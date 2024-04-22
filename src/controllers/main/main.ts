@@ -308,7 +308,7 @@ export class MainController extends EventEmitter {
     if (this.status === 'LOADING') return
     this.latestMethodCall = callName
     this.status = 'LOADING'
-    this.emitUpdate()
+    await this.forceEmitUpdate()
     try {
       await fn()
       this.status = 'SUCCESS'
