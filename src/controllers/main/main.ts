@@ -311,13 +311,6 @@ export class MainController extends EventEmitter {
     this.emitUpdate()
     try {
       await fn()
-      // ⚠️ To be discussed.
-      // When this code is executed in a testing environment,
-      // the SUCCESS status, for some reason, is not being received/applied on the frontend (FE).
-      // When we manually run it as a user, everything works as expected.
-      // It's peculiar because we previously resolved this timing issue by adding a wait(1)
-      // before updating the DONE status (check next lines), and it wasn't necessary to apply it here too.
-      // await wait(1)
       this.status = 'SUCCESS'
       await this.forceEmitUpdate()
     } catch (error: any) {
@@ -328,13 +321,9 @@ export class MainController extends EventEmitter {
       })
     }
 
-    // set status in the next tick to ensure the FE receives the 'SUCCESS' status
-    // await wait(1)
     this.status = 'DONE'
     await this.forceEmitUpdate()
 
-    // reset the status in the next tick to ensure the FE receives the 'DONE' status
-    // await wait(1)
     if (this.latestMethodCall === callName) {
       this.status = 'INITIAL'
       await this.forceEmitUpdate()
@@ -409,7 +398,8 @@ export class MainController extends EventEmitter {
   async updateAccountsOpsStatuses() {
     await this.#initialLoadPromise
 
-    const { shouldEmitUpdate, shouldUpdatePortfolio } = await this.activity.updateAccountsOpsStatuses()
+    const { shouldEmitUpdate, shouldUpdatePortfolio } =
+      await this.activity.updateAccountsOpsStatuses()
 
     if (shouldEmitUpdate) {
       this.emitUpdate()
@@ -417,7 +407,6 @@ export class MainController extends EventEmitter {
       if (shouldUpdatePortfolio) {
         this.updateSelectedAccount(this.selectedAccount, true)
       }
-      
     }
   }
 

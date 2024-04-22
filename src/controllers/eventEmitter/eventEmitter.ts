@@ -43,6 +43,14 @@ export default class EventEmitter {
     return this.#errors
   }
 
+  /**
+   * Using this function to emit an update bypasses both background and React batching,
+   * ensuring that the state update is immediately applied at the application level (React/Extension).
+   *
+   * This is particularly handy when multiple status flags are being updated rapidly.
+   * Without the `forceEmitUpdate` option, the application will only render the very first and last status updates,
+   * batching the ones in between.
+   */
   protected async forceEmitUpdate() {
     await wait(1)
     // eslint-disable-next-line no-restricted-syntax
