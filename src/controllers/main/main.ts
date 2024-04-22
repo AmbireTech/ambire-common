@@ -1002,9 +1002,9 @@ export class MainController extends EventEmitter {
         this.signAccountOp.update({ estimation })
       }
 
-      // if there's an estimation error, clear the pending state
+      // if there's an estimation error, override the pending results
       if (estimation && estimation.error) {
-        this.portfolio.makePendingLatestFor(localAccountOp)
+        this.portfolio.overridePendingResults(localAccountOp)
       }
     } catch (error: any) {
       this.emitError({

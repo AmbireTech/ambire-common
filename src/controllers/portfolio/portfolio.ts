@@ -246,16 +246,16 @@ export class PortfolioController extends EventEmitter {
     this.#additionalHints = []
   }
 
-  // clear the pending state for the given accountOp
-  async makePendingLatestFor(accountOp: AccountOp) {
+  // make the pending results the same as the latest ones
+  async overridePendingResults(accountOp: AccountOp) {
     if (
       this.pending[accountOp.accountAddr] &&
       this.pending[accountOp.accountAddr][accountOp.networkId] &&
       this.latest[accountOp.accountAddr] &&
       this.latest[accountOp.accountAddr][accountOp.networkId]
     ) {
-      this.pending[accountOp.accountAddr][accountOp.networkId] =
-        this.latest[accountOp.accountAddr][accountOp.networkId]
+      this.pending[accountOp.accountAddr][accountOp.networkId]!.result =
+        this.latest[accountOp.accountAddr][accountOp.networkId]!.result
       this.emitUpdate()
     }
   }
