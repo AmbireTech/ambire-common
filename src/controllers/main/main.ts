@@ -968,13 +968,20 @@ export class MainController extends EventEmitter {
         estimation
 
       // if the nonce from the estimation is different than the one in localAccountOp,
-      // override localAccountOp.nonce and set it in this.accountOpsToBeSigned as
-      // the nonce from the estimation is the newest one
+      // override all places that contain the old nonce with the correct one
       if (estimation && BigInt(estimation.currentAccountNonce) !== localAccountOp.nonce) {
         localAccountOp.nonce = BigInt(estimation.currentAccountNonce)
+
         this.accountOpsToBeSigned[localAccountOp.accountAddr][
           localAccountOp.networkId
         ]!.accountOp.nonce = localAccountOp.nonce
+
+        if (
+          this.accountStates[localAccountOp.accountAddr] &&
+          this.accountStates[localAccountOp.accountAddr][localAccountOp.networkId]
+        )
+          this.accountStates[localAccountOp.accountAddr][localAccountOp.networkId].nonce =
+            localAccountOp.nonce
       }
 
       // update the signAccountOp controller once estimation finishes;
