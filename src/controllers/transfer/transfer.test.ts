@@ -198,6 +198,7 @@ describe('Transfer Controller', () => {
       (t) =>
         t.address === '0x0000000000000000000000000000000000000000' && t.networkId === 'ethereum'
     )
+    nativeToken!.amount = 10n
 
     transferController.update({ selectedToken: nativeToken })
     transferController.update({
