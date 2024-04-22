@@ -379,7 +379,6 @@ describe('Portfolio Controller ', () => {
         emptyAccount.addr,
         undefined
       )
-      await controller.getAdditionalPortfolio(emptyAccount.addr)
 
       PINNED_TOKENS.filter((token) => token.onGasTank && token.networkId === 'ethereum').forEach(
         (pinnedToken) => {
@@ -399,8 +398,6 @@ describe('Portfolio Controller ', () => {
       const controller = new PortfolioController(storage, settings, relayerUrl)
 
       await controller.updateSelectedAccount([account], [ethereum], account.addr, undefined)
-
-      await controller.getAdditionalPortfolio(account.addr)
 
       controller.latest[account.addr].ethereum?.result?.tokens.forEach((token) => {
         expect(token.amount > 0)
