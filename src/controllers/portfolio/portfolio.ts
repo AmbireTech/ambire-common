@@ -246,6 +246,14 @@ export class PortfolioController extends EventEmitter {
     this.#additionalHints = []
   }
 
+  // clear the pending state, if set
+  async clearPending(selectedAccountId: AccountId) {
+    if (this.pending[selectedAccountId]) {
+      this.pending[selectedAccountId] = {}
+      this.emitUpdate()
+    }
+  }
+
   async updateTokenValidationByStandard(
     token: { address: TokenResult['address']; networkId: TokenResult['networkId'] },
     accountId: AccountId

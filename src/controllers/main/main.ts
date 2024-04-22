@@ -663,7 +663,8 @@ export class MainController extends EventEmitter {
     const accountOps = this.accountOpsToBeSigned[selectedAccount]
       ? Object.fromEntries(
           Object.entries(this.accountOpsToBeSigned[selectedAccount])
-            .filter(([, accOp]) => accOp)
+            // filter out account ops that have an estimation error
+            .filter(([, accOp]) => accOp && (!accOp.estimation || !accOp.estimation.error))
             .map(([networkId, x]) => [networkId, [x!.accountOp]])
         )
       : undefined
@@ -999,6 +1000,11 @@ export class MainController extends EventEmitter {
       // this eliminates the infinite loading bug if the estimation comes slower
       if (this.signAccountOp && estimation) {
         this.signAccountOp.update({ estimation })
+      }
+
+      // if there's an estimation error, clear the pending state
+      if (estimation && estimation.error) {
+        this.portfolio.clearPending(localAccountOp.accountAddr)
       }
     } catch (error: any) {
       this.emitError({
