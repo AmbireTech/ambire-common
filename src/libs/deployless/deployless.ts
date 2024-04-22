@@ -77,7 +77,13 @@ export class Deployless {
 
   // this will detect whether the provider supports state override and also retrieve the actual code of the contract we are using
   private async detectStateOverride(): Promise<void> {
-    if (!(this.provider instanceof JsonRpcProvider)) {
+    const isJsonRpcProvider =
+      this.provider &&
+      typeof (this.provider as JsonRpcProvider).send === 'function' &&
+      // eslint-disable-next-line no-underscore-dangle
+      typeof (this.provider as JsonRpcProvider)._send === 'function'
+
+    if (!isJsonRpcProvider) {
       throw new Error(
         'state override mode (or auto-detect) not available unless you use JsonRpcProvider'
       )
@@ -178,7 +184,7 @@ export function parseErr(data: string): string | null {
   const dataNoPrefix = data.slice(10)
   if (data.startsWith(panicSig)) {
     // https://docs.soliditylang.org/en/v0.8.11/control-structures.html#panic-via-assert-and-error-via-require
-    const num = parseInt('0x' + dataNoPrefix)
+    const num = parseInt(`0x${dataNoPrefix}`)
     if (num === 0x00) return 'generic compiler error'
     if (num === 0x01) return 'solidity assert error'
     if (num === 0x11) return 'arithmetic error'
