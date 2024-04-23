@@ -6,6 +6,7 @@ import { Account } from '../../interfaces/account'
 import { NetworkId } from '../../interfaces/networkDescriptor'
 import { RPCProvider } from '../../interfaces/settings'
 import { isSmartAccount } from '../account/account'
+import { TokenResult } from './interfaces'
 
 const usdcEMapping: { [key: string]: string } = {
   avalanche: '0xa7d7079b0fead91f3e65f86e8915cb59c1a4c664',
@@ -96,4 +97,10 @@ export const validateERC20Token = async (
 
 export const shouldGetAdditionalPortfolio = (account: Account) => {
   return isSmartAccount(account)
+}
+
+// fetch the amountPostSimulation for the token if set
+// otherwise, the token.amount
+export const getTokenAmount = (token: TokenResult): bigint => {
+  return typeof token.amountPostSimulation === 'bigint' ? token.amountPostSimulation : token.amount
 }
