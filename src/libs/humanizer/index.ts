@@ -9,7 +9,6 @@ import { humanizeCalls, humanizePlainTextMessage, humanizeTypedMessage } from '.
 import {
   HumanizerCallModule,
   HumanizerFragment,
-  HumanizerMeta,
   HumanizerParsingModule,
   HumanizerSettings,
   IrCall,
@@ -33,9 +32,9 @@ import {
   fallbackEIP712Humanizer,
   permit2Module
 } from './typedMessageModules'
-
-export const HUMANIZER_META_KEY = 'HumanizerMetaV2'
-// generic in the begining
+import { addFragsToLazyStore, lazyReadHumanizerMeta } from './lazyStorage'
+import { HUMANIZER_META_KEY } from './utils'
+// from most generic to least generic
 // the final humanization is the final triggered module
 export const humanizerCallModules: HumanizerCallModule[] = [
   genericErc20Humanizer,
@@ -53,51 +52,11 @@ export const humanizerCallModules: HumanizerCallModule[] = [
 
 const parsingModules: HumanizerParsingModule[] = [humanizerMetaParsing]
 
-// generic at the end
+// from least generic to most generic
 // the final visualization and warnings are from the first triggered module
 const humanizerTMModules = [erc20Module, erc721Module, permit2Module, fallbackEIP712Humanizer]
 
-const integrateFragments = (
-  _humanizerMeta: HumanizerMeta,
-  fragments: HumanizerFragment[]
-): HumanizerMeta => {
-  const humanizerMeta = _humanizerMeta
-  fragments.forEach((f) => {
-    // @TODO rename types to singular  also add enum
-    if (f.type === 'abis') humanizerMeta.abis[f.key] = f.value
-    if (f.type === 'selector') humanizerMeta.abis.NO_ABI[f.key] = f.value
-    if (f.type === 'knownAddresses')
-      humanizerMeta.knownAddresses[f.key] = { ...humanizerMeta.knownAddresses[f.key], ...f.value }
-    if (f.type === 'token') {
-      humanizerMeta.knownAddresses[f.key] = {
-        ...humanizerMeta.knownAddresses?.[f.key],
-        token: f.value
-      }
-    }
-  })
-  return humanizerMeta
-}
-
-// @TODO move to constants????
-export const combineKnownHumanizerInfo = (
-  stored: HumanizerMeta,
-  passedHumanizerMeta: HumanizerMeta | undefined,
-  humanizerFragments?: HumanizerFragment[]
-): { toStore: HumanizerMeta; toReturn: HumanizerMeta } => {
-  const globalFrags = humanizerFragments?.filter((f) => f.isGlobal) || []
-  const nonGlobalFragments = humanizerFragments?.filter((f) => !f.isGlobal) || []
-
-  const toStore: HumanizerMeta = integrateFragments(stored, globalFrags)
-
-  const toReturn = integrateFragments(toStore, nonGlobalFragments)
-  toReturn.abis.NO_ABI = { ...toReturn?.abis?.NO_ABI, ...passedHumanizerMeta?.abis?.NO_ABI }
-  toReturn.knownAddresses = { ...toReturn?.knownAddresses, ...passedHumanizerMeta?.knownAddresses }
-  // this operation should only append and not override
-  toReturn.abis = { ...passedHumanizerMeta?.abis, ...toReturn?.abis }
-
-  return { toStore, toReturn }
-}
-
+// @TODO to be removed
 export const humanizeAccountOp = async (
   storage: Storage,
   accountOp: AccountOp,
@@ -106,65 +65,72 @@ export const humanizeAccountOp = async (
 ): Promise<IrCall[]> => {
   const storedHumanizerMeta = await storage.get(HUMANIZER_META_KEY, {})
 
-  const [irCalls] = humanizeCalls(
-    { ...accountOp!, humanizerMeta: { ...accountOp!.humanizerMeta, ...storedHumanizerMeta } },
-    humanizerCallModules,
-    { fetch, emitError }
-  )
+  const [irCalls] = humanizeCalls(accountOp, humanizerCallModules, storedHumanizerMeta, {
+    fetch,
+    emitError
+  })
 
   return irCalls
 }
 
-// @TODO: update iterface name
-export const sharedHumanization = async <InputData extends AccountOp | Message>(
-  data: InputData,
+const sharedHumanization = async <InputDataType extends AccountOp | Message>(
+  data: InputDataType,
   storage: Storage,
   fetch: Function,
-  callback: ((response: IrCall[]) => void) | ((response: IrMessage) => void),
-  emitError: (err: ErrorRef) => void
+  callback:
+    | ((response: IrCall[], nonGlobalFrags: HumanizerFragment[]) => void)
+    | ((response: IrMessage) => void),
+  emitError: (err: ErrorRef) => void,
+  options?: any
 ) => {
-  let humanizerFragments: HumanizerFragment[] = []
   let op: AccountOp
-  let irCalls
+  let message: Message | null = null
+  let irCalls: IrCall[] = []
   let asyncOps: Promise<HumanizerFragment | null>[] = []
   let parsedMessage: IrMessage
   if ('calls' in data) {
     op = parse(stringify(data))
   }
-
-  const storedHumanizerMeta = await storage.get(HUMANIZER_META_KEY, {
-    knownAddresses: {},
-    abis: { NO_ABI: {} }
-  } as HumanizerMeta)
-
+  if ('content' in data) {
+    message = parse(stringify(data))
+  }
   for (let i = 0; i <= 3; i++) {
-    // @TODO should we always do this
-
-    const { toReturn: toBeUsed, toStore } = combineKnownHumanizerInfo(
-      storedHumanizerMeta,
-      data.humanizerMeta as HumanizerMeta | undefined,
-      humanizerFragments
-    )
+    const totalHumanizerMetaToBeUsed = await lazyReadHumanizerMeta(storage, {
+      nocache: options && !options?.isExtension
+    })
     if ('calls' in data) {
-      op!.humanizerMeta = toBeUsed
-      ;[irCalls, asyncOps] = humanizeCalls(op!, humanizerCallModules, { fetch, emitError })
-      const [parsedCalls, newAsyncOps] = parseCalls(op!, irCalls, parsingModules, {
+      //
+      ;[irCalls, asyncOps] = humanizeCalls(op!, humanizerCallModules, totalHumanizerMetaToBeUsed, {
         fetch,
         emitError
       })
+      const [parsedCalls, newAsyncOps] = parseCalls(
+        op!,
+        irCalls,
+        parsingModules,
+        totalHumanizerMetaToBeUsed,
+        {
+          fetch,
+          emitError
+        }
+      )
       asyncOps.push(...newAsyncOps)
-      ;(callback as (response: IrCall[]) => void)(parsedCalls)
+      ;(callback as (response: IrCall[], nonGlobalFrags: HumanizerFragment[]) => void)(
+        parsedCalls,
+        op!.humanizerMetaFragments || []
+      )
+      //
     } else if ('content' in data) {
       const humanizerSettings: HumanizerSettings = {
-        accountAddr: data.accountAddr,
-        networkId: data?.networkId || 'ethereum',
-        humanizerMeta: toBeUsed
+        accountAddr: message!.accountAddr,
+        networkId: message?.networkId || 'ethereum',
+        humanizerMeta: totalHumanizerMetaToBeUsed
       }
       const irMessage: IrMessage = {
-        ...data,
-        ...(data.content.kind === 'typedMessage'
-          ? humanizeTypedMessage(humanizerTMModules, data.content)
-          : humanizePlainTextMessage(data.content))
+        ...message!,
+        ...(message!.content.kind === 'typedMessage'
+          ? humanizeTypedMessage(humanizerTMModules, message!.content)
+          : humanizePlainTextMessage(message!.content))
       }
 
       ;[parsedMessage, asyncOps] = parseMessage(humanizerSettings, irMessage, parsingModules, {
@@ -174,30 +140,43 @@ export const sharedHumanization = async <InputData extends AccountOp | Message>(
       ;(callback as (response: IrMessage) => void)(parsedMessage)
     }
 
-    humanizerFragments = await Promise.all(asyncOps).then(
+    const humanizerFragments = await Promise.all(asyncOps).then(
       (frags) => frags.filter((x) => x) as HumanizerFragment[]
     )
-    await storage.set(HUMANIZER_META_KEY, toStore)
+    const globalFragments = humanizerFragments.filter((f) => f.isGlobal)
+    const nonGlobalFragments = humanizerFragments.filter((f) => !f.isGlobal)
+    if ('calls' in data)
+      // @TODO we should store the non global frags in the op
+      op!.humanizerMetaFragments = [...(op!.humanizerMetaFragments || []), ...nonGlobalFragments]
+    if ('content' in data)
+      message!.humanizerFragments = [...(message!.humanizerFragments || []), ...nonGlobalFragments]
+    await addFragsToLazyStore(storage, globalFragments, {
+      urgent: options && !options?.isExtension
+    })
     if (!humanizerFragments.length) return
   }
 }
 
-export const callsHumanizer = async (
+const callsHumanizer = async (
   accountOp: AccountOp,
   storage: Storage,
   fetch: Function,
-  callback: (irCalls: IrCall[]) => void,
-  emitError: (err: ErrorRef) => void
+  callback: (irCalls: IrCall[], nonGlobalFrags: HumanizerFragment[]) => void,
+  emitError: (err: ErrorRef) => void,
+  options?: any
 ) => {
-  await sharedHumanization(accountOp, storage, fetch, callback, emitError)
+  await sharedHumanization(accountOp, storage, fetch, callback, emitError, options)
 }
 
-export const messageHumanizer = async (
+const messageHumanizer = async (
   message: Message,
   storage: Storage,
   fetch: Function,
   callback: (msgs: IrMessage) => void,
-  emitError: (err: ErrorRef) => void
+  emitError: (err: ErrorRef) => void,
+  options?: any
 ) => {
-  await sharedHumanization(message, storage, fetch, callback, emitError)
+  await sharedHumanization(message, storage, fetch, callback, emitError, options)
 }
+
+export { callsHumanizer, messageHumanizer, HUMANIZER_META_KEY }

@@ -1,7 +1,7 @@
 import { Interface, ZeroAddress } from 'ethers'
 
 import { AccountOp } from '../../accountOp/accountOp'
-import { HumanizerCallModule, HumanizerFragment, IrCall } from '../interfaces'
+import { HumanizerCallModule, HumanizerFragment, HumanizerMeta, IrCall } from '../interfaces'
 import {
   getAction,
   getAddressVisualization,
@@ -17,10 +17,11 @@ import {
 export const genericErc721Humanizer: HumanizerCallModule = (
   accountOp: AccountOp,
   currentIrCalls: IrCall[],
+  humanizerMeta: HumanizerMeta,
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   options?: any
 ) => {
-  const iface = new Interface(getKnownAbi(accountOp.humanizerMeta, 'ERC721', options))
+  const iface = new Interface(getKnownAbi(humanizerMeta, 'ERC721', options))
   const nftTransferVisualization = (call: IrCall) => {
     const args = iface.parseTransaction(call)?.args.toArray() || []
     return args[0] === accountOp.accountAddr
@@ -84,7 +85,7 @@ export const genericErc721Humanizer: HumanizerCallModule = (
     // that's why we check if it's a known token to prevent humanization.
     // If it's not a known token, using the same humanization is okay as
     // we cannot humanize it further
-    const isActuallyKnownToken = !!getKnownToken(accountOp.humanizerMeta, call.to)
+    const isActuallyKnownToken = !!getKnownToken(humanizerMeta, call.to)
     // could do additional check if it is actually NFT contract
     return matcher[call.data.substring(0, 10)] && !isActuallyKnownToken
       ? {
@@ -99,10 +100,11 @@ export const genericErc721Humanizer: HumanizerCallModule = (
 export const genericErc20Humanizer: HumanizerCallModule = (
   accountOp: AccountOp,
   currentIrCalls: IrCall[],
+  humanizerMeta: HumanizerMeta,
   options?: any
 ) => {
   const asyncOps: Promise<HumanizerFragment | null>[] = []
-  const iface = new Interface(getKnownAbi(accountOp.humanizerMeta, 'ERC20', options))
+  const iface = new Interface(getKnownAbi(humanizerMeta, 'ERC20', options))
   const matcher = {
     [iface.getFunction('approve')?.selector!]: (call: IrCall) => {
       const args = iface.parseTransaction(call)?.args.toArray() || []
@@ -160,7 +162,7 @@ export const genericErc20Humanizer: HumanizerCallModule = (
   }
   const newCalls = currentIrCalls.map((call) => {
     const sigHash = call.data.substring(0, 10)
-    const isToKnownToken = !!getKnownToken(accountOp.humanizerMeta, call.to)
+    const isToKnownToken = !!getKnownToken(humanizerMeta, call.to)
     // if proper func selector and no such token found in meta
     // console.log(matcher[sigHash], isToKnownToken)
     if (matcher[sigHash] && !isToKnownToken) {

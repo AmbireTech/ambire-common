@@ -934,11 +934,13 @@ export class MainController extends EventEmitter {
           this.accounts,
           this.settings.networks,
           localAccountOp.accountAddr,
-          Object.fromEntries(
-            Object.entries(this.accountOpsToBeSigned[localAccountOp.accountAddr])
-              .filter(([, accOp]) => accOp)
-              .map(([networkId, x]) => [networkId, [x!.accountOp]])
-          ),
+          this.accountOpsToBeSigned[localAccountOp.accountAddr]
+            ? Object.fromEntries(
+                Object.entries(this.accountOpsToBeSigned[localAccountOp.accountAddr])
+                  .filter(([, accOp]) => accOp)
+                  .map(([networkId, x]) => [networkId, [x!.accountOp]])
+              )
+            : undefined,
           {
             forceUpdate: true,
             additionalHints
