@@ -304,14 +304,29 @@ export class MainController extends EventEmitter {
   }
 
   async #statusWrapper(callName: string, fn: Function) {
-    if (this.status === 'LOADING') return
+    // We should not allow executing a second function simultaneously while another function execution is already in progress,
+    // as both functions manipulate the same status property, which may lead to unexpected behavior.
+    // Keeping this in mind, if we have an application logic (hook) that automatically invokes a function wrapped with #statusWrapper,
+    // we should always check if the status is INITIAL and only then invoke the function.
+    // You can see such an example in `authContext.tsx`.
+    if (this.status !== 'INITIAL') {
+      this.emitError({
+        level: 'minor',
+        message: `Please wait for the completion of the previous action before initiating another one.', ${callName}`,
+        error: new Error(
+          'Another function is already being handled by #statusWrapper; refrain from invoking a second function.'
+        )
+      })
+
+      return
+    }
     this.latestMethodCall = callName
     this.status = 'LOADING'
-    this.emitUpdate()
+    await this.forceEmitUpdate()
     try {
       await fn()
       this.status = 'SUCCESS'
-      this.emitUpdate()
+      await this.forceEmitUpdate()
     } catch (error: any) {
       this.emitError({
         level: 'major',
@@ -320,16 +335,12 @@ export class MainController extends EventEmitter {
       })
     }
 
-    // set status in the next tick to ensure the FE receives the 'SUCCESS' status
-    await wait(1)
     this.status = 'DONE'
-    this.emitUpdate()
+    await this.forceEmitUpdate()
 
-    // reset the status in the next tick to ensure the FE receives the 'DONE' status
-    await wait(1)
     if (this.latestMethodCall === callName) {
       this.status = 'INITIAL'
-      this.emitUpdate()
+      await this.forceEmitUpdate()
     }
   }
 
