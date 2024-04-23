@@ -37,7 +37,6 @@ import { estimate } from '../../libs/estimate/estimate'
 import { EstimateResult } from '../../libs/estimate/interfaces'
 import { GasRecommendation, getGasPriceRecommendations } from '../../libs/gasPrice/gasPrice'
 import { humanizeAccountOp } from '../../libs/humanizer'
-import { shouldGetAdditionalPortfolio } from '../../libs/portfolio/helpers'
 import { GetOptions } from '../../libs/portfolio/interfaces'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { isErc4337Broadcast } from '../../libs/userOperation/userOperation'
@@ -671,11 +670,21 @@ export class MainController extends EventEmitter {
       ? { forceUpdate, additionalHints }
       : { forceUpdate }
 
+    // pass the accountOps if any so we could reflect the pending state
+    const accountOps = this.accountOpsToBeSigned[selectedAccount]
+      ? Object.fromEntries(
+          Object.entries(this.accountOpsToBeSigned[selectedAccount])
+            // filter out account ops that have an estimation error
+            .filter(([, accOp]) => accOp && (!accOp.estimation || !accOp.estimation.error))
+            .map(([networkId, x]) => [networkId, [x!.accountOp]])
+        )
+      : undefined
+
     this.portfolio.updateSelectedAccount(
       this.accounts,
       this.settings.networks,
       selectedAccount,
-      undefined,
+      accountOps,
       updateOptions
     )
   }
@@ -756,6 +765,9 @@ export class MainController extends EventEmitter {
         delete this.accountOpsToBeSigned[accountAddr]?.[networkId]
         if (!Object.keys(this.accountOpsToBeSigned[accountAddr] || {}).length)
           delete this.accountOpsToBeSigned[accountAddr]
+
+        // remove the pending state
+        this.updateSelectedAccount(this.selectedAccount, true)
       }
     } else {
       this.messagesToBeSigned[accountAddr] = this.messagesToBeSigned[accountAddr].filter(
@@ -933,11 +945,13 @@ export class MainController extends EventEmitter {
           this.accounts,
           this.settings.networks,
           localAccountOp.accountAddr,
-          Object.fromEntries(
-            Object.entries(this.accountOpsToBeSigned[localAccountOp.accountAddr])
-              .filter(([, accOp]) => accOp)
-              .map(([networkId, x]) => [networkId, [x!.accountOp]])
-          ),
+          this.accountOpsToBeSigned[localAccountOp.accountAddr]
+            ? Object.fromEntries(
+                Object.entries(this.accountOpsToBeSigned[localAccountOp.accountAddr])
+                  .filter(([, accOp]) => accOp)
+                  .map(([networkId, x]) => [networkId, [x!.accountOp]])
+              )
+            : undefined,
           {
             forceUpdate: true,
             additionalHints
@@ -999,6 +1013,11 @@ export class MainController extends EventEmitter {
       // this eliminates the infinite loading bug if the estimation comes slower
       if (this.signAccountOp && estimation) {
         this.signAccountOp.update({ estimation })
+      }
+
+      // if there's an estimation error, override the pending results
+      if (estimation && estimation.error) {
+        this.portfolio.overridePendingResults(localAccountOp)
       }
     } catch (error: any) {
       this.emitError({
