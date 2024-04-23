@@ -312,9 +312,11 @@ export class MainController extends EventEmitter {
     // You can see such an example in `authContext.tsx`.
     if (this.status !== 'INITIAL') {
       this.emitError({
-        level: 'major',
-        message: `Another function is already being handled by #statusWrapper; refrain from invoking a second function.', ${callName}`,
-        error: new Error('')
+        level: 'minor',
+        message: `Please wait for the completion of the previous action before initiating another one.', ${callName}`,
+        error: new Error(
+          'Another function is already being handled by #statusWrapper; refrain from invoking a second function.'
+        )
       })
 
       return
