@@ -572,7 +572,7 @@ export class EmailVaultController extends EventEmitter {
     // Keeping this in mind, if we have an application logic (hook) that automatically invokes a function wrapped with #statusWrapper,
     // we should always check if the status is INITIAL and only then invoke the function.
     // You can see such an example in `authContext.tsx`.
-    if (this.latestMethodCall !== 'INITIAL') {
+    if (this.latestMethodStatus !== 'INITIAL') {
       this.emitError({
         level: 'minor',
         message: `Please wait for the completion of the previous action before initiating another one.', ${callName}`,
