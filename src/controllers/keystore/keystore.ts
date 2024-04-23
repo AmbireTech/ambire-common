@@ -529,11 +529,11 @@ export class KeystoreController extends EventEmitter {
     this.latestMethodCall = callName
     this.errorMessage = ''
     this.status = 'LOADING'
-    this.emitUpdate()
+    await this.forceEmitUpdate()
     try {
       await fn()
       this.status = 'SUCCESS'
-      this.emitUpdate()
+      await this.forceEmitUpdate()
     } catch (error: any) {
       if (error?.message === 'keystore: wrong secret') {
         this.errorMessage = 'Invalid Device Password.'
@@ -569,16 +569,12 @@ export class KeystoreController extends EventEmitter {
       }
     }
 
-    // set status in the next tick to ensure the FE receives the 'SUCCESS' status
-    await wait(1)
     this.status = 'DONE'
-    this.emitUpdate()
+    await this.forceEmitUpdate()
 
-    // reset the status in the next tick to ensure the FE receives the 'DONE' status
-    await wait(1)
     if (this.latestMethodCall === callName) {
       this.status = 'INITIAL'
-      this.emitUpdate()
+      await this.forceEmitUpdate()
     }
   }
 
