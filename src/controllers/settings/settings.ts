@@ -506,7 +506,21 @@ export class SettingsController extends EventEmitter {
   }
 
   async #wrapSettingsAction(callName: string, fn: Function) {
-    if (this.status === 'LOADING') return
+    // We should not allow executing a second function simultaneously while another function execution is already in progress,
+    // as both functions manipulate the same status property, which may lead to unexpected behavior.
+    // Keeping this in mind, if we have an application logic (hook) that automatically invokes a function wrapped with #statusWrapper,
+    // we should always check if the status is INITIAL and only then invoke the function.
+    // You can see such an example in `authContext.tsx`.
+    if (this.status !== 'INITIAL') {
+      this.emitError({
+        level: 'major',
+        message: `Another function is already being handled by #statusWrapper; refrain from invoking a second function.', ${callName}`,
+        error: new Error('')
+      })
+
+      return
+    }
+
     this.latestMethodCall = callName
     this.status = 'LOADING'
     this.emitUpdate()
