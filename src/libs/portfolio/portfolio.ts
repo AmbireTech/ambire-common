@@ -11,6 +11,7 @@ import { Deployless, fromDescriptor } from '../deployless/deployless'
 import batcher from './batcher'
 import { geckoRequestBatcher, geckoResponseIdentifier } from './gecko'
 import { getNFTs, getTokens } from './getOnchainBalances'
+import { getTokenAmount } from './helpers'
 import {
   CollectionResult,
   GetOptions,
@@ -323,7 +324,7 @@ export class Portfolio {
         for (const x of token.priceIn) {
           localCur[x.baseCurrency] =
             (localCur[x.baseCurrency] || 0) +
-            (Number(token.amount) / 10 ** token.decimals) * x.price
+            (Number(getTokenAmount(token)) / 10 ** token.decimals) * x.price
         }
         return localCur
       }, {})

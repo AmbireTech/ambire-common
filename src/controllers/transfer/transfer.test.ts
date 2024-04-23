@@ -198,8 +198,10 @@ describe('Transfer Controller', () => {
       (t) =>
         t.address === '0x0000000000000000000000000000000000000000' && t.networkId === 'ethereum'
     )
+    nativeToken!.amount = 10n
 
     transferController.update({ selectedToken: nativeToken })
+    expect(transferController.selectedToken).not.toBe(null)
     transferController.update({
       amount: '1'
     })
@@ -215,6 +217,25 @@ describe('Transfer Controller', () => {
       PLACEHOLDER_RECIPIENT_LOWERCASE
     )
     expect(transferController.userRequest?.action.value).toBe(1000000000000000000n)
+  })
+  test("should reject a token that doesn't have amount or amountPostSimulation for transfer", async () => {
+    const tokens = await getTokens()
+    const nativeToken = tokens.find(
+      (t) =>
+        t.address === '0x0000000000000000000000000000000000000000' && t.networkId === 'ethereum'
+    )
+    transferController.update({ selectedToken: nativeToken })
+    expect(transferController.selectedToken).toBe(null)
+  })
+  test("should accept a token that doesn't have amount but has amountPostSimulation for transfer", async () => {
+    const tokens = await getTokens()
+    const nativeToken = tokens.find(
+      (t) =>
+        t.address === '0x0000000000000000000000000000000000000000' && t.networkId === 'ethereum'
+    )
+    nativeToken!.amountPostSimulation = 10n
+    transferController.update({ selectedToken: nativeToken })
+    expect(transferController.selectedToken).not.toBe(null)
   })
 
   test('should detect that the recipient is the fee collector', async () => {

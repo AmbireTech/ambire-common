@@ -246,6 +246,20 @@ export class PortfolioController extends EventEmitter {
     this.#additionalHints = []
   }
 
+  // make the pending results the same as the latest ones
+  async overridePendingResults(accountOp: AccountOp) {
+    if (
+      this.pending[accountOp.accountAddr] &&
+      this.pending[accountOp.accountAddr][accountOp.networkId] &&
+      this.latest[accountOp.accountAddr] &&
+      this.latest[accountOp.accountAddr][accountOp.networkId]
+    ) {
+      this.pending[accountOp.accountAddr][accountOp.networkId]!.result =
+        this.latest[accountOp.accountAddr][accountOp.networkId]!.result
+      this.emitUpdate()
+    }
+  }
+
   async updateTokenValidationByStandard(
     token: { address: TokenResult['address']; networkId: TokenResult['networkId'] },
     accountId: AccountId
