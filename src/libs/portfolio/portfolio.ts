@@ -221,7 +221,7 @@ export class Portfolio {
       // return the token if it's pinned and requested
       // or if it's not pinned but under the limit
       const pinnedRequested = isPinned && localOpts.fetchPinned
-      const underLimit = !isPinned && tokensWithErr.length <= limits.erc20 / 2
+      const underLimit = tokensWithErr.length <= limits.erc20 / 2
 
       return !!isTokenPreference || isInAdditionalHints || pinnedRequested || underLimit
     }
