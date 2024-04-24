@@ -27,9 +27,8 @@ export function getWarning(
 ): HumanizerWarning {
   return { content, level }
 }
-export function randomId(): bigint {
-  return BigInt(Math.floor(Math.random() * Number.MAX_SAFE_INTEGER))
-}
+export const randomId = (): number => Math.floor(Math.random() * Number.MAX_SAFE_INTEGER)
+
 export function getLabel(content: string): HumanizerVisualization {
   return { type: 'label', content, id: randomId() }
 }
@@ -52,7 +51,7 @@ export function getToken(_address: string, amount: bigint): HumanizerVisualizati
 }
 
 export function getNft(address: string, id: bigint): HumanizerVisualization {
-  return { type: 'nft', address, id: BigInt(id) }
+  return { type: 'nft', address, id: randomId(), nftId: id }
 }
 
 export function getOnBehalfOf(onBehalfOf: string, sender: string): HumanizerVisualization[] {
