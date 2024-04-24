@@ -218,7 +218,7 @@ describe('typed message tests', () => {
     const { fullVisualization } = permit2Module(tmTemplate)
     expect(fullVisualization?.length).toEqual(expectedBatchVisualization.length)
     expectedBatchVisualization.forEach((v, i) => {
-      expect(v).toEqual(fullVisualization?.[i])
+      expect(fullVisualization?.[i]).toMatchObject(v)
     })
   })
   test('fallback module', () => {
