@@ -29,6 +29,10 @@ export default class EventEmitter {
 
   #errors: ErrorRef[] = []
 
+  status: 'INITIAL' | 'LOADING' | 'SUCCESS' | 'ERROR' = 'INITIAL'
+
+  latestMethodCall: string | null = null
+
   get onUpdateIds() {
     return this.#callbacksWithId.map((item) => item.id)
   }
@@ -75,6 +79,27 @@ export default class EventEmitter {
     for (const i of this.#errorCallbacksWithId) i.cb(error)
     // eslint-disable-next-line no-restricted-syntax
     for (const cb of this.#errorCallbacks) cb(error)
+  }
+
+  protected async withStatus(callName: string, fn: () => Promise<ErrorRef | void> | void) {
+    if (this.status !== 'INITIAL') return
+    this.latestMethodCall = callName
+    this.status = 'LOADING'
+    this.forceEmitUpdate()
+
+    try {
+      await fn()
+
+      this.status = 'SUCCESS'
+      this.forceEmitUpdate()
+    } catch (error: any) {
+      this.status = 'ERROR'
+      this.emitError(error)
+      this.forceEmitUpdate()
+    }
+
+    this.status = 'INITIAL'
+    this.emitUpdate()
   }
 
   // Prevents memory leaks and storing huge amount of errors
