@@ -8,7 +8,9 @@ import { wrapEthSign, wrapExternallyValidated, wrapTypedData } from '../ambireSi
 import { abiCoder, chainId, expect, provider } from '../config'
 import {
   buildUserOp,
+  getAccountGasLimits,
   getDKIMValidatorData,
+  getGasFees,
   getPriviledgeTxnWithCustomHash,
   getSignerKey,
   getTargetNonce
@@ -93,7 +95,10 @@ async function deployAmbireAccountAndEntryPointAndPaymaster(validatorDataOptions
   const { signerKey, hash } = getSignerKey(await dkimRecovery.getAddress(), validatorData)
   const { ambireAccountAddress: addr } = await deployAmbireAccountHardhatNetwork([
     { addr: signerKey, hash },
-    { addr: signerWithPrivs.address, hash: '0x0000000000000000000000000000000000000000000000000000000000000001' }
+    {
+      addr: signerWithPrivs.address,
+      hash: '0x0000000000000000000000000000000000000000000000000000000000000001'
+    }
   ])
   ambireAccountAddress = addr
   account = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, signerWithPrivs)
@@ -204,9 +209,14 @@ describe('ERC4337 DKIM sigMode Both', () => {
     })
     const targetNonce = getTargetNonce(replayTargetNonceOp)
     replayTargetNonceOp.nonce = `${targetNonce.substring(0, targetNonce.length - 2)}01`
+    const isOneTimeNonce = (error: string) => {
+      return Buffer.from(error.substring(2), 'hex')
+        .toString()
+        .includes('execute(): one-time nonce is wrong')
+    }
     await expect(entryPoint.handleOps([replayTargetNonceOp], relayer))
-      .to.be.revertedWithCustomError(entryPoint, 'FailedOp')
-      .withArgs(0, 'AA23 reverted: validateUserOp: execute(): one-time nonce is wrong')
+      .to.be.revertedWithCustomError(entryPoint, 'FailedOpWithRevert')
+      .withArgs(0, 'AA23 reverted', isOneTimeNonce)
 
     // try to replay with a valid paymaster signature, should fail
     // and should not allow to reuse the nonce
@@ -727,7 +737,10 @@ describe('DKIM sigMode Both with acceptUnknownSelectors true', () => {
     )
     const { ambireAccountAddress: addr } = await deployAmbireAccountHardhatNetwork([
       { addr: signerKey, hash },
-      { addr: signerWithPrivs.address, hash: '0x0000000000000000000000000000000000000000000000000000000000000001' }
+      {
+        addr: signerWithPrivs.address,
+        hash: '0x0000000000000000000000000000000000000000000000000000000000000001'
+      }
     ])
     ambireAccountAddress = addr
     account = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, signerWithPrivs)
@@ -987,16 +1000,17 @@ describe('ERC4337 DKIM sigMode OnlyDKIM with valid entry point that validates ev
       nonce: ethers.toBeHex(newNonce, 1),
       initCode: '0x',
       callData: account.interface.encodeFunctionData('executeBySender', [[]]),
-      callGasLimit: ethers.toBeHex(100000),
-      verificationGasLimit: ethers.toBeHex(500000),
-      preVerificationGas: ethers.toBeHex(50000),
-      maxFeePerGas: ethers.toBeHex(100000),
-      maxPriorityFeePerGas: ethers.toBeHex(100000),
+      accountGasLimits: getAccountGasLimits(500000, 100000),
+      preVerificationGas: 500000n,
+      gasFees: getGasFees(100000, 100000),
       paymasterAndData: '0x',
       signature: finalSig
     }
+    const isSigMode = (error: string) => {
+      return Buffer.from(error.substring(2), 'hex').toString().includes('SV_SIGMODE')
+    }
     await expect(entryPoint.handleOps([userOperation], relayer))
-      .to.be.revertedWithCustomError(entryPoint, 'FailedOp')
-      .withArgs(0, 'AA23 reverted: SV_SIGMODE')
+      .to.be.revertedWithCustomError(entryPoint, 'FailedOpWithRevert')
+      .withArgs(0, 'AA23 reverted', isSigMode)
   })
 })
