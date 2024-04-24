@@ -3,7 +3,7 @@ pragma solidity 0.8.19;
 
 import './libs/SignatureValidator.sol';
 import './ExternalSigValidator.sol';
-import './libs/erc4337/UserOperation.sol';
+import './libs/erc4337/PackedUserOperation.sol';
 
 /**
  * @notice  A validator that performs DKIM signature recovery
@@ -298,14 +298,14 @@ contract AmbireAccount {
 	 * We require a one time hash nonce commitment from the paymaster for the given
 	 * req. We use this to give permissions to the entry point on the fly
 	 * and enable ERC-4337
-	 * @param   op  the UserOperation we're executing
+	 * @param   op  the PackedUserOperation we're executing
 	 * @param   userOpHash  the hash we've committed to
 	 * @param   missingAccountFunds  the funds the account needs to pay
 	 * @return  uint256  0 for success, 1 for signature failure, and a uint256
 	 * packed timestamp for a future valid signature:
 	 * address aggregator, uint48 validUntil, uint48 validAfter
 	 */
-	function validateUserOp(UserOperation calldata op, bytes32 userOpHash, uint256 missingAccountFunds)
+	function validateUserOp(PackedUserOperation calldata op, bytes32 userOpHash, uint256 missingAccountFunds)
 	external payable returns (uint256)
 	{
 		// enable running executeMultiple operation through the entryPoint if
@@ -324,9 +324,10 @@ contract AmbireAccount {
 				op.paymasterAndData.length >= 20 && bytes20(op.paymasterAndData[:20]) != bytes20(0),
 				'validateUserOp: paymaster required in execute() mode'
 			);
+
 			// hashing in everything except sender (nonces are scoped by sender anyway), nonce, signature
 			uint256 targetNonce = uint256(keccak256(
-				abi.encode(op.initCode, op.callData, op.callGasLimit, op.verificationGasLimit, op.preVerificationGas, op.maxFeePerGas, op.maxPriorityFeePerGas, op.paymasterAndData)
+				abi.encode(op.initCode, op.callData, op.accountGasLimits, op.preVerificationGas, op.gasFees, op.paymasterAndData)
 			)) << 64;
 			require(op.nonce == targetNonce, 'validateUserOp: execute(): one-time nonce is wrong');
 			return SIG_VALIDATION_SUCCESS;

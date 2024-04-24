@@ -8,7 +8,13 @@ import {
 } from '../../src/libs/proxyDeploy/deploy'
 import { wrapEthSign, wrapTypedData } from '../ambireSign'
 import { abiCoder, chainId, expect, provider } from '../config'
-import { buildUserOp, getPriviledgeTxnWithCustomHash, getTargetNonce } from '../helpers'
+import {
+  buildUserOp,
+  getAccountGasLimits,
+  getGasFees,
+  getPriviledgeTxnWithCustomHash,
+  getTargetNonce
+} from '../helpers'
 
 const salt = '0x0'
 
@@ -134,11 +140,9 @@ describe('ERC-4337 deploys the account via userOp and adds the entry point permi
       nonce: ethers.toBeHex(await entryPoint.getNonce(senderAddress, 0), 1),
       initCode: '0x',
       callData: proxy.interface.encodeFunctionData('executeBySender', [[anotherTxn]]),
-      callGasLimit: ethers.toBeHex(100000),
-      verificationGasLimit: ethers.toBeHex(500000),
-      preVerificationGas: ethers.toBeHex(50000),
-      maxFeePerGas: ethers.toBeHex(100000),
-      maxPriorityFeePerGas: ethers.toBeHex(100000),
+      accountGasLimits: getAccountGasLimits(500000, 100000),
+      preVerificationGas: 500000n,
+      gasFees: getGasFees(100000, 100000),
       paymasterAndData: '0x',
       signature: '0x'
     }
@@ -170,11 +174,9 @@ describe('ERC-4337 deploys the account via userOp and adds the entry point permi
       nonce: ethers.toBeHex(await entryPoint.getNonce(senderAddress, 0), 1),
       initCode: '0x',
       callData: proxy.interface.encodeFunctionData('executeBySender', [[anotherTxn]]),
-      callGasLimit: ethers.toBeHex(100000),
-      verificationGasLimit: ethers.toBeHex(500000),
-      preVerificationGas: ethers.toBeHex(50000),
-      maxFeePerGas: ethers.toBeHex(100000),
-      maxPriorityFeePerGas: ethers.toBeHex(100000),
+      accountGasLimits: getAccountGasLimits(500000, 100000),
+      preVerificationGas: 500000n,
+      gasFees: getGasFees(100000, 100000),
       paymasterAndData: '0x',
       signature: '0x'
     }

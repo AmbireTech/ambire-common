@@ -37,7 +37,7 @@
     "validator": "^13.7.0"
   },
   "devDependencies": {
-    "@account-abstraction/contracts": "^0.6.0",
+    "@account-abstraction/contracts": "^0.7.0",
     "@borislav.itskov/schnorrkel.js": "2.0.85",
     "@ensdomains/dnsprovejs": "^0.4.1",
     "@nomicfoundation/hardhat-chai-matchers": "^2.0.1",

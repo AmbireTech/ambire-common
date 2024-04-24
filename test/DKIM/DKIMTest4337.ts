@@ -214,7 +214,7 @@ describe('ERC4337 DKIM sigMode Both', () => {
       sender: ambireAccountAddress,
       signedNonce: ethers.toBeHex(0, 1),
       callData: account.interface.encodeFunctionData('executeMultiple', [[[txns, finalSig]]]),
-      callGasLimit: ethers.toBeHex(510000)
+      callGasLimit: 510000
     })
     secondUserOperation.nonce = getTargetNonce(secondUserOperation)
     await expect(entryPoint.handleOps([secondUserOperation], relayer)).to.emit(
@@ -408,7 +408,7 @@ describe('ERC4337 DKIM sigMode OnlyDKIM', () => {
       sender: ambireAccountAddress,
       signedNonce: ethers.toBeHex(0, 1),
       callData: account.interface.encodeFunctionData('executeMultiple', [[[[], finalSig]]]),
-      callGasLimit: ethers.toBeHex(440000)
+      callGasLimit: 440000
     })
     thirdUserOperation.nonce = getTargetNonce(thirdUserOperation)
     await expect(entryPoint.handleOps([thirdUserOperation], relayer)).to.emit(
@@ -428,7 +428,7 @@ describe('ERC4337 DKIM sigMode OnlyDKIM', () => {
       sender: ambireAccountAddress,
       signedNonce: ethers.toBeHex(0, 1),
       callData: account.interface.encodeFunctionData('executeMultiple', [[[txns, finalSig]]]),
-      callGasLimit: ethers.toBeHex(440000)
+      callGasLimit: 440000
     })
     forthUserOperation.nonce = getTargetNonce(forthUserOperation)
     await entryPoint.handleOps([forthUserOperation], relayer)
@@ -449,7 +449,7 @@ describe('ERC4337 DKIM sigMode OnlyDKIM', () => {
       sender: ambireAccountAddress,
       signedNonce: ethers.toBeHex(0, 1),
       callData: account.interface.encodeFunctionData('executeMultiple', [[[txns, finalSig]]]),
-      callGasLimit: ethers.toBeHex(445000)
+      callGasLimit: 445000
     })
     fifthUserOperation.nonce = getTargetNonce(fifthUserOperation)
     await expect(entryPoint.handleOps([fifthUserOperation], relayer)).to.emit(
@@ -570,7 +570,7 @@ describe('ERC4337 DKIM sigMode OnlySecond', () => {
       sender: ambireAccountAddress,
       signedNonce: ethers.toBeHex(0, 1),
       callData: account.interface.encodeFunctionData('executeMultiple', [[[txns, finalSig]]]),
-      callGasLimit: ethers.toBeHex(600000)
+      callGasLimit: 600000
     })
     thirdUserOperation.nonce = getTargetNonce(thirdUserOperation)
     await entryPoint.handleOps([thirdUserOperation], relayer)
@@ -591,7 +591,7 @@ describe('ERC4337 DKIM sigMode OnlySecond', () => {
       sender: ambireAccountAddress,
       signedNonce: ethers.toBeHex(0, 1),
       callData: account.interface.encodeFunctionData('executeMultiple', [[[txns, finalSig]]]),
-      callGasLimit: ethers.toBeHex(510000)
+      callGasLimit: 510000
     })
     forthUserOp.nonce = getTargetNonce(forthUserOp)
     await expect(entryPoint.handleOps([forthUserOp], relayer)).to.emit(
@@ -916,7 +916,7 @@ describe('DKIM sigMode OnlySecond with a timelock of 2 minutes', () => {
       sender: ambireAccountAddress,
       signedNonce: ethers.toBeHex(0, 1),
       callData: account.interface.encodeFunctionData('executeMultiple', [[[[], finalSig]]]),
-      callGasLimit: ethers.toBeHex(456000)
+      callGasLimit: 456000
     })
     thirdUserOp.nonce = getTargetNonce(thirdUserOp)
     await expect(entryPoint.handleOps([thirdUserOp], relayer)).to.emit(

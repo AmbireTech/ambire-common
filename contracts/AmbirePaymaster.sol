@@ -6,6 +6,9 @@ import './libs/erc4337/IPaymaster.sol';
 import './libs/SignatureValidator.sol';
 
 contract AmbirePaymaster is IPaymaster {
+	// 52 = 20 address + 16 paymasterVerificationGasLimit + 16 paymasterPostOpGasLimit
+	uint256 public constant PAYMASTER_DATA_OFFSET = 52;
+
 	address immutable public relayer;
 
 	constructor(address _relayer) {
@@ -54,13 +57,12 @@ contract AmbirePaymaster is IPaymaster {
 	 * we tweak the validAfter property.
 	 * For more information, check EntryPoint -> _getValidationData()
 	 */
-	function validatePaymasterUserOp(UserOperation calldata userOp, bytes32, uint256)
+	function validatePaymasterUserOp(PackedUserOperation calldata userOp, bytes32, uint256)
 		external
 		view
 		returns (bytes memory context, uint256 validationData)
 	{
-		// parse the paymasterAndData
-		(uint48 validUntil, uint48 validAfter, bytes memory signature) = abi.decode(userOp.paymasterAndData[20:], (uint48, uint48, bytes));
+		(uint48 validUntil, uint48 validAfter, bytes memory signature) = abi.decode(userOp.paymasterAndData[PAYMASTER_DATA_OFFSET:], (uint48, uint48, bytes));
 
 		bytes memory callData = userOp.callData;
 		bytes32 hash = keccak256(abi.encode(
@@ -78,11 +80,9 @@ contract AmbirePaymaster is IPaymaster {
 			callData.length >= 4 && bytes4(userOp.callData[0:4]) == IAmbireAccount.executeMultiple.selector ? 0 : userOp.nonce,
 			userOp.initCode,
 			callData,
-			userOp.callGasLimit,
-			userOp.verificationGasLimit,
+			userOp.accountGasLimits,
 			userOp.preVerificationGas,
-			userOp.maxFeePerGas,
-			userOp.maxPriorityFeePerGas
+			userOp.gasFees
 		));
 		bool isValidSig = SignatureValidator.recoverAddr(hash, signature, true) == relayer;
 		// see _packValidationData: https://github.com/eth-infinitism/account-abstraction/blob/f2b09e60a92d5b3177c68d9f382912ccac19e8db/contracts/core/Helpers.sol#L73-L80
