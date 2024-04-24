@@ -153,7 +153,7 @@ const sharedHumanization = async <InputDataType extends AccountOp | Message>(
     await addFragsToLazyStore(storage, globalFragments, {
       urgent: options && !options?.isExtension
     })
-    if (!humanizerFragments.length || options.history) return
+    if (!humanizerFragments.length || options?.history) return
   }
 }
 
