@@ -1289,6 +1289,7 @@ export class MainController extends EventEmitter {
       if (accountOp.gasFeePayment?.isERC4337) {
         submittedAccountOp.userOpHash = transactionRes.hash
       }
+
       await this.activity.addAccountOp(submittedAccountOp)
       accountOp.calls.forEach((call) => {
         if (call.fromUserRequestId) {
@@ -1305,6 +1306,12 @@ export class MainController extends EventEmitter {
       })
       console.log('broadcasted:', transactionRes)
       !!this.onBroadcastSuccess && this.onBroadcastSuccess('account-op')
+
+      // clean up this.accountOpsToBeSigned after a successful broadcast
+      delete this.accountOpsToBeSigned[accountOp.accountAddr]?.[accountOp.networkId]
+      if (!Object.keys(this.accountOpsToBeSigned[accountOp.accountAddr] || {}).length)
+        delete this.accountOpsToBeSigned[accountOp.accountAddr]
+
       this.broadcastStatus = 'DONE'
       this.emitUpdate()
       await wait(1)
