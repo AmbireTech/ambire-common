@@ -983,12 +983,23 @@ export class MainController extends EventEmitter {
         })
       ])
 
-      this.accountOpsToBeSigned[localAccountOp.accountAddr] ||= {}
-      this.accountOpsToBeSigned[localAccountOp.accountAddr][localAccountOp.networkId] ||= {
-        accountOp: localAccountOp,
-        estimation
-      }
-      // @TODO compare intent between accountOp and this.accountOpsToBeSigned[accountOp.accountAddr][accountOp.networkId].accountOp
+      // @race
+      // if the account op has been deleted from this.accountOpsToBeSigned,
+      // don't continue as the request has already finished
+      if (
+        !this.accountOpsToBeSigned[localAccountOp.accountAddr] ||
+        !this.accountOpsToBeSigned[localAccountOp.accountAddr][localAccountOp.networkId]
+      )
+        return
+
+      // @race
+      // we check this in the if statement above but in the event of a race which
+      // deletes this.accountOpsToBeSigned just before coming here,
+      // it's better an error to be thrown and caught instead of creating
+      // a new entry in this.accountOpsToBeSigned. That's why we use "!" and we should
+      // keep it that way
+      this.accountOpsToBeSigned[localAccountOp.accountAddr][localAccountOp.networkId]!.accountOp =
+        localAccountOp
       this.accountOpsToBeSigned[localAccountOp.accountAddr][localAccountOp.networkId]!.estimation =
         estimation
 
