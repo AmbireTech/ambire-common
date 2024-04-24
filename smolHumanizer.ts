@@ -1,5 +1,9 @@
-import { Interface } from 'ethers'
+import { Interface, toBigInt, hexlify } from 'ethers'
 import fetch from 'node-fetch'
+import { readFile, exists } from 'fs'
+import { promisify } from 'util'
+const _readFile = promisify(readFile)
+const _exists = promisify(exists)
 
 const iface = new Interface(['function execute(bytes,bytes[],uint256)'])
 
@@ -17,13 +21,36 @@ async function fetchJson (url: string, body: object, args: object = {}) {
 }
 
 async function fetchRpc(url: string, method: string, params: any[] = []) {
-	return fetchJson(url, { method, params, id: 1, jsonrpc: '2.0' })
+	// @TODO: fix any?
+	const response: any = await fetchJson(url, { method, params, id: 1, jsonrpc: '2.0' })
+	// @TODO is this the right way to handle errors; this should be ok?
+	if (response.error) throw response.error
+	return response.result
 }
 
 // @TODO dynamic URL
 const url = 'https://invictus.ambire.com/ethereum'
 async function scrapeSignatures () {
-	console.log(await fetchRpc(url, 'eth_blockNumber'))
+	const mostFrequent = new Map()
+	const latestBlock = toBigInt(await fetchRpc(url, 'eth_blockNumber'))
+	for (let i = latestBlock - 100n; i <= latestBlock; i++) {
+		const block = await fetchRpc(url,'eth_getBlockByNumber', ['0x'+i.toString(16), true])
+		for (const txn of block.transactions) { 
+			if (txn.input.length >= 10) {
+				const sig = txn.input.slice(2, 10)
+				mostFrequent.set(sig, (mostFrequent.get(sig) ?? 0) + 1)
+			}
+		}
+	}
+	const sorted = [...mostFrequent.entries()].sort((a,b) => b[1] - a[1])
+	const signatures = Promise.all(sorted.slice(0, 100).map(async ([sigHash, hits]) => {
+		const path = `/home/ivo/storage/repos/4bytes/signatures/${sigHash}`
+		const exists = await _exists(path)
+		const sig = exists ? (await _readFile(path)).toString() : null
+		return [sig || sigHash, hits]
+	}))
+
+	console.log(signatures)
 }
 
 
