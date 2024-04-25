@@ -1,3 +1,4 @@
+import { ZeroAddress } from 'ethers'
 /* eslint-disable import/no-extraneous-dependencies */
 import fetch from 'node-fetch'
 
@@ -39,31 +40,20 @@ import EventEmitter from '../eventEmitter/eventEmitter'
 /* eslint-disable @typescript-eslint/no-shadow */
 import { SettingsController } from '../settings/settings'
 
-/* eslint-disable @typescript-eslint/no-use-before-define */
-// We already know that `results.tokens` and `result.collections` tokens have a balance (this is handled by the portfolio lib).
-// Based on that, we can easily find out which hint tokens also have a balance.
-function getHintsWithBalance(
-  result: PortfolioGetResult
-  // keepPinned: boolean,
-  // additionalHints: GetOptions['additionalHints'] = []
-): {
-  erc20s: Hints['erc20s']
-  erc721s: Hints['erc721s']
-} {
-  const erc20s = result.tokens
-    // .filter((token) => {
-    //   return (
-    //     token.amount > 0n ||
-    //     additionalHints.includes(token.address) ||
-    //     // Delete pinned tokens' hints if the user has > 1 non-zero tokens
-    //     (keepPinned &&
-    //       PINNED_TOKENS.find(
-    //         (pinnedToken) =>
-    //           pinnedToken.address === token.address && pinnedToken.networkId === token.networkId
-    //       ))
-    //   )
-    // })
-    .map((token) => token.address)
+/**
+ * Updates the previous hints storage with the latest portfolio get result.
+ * @param result - The portfolio get result.
+ * @param storagePreviousHints - The previous hints storage.
+ * @param key - The key to update in the previous hints storage.
+ * @returns The updated previous hints storage.
+ */
+function updatePreviousHintsStorage(
+  result: PortfolioGetResult,
+  storagePreviousHints: any,
+  key: string
+) {
+  const networkId = result.hints.networkId
+  const erc20s = result.tokens.filter((token) => token.amount > 0n).map((token) => token.address)
 
   const erc721s = Object.fromEntries(
     result.collections.map((collection) => [
@@ -72,10 +62,19 @@ function getHintsWithBalance(
     ])
   )
 
-  return {
-    erc20s,
-    erc721s
-  }
+  storagePreviousHints.fromVelcro[key] = { erc20s, erc721s }
+
+  // Set lastSeenNonZero timestamp for learnedTokens
+  erc20s.forEach((address) => {
+    storagePreviousHints.learnedTokens[networkId] = {
+      ...(storagePreviousHints.learnedTokens[networkId]
+        ? storagePreviousHints.learnedTokens[networkId]
+        : []),
+      [address]: Date.now().toString()
+    }
+  })
+
+  return storagePreviousHints
 }
 
 export class PortfolioController extends EventEmitter {
@@ -108,6 +107,15 @@ export class PortfolioController extends EventEmitter {
   #minUpdateInterval: number = 20000 // 20 seconds
 
   #additionalHints: GetOptions['additionalHints'] = []
+
+  // Temporary store in here until it is a WIP
+  #storagePreviousHints: {
+    fromVelcro: { [key: string]: { erc20s: Hints['erc20s']; erc721s: Hints['erc721s'] } }
+    learnedTokens: { [networkId: NetworkId]: { [address: TokenResult['address']]: string | null } }
+  } = {
+    fromVelcro: {},
+    learnedTokens: {}
+  }
 
   #settings: SettingsController
 
@@ -205,8 +213,8 @@ export class PortfolioController extends EventEmitter {
       }, {} as AccountState)
 
       if (shouldGetAdditionalPortfolio(selectedAccount)) {
-        state[accountId]['gasTank'] = { isReady: false, isLoading: false, errors: [] }
-        state[accountId]['rewards'] = { isReady: false, isLoading: false, errors: [] }
+        state[accountId].gasTank = { isReady: false, isLoading: false, errors: [] }
+        state[accountId].rewards = { isReady: false, isLoading: false, errors: [] }
       }
 
       this.emitUpdate()
@@ -498,7 +506,7 @@ export class PortfolioController extends EventEmitter {
     if (opts?.additionalHints) this.#additionalHints = opts.additionalHints
     const hasNonZeroTokens = !!this.#networksWithAssetsByAccounts?.[accountId]?.length
     // Load storage cached hints
-    const storagePreviousHints = await this.#storage.get('previousHints', {})
+    // const storagePreviousHints = await this.#storage.get('previousHints', {})
 
     const selectedAccount = accounts.find((x) => x.addr === accountId)
     if (!selectedAccount) throw new Error('selected account does not exist')
@@ -552,11 +560,45 @@ export class PortfolioController extends EventEmitter {
           tokenPreferences,
           ...portfolioProps
         })
+
+        // TODO: figure out if we need the limits.erc20 check here and move this in helpers
+        const tokenFilter = (token: TokenResult): boolean => {
+          const isTokenPreference = portfolioProps.tokenPreferences?.find((tokenPreference) => {
+            return (
+              tokenPreference.address === token.address && tokenPreference.networkId === network.id
+            )
+          })
+          if (isTokenPreference) {
+            token.isHidden = isTokenPreference.isHidden
+          }
+
+          // always include > 0 amount and native token
+          if (token.amount > 0 || token.address === ZeroAddress) return true
+
+          const isPinned = !!PINNED_TOKENS.find((pinnedToken) => {
+            return pinnedToken.networkId === network.id && pinnedToken.address === token.address
+          })
+
+          // TODO: Get them from storagePreviousHints, instead of passed props
+          const isInAdditionalHints = portfolioProps.additionalHints?.includes(token.address)
+
+          // if the amount is 0
+          // return the token if it's pinned and requested
+          // or if it's not pinned but under the limit
+          const pinnedRequested = isPinned && !hasNonZeroTokens
+          // const underLimit = result.tokens.length <= limits.erc20 / 2
+
+          return !!isTokenPreference || isInAdditionalHints || pinnedRequested
+        }
+
         _accountState[network.id] = {
           isReady: true,
           isLoading: false,
           errors: result.errors,
-          result
+          result: {
+            ...result,
+            tokens: result.tokens.filter((token) => tokenFilter(token))
+          }
         }
         this.emitUpdate()
         return true
@@ -596,6 +638,15 @@ export class PortfolioController extends EventEmitter {
 
         const forceUpdate = opts?.forceUpdate || areAccountOpsChanged
 
+        // Pass in fallbackHints and learnedTokens as additionalHints only on areAccountOpsChanged
+        // TODO: figure out - But if we pass them only on accountOpsChange and simulation
+        const fallbackHints = this.#storagePreviousHints?.fromVelcro[key] || {
+          erc20s: [],
+          erc721s: {}
+        }
+        const additionalHints =
+          Object.keys(this.#storagePreviousHints?.learnedTokens[network.id] || {}) || []
+
         const [isSuccessfulLatestUpdate] = await Promise.all([
           // Latest state update
           updatePortfolioState(
@@ -604,8 +655,8 @@ export class PortfolioController extends EventEmitter {
             portfolioLib,
             {
               blockTag: 'latest',
-              previousHints: storagePreviousHints[key],
-              additionalHints: this.#additionalHints
+              previousHints: fallbackHints,
+              additionalHints
             },
             forceUpdate
           ),
@@ -618,7 +669,7 @@ export class PortfolioController extends EventEmitter {
                 portfolioLib,
                 {
                   blockTag: 'pending',
-                  previousHints: storagePreviousHints[key],
+                  previousHints: fallbackHints,
                   ...(currentAccountOps && {
                     simulation: {
                       account: selectedAccount,
@@ -626,7 +677,7 @@ export class PortfolioController extends EventEmitter {
                     }
                   }),
                   isEOA: !isSmartAccount(selectedAccount),
-                  additionalHints: this.#additionalHints
+                  additionalHints
                 },
                 forceUpdate
               )
@@ -639,12 +690,12 @@ export class PortfolioController extends EventEmitter {
           isSuccessfulLatestUpdate &&
           !(accountState[network.id]!.result?.errors || []).find((err) => err.name === 'HintsError')
         ) {
-          storagePreviousHints[key] = getHintsWithBalance(
-            accountState[network.id]!.result!
-            // !hasNonZeroTokens,
-            // this.#additionalHints
+          // Store tokens from velcro and update learnedTokens timestamp for lastSeenNonZero property
+          this.#storagePreviousHints = updatePreviousHintsStorage(
+            accountState[network.id]!.result!,
+            this.#storagePreviousHints,
+            key
           )
-          await this.#storage.set('previousHints', storagePreviousHints)
         }
 
         // We cache the previously simulated AccountOps
@@ -662,6 +713,29 @@ export class PortfolioController extends EventEmitter {
     await this.#updateNetworksWithAssets(accounts, accountId, accountState)
 
     this.emitUpdate()
+  }
+
+  /**
+   * Learn new tokens from humanizer and debug_traceCall
+   * @param tokens: []
+   * @param storagePreviousHints: {}
+   * @param networkId: NetworkId
+   */
+  learnTokens(tokens: any, networkId: NetworkId) {
+    const learnedTokens = this.#storagePreviousHints.learnedTokens || {}
+    const networkLearnedTokens = learnedTokens[networkId]
+
+    tokens.forEach((token) => {
+      if (!(token.address in networkLearnedTokens)) {
+        networkLearnedTokens[token.address] = token.amount > 0n ? Date.now().toString() : null
+      }
+    })
+
+    // TODO: Implement a cleanup mechanism for learned tokens
+    // Filter out the pinned tokens and/or other list of tokens we need specifically to not remove
+    // even if accounts had not aknowledged them
+
+    this.#storagePreviousHints.learnedTokens = learnedTokens
   }
 
   get networksWithAssets() {

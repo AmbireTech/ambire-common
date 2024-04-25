@@ -201,29 +201,7 @@ export class Portfolio {
     const tokenFilter = ([error, result]: [string, TokenResult]): boolean => {
       if (error !== '0x' || result.symbol === '') return false
 
-      const isTokenPreference = localOpts.tokenPreferences?.find((tokenPreference) => {
-        return tokenPreference.address === result.address && tokenPreference.networkId === networkId
-      })
-      if (isTokenPreference) {
-        result.isHidden = isTokenPreference.isHidden
-      }
-
-      // always include > 0 amount and native token
-      if (result.amount > 0 || result.address === ZeroAddress) return true
-
-      const isPinned = !!PINNED_TOKENS.find((pinnedToken) => {
-        return pinnedToken.networkId === networkId && pinnedToken.address === result.address
-      })
-
-      const isInAdditionalHints = localOpts.additionalHints?.includes(result.address)
-
-      // if the amount is 0
-      // return the token if it's pinned and requested
-      // or if it's not pinned but under the limit
-      const pinnedRequested = isPinned && localOpts.fetchPinned
-      const underLimit = tokensWithErr.length <= limits.erc20 / 2
-
-      return !!isTokenPreference || isInAdditionalHints || pinnedRequested || underLimit
+      return true
     }
 
     const tokensWithoutPrices = tokensWithErr
