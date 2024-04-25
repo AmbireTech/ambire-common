@@ -4,10 +4,9 @@ pragma solidity 0.8.19;
 import './deployless/IAmbireAccount.sol';
 import './libs/erc4337/IPaymaster.sol';
 import './libs/SignatureValidator.sol';
+import './libs/erc4337/UserOpHelper.sol';
 
 contract AmbirePaymaster is IPaymaster {
-	// 52 = 20 address + 16 paymasterVerificationGasLimit + 16 paymasterPostOpGasLimit
-	uint256 public constant PAYMASTER_DATA_OFFSET = 52;
 
 	address immutable public relayer;
 
@@ -62,7 +61,10 @@ contract AmbirePaymaster is IPaymaster {
 		view
 		returns (bytes memory context, uint256 validationData)
 	{
-		(uint48 validUntil, uint48 validAfter, bytes memory signature) = abi.decode(userOp.paymasterAndData[PAYMASTER_DATA_OFFSET:], (uint48, uint48, bytes));
+		(uint48 validUntil, uint48 validAfter, bytes memory signature) = abi.decode(
+			userOp.paymasterAndData[UserOpHelper.PAYMASTER_DATA_OFFSET:],
+			(uint48, uint48, bytes)
+		);
 
 		bytes memory callData = userOp.callData;
 		bytes32 hash = keccak256(abi.encode(

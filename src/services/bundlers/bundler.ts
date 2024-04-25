@@ -168,7 +168,7 @@ export class Bundler {
       [`0x${privSlot(0, 'address', ERC_4337_ENTRYPOINT, 'bytes32')}`]: ENTRY_POINT_MARKER
     }
     const stateOverride =
-      userOperation.initCode !== '0x'
+      userOperation.factory !== '0x'
         ? {
             [PROXY_NO_REVERTS]: {
               code: AmbireAccountNoReverts.binRuntime
@@ -181,8 +181,10 @@ export class Bundler {
             }
           }
 
+    const cleanUserOp = getCleanUserOp(userOperation)[0]
+    console.log(cleanUserOp)
     return provider.send('eth_estimateUserOperationGas', [
-      getCleanUserOp(userOperation)[0],
+      cleanUserOp,
       ERC_4337_ENTRYPOINT,
       stateOverride
     ])

@@ -4,7 +4,7 @@ import { parseEther } from 'ethers'
 
 import { describe, expect, test } from '@jest/globals'
 
-import { optyNotDeployed } from '../../../test/config'
+import { arbNotDeployed } from '../../../test/config'
 import { getAccountsInfo } from '../../../test/helpers'
 import { networks } from '../../consts/networks'
 import { getRpcProvider } from '../../services/provider'
@@ -14,32 +14,32 @@ import { bundlerEstimate } from './estimateBundler'
 const to = '0x68b3465833fb72a70ecdf485e0e4c7bd8665fc45'
 
 describe('Bundler estimation tests', () => {
-  describe('Estimation tests: optimism', () => {
+  describe('Estimation tests: arbitrum', () => {
     test('should estimate an userOp for an undeployed account', async () => {
-      const opOptimism: AccountOp = {
-        accountAddr: optyNotDeployed.addr,
-        signingKeyAddr: optyNotDeployed.associatedKeys[0],
+      const opArbitrum: AccountOp = {
+        accountAddr: arbNotDeployed.addr,
+        signingKeyAddr: arbNotDeployed.associatedKeys[0],
         signingKeyType: null,
         gasLimit: null,
         gasFeePayment: null,
-        networkId: 'optimism',
+        networkId: 'arbitrum',
         nonce: 0n,
         signature: '0x',
         calls: [{ to, value: parseEther('10000000'), data: '0x' }],
         accountOpToExecuteBefore: null
       }
-      const optimism = networks.find((net) => net.id === 'optimism')!
-      const usedNetworks = [optimism]
+      const arbitrum = networks.find((net) => net.id === 'arbitrum')!
+      const usedNetworks = [arbitrum]
       const providers = {
-        [optimism.id]: getRpcProvider(optimism.rpcUrls, optimism.chainId)
+        [arbitrum.id]: getRpcProvider(arbitrum.rpcUrls, arbitrum.chainId)
       }
-      const accountStates = await getAccountsInfo(usedNetworks, providers, [optyNotDeployed])
+      const accountStates = await getAccountsInfo(usedNetworks, providers, [arbNotDeployed])
       const feeTokens = [
         {
           address: '0x0000000000000000000000000000000000000000',
           amount: 1n,
           symbol: 'ETH',
-          networkId: 'optimism',
+          networkId: 'arbitrum',
           decimals: 18,
           priceIn: [],
           flags: {
@@ -53,7 +53,7 @@ describe('Bundler estimation tests', () => {
           address: '0xdAC17F958D2ee523a2206206994597C13D831ec7',
           amount: 1n,
           symbol: 'USDT',
-          networkId: 'optimism',
+          networkId: 'arbitrum',
           decimals: 18,
           priceIn: [],
           flags: {
@@ -67,7 +67,7 @@ describe('Bundler estimation tests', () => {
           address: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
           amount: 1n,
           symbol: 'USDC',
-          networkId: 'optimism',
+          networkId: 'arbitrum',
           decimals: 18,
           priceIn: [],
           flags: {
@@ -79,10 +79,10 @@ describe('Bundler estimation tests', () => {
         }
       ]
       const result = await bundlerEstimate(
-        optyNotDeployed,
+        arbNotDeployed,
         accountStates,
-        opOptimism,
-        optimism,
+        opArbitrum,
+        arbitrum,
         feeTokens
       )
 

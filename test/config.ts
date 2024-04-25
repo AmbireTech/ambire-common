@@ -62,7 +62,7 @@ const optyDeployed: Account = {
   ]
 }
 
-const optyNotDeployed: Account = {
+const arbNotDeployed: Account = {
   addr: '0x4E6AB66459bD13b9b30A5CbCF28723C7D08172e5',
   associatedKeys: ['0x3884dD96Da6CDaEAf937301Ff5cC5b0a58478355'],
   creation: {
@@ -105,5 +105,5 @@ export {
   assertion,
   trezorSlot7v24337Deployed,
   optyDeployed,
-  optyNotDeployed
+  arbNotDeployed
 }

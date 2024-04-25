@@ -1,4 +1,4 @@
-import { AbiCoder, BigNumberish, concat, hexlify, Interface, keccak256, toBeHex } from 'ethers'
+import { AbiCoder, concat, hexlify, Interface, keccak256, toBeHex } from 'ethers'
 import { NetworkDescriptor } from 'interfaces/networkDescriptor'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
@@ -12,7 +12,7 @@ import {
 import { SPOOF_SIGTYPE } from '../../consts/signatures'
 import { Account, AccountId, AccountOnchainState } from '../../interfaces/account'
 import { AccountOp } from '../accountOp/accountOp'
-import { UnPackedUserOperation, UserOperation } from './types'
+import { PaymasterUnpacked, UserOperation } from './types'
 
 export function calculateCallDataCost(callData: string): bigint {
   if (callData === '0x') return 0n
@@ -33,19 +33,14 @@ export function getSigForCalculations() {
   return '0x0dc2d37f7b285a2243b2e1e6ba7195c578c72b395c0f76556f8961b0bca97ddc44e2d7a249598f56081a375837d2b82414c3c94940db3c1e64110108021161ca1c01'
 }
 
-export function getPaymasterDataForEstimate() {
-  // 15K for our paymaster is more than enough
-  const paymasterVerificationGasLimit = toBeHex(15000, 16)
-  const paymasterPostOp = toBeHex(0, 16)
-
+export function getPaymasterDataForEstimate(): PaymasterUnpacked {
   const abiCoder = new AbiCoder()
-  const simulationData = abiCoder.encode(
-    ['uint48', 'uint48', 'bytes'],
-    [0, 0, getSigForCalculations()]
-  )
-  return hexlify(
-    concat([AMBIRE_PAYMASTER, paymasterVerificationGasLimit, paymasterPostOp, simulationData])
-  )
+  return {
+    paymaster: AMBIRE_PAYMASTER,
+    paymasterVerificationGasLimit: toBeHex(15000),
+    paymasterPostOpGasLimit: toBeHex(0),
+    paymasterData: abiCoder.encode(['uint48', 'uint48', 'bytes'], [0, 0, getSigForCalculations()])
+  }
 }
 
 // get the call to give privileges to the entry point
@@ -69,7 +64,7 @@ export function getActivatorCall(addr: AccountId) {
  * @param UserOperation userOp
  * @returns EntryPoint userOp
  */
-export function getCleanUserOp(userOp: UserOperation | UnPackedUserOperation) {
+export function getCleanUserOp(userOp: UserOperation) {
   return [(({ requestType, activatorCall, ...o }) => o)(userOp)]
 }
 
@@ -86,12 +81,23 @@ export function getOneTimeNonce(userOperation: UserOperation) {
     abiCoder.encode(
       ['bytes', 'bytes', 'uint256', 'uint256', 'uint256', 'uint256', 'uint256', 'bytes'],
       [
-        userOperation.initCode,
+        concat([userOperation.factory, userOperation.factoryData]),
         userOperation.callData,
-        userOperation.accountGasLimits,
+        concat([
+          toBeHex(userOperation.verificationGasLimit, 16),
+          toBeHex(userOperation.callGasLimit, 16)
+        ]),
         userOperation.preVerificationGas,
-        userOperation.gasFees,
-        userOperation.paymasterAndData
+        concat([
+          toBeHex(userOperation.maxPriorityFeePerGas, 16),
+          toBeHex(userOperation.maxFeePerGas, 16)
+        ]),
+        concat([
+          userOperation.paymaster,
+          toBeHex(userOperation.paymasterVerificationGasLimit, 16),
+          toBeHex(userOperation.paymasterPostOpGasLimit, 16),
+          userOperation.paymasterData
+        ])
       ]
     )
   ).substring(18)}${toBeHex(0, 8).substring(2)}`
@@ -99,17 +105,6 @@ export function getOneTimeNonce(userOperation: UserOperation) {
 
 export function shouldUseOneTimeNonce(userOp: UserOperation) {
   return userOp.requestType !== 'standard'
-}
-
-export function getAccountGasLimits(
-  verificationGasLimit: BigNumberish,
-  callGasLimit: BigNumberish
-) {
-  return concat([toBeHex(verificationGasLimit, 16), toBeHex(callGasLimit, 16)])
-}
-
-export function getGasFees(maxPriorityFeePerGas: BigNumberish, maxFeePerGas: BigNumberish) {
-  return concat([toBeHex(maxPriorityFeePerGas, 16), toBeHex(maxFeePerGas, 16)])
 }
 
 export function getUserOperation(
@@ -120,12 +115,18 @@ export function getUserOperation(
   const userOp: UserOperation = {
     sender: accountOp.accountAddr,
     nonce: toBeHex(accountState.erc4337Nonce),
-    initCode: '0x',
+    factory: '0x',
+    factoryData: '0x',
     callData: '0x',
-    accountGasLimits: getAccountGasLimits(0, 0),
+    callGasLimit: toBeHex(0),
+    verificationGasLimit: toBeHex(0),
     preVerificationGas: toBeHex(0),
-    gasFees: getGasFees(1, 1),
-    paymasterAndData: '0x',
+    maxFeePerGas: toBeHex(1),
+    maxPriorityFeePerGas: toBeHex(1),
+    paymaster: '0x',
+    paymasterVerificationGasLimit: toBeHex(0),
+    paymasterPostOpGasLimit: toBeHex(0),
+    paymasterData: '0x',
     signature: '0x',
     requestType: 'standard'
   }
@@ -135,15 +136,11 @@ export function getUserOperation(
     if (!account.creation) throw new Error('Account creation properties are missing')
 
     const factoryInterface = new Interface(AmbireAccountFactory.abi)
-    userOp.initCode = hexlify(
-      concat([
-        account.creation.factoryAddr,
-        factoryInterface.encodeFunctionData('deploy', [
-          account.creation.bytecode,
-          account.creation.salt
-        ])
-      ])
-    )
+    userOp.factory = account.creation.factoryAddr
+    userOp.factoryData = factoryInterface.encodeFunctionData('deploy', [
+      account.creation.bytecode,
+      account.creation.salt
+    ])
 
     userOp.requestType = 'activator'
   }

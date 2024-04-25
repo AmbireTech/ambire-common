@@ -4,6 +4,7 @@ pragma solidity 0.8.19;
 import './libs/SignatureValidator.sol';
 import './ExternalSigValidator.sol';
 import './libs/erc4337/PackedUserOperation.sol';
+import './libs/erc4337/UserOpHelper.sol';
 
 /**
  * @notice  A validator that performs DKIM signature recovery
@@ -321,7 +322,8 @@ contract AmbireAccount {
 			// Require a paymaster, otherwise this mode can be used by anyone to get the user to spend their deposit
 			require(op.signature.length == 0, 'validateUserOp: empty signature required in execute() mode');
 			require(
-				op.paymasterAndData.length >= 20 && bytes20(op.paymasterAndData[:20]) != bytes20(0),
+				op.paymasterAndData.length >= UserOpHelper.PAYMASTER_DATA_OFFSET &&
+				bytes20(op.paymasterAndData[:UserOpHelper.PAYMASTER_ADDR_OFFSET]) != bytes20(0),
 				'validateUserOp: paymaster required in execute() mode'
 			);
 

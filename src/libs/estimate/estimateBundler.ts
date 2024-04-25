@@ -1,4 +1,4 @@
-import { concat, hexlify, Interface, toBeHex, ZeroAddress } from 'ethers'
+import { Interface, toBeHex, ZeroAddress } from 'ethers'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireAccountFactory from '../../../contracts/compiled/AmbireAccountFactory.json'
@@ -19,7 +19,6 @@ import { getProxyDeployBytecode } from '../proxyDeploy/deploy'
 import { getAmbireAccountAddress } from '../proxyDeploy/getAmbireAddressTwo'
 import { UserOperation } from '../userOperation/types'
 import {
-  getGasFees,
   getPaymasterDataForEstimate,
   getSigForCalculations,
   getUserOperation
@@ -33,32 +32,22 @@ function getUserOpForEstimate(
   isDeployed: boolean
 ): UserOperation {
   const uOp = { ...userOp }
-  const ambireAccount = new Interface(AmbireAccount.abi)
-  // const uOp: UnPackedUserOperation = {
-  //   ...localOp,
-  //   maxPriorityFeePerGas: userOp.gasFees.substring(0, 16),
-  //   maxFeePerGas: `0x${userOp.gasFees.substring(16)}`,
-  //   verificationGasLimit: userOp.accountGasLimits.substring(0, 16),
-  //   callGasLimit: `0x${userOp.accountGasLimits.substring(16)}`
-  // }
 
   if (!isDeployed) {
     // replace the initCode with one that will not revert in estimation
     const factoryInterface = new Interface(AmbireAccountFactory.abi)
     const bytecode = getProxyDeployBytecode(
+      // TODO: change PROXY_NO_REVERTS
       PROXY_NO_REVERTS,
       [{ addr: ERC_4337_ENTRYPOINT, hash: ENTRY_POINT_MARKER }],
       { privSlot: 0 }
     )
     uOp.sender = getAmbireAccountAddress(AMBIRE_ACCOUNT_FACTORY, bytecode)
-    uOp.initCode = hexlify(
-      concat([
-        AMBIRE_ACCOUNT_FACTORY,
-        factoryInterface.encodeFunctionData('deploy', [bytecode, toBeHex(0, 32)])
-      ])
-    )
+    uOp.factory = AMBIRE_ACCOUNT_FACTORY
+    uOp.factoryData = factoryInterface.encodeFunctionData('deploy', [bytecode, toBeHex(0, 32)])
   }
 
+  const ambireAccount = new Interface(AmbireAccount.abi)
   uOp.callData = ambireAccount.encodeFunctionData('executeBySender', [getSignableCalls(op)])
   uOp.signature = getSigForCalculations()
   return uOp
@@ -122,24 +111,28 @@ export async function bundlerEstimate(
   // preVerificationGas.
   if (network.isOptimistic) {
     // use medium for the gas limit estimation
-    userOp.gasFees = getGasFees(
-      gasPrices.medium.maxPriorityFeePerGas,
-      gasPrices.medium.maxFeePerGas
-    )
+    userOp.maxPriorityFeePerGas = gasPrices.medium.maxPriorityFeePerGas
+    userOp.maxFeePerGas = gasPrices.medium.maxFeePerGas
   }
 
   // add fake data so simulation works
-  if (network.erc4337.hasPaymaster) userOp.paymasterAndData = getPaymasterDataForEstimate()
+  if (network.erc4337.hasPaymaster) {
+    const paymasterUnpacked = getPaymasterDataForEstimate()
+    userOp.paymaster = paymasterUnpacked.paymaster
+    userOp.paymasterVerificationGasLimit = paymasterUnpacked.paymasterVerificationGasLimit
+    userOp.paymasterPostOpGasLimit = paymasterUnpacked.paymasterPostOpGasLimit
+    userOp.paymasterData = paymasterUnpacked.paymasterData
+  }
 
   if (userOp.activatorCall) localOp.activatorCall = userOp.activatorCall
   const uOp = getUserOpForEstimate(userOp, localOp, accountState.isDeployed)
-  const gasData = await Bundler.estimate(uOp, network).catch((e: any) =>
-    mapError(
+  const gasData = await Bundler.estimate(uOp, network).catch((e: any) => {
+    return mapError(
       new Error(
         e.error && e.error.message ? e.error.message : 'Estimation failed with unknown reason'
       )
     )
-  )
+  })
   if (gasData instanceof Error)
     return estimationErrorFormatted(gasData as Error, { feePaymentOptions })
 
@@ -150,8 +143,6 @@ export async function bundlerEstimate(
     maxFeePerGas: toBeHex(apeMaxFee),
     maxPriorityFeePerGas: toBeHex(apePriority)
   }
-
-  console.log(gasData)
 
   return {
     gasUsed: BigInt(gasData.callGasLimit),
