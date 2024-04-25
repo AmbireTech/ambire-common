@@ -106,7 +106,7 @@ export default class EventEmitter {
     }
 
     this.status = 'INITIAL'
-    this.emitUpdate()
+    this.forceEmitUpdate()
   }
 
   // Prevents memory leaks and storing huge amount of errors
