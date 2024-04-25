@@ -3,6 +3,7 @@
 
 import fetch from 'node-fetch'
 
+import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireAccountNoReverts from '../../../contracts/compiled/AmbireAccountNoRevert.json'
 import { ENTRY_POINT_MARKER, ERC_4337_ENTRYPOINT, PROXY_NO_REVERTS } from '../../consts/deploy'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
@@ -167,19 +168,18 @@ export class Bundler {
     const stateDiff = {
       [`0x${privSlot(0, 'address', ERC_4337_ENTRYPOINT, 'bytes32')}`]: ENTRY_POINT_MARKER
     }
-    const stateOverride =
-      userOperation.factory !== '0x'
-        ? {
-            [PROXY_NO_REVERTS]: {
-              code: AmbireAccountNoReverts.binRuntime
-            }
+    const stateOverride = userOperation.factory
+      ? {
+          [PROXY_NO_REVERTS]: {
+            code: AmbireAccountNoReverts.binRuntime
           }
-        : {
-            [userOperation.sender]: {
-              code: AmbireAccountNoReverts.binRuntime,
-              stateDiff
-            }
+        }
+      : {
+          [userOperation.sender]: {
+            code: AmbireAccount.binRuntime,
+            stateDiff
           }
+        }
 
     const cleanUserOp = getCleanUserOp(userOperation)[0]
     console.log(cleanUserOp)

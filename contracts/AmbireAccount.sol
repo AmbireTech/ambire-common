@@ -320,7 +320,9 @@ contract AmbireAccount {
 		// The fee payment call will be with a signature from the new key
 		if (op.callData.length >= 4 && bytes4(op.callData[0:4]) == this.executeMultiple.selector) {
 			// Require a paymaster, otherwise this mode can be used by anyone to get the user to spend their deposit
-			require(op.signature.length == 0, 'validateUserOp: empty signature required in execute() mode');
+			// @estimation-no-revert
+			if (op.signature.length != 0) return SIG_VALIDATION_FAILED;
+
 			require(
 				op.paymasterAndData.length >= UserOpHelper.PAYMASTER_DATA_OFFSET &&
 				bytes20(op.paymasterAndData[:UserOpHelper.PAYMASTER_ADDR_OFFSET]) != bytes20(0),
@@ -331,7 +333,10 @@ contract AmbireAccount {
 			uint256 targetNonce = uint256(keccak256(
 				abi.encode(op.initCode, op.callData, op.accountGasLimits, op.preVerificationGas, op.gasFees, op.paymasterAndData)
 			)) << 64;
-			require(op.nonce == targetNonce, 'validateUserOp: execute(): one-time nonce is wrong');
+
+			// @estimation-no-revert
+			if (op.nonce != targetNonce) return SIG_VALIDATION_FAILED;
+
 			return SIG_VALIDATION_SUCCESS;
 		}
 

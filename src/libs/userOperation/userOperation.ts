@@ -79,9 +79,11 @@ export function getOneTimeNonce(userOperation: UserOperation) {
   const abiCoder = new AbiCoder()
   return `0x${keccak256(
     abiCoder.encode(
-      ['bytes', 'bytes', 'uint256', 'uint256', 'uint256', 'uint256', 'uint256', 'bytes'],
+      ['bytes', 'bytes', 'bytes32', 'uint256', 'bytes32', 'bytes'],
       [
-        concat([userOperation.factory, userOperation.factoryData]),
+        userOperation.factory && userOperation.factoryData
+          ? concat([userOperation.factory, userOperation.factoryData])
+          : '0x',
         userOperation.callData,
         concat([
           toBeHex(userOperation.verificationGasLimit, 16),
@@ -115,8 +117,6 @@ export function getUserOperation(
   const userOp: UserOperation = {
     sender: accountOp.accountAddr,
     nonce: toBeHex(accountState.erc4337Nonce),
-    factory: '0x',
-    factoryData: '0x',
     callData: '0x',
     callGasLimit: toBeHex(0),
     verificationGasLimit: toBeHex(0),

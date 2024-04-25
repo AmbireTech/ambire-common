@@ -12,8 +12,8 @@ export interface PaymasterUnpacked {
 export interface UserOperation {
   sender: string
   nonce: string
-  factory: string // hex string
-  factoryData: string // hex string
+  factory?: string // hex string
+  factoryData?: string // hex string
   callData: string // hex string
   callGasLimit: string
   verificationGasLimit: string
