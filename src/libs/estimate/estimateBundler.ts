@@ -19,6 +19,7 @@ import { getProxyDeployBytecode } from '../proxyDeploy/deploy'
 import { getAmbireAccountAddress } from '../proxyDeploy/getAmbireAddressTwo'
 import { UserOperation } from '../userOperation/types'
 import {
+  getGasFees,
   getPaymasterDataForEstimate,
   getSigForCalculations,
   getUserOperation
@@ -31,8 +32,15 @@ function getUserOpForEstimate(
   op: AccountOp,
   isDeployed: boolean
 ): UserOperation {
-  const ambireAccount = new Interface(AmbireAccount.abi)
   const uOp = { ...userOp }
+  const ambireAccount = new Interface(AmbireAccount.abi)
+  // const uOp: UnPackedUserOperation = {
+  //   ...localOp,
+  //   maxPriorityFeePerGas: userOp.gasFees.substring(0, 16),
+  //   maxFeePerGas: `0x${userOp.gasFees.substring(16)}`,
+  //   verificationGasLimit: userOp.accountGasLimits.substring(0, 16),
+  //   callGasLimit: `0x${userOp.accountGasLimits.substring(16)}`
+  // }
 
   if (!isDeployed) {
     // replace the initCode with one that will not revert in estimation
@@ -114,8 +122,10 @@ export async function bundlerEstimate(
   // preVerificationGas.
   if (network.isOptimistic) {
     // use medium for the gas limit estimation
-    userOp.maxFeePerGas = gasPrices.medium.maxFeePerGas
-    userOp.maxPriorityFeePerGas = gasPrices.medium.maxPriorityFeePerGas
+    userOp.gasFees = getGasFees(
+      gasPrices.medium.maxPriorityFeePerGas,
+      gasPrices.medium.maxFeePerGas
+    )
   }
 
   // add fake data so simulation works
@@ -141,6 +151,8 @@ export async function bundlerEstimate(
     maxPriorityFeePerGas: toBeHex(apePriority)
   }
 
+  console.log(gasData)
+
   return {
     gasUsed: BigInt(gasData.callGasLimit),
     currentAccountNonce: Number(op.nonce),
@@ -149,6 +161,8 @@ export async function bundlerEstimate(
       preVerificationGas: gasData.preVerificationGas,
       verificationGasLimit: gasData.verificationGasLimit,
       callGasLimit: gasData.callGasLimit,
+      paymasterVerificationGasLimit: gasData.paymasterVerificationGasLimit,
+      paymasterPostOpGasLimit: gasData.paymasterPostOpGasLimit,
       gasPrice: { ...gasPrices, ape }
     },
     error: null

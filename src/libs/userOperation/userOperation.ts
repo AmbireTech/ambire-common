@@ -1,4 +1,4 @@
-import { AbiCoder, concat, hexlify, Interface, keccak256, toBeHex } from 'ethers'
+import { AbiCoder, BigNumberish, concat, hexlify, Interface, keccak256, toBeHex } from 'ethers'
 import { NetworkDescriptor } from 'interfaces/networkDescriptor'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
@@ -12,7 +12,7 @@ import {
 import { SPOOF_SIGTYPE } from '../../consts/signatures'
 import { Account, AccountId, AccountOnchainState } from '../../interfaces/account'
 import { AccountOp } from '../accountOp/accountOp'
-import { UserOperation } from './types'
+import { UnPackedUserOperation, UserOperation } from './types'
 
 export function calculateCallDataCost(callData: string): bigint {
   if (callData === '0x') return 0n
@@ -34,12 +34,18 @@ export function getSigForCalculations() {
 }
 
 export function getPaymasterDataForEstimate() {
+  // 15K for our paymaster is more than enough
+  const paymasterVerificationGasLimit = toBeHex(15000, 16)
+  const paymasterPostOp = toBeHex(0, 16)
+
   const abiCoder = new AbiCoder()
   const simulationData = abiCoder.encode(
     ['uint48', 'uint48', 'bytes'],
     [0, 0, getSigForCalculations()]
   )
-  return hexlify(concat([AMBIRE_PAYMASTER, simulationData]))
+  return hexlify(
+    concat([AMBIRE_PAYMASTER, paymasterVerificationGasLimit, paymasterPostOp, simulationData])
+  )
 }
 
 // get the call to give privileges to the entry point
@@ -63,7 +69,7 @@ export function getActivatorCall(addr: AccountId) {
  * @param UserOperation userOp
  * @returns EntryPoint userOp
  */
-export function getCleanUserOp(userOp: UserOperation) {
+export function getCleanUserOp(userOp: UserOperation | UnPackedUserOperation) {
   return [(({ requestType, activatorCall, ...o }) => o)(userOp)]
 }
 
@@ -82,11 +88,9 @@ export function getOneTimeNonce(userOperation: UserOperation) {
       [
         userOperation.initCode,
         userOperation.callData,
-        userOperation.callGasLimit,
-        userOperation.verificationGasLimit,
+        userOperation.accountGasLimits,
         userOperation.preVerificationGas,
-        userOperation.maxFeePerGas,
-        userOperation.maxPriorityFeePerGas,
+        userOperation.gasFees,
         userOperation.paymasterAndData
       ]
     )
@@ -95,6 +99,17 @@ export function getOneTimeNonce(userOperation: UserOperation) {
 
 export function shouldUseOneTimeNonce(userOp: UserOperation) {
   return userOp.requestType !== 'standard'
+}
+
+export function getAccountGasLimits(
+  verificationGasLimit: BigNumberish,
+  callGasLimit: BigNumberish
+) {
+  return concat([toBeHex(verificationGasLimit, 16), toBeHex(callGasLimit, 16)])
+}
+
+export function getGasFees(maxPriorityFeePerGas: BigNumberish, maxFeePerGas: BigNumberish) {
+  return concat([toBeHex(maxPriorityFeePerGas, 16), toBeHex(maxFeePerGas, 16)])
 }
 
 export function getUserOperation(
@@ -107,11 +122,9 @@ export function getUserOperation(
     nonce: toBeHex(accountState.erc4337Nonce),
     initCode: '0x',
     callData: '0x',
+    accountGasLimits: getAccountGasLimits(0, 0),
     preVerificationGas: toBeHex(0),
-    callGasLimit: toBeHex(0),
-    verificationGasLimit: toBeHex(0),
-    maxFeePerGas: toBeHex(1),
-    maxPriorityFeePerGas: toBeHex(1),
+    gasFees: getGasFees(1, 1),
     paymasterAndData: '0x',
     signature: '0x',
     requestType: 'standard'
