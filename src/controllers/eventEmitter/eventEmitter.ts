@@ -94,7 +94,14 @@ export default class EventEmitter {
       this.forceEmitUpdate()
     } catch (error: any) {
       this.status = 'ERROR'
-      this.emitError(error)
+      if ('message' in error && 'level' in error && 'error' in error) {
+        this.emitError(error)
+      }
+      this.emitError({
+        message: error?.message || 'An unexpected error occurred',
+        level: 'major',
+        error
+      })
       this.forceEmitUpdate()
     }
 
