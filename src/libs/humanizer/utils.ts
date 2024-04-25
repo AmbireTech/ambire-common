@@ -1,6 +1,6 @@
-import { ErrorRef } from 'controllers/eventEmitter/eventEmitter'
 import dotenv from 'dotenv'
 import { ZeroAddress } from 'ethers'
+import { ErrorRef } from '../../controllers/eventEmitter/eventEmitter'
 
 import { geckoIdMapper } from '../../consts/coingecko'
 import { networks } from '../../consts/networks'
@@ -27,16 +27,17 @@ export function getWarning(
 ): HumanizerWarning {
   return { content, level }
 }
+export const randomId = (): number => Math.floor(Math.random() * Number.MAX_SAFE_INTEGER)
 
 export function getLabel(content: string): HumanizerVisualization {
-  return { type: 'label', content }
+  return { type: 'label', content, id: randomId() }
 }
 export function getAction(content: string): HumanizerVisualization {
-  return { type: 'action', content }
+  return { type: 'action', content, id: randomId() }
 }
 export function getAddressVisualization(_address: string): HumanizerVisualization {
   const address = _address.toLowerCase()
-  return { type: 'address', address }
+  return { type: 'address', address, id: randomId() }
 }
 
 export function getToken(_address: string, amount: bigint): HumanizerVisualization {
@@ -44,12 +45,13 @@ export function getToken(_address: string, amount: bigint): HumanizerVisualizati
   return {
     type: 'token',
     address,
-    amount: BigInt(amount)
+    amount: BigInt(amount),
+    id: randomId()
   }
 }
 
 export function getNft(address: string, id: bigint): HumanizerVisualization {
-  return { type: 'nft', address, id: BigInt(id) }
+  return { type: 'nft', address, id: randomId(), nftId: id }
 }
 
 export function getOnBehalfOf(onBehalfOf: string, sender: string): HumanizerVisualization[] {
@@ -80,7 +82,8 @@ export function getDeadline(deadlineSecs: bigint | number): HumanizerVisualizati
   const deadline = BigInt(deadlineSecs) * 1000n
   return {
     type: 'deadline',
-    amount: deadline
+    amount: deadline,
+    id: randomId()
   }
 }
 
@@ -113,7 +116,8 @@ export async function getTokenInfo(
   options: any
 ): Promise<HumanizerFragment | null> {
   const network = networks.find((n: NetworkDescriptor) => n.id === humanizerSettings.networkId)
-  let platformId = network?.platformId
+  if (!network) return null
+  let platformId = network.platformId
   if (!platformId) {
     options.emitError({
       message: 'getTokenInfo: could not find platform id for token info api',
