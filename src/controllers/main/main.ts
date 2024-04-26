@@ -65,9 +65,7 @@ export class MainController extends EventEmitter {
   // Holds the initial load promise, so that one can wait until it completes
   #initialLoadPromise: Promise<void>
 
-  status: 'INITIAL' | 'LOADING' | 'SUCCESS' | 'DONE' = 'INITIAL'
-
-  latestMethodCall: string | null = null
+  latestMethodCall: 'onAccountAdderSuccess' | 'selectAccount' | null = null
 
   #callRelayer: Function
 
@@ -270,7 +268,7 @@ export class MainController extends EventEmitter {
     const onAccountAdderSuccess = () => {
       if (this.accountAdder.addAccountsStatus !== 'SUCCESS') return
 
-      return this.#statusWrapper('onAccountAdderSuccess', async () => {
+      return this.withStatus('onAccountAdderSuccess', async () => {
         // Add accounts first, because some of the next steps have validation
         // if accounts exists.
         await this.addAccounts(this.accountAdder.readyToAddAccounts)
@@ -301,47 +299,6 @@ export class MainController extends EventEmitter {
 
     this.isReady = true
     this.emitUpdate()
-  }
-
-  async #statusWrapper(callName: string, fn: Function) {
-    // We should not allow executing a second function simultaneously while another function execution is already in progress,
-    // as both functions manipulate the same status property, which may lead to unexpected behavior.
-    // Keeping this in mind, if we have an application logic (hook) that automatically invokes a function wrapped with #statusWrapper,
-    // we should always check if the status is INITIAL and only then invoke the function.
-    // You can see such an example in `authContext.tsx`.
-    if (this.status !== 'INITIAL') {
-      this.emitError({
-        level: 'minor',
-        message: `Please wait for the completion of the previous action before initiating another one.', ${callName}`,
-        error: new Error(
-          'Another function is already being handled by #statusWrapper; refrain from invoking a second function.'
-        )
-      })
-
-      return
-    }
-    this.latestMethodCall = callName
-    this.status = 'LOADING'
-    await this.forceEmitUpdate()
-    try {
-      await fn()
-      this.status = 'SUCCESS'
-      await this.forceEmitUpdate()
-    } catch (error: any) {
-      this.emitError({
-        level: 'major',
-        message: `An error encountered. Please try again. If the problem persists, please contact support.', ${callName}`,
-        error
-      })
-    }
-
-    this.status = 'DONE'
-    await this.forceEmitUpdate()
-
-    if (this.latestMethodCall === callName) {
-      this.status = 'INITIAL'
-      await this.forceEmitUpdate()
-    }
   }
 
   initSignAccOp(accountAddr: string, networkId: string): null | void {
@@ -539,7 +496,7 @@ export class MainController extends EventEmitter {
 
   // All operations must be synchronous so the change is instantly reflected in the UI
   async selectAccount(toAccountAddr: string) {
-    await this.#statusWrapper('selectAccount', async () => this.#selectAccount(toAccountAddr))
+    await this.withStatus('selectAccount', async () => this.#selectAccount(toAccountAddr))
   }
 
   async #selectAccount(toAccountAddr: string) {
