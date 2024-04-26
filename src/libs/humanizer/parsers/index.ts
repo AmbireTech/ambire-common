@@ -16,9 +16,13 @@ const runModules = (
   settings: HumanizerSettings,
   modules: HumanizerParsingModule[],
   options?: any
-): [HumanizerVisualization[], HumanizerWarning[], Promise<HumanizerFragment | null>[]] => {
+): [
+  HumanizerVisualization[],
+  HumanizerWarning[],
+  Array<() => Promise<HumanizerFragment | null>>
+] => {
   const warnings: HumanizerWarning[] = []
-  const asyncOps: Promise<HumanizerFragment | null>[] = []
+  const asyncOps: Array<() => Promise<HumanizerFragment | null>> = []
 
   let visualization = _visualization
   modules.forEach((m) => {
@@ -37,8 +41,8 @@ export function parseCalls(
   modules: HumanizerParsingModule[],
   humanizerMeta: HumanizerMeta,
   options?: any
-): [IrCall[], Promise<HumanizerFragment | null>[]] {
-  const asyncOps: Promise<HumanizerFragment | null>[] = []
+): [IrCall[], Array<() => Promise<HumanizerFragment | null>>] {
+  const asyncOps: Array<() => Promise<HumanizerFragment | null>> = []
   const newCalls = calls.map((call) => {
     const humanizerSettings: HumanizerSettings = {
       accountAddr: accountOp.accountAddr,
@@ -63,7 +67,7 @@ export function parseMessage(
   message: IrMessage,
   modules: HumanizerParsingModule[],
   options?: any
-): [IrMessage, Promise<HumanizerFragment | null>[]] {
+): [IrMessage, Array<() => Promise<HumanizerFragment | null>>] {
   const humanizerSettings: HumanizerSettings = {
     ...settings,
     humanizerMeta: integrateFragments(

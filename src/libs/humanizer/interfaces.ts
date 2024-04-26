@@ -48,7 +48,7 @@ export interface HumanizerFragment {
 export interface HumanizerCallModule {
   (AccountOp: AccountOp, calls: IrCall[], humanizerMeta: HumanizerMeta, options?: any): [
     IrCall[],
-    Promise<HumanizerFragment | null>[]
+    Array<() => Promise<HumanizerFragment | null>>
   ]
 }
 
@@ -94,7 +94,7 @@ export interface HumanizerParsingModule {
   (humanizerSettings: HumanizerSettings, visualization: HumanizerVisualization[], options?: any): [
     HumanizerVisualization[],
     HumanizerWarning[],
-    Promise<HumanizerFragment | null>[]
+    Array<() => Promise<HumanizerFragment | null>>
   ]
 }
 

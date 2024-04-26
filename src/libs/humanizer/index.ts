@@ -86,7 +86,7 @@ const sharedHumanization = async <InputDataType extends AccountOp | Message>(
   let op: AccountOp
   let message: Message | null = null
   let irCalls: IrCall[] = []
-  let asyncOps: Promise<HumanizerFragment | null>[] = []
+  let asyncOps: (() => Promise<HumanizerFragment | null>)[] = []
   let parsedMessage: IrMessage
   if ('calls' in data) {
     op = parse(stringify(data))
@@ -140,9 +140,12 @@ const sharedHumanization = async <InputDataType extends AccountOp | Message>(
       ;(callback as (response: IrMessage) => void)(parsedMessage)
     }
 
-    const humanizerFragments = await Promise.all(asyncOps).then(
-      (frags) => frags.filter((x) => x) as HumanizerFragment[]
-    )
+    // if we are in the history no more than 1 cycle and no async operations
+    if (options?.history) return
+
+    const humanizerFragments = await Promise.all(
+      asyncOps.map((asyncOperation) => asyncOperation())
+    ).then((frags) => frags.filter((x) => x) as HumanizerFragment[])
     const globalFragments = humanizerFragments.filter((f) => f.isGlobal)
     const nonGlobalFragments = humanizerFragments.filter((f) => !f.isGlobal)
     if ('calls' in data)
@@ -153,7 +156,8 @@ const sharedHumanization = async <InputDataType extends AccountOp | Message>(
     await addFragsToLazyStore(storage, globalFragments, {
       urgent: options && !options?.isExtension
     })
-    if (!humanizerFragments.length || options?.history) return
+
+    if (!humanizerFragments.length) return
   }
 }
 
