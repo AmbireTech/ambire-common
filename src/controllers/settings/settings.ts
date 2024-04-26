@@ -507,7 +507,7 @@ export class SettingsController extends EventEmitter {
     networkPreferences: Partial<NetworkPreference>,
     networkId: NetworkDescriptor['id']
   ) {
-    await this.withStatus('updateNetworkPreferences', () =>
+    await this.withStatus(this.updateNetworkPreferences.name, () =>
       this.#updateNetworkPreferences(networkPreferences, networkId)
     )
   }
