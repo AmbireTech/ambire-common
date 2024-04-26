@@ -210,7 +210,8 @@ describe('asyncOps tests', () => {
       fetch,
       emitError: mockEmitError
     })
-    const asyncData = await Promise.all(asyncOps)
+    const asyncData = await Promise.all(asyncOps.map((i) => i()))
+
     expect(asyncData[0]).toMatchObject({
       key: irCalls[0].to.toLowerCase(),
       type: 'token',
