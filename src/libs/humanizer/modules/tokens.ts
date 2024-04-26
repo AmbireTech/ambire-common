@@ -1,7 +1,7 @@
 import { Interface, ZeroAddress } from 'ethers'
 
 import { AccountOp } from '../../accountOp/accountOp'
-import { HumanizerCallModule, HumanizerFragment, HumanizerMeta, IrCall } from '../interfaces'
+import { HumanizerCallModule, HumanizerMeta, HumanizerPromise, IrCall } from '../interfaces'
 import {
   getAction,
   getAddressVisualization,
@@ -103,7 +103,7 @@ export const genericErc20Humanizer: HumanizerCallModule = (
   humanizerMeta: HumanizerMeta,
   options?: any
 ) => {
-  const asyncOps: Array<() => Promise<HumanizerFragment | null>> = []
+  const asyncOps: HumanizerPromise[] = []
   const iface = new Interface(getKnownAbi(humanizerMeta, 'ERC20', options))
   const matcher = {
     [iface.getFunction('approve')?.selector!]: (call: IrCall) => {

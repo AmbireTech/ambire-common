@@ -43,12 +43,12 @@ export interface HumanizerFragment {
   key: string
   value: string | Array<any> | AbiFragment | any
 }
-
+export type HumanizerPromise = () => Promise<HumanizerFragment | null>
 // @TODO make humanizer options interface
 export interface HumanizerCallModule {
   (AccountOp: AccountOp, calls: IrCall[], humanizerMeta: HumanizerMeta, options?: any): [
     IrCall[],
-    Array<() => Promise<HumanizerFragment | null>>
+    HumanizerPromise[]
   ]
 }
 
@@ -94,7 +94,7 @@ export interface HumanizerParsingModule {
   (humanizerSettings: HumanizerSettings, visualization: HumanizerVisualization[], options?: any): [
     HumanizerVisualization[],
     HumanizerWarning[],
-    Array<() => Promise<HumanizerFragment | null>>
+    HumanizerPromise[]
   ]
 }
 

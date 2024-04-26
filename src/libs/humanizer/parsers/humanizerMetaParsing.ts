@@ -2,7 +2,7 @@ import { ZeroAddress } from 'ethers'
 
 import { networks } from '../../../consts/networks'
 import {
-  HumanizerFragment,
+  HumanizerPromise,
   HumanizerSettings,
   HumanizerVisualization,
   HumanizerWarning
@@ -15,7 +15,7 @@ export const humanizerMetaParsing: HumanizerParsingModule = (
   options?: any
 ) => {
   const humanizerWarnings: HumanizerWarning[] = []
-  const asyncOps: Array<() => Promise<HumanizerFragment | null>> = []
+  const asyncOps: HumanizerPromise[] = []
   const res: HumanizerVisualization[] = visualization.map((v) => {
     if (v.address) {
       if (v.address === ZeroAddress) {
@@ -54,6 +54,6 @@ export interface HumanizerParsingModule {
   (humanizerSettings: HumanizerSettings, visualization: HumanizerVisualization[], options?: any): [
     HumanizerVisualization[],
     HumanizerWarning[],
-    Array<() => Promise<HumanizerFragment | null>>
+    HumanizerPromise[]
   ]
 }
