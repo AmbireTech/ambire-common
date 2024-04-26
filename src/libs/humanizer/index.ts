@@ -95,6 +95,7 @@ const sharedHumanization = async <InputDataType extends AccountOp | Message>(
     message = parse(stringify(data))
   }
   for (let i = 0; i <= 3; i++) {
+    // @TODO refactor conditional for nocache
     const totalHumanizerMetaToBeUsed = await lazyReadHumanizerMeta(storage, {
       nocache: options && !options?.isExtension
     })
@@ -141,7 +142,7 @@ const sharedHumanization = async <InputDataType extends AccountOp | Message>(
     }
 
     // if we are in the history no more than 1 cycle and no async operations
-    if (options?.history) return
+    if (options?.noAsyncOperations) return
 
     const humanizerFragments = await Promise.all(
       asyncOps.map((asyncOperation) => asyncOperation())
