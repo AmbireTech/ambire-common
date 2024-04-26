@@ -12,6 +12,16 @@ export type ErrorRef = {
   error: Error
 }
 
+export type Statuses<T extends Array<string>> = {
+  [key in T[number]]: 'INITIAL' | 'LOADING' | 'SUCCESS' | 'ERROR'
+}
+
+export const getDefaultStatuses = (methods: string[]) =>
+  methods.reduce((acc, method) => {
+    acc[method] = 'INITIAL'
+    return acc
+  }, {} as Statuses<string[]>)
+
 export default class EventEmitter {
   #callbacksWithId: {
     id: string | null
@@ -29,9 +39,7 @@ export default class EventEmitter {
 
   #errors: ErrorRef[] = []
 
-  status: 'INITIAL' | 'LOADING' | 'SUCCESS' | 'ERROR' = 'INITIAL'
-
-  latestMethodCall: string | null = null
+  statuses: Statuses<string[]> = {}
 
   get onUpdateIds() {
     return this.#callbacksWithId.map((item) => item.id)
@@ -81,8 +89,14 @@ export default class EventEmitter {
     for (const cb of this.#errorCallbacks) cb(error)
   }
 
-  protected async withStatus(callName: string, fn: () => Promise<ErrorRef | void> | void) {
-    if (this.status !== 'INITIAL') {
+  protected async withStatus(
+    callName: string,
+    fn: () => Promise<ErrorRef | void> | void,
+    allowMultipleActions = false
+  ) {
+    const someStatusIsLoading = Object.values(this.statuses).some((status) => status !== 'INITIAL')
+
+    if ((someStatusIsLoading && !allowMultipleActions) || this.statuses[callName] !== 'INITIAL') {
       this.emitError({
         level: 'minor',
         message: `Please wait for the completion of the previous action before initiating another one.', ${callName}`,
@@ -92,17 +106,17 @@ export default class EventEmitter {
       })
       return
     }
-    this.latestMethodCall = callName
-    this.status = 'LOADING'
+
+    this.statuses[callName] = 'LOADING'
     this.forceEmitUpdate()
 
     try {
       await fn()
 
-      this.status = 'SUCCESS'
+      this.statuses[callName] = 'SUCCESS'
       this.forceEmitUpdate()
     } catch (error: any) {
-      this.status = 'ERROR'
+      this.statuses[callName] = 'ERROR'
       if ('message' in error && 'level' in error && 'error' in error) {
         this.emitError(error)
       }
@@ -114,7 +128,7 @@ export default class EventEmitter {
       this.forceEmitUpdate()
     }
 
-    this.status = 'INITIAL'
+    this.statuses[callName] = 'INITIAL'
     this.forceEmitUpdate()
   }
 

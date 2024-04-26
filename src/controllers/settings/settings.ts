@@ -22,7 +22,9 @@ import { Storage } from '../../interfaces/storage'
 import { getFeaturesByNetworkProperties, getNetworkInfo } from '../../libs/settings/settings'
 import { isValidAddress } from '../../services/address'
 import { getRpcProvider } from '../../services/provider'
-import EventEmitter from '../eventEmitter/eventEmitter'
+import EventEmitter, { getDefaultStatuses, Statuses } from '../eventEmitter/eventEmitter'
+
+const STATUS_WRAPPED_METHODS = ['addCustomNetwork', 'updateNetworkPreferences']
 
 export class SettingsController extends EventEmitter {
   accountPreferences: AccountPreferences = {}
@@ -35,7 +37,7 @@ export class SettingsController extends EventEmitter {
 
   #storage: Storage
 
-  latestMethodCall: 'addCustomNetwork' | 'updateNetworkPreferences' | null = null
+  statuses: Statuses<typeof STATUS_WRAPPED_METHODS> = getDefaultStatuses(STATUS_WRAPPED_METHODS)
 
   networkToAddOrUpdate: {
     chainId: NetworkDescriptor['chainId']

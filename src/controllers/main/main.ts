@@ -48,7 +48,7 @@ import { ActivityController, SignedMessage, SubmittedAccountOp } from '../activi
 import { AddressBookController } from '../addressBook/addressBook'
 import { DomainsController } from '../domains/domains'
 import { EmailVaultController } from '../emailVault/emailVault'
-import EventEmitter from '../eventEmitter/eventEmitter'
+import EventEmitter, { getDefaultStatuses, Statuses } from '../eventEmitter/eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
 import { PortfolioController } from '../portfolio/portfolio'
 import { SettingsController } from '../settings/settings'
@@ -57,6 +57,8 @@ import { SignAccountOpController, SigningStatus } from '../signAccountOp/signAcc
 import { SignMessageController } from '../signMessage/signMessage'
 import { TransferController } from '../transfer/transfer'
 
+const STATUS_WRAPPED_METHODS = ['selectAccount', 'onAccountAdderSuccess']
+
 export class MainController extends EventEmitter {
   #storage: Storage
 
@@ -64,8 +66,6 @@ export class MainController extends EventEmitter {
 
   // Holds the initial load promise, so that one can wait until it completes
   #initialLoadPromise: Promise<void>
-
-  latestMethodCall: 'onAccountAdderSuccess' | 'selectAccount' | null = null
 
   #callRelayer: Function
 
@@ -138,6 +138,8 @@ export class MainController extends EventEmitter {
   lastUpdate: Date = new Date()
 
   broadcastStatus: 'INITIAL' | 'LOADING' | 'DONE' = 'INITIAL'
+
+  statuses: Statuses<typeof STATUS_WRAPPED_METHODS> = getDefaultStatuses(STATUS_WRAPPED_METHODS)
 
   #relayerUrl: string
 
@@ -268,32 +270,36 @@ export class MainController extends EventEmitter {
     const onAccountAdderSuccess = () => {
       if (this.accountAdder.addAccountsStatus !== 'SUCCESS') return
 
-      return this.withStatus('onAccountAdderSuccess', async () => {
-        // Add accounts first, because some of the next steps have validation
-        // if accounts exists.
-        await this.addAccounts(this.accountAdder.readyToAddAccounts)
+      return this.withStatus(
+        'onAccountAdderSuccess',
+        async () => {
+          // Add accounts first, because some of the next steps have validation
+          // if accounts exists.
+          await this.addAccounts(this.accountAdder.readyToAddAccounts)
 
-        // Then add keys, because some of the next steps could have validation
-        // if keys exists. Should be separate (not combined in Promise.all,
-        // since firing multiple keystore actions is not possible
-        // (the #wrapKeystoreAction listens for the first one to finish and
-        // skips the parallel one, if one is requested).
-        await this.keystore.addKeys(this.accountAdder.readyToAddKeys.internal)
-        await this.keystore.addKeysExternallyStored(this.accountAdder.readyToAddKeys.external)
+          // Then add keys, because some of the next steps could have validation
+          // if keys exists. Should be separate (not combined in Promise.all,
+          // since firing multiple keystore actions is not possible
+          // (the #wrapKeystoreAction listens for the first one to finish and
+          // skips the parallel one, if one is requested).
+          await this.keystore.addKeys(this.accountAdder.readyToAddKeys.internal)
+          await this.keystore.addKeysExternallyStored(this.accountAdder.readyToAddKeys.external)
 
-        await Promise.all([
-          this.settings.addKeyPreferences(this.accountAdder.readyToAddKeyPreferences),
-          this.settings.addAccountPreferences(this.accountAdder.readyToAddAccountPreferences),
-          (() => {
-            const defaultSelectedAccount = getDefaultSelectedAccount(
-              this.accountAdder.readyToAddAccounts
-            )
-            if (!defaultSelectedAccount) return Promise.resolve()
+          await Promise.all([
+            this.settings.addKeyPreferences(this.accountAdder.readyToAddKeyPreferences),
+            this.settings.addAccountPreferences(this.accountAdder.readyToAddAccountPreferences),
+            (() => {
+              const defaultSelectedAccount = getDefaultSelectedAccount(
+                this.accountAdder.readyToAddAccounts
+              )
+              if (!defaultSelectedAccount) return Promise.resolve()
 
-            return this.#selectAccount(defaultSelectedAccount.addr)
-          })()
-        ])
-      })
+              return this.#selectAccount(defaultSelectedAccount.addr)
+            })()
+          ])
+        },
+        true
+      )
     }
     this.accountAdder.onUpdate(onAccountAdderSuccess)
 
@@ -496,7 +502,7 @@ export class MainController extends EventEmitter {
 
   // All operations must be synchronous so the change is instantly reflected in the UI
   async selectAccount(toAccountAddr: string) {
-    await this.withStatus('selectAccount', async () => this.#selectAccount(toAccountAddr))
+    await this.withStatus('selectAccount', async () => this.#selectAccount(toAccountAddr), true)
   }
 
   async #selectAccount(toAccountAddr: string) {
