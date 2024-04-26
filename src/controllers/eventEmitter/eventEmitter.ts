@@ -82,7 +82,16 @@ export default class EventEmitter {
   }
 
   protected async withStatus(callName: string, fn: () => Promise<ErrorRef | void> | void) {
-    if (this.status !== 'INITIAL') return
+    if (this.status !== 'INITIAL') {
+      this.emitError({
+        level: 'minor',
+        message: `Please wait for the completion of the previous action before initiating another one.', ${callName}`,
+        error: new Error(
+          'Another function is already being handled by #statusWrapper; refrain from invoking a second function.'
+        )
+      })
+      return
+    }
     this.latestMethodCall = callName
     this.status = 'LOADING'
     this.forceEmitUpdate()
