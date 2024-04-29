@@ -226,9 +226,10 @@ describe('Main Controller ', () => {
     await new Promise((resolve) => {
       const unsubscribe = controller.onUpdate(() => {
         emitCounter++
+
         if (emitCounter === 2 && controller.isReady) addAccounts()
 
-        if (controller.statuses.onAccountAdderSuccess === 'LOADING') {
+        if (controller.statuses.onAccountAdderSuccess === 'SUCCESS') {
           expect(controller.accounts).toContainEqual({
             ...accountPendingCreation.account,
             newlyCreated: false
@@ -271,6 +272,8 @@ describe('Main Controller ', () => {
     let emitCounter = 0
     const unsubscribe = mainCtrl.onUpdate(() => {
       emitCounter++
+
+      console.log(emitCounter, mainCtrl.accounts[0].associatedKeys)
 
       if (emitCounter === 3) {
         expect(mainCtrl.accounts[0].associatedKeys.length).toEqual(2)
