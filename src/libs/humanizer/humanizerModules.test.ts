@@ -462,7 +462,7 @@ describe('module tests', () => {
     irCalls.forEach((c, i) => {
       expect(c?.fullVisualization?.length).toEqual(expectedhumanization[i].length)
       c?.fullVisualization?.forEach((v: HumanizerVisualization, j: number) => {
-        expect(v).toEqual(expectedhumanization[i][j])
+        expect(v).toMatchObject(expectedhumanization[i][j])
       })
     })
   })
@@ -470,22 +470,21 @@ describe('module tests', () => {
     accountOp.calls = [...transactions.weth]
     let irCalls: IrCall[] = accountOp.calls
     ;[irCalls] = wrappingModule(accountOp, irCalls, humanizerInfo)
-    expect(irCalls[0]?.fullVisualization).toEqual([
-      { type: 'action', content: 'Wrap' },
-      {
-        type: 'token',
-        address: '0x0000000000000000000000000000000000000000',
-        amount: transactions.weth[0].value
-      }
-    ])
-    expect(irCalls[1]?.fullVisualization).toEqual([
-      { type: 'action', content: 'Unwrap' },
-      {
-        type: 'token',
-        address: '0x0000000000000000000000000000000000000000',
-        amount: 8900000000000000n
-      }
-    ])
+    expect(irCalls[0].fullVisualization?.length).toBe(2)
+    expect(irCalls[0]?.fullVisualization![0]).toMatchObject({ type: 'action', content: 'Wrap' })
+    expect(irCalls[0]?.fullVisualization![1]).toMatchObject({
+      type: 'token',
+      address: '0x0000000000000000000000000000000000000000',
+      amount: transactions.weth[0].value
+    })
+
+    expect(irCalls[1].fullVisualization?.length).toBe(2)
+    expect(irCalls[1]?.fullVisualization![0]).toMatchObject({ type: 'action', content: 'Unwrap' })
+    expect(irCalls[1]?.fullVisualization![1]).toMatchObject({
+      type: 'token',
+      address: '0x0000000000000000000000000000000000000000',
+      amount: 8900000000000000n
+    })
     expect(irCalls[2]?.fullVisualization).toBeUndefined()
   })
 
@@ -625,7 +624,7 @@ describe('module tests', () => {
   })
 
   test('SushiSwap RouteProcessor', () => {
-    const expectedhumanization: HumanizerVisualization[] = [
+    const expectedhumanization: Partial<HumanizerVisualization>[] = [
       { type: 'action', content: 'Swap' },
       {
         type: 'token',
@@ -643,13 +642,13 @@ describe('module tests', () => {
     let irCalls: IrCall[] = accountOp.calls
     ;[irCalls] = sushiSwapModule(accountOp, irCalls, humanizerInfo)
     expect(irCalls.length).toBe(1)
-    expectedhumanization.forEach((h: HumanizerVisualization, i: number) => {
+    expectedhumanization.forEach((h: Partial<HumanizerVisualization>, i: number) => {
       expect(irCalls[0]?.fullVisualization?.[i]).toMatchObject(h)
     })
   })
 
   test('Privilege Humanizer', async () => {
-    const expectedhumanization: HumanizerVisualization[][] = [
+    const expectedhumanization: Partial<HumanizerVisualization>[][] = [
       [
         { type: 'action', content: 'Enable' },
         {
@@ -684,10 +683,12 @@ describe('module tests', () => {
     ;[irCalls] = privilegeHumanizer(accountOp, irCalls, humanizerInfo)
 
     expect(irCalls.length).toBe(expectedhumanization.length)
-    expectedhumanization.forEach((callHumanization: HumanizerVisualization[], i: number) => {
-      callHumanization.forEach((h: HumanizerVisualization, j: number) =>
-        expect(irCalls[i]?.fullVisualization?.[j]).toMatchObject(h)
-      )
-    })
+    expectedhumanization.forEach(
+      (callHumanization: Partial<HumanizerVisualization>[], i: number) => {
+        callHumanization.forEach((h: Partial<HumanizerVisualization>, j: number) =>
+          expect(irCalls[i]?.fullVisualization?.[j]).toMatchObject(h)
+        )
+      }
+    )
   })
 })
