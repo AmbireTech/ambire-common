@@ -28,6 +28,7 @@ import {
 import { networks } from '../../consts/networks'
 import { Account } from '../../interfaces/account'
 import { dedicatedToOneSAPriv } from '../../interfaces/keystore'
+import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { getSmartAccount } from '../../libs/account/account'
 import { AccountOp, callToTuple, getSignableCalls } from '../../libs/accountOp/accountOp'
 import { getProxyDeployBytecode } from '../../libs/proxyDeploy/deploy'
@@ -46,9 +47,9 @@ import { Bundler } from './bundler'
 const to = '0x706431177041C87BEb1C25Fa29b92057Cb3c7089'
 
 const addrWithDeploySignature = '0x52C37FD54BD02E9240e8558e28b11e0Dc22d8e85'
-const polygon = networks.find((net) => net.id === 'polygon')!
+const optimism = networks.find((net) => net.id === 'optimism')!
 
-async function getDeploySignature(smartAcc: Account) {
+async function getDeploySignature(smartAcc: Account, network: NetworkDescriptor) {
   // CODE FOR getting a valid deploy signature if you have the PK
   const nonce = 0
   const call = getActivatorCall(smartAcc.addr)
@@ -58,10 +59,10 @@ async function getDeploySignature(smartAcc: Account) {
   const executeHash = keccak256(
     abiCoder.encode(
       ['address', 'uint', 'uint', 'tuple(address, uint, bytes)[]'],
-      [smartAcc.addr, polygon.chainId, nonce, txns]
+      [smartAcc.addr, network.chainId, nonce, txns]
     )
   )
-  const typedData = getTypedData(polygon.chainId, smartAcc.addr, executeHash)
+  const typedData = getTypedData(network.chainId, smartAcc.addr, executeHash)
   const typesWithoutEIP712Domain = { ...typedData.types }
   if (typesWithoutEIP712Domain.EIP712Domain) {
     // eslint-disable-next-line no-param-reassign
@@ -86,7 +87,7 @@ describe('Bundler tests', () => {
   //   })
   // })
 
-  describe('Estimation tests: polygon', () => {
+  describe('Estimation tests: optimism', () => {
     test('should estimate a valid userOp for an undeployed account', async () => {
       const privs = [
         {
@@ -95,28 +96,29 @@ describe('Bundler tests', () => {
         }
       ]
       const smartAcc = await getSmartAccount(privs)
-      const opPolygon: AccountOp = {
+
+      const opOptimism: AccountOp = {
         accountAddr: smartAcc.addr,
         signingKeyAddr: smartAcc.associatedKeys[0],
         signingKeyType: null,
         gasLimit: null,
         gasFeePayment: null,
-        networkId: 'polygon',
+        networkId: optimism.id,
         nonce: 0n,
         signature: '0x',
         calls: [
-          // native passes even though matic balance is below 10
+          // native passes even though native balance is below 10
           { to, value: parseEther('10'), data: '0x' }
         ],
         accountOpToExecuteBefore: null
       }
-      const usedNetworks = [polygon]
+      const usedNetworks = [optimism]
       const providers = {
-        [polygon.id]: getRpcProvider(polygon.rpcUrls, polygon.chainId)
+        [optimism.id]: getRpcProvider(optimism.rpcUrls, optimism.chainId)
       }
       const accountStates = await getAccountsInfo(usedNetworks, providers, [smartAcc])
-      const accountState = accountStates[opPolygon.accountAddr][opPolygon.networkId]
-      const userOp = getUserOperation(smartAcc, accountState, opPolygon)
+      const accountState = accountStates[opOptimism.accountAddr][opOptimism.networkId]
+      const userOp = getUserOperation(smartAcc, accountState, opOptimism)
 
       // override the factoryData so it deploys the contract with entry point privileges
       const factoryInterface = new Interface(AmbireAccountFactory.abi)
@@ -127,13 +129,13 @@ describe('Bundler tests', () => {
         smartAcc.creation!.bytecode,
         smartAcc.creation!.salt,
         txns,
-        '0xd35e03b37ad964c1a0c911e6340e921b77c8027c9ff6d553e4169941a64f59eb6a2378df7148f45fc828f4c5fff9f9f35f23d657893e79f759acafa2db40ccb01b01'
+        '0x126eabb5d01aa47fdeae4797ae5ae63d3279d12ccfddd0a09ad38a63c4140ab57354a2ef555c0c411b20644627b0f23b1927cec6401ca228b65046b620337dcf1b01'
       ])
       // end
 
       const ambireInterface = new Interface(AmbireAccount.abi)
       userOp.callData = ambireInterface.encodeFunctionData('executeBySender', [
-        getSignableCalls(opPolygon)
+        getSignableCalls(opOptimism)
       ])
       const paymasterAndData = getPaymasterDataForEstimate()
       userOp.paymaster = paymasterAndData.paymaster
@@ -143,7 +145,7 @@ describe('Bundler tests', () => {
       userOp.nonce = toBeHex(0)
       userOp.signature = getSigForCalculations()
 
-      const bundlerEstimate = await Bundler.estimate(userOp, polygon)
+      const bundlerEstimate = await Bundler.estimate(userOp, optimism)
       expect(bundlerEstimate).toHaveProperty('preVerificationGas')
       expect(bundlerEstimate).toHaveProperty('verificationGasLimit')
       expect(bundlerEstimate).toHaveProperty('callGasLimit')
@@ -160,28 +162,28 @@ describe('Bundler tests', () => {
         }
       ]
       const smartAcc = await getSmartAccount(privs)
-      const opPolygon: AccountOp = {
+      const opOptimism: AccountOp = {
         accountAddr: smartAcc.addr,
         signingKeyAddr: smartAcc.associatedKeys[0],
         signingKeyType: null,
         gasLimit: null,
         gasFeePayment: null,
-        networkId: 'polygon',
+        networkId: optimism.id,
         nonce: 0n,
         signature: '0x',
         calls: [{ to, value: parseEther('10'), data: '0x' }],
         accountOpToExecuteBefore: null
       }
-      const usedNetworks = [polygon]
+      const usedNetworks = [optimism]
       const providers = {
-        [polygon.id]: getRpcProvider(polygon.rpcUrls, polygon.chainId)
+        [optimism.id]: getRpcProvider(optimism.rpcUrls, optimism.chainId)
       }
       const accountStates = await getAccountsInfo(usedNetworks, providers, [smartAcc])
-      const accountState = accountStates[opPolygon.accountAddr][opPolygon.networkId]
-      const userOp = getUserOperation(smartAcc, accountState, opPolygon)
+      const accountState = accountStates[opOptimism.accountAddr][opOptimism.networkId]
+      const userOp = getUserOperation(smartAcc, accountState, opOptimism)
       const ambireInterface = new Interface(AmbireAccount.abi)
       userOp.callData = ambireInterface.encodeFunctionData('executeBySender', [
-        getSignableCalls(opPolygon)
+        getSignableCalls(opOptimism)
       ])
       const paymasterAndData = getPaymasterDataForEstimate()
       userOp.paymaster = paymasterAndData.paymaster
@@ -192,7 +194,7 @@ describe('Bundler tests', () => {
       userOp.signature = getSigForCalculations()
 
       try {
-        await Bundler.estimate(userOp, polygon)
+        await Bundler.estimate(userOp, optimism)
       } catch (e: any) {
         expect(e.error.message.indexOf('validateUserOp: not from entryPoint')).not.toBe(-1)
       }
@@ -208,13 +210,13 @@ describe('Bundler tests', () => {
       ]
       const smartAcc = await getSmartAccount(privs)
       const ERC20Interface = new Interface(ERC20.abi)
-      const opPolygon: AccountOp = {
+      const opOptimism: AccountOp = {
         accountAddr: smartAcc.addr,
         signingKeyAddr: smartAcc.associatedKeys[0],
         signingKeyType: null,
         gasLimit: null,
         gasFeePayment: null,
-        networkId: 'polygon',
+        networkId: optimism.id,
         nonce: 0n,
         signature: '0x',
         calls: [
@@ -222,20 +224,20 @@ describe('Bundler tests', () => {
           { to, value: parseEther('10'), data: '0x' },
           // USDT, reverts
           {
-            to: '0xc2132D05D31c914a87C6611C10748AEb04B58e8F',
+            to: '0x94b008aA00579c1307B0EF2c499aD98a8ce58e58',
             value: 0n,
             data: ERC20Interface.encodeFunctionData('transfer', [FEE_COLLECTOR, 10])
           }
         ],
         accountOpToExecuteBefore: null
       }
-      const usedNetworks = [polygon]
+      const usedNetworks = [optimism]
       const providers = {
-        [polygon.id]: getRpcProvider(polygon.rpcUrls, polygon.chainId)
+        [optimism.id]: getRpcProvider(optimism.rpcUrls, optimism.chainId)
       }
       const accountStates = await getAccountsInfo(usedNetworks, providers, [smartAcc])
-      const accountState = accountStates[opPolygon.accountAddr][opPolygon.networkId]
-      const userOp = getUserOperation(smartAcc, accountState, opPolygon)
+      const accountState = accountStates[opOptimism.accountAddr][opOptimism.networkId]
+      const userOp = getUserOperation(smartAcc, accountState, opOptimism)
 
       // override the factoryData so it deploys the contract with entry point privileges
       const factoryInterface = new Interface(AmbireAccountFactory.abi)
@@ -246,13 +248,13 @@ describe('Bundler tests', () => {
         smartAcc.creation!.bytecode,
         smartAcc.creation!.salt,
         txns,
-        '0xd35e03b37ad964c1a0c911e6340e921b77c8027c9ff6d553e4169941a64f59eb6a2378df7148f45fc828f4c5fff9f9f35f23d657893e79f759acafa2db40ccb01b01'
+        '0x126eabb5d01aa47fdeae4797ae5ae63d3279d12ccfddd0a09ad38a63c4140ab57354a2ef555c0c411b20644627b0f23b1927cec6401ca228b65046b620337dcf1b01'
       ])
       // end
 
       const ambireInterface = new Interface(AmbireAccount.abi)
       userOp.callData = ambireInterface.encodeFunctionData('executeBySender', [
-        getSignableCalls(opPolygon)
+        getSignableCalls(opOptimism)
       ])
       const paymasterAndData = getPaymasterDataForEstimate()
       userOp.paymaster = paymasterAndData.paymaster
@@ -263,7 +265,7 @@ describe('Bundler tests', () => {
       userOp.signature = getSigForCalculations()
 
       try {
-        await Bundler.estimate(userOp, polygon)
+        await Bundler.estimate(userOp, optimism)
       } catch (e: any) {
         const buffer = Buffer.from(
           e.error.message.substring(e.error.message.indexOf('0x') + 2),
