@@ -189,3 +189,12 @@ export function shouldIncludeActivatorCall(
 export function getExplorerId(network: NetworkDescriptor) {
   return network.erc4337.explorerId ?? network.id
 }
+
+// if the account is v2 and the network is 4337 and the account hasn't
+// authorized the entry point, he should be asked to do so
+export function shouldAskForEntryPointAuthorization(
+  network: NetworkDescriptor,
+  accountState: AccountOnchainState
+) {
+  return accountState.isV2 && network.erc4337.enabled && !accountState.isErc4337Enabled
+}
