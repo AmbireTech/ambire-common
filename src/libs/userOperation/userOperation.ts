@@ -1,4 +1,5 @@
 import { AbiCoder, concat, hexlify, Interface, keccak256, toBeHex } from 'ethers'
+import { KeystoreSigner } from 'interfaces/keystore'
 import { NetworkDescriptor } from 'interfaces/networkDescriptor'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
@@ -11,8 +12,8 @@ import {
 } from '../../consts/deploy'
 import { SPOOF_SIGTYPE } from '../../consts/signatures'
 import { Account, AccountId, AccountOnchainState } from '../../interfaces/account'
-import { getTypedData } from '../../libs/signMessage/signMessage'
 import { AccountOp, callToTuple, getSignableHash } from '../accountOp/accountOp'
+import { getTypedData, wrapStandard } from '../signMessage/signMessage'
 import { PaymasterUnpacked, UserOperation } from './types'
 
 export function calculateCallDataCost(callData: string): bigint {
@@ -113,7 +114,8 @@ export function shouldUseOneTimeNonce(userOp: UserOperation) {
 export function getUserOperation(
   account: Account,
   accountState: AccountOnchainState,
-  accountOp: AccountOp
+  accountOp: AccountOp,
+  entryPointSig?: string
 ): UserOperation {
   const userOp: UserOperation = {
     sender: accountOp.accountAddr,
@@ -135,19 +137,21 @@ export function getUserOperation(
   // if the account is not deployed, prepare the deploy in the initCode
   if (!accountState.isDeployed) {
     if (!account.creation) throw new Error('Account creation properties are missing')
+    if (!entryPointSig) throw new Error('No entry point authorization signature provided')
 
     const factoryInterface = new Interface(AmbireAccountFactory.abi)
     userOp.factory = account.creation.factoryAddr
-    userOp.factoryData = factoryInterface.encodeFunctionData('deploy', [
+    userOp.factoryData = factoryInterface.encodeFunctionData('deployAndExecute', [
       account.creation.bytecode,
-      account.creation.salt
+      account.creation.salt,
+      [callToTuple(getActivatorCall(accountOp.accountAddr))],
+      entryPointSig
     ])
 
     userOp.requestType = 'activator'
   }
 
-  // give permissions to the entry if there aren't nay
-  if (!accountState.isErc4337Enabled) {
+  if (accountState.isDeployed && !accountState.isErc4337Enabled) {
     userOp.activatorCall = getActivatorCall(accountOp.accountAddr)
     userOp.requestType = 'activator'
   }
@@ -203,4 +207,22 @@ export function shouldAskForEntryPointAuthorization(
 export async function getEntryPointAuthorization(addr: AccountId, chainId: bigint, nonce: bigint) {
   const hash = getSignableHash(addr, chainId, nonce, [getActivatorCall(addr)])
   return getTypedData(chainId, addr, hexlify(hash))
+}
+
+// TODO: DELETE THIS ONCE WE HAVE THE AUTHORIZATION SCREEN
+export async function getDummyEntryPointSig(
+  addr: AccountId,
+  chainId: bigint,
+  signer: KeystoreSigner
+) {
+  const txns = [callToTuple(getActivatorCall(addr))]
+  const abiCoder = new AbiCoder()
+  const executeHash = keccak256(
+    abiCoder.encode(
+      ['address', 'uint', 'uint', 'tuple(address, uint, bytes)[]'],
+      [addr, chainId, 0, txns]
+    )
+  )
+  const typedData = getTypedData(chainId, addr, executeHash)
+  return wrapStandard(await signer.signTypedData(typedData))
 }

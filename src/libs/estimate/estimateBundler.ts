@@ -1,57 +1,22 @@
 import { Interface, toBeHex, ZeroAddress } from 'ethers'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
-import AmbireAccountFactory from '../../../contracts/compiled/AmbireAccountFactory.json'
-import {
-  AMBIRE_ACCOUNT_FACTORY,
-  AMBIRE_PAYMASTER,
-  ENTRY_POINT_MARKER,
-  ERC_4337_ENTRYPOINT,
-  PROXY_NO_REVERTS
-} from '../../consts/deploy'
+import { AMBIRE_PAYMASTER } from '../../consts/deploy'
 import { Account, AccountStates } from '../../interfaces/account'
+import { KeystoreSigner } from '../../interfaces/keystore'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { Bundler } from '../../services/bundlers/bundler'
 import { AccountOp, getSignableCalls } from '../accountOp/accountOp'
 import { getFeeCall } from '../calls/calls'
 import { TokenResult } from '../portfolio'
-import { getProxyDeployBytecode } from '../proxyDeploy/deploy'
-import { getAmbireAccountAddress } from '../proxyDeploy/getAmbireAddressTwo'
-import { UserOperation } from '../userOperation/types'
 import {
+  getDummyEntryPointSig,
   getPaymasterDataForEstimate,
   getSigForCalculations,
   getUserOperation
 } from '../userOperation/userOperation'
 import { estimationErrorFormatted } from './errors'
 import { EstimateResult, FeePaymentOption } from './interfaces'
-
-function getUserOpForEstimate(
-  userOp: UserOperation,
-  op: AccountOp,
-  isDeployed: boolean
-): UserOperation {
-  const uOp = { ...userOp }
-
-  if (!isDeployed) {
-    // replace the initCode with one that will not revert in estimation
-    const factoryInterface = new Interface(AmbireAccountFactory.abi)
-    const bytecode = getProxyDeployBytecode(
-      // TODO: change PROXY_NO_REVERTS
-      PROXY_NO_REVERTS,
-      [{ addr: ERC_4337_ENTRYPOINT, hash: ENTRY_POINT_MARKER }],
-      { privSlot: 0 }
-    )
-    uOp.sender = getAmbireAccountAddress(AMBIRE_ACCOUNT_FACTORY, bytecode)
-    uOp.factory = AMBIRE_ACCOUNT_FACTORY
-    uOp.factoryData = factoryInterface.encodeFunctionData('deploy', [bytecode, toBeHex(0, 32)])
-  }
-
-  const ambireAccount = new Interface(AmbireAccount.abi)
-  uOp.callData = ambireAccount.encodeFunctionData('executeBySender', [getSignableCalls(op)])
-  uOp.signature = getSigForCalculations()
-  return uOp
-}
 
 function getFeeTokenForEstimate(feeTokens: TokenResult[]): TokenResult | null {
   if (!feeTokens.length) return null
@@ -86,6 +51,7 @@ function mapError(e: Error) {
 }
 
 export async function bundlerEstimate(
+  signer: KeystoreSigner,
   account: Account,
   accountStates: AccountStates,
   op: AccountOp,
@@ -100,7 +66,12 @@ export async function bundlerEstimate(
   const feeToken = getFeeTokenForEstimate(feeTokens)
   if (feeToken) localOp.feeCall = getFeeCall(feeToken, 1n)
   const accountState = accountStates[localOp.accountAddr][localOp.networkId]
-  const userOp = getUserOperation(account, accountState, localOp)
+  const userOp = getUserOperation(
+    account,
+    accountState,
+    localOp,
+    await getDummyEntryPointSig(account.addr, network.chainId, signer)
+  )
   const gasPrices = await Bundler.fetchGasPrices(network).catch(
     () => new Error('Could not fetch gas prices, retrying...')
   )
@@ -125,8 +96,12 @@ export async function bundlerEstimate(
   }
 
   if (userOp.activatorCall) localOp.activatorCall = userOp.activatorCall
-  const uOp = getUserOpForEstimate(userOp, localOp, accountState.isDeployed)
-  const gasData = await Bundler.estimate(uOp, network).catch((e: any) => {
+
+  const ambireAccount = new Interface(AmbireAccount.abi)
+  userOp.callData = ambireAccount.encodeFunctionData('executeBySender', [getSignableCalls(op)])
+  userOp.signature = getSigForCalculations()
+
+  const gasData = await Bundler.estimate(userOp, network).catch((e: any) => {
     return mapError(
       new Error(
         e.error && e.error.message ? e.error.message : 'Estimation failed with unknown reason'

@@ -22,8 +22,7 @@ import { FEE_COLLECTOR } from '../../consts/addresses'
 import {
   AMBIRE_ACCOUNT_FACTORY,
   ENTRY_POINT_MARKER,
-  ERC_4337_ENTRYPOINT,
-  PROXY_NO_REVERTS
+  ERC_4337_ENTRYPOINT
 } from '../../consts/deploy'
 import { networks } from '../../consts/networks'
 import { Account } from '../../interfaces/account'
@@ -118,20 +117,12 @@ describe('Bundler tests', () => {
       }
       const accountStates = await getAccountsInfo(usedNetworks, providers, [smartAcc])
       const accountState = accountStates[opOptimism.accountAddr][opOptimism.networkId]
-      const userOp = getUserOperation(smartAcc, accountState, opOptimism)
-
-      // override the factoryData so it deploys the contract with entry point privileges
-      const factoryInterface = new Interface(AmbireAccountFactory.abi)
-      const call = getActivatorCall(smartAcc.addr)
-      const tupleCall = callToTuple(call)
-      const txns = [tupleCall]
-      userOp.factoryData = factoryInterface.encodeFunctionData('deployAndExecute', [
-        smartAcc.creation!.bytecode,
-        smartAcc.creation!.salt,
-        txns,
+      const userOp = getUserOperation(
+        smartAcc,
+        accountState,
+        opOptimism,
         '0x126eabb5d01aa47fdeae4797ae5ae63d3279d12ccfddd0a09ad38a63c4140ab57354a2ef555c0c411b20644627b0f23b1927cec6401ca228b65046b620337dcf1b01'
-      ])
-      // end
+      )
 
       const ambireInterface = new Interface(AmbireAccount.abi)
       userOp.callData = ambireInterface.encodeFunctionData('executeBySender', [
@@ -180,7 +171,12 @@ describe('Bundler tests', () => {
       }
       const accountStates = await getAccountsInfo(usedNetworks, providers, [smartAcc])
       const accountState = accountStates[opOptimism.accountAddr][opOptimism.networkId]
-      const userOp = getUserOperation(smartAcc, accountState, opOptimism)
+      const userOp = getUserOperation(
+        smartAcc,
+        accountState,
+        opOptimism,
+        '0x126eabb5d01aa47fdeae4797ae5ae63d3279d12ccfddd0a09ad38a63c4140ab57354a2ef555c0c411b20644627b0f23b1927cec6401ca228b65046b620337dcf1b01'
+      )
       const ambireInterface = new Interface(AmbireAccount.abi)
       userOp.callData = ambireInterface.encodeFunctionData('executeBySender', [
         getSignableCalls(opOptimism)
@@ -192,6 +188,13 @@ describe('Bundler tests', () => {
       userOp.paymasterData = paymasterAndData.paymasterData
       userOp.nonce = toBeHex(0)
       userOp.signature = getSigForCalculations()
+
+      // override the factoryData so it deploy without entry point privs
+      const factoryInterface = new Interface(AmbireAccountFactory.abi)
+      userOp.factoryData = factoryInterface.encodeFunctionData('deploy', [
+        smartAcc.creation!.bytecode,
+        smartAcc.creation!.salt
+      ])
 
       try {
         await Bundler.estimate(userOp, optimism)
@@ -237,20 +240,12 @@ describe('Bundler tests', () => {
       }
       const accountStates = await getAccountsInfo(usedNetworks, providers, [smartAcc])
       const accountState = accountStates[opOptimism.accountAddr][opOptimism.networkId]
-      const userOp = getUserOperation(smartAcc, accountState, opOptimism)
-
-      // override the factoryData so it deploys the contract with entry point privileges
-      const factoryInterface = new Interface(AmbireAccountFactory.abi)
-      const call = getActivatorCall(smartAcc.addr)
-      const tupleCall = callToTuple(call)
-      const txns = [tupleCall]
-      userOp.factoryData = factoryInterface.encodeFunctionData('deployAndExecute', [
-        smartAcc.creation!.bytecode,
-        smartAcc.creation!.salt,
-        txns,
+      const userOp = getUserOperation(
+        smartAcc,
+        accountState,
+        opOptimism,
         '0x126eabb5d01aa47fdeae4797ae5ae63d3279d12ccfddd0a09ad38a63c4140ab57354a2ef555c0c411b20644627b0f23b1927cec6401ca228b65046b620337dcf1b01'
-      ])
-      // end
+      )
 
       const ambireInterface = new Interface(AmbireAccount.abi)
       userOp.callData = ambireInterface.encodeFunctionData('executeBySender', [

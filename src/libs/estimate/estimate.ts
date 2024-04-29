@@ -5,7 +5,7 @@ import { FEE_COLLECTOR } from '../../consts/addresses'
 import { DEPLOYLESS_SIMULATION_FROM, OPTIMISTIC_ORACLE } from '../../consts/deploy'
 import { networks as predefinedNetworks } from '../../consts/networks'
 import { Account, AccountStates } from '../../interfaces/account'
-import { Key } from '../../interfaces/keystore'
+import { Key, KeystoreSigner } from '../../interfaces/keystore'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { getIsViewOnly } from '../../utils/accounts'
 import { getAccountDeployParams, isSmartAccount } from '../account/account'
@@ -51,6 +51,7 @@ function getNonceDiscrepancyFailure(op: AccountOp, outcomeNonce: number): Error 
 }
 
 export async function estimate4337(
+  signer: KeystoreSigner,
   account: Account,
   op: AccountOp,
   calls: Call[],
@@ -110,7 +111,7 @@ export async function estimate4337(
         blockTag
       })
       .catch(catchEstimationFailure),
-    bundlerEstimate(account, accountStates, op, network, feeTokens)
+    bundlerEstimate(signer, account, accountStates, op, network, feeTokens)
   ]
   const estimations = await estimateWithRetries(initializeRequests)
   if (estimations instanceof Error)
@@ -153,6 +154,7 @@ export async function estimate4337(
 }
 
 export async function estimate(
+  signer: KeystoreSigner,
   provider: Provider | JsonRpcProvider,
   network: NetworkDescriptor,
   account: Account,
@@ -199,6 +201,7 @@ export async function estimate(
   // if 4337, delegate
   if (opts && opts.is4337Broadcast) {
     const estimationResult: EstimateResult = await estimate4337(
+      signer,
       account,
       op,
       calls,

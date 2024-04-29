@@ -940,6 +940,10 @@ export class MainController extends EventEmitter {
       const stringAddr: any = result.length ? result.flat(Infinity) : []
       additionalHints!.push(...stringAddr)
 
+      // TODO<Bobby>: delete this
+      const key = this.keystore.keys[0]
+      const signer = await this.keystore.getSigner(key.addr, key.type)
+
       const [, estimation] = await Promise.all([
         // NOTE: we are not emitting an update here because the portfolio controller will do that
         // NOTE: the portfolio controller has it's own logic of constructing/caching providers, this is intentional, as
@@ -961,6 +965,7 @@ export class MainController extends EventEmitter {
           }
         ),
         estimate(
+          signer,
           this.settings.providers[localAccountOp.networkId],
           network,
           account,

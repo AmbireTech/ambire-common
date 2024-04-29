@@ -21,6 +21,7 @@ import { getExecuteSignature, getTypedData, wrapStandard } from '../../libs/sign
 import { getGasUsed } from '../../libs/singleton/singleton'
 import {
   getActivatorCall,
+  getDummyEntryPointSig,
   getOneTimeNonce,
   getUserOperation,
   isErc4337Broadcast,
@@ -864,7 +865,12 @@ export class SignAccountOpController extends EventEmitter {
           signer
         )
       } else if (this.accountOp.gasFeePayment.isERC4337) {
-        const userOperation = getUserOperation(this.account, accountState, this.accountOp)
+        const userOperation = getUserOperation(
+          this.account,
+          accountState,
+          this.accountOp,
+          await getDummyEntryPointSig(this.accountOp.accountAddr, this.#network.chainId, signer)
+        )
         userOperation.preVerificationGas = this.#estimation!.erc4337GasLimits!.preVerificationGas
         userOperation.callGasLimit = this.#estimation!.erc4337GasLimits!.callGasLimit
         userOperation.verificationGasLimit =
