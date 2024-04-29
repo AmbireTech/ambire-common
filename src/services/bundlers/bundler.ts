@@ -3,9 +3,7 @@
 
 import fetch from 'node-fetch'
 
-import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
-import AmbireAccountNoReverts from '../../../contracts/compiled/AmbireAccountNoRevert.json'
-import { ENTRY_POINT_MARKER, ERC_4337_ENTRYPOINT, PROXY_NO_REVERTS } from '../../consts/deploy'
+import { ENTRY_POINT_MARKER, ERC_4337_ENTRYPOINT } from '../../consts/deploy'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { BundlerEstimateResult } from '../../libs/estimate/interfaces'
 import { Gas1559Recommendation } from '../../libs/gasPrice/gasPrice'
@@ -159,35 +157,18 @@ export class Bundler {
     const url = `https://api.pimlico.io/v2/${network.id}/rpc?apikey=${process.env.REACT_APP_PIMLICO_API_KEY}`
     const provider = getRpcProvider([url], network.chainId)
 
-    // stateOverride is needed as our main AmbireAccount.sol contract
-    // reverts when doing validateUserOp in certain cases and that's preventing
-    // the estimation to pass. That's why we replace the main code with one
-    // that doesn't revert in validateUserOp.
-    // when deploying, we replace the proxy; otherwise, we replace the
-    // code at the sender
-    const stateDiff = {
-      [`0x${privSlot(0, 'address', ERC_4337_ENTRYPOINT, 'bytes32')}`]: ENTRY_POINT_MARKER
-    }
-    const stateOverride = userOperation.factory
-      ? {
-          [PROXY_NO_REVERTS]: {
-            code: AmbireAccountNoReverts.binRuntime
-          }
-        }
-      : {
-          [userOperation.sender]: {
-            code: AmbireAccount.binRuntime,
-            stateDiff
-          }
-        }
+    // const stateOverride =
+    //   userOperation.factory === undefined
+    //     ? {
+    //         [userOperation.sender]: {
+    //           // add privileges to the entry point if missing
+    //           [`0x${privSlot(0, 'address', ERC_4337_ENTRYPOINT, 'bytes32')}`]: ENTRY_POINT_MARKER
+    //         }
+    //       }
+    //     : null
 
     const cleanUserOp = getCleanUserOp(userOperation)[0]
-    console.log(cleanUserOp)
-    return provider.send('eth_estimateUserOperationGas', [
-      cleanUserOp,
-      ERC_4337_ENTRYPOINT,
-      stateOverride
-    ])
+    return provider.send('eth_estimateUserOperationGas', [cleanUserOp, ERC_4337_ENTRYPOINT])
   }
 
   static async fetchGasPrices(network: NetworkDescriptor): Promise<{
