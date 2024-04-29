@@ -505,7 +505,11 @@ export class MainController extends EventEmitter {
 
   // All operations must be synchronous so the change is instantly reflected in the UI
   async selectAccount(toAccountAddr: string) {
-    await this.withStatus('selectAccount', async () => this.#selectAccount(toAccountAddr), true)
+    await this.withStatus(
+      this.selectAccount.name,
+      async () => this.#selectAccount(toAccountAddr),
+      true
+    )
   }
 
   async #selectAccount(toAccountAddr: string) {

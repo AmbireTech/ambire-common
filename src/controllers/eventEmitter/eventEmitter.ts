@@ -86,6 +86,10 @@ export default class EventEmitter {
   protected async withStatus(callName: string, fn: Function, allowMultipleActions = false) {
     const someStatusIsLoading = Object.values(this.statuses).some((status) => status !== 'INITIAL')
 
+    if (!this.statuses[callName]) {
+      console.error(`${callName} is not defined in "statuses".`)
+    }
+
     if ((someStatusIsLoading && !allowMultipleActions) || this.statuses[callName] !== 'INITIAL') {
       this.emitError({
         level: 'minor',

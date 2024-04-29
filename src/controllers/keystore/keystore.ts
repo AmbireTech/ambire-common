@@ -32,6 +32,7 @@ const KEYSTORE_UNEXPECTED_ERROR_MESSAGE =
 const STATUS_WRAPPED_METHODS = {
   unlockWithSecret: 'INITIAL',
   addSecret: 'INITIAL',
+  removeSecret: 'INITIAL',
   addKeys: 'INITIAL',
   addKeysExternallyStored: 'INITIAL',
   changeKeystorePassword: 'INITIAL'
@@ -211,7 +212,9 @@ export class KeystoreController extends EventEmitter {
   }
 
   async unlockWithSecret(secretId: string, secret: string) {
-    await this.withStatus('unlockWithSecret', () => this.#unlockWithSecret(secretId, secret))
+    await this.withStatus(this.unlockWithSecret.name, () =>
+      this.#unlockWithSecret(secretId, secret)
+    )
   }
 
   async #addSecret(
@@ -296,7 +299,7 @@ export class KeystoreController extends EventEmitter {
   }
 
   async addSecret(secretId: string, secret: string, extraEntropy: string, leaveUnlocked: boolean) {
-    await this.withStatus('addSecret', () =>
+    await this.withStatus(this.addSecret.name, () =>
       this.#addSecret(secretId, secret, extraEntropy, leaveUnlocked)
     )
   }
@@ -316,7 +319,7 @@ export class KeystoreController extends EventEmitter {
   }
 
   async removeSecret(secretId: string) {
-    await this.withStatus('removeSecret', () => this.#removeSecret(secretId))
+    await this.withStatus(this.removeSecret.name, () => this.#removeSecret(secretId))
   }
 
   get keys(): Key[] {
@@ -378,7 +381,9 @@ export class KeystoreController extends EventEmitter {
   }
 
   async addKeysExternallyStored(keysToAdd: ExternalKey[]) {
-    await this.withStatus('addKeysExternallyStored', () => this.#addKeysExternallyStored(keysToAdd))
+    await this.withStatus(this.addKeysExternallyStored.name, () =>
+      this.#addKeysExternallyStored(keysToAdd)
+    )
   }
 
   async #addKeys(keysToAdd: { privateKey: string; dedicatedToOneSA: boolean }[]) {
@@ -438,7 +443,7 @@ export class KeystoreController extends EventEmitter {
   }
 
   async addKeys(keysToAdd: { privateKey: string; dedicatedToOneSA: boolean }[]) {
-    await this.withStatus('addKeys', () => this.#addKeys(keysToAdd))
+    await this.withStatus(this.addKeys.name, () => this.#addKeys(keysToAdd))
   }
 
   async removeKey(addr: Key['addr'], type: Key['type']) {
@@ -595,7 +600,7 @@ export class KeystoreController extends EventEmitter {
   }
 
   async changeKeystorePassword(newSecret: string, oldSecret?: string) {
-    await this.withStatus('changeKeystorePassword', () =>
+    await this.withStatus(this.changeKeystorePassword.name, () =>
       this.#changeKeystorePassword(newSecret, oldSecret)
     )
   }
