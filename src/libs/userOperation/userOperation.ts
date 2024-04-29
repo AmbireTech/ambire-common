@@ -11,7 +11,8 @@ import {
 } from '../../consts/deploy'
 import { SPOOF_SIGTYPE } from '../../consts/signatures'
 import { Account, AccountId, AccountOnchainState } from '../../interfaces/account'
-import { AccountOp } from '../accountOp/accountOp'
+import { getTypedData } from '../../libs/signMessage/signMessage'
+import { AccountOp, callToTuple, getSignableHash } from '../accountOp/accountOp'
 import { PaymasterUnpacked, UserOperation } from './types'
 
 export function calculateCallDataCost(callData: string): bigint {
@@ -197,4 +198,9 @@ export function shouldAskForEntryPointAuthorization(
   accountState: AccountOnchainState
 ) {
   return accountState.isV2 && network.erc4337.enabled && !accountState.isErc4337Enabled
+}
+
+export async function getEntryPointAuthorization(addr: AccountId, chainId: bigint, nonce: bigint) {
+  const hash = getSignableHash(addr, chainId, nonce, [getActivatorCall(addr)])
+  return getTypedData(chainId, addr, hexlify(hash))
 }

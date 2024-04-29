@@ -2,6 +2,7 @@ import { AbiCoder, getBytes, keccak256 } from 'ethers'
 import { Key } from 'interfaces/keystore'
 import { HumanizerFragment } from 'libs/humanizer/interfaces'
 
+import { AccountId } from '../../interfaces/account'
 import { NetworkId } from '../../interfaces/networkDescriptor'
 import { stringify } from '../richJson/richJson'
 import { UserOperation } from '../userOperation/types'
@@ -123,6 +124,23 @@ export function getSignableCalls(op: AccountOp) {
   return callsToSign
 }
 
+export function getSignableHash(
+  addr: AccountId,
+  chainId: bigint,
+  nonce: bigint,
+  calls: Call[]
+): Uint8Array {
+  const abiCoder = new AbiCoder()
+  return getBytes(
+    keccak256(
+      abiCoder.encode(
+        ['address', 'uint', 'uint', 'tuple(address, uint, bytes)[]'],
+        [addr, chainId, nonce, calls.map((call) => callToTuple(call))]
+      )
+    )
+  )
+}
+
 /**
  * This function returns the hash as a Uint8Array instead of string
  * and the reason for this is the implementation that follows:
@@ -149,13 +167,5 @@ export function getSignableCalls(op: AccountOp) {
  * @returns Uint8Array
  */
 export function accountOpSignableHash(op: AccountOp, chainId: bigint): Uint8Array {
-  const abiCoder = new AbiCoder()
-  return getBytes(
-    keccak256(
-      abiCoder.encode(
-        ['address', 'uint', 'uint', 'tuple(address, uint, bytes)[]'],
-        [op.accountAddr, chainId, op.nonce ?? 0n, getSignableCalls(op)]
-      )
-    )
-  )
+  return getSignableHash(op.accountAddr, chainId, op.nonce ?? 0n, op.calls)
 }
