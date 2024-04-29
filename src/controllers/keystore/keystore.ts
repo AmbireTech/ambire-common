@@ -519,7 +519,7 @@ export class KeystoreController extends EventEmitter {
     if (this.status !== 'INITIAL') {
       this.emitError({
         level: 'minor',
-        message: `Please wait for the completion of the previous action before initiating another one.', ${callName}`,
+        message: `Please wait for the completion of the previous action before initiating another one: ${callName}`,
         error: new Error(
           'Another function is already being handled by #statusWrapper; refrain from invoking a second function.'
         )
