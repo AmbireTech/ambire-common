@@ -41,8 +41,7 @@ export const getManifestFromDappUrl = async (
 
   if (!isGnosisManifest) {
     throw new Error(
-      'Custom dApps must be compatible with the Safe Apps ecosystem. Please enter the URL of a dApp that supports Safe.',
-      { cause: 'not-safe' }
+      'Custom dApps must be compatible with the Safe Apps ecosystem. Please enter the URL of a dApp that supports Safe.'
     )
   }
 
