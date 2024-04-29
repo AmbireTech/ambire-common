@@ -110,7 +110,10 @@ export default class EventEmitter {
       this.statuses[callName] = 'ERROR'
       if ('message' in error && 'level' in error && 'error' in error) {
         this.emitError(error)
-      } else {
+
+        // Sometimes we don't want to show an error message to the user. For example, if the user cancels a request
+        // we don't want to go through the SUCCESS state, but we also don't want to show an error message.
+      } else if (error?.message) {
         this.emitError({
           message: error?.message || 'An unexpected error occurred',
           level: 'major',
