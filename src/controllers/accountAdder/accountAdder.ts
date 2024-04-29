@@ -444,8 +444,7 @@ export class AccountAdderController extends EventEmitter {
     try {
       this.#derivedAccounts = await this.#deriveAccounts({ networks, providers })
 
-      // pageSize is 1 when importing private keys
-      if (this.pageSize === 1) {
+      if (this.#keyIterator?.type === 'internal' && this.#keyIterator?.subType === 'private-key') {
         const usedAccounts = this.accountsOnPage.filter((acc) => acc.account.usedOnNetworks.length)
 
         // If at least one account is used preselect both accounts on the page
