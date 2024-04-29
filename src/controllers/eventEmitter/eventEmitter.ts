@@ -99,13 +99,13 @@ export default class EventEmitter {
     }
 
     this.statuses[callName] = 'LOADING'
-    this.forceEmitUpdate()
+    await this.forceEmitUpdate()
 
     try {
       await fn()
 
       this.statuses[callName] = 'SUCCESS'
-      this.forceEmitUpdate()
+      await this.forceEmitUpdate()
     } catch (error: any) {
       this.statuses[callName] = 'ERROR'
       if ('message' in error && 'level' in error && 'error' in error) {
@@ -117,13 +117,11 @@ export default class EventEmitter {
           error
         })
       }
-      this.forceEmitUpdate()
+      await this.forceEmitUpdate()
     }
 
-    await wait(1)
-
     this.statuses[callName] = 'INITIAL'
-    this.forceEmitUpdate()
+    await this.forceEmitUpdate()
   }
 
   // Prevents memory leaks and storing huge amount of errors
