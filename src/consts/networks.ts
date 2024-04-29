@@ -66,7 +66,7 @@ const networks: NetworkDescriptor[] = [
     },
     unstoppableDomainsChain: 'ERC20',
     isSAEnabled: true,
-    areContractsDeployed: false,
+    areContractsDeployed: true,
     hasRelayer: true,
     hasDebugTraceCall: false,
     platformId: 'optimistic-ethereum',
