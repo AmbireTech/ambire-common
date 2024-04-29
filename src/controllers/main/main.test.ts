@@ -273,8 +273,6 @@ describe('Main Controller ', () => {
     const unsubscribe = mainCtrl.onUpdate(() => {
       emitCounter++
 
-      console.log(emitCounter, mainCtrl.accounts[0].associatedKeys)
-
       if (emitCounter === 3) {
         expect(mainCtrl.accounts[0].associatedKeys.length).toEqual(2)
         expect(mainCtrl.accounts[0].associatedKeys).toContain(
