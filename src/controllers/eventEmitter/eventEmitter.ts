@@ -12,15 +12,9 @@ export type ErrorRef = {
   error: Error
 }
 
-export type Statuses<T extends Array<string>> = {
-  [key in T[number]]: 'INITIAL' | 'LOADING' | 'SUCCESS' | 'ERROR'
+export type Statuses<T extends string> = {
+  [key in T]: 'INITIAL' | 'LOADING' | 'SUCCESS' | 'ERROR'
 }
-
-export const getDefaultStatuses = (methods: string[]) =>
-  methods.reduce((acc, method) => {
-    acc[method] = 'INITIAL'
-    return acc
-  }, {} as Statuses<string[]>)
 
 export default class EventEmitter {
   #callbacksWithId: {
@@ -39,7 +33,7 @@ export default class EventEmitter {
 
   #errors: ErrorRef[] = []
 
-  statuses: Statuses<string[]> = {}
+  statuses: Statuses<string> = {}
 
   get onUpdateIds() {
     return this.#callbacksWithId.map((item) => item.id)
@@ -89,11 +83,7 @@ export default class EventEmitter {
     for (const cb of this.#errorCallbacks) cb(error)
   }
 
-  protected async withStatus(
-    callName: string,
-    fn: () => Promise<ErrorRef | void> | void,
-    allowMultipleActions = false
-  ) {
+  protected async withStatus(callName: string, fn: Function, allowMultipleActions = false) {
     const someStatusIsLoading = Object.values(this.statuses).some((status) => status !== 'INITIAL')
 
     if ((someStatusIsLoading && !allowMultipleActions) || this.statuses[callName] !== 'INITIAL') {
@@ -101,9 +91,10 @@ export default class EventEmitter {
         level: 'minor',
         message: `Please wait for the completion of the previous action before initiating another one.', ${callName}`,
         error: new Error(
-          'Another function is already being handled by #statusWrapper; refrain from invoking a second function.'
+          'Another function is already being handled by withStatus refrain from invoking a second function.'
         )
       })
+
       return
     }
 
@@ -119,14 +110,17 @@ export default class EventEmitter {
       this.statuses[callName] = 'ERROR'
       if ('message' in error && 'level' in error && 'error' in error) {
         this.emitError(error)
+      } else {
+        this.emitError({
+          message: error?.message || 'An unexpected error occurred',
+          level: 'major',
+          error
+        })
       }
-      this.emitError({
-        message: error?.message || 'An unexpected error occurred',
-        level: 'major',
-        error
-      })
       this.forceEmitUpdate()
     }
+
+    await wait(1)
 
     this.statuses[callName] = 'INITIAL'
     this.forceEmitUpdate()

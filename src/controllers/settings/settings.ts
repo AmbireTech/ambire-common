@@ -22,9 +22,12 @@ import { Storage } from '../../interfaces/storage'
 import { getFeaturesByNetworkProperties, getNetworkInfo } from '../../libs/settings/settings'
 import { isValidAddress } from '../../services/address'
 import { getRpcProvider } from '../../services/provider'
-import EventEmitter, { getDefaultStatuses, Statuses } from '../eventEmitter/eventEmitter'
+import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter'
 
-const STATUS_WRAPPED_METHODS = ['addCustomNetwork', 'updateNetworkPreferences']
+const STATUS_WRAPPED_METHODS = {
+  addCustomNetwork: 'INITIAL',
+  updateNetworkPreferences: 'INITIAL'
+} as const
 
 export class SettingsController extends EventEmitter {
   accountPreferences: AccountPreferences = {}
@@ -37,7 +40,7 @@ export class SettingsController extends EventEmitter {
 
   #storage: Storage
 
-  statuses: Statuses<typeof STATUS_WRAPPED_METHODS> = getDefaultStatuses(STATUS_WRAPPED_METHODS)
+  statuses: Statuses<keyof typeof STATUS_WRAPPED_METHODS> = STATUS_WRAPPED_METHODS
 
   networkToAddOrUpdate: {
     chainId: NetworkDescriptor['chainId']
@@ -403,7 +406,7 @@ export class SettingsController extends EventEmitter {
   }
 
   async addCustomNetwork(customNetwork: CustomNetwork) {
-    this.withStatus(this.addCustomNetwork.name, () => this.#addCustomNetwork(customNetwork))
+    await this.withStatus(this.addCustomNetwork.name, () => this.#addCustomNetwork(customNetwork))
   }
 
   async removeCustomNetwork(id: NetworkDescriptor['id']) {

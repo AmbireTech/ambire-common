@@ -48,7 +48,7 @@ import { ActivityController, SignedMessage, SubmittedAccountOp } from '../activi
 import { AddressBookController } from '../addressBook/addressBook'
 import { DomainsController } from '../domains/domains'
 import { EmailVaultController } from '../emailVault/emailVault'
-import EventEmitter, { getDefaultStatuses, Statuses } from '../eventEmitter/eventEmitter'
+import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
 import { PortfolioController } from '../portfolio/portfolio'
 import { SettingsController } from '../settings/settings'
@@ -57,7 +57,10 @@ import { SignAccountOpController, SigningStatus } from '../signAccountOp/signAcc
 import { SignMessageController } from '../signMessage/signMessage'
 import { TransferController } from '../transfer/transfer'
 
-const STATUS_WRAPPED_METHODS = ['selectAccount', 'onAccountAdderSuccess']
+const STATUS_WRAPPED_METHODS = {
+  onAccountAdderSuccess: 'INITIAL',
+  selectAccount: 'INITIAL'
+} as const
 
 export class MainController extends EventEmitter {
   #storage: Storage
@@ -139,7 +142,7 @@ export class MainController extends EventEmitter {
 
   broadcastStatus: 'INITIAL' | 'LOADING' | 'DONE' = 'INITIAL'
 
-  statuses: Statuses<typeof STATUS_WRAPPED_METHODS> = getDefaultStatuses(STATUS_WRAPPED_METHODS)
+  statuses: Statuses<keyof typeof STATUS_WRAPPED_METHODS> = STATUS_WRAPPED_METHODS
 
   #relayerUrl: string
 

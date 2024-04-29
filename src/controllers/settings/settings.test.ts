@@ -205,7 +205,7 @@ describe('Settings Controller', () => {
   test('should check if network features get displayed correctly for ethereum', (done) => {
     let checks = 0
     settingsController.onUpdate(() => {
-      if (checks === 5) {
+      if (checks === 4) {
         checks++
         const eth = settingsController.networks.find((net) => net.id === 'ethereum')!
         expect(eth.areContractsDeployed).toBe(true)
@@ -213,7 +213,7 @@ describe('Settings Controller', () => {
       }
 
       // skip updates until the correct one comes
-      if (checks === 2 || checks === 3 || checks === 4) {
+      if (checks === 2 || checks === 3) {
         checks++
       }
 
