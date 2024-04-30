@@ -366,7 +366,6 @@ export class SettingsController extends EventEmitter {
     ) {
       return
     }
-
     // make sure the network has not been added already
     const chainIds = this.networks.map((net) => net.chainId)
     if (chainIds.indexOf(BigInt(customNetwork.chainId)) !== -1) {
