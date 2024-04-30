@@ -1,53 +1,20 @@
 /* eslint-disable @typescript-eslint/no-floating-promises */
 
-// TODO<BOBBY>: DELETE THIS
-/* eslint-disable @typescript-eslint/no-floating-promises */
-/* eslint-disable @typescript-eslint/no-unused-vars */
-/* eslint-disable class-methods-use-this */
-/* eslint-disable @typescript-eslint/no-useless-constructor */
-/* eslint-disable max-classes-per-file */
-
 import { parseEther } from 'ethers'
 
 import { describe, expect, test } from '@jest/globals'
 
-import { arbNotDeployed } from '../../../test/config'
 import { getAccountsInfo } from '../../../test/helpers'
 import { networks } from '../../consts/networks'
-import { dedicatedToOneSAPriv, Key, KeystoreSigner } from '../../interfaces/keystore'
+import { dedicatedToOneSAPriv } from '../../interfaces/keystore'
 import { getRpcProvider } from '../../services/provider'
 import { getSmartAccount } from '../account/account'
 import { AccountOp } from '../accountOp/accountOp'
 import { bundlerEstimate } from './estimateBundler'
+import { localSigner } from './localSigner'
 
 const to = '0x06564FA10c67427a187f90703fD094054f8F0408'
 
-class LocalSigner implements KeystoreSigner {
-  key: Key
-
-  constructor(_key: Key) {
-    this.key = _key
-  }
-
-  async signRawTransaction() {
-    return '0x126eabb5d01aa47fdeae4797ae5ae63d3279d12ccfddd0a09ad38a63c4140ab57354a2ef555c0c411b20644627b0f23b1927cec6401ca228b65046b620337dcf1b'
-  }
-
-  async signTypedData() {
-    return '0x126eabb5d01aa47fdeae4797ae5ae63d3279d12ccfddd0a09ad38a63c4140ab57354a2ef555c0c411b20644627b0f23b1927cec6401ca228b65046b620337dcf1b'
-  }
-
-  async signMessage() {
-    return '0x126eabb5d01aa47fdeae4797ae5ae63d3279d12ccfddd0a09ad38a63c4140ab57354a2ef555c0c411b20644627b0f23b1927cec6401ca228b65046b620337dcf1b'
-  }
-}
-const localSigner = new LocalSigner({
-  addr: arbNotDeployed.addr,
-  type: 'internal',
-  dedicatedToOneSA: true,
-  meta: null,
-  isExternallyStored: false
-})
 const addrWithDeploySignature = '0x52C37FD54BD02E9240e8558e28b11e0Dc22d8e85'
 const optimism = networks.find((net) => net.id === 'optimism')!
 

@@ -20,6 +20,7 @@ import { Call } from '../accountOp/types'
 import { getAccountState } from '../accountState/accountState'
 import { Portfolio } from '../portfolio/portfolio'
 import { estimate, estimate4337 } from './estimate'
+import { localSigner } from './localSigner'
 
 const ethereum = networks.find((x) => x.id === 'ethereum')
 const optimism = networks.find((x) => x.id === 'optimism')
@@ -293,6 +294,7 @@ describe('estimate', () => {
 
     const accountStates = await getAccountsInfo([EOAAccount])
     const response = await estimate(
+      localSigner,
       provider,
       ethereum,
       EOAAccount,
@@ -343,6 +345,7 @@ describe('estimate', () => {
 
     const accountStates = await getAccountsInfo([EOAAccount])
     const response = await estimate(
+      localSigner,
       providerPolygon,
       polygon,
       EOAAccount,
@@ -395,6 +398,7 @@ describe('estimate', () => {
 
     const accountStates = await getAccountsInfo([EOAAccount])
     const response = await estimate(
+      localSigner,
       providerPolygon,
       polygon,
       EOAAccount,
@@ -445,6 +449,7 @@ describe('estimate', () => {
 
     const accountStates = await getAccountsInfo([EOAAccount])
     const response = await estimate(
+      localSigner,
       providerPolygon,
       polygon,
       EOAAccount,
@@ -483,6 +488,7 @@ describe('estimate', () => {
 
     const accountStates = await getAccountsInfo([account])
     const response = await estimate(
+      localSigner,
       provider,
       ethereum,
       account,
@@ -548,6 +554,7 @@ describe('estimate', () => {
 
     const accountStates = await getAccountsInfo([account])
     const response = await estimate(
+      localSigner,
       provider,
       ethereum,
       account,
@@ -581,6 +588,7 @@ describe('estimate', () => {
 
     const accountStates = await getAccountsInfo([viewOnlyAcc])
     const response = await estimate(
+      localSigner,
       provider,
       ethereum,
       viewOnlyAcc,
@@ -638,6 +646,7 @@ describe('estimate', () => {
 
     const accountStates = await getAccountsInfo([account])
     const response = await estimate(
+      localSigner,
       provider,
       ethereum,
       account,
@@ -648,6 +657,7 @@ describe('estimate', () => {
       feeTokens
     )
     const responseWithExecuteBefore = await estimate(
+      localSigner,
       provider,
       ethereum,
       account,
@@ -698,6 +708,7 @@ describe('estimate', () => {
 
     const accountStates = await getAccountsInfo([accountOptimism])
     const response = await estimate(
+      localSigner,
       providerOptimism,
       optimism,
       accountOptimism,
@@ -729,6 +740,7 @@ describe('estimate', () => {
 
     const accountStates = await getAccountsInfo([smartAccountv2eip712])
     const response = await estimate(
+      localSigner,
       providerArbitrum,
       arbitrum,
       smartAccountv2eip712,
@@ -759,6 +771,7 @@ describe('estimate', () => {
     // force a fake nonce so the tests proceeds
     accountStates[opArbitrum.accountAddr][opArbitrum.networkId].erc4337Nonce = 0n
     const response = await estimate(
+      localSigner,
       providerArbitrum,
       arbitrum,
       trezorSlot6v2NotDeployed,
@@ -803,6 +816,7 @@ describe('estimate', () => {
     }
     const accountStates = await getAccountsInfo([trezorSlot6v2NotDeployed])
     const response = await estimate(
+      localSigner,
       providerArbitrum,
       clonedArb,
       trezorSlot6v2NotDeployed,
@@ -842,6 +856,7 @@ describe('estimate', () => {
     }
     const proxyProvider = new Proxy(brokenProvider, handler2)
     const response = await estimate4337(
+      localSigner,
       trezorSlot6v2NotDeployed,
       opArbitrum,
       opArbitrum.calls,
@@ -883,6 +898,7 @@ describe('estimate', () => {
     }
 
     const response = await estimate(
+      localSigner,
       providerAvalanche,
       avalanche,
       trezorSlot7v24337Deployed,
@@ -925,6 +941,7 @@ describe('estimate', () => {
     const accountStates = await getAccountsInfo([smartAccountv2eip712])
 
     const response = await estimate(
+      localSigner,
       providerPolygon,
       polygon,
       smartAccountv2eip712,
@@ -954,6 +971,7 @@ describe('estimate', () => {
     const accountStates = await getAccountsInfo([smartAccountv2eip712])
 
     const response = await estimate(
+      localSigner,
       providerPolygon,
       polygon,
       { ...smartAccountv2eip712, associatedKeys: [trezorSlot6v2NotDeployed.associatedKeys[0]] },
@@ -983,6 +1001,7 @@ describe('estimate', () => {
 
     const accountStates = await getAccountsInfo([account])
     const response = await estimate(
+      localSigner,
       provider,
       ethereum,
       account,

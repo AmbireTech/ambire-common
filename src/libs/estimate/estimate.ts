@@ -121,6 +121,8 @@ export async function estimate4337(
         preVerificationGas: toBeHex(0),
         verificationGasLimit: toBeHex(0),
         callGasLimit: toBeHex(0),
+        paymasterVerificationGasLimit: toBeHex(0),
+        paymasterPostOpGasLimit: toBeHex(0),
         gasPrice: {
           slow: { maxFeePerGas: toBeHex(0), maxPriorityFeePerGas: toBeHex(0) },
           medium: { maxFeePerGas: toBeHex(0), maxPriorityFeePerGas: toBeHex(0) },

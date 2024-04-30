@@ -913,7 +913,8 @@ export class SignAccountOpController extends EventEmitter {
                 paymaster: AMBIRE_PAYMASTER
               }
             )
-            userOperation.paymasterAndData = response.data.paymasterAndData
+            userOperation.paymaster = response.data.paymaster
+            userOperation.paymasterData = response.data.paymasterData
             if (usesOneTimeNonce) {
               userOperation.nonce = getOneTimeNonce(userOperation)
             }

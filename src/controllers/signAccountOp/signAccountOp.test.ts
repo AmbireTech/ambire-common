@@ -18,6 +18,7 @@ import { AccountOp, accountOpSignableHash } from '../../libs/accountOp/accountOp
 import { getAccountState } from '../../libs/accountState/accountState'
 import { estimate } from '../../libs/estimate/estimate'
 import { EstimateResult } from '../../libs/estimate/interfaces'
+import { localSigner } from '../../libs/estimate/localSigner'
 import * as gasPricesLib from '../../libs/gasPrice/gasPrice'
 import { HUMANIZER_META_KEY } from '../../libs/humanizer'
 import { KeystoreSigner } from '../../libs/keystoreSigner/keystoreSigner'
@@ -327,6 +328,7 @@ const init = async (
   const estimation =
     estimationMock ||
     (await estimate(
+      localSigner,
       provider,
       network,
       account,
