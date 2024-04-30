@@ -210,7 +210,6 @@ export async function getEntryPointAuthorization(addr: AccountId, chainId: bigin
   return getTypedData(chainId, addr, hexlify(hash))
 }
 
-// TODO: DELETE THIS ONCE WE HAVE THE AUTHORIZATION SCREEN
 export async function getDummyEntryPointSig(
   addr: AccountId,
   chainId: bigint,
@@ -221,7 +220,7 @@ export async function getDummyEntryPointSig(
   const executeHash = keccak256(
     abiCoder.encode(
       ['address', 'uint', 'uint', 'tuple(address, uint, bytes)[]'],
-      [addr, chainId, 0, txns]
+      [addr, chainId, 0n, txns]
     )
   )
   const typedData = getTypedData(chainId, addr, executeHash)
