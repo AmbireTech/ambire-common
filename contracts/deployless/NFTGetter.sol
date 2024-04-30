@@ -83,7 +83,7 @@ contract NFTGetter is Simulation {
     NFTCollectionMetadata[] memory collectionMetas = new NFTCollectionMetadata[](len);
     for (uint i = 0; i != len; i++) {
       try
-        this.getCollectionMeta{ gas: 50000 * tokenPerCollectionLimit }(
+        this.getCollectionMeta{ gas: 7750000 * tokenPerCollectionLimit }(
           account,
           collections[i],
           tokenIds[i],
