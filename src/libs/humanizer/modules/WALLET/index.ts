@@ -1,7 +1,7 @@
 // update return ir to be {...ir,calls:newCalls} instead of {calls:newCalls} everywhere
 import { WALLETSupplyControllerMapping } from './WALLETSupplyController'
 import { StakingPools } from './stakingPools'
-import { HumanizerCallModule, IrCall } from '../../interfaces'
+import { HumanizerCallModule, HumanizerMeta, IrCall } from '../../interfaces'
 import { AccountOp } from '../../../accountOp/accountOp'
 import { checkIfUnknownAction, getUnknownVisualization } from '../../utils'
 
@@ -15,12 +15,13 @@ const stakingAddresses = [
 export const WALLETModule: HumanizerCallModule = (
   accountOp: AccountOp,
   irCalls: IrCall[],
+  humanizerMeta: HumanizerMeta,
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   options?: any
 ) => {
   const matcher = {
-    supplyController: WALLETSupplyControllerMapping(accountOp.humanizerMeta),
-    stakingPool: StakingPools(accountOp.humanizerMeta)
+    supplyController: WALLETSupplyControllerMapping(humanizerMeta),
+    stakingPool: StakingPools(humanizerMeta)
   }
   const newCalls = irCalls.map((call: IrCall) => {
     if (

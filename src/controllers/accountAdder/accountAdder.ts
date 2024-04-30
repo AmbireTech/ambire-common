@@ -512,7 +512,7 @@ export class AccountAdderController extends EventEmitter {
     }
 
     this.addAccountsStatus = 'LOADING'
-    this.emitUpdate()
+    await this.forceEmitUpdate()
 
     let newlyCreatedAccounts: Account['addr'][] = []
     const accountsToAddOnRelayer: SelectedAccountForImport[] = accounts
@@ -566,7 +566,7 @@ export class AccountAdderController extends EventEmitter {
         })
 
         this.addAccountsStatus = 'INITIAL'
-        this.emitUpdate()
+        await this.forceEmitUpdate()
         return
       }
     }
@@ -581,12 +581,11 @@ export class AccountAdderController extends EventEmitter {
     this.readyToAddKeyPreferences = readyToAddKeyPreferences
     this.readyToAddAccountPreferences = readyToAddAccountPreferences
     this.addAccountsStatus = 'SUCCESS'
-    this.emitUpdate()
+    await this.forceEmitUpdate()
 
     // reset the addAccountsStatus in the next tick to ensure the FE receives the 'SUCCESS' state
-    await wait(1)
     this.addAccountsStatus = 'INITIAL'
-    this.emitUpdate()
+    await this.forceEmitUpdate()
   }
 
   async createAndAddEmailAccount(selectedAccount: SelectedAccountForImport) {

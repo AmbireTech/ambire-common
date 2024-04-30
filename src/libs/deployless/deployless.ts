@@ -17,6 +17,8 @@ const codeOfContractAbi = ['function codeOf(bytes deployCode) external view']
 const deployErrorSig = '0xb4f54111'
 // Signature of Error(string)
 const errorSig = '0x08c379a0'
+// LBRouter__InvalidTokenPath
+const invalidPath = '0x4feac00c'
 // Signature of Panic(uint256)
 const panicSig = '0x4e487b71'
 // uniswap swap expired
@@ -233,6 +235,9 @@ export function parseErr(data: string): string | null {
       if (e.code === 'BUFFER_OVERRUN' || e.code === 'NUMERIC_FAULT') return dataNoPrefix
       return e
     }
+  }
+  if (data.startsWith(invalidPath)) {
+    return 'Invalid swap path. Sometimes the router fails to pass correctly the swap parameters. Please try again to reinit the swap'
   }
   // uniswap expired error
   if (data === expiredSwap) {

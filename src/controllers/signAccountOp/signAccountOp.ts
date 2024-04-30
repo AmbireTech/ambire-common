@@ -283,7 +283,10 @@ export class SignAccountOpController extends EventEmitter {
 
     if (this.selectedOption) {
       const identifier = getFeeSpeedIdentifier(this.selectedOption, this.accountOp.accountAddr)
-      if (this.feeSpeeds[identifier].some((speed) => speed.amountUsd === null)) {
+      if (
+        this.hasSpeeds(identifier) &&
+        this.feeSpeeds[identifier].some((speed) => speed.amountUsd === null)
+      ) {
         errors.push(NON_CRITICAL_ERRORS.feeUsdEstimation)
       }
     }

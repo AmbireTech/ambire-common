@@ -18,7 +18,7 @@ interface AccountPortfolio {
 
 export function calculateAccountPortfolio(
   selectedAccount: string | null,
-  state: { latest: PortfolioControllerState },
+  state: { latest: PortfolioControllerState; pending: PortfolioControllerState },
   accountPortfolio: AccountPortfolio
 ) {
   const updatedTokens: TokenResultInterface[] = []
@@ -36,7 +36,12 @@ export function calculateAccountPortfolio(
     }
   }
 
-  if (!state.latest || !state.latest[selectedAccount]) {
+  const hasLatest = state.latest && state.latest[selectedAccount]
+  const hasPending =
+    state.pending &&
+    state.pending[selectedAccount] &&
+    Object.keys(state.pending[selectedAccount]).length
+  if (!hasLatest && !hasPending) {
     return {
       tokens: accountPortfolio?.tokens || [],
       collections: accountPortfolio?.collections || [],
@@ -45,7 +50,9 @@ export function calculateAccountPortfolio(
     }
   }
 
-  const selectedAccountData = state.latest[selectedAccount]
+  const selectedAccountData = hasPending
+    ? state.pending[selectedAccount]
+    : state.latest[selectedAccount]
 
   const isNetworkReady = (networkData: AccountState | AdditionalAccountState | undefined) => {
     return (

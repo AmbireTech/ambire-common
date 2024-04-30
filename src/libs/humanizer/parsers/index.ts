@@ -1,6 +1,7 @@
 import { AccountOp } from '../../accountOp/accountOp'
 import {
   HumanizerFragment,
+  HumanizerMeta,
   HumanizerParsingModule,
   HumanizerSettings,
   HumanizerVisualization,
@@ -8,6 +9,7 @@ import {
   IrCall,
   IrMessage
 } from '../interfaces'
+import { EMPTY_HUMANIZER_META, integrateFragments } from '../utils'
 
 const runModules = (
   _visualization: HumanizerVisualization[],
@@ -33,6 +35,7 @@ export function parseCalls(
   accountOp: AccountOp,
   calls: IrCall[],
   modules: HumanizerParsingModule[],
+  humanizerMeta: HumanizerMeta,
   options?: any
 ): [IrCall[], Promise<HumanizerFragment | null>[]] {
   const asyncOps: Promise<HumanizerFragment | null>[] = []
@@ -40,7 +43,7 @@ export function parseCalls(
     const humanizerSettings: HumanizerSettings = {
       accountAddr: accountOp.accountAddr,
       networkId: accountOp.networkId,
-      humanizerMeta: accountOp.humanizerMeta
+      humanizerMeta: integrateFragments(humanizerMeta, accountOp.humanizerMetaFragments || [])
     }
 
     const [fullVisualization, warnings, callAsyncOps] = runModules(
@@ -56,11 +59,18 @@ export function parseCalls(
 }
 
 export function parseMessage(
-  humanizerSettings: HumanizerSettings,
+  settings: HumanizerSettings,
   message: IrMessage,
   modules: HumanizerParsingModule[],
   options?: any
 ): [IrMessage, Promise<HumanizerFragment | null>[]] {
+  const humanizerSettings: HumanizerSettings = {
+    ...settings,
+    humanizerMeta: integrateFragments(
+      settings.humanizerMeta || EMPTY_HUMANIZER_META,
+      message.humanizerFragments || []
+    )
+  }
   const [fullVisualization, warnings, asyncOps] = runModules(
     message.fullVisualization!,
     humanizerSettings,

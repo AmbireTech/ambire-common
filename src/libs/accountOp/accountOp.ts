@@ -1,6 +1,6 @@
 import { AbiCoder, getBytes, keccak256 } from 'ethers'
 import { Key } from 'interfaces/keystore'
-import { HumanizerMeta } from 'libs/humanizer/interfaces'
+import { HumanizerFragment } from 'libs/humanizer/interfaces'
 
 import { NetworkId } from '../../interfaces/networkDescriptor'
 import { stringify } from '../richJson/richJson'
@@ -64,11 +64,9 @@ export interface AccountOp {
   // however, in practice we only use this for recovery atm and we never have a case with more than one
   // Supporting this can done relatively easily via executeMany() for v2 accounts, and with multiple UserOps via 4337 (again v2 accs)
   accountOpToExecuteBefore: AccountOp | null
-  // This is fed into the humanizer to help visualize the accountOp
-  // This can contain info like the value of specific share tokens at the time of signing,
-  // or any other data that needs to otherwise be retrieved in an async manner and/or needs to be
-  // "remembered" at the time of signing in order to visualize history properly
-  humanizerMeta?: HumanizerMeta
+  // this is the humanizer meta info that is supposed to be frozen in time
+  // expressed as HumanizerFragments that can be integrated in the passed humanizer meta object
+  humanizerMetaFragments?: HumanizerFragment[]
   txnId?: string
   status?: AccountOpStatus
   // in the case of ERC-4337, we need an UserOperation structure for the AccountOp

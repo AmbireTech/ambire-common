@@ -37,7 +37,6 @@ import { estimate } from '../../libs/estimate/estimate'
 import { EstimateResult } from '../../libs/estimate/interfaces'
 import { GasRecommendation, getGasPriceRecommendations } from '../../libs/gasPrice/gasPrice'
 import { humanizeAccountOp } from '../../libs/humanizer'
-import { shouldGetAdditionalPortfolio } from '../../libs/portfolio/helpers'
 import { GetOptions } from '../../libs/portfolio/interfaces'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { isErc4337Broadcast } from '../../libs/userOperation/userOperation'
@@ -293,7 +292,7 @@ export class MainController extends EventEmitter {
             )
             if (!defaultSelectedAccount) return Promise.resolve()
 
-            return this.selectAccount(defaultSelectedAccount.addr)
+            return this.#selectAccount(defaultSelectedAccount.addr)
           })()
         ])
       })
@@ -305,14 +304,29 @@ export class MainController extends EventEmitter {
   }
 
   async #statusWrapper(callName: string, fn: Function) {
-    if (this.status === 'LOADING') return
+    // We should not allow executing a second function simultaneously while another function execution is already in progress,
+    // as both functions manipulate the same status property, which may lead to unexpected behavior.
+    // Keeping this in mind, if we have an application logic (hook) that automatically invokes a function wrapped with #statusWrapper,
+    // we should always check if the status is INITIAL and only then invoke the function.
+    // You can see such an example in `authContext.tsx`.
+    if (this.status !== 'INITIAL') {
+      this.emitError({
+        level: 'minor',
+        message: `Please wait for the completion of the previous action before initiating another one: ${callName}`,
+        error: new Error(
+          'Another function is already being handled by #statusWrapper; refrain from invoking a second function.'
+        )
+      })
+
+      return
+    }
     this.latestMethodCall = callName
     this.status = 'LOADING'
-    this.emitUpdate()
+    await this.forceEmitUpdate()
     try {
       await fn()
       this.status = 'SUCCESS'
-      this.emitUpdate()
+      await this.forceEmitUpdate()
     } catch (error: any) {
       this.emitError({
         level: 'major',
@@ -321,16 +335,12 @@ export class MainController extends EventEmitter {
       })
     }
 
-    // set status in the next tick to ensure the FE receives the 'SUCCESS' status
-    await wait(1)
     this.status = 'DONE'
-    this.emitUpdate()
+    await this.forceEmitUpdate()
 
-    // reset the status in the next tick to ensure the FE receives the 'DONE' status
-    await wait(1)
     if (this.latestMethodCall === callName) {
       this.status = 'INITIAL'
-      this.emitUpdate()
+      await this.forceEmitUpdate()
     }
   }
 
@@ -529,25 +539,28 @@ export class MainController extends EventEmitter {
 
   // All operations must be synchronous so the change is instantly reflected in the UI
   async selectAccount(toAccountAddr: string) {
-    this.#statusWrapper('selectAccount', async () => {
-      await this.#initialLoadPromise
+    await this.#statusWrapper('selectAccount', async () => this.#selectAccount(toAccountAddr))
+  }
 
-      if (!this.accounts.find((acc) => acc.addr === toAccountAddr)) {
-        // TODO: error handling, trying to switch to account that does not exist
-        return
-      }
+  async #selectAccount(toAccountAddr: string) {
+    await this.#initialLoadPromise
 
-      this.selectedAccount = toAccountAddr
-      // eslint-disable-next-line @typescript-eslint/no-floating-promises
-      this.#storage.set('selectedAccount', toAccountAddr)
-      this.activity.init({ filters: { account: toAccountAddr } })
-      this.addressBook.update({
-        selectedAccount: toAccountAddr
-      })
-      // eslint-disable-next-line @typescript-eslint/no-floating-promises
-      this.updateSelectedAccount(toAccountAddr)
-      this.onUpdateDappSelectedAccount(toAccountAddr)
+    if (!this.accounts.find((acc) => acc.addr === toAccountAddr)) {
+      // TODO: error handling, trying to switch to account that does not exist
+      return
+    }
+
+    this.selectedAccount = toAccountAddr
+    // eslint-disable-next-line @typescript-eslint/no-floating-promises
+    this.#storage.set('selectedAccount', toAccountAddr)
+    this.activity.init({ filters: { account: toAccountAddr } })
+    this.addressBook.update({
+      selectedAccount: toAccountAddr
     })
+    // eslint-disable-next-line @typescript-eslint/no-floating-promises
+    this.updateSelectedAccount(toAccountAddr)
+    this.onUpdateDappSelectedAccount(toAccountAddr)
+
     this.emitUpdate()
   }
 
@@ -660,11 +673,21 @@ export class MainController extends EventEmitter {
       ? { forceUpdate, additionalHints }
       : { forceUpdate }
 
+    // pass the accountOps if any so we could reflect the pending state
+    const accountOps = this.accountOpsToBeSigned[selectedAccount]
+      ? Object.fromEntries(
+          Object.entries(this.accountOpsToBeSigned[selectedAccount])
+            // filter out account ops that have an estimation error
+            .filter(([, accOp]) => accOp && (!accOp.estimation || !accOp.estimation.error))
+            .map(([networkId, x]) => [networkId, [x!.accountOp]])
+        )
+      : undefined
+
     this.portfolio.updateSelectedAccount(
       this.accounts,
       this.settings.networks,
       selectedAccount,
-      undefined,
+      accountOps,
       updateOptions
     )
   }
@@ -745,6 +768,9 @@ export class MainController extends EventEmitter {
         delete this.accountOpsToBeSigned[accountAddr]?.[networkId]
         if (!Object.keys(this.accountOpsToBeSigned[accountAddr] || {}).length)
           delete this.accountOpsToBeSigned[accountAddr]
+
+        // remove the pending state
+        this.updateSelectedAccount(this.selectedAccount, true)
       }
     } else {
       this.messagesToBeSigned[accountAddr] = this.messagesToBeSigned[accountAddr].filter(
@@ -922,11 +948,13 @@ export class MainController extends EventEmitter {
           this.accounts,
           this.settings.networks,
           localAccountOp.accountAddr,
-          Object.fromEntries(
-            Object.entries(this.accountOpsToBeSigned[localAccountOp.accountAddr])
-              .filter(([, accOp]) => accOp)
-              .map(([networkId, x]) => [networkId, [x!.accountOp]])
-          ),
+          this.accountOpsToBeSigned[localAccountOp.accountAddr]
+            ? Object.fromEntries(
+                Object.entries(this.accountOpsToBeSigned[localAccountOp.accountAddr])
+                  .filter(([, accOp]) => accOp)
+                  .map(([networkId, x]) => [networkId, [x!.accountOp]])
+              )
+            : undefined,
           {
             forceUpdate: true,
             additionalHints
@@ -958,12 +986,23 @@ export class MainController extends EventEmitter {
         })
       ])
 
-      this.accountOpsToBeSigned[localAccountOp.accountAddr] ||= {}
-      this.accountOpsToBeSigned[localAccountOp.accountAddr][localAccountOp.networkId] ||= {
-        accountOp: localAccountOp,
-        estimation
-      }
-      // @TODO compare intent between accountOp and this.accountOpsToBeSigned[accountOp.accountAddr][accountOp.networkId].accountOp
+      // @race
+      // if the account op has been deleted from this.accountOpsToBeSigned,
+      // don't continue as the request has already finished
+      if (
+        !this.accountOpsToBeSigned[localAccountOp.accountAddr] ||
+        !this.accountOpsToBeSigned[localAccountOp.accountAddr][localAccountOp.networkId]
+      )
+        return
+
+      // @race
+      // we check this in the if statement above but in the event of a race which
+      // deletes this.accountOpsToBeSigned just before coming here,
+      // it's better an error to be thrown and caught instead of creating
+      // a new entry in this.accountOpsToBeSigned. That's why we use "!" and we should
+      // keep it that way
+      this.accountOpsToBeSigned[localAccountOp.accountAddr][localAccountOp.networkId]!.accountOp =
+        localAccountOp
       this.accountOpsToBeSigned[localAccountOp.accountAddr][localAccountOp.networkId]!.estimation =
         estimation
 
@@ -988,6 +1027,11 @@ export class MainController extends EventEmitter {
       // this eliminates the infinite loading bug if the estimation comes slower
       if (this.signAccountOp && estimation) {
         this.signAccountOp.update({ estimation })
+      }
+
+      // if there's an estimation error, override the pending results
+      if (estimation && estimation.error) {
+        this.portfolio.overridePendingResults(localAccountOp)
       }
     } catch (error: any) {
       this.emitError({

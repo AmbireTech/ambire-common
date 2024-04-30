@@ -1,4 +1,4 @@
-import { NetworkId } from 'interfaces/networkDescriptor'
+import { NetworkId } from '../../interfaces/networkDescriptor'
 
 import { Account } from '../../interfaces/account'
 import { Message, TypedMessage } from '../../interfaces/userRequest'
@@ -15,7 +15,8 @@ export type HumanizerVisualization = {
   humanizerMeta?: HumanizerMetaAddress
   warning?: boolean
   // humanizerMeta?: HumanizerMetaAddress
-  id?: bigint
+  id: number
+  nftId?: bigint
   isHidden?: boolean
 }
 export interface IrCall extends Call {
@@ -45,7 +46,7 @@ export interface HumanizerFragment {
 
 // @TODO make humanizer options interface
 export interface HumanizerCallModule {
-  (AccountOp: AccountOp, calls: IrCall[], options?: any): [
+  (AccountOp: AccountOp, calls: IrCall[], humanizerMeta: HumanizerMeta, options?: any): [
     IrCall[],
     Promise<HumanizerFragment | null>[]
   ]

@@ -1,4 +1,4 @@
-import { TypedMessage } from 'interfaces/userRequest'
+import { TypedMessage } from '../../../interfaces/userRequest'
 import { HumanizerTypedMessaageModule, HumanizerVisualization } from '../interfaces'
 import { getLabel } from '../utils'
 

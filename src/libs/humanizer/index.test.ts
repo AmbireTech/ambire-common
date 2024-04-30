@@ -12,9 +12,9 @@ import { Key } from '../../interfaces/keystore'
 import { Storage } from '../../interfaces/storage'
 import { Message, TypedMessage } from '../../interfaces/userRequest'
 import { AccountOp } from '../accountOp/accountOp'
-import { callsHumanizer, messageHumanizer, HUMANIZER_META_KEY } from './index'
-import { HumanizerMeta, HumanizerVisualization, IrCall, IrMessage } from './interfaces'
-
+import { callsHumanizer, messageHumanizer } from './index'
+import { HumanizerVisualization, IrCall, IrMessage } from './interfaces'
+import { EMPTY_HUMANIZER_META, HUMANIZER_META_KEY } from './utils'
 // const address1 = '0x6942069420694206942069420694206942069420'
 const address2 = '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
 const WETH_ADDRESS = '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2'
@@ -221,7 +221,6 @@ describe('Humanizer main function', () => {
     storage = produceMemoryStore()
     await storage.set(HUMANIZER_META_KEY, humanizerMeta)
     accountOp.calls = []
-    accountOp.humanizerMeta = { ...(humanizerJSON as HumanizerMeta) }
   })
 
   test('generic humanize', async () => {
@@ -304,7 +303,7 @@ describe('TypedMessages', () => {
   let storage: Storage
   beforeEach(async () => {
     storage = produceMemoryStore()
-    await storage.set(HUMANIZER_META_KEY, { abis: { NO_ABI: {} }, knownAddresses: {} })
+    await storage.set(HUMANIZER_META_KEY, EMPTY_HUMANIZER_META)
   })
   test('simple humanization', async () => {
     const message = {
@@ -364,7 +363,11 @@ describe('TypedMessages', () => {
       {
         type: 'address',
         address: '0x000000000022d473030f116ddee9f6b43ac78ba3',
-        name: 'Permit 2 contract'
+        humanizerMeta: {
+          name: 'Permit2',
+          address: '0x000000000022d473030f116ddee9f6b43ac78ba3',
+          isSC: {}
+        }
       },
       { type: 'label', content: 'to use' },
       {
@@ -372,12 +375,11 @@ describe('TypedMessages', () => {
         address: '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2',
         amount: 1000000000000000000n,
         humanizerMeta: {
-          token: {
-            decimals: 18,
-            symbol: 'WETH'
-          }
-        },
-        warning: true
+          name: 'Wrapped ETH',
+          address: '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2',
+          isSC: {},
+          token: { decimals: 18, symbol: 'WETH' }
+        }
       },
       { type: 'label', content: 'for time period' },
       { type: 'deadline', amount: 968187600000n },
@@ -388,7 +390,11 @@ describe('TypedMessages', () => {
       {
         type: 'address',
         address: '0x000000000022d473030f116ddee9f6b43ac78ba3',
-        name: 'Permit 2 contract'
+        humanizerMeta: {
+          name: 'Permit2',
+          address: '0x000000000022d473030f116ddee9f6b43ac78ba3',
+          isSC: {}
+        }
       },
       { type: 'label', content: 'to use' },
       {
@@ -396,12 +402,11 @@ describe('TypedMessages', () => {
         address: '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2',
         amount: 500000000000000000n,
         humanizerMeta: {
-          token: {
-            decimals: 18,
-            symbol: 'WETH'
-          }
-        },
-        warning: true
+          name: 'Wrapped ETH',
+          address: '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2',
+          isSC: {},
+          token: { decimals: 18, symbol: 'WETH' }
+        }
       },
       { type: 'label', content: 'for time period' },
       { type: 'deadline', amount: 969187600000n },
@@ -411,19 +416,25 @@ describe('TypedMessages', () => {
     const onUpdate = jest.fn((newMessage: IrMessage) => {
       if (newMessage.id === 1)
         newMessage.fullVisualization?.forEach((v, i) =>
-          expect(expectedVisualizations[i]).toMatchObject(v)
+          expect(v).toMatchObject(expectedVisualizations[i])
         )
-      if (newMessage.id === 2)
-        expect(newMessage.fullVisualization).toEqual([
-          { type: 'action', content: 'Sign message:' },
-          { type: 'label', content: 'random message' }
-        ])
+      if (newMessage.id === 2) {
+        expect(newMessage.fullVisualization).not.toBeNull()
+        expect(newMessage.fullVisualization?.length).toBe(2)
+        expect(newMessage.fullVisualization![0]).toMatchObject({
+          type: 'action',
+          content: 'Sign message:'
+        })
+        expect(newMessage.fullVisualization![1]).toMatchObject({
+          type: 'label',
+          content: 'random message'
+        })
+      }
     })
 
     await messageHumanizer(messages[0], storage, fetch, onUpdate, emitError)
     await messageHumanizer(messages[1], storage, fetch, onUpdate, emitError)
-    // two times from first message, one from the second
-    expect(onUpdate).toHaveBeenCalledTimes(3)
+    expect(onUpdate).toHaveBeenCalledTimes(2)
   })
 })
 
@@ -433,7 +444,6 @@ describe('with (Account | Key)[] arg', () => {
     storage = produceMemoryStore()
     await storage.set(HUMANIZER_META_KEY, humanizerMeta)
     accountOp.calls = []
-    accountOp.humanizerMeta = { ...(humanizerJSON as HumanizerMeta) }
   })
   test('with calls', async () => {
     const expectedVisualizations = [

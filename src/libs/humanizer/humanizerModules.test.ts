@@ -4,12 +4,12 @@ import fetch from 'node-fetch'
 import { describe, expect, test } from '@jest/globals'
 
 import { FEE_COLLECTOR } from '../../consts/addresses'
-import humanizerInfo from '../../consts/humanizer/humanizerInfo.json'
+import _humanizerInfo from '../../consts/humanizer/humanizerInfo.json'
 import { ErrorRef } from '../../controllers/eventEmitter/eventEmitter'
 import { AccountOp } from '../accountOp/accountOp'
 import { humanizeCalls, visualizationToText } from './humanizerFuncs'
 import { humanizerCallModules as humanizerModules } from './index'
-import { AbiFragment, HumanizerMeta, HumanizerVisualization, IrCall } from './interfaces'
+import { HumanizerFragment, HumanizerMeta, HumanizerVisualization, IrCall } from './interfaces'
 import { aaveHumanizer } from './modules/Aave'
 import { privilegeHumanizer } from './modules/privileges'
 import { sushiSwapModule } from './modules/sushiSwapModule'
@@ -19,8 +19,9 @@ import { WALLETModule } from './modules/WALLET'
 import { wrappingModule } from './modules/wrapped'
 import { parseCalls } from './parsers'
 import { humanizerMetaParsing } from './parsers/humanizerMetaParsing'
-import { getAction, getLabel, getToken } from './utils'
+import { getAction, getLabel, getToken, integrateFragments } from './utils'
 
+const humanizerInfo = _humanizerInfo as HumanizerMeta
 const TETHER_ADDRESS = '0xdac17f958d2ee523a2206206994597c13d831ec7'
 const WETH_ADDRESS = '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2'
 const accountOp: AccountOp = {
@@ -200,7 +201,6 @@ const moockEmitError = (e: ErrorRef) => emitedErrors.push(e)
 const standartOptions = { fetch, emitError: moockEmitError }
 describe('module tests', () => {
   beforeEach(async () => {
-    accountOp.humanizerMeta = { ...(humanizerInfo as HumanizerMeta) }
     accountOp.calls = []
     emitedErrors = []
   })
@@ -208,7 +208,7 @@ describe('module tests', () => {
   // TODO: look into improper texification for  unrecognized tokens
   test('visualization to text', async () => {
     const expectedTexification = [
-      'Swap 50844.919041919270406243 XLRT for at least 0.137930462904193673 ETH and send it to 0x0000000000000000000000000000000000000000 already expired',
+      'Swap 50844.919041919270406243 XLRT for at least 0.137930462904193673 ETH and send it to 0x0000000000000000000000000000000000000000 (Blackhole) already expired',
       'Swap 0.941 WETH for at least 5158707941840645403045 0x6e975115250b05c828ecb8ededb091975fc20a5d token and send it to 0xbb6c8c037b9cc3bf1a4c4188d92e5d86bfce76a8 already expired',
       'Swap 422.775565331912310692 SHARES for at least 2454.922038 USDC and send it to 0xca124b356bf11dc153b886ecb4596b5cb9395c41 already expired',
       'Swap up to 4825320403256397423633 0x6e975115250b05c828ecb8ededb091975fc20a5d token for 0.941 WETH and send it to 0xbb6c8c037b9cc3bf1a4c4188d92e5d86bfce76a8 already expired',
@@ -237,7 +237,12 @@ describe('module tests', () => {
       .map((key: string) => transactions[key])
       .flat()
     accountOp.calls = allCalls
-    let [irCalls, asyncOps] = humanizeCalls(accountOp, humanizerModules, standartOptions)
+    let [irCalls, asyncOps] = humanizeCalls(
+      accountOp,
+      humanizerModules,
+      humanizerInfo,
+      standartOptions
+    )
     // irCalls.forEach((c: IrCall, i) => {
     //   console.log(c.fullVisualization, i)
     // })
@@ -245,21 +250,27 @@ describe('module tests', () => {
       accountOp,
       irCalls,
       [humanizerMetaParsing],
+      humanizerInfo,
       standartOptions
     )
     irCalls = parsedCalls
     asyncOps.push(...newAsyncOps)
+    const frags: HumanizerFragment[] = (await Promise.all(asyncOps)).filter(
+      (x) => x
+    ) as HumanizerFragment[]
     // @TODO use new combination function
-    ;(await Promise.all(asyncOps)).forEach((a) => {
-      if (a && a.type === 'selector' && accountOp.humanizerMeta?.abis.NO_ABI)
-        accountOp.humanizerMeta.abis.NO_ABI![(a.value as AbiFragment).selector] =
-          a.value as AbiFragment
-    })
-    ;[irCalls, asyncOps] = humanizeCalls(accountOp, humanizerModules, standartOptions)
+    const newHumanizerMeta = integrateFragments(humanizerInfo as HumanizerMeta, frags)
+    ;[irCalls, asyncOps] = humanizeCalls(
+      accountOp,
+      humanizerModules,
+      newHumanizerMeta,
+      standartOptions
+    )
     ;[parsedCalls, newAsyncOps] = parseCalls(
       accountOp,
       irCalls,
       [humanizerMetaParsing],
+      humanizerInfo,
       standartOptions
     )
     irCalls = parsedCalls
@@ -444,35 +455,36 @@ describe('module tests', () => {
     ]
     accountOp.calls = [...transactions.uniV3]
     let irCalls: IrCall[] = accountOp.calls
-    ;[irCalls] = uniswapHumanizer(accountOp, irCalls, { emitedError: moockEmitError })
+    ;[irCalls] = uniswapHumanizer(accountOp, irCalls, humanizerInfo, {
+      emitedError: moockEmitError
+    })
     expect(irCalls.length).toBe(expectedhumanization.length)
     irCalls.forEach((c, i) => {
       expect(c?.fullVisualization?.length).toEqual(expectedhumanization[i].length)
       c?.fullVisualization?.forEach((v: HumanizerVisualization, j: number) => {
-        expect(v).toEqual(expectedhumanization[i][j])
+        expect(v).toMatchObject(expectedhumanization[i][j])
       })
     })
   })
   test('WETH', () => {
     accountOp.calls = [...transactions.weth]
     let irCalls: IrCall[] = accountOp.calls
-    ;[irCalls] = wrappingModule(accountOp, irCalls)
-    expect(irCalls[0]?.fullVisualization).toEqual([
-      { type: 'action', content: 'Wrap' },
-      {
-        type: 'token',
-        address: '0x0000000000000000000000000000000000000000',
-        amount: transactions.weth[0].value
-      }
-    ])
-    expect(irCalls[1]?.fullVisualization).toEqual([
-      { type: 'action', content: 'Unwrap' },
-      {
-        type: 'token',
-        address: '0x0000000000000000000000000000000000000000',
-        amount: 8900000000000000n
-      }
-    ])
+    ;[irCalls] = wrappingModule(accountOp, irCalls, humanizerInfo)
+    expect(irCalls[0].fullVisualization?.length).toBe(2)
+    expect(irCalls[0]?.fullVisualization![0]).toMatchObject({ type: 'action', content: 'Wrap' })
+    expect(irCalls[0]?.fullVisualization![1]).toMatchObject({
+      type: 'token',
+      address: '0x0000000000000000000000000000000000000000',
+      amount: transactions.weth[0].value
+    })
+
+    expect(irCalls[1].fullVisualization?.length).toBe(2)
+    expect(irCalls[1]?.fullVisualization![0]).toMatchObject({ type: 'action', content: 'Unwrap' })
+    expect(irCalls[1]?.fullVisualization![1]).toMatchObject({
+      type: 'token',
+      address: '0x0000000000000000000000000000000000000000',
+      amount: 8900000000000000n
+    })
     expect(irCalls[2]?.fullVisualization).toBeUndefined()
   })
 
@@ -513,7 +525,7 @@ describe('module tests', () => {
       }
     ]
 
-    const [newCalls] = wrappingModule(accountOp, calls)
+    const [newCalls] = wrappingModule(accountOp, calls, humanizerInfo)
     expect(newCalls.length).toBe(1)
     newCalls[0].fullVisualization?.map((v, i) => expect(v).toMatchObject(expectedHumanization[i]))
   })
@@ -551,7 +563,7 @@ describe('module tests', () => {
     ]
     accountOp.calls = [...transactions.aaveLendingPoolV2, ...transactions.aaveWethGatewayV2]
     let irCalls: IrCall[] = accountOp.calls
-    ;[irCalls] = aaveHumanizer(accountOp, irCalls)
+    ;[irCalls] = aaveHumanizer(accountOp, irCalls, humanizerInfo)
     irCalls.forEach((c, i) =>
       c?.fullVisualization?.forEach((v: HumanizerVisualization, j: number) =>
         expect(v).toMatchObject(expectedhumanization[i][j])
@@ -602,7 +614,7 @@ describe('module tests', () => {
     ]
     accountOp.calls = [...transactions.WALLET]
     let irCalls: IrCall[] = accountOp.calls
-    ;[irCalls] = WALLETModule(accountOp, irCalls)
+    ;[irCalls] = WALLETModule(accountOp, irCalls, humanizerInfo)
 
     irCalls.forEach((c, i) =>
       c?.fullVisualization?.forEach((v: HumanizerVisualization, j: number) =>
@@ -612,7 +624,7 @@ describe('module tests', () => {
   })
 
   test('SushiSwap RouteProcessor', () => {
-    const expectedhumanization: HumanizerVisualization[] = [
+    const expectedhumanization: Partial<HumanizerVisualization>[] = [
       { type: 'action', content: 'Swap' },
       {
         type: 'token',
@@ -628,15 +640,15 @@ describe('module tests', () => {
     ]
     accountOp.calls = [...transactions.sushiSwapCalls]
     let irCalls: IrCall[] = accountOp.calls
-    ;[irCalls] = sushiSwapModule(accountOp, irCalls)
+    ;[irCalls] = sushiSwapModule(accountOp, irCalls, humanizerInfo)
     expect(irCalls.length).toBe(1)
-    expectedhumanization.forEach((h: HumanizerVisualization, i: number) => {
+    expectedhumanization.forEach((h: Partial<HumanizerVisualization>, i: number) => {
       expect(irCalls[0]?.fullVisualization?.[i]).toMatchObject(h)
     })
   })
 
   test('Privilege Humanizer', async () => {
-    const expectedhumanization: HumanizerVisualization[][] = [
+    const expectedhumanization: Partial<HumanizerVisualization>[][] = [
       [
         { type: 'action', content: 'Enable' },
         {
@@ -668,13 +680,15 @@ describe('module tests', () => {
     ]
     accountOp.calls = [...transactions.privileges]
     let irCalls: IrCall[] = accountOp.calls
-    ;[irCalls] = privilegeHumanizer(accountOp, irCalls)
+    ;[irCalls] = privilegeHumanizer(accountOp, irCalls, humanizerInfo)
 
     expect(irCalls.length).toBe(expectedhumanization.length)
-    expectedhumanization.forEach((callHumanization: HumanizerVisualization[], i: number) => {
-      callHumanization.forEach((h: HumanizerVisualization, j: number) =>
-        expect(irCalls[i]?.fullVisualization?.[j]).toMatchObject(h)
-      )
-    })
+    expectedhumanization.forEach(
+      (callHumanization: Partial<HumanizerVisualization>[], i: number) => {
+        callHumanization.forEach((h: Partial<HumanizerVisualization>, j: number) =>
+          expect(irCalls[i]?.fullVisualization?.[j]).toMatchObject(h)
+        )
+      }
+    )
   })
 })

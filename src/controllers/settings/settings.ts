@@ -228,7 +228,23 @@ export class SettingsController extends EventEmitter {
 
     await this.#storePreferences()
 
-    this.emitUpdate()
+    // We use `await` here to ensure that an outer function can await the emit to be dispatched to the application.
+    // Consider the following example:
+    // 1. In MainController's onAccountAdderSuccess, we process the newly added accounts from AccountAdder.
+    // 2. Within this function, we await the completion of both Settings methods:
+    // await Promise.all([
+    //   this.settings.addKeyPreferences(this.accountAdder.readyToAddKeyPreferences),
+    //   this.settings.addAccountPreferences(this.accountAdder.readyToAddAccountPreferences),
+    // ])
+    // 3. Once both Promises are resolved, the MainController status is set to 'SUCCESS', indicating successful account importation.
+    // However, there's a catch. If we don't `await` here, both Promises will resolve,
+    // and MainController's onAccountAdderSuccess will change its status to 'SUCCESS'.
+    // Consequently, at the application level, components will be able to access the newly imported accounts,
+    // but the Settings' accountsPreferences may not have been updated yet.
+    //
+    // We've previously encountered this issue in AccountsPersonalizeScreen,
+    // and it happens from time to time, which is why we implemented this fix.
+    await this.forceEmitUpdate()
   }
 
   async addKeyPreferences(newKeyPreferences: KeyPreferences) {
@@ -253,7 +269,24 @@ export class SettingsController extends EventEmitter {
     this.keyPreferences = nextKeyPreferences
 
     await this.#storePreferences()
-    this.emitUpdate()
+
+    // We use `await` here to ensure that an outer function can await the emit to be dispatched to the application.
+    // Consider the following example:
+    // 1. In MainController's onAccountAdderSuccess, we process the newly added accounts from AccountAdder.
+    // 2. Within this function, we await the completion of both Settings methods:
+    // await Promise.all([
+    //   this.settings.addKeyPreferences(this.accountAdder.readyToAddKeyPreferences),
+    //   this.settings.addAccountPreferences(this.accountAdder.readyToAddAccountPreferences),
+    // ])
+    // 3. Once both Promises are resolved, the MainController status is set to 'SUCCESS', indicating successful account importation.
+    // However, there's a catch. If we don't `await` here, both Promises will resolve,
+    // and MainController's onAccountAdderSuccess will change its status to 'SUCCESS'.
+    // Consequently, at the application level, components will be able to access the newly imported accounts,
+    // but the Settings' keyPreferences may not have been updated yet.
+    //
+    // We've previously encountered this issue in AccountsPersonalizeScreen,
+    // and it happens from time to time, which is why we implemented this fix.
+    await this.forceEmitUpdate()
   }
 
   async removeAccountPreferences(accountPreferenceKeys: Array<keyof AccountPreferences> = []) {
@@ -506,15 +539,30 @@ export class SettingsController extends EventEmitter {
   }
 
   async #wrapSettingsAction(callName: string, fn: Function) {
-    if (this.status === 'LOADING') return
+    // We should not allow executing a second function simultaneously while another function execution is already in progress,
+    // as both functions manipulate the same status property, which may lead to unexpected behavior.
+    // Keeping this in mind, if we have an application logic (hook) that automatically invokes a function wrapped with #statusWrapper,
+    // we should always check if the status is INITIAL and only then invoke the function.
+    // You can see such an example in `authContext.tsx`.
+    if (this.status !== 'INITIAL') {
+      this.emitError({
+        level: 'minor',
+        message: `Please wait for the completion of the previous action before initiating another one: ${callName}`,
+        error: new Error(
+          'Another function is already being handled by #statusWrapper; refrain from invoking a second function.'
+        )
+      })
+
+      return
+    }
+
     this.latestMethodCall = callName
     this.status = 'LOADING'
-    this.emitUpdate()
+    await this.forceEmitUpdate()
     try {
       await fn()
-      await wait(1)
       this.status = 'SUCCESS'
-      this.emitUpdate()
+      await this.forceEmitUpdate()
     } catch (error: any) {
       if (error?.message === 'settings: addCustomNetwork chain already added') {
         this.emitError({
@@ -542,16 +590,12 @@ export class SettingsController extends EventEmitter {
       }
     }
 
-    // set status in the next tick to ensure the FE receives the 'SUCCESS' status
-    await wait(1)
     this.status = 'DONE'
-    this.emitUpdate()
+    await this.forceEmitUpdate()
 
-    // reset the status in the next tick to ensure the FE receives the 'DONE' status
-    await wait(1)
     if (this.latestMethodCall === callName) {
       this.status = 'INITIAL'
-      this.emitUpdate()
+      await this.forceEmitUpdate()
     }
   }
 
