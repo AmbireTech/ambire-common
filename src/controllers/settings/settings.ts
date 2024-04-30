@@ -21,7 +21,6 @@ import { Storage } from '../../interfaces/storage'
 import { getFeaturesByNetworkProperties, getNetworkInfo } from '../../libs/settings/settings'
 import { isValidAddress } from '../../services/address'
 import { getRpcProvider } from '../../services/provider'
-import wait from '../../utils/wait'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
 export class SettingsController extends EventEmitter {
