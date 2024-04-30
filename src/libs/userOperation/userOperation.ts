@@ -147,8 +147,6 @@ export function getUserOperation(
       [callToTuple(getActivatorCall(accountOp.accountAddr))],
       entryPointSig
     ])
-
-    userOp.requestType = 'activator'
   }
 
   if (accountState.isDeployed && !accountState.isErc4337Enabled) {
