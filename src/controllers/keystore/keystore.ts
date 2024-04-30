@@ -165,7 +165,8 @@ export class KeystoreController extends EventEmitter {
     const secretEntry = this.#keystoreSecrets.find((x) => x.id === secretId)
     if (!secretEntry) {
       throw new EmittableError({
-        message: `Something went wrong when trying to unlock Ambire. Please try again or contact support if the problem persists.`,
+        message:
+          'Something went wrong when trying to unlock Ambire. Please try again or contact support if the problem persists.',
         level: 'major',
         error: new Error('keystore: secret not found')
       })
