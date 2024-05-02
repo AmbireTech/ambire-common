@@ -12,7 +12,8 @@ import {
   HumanizerParsingModule,
   HumanizerSettings,
   IrCall,
-  IrMessage
+  IrMessage,
+  HumanizerPromise
 } from './interfaces'
 import { aaveHumanizer } from './modules/Aave'
 import { fallbackHumanizer } from './modules/fallBackHumanizer'
@@ -86,7 +87,7 @@ const sharedHumanization = async <InputDataType extends AccountOp | Message>(
   let op: AccountOp
   let message: Message | null = null
   let irCalls: IrCall[] = []
-  let asyncOps: (() => Promise<HumanizerFragment | null>)[] = []
+  let asyncOps: HumanizerPromise[] = []
   let parsedMessage: IrMessage
   if ('calls' in data) {
     op = parse(stringify(data))
