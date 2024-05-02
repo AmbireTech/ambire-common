@@ -66,38 +66,13 @@ contract NFTGetter is Simulation  {
 		uint len = collections.length;
 		NFTCollectionMetadata[] memory collectionMetas = new NFTCollectionMetadata[](len);
 		for (uint i=0; i!=len; i++) {
-			try this.getCollectionMeta{ gas: 50000*tokenPerCollectionLimit }(account, collections[i], tokenIds[i], tokenPerCollectionLimit)
+			try this.getCollectionMeta{ gas: 7750000*tokenPerCollectionLimit }(account, collections[i], tokenIds[i], tokenPerCollectionLimit)
 			returns (NFTCollectionMetadata memory meta) { collectionMetas[i] = meta; }
 			catch (bytes memory err) { collectionMetas[i].error = err.length == 0 ? bytes('REVERT') : err; }
 		}
 		return collectionMetas;
 	}
   
-function getAllNFTs(
-    IAmbireAccount account,
-    NFT[] memory collections,
-    uint[][] memory tokenIds,
-    uint tokenPerCollectionLimit
-  ) public view returns (NFTCollectionMetadata[] memory) {
-    uint len = collections.length;
-    NFTCollectionMetadata[] memory collectionMetas = new NFTCollectionMetadata[](len);
-    for (uint i = 0; i != len; i++) {
-      try
-        this.getCollectionMeta{ gas: 7750000 * tokenPerCollectionLimit }(
-          account,
-          collections[i],
-          tokenIds[i],
-          tokenPerCollectionLimit
-        )
-      returns (NFTCollectionMetadata memory meta) {
-        collectionMetas[i] = meta;
-      } catch (bytes memory err) {
-        collectionMetas[i].error = err.length == 0 ? bytes('REVERT') : err;
-      }
-    }
-    return collectionMetas;
-  }
-
 	function simulateAndGetAllNFTs(
 		IAmbireAccount account, NFT[] memory collections, uint[][] memory tokenIds, uint tokenPerCollectionLimit,
 		// instead of passing {factory, code, salt}, we'll just have factory and factoryCalldata
