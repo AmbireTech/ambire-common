@@ -6,8 +6,8 @@ import { Message, PlainTextMessage, TypedMessage } from '../../interfaces/userRe
 import { AccountOp } from '../accountOp/accountOp'
 import {
   HumanizerCallModule,
-  HumanizerFragment,
   HumanizerMeta,
+  HumanizerPromise,
   HumanizerTypedMessaageModule,
   HumanizerVisualization,
   IrCall,
@@ -20,7 +20,7 @@ export function humanizeCalls(
   humanizerModules: HumanizerCallModule[],
   _humanizerMeta: HumanizerMeta,
   options?: any
-): [IrCall[], Array<Promise<HumanizerFragment | null>>, ErrorRef | null] {
+): [IrCall[], HumanizerPromise[], ErrorRef | null] {
   let error = null
   const accountOp = {
     ..._accountOp,
@@ -29,7 +29,7 @@ export function humanizeCalls(
   const humanizerMeta = integrateFragments(_humanizerMeta, accountOp.humanizerMetaFragments || [])
 
   let currentCalls: IrCall[] = accountOp.calls
-  let asyncOps: Promise<HumanizerFragment | null>[] = []
+  let asyncOps: HumanizerPromise[] = []
   try {
     humanizerModules.forEach((hm) => {
       let newPromises = []
