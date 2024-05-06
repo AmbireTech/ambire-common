@@ -62,25 +62,21 @@ console.log(iface.parseTransaction({
 // @TODO call the entire module parser
 type NetworkId = string
 
-interface TokenInParsedCall {
+interface TokenInParsedAction {
 	// nothing other than an address and network, retrieving meta is the responsibility of the token component + service
 	address: string,
 	networkId: NetworkId,
 	role?: string,
 }
 
-interface InteracteeInParsedCall {
+interface InteracteeInParsedAction {
 	address: string,
 	role?: string
 }
 
-// Designed to be used as an intersection type with Call
-// like this: `ParsedCall & Call`
-// see https://www.typescriptlang.org/docs/handbook/unions-and-intersections.html#intersection-types
-interface ParsedCall {
+// Designed to be used together with Call or Message, however for each Call/Message there could be an array of ParsedAction
+interface ParsedAction {
 	actionName: string,
 	interactedWith: InteracteeInParsedCall[],
 	tokens: TokenInParsedCall[]
 }
-
-// @TODO: ParsedMessage??
