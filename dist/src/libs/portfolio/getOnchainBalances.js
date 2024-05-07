@@ -1,20 +1,11 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.getTokens = exports.getNFTs = void 0;
+const deployless_1 = require("../deployless/deployless");
 const account_1 = require("../account/account");
 const accountOp_1 = require("../accountOp/accountOp");
-const deployless_1 = require("../deployless/deployless");
-const helpers_1 = require("./helpers");
 // 0x00..01 is the address from which simulation signatures are valid
 const DEPLOYLESS_SIMULATION_FROM = '0x0000000000000000000000000000000000000001';
-class SimulationError extends Error {
-    constructor(message, beforeNonce, afterNonce) {
-        super(`simulation error: ${message}`);
-        this.simulationErrorMsg = message;
-        this.beforeNonce = beforeNonce;
-        this.afterNonce = afterNonce;
-    }
-}
 const handleSimulationError = (error, beforeNonce, afterNonce) => {
     if (error !== '0x')
         throw new SimulationError((0, deployless_1.parseErr)(error) || error, beforeNonce, afterNonce);
@@ -25,16 +16,15 @@ const handleSimulationError = (error, beforeNonce, afterNonce) => {
     if (afterNonce < beforeNonce)
         throw new SimulationError('lower "after" nonce, should not be possible', beforeNonce, afterNonce);
 };
-async function getNFTs(network, deployless, opts, accountAddr, tokenAddrs, limits) {
+async function getNFTs(deployless, opts, accountAddr, tokenAddrs, limits) {
     const deploylessOpts = { blockTag: opts.blockTag, from: DEPLOYLESS_SIMULATION_FROM };
     const mapToken = (token) => {
         return {
             name: token.name,
-            networkId: network.id,
             symbol: token.symbol,
             amount: BigInt(token.nfts.length),
             decimals: 1,
-            collectibles: [...token.nfts]
+            collectibles: [...token.nfts].map((token) => ({ id: token.id, url: token.uri }))
         };
     };
     if (!opts.simulation) {
@@ -71,13 +61,11 @@ exports.getNFTs = getNFTs;
 async function getTokens(network, deployless, opts, accountAddr, tokenAddrs) {
     const mapToken = (token, address) => ({
         amount: token.amount,
-        networkId: network.id,
         decimals: new Number(token.decimals),
         symbol: address === '0x0000000000000000000000000000000000000000'
             ? network.nativeAssetSymbol
             : token.symbol,
-        address,
-        flags: (0, helpers_1.getFlags)({}, network.id, network.id, address)
+        address
     });
     const deploylessOpts = { blockTag: opts.blockTag, from: DEPLOYLESS_SIMULATION_FROM };
     if (!opts.simulation) {
@@ -104,4 +92,12 @@ async function getTokens(network, deployless, opts, accountAddr, tokenAddrs) {
     ]);
 }
 exports.getTokens = getTokens;
+class SimulationError extends Error {
+    constructor(message, beforeNonce, afterNonce) {
+        super(`simulation error: ${message}`);
+        this.simulationErrorMsg = message;
+        this.beforeNonce = beforeNonce;
+        this.afterNonce = afterNonce;
+    }
+}
 //# sourceMappingURL=getOnchainBalances.js.map
