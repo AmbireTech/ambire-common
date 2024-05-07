@@ -1,10 +1,10 @@
 import { ethers } from 'ethers'
-import { Key } from '../../interfaces/keystore'
+import { Key } from 'interfaces/keystore'
 
 import { networks } from '../../consts/networks'
 import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
 import { stringify } from '../bigintJson/bigintJson'
-import { UserOperation } from '../userOperation/userOperation'
+import { UserOperation } from '../../libs/userOperation/userOperation'
 
 export interface Call {
   to: string
@@ -52,11 +52,11 @@ export interface AccountOp {
   // this is a number and not a bigint because of ethers (it uses number for nonces)
   nonce: bigint | null
   // @TODO: nonce namespace? it is dependent on gasFeePayment
-  calls: Call[]
+  calls: Call[],
   // the feeCall is an extra call we add manually when there's a
   // relayer/paymaster transaction so that the relayer/paymaster
   // can authorize the payment
-  feeCall?: Call
+  feeCall?: Call,
   gasLimit: number | null
   signature: string | null
   gasFeePayment: GasFeePayment | null
@@ -73,7 +73,7 @@ export interface AccountOp {
   // "remembered" at the time of signing in order to visualize history properly
   humanizerMeta?: { [key: string]: any }
   txnId?: string
-  status?: AccountOpStatus
+  status?: AccountOpStatus,
   // in the case of ERC-4337, we need an UserOperation structure for the AccountOp
   asUserOperation?: UserOperation
 }
@@ -155,7 +155,12 @@ export function accountOpSignableHash(op: AccountOp): Uint8Array {
     ethers.keccak256(
       abiCoder.encode(
         ['address', 'uint', 'uint', 'tuple(address, uint, bytes)[]'],
-        [op.accountAddr, opNetworks[0].chainId, op.nonce ?? 0n, getSignableCalls(op)]
+        [
+          op.accountAddr,
+          opNetworks[0].chainId,
+          op.nonce ?? 0n,
+          getSignableCalls(op)
+        ]
       )
     )
   )
@@ -170,10 +175,8 @@ export function accountOpSignableHash(op: AccountOp): Uint8Array {
  * @returns boolean
  */
 export function isNative(gasFeePayment: GasFeePayment): boolean {
-  return (
-    !gasFeePayment.isGasTank &&
+  return !gasFeePayment.isGasTank &&
     gasFeePayment.inToken == '0x0000000000000000000000000000000000000000'
-  )
 }
 
 export function getSignableCalls(op: AccountOp) {
