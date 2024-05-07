@@ -1,32 +1,37 @@
-import { ethers } from "ethers";
-import { Account, AccountOnchainState } from "../../interfaces/account";
-import { AccountOp, getSignableCalls } from "../accountOp/accountOp";
-import AmbireAccount from "../../../contracts/compiled/AmbireAccount.json";
-import AmbireAccountFactory from "../../../contracts/compiled/AmbireAccountFactory.json";
-import { AMBIRE_PAYMASTER, AMBIRE_PAYMASTER_SIGNER, ENTRY_POINT_MARKER, ERC_4337_ENTRYPOINT } from "../../../src/consts/deploy";
-import { NetworkDescriptor } from "interfaces/networkDescriptor";
-import { SPOOF_SIGTYPE } from "../../consts/signatures";
+import { ethers } from 'ethers'
+import { Account, AccountOnchainState } from '../../interfaces/account'
+import { AccountOp, getSignableCalls } from '../accountOp/accountOp'
+import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
+import AmbireAccountFactory from '../../../contracts/compiled/AmbireAccountFactory.json'
+import {
+  AMBIRE_PAYMASTER,
+  AMBIRE_PAYMASTER_SIGNER,
+  ENTRY_POINT_MARKER,
+  ERC_4337_ENTRYPOINT
+} from '../../consts/deploy'
+import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
+import { SPOOF_SIGTYPE } from '../../consts/signatures'
 
 export interface UserOperation {
-  sender: string,
-  nonce: string, // hex string
-  initCode: string, // hex string
-  callData: string, // hex string
-  callGasLimit: string, // hex string
-  verificationGasLimit: string, // hex string
-  preVerificationGas: string, // hex string
-  maxFeePerGas: string, // hex string
-  maxPriorityFeePerGas: string, // hex string
-  paymasterAndData: string, // hex string
-  signature: string, // hex string
+  sender: string
+  nonce: string // hex string
+  initCode: string // hex string
+  callData: string // hex string
+  callGasLimit: string // hex string
+  verificationGasLimit: string // hex string
+  preVerificationGas: string // hex string
+  maxFeePerGas: string // hex string
+  maxPriorityFeePerGas: string // hex string
+  paymasterAndData: string // hex string
+  signature: string // hex string
   // https://github.com/AmbireTech/ambire-app/wiki/Ambire-Flows-(wrap,-sign,-payment,-broadcast)#erc-4337-edge-case
-  isEdgeCase: boolean,
+  isEdgeCase: boolean
 }
 
 export function calculateCallDataCost(callData: string): bigint {
   if (callData === '0x') return 0n
   const bytes = Buffer.from(callData.substring(2))
-  const nonZeroBytes = BigInt(bytes.filter(b => b).length)
+  const nonZeroBytes = BigInt(bytes.filter((b) => b).length)
   const zeroBytes = BigInt(BigInt(bytes.length) - nonZeroBytes)
   return zeroBytes * 4n + nonZeroBytes * 16n
 }
@@ -45,15 +50,17 @@ export function toUserOperation(
 
     const ambireAccountFactory = new ethers.BaseContract(
       account.creation.factoryAddr,
-      AmbireAccountFactory.abi,
+      AmbireAccountFactory.abi
     )
-    initCode = ethers.hexlify(ethers.concat([
-      account.creation.factoryAddr,
-      ambireAccountFactory.interface.encodeFunctionData(
-        'deploy',
-        [account.creation.bytecode, account.creation.salt]
-      )
-    ]))
+    initCode = ethers.hexlify(
+      ethers.concat([
+        account.creation.factoryAddr,
+        ambireAccountFactory.interface.encodeFunctionData('deploy', [
+          account.creation.bytecode,
+          account.creation.salt
+        ])
+      ])
+    )
 
     isEdgeCase = true
   }
@@ -61,10 +68,10 @@ export function toUserOperation(
   // give permissions to the entry if there aren't nay
   const ambireAccount = new ethers.BaseContract(accountOp.accountAddr, AmbireAccount.abi)
   if (!accountState.isErc4337Enabled) {
-    const givePermsToEntryPointData = ambireAccount.interface.encodeFunctionData('setAddrPrivilege', [
-      ERC_4337_ENTRYPOINT,
-      ENTRY_POINT_MARKER
-    ])
+    const givePermsToEntryPointData = ambireAccount.interface.encodeFunctionData(
+      'setAddrPrivilege',
+      [ERC_4337_ENTRYPOINT, ENTRY_POINT_MARKER]
+    )
     accountOp.calls.push({
       to: accountOp.accountAddr,
       value: 0n,
@@ -79,12 +86,13 @@ export function toUserOperation(
   if (isEdgeCase) {
     const abiCoder = new ethers.AbiCoder()
     const spoofSig = abiCoder.encode(['address'], [account.associatedKeys[0]]) + SPOOF_SIGTYPE
-    callData = ambireAccount.interface.encodeFunctionData('executeMultiple', [[[
-      getSignableCalls(accountOp),
-      spoofSig
-    ]]])
+    callData = ambireAccount.interface.encodeFunctionData('executeMultiple', [
+      [[getSignableCalls(accountOp), spoofSig]]
+    ])
   } else {
-    callData = ambireAccount.interface.encodeFunctionData('executeBySender', [getSignableCalls(accountOp)])
+    callData = ambireAccount.interface.encodeFunctionData('executeBySender', [
+      getSignableCalls(accountOp)
+    ])
   }
 
   // 27000n initial + deploy, callData, paymaster, signature
@@ -122,47 +130,38 @@ export function toUserOperation(
  */
 export function getTargetEdgeCaseNonce(userOperation: UserOperation) {
   const abiCoder = new ethers.AbiCoder()
-  return '0x' + ethers.keccak256(
-    abiCoder.encode([
-      'bytes',
-      'bytes',
-      'uint256',
-      'uint256',
-      'uint256',
-      'uint256',
-      'uint256',
-      'bytes',
-    ], [
-      userOperation.initCode,
-      userOperation.callData,
-      userOperation.callGasLimit,
-      userOperation.verificationGasLimit,
-      userOperation.preVerificationGas,
-      userOperation.maxFeePerGas,
-      userOperation.maxPriorityFeePerGas,
-      userOperation.paymasterAndData,
-    ])
-  ).substring(18) + ethers.toBeHex(0, 8).substring(2)
+  return `0x${ethers
+    .keccak256(
+      abiCoder.encode(
+        ['bytes', 'bytes', 'uint256', 'uint256', 'uint256', 'uint256', 'uint256', 'bytes'],
+        [
+          userOperation.initCode,
+          userOperation.callData,
+          userOperation.callGasLimit,
+          userOperation.verificationGasLimit,
+          userOperation.preVerificationGas,
+          userOperation.maxFeePerGas,
+          userOperation.maxPriorityFeePerGas,
+          userOperation.paymasterAndData
+        ]
+      )
+    )
+    .substring(18)}${ethers.toBeHex(0, 8).substring(2)}`
 }
 
 export function getPaymasterSpoof() {
   const abiCoder = new ethers.AbiCoder()
   const spoofSig = abiCoder.encode(['address'], [AMBIRE_PAYMASTER_SIGNER]) + SPOOF_SIGTYPE
-  const simulationData = abiCoder.encode(
-    ['uint48', 'uint48', 'bytes'],
-    [0, 0, spoofSig]
-  )
-  return ethers.hexlify(ethers.concat([
-    AMBIRE_PAYMASTER,
-    simulationData
-  ]))
+  const simulationData = abiCoder.encode(['uint48', 'uint48', 'bytes'], [0, 0, spoofSig])
+  return ethers.hexlify(ethers.concat([AMBIRE_PAYMASTER, simulationData]))
 }
 
-export function isErc4337Broadcast(network: NetworkDescriptor, accountState: AccountOnchainState): boolean {
+export function isErc4337Broadcast(
+  network: NetworkDescriptor,
+  accountState: AccountOnchainState
+): boolean {
   // write long to fix typescript issues
-  const isEnabled = network && network.erc4337
-    ? network.erc4337.enabled
-    : false
+  const isEnabled = network && network.erc4337 ? network.erc4337.enabled : false
 
-    return (isEnabled && accountState.isV2)
+  return isEnabled && accountState.isV2
 }

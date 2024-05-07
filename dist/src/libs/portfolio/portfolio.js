@@ -4,13 +4,13 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.Portfolio = exports.getEmptyHints = void 0;
-const deployless_1 = require("../deployless/deployless");
-const NFTGetter_json_1 = __importDefault(require("../../../contracts/compiled/NFTGetter.json"));
 const BalanceGetter_json_1 = __importDefault(require("../../../contracts/compiled/BalanceGetter.json"));
+const NFTGetter_json_1 = __importDefault(require("../../../contracts/compiled/NFTGetter.json"));
+const deployless_1 = require("../deployless/deployless");
 const batcher_1 = __importDefault(require("./batcher"));
 const gecko_1 = require("./gecko");
-const pagination_1 = require("./pagination");
 const getOnchainBalances_1 = require("./getOnchainBalances");
+const pagination_1 = require("./pagination");
 const LIMITS = {
     // we have to be conservative with erc721Tokens because if we pass 30x20 (worst case) tokenIds, that's 30x20 extra words which is 19kb
     // proxy mode input is limited to 24kb
@@ -24,8 +24,8 @@ const LIMITS = {
     }
 };
 const getEmptyHints = (networkId, accountAddr) => ({
-    networkId: networkId,
-    accountAddr: accountAddr,
+    networkId,
+    accountAddr,
     erc20s: [],
     erc721s: {},
     prices: {},
@@ -35,7 +35,8 @@ exports.getEmptyHints = getEmptyHints;
 const defaultOptions = {
     baseCurrency: 'usd',
     blockTag: 'latest',
-    priceRecency: 0
+    priceRecency: 0,
+    pinned: []
 };
 class Portfolio {
     constructor(fetch, provider, network) {
@@ -58,7 +59,7 @@ class Portfolio {
     }
     async get(accountAddr, opts = {}) {
         opts = { ...defaultOptions, ...opts };
-        const { baseCurrency } = opts;
+        const { baseCurrency, pinned } = opts;
         if (opts.simulation && opts.simulation.account.addr !== accountAddr)
             throw new Error('wrong account passed');
         // Get hints (addresses to check on-chain) via Velcro
@@ -91,6 +92,9 @@ class Portfolio {
                 erc721s: { ...opts.previousHints.erc721s, ...hints.erc721s }
             };
         }
+        // add pinned tokens to the hints and dedup
+        // Those will appear in the result even if they're zero amount
+        hints.erc20s = [...new Set([...hints.erc20s, ...pinned])];
         // This also allows getting prices, this is used for more exotic tokens that cannot be retrieved via Coingecko
         const priceCache = opts.priceCache || new Map();
         for (const addr in hints.prices || {}) {
@@ -106,7 +110,7 @@ class Portfolio {
         const collectionsHints = Object.entries(hints.erc721s);
         const [tokensWithErr, collectionsWithErr] = await Promise.all([
             (0, pagination_1.flattenResults)((0, pagination_1.paginate)(hints.erc20s, limits.erc20).map((page) => (0, getOnchainBalances_1.getTokens)(this.network, this.deploylessTokens, opts, accountAddr, page))),
-            (0, pagination_1.flattenResults)((0, pagination_1.paginate)(collectionsHints, limits.erc721).map((page) => (0, getOnchainBalances_1.getNFTs)(this.deploylessNfts, opts, accountAddr, page, limits)))
+            (0, pagination_1.flattenResults)((0, pagination_1.paginate)(collectionsHints, limits.erc721).map((page) => (0, getOnchainBalances_1.getNFTs)(this.network, this.deploylessNfts, opts, accountAddr, page, limits)))
         ]);
         // Re-map/filter into our format
         const getPriceFromCache = (address) => {
@@ -121,16 +125,26 @@ class Portfolio {
                 return eligible;
             return null;
         };
-        const tokenFilter = ([error, result]) => result.amount > 0 && error == '0x' && result.symbol !== '';
-        const tokens = tokensWithErr.filter(tokenFilter).map(([_, result]) => result);
-        const collections = collectionsWithErr.filter(tokenFilter).map(([_, x], i) => {
+        const tokenFilter = ([error, result]) => (result.amount > 0 || pinned.includes(result.address)) &&
+            error === '0x' &&
+            result.symbol !== '';
+        const tokens = tokensWithErr
+            .filter((tokenWithErr) => tokenFilter(tokenWithErr))
+            .map(([, result]) => result);
+        const unfilteredCollections = collectionsWithErr.map(([error, x], i) => {
             const address = collectionsHints[i][0];
-            return {
-                ...x,
-                address: address,
-                priceIn: getPriceFromCache(address) || []
-            };
+            return [
+                error,
+                {
+                    ...x,
+                    address,
+                    priceIn: getPriceFromCache(address) || []
+                }
+            ];
         });
+        const collections = unfilteredCollections
+            .filter((preFilterCollection) => tokenFilter(preFilterCollection))
+            .map(([, collection]) => collection);
         const oracleCallDone = Date.now();
         // Update prices
         await Promise.all(tokens.map(async (token) => {

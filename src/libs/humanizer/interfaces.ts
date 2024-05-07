@@ -1,4 +1,4 @@
-import { NetworkId } from 'interfaces/networkDescriptor'
+import { NetworkId } from '../../interfaces/networkDescriptor'
 
 import { Account } from '../../interfaces/account'
 import { Message, TypedMessage } from '../../interfaces/userRequest'

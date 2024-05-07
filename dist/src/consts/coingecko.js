@@ -6,7 +6,8 @@ exports.geckoIdMapper = exports.geckoNetworkIdMapper = void 0;
 function geckoNetworkIdMapper(x) {
     return ({
         polygon: 'polygon-pos',
-        arbitrum: 'arbitrum-one'
+        arbitrum: 'arbitrum-one',
+        optimism: 'optimistic-ethereum'
     }[x] || x);
 }
 exports.geckoNetworkIdMapper = geckoNetworkIdMapper;

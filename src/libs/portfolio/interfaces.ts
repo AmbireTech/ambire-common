@@ -1,4 +1,4 @@
-import { NetworkId } from 'interfaces/networkDescriptor'
+import { NetworkId } from '../../interfaces/networkDescriptor'
 
 import { Account } from '../../interfaces/account'
 import { AccountOp } from '../accountOp/accountOp'
