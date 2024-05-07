@@ -83,14 +83,18 @@ export default class EventEmitter {
     for (const cb of this.#errorCallbacks) cb(error)
   }
 
-  protected async withStatus(callName: string, fn: Function, allowMultipleActions = false) {
+  protected async withStatus(callName: string, fn: Function, allowConcurrentActions = false) {
     const someStatusIsLoading = Object.values(this.statuses).some((status) => status !== 'INITIAL')
 
     if (!this.statuses[callName]) {
       console.error(`${callName} is not defined in "statuses".`)
     }
 
-    if ((someStatusIsLoading && !allowMultipleActions) || this.statuses[callName] !== 'INITIAL') {
+    // By default, concurrent actions are disallowed to maintain consistency, particularly within sub-controllers where
+    // simultaneous actions can lead to unintended side effects. The 'allowConcurrentActions' flag is provided to enable
+    // concurrent execution at the main controller level. This is useful when multiple actions need to modify the state
+    // of different sub-controllers simultaneously.
+    if ((someStatusIsLoading && !allowConcurrentActions) || this.statuses[callName] !== 'INITIAL') {
       this.emitError({
         level: 'minor',
         message: `Please wait for the completion of the previous action before initiating another one.', ${callName}`,
