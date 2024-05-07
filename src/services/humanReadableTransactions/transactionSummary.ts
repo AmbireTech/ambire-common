@@ -61,7 +61,7 @@ function parseActions(actions) {
     ) {
       // swap x for at least y
       result.push(['Swap', actions[i][1], actions[i + 1][2], actions[i + 1][3]])
-      // skip next ccall, since two were merged
+      // skip next call, since two were merged
       i++
       continue
     }
@@ -80,7 +80,7 @@ function parseActions(actions) {
       actions[i + 1][1].type === 'token'
     ) {
       result.push(['Remove liquidity and withdraw', actions[i][1], 'and', actions[i + 1][1]])
-      // skip next ccall, since two were merged
+      // skip next call, since two were merged
       i++
       continue
     }
