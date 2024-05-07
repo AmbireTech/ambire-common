@@ -743,10 +743,7 @@ export class MainController extends EventEmitter {
     await this.updateSelectedAccount(this.selectedAccount, true)
   }
 
-  // @TODO allow this to remove multiple OR figure out a way to debounce re-estimations
-  // first one sounds more reasonble
-  // although the second one can't hurt and can help (or no debounce, just a one-at-a-time queue)
-  async removeUserRequest(id: number) {
+  #removeUserRequest(id: number, callCallbacks: boolean = true) {
     const req = this.userRequests.find((uReq) => uReq.id === id)
     if (!req) return
 
@@ -755,7 +752,7 @@ export class MainController extends EventEmitter {
 
     // update the pending stuff to be signed
     const { action, accountAddr, networkId } = req
-    if (action.kind === 'call') {
+    if (action.kind === 'call' && callCallbacks) {
       // @TODO ensure acc info, re-estimate
       const accountOp = this.#makeAccountOpFromUserRequests(accountAddr, networkId)
       if (accountOp) {
@@ -772,13 +769,22 @@ export class MainController extends EventEmitter {
         // remove the pending state
         this.updateSelectedAccount(this.selectedAccount, true)
       }
-    } else {
+    } else if (action.kind === 'message' || action.kind === 'typedMessage') {
       this.messagesToBeSigned[accountAddr] = this.messagesToBeSigned[accountAddr].filter(
         (x) => x.fromUserRequestId !== id
       )
       if (!Object.keys(this.messagesToBeSigned[accountAddr] || {}).length)
         delete this.messagesToBeSigned[accountAddr]
     }
+  }
+
+  removeUserRequest(id: number) {
+    this.#removeUserRequest(id)
+    this.emitUpdate()
+  }
+
+  removeUserRequests(ids: number[]) {
+    ids.forEach((id, index) => this.#removeUserRequest(id, index === ids.length - 1))
     this.emitUpdate()
   }
 
