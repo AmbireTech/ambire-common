@@ -3,7 +3,7 @@ import { getAccountDeployParams } from '../account/account'
 import { callToTuple } from '../accountOp/accountOp'
 import { Deployless, parseErr } from '../deployless/deployless'
 import { getFlags } from './helpers'
-import { Collectible, CollectionResult, LimitsOptions, TokenResult } from './interfaces'
+import { CollectionResult, LimitsOptions, TokenResult } from './interfaces'
 import { GetOptions } from './portfolio'
 
 // 0x00..01 is the address from which simulation signatures are valid
@@ -54,9 +54,7 @@ export async function getNFTs(
       symbol: token.symbol,
       amount: BigInt(token.nfts.length),
       decimals: 1,
-      collectibles: [...(token.nfts as any[])].map(
-        (token: any) => ({ id: token.id, url: token.uri } as Collectible)
-      )
+      collectibles: [...(token.nfts as any[])]
     } as CollectionResult
   }
 
