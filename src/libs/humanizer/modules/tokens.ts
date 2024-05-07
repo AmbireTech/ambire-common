@@ -1,7 +1,7 @@
 import { Interface, ZeroAddress } from 'ethers'
 
 import { AccountOp } from '../../accountOp/accountOp'
-import { HumanizerCallModule, HumanizerFragment, HumanizerMeta, IrCall } from '../interfaces'
+import { HumanizerCallModule, HumanizerMeta, HumanizerPromise, IrCall } from '../interfaces'
 import {
   getAction,
   getAddressVisualization,
@@ -103,7 +103,7 @@ export const genericErc20Humanizer: HumanizerCallModule = (
   humanizerMeta: HumanizerMeta,
   options?: any
 ) => {
-  const asyncOps: Promise<HumanizerFragment | null>[] = []
+  const asyncOps: HumanizerPromise[] = []
   const iface = new Interface(getKnownAbi(humanizerMeta, 'ERC20', options))
   const matcher = {
     [iface.getFunction('approve')?.selector!]: (call: IrCall) => {
@@ -165,16 +165,15 @@ export const genericErc20Humanizer: HumanizerCallModule = (
     const isToKnownToken = !!getKnownToken(humanizerMeta, call.to)
     // if proper func selector and no such token found in meta
     // console.log(matcher[sigHash], isToKnownToken)
-    if (matcher[sigHash] && !isToKnownToken) {
-      const asyncTokenInfo = getTokenInfo(accountOp, call.to, options)
-      asyncOps.push(asyncTokenInfo)
-    }
-    if (matcher[sigHash] && isToKnownToken) {
+    if (matcher[sigHash] && !isToKnownToken)
+      asyncOps.push(() => getTokenInfo(accountOp, call.to, options))
+
+    if (matcher[sigHash] && isToKnownToken)
       return {
         ...call,
         fullVisualization: matcher[sigHash](call)
       }
-    }
+
     if (isToKnownToken && !matcher[sigHash])
       return {
         ...call,
