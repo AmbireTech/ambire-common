@@ -17,6 +17,11 @@ function parseActions(actions) {
       continue
     }
 
+    if (actions[i].length >= 2 && actions[i][actions[i].length - 2] === 'and send it to') {
+      result.push(actions[i])
+      continue
+    }
+
     if (
       // are valid [obj]
       actions[i].length >= 4 &&
