@@ -43,10 +43,6 @@ const THRESHOLD = 10
 
 /**
  * Updates the previous hints storage with the latest portfolio get result.
- * @param result - The portfolio get result.
- * @param storagePreviousHints - The previous hints storage.
- * @param key - The key to update in the previous hints storage.
- * @returns The updated previous hints storage.
  */
 function updatePreviousHintsStorage(
   result: PortfolioGetResult,
@@ -728,9 +724,6 @@ export class PortfolioController extends EventEmitter {
 
   /**
    * Learn new tokens from humanizer and debug_traceCall
-   * @param tokens: []
-   * @param storagePreviousHints: {}
-   * @param networkId: NetworkId
    */
   async learnTokens(tokens: string[], networkId: NetworkId) {
     const storagePreviousHints = await this.#storage.get('previousHints', {})
@@ -738,7 +731,8 @@ export class PortfolioController extends EventEmitter {
     const learnedTokens = storagePreviousHints.learnedTokens || {}
     const networkLearnedTokens = learnedTokens[networkId] || {}
 
-    // Get the limit for the network, refactor this maybe, this seems like a hack
+    // Get the limit for the network
+    // TODO: refactor this, this seems like a hack
     const keyWithNetwork = [...this.#portfolioLibs.keys()].find((k) => k.includes(networkId))
 
     const limit = this.#portfolioLibs[keyWithNetwork]?.value.deploylessTokens.isLimitedAt24kbData
