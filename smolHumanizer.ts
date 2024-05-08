@@ -77,6 +77,6 @@ interface InteracteeInParsedAction {
 // Designed to be used together with Call or Message, however for each Call/Message there could be an array of ParsedAction
 interface ParsedAction {
 	actionName: string,
-	interactedWith: InteracteeInParsedCall[],
-	tokens: TokenInParsedCall[]
+	interactedWith: InteracteeInParsedAction[],
+	tokens: TokenInParsedAction[]
 }
