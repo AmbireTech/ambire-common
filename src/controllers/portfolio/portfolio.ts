@@ -63,15 +63,21 @@ function updatePreviousHintsStorage(
     ])
   )
 
-  storagePreviousHints.fromExternalAPI[key] = { erc20s, erc721s }
+  storagePreviousHints.fromExternalAPI = {
+    ...storagePreviousHints.fromExternalAPI,
+    [key]: { erc20s, erc721s }
+  }
 
   // Set lastSeenNonZero timestamp for learnedTokens
   erc20s.forEach((address) => {
-    storagePreviousHints.learnedTokens[networkId] = {
-      ...(storagePreviousHints.learnedTokens[networkId]
-        ? storagePreviousHints.learnedTokens[networkId]
-        : []),
-      [address]: Date.now().toString()
+    storagePreviousHints.learnedTokens = {
+      ...(storagePreviousHints.learnedTokens || {}),
+      [networkId]: {
+        ...((storagePreviousHints?.learnedTokens &&
+          storagePreviousHints?.learnedTokens[networkId]) ??
+          {}),
+        [address]: Date.now().toString()
+      }
     }
   })
 
@@ -553,7 +559,11 @@ export class PortfolioController extends EventEmitter {
         })
 
         const additionalHints =
-          Object.keys(storagePreviousHints?.learnedTokens[network.id] || {}) || []
+          Object.keys(
+            (storagePreviousHints?.learnedTokens &&
+              storagePreviousHints?.learnedTokens[network.id]) ??
+              {}
+          ) || []
 
         // TODO: move this in helpers
         const tokenFilter = (token: TokenResult): boolean => {
@@ -631,12 +641,17 @@ export class PortfolioController extends EventEmitter {
         const forceUpdate = opts?.forceUpdate || areAccountOpsChanged
 
         // Pass in learnedTokens as additionalHints only on areAccountOpsChanged
-        const fallbackHints = storagePreviousHints?.fromExternalAPI[key] || {
+        const fallbackHints = (storagePreviousHints?.fromExternalAPI &&
+          storagePreviousHints?.fromExternalAPI[key]) ?? {
           erc20s: [],
           erc721s: {}
         }
         const additionalHints =
-          Object.keys(storagePreviousHints?.learnedTokens[network.id] || {}) || []
+          Object.keys(
+            (storagePreviousHints?.learnedTokens &&
+              storagePreviousHints?.learnedTokens[network.id]) ??
+              {}
+          ) || []
 
         const [isSuccessfulLatestUpdate] = await Promise.all([
           // Latest state update
