@@ -647,11 +647,13 @@ export class PortfolioController extends EventEmitter {
           erc721s: {}
         }
         const additionalHints =
-          Object.keys(
-            (storagePreviousHints?.learnedTokens &&
-              storagePreviousHints?.learnedTokens[network.id]) ??
-              {}
-          ) || []
+          (areAccountOpsChanged &&
+            Object.keys(
+              (storagePreviousHints?.learnedTokens &&
+                storagePreviousHints?.learnedTokens[network.id]) ??
+                {}
+            )) ||
+          []
 
         const [isSuccessfulLatestUpdate] = await Promise.all([
           // Latest state update
