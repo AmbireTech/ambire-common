@@ -766,8 +766,6 @@ export class PortfolioController extends EventEmitter {
     const learnedTokens = storagePreviousHints.learnedTokens || {}
     const networkLearnedTokens = learnedTokens[networkId]
 
-    const tokensToDeleteCount = this.#calculateTokensToDeleteCount(networkLearnedTokens, limit)
-
     const learnedTokensArray = Object.entries(networkLearnedTokens)
       .filter(([address, lastSeenNonZero]) => {
         const isPinned = PINNED_TOKENS.map((t) => t.address).includes(address)
@@ -778,6 +776,8 @@ export class PortfolioController extends EventEmitter {
         return !isPinned && !isTokenPreference && lastSeenNonZero !== null
       })
       .sort((a, b) => Number(a[1]) - Number(b[1]))
+
+    const tokensToDeleteCount = this.#calculateTokensToDeleteCount(learnedTokensArray, limit)
 
     // If there are more tokens than the limit, delete the oldest ones
     const tokensToDelete = learnedTokensArray.slice(0, tokensToDeleteCount)
