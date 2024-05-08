@@ -39,7 +39,7 @@ import EventEmitter from '../eventEmitter/eventEmitter'
 /* eslint-disable @typescript-eslint/no-shadow */
 import { SettingsController } from '../settings/settings'
 
-const TRESHOLD = 10
+const THRESHOLD = 10
 
 /**
  * Updates the previous hints storage with the latest portfolio get result.
@@ -746,7 +746,7 @@ export class PortfolioController extends EventEmitter {
       : LIMITS.deploylessStateOverrideMode
 
     // Reached network erc20 limit
-    if (limit.erc20 - Object.keys(networkLearnedTokens).length === TRESHOLD) {
+    if (limit.erc20 - Object.keys(networkLearnedTokens).length === THRESHOLD) {
       await this.cleanLearnedTokens(networkId, limit.erc20, storagePreviousHints)
     }
     tokens.forEach((address) => {
@@ -771,8 +771,8 @@ export class PortfolioController extends EventEmitter {
     const ratio = totalTokens / limit
 
     // Calculate the number of tokens to delete based on the ratio
-    // Ensure there's always slots available based on the TRESHOLD
-    return Math.max(0, Math.ceil(ratio * totalTokens - (limit - TRESHOLD)))
+    // Ensure there's always slots available based on the THRESHOLD
+    return Math.max(0, Math.ceil(ratio * totalTokens - (limit - THRESHOLD)))
   }
 
   // Implement a cleanup mechanism for learned tokens
