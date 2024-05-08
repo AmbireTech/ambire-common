@@ -59,6 +59,7 @@ type NetworkId = string
 interface TokenInParsedAction {
 	// nothing other than an address and network, retrieving meta is the responsibility of the token component + service
 	address: string,
+	amount: bigint,
 	networkId: NetworkId,
 	role?: string,
 }
@@ -85,8 +86,10 @@ if (parsed) {
 	const abiCoder = new AbiCoder()
 	const commandArgs = parsed.args[1]
 	const commands = Buffer.from(parsed.args[0].slice(2), 'hex')
-	// @TODO: bitmask, handle flags
+	// @TODO: what are the special addrs, 0x000...002
+	// @TODO post-processing: WETH, merging swaps
 	for (const [idx, cmdRaw] of commands.entries()) {
+		// first bit is flag whether to allow the command to revert
 		const cmd = cmdRaw & 0b01111111
 		if (cmd === 0) console.log('v3 swap exact in', abiCoder.decode(['address', 'uint256', 'uint256', 'bytes', 'bool'], commandArgs[idx]))
 		if (cmd === 1) console.log('v3 swap exact out', abiCoder.decode(['address', 'uint256', 'uint256', 'bytes', 'bool'], commandArgs[idx]))
