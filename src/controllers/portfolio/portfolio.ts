@@ -29,16 +29,17 @@ import {
   AccountState,
   AdditionalAccountState,
   GetOptions,
-  Hints,
   PortfolioControllerState,
   PortfolioGetResult,
   TokenResult
 } from '../../libs/portfolio/interfaces'
-import { Portfolio } from '../../libs/portfolio/portfolio'
+import { LIMITS, Portfolio } from '../../libs/portfolio/portfolio'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import EventEmitter from '../eventEmitter/eventEmitter'
 /* eslint-disable @typescript-eslint/no-shadow */
 import { SettingsController } from '../settings/settings'
+
+const TRESHOLD = 10
 
 /**
  * Updates the previous hints storage with the latest portfolio get result.
@@ -62,7 +63,7 @@ function updatePreviousHintsStorage(
     ])
   )
 
-  storagePreviousHints.fromVelcro[key] = { erc20s, erc721s }
+  storagePreviousHints.fromExternalAPI[key] = { erc20s, erc721s }
 
   // Set lastSeenNonZero timestamp for learnedTokens
   erc20s.forEach((address) => {
@@ -107,15 +108,6 @@ export class PortfolioController extends EventEmitter {
   #minUpdateInterval: number = 20000 // 20 seconds
 
   #additionalHints: GetOptions['additionalHints'] = []
-
-  // Temporary store in here until it is a WIP
-  #storagePreviousHints: {
-    fromVelcro: { [key: string]: { erc20s: Hints['erc20s']; erc721s: Hints['erc721s'] } }
-    learnedTokens: { [networkId: NetworkId]: { [address: TokenResult['address']]: string | null } }
-  } = {
-    fromVelcro: {},
-    learnedTokens: {}
-  }
 
   #settings: SettingsController
 
@@ -506,7 +498,7 @@ export class PortfolioController extends EventEmitter {
     if (opts?.additionalHints) this.#additionalHints = opts.additionalHints
     const hasNonZeroTokens = !!this.#networksWithAssetsByAccounts?.[accountId]?.length
     // Load storage cached hints
-    // const storagePreviousHints = await this.#storage.get('previousHints', {})
+    const storagePreviousHints = await this.#storage.get('previousHints', {})
 
     const selectedAccount = accounts.find((x) => x.addr === accountId)
     if (!selectedAccount) throw new Error('selected account does not exist')
@@ -532,7 +524,6 @@ export class PortfolioController extends EventEmitter {
         _accountState[network.id] = { isReady: false, isLoading: false, errors: [] }
         this.emitUpdate()
       }
-
       const state = _accountState[network.id]!
 
       // When the portfolio was called lastly
@@ -561,9 +552,12 @@ export class PortfolioController extends EventEmitter {
           ...portfolioProps
         })
 
-        // TODO: figure out if we need the limits.erc20 check here and move this in helpers
+        const additionalHints =
+          Object.keys(storagePreviousHints?.learnedTokens[network.id] || {}) || []
+
+        // TODO: move this in helpers
         const tokenFilter = (token: TokenResult): boolean => {
-          const isTokenPreference = portfolioProps.tokenPreferences?.find((tokenPreference) => {
+          const isTokenPreference = tokenPreferences?.find((tokenPreference) => {
             return (
               tokenPreference.address === token.address && tokenPreference.networkId === network.id
             )
@@ -580,13 +574,11 @@ export class PortfolioController extends EventEmitter {
           })
 
           // TODO: Get them from storagePreviousHints, instead of passed props
-          const isInAdditionalHints = portfolioProps.additionalHints?.includes(token.address)
+          const isInAdditionalHints = additionalHints?.includes(token.address)
 
           // if the amount is 0
           // return the token if it's pinned and requested
-          // or if it's not pinned but under the limit
           const pinnedRequested = isPinned && !hasNonZeroTokens
-          // const underLimit = result.tokens.length <= limits.erc20 / 2
 
           return !!isTokenPreference || isInAdditionalHints || pinnedRequested
         }
@@ -638,14 +630,13 @@ export class PortfolioController extends EventEmitter {
 
         const forceUpdate = opts?.forceUpdate || areAccountOpsChanged
 
-        // Pass in fallbackHints and learnedTokens as additionalHints only on areAccountOpsChanged
-        // TODO: figure out - But if we pass them only on accountOpsChange and simulation
-        const fallbackHints = this.#storagePreviousHints?.fromVelcro[key] || {
+        // Pass in learnedTokens as additionalHints only on areAccountOpsChanged
+        const fallbackHints = storagePreviousHints?.fromExternalAPI[key] || {
           erc20s: [],
           erc721s: {}
         }
         const additionalHints =
-          Object.keys(this.#storagePreviousHints?.learnedTokens[network.id] || {}) || []
+          Object.keys(storagePreviousHints?.learnedTokens[network.id] || {}) || []
 
         const [isSuccessfulLatestUpdate] = await Promise.all([
           // Latest state update
@@ -684,18 +675,21 @@ export class PortfolioController extends EventEmitter {
             : Promise.resolve(false)
         ])
 
+        // TODO: Think we should persist new learnedTokens even if the update fails without updating lastSeenNonZero
         // Persist previousHints in the disk storage for further requests, when:
         // latest state was updated successful and hints were fetched successful too (no HintsError from portfolio result)
         if (
           isSuccessfulLatestUpdate &&
           !(accountState[network.id]!.result?.errors || []).find((err) => err.name === 'HintsError')
         ) {
-          // Store tokens from velcro and update learnedTokens timestamp for lastSeenNonZero property
-          this.#storagePreviousHints = updatePreviousHintsStorage(
+          // Store tokens from velcro and other APIs and update learnedTokens timestamp for lastSeenNonZero property
+          const updatedStoragePreviousHints = updatePreviousHintsStorage(
             accountState[network.id]!.result!,
-            this.#storagePreviousHints,
+            storagePreviousHints,
             key
           )
+
+          await this.#storage.set('previousHints', updatedStoragePreviousHints)
         }
 
         // We cache the previously simulated AccountOps
@@ -721,21 +715,83 @@ export class PortfolioController extends EventEmitter {
    * @param storagePreviousHints: {}
    * @param networkId: NetworkId
    */
-  learnTokens(tokens: any, networkId: NetworkId) {
-    const learnedTokens = this.#storagePreviousHints.learnedTokens || {}
-    const networkLearnedTokens = learnedTokens[networkId]
+  async learnTokens(tokens: string[], networkId: NetworkId) {
+    const storagePreviousHints = await this.#storage.get('previousHints', {})
 
-    tokens.forEach((token) => {
-      if (!(token.address in networkLearnedTokens)) {
-        networkLearnedTokens[token.address] = token.amount > 0n ? Date.now().toString() : null
+    const learnedTokens = storagePreviousHints.learnedTokens || {}
+    const networkLearnedTokens = learnedTokens[networkId] || {}
+
+    // Get the limit for the network, refactor this maybe, this seems like a hack
+    const keyWithNetwork = [...this.#portfolioLibs.keys()].find((k) => k.includes(networkId))
+
+    const limit = this.#portfolioLibs[keyWithNetwork]?.value.deploylessTokens.isLimitedAt24kbData
+      ? LIMITS.deploylessProxyMode
+      : LIMITS.deploylessStateOverrideMode
+
+    // Reached network erc20 limit
+    if (limit.erc20 - Object.keys(networkLearnedTokens).length === TRESHOLD) {
+      await this.cleanLearnedTokens(networkId, limit.erc20, storagePreviousHints)
+    }
+    tokens.forEach((address) => {
+      if (address === ZeroAddress) return
+      if (!(address in networkLearnedTokens)) {
+        networkLearnedTokens[address] = null
       }
     })
 
-    // TODO: Implement a cleanup mechanism for learned tokens
-    // Filter out the pinned tokens and/or other list of tokens we need specifically to not remove
-    // even if accounts had not aknowledged them
+    const updatedPreviousHintsStorage = {
+      ...storagePreviousHints,
+      learnedTokens: {
+        ...storagePreviousHints.learnedTokens,
+        [networkId]: learnedTokens
+      }
+    }
+    await this.#storage.set('previousHints', updatedPreviousHintsStorage)
+  }
 
-    this.#storagePreviousHints.learnedTokens = learnedTokens
+  #calculateTokensToDeleteCount(networkLearnedTokens: any, limit: number) {
+    const totalTokens = Object.keys(networkLearnedTokens).length
+    const ratio = totalTokens / limit
+
+    // Calculate the number of tokens to delete based on the ratio
+    // Ensure there's always slots available based on the TRESHOLD
+    return Math.max(0, Math.ceil(ratio * totalTokens - (limit - TRESHOLD)))
+  }
+
+  // Implement a cleanup mechanism for learned tokens
+  // 1. leave in any tokens which are in pinned tokens and token preferences. Here we should think about another list we need to NEVER remove learned tokens
+  // 2. when reached the limit of a network with 250 tokens remove tokens with 1) lastSeenNonZero  = null 2) oldest seen by lastSeenNonZero
+  // 3. periodically delete some tokens which are seen a long time ago just in case
+  async cleanLearnedTokens(networkId: NetworkId, limit: number, storagePreviousHints: any) {
+    const learnedTokens = storagePreviousHints.learnedTokens || {}
+    const networkLearnedTokens = learnedTokens[networkId]
+
+    const tokensToDeleteCount = this.#calculateTokensToDeleteCount(networkLearnedTokens, limit)
+
+    const learnedTokensArray = Object.entries(networkLearnedTokens)
+      .filter(([address, lastSeenNonZero]) => {
+        const isPinned = PINNED_TOKENS.map((t) => t.address).includes(address)
+
+        const isTokenPreference = this.tokenPreferences.find(
+          (token) => token.networkId === networkId && token.address === address
+        )
+        return !isPinned && !isTokenPreference && lastSeenNonZero !== null
+      })
+      .sort((a, b) => Number(a[1]) - Number(b[1]))
+
+    // If there are more tokens than the limit, delete the oldest ones
+    const tokensToDelete = learnedTokensArray.slice(0, tokensToDeleteCount)
+
+    tokensToDelete.forEach(([address]) => delete networkLearnedTokens[address])
+
+    const updatedPreviousHintsStorage = {
+      ...storagePreviousHints,
+      learnedTokens: {
+        ...storagePreviousHints.learnedTokens,
+        [networkId]: networkLearnedTokens
+      }
+    }
+    await this.#storage.set('previousHints', updatedPreviousHintsStorage)
   }
 
   get networksWithAssets() {
