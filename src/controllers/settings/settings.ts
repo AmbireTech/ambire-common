@@ -366,24 +366,19 @@ export class SettingsController extends EventEmitter {
     ) {
       return
     }
-    // make sure the network has not been added already
     const chainIds = this.networks.map((net) => net.chainId)
-    if (chainIds.indexOf(BigInt(customNetwork.chainId)) !== -1) {
-      throw new EmittableError({
-        message:
-          'Failed to detect network, perhaps an RPC issue. Please change the RPC and try again.',
-        level: 'major'
-      })
-    }
-
-    // make sure the id of the network is unique
     const customNetworkId = customNetwork.name.toLowerCase()
     const ids = this.networks.map((net) => net.id)
-    if (ids.indexOf(customNetworkId) !== -1) {
+
+    // make sure the id and chainId of the network are unique
+    if (
+      ids.indexOf(customNetworkId) !== -1 ||
+      chainIds.indexOf(BigInt(customNetwork.chainId)) !== -1
+    ) {
       throw new EmittableError({
-        message:
-          'Failed to detect network, perhaps an RPC issue. Please change the RPC and try again.',
-        level: 'major'
+        message: 'The network you are trying to add has already been added.',
+        level: 'major',
+        error: new Error('settings: addCustomNetwork chain already added (duplicate id/chainId)')
       })
     }
 
