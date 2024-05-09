@@ -1,4 +1,5 @@
 /* eslint-disable no-underscore-dangle */
+import EmittableError from '../../classes/EmittableError'
 import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
 import { networks } from '../../consts/networks'
 import { Key } from '../../interfaces/keystore'
@@ -21,8 +22,12 @@ import { Storage } from '../../interfaces/storage'
 import { getFeaturesByNetworkProperties, getNetworkInfo } from '../../libs/settings/settings'
 import { isValidAddress } from '../../services/address'
 import { getRpcProvider } from '../../services/provider'
-import wait from '../../utils/wait'
-import EventEmitter from '../eventEmitter/eventEmitter'
+import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter'
+
+const STATUS_WRAPPED_METHODS = {
+  addCustomNetwork: 'INITIAL',
+  updateNetworkPreferences: 'INITIAL'
+} as const
 
 export class SettingsController extends EventEmitter {
   accountPreferences: AccountPreferences = {}
@@ -35,9 +40,7 @@ export class SettingsController extends EventEmitter {
 
   #storage: Storage
 
-  status: 'INITIAL' | 'LOADING' | 'SUCCESS' | 'DONE' = 'INITIAL'
-
-  latestMethodCall: string | null = null
+  statuses: Statuses<keyof typeof STATUS_WRAPPED_METHODS> = STATUS_WRAPPED_METHODS
 
   networkToAddOrUpdate: {
     chainId: NetworkDescriptor['chainId']
@@ -363,18 +366,25 @@ export class SettingsController extends EventEmitter {
     ) {
       return
     }
-
     // make sure the network has not been added already
     const chainIds = this.networks.map((net) => net.chainId)
     if (chainIds.indexOf(BigInt(customNetwork.chainId)) !== -1) {
-      throw new Error('settings: addCustomNetwork chain already added')
+      throw new EmittableError({
+        message:
+          'Failed to detect network, perhaps an RPC issue. Please change the RPC and try again.',
+        level: 'major'
+      })
     }
 
     // make sure the id of the network is unique
     const customNetworkId = customNetwork.name.toLowerCase()
     const ids = this.networks.map((net) => net.id)
     if (ids.indexOf(customNetworkId) !== -1) {
-      throw new Error('settings: addCustomNetwork chain already added')
+      throw new EmittableError({
+        message:
+          'Failed to detect network, perhaps an RPC issue. Please change the RPC and try again.',
+        level: 'major'
+      })
     }
 
     const info = { ...(this.networkToAddOrUpdate.info as NetworkInfo) }
@@ -395,7 +405,7 @@ export class SettingsController extends EventEmitter {
   }
 
   async addCustomNetwork(customNetwork: CustomNetwork) {
-    await this.#wrapSettingsAction('addCustomNetwork', () => this.#addCustomNetwork(customNetwork))
+    await this.withStatus(this.addCustomNetwork.name, () => this.#addCustomNetwork(customNetwork))
   }
 
   async removeCustomNetwork(id: NetworkDescriptor['id']) {
@@ -499,7 +509,7 @@ export class SettingsController extends EventEmitter {
     networkPreferences: Partial<NetworkPreference>,
     networkId: NetworkDescriptor['id']
   ) {
-    await this.#wrapSettingsAction('updateNetworkPreferences', () =>
+    await this.withStatus(this.updateNetworkPreferences.name, () =>
       this.#updateNetworkPreferences(networkPreferences, networkId)
     )
   }
@@ -536,67 +546,6 @@ export class SettingsController extends EventEmitter {
         error: new Error(`settings: failed to set areContractsDeployed to true for ${network.id}`)
       })
     })
-  }
-
-  async #wrapSettingsAction(callName: string, fn: Function) {
-    // We should not allow executing a second function simultaneously while another function execution is already in progress,
-    // as both functions manipulate the same status property, which may lead to unexpected behavior.
-    // Keeping this in mind, if we have an application logic (hook) that automatically invokes a function wrapped with #statusWrapper,
-    // we should always check if the status is INITIAL and only then invoke the function.
-    // You can see such an example in `authContext.tsx`.
-    if (this.status !== 'INITIAL') {
-      this.emitError({
-        level: 'minor',
-        message: `Please wait for the completion of the previous action before initiating another one.', ${callName}`,
-        error: new Error(
-          'Another function is already being handled by #statusWrapper; refrain from invoking a second function.'
-        )
-      })
-
-      return
-    }
-
-    this.latestMethodCall = callName
-    this.status = 'LOADING'
-    await this.forceEmitUpdate()
-    try {
-      await fn()
-      this.status = 'SUCCESS'
-      await this.forceEmitUpdate()
-    } catch (error: any) {
-      if (error?.message === 'settings: addCustomNetwork chain already added') {
-        this.emitError({
-          message:
-            'Failed to detect network, perhaps an RPC issue. Please change the RPC and try again.',
-          level: 'major',
-          error
-        })
-      } else if (error?.message === 'settings: failed to detect network') {
-        this.emitError({
-          message:
-            'Failed to detect network, perhaps an RPC issue. Please change the RPC and try again.',
-          level: 'major',
-          error
-        })
-      } else if (
-        error?.message === 'settings: initialized network before calling addCustomNetwork'
-      ) {
-        this.emitError({
-          message:
-            'Adding custom network failed because the network was not initialized properly. Please try again.',
-          level: 'major',
-          error
-        })
-      }
-    }
-
-    this.status = 'DONE'
-    await this.forceEmitUpdate()
-
-    if (this.latestMethodCall === callName) {
-      this.status = 'INITIAL'
-      await this.forceEmitUpdate()
-    }
   }
 
   #throwInvalidAddress(addresses: string[]) {

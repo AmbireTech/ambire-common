@@ -226,12 +226,10 @@ describe('Main Controller ', () => {
     await new Promise((resolve) => {
       const unsubscribe = controller.onUpdate(() => {
         emitCounter++
+
         if (emitCounter === 2 && controller.isReady) addAccounts()
 
-        if (
-          controller.status === 'SUCCESS' &&
-          controller.latestMethodCall === 'onAccountAdderSuccess'
-        ) {
+        if (controller.statuses.onAccountAdderSuccess === 'SUCCESS') {
           expect(controller.accounts).toContainEqual({
             ...accountPendingCreation.account,
             newlyCreated: false

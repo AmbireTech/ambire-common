@@ -255,7 +255,7 @@ describe('module tests', () => {
     )
     irCalls = parsedCalls
     asyncOps.push(...newAsyncOps)
-    const frags: HumanizerFragment[] = (await Promise.all(asyncOps)).filter(
+    const frags: HumanizerFragment[] = (await Promise.all(asyncOps.map((i) => i()))).filter(
       (x) => x
     ) as HumanizerFragment[]
     // @TODO use new combination function
