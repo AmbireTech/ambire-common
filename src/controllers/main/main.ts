@@ -911,7 +911,9 @@ export class MainController extends EventEmitter {
       additionalHints!.push(...stringAddr)
 
       // TODO<Bobby>: delete this
-      const key = this.keystore.keys[0]
+      const key = this.keystore.keys.find(
+        (k) => getAddress(k.addr) === getAddress(account.associatedKeys[0])
+      )!
       const signer = await this.keystore.getSigner(key.addr, key.type)
 
       const [, estimation] = await Promise.all([

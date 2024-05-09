@@ -147,8 +147,6 @@ export function getUserOperation(
       [callToTuple(getActivatorCall(accountOp.accountAddr))],
       entryPointSig
     ])
-
-    userOp.requestType = 'activator'
   }
 
   if (accountState.isDeployed && !accountState.isErc4337Enabled) {
@@ -171,13 +169,14 @@ export function isErc4337Broadcast(
   // write long to fix typescript issues
   const isEnabled = network && network.erc4337 ? network.erc4337.enabled : false
 
-  // if the entry point is not a signer in the account and we don't have a paymaster,
-  // we cannot do an ERC-4337 broadcast as that happens either through
-  // the entry point or the paymaster
-  const isEntryPointSignerOrNetworkHasPaymaster =
-    accountState.isErc4337Enabled || shouldUsePaymaster(network)
+  // we can broadcast a 4337 if:
+  // - the account is not deployed (we do deployAndExecute in the factoryData)
+  // - the entry point is enabled (standard ops)
+  // - we have a paymaster (through the edge case)
+  const canWeBroadcast4337 =
+    accountState.isErc4337Enabled || shouldUsePaymaster(network) || !accountState.isDeployed
 
-  return isEnabled && isEntryPointSignerOrNetworkHasPaymaster && accountState.isV2
+  return isEnabled && canWeBroadcast4337 && accountState.isV2
 }
 
 // if the account is v2 account that does not have the entry point as a signer
@@ -209,7 +208,6 @@ export async function getEntryPointAuthorization(addr: AccountId, chainId: bigin
   return getTypedData(chainId, addr, hexlify(hash))
 }
 
-// TODO: DELETE THIS ONCE WE HAVE THE AUTHORIZATION SCREEN
 export async function getDummyEntryPointSig(
   addr: AccountId,
   chainId: bigint,
@@ -220,7 +218,7 @@ export async function getDummyEntryPointSig(
   const executeHash = keccak256(
     abiCoder.encode(
       ['address', 'uint', 'uint', 'tuple(address, uint, bytes)[]'],
-      [addr, chainId, 0, txns]
+      [addr, chainId, 0n, txns]
     )
   )
   const typedData = getTypedData(chainId, addr, executeHash)

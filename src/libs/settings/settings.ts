@@ -85,9 +85,15 @@ export async function getNetworkInfo(
         const has4337 = entryPointCode !== '0x' && hasBundler
         let hasPaymaster = false
         if (has4337) {
-          const entryPoint = new Contract(ERC_4337_ENTRYPOINT, EntryPointAbi, provider)
-          const paymasterBalance = await entryPoint.balanceOf(AMBIRE_PAYMASTER)
-          hasPaymaster = paymasterBalance.toString() > 0
+          // predefined networks should always have a paymaster
+          const isPredefined = predefinedNetworks.find((net) => net.chainId === chainId)
+          if (isPredefined) {
+            hasPaymaster = true
+          } else {
+            const entryPoint = new Contract(ERC_4337_ENTRYPOINT, EntryPointAbi, provider)
+            const paymasterBalance = await entryPoint.balanceOf(AMBIRE_PAYMASTER)
+            hasPaymaster = paymasterBalance.toString() > 0
+          }
         }
         networkInfo = {
           ...networkInfo,
