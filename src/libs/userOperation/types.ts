@@ -2,13 +2,6 @@ import { Call } from '../accountOp/types'
 
 export type UserOpRequestType = 'standard' | 'activator' | 'recovery'
 
-export interface PaymasterUnpacked {
-  paymaster: string // hex string
-  paymasterVerificationGasLimit: string // hex string
-  paymasterPostOpGasLimit: string // hex string
-  paymasterData: string // hex string
-}
-
 export interface UserOperation {
   sender: string
   nonce: string

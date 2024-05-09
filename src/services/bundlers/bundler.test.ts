@@ -130,8 +130,8 @@ describe('Bundler tests', () => {
       ])
       const paymasterAndData = getPaymasterDataForEstimate()
       userOp.paymaster = paymasterAndData.paymaster
-      userOp.paymasterVerificationGasLimit = paymasterAndData.paymasterVerificationGasLimit
-      userOp.paymasterPostOpGasLimit = paymasterAndData.paymasterPostOpGasLimit
+      userOp.paymasterVerificationGasLimit = toBeHex(0)
+      userOp.paymasterPostOpGasLimit = toBeHex(0)
       userOp.paymasterData = paymasterAndData.paymasterData
       userOp.nonce = toBeHex(0)
       userOp.signature = getSigForCalculations()

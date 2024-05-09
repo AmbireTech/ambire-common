@@ -1,11 +1,10 @@
 /* eslint-disable no-restricted-syntax */
-import { AbiCoder, Contract, formatUnits, getAddress, Interface, toBeHex } from 'ethers'
+import { AbiCoder, formatUnits, getAddress, Interface, toBeHex } from 'ethers'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
-import EntryPointAbi from '../../../contracts/compiled/EntryPoint.json'
 import ERC20 from '../../../contracts/compiled/IERC20.json'
 import { FEE_COLLECTOR } from '../../consts/addresses'
-import { AMBIRE_PAYMASTER, ERC_4337_ENTRYPOINT, SINGLETON } from '../../consts/deploy'
+import { AMBIRE_PAYMASTER, SINGLETON } from '../../consts/deploy'
 import { Account, AccountStates } from '../../interfaces/account'
 import { ExternalSignerControllers, Key } from '../../interfaces/keystore'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
@@ -24,6 +23,7 @@ import {
   getDummyEntryPointSig,
   getOneTimeNonce,
   getUserOperation,
+  getUserOpHash,
   isErc4337Broadcast,
   shouldIncludeActivatorCall,
   shouldUseOneTimeNonce,
@@ -875,12 +875,17 @@ export class SignAccountOpController extends EventEmitter {
         userOperation.callGasLimit = this.#estimation!.erc4337GasLimits!.callGasLimit
         userOperation.verificationGasLimit =
           this.#estimation!.erc4337GasLimits!.verificationGasLimit
+        userOperation.paymasterVerificationGasLimit =
+          this.#estimation!.erc4337GasLimits!.paymasterVerificationGasLimit
+        userOperation.paymasterPostOpGasLimit =
+          this.#estimation!.erc4337GasLimits!.paymasterPostOpGasLimit
         userOperation.maxFeePerGas = toBeHex(gasFeePayment.gasPrice)
         userOperation.maxPriorityFeePerGas = toBeHex(gasFeePayment.maxPriorityFeePerGas!)
+
         const usesOneTimeNonce = shouldUseOneTimeNonce(userOperation)
         const usesPaymaster = shouldUsePaymaster(this.#network)
-
         if (usesPaymaster) {
+          userOperation.paymaster = AMBIRE_PAYMASTER
           this.#addFeePayment()
         }
 
@@ -910,10 +915,12 @@ export class SignAccountOpController extends EventEmitter {
               {
                 // send without the requestType prop
                 userOperation: (({ requestType, activatorCall, ...o }) => o)(userOperation),
-                paymaster: AMBIRE_PAYMASTER
+                paymaster: AMBIRE_PAYMASTER,
+                bytecode: this.account.creation.bytecode,
+                salt: this.account.creation.salt,
+                key: this.account.associatedKeys[0]
               }
             )
-            userOperation.paymaster = response.data.paymaster
             userOperation.paymasterData = response.data.paymasterData
             if (usesOneTimeNonce) {
               userOperation.nonce = getOneTimeNonce(userOperation)
@@ -924,12 +931,10 @@ export class SignAccountOpController extends EventEmitter {
         }
 
         if (userOperation.requestType === 'standard') {
-          const provider = this.#settings.providers[this.accountOp.networkId]
-          const entryPoint = new Contract(ERC_4337_ENTRYPOINT, EntryPointAbi, provider)
           const typedData = getTypedData(
             this.#network.chainId,
             this.accountOp.accountAddr,
-            await entryPoint.getUserOpHash(userOperation)
+            getUserOpHash(userOperation, this.#network.chainId)
           )
           const signature = wrapStandard(await signer.signTypedData(typedData))
           userOperation.signature = signature

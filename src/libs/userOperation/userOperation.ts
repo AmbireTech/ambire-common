@@ -14,7 +14,7 @@ import { SPOOF_SIGTYPE } from '../../consts/signatures'
 import { Account, AccountId, AccountOnchainState } from '../../interfaces/account'
 import { AccountOp, callToTuple, getSignableHash } from '../accountOp/accountOp'
 import { getTypedData, wrapStandard } from '../signMessage/signMessage'
-import { PaymasterUnpacked, UserOperation } from './types'
+import { UserOperation } from './types'
 
 export function calculateCallDataCost(callData: string): bigint {
   if (callData === '0x') return 0n
@@ -35,12 +35,10 @@ export function getSigForCalculations() {
   return '0x0dc2d37f7b285a2243b2e1e6ba7195c578c72b395c0f76556f8961b0bca97ddc44e2d7a249598f56081a375837d2b82414c3c94940db3c1e64110108021161ca1c01'
 }
 
-export function getPaymasterDataForEstimate(): PaymasterUnpacked {
+export function getPaymasterDataForEstimate(): { paymaster: string; paymasterData: string } {
   const abiCoder = new AbiCoder()
   return {
     paymaster: AMBIRE_PAYMASTER,
-    paymasterVerificationGasLimit: toBeHex(15000),
-    paymasterPostOpGasLimit: toBeHex(0),
     paymasterData: abiCoder.encode(['uint48', 'uint48', 'bytes'], [0, 0, getSigForCalculations()])
   }
 }
@@ -187,7 +185,12 @@ export function shouldIncludeActivatorCall(
   network: NetworkDescriptor,
   accountState: AccountOnchainState
 ) {
-  return accountState.isV2 && network.erc4337.enabled && !accountState.isErc4337Enabled
+  return (
+    accountState.isV2 &&
+    accountState.isDeployed &&
+    network.erc4337.enabled &&
+    !accountState.isErc4337Enabled
+  )
 }
 
 export function getExplorerId(network: NetworkDescriptor) {
@@ -223,4 +226,46 @@ export async function getDummyEntryPointSig(
   )
   const typedData = getTypedData(chainId, addr, executeHash)
   return wrapStandard(await signer.signTypedData(typedData))
+}
+
+export function getUserOpHash(userOp: UserOperation, chainId: bigint) {
+  const abiCoder = new AbiCoder()
+  const initCode = userOp.factory ? concat([userOp.factory, userOp.factoryData!]) : '0x'
+  const hashInitCode = keccak256(initCode)
+  const hashCallData = keccak256(userOp.callData)
+  const accountGasLimits = concat([
+    toBeHex(userOp.verificationGasLimit.toString(), 16),
+    toBeHex(userOp.callGasLimit.toString(), 16)
+  ])
+  const gasFees = concat([
+    toBeHex(userOp.maxPriorityFeePerGas.toString(), 16),
+    toBeHex(userOp.maxFeePerGas.toString(), 16)
+  ])
+  const paymasterAndData =
+    userOp.paymaster !== '0x'
+      ? concat([
+          userOp.paymaster,
+          toBeHex(userOp.paymasterVerificationGasLimit.toString(), 16),
+          toBeHex(userOp.paymasterPostOpGasLimit.toString(), 16),
+          userOp.paymasterData
+        ])
+      : '0x'
+  const hashPaymasterAndData = keccak256(paymasterAndData)
+  const packed = abiCoder.encode(
+    ['address', 'uint256', 'bytes32', 'bytes32', 'bytes32', 'uint256', 'bytes32', 'bytes32'],
+    [
+      userOp.sender,
+      userOp.nonce,
+      hashInitCode,
+      hashCallData,
+      accountGasLimits,
+      userOp.preVerificationGas,
+      gasFees,
+      hashPaymasterAndData
+    ]
+  )
+  const packedHash = keccak256(packed)
+  return keccak256(
+    abiCoder.encode(['bytes32', 'address', 'uint256'], [packedHash, ERC_4337_ENTRYPOINT, chainId])
+  )
 }

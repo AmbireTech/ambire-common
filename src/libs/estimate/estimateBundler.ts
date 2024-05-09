@@ -90,8 +90,6 @@ export async function bundlerEstimate(
   if (network.erc4337.hasPaymaster) {
     const paymasterUnpacked = getPaymasterDataForEstimate()
     userOp.paymaster = paymasterUnpacked.paymaster
-    userOp.paymasterVerificationGasLimit = paymasterUnpacked.paymasterVerificationGasLimit
-    userOp.paymasterPostOpGasLimit = paymasterUnpacked.paymasterPostOpGasLimit
     userOp.paymasterData = paymasterUnpacked.paymasterData
   }
 
