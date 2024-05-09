@@ -75,7 +75,6 @@ function updatePreviousHintsStorage(
     storagePreviousHints.learnedTokens[networkId][address] = Date.now().toString()
   })
 
-  console.log(storagePreviousHints)
   return storagePreviousHints
 }
 
