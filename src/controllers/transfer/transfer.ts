@@ -280,8 +280,16 @@ export class TransferController extends EventEmitter {
       ? FEE_COLLECTOR.toLowerCase()
       : this.recipientAddress.toLowerCase()
 
+    if(parseFloat(this.amount)< 1/10**this.selectedToken.decimals)
+      return this.emitError({
+        level: 'major',
+        message:
+          'Token amount too low.',
+        error: new Error('transfer: user requested token transfer amount too low.')
+      })
+
     const bigNumberHexAmount = `0x${parseUnits(
-      this.amount,
+      parseFloat(this.amount).toFixed(this.selectedToken.decimals).toString(),
       Number(this.selectedToken.decimals)
     ).toString(16)}`
 
