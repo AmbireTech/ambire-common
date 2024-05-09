@@ -2,7 +2,7 @@ import { ethers } from 'ethers'
 import fetch from 'node-fetch'
 
 import { describe, expect, test } from '@jest/globals'
-
+import { networks } from '../../consts/networks'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import _humanizerInfo from '../../consts/humanizer/humanizerInfo.json'
 import { ErrorRef } from '../../controllers/eventEmitter/eventEmitter'
@@ -198,7 +198,7 @@ const transactions: { [key: string]: Array<IrCall> } = {
 
 let emitedErrors: ErrorRef[] = []
 const moockEmitError = (e: ErrorRef) => emitedErrors.push(e)
-const standartOptions = { fetch, emitError: moockEmitError }
+const standartOptions = { fetch, emitError: moockEmitError, network: networks[0] }
 describe('module tests', () => {
   beforeEach(async () => {
     accountOp.calls = []
