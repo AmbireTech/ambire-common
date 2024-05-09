@@ -96,7 +96,7 @@ export async function bundlerEstimate(
   if (userOp.activatorCall) localOp.activatorCall = userOp.activatorCall
 
   const ambireAccount = new Interface(AmbireAccount.abi)
-  userOp.callData = ambireAccount.encodeFunctionData('executeBySender', [getSignableCalls(op)])
+  userOp.callData = ambireAccount.encodeFunctionData('executeBySender', [getSignableCalls(localOp)])
   userOp.signature = getSigForCalculations()
 
   const gasData = await Bundler.estimate(userOp, network).catch((e: any) => {
