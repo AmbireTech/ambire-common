@@ -44,6 +44,7 @@ const THRESHOLD = 10
 /**
  * Updates the previous hints storage with the latest portfolio get result.
  */
+// TODO: Move to helpers
 function updatePreviousHintsStorage(
   result: PortfolioGetResult,
   storagePreviousHints: any,
@@ -63,20 +64,18 @@ function updatePreviousHintsStorage(
     ...storagePreviousHints.fromExternalAPI,
     [key]: { erc20s, erc721s }
   }
-
+  if (!storagePreviousHints?.learnedTokens || !storagePreviousHints?.learnedTokens[networkId]) {
+    storagePreviousHints.learnedTokens = {
+      ...storagePreviousHints.learnedTokens,
+      [networkId]: {}
+    }
+  }
   // Set lastSeenNonZero timestamp for learnedTokens
   erc20s.forEach((address) => {
-    storagePreviousHints.learnedTokens = {
-      ...(storagePreviousHints.learnedTokens || {}),
-      [networkId]: {
-        ...((storagePreviousHints?.learnedTokens &&
-          storagePreviousHints?.learnedTokens[networkId]) ??
-          {}),
-        [address]: Date.now().toString()
-      }
-    }
+    storagePreviousHints.learnedTokens[networkId][address] = Date.now().toString()
   })
 
+  console.log(storagePreviousHints)
   return storagePreviousHints
 }
 
@@ -749,14 +748,9 @@ export class PortfolioController extends EventEmitter {
         networkLearnedTokens[address] = null
       }
     })
+    const updatedPreviousHintsStorage = { ...storagePreviousHints }
+    updatedPreviousHintsStorage.learnedTokens[networkId] = networkLearnedTokens
 
-    const updatedPreviousHintsStorage = {
-      ...storagePreviousHints,
-      learnedTokens: {
-        ...storagePreviousHints.learnedTokens,
-        [networkId]: learnedTokens
-      }
-    }
     await this.#storage.set('previousHints', updatedPreviousHintsStorage)
   }
 
