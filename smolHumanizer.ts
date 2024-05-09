@@ -6,6 +6,7 @@ import { promisify } from 'util'
 const _readFile = promisify(readFile)
 const _exists = promisify(exists)
 
+
 async function fetchJson (url: string, body: object, args: object = {}) {
 	const headers = { 'Content-Type': 'application/json' }
 	const res = await fetch(url, { method: 'POST', body: JSON.stringify(body), headers, ...args })
@@ -52,6 +53,9 @@ scrapeSignatures()
 
 */
 
+// @TODO separate output actions for approve and revoke, so we need a special parser for approvals
+
+
 // @TODO: import from common
 // @TODO call the entire module parser
 type NetworkId = string
@@ -82,16 +86,34 @@ const parsed = iface.parseTransaction({
   value: 1000000000000000000n
 })
 
+// What are the special addrs, 0x000...002 ?
+// from uni code at https://github.com/Uniswap/universal-router/blob/main/contracts/libraries/Constants.sol (commmit 1cde151b29f101cb06c0db4a2afededa864307b3)
+/// @dev Used as a flag for identifying the transfer of ETH instead of a token
+// address internal constant ETH = address(0);
+/// @dev Used as a flag for identifying that msg.sender should be used, saves gas by sending more 0 bytes
+// address internal constant MSG_SENDER = address(1);
+/// @dev Used as a flag for identifying address(this) should be used, saves gas by sending more 0 bytes
+// address internal constant ADDRESS_THIS = address(2);
+
 if (parsed) {
 	const abiCoder = new AbiCoder()
 	const commandArgs = parsed.args[1]
 	const commands = Buffer.from(parsed.args[0].slice(2), 'hex')
-	// @TODO: what are the special addrs, 0x000...002
+	// @TODO: ugly hack for the path to get in/out: .slice(0, 42), slice(-40)
 	// @TODO post-processing: WETH, merging swaps
-	for (const [idx, cmdRaw] of commands.entries()) {
+	const mapped = [...commands].map((cmdRaw, idx) => {
 		// first bit is flag whether to allow the command to revert
 		const cmd = cmdRaw & 0b01111111
-		if (cmd === 0) console.log('v3 swap exact in', abiCoder.decode(['address', 'uint256', 'uint256', 'bytes', 'bool'], commandArgs[idx]))
+		if (cmd === 0 || cmd === 1) {
+			// last arg is whether tokens are in the router, we don't care much about this
+			// @TODO we need to care about this if we do WETH?
+			const [recipient, amount1, amount2, path, ] =  abiCoder.decode(['address', 'uint256', 'uint256', 'bytes', 'bool'], commandArgs[idx])
+			const tokenIn = path.slice(0, 42)
+			const tokenOut = '0x' + path.slice(-40)
+			return cmd === 0
+				? { action: 'swapExactIn', amountIn: amount1, amountOutMin: amount2, tokenIn, tokenOut }
+				: { action: 'swapExactOut', amountOut: amount1, amountInMax: amount2, tokenIn, tokenOut }
+		}
 		if (cmd === 1) console.log('v3 swap exact out', abiCoder.decode(['address', 'uint256', 'uint256', 'bytes', 'bool'], commandArgs[idx]))
 		if (cmd === 2) console.log('permit2 transferFrom', commandArgs[idx])
 		if (cmd === 3) console.log('permit2 transfer batch', commandArgs[idx])
@@ -103,7 +125,10 @@ if (parsed) {
 		if (cmd === 10) console.log('permit2 permit', commandArgs[idx])
 		if (cmd === 11) console.log('wrap eth', abiCoder.decode(['address', 'uint256'], commandArgs[idx]))
 		if (cmd === 12) console.log('unswap eth', abiCoder.decode(['address', 'uint256'], commandArgs[idx]))
-		// 13 is PERMIT2_TRANSFER_FROM_BATCH
 
-	}
+		return null
+
+		// 13 is PERMIT2_TRANSFER_FROM_BATCH
+	})
+	console.log(mapped)
 }
