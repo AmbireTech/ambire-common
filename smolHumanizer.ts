@@ -104,12 +104,16 @@ if (parsed) {
 	const mapped = [...commands].map((cmdRaw, idx) => {
 		// first bit is flag whether to allow the command to revert
 		const cmd = cmdRaw & 0b01111111
-		if (cmd === 0 || cmd === 1) {
+		if (cmd === 0 || cmd === 1 || cmd === 8 || cmd === 9) {
+			const isExactIn = cmd === 0 || cmd === 8
+			const isV2 = cmd === 8 || cmd === 9
+			const pathType =  isV2 ? 'address[0]' : 'bytes'
 			// last arg is whether tokens are in the router, we don't care much about this
 			// @TODO we need to care about this if we do WETH?
-			const [recipient, amount1, amount2, path, ] =  abiCoder.decode(['address', 'uint256', 'uint256', 'bytes', 'bool'], commandArgs[idx])
-			const tokenIn = path.slice(0, 42)
-			const tokenOut = '0x' + path.slice(-40)
+			// @TODO recipient
+			const [recipient, amount1, amount2, path, ] =  abiCoder.decode(['address', 'uint256', 'uint256', pathType, 'bool'], commandArgs[idx])
+			const tokenIn = isV2 ? path[0] : path.slice(0, 42)
+			const tokenOut = isV2 ? path[path.length - 1] : '0x' + path.slice(-40)
 			return cmd === 0
 				? { action: 'swapExactIn', amountIn: amount1, amountOutMin: amount2, tokenIn, tokenOut }
 				: { action: 'swapExactOut', amountOut: amount1, amountInMax: amount2, tokenIn, tokenOut }
@@ -120,8 +124,6 @@ if (parsed) {
 		if (cmd === 4) console.log('sweep', abiCoder.decode(['address', 'address', 'uint256'], commandArgs[idx]))
 		if (cmd === 5) console.log('transfer', commandArgs[idx])
 		if (cmd === 6) console.log('pay portion', abiCoder.decode(['address', 'address', 'uint256'], commandArgs[idx]))
-		if (cmd === 8) console.log('v2 swap exact in', abiCoder.decode(['address', 'uint256', 'uint256', 'address[]', 'bool'], commandArgs[idx]))
-		if (cmd === 9) console.log('v2 swap exact out', abiCoder.decode(['address', 'uint256', 'uint256', 'address[]', 'bool'], commandArgs[idx]))
 		if (cmd === 10) console.log('permit2 permit', commandArgs[idx])
 		if (cmd === 11) console.log('wrap eth', abiCoder.decode(['address', 'uint256'], commandArgs[idx]))
 		if (cmd === 12) console.log('unswap eth', abiCoder.decode(['address', 'uint256'], commandArgs[idx]))
