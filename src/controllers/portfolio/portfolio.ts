@@ -723,17 +723,20 @@ export class PortfolioController extends EventEmitter {
   /**
    * Learn new tokens from humanizer and debug_traceCall
    */
-  async learnTokens(tokens: string[], networkId: NetworkId) {
+  async learnTokens(tokens: string[], networkId: NetworkId, accountId: AccountId) {
     const storagePreviousHints = await this.#storage.get('previousHints', {})
 
     const learnedTokens = storagePreviousHints.learnedTokens || {}
     const networkLearnedTokens = learnedTokens[networkId] || {}
 
-    // Get the limit for the network
-    // TODO: refactor this, this seems like a hack
-    const keyWithNetwork = [...this.#portfolioLibs.keys()].find((k) => k.includes(networkId))
+    const network = this.#settings.networks.find((x) => x.id === networkId)
 
-    const limit = this.#portfolioLibs[keyWithNetwork]?.value.deploylessTokens.isLimitedAt24kbData
+    if (!network) throw new Error('network not found')
+
+    const portfolioLib = this.initializePortfolioLibIfNeeded(accountId, networkId, network)
+
+    // Get the limit for the network
+    const limit = portfolioLib.deploylessTokens.isLimitedAt24kbData
       ? LIMITS.deploylessProxyMode
       : LIMITS.deploylessStateOverrideMode
 
