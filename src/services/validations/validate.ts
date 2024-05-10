@@ -126,6 +126,12 @@ const validateSendTransferAmount = (amount: string, selectedAsset: TokenResult) 
 
   try {
     if (amount && selectedAsset && selectedAsset.decimals) {
+      if (Number(amount) < 1 / 10 ** selectedAsset.decimals)
+        return {
+          success: false,
+          message: 'Token amount too low.'
+        }
+
       const selectedAssetMaxAmount = Number(
         formatUnits(getTokenAmount(selectedAsset), Number(selectedAsset.decimals))
       )
