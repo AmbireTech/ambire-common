@@ -6,7 +6,6 @@
 /* eslint-disable @typescript-eslint/no-useless-constructor */
 import { AbiCoder, keccak256, Wallet } from 'ethers'
 
-import { arbNotDeployed } from '../../../test/config'
 /* eslint-disable max-classes-per-file */
 import { Account } from '../../interfaces/account'
 import { Key, KeystoreSigner } from '../../interfaces/keystore'
@@ -23,20 +22,20 @@ class LocalSigner implements KeystoreSigner {
   }
 
   async signRawTransaction() {
-    return '0xd994364b5484bcc5ad9261399d7438fa8e59c1b9478bc02ac8f1fc43be523cc634bd165330c7e33b1e2898fed19e01087b9fe787557efb3f845adf2fa288069f1b01'
+    return '0xd994364b5484bcc5ad9261399d7438fa8e59c1b9478bc02ac8f1fc43be523cc634bd165330c7e33b1e2898fed19e01087b9fe787557efb3f845adf2fa288069f1b'
   }
 
   async signTypedData() {
-    return '0xd994364b5484bcc5ad9261399d7438fa8e59c1b9478bc02ac8f1fc43be523cc634bd165330c7e33b1e2898fed19e01087b9fe787557efb3f845adf2fa288069f1b01'
+    return '0xd994364b5484bcc5ad9261399d7438fa8e59c1b9478bc02ac8f1fc43be523cc634bd165330c7e33b1e2898fed19e01087b9fe787557efb3f845adf2fa288069f1b'
   }
 
   async signMessage() {
-    return '0xd994364b5484bcc5ad9261399d7438fa8e59c1b9478bc02ac8f1fc43be523cc634bd165330c7e33b1e2898fed19e01087b9fe787557efb3f845adf2fa288069f1b01'
+    return '0xd994364b5484bcc5ad9261399d7438fa8e59c1b9478bc02ac8f1fc43be523cc634bd165330c7e33b1e2898fed19e01087b9fe787557efb3f845adf2fa288069f1b'
   }
 }
 
 export const localSigner = new LocalSigner({
-  addr: arbNotDeployed.addr,
+  addr: '0x52C37FD54BD02E9240e8558e28b11e0Dc22d8e85',
   type: 'internal',
   dedicatedToOneSA: true,
   meta: null,
