@@ -159,3 +159,7 @@ export function accountOpSignableHash(op: AccountOp, chainId: bigint): Uint8Arra
     )
   )
 }
+
+export const getAccountOpId = (accountAddr: string, networkId: string) => {
+  return `${accountAddr}-${networkId}`
+}

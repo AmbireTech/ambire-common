@@ -1,6 +1,6 @@
 import { TypedDataDomain, TypedDataField } from 'ethers'
-
 import { HumanizerFragment } from 'libs/humanizer/interfaces'
+
 import { AccountId } from './account'
 import { NetworkId } from './networkDescriptor'
 

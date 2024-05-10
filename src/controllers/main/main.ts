@@ -13,6 +13,7 @@ import AmbireAccountFactory from '../../../contracts/compiled/AmbireAccountFacto
 import { SINGLETON } from '../../consts/deploy'
 import { Account, AccountId, AccountOnchainState, AccountStates } from '../../interfaces/account'
 import { Banner } from '../../interfaces/banner'
+import { Dapp } from '../../interfaces/dapp'
 import {
   ExternalSignerControllers,
   Key,
@@ -23,8 +24,14 @@ import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor
 import { CustomNetwork, NetworkPreference } from '../../interfaces/settings'
 import { Storage } from '../../interfaces/storage'
 import { Message, UserRequest } from '../../interfaces/userRequest'
+import { WindowManager } from '../../interfaces/window'
 import { getDefaultSelectedAccount, isSmartAccount } from '../../libs/account/account'
-import { AccountOp, AccountOpStatus, getSignableCalls } from '../../libs/accountOp/accountOp'
+import {
+  AccountOp,
+  AccountOpStatus,
+  getAccountOpId,
+  getSignableCalls
+} from '../../libs/accountOp/accountOp'
 import { Call as AccountOpCall } from '../../libs/accountOp/types'
 import { getAccountState } from '../../libs/accountState/accountState'
 import {
@@ -41,6 +48,7 @@ import { GetOptions } from '../../libs/portfolio/interfaces'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { isErc4337Broadcast } from '../../libs/userOperation/userOperation'
 import bundler from '../../services/bundlers'
+import findAccountOpInSignAccountOpsToBeSigned from '../../utils/findAccountOpInSignAccountOpsToBeSigned'
 import generateSpoofSig from '../../utils/generateSpoofSig'
 import wait from '../../utils/wait'
 import { AccountAdderController } from '../accountAdder/accountAdder'
@@ -50,6 +58,7 @@ import { DomainsController } from '../domains/domains'
 import { EmailVaultController } from '../emailVault/emailVault'
 import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
+import { NotificationController } from '../notification/notification'
 import { PortfolioController } from '../portfolio/portfolio'
 import { SettingsController } from '../settings/settings'
 /* eslint-disable no-underscore-dangle */
@@ -91,6 +100,8 @@ export class MainController extends EventEmitter {
   portfolio: PortfolioController
 
   transfer: TransferController
+
+  notification: NotificationController
 
   // Public sub-structures
   // @TODO emailVaults
@@ -146,16 +157,9 @@ export class MainController extends EventEmitter {
 
   #relayerUrl: string
 
-  onResolveDappRequest: (
-    data: {
-      hash: string | null
-      networkId?: NetworkId
-      isUserOp?: boolean
-    },
-    id?: number
-  ) => void
+  #windowManager: WindowManager
 
-  onRejectDappRequest: (err: any, id?: number) => void
+  #getDapp: (url: string) => Dapp
 
   onUpdateDappSelectedAccount: (accountAddr: string) => void
 
@@ -167,8 +171,8 @@ export class MainController extends EventEmitter {
     relayerUrl,
     keystoreSigners,
     externalSignerControllers,
-    onResolveDappRequest,
-    onRejectDappRequest,
+    windowManager,
+    getDapp,
     onUpdateDappSelectedAccount,
     onBroadcastSuccess
   }: {
@@ -177,15 +181,8 @@ export class MainController extends EventEmitter {
     relayerUrl: string
     keystoreSigners: Partial<{ [key in Key['type']]: KeystoreSignerType }>
     externalSignerControllers: ExternalSignerControllers
-    onResolveDappRequest: (
-      data: {
-        hash: string | null
-        networkId?: NetworkId
-        isUserOp?: boolean
-      },
-      id?: number
-    ) => void
-    onRejectDappRequest: (err: any, id?: number) => void
+    windowManager: WindowManager
+    getDapp: (url: string) => Dapp
     onUpdateDappSelectedAccount: (accountAddr: string) => void
     onBroadcastSuccess?: (type: 'message' | 'typed-data' | 'account-op') => void
   }) {
@@ -193,6 +190,8 @@ export class MainController extends EventEmitter {
     this.#storage = storage
     this.#fetch = fetch
     this.#relayerUrl = relayerUrl
+    this.#windowManager = windowManager
+    this.#getDapp = getDapp
 
     this.keystore = new KeystoreController(this.#storage, keystoreSigners)
     this.#externalSignerControllers = externalSignerControllers
@@ -220,10 +219,14 @@ export class MainController extends EventEmitter {
       this.#fetch
     )
     this.transfer = new TransferController(this.settings, this.addressBook)
+    this.notification = new NotificationController({
+      accounts: this.accounts,
+      networks: this.settings.networks,
+      windowManager,
+      getDapp
+    })
     this.domains = new DomainsController(this.settings.providers, this.#fetch)
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch: this.#fetch })
-    this.onResolveDappRequest = onResolveDappRequest
-    this.onRejectDappRequest = onRejectDappRequest
     this.onUpdateDappSelectedAccount = onUpdateDappSelectedAccount
     this.onBroadcastSuccess = onBroadcastSuccess
     // @TODO Load userRequests from storage and emit that we have updated
@@ -711,6 +714,37 @@ export class MainController extends EventEmitter {
   async removeCustomNetwork(id: NetworkDescriptor['id']) {
     await this.settings.removeCustomNetwork(id)
     await this.updateSelectedAccount(this.selectedAccount, true)
+  }
+
+  removeAccountOp(accountAddr: string, networkId: string) {
+    const accountOp = findAccountOpInSignAccountOpsToBeSigned(
+      this.accountOpsToBeSigned,
+      accountAddr,
+      networkId
+    )
+
+    if (accountOp) {
+      // clear signAccountOp
+      if (
+        this.signAccountOp &&
+        this.signAccountOp.accountOp.accountAddr === accountAddr &&
+        this.signAccountOp.accountOp.networkId === networkId
+      ) {
+        this.signAccountOp = null
+      }
+
+      // clear accountOpsToBeSigned
+      delete this.accountOpsToBeSigned[accountAddr]?.[networkId]
+      if (!Object.keys(this.accountOpsToBeSigned[accountAddr] || {}).length)
+        delete this.accountOpsToBeSigned[accountAddr]
+
+      // clear userRequests for that op
+      this.userRequests = this.userRequests.filter(
+        (req) => !accountOp.calls.some((c) => c.fromUserRequestId === req.id)
+      )
+
+      this.emitUpdate()
+    }
   }
 
   // @TODO allow this to remove multiple OR figure out a way to debounce re-estimations
@@ -1277,16 +1311,16 @@ export class MainController extends EventEmitter {
       accountOp.calls.forEach((call) => {
         if (call.fromUserRequestId) {
           this.removeUserRequest(call.fromUserRequestId)
-          this.onResolveDappRequest(
-            {
-              hash: transactionRes?.hash || null,
-              networkId: network.id,
-              isUserOp: !!accountOp?.asUserOperation
-            },
-            call.fromUserRequestId
-          )
         }
       })
+      this.notification.resolveNotificationRequest(
+        {
+          hash: transactionRes?.hash || null,
+          networkId: network.id,
+          isUserOp: !!accountOp?.asUserOperation
+        },
+        getAccountOpId(accountOp.accountAddr, accountOp.networkId)
+      )
       console.log('broadcasted:', transactionRes)
       !!this.onBroadcastSuccess && this.onBroadcastSuccess('account-op')
       this.broadcastStatus = 'DONE'
@@ -1304,7 +1338,10 @@ export class MainController extends EventEmitter {
 
     await this.activity.addSignedMessage(signedMessage, signedMessage.accountAddr)
     this.removeUserRequest(signedMessage.id)
-    this.onResolveDappRequest({ hash: signedMessage.signature }, signedMessage.id)
+    this.notification.resolveNotificationRequest(
+      { hash: signedMessage.signature },
+      signedMessage.id.toString()
+    )
     !!this.onBroadcastSuccess &&
       this.onBroadcastSuccess(
         signedMessage.content.kind === 'typedMessage' ? 'typed-data' : 'message'
