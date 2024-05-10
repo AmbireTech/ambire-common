@@ -1,5 +1,6 @@
 /* eslint-disable no-restricted-syntax */
 /* eslint-disable import/no-extraneous-dependencies */
+/* eslint-disable class-methods-use-this */
 
 import fetch from 'node-fetch'
 
@@ -152,23 +153,30 @@ export class Bundler {
 
   static async estimate(
     userOperation: UserOperation,
-    network: NetworkDescriptor
+    network: NetworkDescriptor,
+    shouldStateOverride = false
   ): Promise<BundlerEstimateResult> {
     const url = `https://api.pimlico.io/v2/${network.id}/rpc?apikey=${process.env.REACT_APP_PIMLICO_API_KEY}`
     const provider = getRpcProvider([url], network.chainId)
 
-    // const stateOverride =
-    //   userOperation.factory === undefined
-    //     ? {
-    //         [userOperation.sender]: {
-    //           // add privileges to the entry point if missing
-    //           [`0x${privSlot(0, 'address', ERC_4337_ENTRYPOINT, 'bytes32')}`]: ENTRY_POINT_MARKER
-    //         }
-    //       }
-    //     : null
+    if (shouldStateOverride) {
+      const stateOverride = {
+        [userOperation.sender]: {
+          // add privileges to the entry point
+          [`0x${privSlot(0, 'address', ERC_4337_ENTRYPOINT, 'bytes32')}`]: ENTRY_POINT_MARKER
+        }
+      }
+      return provider.send('eth_estimateUserOperationGas', [
+        getCleanUserOp(userOperation)[0],
+        ERC_4337_ENTRYPOINT,
+        stateOverride
+      ])
+    }
 
-    const cleanUserOp = getCleanUserOp(userOperation)[0]
-    return provider.send('eth_estimateUserOperationGas', [cleanUserOp, ERC_4337_ENTRYPOINT])
+    return provider.send('eth_estimateUserOperationGas', [
+      getCleanUserOp(userOperation)[0],
+      ERC_4337_ENTRYPOINT
+    ])
   }
 
   static async fetchGasPrices(network: NetworkDescriptor): Promise<{

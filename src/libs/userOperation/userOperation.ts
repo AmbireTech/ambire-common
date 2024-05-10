@@ -157,16 +157,13 @@ export function getUserOperation(
 
 export function shouldUsePaymaster(network: NetworkDescriptor): boolean {
   // if there's a paymaster on the network, we pay with it. Simple
-  return !!network.erc4337?.hasPaymaster
+  return !!network.erc4337.hasPaymaster
 }
 
 export function isErc4337Broadcast(
   network: NetworkDescriptor,
   accountState: AccountOnchainState
 ): boolean {
-  // write long to fix typescript issues
-  const isEnabled = network && network.erc4337 ? network.erc4337.enabled : false
-
   // we can broadcast a 4337 if:
   // - the account is not deployed (we do deployAndExecute in the factoryData)
   // - the entry point is enabled (standard ops)
@@ -174,7 +171,7 @@ export function isErc4337Broadcast(
   const canWeBroadcast4337 =
     accountState.isErc4337Enabled || shouldUsePaymaster(network) || !accountState.isDeployed
 
-  return isEnabled && canWeBroadcast4337 && accountState.isV2
+  return network.erc4337.enabled && canWeBroadcast4337 && accountState.isV2
 }
 
 // if the account is v2 account that does not have the entry point as a signer
@@ -187,9 +184,9 @@ export function shouldIncludeActivatorCall(
 ) {
   return (
     accountState.isV2 &&
-    accountState.isDeployed &&
     network.erc4337.enabled &&
-    !accountState.isErc4337Enabled
+    !accountState.isErc4337Enabled &&
+    !accountState.isDeployed
   )
 }
 

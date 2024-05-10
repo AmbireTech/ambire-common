@@ -13,7 +13,8 @@ import {
   getDummyEntryPointSig,
   getPaymasterDataForEstimate,
   getSigForCalculations,
-  getUserOperation
+  getUserOperation,
+  shouldUsePaymaster
 } from '../userOperation/userOperation'
 import { estimationErrorFormatted } from './errors'
 import { EstimateResult, FeePaymentOption } from './interfaces'
@@ -63,8 +64,11 @@ export async function bundlerEstimate(
   // balances from Estimation.sol reflect the balances after pending txn exec
   const feePaymentOptions: FeePaymentOption[] = []
   const localOp = { ...op }
-  const feeToken = getFeeTokenForEstimate(feeTokens)
-  if (feeToken) localOp.feeCall = getFeeCall(feeToken, 1n)
+  const usesPaymaster = shouldUsePaymaster(network)
+  if (usesPaymaster) {
+    const feeToken = getFeeTokenForEstimate(feeTokens)
+    if (feeToken) localOp.feeCall = getFeeCall(feeToken, 1n)
+  }
   const accountState = accountStates[localOp.accountAddr][localOp.networkId]
   const userOp = getUserOperation(
     account,
@@ -87,7 +91,7 @@ export async function bundlerEstimate(
   }
 
   // add fake data so simulation works
-  if (network.erc4337.hasPaymaster) {
+  if (usesPaymaster) {
     const paymasterUnpacked = getPaymasterDataForEstimate()
     userOp.paymaster = paymasterUnpacked.paymaster
     userOp.paymasterData = paymasterUnpacked.paymasterData
@@ -99,7 +103,8 @@ export async function bundlerEstimate(
   userOp.callData = ambireAccount.encodeFunctionData('executeBySender', [getSignableCalls(localOp)])
   userOp.signature = getSigForCalculations()
 
-  const gasData = await Bundler.estimate(userOp, network).catch((e: any) => {
+  const shouldStateOverride = !accountState.isErc4337Enabled && accountState.isDeployed
+  const gasData = await Bundler.estimate(userOp, network, shouldStateOverride).catch((e: any) => {
     return mapError(
       new Error(
         e.error && e.error.message ? e.error.message : 'Estimation failed with unknown reason'
