@@ -74,7 +74,9 @@ export async function bundlerEstimate(
     account,
     accountState,
     localOp,
-    await getDummyEntryPointSig(account.addr, network.chainId, signer)
+    !accountState.isDeployed
+      ? await getDummyEntryPointSig(account.addr, network.chainId, signer)
+      : undefined
   )
   const gasPrices = await Bundler.fetchGasPrices(network).catch(
     () => new Error('Could not fetch gas prices, retrying...')

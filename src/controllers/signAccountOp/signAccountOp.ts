@@ -869,7 +869,9 @@ export class SignAccountOpController extends EventEmitter {
           this.account,
           accountState,
           this.accountOp,
-          await getDummyEntryPointSig(this.accountOp.accountAddr, this.#network.chainId, signer)
+          !accountState.isDeployed
+            ? await getDummyEntryPointSig(this.accountOp.accountAddr, this.#network.chainId, signer)
+            : undefined
         )
         userOperation.preVerificationGas = this.#estimation!.erc4337GasLimits!.preVerificationGas
         userOperation.callGasLimit = this.#estimation!.erc4337GasLimits!.callGasLimit
