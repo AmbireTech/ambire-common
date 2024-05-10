@@ -342,17 +342,18 @@ contract AmbireAccount {
 
 		require(privileges[msg.sender] == ENTRY_POINT_MARKER, 'validateUserOp: not from entryPoint');
 
-		// this is replay-safe because userOpHash is retrieved like this: keccak256(abi.encode(userOp.hash(), address(this), block.chainid))
-		address signer = SignatureValidator.recoverAddr(userOpHash, op.signature, true);
-		if (privileges[signer] == bytes32(0)) return SIG_VALIDATION_FAILED;
-
-		// NOTE: we do not have to pay the entryPoint if SIG_VALIDATION_FAILED, so we just return on those
+		// @estimation
+		// paying should happen even if signature validation fails
 		if (missingAccountFunds > 0) {
 			// NOTE: MAY pay more than the minimum, to deposit for future transactions
 			(bool success,) = msg.sender.call{value : missingAccountFunds}('');
 			// ignore failure (its EntryPoint's job to verify, not account.)
 			(success);
 		}
+
+		// this is replay-safe because userOpHash is retrieved like this: keccak256(abi.encode(userOp.hash(), address(this), block.chainid))
+		address signer = SignatureValidator.recoverAddr(userOpHash, op.signature, true);
+		if (privileges[signer] == bytes32(0)) return SIG_VALIDATION_FAILED;
 
 		return SIG_VALIDATION_SUCCESS;
 	}

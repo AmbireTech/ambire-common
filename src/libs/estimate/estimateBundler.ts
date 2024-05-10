@@ -96,6 +96,8 @@ export async function bundlerEstimate(
   if (usesPaymaster) {
     const paymasterUnpacked = getPaymasterDataForEstimate()
     userOp.paymaster = paymasterUnpacked.paymaster
+    userOp.paymasterPostOpGasLimit = paymasterUnpacked.paymasterPostOpGasLimit
+    userOp.paymasterVerificationGasLimit = paymasterUnpacked.paymasterVerificationGasLimit
     userOp.paymasterData = paymasterUnpacked.paymasterData
   }
 

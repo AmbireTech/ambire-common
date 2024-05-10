@@ -13,10 +13,10 @@ export interface UserOperation {
   preVerificationGas: string
   maxFeePerGas: string
   maxPriorityFeePerGas: string
-  paymaster: string // hex string
-  paymasterVerificationGasLimit: string
-  paymasterPostOpGasLimit: string
-  paymasterData: string // hex string
+  paymaster?: string // hex string
+  paymasterVerificationGasLimit?: string
+  paymasterPostOpGasLimit?: string
+  paymasterData?: string // hex string
   signature: string // hex string
   // https://github.com/AmbireTech/ambire-app/wiki/Ambire-Flows-(wrap,-sign,-payment,-broadcast)#erc-4337-edge-case
   requestType: UserOpRequestType
