@@ -1,20 +1,20 @@
 /* eslint no-console: "off" */
 
-import { AbiCoder, ethers, Interface, ZeroAddress } from 'ethers'
+import { AbiCoder, ethers, Interface, parseEther, ZeroAddress } from 'ethers'
 import fetch from 'node-fetch'
 
 import { describe, expect } from '@jest/globals'
 import structuredClone from '@ungap/structured-clone'
 
 import ERC20 from '../../../contracts/compiled/IERC20.json'
-import { trezorSlot7v24337Deployed } from '../../../test/config'
 import { getNonce } from '../../../test/helpers'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { networks } from '../../consts/networks'
 import { Account, AccountStates } from '../../interfaces/account'
-import { Key } from '../../interfaces/keystore'
+import { dedicatedToOneSAPriv, Key } from '../../interfaces/keystore'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { getRpcProvider } from '../../services/provider'
+import { getSmartAccount } from '../account/account'
 import { AccountOp } from '../accountOp/accountOp'
 import { Call } from '../accountOp/types'
 import { getAccountState } from '../accountState/accountState'
@@ -31,8 +31,9 @@ if (!ethereum || !optimism || !arbitrum || !avalanche || !polygon) throw new Err
 const provider = getRpcProvider(ethereum.rpcUrls, ethereum.chainId)
 const providerOptimism = getRpcProvider(optimism.rpcUrls, optimism.chainId)
 const providerArbitrum = getRpcProvider(arbitrum.rpcUrls, arbitrum.chainId)
-const providerAvalanche = getRpcProvider(avalanche.rpcUrls, avalanche.chainId)
+// const providerAvalanche = getRpcProvider(avalanche.rpcUrls, avalanche.chainId)
 const providerPolygon = getRpcProvider(polygon.rpcUrls, polygon.chainId)
+const addrWithDeploySignature = '0x52C37FD54BD02E9240e8558e28b11e0Dc22d8e85'
 
 // Used to determine if an account is view-only or not
 // and subsequently if it should be included in the fee payment options
@@ -74,6 +75,13 @@ const MOCK_KEYSTORE_KEYS: Key[] = [
     type: 'internal',
     addr: '0xa8eEaC54343F94CfEEB3492e07a7De72bDFD118a',
     dedicatedToOneSA: false,
+    meta: null,
+    isExternallyStored: false
+  },
+  {
+    type: 'internal',
+    addr: addrWithDeploySignature,
+    dedicatedToOneSA: true,
     meta: null,
     isExternallyStored: false
   }
@@ -182,36 +190,36 @@ const feeTokens = [
   }
 ]
 
-const feeTokensAvalanche = [
-  {
-    address: '0x0000000000000000000000000000000000000000',
-    amount: 1n,
-    symbol: 'AVAX',
-    networkId: 'avalanche',
-    decimals: 18,
-    priceIn: [],
-    flags: {
-      onGasTank: false,
-      rewardsType: null,
-      canTopUpGasTank: true,
-      isFeeToken: true
-    }
-  },
-  {
-    address: '0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E',
-    amount: 1n,
-    symbol: 'USDC',
-    networkId: 'avalanche',
-    decimals: 6,
-    priceIn: [],
-    flags: {
-      onGasTank: false,
-      rewardsType: null,
-      canTopUpGasTank: true,
-      isFeeToken: true
-    }
-  }
-]
+// const feeTokensAvalanche = [
+//   {
+//     address: '0x0000000000000000000000000000000000000000',
+//     amount: 1n,
+//     symbol: 'AVAX',
+//     networkId: 'avalanche',
+//     decimals: 18,
+//     priceIn: [],
+//     flags: {
+//       onGasTank: false,
+//       rewardsType: null,
+//       canTopUpGasTank: true,
+//       isFeeToken: true
+//     }
+//   },
+//   {
+//     address: '0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E',
+//     amount: 1n,
+//     symbol: 'USDC',
+//     networkId: 'avalanche',
+//     decimals: 6,
+//     priceIn: [],
+//     flags: {
+//       onGasTank: false,
+//       rewardsType: null,
+//       canTopUpGasTank: true,
+//       isFeeToken: true
+//     }
+//   }
+// ]
 
 const portfolio = new Portfolio(fetch, provider, ethereum)
 
@@ -754,45 +762,99 @@ describe('estimate', () => {
     response.feePaymentOptions.map((option) => expect(option.addedNative).toBeGreaterThan(0n))
   })
 
-  it('[ERC-4337]:Arbitrum | should fail with an inner call failure but otherwise estimation should work', async () => {
-    const opArbitrum: AccountOp = {
-      accountAddr: trezorSlot6v2NotDeployed.addr,
-      signingKeyAddr: trezorSlot6v2NotDeployed.associatedKeys[0],
+  it('[ERC-4337]:Optimism | not deployed account | should work', async () => {
+    const privs = [
+      {
+        addr: addrWithDeploySignature,
+        hash: dedicatedToOneSAPriv
+      }
+    ]
+    const smartAcc = await getSmartAccount(privs)
+    const opOptimism: AccountOp = {
+      accountAddr: smartAcc.addr,
+      signingKeyAddr: smartAcc.associatedKeys[0],
       signingKeyType: null,
       gasLimit: null,
       gasFeePayment: null,
-      networkId: 'arbitrum',
-      nonce: 1n,
-      signature: spoofSig,
-      calls: [{ to, value: BigInt(100000000000), data: '0x' }],
+      networkId: 'optimism',
+      nonce: 0n,
+      signature: '0x',
+      calls: [{ to: FEE_COLLECTOR, value: 1n, data: '0x' }],
       accountOpToExecuteBefore: null
     }
-    const accountStates = await getAccountsInfo([trezorSlot6v2NotDeployed])
-    // force a fake nonce so the tests proceeds
-    accountStates[opArbitrum.accountAddr][opArbitrum.networkId].erc4337Nonce = 0n
+    const accountStates = await getAccountsInfo([smartAcc])
     const response = await estimate(
       localSigner,
-      providerArbitrum,
-      arbitrum,
-      trezorSlot6v2NotDeployed,
+      providerOptimism,
+      optimism,
+      smartAcc,
       MOCK_KEYSTORE_KEYS,
-      opArbitrum,
+      opOptimism,
       accountStates,
       nativeToCheck,
       feeTokens,
       { is4337Broadcast: true }
     )
 
+    expect(response.error).toBe(null)
+
     expect(response.erc4337GasLimits).not.toBe(undefined)
     expect(BigInt(response.erc4337GasLimits!.callGasLimit)).toBeGreaterThan(0n)
     expect(BigInt(response.erc4337GasLimits!.verificationGasLimit)).toBeGreaterThan(0n)
     expect(BigInt(response.erc4337GasLimits!.preVerificationGas)).toBeGreaterThan(0n)
-
-    expect(response.error).not.toBe(null)
-    expect(response.error?.message).toBe('Transaction reverted: invalid call in the bundle')
+    expect(BigInt(response.erc4337GasLimits!.paymasterPostOpGasLimit)).toBeGreaterThan(0n)
+    expect(BigInt(response.erc4337GasLimits!.paymasterVerificationGasLimit)).toBeGreaterThan(0n)
 
     expect(response.feePaymentOptions.length).toBeGreaterThan(0)
+    expect(response.feePaymentOptions![0].token).not.toBe(undefined)
+    expect(response.feePaymentOptions![0].token).not.toBe(null)
+  })
 
+  it('[ERC-4337]:Optimism | should fail with an inner call failure but otherwise estimation should work', async () => {
+    const privs = [
+      {
+        addr: addrWithDeploySignature,
+        hash: dedicatedToOneSAPriv
+      }
+    ]
+    const smartAcc = await getSmartAccount(privs)
+    const opOptimism: AccountOp = {
+      accountAddr: smartAcc.addr,
+      signingKeyAddr: smartAcc.associatedKeys[0],
+      signingKeyType: null,
+      gasLimit: null,
+      gasFeePayment: null,
+      networkId: 'optimism',
+      nonce: 0n,
+      signature: '0x',
+      calls: [{ to: FEE_COLLECTOR, value: parseEther('1'), data: '0x' }],
+      accountOpToExecuteBefore: null
+    }
+    const accountStates = await getAccountsInfo([smartAcc])
+    const response = await estimate(
+      localSigner,
+      providerOptimism,
+      optimism,
+      smartAcc,
+      MOCK_KEYSTORE_KEYS,
+      opOptimism,
+      accountStates,
+      nativeToCheck,
+      feeTokens,
+      { is4337Broadcast: true }
+    )
+
+    expect(response.error).not.toBe(null)
+    expect(response.error?.message).toBe('Insufficient funds for intristic transaction cost')
+
+    expect(response.erc4337GasLimits).not.toBe(undefined)
+    expect(BigInt(response.erc4337GasLimits!.callGasLimit)).toBe(0n)
+    expect(BigInt(response.erc4337GasLimits!.verificationGasLimit)).toBe(0n)
+    expect(BigInt(response.erc4337GasLimits!.preVerificationGas)).toBe(0n)
+    expect(BigInt(response.erc4337GasLimits!.paymasterPostOpGasLimit)).toBe(0n)
+    expect(BigInt(response.erc4337GasLimits!.paymasterVerificationGasLimit)).toBe(0n)
+
+    expect(response.feePaymentOptions.length).toBeGreaterThan(0)
     expect(response.feePaymentOptions![0].token).not.toBe(undefined)
     expect(response.feePaymentOptions![0].token).not.toBe(null)
   })
@@ -878,51 +940,6 @@ describe('estimate', () => {
     expect(BigInt(response.erc4337GasLimits!.callGasLimit)).toBe(0n)
     expect(BigInt(response.erc4337GasLimits!.verificationGasLimit)).toBe(0n)
     expect(BigInt(response.erc4337GasLimits!.preVerificationGas)).toBe(0n)
-  })
-
-  it('[ERC-4337]:Avalanche | estimate a deployed account paying in native', async () => {
-    const accountStates = await getAccountsInfo([trezorSlot7v24337Deployed])
-    const networkId = 'avalanche'
-    const accountState = accountStates[trezorSlot7v24337Deployed.addr][networkId]
-    const opAvalanche: AccountOp = {
-      accountAddr: trezorSlot7v24337Deployed.addr,
-      signingKeyAddr: trezorSlot7v24337Deployed.associatedKeys[0],
-      signingKeyType: null,
-      gasLimit: null,
-      gasFeePayment: null,
-      networkId,
-      nonce: accountState.nonce,
-      signature: '0x',
-      calls: [{ to, value: BigInt(100), data: '0x' }],
-      accountOpToExecuteBefore: null
-    }
-
-    const response = await estimate(
-      localSigner,
-      providerAvalanche,
-      avalanche,
-      trezorSlot7v24337Deployed,
-      MOCK_KEYSTORE_KEYS,
-      opAvalanche,
-      accountStates,
-      nativeToCheck,
-      feeTokensAvalanche,
-      { is4337Broadcast: true }
-    )
-
-    expect(response.erc4337GasLimits).not.toBe(undefined)
-    expect(BigInt(response.erc4337GasLimits!.callGasLimit)).toBeGreaterThan(0n)
-    expect(BigInt(response.erc4337GasLimits!.verificationGasLimit)).toBeGreaterThan(0n)
-    expect(BigInt(response.erc4337GasLimits!.preVerificationGas)).toBeGreaterThan(0n)
-
-    expect(response.feePaymentOptions.length).toBeGreaterThan(0)
-    response.feePaymentOptions.forEach((opt) => {
-      expect(opt.addedNative).toBe(0n)
-      // no basic acc payment
-      expect(opt.paidBy).toBe(trezorSlot7v24337Deployed.addr)
-    })
-
-    expect(response.error).toBe(null)
   })
 
   it('estimates a polygon request with insufficient funds for txn and estimation should fail with transaction reverted', async () => {

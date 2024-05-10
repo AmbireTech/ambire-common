@@ -1,6 +1,6 @@
 /* this file describes errors during estimation */
 
-import { AbiCoder } from 'ethers'
+import { AbiCoder, isHexString } from 'ethers'
 
 import { Erc4337GasLimits, EstimateResult } from './interfaces'
 
@@ -29,7 +29,9 @@ export function mapTxnErrMsg(contractError: string): string | null {
   } else if (contractError === expiredSig) {
     msg = contractError
   } else {
-    msg = Buffer.from(contractError.substring(2), 'hex').toString()
+    msg = isHexString(contractError)
+      ? Buffer.from(contractError.substring(2), 'hex').toString()
+      : contractError
   }
 
   if (!msg || msg === '0x') return null
@@ -42,6 +44,8 @@ export function mapTxnErrMsg(contractError: string): string | null {
     return 'Your signer address is not authorized'
   if (contractErrors.find((contractMsg) => msg.includes(contractMsg)))
     return 'This dApp does not support smart wallets'
+  if (msg.includes('IMPOSSIBLE_GAS_CONSUMPTION'))
+    return 'Insufficient funds for intristic transaction cost'
 
   return null
 }
