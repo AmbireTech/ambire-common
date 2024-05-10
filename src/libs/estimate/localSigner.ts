@@ -4,9 +4,16 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable class-methods-use-this */
 /* eslint-disable @typescript-eslint/no-useless-constructor */
-/* eslint-disable max-classes-per-file */
+import { AbiCoder, keccak256, Wallet } from 'ethers'
+
 import { arbNotDeployed } from '../../../test/config'
+/* eslint-disable max-classes-per-file */
+import { Account } from '../../interfaces/account'
 import { Key, KeystoreSigner } from '../../interfaces/keystore'
+import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
+import { callToTuple } from '../accountOp/accountOp'
+import { getTypedData, wrapStandard } from '../signMessage/signMessage'
+import { getActivatorCall } from '../userOperation/userOperation'
 
 class LocalSigner implements KeystoreSigner {
   key: Key
@@ -16,15 +23,15 @@ class LocalSigner implements KeystoreSigner {
   }
 
   async signRawTransaction() {
-    return '0x126eabb5d01aa47fdeae4797ae5ae63d3279d12ccfddd0a09ad38a63c4140ab57354a2ef555c0c411b20644627b0f23b1927cec6401ca228b65046b620337dcf1b'
+    return '0xd994364b5484bcc5ad9261399d7438fa8e59c1b9478bc02ac8f1fc43be523cc634bd165330c7e33b1e2898fed19e01087b9fe787557efb3f845adf2fa288069f1b01'
   }
 
   async signTypedData() {
-    return '0x126eabb5d01aa47fdeae4797ae5ae63d3279d12ccfddd0a09ad38a63c4140ab57354a2ef555c0c411b20644627b0f23b1927cec6401ca228b65046b620337dcf1b'
+    return '0xd994364b5484bcc5ad9261399d7438fa8e59c1b9478bc02ac8f1fc43be523cc634bd165330c7e33b1e2898fed19e01087b9fe787557efb3f845adf2fa288069f1b01'
   }
 
   async signMessage() {
-    return '0x126eabb5d01aa47fdeae4797ae5ae63d3279d12ccfddd0a09ad38a63c4140ab57354a2ef555c0c411b20644627b0f23b1927cec6401ca228b65046b620337dcf1b'
+    return '0xd994364b5484bcc5ad9261399d7438fa8e59c1b9478bc02ac8f1fc43be523cc634bd165330c7e33b1e2898fed19e01087b9fe787557efb3f845adf2fa288069f1b01'
   }
 }
 
@@ -35,3 +42,29 @@ export const localSigner = new LocalSigner({
   meta: null,
   isExternallyStored: false
 })
+
+export async function getDeploySignature(smartAcc: Account, network: NetworkDescriptor) {
+  // CODE FOR getting a valid deploy signature if you have the PK
+  const nonce = 0
+  const call = getActivatorCall(smartAcc.addr)
+  const tupleCall = callToTuple(call)
+  const txns = [tupleCall]
+  const abiCoder = new AbiCoder()
+  const executeHash = keccak256(
+    abiCoder.encode(
+      ['address', 'uint', 'uint', 'tuple(address, uint, bytes)[]'],
+      [smartAcc.addr, network.chainId, nonce, txns]
+    )
+  )
+  const typedData = getTypedData(network.chainId, smartAcc.addr, executeHash)
+  const typesWithoutEIP712Domain = { ...typedData.types }
+  if (typesWithoutEIP712Domain.EIP712Domain) {
+    // eslint-disable-next-line no-param-reassign
+    delete typesWithoutEIP712Domain.EIP712Domain
+  }
+  const wallet = new Wallet(process.env.METAMASK_PK!)
+  const s = wrapStandard(
+    await wallet.signTypedData(typedData.domain, typesWithoutEIP712Domain, typedData.message)
+  )
+  return s
+}
