@@ -283,7 +283,7 @@ export async function estimate(
       .catch(catchEstimationFailure),
     estimateArbitrumL1GasUsed(op, account, accountState, provider).catch(catchEstimationFailure),
     isCustomNetwork
-      ? estimateCustomNetwork(account, op, accountStates, network, provider)
+      ? estimateCustomNetwork(account, op, provider)
       : new Promise((resolve) => {
           resolve(0n)
         })

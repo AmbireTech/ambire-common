@@ -153,8 +153,6 @@ describe('Bundler tests', () => {
       ])
       const paymasterAndData = getPaymasterDataForEstimate()
       userOp.paymaster = paymasterAndData.paymaster
-      userOp.paymasterVerificationGasLimit = paymasterAndData.paymasterVerificationGasLimit
-      userOp.paymasterPostOpGasLimit = paymasterAndData.paymasterPostOpGasLimit
       userOp.paymasterData = paymasterAndData.paymasterData
       userOp.nonce = toBeHex(0)
       userOp.signature = getSigForCalculations()
@@ -223,8 +221,6 @@ describe('Bundler tests', () => {
       ])
       const paymasterAndData = getPaymasterDataForEstimate()
       userOp.paymaster = paymasterAndData.paymaster
-      userOp.paymasterVerificationGasLimit = paymasterAndData.paymasterVerificationGasLimit
-      userOp.paymasterPostOpGasLimit = paymasterAndData.paymasterPostOpGasLimit
       userOp.paymasterData = paymasterAndData.paymasterData
       userOp.nonce = toBeHex(0)
       userOp.signature = getSigForCalculations()
@@ -268,8 +264,6 @@ describe('Bundler tests', () => {
       ])
       const paymasterAndData = getPaymasterDataForEstimate()
       userOp.paymaster = paymasterAndData.paymaster
-      userOp.paymasterVerificationGasLimit = paymasterAndData.paymasterVerificationGasLimit
-      userOp.paymasterPostOpGasLimit = paymasterAndData.paymasterPostOpGasLimit
       userOp.paymasterData = paymasterAndData.paymasterData
       userOp.signature = getSigForCalculations()
       const bundlerEstimate = await Bundler.estimate(userOp, optimism)
@@ -323,8 +317,6 @@ describe('Bundler tests', () => {
       ])
       const paymasterAndData = getPaymasterDataForEstimate()
       userOp.paymaster = paymasterAndData.paymaster
-      userOp.paymasterVerificationGasLimit = paymasterAndData.paymasterVerificationGasLimit
-      userOp.paymasterPostOpGasLimit = paymasterAndData.paymasterPostOpGasLimit
       userOp.paymasterData = paymasterAndData.paymasterData
       userOp.signature = getSigForCalculations()
 
@@ -366,8 +358,6 @@ describe('Bundler tests', () => {
       ])
       const paymasterAndData = getPaymasterDataForEstimate()
       userOp.paymaster = paymasterAndData.paymaster
-      userOp.paymasterVerificationGasLimit = paymasterAndData.paymasterVerificationGasLimit
-      userOp.paymasterPostOpGasLimit = paymasterAndData.paymasterPostOpGasLimit
       userOp.paymasterData = paymasterAndData.paymasterData
 
       await Bundler.estimate(userOp, optimism).catch((e) => {
