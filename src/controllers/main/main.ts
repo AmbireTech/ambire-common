@@ -7,13 +7,14 @@ import {
   TransactionResponse,
   ZeroAddress
 } from 'ethers'
+import { isSignMethod } from 'libs/notification/notification'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireAccountFactory from '../../../contracts/compiled/AmbireAccountFactory.json'
 import { SINGLETON } from '../../consts/deploy'
 import { Account, AccountId, AccountOnchainState, AccountStates } from '../../interfaces/account'
 import { Banner } from '../../interfaces/banner'
-import { Dapp } from '../../interfaces/dapp'
+import { Dapp, DappProviderRequest } from '../../interfaces/dapp'
 import {
   ExternalSignerControllers,
   Key,
@@ -21,6 +22,7 @@ import {
   TxnRequest
 } from '../../interfaces/keystore'
 import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
+import { NotificationRequest } from '../../interfaces/notification'
 import { CustomNetwork, NetworkPreference } from '../../interfaces/settings'
 import { Storage } from '../../interfaces/storage'
 import { Message, UserRequest } from '../../interfaces/userRequest'
@@ -159,7 +161,7 @@ export class MainController extends EventEmitter {
 
   #windowManager: WindowManager
 
-  #getDapp: (url: string) => Dapp
+  #getDapp: (url: string) => Dapp | undefined
 
   onUpdateDappSelectedAccount: (accountAddr: string) => void
 
@@ -182,7 +184,7 @@ export class MainController extends EventEmitter {
     keystoreSigners: Partial<{ [key in Key['type']]: KeystoreSignerType }>
     externalSignerControllers: ExternalSignerControllers
     windowManager: WindowManager
-    getDapp: (url: string) => Dapp
+    getDapp: (url: string) => Dapp | undefined
     onUpdateDappSelectedAccount: (accountAddr: string) => void
     onBroadcastSuccess?: (type: 'message' | 'typed-data' | 'account-op') => void
   }) {
@@ -714,6 +716,24 @@ export class MainController extends EventEmitter {
   async removeCustomNetwork(id: NetworkDescriptor['id']) {
     await this.settings.removeCustomNetwork(id)
     await this.updateSelectedAccount(this.selectedAccount, true)
+  }
+
+  async buildNotificationRequest(
+    request: DappProviderRequest,
+    dappPromise: {
+      resolve: (data: any) => void
+      reject: (data: any) => void
+    }
+  ) {
+    if (isSignMethod(request.method)) {
+    } else {
+      const notificationRequest: NotificationRequest = {
+        ...request,
+        id: new Date().getTime().toString(),
+        promises: [dappPromise]
+      }
+      this.notification.requestNotificationRequest(notificationRequest)
+    }
   }
 
   removeAccountOp(accountAddr: string, networkId: string) {

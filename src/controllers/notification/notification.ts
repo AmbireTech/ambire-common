@@ -6,86 +6,21 @@ import { getBigInt } from 'ethers'
 import { Account } from '../../interfaces/account'
 import { Dapp } from '../../interfaces/dapp'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
+import { NotificationRequest } from '../../interfaces/notification'
 import { CustomNetwork, NetworkPreference } from '../../interfaces/settings'
 import { UserRequest } from '../../interfaces/userRequest'
 import { WindowManager } from '../../interfaces/window'
 import { isSmartAccount } from '../../libs/account/account'
 import { getAccountOpId } from '../../libs/accountOp/accountOp'
+import {
+  isSignAccountOpMethod,
+  isSignMessageMethod,
+  isSignTypedDataMethod,
+  QUEUE_REQUEST_METHODS_WHITELIST,
+  SIGN_METHODS
+} from '../../libs/notification/notification'
 import findAccountOpInSignAccountOpsToBeSigned from '../../utils/findAccountOpInSignAccountOpsToBeSigned'
-import wait from '../../utils/wait'
 import EventEmitter from '../eventEmitter/eventEmitter'
-
-export const BENZIN_NOTIFICATION_DATA = { screen: 'Benzin', method: 'benzin' }
-
-export const SIGN_METHODS = [
-  'eth_signTypedData',
-  'eth_signTypedData_v1',
-  'eth_signTypedData_v3',
-  'eth_signTypedData_v4',
-  'personal_sign',
-  'eth_sign',
-  'eth_sendTransaction',
-  'gs_multi_send',
-  'ambire_sendBatchTransaction'
-]
-
-export const CHAIN_METHODS = ['wallet_switchEthereumChain', 'wallet_addEthereumChain']
-
-const QUEUE_REQUEST_METHODS_WHITELIST = SIGN_METHODS
-
-export const isSignAccountOpMethod = (method: string) => {
-  return ['eth_sendTransaction', 'gs_multi_send', 'ambire_sendBatchTransaction'].includes(method)
-}
-
-export const isSignTypedDataMethod = (method: string) => {
-  return [
-    'eth_signTypedData',
-    'eth_signTypedData_v1',
-    'eth_signTypedData_v3',
-    'eth_signTypedData_v4'
-  ].includes(method)
-}
-
-export const isSignMessageMethod = (method: string) => {
-  return ['personal_sign', 'eth_sign'].includes(method)
-}
-
-export const getScreenType = (kind: UserRequest['action']['kind']) => {
-  if (kind === 'call') return 'SendTransaction'
-  if (kind === 'message') return 'SignText'
-  if (kind === 'typedMessage') return 'SignTypedData'
-  return undefined
-}
-
-type Request = {
-  method: string
-  params?: any
-  session: { name: string; origin: string; icon: string }
-  origin: string
-  screen: string
-  meta?: { [key: string]: any }
-}
-
-export type NotificationRequest = Request &
-  (
-    | {
-        id: string
-        isSignRequest: false
-        promises: {
-          resolve: (data: any) => void
-          reject: (data: any) => void
-        }[]
-      }
-    | {
-        id: string
-        isSignRequest: true
-        promises: {
-          fromUserRequestId: number
-          resolve: (data: any) => void
-          reject: (data: any) => void
-        }[]
-      }
-  )
 
 export class NotificationController extends EventEmitter {
   #accounts: (Account & {
@@ -96,7 +31,7 @@ export class NotificationController extends EventEmitter {
 
   #windowManager: WindowManager
 
-  #getDapp: (url: string) => Dapp
+  #getDapp: (url: string) => Dapp | undefined
 
   notificationRequests: NotificationRequest[] = []
 
@@ -115,7 +50,7 @@ export class NotificationController extends EventEmitter {
     })[]
     networks: (NetworkDescriptor & (NetworkPreference | CustomNetwork))[]
     windowManager: WindowManager
-    getDapp: (url: string) => Dapp
+    getDapp: (url: string) => Dapp | undefined
   }) {
     super()
     this.#windowManager = windowManager
@@ -132,115 +67,83 @@ export class NotificationController extends EventEmitter {
     })
   }
 
-  requestNotificationRequest = (request: Request, openNewWindow: boolean = true): Promise<any> => {
+  requestNotificationRequest = (request: NotificationRequest, openNewWindow: boolean = true) => {
     // Delete the current notification request if it's a benzin request
-    if (this.currentNotificationRequest?.method === BENZIN_NOTIFICATION_DATA.method) {
+    if (this.currentNotificationRequest?.method === 'benzin') {
       this.#deleteNotificationRequest(this.currentNotificationRequest.id)
       this.currentNotificationRequest = null
     }
 
-    return new Promise((resolve, reject) => {
-      if (
-        !QUEUE_REQUEST_METHODS_WHITELIST.includes(request.method) &&
-        this.notificationWindowId &&
-        this.currentNotificationRequest
-      ) {
-        if (request.method === this.currentNotificationRequest.method) {
-          this.#rejectNotificationRequestPromises(
-            'Request rejected',
-            this.currentNotificationRequest.id
-          )
-          this.#deleteNotificationRequest(this.currentNotificationRequest.id)
-        } else {
-          this.focusCurrentNotificationWindow(
-            'You currently have a pending dApp request. Please resolve it before making another request.'
-          )
-          throw ethErrors.provider.userRejectedRequest(
-            'please request after current request resolve'
-          )
-        }
-      }
-
-      if (CHAIN_METHODS.includes(request.method)) {
-        let chainId = request.params?.[0]?.chainId
-        if (typeof chainId === 'string') chainId = Number(chainId)
-
-        const network = this.#networks.find((n) => Number(n.chainId) === chainId)
-
-        if (network) {
-          reject(null)
-          return
-        }
-      }
-
-      if (!SIGN_METHODS.includes(request.method)) {
-        const id = new Date().getTime().toString()
-
-        const notificationRequest: NotificationRequest = {
-          ...request,
-          id,
-          isSignRequest: false,
-          promises: [{ resolve, reject }]
-        }
-
-        this.#addNotificationRequest(notificationRequest)
-
-        this.emitUpdate()
-        if (openNewWindow) this.#openNotificationWindow()
-        return
-      }
-
-      //
-      // Handle SIGN_METHODS
-      //
-
-      if (isSignAccountOpMethod(request.method)) {
-        this.#addSignAccountOpRequest(
-          request,
-          {
-            reject,
-            resolve
-          },
-          openNewWindow
+    if (
+      !QUEUE_REQUEST_METHODS_WHITELIST.includes(request.method) &&
+      this.notificationWindowId &&
+      this.currentNotificationRequest
+    ) {
+      if (request.method === this.currentNotificationRequest.method) {
+        this.#rejectNotificationRequestPromises(
+          'Request rejected',
+          this.currentNotificationRequest.id
         )
-        return
+        this.#deleteNotificationRequest(this.currentNotificationRequest.id)
+      } else {
+        this.focusCurrentNotificationWindow(
+          'You currently have a pending dApp request. Please resolve it before making another request.'
+        )
+        throw ethErrors.provider.userRejectedRequest('please request after current request resolve')
       }
+    }
 
-      if (isSignMessageMethod(request.method)) {
-        // const userNotification = new UserNotification(this.#dappsCtrl)
-        // const userRequest = userNotification.createSignMessageUserRequest({
-        //   id,
-        //   data: request.params,
-        //   origin: request.origin,
-        //   selectedAccount: this.#mainCtrl.selectedAccount || '',
-        //   networks: this.#mainCtrl.settings.networks,
-        //   onError: (err) => this.rejectNotificationRequest(err),
-        //   onSuccess: (data, id) => this.resolveNotificationRequest(data, id)
-        // })
-        // if (userRequest) this.#mainCtrl.addUserRequest(userRequest)
-        // else {
-        //   this.rejectNotificationRequest('Invalid request data')
-        //   return
-        // }
-      }
+    if (!SIGN_METHODS.includes(request.method)) {
+      this.#addNotificationRequest(request)
 
-      if (isSignTypedDataMethod(request.method)) {
-        // const userNotification = new UserNotification(this.#dappsCtrl)
-        // const userRequest = userNotification.createSignTypedDataUserRequest({
-        //   id,
-        //   data: request.params,
-        //   origin: request.origin,
-        //   selectedAccount: this.#mainCtrl.selectedAccount || '',
-        //   networks: this.#mainCtrl.settings.networks,
-        //   onError: (err) => this.rejectNotificationRequest(err),
-        //   onSuccess: (data, id) => this.resolveNotificationRequest(data, id)
-        // })
-        // if (userRequest) this.#mainCtrl.addUserRequest(userRequest)
-        // else {
-        //   this.rejectNotificationRequest('Invalid request data')
-        // }
-      }
-    })
+      this.emitUpdate()
+      if (openNewWindow) this.#openNotificationWindow()
+      return
+    }
+
+    //
+    // Handle SIGN_METHODS
+    //
+
+    if (isSignAccountOpMethod(request.method)) {
+      this.#addSignAccountOpRequest(request, openNewWindow)
+      return
+    }
+
+    if (isSignMessageMethod(request.method)) {
+      // const userNotification = new UserNotification(this.#dappsCtrl)
+      // const userRequest = userNotification.createSignMessageUserRequest({
+      //   id,
+      //   data: request.params,
+      //   origin: request.origin,
+      //   selectedAccount: this.#mainCtrl.selectedAccount || '',
+      //   networks: this.#mainCtrl.settings.networks,
+      //   onError: (err) => this.rejectNotificationRequest(err),
+      //   onSuccess: (data, id) => this.resolveNotificationRequest(data, id)
+      // })
+      // if (userRequest) this.#mainCtrl.addUserRequest(userRequest)
+      // else {
+      //   this.rejectNotificationRequest('Invalid request data')
+      //   return
+      // }
+    }
+
+    if (isSignTypedDataMethod(request.method)) {
+      // const userNotification = new UserNotification(this.#dappsCtrl)
+      // const userRequest = userNotification.createSignTypedDataUserRequest({
+      //   id,
+      //   data: request.params,
+      //   origin: request.origin,
+      //   selectedAccount: this.#mainCtrl.selectedAccount || '',
+      //   networks: this.#mainCtrl.settings.networks,
+      //   onError: (err) => this.rejectNotificationRequest(err),
+      //   onSuccess: (data, id) => this.resolveNotificationRequest(data, id)
+      // })
+      // if (userRequest) this.#mainCtrl.addUserRequest(userRequest)
+      // else {
+      //   this.rejectNotificationRequest('Invalid request data')
+      // }
+    }
   }
 
   resolveNotificationRequest = (data: any, requestId?: string) => {
@@ -266,8 +169,7 @@ export class NotificationController extends EventEmitter {
       this.requestNotificationRequest(
         {
           ...notificationRequest,
-          screen: BENZIN_NOTIFICATION_DATA.screen,
-          method: BENZIN_NOTIFICATION_DATA.method,
+          method: 'benzin',
           meta
         },
         false
@@ -312,7 +214,7 @@ export class NotificationController extends EventEmitter {
   }
 
   async #addSignAccountOpRequest(
-    request: Request,
+    request: NotificationRequest,
     promise: {
       resolve: (data: any) => void
       reject: (data: any) => void
@@ -325,7 +227,6 @@ export class NotificationController extends EventEmitter {
     )
 
     if (!network) {
-      this.#rejectNotificationRequestPromises
       promise.reject('Unsupported network')
       return
     }
@@ -493,13 +394,12 @@ export class NotificationController extends EventEmitter {
   // }
 
   #openNotificationWindow = async () => {
-    await wait(1) // Open on next tick to ensure that state update is emitted to FE before opening the window
     if (this.notificationWindowId !== null) {
       this.#windowManager.remove(this.notificationWindowId)
       this.notificationWindowId = null
       this.emitUpdate()
     }
-    this.#windowManager.openNotification().then((winId) => {
+    this.#windowManager.open().then((winId) => {
       this.notificationWindowId = winId!
       this.emitUpdate()
     })
