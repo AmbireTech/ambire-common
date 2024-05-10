@@ -192,8 +192,8 @@ export async function estimate(
 
   // @EntryPoint activation
   // if the account is v2 without the entry point signer being a signer
-  // and the network is 4337 but doesn't have a paymaster, we should activate
-  // the entry point and therefore estimate the activator call here
+  // and the network is 4337 but doesn't have a paymaster and the account
+  // is deployed for some reason, we should include the activator
   const calls = [...op.calls]
   const accountState = accountStates[op.accountAddr][op.networkId]
   if (shouldIncludeActivatorCall(network, accountState)) {

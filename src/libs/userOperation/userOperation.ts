@@ -186,7 +186,7 @@ export function shouldIncludeActivatorCall(
     accountState.isV2 &&
     network.erc4337.enabled &&
     !accountState.isErc4337Enabled &&
-    !accountState.isDeployed
+    accountState.isDeployed
   )
 }
 
