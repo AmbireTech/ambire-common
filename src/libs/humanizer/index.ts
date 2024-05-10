@@ -113,7 +113,8 @@ const sharedHumanization = async <InputDataType extends AccountOp | Message>(
         totalHumanizerMetaToBeUsed,
         {
           fetch,
-          emitError
+          emitError,
+          network: options?.network
         }
       )
       asyncOps.push(...newAsyncOps)
@@ -137,7 +138,8 @@ const sharedHumanization = async <InputDataType extends AccountOp | Message>(
 
       ;[parsedMessage, asyncOps] = parseMessage(humanizerSettings, irMessage, parsingModules, {
         fetch,
-        emitError
+        emitError,
+        network: options?.network
       })
       ;(callback as (response: IrMessage) => void)(parsedMessage)
     }

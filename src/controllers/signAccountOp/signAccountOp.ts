@@ -201,7 +201,8 @@ export class SignAccountOpController extends EventEmitter {
         this.humanReadable = humanizedCalls
         this.emitUpdate()
       },
-      (err) => this.emitError(err)
+      (err) => this.emitError(err),
+      { network: this.#network }
     ).catch((err) => this.emitError(err))
   }
 
