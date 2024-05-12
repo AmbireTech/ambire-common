@@ -1,13 +1,13 @@
 /* eslint-disable @typescript-eslint/brace-style */
 import {
   getAddress,
+  getBigInt,
   Interface,
   isAddress,
   toQuantity,
   TransactionResponse,
   ZeroAddress
 } from 'ethers'
-import { isSignMethod } from 'libs/notification/notification'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireAccountFactory from '../../../contracts/compiled/AmbireAccountFactory.json'
@@ -46,8 +46,10 @@ import { estimate } from '../../libs/estimate/estimate'
 import { EstimateResult } from '../../libs/estimate/interfaces'
 import { GasRecommendation, getGasPriceRecommendations } from '../../libs/gasPrice/gasPrice'
 import { humanizeAccountOp } from '../../libs/humanizer'
+import { isSignAccountOpMethod, isSignMethod } from '../../libs/notification/notification'
 import { GetOptions } from '../../libs/portfolio/interfaces'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
+import { stringify } from '../../libs/richJson/richJson'
 import { isErc4337Broadcast } from '../../libs/userOperation/userOperation'
 import bundler from '../../services/bundlers'
 import findAccountOpInSignAccountOpsToBeSigned from '../../utils/findAccountOpInSignAccountOpsToBeSigned'
@@ -726,13 +728,60 @@ export class MainController extends EventEmitter {
     }
   ) {
     if (isSignMethod(request.method)) {
+      if (isSignAccountOpMethod(request.method)) {
+        const transaction = request.params[0]
+        const network = this.settings.networks.find(
+          (n) => Number(n.chainId) === Number(this.#getDapp(request.origin)?.chainId)
+        )
+        if (!network) {
+          dappPromise.reject('Transaction failed - unknown network')
+          return
+        }
+
+        const accountAddr = getAddress(transaction.from)
+        const account = this.accounts.find((a) => a.addr === accountAddr)
+        if (!accountAddr || !account) {
+          dappPromise.reject('Invalid transaction params - address not found')
+          return
+        }
+        delete transaction.from
+        const userRequestId = new Date().getTime()
+        const userRequest: UserRequest = {
+          id: userRequestId,
+          action: {
+            kind: 'call',
+            ...transaction,
+            value: transaction.value ? getBigInt(transaction.value) : 0n
+          },
+          networkId: network.id,
+          accountAddr,
+          forceNonce: null
+        }
+
+        await this.addUserRequest(userRequest)
+
+        const notificationRequest: NotificationRequest = {
+          ...request,
+          id: getAccountOpId(userRequest.accountAddr, userRequest.networkId),
+          meta: {
+            accountAddr,
+            networkId: network.id
+          },
+          promises: [{ fromUserRequestId: userRequestId, ...dappPromise }]
+        }
+
+        this.notification.requestAccountOpNotification(
+          notificationRequest,
+          account.creation ? 'smart' : 'basic'
+        )
+      }
     } else {
       const notificationRequest: NotificationRequest = {
         ...request,
         id: new Date().getTime().toString(),
         promises: [dappPromise]
       }
-      this.notification.requestNotificationRequest(notificationRequest)
+      this.notification.requestBasicNotificationRequest(notificationRequest)
     }
   }
 

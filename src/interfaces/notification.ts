@@ -1,6 +1,6 @@
 import { DappProviderRequest } from './dapp'
 
-interface BasicNotificationRequest extends DappProviderRequest {
+export interface BasicNotificationRequest extends DappProviderRequest {
   id: string
   promises: {
     resolve: (data: any) => void
@@ -8,7 +8,7 @@ interface BasicNotificationRequest extends DappProviderRequest {
   }[]
 }
 
-interface SignNotificationRequest extends DappProviderRequest {
+export interface SignNotificationRequest extends DappProviderRequest {
   id: string
   promises: {
     fromUserRequestId: number

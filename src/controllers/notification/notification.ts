@@ -1,17 +1,17 @@
 /* eslint-disable @typescript-eslint/no-floating-promises */
 /* eslint-disable @typescript-eslint/no-shadow */
 import { ethErrors } from 'eth-rpc-errors'
-import { getBigInt } from 'ethers'
 
 import { Account } from '../../interfaces/account'
 import { Dapp } from '../../interfaces/dapp'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
-import { NotificationRequest } from '../../interfaces/notification'
+import {
+  BasicNotificationRequest,
+  NotificationRequest,
+  SignNotificationRequest
+} from '../../interfaces/notification'
 import { CustomNetwork, NetworkPreference } from '../../interfaces/settings'
-import { UserRequest } from '../../interfaces/userRequest'
 import { WindowManager } from '../../interfaces/window'
-import { isSmartAccount } from '../../libs/account/account'
-import { getAccountOpId } from '../../libs/accountOp/accountOp'
 import {
   isSignAccountOpMethod,
   isSignMessageMethod,
@@ -19,16 +19,9 @@ import {
   QUEUE_REQUEST_METHODS_WHITELIST,
   SIGN_METHODS
 } from '../../libs/notification/notification'
-import findAccountOpInSignAccountOpsToBeSigned from '../../utils/findAccountOpInSignAccountOpsToBeSigned'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
 export class NotificationController extends EventEmitter {
-  #accounts: (Account & {
-    newlyCreated?: boolean | undefined
-  })[]
-
-  #networks: (NetworkDescriptor & (NetworkPreference | CustomNetwork))[]
-
   #windowManager: WindowManager
 
   #getDapp: (url: string) => Dapp | undefined
@@ -40,8 +33,6 @@ export class NotificationController extends EventEmitter {
   currentNotificationRequest: NotificationRequest | null = null
 
   constructor({
-    accounts,
-    networks,
     windowManager,
     getDapp
   }: {
@@ -55,8 +46,6 @@ export class NotificationController extends EventEmitter {
     super()
     this.#windowManager = windowManager
     this.#getDapp = getDapp
-    this.#accounts = accounts
-    this.#networks = networks
 
     this.#windowManager.event.on('windowRemoved', (winId: number) => {
       if (winId === this.notificationWindowId) {
@@ -67,83 +56,50 @@ export class NotificationController extends EventEmitter {
     })
   }
 
-  requestNotificationRequest = (request: NotificationRequest, openNewWindow: boolean = true) => {
-    // Delete the current notification request if it's a benzin request
-    if (this.currentNotificationRequest?.method === 'benzin') {
-      this.#deleteNotificationRequest(this.currentNotificationRequest.id)
-      this.currentNotificationRequest = null
-    }
+  requestBasicNotificationRequest = (
+    request: BasicNotificationRequest,
+    openNewWindow: boolean = true
+  ) => {
+    this.#validateRequest(request)
 
-    if (
-      !QUEUE_REQUEST_METHODS_WHITELIST.includes(request.method) &&
-      this.notificationWindowId &&
-      this.currentNotificationRequest
-    ) {
-      if (request.method === this.currentNotificationRequest.method) {
-        this.#rejectNotificationRequestPromises(
-          'Request rejected',
-          this.currentNotificationRequest.id
-        )
-        this.#deleteNotificationRequest(this.currentNotificationRequest.id)
-      } else {
-        this.focusCurrentNotificationWindow(
-          'You currently have a pending dApp request. Please resolve it before making another request.'
-        )
-        throw ethErrors.provider.userRejectedRequest('please request after current request resolve')
-      }
-    }
+    this.#addNotificationRequest(request)
+    this.currentNotificationRequest = request
 
-    if (!SIGN_METHODS.includes(request.method)) {
+    this.emitUpdate()
+    if (openNewWindow) this.#openNotificationWindow()
+  }
+
+  requestAccountOpNotification(request: SignNotificationRequest, accountType: 'smart' | 'basic') {
+    if (accountType === 'basic') {
       this.#addNotificationRequest(request)
-
-      this.emitUpdate()
-      if (openNewWindow) this.#openNotificationWindow()
-      return
+      const firstNotificationRequestWithSameId = this.notificationRequests.find(
+        (r) => r.id === request.id
+      )
+      this.currentNotificationRequest = firstNotificationRequestWithSameId || request
     }
 
-    //
-    // Handle SIGN_METHODS
-    //
+    if (accountType === 'smart') {
+      let alreadyAdded = false
+      this.notificationRequests = this.notificationRequests.map((r) => {
+        if (r.id === request.id) {
+          alreadyAdded = true
+          return {
+            ...r,
+            promises: [...r.promises, ...request.promises]
+          }
+        }
 
-    if (isSignAccountOpMethod(request.method)) {
-      this.#addSignAccountOpRequest(request, openNewWindow)
-      return
+        return r
+      })
+
+      if (!alreadyAdded) {
+        this.#addNotificationRequest(request)
+      }
+      this.currentNotificationRequest = request
     }
 
-    if (isSignMessageMethod(request.method)) {
-      // const userNotification = new UserNotification(this.#dappsCtrl)
-      // const userRequest = userNotification.createSignMessageUserRequest({
-      //   id,
-      //   data: request.params,
-      //   origin: request.origin,
-      //   selectedAccount: this.#mainCtrl.selectedAccount || '',
-      //   networks: this.#mainCtrl.settings.networks,
-      //   onError: (err) => this.rejectNotificationRequest(err),
-      //   onSuccess: (data, id) => this.resolveNotificationRequest(data, id)
-      // })
-      // if (userRequest) this.#mainCtrl.addUserRequest(userRequest)
-      // else {
-      //   this.rejectNotificationRequest('Invalid request data')
-      //   return
-      // }
-    }
-
-    if (isSignTypedDataMethod(request.method)) {
-      // const userNotification = new UserNotification(this.#dappsCtrl)
-      // const userRequest = userNotification.createSignTypedDataUserRequest({
-      //   id,
-      //   data: request.params,
-      //   origin: request.origin,
-      //   selectedAccount: this.#mainCtrl.selectedAccount || '',
-      //   networks: this.#mainCtrl.settings.networks,
-      //   onError: (err) => this.rejectNotificationRequest(err),
-      //   onSuccess: (data, id) => this.resolveNotificationRequest(data, id)
-      // })
-      // if (userRequest) this.#mainCtrl.addUserRequest(userRequest)
-      // else {
-      //   this.rejectNotificationRequest('Invalid request data')
-      // }
-    }
+    this.emitUpdate()
+    this.#openNotificationWindow()
   }
 
   resolveNotificationRequest = (data: any, requestId?: string) => {
@@ -163,10 +119,10 @@ export class NotificationController extends EventEmitter {
     }
 
     if (isSignAccountOpMethod(notificationRequest.method)) {
-      this.#removeAccountOp(notificationRequest)
+      // this.#removeAccountOp(notificationRequest) // TODO:
       const meta = { ...notificationRequest.meta, txnId: null, userOpHash: null }
       data?.isUserOp ? (meta.userOpHash = data.hash) : (meta.txnId = data.hash)
-      this.requestNotificationRequest(
+      this.requestBasicNotificationRequest(
         {
           ...notificationRequest,
           method: 'benzin',
@@ -196,109 +152,42 @@ export class NotificationController extends EventEmitter {
       this.#setNextNotificationRequestOnReject(notificationRequest)
     }
 
-    if (isSignAccountOpMethod(notificationRequest.method)) {
-      this.#removeAccountOp(notificationRequest)
-    }
-
     this.emitUpdate()
   }
 
   #addNotificationRequest(request: NotificationRequest) {
     this.notificationRequests = [request, ...this.notificationRequests]
-    this.currentNotificationRequest = request
   }
 
-  #doesAccountSupportsBatching(accountAddr: string) {
-    const account = this.#accounts.find((a) => a.addr === accountAddr)
-    return !!account && isSmartAccount(account)
+  getNotificationRequestById(requestId: string) {
+    return this.notificationRequests.find((r) => r.id === requestId)
   }
 
-  async #addSignAccountOpRequest(
-    request: NotificationRequest,
-    promise: {
-      resolve: (data: any) => void
-      reject: (data: any) => void
-    },
-    openNewWindow: boolean = true
-  ) {
-    const transaction = request.params[0]
-    const network = this.#networks.find(
-      (n) => Number(n.chainId) === Number(this.#getDapp(request.origin)?.chainId)
-    )
-
-    if (!network) {
-      promise.reject('Unsupported network')
-      return
+  #validateRequest(request: NotificationRequest) {
+    // Delete the current notification request if it's a benzin request
+    if (this.currentNotificationRequest?.method === 'benzin') {
+      this.#deleteNotificationRequest(this.currentNotificationRequest.id)
+      this.currentNotificationRequest = null
     }
-
-    const accountAddr = transaction.from
-    if (!accountAddr) {
-      promise.reject('Invalid transaction params')
-      return
-    }
-    delete transaction.from
-    const userRequest: UserRequest = {
-      id: new Date().getTime(),
-      action: {
-        kind: 'call',
-        ...transaction,
-        value: transaction.value ? getBigInt(transaction.value) : 0n
-      },
-      networkId: network.id,
-      accountAddr,
-      // TODO: ?
-      forceNonce: null
-    }
-
-    await this.#mainCtrl.addUserRequest(userRequest)
-
-    const existingNotificationRequest = this.notificationRequests.find(
-      (r) => r.id === getAccountOpId(userRequest.accountAddr, userRequest.networkId)
-    )
-
-    if (existingNotificationRequest) {
-      this.notificationRequests.map((r) => {
-        if (r.id === getAccountOpId(userRequest.accountAddr, userRequest.networkId) && !r.isReady) {
-          foundNotificationRequest = true
-          return { ...notificationRequestFromUserRequest, promises: r.promises }
-        }
-
-        return r
-      })
-    }
-
-    this.notificationRequests.map((r) => {
-      if (r.id === getAccountOpId(userRequest.accountAddr, userRequest.networkId) && !r.isReady) {
-        foundNotificationRequest = true
-        return { ...notificationRequestFromUserRequest, promises: r.promises }
-      }
-
-      return r
-    })
 
     if (
-      this.notificationRequests.find(
-        (r) => r.id === getAccountOpId(userRequest.accountAddr, userRequest.networkId)
-      )
+      !QUEUE_REQUEST_METHODS_WHITELIST.includes(request.method) &&
+      this.notificationWindowId &&
+      this.currentNotificationRequest
     ) {
-      this.emitUpdate()
-      if (openNewWindow) this.#openNotificationWindow()
-    } else {
-      this.#addNotificationRequest({
-        ...notificationRequest,
-        id: getAccountOpId(userRequest.accountAddr, userRequest.networkId)
-      })
+      if (request.method === this.currentNotificationRequest.method) {
+        this.#rejectNotificationRequestPromises(
+          'Request rejected',
+          this.currentNotificationRequest.id
+        )
+        this.#deleteNotificationRequest(this.currentNotificationRequest.id)
+      } else {
+        this.focusCurrentNotificationWindow(
+          'You currently have a pending dApp request. Please resolve it before making another request.'
+        )
+        throw ethErrors.provider.userRejectedRequest('please request after current request resolve')
+      }
     }
-  }
-
-  #removeAccountOp(request: NotificationRequest) {
-    const accountOp = findAccountOpInSignAccountOpsToBeSigned(
-      this.#mainCtrl.accountOpsToBeSigned,
-      request.meta?.accountAddr,
-      request.meta?.networkId
-    )
-    if (accountOp)
-      this.#mainCtrl.removeAccountOp(request.meta?.accountAddr, request.meta?.networkId)
   }
 
   #resolveNotificationRequestPromises(data: any, requestId: string) {
