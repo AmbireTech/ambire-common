@@ -209,14 +209,9 @@ describe('ERC4337 DKIM sigMode Both', () => {
     })
     const targetNonce = getTargetNonce(replayTargetNonceOp)
     replayTargetNonceOp.nonce = `${targetNonce.substring(0, targetNonce.length - 2)}01`
-    const isOneTimeNonce = (error: string) => {
-      return Buffer.from(error.substring(2), 'hex')
-        .toString()
-        .includes('execute(): one-time nonce is wrong')
-    }
     await expect(entryPoint.handleOps([replayTargetNonceOp], relayer))
-      .to.be.revertedWithCustomError(entryPoint, 'FailedOpWithRevert')
-      .withArgs(0, 'AA23 reverted', isOneTimeNonce)
+      .to.be.revertedWithCustomError(entryPoint, 'FailedOp')
+      .withArgs(0, 'AA24 signature error')
 
     // try to replay with a valid paymaster signature, should fail
     // and should not allow to reuse the nonce
