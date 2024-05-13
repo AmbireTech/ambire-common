@@ -395,184 +395,118 @@ describe('Bundler tests', () => {
     })
   })
 
-  // describe('Estimation tests: mantle, undeployed account', () => {
-  //   test('should estimate a deploy userOp', async () => {
-  //     const privs = [
-  //       {
-  //         addr: addrWithDeploySignature,
-  //         hash: dedicatedToOneSAPriv
-  //       }
-  //     ]
-  //     const smartAcc = await getSmartAccount(privs)
+  describe('Estimation tests: mantle, undeployed account', () => {
+    test('should estimate a deploy userOp', async () => {
+      const privs = [
+        {
+          addr: addrWithDeploySignature,
+          hash: dedicatedToOneSAPriv
+        }
+      ]
+      const smartAcc = await getSmartAccount(privs)
 
-  //     const opMantle: AccountOp = {
-  //       accountAddr: smartAcc.addr,
-  //       signingKeyAddr: smartAcc.associatedKeys[0],
-  //       signingKeyType: null,
-  //       gasLimit: null,
-  //       gasFeePayment: null,
-  //       networkId: mantle.id,
-  //       nonce: 0n,
-  //       signature: '0x',
-  //       calls: [{ to, value: 1n, data: '0x' }],
-  //       accountOpToExecuteBefore: null
-  //     }
-  //     const usedNetworks = [mantle]
-  //     const providers = {
-  //       [mantle.id]: getRpcProvider(mantle.rpcUrls, mantle.chainId)
-  //     }
-  //     const accountStates = await getAccountsInfo(usedNetworks, providers, [smartAcc])
-  //     const accountState = accountStates[opMantle.accountAddr][opMantle.networkId]
+      const opMantle: AccountOp = {
+        accountAddr: smartAcc.addr,
+        signingKeyAddr: smartAcc.associatedKeys[0],
+        signingKeyType: null,
+        gasLimit: null,
+        gasFeePayment: null,
+        networkId: mantle.id,
+        nonce: 0n,
+        signature: '0x',
+        calls: [{ to, value: 1n, data: '0x' }],
+        accountOpToExecuteBefore: null
+      }
+      const usedNetworks = [mantle]
+      const providers = {
+        [mantle.id]: getRpcProvider(mantle.rpcUrls, mantle.chainId)
+      }
+      const accountStates = await getAccountsInfo(usedNetworks, providers, [smartAcc])
+      const accountState = accountStates[opMantle.accountAddr][opMantle.networkId]
+      const userOp = getUserOperation(
+        smartAcc,
+        accountState,
+        opMantle,
+        '0x44891d2fe7190d2bda961e54406dd19d419861f076e8f807bf760101a7fe130c66e5d896adb7c80751586f2fbf0b7ff0d89ff836dbc46a7083ec3d757bead8771c01'
+      )
 
-  //     const privKey = process.env.METAMASK_PK
-  //     const key: Key = {
-  //       addr: addrWithDeploySignature,
-  //       type: 'internal',
-  //       dedicatedToOneSA: true,
-  //       isExternallyStored: false,
-  //       meta: null
-  //     }
-  //     const signer = new KeystoreSigner(key, privKey)
-  //     const sig = await getDummyEntryPointSig(smartAcc.addr, mantle.chainId, signer)
-  //     console.log(sig)
+      const ambireInterface = new Interface(AmbireAccount.abi)
+      userOp.callData = ambireInterface.encodeFunctionData('executeBySender', [
+        getSignableCalls(opMantle)
+      ])
+      userOp.nonce = toBeHex(0)
+      userOp.signature = getSigForCalculations()
 
-  //     const userOp = getUserOperation(smartAcc, accountState, opMantle, sig)
+      const bundlerEstimate = await Bundler.estimate(userOp, mantle)
+      expect(bundlerEstimate).toHaveProperty('preVerificationGas')
+      expect(bundlerEstimate).toHaveProperty('verificationGasLimit')
+      expect(bundlerEstimate).toHaveProperty('callGasLimit')
+      expect(bundlerEstimate).toHaveProperty('paymasterVerificationGasLimit')
+      expect(bundlerEstimate).toHaveProperty('paymasterPostOpGasLimit')
+    })
+    test('should revert because we are trying to send USDT and the account does not have USDT', async () => {
+      expect.assertions(1)
 
-  //     const ambireInterface = new Interface(AmbireAccount.abi)
-  //     userOp.callData = ambireInterface.encodeFunctionData('executeBySender', [
-  //       getSignableCalls(opMantle)
-  //     ])
-  //     userOp.nonce = toBeHex(0)
-  //     userOp.signature = getSigForCalculations()
+      const privs = [
+        {
+          addr: addrWithDeploySignature,
+          hash: dedicatedToOneSAPriv
+        }
+      ]
+      const smartAcc = await getSmartAccount(privs)
+      const ERC20Interface = new Interface(ERC20.abi)
+      const opMantle: AccountOp = {
+        accountAddr: smartAcc.addr,
+        signingKeyAddr: smartAcc.associatedKeys[0],
+        signingKeyType: null,
+        gasLimit: null,
+        gasFeePayment: null,
+        networkId: mantle.id,
+        nonce: 0n,
+        signature: '0x',
+        calls: [
+          { to, value: 1n, data: '0x' },
+          // USDT, reverts
+          {
+            to: '0x201eba5cc46d216ce6dc03f6a759e8e766e956ae',
+            value: 0n,
+            data: ERC20Interface.encodeFunctionData('transfer', [FEE_COLLECTOR, 10])
+          }
+        ],
+        accountOpToExecuteBefore: null
+      }
+      const usedNetworks = [mantle]
+      const providers = {
+        [mantle.id]: getRpcProvider(mantle.rpcUrls, mantle.chainId)
+      }
+      const accountStates = await getAccountsInfo(usedNetworks, providers, [smartAcc])
+      const accountState = accountStates[opMantle.accountAddr][opMantle.networkId]
+      const userOp = getUserOperation(
+        smartAcc,
+        accountState,
+        opMantle,
+        '0x44891d2fe7190d2bda961e54406dd19d419861f076e8f807bf760101a7fe130c66e5d896adb7c80751586f2fbf0b7ff0d89ff836dbc46a7083ec3d757bead8771c01'
+      )
 
-  //     const bundlerEstimate = await Bundler.estimate(userOp, mantle)
-  //     expect(bundlerEstimate).toHaveProperty('preVerificationGas')
-  //     expect(bundlerEstimate).toHaveProperty('verificationGasLimit')
-  //     expect(bundlerEstimate).toHaveProperty('callGasLimit')
-  //     expect(bundlerEstimate).toHaveProperty('paymasterVerificationGasLimit')
-  //     expect(bundlerEstimate).toHaveProperty('paymasterPostOpGasLimit')
-  //   })
-  // test('should return an error that the call is not from the entry point', async () => {
-  //   expect.assertions(1)
+      const ambireInterface = new Interface(AmbireAccount.abi)
+      userOp.callData = ambireInterface.encodeFunctionData('executeBySender', [
+        getSignableCalls(opMantle)
+      ])
+      const paymasterAndData = getPaymasterDataForEstimate()
+      userOp.paymaster = paymasterAndData.paymaster
+      userOp.paymasterData = paymasterAndData.paymasterData
+      userOp.nonce = toBeHex(0)
+      userOp.signature = getSigForCalculations()
 
-  //   const privs = [
-  //     {
-  //       addr: addrWithDeploySignature,
-  //       hash: dedicatedToOneSAPriv
-  //     }
-  //   ]
-  //   const smartAcc = await getSmartAccount(privs)
-  //   const opOptimism: AccountOp = {
-  //     accountAddr: smartAcc.addr,
-  //     signingKeyAddr: smartAcc.associatedKeys[0],
-  //     signingKeyType: null,
-  //     gasLimit: null,
-  //     gasFeePayment: null,
-  //     networkId: optimism.id,
-  //     nonce: 0n,
-  //     signature: '0x',
-  //     calls: [{ to, value: parseEther('10'), data: '0x' }],
-  //     accountOpToExecuteBefore: null
-  //   }
-  //   const usedNetworks = [optimism]
-  //   const providers = {
-  //     [optimism.id]: getRpcProvider(optimism.rpcUrls, optimism.chainId)
-  //   }
-  //   const accountStates = await getAccountsInfo(usedNetworks, providers, [smartAcc])
-  //   const accountState = accountStates[opOptimism.accountAddr][opOptimism.networkId]
-  //   const userOp = getUserOperation(
-  //     smartAcc,
-  //     accountState,
-  //     opOptimism,
-  //     '0x126eabb5d01aa47fdeae4797ae5ae63d3279d12ccfddd0a09ad38a63c4140ab57354a2ef555c0c411b20644627b0f23b1927cec6401ca228b65046b620337dcf1b01'
-  //   )
-  //   const ambireInterface = new Interface(AmbireAccount.abi)
-  //   userOp.callData = ambireInterface.encodeFunctionData('executeBySender', [
-  //     getSignableCalls(opOptimism)
-  //   ])
-  //   const paymasterAndData = getPaymasterDataForEstimate()
-  //   userOp.paymaster = paymasterAndData.paymaster
-  //   userOp.paymasterData = paymasterAndData.paymasterData
-  //   userOp.nonce = toBeHex(0)
-  //   userOp.signature = getSigForCalculations()
-
-  //   // override the factoryData so it deploy without entry point privs
-  //   const factoryInterface = new Interface(AmbireAccountFactory.abi)
-  //   userOp.factoryData = factoryInterface.encodeFunctionData('deploy', [
-  //     smartAcc.creation!.bytecode,
-  //     smartAcc.creation!.salt
-  //   ])
-
-  //   try {
-  //     await Bundler.estimate(userOp, optimism)
-  //   } catch (e: any) {
-  //     expect(e.error.message.indexOf('validateUserOp: not from entryPoint')).not.toBe(-1)
-  //   }
-  // })
-  // test('should revert because we are trying to send USDT and the account does not have USDT', async () => {
-  //   expect.assertions(1)
-
-  //   const privs = [
-  //     {
-  //       addr: addrWithDeploySignature,
-  //       hash: dedicatedToOneSAPriv
-  //     }
-  //   ]
-  //   const smartAcc = await getSmartAccount(privs)
-  //   const ERC20Interface = new Interface(ERC20.abi)
-  //   const opOptimism: AccountOp = {
-  //     accountAddr: smartAcc.addr,
-  //     signingKeyAddr: smartAcc.associatedKeys[0],
-  //     signingKeyType: null,
-  //     gasLimit: null,
-  //     gasFeePayment: null,
-  //     networkId: optimism.id,
-  //     nonce: 0n,
-  //     signature: '0x',
-  //     calls: [
-  //       // native, passes even though no eth
-  //       { to, value: parseEther('10'), data: '0x' },
-  //       // USDT, reverts
-  //       {
-  //         to: '0x94b008aA00579c1307B0EF2c499aD98a8ce58e58',
-  //         value: 0n,
-  //         data: ERC20Interface.encodeFunctionData('transfer', [FEE_COLLECTOR, 10])
-  //       }
-  //     ],
-  //     accountOpToExecuteBefore: null
-  //   }
-  //   const usedNetworks = [optimism]
-  //   const providers = {
-  //     [optimism.id]: getRpcProvider(optimism.rpcUrls, optimism.chainId)
-  //   }
-  //   const accountStates = await getAccountsInfo(usedNetworks, providers, [smartAcc])
-  //   const accountState = accountStates[opOptimism.accountAddr][opOptimism.networkId]
-  //   const userOp = getUserOperation(
-  //     smartAcc,
-  //     accountState,
-  //     opOptimism,
-  //     '0x126eabb5d01aa47fdeae4797ae5ae63d3279d12ccfddd0a09ad38a63c4140ab57354a2ef555c0c411b20644627b0f23b1927cec6401ca228b65046b620337dcf1b01'
-  //   )
-
-  //   const ambireInterface = new Interface(AmbireAccount.abi)
-  //   userOp.callData = ambireInterface.encodeFunctionData('executeBySender', [
-  //     getSignableCalls(opOptimism)
-  //   ])
-  //   const paymasterAndData = getPaymasterDataForEstimate()
-  //   userOp.paymaster = paymasterAndData.paymaster
-  //   userOp.paymasterData = paymasterAndData.paymasterData
-  //   userOp.nonce = toBeHex(0)
-  //   userOp.signature = getSigForCalculations()
-
-  //   try {
-  //     await Bundler.estimate(userOp, optimism)
-  //   } catch (e: any) {
-  //     const buffer = Buffer.from(
-  //       e.error.message.substring(e.error.message.indexOf('0x') + 2),
-  //       'hex'
-  //     ).toString()
-  //     expect(buffer.indexOf('transfer amount exceeds balance')).not.toBe(-1)
-  //   }
-  // })
-  // })
+      try {
+        await Bundler.estimate(userOp, mantle)
+      } catch (e: any) {
+        const buffer = Buffer.from(
+          e.error.message.substring(e.error.message.indexOf('0x') + 2),
+          'hex'
+        ).toString()
+        expect(buffer.indexOf('transfer amount exceeds balance')).not.toBe(-1)
+      }
+    })
+  })
 })
