@@ -6,7 +6,7 @@ import { Account } from '../../interfaces/account'
 import { NetworkId } from '../../interfaces/networkDescriptor'
 import { RPCProvider } from '../../interfaces/settings'
 import { isSmartAccount } from '../account/account'
-import { TokenResult } from './interfaces'
+import { GetOptions, PortfolioGetResult, TokenResult } from './interfaces'
 
 const usdcEMapping: { [key: string]: string } = {
   avalanche: '0xa7d7079b0fead91f3e65f86e8915cb59c1a4c664',
@@ -103,4 +103,47 @@ export const shouldGetAdditionalPortfolio = (account: Account) => {
 // otherwise, the token.amount
 export const getTokenAmount = (token: TokenResult): bigint => {
   return typeof token.amountPostSimulation === 'bigint' ? token.amountPostSimulation : token.amount
+}
+
+/**
+ * Updates the previous hints storage with the latest portfolio get result.
+ */
+export function updatePreviousHintsStorage(
+  result: PortfolioGetResult,
+  networkId: NetworkId,
+  storagePreviousHints: {
+    learnedTokens: { [key in NetworkId]: { [key: string]: string } }
+    fromExternalAPI: { [key: string]: GetOptions['previousHints'] }
+  },
+  key: string
+) {
+  const hints = storagePreviousHints
+  const erc20s = result.tokens.filter((token) => token.amount > 0n).map((token) => token.address)
+
+  const erc721s = Object.fromEntries(
+    result.collections.map((collection) => [
+      collection.address,
+      result.hints.erc721s[collection.address]
+    ])
+  )
+  const previousHints = (hints.fromExternalAPI && hints.fromExternalAPI[key]) || {}
+
+  hints.fromExternalAPI = {
+    ...hints.fromExternalAPI,
+    [key]: { erc20s, erc721s }
+  }
+  // eslint-disable-next-line no-restricted-syntax
+  for (const address of erc20s) {
+    if (Object.keys(previousHints).length > 0 && !previousHints.erc20s.includes(address)) {
+      if (!hints?.learnedTokens || !hints?.learnedTokens[networkId]) {
+        hints.learnedTokens = {
+          ...hints.learnedTokens,
+          [networkId]: {}
+        }
+      }
+      hints.learnedTokens[networkId][address] = Date.now().toString()
+    }
+  }
+
+  return hints
 }

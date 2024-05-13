@@ -21,6 +21,7 @@ import getAccountNetworksWithAssets from '../../libs/portfolio/getNetworksWithAs
 import {
   getFlags,
   shouldGetAdditionalPortfolio,
+  updatePreviousHintsStorage,
   validateERC20Token
 } from '../../libs/portfolio/helpers'
 /* eslint-disable no-param-reassign */
@@ -33,50 +34,14 @@ import {
   PortfolioGetResult,
   TokenResult
 } from '../../libs/portfolio/interfaces'
-import { LIMITS, Portfolio } from '../../libs/portfolio/portfolio'
+import { Portfolio } from '../../libs/portfolio/portfolio'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import EventEmitter from '../eventEmitter/eventEmitter'
 /* eslint-disable @typescript-eslint/no-shadow */
 import { SettingsController } from '../settings/settings'
 
 const THRESHOLD = 10
-
-/**
- * Updates the previous hints storage with the latest portfolio get result.
- */
-// TODO: Move to helpers
-function updatePreviousHintsStorage(
-  result: PortfolioGetResult,
-  storagePreviousHints: any,
-  key: string
-) {
-  const networkId = result.hints.networkId
-  const erc20s = result.tokens.filter((token) => token.amount > 0n).map((token) => token.address)
-
-  const erc721s = Object.fromEntries(
-    result.collections.map((collection) => [
-      collection.address,
-      result.hints.erc721s[collection.address]
-    ])
-  )
-
-  storagePreviousHints.fromExternalAPI = {
-    ...storagePreviousHints.fromExternalAPI,
-    [key]: { erc20s, erc721s }
-  }
-  if (!storagePreviousHints?.learnedTokens || !storagePreviousHints?.learnedTokens[networkId]) {
-    storagePreviousHints.learnedTokens = {
-      ...storagePreviousHints.learnedTokens,
-      [networkId]: {}
-    }
-  }
-  // Set lastSeenNonZero timestamp for learnedTokens
-  erc20s.forEach((address) => {
-    storagePreviousHints.learnedTokens[networkId][address] = Date.now().toString()
-  })
-
-  return storagePreviousHints
-}
+const LIMIT = 50
 
 export class PortfolioController extends EventEmitter {
   latest: PortfolioControllerState
@@ -696,6 +661,7 @@ export class PortfolioController extends EventEmitter {
           // Store tokens from velcro and other APIs and update learnedTokens timestamp for lastSeenNonZero property
           const updatedStoragePreviousHints = updatePreviousHintsStorage(
             accountState[network.id]!.result!,
+            network.id,
             storagePreviousHints,
             key
           )
@@ -723,70 +689,49 @@ export class PortfolioController extends EventEmitter {
   /**
    * Learn new tokens from humanizer and debug_traceCall
    */
-  async learnTokens(tokens: string[], networkId: NetworkId, accountId: AccountId) {
+  async learnTokens(tokens: string[], networkId: NetworkId) {
     const storagePreviousHints = await this.#storage.get('previousHints', {})
 
     const learnedTokens = storagePreviousHints.learnedTokens || {}
-    const networkLearnedTokens = learnedTokens[networkId] || {}
+    let networkLearnedTokens = learnedTokens[networkId] || {}
 
-    const network = this.#settings.networks.find((x) => x.id === networkId)
-
-    if (!network) throw new Error('network not found')
-
-    const portfolioLib = this.initializePortfolioLibIfNeeded(accountId, networkId, network)
-
-    // Get the limit for the network
-    const limit = portfolioLib.deploylessTokens.isLimitedAt24kbData
-      ? LIMITS.deploylessProxyMode
-      : LIMITS.deploylessStateOverrideMode
-
-    // Reached network erc20 limit
-    if (limit.erc20 - Object.keys(networkLearnedTokens).length === THRESHOLD) {
-      await this.cleanLearnedTokens(networkId, limit.erc20, storagePreviousHints)
-    }
-    tokens.forEach((address) => {
-      if (address === ZeroAddress) return
-      if (!(address in networkLearnedTokens)) {
+    for (const address of tokens) {
+      if (address !== ZeroAddress && !(address in networkLearnedTokens)) {
         networkLearnedTokens[address] = null
       }
-    })
+    }
+
+    // Reached limit
+    if (LIMIT >= Object.keys(networkLearnedTokens).length - THRESHOLD) {
+      networkLearnedTokens = await this.cleanLearnedTokens(networkId, storagePreviousHints)
+    }
     const updatedPreviousHintsStorage = { ...storagePreviousHints }
     updatedPreviousHintsStorage.learnedTokens[networkId] = networkLearnedTokens
 
     await this.#storage.set('previousHints', updatedPreviousHintsStorage)
   }
 
-  #calculateTokensToDeleteCount(networkLearnedTokens: any, limit: number) {
-    const totalTokens = Object.keys(networkLearnedTokens).length
-    const ratio = totalTokens / limit
-
-    // Calculate the number of tokens to delete based on the ratio
-    // Ensure there's always slots available based on the THRESHOLD
-    return Math.max(0, Math.ceil(ratio * totalTokens - (limit - THRESHOLD)))
-  }
-
   // Implement a cleanup mechanism for learned tokens
   // 1. leave in any tokens which are in pinned tokens and token preferences. Here we should think about another list we need to NEVER remove learned tokens
-  // 2. when reached the limit of a network with 250 tokens remove tokens with 1) lastSeenNonZero  = null 2) oldest seen by lastSeenNonZero
-  // 3. periodically delete some tokens which are seen a long time ago just in case
-  async cleanLearnedTokens(networkId: NetworkId, limit: number, storagePreviousHints: any) {
+  // 2. when reached the limit of a network with 250 tokens remove tokens which are soonest seen by lastSeenNonZero
+  async cleanLearnedTokens(networkId: NetworkId, storagePreviousHints: any) {
     const learnedTokens = storagePreviousHints.learnedTokens || {}
     const networkLearnedTokens = learnedTokens[networkId]
 
     const learnedTokensArray = Object.entries(networkLearnedTokens)
-      .filter(([address, lastSeenNonZero]) => {
+      .filter(([address]) => {
         const isPinned = PINNED_TOKENS.map((t) => t.address).includes(address)
 
         const isTokenPreference = this.tokenPreferences.find(
           (token) => token.networkId === networkId && token.address === address
         )
-        return !isPinned && !isTokenPreference && lastSeenNonZero !== null
+        return !isPinned && !isTokenPreference
       })
-      .sort((a, b) => Number(a[1]) - Number(b[1]))
+      .sort((a, b) => Number(b[1]) - Number(a[1]))
 
-    const tokensToDeleteCount = this.#calculateTokensToDeleteCount(learnedTokensArray, limit)
+    const tokensToDeleteCount = Math.max(0, learnedTokensArray.length - LIMIT)
 
-    // If there are more tokens than the limit, delete the oldest ones
+    // If there are more tokens than the limit, delete the newest ones
     const tokensToDelete = learnedTokensArray.slice(0, tokensToDeleteCount)
 
     tokensToDelete.forEach(([address]) => delete networkLearnedTokens[address])
