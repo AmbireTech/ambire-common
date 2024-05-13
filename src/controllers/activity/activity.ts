@@ -3,6 +3,7 @@
 import { SettingsController } from 'controllers/settings/settings'
 import fetch from 'node-fetch'
 
+import { networks as predefinedNetworks } from '../../consts/networks'
 import { AccountStates } from '../../interfaces/account'
 import { Banner } from '../../interfaces/banner'
 import { Storage } from '../../interfaces/storage'
@@ -287,28 +288,44 @@ export class ActivityController extends EventEmitter {
 
               shouldEmitUpdate = true
 
-              const declareFailedIfQuaterPassed = (op: SubmittedAccountOp) => {
+              const declareRejectedIfQuaterPassed = (op: SubmittedAccountOp) => {
                 const accountOpDate = new Date(op.timestamp)
                 accountOpDate.setMinutes(accountOpDate.getMinutes() + 15)
                 const aQuaterHasPassed = accountOpDate < new Date()
                 if (aQuaterHasPassed) {
                   this.#accountsOps[this.filters!.account][network][accountOpIndex].status =
-                    AccountOpStatus.Failure
+                    AccountOpStatus.Rejected
                 }
               }
 
               try {
                 let txnId = accountOp.txnId
                 if (accountOp.userOpHash) {
+                  const isCustomNetwork = !predefinedNetworks.find(
+                    (net) => net.id === networkConfig.id
+                  )
                   const [response, bundlerResult] = await Promise.all([
-                    fetchUserOp(accountOp.userOpHash, fetch, getExplorerId(networkConfig)),
+                    !isCustomNetwork
+                      ? fetchUserOp(accountOp.userOpHash, fetch, getExplorerId(networkConfig))
+                      : new Promise((resolve) => {
+                          resolve(null)
+                        }),
                     Bundler.getStatusAndTxnId(accountOp.userOpHash, networkConfig)
                   ])
+
+                  if (bundlerResult.status === 'rejected') {
+                    this.#accountsOps[this.filters!.account][network][accountOpIndex].status =
+                      AccountOpStatus.Rejected
+                    return
+                  }
 
                   if (bundlerResult.transactionHash) {
                     txnId = bundlerResult.transactionHash
                     this.#accountsOps[this.filters!.account][network][accountOpIndex].txnId = txnId
                   } else {
+                    // on custom networks the response is null
+                    if (!response) return
+
                     // nothing we can do if we don't have information
                     if (response.status !== 200) return
 
@@ -322,7 +339,7 @@ export class ActivityController extends EventEmitter {
                       this.#accountsOps[this.filters!.account][network][accountOpIndex].txnId =
                         txnId
                     } else {
-                      declareFailedIfQuaterPassed(accountOp)
+                      declareRejectedIfQuaterPassed(accountOp)
                       return
                     }
                   }
@@ -348,7 +365,7 @@ export class ActivityController extends EventEmitter {
                 // if there's no receipt, confirm there's a txn
                 // if there's no txn and 15 minutes have passed, declare it a failure
                 const txn = await provider.getTransaction(txnId)
-                if (!txn) declareFailedIfQuaterPassed(accountOp)
+                if (!txn) declareRejectedIfQuaterPassed(accountOp)
               } catch {
                 this.emitError({
                   level: 'silent',
@@ -483,8 +500,9 @@ export class ActivityController extends EventEmitter {
     return this.broadcastedButNotConfirmed.map((accountOp) => {
       const network = this.#settings.networks.find((x) => x.id === accountOp.networkId)!
 
+      const isCustomNetwork = !predefinedNetworks.find((net) => net.id === network.id)
       const url =
-        accountOp.userOpHash && accountOp.txnId === accountOp.userOpHash
+        accountOp.userOpHash && accountOp.txnId === accountOp.userOpHash && !isCustomNetwork
           ? `https://jiffyscan.xyz/userOpHash/${accountOp.userOpHash}?network=${getExplorerId(
               network
             )}`

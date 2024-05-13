@@ -65,8 +65,14 @@ export class Bundler {
   async pollTxnHash(
     userOperationHash: string,
     network: NetworkDescriptor
-  ): Promise<{ transactionHash: string }> {
+  ): Promise<{ transactionHash: string; status: string }> {
     const result = await Bundler.getStatusAndTxnId(userOperationHash, network)
+
+    // if the bundler has rejected the userOp, no meaning in continuing to poll
+    if (result && result.status === 'rejected') {
+      return result
+    }
+
     if (!result || !result.transactionHash) {
       const delayPromise = (ms: number) =>
         new Promise((resolve) => {

@@ -30,6 +30,7 @@ export enum AccountOpStatus {
   BroadcastedButNotConfirmed = 'broadcasted-but-not-confirmed',
   Success = 'success',
   Failure = 'failure',
+  Rejected = 'rejected',
   UnknownButPastNonce = 'unknown-but-past-nonce'
 }
 
