@@ -1,3 +1,5 @@
+import { DappProviderRequest } from '../../interfaces/dapp'
+
 export const SIGN_METHODS = [
   'eth_signTypedData',
   'eth_signTypedData_v1',
@@ -5,9 +7,7 @@ export const SIGN_METHODS = [
   'eth_signTypedData_v4',
   'personal_sign',
   'eth_sign',
-  'eth_sendTransaction',
-  'gs_multi_send',
-  'ambire_sendBatchTransaction'
+  'eth_sendTransaction'
 ]
 
 export const QUEUE_REQUEST_METHODS_WHITELIST = SIGN_METHODS
@@ -17,11 +17,12 @@ export const isSignMethod = (method: string) => {
 }
 
 export const isSignAccountOpMethod = (method: string) => {
-  return ['eth_sendTransaction'].includes(method)
+  return ['call', 'eth_sendTransaction'].includes(method)
 }
 
 export const isSignTypedDataMethod = (method: string) => {
   return [
+    'typedMessage',
     'eth_signTypedData',
     'eth_signTypedData_v1',
     'eth_signTypedData_v3',
@@ -30,7 +31,7 @@ export const isSignTypedDataMethod = (method: string) => {
 }
 
 export const isSignMessageMethod = (method: string) => {
-  return ['personal_sign', 'eth_sign'].includes(method)
+  return ['message', 'personal_sign', 'eth_sign'].includes(method)
 }
 
 export const methodToScreenMap = {
@@ -48,6 +49,23 @@ export const methodToScreenMap = {
   wallet_switchEthereumChain: 'AddChainScreen',
   wallet_watchAsset: 'WatchAssetScreen',
   eth_getEncryptionPublicKey: 'GetEncryptionPublicKeyScreen'
+}
+
+export const dappRequestMethodToActionKind = (method: DappProviderRequest['method']) => {
+  if (['call', 'eth_sendTransaction'].includes(method)) return 'call'
+  if (
+    [
+      'eth_signTypedData',
+      'eth_signTypedData_v1',
+      'eth_signTypedData_v3',
+      'eth_signTypedData_v4'
+    ].includes(method)
+  )
+    return 'typedMessage'
+  if (['personal_sign', 'eth_sign'].includes(method)) return 'message'
+
+  // method to camelCase
+  return method.replace(/_(.)/g, (m, p1) => p1.toUpperCase())
 }
 
 export const getNotificationScreen = (method: string) => {

@@ -1,7 +1,6 @@
 /* eslint-disable @typescript-eslint/brace-style */
 import {
   getAddress,
-  getBigInt,
   Interface,
   isAddress,
   toQuantity,
@@ -14,7 +13,7 @@ import AmbireAccountFactory from '../../../contracts/compiled/AmbireAccountFacto
 import { SINGLETON } from '../../consts/deploy'
 import { Account, AccountId, AccountOnchainState, AccountStates } from '../../interfaces/account'
 import { Banner } from '../../interfaces/banner'
-import { Dapp, DappProviderRequest } from '../../interfaces/dapp'
+import { Dapp } from '../../interfaces/dapp'
 import {
   ExternalSignerControllers,
   Key,
@@ -22,10 +21,16 @@ import {
   TxnRequest
 } from '../../interfaces/keystore'
 import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
-import { NotificationRequest } from '../../interfaces/notification'
+import {
+  Call,
+  Message,
+  NotificationRequest,
+  PlainTextMessage,
+  SignNotificationRequest,
+  TypedMessage
+} from '../../interfaces/notification'
 import { CustomNetwork, NetworkPreference } from '../../interfaces/settings'
 import { Storage } from '../../interfaces/storage'
-import { Message, UserRequest } from '../../interfaces/userRequest'
 import { WindowManager } from '../../interfaces/window'
 import { getDefaultSelectedAccount, isSmartAccount } from '../../libs/account/account'
 import {
@@ -46,10 +51,8 @@ import { estimate } from '../../libs/estimate/estimate'
 import { EstimateResult } from '../../libs/estimate/interfaces'
 import { GasRecommendation, getGasPriceRecommendations } from '../../libs/gasPrice/gasPrice'
 import { humanizeAccountOp } from '../../libs/humanizer'
-import { isSignAccountOpMethod, isSignMethod } from '../../libs/notification/notification'
 import { GetOptions } from '../../libs/portfolio/interfaces'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
-import { stringify } from '../../libs/richJson/richJson'
 import { isErc4337Broadcast } from '../../libs/userOperation/userOperation'
 import bundler from '../../services/bundlers'
 import findAccountOpInSignAccountOpsToBeSigned from '../../utils/findAccountOpInSignAccountOpsToBeSigned'
@@ -224,17 +227,94 @@ export class MainController extends EventEmitter {
     )
     this.transfer = new TransferController(this.settings, this.addressBook)
     this.notification = new NotificationController({
-      accounts: this.accounts,
-      networks: this.settings.networks,
+      settings: this.settings,
       windowManager,
-      getDapp
+      getDapp,
+      onAddNotificationRequest: async (request: NotificationRequest) => {
+        if (request.action.kind === 'call') {
+          const { accountAddr, networkId } = (request as SignNotificationRequest).meta
+
+          // @TODO: if EOA, only one call per accountOp
+          if (!this.accountOpsToBeSigned[accountAddr]) this.accountOpsToBeSigned[accountAddr] = {}
+          // @TODO
+          // one solution would be to, instead of checking, have a promise that we always await here, that is responsible for fetching
+          // account data; however, this won't work with EOA accountOps, which have to always pick the first userRequest for a particular acc/network,
+          // and be recalculated when one gets dismissed
+          // although it could work like this: 1) await the promise, 2) check if exists 3) if not, re-trigger the promise;
+          // 4) manage recalc on removeUserRequest too in order to handle EOAs
+          // @TODO consider re-using this whole block in removeUserRequest
+          await this.#ensureAccountInfo(accountAddr, networkId)
+
+          if (this.signAccOpInitError) return
+
+          const accountOp = this.#makeAccountOpFromNotificationRequests(accountAddr, networkId)
+          if (accountOp) {
+            this.accountOpsToBeSigned[accountAddr] ||= {}
+            this.accountOpsToBeSigned[accountAddr][networkId] = { accountOp, estimation: null }
+            if (this.signAccountOp) this.signAccountOp.update({ accountOp })
+            this.#estimateAccountOp(accountOp)
+          }
+        } else if (['typedMessage', 'message'].includes(request.action.kind)) {
+          const {
+            id,
+            action,
+            meta: { accountAddr, networkId }
+          } = request as SignNotificationRequest
+
+          if (!this.messagesToBeSigned[accountAddr]) this.messagesToBeSigned[accountAddr] = []
+          if (this.messagesToBeSigned[accountAddr].find((x) => x.fromUserRequestId === request.id))
+            return
+          this.messagesToBeSigned[accountAddr].push({
+            id,
+            content: action as PlainTextMessage | TypedMessage,
+            fromUserRequestId: request.id,
+            signature: null,
+            accountAddr,
+            networkId
+          })
+        }
+
+        this.emitUpdate()
+      },
+      onRemoveNotificationRequest: async (request: NotificationRequest) => {
+        if (request.action.kind === 'call') {
+          const {
+            meta: { accountAddr, networkId }
+          } = request
+          // @TODO ensure acc info, re-estimate
+          const accountOp = this.#makeAccountOpFromNotificationRequests(accountAddr, networkId)
+          if (accountOp) {
+            this.accountOpsToBeSigned[accountAddr] ||= {}
+            this.accountOpsToBeSigned[accountAddr][networkId] = { accountOp, estimation: null }
+            if (this.signAccountOp) this.signAccountOp.update({ accountOp, estimation: null })
+
+            this.#estimateAccountOp(accountOp)
+          } else {
+            delete this.accountOpsToBeSigned[accountAddr]?.[networkId]
+            if (!Object.keys(this.accountOpsToBeSigned[accountAddr] || {}).length)
+              delete this.accountOpsToBeSigned[accountAddr]
+
+            // remove the pending state
+            this.updateSelectedAccount(this.selectedAccount, true)
+          }
+        } else {
+          const {
+            id,
+            meta: { accountAddr }
+          } = request
+          this.messagesToBeSigned[accountAddr] = this.messagesToBeSigned[accountAddr].filter(
+            (x) => x.fromUserRequestId !== id
+          )
+          if (!Object.keys(this.messagesToBeSigned[accountAddr] || {}).length)
+            delete this.messagesToBeSigned[accountAddr]
+        }
+        this.emitUpdate()
+      }
     })
     this.domains = new DomainsController(this.settings.providers, this.#fetch)
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch: this.#fetch })
     this.onUpdateDappSelectedAccount = onUpdateDappSelectedAccount
     this.onBroadcastSuccess = onBroadcastSuccess
-    // @TODO Load userRequests from storage and emit that we have updated
-    // @TODO
   }
 
   async #load(): Promise<void> {
@@ -598,23 +678,28 @@ export class MainController extends EventEmitter {
       this.signAccOpInitError = `Failed to retrieve account info for ${networkId}, because of one of the following reasons: 1) network doesn't exist, 2) RPC is down for this network`
   }
 
-  #makeAccountOpFromUserRequests(accountAddr: AccountId, networkId: NetworkId): AccountOp | null {
+  #makeAccountOpFromNotificationRequests(
+    accountAddr: AccountId,
+    networkId: NetworkId
+  ): AccountOp | null {
     const account = this.accounts.find((x) => x.addr === accountAddr)
     if (!account)
       throw new Error(
-        `makeAccountOpFromUserRequests: tried to run for non-existent account ${accountAddr}`
+        `makeAccountOpFromNotificationRequests: tried to run for non-existent account ${accountAddr}`
       )
     // Note: we use reduce instead of filter/map so that the compiler can deduce that we're checking .kind
-    const calls = this.userRequests.reduce((uCalls: AccountOpCall[], req) => {
+    const calls = this.notification.notificationRequests.reduce((uCalls: AccountOpCall[], req) => {
       // only the first one for EOAs
       if (!account.creation && uCalls.length > 0) return uCalls
 
       if (
-        req.action.kind === 'call' &&
-        req.networkId === networkId &&
-        req.accountAddr === accountAddr
+        (req as SignNotificationRequest).action.kind === 'call' &&
+        (req as SignNotificationRequest).meta.networkId === networkId &&
+        (req as SignNotificationRequest).meta.accountAddr === accountAddr
       ) {
-        const { to, value, data } = req.action
+        const {
+          params: { to, value, data }
+        } = (req as SignNotificationRequest).action as Call
         uCalls.push({ to, value, data, fromUserRequestId: req.id })
       }
       return uCalls
@@ -669,47 +754,6 @@ export class MainController extends EventEmitter {
     )
   }
 
-  async addUserRequest(req: UserRequest) {
-    this.userRequests.push(req)
-    const { id, action, accountAddr, networkId } = req
-    if (!this.settings.networks.find((x) => x.id === networkId))
-      throw new Error(`addUserRequest: ${networkId}: network does not exist`)
-    if (action.kind === 'call') {
-      // @TODO: if EOA, only one call per accountOp
-      if (!this.accountOpsToBeSigned[accountAddr]) this.accountOpsToBeSigned[accountAddr] = {}
-      // @TODO
-      // one solution would be to, instead of checking, have a promise that we always await here, that is responsible for fetching
-      // account data; however, this won't work with EOA accountOps, which have to always pick the first userRequest for a particular acc/network,
-      // and be recalculated when one gets dismissed
-      // although it could work like this: 1) await the promise, 2) check if exists 3) if not, re-trigger the promise;
-      // 4) manage recalc on removeUserRequest too in order to handle EOAs
-      // @TODO consider re-using this whole block in removeUserRequest
-      await this.#ensureAccountInfo(accountAddr, networkId)
-
-      if (this.signAccOpInitError) return
-
-      const accountOp = this.#makeAccountOpFromUserRequests(accountAddr, networkId)
-      if (accountOp) {
-        this.accountOpsToBeSigned[accountAddr] ||= {}
-        this.accountOpsToBeSigned[accountAddr][networkId] = { accountOp, estimation: null }
-        if (this.signAccountOp) this.signAccountOp.update({ accountOp })
-        this.#estimateAccountOp(accountOp)
-      }
-    } else {
-      if (!this.messagesToBeSigned[accountAddr]) this.messagesToBeSigned[accountAddr] = []
-      if (this.messagesToBeSigned[accountAddr].find((x) => x.fromUserRequestId === req.id)) return
-      this.messagesToBeSigned[accountAddr].push({
-        id,
-        content: action,
-        fromUserRequestId: req.id,
-        signature: null,
-        accountAddr,
-        networkId
-      })
-    }
-    this.emitUpdate()
-  }
-
   async addCustomNetwork(customNetwork: CustomNetwork) {
     await this.settings.addCustomNetwork(customNetwork)
     await this.updateSelectedAccount(this.selectedAccount, true)
@@ -720,72 +764,7 @@ export class MainController extends EventEmitter {
     await this.updateSelectedAccount(this.selectedAccount, true)
   }
 
-  async buildNotificationRequest(
-    request: DappProviderRequest,
-    dappPromise: {
-      resolve: (data: any) => void
-      reject: (data: any) => void
-    }
-  ) {
-    if (isSignMethod(request.method)) {
-      if (isSignAccountOpMethod(request.method)) {
-        const transaction = request.params[0]
-        const network = this.settings.networks.find(
-          (n) => Number(n.chainId) === Number(this.#getDapp(request.origin)?.chainId)
-        )
-        if (!network) {
-          dappPromise.reject('Transaction failed - unknown network')
-          return
-        }
-
-        const accountAddr = getAddress(transaction.from)
-        const account = this.accounts.find((a) => a.addr === accountAddr)
-        if (!accountAddr || !account) {
-          dappPromise.reject('Invalid transaction params - address not found')
-          return
-        }
-        delete transaction.from
-        const userRequestId = new Date().getTime()
-        const userRequest: UserRequest = {
-          id: userRequestId,
-          action: {
-            kind: 'call',
-            ...transaction,
-            value: transaction.value ? getBigInt(transaction.value) : 0n
-          },
-          networkId: network.id,
-          accountAddr,
-          forceNonce: null
-        }
-
-        await this.addUserRequest(userRequest)
-
-        const notificationRequest: NotificationRequest = {
-          ...request,
-          id: getAccountOpId(userRequest.accountAddr, userRequest.networkId),
-          meta: {
-            accountAddr,
-            networkId: network.id
-          },
-          promises: [{ fromUserRequestId: userRequestId, ...dappPromise }]
-        }
-
-        this.notification.requestAccountOpNotification(
-          notificationRequest,
-          account.creation ? 'smart' : 'basic'
-        )
-      }
-    } else {
-      const notificationRequest: NotificationRequest = {
-        ...request,
-        id: new Date().getTime().toString(),
-        promises: [dappPromise]
-      }
-      this.notification.requestBasicNotificationRequest(notificationRequest)
-    }
-  }
-
-  removeAccountOp(accountAddr: string, networkId: string) {
+  rejectAccountOp(accountAddr: string, networkId: string) {
     const accountOp = findAccountOpInSignAccountOpsToBeSigned(
       this.accountOpsToBeSigned,
       accountAddr,
@@ -807,7 +786,9 @@ export class MainController extends EventEmitter {
       if (!Object.keys(this.accountOpsToBeSigned[accountAddr] || {}).length)
         delete this.accountOpsToBeSigned[accountAddr]
 
-      // clear userRequests for that op
+      // clear notificationRequests for that op
+
+      const
       this.userRequests = this.userRequests.filter(
         (req) => !accountOp.calls.some((c) => c.fromUserRequestId === req.id)
       )
@@ -830,7 +811,7 @@ export class MainController extends EventEmitter {
     const { action, accountAddr, networkId } = req
     if (action.kind === 'call') {
       // @TODO ensure acc info, re-estimate
-      const accountOp = this.#makeAccountOpFromUserRequests(accountAddr, networkId)
+      const accountOp = this.#makeAccountOpFromNotificationRequests(accountAddr, networkId)
       if (accountOp) {
         this.accountOpsToBeSigned[accountAddr] ||= {}
         this.accountOpsToBeSigned[accountAddr][networkId] = { accountOp, estimation: null }
@@ -1379,9 +1360,17 @@ export class MainController extends EventEmitter {
       await this.activity.addAccountOp(submittedAccountOp)
       accountOp.calls.forEach((call) => {
         if (call.fromUserRequestId) {
-          this.removeUserRequest(call.fromUserRequestId)
+          this.notification.resolveNotificationRequest(
+            {
+              hash: transactionRes?.hash || null,
+              networkId: network.id,
+              isUserOp: !!accountOp?.asUserOperation
+            },
+            call.fromUserRequestId
+          )
         }
       })
+
       this.notification.resolveNotificationRequest(
         {
           hash: transactionRes?.hash || null,

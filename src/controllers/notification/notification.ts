@@ -1,27 +1,34 @@
 /* eslint-disable @typescript-eslint/no-floating-promises */
-/* eslint-disable @typescript-eslint/no-shadow */
 import { ethErrors } from 'eth-rpc-errors'
+import { getAddress, getBigInt } from 'ethers'
 
-import { Account } from '../../interfaces/account'
-import { Dapp } from '../../interfaces/dapp'
-import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
+import { Dapp, DappProviderRequest } from '../../interfaces/dapp'
 import {
-  BasicNotificationRequest,
+  CurrentNotification,
+  DappNotificationRequest,
+  Message,
   NotificationRequest,
   SignNotificationRequest
 } from '../../interfaces/notification'
-import { CustomNetwork, NetworkPreference } from '../../interfaces/settings'
 import { WindowManager } from '../../interfaces/window'
-import {
-  isSignAccountOpMethod,
-  isSignMessageMethod,
-  isSignTypedDataMethod,
-  QUEUE_REQUEST_METHODS_WHITELIST,
-  SIGN_METHODS
-} from '../../libs/notification/notification'
+import { AccountOp } from '../../libs/accountOp/accountOp'
+import { EstimateResult } from '../../libs/estimate/interfaces'
+import { dappRequestMethodToActionKind } from '../../libs/notification/notification'
 import EventEmitter from '../eventEmitter/eventEmitter'
+/* eslint-disable @typescript-eslint/no-shadow */
+import { SettingsController } from '../settings/settings'
 
 export class NotificationController extends EventEmitter {
+  #settings: SettingsController
+
+  #accountOpsToBeSigned: {
+    [key: string]: {
+      [key: string]: { accountOp: AccountOp; estimation: EstimateResult | null } | null
+    }
+  } = {}
+
+  #messagesToBeSigned: { [key: string]: Message[] } = {}
+
   #windowManager: WindowManager
 
   #getDapp: (url: string) => Dapp | undefined
@@ -30,22 +37,68 @@ export class NotificationController extends EventEmitter {
 
   notificationWindowId: null | number = null
 
-  currentNotificationRequest: NotificationRequest | null = null
+  #currentNotificationQueue: CurrentNotification[] = []
+
+  #currentNotification: CurrentNotification | null = null
+
+  get currentNotification() {
+    return this.#currentNotification
+  }
+
+  set currentNotification(value: CurrentNotification | null) {
+    if (this.currentNotification && value) {
+      this.#currentNotificationQueue.push(value)
+      this.openNotificationWindow()
+      return
+    }
+
+    this.#currentNotification = value
+
+    if (!value) {
+      !!this.notificationWindowId &&
+        this.#windowManager.remove(this.notificationWindowId).then(() => {
+          this.notificationWindowId = null
+          this.emitUpdate()
+        })
+    } else {
+      this.openNotificationWindow()
+    }
+  }
+
+  #onAddNotificationRequestCallback: (request: NotificationRequest) => Promise<void>
+
+  #onRemoveNotificationRequestCallback: (request: NotificationRequest) => Promise<void>
 
   constructor({
+    settings,
+    accountOpsToBeSigned,
+    messagesToBeSigned,
     windowManager,
-    getDapp
+    getDapp,
+    onAddNotificationRequest,
+    onRemoveNotificationRequest
   }: {
-    accounts: (Account & {
-      newlyCreated?: boolean | undefined
-    })[]
-    networks: (NetworkDescriptor & (NetworkPreference | CustomNetwork))[]
+    settings: SettingsController
+    accountOpsToBeSigned: {
+      [key: string]: {
+        [key: string]: { accountOp: AccountOp; estimation: EstimateResult | null } | null
+      }
+    }
+    messagesToBeSigned: { [key: string]: Message[] }
     windowManager: WindowManager
     getDapp: (url: string) => Dapp | undefined
+    onAddNotificationRequest: (request: NotificationRequest) => Promise<void>
+    onRemoveNotificationRequest: (request: NotificationRequest) => Promise<void>
   }) {
     super()
+
+    this.#settings = settings
+    this.#accountOpsToBeSigned = accountOpsToBeSigned
+    this.#messagesToBeSigned = messagesToBeSigned
     this.#windowManager = windowManager
     this.#getDapp = getDapp
+    this.#onAddNotificationRequestCallback = onAddNotificationRequest
+    this.#onRemoveNotificationRequestCallback = onRemoveNotificationRequest
 
     this.#windowManager.event.on('windowRemoved', (winId: number) => {
       if (winId === this.notificationWindowId) {
@@ -56,202 +109,139 @@ export class NotificationController extends EventEmitter {
     })
   }
 
-  requestBasicNotificationRequest = (
-    request: BasicNotificationRequest,
-    openNewWindow: boolean = true
-  ) => {
-    this.#validateRequest(request)
+  async buildNotificationRequest(
+    request: DappProviderRequest,
+    dappPromise: {
+      resolve: (data: any) => void
+      reject: (data: any) => void
+    }
+  ) {
+    let notificationRequest = null
+    const kind = dappRequestMethodToActionKind(request.method)
 
-    this.#addNotificationRequest(request)
-    this.currentNotificationRequest = request
+    const network = this.#settings.networks.find(
+      (n) => Number(n.chainId) === Number(this.#getDapp(request.origin)?.chainId)
+    )
 
-    this.emitUpdate()
-    if (openNewWindow) this.#openNotificationWindow()
-  }
-
-  requestAccountOpNotification(request: SignNotificationRequest, accountType: 'smart' | 'basic') {
-    if (accountType === 'basic') {
-      this.#addNotificationRequest(request)
-      const firstNotificationRequestWithSameId = this.notificationRequests.find(
-        (r) => r.id === request.id
-      )
-      this.currentNotificationRequest = firstNotificationRequestWithSameId || request
+    if (!network) {
+      throw ethErrors.provider.chainDisconnected('Transaction failed - unknown network')
     }
 
-    if (accountType === 'smart') {
-      let alreadyAdded = false
-      this.notificationRequests = this.notificationRequests.map((r) => {
-        if (r.id === request.id) {
-          alreadyAdded = true
-          return {
-            ...r,
-            promises: [...r.promises, ...request.promises]
+    if (kind === 'call') {
+      const transaction = request.params[0]
+      const accountAddr = getAddress(transaction.from)
+
+      delete transaction.from
+      notificationRequest = {
+        id: new Date().getTime(),
+        action: {
+          kind,
+          params: {
+            ...transaction,
+            value: transaction.value ? getBigInt(transaction.value) : 0n
           }
-        }
-
-        return r
-      })
-
-      if (!alreadyAdded) {
-        this.#addNotificationRequest(request)
-      }
-      this.currentNotificationRequest = request
-    }
-
-    this.emitUpdate()
-    this.#openNotificationWindow()
-  }
-
-  resolveNotificationRequest = (data: any, requestId?: string) => {
-    let notificationRequest = this.currentNotificationRequest
-
-    if (requestId) {
-      const notificationRequestById = this.notificationRequests.find((req) => req.id === requestId)
-      if (notificationRequestById) notificationRequest = notificationRequestById
-    }
-
-    if (!notificationRequest) return // TODO: emit error
-
-    this.#resolveNotificationRequestPromises(data, notificationRequest.id)
-
-    if (!SIGN_METHODS.includes(notificationRequest.method)) {
-      this.#setNextNotificationRequestOnResolve(notificationRequest)
-    }
-
-    if (isSignAccountOpMethod(notificationRequest.method)) {
-      // this.#removeAccountOp(notificationRequest) // TODO:
-      const meta = { ...notificationRequest.meta, txnId: null, userOpHash: null }
-      data?.isUserOp ? (meta.userOpHash = data.hash) : (meta.txnId = data.hash)
-      this.requestBasicNotificationRequest(
-        {
-          ...notificationRequest,
-          method: 'benzin',
-          meta
         },
-        false
-      )
-      return
+        meta: { isSign: true, accountAddr, networkId: network.id },
+        dappPromise
+      } as SignNotificationRequest
+    } else if (kind === 'message') {
+      // TODO:
+    } else if (kind === 'typedMessage') {
+      // TODO:
+    } else {
+      notificationRequest = {
+        id: new Date().getTime(),
+        session: request.session,
+        action: { kind, params: request.params },
+        meta: { isSign: false },
+        dappPromise
+      } as DappNotificationRequest
     }
 
-    this.emitUpdate()
+    if (notificationRequest) {
+      this.notificationRequests.push(notificationRequest)
+      await this.#onAddNotificationRequestCallback(notificationRequest)
+      if (
+        notificationRequest.action.kind === 'call' &&
+        this.#accountOpsToBeSigned[notificationRequest.meta.accountAddr][
+          notificationRequest.meta.networkId
+        ]
+      ) {
+        this.currentNotification = {
+          type: 'accountOp',
+          accountAddr: notificationRequest.meta.accountAddr,
+          networkId: notificationRequest.meta.networkId
+        }
+      }
+      this.emitUpdate()
+    }
   }
 
-  rejectNotificationRequest = async (err: string, requestId?: string) => {
-    let notificationRequest = this.currentNotificationRequest
-
-    if (requestId) {
-      const notificationRequestById = this.notificationRequests.find((req) => req.id === requestId)
-      if (notificationRequestById) notificationRequest = notificationRequestById
-    }
+  resolveNotificationRequest = (data: any, requestId: number) => {
+    const notificationRequest = this.notificationRequests.find((r) => r.id === requestId)
 
     if (!notificationRequest) return // TODO: emit error
 
-    this.#rejectNotificationRequestPromises(err, notificationRequest.id)
+    this.#resolveAndDeleteNotificationRequestPromise(data, notificationRequest.id)
 
-    if (!SIGN_METHODS.includes(notificationRequest.method)) {
-      this.#setNextNotificationRequestOnReject(notificationRequest)
-    }
-
+    this.#setNextNotificationRequest()
     this.emitUpdate()
   }
 
-  #addNotificationRequest(request: NotificationRequest) {
-    this.notificationRequests = [request, ...this.notificationRequests]
-  }
-
-  getNotificationRequestById(requestId: string) {
-    return this.notificationRequests.find((r) => r.id === requestId)
-  }
-
-  #validateRequest(request: NotificationRequest) {
-    // Delete the current notification request if it's a benzin request
-    if (this.currentNotificationRequest?.method === 'benzin') {
-      this.#deleteNotificationRequest(this.currentNotificationRequest.id)
-      this.currentNotificationRequest = null
-    }
-
-    if (
-      !QUEUE_REQUEST_METHODS_WHITELIST.includes(request.method) &&
-      this.notificationWindowId &&
-      this.currentNotificationRequest
-    ) {
-      if (request.method === this.currentNotificationRequest.method) {
-        this.#rejectNotificationRequestPromises(
-          'Request rejected',
-          this.currentNotificationRequest.id
-        )
-        this.#deleteNotificationRequest(this.currentNotificationRequest.id)
-      } else {
-        this.focusCurrentNotificationWindow(
-          'You currently have a pending dApp request. Please resolve it before making another request.'
-        )
-        throw ethErrors.provider.userRejectedRequest('please request after current request resolve')
-      }
-    }
-  }
-
-  #resolveNotificationRequestPromises(data: any, requestId: string) {
+  rejectNotificationRequest = async (err: string, requestId: number) => {
     const notificationRequest = this.notificationRequests.find((r) => r.id === requestId)
-    if (notificationRequest) notificationRequest.promises.forEach((p) => p.resolve(data))
+
+    if (!notificationRequest) return // TODO: emit error
+
+    this.#rejectAndDeleteNotificationRequestPromise(err, notificationRequest.id)
+
+    if (!notificationRequest.meta.isSign) {
+      this.#setNextNotificationRequest()
+    }
+    this.emitUpdate()
   }
 
-  #rejectNotificationRequestPromises(err: string, requestId: string) {
+  #resolveAndDeleteNotificationRequestPromise(data: any, requestId: number) {
     const notificationRequest = this.notificationRequests.find((r) => r.id === requestId)
-    if (notificationRequest) notificationRequest.promises.forEach((p) => p.reject(err))
-  }
-
-  #deleteNotificationRequest(requestId: string) {
-    if (this.notificationRequests.length) {
-      this.notificationRequests = this.notificationRequests.filter((r) => r.id !== requestId)
-    } else {
-      this.currentNotificationRequest = null
+    if (notificationRequest) {
+      notificationRequest?.dappPromise?.resolve(data)
+      this.#deleteNotificationRequest(requestId)
     }
   }
 
-  #setNextNotificationRequestOnResolve(currentNotificationRequest: NotificationRequest) {
-    const currentOrigin = currentNotificationRequest?.origin
-    this.#deleteNotificationRequest(currentNotificationRequest.id)
-    const nextNotificationRequest = this.notificationRequests[0]
-    const nextOrigin = nextNotificationRequest?.origin
-
-    if (!nextNotificationRequest) {
-      this.currentNotificationRequest = null
-      return
-    }
-
-    if (!SIGN_METHODS.includes(nextNotificationRequest?.params?.method)) {
-      this.currentNotificationRequest = nextNotificationRequest
-      return
-    }
-
-    if (currentOrigin && nextOrigin && currentOrigin === nextOrigin) {
-      this.currentNotificationRequest = nextNotificationRequest
+  #rejectAndDeleteNotificationRequestPromise(err: string, requestId: number) {
+    const notificationRequest = this.notificationRequests.find((r) => r.id === requestId)
+    if (notificationRequest) {
+      notificationRequest?.dappPromise?.reject(err)
+      this.#deleteNotificationRequest(requestId)
     }
   }
 
-  #setNextNotificationRequestOnReject(currentNotificationRequest: NotificationRequest) {
-    this.#deleteNotificationRequest(currentNotificationRequest.id)
-    const nextNotificationRequest = this.notificationRequests[0]
+  #deleteNotificationRequest(requestId: number) {
+    this.notificationRequests = this.notificationRequests.filter((r) => r.id !== requestId)
 
-    if (!nextNotificationRequest) {
-      this.currentNotificationRequest = null
+    if (!this.notificationRequests.length) {
+      this.currentNotification = null
+    }
+  }
+
+  #setNextNotificationRequest() {
+    const dappRequests = this.notificationRequests.filter((r) => !r.meta.isSign)
+    if (!dappRequests.length) {
+      this.currentNotification = null
       return
     }
-    if (SIGN_METHODS.includes(nextNotificationRequest.method)) {
-      this.currentNotificationRequest = null
-      return
-    }
 
-    this.currentNotificationRequest = nextNotificationRequest
+    this.currentNotification = {
+      type: 'notificationRequest',
+      notificationRequest: dappRequests[0]
+    }
   }
 
   rejectAllNotificationRequestsThatAreNotSignRequests = () => {
-    this.notificationRequests.forEach((notificationReq: NotificationRequest) => {
-      if (!SIGN_METHODS.includes(notificationReq.method)) {
-        this.rejectNotificationRequest(
-          `User rejected the request: ${notificationReq.method}`,
-          notificationReq.id
-        )
+    this.notificationRequests.forEach((r: NotificationRequest) => {
+      if (!['call', 'typedMessage', 'message'].includes(r.action.kind)) {
+        this.rejectNotificationRequest(`User rejected the request: ${r.action.kind}`, r.id)
       }
     })
     this.emitUpdate()
@@ -260,13 +250,13 @@ export class NotificationController extends EventEmitter {
   // TODO:
   // notifyForClosedUserRequestThatAreStillPending = async () => {
   //   if (
-  //     this.currentNotificationRequest &&
-  //     SIGN_METHODS.includes(this.currentNotificationRequest.method)
+  //     this.currentNotification &&
+  //     SIGN_METHODS.includes(this.currentNotification.method)
   //   ) {
-  //     const title = isSignAccountOpMethod(this.currentNotificationRequest.method)
+  //     const title = isSignAccountOpMethod(this.currentNotification.method)
   //       ? 'Added Pending Transaction Request'
   //       : 'Added Pending Message Request'
-  //     const message = isSignAccountOpMethod(this.currentNotificationRequest.method)
+  //     const message = isSignAccountOpMethod(this.currentNotification.method)
   //       ? 'Transaction added to your cart. You can add more transactions and sign them all together (thus saving on network fees).'
   //       : 'The message was added to your cart. You can find all pending requests listed on your Dashboard.'
 
@@ -282,32 +272,33 @@ export class NotificationController extends EventEmitter {
   //   }
   // }
 
-  #openNotificationWindow = async () => {
+  openNotificationWindow() {
     if (this.notificationWindowId !== null) {
-      this.#windowManager.remove(this.notificationWindowId)
-      this.notificationWindowId = null
-      this.emitUpdate()
+      this.focusCurrentNotificationWindow()
+    } else {
+      this.#windowManager.open().then((winId) => {
+        this.notificationWindowId = winId!
+        this.emitUpdate()
+      })
     }
-    this.#windowManager.open().then((winId) => {
-      this.notificationWindowId = winId!
-      this.emitUpdate()
-    })
   }
 
   focusCurrentNotificationWindow = (warningMessage?: string) => {
     if (
       !this.notificationRequests.length ||
-      !this.currentNotificationRequest ||
+      !this.currentNotification ||
       !this.notificationWindowId
     )
       return
 
     this.#windowManager.focus(this.notificationWindowId)
     // TODO:
-    // this.#pm.send('> ui-warning', {
-    //   method: 'notification',
-    //   params: { warnings: [warningMessage], controller: 'notification' }
-    // })
+    if (warningMessage) {
+      // this.#pm.send('> ui-warning', {
+      //   method: 'notification',
+      //   params: { warnings: [warningMessage], controller: 'notification' }
+      // })
+    }
   }
 
   toJSON() {
