@@ -189,6 +189,12 @@ export async function estimate(
     return estimationErrorFormatted(
       new Error('Smart accounts are not available for this network. Please use a Basic Account')
     )
+  if (!network.areContractsDeployed)
+    return estimationErrorFormatted(
+      new Error(
+        'The Ambire smart contracts are not deployed on this network, yet. You can deploy them via a Basic Account throught the network settings'
+      )
+    )
 
   // @EntryPoint activation
   // if the account is v2 without the entry point signer being a signer
