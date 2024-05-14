@@ -703,7 +703,7 @@ export class PortfolioController extends EventEmitter {
 
     // Reached limit
     if (LIMIT >= Object.keys(networkLearnedTokens).length - THRESHOLD) {
-      networkLearnedTokens = await this.cleanLearnedTokens(networkId, storagePreviousHints)
+      networkLearnedTokens = await this.cleanLearnedTokens(networkId, networkLearnedTokens)
     }
     const updatedPreviousHintsStorage = { ...storagePreviousHints }
     updatedPreviousHintsStorage.learnedTokens[networkId] = networkLearnedTokens
