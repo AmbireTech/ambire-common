@@ -11,7 +11,7 @@ import { Deployless, fromDescriptor } from '../deployless/deployless'
 import batcher from './batcher'
 import { geckoRequestBatcher, geckoResponseIdentifier } from './gecko'
 import { getNFTs, getTokens } from './getOnchainBalances'
-import { getTokenAmount } from './helpers'
+import { getTotal } from './helpers'
 import {
   CollectionResult,
   GetOptions,
@@ -318,16 +318,7 @@ export class Portfolio {
         .filter(([error, result]) => error !== '0x' || result.symbol === '')
         .map(([error, result]) => ({ error, address: result.address })),
       collections: collections.filter((x) => x.collectibles?.length),
-      total: tokensWithPrices.reduce((cur, token) => {
-        const localCur = cur
-        if (token.isHidden) return localCur
-        for (const x of token.priceIn) {
-          localCur[x.baseCurrency] =
-            (localCur[x.baseCurrency] || 0) +
-            (Number(getTokenAmount(token)) / 10 ** token.decimals) * x.price
-        }
-        return localCur
-      }, {})
+      total: getTotal(tokensWithPrices)
     }
   }
 }
