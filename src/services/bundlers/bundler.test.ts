@@ -69,6 +69,31 @@ const mantle = {
     is1559: true
   }
 }
+const base = {
+  id: 'base',
+  name: 'base',
+  nativeAssetSymbol: 'ETH',
+  rpcUrls: ['https://mainnet.base.org	'],
+  rpcNoStateOverride: false,
+  chainId: 8453n,
+  explorerUrl: 'https://basescan.org/',
+  erc4337: {
+    enabled: true,
+    hasPaymaster: false
+  },
+  unstoppableDomainsChain: 'ERC20',
+  isSAEnabled: true,
+  areContractsDeployed: true,
+  hasRelayer: false,
+  hasDebugTraceCall: false,
+  platformId: 'base',
+  nativeAssetId: 'base',
+  hasSingleton: true,
+  features: [],
+  feeOptions: {
+    is1559: true
+  }
+}
 
 describe('Bundler tests', () => {
   describe('Basic tests', () => {
@@ -507,6 +532,51 @@ describe('Bundler tests', () => {
         ).toString()
         expect(buffer.indexOf('transfer amount exceeds balance')).not.toBe(-1)
       }
+    })
+  })
+
+  describe('Estimation tests: base, deployed account', () => {
+    test('should estimate successfully', async () => {
+      const opBase: AccountOp = {
+        accountAddr: smartAccDeployed.addr,
+        signingKeyAddr: smartAccDeployed.associatedKeys[0],
+        signingKeyType: null,
+        gasLimit: null,
+        gasFeePayment: null,
+        networkId: 'base',
+        nonce: 0n,
+        signature: '0x',
+        calls: [{ to, value: parseEther('1'), data: '0x' }],
+        accountOpToExecuteBefore: null
+      }
+      const usedNetworks = [base]
+      const providers = {
+        [base.id]: getRpcProvider(base.rpcUrls, base.chainId)
+      }
+      const accountStates = await getAccountsInfo(usedNetworks, providers, [smartAccDeployed])
+      const accountState = accountStates[opBase.accountAddr][opBase.networkId]
+      const userOp = getUserOperation(smartAccDeployed, accountState, opBase)
+      const ambireInterface = new Interface(AmbireAccount.abi)
+      userOp.callData = ambireInterface.encodeFunctionData('executeBySender', [
+        getSignableCalls(opBase)
+      ])
+      const paymasterAndData = getPaymasterDataForEstimate()
+      userOp.paymaster = paymasterAndData.paymaster
+      userOp.paymasterData = paymasterAndData.paymasterData
+      userOp.signature = getSigForCalculations()
+      const bundlerEstimate = await Bundler.estimate(userOp, base)
+      expect(bundlerEstimate).toHaveProperty('preVerificationGas')
+      expect(bundlerEstimate).toHaveProperty('verificationGasLimit')
+      expect(bundlerEstimate).toHaveProperty('callGasLimit')
+      expect(bundlerEstimate).toHaveProperty('paymasterVerificationGasLimit')
+      expect(bundlerEstimate).toHaveProperty('paymasterPostOpGasLimit')
+
+      const estimateWithStateOverride = await Bundler.estimate(userOp, base, true)
+      expect(estimateWithStateOverride).toHaveProperty('preVerificationGas')
+      expect(estimateWithStateOverride).toHaveProperty('verificationGasLimit')
+      expect(estimateWithStateOverride).toHaveProperty('callGasLimit')
+      expect(estimateWithStateOverride).toHaveProperty('paymasterVerificationGasLimit')
+      expect(estimateWithStateOverride).toHaveProperty('paymasterPostOpGasLimit')
     })
   })
 })
