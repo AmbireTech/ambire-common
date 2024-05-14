@@ -121,13 +121,11 @@ export const getTotal = (t: any[]) =>
   }, {})
 
 export const getPinnedGasTankTokens = (
-  data: any,
+  availableGasTankAssets: any,
   hasNonZeroTokens: boolean,
   accountId: AccountId,
   gasTankTokens: TokenResult[]
 ) => {
-  const availableGasTankAssets = data.gasTank?.availableGasTankAssets
-
   if (!availableGasTankAssets) return []
   // Don't set pinnedGasTankTokens if the user has > 1 non-zero tokens
   if (hasNonZeroTokens) return []

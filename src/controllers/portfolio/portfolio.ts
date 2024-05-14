@@ -409,7 +409,12 @@ export class PortfolioController extends EventEmitter {
         updateStarted: start,
         tokens: [
           ...gasTankTokens,
-          ...getPinnedGasTankTokens(res.data, hasNonZeroTokens, accountId, gasTankTokens)
+          ...getPinnedGasTankTokens(
+            res.data.gasTank.availableGasTankAssets,
+            hasNonZeroTokens,
+            accountId,
+            gasTankTokens
+          )
         ],
         total: getTotal(gasTankTokens)
       }
