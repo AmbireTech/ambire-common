@@ -368,7 +368,10 @@ describe('Settings Controller', () => {
     //   }
     // })
 
-    settingsController.setNetworkToAddOrUpdate({ rpcUrl: 'https://rpc.mantle.xyz', chainId: 5000n })
+    settingsController.setNetworkToAddOrUpdate({
+      rpcUrl: 'https://mantle-mainnet.public.blastapi.io',
+      chainId: 5000n
+    })
   })
 
   // TODO: Refactor Fantom test as well
