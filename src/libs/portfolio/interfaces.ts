@@ -173,6 +173,6 @@ export interface GetOptions {
 }
 
 export interface PreviousHintsStorage {
-  learnedTokens: { [key in NetworkId]: { [key: string]: string } }
+  learnedTokens: { [key in NetworkId]: { [key: string]: string | null } }
   fromExternalAPI: { [key: string]: GetOptions['previousHints'] }
 }

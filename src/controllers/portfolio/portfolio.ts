@@ -32,6 +32,7 @@ import {
   GetOptions,
   PortfolioControllerState,
   PortfolioGetResult,
+  PreviousHintsStorage,
   TokenResult
 } from '../../libs/portfolio/interfaces'
 import { Portfolio } from '../../libs/portfolio/portfolio'
@@ -74,6 +75,11 @@ export class PortfolioController extends EventEmitter {
 
   #additionalHints: GetOptions['additionalHints'] = []
 
+  #previousHints: PreviousHintsStorage = {
+    fromExternalAPI: {},
+    learnedTokens: {}
+  }
+
   #settings: SettingsController
 
   // Holds the initial load promise, so that one can wait until it completes
@@ -95,6 +101,7 @@ export class PortfolioController extends EventEmitter {
   async #load() {
     try {
       this.tokenPreferences = await this.#storage.get('tokenPreferences', [])
+      this.#previousHints = await this.#storage.get('previousHints', {})
     } catch (e) {
       this.emitError({
         message:
@@ -463,7 +470,7 @@ export class PortfolioController extends EventEmitter {
     if (opts?.additionalHints) this.#additionalHints = opts.additionalHints
     const hasNonZeroTokens = !!this.#networksWithAssetsByAccounts?.[accountId]?.length
     // Load storage cached hints
-    const storagePreviousHints = await this.#storage.get('previousHints', {})
+    const storagePreviousHints = this.#previousHints
 
     const selectedAccount = accounts.find((x) => x.addr === accountId)
     if (!selectedAccount) throw new Error('selected account does not exist')
@@ -651,7 +658,6 @@ export class PortfolioController extends EventEmitter {
             : Promise.resolve(false)
         ])
 
-        // TODO: Think we should persist new learnedTokens even if the update fails without updating lastSeenNonZero
         // Persist previousHints in the disk storage for further requests, when:
         // latest state was updated successful and hints were fetched successful too (no HintsError from portfolio result)
         if (
@@ -665,6 +671,8 @@ export class PortfolioController extends EventEmitter {
             storagePreviousHints,
             key
           )
+
+          this.#previousHints = updatedStoragePreviousHints
 
           await this.#storage.set('previousHints', updatedStoragePreviousHints)
         }
@@ -690,7 +698,7 @@ export class PortfolioController extends EventEmitter {
    * Learn new tokens from humanizer and debug_traceCall
    */
   async learnTokens(tokenAddresses: string[], networkId: NetworkId) {
-    const storagePreviousHints = await this.#storage.get('previousHints', {})
+    const storagePreviousHints = this.#previousHints
 
     const learnedTokens = storagePreviousHints.learnedTokens || {}
     let networkLearnedTokens = learnedTokens[networkId] || {}
@@ -711,6 +719,7 @@ export class PortfolioController extends EventEmitter {
     const updatedPreviousHintsStorage = { ...storagePreviousHints }
     updatedPreviousHintsStorage.learnedTokens[networkId] = networkLearnedTokens
 
+    this.#previousHints = updatedPreviousHintsStorage
     await this.#storage.set('previousHints', updatedPreviousHintsStorage)
   }
 
