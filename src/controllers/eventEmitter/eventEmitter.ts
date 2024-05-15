@@ -12,6 +12,10 @@ export type ErrorRef = {
   error: Error
 }
 
+export type Statuses<T extends string> = {
+  [key in T]: 'INITIAL' | 'LOADING' | 'SUCCESS' | 'ERROR'
+}
+
 export default class EventEmitter {
   #callbacksWithId: {
     id: string | null
@@ -28,6 +32,8 @@ export default class EventEmitter {
   #errorCallbacks: ((error: ErrorRef) => void)[] = []
 
   #errors: ErrorRef[] = []
+
+  statuses: Statuses<string> = {}
 
   get onUpdateIds() {
     return this.#callbacksWithId.map((item) => item.id)
@@ -75,6 +81,58 @@ export default class EventEmitter {
     for (const i of this.#errorCallbacksWithId) i.cb(error)
     // eslint-disable-next-line no-restricted-syntax
     for (const cb of this.#errorCallbacks) cb(error)
+  }
+
+  protected async withStatus(callName: string, fn: Function, allowConcurrentActions = false) {
+    const someStatusIsLoading = Object.values(this.statuses).some((status) => status !== 'INITIAL')
+
+    if (!this.statuses[callName]) {
+      console.error(`${callName} is not defined in "statuses".`)
+    }
+
+    // By default, concurrent actions are disallowed to maintain consistency, particularly within sub-controllers where
+    // simultaneous actions can lead to unintended side effects. The 'allowConcurrentActions' flag is provided to enable
+    // concurrent execution at the main controller level. This is useful when multiple actions need to modify the state
+    // of different sub-controllers simultaneously.
+    if ((someStatusIsLoading && !allowConcurrentActions) || this.statuses[callName] !== 'INITIAL') {
+      this.emitError({
+        level: 'minor',
+        message: `Please wait for the completion of the previous action before initiating another one.', ${callName}`,
+        error: new Error(
+          'Another function is already being handled by withStatus refrain from invoking a second function.'
+        )
+      })
+
+      return
+    }
+
+    this.statuses[callName] = 'LOADING'
+    await this.forceEmitUpdate()
+
+    try {
+      await fn()
+
+      this.statuses[callName] = 'SUCCESS'
+      await this.forceEmitUpdate()
+    } catch (error: any) {
+      this.statuses[callName] = 'ERROR'
+      if ('message' in error && 'level' in error && 'error' in error) {
+        this.emitError(error)
+
+        // Sometimes we don't want to show an error message to the user. For example, if the user cancels a request
+        // we don't want to go through the SUCCESS state, but we also don't want to show an error message.
+      } else if (error?.message) {
+        this.emitError({
+          message: error?.message || 'An unexpected error occurred',
+          level: 'major',
+          error
+        })
+      }
+      await this.forceEmitUpdate()
+    }
+
+    this.statuses[callName] = 'INITIAL'
+    await this.forceEmitUpdate()
   }
 
   // Prevents memory leaks and storing huge amount of errors

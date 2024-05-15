@@ -1,4 +1,4 @@
-import { Storage } from 'interfaces/storage'
+import { Storage } from '../../interfaces/storage'
 import { EMPTY_HUMANIZER_META, HUMANIZER_META_KEY, integrateFragments } from './utils'
 import { HumanizerFragment, HumanizerMeta } from './interfaces'
 // @TODO to more usable place

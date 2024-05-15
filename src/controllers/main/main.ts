@@ -48,7 +48,8 @@ import { ActivityController, SignedMessage, SubmittedAccountOp } from '../activi
 import { AddressBookController } from '../addressBook/addressBook'
 import { DomainsController } from '../domains/domains'
 import { EmailVaultController } from '../emailVault/emailVault'
-import EventEmitter from '../eventEmitter/eventEmitter'
+import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter'
+import { InviteController } from '../invite/invite'
 import { KeystoreController } from '../keystore/keystore'
 import { PortfolioController } from '../portfolio/portfolio'
 import { SettingsController } from '../settings/settings'
@@ -56,6 +57,11 @@ import { SettingsController } from '../settings/settings'
 import { SignAccountOpController, SigningStatus } from '../signAccountOp/signAccountOp'
 import { SignMessageController } from '../signMessage/signMessage'
 import { TransferController } from '../transfer/transfer'
+
+const STATUS_WRAPPED_METHODS = {
+  onAccountAdderSuccess: 'INITIAL',
+  selectAccount: 'INITIAL'
+} as const
 
 export class MainController extends EventEmitter {
   #storage: Storage
@@ -65,15 +71,13 @@ export class MainController extends EventEmitter {
   // Holds the initial load promise, so that one can wait until it completes
   #initialLoadPromise: Promise<void>
 
-  status: 'INITIAL' | 'LOADING' | 'SUCCESS' | 'DONE' = 'INITIAL'
-
-  latestMethodCall: string | null = null
-
   #callRelayer: Function
 
   accountStates: AccountStates = {}
 
   isReady: boolean = false
+
+  invite: InviteController
 
   keystore: KeystoreController
 
@@ -141,6 +145,8 @@ export class MainController extends EventEmitter {
 
   broadcastStatus: 'INITIAL' | 'LOADING' | 'DONE' = 'INITIAL'
 
+  statuses: Statuses<keyof typeof STATUS_WRAPPED_METHODS> = STATUS_WRAPPED_METHODS
+
   #relayerUrl: string
 
   onResolveDappRequest: (
@@ -191,6 +197,7 @@ export class MainController extends EventEmitter {
     this.#fetch = fetch
     this.#relayerUrl = relayerUrl
 
+    this.invite = new InviteController({ relayerUrl, fetch, storage: this.#storage })
     this.keystore = new KeystoreController(this.#storage, keystoreSigners)
     this.#externalSignerControllers = externalSignerControllers
     this.settings = new SettingsController(this.#storage)
@@ -270,78 +277,41 @@ export class MainController extends EventEmitter {
     const onAccountAdderSuccess = () => {
       if (this.accountAdder.addAccountsStatus !== 'SUCCESS') return
 
-      return this.#statusWrapper('onAccountAdderSuccess', async () => {
-        // Add accounts first, because some of the next steps have validation
-        // if accounts exists.
-        await this.addAccounts(this.accountAdder.readyToAddAccounts)
+      return this.withStatus(
+        'onAccountAdderSuccess',
+        async () => {
+          // Add accounts first, because some of the next steps have validation
+          // if accounts exists.
+          await this.addAccounts(this.accountAdder.readyToAddAccounts)
 
-        // Then add keys, because some of the next steps could have validation
-        // if keys exists. Should be separate (not combined in Promise.all,
-        // since firing multiple keystore actions is not possible
-        // (the #wrapKeystoreAction listens for the first one to finish and
-        // skips the parallel one, if one is requested).
-        await this.keystore.addKeys(this.accountAdder.readyToAddKeys.internal)
-        await this.keystore.addKeysExternallyStored(this.accountAdder.readyToAddKeys.external)
+          // Then add keys, because some of the next steps could have validation
+          // if keys exists. Should be separate (not combined in Promise.all,
+          // since firing multiple keystore actions is not possible
+          // (the #wrapKeystoreAction listens for the first one to finish and
+          // skips the parallel one, if one is requested).
+          await this.keystore.addKeys(this.accountAdder.readyToAddKeys.internal)
+          await this.keystore.addKeysExternallyStored(this.accountAdder.readyToAddKeys.external)
 
-        await Promise.all([
-          this.settings.addKeyPreferences(this.accountAdder.readyToAddKeyPreferences),
-          this.settings.addAccountPreferences(this.accountAdder.readyToAddAccountPreferences),
-          (() => {
-            const defaultSelectedAccount = getDefaultSelectedAccount(
-              this.accountAdder.readyToAddAccounts
-            )
-            if (!defaultSelectedAccount) return Promise.resolve()
+          await Promise.all([
+            this.settings.addKeyPreferences(this.accountAdder.readyToAddKeyPreferences),
+            this.settings.addAccountPreferences(this.accountAdder.readyToAddAccountPreferences),
+            (() => {
+              const defaultSelectedAccount = getDefaultSelectedAccount(
+                this.accountAdder.readyToAddAccounts
+              )
+              if (!defaultSelectedAccount) return Promise.resolve()
 
-            return this.selectAccount(defaultSelectedAccount.addr)
-          })()
-        ])
-      })
+              return this.#selectAccount(defaultSelectedAccount.addr)
+            })()
+          ])
+        },
+        true
+      )
     }
     this.accountAdder.onUpdate(onAccountAdderSuccess)
 
     this.isReady = true
     this.emitUpdate()
-  }
-
-  async #statusWrapper(callName: string, fn: Function) {
-    // We should not allow executing a second function simultaneously while another function execution is already in progress,
-    // as both functions manipulate the same status property, which may lead to unexpected behavior.
-    // Keeping this in mind, if we have an application logic (hook) that automatically invokes a function wrapped with #statusWrapper,
-    // we should always check if the status is INITIAL and only then invoke the function.
-    // You can see such an example in `authContext.tsx`.
-    if (this.status !== 'INITIAL') {
-      this.emitError({
-        level: 'minor',
-        message: `Please wait for the completion of the previous action before initiating another one.', ${callName}`,
-        error: new Error(
-          'Another function is already being handled by #statusWrapper; refrain from invoking a second function.'
-        )
-      })
-
-      return
-    }
-    this.latestMethodCall = callName
-    this.status = 'LOADING'
-    await this.forceEmitUpdate()
-    try {
-      await fn()
-      this.status = 'SUCCESS'
-      await this.forceEmitUpdate()
-    } catch (error: any) {
-      this.emitError({
-        level: 'major',
-        message: `An error encountered. Please try again. If the problem persists, please contact support.', ${callName}`,
-        error
-      })
-    }
-
-    this.status = 'DONE'
-    await this.forceEmitUpdate()
-
-    if (this.latestMethodCall === callName) {
-      this.status = 'INITIAL'
-      await this.forceEmitUpdate()
-    }
   }
 
   initSignAccOp(accountAddr: string, networkId: string): null | void {
@@ -539,25 +509,32 @@ export class MainController extends EventEmitter {
 
   // All operations must be synchronous so the change is instantly reflected in the UI
   async selectAccount(toAccountAddr: string) {
-    this.#statusWrapper('selectAccount', async () => {
-      await this.#initialLoadPromise
+    await this.withStatus(
+      this.selectAccount.name,
+      async () => this.#selectAccount(toAccountAddr),
+      true
+    )
+  }
 
-      if (!this.accounts.find((acc) => acc.addr === toAccountAddr)) {
-        // TODO: error handling, trying to switch to account that does not exist
-        return
-      }
+  async #selectAccount(toAccountAddr: string) {
+    await this.#initialLoadPromise
 
-      this.selectedAccount = toAccountAddr
-      // eslint-disable-next-line @typescript-eslint/no-floating-promises
-      this.#storage.set('selectedAccount', toAccountAddr)
-      this.activity.init({ filters: { account: toAccountAddr } })
-      this.addressBook.update({
-        selectedAccount: toAccountAddr
-      })
-      // eslint-disable-next-line @typescript-eslint/no-floating-promises
-      this.updateSelectedAccount(toAccountAddr)
-      this.onUpdateDappSelectedAccount(toAccountAddr)
+    if (!this.accounts.find((acc) => acc.addr === toAccountAddr)) {
+      // TODO: error handling, trying to switch to account that does not exist
+      return
+    }
+
+    this.selectedAccount = toAccountAddr
+    // eslint-disable-next-line @typescript-eslint/no-floating-promises
+    this.#storage.set('selectedAccount', toAccountAddr)
+    this.activity.init({ filters: { account: toAccountAddr } })
+    this.addressBook.update({
+      selectedAccount: toAccountAddr
     })
+    // eslint-disable-next-line @typescript-eslint/no-floating-promises
+    this.updateSelectedAccount(toAccountAddr)
+    this.onUpdateDappSelectedAccount(toAccountAddr)
+
     this.emitUpdate()
   }
 

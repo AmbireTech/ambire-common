@@ -2,7 +2,7 @@ import { ZeroAddress } from 'ethers'
 
 import { networks } from '../../../consts/networks'
 import {
-  HumanizerFragment,
+  HumanizerPromise,
   HumanizerSettings,
   HumanizerVisualization,
   HumanizerWarning
@@ -15,13 +15,11 @@ export const humanizerMetaParsing: HumanizerParsingModule = (
   options?: any
 ) => {
   const humanizerWarnings: HumanizerWarning[] = []
-  const asyncOps: Promise<HumanizerFragment | null>[] = []
+  const asyncOps: HumanizerPromise[] = []
   const res: HumanizerVisualization[] = visualization.map((v) => {
     if (v.address) {
       if (v.address === ZeroAddress) {
-        const symbol = networks.find(
-          ({ id }) => id === humanizerSettings.networkId
-        )?.nativeAssetSymbol
+        const symbol = options?.network?.nativeAssetSymbol || 'NATIVE'
         return symbol
           ? {
               ...v,
@@ -32,8 +30,8 @@ export const humanizerMetaParsing: HumanizerParsingModule = (
 
       const humanizerMeta =
         humanizerSettings?.humanizerMeta?.knownAddresses[v.address.toLowerCase()]
-      if (v.type === 'token' && !humanizerMeta?.token && !v.isHidden) {
-        asyncOps.push(getTokenInfo(humanizerSettings, v.address, options))
+      if (v.type === 'token' && !humanizerMeta?.token && !v.isHidden && v.address) {
+        asyncOps.push(() => getTokenInfo(humanizerSettings, v.address!, options))
         return {
           ...v,
           humanizerMeta
@@ -54,6 +52,6 @@ export interface HumanizerParsingModule {
   (humanizerSettings: HumanizerSettings, visualization: HumanizerVisualization[], options?: any): [
     HumanizerVisualization[],
     HumanizerWarning[],
-    Promise<HumanizerFragment | null>[]
+    HumanizerPromise[]
   ]
 }

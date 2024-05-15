@@ -416,13 +416,20 @@ describe('TypedMessages', () => {
     const onUpdate = jest.fn((newMessage: IrMessage) => {
       if (newMessage.id === 1)
         newMessage.fullVisualization?.forEach((v, i) =>
-          expect(expectedVisualizations[i]).toMatchObject(v)
+          expect(v).toMatchObject(expectedVisualizations[i])
         )
-      if (newMessage.id === 2)
-        expect(newMessage.fullVisualization).toEqual([
-          { type: 'action', content: 'Sign message:' },
-          { type: 'label', content: 'random message' }
-        ])
+      if (newMessage.id === 2) {
+        expect(newMessage.fullVisualization).not.toBeNull()
+        expect(newMessage.fullVisualization?.length).toBe(2)
+        expect(newMessage.fullVisualization![0]).toMatchObject({
+          type: 'action',
+          content: 'Sign message:'
+        })
+        expect(newMessage.fullVisualization![1]).toMatchObject({
+          type: 'label',
+          content: 'random message'
+        })
+      }
     })
 
     await messageHumanizer(messages[0], storage, fetch, onUpdate, emitError)

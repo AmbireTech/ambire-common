@@ -6,6 +6,7 @@ import {
   HumanizerCallModule,
   HumanizerFragment,
   HumanizerMeta,
+  HumanizerPromise,
   HumanizerVisualization,
   IrCall
 } from '../interfaces'
@@ -151,7 +152,7 @@ export const fallbackHumanizer: HumanizerCallModule = (
   humanizerMeta: HumanizerMeta,
   options?: any
 ) => {
-  const asyncOps: Promise<HumanizerFragment | null>[] = []
+  const asyncOps: HumanizerPromise[] = []
   const newCalls = currentIrCalls.map((call) => {
     if (call.fullVisualization && !checkIfUnknownAction(call?.fullVisualization)) return call
 
@@ -196,9 +197,7 @@ export const fallbackHumanizer: HumanizerCallModule = (
           )
         )
       } else {
-        // const promise = fetchFuncEtherface(call.data.slice(0, 10), options)
-        const promise = fetchFunc4bytes(call.data.slice(0, 10), options)
-        asyncOps.push(promise)
+        asyncOps.push(() => fetchFunc4bytes(call.data.slice(0, 10), options))
 
         visualization.push(
           getAction('Unknown action'),

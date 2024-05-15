@@ -210,7 +210,8 @@ describe('asyncOps tests', () => {
       fetch,
       emitError: mockEmitError
     })
-    const asyncData = await Promise.all(asyncOps)
+    const asyncData = await Promise.all(asyncOps.map((i) => i()))
+
     expect(asyncData[0]).toMatchObject({
       key: irCalls[0].to.toLowerCase(),
       type: 'token',
@@ -332,7 +333,7 @@ describe('module tests', () => {
       fetch,
       emitError: mockEmitError
     })
-    asyncOps = (await Promise.all(asyncOps)).filter((a) => a) as HumanizerFragment[]
+    asyncOps = (await Promise.all(asyncOps.map((i) => i()))).filter((a) => a) as HumanizerFragment[]
     expect(asyncOps.length).toBe(1)
     expect(asyncOps[0]).toMatchObject({ key: '0x095ea7b3' })
     ;[irCalls, asyncOps] = fallbackHumanizer(

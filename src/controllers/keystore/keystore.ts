@@ -12,6 +12,7 @@ import {
 import { concat, getBytes, hexlify, keccak256, randomBytes, toUtf8Bytes, Wallet } from 'ethers'
 import scrypt from 'scrypt-js'
 
+import EmittableError from '../../classes/EmittableError'
 import {
   ExternalKey,
   Key,
@@ -21,11 +22,21 @@ import {
   StoredKey
 } from '../../interfaces/keystore'
 import { Storage } from '../../interfaces/storage'
-import wait from '../../utils/wait'
-import EventEmitter from '../eventEmitter/eventEmitter'
+import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter'
 
 const scryptDefaults = { N: 131072, r: 8, p: 1, dkLen: 64 }
 const CIPHER = 'aes-128-ctr'
+const KEYSTORE_UNEXPECTED_ERROR_MESSAGE =
+  'Keystore unexpected error. If the problem persists, please contact support.'
+
+const STATUS_WRAPPED_METHODS = {
+  unlockWithSecret: 'INITIAL',
+  addSecret: 'INITIAL',
+  removeSecret: 'INITIAL',
+  addKeys: 'INITIAL',
+  addKeysExternallyStored: 'INITIAL',
+  changeKeystorePassword: 'INITIAL'
+} as const
 
 function getBytesForSecret(secret: string): ArrayLike<number> {
   // see https://github.com/ethers-io/ethers.js/blob/v5/packages/json-wallets/src.ts/utils.ts#L19-L24
@@ -73,11 +84,9 @@ export class KeystoreController extends EventEmitter {
 
   isReadyToStoreKeys: boolean = false
 
-  status: 'INITIAL' | 'LOADING' | 'SUCCESS' | 'DONE' = 'INITIAL'
-
   errorMessage: string = ''
 
-  latestMethodCall: string | null = null
+  statuses: Statuses<keyof typeof STATUS_WRAPPED_METHODS> = STATUS_WRAPPED_METHODS
 
   // Holds the initial load promise, so that one can wait until it completes
   #initialLoadPromise: Promise<void>
@@ -145,17 +154,32 @@ export class KeystoreController extends EventEmitter {
 
     // @TODO should we check if already locked? probably not cause this function can  be used in order to verify if a secret is correct
     if (!this.#keystoreSecrets.length) {
-      throw new Error('keystore: no secrets yet')
+      throw new EmittableError({
+        message:
+          'Trying to unlock Ambire, but the lock mechanism was not fully configured yet. Please try again or contact support if the problem persists.',
+        level: 'major',
+        error: new Error('keystore: no secrets yet')
+      })
     }
 
     const secretEntry = this.#keystoreSecrets.find((x) => x.id === secretId)
     if (!secretEntry) {
-      throw new Error(`keystore: secret not found: ${secretId}`)
+      throw new EmittableError({
+        message:
+          'Something went wrong when trying to unlock Ambire. Please try again or contact support if the problem persists.',
+        level: 'major',
+        error: new Error('keystore: secret not found')
+      })
     }
 
     const { scryptParams, aesEncrypted } = secretEntry
     if (aesEncrypted.cipherType !== CIPHER) {
-      throw new Error(`keystore: unsupported cipherType ${aesEncrypted.cipherType}`)
+      throw new EmittableError({
+        message:
+          'Something went wrong when trying to unlock Ambire. Please try again or contact support if the problem persists.',
+        level: 'major',
+        error: new Error(`keystore: unsupported cipherType ${aesEncrypted.cipherType}`)
+      })
     }
     // @TODO: progressCallback?
 
@@ -175,16 +199,18 @@ export class KeystoreController extends EventEmitter {
     const aesCtr = new aes.ModeOfOperation.ctr(derivedKey, counter)
     const mac = keccak256(concat([macPrefix, aesEncrypted.ciphertext]))
     if (mac !== aesEncrypted.mac) {
-      // Throw, because that's handled as a form field error
-      throw new Error('keystore: wrong secret')
+      this.errorMessage = 'Invalid Device Password.'
+      this.emitUpdate()
+      return
     }
+    this.errorMessage = ''
 
     const decrypted = aesCtr.decrypt(getBytes(aesEncrypted.ciphertext))
     this.#mainKey = { key: decrypted.slice(0, 16), iv: decrypted.slice(16, 32) }
   }
 
   async unlockWithSecret(secretId: string, secret: string) {
-    return this.#wrapKeystoreAction('unlockWithSecret', () =>
+    await this.withStatus(this.unlockWithSecret.name, () =>
       this.#unlockWithSecret(secretId, secret)
     )
   }
@@ -199,7 +225,11 @@ export class KeystoreController extends EventEmitter {
 
     // @TODO test
     if (this.#keystoreSecrets.find((x) => x.id === secretId))
-      throw new Error(`keystore: trying to add duplicate secret ${secretId}`)
+      throw new EmittableError({
+        message: KEYSTORE_UNEXPECTED_ERROR_MESSAGE,
+        level: 'major',
+        error: new Error(`keystore: trying to add duplicate secret ${secretId}`)
+      })
 
     let mainKey: MainKey | null = this.#mainKey
     // We are not unlocked
@@ -213,7 +243,12 @@ export class KeystoreController extends EventEmitter {
           key,
           iv: randomBytes(16)
         }
-      } else throw new Error('keystore: must unlock keystore before adding secret')
+      } else
+        throw new EmittableError({
+          message: KEYSTORE_UNEXPECTED_ERROR_MESSAGE,
+          level: 'major',
+          error: new Error('keystore: must unlock keystore before adding secret')
+        })
 
       if (leaveUnlocked) {
         this.#mainKey = mainKey
@@ -262,7 +297,7 @@ export class KeystoreController extends EventEmitter {
   }
 
   async addSecret(secretId: string, secret: string, extraEntropy: string, leaveUnlocked: boolean) {
-    await this.#wrapKeystoreAction('addSecret', () =>
+    await this.withStatus(this.addSecret.name, () =>
       this.#addSecret(secretId, secret, extraEntropy, leaveUnlocked)
     )
   }
@@ -271,14 +306,18 @@ export class KeystoreController extends EventEmitter {
     await this.#initialLoadPromise
 
     if (!this.#keystoreSecrets.find((x) => x.id === secretId))
-      throw new Error(`keystore: secret$ ${secretId} not found`)
+      throw new EmittableError({
+        message: KEYSTORE_UNEXPECTED_ERROR_MESSAGE,
+        level: 'major',
+        error: new Error(`keystore: secret$ ${secretId} not found`)
+      })
 
     this.#keystoreSecrets = this.#keystoreSecrets.filter((x) => x.id !== secretId)
     await this.#storage.set('keystoreSecrets', this.#keystoreSecrets)
   }
 
   async removeSecret(secretId: string) {
-    await this.#wrapKeystoreAction('removeSecret', () => this.#removeSecret(secretId))
+    await this.withStatus(this.removeSecret.name, () => this.#removeSecret(secretId))
   }
 
   get keys(): Key[] {
@@ -340,7 +379,7 @@ export class KeystoreController extends EventEmitter {
   }
 
   async addKeysExternallyStored(keysToAdd: ExternalKey[]) {
-    await this.#wrapKeystoreAction('addKeysExternallyStored', () =>
+    await this.withStatus(this.addKeysExternallyStored.name, () =>
       this.#addKeysExternallyStored(keysToAdd)
     )
   }
@@ -348,7 +387,12 @@ export class KeystoreController extends EventEmitter {
   async #addKeys(keysToAdd: { privateKey: string; dedicatedToOneSA: boolean }[]) {
     await this.#initialLoadPromise
     if (!keysToAdd.length) return
-    if (this.#mainKey === null) throw new Error('keystore: needs to be unlocked')
+    if (this.#mainKey === null)
+      throw new EmittableError({
+        message: KEYSTORE_UNEXPECTED_ERROR_MESSAGE,
+        level: 'major',
+        error: new Error('keystore: needs to be unlocked')
+      })
 
     // Strip out keys with duplicated private keys. One unique key is enough.
     const uniquePrivateKeysToAddSet = new Set()
@@ -397,17 +441,27 @@ export class KeystoreController extends EventEmitter {
   }
 
   async addKeys(keysToAdd: { privateKey: string; dedicatedToOneSA: boolean }[]) {
-    await this.#wrapKeystoreAction('addKeys', () => this.#addKeys(keysToAdd))
+    await this.withStatus(this.addKeys.name, () => this.#addKeys(keysToAdd))
   }
 
   async removeKey(addr: Key['addr'], type: Key['type']) {
     await this.#initialLoadPromise
-    if (!this.isUnlocked) throw new Error('keystore: not unlocked')
+    if (!this.isUnlocked)
+      throw new EmittableError({
+        message:
+          'Extension not unlocked. Please try again or contact support if the problem persists.',
+        level: 'major',
+        error: new Error('keystore: not unlocked')
+      })
     const keys = this.#keystoreKeys
     if (!keys.find((x) => x.addr === addr && x.type === type))
-      throw new Error(
-        `keystore: trying to remove key that does not exist: address: ${addr}, type: ${type}`
-      )
+      throw new EmittableError({
+        message: KEYSTORE_UNEXPECTED_ERROR_MESSAGE,
+        level: 'major',
+        error: new Error(
+          `keystore: trying to remove key that does not exist: address: ${addr}, type: ${type}`
+        )
+      })
 
     this.#keystoreKeys = keys.filter((x) => x.addr === addr && x.type === type)
     await this.#storage.set('keystoreKeys', this.#keystoreKeys)
@@ -510,76 +564,6 @@ export class KeystoreController extends EventEmitter {
     return new SignerInitializer(key)
   }
 
-  async #wrapKeystoreAction(callName: string, fn: Function) {
-    // We should not allow executing a second function simultaneously while another function execution is already in progress,
-    // as both functions manipulate the same status property, which may lead to unexpected behavior.
-    // Keeping this in mind, if we have an application logic (hook) that automatically invokes a function wrapped with #statusWrapper,
-    // we should always check if the status is INITIAL and only then invoke the function.
-    // You can see such an example in `authContext.tsx`.
-    if (this.status !== 'INITIAL') {
-      this.emitError({
-        level: 'minor',
-        message: `Please wait for the completion of the previous action before initiating another one.', ${callName}`,
-        error: new Error(
-          'Another function is already being handled by #statusWrapper; refrain from invoking a second function.'
-        )
-      })
-
-      return
-    }
-
-    this.latestMethodCall = callName
-    this.errorMessage = ''
-    this.status = 'LOADING'
-    await this.forceEmitUpdate()
-    try {
-      await fn()
-      this.status = 'SUCCESS'
-      await this.forceEmitUpdate()
-    } catch (error: any) {
-      if (error?.message === 'keystore: wrong secret') {
-        this.errorMessage = 'Invalid Device Password.'
-      } else if (error?.message === 'keystore: not unlocked') {
-        this.emitError({
-          message: 'App not unlocked. Please try again or contact support if the problem persists.',
-          level: 'major',
-          error
-        })
-      } else if (error?.message === 'keystore: no secrets yet') {
-        this.emitError({
-          message:
-            'Trying to unlock Ambire, but the lock mechanism was not fully configured yet. Please try again or contact support if the problem persists.',
-          level: 'major',
-          error
-        })
-      } else if (
-        error?.message?.includes('keystore: secret not found:') ||
-        error?.message?.includes('keystore: unsupported cipherType')
-      ) {
-        this.emitError({
-          message:
-            'Something went wrong when trying to unlock Ambire. Please try again or contact support if the problem persists.',
-          level: 'major',
-          error
-        })
-      } else {
-        this.emitError({
-          message: 'Keystore unexpected error. If the problem persists, please contact support.',
-          level: 'major',
-          error
-        })
-      }
-    }
-
-    this.status = 'DONE'
-    await this.forceEmitUpdate()
-
-    if (this.latestMethodCall === callName) {
-      this.status = 'INITIAL'
-      await this.forceEmitUpdate()
-    }
-  }
-
   async #changeKeystorePassword(newSecret: string, oldSecret?: string) {
     await this.#initialLoadPromise
 
@@ -602,14 +586,19 @@ export class KeystoreController extends EventEmitter {
     // and not unlock the Keystore with the recovery secret unless the user provides a new passphrase.
     if (oldSecret) await this.#unlockWithSecret('password', oldSecret)
 
-    if (!this.isUnlocked) throw new Error('keystore: not unlocked')
+    if (!this.isUnlocked)
+      throw new EmittableError({
+        message: 'App not unlocked. Please try again or contact support if the problem persists.',
+        level: 'major',
+        error: new Error('keystore: not unlocked')
+      })
 
     await this.#removeSecret('password')
     await this.#addSecret('password', newSecret, '', true)
   }
 
   async changeKeystorePassword(newSecret: string, oldSecret?: string) {
-    await this.#wrapKeystoreAction('changeKeystorePassword', () =>
+    await this.withStatus(this.changeKeystorePassword.name, () =>
       this.#changeKeystorePassword(newSecret, oldSecret)
     )
   }

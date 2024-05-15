@@ -1,8 +1,8 @@
 import { AccountOp } from '../../accountOp/accountOp'
 import {
-  HumanizerFragment,
   HumanizerMeta,
   HumanizerParsingModule,
+  HumanizerPromise,
   HumanizerSettings,
   HumanizerVisualization,
   HumanizerWarning,
@@ -16,9 +16,9 @@ const runModules = (
   settings: HumanizerSettings,
   modules: HumanizerParsingModule[],
   options?: any
-): [HumanizerVisualization[], HumanizerWarning[], Promise<HumanizerFragment | null>[]] => {
+): [HumanizerVisualization[], HumanizerWarning[], HumanizerPromise[]] => {
   const warnings: HumanizerWarning[] = []
-  const asyncOps: Promise<HumanizerFragment | null>[] = []
+  const asyncOps: HumanizerPromise[] = []
 
   let visualization = _visualization
   modules.forEach((m) => {
@@ -37,8 +37,8 @@ export function parseCalls(
   modules: HumanizerParsingModule[],
   humanizerMeta: HumanizerMeta,
   options?: any
-): [IrCall[], Promise<HumanizerFragment | null>[]] {
-  const asyncOps: Promise<HumanizerFragment | null>[] = []
+): [IrCall[], HumanizerPromise[]] {
+  const asyncOps: HumanizerPromise[] = []
   const newCalls = calls.map((call) => {
     const humanizerSettings: HumanizerSettings = {
       accountAddr: accountOp.accountAddr,
@@ -63,7 +63,7 @@ export function parseMessage(
   message: IrMessage,
   modules: HumanizerParsingModule[],
   options?: any
-): [IrMessage, Promise<HumanizerFragment | null>[]] {
+): [IrMessage, HumanizerPromise[]] {
   const humanizerSettings: HumanizerSettings = {
     ...settings,
     humanizerMeta: integrateFragments(
