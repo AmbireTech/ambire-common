@@ -40,8 +40,8 @@ import EventEmitter from '../eventEmitter/eventEmitter'
 /* eslint-disable @typescript-eslint/no-shadow */
 import { SettingsController } from '../settings/settings'
 
-const THRESHOLD = 10
-const LIMIT = 50
+const LEARNED_TOKENS_CLEAN_THRESHOLD = 10
+const LEARNED_TOKENS_NETWORK_LIMIT = 50
 
 export class PortfolioController extends EventEmitter {
   latest: PortfolioControllerState
@@ -702,7 +702,10 @@ export class PortfolioController extends EventEmitter {
     }
 
     // Reached limit
-    if (LIMIT >= Object.keys(networkLearnedTokens).length - THRESHOLD) {
+    if (
+      LEARNED_TOKENS_NETWORK_LIMIT >=
+      Object.keys(networkLearnedTokens).length - LEARNED_TOKENS_CLEAN_THRESHOLD
+    ) {
       networkLearnedTokens = await this.cleanLearnedTokens(networkId, networkLearnedTokens)
     }
     const updatedPreviousHintsStorage = { ...storagePreviousHints }
@@ -729,20 +732,19 @@ export class PortfolioController extends EventEmitter {
       })
       .sort((a, b) => Number(b[1]) - Number(a[1]))
 
-    const tokensToDeleteCount = Math.max(0, learnedTokensArray.length - LIMIT)
+    const tokensToDeleteCount = Math.max(
+      0,
+      learnedTokensArray.length - LEARNED_TOKENS_NETWORK_LIMIT
+    )
 
     // If there are more tokens than the limit, delete the newest ones
     const tokensToDelete = learnedTokensArray.slice(0, tokensToDeleteCount)
 
     tokensToDelete.forEach(([address]) => delete networkLearnedTokens[address])
 
-    const updatedPreviousHintsStorage = {
-      ...storagePreviousHints,
-      learnedTokens: {
-        ...storagePreviousHints.learnedTokens,
-        [networkId]: networkLearnedTokens
-      }
-    }
+    const updatedPreviousHintsStorage = { ...storagePreviousHints }
+    updatedPreviousHintsStorage.learnedTokens[networkId] = networkLearnedTokens
+
     return updatedPreviousHintsStorage
   }
 
