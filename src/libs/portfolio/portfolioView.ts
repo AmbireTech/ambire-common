@@ -1,5 +1,4 @@
-import { Account } from 'interfaces/account'
-
+import { Account } from '../../interfaces/account'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { shouldGetAdditionalPortfolio } from './helpers'
 import {
