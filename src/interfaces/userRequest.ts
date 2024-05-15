@@ -2,25 +2,32 @@ import { TypedDataDomain, TypedDataField } from 'ethers'
 import { HumanizerFragment } from 'libs/humanizer/interfaces'
 
 import { AccountId } from './account'
+import { DappProviderRequest } from './dapp'
 import { NetworkId } from './networkDescriptor'
 
 export interface Call {
   kind: 'call'
-  to: string
-  value: bigint
-  data: string
+  params: {
+    to: string
+    value: bigint
+    data: string
+  }
 }
 export interface PlainTextMessage {
   kind: 'message'
-  message: string | Uint8Array
+  params: {
+    message: string | Uint8Array
+  }
 }
 
 export interface TypedMessage {
   kind: 'typedMessage'
-  domain: TypedDataDomain
-  types: Record<string, Array<TypedDataField>>
-  message: Record<string, any>
-  primaryType: keyof TypedMessage['types']
+  params: {
+    domain: TypedDataDomain
+    types: Record<string, Array<TypedDataField>>
+    message: Record<string, any>
+    primaryType: keyof TypedMessage['params']['types']
+  }
 }
 // @TODO: move this type and it's deps (PlainTextMessage, TypedMessage) to another place,
 // probably interfaces
@@ -36,17 +43,37 @@ export interface Message {
   networkId: NetworkId
 }
 
-export interface UserRequest {
-  // Unlike the AccountOp, which we compare by content,
-  // we need a distinct identifier here that's set by whoever is posting the request
-  // the requests cannot be compared by content because it's valid for a user to post two or more identical ones
-  // while for AccountOps we do only care about their content in the context of simulations
+export interface SignUserRequest {
   id: number
-  networkId: NetworkId
-  accountAddr: AccountId
-  // TODO: The dApp could define a nonce for the request, but this could not be
-  // applicable, because the dApp will check this as a EOA. Double check.
-  forceNonce: bigint | null
-  // either-or here between call and a message, plus different types of messages
   action: Call | PlainTextMessage | TypedMessage
+  meta: {
+    isSign: true
+    accountAddr: AccountId
+    networkId: NetworkId
+    [key: string]: any
+  }
+  // defined only when SignUserRequest is built from a DappRequest
+  dappPromise?: {
+    resolve: (data: any) => void
+    reject: (data: any) => void
+  }
 }
+
+export interface DappUserRequest {
+  id: number
+  action: {
+    kind: Exclude<string, 'call' | 'message' | 'typedMessage'>
+    params: any
+  }
+  session: DappProviderRequest['session']
+  meta: {
+    isSign: false
+    [key: string]: any
+  }
+  dappPromise: {
+    resolve: (data: any) => void
+    reject: (data: any) => void
+  }
+}
+
+export type UserRequest = DappUserRequest | SignUserRequest
