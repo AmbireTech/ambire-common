@@ -20,8 +20,8 @@ import { CustomToken } from '../../libs/portfolio/customToken'
 import getAccountNetworksWithAssets from '../../libs/portfolio/getNetworksWithAssets'
 import {
   getFlags,
+  getUpdatedHints,
   shouldGetAdditionalPortfolio,
-  updatePreviousHintsStorage,
   validateERC20Token
 } from '../../libs/portfolio/helpers'
 /* eslint-disable no-param-reassign */
@@ -659,7 +659,7 @@ export class PortfolioController extends EventEmitter {
           !(accountState[network.id]!.result?.errors || []).find((err) => err.name === 'HintsError')
         ) {
           // Store tokens from velcro and other APIs and update learnedTokens timestamp for lastSeenNonZero property
-          const updatedStoragePreviousHints = updatePreviousHintsStorage(
+          const updatedStoragePreviousHints = getUpdatedHints(
             accountState[network.id]!.result!,
             network.id,
             storagePreviousHints,
@@ -689,13 +689,13 @@ export class PortfolioController extends EventEmitter {
   /**
    * Learn new tokens from humanizer and debug_traceCall
    */
-  async learnTokens(tokens: string[], networkId: NetworkId) {
+  async learnTokens(tokenAddresses: string[], networkId: NetworkId) {
     const storagePreviousHints = await this.#storage.get('previousHints', {})
 
     const learnedTokens = storagePreviousHints.learnedTokens || {}
     let networkLearnedTokens = learnedTokens[networkId] || {}
 
-    for (const address of tokens) {
+    for (const address of tokenAddresses) {
       if (address !== ZeroAddress && !(address in networkLearnedTokens)) {
         networkLearnedTokens[address] = null
       }
@@ -743,7 +743,7 @@ export class PortfolioController extends EventEmitter {
         [networkId]: networkLearnedTokens
       }
     }
-    await this.#storage.set('previousHints', updatedPreviousHintsStorage)
+    return updatedPreviousHintsStorage
   }
 
   get networksWithAssets() {

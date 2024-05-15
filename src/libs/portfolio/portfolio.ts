@@ -198,11 +198,8 @@ export class Portfolio {
       return null
     }
 
-    const tokenFilter = ([error, result]: [string, TokenResult]): boolean => {
-      if (error !== '0x' || result.symbol === '') return false
-
-      return true
-    }
+    const tokenFilter = ([error, result]: [string, TokenResult]): boolean =>
+      error === '0x' && !!result.symbol
 
     const tokensWithoutPrices = tokensWithErr
       .filter((tokenWithErr) => tokenFilter(tokenWithErr))
