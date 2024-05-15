@@ -205,7 +205,7 @@ describe('Settings Controller', () => {
     )
   })
 
-  test('should check if network features get displayed correctly for ethereum', (done) => {
+  test('should check if network features get displayed correctly for polygon', (done) => {
     let checks = 0
     settingsController.onUpdate(() => {
       if (settingsController.statuses.updateNetworkPreferences === 'INITIAL') {
@@ -213,7 +213,7 @@ describe('Settings Controller', () => {
       }
       if (checks === 4) {
         checks++
-        const eth = settingsController.networks.find((net) => net.id === 'ethereum')!
+        const eth = settingsController.networks.find((net) => net.id === 'polygon')!
         expect(eth.areContractsDeployed).toBe(true)
       }
 
@@ -224,7 +224,7 @@ describe('Settings Controller', () => {
 
       if (checks === 1) {
         checks++
-        const eth = settingsController.networks.find((net) => net.id === 'ethereum')!
+        const eth = settingsController.networks.find((net) => net.id === 'polygon')!
         expect(eth.areContractsDeployed).toBe(false)
         settingsController.setContractsDeployedToTrueIfDeployed(eth)
       }
@@ -235,7 +235,7 @@ describe('Settings Controller', () => {
       }
     })
 
-    const eth = settingsController.networks.find((net) => net.id === 'ethereum')!
+    const eth = settingsController.networks.find((net) => net.id === 'polygon')!
     expect(eth?.features.length).toBe(3)
 
     const saSupport = eth?.features.find((feat) => feat.id === 'saSupport')!
@@ -255,7 +255,7 @@ describe('Settings Controller', () => {
     expect(prices!.level).toBe('success')
 
     // set first to false so we could test setContractsDeployedToTrueIfDeployed
-    settingsController.updateNetworkPreferences({ areContractsDeployed: false }, 'ethereum')
+    settingsController.updateNetworkPreferences({ areContractsDeployed: false }, 'polygon')
   })
 
   test('should add the mantle network as a custom network', (done) => {

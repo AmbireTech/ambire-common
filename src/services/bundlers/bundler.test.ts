@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-floating-promises */
 
-import { Interface, parseEther, toBeHex } from 'ethers'
+import { Interface, parseEther, parseUnits, toBeHex } from 'ethers'
 
 import { describe, expect, test } from '@jest/globals'
 
@@ -332,7 +332,7 @@ describe('Bundler tests', () => {
       expect(estimateWithStateOverride).toHaveProperty('paymasterVerificationGasLimit')
       expect(estimateWithStateOverride).toHaveProperty('paymasterPostOpGasLimit')
     })
-    test("should revert as we're trying to send USDT and the account does not have USDT", async () => {
+    test("should revert as we're trying to send USDT and the account does not have enough USDT", async () => {
       expect.assertions(1)
       const ERC20Interface = new Interface(ERC20.abi)
       const opOptimism: AccountOp = {
@@ -351,7 +351,10 @@ describe('Bundler tests', () => {
           {
             to: '0x94b008aA00579c1307B0EF2c499aD98a8ce58e58',
             value: 0n,
-            data: ERC20Interface.encodeFunctionData('transfer', [FEE_COLLECTOR, 10])
+            data: ERC20Interface.encodeFunctionData('transfer', [
+              FEE_COLLECTOR,
+              parseUnits('10', 6)
+            ])
           }
         ],
         accountOpToExecuteBefore: null
