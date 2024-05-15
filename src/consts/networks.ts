@@ -40,7 +40,7 @@ const networks: NetworkDescriptor[] = [
     },
     unstoppableDomainsChain: 'MATIC',
     isSAEnabled: true,
-    areContractsDeployed: false,
+    areContractsDeployed: true,
     hasRelayer: true,
     hasDebugTraceCall: false,
     platformId: 'polygon-pos',

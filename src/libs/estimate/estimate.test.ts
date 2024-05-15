@@ -1,11 +1,12 @@
 /* eslint no-console: "off" */
 
-import { AbiCoder, ethers, Interface, parseEther, ZeroAddress } from 'ethers'
+import { AbiCoder, Contract, ethers, Interface, parseEther, ZeroAddress } from 'ethers'
 import fetch from 'node-fetch'
 
 import { describe, expect } from '@jest/globals'
 import structuredClone from '@ungap/structured-clone'
 
+import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import ERC20 from '../../../contracts/compiled/IERC20.json'
 import { getNonce } from '../../../test/helpers'
 import { FEE_COLLECTOR } from '../../consts/addresses'
@@ -22,10 +23,13 @@ import { Portfolio } from '../portfolio/portfolio'
 import { estimate, estimate4337 } from './estimate'
 import { localSigner } from './localSigner'
 
-const ethereum = networks.find((x) => x.id === 'ethereum')
+const ethereum = networks.find((x) => x.id === 'ethereum')!
+ethereum.areContractsDeployed = true
 const optimism = networks.find((x) => x.id === 'optimism')
-const arbitrum = networks.find((x) => x.id === 'arbitrum')
-const avalanche = networks.find((x) => x.id === 'avalanche')
+const arbitrum = networks.find((x) => x.id === 'arbitrum')!
+arbitrum.areContractsDeployed = true
+const avalanche = networks.find((x) => x.id === 'avalanche')!
+avalanche.areContractsDeployed = true
 const polygon = networks.find((x) => x.id === 'polygon')
 if (!ethereum || !optimism || !arbitrum || !avalanche || !polygon) throw new Error('no network')
 const provider = getRpcProvider(ethereum.rpcUrls, ethereum.chainId)
@@ -34,6 +38,23 @@ const providerArbitrum = getRpcProvider(arbitrum.rpcUrls, arbitrum.chainId)
 // const providerAvalanche = getRpcProvider(avalanche.rpcUrls, avalanche.chainId)
 const providerPolygon = getRpcProvider(polygon.rpcUrls, polygon.chainId)
 const addrWithDeploySignature = '0x52C37FD54BD02E9240e8558e28b11e0Dc22d8e85'
+
+const smartAccDeployed: Account = {
+  addr: '0x3F791753727536BF1a4Cb87334997D72435A2267',
+  initialPrivileges: [
+    [
+      '0xBd84Cc40a5b5197B5B61919c22A55e1c46d2A3bb',
+      '0x0000000000000000000000000000000000000000000000000000000000000002'
+    ]
+  ],
+  creation: {
+    factoryAddr: '0xc4460dDA0bD0c43B98Fd3F8312f75668BC64eB64',
+    bytecode:
+      '0x7f00000000000000000000000000000000000000000000000000000000000000027ff33cc417366b7e38d2706a67ab46f85465661c28b864b521441180d15df82251553d602d80604d3d3981f3363d3d373d3d3d363d732ee4ce14a9486b62300fa7618d48d93e8ef2a5875af43d82803e903d91602b57fd5bf3',
+    salt: '0x0000000000000000000000000000000000000000000000000000000000000000'
+  },
+  associatedKeys: ['0xBd84Cc40a5b5197B5B61919c22A55e1c46d2A3bb']
+}
 
 // Used to determine if an account is view-only or not
 // and subsequently if it should be included in the fee payment options
@@ -87,7 +108,7 @@ const MOCK_KEYSTORE_KEYS: Key[] = [
   }
 ]
 
-const account: Account = {
+const v1Acc: Account = {
   addr: '0xa07D75aacEFd11b425AF7181958F0F85c312f143',
   associatedKeys: ['0xd6e371526cdaeE04cd8AF225D42e37Bc14688D9E'],
   initialPrivileges: [
@@ -472,9 +493,9 @@ describe('estimate', () => {
     expect(response.error).not.toBe(null)
   })
 
-  it('estimates gasUsage, fee and native tokens outcome', async () => {
+  it('[v1] estimates gasUsage, fee and native tokens outcome', async () => {
     const op = {
-      accountAddr: account.addr,
+      accountAddr: v1Acc.addr,
       signingKeyAddr: null,
       signingKeyType: null,
       gasLimit: null,
@@ -494,12 +515,12 @@ describe('estimate', () => {
       (token) => token.address === '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48'
     )
 
-    const accountStates = await getAccountsInfo([account])
+    const accountStates = await getAccountsInfo([v1Acc])
     const response = await estimate(
       localSigner,
       provider,
       ethereum,
-      account,
+      v1Acc,
       MOCK_KEYSTORE_KEYS,
       op,
       accountStates,
@@ -513,6 +534,8 @@ describe('estimate', () => {
       (option) => option.token.address === '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48'
     )
 
+    console.log(response.error)
+
     // This is the min gas unit we can spend, but we expect more than that having in mind that multiple computations happens in the Contract
     expect(response.gasUsed).toBeGreaterThan(21000n)
     // As we swap 1 USDC for 1 USDT, we expect the estimate (outcome) balance of USDT to be greater than before the estimate (portfolio value)
@@ -525,7 +548,7 @@ describe('estimate', () => {
 
     // make sure there's a native fee payment option in the same acc addr
     const noFeePaymentViewOnlyAcc = response.feePaymentOptions.find(
-      (opt) => opt.paidBy === account.addr && opt.token.address === ethers.ZeroAddress
+      (opt) => opt.paidBy === v1Acc.addr && opt.token.address === ethers.ZeroAddress
     )
     expect(noFeePaymentViewOnlyAcc).not.toBe(undefined)
 
@@ -546,9 +569,9 @@ describe('estimate', () => {
     expect(viewOnlyAccOption).toBe(undefined)
   })
 
-  it('estimates correctly by passing multiple view only accounts to estimation and removing the fee options for them as they are not valid', async () => {
+  it('[v1] estimates correctly by passing multiple view only accounts to estimation and removing the fee options for them as they are not valid', async () => {
     const op = {
-      accountAddr: account.addr,
+      accountAddr: v1Acc.addr,
       signingKeyAddr: null,
       signingKeyType: null,
       gasLimit: null,
@@ -560,12 +583,12 @@ describe('estimate', () => {
       accountOpToExecuteBefore: null
     }
 
-    const accountStates = await getAccountsInfo([account])
+    const accountStates = await getAccountsInfo([v1Acc])
     const response = await estimate(
       localSigner,
       provider,
       ethereum,
-      account,
+      v1Acc,
       MOCK_KEYSTORE_KEYS,
       op,
       accountStates,
@@ -614,9 +637,9 @@ describe('estimate', () => {
     expect(viewOnlyAccOption).not.toBe(undefined)
   })
 
-  it('estimates with `accountOpToExecuteBefore`', async () => {
+  it('[v1] estimates with `accountOpToExecuteBefore`', async () => {
     const op = {
-      accountAddr: account.addr,
+      accountAddr: v1Acc.addr,
       signingKeyAddr: null,
       signingKeyType: null,
       gasLimit: null,
@@ -629,7 +652,7 @@ describe('estimate', () => {
     }
 
     const opWithExecuteBefore = {
-      accountAddr: account.addr,
+      accountAddr: v1Acc.addr,
       signingKeyAddr: null,
       signingKeyType: null,
       gasLimit: null,
@@ -639,25 +662,25 @@ describe('estimate', () => {
       signature: spoofSig,
       calls: [{ to, value: BigInt(0), data }],
       accountOpToExecuteBefore: {
-        accountAddr: account.addr,
+        accountAddr: v1Acc.addr,
         signingKeyAddr: null,
         signingKeyType: null,
         gasLimit: null,
         gasFeePayment: null,
         networkId: 'ethereum',
-        nonce: await getNonce(account.addr, provider),
+        nonce: await getNonce(v1Acc.addr, provider),
         signature: spoofSig,
         calls: [{ to, value: BigInt(0), data }],
         accountOpToExecuteBefore: null
       }
     }
 
-    const accountStates = await getAccountsInfo([account])
+    const accountStates = await getAccountsInfo([v1Acc])
     const response = await estimate(
       localSigner,
       provider,
       ethereum,
-      account,
+      v1Acc,
       MOCK_KEYSTORE_KEYS,
       op,
       accountStates,
@@ -668,7 +691,7 @@ describe('estimate', () => {
       localSigner,
       provider,
       ethereum,
-      account,
+      v1Acc,
       MOCK_KEYSTORE_KEYS,
       opWithExecuteBefore,
       accountStates,
@@ -859,6 +882,49 @@ describe('estimate', () => {
     expect(response.feePaymentOptions![0].token).not.toBe(null)
   })
 
+  it('[ERC-4337]:Optimism | deployed account | should work', async () => {
+    const ambAcc = new Contract(smartAccDeployed.addr, AmbireAccount.abi, providerOptimism)
+    const nonce = await ambAcc.nonce()
+    const opOptimism: AccountOp = {
+      accountAddr: smartAccDeployed.addr,
+      signingKeyAddr: smartAccDeployed.associatedKeys[0],
+      signingKeyType: null,
+      gasLimit: null,
+      gasFeePayment: null,
+      networkId: 'optimism',
+      nonce,
+      signature: '0x',
+      calls: [{ to: FEE_COLLECTOR, value: 1n, data: '0x' }],
+      accountOpToExecuteBefore: null
+    }
+    const accountStates = await getAccountsInfo([smartAccDeployed])
+    const response = await estimate(
+      localSigner, // it doesn't matter in this case
+      providerOptimism,
+      optimism,
+      smartAccDeployed,
+      MOCK_KEYSTORE_KEYS,
+      opOptimism,
+      accountStates,
+      nativeToCheck,
+      feeTokens,
+      { is4337Broadcast: true }
+    )
+
+    expect(response.error).toBe(null)
+
+    expect(response.erc4337GasLimits).not.toBe(undefined)
+    expect(BigInt(response.erc4337GasLimits!.callGasLimit)).toBeGreaterThan(0n)
+    expect(BigInt(response.erc4337GasLimits!.verificationGasLimit)).toBeGreaterThan(0n)
+    expect(BigInt(response.erc4337GasLimits!.preVerificationGas)).toBeGreaterThan(0n)
+    expect(BigInt(response.erc4337GasLimits!.paymasterPostOpGasLimit)).toBeGreaterThan(0n)
+    expect(BigInt(response.erc4337GasLimits!.paymasterVerificationGasLimit)).toBeGreaterThan(0n)
+
+    expect(response.feePaymentOptions.length).toBeGreaterThan(0)
+    expect(response.feePaymentOptions![0].token).not.toBe(undefined)
+    expect(response.feePaymentOptions![0].token).not.toBe(null)
+  })
+
   it('[EOA-for-SA]:Arbitrum | should return native fee payment options even if hasRelayer = false', async () => {
     const clonedArb = structuredClone(arbitrum)
     clonedArb.hasRelayer = false
@@ -1002,9 +1068,9 @@ describe('estimate', () => {
     expect(response.error?.message).toBe('Your signer address is not authorized')
   })
 
-  it('estimates an expired uniswap swap and it should display error properly', async () => {
+  it('[v1] estimates an expired uniswap swap and it should display error properly', async () => {
     const op = {
-      accountAddr: account.addr,
+      accountAddr: v1Acc.addr,
       signingKeyAddr: null,
       signingKeyType: null,
       gasLimit: null,
@@ -1016,12 +1082,12 @@ describe('estimate', () => {
       accountOpToExecuteBefore: null
     }
 
-    const accountStates = await getAccountsInfo([account])
+    const accountStates = await getAccountsInfo([v1Acc])
     const response = await estimate(
       localSigner,
       provider,
       ethereum,
-      account,
+      v1Acc,
       MOCK_KEYSTORE_KEYS,
       op,
       accountStates,
