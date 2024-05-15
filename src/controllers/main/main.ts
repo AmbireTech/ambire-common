@@ -49,6 +49,7 @@ import { AddressBookController } from '../addressBook/addressBook'
 import { DomainsController } from '../domains/domains'
 import { EmailVaultController } from '../emailVault/emailVault'
 import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter'
+import { InviteController } from '../invite/invite'
 import { KeystoreController } from '../keystore/keystore'
 import { PortfolioController } from '../portfolio/portfolio'
 import { SettingsController } from '../settings/settings'
@@ -75,6 +76,8 @@ export class MainController extends EventEmitter {
   accountStates: AccountStates = {}
 
   isReady: boolean = false
+
+  invite: InviteController
 
   keystore: KeystoreController
 
@@ -194,6 +197,7 @@ export class MainController extends EventEmitter {
     this.#fetch = fetch
     this.#relayerUrl = relayerUrl
 
+    this.invite = new InviteController({ relayerUrl, fetch, storage: this.#storage })
     this.keystore = new KeystoreController(this.#storage, keystoreSigners)
     this.#externalSignerControllers = externalSignerControllers
     this.settings = new SettingsController(this.#storage)
