@@ -16,7 +16,7 @@ import {
   getUserOperation,
   shouldUsePaymaster
 } from '../userOperation/userOperation'
-import { estimationErrorFormatted } from './errors'
+import { estimationErrorFormatted, mapTxnErrMsg } from './errors'
 import { EstimateResult, FeePaymentOption } from './interfaces'
 
 function getFeeTokenForEstimate(feeTokens: TokenResult[]): TokenResult | null {
@@ -109,11 +109,11 @@ export async function bundlerEstimate(
 
   const shouldStateOverride = !accountState.isErc4337Enabled && accountState.isDeployed
   const gasData = await Bundler.estimate(userOp, network, shouldStateOverride).catch((e: any) => {
-    return mapError(
-      new Error(
-        e.error && e.error.message ? e.error.message : 'Estimation failed with unknown reason'
-      )
-    )
+    let errMsg = e.error.message ? e.error.message : 'Estimation failed with unknown reason'
+    const hex = errMsg.indexOf('0x') !== -1 ? errMsg.substring(errMsg.indexOf('0x')) : null
+    const decodedHex = hex ? mapTxnErrMsg(hex) : null
+    if (decodedHex) errMsg = errMsg.replace(hex, decodedHex)
+    return mapError(new Error(errMsg))
   })
   if (gasData instanceof Error)
     return estimationErrorFormatted(gasData as Error, { feePaymentOptions })

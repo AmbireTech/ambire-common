@@ -20,6 +20,7 @@ const expiredSig = '0x5bf6f916'
 
 export function mapTxnErrMsg(contractError: string): string | null {
   let msg = ''
+  let riskOfUnreadableChars = false
   if (contractError.startsWith(errorSig)) {
     try {
       msg = new AbiCoder().decode(['string'], `0x${contractError.slice(10)}`)[0]
@@ -29,9 +30,9 @@ export function mapTxnErrMsg(contractError: string): string | null {
   } else if (contractError === expiredSig) {
     msg = contractError
   } else {
-    msg = isHexString(contractError)
-      ? Buffer.from(contractError.substring(2), 'hex').toString()
-      : contractError
+    const isHex = isHexString(contractError)
+    riskOfUnreadableChars = isHex
+    msg = isHex ? Buffer.from(contractError.substring(2), 'hex').toString() : contractError
   }
 
   if (!msg || msg === '0x') return null
@@ -46,6 +47,7 @@ export function mapTxnErrMsg(contractError: string): string | null {
     return 'This dApp does not support smart wallets'
   if (msg.includes('IMPOSSIBLE_GAS_CONSUMPTION'))
     return 'Insufficient funds for intristic transaction cost'
+  if (!riskOfUnreadableChars) return msg
 
   return null
 }
