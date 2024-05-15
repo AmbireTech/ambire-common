@@ -459,11 +459,7 @@ export class PortfolioController extends EventEmitter {
 
     const accountState = this.latest[accountId]
     const pendingState = this.pending[accountId]
-    console.log(
-      'shouldGetAdditionalPortfolio',
-      shouldGetAdditionalPortfolio(selectedAccount)
-      // hasNonZeroTokens
-    )
+
     if (shouldGetAdditionalPortfolio(selectedAccount)) {
       this.#getAdditionalPortfolio(accountId)
     }
