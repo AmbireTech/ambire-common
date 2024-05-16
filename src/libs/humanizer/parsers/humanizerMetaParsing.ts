@@ -19,7 +19,10 @@ export const humanizerMetaParsing: HumanizerParsingModule = (
   const res: HumanizerVisualization[] = visualization.map((v) => {
     if (v.address) {
       if (v.address === ZeroAddress) {
-        const symbol = options?.network?.nativeAssetSymbol || 'NATIVE'
+        const symbol =
+          options?.network?.nativeAssetSymbol ||
+          networks.find(({ id }) => id && id === options?.networkId)?.nativeAssetSymbol ||
+          'NATIVE'
         return symbol
           ? {
               ...v,
