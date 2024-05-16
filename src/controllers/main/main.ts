@@ -685,19 +685,20 @@ export class MainController extends EventEmitter {
   ) {
     let userRequest = null
     const kind = dappRequestMethodToActionKind(request.method)
-
-    const network = this.settings.networks.find(
-      (n) => Number(n.chainId) === Number(this.#getDapp(request.origin)?.chainId)
-    )
-
-    if (!network) {
-      throw ethErrors.provider.chainDisconnected('Transaction failed - unknown network')
-    }
+    const dapp = this.#getDapp(request.origin)
+    console.log('buildUserRequest', request)
+    console.log('buildUserRequest kind', kind)
 
     if (kind === 'call') {
       const transaction = request.params[0]
       const accountAddr = getAddress(transaction.from)
+      const network = this.settings.networks.find(
+        (n) => Number(n.chainId) === Number(dapp?.chainId)
+      )
 
+      if (!network) {
+        throw ethErrors.provider.chainDisconnected('Transaction failed - unknown network')
+      }
       delete transaction.from
       userRequest = {
         id: new Date().getTime(),
@@ -737,27 +738,24 @@ export class MainController extends EventEmitter {
 
     userRequest?.dappPromise?.resolve(data)
     await this.removeUserRequest(userRequest.id)
-    // this.#setNextNotificationRequest(notificationRequest)
     this.emitUpdate()
   }
 
-  rejectUserRequest = async (err: string, requestId: number) => {
+  rejectUserRequest = async (err: string, requestId?: number) => {
     const userRequest = this.userRequests.find((r) => r.id === requestId)
     if (!userRequest) return // TODO: emit error
 
     userRequest?.dappPromise?.reject(err)
     await this.removeUserRequest(userRequest.id)
-
-    // this.#setNextNotificationRequest(notificationRequest)
     this.emitUpdate()
   }
 
   async addUserRequest(req: UserRequest) {
     this.userRequests.push(req)
     const { id, action, meta } = req
-    if (!this.settings.networks.find((x) => x.id === meta.networkId))
-      throw new Error(`addUserRequest: ${meta.networkId}: network does not exist`)
     if (action.kind === 'call') {
+      if (!this.settings.networks.find((x) => x.id === meta.networkId))
+        throw new Error(`addUserRequest: ${meta.networkId}: network does not exist`)
       // @TODO: if EOA, only one call per accountOp
       if (!this.accountOpsToBeSigned[meta.accountAddr])
         this.accountOpsToBeSigned[meta.accountAddr] = {}
@@ -790,6 +788,9 @@ export class MainController extends EventEmitter {
         this.#estimateAccountOp(accountOp)
       }
     } else if (action.kind === 'typedMessage' || action.kind === 'message') {
+      // TODO:
+      // if (!this.settings.networks.find((x) => x.id === meta.networkId))
+      //   throw new Error(`addUserRequest: ${meta.networkId}: network does not exist`)
       if (!this.messagesToBeSigned[meta.accountAddr]) {
         const messageRequests = this.userRequests.filter(
           (r) => r.action.kind === 'typedMessage' || r.action.kind === 'message'
@@ -822,7 +823,7 @@ export class MainController extends EventEmitter {
     } else {
       this.actions.addToActionsQueue({
         id,
-        type: 'userRequest',
+        type: req.action.kind,
         userRequest: req
       })
     }
@@ -873,11 +874,25 @@ export class MainController extends EventEmitter {
         this.updateSelectedAccount(this.selectedAccount, true)
       }
     } else if (action.kind === 'typedMessage' || action.kind === 'message') {
-      this.messagesToBeSigned[meta.accountAddr] = this.messagesToBeSigned[meta.accountAddr].filter(
-        (x) => x.fromUserRequestId !== id
+      const messageRequests = this.userRequests.filter(
+        (r) => r.action.kind === 'typedMessage' || r.action.kind === 'message'
       )
-      if (!Object.keys(this.messagesToBeSigned[meta.accountAddr] || {}).length)
+      if (messageRequests.length) {
+        const messageRequest = messageRequests[0]
+        this.messagesToBeSigned[meta.accountAddr] = {
+          id: messageRequest.id,
+          content: messageRequest.action as PlainTextMessage | TypedMessage,
+          fromUserRequestId: messageRequest.id,
+          signature: null,
+          accountAddr: messageRequest.meta.accountAddr,
+          networkId: messageRequest.meta.networkId
+        }
+      } else {
         delete this.messagesToBeSigned[meta.accountAddr]
+        this.actions.removeFromActionQueue(id)
+      }
+    } else {
+      this.actions.removeFromActionQueue(id)
     }
     this.emitUpdate()
   }

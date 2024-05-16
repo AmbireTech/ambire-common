@@ -1,32 +1,36 @@
 /* eslint-disable @typescript-eslint/no-floating-promises */
 
 import { Dapp } from '../../interfaces/dapp'
-import { Message, UserRequest } from '../../interfaces/userRequest'
+import { DappUserRequest, Message, UserRequest } from '../../interfaces/userRequest'
 import { WindowManager } from '../../interfaces/window'
 import { AccountOp } from '../../libs/accountOp/accountOp'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
-export type Action =
-  | {
-      id: string | number
-      type: 'accountOp'
-      accountOp: AccountOp
-      withBatching: boolean
-    }
-  | {
-      id: number
-      type: 'signMessage'
-      signMessage: Message
-    }
-  | {
-      id: number
-      type: 'benzin'
-    }
-  | {
-      id: number
-      type: 'userRequest'
-      userRequest: UserRequest
-    }
+export type AccountOpAction = {
+  id: string | number
+  type: 'accountOp'
+  accountOp: AccountOp
+  withBatching: boolean
+}
+
+export type SignMessageAction = {
+  id: number
+  type: 'signMessage'
+  signMessage: Message
+}
+
+export type BenzinAction = {
+  id: number
+  type: 'benzin'
+}
+
+export type UserRequestAction = {
+  id: number
+  type: DappUserRequest['action']['kind']
+  userRequest: UserRequest
+}
+
+export type Action = AccountOpAction | SignMessageAction | BenzinAction | UserRequestAction
 
 export class ActionsController extends EventEmitter {
   #windowManager: WindowManager
@@ -37,7 +41,7 @@ export class ActionsController extends EventEmitter {
 
   actionWindowId: null | number = null
 
-  actionsQueue: Action[] = []
+  #actionsQueue: Action[] = []
 
   currentAction: Action | null = null
 
@@ -60,7 +64,7 @@ export class ActionsController extends EventEmitter {
       if (winId === this.actionWindowId) {
         this.actionWindowId = null
         // TODO: this.notifyForClosedUserRequestThatAreStillPending()
-        this.rejectAllNotificationRequestsThatAreNotSignRequests()
+        // this.rejectAllNotificationRequestsThatAreNotSignRequests()
       }
     })
   }
@@ -70,22 +74,22 @@ export class ActionsController extends EventEmitter {
       const opActionIndex = array.findIndex((a) => a.id === action.id)
 
       if (opActionIndex !== -1) {
-        this.actionsQueue[opActionIndex] = action
-        this.setCurrentAction(this.actionWindowId[0] || null)
+        this.#actionsQueue[opActionIndex] = action
+        this.setCurrentAction(this.#actionsQueue[0] || null)
         return
       }
     }
 
-    if (this.actionsQueue.find((a) => a.id === action.id)) return
+    if (this.#actionsQueue.find((a) => a.id === action.id)) return
 
-    this.actionsQueue.push(action)
-    this.setCurrentAction(this.actionWindowId[0] || null)
+    this.#actionsQueue.push(action)
+    this.setCurrentAction(this.#actionsQueue[0] || null)
   }
 
   removeFromActionQueue(actionId: Action['id']) {
-    this.actionsQueue = this.actionsQueue.filter((a) => a.id !== actionId)
+    this.#actionsQueue = this.#actionsQueue.filter((a) => a.id !== actionId)
 
-    this.setCurrentAction(this.actionWindowId[0] || null)
+    this.setCurrentAction(this.#actionsQueue[0] || null)
   }
 
   setCurrentAction(nextAction: Action | null) {
@@ -94,9 +98,9 @@ export class ActionsController extends EventEmitter {
       return
     }
 
-    this.#currentAction = nextAction
+    this.currentAction = nextAction
 
-    if (!this.#currentAction) {
+    if (!this.currentAction) {
       !!this.actionWindowId &&
         this.#windowManager.remove(this.actionWindowId).then(() => {
           this.actionWindowId = null
