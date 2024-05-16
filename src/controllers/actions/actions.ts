@@ -1,42 +1,34 @@
 /* eslint-disable @typescript-eslint/no-floating-promises */
 
 import { Dapp } from '../../interfaces/dapp'
-import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
-import { CustomNetwork, NetworkPreference } from '../../interfaces/settings'
 import { Message, UserRequest } from '../../interfaces/userRequest'
 import { WindowManager } from '../../interfaces/window'
 import { AccountOp } from '../../libs/accountOp/accountOp'
-import { EstimateResult } from '../../libs/estimate/interfaces'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
-export type CurrentAction =
+export type Action =
   | {
+      id: string | number
       type: 'accountOp'
       accountOp: AccountOp
+      withBatching: boolean
     }
   | {
+      id: number
       type: 'signMessage'
       signMessage: Message
     }
   | {
+      id: number
       type: 'benzin'
     }
   | {
+      id: number
       type: 'userRequest'
       userRequest: UserRequest
     }
 
 export class ActionsController extends EventEmitter {
-  #networks: (NetworkDescriptor & (NetworkPreference | CustomNetwork))[]
-
-  #accountOpsToBeSigned: {
-    [key: string]: {
-      [key: string]: { accountOp: AccountOp; estimation: EstimateResult | null } | null
-    }
-  } = {}
-
-  #messagesToBeSigned: { [key: string]: Message[] } = {}
-
   #windowManager: WindowManager
 
   #getDapp: (url: string) => Dapp | undefined
@@ -45,47 +37,24 @@ export class ActionsController extends EventEmitter {
 
   actionWindowId: null | number = null
 
-  #actionsQueue: CurrentAction[] = []
+  actionsQueue: Action[] = []
 
-  currentAction: CurrentAction | null = null
-
-  #onAddUserRequestCallback: (request: UserRequest) => Promise<void>
-
-  #onRemoveUserRequestCallback: (request: UserRequest) => Promise<void>
+  currentAction: Action | null = null
 
   constructor({
     userRequests,
-    networks,
-    accountOpsToBeSigned,
-    messagesToBeSigned,
     windowManager,
-    getDapp,
-    onAddUserRequest,
-    onRemoveUserRequest
+    getDapp
   }: {
     userRequests: UserRequest[]
-    networks: (NetworkDescriptor & (NetworkPreference | CustomNetwork))[]
-    accountOpsToBeSigned: {
-      [key: string]: {
-        [key: string]: { accountOp: AccountOp; estimation: EstimateResult | null } | null
-      }
-    }
-    messagesToBeSigned: { [key: string]: Message[] }
     windowManager: WindowManager
     getDapp: (url: string) => Dapp | undefined
-    onAddUserRequest: (request: UserRequest) => Promise<void>
-    onRemoveUserRequest: (request: UserRequest) => Promise<void>
   }) {
     super()
 
     this.#userRequests = userRequests
-    this.#networks = networks
-    this.#accountOpsToBeSigned = accountOpsToBeSigned
-    this.#messagesToBeSigned = messagesToBeSigned
     this.#windowManager = windowManager
     this.#getDapp = getDapp
-    this.#onAddUserRequestCallback = onAddUserRequest
-    this.#onRemoveUserRequestCallback = onRemoveUserRequest
 
     this.#windowManager.event.on('windowRemoved', (winId: number) => {
       if (winId === this.actionWindowId) {
@@ -96,46 +65,38 @@ export class ActionsController extends EventEmitter {
     })
   }
 
-  addToActionsQueue(action: CurrentAction) {
-    if (
-      action.type === 'accountOp' &&
-      this.#actionsQueue.find(
-        (a) => a.type === action.type && a.accountAddr === action.accountAddr && action.networkId
-      )
-    ) {
-      return
+  addToActionsQueue(action: Action) {
+    if (action.type === 'accountOp' && action.withBatching) {
+      const opActionIndex = array.findIndex((a) => a.id === action.id)
+
+      if (opActionIndex !== -1) {
+        this.actionsQueue[opActionIndex] = action
+        this.setCurrentAction(this.actionWindowId[0] || null)
+        return
+      }
     }
 
-    if (
-      action.type === 'signMessage' &&
-      this.#actionsQueue.find(
-        (a) => a.type === action.type && a.accountAddr === action.accountAddr && action.networkId
-      )
-    ) {
-      return
-    }
+    if (this.actionsQueue.find((a) => a.id === action.id)) return
 
-    this.#actionsQueue.push(action)
+    this.actionsQueue.push(action)
+    this.setCurrentAction(this.actionWindowId[0] || null)
   }
 
-  setCurrentAction(action: CurrentAction | null) {
-    if (this.currentAction && action) {
-      addToActionsQueue(action)
-      this.openActionWindow()
+  removeFromActionQueue(actionId: Action['id']) {
+    this.actionsQueue = this.actionsQueue.filter((a) => a.id !== actionId)
 
-      this.emitUpdate()
+    this.setCurrentAction(this.actionWindowId[0] || null)
+  }
+
+  setCurrentAction(nextAction: Action | null) {
+    if (nextAction && nextAction.id === this.currentAction?.id) {
+      this.openActionWindow()
       return
     }
 
-    const nextAction = null
-    if (!newAction && this.#actionsQueue.length) {
-      nextAction = this.#actionsQueue[0]
-    } else {
-      nextAction = action
-    }
     this.#currentAction = nextAction
 
-    if (!nextAction) {
+    if (!this.#currentAction) {
       !!this.actionWindowId &&
         this.#windowManager.remove(this.actionWindowId).then(() => {
           this.actionWindowId = null
@@ -146,28 +107,6 @@ export class ActionsController extends EventEmitter {
     }
 
     this.emitUpdate()
-  }
-
-  #setNextNotificationRequest(notificationRequest: UserRequest) {
-    if (
-      notificationRequest.action.kind === 'call' &&
-      this.#accountOpsToBeSigned[notificationRequest.meta.accountAddr][
-        notificationRequest.meta.networkId
-      ]
-    ) {
-      return
-    }
-
-    const dappRequests = this.#userRequests.filter((r) => !r.meta.isSign)
-    if (!dappRequests.length) {
-      this.currentAction = null
-      return
-    }
-
-    this.currentAction = {
-      type: 'notificationRequest',
-      notificationRequest: dappRequests[0]
-    }
   }
 
   rejectAllNotificationRequestsThatAreNotSignRequests = () => {

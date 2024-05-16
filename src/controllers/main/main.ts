@@ -59,7 +59,6 @@ import { GetOptions } from '../../libs/portfolio/interfaces'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { isErc4337Broadcast } from '../../libs/userOperation/userOperation'
 import bundler from '../../services/bundlers'
-import findAccountOpInSignAccountOpsToBeSigned from '../../utils/findAccountOpInSignAccountOpsToBeSigned'
 import generateSpoofSig from '../../utils/generateSpoofSig'
 import wait from '../../utils/wait'
 import { AccountAdderController } from '../accountAdder/accountAdder'
@@ -157,8 +156,8 @@ export class MainController extends EventEmitter {
 
   accountOpsToBeConfirmed: { [key: string]: { [key: string]: AccountOp } } = {}
 
-  // accountAddr => UniversalMessage[]
-  messagesToBeSigned: { [key: string]: Message[] } = {}
+  // accountAddr => UniversalMessage
+  messagesToBeSigned: { [key: string]: Message } = {}
 
   lastUpdate: Date = new Date()
 
@@ -231,9 +230,7 @@ export class MainController extends EventEmitter {
     )
     this.transfer = new TransferController(this.settings, this.addressBook)
     this.actions = new ActionsController({
-      networks: this.settings.networks,
-      accountOpsToBeSigned: this.accountOpsToBeSigned,
-      messagesToBeSigned: this.messagesToBeSigned,
+      userRequests: this.userRequests,
       windowManager,
       getDapp
     })
@@ -385,6 +382,7 @@ export class MainController extends EventEmitter {
     this.signAccountOp = null
     this.portfolio.resetAdditionalHints()
     MainController.signAccountOpListener() // unsubscribes for further updates
+
     this.emitUpdate()
   }
 
@@ -611,22 +609,23 @@ export class MainController extends EventEmitter {
         `makeAccountOpFromUserRequests: tried to run for non-existent account ${accountAddr}`
       )
     // Note: we use reduce instead of filter/map so that the compiler can deduce that we're checking .kind
-    const calls = this.userRequests.reduce((uCalls: AccountOpCall[], req) => {
-      // only the first one for EOAs
-      if (!account.creation && uCalls.length > 0) return uCalls
+    const calls = this.userRequests
+      .filter((r) => r.action.kind === 'call')
+      .reduce((uCalls: AccountOpCall[], req) => {
+        // only the first one for EOAs
+        if (!account.creation && uCalls.length > 0) return uCalls
 
-      if (
-        (req as SignUserRequest).action.kind === 'call' &&
-        (req as SignUserRequest).meta.networkId === networkId &&
-        (req as SignUserRequest).meta.accountAddr === accountAddr
-      ) {
-        const {
-          params: { to, value, data }
-        } = (req as SignUserRequest).action as Call
-        uCalls.push({ to, value, data, fromUserRequestId: req.id })
-      }
-      return uCalls
-    }, [])
+        if (
+          (req as SignUserRequest).meta.networkId === networkId &&
+          (req as SignUserRequest).meta.accountAddr === accountAddr
+        ) {
+          const {
+            params: { to, value, data }
+          } = (req as SignUserRequest).action as Call
+          uCalls.push({ to, value, data, fromUserRequestId: req.id })
+        }
+        return uCalls
+      }, [])
 
     if (!calls.length) return null
 
@@ -728,31 +727,6 @@ export class MainController extends EventEmitter {
 
     if (userRequest) {
       await this.addUserRequest(userRequest)
-      if (
-        userRequest.action.kind === 'call' &&
-        this.accountOpsToBeSigned[userRequest.meta.accountAddr][userRequest.meta.networkId]
-      ) {
-        this.actions.setCurrentAction({
-          type: 'accountOp',
-          accountAddr: userRequest.meta.accountAddr,
-          networkId: userRequest.meta.networkId
-        })
-      } else if (
-        userRequest.action.kind === 'typedMessage' ||
-        userRequest.action.kind === 'message'
-      ) {
-        this.actions.setCurrentAction({
-          type: 'signMessage',
-          accountAddr: userRequest.meta.accountAddr,
-          networkId: userRequest.meta.networkId
-        })
-      } else {
-        this.actions.setCurrentAction({
-          type: 'userRequest',
-          userRequest
-        })
-      }
-
       this.emitUpdate()
     }
   }
@@ -805,20 +779,51 @@ export class MainController extends EventEmitter {
           accountOp,
           estimation: null
         }
+        const account = this.accounts.filter((x) => x.addr === meta.accountAddr)[0]
+        this.actions.addToActionsQueue({
+          id: account.creation ? `${accountOp.accountAddr}-${accountOp.networkId}` : id,
+          type: 'accountOp',
+          accountOp,
+          withBatching: !!account.creation
+        })
         if (this.signAccountOp) this.signAccountOp.update({ accountOp })
         this.#estimateAccountOp(accountOp)
       }
     } else if (action.kind === 'typedMessage' || action.kind === 'message') {
-      if (!this.messagesToBeSigned[meta.accountAddr]) this.messagesToBeSigned[meta.accountAddr] = []
-      if (this.messagesToBeSigned[meta.accountAddr].find((x) => x.fromUserRequestId === req.id))
-        return
-      this.messagesToBeSigned[meta.accountAddr].push({
+      if (!this.messagesToBeSigned[meta.accountAddr]) {
+        const messageRequests = this.userRequests.filter(
+          (r) => r.action.kind === 'typedMessage' || r.action.kind === 'message'
+        )
+        if (messageRequests.length) {
+          const messageRequest = messageRequests[0]
+          this.messagesToBeSigned[meta.accountAddr] = {
+            id: messageRequest.id,
+            content: messageRequest.action as PlainTextMessage | TypedMessage,
+            fromUserRequestId: messageRequest.id,
+            signature: null,
+            accountAddr: messageRequest.meta.accountAddr,
+            networkId: messageRequest.meta.networkId
+          }
+        }
+      }
+
+      this.actions.addToActionsQueue({
+        id: meta.accountAddr,
+        type: 'signMessage',
+        signMessage: {
+          id,
+          content: action as PlainTextMessage | TypedMessage,
+          fromUserRequestId: id,
+          signature: null,
+          accountAddr: req.meta.accountAddr,
+          networkId: req.meta.networkId
+        }
+      })
+    } else {
+      this.actions.addToActionsQueue({
         id,
-        content: action as PlainTextMessage | TypedMessage,
-        fromUserRequestId: req.id,
-        signature: null,
-        accountAddr: meta.accountAddr,
-        networkId: meta.networkId
+        type: 'userRequest',
+        userRequest: req
       })
     }
 
@@ -847,13 +852,23 @@ export class MainController extends EventEmitter {
           estimation: null
         }
         if (this.signAccountOp) this.signAccountOp.update({ accountOp, estimation: null })
-
+        const account = this.accounts.filter((x) => x.addr === meta.accountAddr)[0]
+        this.actions.addToActionsQueue({
+          id: account.creation ? `${accountOp.accountAddr}-${accountOp.networkId}` : id,
+          type: 'accountOp',
+          accountOp,
+          withBatching: !!account.creation
+        })
         this.#estimateAccountOp(accountOp)
       } else {
         delete this.accountOpsToBeSigned[meta.accountAddr]?.[meta.networkId]
         if (!Object.keys(this.accountOpsToBeSigned[meta.accountAddr] || {}).length)
           delete this.accountOpsToBeSigned[meta.accountAddr]
 
+        const account = this.accounts.filter((x) => x.addr === meta.accountAddr)[0]
+        this.actions.removeFromActionQueue(
+          account.creation ? `${meta.accountAddr}-${meta.networkId}` : id
+        )
         // remove the pending state
         this.updateSelectedAccount(this.selectedAccount, true)
       }
@@ -878,34 +893,22 @@ export class MainController extends EventEmitter {
   }
 
   async rejectAccountOp(accountAddr: string, networkId: string) {
-    const accountOp = findAccountOpInSignAccountOpsToBeSigned(
-      this.accountOpsToBeSigned,
-      accountAddr,
-      networkId
-    )
+    const accountOp = this.accountOpsToBeSigned?.[accountAddr]?.[networkId]?.accountOp
 
     if (accountOp) {
-      // clear signAccountOp
-      if (
-        this.signAccountOp &&
-        this.signAccountOp.accountOp.accountAddr === accountAddr &&
-        this.signAccountOp.accountOp.networkId === networkId
-      ) {
-        this.signAccountOp = null
-      }
-
       // clear accountOpsToBeSigned
       delete this.accountOpsToBeSigned[accountAddr]?.[networkId]
       if (!Object.keys(this.accountOpsToBeSigned[accountAddr] || {}).length)
         delete this.accountOpsToBeSigned[accountAddr]
-
       accountOp.calls.forEach((c) => {
         const uReq = this.userRequests.find((r) => r.id === c.fromUserRequestId)
         if (uReq) {
           uReq?.dappPromise?.reject('User rejected the request')
           this.userRequests.splice(this.userRequests.indexOf(uReq), 1)
+          this.actions.removeFromActionQueue(uReq.id) // for basic acc
         }
       })
+      this.actions.removeFromActionQueue(`${accountAddr}-${networkId}`) // for smart acc
 
       this.emitUpdate()
     }
