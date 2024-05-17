@@ -82,7 +82,6 @@ interface ParsedAction {
 
 
 // @TODO 
-// 	- return specific format
 //  - WETH
 //  - group
 //  - should we require a sweep?
@@ -119,9 +118,16 @@ function parseUniUniversal(txn: any) {
 				const [recipient, amount1, amount2, path, ] =  abiCoder.decode(['address', 'uint256', 'uint256', pathType, 'bool'], commandArgs[idx])
 				const tokenIn = isV2 ? path[0] : path.slice(0, 42)
 				const tokenOut = isV2 ? path[path.length - 1] : '0x' + path.slice(-40)
+				// @TODO interactedWith in case of a different recipient
 				return cmd === 0
-					? { action: 'swapExactIn', amountIn: amount1, amountOutMin: amount2, tokenIn, tokenOut }
-					: { action: 'swapExactOut', amountOut: amount1, amountInMax: amount2, tokenIn, tokenOut }
+					? { actionName: 'swapExactIn', interactedWith: [], tokens: [
+							{ address: tokenIn, amount: amount1, role: 'in' },
+							{ address: tokenOut, amount: amount2, role: 'outMin' }
+						] }
+					: { actionName: 'swapExactOut', interactedWith: [], tokens: [
+						{ address: tokenIn, amount: amount2, role: 'inMax' },
+						{ address: tokenOut, amount: amount1, role: 'out' }
+					] }
 			}
 			if (cmd === 1) console.log('v3 swap exact out', abiCoder.decode(['address', 'uint256', 'uint256', 'bytes', 'bool'], commandArgs[idx]))
 			if (cmd === 2) console.log('permit2 transferFrom', commandArgs[idx])
