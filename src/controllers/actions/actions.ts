@@ -69,6 +69,10 @@ export class ActionsController extends EventEmitter {
     })
   }
 
+  get numberOfPendingActions() {
+    return this.#actionsQueue.length
+  }
+
   addToActionsQueue(action: Action) {
     if (action.type === 'accountOp' && action.withBatching) {
       const opActionIndex = array.findIndex((a) => a.id === action.id)
@@ -174,7 +178,8 @@ export class ActionsController extends EventEmitter {
   toJSON() {
     return {
       ...this,
-      ...super.toJSON()
+      ...super.toJSON(),
+      numberOfPendingActions: this.numberOfPendingActions
     }
   }
 }

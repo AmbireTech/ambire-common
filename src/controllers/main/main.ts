@@ -36,21 +36,11 @@ import {
 } from '../../interfaces/userRequest'
 import { WindowManager } from '../../interfaces/window'
 import { getDefaultSelectedAccount, isSmartAccount } from '../../libs/account/account'
-import {
-  AccountOp,
-  AccountOpStatus,
-  getAccountOpId,
-  getSignableCalls
-} from '../../libs/accountOp/accountOp'
+import { AccountOp, AccountOpStatus, getSignableCalls } from '../../libs/accountOp/accountOp'
 import { Call as AccountOpCall } from '../../libs/accountOp/types'
 import { getAccountState } from '../../libs/accountState/accountState'
 import { dappRequestMethodToActionKind } from '../../libs/actions/actions'
-import {
-  getAccountOpBannersForEOA,
-  getAccountOpBannersForSmartAccount,
-  getMessageBanners,
-  getPendingAccountOpBannersForEOA
-} from '../../libs/banners/banners'
+import { getAccountOpBanners } from '../../libs/banners/banners'
 import { estimate } from '../../libs/estimate/estimate'
 import { EstimateResult } from '../../libs/estimate/interfaces'
 import { GasRecommendation, getGasPriceRecommendations } from '../../libs/gasPrice/gasPrice'
@@ -321,6 +311,7 @@ export class MainController extends EventEmitter {
   }
 
   initSignAccOp(accountAddr: string, networkId: string): null | void {
+    console.log('initSignAccOp')
     const accountOpToBeSigned = this.accountOpsToBeSigned?.[accountAddr]?.[networkId]?.accountOp
     const account = this.accounts?.find((acc) => acc.addr === accountAddr)
     const network = this.settings.networks.find((net) => net.id === networkId)
@@ -732,21 +723,21 @@ export class MainController extends EventEmitter {
     }
   }
 
-  resolveUserRequest = async (data: any, requestId: number) => {
+  resolveUserRequest = (data: any, requestId: number) => {
     const userRequest = this.userRequests.find((r) => r.id === requestId)
     if (!userRequest) return // TODO: emit error
 
-    userRequest?.dappPromise?.resolve(data)
-    await this.removeUserRequest(userRequest.id)
+    userRequest.dappPromise?.resolve(data)
+    this.removeUserRequest(userRequest.id)
     this.emitUpdate()
   }
 
-  rejectUserRequest = async (err: string, requestId?: number) => {
+  rejectUserRequest = (err: string, requestId?: number) => {
     const userRequest = this.userRequests.find((r) => r.id === requestId)
     if (!userRequest) return // TODO: emit error
 
-    userRequest?.dappPromise?.reject(err)
-    await this.removeUserRequest(userRequest.id)
+    userRequest.dappPromise?.reject(ethErrors.provider.userRejectedRequest<any>(err))
+    this.removeUserRequest(userRequest.id)
     this.emitUpdate()
   }
 
@@ -834,7 +825,7 @@ export class MainController extends EventEmitter {
   // @TODO allow this to remove multiple OR figure out a way to debounce re-estimations
   // first one sounds more reasonble
   // although the second one can't hurt and can help (or no debounce, just a one-at-a-time queue)
-  async removeUserRequest(id: number) {
+  removeUserRequest(id: number) {
     const req = this.userRequests.find((uReq) => uReq.id === id)
     if (!req) return
 
@@ -846,6 +837,7 @@ export class MainController extends EventEmitter {
     if (action.kind === 'call') {
       // @TODO ensure acc info, re-estimate
       const accountOp = this.#makeAccountOpFromUserRequests(meta.accountAddr, meta.networkId)
+      const account = this.accounts.filter((x) => x.addr === meta.accountAddr)[0]
       if (accountOp) {
         this.accountOpsToBeSigned[meta.accountAddr] ||= {}
         this.accountOpsToBeSigned[meta.accountAddr][meta.networkId] = {
@@ -853,20 +845,22 @@ export class MainController extends EventEmitter {
           estimation: null
         }
         if (this.signAccountOp) this.signAccountOp.update({ accountOp, estimation: null })
-        const account = this.accounts.filter((x) => x.addr === meta.accountAddr)[0]
-        this.actions.addToActionsQueue({
-          id: account.creation ? `${accountOp.accountAddr}-${accountOp.networkId}` : id,
-          type: 'accountOp',
-          accountOp,
-          withBatching: !!account.creation
-        })
+        if (account.creation) {
+          this.actions.addToActionsQueue({
+            id: `${accountOp.accountAddr}-${accountOp.networkId}`,
+            type: 'accountOp',
+            accountOp,
+            withBatching: true
+          })
+        } else {
+          this.actions.removeFromActionQueue(id)
+        }
         this.#estimateAccountOp(accountOp)
       } else {
         delete this.accountOpsToBeSigned[meta.accountAddr]?.[meta.networkId]
         if (!Object.keys(this.accountOpsToBeSigned[meta.accountAddr] || {}).length)
           delete this.accountOpsToBeSigned[meta.accountAddr]
 
-        const account = this.accounts.filter((x) => x.addr === meta.accountAddr)[0]
         this.actions.removeFromActionQueue(
           account.creation ? `${meta.accountAddr}-${meta.networkId}` : id
         )
@@ -907,26 +901,36 @@ export class MainController extends EventEmitter {
     await this.updateSelectedAccount(this.selectedAccount, true)
   }
 
-  async rejectAccountOp(accountAddr: string, networkId: string) {
+  resolveAccountOp(data: any, accountAddr: string, networkId: string) {
     const accountOp = this.accountOpsToBeSigned?.[accountAddr]?.[networkId]?.accountOp
+    if (!accountOp) return
 
-    if (accountOp) {
-      // clear accountOpsToBeSigned
-      delete this.accountOpsToBeSigned[accountAddr]?.[networkId]
-      if (!Object.keys(this.accountOpsToBeSigned[accountAddr] || {}).length)
-        delete this.accountOpsToBeSigned[accountAddr]
-      accountOp.calls.forEach((c) => {
-        const uReq = this.userRequests.find((r) => r.id === c.fromUserRequestId)
-        if (uReq) {
-          uReq?.dappPromise?.reject('User rejected the request')
-          this.userRequests.splice(this.userRequests.indexOf(uReq), 1)
-          this.actions.removeFromActionQueue(uReq.id) // for basic acc
-        }
-      })
-      this.actions.removeFromActionQueue(`${accountAddr}-${networkId}`) // for smart acc
-
-      this.emitUpdate()
+    // eslint-disable-next-line no-restricted-syntax
+    for (const call of accountOp.calls) {
+      const uReq = this.userRequests.find((r) => r.id === call.fromUserRequestId)
+      if (uReq) {
+        uReq.dappPromise?.resolve(data)
+        // eslint-disable-next-line no-await-in-loop
+        this.removeUserRequest(uReq.id)
+      }
     }
+    this.emitUpdate()
+  }
+
+  rejectAccountOp(err: string, accountAddr: string, networkId: string) {
+    const accountOp = this.accountOpsToBeSigned?.[accountAddr]?.[networkId]?.accountOp
+    if (!accountOp) return
+
+    // eslint-disable-next-line no-restricted-syntax
+    for (const call of accountOp.calls) {
+      const uReq = this.userRequests.find((r) => r.id === call.fromUserRequestId)
+      if (uReq) {
+        uReq.dappPromise?.reject(ethErrors.provider.userRejectedRequest<any>(err))
+        // eslint-disable-next-line no-await-in-loop
+        this.removeUserRequest(uReq.id)
+      }
+    }
+    this.emitUpdate()
   }
 
   /**
@@ -1451,27 +1455,16 @@ export class MainController extends EventEmitter {
         submittedAccountOp.userOpHash = transactionRes.hash
       }
       await this.activity.addAccountOp(submittedAccountOp)
-      accountOp.calls.forEach((call) => {
-        if (call.fromUserRequestId) {
-          this.actions.resolveUserRequest(
-            {
-              hash: transactionRes?.hash || null,
-              networkId: network.id,
-              isUserOp: !!accountOp?.asUserOperation
-            },
-            call.fromUserRequestId
-          )
-        }
-      })
-
-      this.actions.resolveUserRequest(
+      this.resolveAccountOp(
         {
           hash: transactionRes?.hash || null,
           networkId: network.id,
           isUserOp: !!accountOp?.asUserOperation
         },
-        getAccountOpId(accountOp.accountAddr, accountOp.networkId)
+        accountOp.accountAddr,
+        accountOp.networkId
       )
+
       console.log('broadcasted:', transactionRes)
       !!this.onBroadcastSuccess && this.onBroadcastSuccess('account-op')
       this.broadcastStatus = 'DONE'
@@ -1488,8 +1481,7 @@ export class MainController extends EventEmitter {
     this.emitUpdate()
 
     await this.activity.addSignedMessage(signedMessage, signedMessage.accountAddr)
-
-    this.actions.resolveUserRequest({ hash: signedMessage.signature }, signedMessage.id)
+    await this.resolveUserRequest({ hash: signedMessage.signature }, signedMessage.id)
     !!this.onBroadcastSuccess &&
       this.onBroadcastSuccess(
         signedMessage.content.kind === 'typedMessage' ? 'typed-data' : 'message'
@@ -1533,31 +1525,20 @@ export class MainController extends EventEmitter {
   // will not trigger emitUpdate in the MainController, therefore the banners will
   // remain the same until a subsequent update in the MainController.
   get banners(): Banner[] {
-    const userRequests =
-      this.userRequests
-        .filter((r) => ['call', 'typedMessage', 'message'].includes(r.action.kind))
-        .filter((req) => req.meta?.accountAddr === this.selectedAccount) || []
-    const accounts = this.accounts
+    if (!this.selectedAccount) return []
 
-    const accountOpEOABanners = getAccountOpBannersForEOA({
-      userRequests,
-      accounts,
+    const accountOpBanners = getAccountOpBanners({
+      accountOpsToBeSignedByNetwork: this.accountOpsToBeSigned[this.selectedAccount],
+      selectedAccount: this.selectedAccount,
+      userRequests:
+        this.userRequests
+          .filter((r) => r.action.kind === 'call')
+          .filter((req) => req.meta.accountAddr === this.selectedAccount) || [],
+      accounts: this.accounts,
       networks: this.settings.networks
     })
-    const pendingAccountOpEOABanners = getPendingAccountOpBannersForEOA({ userRequests, accounts })
-    const accountOpSmartAccountBanners = getAccountOpBannersForSmartAccount({
-      userRequests,
-      accounts,
-      networks: this.settings.networks
-    })
-    const messageBanners = getMessageBanners({ userRequests })
 
-    return [
-      ...accountOpSmartAccountBanners,
-      ...accountOpEOABanners,
-      ...pendingAccountOpEOABanners,
-      ...messageBanners
-    ]
+    return [...accountOpBanners]
   }
 
   #throwAccountOpBroadcastError(error: Error, message?: string) {
