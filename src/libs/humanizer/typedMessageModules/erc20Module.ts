@@ -1,43 +1,43 @@
 import { TypedMessage } from '../../../interfaces/userRequest'
 import { HumanizerTypedMessaageModule, HumanizerVisualization } from '../interfaces'
-import { getAction, getDeadline, getAddressVisualization, getLabel, getToken } from '../utils'
+import { getAction, getAddressVisualization, getDeadline, getLabel, getToken } from '../utils'
 
 export const erc20Module: HumanizerTypedMessaageModule = (tm: TypedMessage) => {
-  if (tm.types.Permit && tm.primaryType === 'Permit') {
+  if (tm.params.types.Permit && tm.params.primaryType === 'Permit') {
     if (
-      tm.message.owner &&
-      tm.message.spender &&
-      tm.message.value &&
-      tm.message.nonce &&
-      tm.message.deadline &&
-      tm.domain.verifyingContract
+      tm.params.message.owner &&
+      tm.params.message.spender &&
+      tm.params.message.value &&
+      tm.params.message.nonce &&
+      tm.params.message.deadline &&
+      tm.params.domain.verifyingContract
     ) {
       return {
         fullVisualization: [
           getAction('Send'),
-          getToken(tm.domain.verifyingContract!, tm.message.value),
+          getToken(tm.params.domain.verifyingContract!, tm.params.message.value),
           getLabel('to'),
-          getAddressVisualization(tm.message.spender),
-          tm.message.deadline ? getDeadline(tm.message.deadline) : null
+          getAddressVisualization(tm.params.message.spender),
+          tm.params.message.deadline ? getDeadline(tm.params.message.deadline) : null
         ].filter((x) => x) as HumanizerVisualization[]
       }
     }
     // @TODO should we add humanization here?
   }
-  if (tm.types.PermitSingle && tm.primaryType === 'PermitSingle') {
+  if (tm.params.types.PermitSingle && tm.params.primaryType === 'PermitSingle') {
     if (
-      tm?.message?.spender &&
-      tm?.message?.details?.token &&
-      tm?.message?.details?.amount &&
-      tm?.message?.details?.expiration
+      tm?.params?.message?.spender &&
+      tm?.params?.message?.details?.token &&
+      tm?.params?.message?.details?.amount &&
+      tm?.params?.message?.details?.expiration
     ) {
       return {
         fullVisualization: [
           getLabel('Approve'),
-          getAddressVisualization(tm.message.spender),
+          getAddressVisualization(tm.params.message.spender),
           getLabel('to use'),
-          getToken(tm.message.details.token, BigInt(tm.message.details.amount)),
-          getDeadline(tm.message.details.expiration)
+          getToken(tm.params.message.details.token, BigInt(tm.params.message.details.amount)),
+          getDeadline(tm.params.message.details.expiration)
         ]
       }
     }

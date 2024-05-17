@@ -46,6 +46,7 @@ export interface Message {
 export interface SignUserRequest {
   id: number
   action: Call | PlainTextMessage | TypedMessage
+  session?: DappProviderRequest['session']
   meta: {
     isSign: true
     accountAddr: AccountId

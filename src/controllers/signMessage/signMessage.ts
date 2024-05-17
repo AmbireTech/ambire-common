@@ -187,13 +187,13 @@ export class SignMessageController extends EventEmitter {
       let signature
       try {
         if (this.messageToSign.content.kind === 'message') {
-          const message = this.messageToSign.content.message
-          this.messageToSign.content.message = isHexString(message)
+          const message = this.messageToSign.content.params.message
+          this.messageToSign.content.params.message = isHexString(message)
             ? message
             : hexlify(toUtf8Bytes(message.toString()))
 
           signature = await getPlainTextSignature(
-            this.messageToSign.content.message,
+            this.messageToSign.content.params.message,
             network,
             account,
             accountState,
@@ -228,9 +228,9 @@ export class SignMessageController extends EventEmitter {
       }
 
       const personalMsgToValidate =
-        typeof this.messageToSign.content.message === 'string'
-          ? hexStringToUint8Array(this.messageToSign.content.message)
-          : this.messageToSign.content.message
+        typeof this.messageToSign.content.params.message === 'string'
+          ? hexStringToUint8Array(this.messageToSign.content.params.message)
+          : this.messageToSign.content.params.message
 
       const isValidSignature = await verifyMessage({
         provider: this.#settings.providers[network?.id || 'ethereum'],
@@ -243,9 +243,9 @@ export class SignMessageController extends EventEmitter {
         typedData:
           this.messageToSign.content.kind === 'typedMessage'
             ? {
-                domain: this.messageToSign.content.domain,
-                types: this.messageToSign.content.types,
-                message: this.messageToSign.content.message
+                domain: this.messageToSign.content.params.domain,
+                types: this.messageToSign.content.params.types,
+                message: this.messageToSign.content.params.message
               }
             : undefined
       })

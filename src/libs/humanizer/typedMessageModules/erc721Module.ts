@@ -1,6 +1,6 @@
 import { TypedMessage } from '../../../interfaces/userRequest'
 import { HumanizerTypedMessaageModule, HumanizerVisualization } from '../interfaces'
-import { getAction, getDeadline, getAddressVisualization, getLabel, getNft } from '../utils'
+import { getAction, getAddressVisualization, getDeadline, getLabel, getNft } from '../utils'
 
 const visualizePermit = (
   spender: string,
@@ -18,14 +18,19 @@ const visualizePermit = (
   return res
 }
 export const erc721Module: HumanizerTypedMessaageModule = (tm: TypedMessage) => {
-  if (tm.types.Permit && tm.primaryType === 'Permit') {
-    if (tm.message.spender && tm.message.tokenId && tm.message.nonce && tm.message.deadline) {
+  if (tm.params.types.Permit && tm.params.primaryType === 'Permit') {
+    if (
+      tm.params.message.spender &&
+      tm.params.message.tokenId &&
+      tm.params.message.nonce &&
+      tm.params.message.deadline
+    ) {
       return {
         fullVisualization: visualizePermit(
-          tm.message.spender,
-          tm.message.tokenId,
-          tm.message.deadline,
-          tm.domain.verifyingContract as string
+          tm.params.message.spender,
+          tm.params.message.tokenId,
+          tm.params.message.deadline,
+          tm.params.domain.verifyingContract as string
         )
       }
     }

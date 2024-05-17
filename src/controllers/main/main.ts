@@ -47,6 +47,7 @@ import { GasRecommendation, getGasPriceRecommendations } from '../../libs/gasPri
 import { humanizeAccountOp } from '../../libs/humanizer'
 import { GetOptions } from '../../libs/portfolio/interfaces'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
+import { parse } from '../../libs/richJson/richJson'
 import { isErc4337Broadcast } from '../../libs/userOperation/userOperation'
 import bundler from '../../services/bundlers'
 import generateSpoofSig from '../../utils/generateSpoofSig'
@@ -677,8 +678,10 @@ export class MainController extends EventEmitter {
     let userRequest = null
     const kind = dappRequestMethodToActionKind(request.method)
     const dapp = this.#getDapp(request.origin)
-    console.log('buildUserRequest', request)
-    console.log('buildUserRequest kind', kind)
+
+    if (!this.selectedAccount) {
+      throw ethErrors.rpc.internal()
+    }
 
     if (kind === 'call') {
       const transaction = request.params[0]
@@ -704,9 +707,99 @@ export class MainController extends EventEmitter {
         dappPromise
       } as SignUserRequest
     } else if (kind === 'message') {
-      // TODO:
+      const msg = request.params
+      if (!msg) {
+        throw ethErrors.rpc.invalidRequest('No msg request to sign')
+      }
+      const msdAddress = getAddress(msg?.[1])
+      // TODO: if address is in this.accounts in theory the user should be able to sign
+      // e.g. if an acc from the wallet is used as a signer of another wallet
+      if (getAddress(msdAddress) !== getAddress(this.selectedAccount)) {
+        dappPromise.resolve('Invalid parameters: must use the current user address to sign')
+        return
+      }
+
+      const network = this.settings.networks.find(
+        (n) => Number(n.chainId) === Number(dapp?.chainId)
+      )
+
+      if (!network) {
+        throw ethErrors.provider.chainDisconnected('Transaction failed - unknown network')
+      }
+
+      userRequest = {
+        id: new Date().getTime(),
+        action: {
+          kind: 'message',
+          params: {
+            message: msg[0]
+          }
+        },
+        session: request.session,
+        meta: {
+          accountAddr: msdAddress,
+          networkId: network.id
+        },
+        dappPromise
+      } as SignUserRequest
     } else if (kind === 'typedMessage') {
-      // TODO:
+      const msg = request.params
+      if (!msg) {
+        throw ethErrors.rpc.invalidRequest('No msg request to sign')
+      }
+      const msdAddress = getAddress(msg?.[0])
+      // TODO: if address is in this.accounts in theory the user should be able to sign
+      // e.g. if an acc from the wallet is used as a signer of another wallet
+      if (getAddress(msdAddress) !== getAddress(this.selectedAccount)) {
+        dappPromise.resolve('Invalid parameters: must use the current user address to sign')
+        return
+      }
+
+      const network = this.settings.networks.find(
+        (n) => Number(n.chainId) === Number(dapp?.chainId)
+      )
+
+      if (!network) {
+        throw ethErrors.provider.chainDisconnected('Transaction failed - unknown network')
+      }
+
+      let typedData = msg?.[1]
+
+      try {
+        typedData = parse(typedData)
+      } catch (error) {
+        throw ethErrors.rpc.invalidRequest('Invalid typedData provided')
+      }
+
+      if (
+        !typedData?.types ||
+        !typedData?.domain ||
+        !typedData?.message ||
+        !typedData?.primaryType
+      ) {
+        throw ethErrors.rpc.methodNotSupported(
+          'Invalid typedData format - only typedData v4 is supported'
+        )
+      }
+
+      userRequest = {
+        id: new Date().getTime(),
+        action: {
+          kind: 'typedMessage',
+          params: {
+            types: typedData.types,
+            domain: typedData.domain,
+            message: typedData.message,
+            primaryType: typedData.primaryType
+          }
+        },
+        session: request.session,
+        meta: {
+          accountAddr: msdAddress,
+          networkId: network.id
+        },
+        dappPromise
+      } as SignUserRequest
     } else {
       userRequest = {
         id: new Date().getTime(),
@@ -728,16 +821,16 @@ export class MainController extends EventEmitter {
     if (!userRequest) return // TODO: emit error
 
     userRequest.dappPromise?.resolve(data)
-    this.removeUserRequest(userRequest.id)
+    this.removeUserRequest(requestId)
     this.emitUpdate()
   }
 
-  rejectUserRequest = (err: string, requestId?: number) => {
+  rejectUserRequest = (err: string, requestId: number) => {
     const userRequest = this.userRequests.find((r) => r.id === requestId)
     if (!userRequest) return // TODO: emit error
 
     userRequest.dappPromise?.reject(ethErrors.provider.userRejectedRequest<any>(err))
-    this.removeUserRequest(userRequest.id)
+    this.removeUserRequest(requestId)
     this.emitUpdate()
   }
 
@@ -779,9 +872,6 @@ export class MainController extends EventEmitter {
         this.#estimateAccountOp(accountOp)
       }
     } else if (action.kind === 'typedMessage' || action.kind === 'message') {
-      // TODO:
-      // if (!this.settings.networks.find((x) => x.id === meta.networkId))
-      //   throw new Error(`addUserRequest: ${meta.networkId}: network does not exist`)
       if (!this.messagesToBeSigned[meta.accountAddr]) {
         const messageRequests = this.userRequests.filter(
           (r) => r.action.kind === 'typedMessage' || r.action.kind === 'message'
@@ -800,16 +890,9 @@ export class MainController extends EventEmitter {
       }
 
       this.actions.addToActionsQueue({
-        id: meta.accountAddr,
+        id,
         type: 'signMessage',
-        signMessage: {
-          id,
-          content: action as PlainTextMessage | TypedMessage,
-          fromUserRequestId: id,
-          signature: null,
-          accountAddr: req.meta.accountAddr,
-          networkId: req.meta.networkId
-        }
+        userRequest: req
       })
     } else {
       this.actions.addToActionsQueue({
@@ -883,8 +966,8 @@ export class MainController extends EventEmitter {
         }
       } else {
         delete this.messagesToBeSigned[meta.accountAddr]
-        this.actions.removeFromActionQueue(id)
       }
+      this.actions.removeFromActionQueue(id)
     } else {
       this.actions.removeFromActionQueue(id)
     }

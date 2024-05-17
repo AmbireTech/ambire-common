@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-floating-promises */
 
 import { Dapp } from '../../interfaces/dapp'
-import { DappUserRequest, Message, UserRequest } from '../../interfaces/userRequest'
+import { DappUserRequest, SignUserRequest, UserRequest } from '../../interfaces/userRequest'
 import { WindowManager } from '../../interfaces/window'
 import { AccountOp } from '../../libs/accountOp/accountOp'
 import EventEmitter from '../eventEmitter/eventEmitter'
@@ -16,7 +16,7 @@ export type AccountOpAction = {
 export type SignMessageAction = {
   id: number
   type: 'signMessage'
-  signMessage: Message
+  userRequest: SignUserRequest
 }
 
 export type BenzinAction = {
@@ -74,17 +74,12 @@ export class ActionsController extends EventEmitter {
   }
 
   addToActionsQueue(action: Action) {
-    if (action.type === 'accountOp' && action.withBatching) {
-      const opActionIndex = array.findIndex((a) => a.id === action.id)
-
-      if (opActionIndex !== -1) {
-        this.#actionsQueue[opActionIndex] = action
-        this.setCurrentAction(this.#actionsQueue[0] || null)
-        return
-      }
+    const actionIndex = this.#actionsQueue.findIndex((a) => a.id === action.id)
+    if (actionIndex !== -1) {
+      this.#actionsQueue[actionIndex] = action
+      this.setCurrentAction(this.#actionsQueue[0] || null)
+      return
     }
-
-    if (this.#actionsQueue.find((a) => a.id === action.id)) return
 
     this.#actionsQueue.push(action)
     this.setCurrentAction(this.#actionsQueue[0] || null)
