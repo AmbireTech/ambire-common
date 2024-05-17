@@ -83,8 +83,10 @@ interface ParsedAction {
 
 // @TODO 
 //  - WETH
-//  - group
 //  - should we require a sweep?
+//  - parse transfer
+//  - group
+//  - unknwon actions
 function parseUniUniversal(txn: any) {
 
 	const iface = new Interface(['function execute(bytes,bytes[],uint256)'])
@@ -98,7 +100,7 @@ function parseUniUniversal(txn: any) {
 	// address internal constant MSG_SENDER = address(1);
 	/// @dev Used as a flag for identifying address(this) should be used, saves gas by sending more 0 bytes
 	// address internal constant ADDRESS_THIS = address(2);
-
+	// @TODO: if not parsed
 	if (parsed) {
 		const abiCoder = new AbiCoder()
 		const commandArgs = parsed.args[1]
@@ -114,11 +116,12 @@ function parseUniUniversal(txn: any) {
 				const pathType =  isV2 ? 'address[0]' : 'bytes'
 				// last arg is whether tokens are in the router, we don't care much about this
 				// @TODO we need to care about this if we do WETH?
-				// @TODO recipient
-				const [recipient, amount1, amount2, path, ] =  abiCoder.decode(['address', 'uint256', 'uint256', pathType, 'bool'], commandArgs[idx])
+				const [recipient, amount1, amount2, path, /*tokensInRouter*/] =  abiCoder.decode(['address', 'uint256', 'uint256', pathType, 'bool'], commandArgs[idx])
 				const tokenIn = isV2 ? path[0] : path.slice(0, 42)
 				const tokenOut = isV2 ? path[path.length - 1] : '0x' + path.slice(-40)
 				// @TODO interactedWith in case of a different recipient
+				// @TODO find the `sweep`, find the recipient to implement different recipient
+				// algo: sweep not found -> unknown interaction; sweep found to 0x01 -> nothing, sweep found but not to 0x01 -> add a transfer action
 				return cmd === 0
 					? { actionName: 'swapExactIn', interactedWith: [], tokens: [
 							{ address: tokenIn, amount: amount1, role: 'in' },
@@ -129,6 +132,7 @@ function parseUniUniversal(txn: any) {
 						{ address: tokenOut, amount: amount1, role: 'out' }
 					] }
 			}
+			/*
 			if (cmd === 1) console.log('v3 swap exact out', abiCoder.decode(['address', 'uint256', 'uint256', 'bytes', 'bool'], commandArgs[idx]))
 			if (cmd === 2) console.log('permit2 transferFrom', commandArgs[idx])
 			if (cmd === 3) console.log('permit2 transfer batch', commandArgs[idx])
@@ -138,12 +142,18 @@ function parseUniUniversal(txn: any) {
 			if (cmd === 10) console.log('permit2 permit', commandArgs[idx])
 			if (cmd === 11) console.log('wrap eth', abiCoder.decode(['address', 'uint256'], commandArgs[idx]))
 			if (cmd === 12) console.log('unswap eth', abiCoder.decode(['address', 'uint256'], commandArgs[idx]))
+			*/
 
 			return null
 
 			// 13 is PERMIT2_TRANSFER_FROM_BATCH
-		})
+		}).filter(x => x)
 		console.log(mapped)
+		return mapped
+	} else {
+		return [{
+			actionName: 'unknownSwap', interactedWith: [], tokens: []
+		}]
 	}
 }
 
