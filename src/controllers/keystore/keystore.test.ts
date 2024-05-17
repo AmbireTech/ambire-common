@@ -79,15 +79,9 @@ describe('KeystoreController', () => {
   test('should not unlock with non-existent secret (when no secrets exist)', (done) => {
     keystore.unlockWithSecret('password', pass)
 
-    const unsubscribe = keystore.onError((e) => {
-      expect(e.error.message).toBe('keystore: no secrets yet')
-      expect(keystore.isUnlocked).toBe(false)
-
-      unsubscribe()
-    })
-
     const unsubscribeUpdate = keystore.onUpdate(async () => {
-      if (keystore.latestMethodCall === 'unlockWithSecret' && keystore.status === 'DONE') {
+      if (keystore.statuses.unlockWithSecret === 'ERROR') {
+        expect(keystore.isUnlocked).toBe(false)
         unsubscribeUpdate()
         done()
       }
@@ -102,7 +96,7 @@ describe('KeystoreController', () => {
     keystore.addSecret('password', pass, '', false)
 
     const unsubscribe = keystore.onUpdate(async () => {
-      if (keystore.latestMethodCall === 'addSecret' && keystore.status === 'DONE') {
+      if (keystore.statuses.addSecret === 'SUCCESS') {
         expect(keystore.isUnlocked).toBe(false)
         expect(await keystore.isReadyToStoreKeys).toBe(true)
 
@@ -115,15 +109,9 @@ describe('KeystoreController', () => {
   test('should not unlock with non-existent secret (when secrets exist)', (done) => {
     keystore.unlockWithSecret('playstation', '')
 
-    const unsubscribe = keystore.onError((e) => {
-      expect(e.error.message).toBe('keystore: secret not found: playstation')
-      expect(keystore.isUnlocked).toBe(false)
-
-      unsubscribe()
-    })
-
     const unsubscribeUpdate = keystore.onUpdate(async () => {
-      if (keystore.latestMethodCall === 'unlockWithSecret' && keystore.status === 'DONE') {
+      if (keystore.statuses.unlockWithSecret === 'ERROR') {
+        expect(keystore.isUnlocked).toBe(false)
         unsubscribeUpdate()
         done()
       }
@@ -134,7 +122,7 @@ describe('KeystoreController', () => {
     try {
       await keystore.unlockWithSecret('password', `${pass}1`)
     } catch {
-      expect(keystore.errorMessage).toBe('keystore: wrong secret')
+      expect(keystore.statuses.unlockWithSecret).toBe('ERROR')
     }
   })
 
@@ -142,7 +130,7 @@ describe('KeystoreController', () => {
     keystore.unlockWithSecret('password', pass)
 
     const unsubscribe = keystore.onUpdate(async () => {
-      if (keystore.latestMethodCall === 'unlockWithSecret' && keystore.status === 'DONE') {
+      if (keystore.statuses.unlockWithSecret === 'SUCCESS') {
         expect(keystore.isUnlocked).toBe(true)
 
         unsubscribe()
@@ -155,7 +143,7 @@ describe('KeystoreController', () => {
     keystore.addKeys([{ privateKey: privKey, dedicatedToOneSA: true }])
 
     const unsubscribe = keystore.onUpdate(async () => {
-      if (keystore.latestMethodCall === 'addKeys' && keystore.status === 'DONE') {
+      if (keystore.statuses.addKeys === 'SUCCESS') {
         expect(keystore.keys).toContainEqual(
           expect.objectContaining({ addr: keyPublicAddress, type: 'internal' })
         )
@@ -186,7 +174,7 @@ describe('KeystoreController', () => {
     keystore.addKeys([...keysWithPrivateKeyAlreadyAdded, ...keysWithPrivateKeyDuplicatedInParams])
 
     const unsubscribe = keystore.onUpdate(async () => {
-      if (keystore.latestMethodCall === 'addKeys' && keystore.status === 'DONE') {
+      if (keystore.statuses.addKeys === 'SUCCESS') {
         const newKeys = keystore.keys.filter(
           (x) =>
             [anotherPrivateKeyPublicAddress, keyPublicAddress].includes(x.addr) &&
@@ -218,7 +206,7 @@ describe('KeystoreController', () => {
     ])
 
     const unsubscribe = keystore.onUpdate(async () => {
-      if (keystore.latestMethodCall === 'addKeysExternallyStored' && keystore.status === 'DONE') {
+      if (keystore.statuses.addKeysExternallyStored === 'SUCCESS') {
         expect(keystore.keys).toContainEqual(
           expect.objectContaining({ addr: publicAddress, type: 'trezor' })
         )
@@ -292,7 +280,7 @@ describe('KeystoreController', () => {
     ])
 
     const unsubscribe = keystore.onUpdate(async () => {
-      if (keystore.latestMethodCall === 'addKeysExternallyStored' && keystore.status === 'DONE') {
+      if (keystore.statuses.addKeysExternallyStored === 'SUCCESS') {
         const newKeys = keystore.keys
           .map(({ addr }) => addr)
           .filter((addr) => [publicAddress, anotherAddressNotAddedYet].includes(addr))
@@ -345,7 +333,7 @@ describe('KeystoreController', () => {
     keystore.addKeysExternallyStored(externalKeysToAddWithDuplicateOnes)
 
     const unsubscribe = keystore.onUpdate(async () => {
-      if (keystore.latestMethodCall === 'addKeysExternallyStored' && keystore.status === 'DONE') {
+      if (keystore.statuses.addKeysExternallyStored === 'SUCCESS') {
         expect(
           keystore.keys.filter((x) => x.addr === keyPublicAddress && x.type === 'trezor').length
         ).toEqual(1)
@@ -367,7 +355,7 @@ describe('KeystoreController', () => {
     keystore.changeKeystorePassword(`${pass}1`, pass)
 
     const unsubscribe = keystore.onUpdate(async () => {
-      if (keystore.latestMethodCall === 'changeKeystorePassword' && keystore.status === 'DONE') {
+      if (keystore.statuses.changeKeystorePassword === 'SUCCESS') {
         const secrets = await storage.get('keystoreSecrets', [])
         expect(secrets).toHaveLength(1)
 
@@ -408,7 +396,8 @@ describe('KeystoreController', () => {
     keystore.unlockWithSecret('password', `${pass}1`)
 
     const unsubscribe = keystore.onUpdate(async () => {
-      if (keystore.latestMethodCall === 'unlockWithSecret' && keystore.status === 'DONE') {
+      console.log(keystore.statuses.unlockWithSecret)
+      if (keystore.statuses.unlockWithSecret === 'SUCCESS') {
         const keyBackup = await keystore.exportKeyWithPasscode(
           keyPublicAddress,
           'internal',
@@ -449,7 +438,7 @@ describe('import/export with pub key test', () => {
   test('import Key With Public Key Encryption', (done) => {
     let exported: Encrypted
     const unsubscribe = keystore.onUpdate(async () => {
-      if (keystore.latestMethodCall === 'addKeys' && keystore.status === 'DONE') {
+      if (keystore.statuses.addKeys === 'SUCCESS') {
         expect(keystore.keys[0]).toMatchObject({ addr: wallet.address, type: 'internal' })
 
         exported = await keystore.exportKeyWithPublicKeyEncryption(wallet.address, uid2)
@@ -474,7 +463,7 @@ describe('import/export with pub key test', () => {
       })
     }
     const unsubscribe2 = keystore2.onUpdate(async () => {
-      if (exported && keystore2.latestMethodCall === 'addKeys' && keystore2.status === 'DONE') {
+      if (exported && keystore2.statuses.addKeys === 'SUCCESS') {
         getImportedKeyOnUpdate()
         unsubscribe2()
       }

@@ -6,6 +6,7 @@ import {
   HumanizerCallModule,
   HumanizerFragment,
   HumanizerMeta,
+  HumanizerPromise,
   HumanizerVisualization,
   IrCall
 } from '../interfaces'
@@ -17,6 +18,7 @@ import {
   getToken
 } from '../utils'
 
+// @TODO add again
 // etherface was down for some time and we replaced it with 4bytes
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 async function fetchFuncEtherface(
@@ -147,14 +149,15 @@ function extractAddresses(data: string, _selector: string): string[] {
 export const fallbackHumanizer: HumanizerCallModule = (
   accountOp: AccountOp,
   currentIrCalls: IrCall[],
+  humanizerMeta: HumanizerMeta,
   options?: any
 ) => {
-  const asyncOps: Promise<HumanizerFragment | null>[] = []
+  const asyncOps: HumanizerPromise[] = []
   const newCalls = currentIrCalls.map((call) => {
     if (call.fullVisualization && !checkIfUnknownAction(call?.fullVisualization)) return call
 
     const knownSigHashes: HumanizerMeta['abis']['NO_ABI'] = Object.values(
-      accountOp.humanizerMeta?.abis as HumanizerMeta['abis']
+      humanizerMeta.abis as HumanizerMeta['abis']
     ).reduce((a, b) => ({ ...a, ...b }), {})
 
     const visualization: Array<HumanizerVisualization> = []
@@ -194,9 +197,7 @@ export const fallbackHumanizer: HumanizerCallModule = (
           )
         )
       } else {
-        // const promise = fetchFuncEtherface(call.data.slice(0, 10), options)
-        const promise = fetchFunc4bytes(call.data.slice(0, 10), options)
-        asyncOps.push(promise)
+        asyncOps.push(() => fetchFunc4bytes(call.data.slice(0, 10), options))
 
         visualization.push(
           getAction('Unknown action'),

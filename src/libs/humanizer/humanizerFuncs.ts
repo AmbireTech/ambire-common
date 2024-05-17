@@ -6,30 +6,34 @@ import { Message, PlainTextMessage, TypedMessage } from '../../interfaces/userRe
 import { AccountOp } from '../accountOp/accountOp'
 import {
   HumanizerCallModule,
-  HumanizerFragment,
+  HumanizerMeta,
+  HumanizerPromise,
   HumanizerTypedMessaageModule,
   HumanizerVisualization,
   IrCall,
   IrMessage
 } from './interfaces'
-import { getAction, getDeadlineText, getLabel } from './utils'
+import { getAction, getDeadlineText, getLabel, integrateFragments } from './utils'
 
 export function humanizeCalls(
   _accountOp: AccountOp,
   humanizerModules: HumanizerCallModule[],
+  _humanizerMeta: HumanizerMeta,
   options?: any
-): [IrCall[], Array<Promise<HumanizerFragment | null>>, ErrorRef | null] {
+): [IrCall[], HumanizerPromise[], ErrorRef | null] {
   let error = null
   const accountOp = {
     ..._accountOp,
     calls: _accountOp.calls.map((c) => ({ ...c, to: c.to }))
   }
+  const humanizerMeta = integrateFragments(_humanizerMeta, accountOp.humanizerMetaFragments || [])
+
   let currentCalls: IrCall[] = accountOp.calls
-  let asyncOps: Promise<HumanizerFragment | null>[] = []
+  let asyncOps: HumanizerPromise[] = []
   try {
     humanizerModules.forEach((hm) => {
       let newPromises = []
-      ;[currentCalls, newPromises] = hm(accountOp, currentCalls, options)
+      ;[currentCalls, newPromises] = hm(accountOp, currentCalls, humanizerMeta, options)
       asyncOps = [...asyncOps, ...newPromises]
     })
   } catch (e: any) {

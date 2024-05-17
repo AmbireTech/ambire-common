@@ -4,16 +4,17 @@ import fetch from 'node-fetch'
 /* eslint-disable no-console */
 import { describe, expect, test } from '@jest/globals'
 
+import { stringify, parse } from '../richJson/richJson'
 import { ErrorRef } from '../../controllers/eventEmitter/eventEmitter'
 import { AccountOp } from '../accountOp/accountOp'
-import { AbiFragment, HumanizerFragment, HumanizerVisualization, IrCall } from './interfaces'
+import { HumanizerFragment, HumanizerMeta, HumanizerVisualization, IrCall } from './interfaces'
 import { fallbackHumanizer } from './modules/fallBackHumanizer'
 import { genericErc20Humanizer, genericErc721Humanizer } from './modules/tokens'
 import { uniswapHumanizer } from './modules/Uniswap'
 import { parseCalls } from './parsers'
 
 import humanizerInfo from '../../consts/humanizer/humanizerInfo.json'
-import { combineKnownHumanizerInfo, HUMANIZER_META_KEY } from '.'
+import { EMPTY_HUMANIZER_META, HUMANIZER_META_KEY, integrateFragments } from './utils'
 import { produceMemoryStore } from '../../../test/helpers'
 import { humanizerMetaParsing } from './parsers/humanizerMetaParsing'
 
@@ -193,24 +194,24 @@ const transactions = {
 
 describe('asyncOps tests', () => {
   beforeEach(async () => {
-    accountOp.humanizerMeta = JSON.parse(JSON.stringify(humanizerInfo))
     accountOp.calls = []
   })
 
   test('getTokenInfo', async () => {
     accountOp.calls = transactions.erc20
-    delete accountOp.humanizerMeta!.knownAddresses['0xdac17f958d2ee523a2206206994597c13d831ec7']
-      .token
-    if (accountOp.humanizerMeta)
-      Object.keys(accountOp.humanizerMeta.knownAddresses).forEach((k) => {
-        delete accountOp.humanizerMeta?.knownAddresses[k]
+    const humanizerMeta = parse(stringify(humanizerInfo))
+    delete humanizerMeta!.knownAddresses['0xdac17f958d2ee523a2206206994597c13d831ec7'].token
+    if (humanizerMeta)
+      Object.keys(humanizerMeta.knownAddresses).forEach((k) => {
+        delete humanizerMeta?.knownAddresses[k]
       })
     const irCalls: IrCall[] = accountOp.calls
-    const [, asyncOps] = genericErc20Humanizer(accountOp, irCalls, {
+    const [, asyncOps] = genericErc20Humanizer(accountOp, irCalls, humanizerMeta, {
       fetch,
       emitError: mockEmitError
     })
-    const asyncData = await Promise.all(asyncOps)
+    const asyncData = await Promise.all(asyncOps.map((i) => i()))
+
     expect(asyncData[0]).toMatchObject({
       key: irCalls[0].to.toLowerCase(),
       type: 'token',
@@ -224,7 +225,6 @@ describe('asyncOps tests', () => {
 
 describe('module tests', () => {
   beforeEach(async () => {
-    accountOp.humanizerMeta = JSON.parse(JSON.stringify(humanizerInfo))
     accountOp.calls = []
   })
   test('callsToIr', () => {
@@ -237,7 +237,9 @@ describe('module tests', () => {
   test('genericErc20Humanizer', () => {
     accountOp.calls = [...transactions.erc20]
     const irCalls: IrCall[] = accountOp.calls
-    const [newCalls] = genericErc20Humanizer(accountOp, irCalls, { fetch })
+    const [newCalls] = genericErc20Humanizer(accountOp, irCalls, humanizerInfo as HumanizerMeta, {
+      fetch
+    })
     expect(newCalls.length).toBe(transactions.erc20.length)
     newCalls.forEach((c) => {
       expect(
@@ -253,7 +255,7 @@ describe('module tests', () => {
   test('genericErc721Humanizer', () => {
     accountOp.calls = [...transactions.erc721]
     const irCalls: IrCall[] = accountOp.calls
-    const [newCalls] = genericErc721Humanizer(accountOp, irCalls)
+    const [newCalls] = genericErc721Humanizer(accountOp, irCalls, humanizerInfo as HumanizerMeta)
 
     expect(newCalls.length).toBe(transactions.erc721.length)
     newCalls.forEach((c) => {
@@ -263,7 +265,7 @@ describe('module tests', () => {
   test('uniSwap', () => {
     accountOp.calls = [...transactions.uniV3]
     const irCalls: IrCall[] = accountOp.calls
-    const [calls] = uniswapHumanizer(accountOp, irCalls)
+    const [calls] = uniswapHumanizer(accountOp, irCalls, humanizerInfo as HumanizerMeta)
     const expectedVisualization = [
       [
         { type: 'action', content: 'Swap' },
@@ -324,32 +326,22 @@ describe('module tests', () => {
   test('fallback', async () => {
     const storage = produceMemoryStore()
     await storage.set(HUMANIZER_META_KEY, { abis: { NO_ABI: {} }, knownAddresses: {} })
-
     accountOp.calls = [...transactions.generic]
-    accountOp.humanizerMeta!.abis = { NO_ABI: {} }
     let irCalls: IrCall[] = accountOp.calls
     let asyncOps = []
-    ;[irCalls, asyncOps] = fallbackHumanizer(accountOp, irCalls, {
+    ;[irCalls, asyncOps] = fallbackHumanizer(accountOp, irCalls, EMPTY_HUMANIZER_META, {
       fetch,
       emitError: mockEmitError
     })
-    asyncOps = (await Promise.all(asyncOps)).filter((a) => a) as HumanizerFragment[]
+    asyncOps = (await Promise.all(asyncOps.map((i) => i()))).filter((a) => a) as HumanizerFragment[]
     expect(asyncOps.length).toBe(1)
     expect(asyncOps[0]).toMatchObject({ key: '0x095ea7b3' })
-
-    accountOp.humanizerMeta = combineKnownHumanizerInfo(
-      await storage.get(HUMANIZER_META_KEY, { knownAddresses: {}, abis: { NO_ABI: {} } }),
-      { abis: { NO_ABI: {} }, knownAddresses: {} },
-      asyncOps
-    ).toStore
-
-    // @TODO finish the leraning funvtion
-    asyncOps.forEach((a) => {
-      if (a.type === 'selector' && accountOp.humanizerMeta?.abis.NO_ABI)
-        accountOp.humanizerMeta.abis.NO_ABI![(a.value as AbiFragment).selector] =
-          a.value as AbiFragment
-    })
-    ;[irCalls, asyncOps] = fallbackHumanizer(accountOp, irCalls, { fetch })
+    ;[irCalls, asyncOps] = fallbackHumanizer(
+      accountOp,
+      irCalls,
+      integrateFragments(EMPTY_HUMANIZER_META, asyncOps),
+      { fetch }
+    )
     expect(irCalls[1]?.fullVisualization?.[0]).toMatchObject({
       type: 'action',
       content: 'Call approve(address,uint256)'
@@ -361,9 +353,15 @@ describe('module tests', () => {
   test('metaParsing', () => {
     accountOp.calls = [...transactions.humanizerMetatransaction]
     let irCalls = accountOp.calls
-    ;[irCalls] = genericErc20Humanizer(accountOp, irCalls)
-    ;[irCalls] = fallbackHumanizer(accountOp, irCalls)
-    const [newCalls] = parseCalls(accountOp, irCalls, [humanizerMetaParsing], { fetch })
+    ;[irCalls] = genericErc20Humanizer(accountOp, irCalls, humanizerInfo as HumanizerMeta)
+    ;[irCalls] = fallbackHumanizer(accountOp, irCalls, humanizerInfo as HumanizerMeta)
+    const [newCalls] = parseCalls(
+      accountOp,
+      irCalls,
+      [humanizerMetaParsing],
+      humanizerInfo as HumanizerMeta,
+      { fetch }
+    )
     expect(newCalls.length).toBe(transactions.humanizerMetatransaction.length)
     expect(
       newCalls[0]?.fullVisualization?.find((v: HumanizerVisualization) => v.type === 'address')

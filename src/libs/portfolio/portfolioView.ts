@@ -1,4 +1,6 @@
+import { Account } from '../../interfaces/account'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
+import { shouldGetAdditionalPortfolio } from './helpers'
 import {
   AccountState,
   AdditionalAccountState,
@@ -18,8 +20,9 @@ interface AccountPortfolio {
 
 export function calculateAccountPortfolio(
   selectedAccount: string | null,
-  state: { latest: PortfolioControllerState },
-  accountPortfolio: AccountPortfolio
+  state: { latest: PortfolioControllerState; pending: PortfolioControllerState },
+  accountPortfolio: AccountPortfolio,
+  account: Account
 ) {
   const updatedTokens: TokenResultInterface[] = []
   const updatedCollections: CollectionResultInterface[] = []
@@ -36,7 +39,12 @@ export function calculateAccountPortfolio(
     }
   }
 
-  if (!state.latest || !state.latest[selectedAccount]) {
+  const hasLatest = state.latest && state.latest[selectedAccount]
+  const hasPending =
+    state.pending &&
+    state.pending[selectedAccount] &&
+    Object.keys(state.pending[selectedAccount]).length
+  if (!hasLatest && !hasPending) {
     return {
       tokens: accountPortfolio?.tokens || [],
       collections: accountPortfolio?.collections || [],
@@ -45,7 +53,22 @@ export function calculateAccountPortfolio(
     }
   }
 
-  const selectedAccountData = state.latest[selectedAccount]
+  const selectedAccountData = hasPending
+    ? state.pending[selectedAccount]
+    : state.latest[selectedAccount]
+
+  // In the case we have a pending state we lose the gasTank and rewards data which is fetched on latest only
+  // Either that or we populate pending with them as well on forceUpdate in controller.
+  if (
+    shouldGetAdditionalPortfolio(account) &&
+    hasPending &&
+    state.latest[selectedAccount].gasTank &&
+    state.latest[selectedAccount].rewards
+  ) {
+    selectedAccountData.gasTank = state.latest[selectedAccount].gasTank
+
+    selectedAccountData.rewards = state.latest[selectedAccount].rewards
+  }
 
   const isNetworkReady = (networkData: AccountState | AdditionalAccountState | undefined) => {
     return (

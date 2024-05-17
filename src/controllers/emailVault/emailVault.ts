@@ -15,7 +15,7 @@ import { EmailVault } from '../../libs/emailVault/emailVault'
 import { requestMagicLink } from '../../libs/magicLink/magicLink'
 import { Polling } from '../../libs/polling/polling'
 import wait from '../../utils/wait'
-import EventEmitter from '../eventEmitter/eventEmitter'
+import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
 
 export enum EmailVaultState {
@@ -47,6 +47,14 @@ export type SessionKeys = {
 function base64UrlEncode(str: string) {
   return str.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
 }
+
+const STATUS_WRAPPED_METHODS = {
+  getEmailVaultInfo: 'INITIAL',
+  uploadKeyStoreSecret: 'INITIAL',
+  recoverKeyStore: 'INITIAL',
+  requestKeysSync: 'INITIAL',
+  finalizeSyncKeys: 'INITIAL'
+} as const
 
 /**
  * EmailVaultController
@@ -86,10 +94,6 @@ export class EmailVaultController extends EventEmitter {
 
   lastUpdate: Date = new Date()
 
-  latestMethodStatus: 'INITIAL' | 'LOADING' | 'SUCCESS' | 'DONE' = 'INITIAL'
-
-  latestMethodCall: string | null = null
-
   emailVaultStates: {
     email: { [email: string]: EmailVaultData }
     criticalError?: Error
@@ -97,6 +101,8 @@ export class EmailVaultController extends EventEmitter {
   } = {
     email: {}
   }
+
+  statuses: Statuses<keyof typeof STATUS_WRAPPED_METHODS> = STATUS_WRAPPED_METHODS
 
   constructor(
     storage: Storage,
@@ -258,9 +264,7 @@ export class EmailVaultController extends EventEmitter {
   }
 
   async getEmailVaultInfo(email: string) {
-    await this.#wrapEmailVaultPublicMethod('getEmailVaultInfo', () =>
-      this.#getEmailVaultInfo(email)
-    )
+    await this.withStatus(this.getEmailVaultInfo.name, () => this.#getEmailVaultInfo(email))
   }
 
   async #getEmailVaultInfo(email: string): Promise<void> {
@@ -300,9 +304,7 @@ export class EmailVaultController extends EventEmitter {
   }
 
   async uploadKeyStoreSecret(email: string) {
-    await this.#wrapEmailVaultPublicMethod('uploadKeyStoreSecret', () =>
-      this.#uploadKeyStoreSecret(email)
-    )
+    await this.withStatus(this.uploadKeyStoreSecret.name, () => this.#uploadKeyStoreSecret(email))
   }
 
   async #uploadKeyStoreSecret(email: string) {
@@ -321,8 +323,8 @@ export class EmailVaultController extends EventEmitter {
 
     if (this.#shouldStopConfirmationPolling) {
       this.#isUploadingSecret = false
-      this.emitUpdate()
-      return
+      // Set status to ERROR, but don't emit an error message
+      throw new Error('')
     }
 
     if (magicKey?.key) {
@@ -355,7 +357,7 @@ export class EmailVaultController extends EventEmitter {
   }
 
   async recoverKeyStore(email: string, newPassword: string) {
-    await this.#wrapEmailVaultPublicMethod('recoverKeyStore', () =>
+    await this.withStatus(this.recoverKeyStore.name, () =>
       this.#recoverKeyStore(email, newPassword)
     )
   }
@@ -448,9 +450,7 @@ export class EmailVaultController extends EventEmitter {
   }
 
   async requestKeysSync(email: string, keys: string[]) {
-    await this.#wrapEmailVaultPublicMethod('requestKeysSync', () =>
-      this.#requestKeysSync(email, keys)
-    )
+    await this.withStatus(this.requestKeysSync.name, () => this.#requestKeysSync(email, keys))
   }
 
   async #requestKeysSync(email: string, keys: string[]) {
@@ -525,7 +525,7 @@ export class EmailVaultController extends EventEmitter {
         return { ...res, password }
       })
       .filter((x) => x)
-    await this.#wrapEmailVaultPublicMethod('finalizeSyncRequest', () =>
+    await this.withStatus(this.finalizeSyncKeys.name, () =>
       this.#finalizeSyncKeys(email, operations)
     )
   }
@@ -564,47 +564,6 @@ export class EmailVaultController extends EventEmitter {
       await this.handleMagicLinkKey(email, () => this.fulfillSyncRequests(email, password))
     }
     this.emitUpdate()
-  }
-
-  async #wrapEmailVaultPublicMethod(callName: string, fn: Function) {
-    if (this.latestMethodStatus === 'LOADING') return
-    this.latestMethodCall = callName
-    this.latestMethodStatus = 'LOADING'
-    this.emitUpdate()
-    try {
-      await fn()
-
-      const isKeyStoreSecretUploadingCanceled =
-        this.#shouldStopConfirmationPolling && callName === 'uploadKeyStoreSecret'
-
-      // In case of a canceled verification and, respectively, a canceled keystore secret upload,
-      // we should not change the status to SUCCESS, as the method was simply canceled.
-      // Adding this check here will prevent any success modal from being shown on the FE when the user cancels their upload attempt.
-      if (!isKeyStoreSecretUploadingCanceled) {
-        this.latestMethodStatus = 'SUCCESS'
-        this.emitUpdate()
-      }
-    } catch (error: any) {
-      this.emitError({
-        message: 'Email vault unexpected error. If the problem persists, please contact support.',
-        level: 'major',
-        error
-      })
-    }
-
-    // set status in the next tick to ensure the FE receives the 'SUCCESS' status
-    await wait(1)
-
-    this.latestMethodStatus = 'DONE'
-    this.emitUpdate()
-
-    // reset the status in the next tick to ensure the FE receives the 'DONE' status
-    await wait(1)
-
-    if (this.latestMethodCall === callName) {
-      this.latestMethodStatus = 'INITIAL'
-      this.emitUpdate()
-    }
   }
 
   async cleanMagicAndSessionKeys() {
@@ -663,7 +622,7 @@ export class EmailVaultController extends EventEmitter {
         id: 'keystore-secret-backup',
         type: 'info',
         title: 'Enable device password reset via email',
-        text: "Email Vault recovers your Device Password. It is securely stored in Ambire's infrastructure cloud.",
+        text: "Email Vault recovers your device password. It is securely stored in Ambire's infrastructure cloud.",
         actions: [
           {
             label: 'Enable',

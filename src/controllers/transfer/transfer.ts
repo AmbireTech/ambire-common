@@ -9,6 +9,7 @@ import { TransferUpdate } from '../../interfaces/transfer'
 import { UserRequest } from '../../interfaces/userRequest'
 import { HumanizerMeta } from '../../libs/humanizer/interfaces'
 import { TokenResult } from '../../libs/portfolio'
+import { getTokenAmount } from '../../libs/portfolio/helpers'
 import { validateSendTransferAddress, validateSendTransferAmount } from '../../services/validations'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
@@ -77,7 +78,7 @@ export class TransferController extends EventEmitter {
 
   // every time when updating selectedToken update the amount and maxAmount of the form
   set selectedToken(token: TokenResult | null) {
-    if (token?.amount && Number(token?.amount) === 0) {
+    if (!token || Number(getTokenAmount(token)) === 0) {
       this.#selectedToken = null
       this.amount = ''
       return
@@ -101,14 +102,19 @@ export class TransferController extends EventEmitter {
   }
 
   get maxAmount() {
-    if (!this.selectedToken?.amount || !this.selectedToken?.decimals) return '0'
+    if (
+      !this.selectedToken ||
+      getTokenAmount(this.selectedToken) === 0n ||
+      !this.selectedToken.decimals
+    )
+      return '0'
 
-    return formatUnits(this.selectedToken.amount, Number(this.selectedToken.decimals))
+    return formatUnits(getTokenAmount(this.selectedToken), Number(this.selectedToken.decimals))
   }
 
   set tokens(tokenResults: TokenResult[]) {
     const filteredTokens = tokenResults.filter(
-      (token) => Number(token.amount) > 0 && !token.flags.onGasTank
+      (token) => Number(getTokenAmount(token)) > 0 && !token.flags.onGasTank
     )
     this.#tokens = filteredTokens
     this.#updateSelectedTokenIfNeeded(filteredTokens)
@@ -275,7 +281,7 @@ export class TransferController extends EventEmitter {
       : this.recipientAddress.toLowerCase()
 
     const bigNumberHexAmount = `0x${parseUnits(
-      this.amount,
+      parseFloat(this.amount).toFixed(this.selectedToken.decimals).toString(),
       Number(this.selectedToken.decimals)
     ).toString(16)}`
 
@@ -313,6 +319,7 @@ export class TransferController extends EventEmitter {
       !isAddressInAddressBook &&
       this.recipientAddress.toLowerCase() !== FEE_COLLECTOR.toLowerCase()
     this.isRecipientAddressUnknownAgreed = false
+    this.#setSWWarningVisibleIfNeeded()
 
     this.emitUpdate()
   }
@@ -351,6 +358,7 @@ export class TransferController extends EventEmitter {
       this.#settings.networks.find(({ id }) => id === this.selectedToken?.networkId) || null
 
     this.isSWWarningVisible =
+      this.isRecipientAddressUnknown &&
       !this.isTopUp &&
       !!this.selectedToken?.address &&
       Number(this.selectedToken?.address) === 0 &&

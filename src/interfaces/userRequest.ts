@@ -1,5 +1,6 @@
 import { TypedDataDomain, TypedDataField } from 'ethers'
 
+import { HumanizerFragment } from 'libs/humanizer/interfaces'
 import { AccountId } from './account'
 import { NetworkId } from './networkDescriptor'
 
@@ -29,11 +30,9 @@ export interface Message {
   content: PlainTextMessage | TypedMessage
   signature: string | null
   fromUserRequestId?: number
-  // This is fed into the humanizer to help visualize the accountOp
-  // This can contain info like the value of specific share tokens at the time of signing,
-  // or any other data that needs to otherwise be retrieved in an async manner and/or needs to be
-  // "remembered" at the time of signing in order to visualize history properly
-  humanizerMeta?: { [key: string]: any }
+  // those are the async non glabal data fragments that are obtained via the humanizer and stored
+  // in the Message so we can visualize it better and fater later
+  humanizerFragments?: HumanizerFragment[]
   networkId: NetworkId
 }
 

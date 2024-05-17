@@ -37,7 +37,6 @@ import { estimate } from '../../libs/estimate/estimate'
 import { EstimateResult } from '../../libs/estimate/interfaces'
 import { GasRecommendation, getGasPriceRecommendations } from '../../libs/gasPrice/gasPrice'
 import { humanizeAccountOp } from '../../libs/humanizer'
-import { shouldGetAdditionalPortfolio } from '../../libs/portfolio/helpers'
 import { GetOptions } from '../../libs/portfolio/interfaces'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { isErc4337Broadcast } from '../../libs/userOperation/userOperation'
@@ -49,7 +48,8 @@ import { ActivityController, SignedMessage, SubmittedAccountOp } from '../activi
 import { AddressBookController } from '../addressBook/addressBook'
 import { DomainsController } from '../domains/domains'
 import { EmailVaultController } from '../emailVault/emailVault'
-import EventEmitter from '../eventEmitter/eventEmitter'
+import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter'
+import { InviteController } from '../invite/invite'
 import { KeystoreController } from '../keystore/keystore'
 import { PortfolioController } from '../portfolio/portfolio'
 import { SettingsController } from '../settings/settings'
@@ -57,6 +57,11 @@ import { SettingsController } from '../settings/settings'
 import { SignAccountOpController, SigningStatus } from '../signAccountOp/signAccountOp'
 import { SignMessageController } from '../signMessage/signMessage'
 import { TransferController } from '../transfer/transfer'
+
+const STATUS_WRAPPED_METHODS = {
+  onAccountAdderSuccess: 'INITIAL',
+  selectAccount: 'INITIAL'
+} as const
 
 export class MainController extends EventEmitter {
   #storage: Storage
@@ -66,15 +71,13 @@ export class MainController extends EventEmitter {
   // Holds the initial load promise, so that one can wait until it completes
   #initialLoadPromise: Promise<void>
 
-  status: 'INITIAL' | 'LOADING' | 'SUCCESS' | 'DONE' = 'INITIAL'
-
-  latestMethodCall: string | null = null
-
   #callRelayer: Function
 
   accountStates: AccountStates = {}
 
   isReady: boolean = false
+
+  invite: InviteController
 
   keystore: KeystoreController
 
@@ -142,6 +145,8 @@ export class MainController extends EventEmitter {
 
   broadcastStatus: 'INITIAL' | 'LOADING' | 'DONE' = 'INITIAL'
 
+  statuses: Statuses<keyof typeof STATUS_WRAPPED_METHODS> = STATUS_WRAPPED_METHODS
+
   #relayerUrl: string
 
   onResolveDappRequest: (
@@ -192,6 +197,7 @@ export class MainController extends EventEmitter {
     this.#fetch = fetch
     this.#relayerUrl = relayerUrl
 
+    this.invite = new InviteController({ relayerUrl, fetch, storage: this.#storage })
     this.keystore = new KeystoreController(this.#storage, keystoreSigners)
     this.#externalSignerControllers = externalSignerControllers
     this.settings = new SettingsController(this.#storage)
@@ -271,67 +277,41 @@ export class MainController extends EventEmitter {
     const onAccountAdderSuccess = () => {
       if (this.accountAdder.addAccountsStatus !== 'SUCCESS') return
 
-      return this.#statusWrapper('onAccountAdderSuccess', async () => {
-        // Add accounts first, because some of the next steps have validation
-        // if accounts exists.
-        await this.addAccounts(this.accountAdder.readyToAddAccounts)
+      return this.withStatus(
+        'onAccountAdderSuccess',
+        async () => {
+          // Add accounts first, because some of the next steps have validation
+          // if accounts exists.
+          await this.addAccounts(this.accountAdder.readyToAddAccounts)
 
-        // Then add keys, because some of the next steps could have validation
-        // if keys exists. Should be separate (not combined in Promise.all,
-        // since firing multiple keystore actions is not possible
-        // (the #wrapKeystoreAction listens for the first one to finish and
-        // skips the parallel one, if one is requested).
-        await this.keystore.addKeys(this.accountAdder.readyToAddKeys.internal)
-        await this.keystore.addKeysExternallyStored(this.accountAdder.readyToAddKeys.external)
+          // Then add keys, because some of the next steps could have validation
+          // if keys exists. Should be separate (not combined in Promise.all,
+          // since firing multiple keystore actions is not possible
+          // (the #wrapKeystoreAction listens for the first one to finish and
+          // skips the parallel one, if one is requested).
+          await this.keystore.addKeys(this.accountAdder.readyToAddKeys.internal)
+          await this.keystore.addKeysExternallyStored(this.accountAdder.readyToAddKeys.external)
 
-        await Promise.all([
-          this.settings.addKeyPreferences(this.accountAdder.readyToAddKeyPreferences),
-          this.settings.addAccountPreferences(this.accountAdder.readyToAddAccountPreferences),
-          (() => {
-            const defaultSelectedAccount = getDefaultSelectedAccount(
-              this.accountAdder.readyToAddAccounts
-            )
-            if (!defaultSelectedAccount) return Promise.resolve()
+          await Promise.all([
+            this.settings.addKeyPreferences(this.accountAdder.readyToAddKeyPreferences),
+            this.settings.addAccountPreferences(this.accountAdder.readyToAddAccountPreferences),
+            (() => {
+              const defaultSelectedAccount = getDefaultSelectedAccount(
+                this.accountAdder.readyToAddAccounts
+              )
+              if (!defaultSelectedAccount) return Promise.resolve()
 
-            return this.selectAccount(defaultSelectedAccount.addr)
-          })()
-        ])
-      })
+              return this.#selectAccount(defaultSelectedAccount.addr)
+            })()
+          ])
+        },
+        true
+      )
     }
     this.accountAdder.onUpdate(onAccountAdderSuccess)
 
     this.isReady = true
     this.emitUpdate()
-  }
-
-  async #statusWrapper(callName: string, fn: Function) {
-    if (this.status === 'LOADING') return
-    this.latestMethodCall = callName
-    this.status = 'LOADING'
-    this.emitUpdate()
-    try {
-      await fn()
-      this.status = 'SUCCESS'
-      this.emitUpdate()
-    } catch (error: any) {
-      this.emitError({
-        level: 'major',
-        message: `An error encountered. Please try again. If the problem persists, please contact support.', ${callName}`,
-        error
-      })
-    }
-
-    // set status in the next tick to ensure the FE receives the 'SUCCESS' status
-    await wait(1)
-    this.status = 'DONE'
-    this.emitUpdate()
-
-    // reset the status in the next tick to ensure the FE receives the 'DONE' status
-    await wait(1)
-    if (this.latestMethodCall === callName) {
-      this.status = 'INITIAL'
-      this.emitUpdate()
-    }
   }
 
   initSignAccOp(accountAddr: string, networkId: string): null | void {
@@ -402,10 +382,15 @@ export class MainController extends EventEmitter {
   async updateAccountsOpsStatuses() {
     await this.#initialLoadPromise
 
-    const hasUpdatedStatuses = await this.activity.updateAccountsOpsStatuses()
+    const { shouldEmitUpdate, shouldUpdatePortfolio } =
+      await this.activity.updateAccountsOpsStatuses()
 
-    if (hasUpdatedStatuses) {
+    if (shouldEmitUpdate) {
       this.emitUpdate()
+
+      if (shouldUpdatePortfolio) {
+        this.updateSelectedAccount(this.selectedAccount, true)
+      }
     }
   }
 
@@ -522,7 +507,16 @@ export class MainController extends EventEmitter {
     this.emitUpdate()
   }
 
+  // All operations must be synchronous so the change is instantly reflected in the UI
   async selectAccount(toAccountAddr: string) {
+    await this.withStatus(
+      this.selectAccount.name,
+      async () => this.#selectAccount(toAccountAddr),
+      true
+    )
+  }
+
+  async #selectAccount(toAccountAddr: string) {
     await this.#initialLoadPromise
 
     if (!this.accounts.find((acc) => acc.addr === toAccountAddr)) {
@@ -531,13 +525,16 @@ export class MainController extends EventEmitter {
     }
 
     this.selectedAccount = toAccountAddr
-    await this.#storage.set('selectedAccount', toAccountAddr)
+    // eslint-disable-next-line @typescript-eslint/no-floating-promises
+    this.#storage.set('selectedAccount', toAccountAddr)
     this.activity.init({ filters: { account: toAccountAddr } })
     this.addressBook.update({
       selectedAccount: toAccountAddr
     })
+    // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.updateSelectedAccount(toAccountAddr)
     this.onUpdateDappSelectedAccount(toAccountAddr)
+
     this.emitUpdate()
   }
 
@@ -650,19 +647,23 @@ export class MainController extends EventEmitter {
       ? { forceUpdate, additionalHints }
       : { forceUpdate }
 
-    this.portfolio
-      .updateSelectedAccount(
-        this.accounts,
-        this.settings.networks,
-        selectedAccount,
-        undefined,
-        updateOptions
-      )
-      .then(() => {
-        const account = this.accounts.find(({ addr }) => addr === selectedAccount)
-        if (shouldGetAdditionalPortfolio(account))
-          this.portfolio.getAdditionalPortfolio(selectedAccount)
-      })
+    // pass the accountOps if any so we could reflect the pending state
+    const accountOps = this.accountOpsToBeSigned[selectedAccount]
+      ? Object.fromEntries(
+          Object.entries(this.accountOpsToBeSigned[selectedAccount])
+            // filter out account ops that have an estimation error
+            .filter(([, accOp]) => accOp && (!accOp.estimation || !accOp.estimation.error))
+            .map(([networkId, x]) => [networkId, [x!.accountOp]])
+        )
+      : undefined
+
+    this.portfolio.updateSelectedAccount(
+      this.accounts,
+      this.settings.networks,
+      selectedAccount,
+      accountOps,
+      updateOptions
+    )
   }
 
   async addUserRequest(req: UserRequest) {
@@ -741,6 +742,9 @@ export class MainController extends EventEmitter {
         delete this.accountOpsToBeSigned[accountAddr]?.[networkId]
         if (!Object.keys(this.accountOpsToBeSigned[accountAddr] || {}).length)
           delete this.accountOpsToBeSigned[accountAddr]
+
+        // remove the pending state
+        this.updateSelectedAccount(this.selectedAccount, true)
       }
     } else {
       this.messagesToBeSigned[accountAddr] = this.messagesToBeSigned[accountAddr].filter(
@@ -820,14 +824,7 @@ export class MainController extends EventEmitter {
         this.portfolio.latest?.[localAccountOp.accountAddr]?.[localAccountOp.networkId]?.result
           ?.tokens ?? []
       const gasTankFeeTokens =
-        this.portfolio.latest?.[localAccountOp.accountAddr]?.gasTank?.result?.tokens.filter(
-          (token) => {
-            return (
-              token.address !== ZeroAddress ||
-              token.symbol.toLowerCase() === network.nativeAssetSymbol.toLowerCase()
-            )
-          }
-        ) ?? []
+        this.portfolio.latest?.[localAccountOp.accountAddr]?.gasTank?.result?.tokens ?? []
 
       const feeTokens =
         [...networkFeeTokens, ...gasTankFeeTokens].filter((t) => t.flags.isFeeToken) || []
@@ -917,7 +914,7 @@ export class MainController extends EventEmitter {
       const stringAddr: any = result.length ? result.flat(Infinity) : []
       additionalHints!.push(...stringAddr)
 
-      const [, , estimation] = await Promise.all([
+      const [, estimation] = await Promise.all([
         // NOTE: we are not emitting an update here because the portfolio controller will do that
         // NOTE: the portfolio controller has it's own logic of constructing/caching providers, this is intentional, as
         // it may have different needs
@@ -925,18 +922,18 @@ export class MainController extends EventEmitter {
           this.accounts,
           this.settings.networks,
           localAccountOp.accountAddr,
-          Object.fromEntries(
-            Object.entries(this.accountOpsToBeSigned[localAccountOp.accountAddr])
-              .filter(([, accOp]) => accOp)
-              .map(([networkId, x]) => [networkId, [x!.accountOp]])
-          ),
+          this.accountOpsToBeSigned[localAccountOp.accountAddr]
+            ? Object.fromEntries(
+                Object.entries(this.accountOpsToBeSigned[localAccountOp.accountAddr])
+                  .filter(([, accOp]) => accOp)
+                  .map(([networkId, x]) => [networkId, [x!.accountOp]])
+              )
+            : undefined,
           {
             forceUpdate: true,
             additionalHints
           }
         ),
-        shouldGetAdditionalPortfolio(account) &&
-          this.portfolio.getAdditionalPortfolio(localAccountOp.accountAddr),
         estimate(
           this.settings.providers[localAccountOp.networkId],
           network,
@@ -963,29 +960,52 @@ export class MainController extends EventEmitter {
         })
       ])
 
-      this.accountOpsToBeSigned[localAccountOp.accountAddr] ||= {}
-      this.accountOpsToBeSigned[localAccountOp.accountAddr][localAccountOp.networkId] ||= {
-        accountOp: localAccountOp,
-        estimation
-      }
-      // @TODO compare intent between accountOp and this.accountOpsToBeSigned[accountOp.accountAddr][accountOp.networkId].accountOp
+      // @race
+      // if the account op has been deleted from this.accountOpsToBeSigned,
+      // don't continue as the request has already finished
+      if (
+        !this.accountOpsToBeSigned[localAccountOp.accountAddr] ||
+        !this.accountOpsToBeSigned[localAccountOp.accountAddr][localAccountOp.networkId]
+      )
+        return
+
+      // @race
+      // we check this in the if statement above but in the event of a race which
+      // deletes this.accountOpsToBeSigned just before coming here,
+      // it's better an error to be thrown and caught instead of creating
+      // a new entry in this.accountOpsToBeSigned. That's why we use "!" and we should
+      // keep it that way
+      this.accountOpsToBeSigned[localAccountOp.accountAddr][localAccountOp.networkId]!.accountOp =
+        localAccountOp
       this.accountOpsToBeSigned[localAccountOp.accountAddr][localAccountOp.networkId]!.estimation =
         estimation
 
       // if the nonce from the estimation is different than the one in localAccountOp,
-      // override localAccountOp.nonce and set it in this.accountOpsToBeSigned as
-      // the nonce from the estimation is the newest one
+      // override all places that contain the old nonce with the correct one
       if (estimation && BigInt(estimation.currentAccountNonce) !== localAccountOp.nonce) {
         localAccountOp.nonce = BigInt(estimation.currentAccountNonce)
+
         this.accountOpsToBeSigned[localAccountOp.accountAddr][
           localAccountOp.networkId
         ]!.accountOp.nonce = localAccountOp.nonce
+
+        if (
+          this.accountStates[localAccountOp.accountAddr] &&
+          this.accountStates[localAccountOp.accountAddr][localAccountOp.networkId]
+        )
+          this.accountStates[localAccountOp.accountAddr][localAccountOp.networkId].nonce =
+            localAccountOp.nonce
       }
 
       // update the signAccountOp controller once estimation finishes;
       // this eliminates the infinite loading bug if the estimation comes slower
       if (this.signAccountOp && estimation) {
         this.signAccountOp.update({ estimation })
+      }
+
+      // if there's an estimation error, override the pending results
+      if (estimation && estimation.error) {
+        this.portfolio.overridePendingResults(localAccountOp)
       }
     } catch (error: any) {
       this.emitError({
@@ -1084,7 +1104,7 @@ export class MainController extends EventEmitter {
         // if it's eip1559, send it as such. If no, go to legacy
         const gasPrice =
           (gasFeePayment.amount - feeTokenEstimation.addedNative) / gasFeePayment.simulatedGasLimit
-        if ('maxPriorityFeePerGas' in gasFeePayment) {
+        if (gasFeePayment.maxPriorityFeePerGas !== undefined) {
           rawTxn.maxFeePerGas = gasPrice
           rawTxn.maxPriorityFeePerGas = gasFeePayment.maxPriorityFeePerGas
         } else {
@@ -1170,7 +1190,7 @@ export class MainController extends EventEmitter {
           gasLimit: accountOp.gasFeePayment.simulatedGasLimit
         }
 
-        if ('maxPriorityFeePerGas' in accountOp.gasFeePayment) {
+        if (accountOp.gasFeePayment.maxPriorityFeePerGas !== undefined) {
           rawTxn.maxFeePerGas = gasPrice
           rawTxn.maxPriorityFeePerGas = accountOp.gasFeePayment.maxPriorityFeePerGas
         } else {

@@ -5,6 +5,7 @@ import { Banner } from '../../interfaces/banner'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { RPCProviders } from '../../interfaces/settings'
 import { UserRequest } from '../../interfaces/userRequest'
+import { PORTFOLIO_LIB_ERROR_NAMES } from '../portfolio/portfolio'
 import { getNetworksWithFailedRPC } from '../settings/settings'
 
 export const getMessageBanners = ({ userRequests }: { userRequests: UserRequest[] }) => {
@@ -99,7 +100,7 @@ export const getPendingAccountOpBannersForEOA = ({
 
   return [
     {
-      id: pendingUserRequests[0].id,
+      id: pendingUserRequests[1].id,
       type: 'info',
       title: `${numberOfPendingRequest} More pending transactions are waiting to be signed`,
       text: '' // TODO:
@@ -217,7 +218,7 @@ export const getNetworksWithFailedRPCBanners = ({
       id: 'rpcs-down',
       type: 'warning',
       title: `Failed to retrieve network data for ${n.name}. You can try selecting another RPC URL`,
-      text: 'Affected features: visible tokens, sign message/transaction, ENS/UD domain resolving, add account.',
+      text: 'Affected features: visible assets, sign message/transaction, ENS/UD domain resolving, add account.',
       actions: [
         {
           label: 'Select',
@@ -254,56 +255,72 @@ export const getNetworksWithPortfolioErrorBanners = ({
 }): Banner[] => {
   const banners: Banner[] = []
 
+  const portfolioLoading = Object.keys(portfolioLatest).some((accId: AccountId) => {
+    const accPortfolio = portfolioLatest[accId]
+
+    return Object.keys(accPortfolio).some((network) => {
+      const portfolioForNetwork = accPortfolio[network]
+
+      return portfolioForNetwork?.isLoading
+    })
+  })
+
+  // Otherwise networks are appended to the banner one by one, which looks weird
+  if (portfolioLoading) return []
+
   Object.keys(portfolioLatest).forEach((accId: AccountId) => {
     const accPortfolio = portfolioLatest[accId]
 
     if (!accPortfolio) return
 
-    const networkNamesToShowBannersFor: string[] = []
+    const networkNamesWithPriceFetchError: string[] = []
+    const networkNamesWithCriticalError: string[] = []
 
-    // @ts-expect-error
     Object.keys(accPortfolio).forEach((network) => {
-      if (['rewards', 'gasTank'].includes(network)) return []
-
       const portfolioForNetwork = accPortfolio[network]
       const criticalError = portfolioForNetwork?.criticalError
+
       const networkData = networks.find((n: NetworkDescriptor) => n.id === network)
 
-      if (!networkData) {
-        // Should never happen
-        console.error(`Network with id ${network} not found in the network list`)
+      if (!portfolioForNetwork || !networkData || portfolioForNetwork.isLoading) return
 
+      if (criticalError) {
+        networkNamesWithCriticalError.push(networkData.name)
+        // If there is a critical error, we don't need to check for price fetch error
         return
       }
 
-      if (portfolioForNetwork?.isLoading) return
+      const priceFetchError = portfolioForNetwork?.errors.find(
+        (err: any) => err?.name === PORTFOLIO_LIB_ERROR_NAMES.PriceFetchError
+      )
 
-      if (!criticalError && portfolioForNetwork?.result) {
-        const priceMissingForAllTokens = portfolioForNetwork?.result.tokens
-          // WALLET prices are not retrieved from coingecko
-          .filter((t) => !t.symbol.includes('WALLET'))
-          .every((token) => !token.priceIn.length)
-
-        if (priceMissingForAllTokens && portfolioForNetwork?.result.tokens.length > 0) {
-          networkNamesToShowBannersFor.push(networkData.name)
-        }
-
-        return
+      if (priceFetchError) {
+        networkNamesWithPriceFetchError.push(networkData.name)
       }
-
-      networkNamesToShowBannersFor.push(networkData.name)
     })
 
-    if (!networkNamesToShowBannersFor.length) return
-
-    banners.push({
-      accountAddr: accId,
-      id: `${accId}-portfolio-critical-error`,
-      type: 'error',
-      title: `Failed to retrieve the portfolio data for ${networkNamesToShowBannersFor.join(', ')}`,
-      text: 'Affected features: account balances, assets. Please try again later or contact support.',
-      actions: []
-    })
+    if (networkNamesWithPriceFetchError.length) {
+      banners.push({
+        accountAddr: accId,
+        id: `${accId}-portfolio-prices-error`,
+        type: 'warning',
+        title: `Failed to retrieve prices for ${networkNamesWithPriceFetchError.join(', ')}`,
+        text: 'Affected features: account balances, asset prices. Please try again later or contact support.',
+        actions: []
+      })
+    }
+    if (networkNamesWithCriticalError.length) {
+      banners.push({
+        accountAddr: accId,
+        id: `${accId}-portfolio-critical-error`,
+        type: 'error',
+        title: `Failed to retrieve the portfolio data for ${networkNamesWithCriticalError.join(
+          ', '
+        )}`,
+        text: 'Affected features: account balances, visible assets. Please try again later or contact support.',
+        actions: []
+      })
+    }
   })
 
   return banners

@@ -256,16 +256,22 @@ export class ActivityController extends EventEmitter {
    * 2. If we don't manage to determine its status, we are comparing AccountOp and Account nonce.
    * If Account nonce is greater than AccountOp, then we know that AccountOp has past nonce (AccountOpStatus.UnknownButPastNonce).
    */
-  async updateAccountsOpsStatuses(): Promise<boolean> {
+  async updateAccountsOpsStatuses(): Promise<{
+    shouldEmitUpdate: boolean
+    shouldUpdatePortfolio: boolean
+  }> {
     await this.#initialLoadPromise
 
     // Here we don't rely on `this.isInitialized` flag, as it checks for both `this.filters.account` and `this.filters.network` existence.
     // Banners are network agnostic, and that's the reason we check for `this.filters.account` only and having this.#accountsOps loaded.
-    if (!this.filters?.account || !this.#accountsOps[this.filters.account]) return false
+    if (!this.filters?.account || !this.#accountsOps[this.filters.account])
+      return { shouldEmitUpdate: false, shouldUpdatePortfolio: false }
 
     // This flag tracks the changes to AccountsOps statuses
     // and optimizes the number of the emitted updates and storage/state updates.
     let shouldEmitUpdate = false
+
+    let shouldUpdatePortfolio = false
 
     await Promise.all(
       Object.keys(this.#accountsOps[this.filters.account]).map(async (network) => {
@@ -280,6 +286,16 @@ export class ActivityController extends EventEmitter {
               if (accountOp.status !== AccountOpStatus.BroadcastedButNotConfirmed) return
 
               shouldEmitUpdate = true
+
+              const declareFailedIfQuaterPassed = (op: SubmittedAccountOp) => {
+                const accountOpDate = new Date(op.timestamp)
+                accountOpDate.setMinutes(accountOpDate.getMinutes() + 15)
+                const aQuaterHasPassed = accountOpDate < new Date()
+                if (aQuaterHasPassed) {
+                  this.#accountsOps[this.filters!.account][network][accountOpIndex].status =
+                    AccountOpStatus.Failure
+                }
+              }
 
               try {
                 let txnId = accountOp.txnId
@@ -306,13 +322,7 @@ export class ActivityController extends EventEmitter {
                       this.#accountsOps[this.filters!.account][network][accountOpIndex].txnId =
                         txnId
                     } else {
-                      const accountOpDate = new Date(accountOp.timestamp)
-                      accountOpDate.setMinutes(accountOpDate.getMinutes() + 15)
-                      const aQuaterHasPassed = accountOpDate < new Date()
-                      if (aQuaterHasPassed) {
-                        this.#accountsOps[this.filters!.account][network][accountOpIndex].status =
-                          AccountOpStatus.Failure
-                      }
+                      declareFailedIfQuaterPassed(accountOp)
                       return
                     }
                   }
@@ -323,6 +333,10 @@ export class ActivityController extends EventEmitter {
                   this.#accountsOps[this.filters!.account][network][accountOpIndex].status =
                     receipt.status ? AccountOpStatus.Success : AccountOpStatus.Failure
 
+                  if (receipt.status) {
+                    shouldUpdatePortfolio = true
+                  }
+
                   if (accountOp.isSingletonDeploy && receipt.status) {
                     // the below promise has a catch() inside
                     /* eslint-disable @typescript-eslint/no-floating-promises */
@@ -330,6 +344,11 @@ export class ActivityController extends EventEmitter {
                   }
                   return
                 }
+
+                // if there's no receipt, confirm there's a txn
+                // if there's no txn and 15 minutes have passed, declare it a failure
+                const txn = await provider.getTransaction(txnId)
+                if (!txn) declareFailedIfQuaterPassed(accountOp)
               } catch {
                 this.emitError({
                   level: 'silent',
@@ -350,6 +369,7 @@ export class ActivityController extends EventEmitter {
               ) {
                 this.#accountsOps[this.filters!.account][network][accountOpIndex].status =
                   AccountOpStatus.UnknownButPastNonce
+                shouldUpdatePortfolio = true
               }
             }
           )
@@ -366,7 +386,7 @@ export class ActivityController extends EventEmitter {
       this.emitUpdate()
     }
 
-    return shouldEmitUpdate
+    return { shouldEmitUpdate, shouldUpdatePortfolio }
   }
 
   async addSignedMessage(signedMessage: SignedMessage, account: string) {

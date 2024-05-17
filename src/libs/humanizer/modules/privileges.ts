@@ -3,17 +3,17 @@ import { Interface, ZeroHash } from 'ethers'
 import AmbireAccount from '../../../../contracts/compiled/AmbireAccount.json'
 import { ENTRY_POINT_MARKER } from '../../../consts/deploy'
 import { AccountOp } from '../../accountOp/accountOp'
-import { HumanizerCallModule, HumanizerVisualization, IrCall } from '../interfaces'
+import { HumanizerCallModule, HumanizerMeta, HumanizerVisualization, IrCall } from '../interfaces'
 import { getAction, getAddressVisualization, getKnownName, getLabel } from '../utils'
 
 const iface = new Interface(AmbireAccount.abi)
 
-const parsePriviligeCall = (accountOp: AccountOp, call: IrCall): HumanizerVisualization[] => {
+const parsePriviligeCall = (
+  humanizerMeta: HumanizerMeta,
+  call: IrCall
+): HumanizerVisualization[] => {
   const { addr, priv } = iface.parseTransaction(call)!.args
-  if (
-    getKnownName(accountOp.humanizerMeta, addr)?.includes('entry point') &&
-    priv === ENTRY_POINT_MARKER
-  )
+  if (getKnownName(humanizerMeta, addr)?.includes('entry point') && priv === ENTRY_POINT_MARKER)
     return [getAction('Enable'), getAddressVisualization(addr)]
   if (priv === ZeroHash)
     return [getAction('Revoke access'), getLabel('of'), getAddressVisualization(addr)]
@@ -31,6 +31,7 @@ const parsePriviligeCall = (accountOp: AccountOp, call: IrCall): HumanizerVisual
 export const privilegeHumanizer: HumanizerCallModule = (
   accountOp: AccountOp,
   irCalls: IrCall[],
+  humanizerMeta: HumanizerMeta,
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   options?: any
 ) => {
@@ -42,7 +43,7 @@ export const privilegeHumanizer: HumanizerCallModule = (
     ) {
       return {
         ...call,
-        fullVisualization: parsePriviligeCall(accountOp, call)
+        fullVisualization: parsePriviligeCall(humanizerMeta, call)
       }
     }
     return call

@@ -3,6 +3,7 @@ import isEmail from 'validator/es/lib/isEmail'
 
 import { TransferControllerState } from '../../interfaces/transfer'
 import { TokenResult } from '../../libs/portfolio'
+import { getTokenAmount } from '../../libs/portfolio/helpers'
 import { isValidAddress } from '../address'
 
 const validateAddress = (address: string) => {
@@ -125,8 +126,14 @@ const validateSendTransferAmount = (amount: string, selectedAsset: TokenResult) 
 
   try {
     if (amount && selectedAsset && selectedAsset.decimals) {
+      if (Number(amount) < 1 / 10 ** selectedAsset.decimals)
+        return {
+          success: false,
+          message: 'Token amount too low.'
+        }
+
       const selectedAssetMaxAmount = Number(
-        formatUnits(selectedAsset.amount, Number(selectedAsset.decimals))
+        formatUnits(getTokenAmount(selectedAsset), Number(selectedAsset.decimals))
       )
       const currentAmount = Number(amount)
 

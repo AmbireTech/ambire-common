@@ -344,7 +344,7 @@ export async function estimate(
   )
 
   // this is for EOAs paying for SA in native
-  const nativeToken = filteredFeeTokens.find(
+  const nativeToken = feeTokens.find(
     (token) => token.address === ZeroAddress && !token.flags.onGasTank
   )
   const nativeTokenOptions: FeePaymentOption[] = nativeAssetBalances.map(

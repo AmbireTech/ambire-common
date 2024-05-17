@@ -11,6 +11,7 @@ import { Deployless, fromDescriptor } from '../deployless/deployless'
 import batcher from './batcher'
 import { geckoRequestBatcher, geckoResponseIdentifier } from './gecko'
 import { getNFTs, getTokens } from './getOnchainBalances'
+import { getTokenAmount } from './helpers'
 import {
   CollectionResult,
   GetOptions,
@@ -18,7 +19,6 @@ import {
   Limits,
   LimitsOptions,
   PortfolioGetResult,
-  Price,
   PriceCache,
   TokenResult
 } from './interfaces'
@@ -35,6 +35,11 @@ const LIMITS: Limits = {
     erc721TokensInput: 100,
     erc721Tokens: 100
   }
+}
+
+export const PORTFOLIO_LIB_ERROR_NAMES = {
+  HintsError: 'HintsError',
+  PriceFetchError: 'PriceFetchError'
 }
 
 export const getEmptyHints = (networkId: string, accountAddr: string): Hints => ({
@@ -87,6 +92,7 @@ export class Portfolio {
   }
 
   async get(accountAddr: string, opts: Partial<GetOptions> = {}): Promise<PortfolioGetResult> {
+    const errors: PortfolioGetResult['errors'] = []
     const localOpts = { ...defaultOptions, ...opts }
     const disableAutoDiscovery = localOpts.disableAutoDiscovery || false
     const { baseCurrency } = localOpts
@@ -108,10 +114,11 @@ export class Portfolio {
           ? await this.batchedVelcroDiscovery({ networkId, accountAddr, baseCurrency })
           : getEmptyHints(networkId, accountAddr)
     } catch (error: any) {
-      hints = {
-        ...getEmptyHints(networkId, accountAddr),
-        error
-      }
+      errors.push({
+        name: PORTFOLIO_LIB_ERROR_NAMES.HintsError,
+        message: `Failed to fetch hints from Velcro for networkId (${networkId}): ${error.message}`
+      })
+      hints = getEmptyHints(networkId, accountAddr)
     }
 
     // Always add 0x00 to hints
@@ -214,12 +221,12 @@ export class Portfolio {
       // return the token if it's pinned and requested
       // or if it's not pinned but under the limit
       const pinnedRequested = isPinned && localOpts.fetchPinned
-      const underLimit = !isPinned && tokensWithErr.length <= limits.erc20 / 2
+      const underLimit = tokensWithErr.length <= limits.erc20 / 2
 
       return !!isTokenPreference || isInAdditionalHints || pinnedRequested || underLimit
     }
 
-    const tokens = tokensWithErr
+    const tokensWithoutPrices = tokensWithErr
       .filter((tokenWithErr) => tokenFilter(tokenWithErr))
       .map(([, result]) => result)
 
@@ -243,17 +250,18 @@ export class Portfolio {
 
     // Update prices and set the priceIn for each token by reference,
     // updating the final tokens array as a result
-    await Promise.all(
-      tokens.map(async (token) => {
+    const tokensWithPrices = await Promise.all(
+      tokensWithoutPrices.map(async (token) => {
+        let priceIn: TokenResult['priceIn'] = []
         const cachedPriceIn = getPriceFromCache(token.address)
+
         if (cachedPriceIn) {
-          // reassinging priceIn to the function param is not an ideal
-          // solution in this case as it's harder for reading but we're
-          // going along with it. Please understand that the final tokens
-          // array is updated with the edited token in this scope
-          /* eslint-disable-next-line no-param-reassign */
-          token.priceIn = cachedPriceIn
-          return
+          priceIn = cachedPriceIn
+
+          return {
+            ...token,
+            priceIn
+          }
         }
 
         try {
@@ -264,16 +272,33 @@ export class Portfolio {
             // this is what to look for in the coingecko response object
             responseIdentifier: geckoResponseIdentifier(token.address, this.network)
           })
-          const priceIn: Price[] = Object.entries(priceData || {}).map(([baseCurr, price]) => ({
+          priceIn = Object.entries(priceData || {}).map(([baseCurr, price]) => ({
             baseCurrency: baseCurr,
             price: price as number
           }))
           if (priceIn.length) priceCache.set(token.address, [Date.now(), priceIn])
-          /* eslint-disable-next-line no-param-reassign */
-          token.priceIn = priceIn
-        } catch {
-          /* eslint-disable-next-line no-param-reassign */
-          token.priceIn = []
+        } catch (error: any) {
+          const errorMessage = error?.message || 'Unknown error'
+          priceIn = []
+
+          // Avoid duplicate errors, because this.bachedGecko is called for each token and if
+          // there is an error it will most likely be the same for all tokens
+          if (
+            !errors.find(
+              (x) =>
+                x.name === PORTFOLIO_LIB_ERROR_NAMES.PriceFetchError && x.message === errorMessage
+            )
+          ) {
+            errors.push({
+              name: PORTFOLIO_LIB_ERROR_NAMES.PriceFetchError,
+              message: errorMessage
+            })
+          }
+        }
+
+        return {
+          ...token,
+          priceIn
         }
       })
     )
@@ -282,28 +307,27 @@ export class Portfolio {
     return {
       // Raw hints response
       hints,
+      errors,
       updateStarted: start,
       discoveryTime: discoveryDone - start,
       oracleCallTime: oracleCallDone - discoveryDone,
       priceUpdateTime: priceUpdateDone - oracleCallDone,
       priceCache,
-      tokens,
+      tokens: tokensWithPrices,
       tokenErrors: tokensWithErr
         .filter(([error, result]) => error !== '0x' || result.symbol === '')
         .map(([error, result]) => ({ error, address: result.address })),
       collections: collections.filter((x) => x.collectibles?.length),
-      total: tokens.reduce((cur, token) => {
+      total: tokensWithPrices.reduce((cur, token) => {
         const localCur = cur
         if (token.isHidden) return localCur
         for (const x of token.priceIn) {
           localCur[x.baseCurrency] =
             (localCur[x.baseCurrency] || 0) +
-            (Number(token.amount) / 10 ** token.decimals) * x.price
+            (Number(getTokenAmount(token)) / 10 ** token.decimals) * x.price
         }
         return localCur
-      }, {}),
-      // Add error field conditionally
-      ...(hints.error && { hintsError: hints.error })
+      }, {})
     }
   }
 }
