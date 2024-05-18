@@ -136,6 +136,8 @@ function parseUniUniversal(txn: any) {
 				// @TODO consider comparing the amount too
 				const sweep = sweeps.find(x => x && x.token === tokenOut)
 				if (!sweep) return []
+				// @TODO: handle WETH; if input is WETH, try to find a wrap and change it to ETH, but also make sure txn.value is equal
+				// @TODO handle WETH output; if output is WETH, try to find an unwrap AFTER and if so change it to ETH
 				return [cmd === 0
 					? { actionName: sweep ? 'swapExactIn' : 'swapUnknown', interactedWith: [], tokens: [
 							{ address: tokenIn, amount: amount1, role: 'in' },
