@@ -64,7 +64,8 @@ interface TokenInParsedAction {
 	// nothing other than an address and network, retrieving meta is the responsibility of the token component + service
 	address: string,
 	amount: bigint,
-	networkId: NetworkId,
+	// @TODO should this be optional?
+	networkId?: NetworkId,
 	role?: string,
 }
 
@@ -117,7 +118,7 @@ function parseUniUniversal(txn: any) {
 			}
 			return null
 		})
-		const mapped = commands.map((cmd, idx, allCmds) => {
+		const mapped = commands.map((cmd, idx, allCmds): ParsedAction[] => {
 			if (cmd === 0 || cmd === 1 || cmd === 8 || cmd === 9) {
 				const isExactIn = cmd === 0 || cmd === 8
 				const isV2 = cmd === 8 || cmd === 9
@@ -134,26 +135,22 @@ function parseUniUniversal(txn: any) {
 				// @TODO document that we do not need to flag sweeps as used, we just need to find the sweep that matches our command
 				// @TODO consider comparing the amount too
 				const sweep = sweeps.find(x => x && x.token === tokenOut)
-				if (!sweep) return 
+				if (!sweep) return []
 				return [cmd === 0
 					? { actionName: sweep ? 'swapExactIn' : 'swapUnknown', interactedWith: [], tokens: [
 							{ address: tokenIn, amount: amount1, role: 'in' },
 							{ address: tokenOut, amount: amount2, role: 'outMin' }
-						] }
+						] } as ParsedAction
 					: { actionName: sweep ? 'swapExactOut' : 'swapUnknown', interactedWith: [], tokens: [
 						{ address: tokenIn, amount: amount2, role: 'inMax' },
 						{ address: tokenOut, amount: amount1, role: 'out' }
-					] }].concat(
-						// @TODO: check for msg.sender santinel value
-						sweep && sweep.recipient !== txn.from
+					] } as ParsedAction].concat(
+						sweep && sweep.recipient !== '0x0000000000000000000000000000000000000001' && sweep.recipient !== txn.from
 							? [{
 								actionName: 'send',
-								interactedWith: [
-									// @TODO fix type issue
-									//{ address: sweep.recipient, role: 'recipient' }
-								],
+								interactedWith: [{ address: sweep.recipient }],
 								tokens: [{ address: tokenOut, amount: sweep.minAmount, role: 'send' }]
-							}]
+							} as ParsedAction]
 							: []
 					)
 			}
