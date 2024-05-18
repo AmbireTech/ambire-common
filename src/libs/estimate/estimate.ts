@@ -19,7 +19,6 @@ import {
   shouldIncludeActivatorCall,
   shouldUsePaymaster
 } from '../userOperation/userOperation'
-import { estimateCustomNetwork } from './customNetworks'
 import { catchEstimationFailure, estimationErrorFormatted, mapTxnErrMsg } from './errors'
 import { estimateArbitrumL1GasUsed } from './estimateArbitrum'
 import { bundlerEstimate } from './estimateBundler'
@@ -289,7 +288,17 @@ export async function estimate(
       .catch(catchEstimationFailure),
     estimateArbitrumL1GasUsed(op, account, accountState, provider).catch(catchEstimationFailure),
     isCustomNetwork
-      ? estimateCustomNetwork(account, op, provider)
+      ? estimate4337(
+          signer,
+          account,
+          op,
+          calls,
+          accountStates,
+          network,
+          provider,
+          feeTokens,
+          blockTag
+        )
       : new Promise((resolve) => {
           resolve(0n)
         })
@@ -315,7 +324,10 @@ export async function estimate(
 
   // we're touching the calculations for custom networks only
   // customlyEstimatedGas is 0 when the network is not custom
-  const customlyEstimatedGas = estimations[2]
+  const customlyEstimatedGas = isCustomNetwork
+    ? BigInt(estimations[2].erc4337GasLimits.callGasLimit) +
+      BigInt(estimations[2].erc4337GasLimits.preVerificationGas)
+    : 0n
   if (gasUsed < customlyEstimatedGas) gasUsed = customlyEstimatedGas
 
   // WARNING: calculateRefund will 100% NOT work in all cases we have

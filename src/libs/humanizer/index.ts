@@ -114,7 +114,8 @@ const sharedHumanization = async <InputDataType extends AccountOp | Message>(
         {
           fetch,
           emitError,
-          network: options?.network
+          network: options?.network,
+          networkId: op!.networkId
         }
       )
       asyncOps.push(...newAsyncOps)
