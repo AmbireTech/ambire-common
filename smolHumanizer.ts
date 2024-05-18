@@ -1,4 +1,4 @@
-import { Interface, toBigInt, hexlify } from 'ethers'
+import { Interface, toBigInt, hexlify, getAddress } from 'ethers'
 import { AbiCoder } from 'ethers'
 import fetch from 'node-fetch'
 import { readFile, exists } from 'fs'
@@ -104,13 +104,20 @@ function parseUniUniversal(txn: any) {
 	if (parsed) {
 		const abiCoder = new AbiCoder()
 		const commandArgs = parsed.args[1]
-		const commands = Buffer.from(parsed.args[0].slice(2), 'hex')
+		const commandsRaw = Buffer.from(parsed.args[0].slice(2), 'hex')
 		// @TODO: ugly hack for the path to get in/out: .slice(0, 42), slice(-40)
 		// @TODO post-processing: WETH, merging swaps
-		const mapped = [...commands]
-		// first bit is flag whether to allow the command to revert
-		.map(cmdRaw => cmdRaw & 0b01111111)
-		.map((cmd, idx, allCmds) => {
+		const commands = [...commandsRaw]
+			// first bit is flag whether to allow the command to revert
+			.map(cmdRaw => cmdRaw & 0b01111111)
+		const sweeps = commands.map((cmd, idx) => {
+			if (cmd === 4) {
+				const [token, recipient, minAmount] = abiCoder.decode(['address', 'address', 'uint256'], commandArgs[idx])
+				return { token, recipient, minAmount }
+			}
+			return null
+		})
+		const mapped = commands.map((cmd, idx, allCmds) => {
 			if (cmd === 0 || cmd === 1 || cmd === 8 || cmd === 9) {
 				const isExactIn = cmd === 0 || cmd === 8
 				const isV2 = cmd === 8 || cmd === 9
@@ -118,26 +125,37 @@ function parseUniUniversal(txn: any) {
 				// last arg is whether tokens are in the router, we don't care much about this
 				// @TODO we need to care about this if we do WETH?
 				const [recipient, amount1, amount2, path, /*tokensInRouter*/] =  abiCoder.decode(['address', 'uint256', 'uint256', pathType, 'bool'], commandArgs[idx])
-				const tokenIn = isV2 ? path[0] : path.slice(0, 42)
-				const tokenOut = isV2 ? path[path.length - 1] : '0x' + path.slice(-40)
-				// @TODO interactedWith in case of a different recipient
-				// @TODO find the `sweep`, find the recipient to implement different recipient
-				// algo: sweep not found -> unknown interaction; sweep found to 0x01 -> nothing, sweep found but not to 0x01 -> add a transfer action
-				// @TODO: multiple sweeps?
-				// @TODO document that we do not need to flag sweeps as used, we just need to find the sweep that matches our command
-				const outputSweepRaw = commandArgs[allCmds.indexOf(4)]
-				const outputSweep = outputSweepRaw ?? abiCoder.decode(['address', 'address', 'uint256'], outputSweepRaw)
-				console.log(outputSweep)
+				const tokenIn = getAddress(isV2 ? path[0] : path.slice(0, 42))
+				const tokenOut = getAddress(isV2 ? path[path.length - 1] : '0x' + path.slice(-40))
+				// how to handle the case case of a different recipient:
+				// find the `sweep`, find the recipient to implement different recipient
+				// sweep not found -> unknown interaction; sweep found to 0x01 -> nothing, sweep found but not to 0x01 -> add a transfer action
 
+				// @TODO document that we do not need to flag sweeps as used, we just need to find the sweep that matches our command
+				// @TODO consider comparing the amount too
+				const sweep = sweeps.find(x => x && x.token === tokenOut)
+				if (!sweep) return 
 				return [cmd === 0
-					? { actionName: 'swapExactIn', interactedWith: [], tokens: [
+					? { actionName: sweep ? 'swapExactIn' : 'swapUnknown', interactedWith: [], tokens: [
 							{ address: tokenIn, amount: amount1, role: 'in' },
 							{ address: tokenOut, amount: amount2, role: 'outMin' }
 						] }
-					: { actionName: 'swapExactOut', interactedWith: [], tokens: [
+					: { actionName: sweep ? 'swapExactOut' : 'swapUnknown', interactedWith: [], tokens: [
 						{ address: tokenIn, amount: amount2, role: 'inMax' },
 						{ address: tokenOut, amount: amount1, role: 'out' }
-					] }]
+					] }].concat(
+						// @TODO: check for msg.sender santinel value
+						sweep && sweep.recipient !== txn.from
+							? [{
+								actionName: 'send',
+								interactedWith: [
+									// @TODO fix type issue
+									//{ address: sweep.recipient, role: 'recipient' }
+								],
+								tokens: [{ address: tokenOut, amount: sweep.minAmount, role: 'send' }]
+							}]
+							: []
+					)
 			}
 			/*
 			if (cmd === 1) console.log('v3 swap exact out', abiCoder.decode(['address', 'uint256', 'uint256', 'bytes', 'bool'], commandArgs[idx]))
@@ -171,7 +189,7 @@ function parse1Inch() {
 	const txn = {
 		to: '0x1111111254eeb25477b68fb85ed929f73a960582',
 		data: '0x12aa3caf000000000000000000000000e37e799d5077682fa0a244d46e5649f71457bd09000000000000000000000000eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee000000000000000000000000d55210bb6898c021a19de1f58d27b71f095921ee000000000000000000000000e37e799d5077682fa0a244d46e5649f71457bd090000000000000000000000003978b91854b75a5c19203ada5bdc873362355dfa000000000000000000000000000000000000000000000000000c342a7d4a99f600000000000000000000000000000000000000000038709bb571b85783d0fa080000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000014000000000000000000000000000000000000000000000000000000000000001600000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000011b0000000000000000000000000000000000000000fd00006e00005400004e802026678dcd0000000000000000000000000000000000000000382ffce2287252f930e1c8dc9328dac5bf282ba100000000000000000000000000000000000000000000000000001f3ddd69b4bd00206b4be0b94041c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2d0e30db00c20c02aaa39b223fe8d0a0e5c4f27ead9083c756cc25bb8f1ce603577a4d17cc9d72f6a4c38f3b0b74c6ae40711b8002dc6c05bb8f1ce603577a4d17cc9d72f6a4c38f3b0b74c1111111254eeb25477b68fb85ed929f73a96058200000000000000000000000000000000000000000038709bb571b85783d0fa08c02aaa39b223fe8d0a0e5c4f27ead9083c756cc200000000009a635db5',
-		value: '0xc342a7d4a99f6'
+		value: '0xc342a7d4a99f6',
 	}
 	const parsed = iface.parseTransaction(txn)
 	if (parsed) {
@@ -190,6 +208,7 @@ function parse1Inch() {
 
 parseUniUniversal({
 	  data: '0x3593564c000000000000000000000000000000000000000000000000000000000000006000000000000000000000000000000000000000000000000000000000000000a00000000000000000000000000000000000000000000000000000000066229ac300000000000000000000000000000000000000000000000000000000000000040b000604000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000008000000000000000000000000000000000000000000000000000000000000000e000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000000280000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000de0b6b3a7640000000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000de0b6b3a7640000000000000000000000000000000000000000000000001906999cbae477f0296c00000000000000000000000000000000000000000000000000000000000000a00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000002bc02aaa39b223fe8d0a0e5c4f27ead9083c756cc200271088800092ff476844f74dc2fc427974bbee2794ae000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000006000000000000000000000000088800092ff476844f74dc2fc427974bbee2794ae00000000000000000000000037a8f295612602f2774d331e562be9e61b83a3270000000000000000000000000000000000000000000000000000000000000019000000000000000000000000000000000000000000000000000000000000006000000000000000000000000088800092ff476844f74dc2fc427974bbee2794ae0000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000001906999cbae477f0296c',
-	  value: 1000000000000000000n
+	  value: 1000000000000000000n,
+	  // from: ''
 	})
 // parse1Inch()
