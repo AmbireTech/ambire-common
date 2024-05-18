@@ -107,9 +107,10 @@ function parseUniUniversal(txn: any) {
 		const commands = Buffer.from(parsed.args[0].slice(2), 'hex')
 		// @TODO: ugly hack for the path to get in/out: .slice(0, 42), slice(-40)
 		// @TODO post-processing: WETH, merging swaps
-		const mapped = [...commands].map((cmdRaw, idx) => {
-			// first bit is flag whether to allow the command to revert
-			const cmd = cmdRaw & 0b01111111
+		const mapped = [...commands]
+		// first bit is flag whether to allow the command to revert
+		.map(cmdRaw => cmdRaw & 0b01111111)
+		.map((cmd, idx, allCmds) => {
 			if (cmd === 0 || cmd === 1 || cmd === 8 || cmd === 9) {
 				const isExactIn = cmd === 0 || cmd === 8
 				const isV2 = cmd === 8 || cmd === 9
@@ -122,7 +123,13 @@ function parseUniUniversal(txn: any) {
 				// @TODO interactedWith in case of a different recipient
 				// @TODO find the `sweep`, find the recipient to implement different recipient
 				// algo: sweep not found -> unknown interaction; sweep found to 0x01 -> nothing, sweep found but not to 0x01 -> add a transfer action
-				return cmd === 0
+				// @TODO: multiple sweeps?
+				// @TODO document that we do not need to flag sweeps as used, we just need to find the sweep that matches our command
+				const outputSweepRaw = commandArgs[allCmds.indexOf(4)]
+				const outputSweep = outputSweepRaw ?? abiCoder.decode(['address', 'address', 'uint256'], outputSweepRaw)
+				console.log(outputSweep)
+
+				return [cmd === 0
 					? { actionName: 'swapExactIn', interactedWith: [], tokens: [
 							{ address: tokenIn, amount: amount1, role: 'in' },
 							{ address: tokenOut, amount: amount2, role: 'outMin' }
@@ -130,7 +137,7 @@ function parseUniUniversal(txn: any) {
 					: { actionName: 'swapExactOut', interactedWith: [], tokens: [
 						{ address: tokenIn, amount: amount2, role: 'inMax' },
 						{ address: tokenOut, amount: amount1, role: 'out' }
-					] }
+					] }]
 			}
 			/*
 			if (cmd === 1) console.log('v3 swap exact out', abiCoder.decode(['address', 'uint256', 'uint256', 'bytes', 'bool'], commandArgs[idx]))
@@ -144,10 +151,10 @@ function parseUniUniversal(txn: any) {
 			if (cmd === 12) console.log('unswap eth', abiCoder.decode(['address', 'uint256'], commandArgs[idx]))
 			*/
 
-			return null
+			return []
 
 			// 13 is PERMIT2_TRANSFER_FROM_BATCH
-		}).filter(x => x)
+		}).flat().filter(x => x)
 		console.log(mapped)
 		return mapped
 	} else {
