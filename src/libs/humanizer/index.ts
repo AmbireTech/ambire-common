@@ -98,7 +98,7 @@ const sharedHumanization = async <InputDataType extends AccountOp | Message>(
   for (let i = 0; i <= 3; i++) {
     // @TODO refactor conditional for nocache
     const totalHumanizerMetaToBeUsed = await lazyReadHumanizerMeta(storage, {
-      nocache: options && !options?.isExtension
+      nocache: options?.isExtension === false
     })
     if ('calls' in data) {
       //
@@ -159,7 +159,7 @@ const sharedHumanization = async <InputDataType extends AccountOp | Message>(
     if ('content' in data)
       message!.humanizerFragments = [...(message!.humanizerFragments || []), ...nonGlobalFragments]
     await addFragsToLazyStore(storage, globalFragments, {
-      urgent: options && !options?.isExtension
+      urgent: options.isExtension === false
     })
 
     if (!humanizerFragments.length) return
