@@ -7,27 +7,21 @@ import { NetworkId } from './networkDescriptor'
 
 export interface Call {
   kind: 'call'
-  params: {
-    to: string
-    value: bigint
-    data: string
-  }
+  to: string
+  value: bigint
+  data: string
 }
 export interface PlainTextMessage {
   kind: 'message'
-  params: {
-    message: string | Uint8Array
-  }
+  message: string | Uint8Array
 }
 
 export interface TypedMessage {
   kind: 'typedMessage'
-  params: {
-    domain: TypedDataDomain
-    types: Record<string, Array<TypedDataField>>
-    message: Record<string, any>
-    primaryType: keyof TypedMessage['params']['types']
-  }
+  domain: TypedDataDomain
+  types: Record<string, Array<TypedDataField>>
+  message: Record<string, any>
+  primaryType: keyof TypedMessage['types']
 }
 // @TODO: move this type and it's deps (PlainTextMessage, TypedMessage) to another place,
 // probably interfaces

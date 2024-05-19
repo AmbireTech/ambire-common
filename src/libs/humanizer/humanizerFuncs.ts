@@ -103,6 +103,6 @@ export const humanizePlainTextMessage = (
   m: PlainTextMessage
   // only full visualization and warnings
 ): Omit<IrMessage, keyof Message> => ({
-  fullVisualization: [getAction('Sign message:'), getLabel(m.params.message as string)],
+  fullVisualization: [getAction('Sign message:'), getLabel(m.message as string)],
   warnings: []
 })

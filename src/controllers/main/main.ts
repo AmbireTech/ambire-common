@@ -611,9 +611,7 @@ export class MainController extends EventEmitter {
           (req as SignUserRequest).meta.networkId === networkId &&
           (req as SignUserRequest).meta.accountAddr === accountAddr
         ) {
-          const {
-            params: { to, value, data }
-          } = (req as SignUserRequest).action as Call
+          const { to, value, data } = (req as SignUserRequest).action as Call
           uCalls.push({ to, value, data, fromUserRequestId: req.id })
         }
         return uCalls
@@ -698,10 +696,8 @@ export class MainController extends EventEmitter {
         id: new Date().getTime(),
         action: {
           kind,
-          params: {
-            ...transaction,
-            value: transaction.value ? getBigInt(transaction.value) : 0n
-          }
+          ...transaction,
+          value: transaction.value ? getBigInt(transaction.value) : 0n
         },
         meta: { isSign: true, accountAddr, networkId: network.id },
         dappPromise
@@ -731,9 +727,7 @@ export class MainController extends EventEmitter {
         id: new Date().getTime(),
         action: {
           kind: 'message',
-          params: {
-            message: msg[0]
-          }
+          message: msg[0]
         },
         session: request.session,
         meta: {
@@ -786,12 +780,10 @@ export class MainController extends EventEmitter {
         id: new Date().getTime(),
         action: {
           kind: 'typedMessage',
-          params: {
-            types: typedData.types,
-            domain: typedData.domain,
-            message: typedData.message,
-            primaryType: typedData.primaryType
-          }
+          types: typedData.types,
+          domain: typedData.domain,
+          message: typedData.message,
+          primaryType: typedData.primaryType
         },
         session: request.session,
         meta: {

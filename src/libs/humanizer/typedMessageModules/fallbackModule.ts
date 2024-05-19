@@ -23,7 +23,7 @@ const fallbackParser = (
 
 export const fallbackEIP712Humanizer: HumanizerTypedMessaageModule = (tm: TypedMessage) => {
   return {
-    fullVisualization: fallbackParser(tm.params.message, 0),
+    fullVisualization: fallbackParser(tm.message, 0),
     warnings: [{ content: 'Unsuccessfully humanized', level: 'caution' }]
   }
 }

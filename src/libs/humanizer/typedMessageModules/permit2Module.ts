@@ -52,22 +52,22 @@ export const permit2Module: HumanizerTypedMessaageModule = (tm: TypedMessage) =>
   const visualizations: HumanizerVisualization[] = []
   if (
     tm?.params?.domain?.verifyingContract &&
-    tm.params.domain.verifyingContract.toLowerCase() === PERMIT_2_ADDRESS.toLowerCase()
+    tm.domain.verifyingContract.toLowerCase() === PERMIT_2_ADDRESS.toLowerCase()
   ) {
     if (tm.params?.types?.PermitSingle?.[0]?.type === 'PermitDetails') {
       visualizations.push(
-        ...visualizePermit(tm.params.message.details),
+        ...visualizePermit(tm.message.details),
         getLabel('this whole signatuere'),
-        getDeadline(tm.params.message.sigDeadline)
+        getDeadline(tm.message.sigDeadline)
       )
     } else if (tm.params?.types?.PermitBatch?.[0]?.type === 'PermitDetails[]') {
-      tm.params.message.details.forEach((permitDetails: PermitDetails, i: number) => {
+      tm.message.details.forEach((permitDetails: PermitDetails, i: number) => {
         visualizations.push(
           ...[
             getLabel(`Permit #${i + 1}`),
             ...visualizePermit(permitDetails),
             getLabel('this whole signatuere'),
-            getDeadline(tm.params.message.sigDeadline) as HumanizerVisualization
+            getDeadline(tm.message.sigDeadline) as HumanizerVisualization
           ]
         )
       })

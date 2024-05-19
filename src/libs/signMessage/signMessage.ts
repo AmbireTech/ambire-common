@@ -91,10 +91,12 @@ export const getTypedData = (
 
   return {
     kind: 'typedMessage',
-    domain,
-    types,
-    message,
-    primaryType: 'AmbireOperation'
+    params: {
+      domain,
+      types,
+      message,
+      primaryType: 'AmbireOperation'
+    }
   }
 }
 
