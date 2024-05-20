@@ -98,11 +98,13 @@ export const getAccountOpBanners = ({
         })
       }
     })
-    if (userRequests.length > 1) {
+    if (userRequests.length - txnBanners.length > 0) {
       txnBanners.push({
         id: new Date().getTime(),
         type: 'info',
-        title: `${userRequests.length - 1} More pending transactions are waiting to be signed`,
+        title: `${
+          userRequests.length - txnBanners.length
+        } More pending transactions are waiting to be signed`,
         text: '' // TODO:
       } as Banner)
     }

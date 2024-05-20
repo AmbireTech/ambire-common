@@ -62,7 +62,6 @@ export class ActionsController extends EventEmitter {
         // we have banners for these actions on the dashboard
         this.actionsQueue = this.actionsQueue.filter((a) => !['accountOp'].includes(a.type))
         this.emitUpdate()
-        // TODO: this.notifyForClosedUserRequestThatAreStillPending()
       }
     })
   }
@@ -76,7 +75,7 @@ export class ActionsController extends EventEmitter {
     }
 
     this.actionsQueue.push(action)
-    this.setCurrentAction(this.actionsQueue[0] || null)
+    this.setCurrentAction(this.actionsQueue[0] || null, this.actionsQueue.length > 1)
   }
 
   removeFromActionsQueue(actionId: Action['id']) {
@@ -85,9 +84,9 @@ export class ActionsController extends EventEmitter {
     this.setCurrentAction(this.actionsQueue[0] || null)
   }
 
-  setCurrentAction(nextAction: Action | null) {
+  setCurrentAction(nextAction: Action | null, withMessage?: boolean) {
     if (nextAction && nextAction.id === this.currentAction?.id) {
-      this.openActionWindow()
+      this.openActionWindow(withMessage)
       return
     }
 
@@ -100,7 +99,7 @@ export class ActionsController extends EventEmitter {
           this.emitUpdate()
         })
     } else {
-      this.openActionWindow()
+      this.openActionWindow(withMessage)
     }
 
     this.emitUpdate()
@@ -110,52 +109,14 @@ export class ActionsController extends EventEmitter {
     if (!this.actionsQueue.length || this.currentAction) return
 
     this.setCurrentAction(this.actionsQueue[0])
-    // TODO:
-    // this.#pm.send('> ui-warning', {
-    //   method: 'actions',
-    //   params: { warnings: [warningMessage], controller: 'actions' }
-    // })
+    this.#windowManager.sendWindowMessage('> ui-warning', 'You have unresolved pending requests.')
 
     this.emitUpdate()
   }
 
-  rejectAllNotificationRequestsThatAreNotSignRequests = () => {
-    this.#userRequests.forEach((r: UserRequest) => {
-      if (!['call', 'typedMessage', 'message'].includes(r.action.kind)) {
-        this.rejectUserRequest(`User rejected the request: ${r.action.kind}`, r.id)
-      }
-    })
-    this.emitUpdate()
-  }
-
-  // TODO:
-  // notifyForClosedUserRequestThatAreStillPending = async () => {
-  //   if (
-  //     this.currentAction &&
-  //     SIGN_METHODS.includes(this.currentAction.method)
-  //   ) {
-  //     const title = isSignAccountOpMethod(this.currentAction.method)
-  //       ? 'Added Pending Transaction Request'
-  //       : 'Added Pending Message Request'
-  //     const message = isSignAccountOpMethod(this.currentAction.method)
-  //       ? 'Transaction added to your cart. You can add more transactions and sign them all together (thus saving on network fees).'
-  //       : 'The message was added to your cart. You can find all pending requests listed on your Dashboard.'
-
-  //     const id = new Date().getTime()
-  //     // service_worker (mv3) - without await the notification doesn't show
-  //     await browser.notifications.create(id.toString(), {
-  //       type: 'basic',
-  //       iconUrl: browser.runtime.getURL('assets/images/xicon@96.png'),
-  //       title,
-  //       message,
-  //       priority: 2
-  //     })
-  //   }
-  // }
-
-  openActionWindow() {
+  openActionWindow(withMessage?: boolean) {
     if (this.actionWindowId !== null) {
-      this.focusActionWindow()
+      this.focusActionWindow(withMessage)
     } else {
       this.#windowManager.open().then((winId) => {
         this.actionWindowId = winId!
@@ -164,15 +125,16 @@ export class ActionsController extends EventEmitter {
     }
   }
 
-  focusActionWindow = () => {
+  focusActionWindow = (withMessage?: boolean) => {
     if (!this.#userRequests.length || !this.currentAction || !this.actionWindowId) return
 
     this.#windowManager.focus(this.actionWindowId)
-    // TODO:
-    // this.#pm.send('> ui-warning', {
-    //   method: 'actions',
-    //   params: { warnings: [warningMessage], controller: 'actions' }
-    // })
+    if (withMessage) {
+      this.#windowManager.sendWindowMessage(
+        '> ui-warning',
+        'You have pending requests. Please resolve them before accessing new ones.'
+      )
+    }
   }
 
   toJSON() {
