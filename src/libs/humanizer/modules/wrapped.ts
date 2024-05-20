@@ -72,7 +72,7 @@ export const wrappingModule: HumanizerCallModule = (
       if (call.data.slice(0, 10) === iface.getFunction('deposit')?.selector) {
         return {
           ...call,
-          fullVisualization: getWraping(ZeroAddress, call.value)
+          fullVisualization: getWraping(ZeroAddress, call.value, call.to)
         }
       }
       // 0x2e1a7d4d
@@ -80,7 +80,7 @@ export const wrappingModule: HumanizerCallModule = (
         const [amount] = iface.parseTransaction(call)?.args || []
         return {
           ...call,
-          fullVisualization: getUnwraping(ZeroAddress, amount)
+          fullVisualization: getUnwraping(ZeroAddress, amount, call.to)
         }
       }
       if (!call?.fullVisualization)
