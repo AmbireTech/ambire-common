@@ -467,7 +467,6 @@ export class PortfolioController extends EventEmitter {
   ) {
     await this.#initialLoadPromise
 
-    if (opts?.additionalHints) this.#additionalHints = opts.additionalHints
     const hasNonZeroTokens = !!this.#networksWithAssetsByAccounts?.[accountId]?.length
     // Load storage cached hints
     const storagePreviousHints = this.#previousHints
@@ -524,12 +523,7 @@ export class PortfolioController extends EventEmitter {
           ...portfolioProps
         })
 
-        const additionalHints =
-          Object.keys(
-            (storagePreviousHints?.learnedTokens &&
-              storagePreviousHints?.learnedTokens[network.id]) ??
-              {}
-          ) || []
+        const additionalHints = portfolioProps.additionalHints || []
 
         // TODO: move this in helpers
         const tokenFilter = (token: TokenResult): boolean => {
@@ -613,7 +607,7 @@ export class PortfolioController extends EventEmitter {
           erc721s: {}
         }
         const additionalHints =
-          (areAccountOpsChanged &&
+          ((areAccountOpsChanged || forceUpdate) &&
             Object.keys(
               (storagePreviousHints?.learnedTokens &&
                 storagePreviousHints?.learnedTokens[network.id]) ??
@@ -658,13 +652,8 @@ export class PortfolioController extends EventEmitter {
             : Promise.resolve(false)
         ])
 
-        // Persist previousHints in the disk storage for further requests, when:
-        // latest state was updated successful and hints were fetched successful too (no HintsError from portfolio result)
-        if (
-          isSuccessfulLatestUpdate &&
-          !(accountState[network.id]!.result?.errors || []).find((err) => err.name === 'HintsError')
-        ) {
-          // Store tokens from velcro and other APIs and update learnedTokens timestamp for lastSeenNonZero property
+        // Persist latest state in previousHints in the disk storage for further requests
+        if (isSuccessfulLatestUpdate && !areAccountOpsChanged && !forceUpdate) {
           const updatedStoragePreviousHints = getUpdatedHints(
             accountState[network.id]!.result!,
             network.id,
@@ -694,9 +683,7 @@ export class PortfolioController extends EventEmitter {
     this.emitUpdate()
   }
 
-  /**
-   * Learn new tokens from humanizer and debug_traceCall
-   */
+  // Learn new tokens from humanizer and debug_traceCall
   async learnTokens(tokenAddresses: string[], networkId: NetworkId) {
     const storagePreviousHints = this.#previousHints
 
@@ -711,8 +698,8 @@ export class PortfolioController extends EventEmitter {
 
     // Reached limit
     if (
-      LEARNED_TOKENS_NETWORK_LIMIT >=
-      Object.keys(networkLearnedTokens).length - LEARNED_TOKENS_CLEAN_THRESHOLD
+      LEARNED_TOKENS_NETWORK_LIMIT - Object.keys(networkLearnedTokens).length >=
+      LEARNED_TOKENS_CLEAN_THRESHOLD
     ) {
       networkLearnedTokens = await this.cleanLearnedTokens(networkId, networkLearnedTokens)
     }
@@ -725,10 +712,14 @@ export class PortfolioController extends EventEmitter {
 
   // Implement a cleanup mechanism for learned tokens
   // 1. leave in any tokens which are in pinned tokens and token preferences. Here we should think about another list we need to NEVER remove learned tokens
-  // 2. when reached the limit of a network with 250 tokens remove tokens which are soonest seen by lastSeenNonZero
-  async cleanLearnedTokens(networkId: NetworkId, storagePreviousHints: any) {
-    const learnedTokens = storagePreviousHints.learnedTokens || {}
-    const networkLearnedTokens = learnedTokens[networkId]
+  // 2. remove tokens which are lastSeenNonZero already
+  // 3. when reached the limit of a network with 50 tokens remove tokens which are soonest seen by lastSeenNonZero
+  async cleanLearnedTokens(networkId: NetworkId, networkLearnedTokens: any) {
+    const slotsLeft = LEARNED_TOKENS_NETWORK_LIMIT - Object.keys(networkLearnedTokens).length
+
+    const addressesWithTimestamps = Object.keys(networkLearnedTokens).filter(
+      (address) => networkLearnedTokens[address] !== null
+    )
 
     const learnedTokensArray = Object.entries(networkLearnedTokens)
       .filter(([address]) => {
@@ -741,20 +732,19 @@ export class PortfolioController extends EventEmitter {
       })
       .sort((a, b) => Number(b[1]) - Number(a[1]))
 
-    const tokensToDeleteCount = Math.max(
-      0,
-      learnedTokensArray.length - LEARNED_TOKENS_NETWORK_LIMIT
-    )
+    if (addressesWithTimestamps.length > 0) {
+      addressesWithTimestamps.forEach((address) => delete networkLearnedTokens[address])
+    } else if (slotsLeft <= LEARNED_TOKENS_CLEAN_THRESHOLD) {
+      const tokensToDeleteCount = Math.max(
+        0,
+        learnedTokensArray.length - LEARNED_TOKENS_CLEAN_THRESHOLD
+      )
+      const tokensToDelete = learnedTokensArray.slice(0, tokensToDeleteCount)
 
-    // If there are more tokens than the limit, delete the newest ones
-    const tokensToDelete = learnedTokensArray.slice(0, tokensToDeleteCount)
+      tokensToDelete.forEach(([address]) => delete networkLearnedTokens[address])
+    }
 
-    tokensToDelete.forEach(([address]) => delete networkLearnedTokens[address])
-
-    const updatedPreviousHintsStorage = { ...storagePreviousHints }
-    updatedPreviousHintsStorage.learnedTokens[networkId] = networkLearnedTokens
-
-    return updatedPreviousHintsStorage
+    return networkLearnedTokens
   }
 
   get networksWithAssets() {
