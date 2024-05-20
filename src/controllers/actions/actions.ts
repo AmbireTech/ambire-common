@@ -38,7 +38,7 @@ export class ActionsController extends EventEmitter {
 
   actionWindowId: null | number = null
 
-  #actionsQueue: Action[] = []
+  actionsQueue: Action[] = []
 
   currentAction: Action | null = null
 
@@ -66,25 +66,25 @@ export class ActionsController extends EventEmitter {
   }
 
   get numberOfPendingActions() {
-    return this.#actionsQueue.length
+    return this.actionsQueue.length
   }
 
   addToActionsQueue(action: Action) {
-    const actionIndex = this.#actionsQueue.findIndex((a) => a.id === action.id)
+    const actionIndex = this.actionsQueue.findIndex((a) => a.id === action.id)
     if (actionIndex !== -1) {
-      this.#actionsQueue[actionIndex] = action
-      this.setCurrentAction(this.#actionsQueue[0] || null)
+      this.actionsQueue[actionIndex] = action
+      this.setCurrentAction(this.actionsQueue[0] || null)
       return
     }
 
-    this.#actionsQueue.push(action)
-    this.setCurrentAction(this.#actionsQueue[0] || null)
+    this.actionsQueue.push(action)
+    this.setCurrentAction(this.actionsQueue[0] || null)
   }
 
   removeFromActionsQueue(actionId: Action['id']) {
-    this.#actionsQueue = this.#actionsQueue.filter((a) => a.id !== actionId)
+    this.actionsQueue = this.actionsQueue.filter((a) => a.id !== actionId)
 
-    this.setCurrentAction(this.#actionsQueue[0] || null)
+    this.setCurrentAction(this.actionsQueue[0] || null)
   }
 
   setCurrentAction(nextAction: Action | null) {
@@ -109,9 +109,9 @@ export class ActionsController extends EventEmitter {
   }
 
   openFirstPendingAction() {
-    if (!this.#actionsQueue.length || this.currentAction) return
+    if (!this.actionsQueue.length || this.currentAction) return
 
-    this.setCurrentAction(this.#actionsQueue[0])
+    this.setCurrentAction(this.actionsQueue[0])
     // TODO:
     // this.#pm.send('> ui-warning', {
     //   method: 'actions',

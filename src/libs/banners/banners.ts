@@ -88,10 +88,10 @@ export const getAccountOpBanners = ({
               label: 'Open',
               actionName: 'open-accountOp',
               meta: {
-                id: `${selectedAccount}-${netId}`,
+                id: accOp.accountOp.calls[0].fromUserRequestId!,
                 type: 'accountOp',
                 accountOp: accOp.accountOp,
-                withBatching: true
+                withBatching: false
               }
             }
           ]

@@ -864,7 +864,13 @@ export class MainController extends EventEmitter {
           accountOp,
           withBatching: !!account.creation
         })
-        if (this.signAccountOp) this.signAccountOp.update({ accountOp })
+        if (
+          this.signAccountOp &&
+          this.signAccountOp.accountOp.accountAddr === accountOp.accountAddr &&
+          this.signAccountOp.accountOp.networkId === accountOp.networkId
+        ) {
+          this.signAccountOp.update({ accountOp })
+        }
         this.#estimateAccountOp(accountOp)
       }
     } else if (action.kind === 'typedMessage' || action.kind === 'message') {
@@ -923,14 +929,25 @@ export class MainController extends EventEmitter {
           accountOp,
           estimation: null
         }
-        if (this.signAccountOp) this.signAccountOp.update({ accountOp, estimation: null })
+        if (
+          this.signAccountOp &&
+          this.signAccountOp.accountOp.accountAddr === accountOp.accountAddr &&
+          this.signAccountOp.accountOp.networkId === accountOp.networkId
+        ) {
+          this.signAccountOp.update({ accountOp, estimation: null })
+        }
         if (account.creation) {
-          this.actions.addToActionsQueue({
-            id: `${accountOp.accountAddr}-${accountOp.networkId}`,
-            type: 'accountOp',
-            accountOp,
-            withBatching: true
-          })
+          // if the rejectAccountOp is called we remove the calls one by one in case of multiple calls in the op
+          // therefore we wait a little bit to avoid action-window initialization on remove
+          setTimeout(() => {
+            if (this.accountOpsToBeSigned[accountOp.accountAddr][accountOp.networkId])
+              this.actions.addToActionsQueue({
+                id: `${accountOp.accountAddr}-${accountOp.networkId}`,
+                type: 'accountOp',
+                accountOp,
+                withBatching: true
+              })
+          }, 150)
         } else {
           this.actions.removeFromActionsQueue(id)
         }
