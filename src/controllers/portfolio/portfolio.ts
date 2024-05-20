@@ -690,19 +690,25 @@ export class PortfolioController extends EventEmitter {
     const learnedTokens = storagePreviousHints.learnedTokens || {}
     let networkLearnedTokens = learnedTokens[networkId] || {}
 
+    // Reached limit
+    if (
+      LEARNED_TOKENS_NETWORK_LIMIT - Object.keys(networkLearnedTokens).length <=
+      LEARNED_TOKENS_CLEAN_THRESHOLD
+    ) {
+      networkLearnedTokens = await this.cleanLearnedTokens(
+        networkId,
+        networkLearnedTokens,
+        tokenAddresses
+      )
+    }
+
+    // Add new tokens
     for (const address of tokenAddresses) {
       if (address !== ZeroAddress && !(address in networkLearnedTokens)) {
         networkLearnedTokens[address] = null
       }
     }
 
-    // Reached limit
-    if (
-      LEARNED_TOKENS_NETWORK_LIMIT - Object.keys(networkLearnedTokens).length >=
-      LEARNED_TOKENS_CLEAN_THRESHOLD
-    ) {
-      networkLearnedTokens = await this.cleanLearnedTokens(networkId, networkLearnedTokens)
-    }
     const updatedPreviousHintsStorage = { ...storagePreviousHints }
     updatedPreviousHintsStorage.learnedTokens[networkId] = networkLearnedTokens
 
@@ -713,10 +719,18 @@ export class PortfolioController extends EventEmitter {
   // Implement a cleanup mechanism for learned tokens
   // 1. leave in any tokens which are in pinned tokens and token preferences. Here we should think about another list we need to NEVER remove learned tokens
   // 2. remove tokens which are lastSeenNonZero already
-  // 3. when reached the limit of a network with 50 tokens remove tokens which are soonest seen by lastSeenNonZero
-  async cleanLearnedTokens(networkId: NetworkId, networkLearnedTokens: any) {
-    const slotsLeft = LEARNED_TOKENS_NETWORK_LIMIT - Object.keys(networkLearnedTokens).length
-
+  // 3. remove not seen tokens based on new tokens length or LEARNED_TOKENS_CLEAN_THRESHOLD in order to ensure we have space for new learned tokens
+  async cleanLearnedTokens(
+    networkId: NetworkId,
+    networkLearnedTokens: PreviousHintsStorage['learnedTokens'][NetworkId],
+    tokenAddresses: string[]
+  ) {
+    let slotsLeft = LEARNED_TOKENS_NETWORK_LIMIT - Object.keys(networkLearnedTokens).length
+    const newTokensLength = tokenAddresses.length
+    const deleteCount =
+      newTokensLength > LEARNED_TOKENS_CLEAN_THRESHOLD
+        ? newTokensLength
+        : LEARNED_TOKENS_CLEAN_THRESHOLD
     const addressesWithTimestamps = Object.keys(networkLearnedTokens).filter(
       (address) => networkLearnedTokens[address] !== null
     )
@@ -733,8 +747,13 @@ export class PortfolioController extends EventEmitter {
       .sort((a, b) => Number(b[1]) - Number(a[1]))
 
     if (addressesWithTimestamps.length > 0) {
-      addressesWithTimestamps.forEach((address) => delete networkLearnedTokens[address])
-    } else if (slotsLeft <= LEARNED_TOKENS_CLEAN_THRESHOLD) {
+      addressesWithTimestamps.forEach((address) => {
+        delete networkLearnedTokens[address]
+        slotsLeft += 1
+      })
+    }
+
+    if (slotsLeft <= deleteCount) {
       const tokensToDeleteCount = Math.max(
         0,
         learnedTokensArray.length - LEARNED_TOKENS_CLEAN_THRESHOLD

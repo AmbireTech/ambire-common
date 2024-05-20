@@ -931,8 +931,7 @@ export class MainController extends EventEmitter {
               )
             : undefined,
           {
-            forceUpdate: true,
-            additionalHints
+            forceUpdate: true
           }
         ),
         estimate(
