@@ -1,6 +1,5 @@
 /* eslint-disable @typescript-eslint/no-floating-promises */
 
-import { Dapp } from '../../interfaces/dapp'
 import { DappUserRequest, SignUserRequest, UserRequest } from '../../interfaces/userRequest'
 import { WindowManager } from '../../interfaces/window'
 import { AccountOp } from '../../libs/accountOp/accountOp'
@@ -35,8 +34,6 @@ export type Action = AccountOpAction | SignMessageAction | BenzinAction | UserRe
 export class ActionsController extends EventEmitter {
   #windowManager: WindowManager
 
-  #getDapp: (url: string) => Dapp | undefined
-
   #userRequests: UserRequest[] = []
 
   actionWindowId: null | number = null
@@ -47,22 +44,21 @@ export class ActionsController extends EventEmitter {
 
   constructor({
     userRequests,
-    windowManager,
-    getDapp
+    windowManager
   }: {
     userRequests: UserRequest[]
     windowManager: WindowManager
-    getDapp: (url: string) => Dapp | undefined
   }) {
     super()
 
     this.#userRequests = userRequests
     this.#windowManager = windowManager
-    this.#getDapp = getDapp
 
     this.#windowManager.event.on('windowRemoved', (winId: number) => {
       if (winId === this.actionWindowId) {
         this.actionWindowId = null
+        this.currentAction = null
+        this.emitUpdate()
         // TODO: this.notifyForClosedUserRequestThatAreStillPending()
         // this.rejectAllNotificationRequestsThatAreNotSignRequests()
       }
@@ -112,6 +108,19 @@ export class ActionsController extends EventEmitter {
     this.emitUpdate()
   }
 
+  openFirstPendingAction() {
+    if (!this.#actionsQueue.length || this.currentAction) return
+
+    this.setCurrentAction(this.#actionsQueue[0])
+    // TODO:
+    // this.#pm.send('> ui-warning', {
+    //   method: 'actions',
+    //   params: { warnings: [warningMessage], controller: 'actions' }
+    // })
+
+    this.emitUpdate()
+  }
+
   rejectAllNotificationRequestsThatAreNotSignRequests = () => {
     this.#userRequests.forEach((r: UserRequest) => {
       if (!['call', 'typedMessage', 'message'].includes(r.action.kind)) {
@@ -157,17 +166,15 @@ export class ActionsController extends EventEmitter {
     }
   }
 
-  focusActionWindow = (warningMessage?: string) => {
+  focusActionWindow = () => {
     if (!this.#userRequests.length || !this.currentAction || !this.actionWindowId) return
 
     this.#windowManager.focus(this.actionWindowId)
     // TODO:
-    if (warningMessage) {
-      // this.#pm.send('> ui-warning', {
-      //   method: 'actions',
-      //   params: { warnings: [warningMessage], controller: 'actions' }
-      // })
-    }
+    // this.#pm.send('> ui-warning', {
+    //   method: 'actions',
+    //   params: { warnings: [warningMessage], controller: 'actions' }
+    // })
   }
 
   toJSON() {

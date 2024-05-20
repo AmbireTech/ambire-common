@@ -220,11 +220,7 @@ export class MainController extends EventEmitter {
       this.#fetch
     )
     this.transfer = new TransferController(this.settings, this.addressBook)
-    this.actions = new ActionsController({
-      userRequests: this.userRequests,
-      windowManager,
-      getDapp
-    })
+    this.actions = new ActionsController({ userRequests: this.userRequests, windowManager })
     this.domains = new DomainsController(this.settings.providers, this.#fetch)
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch: this.#fetch })
     this.onUpdateDappSelectedAccount = onUpdateDappSelectedAccount
