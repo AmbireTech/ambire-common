@@ -58,15 +58,13 @@ export class ActionsController extends EventEmitter {
       if (winId === this.actionWindowId) {
         this.actionWindowId = null
         this.currentAction = null
+
+        // we have banners for these actions on the dashboard
+        this.actionsQueue = this.actionsQueue.filter((a) => !['accountOp'].includes(a.type))
         this.emitUpdate()
         // TODO: this.notifyForClosedUserRequestThatAreStillPending()
-        // this.rejectAllNotificationRequestsThatAreNotSignRequests()
       }
     })
-  }
-
-  get numberOfPendingActions() {
-    return this.actionsQueue.length
   }
 
   addToActionsQueue(action: Action) {
@@ -180,8 +178,7 @@ export class ActionsController extends EventEmitter {
   toJSON() {
     return {
       ...this,
-      ...super.toJSON(),
-      numberOfPendingActions: this.numberOfPendingActions
+      ...super.toJSON()
     }
   }
 }
