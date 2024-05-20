@@ -106,14 +106,14 @@ export const getTokenAmount = (token: TokenResult): bigint => {
   return typeof token.amountPostSimulation === 'bigint' ? token.amountPostSimulation : token.amount
 }
 
-export const getTotal = (t: any[]) =>
-  t.reduce((cur: any, token: any) => {
-    const localCur = cur
+export const getTotal = (t: TokenResult[]) =>
+  t.reduce((cur: { [key: string]: number }, token: TokenResult) => {
+    const localCur = cur // Add index signature to the type of localCur
     if (token.isHidden) return localCur
     // eslint-disable-next-line no-restricted-syntax
     for (const x of token.priceIn) {
-      cur[x.baseCurrency] =
-        (cur[x.baseCurrency] || 0) +
+      localCur[x.baseCurrency] =
+        (localCur[x.baseCurrency] || 0) +
         (Number(getTokenAmount(token)) / 10 ** token.decimals) * x.price
     }
 
@@ -121,7 +121,7 @@ export const getTotal = (t: any[]) =>
   }, {})
 
 export const getPinnedGasTankTokens = (
-  availableGasTankAssets: any,
+  availableGasTankAssets: TokenResult[],
   hasNonZeroTokens: boolean,
   accountId: AccountId,
   gasTankTokens: TokenResult[]
