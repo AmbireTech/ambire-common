@@ -514,6 +514,13 @@ export default [
     icon: 'https://assets.coingecko.com/coins/images/9956/small/4943.png'
   },
   {
+    address: '0x4200000000000000000000000000000000000006',
+    symbol: 'WETH',
+    networkId: 'optimism',
+    decimals: 18,
+    icon: 'https://assets.coingecko.com/coins/images/2518/small/weth.png?1628852295'
+  },
+  {
     address: '0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9',
     symbol: 'usdt',
     networkId: 'arbitrum',
@@ -540,6 +547,13 @@ export default [
     networkId: 'arbitrum',
     decimals: 18,
     icon: 'https://assets.coingecko.com/coins/images/9956/small/4943.png'
+  },
+  {
+    address: '0x82aF49447D8a07e3bd95BD0d56f35241523fBab1',
+    symbol: 'WETH',
+    networkId: 'arbitrum',
+    decimals: 18,
+    icon: 'https://assets.coingecko.com/coins/images/2518/small/weth.png?1628852295'
   },
   {
     address: '0x382bB369d343125BfB2117af9c149795C6C65C50',
