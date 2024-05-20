@@ -932,7 +932,7 @@ export class MainController extends EventEmitter {
             withBatching: true
           })
         } else {
-          this.actions.removeFromActionQueue(id)
+          this.actions.removeFromActionsQueue(id)
         }
         this.#estimateAccountOp(accountOp)
       } else {
@@ -940,7 +940,7 @@ export class MainController extends EventEmitter {
         if (!Object.keys(this.accountOpsToBeSigned[meta.accountAddr] || {}).length)
           delete this.accountOpsToBeSigned[meta.accountAddr]
 
-        this.actions.removeFromActionQueue(
+        this.actions.removeFromActionsQueue(
           account.creation ? `${meta.accountAddr}-${meta.networkId}` : id
         )
         // remove the pending state
@@ -963,9 +963,9 @@ export class MainController extends EventEmitter {
       } else {
         delete this.messagesToBeSigned[meta.accountAddr]
       }
-      this.actions.removeFromActionQueue(id)
+      this.actions.removeFromActionsQueue(id)
     } else {
-      this.actions.removeFromActionQueue(id)
+      this.actions.removeFromActionsQueue(id)
     }
     this.emitUpdate()
   }

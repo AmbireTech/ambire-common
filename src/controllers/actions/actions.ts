@@ -81,7 +81,7 @@ export class ActionsController extends EventEmitter {
     this.setCurrentAction(this.#actionsQueue[0] || null)
   }
 
-  removeFromActionQueue(actionId: Action['id']) {
+  removeFromActionsQueue(actionId: Action['id']) {
     this.#actionsQueue = this.#actionsQueue.filter((a) => a.id !== actionId)
 
     this.setCurrentAction(this.#actionsQueue[0] || null)
