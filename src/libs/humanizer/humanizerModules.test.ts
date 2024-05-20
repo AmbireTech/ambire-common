@@ -470,22 +470,33 @@ describe('module tests', () => {
     accountOp.calls = [...transactions.weth]
     let irCalls: IrCall[] = accountOp.calls
     ;[irCalls] = wrappingModule(accountOp, irCalls, humanizerInfo)
-    expect(irCalls[0].fullVisualization?.length).toBe(2)
+    expect(irCalls[0].fullVisualization?.length).toBe(3)
     expect(irCalls[0]?.fullVisualization![0]).toMatchObject({ type: 'action', content: 'Wrap' })
     expect(irCalls[0]?.fullVisualization![1]).toMatchObject({
       type: 'token',
       address: '0x0000000000000000000000000000000000000000',
       amount: transactions.weth[0].value
     })
+    expect(irCalls[0]?.fullVisualization![2]).toMatchObject({
+      type: 'token',
+      address: '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2',
+      amount: 0n,
+      isHidden: true
+    })
 
-    expect(irCalls[1].fullVisualization?.length).toBe(2)
+    expect(irCalls[1].fullVisualization?.length).toBe(3)
     expect(irCalls[1]?.fullVisualization![0]).toMatchObject({ type: 'action', content: 'Unwrap' })
     expect(irCalls[1]?.fullVisualization![1]).toMatchObject({
       type: 'token',
       address: '0x0000000000000000000000000000000000000000',
       amount: 8900000000000000n
     })
-    expect(irCalls[2]?.fullVisualization).toBeUndefined()
+    expect(irCalls[0]?.fullVisualization![2]).toMatchObject({
+      type: 'token',
+      address: '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2',
+      amount: 0n,
+      isHidden: true
+    })
   })
 
   test('SWAP WRAP/UNWRAPS', () => {
