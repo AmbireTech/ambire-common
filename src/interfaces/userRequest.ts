@@ -42,7 +42,7 @@ export interface SignUserRequest {
   action: Call | PlainTextMessage | TypedMessage
   session?: DappProviderRequest['session']
   meta: {
-    isSign: true
+    isSignAction: true
     accountAddr: AccountId
     networkId: NetworkId
     [key: string]: any
@@ -62,7 +62,7 @@ export interface DappUserRequest {
   }
   session: DappProviderRequest['session']
   meta: {
-    isSign: false
+    isSignAction: false
     [key: string]: any
   }
   dappPromise: {

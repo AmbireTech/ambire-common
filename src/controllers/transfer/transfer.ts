@@ -300,10 +300,12 @@ export class TransferController extends EventEmitter {
 
     this.userRequest = {
       id: new Date().getTime(),
-      networkId: this.#selectedTokenNetworkData.id,
-      accountAddr: this.#selectedAccount,
-      forceNonce: null,
-      action: txn
+      action: txn,
+      meta: {
+        isSignAction: true,
+        networkId: this.#selectedTokenNetworkData.id,
+        accountAddr: this.#selectedAccount
+      }
     }
 
     this.emitUpdate()

@@ -302,6 +302,12 @@ export class MainController extends EventEmitter {
       )
     }
     this.accountAdder.onUpdate(onAccountAdderSuccess)
+    this.transfer.onUpdate(async () => {
+      if (this.transfer.userRequest) {
+        await this.addUserRequest(this.transfer.userRequest)
+        this.transfer.resetForm()
+      }
+    })
 
     this.isReady = true
     this.emitUpdate()
@@ -695,7 +701,7 @@ export class MainController extends EventEmitter {
           ...transaction,
           value: transaction.value ? getBigInt(transaction.value) : 0n
         },
-        meta: { isSign: true, accountAddr, networkId: network.id },
+        meta: { isSignAction: true, accountAddr, networkId: network.id },
         dappPromise
       } as SignUserRequest
     } else if (kind === 'message') {
@@ -727,6 +733,7 @@ export class MainController extends EventEmitter {
         },
         session: request.session,
         meta: {
+          isSignAction: true,
           accountAddr: msdAddress,
           networkId: network.id
         },
@@ -783,6 +790,7 @@ export class MainController extends EventEmitter {
         },
         session: request.session,
         meta: {
+          isSignAction: true,
           accountAddr: msdAddress,
           networkId: network.id
         },
@@ -793,7 +801,7 @@ export class MainController extends EventEmitter {
         id: new Date().getTime(),
         session: request.session,
         action: { kind, params: request.params },
-        meta: { isSign: false },
+        meta: { isSignAction: false },
         dappPromise
       } as DappUserRequest
     }
