@@ -1,12 +1,4 @@
-import {
-  Contract,
-  hashMessage,
-  JsonRpcProvider,
-  toUtf8Bytes,
-  TypedDataEncoder,
-  verifyMessage,
-  verifyTypedData
-} from 'ethers'
+import { Contract, hashMessage, toUtf8Bytes, TypedDataEncoder } from 'ethers'
 
 import { beforeAll, describe, expect, test } from '@jest/globals'
 
@@ -20,7 +12,12 @@ import { Storage } from '../../interfaces/storage'
 import { getRpcProvider } from '../../services/provider'
 import { getAccountState } from '../accountState/accountState'
 import { KeystoreSigner } from '../keystoreSigner/keystoreSigner'
-import { getEIP712Signature, getPlainTextSignature, getTypedData } from './signMessage'
+import {
+  getEIP712Signature,
+  getPlainTextSignature,
+  getTypedData,
+  verifyMessage
+} from './signMessage'
 
 const ethereumNetwork = networks.find((net) => net.id === 'ethereum')!
 const polygonNetwork = networks.find((net) => net.id === 'polygon')!
@@ -111,7 +108,14 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
       accountStates[eoaAccount.addr][ethereumNetwork.id],
       signer
     )
-    expect(verifyMessage('test', signatureForPlainText)).toBe(eoaSigner.keyPublicAddress)
+    const provider = getRpcProvider(ethereumNetwork.rpcUrls, ethereumNetwork.chainId)
+    const firstRes = await verifyMessage({
+      provider,
+      signer: eoaSigner.keyPublicAddress,
+      signature: signatureForPlainText,
+      message: 'test'
+    })
+    expect(firstRes).toBe(true)
 
     const signatureForUint8Array = await getPlainTextSignature(
       toUtf8Bytes('test'),
@@ -120,9 +124,13 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
       accountStates[eoaAccount.addr][ethereumNetwork.id],
       signer
     )
-    expect(verifyMessage(toUtf8Bytes('test'), signatureForUint8Array)).toBe(
-      eoaSigner.keyPublicAddress
-    )
+    const secondRes = await verifyMessage({
+      provider,
+      signer: eoaSigner.keyPublicAddress,
+      signature: signatureForUint8Array,
+      message: toUtf8Bytes('test')
+    })
+    expect(secondRes).toBe(true)
 
     const signatureForNumberAsString = await getPlainTextSignature(
       '1',
@@ -131,7 +139,13 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
       accountStates[eoaAccount.addr][ethereumNetwork.id],
       signer
     )
-    expect(verifyMessage('1', signatureForNumberAsString)).toBe(eoaSigner.keyPublicAddress)
+    const thirdRes = await verifyMessage({
+      provider,
+      signer: eoaSigner.keyPublicAddress,
+      signature: signatureForNumberAsString,
+      message: '1'
+    })
+    expect(thirdRes).toBe(true)
   })
   test('Signing [Dedicated to one SA]: plain text', async () => {
     const accountStates = await getAccountsInfo([smartAccount])
@@ -147,10 +161,15 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
     // the key should be dedicatedToOneSA, so we expect the signature to end in 00
     expect(signatureForPlainText.slice(-2)).toEqual('00')
 
-    const unwrappedSig = signatureForPlainText.slice(0, -2)
-    expect(verifyMessage('test', unwrappedSig)).toBe(eoaSigner.keyPublicAddress)
-
     const provider = getRpcProvider(polygonNetwork.rpcUrls, polygonNetwork.chainId)
+    const res = await verifyMessage({
+      provider,
+      signer: smartAccount.addr,
+      signature: signatureForPlainText,
+      message: 'test'
+    })
+    expect(res).toBe(true)
+
     const contract = new Contract(smartAccount.addr, AmbireAccount.abi, provider)
     const isValidSig = await contract.isValidSignature(hashMessage('test'), signatureForPlainText)
     expect(isValidSig).toBe(contractSuccess)
@@ -212,10 +231,15 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
       accountState.accountAddr,
       hashMessage('test')
     )
+    const provider = getRpcProvider(ethereumNetwork.rpcUrls, ethereumNetwork.chainId)
     const eip712Sig = await getEIP712Signature(typedDataTest, eoaAccount, accountState, signer)
-    expect(
-      verifyTypedData(typedDataTest.domain, typedDataTest.types, typedDataTest.message, eip712Sig)
-    ).toBe(eoaSigner.keyPublicAddress)
+    const res = await verifyMessage({
+      provider,
+      signer: eoaSigner.keyPublicAddress,
+      signature: eip712Sig,
+      typedData: typedDataTest
+    })
+    expect(res).toBe(true)
 
     const typedDataNumber = getTypedData(
       ethereumNetwork.chainId,
@@ -223,14 +247,14 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
       hashMessage('12')
     )
     const eip712SigNum = await getEIP712Signature(typedDataNumber, eoaAccount, accountState, signer)
-    expect(
-      verifyTypedData(
-        typedDataNumber.domain,
-        typedDataNumber.types,
-        typedDataNumber.message,
-        eip712SigNum
-      )
-    ).toBe(eoaSigner.keyPublicAddress)
+
+    const secondRes = await verifyMessage({
+      provider,
+      signer: eoaSigner.keyPublicAddress,
+      signature: eip712SigNum,
+      typedData: typedDataNumber
+    })
+    expect(secondRes).toBe(true)
   })
   test('Signing [Dedicated to one SA]: eip-712', async () => {
     const accountStates = await getAccountsInfo([smartAccount])
@@ -246,12 +270,15 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
     // the key should be dedicatedToOneSA, so we expect the signature to end in 00
     expect(eip712Sig.slice(-2)).toEqual('00')
 
-    const unwrappedSig = eip712Sig.slice(0, -2)
-    expect(
-      verifyTypedData(typedData.domain, typedData.types, typedData.message, unwrappedSig)
-    ).toBe(eoaSigner.keyPublicAddress)
-
     const provider = getRpcProvider(polygonNetwork.rpcUrls, polygonNetwork.chainId)
+    const res = await verifyMessage({
+      provider,
+      signer: smartAccount.addr,
+      signature: eip712Sig,
+      typedData
+    })
+    expect(res).toBe(true)
+
     const contract = new Contract(smartAccount.addr, AmbireAccount.abi, provider)
     const isValidSig = await contract.isValidSignature(
       TypedDataEncoder.hash(typedData.domain, typedData.types, typedData.message),
@@ -303,17 +330,18 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: false', () => {
     // the key should not be dedicatedToOneSA, so we expect the signature to end in 01
     expect(signatureForPlainText.slice(-2)).toEqual('01')
 
-    const typedData = getTypedData(polygonNetwork.chainId, smartAccount.addr, hashMessage('test'))
-    const unwrappedSig = signatureForPlainText.slice(0, -2)
-    delete typedData.types.EIP712Domain
-    expect(
-      verifyTypedData(typedData.domain, typedData.types, typedData.message, unwrappedSig)
-    ).toBe(eoaSigner.keyPublicAddress)
-
     const provider = getRpcProvider(polygonNetwork.rpcUrls, polygonNetwork.chainId)
     const contract = new Contract(smartAccount.addr, AmbireAccount.abi, provider)
     const isValidSig = await contract.isValidSignature(hashMessage('test'), signatureForPlainText)
     expect(isValidSig).toBe(contractSuccess)
+
+    const res = await verifyMessage({
+      provider,
+      signer: smartAccount.addr,
+      signature: signatureForPlainText,
+      message: 'test'
+    })
+    expect(res).toBe(true)
   })
   test('Signing [Not dedicated to one SA]: eip-712, should throw an error', async () => {
     const accountStates = await getAccountsInfo([smartAccount])
