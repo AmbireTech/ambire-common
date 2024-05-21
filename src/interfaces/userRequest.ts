@@ -39,7 +39,7 @@ export interface Message {
 
 export interface SignUserRequest {
   id: number
-  action: Call | PlainTextMessage | TypedMessage
+  action: Call | PlainTextMessage | TypedMessage | { kind: 'benzin' }
   session?: DappProviderRequest['session']
   meta: {
     isSignAction: true
@@ -57,7 +57,7 @@ export interface SignUserRequest {
 export interface DappUserRequest {
   id: number
   action: {
-    kind: Exclude<string, 'call' | 'message' | 'typedMessage'>
+    kind: Exclude<string, 'call' | 'message' | 'typedMessage' | 'benzin'>
     params: any
   }
   session: DappProviderRequest['session']

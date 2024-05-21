@@ -6,25 +6,26 @@ import { AccountOp } from '../../libs/accountOp/accountOp'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
 export type AccountOpAction = {
-  id: string | number
+  id: string | UserRequest['id']
   type: 'accountOp'
   accountOp: AccountOp
   withBatching: boolean
 }
 
 export type SignMessageAction = {
-  id: number
+  id: SignUserRequest['id']
   type: 'signMessage'
   userRequest: SignUserRequest
 }
 
 export type BenzinAction = {
-  id: number
+  id: UserRequest['id']
   type: 'benzin'
+  userRequest: UserRequest
 }
 
 export type UserRequestAction = {
-  id: number
+  id: UserRequest['id']
   type: DappUserRequest['action']['kind']
   userRequest: UserRequest
 }
@@ -34,39 +35,42 @@ export type Action = AccountOpAction | SignMessageAction | BenzinAction | UserRe
 export class ActionsController extends EventEmitter {
   #windowManager: WindowManager
 
-  #userRequests: UserRequest[] = []
-
   actionWindowId: null | number = null
 
   actionsQueue: Action[] = []
 
   currentAction: Action | null = null
 
+  #onActionWindowClose: () => void
+
   constructor({
-    userRequests,
-    windowManager
+    windowManager,
+    onActionWindowClose
   }: {
-    userRequests: UserRequest[]
     windowManager: WindowManager
+    onActionWindowClose: () => void
   }) {
     super()
 
-    this.#userRequests = userRequests
     this.#windowManager = windowManager
+    this.#onActionWindowClose = onActionWindowClose
 
     this.#windowManager.event.on('windowRemoved', (winId: number) => {
       if (winId === this.actionWindowId) {
+        this.#onActionWindowClose()
         this.actionWindowId = null
         this.currentAction = null
 
         // we have banners for these actions on the dashboard
-        this.actionsQueue = this.actionsQueue.filter((a) => !['accountOp'].includes(a.type))
+        this.actionsQueue = this.actionsQueue.filter(
+          (a) => !['accountOp', 'benzin'].includes(a.type)
+        )
         this.emitUpdate()
       }
     })
   }
 
-  addToActionsQueue(action: Action) {
+  addToActionsQueue(action: Action, withPriority?: boolean) {
     const actionIndex = this.actionsQueue.findIndex((a) => a.id === action.id)
     if (actionIndex !== -1) {
       this.actionsQueue[actionIndex] = action
@@ -74,8 +78,15 @@ export class ActionsController extends EventEmitter {
       return
     }
 
-    this.actionsQueue.push(action)
-    this.setCurrentAction(this.actionsQueue[0] || null, this.actionsQueue.length > 1)
+    if (withPriority) {
+      this.actionsQueue.unshift(action)
+    } else {
+      this.actionsQueue.push(action)
+    }
+    this.setCurrentAction(
+      this.actionsQueue[0] || null,
+      !withPriority && this.actionsQueue.length > 1
+    )
   }
 
   removeFromActionsQueue(actionId: Action['id']) {
@@ -126,7 +137,7 @@ export class ActionsController extends EventEmitter {
   }
 
   focusActionWindow = (withMessage?: boolean) => {
-    if (!this.#userRequests.length || !this.currentAction || !this.actionWindowId) return
+    if (!this.actionsQueue.length || !this.currentAction || !this.actionWindowId) return
 
     this.#windowManager.focus(this.actionWindowId)
     if (withMessage) {

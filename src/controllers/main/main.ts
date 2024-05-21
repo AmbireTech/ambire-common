@@ -220,7 +220,13 @@ export class MainController extends EventEmitter {
       this.#fetch
     )
     this.transfer = new TransferController(this.settings, this.addressBook)
-    this.actions = new ActionsController({ userRequests: this.userRequests, windowManager })
+    this.actions = new ActionsController({
+      windowManager,
+      onActionWindowClose: () => {
+        this.userRequests = this.userRequests.filter((r) => r.action.kind !== 'benzin')
+        this.emitUpdate()
+      }
+    })
     this.domains = new DomainsController(this.settings.providers, this.#fetch)
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch: this.#fetch })
     this.onUpdateDappSelectedAccount = onUpdateDappSelectedAccount
@@ -830,8 +836,12 @@ export class MainController extends EventEmitter {
     this.emitUpdate()
   }
 
-  async addUserRequest(req: UserRequest) {
-    this.userRequests.push(req)
+  async addUserRequest(req: UserRequest, withPriority?: boolean) {
+    if (withPriority) {
+      this.userRequests.unshift(req)
+    } else {
+      this.userRequests.push(req)
+    }
     const { id, action, meta } = req
     if (action.kind === 'call') {
       if (!this.settings.networks.find((x) => x.id === meta.networkId))
@@ -858,12 +868,15 @@ export class MainController extends EventEmitter {
           estimation: null
         }
         const account = this.accounts.filter((x) => x.addr === meta.accountAddr)[0]
-        this.actions.addToActionsQueue({
-          id: account.creation ? `${accountOp.accountAddr}-${accountOp.networkId}` : id,
-          type: 'accountOp',
-          accountOp,
-          withBatching: !!account.creation
-        })
+        this.actions.addToActionsQueue(
+          {
+            id: account.creation ? `${accountOp.accountAddr}-${accountOp.networkId}` : id,
+            type: 'accountOp',
+            accountOp,
+            withBatching: !!account.creation
+          },
+          withPriority
+        )
         if (
           this.signAccountOp &&
           this.signAccountOp.accountOp.accountAddr === accountOp.accountAddr &&
@@ -891,17 +904,23 @@ export class MainController extends EventEmitter {
         }
       }
 
-      this.actions.addToActionsQueue({
-        id,
-        type: 'signMessage',
-        userRequest: req
-      })
+      this.actions.addToActionsQueue(
+        {
+          id,
+          type: 'signMessage',
+          userRequest: req
+        },
+        withPriority
+      )
     } else {
-      this.actions.addToActionsQueue({
-        id,
-        type: req.action.kind,
-        userRequest: req
-      })
+      this.actions.addToActionsQueue(
+        {
+          id,
+          type: req.action.kind,
+          userRequest: req
+        },
+        withPriority
+      )
     }
 
     this.emitUpdate()
@@ -997,9 +1016,24 @@ export class MainController extends EventEmitter {
     await this.updateSelectedAccount(this.selectedAccount, true)
   }
 
-  resolveAccountOp(data: any, accountAddr: string, networkId: string) {
+  async resolveAccountOp(data: any, accountAddr: string, networkId: string) {
     const accountOp = this.accountOpsToBeSigned?.[accountAddr]?.[networkId]?.accountOp
     if (!accountOp) return
+
+    const meta: SignUserRequest['meta'] = {
+      isSignAction: true,
+      accountAddr,
+      networkId,
+      txnId: null,
+      userOpHash: null
+    }
+    data?.isUserOp ? (meta.userOpHash = data.hash) : (meta.txnId = data.hash)
+    const benzinUserRequest: SignUserRequest = {
+      id: new Date().getTime(),
+      action: { kind: 'benzin' },
+      meta
+    }
+    await this.addUserRequest(benzinUserRequest, true)
 
     // eslint-disable-next-line no-restricted-syntax
     for (const call of accountOp.calls) {
@@ -1010,6 +1044,7 @@ export class MainController extends EventEmitter {
         this.removeUserRequest(uReq.id)
       }
     }
+
     this.emitUpdate()
   }
 
@@ -1551,7 +1586,7 @@ export class MainController extends EventEmitter {
         submittedAccountOp.userOpHash = transactionRes.hash
       }
       await this.activity.addAccountOp(submittedAccountOp)
-      this.resolveAccountOp(
+      await this.resolveAccountOp(
         {
           hash: transactionRes?.hash || null,
           networkId: network.id,
