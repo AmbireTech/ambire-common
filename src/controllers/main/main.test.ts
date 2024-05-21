@@ -1,4 +1,5 @@
 import { ethers } from 'ethers'
+import EventEmitter from 'events'
 import fetch from 'node-fetch'
 
 import { describe, expect, test } from '@jest/globals'
@@ -14,6 +15,13 @@ import { getBytecode } from '../../libs/proxyDeploy/bytecode'
 import { getAmbireAccountAddress } from '../../libs/proxyDeploy/getAmbireAddressTwo'
 import { MainController } from './main'
 
+const windowManager = {
+  focus: () => Promise.resolve(),
+  open: () => Promise.resolve(0),
+  remove: () => Promise.resolve(),
+  event: new EventEmitter(),
+  sendWindowMessage: () => {}
+}
 describe('Main Controller ', () => {
   const accounts = [
     {
@@ -60,8 +68,8 @@ describe('Main Controller ', () => {
       relayerUrl,
       keystoreSigners: { internal: KeystoreSigner },
       externalSignerControllers: {},
-      onResolveDappRequest: () => {},
-      onRejectDappRequest: () => {},
+      windowManager,
+      getDapp: () => undefined,
       onUpdateDappSelectedAccount: () => {}
     })
     // eslint-disable-next-line no-promise-executor-return
@@ -79,14 +87,16 @@ describe('Main Controller ', () => {
   test('Add a user request', async () => {
     const req: UserRequest = {
       id: 1,
-      accountAddr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
-      networkId: 'ethereum',
-      forceNonce: null,
       action: {
         kind: 'call',
         to: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
         value: BigInt(0),
         data: '0xa9059cbb000000000000000000000000e5a4dad2ea987215460379ab285df87136e83bea00000000000000000000000000000000000000000000000000000000005040aa'
+      },
+      meta: {
+        isSignAction: true,
+        accountAddr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+        networkId: 'ethereum'
       }
     }
     await controller.addUserRequest(req)
@@ -97,14 +107,16 @@ describe('Main Controller ', () => {
   test('Remove a user request', async () => {
     const req: UserRequest = {
       id: 1,
-      accountAddr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
-      networkId: 'ethereum',
-      forceNonce: null,
       action: {
         kind: 'call',
         to: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
         value: BigInt(0),
         data: '0xa9059cbb000000000000000000000000e5a4dad2ea987215460379ab285df87136e83bea00000000000000000000000000000000000000000000000000000000005040aa'
+      },
+      meta: {
+        isSignAction: true,
+        accountAddr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+        networkId: 'ethereum'
       }
     }
     await controller.removeUserRequest(req.id)
@@ -169,10 +181,10 @@ describe('Main Controller ', () => {
       storage,
       fetch,
       relayerUrl,
+      windowManager,
+      getDapp: () => undefined,
       keystoreSigners: { internal: KeystoreSigner },
       externalSignerControllers: {},
-      onResolveDappRequest: () => {},
-      onRejectDappRequest: () => {},
       onUpdateDappSelectedAccount: () => {}
     })
 
@@ -248,10 +260,10 @@ describe('Main Controller ', () => {
       storage,
       fetch,
       relayerUrl,
+      windowManager,
+      getDapp: () => undefined,
       keystoreSigners: { internal: KeystoreSigner },
       externalSignerControllers: {},
-      onResolveDappRequest: () => {},
-      onRejectDappRequest: () => {},
       onUpdateDappSelectedAccount: () => {}
     })
 

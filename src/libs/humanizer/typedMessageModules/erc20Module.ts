@@ -26,10 +26,10 @@ export const erc20Module: HumanizerTypedMessaageModule = (tm: TypedMessage) => {
   }
   if (tm.types.PermitSingle && tm.primaryType === 'PermitSingle') {
     if (
-      tm?.params?.message?.spender &&
-      tm?.params?.message?.details?.token &&
-      tm?.params?.message?.details?.amount &&
-      tm?.params?.message?.details?.expiration
+      tm?.message?.spender &&
+      tm?.message?.details?.token &&
+      tm?.message?.details?.amount &&
+      tm?.message?.details?.expiration
     ) {
       return {
         fullVisualization: [

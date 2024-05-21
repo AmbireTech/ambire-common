@@ -51,16 +51,16 @@ const visualizePermit = (permit: PermitDetails): HumanizerVisualization[] => {
 export const permit2Module: HumanizerTypedMessaageModule = (tm: TypedMessage) => {
   const visualizations: HumanizerVisualization[] = []
   if (
-    tm?.params?.domain?.verifyingContract &&
+    tm?.domain?.verifyingContract &&
     tm.domain.verifyingContract.toLowerCase() === PERMIT_2_ADDRESS.toLowerCase()
   ) {
-    if (tm.params?.types?.PermitSingle?.[0]?.type === 'PermitDetails') {
+    if (tm?.types?.PermitSingle?.[0]?.type === 'PermitDetails') {
       visualizations.push(
         ...visualizePermit(tm.message.details),
         getLabel('this whole signatuere'),
         getDeadline(tm.message.sigDeadline)
       )
-    } else if (tm.params?.types?.PermitBatch?.[0]?.type === 'PermitDetails[]') {
+    } else if (tm?.types?.PermitBatch?.[0]?.type === 'PermitDetails[]') {
       tm.message.details.forEach((permitDetails: PermitDetails, i: number) => {
         visualizations.push(
           ...[
