@@ -6,7 +6,7 @@ import { formatUnits, Interface, isAddress, parseUnits } from 'ethers'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { AddressState } from '../../interfaces/domains'
 import { TransferUpdate } from '../../interfaces/transfer'
-import { UserRequest } from '../../interfaces/userRequest'
+import { SignUserRequest } from '../../interfaces/userRequest'
 import { HumanizerMeta } from '../../libs/humanizer/interfaces'
 import { TokenResult } from '../../libs/portfolio'
 import { getTokenAmount } from '../../libs/portfolio/helpers'
@@ -57,7 +57,7 @@ export class TransferController extends EventEmitter {
 
   isRecipientHumanizerKnownTokenOrSmartContract = false
 
-  userRequest: UserRequest | null = null
+  userRequest: SignUserRequest | null = null
 
   #selectedTokenNetworkData: {
     id: string
