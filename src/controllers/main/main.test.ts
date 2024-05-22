@@ -20,7 +20,7 @@ const windowManager = {
   open: () => Promise.resolve(0),
   remove: () => Promise.resolve(),
   event: new EventEmitter(),
-  sendWindowMessage: () => {}
+  sendWindowToastMessage: () => {}
 }
 describe('Main Controller ', () => {
   const accounts = [

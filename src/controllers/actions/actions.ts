@@ -35,7 +35,7 @@ export type Action = AccountOpAction | SignMessageAction | BenzinAction | UserRe
 export class ActionsController extends EventEmitter {
   #windowManager: WindowManager
 
-  actionWindowId: null | number = null
+  actionWindowId: number | null = null
 
   actionsQueue: Action[] = []
 
@@ -82,6 +82,11 @@ export class ActionsController extends EventEmitter {
       this.actionsQueue.unshift(action)
     } else {
       this.actionsQueue.push(action)
+      if (this.actionWindowId && action.type !== 'benzin') {
+        this.#windowManager.sendWindowToastMessage('A new action request was added to the queue.', {
+          type: 'success'
+        })
+      }
     }
     this.setCurrentAction(this.actionsQueue[0] || null)
   }
@@ -119,8 +124,6 @@ export class ActionsController extends EventEmitter {
     if (!this.actionsQueue.length || this.currentAction) return
 
     this.setCurrentAction(this.actionsQueue[0])
-    this.#windowManager.sendWindowMessage('> ui-warning', 'You have unresolved pending requests.')
-
     this.emitUpdate()
   }
 
