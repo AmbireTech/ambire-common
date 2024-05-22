@@ -281,7 +281,7 @@ export class TransferController extends EventEmitter {
       : this.recipientAddress.toLowerCase()
 
     const bigNumberHexAmount = `0x${parseUnits(
-      parseFloat(this.amount).toFixed(this.selectedToken.decimals).toString(),
+      this.amount,
       Number(this.selectedToken.decimals)
     ).toString(16)}`
 
