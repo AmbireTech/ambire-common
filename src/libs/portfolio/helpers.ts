@@ -2,10 +2,12 @@ import { Contract, ZeroAddress } from 'ethers'
 
 import IERC20 from '../../../contracts/compiled/IERC20.json'
 import gasTankFeeTokens from '../../consts/gasTankFeeTokens'
+import { PINNED_TOKENS } from '../../consts/pinnedTokens'
 import { Account } from '../../interfaces/account'
 import { NetworkId } from '../../interfaces/networkDescriptor'
 import { RPCProvider } from '../../interfaces/settings'
 import { isSmartAccount } from '../account/account'
+import { CustomToken } from './customToken'
 import { PortfolioGetResult, PreviousHintsStorage, TokenResult } from './interfaces'
 
 const usdcEMapping: { [key: string]: string } = {
@@ -110,7 +112,8 @@ export function getUpdatedHints(
   result: PortfolioGetResult,
   networkId: NetworkId,
   storagePreviousHints: PreviousHintsStorage,
-  key: string
+  key: string,
+  tokenPreferences: CustomToken[]
 ) {
   const hints = { ...storagePreviousHints }
   if (!hints.fromExternalAPI) hints.fromExternalAPI = {}
@@ -133,7 +136,14 @@ export function getUpdatedHints(
   if (Object.keys(previousHintsFromExternalAPI).length > 0) {
     // eslint-disable-next-line no-restricted-syntax
     for (const address of erc20s) {
-      if (!previousHintsFromExternalAPI.includes(address)) {
+      const isPinned = PINNED_TOKENS.some(
+        (pinned) => pinned.address === address && pinned.networkId === networkId
+      )
+      const isTokenPreference = tokenPreferences.some(
+        (preference) => preference.address === address && preference.networkId === networkId
+      )
+
+      if (!previousHintsFromExternalAPI.includes(address) && !isPinned && !isTokenPreference) {
         if (!hints.learnedTokens[networkId]) hints.learnedTokens[networkId] = {}
         hints.learnedTokens[networkId][address] = Date.now().toString()
       }
@@ -141,4 +151,34 @@ export function getUpdatedHints(
   }
 
   return hints
+}
+
+export const tokenFilter = (
+  token: TokenResult,
+  network: { id: NetworkId },
+  hasNonZeroTokens: boolean,
+  additionalHints: string[] | undefined,
+  tokenPreferences: CustomToken[]
+): boolean => {
+  const isTokenPreference = tokenPreferences?.find((tokenPreference) => {
+    return tokenPreference.address === token.address && tokenPreference.networkId === network.id
+  })
+  if (isTokenPreference) {
+    token.isHidden = isTokenPreference.isHidden
+  }
+
+  // always include > 0 amount and native token
+  if (token.amount > 0 || token.address === ZeroAddress) return true
+
+  const isPinned = !!PINNED_TOKENS.find((pinnedToken) => {
+    return pinnedToken.networkId === network.id && pinnedToken.address === token.address
+  })
+
+  const isInAdditionalHints = additionalHints?.includes(token.address)
+
+  // if the amount is 0
+  // return the token if it's pinned and requested
+  const pinnedRequested = isPinned && !hasNonZeroTokens
+
+  return !!isTokenPreference || isInAdditionalHints || pinnedRequested
 }
