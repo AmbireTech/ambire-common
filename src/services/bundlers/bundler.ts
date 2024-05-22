@@ -31,7 +31,7 @@ export class Bundler {
    * @returns Receipt | null
    */
   async getReceipt(userOperationHash: string, network: NetworkDescriptor) {
-    const url = `https://api.pimlico.io/v1/${network.id}/rpc?apikey=${process.env.REACT_APP_PIMLICO_API_KEY}`
+    const url = `https://api.pimlico.io/v1/${network.chainId}/rpc?apikey=${process.env.REACT_APP_PIMLICO_API_KEY}`
     const provider = getRpcProvider([url], network.chainId)
     return provider.send('eth_getUserOperationReceipt', [userOperationHash])
   }
@@ -86,7 +86,7 @@ export class Bundler {
    * @returns userOperationHash
    */
   async broadcast(userOperation: UserOperation, network: NetworkDescriptor): Promise<string> {
-    const url = `https://api.pimlico.io/v1/${network.id}/rpc?apikey=${process.env.REACT_APP_PIMLICO_API_KEY}`
+    const url = `https://api.pimlico.io/v1/${network.chainId}/rpc?apikey=${process.env.REACT_APP_PIMLICO_API_KEY}`
     const provider = getRpcProvider([url], network.chainId)
 
     return provider.send('eth_sendUserOperation', [
@@ -96,13 +96,13 @@ export class Bundler {
   }
 
   static async getStatusAndTxnId(userOperationHash: string, network: NetworkDescriptor) {
-    const url = `https://api.pimlico.io/v1/${network.id}/rpc?apikey=${process.env.REACT_APP_PIMLICO_API_KEY}`
+    const url = `https://api.pimlico.io/v1/${network.chainId}/rpc?apikey=${process.env.REACT_APP_PIMLICO_API_KEY}`
     const provider = getRpcProvider([url], network.chainId)
     return provider.send('pimlico_getUserOperationStatus', [userOperationHash])
   }
 
   static async getUserOpGasPrice(network: NetworkDescriptor) {
-    const url = `https://api.pimlico.io/v1/${network.id}/rpc?apikey=${process.env.REACT_APP_PIMLICO_API_KEY}`
+    const url = `https://api.pimlico.io/v1/${network.chainId}/rpc?apikey=${process.env.REACT_APP_PIMLICO_API_KEY}`
     const provider = getRpcProvider([url], network.chainId)
     return provider.send('pimlico_getUserOperationGasPrice', [])
   }
@@ -156,7 +156,7 @@ export class Bundler {
     userOperation: UserOperation,
     network: NetworkDescriptor
   ): Promise<Erc4337GasLimits> {
-    const url = `https://api.pimlico.io/v1/${network.id}/rpc?apikey=${process.env.REACT_APP_PIMLICO_API_KEY}`
+    const url = `https://api.pimlico.io/v1/${network.chainId}/rpc?apikey=${process.env.REACT_APP_PIMLICO_API_KEY}`
     const provider = getRpcProvider([url], network.chainId)
 
     // stateOverride is needed as our main AmbireAccount.sol contract
@@ -194,7 +194,7 @@ export class Bundler {
     medium: { maxFeePerGas: string; maxPriorityFeePerGas: string }
     fast: { maxFeePerGas: string; maxPriorityFeePerGas: string }
   }> {
-    const url = `https://api.pimlico.io/v1/${network.id}/rpc?apikey=${process.env.REACT_APP_PIMLICO_API_KEY}`
+    const url = `https://api.pimlico.io/v1/${network.chainId}/rpc?apikey=${process.env.REACT_APP_PIMLICO_API_KEY}`
     const provider = getRpcProvider([url], network.chainId)
     const results = await provider.send('pimlico_getUserOperationGasPrice', [])
     return {
