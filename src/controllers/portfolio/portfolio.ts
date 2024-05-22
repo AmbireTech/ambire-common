@@ -457,7 +457,6 @@ export class PortfolioController extends EventEmitter {
     accountOps?: { [key: string]: AccountOp[] },
     opts?: {
       forceUpdate: boolean
-      additionalHints?: GetOptions['additionalHints']
     }
   ) {
     await this.#initialLoadPromise
@@ -576,7 +575,7 @@ export class PortfolioController extends EventEmitter {
           erc721s: {}
         }
         const additionalHints =
-          (areAccountOpsChanged &&
+          (forceUpdate &&
             Object.keys(
               (storagePreviousHints?.learnedTokens &&
                 storagePreviousHints?.learnedTokens[network.id]) ??
@@ -654,19 +653,21 @@ export class PortfolioController extends EventEmitter {
   }
 
   // Learn new tokens from humanizer and debug_traceCall
-  async learnTokens(tokenAddresses: string[], networkId: NetworkId) {
+  async learnTokens(tokenAddresses: string[] | undefined, networkId: NetworkId) {
+    if (!tokenAddresses) return
     const storagePreviousHints = this.#previousHints
     storagePreviousHints.learnedTokens = {}
     const learnedTokens = storagePreviousHints.learnedTokens || {}
-    let networkLearnedTokens = learnedTokens[networkId] || {}
+    let networkLearnedTokens: { [key: string]: any } = learnedTokens[networkId] || {}
 
     const tokensToLearn = tokenAddresses
       .filter((address) => address !== ZeroAddress && !(address in networkLearnedTokens))
-      .reduce((acc, curr) => {
+      .reduce((acc: { [key: string]: null }, curr) => {
         acc[curr] = null
         return acc
       }, {})
 
+    if (!tokensToLearn) return
     // Add new tokens in the beginning of the list
     networkLearnedTokens = { ...tokensToLearn, ...networkLearnedTokens }
 

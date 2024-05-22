@@ -374,7 +374,6 @@ export class MainController extends EventEmitter {
 
   destroySignAccOp() {
     this.signAccountOp = null
-    this.portfolio.resetAdditionalHints()
     MainController.signAccountOpListener() // unsubscribes for further updates
     this.emitUpdate()
   }
@@ -637,15 +636,8 @@ export class MainController extends EventEmitter {
     }
   }
 
-  async updateSelectedAccount(
-    selectedAccount: string | null = null,
-    forceUpdate: boolean = false,
-    additionalHints: string[] = []
-  ) {
+  async updateSelectedAccount(selectedAccount: string | null = null, forceUpdate: boolean = false) {
     if (!selectedAccount) return
-    const updateOptions = additionalHints.length
-      ? { forceUpdate, additionalHints }
-      : { forceUpdate }
 
     // pass the accountOps if any so we could reflect the pending state
     const accountOps = this.accountOpsToBeSigned[selectedAccount]
@@ -662,7 +654,7 @@ export class MainController extends EventEmitter {
       this.settings.networks,
       selectedAccount,
       accountOps,
-      updateOptions
+      { forceUpdate }
     )
   }
 
