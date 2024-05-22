@@ -83,10 +83,7 @@ export class ActionsController extends EventEmitter {
     } else {
       this.actionsQueue.push(action)
     }
-    this.setCurrentAction(
-      this.actionsQueue[0] || null,
-      !withPriority && this.actionsQueue.length > 1
-    )
+    this.setCurrentAction(this.actionsQueue[0] || null)
   }
 
   removeFromActionsQueue(actionId: Action['id']) {
@@ -95,9 +92,10 @@ export class ActionsController extends EventEmitter {
     this.setCurrentAction(this.actionsQueue[0] || null)
   }
 
-  setCurrentAction(nextAction: Action | null, withMessage?: boolean) {
+  setCurrentAction(nextAction: Action | null) {
     if (nextAction && nextAction.id === this.currentAction?.id) {
-      this.openActionWindow(withMessage)
+      this.openActionWindow()
+      this.emitUpdate()
       return
     }
 
@@ -109,8 +107,9 @@ export class ActionsController extends EventEmitter {
           this.actionWindowId = null
           this.emitUpdate()
         })
+      this.emitUpdate()
     } else {
-      this.openActionWindow(withMessage)
+      this.openActionWindow()
     }
 
     this.emitUpdate()
@@ -125,27 +124,22 @@ export class ActionsController extends EventEmitter {
     this.emitUpdate()
   }
 
-  openActionWindow(withMessage?: boolean) {
+  openActionWindow() {
     if (this.actionWindowId !== null) {
-      this.focusActionWindow(withMessage)
+      this.focusActionWindow()
     } else {
       this.#windowManager.open().then((winId) => {
         this.actionWindowId = winId!
         this.emitUpdate()
       })
     }
+    this.emitUpdate()
   }
 
-  focusActionWindow = (withMessage?: boolean) => {
+  focusActionWindow = () => {
     if (!this.actionsQueue.length || !this.currentAction || !this.actionWindowId) return
 
     this.#windowManager.focus(this.actionWindowId)
-    if (withMessage) {
-      this.#windowManager.sendWindowMessage(
-        '> ui-warning',
-        'You have pending requests. Please resolve them before accessing new ones.'
-      )
-    }
   }
 
   toJSON() {
