@@ -1,4 +1,4 @@
-import { formatUnits, getAddress } from 'ethers'
+import { formatUnits, getAddress, parseUnits } from 'ethers'
 import isEmail from 'validator/es/lib/isEmail'
 
 import { TransferControllerState } from '../../interfaces/transfer'
@@ -132,15 +132,15 @@ const validateSendTransferAmount = (amount: string, selectedAsset: TokenResult) 
           message: 'Token amount too low.'
         }
 
-      const selectedAssetMaxAmount = Number(
-        formatUnits(getTokenAmount(selectedAsset), Number(selectedAsset.decimals))
-      )
-      const currentAmount = Number(amount)
+      const currentAmount: bigint = parseUnits(amount, selectedAsset.decimals)
 
-      if (currentAmount > selectedAssetMaxAmount) {
+      if (currentAmount > getTokenAmount(selectedAsset)) {
         return {
           success: false,
-          message: `The amount is greater than the asset's balance: ${selectedAssetMaxAmount} ${selectedAsset?.symbol}.`
+          message: `The amount is greater than the asset's balance: ${formatUnits(
+            getTokenAmount(selectedAsset),
+            Number(selectedAsset.decimals)
+          )} ${selectedAsset?.symbol}.`
         }
       }
     }
