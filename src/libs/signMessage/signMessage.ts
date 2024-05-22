@@ -327,9 +327,9 @@ export async function getEIP712Signature(
   }
 
   if (!accountState.isV2) {
-    const asJson = JSON.stringify(message).toLowerCase()
+    const asString = JSON.stringify(message).toLowerCase()
     if (
-      asJson.indexOf(account.addr.toLowerCase()) !== -1 ||
+      asString.indexOf(account.addr.toLowerCase()) !== -1 ||
       (message.domain.name === 'Permit2' &&
         message.domain.verifyingContract &&
         getAddress(message.domain.verifyingContract) === PERMIT_2_ADDRESS)
