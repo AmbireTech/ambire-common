@@ -32,6 +32,18 @@ export type UserRequestAction = {
 
 export type Action = AccountOpAction | SignMessageAction | BenzinAction | UserRequestAction
 
+/**
+ * The ActionsController is responsible for storing the converted userRequests
+ * from the MainController into actions. After adding an action an action-window will be opened with the first action form actionsQueue
+ * For most userRequests, there is a corresponding action in the actionsQueue
+ * containing the details of the userRequest needed for displaying it to the user.
+ * However, some userRequests can be batched together, resulting in a single action created for multiple requests.
+ *
+ * After being opened, the action-window will remain visible to the user until all actions are resolved or rejected,
+ * or until the user forcefully closes the window using the system close icon (X).
+ * All pending/unresolved actions that do not have banners will be prompted to the user first time they click on the Ambire extension icon
+ * аnd these actions with banners can remain pending until the user decides to reject or open them.
+ */
 export class ActionsController extends EventEmitter {
   #windowManager: WindowManager
 
