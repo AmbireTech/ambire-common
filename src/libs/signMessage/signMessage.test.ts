@@ -231,7 +231,13 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
       hashMessage('test')
     )
     const provider = getRpcProvider(ethereumNetwork.rpcUrls, ethereumNetwork.chainId)
-    const eip712Sig = await getEIP712Signature(typedDataTest, eoaAccount, accountState, signer)
+    const eip712Sig = await getEIP712Signature(
+      typedDataTest,
+      eoaAccount,
+      accountState,
+      signer,
+      ethereumNetwork
+    )
     const res = await verifyMessage({
       provider,
       signer: eoaSigner.keyPublicAddress,
@@ -245,7 +251,13 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
       accountState.accountAddr,
       hashMessage('12')
     )
-    const eip712SigNum = await getEIP712Signature(typedDataNumber, eoaAccount, accountState, signer)
+    const eip712SigNum = await getEIP712Signature(
+      typedDataNumber,
+      eoaAccount,
+      accountState,
+      signer,
+      ethereumNetwork
+    )
 
     const secondRes = await verifyMessage({
       provider,
@@ -265,7 +277,13 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
       accountState.accountAddr,
       hashMessage('test')
     )
-    const eip712Sig = await getEIP712Signature(typedData, smartAccount, accountState, signer)
+    const eip712Sig = await getEIP712Signature(
+      typedData,
+      smartAccount,
+      accountState,
+      signer,
+      polygonNetwork
+    )
     // the key should be dedicatedToOneSA, so we expect the signature to end in 00
     expect(eip712Sig.slice(-2)).toEqual('00')
 
@@ -295,7 +313,13 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
       accountState.accountAddr,
       hashMessage('test')
     )
-    const eip712Sig = await getEIP712Signature(typedData, v1Account, accountState, signer)
+    const eip712Sig = await getEIP712Signature(
+      typedData,
+      v1Account,
+      accountState,
+      signer,
+      ethereumNetwork
+    )
     // the key is for a v1 acc so it should be 00
     expect(eip712Sig.slice(-2)).toEqual('00')
 
@@ -315,7 +339,14 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
 
     const typedData = getTypedData(ethereumNetwork.chainId, PERMIT_2_ADDRESS, hashMessage('test'))
     typedData.domain.name = 'Permit2'
-    const eip712Sig = await getEIP712Signature(typedData, v1Account, accountState, signer)
+    typedData.message.spender = '0x3fC91A3afd70395Cd496C647d5a6CC9D4B2b7FAD'
+    const eip712Sig = await getEIP712Signature(
+      typedData,
+      v1Account,
+      accountState,
+      signer,
+      ethereumNetwork
+    )
     // the key is for a v1 acc so it should be 00
     expect(eip712Sig.slice(-2)).toEqual('00')
 
@@ -339,7 +370,7 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
       hashMessage('test')
     )
     try {
-      await getEIP712Signature(typedData, v1Account, accountState, signer)
+      await getEIP712Signature(typedData, v1Account, accountState, signer, polygonNetwork)
       console.log('No error was thrown for [V1 SA]: eip-712, but it should have')
       expect(true).toEqual(false)
     } catch (e: any) {
@@ -396,7 +427,7 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: false', () => {
       hashMessage('test')
     )
     try {
-      await getEIP712Signature(typedData, smartAccount, accountState, signer)
+      await getEIP712Signature(typedData, smartAccount, accountState, signer, polygonNetwork)
       console.log('No error was thrown for [Not dedicated to one SA]: eip-712, but it should have')
       expect(true).toEqual(false)
     } catch (e: any) {

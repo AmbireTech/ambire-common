@@ -16,7 +16,7 @@ import {
 } from 'ethers'
 
 import UniversalSigValidator from '../../../contracts/compiled/UniversalSigValidator.json'
-import { PERMIT_2_ADDRESS } from '../../consts/addresses'
+import { PERMIT_2_ADDRESS, UNISWAP_UNIVERSAL_ROUTERS } from '../../consts/addresses'
 import { Account, AccountCreation, AccountOnchainState } from '../../interfaces/account'
 import { KeystoreSigner } from '../../interfaces/keystore'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
@@ -308,7 +308,8 @@ export async function getEIP712Signature(
   message: TypedMessage,
   account: Account,
   accountState: AccountOnchainState,
-  signer: KeystoreSigner
+  signer: KeystoreSigner,
+  network: NetworkDescriptor
 ): Promise<string> {
   if (!message.types.EIP712Domain) {
     throw new Error(
@@ -332,7 +333,11 @@ export async function getEIP712Signature(
       asString.indexOf(account.addr.toLowerCase()) !== -1 ||
       (message.domain.name === 'Permit2' &&
         message.domain.verifyingContract &&
-        getAddress(message.domain.verifyingContract) === PERMIT_2_ADDRESS)
+        getAddress(message.domain.verifyingContract) === PERMIT_2_ADDRESS &&
+        message.message &&
+        message.message.spender &&
+        UNISWAP_UNIVERSAL_ROUTERS[Number(network.chainId)] &&
+        UNISWAP_UNIVERSAL_ROUTERS[Number(network.chainId)] === getAddress(message.message.spender))
     ) {
       return wrapUnprotected(await signer.signTypedData(message))
     }

@@ -206,7 +206,8 @@ export class SignMessageController extends EventEmitter {
             this.messageToSign.content,
             account,
             accountState,
-            this.#signer
+            this.#signer,
+            network
           )
         }
       } catch (error: any) {
