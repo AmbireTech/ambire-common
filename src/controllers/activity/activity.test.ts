@@ -5,6 +5,14 @@ import { AccountStates } from '../../interfaces/account'
 import { SettingsController } from '../settings/settings'
 import { ActivityController, SignedMessage, SubmittedAccountOp } from './activity'
 
+const INIT_PARAMS = {
+  selectedAccount: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
+  filters: {
+    account: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
+    network: 'ethereum'
+  }
+}
+
 describe('Activity Controller ', () => {
   const accounts = {
     '0xa07D75aacEFd11b425AF7181958F0F85c312f143': {
@@ -41,12 +49,7 @@ describe('Activity Controller ', () => {
       const settings = new SettingsController(storage)
       const controller = new ActivityController(storage, accounts, settings)
 
-      controller.init({
-        filters: {
-          account: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
-          network: 'ethereum'
-        }
-      })
+      controller.init(INIT_PARAMS)
 
       const accountOp = {
         accountAddr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
@@ -87,12 +90,7 @@ describe('Activity Controller ', () => {
       const settings = new SettingsController(storage)
       const controller = new ActivityController(storage, accounts, settings)
 
-      controller.init({
-        filters: {
-          account: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
-          network: 'ethereum'
-        }
-      })
+      controller.init(INIT_PARAMS)
 
       const accountsOps = [
         {
@@ -216,12 +214,7 @@ describe('Activity Controller ', () => {
       const settings = new SettingsController(storage)
       const controller = new ActivityController(storage, accounts, settings)
 
-      controller.init({
-        filters: {
-          account: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
-          network: 'ethereum'
-        }
-      })
+      controller.init(INIT_PARAMS)
 
       const accountOp = {
         accountAddr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
@@ -260,12 +253,7 @@ describe('Activity Controller ', () => {
       const settings = new SettingsController(storage)
       const controller = new ActivityController(storage, accounts, settings)
 
-      controller.init({
-        filters: {
-          account: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
-          network: 'ethereum'
-        }
-      })
+      controller.init(INIT_PARAMS)
 
       const accountOp = {
         accountAddr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
@@ -305,6 +293,7 @@ describe('Activity Controller ', () => {
       const controller = new ActivityController(storage, accounts, settings)
 
       controller.init({
+        selectedAccount: '0xa07D75aacEFd11b425AF7181958F0F85c312f143',
         filters: {
           account: '0xa07D75aacEFd11b425AF7181958F0F85c312f143',
           network: 'ethereum'
@@ -348,12 +337,7 @@ describe('Activity Controller ', () => {
       const settings = new SettingsController(storage)
       const controller = new ActivityController(storage, accounts, settings)
 
-      controller.init({
-        filters: {
-          account: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
-          network: 'ethereum'
-        }
-      })
+      controller.init(INIT_PARAMS)
 
       const accountOp = {
         accountAddr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
@@ -401,12 +385,7 @@ describe('Activity Controller ', () => {
       const settings = new SettingsController(storage)
       const controller = new ActivityController(storage, accounts, settings)
 
-      controller.init({
-        filters: {
-          account: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
-          network: 'ethereum'
-        }
-      })
+      controller.init(INIT_PARAMS)
 
       const signedMessage: SignedMessage = {
         id: 1,
@@ -445,12 +424,7 @@ describe('Activity Controller ', () => {
       const settings = new SettingsController(storage)
       const controller = new ActivityController(storage, accounts, settings)
 
-      controller.init({
-        filters: {
-          account: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
-          network: 'ethereum'
-        }
-      })
+      controller.init(INIT_PARAMS)
 
       const signedMessage: SignedMessage = {
         id: 1,
@@ -495,12 +469,7 @@ describe('Activity Controller ', () => {
       const settings = new SettingsController(storage)
       const controller = new ActivityController(storage, accounts, settings)
 
-      controller.init({
-        filters: {
-          account: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
-          network: 'ethereum'
-        }
-      })
+      controller.init(INIT_PARAMS)
 
       const signedMessage: SignedMessage = {
         id: 1,
