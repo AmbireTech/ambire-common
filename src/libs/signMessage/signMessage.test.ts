@@ -4,6 +4,7 @@ import { beforeAll, describe, expect, test } from '@jest/globals'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import { produceMemoryStore } from '../../../test/helpers'
+import { PERMIT_2_ADDRESS } from '../../consts/addresses'
 import { networks } from '../../consts/networks'
 import { KeystoreController } from '../../controllers/keystore/keystore'
 import { Account, AccountStates } from '../../interfaces/account'
@@ -174,7 +175,31 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
     const isValidSig = await contract.isValidSignature(hashMessage('test'), signatureForPlainText)
     expect(isValidSig).toBe(contractSuccess)
   })
-  test('Signing [V1 SA]: plain text, should throw an error', async () => {
+  test('Signing [V1 SA]: plain text, should allow as it contains the address in the message', async () => {
+    const accountStates = await getAccountsInfo([v1Account])
+    const signer = await keystore.getSigner(v1siger.keyPublicAddress, 'internal')
+
+    const msg = `test for ${v1Account.addr}`
+    const signatureForPlainText = await getPlainTextSignature(
+      msg,
+      polygonNetwork,
+      v1Account,
+      accountStates[v1Account.addr][polygonNetwork.id],
+      signer
+    )
+    // the key should be 00 because it's a v1 account
+    expect(signatureForPlainText.slice(-2)).toEqual('00')
+
+    const provider = getRpcProvider(polygonNetwork.rpcUrls, polygonNetwork.chainId)
+    const res = await verifyMessage({
+      provider,
+      signer: v1Account.addr,
+      signature: signatureForPlainText,
+      message: msg
+    })
+    expect(res).toBe(true)
+  })
+  test('Signing [V1 SA]: plain text, should throw an error as it does NOT contain the address in the message', async () => {
     const accountStates = await getAccountsInfo([v1Account])
     const signer = await keystore.getSigner(v1siger.keyPublicAddress, 'internal')
 
@@ -194,32 +219,6 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
       )
     }
   })
-
-  // NOTE: do not delete the test below
-  // if we enable v1 plain text signing in the extension, the below
-  // test showcases how it should work.
-
-  // test('Signing [V1 SA]: plain text', async () => {
-  //   const accountStates = await getAccountsInfo([v1Account])
-  //   const signer = await keystore.getSigner(v1siger.keyPublicAddress, 'internal')
-
-  //   const signatureForPlainText = await getPlainTextSignature(
-  //     'test',
-  //     ethereumNetwork,
-  //     v1Account,
-  //     accountStates[v1Account.addr][ethereumNetwork.id],
-  //     signer
-  //   )
-  //   expect(signatureForPlainText.slice(-2)).toEqual('00')
-
-  //   const unwrappedSig = signatureForPlainText.slice(0, -2)
-  //   expect(verifyMessage('test', unwrappedSig)).toBe(v1siger.keyPublicAddress)
-
-  //   const provider = getRpcProvider(polygonNetwork.rpcUrls, polygonNetwork.chainId)
-  //   const contract = new Contract(v1Account.addr, AmbireAccount.abi, provider)
-  //   const isValidSig = await contract.isValidSignature(hashMessage('test'), signatureForPlainText)
-  //   expect(isValidSig).toBe(contractSuccess)
-  // })
 
   test('Signing [EOA]: eip-712', async () => {
     const accountStates = await getAccountsInfo([eoaAccount])
@@ -286,7 +285,7 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
     )
     expect(isValidSig).toBe(contractSuccess)
   })
-  test('Signing [V1 SA]: eip-712, should throw an error', async () => {
+  test('Signing [V1 SA]: eip-712, should pass as the smart account address is in the typed data', async () => {
     const accountStates = await getAccountsInfo([v1Account])
     const accountState = accountStates[v1Account.addr][ethereumNetwork.id]
     const signer = await keystore.getSigner(v1siger.keyPublicAddress, 'internal')
@@ -296,13 +295,56 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
       accountState.accountAddr,
       hashMessage('test')
     )
+    const eip712Sig = await getEIP712Signature(typedData, v1Account, accountState, signer)
+    // the key is for a v1 acc so it should be 00
+    expect(eip712Sig.slice(-2)).toEqual('00')
+
+    const provider = getRpcProvider(polygonNetwork.rpcUrls, polygonNetwork.chainId)
+    const res = await verifyMessage({
+      provider,
+      signer: v1Account.addr,
+      signature: eip712Sig,
+      typedData
+    })
+    expect(res).toBe(true)
+  })
+  test("Signing [V1 SA]: eip-712, should pass as the verifying contract is Uniswap's permit contract", async () => {
+    const accountStates = await getAccountsInfo([v1Account])
+    const accountState = accountStates[v1Account.addr][ethereumNetwork.id]
+    const signer = await keystore.getSigner(v1siger.keyPublicAddress, 'internal')
+
+    const typedData = getTypedData(ethereumNetwork.chainId, PERMIT_2_ADDRESS, hashMessage('test'))
+    typedData.domain.name = 'Permit2'
+    const eip712Sig = await getEIP712Signature(typedData, v1Account, accountState, signer)
+    // the key is for a v1 acc so it should be 00
+    expect(eip712Sig.slice(-2)).toEqual('00')
+
+    const provider = getRpcProvider(polygonNetwork.rpcUrls, polygonNetwork.chainId)
+    const res = await verifyMessage({
+      provider,
+      signer: v1Account.addr,
+      signature: eip712Sig,
+      typedData
+    })
+    expect(res).toBe(true)
+  })
+  test('Signing [V1 SA]: eip-712, should throw an error as the smart account address is NOT in the typed data', async () => {
+    const accountStates = await getAccountsInfo([v1Account])
+    const accountState = accountStates[v1Account.addr][ethereumNetwork.id]
+    const signer = await keystore.getSigner(v1siger.keyPublicAddress, 'internal')
+
+    const typedData = getTypedData(
+      ethereumNetwork.chainId,
+      v1siger.keyPublicAddress, // this is the difference
+      hashMessage('test')
+    )
     try {
       await getEIP712Signature(typedData, v1Account, accountState, signer)
       console.log('No error was thrown for [V1 SA]: eip-712, but it should have')
       expect(true).toEqual(false)
     } catch (e: any) {
       expect(e.message).toBe(
-        'Signing eip-712 messages is disallowed for v1 accounts. Please contact support to proceed'
+        'Signing this eip-712 message is disallowed for v1 accounts as it does not contain the smart account address and therefore deemed unsafe'
       )
     }
   })
