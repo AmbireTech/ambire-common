@@ -12,7 +12,6 @@ import { getRpcProvider } from '../../services/provider'
 import { getSmartAccount } from '../account/account'
 import { AccountOp } from '../accountOp/accountOp'
 import { bundlerEstimate } from './estimateBundler'
-import { localSigner } from './localSigner'
 
 const to = '0x06564FA10c67427a187f90703fD094054f8F0408'
 
@@ -59,7 +58,11 @@ describe('Bundler estimation tests', () => {
           // native passes even though native balance is below 10
           { to, value: parseEther('10'), data: '0x' }
         ],
-        accountOpToExecuteBefore: null
+        accountOpToExecuteBefore: null,
+        meta: {
+          entryPointAuthorization:
+            '0xd994364b5484bcc5ad9261399d7438fa8e59c1b9478bc02ac8f1fc43be523cc634bd165330c7e33b1e2898fed19e01087b9fe787557efb3f845adf2fa288069f1b01'
+        }
       }
       const usedNetworks = [optimism]
       const providers = {
@@ -84,14 +87,7 @@ describe('Bundler estimation tests', () => {
           }
         }
       ]
-      const result = await bundlerEstimate(
-        localSigner,
-        smartAcc,
-        accountStates,
-        opOptimism,
-        optimism,
-        feeTokens
-      )
+      const result = await bundlerEstimate(smartAcc, accountStates, opOptimism, optimism, feeTokens)
 
       expect(result).toHaveProperty('erc4337GasLimits')
       expect(BigInt(result.erc4337GasLimits!.callGasLimit)).toBeGreaterThan(0n)
@@ -143,7 +139,6 @@ describe('Bundler estimation tests', () => {
         }
       ]
       const result = await bundlerEstimate(
-        localSigner,
         smartAccDeployed,
         accountStates,
         opOptimism,

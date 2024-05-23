@@ -21,7 +21,6 @@ import { Call } from '../accountOp/types'
 import { getAccountState } from '../accountState/accountState'
 import { Portfolio } from '../portfolio/portfolio'
 import { estimate, estimate4337 } from './estimate'
-import { localSigner } from './localSigner'
 
 const ethereum = networks.find((x) => x.id === 'ethereum')!
 ethereum.areContractsDeployed = true
@@ -323,7 +322,6 @@ describe('estimate', () => {
 
     const accountStates = await getAccountsInfo([EOAAccount])
     const response = await estimate(
-      localSigner,
       provider,
       ethereum,
       EOAAccount,
@@ -374,7 +372,6 @@ describe('estimate', () => {
 
     const accountStates = await getAccountsInfo([EOAAccount])
     const response = await estimate(
-      localSigner,
       providerPolygon,
       polygon,
       EOAAccount,
@@ -427,7 +424,6 @@ describe('estimate', () => {
 
     const accountStates = await getAccountsInfo([EOAAccount])
     const response = await estimate(
-      localSigner,
       providerPolygon,
       polygon,
       EOAAccount,
@@ -478,7 +474,6 @@ describe('estimate', () => {
 
     const accountStates = await getAccountsInfo([EOAAccount])
     const response = await estimate(
-      localSigner,
       providerPolygon,
       polygon,
       EOAAccount,
@@ -517,7 +512,6 @@ describe('estimate', () => {
 
     const accountStates = await getAccountsInfo([v1Acc])
     const response = await estimate(
-      localSigner,
       provider,
       ethereum,
       v1Acc,
@@ -585,7 +579,6 @@ describe('estimate', () => {
 
     const accountStates = await getAccountsInfo([v1Acc])
     const response = await estimate(
-      localSigner,
       provider,
       ethereum,
       v1Acc,
@@ -619,7 +612,6 @@ describe('estimate', () => {
 
     const accountStates = await getAccountsInfo([viewOnlyAcc])
     const response = await estimate(
-      localSigner,
       provider,
       ethereum,
       viewOnlyAcc,
@@ -677,7 +669,6 @@ describe('estimate', () => {
 
     const accountStates = await getAccountsInfo([v1Acc])
     const response = await estimate(
-      localSigner,
       provider,
       ethereum,
       v1Acc,
@@ -688,7 +679,6 @@ describe('estimate', () => {
       feeTokens
     )
     const responseWithExecuteBefore = await estimate(
-      localSigner,
       provider,
       ethereum,
       v1Acc,
@@ -739,7 +729,6 @@ describe('estimate', () => {
 
     const accountStates = await getAccountsInfo([accountOptimism])
     const response = await estimate(
-      localSigner,
       providerOptimism,
       optimism,
       accountOptimism,
@@ -771,7 +760,6 @@ describe('estimate', () => {
 
     const accountStates = await getAccountsInfo([smartAccountv2eip712])
     const response = await estimate(
-      localSigner,
       providerArbitrum,
       arbitrum,
       smartAccountv2eip712,
@@ -785,7 +773,7 @@ describe('estimate', () => {
     response.feePaymentOptions.map((option) => expect(option.addedNative).toBeGreaterThan(0n))
   })
 
-  it('[ERC-4337]:Optimism | not deployed account | should work', async () => {
+  it('[ERC-4337]:Optimism | not deployed | should work', async () => {
     const privs = [
       {
         addr: addrWithDeploySignature,
@@ -803,11 +791,14 @@ describe('estimate', () => {
       nonce: 0n,
       signature: '0x',
       calls: [{ to: FEE_COLLECTOR, value: 1n, data: '0x' }],
-      accountOpToExecuteBefore: null
+      accountOpToExecuteBefore: null,
+      meta: {
+        entryPointAuthorization:
+          '0xd994364b5484bcc5ad9261399d7438fa8e59c1b9478bc02ac8f1fc43be523cc634bd165330c7e33b1e2898fed19e01087b9fe787557efb3f845adf2fa288069f1b01'
+      }
     }
     const accountStates = await getAccountsInfo([smartAcc])
     const response = await estimate(
-      localSigner,
       providerOptimism,
       optimism,
       smartAcc,
@@ -833,7 +824,7 @@ describe('estimate', () => {
     expect(response.feePaymentOptions![0].token).not.toBe(null)
   })
 
-  it('[ERC-4337]:Optimism | should fail with an inner call failure but otherwise estimation should work', async () => {
+  it('[ERC-4337]:Optimism | not deployed | should fail with an inner call failure but otherwise estimation should work', async () => {
     const privs = [
       {
         addr: addrWithDeploySignature,
@@ -851,11 +842,14 @@ describe('estimate', () => {
       nonce: 0n,
       signature: '0x',
       calls: [{ to: FEE_COLLECTOR, value: parseEther('1'), data: '0x' }],
-      accountOpToExecuteBefore: null
+      accountOpToExecuteBefore: null,
+      meta: {
+        entryPointAuthorization:
+          '0xd994364b5484bcc5ad9261399d7438fa8e59c1b9478bc02ac8f1fc43be523cc634bd165330c7e33b1e2898fed19e01087b9fe787557efb3f845adf2fa288069f1b01'
+      }
     }
     const accountStates = await getAccountsInfo([smartAcc])
     const response = await estimate(
-      localSigner,
       providerOptimism,
       optimism,
       smartAcc,
@@ -899,7 +893,7 @@ describe('estimate', () => {
     }
     const accountStates = await getAccountsInfo([smartAccDeployed])
     const response = await estimate(
-      localSigner, // it doesn't matter in this case
+      // it doesn't matter in this case
       providerOptimism,
       optimism,
       smartAccDeployed,
@@ -944,7 +938,6 @@ describe('estimate', () => {
     }
     const accountStates = await getAccountsInfo([trezorSlot6v2NotDeployed])
     const response = await estimate(
-      localSigner,
       providerArbitrum,
       clonedArb,
       trezorSlot6v2NotDeployed,
@@ -984,7 +977,6 @@ describe('estimate', () => {
     }
     const proxyProvider = new Proxy(brokenProvider, handler2)
     const response = await estimate4337(
-      localSigner,
       trezorSlot6v2NotDeployed,
       opArbitrum,
       opArbitrum.calls,
@@ -996,9 +988,7 @@ describe('estimate', () => {
     )
 
     expect(response.error).not.toBe(null)
-    expect(response.error?.message).toBe(
-      'Estimation failed with unknown reason. Please try again to initialize your request or contact Ambire support'
-    )
+    expect(response.error?.message).toBe('no sends')
 
     expect(response.feePaymentOptions.length).toBeGreaterThan(0)
 
@@ -1024,7 +1014,6 @@ describe('estimate', () => {
     const accountStates = await getAccountsInfo([smartAccountv2eip712])
 
     const response = await estimate(
-      localSigner,
       providerPolygon,
       polygon,
       smartAccountv2eip712,
@@ -1054,7 +1043,6 @@ describe('estimate', () => {
     const accountStates = await getAccountsInfo([smartAccountv2eip712])
 
     const response = await estimate(
-      localSigner,
       providerPolygon,
       polygon,
       { ...smartAccountv2eip712, associatedKeys: [trezorSlot6v2NotDeployed.associatedKeys[0]] },
@@ -1084,7 +1072,6 @@ describe('estimate', () => {
 
     const accountStates = await getAccountsInfo([v1Acc])
     const response = await estimate(
-      localSigner,
       provider,
       ethereum,
       v1Acc,
