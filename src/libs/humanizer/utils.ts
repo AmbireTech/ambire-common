@@ -170,12 +170,28 @@ export function getUnknownVisualization(name: string, call: IrCall): HumanizerVi
   return unknownVisualization
 }
 
-export function getWraping(address: string, amount: bigint): HumanizerVisualization[] {
-  return [getAction('Wrap'), getToken(address, amount)]
+export function getWraping(
+  address: string,
+  amount: bigint,
+  hiddenAsseAddress?: string
+): HumanizerVisualization[] {
+  return [
+    getAction('Wrap'),
+    getToken(address, amount),
+    hiddenAsseAddress && { ...getToken(hiddenAsseAddress, 0n), isHidden: true }
+  ].filter((x) => x) as HumanizerVisualization[]
 }
 
-export function getUnwraping(address: string, amount: bigint): HumanizerVisualization[] {
-  return [getAction('Unwrap'), getToken(address, amount)]
+export function getUnwraping(
+  address: string,
+  amount: bigint,
+  hiddenAsseAddress?: string
+): HumanizerVisualization[] {
+  return [
+    getAction('Unwrap'),
+    getToken(address, amount),
+    hiddenAsseAddress && { ...getToken(hiddenAsseAddress, 0n), isHidden: true }
+  ].filter((x) => x) as HumanizerVisualization[]
 }
 
 export function getKnownAbi(

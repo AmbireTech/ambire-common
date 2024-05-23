@@ -1,8 +1,7 @@
-import { JsonRpcProvider, ZeroAddress } from 'ethers'
+import { FetchRequest, JsonRpcProvider, ZeroAddress } from 'ethers'
 
 import AmbireAccountFactory from '../../../contracts/compiled/AmbireAccountFactory.json'
 import { AMBIRE_ACCOUNT_FACTORY, DEPLOYLESS_SIMULATION_FROM } from '../../consts/deploy'
-import { getRpcProvider } from '../../services/provider'
 import { getSmartAccount, getSpoof } from '../account/account'
 import { callToTuple } from '../accountOp/accountOp'
 import { getActivatorCall } from '../userOperation/userOperation'
@@ -65,13 +64,12 @@ export async function simulateDebugTraceCall(
 
   // eslint-disable-next-line no-underscore-dangle
   const url = provider._getConnection().url
-  // eslint-disable-next-line no-underscore-dangle
-  const chainId = provider._network ? provider._network.chainId : undefined
-  const noBatchingProvider = getRpcProvider([url], chainId, url, {
-    batchMaxCount: 1
-  })
 
-  await noBatchingProvider
+  const providerReq = new FetchRequest(url)
+  providerReq.setThrottleParams({ maxAttempts: 1 })
+  const noThrottleProvider = new JsonRpcProvider(providerReq)
+
+  await noThrottleProvider
     .send('debug_traceCall', [
       {
         to: '0x888888888889c00c67689029d7856aac1065ec11',
@@ -95,20 +93,9 @@ export async function simulateDebugTraceCall(
         throw new Error('no response')
       }
 
-      if (
-        e.message.includes('not whitelisted') ||
-        e.message.includes('not exist') ||
-        e.message.includes("doesn't exist") ||
-        e.message.includes('not available') ||
-        e.message.includes('400 Bad Request') ||
-        e.message.includes('Forbidden') ||
-        e.message.includes('disabled') ||
-        e.code === 'UNSUPPORTED_OPERATION'
-      ) {
-        supportsDebugTraceCall = false
-      }
+      supportsDebugTraceCall = false
     })
 
-  noBatchingProvider.destroy()
+  noThrottleProvider.destroy()
   return supportsDebugTraceCall
 }

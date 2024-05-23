@@ -1,6 +1,6 @@
 import { TypedMessage } from '../../../interfaces/userRequest'
 import { HumanizerTypedMessaageModule, HumanizerVisualization } from '../interfaces'
-import { getAction, getDeadline, getAddressVisualization, getLabel, getToken } from '../utils'
+import { getAction, getAddressVisualization, getDeadline, getLabel, getToken } from '../utils'
 
 export const erc20Module: HumanizerTypedMessaageModule = (tm: TypedMessage) => {
   if (tm.types.Permit && tm.primaryType === 'Permit') {
