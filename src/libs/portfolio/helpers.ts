@@ -112,9 +112,10 @@ export const getTotal = (t: TokenResult[]) =>
     if (token.isHidden) return localCur
     // eslint-disable-next-line no-restricted-syntax
     for (const x of token.priceIn) {
-      localCur[x.baseCurrency] =
-        (localCur[x.baseCurrency] || 0) +
-        (Number(getTokenAmount(token)) / 10 ** token.decimals) * x.price
+      const currentAmount = localCur[x.baseCurrency] || 0
+
+      const tokenAmount = Number(getTokenAmount(token)) / 10 ** token.decimals
+      localCur[x.baseCurrency] = currentAmount + tokenAmount * x.price
     }
 
     return localCur

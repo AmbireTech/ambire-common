@@ -111,7 +111,7 @@ export type PortfolioControllerState = {
 export interface AdditionalPortfolioGetResult {
   updateStarted: number
   tokens: TokenResult[]
-  total: { [name: string]: bigint }
+  total: { [name: string]: number }
 }
 
 export interface PortfolioGetResult {
@@ -123,7 +123,7 @@ export interface PortfolioGetResult {
   tokens: TokenResult[]
   tokenErrors: { error: string; address: string }[]
   collections: CollectionResult[]
-  total: { [name: string]: bigint }
+  total: { [name: string]: number }
   hints: Hints
   errors: ExtendedError[]
 }
