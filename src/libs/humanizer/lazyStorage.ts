@@ -1,7 +1,8 @@
 import { Storage } from '../../interfaces/storage'
 import { EMPTY_HUMANIZER_META, HUMANIZER_META_KEY, integrateFragments } from './utils'
+import humanizerInfo from '../../consts/humanizer/humanizerInfo.json'
 import { HumanizerFragment, HumanizerMeta } from './interfaces'
-// @TODO to more usable place
+
 const LAZY_STORE_DELAY = 1 * 1000
 const LAZY_READ_DELAY = 30 * 1000
 
@@ -14,7 +15,7 @@ export async function lazyReadHumanizerMeta(
   options?: { nocache?: boolean }
 ): Promise<HumanizerMeta> {
   if (Date.now() - lastTimeRead > LAZY_READ_DELAY || options?.nocache) {
-    memoryHumanizerMeta = await storage.get(HUMANIZER_META_KEY, EMPTY_HUMANIZER_META)
+    memoryHumanizerMeta = await storage.get(HUMANIZER_META_KEY, humanizerInfo)
     lastTimeRead = Date.now()
   }
   return memoryHumanizerMeta

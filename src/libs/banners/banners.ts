@@ -1,168 +1,114 @@
-// eslint-disable-next-line import/no-cycle
 import { PortfolioController } from '../../controllers/portfolio/portfolio'
 import { Account, AccountId } from '../../interfaces/account'
 import { Banner } from '../../interfaces/banner'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { RPCProviders } from '../../interfaces/settings'
 import { UserRequest } from '../../interfaces/userRequest'
+// eslint-disable-next-line import/no-cycle
+import { AccountOp } from '../accountOp/accountOp'
+import { EstimateResult } from '../estimate/interfaces'
 import { PORTFOLIO_LIB_ERROR_NAMES } from '../portfolio/portfolio'
 import { getNetworksWithFailedRPC } from '../settings/settings'
 
-export const getMessageBanners = ({ userRequests }: { userRequests: UserRequest[] }) => {
-  const txnBanners: Banner[] = []
-
-  if (!userRequests) return txnBanners
-
-  userRequests.forEach((req: UserRequest) => {
-    if (req.action.kind === 'message' || req.action.kind === 'typedMessage') {
-      txnBanners.push({
-        id: req.id,
-        type: 'info',
-        title: 'Message waiting to be signed',
-        text: `Message type: ${req.action.kind === 'message' ? 'personal_sign' : 'typed_data'}`, // TODO:
-        actions: [
-          {
-            label: 'Reject',
-            actionName: 'reject',
-            meta: { ids: [req.id], err: 'User rejected the transaction request' }
-          },
-          {
-            label: 'Open',
-            actionName: 'open',
-            meta: { ids: [req.id] }
-          }
-        ]
-      })
-    }
-  })
-
-  return txnBanners
-}
-
-export const getAccountOpBannersForEOA = ({
+export const getAccountOpBanners = ({
+  accountOpsToBeSignedByNetwork,
+  selectedAccount,
   userRequests,
   accounts,
   networks
 }: {
+  accountOpsToBeSignedByNetwork: {
+    [key: string]: { accountOp: AccountOp; estimation: EstimateResult | null } | null
+  }
+  selectedAccount: string
   userRequests: UserRequest[]
   accounts: Account[]
   networks: NetworkDescriptor[]
 }): Banner[] => {
-  if (!userRequests) return []
-
-  const activeUserRequest = userRequests.find((req: UserRequest) => {
-    const account = accounts.find((acc) => acc.addr === req.accountAddr) || ({} as Account)
-    return req.action.kind === 'call' && !account?.creation
-  })
-
-  if (!activeUserRequest) return []
-
-  const networkName = networks.filter((n) => n.id === activeUserRequest.networkId)[0].name
-
-  return [
-    {
-      id: activeUserRequest.id,
-      type: 'info',
-      title: `Transaction waiting to be signed ${networkName ? `on ${networkName}` : ''}`,
-      text: '', // TODO:
-      actions: [
-        {
-          label: 'Reject',
-          actionName: 'reject',
-          meta: { ids: [activeUserRequest.id], err: 'User rejected the transaction request' }
-        },
-        {
-          label: 'Open',
-          actionName: 'open',
-          meta: { ids: [activeUserRequest.id] }
-        }
-      ]
-    } as Banner
-  ]
-}
-
-export const getPendingAccountOpBannersForEOA = ({
-  userRequests,
-  accounts
-}: {
-  userRequests: UserRequest[]
-  accounts: Account[]
-}): Banner[] => {
-  if (!userRequests) return []
-
-  const pendingUserRequests: UserRequest[] = userRequests.filter((req: UserRequest) => {
-    const account = accounts.find((acc) => acc.addr === req.accountAddr) || ({} as Account)
-    return req.action.kind === 'call' && !account?.creation
-  })
-
-  const numberOfPendingRequest = pendingUserRequests.length - 1
-  if (numberOfPendingRequest <= 0) return []
-
-  return [
-    {
-      id: pendingUserRequests[1].id,
-      type: 'info',
-      title: `${numberOfPendingRequest} More pending transactions are waiting to be signed`,
-      text: '' // TODO:
-    } as Banner
-  ]
-}
-
-export const getAccountOpBannersForSmartAccount = ({
-  userRequests,
-  accounts,
-  networks
-}: {
-  userRequests: UserRequest[]
-  accounts: Account[]
-  networks: NetworkDescriptor[]
-}) => {
+  if (!userRequests.length || !accountOpsToBeSignedByNetwork) return []
   const txnBanners: Banner[] = []
 
-  if (!userRequests) return txnBanners
+  const account = accounts.find((acc) => acc.addr === selectedAccount)
 
-  const groupedRequests = userRequests.reduce((acc: any, userRequest: UserRequest) => {
-    const key = `${userRequest.accountAddr}-${userRequest.networkId}`
+  if (account?.creation) {
+    Object.entries(accountOpsToBeSignedByNetwork).forEach(([netId, accOp]) => {
+      if (accOp?.accountOp) {
+        const network = networks.filter((n) => n.id === netId)[0]
 
-    if (!acc[key]) {
-      acc[key] = []
-    }
-    const account = accounts.find((a) => a.addr === userRequest.accountAddr) || ({} as Account)
-    if (userRequest.action.kind === 'call' && account.creation) {
-      acc[key].push(userRequest)
-    }
-
-    return acc
-  }, {})
-
-  const groupedRequestsArray: UserRequest[][] = (
-    (Object.values(groupedRequests || {}) || []) as UserRequest[][]
-  ).filter((group: any) => group.length)
-
-  groupedRequestsArray.forEach((group) => {
-    const networkName = networks.filter((n) => n.id === group[0].networkId)[0].name
-
-    txnBanners.push({
-      id: group[0].id,
-      type: 'info',
-      title: `${group.length} ${
-        group.length === 1 ? 'Transaction' : 'Transactions'
-      } waiting to be signed ${networkName ? `on ${networkName}` : ''}`,
-      text: '', // TODO:
-      actions: [
-        {
-          label: 'Reject',
-          actionName: 'reject',
-          meta: { ids: group.map((g) => g.id), err: 'User rejected the transaction request' }
-        },
-        {
-          label: 'Open',
-          actionName: 'open',
-          meta: { ids: [group[0].id] }
-        }
-      ]
+        txnBanners.push({
+          id: `${selectedAccount}-${netId}`,
+          type: 'info',
+          title: `Transaction waiting to be signed ${network.name ? `on ${network.name}` : ''}`,
+          text: '', // TODO:
+          actions: [
+            {
+              label: 'Reject',
+              actionName: 'reject-accountOp',
+              meta: {
+                err: 'User rejected the transaction request',
+                accountAddr: accOp.accountOp.accountAddr,
+                networkId: accOp.accountOp.networkId
+              }
+            },
+            {
+              label: 'Open',
+              actionName: 'open-accountOp',
+              meta: {
+                id: `${selectedAccount}-${netId}`,
+                type: 'accountOp',
+                accountOp: accOp.accountOp,
+                withBatching: true
+              }
+            }
+          ]
+        })
+      }
     })
-  })
+  } else {
+    Object.entries(accountOpsToBeSignedByNetwork).forEach(([netId, accOp]) => {
+      if (accOp?.accountOp) {
+        const network = networks.filter((n) => n.id === netId)[0]
+
+        txnBanners.push({
+          id: `${selectedAccount}-${netId}`,
+          type: 'info',
+          title: `Transaction waiting to be signed ${network.name ? `on ${network.name}` : ''}`,
+          text: '', // TODO:
+          actions: [
+            {
+              label: 'Reject',
+              actionName: 'reject-accountOp',
+              meta: {
+                err: 'User rejected the transaction request',
+                accountAddr: accOp.accountOp.accountAddr,
+                networkId: accOp.accountOp.networkId
+              }
+            },
+            {
+              label: 'Open',
+              actionName: 'open-accountOp',
+              meta: {
+                id: accOp.accountOp.calls[0].fromUserRequestId!,
+                type: 'accountOp',
+                accountOp: accOp.accountOp,
+                withBatching: false
+              }
+            }
+          ]
+        })
+      }
+    })
+    if (userRequests.length - txnBanners.length > 0) {
+      txnBanners.push({
+        id: new Date().getTime(),
+        type: 'info',
+        title: `${
+          userRequests.length - txnBanners.length
+        } More pending transactions are waiting to be signed`,
+        text: '' // TODO:
+      } as Banner)
+    }
+  }
 
   return txnBanners
 }

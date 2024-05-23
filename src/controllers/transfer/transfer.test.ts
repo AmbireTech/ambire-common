@@ -181,7 +181,7 @@ describe('Transfer Controller', () => {
   test('should build user request with non-native token transfer', async () => {
     await transferController.buildUserRequest()
 
-    expect(transferController.userRequest?.accountAddr).toBe(PLACEHOLDER_SELECTED_ACCOUNT)
+    expect(transferController.userRequest?.meta?.accountAddr).toBe(PLACEHOLDER_SELECTED_ACCOUNT)
     expect(transferController.userRequest?.action.kind).toBe('call')
 
     // Fixes TS errors
@@ -207,7 +207,7 @@ describe('Transfer Controller', () => {
     })
     await transferController.buildUserRequest()
 
-    expect(transferController.userRequest?.accountAddr).toBe(PLACEHOLDER_SELECTED_ACCOUNT)
+    expect(transferController.userRequest?.meta?.accountAddr).toBe(PLACEHOLDER_SELECTED_ACCOUNT)
     expect(transferController.userRequest?.action.kind).toBe('call')
 
     // Fixes TS errors
