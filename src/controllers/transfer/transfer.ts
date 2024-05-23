@@ -279,9 +279,12 @@ export class TransferController extends EventEmitter {
     const recipientAddress = this.isTopUp
       ? FEE_COLLECTOR.toLowerCase()
       : this.recipientAddress.toLowerCase()
+    const sanitizedAmount = this.amount.split('.')
+    if (sanitizedAmount[1])
+      sanitizedAmount[1] = sanitizedAmount[1].slice(0, this.selectedToken.decimals)
 
     const bigNumberHexAmount = `0x${parseUnits(
-      parseFloat(this.amount).toFixed(this.selectedToken.decimals).toString(),
+      sanitizedAmount.join('.'),
       Number(this.selectedToken.decimals)
     ).toString(16)}`
 
