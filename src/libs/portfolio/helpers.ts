@@ -137,10 +137,13 @@ export function getUpdatedHints(
     // eslint-disable-next-line no-restricted-syntax
     for (const address of erc20s) {
       const isPinned = PINNED_TOKENS.some(
-        (pinned) => pinned.address === address && pinned.networkId === networkId
+        (pinned) =>
+          pinned.address.toLowerCase() === address.toLowerCase() && pinned.networkId === networkId
       )
       const isTokenPreference = tokenPreferences.some(
-        (preference) => preference.address === address && preference.networkId === networkId
+        (preference) =>
+          preference.address.toLowerCase() === address.toLowerCase() &&
+          preference.networkId === networkId
       )
 
       if (!previousHintsFromExternalAPI.includes(address) && !isPinned && !isTokenPreference) {

@@ -658,7 +658,7 @@ export class PortfolioController extends EventEmitter {
     const storagePreviousHints = this.#previousHints
     storagePreviousHints.learnedTokens = {}
     const learnedTokens = storagePreviousHints.learnedTokens || {}
-    let networkLearnedTokens: { [key: string]: any } = learnedTokens[networkId] || {}
+    let networkLearnedTokens: { [key: string]: string | null } = learnedTokens[networkId] || {}
 
     const tokensToLearn = tokenAddresses
       .filter((address) => address !== ZeroAddress && !(address in networkLearnedTokens))
@@ -667,7 +667,7 @@ export class PortfolioController extends EventEmitter {
         return acc
       }, {})
 
-    if (!tokensToLearn) return
+    if (!tokensToLearn.length) return
     // Add new tokens in the beginning of the list
     networkLearnedTokens = { ...tokensToLearn, ...networkLearnedTokens }
 
