@@ -110,16 +110,8 @@ export type PortfolioControllerState = {
 
 export interface AdditionalPortfolioGetResult {
   updateStarted: number
-  discoveryTime?: number
-  oracleCallTime?: number
-  priceUpdateTime?: number
-  priceCache?: PriceCache
   tokens: TokenResult[]
-  tokenErrors?: { error: string; address: string }[]
-  collections?: CollectionResult[]
-  total: { [name: string]: bigint }
-  hints?: Hints
-  hintsError?: string
+  total: { [name: string]: number }
 }
 
 export interface PortfolioGetResult {
@@ -131,7 +123,7 @@ export interface PortfolioGetResult {
   tokens: TokenResult[]
   tokenErrors: { error: string; address: string }[]
   collections: CollectionResult[]
-  total: { [name: string]: bigint }
+  total: { [name: string]: number }
   hints: Hints
   errors: ExtendedError[]
 }
