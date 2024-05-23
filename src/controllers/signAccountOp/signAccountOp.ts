@@ -20,7 +20,6 @@ import { getExecuteSignature, getTypedData, wrapStandard } from '../../libs/sign
 import { getGasUsed } from '../../libs/singleton/singleton'
 import {
   getActivatorCall,
-  getDummyEntryPointSig,
   getOneTimeNonce,
   getUserOperation,
   getUserOpHash,
@@ -866,13 +865,18 @@ export class SignAccountOpController extends EventEmitter {
           signer
         )
       } else if (this.accountOp.gasFeePayment.isERC4337) {
+        // if there's no entryPointAuthorization, the txn will fail
+        if (
+          !accountState.isDeployed &&
+          (!this.accountOp.meta || !this.accountOp.meta.entryPointAuthorization)
+        )
+          return this.#setSigningError('Entry point privileges not granted. Please contact support')
+
         const userOperation = getUserOperation(
           this.account,
           accountState,
           this.accountOp,
-          !accountState.isDeployed
-            ? await getDummyEntryPointSig(this.accountOp.accountAddr, this.#network.chainId, signer)
-            : undefined
+          !accountState.isDeployed ? this.accountOp.meta!.entryPointAuthorization : undefined
         )
         userOperation.preVerificationGas = this.#estimation!.erc4337GasLimits!.preVerificationGas
         userOperation.callGasLimit = this.#estimation!.erc4337GasLimits!.callGasLimit

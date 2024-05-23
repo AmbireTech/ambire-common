@@ -49,8 +49,11 @@ import { GetOptions } from '../../libs/portfolio/interfaces'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { parse } from '../../libs/richJson/richJson'
 import {
+  adjustEntryPointAuthorization,
+  getEntryPointAuthorization
+} from '../../libs/signMessage/signMessage'
+import {
   ENTRY_POINT_AUTHORIZATION_REQUEST_ID,
-  getEntryPointAuthorization,
   isErc4337Broadcast,
   shouldAskForEntryPointAuthorization
 } from '../../libs/userOperation/userOperation'
@@ -164,8 +167,6 @@ export class MainController extends EventEmitter {
 
   statuses: Statuses<keyof typeof STATUS_WRAPPED_METHODS> = STATUS_WRAPPED_METHODS
 
-  #relayerUrl: string
-
   #windowManager: WindowManager
 
   #getDapp: (url: string) => Dapp | undefined
@@ -198,7 +199,6 @@ export class MainController extends EventEmitter {
     super()
     this.#storage = storage
     this.#fetch = fetch
-    this.#relayerUrl = relayerUrl
     this.#windowManager = windowManager
     this.#getDapp = getDapp
 
@@ -1261,12 +1261,6 @@ export class MainController extends EventEmitter {
       const stringAddr: any = result.length ? result.flat(Infinity) : []
       additionalHints!.push(...stringAddr)
 
-      // TODO<Bobby>: delete this
-      const key = this.keystore.keys.find(
-        (k) => getAddress(k.addr) === getAddress(account.associatedKeys[0])
-      )!
-      const signer = await this.keystore.getSigner(key.addr, key.type)
-
       const [, estimation] = await Promise.all([
         // NOTE: we are not emitting an update here because the portfolio controller will do that
         // NOTE: the portfolio controller has it's own logic of constructing/caching providers, this is intentional, as
@@ -1288,7 +1282,6 @@ export class MainController extends EventEmitter {
           }
         ),
         estimate(
-          signer,
           this.settings.providers[localAccountOp.networkId],
           network,
           account,
@@ -1662,6 +1655,11 @@ export class MainController extends EventEmitter {
       const accountOp =
         this.accountOpsToBeSigned[signedMessage.accountAddr][signedMessage.networkId]?.accountOp
       if (accountOp) {
+        // edit by reference
+        if (!accountOp.meta) accountOp.meta = {}
+        accountOp.meta.entryPointAuthorization = adjustEntryPointAuthorization(
+          signedMessage.signature as string
+        )
         this.actions.addToActionsQueue(
           {
             id: `${accountOp.accountAddr}-${accountOp.networkId}`,

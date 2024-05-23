@@ -3,14 +3,12 @@ import { Interface, toBeHex, ZeroAddress } from 'ethers'
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import { AMBIRE_PAYMASTER } from '../../consts/deploy'
 import { Account, AccountStates } from '../../interfaces/account'
-import { KeystoreSigner } from '../../interfaces/keystore'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { Bundler } from '../../services/bundlers/bundler'
 import { AccountOp, getSignableCalls } from '../accountOp/accountOp'
 import { getFeeCall } from '../calls/calls'
 import { TokenResult } from '../portfolio'
 import {
-  getDummyEntryPointSig,
   getPaymasterDataForEstimate,
   getSigForCalculations,
   getUserOperation,
@@ -52,7 +50,6 @@ function mapError(e: Error) {
 }
 
 export async function bundlerEstimate(
-  signer: KeystoreSigner,
   account: Account,
   accountStates: AccountStates,
   op: AccountOp,
@@ -63,20 +60,26 @@ export async function bundlerEstimate(
   // in an upper level using the balances from Estimation.sol.
   // balances from Estimation.sol reflect the balances after pending txn exec
   const feePaymentOptions: FeePaymentOption[] = []
+
   const localOp = { ...op }
+  const accountState = accountStates[localOp.accountAddr][localOp.networkId]
+  // if there's no entryPointAuthorization, we cannot do the estimation on deploy
+  if (!accountState.isDeployed && (!op.meta || !op.meta.entryPointAuthorization))
+    return estimationErrorFormatted(
+      new Error('Entry point privileges not granted. Please contact support'),
+      { feePaymentOptions }
+    )
+
   const usesPaymaster = shouldUsePaymaster(network)
   if (usesPaymaster) {
     const feeToken = getFeeTokenForEstimate(feeTokens)
     if (feeToken) localOp.feeCall = getFeeCall(feeToken, 1n)
   }
-  const accountState = accountStates[localOp.accountAddr][localOp.networkId]
   const userOp = getUserOperation(
     account,
     accountState,
     localOp,
-    !accountState.isDeployed
-      ? await getDummyEntryPointSig(account.addr, network.chainId, signer)
-      : undefined
+    !accountState.isDeployed ? op.meta!.entryPointAuthorization : undefined
   )
   const gasPrices = await Bundler.fetchGasPrices(network).catch(
     () => new Error('Could not fetch gas prices, retrying...')

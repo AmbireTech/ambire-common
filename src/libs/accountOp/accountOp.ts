@@ -73,6 +73,11 @@ export interface AccountOp {
   status?: AccountOpStatus
   // in the case of ERC-4337, we need an UserOperation structure for the AccountOp
   asUserOperation?: UserOperation
+  // all kinds of custom accountOp properties that are needed in specific cases
+  meta?: {
+    // pass the entry point authorization signature for the deploy 4337 txn
+    entryPointAuthorization?: string
+  }
 }
 
 export function callToTuple(call: Call): [string, string, string] {

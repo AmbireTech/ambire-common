@@ -1,5 +1,4 @@
 import { AbiCoder, concat, hexlify, Interface, keccak256, toBeHex } from 'ethers'
-import { KeystoreSigner } from 'interfaces/keystore'
 import { NetworkDescriptor } from 'interfaces/networkDescriptor'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
@@ -12,8 +11,7 @@ import {
 } from '../../consts/deploy'
 import { SPOOF_SIGTYPE } from '../../consts/signatures'
 import { Account, AccountId, AccountOnchainState } from '../../interfaces/account'
-import { AccountOp, callToTuple, getSignableHash } from '../accountOp/accountOp'
-import { getTypedData, wrapStandard } from '../signMessage/signMessage'
+import { AccountOp, callToTuple } from '../accountOp/accountOp'
 import { UserOperation } from './types'
 
 export function calculateCallDataCost(callData: string): bigint {
@@ -207,28 +205,6 @@ export function shouldAskForEntryPointAuthorization(
 }
 
 export const ENTRY_POINT_AUTHORIZATION_REQUEST_ID = 'ENTRY_POINT_AUTHORIZATION_REQUEST_ID'
-
-export async function getEntryPointAuthorization(addr: AccountId, chainId: bigint, nonce: bigint) {
-  const hash = getSignableHash(addr, chainId, nonce, [getActivatorCall(addr)])
-  return getTypedData(chainId, addr, hexlify(hash))
-}
-
-export async function getDummyEntryPointSig(
-  addr: AccountId,
-  chainId: bigint,
-  signer: KeystoreSigner
-) {
-  const txns = [callToTuple(getActivatorCall(addr))]
-  const abiCoder = new AbiCoder()
-  const executeHash = keccak256(
-    abiCoder.encode(
-      ['address', 'uint', 'uint', 'tuple(address, uint, bytes)[]'],
-      [addr, chainId, 0n, txns]
-    )
-  )
-  const typedData = getTypedData(chainId, addr, executeHash)
-  return wrapStandard(await signer.signTypedData(typedData))
-}
 
 export function getUserOpHash(userOp: UserOperation, chainId: bigint) {
   const abiCoder = new AbiCoder()
