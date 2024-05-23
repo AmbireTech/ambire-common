@@ -50,7 +50,7 @@ interface ERC721Innumerable {
   tokens: string[]
 }
 
-interface ERC721s {
+export interface ERC721s {
   [name: string]: ERC721Enumerable | ERC721Innumerable
 }
 
@@ -162,4 +162,9 @@ export interface GetOptions {
   tokenPreferences: CustomToken[]
   additionalHints?: Hints['erc20s']
   disableAutoDiscovery?: boolean
+}
+
+export interface PreviousHintsStorage {
+  learnedTokens: { [key in NetworkId]: { [key: string]: string | null } }
+  fromExternalAPI: { [key: string]: GetOptions['previousHints'] }
 }

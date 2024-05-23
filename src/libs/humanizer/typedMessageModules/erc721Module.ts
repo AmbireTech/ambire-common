@@ -1,6 +1,6 @@
 import { TypedMessage } from '../../../interfaces/userRequest'
 import { HumanizerTypedMessaageModule, HumanizerVisualization } from '../interfaces'
-import { getAction, getDeadline, getAddressVisualization, getLabel, getNft } from '../utils'
+import { getAction, getAddressVisualization, getDeadline, getLabel, getNft } from '../utils'
 
 const visualizePermit = (
   spender: string,

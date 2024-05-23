@@ -1,3 +1,5 @@
+import { AccountOpAction } from 'controllers/actions/actions'
+
 import { NetworkDescriptor } from './networkDescriptor'
 
 export type BannerType = 'error' | 'warning' | 'info' | 'success'
@@ -14,17 +16,16 @@ export interface Banner {
 export type Action =
   | {
       label: 'Open'
-      actionName: 'open'
-      meta: {
-        ids: number[]
-      }
+      actionName: 'open-accountOp'
+      meta: AccountOpAction
     }
   | {
       label: 'Reject'
-      actionName: 'reject'
+      actionName: 'reject-accountOp'
       meta: {
-        ids: number[]
         err: string
+        accountAddr: string
+        networkId: string
       }
     }
   | {

@@ -1,6 +1,8 @@
+import { ethErrors } from 'eth-rpc-errors'
 /* eslint-disable @typescript-eslint/brace-style */
 import {
   getAddress,
+  getBigInt,
   Interface,
   isAddress,
   toQuantity,
@@ -13,6 +15,7 @@ import AmbireAccountFactory from '../../../contracts/compiled/AmbireAccountFacto
 import { SINGLETON } from '../../consts/deploy'
 import { Account, AccountId, AccountOnchainState, AccountStates } from '../../interfaces/account'
 import { Banner } from '../../interfaces/banner'
+import { Dapp, DappProviderRequest } from '../../interfaces/dapp'
 import {
   ExternalSignerControllers,
   Key,
@@ -22,28 +25,35 @@ import {
 import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
 import { CustomNetwork, NetworkPreference } from '../../interfaces/settings'
 import { Storage } from '../../interfaces/storage'
-import { Message, UserRequest } from '../../interfaces/userRequest'
+import {
+  Call,
+  DappUserRequest,
+  Message,
+  PlainTextMessage,
+  SignUserRequest,
+  TypedMessage,
+  UserRequest
+} from '../../interfaces/userRequest'
+import { WindowManager } from '../../interfaces/window'
 import { getDefaultSelectedAccount, isSmartAccount } from '../../libs/account/account'
 import { AccountOp, AccountOpStatus, getSignableCalls } from '../../libs/accountOp/accountOp'
 import { Call as AccountOpCall } from '../../libs/accountOp/types'
 import { getAccountState } from '../../libs/accountState/accountState'
-import {
-  getAccountOpBannersForEOA,
-  getAccountOpBannersForSmartAccount,
-  getMessageBanners,
-  getPendingAccountOpBannersForEOA
-} from '../../libs/banners/banners'
+import { dappRequestMethodToActionKind } from '../../libs/actions/actions'
+import { getAccountOpBanners } from '../../libs/banners/banners'
 import { estimate } from '../../libs/estimate/estimate'
 import { EstimateResult } from '../../libs/estimate/interfaces'
 import { GasRecommendation, getGasPriceRecommendations } from '../../libs/gasPrice/gasPrice'
 import { humanizeAccountOp } from '../../libs/humanizer'
 import { GetOptions } from '../../libs/portfolio/interfaces'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
+import { parse } from '../../libs/richJson/richJson'
 import { isErc4337Broadcast } from '../../libs/userOperation/userOperation'
 import bundler from '../../services/bundlers'
 import generateSpoofSig from '../../utils/generateSpoofSig'
 import wait from '../../utils/wait'
 import { AccountAdderController } from '../accountAdder/accountAdder'
+import { ActionsController } from '../actions/actions'
 import { ActivityController, SignedMessage, SubmittedAccountOp } from '../activity/activity'
 import { AddressBookController } from '../addressBook/addressBook'
 import { DomainsController } from '../domains/domains'
@@ -95,6 +105,8 @@ export class MainController extends EventEmitter {
 
   transfer: TransferController
 
+  actions: ActionsController
+
   // Public sub-structures
   // @TODO emailVaults
   emailVault: EmailVaultController
@@ -138,8 +150,8 @@ export class MainController extends EventEmitter {
 
   accountOpsToBeConfirmed: { [key: string]: { [key: string]: AccountOp } } = {}
 
-  // accountAddr => UniversalMessage[]
-  messagesToBeSigned: { [key: string]: Message[] } = {}
+  // accountAddr => UniversalMessage
+  messagesToBeSigned: { [key: string]: Message } = {}
 
   lastUpdate: Date = new Date()
 
@@ -149,16 +161,9 @@ export class MainController extends EventEmitter {
 
   #relayerUrl: string
 
-  onResolveDappRequest: (
-    data: {
-      hash: string | null
-      networkId?: NetworkId
-      isUserOp?: boolean
-    },
-    id?: number
-  ) => void
+  #windowManager: WindowManager
 
-  onRejectDappRequest: (err: any, id?: number) => void
+  #getDapp: (url: string) => Dapp | undefined
 
   onUpdateDappSelectedAccount: (accountAddr: string) => void
 
@@ -170,8 +175,8 @@ export class MainController extends EventEmitter {
     relayerUrl,
     keystoreSigners,
     externalSignerControllers,
-    onResolveDappRequest,
-    onRejectDappRequest,
+    windowManager,
+    getDapp,
     onUpdateDappSelectedAccount,
     onBroadcastSuccess
   }: {
@@ -180,15 +185,8 @@ export class MainController extends EventEmitter {
     relayerUrl: string
     keystoreSigners: Partial<{ [key in Key['type']]: KeystoreSignerType }>
     externalSignerControllers: ExternalSignerControllers
-    onResolveDappRequest: (
-      data: {
-        hash: string | null
-        networkId?: NetworkId
-        isUserOp?: boolean
-      },
-      id?: number
-    ) => void
-    onRejectDappRequest: (err: any, id?: number) => void
+    windowManager: WindowManager
+    getDapp: (url: string) => Dapp | undefined
     onUpdateDappSelectedAccount: (accountAddr: string) => void
     onBroadcastSuccess?: (type: 'message' | 'typed-data' | 'account-op') => void
   }) {
@@ -196,6 +194,8 @@ export class MainController extends EventEmitter {
     this.#storage = storage
     this.#fetch = fetch
     this.#relayerUrl = relayerUrl
+    this.#windowManager = windowManager
+    this.#getDapp = getDapp
 
     this.invite = new InviteController({ relayerUrl, fetch, storage: this.#storage })
     this.keystore = new KeystoreController(this.#storage, keystoreSigners)
@@ -224,14 +224,17 @@ export class MainController extends EventEmitter {
       this.#fetch
     )
     this.transfer = new TransferController(this.settings, this.addressBook)
+    this.actions = new ActionsController({
+      windowManager,
+      onActionWindowClose: () => {
+        this.userRequests = this.userRequests.filter((r) => r.action.kind !== 'benzin')
+        this.emitUpdate()
+      }
+    })
     this.domains = new DomainsController(this.settings.providers, this.#fetch)
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch: this.#fetch })
-    this.onResolveDappRequest = onResolveDappRequest
-    this.onRejectDappRequest = onRejectDappRequest
     this.onUpdateDappSelectedAccount = onUpdateDappSelectedAccount
     this.onBroadcastSuccess = onBroadcastSuccess
-    // @TODO Load userRequests from storage and emit that we have updated
-    // @TODO
   }
 
   async #load(): Promise<void> {
@@ -309,6 +312,12 @@ export class MainController extends EventEmitter {
       )
     }
     this.accountAdder.onUpdate(onAccountAdderSuccess)
+    this.transfer.onUpdate(async () => {
+      if (this.transfer.userRequest) {
+        await this.addUserRequest(this.transfer.userRequest)
+        this.transfer.resetForm()
+      }
+    })
 
     this.isReady = true
     this.emitUpdate()
@@ -374,8 +383,8 @@ export class MainController extends EventEmitter {
 
   destroySignAccOp() {
     this.signAccountOp = null
-    this.portfolio.resetAdditionalHints()
     MainController.signAccountOpListener() // unsubscribes for further updates
+
     this.emitUpdate()
   }
 
@@ -602,20 +611,21 @@ export class MainController extends EventEmitter {
         `makeAccountOpFromUserRequests: tried to run for non-existent account ${accountAddr}`
       )
     // Note: we use reduce instead of filter/map so that the compiler can deduce that we're checking .kind
-    const calls = this.userRequests.reduce((uCalls: AccountOpCall[], req) => {
-      // only the first one for EOAs
-      if (!account.creation && uCalls.length > 0) return uCalls
+    const calls = this.userRequests
+      .filter((r) => r.action.kind === 'call')
+      .reduce((uCalls: AccountOpCall[], req) => {
+        // only the first one for EOAs
+        if (!account.creation && uCalls.length > 0) return uCalls
 
-      if (
-        req.action.kind === 'call' &&
-        req.networkId === networkId &&
-        req.accountAddr === accountAddr
-      ) {
-        const { to, value, data } = req.action
-        uCalls.push({ to, value, data, fromUserRequestId: req.id })
-      }
-      return uCalls
-    }, [])
+        if (
+          (req as SignUserRequest).meta.networkId === networkId &&
+          (req as SignUserRequest).meta.accountAddr === accountAddr
+        ) {
+          const { to, value, data } = (req as SignUserRequest).action as Call
+          uCalls.push({ to, value, data, fromUserRequestId: req.id })
+        }
+        return uCalls
+      }, [])
 
     if (!calls.length) return null
 
@@ -637,15 +647,8 @@ export class MainController extends EventEmitter {
     }
   }
 
-  async updateSelectedAccount(
-    selectedAccount: string | null = null,
-    forceUpdate: boolean = false,
-    additionalHints: string[] = []
-  ) {
+  async updateSelectedAccount(selectedAccount: string | null = null, forceUpdate: boolean = false) {
     if (!selectedAccount) return
-    const updateOptions = additionalHints.length
-      ? { forceUpdate, additionalHints }
-      : { forceUpdate }
 
     // pass the accountOps if any so we could reflect the pending state
     const accountOps = this.accountOpsToBeSigned[selectedAccount]
@@ -662,18 +665,185 @@ export class MainController extends EventEmitter {
       this.settings.networks,
       selectedAccount,
       accountOps,
-      updateOptions
+      { forceUpdate }
     )
   }
 
-  async addUserRequest(req: UserRequest) {
-    this.userRequests.push(req)
-    const { id, action, accountAddr, networkId } = req
-    if (!this.settings.networks.find((x) => x.id === networkId))
-      throw new Error(`addUserRequest: ${networkId}: network does not exist`)
+  async buildUserRequest(
+    request: DappProviderRequest,
+    dappPromise: {
+      resolve: (data: any) => void
+      reject: (data: any) => void
+    }
+  ) {
+    let userRequest = null
+    const kind = dappRequestMethodToActionKind(request.method)
+    const dapp = this.#getDapp(request.origin)
+
+    if (!this.selectedAccount) {
+      throw ethErrors.rpc.internal()
+    }
+
+    if (kind === 'call') {
+      const transaction = request.params[0]
+      const accountAddr = getAddress(transaction.from)
+      const network = this.settings.networks.find(
+        (n) => Number(n.chainId) === Number(dapp?.chainId)
+      )
+
+      if (!network) {
+        throw ethErrors.provider.chainDisconnected('Transaction failed - unknown network')
+      }
+      delete transaction.from
+      userRequest = {
+        id: new Date().getTime(),
+        action: {
+          kind,
+          ...transaction,
+          value: transaction.value ? getBigInt(transaction.value) : 0n
+        },
+        meta: { isSignAction: true, accountAddr, networkId: network.id },
+        dappPromise
+      } as SignUserRequest
+    } else if (kind === 'message') {
+      const msg = request.params
+      if (!msg) {
+        throw ethErrors.rpc.invalidRequest('No msg request to sign')
+      }
+      const msdAddress = getAddress(msg?.[1])
+      // TODO: if address is in this.accounts in theory the user should be able to sign
+      // e.g. if an acc from the wallet is used as a signer of another wallet
+      if (getAddress(msdAddress) !== getAddress(this.selectedAccount)) {
+        dappPromise.resolve('Invalid parameters: must use the current user address to sign')
+        return
+      }
+
+      const network = this.settings.networks.find(
+        (n) => Number(n.chainId) === Number(dapp?.chainId)
+      )
+
+      if (!network) {
+        throw ethErrors.provider.chainDisconnected('Transaction failed - unknown network')
+      }
+
+      userRequest = {
+        id: new Date().getTime(),
+        action: {
+          kind: 'message',
+          message: msg[0]
+        },
+        session: request.session,
+        meta: {
+          isSignAction: true,
+          accountAddr: msdAddress,
+          networkId: network.id
+        },
+        dappPromise
+      } as SignUserRequest
+    } else if (kind === 'typedMessage') {
+      const msg = request.params
+      if (!msg) {
+        throw ethErrors.rpc.invalidRequest('No msg request to sign')
+      }
+      const msdAddress = getAddress(msg?.[0])
+      // TODO: if address is in this.accounts in theory the user should be able to sign
+      // e.g. if an acc from the wallet is used as a signer of another wallet
+      if (getAddress(msdAddress) !== getAddress(this.selectedAccount)) {
+        dappPromise.resolve('Invalid parameters: must use the current user address to sign')
+        return
+      }
+
+      const network = this.settings.networks.find(
+        (n) => Number(n.chainId) === Number(dapp?.chainId)
+      )
+
+      if (!network) {
+        throw ethErrors.provider.chainDisconnected('Transaction failed - unknown network')
+      }
+
+      let typedData = msg?.[1]
+
+      try {
+        typedData = parse(typedData)
+      } catch (error) {
+        throw ethErrors.rpc.invalidRequest('Invalid typedData provided')
+      }
+
+      if (
+        !typedData?.types ||
+        !typedData?.domain ||
+        !typedData?.message ||
+        !typedData?.primaryType
+      ) {
+        throw ethErrors.rpc.methodNotSupported(
+          'Invalid typedData format - only typedData v4 is supported'
+        )
+      }
+
+      userRequest = {
+        id: new Date().getTime(),
+        action: {
+          kind: 'typedMessage',
+          types: typedData.types,
+          domain: typedData.domain,
+          message: typedData.message,
+          primaryType: typedData.primaryType
+        },
+        session: request.session,
+        meta: {
+          isSignAction: true,
+          accountAddr: msdAddress,
+          networkId: network.id
+        },
+        dappPromise
+      } as SignUserRequest
+    } else {
+      userRequest = {
+        id: new Date().getTime(),
+        session: request.session,
+        action: { kind, params: request.params },
+        meta: { isSignAction: false },
+        dappPromise
+      } as DappUserRequest
+    }
+
+    if (userRequest) {
+      await this.addUserRequest(userRequest)
+      this.emitUpdate()
+    }
+  }
+
+  resolveUserRequest = (data: any, requestId: number) => {
+    const userRequest = this.userRequests.find((r) => r.id === requestId)
+    if (!userRequest) return // TODO: emit error
+
+    userRequest.dappPromise?.resolve(data)
+    this.removeUserRequest(requestId)
+    this.emitUpdate()
+  }
+
+  rejectUserRequest = (err: string, requestId: number) => {
+    const userRequest = this.userRequests.find((r) => r.id === requestId)
+    if (!userRequest) return // TODO: emit error
+
+    userRequest.dappPromise?.reject(ethErrors.provider.userRejectedRequest<any>(err))
+    this.removeUserRequest(requestId)
+    this.emitUpdate()
+  }
+
+  async addUserRequest(req: UserRequest, withPriority?: boolean) {
+    if (withPriority) {
+      this.userRequests.unshift(req)
+    } else {
+      this.userRequests.push(req)
+    }
+    const { id, action, meta } = req
     if (action.kind === 'call') {
+      if (!this.settings.networks.find((x) => x.id === meta.networkId))
+        throw new Error(`addUserRequest: ${meta.networkId}: network does not exist`)
       // @TODO: if EOA, only one call per accountOp
-      if (!this.accountOpsToBeSigned[accountAddr]) this.accountOpsToBeSigned[accountAddr] = {}
+      if (!this.accountOpsToBeSigned[meta.accountAddr])
+        this.accountOpsToBeSigned[meta.accountAddr] = {}
       // @TODO
       // one solution would be to, instead of checking, have a promise that we always await here, that is responsible for fetching
       // account data; however, this won't work with EOA accountOps, which have to always pick the first userRequest for a particular acc/network,
@@ -681,28 +851,152 @@ export class MainController extends EventEmitter {
       // although it could work like this: 1) await the promise, 2) check if exists 3) if not, re-trigger the promise;
       // 4) manage recalc on removeUserRequest too in order to handle EOAs
       // @TODO consider re-using this whole block in removeUserRequest
-      await this.#ensureAccountInfo(accountAddr, networkId)
+      await this.#ensureAccountInfo(meta.accountAddr, meta.networkId)
 
       if (this.signAccOpInitError) return
 
-      const accountOp = this.#makeAccountOpFromUserRequests(accountAddr, networkId)
+      const accountOp = this.#makeAccountOpFromUserRequests(meta.accountAddr, meta.networkId)
       if (accountOp) {
-        this.accountOpsToBeSigned[accountAddr] ||= {}
-        this.accountOpsToBeSigned[accountAddr][networkId] = { accountOp, estimation: null }
-        if (this.signAccountOp) this.signAccountOp.update({ accountOp })
+        this.accountOpsToBeSigned[meta.accountAddr] ||= {}
+        this.accountOpsToBeSigned[meta.accountAddr][meta.networkId] = {
+          accountOp,
+          estimation: null
+        }
+        const account = this.accounts.filter((x) => x.addr === meta.accountAddr)[0]
+        this.actions.addToActionsQueue(
+          {
+            id: account.creation ? `${accountOp.accountAddr}-${accountOp.networkId}` : id,
+            type: 'accountOp',
+            accountOp,
+            withBatching: !!account.creation
+          },
+          withPriority
+        )
+        if (
+          this.signAccountOp &&
+          this.signAccountOp.accountOp.accountAddr === accountOp.accountAddr &&
+          this.signAccountOp.accountOp.networkId === accountOp.networkId
+        ) {
+          this.signAccountOp.update({ accountOp })
+        }
         this.#estimateAccountOp(accountOp)
       }
+    } else if (action.kind === 'typedMessage' || action.kind === 'message') {
+      if (!this.messagesToBeSigned[meta.accountAddr]) {
+        const messageRequests = this.userRequests.filter(
+          (r) => r.action.kind === 'typedMessage' || r.action.kind === 'message'
+        )
+        if (messageRequests.length) {
+          const messageRequest = messageRequests[0]
+          this.messagesToBeSigned[meta.accountAddr] = {
+            id: messageRequest.id,
+            content: messageRequest.action as PlainTextMessage | TypedMessage,
+            fromUserRequestId: messageRequest.id,
+            signature: null,
+            accountAddr: messageRequest.meta.accountAddr,
+            networkId: messageRequest.meta.networkId
+          }
+        }
+      }
+
+      this.actions.addToActionsQueue(
+        {
+          id,
+          type: 'signMessage',
+          userRequest: req
+        },
+        withPriority
+      )
     } else {
-      if (!this.messagesToBeSigned[accountAddr]) this.messagesToBeSigned[accountAddr] = []
-      if (this.messagesToBeSigned[accountAddr].find((x) => x.fromUserRequestId === req.id)) return
-      this.messagesToBeSigned[accountAddr].push({
-        id,
-        content: action,
-        fromUserRequestId: req.id,
-        signature: null,
-        accountAddr,
-        networkId
-      })
+      this.actions.addToActionsQueue(
+        {
+          id,
+          type: req.action.kind,
+          userRequest: req
+        },
+        withPriority
+      )
+    }
+
+    this.emitUpdate()
+  }
+
+  // @TODO allow this to remove multiple OR figure out a way to debounce re-estimations
+  // first one sounds more reasonble
+  // although the second one can't hurt and can help (or no debounce, just a one-at-a-time queue)
+  removeUserRequest(id: number) {
+    const req = this.userRequests.find((uReq) => uReq.id === id)
+    if (!req) return
+
+    // remove from the request queue
+    this.userRequests.splice(this.userRequests.indexOf(req), 1)
+
+    // update the pending stuff to be signed
+    const { action, meta } = req
+    if (action.kind === 'call') {
+      // @TODO ensure acc info, re-estimate
+      const accountOp = this.#makeAccountOpFromUserRequests(meta.accountAddr, meta.networkId)
+      const account = this.accounts.filter((x) => x.addr === meta.accountAddr)[0]
+      if (accountOp) {
+        this.accountOpsToBeSigned[meta.accountAddr] ||= {}
+        this.accountOpsToBeSigned[meta.accountAddr][meta.networkId] = {
+          accountOp,
+          estimation: null
+        }
+        if (
+          this.signAccountOp &&
+          this.signAccountOp.accountOp.accountAddr === accountOp.accountAddr &&
+          this.signAccountOp.accountOp.networkId === accountOp.networkId
+        ) {
+          this.signAccountOp.update({ accountOp, estimation: null })
+        }
+        if (account.creation) {
+          // if the rejectAccountOp is called we remove the calls one by one in case of multiple calls in the op
+          // therefore we wait a little bit to avoid action-window initialization on remove
+          setTimeout(() => {
+            if (this.accountOpsToBeSigned[accountOp.accountAddr][accountOp.networkId])
+              this.actions.addToActionsQueue({
+                id: `${accountOp.accountAddr}-${accountOp.networkId}`,
+                type: 'accountOp',
+                accountOp,
+                withBatching: true
+              })
+          }, 150)
+        } else {
+          this.actions.removeFromActionsQueue(id)
+        }
+        this.#estimateAccountOp(accountOp)
+      } else {
+        delete this.accountOpsToBeSigned[meta.accountAddr]?.[meta.networkId]
+        if (!Object.keys(this.accountOpsToBeSigned[meta.accountAddr] || {}).length)
+          delete this.accountOpsToBeSigned[meta.accountAddr]
+
+        this.actions.removeFromActionsQueue(
+          account.creation ? `${meta.accountAddr}-${meta.networkId}` : id
+        )
+        // remove the pending state
+        this.updateSelectedAccount(this.selectedAccount, true)
+      }
+    } else if (action.kind === 'typedMessage' || action.kind === 'message') {
+      const messageRequests = this.userRequests.filter(
+        (r) => r.action.kind === 'typedMessage' || r.action.kind === 'message'
+      )
+      if (messageRequests.length) {
+        const messageRequest = messageRequests[0]
+        this.messagesToBeSigned[meta.accountAddr] = {
+          id: messageRequest.id,
+          content: messageRequest.action as PlainTextMessage | TypedMessage,
+          fromUserRequestId: messageRequest.id,
+          signature: null,
+          accountAddr: messageRequest.meta.accountAddr,
+          networkId: messageRequest.meta.networkId
+        }
+      } else {
+        delete this.messagesToBeSigned[meta.accountAddr]
+      }
+      this.actions.removeFromActionsQueue(id)
+    } else {
+      this.actions.removeFromActionsQueue(id)
     }
     this.emitUpdate()
   }
@@ -717,41 +1011,50 @@ export class MainController extends EventEmitter {
     await this.updateSelectedAccount(this.selectedAccount, true)
   }
 
-  // @TODO allow this to remove multiple OR figure out a way to debounce re-estimations
-  // first one sounds more reasonble
-  // although the second one can't hurt and can help (or no debounce, just a one-at-a-time queue)
-  async removeUserRequest(id: number) {
-    const req = this.userRequests.find((uReq) => uReq.id === id)
-    if (!req) return
+  async resolveAccountOp(data: any, accountAddr: string, networkId: string) {
+    const accountOp = this.accountOpsToBeSigned?.[accountAddr]?.[networkId]?.accountOp
+    if (!accountOp) return
 
-    // remove from the request queue
-    this.userRequests.splice(this.userRequests.indexOf(req), 1)
+    const meta: SignUserRequest['meta'] = {
+      isSignAction: true,
+      accountAddr,
+      networkId,
+      txnId: null,
+      userOpHash: null
+    }
+    data?.isUserOp ? (meta.userOpHash = data.hash) : (meta.txnId = data.hash)
+    const benzinUserRequest: SignUserRequest = {
+      id: new Date().getTime(),
+      action: { kind: 'benzin' },
+      meta
+    }
+    await this.addUserRequest(benzinUserRequest, true)
 
-    // update the pending stuff to be signed
-    const { action, accountAddr, networkId } = req
-    if (action.kind === 'call') {
-      // @TODO ensure acc info, re-estimate
-      const accountOp = this.#makeAccountOpFromUserRequests(accountAddr, networkId)
-      if (accountOp) {
-        this.accountOpsToBeSigned[accountAddr] ||= {}
-        this.accountOpsToBeSigned[accountAddr][networkId] = { accountOp, estimation: null }
-        if (this.signAccountOp) this.signAccountOp.update({ accountOp, estimation: null })
-
-        this.#estimateAccountOp(accountOp)
-      } else {
-        delete this.accountOpsToBeSigned[accountAddr]?.[networkId]
-        if (!Object.keys(this.accountOpsToBeSigned[accountAddr] || {}).length)
-          delete this.accountOpsToBeSigned[accountAddr]
-
-        // remove the pending state
-        this.updateSelectedAccount(this.selectedAccount, true)
+    // eslint-disable-next-line no-restricted-syntax
+    for (const call of accountOp.calls) {
+      const uReq = this.userRequests.find((r) => r.id === call.fromUserRequestId)
+      if (uReq) {
+        uReq.dappPromise?.resolve(data)
+        // eslint-disable-next-line no-await-in-loop
+        this.removeUserRequest(uReq.id)
       }
-    } else {
-      this.messagesToBeSigned[accountAddr] = this.messagesToBeSigned[accountAddr].filter(
-        (x) => x.fromUserRequestId !== id
-      )
-      if (!Object.keys(this.messagesToBeSigned[accountAddr] || {}).length)
-        delete this.messagesToBeSigned[accountAddr]
+    }
+
+    this.emitUpdate()
+  }
+
+  rejectAccountOp(err: string, accountAddr: string, networkId: string) {
+    const accountOp = this.accountOpsToBeSigned?.[accountAddr]?.[networkId]?.accountOp
+    if (!accountOp) return
+
+    // eslint-disable-next-line no-restricted-syntax
+    for (const call of accountOp.calls) {
+      const uReq = this.userRequests.find((r) => r.id === call.fromUserRequestId)
+      if (uReq) {
+        uReq.dappPromise?.reject(ethErrors.provider.userRejectedRequest<any>(err))
+        // eslint-disable-next-line no-await-in-loop
+        this.removeUserRequest(uReq.id)
+      }
     }
     this.emitUpdate()
   }
@@ -914,6 +1217,7 @@ export class MainController extends EventEmitter {
       const stringAddr: any = result.length ? result.flat(Infinity) : []
       additionalHints!.push(...stringAddr)
 
+      await this.portfolio.learnTokens(additionalHints, network.id)
       const [, estimation] = await Promise.all([
         // NOTE: we are not emitting an update here because the portfolio controller will do that
         // NOTE: the portfolio controller has it's own logic of constructing/caching providers, this is intentional, as
@@ -930,8 +1234,7 @@ export class MainController extends EventEmitter {
               )
             : undefined,
           {
-            forceUpdate: true,
-            additionalHints
+            forceUpdate: true
           }
         ),
         estimate(
@@ -1278,19 +1581,16 @@ export class MainController extends EventEmitter {
         submittedAccountOp.userOpHash = transactionRes.hash
       }
       await this.activity.addAccountOp(submittedAccountOp)
-      accountOp.calls.forEach((call) => {
-        if (call.fromUserRequestId) {
-          this.removeUserRequest(call.fromUserRequestId)
-          this.onResolveDappRequest(
-            {
-              hash: transactionRes?.hash || null,
-              networkId: network.id,
-              isUserOp: !!accountOp?.asUserOperation
-            },
-            call.fromUserRequestId
-          )
-        }
-      })
+      await this.resolveAccountOp(
+        {
+          hash: transactionRes?.hash || null,
+          networkId: network.id,
+          isUserOp: !!accountOp?.asUserOperation
+        },
+        accountOp.accountAddr,
+        accountOp.networkId
+      )
+
       console.log('broadcasted:', transactionRes)
       !!this.onBroadcastSuccess && this.onBroadcastSuccess('account-op')
       this.broadcastStatus = 'DONE'
@@ -1307,8 +1607,7 @@ export class MainController extends EventEmitter {
     this.emitUpdate()
 
     await this.activity.addSignedMessage(signedMessage, signedMessage.accountAddr)
-    this.removeUserRequest(signedMessage.id)
-    this.onResolveDappRequest({ hash: signedMessage.signature }, signedMessage.id)
+    await this.resolveUserRequest({ hash: signedMessage.signature }, signedMessage.id)
     !!this.onBroadcastSuccess &&
       this.onBroadcastSuccess(
         signedMessage.content.kind === 'typedMessage' ? 'typed-data' : 'message'
@@ -1352,29 +1651,20 @@ export class MainController extends EventEmitter {
   // will not trigger emitUpdate in the MainController, therefore the banners will
   // remain the same until a subsequent update in the MainController.
   get banners(): Banner[] {
-    const userRequests =
-      this.userRequests.filter((req) => req.accountAddr === this.selectedAccount) || []
-    const accounts = this.accounts
+    if (!this.selectedAccount) return []
 
-    const accountOpEOABanners = getAccountOpBannersForEOA({
-      userRequests,
-      accounts,
+    const accountOpBanners = getAccountOpBanners({
+      accountOpsToBeSignedByNetwork: this.accountOpsToBeSigned[this.selectedAccount],
+      selectedAccount: this.selectedAccount,
+      userRequests:
+        this.userRequests
+          .filter((r) => r.action.kind === 'call')
+          .filter((req) => req.meta.accountAddr === this.selectedAccount) || [],
+      accounts: this.accounts,
       networks: this.settings.networks
     })
-    const pendingAccountOpEOABanners = getPendingAccountOpBannersForEOA({ userRequests, accounts })
-    const accountOpSmartAccountBanners = getAccountOpBannersForSmartAccount({
-      userRequests,
-      accounts,
-      networks: this.settings.networks
-    })
-    const messageBanners = getMessageBanners({ userRequests })
 
-    return [
-      ...accountOpSmartAccountBanners,
-      ...accountOpEOABanners,
-      ...pendingAccountOpEOABanners,
-      ...messageBanners
-    ]
+    return [...accountOpBanners]
   }
 
   #throwAccountOpBroadcastError(error: Error, message?: string) {

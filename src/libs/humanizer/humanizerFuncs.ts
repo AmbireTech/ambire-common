@@ -48,7 +48,7 @@ export function humanizeCalls(
 
 export const visualizationToText = (call: IrCall, options: any): string => {
   let text = ''
-  const visualization = call?.fullVisualization
+  const visualization = call?.fullVisualization?.filter((i) => !i.isHidden)
   visualization?.forEach((v: HumanizerVisualization, i: number) => {
     // if not first iteration
     if (i) text += ' '
