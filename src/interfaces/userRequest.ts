@@ -1,7 +1,8 @@
 import { TypedDataDomain, TypedDataField } from 'ethers'
-
 import { HumanizerFragment } from 'libs/humanizer/interfaces'
+
 import { AccountId } from './account'
+import { DappProviderRequest } from './dapp'
 import { NetworkId } from './networkDescriptor'
 
 export interface Call {
@@ -36,17 +37,38 @@ export interface Message {
   networkId: NetworkId
 }
 
-export interface UserRequest {
-  // Unlike the AccountOp, which we compare by content,
-  // we need a distinct identifier here that's set by whoever is posting the request
-  // the requests cannot be compared by content because it's valid for a user to post two or more identical ones
-  // while for AccountOps we do only care about their content in the context of simulations
+export interface SignUserRequest {
   id: number
-  networkId: NetworkId
-  accountAddr: AccountId
-  // TODO: The dApp could define a nonce for the request, but this could not be
-  // applicable, because the dApp will check this as a EOA. Double check.
-  forceNonce: bigint | null
-  // either-or here between call and a message, plus different types of messages
-  action: Call | PlainTextMessage | TypedMessage
+  action: Call | PlainTextMessage | TypedMessage | { kind: 'benzin' }
+  session?: DappProviderRequest['session']
+  meta: {
+    isSignAction: true
+    accountAddr: AccountId
+    networkId: NetworkId
+    [key: string]: any
+  }
+  // defined only when SignUserRequest is built from a DappRequest
+  dappPromise?: {
+    resolve: (data: any) => void
+    reject: (data: any) => void
+  }
 }
+
+export interface DappUserRequest {
+  id: number
+  action: {
+    kind: Exclude<string, 'call' | 'message' | 'typedMessage' | 'benzin'>
+    params: any
+  }
+  session: DappProviderRequest['session']
+  meta: {
+    isSignAction: false
+    [key: string]: any
+  }
+  dappPromise: {
+    resolve: (data: any) => void
+    reject: (data: any) => void
+  }
+}
+
+export type UserRequest = DappUserRequest | SignUserRequest

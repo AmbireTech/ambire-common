@@ -5,7 +5,7 @@ import { formatUnits, Interface, parseUnits } from 'ethers'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { AddressState } from '../../interfaces/domains'
 import { TransferUpdate } from '../../interfaces/transfer'
-import { UserRequest } from '../../interfaces/userRequest'
+import { SignUserRequest } from '../../interfaces/userRequest'
 import { TokenResult } from '../../libs/portfolio'
 import { getTokenAmount } from '../../libs/portfolio/helpers'
 import EventEmitter from '../eventEmitter/eventEmitter'
@@ -33,7 +33,7 @@ export class TransferController extends EventEmitter {
 
   isRecipientAddressUnknownAgreed = false
 
-  userRequest: UserRequest | null = null
+  userRequest: SignUserRequest | null = null
 
   #selectedTokenNetworkData: {
     id: string
@@ -179,9 +179,12 @@ export class TransferController extends EventEmitter {
     const recipientAddress = this.isTopUp
       ? FEE_COLLECTOR.toLowerCase()
       : this.recipientAddress.toLowerCase()
+    const sanitizedAmount = this.amount.split('.')
+    if (sanitizedAmount[1])
+      sanitizedAmount[1] = sanitizedAmount[1].slice(0, this.selectedToken.decimals)
 
     const bigNumberHexAmount = `0x${parseUnits(
-      parseFloat(this.amount).toFixed(this.selectedToken.decimals).toString(),
+      sanitizedAmount.join('.'),
       Number(this.selectedToken.decimals)
     ).toString(16)}`
 
@@ -200,10 +203,12 @@ export class TransferController extends EventEmitter {
 
     this.userRequest = {
       id: new Date().getTime(),
-      networkId: this.#selectedTokenNetworkData.id,
-      accountAddr: this.#selectedAccount,
-      forceNonce: null,
-      action: txn
+      action: txn,
+      meta: {
+        isSignAction: true,
+        networkId: this.#selectedTokenNetworkData.id,
+        accountAddr: this.#selectedAccount
+      }
     }
 
     this.emitUpdate()
