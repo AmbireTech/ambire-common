@@ -388,7 +388,6 @@ export class MainController extends EventEmitter {
 
   destroySignAccOp() {
     this.signAccountOp = null
-    this.portfolio.resetAdditionalHints()
     MainController.signAccountOpListener() // unsubscribes for further updates
 
     this.emitUpdate()
@@ -653,15 +652,8 @@ export class MainController extends EventEmitter {
     }
   }
 
-  async updateSelectedAccount(
-    selectedAccount: string | null = null,
-    forceUpdate: boolean = false,
-    additionalHints: string[] = []
-  ) {
+  async updateSelectedAccount(selectedAccount: string | null = null, forceUpdate: boolean = false) {
     if (!selectedAccount) return
-    const updateOptions = additionalHints.length
-      ? { forceUpdate, additionalHints }
-      : { forceUpdate }
 
     // pass the accountOps if any so we could reflect the pending state
     const accountOps = this.accountOpsToBeSigned[selectedAccount]
@@ -678,7 +670,7 @@ export class MainController extends EventEmitter {
       this.settings.networks,
       selectedAccount,
       accountOps,
-      updateOptions
+      { forceUpdate }
     )
   }
 
@@ -1261,6 +1253,7 @@ export class MainController extends EventEmitter {
       const stringAddr: any = result.length ? result.flat(Infinity) : []
       additionalHints!.push(...stringAddr)
 
+      await this.portfolio.learnTokens(additionalHints, network.id)
       const [, estimation] = await Promise.all([
         // NOTE: we are not emitting an update here because the portfolio controller will do that
         // NOTE: the portfolio controller has it's own logic of constructing/caching providers, this is intentional, as
@@ -1277,8 +1270,7 @@ export class MainController extends EventEmitter {
               )
             : undefined,
           {
-            forceUpdate: true,
-            additionalHints
+            forceUpdate: true
           }
         ),
         estimate(

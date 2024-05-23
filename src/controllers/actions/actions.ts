@@ -119,12 +119,7 @@ export class ActionsController extends EventEmitter {
     this.currentAction = nextAction
 
     if (!this.currentAction) {
-      !!this.actionWindowId &&
-        this.#windowManager.remove(this.actionWindowId).then(() => {
-          this.actionWindowId = null
-          this.emitUpdate()
-        })
-      this.emitUpdate()
+      !!this.actionWindowId && this.#windowManager.remove(this.actionWindowId)
     } else {
       this.openActionWindow()
     }
@@ -148,12 +143,10 @@ export class ActionsController extends EventEmitter {
         this.emitUpdate()
       })
     }
-    this.emitUpdate()
   }
 
   focusActionWindow = () => {
     if (!this.actionsQueue.length || !this.currentAction || !this.actionWindowId) return
-
     this.#windowManager.focus(this.actionWindowId)
   }
 

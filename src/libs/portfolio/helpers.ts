@@ -2,11 +2,13 @@ import { Contract, ZeroAddress } from 'ethers'
 
 import IERC20 from '../../../contracts/compiled/IERC20.json'
 import gasTankFeeTokens from '../../consts/gasTankFeeTokens'
-import { Account } from '../../interfaces/account'
+import { PINNED_TOKENS } from '../../consts/pinnedTokens'
+import { Account, AccountId } from '../../interfaces/account'
 import { NetworkId } from '../../interfaces/networkDescriptor'
 import { RPCProvider } from '../../interfaces/settings'
 import { isSmartAccount } from '../account/account'
-import { TokenResult } from './interfaces'
+import { CustomToken } from './customToken'
+import { PortfolioGetResult, PreviousHintsStorage, TokenResult } from './interfaces'
 
 const usdcEMapping: { [key: string]: string } = {
   avalanche: '0xa7d7079b0fead91f3e65f86e8915cb59c1a4c664',
@@ -103,4 +105,151 @@ export const shouldGetAdditionalPortfolio = (account: Account) => {
 // otherwise, the token.amount
 export const getTokenAmount = (token: TokenResult): bigint => {
   return typeof token.amountPostSimulation === 'bigint' ? token.amountPostSimulation : token.amount
+}
+
+export const getTotal = (t: TokenResult[]) =>
+  t.reduce((cur: { [key: string]: number }, token: TokenResult) => {
+    const localCur = cur // Add index signature to the type of localCur
+    if (token.isHidden) return localCur
+    // eslint-disable-next-line no-restricted-syntax
+    for (const x of token.priceIn) {
+      const currentAmount = localCur[x.baseCurrency] || 0
+
+      const tokenAmount = Number(getTokenAmount(token)) / 10 ** token.decimals
+      localCur[x.baseCurrency] = currentAmount + tokenAmount * x.price
+    }
+
+    return localCur
+  }, {})
+
+export const getPinnedGasTankTokens = (
+  availableGasTankAssets: TokenResult[],
+  hasNonZeroTokens: boolean,
+  accountId: AccountId,
+  gasTankTokens: TokenResult[]
+) => {
+  if (!availableGasTankAssets) return []
+  // Don't set pinnedGasTankTokens if the user has > 1 non-zero tokens
+  if (hasNonZeroTokens) return []
+
+  return availableGasTankAssets.reduce((acc: TokenResult[], token: any) => {
+    const isGasTankToken = !!gasTankTokens.find(
+      (gasTankToken: TokenResult) =>
+        gasTankToken.symbol.toLowerCase() === token.symbol.toLowerCase()
+    )
+    const isAlreadyPinned = !!acc.find(
+      (accToken) => accToken.symbol.toLowerCase() === token.symbol.toLowerCase()
+    )
+
+    if (isGasTankToken || isAlreadyPinned) return acc
+
+    const correspondingPinnedToken = PINNED_TOKENS.find(
+      (pinnedToken) =>
+        (!('accountId' in pinnedToken) || pinnedToken.accountId === accountId) &&
+        pinnedToken.address === token.address &&
+        pinnedToken.networkId === token.network
+    )
+
+    if (correspondingPinnedToken && correspondingPinnedToken.onGasTank) {
+      acc.push({
+        address: token.address,
+        symbol: token.symbol.toUpperCase(),
+        amount: 0n,
+        networkId: correspondingPinnedToken.networkId,
+        decimals: token.decimals,
+        priceIn: [
+          {
+            baseCurrency: 'usd',
+            price: token.price
+          }
+        ],
+        flags: {
+          rewardsType: null,
+          canTopUpGasTank: true,
+          isFeeToken: true,
+          onGasTank: true
+        }
+      })
+    }
+    return acc
+  }, [])
+}
+
+// Updates the previous hints storage with the latest portfolio get result.
+export function getUpdatedHints(
+  result: PortfolioGetResult,
+  networkId: NetworkId,
+  storagePreviousHints: PreviousHintsStorage,
+  key: string,
+  tokenPreferences: CustomToken[]
+) {
+  const hints = { ...storagePreviousHints }
+  if (!hints.fromExternalAPI) hints.fromExternalAPI = {}
+  if (!hints.learnedTokens) hints.learnedTokens = {}
+
+  const erc20s = result.tokens.filter((token) => token.amount > 0n).map((token) => token.address)
+
+  const erc721s = Object.fromEntries(
+    result.collections.map((collection) => [
+      collection.address,
+      result.hints.erc721s[collection.address]
+    ])
+  )
+  const previousHintsFromExternalAPI =
+    (hints.fromExternalAPI && hints.fromExternalAPI[key] && hints.fromExternalAPI[key]?.erc20s) ||
+    []
+
+  hints.fromExternalAPI[key] = { erc20s, erc721s }
+
+  if (Object.keys(previousHintsFromExternalAPI).length > 0) {
+    // eslint-disable-next-line no-restricted-syntax
+    for (const address of erc20s) {
+      const isPinned = PINNED_TOKENS.some(
+        (pinned) =>
+          pinned.address.toLowerCase() === address.toLowerCase() && pinned.networkId === networkId
+      )
+      const isTokenPreference = tokenPreferences.some(
+        (preference) =>
+          preference.address.toLowerCase() === address.toLowerCase() &&
+          preference.networkId === networkId
+      )
+
+      if (!previousHintsFromExternalAPI.includes(address) && !isPinned && !isTokenPreference) {
+        if (!hints.learnedTokens[networkId]) hints.learnedTokens[networkId] = {}
+        hints.learnedTokens[networkId][address] = Date.now().toString()
+      }
+    }
+  }
+
+  return hints
+}
+
+export const tokenFilter = (
+  token: TokenResult,
+  network: { id: NetworkId },
+  hasNonZeroTokens: boolean,
+  additionalHints: string[] | undefined,
+  tokenPreferences: CustomToken[]
+): boolean => {
+  const isTokenPreference = tokenPreferences?.find((tokenPreference) => {
+    return tokenPreference.address === token.address && tokenPreference.networkId === network.id
+  })
+  if (isTokenPreference) {
+    token.isHidden = isTokenPreference.isHidden
+  }
+
+  // always include > 0 amount and native token
+  if (token.amount > 0 || token.address === ZeroAddress) return true
+
+  const isPinned = !!PINNED_TOKENS.find((pinnedToken) => {
+    return pinnedToken.networkId === network.id && pinnedToken.address === token.address
+  })
+
+  const isInAdditionalHints = additionalHints?.includes(token.address)
+
+  // if the amount is 0
+  // return the token if it's pinned and requested
+  const pinnedRequested = isPinned && !hasNonZeroTokens
+
+  return !!isTokenPreference || isInAdditionalHints || pinnedRequested
 }
