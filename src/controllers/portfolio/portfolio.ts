@@ -672,10 +672,7 @@ export class PortfolioController extends EventEmitter {
     networkLearnedTokens = { ...tokensToLearn, ...networkLearnedTokens }
 
     // Reached limit
-    if (
-      LEARNED_TOKENS_NETWORK_LIMIT - Object.keys(networkLearnedTokens).length <=
-      LEARNED_TOKENS_CLEAN_THRESHOLD
-    ) {
+    if (LEARNED_TOKENS_NETWORK_LIMIT - Object.keys(networkLearnedTokens).length < 0) {
       const learnedTokensArray = Object.entries(networkLearnedTokens).sort(
         (a, b) => Number(a[1]) - Number(b[1])
       )
