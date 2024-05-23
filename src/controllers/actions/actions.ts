@@ -6,7 +6,7 @@ import { AccountOp } from '../../libs/accountOp/accountOp'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
 export type AccountOpAction = {
-  id: string | UserRequest['id']
+  id: UserRequest['id']
   type: 'accountOp'
   accountOp: AccountOp
   withBatching: boolean

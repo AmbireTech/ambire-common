@@ -48,7 +48,12 @@ import { humanizeAccountOp } from '../../libs/humanizer'
 import { GetOptions } from '../../libs/portfolio/interfaces'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { parse } from '../../libs/richJson/richJson'
-import { isErc4337Broadcast } from '../../libs/userOperation/userOperation'
+import {
+  ENTRY_POINT_AUTHORIZATION_REQUEST_ID,
+  getEntryPointAuthorization,
+  isErc4337Broadcast,
+  shouldAskForEntryPointAuthorization
+} from '../../libs/userOperation/userOperation'
 import bundler from '../../services/bundlers'
 import generateSpoofSig from '../../utils/generateSpoofSig'
 import wait from '../../utils/wait'
@@ -821,7 +826,7 @@ export class MainController extends EventEmitter {
     }
   }
 
-  resolveUserRequest = (data: any, requestId: number) => {
+  resolveUserRequest = (data: any, requestId: UserRequest['id']) => {
     const userRequest = this.userRequests.find((r) => r.id === requestId)
     if (!userRequest) return // TODO: emit error
 
@@ -830,9 +835,17 @@ export class MainController extends EventEmitter {
     this.emitUpdate()
   }
 
-  rejectUserRequest = (err: string, requestId: number) => {
+  rejectUserRequest = (err: string, requestId: UserRequest['id']) => {
     const userRequest = this.userRequests.find((r) => r.id === requestId)
     if (!userRequest) return // TODO: emit error
+
+    if (requestId === ENTRY_POINT_AUTHORIZATION_REQUEST_ID) {
+      this.rejectAccountOp(
+        'User rejected the request',
+        userRequest.meta.accountAddr,
+        userRequest.meta.networkId
+      )
+    }
 
     userRequest.dappPromise?.reject(ethErrors.provider.userRejectedRequest<any>(err))
     this.removeUserRequest(requestId)
@@ -845,10 +858,12 @@ export class MainController extends EventEmitter {
     } else {
       this.userRequests.push(req)
     }
+
     const { id, action, meta } = req
     if (action.kind === 'call') {
-      if (!this.settings.networks.find((x) => x.id === meta.networkId))
-        throw new Error(`addUserRequest: ${meta.networkId}: network does not exist`)
+      const network = this.settings.networks.find((x) => x.id === meta.networkId)
+      if (!network) throw new Error(`addUserRequest: ${meta.networkId}: network does not exist`)
+
       // @TODO: if EOA, only one call per accountOp
       if (!this.accountOpsToBeSigned[meta.accountAddr])
         this.accountOpsToBeSigned[meta.accountAddr] = {}
@@ -870,6 +885,35 @@ export class MainController extends EventEmitter {
           accountOp,
           estimation: null
         }
+
+        if (
+          this.signAccountOp &&
+          this.signAccountOp.accountOp.accountAddr === accountOp.accountAddr &&
+          this.signAccountOp.accountOp.networkId === accountOp.networkId
+        ) {
+          this.signAccountOp.update({ accountOp })
+        }
+        this.#estimateAccountOp(accountOp)
+
+        const accountState = this.accountStates[meta.accountAddr][meta.networkId]
+        if (shouldAskForEntryPointAuthorization(network, accountState)) {
+          const typedMessageAction = await getEntryPointAuthorization(
+            meta.accountAddr,
+            network.chainId,
+            BigInt(accountState.nonce)
+          )
+          await this.addUserRequest({
+            id: ENTRY_POINT_AUTHORIZATION_REQUEST_ID,
+            action: typedMessageAction,
+            meta: {
+              isSignAction: true,
+              accountAddr: meta.accountAddr,
+              networkId: meta.networkId
+            }
+          } as SignUserRequest)
+          this.emitUpdate()
+          return
+        }
         const account = this.accounts.filter((x) => x.addr === meta.accountAddr)[0]
         this.actions.addToActionsQueue(
           {
@@ -880,14 +924,6 @@ export class MainController extends EventEmitter {
           },
           withPriority
         )
-        if (
-          this.signAccountOp &&
-          this.signAccountOp.accountOp.accountAddr === accountOp.accountAddr &&
-          this.signAccountOp.accountOp.networkId === accountOp.networkId
-        ) {
-          this.signAccountOp.update({ accountOp })
-        }
-        this.#estimateAccountOp(accountOp)
       }
     } else if (action.kind === 'typedMessage' || action.kind === 'message') {
       if (!this.messagesToBeSigned[meta.accountAddr]) {
@@ -932,7 +968,7 @@ export class MainController extends EventEmitter {
   // @TODO allow this to remove multiple OR figure out a way to debounce re-estimations
   // first one sounds more reasonble
   // although the second one can't hurt and can help (or no debounce, just a one-at-a-time queue)
-  removeUserRequest(id: number) {
+  removeUserRequest(id: string | number) {
     const req = this.userRequests.find((uReq) => uReq.id === id)
     if (!req) return
 
@@ -1622,6 +1658,21 @@ export class MainController extends EventEmitter {
     this.emitUpdate()
 
     await this.activity.addSignedMessage(signedMessage, signedMessage.accountAddr)
+    if (signedMessage.id === ENTRY_POINT_AUTHORIZATION_REQUEST_ID) {
+      const accountOp =
+        this.accountOpsToBeSigned[signedMessage.accountAddr][signedMessage.networkId]?.accountOp
+      if (accountOp) {
+        this.actions.addToActionsQueue(
+          {
+            id: `${accountOp.accountAddr}-${accountOp.networkId}`,
+            type: 'accountOp',
+            accountOp,
+            withBatching: true
+          },
+          true
+        )
+      }
+    }
     await this.resolveUserRequest({ hash: signedMessage.signature }, signedMessage.id)
     !!this.onBroadcastSuccess &&
       this.onBroadcastSuccess(

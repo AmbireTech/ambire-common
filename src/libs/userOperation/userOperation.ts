@@ -206,6 +206,8 @@ export function shouldAskForEntryPointAuthorization(
   return accountState.isV2 && network.erc4337.enabled && !accountState.isErc4337Enabled
 }
 
+export const ENTRY_POINT_AUTHORIZATION_REQUEST_ID = 'ENTRY_POINT_AUTHORIZATION_REQUEST_ID'
+
 export async function getEntryPointAuthorization(addr: AccountId, chainId: bigint, nonce: bigint) {
   const hash = getSignableHash(addr, chainId, nonce, [getActivatorCall(addr)])
   return getTypedData(chainId, addr, hexlify(hash))
