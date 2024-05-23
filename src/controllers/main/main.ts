@@ -223,7 +223,7 @@ export class MainController extends EventEmitter {
       this.#storage,
       this.#fetch
     )
-    this.transfer = new TransferController(this.settings, this.addressBook)
+    this.transfer = new TransferController(this.settings)
     this.domains = new DomainsController(this.settings.providers, this.#fetch)
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch: this.#fetch })
     this.onResolveDappRequest = onResolveDappRequest
@@ -257,6 +257,9 @@ export class MainController extends EventEmitter {
 
     if (this.selectedAccount) {
       this.activity.init({ filters: { account: this.selectedAccount } })
+      this.transfer.update({
+        selectedAccount: this.selectedAccount
+      })
       this.addressBook.update({
         selectedAccount
       })
@@ -529,6 +532,9 @@ export class MainController extends EventEmitter {
     this.#storage.set('selectedAccount', toAccountAddr)
     this.activity.init({ filters: { account: toAccountAddr } })
     this.addressBook.update({
+      selectedAccount: toAccountAddr
+    })
+    this.transfer.update({
       selectedAccount: toAccountAddr
     })
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
