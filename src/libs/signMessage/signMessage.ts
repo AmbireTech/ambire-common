@@ -1,6 +1,7 @@
 /* eslint-disable no-param-reassign */
 import {
   AbiCoder,
+  getAddress,
   getBytes,
   hashMessage,
   hexlify,
@@ -15,7 +16,7 @@ import {
 } from 'ethers'
 
 import UniversalSigValidator from '../../../contracts/compiled/UniversalSigValidator.json'
-import { PERMIT_2_ADDRESS } from '../../consts/addresses'
+import { PERMIT_2_ADDRESS, UNISWAP_UNIVERSAL_ROUTERS } from '../../consts/addresses'
 import { Account, AccountCreation, AccountId, AccountOnchainState } from '../../interfaces/account'
 import { KeystoreSigner } from '../../interfaces/keystore'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
@@ -279,12 +280,11 @@ export async function getPlainTextSignature(
   }
 
   if (!accountState.isV2) {
-    // the below commented out code is the way this should work if we enable it
-    // we're disabling it from the extension for v1 account as signatures
-    // produced in plain text are malleable, meaning they could be reused
-    // somewhere else. If demand is big enough for v1 account, we might
-    // re-enable them
-    // return wrapUnprotected(await signer.signMessage(messageHex))
+    const humanReadableMsg = message instanceof Uint8Array ? hexlify(message) : message
+    if (humanReadableMsg.toLowerCase().indexOf(account.addr.toLowerCase()) !== -1) {
+      return wrapUnprotected(await signer.signMessage(messageHex))
+    }
+
     throw new Error(
       'Signing messages is disallowed for v1 accounts. Please contact support to proceed'
     )
@@ -309,7 +309,8 @@ export async function getEIP712Signature(
   message: TypedMessage,
   account: Account,
   accountState: AccountOnchainState,
-  signer: KeystoreSigner
+  signer: KeystoreSigner,
+  network: NetworkDescriptor
 ): Promise<string> {
   if (!message.types.EIP712Domain) {
     throw new Error(
@@ -328,15 +329,22 @@ export async function getEIP712Signature(
   }
 
   if (!accountState.isV2) {
+    const asString = JSON.stringify(message).toLowerCase()
     if (
-      message.domain.name === 'Permit2' &&
-      message.domain.verifyingContract === PERMIT_2_ADDRESS
+      asString.indexOf(account.addr.toLowerCase()) !== -1 ||
+      (message.domain.name === 'Permit2' &&
+        message.domain.verifyingContract &&
+        getAddress(message.domain.verifyingContract) === PERMIT_2_ADDRESS &&
+        message.message &&
+        message.message.spender &&
+        UNISWAP_UNIVERSAL_ROUTERS[Number(network.chainId)] &&
+        UNISWAP_UNIVERSAL_ROUTERS[Number(network.chainId)] === getAddress(message.message.spender))
     ) {
       return wrapUnprotected(await signer.signTypedData(message))
     }
 
     throw new Error(
-      'Signing eip-712 messages is disallowed for v1 accounts. Please contact support to proceed'
+      'Signing this eip-712 message is disallowed for v1 accounts as it does not contain the smart account address and therefore deemed unsafe'
     )
   }
 
