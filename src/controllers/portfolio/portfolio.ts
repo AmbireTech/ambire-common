@@ -667,7 +667,7 @@ export class PortfolioController extends EventEmitter {
         return acc
       }, {})
 
-    if (!tokensToLearn.length) return
+    if (!Object.keys(tokensToLearn).length) return
     // Add new tokens in the beginning of the list
     networkLearnedTokens = { ...tokensToLearn, ...networkLearnedTokens }
 
