@@ -87,7 +87,7 @@ describe('Portfolio Controller ', () => {
       await controller.updateSelectedAccount([account2], [ethereum], account2.addr)
 
       const storagePreviousHints = await storage.get('previousHints', {})
-      const storageErc20s = storagePreviousHints[`ethereum:${account2.addr}`].erc20s
+      const storageErc20s = storagePreviousHints.fromExternalAPI[`ethereum:${account2.addr}`].erc20s
 
       // Controller persists tokens having balance for the current account.
       // @TODO - here we can enhance the test to cover two more scenarios:
@@ -416,8 +416,9 @@ describe('Portfolio Controller ', () => {
     settings.providers = providers
     const controller = new PortfolioController(storage, settings, relayerUrl)
 
+    await controller.learnTokens([BANANA_TOKEN_ADDR], 'ethereum')
+
     await controller.updateSelectedAccount([account], networks, account.addr, undefined, {
-      additionalHints: [BANANA_TOKEN_ADDR],
       forceUpdate: true
     })
 
@@ -426,22 +427,6 @@ describe('Portfolio Controller ', () => {
     )
 
     expect(token).toBeTruthy()
-
-    controller.resetAdditionalHints()
-
-    await controller.updateSelectedAccount([account], networks, account.addr, undefined, {
-      forceUpdate: true
-    })
-
-    // we're chaging how the portfolio fetches tokens
-    // now, even though we're resetting additionalHints, we want the
-    // token to be available once fetched from the simulation.
-    // if we get close to the limit, all tokens with 0 balance will
-    // get flushed
-    const tokenAgain = controller.latest[account.addr].ethereum?.result?.tokens.find(
-      (tk) => tk.address === BANANA_TOKEN_ADDR
-    )
-    expect(tokenAgain).toBeTruthy()
   })
 
   test('Native tokens are fetched for all networks', async () => {

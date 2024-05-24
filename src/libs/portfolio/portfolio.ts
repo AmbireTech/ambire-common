@@ -11,7 +11,7 @@ import { Deployless, fromDescriptor } from '../deployless/deployless'
 import batcher from './batcher'
 import { geckoRequestBatcher, geckoResponseIdentifier } from './gecko'
 import { getNFTs, getTokens } from './getOnchainBalances'
-import { getTokenAmount } from './helpers'
+import { getTotal } from './helpers'
 import {
   CollectionResult,
   GetOptions,
@@ -24,7 +24,7 @@ import {
 } from './interfaces'
 import { flattenResults, paginate } from './pagination'
 
-const LIMITS: Limits = {
+export const LIMITS: Limits = {
   // we have to be conservative with erc721Tokens because if we pass 30x20 (worst case) tokenIds, that's 30x20 extra words which is 19kb
   // proxy mode input is limited to 24kb
   deploylessProxyMode: { erc20: 100, erc721: 30, erc721TokensInput: 20, erc721Tokens: 50 },
@@ -198,33 +198,8 @@ export class Portfolio {
       return null
     }
 
-    const tokenFilter = ([error, result]: [string, TokenResult]): boolean => {
-      if (error !== '0x' || result.symbol === '') return false
-
-      const isTokenPreference = localOpts.tokenPreferences?.find((tokenPreference) => {
-        return tokenPreference.address === result.address && tokenPreference.networkId === networkId
-      })
-      if (isTokenPreference) {
-        result.isHidden = isTokenPreference.isHidden
-      }
-
-      // always include > 0 amount and native token
-      if (result.amount > 0 || result.address === ZeroAddress) return true
-
-      const isPinned = !!PINNED_TOKENS.find((pinnedToken) => {
-        return pinnedToken.networkId === networkId && pinnedToken.address === result.address
-      })
-
-      const isInAdditionalHints = localOpts.additionalHints?.includes(result.address)
-
-      // if the amount is 0
-      // return the token if it's pinned and requested
-      // or if it's not pinned but under the limit
-      const pinnedRequested = isPinned && localOpts.fetchPinned
-      const underLimit = tokensWithErr.length <= limits.erc20 / 2
-
-      return !!isTokenPreference || isInAdditionalHints || pinnedRequested || underLimit
-    }
+    const tokenFilter = ([error, result]: [string, TokenResult]): boolean =>
+      error === '0x' && !!result.symbol
 
     const tokensWithoutPrices = tokensWithErr
       .filter((tokenWithErr) => tokenFilter(tokenWithErr))
@@ -318,16 +293,7 @@ export class Portfolio {
         .filter(([error, result]) => error !== '0x' || result.symbol === '')
         .map(([error, result]) => ({ error, address: result.address })),
       collections: collections.filter((x) => x.collectibles?.length),
-      total: tokensWithPrices.reduce((cur, token) => {
-        const localCur = cur
-        if (token.isHidden) return localCur
-        for (const x of token.priceIn) {
-          localCur[x.baseCurrency] =
-            (localCur[x.baseCurrency] || 0) +
-            (Number(getTokenAmount(token)) / 10 ** token.decimals) * x.price
-        }
-        return localCur
-      }, {})
+      total: getTotal(tokensWithPrices)
     }
   }
 }
