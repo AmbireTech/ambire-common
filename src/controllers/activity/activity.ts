@@ -306,8 +306,8 @@ export class ActivityController extends EventEmitter {
               accountOpDate.setMinutes(accountOpDate.getMinutes() + 15)
               const aQuaterHasPassed = accountOpDate < new Date()
               if (aQuaterHasPassed) {
-                this.#accountsOps[this.filters!.account][network][accountOpIndex].status =
-                  AccountOpStatus.Rejected
+                this.#accountsOps[selectedAccount][network][accountOpIndex].status =
+                  AccountOpStatus.Failure
               }
             }
 
@@ -327,14 +327,14 @@ export class ActivityController extends EventEmitter {
                 ])
 
                 if (bundlerResult.status === 'rejected') {
-                  this.#accountsOps[this.filters!.account][network][accountOpIndex].status =
+                  this.#accountsOps[selectedAccount][network][accountOpIndex].status =
                     AccountOpStatus.Rejected
                   return
                 }
 
                 if (bundlerResult.transactionHash) {
                   txnId = bundlerResult.transactionHash
-                  this.#accountsOps[this.filters!.account][network][accountOpIndex].txnId = txnId
+                  this.#accountsOps[selectedAccount][network][accountOpIndex].txnId = txnId
                 } else {
                   // on custom networks the response is null
                   if (!response) return
@@ -349,7 +349,7 @@ export class ActivityController extends EventEmitter {
                   // indexed, yet, so we wait
                   if (userOps.length) {
                     txnId = userOps[0].transactionHash
-                    this.#accountsOps[this.filters!.account][network][accountOpIndex].txnId = txnId
+                    this.#accountsOps[selectedAccount][network][accountOpIndex].txnId = txnId
                   } else {
                     declareRejectedIfQuaterPassed(accountOp)
                     return
@@ -359,8 +359,9 @@ export class ActivityController extends EventEmitter {
 
               const receipt = await provider.getTransactionReceipt(txnId)
               if (receipt) {
-                this.#accountsOps[this.filters!.account][network][accountOpIndex].status =
-                  receipt.status ? AccountOpStatus.Success : AccountOpStatus.Failure
+                this.#accountsOps[selectedAccount][network][accountOpIndex].status = receipt.status
+                  ? AccountOpStatus.Success
+                  : AccountOpStatus.Failure
 
                 if (receipt.status) {
                   shouldUpdatePortfolio = true
@@ -396,7 +397,7 @@ export class ActivityController extends EventEmitter {
                 this.#accountStates[accountOp.accountAddr][accountOp.networkId].erc4337Nonce >
                   accountOp.nonce)
             ) {
-              this.#accountsOps[this.filters!.account][network][accountOpIndex].status =
+              this.#accountsOps[selectedAccount][network][accountOpIndex].status =
                 AccountOpStatus.UnknownButPastNonce
               shouldUpdatePortfolio = true
             }
