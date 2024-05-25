@@ -264,7 +264,7 @@ export class MainController extends EventEmitter {
     this.activity = new ActivityController(this.#storage, this.accountStates, this.settings)
 
     if (this.selectedAccount) {
-      this.activity.init({ filters: { account: this.selectedAccount } })
+      this.activity.init({ selectedAccount: this.selectedAccount })
       this.addressBook.update({
         selectedAccount
       })
@@ -541,7 +541,11 @@ export class MainController extends EventEmitter {
     this.selectedAccount = toAccountAddr
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.#storage.set('selectedAccount', toAccountAddr)
-    this.activity.init({ filters: { account: toAccountAddr } })
+
+    this.activity.init({
+      selectedAccount: toAccountAddr
+    })
+
     this.addressBook.update({
       selectedAccount: toAccountAddr
     })

@@ -4,7 +4,7 @@ import { SettingsController } from 'controllers/settings/settings'
 import fetch from 'node-fetch'
 
 import { networks as predefinedNetworks } from '../../consts/networks'
-import { AccountStates } from '../../interfaces/account'
+import { AccountId, AccountStates } from '../../interfaces/account'
 import { Banner } from '../../interfaces/banner'
 import { Storage } from '../../interfaces/storage'
 import { Message } from '../../interfaces/userRequest'
@@ -129,6 +129,8 @@ export class ActivityController extends EventEmitter {
 
   #settings: SettingsController
 
+  #selectedAccount: AccountId | null = null
+
   constructor(storage: Storage, accountStates: AccountStates, settings: SettingsController) {
     super()
     this.#storage = storage
@@ -149,23 +151,28 @@ export class ActivityController extends EventEmitter {
     this.emitUpdate()
   }
 
-  init({ filters }: { filters: Filters }) {
-    this.filters = filters
+  init({ selectedAccount, filters }: { selectedAccount: AccountId | null; filters?: Filters }) {
+    this.#selectedAccount = selectedAccount
     this.isInitialized = true
 
-    this.accountsOps = this.filterAndPaginateAccountOps(
-      this.#accountsOps,
-      this.accountsOpsPagination
-    )
-    this.signedMessages = this.filterAndPaginateSignedMessages(
-      this.#signedMessages,
-      this.signedMessagesPagination
-    )
+    if (filters) {
+      this.filters = filters
+
+      this.accountsOps = this.filterAndPaginateAccountOps(
+        this.#accountsOps,
+        this.accountsOpsPagination
+      )
+      this.signedMessages = this.filterAndPaginateSignedMessages(
+        this.#signedMessages,
+        this.signedMessagesPagination
+      )
+    }
 
     this.emitUpdate()
   }
 
   reset() {
+    this.#selectedAccount = null
     this.filters = null
     this.isInitialized = false
     this.emitUpdate()
@@ -182,11 +189,14 @@ export class ActivityController extends EventEmitter {
       return
     }
 
-    let filteredItems = []
-    if (this.filters!.network) {
-      filteredItems = items?.[this.filters!.account]?.[this.filters!.network] || []
-    } else {
-      filteredItems = Object.values(items?.[this.filters!.account] || []).flat()
+    let filteredItems: T[] = []
+
+    if (this.filters) {
+      if (this.filters.network) {
+        filteredItems = items?.[this.filters.account]?.[this.filters.network] || []
+      } else {
+        filteredItems = Object.values(items?.[this.filters.account] || []).flat()
+      }
     }
 
     const { fromPage, itemsPerPage } = pagination
@@ -209,7 +219,7 @@ export class ActivityController extends EventEmitter {
       this.#throwNotInitialized()
       return
     }
-    const filteredItems = items?.[this.filters!.account] || []
+    const filteredItems = this.filters?.account ? items?.[this.filters.account] || [] : []
     const { fromPage, itemsPerPage } = pagination
 
     return {
@@ -265,7 +275,7 @@ export class ActivityController extends EventEmitter {
 
     // Here we don't rely on `this.isInitialized` flag, as it checks for both `this.filters.account` and `this.filters.network` existence.
     // Banners are network agnostic, and that's the reason we check for `this.filters.account` only and having this.#accountsOps loaded.
-    if (!this.filters?.account || !this.#accountsOps[this.filters.account])
+    if (!this.#selectedAccount || !this.#accountsOps[this.#selectedAccount])
       return { shouldEmitUpdate: false, shouldUpdatePortfolio: false }
 
     // This flag tracks the changes to AccountsOps statuses
@@ -275,121 +285,122 @@ export class ActivityController extends EventEmitter {
     let shouldUpdatePortfolio = false
 
     await Promise.all(
-      Object.keys(this.#accountsOps[this.filters.account]).map(async (network) => {
+      Object.keys(this.#accountsOps[this.#selectedAccount]).map(async (network) => {
         const networkConfig = this.#settings.networks.find((x) => x.id === network)!
         const provider = this.#settings.providers[networkConfig.id]
 
+        const selectedAccount = this.#selectedAccount
+
+        if (!selectedAccount) return
+
         return Promise.all(
-          this.#accountsOps[this.filters!.account][network].map(
-            async (accountOp, accountOpIndex) => {
-              // Don't update the current network account ops statuses,
-              // as the statuses are already updated in the previous calls.
-              if (accountOp.status !== AccountOpStatus.BroadcastedButNotConfirmed) return
+          this.#accountsOps[selectedAccount][network].map(async (accountOp, accountOpIndex) => {
+            // Don't update the current network account ops statuses,
+            // as the statuses are already updated in the previous calls.
+            if (accountOp.status !== AccountOpStatus.BroadcastedButNotConfirmed) return
 
-              shouldEmitUpdate = true
+            shouldEmitUpdate = true
 
-              const declareRejectedIfQuaterPassed = (op: SubmittedAccountOp) => {
-                const accountOpDate = new Date(op.timestamp)
-                accountOpDate.setMinutes(accountOpDate.getMinutes() + 15)
-                const aQuaterHasPassed = accountOpDate < new Date()
-                if (aQuaterHasPassed) {
+            const declareRejectedIfQuaterPassed = (op: SubmittedAccountOp) => {
+              const accountOpDate = new Date(op.timestamp)
+              accountOpDate.setMinutes(accountOpDate.getMinutes() + 15)
+              const aQuaterHasPassed = accountOpDate < new Date()
+              if (aQuaterHasPassed) {
+                this.#accountsOps[this.filters!.account][network][accountOpIndex].status =
+                  AccountOpStatus.Rejected
+              }
+            }
+
+            try {
+              let txnId = accountOp.txnId
+              if (accountOp.userOpHash) {
+                const isCustomNetwork = !predefinedNetworks.find(
+                  (net) => net.id === networkConfig.id
+                )
+                const [response, bundlerResult] = await Promise.all([
+                  !isCustomNetwork
+                    ? fetchUserOp(accountOp.userOpHash, fetch, getExplorerId(networkConfig))
+                    : new Promise((resolve) => {
+                        resolve(null)
+                      }),
+                  Bundler.getStatusAndTxnId(accountOp.userOpHash, networkConfig)
+                ])
+
+                if (bundlerResult.status === 'rejected') {
                   this.#accountsOps[this.filters!.account][network][accountOpIndex].status =
                     AccountOpStatus.Rejected
-                }
-              }
-
-              try {
-                let txnId = accountOp.txnId
-                if (accountOp.userOpHash) {
-                  const isCustomNetwork = !predefinedNetworks.find(
-                    (net) => net.id === networkConfig.id
-                  )
-                  const [response, bundlerResult] = await Promise.all([
-                    !isCustomNetwork
-                      ? fetchUserOp(accountOp.userOpHash, fetch, getExplorerId(networkConfig))
-                      : new Promise((resolve) => {
-                          resolve(null)
-                        }),
-                    Bundler.getStatusAndTxnId(accountOp.userOpHash, networkConfig)
-                  ])
-
-                  if (bundlerResult.status === 'rejected') {
-                    this.#accountsOps[this.filters!.account][network][accountOpIndex].status =
-                      AccountOpStatus.Rejected
-                    return
-                  }
-
-                  if (bundlerResult.transactionHash) {
-                    txnId = bundlerResult.transactionHash
-                    this.#accountsOps[this.filters!.account][network][accountOpIndex].txnId = txnId
-                  } else {
-                    // on custom networks the response is null
-                    if (!response) return
-
-                    // nothing we can do if we don't have information
-                    if (response.status !== 200) return
-
-                    const data = await response.json()
-                    const userOps = data.userOps
-
-                    // if there are not user ops, it means the userOpHash is not
-                    // indexed, yet, so we wait
-                    if (userOps.length) {
-                      txnId = userOps[0].transactionHash
-                      this.#accountsOps[this.filters!.account][network][accountOpIndex].txnId =
-                        txnId
-                    } else {
-                      declareRejectedIfQuaterPassed(accountOp)
-                      return
-                    }
-                  }
-                }
-
-                const receipt = await provider.getTransactionReceipt(txnId)
-                if (receipt) {
-                  this.#accountsOps[this.filters!.account][network][accountOpIndex].status =
-                    receipt.status ? AccountOpStatus.Success : AccountOpStatus.Failure
-
-                  if (receipt.status) {
-                    shouldUpdatePortfolio = true
-                  }
-
-                  if (accountOp.isSingletonDeploy && receipt.status) {
-                    // the below promise has a catch() inside
-                    /* eslint-disable @typescript-eslint/no-floating-promises */
-                    this.#settings.setContractsDeployedToTrueIfDeployed(networkConfig)
-                  }
                   return
                 }
 
-                // if there's no receipt, confirm there's a txn
-                // if there's no txn and 15 minutes have passed, declare it a failure
-                const txn = await provider.getTransaction(txnId)
-                if (!txn) declareRejectedIfQuaterPassed(accountOp)
-              } catch {
-                this.emitError({
-                  level: 'silent',
-                  message: `Failed to determine transaction status on ${accountOp.networkId} for ${accountOp.txnId}.`,
-                  error: new Error(
-                    `activity: failed to get transaction receipt for ${accountOp.txnId}`
-                  )
-                })
+                if (bundlerResult.transactionHash) {
+                  txnId = bundlerResult.transactionHash
+                  this.#accountsOps[this.filters!.account][network][accountOpIndex].txnId = txnId
+                } else {
+                  // on custom networks the response is null
+                  if (!response) return
+
+                  // nothing we can do if we don't have information
+                  if (response.status !== 200) return
+
+                  const data = await response.json()
+                  const userOps = data.userOps
+
+                  // if there are not user ops, it means the userOpHash is not
+                  // indexed, yet, so we wait
+                  if (userOps.length) {
+                    txnId = userOps[0].transactionHash
+                    this.#accountsOps[this.filters!.account][network][accountOpIndex].txnId = txnId
+                  } else {
+                    declareRejectedIfQuaterPassed(accountOp)
+                    return
+                  }
+                }
               }
 
-              if (
-                (!accountOp.userOpHash &&
-                  this.#accountStates[accountOp.accountAddr][accountOp.networkId].nonce >
-                    accountOp.nonce) ||
-                (accountOp.userOpHash &&
-                  this.#accountStates[accountOp.accountAddr][accountOp.networkId].erc4337Nonce >
-                    accountOp.nonce)
-              ) {
+              const receipt = await provider.getTransactionReceipt(txnId)
+              if (receipt) {
                 this.#accountsOps[this.filters!.account][network][accountOpIndex].status =
-                  AccountOpStatus.UnknownButPastNonce
-                shouldUpdatePortfolio = true
+                  receipt.status ? AccountOpStatus.Success : AccountOpStatus.Failure
+
+                if (receipt.status) {
+                  shouldUpdatePortfolio = true
+                }
+
+                if (accountOp.isSingletonDeploy && receipt.status) {
+                  // the below promise has a catch() inside
+                  /* eslint-disable @typescript-eslint/no-floating-promises */
+                  this.#settings.setContractsDeployedToTrueIfDeployed(networkConfig)
+                }
+                return
               }
+
+              // if there's no receipt, confirm there's a txn
+              // if there's no txn and 15 minutes have passed, declare it a failure
+              const txn = await provider.getTransaction(txnId)
+              if (!txn) declareRejectedIfQuaterPassed(accountOp)
+            } catch {
+              this.emitError({
+                level: 'silent',
+                message: `Failed to determine transaction status on ${accountOp.networkId} for ${accountOp.txnId}.`,
+                error: new Error(
+                  `activity: failed to get transaction receipt for ${accountOp.txnId}`
+                )
+              })
             }
-          )
+
+            if (
+              (!accountOp.userOpHash &&
+                this.#accountStates[accountOp.accountAddr][accountOp.networkId].nonce >
+                  accountOp.nonce) ||
+              (accountOp.userOpHash &&
+                this.#accountStates[accountOp.accountAddr][accountOp.networkId].erc4337Nonce >
+                  accountOp.nonce)
+            ) {
+              this.#accountsOps[this.filters!.account][network][accountOpIndex].status =
+                AccountOpStatus.UnknownButPastNonce
+              shouldUpdatePortfolio = true
+            }
+          })
         )
       })
     )
@@ -428,13 +439,14 @@ export class ActivityController extends EventEmitter {
     this.emitUpdate()
   }
 
-  setFilters(filters: Filters): void {
+  setFilters(filters: Filters) {
     if (!this.isInitialized) {
       this.#throwNotInitialized()
       return
     }
 
     this.filters = filters
+
     this.accountsOps = this.filterAndPaginateAccountOps(
       this.#accountsOps,
       this.accountsOpsPagination
@@ -489,9 +501,9 @@ export class ActivityController extends EventEmitter {
   get broadcastedButNotConfirmed(): SubmittedAccountOp[] {
     // Here we don't rely on `this.isInitialized` flag, as it checks for both `this.filters.account` and `this.filters.network` existence.
     // Banners are network agnostic, and that's the reason we check for `this.filters.account` only and having this.#accountsOps loaded.
-    if (!this.filters?.account || !this.#accountsOps[this.filters.account]) return []
+    if (!this.#selectedAccount || !this.#accountsOps[this.#selectedAccount]) return []
 
-    return Object.values(this.#accountsOps[this.filters.account])
+    return Object.values(this.#accountsOps[this.#selectedAccount])
       .flat()
       .filter((accountOp) => accountOp.status === AccountOpStatus.BroadcastedButNotConfirmed)
   }
