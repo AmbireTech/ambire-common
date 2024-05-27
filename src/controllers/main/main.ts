@@ -1224,7 +1224,7 @@ export class MainController extends EventEmitter {
         // it may have different needs
         this.portfolio.updateSelectedAccount(
           this.accounts,
-          this.settings.networks,
+          [network],
           localAccountOp.accountAddr,
           this.accountOpsToBeSigned[localAccountOp.accountAddr]
             ? Object.fromEntries(
