@@ -6,7 +6,6 @@ import { RPCProviders } from '../../interfaces/settings'
 import { UserRequest } from '../../interfaces/userRequest'
 // eslint-disable-next-line import/no-cycle
 import { AccountOp } from '../accountOp/accountOp'
-import { EstimateResult } from '../estimate/interfaces'
 import { PORTFOLIO_LIB_ERROR_NAMES } from '../portfolio/portfolio'
 import { getNetworksWithFailedRPC } from '../settings/settings'
 
@@ -18,7 +17,7 @@ export const getAccountOpBanners = ({
   networks
 }: {
   accountOpsToBeSignedByNetwork: {
-    [key: string]: { accountOp: AccountOp; estimation: EstimateResult | null } | null
+    [key: string]: { accountOp: AccountOp } | null
   }
   selectedAccount: string
   userRequests: UserRequest[]
