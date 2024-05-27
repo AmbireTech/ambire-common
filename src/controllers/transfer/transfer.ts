@@ -289,7 +289,6 @@ export class TransferController extends EventEmitter {
     ).toString(16)}`
 
     const txn = {
-      kind: 'call' as const,
       to: this.selectedToken.address,
       value: BigInt(0),
       data: ERC20.encodeFunctionData('transfer', [recipientAddress, bigNumberHexAmount])
@@ -303,7 +302,7 @@ export class TransferController extends EventEmitter {
 
     this.userRequest = {
       id: new Date().getTime(),
-      action: txn,
+      action: { kind: 'call' as const, txns: [txn] },
       meta: {
         isSignAction: true,
         networkId: this.#selectedTokenNetworkData.id,

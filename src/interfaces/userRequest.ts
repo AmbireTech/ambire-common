@@ -7,9 +7,11 @@ import { NetworkId } from './networkDescriptor'
 
 export interface Call {
   kind: 'call'
-  to: string
-  value: bigint
-  data: string
+  txns: {
+    to: string
+    value: bigint
+    data: string
+  }[]
 }
 export interface PlainTextMessage {
   kind: 'message'

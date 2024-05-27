@@ -630,8 +630,11 @@ export class MainController extends EventEmitter {
           (req as SignUserRequest).meta.networkId === networkId &&
           (req as SignUserRequest).meta.accountAddr === accountAddr
         ) {
-          const { to, value, data } = (req as SignUserRequest).action as Call
-          uCalls.push({ to, value, data, fromUserRequestId: req.id })
+          const action = (req as SignUserRequest).action as Call
+          action.txns.forEach((txn) => {
+            const { to, value, data } = txn
+            uCalls.push({ to, value, data, fromUserRequestId: req.id })
+          })
         }
         return uCalls
       }, [])
@@ -708,8 +711,12 @@ export class MainController extends EventEmitter {
         id: new Date().getTime(),
         action: {
           kind,
-          ...transaction,
-          value: transaction.value ? getBigInt(transaction.value) : 0n
+          txns: [
+            {
+              ...transaction,
+              value: transaction.value ? getBigInt(transaction.value) : 0n
+            }
+          ]
         },
         meta: { isSignAction: true, accountAddr, networkId: network.id },
         dappPromise
