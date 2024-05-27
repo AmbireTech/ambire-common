@@ -1,7 +1,7 @@
 import { DappProviderRequest } from '../../interfaces/dapp'
 
 export const dappRequestMethodToActionKind = (method: DappProviderRequest['method']) => {
-  if (['call', 'eth_sendTransaction'].includes(method)) return 'call'
+  if (['call', 'eth_sendTransaction', 'wallet_sendCalls'].includes(method)) return 'call'
   if (
     [
       'eth_signTypedData',
