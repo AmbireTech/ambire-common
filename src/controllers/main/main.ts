@@ -142,11 +142,7 @@ export class MainController extends EventEmitter {
   // 2) it's easier to mutate this - to add/remove accountOps, to find the right accountOp to extend, etc.
   // accountAddr => networkId => { accountOp, estimation }
   // @TODO consider getting rid of the `| null` ugliness, but then we need to auto-delete
-  accountOpsToBeSigned: {
-    [key: string]: {
-      [key: string]: { accountOp: AccountOp; estimation: EstimateResult | null } | null
-    }
-  } = {}
+  accountOpsToBeSigned: { [key: string]: { [key: string]: { accountOp: AccountOp } | null } } = {}
 
   accountOpsToBeConfirmed: { [key: string]: { [key: string]: AccountOp } } = {}
 
@@ -369,7 +365,10 @@ export class MainController extends EventEmitter {
         this.signAccountOp.accountOp.signature &&
         this.signAccountOp.status?.type === SigningStatus.Done
       ) {
-        await this.broadcastSignedAccountOp(this.signAccountOp.accountOp)
+        await this.broadcastSignedAccountOp(
+          this.signAccountOp.accountOp,
+          this.signAccountOp.estimation!
+        )
       }
     }
     MainController.signAccountOpListener = this.signAccountOp.onUpdate(
@@ -378,7 +377,7 @@ export class MainController extends EventEmitter {
 
     this.emitUpdate()
 
-    this.reestimateAndUpdatePrices(accountAddr, networkId)
+    this.reestimateSignAccountOpAndUpdateGasPrices(accountAddr, networkId)
   }
 
   destroySignAccOp() {
@@ -657,10 +656,10 @@ export class MainController extends EventEmitter {
     // pass the accountOps if any so we could reflect the pending state
     const accountOps = this.accountOpsToBeSigned[selectedAccount]
       ? Object.fromEntries(
-          Object.entries(this.accountOpsToBeSigned[selectedAccount])
-            // filter out account ops that have an estimation error
-            .filter(([, accOp]) => accOp && (!accOp.estimation || !accOp.estimation.error))
-            .map(([networkId, x]) => [networkId, [x!.accountOp]])
+          Object.entries(this.accountOpsToBeSigned[selectedAccount]).map(([networkId, x]) => [
+            networkId,
+            [x!.accountOp]
+          ])
         )
       : undefined
 
@@ -862,10 +861,7 @@ export class MainController extends EventEmitter {
       const accountOp = this.#makeAccountOpFromUserRequests(meta.accountAddr, meta.networkId)
       if (accountOp) {
         this.accountOpsToBeSigned[meta.accountAddr] ||= {}
-        this.accountOpsToBeSigned[meta.accountAddr][meta.networkId] = {
-          accountOp,
-          estimation: null
-        }
+        this.accountOpsToBeSigned[meta.accountAddr][meta.networkId] = { accountOp }
         const account = this.accounts.filter((x) => x.addr === meta.accountAddr)[0]
         this.actions.addToActionsQueue(
           {
@@ -882,8 +878,8 @@ export class MainController extends EventEmitter {
           this.signAccountOp.accountOp.networkId === accountOp.networkId
         ) {
           this.signAccountOp.update({ accountOp })
+          this.#estimateSignAccountOp()
         }
-        this.#estimateAccountOp(accountOp)
       }
     } else if (action.kind === 'typedMessage' || action.kind === 'message') {
       if (!this.messagesToBeSigned[meta.accountAddr]) {
@@ -943,16 +939,14 @@ export class MainController extends EventEmitter {
       const account = this.accounts.filter((x) => x.addr === meta.accountAddr)[0]
       if (accountOp) {
         this.accountOpsToBeSigned[meta.accountAddr] ||= {}
-        this.accountOpsToBeSigned[meta.accountAddr][meta.networkId] = {
-          accountOp,
-          estimation: null
-        }
+        this.accountOpsToBeSigned[meta.accountAddr][meta.networkId] = { accountOp }
         if (
           this.signAccountOp &&
           this.signAccountOp.accountOp.accountAddr === accountOp.accountAddr &&
           this.signAccountOp.accountOp.networkId === accountOp.networkId
         ) {
           this.signAccountOp.update({ accountOp, estimation: null })
+          this.#estimateSignAccountOp()
         }
         if (account.creation) {
           // if the rejectAccountOp is called we remove the calls one by one in case of multiple calls in the op
@@ -969,7 +963,6 @@ export class MainController extends EventEmitter {
         } else {
           this.actions.removeFromActionsQueue(id)
         }
-        this.#estimateAccountOp(accountOp)
       } else {
         delete this.accountOpsToBeSigned[meta.accountAddr]?.[meta.networkId]
         if (!Object.keys(this.accountOpsToBeSigned[meta.accountAddr] || {}).length)
@@ -1069,34 +1062,27 @@ export class MainController extends EventEmitter {
    * it would be preferable to update them simultaneously.
    * Otherwise, if either of the variables has not been recently updated, it may lead to an incorrect gas amount result.
    */
-  async reestimateAndUpdatePrices(accountAddr: AccountId, networkId: NetworkId) {
+  async reestimateSignAccountOpAndUpdateGasPrices(accountAddr: AccountId, networkId: NetworkId) {
     if (!this.signAccountOp) return
 
-    const accountOp = this.accountOpsToBeSigned[accountAddr]?.[networkId]?.accountOp
-    const reestimate = accountOp
-      ? this.#estimateAccountOp(accountOp)
-      : new Promise((resolve) => {
-          resolve(true)
-        })
-
-    await Promise.all([this.#updateGasPrice(), reestimate])
+    await Promise.all([this.#updateGasPrice(), this.#estimateSignAccountOp()])
 
     // there's a chance signAccountOp gets destroyed between the time
     // the first "if (!this.signAccountOp) return" is performed and
     // the time we get here. To prevent issues, we check one more time
-    if (this.signAccountOp) {
-      const gasPrices = this.gasPrices[networkId]
-      const estimation = this.accountOpsToBeSigned[accountAddr]?.[networkId]?.estimation
-      this.signAccountOp.update({ gasPrices, ...(estimation && { estimation }) })
-      this.emitUpdate()
-    }
+    if (!this.signAccountOp) return
+
+    this.signAccountOp.update({ gasPrices: this.gasPrices[networkId] })
+    this.emitUpdate()
   }
 
   // @TODO: protect this from race conditions/simultanous executions
-  async #estimateAccountOp(accountOp: AccountOp) {
+  async #estimateSignAccountOp() {
     try {
+      if (!this.signAccountOp) return
+
       // make a local copy to avoid updating the main reference
-      const localAccountOp: AccountOp = { ...accountOp }
+      const localAccountOp: AccountOp = { ...this.signAccountOp.accountOp }
 
       await this.#initialLoadPromise
       // new accountOps should have spoof signatures so that they can be easily simulated
@@ -1118,10 +1104,14 @@ export class MainController extends EventEmitter {
       const EOAaccounts = account?.creation ? this.accounts.filter((acc) => !acc.creation) : []
 
       if (!account)
-        throw new Error(`estimateAccountOp: ${localAccountOp.accountAddr}: account does not exist`)
+        throw new Error(
+          `estimateSignAccountOp: ${localAccountOp.accountAddr}: account does not exist`
+        )
       const network = this.settings.networks.find((x) => x.id === localAccountOp.networkId)
       if (!network)
-        throw new Error(`estimateAccountOp: ${localAccountOp.networkId}: network does not exist`)
+        throw new Error(
+          `estimateSignAccountOp: ${localAccountOp.networkId}: network does not exist`
+        )
 
       // Take the fee tokens from two places: the user's tokens and his gasTank
       // The gastTank tokens participate on each network as they belong everywhere
@@ -1143,8 +1133,11 @@ export class MainController extends EventEmitter {
         // 65gwei, try to make it work most of the times on ethereum
         let gasPrice = 65000000000n
         // calculate the fast gas price to use in simulation
-        if (this.gasPrices[accountOp.networkId] && this.gasPrices[accountOp.networkId].length) {
-          const fast = this.gasPrices[accountOp.networkId][2]
+        if (
+          this.gasPrices[localAccountOp.networkId] &&
+          this.gasPrices[localAccountOp.networkId].length
+        ) {
+          const fast = this.gasPrices[localAccountOp.networkId][2]
           gasPrice =
             'gasPrice' in fast ? fast.gasPrice : fast.baseFeePerGas + fast.maxPriorityFeePerGas
           // increase the gas price with 10% to try to get above the min baseFee
@@ -1152,15 +1145,8 @@ export class MainController extends EventEmitter {
         }
         // 200k, try to make it work most of the times on ethereum
         let gas = 200000n
-        if (
-          this.accountOpsToBeSigned[localAccountOp.accountAddr] &&
-          this.accountOpsToBeSigned[localAccountOp.accountAddr][localAccountOp.networkId] &&
-          this.accountOpsToBeSigned[localAccountOp.accountAddr][localAccountOp.networkId]!
-            .estimation
-        ) {
-          gas =
-            this.accountOpsToBeSigned[localAccountOp.accountAddr][localAccountOp.networkId]!
-              .estimation!.gasUsed
+        if (this.signAccountOp.estimation) {
+          gas = this.signAccountOp.estimation.gasUsed
         }
         const provider = this.settings.providers[localAccountOp.networkId]
         promises = localAccountOp.calls.map((call) => {
@@ -1271,21 +1257,10 @@ export class MainController extends EventEmitter {
       // if the account op has been deleted from this.accountOpsToBeSigned,
       // don't continue as the request has already finished
       if (
-        !this.accountOpsToBeSigned[localAccountOp.accountAddr] ||
-        !this.accountOpsToBeSigned[localAccountOp.accountAddr][localAccountOp.networkId]
+        !this.signAccountOp ||
+        !this.accountOpsToBeSigned?.[localAccountOp.accountAddr]?.[localAccountOp.networkId]
       )
         return
-
-      // @race
-      // we check this in the if statement above but in the event of a race which
-      // deletes this.accountOpsToBeSigned just before coming here,
-      // it's better an error to be thrown and caught instead of creating
-      // a new entry in this.accountOpsToBeSigned. That's why we use "!" and we should
-      // keep it that way
-      this.accountOpsToBeSigned[localAccountOp.accountAddr][localAccountOp.networkId]!.accountOp =
-        localAccountOp
-      this.accountOpsToBeSigned[localAccountOp.accountAddr][localAccountOp.networkId]!.estimation =
-        estimation
 
       // if the nonce from the estimation is different than the one in localAccountOp,
       // override all places that contain the old nonce with the correct one
@@ -1296,10 +1271,7 @@ export class MainController extends EventEmitter {
           localAccountOp.networkId
         ]!.accountOp.nonce = localAccountOp.nonce
 
-        if (
-          this.accountStates[localAccountOp.accountAddr] &&
-          this.accountStates[localAccountOp.accountAddr][localAccountOp.networkId]
-        )
+        if (this.accountStates?.[localAccountOp.accountAddr]?.[localAccountOp.networkId])
           this.accountStates[localAccountOp.accountAddr][localAccountOp.networkId].nonce =
             localAccountOp.nonce
       }
@@ -1336,7 +1308,7 @@ export class MainController extends EventEmitter {
    *   4. for smart accounts, when the Relayer does the broadcast.
    *
    */
-  async broadcastSignedAccountOp(accountOp: AccountOp) {
+  async broadcastSignedAccountOp(accountOp: AccountOp, estimation: EstimateResult) {
     this.broadcastStatus = 'LOADING'
     this.emitUpdate()
 
@@ -1367,8 +1339,6 @@ export class MainController extends EventEmitter {
     }
 
     let transactionRes: TransactionResponse | { hash: string; nonce: number } | null = null
-    const estimation =
-      this.accountOpsToBeSigned[accountOp.accountAddr][accountOp.networkId]!.estimation!
     const feeTokenEstimation = estimation.feePaymentOptions.find(
       (option) =>
         option.token.address === accountOp.gasFeePayment?.inToken &&
