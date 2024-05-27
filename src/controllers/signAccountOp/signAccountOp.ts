@@ -103,7 +103,7 @@ export class SignAccountOpController extends EventEmitter {
 
   gasPrices: GasRecommendation[] | null = null
 
-  #estimation: EstimateResult | null = null
+  estimation: EstimateResult | null = null
 
   feeSpeeds: {
     [identifier: string]: SpeedCalc[]
@@ -159,7 +159,7 @@ export class SignAccountOpController extends EventEmitter {
   }
 
   get isInitialized(): boolean {
-    return !!this.#estimation
+    return !!this.estimation
   }
 
   #setDefaults() {
@@ -211,8 +211,8 @@ export class SignAccountOpController extends EventEmitter {
     if (!this.isInitialized) return errors
 
     // if there's an estimation error, show it
-    if (this.#estimation?.error) {
-      errors.push(this.#estimation.error.message)
+    if (this.estimation?.error) {
+      errors.push(this.estimation.error.message)
     }
 
     const availableFeeOptions = this.availableFeeOptions
@@ -340,16 +340,16 @@ export class SignAccountOpController extends EventEmitter {
 
     if (estimation) {
       this.gasUsedTooHigh = estimation.gasUsed > 10000000n
-      this.#estimation = estimation
+      this.estimation = estimation
       // on each estimation update, set the newest account nonce
       this.accountOp.nonce = BigInt(estimation.currentAccountNonce)
     }
 
     // if estimation is undefined, do not clear the estimation.
     // We do this only if strictly specified as null
-    if (estimation === null) this.#estimation = null
+    if (estimation === null) this.estimation = null
 
-    if (this.#estimation?.error) {
+    if (this.estimation?.error) {
       this.status = { type: SigningStatus.EstimationError }
     }
 
@@ -372,7 +372,7 @@ export class SignAccountOpController extends EventEmitter {
     // Set defaults, if some of the optional params are omitted
     this.#setDefaults()
 
-    if (this.#estimation && this.paidBy && this.feeTokenResult) {
+    if (this.estimation && this.paidBy && this.feeTokenResult) {
       this.selectedOption = this.availableFeeOptions.find(
         (option) =>
           option.paidBy === this.paidBy &&
@@ -403,7 +403,7 @@ export class SignAccountOpController extends EventEmitter {
 
     if (
       this.isInitialized &&
-      this.#estimation &&
+      this.estimation &&
       this.accountOp?.signingKeyAddr &&
       this.accountOp?.signingKeyType &&
       this.accountOp?.gasFeePayment &&
@@ -425,7 +425,7 @@ export class SignAccountOpController extends EventEmitter {
 
   reset() {
     this.gasPrices = null
-    this.#estimation = null
+    this.estimation = null
     this.selectedFeeSpeed = FeeSpeed.Fast
     this.paidBy = null
     this.feeTokenResult = null
@@ -522,7 +522,7 @@ export class SignAccountOpController extends EventEmitter {
     // reset the fee speeds at the beginning to avoid duplications
     this.feeSpeeds = {}
 
-    const gasUsed = this.#estimation!.gasUsed
+    const gasUsed = this.estimation!.gasUsed
     const callDataAdditionalGasCost = getCallDataAdditionalByNetwork(
       this.accountOp!,
       this.#network,
@@ -543,7 +543,7 @@ export class SignAccountOpController extends EventEmitter {
         return
       }
 
-      const erc4337GasLimits = this.#estimation?.erc4337GasLimits
+      const erc4337GasLimits = this.estimation?.erc4337GasLimits
       if (erc4337GasLimits) {
         const speeds: SpeedCalc[] = []
         const usesPaymaster = shouldUsePaymaster(this.#network)
@@ -734,7 +734,7 @@ export class SignAccountOpController extends EventEmitter {
     if (!this.isInitialized) return []
 
     // FeeOptions having amount
-    return this.#estimation!.feePaymentOptions.filter((feeOption) => feeOption.availableAmount)
+    return this.estimation!.feePaymentOptions.filter((feeOption) => feeOption.availableAmount)
   }
 
   get accountKeyStoreKeys(): Key[] {
@@ -866,10 +866,9 @@ export class SignAccountOpController extends EventEmitter {
         )
       } else if (this.accountOp.gasFeePayment.isERC4337) {
         const userOperation = getUserOperation(this.account, accountState, this.accountOp)
-        userOperation.preVerificationGas = this.#estimation!.erc4337GasLimits!.preVerificationGas
-        userOperation.callGasLimit = this.#estimation!.erc4337GasLimits!.callGasLimit
-        userOperation.verificationGasLimit =
-          this.#estimation!.erc4337GasLimits!.verificationGasLimit
+        userOperation.preVerificationGas = this.estimation!.erc4337GasLimits!.preVerificationGas
+        userOperation.callGasLimit = this.estimation!.erc4337GasLimits!.callGasLimit
+        userOperation.verificationGasLimit = this.estimation!.erc4337GasLimits!.verificationGasLimit
         userOperation.maxFeePerGas = toBeHex(gasFeePayment.gasPrice)
         userOperation.maxPriorityFeePerGas = toBeHex(gasFeePayment.maxPriorityFeePerGas!)
         const usesOneTimeNonce = shouldUseOneTimeNonce(userOperation)
