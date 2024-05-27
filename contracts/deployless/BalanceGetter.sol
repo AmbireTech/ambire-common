@@ -55,6 +55,32 @@ contract BalanceGetter is Simulation {
     return (getBalances(account, tokenAddrs), gasleft(), block.number);
   }
 
+  // Compare the tokens balances before (balancesA) and after simulation (balancesB)
+  // and return the delta (with simulation)
+  function getDelta(TokenInfo[] memory balancesA, TokenInfo[] memory balancesB) public pure returns (TokenInfo[] memory) {
+    uint deltaSize = 0;
+
+    for (uint256 i = 0; i < balancesA.length; i++) {
+      if (balancesA[i].amount != balancesB[i].amount) {
+        deltaSize++;
+      }
+    }
+
+    TokenInfo[] memory delta = new TokenInfo[](deltaSize);
+
+    // Second loop to populate the delta array
+    // Separate index for the delta array
+    uint256 deltaIndex = 0;
+    for (uint256 i = 0; i < balancesA.length; i++) {
+      if (balancesA[i].amount != balancesB[i].amount) {
+        delta[deltaIndex] = balancesB[i];
+        deltaIndex++;
+      }
+    }
+
+    return delta;
+  }
+
   function simulateAndGetBalances(
     IAmbireAccount account,
     address[] memory associatedKeys,
@@ -91,6 +117,9 @@ contract BalanceGetter is Simulation {
     afterSimulation.nonce = account.nonce();
     if (afterSimulation.nonce != before.nonce) {
       afterSimulation.balances = getBalances(account, tokenAddrs);
+
+      (TokenInfo[] memory deltaAfter) = getDelta(before.balances, afterSimulation.balances);
+      afterSimulation.balances = deltaAfter;
     }
 
     return (before, afterSimulation, bytes(''), gasleft(), block.number);

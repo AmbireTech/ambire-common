@@ -98,6 +98,38 @@ contract NFTGetter is Simulation {
     return collectionMetas;
   }
 
+  // Compare the collections before (collectionsA) and after simulation (collectionsB)
+  // and return the delta (with simulation)
+  function getDelta(NFTCollectionMetadata[] memory collectionsA, NFTCollectionMetadata[] memory collectionsB) public pure returns (NFTCollectionMetadata[] memory) {
+    uint deltaSize = 0;
+
+    for (uint256 i = 0; i < collectionsA.length; i++) {
+      // Compare hashes of the arrays
+      bytes32 hashA = keccak256(abi.encode(collectionsA[i].nfts));
+      bytes32 hashB = keccak256(abi.encode(collectionsB[i].nfts));
+      if (hashA != hashB) {
+        deltaSize++;
+      }
+    }
+
+    NFTCollectionMetadata[] memory delta = new NFTCollectionMetadata[](deltaSize);
+
+    // Second loop to populate the delta array
+    // Separate index for the delta array
+    uint256 deltaIndex = 0;
+    for (uint256 i = 0; i < collectionsA.length; i++) {
+      // Compare hashes of the arrays
+      bytes32 hashA = keccak256(abi.encode(collectionsA[i].nfts));
+      bytes32 hashB = keccak256(abi.encode(collectionsB[i].nfts));
+      if (hashA != hashB) {
+        delta[deltaIndex] = collectionsB[i];
+        deltaIndex++;
+      }
+    }
+
+    return delta;
+  }
+
   function simulateAndGetAllNFTs(
     IAmbireAccount account,
     address[] memory associatedKeys,
@@ -141,6 +173,10 @@ contract NFTGetter is Simulation {
         tokenIds,
         tokenPerCollectionLimit
       );
+
+
+      (NFTCollectionMetadata[] memory deltaAfter) = getDelta(before.collections, afterSimulation.collections);
+      afterSimulation.collections = deltaAfter;
     }
 
     return (before, afterSimulation, bytes(''), gasleft(), block.number);
