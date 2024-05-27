@@ -642,6 +642,23 @@ export class MainController extends EventEmitter {
 
     const currentAccountOp = this.accountOpsToBeSigned[accountAddr]?.[networkId]?.accountOp
 
+    // we have a paymasterService on the following conditions:
+    // all userRequests point to the same paymaster service url
+    const userRequestWithPaymasterService = this.userRequests.find(
+      (req) => req.meta.capabilities?.paymasterService?.url
+    )
+    const paymasterServiceUrl = userRequestWithPaymasterService
+      ? userRequestWithPaymasterService.meta.capabilities.paymasterService.url
+      : undefined
+    const hasPaymasterSponsporship = paymasterServiceUrl
+      ? this.userRequests.every(
+          (req) => req.meta.capabilities?.paymasterService?.url === paymasterServiceUrl
+        )
+      : false
+    const meta = hasPaymasterSponsporship
+      ? { capabilities: { paymasterService: { url: paymasterServiceUrl } } }
+      : undefined
+
     return {
       accountAddr,
       networkId,
@@ -654,7 +671,8 @@ export class MainController extends EventEmitter {
       signature: account.associatedKeys[0] ? generateSpoofSig(account.associatedKeys[0]) : null,
       // @TODO from pending recoveries
       accountOpToExecuteBefore: null,
-      calls
+      calls,
+      meta
     }
   }
 
@@ -708,6 +726,8 @@ export class MainController extends EventEmitter {
       if (!network) {
         throw ethErrors.provider.chainDisconnected('Transaction failed - unknown network')
       }
+      // wallet_sendCalls might come with paymaster capabilities(ERC-7677)
+      const capabilities = isWalletSendCalls ? request.params[0].capabilities : undefined
       userRequest = {
         id: new Date().getTime(),
         action: {
@@ -718,7 +738,7 @@ export class MainController extends EventEmitter {
             value: txn.value ? getBigInt(txn.value) : 0n
           }))
         },
-        meta: { isSignAction: true, accountAddr, networkId: network.id },
+        meta: { isSignAction: true, accountAddr, networkId: network.id, capabilities },
         dappPromise
       } as SignUserRequest
     } else if (kind === 'message') {

@@ -48,6 +48,11 @@ export interface SignUserRequest {
     accountAddr: AccountId
     networkId: NetworkId
     [key: string]: any
+    capabilities?: {
+      paymasterService?: {
+        url: string
+      }
+    }
   }
   // defined only when SignUserRequest is built from a DappRequest
   dappPromise?: {

@@ -20,6 +20,17 @@ export interface Erc4337GasLimits {
     fast: { maxFeePerGas: string; maxPriorityFeePerGas: string }
     ape: { maxFeePerGas: string; maxPriorityFeePerGas: string }
   }
+  // @eip7677
+  // if by any chance the user op has a sponsorship option, it comes here
+  sponsorship?:
+    | {
+        preVerificationGas: string
+        verificationGasLimit: string
+        callGasLimit: string
+        paymasterVerificationGasLimit: string
+        paymasterPostOpGasLimit: string
+      }
+    | Error
 }
 
 export interface ArbitrumL1Fee {

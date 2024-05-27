@@ -199,4 +199,13 @@ export class Bundler {
       fast: results.fast
     }
   }
+
+  static async estimateSponsorship(
+    userOperation: UserOperation | null,
+    network: NetworkDescriptor,
+    shouldStateOverride = false
+  ): Promise<BundlerEstimateResult | undefined> {
+    if (!userOperation) return undefined
+    return Bundler.estimate(userOperation, network, shouldStateOverride)
+  }
 }
