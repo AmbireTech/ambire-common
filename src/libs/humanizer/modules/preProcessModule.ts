@@ -1,14 +1,11 @@
-import { Interface, ZeroAddress } from 'ethers'
-
 import { AccountOp } from '../../accountOp/accountOp'
-import { HumanizerCallModule, HumanizerMeta, HumanizerPromise, IrCall } from '../interfaces'
+import { HumanizerCallModule, IrCall } from '../interfaces'
 
 
 export const preProcessHumanizer: HumanizerCallModule = (
   accountOp: AccountOp,
   currentIrCalls: IrCall[],
-  humanizerMeta: HumanizerMeta,
-  options?: any
+  _,
 ) => {
 
   const newCalls = currentIrCalls.map((_call) => {
