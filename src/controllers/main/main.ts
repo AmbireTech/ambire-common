@@ -1063,18 +1063,17 @@ export class MainController extends EventEmitter {
    * Otherwise, if either of the variables has not been recently updated, it may lead to an incorrect gas amount result.
    */
   async reestimateSignAccountOpAndUpdateGasPrices(accountAddr: AccountId, networkId: NetworkId) {
-    const accountOp = this.accountOpsToBeSigned[accountAddr]?.[networkId]?.accountOp
-    if (!this.signAccountOp || !accountOp) return
+    if (!this.signAccountOp) return
 
     await Promise.all([this.#updateGasPrice(), this.#estimateSignAccountOp()])
 
     // there's a chance signAccountOp gets destroyed between the time
     // the first "if (!this.signAccountOp) return" is performed and
     // the time we get here. To prevent issues, we check one more time
-    if (this.signAccountOp) {
-      this.signAccountOp.update({ gasPrices: this.gasPrices[networkId] })
-      this.emitUpdate()
-    }
+    if (!this.signAccountOp) return
+
+    this.signAccountOp.update({ gasPrices: this.gasPrices[networkId] })
+    this.emitUpdate()
   }
 
   // @TODO: protect this from race conditions/simultanous executions
