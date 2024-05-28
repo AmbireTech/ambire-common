@@ -10,6 +10,7 @@ contract BalanceGetter is Simulation {
 
   struct TokenInfo {
     string symbol;
+    address addr;
     uint256 amount;
     uint8 decimals;
     bytes error;
@@ -23,6 +24,7 @@ contract BalanceGetter is Simulation {
     IAmbireAccount account,
     IERC20 token
   ) external view returns (TokenInfo memory info) {
+    info.addr = address(token);
     info.amount = token.balanceOf(address(account));
     info.symbol = token.symbol();
     info.decimals = token.decimals();
@@ -36,7 +38,7 @@ contract BalanceGetter is Simulation {
     TokenInfo[] memory results = new TokenInfo[](len);
     for (uint256 i = 0; i < len; i++) {
       if (tokenAddrs[i] == address(0)) {
-        results[i] = TokenInfo('ETH', address(account).balance, 18, bytes(''));
+        results[i] = TokenInfo('ETH', tokenAddrs[i], address(account).balance, 18, bytes(''));
       } else {
         try this.getERC20TokenInfo(account, IERC20(tokenAddrs[i])) returns (TokenInfo memory info) {
           results[i] = info;

@@ -28,6 +28,7 @@ contract NFTGetter is Simulation {
   struct NFTCollectionMetadata {
     string name;
     string symbol;
+    address addr;
     NFTMetadata[] nfts;
     bytes error;
   }
@@ -44,6 +45,7 @@ contract NFTGetter is Simulation {
   ) external view returns (NFTCollectionMetadata memory meta) {
     meta.name = collection.name();
     meta.symbol = collection.symbol();
+    meta.addr = address(collection);
     if (tokenIds.length == 0) {
       uint balance = collection.balanceOf(address(account));
       if (balance > limit) balance = limit;
