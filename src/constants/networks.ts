@@ -15,6 +15,7 @@ export enum NETWORKS {
   'aurora' = 'aurora',
   'okc' = 'okc',
   'base' = 'base',
+  'scroll' = 'scroll',
   'ethereum-pow' = 'ethereum-pow',
   'rinkeby' = 'rinkeby',
   'sepolia' = 'sepolia'
@@ -240,6 +241,22 @@ const networks: NetworkType[] = [
     }
   },
   {
+    id: NETWORKS.scroll,
+    chainId: 534352,
+    nativeAssetSymbol: 'ETH',
+    name: 'Scroll',
+    explorerUrl: 'https://scrollscan.com/',
+    unstoppableDomainsChain: 'ERC20',
+    isGasTankAvailable: true,
+    relayerlessOnly: false,
+    nativeAsset: {
+      address: '0x0000000000000000000000000000000000000000',
+      symbol: 'ETH',
+      coingeckoId: 'ethereum',
+      decimals: 18
+    }
+  },
+  {
     id: NETWORKS.andromeda,
     chainId: 1088,
     nativeAssetSymbol: 'METIS',
@@ -361,7 +378,8 @@ export const coingeckoNets = {
   aurora: 'aurora',
   optimism: 'optimistic-ethereum',
   'optimistic-ethereum': 'optimism',
-  base: 'base'
+  base: 'base',
+  scroll: 'scroll'
 }
 
 export default networks
