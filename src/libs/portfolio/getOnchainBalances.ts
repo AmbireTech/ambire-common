@@ -158,13 +158,21 @@ export async function getNFTs(
   const afterNonce = after[1]
   handleSimulationError(simulationErr, beforeNonce, afterNonce, simulationOps)
 
-  // no simulation was performed if the nonce is the same
-  const postSimulationAmounts = (after[1] === before[1] ? before[0] : after[0]).map(mapToken)
+  // simulation was performed if the nonce is changed
+  const hasSimulation = afterNonce !== beforeNonce
 
-  return before[0].map((token: any, i: number) => [
-    token.error,
-    { ...mapToken(token), amountPostSimulation: postSimulationAmounts[i].amount }
-  ])
+  return before[0].map((beforeToken: any, i: number) => {
+    const simulation = hasSimulation
+      ? after[0].find((simulationToken: any) => simulationToken.addr === beforeToken.addr)
+      : null
+
+    const token = mapToken(beforeToken)
+
+    return [
+      beforeToken.error,
+      { ...token, amountPostSimulation: simulation ? BigInt(simulation.nfts.length) : token.amount }
+    ]
+  })
 }
 
 export async function getTokens(
@@ -221,14 +229,20 @@ export async function getTokens(
   const afterNonce = after[1]
   handleSimulationError(simulationErr, beforeNonce, afterNonce, simulationOps)
 
-  // no simulation was performed if the nonce is the same
-  const postSimulationAmounts = afterNonce === beforeNonce ? before[0] : after[0]
+  // simulation was performed if the nonce is changed
+  const hasSimulation = afterNonce !== beforeNonce
 
-  return before[0].map((token: any, i: number) => [
-    token.error,
-    {
-      ...mapToken(token, tokenAddrs[i]),
-      amountPostSimulation: postSimulationAmounts[i].amount
-    }
-  ])
+  return before[0].map((token: any, i: number) => {
+    const simulation = hasSimulation
+      ? after[0].find((simulationToken: any) => simulationToken.addr === token.addr)
+      : null
+
+    return [
+      token.error,
+      {
+        ...mapToken(token, tokenAddrs[i]),
+        amountPostSimulation: simulation ? simulation.amount : token.amount
+      }
+    ]
+  })
 }
