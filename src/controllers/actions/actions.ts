@@ -3,13 +3,13 @@
 import { DappUserRequest, SignUserRequest, UserRequest } from '../../interfaces/userRequest'
 import { WindowManager } from '../../interfaces/window'
 import { AccountOp } from '../../libs/accountOp/accountOp'
+import { getDappActionRequestsBanners } from '../../libs/banners/banners'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
 export type AccountOpAction = {
   id: string | UserRequest['id']
   type: 'accountOp'
   accountOp: AccountOp
-  withBatching: boolean
 }
 
 export type SignMessageAction = {
@@ -45,6 +45,8 @@ export type Action = AccountOpAction | SignMessageAction | BenzinAction | UserRe
  * аnd these actions with banners can remain pending until the user decides to reject or open them.
  */
 export class ActionsController extends EventEmitter {
+  #selectedAccount: string | null
+
   #windowManager: WindowManager
 
   actionWindowId: number | null = null
@@ -55,15 +57,40 @@ export class ActionsController extends EventEmitter {
 
   #onActionWindowClose: () => void
 
+  get visibleActionsQueue() {
+    return this.actionsQueue.filter((a) => {
+      if (
+        a.type === 'accountOp' &&
+        (a as AccountOpAction).accountOp.accountAddr === this.#selectedAccount
+      ) {
+        return false
+      }
+      if (a.type === 'signMessage' && a.userRequest.meta.accountAddr === this.#selectedAccount) {
+        return false
+      }
+      if (a.type === 'benzin' && a.userRequest.meta.accountAddr === this.#selectedAccount) {
+        return false
+      }
+      if (a.type === 'userRequest') {
+        return false
+      }
+
+      return true
+    })
+  }
+
   constructor({
+    selectedAccount,
     windowManager,
     onActionWindowClose
   }: {
+    selectedAccount: string | null
     windowManager: WindowManager
     onActionWindowClose: () => void
   }) {
     super()
 
+    this.#selectedAccount = selectedAccount
     this.#windowManager = windowManager
     this.#onActionWindowClose = onActionWindowClose
 
@@ -73,43 +100,54 @@ export class ActionsController extends EventEmitter {
         this.actionWindowId = null
         this.currentAction = null
 
-        // we have banners for these actions on the dashboard
-        this.actionsQueue = this.actionsQueue.filter(
-          (a) => !['accountOp', 'benzin'].includes(a.type)
-        )
+        this.actionsQueue = this.actionsQueue.filter((a) => !['benzin'].includes(a.type))
         this.emitUpdate()
       }
     })
   }
 
-  addToActionsQueue(action: Action, withPriority?: boolean) {
-    const actionIndex = this.actionsQueue.findIndex((a) => a.id === action.id)
+  update({ selectedAccount }: { selectedAccount?: string | null }) {
+    if (selectedAccount !== undefined) {
+      if (
+        this.#selectedAccount !== selectedAccount &&
+        this.currentAction &&
+        this.actionWindowId &&
+        ['accountOp', 'signMessage', 'benzin'].includes(this.currentAction.type)
+      ) {
+        this.#windowManager.remove(this.actionWindowId)
+      }
+      this.#selectedAccount = selectedAccount
+    }
+    this.emitUpdate()
+  }
+
+  addOrUpdateAction(newAction: Action, withPriority?: boolean) {
+    const actionIndex = this.actionsQueue.findIndex((a) => a.id === newAction.id)
     if (actionIndex !== -1) {
-      this.actionsQueue[actionIndex] = action
-      this.setCurrentAction(this.actionsQueue[0] || null)
+      this.actionsQueue[actionIndex] = newAction
+      this.#setCurrentAction(this.visibleActionsQueue[0] || null)
       return
     }
 
     if (withPriority) {
-      this.actionsQueue.unshift(action)
+      this.actionsQueue.unshift(newAction)
     } else {
-      this.actionsQueue.push(action)
-      if (this.actionWindowId && action.type !== 'benzin') {
+      this.actionsQueue.push(newAction)
+      if (this.actionWindowId && newAction.type !== 'benzin') {
         this.#windowManager.sendWindowToastMessage('A new action request was added to the queue.', {
           type: 'success'
         })
       }
     }
-    this.setCurrentAction(this.actionsQueue[0] || null)
+    this.#setCurrentAction(this.visibleActionsQueue[0] || null)
   }
 
-  removeFromActionsQueue(actionId: Action['id']) {
+  removeAction(actionId: Action['id']) {
     this.actionsQueue = this.actionsQueue.filter((a) => a.id !== actionId)
-
-    this.setCurrentAction(this.actionsQueue[0] || null)
+    this.#setCurrentAction(this.visibleActionsQueue[0] || null)
   }
 
-  setCurrentAction(nextAction: Action | null) {
+  #setCurrentAction(nextAction: Action | null) {
     if (nextAction && nextAction.id === this.currentAction?.id) {
       this.openActionWindow()
       this.emitUpdate()
@@ -127,11 +165,20 @@ export class ActionsController extends EventEmitter {
     this.emitUpdate()
   }
 
-  openFirstPendingAction() {
-    if (!this.actionsQueue.length || this.currentAction) return
+  setCurrentActionById(actionId: Action['id']) {
+    const action = this.visibleActionsQueue.find((a) => a.id === actionId)
 
-    this.setCurrentAction(this.actionsQueue[0])
-    this.emitUpdate()
+    if (!action) return
+
+    this.#setCurrentAction(action)
+  }
+
+  setCurrentActionByIndex(actionIndex: number) {
+    const action = this.visibleActionsQueue[actionIndex]
+
+    if (!action) return
+
+    this.#setCurrentAction(action)
   }
 
   openActionWindow() {
@@ -146,14 +193,20 @@ export class ActionsController extends EventEmitter {
   }
 
   focusActionWindow = () => {
-    if (!this.actionsQueue.length || !this.currentAction || !this.actionWindowId) return
+    if (!this.visibleActionsQueue.length || !this.currentAction || !this.actionWindowId) return
     this.#windowManager.focus(this.actionWindowId)
+  }
+
+  get banners() {
+    return getDappActionRequestsBanners(this.visibleActionsQueue)
   }
 
   toJSON() {
     return {
       ...this,
-      ...super.toJSON()
+      ...super.toJSON(),
+      visibleActionsQueue: this.visibleActionsQueue,
+      banners: this.banners
     }
   }
 }

@@ -1,37 +1,56 @@
+import { AccountOpAction, Action as ActionFromActionsQueue } from 'controllers/actions/actions'
+
+// eslint-disable-next-line import/no-cycle
 import { PortfolioController } from '../../controllers/portfolio/portfolio'
 import { Account, AccountId } from '../../interfaces/account'
-import { Banner } from '../../interfaces/banner'
+import { Action, Banner } from '../../interfaces/banner'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { RPCProviders } from '../../interfaces/settings'
-import { UserRequest } from '../../interfaces/userRequest'
-// eslint-disable-next-line import/no-cycle
-import { AccountOp } from '../accountOp/accountOp'
 import { PORTFOLIO_LIB_ERROR_NAMES } from '../portfolio/portfolio'
 import { getNetworksWithFailedRPC } from '../settings/settings'
 
+export const getDappActionRequestsBanners = (actions: ActionFromActionsQueue[]): Banner[] => {
+  const requests = actions.filter((a) => a.type !== 'accountOp')
+  if (!requests.length) return []
+
+  return [
+    {
+      id: 'dapp-requests-banner',
+      type: 'info',
+      title: `You have ${requests.length} pending dApp requests`,
+      text: '',
+      actions: [
+        {
+          label: 'Open',
+          actionName: 'open-pending-dapp-requests'
+        }
+      ]
+    }
+  ]
+}
+
 export const getAccountOpBanners = ({
-  accountOpsToBeSignedByNetwork,
+  accountOpActionsByNetwork,
   selectedAccount,
-  userRequests,
   accounts,
   networks
 }: {
-  accountOpsToBeSignedByNetwork: {
-    [key: string]: { accountOp: AccountOp } | null
+  accountOpActionsByNetwork: {
+    [key: string]: AccountOpAction[]
   }
+
   selectedAccount: string
-  userRequests: UserRequest[]
   accounts: Account[]
   networks: NetworkDescriptor[]
 }): Banner[] => {
-  if (!userRequests.length || !accountOpsToBeSignedByNetwork) return []
+  if (!accountOpActionsByNetwork) return []
   const txnBanners: Banner[] = []
 
   const account = accounts.find((acc) => acc.addr === selectedAccount)
 
   if (account?.creation) {
-    Object.entries(accountOpsToBeSignedByNetwork).forEach(([netId, accOp]) => {
-      if (accOp?.accountOp) {
+    Object.entries(accountOpActionsByNetwork).forEach(([netId, actions]) => {
+      actions.forEach((action) => {
         const network = networks.filter((n) => n.id === netId)[0]
 
         txnBanners.push({
@@ -45,68 +64,50 @@ export const getAccountOpBanners = ({
               actionName: 'reject-accountOp',
               meta: {
                 err: 'User rejected the transaction request',
-                accountAddr: accOp.accountOp.accountAddr,
-                networkId: accOp.accountOp.networkId
+                actionId: action.id
               }
             },
             {
               label: 'Open',
               actionName: 'open-accountOp',
-              meta: {
-                id: `${selectedAccount}-${netId}`,
-                type: 'accountOp',
-                accountOp: accOp.accountOp,
-                withBatching: true
-              }
+              meta: { actionId: action.id }
             }
           ]
         })
-      }
+      })
     })
   } else {
-    Object.entries(accountOpsToBeSignedByNetwork).forEach(([netId, accOp]) => {
-      if (accOp?.accountOp) {
-        const network = networks.filter((n) => n.id === netId)[0]
+    Object.entries(accountOpActionsByNetwork).forEach(([netId, actions]) => {
+      const network = networks.filter((n) => n.id === netId)[0]
 
-        txnBanners.push({
-          id: `${selectedAccount}-${netId}`,
-          type: 'info',
-          title: `Transaction waiting to be signed ${network.name ? `on ${network.name}` : ''}`,
-          text: '', // TODO:
-          actions: [
-            {
-              label: 'Reject',
-              actionName: 'reject-accountOp',
-              meta: {
-                err: 'User rejected the transaction request',
-                accountAddr: accOp.accountOp.accountAddr,
-                networkId: accOp.accountOp.networkId
-              }
-            },
-            {
-              label: 'Open',
-              actionName: 'open-accountOp',
-              meta: {
-                id: accOp.accountOp.calls[0].fromUserRequestId!,
-                type: 'accountOp',
-                accountOp: accOp.accountOp,
-                withBatching: false
-              }
-            }
-          ]
-        })
-      }
-    })
-    if (userRequests.length - txnBanners.length > 0) {
       txnBanners.push({
-        id: new Date().getTime(),
+        id: `${selectedAccount}-${netId}`,
         type: 'info',
-        title: `${
-          userRequests.length - txnBanners.length
-        } More pending transactions are waiting to be signed`,
-        text: '' // TODO:
-      } as Banner)
-    }
+        title: `${actions.length} transaction${
+          actions.length > 1 ? 's' : ''
+        } waiting to be signed ${network.name ? `on ${network.name}` : ''}`,
+        text: '', // TODO:
+        actions: [
+          actions.length <= 1
+            ? {
+                label: 'Reject',
+                actionName: 'reject-accountOp',
+                meta: {
+                  err: 'User rejected the transaction request',
+                  actionId: actions[0].id
+                }
+              }
+            : undefined,
+          {
+            label: 'Open',
+            actionName: 'open-accountOp',
+            meta: {
+              actionId: actions[0].id
+            }
+          }
+        ].filter(Boolean) as Action[]
+      })
+    })
   }
 
   return txnBanners

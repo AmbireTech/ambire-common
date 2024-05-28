@@ -57,12 +57,12 @@ describe('SignMessageController', () => {
       }
 
       if (emitCounter === 2) {
-        actionsCtrl.addToActionsQueue(action2)
+        actionsCtrl.addOrUpdateAction(action2)
         expect(actionsCtrl.actionWindowId).toEqual(1)
       }
     })
 
-    actionsCtrl.addToActionsQueue(action1)
+    actionsCtrl.addOrUpdateAction(action1)
     expect(actionsCtrl.actionsQueue).toHaveLength(1)
     expect(actionsCtrl.currentAction).toEqual(action1)
   })
@@ -87,7 +87,7 @@ describe('SignMessageController', () => {
       }
     })
 
-    actionsCtrl.addToActionsQueue(action3, true)
+    actionsCtrl.addOrUpdateAction(action3, true)
   })
   test('on window close', (done) => {
     let emitCounter = 0
@@ -138,10 +138,10 @@ describe('SignMessageController', () => {
         expect(actionsCtrl.actionWindowId).toEqual(2)
         expect(actionsCtrl.actionsQueue).toHaveLength(1)
         expect(actionsCtrl.currentAction?.id).toBe(2)
-        actionsCtrl.removeFromActionsQueue(2)
+        actionsCtrl.removeAction(2)
       }
     })
 
-    actionsCtrl.removeFromActionsQueue(1)
+    actionsCtrl.removeAction(1)
   })
 })
