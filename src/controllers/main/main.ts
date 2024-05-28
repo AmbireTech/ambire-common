@@ -380,7 +380,8 @@ export class MainController extends EventEmitter {
 
     this.emitUpdate()
 
-    this.reestimateSignAccountOpAndUpdateGasPrices(accountAddr, networkId)
+    this.updateSignAccountOpGasPrice(networkId)
+    this.estimateSignAccountOp()
   }
 
   destroySignAccOp() {
@@ -884,7 +885,7 @@ export class MainController extends EventEmitter {
           this.signAccountOp.accountOp.networkId === accountOp.networkId
         ) {
           this.signAccountOp.update({ accountOp })
-          this.#estimateSignAccountOp()
+          this.estimateSignAccountOp()
         }
       }
     } else if (action.kind === 'typedMessage' || action.kind === 'message') {
@@ -952,7 +953,7 @@ export class MainController extends EventEmitter {
           this.signAccountOp.accountOp.networkId === accountOp.networkId
         ) {
           this.signAccountOp.update({ accountOp, estimation: null })
-          this.#estimateSignAccountOp()
+          this.estimateSignAccountOp()
         }
         if (account.creation) {
           // if the rejectAccountOp is called we remove the calls one by one in case of multiple calls in the op
@@ -1062,16 +1063,10 @@ export class MainController extends EventEmitter {
     this.emitUpdate()
   }
 
-  /**
-   * Reestimate the current account op and update the gas prices in the same tick.
-   * To achieve a more accurate gas amount calculation (gasUsageEstimate * gasPrice),
-   * it would be preferable to update them simultaneously.
-   * Otherwise, if either of the variables has not been recently updated, it may lead to an incorrect gas amount result.
-   */
-  async reestimateSignAccountOpAndUpdateGasPrices(accountAddr: AccountId, networkId: NetworkId) {
+  async updateSignAccountOpGasPrice(networkId: NetworkId) {
     if (!this.signAccountOp) return
 
-    await Promise.all([this.#updateGasPrice(), this.#estimateSignAccountOp()])
+    await this.#updateGasPrice()
 
     // there's a chance signAccountOp gets destroyed between the time
     // the first "if (!this.signAccountOp) return" is performed and
@@ -1083,7 +1078,7 @@ export class MainController extends EventEmitter {
   }
 
   // @TODO: protect this from race conditions/simultanous executions
-  async #estimateSignAccountOp() {
+  async estimateSignAccountOp() {
     try {
       if (!this.signAccountOp) return
 
