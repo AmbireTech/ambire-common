@@ -57,9 +57,11 @@ async function scrapeSignatures () {
 		const block = await fetchRpc(url,'eth_getBlockByNumber', ['0x'+i.toString(16), true])
 		for (const txn of block.transactions) { 
 			if (txn.input.length >= 10) {
-				const isFound = !!signaturesFiltered.find(x => x && x[1] === txn.input.slice(2, 10))
+				const sig = txn.input.slice(2, 10)
+				const isFound = !!signaturesFiltered.find(x => x && x[1] === sig)
 				total++
 				if (isFound) found++
+				if (sig === '3593564c') parseUniUniversal({ data: txn.input, value: txn.value, to: txn.to, from: txn.from })
 			}
 		}
 	}
@@ -138,20 +140,31 @@ function parseUniUniversal(txn: any) {
 			if (cmd === 0 || cmd === 1 || cmd === 8 || cmd === 9) {
 				const isExactIn = cmd === 0 || cmd === 8
 				const isV2 = cmd === 8 || cmd === 9
-				const pathType =  isV2 ? 'address[0]' : 'bytes'
+				const pathType =  isV2 ? 'address[]' : 'bytes'
 				// last arg is whether tokens are in the router, we don't care much about this
 				// @TODO we need to care about this if we do WETH?
 				const [recipient, amount1, amount2, path, /*tokensInRouter*/] =  abiCoder.decode(['address', 'uint256', 'uint256', pathType, 'bool'], commandArgs[idx])
-				const tokenIn = getAddress(isV2 ? path[0] : path.slice(0, 42))
-				const tokenOut = getAddress(isV2 ? path[path.length - 1] : '0x' + path.slice(-40))
-				// how to handle the case case of a different recipient:
-				// find the `sweep`, find the recipient to implement different recipient
-				// sweep not found -> unknown interaction; sweep found to 0x01 -> nothing, sweep found but not to 0x01 -> add a transfer action
 
 				// @TODO document that we do not need to flag sweeps as used, we just need to find the sweep that matches our command
 				// @TODO consider comparing the amount too
 				const sweep = sweeps.find(x => x && x.token === tokenOut)
 				if (!sweep) return []
+
+				if (isV2 && path.length === 0) {
+					// just in case https://github.com/Uniswap/universal-router/blob/main/contracts/modules/uniswap/v2/V2SwapRouter.sol#L20
+					return []
+				}
+				if (!isV2 && path.length < 82) {
+					// just in case
+					return []
+				}
+				const tokenInRaw = isV2 ? path[0] : path.slice(0, 42)
+				const tokenOutRaw = isV2 ? path[path.length - 1] : '0x' + path.slice(-40)
+				const tokenIn = getAddress(tokenInRaw)
+				const tokenOut = getAddress(tokenOutRaw)
+				// how to handle the case case of a different recipient:
+				// find the `sweep`, find the recipient to implement different recipient
+				// sweep not found -> unknown interaction; sweep found to 0x01 -> nothing, sweep found but not to 0x01 -> add a transfer action
 				// @TODO: handle WETH; if input is WETH, try to find a wrap and change it to ETH, but also make sure txn.value is equal
 				// @TODO handle WETH output; if output is WETH, try to find an unwrap AFTER and if so change it to ETH
 				return [cmd === 0
