@@ -2,7 +2,6 @@ import { ZeroAddress } from 'ethers'
 /* eslint-disable import/no-extraneous-dependencies */
 import fetch from 'node-fetch'
 
-import { PINNED_TOKENS } from '../../consts/pinnedTokens'
 import { Account, AccountId } from '../../interfaces/account'
 import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
 /* eslint-disable @typescript-eslint/no-shadow */
@@ -20,6 +19,8 @@ import { CustomToken } from '../../libs/portfolio/customToken'
 import getAccountNetworksWithAssets from '../../libs/portfolio/getNetworksWithAssets'
 import {
   getFlags,
+  getPinnedGasTankTokens,
+  getTotal,
   getUpdatedHints,
   shouldGetAdditionalPortfolio,
   tokenFilter,
@@ -340,16 +341,6 @@ export class PortfolioController extends EventEmitter {
 
     if (!res) throw new Error('portfolio controller: no res, should never happen')
 
-    const getTotal = (t: any[]) =>
-      t.reduce((cur: any, token: any) => {
-        for (const x of token.priceIn) {
-          cur[x.baseCurrency] =
-            (cur[x.baseCurrency] || 0) + (Number(token.amount) / 10 ** token.decimals) * x.price
-        }
-
-        return cur
-      }, {})
-
     const rewardsTokens = [
       res.data.rewards.xWalletClaimableBalance || [],
       res.data.rewards.walletClaimableBalance || []
@@ -359,6 +350,7 @@ export class PortfolioController extends EventEmitter {
         ...t,
         flags: getFlags(res.data.rewards, 'rewards', t.networkId, t.address)
       }))
+
     accountState.rewards = {
       isReady: true,
       isLoading: false,
@@ -376,62 +368,21 @@ export class PortfolioController extends EventEmitter {
       flags: getFlags(res.data, 'gasTank', t.networkId, t.address)
     }))
 
-    let pinnedGasTankTokens: TokenResult[] = []
-
-    // Don't set pinnedGasTankTokens if the user has > 1 non-zero tokens
-    if (res.data.gasTank.availableGasTankAssets && !hasNonZeroTokens) {
-      const availableGasTankAssets = res.data.gasTank.availableGasTankAssets
-
-      pinnedGasTankTokens = availableGasTankAssets.reduce((acc: TokenResult[], token: any) => {
-        const isGasTankToken = !!gasTankTokens.find(
-          (gasTankToken: TokenResult) =>
-            gasTankToken.symbol.toLowerCase() === token.symbol.toLowerCase()
-        )
-        const isAlreadyPinned = !!acc.find(
-          (accToken) => accToken.symbol.toLowerCase() === token.symbol.toLowerCase()
-        )
-
-        if (isGasTankToken || isAlreadyPinned) return acc
-
-        const correspondingPinnedToken = PINNED_TOKENS.find(
-          (pinnedToken) =>
-            (!('accountId' in pinnedToken) || pinnedToken.accountId === accountId) &&
-            pinnedToken.address === token.address &&
-            pinnedToken.networkId === token.network
-        )
-
-        if (correspondingPinnedToken && correspondingPinnedToken.onGasTank) {
-          acc.push({
-            address: token.address,
-            symbol: token.symbol.toUpperCase(),
-            amount: 0n,
-            networkId: correspondingPinnedToken.networkId,
-            decimals: token.decimals,
-            priceIn: [
-              {
-                baseCurrency: 'usd',
-                price: token.price
-              }
-            ],
-            flags: {
-              rewardsType: null,
-              canTopUpGasTank: true,
-              isFeeToken: true,
-              onGasTank: true
-            }
-          })
-        }
-        return acc
-      }, [])
-    }
-
     accountState.gasTank = {
       isReady: true,
       isLoading: false,
       errors: [],
       result: {
         updateStarted: start,
-        tokens: [...gasTankTokens, ...pinnedGasTankTokens],
+        tokens: [
+          ...gasTankTokens,
+          ...getPinnedGasTankTokens(
+            res.data.gasTank.availableGasTankAssets,
+            hasNonZeroTokens,
+            accountId,
+            gasTankTokens
+          )
+        ],
         total: getTotal(gasTankTokens)
       }
     }

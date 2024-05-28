@@ -27,6 +27,7 @@ import { WALLETModule } from './modules/WALLET'
 import { wrappingModule } from './modules/wrapped'
 import { parseCalls, parseMessage } from './parsers'
 import { humanizerMetaParsing } from './parsers/humanizerMetaParsing'
+import { preProcessHumanizer } from './modules/preProcessModule'
 import {
   erc20Module,
   erc721Module,
@@ -38,6 +39,7 @@ import { HUMANIZER_META_KEY } from './utils'
 // from most generic to least generic
 // the final humanization is the final triggered module
 export const humanizerCallModules: HumanizerCallModule[] = [
+  preProcessHumanizer,
   genericErc20Humanizer,
   genericErc721Humanizer,
   gasTankModule,

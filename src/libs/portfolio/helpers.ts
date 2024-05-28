@@ -3,7 +3,7 @@ import { Contract, ZeroAddress } from 'ethers'
 import IERC20 from '../../../contracts/compiled/IERC20.json'
 import gasTankFeeTokens from '../../consts/gasTankFeeTokens'
 import { PINNED_TOKENS } from '../../consts/pinnedTokens'
-import { Account } from '../../interfaces/account'
+import { Account, AccountId } from '../../interfaces/account'
 import { NetworkId } from '../../interfaces/networkDescriptor'
 import { RPCProvider } from '../../interfaces/settings'
 import { isSmartAccount } from '../account/account'
@@ -105,6 +105,74 @@ export const shouldGetAdditionalPortfolio = (account: Account) => {
 // otherwise, the token.amount
 export const getTokenAmount = (token: TokenResult): bigint => {
   return typeof token.amountPostSimulation === 'bigint' ? token.amountPostSimulation : token.amount
+}
+
+export const getTotal = (t: TokenResult[]) =>
+  t.reduce((cur: { [key: string]: number }, token: TokenResult) => {
+    const localCur = cur // Add index signature to the type of localCur
+    if (token.isHidden) return localCur
+    // eslint-disable-next-line no-restricted-syntax
+    for (const x of token.priceIn) {
+      const currentAmount = localCur[x.baseCurrency] || 0
+
+      const tokenAmount = Number(getTokenAmount(token)) / 10 ** token.decimals
+      localCur[x.baseCurrency] = currentAmount + tokenAmount * x.price
+    }
+
+    return localCur
+  }, {})
+
+export const getPinnedGasTankTokens = (
+  availableGasTankAssets: TokenResult[],
+  hasNonZeroTokens: boolean,
+  accountId: AccountId,
+  gasTankTokens: TokenResult[]
+) => {
+  if (!availableGasTankAssets) return []
+  // Don't set pinnedGasTankTokens if the user has > 1 non-zero tokens
+  if (hasNonZeroTokens) return []
+
+  return availableGasTankAssets.reduce((acc: TokenResult[], token: any) => {
+    const isGasTankToken = !!gasTankTokens.find(
+      (gasTankToken: TokenResult) =>
+        gasTankToken.symbol.toLowerCase() === token.symbol.toLowerCase()
+    )
+    const isAlreadyPinned = !!acc.find(
+      (accToken) => accToken.symbol.toLowerCase() === token.symbol.toLowerCase()
+    )
+
+    if (isGasTankToken || isAlreadyPinned) return acc
+
+    const correspondingPinnedToken = PINNED_TOKENS.find(
+      (pinnedToken) =>
+        (!('accountId' in pinnedToken) || pinnedToken.accountId === accountId) &&
+        pinnedToken.address === token.address &&
+        pinnedToken.networkId === token.network
+    )
+
+    if (correspondingPinnedToken && correspondingPinnedToken.onGasTank) {
+      acc.push({
+        address: token.address,
+        symbol: token.symbol.toUpperCase(),
+        amount: 0n,
+        networkId: correspondingPinnedToken.networkId,
+        decimals: token.decimals,
+        priceIn: [
+          {
+            baseCurrency: 'usd',
+            price: token.price
+          }
+        ],
+        flags: {
+          rewardsType: null,
+          canTopUpGasTank: true,
+          isFeeToken: true,
+          onGasTank: true
+        }
+      })
+    }
+    return acc
+  }, [])
 }
 
 // Updates the previous hints storage with the latest portfolio get result.
