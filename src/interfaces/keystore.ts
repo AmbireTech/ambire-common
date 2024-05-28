@@ -49,6 +49,7 @@ export interface TxnRequest {
   gasPrice?: bigint
   maxFeePerGas?: bigint
   maxPriorityFeePerGas?: bigint
+  type?: number
 }
 
 export interface KeystoreSigner {
