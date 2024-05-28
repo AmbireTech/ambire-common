@@ -1,13 +1,13 @@
 /* eslint-disable @typescript-eslint/no-floating-promises */
 
-import { DappUserRequest, SignUserRequest, UserRequest } from '../../interfaces/userRequest'
+import { SignUserRequest, UserRequest } from '../../interfaces/userRequest'
 import { WindowManager } from '../../interfaces/window'
 import { AccountOp } from '../../libs/accountOp/accountOp'
 import { getDappActionRequestsBanners } from '../../libs/banners/banners'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
 export type AccountOpAction = {
-  id: string | UserRequest['id']
+  id: SignUserRequest['id']
   type: 'accountOp'
   accountOp: AccountOp
 }
@@ -26,7 +26,7 @@ export type BenzinAction = {
 
 export type UserRequestAction = {
   id: UserRequest['id']
-  type: DappUserRequest['action']['kind']
+  type: string
   userRequest: UserRequest
 }
 
@@ -57,26 +57,24 @@ export class ActionsController extends EventEmitter {
 
   #onActionWindowClose: () => void
 
-  get visibleActionsQueue() {
-    return this.actionsQueue.filter((a) => {
-      if (
-        a.type === 'accountOp' &&
-        (a as AccountOpAction).accountOp.accountAddr === this.#selectedAccount
-      ) {
-        return false
-      }
-      if (a.type === 'signMessage' && a.userRequest.meta.accountAddr === this.#selectedAccount) {
-        return false
-      }
-      if (a.type === 'benzin' && a.userRequest.meta.accountAddr === this.#selectedAccount) {
-        return false
-      }
-      if (a.type === 'userRequest') {
-        return false
-      }
+  get visibleActionsQueue(): Action[] {
+    return (
+      this.actionsQueue.map((a) => {
+        if (a.type === 'accountOp') {
+          return (a as AccountOpAction).accountOp.accountAddr === this.#selectedAccount
+            ? a
+            : undefined
+        }
+        if (a.type === 'signMessage') {
+          return a.userRequest.meta.accountAddr === this.#selectedAccount ? a : undefined
+        }
+        if (a.type === 'benzin') {
+          return a.userRequest.meta.accountAddr === this.#selectedAccount ? a : undefined
+        }
 
-      return true
-    })
+        return a
+      }) as (Action | undefined)[]
+    ).filter(Boolean) as Action[]
   }
 
   constructor({
@@ -107,17 +105,8 @@ export class ActionsController extends EventEmitter {
   }
 
   update({ selectedAccount }: { selectedAccount?: string | null }) {
-    if (selectedAccount !== undefined) {
-      if (
-        this.#selectedAccount !== selectedAccount &&
-        this.currentAction &&
-        this.actionWindowId &&
-        ['accountOp', 'signMessage', 'benzin'].includes(this.currentAction.type)
-      ) {
-        this.#windowManager.remove(this.actionWindowId)
-      }
-      this.#selectedAccount = selectedAccount
-    }
+    if (selectedAccount) this.#selectedAccount = selectedAccount
+
     this.emitUpdate()
   }
 

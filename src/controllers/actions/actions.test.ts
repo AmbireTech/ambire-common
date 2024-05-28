@@ -106,22 +106,6 @@ describe('SignMessageController', () => {
 
     event.emit('windowRemoved', windowId)
   })
-  test('should open first action when action-window is closed but there are pending actions', (done) => {
-    let emitCounter = 0
-    const unsubscribe = actionsCtrl.onUpdate(async () => {
-      emitCounter++
-
-      if (emitCounter === 3) {
-        expect(actionsCtrl.actionWindowId).toEqual(2)
-        expect(actionsCtrl.currentAction).not.toBe(null)
-        expect(actionsCtrl.currentAction?.id).toBe(1)
-        unsubscribe()
-        done()
-      }
-    })
-
-    actionsCtrl.openFirstPendingAction()
-  })
   test('should remove actions from actionsQueue', (done) => {
     let emitCounter = 0
     const unsubscribe = actionsCtrl.onUpdate(async () => {

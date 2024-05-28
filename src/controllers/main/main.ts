@@ -254,9 +254,8 @@ export class MainController extends EventEmitter {
 
     if (this.selectedAccount) {
       this.activity.init({ selectedAccount: this.selectedAccount })
-      this.addressBook.update({
-        selectedAccount
-      })
+      this.addressBook.update({ selectedAccount })
+      this.actions.update({ selectedAccount })
     }
 
     this.updateSelectedAccount(this.selectedAccount)
@@ -797,7 +796,6 @@ export class MainController extends EventEmitter {
   }
 
   async addUserRequest(req: UserRequest, withPriority?: boolean) {
-    console.log('addUserRequest', req)
     if (withPriority) {
       this.userRequests.unshift(req)
     } else {
@@ -823,13 +821,11 @@ export class MainController extends EventEmitter {
         throw new Error(`addUserRequest: tried to run for non-existent account ${meta.accountAddr}`)
 
       let accountOp: AccountOp
-      console.log('addUserRequest', account.creation)
       if (account.creation) {
         const accountOpAction = this.actions.actionsQueue.find(
           (a) => a.id === `${meta.accountAddr}-${meta.networkId}` && a.type === 'accountOp'
         ) as AccountOpAction | undefined
 
-        console.log('addUserRequest accountOpAction', accountOpAction)
         if (!accountOpAction) {
           accountOp = {
             accountAddr: meta.accountAddr,
@@ -847,7 +843,6 @@ export class MainController extends EventEmitter {
             accountOpToExecuteBefore: null,
             calls: this.#batchCallsFromUserRequests(meta.accountAddr, meta.networkId)
           }
-          console.log('addUserRequest accountOp', accountOp)
 
           this.actions.addOrUpdateAction(
             {
