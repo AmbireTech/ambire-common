@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-floating-promises */
 
-import { SignUserRequest, UserRequest } from '../../interfaces/userRequest'
+import { DappUserRequest, SignUserRequest, UserRequest } from '../../interfaces/userRequest'
 import { WindowManager } from '../../interfaces/window'
 import { AccountOp } from '../../libs/accountOp/accountOp'
 import { getDappActionRequestsBanners } from '../../libs/banners/banners'
@@ -21,16 +21,16 @@ export type SignMessageAction = {
 export type BenzinAction = {
   id: UserRequest['id']
   type: 'benzin'
-  userRequest: UserRequest
+  userRequest: SignUserRequest
 }
 
-export type UserRequestAction = {
+export type DappRequestAction = {
   id: UserRequest['id']
-  type: string
-  userRequest: UserRequest
+  type: 'dappRequest'
+  userRequest: DappUserRequest
 }
 
-export type Action = AccountOpAction | SignMessageAction | BenzinAction | UserRequestAction
+export type Action = AccountOpAction | SignMessageAction | BenzinAction | DappRequestAction
 
 /**
  * The ActionsController is responsible for storing the converted userRequests
@@ -61,9 +61,7 @@ export class ActionsController extends EventEmitter {
     return (
       this.actionsQueue.map((a) => {
         if (a.type === 'accountOp') {
-          return (a as AccountOpAction).accountOp.accountAddr === this.#selectedAccount
-            ? a
-            : undefined
+          return a.accountOp.accountAddr === this.#selectedAccount ? a : undefined
         }
         if (a.type === 'signMessage') {
           return a.userRequest.meta.accountAddr === this.#selectedAccount ? a : undefined

@@ -1,3 +1,5 @@
+import { UserRequest } from '../../interfaces/userRequest'
+
 export interface Call {
   to: string
   value: bigint
@@ -5,5 +7,5 @@ export interface Call {
   // if this call is associated with a particular user request
   // multiple calls can be associated with the same user request, for example
   // when a batching request is made
-  fromUserRequestId?: number
+  fromUserRequestId?: UserRequest['id']
 }

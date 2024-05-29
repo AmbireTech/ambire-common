@@ -41,8 +41,7 @@ import { Call as AccountOpCall } from '../../libs/accountOp/types'
 import { getAccountState } from '../../libs/accountState/accountState'
 import {
   dappRequestMethodToActionKind,
-  getAccountOpActionsByNetwork,
-  getAccountOpsByNetwork
+  getAccountOpActionsByNetwork
 } from '../../libs/actions/actions'
 import { getAccountOpBanners } from '../../libs/banners/banners'
 import { estimate } from '../../libs/estimate/estimate'
@@ -615,12 +614,19 @@ export class MainController extends EventEmitter {
     if (!selectedAccount) return
 
     // pass the accountOps if any so we could reflect the pending state
+    const currentAction = this.actions.currentAction
 
+    const accountOps =
+      currentAction?.type === 'accountOp'
+        ? {
+            [currentAction.accountOp.networkId]: [currentAction.accountOp]
+          }
+        : {}
     this.portfolio.updateSelectedAccount(
       this.accounts,
       this.settings.networks,
       selectedAccount,
-      getAccountOpsByNetwork(selectedAccount, this.actions.actionsQueue),
+      accountOps,
       { forceUpdate }
     )
   }
@@ -803,9 +809,6 @@ export class MainController extends EventEmitter {
     }
     const { id, action, meta } = req
     if (action.kind === 'call') {
-      if (!this.settings.networks.find((x) => x.id === meta.networkId))
-        throw new Error(`addUserRequest: ${meta.networkId}: network does not exist`)
-
       // @TODO
       // one solution would be to, instead of checking, have a promise that we always await here, that is responsible for fetching
       // account data; however, this won't work with EOA accountOps, which have to always pick the first userRequest for a particular acc/network,
@@ -816,14 +819,12 @@ export class MainController extends EventEmitter {
       await this.#ensureAccountInfo(meta.accountAddr, meta.networkId)
       if (this.signAccOpInitError) return
 
-      const account = this.accounts.find((x) => x.addr === meta.accountAddr)
-      if (!account)
-        throw new Error(`addUserRequest: tried to run for non-existent account ${meta.accountAddr}`)
+      const account = this.accounts.find((x) => x.addr === meta.accountAddr)!
 
       let accountOp: AccountOp
       if (account.creation) {
         const accountOpAction = this.actions.actionsQueue.find(
-          (a) => a.id === `${meta.accountAddr}-${meta.networkId}` && a.type === 'accountOp'
+          (a) => a.type === 'accountOp' && a.id === `${meta.accountAddr}-${meta.networkId}`
         ) as AccountOpAction | undefined
 
         if (!accountOpAction) {
@@ -834,36 +835,32 @@ export class MainController extends EventEmitter {
             signingKeyType: null,
             gasLimit: null,
             gasFeePayment: null,
-            // We use the AccountInfo to determine
             nonce: this.accountStates[meta.accountAddr][meta.networkId].nonce,
             signature: account.associatedKeys[0]
               ? generateSpoofSig(account.associatedKeys[0])
               : null,
-            // @TODO from pending recoveries
-            accountOpToExecuteBefore: null,
+            accountOpToExecuteBefore: null, // @TODO from pending recoveries
             calls: this.#batchCallsFromUserRequests(meta.accountAddr, meta.networkId)
           }
 
           this.actions.addOrUpdateAction(
             {
-              id: `${meta.accountAddr}-${meta.networkId}`,
+              id: `${meta.accountAddr}-${meta.networkId}`, // SA accountOpAction id
               type: 'accountOp',
               accountOp
             },
             withPriority
           )
         } else {
-          accountOp = accountOpAction.accountOp
-          this.actions.addOrUpdateAction(
-            {
-              ...accountOpAction,
-              accountOp: {
-                ...accountOp,
-                calls: this.#batchCallsFromUserRequests(meta.accountAddr, meta.networkId)
-              }
-            } as AccountOpAction,
-            withPriority
+          accountOpAction.accountOp.calls = this.#batchCallsFromUserRequests(
+            meta.accountAddr,
+            meta.networkId
           )
+          this.actions.addOrUpdateAction(accountOpAction, withPriority)
+          if (this.signAccountOp && this.signAccountOp.fromActionId === accountOpAction.id) {
+            this.signAccountOp.update({ accountOp: accountOpAction.accountOp })
+            this.#estimateSignAccountOp()
+          }
         }
       } else {
         const { to, value, data } = req.action as Call
@@ -874,29 +871,13 @@ export class MainController extends EventEmitter {
           signingKeyType: null,
           gasLimit: null,
           gasFeePayment: null,
-          // We use the AccountInfo to determine
           nonce: this.accountStates[meta.accountAddr][meta.networkId].nonce,
           signature: account.associatedKeys[0] ? generateSpoofSig(account.associatedKeys[0]) : null,
-          // @TODO from pending recoveries
-          accountOpToExecuteBefore: null,
+          accountOpToExecuteBefore: null, // @TODO from pending recoveries
           calls: [{ to, value, data, fromUserRequestId: req.id }]
         }
-        this.actions.addOrUpdateAction(
-          {
-            id: req.id,
-            type: 'accountOp',
-            accountOp
-          },
-          withPriority
-        )
-      }
-      if (
-        this.signAccountOp &&
-        this.signAccountOp.accountOp.accountAddr === meta.accountAddr &&
-        this.signAccountOp.accountOp.networkId === meta.networkId
-      ) {
-        this.signAccountOp.update({ accountOp })
-        this.#estimateSignAccountOp()
+        // BA accountOpAction id same as the userRequest's id because for each call we have an action
+        this.actions.addOrUpdateAction({ id: req.id, type: 'accountOp', accountOp }, withPriority)
       }
     } else if (action.kind === 'typedMessage' || action.kind === 'message') {
       if (!this.messagesToBeSigned[meta.accountAddr]) {
@@ -919,7 +900,7 @@ export class MainController extends EventEmitter {
         {
           id,
           type: 'signMessage',
-          userRequest: req
+          userRequest: req as SignUserRequest
         },
         withPriority
       )
@@ -927,8 +908,8 @@ export class MainController extends EventEmitter {
       this.actions.addOrUpdateAction(
         {
           id,
-          type: req.action.kind,
-          userRequest: req
+          type: 'dappRequest',
+          userRequest: req as DappUserRequest
         },
         withPriority
       )
@@ -938,7 +919,7 @@ export class MainController extends EventEmitter {
   }
 
   // @TODO allow this to remove multiple OR figure out a way to debounce re-estimations
-  // first one sounds more reasonble
+  // first one sounds more reasonable
   // although the second one can't hurt and can help (or no debounce, just a one-at-a-time queue)
   removeUserRequest(id: number) {
     const req = this.userRequests.find((uReq) => uReq.id === id)
@@ -958,29 +939,26 @@ export class MainController extends EventEmitter {
 
       if (account.creation) {
         const accountOpIndex = this.actions.actionsQueue.findIndex(
-          (a) => a.id === `${meta.accountAddr}-${meta.networkId}` && a.type === 'accountOp'
+          (a) => a.type === 'accountOp' && a.id === `${meta.accountAddr}-${meta.networkId}`
         )
-        if (accountOpIndex === -1) return
-        const accountOp = (this.actions.actionsQueue[accountOpIndex] as AccountOpAction).accountOp
+        const accountOpAction = this.actions.actionsQueue[accountOpIndex] as
+          | AccountOpAction
+          | undefined
+        if (!accountOpAction) return
 
-        const calls = this.#batchCallsFromUserRequests(req.meta.accountAddr, req.meta.networkId)
+        accountOpAction.accountOp.calls = this.#batchCallsFromUserRequests(
+          meta.accountAddr,
+          meta.networkId
+        )
+        if (accountOpAction.accountOp.calls.length) {
+          this.actions.addOrUpdateAction(accountOpAction)
 
-        if (calls.length) {
-          this.actions.addOrUpdateAction({
-            ...this.actions.actionsQueue[accountOpIndex],
-            accountOp: { ...accountOp, calls }
-          } as AccountOpAction)
-
-          if (
-            this.signAccountOp &&
-            this.signAccountOp.accountOp.accountAddr === accountOp.accountAddr &&
-            this.signAccountOp.accountOp.networkId === accountOp.networkId
-          ) {
-            this.signAccountOp.update({ accountOp, estimation: null })
+          if (this.signAccountOp && this.signAccountOp.fromActionId === accountOpAction.id) {
+            this.signAccountOp.update({ accountOp: accountOpAction.accountOp, estimation: null })
             this.#estimateSignAccountOp()
           }
         } else {
-          this.actions.removeAction(`${req.meta.accountAddr}-${req.meta.networkId}`)
+          this.actions.removeAction(`${meta.accountAddr}-${meta.networkId}`)
         }
       } else {
         this.actions.removeAction(id)
@@ -1223,6 +1201,7 @@ export class MainController extends EventEmitter {
       additionalHints!.push(...stringAddr)
 
       await this.portfolio.learnTokens(additionalHints, network.id)
+
       const [, estimation] = await Promise.all([
         // NOTE: we are not emitting an update here because the portfolio controller will do that
         // NOTE: the portfolio controller has it's own logic of constructing/caching providers, this is intentional, as
@@ -1231,7 +1210,7 @@ export class MainController extends EventEmitter {
           this.accounts,
           this.settings.networks,
           localAccountOp.accountAddr,
-          getAccountOpsByNetwork(localAccountOp.accountAddr, this.actions.actionsQueue),
+          { [localAccountOp.networkId]: [localAccountOp] },
           { forceUpdate: true }
         ),
         estimate(
