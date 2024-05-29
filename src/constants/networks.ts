@@ -382,4 +382,8 @@ export const coingeckoNets = {
   scroll: 'scroll'
 }
 
+export const networkIdToCoingeckoPlatformId = Object.fromEntries(
+  Object.entries(coingeckoNets).map(([key, value]) => [value, key])
+);
+
 export default networks
