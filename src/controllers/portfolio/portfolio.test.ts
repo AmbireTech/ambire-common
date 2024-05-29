@@ -26,6 +26,18 @@ networks.forEach((network) => {
 
 const ethereum = networks.find((network) => network.id === 'ethereum')!
 
+const prepareTest = () => {
+  const storage = produceMemoryStore()
+
+  const settings = new SettingsController(storage)
+  settings.providers = providers
+  const controller = new PortfolioController(storage, settings, relayerUrl)
+
+  return {
+    controller
+  }
+}
+
 describe('Portfolio Controller ', () => {
   const account = {
     addr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
@@ -114,7 +126,7 @@ describe('Portfolio Controller ', () => {
           expect(latestState.isReady).toEqual(true)
           expect(latestState.result?.tokens.length).toBeGreaterThan(0)
           expect(latestState.result?.collections.length).toBeGreaterThan(0)
-          expect(latestState.result?.hints).toBeTruthy()
+          expect(latestState.result?.hintsFromExternalAPI).toBeTruthy()
           expect(latestState.result?.total.usd).toBeGreaterThan(1000)
           expect(pendingState).toBeFalsy()
           done()
@@ -166,13 +178,13 @@ describe('Portfolio Controller ', () => {
           expect(latestState.isReady).toEqual(true)
           expect(latestState.result?.tokens.length).toBeGreaterThan(0)
           expect(latestState.result?.collections.length).toBeGreaterThan(0)
-          expect(latestState.result?.hints).toBeTruthy()
+          expect(latestState.result?.hintsFromExternalAPI).toBeTruthy()
           expect(latestState.result?.total.usd).toBeGreaterThan(1000)
 
           expect(pendingState.isReady).toEqual(true)
           expect(pendingState.result?.tokens.length).toBeGreaterThan(0)
           expect(pendingState.result?.collections.length).toBeGreaterThan(0)
-          expect(pendingState.result?.hints).toBeTruthy()
+          expect(pendingState.result?.hintsFromExternalAPI).toBeTruthy()
           expect(pendingState.result?.total.usd).toBeGreaterThan(1000)
           done()
         }
@@ -204,7 +216,7 @@ describe('Portfolio Controller ', () => {
 
         expect(pendingState.result?.tokens.length).toBeGreaterThan(0)
         expect(pendingState.result?.collections.length).toBeGreaterThan(0)
-        expect(pendingState.result?.hints).toBeTruthy()
+        expect(pendingState.result?.hintsFromExternalAPI).toBeTruthy()
         expect(pendingState.result?.total.usd).toBeGreaterThan(1000)
         // Expect amount post simulation to be calculated correctly
         expect(collection?.amountPostSimulation).toBe(0n)
@@ -408,13 +420,9 @@ describe('Portfolio Controller ', () => {
     })
   })
 
-  test('Additional hints', async () => {
-    const storage = produceMemoryStore()
+  test('Zero balance token is fetched after being learned', async () => {
     const BANANA_TOKEN_ADDR = '0x94e496474F1725f1c1824cB5BDb92d7691A4F03a'
-
-    const settings = new SettingsController(storage)
-    settings.providers = providers
-    const controller = new PortfolioController(storage, settings, relayerUrl)
+    const { controller } = prepareTest()
 
     await controller.learnTokens([BANANA_TOKEN_ADDR], 'ethereum')
 
