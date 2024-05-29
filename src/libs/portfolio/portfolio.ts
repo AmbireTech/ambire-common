@@ -11,9 +11,10 @@ import { Deployless, fromDescriptor } from '../deployless/deployless'
 import batcher from './batcher'
 import { geckoRequestBatcher, geckoResponseIdentifier } from './gecko'
 import { getNFTs, getTokens } from './getOnchainBalances'
-import { getTotal } from './helpers'
+import { getTotal, stripExternalHintsAPIResponse } from './helpers'
 import {
   CollectionResult,
+  ExternalHintsAPIResponse,
   GetOptions,
   Hints,
   Limits,
@@ -43,12 +44,8 @@ export const PORTFOLIO_LIB_ERROR_NAMES = {
 }
 
 export const getEmptyHints = (networkId: string, accountAddr: string): Hints => ({
-  networkId,
-  accountAddr,
   erc20s: [],
-  erc721s: {},
-  prices: {},
-  hasHints: false
+  erc721s: {}
 })
 
 const defaultOptions: GetOptions = {
@@ -105,29 +102,32 @@ export class Portfolio {
 
     // Make sure portfolio lib still works, even in the case Velcro discovery fails.
     // Because of this, we fall back to Velcro default response.
-    let hints: Hints
+    let hints: Hints = getEmptyHints(networkId, accountAddr)
+    let hintsFromExternalAPI: ExternalHintsAPIResponse | null = null
+
     try {
       // if the network doesn't have a relayer, velcro will not work
       // but we should not record an error if such is the case
-      hints =
-        this.network.hasRelayer && !disableAutoDiscovery
-          ? await this.batchedVelcroDiscovery({ networkId, accountAddr, baseCurrency })
-          : getEmptyHints(networkId, accountAddr)
+      if (this.network.hasRelayer && !disableAutoDiscovery) {
+        hintsFromExternalAPI = await this.batchedVelcroDiscovery({
+          networkId,
+          accountAddr,
+          baseCurrency
+        })
+      }
     } catch (error: any) {
       errors.push({
         name: PORTFOLIO_LIB_ERROR_NAMES.HintsError,
         message: `Failed to fetch hints from Velcro for networkId (${networkId}): ${error.message}`
       })
-      hints = getEmptyHints(networkId, accountAddr)
     }
 
     // Always add 0x00 to hints
-    hints.erc20s = [...hints.erc20s, ZeroAddress]
+    hints.erc20s = [...(hintsFromExternalAPI?.erc20s || []), ZeroAddress]
 
     // Enrich hints with the previously found and cached hints, especially in the case the Velcro discovery fails.
     if (localOpts.previousHints) {
       hints = {
-        ...hints,
         // Unique list of previously discovered and currently discovered erc20s
         erc20s: [...localOpts.previousHints.erc20s, ...hints.erc20s],
         // Please note 2 things:
@@ -160,8 +160,9 @@ export class Portfolio {
 
     // This also allows getting prices, this is used for more exotic tokens that cannot be retrieved via Coingecko
     const priceCache: PriceCache = localOpts.priceCache || new Map()
-    for (const addr in hints.prices || {}) {
-      const priceHint = hints.prices[addr]
+    for (const addr in hintsFromExternalAPI?.prices || {}) {
+      const priceHint = hintsFromExternalAPI?.prices[addr]
+      if (!priceHint) continue
       // @TODO consider validating the external response here, before doing the .set; or validating the whole velcro response
       priceCache.set(addr, [start, Array.isArray(priceHint) ? priceHint : [priceHint]])
     }
@@ -280,8 +281,7 @@ export class Portfolio {
     const priceUpdateDone = Date.now()
 
     return {
-      // Raw hints response
-      hints,
+      hintsFromExternalAPI: stripExternalHintsAPIResponse(hintsFromExternalAPI),
       errors,
       updateStarted: start,
       discoveryTime: discoveryDone - start,

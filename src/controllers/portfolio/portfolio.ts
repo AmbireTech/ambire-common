@@ -31,6 +31,7 @@ import {
 import {
   AccountState,
   AdditionalAccountState,
+  ExternalHintsAPIResponse,
   GetOptions,
   PortfolioControllerState,
   PortfolioGetResult,
@@ -572,9 +573,14 @@ export class PortfolioController extends EventEmitter {
         ])
 
         // Persist latest state in previousHints in the disk storage for further requests
-        if (isSuccessfulLatestUpdate && !areAccountOpsChanged) {
+        if (
+          isSuccessfulLatestUpdate &&
+          !areAccountOpsChanged &&
+          accountState[network.id]?.result?.hintsFromExternalAPI
+        ) {
           const updatedStoragePreviousHints = getUpdatedHints(
-            accountState[network.id]!.result!,
+            accountState[network.id]!.result!.hintsFromExternalAPI as ExternalHintsAPIResponse,
+            accountState[network.id]!.result!.tokens,
             network.id,
             storagePreviousHints,
             key,
@@ -619,8 +625,8 @@ export class PortfolioController extends EventEmitter {
 
       // Keep the timestamp of all learned tokens
       acc[address] = acc[address] || null
-        return acc
-      }, {})
+      return acc
+    }, {})
 
     if (!Object.keys(tokensToLearn).length) return
     // Add new tokens in the beginning of the list
