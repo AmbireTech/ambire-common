@@ -63,7 +63,7 @@ export const getAccountOpBanners = ({
               label: 'Reject',
               actionName: 'reject-accountOp',
               meta: {
-                err: 'User rejected the transaction request',
+                err: 'User rejected the transaction request.',
                 actionId: action.id
               }
             },
@@ -93,7 +93,7 @@ export const getAccountOpBanners = ({
                 label: 'Reject',
                 actionName: 'reject-accountOp',
                 meta: {
-                  err: 'User rejected the transaction request',
+                  err: 'User rejected the transaction request.',
                   actionId: actions[0].id
                 }
               }

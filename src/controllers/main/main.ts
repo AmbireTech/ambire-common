@@ -142,9 +142,6 @@ export class MainController extends EventEmitter {
 
   accountOpsToBeConfirmed: { [key: string]: { [key: string]: AccountOp } } = {}
 
-  // accountAddr => UniversalMessage
-  messagesToBeSigned: { [key: string]: Message } = {}
-
   lastUpdate: Date = new Date()
 
   broadcastStatus: 'INITIAL' | 'LOADING' | 'DONE' = 'INITIAL'
@@ -784,7 +781,7 @@ export class MainController extends EventEmitter {
     return accountOpAction.accountOp
   }
 
-  resolveUserRequest(data: any, requestId: number) {
+  resolveUserRequest(data: any, requestId: UserRequest['id']) {
     const userRequest = this.userRequests.find((r) => r.id === requestId)
     if (!userRequest) return // TODO: emit error
 
@@ -793,7 +790,7 @@ export class MainController extends EventEmitter {
     this.emitUpdate()
   }
 
-  rejectUserRequest(err: string, requestId: number) {
+  rejectUserRequest(err: string, requestId: UserRequest['id']) {
     const userRequest = this.userRequests.find((r) => r.id === requestId)
     if (!userRequest) return // TODO: emit error
 
@@ -880,37 +877,25 @@ export class MainController extends EventEmitter {
         // BA accountOpAction id same as the userRequest's id because for each call we have an action
         this.actions.addOrUpdateAction({ id: req.id, type: 'accountOp', accountOp }, withPriority)
       }
-    } else if (action.kind === 'typedMessage' || action.kind === 'message') {
-      if (!this.messagesToBeSigned[meta.accountAddr]) {
-        const messageRequests = this.userRequests.filter(
-          (r) => r.action.kind === 'typedMessage' || r.action.kind === 'message'
-        )
-        if (messageRequests.length) {
-          const messageRequest = messageRequests[0]
-          this.messagesToBeSigned[meta.accountAddr] = {
-            id: messageRequest.id,
-            content: messageRequest.action as PlainTextMessage | TypedMessage,
-            fromUserRequestId: messageRequest.id,
-            signature: null,
-            accountAddr: messageRequest.meta.accountAddr,
-            networkId: messageRequest.meta.networkId
-          }
-        }
-      }
-      this.actions.addOrUpdateAction(
-        {
-          id,
-          type: 'signMessage',
-          userRequest: req as SignUserRequest
-        },
-        withPriority
-      )
     } else {
       let actionType: 'dappRequest' | 'benzin' | 'signMessage' = 'dappRequest'
 
-      if (req.action.kind === 'benzin') actionType = 'benzin'
-      if (req.action.kind === 'typedMessage' || req.action.kind === 'message')
+      if (req.action.kind === 'typedMessage' || req.action.kind === 'message') {
         actionType = 'signMessage'
+
+        if (this.actions.actionsQueue.find((a) => a.type === 'signMessage')) {
+          const msgReq = this.userRequests.find((uReq) => uReq.id === id)
+          if (!msgReq) return
+          msgReq.dappPromise?.reject(
+            ethErrors.provider.userRejectedRequest(
+              'Rejected: Please complete your pending message request before initiating a new one.'
+            )
+          )
+          this.userRequests.splice(this.userRequests.indexOf(msgReq), 1)
+          return
+        }
+      }
+      if (req.action.kind === 'benzin') actionType = 'benzin'
       this.actions.addOrUpdateAction(
         {
           id,
@@ -976,24 +961,6 @@ export class MainController extends EventEmitter {
         this.actions.removeAction(id)
         this.updateSelectedAccount(this.selectedAccount, true)
       }
-    } else if (action.kind === 'typedMessage' || action.kind === 'message') {
-      const messageRequests = this.userRequests.filter(
-        (r) => r.action.kind === 'typedMessage' || r.action.kind === 'message'
-      )
-      if (messageRequests.length) {
-        const messageRequest = messageRequests[0]
-        this.messagesToBeSigned[meta.accountAddr] = {
-          id: messageRequest.id,
-          content: messageRequest.action as PlainTextMessage | TypedMessage,
-          fromUserRequestId: messageRequest.id,
-          signature: null,
-          accountAddr: messageRequest.meta.accountAddr,
-          networkId: messageRequest.meta.networkId
-        }
-      } else {
-        delete this.messagesToBeSigned[meta.accountAddr]
-      }
-      this.actions.removeAction(id)
     } else {
       this.actions.removeAction(id)
     }
