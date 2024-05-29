@@ -1,3 +1,4 @@
+import { SignMessageAction } from 'controllers/actions/actions'
 import { TypedDataDomain, TypedDataField } from 'ethers'
 import { HumanizerFragment } from 'libs/humanizer/interfaces'
 
@@ -26,19 +27,18 @@ export interface TypedMessage {
 // @TODO: move this type and it's deps (PlainTextMessage, TypedMessage) to another place,
 // probably interfaces
 export interface Message {
-  id: number
+  fromActionId: SignMessageAction['id']
   accountAddr: AccountId
+  networkId: NetworkId
   content: PlainTextMessage | TypedMessage
   signature: string | null
-  fromUserRequestId?: number
-  // those are the async non glabal data fragments that are obtained via the humanizer and stored
-  // in the Message so we can visualize it better and fater later
+  // those are the async non global data fragments that are obtained via the humanizer and stored
+  // in the Message so we can visualize it better and fatter later
   humanizerFragments?: HumanizerFragment[]
-  networkId: NetworkId
 }
 
 export interface SignUserRequest {
-  id: number
+  id: string | number
   action: Call | PlainTextMessage | TypedMessage | { kind: 'benzin' }
   session?: DappProviderRequest['session']
   meta: {
@@ -55,7 +55,7 @@ export interface SignUserRequest {
 }
 
 export interface DappUserRequest {
-  id: number
+  id: string | number
   action: {
     kind: Exclude<string, 'call' | 'message' | 'typedMessage' | 'benzin'>
     params: any

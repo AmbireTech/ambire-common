@@ -258,13 +258,13 @@ export class SignMessageController extends EventEmitter {
       }
 
       this.signedMessage = {
-        id: this.messageToSign.id,
-        dapp: this.dapp,
+        fromActionId: this.messageToSign.fromActionId,
         accountAddr: this.messageToSign.accountAddr,
         networkId: this.messageToSign.networkId,
-        signature,
+        content: this.messageToSign.content,
         timestamp: new Date().getTime(),
-        content: this.messageToSign.content
+        signature,
+        dapp: this.dapp
       }
     } catch (e: any) {
       const error = e instanceof Error ? e : new Error(`Signing failed. Error details: ${e}`)

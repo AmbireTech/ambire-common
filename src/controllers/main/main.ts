@@ -1546,7 +1546,7 @@ export class MainController extends EventEmitter {
     this.emitUpdate()
 
     await this.activity.addSignedMessage(signedMessage, signedMessage.accountAddr)
-    await this.resolveUserRequest({ hash: signedMessage.signature }, signedMessage.id)
+    await this.resolveUserRequest({ hash: signedMessage.signature }, signedMessage.fromActionId)
     !!this.onBroadcastSuccess &&
       this.onBroadcastSuccess(
         signedMessage.content.kind === 'typedMessage' ? 'typed-data' : 'message'
