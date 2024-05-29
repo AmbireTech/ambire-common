@@ -21,6 +21,12 @@ interface NFT {
 }
 
 contract NFTGetter is Simulation {
+  // During simulation, we return the delta between the collection before and after the simulation.
+  // This array maintains a mapping between the indices of the passed-in token addresses and the tokens listed in the delta array.
+  // While returning the token address directly in the before/after collection would be more straightforward,
+  // it would result in heavier data for larger token portfolios, making it more CPU-intensive to parse with ethers.
+  address[] private deltaAddressesMapping;
+
   struct NFTMetadata {
     uint id;
     string uri;
@@ -28,7 +34,6 @@ contract NFTGetter is Simulation {
   struct NFTCollectionMetadata {
     string name;
     string symbol;
-    address addr;
     NFTMetadata[] nfts;
     bytes error;
   }
@@ -45,7 +50,6 @@ contract NFTGetter is Simulation {
   ) external view returns (NFTCollectionMetadata memory meta) {
     meta.name = collection.name();
     meta.symbol = collection.symbol();
-    meta.addr = address(collection);
     if (tokenIds.length == 0) {
       uint balance = collection.balanceOf(address(account));
       if (balance > limit) balance = limit;
@@ -102,7 +106,7 @@ contract NFTGetter is Simulation {
 
   // Compare the collections before (collectionsA) and after simulation (collectionsB)
   // and return the delta (with simulation)
-  function getDelta(NFTCollectionMetadata[] memory collectionsA, NFTCollectionMetadata[] memory collectionsB) public pure returns (NFTCollectionMetadata[] memory) {
+  function getDelta(NFTCollectionMetadata[] memory collectionsA, NFTCollectionMetadata[] memory collectionsB, NFT[] memory collections) public returns (NFTCollectionMetadata[] memory) {
     uint deltaSize = 0;
 
     for (uint256 i = 0; i < collectionsA.length; i++) {
@@ -115,6 +119,7 @@ contract NFTGetter is Simulation {
     }
 
     NFTCollectionMetadata[] memory delta = new NFTCollectionMetadata[](deltaSize);
+    deltaAddressesMapping = new address[](deltaSize);
 
     // Second loop to populate the delta array
     // Separate index for the delta array
@@ -125,6 +130,7 @@ contract NFTGetter is Simulation {
       bytes32 hashB = keccak256(abi.encode(collectionsB[i].nfts));
       if (hashA != hashB) {
         delta[deltaIndex] = collectionsB[i];
+        deltaAddressesMapping[deltaIndex] = address(collections[i]);
         deltaIndex++;
       }
     }
@@ -149,7 +155,8 @@ contract NFTGetter is Simulation {
       NFTCollectionAtNonce memory afterSimulation,
       bytes memory /*simulationError*/,
       uint /*gasLeft*/,
-      uint /*blockNum*/
+      uint /*blockNum*/,
+      address[] memory // deltaAddressesMapping
     )
   {
     before.collections = getAllNFTs(account, collections, tokenIds, tokenPerCollectionLimit);
@@ -164,7 +171,7 @@ contract NFTGetter is Simulation {
     before.nonce = startNonce;
 
     if (!success) {
-      return (before, afterSimulation, err, gasleft(), block.number);
+      return (before, afterSimulation, err, gasleft(), block.number, deltaAddressesMapping);
     }
 
     afterSimulation.nonce = account.nonce();
@@ -177,10 +184,10 @@ contract NFTGetter is Simulation {
       );
 
 
-      (NFTCollectionMetadata[] memory deltaAfter) = getDelta(before.collections, afterSimulation.collections);
+      (NFTCollectionMetadata[] memory deltaAfter) = getDelta(before.collections, afterSimulation.collections, collections);
       afterSimulation.collections = deltaAfter;
     }
 
-    return (before, afterSimulation, bytes(''), gasleft(), block.number);
+    return (before, afterSimulation, bytes(''), gasleft(), block.number, deltaAddressesMapping);
   }
 }

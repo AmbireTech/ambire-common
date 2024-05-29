@@ -139,7 +139,7 @@ export async function getNFTs(
     nonce: isSmartAccount(account) ? nonce : BigInt(EOA_SIMULATION_NONCE),
     calls: calls.map(callToTuple)
   }))
-  const [before, after, simulationErr] = await deployless.call(
+  const [before, after, simulationErr, , , deltaAddressesMapping] = await deployless.call(
     'simulateAndGetAllNFTs',
     [
       accountAddr,
@@ -161,9 +161,17 @@ export async function getNFTs(
   // simulation was performed if the nonce is changed
   const hasSimulation = afterNonce !== beforeNonce
 
+  const simulationTokens = hasSimulation
+    ? after[0].map((simulationToken: any, tokenIndex: number) => ({
+        ...simulationToken,
+        amount: simulationToken.amount,
+        addr: deltaAddressesMapping[tokenIndex]
+      }))
+    : null
+
   return before[0].map((beforeToken: any, i: number) => {
-    const simulation = hasSimulation
-      ? after[0].find((simulationToken: any) => simulationToken.addr === beforeToken.addr)
+    const simulation = simulationTokens
+      ? simulationTokens.find((simulationToken: any) => simulationToken.addr === tokenAddrs[i])
       : null
 
     const token = mapToken(beforeToken)
@@ -212,7 +220,7 @@ export async function getTokens(
     calls: calls.map(callToTuple)
   }))
   const [factory, factoryCalldata] = getAccountDeployParams(account)
-  const [before, after, simulationErr] = await deployless.call(
+  const [before, after, simulationErr, , , deltaAddressesMapping] = await deployless.call(
     'simulateAndGetBalances',
     [
       accountAddr,
@@ -232,9 +240,17 @@ export async function getTokens(
   // simulation was performed if the nonce is changed
   const hasSimulation = afterNonce !== beforeNonce
 
+  const simulationTokens = hasSimulation
+    ? after[0].map((simulationToken: any, tokenIndex: number) => ({
+        ...simulationToken,
+        amount: simulationToken.amount,
+        addr: deltaAddressesMapping[tokenIndex]
+      }))
+    : null
+
   return before[0].map((token: any, i: number) => {
-    const simulation = hasSimulation
-      ? after[0].find((simulationToken: any) => simulationToken.addr === token.addr)
+    const simulation = simulationTokens
+      ? simulationTokens.find((simulationToken: any) => simulationToken.addr === tokenAddrs[i])
       : null
 
     return [

@@ -8,9 +8,14 @@ import './Simulation.sol';
 contract BalanceGetter is Simulation {
   // Knowing the exact source of the error would be great, but we can always change this as this contract is meant to be called off-chain
 
+  // During simulation, we return the delta between the balances before and after the simulation.
+  // This array maintains a mapping between the indices of the passed-in token addresses and the tokens listed in the delta array.
+  // While returning the token address directly in the before/after balances would be more straightforward,
+  // it would result in heavier data for larger token portfolios, making it more CPU-intensive to parse with ethers.
+  address[] private deltaAddressesMapping;
+
   struct TokenInfo {
     string symbol;
-    address addr;
     uint256 amount;
     uint8 decimals;
     bytes error;
@@ -24,7 +29,6 @@ contract BalanceGetter is Simulation {
     IAmbireAccount account,
     IERC20 token
   ) external view returns (TokenInfo memory info) {
-    info.addr = address(token);
     info.amount = token.balanceOf(address(account));
     info.symbol = token.symbol();
     info.decimals = token.decimals();
@@ -38,7 +42,7 @@ contract BalanceGetter is Simulation {
     TokenInfo[] memory results = new TokenInfo[](len);
     for (uint256 i = 0; i < len; i++) {
       if (tokenAddrs[i] == address(0)) {
-        results[i] = TokenInfo('ETH', tokenAddrs[i], address(account).balance, 18, bytes(''));
+        results[i] = TokenInfo('ETH', address(account).balance, 18, bytes(''));
       } else {
         try this.getERC20TokenInfo(account, IERC20(tokenAddrs[i])) returns (TokenInfo memory info) {
           results[i] = info;
@@ -59,7 +63,7 @@ contract BalanceGetter is Simulation {
 
   // Compare the tokens balances before (balancesA) and after simulation (balancesB)
   // and return the delta (with simulation)
-  function getDelta(TokenInfo[] memory balancesA, TokenInfo[] memory balancesB) public pure returns (TokenInfo[] memory) {
+  function getDelta(TokenInfo[] memory balancesA, TokenInfo[] memory balancesB, address[] calldata tokenAddrs) public returns (TokenInfo[] memory) {
     uint deltaSize = 0;
 
     for (uint256 i = 0; i < balancesA.length; i++) {
@@ -69,6 +73,8 @@ contract BalanceGetter is Simulation {
     }
 
     TokenInfo[] memory delta = new TokenInfo[](deltaSize);
+    deltaAddressesMapping = new address[](deltaSize);
+
 
     // Second loop to populate the delta array
     // Separate index for the delta array
@@ -76,6 +82,7 @@ contract BalanceGetter is Simulation {
     for (uint256 i = 0; i < balancesA.length; i++) {
       if (balancesA[i].amount != balancesB[i].amount) {
         delta[deltaIndex] = balancesB[i];
+        deltaAddressesMapping[deltaIndex] = tokenAddrs[i];
         deltaIndex++;
       }
     }
@@ -98,7 +105,8 @@ contract BalanceGetter is Simulation {
       BalancesAtNonce memory afterSimulation,
       bytes memory /*simulationError*/,
       uint /*gasLeft*/,
-      uint /*blockNum*/
+      uint /*blockNum*/,
+      address[] memory // deltaAddressesMapping
     )
   {
     before.balances = getBalances(account, tokenAddrs);
@@ -113,17 +121,17 @@ contract BalanceGetter is Simulation {
     before.nonce = startNonce;
 
     if (!success) {
-      return (before, afterSimulation, err, gasleft(), block.number);
+      return (before, afterSimulation, err, gasleft(), block.number, deltaAddressesMapping);
     }
 
     afterSimulation.nonce = account.nonce();
     if (afterSimulation.nonce != before.nonce) {
       afterSimulation.balances = getBalances(account, tokenAddrs);
 
-      (TokenInfo[] memory deltaAfter) = getDelta(before.balances, afterSimulation.balances);
+      (TokenInfo[] memory deltaAfter) = getDelta(before.balances, afterSimulation.balances, tokenAddrs);
       afterSimulation.balances = deltaAfter;
     }
 
-    return (before, afterSimulation, bytes(''), gasleft(), block.number);
+    return (before, afterSimulation, bytes(''), gasleft(), block.number, deltaAddressesMapping);
   }
 }
