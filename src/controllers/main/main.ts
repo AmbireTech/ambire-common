@@ -906,11 +906,16 @@ export class MainController extends EventEmitter {
         withPriority
       )
     } else {
+      let actionType: 'dappRequest' | 'benzin' | 'signMessage' = 'dappRequest'
+
+      if (req.action.kind === 'benzin') actionType = 'benzin'
+      if (req.action.kind === 'typedMessage' || req.action.kind === 'message')
+        actionType = 'signMessage'
       this.actions.addOrUpdateAction(
         {
           id,
-          type: 'dappRequest',
-          userRequest: req as DappUserRequest
+          type: actionType,
+          userRequest: req as UserRequest as never
         },
         withPriority
       )
@@ -922,7 +927,7 @@ export class MainController extends EventEmitter {
   // @TODO allow this to remove multiple OR figure out a way to debounce re-estimations
   // first one sounds more reasonable
   // although the second one can't hurt and can help (or no debounce, just a one-at-a-time queue)
-  removeUserRequest(id: number) {
+  removeUserRequest(id: UserRequest['id']) {
     const req = this.userRequests.find((uReq) => uReq.id === id)
     if (!req) return
 
@@ -1024,6 +1029,7 @@ export class MainController extends EventEmitter {
       meta
     }
     await this.addUserRequest(benzinUserRequest, true)
+    this.actions.removeAction(actionId)
 
     // eslint-disable-next-line no-restricted-syntax
     for (const call of accountOp.calls) {
@@ -1038,7 +1044,7 @@ export class MainController extends EventEmitter {
     this.emitUpdate()
   }
 
-  rejectAccountOpAction(err: string, actionId: string | number) {
+  rejectAccountOpAction(err: string, actionId: AccountOpAction['id']) {
     const accountOpAction = this.actions.actionsQueue.find((a) => a.id === actionId)
     if (!accountOpAction) return
 
