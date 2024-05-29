@@ -1385,8 +1385,10 @@ export class MainController extends EventEmitter {
         if (gasFeePayment.maxPriorityFeePerGas !== undefined) {
           rawTxn.maxFeePerGas = gasPrice
           rawTxn.maxPriorityFeePerGas = gasFeePayment.maxPriorityFeePerGas
+          rawTxn.type = 2
         } else {
           rawTxn.gasPrice = gasPrice
+          rawTxn.type = 0
         }
 
         const signedTxn = await signer.signRawTransaction(rawTxn)
@@ -1471,8 +1473,10 @@ export class MainController extends EventEmitter {
         if (accountOp.gasFeePayment.maxPriorityFeePerGas !== undefined) {
           rawTxn.maxFeePerGas = gasPrice
           rawTxn.maxPriorityFeePerGas = accountOp.gasFeePayment.maxPriorityFeePerGas
+          rawTxn.type = 2
         } else {
           rawTxn.gasPrice = gasPrice
+          rawTxn.type = 0
         }
 
         const signedTxn = await signer.signRawTransaction(rawTxn)
