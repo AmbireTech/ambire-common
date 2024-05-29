@@ -613,15 +613,16 @@ export class MainController extends EventEmitter {
   async updateSelectedAccount(selectedAccount: string | null = null, forceUpdate: boolean = false) {
     if (!selectedAccount) return
 
-    // pass the accountOps if any so we could reflect the pending state
+    // pass the accountOp if any so we could reflect the pending state
     const currentAction = this.actions.currentAction
-
+    // TODO: update for all accountOps. Currently there is an issue with the simulation
+    // on the signAccountOpScreen if we pass here all ops and there are multiple ops on given network.
     const accountOps =
       currentAction?.type === 'accountOp'
         ? {
             [currentAction.accountOp.networkId]: [currentAction.accountOp]
           }
-        : {}
+        : undefined
     this.portfolio.updateSelectedAccount(
       this.accounts,
       this.settings.networks,
@@ -944,7 +945,12 @@ export class MainController extends EventEmitter {
         const accountOpAction = this.actions.actionsQueue[accountOpIndex] as
           | AccountOpAction
           | undefined
-        if (!accountOpAction) return
+        // accountOp has just been rejected
+        if (!accountOpAction) {
+          this.updateSelectedAccount(this.selectedAccount, true)
+          this.emitUpdate()
+          return
+        }
 
         accountOpAction.accountOp.calls = this.#batchCallsFromUserRequests(
           meta.accountAddr,
@@ -959,9 +965,11 @@ export class MainController extends EventEmitter {
           }
         } else {
           this.actions.removeAction(`${meta.accountAddr}-${meta.networkId}`)
+          this.updateSelectedAccount(this.selectedAccount, true)
         }
       } else {
         this.actions.removeAction(id)
+        this.updateSelectedAccount(this.selectedAccount, true)
       }
     } else if (action.kind === 'typedMessage' || action.kind === 'message') {
       const messageRequests = this.userRequests.filter(
@@ -1035,7 +1043,7 @@ export class MainController extends EventEmitter {
     if (!accountOpAction) return
 
     const { accountOp } = accountOpAction as AccountOpAction
-
+    this.actions.removeAction(actionId)
     // eslint-disable-next-line no-restricted-syntax
     for (const call of accountOp.calls) {
       const uReq = this.userRequests.find((r) => r.id === call.fromUserRequestId)
@@ -1210,6 +1218,8 @@ export class MainController extends EventEmitter {
           this.accounts,
           this.settings.networks,
           localAccountOp.accountAddr,
+          // TODO: update for all accountOps. Currently there is an issue with the simulation
+          // on the signAccountOpScreen if we pass here all ops and there are multiple ops on given network.
           { [localAccountOp.networkId]: [localAccountOp] },
           { forceUpdate: true }
         ),
