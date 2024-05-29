@@ -1,8 +1,8 @@
 import { AbiCoder, getBytes, keccak256 } from 'ethers'
-import { Key } from 'interfaces/keystore'
-import { HumanizerFragment } from 'libs/humanizer/interfaces'
 
+import { Key } from '../../interfaces/keystore'
 import { NetworkId } from '../../interfaces/networkDescriptor'
+import { HumanizerFragment } from '../humanizer/interfaces'
 import { stringify } from '../richJson/richJson'
 import { UserOperation } from '../userOperation/types'
 import { Call } from './types'
