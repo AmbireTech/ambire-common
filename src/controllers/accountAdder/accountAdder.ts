@@ -445,13 +445,16 @@ export class AccountAdderController extends EventEmitter {
       this.#derivedAccounts = await this.#deriveAccounts({ networks, providers })
 
       if (this.#keyIterator?.type === 'internal' && this.#keyIterator?.subType === 'private-key') {
-        const usedAccounts = this.accountsOnPage.filter((acc) => acc.account.usedOnNetworks.length)
+        const accountsOnPageWithoutTheLinked = this.accountsOnPage.filter((acc) => !acc.isLinked)
+        const usedAccounts = accountsOnPageWithoutTheLinked.filter(
+          (acc) => acc.account.usedOnNetworks.length
+        )
 
-        // If at least one account is used preselect both accounts on the page
+        // If at least one account is used - preselect all accounts on the page
+        // (except the linked ones). Usually there are are two accounts
+        // (since the private key flow gas `pageSize` of 1)
         if (usedAccounts.length) {
-          this.accountsOnPage.forEach((acc) => {
-            this.selectAccount(acc.account)
-          })
+          accountsOnPageWithoutTheLinked.forEach((acc) => this.selectAccount(acc.account))
         }
       }
     } catch (e: any) {
