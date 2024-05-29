@@ -606,15 +606,19 @@ export class PortfolioController extends EventEmitter {
   // Learn new tokens from humanizer and debug_traceCall
   async learnTokens(tokenAddresses: string[] | undefined, networkId: NetworkId) {
     if (!tokenAddresses) return
+
     const storagePreviousHints = this.#previousHints
-    storagePreviousHints.learnedTokens = {}
-    const learnedTokens = storagePreviousHints.learnedTokens || {}
+
+    if (!storagePreviousHints.learnedTokens) storagePreviousHints.learnedTokens = {}
+
+    const { learnedTokens } = storagePreviousHints
     let networkLearnedTokens: { [key: string]: string | null } = learnedTokens[networkId] || {}
 
-    const tokensToLearn = tokenAddresses
-      .filter((address) => address !== ZeroAddress && !(address in networkLearnedTokens))
-      .reduce((acc: { [key: string]: null }, curr) => {
-        acc[curr] = null
+    const tokensToLearn = tokenAddresses.reduce((acc: { [key: string]: null }, address) => {
+      if (address === ZeroAddress) return acc
+
+      // Keep the timestamp of all learned tokens
+      acc[address] = acc[address] || null
         return acc
       }, {})
 
