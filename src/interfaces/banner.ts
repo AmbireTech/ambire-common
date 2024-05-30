@@ -23,7 +23,6 @@ export type Action =
       actionName: 'open-accountOp'
       meta: {
         actionId: AccountOpAction['id']
-        shouldActivateInactiveActions: true
       }
     }
   | {

@@ -111,7 +111,10 @@ export class ActionsController extends EventEmitter {
     const actionIndex = this.actionsQueue.findIndex((a) => a.id === newAction.id)
     if (actionIndex !== -1) {
       this.actionsQueue[actionIndex] = newAction
-      this.#setCurrentAction(this.currentAction || this.visibleActionsQueue[0] || null)
+      const currentAction = withPriority
+        ? this.visibleActionsQueue[0] || null
+        : this.currentAction || this.visibleActionsQueue[0] || null
+      this.#setCurrentAction(currentAction)
       return
     }
 
@@ -125,7 +128,10 @@ export class ActionsController extends EventEmitter {
         })
       }
     }
-    this.#setCurrentAction(this.currentAction || this.visibleActionsQueue[0] || null)
+    const currentAction = withPriority
+      ? this.visibleActionsQueue[0] || null
+      : this.currentAction || this.visibleActionsQueue[0] || null
+    this.#setCurrentAction(currentAction)
   }
 
   removeAction(actionId: Action['id']) {
