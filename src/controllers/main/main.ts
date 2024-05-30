@@ -41,7 +41,8 @@ import { Call as AccountOpCall } from '../../libs/accountOp/types'
 import { getAccountState } from '../../libs/accountState/accountState'
 import {
   dappRequestMethodToActionKind,
-  getAccountOpActionsByNetwork
+  getAccountOpActionsByNetwork,
+  getAccountOpFromAction
 } from '../../libs/actions/actions'
 import { getAccountOpBanners } from '../../libs/banners/banners'
 import { estimate } from '../../libs/estimate/estimate'
@@ -313,7 +314,7 @@ export class MainController extends EventEmitter {
   }
 
   initSignAccOp(actionId: AccountOpAction['id']): null | void {
-    const accountOp = this.#getAccountOpFromAction(actionId)
+    const accountOp = getAccountOpFromAction(actionId, this.actions.actionsQueue)
     if (!accountOp) {
       this.signAccOpInitError =
         'We cannot initiate the signing process because no transaction has been found for the specified account and network.'
@@ -771,14 +772,6 @@ export class MainController extends EventEmitter {
       await this.addUserRequest(userRequest)
       this.emitUpdate()
     }
-  }
-
-  #getAccountOpFromAction(accountOpActionId: AccountOpAction['id']) {
-    const accountOpAction = this.actions.actionsQueue.find(
-      (a) => a.id === accountOpActionId
-    ) as AccountOpAction
-    if (!accountOpAction) return undefined
-    return accountOpAction.accountOp
   }
 
   resolveUserRequest(data: any, requestId: UserRequest['id']) {

@@ -41,8 +41,7 @@ export type Action = AccountOpAction | SignMessageAction | BenzinAction | DappRe
  *
  * After being opened, the action-window will remain visible to the user until all actions are resolved or rejected,
  * or until the user forcefully closes the window using the system close icon (X).
- * All pending/unresolved actions that do not have banners will be prompted to the user first time they click on the Ambire extension icon
- * аnd these actions with banners can remain pending until the user decides to reject or open them.
+ * All pending/unresolved actions can be accessed later from the banners on the Dashboard screen.
  */
 export class ActionsController extends EventEmitter {
   #selectedAccount: string | null
@@ -112,7 +111,7 @@ export class ActionsController extends EventEmitter {
     const actionIndex = this.actionsQueue.findIndex((a) => a.id === newAction.id)
     if (actionIndex !== -1) {
       this.actionsQueue[actionIndex] = newAction
-      this.#setCurrentAction(this.visibleActionsQueue[0] || null)
+      this.#setCurrentAction(this.currentAction || this.visibleActionsQueue[0] || null)
       return
     }
 
@@ -126,7 +125,7 @@ export class ActionsController extends EventEmitter {
         })
       }
     }
-    this.#setCurrentAction(this.visibleActionsQueue[0] || null)
+    this.#setCurrentAction(this.currentAction || this.visibleActionsQueue[0] || null)
   }
 
   removeAction(actionId: Action['id']) {

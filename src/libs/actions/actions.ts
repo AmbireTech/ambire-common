@@ -53,3 +53,12 @@ export const getAccountOpActionsByNetwork = (
   }, {})
   return actionsByNetwork
 }
+
+export const getAccountOpFromAction = (
+  accountOpActionId: AccountOpAction['id'],
+  actions: Action[]
+) => {
+  const accountOpAction = actions.find((a) => a.id === accountOpActionId) as AccountOpAction
+  if (!accountOpAction) return undefined
+  return accountOpAction.accountOp
+}
