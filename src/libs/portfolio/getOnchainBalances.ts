@@ -8,7 +8,7 @@ import { callToTuple } from '../accountOp/accountOp'
 import { Deployless, DeploylessMode, parseErr } from '../deployless/deployless'
 import { privSlot } from '../proxyDeploy/deploy'
 import { getFlags, overrideSymbol } from './helpers'
-import { Collectible, CollectionResult, GetOptions, LimitsOptions, TokenResult } from './interfaces'
+import { CollectionResult, GetOptions, LimitsOptions, TokenResult } from './interfaces'
 
 // fake nonce for EOA simulation
 export const EOA_SIMULATION_NONCE =
@@ -106,9 +106,7 @@ export async function getNFTs(
       symbol: token.symbol,
       amount: BigInt(token.nfts.length),
       decimals: 1,
-      collectibles: [...(token.nfts as any[])].map(
-        (colToken: any) => ({ id: colToken.id, url: colToken.uri } as Collectible)
-      )
+      collectibles: [...token.nfts]
     } as CollectionResult
   }
 

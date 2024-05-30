@@ -1,9 +1,8 @@
 import dotenv from 'dotenv'
 import { ZeroAddress } from 'ethers'
-import { ErrorRef } from '../../controllers/eventEmitter/eventEmitter'
 
 import { geckoIdMapper } from '../../consts/coingecko'
-import { networks } from '../../consts/networks'
+import { ErrorRef } from '../../controllers/eventEmitter/eventEmitter'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import {
   AbiFragment,
@@ -115,9 +114,7 @@ export async function getTokenInfo(
   address: string,
   options: any
 ): Promise<HumanizerFragment | null> {
-  const network = networks.find((n: NetworkDescriptor) => n.id === humanizerSettings.networkId)
-  if (!network) return null
-  let platformId = network.platformId
+  let platformId = options?.network?.platformId
   if (!platformId) {
     options.emitError({
       message: 'getTokenInfo: could not find platform id for token info api',

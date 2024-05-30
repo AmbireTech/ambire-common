@@ -21,14 +21,10 @@ interface NFT {
 }
 
 contract NFTGetter is Simulation {
-  struct NFTMetadata {
-    uint id;
-    string uri;
-  }
   struct NFTCollectionMetadata {
     string name;
     string symbol;
-    NFTMetadata[] nfts;
+    uint256[] nfts;
     bytes error;
   }
   struct NFTCollectionAtNonce {
@@ -47,11 +43,10 @@ contract NFTGetter is Simulation {
     if (tokenIds.length == 0) {
       uint balance = collection.balanceOf(address(account));
       if (balance > limit) balance = limit;
-      meta.nfts = new NFTMetadata[](balance);
+      meta.nfts = new uint256[](balance);
       for (uint i = 0; i != balance; i++) {
         uint tokenId = collection.tokenOfOwnerByIndex(address(account), i);
-        meta.nfts[i].id = tokenId;
-        meta.nfts[i].uri = collection.tokenURI(tokenId);
+        meta.nfts[i] = tokenId;
       }
     } else {
       uint total;
@@ -61,12 +56,11 @@ contract NFTGetter is Simulation {
           total++;
         }
       }
-      meta.nfts = new NFTMetadata[](total);
+      meta.nfts = new uint256[](total);
       uint j = 0;
       for (uint i = 0; i != tokenIds.length; i++) {
         if (collection.ownerOf(tokenIds[i]) == address(account)) {
-          meta.nfts[j].id = tokenIds[i];
-          meta.nfts[j].uri = collection.tokenURI(tokenIds[i]);
+          meta.nfts[j] = tokenIds[i];
           j++;
         }
       }

@@ -48,37 +48,17 @@ const getTokens = async () => {
 
 describe('Transfer Controller', () => {
   test('should emit not initialized error', () => {
-    transferController = new TransferController(
-      settingsController,
-      addressBook as unknown as AddressBookController
-    )
+    transferController = new TransferController(settingsController)
 
     transferController.buildUserRequest()
     errorCount++
 
     expect(transferController.emittedErrors.length).toBe(errorCount)
   })
-  test("shouldn't build userRequest when tokens.length === 0", () => {
-    transferController.update({
-      selectedAccount: PLACEHOLDER_SELECTED_ACCOUNT,
-      tokens: [],
-      humanizerInfo: humanizerInfo as HumanizerMeta
-    })
-
-    transferController.buildUserRequest()
-
-    expect(transferController.userRequest).toBe(null)
-  })
   test('should initialize', async () => {
-    const tokens = await getTokens()
-    transferController = new TransferController(
-      settingsController,
-      addressBook as unknown as AddressBookController
-    )
-    await transferController.update({
-      selectedAccount: PLACEHOLDER_SELECTED_ACCOUNT,
-      tokens,
-      humanizerInfo: humanizerInfo as HumanizerMeta
+    transferController = new TransferController(settingsController)
+    transferController.update({
+      selectedAccount: PLACEHOLDER_SELECTED_ACCOUNT
     })
     expect(transferController.isInitialized).toBe(true)
   })
@@ -93,29 +73,6 @@ describe('Transfer Controller', () => {
     })
     expect(transferController.addressState.fieldValue).toBe(PLACEHOLDER_RECIPIENT)
   })
-  test('should set recipient address unknown', () => {
-    expect(transferController.isRecipientAddressUnknown).toBe(true)
-  })
-  test('should flag recipient address as a smart contract', async () => {
-    transferController.update({
-      addressState: {
-        fieldValue: XWALLET_ADDRESS,
-        ensAddress: '',
-        udAddress: '',
-        isDomainResolving: false
-      }
-    })
-    expect(transferController.isRecipientHumanizerKnownTokenOrSmartContract).toBe(true)
-  })
-  test('should show SW warning', async () => {
-    const tokens = await getTokens()
-    const maticOnPolygon = tokens.find(
-      (t) => t.address === '0x0000000000000000000000000000000000000000' && t.networkId === 'polygon'
-    )
-
-    transferController.update({ selectedToken: maticOnPolygon })
-    expect(transferController.isSWWarningVisible).toBe(true)
-  })
   test('should change selected token', async () => {
     const tokens = await getTokens()
     const xwalletOnEthereum = tokens.find(
@@ -126,7 +83,6 @@ describe('Transfer Controller', () => {
     expect(transferController.selectedToken?.address).toBe(XWALLET_ADDRESS)
     expect(transferController.selectedToken?.networkId).toBe('ethereum')
   })
-
   test('should set amount', () => {
     transferController.update({
       amount: '1'
@@ -138,45 +94,6 @@ describe('Transfer Controller', () => {
       isSWWarningAgreed: true
     })
     expect(transferController.isSWWarningAgreed).toBe(true)
-  })
-  test('should set validation form messages', async () => {
-    transferController.update({
-      addressState: {
-        fieldValue: PLACEHOLDER_RECIPIENT,
-        ensAddress: '',
-        udAddress: '',
-        isDomainResolving: false
-      }
-    })
-
-    expect(transferController.validationFormMsgs.amount.success).toBe(true)
-    expect(transferController.validationFormMsgs.recipientAddress.success).toBe(false)
-
-    // Recipient address
-    transferController.update({
-      isRecipientAddressUnknownAgreed: true
-    })
-    expect(transferController.validationFormMsgs.recipientAddress.success).toBe(true)
-    // Amount
-    transferController.update({
-      amount: '0'
-    })
-
-    expect(transferController.validationFormMsgs.amount.success).toBe(false)
-
-    transferController.update({
-      amount: transferController.maxAmount
-    })
-    transferController.update({
-      amount: String(Number(transferController.amount) + 1)
-    })
-
-    expect(transferController.validationFormMsgs.amount.success).toBe(false)
-
-    // Reset
-    transferController.update({
-      amount: transferController.maxAmount
-    })
   })
   test('should build user request with non-native token transfer', async () => {
     await transferController.buildUserRequest()
@@ -238,25 +155,11 @@ describe('Transfer Controller', () => {
     expect(transferController.selectedToken).not.toBe(null)
   })
 
-  test('should detect that the recipient is the fee collector', async () => {
-    transferController.update({
-      addressState: {
-        fieldValue: FEE_COLLECTOR,
-        ensAddress: '',
-        udAddress: '',
-        isDomainResolving: false
-      }
-    })
-    expect(transferController.isRecipientHumanizerKnownTokenOrSmartContract).toBeFalsy()
-    expect(transferController.isRecipientAddressUnknown).toBeFalsy()
-  })
-
   const checkResetForm = () => {
     expect(transferController.amount).toBe('')
     expect(transferController.maxAmount).toBe('0')
     expect(transferController.recipientAddress).toBe('')
     expect(transferController.selectedToken).toBe(null)
-    expect(transferController.isRecipientAddressUnknown).toBe(false)
     expect(transferController.addressState).toEqual({
       fieldValue: '',
       ensAddress: '',
@@ -265,8 +168,6 @@ describe('Transfer Controller', () => {
     })
     expect(transferController.userRequest).toBe(null)
     expect(transferController.isRecipientAddressUnknownAgreed).toBe(false)
-    expect(transferController.isRecipientHumanizerKnownTokenOrSmartContract).toBe(false)
-    expect(transferController.isSWWarningVisible).toBe(false)
     expect(transferController.isSWWarningAgreed).toBe(false)
   }
 
@@ -280,7 +181,6 @@ describe('Transfer Controller', () => {
     transferController.reset()
 
     checkResetForm()
-    expect(transferController.tokens.length).toBe(0)
   })
 
   test('should toJSON()', () => {
