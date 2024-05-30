@@ -51,7 +51,7 @@ describe('ERC-4337 deploys the account via userOp and adds the entry point permi
     'deploy the necessary contracts and adds an entry point deposit for the paymaster',
     async () => {
       const [relayer] = await ethers.getSigners()
-      factory = await ethers.deployContract('AmbireAccountFactory', [relayer.address])
+      factory = await ethers.deployContract('AmbireFactory', [relayer.address])
       paymaster = await ethers.deployContract('AmbirePaymaster', [relayer.address])
       entryPoint = await ethers.deployContract('EntryPoint', relayer)
       proxy = await ethers.deployContract('AmbireAccount')
