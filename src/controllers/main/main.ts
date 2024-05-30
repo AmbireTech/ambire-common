@@ -224,7 +224,7 @@ export class MainController extends EventEmitter {
       this.#storage,
       this.#fetch
     )
-    this.transfer = new TransferController(this.settings, this.addressBook)
+    this.transfer = new TransferController(this.settings)
     this.actions = new ActionsController({
       windowManager,
       onActionWindowClose: () => {
@@ -260,6 +260,9 @@ export class MainController extends EventEmitter {
     this.activity = new ActivityController(this.#storage, this.accountStates, this.settings)
 
     if (this.selectedAccount) {
+      this.transfer.update({
+        selectedAccount: this.selectedAccount
+      })
       this.activity.init({ selectedAccount: this.selectedAccount })
       this.addressBook.update({
         selectedAccount
@@ -546,6 +549,9 @@ export class MainController extends EventEmitter {
     })
 
     this.addressBook.update({
+      selectedAccount: toAccountAddr
+    })
+    this.transfer.update({
       selectedAccount: toAccountAddr
     })
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
@@ -1419,8 +1425,10 @@ export class MainController extends EventEmitter {
         if (gasFeePayment.maxPriorityFeePerGas !== undefined) {
           rawTxn.maxFeePerGas = gasPrice
           rawTxn.maxPriorityFeePerGas = gasFeePayment.maxPriorityFeePerGas
+          rawTxn.type = 2
         } else {
           rawTxn.gasPrice = gasPrice
+          rawTxn.type = 0
         }
 
         const signedTxn = await signer.signRawTransaction(rawTxn)
@@ -1505,8 +1513,10 @@ export class MainController extends EventEmitter {
         if (accountOp.gasFeePayment.maxPriorityFeePerGas !== undefined) {
           rawTxn.maxFeePerGas = gasPrice
           rawTxn.maxPriorityFeePerGas = accountOp.gasFeePayment.maxPriorityFeePerGas
+          rawTxn.type = 2
         } else {
           rawTxn.gasPrice = gasPrice
+          rawTxn.type = 0
         }
 
         const signedTxn = await signer.signRawTransaction(rawTxn)

@@ -1,7 +1,6 @@
 import { formatUnits, getAddress, parseUnits } from 'ethers'
 import isEmail from 'validator/es/lib/isEmail'
 
-import { TransferControllerState } from '../../interfaces/transfer'
 import { TokenResult } from '../../libs/portfolio'
 import { getTokenAmount } from '../../libs/portfolio/helpers'
 import { isValidAddress } from '../address'
@@ -51,11 +50,13 @@ const validateSendTransferAddress = (
   address: string,
   selectedAcc: string,
   addressConfirmed: any,
-  isRecipientAddressUnknown: TransferControllerState['isRecipientAddressUnknown'],
-  isRecipientHumanizerKnownTokenOrSmartContract: TransferControllerState['isRecipientHumanizerKnownTokenOrSmartContract'],
+  isRecipientAddressUnknown: boolean,
+  isRecipientHumanizerKnownTokenOrSmartContract: boolean,
   isUDAddress: boolean,
   isEnsAddress: boolean,
-  isRecipientDomainResolving: boolean
+  isRecipientDomainResolving: boolean,
+  isSWWarningVisible?: boolean,
+  isSWWarningAgreed?: boolean
 ) => {
   // Basic validation is handled in the AddressInput component and we don't want to overwrite it.
   if (!isValidAddress(address) || isRecipientDomainResolving) {
@@ -103,6 +104,13 @@ const validateSendTransferAddress = (
     return {
       success: false,
       message: `You're trying to send to an unknown ${name}. If you really trust the person who gave it to you, confirm using the checkbox below.`
+    }
+  }
+
+  if (isRecipientAddressUnknown && addressConfirmed && isSWWarningVisible && !isSWWarningAgreed) {
+    return {
+      success: false,
+      message: 'Please confirm that the recipient address is not an exchange.'
     }
   }
 
@@ -155,8 +163,8 @@ const validateSendNftAddress = (
   address: string,
   selectedAcc: any,
   addressConfirmed: any,
-  isRecipientAddressUnknown: TransferControllerState['isRecipientAddressUnknown'],
-  isRecipientHumanizerKnownTokenOrSmartContract: TransferControllerState['isRecipientHumanizerKnownTokenOrSmartContract'],
+  isRecipientAddressUnknown: boolean,
+  isRecipientHumanizerKnownTokenOrSmartContract: boolean,
   metadata: any,
   selectedNetwork: any,
   network: any,
