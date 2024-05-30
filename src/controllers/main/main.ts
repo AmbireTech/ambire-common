@@ -887,9 +887,11 @@ export class MainController extends EventEmitter {
           const msgReq = this.userRequests.find((uReq) => uReq.id === id)
           if (!msgReq) return
           msgReq.dappPromise?.reject(
-            ethErrors.provider.userRejectedRequest(
-              'Rejected: Please complete your pending message request before initiating a new one.'
-            )
+            ethErrors.provider.custom({
+              code: 1001,
+              message:
+                'Rejected: Please complete your pending message request before initiating a new one.'
+            })
           )
           this.userRequests.splice(this.userRequests.indexOf(msgReq), 1)
           return
