@@ -384,6 +384,7 @@ const init = async (
     account,
     accountStates,
     networks.find((n) => n.id === op.networkId)!,
+    1,
     op,
     storage,
     fetch,

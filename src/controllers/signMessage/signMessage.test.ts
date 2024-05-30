@@ -75,7 +75,7 @@ describe('SignMessageController', () => {
 
   test('should initialize with a valid message', (done) => {
     const messageToSign: Message = {
-      id: 1,
+      fromActionId: 1,
       content: {
         kind: 'message',
         message: '0x74657374'
@@ -141,7 +141,7 @@ describe('SignMessageController', () => {
 
   test('should set signing key address', () => {
     const messageToSign: Message = {
-      id: 1,
+      fromActionId: 1,
       content: {
         kind: 'message',
         message: '0x74657374'
@@ -160,7 +160,7 @@ describe('SignMessageController', () => {
 
   test('should sign a message', (done) => {
     const messageToSign: Message = {
-      id: 1,
+      fromActionId: 1,
       content: {
         kind: 'message',
         message: '0x74657374'
