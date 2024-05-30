@@ -644,6 +644,17 @@ export class PortfolioController extends EventEmitter {
     }
 
     const updatedPreviousHintsStorage = { ...storagePreviousHints }
+    console.log(
+      'hints test: successful learnTokens call with params',
+      {
+        tokenAddresses,
+        networkId
+      },
+      'parsed tokens to learn:',
+      tokensToLearn,
+      '. New learned tokens structure',
+      networkLearnedTokens
+    )
     updatedPreviousHintsStorage.learnedTokens[networkId] = networkLearnedTokens
 
     this.#previousHints = updatedPreviousHintsStorage

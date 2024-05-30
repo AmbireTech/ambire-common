@@ -106,9 +106,19 @@ export class Portfolio {
     let hintsFromExternalAPI: ExternalHintsAPIResponse | null = null
 
     try {
+      if (networkId === 'optimism') {
+        hintsFromExternalAPI = {
+          erc20s: [],
+          erc721s: {},
+          prices: {},
+          hasHints: true,
+          networkId,
+          accountAddr
+        }
+      }
       // if the network doesn't have a relayer, velcro will not work
       // but we should not record an error if such is the case
-      if (this.network.hasRelayer && !disableAutoDiscovery) {
+      else if (this.network.hasRelayer && !disableAutoDiscovery) {
         hintsFromExternalAPI = await this.batchedVelcroDiscovery({
           networkId,
           accountAddr,

@@ -211,6 +211,13 @@ export function getUpdatedHints(
 ): PreviousHintsStorage {
   const previousHints = { ...storagePreviousHints }
 
+  console.log('hints test: called getUpdatedHints with params', {
+    latestHintsFromExternalAPI,
+    tokens,
+    storagePreviousHints,
+    key,
+    tokenPreferences
+  })
   if (!previousHints.fromExternalAPI) previousHints.fromExternalAPI = {}
   if (!previousHints.learnedTokens) previousHints.learnedTokens = {}
 
@@ -254,13 +261,24 @@ export function getUpdatedHints(
         // Don't set the timestamp back to null if the account doesn't have balance for the token
         // as learnedTokens aren't account specific and one account can have balance for the token
         // while other don't
-        learnedTokens[networkId][address] = Date.now().toString()
+        let dateString = Date.now().toString()
+        learnedTokens[networkId][address] = dateString
+        console.log(
+          `hints test: getUpdatedHints updated the timestamp of ${address} on ${networkId} to ${dateString}`
+        )
       }
     }
   }
 
   // Update the external hints for [network:account] with the latest from the external API
   previousHints.fromExternalAPI[key] = latestHintsFromExternalAPI
+
+  console.log(
+    'hints test: getUpdatedHints updated hints fromExternalAPI from',
+    storagePreviousHints.fromExternalAPI,
+    'to',
+    latestHintsFromExternalAPI
+  )
 
   return {
     fromExternalAPI: previousHints.fromExternalAPI,
