@@ -5,7 +5,7 @@ import { Interface, parseEther, parseUnits, toBeHex } from 'ethers'
 import { describe, expect, test } from '@jest/globals'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
-import AmbireAccountFactory from '../../../contracts/compiled/AmbireAccountFactory.json'
+import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json'
 import ERC20 from '../../../contracts/compiled/IERC20.json'
 import { getAccountsInfo } from '../../../test/helpers'
 import { FEE_COLLECTOR } from '../../consts/addresses'
@@ -210,7 +210,7 @@ describe('Bundler tests', () => {
       userOp.signature = getSigForCalculations()
 
       // override the factoryData so it deploy without entry point privs
-      const factoryInterface = new Interface(AmbireAccountFactory.abi)
+      const factoryInterface = new Interface(AmbireFactory.abi)
       userOp.factoryData = factoryInterface.encodeFunctionData('deploy', [
         smartAcc.creation!.bytecode,
         smartAcc.creation!.salt

@@ -2,7 +2,7 @@ import { AbiCoder, concat, hexlify, Interface, keccak256, toBeHex } from 'ethers
 import { NetworkDescriptor } from 'interfaces/networkDescriptor'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
-import AmbireAccountFactory from '../../../contracts/compiled/AmbireAccountFactory.json'
+import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json'
 import {
   AMBIRE_PAYMASTER,
   AMBIRE_PAYMASTER_SIGNER,
@@ -138,7 +138,7 @@ export function getUserOperation(
     if (!account.creation) throw new Error('Account creation properties are missing')
     if (!entryPointSig) throw new Error('No entry point authorization signature provided')
 
-    const factoryInterface = new Interface(AmbireAccountFactory.abi)
+    const factoryInterface = new Interface(AmbireFactory.abi)
     userOp.factory = account.creation.factoryAddr
     userOp.factoryData = factoryInterface.encodeFunctionData('deployAndExecute', [
       account.creation.bytecode,

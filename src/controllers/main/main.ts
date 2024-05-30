@@ -11,7 +11,7 @@ import {
 } from 'ethers'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
-import AmbireAccountFactory from '../../../contracts/compiled/AmbireAccountFactory.json'
+import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json'
 import { SINGLETON } from '../../consts/deploy'
 import { Account, AccountId, AccountOnchainState, AccountStates } from '../../interfaces/account'
 import { Banner } from '../../interfaces/banner'
@@ -1481,7 +1481,7 @@ export class MainController extends EventEmitter {
           accountOp.signature
         ])
       } else {
-        const ambireFactory = new Interface(AmbireAccountFactory.abi)
+        const ambireFactory = new Interface(AmbireFactory.abi)
         to = account.creation.factoryAddr
         data = ambireFactory.encodeFunctionData('deployAndExecute', [
           account.creation.bytecode,
