@@ -879,7 +879,7 @@ export class MainController extends EventEmitter {
       if (req.action.kind === 'typedMessage' || req.action.kind === 'message') {
         actionType = 'signMessage'
 
-        if (this.actions.actionsQueue.find((a) => a.type === 'signMessage')) {
+        if (this.actions.visibleActionsQueue.find((a) => a.type === 'signMessage')) {
           const msgReq = this.userRequests.find((uReq) => uReq.id === id)
           if (!msgReq) return
           msgReq.dappPromise?.reject(
