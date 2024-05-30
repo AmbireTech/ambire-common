@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: agpl-3.0
 pragma solidity 0.8.19;
 
-import './AmbireAccount.sol';
+import './deployless/IAmbireAccount.sol';
 import './libs/Transaction.sol';
 
 /**
@@ -9,7 +9,7 @@ import './libs/Transaction.sol';
  * @dev     We use create2 to get the AmbireAccount address. It's deterministic:
  * if the same data is passed to it, the same address will pop out.
  */
-contract AmbireAccountFactory {
+contract AmbireFactory {
 	event LogDeployed(address addr, uint256 salt);
 
 	address public immutable allowedToDrain;
@@ -48,7 +48,7 @@ contract AmbireAccountFactory {
 		bytes calldata signature
 	) external returns (address){
 		address payable addr = payable(deploySafe(code, salt));
-		AmbireAccount(addr).execute(txns, signature);
+		IAmbireAccount(addr).execute(txns, signature);
 		return addr;
 	}
 
@@ -67,10 +67,10 @@ contract AmbireAccountFactory {
 	function deployAndExecuteMultiple(
 		bytes calldata code,
 		uint256 salt,
-		AmbireAccount.ExecuteArgs[] calldata toExec
+		IAmbireAccount.ExecuteArgs[] calldata toExec
 	) external returns (address){
 		address payable addr = payable(deploySafe(code, salt));
-		AmbireAccount(addr).executeMultiple(toExec);
+		IAmbireAccount(addr).executeMultiple(toExec);
 		return addr;
 	}
 

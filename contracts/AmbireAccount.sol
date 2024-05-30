@@ -5,6 +5,7 @@ import './libs/SignatureValidator.sol';
 import './ExternalSigValidator.sol';
 import './libs/erc4337/PackedUserOperation.sol';
 import './libs/erc4337/UserOpHelper.sol';
+import './deployless/IAmbireAccount.sol';
 
 /**
  * @notice  A validator that performs DKIM signature recovery
@@ -12,7 +13,7 @@ import './libs/erc4337/UserOpHelper.sol';
  * is a wallet contract, and any ETH sent to it is not lost, but on the other hand not having `payable`
  * makes the Solidity compiler add an extra check for `msg.value`, which in this case is wasted gas
  */
-contract AmbireAccount {
+contract AmbireAccount is IAmbireAccount {
 	// @dev We do not have a constructor. This contract cannot be initialized with any valid `privileges` by itself!
 	// The intended use case is to deploy one base implementation contract, and create a minimal proxy for each user wallet, by
 	// using our own code generation to insert SSTOREs to initialize `privileges` (it was previously called IdentityProxyDeploy.js, now src/libs/proxyDeploy/deploy.ts)
@@ -31,12 +32,6 @@ contract AmbireAccount {
 	// Events
 	event LogPrivilegeChanged(address indexed addr, bytes32 priv);
 	event LogErr(address indexed to, uint256 value, bytes data, bytes returnData); // only used in tryCatch
-
-	// built-in batching of multiple execute()'s; useful when performing timelocked recoveries
-	struct ExecuteArgs {
-		Transaction[] calls;
-		bytes signature;
-	}
 
 	// This contract can accept ETH without calldata
 	receive() external payable {}
