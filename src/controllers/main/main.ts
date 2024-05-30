@@ -1388,20 +1388,23 @@ export class MainController extends EventEmitter {
           rawTxn.gasPrice = gasPrice
         }
 
-        const signedTxn = await signer.signRawTransaction(rawTxn)
-        transactionRes = await provider.broadcastTransaction(signedTxn)
-      } catch (e: any) {
-        let errorMsg = 'Please try again or contact support if the problem persists.'
-        if (e?.message) {
-          if (e.message.includes('insufficient funds')) {
-            errorMsg = 'Insufficient funds for intristic transaction cost'
-          } else {
-            errorMsg = e.message.length > 200 ? `${e.message.substring(0, 200)}...` : e.message
-          }
+        let signedTxn
+        try {
+          signedTxn = await signer.signRawTransaction(rawTxn)
+        } catch (e: any) {
+          throw new Error(`Transaction rejected. Reason: ${e?.message || 'unknown'}`)
         }
+        try {
+          transactionRes = await provider.broadcastTransaction(signedTxn)
+        } catch (e: any) {
+          const reason = e?.message || 'unknown'
 
-        const message = `Failed to broadcast transaction on ${accountOp.networkId}: ${errorMsg}`
-        return this.#throwAccountOpBroadcastError(new Error(message), message)
+          throw new Error(
+            `Transaction couldn't be broadcasted on the ${network.name} network. Reason: ${reason}`
+          )
+        }
+      } catch (e: any) {
+        return this.#throwAccountOpBroadcastError(e)
       }
     }
     // Smart account but EOA pays the fee
@@ -1474,20 +1477,24 @@ export class MainController extends EventEmitter {
           rawTxn.gasPrice = gasPrice
         }
 
-        const signedTxn = await signer.signRawTransaction(rawTxn)
-        transactionRes = await provider.broadcastTransaction(signedTxn)
-      } catch (e: any) {
-        let errorMsg = 'Please try again or contact support if the problem persists.'
-        if (e?.message) {
-          if (e.message.includes('insufficient funds')) {
-            errorMsg = 'Insufficient funds for intristic transaction cost'
-          } else {
-            errorMsg = e.message.length > 200 ? `${e.message.substring(0, 200)}...` : e.message
-          }
+        let signedTxn
+        try {
+          signedTxn = await signer.signRawTransaction(rawTxn)
+        } catch (e: any) {
+          throw new Error(`Transaction rejected. Reason: ${e?.message || 'unknown'}`)
         }
 
-        const message = `Failed to broadcast transaction on ${accountOp.networkId}: ${errorMsg}`
-        return this.#throwAccountOpBroadcastError(new Error(message), message)
+        try {
+          transactionRes = await provider.broadcastTransaction(signedTxn)
+        } catch (e: any) {
+          const reason = e?.message || 'unknown'
+
+          throw new Error(
+            `Transaction couldn't be broadcasted on the ${network.name} network. Reason: ${reason}`
+          )
+        }
+      } catch (e: any) {
+        return this.#throwAccountOpBroadcastError(e)
       }
     }
     // Smart account, the ERC-4337 way
@@ -1538,7 +1545,7 @@ export class MainController extends EventEmitter {
           nonce: Number(accountOp.nonce)
         }
       } catch (e: any) {
-        return this.#throwAccountOpBroadcastError(e, e.message)
+        return this.#throwAccountOpBroadcastError(e)
       }
     }
 
@@ -1641,14 +1648,21 @@ export class MainController extends EventEmitter {
     return [...accountOpBanners]
   }
 
-  #throwAccountOpBroadcastError(error: Error, message?: string) {
-    this.emitError({
-      level: 'major',
-      message:
-        message ||
-        'Unable to send transaction. Please try again or contact Ambire support if the issue persists.',
-      error
-    })
+  #throwAccountOpBroadcastError(error: Error) {
+    let message =
+      error?.message ||
+      'Unable to broadcast the transaction. Please try again or contact Ambire support if the issue persists.'
+
+    if (message) {
+      if (message.includes('insufficient funds')) {
+        // TODO: Better message?
+        message = 'Insufficient funds for intristic transaction cost'
+      } else {
+        message = message.length > 200 ? `${message.substring(0, 200)}...` : message
+      }
+    }
+
+    this.emitError({ level: 'major', message, error })
     // To enable another try for signing in case of broadcast fail
     // broadcast is called in the FE only after successful signing
     this.signAccountOp?.updateStatusToReadyToSign()
