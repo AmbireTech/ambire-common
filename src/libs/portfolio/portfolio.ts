@@ -124,6 +124,8 @@ export class Portfolio {
           accountAddr,
           baseCurrency
         })
+        if (!!hintsFromExternalAPI)
+          hints = stripExternalHintsAPIResponse(hintsFromExternalAPI) as Hints
       }
     } catch (error: any) {
       errors.push({
@@ -131,9 +133,6 @@ export class Portfolio {
         message: `Failed to fetch hints from Velcro for networkId (${networkId}): ${error.message}`
       })
     }
-
-    // Always add 0x00 to hints
-    hints.erc20s = [...(hintsFromExternalAPI?.erc20s || []), ZeroAddress]
 
     // Enrich hints with the previously found and cached hints, especially in the case the Velcro discovery fails.
     if (localOpts.previousHints) {
@@ -165,8 +164,8 @@ export class Portfolio {
       ]
     }
 
-    // Remove duplicates
-    hints.erc20s = [...new Set(hints.erc20s.map((erc20) => getAddress(erc20)))]
+    // Remove duplicates and always add ZeroAddress
+    hints.erc20s = [...new Set(hints.erc20s.map((erc20) => getAddress(erc20)).concat(ZeroAddress))]
 
     // This also allows getting prices, this is used for more exotic tokens that cannot be retrieved via Coingecko
     const priceCache: PriceCache = localOpts.priceCache || new Map()
