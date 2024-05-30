@@ -100,8 +100,7 @@ describe('Main Controller ', () => {
       }
     }
     await controller.addUserRequest(req)
-    expect(Object.keys(controller.accountOpsToBeSigned).length).toBe(1)
-    // console.dir(controller.accountOpsToBeSigned, { depth: null })
+    expect(controller.actions.actionsQueue.length).toBe(1)
     // @TODO test if nonce is correctly set
   })
   test('Remove a user request', async () => {
@@ -120,7 +119,7 @@ describe('Main Controller ', () => {
       }
     }
     await controller.removeUserRequest(req.id)
-    expect(Object.keys(controller.accountOpsToBeSigned).length).toBe(0)
+    expect(controller.actions.actionsQueue.length).toBe(0)
     // console.dir(controller.accountOpsToBeSigned, { depth: null })
     // @TODO test if nonce is correctly set
   })
