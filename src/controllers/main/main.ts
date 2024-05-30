@@ -782,8 +782,17 @@ export class MainController extends EventEmitter {
     if (!userRequest) return // TODO: emit error
 
     userRequest.dappPromise?.resolve(data)
-    this.removeUserRequest(requestId)
-    this.emitUpdate()
+    // These requests are transitionary initiated internally (not dApp requests) that block dApp requests
+    // before being resolved. The timeout prevents the action-window from closing before the actual dApp request arrives
+    if (['unlock', 'dappConnect'].includes(userRequest.action.kind)) {
+      setTimeout(() => {
+        this.removeUserRequest(requestId)
+        this.emitUpdate()
+      }, 300)
+    } else {
+      this.removeUserRequest(requestId)
+      this.emitUpdate()
+    }
   }
 
   rejectUserRequest(err: string, requestId: UserRequest['id']) {
