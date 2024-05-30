@@ -4,6 +4,7 @@ pragma solidity 0.8.19;
 import './Spoof.sol';
 import './IERC20Subset.sol';
 import './FeeTokens.sol';
+import '../libs/Transaction.sol';
 
 interface IGasPriceOracle {
   function getL1GasUsed(bytes memory _data) external view returns (uint256);
@@ -204,7 +205,7 @@ contract Estimation is FeeTokens, Spoof {
     AccountOp memory emptyOp;
     emptyOp.account = account;
     emptyOp.nonce = account.nonce();
-    emptyOp.calls = new IAmbireAccount.Transaction[](1);
+    emptyOp.calls = new Transaction[](1);
     emptyOp.signature = spoofSig;
     // `account` is guaranteed to be in the accessList, so there should be minimum overhead
     emptyOp.calls[0].to = address(this);
@@ -222,7 +223,7 @@ contract Estimation is FeeTokens, Spoof {
     );
     AccountOp memory twoCallOp = emptyOp;
     twoCallOp.nonce = account.nonce();
-    twoCallOp.calls = new IAmbireAccount.Transaction[](2);
+    twoCallOp.calls = new Transaction[](2);
     twoCallOp.calls[0].to = address(this);
     twoCallOp.calls[1].to = address(this);
     SimulationOutcome memory twoCallOpOutcome = simulateSigned(twoCallOp);
