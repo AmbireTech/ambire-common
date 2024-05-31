@@ -95,7 +95,6 @@ export class TransferController extends EventEmitter {
   resetForm() {
     this.amount = ''
     this.addressState = { ...DEFAULT_ADDRESS_STATE }
-    this.selectedToken = null
     this.isRecipientAddressUnknown = false
     this.isRecipientAddressUnknownAgreed = false
     this.isRecipientHumanizerKnownTokenOrSmartContract = false
@@ -288,15 +287,6 @@ export class TransferController extends EventEmitter {
         .includes(this.selectedToken.networkId || 'ethereum')
 
     this.emitUpdate()
-  }
-
-  #throwNotInitialized() {
-    this.emitError({
-      level: 'major',
-      message:
-        'We encountered an internal error during transfer initialization. Retry, or contact support if the issue persists.',
-      error: new Error('transfer: controller not initialized')
-    })
   }
 
   // includes the getters in the stringified instance
