@@ -1,8 +1,9 @@
-import { Call, UserRequest } from 'interfaces/userRequest'
-
 import { AccountOpAction, Action } from '../../controllers/actions/actions'
-import { Account } from '../../interfaces/account'
+import { Account, AccountId } from '../../interfaces/account'
+import { NetworkId } from '../../interfaces/networkDescriptor'
+import { Call, SignUserRequest, UserRequest } from '../../interfaces/userRequest'
 import generateSpoofSig from '../../utils/generateSpoofSig'
+import { Call as AccountOpCall } from '../accountOp/types'
 
 export const batchCallsFromUserRequests = ({
   accountAddr,
@@ -38,41 +39,39 @@ export const makeSmartAccountOpAction = ({
   actionsQueue: Action[]
   userRequests: UserRequest[]
 }): AccountOpAction => {
-  if (account.creation) {
-    const accountOpAction = actionsQueue.find(
-      (a) => a.type === 'accountOp' && a.id === `${account.addr}-${networkId}`
-    ) as AccountOpAction | undefined
+  const accountOpAction = actionsQueue.find(
+    (a) => a.type === 'accountOp' && a.id === `${account.addr}-${networkId}`
+  ) as AccountOpAction | undefined
 
-    if (accountOpAction) {
-      accountOpAction.accountOp.calls = batchCallsFromUserRequests({
-        accountAddr: account.addr,
-        networkId,
-        userRequests
-      })
-      return accountOpAction
-    }
-
-    const accountOp = {
+  if (accountOpAction) {
+    accountOpAction.accountOp.calls = batchCallsFromUserRequests({
       accountAddr: account.addr,
       networkId,
-      signingKeyAddr: null,
-      signingKeyType: null,
-      gasLimit: null,
-      gasFeePayment: null,
-      nonce,
-      signature: account.associatedKeys[0] ? generateSpoofSig(account.associatedKeys[0]) : null,
-      accountOpToExecuteBefore: null, // @TODO from pending recoveries
-      calls: batchCallsFromUserRequests({
-        accountAddr: account.addr,
-        networkId,
-        userRequests
-      })
-    }
-    return {
-      id: `${account.addr}-${networkId}`, // SA accountOpAction id
-      type: 'accountOp',
-      accountOp
-    }
+      userRequests
+    })
+    return accountOpAction
+  }
+
+  const accountOp = {
+    accountAddr: account.addr,
+    networkId,
+    signingKeyAddr: null,
+    signingKeyType: null,
+    gasLimit: null,
+    gasFeePayment: null,
+    nonce,
+    signature: account.associatedKeys[0] ? generateSpoofSig(account.associatedKeys[0]) : null,
+    accountOpToExecuteBefore: null, // @TODO from pending recoveries
+    calls: batchCallsFromUserRequests({
+      accountAddr: account.addr,
+      networkId,
+      userRequests
+    })
+  }
+  return {
+    id: `${account.addr}-${networkId}`, // SA accountOpAction id
+    type: 'accountOp',
+    accountOp
   }
 }
 
