@@ -161,22 +161,21 @@ export async function getNFTs(
 
   const simulationTokens = hasSimulation
     ? after[0].map((simulationToken: any, tokenIndex: number) => ({
-        ...simulationToken,
-        amount: simulationToken.amount,
+        ...mapToken(simulationToken),
         addr: deltaAddressesMapping[tokenIndex]
       }))
     : null
 
   return before[0].map((beforeToken: any, i: number) => {
-    const simulation = simulationTokens
-      ? simulationTokens.find((simulationToken: any) => simulationToken.addr === tokenAddrs[i])
+    const simulationToken = simulationTokens
+      ? simulationTokens.find((token: any) => token.addr === tokenAddrs[i][0])
       : null
 
     const token = mapToken(beforeToken)
 
     return [
       beforeToken.error,
-      { ...token, amountPostSimulation: simulation ? BigInt(simulation.nfts.length) : token.amount }
+      { ...token, amountPostSimulation: simulationToken ? simulationToken.amount : token.amount }
     ]
   })
 }
