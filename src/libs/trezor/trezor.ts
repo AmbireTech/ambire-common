@@ -1,0 +1,22 @@
+/**
+ * Used to "translate" error codes returned by the Trezor device into a
+ * human-readable messages. Although there is a message incoming from Trezor,
+ * it's not self-explanatory and can be difficult for the end users to understand.
+ */
+export const getMessageFromTrezorErrorCode = (errorCode?: string, errorMsg?: string): string => {
+  if (!errorCode && !errorMsg)
+    return 'Could not connect to your Trezor device. Please make sure it is connected.'
+
+  if (errorCode === 'Method_Interrupted')
+    return 'Closing the Trezor popup interrupted the connection.'
+
+  if (errorCode === 'Failure_ActionCancelled') return 'Rejected by your Trezor device.'
+
+  if (
+    errorMsg?.toLocaleLowerCase()?.includes('device disconnected during action') ||
+    errorCode === 'Device_Disconnected'
+  )
+    return 'Trezor device got disconnected.'
+
+  return `${errorMsg} (${errorCode ?? 'no error code incoming'})`
+}
