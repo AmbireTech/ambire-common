@@ -1647,7 +1647,7 @@ export class MainController extends EventEmitter {
         // TODO: Better message?
         message = 'Insufficient funds for intristic transaction cost'
       } else {
-        message = message.length > 200 ? `${message.substring(0, 200)}...` : message
+        message = message.length > 300 ? `${message.substring(0, 300)}...` : message
       }
     }
 
