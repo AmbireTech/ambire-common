@@ -1388,12 +1388,7 @@ export class MainController extends EventEmitter {
           rawTxn.gasPrice = gasPrice
         }
 
-        let signedTxn
-        try {
-          signedTxn = await signer.signRawTransaction(rawTxn)
-        } catch (e: any) {
-          throw new Error(`Transaction rejected. Reason: ${e?.message || 'unknown'}`)
-        }
+        const signedTxn = await signer.signRawTransaction(rawTxn)
         try {
           transactionRes = await provider.broadcastTransaction(signedTxn)
         } catch (e: any) {
@@ -1477,13 +1472,7 @@ export class MainController extends EventEmitter {
           rawTxn.gasPrice = gasPrice
         }
 
-        let signedTxn
-        try {
-          signedTxn = await signer.signRawTransaction(rawTxn)
-        } catch (e: any) {
-          throw new Error(`Transaction rejected. Reason: ${e?.message || 'unknown'}`)
-        }
-
+        const signedTxn = await signer.signRawTransaction(rawTxn)
         try {
           transactionRes = await provider.broadcastTransaction(signedTxn)
         } catch (e: any) {
