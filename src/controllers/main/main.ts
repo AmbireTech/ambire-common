@@ -804,7 +804,6 @@ export class MainController extends EventEmitter {
             r.meta.networkId === userRequest.meta.networkId
           )
       )
-      this.rejectAccountOpAction('User rejected the request', ENTRY_POINT_AUTHORIZATION_REQUEST_ID)
     }
 
     userRequest.dappPromise?.reject(ethErrors.provider.userRejectedRequest<any>(err))
@@ -859,8 +858,12 @@ export class MainController extends EventEmitter {
               isSignAction: true,
               accountAddr: meta.accountAddr,
               networkId: meta.networkId
-            }
-          })
+            },
+            session: req.session,
+            dappPromise: req?.dappPromise
+              ? { reject: req?.dappPromise?.reject, resolve: () => {} }
+              : undefined
+          } as SignUserRequest)
           this.emitUpdate()
           return
         }
@@ -1561,7 +1564,7 @@ export class MainController extends EventEmitter {
     this.emitUpdate()
 
     await this.activity.addSignedMessage(signedMessage, signedMessage.accountAddr)
-    if (signedMessage.id === ENTRY_POINT_AUTHORIZATION_REQUEST_ID) {
+    if (signedMessage.fromActionId === ENTRY_POINT_AUTHORIZATION_REQUEST_ID) {
       const accountOpAction = makeSmartAccountOpAction({
         account: this.accounts.filter((a) => a.addr === signedMessage.accountAddr)[0],
         networkId: signedMessage.networkId,

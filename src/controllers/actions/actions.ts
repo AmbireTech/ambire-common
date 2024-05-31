@@ -60,7 +60,6 @@ export class ActionsController extends EventEmitter {
     return (
       this.actionsQueue.map((a) => {
         if (a.type === 'accountOp') {
-          console.log('vis', a.accountOp.accountAddr, this.selectedAccount)
           return a.accountOp.accountAddr === this.selectedAccount ? a : undefined
         }
         if (a.type === 'signMessage') {
