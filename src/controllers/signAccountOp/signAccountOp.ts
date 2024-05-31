@@ -1,3 +1,4 @@
+import { AccountOpAction } from 'controllers/actions/actions'
 /* eslint-disable no-restricted-syntax */
 import { AbiCoder, formatUnits, getAddress, Interface, toBeHex } from 'ethers'
 
@@ -99,6 +100,8 @@ export class SignAccountOpController extends EventEmitter {
 
   #network: NetworkDescriptor
 
+  fromActionId: AccountOpAction['id']
+
   accountOp: AccountOp
 
   gasPrices: GasRecommendation[] | null = null
@@ -135,6 +138,7 @@ export class SignAccountOpController extends EventEmitter {
     account: Account,
     accountStates: AccountStates,
     network: NetworkDescriptor,
+    fromActionId: AccountOpAction['id'],
     accountOp: AccountOp,
     storage: Storage,
     fetch: Function,
@@ -148,6 +152,7 @@ export class SignAccountOpController extends EventEmitter {
     this.account = account
     this.#accountStates = accountStates
     this.#network = network
+    this.fromActionId = fromActionId
     this.accountOp = structuredClone(accountOp)
     this.#storage = storage
     this.#fetch = fetch
