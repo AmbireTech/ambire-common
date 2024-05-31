@@ -1,4 +1,6 @@
+import { AccountOpAction, Action } from '../../controllers/actions/actions'
 import { DappProviderRequest } from '../../interfaces/dapp'
+import { AccountOp } from '../accountOp/accountOp'
 
 export const dappRequestMethodToActionKind = (method: DappProviderRequest['method']) => {
   if (['call', 'eth_sendTransaction'].includes(method)) return 'call'
@@ -11,8 +13,52 @@ export const dappRequestMethodToActionKind = (method: DappProviderRequest['metho
     ].includes(method)
   )
     return 'typedMessage'
-  if (['personal_sign', 'eth_sign'].includes(method)) return 'message'
-
+  if (['personal_sign'].includes(method)) return 'message'
   // method to camelCase
   return method.replace(/_(.)/g, (m, p1) => p1.toUpperCase())
+}
+
+export const getAccountOpsByNetwork = (
+  accountAddr: string,
+  actions: Action[]
+): { [key: string]: AccountOp[] } | undefined => {
+  const accountOps = (actions.filter((a) => a.type === 'accountOp') as AccountOpAction[])
+    .map((a) => a.accountOp)
+    .filter((op) => op.accountAddr === accountAddr)
+
+  if (!accountOps.length) return undefined
+
+  return accountOps.reduce((acc: any, accountOp) => {
+    const { networkId } = accountOp
+    if (!acc[networkId]) acc[networkId] = []
+
+    acc[networkId].push(accountOp)
+    return acc
+  }, {})
+}
+
+export const getAccountOpActionsByNetwork = (
+  accountAddr: string,
+  actions: Action[]
+): { [key: string]: AccountOpAction[] } => {
+  const accountOpActions = (
+    actions.filter((a) => a.type === 'accountOp') as AccountOpAction[]
+  ).filter((action) => action.accountOp.accountAddr === accountAddr)
+
+  const actionsByNetwork = accountOpActions.reduce((acc: any, accountOpAction) => {
+    const { networkId } = accountOpAction.accountOp
+    if (!acc[networkId]) acc[networkId] = []
+    acc[networkId].push(accountOpAction)
+    return acc
+  }, {})
+  return actionsByNetwork
+}
+
+export const getAccountOpFromAction = (
+  accountOpActionId: AccountOpAction['id'],
+  actions: Action[]
+) => {
+  const accountOpAction = actions.find((a) => a.id === accountOpActionId) as AccountOpAction
+  if (!accountOpAction) return undefined
+  return accountOpAction.accountOp
 }
