@@ -1572,6 +1572,10 @@ export class MainController extends EventEmitter {
         userRequests: this.userRequests,
         actionsQueue: this.actions.actionsQueue
       })
+      if (!accountOpAction.accountOp.meta) accountOpAction.accountOp.meta = {}
+      accountOpAction.accountOp.meta.entryPointAuthorization = adjustEntryPointAuthorization(
+        signedMessage.signature as string
+      )
 
       this.actions.addOrUpdateAction(accountOpAction, true)
     }
