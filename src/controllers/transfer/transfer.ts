@@ -121,7 +121,9 @@ export class TransferController extends EventEmitter {
         this.isRecipientHumanizerKnownTokenOrSmartContract,
         isUDAddress,
         isEnsAddress,
-        this.addressState.isDomainResolving
+        this.addressState.isDomainResolving,
+        this.isSWWarningVisible,
+        this.isSWWarningAgreed
       )
     }
 
