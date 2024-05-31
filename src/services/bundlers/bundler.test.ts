@@ -1,20 +1,24 @@
 /* eslint-disable @typescript-eslint/no-floating-promises */
 
-import { Interface, parseEther, parseUnits, toBeHex } from 'ethers'
+import { AbiCoder, Interface, keccak256, parseEther, parseUnits, toBeHex, Wallet } from 'ethers'
 
 import { describe, expect, test } from '@jest/globals'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
-import AmbireAccountFactory from '../../../contracts/compiled/AmbireAccountFactory.json'
+import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json'
 import ERC20 from '../../../contracts/compiled/IERC20.json'
 import { getAccountsInfo } from '../../../test/helpers'
 import { FEE_COLLECTOR } from '../../consts/addresses'
+import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
 import { networks } from '../../consts/networks'
 import { Account } from '../../interfaces/account'
 import { dedicatedToOneSAPriv } from '../../interfaces/keystore'
+import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { getSmartAccount } from '../../libs/account/account'
-import { AccountOp, getSignableCalls } from '../../libs/accountOp/accountOp'
+import { AccountOp, callToTuple, getSignableCalls } from '../../libs/accountOp/accountOp'
+import { getTypedData, wrapStandard } from '../../libs/signMessage/signMessage'
 import {
+  getActivatorCall,
   getPaymasterDataForEstimate,
   getSigForCalculations,
   getUserOperation
@@ -28,7 +32,7 @@ const addrWithDeploySignature = '0x52C37FD54BD02E9240e8558e28b11e0Dc22d8e85'
 const optimism = networks.find((net) => net.id === 'optimism')!
 
 const smartAccDeployed: Account = {
-  addr: '0x3F791753727536BF1a4Cb87334997D72435A2267',
+  addr: '0x8E5F6c1F0b134657A546932C3eC9169E1633a39b',
   initialPrivileges: [
     [
       '0xBd84Cc40a5b5197B5B61919c22A55e1c46d2A3bb',
@@ -36,9 +40,9 @@ const smartAccDeployed: Account = {
     ]
   ],
   creation: {
-    factoryAddr: '0xc4460dDA0bD0c43B98Fd3F8312f75668BC64eB64',
+    factoryAddr: AMBIRE_ACCOUNT_FACTORY,
     bytecode:
-      '0x7f00000000000000000000000000000000000000000000000000000000000000027ff33cc417366b7e38d2706a67ab46f85465661c28b864b521441180d15df82251553d602d80604d3d3981f3363d3d373d3d3d363d732ee4ce14a9486b62300fa7618d48d93e8ef2a5875af43d82803e903d91602b57fd5bf3',
+      '0x7f00000000000000000000000000000000000000000000000000000000000000027ff33cc417366b7e38d2706a67ab46f85465661c28b864b521441180d15df82251553d602d80604d3d3981f3363d3d373d3d3d363d731cde6a53e9a411eaaf9d11e3e8c653a3e379d5355af43d82803e903d91602b57fd5bf3',
     salt: '0x0000000000000000000000000000000000000000000000000000000000000000'
   },
   associatedKeys: ['0xBd84Cc40a5b5197B5B61919c22A55e1c46d2A3bb']
@@ -95,6 +99,32 @@ const base = {
   }
 }
 
+export async function getDeploySignature(smartAcc: Account, network: NetworkDescriptor) {
+  // CODE FOR getting a valid deploy signature if you have the PK
+  const nonce = 0
+  const call = getActivatorCall(smartAcc.addr)
+  const tupleCall = callToTuple(call)
+  const txns = [tupleCall]
+  const abiCoder = new AbiCoder()
+  const executeHash = keccak256(
+    abiCoder.encode(
+      ['address', 'uint', 'uint', 'tuple(address, uint, bytes)[]'],
+      [smartAcc.addr, network.chainId, nonce, txns]
+    )
+  )
+  const typedData = getTypedData(network.chainId, smartAcc.addr, executeHash)
+  const typesWithoutEIP712Domain = { ...typedData.types }
+  if (typesWithoutEIP712Domain.EIP712Domain) {
+    // eslint-disable-next-line no-param-reassign
+    delete typesWithoutEIP712Domain.EIP712Domain
+  }
+  const wallet = new Wallet(process.env.METAMASK_PK!)
+  const s = wrapStandard(
+    await wallet.signTypedData(typedData.domain, typesWithoutEIP712Domain, typedData.message)
+  )
+  return s
+}
+
 describe('Bundler tests', () => {
   describe('Basic tests', () => {
     test('should check if the network is supported by the bundler', async () => {
@@ -143,7 +173,7 @@ describe('Bundler tests', () => {
         smartAcc,
         accountState,
         opOptimism,
-        '0xd994364b5484bcc5ad9261399d7438fa8e59c1b9478bc02ac8f1fc43be523cc634bd165330c7e33b1e2898fed19e01087b9fe787557efb3f845adf2fa288069f1b01'
+        '0x5bb97ff398c6d4e44f38c81e256d0797c124fe39cc0c5cf66c082c135cb5946879588d3c3f02efe587b8ea01de567c962355640e7da5197cb23f150c6a9fd4101c01'
       )
 
       const ambireInterface = new Interface(AmbireAccount.abi)
@@ -197,7 +227,7 @@ describe('Bundler tests', () => {
         smartAcc,
         accountState,
         opOptimism,
-        '0xd994364b5484bcc5ad9261399d7438fa8e59c1b9478bc02ac8f1fc43be523cc634bd165330c7e33b1e2898fed19e01087b9fe787557efb3f845adf2fa288069f1b01'
+        '0x5bb97ff398c6d4e44f38c81e256d0797c124fe39cc0c5cf66c082c135cb5946879588d3c3f02efe587b8ea01de567c962355640e7da5197cb23f150c6a9fd4101c01'
       )
       const ambireInterface = new Interface(AmbireAccount.abi)
       userOp.callData = ambireInterface.encodeFunctionData('executeBySender', [
@@ -210,7 +240,7 @@ describe('Bundler tests', () => {
       userOp.signature = getSigForCalculations()
 
       // override the factoryData so it deploy without entry point privs
-      const factoryInterface = new Interface(AmbireAccountFactory.abi)
+      const factoryInterface = new Interface(AmbireFactory.abi)
       userOp.factoryData = factoryInterface.encodeFunctionData('deploy', [
         smartAcc.creation!.bytecode,
         smartAcc.creation!.salt
@@ -264,7 +294,7 @@ describe('Bundler tests', () => {
         smartAcc,
         accountState,
         opOptimism,
-        '0xd994364b5484bcc5ad9261399d7438fa8e59c1b9478bc02ac8f1fc43be523cc634bd165330c7e33b1e2898fed19e01087b9fe787557efb3f845adf2fa288069f1b01'
+        '0x5bb97ff398c6d4e44f38c81e256d0797c124fe39cc0c5cf66c082c135cb5946879588d3c3f02efe587b8ea01de567c962355640e7da5197cb23f150c6a9fd4101c01'
       )
 
       const ambireInterface = new Interface(AmbireAccount.abi)
@@ -449,13 +479,14 @@ describe('Bundler tests', () => {
       const providers = {
         [mantle.id]: getRpcProvider(mantle.rpcUrls, mantle.chainId)
       }
+
       const accountStates = await getAccountsInfo(usedNetworks, providers, [smartAcc])
       const accountState = accountStates[opMantle.accountAddr][opMantle.networkId]
       const userOp = getUserOperation(
         smartAcc,
         accountState,
         opMantle,
-        '0x44891d2fe7190d2bda961e54406dd19d419861f076e8f807bf760101a7fe130c66e5d896adb7c80751586f2fbf0b7ff0d89ff836dbc46a7083ec3d757bead8771c01'
+        '0xca26bc0302589b1cf4dd3ff7b725661d5dcb5a059385b9adfe8c8b8250f9548f43fe655a4dfe895594158d3ebe8d95f83068f35188affb4dbad8a906daff8c361c01'
       )
 
       const ambireInterface = new Interface(AmbireAccount.abi)
@@ -513,7 +544,7 @@ describe('Bundler tests', () => {
         smartAcc,
         accountState,
         opMantle,
-        '0x44891d2fe7190d2bda961e54406dd19d419861f076e8f807bf760101a7fe130c66e5d896adb7c80751586f2fbf0b7ff0d89ff836dbc46a7083ec3d757bead8771c01'
+        '0xca26bc0302589b1cf4dd3ff7b725661d5dcb5a059385b9adfe8c8b8250f9548f43fe655a4dfe895594158d3ebe8d95f83068f35188affb4dbad8a906daff8c361c01'
       )
 
       const ambireInterface = new Interface(AmbireAccount.abi)

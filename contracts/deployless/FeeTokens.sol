@@ -3,6 +3,7 @@ pragma solidity 0.8.19;
 
 import './SimulateSigned.sol';
 import './IERC20Subset.sol';
+import '../libs/Transaction.sol';
 
 contract FeeTokens is SimulateSigned {
   function simulateFeePayments(
@@ -19,7 +20,7 @@ contract FeeTokens is SimulateSigned {
       simulationOp.account = account;
       // for the purposes of passing the safety check; otherwise it's a spoof sig and it doesn't matter
       simulationOp.nonce = account.nonce();
-      simulationOp.calls = new IAmbireAccount.Transaction[](1);
+      simulationOp.calls = new Transaction[](1);
       simulationOp.signature = spoofSig;
 
       if (feeToken == address(0)) {

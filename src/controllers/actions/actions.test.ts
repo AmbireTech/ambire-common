@@ -3,7 +3,7 @@ import EventEmitter from 'events'
 import { describe, expect, test } from '@jest/globals'
 
 import { DappUserRequest, SignUserRequest } from '../../interfaces/userRequest'
-import { ActionsController } from './actions'
+import { ActionsController, BenzinAction, DappRequestAction } from './actions'
 
 describe('SignMessageController', () => {
   const event = new EventEmitter()
@@ -24,7 +24,11 @@ describe('SignMessageController', () => {
 
   let actionsCtrl: ActionsController
   test('should init ActionsController', () => {
-    actionsCtrl = new ActionsController({ windowManager, onActionWindowClose: () => {} })
+    actionsCtrl = new ActionsController({
+      selectedAccount: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+      windowManager,
+      onActionWindowClose: () => {}
+    })
     expect(actionsCtrl).toBeDefined()
   })
   test('should add actions to actionsQueue', (done) => {
@@ -42,8 +46,8 @@ describe('SignMessageController', () => {
       session: { name: '', icon: '', origin: '' },
       dappPromise: { resolve: () => {}, reject: () => {} }
     }
-    const action1 = { id: req1.id, type: 'userRequest', userRequest: req1 }
-    const action2 = { id: req2.id, type: 'userRequest', userRequest: req2 }
+    const action1: DappRequestAction = { id: req1.id, type: 'dappRequest', userRequest: req1 }
+    const action2: DappRequestAction = { id: req2.id, type: 'dappRequest', userRequest: req2 }
 
     let emitCounter = 0
     const unsubscribe = actionsCtrl.onUpdate(async () => {
@@ -57,22 +61,57 @@ describe('SignMessageController', () => {
       }
 
       if (emitCounter === 2) {
-        actionsCtrl.addToActionsQueue(action2)
+        actionsCtrl.addOrUpdateAction(action2)
         expect(actionsCtrl.actionWindowId).toEqual(1)
       }
     })
 
-    actionsCtrl.addToActionsQueue(action1)
+    actionsCtrl.addOrUpdateAction(action1)
     expect(actionsCtrl.actionsQueue).toHaveLength(1)
     expect(actionsCtrl.currentAction).toEqual(action1)
+  })
+  test('should update action', (done) => {
+    const updatedReq2: DappUserRequest = {
+      id: 2,
+      action: { kind: 'dappConnect', params: { someUpdatedParams: {} } },
+      meta: { isSignAction: false },
+      session: { name: '', icon: '', origin: '' },
+      dappPromise: { resolve: () => {}, reject: () => {} }
+    }
+    const updatedAction2: DappRequestAction = {
+      id: updatedReq2.id,
+      type: 'dappRequest',
+      userRequest: updatedReq2
+    }
+
+    let emitCounter = 0
+    const unsubscribe = actionsCtrl.onUpdate(async () => {
+      emitCounter++
+      if (emitCounter === 1) {
+        expect(actionsCtrl.actionsQueue).toHaveLength(2)
+        expect(actionsCtrl.visibleActionsQueue).toHaveLength(2)
+        expect(actionsCtrl.currentAction?.id).not.toEqual(null)
+        // update does not change the currently selectedAction
+        expect(actionsCtrl.currentAction?.id).not.toEqual(updatedAction2.id)
+        expect(actionsCtrl.actionWindowId).toEqual(1)
+        unsubscribe()
+        done()
+      }
+    })
+
+    actionsCtrl.addOrUpdateAction(updatedAction2, true)
   })
   test('should add an action with priority', (done) => {
     const req3: SignUserRequest = {
       id: 3,
       action: { kind: 'benzin' },
-      meta: { isSignAction: true, accountAddr: '', networkId: '' }
+      meta: {
+        isSignAction: true,
+        accountAddr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+        networkId: 'ethereum'
+      }
     }
-    const action3 = { id: req3.id, type: 'benzin', userRequest: req3 }
+    const action3: BenzinAction = { id: req3.id, type: 'benzin', userRequest: req3 }
 
     let emitCounter = 0
     const unsubscribe = actionsCtrl.onUpdate(async () => {
@@ -80,6 +119,7 @@ describe('SignMessageController', () => {
 
       if (emitCounter === 1) {
         expect(actionsCtrl.actionsQueue).toHaveLength(3)
+        expect(actionsCtrl.visibleActionsQueue).toHaveLength(3)
         expect(actionsCtrl.currentAction).toEqual(action3)
         expect(actionsCtrl.actionWindowId).toEqual(1)
         unsubscribe()
@@ -87,7 +127,27 @@ describe('SignMessageController', () => {
       }
     })
 
-    actionsCtrl.addToActionsQueue(action3, true)
+    actionsCtrl.addOrUpdateAction(action3, true)
+  })
+  test('should have banners', () => {
+    // no banner for benzin and one banner for the 2 other actions
+    expect(actionsCtrl.banners).toHaveLength(1)
+  })
+  test('on selectedAccount change', (done) => {
+    let emitCounter = 0
+    const unsubscribe = actionsCtrl.onUpdate(async () => {
+      emitCounter++
+
+      if (emitCounter === 1) {
+        expect(actionsCtrl.actionsQueue).toHaveLength(3)
+        expect(actionsCtrl.visibleActionsQueue).toHaveLength(2)
+        expect(actionsCtrl.actionWindowId).toEqual(1)
+        actionsCtrl.update({ selectedAccount: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8' })
+        unsubscribe()
+        done()
+      }
+    })
+    actionsCtrl.update({ selectedAccount: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48' })
   })
   test('on window close', (done) => {
     let emitCounter = 0
@@ -106,27 +166,30 @@ describe('SignMessageController', () => {
 
     event.emit('windowRemoved', windowId)
   })
-  test('should open first action when action-window is closed but there are pending actions', (done) => {
+  test('should select action by id', (done) => {
     let emitCounter = 0
     const unsubscribe = actionsCtrl.onUpdate(async () => {
       emitCounter++
 
-      if (emitCounter === 3) {
-        expect(actionsCtrl.actionWindowId).toEqual(2)
-        expect(actionsCtrl.currentAction).not.toBe(null)
-        expect(actionsCtrl.currentAction?.id).toBe(1)
+      if (emitCounter === 2) {
+        expect(actionsCtrl.actionWindowId).toBe(2) // action-window is reopened on setCurrentAction
         unsubscribe()
         done()
       }
+
+      if (emitCounter === 1) {
+        expect(actionsCtrl.currentAction?.id).toEqual(2)
+      }
     })
 
-    actionsCtrl.openFirstPendingAction()
+    expect(actionsCtrl.actionsQueue).toHaveLength(2)
+    expect(actionsCtrl.visibleActionsQueue).toHaveLength(2)
+    actionsCtrl.setCurrentActionById(2)
   })
   test('should remove actions from actionsQueue', (done) => {
     let emitCounter = 0
     const unsubscribe = actionsCtrl.onUpdate(async () => {
       emitCounter++
-
       if (emitCounter === 2) {
         expect(actionsCtrl.actionWindowId).toBe(null)
         expect(actionsCtrl.actionsQueue).toHaveLength(0)
@@ -138,10 +201,10 @@ describe('SignMessageController', () => {
         expect(actionsCtrl.actionWindowId).toEqual(2)
         expect(actionsCtrl.actionsQueue).toHaveLength(1)
         expect(actionsCtrl.currentAction?.id).toBe(2)
-        actionsCtrl.removeFromActionsQueue(2)
+        actionsCtrl.removeAction(2)
       }
     })
 
-    actionsCtrl.removeFromActionsQueue(1)
+    actionsCtrl.removeAction(1)
   })
 })

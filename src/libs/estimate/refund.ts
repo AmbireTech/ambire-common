@@ -1,7 +1,7 @@
 import { Interface, JsonRpcProvider, Provider } from 'ethers'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
-import AmbireAccountFactory from '../../../contracts/compiled/AmbireAccountFactory.json'
+import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json'
 import { Account } from '../../interfaces/account'
 import { AccountOp } from '../accountOp/accountOp'
 
@@ -14,7 +14,7 @@ export async function refund(
   // WARNING: calculateRefund will 100% NOT work in all cases we have
   // So a warning not to assume this is working
   const IAmbireAccount = new Interface(AmbireAccount.abi)
-  const IAmbireAccountFactory = new Interface(AmbireAccountFactory.abi)
+  const IAmbireFactory = new Interface(AmbireFactory.abi)
 
   const accountCalldata = op.accountOpToExecuteBefore
     ? IAmbireAccount.encodeFunctionData('executeMultiple', [
@@ -25,7 +25,7 @@ export async function refund(
       ])
     : IAmbireAccount.encodeFunctionData('execute', [op.calls, op.signature])
 
-  const factoryCalldata = IAmbireAccountFactory.encodeFunctionData('deployAndExecute', [
+  const factoryCalldata = IAmbireFactory.encodeFunctionData('deployAndExecute', [
     account.creation!.bytecode,
     account.creation!.salt,
     [[account.addr, 0, accountCalldata]],
