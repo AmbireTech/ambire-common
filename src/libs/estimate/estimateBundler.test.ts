@@ -5,6 +5,7 @@ import { parseEther } from 'ethers'
 import { describe, expect, test } from '@jest/globals'
 
 import { getAccountsInfo } from '../../../test/helpers'
+import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
 import { networks } from '../../consts/networks'
 import { Account } from '../../interfaces/account'
 import { dedicatedToOneSAPriv } from '../../interfaces/keystore'
@@ -19,7 +20,7 @@ const addrWithDeploySignature = '0x52C37FD54BD02E9240e8558e28b11e0Dc22d8e85'
 const optimism = networks.find((net) => net.id === 'optimism')!
 
 const smartAccDeployed: Account = {
-  addr: '0x3F791753727536BF1a4Cb87334997D72435A2267',
+  addr: '0x8E5F6c1F0b134657A546932C3eC9169E1633a39b',
   initialPrivileges: [
     [
       '0xBd84Cc40a5b5197B5B61919c22A55e1c46d2A3bb',
@@ -27,9 +28,9 @@ const smartAccDeployed: Account = {
     ]
   ],
   creation: {
-    factoryAddr: '0xc4460dDA0bD0c43B98Fd3F8312f75668BC64eB64',
+    factoryAddr: AMBIRE_ACCOUNT_FACTORY,
     bytecode:
-      '0x7f00000000000000000000000000000000000000000000000000000000000000027ff33cc417366b7e38d2706a67ab46f85465661c28b864b521441180d15df82251553d602d80604d3d3981f3363d3d373d3d3d363d732ee4ce14a9486b62300fa7618d48d93e8ef2a5875af43d82803e903d91602b57fd5bf3',
+      '0x7f00000000000000000000000000000000000000000000000000000000000000027ff33cc417366b7e38d2706a67ab46f85465661c28b864b521441180d15df82251553d602d80604d3d3981f3363d3d373d3d3d363d731cde6a53e9a411eaaf9d11e3e8c653a3e379d5355af43d82803e903d91602b57fd5bf3',
     salt: '0x0000000000000000000000000000000000000000000000000000000000000000'
   },
   associatedKeys: ['0xBd84Cc40a5b5197B5B61919c22A55e1c46d2A3bb']
@@ -61,7 +62,7 @@ describe('Bundler estimation tests', () => {
         accountOpToExecuteBefore: null,
         meta: {
           entryPointAuthorization:
-            '0xd994364b5484bcc5ad9261399d7438fa8e59c1b9478bc02ac8f1fc43be523cc634bd165330c7e33b1e2898fed19e01087b9fe787557efb3f845adf2fa288069f1b01'
+            '0x5bb97ff398c6d4e44f38c81e256d0797c124fe39cc0c5cf66c082c135cb5946879588d3c3f02efe587b8ea01de567c962355640e7da5197cb23f150c6a9fd4101c01'
         }
       }
       const usedNetworks = [optimism]
