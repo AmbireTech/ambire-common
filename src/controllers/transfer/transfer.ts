@@ -1,16 +1,15 @@
-import erc20Abi from 'adex-protocol-eth/abi/ERC20.json'
-import { SettingsController } from 'controllers/settings/settings'
-import { formatUnits, Interface, parseUnits } from 'ethers'
+import { formatUnits, isAddress } from 'ethers'
+import { NetworkDescriptor } from 'interfaces/networkDescriptor'
 
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { AddressState } from '../../interfaces/domains'
 import { TransferUpdate } from '../../interfaces/transfer'
-import { SignUserRequest } from '../../interfaces/userRequest'
+import { HumanizerMeta } from '../../libs/humanizer/interfaces'
 import { TokenResult } from '../../libs/portfolio'
 import { getTokenAmount } from '../../libs/portfolio/helpers'
+import { validateSendTransferAddress, validateSendTransferAmount } from '../../services/validations'
+import { Contacts } from '../addressBook/addressBook'
 import EventEmitter from '../eventEmitter/eventEmitter'
-
-const ERC20 = new Interface(erc20Abi)
 
 const DEFAULT_ADDRESS_STATE = {
   fieldValue: '',
@@ -19,11 +18,29 @@ const DEFAULT_ADDRESS_STATE = {
   isDomainResolving: false
 }
 
+const DEFAULT_VALIDATION_FORM_MSGS = {
+  amount: {
+    success: false,
+    message: ''
+  },
+  recipientAddress: {
+    success: false,
+    message: ''
+  }
+}
+
 export class TransferController extends EventEmitter {
-  // State
-  #settings: SettingsController
+  #networks: NetworkDescriptor[] = []
+
+  #addressBookContacts: Contacts = []
 
   #selectedToken: TokenResult | null = null
+
+  #selectedAccount: string | null = null
+
+  #humanizerInfo: HumanizerMeta | null = null
+
+  isSWWarningVisible = false
 
   isSWWarningAgreed = false
 
@@ -31,29 +48,18 @@ export class TransferController extends EventEmitter {
 
   addressState: AddressState = { ...DEFAULT_ADDRESS_STATE }
 
+  isRecipientAddressUnknown = false
+
   isRecipientAddressUnknownAgreed = false
 
-  userRequest: SignUserRequest | null = null
-
-  #selectedTokenNetworkData: {
-    id: string
-    unstoppableDomainsChain: string
-  } | null = null
-
-  #selectedAccount: string | null = null
+  isRecipientHumanizerKnownTokenOrSmartContract = false
 
   isTopUp: boolean = false
-
-  constructor(settings: SettingsController) {
-    super()
-    this.#settings = settings
-  }
 
   // every time when updating selectedToken update the amount and maxAmount of the form
   set selectedToken(token: TokenResult | null) {
     if (!token || Number(getTokenAmount(token)) === 0) {
       this.#selectedToken = null
-      this.#selectedTokenNetworkData = null
       this.amount = ''
       return
     }
@@ -61,14 +67,13 @@ export class TransferController extends EventEmitter {
     const prevSelectedToken = { ...this.selectedToken }
 
     this.#selectedToken = token
-    this.#selectedTokenNetworkData =
-      this.#settings.networks.find((network) => network.id === token.networkId) || null
 
     if (
       prevSelectedToken?.address !== token?.address ||
       prevSelectedToken?.networkId !== token?.networkId
     ) {
       this.amount = ''
+      this.#setSWWarningVisibleIfNeeded()
     }
   }
 
@@ -91,23 +96,72 @@ export class TransferController extends EventEmitter {
     this.amount = ''
     this.addressState = { ...DEFAULT_ADDRESS_STATE }
     this.selectedToken = null
-    this.#selectedTokenNetworkData = null
-    this.userRequest = null
+    this.isRecipientAddressUnknown = false
     this.isRecipientAddressUnknownAgreed = false
+    this.isRecipientHumanizerKnownTokenOrSmartContract = false
+    this.isSWWarningVisible = false
     this.isSWWarningAgreed = false
 
     this.emitUpdate()
   }
 
-  reset() {
-    this.resetForm()
-    this.#selectedAccount = null
+  get validationFormMsgs() {
+    if (!this.isInitialized) return DEFAULT_VALIDATION_FORM_MSGS
 
-    this.emitUpdate()
+    const validationFormMsgsNew = DEFAULT_VALIDATION_FORM_MSGS
+
+    if (this.#humanizerInfo && this.#selectedAccount) {
+      const isUDAddress = !!this.addressState.udAddress
+      const isEnsAddress = !!this.addressState.ensAddress
+
+      validationFormMsgsNew.recipientAddress = validateSendTransferAddress(
+        this.recipientAddress,
+        this.#selectedAccount,
+        this.isRecipientAddressUnknownAgreed,
+        this.isRecipientAddressUnknown,
+        this.isRecipientHumanizerKnownTokenOrSmartContract,
+        isUDAddress,
+        isEnsAddress,
+        this.addressState.isDomainResolving
+      )
+    }
+
+    // Validate the amount
+    if (this.selectedToken) {
+      validationFormMsgsNew.amount = validateSendTransferAmount(this.amount, this.selectedToken)
+    }
+
+    return validationFormMsgsNew
+  }
+
+  get isFormValid() {
+    if (!this.isInitialized) return false
+
+    // if the amount is set, it's enough in topUp mode
+    if (this.isTopUp) {
+      return (
+        this.selectedToken && validateSendTransferAmount(this.amount, this.selectedToken).success
+      )
+    }
+
+    const areFormFieldsValid =
+      this.validationFormMsgs.amount.success && this.validationFormMsgs.recipientAddress.success
+
+    const isSWWarningMissingOrAccepted = !this.isSWWarningVisible || this.isSWWarningAgreed
+
+    const isRecipientAddressUnknownMissingOrAccepted =
+      !this.isRecipientAddressUnknown || this.isRecipientAddressUnknownAgreed
+
+    return (
+      areFormFieldsValid &&
+      isSWWarningMissingOrAccepted &&
+      isRecipientAddressUnknownMissingOrAccepted &&
+      !this.addressState.isDomainResolving
+    )
   }
 
   get isInitialized() {
-    return !!this.#selectedAccount
+    return !!this.#humanizerInfo && !!this.#selectedAccount && !!this.#networks.length
   }
 
   get recipientAddress() {
@@ -118,13 +172,29 @@ export class TransferController extends EventEmitter {
 
   update({
     selectedAccount,
+    humanizerInfo,
     selectedToken,
     amount,
     addressState,
     isSWWarningAgreed,
     isRecipientAddressUnknownAgreed,
-    isTopUp
+    isTopUp,
+    networks,
+    contacts
   }: TransferUpdate) {
+    if (humanizerInfo) {
+      this.#humanizerInfo = humanizerInfo
+    }
+    if (networks) {
+      this.#networks = networks
+    }
+    if (contacts) {
+      this.#addressBookContacts = contacts
+
+      if (this.isInitialized) {
+        this.checkIsRecipientAddressUnknown()
+      }
+    }
     if (selectedAccount) {
       if (this.#selectedAccount !== selectedAccount) {
         this.amount = ''
@@ -139,14 +209,12 @@ export class TransferController extends EventEmitter {
       this.amount = amount
     }
     if (addressState) {
-      // Because controller state is synced with FE addressState, we need to check if the value
-      // has actually changed. Otherwise we will reset isRecipientAddressUnknownAgreed for no reason
-      if (this.addressState.fieldValue !== addressState.fieldValue) {
-        this.isRecipientAddressUnknownAgreed = false
-      }
       this.addressState = {
         ...this.addressState,
         ...addressState
+      }
+      if (this.isInitialized) {
+        this.#onRecipientAddressChange()
       }
     }
     // We can do a regular check here, because the property defines if it should be updated
@@ -162,54 +230,62 @@ export class TransferController extends EventEmitter {
 
     if (typeof isTopUp === 'boolean') {
       this.isTopUp = isTopUp
+      this.#setSWWarningVisibleIfNeeded()
     }
 
     this.emitUpdate()
   }
 
-  async buildUserRequest() {
-    if (!this.isInitialized) {
-      this.#throwNotInitialized()
+  checkIsRecipientAddressUnknown() {
+    if (!isAddress(this.recipientAddress)) {
+      this.isRecipientAddressUnknown = false
+      this.isRecipientAddressUnknownAgreed = false
+
+      this.emitUpdate()
+      return
+    }
+    const isAddressInAddressBook = this.#addressBookContacts.some(
+      ({ address }) => address.toLowerCase() === this.recipientAddress.toLowerCase()
+    )
+
+    this.isRecipientAddressUnknown =
+      !isAddressInAddressBook && this.recipientAddress.toLowerCase() !== FEE_COLLECTOR.toLowerCase()
+    this.isRecipientAddressUnknownAgreed = false
+    this.#setSWWarningVisibleIfNeeded()
+
+    this.emitUpdate()
+  }
+
+  #onRecipientAddressChange() {
+    if (!isAddress(this.recipientAddress)) {
+      this.isRecipientAddressUnknown = false
+      this.isRecipientAddressUnknownAgreed = false
+      this.isRecipientHumanizerKnownTokenOrSmartContract = false
+      this.isSWWarningVisible = false
+      this.isSWWarningAgreed = false
+
       return
     }
 
-    if (!this.selectedToken || !this.#selectedTokenNetworkData || !this.#selectedAccount) return
-
-    // if the request is a top up, the recipient is the relayer
-    const recipientAddress = this.isTopUp
-      ? FEE_COLLECTOR.toLowerCase()
-      : this.recipientAddress.toLowerCase()
-    const sanitizedAmount = this.amount.split('.')
-    if (sanitizedAmount[1])
-      sanitizedAmount[1] = sanitizedAmount[1].slice(0, this.selectedToken.decimals)
-
-    const bigNumberHexAmount = `0x${parseUnits(
-      sanitizedAmount.join('.'),
-      Number(this.selectedToken.decimals)
-    ).toString(16)}`
-
-    const txn = {
-      kind: 'call' as const,
-      to: this.selectedToken.address,
-      value: BigInt(0),
-      data: ERC20.encodeFunctionData('transfer', [recipientAddress, bigNumberHexAmount])
+    if (this.#humanizerInfo) {
+      // @TODO: could fetch address code
+      this.isRecipientHumanizerKnownTokenOrSmartContract =
+        !!this.#humanizerInfo.knownAddresses[this.recipientAddress.toLowerCase()]?.isSC
     }
 
-    if (Number(this.selectedToken.address) === 0) {
-      txn.to = recipientAddress
-      txn.value = BigInt(bigNumberHexAmount)
-      txn.data = '0x'
-    }
+    this.checkIsRecipientAddressUnknown()
+  }
 
-    this.userRequest = {
-      id: new Date().getTime(),
-      action: txn,
-      meta: {
-        isSignAction: true,
-        networkId: this.#selectedTokenNetworkData.id,
-        accountAddr: this.#selectedAccount
-      }
-    }
+  #setSWWarningVisibleIfNeeded() {
+    this.isSWWarningVisible =
+      this.isRecipientAddressUnknown &&
+      !this.isTopUp &&
+      !!this.selectedToken?.address &&
+      Number(this.selectedToken?.address) === 0 &&
+      this.#networks
+        .filter((n) => n.id !== 'ethereum')
+        .map(({ id }) => id)
+        .includes(this.selectedToken.networkId || 'ethereum')
 
     this.emitUpdate()
   }
@@ -228,6 +304,8 @@ export class TransferController extends EventEmitter {
     return {
       ...this,
       ...super.toJSON(),
+      validationFormMsgs: this.validationFormMsgs,
+      isFormValid: this.isFormValid,
       isInitialized: this.isInitialized,
       selectedToken: this.selectedToken,
       maxAmount: this.maxAmount

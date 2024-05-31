@@ -9,7 +9,7 @@ import { networks } from '../../consts/networks'
 import { HumanizerMeta } from '../../libs/humanizer/interfaces'
 import { Portfolio } from '../../libs/portfolio'
 import { getRpcProvider } from '../../services/provider'
-import { AddressBookController } from '../addressBook/addressBook'
+import { Contacts } from '../addressBook/addressBook'
 import { SettingsController } from '../settings/settings'
 import { TransferController } from './transfer'
 
@@ -25,9 +25,7 @@ const PLACEHOLDER_RECIPIENT_LOWERCASE = PLACEHOLDER_RECIPIENT.toLowerCase()
 const PLACEHOLDER_SELECTED_ACCOUNT = '0xc4A6bB5139123bD6ba0CF387828a9A3a73EF8D1e'
 const XWALLET_ADDRESS = '0x47Cd7E91C3CBaAF266369fe8518345fc4FC12935'
 
-const addressBook = {
-  contacts: []
-}
+const CONTACTS: Contacts = []
 const ethPortfolio = new Portfolio(fetch, provider, ethereum)
 const polygonPortfolio = new Portfolio(fetch, polygonProvider, polygon)
 
@@ -47,18 +45,15 @@ const getTokens = async () => {
 }
 
 describe('Transfer Controller', () => {
-  test('should emit not initialized error', () => {
-    transferController = new TransferController(settingsController)
-
-    transferController.buildUserRequest()
-    errorCount++
-
-    expect(transferController.emittedErrors.length).toBe(errorCount)
-  })
   test('should initialize', async () => {
-    transferController = new TransferController(settingsController)
+    transferController = new TransferController()
     transferController.update({
-      selectedAccount: PLACEHOLDER_SELECTED_ACCOUNT
+      networks: settingsController.networks,
+      contacts: CONTACTS
+    })
+    transferController.update({
+      selectedAccount: PLACEHOLDER_SELECTED_ACCOUNT,
+      humanizerInfo: humanizerInfo as HumanizerMeta
     })
     expect(transferController.isInitialized).toBe(true)
   })
@@ -73,6 +68,29 @@ describe('Transfer Controller', () => {
     })
     expect(transferController.addressState.fieldValue).toBe(PLACEHOLDER_RECIPIENT)
   })
+  test('should set recipient address unknown', () => {
+    expect(transferController.isRecipientAddressUnknown).toBe(true)
+  })
+  test('should flag recipient address as a smart contract', async () => {
+    transferController.update({
+      addressState: {
+        fieldValue: XWALLET_ADDRESS,
+        ensAddress: '',
+        udAddress: '',
+        isDomainResolving: false
+      }
+    })
+    expect(transferController.isRecipientHumanizerKnownTokenOrSmartContract).toBe(true)
+  })
+  test('should show SW warning', async () => {
+    const tokens = await getTokens()
+    const maticOnPolygon = tokens.find(
+      (t) => t.address === '0x0000000000000000000000000000000000000000' && t.networkId === 'polygon'
+    )
+
+    transferController.update({ selectedToken: maticOnPolygon })
+    expect(transferController.isSWWarningVisible).toBe(true)
+  })
   test('should change selected token', async () => {
     const tokens = await getTokens()
     const xwalletOnEthereum = tokens.find(
@@ -83,6 +101,7 @@ describe('Transfer Controller', () => {
     expect(transferController.selectedToken?.address).toBe(XWALLET_ADDRESS)
     expect(transferController.selectedToken?.networkId).toBe('ethereum')
   })
+
   test('should set amount', () => {
     transferController.update({
       amount: '1'
@@ -95,45 +114,44 @@ describe('Transfer Controller', () => {
     })
     expect(transferController.isSWWarningAgreed).toBe(true)
   })
-  test('should build user request with non-native token transfer', async () => {
-    await transferController.buildUserRequest()
-
-    expect(transferController.userRequest?.meta?.accountAddr).toBe(PLACEHOLDER_SELECTED_ACCOUNT)
-    expect(transferController.userRequest?.action.kind).toBe('call')
-
-    // Fixes TS errors
-    if (transferController.userRequest?.action.kind !== 'call') return
-
-    // To be the selected token's address. @TODO: Is this correct?
-    expect(transferController.userRequest?.action.to).toBe(XWALLET_ADDRESS)
-    // Because we are not transferring the native token
-    expect(transferController.userRequest?.action.value).toBe(0n)
-  })
-  test('should build user request with native token transfer', async () => {
-    const tokens = await getTokens()
-    const nativeToken = tokens.find(
-      (t) =>
-        t.address === '0x0000000000000000000000000000000000000000' && t.networkId === 'ethereum'
-    )
-    nativeToken!.amount = 10n
-
-    transferController.update({ selectedToken: nativeToken })
-    expect(transferController.selectedToken).not.toBe(null)
+  test('should set validation form messages', async () => {
     transferController.update({
-      amount: '1'
+      addressState: {
+        fieldValue: PLACEHOLDER_RECIPIENT,
+        ensAddress: '',
+        udAddress: '',
+        isDomainResolving: false
+      }
     })
-    await transferController.buildUserRequest()
 
-    expect(transferController.userRequest?.meta?.accountAddr).toBe(PLACEHOLDER_SELECTED_ACCOUNT)
-    expect(transferController.userRequest?.action.kind).toBe('call')
+    expect(transferController.validationFormMsgs.amount.success).toBe(true)
+    expect(transferController.validationFormMsgs.recipientAddress.success).toBe(false)
 
-    // Fixes TS errors
-    if (transferController.userRequest?.action.kind !== 'call') return
+    // Recipient address
+    transferController.update({
+      isRecipientAddressUnknownAgreed: true
+    })
+    expect(transferController.validationFormMsgs.recipientAddress.success).toBe(true)
+    // Amount
+    transferController.update({
+      amount: '0'
+    })
 
-    expect(transferController.userRequest?.action.to.toLowerCase()).toBe(
-      PLACEHOLDER_RECIPIENT_LOWERCASE
-    )
-    expect(transferController.userRequest?.action.value).toBe(1000000000000000000n)
+    expect(transferController.validationFormMsgs.amount.success).toBe(false)
+
+    transferController.update({
+      amount: transferController.maxAmount
+    })
+    transferController.update({
+      amount: String(Number(transferController.amount) + 1)
+    })
+
+    expect(transferController.validationFormMsgs.amount.success).toBe(false)
+
+    // Reset
+    transferController.update({
+      amount: transferController.maxAmount
+    })
   })
   test("should reject a token that doesn't have amount or amountPostSimulation for transfer", async () => {
     const tokens = await getTokens()
@@ -155,30 +173,39 @@ describe('Transfer Controller', () => {
     expect(transferController.selectedToken).not.toBe(null)
   })
 
+  test('should detect that the recipient is the fee collector', async () => {
+    transferController.update({
+      addressState: {
+        fieldValue: FEE_COLLECTOR,
+        ensAddress: '',
+        udAddress: '',
+        isDomainResolving: false
+      }
+    })
+    expect(transferController.isRecipientHumanizerKnownTokenOrSmartContract).toBeFalsy()
+    expect(transferController.isRecipientAddressUnknown).toBeFalsy()
+  })
+
   const checkResetForm = () => {
     expect(transferController.amount).toBe('')
     expect(transferController.maxAmount).toBe('0')
     expect(transferController.recipientAddress).toBe('')
     expect(transferController.selectedToken).toBe(null)
+    expect(transferController.isRecipientAddressUnknown).toBe(false)
     expect(transferController.addressState).toEqual({
       fieldValue: '',
       ensAddress: '',
       udAddress: '',
       isDomainResolving: false
     })
-    expect(transferController.userRequest).toBe(null)
     expect(transferController.isRecipientAddressUnknownAgreed).toBe(false)
+    expect(transferController.isRecipientHumanizerKnownTokenOrSmartContract).toBe(false)
+    expect(transferController.isSWWarningVisible).toBe(false)
     expect(transferController.isSWWarningAgreed).toBe(false)
   }
 
   test('should reset form', () => {
     transferController.resetForm()
-
-    checkResetForm()
-  })
-
-  test('should reset all state', () => {
-    transferController.reset()
 
     checkResetForm()
   })
