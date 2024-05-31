@@ -247,10 +247,8 @@ export class MainController extends EventEmitter {
     this.activity = new ActivityController(this.#storage, this.accountStates, this.settings)
 
     if (this.selectedAccount) {
-      this.transfer.update({
-        selectedAccount: this.selectedAccount
-      })
-      this.activity.init({ selectedAccount: this.selectedAccount })
+      this.transfer.update({ selectedAccount })
+      this.activity.init({ selectedAccount })
       this.addressBook.update({ selectedAccount })
       this.actions.update({ selectedAccount })
     }
@@ -527,6 +525,7 @@ export class MainController extends EventEmitter {
     this.selectedAccount = toAccountAddr
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.#storage.set('selectedAccount', toAccountAddr)
+    this.transfer.update({ selectedAccount: toAccountAddr })
     this.activity.init({ selectedAccount: toAccountAddr })
     this.addressBook.update({ selectedAccount: toAccountAddr })
     this.actions.update({ selectedAccount: toAccountAddr })
@@ -833,9 +832,9 @@ export class MainController extends EventEmitter {
       if (this.signAccOpInitError) return
 
       const account = this.accounts.find((x) => x.addr === meta.accountAddr)!
+      const accountState = this.accountStates[meta.accountAddr][meta.networkId]
 
       if (account.creation) {
-        const accountState = this.accountStates[meta.accountAddr][meta.networkId]
         const network = this.settings.networks.filter((n) => n.id === meta.networkId)[0]
         if (shouldAskForEntryPointAuthorization(network, accountState)) {
           if (
@@ -861,7 +860,7 @@ export class MainController extends EventEmitter {
               accountAddr: meta.accountAddr,
               networkId: meta.networkId
             }
-          } as SignUserRequest)
+          })
           this.emitUpdate()
           return
         }
@@ -882,7 +881,7 @@ export class MainController extends EventEmitter {
         const accountOpAction = makeBasicAccountOpAction({
           account,
           networkId: meta.networkId,
-          nonce: this.accountStates[meta.accountAddr][meta.networkId].nonce,
+          nonce: accountState.nonce,
           userRequest: req
         })
         this.actions.addOrUpdateAction(accountOpAction, withPriority)

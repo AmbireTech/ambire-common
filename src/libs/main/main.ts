@@ -88,7 +88,7 @@ export const makeBasicAccountOpAction = ({
   userRequest: UserRequest
 }): AccountOpAction => {
   const { to, value, data } = userRequest.action as Call
-  accountOp = {
+  const accountOp = {
     accountAddr: account.addr,
     networkId,
     signingKeyAddr: null,
