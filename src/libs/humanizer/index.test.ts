@@ -15,6 +15,7 @@ import { AccountOp } from '../accountOp/accountOp'
 import { callsHumanizer, messageHumanizer } from './index'
 import { HumanizerVisualization, IrCall, IrMessage } from './interfaces'
 import { EMPTY_HUMANIZER_META, HUMANIZER_META_KEY } from './utils'
+
 // const address1 = '0x6942069420694206942069420694206942069420'
 const address2 = '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
 const WETH_ADDRESS = '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2'
@@ -340,14 +341,14 @@ describe('TypedMessages', () => {
     // public humanizeMessages(accountOp: AccountOp, messages: Message[]) {
     const messages: Message[] = [
       {
-        id: 1,
+        fromActionId: 1,
         accountAddr: accountOp.accountAddr,
         content: tmTemplate,
         signature: null,
         networkId: 'ethereum'
       },
       {
-        id: 2,
+        fromActionId: 2,
         accountAddr: accountOp.accountAddr,
         content: {
           kind: 'message',
@@ -414,11 +415,11 @@ describe('TypedMessages', () => {
       { type: 'deadline', amount: 968187600000n }
     ]
     const onUpdate = jest.fn((newMessage: IrMessage) => {
-      if (newMessage.id === 1)
+      if (newMessage.fromActionId === 1)
         newMessage.fullVisualization?.forEach((v, i) =>
           expect(v).toMatchObject(expectedVisualizations[i])
         )
-      if (newMessage.id === 2) {
+      if (newMessage.fromActionId === 2) {
         expect(newMessage.fullVisualization).not.toBeNull()
         expect(newMessage.fullVisualization?.length).toBe(2)
         expect(newMessage.fullVisualization![0]).toMatchObject({
