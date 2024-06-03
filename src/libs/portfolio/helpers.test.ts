@@ -1,0 +1,67 @@
+import fetch from 'node-fetch'
+
+import { networks } from '../../consts/networks'
+import { getRpcProvider } from '../../services/provider'
+import { getUpdatedHints } from './helpers'
+import { Portfolio } from './portfolio'
+
+const ethereum = networks.find((x) => x.id === 'ethereum')
+const polygon = networks.find((x) => x.id === 'polygon')
+
+if (!ethereum || !polygon) throw new Error('Failed to find ethereum in networks')
+
+const provider = getRpcProvider(ethereum.rpcUrls, ethereum.chainId)
+
+const ethPortfolio = new Portfolio(fetch, provider, ethereum)
+
+const TEST_ACCOUNT_ADDRESS = '0xc4A6bB5139123bD6ba0CF387828a9A3a73EF8D1e'
+const LEARNED_TOKEN_WITH_BALANCE_ADDRESS = '0x335F4e66B9B61CEE5CeaDE4e727FCEC20156B2F0'
+
+const getTokens = async () => {
+  const ethAccPortfolio = await ethPortfolio.get(TEST_ACCOUNT_ADDRESS, {
+    additionalHints: [LEARNED_TOKEN_WITH_BALANCE_ADDRESS]
+  })
+
+  return ethAccPortfolio.tokens
+}
+
+describe('Portfolio helpers', () => {
+  test('getUpdatedHints', async () => {
+    const tokens = await getTokens()
+    const key = `ethereum:${TEST_ACCOUNT_ADDRESS}`
+
+    const updatedHints = getUpdatedHints(
+      {
+        networkId: ethereum.id,
+        erc20s: ['0x9702230A8Ea53601f5cD2dc00fDBc13d4dF4A8c7'],
+        erc721s: {},
+        prices: {},
+        hasHints: true,
+        accountAddr: TEST_ACCOUNT_ADDRESS
+      },
+      tokens,
+      'ethereum',
+      {
+        learnedTokens: {
+          ethereum: {
+            [LEARNED_TOKEN_WITH_BALANCE_ADDRESS]: null
+          }
+        },
+        fromExternalAPI: {
+          [key]: {
+            erc20s: [],
+            erc721s: {}
+          }
+        }
+      },
+      key,
+      []
+    )
+
+    expect(tokens.find((token) => token.address === LEARNED_TOKEN_WITH_BALANCE_ADDRESS))
+    expect(updatedHints.fromExternalAPI[key]?.erc20s).toContain(
+      '0x9702230A8Ea53601f5cD2dc00fDBc13d4dF4A8c7'
+    )
+    expect(updatedHints.learnedTokens.ethereum[LEARNED_TOKEN_WITH_BALANCE_ADDRESS]).toBeDefined()
+  })
+})

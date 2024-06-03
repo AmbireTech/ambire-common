@@ -34,7 +34,8 @@ const prepareTest = () => {
   const controller = new PortfolioController(storage, settings, relayerUrl)
 
   return {
-    controller
+    controller,
+    storage
   }
 }
 
@@ -420,21 +421,59 @@ describe('Portfolio Controller ', () => {
     })
   })
 
-  test('Zero balance token is fetched after being learned', async () => {
-    const BANANA_TOKEN_ADDR = '0x94e496474F1725f1c1824cB5BDb92d7691A4F03a'
-    const { controller } = prepareTest()
+  describe.only('Hints', () => {
+    test('Zero balance token is fetched after being learned', async () => {
+      const BANANA_TOKEN_ADDR = '0x94e496474F1725f1c1824cB5BDb92d7691A4F03a'
+      const { controller } = prepareTest()
 
-    await controller.learnTokens([BANANA_TOKEN_ADDR], 'ethereum')
+      await controller.learnTokens([BANANA_TOKEN_ADDR], 'ethereum')
 
-    await controller.updateSelectedAccount([account], networks, account.addr, undefined, {
-      forceUpdate: true
+      await controller.updateSelectedAccount([account], networks, account.addr, undefined, {
+        forceUpdate: true
+      })
+
+      const token = controller.latest[account.addr].ethereum?.result?.tokens.find(
+        (tk) => tk.address === BANANA_TOKEN_ADDR
+      )
+
+      expect(token).toBeTruthy()
     })
+    test("Learned token timestamps aren't updated if the token is in velcro or velcro doesn't work", async () => {
+      const { controller, storage } = prepareTest()
 
-    const token = controller.latest[account.addr].ethereum?.result?.tokens.find(
-      (tk) => tk.address === BANANA_TOKEN_ADDR
-    )
+      await controller.updateSelectedAccount([account], networks, account.addr, undefined)
 
-    expect(token).toBeTruthy()
+      const firstTokenOnEth = controller.latest[account.addr].ethereum?.result?.tokens.find(
+        (token) =>
+          token.amount > 0n &&
+          token.address !== ZeroAddress &&
+          !token.flags.onGasTank &&
+          !token.flags.rewardsType
+      )
+
+      // Learn a token discovered by velcro
+      await controller.learnTokens([firstTokenOnEth!.address], 'ethereum')
+
+      const previousHintsStorage = await storage.get('previousHints', {})
+      const firstTokenOnEthInLearned =
+        previousHintsStorage.learnedTokens['ethereum'][firstTokenOnEth!.address]
+
+      // Expect the timestamp to be null
+      expect(firstTokenOnEthInLearned).toBeNull()
+
+      ethereum.hasRelayer = false
+
+      await controller.updateSelectedAccount([account], networks, account.addr, undefined, {
+        forceUpdate: true
+      })
+
+      const previousHintsStoragePostUpdate = await storage.get('previousHints', {})
+      const firstTokenOnEthInLearnedPostUpdate =
+        previousHintsStoragePostUpdate.learnedTokens['ethereum'][firstTokenOnEth!.address]
+
+      // Expect the timestamp to be set
+      expect(firstTokenOnEthInLearnedPostUpdate).toBeNull()
+    })
   })
 
   test('Native tokens are fetched for all networks', async () => {
