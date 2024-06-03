@@ -6,7 +6,6 @@ import {
   getAction,
   getAddressVisualization,
   getDeadline,
-  getKnownAbi,
   getLabel,
   getRecipientText,
   getToken,
@@ -18,6 +17,16 @@ import { parsePath } from './utils'
 
 const coder = new AbiCoder()
 
+const UniswapUniversalRouter = [
+  'function collectRewards(bytes looksRareClaim)',
+  'function execute(bytes commands, bytes[] inputs) payable',
+  'function execute(bytes commands, bytes[] inputs, uint256 deadline) payable',
+  'function onERC1155BatchReceived(address, address, uint256[], uint256[], bytes) pure returns (bytes4)',
+  'function onERC1155Received(address, address, uint256, uint256, bytes) pure returns (bytes4)',
+  'function onERC721Received(address, address, uint256, bytes) pure returns (bytes4)',
+  'function supportsInterface(bytes4 interfaceId) pure returns (bool)',
+  'function uniswapV3SwapCallback(int256 amount0Delta, int256 amount1Delta, bytes data)'
+]
 const extractParams = (inputsDetails: any, input: any) => {
   const types = inputsDetails.map((i: any) => i.type)
   const decodedInput = coder.decode(types, input)
@@ -51,10 +60,10 @@ function parseCommands(commands: string, emitError: Function): string[] | null {
 
 // @TODO add txns parsing (example for turning swap 1.15 and send 0.15 to swap 1.00)
 export const uniUniversalRouter = (
-  humanizerInfo: HumanizerMeta,
+  _: HumanizerMeta,
   options?: any
 ): { [x: string]: (a: AccountOp, c: IrCall) => IrCall[] } => {
-  const ifaceUniversalRouter = new Interface(getKnownAbi(humanizerInfo, 'UniswapUniversalRouter'))
+  const ifaceUniversalRouter = new Interface(UniswapUniversalRouter)
   return {
     [`${
       ifaceUniversalRouter.getFunction(

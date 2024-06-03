@@ -2,8 +2,21 @@ import { Interface, ZeroAddress } from 'ethers'
 
 import { AccountOp } from '../../accountOp/accountOp'
 import { HumanizerCallModule, HumanizerMeta, IrCall } from '../interfaces'
-import { getKnownAbi, getUnknownVisualization, getUnwraping, getWraping } from '../utils'
+import { getUnknownVisualization, getUnwraping, getWraping } from '../utils'
 
+const WETH = [
+  'function name() view returns (string)',
+  'function approve(address guy, uint256 wad) returns (bool)',
+  'function totalSupply() view returns (uint256)',
+  'function transferFrom(address src, address dst, uint256 wad) returns (bool)',
+  'function withdraw(uint256 wad)',
+  'function decimals() view returns (uint8)',
+  'function balanceOf(address) view returns (uint256)',
+  'function symbol() view returns (string)',
+  'function transfer(address dst, uint256 wad) returns (bool)',
+  'function deposit() payable',
+  'function allowance(address, address) view returns (uint256)'
+]
 const wrapSwapReducer = (calls: IrCall[]) => {
   const newCalls: IrCall[] = []
   for (let i = 0; i < calls.length; i++) {
@@ -57,7 +70,7 @@ export const wrappingModule: HumanizerCallModule = (
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   options?: any
 ) => {
-  const iface = new Interface(getKnownAbi(humanizerMeta, 'WETH', options))
+  const iface = new Interface(WETH)
   const newCalls = irCalls.map((call: IrCall) => {
     const knownAddressData = humanizerMeta?.knownAddresses[call.to.toLowerCase()]
     if (

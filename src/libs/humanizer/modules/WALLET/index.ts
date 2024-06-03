@@ -1,9 +1,9 @@
+import { AccountOp } from '../../../accountOp/accountOp'
+import { HumanizerCallModule, HumanizerMeta, IrCall } from '../../interfaces'
+import { checkIfUnknownAction, getUnknownVisualization } from '../../utils'
+import { StakingPools } from './stakingPools'
 // update return ir to be {...ir,calls:newCalls} instead of {calls:newCalls} everywhere
 import { WALLETSupplyControllerMapping } from './WALLETSupplyController'
-import { StakingPools } from './stakingPools'
-import { HumanizerCallModule, HumanizerMeta, IrCall } from '../../interfaces'
-import { AccountOp } from '../../../accountOp/accountOp'
-import { checkIfUnknownAction, getUnknownVisualization } from '../../utils'
 
 const stakingAddresses = [
   '0x47cd7e91c3cbaaf266369fe8518345fc4fc12935',
@@ -21,7 +21,7 @@ export const WALLETModule: HumanizerCallModule = (
 ) => {
   const matcher = {
     supplyController: WALLETSupplyControllerMapping(humanizerMeta),
-    stakingPool: StakingPools(humanizerMeta)
+    stakingPool: StakingPools()
   }
   const newCalls = irCalls.map((call: IrCall) => {
     if (
