@@ -770,7 +770,7 @@ export class MainController extends EventEmitter {
     recipientAddress: string,
     selectedToken: TokenResult
   ) {
-    if (!this.selectedAccount) return console.log('no 1')
+    if (!this.selectedAccount) return
 
     const userRequest = buildTransferUserRequest({
       selectedAccount: this.selectedAccount,
@@ -787,10 +787,8 @@ export class MainController extends EventEmitter {
           'buildUserRequestFromTransferRequest: bad parameters passed to buildTransferUserRequest'
         )
       })
-      return console.log('no 2', amount, selectedToken)
+      return
     }
-
-    console.log('userRequest', userRequest)
 
     await this.addUserRequest(userRequest)
   }
