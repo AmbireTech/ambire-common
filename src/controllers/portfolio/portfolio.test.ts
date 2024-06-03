@@ -421,7 +421,7 @@ describe('Portfolio Controller ', () => {
     })
   })
 
-  describe.only('Hints', () => {
+  describe('Hints', () => {
     test('Zero balance token is fetched after being learned', async () => {
       const BANANA_TOKEN_ADDR = '0x94e496474F1725f1c1824cB5BDb92d7691A4F03a'
       const { controller } = prepareTest()
