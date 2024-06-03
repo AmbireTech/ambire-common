@@ -518,6 +518,7 @@ export class MainController extends EventEmitter {
     this.selectedAccount = toAccountAddr
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.#storage.set('selectedAccount', toAccountAddr)
+    this.transfer.update({ selectedAccount: toAccountAddr })
     this.activity.init({ selectedAccount: toAccountAddr })
     this.addressBook.update({ selectedAccount: toAccountAddr })
     this.actions.update({ selectedAccount: toAccountAddr })
