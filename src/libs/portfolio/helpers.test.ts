@@ -1,5 +1,7 @@
 import fetch from 'node-fetch'
 
+import { describe, expect, test } from '@jest/globals'
+
 import { networks } from '../../consts/networks'
 import { getRpcProvider } from '../../services/provider'
 import { getUpdatedHints } from './helpers'
