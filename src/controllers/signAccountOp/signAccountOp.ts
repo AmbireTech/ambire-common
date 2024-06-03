@@ -1,7 +1,5 @@
-import { AccountOpAction } from 'controllers/actions/actions'
 /* eslint-disable no-restricted-syntax */
 import { AbiCoder, formatUnits, getAddress, Interface, toBeHex } from 'ethers'
-import { getPaymasterData } from 'services/sponsorship/paymasterSponsor'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import ERC20 from '../../../contracts/compiled/IERC20.json'
@@ -30,6 +28,8 @@ import {
   shouldUseOneTimeNonce,
   shouldUsePaymaster
 } from '../../libs/userOperation/userOperation'
+import { getPaymasterData } from '../../services/sponsorship/paymasterSponsor'
+import { AccountOpAction } from '../actions/actions'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
 import { PortfolioController } from '../portfolio/portfolio'

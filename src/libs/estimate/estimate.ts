@@ -113,7 +113,7 @@ export async function estimate4337(
   ]
   const estimations = await estimateWithRetries(initializeRequests)
   if (estimations instanceof Error)
-    return estimationErrorFormatted(estimations, {
+    return estimationErrorFormatted(catchEstimationFailure(estimations), {
       feePaymentOptions,
       erc4337GasLimits: {
         preVerificationGas: toBeHex(0),

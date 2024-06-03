@@ -39,7 +39,10 @@ const getPaymasterMetaCapabilities = (
   networkId: string
 ) => {
   const userRequestsForAccountOp = userRequests.filter(
-    (req) => req.meta.accountAddr === accountAddr && req.meta.networkId === networkId
+    (req) =>
+      req.action.kind === 'call' &&
+      req.meta.accountAddr === accountAddr &&
+      req.meta.networkId === networkId
   )
   const userRequestWithPaymasterService = userRequestsForAccountOp.filter(
     (req) => req.meta.capabilities?.paymasterService?.url
