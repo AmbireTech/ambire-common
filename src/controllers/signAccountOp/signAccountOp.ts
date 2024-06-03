@@ -1,6 +1,7 @@
 import { AccountOpAction } from 'controllers/actions/actions'
 /* eslint-disable no-restricted-syntax */
 import { AbiCoder, formatUnits, getAddress, Interface, toBeHex } from 'ethers'
+import { getPaymasterData } from 'services/sponsorship/paymasterSponsor'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import ERC20 from '../../../contracts/compiled/IERC20.json'
@@ -348,6 +349,8 @@ export class SignAccountOpController extends EventEmitter {
       this.estimation = estimation
       // on each estimation update, set the newest account nonce
       this.accountOp.nonce = BigInt(estimation.currentAccountNonce)
+
+      this.setSponsorship()
     }
 
     // if estimation is undefined, do not clear the estimation.
@@ -397,6 +400,40 @@ export class SignAccountOpController extends EventEmitter {
     // Here, we expect to have most of the fields set, so we can safely set GasFeePayment
     this.#setGasFeePayment()
     this.updateStatusToReadyToSign()
+  }
+
+  async setSponsorship() {
+    if (!this.estimation?.sponsorship) return
+
+    const accountState = this.#accountStates[this.accountOp.accountAddr][this.accountOp.networkId]
+    const userOperation = getUserOperation(
+      this.account,
+      accountState,
+      this.accountOp,
+      !accountState.isDeployed ? this.accountOp.meta!.entryPointAuthorization : undefined
+    )
+    const sponsored = this.estimation!.sponsorship
+    userOperation.preVerificationGas = sponsored.preVerificationGas
+    userOperation.callGasLimit = sponsored.callGasLimit
+    userOperation.verificationGasLimit = sponsored.verificationGasLimit
+    userOperation.paymasterVerificationGasLimit = sponsored.paymasterVerificationGasLimit
+    userOperation.paymasterPostOpGasLimit = sponsored.paymasterPostOpGasLimit
+    userOperation.maxFeePerGas = sponsored.gasPrice.fast.maxFeePerGas
+    userOperation.maxPriorityFeePerGas = sponsored.gasPrice.fast.maxPriorityFeePerGas
+    const ambireAccount = new Interface(AmbireAccount.abi)
+    delete this.accountOp.feeCall
+    userOperation.callData = ambireAccount.encodeFunctionData('executeBySender', [
+      getSignableCalls(this.accountOp)
+    ])
+
+    const response = await getPaymasterData(
+      this.accountOp.meta!.capabilities!.paymasterService!.url,
+      this.#network,
+      userOperation
+    )
+    console.log(response)
+    userOperation.paymaster = response.paymaster
+    userOperation.paymasterData = response.paymasterData
   }
 
   updateStatusToReadyToSign() {

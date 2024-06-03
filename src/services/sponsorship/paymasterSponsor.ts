@@ -16,3 +16,12 @@ export function getPaymasterStubData(
     Number(network.chainId)
   ])
 }
+
+export function getPaymasterData(url: string, network: NetworkDescriptor, userOp: UserOperation) {
+  const provider = getRpcProvider([url], network.chainId)
+  return provider.send('pm_getPaymasterData', [
+    getCleanUserOp(userOp)[0],
+    ERC_4337_ENTRYPOINT,
+    Number(network.chainId)
+  ])
+}
