@@ -364,7 +364,8 @@ export class MainController extends EventEmitter {
 
     this.emitUpdate()
 
-    this.reestimateSignAccountOpAndUpdateGasPrices()
+    this.updateSignAccountOpGasPrice()
+    this.estimateSignAccountOp()
   }
 
   destroySignAccOp() {
@@ -878,7 +879,7 @@ export class MainController extends EventEmitter {
           this.actions.addOrUpdateAction(accountOpAction, withPriority)
           if (this.signAccountOp && this.signAccountOp.fromActionId === accountOpAction.id) {
             this.signAccountOp.update({ accountOp: accountOpAction.accountOp })
-            this.#estimateSignAccountOp()
+            this.estimateSignAccountOp()
           }
         }
       } else {
@@ -974,7 +975,7 @@ export class MainController extends EventEmitter {
 
           if (this.signAccountOp && this.signAccountOp.fromActionId === accountOpAction.id) {
             this.signAccountOp.update({ accountOp: accountOpAction.accountOp, estimation: null })
-            this.#estimateSignAccountOp()
+            this.estimateSignAccountOp()
           }
         } else {
           this.actions.removeAction(`${meta.accountAddr}-${meta.networkId}`)
@@ -1052,17 +1053,11 @@ export class MainController extends EventEmitter {
     this.emitUpdate()
   }
 
-  /**
-   * Reestimate the current account op and update the gas prices in the same tick.
-   * To achieve a more accurate gas amount calculation (gasUsageEstimate * gasPrice),
-   * it would be preferable to update them simultaneously.
-   * Otherwise, if either of the variables has not been recently updated, it may lead to an incorrect gas amount result.
-   */
-  async reestimateSignAccountOpAndUpdateGasPrices() {
+  async updateSignAccountOpGasPrice() {
     if (!this.signAccountOp) return
     const networkId = this.signAccountOp.accountOp.networkId
 
-    await Promise.all([this.#updateGasPrice(), this.#estimateSignAccountOp()])
+    await this.#updateGasPrice()
 
     // there's a chance signAccountOp gets destroyed between the time
     // the first "if (!this.signAccountOp) return" is performed and
@@ -1074,7 +1069,7 @@ export class MainController extends EventEmitter {
   }
 
   // @TODO: protect this from race conditions/simultanous executions
-  async #estimateSignAccountOp() {
+  async estimateSignAccountOp() {
     try {
       if (!this.signAccountOp) return
 
@@ -1212,7 +1207,7 @@ export class MainController extends EventEmitter {
         // it may have different needs
         this.portfolio.updateSelectedAccount(
           this.accounts,
-          this.settings.networks,
+          [network],
           localAccountOp.accountAddr,
           // TODO: update for all accountOps. Currently there is an issue with the simulation
           // on the signAccountOpScreen if we pass here all ops and there are multiple ops on given network.

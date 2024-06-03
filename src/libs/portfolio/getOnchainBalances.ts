@@ -137,7 +137,7 @@ export async function getNFTs(
     nonce: isSmartAccount(account) ? nonce : BigInt(EOA_SIMULATION_NONCE),
     calls: calls.map(callToTuple)
   }))
-  const [before, after, simulationErr] = await deployless.call(
+  const [before, after, simulationErr, , , deltaAddressesMapping] = await deployless.call(
     'simulateAndGetAllNFTs',
     [
       accountAddr,
@@ -156,13 +156,28 @@ export async function getNFTs(
   const afterNonce = after[1]
   handleSimulationError(simulationErr, beforeNonce, afterNonce, simulationOps)
 
-  // no simulation was performed if the nonce is the same
-  const postSimulationAmounts = (after[1] === before[1] ? before[0] : after[0]).map(mapToken)
+  // simulation was performed if the nonce is changed
+  const hasSimulation = afterNonce !== beforeNonce
 
-  return before[0].map((token: any, i: number) => [
-    token.error,
-    { ...mapToken(token), amountPostSimulation: postSimulationAmounts[i].amount }
-  ])
+  const simulationTokens = hasSimulation
+    ? after[0].map((simulationToken: any, tokenIndex: number) => ({
+        ...mapToken(simulationToken),
+        addr: deltaAddressesMapping[tokenIndex]
+      }))
+    : null
+
+  return before[0].map((beforeToken: any, i: number) => {
+    const simulationToken = simulationTokens
+      ? simulationTokens.find((token: any) => token.addr === tokenAddrs[i][0])
+      : null
+
+    const token = mapToken(beforeToken)
+
+    return [
+      beforeToken.error,
+      { ...token, amountPostSimulation: simulationToken ? simulationToken.amount : token.amount }
+    ]
+  })
 }
 
 export async function getTokens(
@@ -202,7 +217,7 @@ export async function getTokens(
     calls: calls.map(callToTuple)
   }))
   const [factory, factoryCalldata] = getAccountDeployParams(account)
-  const [before, after, simulationErr] = await deployless.call(
+  const [before, after, simulationErr, , , deltaAddressesMapping] = await deployless.call(
     'simulateAndGetBalances',
     [
       accountAddr,
@@ -219,14 +234,28 @@ export async function getTokens(
   const afterNonce = after[1]
   handleSimulationError(simulationErr, beforeNonce, afterNonce, simulationOps)
 
-  // no simulation was performed if the nonce is the same
-  const postSimulationAmounts = afterNonce === beforeNonce ? before[0] : after[0]
+  // simulation was performed if the nonce is changed
+  const hasSimulation = afterNonce !== beforeNonce
 
-  return before[0].map((token: any, i: number) => [
-    token.error,
-    {
-      ...mapToken(token, tokenAddrs[i]),
-      amountPostSimulation: postSimulationAmounts[i].amount
-    }
-  ])
+  const simulationTokens = hasSimulation
+    ? after[0].map((simulationToken: any, tokenIndex: number) => ({
+        ...simulationToken,
+        amount: simulationToken.amount,
+        addr: deltaAddressesMapping[tokenIndex]
+      }))
+    : null
+
+  return before[0].map((token: any, i: number) => {
+    const simulation = simulationTokens
+      ? simulationTokens.find((simulationToken: any) => simulationToken.addr === tokenAddrs[i])
+      : null
+
+    return [
+      token.error,
+      {
+        ...mapToken(token, tokenAddrs[i]),
+        amountPostSimulation: simulation ? simulation.amount : token.amount
+      }
+    ]
+  })
 }
