@@ -49,9 +49,10 @@ import { estimate } from '../../libs/estimate/estimate'
 import { EstimateResult } from '../../libs/estimate/interfaces'
 import { GasRecommendation, getGasPriceRecommendations } from '../../libs/gasPrice/gasPrice'
 import { humanizeAccountOp } from '../../libs/humanizer'
-import { GetOptions } from '../../libs/portfolio/interfaces'
+import { GetOptions, TokenResult } from '../../libs/portfolio/interfaces'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { parse } from '../../libs/richJson/richJson'
+import { buildTransferUserRequest } from '../../libs/transfer/userRequest'
 import { isErc4337Broadcast } from '../../libs/userOperation/userOperation'
 import bundler from '../../services/bundlers'
 import generateSpoofSig from '../../utils/generateSpoofSig'
@@ -70,7 +71,6 @@ import { SettingsController } from '../settings/settings'
 /* eslint-disable no-underscore-dangle */
 import { SignAccountOpController, SigningStatus } from '../signAccountOp/signAccountOp'
 import { SignMessageController } from '../signMessage/signMessage'
-import { TransferController } from '../transfer/transfer'
 
 const STATUS_WRAPPED_METHODS = {
   onAccountAdderSuccess: 'INITIAL',
@@ -106,8 +106,6 @@ export class MainController extends EventEmitter {
 
   // Subcontrollers
   portfolio: PortfolioController
-
-  transfer: TransferController
 
   actions: ActionsController
 
@@ -213,7 +211,6 @@ export class MainController extends EventEmitter {
       this.#storage,
       this.#fetch
     )
-    this.transfer = new TransferController(this.settings)
     this.actions = new ActionsController({
       selectedAccount: this.selectedAccount,
       windowManager,
@@ -250,9 +247,6 @@ export class MainController extends EventEmitter {
     this.activity = new ActivityController(this.#storage, this.accountStates, this.settings)
 
     if (this.selectedAccount) {
-      this.transfer.update({
-        selectedAccount: this.selectedAccount
-      })
       this.activity.init({ selectedAccount: this.selectedAccount })
       this.addressBook.update({ selectedAccount })
       this.actions.update({ selectedAccount })
@@ -305,12 +299,6 @@ export class MainController extends EventEmitter {
       )
     }
     this.accountAdder.onUpdate(onAccountAdderSuccess)
-    this.transfer.onUpdate(async () => {
-      if (this.transfer.userRequest) {
-        await this.addUserRequest(this.transfer.userRequest)
-        this.transfer.resetForm()
-      }
-    })
 
     this.isReady = true
     this.emitUpdate()
@@ -531,7 +519,6 @@ export class MainController extends EventEmitter {
     this.selectedAccount = toAccountAddr
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.#storage.set('selectedAccount', toAccountAddr)
-    this.transfer.update({ selectedAccount: toAccountAddr })
     this.activity.init({ selectedAccount: toAccountAddr })
     this.addressBook.update({ selectedAccount: toAccountAddr })
     this.actions.update({ selectedAccount: toAccountAddr })
@@ -635,7 +622,7 @@ export class MainController extends EventEmitter {
     )
   }
 
-  async buildUserRequest(
+  async buildUserRequestFromDAppRequest(
     request: DappProviderRequest,
     dappPromise: {
       resolve: (data: any) => void
@@ -777,6 +764,34 @@ export class MainController extends EventEmitter {
       await this.addUserRequest(userRequest)
       this.emitUpdate()
     }
+  }
+
+  async buildTransferUserRequest(
+    amount: string,
+    recipientAddress: string,
+    selectedToken: TokenResult
+  ) {
+    if (!this.selectedAccount) return
+
+    const userRequest = buildTransferUserRequest({
+      selectedAccount: this.selectedAccount,
+      amount,
+      selectedToken,
+      recipientAddress
+    })
+
+    if (!userRequest) {
+      this.emitError({
+        level: 'major',
+        message: 'Unexpected error while building transfer request',
+        error: new Error(
+          'buildUserRequestFromTransferRequest: bad parameters passed to buildTransferUserRequest'
+        )
+      })
+      return
+    }
+
+    await this.addUserRequest(userRequest)
   }
 
   resolveUserRequest(data: any, requestId: UserRequest['id']) {
