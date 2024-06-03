@@ -17,15 +17,9 @@ export const aaveHumanizer: HumanizerCallModule = (
   }
   const newCalls = irCalls.map((call) => {
     const sigHash = call.data.slice(0, 10)
-    if (getKnownName(humanizerMeta, call.to) === 'Aave') {
       return matcher[sigHash]
         ? { ...call, fullVisualization: matcher[sigHash](accountOp, call) }
-        : {
-            ...call,
-            fullVisualization: getUnknownVisualization('Aave', call)
-          }
-    }
-    return call
+        : call
   })
   return [newCalls, []]
 }
