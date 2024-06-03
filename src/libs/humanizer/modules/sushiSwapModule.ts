@@ -1,10 +1,9 @@
 import { Interface, ZeroAddress } from 'ethers'
-import { AccountOp } from '../../accountOp/accountOp'
 
+import { AccountOp } from '../../accountOp/accountOp'
 import { HumanizerCallModule, HumanizerMeta, IrCall } from '../interfaces'
 import {
   getAction,
-  getKnownAbi,
   getKnownName,
   getLabel,
   getRecipientText,
@@ -12,6 +11,18 @@ import {
   getUnknownVisualization
 } from '../utils'
 
+const RouteProcessor = [
+  'function bentoBox() view returns (address)',
+  'function owner() view returns (address)',
+  'function pause()',
+  'function processRoute(address tokenIn, uint256 amountIn, address tokenOut, uint256 amountOutMin, address to, bytes route) payable returns (uint256 amountOut)',
+  'function renounceOwnership()',
+  'function resume()',
+  'function setPriviledge(address user, bool priviledge)',
+  'function transferOwnership(address newOwner)',
+  'function transferValueAndprocessRoute(address transferValueTo, uint256 amountValueTransfer, address tokenIn, uint256 amountIn, address tokenOut, uint256 amountOutMin, address to, bytes route) payable returns (uint256 amountOut)',
+  'function uniswapV3SwapCallback(int256 amount0Delta, int256 amount1Delta, bytes data)'
+]
 export const sushiSwapModule: HumanizerCallModule = (
   accountOp: AccountOp,
   irCalls: IrCall[],
@@ -19,9 +30,7 @@ export const sushiSwapModule: HumanizerCallModule = (
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   options?: any
 ) => {
-  const routeProcessorIface = new Interface(
-    Object.values(getKnownAbi(humanizerMeta, 'RouteProcessor', options))
-  )
+  const routeProcessorIface = new Interface(RouteProcessor)
   const matcher = {
     [`${routeProcessorIface.getFunction('processRoute')?.selector}`]: (
       _accountOp: AccountOp,

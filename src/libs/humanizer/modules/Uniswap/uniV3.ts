@@ -8,7 +8,6 @@ import {
   getAction,
   getAddressVisualization,
   getDeadline,
-  getKnownAbi,
   getLabel,
   getRecipientText,
   getToken,
