@@ -44,7 +44,6 @@ import EventEmitter from '../eventEmitter/eventEmitter'
 /* eslint-disable @typescript-eslint/no-shadow */
 import { SettingsController } from '../settings/settings'
 
-const LEARNED_TOKENS_CLEAN_THRESHOLD = 10
 const LEARNED_TOKENS_NETWORK_LIMIT = 50
 
 export class PortfolioController extends EventEmitter {
