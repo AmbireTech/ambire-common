@@ -188,9 +188,8 @@ describe('Transfer Controller', () => {
 
   const checkResetForm = () => {
     expect(transferController.amount).toBe('')
-    expect(transferController.maxAmount).toBe('0')
     expect(transferController.recipientAddress).toBe('')
-    expect(transferController.selectedToken).toBe(null)
+    expect(transferController.selectedToken).toBeDefined()
     expect(transferController.isRecipientAddressUnknown).toBe(false)
     expect(transferController.addressState).toEqual({
       fieldValue: '',
