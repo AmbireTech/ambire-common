@@ -67,6 +67,14 @@ async function getSponsoredUserOp(
   if (!op.meta?.capabilities?.paymasterService?.url) return null
 
   const sponsoredUserOp = { ...userOp }
+  const localOp = { ...op }
+
+  // delete the fee call as we're not including it in the sponsorship
+  delete localOp.feeCall
+  const ambireAccount = new Interface(AmbireAccount.abi)
+  sponsoredUserOp.callData = ambireAccount.encodeFunctionData('executeBySender', [
+    getSignableCalls(localOp)
+  ])
   const stubData = await getPaymasterStubData(
     op.meta?.capabilities?.paymasterService?.url,
     network,
@@ -149,7 +157,7 @@ export async function bundlerEstimate(
       getEstimationError(e)
     )
   ])
-  if (gasData instanceof Error)
+  if (gasData instanceof Error && sponsoredGasData instanceof Error)
     return estimationErrorFormatted(gasData as Error, { feePaymentOptions })
 
   const apeMaxFee = BigInt(gasPrices.fast.maxFeePerGas) + BigInt(gasPrices.fast.maxFeePerGas) / 5n
@@ -159,17 +167,25 @@ export async function bundlerEstimate(
     maxFeePerGas: toBeHex(apeMaxFee),
     maxPriorityFeePerGas: toBeHex(apePriority)
   }
+  // this indicates whether the estimation succeeds with out options.
+  // This is needed in the case of dApp sponsorship.
+  // For example, the user doesn't have any funds in his wallet so we reject
+  // his userOps as he doesn't have the fee to pay our paymaster. But the
+  // dApp sponsors his transaction => it's valid in the sponsorship estimation
+  const ambireEstimationSuccess = !(gasData instanceof Error)
 
   return {
-    gasUsed: BigInt(gasData.callGasLimit),
+    gasUsed: ambireEstimationSuccess ? BigInt(gasData.callGasLimit) : 0n,
     currentAccountNonce: Number(op.nonce),
     feePaymentOptions,
     erc4337GasLimits: {
-      preVerificationGas: gasData.preVerificationGas,
-      verificationGasLimit: gasData.verificationGasLimit,
-      callGasLimit: gasData.callGasLimit,
-      paymasterVerificationGasLimit: gasData.paymasterVerificationGasLimit,
-      paymasterPostOpGasLimit: gasData.paymasterPostOpGasLimit,
+      preVerificationGas: ambireEstimationSuccess ? gasData.preVerificationGas : '0x',
+      verificationGasLimit: ambireEstimationSuccess ? gasData.verificationGasLimit : '0x',
+      callGasLimit: ambireEstimationSuccess ? gasData.callGasLimit : '0x',
+      paymasterVerificationGasLimit: ambireEstimationSuccess
+        ? gasData.paymasterVerificationGasLimit
+        : '0x',
+      paymasterPostOpGasLimit: ambireEstimationSuccess ? gasData.paymasterPostOpGasLimit : '0x',
       gasPrice: { ...gasPrices, ape },
       sponsorship: sponsoredGasData
     },
