@@ -109,6 +109,7 @@ export class ActionsController extends EventEmitter {
         this.#onActionWindowClose()
         this.actionWindow.id = null
         this.actionWindow.loaded = false
+        this.actionWindow.pendingMessage = null
         this.currentAction = null
 
         this.actionsQueue = this.actionsQueue.filter((a) => !['benzin'].includes(a.type))
