@@ -3,6 +3,8 @@
 import { DappUserRequest, SignUserRequest, UserRequest } from '../../interfaces/userRequest'
 import { WindowManager } from '../../interfaces/window'
 import { AccountOp } from '../../libs/accountOp/accountOp'
+// eslint-disable-next-line import/no-cycle
+import { messageOnNewAction } from '../../libs/actions/actions'
 import { getDappActionRequestsBanners } from '../../libs/banners/banners'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
@@ -128,6 +130,7 @@ export class ActionsController extends EventEmitter {
     const actionIndex = this.actionsQueue.findIndex((a) => a.id === newAction.id)
     if (actionIndex !== -1) {
       this.actionsQueue[actionIndex] = newAction
+      this.sendNewActionMessage(newAction, !!withPriority)
       const currentAction = withPriority
         ? this.visibleActionsQueue[0] || null
         : this.currentAction || this.visibleActionsQueue[0] || null
@@ -139,26 +142,8 @@ export class ActionsController extends EventEmitter {
       this.actionsQueue.unshift(newAction)
     } else {
       this.actionsQueue.push(newAction)
-      if (this.visibleActionsQueue.length > 1 && newAction.type !== 'benzin') {
-        if (this.actionWindow.loaded) {
-          this.#windowManager.sendWindowToastMessage(
-            `A new action request has been added to the ${
-              !withPriority ? 'end of the' : ''
-            } queue.`,
-            {
-              type: 'success'
-            }
-          )
-        } else {
-          this.actionWindow.pendingMessage = {
-            message: `A new action request has been added to the ${
-              !withPriority ? 'end of the' : ''
-            } queue.`,
-            options: { type: 'success' }
-          }
-        }
-      }
     }
+    this.sendNewActionMessage(newAction, !!withPriority)
     const currentAction = withPriority
       ? this.visibleActionsQueue[0] || null
       : this.currentAction || this.visibleActionsQueue[0] || null
@@ -202,6 +187,22 @@ export class ActionsController extends EventEmitter {
     if (!action) return
 
     this.#setCurrentAction(action)
+  }
+
+  sendNewActionMessage(newAction: Action, withPriority: boolean) {
+    if (this.visibleActionsQueue.length > 1 && newAction.type !== 'benzin') {
+      if (this.actionWindow.loaded) {
+        this.#windowManager.sendWindowToastMessage(
+          messageOnNewAction(newAction, withPriority ? 'unshift' : 'push'),
+          { type: 'success' }
+        )
+      } else {
+        this.actionWindow.pendingMessage = {
+          message: messageOnNewAction(newAction, withPriority ? 'unshift' : 'push'),
+          options: { type: 'success' }
+        }
+      }
+    }
   }
 
   openActionWindow() {
