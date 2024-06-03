@@ -20,17 +20,6 @@ export interface Erc4337GasLimits {
     fast: { maxFeePerGas: string; maxPriorityFeePerGas: string }
     ape: { maxFeePerGas: string; maxPriorityFeePerGas: string }
   }
-  // @eip7677
-  // if by any chance the user op has a sponsorship option, it comes here
-  sponsorship?:
-    | {
-        preVerificationGas: string
-        verificationGasLimit: string
-        callGasLimit: string
-        paymasterVerificationGasLimit: string
-        paymasterPostOpGasLimit: string
-      }
-    | Error
 }
 
 export interface ArbitrumL1Fee {
@@ -44,6 +33,7 @@ export interface FeePaymentOption {
   gasUsed?: bigint
   addedNative: bigint
   token: TokenResult
+  isSponsorship?: boolean
 }
 
 export interface EstimateResult {
@@ -54,5 +44,7 @@ export interface EstimateResult {
   currentAccountNonce: number
   feePaymentOptions: FeePaymentOption[]
   erc4337GasLimits?: Erc4337GasLimits
+  // @eip7677
+  sponsorship?: Erc4337GasLimits
   error: Error | null
 }

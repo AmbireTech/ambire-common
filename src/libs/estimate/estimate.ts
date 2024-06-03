@@ -132,11 +132,26 @@ export async function estimate4337(
 
   const [[, , accountOp, outcomeNonce, feeTokenOutcomes]] = estimations[0]
   const estimationResult: EstimateResult = estimations[1]
-  estimationResult.error =
-    estimationResult.error instanceof Error
-      ? estimationResult.error
-      : getInnerCallFailure(accountOp) || getNonceDiscrepancyFailure(op, outcomeNonce)
-  estimationResult.currentAccountNonce = Number(outcomeNonce - 1n)
+
+  // if there are additional errors and there is sponsorship, delete the ambire
+  // estimation and let the sponsorship run
+  const additionalChecks =
+    getInnerCallFailure(accountOp) || getNonceDiscrepancyFailure(op, outcomeNonce)
+  if (
+    additionalChecks instanceof Error &&
+    estimationResult.sponsorship &&
+    !(estimationResult.sponsorship instanceof Error)
+  )
+    delete estimationResult.erc4337GasLimits
+
+  if (estimationResult.erc4337GasLimits) {
+    estimationResult.error =
+      estimationResult.error instanceof Error ? estimationResult.error : additionalChecks
+    estimationResult.currentAccountNonce = Number(outcomeNonce - 1n)
+  } else {
+    const accountState = accountStates[op.accountAddr][op.networkId]
+    estimationResult.currentAccountNonce = Number(accountState.nonce)
+  }
 
   // add the availableAmount after the simulation
   estimationResult.feePaymentOptions = feePaymentOptions.map(
@@ -149,6 +164,30 @@ export async function estimate4337(
       return localOp
     }
   )
+
+  // add the sponsorship fee payment option
+  if (estimationResult.sponsorship) {
+    estimationResult.feePaymentOptions.push({
+      availableAmount: 100000000000000n,
+      paidBy: account.addr,
+      addedNative: 0n,
+      token: {
+        address: ZeroAddress,
+        symbol: 'SPONSORSHIP',
+        amount: 10000000n,
+        networkId: network.id,
+        decimals: 6,
+        priceIn: [],
+        flags: {
+          onGasTank: false,
+          rewardsType: null,
+          canTopUpGasTank: false,
+          isFeeToken: false
+        }
+      },
+      isSponsorship: true
+    })
+  }
 
   return estimationResult
 }
