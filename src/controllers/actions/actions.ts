@@ -48,7 +48,22 @@ export class ActionsController extends EventEmitter {
 
   #windowManager: WindowManager
 
-  actionWindowId: number | null = null
+  actionWindow: {
+    id: number | null
+    loaded: boolean
+    pendingMessage: {
+      message: string
+      options?: {
+        timeout?: number
+        type?: 'error' | 'success' | 'info' | 'warning'
+        sticky?: boolean
+      }
+    } | null
+  } = {
+    id: null,
+    loaded: false,
+    pendingMessage: null
+  }
 
   actionsQueue: Action[] = []
 
@@ -90,9 +105,10 @@ export class ActionsController extends EventEmitter {
     this.#onActionWindowClose = onActionWindowClose
 
     this.#windowManager.event.on('windowRemoved', (winId: number) => {
-      if (winId === this.actionWindowId) {
+      if (winId === this.actionWindow.id) {
         this.#onActionWindowClose()
-        this.actionWindowId = null
+        this.actionWindow.id = null
+        this.actionWindow.loaded = false
         this.currentAction = null
 
         this.actionsQueue = this.actionsQueue.filter((a) => !['benzin'].includes(a.type))
@@ -122,10 +138,24 @@ export class ActionsController extends EventEmitter {
       this.actionsQueue.unshift(newAction)
     } else {
       this.actionsQueue.push(newAction)
-      if (this.actionWindowId && newAction.type !== 'benzin') {
-        this.#windowManager.sendWindowToastMessage('A new action request was added to the queue.', {
-          type: 'success'
-        })
+      if (this.visibleActionsQueue.length > 1 && newAction.type !== 'benzin') {
+        if (this.actionWindow.loaded) {
+          this.#windowManager.sendWindowToastMessage(
+            `A new action request has been added to the ${
+              !withPriority ? 'end of the' : ''
+            } queue.`,
+            {
+              type: 'success'
+            }
+          )
+        } else {
+          this.actionWindow.pendingMessage = {
+            message: `A new action request has been added to the ${
+              !withPriority ? 'end of the' : ''
+            } queue.`,
+            options: { type: 'success' }
+          }
+        }
       }
     }
     const currentAction = withPriority
@@ -149,7 +179,7 @@ export class ActionsController extends EventEmitter {
     this.currentAction = nextAction
 
     if (!this.currentAction) {
-      !!this.actionWindowId && this.#windowManager.remove(this.actionWindowId)
+      !!this.actionWindow.id && this.#windowManager.remove(this.actionWindow.id)
     } else {
       this.openActionWindow()
     }
@@ -174,19 +204,33 @@ export class ActionsController extends EventEmitter {
   }
 
   openActionWindow() {
-    if (this.actionWindowId !== null) {
+    if (this.actionWindow.id !== null) {
       this.focusActionWindow()
     } else {
       this.#windowManager.open().then((winId) => {
-        this.actionWindowId = winId!
+        this.actionWindow.id = winId!
         this.emitUpdate()
       })
     }
   }
 
   focusActionWindow = () => {
-    if (!this.visibleActionsQueue.length || !this.currentAction || !this.actionWindowId) return
-    this.#windowManager.focus(this.actionWindowId)
+    if (!this.visibleActionsQueue.length || !this.currentAction || !this.actionWindow.id) return
+    this.#windowManager.focus(this.actionWindow.id)
+  }
+
+  setWindowLoaded() {
+    if (!this.actionWindow.id) return
+    this.actionWindow.loaded = true
+
+    if (this.actionWindow.pendingMessage) {
+      this.#windowManager.sendWindowToastMessage(
+        this.actionWindow.pendingMessage.message,
+        this.actionWindow.pendingMessage.options
+      )
+      this.actionWindow.pendingMessage = null
+    }
+    this.emitUpdate()
   }
 
   get banners() {
