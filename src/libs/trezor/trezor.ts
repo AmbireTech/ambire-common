@@ -13,7 +13,7 @@ export const getMessageFromTrezorErrorCode = (errorCode?: string, errorMsg?: str
   if (errorCode === 'Failure_ActionCancelled') return 'Rejected by your Trezor device.'
 
   if (
-    errorMsg?.toLocaleLowerCase()?.includes('device disconnected during action') ||
+    errorMsg?.toLowerCase()?.includes('device disconnected during action') ||
     errorCode === 'Device_Disconnected'
   )
     return 'Trezor device got disconnected.'
