@@ -2,6 +2,7 @@ import { formatUnits, isAddress } from 'ethers'
 import { NetworkDescriptor } from 'interfaces/networkDescriptor'
 
 import { FEE_COLLECTOR } from '../../consts/addresses'
+import { AccountId } from '../../interfaces/account'
 import { AddressState } from '../../interfaces/domains'
 import { TransferUpdate } from '../../interfaces/transfer'
 import { HumanizerMeta } from '../../libs/humanizer/interfaces'
@@ -55,6 +56,20 @@ export class TransferController extends EventEmitter {
   isRecipientHumanizerKnownTokenOrSmartContract = false
 
   isTopUp: boolean = false
+
+  constructor(
+    humanizerInfo: HumanizerMeta,
+    selectedAccount: AccountId,
+    networks: NetworkDescriptor[]
+  ) {
+    super()
+
+    this.#humanizerInfo = humanizerInfo
+    this.#selectedAccount = selectedAccount
+    this.#networks = networks
+
+    this.emitUpdate()
+  }
 
   // every time when updating selectedToken update the amount and maxAmount of the form
   set selectedToken(token: TokenResult | null) {

@@ -46,14 +46,13 @@ const getTokens = async () => {
 
 describe('Transfer Controller', () => {
   test('should initialize', async () => {
-    transferController = new TransferController()
+    transferController = new TransferController(
+      humanizerInfo as HumanizerMeta,
+      PLACEHOLDER_SELECTED_ACCOUNT,
+      settingsController.networks
+    )
     transferController.update({
-      networks: settingsController.networks,
       contacts: CONTACTS
-    })
-    transferController.update({
-      selectedAccount: PLACEHOLDER_SELECTED_ACCOUNT,
-      humanizerInfo: humanizerInfo as HumanizerMeta
     })
     expect(transferController.isInitialized).toBe(true)
   })
