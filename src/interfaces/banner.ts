@@ -16,16 +16,21 @@ export interface Banner {
 export type Action =
   | {
       label: 'Open'
+      actionName: 'open-pending-dapp-requests'
+    }
+  | {
+      label: 'Open'
       actionName: 'open-accountOp'
-      meta: AccountOpAction
+      meta: {
+        actionId: AccountOpAction['id']
+      }
     }
   | {
       label: 'Reject'
       actionName: 'reject-accountOp'
       meta: {
         err: string
-        accountAddr: string
-        networkId: string
+        actionId: AccountOpAction['id']
       }
     }
   | {

@@ -8,11 +8,6 @@ export interface Price {
   price: number
 }
 
-export interface Collectible {
-  url: string
-  id: bigint
-}
-
 export interface GetOptionsSimulation {
   accountOps: AccountOp[]
   account: Account
@@ -36,7 +31,7 @@ export interface TokenResult extends Partial<CustomToken> {
 
 export interface CollectionResult extends TokenResult {
   name: string
-  collectibles: Collectible[]
+  collectibles: bigint[]
 }
 
 export type PriceCache = Map<string, [number, Price[]]>

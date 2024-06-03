@@ -388,7 +388,7 @@ describe('Activity Controller ', () => {
       controller.init(INIT_PARAMS)
 
       const signedMessage: SignedMessage = {
-        id: 1,
+        fromActionId: 1,
         accountAddr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
         dapp: {
           icon: '',
@@ -399,7 +399,7 @@ describe('Activity Controller ', () => {
           kind: 'message',
           message: '0x74657374'
         },
-        fromUserRequestId: 1,
+
         signature: '0x0000000000000000000000005be214147ea1ae3653f289e17fe7dc17a73ad17503',
         networkId: 'ethereum'
       }
@@ -427,7 +427,7 @@ describe('Activity Controller ', () => {
       controller.init(INIT_PARAMS)
 
       const signedMessage: SignedMessage = {
-        id: 1,
+        fromActionId: 1,
         accountAddr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
         dapp: {
           icon: '',
@@ -438,7 +438,6 @@ describe('Activity Controller ', () => {
           kind: 'message',
           message: '0x74657374'
         },
-        fromUserRequestId: 1,
         signature: '0x0000000000000000000000005be214147ea1ae3653f289e17fe7dc17a73ad17503',
         networkId: 'ethereum'
       }
@@ -472,7 +471,7 @@ describe('Activity Controller ', () => {
       controller.init(INIT_PARAMS)
 
       const signedMessage: SignedMessage = {
-        id: 1,
+        fromActionId: 1,
         accountAddr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
         dapp: {
           icon: '',
@@ -483,7 +482,6 @@ describe('Activity Controller ', () => {
           kind: 'message',
           message: '0x123456'
         },
-        fromUserRequestId: 1,
         signature: '0x0000000000000000000000005be214147ea1ae3653f289e17fe7dc17a73ad17503',
         networkId: 'ethereum'
       }

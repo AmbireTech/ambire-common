@@ -18,7 +18,6 @@ export const genericErc721Humanizer: HumanizerCallModule = (
   accountOp: AccountOp,
   currentIrCalls: IrCall[],
   humanizerMeta: HumanizerMeta,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   options?: any
 ) => {
   const iface = new Interface(getKnownAbi(humanizerMeta, 'ERC721', options))
