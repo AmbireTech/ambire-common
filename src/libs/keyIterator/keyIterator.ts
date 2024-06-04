@@ -8,8 +8,8 @@ import {
 } from '../../consts/derivation'
 import { SelectedAccountForImport } from '../../interfaces/account'
 import { KeyIterator as KeyIteratorInterface } from '../../interfaces/keyIterator'
-import { isDerivedForSmartAccountKeyOnly } from '../account/account'
 import { getHdPathFromTemplate } from '../../utils/hdPath'
+import { isDerivedForSmartAccountKeyOnly } from '../account/account'
 
 export function isValidPrivateKey(value: string): boolean {
   try {
@@ -154,7 +154,7 @@ export class KeyIterator implements KeyIteratorInterface {
 
         // Private keys for accounts used as smart account keys should be derived
         const isPrivateKeyThatShouldBeDerived =
-          this.#privateKey &&
+          !!this.#privateKey &&
           isValidPrivateKey(this.#privateKey) &&
           index >= SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET
 
