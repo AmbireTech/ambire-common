@@ -144,7 +144,7 @@ const networks: NetworkDescriptor[] = [
     rpcUrls: ['https://invictus.ambire.com/scroll'],
     rpcNoStateOverride: false,
     chainId: 534352n,
-    explorerUrl: 'https://scrollscan.com/',
+    explorerUrl: 'https://scrollscan.com',
     erc4337: {
       enabled: true,
       hasPaymaster: true
