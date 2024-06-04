@@ -124,11 +124,11 @@ export type KeystoreSignerType = {
  * (for the accounts that were just imported by the AccountAdder Controller).
  */
 export type ReadyToAddKeys = {
-  internal: { privateKey: string; dedicatedToOneSA: boolean }[]
+  internal: { privateKey: string; dedicatedToOneSA: Key['dedicatedToOneSA'] }[]
   external: {
     addr: Key['addr']
     type: Key['type']
-    dedicatedToOneSA: boolean
+    dedicatedToOneSA: Key['dedicatedToOneSA']
     meta: ExternalKey['meta']
   }[]
 }
