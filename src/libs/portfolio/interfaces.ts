@@ -23,7 +23,7 @@ export interface TokenResult extends Partial<CustomToken> {
   priceIn: Price[]
   flags: {
     onGasTank: boolean
-    rewardsType: string | null
+    rewardsType: 'wallet-vesting' | 'wallet-rewards' | null
     canTopUpGasTank: boolean
     isFeeToken: boolean
   }
