@@ -25,15 +25,7 @@ import {
 import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
 import { CustomNetwork, NetworkPreference } from '../../interfaces/settings'
 import { Storage } from '../../interfaces/storage'
-import {
-  Call,
-  DappUserRequest,
-  Message,
-  PlainTextMessage,
-  SignUserRequest,
-  TypedMessage,
-  UserRequest
-} from '../../interfaces/userRequest'
+import { Call, DappUserRequest, SignUserRequest, UserRequest } from '../../interfaces/userRequest'
 import { WindowManager } from '../../interfaces/window'
 import { getDefaultSelectedAccount, isSmartAccount } from '../../libs/account/account'
 import { AccountOp, AccountOpStatus, getSignableCalls } from '../../libs/accountOp/accountOp'
@@ -42,7 +34,8 @@ import { getAccountState } from '../../libs/accountState/accountState'
 import {
   dappRequestMethodToActionKind,
   getAccountOpActionsByNetwork,
-  getAccountOpFromAction
+  getAccountOpFromAction,
+  getAccountOpsByNetwork
 } from '../../libs/actions/actions'
 import { getAccountOpBanners } from '../../libs/banners/banners'
 import { estimate } from '../../libs/estimate/estimate'
@@ -372,6 +365,7 @@ export class MainController extends EventEmitter {
     this.signAccountOp = null
     this.signAccOpInitError = null
     MainController.signAccountOpListener() // unsubscribes for further updates
+    this.updateSelectedAccount(this.selectedAccount, true)
 
     this.emitUpdate()
   }
@@ -603,16 +597,13 @@ export class MainController extends EventEmitter {
   async updateSelectedAccount(selectedAccount: string | null = null, forceUpdate: boolean = false) {
     if (!selectedAccount) return
 
-    // pass the accountOp if any so we could reflect the pending state
-    const currentAction = this.actions.currentAction
-    // TODO: update for all accountOps. Currently there is an issue with the simulation
-    // on the signAccountOpScreen if we pass here all ops and there are multiple ops on given network.
+    // pass the accountOps if any so we could reflect the pending state
     const accountOps =
-      currentAction?.type === 'accountOp'
+      this.actions.currentAction?.type === 'accountOp' && this.signAccountOp
         ? {
-            [currentAction.accountOp.networkId]: [currentAction.accountOp]
+            [this.actions.currentAction.accountOp.networkId]: [this.actions.currentAction.accountOp]
           }
-        : undefined
+        : getAccountOpsByNetwork(selectedAccount, this.actions.visibleActionsQueue)
     this.portfolio.updateSelectedAccount(
       this.accounts,
       this.settings.networks,
@@ -1209,9 +1200,9 @@ export class MainController extends EventEmitter {
           this.accounts,
           [network],
           localAccountOp.accountAddr,
-          // TODO: update for all accountOps. Currently there is an issue with the simulation
-          // on the signAccountOpScreen if we pass here all ops and there are multiple ops on given network.
-          { [localAccountOp.networkId]: [localAccountOp] },
+          this.signAccountOp
+            ? { [localAccountOp.networkId]: [localAccountOp] }
+            : getAccountOpsByNetwork(localAccountOp.accountAddr, this.actions.visibleActionsQueue),
           { forceUpdate: true }
         ),
         estimate(
