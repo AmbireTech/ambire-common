@@ -130,7 +130,7 @@ export class ActionsController extends EventEmitter {
     const actionIndex = this.actionsQueue.findIndex((a) => a.id === newAction.id)
     if (actionIndex !== -1) {
       this.actionsQueue[actionIndex] = newAction
-      this.sendNewActionMessage(newAction, !!withPriority)
+      this.sendNewActionMessage(newAction, 'update')
       const currentAction = withPriority
         ? this.visibleActionsQueue[0] || null
         : this.currentAction || this.visibleActionsQueue[0] || null
@@ -143,7 +143,7 @@ export class ActionsController extends EventEmitter {
     } else {
       this.actionsQueue.push(newAction)
     }
-    this.sendNewActionMessage(newAction, !!withPriority)
+    this.sendNewActionMessage(newAction, withPriority ? 'unshift' : 'push')
     const currentAction = withPriority
       ? this.visibleActionsQueue[0] || null
       : this.currentAction || this.visibleActionsQueue[0] || null
@@ -189,16 +189,15 @@ export class ActionsController extends EventEmitter {
     this.#setCurrentAction(action)
   }
 
-  sendNewActionMessage(newAction: Action, withPriority: boolean) {
+  sendNewActionMessage(newAction: Action, type: 'push' | 'unshift' | 'update') {
     if (this.visibleActionsQueue.length > 1 && newAction.type !== 'benzin') {
       if (this.actionWindow.loaded) {
-        this.#windowManager.sendWindowToastMessage(
-          messageOnNewAction(newAction, withPriority ? 'unshift' : 'push'),
-          { type: 'success' }
-        )
+        this.#windowManager.sendWindowToastMessage(messageOnNewAction(newAction, type), {
+          type: 'success'
+        })
       } else {
         this.actionWindow.pendingMessage = {
-          message: messageOnNewAction(newAction, withPriority ? 'unshift' : 'push'),
+          message: messageOnNewAction(newAction, type),
           options: { type: 'success' }
         }
       }
