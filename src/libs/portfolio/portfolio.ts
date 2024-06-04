@@ -198,8 +198,17 @@ export class Portfolio {
       return null
     }
 
-    const tokenFilter = ([error, result]: [string, TokenResult]): boolean =>
-      error === '0x' && !!result.symbol
+    const tokenFilter = ([error, result]: [string, TokenResult]): boolean => {
+      const isTokenPreference = localOpts.tokenPreferences?.find((tokenPreference) => {
+        return tokenPreference.address === result.address && tokenPreference.networkId === networkId
+      })
+
+      if (isTokenPreference) {
+        result.isHidden = isTokenPreference.isHidden
+      }
+
+      return error === '0x' && !!result.symbol
+    }
 
     const tokensWithoutPrices = tokensWithErr
       .filter((tokenWithErr) => tokenFilter(tokenWithErr))

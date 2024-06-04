@@ -116,6 +116,10 @@ export class SettingsController extends EventEmitter {
     // configure the main networks
     return allNetworks.map((network) => {
       const networkPreferences = this.#networkPreferences[network.id]
+
+      // erc4337 settings should not be inherited from networkPreferences
+      if (networkPreferences && 'erc4337' in networkPreferences) delete networkPreferences.erc4337
+
       const selectedRpcUrl =
         networkPreferences?.selectedRpcUrl || networkPreferences?.rpcUrls?.[0] || network.rpcUrls[0]
       this.#setProvider(network, networkPreferences?.rpcUrls || network.rpcUrls, selectedRpcUrl)

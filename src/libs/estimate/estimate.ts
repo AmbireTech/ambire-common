@@ -311,10 +311,11 @@ export async function estimate(
 
   // we're touching the calculations for custom networks only
   // customlyEstimatedGas is 0 when the network is not custom
-  const customlyEstimatedGas = isCustomNetwork
-    ? BigInt(estimations[2].erc4337GasLimits.callGasLimit) +
-      BigInt(estimations[2].erc4337GasLimits.preVerificationGas)
-    : 0n
+  const customlyEstimatedGas =
+    isCustomNetwork && !estimations[2].error
+      ? BigInt(estimations[2].erc4337GasLimits.callGasLimit) +
+        BigInt(estimations[2].erc4337GasLimits.preVerificationGas)
+      : 0n
   if (gasUsed < customlyEstimatedGas) gasUsed = customlyEstimatedGas
 
   // WARNING: calculateRefund will 100% NOT work in all cases we have
