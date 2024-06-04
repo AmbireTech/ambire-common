@@ -42,13 +42,14 @@ import { EstimateResult } from '../../libs/estimate/interfaces'
 import { GasRecommendation, getGasPriceRecommendations } from '../../libs/gasPrice/gasPrice'
 import { humanizeAccountOp } from '../../libs/humanizer'
 import { makeBasicAccountOpAction, makeSmartAccountOpAction } from '../../libs/main/main'
-import { GetOptions } from '../../libs/portfolio/interfaces'
+import { GetOptions, TokenResult } from '../../libs/portfolio/interfaces'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { parse } from '../../libs/richJson/richJson'
 import {
   adjustEntryPointAuthorization,
   getEntryPointAuthorization
 } from '../../libs/signMessage/signMessage'
+import { buildTransferUserRequest } from '../../libs/transfer/userRequest'
 import {
   ENTRY_POINT_AUTHORIZATION_REQUEST_ID,
   isErc4337Broadcast,
@@ -70,7 +71,6 @@ import { SettingsController } from '../settings/settings'
 /* eslint-disable no-underscore-dangle */
 import { SignAccountOpController, SigningStatus } from '../signAccountOp/signAccountOp'
 import { SignMessageController } from '../signMessage/signMessage'
-import { TransferController } from '../transfer/transfer'
 
 const STATUS_WRAPPED_METHODS = {
   onAccountAdderSuccess: 'INITIAL',
@@ -106,8 +106,6 @@ export class MainController extends EventEmitter {
 
   // Subcontrollers
   portfolio: PortfolioController
-
-  transfer: TransferController
 
   actions: ActionsController
 
@@ -210,7 +208,6 @@ export class MainController extends EventEmitter {
       this.#storage,
       this.#fetch
     )
-    this.transfer = new TransferController(this.settings)
     this.actions = new ActionsController({
       selectedAccount: this.selectedAccount,
       windowManager,
@@ -247,8 +244,7 @@ export class MainController extends EventEmitter {
     this.activity = new ActivityController(this.#storage, this.accountStates, this.settings)
 
     if (this.selectedAccount) {
-      this.transfer.update({ selectedAccount })
-      this.activity.init({ selectedAccount })
+      this.activity.init({ selectedAccount: this.selectedAccount })
       this.addressBook.update({ selectedAccount })
       this.actions.update({ selectedAccount })
     }
@@ -300,12 +296,6 @@ export class MainController extends EventEmitter {
       )
     }
     this.accountAdder.onUpdate(onAccountAdderSuccess)
-    this.transfer.onUpdate(async () => {
-      if (this.transfer.userRequest) {
-        await this.addUserRequest(this.transfer.userRequest)
-        this.transfer.resetForm()
-      }
-    })
 
     this.isReady = true
     this.emitUpdate()
@@ -371,7 +361,8 @@ export class MainController extends EventEmitter {
 
     this.emitUpdate()
 
-    this.reestimateSignAccountOpAndUpdateGasPrices()
+    this.updateSignAccountOpGasPrice()
+    this.estimateSignAccountOp()
   }
 
   destroySignAccOp() {
@@ -525,7 +516,6 @@ export class MainController extends EventEmitter {
     this.selectedAccount = toAccountAddr
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.#storage.set('selectedAccount', toAccountAddr)
-    this.transfer.update({ selectedAccount: toAccountAddr })
     this.activity.init({ selectedAccount: toAccountAddr })
     this.addressBook.update({ selectedAccount: toAccountAddr })
     this.actions.update({ selectedAccount: toAccountAddr })
@@ -632,7 +622,7 @@ export class MainController extends EventEmitter {
     )
   }
 
-  async buildUserRequest(
+  async buildUserRequestFromDAppRequest(
     request: DappProviderRequest,
     dappPromise: {
       resolve: (data: any) => void
@@ -783,6 +773,34 @@ export class MainController extends EventEmitter {
     }
   }
 
+  async buildTransferUserRequest(
+    amount: string,
+    recipientAddress: string,
+    selectedToken: TokenResult
+  ) {
+    if (!this.selectedAccount) return
+
+    const userRequest = buildTransferUserRequest({
+      selectedAccount: this.selectedAccount,
+      amount,
+      selectedToken,
+      recipientAddress
+    })
+
+    if (!userRequest) {
+      this.emitError({
+        level: 'major',
+        message: 'Unexpected error while building transfer request',
+        error: new Error(
+          'buildUserRequestFromTransferRequest: bad parameters passed to buildTransferUserRequest'
+        )
+      })
+      return
+    }
+
+    await this.addUserRequest(userRequest)
+  }
+
   resolveUserRequest(data: any, requestId: UserRequest['id']) {
     const userRequest = this.userRequests.find((r) => r.id === requestId)
     if (!userRequest) return // TODO: emit error
@@ -888,7 +906,7 @@ export class MainController extends EventEmitter {
         this.actions.addOrUpdateAction(accountOpAction, withPriority)
         if (this.signAccountOp && this.signAccountOp.fromActionId === accountOpAction.id) {
           this.signAccountOp.update({ accountOp: accountOpAction.accountOp })
-          this.#estimateSignAccountOp()
+          this.estimateSignAccountOp()
         }
       } else {
         const accountOpAction = makeBasicAccountOpAction({
@@ -975,7 +993,7 @@ export class MainController extends EventEmitter {
 
           if (this.signAccountOp && this.signAccountOp.fromActionId === accountOpAction.id) {
             this.signAccountOp.update({ accountOp: accountOpAction.accountOp, estimation: null })
-            this.#estimateSignAccountOp()
+            this.estimateSignAccountOp()
           }
         } else {
           this.actions.removeAction(`${meta.accountAddr}-${meta.networkId}`)
@@ -1053,17 +1071,11 @@ export class MainController extends EventEmitter {
     this.emitUpdate()
   }
 
-  /**
-   * Reestimate the current account op and update the gas prices in the same tick.
-   * To achieve a more accurate gas amount calculation (gasUsageEstimate * gasPrice),
-   * it would be preferable to update them simultaneously.
-   * Otherwise, if either of the variables has not been recently updated, it may lead to an incorrect gas amount result.
-   */
-  async reestimateSignAccountOpAndUpdateGasPrices() {
+  async updateSignAccountOpGasPrice() {
     if (!this.signAccountOp) return
     const networkId = this.signAccountOp.accountOp.networkId
 
-    await Promise.all([this.#updateGasPrice(), this.#estimateSignAccountOp()])
+    await this.#updateGasPrice()
 
     // there's a chance signAccountOp gets destroyed between the time
     // the first "if (!this.signAccountOp) return" is performed and
@@ -1075,7 +1087,7 @@ export class MainController extends EventEmitter {
   }
 
   // @TODO: protect this from race conditions/simultanous executions
-  async #estimateSignAccountOp() {
+  async estimateSignAccountOp() {
     try {
       if (!this.signAccountOp) return
 
@@ -1213,7 +1225,7 @@ export class MainController extends EventEmitter {
         // it may have different needs
         this.portfolio.updateSelectedAccount(
           this.accounts,
-          this.settings.networks,
+          [network],
           localAccountOp.accountAddr,
           // TODO: update for all accountOps. Currently there is an issue with the simulation
           // on the signAccountOpScreen if we pass here all ops and there are multiple ops on given network.
@@ -1381,19 +1393,17 @@ export class MainController extends EventEmitter {
         }
 
         const signedTxn = await signer.signRawTransaction(rawTxn)
-        transactionRes = await provider.broadcastTransaction(signedTxn)
-      } catch (e: any) {
-        let errorMsg = 'Please try again or contact support if the problem persists.'
-        if (e?.message) {
-          if (e.message.includes('insufficient funds')) {
-            errorMsg = 'Insufficient funds for intristic transaction cost'
-          } else {
-            errorMsg = e.message.length > 200 ? `${e.message.substring(0, 200)}...` : e.message
-          }
-        }
+        try {
+          transactionRes = await provider.broadcastTransaction(signedTxn)
+        } catch (e: any) {
+          const reason = e?.message || 'unknown'
 
-        const message = `Failed to broadcast transaction on ${accountOp.networkId}: ${errorMsg}`
-        return this.#throwAccountOpBroadcastError(new Error(message), message)
+          throw new Error(
+            `Transaction couldn't be broadcasted on the ${network.name} network. Reason: ${reason}`
+          )
+        }
+      } catch (e: any) {
+        return this.#throwAccountOpBroadcastError(e)
       }
     }
     // Smart account but EOA pays the fee
@@ -1469,19 +1479,17 @@ export class MainController extends EventEmitter {
         }
 
         const signedTxn = await signer.signRawTransaction(rawTxn)
-        transactionRes = await provider.broadcastTransaction(signedTxn)
-      } catch (e: any) {
-        let errorMsg = 'Please try again or contact support if the problem persists.'
-        if (e?.message) {
-          if (e.message.includes('insufficient funds')) {
-            errorMsg = 'Insufficient funds for intristic transaction cost'
-          } else {
-            errorMsg = e.message.length > 200 ? `${e.message.substring(0, 200)}...` : e.message
-          }
-        }
+        try {
+          transactionRes = await provider.broadcastTransaction(signedTxn)
+        } catch (e: any) {
+          const reason = e?.message || 'unknown'
 
-        const message = `Failed to broadcast transaction on ${accountOp.networkId}: ${errorMsg}`
-        return this.#throwAccountOpBroadcastError(new Error(message), message)
+          throw new Error(
+            `Transaction couldn't be broadcasted on the ${network.name} network. Reason: ${reason}`
+          )
+        }
+      } catch (e: any) {
+        return this.#throwAccountOpBroadcastError(e)
       }
     }
     // Smart account, the ERC-4337 way
@@ -1532,7 +1540,7 @@ export class MainController extends EventEmitter {
           nonce: Number(accountOp.nonce)
         }
       } catch (e: any) {
-        return this.#throwAccountOpBroadcastError(e, e.message)
+        return this.#throwAccountOpBroadcastError(e)
       }
     }
 
@@ -1648,14 +1656,21 @@ export class MainController extends EventEmitter {
     return [...accountOpBanners]
   }
 
-  #throwAccountOpBroadcastError(error: Error, message?: string) {
-    this.emitError({
-      level: 'major',
-      message:
-        message ||
-        'Unable to send transaction. Please try again or contact Ambire support if the issue persists.',
-      error
-    })
+  #throwAccountOpBroadcastError(error: Error) {
+    let message =
+      error?.message ||
+      'Unable to broadcast the transaction. Please try again or contact Ambire support if the issue persists.'
+
+    if (message) {
+      if (message.includes('insufficient funds')) {
+        // TODO: Better message?
+        message = 'Insufficient funds for intristic transaction cost'
+      } else {
+        message = message.length > 300 ? `${message.substring(0, 300)}...` : message
+      }
+    }
+
+    this.emitError({ level: 'major', message, error })
     // To enable another try for signing in case of broadcast fail
     // broadcast is called in the FE only after successful signing
     this.signAccountOp?.updateStatusToReadyToSign()
