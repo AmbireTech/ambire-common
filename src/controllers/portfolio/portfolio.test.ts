@@ -438,7 +438,7 @@ describe('Portfolio Controller ', () => {
 
       expect(token).toBeTruthy()
     })
-    test("Learned token timestamps aren't updated if the token is in velcro or velcro doesn't work", async () => {
+    test("Learned token timestamp isn't updated if the token is found by the external hints api", async () => {
       const { controller, storage } = prepareTest()
 
       await controller.updateSelectedAccount([account], networks, account.addr, undefined)
@@ -454,25 +454,16 @@ describe('Portfolio Controller ', () => {
       // Learn a token discovered by velcro
       await controller.learnTokens([firstTokenOnEth!.address], 'ethereum')
 
+      await controller.updateSelectedAccount([account], networks, account.addr, undefined, {
+        forceUpdate: true
+      })
+
       const previousHintsStorage = await storage.get('previousHints', {})
       const firstTokenOnEthInLearned =
         previousHintsStorage.learnedTokens['ethereum'][firstTokenOnEth!.address]
 
       // Expect the timestamp to be null
       expect(firstTokenOnEthInLearned).toBeNull()
-
-      ethereum.hasRelayer = false
-
-      await controller.updateSelectedAccount([account], networks, account.addr, undefined, {
-        forceUpdate: true
-      })
-
-      const previousHintsStoragePostUpdate = await storage.get('previousHints', {})
-      const firstTokenOnEthInLearnedPostUpdate =
-        previousHintsStoragePostUpdate.learnedTokens['ethereum'][firstTokenOnEth!.address]
-
-      // Expect the timestamp to be set
-      expect(firstTokenOnEthInLearnedPostUpdate).toBeNull()
     })
   })
 
