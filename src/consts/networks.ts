@@ -147,7 +147,7 @@ const networks: NetworkDescriptor[] = [
     explorerUrl: 'https://scrollscan.com',
     erc4337: {
       enabled: true,
-      hasPaymaster: true
+      hasPaymaster: false
     },
     unstoppableDomainsChain: 'ERC20',
     isSAEnabled: true,
