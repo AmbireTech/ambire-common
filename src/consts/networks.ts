@@ -136,6 +136,31 @@ const networks: NetworkDescriptor[] = [
       maxPriorityFee: 100n
     },
     reestimateOn: 6000
+  },
+  {
+    id: 'scroll',
+    name: 'Scroll',
+    nativeAssetSymbol: 'ETH',
+    rpcUrls: ['https://invictus.ambire.com/scroll'],
+    rpcNoStateOverride: false,
+    chainId: 534352n,
+    explorerUrl: 'https://scrollscan.com/',
+    erc4337: {
+      enabled: true,
+      hasPaymaster: true
+    },
+    unstoppableDomainsChain: 'ERC20',
+    isSAEnabled: true,
+    areContractsDeployed: true,
+    hasRelayer: true,
+    hasDebugTraceCall: false,
+    platformId: 'scroll',
+    nativeAssetId: 'ethereum',
+    hasSingleton: true,
+    features: [],
+    feeOptions: {
+      is1559: false
+    }
   }
 ]
 
