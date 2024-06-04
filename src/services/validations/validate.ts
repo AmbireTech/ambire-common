@@ -5,7 +5,12 @@ import { TokenResult } from '../../libs/portfolio'
 import { getTokenAmount } from '../../libs/portfolio/helpers'
 import { isValidAddress } from '../address'
 
-const validateAddress = (address: string) => {
+type ValidateReturnType = {
+  success: boolean
+  message: string
+}
+
+const validateAddress = (address: string): ValidateReturnType => {
   if (!(address && address.length)) {
     return {
       success: false,
@@ -32,7 +37,7 @@ const validateAddress = (address: string) => {
   return { success: true, message: '' }
 }
 
-const validateAddAuthSignerAddress = (address: string, selectedAcc: any) => {
+const validateAddAuthSignerAddress = (address: string, selectedAcc: any): ValidateReturnType => {
   const isValidAddr = validateAddress(address)
   if (!isValidAddr.success) return isValidAddr
 
@@ -43,7 +48,7 @@ const validateAddAuthSignerAddress = (address: string, selectedAcc: any) => {
     }
   }
 
-  return { success: true }
+  return { success: true, message: '' }
 }
 
 const validateSendTransferAddress = (
@@ -57,7 +62,7 @@ const validateSendTransferAddress = (
   isRecipientDomainResolving: boolean,
   isSWWarningVisible?: boolean,
   isSWWarningAgreed?: boolean
-) => {
+): ValidateReturnType => {
   // Basic validation is handled in the AddressInput component and we don't want to overwrite it.
   if (!isValidAddress(address) || isRecipientDomainResolving) {
     return {
@@ -117,7 +122,10 @@ const validateSendTransferAddress = (
   return { success: true, message: '' }
 }
 
-const validateSendTransferAmount = (amount: string, selectedAsset: TokenResult) => {
+const validateSendTransferAmount = (
+  amount: string,
+  selectedAsset: TokenResult
+): ValidateReturnType => {
   if (!(amount && amount.length)) {
     return {
       success: false,
@@ -154,6 +162,11 @@ const validateSendTransferAmount = (amount: string, selectedAsset: TokenResult) 
     }
   } catch (e) {
     console.error(e)
+
+    return {
+      success: false,
+      message: 'Invalid amount.'
+    }
   }
 
   return { success: true, message: '' }
@@ -171,7 +184,7 @@ const validateSendNftAddress = (
   isUDAddress: boolean,
   isEnsAddress: boolean,
   isRecipientDomainResolving: boolean
-) => {
+): ValidateReturnType => {
   const isValidAddr = validateSendTransferAddress(
     address,
     selectedAcc,
@@ -202,7 +215,7 @@ const validateSendNftAddress = (
     }
   }
 
-  return { success: true }
+  return { success: true, message: '' }
 }
 
 const isValidCode = (code: string) => code.length === 6
