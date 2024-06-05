@@ -132,9 +132,9 @@ export async function getNFTs(
   const { accountOps, account } = opts.simulation
   const [factory, factoryCalldata] = getAccountDeployParams(account)
 
-  const simulationOps = accountOps.map(({ nonce, calls }) => ({
+  const simulationOps = accountOps.map(({ nonce, calls }, idx) => ({
     // EOA starts from a fake, specified nonce
-    nonce: isSmartAccount(account) ? nonce : BigInt(EOA_SIMULATION_NONCE),
+    nonce: isSmartAccount(account) ? nonce : BigInt(EOA_SIMULATION_NONCE) + BigInt(idx),
     calls: calls.map(callToTuple)
   }))
   const [before, after, simulationErr, , , deltaAddressesMapping] = await deployless.call(
@@ -211,9 +211,9 @@ export async function getTokens(
     return results.map((token: any, i: number) => [token.error, mapToken(token, tokenAddrs[i])])
   }
   const { accountOps, account } = opts.simulation
-  const simulationOps = accountOps.map(({ nonce, calls }) => ({
+  const simulationOps = accountOps.map(({ nonce, calls }, idx) => ({
     // EOA starts from a fake, specified nonce
-    nonce: isSmartAccount(account) ? nonce : BigInt(EOA_SIMULATION_NONCE),
+    nonce: isSmartAccount(account) ? nonce : BigInt(EOA_SIMULATION_NONCE) + BigInt(idx),
     calls: calls.map(callToTuple)
   }))
   const [factory, factoryCalldata] = getAccountDeployParams(account)
