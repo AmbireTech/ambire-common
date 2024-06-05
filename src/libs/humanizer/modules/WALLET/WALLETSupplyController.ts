@@ -2,7 +2,6 @@
 import { Interface } from 'ethers'
 
 import WALLETSupplyControllerABI from '../../../../../contracts/compiled/WALLETSupplyController.json'
-import { AccountOp } from '../../../accountOp/accountOp'
 import { HumanizerVisualization, IrCall } from '../../interfaces'
 import { getAction, getLabel } from '../../utils'
 

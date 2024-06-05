@@ -1,15 +1,11 @@
 import { AccountOp } from '../../../accountOp/accountOp'
-import { HumanizerCallModule, HumanizerMeta, IrCall } from '../../interfaces'
-import { getKnownName, getUnknownVisualization } from '../../utils'
+import { HumanizerCallModule, IrCall } from '../../interfaces'
 import { aaveLendingPoolV2 } from './aaveLendingPoolV2'
 import { aaveWethGatewayV2 } from './aaveWethGatewayV2'
 
 export const aaveHumanizer: HumanizerCallModule = (
   accountOp: AccountOp,
   irCalls: IrCall[],
-  humanizerMeta: HumanizerMeta,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  options?: any
 ) => {
   const matcher = {
     ...aaveLendingPoolV2(),

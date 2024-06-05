@@ -1,6 +1,7 @@
 import { AbiCoder, Interface, ZeroAddress } from 'ethers'
 
 import { AccountOp } from '../../../accountOp/accountOp'
+import { UniswapUniversalRouter } from '../../const/abis'
 import { IrCall } from '../../interfaces'
 import {
   getAction,
@@ -17,16 +18,6 @@ import { parsePath } from './utils'
 
 const coder = new AbiCoder()
 
-const UniswapUniversalRouter = [
-  'function collectRewards(bytes looksRareClaim)',
-  'function execute(bytes commands, bytes[] inputs) payable',
-  'function execute(bytes commands, bytes[] inputs, uint256 deadline) payable',
-  'function onERC1155BatchReceived(address, address, uint256[], uint256[], bytes) pure returns (bytes4)',
-  'function onERC1155Received(address, address, uint256, uint256, bytes) pure returns (bytes4)',
-  'function onERC721Received(address, address, uint256, bytes) pure returns (bytes4)',
-  'function supportsInterface(bytes4 interfaceId) pure returns (bool)',
-  'function uniswapV3SwapCallback(int256 amount0Delta, int256 amount1Delta, bytes data)'
-]
 const extractParams = (inputsDetails: any, input: any) => {
   const types = inputsDetails.map((i: any) => i.type)
   const decodedInput = coder.decode(types, input)

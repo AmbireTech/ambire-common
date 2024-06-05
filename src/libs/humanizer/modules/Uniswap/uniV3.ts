@@ -3,6 +3,7 @@
 import { Interface, ZeroAddress } from 'ethers'
 
 import { AccountOp } from '../../../accountOp/accountOp'
+import { UniV3Router, UniV3Router2 } from '../../const/abis'
 import { IrCall } from '../../interfaces'
 import {
   getAction,
@@ -16,66 +17,6 @@ import {
 import { HumanizerUniMatcher } from './'
 import { parsePath } from './utils'
 
-const UniV3Router = [
-  'function WETH9() view returns (address)',
-  'function exactInput((bytes path, address recipient, uint256 deadline, uint256 amountIn, uint256 amountOutMinimum) params) payable returns (uint256 amountOut)',
-  'function exactInputSingle((address tokenIn, address tokenOut, uint24 fee, address recipient, uint256 deadline, uint256 amountIn, uint256 amountOutMinimum, uint160 sqrtPriceLimitX96) params) payable returns (uint256 amountOut)',
-  'function exactOutput((bytes path, address recipient, uint256 deadline, uint256 amountOut, uint256 amountInMaximum) params) payable returns (uint256 amountIn)',
-  'function exactOutputSingle((address tokenIn, address tokenOut, uint24 fee, address recipient, uint256 deadline, uint256 amountOut, uint256 amountInMaximum, uint160 sqrtPriceLimitX96) params) payable returns (uint256 amountIn)',
-  'function factory() view returns (address)',
-  'function multicall(bytes[] data) payable returns (bytes[] results)',
-  'function refundETH() payable',
-  'function selfPermit(address token, uint256 value, uint256 deadline, uint8 v, bytes32 r, bytes32 s) payable',
-  'function selfPermitAllowed(address token, uint256 nonce, uint256 expiry, uint8 v, bytes32 r, bytes32 s) payable',
-  'function selfPermitAllowedIfNecessary(address token, uint256 nonce, uint256 expiry, uint8 v, bytes32 r, bytes32 s) payable',
-  'function selfPermitIfNecessary(address token, uint256 value, uint256 deadline, uint8 v, bytes32 r, bytes32 s) payable',
-  'function sweepToken(address token, uint256 amountMinimum, address recipient) payable',
-  'function sweepTokenWithFee(address token, uint256 amountMinimum, address recipient, uint256 feeBips, address feeRecipient) payable',
-  'function uniswapV3SwapCallback(int256 amount0Delta, int256 amount1Delta, bytes _data)',
-  'function unwrapWETH9(uint256 amountMinimum, address recipient) payable',
-  'function unwrapWETH9WithFee(uint256 amountMinimum, address recipient, uint256 feeBips, address feeRecipient) payable'
-]
-const UniV3Router2 = [
-  'function WETH9() view returns (address)',
-  'function approveMax(address token) payable',
-  'function approveMaxMinusOne(address token) payable',
-  'function approveZeroThenMax(address token) payable',
-  'function approveZeroThenMaxMinusOne(address token) payable',
-  'function callPositionManager(bytes data) payable returns (bytes result)',
-  'function checkOracleSlippage(bytes[] paths, uint128[] amounts, uint24 maximumTickDivergence, uint32 secondsAgo) view',
-  'function checkOracleSlippage(bytes path, uint24 maximumTickDivergence, uint32 secondsAgo) view',
-  'function exactInput((bytes path, address recipient, uint256 amountIn, uint256 amountOutMinimum) params) payable returns (uint256 amountOut)',
-  'function exactInputSingle((address tokenIn, address tokenOut, uint24 fee, address recipient, uint256 amountIn, uint256 amountOutMinimum, uint160 sqrtPriceLimitX96) params) payable returns (uint256 amountOut)',
-  'function exactOutput((bytes path, address recipient, uint256 amountOut, uint256 amountInMaximum) params) payable returns (uint256 amountIn)',
-  'function exactOutputSingle((address tokenIn, address tokenOut, uint24 fee, address recipient, uint256 amountOut, uint256 amountInMaximum, uint160 sqrtPriceLimitX96) params) payable returns (uint256 amountIn)',
-  'function factory() view returns (address)',
-  'function factoryV2() view returns (address)',
-  'function getApprovalType(address token, uint256 amount) returns (uint8)',
-  'function increaseLiquidity((address token0, address token1, uint256 tokenId, uint256 amount0Min, uint256 amount1Min) params) payable returns (bytes result)',
-  'function mint((address token0, address token1, uint24 fee, int24 tickLower, int24 tickUpper, uint256 amount0Min, uint256 amount1Min, address recipient) params) payable returns (bytes result)',
-  'function multicall(bytes32 previousBlockhash, bytes[] data) payable returns (bytes[])',
-  'function multicall(uint256 deadline, bytes[] data) payable returns (bytes[])',
-  'function multicall(bytes[] data) payable returns (bytes[] results)',
-  'function positionManager() view returns (address)',
-  'function pull(address token, uint256 value) payable',
-  'function refundETH() payable',
-  'function selfPermit(address token, uint256 value, uint256 deadline, uint8 v, bytes32 r, bytes32 s) payable',
-  'function selfPermitAllowed(address token, uint256 nonce, uint256 expiry, uint8 v, bytes32 r, bytes32 s) payable',
-  'function selfPermitAllowedIfNecessary(address token, uint256 nonce, uint256 expiry, uint8 v, bytes32 r, bytes32 s) payable',
-  'function selfPermitIfNecessary(address token, uint256 value, uint256 deadline, uint8 v, bytes32 r, bytes32 s) payable',
-  'function swapExactTokensForTokens(uint256 amountIn, uint256 amountOutMin, address[] path, address to) payable returns (uint256 amountOut)',
-  'function swapTokensForExactTokens(uint256 amountOut, uint256 amountInMax, address[] path, address to) payable returns (uint256 amountIn)',
-  'function sweepToken(address token, uint256 amountMinimum, address recipient) payable',
-  'function sweepToken(address token, uint256 amountMinimum) payable',
-  'function sweepTokenWithFee(address token, uint256 amountMinimum, uint256 feeBips, address feeRecipient) payable',
-  'function sweepTokenWithFee(address token, uint256 amountMinimum, address recipient, uint256 feeBips, address feeRecipient) payable',
-  'function uniswapV3SwapCallback(int256 amount0Delta, int256 amount1Delta, bytes _data)',
-  'function unwrapWETH9(uint256 amountMinimum, address recipient) payable',
-  'function unwrapWETH9(uint256 amountMinimum) payable',
-  'function unwrapWETH9WithFee(uint256 amountMinimum, address recipient, uint256 feeBips, address feeRecipient) payable',
-  'function unwrapWETH9WithFee(uint256 amountMinimum, uint256 feeBips, address feeRecipient) payable',
-  'function wrapETH(uint256 value) payable'
-]
 // Stolen from ambire-wallet
 const uniV32Mapping = (): HumanizerUniMatcher => {
   const ifaceV32 = new Interface(UniV3Router2)
