@@ -85,9 +85,9 @@ export class SettingsController extends EventEmitter {
         })
     })
 
-    const predefinedNetworkIds = networks.map((net) => net.chainId)
+    const predefinedNetworkChainIds = networks.map((net) => net.chainId)
     const customNetworkIds = customPrefIds
-      .filter((x) => !predefinedNetworkIds.includes(x.chainId))
+      .filter((x) => !predefinedNetworkChainIds.includes(x.chainId))
       .map((x) => x.id)
     const customNetworks = customNetworkIds.map((id) => {
       // @ts-ignore
@@ -130,7 +130,7 @@ export class SettingsController extends EventEmitter {
       // erc4337 settings should not be inherited from networkPreferences
       // for predefined networks
       if (
-        predefinedNetworkIds.includes(network.chainId) &&
+        predefinedNetworkChainIds.includes(network.chainId) &&
         networkPreferences &&
         'erc4337' in networkPreferences
       )
