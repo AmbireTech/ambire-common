@@ -12,7 +12,7 @@ import {
   SINGLETON
 } from '../../consts/deploy'
 import { networks as predefinedNetworks } from '../../consts/networks'
-import { NetworkFeature, NetworkInfo, NetworkInfoLoading } from '../../interfaces/networkDescriptor'
+import { NetworkFeature, NetworkInfo, NetworkInfoLoading } from '../../interfaces/network'
 import { RPCProviders } from '../../interfaces/settings'
 import { Bundler } from '../../services/bundlers/bundler'
 import { getRpcProvider } from '../../services/provider'

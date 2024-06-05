@@ -3,7 +3,7 @@ import { ZeroAddress } from 'ethers'
 import fetch from 'node-fetch'
 
 import { Account, AccountId } from '../../interfaces/account'
-import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
+import { Network, NetworkId } from '../../interfaces/network'
 /* eslint-disable @typescript-eslint/no-shadow */
 import { Storage } from '../../interfaces/storage'
 import { isSmartAccount } from '../../libs/account/account'
@@ -56,7 +56,7 @@ export class PortfolioController extends EventEmitter {
   validTokens: any = { erc20: {}, erc721: {} }
 
   temporaryTokens: {
-    [networkId: NetworkDescriptor['id']]: {
+    [networkId: NetworkId]: {
       isLoading: boolean
       errors: { error: string; address: string }[]
       result: { tokens: PortfolioGetResult['tokens'] }
@@ -70,7 +70,7 @@ export class PortfolioController extends EventEmitter {
   #callRelayer: Function
 
   #networksWithAssetsByAccounts: {
-    [accountId: string]: NetworkDescriptor['id'][]
+    [accountId: string]: NetworkId[]
   } = {}
 
   #minUpdateInterval: number = 20000 // 20 seconds
@@ -165,7 +165,7 @@ export class PortfolioController extends EventEmitter {
     }
   }
 
-  #prepareLatestState(selectedAccount: Account, networks: NetworkDescriptor[]) {
+  #prepareLatestState(selectedAccount: Account, networks: Network[]) {
     const state = this.latest
     const accountId = selectedAccount.addr
 
@@ -196,7 +196,7 @@ export class PortfolioController extends EventEmitter {
     this.emitUpdate()
   }
 
-  #preparePendingState(selectedAccountId: AccountId, networks: NetworkDescriptor[]) {
+  #preparePendingState(selectedAccountId: AccountId, networks: Network[]) {
     if (!this.pending[selectedAccountId]) {
       this.pending[selectedAccountId] = {}
       this.emitUpdate()
@@ -248,11 +248,7 @@ export class PortfolioController extends EventEmitter {
     this.emitUpdate()
   }
 
-  initializePortfolioLibIfNeeded(
-    accountId: AccountId,
-    networkId: NetworkId,
-    network: NetworkDescriptor
-  ) {
+  initializePortfolioLibIfNeeded(accountId: AccountId, networkId: NetworkId, network: Network) {
     const providers = this.#settings.providers
     const key = `${networkId}:${accountId}`
     // Initialize a new Portfolio lib if:
@@ -403,7 +399,7 @@ export class PortfolioController extends EventEmitter {
   // the purpose of this function is to call it when an account is selected or the queue of accountOps changes
   async updateSelectedAccount(
     accounts: Account[],
-    networks: NetworkDescriptor[],
+    networks: Network[],
     accountId: AccountId,
     accountOps?: { [key: string]: AccountOp[] },
     opts?: {
@@ -431,7 +427,7 @@ export class PortfolioController extends EventEmitter {
 
     const updatePortfolioState = async (
       _accountState: AccountState,
-      network: NetworkDescriptor,
+      network: Network,
       portfolioLib: Portfolio,
       portfolioProps: Partial<GetOptions>,
       forceUpdate: boolean

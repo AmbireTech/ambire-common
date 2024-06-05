@@ -2,7 +2,7 @@ import { JsonRpcProvider } from 'ethers'
 
 import { Account } from './account'
 import { Key } from './keystore'
-import { NetworkDescriptor } from './networkDescriptor'
+import { Network } from './network'
 
 export type AccountPreferences = {
   [key in Account['addr']]: {
@@ -60,9 +60,9 @@ export type CustomNetwork = {
 }
 
 export type NetworkPreferences = {
-  [key in NetworkDescriptor['id']]: NetworkPreference | CustomNetwork
+  [key in Network['id']]: NetworkPreference | CustomNetwork
 }
 
 export type RPCProvider = JsonRpcProvider & { isWorking?: boolean }
 
-export type RPCProviders = { [networkId: NetworkDescriptor['id']]: RPCProvider }
+export type RPCProviders = { [networkId: Network['id']]: RPCProvider }

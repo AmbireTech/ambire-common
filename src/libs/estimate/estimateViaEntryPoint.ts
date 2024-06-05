@@ -4,7 +4,7 @@
 // It's not tested so don't expect it to work off the bat
 
 import { Interface, JsonRpcProvider } from 'ethers'
-import { NetworkDescriptor } from 'interfaces/networkDescriptor'
+import { Network } from 'interfaces/network'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import Estimation4337 from '../../../contracts/compiled/Estimation4337.json'
@@ -21,7 +21,7 @@ export function estimateViaEntryPoint(
   account: Account,
   op: AccountOp,
   provider: JsonRpcProvider,
-  network: NetworkDescriptor
+  network: Network
 ): Promise<{
   verificationGasLimit: bigint
   gasUsed: bigint

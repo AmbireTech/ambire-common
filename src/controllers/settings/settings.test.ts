@@ -4,7 +4,7 @@ import { describe, expect, test } from '@jest/globals'
 
 import { produceMemoryStore } from '../../../test/helpers'
 import { networks } from '../../consts/networks'
-import { NetworkInfo } from '../../interfaces/networkDescriptor'
+import { NetworkInfo } from '../../interfaces/network'
 import { CustomNetwork } from '../../interfaces/settings'
 import { SettingsController } from './settings'
 

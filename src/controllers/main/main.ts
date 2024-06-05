@@ -22,7 +22,7 @@ import {
   KeystoreSignerType,
   TxnRequest
 } from '../../interfaces/keystore'
-import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
+import { Network, NetworkId } from '../../interfaces/network'
 import { CustomNetwork, NetworkPreference } from '../../interfaces/settings'
 import { Storage } from '../../interfaces/storage'
 import { Call, DappUserRequest, SignUserRequest, UserRequest } from '../../interfaces/userRequest'
@@ -59,7 +59,9 @@ import { EmailVaultController } from '../emailVault/emailVault'
 import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter'
 import { InviteController } from '../invite/invite'
 import { KeystoreController } from '../keystore/keystore'
+import { NetworksController } from '../networks/networks'
 import { PortfolioController } from '../portfolio/portfolio'
+import { ProvidersController } from '../providers/providers'
 import { SettingsController } from '../settings/settings'
 /* eslint-disable no-underscore-dangle */
 import { SignAccountOpController, SigningStatus } from '../signAccountOp/signAccountOp'
@@ -115,6 +117,10 @@ export class MainController extends EventEmitter {
   signAccOpInitError: string | null = null
 
   activity!: ActivityController
+
+  networks: NetworksController
+
+  providers: ProvidersController
 
   settings: SettingsController
 
@@ -181,6 +187,8 @@ export class MainController extends EventEmitter {
     this.invite = new InviteController({ relayerUrl, fetch, storage: this.#storage })
     this.keystore = new KeystoreController(this.#storage, keystoreSigners)
     this.#externalSignerControllers = externalSignerControllers
+    this.networks = new NetworksController(this.#storage)
+    this.providers = new ProvidersController(this.networks)
     this.settings = new SettingsController(this.#storage)
     this.portfolio = new PortfolioController(this.#storage, this.settings, relayerUrl)
     this.#initialLoadPromise = this.#load()
@@ -212,7 +220,7 @@ export class MainController extends EventEmitter {
         this.emitUpdate()
       }
     })
-    this.domains = new DomainsController(this.settings.providers, this.#fetch)
+    this.domains = new DomainsController(this.providers.providers, this.#fetch)
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch: this.#fetch })
     this.onUpdateDappSelectedAccount = onUpdateDappSelectedAccount
     this.onBroadcastSuccess = onBroadcastSuccess
@@ -399,7 +407,7 @@ export class MainController extends EventEmitter {
       gasPriceNetworks.map(async (network) => {
         try {
           this.gasPrices[network] = await getGasPriceRecommendations(
-            this.settings.providers[network],
+            this.providers.providers[network],
             this.settings.networks.find((net) => net.id === network)!
           )
         } catch (e: any) {
@@ -418,7 +426,7 @@ export class MainController extends EventEmitter {
   async #getAccountsInfo(
     accounts: Account[],
     blockTag: string | number = 'latest',
-    updateOnlyNetworksWithIds: NetworkDescriptor['id'][] = []
+    updateOnlyNetworksWithIds: NetworkId[] = []
   ): Promise<AccountStates> {
     // if any, update the account state only for the passed networks; else - all
     const updateOnlyPassedNetworks = updateOnlyNetworksWithIds.length
@@ -428,14 +436,14 @@ export class MainController extends EventEmitter {
 
     const fetchedState = await Promise.all(
       networksToUpdate.map(async (network) =>
-        getAccountState(this.settings.providers[network.id], network, accounts, blockTag).catch(
+        getAccountState(this.providers.providers[network.id], network, accounts, blockTag).catch(
           () => []
         )
       )
     )
 
-    const networkState: { [networkId: NetworkDescriptor['id']]: AccountOnchainState[] } = {}
-    networksToUpdate.forEach((network: NetworkDescriptor, index) => {
+    const networkState: { [networkId: NetworkId]: AccountOnchainState[] } = {}
+    networksToUpdate.forEach((network: Network, index) => {
       if (!fetchedState[index].length) return
 
       networkState[network.id] = fetchedState[index]
@@ -477,10 +485,7 @@ export class MainController extends EventEmitter {
     return states
   }
 
-  async updateAccountStates(
-    blockTag: string | number = 'latest',
-    networks: NetworkDescriptor['id'][] = []
-  ) {
+  async updateAccountStates(blockTag: string | number = 'latest', networks: NetworkId[] = []) {
     const nextAccountStates = await this.#getAccountsInfo(this.accounts, blockTag, networks)
     // Use `Object.assign` to update `this.accountStates` on purpose! That's
     // in order NOT to break the the reference link between `this.accountStates`
@@ -987,7 +992,7 @@ export class MainController extends EventEmitter {
     await this.updateSelectedAccount(this.selectedAccount, true)
   }
 
-  async removeCustomNetwork(id: NetworkDescriptor['id']) {
+  async removeCustomNetwork(id: NetworkId) {
     await this.settings.removeCustomNetwork(id)
     await this.updateSelectedAccount(this.selectedAccount, true)
   }
@@ -1131,7 +1136,7 @@ export class MainController extends EventEmitter {
         if (this.signAccountOp.estimation) {
           gas = this.signAccountOp.estimation.gasUsed
         }
-        const provider = this.settings.providers[localAccountOp.networkId]
+        const provider = this.providers.providers[localAccountOp.networkId]
         promises = localAccountOp.calls.map((call) => {
           return provider
             .send('debug_traceCall', [
@@ -1206,7 +1211,7 @@ export class MainController extends EventEmitter {
           { forceUpdate: true }
         ),
         estimate(
-          this.settings.providers[localAccountOp.networkId],
+          this.providers.providers[localAccountOp.networkId],
           network,
           account,
           this.keystore.keys,
@@ -1291,7 +1296,7 @@ export class MainController extends EventEmitter {
       return this.#throwAccountOpBroadcastError(new Error('AccountOp missing props'))
     }
 
-    const provider = this.settings.providers[accountOp.networkId]
+    const provider = this.providers.providers[accountOp.networkId]
     const account = this.accounts.find((acc) => acc.addr === accountOp.accountAddr)
     const network = this.settings.networks.find((n) => n.id === accountOp.networkId)
 
@@ -1569,10 +1574,7 @@ export class MainController extends EventEmitter {
     this.emitUpdate()
   }
 
-  async updateNetworkPreferences(
-    networkPreferences: NetworkPreference,
-    networkId: NetworkDescriptor['id']
-  ) {
+  async updateNetworkPreferences(networkPreferences: NetworkPreference, networkId: NetworkId) {
     await this.settings.updateNetworkPreferences(networkPreferences, networkId)
 
     if (networkPreferences?.rpcUrls) {
@@ -1581,10 +1583,7 @@ export class MainController extends EventEmitter {
     }
   }
 
-  async resetNetworkPreference(
-    preferenceKey: keyof NetworkPreference,
-    networkId: NetworkDescriptor['id']
-  ) {
+  async resetNetworkPreference(preferenceKey: keyof NetworkPreference, networkId: NetworkId) {
     await this.settings.resetNetworkPreference(preferenceKey, networkId)
 
     if (preferenceKey === 'rpcUrls') {

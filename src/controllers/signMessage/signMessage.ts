@@ -2,7 +2,7 @@ import { hexlify, isHexString, toUtf8Bytes } from 'ethers'
 
 import { Account, AccountStates } from '../../interfaces/account'
 import { ExternalSignerControllers, Key } from '../../interfaces/keystore'
-import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
+import { Network } from '../../interfaces/network'
 import { Storage } from '../../interfaces/storage'
 import { Message } from '../../interfaces/userRequest'
 import { messageHumanizer } from '../../libs/humanizer'
@@ -177,7 +177,7 @@ export class SignMessageController extends EventEmitter {
       const network = this.#settings.networks.find(
         // @ts-ignore this.messageToSign is not null and it has a check
         // but typescript malfunctions here
-        (n: NetworkDescriptor) => n.id === this.messageToSign.networkId
+        (n: Network) => n.id === this.messageToSign.networkId
       )
       if (!network) {
         throw new Error('Network not supported on Ambire. Please contract support.')

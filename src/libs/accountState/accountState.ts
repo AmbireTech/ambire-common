@@ -3,13 +3,13 @@ import { Provider } from 'ethers'
 import AmbireAccountState from '../../../contracts/compiled/AmbireAccountState.json'
 import { ENTRY_POINT_MARKER, ERC_4337_ENTRYPOINT, MAX_UINT256 } from '../../consts/deploy'
 import { Account, AccountOnchainState } from '../../interfaces/account'
-import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
+import { Network } from '../../interfaces/network'
 import { getAccountDeployParams } from '../account/account'
 import { fromDescriptor } from '../deployless/deployless'
 
 export async function getAccountState(
   provider: Provider,
-  network: NetworkDescriptor,
+  network: Network,
   accounts: Account[],
   blockTag: string | number = 'latest'
 ): Promise<AccountOnchainState[]> {

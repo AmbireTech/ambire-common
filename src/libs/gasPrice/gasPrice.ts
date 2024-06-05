@@ -3,7 +3,7 @@ import { Block, Interface, Provider } from 'ethers'
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireAccountFactory from '../../../contracts/compiled/AmbireAccountFactory.json'
 import { AccountOnchainState } from '../../interfaces/account'
-import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
+import { Network } from '../../interfaces/network'
 import { AccountOp, getSignableCalls } from '../accountOp/accountOp'
 import { getActivatorCall, shouldIncludeActivatorCall } from '../userOperation/userOperation'
 
@@ -109,7 +109,7 @@ async function refetchBlock(
 
 export async function getGasPriceRecommendations(
   provider: Provider,
-  network: NetworkDescriptor,
+  network: Network,
   blockTag: string | number = -1
 ): Promise<GasRecommendation[]> {
   const lastBlock = await refetchBlock(provider, blockTag)
@@ -168,7 +168,7 @@ export async function getGasPriceRecommendations(
 export function getProbableCallData(
   accountOp: AccountOp,
   accountState: AccountOnchainState,
-  network: NetworkDescriptor
+  network: Network
 ): string {
   let estimationCallData
 
@@ -210,7 +210,7 @@ export function getProbableCallData(
 
 export function getCallDataAdditionalByNetwork(
   accountOp: AccountOp,
-  network: NetworkDescriptor,
+  network: Network,
   accountState: AccountOnchainState
 ): bigint {
   // no additional call data is required for arbitrum as the bytes are already

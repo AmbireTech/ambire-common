@@ -9,7 +9,7 @@ import { FEE_COLLECTOR } from '../../consts/addresses'
 import { AMBIRE_PAYMASTER, ERC_4337_ENTRYPOINT, SINGLETON } from '../../consts/deploy'
 import { Account, AccountStates } from '../../interfaces/account'
 import { ExternalSignerControllers, Key } from '../../interfaces/keystore'
-import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
+import { Network } from '../../interfaces/network'
 import { Storage } from '../../interfaces/storage'
 import { isSmartAccount } from '../../libs/account/account'
 import { AccountOp, GasFeePayment, getSignableCalls } from '../../libs/accountOp/accountOp'
@@ -98,7 +98,7 @@ export class SignAccountOpController extends EventEmitter {
 
   #accountStates: AccountStates
 
-  #network: NetworkDescriptor
+  #network: Network
 
   fromActionId: AccountOpAction['id']
 
@@ -137,7 +137,7 @@ export class SignAccountOpController extends EventEmitter {
     externalSignerControllers: ExternalSignerControllers,
     account: Account,
     accountStates: AccountStates,
-    network: NetworkDescriptor,
+    network: Network,
     fromActionId: AccountOpAction['id'],
     accountOp: AccountOp,
     storage: Storage,

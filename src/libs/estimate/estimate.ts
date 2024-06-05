@@ -6,7 +6,7 @@ import { DEPLOYLESS_SIMULATION_FROM, OPTIMISTIC_ORACLE } from '../../consts/depl
 import { networks as predefinedNetworks } from '../../consts/networks'
 import { Account, AccountStates } from '../../interfaces/account'
 import { Key } from '../../interfaces/keystore'
-import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
+import { Network } from '../../interfaces/network'
 import { getIsViewOnly } from '../../utils/accounts'
 import { getAccountDeployParams, isSmartAccount } from '../account/account'
 import { AccountOp } from '../accountOp/accountOp'
@@ -54,7 +54,7 @@ export async function estimate4337(
   op: AccountOp,
   calls: Call[],
   accountStates: AccountStates,
-  network: NetworkDescriptor,
+  network: Network,
   provider: JsonRpcProvider | Provider,
   feeTokens: TokenResult[],
   blockTag: string | number
@@ -153,7 +153,7 @@ export async function estimate4337(
 
 export async function estimate(
   provider: Provider | JsonRpcProvider,
-  network: NetworkDescriptor,
+  network: Network,
   account: Account,
   keystoreKeys: Key[],
   op: AccountOp,

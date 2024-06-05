@@ -12,7 +12,7 @@ import { FEE_COLLECTOR } from '../../consts/addresses'
 import humanizerJSON from '../../consts/humanizer/humanizerInfo.json'
 import { networks } from '../../consts/networks'
 import { Account, AccountStates } from '../../interfaces/account'
-import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
+import { Network, NetworkId } from '../../interfaces/network'
 import { Storage } from '../../interfaces/storage'
 import { AccountOp, accountOpSignableHash } from '../../libs/accountOp/accountOp'
 import { getAccountState } from '../../libs/accountState/accountState'
@@ -45,7 +45,7 @@ const getAccountsInfo = async (accounts: Account[]): Promise<AccountStates> => {
     return [
       acc.addr,
       Object.fromEntries(
-        networks.map((network: NetworkDescriptor, netIndex: number) => {
+        networks.map((network: Network, netIndex: number) => {
           return [network.id, result[netIndex][accIndex]]
         })
       )

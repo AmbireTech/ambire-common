@@ -1,1 +1,10 @@
-{"version":3,"file":"networkDescriptor.js","sourceRoot":"","sources":["../../src/interfaces/networkDescriptor.ts"],"names":[],"mappings":""}
+{
+  "version": 3,
+  "file": "networkDescriptor.js",
+  "sourceRoot": "",
+  "sources": [
+    "../../src/interfaces/network.ts"
+  ],
+  "names": [],
+  "mappings": ""
+}

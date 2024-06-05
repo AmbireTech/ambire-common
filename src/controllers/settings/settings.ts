@@ -4,12 +4,12 @@ import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
 import { networks } from '../../consts/networks'
 import { Key } from '../../interfaces/keystore'
 import {
-  NetworkDescriptor,
+  Network,
   NetworkFeature,
   NetworkId,
   NetworkInfo,
   NetworkInfoLoading
-} from '../../interfaces/networkDescriptor'
+} from '../../interfaces/network'
 import {
   AccountPreferences,
   CustomNetwork,
@@ -43,7 +43,7 @@ export class SettingsController extends EventEmitter {
   statuses: Statuses<keyof typeof STATUS_WRAPPED_METHODS> = STATUS_WRAPPED_METHODS
 
   networkToAddOrUpdate: {
-    chainId: NetworkDescriptor['chainId']
+    chainId: Network['chainId']
     rpcUrl: string
     info?: NetworkInfoLoading<NetworkInfo>
   } | null = null
@@ -55,7 +55,7 @@ export class SettingsController extends EventEmitter {
     this.#load()
   }
 
-  #setProvider(network: NetworkDescriptor, newRpcUrls: string[], selectedRpcUrl?: string) {
+  #setProvider(network: Network, newRpcUrls: string[], selectedRpcUrl?: string) {
     const provider = this.providers[network.id]
 
     // Only update the RPC if the new RPC is different from the current one
@@ -74,7 +74,7 @@ export class SettingsController extends EventEmitter {
     }
   }
 
-  get networks(): (NetworkDescriptor & (NetworkPreference | CustomNetwork))[] {
+  get networks(): (Network & (NetworkPreference | CustomNetwork))[] {
     // set the custom networks that do not exist in ambire-common networks
     const customPrefIds = Object.keys(this.#networkPreferences)
     const predefinedNetworkIds = networks.map((net) => net.id)
@@ -160,7 +160,7 @@ export class SettingsController extends EventEmitter {
     })
   }
 
-  updateProviderIsWorking(networkId: NetworkDescriptor['id'], isWorking: boolean) {
+  updateProviderIsWorking(networkId: NetworkId, isWorking: boolean) {
     this.providers[networkId].isWorking = isWorking
 
     this.emitUpdate()
@@ -191,7 +191,7 @@ export class SettingsController extends EventEmitter {
 
   // eslint-disable-next-line class-methods-use-this
   #migrateNetworkPreferences(networkPreferencesOldFormat: {
-    [key in NetworkDescriptor['id']]: (NetworkPreference | CustomNetwork) & { rpcUrl?: string }
+    [key in NetworkId]: (NetworkPreference | CustomNetwork) & { rpcUrl?: string }
   }) {
     const modifiedNetworks: NetworkPreferences = {}
     // eslint-disable-next-line no-restricted-syntax
@@ -344,7 +344,7 @@ export class SettingsController extends EventEmitter {
 
   setNetworkToAddOrUpdate(
     networkToAddOrUpdate: {
-      chainId: NetworkDescriptor['chainId']
+      chainId: Network['chainId']
       rpcUrl: string
     } | null = null
   ) {
@@ -413,7 +413,7 @@ export class SettingsController extends EventEmitter {
     await this.withStatus(this.addCustomNetwork.name, () => this.#addCustomNetwork(customNetwork))
   }
 
-  async removeCustomNetwork(id: NetworkDescriptor['id']) {
+  async removeCustomNetwork(id: NetworkId) {
     if (networks.find((n) => n.id === id)) return
 
     delete this.#networkPreferences[id]
@@ -425,7 +425,7 @@ export class SettingsController extends EventEmitter {
 
   async #updateNetworkPreferences(
     networkPreferences: Partial<NetworkPreference>,
-    networkId: NetworkDescriptor['id']
+    networkId: NetworkId
   ) {
     if (!Object.keys(networkPreferences).length) return
 
@@ -512,7 +512,7 @@ export class SettingsController extends EventEmitter {
 
   async updateNetworkPreferences(
     networkPreferences: Partial<NetworkPreference>,
-    networkId: NetworkDescriptor['id']
+    networkId: NetworkId
   ) {
     await this.withStatus(this.updateNetworkPreferences.name, () =>
       this.#updateNetworkPreferences(networkPreferences, networkId)
@@ -520,7 +520,7 @@ export class SettingsController extends EventEmitter {
   }
 
   // NOTE: use this method only for predefined networks
-  async resetNetworkPreference(key: keyof NetworkPreference, networkId: NetworkDescriptor['id']) {
+  async resetNetworkPreference(key: keyof NetworkPreference, networkId: NetworkId) {
     if (
       !networkId ||
       !(networkId in this.#networkPreferences) ||
@@ -537,7 +537,7 @@ export class SettingsController extends EventEmitter {
   // call this function after a call to the singleton has been made
   // it will check if the factory has been deployed and update the
   // network settings if it has been
-  async setContractsDeployedToTrueIfDeployed(network: NetworkDescriptor) {
+  async setContractsDeployedToTrueIfDeployed(network: Network) {
     if (network.areContractsDeployed) return
 
     const provider = this.providers[network.id]

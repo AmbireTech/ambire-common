@@ -2,7 +2,7 @@ import { BaseContract, JsonRpcProvider } from 'ethers'
 import { ethers } from 'hardhat'
 
 import { Account, AccountStates } from '../src/interfaces/account'
-import { NetworkDescriptor } from '../src/interfaces/networkDescriptor'
+import { Network } from '../src/interfaces/network'
 import { RPCProviders } from '../src/interfaces/settings'
 import { Storage } from '../src/interfaces/storage'
 import { getAccountState } from '../src/libs/accountState/accountState'
@@ -217,7 +217,7 @@ function getTargetNonce(userOperation: any) {
 }
 
 const getAccountsInfo = async (
-  networks: NetworkDescriptor[],
+  networks: Network[],
   providers: RPCProviders,
   accounts: Account[]
 ): Promise<AccountStates> => {
@@ -228,7 +228,7 @@ const getAccountsInfo = async (
     return [
       acc.addr,
       Object.fromEntries(
-        networks.map((network: NetworkDescriptor, netIndex: number) => {
+        networks.map((network: Network, netIndex: number) => {
           return [network.id, result[netIndex][accIndex]]
         })
       )

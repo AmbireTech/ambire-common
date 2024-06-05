@@ -2,7 +2,7 @@
 
 import { describe, expect, test } from '@jest/globals'
 
-import { NetworkInfo } from '../../interfaces/networkDescriptor'
+import { NetworkInfo } from '../../interfaces/network'
 import { getFeaturesByNetworkProperties } from './settings'
 
 describe('Network features', () => {

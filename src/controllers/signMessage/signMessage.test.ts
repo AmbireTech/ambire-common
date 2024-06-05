@@ -5,7 +5,7 @@ import { beforeAll, describe, expect, jest, test } from '@jest/globals'
 import { produceMemoryStore } from '../../../test/helpers'
 import { networks } from '../../consts/networks'
 import { Account, AccountStates } from '../../interfaces/account'
-import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
+import { Network } from '../../interfaces/network'
 import { Message } from '../../interfaces/userRequest'
 import { getAccountState } from '../../libs/accountState/accountState'
 import { getRpcProvider } from '../../services/provider'
@@ -40,7 +40,7 @@ const getAccountsInfo = async (accounts: Account[]): Promise<AccountStates> => {
     return [
       acc.addr,
       Object.fromEntries(
-        networks.map((network: NetworkDescriptor, netIndex: number) => {
+        networks.map((network: Network, netIndex: number) => {
           return [network.id, result[netIndex][accIndex]]
         })
       )

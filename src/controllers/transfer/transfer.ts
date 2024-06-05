@@ -1,5 +1,5 @@
 import { formatUnits, isAddress } from 'ethers'
-import { NetworkDescriptor } from 'interfaces/networkDescriptor'
+import { Network } from 'interfaces/network'
 
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { AccountId } from '../../interfaces/account'
@@ -31,7 +31,7 @@ const DEFAULT_VALIDATION_FORM_MSGS = {
 }
 
 export class TransferController extends EventEmitter {
-  #networks: NetworkDescriptor[] = []
+  #networks: Network[] = []
 
   #addressBookContacts: Contacts = []
 
@@ -57,11 +57,7 @@ export class TransferController extends EventEmitter {
 
   isTopUp: boolean = false
 
-  constructor(
-    humanizerInfo: HumanizerMeta,
-    selectedAccount: AccountId,
-    networks: NetworkDescriptor[]
-  ) {
+  constructor(humanizerInfo: HumanizerMeta, selectedAccount: AccountId, networks: Network[]) {
     super()
 
     this.#humanizerInfo = humanizerInfo
