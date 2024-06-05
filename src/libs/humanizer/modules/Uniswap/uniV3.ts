@@ -13,6 +13,7 @@ import {
   getToken,
   getUnknownVisualization
 } from '../../utils'
+import { HumanizerUniMatcher } from './'
 import { parsePath } from './utils'
 
 const UniV3Router = [
@@ -76,7 +77,7 @@ const UniV3Router2 = [
   'function wrapETH(uint256 value) payable'
 ]
 // Stolen from ambire-wallet
-const uniV32Mapping = (): { [key: string]: (a: AccountOp, c: IrCall) => IrCall[] } => {
+const uniV32Mapping = (): HumanizerUniMatcher => {
   const ifaceV32 = new Interface(UniV3Router2)
   return {
     // uint256 is deadline
@@ -393,7 +394,7 @@ const uniV32Mapping = (): { [key: string]: (a: AccountOp, c: IrCall) => IrCall[]
   }
 }
 
-const uniV3Mapping = (): { [key: string]: (a: AccountOp, c: IrCall) => IrCall[] } => {
+const uniV3Mapping = (): HumanizerUniMatcher=> {
   const ifaceV3 = new Interface(UniV3Router)
   return {
     // 0xac9650d8

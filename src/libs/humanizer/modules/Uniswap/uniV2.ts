@@ -4,6 +4,7 @@ import { Interface, ZeroAddress } from 'ethers'
 import { AccountOp } from '../../../accountOp/accountOp'
 import { IrCall } from '../../interfaces'
 import { getAction, getDeadline, getLabel, getRecipientText, getToken } from '../../utils'
+import { HumanizerUniMatcher } from './'
 
 const UniV2Router = [
   'function WETH() view returns (address)',
@@ -31,7 +32,7 @@ const UniV2Router = [
   'function swapTokensForExactETH(uint256 amountOut, uint256 amountInMax, address[] path, address to, uint256 deadline) returns (uint256[] amounts)',
   'function swapTokensForExactTokens(uint256 amountOut, uint256 amountInMax, address[] path, address to, uint256 deadline) returns (uint256[] amounts)'
 ]
-const uniV2Mapping = (): { [key: string]: (a: AccountOp, c: IrCall) => IrCall[] } => {
+const uniV2Mapping = (): HumanizerUniMatcher => {
   const iface = new Interface(UniV2Router)
   return {
     // ordered in the same order as the router
