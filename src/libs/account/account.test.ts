@@ -123,7 +123,7 @@ describe('Account', () => {
     const key: Key = {
       addr: basicAccount.addr,
       type: 'internal',
-      dedicatedToOneSA: true,
+      dedicatedToOneSA: false,
       meta: null,
       isExternallyStored: false
     }
@@ -249,7 +249,7 @@ describe('Account', () => {
     const anotherBasicAccountKeyWithTheSameKeyType: Key = {
       addr: anotherBasicAccount.addr,
       type: 'trezor',
-      dedicatedToOneSA: true,
+      dedicatedToOneSA: false,
       meta: {
         deviceId: '123',
         deviceModel: '1',
@@ -262,7 +262,7 @@ describe('Account', () => {
     const anotherBasicAccountKeyWithDifferentKeyType: Key = {
       addr: anotherBasicAccount.addr,
       type: 'internal',
-      dedicatedToOneSA: true,
+      dedicatedToOneSA: false,
       meta: null,
       isExternallyStored: false
     }

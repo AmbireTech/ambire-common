@@ -76,10 +76,20 @@ export class SettingsController extends EventEmitter {
 
   get networks(): (NetworkDescriptor & (NetworkPreference | CustomNetwork))[] {
     // set the custom networks that do not exist in ambire-common networks
-    const customPrefIds = Object.keys(this.#networkPreferences)
-    const predefinedNetworkIds = networks.map((net) => net.id)
-    const customNetworkIds = customPrefIds.filter((x) => !predefinedNetworkIds.includes(x))
-    const customNetworks = customNetworkIds.map((id: NetworkId) => {
+    const customPrefIds: { id: NetworkId; chainId: bigint }[] = []
+    Object.keys(this.#networkPreferences).forEach((networkId) => {
+      if (this.#networkPreferences[networkId] && this.#networkPreferences[networkId].chainId)
+        customPrefIds.push({
+          id: networkId,
+          chainId: this.#networkPreferences[networkId].chainId as bigint
+        })
+    })
+
+    const predefinedNetworkChainIds = networks.map((net) => net.chainId)
+    const customNetworkIds = customPrefIds
+      .filter((x) => !predefinedNetworkChainIds.includes(x.chainId))
+      .map((x) => x.id)
+    const customNetworks = customNetworkIds.map((id) => {
       // @ts-ignore
       // checked with the logic for customNetworkIds
       const customNetwork: CustomNetwork = this.#networkPreferences[id]
@@ -116,6 +126,16 @@ export class SettingsController extends EventEmitter {
     // configure the main networks
     return allNetworks.map((network) => {
       const networkPreferences = this.#networkPreferences[network.id]
+
+      // erc4337 settings should not be inherited from networkPreferences
+      // for predefined networks
+      if (
+        predefinedNetworkChainIds.includes(network.chainId) &&
+        networkPreferences &&
+        'erc4337' in networkPreferences
+      )
+        delete networkPreferences.erc4337
+
       const selectedRpcUrl =
         networkPreferences?.selectedRpcUrl || networkPreferences?.rpcUrls?.[0] || network.rpcUrls[0]
       this.#setProvider(network, networkPreferences?.rpcUrls || network.rpcUrls, selectedRpcUrl)

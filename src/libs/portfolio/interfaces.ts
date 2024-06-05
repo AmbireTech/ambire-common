@@ -23,7 +23,7 @@ export interface TokenResult extends Partial<CustomToken> {
   priceIn: Price[]
   flags: {
     onGasTank: boolean
-    rewardsType: string | null
+    rewardsType: 'wallet-vesting' | 'wallet-rewards' | null
     canTopUpGasTank: boolean
     isFeeToken: boolean
   }
@@ -50,10 +50,13 @@ export interface ERC721s {
 }
 
 export interface Hints {
-  networkId: string
-  accountAddr: string
   erc20s: string[]
   erc721s: ERC721s
+}
+
+export interface ExternalHintsAPIResponse extends Hints {
+  networkId: string
+  accountAddr: string
   prices: {
     [name: string]: Price
   }
@@ -119,7 +122,7 @@ export interface PortfolioGetResult {
   tokenErrors: { error: string; address: string }[]
   collections: CollectionResult[]
   total: { [name: string]: number }
-  hints: Hints
+  hintsFromExternalAPI: Hints | null
   errors: ExtendedError[]
 }
 

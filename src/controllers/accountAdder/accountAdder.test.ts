@@ -469,7 +469,7 @@ describe('AccountAdder', () => {
         expect(internalKeys).toHaveLength(3)
         expect(internalKeys).toContainEqual({
           privateKey: key1PrivateKey,
-          dedicatedToOneSA: true
+          dedicatedToOneSA: false
         })
         expect(internalKeys).toContainEqual({
           privateKey: key1UsedForSmartAccKeysOnlyPrivateKey,
