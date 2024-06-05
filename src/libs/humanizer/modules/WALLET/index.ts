@@ -13,14 +13,11 @@ const stakingAddresses = [
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 export const WALLETModule: HumanizerCallModule = (
-  accountOp: AccountOp,
+  _: AccountOp,
   irCalls: IrCall[],
-  humanizerMeta: HumanizerMeta,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  options?: any
 ) => {
   const matcher = {
-    supplyController: WALLETSupplyControllerMapping(humanizerMeta),
+    supplyController: WALLETSupplyControllerMapping(),
     stakingPool: StakingPools()
   }
   const newCalls = irCalls.map((call: IrCall) => {
@@ -31,7 +28,7 @@ export const WALLETModule: HumanizerCallModule = (
       if (matcher.stakingPool[call.data.slice(0, 10)]) {
         return {
           ...call,
-          fullVisualization: matcher.stakingPool[call.data.slice(0, 10)](accountOp, call)
+          fullVisualization: matcher.stakingPool[call.data.slice(0, 10)](call)
         }
       }
       return {
@@ -42,7 +39,7 @@ export const WALLETModule: HumanizerCallModule = (
     if (matcher.supplyController[call.data.slice(0, 10)]) {
       return {
         ...call,
-        fullVisualization: matcher.supplyController[call.data.slice(0, 10)](accountOp, call)
+        fullVisualization: matcher.supplyController[call.data.slice(0, 10)](call)
       }
     }
     return call

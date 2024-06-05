@@ -1,23 +1,24 @@
-/* eslint-disable no-await-in-loop */
-import { stringify, parse } from '../richJson/richJson'
 import { ErrorRef } from '../../controllers/eventEmitter/eventEmitter'
-
 import { Storage } from '../../interfaces/storage'
 import { Message } from '../../interfaces/userRequest'
 import { AccountOp } from '../accountOp/accountOp'
+/* eslint-disable no-await-in-loop */
+import { parse, stringify } from '../richJson/richJson'
 import { humanizeCalls, humanizePlainTextMessage, humanizeTypedMessage } from './humanizerFuncs'
 import {
   HumanizerCallModule,
   HumanizerFragment,
   HumanizerParsingModule,
+  HumanizerPromise,
   HumanizerSettings,
   IrCall,
-  IrMessage,
-  HumanizerPromise
+  IrMessage
 } from './interfaces'
+import { addFragsToLazyStore, lazyReadHumanizerMeta } from './lazyStorage'
 import { aaveHumanizer } from './modules/Aave'
 import { fallbackHumanizer } from './modules/fallBackHumanizer'
 import { gasTankModule } from './modules/gasTankModule'
+import { preProcessHumanizer } from './modules/preProcessModule'
 import { privilegeHumanizer } from './modules/privileges'
 import { sushiSwapModule } from './modules/sushiSwapModule'
 import { genericErc20Humanizer, genericErc721Humanizer } from './modules/tokens'
@@ -27,15 +28,14 @@ import { WALLETModule } from './modules/WALLET'
 import { wrappingModule } from './modules/wrapped'
 import { parseCalls, parseMessage } from './parsers'
 import { humanizerMetaParsing } from './parsers/humanizerMetaParsing'
-import { preProcessHumanizer } from './modules/preProcessModule'
 import {
   erc20Module,
   erc721Module,
   fallbackEIP712Humanizer,
   permit2Module
 } from './typedMessageModules'
-import { addFragsToLazyStore, lazyReadHumanizerMeta } from './lazyStorage'
 import { HUMANIZER_META_KEY } from './utils'
+
 // from most generic to least generic
 // the final humanization is the final triggered module
 export const humanizerCallModules: HumanizerCallModule[] = [

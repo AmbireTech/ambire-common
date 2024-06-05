@@ -168,12 +168,12 @@ export function getUnknownVisualization(name: string, call: IrCall): HumanizerVi
 export function getWraping(
   address: string,
   amount: bigint,
-  hiddenAsseAddress?: string
+  hiddenAssetAddress?: string
 ): HumanizerVisualization[] {
   return [
     getAction('Wrap'),
     getToken(address, amount),
-    hiddenAsseAddress && { ...getToken(hiddenAsseAddress, 0n), isHidden: true }
+    hiddenAssetAddress && { ...getToken(hiddenAssetAddress, 0n), isHidden: true }
   ].filter((x) => x) as HumanizerVisualization[]
 }
 

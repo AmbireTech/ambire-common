@@ -11,10 +11,10 @@ export const uniswapHumanizer: HumanizerCallModule = (
   humanizerMeta: HumanizerMeta,
   options?: any
 ) => {
-  const uniV2MappingObj = uniV2Mapping(humanizerMeta, options)
-  const uniV3MappingObj = uniV3Mapping(humanizerMeta, options)
-  const uniV32MappingObj = uniV32Mapping(humanizerMeta, options)
-  const uniUniversalRouterObj = uniUniversalRouter(humanizerMeta, options)
+  const uniV2MappingObj = uniV2Mapping()
+  const uniV3MappingObj = uniV3Mapping()
+  const uniV32MappingObj = uniV32Mapping()
+  const uniUniversalRouterObj = uniUniversalRouter(options)
 
   const matcher: {
     [address: string]: {
