@@ -86,8 +86,10 @@ export class SettingsController extends EventEmitter {
     })
 
     const predefinedNetworkIds = networks.map((net) => net.chainId)
-    const customNetworkIds = customPrefIds.filter((x) => !predefinedNetworkIds.includes(x.chainId))
-    const customNetworks = customNetworkIds.map(({ id }) => {
+    const customNetworkIds = customPrefIds
+      .filter((x) => !predefinedNetworkIds.includes(x.chainId))
+      .map((x) => x.id)
+    const customNetworks = customNetworkIds.map((id) => {
       // @ts-ignore
       // checked with the logic for customNetworkIds
       const customNetwork: CustomNetwork = this.#networkPreferences[id]
