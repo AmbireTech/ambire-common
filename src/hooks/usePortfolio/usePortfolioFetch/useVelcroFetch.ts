@@ -311,9 +311,6 @@ export default function useVelcroFetch({
 
         // In case we have cached data from velcro - call balance oracle
         if ((!quickResponse && shouldSkipUpdate) || !tokensToUpdateBalance.length) {
-          // if (!formattedTokens?.length) {
-          //   formattedTokens = assets?.tokens
-          // }
           formattedTokens = removeDuplicatedAssets([
             ...(formattedTokens || []),
             ...(extraTokensAssets?.length ? extraTokensAssets : [])
