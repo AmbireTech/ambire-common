@@ -553,6 +553,18 @@ export class SettingsController extends EventEmitter {
     })
   }
 
+  removeAccountData(address: string, keys: { addr: Key['addr']; type: Key['type'] }[]) {
+    this.removeAccountPreferences([address])
+
+    for (const key of keys) {
+      this.removeKeyPreferences([key])
+    }
+
+    this.#storePreferences()
+
+    this.emitUpdate()
+  }
+
   #throwInvalidAddress(addresses: string[]) {
     return this.emitError({
       message:

@@ -280,6 +280,12 @@ export class SignMessageController extends EventEmitter {
     }
   }
 
+  removeAccountData(address: Account['addr']) {
+    if (this.messageToSign?.accountAddr.toLowerCase() === address.toLowerCase()) {
+      this.reset()
+    }
+  }
+
   #throwNotInitialized() {
     this.emitError({
       level: 'major',
