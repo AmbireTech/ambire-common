@@ -168,8 +168,8 @@ export const isSmartAccount = (account: Account) => !!account && !!account.creat
  * Checks if a (basic) EOA account is a derived one,
  * that is meant to be used as a smart account key only.
  */
-export const isDerivedForSmartAccountKeyOnly = (index: number) =>
-  index >= SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET
+export const isDerivedForSmartAccountKeyOnly = (index?: number) =>
+  typeof index === 'number' && index >= SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET
 
 export const getDefaultSelectedAccount = (accounts: Account[]) => {
   if (accounts.length === 0) return null

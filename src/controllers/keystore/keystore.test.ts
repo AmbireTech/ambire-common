@@ -157,8 +157,8 @@ describe('KeystoreController', () => {
   test('should not add twice internal key that is already added', (done) => {
     // two keys with the same private key
     const keysWithPrivateKeyAlreadyAdded = [
-      { privateKey: privKey, dedicatedToOneSA: true },
-      { privateKey: privKey, dedicatedToOneSA: true }
+      { privateKey: privKey, dedicatedToOneSA: false },
+      { privateKey: privKey, dedicatedToOneSA: false }
     ]
 
     const anotherPrivateKeyNotAddedYet =
@@ -194,7 +194,7 @@ describe('KeystoreController', () => {
     keystore.addKeysExternallyStored([
       {
         addr: publicAddress,
-        dedicatedToOneSA: true,
+        dedicatedToOneSA: false,
         type: 'trezor',
         meta: {
           deviceId: '1',
@@ -224,7 +224,7 @@ describe('KeystoreController', () => {
       {
         addr: publicAddress,
         type: 'trezor' as 'trezor',
-        dedicatedToOneSA: true,
+        dedicatedToOneSA: false,
         meta: {
           deviceId: '1',
           deviceModel: 'trezor',
@@ -236,7 +236,7 @@ describe('KeystoreController', () => {
       {
         addr: publicAddress,
         type: 'trezor' as 'trezor',
-        dedicatedToOneSA: true,
+        dedicatedToOneSA: false,
         meta: {
           deviceId: '1',
           deviceModel: 'trezor',
@@ -252,7 +252,7 @@ describe('KeystoreController', () => {
       {
         addr: anotherAddressNotAddedYet,
         type: 'trezor' as 'trezor',
-        dedicatedToOneSA: true,
+        dedicatedToOneSA: false,
         meta: {
           deviceId: '1',
           deviceModel: 'trezor',
@@ -264,7 +264,7 @@ describe('KeystoreController', () => {
       {
         addr: anotherAddressNotAddedYet,
         type: 'trezor' as 'trezor',
-        dedicatedToOneSA: true,
+        dedicatedToOneSA: false,
         meta: {
           deviceId: '1',
           deviceModel: 'trezor',
@@ -298,7 +298,7 @@ describe('KeystoreController', () => {
       {
         addr: keyPublicAddress,
         type: 'trezor' as 'trezor',
-        dedicatedToOneSA: true,
+        dedicatedToOneSA: false,
         meta: {
           deviceId: '1',
           deviceModel: 'trezor',
@@ -309,7 +309,7 @@ describe('KeystoreController', () => {
       {
         addr: keyPublicAddress,
         type: 'trezor' as 'trezor',
-        dedicatedToOneSA: true,
+        dedicatedToOneSA: false,
         meta: {
           deviceId: '1',
           deviceModel: 'trezor',
@@ -320,7 +320,7 @@ describe('KeystoreController', () => {
       {
         addr: keyPublicAddress,
         type: 'ledger' as 'ledger',
-        dedicatedToOneSA: true,
+        dedicatedToOneSA: false,
         meta: {
           deviceId: '1',
           deviceModel: 'trezor',
@@ -468,6 +468,6 @@ describe('import/export with pub key test', () => {
         unsubscribe2()
       }
     })
-    keystore.addKeys([{ privateKey: wallet.privateKey.slice(2), dedicatedToOneSA: true }])
+    keystore.addKeys([{ privateKey: wallet.privateKey.slice(2), dedicatedToOneSA: false }])
   })
 })
