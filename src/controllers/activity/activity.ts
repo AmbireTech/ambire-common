@@ -1,6 +1,5 @@
 /* eslint-disable import/no-extraneous-dependencies */
 
-import { SettingsController } from 'controllers/settings/settings'
 import fetch from 'node-fetch'
 
 import { AccountId, AccountStates } from '../../interfaces/account'
@@ -12,6 +11,8 @@ import { getExplorerId } from '../../libs/userOperation/userOperation'
 import { Bundler } from '../../services/bundlers/bundler'
 import { fetchUserOp } from '../../services/explorers/jiffyscan'
 import EventEmitter from '../eventEmitter/eventEmitter'
+import { NetworksController } from '../networks/networks'
+import { ProvidersController } from '../providers/providers'
 
 export interface Pagination {
   fromPage: number
@@ -126,15 +127,23 @@ export class ActivityController extends EventEmitter {
 
   isInitialized: boolean = false
 
-  #settings: SettingsController
+  #providers: ProvidersController
+
+  #networks: NetworksController
 
   #selectedAccount: AccountId | null = null
 
-  constructor(storage: Storage, accountStates: AccountStates, settings: SettingsController) {
+  constructor(
+    storage: Storage,
+    accountStates: AccountStates,
+    providers: ProvidersController,
+    networks: NetworksController
+  ) {
     super()
     this.#storage = storage
     this.#accountStates = accountStates
-    this.#settings = settings
+    this.#providers = providers
+    this.#networks = networks
     this.#initialLoadPromise = this.#load()
   }
 
@@ -285,8 +294,8 @@ export class ActivityController extends EventEmitter {
 
     await Promise.all(
       Object.keys(this.#accountsOps[this.#selectedAccount]).map(async (network) => {
-        const networkConfig = this.#settings.networks.find((x) => x.id === network)!
-        const provider = this.#settings.providers[networkConfig.id]
+        const networkConfig = this.#networks.networks.find((x) => x.id === network)!
+        const provider = this.#providers.providers[networkConfig.id]
 
         const selectedAccount = this.#selectedAccount
 
@@ -353,7 +362,7 @@ export class ActivityController extends EventEmitter {
                 if (accountOp.isSingletonDeploy && receipt.status) {
                   // the below promise has a catch() inside
                   /* eslint-disable @typescript-eslint/no-floating-promises */
-                  this.#settings.setContractsDeployedToTrueIfDeployed(networkConfig)
+                  this.#networks.setContractsDeployedToTrueIfDeployed(networkConfig)
                 }
                 return
               }
@@ -494,7 +503,7 @@ export class ActivityController extends EventEmitter {
 
   get banners(): Banner[] {
     return this.broadcastedButNotConfirmed.map((accountOp) => {
-      const network = this.#settings.networks.find((x) => x.id === accountOp.networkId)!
+      const network = this.#networks.networks.find((x) => x.id === accountOp.networkId)!
 
       const url =
         accountOp.userOpHash && accountOp.txnId === accountOp.userOpHash

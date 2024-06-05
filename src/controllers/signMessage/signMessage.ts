@@ -17,12 +17,15 @@ import hexStringToUint8Array from '../../utils/hexStringToUint8Array'
 import { SignedMessage } from '../activity/activity'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
-import { SettingsController } from '../settings/settings'
+import { NetworksController } from '../networks/networks'
+import { ProvidersController } from '../providers/providers'
 
 export class SignMessageController extends EventEmitter {
   #keystore: KeystoreController
 
-  #settings: SettingsController
+  #providers: ProvidersController
+
+  #networks: NetworksController
 
   #externalSignerControllers: ExternalSignerControllers
 
@@ -62,7 +65,8 @@ export class SignMessageController extends EventEmitter {
 
   constructor(
     keystore: KeystoreController,
-    settings: SettingsController,
+    providers: ProvidersController,
+    networks: NetworksController,
     externalSignerControllers: ExternalSignerControllers,
     storage: Storage,
     fetch: Function
@@ -70,7 +74,8 @@ export class SignMessageController extends EventEmitter {
     super()
 
     this.#keystore = keystore
-    this.#settings = settings
+    this.#providers = providers
+    this.#networks = networks
     this.#externalSignerControllers = externalSignerControllers
     this.#storage = storage
     this.#fetch = fetch
@@ -174,7 +179,7 @@ export class SignMessageController extends EventEmitter {
           'Account details needed for the signing mechanism are not found. Please try again, re-import your account or contact support if nothing else helps.'
         )
       }
-      const network = this.#settings.networks.find(
+      const network = this.#networks.networks.find(
         // @ts-ignore this.messageToSign is not null and it has a check
         // but typescript malfunctions here
         (n: Network) => n.id === this.messageToSign.networkId
@@ -234,7 +239,7 @@ export class SignMessageController extends EventEmitter {
           : this.messageToSign.content.message
 
       const isValidSignature = await verifyMessage({
-        provider: this.#settings.providers[network?.id || 'ethereum'],
+        provider: this.#providers.providers[network?.id || 'ethereum'],
         // the signer is always the account even if the actual
         // signature is from a key that has privs to the account
         signer: this.messageToSign?.accountAddr,

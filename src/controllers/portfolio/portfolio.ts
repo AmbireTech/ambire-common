@@ -40,8 +40,10 @@ import {
 import { Portfolio } from '../../libs/portfolio/portfolio'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import EventEmitter from '../eventEmitter/eventEmitter'
+import { NetworksController } from '../networks/networks'
+import { ProvidersController } from '../providers/providers'
+
 /* eslint-disable @typescript-eslint/no-shadow */
-import { SettingsController } from '../settings/settings'
 
 const LEARNED_TOKENS_CLEAN_THRESHOLD = 10
 const LEARNED_TOKENS_NETWORK_LIMIT = 50
@@ -80,19 +82,27 @@ export class PortfolioController extends EventEmitter {
     learnedTokens: {}
   }
 
-  #settings: SettingsController
+  #providers: ProvidersController
+
+  #networks: NetworksController
 
   // Holds the initial load promise, so that one can wait until it completes
   #initialLoadPromise: Promise<void>
 
-  constructor(storage: Storage, settings: SettingsController, relayerUrl: string) {
+  constructor(
+    storage: Storage,
+    providers: ProvidersController,
+    networks: NetworksController,
+    relayerUrl: string
+  ) {
     super()
     this.latest = {}
     this.pending = {}
     this.#portfolioLibs = new Map()
     this.#storage = storage
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
-    this.#settings = settings
+    this.#providers = providers
+    this.#networks = networks
     this.temporaryTokens = {}
 
     this.#initialLoadPromise = this.#load()
@@ -146,7 +156,7 @@ export class PortfolioController extends EventEmitter {
       accountId,
       accountState,
       storageStateByAccount,
-      this.#settings.providers
+      this.#providers.providers
     )
 
     this.emitUpdate()
@@ -237,7 +247,7 @@ export class PortfolioController extends EventEmitter {
     const [isValid, standard]: [boolean, string] = (await validateERC20Token(
       token,
       accountId,
-      this.#settings.providers[token.networkId]
+      this.#providers.providers[token.networkId]
     )) as [boolean, string]
 
     this.validTokens[standard] = {
@@ -249,7 +259,7 @@ export class PortfolioController extends EventEmitter {
   }
 
   initializePortfolioLibIfNeeded(accountId: AccountId, networkId: NetworkId, network: Network) {
-    const providers = this.#settings.providers
+    const providers = this.#providers.providers
     const key = `${networkId}:${accountId}`
     // Initialize a new Portfolio lib if:
     // 1. It does not exist in the portfolioLibs map
@@ -266,7 +276,7 @@ export class PortfolioController extends EventEmitter {
   }
 
   async getTemporaryTokens(accountId: AccountId, networkId: NetworkId, additionalHint: string) {
-    const network = this.#settings.networks.find((x) => x.id === networkId)
+    const network = this.#networks.networks.find((x) => x.id === networkId)
 
     if (!network) throw new Error('network not found')
 
@@ -641,16 +651,13 @@ export class PortfolioController extends EventEmitter {
   }
 
   get banners() {
-    const networks = this.#settings.networks
-    const providers = this.#settings.providers
-
     const networksWithFailedRPCBanners = getNetworksWithFailedRPCBanners({
-      providers,
-      networks,
+      providers: this.#providers.providers,
+      networks: this.#networks.networks,
       networksWithAssets: this.networksWithAssets
     })
     const networksWithPortfolioErrorBanners = getNetworksWithPortfolioErrorBanners({
-      networks,
+      networks: this.#networks.networks,
       portfolioLatest: this.latest
     })
 
