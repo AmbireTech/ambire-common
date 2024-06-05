@@ -47,6 +47,7 @@ export function mapTxnErrMsg(contractError: string): string | null {
     return 'This dApp does not support smart wallets'
   if (msg.includes('IMPOSSIBLE_GAS_CONSUMPTION'))
     return 'Insufficient funds for intristic transaction cost'
+  if (msg.includes('missing revert data')) return null
   if (!riskOfUnreadableChars) return msg
 
   return null

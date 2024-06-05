@@ -33,6 +33,7 @@ export interface FeePaymentOption {
   gasUsed?: bigint
   addedNative: bigint
   token: TokenResult
+  isSponsorship?: boolean
 }
 
 export interface EstimateResult {
@@ -43,5 +44,7 @@ export interface EstimateResult {
   currentAccountNonce: number
   feePaymentOptions: FeePaymentOption[]
   erc4337GasLimits?: Erc4337GasLimits
+  // @eip7677
+  sponsorship?: Erc4337GasLimits
   error: Error | null
 }

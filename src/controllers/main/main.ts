@@ -590,8 +590,11 @@ export class MainController extends EventEmitter {
     return (this.userRequests.filter((r) => r.action.kind === 'call') as SignUserRequest[]).reduce(
       (uCalls: AccountOpCall[], req) => {
         if (req.meta.networkId === networkId && req.meta.accountAddr === accountAddr) {
-          const { to, value, data } = req.action as Call
-          uCalls.push({ to, value, data, fromUserRequestId: req.id })
+          const action = (req as SignUserRequest).action as Call
+          action.txns.forEach((txn) => {
+            const { to, value, data } = txn
+            uCalls.push({ to, value, data, fromUserRequestId: req.id })
+          })
         }
         return uCalls
       },
@@ -634,8 +637,11 @@ export class MainController extends EventEmitter {
     }
 
     if (kind === 'call') {
-      const transaction = request.params[0]
-      const accountAddr = getAddress(transaction.from)
+      const isWalletSendCalls = !!request.params[0].calls
+      const transactions: Call['txns'] = isWalletSendCalls
+        ? request.params[0].calls
+        : [request.params[0]]
+      const accountAddr = getAddress(request.params[0].from)
       const network = this.settings.networks.find(
         (n) => Number(n.chainId) === Number(dapp?.chainId)
       )
@@ -643,15 +649,19 @@ export class MainController extends EventEmitter {
       if (!network) {
         throw ethErrors.provider.chainDisconnected('Transaction failed - unknown network')
       }
-      delete transaction.from
+      // wallet_sendCalls might come with paymaster capabilities(ERC-7677)
+      const capabilities = isWalletSendCalls ? request.params[0].capabilities : undefined
       userRequest = {
         id: new Date().getTime(),
         action: {
           kind,
-          ...transaction,
-          value: transaction.value ? getBigInt(transaction.value) : 0n
+          txns: transactions.map((txn) => ({
+            to: txn.to,
+            data: txn.data,
+            value: txn.value ? getBigInt(txn.value) : 0n
+          }))
         },
-        meta: { isSignAction: true, accountAddr, networkId: network.id },
+        meta: { isSignAction: true, accountAddr, networkId: network.id, capabilities },
         dappPromise
       } as SignUserRequest
     } else if (kind === 'message') {

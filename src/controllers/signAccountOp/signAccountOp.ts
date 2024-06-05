@@ -1,4 +1,3 @@
-import { AccountOpAction } from 'controllers/actions/actions'
 /* eslint-disable no-restricted-syntax */
 import { AbiCoder, formatUnits, getAddress, Interface, toBeHex } from 'ethers'
 
@@ -12,7 +11,7 @@ import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { Storage } from '../../interfaces/storage'
 import { isSmartAccount } from '../../libs/account/account'
 import { AccountOp, GasFeePayment, getSignableCalls } from '../../libs/accountOp/accountOp'
-import { EstimateResult, FeePaymentOption } from '../../libs/estimate/interfaces'
+import { Erc4337GasLimits, EstimateResult, FeePaymentOption } from '../../libs/estimate/interfaces'
 import { GasRecommendation, getCallDataAdditionalByNetwork } from '../../libs/gasPrice/gasPrice'
 import { callsHumanizer } from '../../libs/humanizer'
 import { IrCall } from '../../libs/humanizer/interfaces'
@@ -29,6 +28,8 @@ import {
   shouldUseOneTimeNonce,
   shouldUsePaymaster
 } from '../../libs/userOperation/userOperation'
+import { getPaymasterData } from '../../services/sponsorship/paymasterSponsor'
+import { AccountOpAction } from '../actions/actions'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
 import { PortfolioController } from '../portfolio/portfolio'
@@ -348,6 +349,8 @@ export class SignAccountOpController extends EventEmitter {
       this.estimation = estimation
       // on each estimation update, set the newest account nonce
       this.accountOp.nonce = BigInt(estimation.currentAccountNonce)
+
+      this.setSponsorship()
     }
 
     // if estimation is undefined, do not clear the estimation.
@@ -397,6 +400,40 @@ export class SignAccountOpController extends EventEmitter {
     // Here, we expect to have most of the fields set, so we can safely set GasFeePayment
     this.#setGasFeePayment()
     this.updateStatusToReadyToSign()
+  }
+
+  async setSponsorship() {
+    if (!this.estimation?.sponsorship) return
+
+    const accountState = this.#accountStates[this.accountOp.accountAddr][this.accountOp.networkId]
+    const userOperation = getUserOperation(
+      this.account,
+      accountState,
+      this.accountOp,
+      !accountState.isDeployed ? this.accountOp.meta!.entryPointAuthorization : undefined
+    )
+    const sponsored = this.estimation!.sponsorship
+    userOperation.preVerificationGas = sponsored.preVerificationGas
+    userOperation.callGasLimit = sponsored.callGasLimit
+    userOperation.verificationGasLimit = sponsored.verificationGasLimit
+    userOperation.paymasterVerificationGasLimit = sponsored.paymasterVerificationGasLimit
+    userOperation.paymasterPostOpGasLimit = sponsored.paymasterPostOpGasLimit
+    userOperation.maxFeePerGas = sponsored.gasPrice.fast.maxFeePerGas
+    userOperation.maxPriorityFeePerGas = sponsored.gasPrice.fast.maxPriorityFeePerGas
+    const ambireAccount = new Interface(AmbireAccount.abi)
+    delete this.accountOp.feeCall
+    userOperation.callData = ambireAccount.encodeFunctionData('executeBySender', [
+      getSignableCalls(this.accountOp)
+    ])
+
+    const response = await getPaymasterData(
+      this.accountOp.meta!.capabilities!.paymasterService!.url,
+      this.#network,
+      userOperation
+    )
+    console.log(response)
+    userOperation.paymaster = response.paymaster
+    userOperation.paymasterData = response.paymasterData
   }
 
   updateStatusToReadyToSign() {
@@ -548,14 +585,14 @@ export class SignAccountOpController extends EventEmitter {
         return
       }
 
-      const erc4337GasLimits = this.estimation?.erc4337GasLimits
-      if (erc4337GasLimits) {
+      if (this.estimation?.erc4337GasLimits || this.estimation?.sponsorship) {
+        const limits =
+          this.estimation?.erc4337GasLimits ?? (this.estimation?.sponsorship as Erc4337GasLimits)
         const speeds: SpeedCalc[] = []
         const usesPaymaster = shouldUsePaymaster(this.#network)
 
-        for (const [speed, speedValue] of Object.entries(erc4337GasLimits.gasPrice)) {
-          const simulatedGasLimit =
-            BigInt(erc4337GasLimits.callGasLimit) + BigInt(erc4337GasLimits.preVerificationGas)
+        for (const [speed, speedValue] of Object.entries(limits.gasPrice)) {
+          const simulatedGasLimit = BigInt(limits.callGasLimit) + BigInt(limits.preVerificationGas)
           const gasPrice = BigInt(speedValue.maxFeePerGas)
           let amount = SignAccountOpController.getAmountAfterFeeTokenConvert(
             simulatedGasLimit,
@@ -883,13 +920,14 @@ export class SignAccountOpController extends EventEmitter {
           this.accountOp,
           !accountState.isDeployed ? this.accountOp.meta!.entryPointAuthorization : undefined
         )
-        userOperation.preVerificationGas = this.estimation!.erc4337GasLimits!.preVerificationGas
-        userOperation.callGasLimit = this.estimation!.erc4337GasLimits!.callGasLimit
-        userOperation.verificationGasLimit = this.estimation!.erc4337GasLimits!.verificationGasLimit
-        userOperation.paymasterVerificationGasLimit =
-          this.estimation!.erc4337GasLimits!.paymasterVerificationGasLimit
-        userOperation.paymasterPostOpGasLimit =
-          this.estimation!.erc4337GasLimits!.paymasterPostOpGasLimit
+        const limits = this.selectedOption?.isSponsorship
+          ? (this.estimation!.sponsorship as Erc4337GasLimits)
+          : (this.estimation!.erc4337GasLimits as Erc4337GasLimits)
+        userOperation.preVerificationGas = limits.preVerificationGas
+        userOperation.callGasLimit = limits.callGasLimit
+        userOperation.verificationGasLimit = limits.verificationGasLimit
+        userOperation.paymasterVerificationGasLimit = limits.paymasterVerificationGasLimit
+        userOperation.paymasterPostOpGasLimit = limits.paymasterPostOpGasLimit
         userOperation.maxFeePerGas = toBeHex(gasFeePayment.gasPrice)
         userOperation.maxPriorityFeePerGas = toBeHex(gasFeePayment.maxPriorityFeePerGas!)
 

@@ -2,7 +2,7 @@ import erc20Abi from 'adex-protocol-eth/abi/ERC20.json'
 import { Interface, parseUnits } from 'ethers'
 import { SignUserRequest } from 'interfaces/userRequest'
 
-import { TokenResult } from '../../libs/portfolio'
+import { TokenResult } from '../portfolio'
 
 const ERC20 = new Interface(erc20Abi)
 
@@ -46,7 +46,7 @@ function buildTransferUserRequest({
 
   return {
     id: new Date().getTime(),
-    action: txn,
+    action: { kind: 'call' as const, txns: [txn] },
     meta: {
       isSignAction: true,
       networkId: selectedToken.networkId,

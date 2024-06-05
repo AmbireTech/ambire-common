@@ -8,9 +8,11 @@ import { NetworkId } from './networkDescriptor'
 
 export interface Call {
   kind: 'call'
-  to: string
-  value: bigint
-  data: string
+  txns: {
+    to: string
+    value: bigint
+    data: string
+  }[]
 }
 export interface PlainTextMessage {
   kind: 'message'
@@ -46,6 +48,11 @@ export interface SignUserRequest {
     accountAddr: AccountId
     networkId: NetworkId
     [key: string]: any
+    capabilities?: {
+      paymasterService?: {
+        url: string
+      }
+    }
   }
   // defined only when SignUserRequest is built from a DappRequest
   dappPromise?: {
