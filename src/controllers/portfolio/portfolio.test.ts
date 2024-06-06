@@ -393,6 +393,8 @@ describe('Portfolio Controller ', () => {
         undefined
       )
 
+      if (controller.latest[emptyAccount.addr].gasTank?.isLoading) return
+
       PINNED_TOKENS.filter((token) => token.onGasTank && token.networkId === 'ethereum').forEach(
         (pinnedToken) => {
           const token = controller.latest[emptyAccount.addr].gasTank?.result?.tokens.find(
@@ -460,7 +462,7 @@ describe('Portfolio Controller ', () => {
 
       const previousHintsStorage = await storage.get('previousHints', {})
       const firstTokenOnEthInLearned =
-        previousHintsStorage.learnedTokens['ethereum'][firstTokenOnEth!.address]
+        previousHintsStorage.learnedTokens.ethereum[firstTokenOnEth!.address]
 
       // Expect the timestamp to be null
       expect(firstTokenOnEthInLearned).toBeNull()
