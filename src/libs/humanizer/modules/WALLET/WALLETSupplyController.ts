@@ -6,13 +6,13 @@ import { HumanizerVisualization, IrCall } from '../../interfaces'
 import { getAction, getLabel } from '../../utils'
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
-export const WALLETSupplyControllerMapping = (): { [key: string]: (arg1: IrCall) => HumanizerVisualization[] } => {
+export const WALLETSupplyControllerMapping = (): {
+  [key: string]: (arg1: IrCall) => HumanizerVisualization[]
+} => {
   const iface = new Interface(WALLETSupplyControllerABI)
 
   return {
-    [iface.getFunction('claim')?.selector!]: (
-      call: IrCall
-    ): HumanizerVisualization[] => {
+    [iface.getFunction('claim')?.selector!]: (call: IrCall): HumanizerVisualization[] => {
       const { toBurnBps } = iface.parseTransaction(call)!.args
       const burnPercentage = toBurnBps.toString() / 100
       return burnPercentage > 0
@@ -30,8 +30,7 @@ export const WALLETSupplyControllerMapping = (): { [key: string]: (arg1: IrCall)
         : [getAction('Claim rewards')]
     },
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    [iface.getFunction('mintVesting')?.selector!]: (
-    ): HumanizerVisualization[] => {
+    [iface.getFunction('mintVesting')?.selector!]: (): HumanizerVisualization[] => {
       return [getAction('Claim vested tokens')]
     }
   }

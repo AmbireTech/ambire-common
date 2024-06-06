@@ -21,7 +21,7 @@ const STAKING_POOLS: { [key: string]: { [key: string]: string } } = {
 }
 // const WALLET_TOKEN_ADDR = '0x88800092ff476844f74dc2fc427974bbee2794ae'
 
-export const StakingPools = (): {[key:string]: (c: IrCall)=>HumanizerVisualization[]} => {
+export const StakingPools = (): { [key: string]: (c: IrCall) => HumanizerVisualization[] } => {
   const iface = new Interface(StakingPool)
   return {
     [iface.getFunction('enter')?.selector!]: (call: IrCall) => {

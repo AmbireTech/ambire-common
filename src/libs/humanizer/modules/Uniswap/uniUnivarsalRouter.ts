@@ -11,7 +11,7 @@ import {
   getRecipientText,
   getToken,
   getUnknownVisualization,
-  getWraping
+  getWrapping
 } from '../../utils'
 import { COMMANDS, COMMANDS_DESCRIPTIONS } from './Commands'
 import { parsePath } from './utils'
@@ -40,16 +40,19 @@ function parseCommands(commands: string, emitError?: Function): string[] | null 
     const res = hex.match(/.{2}/g)?.map((p: string) => `0x${p}`)
     return res as string[]
   } catch (e) {
-    emitError && emitError({
-      level: 'minor',
-      message: 'Unexpected error in parsing uniswap commands',
-      error: e
-    })
+    emitError &&
+      emitError({
+        level: 'minor',
+        message: 'Unexpected error in parsing uniswap commands',
+        error: e
+      })
     return null
   }
 }
 
-export const uniUniversalRouter = ( options?: any ): { [x: string]: (a: AccountOp, c: IrCall) => IrCall[] } => {
+export const uniUniversalRouter = (
+  options?: any
+): { [x: string]: (a: AccountOp, c: IrCall) => IrCall[] } => {
   const ifaceUniversalRouter = new Interface(UniswapUniversalRouter)
   return {
     [`${
@@ -179,7 +182,7 @@ export const uniUniversalRouter = ( options?: any ): { [x: string]: (a: AccountO
               params.amountMin &&
                 parsed.push({
                   ...call,
-                  fullVisualization: getWraping(ZeroAddress, params.amountMin)
+                  fullVisualization: getWrapping(ZeroAddress, params.amountMin)
                 })
             } else if (command === COMMANDS.UNWRAP_WETH) {
               const { inputsDetails } = COMMANDS_DESCRIPTIONS.UNWRAP_WETH

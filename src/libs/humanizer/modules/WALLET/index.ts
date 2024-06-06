@@ -12,10 +12,7 @@ const stakingAddresses = [
 ]
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
-export const WALLETModule: HumanizerCallModule = (
-  _: AccountOp,
-  irCalls: IrCall[],
-) => {
+export const WALLETModule: HumanizerCallModule = (_: AccountOp, irCalls: IrCall[]) => {
   const matcher = {
     supplyController: WALLETSupplyControllerMapping(),
     stakingPool: StakingPools()

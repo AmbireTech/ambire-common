@@ -165,7 +165,7 @@ export function getUnknownVisualization(name: string, call: IrCall): HumanizerVi
   return unknownVisualization
 }
 
-export function getWraping(
+export function getWrapping(
   address: string,
   amount: bigint,
   hiddenAssetAddress?: string

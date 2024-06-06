@@ -14,7 +14,8 @@ import {
   getToken,
   getUnknownVisualization
 } from '../../utils'
-import { HumanizerUniMatcher } from './'
+// eslint-disable-next-line import/no-cycle
+import { HumanizerUniMatcher } from '.'
 import { parsePath } from './utils'
 
 // Stolen from ambire-wallet
@@ -335,7 +336,7 @@ const uniV32Mapping = (): HumanizerUniMatcher => {
   }
 }
 
-const uniV3Mapping = (): HumanizerUniMatcher=> {
+const uniV3Mapping = (): HumanizerUniMatcher => {
   const ifaceV3 = new Interface(UniV3Router)
   return {
     // 0xac9650d8
