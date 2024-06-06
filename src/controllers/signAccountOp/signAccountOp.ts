@@ -949,7 +949,11 @@ export class SignAccountOpController extends EventEmitter {
       this.status = { type: SigningStatus.Done }
       this.emitUpdate()
     } catch (error: any) {
-      this.#setSigningError(error?.message, SigningStatus.ReadyToSign)
+      // TODO: To be discussed: errors appearing as toasts
+      this.emitError(error)
+      this.resetStatus()
+      // TODO: To be discussed: errors appearing as UI errors, but sometime disappearing quickly
+      // this.#setSigningError(error?.message, SigningStatus.ReadyToSign)
     }
   }
 
