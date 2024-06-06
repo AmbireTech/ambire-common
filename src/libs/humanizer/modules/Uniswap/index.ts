@@ -5,7 +5,7 @@ import { uniUniversalRouter } from './uniUnivarsalRouter'
 import { uniV2Mapping } from './uniV2'
 import { uniV32Mapping, uniV3Mapping } from './uniV3'
 
-export type HumanizerUniMatcher = { [key: string]:  (a: AccountOp, c: IrCall) => IrCall[] }
+export type HumanizerUniMatcher = { [key: string]: (a: AccountOp, c: IrCall) => IrCall[] }
 export const uniswapHumanizer: HumanizerCallModule = (
   accountOp: AccountOp,
   currentIrCalls: IrCall[],

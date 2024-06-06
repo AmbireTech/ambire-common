@@ -1,6 +1,5 @@
-import { NetworkId } from '../../interfaces/networkDescriptor'
-
 import { Account } from '../../interfaces/account'
+import { NetworkId } from '../../interfaces/networkDescriptor'
 import { Message, TypedMessage } from '../../interfaces/userRequest'
 import { AccountOp } from '../accountOp/accountOp'
 import { Call } from '../accountOp/types'
