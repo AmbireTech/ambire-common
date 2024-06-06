@@ -112,15 +112,15 @@ describe('typed message tests', () => {
   })
   test('erc20 module', () => {
     const expectedVisualization = [
-      { type: 'action', content: 'Send' },
-      {
-        type: 'token',
-        address: WETH_ADDRESS
-      },
-      { type: 'label', content: 'to' },
+      { type: 'action', content: 'Approve' },
       {
         type: 'address',
         address: address2
+      },
+      { type: 'label', content: 'to use' },
+      {
+        type: 'token',
+        address: WETH_ADDRESS
       },
       { type: 'deadline', amount: 968187600000n }
     ]

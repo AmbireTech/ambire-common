@@ -14,10 +14,10 @@ export const erc20Module: HumanizerTypedMessaageModule = (tm: TypedMessage) => {
     ) {
       return {
         fullVisualization: [
-          getAction('Send'),
-          getToken(tm.domain.verifyingContract!, tm.message.value),
-          getLabel('to'),
+          getAction('Approve'),
           getAddressVisualization(tm.message.spender),
+          getLabel('to use'),
+          getToken(tm.domain.verifyingContract!, tm.message.value),
           tm.message.deadline ? getDeadline(tm.message.deadline) : null
         ].filter((x) => x) as HumanizerVisualization[]
       }
