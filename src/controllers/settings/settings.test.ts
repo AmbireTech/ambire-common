@@ -184,7 +184,7 @@ describe('Settings Controller', () => {
       emitCounter++
 
       if (emitCounter === 1) {
-        settingsController.resetNetworkPreference('rpcUrls', 'ethereum')
+        settingsController.resetNetwork('rpcUrls', 'ethereum')
       }
       if (emitCounter === 3) {
         expect(modifiedNetwork?.rpcUrls).toEqual(ethereumStatic?.rpcUrls)

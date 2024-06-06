@@ -1,13 +1,13 @@
-import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
 import { networks as predefinedNetworks } from '../../consts/networks'
 import { Network, NetworkId, NetworkInfo, NetworkInfoLoading } from '../../interfaces/network'
 import { Storage } from '../../interfaces/storage'
-import { getFeaturesByNetworkProperties } from '../../libs/settings/settings'
+import { getFeaturesByNetworkProperties } from '../../libs/networks/networks'
 import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter'
 
 const STATUS_WRAPPED_METHODS = {
   addCustomNetwork: 'INITIAL',
-  updateNetwork: 'INITIAL'
+  updateNetwork: 'INITIAL',
+  updateNetworkPreferences: 'INITIAL'
 } as const
 
 export class NetworksController extends EventEmitter {
@@ -310,31 +310,12 @@ export class NetworksController extends EventEmitter {
   }
 
   // NOTE: use this method only for predefined networks
-  async resetNetworkPreference(key: keyof Network, networkId: NetworkId) {
+  async resetNetwork(key: keyof Network, networkId: NetworkId) {
     if (!networkId || !(networkId in this.#networks) || !(key in this.#networks[networkId])) return
     delete this.#networks[networkId][key]
     await this.#storage.set('networkPreferences', this.#networks)
 
     this.emitUpdate()
-  }
-
-  // call this function after a call to the singleton has been made
-  // it will check if the factory has been deployed and update the
-  // network settings if it has been
-  async setContractsDeployedToTrueIfDeployed(network: Network) {
-    if (network.areContractsDeployed) return
-
-    const provider = this.#providers[network.id]
-    const factoryCode = await provider.getCode(AMBIRE_ACCOUNT_FACTORY)
-    if (factoryCode === '0x') return
-
-    this.#updateNetworkPreferences({ areContractsDeployed: true }, network.id).catch(() => {
-      this.emitError({
-        level: 'silent',
-        message: 'Failed to update the network feature for supporting smart accounts',
-        error: new Error(`settings: failed to set areContractsDeployed to true for ${network.id}`)
-      })
-    })
   }
 
   toJSON() {

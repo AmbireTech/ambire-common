@@ -13,7 +13,7 @@ import {
 } from '../../consts/deploy'
 import { networks as predefinedNetworks } from '../../consts/networks'
 import { NetworkFeature, NetworkInfo, NetworkInfoLoading } from '../../interfaces/network'
-import { RPCProviders } from '../../interfaces/settings'
+import { RPCProviders } from '../../interfaces/provider'
 import { Bundler } from '../../services/bundlers/bundler'
 import { getRpcProvider } from '../../services/provider'
 import { getSASupport, simulateDebugTraceCall } from '../deployless/simulateDeployCall'

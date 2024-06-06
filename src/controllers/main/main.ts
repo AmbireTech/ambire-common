@@ -12,7 +12,7 @@ import {
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireAccountFactory from '../../../contracts/compiled/AmbireAccountFactory.json'
-import { SINGLETON } from '../../consts/deploy'
+import { AMBIRE_ACCOUNT_FACTORY, SINGLETON } from '../../consts/deploy'
 import { Account, AccountId, AccountOnchainState, AccountStates } from '../../interfaces/account'
 import { Banner } from '../../interfaces/banner'
 import { Dapp, DappProviderRequest } from '../../interfaces/dapp'
@@ -255,7 +255,10 @@ export class MainController extends EventEmitter {
       this.#storage,
       this.accountStates,
       this.providers,
-      this.networks
+      this.networks,
+      async (network: Network) => {
+        await this.setContractsDeployedToTrueIfDeployed(network)
+      }
     )
 
     if (this.selectedAccount) {
@@ -578,6 +581,19 @@ export class MainController extends EventEmitter {
     await this.updateAccountStates()
 
     this.emitUpdate()
+  }
+
+  // call this function after a call to the singleton has been made
+  // it will check if the factory has been deployed and update the network settings if it has been
+  async setContractsDeployedToTrueIfDeployed(network: Network) {
+    if (network.areContractsDeployed) return
+
+    const provider = this.providers.providers[network.id]
+    if (!provider) return
+
+    const factoryCode = await provider.getCode(AMBIRE_ACCOUNT_FACTORY)
+    if (factoryCode === '0x') return
+    await this.networks.updateNetworkPreferences({ areContractsDeployed: true }, network.id)
   }
 
   async #ensureAccountInfo(accountAddr: AccountId, networkId: NetworkId) {
@@ -1594,8 +1610,8 @@ export class MainController extends EventEmitter {
     }
   }
 
-  async resetNetworkPreference(preferenceKey: keyof NetworkPreference, networkId: NetworkId) {
-    await this.networks.resetNetworkPreference(preferenceKey, networkId)
+  async resetNetwork(preferenceKey: keyof NetworkPreference, networkId: NetworkId) {
+    await this.networks.resetNetwork(preferenceKey, networkId)
 
     if (preferenceKey === 'rpcUrls') {
       await this.updateAccountStates('latest', [networkId])

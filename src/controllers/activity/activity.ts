@@ -4,6 +4,7 @@ import fetch from 'node-fetch'
 
 import { AccountId, AccountStates } from '../../interfaces/account'
 import { Banner } from '../../interfaces/banner'
+import { Network } from '../../interfaces/network'
 import { Storage } from '../../interfaces/storage'
 import { Message } from '../../interfaces/userRequest'
 import { AccountOp, AccountOpStatus } from '../../libs/accountOp/accountOp'
@@ -133,17 +134,21 @@ export class ActivityController extends EventEmitter {
 
   #selectedAccount: AccountId | null = null
 
+  #onContractsDeployed: (network: Network) => Promise<void>
+
   constructor(
     storage: Storage,
     accountStates: AccountStates,
     providers: ProvidersController,
-    networks: NetworksController
+    networks: NetworksController,
+    onContractsDeployed: (network: Network) => Promise<void>
   ) {
     super()
     this.#storage = storage
     this.#accountStates = accountStates
     this.#providers = providers
     this.#networks = networks
+    this.#onContractsDeployed = onContractsDeployed
     this.#initialLoadPromise = this.#load()
   }
 
@@ -360,9 +365,7 @@ export class ActivityController extends EventEmitter {
                 }
 
                 if (accountOp.isSingletonDeploy && receipt.status) {
-                  // the below promise has a catch() inside
-                  /* eslint-disable @typescript-eslint/no-floating-promises */
-                  this.#networks.setContractsDeployedToTrueIfDeployed(networkConfig)
+                  await this.#onContractsDeployed(networkConfig)
                 }
                 return
               }

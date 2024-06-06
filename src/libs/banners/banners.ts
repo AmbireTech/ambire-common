@@ -6,8 +6,8 @@ import { Account, AccountId } from '../../interfaces/account'
 import { Action, Banner } from '../../interfaces/banner'
 import { Network, NetworkId } from '../../interfaces/network'
 import { RPCProviders } from '../../interfaces/settings'
+import { getNetworksWithFailedRPC } from '../networks/networks'
 import { PORTFOLIO_LIB_ERROR_NAMES } from '../portfolio/portfolio'
-import { getNetworksWithFailedRPC } from '../settings/settings'
 
 export const getDappActionRequestsBanners = (actions: ActionFromActionsQueue[]): Banner[] => {
   const requests = actions.filter((a) => a.type !== 'accountOp')
