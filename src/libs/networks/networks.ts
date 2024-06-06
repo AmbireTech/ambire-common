@@ -253,8 +253,8 @@ export function getFeaturesByNetworkProperties(
     }
 
     const predefinedNetSettings = predefinedNetworks.find((net) => net.chainId === chainId)
-    const erc4337Settings = predefinedNetSettings ? predefinedNetSettings.erc4337 : erc4337
-    const title = (erc4337Settings as any).enabled
+    const erc4337Settings = predefinedNetSettings ? predefinedNetSettings?.erc4337 : erc4337
+    const title = (erc4337Settings as any)?.enabled
       ? "Ambire's smart wallets via ERC-4337 Account Abstraction"
       : "Ambire's smart wallets"
 

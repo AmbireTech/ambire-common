@@ -651,6 +651,8 @@ export class PortfolioController extends EventEmitter {
   }
 
   get banners() {
+    if (!this.#networks.isInitialized) return []
+
     const networksWithFailedRPCBanners = getNetworksWithFailedRPCBanners({
       providers: this.#providers.providers,
       networks: this.#networks.networks,

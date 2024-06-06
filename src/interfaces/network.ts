@@ -40,7 +40,6 @@ export interface NetworkFeature {
   msg?: string
   level: 'success' | 'danger' | 'warning' | 'loading' | 'initial'
 }
-
 export interface Network {
   id: NetworkId
   name: string
@@ -64,4 +63,15 @@ export interface Network {
   reestimateOn?: number
   isOptimistic?: boolean
   flagged?: boolean
+  predefined: boolean
+}
+
+export interface AddNetworkRequestParams {
+  name: Network['name']
+  rpcUrls: Network['rpcUrls']
+  selectedRpcUrl: Network['selectedRpcUrl']
+  chainId: Network['chainId']
+  nativeAssetSymbol: Network['nativeAssetSymbol']
+  explorerUrl: Network['explorerUrl']
+  iconUrls: Network['iconUrls']
 }

@@ -4,8 +4,7 @@ import { describe, expect, test } from '@jest/globals'
 
 import { produceMemoryStore } from '../../../test/helpers'
 import { networks } from '../../consts/networks'
-import { NetworkInfo } from '../../interfaces/network'
-import { CustomNetwork } from '../../interfaces/settings'
+import { Network, NetworkInfo } from '../../interfaces/network'
 import { SettingsController } from './settings'
 
 describe('Settings Controller', () => {
@@ -160,7 +159,7 @@ describe('Settings Controller', () => {
 
     let checkComplete = false
     settingsController.onUpdate(() => {
-      if (settingsController.statuses.updateNetworkPreferences === 'SUCCESS' && !checkComplete) {
+      if (settingsController.statuses.updateNetwork === 'SUCCESS' && !checkComplete) {
         const modifiedNetwork = settingsController.networks.find(({ id }) => id === 'ethereum')
         expect(modifiedNetwork?.explorerUrl).toEqual('https://etherscan.io/custom')
         expect(modifiedNetwork?.rpcUrls).toEqual([
@@ -172,7 +171,7 @@ describe('Settings Controller', () => {
       }
     })
 
-    settingsController.updateNetworkPreferences(preferences, 'ethereum')
+    settingsController.updateNetwork(preferences, 'ethereum')
   })
 
   test('should reset network preferences', (done) => {
@@ -191,12 +190,12 @@ describe('Settings Controller', () => {
         expect(modifiedNetwork?.explorerUrl).toEqual('https://etherscan.io/custom') // Should remain the same
       }
 
-      if (settingsController.statuses.updateNetworkPreferences === 'INITIAL') {
+      if (settingsController.statuses.updateNetwork === 'INITIAL') {
         done()
       }
     })
 
-    settingsController.updateNetworkPreferences(
+    settingsController.updateNetwork(
       {
         rpcUrls: ['https://eth-mainnet.alchemyapi.io/v2/123abc123abc123abc123abc123abcde'],
         explorerUrl: 'https://etherscan.io/custom'
@@ -208,7 +207,7 @@ describe('Settings Controller', () => {
   test('should check if network features get displayed correctly for ethereum', (done) => {
     let checks = 0
     settingsController.onUpdate(() => {
-      if (settingsController.statuses.updateNetworkPreferences === 'INITIAL') {
+      if (settingsController.statuses.updateNetwork === 'INITIAL') {
         done()
       }
       if (checks === 4) {
@@ -255,12 +254,12 @@ describe('Settings Controller', () => {
     expect(prices!.level).toBe('success')
 
     // set first to false so we could test setContractsDeployedToTrueIfDeployed
-    settingsController.updateNetworkPreferences({ areContractsDeployed: false }, 'ethereum')
+    settingsController.updateNetwork({ areContractsDeployed: false }, 'ethereum')
   })
 
   test('should add the mantle network as a custom network', (done) => {
     let checks = 0
-    let mantleNetwork: null | CustomNetwork = null
+    let mantleNetwork: null | Network = null
     settingsController.onUpdate(() => {
       if (checks === 0) {
         expect(settingsController.networkToAddOrUpdate?.chainId).toBe(5000n)
@@ -298,10 +297,10 @@ describe('Settings Controller', () => {
           feeOptions: mantleNetworkInfo.feeOptions ?? {
             is1559: false
           }
-        } as CustomNetwork
+        } as Network
 
         checks++
-        settingsController.addCustomNetwork(mantleNetwork)
+        settingsController.addNetwork(mantleNetwork)
       }
 
       if (checks === 1) {
@@ -332,10 +331,10 @@ describe('Settings Controller', () => {
         expect(prices).not.toBe(undefined)
         expect(prices!.level).toBe('success')
 
-        settingsController.updateNetworkPreferences({ areContractsDeployed: true }, 'mantle')
+        settingsController.updateNetwork({ areContractsDeployed: true }, 'mantle')
       }
 
-      // test to see if updateNetworkPreferences is working
+      // test to see if updateNetwork is working
       if (checks === 2) {
         checks++
         const mantle = settingsController.networks.find((net) => net.id === 'mantle')
@@ -439,7 +438,7 @@ describe('Settings Controller', () => {
   //     done()
   //   })
 
-  //   settingsController.addCustomNetwork({
+  //   settingsController.addNetwork({
   //     name: 'Fantom',
   //     chainId: 250n,
   //     explorerUrl: 'https://ftmscan.com/',

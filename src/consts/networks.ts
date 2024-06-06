@@ -19,7 +19,8 @@ const networks: Network[] = [
     nativeAssetId: 'ethereum',
     hasSingleton: true,
     features: [],
-    feeOptions: { is1559: true }
+    feeOptions: { is1559: true },
+    predefined: true
   },
   {
     id: 'polygon',
@@ -39,7 +40,8 @@ const networks: Network[] = [
     nativeAssetId: 'matic-network',
     hasSingleton: true,
     features: [],
-    feeOptions: { is1559: false, feeIncrease: 10n }
+    feeOptions: { is1559: false, feeIncrease: 10n },
+    predefined: true
   },
   {
     id: 'optimism',
@@ -66,7 +68,8 @@ const networks: Network[] = [
       maxPriorityFee: 100n
     },
     isOptimistic: true,
-    reestimateOn: 6000
+    reestimateOn: 6000,
+    predefined: true
   },
   {
     id: 'avalanche',
@@ -89,7 +92,8 @@ const networks: Network[] = [
     feeOptions: {
       is1559: true,
       minBaseFee: 25000000000n // 25 gwei
-    }
+    },
+    predefined: true
   },
   {
     id: 'arbitrum',
@@ -118,7 +122,8 @@ const networks: Network[] = [
       minBaseFee: 100000000n, // 1 gwei
       maxPriorityFee: 100n
     },
-    reestimateOn: 6000
+    reestimateOn: 6000,
+    predefined: true
   },
   {
     id: 'scroll',
@@ -138,7 +143,8 @@ const networks: Network[] = [
     nativeAssetId: 'ethereum',
     hasSingleton: true,
     features: [],
-    feeOptions: { is1559: false }
+    feeOptions: { is1559: false },
+    predefined: true
   }
 ]
 

@@ -1,19 +1,24 @@
 import { networks as predefinedNetworks } from '../../consts/networks'
-import { Network, NetworkId, NetworkInfo, NetworkInfoLoading } from '../../interfaces/network'
+import {
+  AddNetworkRequestParams,
+  Network,
+  NetworkId,
+  NetworkInfo,
+  NetworkInfoLoading
+} from '../../interfaces/network'
 import { Storage } from '../../interfaces/storage'
 import { getFeaturesByNetworkProperties } from '../../libs/networks/networks'
 import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter'
 
 const STATUS_WRAPPED_METHODS = {
-  addCustomNetwork: 'INITIAL',
-  updateNetwork: 'INITIAL',
-  updateNetworkPreferences: 'INITIAL'
+  addNetwork: 'INITIAL',
+  updateNetwork: 'INITIAL'
 } as const
 
 export class NetworksController extends EventEmitter {
   #storage: Storage
 
-  #networks: Network[]
+  #networks: { [key: NetworkId]: Network }
 
   statuses: Statuses<keyof typeof STATUS_WRAPPED_METHODS> = STATUS_WRAPPED_METHODS
 
@@ -30,113 +35,49 @@ export class NetworksController extends EventEmitter {
     this.#load()
   }
 
+  get isInitialized(): boolean {
+    return !!this.#networks
+  }
+
   get networks(): Network[] {
-    // set the custom networks that do not exist in ambire-common networks
-    const customPrefIds = Object.keys(this.#networks)
-    const predefinedNetworkIds = predefinedNetworks.map((net) => net.id)
-    const customNetworkIds = customPrefIds.filter((x) => !predefinedNetworkIds.includes(x))
-    const customNetworks = customNetworkIds.map((id: NetworkId) => {
-      // @ts-ignore
-      // checked with the logic for customNetworkIds
-      const customNetwork = this.#networks[id]
-      const features: NetworkFeature[] = []
+    if (!this.#networks) return predefinedNetworks
 
-      return {
-        id,
-        unstoppableDomainsChain: 'ERC20',
-        name: customNetwork.name,
-        nativeAssetSymbol: customNetwork.nativeAssetSymbol,
-        rpcUrls: customNetwork.rpcUrls,
-        chainId: customNetwork.chainId,
-        explorerUrl: customNetwork.explorerUrl,
-        erc4337: customNetwork.erc4337 ?? { enabled: false, hasPaymaster: false },
-        isSAEnabled: customNetwork.isSAEnabled ?? false,
-        areContractsDeployed: customNetwork.areContractsDeployed ?? false,
-        isOptimistic: customNetwork.isOptimistic ?? false,
-        rpcNoStateOverride: customNetwork.rpcNoStateOverride ?? true,
-        hasDebugTraceCall: customNetwork.hasDebugTraceCall ?? false,
-        platformId: customNetwork.platformId ?? '',
-        nativeAssetId: customNetwork.nativeAssetId ?? '',
-        flagged: customNetwork.flagged ?? false,
-        feeOptions: customNetwork.feeOptions ?? {
-          is1559: false
-        },
-        features,
-        hasRelayer: false,
-        hasSingleton: customNetwork.hasSingleton ?? false
-      }
-    })
-
-    const allNetworks = [...predefinedNetworks, ...customNetworks]
-
-    // configure the main networks
-    return allNetworks.map((network) => {
-      const networkPreferences = this.#networks[network.id]
-
-      // erc4337 settings should not be inherited from networkPreferences
-      // for predefined networks
-      if (
-        predefinedNetworkIds.includes(network.id) &&
-        networkPreferences &&
-        'erc4337' in networkPreferences
-      )
-        delete networkPreferences.erc4337
-
-      const selectedRpcUrl =
-        networkPreferences?.selectedRpcUrl || networkPreferences?.rpcUrls?.[0] || network.rpcUrls[0]
-
-      const finalNetwork = networkPreferences
-        ? {
-            ...network,
-            ...networkPreferences,
-            selectedRpcUrl
-          }
-        : {
-            ...network,
-            selectedRpcUrl
-          }
-
-      const info: NetworkInfo = {
-        isSAEnabled: finalNetwork.isSAEnabled,
-        isOptimistic: finalNetwork.isOptimistic ?? false,
-        rpcNoStateOverride: finalNetwork.rpcNoStateOverride,
-        erc4337: finalNetwork.erc4337,
-        areContractsDeployed: finalNetwork.areContractsDeployed,
-        feeOptions: finalNetwork.feeOptions,
-        hasDebugTraceCall: finalNetwork.hasDebugTraceCall,
-        platformId: finalNetwork.platformId,
-        nativeAssetId: finalNetwork.nativeAssetId,
-        flagged: finalNetwork.flagged ?? false,
-        chainId: finalNetwork.chainId,
-        hasSingleton: finalNetwork.hasSingleton
-      }
-
-      finalNetwork.features = getFeaturesByNetworkProperties(info)
-      return finalNetwork
+    const uniqueNetworksByChainId = Object.values(this.#networks).filter(
+      (item, index, self) => self.findIndex((i) => i.chainId === item.chainId) === index
+    )
+    return uniqueNetworksByChainId.map((network) => {
+      // eslint-disable-next-line no-param-reassign
+      network.features = getFeaturesByNetworkProperties({
+        isSAEnabled: network.isSAEnabled,
+        isOptimistic: network.isOptimistic ?? false,
+        rpcNoStateOverride: network.rpcNoStateOverride,
+        erc4337: network.erc4337,
+        areContractsDeployed: network.areContractsDeployed,
+        feeOptions: network.feeOptions,
+        hasDebugTraceCall: network.hasDebugTraceCall,
+        platformId: network.platformId,
+        nativeAssetId: network.nativeAssetId,
+        flagged: network.flagged ?? false,
+        chainId: network.chainId,
+        hasSingleton: network.hasSingleton
+      })
+      return network
     })
   }
 
   async #load() {
-    const networkPreferences = await this.#storage.get('networkPreferences', {})
-    this.#networks = this.#migrateNetworkPreferences(networkPreferences)
-    this.emitUpdate()
-  }
-
-  // eslint-disable-next-line class-methods-use-this
-  #migrateNetworkPreferences(networkPreferencesOldFormat: {
-    [key in NetworkId]: Network & { rpcUrl?: string }
-  }) {
-    const modifiedNetworks: Network[] = {}
-    // eslint-disable-next-line no-restricted-syntax
-    for (const [networkId, network] of Object.entries(networkPreferencesOldFormat)) {
-      if (network.rpcUrl && !network.rpcUrls) {
-        modifiedNetworks[networkId] = { ...network, rpcUrls: [network.rpcUrl] }
-      } else {
-        modifiedNetworks[networkId] = network
-      }
+    let storedNetworks: Network[]
+    storedNetworks = await this.#storage.get('networkPreferences', undefined)
+    if (!storedNetworks) {
+      storedNetworks = predefinedNetworks.reduce((acc, n) => {
+        acc[n.id] = n
+        return acc
+      }, {})
+      await this.#storage.set('networkPreferences', storedNetworks)
     }
+    this.#networks = storedNetworks
 
-    return modifiedNetworks
+    this.emitUpdate()
   }
 
   setNetworkToAddOrUpdate(
@@ -162,7 +103,7 @@ export class NetworksController extends EventEmitter {
     }
   }
 
-  async #addCustomNetwork(customNetwork: Network) {
+  async #addNetwork(network: AddNetworkRequestParams) {
     if (
       !this.networkToAddOrUpdate?.info ||
       Object.values(this.networkToAddOrUpdate.info).some((prop) => prop === 'LOADING')
@@ -170,18 +111,15 @@ export class NetworksController extends EventEmitter {
       return
     }
     const chainIds = this.networks.map((net) => net.chainId)
-    const customNetworkId = customNetwork.name.toLowerCase()
-    const ids = this.networks.map((net) => net.id)
+    const networkId = network.name.toLowerCase()
+    const ids = this.networks.map((n) => n.id)
 
     // make sure the id and chainId of the network are unique
-    if (
-      ids.indexOf(customNetworkId) !== -1 ||
-      chainIds.indexOf(BigInt(customNetwork.chainId)) !== -1
-    ) {
+    if (ids.indexOf(networkId) !== -1 || chainIds.indexOf(BigInt(network.chainId)) !== -1) {
       throw new EmittableError({
         message: 'The network you are trying to add has already been added.',
         level: 'major',
-        error: new Error('settings: addCustomNetwork chain already added (duplicate id/chainId)')
+        error: new Error('settings: addNetwork chain already added (duplicate id/chainId)')
       })
     }
 
@@ -189,24 +127,19 @@ export class NetworksController extends EventEmitter {
     const { feeOptions } = info
 
     // eslint-disable-next-line no-param-reassign
-    delete (info as any).feeOptions
-
-    this.#networks[customNetworkId] = {
-      ...customNetwork,
-      ...info,
-      ...feeOptions
-    }
+    delete info.feeOptions
+    this.#networks[networkId] = { ...network, ...info, ...feeOptions, predefined: false } as Network
 
     await this.#storage.set('networkPreferences', this.#networks)
     this.networkToAddOrUpdate = null
     this.emitUpdate()
   }
 
-  async addCustomNetwork(customNetwork: CustomNetwork) {
-    await this.withStatus(this.addCustomNetwork.name, () => this.#addCustomNetwork(customNetwork))
+  async addNetwork(network: AddNetworkRequestParams) {
+    await this.withStatus(this.addNetwork.name, () => this.#addNetwork(network))
   }
 
-  async removeCustomNetwork(id: NetworkId) {
+  async removeNetwork(id: NetworkId) {
     if (networks.find((n) => n.id === id)) return
 
     delete this.#networks[id]
@@ -216,44 +149,30 @@ export class NetworksController extends EventEmitter {
     this.emitUpdate()
   }
 
-  async #updateNetworkPreferences(
-    networkPreferences: Partial<NetworkPreference>,
-    networkId: NetworkId
-  ) {
-    if (!Object.keys(networkPreferences).length) return
+  async #updateNetwork(network: Partial<Network>, networkId: NetworkId) {
+    if (!Object.keys(network).length) return
 
-    const networkData = this.networks.find((network) => network.id === networkId)
+    const networkData = this.networks.find((n) => n.id === networkId)
+    const changedNetwork: Network = Object.keys(network).reduce((acc, key) => {
+      if (!networkData) return acc
 
-    const changedNetworkPreferences: NetworkPreference = Object.keys(networkPreferences).reduce(
-      (acc, key) => {
-        if (!networkData) return acc
+      // No need to save unchanged networks. Here we filter the networks that are the same as the ones in the storage.
+      if (network[key as keyof Network] === networkData[key as keyof Network]) return acc
 
-        // No need to save unchanged network preferences.
-        // Here we filter the network preferences that are the same as the ones in the storage.
-        if (
-          networkPreferences[key as keyof NetworkPreference] ===
-          networkData[key as keyof NetworkPreference]
-        )
-          return acc
+      return { ...acc, [key]: network[key as keyof Network] }
+    }, {} as Network)
 
-        return { ...acc, [key]: networkPreferences[key as keyof NetworkPreference] }
-      },
-      {} as NetworkPreference
-    )
-
-    // Update the network preferences with the incoming new values
-    this.#networks[networkId] = { ...this.#networks[networkId], ...changedNetworkPreferences }
-
+    // Update the networks with the incoming new values
+    this.#networks[networkId] = { ...this.#networks[networkId], ...changedNetwork }
     await this.#storage.set('networkPreferences', this.#networks)
 
     this.emitUpdate()
 
-    // Do not wait the rpc validation in order to complete the execution of updateNetworkPreferences
+    // Do not wait the rpc validation in order to complete the execution of updateNetwork
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     ;(async () => {
-      // if the rpcUrls have changed, call the RPC and check whether it supports
-      // state overrided. If it doesn't, add a warning
-      if (changedNetworkPreferences.selectedRpcUrl) {
+      // if the rpcUrls have changed, call the RPC and check whether it supports state overrided. If it doesn't, add a warning
+      if (changedNetwork.selectedRpcUrl) {
         if (
           this.networkToAddOrUpdate?.info &&
           Object.values(this.networkToAddOrUpdate.info).every((prop) => prop !== 'LOADING')
@@ -277,7 +196,7 @@ export class NetworksController extends EventEmitter {
 
         // eslint-disable-next-line @typescript-eslint/no-floating-promises
         getNetworkInfo(
-          changedNetworkPreferences.selectedRpcUrl,
+          changedNetwork.selectedRpcUrl,
           this.#networks[networkId].chainId!,
           async (info) => {
             if (Object.values(info).some((prop) => prop === 'LOADING')) {
@@ -303,10 +222,8 @@ export class NetworksController extends EventEmitter {
     })()
   }
 
-  async updateNetworkPreferences(networkPreferences: Partial<Network>, networkId: NetworkId) {
-    await this.withStatus(this.updateNetworkPreferences.name, () =>
-      this.#updateNetworkPreferences(networkPreferences, networkId)
-    )
+  async updateNetwork(network: Partial<Network>, networkId: NetworkId) {
+    await this.withStatus(this.updateNetwork.name, () => this.#updateNetwork(network, networkId))
   }
 
   // NOTE: use this method only for predefined networks

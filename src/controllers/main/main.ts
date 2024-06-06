@@ -23,7 +23,6 @@ import {
   TxnRequest
 } from '../../interfaces/keystore'
 import { Network, NetworkId } from '../../interfaces/network'
-import { CustomNetwork, NetworkPreference } from '../../interfaces/settings'
 import { Storage } from '../../interfaces/storage'
 import { Call, DappUserRequest, SignUserRequest, UserRequest } from '../../interfaces/userRequest'
 import { WindowManager } from '../../interfaces/window'
@@ -593,7 +592,7 @@ export class MainController extends EventEmitter {
 
     const factoryCode = await provider.getCode(AMBIRE_ACCOUNT_FACTORY)
     if (factoryCode === '0x') return
-    await this.networks.updateNetworkPreferences({ areContractsDeployed: true }, network.id)
+    await this.networks.updateNetwork({ areContractsDeployed: true }, network.id)
   }
 
   async #ensureAccountInfo(accountAddr: AccountId, networkId: NetworkId) {
@@ -1014,13 +1013,13 @@ export class MainController extends EventEmitter {
     this.emitUpdate()
   }
 
-  async addCustomNetwork(customNetwork: CustomNetwork) {
-    await this.networks.addCustomNetwork(customNetwork)
+  async addNetwork(network: Network) {
+    await this.networks.addNetwork(network)
     await this.updateSelectedAccount(this.selectedAccount, true)
   }
 
-  async removeCustomNetwork(id: NetworkId) {
-    await this.networks.removeCustomNetwork(id)
+  async removeNetwork(id: NetworkId) {
+    await this.networks.removeNetwork(id)
     await this.updateSelectedAccount(this.selectedAccount, true)
   }
 
@@ -1601,19 +1600,19 @@ export class MainController extends EventEmitter {
     this.emitUpdate()
   }
 
-  async updateNetworkPreferences(networkPreferences: NetworkPreference, networkId: NetworkId) {
-    await this.networks.updateNetworkPreferences(networkPreferences, networkId)
+  async updateNetwork(network: Partial<Network>, networkId: NetworkId) {
+    await this.networks.updateNetwork(network, networkId)
 
-    if (networkPreferences?.rpcUrls) {
+    if (network?.rpcUrls) {
       await this.updateAccountStates('latest', [networkId])
       await this.updateSelectedAccount(this.selectedAccount, true)
     }
   }
 
-  async resetNetwork(preferenceKey: keyof NetworkPreference, networkId: NetworkId) {
-    await this.networks.resetNetwork(preferenceKey, networkId)
+  async resetNetwork(networkKey: keyof Network, networkId: NetworkId) {
+    await this.networks.resetNetwork(networkKey, networkId)
 
-    if (preferenceKey === 'rpcUrls') {
+    if (networkKey === 'rpcUrls') {
       await this.updateAccountStates('latest', [networkId])
       await this.updateSelectedAccount(this.selectedAccount, true)
     }
@@ -1625,7 +1624,7 @@ export class MainController extends EventEmitter {
   // will not trigger emitUpdate in the MainController, therefore the banners will
   // remain the same until a subsequent update in the MainController.
   get banners(): Banner[] {
-    if (!this.selectedAccount) return []
+    if (!this.selectedAccount || !this.networks.isInitialized) return []
 
     const accountOpBanners = getAccountOpBanners({
       accountOpActionsByNetwork: getAccountOpActionsByNetwork(

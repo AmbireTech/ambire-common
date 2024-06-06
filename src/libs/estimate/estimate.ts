@@ -3,7 +3,6 @@ import { AbiCoder, JsonRpcProvider, Provider, toBeHex, ZeroAddress } from 'ether
 import Estimation from '../../../contracts/compiled/Estimation.json'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { DEPLOYLESS_SIMULATION_FROM, OPTIMISTIC_ORACLE } from '../../consts/deploy'
-import { networks as predefinedNetworks } from '../../consts/networks'
 import { Account, AccountStates } from '../../interfaces/account'
 import { Key } from '../../interfaces/keystore'
 import { Network } from '../../interfaces/network'
@@ -212,7 +211,6 @@ export async function estimate(
 
   const deploylessEstimator = fromDescriptor(provider, Estimation, !network.rpcNoStateOverride)
   const optimisticOracle = network.isOptimistic ? OPTIMISTIC_ORACLE : ZeroAddress
-  const isCustomNetwork = !predefinedNetworks.find((net) => net.id === network.id)
 
   // we're excluding the view only accounts from the natives to check
   // in all cases EXCEPT the case where we're making an estimation for
@@ -276,7 +274,7 @@ export async function estimate(
       })
       .catch(catchEstimationFailure),
     estimateArbitrumL1GasUsed(op, account, accountState, provider).catch(catchEstimationFailure),
-    isCustomNetwork
+    !network.predefined
       ? estimate4337(account, op, calls, accountStates, network, provider, feeTokens, blockTag)
       : new Promise((resolve) => {
           resolve(0n)
@@ -304,7 +302,7 @@ export async function estimate(
   // we're touching the calculations for custom networks only
   // customlyEstimatedGas is 0 when the network is not custom
   const customlyEstimatedGas =
-    isCustomNetwork && !estimations[2].error
+    !network.predefined && !estimations[2].error
       ? BigInt(estimations[2].erc4337GasLimits.callGasLimit) +
         BigInt(estimations[2].erc4337GasLimits.preVerificationGas)
       : 0n

@@ -15,6 +15,7 @@ export class ProvidersController extends EventEmitter {
 
     this.#networks = networks
     this.#networks.onUpdate(() => {
+      if (!this.#networks.isInitialized) return
       this.#networks.networks.forEach((n) => this.#setProvider(n, n.rpcUrls, n.selectedRpcUrl))
     })
   }

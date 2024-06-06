@@ -505,6 +505,7 @@ export class ActivityController extends EventEmitter {
   }
 
   get banners(): Banner[] {
+    if (!this.#networks.isInitialized) return []
     return this.broadcastedButNotConfirmed.map((accountOp) => {
       const network = this.#networks.networks.find((x) => x.id === accountOp.networkId)!
 
