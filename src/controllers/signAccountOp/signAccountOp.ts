@@ -920,7 +920,6 @@ export class SignAccountOpController extends EventEmitter {
               userOperation.nonce = getOneTimeNonce(userOperation)
             }
           } catch (e: any) {
-            // TODO: Should not be a signing error maybe?
             return this.#setSigningError(e.message)
           }
         }
@@ -953,10 +952,6 @@ export class SignAccountOpController extends EventEmitter {
       this.status = { type: SigningStatus.Done }
       this.emitUpdate()
     } catch (error: any) {
-      // TODO: To be discussed: errors appearing as toasts
-      // this.emitError(error)
-      // this.resetStatus()
-      // TODO: To be discussed: errors appearing as UI errors, but sometime disappearing quickly
       this.#setSigningError(error?.message, SigningStatus.ReadyToSign)
     }
   }
