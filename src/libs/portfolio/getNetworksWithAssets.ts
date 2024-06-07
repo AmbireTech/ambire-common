@@ -1,6 +1,6 @@
 import { AccountId } from '../../interfaces/account'
 import { NetworkId } from '../../interfaces/network'
-import { RPCProviders } from '../../interfaces/settings'
+import { RPCProviders } from '../../interfaces/provider'
 import { AccountState } from './interfaces'
 
 const getAccountNetworksWithAssets = (

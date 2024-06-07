@@ -5,7 +5,7 @@ import { PortfolioController } from '../../controllers/portfolio/portfolio'
 import { Account, AccountId } from '../../interfaces/account'
 import { Action, Banner } from '../../interfaces/banner'
 import { Network, NetworkId } from '../../interfaces/network'
-import { RPCProviders } from '../../interfaces/settings'
+import { RPCProviders } from '../../interfaces/provider'
 import { getNetworksWithFailedRPC } from '../networks/networks'
 import { PORTFOLIO_LIB_ERROR_NAMES } from '../portfolio/portfolio'
 

@@ -3,7 +3,7 @@ import { ethers } from 'hardhat'
 
 import { Account, AccountStates } from '../src/interfaces/account'
 import { Network } from '../src/interfaces/network'
-import { RPCProviders } from '../src/interfaces/settings'
+import { RPCProviders } from '../src/interfaces/provider'
 import { Storage } from '../src/interfaces/storage'
 import { getAccountState } from '../src/libs/accountState/accountState'
 import { parse, stringify } from '../src/libs/richJson/richJson'

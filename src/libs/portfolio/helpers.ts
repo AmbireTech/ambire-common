@@ -5,7 +5,7 @@ import gasTankFeeTokens from '../../consts/gasTankFeeTokens'
 import { PINNED_TOKENS } from '../../consts/pinnedTokens'
 import { Account, AccountId } from '../../interfaces/account'
 import { NetworkId } from '../../interfaces/network'
-import { RPCProvider } from '../../interfaces/settings'
+import { RPCProvider } from '../../interfaces/provider'
 import { isSmartAccount } from '../account/account'
 import { CustomToken } from './customToken'
 import {
@@ -241,6 +241,7 @@ export function getUpdatedHints(
     )
 
     // Update the timestamp of learned tokens
+    // eslint-disable-next-line no-restricted-syntax
     for (const address of networkLearnedTokenAddresses) {
       const lowercaseAddress = address.toLowerCase()
 
