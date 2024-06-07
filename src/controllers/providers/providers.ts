@@ -1,5 +1,5 @@
 /* eslint-disable no-underscore-dangle */
-import { Network } from '../../interfaces/network'
+import { Network, NetworkId } from '../../interfaces/network'
 import { RPCProviders } from '../../interfaces/provider'
 import { getRpcProvider } from '../../services/provider'
 import EventEmitter from '../eventEmitter/eventEmitter'
@@ -39,6 +39,14 @@ export class ProvidersController extends EventEmitter {
     if (!this.providers[networkId]) return
 
     this.providers[networkId].isWorking = isWorking
+    this.emitUpdate()
+  }
+
+  removeProvider(networkId: NetworkId) {
+    if (!this.providers[networkId]) return
+
+    this.providers[networkId]?.destroy()
+    delete this.providers[networkId]
     this.emitUpdate()
   }
 }

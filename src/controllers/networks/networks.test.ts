@@ -1,154 +1,17 @@
 /* eslint-disable @typescript-eslint/no-floating-promises */
 
+import { AddNetworkRequestParams, NetworkInfo } from 'interfaces/network'
+
 import { describe, expect, test } from '@jest/globals'
 
 import { produceMemoryStore } from '../../../test/helpers'
 import { networks } from '../../consts/networks'
-import { Network, NetworkInfo } from '../../interfaces/network'
 import { NetworksController } from './networks'
 
-describe('Settings Controller', () => {
+describe('Networks Controller', () => {
   let networksController: NetworksController
   beforeEach(() => {
-    networksController = new NetworksController(produceMemoryStore())
-  })
-
-  test('should throw if adding an account preference is requested with invalid address', (done) => {
-    let emitCounter = 0
-    networksController.onError(() => {
-      emitCounter++
-
-      if (emitCounter === 1) {
-        const errors = networksController.emittedErrors
-        expect(errors.length).toEqual(1)
-        done()
-      }
-    })
-
-    networksController.addAccountPreferences({
-      '0x-invalid-address': { label: 'test', pfp: 'whatever' }
-    })
-  })
-
-  test('should add account preferences', (done) => {
-    const validAddress = '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045'
-    const preferences = { label: 'Ivo', pfp: 'racing_car' }
-
-    let emitCounter = 0
-    networksController.onUpdate(() => {
-      emitCounter++
-
-      if (emitCounter === 1) {
-        // Cast to AccountPreferences, because TS doesn't know that we just added a preference
-        expect(networksController.accountPreferences[validAddress]).toEqual(preferences)
-        done()
-      }
-    })
-
-    networksController.addAccountPreferences({ [validAddress]: preferences })
-  })
-
-  test('should selectively update only the preferences provided, if one already exists', (done) => {
-    const validAddress = '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045'
-    const preferences = { label: 'Dancho', pfp: 'puzel' }
-    const preferencesWithLabelUpdateOnly = { label: 'Kalo' }
-
-    let emitCounter = 0
-    networksController.onUpdate(() => {
-      emitCounter++
-
-      if (emitCounter === 2) {
-        // Cast to AccountPreferences, because TS doesn't know that we just added a preference
-        expect(networksController.accountPreferences[validAddress].label).toEqual(
-          preferencesWithLabelUpdateOnly.label
-        )
-        expect(networksController.accountPreferences[validAddress].pfp).toEqual(preferences.pfp)
-        done()
-      }
-    })
-
-    networksController.addAccountPreferences({ [validAddress]: preferences })
-    // @ts-ignore TypeScript complains, but that's okay, because we're testing
-    networksController.addAccountPreferences({ [validAddress]: preferencesWithLabelUpdateOnly })
-  })
-
-  test('should remove address preference', (done) => {
-    const validAddress = '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045'
-    const preferences = { label: 'Ivo', pfp: 'racing_car' }
-
-    let emitCounter = 0
-    networksController.onUpdate(() => {
-      emitCounter++
-
-      if (emitCounter === 1) {
-        networksController.removeAccountPreferences([validAddress])
-      }
-
-      if (emitCounter === 2) {
-        // Cast to AccountPreferences, because TS doesn't know that we just added a preference
-        expect(networksController.accountPreferences[validAddress]).toBeUndefined()
-        done()
-      }
-    })
-
-    networksController.addAccountPreferences({ [validAddress]: preferences })
-  })
-
-  test('should throw if adding a key preference is requested with invalid address', (done) => {
-    let emitCounter = 0
-    networksController.onError(() => {
-      emitCounter++
-
-      if (emitCounter === 1) {
-        expect(networksController.emittedErrors.length).toEqual(1)
-        done()
-      }
-    })
-
-    networksController.addKeyPreferences([
-      { addr: '0x-invalid-address', type: 'internal', label: 'test' }
-    ])
-  })
-
-  test('should add key preferences', (done) => {
-    const validRandomAddress1 = '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045'
-    const validRandomAddress2 = '0xb14c95D1844D5d8B00166e46338F5Fc9546DF9D5'
-    const preference1 = { addr: validRandomAddress1, type: 'internal', label: "Kalo's mini key" }
-    const preference2 = { addr: validRandomAddress2, type: 'ledger', label: "Kalo's large key" }
-
-    let emitCounter = 0
-    networksController.onUpdate(() => {
-      emitCounter++
-
-      if (emitCounter === 1) {
-        expect(networksController.keyPreferences).toContainEqual(preference1)
-        expect(networksController.keyPreferences).toContainEqual(preference2)
-        done()
-      }
-    })
-
-    networksController.addKeyPreferences([preference1, preference2])
-  })
-
-  test('should remove key preference', (done) => {
-    const validAddress = '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045'
-    const preference = { addr: validAddress, type: 'internal', label: 'Narnia key' }
-
-    let emitCounter = 0
-    networksController.onUpdate(() => {
-      emitCounter++
-
-      if (emitCounter === 1) {
-        networksController.removeKeyPreferences([preference])
-      }
-
-      if (emitCounter === 2) {
-        expect(networksController.keyPreferences).not.toContainEqual(preference)
-        done()
-      }
-    })
-
-    networksController.addKeyPreferences([preference])
+    networksController = new NetworksController(produceMemoryStore(), () => {})
   })
 
   test('should update network preferences', (done) => {
@@ -165,7 +28,6 @@ describe('Settings Controller', () => {
         expect(modifiedNetwork?.rpcUrls).toEqual([
           'https://eth-mainnet.alchemyapi.io/v2/123abc123abc123abc123abc123abcde'
         ])
-        networksController.providers.ethereum.destroy()
         checkComplete = true
         done()
       }
@@ -204,62 +66,9 @@ describe('Settings Controller', () => {
     )
   })
 
-  test('should check if network features get displayed correctly for ethereum', (done) => {
-    let checks = 0
-    networksController.onUpdate(() => {
-      if (networksController.statuses.updateNetwork === 'INITIAL') {
-        done()
-      }
-      if (checks === 4) {
-        checks++
-        const eth = networksController.networks.find((net) => net.id === 'ethereum')!
-        expect(eth.areContractsDeployed).toBe(true)
-      }
-
-      // skip updates until the correct one comes
-      if (checks === 2 || checks === 3) {
-        checks++
-      }
-
-      if (checks === 1) {
-        checks++
-        const eth = networksController.networks.find((net) => net.id === 'ethereum')!
-        expect(eth.areContractsDeployed).toBe(false)
-        networksController.setContractsDeployedToTrueIfDeployed(eth)
-      }
-
-      // skip the first update: LOADING
-      if (checks === 0) {
-        checks++
-      }
-    })
-
-    const eth = networksController.networks.find((net) => net.id === 'ethereum')!
-    expect(eth?.features.length).toBe(3)
-
-    const saSupport = eth?.features.find((feat) => feat.id === 'saSupport')!
-    expect(saSupport).not.toBe(null)
-    expect(saSupport).not.toBe(undefined)
-    expect(saSupport!.level).toBe('success')
-    expect(saSupport!.title).toBe("Ambire's smart wallets")
-
-    const simulation = eth?.features.find((feat) => feat.id === 'simulation')
-    expect(simulation).not.toBe(null)
-    expect(simulation).not.toBe(undefined)
-    expect(simulation!.level).toBe('success')
-
-    const prices = eth?.features.find((feat) => feat.id === 'prices')
-    expect(prices).not.toBe(null)
-    expect(prices).not.toBe(undefined)
-    expect(prices!.level).toBe('success')
-
-    // set first to false so we could test setContractsDeployedToTrueIfDeployed
-    networksController.updateNetwork({ areContractsDeployed: false }, 'ethereum')
-  })
-
   test('should add the mantle network as a custom network', (done) => {
     let checks = 0
-    let mantleNetwork: null | Network = null
+    let mantleNetwork: null | AddNetworkRequestParams = null
     networksController.onUpdate(() => {
       if (checks === 0) {
         expect(networksController.networkToAddOrUpdate?.chainId).toBe(5000n)
@@ -291,13 +100,15 @@ describe('Settings Controller', () => {
         mantleNetwork = {
           name: 'Mantle',
           rpcUrls: [networksController.networkToAddOrUpdate?.rpcUrl],
+          selectedRpcUrl: networksController.networkToAddOrUpdate?.rpcUrl,
           nativeAssetSymbol: 'MNT',
           explorerUrl: 'https://explorer.mantle.xyz/',
           ...mantleNetworkInfo,
           feeOptions: mantleNetworkInfo.feeOptions ?? {
             is1559: false
-          }
-        } as Network
+          },
+          iconUrls: []
+        } as AddNetworkRequestParams
 
         checks++
         networksController.addNetwork(mantleNetwork)
@@ -336,7 +147,6 @@ describe('Settings Controller', () => {
 
       // test to see if updateNetwork is working
       if (checks === 2) {
-        checks++
         const mantle = networksController.networks.find((net) => net.id === 'mantle')
         expect(mantle?.areContractsDeployed).toBe(true)
         done()

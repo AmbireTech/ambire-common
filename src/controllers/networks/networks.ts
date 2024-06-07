@@ -1,3 +1,4 @@
+import EmittableError from '../../classes/EmittableError'
 import { networks as predefinedNetworks } from '../../consts/networks'
 import {
   AddNetworkRequestParams,
@@ -18,7 +19,7 @@ const STATUS_WRAPPED_METHODS = {
 export class NetworksController extends EventEmitter {
   #storage: Storage
 
-  #networks: { [key: NetworkId]: Network }
+  #networks: { [key: NetworkId]: Network } = {}
 
   statuses: Statuses<keyof typeof STATUS_WRAPPED_METHODS> = STATUS_WRAPPED_METHODS
 
@@ -28,9 +29,12 @@ export class NetworksController extends EventEmitter {
     info?: NetworkInfoLoading<NetworkInfo>
   } | null = null
 
-  constructor(storage: Storage) {
+  #onRemoveNetwork: (id: NetworkId) => void
+
+  constructor(storage: Storage, onRemoveNetwork: (id: NetworkId) => void) {
     super()
     this.#storage = storage
+    this.#onRemoveNetwork = onRemoveNetwork
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.#load()
   }
@@ -66,13 +70,13 @@ export class NetworksController extends EventEmitter {
   }
 
   async #load() {
-    let storedNetworks: Network[]
+    let storedNetworks: { [key: NetworkId]: Network }
     storedNetworks = await this.#storage.get('networkPreferences', undefined)
     if (!storedNetworks || (storedNetworks && Object.keys(storedNetworks).length === 0)) {
       storedNetworks = predefinedNetworks.reduce((acc, n) => {
         acc[n.id] = n
         return acc
-      }, {})
+      }, {} as { [key: NetworkId]: Network })
       await this.#storage.set('networkPreferences', storedNetworks)
     }
     this.#networks = storedNetworks
@@ -126,13 +130,15 @@ export class NetworksController extends EventEmitter {
     const info = { ...(this.networkToAddOrUpdate.info as NetworkInfo) }
     const { feeOptions } = info
 
-    // eslint-disable-next-line no-param-reassign
+    // @ts-ignore
     delete info.feeOptions
     this.#networks[networkId] = {
       id: networkId,
       ...network,
       ...info,
       ...feeOptions,
+      features: getFeaturesByNetworkProperties(info),
+      hasRelayer: false,
       predefined: false
     }
 
@@ -149,8 +155,7 @@ export class NetworksController extends EventEmitter {
     if (!this.#networks[id]) return
 
     delete this.#networks[id]
-    this.providers?.[id]?.destroy()
-    delete this.providers?.[id]
+    this.#onRemoveNetwork(id)
     await this.#storage.set('networkPreferences', this.#networks)
     this.emitUpdate()
   }

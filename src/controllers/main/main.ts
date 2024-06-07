@@ -186,7 +186,9 @@ export class MainController extends EventEmitter {
     this.invite = new InviteController({ relayerUrl, fetch, storage: this.#storage })
     this.keystore = new KeystoreController(this.#storage, keystoreSigners)
     this.#externalSignerControllers = externalSignerControllers
-    this.networks = new NetworksController(this.#storage)
+    this.networks = new NetworksController(this.#storage, (networkId: NetworkId) => {
+      this.providers.removeProvider(networkId)
+    })
     this.providers = new ProvidersController(this.networks)
     this.settings = new SettingsController(this.#storage)
     this.portfolio = new PortfolioController(

@@ -23,7 +23,7 @@ export interface NetworkInfo {
   rpcNoStateOverride: boolean
   erc4337: { enabled: boolean; hasPaymaster: boolean }
   areContractsDeployed: boolean
-  feeOptions: { is1559: boolean } | null
+  feeOptions: { is1559: boolean }
   hasDebugTraceCall: boolean
   platformId: string
   nativeAssetId: string
