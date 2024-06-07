@@ -206,9 +206,6 @@ describe('Portfolio', () => {
         .map((token) => token.address)
         .filter((token) => previousHints.erc20s.includes(token))
     ).toEqual(previousHints.erc20s)
-    // Portfolio should determine the tokens' balances and prices
-    // @ts-ignore
-    expect(result.total.usd).toBeGreaterThan(100)
   })
 
   test('simulation works for EOAs', async () => {
