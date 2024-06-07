@@ -7,7 +7,7 @@ import {
   NetworkInfoLoading
 } from '../../interfaces/network'
 import { Storage } from '../../interfaces/storage'
-import { getFeaturesByNetworkProperties } from '../../libs/networks/networks'
+import { getFeaturesByNetworkProperties, getNetworkInfo } from '../../libs/networks/networks'
 import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter'
 
 const STATUS_WRAPPED_METHODS = {
@@ -68,7 +68,7 @@ export class NetworksController extends EventEmitter {
   async #load() {
     let storedNetworks: Network[]
     storedNetworks = await this.#storage.get('networkPreferences', undefined)
-    if (!storedNetworks) {
+    if (!storedNetworks || (storedNetworks && Object.keys(storedNetworks).length === 0)) {
       storedNetworks = predefinedNetworks.reduce((acc, n) => {
         acc[n.id] = n
         return acc
@@ -111,8 +111,8 @@ export class NetworksController extends EventEmitter {
       return
     }
     const chainIds = this.networks.map((net) => net.chainId)
-    const networkId = network.name.toLowerCase()
     const ids = this.networks.map((n) => n.id)
+    const networkId = network.name.toLowerCase()
 
     // make sure the id and chainId of the network are unique
     if (ids.indexOf(networkId) !== -1 || chainIds.indexOf(BigInt(network.chainId)) !== -1) {
@@ -128,7 +128,13 @@ export class NetworksController extends EventEmitter {
 
     // eslint-disable-next-line no-param-reassign
     delete info.feeOptions
-    this.#networks[networkId] = { ...network, ...info, ...feeOptions, predefined: false } as Network
+    this.#networks[networkId] = {
+      id: networkId,
+      ...network,
+      ...info,
+      ...feeOptions,
+      predefined: false
+    }
 
     await this.#storage.set('networkPreferences', this.#networks)
     this.networkToAddOrUpdate = null
@@ -140,7 +146,7 @@ export class NetworksController extends EventEmitter {
   }
 
   async removeNetwork(id: NetworkId) {
-    if (networks.find((n) => n.id === id)) return
+    if (!this.#networks[id]) return
 
     delete this.#networks[id]
     this.providers?.[id]?.destroy()

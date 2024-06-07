@@ -36,8 +36,9 @@ export class ProvidersController extends EventEmitter {
   }
 
   updateProviderIsWorking(networkId: NetworkId, isWorking: boolean) {
-    this.providers[networkId].isWorking = isWorking
+    if (!this.providers[networkId]) return
 
+    this.providers[networkId].isWorking = isWorking
     this.emitUpdate()
   }
 }
