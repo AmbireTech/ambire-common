@@ -422,9 +422,8 @@ export class SignAccountOpController extends EventEmitter {
       (!this.gasUsedTooHigh || this.gasUsedTooHighAgreed)
     ) {
       this.status = { type: SigningStatus.ReadyToSign }
-    } else {
-      this.status = null
     }
+
     this.emitUpdate()
   }
 
@@ -849,7 +848,7 @@ export class SignAccountOpController extends EventEmitter {
 
     try {
       // In case of EOA account
-      if (!this.account.creation) {
+      if (!isSmartAccount(this.account)) {
         if (this.accountOp.calls.length !== 1)
           return this.#setSigningError(
             'Tried to sign an EOA transaction with multiple or zero calls.'
