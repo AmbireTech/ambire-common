@@ -9,6 +9,7 @@ import {
 import { SelectedAccountForImport } from '../../interfaces/account'
 import { KeyIterator as KeyIteratorInterface } from '../../interfaces/keyIterator'
 import { getHdPathFromTemplate } from '../../utils/hdPath'
+import { isDerivedForSmartAccountKeyOnly } from '../account/account'
 
 export function isValidPrivateKey(value: string): boolean {
   try {
@@ -128,8 +129,6 @@ export class KeyIterator implements KeyIteratorInterface {
       }
 
       return acc.accountKeys.flatMap(({ index }: { index: number }) => {
-        const dedicatedToOneSA = !acc.isLinked
-
         // In case it is a seed, the private keys have to be extracted
         if (this.subType === 'seed') {
           if (!this.#seedPhrase) {
@@ -141,7 +140,7 @@ export class KeyIterator implements KeyIteratorInterface {
           return [
             {
               privateKey: getPrivateKeyFromSeed(this.#seedPhrase, index, hdPathTemplate),
-              dedicatedToOneSA
+              dedicatedToOneSA: isDerivedForSmartAccountKeyOnly(index)
             }
           ]
         }
@@ -155,18 +154,16 @@ export class KeyIterator implements KeyIteratorInterface {
 
         // Private keys for accounts used as smart account keys should be derived
         const isPrivateKeyThatShouldBeDerived =
-          this.#privateKey &&
+          !!this.#privateKey &&
           isValidPrivateKey(this.#privateKey) &&
           index >= SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET
 
-        return [
-          {
-            privateKey: isPrivateKeyThatShouldBeDerived
-              ? derivePrivateKeyFromAnotherPrivateKey(this.#privateKey)
-              : this.#privateKey,
-            dedicatedToOneSA
-          }
-        ]
+        const privateKey = isPrivateKeyThatShouldBeDerived
+          ? derivePrivateKeyFromAnotherPrivateKey(this.#privateKey)
+          : this.#privateKey
+        const dedicatedToOneSA = isPrivateKeyThatShouldBeDerived
+
+        return [{ privateKey, dedicatedToOneSA }]
       })
     })
   }
