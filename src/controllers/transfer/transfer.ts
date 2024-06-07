@@ -1,10 +1,11 @@
 import { formatUnits, isAddress } from 'ethers'
-import { NetworkDescriptor } from 'interfaces/networkDescriptor'
 
 import { FEE_COLLECTOR } from '../../consts/addresses'
-import { AccountId } from '../../interfaces/account'
+import { Account } from '../../interfaces/account'
 import { AddressState } from '../../interfaces/domains'
+import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { TransferUpdate } from '../../interfaces/transfer'
+import { isSmartAccount } from '../../libs/account/account'
 import { HumanizerMeta } from '../../libs/humanizer/interfaces'
 import { TokenResult } from '../../libs/portfolio'
 import { getTokenAmount } from '../../libs/portfolio/helpers'
@@ -37,7 +38,7 @@ export class TransferController extends EventEmitter {
 
   #selectedToken: TokenResult | null = null
 
-  #selectedAccount: string | null = null
+  #selectedAccountData: Account | null = null
 
   #humanizerInfo: HumanizerMeta | null = null
 
@@ -59,13 +60,13 @@ export class TransferController extends EventEmitter {
 
   constructor(
     humanizerInfo: HumanizerMeta,
-    selectedAccount: AccountId,
+    selectedAccountData: Account,
     networks: NetworkDescriptor[]
   ) {
     super()
 
     this.#humanizerInfo = humanizerInfo
-    this.#selectedAccount = selectedAccount
+    this.#selectedAccountData = selectedAccountData
     this.#networks = networks
 
     this.emitUpdate()
@@ -124,13 +125,13 @@ export class TransferController extends EventEmitter {
 
     const validationFormMsgsNew = DEFAULT_VALIDATION_FORM_MSGS
 
-    if (this.#humanizerInfo && this.#selectedAccount) {
+    if (this.#humanizerInfo && this.#selectedAccountData) {
       const isUDAddress = !!this.addressState.udAddress
       const isEnsAddress = !!this.addressState.ensAddress
 
       validationFormMsgsNew.recipientAddress = validateSendTransferAddress(
         this.recipientAddress,
-        this.#selectedAccount,
+        this.#selectedAccountData.addr,
         this.isRecipientAddressUnknownAgreed,
         this.isRecipientAddressUnknown,
         this.isRecipientHumanizerKnownTokenOrSmartContract,
@@ -177,7 +178,7 @@ export class TransferController extends EventEmitter {
   }
 
   get isInitialized() {
-    return !!this.#humanizerInfo && !!this.#selectedAccount && !!this.#networks.length
+    return !!this.#humanizerInfo && !!this.#selectedAccountData && !!this.#networks.length
   }
 
   get recipientAddress() {
@@ -187,7 +188,7 @@ export class TransferController extends EventEmitter {
   }
 
   update({
-    selectedAccount,
+    selectedAccountData,
     humanizerInfo,
     selectedToken,
     amount,
@@ -211,11 +212,11 @@ export class TransferController extends EventEmitter {
         this.checkIsRecipientAddressUnknown()
       }
     }
-    if (selectedAccount) {
-      if (this.#selectedAccount !== selectedAccount) {
+    if (selectedAccountData) {
+      if (this.#selectedAccountData?.addr !== selectedAccountData.addr) {
         this.amount = ''
       }
-      this.#selectedAccount = selectedAccount
+      this.#selectedAccountData = selectedAccountData
     }
     if (selectedToken) {
       this.selectedToken = selectedToken
@@ -293,8 +294,11 @@ export class TransferController extends EventEmitter {
   }
 
   #setSWWarningVisibleIfNeeded() {
+    if (!this.#selectedAccountData) return
+
     this.isSWWarningVisible =
       this.isRecipientAddressUnknown &&
+      isSmartAccount(this.#selectedAccountData) &&
       !this.isTopUp &&
       !!this.selectedToken?.address &&
       Number(this.selectedToken?.address) === 0 &&

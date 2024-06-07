@@ -575,5 +575,33 @@ export default [
     networkId: 'base',
     decimals: 18,
     icon: 'https://assets.coingecko.com/coins/images/9956/small/4943.png'
+  },
+  {
+    networkId: 'scroll',
+    address: '0x06eFdBFf2a14a7c8E15944D1F4A48F9F95F663A4',
+    symbol: 'USDC',
+    decimals: 6,
+    icon: 'https://assets.coingecko.com/coins/images/6319/small/USD_Coin_icon.png'
+  },
+  {
+    networkId: 'scroll',
+    address: '0xf55BEC9cafDbE8730f096Aa55dad6D22d44099Df',
+    symbol: 'USDT',
+    decimals: 6,
+    icon: 'https://assets.coingecko.com/coins/images/32610/small/usdt_%281%29.png'
+  },
+  {
+    networkId: 'scroll',
+    address: '0x5300000000000000000000000000000000000004',
+    symbol: 'WETH',
+    decimals: 18,
+    icon: 'https://assets.coingecko.com/coins/images/32315/small/weth_%281%29.png?1697365181'
+  },
+  {
+    networkId: 'scroll',
+    address: '0xf610A9dfB7C89644979b4A0f27063E9e7d7Cda32',
+    symbol: 'wstETH',
+    decimals: 18,
+    icon: 'https://coin-images.coingecko.com/coins/images/18834/small/wstETH.png'
   }
 ]
