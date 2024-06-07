@@ -26,8 +26,9 @@ import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { getTypedData } from '../../libs/signMessage/signMessage'
 import { getRpcProvider } from '../../services/provider'
 import { KeystoreController } from '../keystore/keystore'
+import { NetworksController } from '../networks/networks'
 import { PortfolioController } from '../portfolio/portfolio'
-import { SettingsController } from '../settings/settings'
+import { ProvidersController } from '../providers/providers'
 import { getFeeSpeedIdentifier } from './helper'
 import { SignAccountOpController } from './signAccountOp'
 
@@ -337,9 +338,18 @@ const init = async (
       feeTokens
     ))
 
-  const settings = new SettingsController(storage)
-  settings.providers = providers
-  const portfolio = new PortfolioController(storage, settings, 'https://staging-relayer.ambire.com')
+  let providersCtrl: ProvidersController
+  const networksCtrl = new NetworksController(storage, (id) => {
+    providersCtrl.removeProvider(id)
+  })
+  providersCtrl = new ProvidersController(networksCtrl)
+  providersCtrl.providers = providers
+  const portfolio = new PortfolioController(
+    storage,
+    providersCtrl,
+    networksCtrl,
+    'https://staging-relayer.ambire.com'
+  )
   await portfolio.updateSelectedAccount(accounts, networks, account.addr)
 
   if (portfolio.latest?.[account.addr][op.networkId]!.result) {
@@ -379,7 +389,7 @@ const init = async (
   const controller = new SignAccountOpController(
     keystore,
     portfolio,
-    settings,
+    providersCtrl,
     {},
     account,
     accountStates,

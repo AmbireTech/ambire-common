@@ -11,7 +11,8 @@ import { getAccountState } from '../../libs/accountState/accountState'
 import { getRpcProvider } from '../../services/provider'
 import { KeystoreController } from '../keystore/keystore'
 import { InternalSigner } from '../keystore/keystore.test'
-import { SettingsController } from '../settings/settings'
+import { NetworksController } from '../networks/networks'
+import { ProvidersController } from '../providers/providers'
 import { SignMessageController } from './signMessage'
 
 const providers = Object.fromEntries(
@@ -52,7 +53,6 @@ const getAccountsInfo = async (accounts: Account[]): Promise<AccountStates> => {
 describe('SignMessageController', () => {
   let signMessageController: SignMessageController
   let keystore: KeystoreController
-  let settings: SettingsController
 
   beforeAll(async () => {
     accountStates = await getAccountsInfo([account])
@@ -61,12 +61,17 @@ describe('SignMessageController', () => {
   beforeEach(() => {
     const keystoreSigners = { internal: InternalSigner }
     keystore = new KeystoreController(produceMemoryStore(), keystoreSigners)
-    settings = new SettingsController(produceMemoryStore())
-    settings.providers = providers
+    let providersCtrl: ProvidersController
+    const networksCtrl = new NetworksController(produceMemoryStore(), (id) => {
+      providersCtrl.removeProvider(id)
+    })
+    providersCtrl = new ProvidersController(networksCtrl)
+    providersCtrl.providers = providers
 
     signMessageController = new SignMessageController(
       keystore,
-      settings,
+      providersCtrl,
+      networksCtrl,
       {},
       produceMemoryStore(),
       fetch

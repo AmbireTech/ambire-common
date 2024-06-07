@@ -46,9 +46,9 @@ export class NetworksController extends EventEmitter {
   get networks(): Network[] {
     if (!this.#networks) return predefinedNetworks
 
-    const uniqueNetworksByChainId = Object.values(this.#networks).filter(
-      (item, index, self) => self.findIndex((i) => i.chainId === item.chainId) === index
-    )
+    const uniqueNetworksByChainId = Object.values(this.#networks)
+      .sort((a, b) => +b.predefined - +a.predefined) // first predefined
+      .filter((item, index, self) => self.findIndex((i) => i.chainId === item.chainId) === index) // unique by chainId (predefined with priority)
     return uniqueNetworksByChainId.map((network) => {
       // eslint-disable-next-line no-param-reassign
       network.features = getFeaturesByNetworkProperties({
