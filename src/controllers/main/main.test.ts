@@ -316,31 +316,18 @@ describe('Main Controller ', () => {
   test('should check if network features get displayed correctly for ethereum', (done) => {
     let checks = 0
     controller.networks.onUpdate(() => {
-      if (controller.networks.statuses.updateNetwork === 'INITIAL') {
-        done()
-      }
-      if (checks === 4) {
-        checks++
+      if (controller.networks.statuses.updateNetwork === 'INITIAL' && checks > 3) {
         const eth = controller.networks.networks.find((net) => net.id === 'ethereum')!
         expect(eth.areContractsDeployed).toBe(true)
+        done()
       }
-
-      // skip updates until the correct one comes
-      if (checks === 2 || checks === 3) {
-        checks++
-      }
-
-      if (checks === 1) {
-        checks++
+      if (checks === 3) {
         const eth = controller.networks.networks.find((net) => net.id === 'ethereum')!
         expect(eth.areContractsDeployed).toBe(false)
         controller.setContractsDeployedToTrueIfDeployed(eth)
       }
 
-      // skip the first update: LOADING
-      if (checks === 0) {
-        checks++
-      }
+      checks++
     })
 
     const eth = controller.networks.networks.find((net) => net.id === 'ethereum')!

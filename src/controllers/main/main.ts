@@ -22,7 +22,7 @@ import {
   KeystoreSignerType,
   TxnRequest
 } from '../../interfaces/keystore'
-import { Network, NetworkId } from '../../interfaces/network'
+import { AddNetworkRequestParams, Network, NetworkId } from '../../interfaces/network'
 import { Storage } from '../../interfaces/storage'
 import { Call, DappUserRequest, SignUserRequest, UserRequest } from '../../interfaces/userRequest'
 import { WindowManager } from '../../interfaces/window'
@@ -1015,7 +1015,7 @@ export class MainController extends EventEmitter {
     this.emitUpdate()
   }
 
-  async addNetwork(network: Network) {
+  async addNetwork(network: AddNetworkRequestParams) {
     await this.networks.addNetwork(network)
     await this.updateSelectedAccount(this.selectedAccount, true)
   }
