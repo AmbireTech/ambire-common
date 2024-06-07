@@ -1,16 +1,16 @@
 import { AbiCoder, ethers, JsonRpcProvider } from 'ethers'
-import { Account } from 'interfaces/account'
 import fetch from 'node-fetch'
 
 import { describe, expect, jest, test } from '@jest/globals'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
+import { monitor, stopMonitoring } from '../../../test/helpers/requests'
 import { networks } from '../../consts/networks'
+import { Account } from '../../interfaces/account'
 import { AccountOp } from '../accountOp/accountOp'
 import { stringify } from '../richJson/richJson'
 import { EOA_SIMULATION_NONCE } from './getOnchainBalances'
 import { Portfolio } from './portfolio'
-import { monitor, stopMonitoring } from '../../../test/helpers/requests'
 
 describe('Portfolio', () => {
   const ethereum = networks.find((x) => x.id === 'ethereum')

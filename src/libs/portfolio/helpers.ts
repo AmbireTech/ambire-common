@@ -10,8 +10,7 @@ import { isSmartAccount } from '../account/account'
 import { CustomToken } from './customToken'
 import {
   ExternalHintsAPIResponse,
-  Hints,
-  PortfolioGetResult,
+  PortfolioLibGetResult,
   PreviousHintsStorage,
   TokenResult
 } from './interfaces'
@@ -183,7 +182,7 @@ export const getPinnedGasTankTokens = (
 
 export const stripExternalHintsAPIResponse = (
   response: ExternalHintsAPIResponse | null
-): PortfolioGetResult['hintsFromExternalAPI'] => {
+): PortfolioLibGetResult['hintsFromExternalAPI'] => {
   if (!response) return null
 
   return {

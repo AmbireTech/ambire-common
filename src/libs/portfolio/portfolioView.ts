@@ -2,12 +2,10 @@ import { Account } from '../../interfaces/account'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { shouldGetAdditionalPortfolio } from './helpers'
 import {
-  AccountState,
-  AdditionalAccountState,
-  AdditionalPortfolioGetResult,
+  AdditionalPortfolioNetworkResult,
   CollectionResult as CollectionResultInterface,
+  NetworkState,
   PortfolioControllerState,
-  PortfolioGetResult,
   TokenResult as TokenResultInterface
 } from './interfaces'
 
@@ -70,24 +68,18 @@ export function calculateAccountPortfolio(
     selectedAccountData.rewards = state.latest[selectedAccount].rewards
   }
 
-  const isNetworkReady = (networkData: AccountState | AdditionalAccountState | undefined) => {
+  const isNetworkReady = (networkData: NetworkState | undefined) => {
     return (
       (networkData && networkData.isReady && !networkData.isLoading) || networkData?.criticalError
     )
   }
 
   Object.keys(selectedAccountData).forEach((network: string) => {
-    const networkData = selectedAccountData[network] as
-      | AccountState
-      | AdditionalAccountState
-      | undefined
+    const networkData = selectedAccountData[network]
 
-    const result = networkData?.result as
-      | PortfolioGetResult
-      | AdditionalPortfolioGetResult
-      | undefined
+    const result = networkData?.result
 
-    if (isNetworkReady(networkData) && !networkData?.criticalError && result) {
+    if (networkData && isNetworkReady(networkData) && !networkData?.criticalError && result) {
       // In the case we receive BigInt here, convert to number
       const networkTotal = Number(result?.total?.usd) || 0
       newTotalAmount += networkTotal
