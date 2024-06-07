@@ -11,7 +11,8 @@ import { HumanizerMeta } from '../../libs/humanizer/interfaces'
 import { Portfolio } from '../../libs/portfolio'
 import { getRpcProvider } from '../../services/provider'
 import { Contacts } from '../addressBook/addressBook'
-import { SettingsController } from '../settings/settings'
+import { NetworksController } from '../networks/networks'
+import { ProvidersController } from '../providers/providers'
 import { TransferController } from './transfer'
 
 const ethereum = networks.find((x) => x.id === 'ethereum')
@@ -39,11 +40,17 @@ const ethPortfolio = new Portfolio(fetch, provider, ethereum)
 const polygonPortfolio = new Portfolio(fetch, polygonProvider, polygon)
 
 let transferController: TransferController
-const settingsController = new SettingsController(produceMemoryStore())
+
 const providers = Object.fromEntries(
   networks.map((network) => [network.id, getRpcProvider(network.rpcUrls, network.chainId)])
 )
-settingsController.providers = providers
+
+let providersCtrl: ProvidersController
+const networksCtrl = new NetworksController(produceMemoryStore(), (id) => {
+  providersCtrl.removeProvider(id)
+})
+providersCtrl = new ProvidersController(networksCtrl)
+providersCtrl.providers = providers
 
 const getTokens = async () => {
   const ethAccPortfolio = await ethPortfolio.get(PLACEHOLDER_SELECTED_ACCOUNT.addr)
@@ -57,7 +64,7 @@ describe('Transfer Controller', () => {
     transferController = new TransferController(
       humanizerInfo as HumanizerMeta,
       PLACEHOLDER_SELECTED_ACCOUNT,
-      settingsController.networks
+      networksCtrl.networks
     )
     transferController.update({
       contacts: CONTACTS
