@@ -31,16 +31,19 @@ export class NetworksController extends EventEmitter {
 
   #onRemoveNetwork: (id: NetworkId) => void
 
+  // Holds the initial load promise, so that one can wait until it completes
+  #initialLoadPromise: Promise<void>
+
   constructor(storage: Storage, onRemoveNetwork: (id: NetworkId) => void) {
     super()
     this.#storage = storage
     this.#onRemoveNetwork = onRemoveNetwork
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
-    this.#load()
+    this.#initialLoadPromise = this.#load()
   }
 
   get isInitialized(): boolean {
-    return !!this.#networks
+    return !!Object.keys(this.#networks).length
   }
 
   get networks(): Network[] {
@@ -84,12 +87,13 @@ export class NetworksController extends EventEmitter {
     this.emitUpdate()
   }
 
-  setNetworkToAddOrUpdate(
+  async setNetworkToAddOrUpdate(
     networkToAddOrUpdate: {
       chainId: Network['chainId']
       rpcUrl: string
     } | null = null
   ) {
+    await this.#initialLoadPromise
     if (networkToAddOrUpdate) {
       this.networkToAddOrUpdate = networkToAddOrUpdate
       this.emitUpdate()
@@ -108,6 +112,7 @@ export class NetworksController extends EventEmitter {
   }
 
   async #addNetwork(network: AddNetworkRequestParams) {
+    await this.#initialLoadPromise
     if (
       !this.networkToAddOrUpdate?.info ||
       Object.values(this.networkToAddOrUpdate.info).some((prop) => prop === 'LOADING')
@@ -152,6 +157,7 @@ export class NetworksController extends EventEmitter {
   }
 
   async removeNetwork(id: NetworkId) {
+    await this.#initialLoadPromise
     if (!this.#networks[id]) return
 
     delete this.#networks[id]
@@ -161,6 +167,7 @@ export class NetworksController extends EventEmitter {
   }
 
   async #updateNetwork(network: Partial<Network>, networkId: NetworkId) {
+    await this.#initialLoadPromise
     if (!Object.keys(network).length) return
 
     const networkData = this.networks.find((n) => n.id === networkId)
@@ -239,6 +246,7 @@ export class NetworksController extends EventEmitter {
 
   // NOTE: use this method only for predefined networks
   async resetNetwork(key: keyof Network, networkId: NetworkId) {
+    await this.#initialLoadPromise
     if (!networkId || !(networkId in this.#networks) || !(key in this.#networks[networkId])) return
     delete this.#networks[networkId][key]
     await this.#storage.set('networkPreferences', this.#networks)
@@ -250,6 +258,7 @@ export class NetworksController extends EventEmitter {
     return {
       ...this,
       ...super.toJSON(),
+      isInitialized: this.isInitialized,
       networks: this.networks
     }
   }
