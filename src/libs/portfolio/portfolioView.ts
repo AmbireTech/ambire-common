@@ -77,10 +77,14 @@ export function calculateAccountPortfolio(
   }
 
   Object.keys(selectedAccountData).forEach((network: string) => {
-    const networkData = selectedAccountData[network] as
-      | AccountState
-      | AdditionalAccountState
-      | undefined
+    // In case we have error on pending state the result does not return the tokens
+    // and we dont want to not display them on dashboard/transfer
+    const accountData =
+      hasPending && !selectedAccountData[network]?.criticalError
+        ? state.pending[selectedAccount]
+        : state.latest[selectedAccount]
+
+    const networkData = accountData[network] as AccountState | AdditionalAccountState | undefined
 
     const result = networkData?.result as
       | PortfolioGetResult
