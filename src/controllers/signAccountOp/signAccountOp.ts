@@ -399,9 +399,7 @@ export class SignAccountOpController extends EventEmitter {
     this.updateStatusToReadyToSign()
   }
 
-  updateStatusToReadyToSign(
-    { shouldResetStatusIfConditionsUnmet } = { shouldResetStatusIfConditionsUnmet: false }
-  ) {
+  updateStatusToReadyToSign() {
     const isInTheMiddleOfSigning = this.status?.type === SigningStatus.InProgress
 
     const criticalErrors = this.errors.filter(
@@ -424,8 +422,6 @@ export class SignAccountOpController extends EventEmitter {
       (!this.gasUsedTooHigh || this.gasUsedTooHighAgreed)
     ) {
       this.status = { type: SigningStatus.ReadyToSign }
-    } else if (shouldResetStatusIfConditionsUnmet) {
-      this.status = null
     }
 
     this.emitUpdate()

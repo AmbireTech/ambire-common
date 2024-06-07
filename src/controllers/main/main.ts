@@ -1631,7 +1631,7 @@ export class MainController extends EventEmitter {
     this.emitError({ level: 'major', message, error })
     // To enable another try for signing in case of broadcast fail
     // broadcast is called in the FE only after successful signing
-    this.signAccountOp?.updateStatusToReadyToSign({ shouldResetStatusIfConditionsUnmet: true })
+    this.signAccountOp?.updateStatusToReadyToSign()
     this.broadcastStatus = 'INITIAL'
     this.emitUpdate()
   }
