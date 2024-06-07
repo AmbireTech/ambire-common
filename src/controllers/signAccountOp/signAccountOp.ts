@@ -399,7 +399,9 @@ export class SignAccountOpController extends EventEmitter {
     this.updateStatusToReadyToSign()
   }
 
-  updateStatusToReadyToSign() {
+  updateStatusToReadyToSign(
+    { shouldResetStatusIfConditionsUnmet } = { shouldResetStatusIfConditionsUnmet: false }
+  ) {
     const isInTheMiddleOfSigning = this.status?.type === SigningStatus.InProgress
 
     const criticalErrors = this.errors.filter(
@@ -422,9 +424,10 @@ export class SignAccountOpController extends EventEmitter {
       (!this.gasUsedTooHigh || this.gasUsedTooHighAgreed)
     ) {
       this.status = { type: SigningStatus.ReadyToSign }
-    } else {
+    } else if (shouldResetStatusIfConditionsUnmet) {
       this.status = null
     }
+
     this.emitUpdate()
   }
 
@@ -849,7 +852,7 @@ export class SignAccountOpController extends EventEmitter {
 
     try {
       // In case of EOA account
-      if (!this.account.creation) {
+      if (!isSmartAccount(this.account)) {
         if (this.accountOp.calls.length !== 1)
           return this.#setSigningError(
             'Tried to sign an EOA transaction with multiple or zero calls.'
@@ -917,6 +920,7 @@ export class SignAccountOpController extends EventEmitter {
               userOperation.nonce = getOneTimeNonce(userOperation)
             }
           } catch (e: any) {
+            // TODO: Should not be a signing error maybe?
             return this.#setSigningError(e.message)
           }
         }
@@ -950,10 +954,10 @@ export class SignAccountOpController extends EventEmitter {
       this.emitUpdate()
     } catch (error: any) {
       // TODO: To be discussed: errors appearing as toasts
-      this.emitError(error)
-      this.resetStatus()
+      // this.emitError(error)
+      // this.resetStatus()
       // TODO: To be discussed: errors appearing as UI errors, but sometime disappearing quickly
-      // this.#setSigningError(error?.message, SigningStatus.ReadyToSign)
+      this.#setSigningError(error?.message, SigningStatus.ReadyToSign)
     }
   }
 
