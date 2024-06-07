@@ -1,11 +1,11 @@
 import { Interface, ZeroAddress } from 'ethers'
 
 import { AccountOp } from '../../accountOp/accountOp'
+import { ERC20, ERC721 } from '../const/abis'
 import { HumanizerCallModule, HumanizerMeta, HumanizerPromise, IrCall } from '../interfaces'
 import {
   getAction,
   getAddressVisualization,
-  getKnownAbi,
   getKnownToken,
   getLabel,
   getNft,
@@ -17,10 +17,9 @@ import {
 export const genericErc721Humanizer: HumanizerCallModule = (
   accountOp: AccountOp,
   currentIrCalls: IrCall[],
-  humanizerMeta: HumanizerMeta,
-  options?: any
+  humanizerMeta: HumanizerMeta
 ) => {
-  const iface = new Interface(getKnownAbi(humanizerMeta, 'ERC721', options))
+  const iface = new Interface(ERC721)
   const nftTransferVisualization = (call: IrCall) => {
     const args = iface.parseTransaction(call)?.args.toArray() || []
     return args[0] === accountOp.accountAddr
@@ -103,7 +102,7 @@ export const genericErc20Humanizer: HumanizerCallModule = (
   options?: any
 ) => {
   const asyncOps: HumanizerPromise[] = []
-  const iface = new Interface(getKnownAbi(humanizerMeta, 'ERC20', options))
+  const iface = new Interface(ERC20)
   const matcher = {
     [iface.getFunction('approve')?.selector!]: (call: IrCall) => {
       const args = iface.parseTransaction(call)?.args.toArray() || []

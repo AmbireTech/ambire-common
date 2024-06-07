@@ -112,7 +112,8 @@ describe('typed message tests', () => {
   })
   test('erc20 module', () => {
     const expectedVisualization = [
-      { type: 'action', content: 'Send' },
+      { type: 'action', content: 'Grant approval' },
+      { type: 'label', content: 'for' },
       {
         type: 'token',
         address: WETH_ADDRESS

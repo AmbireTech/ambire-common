@@ -2,21 +2,13 @@
 import { Interface, ZeroAddress } from 'ethers'
 
 import { AccountOp } from '../../../accountOp/accountOp'
-import { HumanizerMeta, IrCall } from '../../interfaces'
-import {
-  getAction,
-  getDeadline,
-  getKnownAbi,
-  getLabel,
-  getRecipientText,
-  getToken
-} from '../../utils'
+import { UniV2Router } from '../../const/abis'
+import { IrCall } from '../../interfaces'
+import { getAction, getDeadline, getLabel, getRecipientText, getToken } from '../../utils'
+import { HumanizerUniMatcher } from './'
 
-const uniV2Mapping = (
-  humanizerInfo: HumanizerMeta,
-  _options?: any
-): { [key: string]: (a: AccountOp, c: IrCall) => IrCall[] } => {
-  const iface = new Interface(getKnownAbi(humanizerInfo, 'UniV2Router'))
+const uniV2Mapping = (): HumanizerUniMatcher => {
+  const iface = new Interface(UniV2Router)
   return {
     // ordered in the same order as the router
     [iface.getFunction('swapExactTokensForTokens')?.selector!]: (
