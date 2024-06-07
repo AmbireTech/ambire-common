@@ -3,6 +3,7 @@ import isEmail from 'validator/es/lib/isEmail'
 
 import { TokenResult } from '../../libs/portfolio'
 import { getTokenAmount } from '../../libs/portfolio/helpers'
+import { getSanitizedAmount } from '../../libs/transfer/amount'
 import { isValidAddress } from '../address'
 
 type ValidateReturnType = {
@@ -126,14 +127,16 @@ const validateSendTransferAmount = (
   amount: string,
   selectedAsset: TokenResult
 ): ValidateReturnType => {
-  if (!(amount && amount.length)) {
+  const sanitizedAmount = getSanitizedAmount(amount, selectedAsset.decimals)
+
+  if (!(sanitizedAmount && sanitizedAmount.length)) {
     return {
       success: false,
       message: ''
     }
   }
 
-  if (!(amount && Number(amount) > 0)) {
+  if (!(sanitizedAmount && Number(sanitizedAmount) > 0)) {
     return {
       success: false,
       message: 'The amount must be greater than 0.'
@@ -141,14 +144,14 @@ const validateSendTransferAmount = (
   }
 
   try {
-    if (amount && selectedAsset && selectedAsset.decimals) {
-      if (Number(amount) < 1 / 10 ** selectedAsset.decimals)
+    if (sanitizedAmount && selectedAsset && selectedAsset.decimals) {
+      if (Number(sanitizedAmount) < 1 / 10 ** selectedAsset.decimals)
         return {
           success: false,
           message: 'Token amount too low.'
         }
 
-      const currentAmount: bigint = parseUnits(amount, selectedAsset.decimals)
+      const currentAmount: bigint = parseUnits(sanitizedAmount, selectedAsset.decimals)
 
       if (currentAmount > getTokenAmount(selectedAsset)) {
         return {
