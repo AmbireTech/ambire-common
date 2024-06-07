@@ -2,23 +2,10 @@ import { Interface, ZeroAddress } from 'ethers'
 
 import { AccountOp } from '../../accountOp/accountOp'
 import { RouteProcessor } from '../const/abis'
-import { HumanizerCallModule, HumanizerMeta, IrCall } from '../interfaces'
-import {
-  getAction,
-  getKnownName,
-  getLabel,
-  getRecipientText,
-  getToken,
-  getUnknownVisualization
-} from '../utils'
+import { HumanizerCallModule, IrCall } from '../interfaces'
+import { getAction, getLabel, getRecipientText, getToken } from '../utils'
 
-export const sushiSwapModule: HumanizerCallModule = (
-  accountOp: AccountOp,
-  irCalls: IrCall[],
-  humanizerMeta: HumanizerMeta,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  options?: any
-) => {
+export const sushiSwapModule: HumanizerCallModule = (accountOp: AccountOp, irCalls: IrCall[]) => {
   const routeProcessorIface = new Interface(RouteProcessor)
   const matcher = {
     [`${routeProcessorIface.getFunction('processRoute')?.selector}`]: (
@@ -28,8 +15,10 @@ export const sushiSwapModule: HumanizerCallModule = (
       const params = routeProcessorIface.parseTransaction(call)!.args
       let { tokenIn, tokenOut /* route */ } = params
       const { amountIn, amountOutMin, to } = params
-      if (tokenIn === '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee') tokenIn = ZeroAddress
-      if (tokenOut === '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee') tokenOut = ZeroAddress
+      if (tokenIn.toLowerCase() === '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee')
+        tokenIn = ZeroAddress
+      if (tokenOut.toLowerCase() === '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee')
+        tokenOut = ZeroAddress
 
       return {
         ...call,
@@ -44,14 +33,8 @@ export const sushiSwapModule: HumanizerCallModule = (
     }
   }
   const newCalls: IrCall[] = irCalls.map((call: IrCall) => {
-    if (
-      getKnownName(humanizerMeta, call.to)?.includes('SushiSwap') ||
-      getKnownName(humanizerMeta, call.to)?.includes('RouterProcessor')
-    ) {
-      if (matcher[call.data.slice(0, 10)]) {
-        return matcher[call.data.slice(0, 10)](accountOp, call)
-      }
-      return { ...call, fullVisualization: getUnknownVisualization('Sushiswap', call) }
+    if (matcher[call.data.slice(0, 10)]) {
+      return matcher[call.data.slice(0, 10)](accountOp, call)
     }
     return call
   })
