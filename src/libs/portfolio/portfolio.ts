@@ -114,7 +114,7 @@ export class Portfolio {
           accountAddr,
           baseCurrency
         })
-        if (!!hintsFromExternalAPI)
+        if (hintsFromExternalAPI)
           hints = stripExternalHintsAPIResponse(hintsFromExternalAPI) as Hints
       }
     } catch (error: any) {
@@ -242,6 +242,13 @@ export class Portfolio {
         if (cachedPriceIn) {
           priceIn = cachedPriceIn
 
+          return {
+            ...token,
+            priceIn
+          }
+        }
+
+        if (!this.network.platformId) {
           return {
             ...token,
             priceIn
