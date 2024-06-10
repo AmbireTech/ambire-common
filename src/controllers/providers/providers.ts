@@ -10,19 +10,29 @@ export class ProvidersController extends EventEmitter {
 
   providers: RPCProviders = {}
 
-  get isInitialized() {
-    return this.#networks.isInitialized && !!Object.keys(this.providers).length
-  }
+  // Holds the initial load promise, so that one can wait until it completes
+  initialLoadPromise: Promise<void>
 
   constructor(networks: NetworksController) {
     super()
 
     this.#networks = networks
+    // eslint-disable-next-line @typescript-eslint/no-floating-promises
+    this.initialLoadPromise = this.#load()
+
     this.#networks.onUpdate(() => {
       if (!this.#networks.isInitialized) return
       this.#networks.networks.forEach((n) => this.#setProvider(n))
       this.emitUpdate()
     })
+  }
+
+  get isInitialized() {
+    return this.#networks.isInitialized && !!Object.keys(this.providers).length
+  }
+
+  async #load() {
+    await this.#networks.initialLoadPromise
   }
 
   #setProvider(network: Network) {

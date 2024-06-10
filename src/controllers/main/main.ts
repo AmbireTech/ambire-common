@@ -240,6 +240,8 @@ export class MainController extends EventEmitter {
     // and then we call it's methods
     await wait(1)
     this.emitUpdate()
+    await this.networks.initialLoadPromise
+    await this.providers.initialLoadPromise
     const [accounts, selectedAccount] = await Promise.all([
       this.#storage.get('accounts', []),
       this.#storage.get('selectedAccount', null)
@@ -315,6 +317,9 @@ export class MainController extends EventEmitter {
       )
     }
     this.accountAdder.onUpdate(onAccountAdderSuccess)
+    this.providers.onUpdate(() => {
+      this.updateSelectedAccount(this.selectedAccount, true)
+    })
 
     this.isReady = true
     this.emitUpdate()
@@ -637,13 +642,9 @@ export class MainController extends EventEmitter {
             [this.actions.currentAction.accountOp.networkId]: [this.actions.currentAction.accountOp]
           }
         : getAccountOpsByNetwork(selectedAccount, this.actions.visibleActionsQueue)
-    this.portfolio.updateSelectedAccount(
-      this.accounts,
-      this.networks.networks,
-      selectedAccount,
-      accountOps,
-      { forceUpdate }
-    )
+    this.portfolio.updateSelectedAccount(this.accounts, selectedAccount, accountOps, {
+      forceUpdate
+    })
   }
 
   async buildUserRequestFromDAppRequest(
@@ -1231,7 +1232,6 @@ export class MainController extends EventEmitter {
         // it may have different needs
         this.portfolio.updateSelectedAccount(
           this.accounts,
-          [network],
           localAccountOp.accountAddr,
           this.signAccountOp
             ? { [localAccountOp.networkId]: [localAccountOp] }
@@ -1607,7 +1607,6 @@ export class MainController extends EventEmitter {
 
     if (network?.rpcUrls) {
       await this.updateAccountStates('latest', [networkId])
-      await this.updateSelectedAccount(this.selectedAccount, true)
     }
   }
 
@@ -1616,7 +1615,6 @@ export class MainController extends EventEmitter {
 
     if (networkKey === 'rpcUrls') {
       await this.updateAccountStates('latest', [networkId])
-      await this.updateSelectedAccount(this.selectedAccount, true)
     }
   }
 

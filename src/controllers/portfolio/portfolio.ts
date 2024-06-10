@@ -409,7 +409,6 @@ export class PortfolioController extends EventEmitter {
   // the purpose of this function is to call it when an account is selected or the queue of accountOps changes
   async updateSelectedAccount(
     accounts: Account[],
-    networks: Network[],
     accountId: AccountId,
     accountOps?: { [key: string]: AccountOp[] },
     opts?: {
@@ -425,8 +424,8 @@ export class PortfolioController extends EventEmitter {
     const selectedAccount = accounts.find((x) => x.addr === accountId)
     if (!selectedAccount) throw new Error('selected account does not exist')
 
-    this.#prepareLatestState(selectedAccount, networks)
-    this.#preparePendingState(selectedAccount.addr, networks)
+    this.#prepareLatestState(selectedAccount, this.#networks.networks)
+    this.#preparePendingState(selectedAccount.addr, this.#networks.networks)
 
     const accountState = this.latest[accountId]
     const pendingState = this.pending[accountId]
@@ -504,7 +503,7 @@ export class PortfolioController extends EventEmitter {
     }
 
     await Promise.all(
-      networks.map(async (network) => {
+      this.#networks.networks.map(async (network) => {
         const key = `${network.id}:${accountId}`
 
         const portfolioLib = this.initializePortfolioLibIfNeeded(accountId, network.id, network)
@@ -660,7 +659,7 @@ export class PortfolioController extends EventEmitter {
   }
 
   get banners() {
-    if (!this.#networks.isInitialized) return []
+    if (!this.#networks.isInitialized || !this.#providers.isInitialized) return []
 
     const networksWithFailedRPCBanners = getNetworksWithFailedRPCBanners({
       providers: this.#providers.providers,
