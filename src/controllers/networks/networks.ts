@@ -11,7 +11,7 @@ import { Storage } from '../../interfaces/storage'
 import {
   getFeaturesByNetworkProperties,
   getNetworkInfo,
-  networksStorageMigration
+  migrateNetworkPreferencesToNetworks
 } from '../../libs/networks/networks'
 import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter'
 
@@ -89,7 +89,7 @@ export class NetworksController extends EventEmitter {
     let storedNetworks: { [key: NetworkId]: Network }
     storedNetworks = await this.#storage.get('networks', undefined)
     if (!storedNetworks && storedNetworkPreferences) {
-      storedNetworks = await networksStorageMigration(storedNetworkPreferences)
+      storedNetworks = await migrateNetworkPreferencesToNetworks(storedNetworkPreferences)
       await this.#storage.set('networks', storedNetworks)
       await this.#storage.remove('networkPreferences')
     }

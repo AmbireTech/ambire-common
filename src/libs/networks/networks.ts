@@ -323,7 +323,14 @@ export function getFeatures(
   return getFeaturesByNetworkProperties(networkInfo)
 }
 
-export async function networksStorageMigration(networkPreferences: {
+// Since v4.24.0, a new Network interface has been introduced,
+// that replaces the old NetworkDescriptor, NetworkPreference, and CustomNetwork.
+// Previously, only NetworkPreferences were stored, with other network properties
+// being calculated in a getter each time the networks were needed.
+// Now, all network properties are pre-calculated and stored in a structured format: { [key: NetworkId]: Network } in the storage.
+// This function migrates the data from the old NetworkPreferences to the new structure
+// to ensure compatibility and prevent breaking the extension after updating to v4.24.0
+export async function migrateNetworkPreferencesToNetworks(networkPreferences: {
   [key: NetworkId]: Partial<Network>
 }) {
   const predefinedNetworkIds = predefinedNetworks.map((n) => n.id)
