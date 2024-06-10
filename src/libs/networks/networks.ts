@@ -12,7 +12,13 @@ import {
   SINGLETON
 } from '../../consts/deploy'
 import { networks as predefinedNetworks } from '../../consts/networks'
-import { NetworkFeature, NetworkInfo, NetworkInfoLoading } from '../../interfaces/network'
+import {
+  Network,
+  NetworkFeature,
+  NetworkId,
+  NetworkInfo,
+  NetworkInfoLoading
+} from '../../interfaces/network'
 import { RPCProviders } from '../../interfaces/provider'
 import { Bundler } from '../../services/bundlers/bundler'
 import { getRpcProvider } from '../../services/provider'
@@ -315,4 +321,47 @@ export function getFeatures(
   networkInfo: NetworkInfoLoading<NetworkInfo> | undefined
 ): NetworkFeature[] {
   return getFeaturesByNetworkProperties(networkInfo)
+}
+
+export async function networksStorageMigration(networkPreferences: {
+  [key: NetworkId]: Partial<Network>
+}) {
+  const predefinedNetworkIds = predefinedNetworks.map((n) => n.id)
+  const customNetworkIds = Object.keys(networkPreferences).filter(
+    (k) => !predefinedNetworkIds.includes(k)
+  )
+
+  const networksToStore: { [key: NetworkId]: Network } = {}
+
+  predefinedNetworks.forEach((n) => {
+    networksToStore[n.id] = n
+  })
+  customNetworkIds.forEach((networkId: NetworkId) => {
+    const preference = networkPreferences[networkId]
+    const networkInfo = {
+      chainId: preference.chainId!,
+      isSAEnabled: preference.isSAEnabled ?? false,
+      isOptimistic: preference.isOptimistic ?? false,
+      rpcNoStateOverride: preference.rpcNoStateOverride ?? true,
+      erc4337: preference.erc4337 ?? { enabled: false, hasPaymaster: false },
+      areContractsDeployed: preference.areContractsDeployed ?? false,
+      feeOptions: { is1559: (preference as any).is1559 ?? false },
+      hasDebugTraceCall: preference.hasDebugTraceCall ?? false,
+      platformId: preference.platformId ?? '',
+      nativeAssetId: preference.nativeAssetId ?? '',
+      flagged: preference.flagged ?? false,
+      hasSingleton: preference.hasSingleton ?? false
+    }
+    delete (preference as any).is1559
+    networksToStore[networkId] = {
+      id: networkId,
+      ...preference,
+      ...networkInfo,
+      features: getFeaturesByNetworkProperties(networkInfo),
+      hasRelayer: false,
+      predefined: false
+    } as Network
+  })
+
+  return networksToStore
 }

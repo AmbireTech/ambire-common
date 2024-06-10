@@ -8,7 +8,11 @@ import {
   NetworkInfoLoading
 } from '../../interfaces/network'
 import { Storage } from '../../interfaces/storage'
-import { getFeaturesByNetworkProperties, getNetworkInfo } from '../../libs/networks/networks'
+import {
+  getFeaturesByNetworkProperties,
+  getNetworkInfo,
+  networksStorageMigration
+} from '../../libs/networks/networks'
 import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter'
 
 const STATUS_WRAPPED_METHODS = {
@@ -73,14 +77,51 @@ export class NetworksController extends EventEmitter {
   }
 
   async #load() {
+    const a = {
+      name: 'Mantle',
+      rpcUrls: [
+        'https://rpc.mantle.xyz',
+        'https://mantle-mainnet.public.blastapi.io',
+        'https://mantle-rpc.publicnode.com',
+        'https://mantle.drpc.org',
+        'https://rpc.ankr.com/mantle',
+        'https://1rpc.io/mantle'
+      ],
+      selectedRpcUrl: 'https://rpc.mantle.xyz',
+      chainId: { $bigint: '5000' },
+      nativeAssetSymbol: 'MNT',
+      explorerUrl: 'https://explorer.mantle.xyz',
+      iconUrls: [],
+      isSAEnabled: true,
+      hasSingleton: true,
+      isOptimistic: true,
+      rpcNoStateOverride: false,
+      erc4337: { enabled: true, hasPaymaster: false },
+      areContractsDeployed: true,
+      hasDebugTraceCall: false,
+      platformId: 'mantle',
+      nativeAssetId: 'mantle',
+      flagged: false,
+      is1559: true
+    }
+    await this.#storage.set('networkPreferences', { mantle: a })
+    await this.#storage.remove('networks')
+
+    const storedNetworkPreferences: { [key: NetworkId]: Partial<Network> } | undefined =
+      await this.#storage.get('networkPreferences', undefined)
     let storedNetworks: { [key: NetworkId]: Network }
-    storedNetworks = await this.#storage.get('networkPreferences', undefined)
-    if (!storedNetworks || (storedNetworks && Object.keys(storedNetworks).length === 0)) {
+    storedNetworks = await this.#storage.get('networks', undefined)
+    if (!storedNetworks && storedNetworkPreferences) {
+      storedNetworks = await networksStorageMigration(storedNetworkPreferences)
+      await this.#storage.set('networks', storedNetworks)
+      await this.#storage.remove('networkPreferences')
+    }
+    if (!storedNetworks) {
       storedNetworks = predefinedNetworks.reduce((acc, n) => {
         acc[n.id] = n
         return acc
       }, {} as { [key: NetworkId]: Network })
-      await this.#storage.set('networkPreferences', storedNetworks)
+      await this.#storage.set('networks', storedNetworks)
     }
     this.#networks = storedNetworks
 
@@ -147,7 +188,7 @@ export class NetworksController extends EventEmitter {
       predefined: false
     }
 
-    await this.#storage.set('networkPreferences', this.#networks)
+    await this.#storage.set('networks', this.#networks)
     this.networkToAddOrUpdate = null
     this.emitUpdate()
   }
@@ -162,7 +203,7 @@ export class NetworksController extends EventEmitter {
 
     delete this.#networks[id]
     this.#onRemoveNetwork(id)
-    await this.#storage.set('networkPreferences', this.#networks)
+    await this.#storage.set('networks', this.#networks)
     this.emitUpdate()
   }
 
@@ -182,7 +223,7 @@ export class NetworksController extends EventEmitter {
 
     // Update the networks with the incoming new values
     this.#networks[networkId] = { ...this.#networks[networkId], ...changedNetwork }
-    await this.#storage.set('networkPreferences', this.#networks)
+    await this.#storage.set('networks', this.#networks)
 
     this.emitUpdate()
 
@@ -206,7 +247,7 @@ export class NetworksController extends EventEmitter {
             ...feeOptions
           }
 
-          await this.#storage.set('networkPreferences', this.#networks)
+          await this.#storage.set('networks', this.#networks)
 
           this.emitUpdate()
           return
@@ -231,7 +272,7 @@ export class NetworksController extends EventEmitter {
               ...feeOptions
             }
 
-            await this.#storage.set('networkPreferences', this.#networks)
+            await this.#storage.set('networks', this.#networks)
 
             this.emitUpdate()
           }
@@ -249,7 +290,7 @@ export class NetworksController extends EventEmitter {
     await this.#initialLoadPromise
     if (!networkId || !(networkId in this.#networks) || !(key in this.#networks[networkId])) return
     delete this.#networks[networkId][key]
-    await this.#storage.set('networkPreferences', this.#networks)
+    await this.#storage.set('networks', this.#networks)
 
     this.emitUpdate()
   }

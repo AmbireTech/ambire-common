@@ -119,6 +119,10 @@ function produceMemoryStore(): Storage {
     set: (key, value) => {
       storage.set(key, stringify(value))
       return Promise.resolve(null)
+    },
+    remove: (key) => {
+      storage.delete(key)
+      return Promise.resolve(null)
     }
   }
 }
