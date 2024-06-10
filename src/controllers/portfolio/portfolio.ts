@@ -164,12 +164,12 @@ export class PortfolioController extends EventEmitter {
     }
   }
 
-  #prepareLatestState(selectedAccount: Account, networks: NetworkDescriptor[]) {
+  #prepareLatestState(selectedAccount: Account) {
     const state = this.latest
     const accountId = selectedAccount.addr
 
     if (!state[accountId]) {
-      state[accountId] = networks.reduce((acc: AccountState, network) => {
+      state[accountId] = this.#settings.networks.reduce((acc: AccountState, network) => {
         acc[network.id] = { isReady: false, isLoading: false, errors: [] }
 
         return acc
@@ -189,13 +189,17 @@ export class PortfolioController extends EventEmitter {
     // If the user adds a custom network, the portfolio fetches assets for it but the user
     // removes the network, the portfolio should remove the assets for that network.
     for (const networkId of Object.keys(accountState)) {
-      if (![...networks, { id: 'gasTank' }, { id: 'rewards' }].find((x) => x.id === networkId))
+      if (
+        ![...this.#settings.networks, { id: 'gasTank' }, { id: 'rewards' }].find(
+          (x) => x.id === networkId
+        )
+      )
         delete accountState[networkId]
     }
     this.emitUpdate()
   }
 
-  #preparePendingState(selectedAccountId: AccountId, networks: NetworkDescriptor[]) {
+  #preparePendingState(selectedAccountId: AccountId) {
     if (!this.pending[selectedAccountId]) {
       this.pending[selectedAccountId] = {}
       this.emitUpdate()
@@ -207,7 +211,11 @@ export class PortfolioController extends EventEmitter {
     // If the user adds a custom network, the portfolio fetches assets for it but the user
     // removes the network, the portfolio should remove the assets for that network.
     for (const networkId of Object.keys(accountState)) {
-      if (![...networks, { id: 'gasTank' }, { id: 'rewards' }].find((x) => x.id === networkId))
+      if (
+        ![...this.#settings.networks, { id: 'gasTank' }, { id: 'rewards' }].find(
+          (x) => x.id === networkId
+        )
+      )
         delete accountState[networkId]
     }
     this.emitUpdate()
@@ -418,8 +426,8 @@ export class PortfolioController extends EventEmitter {
     const selectedAccount = accounts.find((x) => x.addr === accountId)
     if (!selectedAccount) throw new Error('selected account does not exist')
 
-    this.#prepareLatestState(selectedAccount, networks)
-    this.#preparePendingState(selectedAccount.addr, networks)
+    this.#prepareLatestState(selectedAccount)
+    this.#preparePendingState(selectedAccount.addr)
 
     const accountState = this.latest[accountId]
     const pendingState = this.pending[accountId]
