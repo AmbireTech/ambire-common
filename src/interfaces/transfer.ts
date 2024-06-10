@@ -1,11 +1,12 @@
 import { Contacts } from '../controllers/addressBook/addressBook'
 import { HumanizerMeta } from '../libs/humanizer/interfaces'
 import { TokenResult } from '../libs/portfolio'
+import { Account } from './account'
 import { AddressStateOptional } from './domains'
 import { NetworkDescriptor } from './networkDescriptor'
 
 export interface TransferUpdate {
-  selectedAccount?: string
+  selectedAccountData?: Account
   humanizerInfo?: HumanizerMeta
   networks?: NetworkDescriptor[]
   contacts?: Contacts
