@@ -46,9 +46,15 @@ const providers = Object.fromEntries(
 )
 
 let providersCtrl: ProvidersController
-const networksCtrl = new NetworksController(produceMemoryStore(), (id) => {
-  providersCtrl.removeProvider(id)
-})
+const networksCtrl = new NetworksController(
+  produceMemoryStore(),
+  (net) => {
+    providersCtrl.setProvider(net)
+  },
+  (id) => {
+    providersCtrl.removeProvider(id)
+  }
+)
 providersCtrl = new ProvidersController(networksCtrl)
 providersCtrl.providers = providers
 

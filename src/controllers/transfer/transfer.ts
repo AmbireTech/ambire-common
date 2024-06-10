@@ -1,9 +1,9 @@
 import { formatUnits, isAddress } from 'ethers'
-import { Network } from 'interfaces/network'
 
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { Account } from '../../interfaces/account'
 import { AddressState } from '../../interfaces/domains'
+import { Network } from '../../interfaces/network'
 import { TransferUpdate } from '../../interfaces/transfer'
 import { isSmartAccount } from '../../libs/account/account'
 import { HumanizerMeta } from '../../libs/humanizer/interfaces'

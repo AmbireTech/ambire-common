@@ -5,7 +5,6 @@ import { AddNetworkRequestParams, NetworkInfo } from 'interfaces/network'
 import { describe, expect, test } from '@jest/globals'
 
 import { produceMemoryStore } from '../../../test/helpers'
-import { networks } from '../../consts/networks'
 import { NetworksController } from './networks'
 
 describe('Networks Controller', () => {

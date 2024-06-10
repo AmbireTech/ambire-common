@@ -339,9 +339,15 @@ const init = async (
     ))
 
   let providersCtrl: ProvidersController
-  const networksCtrl = new NetworksController(storage, (id) => {
-    providersCtrl.removeProvider(id)
-  })
+  const networksCtrl = new NetworksController(
+    storage,
+    (net) => {
+      providersCtrl.setProvider(net)
+    },
+    (id) => {
+      providersCtrl.removeProvider(id)
+    }
+  )
   providersCtrl = new ProvidersController(networksCtrl)
   providersCtrl.providers = providers
   const portfolio = new PortfolioController(

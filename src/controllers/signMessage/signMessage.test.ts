@@ -62,9 +62,15 @@ describe('SignMessageController', () => {
     const keystoreSigners = { internal: InternalSigner }
     keystore = new KeystoreController(produceMemoryStore(), keystoreSigners)
     let providersCtrl: ProvidersController
-    const networksCtrl = new NetworksController(produceMemoryStore(), (id) => {
-      providersCtrl.removeProvider(id)
-    })
+    const networksCtrl = new NetworksController(
+      produceMemoryStore(),
+      (net) => {
+        providersCtrl.setProvider(net)
+      },
+      (id) => {
+        providersCtrl.removeProvider(id)
+      }
+    )
     providersCtrl = new ProvidersController(networksCtrl)
     providersCtrl.providers = providers
 

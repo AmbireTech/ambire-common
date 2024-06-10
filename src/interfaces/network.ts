@@ -40,6 +40,12 @@ export interface NetworkFeature {
   msg?: string
   level: 'success' | 'danger' | 'warning' | 'loading' | 'initial'
 }
+
+// NetworkId is a string: this is our internal identifier for the network
+// chainId is a number and is the chainID used for replay protection (EIP-155)
+// we need this distinction because:
+// 1) it's easier to work with the string identifier, for example if we have an object segmented by networks it's easier to debug with string IDs
+// 2) multiple distinct networks may (rarely) run the same chainId
 export interface Network {
   id: NetworkId
   name: string

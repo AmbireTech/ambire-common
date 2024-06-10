@@ -4,12 +4,12 @@
 // It's not tested so don't expect it to work off the bat
 
 import { Interface, JsonRpcProvider } from 'ethers'
-import { Network } from 'interfaces/network'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import Estimation4337 from '../../../contracts/compiled/Estimation4337.json'
 import { DEPLOYLESS_SIMULATION_FROM, ERC_4337_ENTRYPOINT } from '../../consts/deploy'
 import { Account } from '../../interfaces/account'
+import { Network } from '../../interfaces/network'
 import { getSpoof } from '../account/account'
 import { AccountOp, getSignableCalls } from '../accountOp/accountOp'
 import { fromDescriptor } from '../deployless/deployless'

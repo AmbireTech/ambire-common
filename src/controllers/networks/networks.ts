@@ -20,6 +20,11 @@ const STATUS_WRAPPED_METHODS = {
   updateNetwork: 'INITIAL'
 } as const
 
+/**
+ * The NetworksController is responsible for managing networks. It handles both predefined networks and those
+ * that users can add either through a dApp request or manually via the UI. This controller provides functions
+ * for adding, updating, and removing networks.
+ */
 export class NetworksController extends EventEmitter {
   #storage: Storage
 
@@ -174,16 +179,6 @@ export class NetworksController extends EventEmitter {
     await this.withStatus(this.addNetwork.name, () => this.#addNetwork(network))
   }
 
-  async removeNetwork(id: NetworkId) {
-    await this.initialLoadPromise
-    if (!this.#networks[id]) return
-
-    delete this.#networks[id]
-    this.#onRemoveNetwork(id)
-    await this.#storage.set('networks', this.#networks)
-    this.emitUpdate()
-  }
-
   async #updateNetwork(network: Partial<Network>, networkId: NetworkId) {
     await this.initialLoadPromise
     if (!Object.keys(network).length) return
@@ -260,6 +255,16 @@ export class NetworksController extends EventEmitter {
 
   async updateNetwork(network: Partial<Network>, networkId: NetworkId) {
     await this.withStatus(this.updateNetwork.name, () => this.#updateNetwork(network, networkId))
+  }
+
+  async removeNetwork(id: NetworkId) {
+    await this.initialLoadPromise
+    if (!this.#networks[id]) return
+
+    delete this.#networks[id]
+    this.#onRemoveNetwork(id)
+    await this.#storage.set('networks', this.#networks)
+    this.emitUpdate()
   }
 
   toJSON() {
