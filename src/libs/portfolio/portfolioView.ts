@@ -2,12 +2,10 @@ import { Account } from '../../interfaces/account'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { shouldGetAdditionalPortfolio } from './helpers'
 import {
-  AccountState,
-  AdditionalAccountState,
-  AdditionalPortfolioGetResult,
+  AdditionalPortfolioNetworkResult,
   CollectionResult as CollectionResultInterface,
+  NetworkState,
   PortfolioControllerState,
-  PortfolioGetResult,
   TokenResult as TokenResultInterface
 } from './interfaces'
 
@@ -70,7 +68,7 @@ export function calculateAccountPortfolio(
     selectedAccountData.rewards = state.latest[selectedAccount].rewards
   }
 
-  const isNetworkReady = (networkData: AccountState | AdditionalAccountState | undefined) => {
+  const isNetworkReady = (networkData: NetworkState | undefined) => {
     return (
       (networkData && networkData.isReady && !networkData.isLoading) || networkData?.criticalError
     )
@@ -78,20 +76,17 @@ export function calculateAccountPortfolio(
 
   Object.keys(selectedAccountData).forEach((network: string) => {
     // In case we have error on pending state the result does not return the tokens
-    // and we dont want to not display them on dashboard/transfer
+    // and we don't want to not display them on dashboard/transfer
     const accountData =
       hasPending && !selectedAccountData[network]?.criticalError
         ? state.pending[selectedAccount]
         : state.latest[selectedAccount]
 
-    const networkData = accountData[network] as AccountState | AdditionalAccountState | undefined
+    const networkData = accountData[network]
 
-    const result = networkData?.result as
-      | PortfolioGetResult
-      | AdditionalPortfolioGetResult
-      | undefined
+    const result = networkData?.result
 
-    if (isNetworkReady(networkData) && !networkData?.criticalError && result) {
+    if (networkData && isNetworkReady(networkData) && !networkData?.criticalError && result) {
       // In the case we receive BigInt here, convert to number
       const networkTotal = Number(result?.total?.usd) || 0
       newTotalAmount += networkTotal

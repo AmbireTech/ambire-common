@@ -126,7 +126,7 @@ describe('Portfolio Controller ', () => {
         if (latestState && latestState.isReady) {
           expect(latestState.isReady).toEqual(true)
           expect(latestState.result?.tokens.length).toBeGreaterThan(0)
-          expect(latestState.result?.collections.length).toBeGreaterThan(0)
+          expect(latestState.result?.collections?.length).toBeGreaterThan(0)
           expect(latestState.result?.hintsFromExternalAPI).toBeTruthy()
           expect(latestState.result?.total.usd).toBeGreaterThan(1000)
           expect(pendingState).toBeFalsy()
@@ -178,13 +178,13 @@ describe('Portfolio Controller ', () => {
         if (latestState?.isReady && pendingState?.isReady) {
           expect(latestState.isReady).toEqual(true)
           expect(latestState.result?.tokens.length).toBeGreaterThan(0)
-          expect(latestState.result?.collections.length).toBeGreaterThan(0)
+          expect(latestState.result?.collections?.length).toBeGreaterThan(0)
           expect(latestState.result?.hintsFromExternalAPI).toBeTruthy()
           expect(latestState.result?.total.usd).toBeGreaterThan(1000)
 
           expect(pendingState.isReady).toEqual(true)
           expect(pendingState.result?.tokens.length).toBeGreaterThan(0)
-          expect(pendingState.result?.collections.length).toBeGreaterThan(0)
+          expect(pendingState.result?.collections?.length).toBeGreaterThan(0)
           expect(pendingState.result?.hintsFromExternalAPI).toBeTruthy()
           expect(pendingState.result?.total.usd).toBeGreaterThan(1000)
           done()
@@ -210,13 +210,13 @@ describe('Portfolio Controller ', () => {
       controller.onUpdate(() => {
         const pendingState =
           controller.pending['0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'].ethereum!
-        const collection = pendingState.result?.collections.find(
+        const collection = pendingState.result?.collections?.find(
           (c: CollectionResult) => c.symbol === 'NFT Fiesta'
         )
         expect(pendingState.isLoading).toEqual(false)
 
         expect(pendingState.result?.tokens.length).toBeGreaterThan(0)
-        expect(pendingState.result?.collections.length).toBeGreaterThan(0)
+        expect(pendingState.result?.collections?.length).toBeGreaterThan(0)
         expect(pendingState.result?.hintsFromExternalAPI).toBeTruthy()
         expect(pendingState.result?.total.usd).toBeGreaterThan(1000)
         // Expect amount post simulation to be calculated correctly

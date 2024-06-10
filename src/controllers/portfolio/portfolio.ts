@@ -30,11 +30,10 @@ import {
 /* eslint-disable import/no-extraneous-dependencies */
 import {
   AccountState,
-  AdditionalAccountState,
   ExternalHintsAPIResponse,
   GetOptions,
   PortfolioControllerState,
-  PortfolioGetResult,
+  PortfolioLibGetResult,
   PreviousHintsStorage,
   TokenResult
 } from '../../libs/portfolio/interfaces'
@@ -59,7 +58,7 @@ export class PortfolioController extends EventEmitter {
     [networkId: NetworkDescriptor['id']]: {
       isLoading: boolean
       errors: { error: string; address: string }[]
-      result: { tokens: PortfolioGetResult['tokens'] }
+      result: { tokens: PortfolioLibGetResult['tokens'] }
     }
   } = {}
 
@@ -156,7 +155,7 @@ export class PortfolioController extends EventEmitter {
   // gets additional portfolio state from the relayer that isn't retrieved from the portfolio library
   // that's usually the two additional virtual networks: getTank and rewards
   #setNetworkLoading(accountId: AccountId, network: string, isLoading: boolean, error?: any) {
-    const accountState = this.latest[accountId] as AdditionalAccountState
+    const accountState = this.latest[accountId]
     if (!accountState[network]) accountState[network] = { errors: [], isReady: false, isLoading }
     accountState[network]!.isLoading = isLoading
     if (!error) {
@@ -322,7 +321,7 @@ export class PortfolioController extends EventEmitter {
     const hasNonZeroTokens = !!this.#networksWithAssetsByAccounts?.[accountId]?.length
 
     const start = Date.now()
-    const accountState = this.latest[accountId] as AdditionalAccountState
+    const accountState = this.latest[accountId]
 
     this.#setNetworkLoading(accountId, 'gasTank', true)
     this.#setNetworkLoading(accountId, 'rewards', true)
@@ -478,7 +477,8 @@ export class PortfolioController extends EventEmitter {
             ...result,
             tokens: result.tokens.filter((token) =>
               tokenFilter(token, network, hasNonZeroTokens, additionalHints, tokenPreferences)
-            )
+            ),
+            total: getTotal(result.tokens)
           }
         }
         this.emitUpdate()
