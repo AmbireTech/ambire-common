@@ -10,6 +10,10 @@ export class ProvidersController extends EventEmitter {
 
   providers: RPCProviders = {}
 
+  get isInitialized() {
+    return this.#networks.isInitialized && !!Object.keys(this.providers).length
+  }
+
   constructor(networks: NetworksController) {
     super()
 
@@ -52,5 +56,13 @@ export class ProvidersController extends EventEmitter {
     this.providers[networkId]?.destroy()
     delete this.providers[networkId]
     this.emitUpdate()
+  }
+
+  toJSON() {
+    return {
+      ...this,
+      ...super.toJSON(),
+      isInitialized: this.isInitialized
+    }
   }
 }
