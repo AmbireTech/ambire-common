@@ -3,7 +3,7 @@ import { Interface, ZeroAddress } from 'ethers'
 import { AccountOp } from '../../accountOp/accountOp'
 import { WETH } from '../const/abis'
 import { HumanizerCallModule, HumanizerMeta, IrCall } from '../interfaces'
-import { getUnknownVisualization, getUnwraping, getWrapping } from '../utils'
+import { getUnknownVisualization, getUnwrapping, getWrapping } from '../utils'
 
 const wrapSwapReducer = (calls: IrCall[]) => {
   const newCalls: IrCall[] = []
@@ -81,7 +81,7 @@ export const wrappingModule: HumanizerCallModule = (
         const [amount] = iface.parseTransaction(call)?.args || []
         return {
           ...call,
-          fullVisualization: getUnwraping(ZeroAddress, amount, call.to)
+          fullVisualization: getUnwrapping(ZeroAddress, amount, call.to)
         }
       }
       if (!call?.fullVisualization)
