@@ -8,7 +8,12 @@ import { NetworkId } from '../../interfaces/networkDescriptor'
 import { RPCProvider } from '../../interfaces/settings'
 import { isSmartAccount } from '../account/account'
 import { CustomToken } from './customToken'
-import { PortfolioGetResult, PreviousHintsStorage, TokenResult } from './interfaces'
+import {
+  ExternalHintsAPIResponse,
+  PortfolioLibGetResult,
+  PreviousHintsStorage,
+  TokenResult
+} from './interfaces'
 
 const usdcEMapping: { [key: string]: string } = {
   avalanche: '0xa7d7079b0fead91f3e65f86e8915cb59c1a4c664',
@@ -175,53 +180,91 @@ export const getPinnedGasTankTokens = (
   }, [])
 }
 
+export const stripExternalHintsAPIResponse = (
+  response: ExternalHintsAPIResponse | null
+): PortfolioLibGetResult['hintsFromExternalAPI'] => {
+  if (!response) return null
+
+  return {
+    erc20s: response.erc20s,
+    erc721s: response.erc721s
+  }
+}
+
+const getLowercaseAddressArrayForNetwork = (
+  array: { address: string; networkId?: NetworkId }[],
+  networkId: NetworkId
+) =>
+  array
+    .filter((item) => !networkId || item.networkId === networkId)
+    .map((item) => item.address.toLowerCase())
+
 // Updates the previous hints storage with the latest portfolio get result.
 export function getUpdatedHints(
-  result: PortfolioGetResult,
+  latestHintsFromExternalAPI: ExternalHintsAPIResponse,
+  tokens: TokenResult[],
   networkId: NetworkId,
   storagePreviousHints: PreviousHintsStorage,
   key: string,
   tokenPreferences: CustomToken[]
-) {
-  const hints = { ...storagePreviousHints }
-  if (!hints.fromExternalAPI) hints.fromExternalAPI = {}
-  if (!hints.learnedTokens) hints.learnedTokens = {}
+): PreviousHintsStorage {
+  const previousHints = { ...storagePreviousHints }
 
-  const erc20s = result.tokens.filter((token) => token.amount > 0n).map((token) => token.address)
+  if (!previousHints.fromExternalAPI) previousHints.fromExternalAPI = {}
+  if (!previousHints.learnedTokens) previousHints.learnedTokens = {}
 
-  const erc721s = Object.fromEntries(
-    result.collections.map((collection) => [
-      collection.address,
-      result.hints.erc721s[collection.address]
-    ])
-  )
-  const previousHintsFromExternalAPI =
-    (hints.fromExternalAPI && hints.fromExternalAPI[key] && hints.fromExternalAPI[key]?.erc20s) ||
-    []
+  const { learnedTokens } = previousHints
+  const latestERC20HintsFromExternalAPI = latestHintsFromExternalAPI?.erc20s || []
+  const networkLearnedTokens = learnedTokens[networkId] || {}
 
-  hints.fromExternalAPI[key] = { erc20s, erc721s }
+  // The keys in learnedTokens are addresses of tokens
+  const networkLearnedTokenAddresses = Object.keys(networkLearnedTokens)
 
-  if (Object.keys(previousHintsFromExternalAPI).length > 0) {
-    // eslint-disable-next-line no-restricted-syntax
-    for (const address of erc20s) {
-      const isPinned = PINNED_TOKENS.some(
-        (pinned) =>
-          pinned.address.toLowerCase() === address.toLowerCase() && pinned.networkId === networkId
-      )
-      const isTokenPreference = tokenPreferences.some(
-        (preference) =>
-          preference.address.toLowerCase() === address.toLowerCase() &&
-          preference.networkId === networkId
-      )
+  if (networkLearnedTokenAddresses.length) {
+    // Lowercase all addresses outside of the loop for better performance
+    const lowercaseNetworkPinnedTokenAddresses = getLowercaseAddressArrayForNetwork(
+      PINNED_TOKENS,
+      networkId
+    )
+    const lowercaseNetworkPreferenceTokenAddresses = getLowercaseAddressArrayForNetwork(
+      tokenPreferences,
+      networkId
+    )
+    const networkTokensWithBalance = tokens.filter((token) => token.amount > 0n)
+    const lowercaseNetworkTokenAddressesWithBalance = getLowercaseAddressArrayForNetwork(
+      networkTokensWithBalance,
+      networkId
+    )
+    const lowercaseERC20HintsFromExternalAPI = latestERC20HintsFromExternalAPI.map((hint) =>
+      hint.toLowerCase()
+    )
 
-      if (!previousHintsFromExternalAPI.includes(address) && !isPinned && !isTokenPreference) {
-        if (!hints.learnedTokens[networkId]) hints.learnedTokens[networkId] = {}
-        hints.learnedTokens[networkId][address] = Date.now().toString()
+    // Update the timestamp of learned tokens
+    for (const address of networkLearnedTokenAddresses) {
+      const lowercaseAddress = address.toLowerCase()
+
+      const isPinned = lowercaseNetworkPinnedTokenAddresses.includes(lowercaseAddress)
+      const isTokenPreference = lowercaseNetworkPreferenceTokenAddresses.includes(lowercaseAddress)
+      const isTokenInExternalAPIHints =
+        lowercaseERC20HintsFromExternalAPI.includes(lowercaseAddress)
+      const hasBalance = lowercaseNetworkTokenAddressesWithBalance.includes(lowercaseAddress)
+
+      if (!isTokenInExternalAPIHints && !isPinned && !isTokenPreference && hasBalance) {
+        // Don't set the timestamp back to null if the account doesn't have balance for the token
+        // as learnedTokens aren't account specific and one account can have balance for the token
+        // while other don't
+        learnedTokens[networkId][address] = Date.now().toString()
       }
     }
   }
 
-  return hints
+  // Update the external hints for [network:account] with the latest from the external API
+  previousHints.fromExternalAPI[key] = latestHintsFromExternalAPI
+
+  return {
+    fromExternalAPI: previousHints.fromExternalAPI,
+    learnedTokens
+  }
 }
 
 export const tokenFilter = (

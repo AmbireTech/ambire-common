@@ -1,17 +1,17 @@
 import { AbiCoder, Interface, ZeroAddress } from 'ethers'
 
 import { AccountOp } from '../../../accountOp/accountOp'
-import { HumanizerMeta, IrCall } from '../../interfaces'
+import { UniswapUniversalRouter } from '../../const/abis'
+import { IrCall } from '../../interfaces'
 import {
   getAction,
   getAddressVisualization,
   getDeadline,
-  getKnownAbi,
   getLabel,
   getRecipientText,
   getToken,
   getUnknownVisualization,
-  getWraping
+  getWrapping
 } from '../../utils'
 import { COMMANDS, COMMANDS_DESCRIPTIONS } from './Commands'
 import { parsePath } from './utils'
@@ -31,7 +31,7 @@ const extractParams = (inputsDetails: any, input: any) => {
 }
 
 // '0x1234' => ['0x12', '0x34']
-function parseCommands(commands: string, emitError: Function): string[] | null {
+function parseCommands(commands: string, emitError?: Function): string[] | null {
   try {
     if (!commands.startsWith('0x') || commands.length % 2 !== 0) return null
     const hex = commands.slice(2)
@@ -40,21 +40,20 @@ function parseCommands(commands: string, emitError: Function): string[] | null {
     const res = hex.match(/.{2}/g)?.map((p: string) => `0x${p}`)
     return res as string[]
   } catch (e) {
-    emitError({
-      level: 'minor',
-      message: 'Unexpected error in parinsing uniswap commands',
-      error: e
-    })
+    emitError &&
+      emitError({
+        level: 'minor',
+        message: 'Unexpected error in parsing uniswap commands',
+        error: e
+      })
     return null
   }
 }
 
-// @TODO add txns parsing (example for turning swap 1.15 and send 0.15 to swap 1.00)
 export const uniUniversalRouter = (
-  humanizerInfo: HumanizerMeta,
   options?: any
 ): { [x: string]: (a: AccountOp, c: IrCall) => IrCall[] } => {
-  const ifaceUniversalRouter = new Interface(getKnownAbi(humanizerInfo, 'UniswapUniversalRouter'))
+  const ifaceUniversalRouter = new Interface(UniswapUniversalRouter)
   return {
     [`${
       ifaceUniversalRouter.getFunction(
@@ -62,11 +61,9 @@ export const uniUniversalRouter = (
       )?.selector
     }`]: (accountOp: AccountOp, call: IrCall) => {
       const [commands, inputs, deadline] = ifaceUniversalRouter.parseTransaction(call)?.args || []
-      const parsedCommands = parseCommands(commands, options.emitError)
+      const parsedCommands = parseCommands(commands, options?.emitError)
       const parsed: IrCall[] = []
 
-      // if (!)
-      //   parsed.push({ ...call, fullVisualization: getUnknownVisualization('Uni V3', call) })
       parsedCommands
         ? parsedCommands.forEach((command: string, index: number) => {
             if (command === COMMANDS.V3_SWAP_EXACT_IN) {
@@ -113,7 +110,7 @@ export const uniUniversalRouter = (
               //   ]
               // })
             } else if (command === COMMANDS.PAY_PORTION) {
-              // @NOTE: this is used for paying fee altough its already calculated in the humanized response
+              // @NOTE: this is used for paying fee although its already calculated in the humanized response
               // @NOTE: no need to be displayed but we can add warning id the fee is too high?
               // const { inputsDetails } = COMMANDS_DESCRIPTIONS.PAY_PORTION
               // const params = extractParams(inputsDetails, inputs[index])
@@ -128,7 +125,7 @@ export const uniUniversalRouter = (
               //   ]
               // })
             } else if (command === COMMANDS.TRANSFER) {
-              // @NOTE: this is used for paying fee altough its already calculated in the humanized response
+              // @NOTE: this is used for paying fee although its already calculated in the humanized response
               // @NOTE: no need to be displayed but we can add warning id the fee is too high?
               const { inputsDetails } = COMMANDS_DESCRIPTIONS.TRANSFER
               const params = extractParams(inputsDetails, inputs[index])
@@ -185,7 +182,7 @@ export const uniUniversalRouter = (
               params.amountMin &&
                 parsed.push({
                   ...call,
-                  fullVisualization: getWraping(ZeroAddress, params.amountMin)
+                  fullVisualization: getWrapping(ZeroAddress, params.amountMin)
                 })
             } else if (command === COMMANDS.UNWRAP_WETH) {
               const { inputsDetails } = COMMANDS_DESCRIPTIONS.UNWRAP_WETH

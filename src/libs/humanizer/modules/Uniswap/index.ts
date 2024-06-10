@@ -5,21 +5,20 @@ import { uniUniversalRouter } from './uniUnivarsalRouter'
 import { uniV2Mapping } from './uniV2'
 import { uniV32Mapping, uniV3Mapping } from './uniV3'
 
+export type HumanizerUniMatcher = { [key: string]: (a: AccountOp, c: IrCall) => IrCall[] }
 export const uniswapHumanizer: HumanizerCallModule = (
   accountOp: AccountOp,
   currentIrCalls: IrCall[],
   humanizerMeta: HumanizerMeta,
   options?: any
 ) => {
-  const uniV2MappingObj = uniV2Mapping(humanizerMeta, options)
-  const uniV3MappingObj = uniV3Mapping(humanizerMeta, options)
-  const uniV32MappingObj = uniV32Mapping(humanizerMeta, options)
-  const uniUniversalRouterObj = uniUniversalRouter(humanizerMeta, options)
+  const uniV2MappingObj = uniV2Mapping()
+  const uniV3MappingObj = uniV3Mapping()
+  const uniV32MappingObj = uniV32Mapping()
+  const uniUniversalRouterObj = uniUniversalRouter(options)
 
   const matcher: {
-    [address: string]: {
-      [selector: string]: (a: AccountOp, c: IrCall) => IrCall[]
-    }
+    [address: string]: HumanizerUniMatcher
   } = {
     '0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D': uniV2MappingObj,
     '0xe592427a0aece92de3edee1f18e0157c05861564': uniV3MappingObj,

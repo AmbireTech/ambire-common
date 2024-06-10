@@ -3,6 +3,7 @@ import { Interface, parseUnits } from 'ethers'
 import { SignUserRequest } from 'interfaces/userRequest'
 
 import { TokenResult } from '../../libs/portfolio'
+import { getSanitizedAmount } from './amount'
 
 const ERC20 = new Interface(erc20Abi)
 
@@ -23,11 +24,10 @@ function buildTransferUserRequest({
 
   // if the request is a top up, the recipient is the relayer
   const recipientAddress = _recipientAddress?.toLowerCase()
-  const sanitizedAmount = amount.split('.')
-  if (sanitizedAmount[1]) sanitizedAmount[1] = sanitizedAmount[1].slice(0, selectedToken.decimals)
+  const sanitizedAmount = getSanitizedAmount(amount, selectedToken.decimals)
 
   const bigNumberHexAmount = `0x${parseUnits(
-    sanitizedAmount.join('.'),
+    sanitizedAmount,
     Number(selectedToken.decimals)
   ).toString(16)}`
 

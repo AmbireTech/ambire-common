@@ -2,10 +2,8 @@ import dotenv from 'dotenv'
 import { ZeroAddress } from 'ethers'
 
 import { geckoIdMapper } from '../../consts/coingecko'
-import { ErrorRef } from '../../controllers/eventEmitter/eventEmitter'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import {
-  AbiFragment,
   HumanizerFragment,
   HumanizerMeta,
   HumanizerSettings,
@@ -55,7 +53,7 @@ export function getNft(address: string, id: bigint): HumanizerVisualization {
 
 export function getOnBehalfOf(onBehalfOf: string, sender: string): HumanizerVisualization[] {
   return onBehalfOf.toLowerCase() !== sender.toLowerCase()
-    ? [getLabel('on befalf of'), getAddressVisualization(onBehalfOf)]
+    ? [getLabel('on behalf of'), getAddressVisualization(onBehalfOf)]
     : []
 }
 
@@ -167,45 +165,28 @@ export function getUnknownVisualization(name: string, call: IrCall): HumanizerVi
   return unknownVisualization
 }
 
-export function getWraping(
+export function getWrapping(
   address: string,
   amount: bigint,
-  hiddenAsseAddress?: string
+  hiddenAssetAddress?: string
 ): HumanizerVisualization[] {
   return [
     getAction('Wrap'),
     getToken(address, amount),
-    hiddenAsseAddress && { ...getToken(hiddenAsseAddress, 0n), isHidden: true }
+    hiddenAssetAddress && { ...getToken(hiddenAssetAddress, 0n), isHidden: true }
   ].filter((x) => x) as HumanizerVisualization[]
 }
 
-export function getUnwraping(
+export function getUnwrapping(
   address: string,
   amount: bigint,
-  hiddenAsseAddress?: string
+  hiddenAssetAddress?: string
 ): HumanizerVisualization[] {
   return [
     getAction('Unwrap'),
     getToken(address, amount),
-    hiddenAsseAddress && { ...getToken(hiddenAsseAddress, 0n), isHidden: true }
+    hiddenAssetAddress && { ...getToken(hiddenAssetAddress, 0n), isHidden: true }
   ].filter((x) => x) as HumanizerVisualization[]
-}
-
-export function getKnownAbi(
-  humanizerMeta: HumanizerMeta | undefined,
-  abiName: string,
-  options?: any // @TODO make HumanizerOptions interface
-): string[] {
-  if (!humanizerMeta) {
-    options.emitError({})
-    options.emitError({
-      message: 'getKnownAbi: tried to use the humanizer without humanizerMeta',
-      level: 'major',
-      error: new Error('getKnownAbi: tried to use the humanizer without humanizerMeta')
-    } as ErrorRef)
-    return []
-  }
-  return Object.values(humanizerMeta.abis[abiName]).map((i: AbiFragment): string => i.signature)
 }
 
 export function getKnownName(

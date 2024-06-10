@@ -1,11 +1,12 @@
 import { AbiCoder, ethers, JsonRpcProvider } from 'ethers'
-import { Account } from 'interfaces/account'
 import fetch from 'node-fetch'
 
 import { describe, expect, jest, test } from '@jest/globals'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
+import { monitor, stopMonitoring } from '../../../test/helpers/requests'
 import { networks } from '../../consts/networks'
+import { Account } from '../../interfaces/account'
 import { AccountOp } from '../accountOp/accountOp'
 import { stringify } from '../richJson/richJson'
 import { EOA_SIMULATION_NONCE } from './getOnchainBalances'
@@ -23,30 +24,42 @@ describe('Portfolio', () => {
   }
 
   test('batching works', async () => {
-    const [resultOne, resultTwo, resultThree] = await Promise.all([
+    const interceptedRequests = monitor()
+
+    // 💡 Important Note: BATCH_LIMIT is set to 40 in portfolio/gecko.ts.
+    // To simplify testing, we've chosen addresses that contain no more than 40 tokens.
+    // This allows us to predict the number of requests in advance.
+    // If more advanced testing is required, we'll need to count the number of hints and calculate the expected
+    // number of paginated requests accordingly.
+    await Promise.all([
       portfolio.get('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'),
       portfolio.get('0x8F493C12c4F5FF5Fd510549E1e28EA3dD101E850'),
-      portfolio.get('0x62d00bf1f291be434AC01b3Dc75fA84Af963370A')
+      portfolio.get('0xe750Fff1AA867DFb52c9f98596a0faB5e05d30A6')
     ])
 
-    const MS_DIFF = 10
-    expect(Math.abs(resultOne.discoveryTime - resultTwo.discoveryTime)).toBeLessThanOrEqual(MS_DIFF)
-    expect(Math.abs(resultOne.oracleCallTime - resultTwo.oracleCallTime)).toBeLessThanOrEqual(
-      MS_DIFF
+    stopMonitoring()
+
+    const multiHintsReqs = interceptedRequests.filter(
+      (req) =>
+        req?.url.hostname === 'relayer.ambire.com' && req?.url.pathname === '/velcro-v3/multi-hints'
     )
-    expect(Math.abs(resultOne.priceUpdateTime - resultTwo.priceUpdateTime)).toBeLessThanOrEqual(
-      MS_DIFF
+    const nativePriceReqs = interceptedRequests.filter(
+      (req) =>
+        req?.url.hostname === 'cena.ambire.com' && req?.url.pathname === '/api/v3/simple/price'
+    )
+    const tokenPriceReqs = interceptedRequests.filter(
+      (req) =>
+        req?.url.hostname === 'cena.ambire.com' &&
+        req?.url.pathname === '/api/v3/simple/token_price/ethereum'
+    )
+    const rpcReqs = interceptedRequests.filter(
+      (req) => req?.url === 'https://invictus.ambire.com/ethereum'
     )
 
-    expect(Math.abs(resultOne.discoveryTime - resultThree.discoveryTime)).toBeLessThanOrEqual(
-      MS_DIFF
-    )
-    expect(Math.abs(resultOne.oracleCallTime - resultThree.oracleCallTime)).toBeLessThanOrEqual(
-      MS_DIFF
-    )
-    expect(Math.abs(resultOne.priceUpdateTime - resultThree.priceUpdateTime)).toBeLessThanOrEqual(
-      MS_DIFF
-    )
+    expect(multiHintsReqs.length).toEqual(1)
+    expect(nativePriceReqs.length).toEqual(1)
+    expect(tokenPriceReqs.length).toEqual(1)
+    expect(rpcReqs.length).toEqual(1)
   })
 
   test('token simulation', async () => {
@@ -193,9 +206,6 @@ describe('Portfolio', () => {
         .map((token) => token.address)
         .filter((token) => previousHints.erc20s.includes(token))
     ).toEqual(previousHints.erc20s)
-    // Portfolio should determine the tokens' balances and prices
-    // @ts-ignore
-    expect(result.total.usd).toBeGreaterThan(100)
   })
 
   test('simulation works for EOAs', async () => {

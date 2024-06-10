@@ -30,10 +30,10 @@ import {
 /* eslint-disable import/no-extraneous-dependencies */
 import {
   AccountState,
-  AdditionalAccountState,
+  ExternalHintsAPIResponse,
   GetOptions,
   PortfolioControllerState,
-  PortfolioGetResult,
+  PortfolioLibGetResult,
   PreviousHintsStorage,
   TokenResult
 } from '../../libs/portfolio/interfaces'
@@ -43,7 +43,6 @@ import EventEmitter from '../eventEmitter/eventEmitter'
 /* eslint-disable @typescript-eslint/no-shadow */
 import { SettingsController } from '../settings/settings'
 
-const LEARNED_TOKENS_CLEAN_THRESHOLD = 10
 const LEARNED_TOKENS_NETWORK_LIMIT = 50
 
 export class PortfolioController extends EventEmitter {
@@ -59,7 +58,7 @@ export class PortfolioController extends EventEmitter {
     [networkId: NetworkDescriptor['id']]: {
       isLoading: boolean
       errors: { error: string; address: string }[]
-      result: { tokens: PortfolioGetResult['tokens'] }
+      result: { tokens: PortfolioLibGetResult['tokens'] }
     }
   } = {}
 
@@ -156,7 +155,7 @@ export class PortfolioController extends EventEmitter {
   // gets additional portfolio state from the relayer that isn't retrieved from the portfolio library
   // that's usually the two additional virtual networks: getTank and rewards
   #setNetworkLoading(accountId: AccountId, network: string, isLoading: boolean, error?: any) {
-    const accountState = this.latest[accountId] as AdditionalAccountState
+    const accountState = this.latest[accountId]
     if (!accountState[network]) accountState[network] = { errors: [], isReady: false, isLoading }
     accountState[network]!.isLoading = isLoading
     if (!error) {
@@ -322,7 +321,7 @@ export class PortfolioController extends EventEmitter {
     const hasNonZeroTokens = !!this.#networksWithAssetsByAccounts?.[accountId]?.length
 
     const start = Date.now()
-    const accountState = this.latest[accountId] as AdditionalAccountState
+    const accountState = this.latest[accountId]
 
     this.#setNetworkLoading(accountId, 'gasTank', true)
     this.#setNetworkLoading(accountId, 'rewards', true)
@@ -478,7 +477,8 @@ export class PortfolioController extends EventEmitter {
             ...result,
             tokens: result.tokens.filter((token) =>
               tokenFilter(token, network, hasNonZeroTokens, additionalHints, tokenPreferences)
-            )
+            ),
+            total: getTotal(result.tokens)
           }
         }
         this.emitUpdate()
@@ -572,9 +572,14 @@ export class PortfolioController extends EventEmitter {
         ])
 
         // Persist latest state in previousHints in the disk storage for further requests
-        if (isSuccessfulLatestUpdate && !areAccountOpsChanged) {
+        if (
+          isSuccessfulLatestUpdate &&
+          !areAccountOpsChanged &&
+          accountState[network.id]?.result?.hintsFromExternalAPI
+        ) {
           const updatedStoragePreviousHints = getUpdatedHints(
-            accountState[network.id]!.result!,
+            accountState[network.id]!.result!.hintsFromExternalAPI as ExternalHintsAPIResponse,
+            accountState[network.id]!.result!.tokens,
             network.id,
             storagePreviousHints,
             key,
@@ -606,17 +611,21 @@ export class PortfolioController extends EventEmitter {
   // Learn new tokens from humanizer and debug_traceCall
   async learnTokens(tokenAddresses: string[] | undefined, networkId: NetworkId) {
     if (!tokenAddresses) return
+
     const storagePreviousHints = this.#previousHints
-    storagePreviousHints.learnedTokens = {}
-    const learnedTokens = storagePreviousHints.learnedTokens || {}
+
+    if (!storagePreviousHints.learnedTokens) storagePreviousHints.learnedTokens = {}
+
+    const { learnedTokens } = storagePreviousHints
     let networkLearnedTokens: { [key: string]: string | null } = learnedTokens[networkId] || {}
 
-    const tokensToLearn = tokenAddresses
-      .filter((address) => address !== ZeroAddress && !(address in networkLearnedTokens))
-      .reduce((acc: { [key: string]: null }, curr) => {
-        acc[curr] = null
-        return acc
-      }, {})
+    const tokensToLearn = tokenAddresses.reduce((acc: { [key: string]: null }, address) => {
+      if (address === ZeroAddress) return acc
+
+      // Keep the timestamp of all learned tokens
+      acc[address] = acc[address] || null
+      return acc
+    }, {})
 
     if (!Object.keys(tokensToLearn).length) return
     // Add new tokens in the beginning of the list
