@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-floating-promises */
 
+import { Account } from '../../interfaces/account'
 import { DappUserRequest, SignUserRequest, UserRequest } from '../../interfaces/userRequest'
 import { WindowManager } from '../../interfaces/window'
 import { AccountOp } from '../../libs/accountOp/accountOp'
@@ -57,21 +58,19 @@ export class ActionsController extends EventEmitter {
   #onActionWindowClose: () => void
 
   get visibleActionsQueue(): Action[] {
-    return (
-      this.actionsQueue.map((a) => {
-        if (a.type === 'accountOp') {
-          return a.accountOp.accountAddr === this.#selectedAccount ? a : undefined
-        }
-        if (a.type === 'signMessage') {
-          return a.userRequest.meta.accountAddr === this.#selectedAccount ? a : undefined
-        }
-        if (a.type === 'benzin') {
-          return a.userRequest.meta.accountAddr === this.#selectedAccount ? a : undefined
-        }
+    return this.actionsQueue.filter((a) => {
+      if (a.type === 'accountOp') {
+        return a.accountOp.accountAddr === this.#selectedAccount
+      }
+      if (a.type === 'signMessage') {
+        return a.userRequest.meta.accountAddr === this.#selectedAccount
+      }
+      if (a.type === 'benzin') {
+        return a.userRequest.meta.accountAddr === this.#selectedAccount
+      }
 
-        return a
-      }) as (Action | undefined)[]
-    ).filter(Boolean) as Action[]
+      return false
+    })
   }
 
   constructor({
@@ -187,6 +186,24 @@ export class ActionsController extends EventEmitter {
   focusActionWindow = () => {
     if (!this.visibleActionsQueue.length || !this.currentAction || !this.actionWindowId) return
     this.#windowManager.focus(this.actionWindowId)
+  }
+
+  removeAccountData(address: Account['addr']) {
+    this.actionsQueue = this.actionsQueue.filter((a) => {
+      if (a.type === 'accountOp') {
+        return a.accountOp.accountAddr !== address
+      }
+      if (a.type === 'signMessage') {
+        return a.userRequest.meta.accountAddr !== address
+      }
+      if (a.type === 'benzin') {
+        return a.userRequest.meta.accountAddr !== address
+      }
+
+      return false
+    })
+
+    this.emitUpdate()
   }
 
   get banners() {

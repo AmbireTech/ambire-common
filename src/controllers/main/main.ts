@@ -564,6 +564,58 @@ export class MainController extends EventEmitter {
     this.emitUpdate()
   }
 
+  removeAccount(address: Account['addr']) {
+    // Compute account keys that are only associated with this account
+    const accountAssociatedKeys =
+      this.accounts.find((acc) => acc.addr === address)?.associatedKeys || []
+    const keysInKeystore = this.keystore.keys
+    const importedAccountKeys = keysInKeystore.filter((key) =>
+      accountAssociatedKeys.includes(key.addr)
+    )
+    const solelyAccountKeys = importedAccountKeys.filter((key) => {
+      const isKeyAssociatedWithOtherAccounts = this.accounts.some(
+        (acc) => acc.addr !== address && acc.associatedKeys.includes(key.addr)
+      )
+
+      return !isKeyAssociatedWithOtherAccounts
+    })
+
+    // Update the main controller
+    const nextAccounts = this.accounts.filter((acc) => acc.addr !== address)
+
+    this.accounts.length = 0
+    this.accounts.push(...nextAccounts)
+    this.#storage.set('accounts', nextAccounts)
+
+    if (this.selectedAccount?.toLowerCase() === address.toLowerCase()) {
+      const nextSelectedAccount = getDefaultSelectedAccount(nextAccounts)?.addr
+
+      if (nextSelectedAccount) {
+        this.selectAccount(nextSelectedAccount)
+      } else {
+        this.selectedAccount = null
+      }
+    }
+
+    this.emitUpdate()
+
+    // Remove account keys from the keystore
+    for (const key of solelyAccountKeys) {
+      this.keystore.removeKey(key.addr, key.type)
+    }
+
+    // Remove account data from sub-controllers
+    this.portfolio.removeAccountData(address)
+    this.activity.removeAccountData(address)
+    this.actions.removeAccountData(address)
+    this.signMessage.removeAccountData(address)
+    this.settings.removeAccountData(address, solelyAccountKeys)
+
+    if (this.signAccountOp?.account.addr === address) {
+      this.destroySignAccOp()
+    }
+  }
+
   async #ensureAccountInfo(accountAddr: AccountId, networkId: NetworkId) {
     await this.#initialLoadPromise
     // Initial sanity check: does this account even exist?

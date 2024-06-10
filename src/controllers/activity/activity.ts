@@ -3,7 +3,7 @@
 import { SettingsController } from 'controllers/settings/settings'
 import fetch from 'node-fetch'
 
-import { AccountId, AccountStates } from '../../interfaces/account'
+import { Account, AccountId, AccountStates } from '../../interfaces/account'
 import { Banner } from '../../interfaces/banner'
 import { Storage } from '../../interfaces/storage'
 import { Message } from '../../interfaces/userRequest'
@@ -470,6 +470,25 @@ export class ActivityController extends EventEmitter {
       this.#signedMessages,
       this.signedMessagesPagination
     )
+    this.emitUpdate()
+  }
+
+  removeAccountData(address: Account['addr']) {
+    delete this.#accountsOps[address]
+    delete this.#signedMessages[address]
+
+    this.accountsOps = this.filterAndPaginateAccountOps(
+      this.#accountsOps,
+      this.accountsOpsPagination
+    )
+    this.signedMessages = this.filterAndPaginateSignedMessages(
+      this.#signedMessages,
+      this.signedMessagesPagination
+    )
+
+    this.#storage.set('accountsOps', this.#accountsOps)
+    this.#storage.set('signedMessages', this.#signedMessages)
+
     this.emitUpdate()
   }
 
