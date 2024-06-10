@@ -186,9 +186,17 @@ export class MainController extends EventEmitter {
     this.invite = new InviteController({ relayerUrl, fetch, storage: this.#storage })
     this.keystore = new KeystoreController(this.#storage, keystoreSigners)
     this.#externalSignerControllers = externalSignerControllers
-    this.networks = new NetworksController(this.#storage, (networkId: NetworkId) => {
-      this.providers.removeProvider(networkId)
-    })
+    this.networks = new NetworksController(
+      this.#storage,
+      async (network: Network) => {
+        this.providers.setProvider(network)
+        await this.updateAccountStates('latest', [network.id])
+        await this.updateSelectedAccount(this.selectedAccount, true)
+      },
+      (networkId: NetworkId) => {
+        this.providers.removeProvider(networkId)
+      }
+    )
     this.providers = new ProvidersController(this.networks)
     this.settings = new SettingsController(this.#storage)
     this.portfolio = new PortfolioController(
@@ -317,9 +325,6 @@ export class MainController extends EventEmitter {
       )
     }
     this.accountAdder.onUpdate(onAccountAdderSuccess)
-    this.providers.onUpdate(() => {
-      this.updateSelectedAccount(this.selectedAccount, true)
-    })
 
     this.isReady = true
     this.emitUpdate()
@@ -1600,22 +1605,6 @@ export class MainController extends EventEmitter {
     await wait(1)
     this.broadcastStatus = 'INITIAL'
     this.emitUpdate()
-  }
-
-  async updateNetwork(network: Partial<Network>, networkId: NetworkId) {
-    await this.networks.updateNetwork(network, networkId)
-
-    if (network?.rpcUrls) {
-      await this.updateAccountStates('latest', [networkId])
-    }
-  }
-
-  async resetNetwork(networkKey: keyof Network, networkId: NetworkId) {
-    await this.networks.resetNetwork(networkKey, networkId)
-
-    if (networkKey === 'rpcUrls') {
-      await this.updateAccountStates('latest', [networkId])
-    }
   }
 
   // ! IMPORTANT !

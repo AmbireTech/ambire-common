@@ -35,12 +35,19 @@ export class NetworksController extends EventEmitter {
 
   #onRemoveNetwork: (id: NetworkId) => void
 
+  #onAddOrUpdateNetwork: (network: Network) => void
+
   // Holds the initial load promise, so that one can wait until it completes
   initialLoadPromise: Promise<void>
 
-  constructor(storage: Storage, onRemoveNetwork: (id: NetworkId) => void) {
+  constructor(
+    storage: Storage,
+    onAddOrUpdateNetwork: (network: Network) => void,
+    onRemoveNetwork: (id: NetworkId) => void
+  ) {
     super()
     this.#storage = storage
+    this.#onAddOrUpdateNetwork = onAddOrUpdateNetwork
     this.#onRemoveNetwork = onRemoveNetwork
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.initialLoadPromise = this.#load()
@@ -157,7 +164,7 @@ export class NetworksController extends EventEmitter {
       hasRelayer: false,
       predefined: false
     }
-
+    this.#onAddOrUpdateNetwork(this.#networks[networkId])
     await this.#storage.set('networks', this.#networks)
     this.networkToAddOrUpdate = null
     this.emitUpdate()
@@ -193,8 +200,8 @@ export class NetworksController extends EventEmitter {
 
     // Update the networks with the incoming new values
     this.#networks[networkId] = { ...this.#networks[networkId], ...changedNetwork }
+    this.#onAddOrUpdateNetwork(this.#networks[networkId])
     await this.#storage.set('networks', this.#networks)
-
     this.emitUpdate()
 
     // Do not wait the rpc validation in order to complete the execution of updateNetwork
@@ -253,16 +260,6 @@ export class NetworksController extends EventEmitter {
 
   async updateNetwork(network: Partial<Network>, networkId: NetworkId) {
     await this.withStatus(this.updateNetwork.name, () => this.#updateNetwork(network, networkId))
-  }
-
-  // NOTE: use this method only for predefined networks
-  async resetNetwork(key: keyof Network, networkId: NetworkId) {
-    await this.initialLoadPromise
-    if (!networkId || !(networkId in this.#networks) || !(key in this.#networks[networkId])) return
-    delete this.#networks[networkId][key]
-    await this.#storage.set('networks', this.#networks)
-
-    this.emitUpdate()
   }
 
   toJSON() {

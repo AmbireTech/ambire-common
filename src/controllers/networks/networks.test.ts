@@ -11,7 +11,11 @@ import { NetworksController } from './networks'
 describe('Networks Controller', () => {
   let networksController: NetworksController
   beforeEach(() => {
-    networksController = new NetworksController(produceMemoryStore(), () => {})
+    networksController = new NetworksController(
+      produceMemoryStore(),
+      () => {},
+      () => {}
+    )
   })
 
   test('should update network preferences', (done) => {
@@ -34,36 +38,6 @@ describe('Networks Controller', () => {
     })
 
     networksController.updateNetwork(preferences, 'ethereum')
-  })
-
-  test('should reset network preferences', (done) => {
-    const ethereumStatic = networks.find(({ id }) => id === 'ethereum')
-    const modifiedNetwork = networksController.networks.find(({ id }) => id === 'ethereum')
-
-    let emitCounter = 0
-    networksController.onUpdate(() => {
-      emitCounter++
-
-      if (emitCounter === 1) {
-        networksController.resetNetwork('rpcUrls', 'ethereum')
-      }
-      if (emitCounter === 3) {
-        expect(modifiedNetwork?.rpcUrls).toEqual(ethereumStatic?.rpcUrls)
-        expect(modifiedNetwork?.explorerUrl).toEqual('https://etherscan.io/custom') // Should remain the same
-      }
-
-      if (networksController.statuses.updateNetwork === 'INITIAL') {
-        done()
-      }
-    })
-
-    networksController.updateNetwork(
-      {
-        rpcUrls: ['https://eth-mainnet.alchemyapi.io/v2/123abc123abc123abc123abc123abcde'],
-        explorerUrl: 'https://etherscan.io/custom'
-      },
-      'ethereum'
-    )
   })
 
   test('should add the mantle network as a custom network', (done) => {

@@ -19,12 +19,6 @@ export class ProvidersController extends EventEmitter {
     this.#networks = networks
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.initialLoadPromise = this.#load()
-
-    this.#networks.onUpdate(() => {
-      if (!this.#networks.isInitialized) return
-      this.#networks.networks.forEach((n) => this.#setProvider(n))
-      this.emitUpdate()
-    })
   }
 
   get isInitialized() {
@@ -33,9 +27,11 @@ export class ProvidersController extends EventEmitter {
 
   async #load() {
     await this.#networks.initialLoadPromise
+    this.#networks.networks.forEach((n) => this.setProvider(n))
+    this.emitUpdate()
   }
 
-  #setProvider(network: Network) {
+  setProvider(network: Network) {
     const provider = this.providers[network.id]
 
     // Only update the RPC if the new RPC is different from the current one or if there is no RPC for this network yet.

@@ -100,9 +100,15 @@ describe('Portfolio Controller ', () => {
 
       const storage = produceMemoryStore()
       let providersCtrl: ProvidersController
-      const networksCtrl = new NetworksController(storage, (id) => {
-        providersCtrl.removeProvider(id)
-      })
+      const networksCtrl = new NetworksController(
+        storage,
+        (net) => {
+          providersCtrl.setProvider(net)
+        },
+        (id) => {
+          providersCtrl.removeProvider(id)
+        }
+      )
       providersCtrl = new ProvidersController(networksCtrl)
       providersCtrl.providers = providers
       const controller = new PortfolioController(storage, providersCtrl, networksCtrl, relayerUrl)
@@ -124,9 +130,15 @@ describe('Portfolio Controller ', () => {
     test('Latest tokens are fetched and kept in the controller, while the pending should not be fetched (no AccountOp passed)', (done) => {
       const storage = produceMemoryStore()
       let providersCtrl: ProvidersController
-      const networksCtrl = new NetworksController(storage, (id) => {
-        providersCtrl.removeProvider(id)
-      })
+      const networksCtrl = new NetworksController(
+        storage,
+        (net) => {
+          providersCtrl.setProvider(net)
+        },
+        (id) => {
+          providersCtrl.removeProvider(id)
+        }
+      )
       providersCtrl = new ProvidersController(networksCtrl)
       providersCtrl.providers = providers
       const controller = new PortfolioController(storage, providersCtrl, networksCtrl, relayerUrl)
@@ -156,9 +168,15 @@ describe('Portfolio Controller ', () => {
 
       const storage = produceMemoryStore()
       let providersCtrl: ProvidersController
-      const networksCtrl = new NetworksController(storage, (id) => {
-        providersCtrl.removeProvider(id)
-      })
+      const networksCtrl = new NetworksController(
+        storage,
+        (net) => {
+          providersCtrl.setProvider(net)
+        },
+        (id) => {
+          providersCtrl.removeProvider(id)
+        }
+      )
       providersCtrl = new ProvidersController(networksCtrl)
       providersCtrl.providers = providers
       const controller = new PortfolioController(storage, providersCtrl, networksCtrl, relayerUrl)
@@ -184,9 +202,15 @@ describe('Portfolio Controller ', () => {
     test('Latest and Pending are fetched, because `forceUpdate` flag is set', (done) => {
       const storage = produceMemoryStore()
       let providersCtrl: ProvidersController
-      const networksCtrl = new NetworksController(storage, (id) => {
-        providersCtrl.removeProvider(id)
-      })
+      const networksCtrl = new NetworksController(
+        storage,
+        (net) => {
+          providersCtrl.setProvider(net)
+        },
+        (id) => {
+          providersCtrl.removeProvider(id)
+        }
+      )
       providersCtrl = new ProvidersController(networksCtrl)
       providersCtrl.providers = providers
       const controller = new PortfolioController(storage, providersCtrl, networksCtrl, relayerUrl)
@@ -224,9 +248,15 @@ describe('Portfolio Controller ', () => {
 
       const storage = produceMemoryStore()
       let providersCtrl: ProvidersController
-      const networksCtrl = new NetworksController(storage, (id) => {
-        providersCtrl.removeProvider(id)
-      })
+      const networksCtrl = new NetworksController(
+        storage,
+        (net) => {
+          providersCtrl.setProvider(net)
+        },
+        (id) => {
+          providersCtrl.removeProvider(id)
+        }
+      )
       providersCtrl = new ProvidersController(networksCtrl)
       providersCtrl.providers = providers
       const controller = new PortfolioController(storage, providersCtrl, networksCtrl, relayerUrl)
@@ -283,9 +313,15 @@ describe('Portfolio Controller ', () => {
 
       const storage = produceMemoryStore()
       let providersCtrl: ProvidersController
-      const networksCtrl = new NetworksController(storage, (id) => {
-        providersCtrl.removeProvider(id)
-      })
+      const networksCtrl = new NetworksController(
+        storage,
+        (net) => {
+          providersCtrl.setProvider(net)
+        },
+        (id) => {
+          providersCtrl.removeProvider(id)
+        }
+      )
       providersCtrl = new ProvidersController(networksCtrl)
       providersCtrl.providers = providers
       const controller = new PortfolioController(storage, providersCtrl, networksCtrl, relayerUrl)
@@ -316,9 +352,15 @@ describe('Portfolio Controller ', () => {
 
       const storage = produceMemoryStore()
       let providersCtrl: ProvidersController
-      const networksCtrl = new NetworksController(storage, (id) => {
-        providersCtrl.removeProvider(id)
-      })
+      const networksCtrl = new NetworksController(
+        storage,
+        (net) => {
+          providersCtrl.setProvider(net)
+        },
+        (id) => {
+          providersCtrl.removeProvider(id)
+        }
+      )
       providersCtrl = new ProvidersController(networksCtrl)
       providersCtrl.providers = providers
       const controller = new PortfolioController(storage, providersCtrl, networksCtrl, relayerUrl)
@@ -343,9 +385,15 @@ describe('Portfolio Controller ', () => {
 
       const storage = produceMemoryStore()
       let providersCtrl: ProvidersController
-      const networksCtrl = new NetworksController(storage, (id) => {
-        providersCtrl.removeProvider(id)
-      })
+      const networksCtrl = new NetworksController(
+        storage,
+        (net) => {
+          providersCtrl.setProvider(net)
+        },
+        (id) => {
+          providersCtrl.removeProvider(id)
+        }
+      )
       providersCtrl = new ProvidersController(networksCtrl)
       providersCtrl.providers = providers
       const controller = new PortfolioController(storage, providersCtrl, networksCtrl, relayerUrl)
@@ -379,9 +427,15 @@ describe('Portfolio Controller ', () => {
         creation: null
       }
       let providersCtrl: ProvidersController
-      const networksCtrl = new NetworksController(storage, (id) => {
-        providersCtrl.removeProvider(id)
-      })
+      const networksCtrl = new NetworksController(
+        storage,
+        (net) => {
+          providersCtrl.setProvider(net)
+        },
+        (id) => {
+          providersCtrl.removeProvider(id)
+        }
+      )
       providersCtrl = new ProvidersController(networksCtrl)
       providersCtrl.providers = providers
       const controller = new PortfolioController(storage, providersCtrl, networksCtrl, relayerUrl)
@@ -418,9 +472,15 @@ describe('Portfolio Controller ', () => {
         }
       }
       let providersCtrl: ProvidersController
-      const networksCtrl = new NetworksController(storage, (id) => {
-        providersCtrl.removeProvider(id)
-      })
+      const networksCtrl = new NetworksController(
+        storage,
+        (net) => {
+          providersCtrl.setProvider(net)
+        },
+        (id) => {
+          providersCtrl.removeProvider(id)
+        }
+      )
       providersCtrl = new ProvidersController(networksCtrl)
       providersCtrl.providers = providers
       const controller = new PortfolioController(storage, providersCtrl, networksCtrl, relayerUrl)
@@ -443,9 +503,15 @@ describe('Portfolio Controller ', () => {
       const storage = produceMemoryStore()
 
       let providersCtrl: ProvidersController
-      const networksCtrl = new NetworksController(storage, (id) => {
-        providersCtrl.removeProvider(id)
-      })
+      const networksCtrl = new NetworksController(
+        storage,
+        (net) => {
+          providersCtrl.setProvider(net)
+        },
+        (id) => {
+          providersCtrl.removeProvider(id)
+        }
+      )
       providersCtrl = new ProvidersController(networksCtrl)
       providersCtrl.providers = providers
       const controller = new PortfolioController(storage, providersCtrl, networksCtrl, relayerUrl)

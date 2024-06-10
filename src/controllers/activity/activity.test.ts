@@ -58,9 +58,15 @@ describe('Activity Controller ', () => {
     test('Retrieved from Controller and persisted in Storage', async () => {
       const storage = produceMemoryStore()
       let providersCtrl: ProvidersController
-      const networksCtrl = new NetworksController(storage, (id) => {
-        providersCtrl.removeProvider(id)
-      })
+      const networksCtrl = new NetworksController(
+        storage,
+        (net) => {
+          providersCtrl.setProvider(net)
+        },
+        (id) => {
+          providersCtrl.removeProvider(id)
+        }
+      )
       providersCtrl = new ProvidersController(networksCtrl)
       providersCtrl.providers = providers
       const controller = new ActivityController(
@@ -110,9 +116,15 @@ describe('Activity Controller ', () => {
     test('Pagination and filtration handled correctly', async () => {
       const storage = produceMemoryStore()
       let providersCtrl: ProvidersController
-      const networksCtrl = new NetworksController(storage, (id) => {
-        providersCtrl.removeProvider(id)
-      })
+      const networksCtrl = new NetworksController(
+        storage,
+        (net) => {
+          providersCtrl.setProvider(net)
+        },
+        (id) => {
+          providersCtrl.removeProvider(id)
+        }
+      )
       providersCtrl = new ProvidersController(networksCtrl)
       providersCtrl.providers = providers
       const controller = new ActivityController(
@@ -245,9 +257,15 @@ describe('Activity Controller ', () => {
     test('`success` status is set correctly', async () => {
       const storage = produceMemoryStore()
       let providersCtrl: ProvidersController
-      const networksCtrl = new NetworksController(storage, (id) => {
-        providersCtrl.removeProvider(id)
-      })
+      const networksCtrl = new NetworksController(
+        storage,
+        (net) => {
+          providersCtrl.setProvider(net)
+        },
+        (id) => {
+          providersCtrl.removeProvider(id)
+        }
+      )
       providersCtrl = new ProvidersController(networksCtrl)
       providersCtrl.providers = providers
       const controller = new ActivityController(
@@ -295,9 +313,15 @@ describe('Activity Controller ', () => {
     test('`failed` status is set correctly', async () => {
       const storage = produceMemoryStore()
       let providersCtrl: ProvidersController
-      const networksCtrl = new NetworksController(storage, (id) => {
-        providersCtrl.removeProvider(id)
-      })
+      const networksCtrl = new NetworksController(
+        storage,
+        (net) => {
+          providersCtrl.setProvider(net)
+        },
+        (id) => {
+          providersCtrl.removeProvider(id)
+        }
+      )
       providersCtrl = new ProvidersController(networksCtrl)
       providersCtrl.providers = providers
       const controller = new ActivityController(
@@ -345,9 +369,15 @@ describe('Activity Controller ', () => {
     test('`Unknown but past nonce` status is set correctly', async () => {
       const storage = produceMemoryStore()
       let providersCtrl: ProvidersController
-      const networksCtrl = new NetworksController(storage, (id) => {
-        providersCtrl.removeProvider(id)
-      })
+      const networksCtrl = new NetworksController(
+        storage,
+        (net) => {
+          providersCtrl.setProvider(net)
+        },
+        (id) => {
+          providersCtrl.removeProvider(id)
+        }
+      )
       providersCtrl = new ProvidersController(networksCtrl)
       providersCtrl.providers = providers
       const controller = new ActivityController(
@@ -401,9 +431,15 @@ describe('Activity Controller ', () => {
     test('Keeps no more than 1000 items', async () => {
       const storage = produceMemoryStore()
       let providersCtrl: ProvidersController
-      const networksCtrl = new NetworksController(storage, (id) => {
-        providersCtrl.removeProvider(id)
-      })
+      const networksCtrl = new NetworksController(
+        storage,
+        (net) => {
+          providersCtrl.setProvider(net)
+        },
+        (id) => {
+          providersCtrl.removeProvider(id)
+        }
+      )
       providersCtrl = new ProvidersController(networksCtrl)
       providersCtrl.providers = providers
       const controller = new ActivityController(
@@ -460,9 +496,15 @@ describe('Activity Controller ', () => {
     test('Retrieved from Controller and persisted in Storage', async () => {
       const storage = produceMemoryStore()
       let providersCtrl: ProvidersController
-      const networksCtrl = new NetworksController(storage, (id) => {
-        providersCtrl.removeProvider(id)
-      })
+      const networksCtrl = new NetworksController(
+        storage,
+        (net) => {
+          providersCtrl.setProvider(net)
+        },
+        (id) => {
+          providersCtrl.removeProvider(id)
+        }
+      )
       providersCtrl = new ProvidersController(networksCtrl)
       providersCtrl.providers = providers
       const controller = new ActivityController(
@@ -510,9 +552,15 @@ describe('Activity Controller ', () => {
     test('Pagination and filtration handled correctly', async () => {
       const storage = produceMemoryStore()
       let providersCtrl: ProvidersController
-      const networksCtrl = new NetworksController(storage, (id) => {
-        providersCtrl.removeProvider(id)
-      })
+      const networksCtrl = new NetworksController(
+        storage,
+        (net) => {
+          providersCtrl.setProvider(net)
+        },
+        (id) => {
+          providersCtrl.removeProvider(id)
+        }
+      )
       providersCtrl = new ProvidersController(networksCtrl)
       providersCtrl.providers = providers
       const controller = new ActivityController(
@@ -565,9 +613,15 @@ describe('Activity Controller ', () => {
     test('Keeps no more than 1000 items', async () => {
       const storage = produceMemoryStore()
       let providersCtrl: ProvidersController
-      const networksCtrl = new NetworksController(storage, (id) => {
-        providersCtrl.removeProvider(id)
-      })
+      const networksCtrl = new NetworksController(
+        storage,
+        (net) => {
+          providersCtrl.setProvider(net)
+        },
+        (id) => {
+          providersCtrl.removeProvider(id)
+        }
+      )
       providersCtrl = new ProvidersController(networksCtrl)
       providersCtrl.providers = providers
       const controller = new ActivityController(
