@@ -77,36 +77,6 @@ export class NetworksController extends EventEmitter {
   }
 
   async #load() {
-    const a = {
-      name: 'Mantle',
-      rpcUrls: [
-        'https://rpc.mantle.xyz',
-        'https://mantle-mainnet.public.blastapi.io',
-        'https://mantle-rpc.publicnode.com',
-        'https://mantle.drpc.org',
-        'https://rpc.ankr.com/mantle',
-        'https://1rpc.io/mantle'
-      ],
-      selectedRpcUrl: 'https://rpc.mantle.xyz',
-      chainId: { $bigint: '5000' },
-      nativeAssetSymbol: 'MNT',
-      explorerUrl: 'https://explorer.mantle.xyz',
-      iconUrls: [],
-      isSAEnabled: true,
-      hasSingleton: true,
-      isOptimistic: true,
-      rpcNoStateOverride: false,
-      erc4337: { enabled: true, hasPaymaster: false },
-      areContractsDeployed: true,
-      hasDebugTraceCall: false,
-      platformId: 'mantle',
-      nativeAssetId: 'mantle',
-      flagged: false,
-      is1559: true
-    }
-    await this.#storage.set('networkPreferences', { mantle: a })
-    await this.#storage.remove('networks')
-
     const storedNetworkPreferences: { [key: NetworkId]: Partial<Network> } | undefined =
       await this.#storage.get('networkPreferences', undefined)
     let storedNetworks: { [key: NetworkId]: Network }
