@@ -23,6 +23,7 @@ import {
   TxnRequest
 } from '../../interfaces/keystore'
 import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
+import { PortfolioUpdateOpts } from '../../interfaces/portfolio'
 import { CustomNetwork, NetworkPreference } from '../../interfaces/settings'
 import { Storage } from '../../interfaces/storage'
 import { Call, DappUserRequest, SignUserRequest, UserRequest } from '../../interfaces/userRequest'
@@ -365,7 +366,7 @@ export class MainController extends EventEmitter {
     this.signAccountOp = null
     this.signAccOpInitError = null
     MainController.signAccountOpListener() // unsubscribes for further updates
-    this.updateSelectedAccount(this.selectedAccount, true)
+    this.updateSelectedAccount(this.selectedAccount, { forceUpdate: true })
 
     this.emitUpdate()
   }
@@ -380,7 +381,7 @@ export class MainController extends EventEmitter {
       this.emitUpdate()
 
       if (shouldUpdatePortfolio) {
-        this.updateSelectedAccount(this.selectedAccount, true)
+        this.updateSelectedAccount(this.selectedAccount, { forceUpdate: true })
       }
     }
   }
@@ -594,7 +595,10 @@ export class MainController extends EventEmitter {
     )
   }
 
-  async updateSelectedAccount(selectedAccount: string | null = null, forceUpdate: boolean = false) {
+  async updateSelectedAccount(
+    selectedAccount: string | null = null,
+    portfolioUpdateOpts?: PortfolioUpdateOpts
+  ) {
     if (!selectedAccount) return
 
     // pass the accountOps if any so we could reflect the pending state
@@ -609,7 +613,7 @@ export class MainController extends EventEmitter {
       this.settings.networks,
       selectedAccount,
       accountOps,
-      { forceUpdate }
+      portfolioUpdateOpts
     )
   }
 
@@ -952,7 +956,9 @@ export class MainController extends EventEmitter {
           | undefined
         // accountOp has just been rejected
         if (!accountOpAction) {
-          this.updateSelectedAccount(this.selectedAccount, true)
+          this.updateSelectedAccount(this.selectedAccount, {
+            forceUpdate: true
+          })
           this.emitUpdate()
           return
         }
@@ -970,11 +976,11 @@ export class MainController extends EventEmitter {
           }
         } else {
           this.actions.removeAction(`${meta.accountAddr}-${meta.networkId}`)
-          this.updateSelectedAccount(this.selectedAccount, true)
+          this.updateSelectedAccount(this.selectedAccount, { forceUpdate: true })
         }
       } else {
         this.actions.removeAction(id)
-        this.updateSelectedAccount(this.selectedAccount, true)
+        this.updateSelectedAccount(this.selectedAccount, { forceUpdate: true })
       }
     } else {
       this.actions.removeAction(id)
@@ -984,12 +990,12 @@ export class MainController extends EventEmitter {
 
   async addCustomNetwork(customNetwork: CustomNetwork) {
     await this.settings.addCustomNetwork(customNetwork)
-    await this.updateSelectedAccount(this.selectedAccount, true)
+    await this.updateSelectedAccount(this.selectedAccount, { forceUpdate: true })
   }
 
   async removeCustomNetwork(id: NetworkDescriptor['id']) {
     await this.settings.removeCustomNetwork(id)
-    await this.updateSelectedAccount(this.selectedAccount, true)
+    await this.updateSelectedAccount(this.selectedAccount, { forceUpdate: true })
   }
 
   async resolveAccountOpAction(data: any, actionId: AccountOpAction['id']) {
@@ -1577,7 +1583,9 @@ export class MainController extends EventEmitter {
 
     if (networkPreferences?.rpcUrls) {
       await this.updateAccountStates('latest', [networkId])
-      await this.updateSelectedAccount(this.selectedAccount, true)
+      await this.updateSelectedAccount(this.selectedAccount, {
+        forceUpdate: true
+      })
     }
   }
 
@@ -1589,7 +1597,9 @@ export class MainController extends EventEmitter {
 
     if (preferenceKey === 'rpcUrls') {
       await this.updateAccountStates('latest', [networkId])
-      await this.updateSelectedAccount(this.selectedAccount, true)
+      await this.updateSelectedAccount(this.selectedAccount, {
+        forceUpdate: true
+      })
     }
   }
 

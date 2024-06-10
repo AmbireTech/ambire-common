@@ -4,6 +4,7 @@ import fetch from 'node-fetch'
 
 import { Account, AccountId } from '../../interfaces/account'
 import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
+import { PortfolioUpdateOpts } from '../../interfaces/portfolio'
 /* eslint-disable @typescript-eslint/no-shadow */
 import { Storage } from '../../interfaces/storage'
 import { isSmartAccount } from '../../libs/account/account'
@@ -406,9 +407,7 @@ export class PortfolioController extends EventEmitter {
     networks: NetworkDescriptor[],
     accountId: AccountId,
     accountOps?: { [key: string]: AccountOp[] },
-    opts?: {
-      forceUpdate: boolean
-    }
+    opts?: PortfolioUpdateOpts
   ) {
     await this.#initialLoadPromise
 
@@ -419,11 +418,20 @@ export class PortfolioController extends EventEmitter {
     const selectedAccount = accounts.find((x) => x.addr === accountId)
     if (!selectedAccount) throw new Error('selected account does not exist')
 
+    if (opts?.deletePreviousState) {
+      delete this.latest[accountId]
+      delete this.pending[accountId]
+    }
+
     this.#prepareLatestState(selectedAccount, networks)
     this.#preparePendingState(selectedAccount.addr, networks)
 
     const accountState = this.latest[accountId]
     const pendingState = this.pending[accountId]
+
+    if (opts?.deletePreviousState) {
+      this.emitUpdate()
+    }
 
     if (shouldGetAdditionalPortfolio(selectedAccount)) {
       this.#getAdditionalPortfolio(accountId)
