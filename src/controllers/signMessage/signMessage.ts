@@ -102,7 +102,10 @@ export class SignMessageController extends EventEmitter {
       this.messageToSign = messageToSign
       this.#accounts = accounts
       this.#accountStates = accountStates
-
+      const network = this.#settings.networks.find(
+        (n: NetworkDescriptor) => n.id === this.messageToSign?.networkId
+      )
+      // eslint-disable-next-line @typescript-eslint/no-floating-promises
       messageHumanizer(
         messageToSign,
         this.#storage,
@@ -111,7 +114,8 @@ export class SignMessageController extends EventEmitter {
           this.humanReadable = humanizedMessage
           this.emitUpdate()
         },
-        (err) => this.emitError(err)
+        (err) => this.emitError(err),
+        { network }
       )
 
       this.isInitialized = true

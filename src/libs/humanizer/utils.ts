@@ -53,7 +53,7 @@ export function getNft(address: string, id: bigint): HumanizerVisualization {
 
 export function getOnBehalfOf(onBehalfOf: string, sender: string): HumanizerVisualization[] {
   return onBehalfOf.toLowerCase() !== sender.toLowerCase()
-    ? [getLabel('on befalf of'), getAddressVisualization(onBehalfOf)]
+    ? [getLabel('on behalf of'), getAddressVisualization(onBehalfOf)]
     : []
 }
 
@@ -177,15 +177,15 @@ export function getWrapping(
   ].filter((x) => x) as HumanizerVisualization[]
 }
 
-export function getUnwraping(
+export function getUnwrapping(
   address: string,
   amount: bigint,
-  hiddenAsseAddress?: string
+  hiddenAssetAddress?: string
 ): HumanizerVisualization[] {
   return [
     getAction('Unwrap'),
     getToken(address, amount),
-    hiddenAsseAddress && { ...getToken(hiddenAsseAddress, 0n), isHidden: true }
+    hiddenAssetAddress && { ...getToken(hiddenAssetAddress, 0n), isHidden: true }
   ].filter((x) => x) as HumanizerVisualization[]
 }
 

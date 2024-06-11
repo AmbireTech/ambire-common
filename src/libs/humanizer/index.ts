@@ -97,6 +97,11 @@ const sharedHumanization = async <InputDataType extends AccountOp | Message>(
   if ('content' in data) {
     message = parse(stringify(data))
   }
+  const humanizerOptions = {
+    fetch,
+    emitError,
+    network: options?.network
+  }
   for (let i = 0; i <= 3; i++) {
     // @TODO refactor conditional for nocache
     const totalHumanizerMetaToBeUsed = await lazyReadHumanizerMeta(storage, {
@@ -104,21 +109,18 @@ const sharedHumanization = async <InputDataType extends AccountOp | Message>(
     })
     if ('calls' in data) {
       //
-      ;[irCalls, asyncOps] = humanizeCalls(op!, humanizerCallModules, totalHumanizerMetaToBeUsed, {
-        fetch,
-        emitError
-      })
+      ;[irCalls, asyncOps] = humanizeCalls(
+        op!,
+        humanizerCallModules,
+        totalHumanizerMetaToBeUsed,
+        humanizerOptions
+      )
       const [parsedCalls, newAsyncOps] = parseCalls(
         op!,
         irCalls,
         parsingModules,
         totalHumanizerMetaToBeUsed,
-        {
-          fetch,
-          emitError,
-          network: options?.network,
-          networkId: op!.networkId
-        }
+        humanizerOptions
       )
       asyncOps.push(...newAsyncOps)
       ;(callback as (response: IrCall[], nonGlobalFrags: HumanizerFragment[]) => void)(
@@ -139,11 +141,12 @@ const sharedHumanization = async <InputDataType extends AccountOp | Message>(
           : humanizePlainTextMessage(message!.content))
       }
 
-      ;[parsedMessage, asyncOps] = parseMessage(humanizerSettings, irMessage, parsingModules, {
-        fetch,
-        emitError,
-        network: options?.network
-      })
+      ;[parsedMessage, asyncOps] = parseMessage(
+        humanizerSettings,
+        irMessage,
+        parsingModules,
+        humanizerOptions
+      )
       ;(callback as (response: IrMessage) => void)(parsedMessage)
     }
 
