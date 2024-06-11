@@ -1,6 +1,6 @@
 import { AccountOpAction } from 'controllers/actions/actions'
 
-import { NetworkDescriptor } from './networkDescriptor'
+import { Network } from './network'
 
 export type BannerType = 'error' | 'warning' | 'info' | 'success'
 
@@ -61,6 +61,6 @@ export type Action =
       label: 'Select'
       actionName: 'select-rpc-url'
       meta: {
-        network: NetworkDescriptor
+        network: Network
       }
     }

@@ -3,7 +3,7 @@ import { Interface, JsonRpcProvider, Provider } from 'ethers'
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireAccountFactory from '../../../contracts/compiled/AmbireAccountFactory.json'
 import { Account, AccountStates } from '../../interfaces/account'
-import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
+import { Network } from '../../interfaces/network'
 import { getSpoof } from '../account/account'
 import { AccountOp, getSignableCalls } from '../accountOp/accountOp'
 import { Call } from '../accountOp/types'
@@ -13,7 +13,7 @@ export async function estimateCustomNetwork(
   account: Account,
   op: AccountOp,
   accountStates: AccountStates,
-  network: NetworkDescriptor,
+  network: Network,
   provider: Provider | JsonRpcProvider
 ): Promise<bigint> {
   const call: Call = {

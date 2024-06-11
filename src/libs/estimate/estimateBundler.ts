@@ -10,7 +10,7 @@ import {
   PROXY_NO_REVERTS
 } from '../../consts/deploy'
 import { Account, AccountStates } from '../../interfaces/account'
-import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
+import { Network } from '../../interfaces/network'
 import { Bundler } from '../../services/bundlers/bundler'
 import { AccountOp, getSignableCalls } from '../accountOp/accountOp'
 import { getFeeCall } from '../calls/calls'
@@ -92,7 +92,7 @@ export async function bundlerEstimate(
   account: Account,
   accountStates: AccountStates,
   op: AccountOp,
-  network: NetworkDescriptor,
+  network: Network,
   feeTokens: TokenResult[]
 ): Promise<EstimateResult> {
   // we pass an empty array of feePaymentOptions as they are built

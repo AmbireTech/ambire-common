@@ -2,9 +2,10 @@ import { ethers } from 'ethers'
 import fetch from 'node-fetch'
 
 import { describe, expect, test } from '@jest/globals'
-import { networks } from '../../consts/networks'
+
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import _humanizerInfo from '../../consts/humanizer/humanizerInfo.json'
+import { networks } from '../../consts/networks'
 import { ErrorRef } from '../../controllers/eventEmitter/eventEmitter'
 import { AccountOp } from '../accountOp/accountOp'
 import { humanizeCalls, visualizationToText } from './humanizerFuncs'
@@ -219,10 +220,10 @@ describe('module tests', () => {
       'Wrap 1.0 ETH',
       'Unwrap 0.0089 ETH',
       'Call deposit() from 0xe592427a0aece92de3edee1f18e0157c05861564 (Uniswap) and Send 1.0 ETH',
-      'Deposit 11.72018633376687831 STETH to Aave lending pool on befalf of 0x7f4cf2e68f968cc050b3783268c474a15b8bdc2e',
-      'Withdraw all USDC from Aave lending pool on befalf of 0x8bc110db7029197c3621bea8092ab1996d5dd7be',
-      'Deposit 0.135592697552 ETH to Aave lending pool on befalf of 0x47c353467326e6bd0c01e728e8f7d1a06a849395',
-      'Withdraw 0.000000000473401923 ETH from Aave lending pool on befalf of 0x0df1a69fcdf15fec04e37aa5eca4268927b111e7',
+      'Deposit 11.72018633376687831 STETH to Aave lending pool on behalf of 0x7f4cf2e68f968cc050b3783268c474a15b8bdc2e',
+      'Withdraw all USDC from Aave lending pool on behalf of 0x8bc110db7029197c3621bea8092ab1996d5dd7be',
+      'Deposit 0.135592697552 ETH to Aave lending pool on behalf of 0x47c353467326e6bd0c01e728e8f7d1a06a849395',
+      'Withdraw 0.000000000473401923 ETH from Aave lending pool on behalf of 0x0df1a69fcdf15fec04e37aa5eca4268927b111e7',
       'Deposit 10000.0 WALLET to 0x47cd7e91c3cbaaf266369fe8518345fc4fc12935 (WALLET Staking Pool)',
       'Leave with 2527275.889852892335882193 WALLET 0x47cd7e91c3cbaaf266369fe8518345fc4fc12935 (WALLET Staking Pool)',
       'Rage leave with 2019.750399052452828721 WALLET 0x47cd7e91c3cbaaf266369fe8518345fc4fc12935 (WALLET Staking Pool)',
@@ -547,28 +548,28 @@ describe('module tests', () => {
         { content: 'Deposit' },
         { type: 'token' },
         { content: 'to Aave lending pool' },
-        { content: 'on befalf of' },
+        { content: 'on behalf of' },
         { type: 'address' }
       ],
       [
         { content: 'Withdraw' },
         { type: 'token' },
         { content: 'from Aave lending pool' },
-        { content: 'on befalf of' },
+        { content: 'on behalf of' },
         { type: 'address' }
       ],
       [
         { content: 'Deposit' },
         { type: 'token' },
         { content: 'to Aave lending pool' },
-        { content: 'on befalf of' },
+        { content: 'on behalf of' },
         { type: 'address' }
       ],
       [
         { content: 'Withdraw' },
         { type: 'token' },
         { content: 'from Aave lending pool' },
-        { content: 'on befalf of' },
+        { content: 'on behalf of' },
         { type: 'address' }
       ]
     ]
