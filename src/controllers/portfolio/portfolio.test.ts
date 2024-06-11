@@ -121,7 +121,9 @@ describe('Portfolio Controller ', () => {
       await controller.updateSelectedAccount([account2], account2.addr)
 
       const storagePreviousHints = await storage.get('previousHints', {})
-      const storageErc20s = storagePreviousHints.fromExternalAPI[`ethereum:${account2.addr}`].erc20s
+      const storageErc20s =
+        storagePreviousHints.fromExternalAPI[Object.keys(storagePreviousHints.fromExternalAPI)[0]]
+          .erc20s
 
       // Controller persists tokens having balance for the current account.
       // @TODO - here we can enhance the test to cover two more scenarios:
