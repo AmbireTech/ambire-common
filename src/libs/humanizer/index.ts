@@ -1,3 +1,5 @@
+import { NetworkDescriptor, NetworkId } from 'interfaces/networkDescriptor'
+
 import { ErrorRef } from '../../controllers/eventEmitter/eventEmitter'
 import { Storage } from '../../interfaces/storage'
 import { Message } from '../../interfaces/userRequest'
@@ -97,7 +99,12 @@ const sharedHumanization = async <InputDataType extends AccountOp | Message>(
   if ('content' in data) {
     message = parse(stringify(data))
   }
-  const humanizerOptions = {
+  const humanizerOptions: {
+    fetch?: Function
+    emitError?: Function
+    network?: NetworkDescriptor
+    networkId?: NetworkId
+  } = {
     fetch,
     emitError,
     network: options?.network
@@ -108,7 +115,7 @@ const sharedHumanization = async <InputDataType extends AccountOp | Message>(
       nocache: options?.isExtension === false
     })
     if ('calls' in data) {
-      //
+      humanizerOptions.networkId = op!.networkId
       ;[irCalls, asyncOps] = humanizeCalls(
         op!,
         humanizerCallModules,
