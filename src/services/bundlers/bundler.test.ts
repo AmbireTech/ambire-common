@@ -173,7 +173,7 @@ describe('Bundler tests', () => {
         smartAcc,
         accountState,
         opOptimism,
-        '0x5bb97ff398c6d4e44f38c81e256d0797c124fe39cc0c5cf66c082c135cb5946879588d3c3f02efe587b8ea01de567c962355640e7da5197cb23f150c6a9fd4101c01'
+        '0x05404ea5dfa13ddd921cda3f587af6927cc127ee174b57c9891491bfc1f0d3d005f649f8a1fc9147405f064507bae08816638cfc441c4d0dc4eb6640e16621991b01'
       )
 
       const ambireInterface = new Interface(AmbireAccount.abi)
@@ -227,7 +227,7 @@ describe('Bundler tests', () => {
         smartAcc,
         accountState,
         opOptimism,
-        '0x5bb97ff398c6d4e44f38c81e256d0797c124fe39cc0c5cf66c082c135cb5946879588d3c3f02efe587b8ea01de567c962355640e7da5197cb23f150c6a9fd4101c01'
+        '0x05404ea5dfa13ddd921cda3f587af6927cc127ee174b57c9891491bfc1f0d3d005f649f8a1fc9147405f064507bae08816638cfc441c4d0dc4eb6640e16621991b01'
       )
       const ambireInterface = new Interface(AmbireAccount.abi)
       userOp.callData = ambireInterface.encodeFunctionData('executeBySender', [
@@ -294,7 +294,7 @@ describe('Bundler tests', () => {
         smartAcc,
         accountState,
         opOptimism,
-        '0x5bb97ff398c6d4e44f38c81e256d0797c124fe39cc0c5cf66c082c135cb5946879588d3c3f02efe587b8ea01de567c962355640e7da5197cb23f150c6a9fd4101c01'
+        '0x05404ea5dfa13ddd921cda3f587af6927cc127ee174b57c9891491bfc1f0d3d005f649f8a1fc9147405f064507bae08816638cfc441c4d0dc4eb6640e16621991b01'
       )
 
       const ambireInterface = new Interface(AmbireAccount.abi)
@@ -594,9 +594,6 @@ describe('Bundler tests', () => {
       userOp.callData = ambireInterface.encodeFunctionData('executeBySender', [
         getSignableCalls(opBase)
       ])
-      const paymasterAndData = getPaymasterDataForEstimate()
-      userOp.paymaster = paymasterAndData.paymaster
-      userOp.paymasterData = paymasterAndData.paymasterData
       userOp.signature = getSigForCalculations()
       const bundlerEstimate = await Bundler.estimate(userOp, base)
       expect(bundlerEstimate).toHaveProperty('preVerificationGas')

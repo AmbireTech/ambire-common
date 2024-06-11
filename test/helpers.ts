@@ -1,5 +1,6 @@
-import { BaseContract, JsonRpcProvider } from 'ethers'
+import { BaseContract, getBytes, hexlify, JsonRpcProvider, toBeHex } from 'ethers'
 import { ethers } from 'hardhat'
+import secp256k1 from 'secp256k1'
 
 import { Account, AccountStates } from '../src/interfaces/account'
 import { NetworkDescriptor } from '../src/interfaces/networkDescriptor'
@@ -7,8 +8,7 @@ import { RPCProviders } from '../src/interfaces/settings'
 import { Storage } from '../src/interfaces/storage'
 import { getAccountState } from '../src/libs/accountState/accountState'
 import { parse, stringify } from '../src/libs/richJson/richJson'
-import { wrapEthSign, wrapTypedData } from './ambireSign'
-import { abiCoder, addressOne, addressTwo, AmbireAccount, chainId } from './config'
+import { abiCoder, addressOne, addressTwo, AmbireAccount, pk1 } from './config'
 
 async function sendFunds(to: string, ether: number) {
   const [signer] = await ethers.getSigners()
@@ -132,7 +132,7 @@ function getGasFees(maxPriorityFeePerGas: number, maxFeePerGas: number) {
 }
 
 async function buildUserOp(paymaster: BaseContract, entryPointAddr: string, options: any = {}) {
-  const [relayer, sender] = await ethers.getSigners()
+  const [, sender] = await ethers.getSigners()
 
   const userOp = {
     sender: options.sender ?? sender.address,
@@ -179,10 +179,9 @@ async function buildUserOp(paymaster: BaseContract, entryPointAddr: string, opti
       ]
     )
   )
-  const typedData = wrapTypedData(chainId, await paymaster.getAddress(), hash)
-  const signature = wrapEthSign(
-    await relayer.signTypedData(typedData.domain, typedData.types, typedData.value)
-  )
+  const ecdsa = secp256k1.ecdsaSign(getBytes(hash), getBytes(pk1))
+  const signatureNoWrap = `${hexlify(ecdsa.signature)}${ecdsa.recid === 0 ? '1B' : '1C'}`
+  const signature = `${signatureNoWrap}00`
 
   // abi.decode(userOp.paymasterAndData[20:], (uint48, uint48, bytes))
   const paymasterData = abiCoder.encode(

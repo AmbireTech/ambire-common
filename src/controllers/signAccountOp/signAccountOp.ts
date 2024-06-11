@@ -926,8 +926,8 @@ export class SignAccountOpController extends EventEmitter {
                 // send without the requestType prop
                 userOperation: (({ requestType, activatorCall, ...o }) => o)(userOperation),
                 paymaster: AMBIRE_PAYMASTER,
-                bytecode: this.account.creation.bytecode,
-                salt: this.account.creation.salt,
+                bytecode: this.account.creation!.bytecode,
+                salt: this.account.creation!.salt,
                 key: this.account.associatedKeys[0]
               }
             )
