@@ -1,6 +1,5 @@
 import { ethers, ZeroAddress } from 'ethers'
 import { CollectionResult } from 'libs/portfolio/interfaces'
-import wait from 'utils/wait'
 
 import { describe, expect, jest } from '@jest/globals'
 
@@ -25,8 +24,6 @@ networks.forEach((network) => {
   providers[network.id] = getRpcProvider(network.rpcUrls, network.chainId)
   providers[network.id].isWorking = true
 })
-
-const ethereum = networks.find((network) => network.id === 'ethereum')!
 
 const prepareTest = () => {
   const storage = produceMemoryStore()
@@ -119,16 +116,21 @@ describe('Portfolio Controller ', () => {
       providersCtrl = new ProvidersController(networksCtrl)
       providersCtrl.providers = providers
       const controller = new PortfolioController(storage, providersCtrl, networksCtrl, relayerUrl)
-      await controller.updateSelectedAccount([account2], account2.addr, ethereum)
+      console.log('1')
+      await controller.updateSelectedAccount([account2], account2.addr)
+      console.log('2')
       const storagePreviousHints = await storage.get('previousHints', {})
-      const storageErc20s = storagePreviousHints.fromExternalAPI[`ethereum:${account2.addr}`].erc20s
+      const ethereumHints = storagePreviousHints.fromExternalAPI[`ethereum:${account2.addr}`]
+      const polygonHints = storagePreviousHints.fromExternalAPI[`polygon:${account2.addr}`]
+      const optimismHints = storagePreviousHints.fromExternalAPI[`polygon:${account2.addr}`]
 
       // Controller persists tokens having balance for the current account.
-      // @TODO - here we can enhance the test to cover two more scenarios:
+      // @TODO - here we can enhance the test to cover one more scenarios:
       //  #1) Does the account really have amount for the persisted tokens.
-      //  #2) Currently, the tests covers only erc20s tokens. We should do the same check for erc721s too.
-      //  The current account2, doesn't have erc721s.
-      expect(storageErc20s.length).toBeGreaterThan(0)
+      expect(ethereumHints.erc20s.length).toBeGreaterThan(0)
+      expect(Object.keys(ethereumHints.erc721s).length).toBeGreaterThan(0)
+      expect(polygonHints.erc20s.length).toBeGreaterThan(0)
+      expect(optimismHints.erc20s.length).toBeGreaterThan(0)
     })
   })
 

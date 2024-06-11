@@ -396,7 +396,7 @@ export class PortfolioController extends EventEmitter {
     this.emitUpdate()
   }
 
-  // NOTE: we always pass in all `accounts` and `networks` to ensure that the user of this
+  // NOTE: we always pass in all `accounts` to ensure that the user of this
   // controller doesn't have to update this controller every time that those are updated
 
   // The recommended behavior of the application that this API encourages is:
@@ -419,9 +419,6 @@ export class PortfolioController extends EventEmitter {
     await this.#initialLoadPromise
 
     const hasNonZeroTokens = !!this.#networksWithAssetsByAccounts?.[accountId]?.length
-    // Load storage cached hints
-    const storagePreviousHints = this.#previousHints
-
     const selectedAccount = accounts.find((x) => x.addr === accountId)
     if (!selectedAccount) throw new Error('selected account does not exist')
 
@@ -528,16 +525,16 @@ export class PortfolioController extends EventEmitter {
         const forceUpdate = opts?.forceUpdate || areAccountOpsChanged
 
         // Pass in learnedTokens as additionalHints only on areAccountOpsChanged
-        const fallbackHints = (storagePreviousHints?.fromExternalAPI &&
-          storagePreviousHints?.fromExternalAPI[key]) ?? {
+        const fallbackHints = (this.#previousHints?.fromExternalAPI &&
+          this.#previousHints?.fromExternalAPI[key]) ?? {
           erc20s: [],
           erc721s: {}
         }
         const additionalHints =
           (forceUpdate &&
             Object.keys(
-              (storagePreviousHints?.learnedTokens &&
-                storagePreviousHints?.learnedTokens[network.id]) ??
+              (this.#previousHints?.learnedTokens &&
+                this.#previousHints?.learnedTokens[network.id]) ??
                 {}
             )) ||
           []
@@ -589,13 +586,12 @@ export class PortfolioController extends EventEmitter {
             accountState[network.id]!.result!.hintsFromExternalAPI as ExternalHintsAPIResponse,
             accountState[network.id]!.result!.tokens,
             network.id,
-            storagePreviousHints,
+            this.#previousHints,
             key,
             this.tokenPreferences
           )
 
           this.#previousHints = updatedStoragePreviousHints
-
           await this.#storage.set('previousHints', updatedStoragePreviousHints)
         }
 
@@ -612,7 +608,6 @@ export class PortfolioController extends EventEmitter {
     )
 
     await this.#updateNetworksWithAssets(accounts, accountId, accountState)
-
     this.emitUpdate()
   }
 
