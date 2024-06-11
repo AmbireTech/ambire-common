@@ -45,7 +45,10 @@ export function mapTxnErrMsg(contractError: string): string | null {
     return 'Your signer address is not authorized'
   if (contractErrors.find((contractMsg) => msg.includes(contractMsg)))
     return 'This dApp does not support smart wallets'
-  if (msg.includes('IMPOSSIBLE_GAS_CONSUMPTION'))
+  if (
+    msg.includes('IMPOSSIBLE_GAS_CONSUMPTION') ||
+    msg.toLowerCase().includes('insufficient funds')
+  )
     return 'Insufficient funds for intristic transaction cost'
   if (!riskOfUnreadableChars) return msg
 
