@@ -1,4 +1,4 @@
-import { NetworkId } from '../../interfaces/networkDescriptor'
+import { NetworkId } from '../../interfaces/network'
 
 export interface CustomToken {
   address: string

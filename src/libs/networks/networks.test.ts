@@ -2,8 +2,8 @@
 
 import { describe, expect, test } from '@jest/globals'
 
-import { NetworkInfo } from '../../interfaces/networkDescriptor'
-import { getFeaturesByNetworkProperties } from './settings'
+import { NetworkInfo } from '../../interfaces/network'
+import { getFeaturesByNetworkProperties } from './networks'
 
 describe('Network features', () => {
   test('should check if valid messages for smart account support get shown depending on the network properties', async () => {

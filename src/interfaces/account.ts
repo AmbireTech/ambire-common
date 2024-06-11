@@ -1,4 +1,4 @@
-import { NetworkDescriptor } from './networkDescriptor'
+import { Network } from './network'
 
 export type AccountId = string
 
@@ -49,7 +49,7 @@ type AccountDerivationMeta = {
   isLinked: boolean // linked accounts are also smart accounts, so use a flag to differentiate
 }
 
-export type AccountWithNetworkMeta = Account & { usedOnNetworks: NetworkDescriptor[] }
+export type AccountWithNetworkMeta = Account & { usedOnNetworks: Network[] }
 
 /**
  * The account that is derived programmatically and internally by Ambire.
