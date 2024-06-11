@@ -3,7 +3,7 @@ import { ZeroAddress } from 'ethers'
 import fetch from 'node-fetch'
 
 import { Account, AccountId } from '../../interfaces/account'
-import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
+import { Network, NetworkId } from '../../interfaces/network'
 /* eslint-disable @typescript-eslint/no-shadow */
 import { Storage } from '../../interfaces/storage'
 import { isSmartAccount } from '../../libs/account/account'
@@ -40,8 +40,10 @@ import {
 import { Portfolio } from '../../libs/portfolio/portfolio'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import EventEmitter from '../eventEmitter/eventEmitter'
+import { NetworksController } from '../networks/networks'
+import { ProvidersController } from '../providers/providers'
+
 /* eslint-disable @typescript-eslint/no-shadow */
-import { SettingsController } from '../settings/settings'
 
 const LEARNED_TOKENS_NETWORK_LIMIT = 50
 
@@ -55,7 +57,7 @@ export class PortfolioController extends EventEmitter {
   validTokens: any = { erc20: {}, erc721: {} }
 
   temporaryTokens: {
-    [networkId: NetworkDescriptor['id']]: {
+    [networkId: NetworkId]: {
       isLoading: boolean
       errors: { error: string; address: string }[]
       result: { tokens: PortfolioLibGetResult['tokens'] }
@@ -69,7 +71,7 @@ export class PortfolioController extends EventEmitter {
   #callRelayer: Function
 
   #networksWithAssetsByAccounts: {
-    [accountId: string]: NetworkDescriptor['id'][]
+    [accountId: string]: NetworkId[]
   } = {}
 
   #minUpdateInterval: number = 20000 // 20 seconds
@@ -79,19 +81,27 @@ export class PortfolioController extends EventEmitter {
     learnedTokens: {}
   }
 
-  #settings: SettingsController
+  #providers: ProvidersController
+
+  #networks: NetworksController
 
   // Holds the initial load promise, so that one can wait until it completes
   #initialLoadPromise: Promise<void>
 
-  constructor(storage: Storage, settings: SettingsController, relayerUrl: string) {
+  constructor(
+    storage: Storage,
+    providers: ProvidersController,
+    networks: NetworksController,
+    relayerUrl: string
+  ) {
     super()
     this.latest = {}
     this.pending = {}
     this.#portfolioLibs = new Map()
     this.#storage = storage
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
-    this.#settings = settings
+    this.#providers = providers
+    this.#networks = networks
     this.temporaryTokens = {}
 
     this.#initialLoadPromise = this.#load()
@@ -99,6 +109,7 @@ export class PortfolioController extends EventEmitter {
 
   async #load() {
     try {
+      await this.#networks.initialLoadPromise
       this.tokenPreferences = await this.#storage.get('tokenPreferences', [])
       this.#previousHints = await this.#storage.get('previousHints', {})
     } catch (e) {
@@ -145,7 +156,7 @@ export class PortfolioController extends EventEmitter {
       accountId,
       accountState,
       storageStateByAccount,
-      this.#settings.providers
+      this.#providers.providers
     )
 
     this.emitUpdate()
@@ -164,7 +175,7 @@ export class PortfolioController extends EventEmitter {
     }
   }
 
-  #prepareLatestState(selectedAccount: Account, networks: NetworkDescriptor[]) {
+  #prepareLatestState(selectedAccount: Account, networks: Network[]) {
     const state = this.latest
     const accountId = selectedAccount.addr
 
@@ -195,7 +206,7 @@ export class PortfolioController extends EventEmitter {
     this.emitUpdate()
   }
 
-  #preparePendingState(selectedAccountId: AccountId, networks: NetworkDescriptor[]) {
+  #preparePendingState(selectedAccountId: AccountId, networks: Network[]) {
     if (!this.pending[selectedAccountId]) {
       this.pending[selectedAccountId] = {}
       this.emitUpdate()
@@ -236,7 +247,7 @@ export class PortfolioController extends EventEmitter {
     const [isValid, standard]: [boolean, string] = (await validateERC20Token(
       token,
       accountId,
-      this.#settings.providers[token.networkId]
+      this.#providers.providers[token.networkId]
     )) as [boolean, string]
 
     this.validTokens[standard] = {
@@ -247,12 +258,8 @@ export class PortfolioController extends EventEmitter {
     this.emitUpdate()
   }
 
-  initializePortfolioLibIfNeeded(
-    accountId: AccountId,
-    networkId: NetworkId,
-    network: NetworkDescriptor
-  ) {
-    const providers = this.#settings.providers
+  initializePortfolioLibIfNeeded(accountId: AccountId, networkId: NetworkId, network: Network) {
+    const providers = this.#providers.providers
     const key = `${networkId}:${accountId}`
     // Initialize a new Portfolio lib if:
     // 1. It does not exist in the portfolioLibs map
@@ -269,7 +276,7 @@ export class PortfolioController extends EventEmitter {
   }
 
   async getTemporaryTokens(accountId: AccountId, networkId: NetworkId, additionalHint: string) {
-    const network = this.#settings.networks.find((x) => x.id === networkId)
+    const network = this.#networks.networks.find((x) => x.id === networkId)
 
     if (!network) throw new Error('network not found')
 
@@ -402,8 +409,8 @@ export class PortfolioController extends EventEmitter {
   // the purpose of this function is to call it when an account is selected or the queue of accountOps changes
   async updateSelectedAccount(
     accounts: Account[],
-    networks: NetworkDescriptor[],
     accountId: AccountId,
+    network?: Network,
     accountOps?: { [key: string]: AccountOp[] },
     opts?: {
       forceUpdate: boolean
@@ -418,8 +425,8 @@ export class PortfolioController extends EventEmitter {
     const selectedAccount = accounts.find((x) => x.addr === accountId)
     if (!selectedAccount) throw new Error('selected account does not exist')
 
-    this.#prepareLatestState(selectedAccount, networks)
-    this.#preparePendingState(selectedAccount.addr, networks)
+    this.#prepareLatestState(selectedAccount, this.#networks.networks)
+    this.#preparePendingState(selectedAccount.addr, this.#networks.networks)
 
     const accountState = this.latest[accountId]
     const pendingState = this.pending[accountId]
@@ -430,7 +437,7 @@ export class PortfolioController extends EventEmitter {
 
     const updatePortfolioState = async (
       _accountState: AccountState,
-      network: NetworkDescriptor,
+      network: Network,
       portfolioLib: Portfolio,
       portfolioProps: Partial<GetOptions>,
       forceUpdate: boolean
@@ -497,6 +504,7 @@ export class PortfolioController extends EventEmitter {
       }
     }
 
+    const networks = network ? [network] : this.#networks.networks
     await Promise.all(
       networks.map(async (network) => {
         const key = `${network.id}:${accountId}`
@@ -654,16 +662,15 @@ export class PortfolioController extends EventEmitter {
   }
 
   get banners() {
-    const networks = this.#settings.networks
-    const providers = this.#settings.providers
+    if (!this.#networks.isInitialized || !this.#providers.isInitialized) return []
 
     const networksWithFailedRPCBanners = getNetworksWithFailedRPCBanners({
-      providers,
-      networks,
+      providers: this.#providers.providers,
+      networks: this.#networks.networks,
       networksWithAssets: this.networksWithAssets
     })
     const networksWithPortfolioErrorBanners = getNetworksWithPortfolioErrorBanners({
-      networks,
+      networks: this.#networks.networks,
       portfolioLatest: this.latest
     })
 

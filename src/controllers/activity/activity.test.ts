@@ -1,8 +1,12 @@
 import { describe, expect } from '@jest/globals'
 
 import { produceMemoryStore } from '../../../test/helpers'
+import { networks } from '../../consts/networks'
 import { AccountStates } from '../../interfaces/account'
-import { SettingsController } from '../settings/settings'
+import { RPCProviders } from '../../interfaces/provider'
+import { getRpcProvider } from '../../services/provider'
+import { NetworksController } from '../networks/networks'
+import { ProvidersController } from '../providers/providers'
 import { ActivityController, SignedMessage, SubmittedAccountOp } from './activity'
 
 const INIT_PARAMS = {
@@ -12,6 +16,13 @@ const INIT_PARAMS = {
     network: 'ethereum'
   }
 }
+
+const providers: RPCProviders = {}
+
+networks.forEach((network) => {
+  providers[network.id] = getRpcProvider(network.rpcUrls, network.chainId)
+  providers[network.id].isWorking = true
+})
 
 describe('Activity Controller ', () => {
   const accounts = {
@@ -46,8 +57,25 @@ describe('Activity Controller ', () => {
   describe('AccountsOps', () => {
     test('Retrieved from Controller and persisted in Storage', async () => {
       const storage = produceMemoryStore()
-      const settings = new SettingsController(storage)
-      const controller = new ActivityController(storage, accounts, settings)
+      let providersCtrl: ProvidersController
+      const networksCtrl = new NetworksController(
+        storage,
+        (net) => {
+          providersCtrl.setProvider(net)
+        },
+        (id) => {
+          providersCtrl.removeProvider(id)
+        }
+      )
+      providersCtrl = new ProvidersController(networksCtrl)
+      providersCtrl.providers = providers
+      const controller = new ActivityController(
+        storage,
+        accounts,
+        providersCtrl,
+        networksCtrl,
+        () => Promise.resolve()
+      )
 
       controller.init(INIT_PARAMS)
 
@@ -87,8 +115,25 @@ describe('Activity Controller ', () => {
 
     test('Pagination and filtration handled correctly', async () => {
       const storage = produceMemoryStore()
-      const settings = new SettingsController(storage)
-      const controller = new ActivityController(storage, accounts, settings)
+      let providersCtrl: ProvidersController
+      const networksCtrl = new NetworksController(
+        storage,
+        (net) => {
+          providersCtrl.setProvider(net)
+        },
+        (id) => {
+          providersCtrl.removeProvider(id)
+        }
+      )
+      providersCtrl = new ProvidersController(networksCtrl)
+      providersCtrl.providers = providers
+      const controller = new ActivityController(
+        storage,
+        accounts,
+        providersCtrl,
+        networksCtrl,
+        () => Promise.resolve()
+      )
 
       controller.init(INIT_PARAMS)
 
@@ -211,8 +256,25 @@ describe('Activity Controller ', () => {
 
     test('`success` status is set correctly', async () => {
       const storage = produceMemoryStore()
-      const settings = new SettingsController(storage)
-      const controller = new ActivityController(storage, accounts, settings)
+      let providersCtrl: ProvidersController
+      const networksCtrl = new NetworksController(
+        storage,
+        (net) => {
+          providersCtrl.setProvider(net)
+        },
+        (id) => {
+          providersCtrl.removeProvider(id)
+        }
+      )
+      providersCtrl = new ProvidersController(networksCtrl)
+      providersCtrl.providers = providers
+      const controller = new ActivityController(
+        storage,
+        accounts,
+        providersCtrl,
+        networksCtrl,
+        () => Promise.resolve()
+      )
 
       controller.init(INIT_PARAMS)
 
@@ -250,8 +312,25 @@ describe('Activity Controller ', () => {
 
     test('`failed` status is set correctly', async () => {
       const storage = produceMemoryStore()
-      const settings = new SettingsController(storage)
-      const controller = new ActivityController(storage, accounts, settings)
+      let providersCtrl: ProvidersController
+      const networksCtrl = new NetworksController(
+        storage,
+        (net) => {
+          providersCtrl.setProvider(net)
+        },
+        (id) => {
+          providersCtrl.removeProvider(id)
+        }
+      )
+      providersCtrl = new ProvidersController(networksCtrl)
+      providersCtrl.providers = providers
+      const controller = new ActivityController(
+        storage,
+        accounts,
+        providersCtrl,
+        networksCtrl,
+        () => Promise.resolve()
+      )
 
       controller.init(INIT_PARAMS)
 
@@ -289,8 +368,25 @@ describe('Activity Controller ', () => {
 
     test('`Unknown but past nonce` status is set correctly', async () => {
       const storage = produceMemoryStore()
-      const settings = new SettingsController(storage)
-      const controller = new ActivityController(storage, accounts, settings)
+      let providersCtrl: ProvidersController
+      const networksCtrl = new NetworksController(
+        storage,
+        (net) => {
+          providersCtrl.setProvider(net)
+        },
+        (id) => {
+          providersCtrl.removeProvider(id)
+        }
+      )
+      providersCtrl = new ProvidersController(networksCtrl)
+      providersCtrl.providers = providers
+      const controller = new ActivityController(
+        storage,
+        accounts,
+        providersCtrl,
+        networksCtrl,
+        () => Promise.resolve()
+      )
 
       controller.init({
         selectedAccount: '0xa07D75aacEFd11b425AF7181958F0F85c312f143',
@@ -334,8 +430,25 @@ describe('Activity Controller ', () => {
 
     test('Keeps no more than 1000 items', async () => {
       const storage = produceMemoryStore()
-      const settings = new SettingsController(storage)
-      const controller = new ActivityController(storage, accounts, settings)
+      let providersCtrl: ProvidersController
+      const networksCtrl = new NetworksController(
+        storage,
+        (net) => {
+          providersCtrl.setProvider(net)
+        },
+        (id) => {
+          providersCtrl.removeProvider(id)
+        }
+      )
+      providersCtrl = new ProvidersController(networksCtrl)
+      providersCtrl.providers = providers
+      const controller = new ActivityController(
+        storage,
+        accounts,
+        providersCtrl,
+        networksCtrl,
+        () => Promise.resolve()
+      )
 
       controller.init(INIT_PARAMS)
 
@@ -382,8 +495,25 @@ describe('Activity Controller ', () => {
   describe('SignedMessages', () => {
     test('Retrieved from Controller and persisted in Storage', async () => {
       const storage = produceMemoryStore()
-      const settings = new SettingsController(storage)
-      const controller = new ActivityController(storage, accounts, settings)
+      let providersCtrl: ProvidersController
+      const networksCtrl = new NetworksController(
+        storage,
+        (net) => {
+          providersCtrl.setProvider(net)
+        },
+        (id) => {
+          providersCtrl.removeProvider(id)
+        }
+      )
+      providersCtrl = new ProvidersController(networksCtrl)
+      providersCtrl.providers = providers
+      const controller = new ActivityController(
+        storage,
+        accounts,
+        providersCtrl,
+        networksCtrl,
+        () => Promise.resolve()
+      )
 
       controller.init(INIT_PARAMS)
 
@@ -421,8 +551,25 @@ describe('Activity Controller ', () => {
 
     test('Pagination and filtration handled correctly', async () => {
       const storage = produceMemoryStore()
-      const settings = new SettingsController(storage)
-      const controller = new ActivityController(storage, accounts, settings)
+      let providersCtrl: ProvidersController
+      const networksCtrl = new NetworksController(
+        storage,
+        (net) => {
+          providersCtrl.setProvider(net)
+        },
+        (id) => {
+          providersCtrl.removeProvider(id)
+        }
+      )
+      providersCtrl = new ProvidersController(networksCtrl)
+      providersCtrl.providers = providers
+      const controller = new ActivityController(
+        storage,
+        accounts,
+        providersCtrl,
+        networksCtrl,
+        () => Promise.resolve()
+      )
 
       controller.init(INIT_PARAMS)
 
@@ -465,8 +612,25 @@ describe('Activity Controller ', () => {
 
     test('Keeps no more than 1000 items', async () => {
       const storage = produceMemoryStore()
-      const settings = new SettingsController(storage)
-      const controller = new ActivityController(storage, accounts, settings)
+      let providersCtrl: ProvidersController
+      const networksCtrl = new NetworksController(
+        storage,
+        (net) => {
+          providersCtrl.setProvider(net)
+        },
+        (id) => {
+          providersCtrl.removeProvider(id)
+        }
+      )
+      providersCtrl = new ProvidersController(networksCtrl)
+      providersCtrl.providers = providers
+      const controller = new ActivityController(
+        storage,
+        accounts,
+        providersCtrl,
+        networksCtrl,
+        () => Promise.resolve()
+      )
 
       controller.init(INIT_PARAMS)
 

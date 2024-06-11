@@ -1,5 +1,5 @@
 import { AbiCoder, concat, hexlify, Interface, keccak256, toBeHex } from 'ethers'
-import { NetworkDescriptor } from 'interfaces/networkDescriptor'
+import { Network } from 'interfaces/network'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireAccountFactory from '../../../contracts/compiled/AmbireAccountFactory.json'
@@ -144,15 +144,12 @@ export function getUserOperation(
   return userOp
 }
 
-export function shouldUsePaymaster(network: NetworkDescriptor): boolean {
+export function shouldUsePaymaster(network: Network): boolean {
   // if there's a paymaster on the network, we pay with it. Simple
   return !!network.erc4337?.hasPaymaster
 }
 
-export function isErc4337Broadcast(
-  network: NetworkDescriptor,
-  accountState: AccountOnchainState
-): boolean {
+export function isErc4337Broadcast(network: Network, accountState: AccountOnchainState): boolean {
   // write long to fix typescript issues
   const isEnabled = network && network.erc4337 ? network.erc4337.enabled : false
 
@@ -169,13 +166,10 @@ export function isErc4337Broadcast(
 // and the network is a 4337 one without a paymaster, the only way to broadcast
 // a txn is through EOA pays for SA. That's why we need this check to include
 // the activator call and the next txn to be ERC-4337
-export function shouldIncludeActivatorCall(
-  network: NetworkDescriptor,
-  accountState: AccountOnchainState
-) {
+export function shouldIncludeActivatorCall(network: Network, accountState: AccountOnchainState) {
   return accountState.isV2 && network.erc4337.enabled && !accountState.isErc4337Enabled
 }
 
-export function getExplorerId(network: NetworkDescriptor) {
+export function getExplorerId(network: Network) {
   return network.erc4337.explorerId ?? network.id
 }

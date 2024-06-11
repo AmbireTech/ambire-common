@@ -1,5 +1,5 @@
 import { Account } from '../../interfaces/account'
-import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
+import { Network } from '../../interfaces/network'
 import { shouldGetAdditionalPortfolio } from './helpers'
 import {
   AdditionalPortfolioNetworkResult,
@@ -118,7 +118,7 @@ export type PendingToken = TokenResultInterface & {
 
 export function calculateTokensPendingState(
   selectedAccount: string,
-  network: NetworkDescriptor,
+  network: Network,
   state: { pending: PortfolioControllerState }
 ): PendingToken[] {
   const pendingData = state.pending[selectedAccount][network.id]

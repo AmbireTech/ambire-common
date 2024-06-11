@@ -312,4 +312,44 @@ describe('Main Controller ', () => {
       }
     ])
   })
+
+  test('should check if network features get displayed correctly for ethereum', (done) => {
+    let checks = 0
+    controller.networks.onUpdate(() => {
+      if (controller.networks.statuses.updateNetwork === 'INITIAL' && checks > 3) {
+        const eth = controller.networks.networks.find((net) => net.id === 'ethereum')!
+        expect(eth.areContractsDeployed).toBe(true)
+        done()
+      }
+      if (checks === 3) {
+        const eth = controller.networks.networks.find((net) => net.id === 'ethereum')!
+        expect(eth.areContractsDeployed).toBe(false)
+        controller.setContractsDeployedToTrueIfDeployed(eth)
+      }
+
+      checks++
+    })
+
+    const eth = controller.networks.networks.find((net) => net.id === 'ethereum')!
+    expect(eth?.features.length).toBe(3)
+
+    const saSupport = eth?.features.find((feat) => feat.id === 'saSupport')!
+    expect(saSupport).not.toBe(null)
+    expect(saSupport).not.toBe(undefined)
+    expect(saSupport!.level).toBe('success')
+    expect(saSupport!.title).toBe("Ambire's smart wallets")
+
+    const simulation = eth?.features.find((feat) => feat.id === 'simulation')
+    expect(simulation).not.toBe(null)
+    expect(simulation).not.toBe(undefined)
+    expect(simulation!.level).toBe('success')
+
+    const prices = eth?.features.find((feat) => feat.id === 'prices')
+    expect(prices).not.toBe(null)
+    expect(prices).not.toBe(undefined)
+    expect(prices!.level).toBe('success')
+
+    // set first to false so we could test setContractsDeployedToTrueIfDeployed
+    controller.networks.updateNetwork({ areContractsDeployed: false }, 'ethereum')
+  })
 })

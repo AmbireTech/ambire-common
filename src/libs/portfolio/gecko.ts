@@ -1,7 +1,7 @@
 import dotenv from 'dotenv'
 
 import { geckoIdMapper } from '../../consts/coingecko'
-import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
+import { Network } from '../../interfaces/network'
 import { QueueElement, Request } from './batcher'
 import { paginate } from './pagination'
 
@@ -10,7 +10,7 @@ dotenv.config()
 // max tokens per request; we seem to have faster results when it's lower
 const BATCH_LIMIT = 40
 
-export function geckoResponseIdentifier(tokenAddr: string, network: NetworkDescriptor): string {
+export function geckoResponseIdentifier(tokenAddr: string, network: Network): string {
   return geckoIdMapper(tokenAddr, network) || tokenAddr.toLowerCase()
 }
 
