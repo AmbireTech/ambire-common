@@ -161,6 +161,32 @@ const networks: NetworkDescriptor[] = [
     feeOptions: {
       is1559: false
     }
+  },
+  {
+    id: 'gnosis',
+    name: 'Gnosis',
+    nativeAssetSymbol: 'XDAI',
+    rpcUrls: ['https://invictus.ambire.com/gnosis'],
+    rpcNoStateOverride: true,
+    chainId: 100n,
+    explorerUrl: 'https://gnosisscan.io',
+    erc4337: {
+      enabled: false,
+      hasPaymaster: false
+    },
+    unstoppableDomainsChain: 'ERC20',
+    isSAEnabled: true,
+    areContractsDeployed: true,
+    hasRelayer: true,
+    hasDebugTraceCall: false,
+    platformId: 'xdai',
+    nativeAssetId: 'xdai',
+    hasSingleton: true,
+    features: [],
+    feeOptions: {
+      is1559: true,
+      feeIncrease: 100n
+    }
   }
 ]
 
