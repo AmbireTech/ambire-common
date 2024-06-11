@@ -286,7 +286,9 @@ export class ActivityController extends EventEmitter {
 
     await Promise.all(
       Object.keys(this.#accountsOps[this.#selectedAccount]).map(async (network) => {
-        const networkConfig = this.#settings.networks.find((x) => x.id === network)!
+        const networkConfig = this.#settings.networks.find((x) => x.id === network)
+        if (!networkConfig) return
+
         const provider = this.#settings.providers[networkConfig.id]
 
         const selectedAccount = this.#selectedAccount
