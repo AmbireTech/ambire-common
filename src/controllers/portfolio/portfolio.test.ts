@@ -346,7 +346,7 @@ describe('Portfolio Controller ', () => {
         }
       })
       await controller.updateSelectedAccount([account], account.addr, accountOp)
-      await controller.updateSelectedAccount([account], [ethereum], account.addr, accountOp, {
+      await controller.updateSelectedAccount([account], account.addr, accountOp, {
         forceUpdate: true
       })
 

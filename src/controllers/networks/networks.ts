@@ -102,6 +102,9 @@ export class NetworksController extends EventEmitter {
     predefinedNetworks.forEach((n) => {
       this.#networks[n.id] = n
     })
+    // without await to avoid performance impact on load
+    // needed to keep the networks storage up to date with the latest from predefinedNetworks
+    this.#storage.set('networks', this.#networks)
 
     this.emitUpdate()
   }
