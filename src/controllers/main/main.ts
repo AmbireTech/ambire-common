@@ -647,7 +647,7 @@ export class MainController extends EventEmitter {
             [this.actions.currentAction.accountOp.networkId]: [this.actions.currentAction.accountOp]
           }
         : getAccountOpsByNetwork(selectedAccount, this.actions.visibleActionsQueue)
-    this.portfolio.updateSelectedAccount(this.accounts, selectedAccount, accountOps, {
+    this.portfolio.updateSelectedAccount(this.accounts, selectedAccount, undefined, accountOps, {
       forceUpdate
     })
   }
@@ -1238,6 +1238,7 @@ export class MainController extends EventEmitter {
         this.portfolio.updateSelectedAccount(
           this.accounts,
           localAccountOp.accountAddr,
+          undefined,
           this.signAccountOp
             ? { [localAccountOp.networkId]: [localAccountOp] }
             : getAccountOpsByNetwork(localAccountOp.accountAddr, this.actions.visibleActionsQueue),

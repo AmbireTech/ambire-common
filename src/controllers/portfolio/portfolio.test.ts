@@ -1,5 +1,6 @@
 import { ethers, ZeroAddress } from 'ethers'
 import { CollectionResult } from 'libs/portfolio/interfaces'
+import wait from 'utils/wait'
 
 import { describe, expect, jest } from '@jest/globals'
 
@@ -118,12 +119,9 @@ describe('Portfolio Controller ', () => {
       providersCtrl = new ProvidersController(networksCtrl)
       providersCtrl.providers = providers
       const controller = new PortfolioController(storage, providersCtrl, networksCtrl, relayerUrl)
-      await controller.updateSelectedAccount([account2], account2.addr)
-
+      await controller.updateSelectedAccount([account2], account2.addr, ethereum)
       const storagePreviousHints = await storage.get('previousHints', {})
-      const storageErc20s =
-        storagePreviousHints.fromExternalAPI[Object.keys(storagePreviousHints.fromExternalAPI)[0]]
-          .erc20s
+      const storageErc20s = storagePreviousHints.fromExternalAPI[`ethereum:${account2.addr}`].erc20s
 
       // Controller persists tokens having balance for the current account.
       // @TODO - here we can enhance the test to cover two more scenarios:
@@ -244,7 +242,7 @@ describe('Portfolio Controller ', () => {
         }
       })
 
-      controller.updateSelectedAccount([account], account.addr, undefined, {
+      controller.updateSelectedAccount([account], account.addr, undefined, undefined, {
         forceUpdate: true
       })
     })
@@ -268,7 +266,7 @@ describe('Portfolio Controller ', () => {
       providersCtrl = new ProvidersController(networksCtrl)
       providersCtrl.providers = providers
       const controller = new PortfolioController(storage, providersCtrl, networksCtrl, relayerUrl)
-      await controller.updateSelectedAccount([account], account.addr, accountOp)
+      await controller.updateSelectedAccount([account], account.addr, undefined, accountOp)
 
       controller.onUpdate(() => {
         const pendingState =
@@ -309,8 +307,8 @@ describe('Portfolio Controller ', () => {
     //       done()
     //     }
     //   })
-    //   await controller.updateSelectedAccount([account], account.addr, accountOp)
-    //   await controller.updateSelectedAccount([account], account.addr, accountOp)
+    //   await controller.updateSelectedAccount([account], account.addr, undefined, accountOp)
+    //   await controller.updateSelectedAccount([account], account.addr, undefined, accountOp)
     //
     //   expect(done).not.toHaveBeenCalled()
     // })
@@ -347,8 +345,8 @@ describe('Portfolio Controller ', () => {
           done()
         }
       })
-      await controller.updateSelectedAccount([account], account.addr, accountOp)
-      await controller.updateSelectedAccount([account], account.addr, accountOp, {
+      await controller.updateSelectedAccount([account], account.addr, undefined, accountOp)
+      await controller.updateSelectedAccount([account], account.addr, undefined, accountOp, {
         forceUpdate: true
       })
 
@@ -373,11 +371,11 @@ describe('Portfolio Controller ', () => {
       providersCtrl.providers = providers
       const controller = new PortfolioController(storage, providersCtrl, networksCtrl, relayerUrl)
 
-      await controller.updateSelectedAccount([account], account.addr, accountOp)
+      await controller.updateSelectedAccount([account], account.addr, undefined, accountOp)
       const pendingState1 =
         controller.pending['0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'].ethereum!
 
-      await controller.updateSelectedAccount([account], account.addr, accountOp, {
+      await controller.updateSelectedAccount([account], account.addr, undefined, accountOp, {
         forceUpdate: true
       })
       const pendingState2 =
@@ -406,7 +404,7 @@ describe('Portfolio Controller ', () => {
       providersCtrl.providers = providers
       const controller = new PortfolioController(storage, providersCtrl, networksCtrl, relayerUrl)
 
-      await controller.updateSelectedAccount([account], account.addr, accountOp)
+      await controller.updateSelectedAccount([account], account.addr, undefined, accountOp)
       const pendingState1 =
         controller.pending['0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'].ethereum!
 
@@ -414,7 +412,7 @@ describe('Portfolio Controller ', () => {
       // Change the address
       accountOp2.ethereum[0].accountAddr = '0xB674F3fd5F43464dB0448a57529eAF37F04cceA4'
 
-      await controller.updateSelectedAccount([account], account.addr, accountOp2)
+      await controller.updateSelectedAccount([account], account.addr, undefined, accountOp2)
       const pendingState2 =
         controller.pending['0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'].ethereum!
 
@@ -448,9 +446,15 @@ describe('Portfolio Controller ', () => {
       providersCtrl.providers = providers
       const controller = new PortfolioController(storage, providersCtrl, networksCtrl, relayerUrl)
 
-      await controller.updateSelectedAccount([emptyAccount], emptyAccount.addr, undefined, {
-        forceUpdate: true
-      })
+      await controller.updateSelectedAccount(
+        [emptyAccount],
+        emptyAccount.addr,
+        undefined,
+        undefined,
+        {
+          forceUpdate: true
+        }
+      )
 
       PINNED_TOKENS.filter((token) => token.networkId === 'ethereum').forEach((pinnedToken) => {
         const token = controller.latest[emptyAccount.addr].ethereum?.result?.tokens.find(
@@ -493,7 +497,7 @@ describe('Portfolio Controller ', () => {
       providersCtrl.providers = providers
       const controller = new PortfolioController(storage, providersCtrl, networksCtrl, relayerUrl)
 
-      await controller.updateSelectedAccount([emptyAccount], emptyAccount.addr, undefined)
+      await controller.updateSelectedAccount([emptyAccount], emptyAccount.addr)
 
       if (controller.latest[emptyAccount.addr].gasTank?.isLoading) return
 
@@ -524,7 +528,7 @@ describe('Portfolio Controller ', () => {
       providersCtrl.providers = providers
       const controller = new PortfolioController(storage, providersCtrl, networksCtrl, relayerUrl)
 
-      await controller.updateSelectedAccount([account], account.addr, undefined)
+      await controller.updateSelectedAccount([account], account.addr)
 
       controller.latest[account.addr].ethereum?.result?.tokens.forEach((token) => {
         expect(token.amount > 0)
@@ -542,7 +546,7 @@ describe('Portfolio Controller ', () => {
 
       await controller.learnTokens([BANANA_TOKEN_ADDR], 'ethereum')
 
-      await controller.updateSelectedAccount([account], account.addr, undefined, {
+      await controller.updateSelectedAccount([account], account.addr, undefined, undefined, {
         forceUpdate: true
       })
 
@@ -555,7 +559,7 @@ describe('Portfolio Controller ', () => {
     test("Learned token timestamp isn't updated if the token is found by the external hints api", async () => {
       const { controller, storage } = prepareTest()
 
-      await controller.updateSelectedAccount([account], account.addr, undefined)
+      await controller.updateSelectedAccount([account], account.addr)
 
       const firstTokenOnEth = controller.latest[account.addr].ethereum?.result?.tokens.find(
         (token) =>
@@ -568,7 +572,7 @@ describe('Portfolio Controller ', () => {
       // Learn a token discovered by velcro
       await controller.learnTokens([firstTokenOnEth!.address], 'ethereum')
 
-      await controller.updateSelectedAccount([account], account.addr, undefined, {
+      await controller.updateSelectedAccount([account], account.addr, undefined, undefined, {
         forceUpdate: true
       })
 
@@ -598,7 +602,7 @@ describe('Portfolio Controller ', () => {
     providersCtrl.providers = providers
     const controller = new PortfolioController(storage, providersCtrl, networksCtrl, relayerUrl)
 
-    await controller.updateSelectedAccount([account], account.addr, undefined)
+    await controller.updateSelectedAccount([account], account.addr)
 
     networks.forEach((network) => {
       const nativeToken = controller.latest[account.addr][network.id]?.result?.tokens.find(
@@ -712,7 +716,7 @@ describe('Portfolio Controller ', () => {
 
     await controller.updateTokenPreferences([tokenInPreferences])
 
-    await controller.updateSelectedAccount([account], account.addr, undefined)
+    await controller.updateSelectedAccount([account], account.addr)
 
     controller.onUpdate(() => {
       networks.forEach((network) => {

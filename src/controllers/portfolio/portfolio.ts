@@ -410,6 +410,7 @@ export class PortfolioController extends EventEmitter {
   async updateSelectedAccount(
     accounts: Account[],
     accountId: AccountId,
+    network?: Network,
     accountOps?: { [key: string]: AccountOp[] },
     opts?: {
       forceUpdate: boolean
@@ -503,8 +504,9 @@ export class PortfolioController extends EventEmitter {
       }
     }
 
+    const networks = network ? [network] : this.#networks.networks
     await Promise.all(
-      this.#networks.networks.map(async (network) => {
+      networks.map(async (network) => {
         const key = `${network.id}:${accountId}`
 
         const portfolioLib = this.initializePortfolioLibIfNeeded(accountId, network.id, network)

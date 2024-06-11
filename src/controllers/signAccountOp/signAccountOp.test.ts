@@ -356,7 +356,7 @@ const init = async (
     networksCtrl,
     'https://staging-relayer.ambire.com'
   )
-  await portfolio.updateSelectedAccount(accounts, account.addr)
+  await portfolio.updateSelectedAccount(accounts, account.addr, network)
 
   if (portfolio.latest?.[account.addr][op.networkId]!.result) {
     portfolio!.latest[account.addr][op.networkId]!.result!.tokens = [
