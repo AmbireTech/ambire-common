@@ -1,6 +1,6 @@
 import { formatUnits } from 'ethers'
 
-import { MAX_UINT256 } from '../../consts/deploy'
+import { MAX_UINT160, MAX_UINT256 } from '../../consts/deploy'
 import { ErrorRef } from '../../controllers/eventEmitter/eventEmitter'
 import { Message, PlainTextMessage, TypedMessage } from '../../interfaces/userRequest'
 import { AccountOp } from '../accountOp/accountOp'
@@ -57,7 +57,7 @@ export const visualizationToText = (call: IrCall, options: any): string => {
       text += v?.humanizerMeta?.name ? `${v.address} (${v?.humanizerMeta?.name})` : v.address
     if (v.type === 'token') {
       if (v.humanizerMeta?.token) {
-        if (v.amount === MAX_UINT256) {
+        if (v.amount === MAX_UINT256 || v.amount === MAX_UINT160) {
           text += `all ${
             v.humanizerMeta.token?.symbol ? v.humanizerMeta.token?.symbol : `${v.address} token`
           }`
