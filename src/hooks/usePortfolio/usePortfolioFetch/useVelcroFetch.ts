@@ -35,12 +35,19 @@ export default function useVelcroFetch({
       ...tokens
         .map((token: any) => {
           const prevToken =
-            assets?.tokens?.length && assets?.tokens.find((t) => t.address.toLowerCase() === token.address.toLowerCase())
-          
+            assets?.tokens?.length &&
+            assets?.tokens.find((t) => t.address.toLowerCase() === token.address.toLowerCase())
+
           // Get the coingeckoId from constants if not present from velcro
           if (token.coingeckoId === null || prevToken?.coingeckoId === null) {
-            const tokenInList = constants.tokenList[network] && constants.tokenList[network].find(t => t.address.toLowerCase() === token.address.toLowerCase())
-            if (tokenInList) { token.coingeckoId = tokenInList.coingeckoId}
+            const tokenInList =
+              constants.tokenList[network] &&
+              constants.tokenList[network].find(
+                (t) => t.address.toLowerCase() === token.address.toLowerCase()
+              )
+            if (tokenInList) {
+              token.coingeckoId = tokenInList.coingeckoId
+            }
           }
           let updatedData = {}
           if (!prevToken) return { ...token }
@@ -311,9 +318,6 @@ export default function useVelcroFetch({
 
         // In case we have cached data from velcro - call balance oracle
         if ((!quickResponse && shouldSkipUpdate) || !tokensToUpdateBalance.length) {
-          if (!formattedTokens?.length) {
-            formattedTokens = assets?.tokens
-          }
           formattedTokens = removeDuplicatedAssets([
             ...(formattedTokens || []),
             ...(extraTokensAssets?.length ? extraTokensAssets : [])

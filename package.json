@@ -1,5 +1,5 @@
 {
-  "version": "1.0.15",
+  "version": "1.0.16",
   "name": "@ambire/common",
   "description": "Common ground for the Ambire apps",
   "public": true,
