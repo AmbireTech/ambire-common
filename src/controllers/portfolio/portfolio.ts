@@ -532,123 +532,109 @@ export class PortfolioController extends EventEmitter {
             [accountId]: Promise.resolve()
           }
 
-        // `no-async-promise-executor` - This rule protects us from losing errors thrown by an async Promise executor function,
-        // which would prevent the newly-constructed Promise from rejecting properly.
-        // Since our Promise executor functions need to be async (as we are performing async calls), we intentionally wrap
-        // our executor function in a try/catch block to handle such async errors and manually reject the Promise.
-        // eslint-disable-next-line no-async-promise-executor
-        const updatePromise: Promise<void> = new Promise(async (resolve, reject) => {
-          // We wrap the Promise body in a try/catch because, whether it resolves or rejects,
-          // we need to chain the next `updatePromise` call to `this.queue`, i.e.:
-          // this.queue = this.queue.then(() => updatePromise).catch(() => updatePromise)
-          // Otherwise, if the Promise fails, the next call won't be invoked.
-          try {
-            // We are performing the following extended check because both (or one of both) variables may have an undefined value.
-            // If both variables contain AccountOps, we can simply compare for changes in the AccountOps intent.
-            // However, when one of the variables is not set, two cases arise:
-            // 1. A change occurs if one variable is undefined and the other one holds an AccountOps object.
-            // 2. No change occurs if both variables are undefined.
-            const areAccountOpsChanged =
-              // eslint-disable-next-line prettier/prettier
+        const updatePromise = async (): Promise<void> => {
+          // We are performing the following extended check because both (or one of both) variables may have an undefined value.
+          // If both variables contain AccountOps, we can simply compare for changes in the AccountOps intent.
+          // However, when one of the variables is not set, two cases arise:
+          // 1. A change occurs if one variable is undefined and the other one holds an AccountOps object.
+          // 2. No change occurs if both variables are undefined.
+          const areAccountOpsChanged =
+            // eslint-disable-next-line prettier/prettier
                     currentAccountOps && simulatedAccountOps
-                ? !isAccountOpsIntentEqual(currentAccountOps, simulatedAccountOps)
-                : currentAccountOps !== simulatedAccountOps
+              ? !isAccountOpsIntentEqual(currentAccountOps, simulatedAccountOps)
+              : currentAccountOps !== simulatedAccountOps
 
-            const forceUpdate = opts?.forceUpdate || areAccountOpsChanged
+          const forceUpdate = opts?.forceUpdate || areAccountOpsChanged
 
-            // Pass in learnedTokens as additionalHints only on areAccountOpsChanged
-            const fallbackHints = (storagePreviousHints?.fromExternalAPI &&
-              storagePreviousHints?.fromExternalAPI[key]) ?? {
-              erc20s: [],
-              erc721s: {}
-            }
-            const additionalHints =
-              (forceUpdate &&
-                Object.keys(
-                  (storagePreviousHints?.learnedTokens &&
-                    storagePreviousHints?.learnedTokens[network.id]) ??
-                    {}
-                )) ||
-              []
-
-            const [isSuccessfulLatestUpdate] = await Promise.all([
-              // Latest state update
-              this.#updatePortfolioState(
-                accountId,
-                accountState,
-                network,
-                portfolioLib,
-                {
-                  blockTag: 'latest',
-                  previousHints: fallbackHints,
-                  additionalHints
-                },
-                forceUpdate
-              ),
-              // Pending state update
-              // We are updating the pending state, only if AccountOps are changed or the application logic requests a force update
-              forceUpdate
-                ? await this.#updatePortfolioState(
-                    accountId,
-                    pendingState,
-                    network,
-                    portfolioLib,
-                    {
-                      blockTag: 'pending',
-                      previousHints: fallbackHints,
-                      ...(currentAccountOps && {
-                        simulation: {
-                          account: selectedAccount,
-                          accountOps: currentAccountOps
-                        }
-                      }),
-                      isEOA: !isSmartAccount(selectedAccount),
-                      additionalHints
-                    },
-                    forceUpdate
-                  )
-                : Promise.resolve(false)
-            ])
-
-            // Persist latest state in previousHints in the disk storage for further requests
-            if (
-              isSuccessfulLatestUpdate &&
-              !areAccountOpsChanged &&
-              accountState[network.id]?.result?.hintsFromExternalAPI
-            ) {
-              const updatedStoragePreviousHints = getUpdatedHints(
-                accountState[network.id]!.result!.hintsFromExternalAPI as ExternalHintsAPIResponse,
-                accountState[network.id]!.result!.tokens,
-                network.id,
-                storagePreviousHints,
-                key,
-                this.tokenPreferences
-              )
-
-              this.#previousHints = updatedStoragePreviousHints
-
-              await this.#storage.set('previousHints', updatedStoragePreviousHints)
-            }
-
-            // We cache the previously simulated AccountOps
-            // in order to compare them with the newly passed AccountOps before executing a new updatePortfolioState.
-            // This allows us to identify any differences between the two.
-            // TODO: If we enable the below line, pending states stopped working in the application (extension).
-            //  In the case we run this logic under a testing environment, then it works as expected.
-            //  As it is not a deal-breaker (for now), we will comment it out and will fix it later this week.
-            // if (isSuccessfulPendingUpdate && currentAccountOps) {
-            //   pendingState[network.id]!.accountOps = currentAccountOps
-            // }
-            resolve()
-          } catch (error) {
-            reject(error)
+          // Pass in learnedTokens as additionalHints only on areAccountOpsChanged
+          const fallbackHints = (storagePreviousHints?.fromExternalAPI &&
+            storagePreviousHints?.fromExternalAPI[key]) ?? {
+            erc20s: [],
+            erc721s: {}
           }
-        })
+          const additionalHints =
+            (forceUpdate &&
+              Object.keys(
+                (storagePreviousHints?.learnedTokens &&
+                  storagePreviousHints?.learnedTokens[network.id]) ??
+                  {}
+              )) ||
+            []
+
+          const [isSuccessfulLatestUpdate] = await Promise.all([
+            // Latest state update
+            this.#updatePortfolioState(
+              accountId,
+              accountState,
+              network,
+              portfolioLib,
+              {
+                blockTag: 'latest',
+                previousHints: fallbackHints,
+                additionalHints
+              },
+              forceUpdate
+            ),
+            // Pending state update
+            // We are updating the pending state, only if AccountOps are changed or the application logic requests a force update
+            forceUpdate
+              ? await this.#updatePortfolioState(
+                  accountId,
+                  pendingState,
+                  network,
+                  portfolioLib,
+                  {
+                    blockTag: 'pending',
+                    previousHints: fallbackHints,
+                    ...(currentAccountOps && {
+                      simulation: {
+                        account: selectedAccount,
+                        accountOps: currentAccountOps
+                      }
+                    }),
+                    isEOA: !isSmartAccount(selectedAccount),
+                    additionalHints
+                  },
+                  forceUpdate
+                )
+              : Promise.resolve(false)
+          ])
+
+          // Persist latest state in previousHints in the disk storage for further requests
+          if (
+            isSuccessfulLatestUpdate &&
+            !areAccountOpsChanged &&
+            accountState[network.id]?.result?.hintsFromExternalAPI
+          ) {
+            const updatedStoragePreviousHints = getUpdatedHints(
+              accountState[network.id]!.result!.hintsFromExternalAPI as ExternalHintsAPIResponse,
+              accountState[network.id]!.result!.tokens,
+              network.id,
+              storagePreviousHints,
+              key,
+              this.tokenPreferences
+            )
+
+            this.#previousHints = updatedStoragePreviousHints
+
+            await this.#storage.set('previousHints', updatedStoragePreviousHints)
+          }
+
+          // We cache the previously simulated AccountOps
+          // in order to compare them with the newly passed AccountOps before executing a new updatePortfolioState.
+          // This allows us to identify any differences between the two.
+          // TODO: If we enable the below line, pending states stopped working in the application (extension).
+          //  In the case we run this logic under a testing environment, then it works as expected.
+          //  As it is not a deal-breaker (for now), we will comment it out and will fix it later this week.
+          // if (isSuccessfulPendingUpdate && currentAccountOps) {
+          //   pendingState[network.id]!.accountOps = currentAccountOps
+          // }
+        }
 
         // Chain the new updatePromise to the current queue
         this.queue[network.id][accountId] = this.queue[network.id][accountId]
-          .then(() => updatePromise)
-          .catch(() => updatePromise)
+          .then(updatePromise)
+          .catch(updatePromise)
 
         // Ensure the method waits for the entire queue to resolve
         await this.queue[network.id][accountId]
