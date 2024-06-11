@@ -404,6 +404,81 @@ export class PortfolioController extends EventEmitter {
     this.emitUpdate()
   }
 
+  async #updatePortfolioState(
+    accountId: string,
+    _accountState: AccountState,
+    network: NetworkDescriptor,
+    portfolioLib: Portfolio,
+    portfolioProps: Partial<GetOptions>,
+    forceUpdate: boolean
+  ): Promise<boolean> {
+    const hasNonZeroTokens = !!this.#networksWithAssetsByAccounts?.[accountId]?.length
+
+    if (!_accountState[network.id]) {
+      _accountState[network.id] = {
+        isReady: false,
+        isLoading: false,
+        errors: []
+      }
+      this.emitUpdate()
+    }
+    const state = _accountState[network.id]!
+
+    // When the portfolio was called lastly
+    const lastUpdateStartedAt = state.result?.updateStarted
+    if (
+      lastUpdateStartedAt &&
+      Date.now() - lastUpdateStartedAt <= this.#minUpdateInterval &&
+      !forceUpdate
+    )
+      return false
+
+    // Only one loading at a time, ensure there are no race conditions
+    if (state.isLoading && !forceUpdate) return false
+
+    state.isLoading = true
+    this.emitUpdate()
+
+    const tokenPreferences = this.tokenPreferences
+
+    try {
+      const result = await portfolioLib.get(accountId, {
+        priceRecency: 60000,
+        priceCache: state.result?.priceCache,
+        fetchPinned: !hasNonZeroTokens,
+        tokenPreferences,
+        ...portfolioProps
+      })
+
+      const additionalHints = portfolioProps.additionalHints || []
+
+      _accountState[network.id] = {
+        isReady: true,
+        isLoading: false,
+        errors: result.errors,
+        result: {
+          ...result,
+          tokens: result.tokens.filter((token) =>
+            tokenFilter(token, network, hasNonZeroTokens, additionalHints, tokenPreferences)
+          )
+        }
+      }
+      this.emitUpdate()
+      return true
+    } catch (e: any) {
+      this.emitError({
+        level: 'silent',
+        message: "Error while executing the 'get' function in the portfolio library.",
+        error: e
+      })
+      state.isLoading = false
+      if (!state.isReady) state.criticalError = e
+      else state.errors.push(e)
+      this.emitUpdate()
+      return false
+    }
+  }
+
   // NOTE: we always pass in all `accounts` and `networks` to ensure that the user of this
   // controller doesn't have to update this controller every time that those are updated
 
@@ -426,7 +501,6 @@ export class PortfolioController extends EventEmitter {
   ) {
     await this.#initialLoadPromise
 
-    const hasNonZeroTokens = !!this.#networksWithAssetsByAccounts?.[accountId]?.length
     // Load storage cached hints
     const storagePreviousHints = this.#previousHints
 
@@ -441,78 +515,6 @@ export class PortfolioController extends EventEmitter {
 
     if (shouldGetAdditionalPortfolio(selectedAccount)) {
       this.#getAdditionalPortfolio(accountId)
-    }
-
-    const updatePortfolioState = async (
-      _accountState: AccountState,
-      network: NetworkDescriptor,
-      portfolioLib: Portfolio,
-      portfolioProps: Partial<GetOptions>,
-      forceUpdate: boolean
-    ): Promise<boolean> => {
-      if (!_accountState[network.id]) {
-        _accountState[network.id] = {
-          isReady: false,
-          isLoading: false,
-          errors: []
-        }
-        this.emitUpdate()
-      }
-      const state = _accountState[network.id]!
-
-      // When the portfolio was called lastly
-      const lastUpdateStartedAt = state.result?.updateStarted
-      if (
-        lastUpdateStartedAt &&
-        Date.now() - lastUpdateStartedAt <= this.#minUpdateInterval &&
-        !forceUpdate
-      )
-        return false
-
-      // Only one loading at a time, ensure there are no race conditions
-      if (state.isLoading && !forceUpdate) return false
-
-      state.isLoading = true
-      this.emitUpdate()
-
-      const tokenPreferences = this.tokenPreferences
-
-      try {
-        const result = await portfolioLib.get(accountId, {
-          priceRecency: 60000,
-          priceCache: state.result?.priceCache,
-          fetchPinned: !hasNonZeroTokens,
-          tokenPreferences,
-          ...portfolioProps
-        })
-
-        const additionalHints = portfolioProps.additionalHints || []
-
-        _accountState[network.id] = {
-          isReady: true,
-          isLoading: false,
-          errors: result.errors,
-          result: {
-            ...result,
-            tokens: result.tokens.filter((token) =>
-              tokenFilter(token, network, hasNonZeroTokens, additionalHints, tokenPreferences)
-            )
-          }
-        }
-        this.emitUpdate()
-        return true
-      } catch (e: any) {
-        this.emitError({
-          level: 'silent',
-          message: "Error while executing the 'get' function in the portfolio library.",
-          error: e
-        })
-        state.isLoading = false
-        if (!state.isReady) state.criticalError = e
-        else state.errors.push(e)
-        this.emitUpdate()
-        return false
-      }
     }
 
     await Promise.all(
@@ -571,7 +573,8 @@ export class PortfolioController extends EventEmitter {
 
             const [isSuccessfulLatestUpdate] = await Promise.all([
               // Latest state update
-              updatePortfolioState(
+              this.#updatePortfolioState(
+                accountId,
                 accountState,
                 network,
                 portfolioLib,
@@ -585,7 +588,8 @@ export class PortfolioController extends EventEmitter {
               // Pending state update
               // We are updating the pending state, only if AccountOps are changed or the application logic requests a force update
               forceUpdate
-                ? await updatePortfolioState(
+                ? await this.#updatePortfolioState(
+                    accountId,
                     pendingState,
                     network,
                     portfolioLib,
