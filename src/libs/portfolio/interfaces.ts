@@ -13,13 +13,9 @@ export interface GetOptionsSimulation {
   account: Account
 }
 
-export interface TokenResult extends Partial<CustomToken> {
-  address: string
-  symbol: string
+export type TokenResult = Omit<CustomToken, 'standard'> & {
   amount: bigint
-  networkId: NetworkId
   amountPostSimulation?: bigint
-  decimals: number
   priceIn: Price[]
   flags: {
     onGasTank: boolean
