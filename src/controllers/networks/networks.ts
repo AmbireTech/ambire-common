@@ -92,20 +92,16 @@ export class NetworksController extends EventEmitter {
     const storedNetworkPreferences: { [key: NetworkId]: Partial<Network> } | undefined =
       await this.#storage.get('networkPreferences', undefined)
     let storedNetworks: { [key: NetworkId]: Network }
-    storedNetworks = await this.#storage.get('networks', undefined)
-    if (!storedNetworks && storedNetworkPreferences) {
+    storedNetworks = await this.#storage.get('networks', {})
+    if (!Object.keys(storedNetworks).length && storedNetworkPreferences) {
       storedNetworks = await migrateNetworkPreferencesToNetworks(storedNetworkPreferences)
       await this.#storage.set('networks', storedNetworks)
       await this.#storage.remove('networkPreferences')
     }
-    if (!storedNetworks) {
-      storedNetworks = predefinedNetworks.reduce((acc, n) => {
-        acc[n.id] = n
-        return acc
-      }, {} as { [key: NetworkId]: Network })
-      await this.#storage.set('networks', storedNetworks)
-    }
     this.#networks = storedNetworks
+    predefinedNetworks.forEach((n) => {
+      this.#networks[n.id] = n
+    })
 
     this.emitUpdate()
   }
