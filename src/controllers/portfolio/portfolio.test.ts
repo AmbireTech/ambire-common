@@ -116,9 +116,7 @@ describe('Portfolio Controller ', () => {
       providersCtrl = new ProvidersController(networksCtrl)
       providersCtrl.providers = providers
       const controller = new PortfolioController(storage, providersCtrl, networksCtrl, relayerUrl)
-      console.log('1')
       await controller.updateSelectedAccount([account2], account2.addr)
-      console.log('2')
       const storagePreviousHints = await storage.get('previousHints', {})
       const ethereumHints = storagePreviousHints.fromExternalAPI[`ethereum:${account2.addr}`]
       const polygonHints = storagePreviousHints.fromExternalAPI[`polygon:${account2.addr}`]
