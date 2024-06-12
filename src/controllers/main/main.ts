@@ -12,7 +12,7 @@ import {
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json'
-import { SINGLETON } from '../../consts/deploy'
+import { AMBIRE_ACCOUNT_FACTORY, SINGLETON } from '../../consts/deploy'
 import { Account, AccountId, AccountOnchainState, AccountStates } from '../../interfaces/account'
 import { Banner } from '../../interfaces/banner'
 import { Dapp, DappProviderRequest } from '../../interfaces/dapp'
@@ -22,8 +22,7 @@ import {
   KeystoreSignerType,
   TxnRequest
 } from '../../interfaces/keystore'
-import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
-import { CustomNetwork, NetworkPreference } from '../../interfaces/settings'
+import { AddNetworkRequestParams, Network, NetworkId } from '../../interfaces/network'
 import { Storage } from '../../interfaces/storage'
 import { Call, DappUserRequest, SignUserRequest, UserRequest } from '../../interfaces/userRequest'
 import { WindowManager } from '../../interfaces/window'
@@ -67,7 +66,9 @@ import { EmailVaultController } from '../emailVault/emailVault'
 import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter'
 import { InviteController } from '../invite/invite'
 import { KeystoreController } from '../keystore/keystore'
+import { NetworksController } from '../networks/networks'
 import { PortfolioController } from '../portfolio/portfolio'
+import { ProvidersController } from '../providers/providers'
 import { SettingsController } from '../settings/settings'
 /* eslint-disable no-underscore-dangle */
 import { SignAccountOpController, SigningStatus } from '../signAccountOp/signAccountOp'
@@ -123,6 +124,10 @@ export class MainController extends EventEmitter {
   signAccOpInitError: string | null = null
 
   activity!: ActivityController
+
+  networks: NetworksController
+
+  providers: ProvidersController
 
   settings: SettingsController
 
@@ -186,8 +191,25 @@ export class MainController extends EventEmitter {
     this.invite = new InviteController({ relayerUrl, fetch, storage: this.#storage })
     this.keystore = new KeystoreController(this.#storage, keystoreSigners)
     this.#externalSignerControllers = externalSignerControllers
+    this.networks = new NetworksController(
+      this.#storage,
+      async (network: Network) => {
+        this.providers.setProvider(network)
+        await this.updateAccountStates('latest', [network.id])
+        await this.updateSelectedAccount(this.selectedAccount, true)
+      },
+      (networkId: NetworkId) => {
+        this.providers.removeProvider(networkId)
+      }
+    )
+    this.providers = new ProvidersController(this.networks)
     this.settings = new SettingsController(this.#storage)
-    this.portfolio = new PortfolioController(this.#storage, this.settings, relayerUrl)
+    this.portfolio = new PortfolioController(
+      this.#storage,
+      this.providers,
+      this.networks,
+      relayerUrl
+    )
     this.#initialLoadPromise = this.#load()
     this.emailVault = new EmailVaultController(
       this.#storage,
@@ -204,7 +226,8 @@ export class MainController extends EventEmitter {
     this.addressBook = new AddressBookController(this.#storage, this.accounts, this.settings)
     this.signMessage = new SignMessageController(
       this.keystore,
-      this.settings,
+      this.providers,
+      this.networks,
       this.#externalSignerControllers,
       this.#storage,
       this.#fetch
@@ -217,7 +240,7 @@ export class MainController extends EventEmitter {
         this.emitUpdate()
       }
     })
-    this.domains = new DomainsController(this.settings.providers, this.#fetch)
+    this.domains = new DomainsController(this.providers.providers, this.#fetch)
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch: this.#fetch })
     this.onUpdateDappSelectedAccount = onUpdateDappSelectedAccount
     this.onBroadcastSuccess = onBroadcastSuccess
@@ -230,6 +253,8 @@ export class MainController extends EventEmitter {
     // and then we call it's methods
     await wait(1)
     this.emitUpdate()
+    await this.networks.initialLoadPromise
+    await this.providers.initialLoadPromise
     const [accounts, selectedAccount] = await Promise.all([
       this.#storage.get('accounts', []),
       this.#storage.get('selectedAccount', null)
@@ -242,7 +267,15 @@ export class MainController extends EventEmitter {
     // @TODO reload those
     // @TODO error handling here
     this.accountStates = await this.#getAccountsInfo(this.accounts)
-    this.activity = new ActivityController(this.#storage, this.accountStates, this.settings)
+    this.activity = new ActivityController(
+      this.#storage,
+      this.accountStates,
+      this.providers,
+      this.networks,
+      async (network: Network) => {
+        await this.setContractsDeployedToTrueIfDeployed(network)
+      }
+    )
 
     if (this.selectedAccount) {
       this.activity.init({ selectedAccount: this.selectedAccount })
@@ -311,7 +344,7 @@ export class MainController extends EventEmitter {
     }
 
     const account = this.accounts?.find((acc) => acc.addr === accountOp.accountAddr)
-    const network = this.settings.networks.find((net) => net.id === accountOp.networkId)
+    const network = this.networks.networks.find((net) => net.id === accountOp.networkId)
 
     if (!account) {
       this.signAccOpInitError =
@@ -330,7 +363,7 @@ export class MainController extends EventEmitter {
     this.signAccountOp = new SignAccountOpController(
       this.keystore,
       this.portfolio,
-      this.settings,
+      this.providers,
       this.#externalSignerControllers,
       account,
       this.accountStates,
@@ -404,14 +437,14 @@ export class MainController extends EventEmitter {
       gasPriceNetworks.map(async (network) => {
         try {
           this.gasPrices[network] = await getGasPriceRecommendations(
-            this.settings.providers[network],
-            this.settings.networks.find((net) => net.id === network)!
+            this.providers.providers[network],
+            this.networks.networks.find((net) => net.id === network)!
           )
         } catch (e: any) {
           this.emitError({
             level: 'major',
             message: `Unable to get gas price for ${
-              this.settings.networks.find((n) => n.id === network)?.name
+              this.networks.networks.find((n) => n.id === network)?.name
             }`,
             error: new Error(`Failed to fetch gas price: ${e?.message}`)
           })
@@ -423,31 +456,31 @@ export class MainController extends EventEmitter {
   async #getAccountsInfo(
     accounts: Account[],
     blockTag: string | number = 'latest',
-    updateOnlyNetworksWithIds: NetworkDescriptor['id'][] = []
+    updateOnlyNetworksWithIds: NetworkId[] = []
   ): Promise<AccountStates> {
     // if any, update the account state only for the passed networks; else - all
     const updateOnlyPassedNetworks = updateOnlyNetworksWithIds.length
     const networksToUpdate = updateOnlyPassedNetworks
-      ? this.settings.networks.filter((network) => updateOnlyNetworksWithIds.includes(network.id))
-      : this.settings.networks
+      ? this.networks.networks.filter((network) => updateOnlyNetworksWithIds.includes(network.id))
+      : this.networks.networks
 
     const fetchedState = await Promise.all(
       networksToUpdate.map(async (network) =>
-        getAccountState(this.settings.providers[network.id], network, accounts, blockTag).catch(
+        getAccountState(this.providers.providers[network.id], network, accounts, blockTag).catch(
           () => []
         )
       )
     )
 
-    const networkState: { [networkId: NetworkDescriptor['id']]: AccountOnchainState[] } = {}
-    networksToUpdate.forEach((network: NetworkDescriptor, index) => {
+    const networkState: { [networkId: NetworkId]: AccountOnchainState[] } = {}
+    networksToUpdate.forEach((network: Network, index) => {
       if (!fetchedState[index].length) return
 
       networkState[network.id] = fetchedState[index]
     })
 
     const states = accounts.reduce((accStates: AccountStates, acc: Account, accIndex: number) => {
-      const networkStates = this.settings.networks.reduce(
+      const networkStates = this.networks.networks.reduce(
         (netStates: AccountStates[keyof AccountStates], network) => {
           // if a flag for updateOnlyPassedNetworks is passed, we load
           // the ones not requested from the previous state
@@ -459,11 +492,11 @@ export class MainController extends EventEmitter {
           }
 
           if (!(network.id in networkState) || !(accIndex in networkState[network.id])) {
-            this.settings.updateProviderIsWorking(network.id, false)
+            this.providers.updateProviderIsWorking(network.id, false)
             return netStates
           }
 
-          this.settings.updateProviderIsWorking(network.id, true)
+          this.providers.updateProviderIsWorking(network.id, true)
 
           return {
             ...netStates,
@@ -482,10 +515,7 @@ export class MainController extends EventEmitter {
     return states
   }
 
-  async updateAccountStates(
-    blockTag: string | number = 'latest',
-    networks: NetworkDescriptor['id'][] = []
-  ) {
+  async updateAccountStates(blockTag: string | number = 'latest', networks: NetworkId[] = []) {
     const nextAccountStates = await this.#getAccountsInfo(this.accounts, blockTag, networks)
     // Use `Object.assign` to update `this.accountStates` on purpose! That's
     // in order NOT to break the the reference link between `this.accountStates`
@@ -569,6 +599,19 @@ export class MainController extends EventEmitter {
     this.emitUpdate()
   }
 
+  // call this function after a call to the singleton has been made
+  // it will check if the factory has been deployed and update the network settings if it has been
+  async setContractsDeployedToTrueIfDeployed(network: Network) {
+    if (network.areContractsDeployed) return
+
+    const provider = this.providers.providers[network.id]
+    if (!provider) return
+
+    const factoryCode = await provider.getCode(AMBIRE_ACCOUNT_FACTORY)
+    if (factoryCode === '0x') return
+    await this.networks.updateNetwork({ areContractsDeployed: true }, network.id)
+  }
+
   async #ensureAccountInfo(accountAddr: AccountId, networkId: NetworkId) {
     await this.#initialLoadPromise
     // Initial sanity check: does this account even exist?
@@ -609,13 +652,9 @@ export class MainController extends EventEmitter {
             [this.actions.currentAction.accountOp.networkId]: [this.actions.currentAction.accountOp]
           }
         : getAccountOpsByNetwork(selectedAccount, this.actions.visibleActionsQueue)
-    this.portfolio.updateSelectedAccount(
-      this.accounts,
-      this.settings.networks,
-      selectedAccount,
-      accountOps,
-      { forceUpdate }
-    )
+    this.portfolio.updateSelectedAccount(this.accounts, selectedAccount, undefined, accountOps, {
+      forceUpdate
+    })
   }
 
   async buildUserRequestFromDAppRequest(
@@ -636,7 +675,7 @@ export class MainController extends EventEmitter {
     if (kind === 'call') {
       const transaction = request.params[0]
       const accountAddr = getAddress(transaction.from)
-      const network = this.settings.networks.find(
+      const network = this.networks.networks.find(
         (n) => Number(n.chainId) === Number(dapp?.chainId)
       )
 
@@ -667,7 +706,7 @@ export class MainController extends EventEmitter {
         return
       }
 
-      const network = this.settings.networks.find(
+      const network = this.networks.networks.find(
         (n) => Number(n.chainId) === Number(dapp?.chainId)
       )
 
@@ -702,7 +741,7 @@ export class MainController extends EventEmitter {
         return
       }
 
-      const network = this.settings.networks.find(
+      const network = this.networks.networks.find(
         (n) => Number(n.chainId) === Number(dapp?.chainId)
       )
 
@@ -998,13 +1037,13 @@ export class MainController extends EventEmitter {
     this.emitUpdate()
   }
 
-  async addCustomNetwork(customNetwork: CustomNetwork) {
-    await this.settings.addCustomNetwork(customNetwork)
+  async addNetwork(network: AddNetworkRequestParams) {
+    await this.networks.addNetwork(network)
     await this.updateSelectedAccount(this.selectedAccount, true)
   }
 
-  async removeCustomNetwork(id: NetworkDescriptor['id']) {
-    await this.settings.removeCustomNetwork(id)
+  async removeNetwork(id: NetworkId) {
+    await this.networks.removeNetwork(id)
     await this.updateSelectedAccount(this.selectedAccount, true)
   }
 
@@ -1106,7 +1145,7 @@ export class MainController extends EventEmitter {
         throw new Error(
           `estimateSignAccountOp: ${localAccountOp.accountAddr}: account does not exist`
         )
-      const network = this.settings.networks.find((x) => x.id === localAccountOp.networkId)
+      const network = this.networks.networks.find((x) => x.id === localAccountOp.networkId)
       if (!network)
         throw new Error(
           `estimateSignAccountOp: ${localAccountOp.networkId}: network does not exist`
@@ -1147,7 +1186,7 @@ export class MainController extends EventEmitter {
         if (this.signAccountOp.estimation) {
           gas = this.signAccountOp.estimation.gasUsed
         }
-        const provider = this.settings.providers[localAccountOp.networkId]
+        const provider = this.providers.providers[localAccountOp.networkId]
         promises = localAccountOp.calls.map((call) => {
           return provider
             .send('debug_traceCall', [
@@ -1214,15 +1253,15 @@ export class MainController extends EventEmitter {
         // it may have different needs
         this.portfolio.updateSelectedAccount(
           this.accounts,
-          [network],
           localAccountOp.accountAddr,
+          undefined,
           this.signAccountOp
             ? { [localAccountOp.networkId]: [localAccountOp] }
             : getAccountOpsByNetwork(localAccountOp.accountAddr, this.actions.visibleActionsQueue),
           { forceUpdate: true }
         ),
         estimate(
-          this.settings.providers[localAccountOp.networkId],
+          this.providers.providers[localAccountOp.networkId],
           network,
           account,
           this.keystore.keys,
@@ -1307,9 +1346,9 @@ export class MainController extends EventEmitter {
       return this.#throwAccountOpBroadcastError(new Error('AccountOp missing props'))
     }
 
-    const provider = this.settings.providers[accountOp.networkId]
+    const provider = this.providers.providers[accountOp.networkId]
     const account = this.accounts.find((acc) => acc.addr === accountOp.accountAddr)
-    const network = this.settings.networks.find((n) => n.id === accountOp.networkId)
+    const network = this.networks.networks.find((n) => n.id === accountOp.networkId)
 
     if (!provider) {
       return this.#throwAccountOpBroadcastError(
@@ -1600,37 +1639,13 @@ export class MainController extends EventEmitter {
     this.emitUpdate()
   }
 
-  async updateNetworkPreferences(
-    networkPreferences: NetworkPreference,
-    networkId: NetworkDescriptor['id']
-  ) {
-    await this.settings.updateNetworkPreferences(networkPreferences, networkId)
-
-    if (networkPreferences?.rpcUrls) {
-      await this.updateAccountStates('latest', [networkId])
-      await this.updateSelectedAccount(this.selectedAccount, true)
-    }
-  }
-
-  async resetNetworkPreference(
-    preferenceKey: keyof NetworkPreference,
-    networkId: NetworkDescriptor['id']
-  ) {
-    await this.settings.resetNetworkPreference(preferenceKey, networkId)
-
-    if (preferenceKey === 'rpcUrls') {
-      await this.updateAccountStates('latest', [networkId])
-      await this.updateSelectedAccount(this.selectedAccount, true)
-    }
-  }
-
   // ! IMPORTANT !
   // Banners that depend on async data from sub-controllers should be implemented
   // in the sub-controllers themselves. This is because updates in the sub-controllers
   // will not trigger emitUpdate in the MainController, therefore the banners will
   // remain the same until a subsequent update in the MainController.
   get banners(): Banner[] {
-    if (!this.selectedAccount) return []
+    if (!this.selectedAccount || !this.networks.isInitialized) return []
 
     const accountOpBanners = getAccountOpBanners({
       accountOpActionsByNetwork: getAccountOpActionsByNetwork(
@@ -1639,7 +1654,7 @@ export class MainController extends EventEmitter {
       ),
       selectedAccount: this.selectedAccount,
       accounts: this.accounts,
-      networks: this.settings.networks
+      networks: this.networks.networks
     })
 
     return [...accountOpBanners]

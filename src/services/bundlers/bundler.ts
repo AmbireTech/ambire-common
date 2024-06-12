@@ -5,7 +5,7 @@
 import fetch from 'node-fetch'
 
 import { ENTRY_POINT_MARKER, ERC_4337_ENTRYPOINT } from '../../consts/deploy'
-import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
+import { Network } from '../../interfaces/network'
 import { BundlerEstimateResult } from '../../libs/estimate/interfaces'
 import { Gas1559Recommendation } from '../../libs/gasPrice/gasPrice'
 import { privSlot } from '../../libs/proxyDeploy/deploy'
@@ -29,7 +29,7 @@ export class Bundler {
    * @param userOperationHash
    * @returns Receipt | null
    */
-  async getReceipt(userOperationHash: string, network: NetworkDescriptor) {
+  async getReceipt(userOperationHash: string, network: Network) {
     const url = `https://api.pimlico.io/v2/${network.chainId}/rpc?apikey=${process.env.REACT_APP_PIMLICO_API_KEY}`
     const provider = getRpcProvider([url], network.chainId)
     return provider.send('eth_getUserOperationReceipt', [userOperationHash])
@@ -42,7 +42,7 @@ export class Bundler {
    * @param network
    * @returns https://docs.alchemy.com/reference/eth-getuseroperationreceipt
    */
-  async poll(userOperationHash: string, network: NetworkDescriptor): Promise<any> {
+  async poll(userOperationHash: string, network: Network): Promise<any> {
     const receipt = await this.getReceipt(userOperationHash, network)
     if (!receipt) {
       const delayPromise = (ms: number) =>
@@ -64,7 +64,7 @@ export class Bundler {
    */
   async pollTxnHash(
     userOperationHash: string,
-    network: NetworkDescriptor
+    network: Network
   ): Promise<{ transactionHash: string; status: string }> {
     const result = await Bundler.getStatusAndTxnId(userOperationHash, network)
 
@@ -90,7 +90,7 @@ export class Bundler {
    * @param UserOperation userOperation
    * @returns userOperationHash
    */
-  async broadcast(userOperation: UserOperation, network: NetworkDescriptor): Promise<string> {
+  async broadcast(userOperation: UserOperation, network: Network): Promise<string> {
     const url = `https://api.pimlico.io/v2/${network.chainId}/rpc?apikey=${process.env.REACT_APP_PIMLICO_API_KEY}`
     const provider = getRpcProvider([url], network.chainId)
 
@@ -100,22 +100,19 @@ export class Bundler {
     ])
   }
 
-  static async getStatusAndTxnId(userOperationHash: string, network: NetworkDescriptor) {
+  static async getStatusAndTxnId(userOperationHash: string, network: Network) {
     const url = `https://api.pimlico.io/v2/${network.chainId}/rpc?apikey=${process.env.REACT_APP_PIMLICO_API_KEY}`
     const provider = getRpcProvider([url], network.chainId)
     return provider.send('pimlico_getUserOperationStatus', [userOperationHash])
   }
 
-  static async getUserOpGasPrice(network: NetworkDescriptor) {
+  static async getUserOpGasPrice(network: Network) {
     const url = `https://api.pimlico.io/v2/${network.chainId}/rpc?apikey=${process.env.REACT_APP_PIMLICO_API_KEY}`
     const provider = getRpcProvider([url], network.chainId)
     return provider.send('pimlico_getUserOperationGasPrice', [])
   }
 
-  async pollGetUserOpGasPrice(
-    network: NetworkDescriptor,
-    counter = 0
-  ): Promise<Gas1559Recommendation[]> {
+  async pollGetUserOpGasPrice(network: Network, counter = 0): Promise<Gas1559Recommendation[]> {
     if (counter >= 5) {
       throw new Error('unable to fetch bundler gas prices')
     }
@@ -159,7 +156,7 @@ export class Bundler {
 
   static async estimate(
     userOperation: UserOperation,
-    network: NetworkDescriptor,
+    network: Network,
     shouldStateOverride = false
   ): Promise<BundlerEstimateResult> {
     const url = `https://api.pimlico.io/v2/${network.chainId}/rpc?apikey=${process.env.REACT_APP_PIMLICO_API_KEY}`
@@ -185,7 +182,7 @@ export class Bundler {
     ])
   }
 
-  static async fetchGasPrices(network: NetworkDescriptor): Promise<{
+  static async fetchGasPrices(network: Network): Promise<{
     slow: { maxFeePerGas: string; maxPriorityFeePerGas: string }
     medium: { maxFeePerGas: string; maxPriorityFeePerGas: string }
     fast: { maxFeePerGas: string; maxPriorityFeePerGas: string }

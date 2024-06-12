@@ -17,7 +17,7 @@ import {
 } from '../../interfaces/account'
 import { KeyIterator } from '../../interfaces/keyIterator'
 import { dedicatedToOneSAPriv, ReadyToAddKeys } from '../../interfaces/keystore'
-import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
+import { Network, NetworkId } from '../../interfaces/network'
 import { AccountPreferences, KeyPreferences } from '../../interfaces/settings'
 import {
   getAccountImportStatus,
@@ -266,7 +266,7 @@ export class AccountAdderController extends EventEmitter {
     providers
   }: {
     path: HD_PATH_TEMPLATE_TYPE
-    networks: NetworkDescriptor[]
+    networks: Network[]
     providers: { [key: string]: JsonRpcProvider }
   }): void {
     this.hdPathTemplate = path
@@ -420,7 +420,7 @@ export class AccountAdderController extends EventEmitter {
     providers
   }: {
     page: number
-    networks: NetworkDescriptor[]
+    networks: Network[]
     providers: { [key: string]: JsonRpcProvider }
   }): Promise<void> {
     if (!this.isInitialized) return this.#throwNotInitialized()
@@ -625,7 +625,7 @@ export class AccountAdderController extends EventEmitter {
     networks,
     providers
   }: {
-    networks: NetworkDescriptor[]
+    networks: Network[]
     providers: { [key: string]: JsonRpcProvider }
   }): Promise<DerivedAccount[]> {
     // Should never happen, because before the #deriveAccounts method gets
@@ -724,14 +724,14 @@ export class AccountAdderController extends EventEmitter {
     providers
   }: {
     accounts: DerivedAccountWithoutNetworkMeta[]
-    networks: NetworkDescriptor[]
+    networks: Network[]
     providers: { [key: string]: JsonRpcProvider }
   }): Promise<DerivedAccount[]> {
     const accountsObj: { [key: Account['addr']]: DerivedAccount } = Object.fromEntries(
       accounts.map((a) => [a.account.addr, { ...a, account: { ...a.account, usedOnNetworks: [] } }])
     )
 
-    const networkLookup: { [key: NetworkDescriptor['id']]: NetworkDescriptor } = {}
+    const networkLookup: { [key: NetworkId]: Network } = {}
     networks.forEach((network) => {
       networkLookup[network.id] = network
     })
@@ -806,7 +806,7 @@ export class AccountAdderController extends EventEmitter {
     providers
   }: {
     accounts: Account[]
-    networks: NetworkDescriptor[]
+    networks: Network[]
     providers: { [key: string]: JsonRpcProvider }
   }) {
     if (accounts.length === 0) return

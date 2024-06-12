@@ -13,7 +13,7 @@ import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
 import { networks } from '../../consts/networks'
 import { Account } from '../../interfaces/account'
 import { dedicatedToOneSAPriv } from '../../interfaces/keystore'
-import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
+import { Network } from '../../interfaces/network'
 import { getSmartAccount } from '../../libs/account/account'
 import { AccountOp, callToTuple, getSignableCalls } from '../../libs/accountOp/accountOp'
 import { getTypedData, wrapStandard } from '../../libs/signMessage/signMessage'
@@ -48,11 +48,12 @@ const smartAccDeployed: Account = {
   associatedKeys: ['0xBd84Cc40a5b5197B5B61919c22A55e1c46d2A3bb']
 }
 
-const mantle = {
+const mantle: Network = {
   id: 'mantle',
   name: 'mantle',
   nativeAssetSymbol: 'MNT',
   rpcUrls: ['https://mantle-rpc.publicnode.com'],
+  selectedRpcUrl: 'https://mantle-rpc.publicnode.com',
   rpcNoStateOverride: false,
   chainId: 5000n,
   explorerUrl: 'https://explorer.mantle.xyz',
@@ -60,7 +61,6 @@ const mantle = {
     enabled: true,
     hasPaymaster: false
   },
-  unstoppableDomainsChain: 'ERC20',
   isSAEnabled: true,
   areContractsDeployed: true,
   hasRelayer: false,
@@ -71,13 +71,15 @@ const mantle = {
   features: [],
   feeOptions: {
     is1559: true
-  }
+  },
+  predefined: false
 }
-const base = {
+const base: Network = {
   id: 'base',
   name: 'base',
   nativeAssetSymbol: 'ETH',
-  rpcUrls: ['https://mainnet.base.org	'],
+  rpcUrls: ['https://mainnet.base.org'],
+  selectedRpcUrl: 'https://mainnet.base.org',
   rpcNoStateOverride: false,
   chainId: 8453n,
   explorerUrl: 'https://basescan.org/',
@@ -85,7 +87,6 @@ const base = {
     enabled: true,
     hasPaymaster: false
   },
-  unstoppableDomainsChain: 'ERC20',
   isSAEnabled: true,
   areContractsDeployed: true,
   hasRelayer: false,
@@ -96,10 +97,11 @@ const base = {
   features: [],
   feeOptions: {
     is1559: true
-  }
+  },
+  predefined: false
 }
 
-export async function getDeploySignature(smartAcc: Account, network: NetworkDescriptor) {
+export async function getDeploySignature(smartAcc: Account, network: Network) {
   // CODE FOR getting a valid deploy signature if you have the PK
   const nonce = 0
   const call = getActivatorCall(smartAcc.addr)

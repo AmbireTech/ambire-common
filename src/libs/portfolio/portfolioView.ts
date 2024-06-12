@@ -1,8 +1,7 @@
 import { Account } from '../../interfaces/account'
-import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
-import { shouldGetAdditionalPortfolio } from './helpers'
+import { Network } from '../../interfaces/network'
 import {
-  AdditionalPortfolioNetworkResult,
+  AccountState,
   CollectionResult as CollectionResultInterface,
   NetworkState,
   PortfolioControllerState,
@@ -51,21 +50,24 @@ export function calculateAccountPortfolio(
     }
   }
 
-  const selectedAccountData = hasPending
-    ? state.pending[selectedAccount]
-    : state.latest[selectedAccount]
+  let selectedAccountData = state.latest[selectedAccount]
 
-  // In the case we have a pending state we lose the gasTank and rewards data which is fetched on latest only
-  // Either that or we populate pending with them as well on forceUpdate in controller.
-  if (
-    shouldGetAdditionalPortfolio(account) &&
-    hasPending &&
-    state.latest[selectedAccount].gasTank &&
-    state.latest[selectedAccount].rewards
-  ) {
-    selectedAccountData.gasTank = state.latest[selectedAccount].gasTank
+  const pendingAccountStateWithoutCriticalErrors = Object.keys(
+    state.pending[selectedAccount]
+  ).reduce((acc, network) => {
+    // Filter out networks with critical errors
+    if (!state.pending[selectedAccount][network]?.criticalError) {
+      acc[network] = state.pending[selectedAccount][network]
+    }
+    return acc
+  }, {} as AccountState)
 
-    selectedAccountData.rewards = state.latest[selectedAccount].rewards
+  if (hasPending && Object.keys(pendingAccountStateWithoutCriticalErrors).length > 0) {
+    // Mix latest and pending data. This is required because pending state may only have some networks
+    selectedAccountData = {
+      ...selectedAccountData,
+      ...pendingAccountStateWithoutCriticalErrors
+    }
   }
 
   const isNetworkReady = (networkData: NetworkState | undefined) => {
@@ -75,15 +77,7 @@ export function calculateAccountPortfolio(
   }
 
   Object.keys(selectedAccountData).forEach((network: string) => {
-    // In case we have error on pending state the result does not return the tokens
-    // and we don't want to not display them on dashboard/transfer
-    const accountData =
-      hasPending && !selectedAccountData[network]?.criticalError
-        ? state.pending[selectedAccount]
-        : state.latest[selectedAccount]
-
-    const networkData = accountData[network]
-
+    const networkData = selectedAccountData[network]
     const result = networkData?.result
 
     if (networkData && isNetworkReady(networkData) && !networkData?.criticalError && result) {
@@ -118,7 +112,7 @@ export type PendingToken = TokenResultInterface & {
 
 export function calculateTokensPendingState(
   selectedAccount: string,
-  network: NetworkDescriptor,
+  network: Network,
   state: { pending: PortfolioControllerState }
 ): PendingToken[] {
   const pendingData = state.pending[selectedAccount][network.id]

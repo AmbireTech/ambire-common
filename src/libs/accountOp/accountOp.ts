@@ -2,7 +2,7 @@ import { AbiCoder, getBytes, keccak256 } from 'ethers'
 
 import { AccountId } from '../../interfaces/account'
 import { Key } from '../../interfaces/keystore'
-import { NetworkId } from '../../interfaces/networkDescriptor'
+import { NetworkId } from '../../interfaces/network'
 import { HumanizerFragment } from '../humanizer/interfaces'
 import { stringify } from '../richJson/richJson'
 import { UserOperation } from '../userOperation/types'

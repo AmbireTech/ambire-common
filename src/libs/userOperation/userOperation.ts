@@ -1,5 +1,5 @@
 import { AbiCoder, concat, hexlify, Interface, keccak256, toBeHex } from 'ethers'
-import { NetworkDescriptor } from 'interfaces/networkDescriptor'
+import { Network } from 'interfaces/network'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json'
@@ -156,15 +156,12 @@ export function getUserOperation(
   return userOp
 }
 
-export function shouldUsePaymaster(network: NetworkDescriptor): boolean {
+export function shouldUsePaymaster(network: Network): boolean {
   // if there's a paymaster on the network, we pay with it. Simple
   return !!network.erc4337.hasPaymaster
 }
 
-export function isErc4337Broadcast(
-  network: NetworkDescriptor,
-  accountState: AccountOnchainState
-): boolean {
+export function isErc4337Broadcast(network: Network, accountState: AccountOnchainState): boolean {
   // we can broadcast a 4337 if:
   // - the account is not deployed (we do deployAndExecute in the factoryData)
   // - the entry point is enabled (standard ops)
@@ -179,10 +176,7 @@ export function isErc4337Broadcast(
 // and the network is a 4337 one without a paymaster, the only way to broadcast
 // a txn is through EOA pays for SA. That's why we need this check to include
 // the activator call and the next txn to be ERC-4337
-export function shouldIncludeActivatorCall(
-  network: NetworkDescriptor,
-  accountState: AccountOnchainState
-) {
+export function shouldIncludeActivatorCall(network: Network, accountState: AccountOnchainState) {
   return (
     accountState.isV2 &&
     network.erc4337.enabled &&
@@ -191,14 +185,14 @@ export function shouldIncludeActivatorCall(
   )
 }
 
-export function getExplorerId(network: NetworkDescriptor) {
+export function getExplorerId(network: Network) {
   return network.erc4337.explorerId ?? network.id
 }
 
 // if the account is v2 and the network is 4337 and the account hasn't
 // authorized the entry point, he should be asked to do so
 export function shouldAskForEntryPointAuthorization(
-  network: NetworkDescriptor,
+  network: Network,
   accountState: AccountOnchainState
 ) {
   return accountState.isV2 && network.erc4337.enabled && !accountState.isErc4337Enabled

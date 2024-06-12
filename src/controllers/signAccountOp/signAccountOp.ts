@@ -8,7 +8,7 @@ import { FEE_COLLECTOR } from '../../consts/addresses'
 import { AMBIRE_PAYMASTER, SINGLETON } from '../../consts/deploy'
 import { Account, AccountStates } from '../../interfaces/account'
 import { ExternalSignerControllers, Key } from '../../interfaces/keystore'
-import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
+import { Network } from '../../interfaces/network'
 import { Storage } from '../../interfaces/storage'
 import { isSmartAccount } from '../../libs/account/account'
 import { AccountOp, GasFeePayment, getSignableCalls } from '../../libs/accountOp/accountOp'
@@ -32,7 +32,7 @@ import {
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
 import { PortfolioController } from '../portfolio/portfolio'
-import { SettingsController } from '../settings/settings'
+import { ProvidersController } from '../providers/providers'
 import { getFeeSpeedIdentifier, getTokenUsdAmount } from './helper'
 
 export enum SigningStatus {
@@ -86,7 +86,7 @@ export class SignAccountOpController extends EventEmitter {
 
   #portfolio: PortfolioController
 
-  #settings: SettingsController
+  #providers: ProvidersController
 
   #externalSignerControllers: ExternalSignerControllers
 
@@ -98,7 +98,7 @@ export class SignAccountOpController extends EventEmitter {
 
   #accountStates: AccountStates
 
-  #network: NetworkDescriptor
+  #network: Network
 
   fromActionId: AccountOpAction['id']
 
@@ -133,11 +133,11 @@ export class SignAccountOpController extends EventEmitter {
   constructor(
     keystore: KeystoreController,
     portfolio: PortfolioController,
-    settings: SettingsController,
+    providers: ProvidersController,
     externalSignerControllers: ExternalSignerControllers,
     account: Account,
     accountStates: AccountStates,
-    network: NetworkDescriptor,
+    network: Network,
     fromActionId: AccountOpAction['id'],
     accountOp: AccountOp,
     storage: Storage,
@@ -147,7 +147,7 @@ export class SignAccountOpController extends EventEmitter {
     super()
     this.#keystore = keystore
     this.#portfolio = portfolio
-    this.#settings = settings
+    this.#providers = providers
     this.#externalSignerControllers = externalSignerControllers
     this.account = account
     this.#accountStates = accountStates

@@ -1,6 +1,7 @@
 import { JsonRpcProvider, Provider } from 'ethers'
 
-import { Account } from '../../interfaces/account'
+import { Account, AccountStates } from '../../interfaces/account'
+import { Network } from '../../interfaces/network'
 import { AccountOp } from '../accountOp/accountOp'
 import { Call } from '../accountOp/types'
 import { getActivatorCall } from '../userOperation/userOperation'
@@ -8,6 +9,8 @@ import { getActivatorCall } from '../userOperation/userOperation'
 export async function estimateCustomNetwork(
   account: Account,
   op: AccountOp,
+  accountStates: AccountStates,
+  network: Network,
   provider: Provider | JsonRpcProvider
 ): Promise<bigint> {
   const calls: any = [...op.calls]
