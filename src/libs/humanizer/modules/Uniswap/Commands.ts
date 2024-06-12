@@ -30,6 +30,10 @@ export const COMMANDS = {
   // SWEEP_ERC1155: '0x1d'
 }
 
+/**
+ * ABI-like structure for each uniswap action
+ * https://docs.uniswap.org/contracts/universal-router/technical-reference
+ */
 export const COMMANDS_DESCRIPTIONS = {
   V3_SWAP_EXACT_IN: {
     command: '0x00',
@@ -106,21 +110,13 @@ export const COMMANDS_DESCRIPTIONS = {
   },
   PERMIT2_PERMIT: {
     command: '0x0a',
-    // @TODO input details
-    /*
-    struct PermitSingle {
-        // the permit data for a single token allowance
-        PermitDetails details;
-        // address permissioned on the allowed tokens
-        address spender;
-        // deadline on the permit signature
-        uint256 sigDeadline;
-    }
-
-    IAllowanceTransfer.PermitSingle A PermitSingle struct outlining the Permit2 permit to execute
-    bytes The signature to provide to Permit2
-    */
-    inputsDetails: []
+    inputsDetails: [
+      {
+        name: 'permit',
+        type: 'tuple(tuple(address token, uint160 amount, uint48 expiration, uint48 nonce) details, address spender, uint256 sigDeadline)'
+      },
+      { name: 'signature', type: 'bytes' }
+    ]
   },
   WRAP_ETH: {
     command: '0x0b',
