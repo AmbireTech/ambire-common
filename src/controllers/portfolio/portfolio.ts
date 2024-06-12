@@ -623,18 +623,15 @@ export class PortfolioController extends EventEmitter {
   async learnTokens(tokenAddresses: string[] | undefined, networkId: NetworkId) {
     if (!tokenAddresses) return
 
-    const storagePreviousHints = this.#previousHints
+    if (!this.#previousHints.learnedTokens) this.#previousHints.learnedTokens = {}
 
-    if (!storagePreviousHints.learnedTokens) storagePreviousHints.learnedTokens = {}
-
-    const { learnedTokens } = storagePreviousHints
-    let networkLearnedTokens: { [key: string]: string | null } = learnedTokens[networkId] || {}
+    let networkLearnedTokens: PreviousHintsStorage['learnedTokens'][''] =
+      this.#previousHints.learnedTokens[networkId] || {}
 
     const tokensToLearn = tokenAddresses.reduce((acc: { [key: string]: null }, address) => {
       if (address === ZeroAddress) return acc
 
-      // Keep the timestamp of all learned tokens
-      acc[address] = acc[address] || null
+      acc[address] = acc[address] || null // Keep the timestamp of all learned tokens
       return acc
     }, {})
 
@@ -653,11 +650,8 @@ export class PortfolioController extends EventEmitter {
       )
     }
 
-    const updatedPreviousHintsStorage = { ...storagePreviousHints }
-    updatedPreviousHintsStorage.learnedTokens[networkId] = networkLearnedTokens
-
-    this.#previousHints = updatedPreviousHintsStorage
-    await this.#storage.set('previousHints', updatedPreviousHintsStorage)
+    this.#previousHints.learnedTokens[networkId] = networkLearnedTokens
+    await this.#storage.set('previousHints', this.#previousHints)
   }
 
   get networksWithAssets() {
