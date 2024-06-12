@@ -21,7 +21,7 @@ export interface NetworkInfo {
   hasSingleton: boolean
   isOptimistic: boolean
   rpcNoStateOverride: boolean
-  erc4337: { enabled: boolean; hasPaymaster: boolean }
+  erc4337: { enabled: boolean; hasPaymaster: boolean; bundlerUrl?: string }
   areContractsDeployed: boolean
   feeOptions: { is1559: boolean }
   hasDebugTraceCall: boolean
@@ -55,6 +55,7 @@ export interface Network {
   explorerUrl: string
   selectedRpcUrl: string
   erc4337: Erc4337settings
+  bundlerUrl?: string
   rpcNoStateOverride: boolean
   feeOptions: FeeOptions
   isSAEnabled: boolean
@@ -80,4 +81,5 @@ export interface AddNetworkRequestParams {
   nativeAssetSymbol: Network['nativeAssetSymbol']
   explorerUrl: Network['explorerUrl']
   iconUrls: Network['iconUrls']
+  bundlerUrl: Network['bundlerUrl']
 }
