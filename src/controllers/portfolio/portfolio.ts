@@ -625,7 +625,7 @@ export class PortfolioController extends EventEmitter {
 
     if (!this.#previousHints.learnedTokens) this.#previousHints.learnedTokens = {}
 
-    let networkLearnedTokens: { [key: string]: string | null } =
+    let networkLearnedTokens: PreviousHintsStorage['learnedTokens'][''] =
       this.#previousHints.learnedTokens[networkId] || {}
 
     const tokensToLearn = tokenAddresses.reduce((acc: { [key: string]: null }, address) => {
