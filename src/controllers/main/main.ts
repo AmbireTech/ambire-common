@@ -890,7 +890,7 @@ export class MainController extends EventEmitter {
       const accountState = this.accountStates[meta.accountAddr][meta.networkId]
 
       if (account.creation) {
-        const network = this.settings.networks.filter((n) => n.id === meta.networkId)[0]
+        const network = this.networks.networks.filter((n) => n.id === meta.networkId)[0]
         if (shouldAskForEntryPointAuthorization(network, accountState)) {
           if (
             this.actions.visibleActionsQueue.find(
