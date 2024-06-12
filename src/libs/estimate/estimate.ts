@@ -283,7 +283,7 @@ export async function estimate(
       })
       .catch(catchEstimationFailure),
     estimateArbitrumL1GasUsed(op, account, accountState, provider).catch(catchEstimationFailure),
-    estimateGas(account, op, provider)
+    estimateGas(account, op, provider).catch(() => 0n)
   ]
   const estimations = await estimateWithRetries(initializeRequests)
   if (estimations instanceof Error) return estimationErrorFormatted(estimations)
@@ -305,7 +305,7 @@ export async function estimate(
   let gasUsed = deployment.gasUsed + accountOpToExecuteBefore.gasUsed + accountOp.gasUsed
 
   // if estimateGas brings a bigger estimation than Estimation.sol, use it
-  const customlyEstimatedGas = !(estimations[2] instanceof Error) ? estimations[2] : 0n
+  const customlyEstimatedGas = estimations[2]
   if (gasUsed < customlyEstimatedGas) gasUsed = customlyEstimatedGas
 
   // WARNING: calculateRefund will 100% NOT work in all cases we have

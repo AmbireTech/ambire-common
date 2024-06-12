@@ -80,6 +80,7 @@ describe('Networks Controller', () => {
           feeOptions: mantleNetworkInfo.feeOptions ?? {
             is1559: false
           },
+          bundlerUrl: '',
           iconUrls: []
         } as AddNetworkRequestParams
 

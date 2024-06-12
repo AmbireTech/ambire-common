@@ -1,6 +1,6 @@
 import { AccountOpAction, Action } from '../../controllers/actions/actions'
 import { Account, AccountId } from '../../interfaces/account'
-import { NetworkId } from '../../interfaces/networkDescriptor'
+import { NetworkId } from '../../interfaces/network'
 import { Call, SignUserRequest, UserRequest } from '../../interfaces/userRequest'
 import generateSpoofSig from '../../utils/generateSpoofSig'
 import { Call as AccountOpCall } from '../accountOp/types'
