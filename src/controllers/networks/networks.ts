@@ -163,7 +163,7 @@ export class NetworksController extends EventEmitter {
       id: networkId,
       ...network,
       ...info,
-      ...feeOptions,
+      feeOptions,
       features: getFeaturesByNetworkProperties(info),
       hasRelayer: false,
       predefined: false
