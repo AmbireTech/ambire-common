@@ -629,7 +629,7 @@ export class PortfolioController extends EventEmitter {
         // Chain the new updatePromise to the current queue
         this.queue[network.id][accountId] = this.queue[network.id][accountId]
           .then(updatePromise)
-          .catch(updatePromise)
+          .catch(() => updatePromise())
 
         // Ensure the method waits for the entire queue to resolve
         await this.queue[network.id][accountId]
