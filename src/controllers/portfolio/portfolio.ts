@@ -433,9 +433,6 @@ export class PortfolioController extends EventEmitter {
     )
       return false
 
-    // Only one loading at a time, ensure there are no race conditions
-    if (state.isLoading && !forceUpdate) return false
-
     state.isLoading = true
     this.emitUpdate()
 
