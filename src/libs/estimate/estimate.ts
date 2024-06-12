@@ -22,6 +22,7 @@ import { catchEstimationFailure, estimationErrorFormatted, mapTxnErrMsg } from '
 import { estimateArbitrumL1GasUsed } from './estimateArbitrum'
 import { bundlerEstimate } from './estimateBundler'
 import { estimateEOA } from './estimateEOA'
+import { estimateGas } from './estimateGas'
 import { estimateWithRetries } from './estimateWithRetries'
 import { ArbitrumL1Fee, EstimateResult, FeePaymentOption } from './interfaces'
 import { refund } from './refund'
@@ -282,11 +283,7 @@ export async function estimate(
       })
       .catch(catchEstimationFailure),
     estimateArbitrumL1GasUsed(op, account, accountState, provider).catch(catchEstimationFailure),
-    !network.predefined
-      ? estimate4337(account, op, calls, accountStates, network, provider, feeTokens, blockTag)
-      : new Promise((resolve) => {
-          resolve(0n)
-        })
+    estimateGas(account, op, provider)
   ]
   const estimations = await estimateWithRetries(initializeRequests)
   if (estimations instanceof Error) return estimationErrorFormatted(estimations)
@@ -307,13 +304,8 @@ export async function estimate(
 
   let gasUsed = deployment.gasUsed + accountOpToExecuteBefore.gasUsed + accountOp.gasUsed
 
-  // we're touching the calculations for custom networks only
-  // customlyEstimatedGas is 0 when the network is not custom
-  const customlyEstimatedGas =
-    !network.predefined && !estimations[2].error
-      ? BigInt(estimations[2].erc4337GasLimits.callGasLimit) +
-        BigInt(estimations[2].erc4337GasLimits.preVerificationGas)
-      : 0n
+  // if estimateGas brings a bigger estimation than Estimation.sol, use it
+  const customlyEstimatedGas = !(estimations[2] instanceof Error) ? estimations[2] : 0n
   if (gasUsed < customlyEstimatedGas) gasUsed = customlyEstimatedGas
 
   // WARNING: calculateRefund will 100% NOT work in all cases we have
