@@ -8,7 +8,7 @@ import {
   HumanizerCallModule,
   HumanizerMeta,
   HumanizerPromise,
-  HumanizerTypedMessaageModule,
+  HumanizerTypedMessageModule,
   HumanizerVisualization,
   IrCall,
   IrMessage
@@ -88,7 +88,7 @@ export const visualizationToText = (call: IrCall, options: any): string => {
 }
 
 export const humanizeTypedMessage = (
-  modules: HumanizerTypedMessaageModule[],
+  modules: HumanizerTypedMessageModule[],
   tm: TypedMessage
   // only fullVisualization and warnings
 ): Omit<IrMessage, keyof Message> => {

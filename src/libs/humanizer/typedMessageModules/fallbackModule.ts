@@ -1,5 +1,5 @@
 import { TypedMessage } from '../../../interfaces/userRequest'
-import { HumanizerTypedMessaageModule, HumanizerVisualization } from '../interfaces'
+import { HumanizerTypedMessageModule, HumanizerVisualization } from '../interfaces'
 import { getLabel } from '../utils'
 
 const fallbackParser = (
@@ -21,7 +21,7 @@ const fallbackParser = (
   return v
 }
 
-export const fallbackEIP712Humanizer: HumanizerTypedMessaageModule = (tm: TypedMessage) => {
+export const fallbackEIP712Humanizer: HumanizerTypedMessageModule = (tm: TypedMessage) => {
   return {
     fullVisualization: fallbackParser(tm.message, 0),
     warnings: [{ content: 'Unsuccessfully humanized', level: 'caution' }]
