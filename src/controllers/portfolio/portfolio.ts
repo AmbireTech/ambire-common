@@ -536,8 +536,7 @@ export class PortfolioController extends EventEmitter {
           // 1. A change occurs if one variable is undefined and the other one holds an AccountOps object.
           // 2. No change occurs if both variables are undefined.
           const areAccountOpsChanged =
-            // eslint-disable-next-line prettier/prettier
-                    currentAccountOps && simulatedAccountOps
+            currentAccountOps && simulatedAccountOps
               ? !isAccountOpsIntentEqual(currentAccountOps, simulatedAccountOps)
               : currentAccountOps !== simulatedAccountOps
 
@@ -575,7 +574,7 @@ export class PortfolioController extends EventEmitter {
             // Pending state update
             // We are updating the pending state, only if AccountOps are changed or the application logic requests a force update
             forceUpdate
-              ? await this.#updatePortfolioState(
+              ? this.#updatePortfolioState(
                   accountId,
                   pendingState,
                   network,
@@ -620,12 +619,9 @@ export class PortfolioController extends EventEmitter {
           // We cache the previously simulated AccountOps
           // in order to compare them with the newly passed AccountOps before executing a new updatePortfolioState.
           // This allows us to identify any differences between the two.
-          // TODO: If we enable the below line, pending states stopped working in the application (extension).
-          //  In the case we run this logic under a testing environment, then it works as expected.
-          //  As it is not a deal-breaker (for now), we will comment it out and will fix it later this week.
-          // if (isSuccessfulPendingUpdate && currentAccountOps) {
-          //   pendingState[network.id]!.accountOps = currentAccountOps
-          // }
+          if (currentAccountOps) {
+            pendingState[network.id]!.accountOps = currentAccountOps
+          }
         }
 
         // Chain the new updatePromise to the current queue
