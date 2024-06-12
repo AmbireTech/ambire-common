@@ -37,7 +37,7 @@ import {
   PreviousHintsStorage,
   TokenResult
 } from '../../libs/portfolio/interfaces'
-import { Portfolio } from '../../libs/portfolio/portfolio'
+import { Portfolio } from '../../libs/portfolio'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { NetworksController } from '../networks/networks'
@@ -60,7 +60,7 @@ export class PortfolioController extends EventEmitter {
   // Before implementing this queue, multiple `updateSelectedAccount` calls made in a short period of time could cause
   // the response of the latest call to be overwritten by a slower previous call.
   queue: {
-    [networkId: NetworkDescriptor['id']]: {
+    [networkId: NetworkId]: {
       [accountId: string]: Promise<void>
     }
   }
@@ -533,7 +533,7 @@ export class PortfolioController extends EventEmitter {
 
         const portfolioLib = this.initializePortfolioLibIfNeeded(accountId, network.id, network)
 
-        const currentAccountOps = accountOps?.[network.id].filter(
+        const currentAccountOps = accountOps?.[network.id]?.filter(
           (op) => op.accountAddr === accountId
         )
         const simulatedAccountOps = pendingState[network.id]?.accountOps

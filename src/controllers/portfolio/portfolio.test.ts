@@ -449,7 +449,9 @@ describe('Portfolio Controller ', () => {
       await controller.updateSelectedAccount(
         [emptyAccount],
         emptyAccount.addr,
-        undefined,
+        // we pass a network here, just because the portfolio is trying to perform a call to an undefined network,
+        // and it throws a silent error
+        networks.find((network) => network.id === 'ethereum'),
         undefined,
         {
           forceUpdate: true
