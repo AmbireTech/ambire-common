@@ -15,7 +15,7 @@ import AmbireAccountFactory from '../../../contracts/compiled/AmbireAccountFacto
 import { AMBIRE_ACCOUNT_FACTORY, SINGLETON } from '../../consts/deploy'
 import { Account, AccountId, AccountOnchainState, AccountStates } from '../../interfaces/account'
 import { Banner } from '../../interfaces/banner'
-import { Dapp, DappProviderRequest } from '../../interfaces/dapp'
+import { DappProviderRequest } from '../../interfaces/dapp'
 import {
   ExternalSignerControllers,
   Key,
@@ -53,6 +53,7 @@ import { AccountAdderController } from '../accountAdder/accountAdder'
 import { AccountOpAction, ActionsController } from '../actions/actions'
 import { ActivityController, SignedMessage, SubmittedAccountOp } from '../activity/activity'
 import { AddressBookController } from '../addressBook/addressBook'
+import { DappsController } from '../dapps/dapps'
 import { DomainsController } from '../domains/domains'
 import { EmailVaultController } from '../emailVault/emailVault'
 import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter'
@@ -96,10 +97,16 @@ export class MainController extends EventEmitter {
    */
   #externalSignerControllers: ExternalSignerControllers = {}
 
+  // Subcontrollers
+  networks: NetworksController
+
+  providers: ProvidersController
+
   accountAdder: AccountAdderController
 
-  // Subcontrollers
   portfolio: PortfolioController
+
+  dapps: DappsController
 
   actions: ActionsController
 
@@ -116,10 +123,6 @@ export class MainController extends EventEmitter {
   signAccOpInitError: string | null = null
 
   activity!: ActivityController
-
-  networks: NetworksController
-
-  providers: ProvidersController
 
   settings: SettingsController
 
@@ -149,10 +152,6 @@ export class MainController extends EventEmitter {
 
   #windowManager: WindowManager
 
-  #getDapp: (url: string) => Dapp | undefined
-
-  onUpdateDappSelectedAccount: (accountAddr: string) => void
-
   onBroadcastSuccess?: (type: 'message' | 'typed-data' | 'account-op') => void
 
   constructor({
@@ -162,8 +161,6 @@ export class MainController extends EventEmitter {
     keystoreSigners,
     externalSignerControllers,
     windowManager,
-    getDapp,
-    onUpdateDappSelectedAccount,
     onBroadcastSuccess
   }: {
     storage: Storage
@@ -172,8 +169,6 @@ export class MainController extends EventEmitter {
     keystoreSigners: Partial<{ [key in Key['type']]: KeystoreSignerType }>
     externalSignerControllers: ExternalSignerControllers
     windowManager: WindowManager
-    getDapp: (url: string) => Dapp | undefined
-    onUpdateDappSelectedAccount: (accountAddr: string) => void
     onBroadcastSuccess?: (type: 'message' | 'typed-data' | 'account-op') => void
   }) {
     super()
@@ -181,7 +176,6 @@ export class MainController extends EventEmitter {
     this.#fetch = fetch
     this.#relayerUrl = relayerUrl
     this.#windowManager = windowManager
-    this.#getDapp = getDapp
 
     this.invite = new InviteController({ relayerUrl, fetch, storage: this.#storage })
     this.keystore = new KeystoreController(this.#storage, keystoreSigners)
@@ -227,6 +221,7 @@ export class MainController extends EventEmitter {
       this.#storage,
       this.#fetch
     )
+    this.dapps = new DappsController(this.#storage)
     this.actions = new ActionsController({
       selectedAccount: this.selectedAccount,
       windowManager,
@@ -237,7 +232,6 @@ export class MainController extends EventEmitter {
     })
     this.domains = new DomainsController(this.providers.providers, this.#fetch)
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch: this.#fetch })
-    this.onUpdateDappSelectedAccount = onUpdateDappSelectedAccount
     this.onBroadcastSuccess = onBroadcastSuccess
   }
 
@@ -546,9 +540,9 @@ export class MainController extends EventEmitter {
     this.activity.init({ selectedAccount: toAccountAddr })
     this.addressBook.update({ selectedAccount: toAccountAddr })
     this.actions.update({ selectedAccount: toAccountAddr })
+    this.dapps.broadcastDappSessionEvent('accountsChanged', toAccountAddr ? [toAccountAddr] : [])
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.updateSelectedAccount(toAccountAddr)
-    this.onUpdateDappSelectedAccount(toAccountAddr)
 
     this.emitUpdate()
   }
@@ -661,7 +655,7 @@ export class MainController extends EventEmitter {
   ) {
     let userRequest = null
     const kind = dappRequestMethodToActionKind(request.method)
-    const dapp = this.#getDapp(request.origin)
+    const dapp = this.dapps.getDapp(request.origin)
 
     if (!this.selectedAccount) {
       throw ethErrors.rpc.internal()
