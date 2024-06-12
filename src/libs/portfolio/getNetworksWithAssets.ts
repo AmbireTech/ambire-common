@@ -1,17 +1,17 @@
 import { AccountId } from '../../interfaces/account'
-import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
-import { RPCProviders } from '../../interfaces/settings'
+import { NetworkId } from '../../interfaces/network'
+import { RPCProviders } from '../../interfaces/provider'
 import { AccountState } from './interfaces'
 
 const getAccountNetworksWithAssets = (
   accountId: AccountId,
   accountState: AccountState,
   storageStateByAccount: {
-    [accountId: string]: NetworkDescriptor['id'][]
+    [accountId: string]: NetworkId[]
   },
   providers: RPCProviders
-): NetworkDescriptor['id'][] => {
-  let networksWithAssets: NetworkDescriptor['id'][] = []
+): NetworkId[] => {
+  let networksWithAssets: NetworkId[] = []
 
   Object.keys(accountState).forEach((networkId) => {
     if (!providers[networkId]) return

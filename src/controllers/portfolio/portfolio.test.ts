@@ -7,10 +7,11 @@ import { getNonce, produceMemoryStore } from '../../../test/helpers'
 import { networks } from '../../consts/networks'
 import { PINNED_TOKENS } from '../../consts/pinnedTokens'
 import { Account } from '../../interfaces/account'
-import { RPCProviders } from '../../interfaces/settings'
+import { RPCProviders } from '../../interfaces/provider'
 import { AccountOp } from '../../libs/accountOp/accountOp'
 import { getRpcProvider } from '../../services/provider'
-import { SettingsController } from '../settings/settings'
+import { NetworksController } from '../networks/networks'
+import { ProvidersController } from '../providers/providers'
 import { PortfolioController } from './portfolio'
 
 const relayerUrl = 'https://staging-relayer.ambire.com'
@@ -24,14 +25,22 @@ networks.forEach((network) => {
   providers[network.id].isWorking = true
 })
 
-const ethereum = networks.find((network) => network.id === 'ethereum')!
-
 const prepareTest = () => {
   const storage = produceMemoryStore()
 
-  const settings = new SettingsController(storage)
-  settings.providers = providers
-  const controller = new PortfolioController(storage, settings, relayerUrl)
+  let providersCtrl: ProvidersController
+  const networksCtrl = new NetworksController(
+    storage,
+    (net) => {
+      providersCtrl.setProvider(net)
+    },
+    (id) => {
+      providersCtrl.removeProvider(id)
+    }
+  )
+  providersCtrl = new ProvidersController(networksCtrl)
+  providersCtrl.providers = providers
+  const controller = new PortfolioController(storage, providersCtrl, networksCtrl, relayerUrl)
 
   return {
     controller,
@@ -94,29 +103,51 @@ describe('Portfolio Controller ', () => {
       }
 
       const storage = produceMemoryStore()
-      const settings = new SettingsController(storage)
-      settings.providers = providers
-      const controller = new PortfolioController(storage, settings, relayerUrl)
-      await controller.updateSelectedAccount([account2], [ethereum], account2.addr)
-
+      let providersCtrl: ProvidersController
+      const networksCtrl = new NetworksController(
+        storage,
+        (net) => {
+          providersCtrl.setProvider(net)
+        },
+        (id) => {
+          providersCtrl.removeProvider(id)
+        }
+      )
+      providersCtrl = new ProvidersController(networksCtrl)
+      providersCtrl.providers = providers
+      const controller = new PortfolioController(storage, providersCtrl, networksCtrl, relayerUrl)
+      await controller.updateSelectedAccount([account2], account2.addr)
       const storagePreviousHints = await storage.get('previousHints', {})
-      const storageErc20s = storagePreviousHints.fromExternalAPI[`ethereum:${account2.addr}`].erc20s
+      const ethereumHints = storagePreviousHints.fromExternalAPI[`ethereum:${account2.addr}`]
+      const polygonHints = storagePreviousHints.fromExternalAPI[`polygon:${account2.addr}`]
+      const optimismHints = storagePreviousHints.fromExternalAPI[`polygon:${account2.addr}`]
 
       // Controller persists tokens having balance for the current account.
-      // @TODO - here we can enhance the test to cover two more scenarios:
+      // @TODO - here we can enhance the test to cover one more scenarios:
       //  #1) Does the account really have amount for the persisted tokens.
-      //  #2) Currently, the tests covers only erc20s tokens. We should do the same check for erc721s too.
-      //  The current account2, doesn't have erc721s.
-      expect(storageErc20s.length).toBeGreaterThan(0)
+      expect(ethereumHints.erc20s.length).toBeGreaterThan(0)
+      expect(Object.keys(ethereumHints.erc721s).length).toBeGreaterThan(0)
+      expect(polygonHints.erc20s.length).toBeGreaterThan(0)
+      expect(optimismHints.erc20s.length).toBeGreaterThan(0)
     })
   })
 
   describe('Latest tokens', () => {
     test('Latest tokens are fetched and kept in the controller, while the pending should not be fetched (no AccountOp passed)', (done) => {
       const storage = produceMemoryStore()
-      const settings = new SettingsController(storage)
-      settings.providers = providers
-      const controller = new PortfolioController(storage, settings, relayerUrl)
+      let providersCtrl: ProvidersController
+      const networksCtrl = new NetworksController(
+        storage,
+        (net) => {
+          providersCtrl.setProvider(net)
+        },
+        (id) => {
+          providersCtrl.removeProvider(id)
+        }
+      )
+      providersCtrl = new ProvidersController(networksCtrl)
+      providersCtrl.providers = providers
+      const controller = new PortfolioController(storage, providersCtrl, networksCtrl, relayerUrl)
 
       controller.onUpdate(() => {
         const latestState =
@@ -134,7 +165,7 @@ describe('Portfolio Controller ', () => {
         }
       })
 
-      controller.updateSelectedAccount([account], [ethereum], account.addr)
+      controller.updateSelectedAccount([account], account.addr)
     })
 
     // @TODO redo this test
@@ -142,9 +173,19 @@ describe('Portfolio Controller ', () => {
       const done = jest.fn(() => null)
 
       const storage = produceMemoryStore()
-      const settings = new SettingsController(storage)
-      settings.providers = providers
-      const controller = new PortfolioController(storage, settings, relayerUrl)
+      let providersCtrl: ProvidersController
+      const networksCtrl = new NetworksController(
+        storage,
+        (net) => {
+          providersCtrl.setProvider(net)
+        },
+        (id) => {
+          providersCtrl.removeProvider(id)
+        }
+      )
+      providersCtrl = new ProvidersController(networksCtrl)
+      providersCtrl.providers = providers
+      const controller = new PortfolioController(storage, providersCtrl, networksCtrl, relayerUrl)
       let pendingState1: any
       controller.onUpdate(() => {
         if (!pendingState1?.isReady) {
@@ -158,17 +199,27 @@ describe('Portfolio Controller ', () => {
             done()
         }
       })
-      await controller.updateSelectedAccount([account], [ethereum], account.addr)
-      await controller.updateSelectedAccount([account], [ethereum], account.addr)
+      await controller.updateSelectedAccount([account], account.addr)
+      await controller.updateSelectedAccount([account], account.addr)
 
       expect(done).not.toHaveBeenCalled()
     })
 
     test('Latest and Pending are fetched, because `forceUpdate` flag is set', (done) => {
       const storage = produceMemoryStore()
-      const settings = new SettingsController(storage)
-      settings.providers = providers
-      const controller = new PortfolioController(storage, settings, relayerUrl)
+      let providersCtrl: ProvidersController
+      const networksCtrl = new NetworksController(
+        storage,
+        (net) => {
+          providersCtrl.setProvider(net)
+        },
+        (id) => {
+          providersCtrl.removeProvider(id)
+        }
+      )
+      providersCtrl = new ProvidersController(networksCtrl)
+      providersCtrl.providers = providers
+      const controller = new PortfolioController(storage, providersCtrl, networksCtrl, relayerUrl)
 
       controller.onUpdate(() => {
         const latestState =
@@ -191,7 +242,7 @@ describe('Portfolio Controller ', () => {
         }
       })
 
-      controller.updateSelectedAccount([account], [ethereum], account.addr, undefined, {
+      controller.updateSelectedAccount([account], account.addr, undefined, undefined, {
         forceUpdate: true
       })
     })
@@ -202,10 +253,20 @@ describe('Portfolio Controller ', () => {
       const accountOp = await getAccountOp()
 
       const storage = produceMemoryStore()
-      const settings = new SettingsController(storage)
-      settings.providers = providers
-      const controller = new PortfolioController(storage, settings, relayerUrl)
-      await controller.updateSelectedAccount([account], [ethereum], account.addr, accountOp)
+      let providersCtrl: ProvidersController
+      const networksCtrl = new NetworksController(
+        storage,
+        (net) => {
+          providersCtrl.setProvider(net)
+        },
+        (id) => {
+          providersCtrl.removeProvider(id)
+        }
+      )
+      providersCtrl = new ProvidersController(networksCtrl)
+      providersCtrl.providers = providers
+      const controller = new PortfolioController(storage, providersCtrl, networksCtrl, relayerUrl)
+      await controller.updateSelectedAccount([account], account.addr, undefined, accountOp)
 
       controller.onUpdate(() => {
         const pendingState =
@@ -246,8 +307,8 @@ describe('Portfolio Controller ', () => {
     //       done()
     //     }
     //   })
-    //   await controller.updateSelectedAccount([account], networks, account.addr, accountOp)
-    //   await controller.updateSelectedAccount([account], networks, account.addr, accountOp)
+    //   await controller.updateSelectedAccount([account], account.addr, undefined, accountOp)
+    //   await controller.updateSelectedAccount([account], account.addr, undefined, accountOp)
     //
     //   expect(done).not.toHaveBeenCalled()
     // })
@@ -257,9 +318,19 @@ describe('Portfolio Controller ', () => {
       const accountOp = await getAccountOp()
 
       const storage = produceMemoryStore()
-      const settings = new SettingsController(storage)
-      settings.providers = providers
-      const controller = new PortfolioController(storage, settings, relayerUrl)
+      let providersCtrl: ProvidersController
+      const networksCtrl = new NetworksController(
+        storage,
+        (net) => {
+          providersCtrl.setProvider(net)
+        },
+        (id) => {
+          providersCtrl.removeProvider(id)
+        }
+      )
+      providersCtrl = new ProvidersController(networksCtrl)
+      providersCtrl.providers = providers
+      const controller = new PortfolioController(storage, providersCtrl, networksCtrl, relayerUrl)
       let pendingState1: any
       let pendingState2: any
       controller.onUpdate(() => {
@@ -274,8 +345,8 @@ describe('Portfolio Controller ', () => {
           done()
         }
       })
-      await controller.updateSelectedAccount([account], [ethereum], account.addr, accountOp)
-      await controller.updateSelectedAccount([account], [ethereum], account.addr, accountOp, {
+      await controller.updateSelectedAccount([account], account.addr, undefined, accountOp)
+      await controller.updateSelectedAccount([account], account.addr, undefined, accountOp, {
         forceUpdate: true
       })
 
@@ -286,15 +357,25 @@ describe('Portfolio Controller ', () => {
       const accountOp = await getAccountOp()
 
       const storage = produceMemoryStore()
-      const settings = new SettingsController(storage)
-      settings.providers = providers
-      const controller = new PortfolioController(storage, settings, relayerUrl)
+      let providersCtrl: ProvidersController
+      const networksCtrl = new NetworksController(
+        storage,
+        (net) => {
+          providersCtrl.setProvider(net)
+        },
+        (id) => {
+          providersCtrl.removeProvider(id)
+        }
+      )
+      providersCtrl = new ProvidersController(networksCtrl)
+      providersCtrl.providers = providers
+      const controller = new PortfolioController(storage, providersCtrl, networksCtrl, relayerUrl)
 
-      await controller.updateSelectedAccount([account], [ethereum], account.addr, accountOp)
+      await controller.updateSelectedAccount([account], account.addr, undefined, accountOp)
       const pendingState1 =
         controller.pending['0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'].ethereum!
 
-      await controller.updateSelectedAccount([account], [ethereum], account.addr, accountOp, {
+      await controller.updateSelectedAccount([account], account.addr, undefined, accountOp, {
         forceUpdate: true
       })
       const pendingState2 =
@@ -309,11 +390,21 @@ describe('Portfolio Controller ', () => {
       const accountOp = await getAccountOp()
 
       const storage = produceMemoryStore()
-      const settings = new SettingsController(storage)
-      settings.providers = providers
-      const controller = new PortfolioController(storage, settings, relayerUrl)
+      let providersCtrl: ProvidersController
+      const networksCtrl = new NetworksController(
+        storage,
+        (net) => {
+          providersCtrl.setProvider(net)
+        },
+        (id) => {
+          providersCtrl.removeProvider(id)
+        }
+      )
+      providersCtrl = new ProvidersController(networksCtrl)
+      providersCtrl.providers = providers
+      const controller = new PortfolioController(storage, providersCtrl, networksCtrl, relayerUrl)
 
-      await controller.updateSelectedAccount([account], [ethereum], account.addr, accountOp)
+      await controller.updateSelectedAccount([account], account.addr, undefined, accountOp)
       const pendingState1 =
         controller.pending['0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'].ethereum!
 
@@ -321,7 +412,7 @@ describe('Portfolio Controller ', () => {
       // Change the address
       accountOp2.ethereum[0].accountAddr = '0xB674F3fd5F43464dB0448a57529eAF37F04cceA4'
 
-      await controller.updateSelectedAccount([account], [ethereum], account.addr, accountOp2)
+      await controller.updateSelectedAccount([account], account.addr, undefined, accountOp2)
       const pendingState2 =
         controller.pending['0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'].ethereum!
 
@@ -341,14 +432,24 @@ describe('Portfolio Controller ', () => {
         associatedKeys: [],
         creation: null
       }
-      const settings = new SettingsController(storage)
-      settings.providers = providers
-      const controller = new PortfolioController(storage, settings, relayerUrl)
+      let providersCtrl: ProvidersController
+      const networksCtrl = new NetworksController(
+        storage,
+        (net) => {
+          providersCtrl.setProvider(net)
+        },
+        (id) => {
+          providersCtrl.removeProvider(id)
+        }
+      )
+      providersCtrl = new ProvidersController(networksCtrl)
+      providersCtrl.providers = providers
+      const controller = new PortfolioController(storage, providersCtrl, networksCtrl, relayerUrl)
 
       await controller.updateSelectedAccount(
         [emptyAccount],
-        [ethereum],
         emptyAccount.addr,
+        undefined,
         undefined,
         {
           forceUpdate: true
@@ -382,16 +483,21 @@ describe('Portfolio Controller ', () => {
           salt: '0x0000000000000000000000000000000000000000000000000000000000000000'
         }
       }
-      const settings = new SettingsController(storage)
-      settings.providers = providers
-      const controller = new PortfolioController(storage, settings, relayerUrl)
-
-      await controller.updateSelectedAccount(
-        [emptyAccount],
-        [ethereum],
-        emptyAccount.addr,
-        undefined
+      let providersCtrl: ProvidersController
+      const networksCtrl = new NetworksController(
+        storage,
+        (net) => {
+          providersCtrl.setProvider(net)
+        },
+        (id) => {
+          providersCtrl.removeProvider(id)
+        }
       )
+      providersCtrl = new ProvidersController(networksCtrl)
+      providersCtrl.providers = providers
+      const controller = new PortfolioController(storage, providersCtrl, networksCtrl, relayerUrl)
+
+      await controller.updateSelectedAccount([emptyAccount], emptyAccount.addr)
 
       if (controller.latest[emptyAccount.addr].gasTank?.isLoading) return
 
@@ -408,11 +514,21 @@ describe('Portfolio Controller ', () => {
     test('Pinned gas tank tokens are not set in an account with tokens', async () => {
       const storage = produceMemoryStore()
 
-      const settings = new SettingsController(storage)
-      settings.providers = providers
-      const controller = new PortfolioController(storage, settings, relayerUrl)
+      let providersCtrl: ProvidersController
+      const networksCtrl = new NetworksController(
+        storage,
+        (net) => {
+          providersCtrl.setProvider(net)
+        },
+        (id) => {
+          providersCtrl.removeProvider(id)
+        }
+      )
+      providersCtrl = new ProvidersController(networksCtrl)
+      providersCtrl.providers = providers
+      const controller = new PortfolioController(storage, providersCtrl, networksCtrl, relayerUrl)
 
-      await controller.updateSelectedAccount([account], [ethereum], account.addr, undefined)
+      await controller.updateSelectedAccount([account], account.addr)
 
       controller.latest[account.addr].ethereum?.result?.tokens.forEach((token) => {
         expect(token.amount > 0)
@@ -430,7 +546,7 @@ describe('Portfolio Controller ', () => {
 
       await controller.learnTokens([BANANA_TOKEN_ADDR], 'ethereum')
 
-      await controller.updateSelectedAccount([account], networks, account.addr, undefined, {
+      await controller.updateSelectedAccount([account], account.addr, undefined, undefined, {
         forceUpdate: true
       })
 
@@ -443,7 +559,7 @@ describe('Portfolio Controller ', () => {
     test("Learned token timestamp isn't updated if the token is found by the external hints api", async () => {
       const { controller, storage } = prepareTest()
 
-      await controller.updateSelectedAccount([account], networks, account.addr, undefined)
+      await controller.updateSelectedAccount([account], account.addr)
 
       const firstTokenOnEth = controller.latest[account.addr].ethereum?.result?.tokens.find(
         (token) =>
@@ -456,7 +572,7 @@ describe('Portfolio Controller ', () => {
       // Learn a token discovered by velcro
       await controller.learnTokens([firstTokenOnEth!.address], 'ethereum')
 
-      await controller.updateSelectedAccount([account], networks, account.addr, undefined, {
+      await controller.updateSelectedAccount([account], account.addr, undefined, undefined, {
         forceUpdate: true
       })
 
@@ -472,11 +588,21 @@ describe('Portfolio Controller ', () => {
   test('Native tokens are fetched for all networks', async () => {
     const storage = produceMemoryStore()
 
-    const settings = new SettingsController(storage)
-    settings.providers = providers
-    const controller = new PortfolioController(storage, settings, relayerUrl)
+    let providersCtrl: ProvidersController
+    const networksCtrl = new NetworksController(
+      storage,
+      (net) => {
+        providersCtrl.setProvider(net)
+      },
+      (id) => {
+        providersCtrl.removeProvider(id)
+      }
+    )
+    providersCtrl = new ProvidersController(networksCtrl)
+    providersCtrl.providers = providers
+    const controller = new PortfolioController(storage, providersCtrl, networksCtrl, relayerUrl)
 
-    await controller.updateSelectedAccount([account], networks, account.addr, undefined)
+    await controller.updateSelectedAccount([account], account.addr)
 
     networks.forEach((network) => {
       const nativeToken = controller.latest[account.addr][network.id]?.result?.tokens.find(
@@ -489,8 +615,6 @@ describe('Portfolio Controller ', () => {
 
   test('Check Token Validity - erc20, erc1155', async () => {
     const storage = produceMemoryStore()
-    const settings = new SettingsController(storage)
-    settings.providers = providers
     const token = {
       address: '0x95aD61b0a150d79219dCF64E1E6Cc01f0B64C4cE',
       networkId: 'ethereum'
@@ -499,7 +623,19 @@ describe('Portfolio Controller ', () => {
       address: '0xEBba467eCB6b21239178033189CeAE27CA12EaDf',
       networkId: 'arbitrum'
     }
-    const controller = new PortfolioController(storage, settings, relayerUrl)
+    let providersCtrl: ProvidersController
+    const networksCtrl = new NetworksController(
+      storage,
+      (net) => {
+        providersCtrl.setProvider(net)
+      },
+      (id) => {
+        providersCtrl.removeProvider(id)
+      }
+    )
+    providersCtrl = new ProvidersController(networksCtrl)
+    providersCtrl.providers = providers
+    const controller = new PortfolioController(storage, providersCtrl, networksCtrl, relayerUrl)
 
     await controller.updateTokenValidationByStandard(token, account.addr)
     await controller.updateTokenValidationByStandard(tokenERC1155, account.addr)
@@ -516,8 +652,6 @@ describe('Portfolio Controller ', () => {
 
   test('Update Token Preferences', async () => {
     const storage = produceMemoryStore()
-    const settings = new SettingsController(storage)
-    settings.providers = providers
 
     const tokenInPreferences = {
       address: '0x95aD61b0a150d79219dCF64E1E6Cc01f0B64C4cE',
@@ -528,7 +662,19 @@ describe('Portfolio Controller ', () => {
       decimals: 18
     }
 
-    const controller = new PortfolioController(storage, settings, relayerUrl)
+    let providersCtrl: ProvidersController
+    const networksCtrl = new NetworksController(
+      storage,
+      (net) => {
+        providersCtrl.setProvider(net)
+      },
+      (id) => {
+        providersCtrl.removeProvider(id)
+      }
+    )
+    providersCtrl = new ProvidersController(networksCtrl)
+    providersCtrl.providers = providers
+    const controller = new PortfolioController(storage, providersCtrl, networksCtrl, relayerUrl)
 
     await controller.updateTokenPreferences([tokenInPreferences])
 
@@ -543,8 +689,6 @@ describe('Portfolio Controller ', () => {
 
   test('Update Token Preferences - hide a token and portfolio returns isHidden flag', async () => {
     const storage = produceMemoryStore()
-    const settings = new SettingsController(storage)
-    settings.providers = providers
 
     const tokenInPreferences = {
       address: '0x95aD61b0a150d79219dCF64E1E6Cc01f0B64C4cE',
@@ -556,11 +700,23 @@ describe('Portfolio Controller ', () => {
       isHidden: true
     }
 
-    const controller = new PortfolioController(storage, settings, relayerUrl)
+    let providersCtrl: ProvidersController
+    const networksCtrl = new NetworksController(
+      storage,
+      (net) => {
+        providersCtrl.setProvider(net)
+      },
+      (id) => {
+        providersCtrl.removeProvider(id)
+      }
+    )
+    providersCtrl = new ProvidersController(networksCtrl)
+    providersCtrl.providers = providers
+    const controller = new PortfolioController(storage, providersCtrl, networksCtrl, relayerUrl)
 
     await controller.updateTokenPreferences([tokenInPreferences])
 
-    await controller.updateSelectedAccount([account], networks, account.addr, undefined)
+    await controller.updateSelectedAccount([account], account.addr)
 
     controller.onUpdate(() => {
       networks.forEach((network) => {

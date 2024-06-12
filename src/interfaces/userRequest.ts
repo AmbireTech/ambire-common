@@ -4,7 +4,7 @@ import { TypedDataDomain, TypedDataField } from 'ethers'
 import { HumanizerFragment } from '../libs/humanizer/interfaces'
 import { AccountId } from './account'
 import { DappProviderRequest } from './dapp'
-import { NetworkId } from './networkDescriptor'
+import { NetworkId } from './network'
 
 export interface Call {
   kind: 'call'

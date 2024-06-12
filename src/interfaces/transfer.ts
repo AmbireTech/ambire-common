@@ -3,12 +3,12 @@ import { HumanizerMeta } from '../libs/humanizer/interfaces'
 import { TokenResult } from '../libs/portfolio'
 import { Account } from './account'
 import { AddressStateOptional } from './domains'
-import { NetworkDescriptor } from './networkDescriptor'
+import { Network } from './network'
 
 export interface TransferUpdate {
   selectedAccountData?: Account
   humanizerInfo?: HumanizerMeta
-  networks?: NetworkDescriptor[]
+  networks?: Network[]
   contacts?: Contacts
   selectedToken?: TokenResult
   amount?: string

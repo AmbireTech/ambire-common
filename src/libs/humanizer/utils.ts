@@ -2,7 +2,7 @@ import dotenv from 'dotenv'
 import { ZeroAddress } from 'ethers'
 
 import { geckoIdMapper } from '../../consts/coingecko'
-import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
+import { Network } from '../../interfaces/network'
 import {
   HumanizerFragment,
   HumanizerMeta,
@@ -89,7 +89,7 @@ export function getDeadline(deadlineSecs: bigint | number): HumanizerVisualizati
  * This is used by benzina and hence we cannot wrap the errors in emitError
  */
 // @TODO this shouldn't be here, a more suitable place would be portfolio/gecko
-export async function getNativePrice(network: NetworkDescriptor, fetch: Function): Promise<number> {
+export async function getNativePrice(network: Network, fetch: Function): Promise<number> {
   const platformId = geckoIdMapper(ZeroAddress, network)
   if (!platformId) {
     throw new Error(`getNativePrice: ${network.name} is not supported`)

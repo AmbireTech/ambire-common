@@ -19,7 +19,7 @@ import UniversalSigValidator from '../../../contracts/compiled/UniversalSigValid
 import { PERMIT_2_ADDRESS, UNISWAP_UNIVERSAL_ROUTERS } from '../../consts/addresses'
 import { Account, AccountCreation, AccountOnchainState } from '../../interfaces/account'
 import { KeystoreSigner } from '../../interfaces/keystore'
-import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
+import { Network } from '../../interfaces/network'
 import { TypedMessage } from '../../interfaces/userRequest'
 import hexStringToUint8Array from '../../utils/hexStringToUint8Array'
 import { AccountOp, accountOpSignableHash } from '../accountOp/accountOp'
@@ -233,7 +233,7 @@ export async function verifyMessage({
 
 // Authorize the execute calls according to the version of the smart account
 export async function getExecuteSignature(
-  network: NetworkDescriptor,
+  network: Network,
   accountOp: AccountOp,
   accountState: AccountOnchainState,
   signer: KeystoreSigner
@@ -257,7 +257,7 @@ export async function getExecuteSignature(
 
 export async function getPlainTextSignature(
   message: string | Uint8Array,
-  network: NetworkDescriptor,
+  network: Network,
   account: Account,
   accountState: AccountOnchainState,
   signer: KeystoreSigner
@@ -309,7 +309,7 @@ export async function getEIP712Signature(
   account: Account,
   accountState: AccountOnchainState,
   signer: KeystoreSigner,
-  network: NetworkDescriptor
+  network: Network
 ): Promise<string> {
   if (!message.types.EIP712Domain) {
     throw new Error(

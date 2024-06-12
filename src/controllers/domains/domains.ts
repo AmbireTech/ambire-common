@@ -1,6 +1,6 @@
 import { getAddress } from 'ethers'
 
-import { RPCProviders } from '../../interfaces/settings'
+import { RPCProviders } from '../../interfaces/provider'
 import { reverseLookupEns } from '../../services/ensDomains'
 import { reverseLookupUD } from '../../services/unstoppableDomains'
 import EventEmitter from '../eventEmitter/eventEmitter'
