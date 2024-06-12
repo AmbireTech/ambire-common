@@ -1,6 +1,6 @@
 import { PERMIT_2_ADDRESS } from '../../../consts/addresses'
 import { TypedMessage } from '../../../interfaces/userRequest'
-import { HumanizerTypedMessaageModule, HumanizerVisualization } from '../interfaces'
+import { HumanizerTypedMessageModule, HumanizerVisualization } from '../interfaces'
 import { getAction, getAddressVisualization, getDeadline, getLabel, getToken } from '../utils'
 
 // interfaces
@@ -48,7 +48,7 @@ const visualizePermit = (permit: PermitDetails): HumanizerVisualization[] => {
   ]
 }
 
-export const permit2Module: HumanizerTypedMessaageModule = (tm: TypedMessage) => {
+export const permit2Module: HumanizerTypedMessageModule = (tm: TypedMessage) => {
   const visualizations: HumanizerVisualization[] = []
   if (
     tm?.domain?.verifyingContract &&

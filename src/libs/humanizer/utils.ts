@@ -2,7 +2,7 @@ import dotenv from 'dotenv'
 import { ZeroAddress } from 'ethers'
 
 import { geckoIdMapper } from '../../consts/coingecko'
-import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
+import { Network } from '../../interfaces/network'
 import {
   HumanizerFragment,
   HumanizerMeta,
@@ -53,7 +53,7 @@ export function getNft(address: string, id: bigint): HumanizerVisualization {
 
 export function getOnBehalfOf(onBehalfOf: string, sender: string): HumanizerVisualization[] {
   return onBehalfOf.toLowerCase() !== sender.toLowerCase()
-    ? [getLabel('on befalf of'), getAddressVisualization(onBehalfOf)]
+    ? [getLabel('on behalf of'), getAddressVisualization(onBehalfOf)]
     : []
 }
 
@@ -89,7 +89,7 @@ export function getDeadline(deadlineSecs: bigint | number): HumanizerVisualizati
  * This is used by benzina and hence we cannot wrap the errors in emitError
  */
 // @TODO this shouldn't be here, a more suitable place would be portfolio/gecko
-export async function getNativePrice(network: NetworkDescriptor, fetch: Function): Promise<number> {
+export async function getNativePrice(network: Network, fetch: Function): Promise<number> {
   const platformId = geckoIdMapper(ZeroAddress, network)
   if (!platformId) {
     throw new Error(`getNativePrice: ${network.name} is not supported`)
@@ -177,15 +177,15 @@ export function getWrapping(
   ].filter((x) => x) as HumanizerVisualization[]
 }
 
-export function getUnwraping(
+export function getUnwrapping(
   address: string,
   amount: bigint,
-  hiddenAsseAddress?: string
+  hiddenAssetAddress?: string
 ): HumanizerVisualization[] {
   return [
     getAction('Unwrap'),
     getToken(address, amount),
-    hiddenAsseAddress && { ...getToken(hiddenAsseAddress, 0n), isHidden: true }
+    hiddenAssetAddress && { ...getToken(hiddenAssetAddress, 0n), isHidden: true }
   ].filter((x) => x) as HumanizerVisualization[]
 }
 

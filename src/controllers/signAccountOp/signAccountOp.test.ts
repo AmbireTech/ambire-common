@@ -12,7 +12,7 @@ import { FEE_COLLECTOR } from '../../consts/addresses'
 import humanizerJSON from '../../consts/humanizer/humanizerInfo.json'
 import { networks } from '../../consts/networks'
 import { Account, AccountStates } from '../../interfaces/account'
-import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
+import { Network, NetworkId } from '../../interfaces/network'
 import { Storage } from '../../interfaces/storage'
 import { AccountOp, accountOpSignableHash } from '../../libs/accountOp/accountOp'
 import { getAccountState } from '../../libs/accountState/accountState'
@@ -26,8 +26,9 @@ import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { getTypedData } from '../../libs/signMessage/signMessage'
 import { getRpcProvider } from '../../services/provider'
 import { KeystoreController } from '../keystore/keystore'
+import { NetworksController } from '../networks/networks'
 import { PortfolioController } from '../portfolio/portfolio'
-import { SettingsController } from '../settings/settings'
+import { ProvidersController } from '../providers/providers'
 import { getFeeSpeedIdentifier } from './helper'
 import { SignAccountOpController } from './signAccountOp'
 
@@ -45,7 +46,7 @@ const getAccountsInfo = async (accounts: Account[]): Promise<AccountStates> => {
     return [
       acc.addr,
       Object.fromEntries(
-        networks.map((network: NetworkDescriptor, netIndex: number) => {
+        networks.map((network: Network, netIndex: number) => {
           return [network.id, result[netIndex][accIndex]]
         })
       )
@@ -337,10 +338,25 @@ const init = async (
       feeTokens
     ))
 
-  const settings = new SettingsController(storage)
-  settings.providers = providers
-  const portfolio = new PortfolioController(storage, settings, 'https://staging-relayer.ambire.com')
-  await portfolio.updateSelectedAccount(accounts, networks, account.addr)
+  let providersCtrl: ProvidersController
+  const networksCtrl = new NetworksController(
+    storage,
+    (net) => {
+      providersCtrl.setProvider(net)
+    },
+    (id) => {
+      providersCtrl.removeProvider(id)
+    }
+  )
+  providersCtrl = new ProvidersController(networksCtrl)
+  providersCtrl.providers = providers
+  const portfolio = new PortfolioController(
+    storage,
+    providersCtrl,
+    networksCtrl,
+    'https://staging-relayer.ambire.com'
+  )
+  await portfolio.updateSelectedAccount(accounts, account.addr, network)
 
   if (portfolio.latest?.[account.addr][op.networkId]!.result) {
     portfolio!.latest[account.addr][op.networkId]!.result!.tokens = [
@@ -379,7 +395,7 @@ const init = async (
   const controller = new SignAccountOpController(
     keystore,
     portfolio,
-    settings,
+    providersCtrl,
     {},
     account,
     accountStates,

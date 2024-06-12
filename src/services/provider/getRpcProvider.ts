@@ -1,13 +1,13 @@
 import { JsonRpcProvider, Network } from 'ethers'
 
-import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
+import { Network as NetworkInterface } from '../../interfaces/network'
 
 interface ProviderOptions {
   batchMaxCount: number
 }
 
 const getRpcProvider = (
-  rpcUrls: NetworkDescriptor['rpcUrls'],
+  rpcUrls: NetworkInterface['rpcUrls'],
   chainId?: bigint | number,
   selectedRpcUrl?: string,
   options?: ProviderOptions

@@ -6,12 +6,12 @@ import { getAddress, JsonRpcProvider, Provider, ZeroAddress } from 'ethers'
 import BalanceGetter from '../../../contracts/compiled/BalanceGetter.json'
 import NFTGetter from '../../../contracts/compiled/NFTGetter.json'
 import { PINNED_TOKENS } from '../../consts/pinnedTokens'
-import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
+import { Network } from '../../interfaces/network'
 import { Deployless, fromDescriptor } from '../deployless/deployless'
 import batcher from './batcher'
 import { geckoRequestBatcher, geckoResponseIdentifier } from './gecko'
 import { getNFTs, getTokens } from './getOnchainBalances'
-import { getTotal, stripExternalHintsAPIResponse } from './helpers'
+import { stripExternalHintsAPIResponse } from './helpers'
 import {
   CollectionResult,
   ExternalHintsAPIResponse,
@@ -19,7 +19,7 @@ import {
   Hints,
   Limits,
   LimitsOptions,
-  PortfolioGetResult,
+  PortfolioLibGetResult,
   PriceCache,
   TokenResult
 } from './interfaces'
@@ -43,7 +43,7 @@ export const PORTFOLIO_LIB_ERROR_NAMES = {
   PriceFetchError: 'PriceFetchError'
 }
 
-export const getEmptyHints = (networkId: string, accountAddr: string): Hints => ({
+export const getEmptyHints = (): Hints => ({
   erc20s: [],
   erc721s: {}
 })
@@ -59,7 +59,7 @@ const defaultOptions: GetOptions = {
 }
 
 export class Portfolio {
-  network: NetworkDescriptor
+  network: Network
 
   private batchedVelcroDiscovery: Function
 
@@ -69,7 +69,7 @@ export class Portfolio {
 
   private deploylessNfts: Deployless
 
-  constructor(fetch: Function, provider: Provider | JsonRpcProvider, network: NetworkDescriptor) {
+  constructor(fetch: Function, provider: Provider | JsonRpcProvider, network: Network) {
     this.batchedVelcroDiscovery = batcher(fetch, (queue) => {
       const baseCurrencies = [...new Set(queue.map((x) => x.data.baseCurrency))]
       return baseCurrencies.map((baseCurrency) => {
@@ -88,8 +88,8 @@ export class Portfolio {
     this.deploylessNfts = fromDescriptor(provider, NFTGetter, !network.rpcNoStateOverride)
   }
 
-  async get(accountAddr: string, opts: Partial<GetOptions> = {}): Promise<PortfolioGetResult> {
-    const errors: PortfolioGetResult['errors'] = []
+  async get(accountAddr: string, opts: Partial<GetOptions> = {}): Promise<PortfolioLibGetResult> {
+    const errors: PortfolioLibGetResult['errors'] = []
     const localOpts = { ...defaultOptions, ...opts }
     const disableAutoDiscovery = localOpts.disableAutoDiscovery || false
     const { baseCurrency } = localOpts
@@ -102,7 +102,7 @@ export class Portfolio {
 
     // Make sure portfolio lib still works, even in the case Velcro discovery fails.
     // Because of this, we fall back to Velcro default response.
-    let hints: Hints = getEmptyHints(networkId, accountAddr)
+    let hints: Hints = getEmptyHints()
     let hintsFromExternalAPI: ExternalHintsAPIResponse | null = null
 
     try {
@@ -114,7 +114,7 @@ export class Portfolio {
           accountAddr,
           baseCurrency
         })
-        if (!!hintsFromExternalAPI)
+        if (hintsFromExternalAPI)
           hints = stripExternalHintsAPIResponse(hintsFromExternalAPI) as Hints
       }
     } catch (error: any) {
@@ -198,17 +198,8 @@ export class Portfolio {
       return null
     }
 
-    const tokenFilter = ([error, result]: [string, TokenResult]): boolean => {
-      const isTokenPreference = localOpts.tokenPreferences?.find((tokenPreference) => {
-        return tokenPreference.address === result.address && tokenPreference.networkId === networkId
-      })
-
-      if (isTokenPreference) {
-        result.isHidden = isTokenPreference.isHidden
-      }
-
-      return error === '0x' && !!result.symbol
-    }
+    const tokenFilter = ([error, result]: [string, TokenResult]): boolean =>
+      error === '0x' && !!result.symbol
 
     const tokensWithoutPrices = tokensWithErr
       .filter((tokenWithErr) => tokenFilter(tokenWithErr))
@@ -242,6 +233,13 @@ export class Portfolio {
         if (cachedPriceIn) {
           priceIn = cachedPriceIn
 
+          return {
+            ...token,
+            priceIn
+          }
+        }
+
+        if (!this.network.platformId) {
           return {
             ...token,
             priceIn
@@ -300,8 +298,7 @@ export class Portfolio {
       tokenErrors: tokensWithErr
         .filter(([error, result]) => error !== '0x' || result.symbol === '')
         .map(([error, result]) => ({ error, address: result.address })),
-      collections: collections.filter((x) => x.collectibles?.length),
-      total: getTotal(tokensWithPrices)
+      collections: collections.filter((x) => x.collectibles?.length)
     }
   }
 }
