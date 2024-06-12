@@ -488,7 +488,7 @@ describe('Bundler tests', () => {
         smartAcc,
         accountState,
         opMantle,
-        '0xca26bc0302589b1cf4dd3ff7b725661d5dcb5a059385b9adfe8c8b8250f9548f43fe655a4dfe895594158d3ebe8d95f83068f35188affb4dbad8a906daff8c361c01'
+        '0x38d93f334162dbbbf5115b6a73051426663be3083e698ec89f6db4dc520e8029531bbe508ba2461401fb2f39d9cab723c8b1b5e85cd15841cad6615b7107ae351b01'
       )
 
       const ambireInterface = new Interface(AmbireAccount.abi)
@@ -546,7 +546,7 @@ describe('Bundler tests', () => {
         smartAcc,
         accountState,
         opMantle,
-        '0xca26bc0302589b1cf4dd3ff7b725661d5dcb5a059385b9adfe8c8b8250f9548f43fe655a4dfe895594158d3ebe8d95f83068f35188affb4dbad8a906daff8c361c01'
+        '0x38d93f334162dbbbf5115b6a73051426663be3083e698ec89f6db4dc520e8029531bbe508ba2461401fb2f39d9cab723c8b1b5e85cd15841cad6615b7107ae351b01'
       )
 
       const ambireInterface = new Interface(AmbireAccount.abi)

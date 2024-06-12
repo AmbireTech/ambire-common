@@ -4,7 +4,6 @@ import { ethers } from 'ethers'
 import fetch from 'node-fetch'
 
 import { describe, expect, jest, test } from '@jest/globals'
-import structuredClone from '@ungap/structured-clone'
 
 import { trezorSlot7v24337Deployed } from '../../../test/config'
 import { produceMemoryStore } from '../../../test/helpers'
@@ -31,8 +30,6 @@ import { PortfolioController } from '../portfolio/portfolio'
 import { ProvidersController } from '../providers/providers'
 import { getFeeSpeedIdentifier } from './helper'
 import { SignAccountOpController } from './signAccountOp'
-
-global.structuredClone = structuredClone as any
 
 const providers = Object.fromEntries(
   networks.map((network) => [network.id, getRpcProvider(network.rpcUrls, network.chainId)])
