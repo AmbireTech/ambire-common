@@ -715,7 +715,11 @@ export class SignAccountOpController extends EventEmitter {
     const accountState = this.#accountStates[this.accountOp.accountAddr][this.accountOp.networkId]
     return {
       paidBy: this.paidBy,
-      isERC4337: isErc4337Broadcast(this.#network, accountState),
+      // we're allowing EOAs to broadcast on 4337 networks as well
+      // in that case, we don't do user operations
+      isERC4337:
+        this.paidBy === this.accountOp.accountAddr &&
+        isErc4337Broadcast(this.#network, accountState),
       isGasTank: this.feeTokenResult.flags.onGasTank,
       inToken: this.feeTokenResult.address,
       amount: chosenSpeed.amount,
