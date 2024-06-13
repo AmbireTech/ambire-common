@@ -4,6 +4,7 @@ import { DappUserRequest, SignUserRequest, UserRequest } from '../../interfaces/
 import { WindowManager } from '../../interfaces/window'
 import { AccountOp } from '../../libs/accountOp/accountOp'
 import { getDappActionRequestsBanners } from '../../libs/banners/banners'
+import { AccountsController } from '../accounts/accounts'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
 export type AccountOpAction = {
@@ -44,7 +45,7 @@ export type Action = AccountOpAction | SignMessageAction | BenzinAction | DappRe
  * All pending/unresolved actions can be accessed later from the banners on the Dashboard screen.
  */
 export class ActionsController extends EventEmitter {
-  #selectedAccount: string | null
+  #accounts: AccountsController
 
   #windowManager: WindowManager
 
@@ -60,13 +61,13 @@ export class ActionsController extends EventEmitter {
     return (
       this.actionsQueue.map((a) => {
         if (a.type === 'accountOp') {
-          return a.accountOp.accountAddr === this.#selectedAccount ? a : undefined
+          return a.accountOp.accountAddr === this.#accounts.selectedAccount ? a : undefined
         }
         if (a.type === 'signMessage') {
-          return a.userRequest.meta.accountAddr === this.#selectedAccount ? a : undefined
+          return a.userRequest.meta.accountAddr === this.#accounts.selectedAccount ? a : undefined
         }
         if (a.type === 'benzin') {
-          return a.userRequest.meta.accountAddr === this.#selectedAccount ? a : undefined
+          return a.userRequest.meta.accountAddr === this.#accounts.selectedAccount ? a : undefined
         }
 
         return a
@@ -75,17 +76,17 @@ export class ActionsController extends EventEmitter {
   }
 
   constructor({
-    selectedAccount,
+    accounts,
     windowManager,
     onActionWindowClose
   }: {
-    selectedAccount: string | null
+    accounts: AccountsController
     windowManager: WindowManager
     onActionWindowClose: () => void
   }) {
     super()
 
-    this.#selectedAccount = selectedAccount
+    this.#accounts = accounts
     this.#windowManager = windowManager
     this.#onActionWindowClose = onActionWindowClose
 
@@ -99,12 +100,6 @@ export class ActionsController extends EventEmitter {
         this.emitUpdate()
       }
     })
-  }
-
-  update({ selectedAccount }: { selectedAccount?: string | null }) {
-    if (selectedAccount) this.#selectedAccount = selectedAccount
-
-    this.emitUpdate()
   }
 
   addOrUpdateAction(newAction: Action, withPriority?: boolean) {

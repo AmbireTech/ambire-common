@@ -2,6 +2,7 @@ import { getAddress } from 'ethers'
 
 import { Account } from '../../interfaces/account'
 import { Storage } from '../../interfaces/storage'
+import { AccountsController } from '../accounts/accounts'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { SettingsController } from '../settings/settings'
 
@@ -30,13 +31,11 @@ export class AddressBookController extends EventEmitter {
 
   #initialLoadPromise: Promise<void>
 
-  #accounts: Account[] = []
+  #accounts: AccountsController
 
   #settings: SettingsController
 
-  #selectedAccount: Account['addr'] = ''
-
-  constructor(storage: Storage, accounts: Account[], settings: SettingsController) {
+  constructor(storage: Storage, accounts: AccountsController, settings: SettingsController) {
     super()
 
     this.#storage = storage
@@ -48,7 +47,7 @@ export class AddressBookController extends EventEmitter {
 
   // Contacts, generated on the fly from the accounts in the wallet (not stored in storage)
   get #walletAccountsSourcedContacts() {
-    return this.#accounts.map((account) => ({
+    return this.#accounts.accounts.map((account) => ({
       name: this.#settings.accountPreferences[account.addr]?.label || '',
       address: account.addr,
       isWalletAccount: true
@@ -57,7 +56,7 @@ export class AddressBookController extends EventEmitter {
 
   get contacts() {
     return [...this.#manuallyAddedContacts, ...this.#walletAccountsSourcedContacts].filter(
-      ({ address }) => address.toLowerCase() !== this.#selectedAccount.toLowerCase()
+      ({ address }) => getAddress(address) !== getAddress(this.#accounts.selectedAccount || '')
     )
   }
 
@@ -102,14 +101,6 @@ export class AddressBookController extends EventEmitter {
       })
       return ''
     }
-  }
-
-  update({ selectedAccount }: { selectedAccount: Account['addr'] }) {
-    if (selectedAccount) {
-      this.#selectedAccount = selectedAccount
-    }
-
-    this.emitUpdate()
   }
 
   async addContact(name: string, address: string) {

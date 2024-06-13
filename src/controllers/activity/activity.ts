@@ -2,7 +2,7 @@
 
 import fetch from 'node-fetch'
 
-import { AccountId, AccountStates } from '../../interfaces/account'
+import { AccountId } from '../../interfaces/account'
 import { Banner } from '../../interfaces/banner'
 import { Network } from '../../interfaces/network'
 import { Storage } from '../../interfaces/storage'
@@ -11,6 +11,7 @@ import { AccountOp, AccountOpStatus } from '../../libs/accountOp/accountOp'
 import { getExplorerId } from '../../libs/userOperation/userOperation'
 import { Bundler } from '../../services/bundlers/bundler'
 import { fetchUserOp } from '../../services/explorers/jiffyscan'
+import { AccountsController } from '../accounts/accounts'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { NetworksController } from '../networks/networks'
 import { ProvidersController } from '../providers/providers'
@@ -104,7 +105,7 @@ export class ActivityController extends EventEmitter {
 
   #initialLoadPromise: Promise<void>
 
-  #accountStates: AccountStates
+  #accounts: AccountsController
 
   #accountsOps: InternalAccountsOps = {}
 
@@ -138,14 +139,14 @@ export class ActivityController extends EventEmitter {
 
   constructor(
     storage: Storage,
-    accountStates: AccountStates,
+    accounts: AccountsController,
     providers: ProvidersController,
     networks: NetworksController,
     onContractsDeployed: (network: Network) => Promise<void>
   ) {
     super()
     this.#storage = storage
-    this.#accountStates = accountStates
+    this.#accounts = accounts
     this.#providers = providers
     this.#networks = networks
     this.#onContractsDeployed = onContractsDeployed
@@ -153,6 +154,7 @@ export class ActivityController extends EventEmitter {
   }
 
   async #load(): Promise<void> {
+    await this.#accounts.initialLoadPromise
     const [accountsOps, signedMessages] = await Promise.all([
       this.#storage.get('accountsOps', {}),
       this.#storage.get('signedMessages', {})
@@ -161,11 +163,11 @@ export class ActivityController extends EventEmitter {
     this.#accountsOps = accountsOps
     this.#signedMessages = signedMessages
 
+    this.init()
     this.emitUpdate()
   }
 
-  init({ selectedAccount, filters }: { selectedAccount: AccountId | null; filters?: Filters }) {
-    this.#selectedAccount = selectedAccount
+  init(filters?: Filters) {
     this.isInitialized = true
 
     if (filters) {
@@ -385,11 +387,11 @@ export class ActivityController extends EventEmitter {
 
             if (
               (!accountOp.userOpHash &&
-                this.#accountStates[accountOp.accountAddr][accountOp.networkId].nonce >
+                this.#accounts.accountStates[accountOp.accountAddr][accountOp.networkId].nonce >
                   accountOp.nonce) ||
               (accountOp.userOpHash &&
-                this.#accountStates[accountOp.accountAddr][accountOp.networkId].erc4337Nonce >
-                  accountOp.nonce)
+                this.#accounts.accountStates[accountOp.accountAddr][accountOp.networkId]
+                  .erc4337Nonce > accountOp.nonce)
             ) {
               this.#accountsOps[selectedAccount][networkId][accountOpIndex].status =
                 AccountOpStatus.UnknownButPastNonce

@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-floating-promises */
 import { getCreate2Address, JsonRpcProvider, keccak256 } from 'ethers'
 
 import { PROXY_AMBIRE_ACCOUNT } from '../../consts/deploy'
@@ -30,6 +29,8 @@ import {
 } from '../../libs/account/account'
 import { getAccountState } from '../../libs/accountState/accountState'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
+/* eslint-disable @typescript-eslint/no-floating-promises */
+import { AccountsController } from '../accounts/accounts'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
 
@@ -46,7 +47,7 @@ export const DEFAULT_PAGE_SIZE = 5
 export class AccountAdderController extends EventEmitter {
   #callRelayer: Function
 
-  #alreadyImportedAccounts: Account[]
+  #accounts: AccountsController
 
   #keystore: KeystoreController
 
@@ -92,18 +93,18 @@ export class AccountAdderController extends EventEmitter {
   #linkedAccounts: { account: AccountWithNetworkMeta; isLinked: boolean }[] = []
 
   constructor({
-    alreadyImportedAccounts,
+    accounts,
     keystore,
     relayerUrl,
     fetch
   }: {
-    alreadyImportedAccounts: Account[]
+    accounts: AccountsController
     keystore: KeystoreController
     relayerUrl: string
     fetch: Function
   }) {
     super()
-    this.#alreadyImportedAccounts = alreadyImportedAccounts
+    this.#accounts = accounts
     this.#keystore = keystore
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
   }
@@ -202,7 +203,7 @@ export class AccountAdderController extends EventEmitter {
       ...acc,
       importStatus: getAccountImportStatus({
         account: acc.account,
-        alreadyImportedAccounts: this.#alreadyImportedAccounts,
+        alreadyImportedAccounts: this.#accounts.accounts,
         keys: this.#keystore.keys,
         accountsOnPage: mergedAccounts,
         keyIteratorType: this.#keyIterator?.type
