@@ -215,7 +215,7 @@ describe('module tests', () => {
       'Swap up to 4825320403256397423633 0x6e975115250b05c828ecb8ededb091975fc20a5d token for 0.941 WETH and send it to 0xbb6c8c037b9cc3bf1a4c4188d92e5d86bfce76a8 already expired',
       'Swap 0.0001 ETH for at least 0.178131 USDC already expired',
       'Swap 100.0 USDC for at least 0.072003605256085551 MKR and send it to 0x02a3109c4ce8354ee771feac419b5da04ef15761 already expired',
-      'Approved Uniswap to use the following token via signed message.',
+      'Grant approval for all USDC to 0x643770e279d5d0733f21d6dc03a8efbabf3255b4 (UniswapUniversalRouter)',
       'Swap 0.01 USDC for at least 0.01033797938413311 ETH already expired',
       'Wrap 1.0 ETH',
       'Unwrap 0.0089 ETH',
@@ -421,8 +421,26 @@ describe('module tests', () => {
       ],
       [
         {
+          type: 'action',
+          content: 'Grant approval'
+        },
+        {
           type: 'label',
-          content: 'Approved Uniswap to use the following token via signed message.'
+          content: 'for'
+        },
+        {
+          type: 'token',
+          address: '0x3c499c542cef5e3811e1192ce70d8cc03d5c3359',
+          amount: 1461501637330902918203684832716283019655932542975n
+        },
+        {
+          type: 'label',
+          content: 'to'
+        },
+
+        {
+          type: 'address',
+          address: '0x643770e279d5d0733f21d6dc03a8efbabf3255b4'
         }
       ],
       [

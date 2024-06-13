@@ -8,6 +8,7 @@ import { humanizeCalls, humanizePlainTextMessage, humanizeTypedMessage } from '.
 import {
   HumanizerCallModule,
   HumanizerFragment,
+  HumanizerOptions,
   HumanizerParsingModule,
   HumanizerPromise,
   HumanizerSettings,
@@ -97,7 +98,7 @@ const sharedHumanization = async <InputDataType extends AccountOp | Message>(
   if ('content' in data) {
     message = parse(stringify(data))
   }
-  const humanizerOptions = {
+  const humanizerOptions: HumanizerOptions = {
     fetch,
     emitError,
     network: options?.network
@@ -108,7 +109,7 @@ const sharedHumanization = async <InputDataType extends AccountOp | Message>(
       nocache: options?.isExtension === false
     })
     if ('calls' in data) {
-      //
+      humanizerOptions.networkId = op!.networkId
       ;[irCalls, asyncOps] = humanizeCalls(
         op!,
         humanizerCallModules,
