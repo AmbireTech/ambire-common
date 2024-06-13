@@ -62,6 +62,7 @@ describe('Activity Controller ', () => {
       let providersCtrl: ProvidersController
       const networksCtrl = new NetworksController(
         storage,
+        fetch,
         (net) => {
           providersCtrl.setProvider(net)
         },
@@ -121,6 +122,7 @@ describe('Activity Controller ', () => {
       let providersCtrl: ProvidersController
       const networksCtrl = new NetworksController(
         storage,
+        fetch,
         (net) => {
           providersCtrl.setProvider(net)
         },
@@ -263,6 +265,7 @@ describe('Activity Controller ', () => {
       let providersCtrl: ProvidersController
       const networksCtrl = new NetworksController(
         storage,
+        fetch,
         (net) => {
           providersCtrl.setProvider(net)
         },
@@ -320,6 +323,7 @@ describe('Activity Controller ', () => {
       let providersCtrl: ProvidersController
       const networksCtrl = new NetworksController(
         storage,
+        fetch,
         (net) => {
           providersCtrl.setProvider(net)
         },
@@ -377,6 +381,7 @@ describe('Activity Controller ', () => {
       let providersCtrl: ProvidersController
       const networksCtrl = new NetworksController(
         storage,
+        fetch,
         (net) => {
           providersCtrl.setProvider(net)
         },
@@ -440,6 +445,7 @@ describe('Activity Controller ', () => {
       let providersCtrl: ProvidersController
       const networksCtrl = new NetworksController(
         storage,
+        fetch,
         (net) => {
           providersCtrl.setProvider(net)
         },
@@ -506,6 +512,7 @@ describe('Activity Controller ', () => {
       let providersCtrl: ProvidersController
       const networksCtrl = new NetworksController(
         storage,
+        fetch,
         (net) => {
           providersCtrl.setProvider(net)
         },
@@ -563,6 +570,7 @@ describe('Activity Controller ', () => {
       let providersCtrl: ProvidersController
       const networksCtrl = new NetworksController(
         storage,
+        fetch,
         (net) => {
           providersCtrl.setProvider(net)
         },
@@ -625,6 +633,7 @@ describe('Activity Controller ', () => {
       let providersCtrl: ProvidersController
       const networksCtrl = new NetworksController(
         storage,
+        fetch,
         (net) => {
           providersCtrl.setProvider(net)
         },

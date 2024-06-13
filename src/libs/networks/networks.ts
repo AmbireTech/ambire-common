@@ -1,7 +1,6 @@
 /* eslint-disable import/no-extraneous-dependencies */
 
 import { Contract } from 'ethers'
-import fetch from 'node-fetch'
 
 import EntryPointAbi from '../../../contracts/compiled/EntryPoint.json'
 import {
@@ -12,6 +11,7 @@ import {
   SINGLETON
 } from '../../consts/deploy'
 import { networks as predefinedNetworks } from '../../consts/networks'
+import { Fetch } from '../../interfaces/fetch'
 import {
   Network,
   NetworkFeature,
@@ -43,6 +43,7 @@ async function retryRequest(init: Function, counter = 0): Promise<any> {
 }
 
 export async function getNetworkInfo(
+  fetch: Fetch,
   rpcUrl: string,
   chainId: bigint,
   callback: (networkInfo: NetworkInfoLoading<NetworkInfo>) => void

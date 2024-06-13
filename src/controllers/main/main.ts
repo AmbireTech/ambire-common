@@ -165,7 +165,7 @@ export class MainController extends EventEmitter {
     onBroadcastSuccess
   }: {
     storage: Storage
-    fetch: Function
+    fetch: Fetch
     relayerUrl: string
     keystoreSigners: Partial<{ [key in Key['type']]: KeystoreSignerType }>
     externalSignerControllers: ExternalSignerControllers
@@ -183,6 +183,7 @@ export class MainController extends EventEmitter {
     this.#externalSignerControllers = externalSignerControllers
     this.networks = new NetworksController(
       this.#storage,
+      this.#fetch,
       async (network: Network) => {
         this.providers.setProvider(network)
         await this.updateAccountStates('latest', [network.id])

@@ -1,5 +1,6 @@
 import EmittableError from '../../classes/EmittableError'
 import { networks as predefinedNetworks } from '../../consts/networks'
+import { Fetch } from '../../interfaces/fetch'
 import {
   AddNetworkRequestParams,
   Network,
@@ -28,6 +29,8 @@ const STATUS_WRAPPED_METHODS = {
 export class NetworksController extends EventEmitter {
   #storage: Storage
 
+  #fetch: Fetch
+
   #networks: { [key: NetworkId]: Network } = {}
 
   statuses: Statuses<keyof typeof STATUS_WRAPPED_METHODS> = STATUS_WRAPPED_METHODS
@@ -47,11 +50,13 @@ export class NetworksController extends EventEmitter {
 
   constructor(
     storage: Storage,
+    fetch: Fetch,
     onAddOrUpdateNetwork: (network: Network) => void,
     onRemoveNetwork: (id: NetworkId) => void
   ) {
     super()
     this.#storage = storage
+    this.#fetch = fetch
     this.#onAddOrUpdateNetwork = onAddOrUpdateNetwork
     this.#onRemoveNetwork = onRemoveNetwork
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
@@ -121,12 +126,17 @@ export class NetworksController extends EventEmitter {
       this.emitUpdate()
 
       // eslint-disable-next-line @typescript-eslint/no-floating-promises
-      getNetworkInfo(networkToAddOrUpdate.rpcUrl, networkToAddOrUpdate.chainId, (info) => {
-        if (this.networkToAddOrUpdate) {
-          this.networkToAddOrUpdate = { ...this.networkToAddOrUpdate, info }
-          this.emitUpdate()
+      getNetworkInfo(
+        this.#fetch,
+        networkToAddOrUpdate.rpcUrl,
+        networkToAddOrUpdate.chainId,
+        (info) => {
+          if (this.networkToAddOrUpdate) {
+            this.networkToAddOrUpdate = { ...this.networkToAddOrUpdate, info }
+            this.emitUpdate()
+          }
         }
-      })
+      )
     } else {
       this.networkToAddOrUpdate = null
       this.emitUpdate()
@@ -226,6 +236,7 @@ export class NetworksController extends EventEmitter {
 
         // eslint-disable-next-line @typescript-eslint/no-floating-promises
         getNetworkInfo(
+          this.#fetch,
           changedNetwork.selectedRpcUrl,
           this.#networks[networkId].chainId!,
           async (info) => {

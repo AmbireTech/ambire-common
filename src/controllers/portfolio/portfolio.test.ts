@@ -1,5 +1,4 @@
 import { ethers, ZeroAddress } from 'ethers'
-import { CollectionResult } from 'libs/portfolio/interfaces'
 import fetch from 'node-fetch'
 
 import { describe, expect, jest } from '@jest/globals'
@@ -10,6 +9,7 @@ import { PINNED_TOKENS } from '../../consts/pinnedTokens'
 import { Account } from '../../interfaces/account'
 import { RPCProviders } from '../../interfaces/provider'
 import { AccountOp } from '../../libs/accountOp/accountOp'
+import { CollectionResult } from '../../libs/portfolio/interfaces'
 import { getRpcProvider } from '../../services/provider'
 import { NetworksController } from '../networks/networks'
 import { ProvidersController } from '../providers/providers'
@@ -32,6 +32,7 @@ const prepareTest = () => {
   let providersCtrl: ProvidersController
   const networksCtrl = new NetworksController(
     storage,
+    fetch,
     (net) => {
       providersCtrl.setProvider(net)
     },
@@ -113,6 +114,7 @@ describe('Portfolio Controller ', () => {
       let providersCtrl: ProvidersController
       const networksCtrl = new NetworksController(
         storage,
+        fetch,
         (net) => {
           providersCtrl.setProvider(net)
         },
@@ -151,6 +153,7 @@ describe('Portfolio Controller ', () => {
       let providersCtrl: ProvidersController
       const networksCtrl = new NetworksController(
         storage,
+        fetch,
         (net) => {
           providersCtrl.setProvider(net)
         },
@@ -195,6 +198,7 @@ describe('Portfolio Controller ', () => {
       let providersCtrl: ProvidersController
       const networksCtrl = new NetworksController(
         storage,
+        fetch,
         (net) => {
           providersCtrl.setProvider(net)
         },
@@ -235,6 +239,7 @@ describe('Portfolio Controller ', () => {
       let providersCtrl: ProvidersController
       const networksCtrl = new NetworksController(
         storage,
+        fetch,
         (net) => {
           providersCtrl.setProvider(net)
         },
@@ -287,6 +292,7 @@ describe('Portfolio Controller ', () => {
       let providersCtrl: ProvidersController
       const networksCtrl = new NetworksController(
         storage,
+        fetch,
         (net) => {
           providersCtrl.setProvider(net)
         },
@@ -358,6 +364,7 @@ describe('Portfolio Controller ', () => {
       let providersCtrl: ProvidersController
       const networksCtrl = new NetworksController(
         storage,
+        fetch,
         (net) => {
           providersCtrl.setProvider(net)
         },
@@ -397,6 +404,7 @@ describe('Portfolio Controller ', () => {
       let providersCtrl: ProvidersController
       const networksCtrl = new NetworksController(
         storage,
+        fetch,
         (net) => {
           providersCtrl.setProvider(net)
         },
@@ -436,6 +444,7 @@ describe('Portfolio Controller ', () => {
       let providersCtrl: ProvidersController
       const networksCtrl = new NetworksController(
         storage,
+        fetch,
         (net) => {
           providersCtrl.setProvider(net)
         },
@@ -484,6 +493,7 @@ describe('Portfolio Controller ', () => {
       let providersCtrl: ProvidersController
       const networksCtrl = new NetworksController(
         storage,
+        fetch,
         (net) => {
           providersCtrl.setProvider(net)
         },
@@ -541,6 +551,7 @@ describe('Portfolio Controller ', () => {
       let providersCtrl: ProvidersController
       const networksCtrl = new NetworksController(
         storage,
+        fetch,
         (net) => {
           providersCtrl.setProvider(net)
         },
@@ -578,6 +589,7 @@ describe('Portfolio Controller ', () => {
       let providersCtrl: ProvidersController
       const networksCtrl = new NetworksController(
         storage,
+        fetch,
         (net) => {
           providersCtrl.setProvider(net)
         },
@@ -658,6 +670,7 @@ describe('Portfolio Controller ', () => {
     let providersCtrl: ProvidersController
     const networksCtrl = new NetworksController(
       storage,
+      fetch,
       (net) => {
         providersCtrl.setProvider(net)
       },
@@ -699,6 +712,7 @@ describe('Portfolio Controller ', () => {
     let providersCtrl: ProvidersController
     const networksCtrl = new NetworksController(
       storage,
+      fetch,
       (net) => {
         providersCtrl.setProvider(net)
       },
@@ -744,6 +758,7 @@ describe('Portfolio Controller ', () => {
     let providersCtrl: ProvidersController
     const networksCtrl = new NetworksController(
       storage,
+      fetch,
       (net) => {
         providersCtrl.setProvider(net)
       },
@@ -788,6 +803,7 @@ describe('Portfolio Controller ', () => {
     let providersCtrl: ProvidersController
     const networksCtrl = new NetworksController(
       storage,
+      fetch,
       (net) => {
         providersCtrl.setProvider(net)
       },

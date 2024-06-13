@@ -64,6 +64,7 @@ describe('SignMessageController', () => {
     let providersCtrl: ProvidersController
     const networksCtrl = new NetworksController(
       produceMemoryStore(),
+      fetch,
       (net) => {
         providersCtrl.setProvider(net)
       },
