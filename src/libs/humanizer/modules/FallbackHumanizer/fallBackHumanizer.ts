@@ -1,7 +1,7 @@
 /* eslint-disable no-await-in-loop */
 import { Interface, isAddress, ZeroAddress } from 'ethers'
 
-import { AccountOp } from '../../accountOp/accountOp'
+import { AccountOp } from '../../../accountOp/accountOp'
 import {
   HumanizerCallModule,
   HumanizerFragment,
@@ -9,14 +9,14 @@ import {
   HumanizerPromise,
   HumanizerVisualization,
   IrCall
-} from '../interfaces'
+} from '../../interfaces'
 import {
   checkIfUnknownAction,
   getAction,
   getAddressVisualization,
   getLabel,
   getToken
-} from '../utils'
+} from '../../utils'
 
 // @TODO add again
 // etherface was down for some time and we replaced it with 4bytes

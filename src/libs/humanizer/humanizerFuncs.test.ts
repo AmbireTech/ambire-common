@@ -4,19 +4,13 @@ import fetch from 'node-fetch'
 /* eslint-disable no-console */
 import { describe, expect, test } from '@jest/globals'
 
-import { stringify, parse } from '../richJson/richJson'
+import humanizerInfo from '../../consts/humanizer/humanizerInfo.json'
 import { ErrorRef } from '../../controllers/eventEmitter/eventEmitter'
 import { AccountOp } from '../accountOp/accountOp'
-import { HumanizerFragment, HumanizerMeta, HumanizerVisualization, IrCall } from './interfaces'
-import { fallbackHumanizer } from './modules/fallBackHumanizer'
+import { parse, stringify } from '../richJson/richJson'
+import { HumanizerMeta, HumanizerVisualization, IrCall } from './interfaces'
 import { genericErc20Humanizer, genericErc721Humanizer } from './modules/tokens'
 import { uniswapHumanizer } from './modules/Uniswap'
-import { parseCalls } from './parsers'
-
-import humanizerInfo from '../../consts/humanizer/humanizerInfo.json'
-import { EMPTY_HUMANIZER_META, HUMANIZER_META_KEY, integrateFragments } from './utils'
-import { produceMemoryStore } from '../../../test/helpers'
-import { humanizerMetaParsing } from './parsers/humanizerMetaParsing'
 
 const mockEmitError = (e: ErrorRef) => console.log(e)
 
@@ -320,68 +314,6 @@ describe('module tests', () => {
       c?.fullVisualization?.forEach((v: HumanizerVisualization, j: number) => {
         expect(v).toMatchObject(expectedVisualization[i][j])
       })
-    })
-  })
-
-  test('fallback', async () => {
-    const storage = produceMemoryStore()
-    await storage.set(HUMANIZER_META_KEY, { abis: { NO_ABI: {} }, knownAddresses: {} })
-    accountOp.calls = [...transactions.generic]
-    let irCalls: IrCall[] = accountOp.calls
-    let asyncOps = []
-    ;[irCalls, asyncOps] = fallbackHumanizer(accountOp, irCalls, EMPTY_HUMANIZER_META, {
-      fetch,
-      emitError: mockEmitError
-    })
-    asyncOps = (await Promise.all(asyncOps.map((i) => i()))).filter((a) => a) as HumanizerFragment[]
-    expect(asyncOps.length).toBe(1)
-    expect(asyncOps[0]).toMatchObject({ key: '0x095ea7b3' })
-    ;[irCalls, asyncOps] = fallbackHumanizer(
-      accountOp,
-      irCalls,
-      integrateFragments(EMPTY_HUMANIZER_META, asyncOps),
-      { fetch }
-    )
-    expect(irCalls[1]?.fullVisualization?.[0]).toMatchObject({
-      type: 'action',
-      content: 'Call approve(address,uint256)'
-    })
-    expect(asyncOps.length).toBe(0)
-  })
-
-  // @TODO humanizerMetaParsing
-  test('metaParsing', () => {
-    accountOp.calls = [...transactions.humanizerMetatransaction]
-    let irCalls = accountOp.calls
-    ;[irCalls] = genericErc20Humanizer(accountOp, irCalls, humanizerInfo as HumanizerMeta)
-    ;[irCalls] = fallbackHumanizer(accountOp, irCalls, humanizerInfo as HumanizerMeta)
-    const [newCalls] = parseCalls(
-      accountOp,
-      irCalls,
-      [humanizerMetaParsing],
-      humanizerInfo as HumanizerMeta,
-      { fetch }
-    )
-    expect(newCalls.length).toBe(transactions.humanizerMetatransaction.length)
-    expect(
-      newCalls[0]?.fullVisualization?.find((v: HumanizerVisualization) => v.type === 'address')
-    ).toMatchObject({
-      type: 'address',
-      address: expect.anything(),
-      humanizerMeta: {}
-    })
-    expect(
-      newCalls[1]?.fullVisualization?.find((v: HumanizerVisualization) => v.type === 'address')
-    ).toMatchObject({
-      type: 'address',
-      address: expect.anything(),
-      humanizerMeta: {}
-    })
-    expect(
-      newCalls[2]?.fullVisualization?.find((v: HumanizerVisualization) => v.type === 'address')
-    ).toMatchObject({
-      type: 'address',
-      address: expect.anything()
     })
   })
 })

@@ -17,7 +17,7 @@ import {
 } from './interfaces'
 import { addFragsToLazyStore, lazyReadHumanizerMeta } from './lazyStorage'
 import { aaveHumanizer } from './modules/Aave'
-import { fallbackHumanizer } from './modules/fallBackHumanizer'
+import fallbackHumanizer from './modules/FallbackHumanizer'
 import { gasTankModule } from './modules/gasTankModule'
 import { preProcessHumanizer } from './modules/preProcessModule'
 import { privilegeHumanizer } from './modules/privileges'
