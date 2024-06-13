@@ -1,6 +1,8 @@
+import { Fetch } from '../../interfaces/fetch'
+
 export async function fetchUserOp(
   userOpHash: string,
-  fetchFn: Function,
+  fetchFn: Fetch,
   explorerNetworkId: string | null = null
 ) {
   let url = `https://api.jiffyscan.xyz/v0/getUserOp?hash=${userOpHash}`
