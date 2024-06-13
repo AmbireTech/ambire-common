@@ -109,7 +109,7 @@ const networks: Network[] = [
       explorerId: 'arbitrum-one'
     },
     isSAEnabled: true,
-    areContractsDeployed: false,
+    areContractsDeployed: true,
     hasRelayer: true,
     hasDebugTraceCall: false,
     platformId: 'arbitrum-one',
@@ -137,7 +137,7 @@ const networks: Network[] = [
       hasPaymaster: true
     },
     isSAEnabled: true,
-    areContractsDeployed: false,
+    areContractsDeployed: true,
     hasRelayer: true,
     hasDebugTraceCall: false,
     platformId: 'base',
