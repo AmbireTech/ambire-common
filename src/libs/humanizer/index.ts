@@ -1,4 +1,5 @@
 import { ErrorRef } from '../../controllers/eventEmitter/eventEmitter'
+import { HumanizerFragment } from '../../interfaces/humanizer'
 import { Storage } from '../../interfaces/storage'
 import { Message } from '../../interfaces/userRequest'
 import { AccountOp } from '../accountOp/accountOp'
@@ -7,7 +8,6 @@ import { parse, stringify } from '../richJson/richJson'
 import { humanizeCalls, humanizePlainTextMessage, humanizeTypedMessage } from './humanizerFuncs'
 import {
   HumanizerCallModule,
-  HumanizerFragment,
   HumanizerOptions,
   HumanizerParsingModule,
   HumanizerPromise,

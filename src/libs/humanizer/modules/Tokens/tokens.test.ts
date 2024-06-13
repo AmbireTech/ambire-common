@@ -11,6 +11,7 @@ import { parse, stringify } from '../../../richJson/richJson'
 import { HumanizerMeta, HumanizerVisualization, IrCall } from '../../interfaces'
 import { genericErc20Humanizer, genericErc721Humanizer } from '.'
 
+// eslint-disable-next-line no-console
 const mockEmitError = (e: ErrorRef) => console.log(e)
 
 // const mockedFetchForTokens = async (url: string) => {

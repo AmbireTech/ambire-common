@@ -1,10 +1,10 @@
 /* eslint-disable no-await-in-loop */
 import { Interface, isAddress, ZeroAddress } from 'ethers'
 
+import { HumanizerFragment } from '../../../../interfaces/humanizer'
 import { AccountOp } from '../../../accountOp/accountOp'
 import {
   HumanizerCallModule,
-  HumanizerFragment,
   HumanizerMeta,
   HumanizerPromise,
   HumanizerVisualization,
