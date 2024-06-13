@@ -4,6 +4,13 @@ import { Dapp } from '../../interfaces/dapp'
 import { Storage } from '../../interfaces/storage'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
+// The DappsController is responsible for the following tasks:
+// 1. Managing the dApp catalog
+// 2. Handling active sessions between dApps and the wallet
+// 3. Broadcasting events from the wallet to connected dApps via the Session
+
+// The possible events include: accountsChanged, chainChanged, disconnect, lock, unlock, and connect.
+
 export class DappsController extends EventEmitter {
   dappsSessionMap: Map<string, Session>
 
