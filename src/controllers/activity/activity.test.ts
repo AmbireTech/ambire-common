@@ -1,3 +1,5 @@
+import fetch from 'node-fetch'
+
 import { describe, expect } from '@jest/globals'
 
 import { produceMemoryStore } from '../../../test/helpers'
@@ -71,6 +73,7 @@ describe('Activity Controller ', () => {
       providersCtrl.providers = providers
       const controller = new ActivityController(
         storage,
+        fetch,
         accounts,
         providersCtrl,
         networksCtrl,
@@ -129,6 +132,7 @@ describe('Activity Controller ', () => {
       providersCtrl.providers = providers
       const controller = new ActivityController(
         storage,
+        fetch,
         accounts,
         providersCtrl,
         networksCtrl,
@@ -270,6 +274,7 @@ describe('Activity Controller ', () => {
       providersCtrl.providers = providers
       const controller = new ActivityController(
         storage,
+        fetch,
         accounts,
         providersCtrl,
         networksCtrl,
@@ -326,6 +331,7 @@ describe('Activity Controller ', () => {
       providersCtrl.providers = providers
       const controller = new ActivityController(
         storage,
+        fetch,
         accounts,
         providersCtrl,
         networksCtrl,
@@ -382,6 +388,7 @@ describe('Activity Controller ', () => {
       providersCtrl.providers = providers
       const controller = new ActivityController(
         storage,
+        fetch,
         accounts,
         providersCtrl,
         networksCtrl,
@@ -444,6 +451,7 @@ describe('Activity Controller ', () => {
       providersCtrl.providers = providers
       const controller = new ActivityController(
         storage,
+        fetch,
         accounts,
         providersCtrl,
         networksCtrl,
@@ -509,6 +517,7 @@ describe('Activity Controller ', () => {
       providersCtrl.providers = providers
       const controller = new ActivityController(
         storage,
+        fetch,
         accounts,
         providersCtrl,
         networksCtrl,
@@ -565,6 +574,7 @@ describe('Activity Controller ', () => {
       providersCtrl.providers = providers
       const controller = new ActivityController(
         storage,
+        fetch,
         accounts,
         providersCtrl,
         networksCtrl,
@@ -626,6 +636,7 @@ describe('Activity Controller ', () => {
       providersCtrl.providers = providers
       const controller = new ActivityController(
         storage,
+        fetch,
         accounts,
         providersCtrl,
         networksCtrl,

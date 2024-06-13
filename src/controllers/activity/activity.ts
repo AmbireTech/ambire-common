@@ -1,9 +1,8 @@
 /* eslint-disable import/no-extraneous-dependencies */
 
-import fetch from 'node-fetch'
-
 import { AccountId, AccountStates } from '../../interfaces/account'
 import { Banner } from '../../interfaces/banner'
+import { Fetch } from '../../interfaces/fetch'
 import { Network } from '../../interfaces/network'
 import { Storage } from '../../interfaces/storage'
 import { Message } from '../../interfaces/userRequest'
@@ -102,6 +101,8 @@ const trim = <T>(items: T[], maxSize = 1000): void => {
 export class ActivityController extends EventEmitter {
   #storage: Storage
 
+  #fetch: Fetch
+
   #initialLoadPromise: Promise<void>
 
   #accountStates: AccountStates
@@ -138,6 +139,7 @@ export class ActivityController extends EventEmitter {
 
   constructor(
     storage: Storage,
+    fetch: Fetch,
     accountStates: AccountStates,
     providers: ProvidersController,
     networks: NetworksController,
@@ -145,6 +147,7 @@ export class ActivityController extends EventEmitter {
   ) {
     super()
     this.#storage = storage
+    this.#fetch = fetch
     this.#accountStates = accountStates
     this.#providers = providers
     this.#networks = networks
@@ -328,7 +331,7 @@ export class ActivityController extends EventEmitter {
               let txnId = accountOp.txnId
               if (accountOp.userOpHash) {
                 const [response, bundlerResult] = await Promise.all([
-                  fetchUserOp(accountOp.userOpHash, fetch, getExplorerId(network)),
+                  fetchUserOp(accountOp.userOpHash, this.#fetch, getExplorerId(network)),
                   Bundler.getStatusAndTxnId(accountOp.userOpHash, network)
                 ])
 
