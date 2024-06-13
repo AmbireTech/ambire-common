@@ -1,5 +1,6 @@
 import { ethers, ZeroAddress } from 'ethers'
 import { CollectionResult } from 'libs/portfolio/interfaces'
+import fetch from 'node-fetch'
 
 import { describe, expect, jest } from '@jest/globals'
 
@@ -40,7 +41,13 @@ const prepareTest = () => {
   )
   providersCtrl = new ProvidersController(networksCtrl)
   providersCtrl.providers = providers
-  const controller = new PortfolioController(storage, providersCtrl, networksCtrl, relayerUrl)
+  const controller = new PortfolioController(
+    storage,
+    fetch,
+    providersCtrl,
+    networksCtrl,
+    relayerUrl
+  )
 
   return {
     controller,
@@ -115,7 +122,13 @@ describe('Portfolio Controller ', () => {
       )
       providersCtrl = new ProvidersController(networksCtrl)
       providersCtrl.providers = providers
-      const controller = new PortfolioController(storage, providersCtrl, networksCtrl, relayerUrl)
+      const controller = new PortfolioController(
+        storage,
+        fetch,
+        providersCtrl,
+        networksCtrl,
+        relayerUrl
+      )
       await controller.updateSelectedAccount([account2], account2.addr)
       const storagePreviousHints = await storage.get('previousHints', {})
       const ethereumHints = storagePreviousHints.fromExternalAPI[`ethereum:${account2.addr}`]
@@ -147,7 +160,13 @@ describe('Portfolio Controller ', () => {
       )
       providersCtrl = new ProvidersController(networksCtrl)
       providersCtrl.providers = providers
-      const controller = new PortfolioController(storage, providersCtrl, networksCtrl, relayerUrl)
+      const controller = new PortfolioController(
+        storage,
+        fetch,
+        providersCtrl,
+        networksCtrl,
+        relayerUrl
+      )
 
       controller.onUpdate(() => {
         const latestState =
@@ -185,7 +204,13 @@ describe('Portfolio Controller ', () => {
       )
       providersCtrl = new ProvidersController(networksCtrl)
       providersCtrl.providers = providers
-      const controller = new PortfolioController(storage, providersCtrl, networksCtrl, relayerUrl)
+      const controller = new PortfolioController(
+        storage,
+        fetch,
+        providersCtrl,
+        networksCtrl,
+        relayerUrl
+      )
       let pendingState1: any
       controller.onUpdate(() => {
         if (!pendingState1?.isReady) {
@@ -219,7 +244,13 @@ describe('Portfolio Controller ', () => {
       )
       providersCtrl = new ProvidersController(networksCtrl)
       providersCtrl.providers = providers
-      const controller = new PortfolioController(storage, providersCtrl, networksCtrl, relayerUrl)
+      const controller = new PortfolioController(
+        storage,
+        fetch,
+        providersCtrl,
+        networksCtrl,
+        relayerUrl
+      )
 
       controller.onUpdate(() => {
         const latestState =
@@ -265,7 +296,13 @@ describe('Portfolio Controller ', () => {
       )
       providersCtrl = new ProvidersController(networksCtrl)
       providersCtrl.providers = providers
-      const controller = new PortfolioController(storage, providersCtrl, networksCtrl, relayerUrl)
+      const controller = new PortfolioController(
+        storage,
+        fetch,
+        providersCtrl,
+        networksCtrl,
+        relayerUrl
+      )
       await controller.updateSelectedAccount([account], account.addr, undefined, accountOp)
 
       controller.onUpdate(() => {
@@ -292,7 +329,7 @@ describe('Portfolio Controller ', () => {
     //   const accountOp = await getAccountOp()
     //
     //   const storage = produceMemoryStore()
-    //   const controller = new PortfolioController(storage, relayerUrl)
+    //   const controller = new PortfolioController(storage, fetch, relayerUrl)
     //   let pendingState1: any
     //   let pendingState2: any
     //   controller.onUpdate(() => {
@@ -369,7 +406,13 @@ describe('Portfolio Controller ', () => {
       )
       providersCtrl = new ProvidersController(networksCtrl)
       providersCtrl.providers = providers
-      const controller = new PortfolioController(storage, providersCtrl, networksCtrl, relayerUrl)
+      const controller = new PortfolioController(
+        storage,
+        fetch,
+        providersCtrl,
+        networksCtrl,
+        relayerUrl
+      )
 
       await controller.updateSelectedAccount([account], account.addr, undefined, accountOp)
       const pendingState1 =
@@ -402,7 +445,13 @@ describe('Portfolio Controller ', () => {
       )
       providersCtrl = new ProvidersController(networksCtrl)
       providersCtrl.providers = providers
-      const controller = new PortfolioController(storage, providersCtrl, networksCtrl, relayerUrl)
+      const controller = new PortfolioController(
+        storage,
+        fetch,
+        providersCtrl,
+        networksCtrl,
+        relayerUrl
+      )
 
       await controller.updateSelectedAccount([account], account.addr, undefined, accountOp)
       const pendingState1 =
@@ -444,7 +493,13 @@ describe('Portfolio Controller ', () => {
       )
       providersCtrl = new ProvidersController(networksCtrl)
       providersCtrl.providers = providers
-      const controller = new PortfolioController(storage, providersCtrl, networksCtrl, relayerUrl)
+      const controller = new PortfolioController(
+        storage,
+        fetch,
+        providersCtrl,
+        networksCtrl,
+        relayerUrl
+      )
 
       await controller.updateSelectedAccount(
         [emptyAccount],
@@ -495,7 +550,13 @@ describe('Portfolio Controller ', () => {
       )
       providersCtrl = new ProvidersController(networksCtrl)
       providersCtrl.providers = providers
-      const controller = new PortfolioController(storage, providersCtrl, networksCtrl, relayerUrl)
+      const controller = new PortfolioController(
+        storage,
+        fetch,
+        providersCtrl,
+        networksCtrl,
+        relayerUrl
+      )
 
       await controller.updateSelectedAccount([emptyAccount], emptyAccount.addr)
 
@@ -526,7 +587,13 @@ describe('Portfolio Controller ', () => {
       )
       providersCtrl = new ProvidersController(networksCtrl)
       providersCtrl.providers = providers
-      const controller = new PortfolioController(storage, providersCtrl, networksCtrl, relayerUrl)
+      const controller = new PortfolioController(
+        storage,
+        fetch,
+        providersCtrl,
+        networksCtrl,
+        relayerUrl
+      )
 
       await controller.updateSelectedAccount([account], account.addr)
 
@@ -600,7 +667,13 @@ describe('Portfolio Controller ', () => {
     )
     providersCtrl = new ProvidersController(networksCtrl)
     providersCtrl.providers = providers
-    const controller = new PortfolioController(storage, providersCtrl, networksCtrl, relayerUrl)
+    const controller = new PortfolioController(
+      storage,
+      fetch,
+      providersCtrl,
+      networksCtrl,
+      relayerUrl
+    )
 
     await controller.updateSelectedAccount([account], account.addr)
 
@@ -635,7 +708,13 @@ describe('Portfolio Controller ', () => {
     )
     providersCtrl = new ProvidersController(networksCtrl)
     providersCtrl.providers = providers
-    const controller = new PortfolioController(storage, providersCtrl, networksCtrl, relayerUrl)
+    const controller = new PortfolioController(
+      storage,
+      fetch,
+      providersCtrl,
+      networksCtrl,
+      relayerUrl
+    )
 
     await controller.updateTokenValidationByStandard(token, account.addr)
     await controller.updateTokenValidationByStandard(tokenERC1155, account.addr)
@@ -674,7 +753,13 @@ describe('Portfolio Controller ', () => {
     )
     providersCtrl = new ProvidersController(networksCtrl)
     providersCtrl.providers = providers
-    const controller = new PortfolioController(storage, providersCtrl, networksCtrl, relayerUrl)
+    const controller = new PortfolioController(
+      storage,
+      fetch,
+      providersCtrl,
+      networksCtrl,
+      relayerUrl
+    )
 
     await controller.updateTokenPreferences([tokenInPreferences])
 
@@ -712,7 +797,13 @@ describe('Portfolio Controller ', () => {
     )
     providersCtrl = new ProvidersController(networksCtrl)
     providersCtrl.providers = providers
-    const controller = new PortfolioController(storage, providersCtrl, networksCtrl, relayerUrl)
+    const controller = new PortfolioController(
+      storage,
+      fetch,
+      providersCtrl,
+      networksCtrl,
+      relayerUrl
+    )
 
     await controller.updateTokenPreferences([tokenInPreferences])
 

@@ -352,6 +352,7 @@ const init = async (
   providersCtrl.providers = providers
   const portfolio = new PortfolioController(
     storage,
+    fetch,
     providersCtrl,
     networksCtrl,
     'https://staging-relayer.ambire.com'

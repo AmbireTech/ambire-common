@@ -196,6 +196,7 @@ export class MainController extends EventEmitter {
     this.settings = new SettingsController(this.#storage)
     this.portfolio = new PortfolioController(
       this.#storage,
+      this.#fetch,
       this.providers,
       this.networks,
       relayerUrl

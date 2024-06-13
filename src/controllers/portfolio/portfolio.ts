@@ -1,8 +1,7 @@
 import { ZeroAddress } from 'ethers'
-/* eslint-disable import/no-extraneous-dependencies */
-import fetch from 'node-fetch'
 
 import { Account, AccountId } from '../../interfaces/account'
+import { Fetch } from '../../interfaces/fetch'
 import { Network, NetworkId } from '../../interfaces/network'
 /* eslint-disable @typescript-eslint/no-shadow */
 import { Storage } from '../../interfaces/storage'
@@ -90,6 +89,7 @@ export class PortfolioController extends EventEmitter {
 
   constructor(
     storage: Storage,
+    fetch: Fetch,
     providers: ProvidersController,
     networks: NetworksController,
     relayerUrl: string
