@@ -67,6 +67,8 @@ export class PortfolioController extends EventEmitter {
 
   #storage: Storage
 
+  #fetch: Fetch
+
   #callRelayer: Function
 
   #networksWithAssetsByAccounts: {
@@ -99,6 +101,7 @@ export class PortfolioController extends EventEmitter {
     this.pending = {}
     this.#portfolioLibs = new Map()
     this.#storage = storage
+    this.#fetch = fetch
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
     this.#providers = providers
     this.#networks = networks
@@ -278,7 +281,7 @@ export class PortfolioController extends EventEmitter {
         // eslint-disable-next-line no-underscore-dangle
         providers[network.id]?._getConnection().url
     ) {
-      this.#portfolioLibs.set(key, new Portfolio(fetch, providers[network.id], network))
+      this.#portfolioLibs.set(key, new Portfolio(this.#fetch, providers[network.id], network))
     }
     return this.#portfolioLibs.get(key)!
   }
