@@ -374,7 +374,13 @@ describe('Portfolio Controller ', () => {
       )
       providersCtrl = new ProvidersController(networksCtrl)
       providersCtrl.providers = providers
-      const controller = new PortfolioController(storage, providersCtrl, networksCtrl, relayerUrl)
+      const controller = new PortfolioController(
+        storage,
+        fetch,
+        providersCtrl,
+        networksCtrl,
+        relayerUrl
+      )
       let pendingState1: any
       let pendingState2: any
       controller.onUpdate(() => {
