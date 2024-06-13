@@ -1,5 +1,5 @@
 import { Account } from '../../interfaces/account'
-import { NetworkId } from '../../interfaces/network'
+import { Network, NetworkId } from '../../interfaces/network'
 import { Message, TypedMessage } from '../../interfaces/userRequest'
 import { AccountOp } from '../accountOp/accountOp'
 import { Call } from '../accountOp/types'
@@ -51,7 +51,7 @@ export interface HumanizerCallModule {
   ]
 }
 
-export interface HumanizerTypedMessaageModule {
+export interface HumanizerTypedMessageModule {
   (typedMessage: TypedMessage): Omit<IrMessage, keyof Message>
 }
 
@@ -95,6 +95,12 @@ export interface HumanizerParsingModule {
     HumanizerWarning[],
     HumanizerPromise[]
   ]
+}
+export interface HumanizerOptions {
+  fetch?: Function
+  emitError?: Function
+  network?: Network
+  networkId?: NetworkId
 }
 
 export type DataToHumanize = AccountOp | Message

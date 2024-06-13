@@ -169,11 +169,22 @@ export const uniUniversalRouter = (
                 ]
               })
             } else if (command === COMMANDS.PERMIT2_PERMIT) {
+              const {
+                permit: {
+                  details: { token, amount /* expiration, nonce */ },
+                  spender
+                  // sigDeadline
+                }
+                // signature
+              } = extractParams(COMMANDS_DESCRIPTIONS.PERMIT2_PERMIT.inputsDetails, inputs[index])
               parsed.push({
                 ...call,
                 fullVisualization: [
-                  // @TODO extract args (first we have to add them to the COMMANDS_DESCRIPTIONS object)
-                  getLabel('Approved Uniswap to use the following token via signed message.')
+                  getAction('Grant approval'),
+                  getLabel('for'),
+                  getToken(token, amount),
+                  getLabel('to'),
+                  getAddressVisualization(spender)
                 ]
               })
             } else if (command === COMMANDS.WRAP_ETH) {
