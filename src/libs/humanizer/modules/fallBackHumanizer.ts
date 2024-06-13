@@ -74,7 +74,7 @@ async function fetchFunc4bytes(selector: string, options: any): Promise<Humanize
     return options.emitError({
       message: 'fetchFunc4bytes: no fetch function passed',
       error: new Error('No fetch function passed to fetchFunc4bytes'),
-      level: 'major'
+      level: 'silent'
     })
   let res
   // often fails due to timeout => loop for retrying

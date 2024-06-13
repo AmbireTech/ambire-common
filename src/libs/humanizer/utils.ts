@@ -119,7 +119,7 @@ export async function getTokenInfo(
       error: new Error(
         `could not find platform id for token info api ${humanizerSettings.networkId}`
       ),
-      level: 'minor'
+      level: 'silent'
     })
     platformId = humanizerSettings.networkId
   }
