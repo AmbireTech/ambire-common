@@ -12,7 +12,7 @@ export async function fetchUserOp(
     method: 'GET',
     headers: {
       'Content-Type': 'application/json',
-      'x-api-key': process.env.REACT_APP_JIFFYSCAN_API_KEY
+      'x-api-key': process.env.REACT_APP_JIFFYSCAN_API_KEY || ''
     }
   })
 }
