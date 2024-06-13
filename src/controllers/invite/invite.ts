@@ -1,3 +1,4 @@
+import { Fetch } from '../../interfaces/fetch'
 import { Storage } from '../../interfaces/storage'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import EventEmitter from '../eventEmitter/eventEmitter'
@@ -35,7 +36,7 @@ export class InviteController extends EventEmitter {
     storage
   }: {
     relayerUrl: string
-    fetch: Function
+    fetch: Fetch
     storage: Storage
   }) {
     super()

@@ -15,6 +15,7 @@ import {
   DerivedAccountWithoutNetworkMeta,
   SelectedAccountForImport
 } from '../../interfaces/account'
+import { Fetch } from '../../interfaces/fetch'
 import { KeyIterator } from '../../interfaces/keyIterator'
 import { dedicatedToOneSAPriv, ReadyToAddKeys } from '../../interfaces/keystore'
 import { Network, NetworkId } from '../../interfaces/network'
@@ -100,7 +101,7 @@ export class AccountAdderController extends EventEmitter {
     alreadyImportedAccounts: Account[]
     keystore: KeystoreController
     relayerUrl: string
-    fetch: Function
+    fetch: Fetch
   }) {
     super()
     this.#alreadyImportedAccounts = alreadyImportedAccounts

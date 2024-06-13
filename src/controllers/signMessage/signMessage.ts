@@ -1,6 +1,7 @@
 import { hexlify, isHexString, toUtf8Bytes } from 'ethers'
 
 import { Account, AccountStates } from '../../interfaces/account'
+import { Fetch } from '../../interfaces/fetch'
 import { ExternalSignerControllers, Key } from '../../interfaces/keystore'
 import { Network } from '../../interfaces/network'
 import { Storage } from '../../interfaces/storage'
@@ -31,7 +32,7 @@ export class SignMessageController extends EventEmitter {
 
   #storage: Storage
 
-  #fetch: Function
+  #fetch: Fetch
 
   #accounts: Account[] | null = null
 
@@ -69,7 +70,7 @@ export class SignMessageController extends EventEmitter {
     networks: NetworksController,
     externalSignerControllers: ExternalSignerControllers,
     storage: Storage,
-    fetch: Function
+    fetch: Fetch
   ) {
     super()
 

@@ -9,6 +9,7 @@ import {
   OperationRequestType,
   SecretType
 } from '../../interfaces/emailVault'
+import { Fetch } from '../../interfaces/fetch'
 import { Storage } from '../../interfaces/storage'
 import { getKeySyncBanner } from '../../libs/banners/banners'
 import { EmailVault } from '../../libs/emailVault/emailVault'
@@ -84,7 +85,7 @@ export class EmailVaultController extends EventEmitter {
 
   #autoConfirmMagicLink: boolean = false
 
-  #fetch: Function
+  #fetch: Fetch
 
   #relayerUrl: string
 
@@ -106,7 +107,7 @@ export class EmailVaultController extends EventEmitter {
 
   constructor(
     storage: Storage,
-    fetch: Function,
+    fetch: Fetch,
     relayerUrl: string,
     keyStore: KeystoreController,
     options?: { autoConfirmMagicLink?: boolean }

@@ -1,4 +1,5 @@
 import { ErrorRef } from '../../controllers/eventEmitter/eventEmitter'
+import { Fetch } from '../../interfaces/fetch'
 import { Storage } from '../../interfaces/storage'
 import { Message } from '../../interfaces/userRequest'
 import { AccountOp } from '../accountOp/accountOp'
@@ -64,7 +65,7 @@ const humanizerTMModules = [erc20Module, erc721Module, permit2Module, fallbackEI
 export const humanizeAccountOp = async (
   storage: Storage,
   accountOp: AccountOp,
-  fetch: Function,
+  fetch: Fetch,
   emitError: Function
 ): Promise<IrCall[]> => {
   const storedHumanizerMeta = await storage.get(HUMANIZER_META_KEY, {})
@@ -80,7 +81,7 @@ export const humanizeAccountOp = async (
 const sharedHumanization = async <InputDataType extends AccountOp | Message>(
   data: InputDataType,
   storage: Storage,
-  fetch: Function,
+  fetch: Fetch,
   callback:
     | ((response: IrCall[], nonGlobalFrags: HumanizerFragment[]) => void)
     | ((response: IrMessage) => void),
@@ -175,7 +176,7 @@ const sharedHumanization = async <InputDataType extends AccountOp | Message>(
 const callsHumanizer = async (
   accountOp: AccountOp,
   storage: Storage,
-  fetch: Function,
+  fetch: Fetch,
   callback: (irCalls: IrCall[], nonGlobalFrags: HumanizerFragment[]) => void,
   emitError: (err: ErrorRef) => void,
   options?: any
@@ -186,7 +187,7 @@ const callsHumanizer = async (
 const messageHumanizer = async (
   message: Message,
   storage: Storage,
-  fetch: Function,
+  fetch: Fetch,
   callback: (msgs: IrMessage) => void,
   emitError: (err: ErrorRef) => void,
   options?: any
