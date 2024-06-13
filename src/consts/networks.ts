@@ -141,7 +141,7 @@ const networks: Network[] = [
     hasRelayer: true,
     hasDebugTraceCall: false,
     platformId: 'base',
-    nativeAssetId: 'base',
+    nativeAssetId: 'ethereum',
     hasSingleton: true,
     features: [],
     feeOptions: {

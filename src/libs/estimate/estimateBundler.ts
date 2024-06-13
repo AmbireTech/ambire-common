@@ -73,7 +73,7 @@ export async function bundlerEstimate(
   const usesPaymaster = shouldUsePaymaster(network)
   if (usesPaymaster) {
     const feeToken = getFeeTokenForEstimate(feeTokens)
-    if (feeToken) localOp.feeCall = getFeeCall(feeToken, 1n)
+    if (feeToken) localOp.feeCall = getFeeCall(feeToken, 0n)
   }
   const userOp = getUserOperation(
     account,
