@@ -86,7 +86,7 @@ export async function getNetworkInfo(
       (async () => {
         const responses = await Promise.all([
           retryRequest(() => provider.getCode(ERC_4337_ENTRYPOINT)),
-          Bundler.isNetworkSupported(chainId).catch(() => false)
+          Bundler.isNetworkSupported(fetch, chainId).catch(() => false)
         ]).catch((e: Error) => raiseFlagged(e, ['0x', false]))
         const [entryPointCode, hasBundler] = responses
         const has4337 = entryPointCode !== '0x' && hasBundler

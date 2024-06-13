@@ -1,11 +1,10 @@
 /* eslint-disable no-restricted-syntax */
 /* eslint-disable import/no-extraneous-dependencies */
 
-import fetch from 'node-fetch'
-
 import AmbireAccountNoReverts from '../../../contracts/compiled/AmbireAccountNoRevert.json'
 import { ERC_4337_ENTRYPOINT } from '../../../dist/src/consts/deploy'
 import { ENTRY_POINT_MARKER, PROXY_NO_REVERTS } from '../../consts/deploy'
+import { Fetch } from '../../interfaces/fetch'
 import { Network } from '../../interfaces/network'
 import { Erc4337GasLimits } from '../../libs/estimate/interfaces'
 import { Gas1559Recommendation } from '../../libs/gasPrice/gasPrice'
@@ -143,7 +142,7 @@ export class Bundler {
   }
 
   // use this request to check if the bundler supports the network
-  static async isNetworkSupported(chainId: bigint) {
+  static async isNetworkSupported(fetch: Fetch, chainId: bigint) {
     const url = `https://api.pimlico.io/health?apikey=${process.env.REACT_APP_PIMLICO_API_KEY}&chain-id=${chainId}`
     const result = await fetch(url)
     return result.status === 200

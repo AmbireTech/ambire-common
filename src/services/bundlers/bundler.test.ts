@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-floating-promises */
 
 import { concat, hexlify, Interface, parseEther, toBeHex } from 'ethers'
+import fetch from 'node-fetch'
 
 import { describe, expect, test } from '@jest/globals'
 
@@ -29,10 +30,10 @@ describe('Bundler tests', () => {
   describe('Basic tests', () => {
     test('should check if the network is supported by the bundler', async () => {
       // it supports mantle
-      const mantleShouldBeSupported = await Bundler.isNetworkSupported(5000n)
+      const mantleShouldBeSupported = await Bundler.isNetworkSupported(fetch, 5000n)
       expect(mantleShouldBeSupported).toBe(true)
       // it doesn't support filecoin
-      const filecoinShouldNotBeSupported = await Bundler.isNetworkSupported(134n)
+      const filecoinShouldNotBeSupported = await Bundler.isNetworkSupported(fetch, 134n)
       expect(filecoinShouldNotBeSupported).toBe(false)
     })
   })
