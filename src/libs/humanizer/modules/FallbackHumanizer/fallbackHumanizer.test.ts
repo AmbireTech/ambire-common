@@ -1,3 +1,7 @@
+import fetch from 'node-fetch'
+
+import { describe, expect } from '@jest/globals'
+
 import { produceMemoryStore } from '../../../../../test/helpers'
 import humanizerInfo from '../../../../consts/humanizer/humanizerInfo.json'
 import { ErrorRef } from '../../../../controllers/eventEmitter/eventEmitter'
@@ -6,9 +10,10 @@ import { HumanizerFragment, HumanizerMeta, HumanizerVisualization, IrCall } from
 import { parseCalls } from '../../parsers'
 import { humanizerMetaParsing } from '../../parsers/humanizerMetaParsing'
 import { EMPTY_HUMANIZER_META, HUMANIZER_META_KEY, integrateFragments } from '../../utils'
-import { genericErc20Humanizer } from '../tokens'
-import fallbackHumanizer from '.'
+import { genericErc20Humanizer } from '../Tokens'
+import { fallbackHumanizer } from './fallBackHumanizer'
 
+// eslint-disable-next-line no-console
 const mockEmitError = (e: ErrorRef) => console.log(e)
 
 const accountOp: AccountOp = {

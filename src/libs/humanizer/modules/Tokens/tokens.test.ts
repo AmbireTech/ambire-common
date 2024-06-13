@@ -1,16 +1,15 @@
 import { ethers } from 'ethers'
 import fetch from 'node-fetch'
 
-/* eslint-disable no-console */
 import { describe, expect, test } from '@jest/globals'
 
-import humanizerInfo from '../../consts/humanizer/humanizerInfo.json'
-import { ErrorRef } from '../../controllers/eventEmitter/eventEmitter'
-import { AccountOp } from '../accountOp/accountOp'
-import { parse, stringify } from '../richJson/richJson'
-import { HumanizerMeta, HumanizerVisualization, IrCall } from './interfaces'
-import { genericErc20Humanizer, genericErc721Humanizer } from './modules/tokens'
-import { uniswapHumanizer } from './modules/Uniswap'
+import humanizerInfo from '../../../../consts/humanizer/humanizerInfo.json'
+import { networks } from '../../../../consts/networks'
+import { ErrorRef } from '../../../../controllers/eventEmitter/eventEmitter'
+import { AccountOp } from '../../../accountOp/accountOp'
+import { parse, stringify } from '../../../richJson/richJson'
+import { HumanizerMeta, HumanizerVisualization, IrCall } from '../../interfaces'
+import { genericErc20Humanizer, genericErc721Humanizer } from '.'
 
 const mockEmitError = (e: ErrorRef) => console.log(e)
 
@@ -143,50 +142,10 @@ const transactions = {
       value: BigInt(0),
       data: '0x42842e0e000000000000000000000000C89B38119C58536d818f3Bf19a9E3870828C199400000000000000000000000046705dfff24256421a05d056c29e81bdc09723b80000000000000000000000000000000000000000000000000000000000000000'
     }
-  ],
-  humanizerMetatransaction: [
-    // ETH to uniswap (bad example, sending eth to contract)
-    {
-      to: '0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D',
-      value: BigInt(10 * 18),
-      data: '0x'
-    },
-    // USDT to uniswap (bad example, sending erc-20 to contract)
-    {
-      to: '0xdAC17F958D2ee523a2206206994597C13D831ec7',
-      value: BigInt(0),
-      data: '0xa9059cbb0000000000000000000000007a250d5630b4cf539739df2c5dacb4c659f2488d000000000000000000000000000000000000000000000000000000003b9aca00'
-    },
-    // ETH to random address (expects to shortened address)
-    {
-      to: '0x1234f3fd5f43464db0448a57529eaf37f04c1234',
-      value: BigInt(10 * 18),
-      data: '0x'
-    }
-  ],
-  uniV3: [
-    // Swap exact WALLET for at least x  USDC
-    {
-      to: '0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45',
-      value: BigInt(0),
-      data: '0x5ae401dc0000000000000000000000000000000000000000000000000000000064c236530000000000000000000000000000000000000000000000000000000000000040000000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000124b858183f00000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000080000000000000000000000000b674f3fd5f43464db0448a57529eaf37f04ccea500000000000000000000000000000000000000000000003635c9adc5dea000000000000000000000000000000000000000000000000000000000000000835074000000000000000000000000000000000000000000000000000000000000004288800092ff476844f74dc2fc427974bbee2794ae002710c02aaa39b223fe8d0a0e5c4f27ead9083c756cc20001f4a0b86991c6218b36c1d19d4a2e9eb0ce3606eb4800000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000'
-    },
-    // Swap up to x Adex to exact DAI
-    {
-      to: '0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45',
-      value: BigInt(0),
-      data: '0x5ae401dc0000000000000000000000000000000000000000000000000000000064c233bf000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000012409b8134600000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000080000000000000000000000000b674f3fd5f43464db0448a57529eaf37f04ccea50000000000000000000000000000000000000000000000056bc75e2d63100000000000000000000000000000000000000000000000000025faff1f58be30f6ec00000000000000000000000000000000000000000000000000000000000000426b175474e89094c44da98b954eedeac495271d0f000064dac17f958d2ee523a2206206994597c13d831ec7000bb8ade00c28244d5ce17d72e40330b1c318cd12b7c300000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000'
-    },
-    // multicall
-    {
-      to: '0xE592427A0AEce92De3Edee1F18E0157C05861564',
-      data: '0xac9650d800000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000001a00000000000000000000000000000000000000000000000000000000000000124f28c0498000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000000a00000000000000000000000005a5be6b067d6b5b018adbcd27ee6972105b3b4000000000000000000000000000000000000000000000000000000000064d4f15700000000000000000000000000000000000000000000048a19ce0269c802800000000000000000000000000000000000000000000000000019952df3ca0a9588000000000000000000000000000000000000000000000000000000000000002b046eee2cc3188071c02bfc1745a6b17c656e3f3d000bb8c02aaa39b223fe8d0a0e5c4f27ead9083c756cc200000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000412210e8a00000000000000000000000000000000000000000000000000000000',
-      value: BigInt(0)
-    }
   ]
 }
 
-describe('asyncOps tests', () => {
+describe('Tokens', () => {
   beforeEach(async () => {
     accountOp.calls = []
   })
@@ -202,7 +161,8 @@ describe('asyncOps tests', () => {
     const irCalls: IrCall[] = accountOp.calls
     const [, asyncOps] = genericErc20Humanizer(accountOp, irCalls, humanizerMeta, {
       fetch,
-      emitError: mockEmitError
+      emitError: mockEmitError,
+      network: networks[0]
     })
     const asyncData = await Promise.all(asyncOps.map((i) => i()))
 
@@ -215,24 +175,13 @@ describe('asyncOps tests', () => {
       }
     })
   })
-})
-
-describe('module tests', () => {
-  beforeEach(async () => {
-    accountOp.calls = []
-  })
-  test('callsToIr', () => {
-    accountOp.calls = [...transactions.generic, ...transactions.erc20]
-    const irCalls: IrCall[] = accountOp.calls
-    expect(irCalls.length).toBe(transactions.erc20.length + transactions.generic.length)
-    expect(irCalls[0]).toEqual({ ...transactions.generic[0], fullVisualization: undefined })
-  })
   // @TODO err
   test('genericErc20Humanizer', () => {
     accountOp.calls = [...transactions.erc20]
     const irCalls: IrCall[] = accountOp.calls
     const [newCalls] = genericErc20Humanizer(accountOp, irCalls, humanizerInfo as HumanizerMeta, {
-      fetch
+      fetch,
+      networkId: 'ethereum'
     })
     expect(newCalls.length).toBe(transactions.erc20.length)
     newCalls.forEach((c) => {
@@ -249,71 +198,13 @@ describe('module tests', () => {
   test('genericErc721Humanizer', () => {
     accountOp.calls = [...transactions.erc721]
     const irCalls: IrCall[] = accountOp.calls
-    const [newCalls] = genericErc721Humanizer(accountOp, irCalls, humanizerInfo as HumanizerMeta)
+    const [newCalls] = genericErc721Humanizer(accountOp, irCalls, humanizerInfo as HumanizerMeta, {
+      networkId: 'ethereum'
+    })
 
     expect(newCalls.length).toBe(transactions.erc721.length)
     newCalls.forEach((c) => {
       expect(c?.fullVisualization).not.toBeNull()
-    })
-  })
-  test('uniSwap', () => {
-    accountOp.calls = [...transactions.uniV3]
-    const irCalls: IrCall[] = accountOp.calls
-    const [calls] = uniswapHumanizer(accountOp, irCalls, humanizerInfo as HumanizerMeta)
-    const expectedVisualization = [
-      [
-        { type: 'action', content: 'Swap' },
-        {
-          type: 'token',
-          address: '0x88800092ff476844f74dc2fc427974bbee2794ae',
-          amount: 1000000000000000000000n
-        },
-        { type: 'label', content: 'for at least' },
-        {
-          type: 'token',
-          address: '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48'
-        },
-        { type: 'deadline', amount: 1690449491000n }
-      ],
-      [
-        { type: 'action', content: 'Swap up to' },
-        {
-          type: 'token',
-          address: '0xade00c28244d5ce17d72e40330b1c318cd12b7c3'
-        },
-        { type: 'label', content: 'for' },
-        {
-          type: 'token',
-          address: '0x6b175474e89094c44da98b954eedeac495271d0f'
-        },
-        { type: 'deadline', amount: 1690448831000n }
-      ],
-      [
-        { type: 'action', content: 'Swap up to' },
-        {
-          type: 'token',
-          address: '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2'
-        },
-        { type: 'label', content: 'for' },
-        {
-          type: 'token',
-          address: '0x046eee2cc3188071c02bfc1745a6b17c656e3f3d'
-        },
-        { type: 'label', content: 'and send it to' },
-        {
-          type: 'address',
-          address: '0x5a5be6b067d6b5b018adbcd27ee6972105b3b400'
-        },
-        { type: 'deadline', amount: 1691677015000n }
-      ],
-      [{ type: 'action', content: 'Refund' }]
-    ]
-    expect(calls.length).toEqual(expectedVisualization.length)
-    calls.forEach((c, i) => {
-      expect(c?.fullVisualization?.length).toBe(expectedVisualization[i].length)
-      c?.fullVisualization?.forEach((v: HumanizerVisualization, j: number) => {
-        expect(v).toMatchObject(expectedVisualization[i][j])
-      })
     })
   })
 })

@@ -5,7 +5,7 @@ import { AccountOp } from '../../../accountOp/accountOp'
 import { UniV2Router } from '../../const/abis'
 import { IrCall } from '../../interfaces'
 import { getAction, getDeadline, getLabel, getRecipientText, getToken } from '../../utils'
-import { HumanizerUniMatcher } from './'
+import { HumanizerUniMatcher } from './interfaces'
 
 const uniV2Mapping = (): HumanizerUniMatcher => {
   const iface = new Interface(UniV2Router)
