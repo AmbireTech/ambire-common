@@ -1,11 +1,10 @@
 import { Interface, toBeHex, ZeroAddress } from 'ethers'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
-import { AMBIRE_PAYMASTER } from '../../consts/deploy'
 import { Account, AccountStates } from '../../interfaces/account'
 import { Network } from '../../interfaces/network'
 import { Bundler } from '../../services/bundlers/bundler'
-import { AccountOp, getSignableCalls } from '../accountOp/accountOp'
+import { AccountOp, callToTuple, getSignableCalls } from '../accountOp/accountOp'
 import { getFeeCall } from '../calls/calls'
 import { TokenResult } from '../portfolio'
 import {
@@ -38,17 +37,6 @@ function getFeeTokenForEstimate(feeTokens: TokenResult[]): TokenResult | null {
   return gasTankToken ?? null
 }
 
-// try to humanize a bit more the error message
-function mapError(e: Error) {
-  if (e.message.includes('paymaster deposit too low')) {
-    return new Error(
-      `Paymaster with address ${AMBIRE_PAYMASTER} does not have enough funds to execute this request. Please contact support`
-    )
-  }
-
-  return e
-}
-
 export async function bundlerEstimate(
   account: Account,
   accountStates: AccountStates,
@@ -73,7 +61,7 @@ export async function bundlerEstimate(
   const usesPaymaster = shouldUsePaymaster(network)
   if (usesPaymaster) {
     const feeToken = getFeeTokenForEstimate(feeTokens)
-    if (feeToken) localOp.feeCall = getFeeCall(feeToken, 0n)
+    if (feeToken) localOp.feeCall = getFeeCall(feeToken, 1n)
   }
   const userOp = getUserOperation(
     account,
@@ -112,11 +100,7 @@ export async function bundlerEstimate(
 
   const shouldStateOverride = !accountState.isErc4337Enabled && accountState.isDeployed
   const gasData = await Bundler.estimate(userOp, network, shouldStateOverride).catch((e: any) => {
-    let errMsg = e.error.message ? e.error.message : 'Estimation failed with unknown reason'
-    const hex = errMsg.indexOf('0x') !== -1 ? errMsg.substring(errMsg.indexOf('0x')) : null
-    const decodedHex = hex ? mapTxnErrMsg(hex) : null
-    if (decodedHex) errMsg = errMsg.replace(hex, decodedHex)
-    return mapError(new Error(errMsg))
+    return new Error(Bundler.decodeBundlerError(e, 'Estimation failed with unknown reason'))
   })
   if (gasData instanceof Error)
     return estimationErrorFormatted(gasData as Error, { feePaymentOptions })

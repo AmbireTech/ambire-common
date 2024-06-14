@@ -50,6 +50,9 @@ export function mapTxnErrMsg(contractError: string): string | null {
     msg.toLowerCase().includes('insufficient funds')
   )
     return 'Insufficient funds for intristic transaction cost'
+  if (msg.includes('paymaster deposit too low')) {
+    return `Paymaster does not have enough funds to execute this request. Please use another payment option or contact support`
+  }
   if (!riskOfUnreadableChars) return msg
 
   return null

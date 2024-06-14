@@ -843,10 +843,15 @@ export class SignAccountOpController extends EventEmitter {
     delete this.accountOp.activatorCall
 
     // @EntryPoint activation
-    // if the account is v2 without the entry point signer being a signer
-    // and the network is 4337 but doesn't have a paymaster, we should activate
-    // the entry point and therefore do so here
-    if (shouldIncludeActivatorCall(this.#network, accountState)) {
+    // if we broadcast by an EOA, this is the only way to include
+    // the entry point as a signer
+    if (
+      shouldIncludeActivatorCall(
+        this.#network,
+        accountState,
+        this.accountOp.gasFeePayment.isERC4337
+      )
+    ) {
       this.accountOp.activatorCall = getActivatorCall(this.accountOp.accountAddr)
     }
 

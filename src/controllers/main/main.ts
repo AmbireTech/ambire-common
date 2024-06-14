@@ -56,6 +56,7 @@ import {
   shouldAskForEntryPointAuthorization
 } from '../../libs/userOperation/userOperation'
 import bundler from '../../services/bundlers'
+import { Bundler } from '../../services/bundlers/bundler'
 import wait from '../../utils/wait'
 import { AccountAdderController } from '../accountAdder/accountAdder'
 import { AccountOpAction, ActionsController, SignMessageAction } from '../actions/actions'
@@ -1529,11 +1530,22 @@ export class MainController extends EventEmitter {
       let userOperationHash
       try {
         userOperationHash = await bundler.broadcast(userOperation, network!)
-      } catch (e) {
-        return this.#throwAccountOpBroadcastError(new Error('bundler broadcast failed'))
+      } catch (e: any) {
+        return this.#throwAccountOpBroadcastError(
+          new Error(
+            Bundler.decodeBundlerError(
+              e,
+              'Bundler broadcast failed. Please try broadcasting by an EOA or contact support'
+            )
+          )
+        )
       }
       if (!userOperationHash) {
-        return this.#throwAccountOpBroadcastError(new Error('bundler broadcast failed'))
+        return this.#throwAccountOpBroadcastError(
+          new Error(
+            'Bundler broadcast failed. Please try broadcasting by an EOA or contact support'
+          )
+        )
       }
 
       // broadcast the userOperationHash

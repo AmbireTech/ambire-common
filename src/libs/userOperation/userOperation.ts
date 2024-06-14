@@ -172,16 +172,18 @@ export function isErc4337Broadcast(network: Network, accountState: AccountOnchai
   return network.erc4337.enabled && canWeBroadcast4337 && accountState.isV2
 }
 
-// if the account is v2 account that does not have the entry point as a signer
-// and the network is a 4337 one without a paymaster, the only way to broadcast
-// a txn is through EOA pays for SA. That's why we need this check to include
-// the activator call and the next txn to be ERC-4337
-export function shouldIncludeActivatorCall(network: Network, accountState: AccountOnchainState) {
+// for special cases where we broadcast a 4337 operation with an EOA,
+// add the activator call so the use has the entry point attached
+export function shouldIncludeActivatorCall(
+  network: Network,
+  accountState: AccountOnchainState,
+  is4337Broadcast = true
+) {
   return (
     accountState.isV2 &&
     network.erc4337.enabled &&
     !accountState.isErc4337Enabled &&
-    accountState.isDeployed
+    (accountState.isDeployed || !is4337Broadcast)
   )
 }
 
