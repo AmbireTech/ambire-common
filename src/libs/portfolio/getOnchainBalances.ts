@@ -202,7 +202,8 @@ export async function getTokens(
   }
   const deploylessOpts = getDeploylessOpts(accountAddr, opts)
   if (!opts.simulation) {
-    const [results] = await deployless.call(
+   
+    const [results, blockNumber] = await deployless.call(
       'getBalances',
       [accountAddr, tokenAddrs],
       deploylessOpts
@@ -217,7 +218,7 @@ export async function getTokens(
     calls: calls.map(callToTuple)
   }))
   const [factory, factoryCalldata] = getAccountDeployParams(account)
-  const [before, after, simulationErr, , , deltaAddressesMapping] = await deployless.call(
+  const [before, after, simulationErr, , blockNumber, deltaAddressesMapping] = await deployless.call(
     'simulateAndGetBalances',
     [
       accountAddr,

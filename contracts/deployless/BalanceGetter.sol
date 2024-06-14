@@ -37,7 +37,7 @@ contract BalanceGetter is Simulation {
   function getBalances(
     IAmbireAccount account,
     address[] calldata tokenAddrs
-  ) public view returns (TokenInfo[] memory) {
+  ) public view returns (TokenInfo[] memory, uint) {
     uint len = tokenAddrs.length;
     TokenInfo[] memory results = new TokenInfo[](len);
     for (uint256 i = 0; i < len; i++) {
@@ -51,14 +51,15 @@ contract BalanceGetter is Simulation {
         }
       }
     }
-    return results;
+    return (results, block.number);
   }
 
   function getBalancesWithInfo(
     IAmbireAccount account,
     address[] calldata tokenAddrs
   ) public view returns (TokenInfo[] memory, uint, uint) {
-    return (getBalances(account, tokenAddrs), gasleft(), block.number);
+    (TokenInfo[] memory results, uint blockNumber) = getBalances(account, tokenAddrs);
+    return (results, gasleft(), blockNumber);
   }
 
   // Compare the tokens balances before (balancesA) and after simulation (balancesB)
@@ -109,8 +110,8 @@ contract BalanceGetter is Simulation {
       address[] memory // deltaAddressesMapping
     )
   {
-    before.balances = getBalances(account, tokenAddrs);
-
+    (TokenInfo[] memory results, ) = getBalances(account, tokenAddrs);
+    before.balances = results;
     (uint startNonce, bool success, bytes memory err) = Simulation.simulate(
       account,
       associatedKeys,
@@ -126,7 +127,7 @@ contract BalanceGetter is Simulation {
 
     afterSimulation.nonce = account.nonce();
     if (afterSimulation.nonce != before.nonce) {
-      afterSimulation.balances = getBalances(account, tokenAddrs);
+      before.balances = results;
 
       (TokenInfo[] memory deltaAfter) = getDelta(before.balances, afterSimulation.balances, tokenAddrs);
       afterSimulation.balances = deltaAfter;
