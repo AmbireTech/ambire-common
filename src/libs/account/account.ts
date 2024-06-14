@@ -4,7 +4,13 @@ import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
 import { SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET } from '../../consts/derivation'
 import { SPOOF_SIGTYPE } from '../../consts/signatures'
-import { Account, AccountOnPage, ImportStatus } from '../../interfaces/account'
+import {
+  Account,
+  AccountId,
+  AccountOnPage,
+  AccountPreferences,
+  ImportStatus
+} from '../../interfaces/account'
 import { Key } from '../../interfaces/keystore'
 import { DKIM_VALIDATOR_ADDR, getSignerKey, RECOVERY_DEFAULTS } from '../dkim/recovery'
 import { KeyIterator } from '../keyIterator/keyIterator'
@@ -288,4 +294,18 @@ export const getDefaultAccountPreferences = (
     label: `Account ${number}`,
     pfp: accountAddr // default pfp - a jazz icon generated from the addr
   }
+}
+
+export function migrateAccountPreferencesToAccounts(
+  accountPreferences: {
+    [key: AccountId]: AccountPreferences
+  },
+  accounts: Account[]
+) {
+  return accounts.map((a) => {
+    return {
+      ...a,
+      preferences: accountPreferences[a.addr]
+    }
+  })
 }

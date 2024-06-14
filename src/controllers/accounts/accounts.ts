@@ -7,7 +7,10 @@ import {
 } from '../../interfaces/account'
 import { Network, NetworkId } from '../../interfaces/network'
 import { Storage } from '../../interfaces/storage'
-import { getDefaultSelectedAccount } from '../../libs/account/account'
+import {
+  getDefaultSelectedAccount,
+  migrateAccountPreferencesToAccounts
+} from '../../libs/account/account'
 import { getAccountState } from '../../libs/accountState/accountState'
 import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter'
 import { NetworksController } from '../networks/networks'
@@ -57,11 +60,18 @@ export class AccountsController extends EventEmitter {
   async #load() {
     await this.#networks.initialLoadPromise
     await this.#providers.initialLoadPromise
-    const [accounts, selectedAccount] = await Promise.all([
+    const [accounts, selectedAccount, accountPreferences] = await Promise.all([
       this.#storage.get('accounts', []),
-      this.#storage.get('selectedAccount', null)
+      this.#storage.get('selectedAccount', null),
+      this.#storage.get('accountPreferences', undefined)
     ])
-    this.accounts = accounts
+    if (accountPreferences) {
+      this.accounts = migrateAccountPreferencesToAccounts(accountPreferences, accounts)
+      await this.#storage.set('accounts', this.accounts)
+      await this.#storage.remove('accountPreferences')
+    } else {
+      this.accounts = accounts
+    }
     this.selectedAccount = selectedAccount
     // TODO: error handling here
     this.accountStates = await this.#getAccountsInfo(this.accounts)
