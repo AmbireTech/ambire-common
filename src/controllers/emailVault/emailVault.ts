@@ -264,7 +264,7 @@ export class EmailVaultController extends EventEmitter {
   }
 
   async getEmailVaultInfo(email: string) {
-    await this.withStatus(this.getEmailVaultInfo.name, () => this.#getEmailVaultInfo(email))
+    await this.withStatus('getEmailVaultInfo', () => this.#getEmailVaultInfo(email))
   }
 
   async #getEmailVaultInfo(email: string): Promise<void> {
@@ -304,7 +304,7 @@ export class EmailVaultController extends EventEmitter {
   }
 
   async uploadKeyStoreSecret(email: string) {
-    await this.withStatus(this.uploadKeyStoreSecret.name, () => this.#uploadKeyStoreSecret(email))
+    await this.withStatus('uploadKeyStoreSecret', () => this.#uploadKeyStoreSecret(email))
   }
 
   async #uploadKeyStoreSecret(email: string) {
@@ -357,9 +357,7 @@ export class EmailVaultController extends EventEmitter {
   }
 
   async recoverKeyStore(email: string, newPassword: string) {
-    await this.withStatus(this.recoverKeyStore.name, () =>
-      this.#recoverKeyStore(email, newPassword)
-    )
+    await this.withStatus('recoverKeyStore', () => this.#recoverKeyStore(email, newPassword))
   }
 
   async #recoverKeyStore(email: string, newPassword: string): Promise<void> {
@@ -450,7 +448,7 @@ export class EmailVaultController extends EventEmitter {
   }
 
   async requestKeysSync(email: string, keys: string[]) {
-    await this.withStatus(this.requestKeysSync.name, () => this.#requestKeysSync(email, keys))
+    await this.withStatus('requestKeysSync', () => this.#requestKeysSync(email, keys))
   }
 
   async #requestKeysSync(email: string, keys: string[]) {
@@ -525,9 +523,7 @@ export class EmailVaultController extends EventEmitter {
         return { ...res, password }
       })
       .filter((x) => x)
-    await this.withStatus(this.finalizeSyncKeys.name, () =>
-      this.#finalizeSyncKeys(email, operations)
-    )
+    await this.withStatus('finalizeSyncKeys', () => this.#finalizeSyncKeys(email, operations))
   }
 
   // DOCS
