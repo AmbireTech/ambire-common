@@ -1,8 +1,8 @@
-import { AccountOp } from '../../accountOp/accountOp'
-import { HumanizerCallModule, IrCall } from '../interfaces'
+import { AccountOp } from '../../../accountOp/accountOp'
+import { HumanizerCallModule, IrCall } from '../../interfaces'
 
 export const preProcessHumanizer: HumanizerCallModule = (
-  accountOp: AccountOp,
+  _: AccountOp,
   currentIrCalls: IrCall[]
 ) => {
   const newCalls = currentIrCalls.map((_call) => {

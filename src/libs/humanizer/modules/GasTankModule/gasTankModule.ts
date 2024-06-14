@@ -1,16 +1,13 @@
 import { ZeroAddress } from 'ethers'
 
-import { AccountOp } from '../../accountOp/accountOp'
-import { HumanizerCallModule, HumanizerMeta, IrCall } from '../interfaces'
-import { getAction, getKnownName, getToken } from '../utils'
+import { AccountOp } from '../../../accountOp/accountOp'
+import { HumanizerCallModule, HumanizerMeta, IrCall } from '../../interfaces'
+import { getAction, getKnownName, getToken } from '../../utils'
 
-// @TODO add test
 export const gasTankModule: HumanizerCallModule = (
-  accountOp: AccountOp,
+  _: AccountOp,
   irCalls: IrCall[],
-  humanizerMeta: HumanizerMeta,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  options?: any
+  humanizerMeta: HumanizerMeta
 ) => {
   const newCalls = irCalls.map((call) => {
     if (getKnownName(humanizerMeta, call.to) === 'Gas Tank')
