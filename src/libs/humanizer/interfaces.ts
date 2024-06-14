@@ -1,4 +1,5 @@
 import { Account } from '../../interfaces/account'
+import { HumanizerFragment } from '../../interfaces/humanizer'
 import { Network, NetworkId } from '../../interfaces/network'
 import { Message, TypedMessage } from '../../interfaces/userRequest'
 import { AccountOp } from '../accountOp/accountOp'
@@ -35,13 +36,6 @@ export interface Ir {
   messages: IrMessage[]
 }
 
-// @TODO make this an enum
-export interface HumanizerFragment {
-  type: 'knownAddresses' | 'abis' | 'selector' | 'token'
-  isGlobal: boolean
-  key: string
-  value: string | Array<any> | AbiFragment | any
-}
 export type HumanizerPromise = () => Promise<HumanizerFragment | null>
 // @TODO make humanizer options interface
 export interface HumanizerCallModule {

@@ -1,8 +1,8 @@
 import { expect, jest } from '@jest/globals'
 
+import { HumanizerFragment } from '../../interfaces/humanizer'
 // import { parse, stringify } from '../richJson/richJson'
 import { stringify } from '../richJson/richJson'
-import { HumanizerFragment } from './interfaces'
 import { addFragsToLazyStore, lazyReadHumanizerMeta } from './lazyStorage'
 import { EMPTY_HUMANIZER_META, HUMANIZER_META_KEY } from './utils'
 

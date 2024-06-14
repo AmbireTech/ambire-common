@@ -1,15 +1,15 @@
 import { AccountOp } from '../../../accountOp/accountOp'
 import { HumanizerCallModule, HumanizerMeta, HumanizerWarning, IrCall } from '../../interfaces'
 import { getUnknownVisualization, getWarning } from '../../utils'
-import { uniUniversalRouter } from './uniUnivarsalRouter'
+import { HumanizerUniMatcher } from './interfaces'
+import { uniUniversalRouter } from './uniUniversalRouter'
 import { uniV2Mapping } from './uniV2'
 import { uniV32Mapping, uniV3Mapping } from './uniV3'
 
-export type HumanizerUniMatcher = { [key: string]: (a: AccountOp, c: IrCall) => IrCall[] }
 export const uniswapHumanizer: HumanizerCallModule = (
   accountOp: AccountOp,
   currentIrCalls: IrCall[],
-  humanizerMeta: HumanizerMeta,
+  _: HumanizerMeta,
   options?: any
 ) => {
   const uniV2MappingObj = uniV2Mapping()
@@ -51,7 +51,7 @@ export const uniswapHumanizer: HumanizerCallModule = (
     if (matchedObj) {
       if (matchedObj?.[sigHash]) {
         matchedObj[sigHash](accountOp, call).forEach((hc: IrCall, index: number) =>
-          // if multicall has value it shouldnt result in multiple calls with value
+          // if multicall has value it shouldn't result in multiple calls with value
           index === 0 ? newCalls.push(hc) : newCalls.push({ ...hc, value: 0n })
         )
       } else {
@@ -63,7 +63,7 @@ export const uniswapHumanizer: HumanizerCallModule = (
       // if unknown address, but known sighash
     } else if (fallbackFlatUniswapsObject[sigHash]) {
       fallbackFlatUniswapsObject[sigHash](accountOp, call).forEach((hc: IrCall, index: number) => {
-        // if multicall has value it shouldnt result in multiple calls with value
+        // if multicall has value it shouldn't result in multiple calls with value
         const warnings: HumanizerWarning[] = [getWarning('Unknown uniswap address', 'alarm')]
         index === 0
           ? newCalls.push({ ...hc, warnings })

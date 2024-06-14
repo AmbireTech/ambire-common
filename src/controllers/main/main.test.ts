@@ -68,9 +68,7 @@ describe('Main Controller ', () => {
       relayerUrl,
       keystoreSigners: { internal: KeystoreSigner },
       externalSignerControllers: {},
-      windowManager,
-      getDapp: () => undefined,
-      onUpdateDappSelectedAccount: () => {}
+      windowManager
     })
     // eslint-disable-next-line no-promise-executor-return
     await new Promise((resolve) => {
@@ -181,10 +179,8 @@ describe('Main Controller ', () => {
       fetch,
       relayerUrl,
       windowManager,
-      getDapp: () => undefined,
       keystoreSigners: { internal: KeystoreSigner },
-      externalSignerControllers: {},
-      onUpdateDappSelectedAccount: () => {}
+      externalSignerControllers: {}
     })
 
     const signerAddr = '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
@@ -260,10 +256,8 @@ describe('Main Controller ', () => {
       fetch,
       relayerUrl,
       windowManager,
-      getDapp: () => undefined,
       keystoreSigners: { internal: KeystoreSigner },
-      externalSignerControllers: {},
-      onUpdateDappSelectedAccount: () => {}
+      externalSignerControllers: {}
     })
 
     mainCtrl.accounts = [

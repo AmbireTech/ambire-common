@@ -81,7 +81,7 @@ export const visualizationToText = (call: IrCall, options: any): string => {
   }
   options.emitError({
     message: 'visualizationToText: Something went wrong with humanization',
-    errror: new Error(`visualizationToText couldn't convert the txn to text, ${call}`),
+    error: new Error(`visualizationToText couldn't convert the txn to text, ${call}`),
     level: 'silent'
   })
   return `Call to ${call.to} with ${call.value} value and ${call.data} data`
