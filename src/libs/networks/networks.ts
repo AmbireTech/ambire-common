@@ -101,7 +101,7 @@ export async function getNetworkInfo(
           hasSingleton: singletonCode !== '0x',
           isSAEnabled: supportsAmbire && singletonCode !== '0x',
           areContractsDeployed,
-          rpcNoStateOverride: !saSupport.supportsStateOverride,
+          rpcNoStateOverride: predefinedNetwork && predefinedNetwork.rpcNoStateOverride === true ? true : !saSupport.supportsStateOverride,
           erc4337: {
             enabled: predefinedNetwork ? predefinedNetwork.erc4337.enabled : false,
             hasPaymaster: predefinedNetwork ? predefinedNetwork.erc4337.hasPaymaster : false
