@@ -4,7 +4,6 @@ import { Account } from '../../interfaces/account'
 import { Storage } from '../../interfaces/storage'
 import { AccountsController } from '../accounts/accounts'
 import EventEmitter from '../eventEmitter/eventEmitter'
-import { SettingsController } from '../settings/settings'
 
 export type Contact = {
   name: string
@@ -33,14 +32,11 @@ export class AddressBookController extends EventEmitter {
 
   #accounts: AccountsController
 
-  #settings: SettingsController
-
-  constructor(storage: Storage, accounts: AccountsController, settings: SettingsController) {
+  constructor(storage: Storage, accounts: AccountsController) {
     super()
 
     this.#storage = storage
     this.#accounts = accounts
-    this.#settings = settings
 
     this.#initialLoadPromise = this.#load()
   }
@@ -48,7 +44,7 @@ export class AddressBookController extends EventEmitter {
   // Contacts, generated on the fly from the accounts in the wallet (not stored in storage)
   get #walletAccountsSourcedContacts() {
     return this.#accounts.accounts.map((account) => ({
-      name: this.#settings.accountPreferences[account.addr]?.label || '',
+      name: account.preferences.label,
       address: account.addr,
       isWalletAccount: true
     }))

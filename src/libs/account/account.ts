@@ -1,5 +1,6 @@
 import { AbiCoder, hexlify, Interface, toBeHex, toUtf8Bytes, ZeroAddress } from 'ethers'
 
+import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
 import { SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET } from '../../consts/derivation'
 import { SPOOF_SIGTYPE } from '../../consts/signatures'
@@ -48,26 +49,35 @@ export function getAccountDeployParams(account: Account): [string, string] {
   ]
 }
 
-export function getBasicAccount(key: string): Account {
+export function getBasicAccount(addr: string): Account {
   return {
-    addr: key,
-    associatedKeys: [key],
+    addr,
+    associatedKeys: [addr],
     initialPrivileges: [],
-    creation: null
+    creation: null,
+    preferences: {
+      label: DEFAULT_ACCOUNT_LABEL,
+      pfp: addr
+    }
   }
 }
 
 export async function getSmartAccount(privileges: PrivLevels[]): Promise<Account> {
   const bytecode = await getBytecode(privileges)
+  const addr = getAmbireAccountAddress(AMBIRE_ACCOUNT_FACTORY, bytecode)
 
   return {
-    addr: getAmbireAccountAddress(AMBIRE_ACCOUNT_FACTORY, bytecode),
+    addr,
     initialPrivileges: privileges.map((priv) => [priv.addr, priv.hash]),
     associatedKeys: privileges.map((priv) => priv.addr),
     creation: {
       factoryAddr: AMBIRE_ACCOUNT_FACTORY,
       bytecode,
       salt: toBeHex(0, 32)
+    },
+    preferences: {
+      label: DEFAULT_ACCOUNT_LABEL,
+      pfp: addr
     }
   }
 }
@@ -261,4 +271,21 @@ export const getAccountImportStatus = ({
   // Since there are `importedKeysForThisAcc`, as a fallback -
   // for all other scenarios this account has been imported with different keys.
   return ImportStatus.ImportedWithDifferentKeys
+}
+
+export const getDefaultAccountPreferences = (
+  accountAddr: string,
+  prevAccounts: Account[],
+  i: number
+) => {
+  // If an account with the same address already exists, skip,
+  // in order to persist the already stored account preferences.
+  const existingAcc = prevAccounts.find(({ addr }) => addr === accountAddr)
+  if (existingAcc) return undefined
+
+  const number = prevAccounts.length + (i + 1)
+  return {
+    label: `Account ${number}`,
+    pfp: accountAddr // default pfp - a jazz icon generated from the addr
+  }
 }

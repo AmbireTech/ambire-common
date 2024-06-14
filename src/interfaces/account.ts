@@ -2,6 +2,11 @@ import { Network } from './network'
 
 export type AccountId = string
 
+export type AccountPreferences = {
+  label: string
+  pfp: string // URL (https, ipfs or nft721://contractAddr/tokenId)
+}
+
 export interface Account {
   addr: AccountId
   // Associated keys that can control thte account
@@ -10,6 +15,7 @@ export interface Account {
   initialPrivileges: [string, string][]
   // Creation data; `null` in case of an EOA
   creation: AccountCreation | null
+  preferences: AccountPreferences
   email?: string
 }
 

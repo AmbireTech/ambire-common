@@ -1,4 +1,10 @@
-import { Account, AccountId, AccountOnchainState, AccountStates } from '../../interfaces/account'
+import {
+  Account,
+  AccountId,
+  AccountOnchainState,
+  AccountPreferences,
+  AccountStates
+} from '../../interfaces/account'
 import { Network, NetworkId } from '../../interfaces/network'
 import { Storage } from '../../interfaces/storage'
 import { getDefaultSelectedAccount } from '../../libs/account/account'
@@ -8,7 +14,8 @@ import { NetworksController } from '../networks/networks'
 import { ProvidersController } from '../providers/providers'
 
 const STATUS_WRAPPED_METHODS = {
-  selectAccount: 'INITIAL'
+  selectAccount: 'INITIAL',
+  updateAccountPreferences: 'INITIAL'
 } as const
 
 export class AccountsController extends EventEmitter {
@@ -62,11 +69,7 @@ export class AccountsController extends EventEmitter {
   }
 
   async selectAccount(toAccountAddr: string) {
-    await this.withStatus(
-      this.selectAccount.name,
-      async () => this.#selectAccount(toAccountAddr),
-      true
-    )
+    await this.withStatus(this.selectAccount.name, async () => this.#selectAccount(toAccountAddr))
   }
 
   async #selectAccount(toAccountAddr: string) {
@@ -174,6 +177,23 @@ export class AccountsController extends EventEmitter {
     }
     await this.updateAccountStates()
 
+    this.emitUpdate()
+  }
+
+  async updateAccountPreferences(accounts: { addr: string; preferences: AccountPreferences }[]) {
+    await this.withStatus(this.updateAccountPreferences.name, async () =>
+      this.#updateAccountPreferences(accounts)
+    )
+  }
+
+  async #updateAccountPreferences(accounts: { addr: string; preferences: AccountPreferences }[]) {
+    this.accounts = this.accounts.map((acc) => {
+      const account = accounts.find((a) => a.addr === acc.addr)
+      if (!account) return acc
+
+      return { ...acc, preferences: account.preferences }
+    })
+    await this.#storage.set('accounts', this.accounts)
     this.emitUpdate()
   }
 }

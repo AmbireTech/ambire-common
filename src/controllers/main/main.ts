@@ -222,7 +222,7 @@ export class MainController extends EventEmitter {
       relayerUrl,
       fetch: this.#fetch
     })
-    this.addressBook = new AddressBookController(this.#storage, this.accounts, this.settings)
+    this.addressBook = new AddressBookController(this.#storage, this.accounts)
     this.signMessage = new SignMessageController(
       this.keystore,
       this.providers,
@@ -293,11 +293,7 @@ export class MainController extends EventEmitter {
           // skips the parallel one, if one is requested).
           await this.keystore.addKeys(this.accountAdder.readyToAddKeys.internal)
           await this.keystore.addKeysExternallyStored(this.accountAdder.readyToAddKeys.external)
-
-          await Promise.all([
-            this.settings.addKeyPreferences(this.accountAdder.readyToAddKeyPreferences),
-            this.settings.addAccountPreferences(this.accountAdder.readyToAddAccountPreferences)
-          ])
+          await this.settings.addKeyPreferences(this.accountAdder.readyToAddKeyPreferences)
         },
         true
       )
