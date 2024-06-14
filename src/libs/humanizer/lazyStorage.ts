@@ -15,7 +15,7 @@ export async function lazyReadHumanizerMeta(
   storage: Storage,
   options?: { isExtension?: boolean; nocache?: boolean }
 ): Promise<HumanizerMeta> {
-  if (!options?.isExtension) {
+  if (options?.isExtension !== undefined && !options?.isExtension) {
     return humanizerInfo as HumanizerMeta
   }
   if (Date.now() - lastTimeRead > LAZY_READ_DELAY || options?.nocache) {
