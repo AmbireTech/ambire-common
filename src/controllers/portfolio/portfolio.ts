@@ -169,7 +169,7 @@ export class PortfolioController extends EventEmitter {
     const accountState = this.latest[accountId]
     if (!accountState[network]) accountState[network] = { errors: [], isReady: false, isLoading }
     accountState[network]!.isLoading = isLoading
-    if (!error) {
+    if (error) {
       if (!accountState[network]!.isReady) accountState[network]!.criticalError = error
       else accountState[network]!.errors.push(error)
     }

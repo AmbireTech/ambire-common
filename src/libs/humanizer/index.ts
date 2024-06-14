@@ -1,4 +1,5 @@
 import { ErrorRef } from '../../controllers/eventEmitter/eventEmitter'
+import { HumanizerFragment } from '../../interfaces/humanizer'
 import { Storage } from '../../interfaces/storage'
 import { Message } from '../../interfaces/userRequest'
 import { AccountOp } from '../accountOp/accountOp'
@@ -7,7 +8,6 @@ import { parse, stringify } from '../richJson/richJson'
 import { humanizeCalls, humanizePlainTextMessage, humanizeTypedMessage } from './humanizerFuncs'
 import {
   HumanizerCallModule,
-  HumanizerFragment,
   HumanizerOptions,
   HumanizerParsingModule,
   HumanizerPromise,
@@ -17,16 +17,15 @@ import {
 } from './interfaces'
 import { addFragsToLazyStore, lazyReadHumanizerMeta } from './lazyStorage'
 import { aaveHumanizer } from './modules/Aave'
-import { fallbackHumanizer } from './modules/fallBackHumanizer'
-import { gasTankModule } from './modules/gasTankModule'
-import { preProcessHumanizer } from './modules/preProcessModule'
-import { privilegeHumanizer } from './modules/privileges'
-import { sushiSwapModule } from './modules/sushiSwapModule'
-import { genericErc20Humanizer, genericErc721Humanizer } from './modules/tokens'
+import fallbackHumanizer from './modules/FallbackHumanizer'
+import gasTankModule from './modules/GasTankModule'
+import preProcessHumanizer from './modules/PreProcess'
+import privilegeHumanizer from './modules/Privileges'
+import sushiSwapModule from './modules/Sushiswap'
+import { genericErc20Humanizer, genericErc721Humanizer } from './modules/Tokens'
 import { uniswapHumanizer } from './modules/Uniswap'
-// import { oneInchHumanizer } from '.modules/oneInch'
 import { WALLETModule } from './modules/WALLET'
-import { wrappingModule } from './modules/wrapped'
+import wrappingModule from './modules/Wrapping'
 import { parseCalls, parseMessage } from './parsers'
 import { humanizerMetaParsing } from './parsers/humanizerMetaParsing'
 import {
@@ -47,7 +46,6 @@ export const humanizerCallModules: HumanizerCallModule[] = [
   uniswapHumanizer,
   wrappingModule,
   aaveHumanizer,
-  // oneInchHumanizer,
   WALLETModule,
   privilegeHumanizer,
   sushiSwapModule,
