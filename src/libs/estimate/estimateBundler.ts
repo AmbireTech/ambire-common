@@ -4,7 +4,7 @@ import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import { Account, AccountStates } from '../../interfaces/account'
 import { Network } from '../../interfaces/network'
 import { Bundler } from '../../services/bundlers/bundler'
-import { AccountOp, callToTuple, getSignableCalls } from '../accountOp/accountOp'
+import { AccountOp, getSignableCalls } from '../accountOp/accountOp'
 import { getFeeCall } from '../calls/calls'
 import { TokenResult } from '../portfolio'
 import {
@@ -13,7 +13,7 @@ import {
   getUserOperation,
   shouldUsePaymaster
 } from '../userOperation/userOperation'
-import { estimationErrorFormatted, mapTxnErrMsg } from './errors'
+import { estimationErrorFormatted } from './errors'
 import { EstimateResult, FeePaymentOption } from './interfaces'
 
 function getFeeTokenForEstimate(feeTokens: TokenResult[]): TokenResult | null {

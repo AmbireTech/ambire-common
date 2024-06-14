@@ -985,7 +985,8 @@ describe('estimate', () => {
       arbitrum,
       proxyProvider,
       feeTokens,
-      'latest'
+      'latest',
+      []
     )
 
     expect(response.error).not.toBe(null)
