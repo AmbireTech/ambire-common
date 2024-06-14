@@ -418,7 +418,7 @@ export class PortfolioController extends EventEmitter {
     this.emitUpdate()
   }
 
-  async #updatePortfolioState(
+  protected async updatePortfolioState(
     accountId: string,
     _accountState: AccountState,
     network: Network,
@@ -587,7 +587,7 @@ export class PortfolioController extends EventEmitter {
 
           const [isSuccessfulLatestUpdate] = await Promise.all([
             // Latest state update
-            this.#updatePortfolioState(
+            this.updatePortfolioState(
               accountId,
               accountState,
               network,
@@ -602,7 +602,7 @@ export class PortfolioController extends EventEmitter {
             // Pending state update
             // We are updating the pending state, only if AccountOps are changed or the application logic requests a force update
             forceUpdate
-              ? this.#updatePortfolioState(
+              ? this.updatePortfolioState(
                   accountId,
                   pendingState,
                   network,
