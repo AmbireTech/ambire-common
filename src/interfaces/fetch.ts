@@ -8,7 +8,4 @@ export interface RequestInitWithCustomHeaders extends RequestInit {
   }
 }
 
-export type Fetch = (
-  input: RequestInfo,
-  init?: RequestInitWithCustomHeaders
-) => Promise<Response> | typeof fetch
+export type Fetch = (input: RequestInfo, init?: RequestInitWithCustomHeaders) => Promise<Response>
