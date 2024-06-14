@@ -190,9 +190,8 @@ export class MainController extends EventEmitter {
       this.#storage,
       this.providers,
       this.networks,
-      async (toAccountAddr: string) => {
+      async () => {
         this.activity.init()
-        this.onUpdateDappSelectedAccount(toAccountAddr)
         await this.updateSelectedAccountPortfolio()
       }
     )
