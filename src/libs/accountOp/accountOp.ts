@@ -123,7 +123,7 @@ export function isAccountOpsIntentEqual(
   return stringify(createIntent(accountOps1)) === stringify(createIntent(accountOps2))
 }
 
-export function getSignableCalls(op: AccountOp) {
+export function getSignableCalls(op: AccountOp): [string, string, string][] {
   const callsToSign = op.calls.map((call: Call) => callToTuple(call))
   if (op.activatorCall) callsToSign.push(callToTuple(op.activatorCall))
   if (op.feeCall) callsToSign.push(callToTuple(op.feeCall))
@@ -134,14 +134,14 @@ export function getSignableHash(
   addr: AccountId,
   chainId: bigint,
   nonce: bigint,
-  calls: Call[]
+  calls: [string, string, string][]
 ): Uint8Array {
   const abiCoder = new AbiCoder()
   return getBytes(
     keccak256(
       abiCoder.encode(
         ['address', 'uint', 'uint', 'tuple(address, uint, bytes)[]'],
-        [addr, chainId, nonce, calls.map((call) => callToTuple(call))]
+        [addr, chainId, nonce, calls]
       )
     )
   )
@@ -173,5 +173,5 @@ export function getSignableHash(
  * @returns Uint8Array
  */
 export function accountOpSignableHash(op: AccountOp, chainId: bigint): Uint8Array {
-  return getSignableHash(op.accountAddr, chainId, op.nonce ?? 0n, op.calls)
+  return getSignableHash(op.accountAddr, chainId, op.nonce ?? 0n, getSignableCalls(op))
 }

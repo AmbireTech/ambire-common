@@ -247,7 +247,7 @@ export async function estimate(
   // is deployed for some reason, we should include the activator
   const calls = [...op.calls]
   const accountState = accountStates[op.accountAddr][op.networkId]
-  if (shouldIncludeActivatorCall(network, accountState)) {
+  if (shouldIncludeActivatorCall(network, accountState, false)) {
     calls.push(getActivatorCall(op.accountAddr))
   }
 

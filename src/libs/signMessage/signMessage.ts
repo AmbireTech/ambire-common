@@ -22,7 +22,12 @@ import { KeystoreSigner } from '../../interfaces/keystore'
 import { Network } from '../../interfaces/network'
 import { TypedMessage } from '../../interfaces/userRequest'
 import hexStringToUint8Array from '../../utils/hexStringToUint8Array'
-import { AccountOp, accountOpSignableHash, getSignableHash } from '../accountOp/accountOp'
+import {
+  AccountOp,
+  accountOpSignableHash,
+  callToTuple,
+  getSignableHash
+} from '../accountOp/accountOp'
 import { fromDescriptor } from '../deployless/deployless'
 import { getActivatorCall } from '../userOperation/userOperation'
 
@@ -363,7 +368,7 @@ export async function getEIP712Signature(
 
 // get the typedData for the first ERC-4337 deploy txn
 export async function getEntryPointAuthorization(addr: AccountId, chainId: bigint, nonce: bigint) {
-  const hash = getSignableHash(addr, chainId, nonce, [getActivatorCall(addr)])
+  const hash = getSignableHash(addr, chainId, nonce, [callToTuple(getActivatorCall(addr))])
   return getTypedData(chainId, addr, hexlify(hash))
 }
 

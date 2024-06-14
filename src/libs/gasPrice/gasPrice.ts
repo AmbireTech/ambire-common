@@ -174,7 +174,7 @@ export function getProbableCallData(
 
   // include the activator call for estimation if any
   const localOp = { ...accountOp }
-  if (shouldIncludeActivatorCall(network, accountState)) {
+  if (shouldIncludeActivatorCall(network, accountState, false)) {
     localOp.activatorCall = getActivatorCall(localOp.accountAddr)
   }
 
