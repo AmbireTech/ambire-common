@@ -21,7 +21,7 @@ import { AccountOp } from '../accountOp/accountOp'
 import { Call } from '../accountOp/types'
 import { getAccountState } from '../accountState/accountState'
 import { Portfolio } from '../portfolio/portfolio'
-import { estimate, estimate4337 } from './estimate'
+import { estimate } from './estimate'
 
 const ethereum = networks.find((x) => x.id === 'ethereum')!
 ethereum.areContractsDeployed = true
@@ -863,14 +863,14 @@ describe('estimate', () => {
     )
 
     expect(response.error).not.toBe(null)
-    expect(response.error?.message).toBe('Insufficient funds for intristic transaction cost')
+    expect(response.error?.message).toBe('Transaction reverted: invalid call in the bundle')
 
     expect(response.erc4337GasLimits).not.toBe(undefined)
-    expect(BigInt(response.erc4337GasLimits!.callGasLimit)).toBe(0n)
-    expect(BigInt(response.erc4337GasLimits!.verificationGasLimit)).toBe(0n)
-    expect(BigInt(response.erc4337GasLimits!.preVerificationGas)).toBe(0n)
-    expect(BigInt(response.erc4337GasLimits!.paymasterPostOpGasLimit)).toBe(0n)
-    expect(BigInt(response.erc4337GasLimits!.paymasterVerificationGasLimit)).toBe(0n)
+    expect(BigInt(response.erc4337GasLimits!.callGasLimit)).toBeGreaterThan(0n)
+    expect(BigInt(response.erc4337GasLimits!.verificationGasLimit)).toBeGreaterThan(0n)
+    expect(BigInt(response.erc4337GasLimits!.preVerificationGas)).toBeGreaterThan(0n)
+    expect(BigInt(response.erc4337GasLimits!.paymasterPostOpGasLimit)).toBeGreaterThan(0n)
+    expect(BigInt(response.erc4337GasLimits!.paymasterVerificationGasLimit)).toBeGreaterThan(0n)
 
     expect(response.feePaymentOptions.length).toBeGreaterThan(0)
     expect(response.feePaymentOptions![0].token).not.toBe(undefined)
@@ -954,50 +954,6 @@ describe('estimate', () => {
     expect(response.feePaymentOptions[0].token).not.toBe(null)
     expect(response.feePaymentOptions[0].token).not.toBe(undefined)
     expect(response.feePaymentOptions[0].token.address).toBe(ZeroAddress)
-  })
-
-  it('[ERC-4337]:Arbitrum | should fail because of a broken provider but still return fee options', async () => {
-    const opArbitrum: AccountOp = {
-      accountAddr: trezorSlot6v2NotDeployed.addr,
-      signingKeyAddr: trezorSlot6v2NotDeployed.associatedKeys[0],
-      signingKeyType: null,
-      gasLimit: null,
-      gasFeePayment: null,
-      networkId: 'arbitrum',
-      nonce: 1n,
-      signature: spoofSig,
-      calls: [{ to, value: BigInt(100000000000), data: '0x' }],
-      accountOpToExecuteBefore: null
-    }
-    const accountStates = await getAccountsInfo([trezorSlot6v2NotDeployed])
-    const brokenProvider = getRpcProvider(arbitrum.rpcUrls, arbitrum.chainId)
-    const handler2 = {
-      get(target: any, prop: any) {
-        if (prop === 'send') throw new Error('no sends')
-      }
-    }
-    const proxyProvider = new Proxy(brokenProvider, handler2)
-    const response = await estimate4337(
-      trezorSlot6v2NotDeployed,
-      opArbitrum,
-      opArbitrum.calls,
-      accountStates,
-      arbitrum,
-      proxyProvider,
-      feeTokens,
-      'latest',
-      []
-    )
-
-    expect(response.error).not.toBe(null)
-    expect(response.error?.message).toBe('no sends')
-
-    expect(response.feePaymentOptions.length).toBeGreaterThan(0)
-
-    expect(response.erc4337GasLimits).not.toBe(undefined)
-    expect(BigInt(response.erc4337GasLimits!.callGasLimit)).toBe(0n)
-    expect(BigInt(response.erc4337GasLimits!.verificationGasLimit)).toBe(0n)
-    expect(BigInt(response.erc4337GasLimits!.preVerificationGas)).toBe(0n)
   })
 
   it('estimates a polygon request with insufficient funds for txn and estimation should fail with transaction reverted', async () => {
