@@ -17,6 +17,7 @@ import {
 } from './interfaces'
 import { addFragsToLazyStore, lazyReadHumanizerMeta } from './lazyStorage'
 import { aaveHumanizer } from './modules/Aave'
+import curveModule from './modules/Curve'
 import fallbackHumanizer from './modules/FallbackHumanizer'
 import gasTankModule from './modules/GasTankModule'
 import preProcessHumanizer from './modules/PreProcess'
@@ -44,6 +45,7 @@ export const humanizerCallModules: HumanizerCallModule[] = [
   genericErc721Humanizer,
   gasTankModule,
   uniswapHumanizer,
+  curveModule,
   wrappingModule,
   aaveHumanizer,
   WALLETModule,
