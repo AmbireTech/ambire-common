@@ -420,6 +420,7 @@ export class MainController extends EventEmitter {
   // call this function after a call to the singleton has been made
   // it will check if the factory has been deployed and update the network settings if it has been
   async setContractsDeployedToTrueIfDeployed(network: Network) {
+    await this.#initialLoadPromise
     if (network.areContractsDeployed) return
 
     const provider = this.providers.providers[network.id]

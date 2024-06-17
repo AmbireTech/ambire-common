@@ -129,7 +129,7 @@ export class AccountsController extends EventEmitter {
         (netStates: AccountStates[keyof AccountStates], network) => {
           // if a flag for updateOnlyPassedNetworks is passed, we load the ones not requested from the previous state
           if (updateOnlyPassedNetworks && !updateOnlyNetworksWithIds.includes(network.id)) {
-            return { ...netStates, [network.id]: this.accountStates[acc.addr][network.id] }
+            return { ...netStates, [network.id]: this.accountStates?.[acc.addr]?.[network.id] }
           }
 
           if (!(network.id in networkState) || !(accIndex in networkState[network.id])) {
