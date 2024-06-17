@@ -193,6 +193,8 @@ export class MainController extends EventEmitter {
       async () => {
         this.activity.init()
         await this.updateSelectedAccountPortfolio()
+        await this.forceEmitUpdate()
+        await this.actions.forceEmitUpdate()
       }
     )
     this.settings = new SettingsController(this.#storage)
