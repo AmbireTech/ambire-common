@@ -318,6 +318,16 @@ export default function useVelcroFetch({
 
         // In case we have cached data from velcro - call balance oracle
         if ((!quickResponse && shouldSkipUpdate) || !tokensToUpdateBalance.length) {
+          // If formattedTokens is still empty, update it with the new response tokens
+          // (rather than from assets.tokens - previous response).
+          // This ensures that even if we are using cached data or if there are no tokens to update,
+          // we still populate the tokens list correctly before any further processing or updates.
+          // Otherwise, we will have not full tokens list, but only our tokensList from constants
+          // and we will not update balance on newly removed tokens from the list - they will be still in the list.
+          if (!formattedTokens.length) {
+            formattedTokens = formatTokensResponse(tokens, assets, networkToFetch?.network, account)
+          }
+
           formattedTokens = removeDuplicatedAssets([
             ...(formattedTokens || []),
             ...(extraTokensAssets?.length ? extraTokensAssets : [])
