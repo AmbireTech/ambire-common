@@ -59,7 +59,7 @@ export class PortfolioController extends EventEmitter {
   // regardless of whether it succeeds or fails.
   // Before implementing this queue, multiple `updateSelectedAccount` calls made in a short period of time could cause
   // the response of the latest call to be overwritten by a slower previous call.
-  queue: {
+  #queue: {
     [networkId: NetworkId]: {
       [accountId: string]: Promise<void>
     }
@@ -110,7 +110,7 @@ export class PortfolioController extends EventEmitter {
     super()
     this.latest = {}
     this.pending = {}
-    this.queue = {}
+    this.#queue = {}
     this.#portfolioLibs = new Map()
     this.#storage = storage
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
@@ -538,9 +538,9 @@ export class PortfolioController extends EventEmitter {
         )
         const simulatedAccountOps = pendingState[network.id]?.accountOps
 
-        if (!this.queue?.[network.id]?.[accountId])
-          this.queue[network.id] = {
-            ...this.queue[network.id],
+        if (!this.#queue?.[network.id]?.[accountId])
+          this.#queue[network.id] = {
+            ...this.#queue[network.id],
             [accountId]: Promise.resolve()
           }
 
@@ -652,12 +652,12 @@ export class PortfolioController extends EventEmitter {
         }
 
         // Chain the new updatePromise to the current queue
-        this.queue[network.id][accountId] = this.queue[network.id][accountId]
+        this.#queue[network.id][accountId] = this.#queue[network.id][accountId]
           .then(updatePromise)
           .catch(() => updatePromise())
 
         // Ensure the method waits for the entire queue to resolve
-        await this.queue[network.id][accountId]
+        await this.#queue[network.id][accountId]
       })
     )
 
