@@ -25,7 +25,7 @@ const curveModule: HumanizerCallModule = (_: AccountOp, calls: IrCall[]) => {
 
   const matcher = {
     [iface.getFunction(
-      'exchange(address[11] _route, uint256[5][5] _swap_params, uint256 _amount, uint256 _expected, address[5] _pools,)'
+      'exchange(address[11] _route, uint256[5][5] _swap_params, uint256 _amount, uint256 _expected, address[5] _pools)'
     )?.selector!]: (call: IrCall) => {
       // eslint-disable-next-line @typescript-eslint/naming-convention
       const { _route, _amount, _expected } = iface.parseTransaction(call)!.args
