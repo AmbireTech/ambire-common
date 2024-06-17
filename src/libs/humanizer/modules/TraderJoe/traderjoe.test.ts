@@ -5,7 +5,6 @@ import { compareHumanizerVisualizations } from '../../testHelpers'
 import { getAction, getAddressVisualization, getDeadline, getLabel, getToken } from '../../utils'
 import traderJoe from '.'
 
-// @TODO add all txns to textification???
 const transactions = [
   // exact NATIVE for USDC.e
   {

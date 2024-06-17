@@ -5,8 +5,7 @@ import { Router } from '../../const/abis/TraderJoe'
 import { HumanizerCallModule, IrCall } from '../../interfaces'
 import { getAction, getDeadline, getLabel, getRecipientText, getToken } from '../../utils'
 
-// @TODO
-// limit order manager
+// @TODO limit order manager
 
 const traderJoeModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]) => {
   const iface = new Interface(Router)
