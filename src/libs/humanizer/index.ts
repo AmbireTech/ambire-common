@@ -24,6 +24,7 @@ import preProcessHumanizer from './modules/PreProcess'
 import privilegeHumanizer from './modules/Privileges'
 import sushiSwapModule from './modules/Sushiswap'
 import { genericErc20Humanizer, genericErc721Humanizer } from './modules/Tokens'
+import traderJoeModule from './modules/TraderJoe'
 import { uniswapHumanizer } from './modules/Uniswap'
 import { WALLETModule } from './modules/WALLET'
 import wrappingModule from './modules/Wrapping'
@@ -46,6 +47,7 @@ export const humanizerCallModules: HumanizerCallModule[] = [
   gasTankModule,
   uniswapHumanizer,
   curveModule,
+  traderJoeModule,
   wrappingModule,
   aaveHumanizer,
   WALLETModule,
