@@ -79,15 +79,13 @@ export class AccountsController extends EventEmitter {
   }
 
   async selectAccount(toAccountAddr: string) {
-    await this.withStatus(this.selectAccount.name, async () => this.#selectAccount(toAccountAddr))
+    await this.withStatus('selectAccount', async () => this.#selectAccount(toAccountAddr))
   }
 
   async #selectAccount(toAccountAddr: string) {
     await this.initialLoadPromise
-
     // TODO: error handling, trying to switch to account that does not exist
     if (!this.accounts.find((acc) => acc.addr === toAccountAddr)) return
-
     this.selectedAccount = toAccountAddr
     await this.#storage.set('selectedAccount', toAccountAddr)
     this.#onSelectAccount(toAccountAddr)

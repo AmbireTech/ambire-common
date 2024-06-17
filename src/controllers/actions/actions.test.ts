@@ -2,7 +2,15 @@ import EventEmitter from 'events'
 
 import { describe, expect, test } from '@jest/globals'
 
+import { produceMemoryStore } from '../../../test/helpers'
+import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
+import { networks } from '../../consts/networks'
+import { Storage } from '../../interfaces/storage'
 import { DappUserRequest, SignUserRequest } from '../../interfaces/userRequest'
+import { getRpcProvider } from '../../services/provider'
+import { AccountsController } from '../accounts/accounts'
+import { NetworksController } from '../networks/networks'
+import { ProvidersController } from '../providers/providers'
 import { ActionsController, BenzinAction, DappRequestAction } from './actions'
 
 describe('SignMessageController', () => {
@@ -22,10 +30,57 @@ describe('SignMessageController', () => {
     sendWindowToastMessage: () => {}
   }
 
+  const storage: Storage = produceMemoryStore()
+  const accounts = [
+    {
+      addr: '0xAa0e9a1E2D2CcF2B867fda047bb5394BEF1883E0',
+      associatedKeys: ['0xAa0e9a1E2D2CcF2B867fda047bb5394BEF1883E0'],
+      initialPrivileges: [],
+      creation: null,
+      preferences: {
+        label: DEFAULT_ACCOUNT_LABEL,
+        pfp: '0xAa0e9a1E2D2CcF2B867fda047bb5394BEF1883E0'
+      }
+    },
+    {
+      addr: '0x71c3D24a627f0416db45107353d8d0A5ae0401ae',
+      associatedKeys: ['0x71c3D24a627f0416db45107353d8d0A5ae0401ae'],
+      initialPrivileges: [],
+      creation: null,
+      preferences: {
+        label: DEFAULT_ACCOUNT_LABEL,
+        pfp: '0x71c3D24a627f0416db45107353d8d0A5ae0401ae'
+      }
+    }
+  ]
+  const providers = Object.fromEntries(
+    networks.map((network) => [network.id, getRpcProvider(network.rpcUrls, network.chainId)])
+  )
+
+  let providersCtrl: ProvidersController
+  const networksCtrl = new NetworksController(
+    storage,
+    (net) => {
+      providersCtrl.setProvider(net)
+    },
+    (id) => {
+      providersCtrl.removeProvider(id)
+    }
+  )
+  providersCtrl = new ProvidersController(networksCtrl)
+  providersCtrl.providers = providers
+
+  let accountsCtrl: AccountsController
   let actionsCtrl: ActionsController
-  test('should init ActionsController', () => {
+  test('should init ActionsController', async () => {
+    await storage.set('accounts', accounts)
+    accountsCtrl = new AccountsController(storage, providersCtrl, networksCtrl, () => {})
+    await accountsCtrl.initialLoadPromise
+    await networksCtrl.initialLoadPromise
+    await providersCtrl.initialLoadPromise
+    accountsCtrl.selectedAccount = '0xAa0e9a1E2D2CcF2B867fda047bb5394BEF1883E0'
     actionsCtrl = new ActionsController({
-      selectedAccount: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+      accounts: accountsCtrl,
       windowManager,
       onActionWindowClose: () => {}
     })
@@ -52,7 +107,6 @@ describe('SignMessageController', () => {
     let emitCounter = 0
     const unsubscribe = actionsCtrl.onUpdate(async () => {
       emitCounter++
-
       if (emitCounter === 3) {
         expect(actionsCtrl.actionsQueue).toHaveLength(2)
         expect(actionsCtrl.currentAction).toEqual(action1)
@@ -107,7 +161,7 @@ describe('SignMessageController', () => {
       action: { kind: 'benzin' },
       meta: {
         isSignAction: true,
-        accountAddr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+        accountAddr: '0xAa0e9a1E2D2CcF2B867fda047bb5394BEF1883E0',
         networkId: 'ethereum'
       }
     }
@@ -142,12 +196,17 @@ describe('SignMessageController', () => {
         expect(actionsCtrl.actionsQueue).toHaveLength(3)
         expect(actionsCtrl.visibleActionsQueue).toHaveLength(2)
         expect(actionsCtrl.actionWindowId).toEqual(1)
-        actionsCtrl.update({ selectedAccount: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8' })
+
+        await accountsCtrl.selectAccount('0xAa0e9a1E2D2CcF2B867fda047bb5394BEF1883E0')
+        await actionsCtrl.forceEmitUpdate()
         unsubscribe()
         done()
       }
     })
-    actionsCtrl.update({ selectedAccount: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48' })
+    ;(async () => {
+      await accountsCtrl.selectAccount('0x71c3D24a627f0416db45107353d8d0A5ae0401ae')
+      actionsCtrl.forceEmitUpdate()
+    })()
   })
   test('on window close', (done) => {
     let emitCounter = 0

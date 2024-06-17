@@ -58,6 +58,8 @@ export class ActionsController extends EventEmitter {
   #onActionWindowClose: () => void
 
   get visibleActionsQueue(): Action[] {
+    if (!this.#accounts.selectedAccount) return []
+
     return (
       this.actionsQueue.map((a) => {
         if (a.type === 'accountOp') {
