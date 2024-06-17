@@ -1,14 +1,14 @@
 import { Interface, ZeroAddress } from 'ethers'
 
 import { AccountOp } from '../../../accountOp/accountOp'
-import { Router } from '../../const/abis/TraderJoe'
+import { JoeRouter } from '../../const/abis'
 import { HumanizerCallModule, IrCall } from '../../interfaces'
 import { getAction, getDeadline, getLabel, getRecipientText, getToken } from '../../utils'
 
 // @TODO limit order manager
 
 const traderJoeModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]) => {
-  const iface = new Interface(Router)
+  const iface = new Interface(JoeRouter)
   const matcher = {
     [iface.getFunction(
       'swapExactNATIVEForTokens(uint256 amountOutMin,(uint256[],uint8[],address[]) path,address to,uint256 deadline)'
