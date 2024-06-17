@@ -60,8 +60,8 @@ export class PortfolioController extends EventEmitter {
   // Before implementing this queue, multiple `updateSelectedAccount` calls made in a short period of time could cause
   // the response of the latest call to be overwritten by a slower previous call.
   #queue: {
-    [networkId: NetworkId]: {
-      [accountId: string]: Promise<void>
+    [accountId: string]: {
+      [networkId: NetworkId]: Promise<void>
     }
   }
 
@@ -540,10 +540,10 @@ export class PortfolioController extends EventEmitter {
         )
         const simulatedAccountOps = pendingState[network.id]?.accountOps
 
-        if (!this.#queue?.[network.id]?.[accountId])
-          this.#queue[network.id] = {
-            ...this.#queue[network.id],
-            [accountId]: Promise.resolve()
+        if (!this.#queue?.[accountId]?.[network.id])
+          this.#queue[accountId] = {
+            ...this.#queue[accountId],
+            [network.id]: Promise.resolve()
           }
 
         const updatePromise = async (): Promise<void> => {
@@ -654,12 +654,12 @@ export class PortfolioController extends EventEmitter {
         }
 
         // Chain the new updatePromise to the current queue
-        this.#queue[network.id][accountId] = this.#queue[network.id][accountId]
+        this.#queue[accountId][network.id] = this.#queue[accountId][network.id]
           .then(updatePromise)
           .catch(() => updatePromise())
 
         // Ensure the method waits for the entire queue to resolve
-        await this.#queue[network.id][accountId]
+        await this.#queue[accountId][network.id]
       })
     )
 
