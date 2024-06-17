@@ -418,6 +418,8 @@ export class PortfolioController extends EventEmitter {
     this.emitUpdate()
   }
 
+  // By our convention, we always stick with private (#) instead of protected methods.
+  // However, we made a compromise here to allow Jest tests to mock updatePortfolioState.
   protected async updatePortfolioState(
     accountId: string,
     _accountState: AccountState,
