@@ -175,7 +175,7 @@ export class NetworksController extends EventEmitter {
   }
 
   async addNetwork(network: AddNetworkRequestParams) {
-    await this.withStatus(this.addNetwork.name, () => this.#addNetwork(network))
+    await this.withStatus('addNetwork', () => this.#addNetwork(network))
   }
 
   async #updateNetwork(network: Partial<Network>, networkId: NetworkId) {
@@ -253,7 +253,7 @@ export class NetworksController extends EventEmitter {
   }
 
   async updateNetwork(network: Partial<Network>, networkId: NetworkId) {
-    await this.withStatus(this.updateNetwork.name, () => this.#updateNetwork(network, networkId))
+    await this.withStatus('updateNetwork', () => this.#updateNetwork(network, networkId))
   }
 
   async removeNetwork(id: NetworkId) {
