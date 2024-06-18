@@ -2,6 +2,7 @@ import fetch from 'node-fetch'
 
 import { describe, expect, test } from '@jest/globals'
 
+import { velcroUrl } from '../../../test/config'
 import { networks } from '../../consts/networks'
 import { getRpcProvider } from '../../services/provider'
 import { getUpdatedHints } from './helpers'
@@ -14,7 +15,7 @@ if (!ethereum || !polygon) throw new Error('Failed to find ethereum in networks'
 
 const provider = getRpcProvider(ethereum.rpcUrls, ethereum.chainId)
 
-const ethPortfolio = new Portfolio(fetch, provider, ethereum)
+const ethPortfolio = new Portfolio(fetch, provider, ethereum, velcroUrl)
 
 const TEST_ACCOUNT_ADDRESS = '0xc4A6bB5139123bD6ba0CF387828a9A3a73EF8D1e'
 const LEARNED_TOKEN_WITH_BALANCE_ADDRESS = '0x335F4e66B9B61CEE5CeaDE4e727FCEC20156B2F0'

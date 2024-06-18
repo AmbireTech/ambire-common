@@ -14,6 +14,7 @@ import {
   getNetworksWithFailedRPCBanners,
   getNetworksWithPortfolioErrorBanners
 } from '../../libs/banners/banners'
+import { Portfolio } from '../../libs/portfolio'
 /* eslint-disable @typescript-eslint/no-use-before-define */
 import { CustomToken } from '../../libs/portfolio/customToken'
 import getAccountNetworksWithAssets from '../../libs/portfolio/getNetworksWithAssets'
@@ -37,7 +38,6 @@ import {
   PreviousHintsStorage,
   TokenResult
 } from '../../libs/portfolio/interfaces'
-import { Portfolio } from '../../libs/portfolio'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { NetworksController } from '../networks/networks'
@@ -83,6 +83,8 @@ export class PortfolioController extends EventEmitter {
 
   #callRelayer: Function
 
+  #velcroUrl: string
+
   #networksWithAssetsByAccounts: {
     [accountId: string]: NetworkId[]
   } = {}
@@ -105,7 +107,8 @@ export class PortfolioController extends EventEmitter {
     storage: Storage,
     providers: ProvidersController,
     networks: NetworksController,
-    relayerUrl: string
+    relayerUrl: string,
+    velcroUrl: string
   ) {
     super()
     this.latest = {}
@@ -114,6 +117,7 @@ export class PortfolioController extends EventEmitter {
     this.#portfolioLibs = new Map()
     this.#storage = storage
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
+    this.#velcroUrl = velcroUrl
     this.#providers = providers
     this.#networks = networks
     this.temporaryTokens = {}
@@ -292,7 +296,10 @@ export class PortfolioController extends EventEmitter {
         // eslint-disable-next-line no-underscore-dangle
         providers[network.id]?._getConnection().url
     ) {
-      this.#portfolioLibs.set(key, new Portfolio(fetch, providers[network.id], network))
+      this.#portfolioLibs.set(
+        key,
+        new Portfolio(fetch, providers[network.id], network, this.#velcroUrl)
+      )
     }
     return this.#portfolioLibs.get(key)!
   }

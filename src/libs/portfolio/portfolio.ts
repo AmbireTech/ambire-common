@@ -69,12 +69,17 @@ export class Portfolio {
 
   private deploylessNfts: Deployless
 
-  constructor(fetch: Function, provider: Provider | JsonRpcProvider, network: Network) {
+  constructor(
+    fetch: Function,
+    provider: Provider | JsonRpcProvider,
+    network: Network,
+    velcroUrl: string
+  ) {
     this.batchedVelcroDiscovery = batcher(fetch, (queue) => {
       const baseCurrencies = [...new Set(queue.map((x) => x.data.baseCurrency))]
       return baseCurrencies.map((baseCurrency) => {
         const queueSegment = queue.filter((x) => x.data.baseCurrency === baseCurrency)
-        const url = `https://relayer.ambire.com/velcro-v3/multi-hints?networks=${queueSegment
+        const url = `${velcroUrl}/multi-hints?networks=${queueSegment
           .map((x) => x.data.networkId)
           .join(',')}&accounts=${queueSegment
           .map((x) => x.data.accountAddr)

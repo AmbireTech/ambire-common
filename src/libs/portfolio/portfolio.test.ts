@@ -4,6 +4,7 @@ import fetch from 'node-fetch'
 import { describe, expect, jest, test } from '@jest/globals'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
+import { velcroUrl } from '../../../test/config'
 import { monitor, stopMonitoring } from '../../../test/helpers/requests'
 import { networks } from '../../consts/networks'
 import { Account } from '../../interfaces/account'
@@ -16,7 +17,7 @@ describe('Portfolio', () => {
   const ethereum = networks.find((x) => x.id === 'ethereum')
   if (!ethereum) throw new Error('unable to find ethereum network in consts')
   const provider = new JsonRpcProvider('https://invictus.ambire.com/ethereum')
-  const portfolio = new Portfolio(fetch, provider, ethereum)
+  const portfolio = new Portfolio(fetch, provider, ethereum, velcroUrl)
 
   async function getNonce(address: string) {
     const accountContract = new ethers.Contract(address, AmbireAccount.abi, provider)
@@ -171,7 +172,7 @@ describe('Portfolio', () => {
       return jest.fn((url: any) => {
         // @ts-ignore
         const { Response } = jest.requireActual('node-fetch')
-        if (url.includes('https://relayer.ambire.com/velcro-v3/multi-hints')) {
+        if (url.includes(`${velcroUrl}/multi-hints`)) {
           const body = stringify({ message: 'API error' })
           const headers = { status: 200 }
 
@@ -183,7 +184,7 @@ describe('Portfolio', () => {
       })
     })
 
-    const portfolioInner = new Portfolio(fetch, provider, ethereum)
+    const portfolioInner = new Portfolio(fetch, provider, ethereum, velcroUrl)
     const previousHints = {
       erc20s: [
         '0x0000000000000000000000000000000000000000',

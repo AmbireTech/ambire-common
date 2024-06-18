@@ -2,6 +2,7 @@ import fetch from 'node-fetch'
 
 import { expect } from '@jest/globals'
 
+import { velcroUrl } from '../../../test/config'
 import { produceMemoryStore } from '../../../test/helpers'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import humanizerInfo from '../../consts/humanizer/humanizerInfo.json'
@@ -36,8 +37,8 @@ const PLACEHOLDER_SELECTED_ACCOUNT: Account = {
 const XWALLET_ADDRESS = '0x47Cd7E91C3CBaAF266369fe8518345fc4FC12935'
 
 const CONTACTS: Contacts = []
-const ethPortfolio = new Portfolio(fetch, provider, ethereum)
-const polygonPortfolio = new Portfolio(fetch, polygonProvider, polygon)
+const ethPortfolio = new Portfolio(fetch, provider, ethereum, velcroUrl)
+const polygonPortfolio = new Portfolio(fetch, polygonProvider, polygon, velcroUrl)
 
 let transferController: TransferController
 
