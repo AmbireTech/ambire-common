@@ -1,3 +1,5 @@
+import { getAddress, isAddress } from 'ethers'
+
 import {
   Account,
   AccountId,
@@ -152,6 +154,8 @@ export class AccountsController extends EventEmitter {
 
   async addAccounts(accounts: Account[] = []) {
     if (!accounts.length) return
+    // eslint-disable-next-line no-param-reassign
+    accounts = accounts.map((a) => ({ ...a, addr: getAddress(a.addr) }))
     const alreadyAddedAddressSet = new Set(this.accounts.map((account) => account.addr))
     const newAccountsNotAddedYet = accounts.filter((acc) => !alreadyAddedAddressSet.has(acc.addr))
     const newAccountsAlreadyAdded = accounts.filter((acc) => alreadyAddedAddressSet.has(acc.addr))
@@ -198,7 +202,9 @@ export class AccountsController extends EventEmitter {
     this.accounts = this.accounts.map((acc) => {
       const account = accounts.find((a) => a.addr === acc.addr)
       if (!account) return acc
-
+      if (isAddress(account.preferences.pfp)) {
+        account.preferences.pfp = getAddress(account.preferences.pfp)
+      }
       return { ...acc, preferences: account.preferences }
     })
     await this.#storage.set('accounts', this.accounts)

@@ -529,7 +529,7 @@ export class MainController extends EventEmitter {
       const msdAddress = getAddress(msg?.[1])
       // TODO: if address is in this.accounts in theory the user should be able to sign
       // e.g. if an acc from the wallet is used as a signer of another wallet
-      if (getAddress(msdAddress) !== getAddress(this.accounts.selectedAccount)) {
+      if (getAddress(msdAddress) !== this.accounts.selectedAccount) {
         dappPromise.resolve('Invalid parameters: must use the current user address to sign')
         return
       }
@@ -564,7 +564,7 @@ export class MainController extends EventEmitter {
       const msdAddress = getAddress(msg?.[0])
       // TODO: if address is in this.accounts in theory the user should be able to sign
       // e.g. if an acc from the wallet is used as a signer of another wallet
-      if (getAddress(msdAddress) !== getAddress(this.accounts.selectedAccount)) {
+      if (getAddress(msdAddress) !== this.accounts.selectedAccount) {
         dappPromise.resolve('Invalid parameters: must use the current user address to sign')
         return
       }

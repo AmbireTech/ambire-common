@@ -1,4 +1,4 @@
-import { AbiCoder, hexlify, Interface, toBeHex, toUtf8Bytes, ZeroAddress } from 'ethers'
+import { AbiCoder, getAddress, hexlify, Interface, toBeHex, toUtf8Bytes, ZeroAddress } from 'ethers'
 
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
@@ -284,15 +284,18 @@ export const getDefaultAccountPreferences = (
   prevAccounts: Account[],
   i: number
 ): AccountPreferences => {
-  const existingAcc = prevAccounts.find(({ addr }) => addr === accountAddr)
   const number = prevAccounts.length + (i + 1)
 
   return {
-    label: existingAcc ? DEFAULT_ACCOUNT_LABEL : `Account ${number}`,
-    pfp: accountAddr // default pfp - a jazz icon generated from the addr
+    label: `Account ${number}`,
+    pfp: getAddress(accountAddr) // default pfp - a jazz icon generated from the addr
   }
 }
 
+// As of version 4.25.0, a new Account interface has been introduced,
+// merging the previously separate Account and AccountPreferences interfaces.
+// This change requires a migration due to the introduction of a new controller, AccountsController,
+// which now manages both accounts and their preferences.
 export function migrateAccountPreferencesToAccounts(
   accountPreferences: {
     [key: AccountId]: AccountPreferences

@@ -54,7 +54,7 @@ export class AddressBookController extends EventEmitter {
     if (!this.#accounts.selectedAccount) return []
 
     return [...this.#manuallyAddedContacts, ...this.#walletAccountsSourcedContacts].filter(
-      ({ address }) => getAddress(address) !== getAddress(this.#accounts.selectedAccount || '')
+      ({ address }) => address !== this.#accounts.selectedAccount
     )
   }
 
