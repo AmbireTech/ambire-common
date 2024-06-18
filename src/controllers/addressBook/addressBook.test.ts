@@ -51,13 +51,13 @@ const MOCK_ACCOUNTS: Account[] = [
   }
 ]
 
+storage.set('accounts', MOCK_ACCOUNTS)
+
 const providers = Object.fromEntries(
   networks.map((network) => [network.id, getRpcProvider(network.rpcUrls, network.chainId)])
 )
 
-describe('AddressBookController', async () => {
-  await storage.set('accounts', MOCK_ACCOUNTS)
-
+describe('AddressBookController', () => {
   let providersCtrl: ProvidersController
   const networksCtrl = new NetworksController(
     storage,
