@@ -4,6 +4,7 @@ import fetch from 'node-fetch'
 
 import { describe, expect, test } from '@jest/globals'
 
+import { relayerUrl } from '../../../test/config'
 import { produceMemoryStore } from '../../../test/helpers'
 import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
 import { BIP44_STANDARD_DERIVATION_TEMPLATE } from '../../consts/derivation'
@@ -57,7 +58,6 @@ describe('Main Controller ', () => {
   ]
 
   const storage = produceMemoryStore()
-  const relayerUrl = 'https://staging-relayer.ambire.com'
   const email = 'unufri@ambire.com'
   storage.set('accounts', accounts)
   let controller: MainController

@@ -1,18 +1,18 @@
 import fetch from 'node-fetch'
 
 import { expect } from '@jest/globals'
-import { Polling } from './polling'
-import { requestMagicLink } from '../magicLink/magicLink'
-import { EmailVault } from '../emailVault/emailVault'
+
+import { relayerUrl } from '../../../test/config'
 import { EmailVaultData } from '../../interfaces/emailVault'
+import { EmailVault } from '../emailVault/emailVault'
+import { requestMagicLink } from '../magicLink/magicLink'
 import { relayerCall } from '../relayerCall/relayerCall'
+import { Polling } from './polling'
 
 const getRandomEmail = () => {
   return `yosif+${Math.random().toString().slice(2)}@ambire.com`
 }
 const email = getRandomEmail()
-const relayerUrl = 'https://staging-relayer.ambire.com'
-// const relayerUrl = 'http://localhost:1934'
 
 describe('Polling', () => {
   const ev: EmailVault = new EmailVault(fetch, relayerUrl)

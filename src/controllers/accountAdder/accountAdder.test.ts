@@ -5,6 +5,7 @@ import fetch from 'node-fetch'
 /* eslint-disable no-new */
 import { describe, expect, test } from '@jest/globals'
 
+import { relayerUrl } from '../../../test/config'
 import { produceMemoryStore } from '../../../test/helpers'
 import {
   BIP44_STANDARD_DERIVATION_TEMPLATE,
@@ -21,8 +22,6 @@ import { AccountAdderController, DEFAULT_PAGE, DEFAULT_PAGE_SIZE } from './accou
 const providers = Object.fromEntries(
   networks.map((network) => [network.id, getRpcProvider(network.rpcUrls, network.chainId)])
 )
-
-const relayerUrl = 'https://staging-relayer.ambire.com'
 
 const key1to11BasicAccPublicAddresses = Array.from(
   { length: 11 },

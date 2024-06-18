@@ -6,7 +6,7 @@ import fetch from 'node-fetch'
 import { describe, expect, jest, test } from '@jest/globals'
 import structuredClone from '@ungap/structured-clone'
 
-import { trezorSlot7v24337Deployed } from '../../../test/config'
+import { relayerUrl, trezorSlot7v24337Deployed } from '../../../test/config'
 import { produceMemoryStore } from '../../../test/helpers'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import humanizerJSON from '../../consts/humanizer/humanizerInfo.json'
@@ -350,12 +350,7 @@ const init = async (
   )
   providersCtrl = new ProvidersController(networksCtrl)
   providersCtrl.providers = providers
-  const portfolio = new PortfolioController(
-    storage,
-    providersCtrl,
-    networksCtrl,
-    'https://staging-relayer.ambire.com'
-  )
+  const portfolio = new PortfolioController(storage, providersCtrl, networksCtrl, relayerUrl)
   await portfolio.updateSelectedAccount(accounts, account.addr, network)
 
   if (portfolio.latest?.[account.addr][op.networkId]!.result) {
