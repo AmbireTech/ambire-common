@@ -17,7 +17,7 @@ import {
 } from './interfaces'
 import { addFragsToLazyStore, lazyReadHumanizerMeta } from './lazyStorage'
 import { aaveHumanizer } from './modules/Aave'
-import { AcrossModule } from './modules/Across'
+import AcrossModule from './modules/Across'
 import curveModule from './modules/Curve'
 import fallbackHumanizer from './modules/FallbackHumanizer'
 import gasTankModule from './modules/GasTankModule'
