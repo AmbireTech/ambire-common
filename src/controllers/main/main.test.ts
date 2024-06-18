@@ -4,7 +4,7 @@ import fetch from 'node-fetch'
 
 import { describe, expect, test } from '@jest/globals'
 
-import { relayerUrl } from '../../../test/config'
+import { relayerUrl, velcroUrl } from '../../../test/config'
 import { produceMemoryStore } from '../../../test/helpers'
 import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
 import { BIP44_STANDARD_DERIVATION_TEMPLATE } from '../../consts/derivation'
@@ -68,7 +68,8 @@ describe('Main Controller ', () => {
       relayerUrl,
       keystoreSigners: { internal: KeystoreSigner },
       externalSignerControllers: {},
-      windowManager
+      windowManager,
+      velcroUrl
     })
     // eslint-disable-next-line no-promise-executor-return
     await new Promise((resolve) => {
@@ -180,7 +181,8 @@ describe('Main Controller ', () => {
       relayerUrl,
       windowManager,
       keystoreSigners: { internal: KeystoreSigner },
-      externalSignerControllers: {}
+      externalSignerControllers: {},
+      velcroUrl
     })
 
     const signerAddr = '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
@@ -257,7 +259,8 @@ describe('Main Controller ', () => {
       relayerUrl,
       windowManager,
       keystoreSigners: { internal: KeystoreSigner },
-      externalSignerControllers: {}
+      externalSignerControllers: {},
+      velcroUrl
     })
 
     mainCtrl.accounts = [
