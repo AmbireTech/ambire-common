@@ -17,7 +17,7 @@ const AmbireAccount = require('../contracts/compiled/AmbireAccount.json')
 const AmbireFactory = require('../contracts/compiled/AmbireFactory.json')
 
 const relayerUrl = 'https://staging-relayer.ambire.com'
-const velcroUrl = 'https://velcro.ambire.com/v3'
+const velcroUrl = 'https://velcro.ambire.com/velcro-v3'
 const localhost = 'http://127.0.0.1:8545'
 const validSig = '0x1626ba7e'
 const invalidSig = '0xffffffff'
