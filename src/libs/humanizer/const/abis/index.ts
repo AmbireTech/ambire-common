@@ -1,5 +1,6 @@
 import { AaveLendingPoolV2, AaveWethGatewayV2 } from './Aave'
 import { Across } from './Across'
+import { KyberSwap } from './KyberSwap'
 import { RouteProcessor } from './Sushi'
 import { ERC20, ERC721, WETH } from './Tokens'
 import { JoeRouter } from './TraderJoe'
@@ -19,5 +20,6 @@ export {
   WETH,
   RouteProcessor,
   JoeRouter,
-  Across
+  Across,
+  KyberSwap
 }
