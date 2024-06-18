@@ -1,37 +1,60 @@
 /* eslint no-console: "off" */
 
-import { AbiCoder, ethers, Interface, ZeroAddress } from 'ethers'
+import { AbiCoder, Contract, ethers, Interface, parseEther, ZeroAddress } from 'ethers'
 import fetch from 'node-fetch'
 
 import { describe, expect } from '@jest/globals'
 import structuredClone from '@ungap/structured-clone'
 
+import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import ERC20 from '../../../contracts/compiled/IERC20.json'
-import { trezorSlot7v24337Deployed } from '../../../test/config'
 import { getNonce } from '../../../test/helpers'
 import { FEE_COLLECTOR } from '../../consts/addresses'
+import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
 import { networks } from '../../consts/networks'
 import { Account, AccountStates } from '../../interfaces/account'
-import { Key } from '../../interfaces/keystore'
+import { dedicatedToOneSAPriv, Key } from '../../interfaces/keystore'
 import { Network } from '../../interfaces/network'
 import { getRpcProvider } from '../../services/provider'
+import { getSmartAccount } from '../account/account'
 import { AccountOp } from '../accountOp/accountOp'
 import { Call } from '../accountOp/types'
 import { getAccountState } from '../accountState/accountState'
 import { Portfolio } from '../portfolio/portfolio'
-import { estimate, estimate4337 } from './estimate'
+import { estimate } from './estimate'
 
-const ethereum = networks.find((x) => x.id === 'ethereum')
+const ethereum = networks.find((x) => x.id === 'ethereum')!
+ethereum.areContractsDeployed = true
 const optimism = networks.find((x) => x.id === 'optimism')
-const arbitrum = networks.find((x) => x.id === 'arbitrum')
-const avalanche = networks.find((x) => x.id === 'avalanche')
+const arbitrum = networks.find((x) => x.id === 'arbitrum')!
+arbitrum.areContractsDeployed = true
+const avalanche = networks.find((x) => x.id === 'avalanche')!
+avalanche.areContractsDeployed = true
 const polygon = networks.find((x) => x.id === 'polygon')
 if (!ethereum || !optimism || !arbitrum || !avalanche || !polygon) throw new Error('no network')
 const provider = getRpcProvider(ethereum.rpcUrls, ethereum.chainId)
 const providerOptimism = getRpcProvider(optimism.rpcUrls, optimism.chainId)
 const providerArbitrum = getRpcProvider(arbitrum.rpcUrls, arbitrum.chainId)
-const providerAvalanche = getRpcProvider(avalanche.rpcUrls, avalanche.chainId)
+// const providerAvalanche = getRpcProvider(avalanche.rpcUrls, avalanche.chainId)
 const providerPolygon = getRpcProvider(polygon.rpcUrls, polygon.chainId)
+const addrWithDeploySignature = '0x52C37FD54BD02E9240e8558e28b11e0Dc22d8e85'
+
+const smartAccDeployed: Account = {
+  addr: '0x8E5F6c1F0b134657A546932C3eC9169E1633a39b',
+  initialPrivileges: [
+    [
+      '0xBd84Cc40a5b5197B5B61919c22A55e1c46d2A3bb',
+      '0x0000000000000000000000000000000000000000000000000000000000000002'
+    ]
+  ],
+  creation: {
+    factoryAddr: AMBIRE_ACCOUNT_FACTORY,
+    bytecode:
+      '0x7f00000000000000000000000000000000000000000000000000000000000000027ff33cc417366b7e38d2706a67ab46f85465661c28b864b521441180d15df82251553d602d80604d3d3981f3363d3d373d3d3d363d731cde6a53e9a411eaaf9d11e3e8c653a3e379d5355af43d82803e903d91602b57fd5bf3',
+    salt: '0x0000000000000000000000000000000000000000000000000000000000000000'
+  },
+  associatedKeys: ['0xBd84Cc40a5b5197B5B61919c22A55e1c46d2A3bb']
+}
 
 // Used to determine if an account is view-only or not
 // and subsequently if it should be included in the fee payment options
@@ -75,10 +98,17 @@ const MOCK_KEYSTORE_KEYS: Key[] = [
     dedicatedToOneSA: false,
     meta: null,
     isExternallyStored: false
+  },
+  {
+    type: 'internal',
+    addr: addrWithDeploySignature,
+    dedicatedToOneSA: true,
+    meta: null,
+    isExternallyStored: false
   }
 ]
 
-const account: Account = {
+const v1Acc: Account = {
   addr: '0xa07D75aacEFd11b425AF7181958F0F85c312f143',
   associatedKeys: ['0xd6e371526cdaeE04cd8AF225D42e37Bc14688D9E'],
   initialPrivileges: [
@@ -181,36 +211,36 @@ const feeTokens = [
   }
 ]
 
-const feeTokensAvalanche = [
-  {
-    address: '0x0000000000000000000000000000000000000000',
-    amount: 1n,
-    symbol: 'AVAX',
-    networkId: 'avalanche',
-    decimals: 18,
-    priceIn: [],
-    flags: {
-      onGasTank: false,
-      rewardsType: null,
-      canTopUpGasTank: true,
-      isFeeToken: true
-    }
-  },
-  {
-    address: '0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E',
-    amount: 1n,
-    symbol: 'USDC',
-    networkId: 'avalanche',
-    decimals: 6,
-    priceIn: [],
-    flags: {
-      onGasTank: false,
-      rewardsType: null,
-      canTopUpGasTank: true,
-      isFeeToken: true
-    }
-  }
-]
+// const feeTokensAvalanche = [
+//   {
+//     address: '0x0000000000000000000000000000000000000000',
+//     amount: 1n,
+//     symbol: 'AVAX',
+//     networkId: 'avalanche',
+//     decimals: 18,
+//     priceIn: [],
+//     flags: {
+//       onGasTank: false,
+//       rewardsType: null,
+//       canTopUpGasTank: true,
+//       isFeeToken: true
+//     }
+//   },
+//   {
+//     address: '0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E',
+//     amount: 1n,
+//     symbol: 'USDC',
+//     networkId: 'avalanche',
+//     decimals: 6,
+//     priceIn: [],
+//     flags: {
+//       onGasTank: false,
+//       rewardsType: null,
+//       canTopUpGasTank: true,
+//       isFeeToken: true
+//     }
+//   }
+// ]
 
 const portfolio = new Portfolio(fetch, provider, ethereum)
 
@@ -459,9 +489,9 @@ describe('estimate', () => {
     expect(response.error).not.toBe(null)
   })
 
-  it('estimates gasUsage, fee and native tokens outcome', async () => {
+  it('[v1] estimates gasUsage, fee and native tokens outcome', async () => {
     const op = {
-      accountAddr: account.addr,
+      accountAddr: v1Acc.addr,
       signingKeyAddr: null,
       signingKeyType: null,
       gasLimit: null,
@@ -481,11 +511,11 @@ describe('estimate', () => {
       (token) => token.address === '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48'
     )
 
-    const accountStates = await getAccountsInfo([account])
+    const accountStates = await getAccountsInfo([v1Acc])
     const response = await estimate(
       provider,
       ethereum,
-      account,
+      v1Acc,
       MOCK_KEYSTORE_KEYS,
       op,
       accountStates,
@@ -499,6 +529,8 @@ describe('estimate', () => {
       (option) => option.token.address === '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48'
     )
 
+    console.log(response.error)
+
     // This is the min gas unit we can spend, but we expect more than that having in mind that multiple computations happens in the Contract
     expect(response.gasUsed).toBeGreaterThan(21000n)
     // As we swap 1 USDC for 1 USDT, we expect the estimate (outcome) balance of USDT to be greater than before the estimate (portfolio value)
@@ -511,7 +543,7 @@ describe('estimate', () => {
 
     // make sure there's a native fee payment option in the same acc addr
     const noFeePaymentViewOnlyAcc = response.feePaymentOptions.find(
-      (opt) => opt.paidBy === account.addr && opt.token.address === ethers.ZeroAddress
+      (opt) => opt.paidBy === v1Acc.addr && opt.token.address === ethers.ZeroAddress
     )
     expect(noFeePaymentViewOnlyAcc).not.toBe(undefined)
 
@@ -532,9 +564,9 @@ describe('estimate', () => {
     expect(viewOnlyAccOption).toBe(undefined)
   })
 
-  it('estimates correctly by passing multiple view only accounts to estimation and removing the fee options for them as they are not valid', async () => {
+  it('[v1] estimates correctly by passing multiple view only accounts to estimation and removing the fee options for them as they are not valid', async () => {
     const op = {
-      accountAddr: account.addr,
+      accountAddr: v1Acc.addr,
       signingKeyAddr: null,
       signingKeyType: null,
       gasLimit: null,
@@ -546,11 +578,11 @@ describe('estimate', () => {
       accountOpToExecuteBefore: null
     }
 
-    const accountStates = await getAccountsInfo([account])
+    const accountStates = await getAccountsInfo([v1Acc])
     const response = await estimate(
       provider,
       ethereum,
-      account,
+      v1Acc,
       MOCK_KEYSTORE_KEYS,
       op,
       accountStates,
@@ -598,9 +630,9 @@ describe('estimate', () => {
     expect(viewOnlyAccOption).not.toBe(undefined)
   })
 
-  it('estimates with `accountOpToExecuteBefore`', async () => {
+  it('[v1] estimates with `accountOpToExecuteBefore`', async () => {
     const op = {
-      accountAddr: account.addr,
+      accountAddr: v1Acc.addr,
       signingKeyAddr: null,
       signingKeyType: null,
       gasLimit: null,
@@ -613,7 +645,7 @@ describe('estimate', () => {
     }
 
     const opWithExecuteBefore = {
-      accountAddr: account.addr,
+      accountAddr: v1Acc.addr,
       signingKeyAddr: null,
       signingKeyType: null,
       gasLimit: null,
@@ -623,24 +655,24 @@ describe('estimate', () => {
       signature: spoofSig,
       calls: [{ to, value: BigInt(0), data }],
       accountOpToExecuteBefore: {
-        accountAddr: account.addr,
+        accountAddr: v1Acc.addr,
         signingKeyAddr: null,
         signingKeyType: null,
         gasLimit: null,
         gasFeePayment: null,
         networkId: 'ethereum',
-        nonce: await getNonce(account.addr, provider),
+        nonce: await getNonce(v1Acc.addr, provider),
         signature: spoofSig,
         calls: [{ to, value: BigInt(0), data }],
         accountOpToExecuteBefore: null
       }
     }
 
-    const accountStates = await getAccountsInfo([account])
+    const accountStates = await getAccountsInfo([v1Acc])
     const response = await estimate(
       provider,
       ethereum,
-      account,
+      v1Acc,
       MOCK_KEYSTORE_KEYS,
       op,
       accountStates,
@@ -650,7 +682,7 @@ describe('estimate', () => {
     const responseWithExecuteBefore = await estimate(
       provider,
       ethereum,
-      account,
+      v1Acc,
       MOCK_KEYSTORE_KEYS,
       opWithExecuteBefore,
       accountStates,
@@ -742,44 +774,148 @@ describe('estimate', () => {
     response.feePaymentOptions.map((option) => expect(option.addedNative).toBeGreaterThan(0n))
   })
 
-  it('[ERC-4337]:Arbitrum | should fail with an inner call failure but otherwise estimation should work', async () => {
-    const opArbitrum: AccountOp = {
-      accountAddr: trezorSlot6v2NotDeployed.addr,
-      signingKeyAddr: trezorSlot6v2NotDeployed.associatedKeys[0],
+  it('[ERC-4337]:Optimism | not deployed | should work', async () => {
+    const privs = [
+      {
+        addr: addrWithDeploySignature,
+        hash: dedicatedToOneSAPriv
+      }
+    ]
+    const smartAcc = await getSmartAccount(privs)
+    const opOptimism: AccountOp = {
+      accountAddr: smartAcc.addr,
+      signingKeyAddr: smartAcc.associatedKeys[0],
       signingKeyType: null,
       gasLimit: null,
       gasFeePayment: null,
-      networkId: 'arbitrum',
-      nonce: 1n,
-      signature: spoofSig,
-      calls: [{ to, value: BigInt(100000000000), data: '0x' }],
-      accountOpToExecuteBefore: null
+      networkId: 'optimism',
+      nonce: 0n,
+      signature: '0x',
+      calls: [{ to: FEE_COLLECTOR, value: 1n, data: '0x' }],
+      accountOpToExecuteBefore: null,
+      meta: {
+        entryPointAuthorization:
+          '0x05404ea5dfa13ddd921cda3f587af6927cc127ee174b57c9891491bfc1f0d3d005f649f8a1fc9147405f064507bae08816638cfc441c4d0dc4eb6640e16621991b01'
+      }
     }
-    const accountStates = await getAccountsInfo([trezorSlot6v2NotDeployed])
-    // force a fake nonce so the tests proceeds
-    accountStates[opArbitrum.accountAddr][opArbitrum.networkId].erc4337Nonce = 0n
+    const accountStates = await getAccountsInfo([smartAcc])
     const response = await estimate(
-      providerArbitrum,
-      arbitrum,
-      trezorSlot6v2NotDeployed,
+      providerOptimism,
+      optimism,
+      smartAcc,
       MOCK_KEYSTORE_KEYS,
-      opArbitrum,
+      opOptimism,
       accountStates,
       nativeToCheck,
       feeTokens,
       { is4337Broadcast: true }
     )
 
+    expect(response.error).toBe(null)
+
     expect(response.erc4337GasLimits).not.toBe(undefined)
     expect(BigInt(response.erc4337GasLimits!.callGasLimit)).toBeGreaterThan(0n)
     expect(BigInt(response.erc4337GasLimits!.verificationGasLimit)).toBeGreaterThan(0n)
     expect(BigInt(response.erc4337GasLimits!.preVerificationGas)).toBeGreaterThan(0n)
+    expect(BigInt(response.erc4337GasLimits!.paymasterPostOpGasLimit)).toBeGreaterThan(0n)
+    expect(BigInt(response.erc4337GasLimits!.paymasterVerificationGasLimit)).toBeGreaterThan(0n)
+
+    expect(response.feePaymentOptions.length).toBeGreaterThan(0)
+    expect(response.feePaymentOptions![0].token).not.toBe(undefined)
+    expect(response.feePaymentOptions![0].token).not.toBe(null)
+  })
+
+  it('[ERC-4337]:Optimism | not deployed | should fail with an inner call failure but otherwise estimation should work', async () => {
+    const privs = [
+      {
+        addr: addrWithDeploySignature,
+        hash: dedicatedToOneSAPriv
+      }
+    ]
+    const smartAcc = await getSmartAccount(privs)
+    const opOptimism: AccountOp = {
+      accountAddr: smartAcc.addr,
+      signingKeyAddr: smartAcc.associatedKeys[0],
+      signingKeyType: null,
+      gasLimit: null,
+      gasFeePayment: null,
+      networkId: 'optimism',
+      nonce: 0n,
+      signature: '0x',
+      calls: [{ to: FEE_COLLECTOR, value: parseEther('1'), data: '0x' }],
+      accountOpToExecuteBefore: null,
+      meta: {
+        entryPointAuthorization:
+          '0x05404ea5dfa13ddd921cda3f587af6927cc127ee174b57c9891491bfc1f0d3d005f649f8a1fc9147405f064507bae08816638cfc441c4d0dc4eb6640e16621991b01'
+      }
+    }
+    const accountStates = await getAccountsInfo([smartAcc])
+    const response = await estimate(
+      providerOptimism,
+      optimism,
+      smartAcc,
+      MOCK_KEYSTORE_KEYS,
+      opOptimism,
+      accountStates,
+      nativeToCheck,
+      feeTokens,
+      { is4337Broadcast: true }
+    )
 
     expect(response.error).not.toBe(null)
     expect(response.error?.message).toBe('Transaction reverted: invalid call in the bundle')
 
-    expect(response.feePaymentOptions.length).toBeGreaterThan(0)
+    expect(response.erc4337GasLimits).not.toBe(undefined)
+    expect(BigInt(response.erc4337GasLimits!.callGasLimit)).toBeGreaterThan(0n)
+    expect(BigInt(response.erc4337GasLimits!.verificationGasLimit)).toBeGreaterThan(0n)
+    expect(BigInt(response.erc4337GasLimits!.preVerificationGas)).toBeGreaterThan(0n)
+    expect(BigInt(response.erc4337GasLimits!.paymasterPostOpGasLimit)).toBeGreaterThan(0n)
+    expect(BigInt(response.erc4337GasLimits!.paymasterVerificationGasLimit)).toBeGreaterThan(0n)
 
+    expect(response.feePaymentOptions.length).toBeGreaterThan(0)
+    expect(response.feePaymentOptions![0].token).not.toBe(undefined)
+    expect(response.feePaymentOptions![0].token).not.toBe(null)
+  })
+
+  it('[ERC-4337]:Optimism | deployed account | should work', async () => {
+    const ambAcc = new Contract(smartAccDeployed.addr, AmbireAccount.abi, providerOptimism)
+    const nonce = await ambAcc.nonce()
+    const opOptimism: AccountOp = {
+      accountAddr: smartAccDeployed.addr,
+      signingKeyAddr: smartAccDeployed.associatedKeys[0],
+      signingKeyType: null,
+      gasLimit: null,
+      gasFeePayment: null,
+      networkId: 'optimism',
+      nonce,
+      signature: '0x',
+      calls: [{ to: FEE_COLLECTOR, value: 1n, data: '0x' }],
+      accountOpToExecuteBefore: null
+    }
+    const accountStates = await getAccountsInfo([smartAccDeployed])
+    const response = await estimate(
+      // it doesn't matter in this case
+      providerOptimism,
+      optimism,
+      smartAccDeployed,
+      MOCK_KEYSTORE_KEYS,
+      opOptimism,
+      accountStates,
+      nativeToCheck,
+      feeTokens,
+      { is4337Broadcast: true }
+    )
+
+    expect(response.error).toBe(null)
+
+    expect(response.erc4337GasLimits).not.toBe(undefined)
+    expect(BigInt(response.erc4337GasLimits!.callGasLimit)).toBeGreaterThan(0n)
+    expect(BigInt(response.erc4337GasLimits!.verificationGasLimit)).toBeGreaterThan(0n)
+    expect(BigInt(response.erc4337GasLimits!.preVerificationGas)).toBeGreaterThan(0n)
+    expect(BigInt(response.erc4337GasLimits!.paymasterPostOpGasLimit)).toBeGreaterThan(0n)
+    expect(BigInt(response.erc4337GasLimits!.paymasterVerificationGasLimit)).toBeGreaterThan(0n)
+
+    expect(response.feePaymentOptions.length).toBeGreaterThan(0)
     expect(response.feePaymentOptions![0].token).not.toBe(undefined)
     expect(response.feePaymentOptions![0].token).not.toBe(null)
   })
@@ -818,95 +954,6 @@ describe('estimate', () => {
     expect(response.feePaymentOptions[0].token).not.toBe(null)
     expect(response.feePaymentOptions[0].token).not.toBe(undefined)
     expect(response.feePaymentOptions[0].token.address).toBe(ZeroAddress)
-  })
-
-  it('[ERC-4337]:Arbitrum | should fail because of a broken provider but still return fee options', async () => {
-    const opArbitrum: AccountOp = {
-      accountAddr: trezorSlot6v2NotDeployed.addr,
-      signingKeyAddr: trezorSlot6v2NotDeployed.associatedKeys[0],
-      signingKeyType: null,
-      gasLimit: null,
-      gasFeePayment: null,
-      networkId: 'arbitrum',
-      nonce: 1n,
-      signature: spoofSig,
-      calls: [{ to, value: BigInt(100000000000), data: '0x' }],
-      accountOpToExecuteBefore: null
-    }
-    const accountStates = await getAccountsInfo([trezorSlot6v2NotDeployed])
-    const brokenProvider = getRpcProvider(arbitrum.rpcUrls, arbitrum.chainId)
-    const handler2 = {
-      get(target: any, prop: any) {
-        if (prop === 'send') throw new Error('no sends')
-      }
-    }
-    const proxyProvider = new Proxy(brokenProvider, handler2)
-    const response = await estimate4337(
-      trezorSlot6v2NotDeployed,
-      opArbitrum,
-      opArbitrum.calls,
-      accountStates,
-      arbitrum,
-      proxyProvider,
-      feeTokens,
-      'latest'
-    )
-
-    expect(response.error).not.toBe(null)
-    expect(response.error?.message).toBe(
-      'Estimation failed with unknown reason. Please try again to initialize your request or contact Ambire support'
-    )
-
-    expect(response.feePaymentOptions.length).toBeGreaterThan(0)
-
-    expect(response.erc4337GasLimits).not.toBe(undefined)
-    expect(BigInt(response.erc4337GasLimits!.callGasLimit)).toBe(0n)
-    expect(BigInt(response.erc4337GasLimits!.verificationGasLimit)).toBe(0n)
-    expect(BigInt(response.erc4337GasLimits!.preVerificationGas)).toBe(0n)
-  })
-
-  it('[ERC-4337]:Avalanche | estimate a deployed account paying in native', async () => {
-    const accountStates = await getAccountsInfo([trezorSlot7v24337Deployed])
-    const networkId = 'avalanche'
-    const accountState = accountStates[trezorSlot7v24337Deployed.addr][networkId]
-    const opAvalanche: AccountOp = {
-      accountAddr: trezorSlot7v24337Deployed.addr,
-      signingKeyAddr: trezorSlot7v24337Deployed.associatedKeys[0],
-      signingKeyType: null,
-      gasLimit: null,
-      gasFeePayment: null,
-      networkId,
-      nonce: accountState.nonce,
-      signature: '0x',
-      calls: [{ to, value: BigInt(100), data: '0x' }],
-      accountOpToExecuteBefore: null
-    }
-
-    const response = await estimate(
-      providerAvalanche,
-      avalanche,
-      trezorSlot7v24337Deployed,
-      MOCK_KEYSTORE_KEYS,
-      opAvalanche,
-      accountStates,
-      nativeToCheck,
-      feeTokensAvalanche,
-      { is4337Broadcast: true }
-    )
-
-    expect(response.erc4337GasLimits).not.toBe(undefined)
-    expect(BigInt(response.erc4337GasLimits!.callGasLimit)).toBeGreaterThan(0n)
-    expect(BigInt(response.erc4337GasLimits!.verificationGasLimit)).toBeGreaterThan(0n)
-    expect(BigInt(response.erc4337GasLimits!.preVerificationGas)).toBeGreaterThan(0n)
-
-    expect(response.feePaymentOptions.length).toBeGreaterThan(0)
-    response.feePaymentOptions.forEach((opt) => {
-      expect(opt.addedNative).toBe(0n)
-      // no basic acc payment
-      expect(opt.paidBy).toBe(trezorSlot7v24337Deployed.addr)
-    })
-
-    expect(response.error).toBe(null)
   })
 
   it('estimates a polygon request with insufficient funds for txn and estimation should fail with transaction reverted', async () => {
@@ -967,9 +1014,9 @@ describe('estimate', () => {
     expect(response.error?.message).toBe('Your signer address is not authorized')
   })
 
-  it('estimates an expired uniswap swap and it should display error properly', async () => {
+  it('[v1] estimates an expired uniswap swap and it should display error properly', async () => {
     const op = {
-      accountAddr: account.addr,
+      accountAddr: v1Acc.addr,
       signingKeyAddr: null,
       signingKeyType: null,
       gasLimit: null,
@@ -981,11 +1028,11 @@ describe('estimate', () => {
       accountOpToExecuteBefore: null
     }
 
-    const accountStates = await getAccountsInfo([account])
+    const accountStates = await getAccountsInfo([v1Acc])
     const response = await estimate(
       provider,
       ethereum,
-      account,
+      v1Acc,
       MOCK_KEYSTORE_KEYS,
       op,
       accountStates,

@@ -11,7 +11,7 @@ import {
 } from 'ethers'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
-import AmbireAccountFactory from '../../../contracts/compiled/AmbireAccountFactory.json'
+import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json'
 import { AMBIRE_ACCOUNT_FACTORY, SINGLETON } from '../../consts/deploy'
 import { Account, AccountId, AccountOnchainState, AccountStates } from '../../interfaces/account'
 import { Banner } from '../../interfaces/banner'
@@ -41,16 +41,25 @@ import { estimate } from '../../libs/estimate/estimate'
 import { EstimateResult } from '../../libs/estimate/interfaces'
 import { GasRecommendation, getGasPriceRecommendations } from '../../libs/gasPrice/gasPrice'
 import { humanizeAccountOp } from '../../libs/humanizer'
+import { makeBasicAccountOpAction, makeSmartAccountOpAction } from '../../libs/main/main'
 import { GetOptions, TokenResult } from '../../libs/portfolio/interfaces'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { parse } from '../../libs/richJson/richJson'
+import {
+  adjustEntryPointAuthorization,
+  getEntryPointAuthorization
+} from '../../libs/signMessage/signMessage'
 import { buildTransferUserRequest } from '../../libs/transfer/userRequest'
-import { isErc4337Broadcast } from '../../libs/userOperation/userOperation'
+import {
+  ENTRY_POINT_AUTHORIZATION_REQUEST_ID,
+  isErc4337Broadcast,
+  shouldAskForEntryPointAuthorization
+} from '../../libs/userOperation/userOperation'
 import bundler from '../../services/bundlers'
-import generateSpoofSig from '../../utils/generateSpoofSig'
+import { Bundler } from '../../services/bundlers/bundler'
 import wait from '../../utils/wait'
 import { AccountAdderController } from '../accountAdder/accountAdder'
-import { AccountOpAction, ActionsController } from '../actions/actions'
+import { AccountOpAction, ActionsController, SignMessageAction } from '../actions/actions'
 import { ActivityController, SignedMessage, SubmittedAccountOp } from '../activity/activity'
 import { AddressBookController } from '../addressBook/addressBook'
 import { DappsController } from '../dapps/dapps'
@@ -148,8 +157,6 @@ export class MainController extends EventEmitter {
 
   statuses: Statuses<keyof typeof STATUS_WRAPPED_METHODS> = STATUS_WRAPPED_METHODS
 
-  #relayerUrl: string
-
   #windowManager: WindowManager
 
   onBroadcastSuccess?: (type: 'message' | 'typed-data' | 'account-op') => void
@@ -174,7 +181,6 @@ export class MainController extends EventEmitter {
     super()
     this.#storage = storage
     this.#fetch = fetch
-    this.#relayerUrl = relayerUrl
     this.#windowManager = windowManager
 
     this.invite = new InviteController({ relayerUrl, fetch, storage: this.#storage })
@@ -836,6 +842,17 @@ export class MainController extends EventEmitter {
     const userRequest = this.userRequests.find((r) => r.id === requestId)
     if (!userRequest) return // TODO: emit error
 
+    if (requestId === ENTRY_POINT_AUTHORIZATION_REQUEST_ID) {
+      this.userRequests = this.userRequests.filter(
+        (r) =>
+          !(
+            r.action.kind === 'call' &&
+            r.meta.accountAddr === userRequest.meta.accountAddr &&
+            r.meta.networkId === userRequest.meta.networkId
+          )
+      )
+    }
+
     userRequest.dappPromise?.reject(ethErrors.provider.userRejectedRequest<any>(err))
     this.removeUserRequest(requestId)
     this.emitUpdate()
@@ -847,6 +864,7 @@ export class MainController extends EventEmitter {
     } else {
       this.userRequests.push(req)
     }
+
     const { id, action, meta } = req
     if (action.kind === 'call') {
       // @TODO
@@ -860,64 +878,63 @@ export class MainController extends EventEmitter {
       if (this.signAccOpInitError) return
 
       const account = this.accounts.find((x) => x.addr === meta.accountAddr)!
+      const accountState = this.accountStates[meta.accountAddr][meta.networkId]
 
-      let accountOp: AccountOp
       if (account.creation) {
-        const accountOpAction = this.actions.actionsQueue.find(
-          (a) => a.type === 'accountOp' && a.id === `${meta.accountAddr}-${meta.networkId}`
-        ) as AccountOpAction | undefined
-
-        if (!accountOpAction) {
-          accountOp = {
-            accountAddr: meta.accountAddr,
-            networkId: meta.networkId,
-            signingKeyAddr: null,
-            signingKeyType: null,
-            gasLimit: null,
-            gasFeePayment: null,
-            nonce: this.accountStates[meta.accountAddr][meta.networkId].nonce,
-            signature: account.associatedKeys[0]
-              ? generateSpoofSig(account.associatedKeys[0])
-              : null,
-            accountOpToExecuteBefore: null, // @TODO from pending recoveries
-            calls: this.#batchCallsFromUserRequests(meta.accountAddr, meta.networkId)
+        const network = this.networks.networks.filter((n) => n.id === meta.networkId)[0]
+        if (shouldAskForEntryPointAuthorization(network, accountState)) {
+          if (
+            this.actions.visibleActionsQueue.find(
+              (a) =>
+                a.id === ENTRY_POINT_AUTHORIZATION_REQUEST_ID &&
+                (a as SignMessageAction).userRequest.meta.networkId === meta.networkId
+            )
+          ) {
+            this.emitUpdate()
+            return
           }
-
-          this.actions.addOrUpdateAction(
-            {
-              id: `${meta.accountAddr}-${meta.networkId}`, // SA accountOpAction id
-              type: 'accountOp',
-              accountOp
-            },
-            withPriority
-          )
-        } else {
-          accountOpAction.accountOp.calls = this.#batchCallsFromUserRequests(
+          const typedMessageAction = await getEntryPointAuthorization(
             meta.accountAddr,
-            meta.networkId
+            network.chainId,
+            BigInt(accountState.nonce)
           )
-          this.actions.addOrUpdateAction(accountOpAction, withPriority)
-          if (this.signAccountOp && this.signAccountOp.fromActionId === accountOpAction.id) {
-            this.signAccountOp.update({ accountOp: accountOpAction.accountOp })
-            this.estimateSignAccountOp()
-          }
+          await this.addUserRequest({
+            id: ENTRY_POINT_AUTHORIZATION_REQUEST_ID,
+            action: typedMessageAction,
+            meta: {
+              isSignAction: true,
+              accountAddr: meta.accountAddr,
+              networkId: meta.networkId
+            },
+            session: req.session,
+            dappPromise: req?.dappPromise
+              ? { reject: req?.dappPromise?.reject, resolve: () => {} }
+              : undefined
+          } as SignUserRequest)
+          this.emitUpdate()
+          return
+        }
+
+        const accountOpAction = makeSmartAccountOpAction({
+          account,
+          networkId: meta.networkId,
+          nonce: accountState.nonce,
+          userRequests: this.userRequests,
+          actionsQueue: this.actions.actionsQueue
+        })
+        this.actions.addOrUpdateAction(accountOpAction, withPriority)
+        if (this.signAccountOp && this.signAccountOp.fromActionId === accountOpAction.id) {
+          this.signAccountOp.update({ accountOp: accountOpAction.accountOp })
+          this.estimateSignAccountOp()
         }
       } else {
-        const { to, value, data } = req.action as Call
-        accountOp = {
-          accountAddr: meta.accountAddr,
+        const accountOpAction = makeBasicAccountOpAction({
+          account,
           networkId: meta.networkId,
-          signingKeyAddr: null,
-          signingKeyType: null,
-          gasLimit: null,
-          gasFeePayment: null,
-          nonce: this.accountStates[meta.accountAddr][meta.networkId].nonce,
-          signature: account.associatedKeys[0] ? generateSpoofSig(account.associatedKeys[0]) : null,
-          accountOpToExecuteBefore: null, // @TODO from pending recoveries
-          calls: [{ to, value, data, fromUserRequestId: req.id }]
-        }
-        // BA accountOpAction id same as the userRequest's id because for each call we have an action
-        this.actions.addOrUpdateAction({ id: req.id, type: 'accountOp', accountOp }, withPriority)
+          nonce: accountState.nonce,
+          userRequest: req
+        })
+        this.actions.addOrUpdateAction(accountOpAction, withPriority)
       }
     } else {
       let actionType: 'dappRequest' | 'benzin' | 'signMessage' = 'dappRequest'
@@ -1442,7 +1459,7 @@ export class MainController extends EventEmitter {
           accountOp.signature
         ])
       } else {
-        const ambireFactory = new Interface(AmbireAccountFactory.abi)
+        const ambireFactory = new Interface(AmbireFactory.abi)
         to = account.creation.factoryAddr
         data = ambireFactory.encodeFunctionData('deployAndExecute', [
           account.creation.bytecode,
@@ -1509,11 +1526,22 @@ export class MainController extends EventEmitter {
       let userOperationHash
       try {
         userOperationHash = await bundler.broadcast(userOperation, network!)
-      } catch (e) {
-        return this.#throwAccountOpBroadcastError(new Error('bundler broadcast failed'))
+      } catch (e: any) {
+        return this.#throwAccountOpBroadcastError(
+          new Error(
+            Bundler.decodeBundlerError(
+              e,
+              'Bundler broadcast failed. Please try broadcasting by an EOA or contact support'
+            )
+          )
+        )
       }
       if (!userOperationHash) {
-        return this.#throwAccountOpBroadcastError(new Error('bundler broadcast failed'))
+        return this.#throwAccountOpBroadcastError(
+          new Error(
+            'Bundler broadcast failed. Please try broadcasting by an EOA or contact support'
+          )
+        )
       }
 
       // broadcast the userOperationHash
@@ -1584,6 +1612,21 @@ export class MainController extends EventEmitter {
     this.emitUpdate()
 
     await this.activity.addSignedMessage(signedMessage, signedMessage.accountAddr)
+    if (signedMessage.fromActionId === ENTRY_POINT_AUTHORIZATION_REQUEST_ID) {
+      const accountOpAction = makeSmartAccountOpAction({
+        account: this.accounts.filter((a) => a.addr === signedMessage.accountAddr)[0],
+        networkId: signedMessage.networkId,
+        nonce: this.accountStates[signedMessage.accountAddr][signedMessage.networkId].nonce,
+        userRequests: this.userRequests,
+        actionsQueue: this.actions.actionsQueue
+      })
+      if (!accountOpAction.accountOp.meta) accountOpAction.accountOp.meta = {}
+      accountOpAction.accountOp.meta.entryPointAuthorization = adjustEntryPointAuthorization(
+        signedMessage.signature as string
+      )
+
+      this.actions.addOrUpdateAction(accountOpAction, true)
+    }
     await this.resolveUserRequest({ hash: signedMessage.signature }, signedMessage.fromActionId)
     !!this.onBroadcastSuccess &&
       this.onBroadcastSuccess(

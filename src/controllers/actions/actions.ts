@@ -44,7 +44,7 @@ export type Action = AccountOpAction | SignMessageAction | BenzinAction | DappRe
  * All pending/unresolved actions can be accessed later from the banners on the Dashboard screen.
  */
 export class ActionsController extends EventEmitter {
-  #selectedAccount: string | null
+  selectedAccount: string | null
 
   #windowManager: WindowManager
 
@@ -60,13 +60,13 @@ export class ActionsController extends EventEmitter {
     return (
       this.actionsQueue.map((a) => {
         if (a.type === 'accountOp') {
-          return a.accountOp.accountAddr === this.#selectedAccount ? a : undefined
+          return a.accountOp.accountAddr === this.selectedAccount ? a : undefined
         }
         if (a.type === 'signMessage') {
-          return a.userRequest.meta.accountAddr === this.#selectedAccount ? a : undefined
+          return a.userRequest.meta.accountAddr === this.selectedAccount ? a : undefined
         }
         if (a.type === 'benzin') {
-          return a.userRequest.meta.accountAddr === this.#selectedAccount ? a : undefined
+          return a.userRequest.meta.accountAddr === this.selectedAccount ? a : undefined
         }
 
         return a
@@ -85,7 +85,7 @@ export class ActionsController extends EventEmitter {
   }) {
     super()
 
-    this.#selectedAccount = selectedAccount
+    this.selectedAccount = selectedAccount
     this.#windowManager = windowManager
     this.#onActionWindowClose = onActionWindowClose
 
@@ -102,7 +102,7 @@ export class ActionsController extends EventEmitter {
   }
 
   update({ selectedAccount }: { selectedAccount?: string | null }) {
-    if (selectedAccount) this.#selectedAccount = selectedAccount
+    if (selectedAccount) this.selectedAccount = selectedAccount
 
     this.emitUpdate()
   }

@@ -13,8 +13,11 @@ let lastTimeRead = 0
 
 export async function lazyReadHumanizerMeta(
   storage: Storage,
-  options?: { nocache?: boolean }
+  options?: { isExtension?: boolean; nocache?: boolean }
 ): Promise<HumanizerMeta> {
+  if (options?.isExtension !== undefined && !options?.isExtension) {
+    return humanizerInfo as HumanizerMeta
+  }
   if (Date.now() - lastTimeRead > LAZY_READ_DELAY || options?.nocache) {
     memoryHumanizerMeta = await storage.get(HUMANIZER_META_KEY, humanizerInfo)
     lastTimeRead = Date.now()

@@ -14,7 +14,7 @@ const addressTwo = '0x70997970C51812dc3A010C7d01b50e0d17dc79C8'
 const addressThree = '0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC'
 const addressFour = '0x90F79bf6EB2c4f870365E785982E1f101E93b906'
 const AmbireAccount = require('../contracts/compiled/AmbireAccount.json')
-const AmbireAccountFactory = require('../contracts/compiled/AmbireAccountFactory.json')
+const AmbireFactory = require('../contracts/compiled/AmbireFactory.json')
 
 const localhost = 'http://127.0.0.1:8545'
 const validSig = '0x1626ba7e'
@@ -62,7 +62,7 @@ const optyDeployed: Account = {
   ]
 }
 
-const optyNotDeployed: Account = {
+const arbNotDeployed: Account = {
   addr: '0x4E6AB66459bD13b9b30A5CbCF28723C7D08172e5',
   associatedKeys: ['0x3884dD96Da6CDaEAf937301Ff5cC5b0a58478355'],
   creation: {
@@ -84,7 +84,7 @@ export {
   pk2,
   pk3,
   AmbireAccount,
-  AmbireAccountFactory,
+  AmbireFactory,
   localhost,
   validSig,
   invalidSig,
@@ -105,5 +105,5 @@ export {
   assertion,
   trezorSlot7v24337Deployed,
   optyDeployed,
-  optyNotDeployed
+  arbNotDeployed
 }
