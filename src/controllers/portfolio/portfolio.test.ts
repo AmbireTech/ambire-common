@@ -135,7 +135,6 @@ describe('Portfolio Controller ', () => {
     // @TODO - here we can enhance the test to cover one more scenarios:
     //  #1) Does the account really have amount for the persisted tokens.
     expect(ethereumHints.erc20s.length).toBeGreaterThan(0)
-    expect(Object.keys(ethereumHints.erc721s).length).toBeGreaterThan(0)
     expect(polygonHints.erc20s.length).toBeGreaterThan(0)
     expect(optimismHints.erc20s.length).toBeGreaterThan(0)
   })

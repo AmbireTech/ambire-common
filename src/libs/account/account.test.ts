@@ -53,6 +53,10 @@ describe('Account', () => {
         factoryAddr: AMBIRE_ACCOUNT_FACTORY,
         bytecode,
         salt: ethers.toBeHex(0, 32)
+      },
+      preferences: {
+        label: DEFAULT_ACCOUNT_LABEL,
+        pfp: getAmbireAccountAddress(AMBIRE_ACCOUNT_FACTORY, bytecode)
       }
     }
     expect(newSmartAccount as Account).toStrictEqual(accountNotDeployed)
