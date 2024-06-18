@@ -2,6 +2,11 @@ import { Network } from './network'
 
 export type AccountId = string
 
+export type AccountPreferences = {
+  label: string
+  pfp: string // profile picture - acc address as default value to display a unique jazz icon
+}
+
 export interface Account {
   addr: AccountId
   // Associated keys that can control thte account
@@ -10,7 +15,9 @@ export interface Account {
   initialPrivileges: [string, string][]
   // Creation data; `null` in case of an EOA
   creation: AccountCreation | null
+  preferences: AccountPreferences
   email?: string
+  newlyCreated?: boolean
 }
 
 export interface AccountCreation {

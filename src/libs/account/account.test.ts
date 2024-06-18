@@ -3,6 +3,7 @@ import { ethers, ZeroAddress } from 'ethers'
 /* eslint-disable no-new */
 import { describe, expect, test } from '@jest/globals'
 
+import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
 import { BIP44_STANDARD_DERIVATION_TEMPLATE } from '../../consts/derivation'
 import { Account, AccountCreation, AccountOnPage, ImportStatus } from '../../interfaces/account'
@@ -23,7 +24,11 @@ const basicAccount: Account = {
   addr: keyPublicAddress,
   associatedKeys: [keyPublicAddress],
   initialPrivileges: [],
-  creation: null
+  creation: null,
+  preferences: {
+    label: DEFAULT_ACCOUNT_LABEL,
+    pfp: keyPublicAddress
+  }
 }
 
 describe('Account', () => {
@@ -48,6 +53,10 @@ describe('Account', () => {
         factoryAddr: AMBIRE_ACCOUNT_FACTORY,
         bytecode,
         salt: ethers.toBeHex(0, 32)
+      },
+      preferences: {
+        label: DEFAULT_ACCOUNT_LABEL,
+        pfp: getAmbireAccountAddress(AMBIRE_ACCOUNT_FACTORY, bytecode)
       }
     }
     expect(newSmartAccount as Account).toStrictEqual(accountNotDeployed)
@@ -67,14 +76,19 @@ describe('Account', () => {
     }
     const bytecode = await getBytecode([priv])
 
+    const addr = getAmbireAccountAddress(AMBIRE_ACCOUNT_FACTORY, bytecode)
     const accountNotDeployed: Account = {
-      addr: getAmbireAccountAddress(AMBIRE_ACCOUNT_FACTORY, bytecode),
+      addr,
       associatedKeys: [priv.addr],
       initialPrivileges: [[priv.addr, priv.hash]],
       creation: {
         factoryAddr: AMBIRE_ACCOUNT_FACTORY,
         bytecode,
         salt: ethers.toBeHex(1, 32)
+      },
+      preferences: {
+        label: DEFAULT_ACCOUNT_LABEL,
+        pfp: addr
       }
     }
     const accountData = getAccountDeployParams(accountNotDeployed)
@@ -243,7 +257,11 @@ describe('Account', () => {
       addr: '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045',
       associatedKeys: ['0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045'],
       initialPrivileges: [],
-      creation: null
+      creation: null,
+      preferences: {
+        label: DEFAULT_ACCOUNT_LABEL,
+        pfp: '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045'
+      }
     }
 
     const anotherBasicAccountKeyWithTheSameKeyType: Key = {

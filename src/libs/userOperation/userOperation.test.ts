@@ -5,6 +5,7 @@ import { parseEther } from 'ethers'
 import { describe, expect, test } from '@jest/globals'
 
 import { getAccountsInfo } from '../../../test/helpers'
+import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { networks } from '../../consts/networks'
 import { Account } from '../../interfaces/account'
 import { getRpcProvider } from '../../services/provider'
@@ -29,7 +30,11 @@ const smartAccDeployed: Account = {
       '0x7f00000000000000000000000000000000000000000000000000000000000000027ff33cc417366b7e38d2706a67ab46f85465661c28b864b521441180d15df82251553d602d80604d3d3981f3363d3d373d3d3d363d7372d91da2b0c316d030e1ed840b80c9cd9ae445b65af43d82803e903d91602b57fd5bf3',
     salt: '0x0000000000000000000000000000000000000000000000000000000000000000'
   },
-  associatedKeys: ['0xBd84Cc40a5b5197B5B61919c22A55e1c46d2A3bb']
+  associatedKeys: ['0xBd84Cc40a5b5197B5B61919c22A55e1c46d2A3bb'],
+  preferences: {
+    label: DEFAULT_ACCOUNT_LABEL,
+    pfp: '0xcb2dF90Fb6b22A87Ce22A0D36f2EcA8ED1DD1A8b'
+  }
 }
 
 describe('User Operation tests', () => {
