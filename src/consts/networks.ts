@@ -68,7 +68,6 @@ const networks: Network[] = [
       maxPriorityFee: 100n
     },
     isOptimistic: true,
-    reestimateOn: 6000,
     predefined: true
   },
   {
@@ -122,7 +121,32 @@ const networks: Network[] = [
       minBaseFee: 100000000n, // 1 gwei
       maxPriorityFee: 100n
     },
-    reestimateOn: 6000,
+    predefined: true
+  },
+  {
+    id: 'base',
+    name: 'Base',
+    nativeAssetSymbol: 'ETH',
+    rpcUrls: ['https://invictus.ambire.com/base'],
+    selectedRpcUrl: 'https://invictus.ambire.com/base',
+    rpcNoStateOverride: false,
+    chainId: 8453n,
+    explorerUrl: 'https://basescan.org',
+    erc4337: {
+      enabled: true,
+      hasPaymaster: true
+    },
+    isSAEnabled: true,
+    areContractsDeployed: true,
+    hasRelayer: true,
+    hasDebugTraceCall: false,
+    platformId: 'base',
+    nativeAssetId: 'ethereum',
+    hasSingleton: true,
+    features: [],
+    feeOptions: {
+      is1559: true
+    },
     predefined: true
   },
   {

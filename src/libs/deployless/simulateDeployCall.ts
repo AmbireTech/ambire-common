@@ -1,6 +1,6 @@
 import { FetchRequest, JsonRpcProvider, ZeroAddress } from 'ethers'
 
-import AmbireAccountFactory from '../../../contracts/compiled/AmbireAccountFactory.json'
+import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json'
 import { AMBIRE_ACCOUNT_FACTORY, DEPLOYLESS_SIMULATION_FROM } from '../../consts/deploy'
 import { getSmartAccount, getSpoof } from '../account/account'
 import { callToTuple } from '../accountOp/accountOp'
@@ -27,7 +27,7 @@ export async function getSASupport(
     to: AMBIRE_ACCOUNT_FACTORY,
     mode: DeploylessMode.StateOverride
   }
-  const deployless = fromDescriptor(provider, AmbireAccountFactory, true)
+  const deployless = fromDescriptor(provider, AmbireFactory, true)
   let supportsStateOverride = true
   const result = await deployless
     .call(

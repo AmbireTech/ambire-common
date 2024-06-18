@@ -2,7 +2,7 @@
 
 import fetch from 'node-fetch'
 
-import { AccountId } from '../../interfaces/account'
+import { networks as predefinedNetworks } from '../../consts/networks'
 import { Banner } from '../../interfaces/banner'
 import { Network } from '../../interfaces/network'
 import { Storage } from '../../interfaces/storage'
@@ -313,7 +313,7 @@ export class ActivityController extends EventEmitter {
 
             shouldEmitUpdate = true
 
-            const declareFailedIfQuaterPassed = (op: SubmittedAccountOp) => {
+            const declareRejectedIfQuaterPassed = (op: SubmittedAccountOp) => {
               const accountOpDate = new Date(op.timestamp)
               accountOpDate.setMinutes(accountOpDate.getMinutes() + 15)
               const aQuaterHasPassed = accountOpDate < new Date()
@@ -327,14 +327,27 @@ export class ActivityController extends EventEmitter {
               let txnId = accountOp.txnId
               if (accountOp.userOpHash) {
                 const [response, bundlerResult] = await Promise.all([
-                  fetchUserOp(accountOp.userOpHash, fetch, getExplorerId(network)),
+                  !network.predefined
+                    ? fetchUserOp(accountOp.userOpHash, fetch, getExplorerId(network))
+                    : new Promise((resolve) => {
+                        resolve(null)
+                      }),
                   Bundler.getStatusAndTxnId(accountOp.userOpHash, network)
                 ])
+
+                if (bundlerResult.status === 'rejected') {
+                  this.#accountsOps[selectedAccount][networkId][accountOpIndex].status =
+                    AccountOpStatus.Rejected
+                  return
+                }
 
                 if (bundlerResult.transactionHash) {
                   txnId = bundlerResult.transactionHash
                   this.#accountsOps[selectedAccount][networkId][accountOpIndex].txnId = txnId
                 } else {
+                  // on custom networks the response is null
+                  if (!response) return
+
                   // nothing we can do if we don't have information
                   if (response.status !== 200) return
 
@@ -347,7 +360,7 @@ export class ActivityController extends EventEmitter {
                     txnId = userOps[0].transactionHash
                     this.#accountsOps[selectedAccount][networkId][accountOpIndex].txnId = txnId
                   } else {
-                    declareFailedIfQuaterPassed(accountOp)
+                    declareRejectedIfQuaterPassed(accountOp)
                     return
                   }
                 }
@@ -371,7 +384,7 @@ export class ActivityController extends EventEmitter {
               // if there's no receipt, confirm there's a txn
               // if there's no txn and 15 minutes have passed, declare it a failure
               const txn = await provider.getTransaction(txnId)
-              if (!txn) declareFailedIfQuaterPassed(accountOp)
+              if (!txn) declareRejectedIfQuaterPassed(accountOp)
             } catch {
               this.emitError({
                 level: 'silent',
@@ -508,8 +521,9 @@ export class ActivityController extends EventEmitter {
     return this.broadcastedButNotConfirmed.map((accountOp) => {
       const network = this.#networks.networks.find((x) => x.id === accountOp.networkId)!
 
+      const isCustomNetwork = !predefinedNetworks.find((net) => net.id === network.id)
       const url =
-        accountOp.userOpHash && accountOp.txnId === accountOp.userOpHash
+        accountOp.userOpHash && accountOp.txnId === accountOp.userOpHash && !isCustomNetwork
           ? `https://jiffyscan.xyz/userOpHash/${accountOp.userOpHash}?network=${getExplorerId(
               network
             )}`

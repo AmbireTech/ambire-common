@@ -3,7 +3,9 @@ pragma solidity 0.8.19;
 
 import './libs/SignatureValidator.sol';
 import './ExternalSigValidator.sol';
-import './libs/erc4337/UserOperation.sol';
+import './libs/erc4337/PackedUserOperation.sol';
+import './libs/erc4337/UserOpHelper.sol';
+import './deployless/IAmbireAccount.sol';
 
 /**
  * @notice  A validator that performs DKIM signature recovery
@@ -11,7 +13,7 @@ import './libs/erc4337/UserOperation.sol';
  * is a wallet contract, and any ETH sent to it is not lost, but on the other hand not having `payable`
  * makes the Solidity compiler add an extra check for `msg.value`, which in this case is wasted gas
  */
-contract AmbireAccount {
+contract AmbireAccount is IAmbireAccount {
 	// @dev We do not have a constructor. This contract cannot be initialized with any valid `privileges` by itself!
 	// The intended use case is to deploy one base implementation contract, and create a minimal proxy for each user wallet, by
 	// using our own code generation to insert SSTOREs to initialize `privileges` (it was previously called IdentityProxyDeploy.js, now src/libs/proxyDeploy/deploy.ts)
@@ -30,12 +32,6 @@ contract AmbireAccount {
 	// Events
 	event LogPrivilegeChanged(address indexed addr, bytes32 priv);
 	event LogErr(address indexed to, uint256 value, bytes data, bytes returnData); // only used in tryCatch
-
-	// built-in batching of multiple execute()'s; useful when performing timelocked recoveries
-	struct ExecuteArgs {
-		Transaction[] calls;
-		bytes signature;
-	}
 
 	// This contract can accept ETH without calldata
 	receive() external payable {}
@@ -298,14 +294,14 @@ contract AmbireAccount {
 	 * We require a one time hash nonce commitment from the paymaster for the given
 	 * req. We use this to give permissions to the entry point on the fly
 	 * and enable ERC-4337
-	 * @param   op  the UserOperation we're executing
+	 * @param   op  the PackedUserOperation we're executing
 	 * @param   userOpHash  the hash we've committed to
 	 * @param   missingAccountFunds  the funds the account needs to pay
 	 * @return  uint256  0 for success, 1 for signature failure, and a uint256
 	 * packed timestamp for a future valid signature:
 	 * address aggregator, uint48 validUntil, uint48 validAfter
 	 */
-	function validateUserOp(UserOperation calldata op, bytes32 userOpHash, uint256 missingAccountFunds)
+	function validateUserOp(PackedUserOperation calldata op, bytes32 userOpHash, uint256 missingAccountFunds)
 	external payable returns (uint256)
 	{
 		// enable running executeMultiple operation through the entryPoint if
@@ -319,32 +315,40 @@ contract AmbireAccount {
 		// The fee payment call will be with a signature from the new key
 		if (op.callData.length >= 4 && bytes4(op.callData[0:4]) == this.executeMultiple.selector) {
 			// Require a paymaster, otherwise this mode can be used by anyone to get the user to spend their deposit
-			require(op.signature.length == 0, 'validateUserOp: empty signature required in execute() mode');
+			// @estimation-no-revert
+			if (op.signature.length != 0) return SIG_VALIDATION_FAILED;
+
 			require(
-				op.paymasterAndData.length >= 20 && bytes20(op.paymasterAndData[:20]) != bytes20(0),
+				op.paymasterAndData.length >= UserOpHelper.PAYMASTER_DATA_OFFSET &&
+				bytes20(op.paymasterAndData[:UserOpHelper.PAYMASTER_ADDR_OFFSET]) != bytes20(0),
 				'validateUserOp: paymaster required in execute() mode'
 			);
+
 			// hashing in everything except sender (nonces are scoped by sender anyway), nonce, signature
 			uint256 targetNonce = uint256(keccak256(
-				abi.encode(op.initCode, op.callData, op.callGasLimit, op.verificationGasLimit, op.preVerificationGas, op.maxFeePerGas, op.maxPriorityFeePerGas, op.paymasterAndData)
+				abi.encode(op.initCode, op.callData, op.accountGasLimits, op.preVerificationGas, op.gasFees, op.paymasterAndData)
 			)) << 64;
-			require(op.nonce == targetNonce, 'validateUserOp: execute(): one-time nonce is wrong');
+
+			// @estimation-no-revert
+			if (op.nonce != targetNonce) return SIG_VALIDATION_FAILED;
+
 			return SIG_VALIDATION_SUCCESS;
 		}
 
 		require(privileges[msg.sender] == ENTRY_POINT_MARKER, 'validateUserOp: not from entryPoint');
 
-		// this is replay-safe because userOpHash is retrieved like this: keccak256(abi.encode(userOp.hash(), address(this), block.chainid))
-		address signer = SignatureValidator.recoverAddr(userOpHash, op.signature, true);
-		if (privileges[signer] == bytes32(0)) return SIG_VALIDATION_FAILED;
-
-		// NOTE: we do not have to pay the entryPoint if SIG_VALIDATION_FAILED, so we just return on those
+		// @estimation
+		// paying should happen even if signature validation fails
 		if (missingAccountFunds > 0) {
 			// NOTE: MAY pay more than the minimum, to deposit for future transactions
 			(bool success,) = msg.sender.call{value : missingAccountFunds}('');
 			// ignore failure (its EntryPoint's job to verify, not account.)
 			(success);
 		}
+
+		// this is replay-safe because userOpHash is retrieved like this: keccak256(abi.encode(userOp.hash(), address(this), block.chainid))
+		address signer = SignatureValidator.recoverAddr(userOpHash, op.signature, true);
+		if (privileges[signer] == bytes32(0)) return SIG_VALIDATION_FAILED;
 
 		return SIG_VALIDATION_SUCCESS;
 	}
