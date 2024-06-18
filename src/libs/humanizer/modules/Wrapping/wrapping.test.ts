@@ -1,9 +1,9 @@
 import { ZeroAddress } from 'ethers'
-import { AccountOp } from 'libs/accountOp/accountOp'
 
 import { expect } from '@jest/globals'
 
 import humanizerInfo from '../../../../consts/humanizer/humanizerInfo.json'
+import { AccountOp } from '../../../accountOp/accountOp'
 import { HumanizerMeta, HumanizerVisualization, IrCall } from '../../interfaces'
 import { compareHumanizerVisualizations } from '../../testHelpers'
 import { getAction, getLabel, getToken } from '../../utils'

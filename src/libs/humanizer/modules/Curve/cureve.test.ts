@@ -1,10 +1,9 @@
-import { HumanizerMeta } from 'libs/humanizer/interfaces'
-
 import humanizerInfo from '../../../../consts/humanizer/humanizerInfo.json'
 import { AccountOp } from '../../../accountOp/accountOp'
+import { HumanizerMeta } from '../../interfaces'
 import { compareHumanizerVisualizations } from '../../testHelpers'
 import { getAction, getLabel, getToken } from '../../utils'
-import curveModule from '.'
+import curveModule from './'
 
 const transactions = [
   {
@@ -43,7 +42,7 @@ const accountOp: AccountOp = {
 
 describe('curve', () => {
   test('basic', () => {
-    const expectedVisualziation = [
+    const expectedVisualization = [
       [
         getAction('Swap'),
         getToken('0x0000000000000000000000000000000000000000', 165849322610849170n),
@@ -59,6 +58,6 @@ describe('curve', () => {
     ]
     const [calls] = curveModule(accountOp, transactions, humanizerInfo as HumanizerMeta)
 
-    compareHumanizerVisualizations(calls, expectedVisualziation)
+    compareHumanizerVisualizations(calls, expectedVisualization)
   })
 })

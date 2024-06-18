@@ -16,6 +16,7 @@ import {
   IrMessage
 } from './interfaces'
 import { addFragsToLazyStore, lazyReadHumanizerMeta } from './lazyStorage'
+import OneInchModule from './modules/1Inch'
 import { aaveHumanizer } from './modules/Aave'
 import AcrossModule from './modules/Across'
 import curveModule from './modules/Curve'
@@ -52,6 +53,7 @@ export const humanizerCallModules: HumanizerCallModule[] = [
   traderJoeModule,
   KyberSwap,
   AcrossModule,
+  OneInchModule,
   wrappingModule,
   aaveHumanizer,
   WALLETModule,

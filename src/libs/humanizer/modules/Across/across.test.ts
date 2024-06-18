@@ -52,7 +52,7 @@ const accountOp: AccountOp = {
 const ARBITRUM_CHAIN_ID = 42161n
 describe('Across', () => {
   test('basic', () => {
-    const expectedVisualziation = [
+    const expectedVisualization = [
       [
         getAction('Bridge'),
         getToken('0x3c499c542cef5e3811e1192ce70d8cc03d5c3359', 130592n),
@@ -78,6 +78,6 @@ describe('Across', () => {
       ]
     ]
     const [calls] = AcrossModule(accountOp, transactions, humanizerInfo as HumanizerMeta)
-    compareHumanizerVisualizations(calls, expectedVisualziation)
+    compareHumanizerVisualizations(calls, expectedVisualization)
   })
 })

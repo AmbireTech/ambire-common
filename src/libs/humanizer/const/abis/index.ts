@@ -1,3 +1,4 @@
+import { OneInch } from './1Inch'
 import { AaveLendingPoolV2, AaveWethGatewayV2 } from './Aave'
 import { Across } from './Across'
 import { KyberSwap } from './KyberSwap'
@@ -21,5 +22,6 @@ export {
   RouteProcessor,
   JoeRouter,
   Across,
+  OneInch,
   KyberSwap
 }

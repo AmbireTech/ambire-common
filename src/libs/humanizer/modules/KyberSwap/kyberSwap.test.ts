@@ -5,7 +5,7 @@ import { AccountOp } from '../../../accountOp/accountOp'
 import { HumanizerMeta } from '../../interfaces'
 import { compareHumanizerVisualizations } from '../../testHelpers'
 import { getAction, getLabel, getToken } from '../../utils'
-import KyberModule from '.'
+import KyberModule from './'
 
 const transactions = [
   // swap eth for shib
@@ -45,7 +45,7 @@ const accountOp: AccountOp = {
 }
 describe('KyberSwap', () => {
   test('basic', () => {
-    const expectedVisualziation = [
+    const expectedVisualization = [
       [
         getAction('Swap'),
         getToken(ZeroAddress, 40000000000000000000n),
@@ -60,6 +60,6 @@ describe('KyberSwap', () => {
       ]
     ]
     const [calls] = KyberModule(accountOp, transactions, humanizerInfo as HumanizerMeta)
-    compareHumanizerVisualizations(calls, expectedVisualziation)
+    compareHumanizerVisualizations(calls, expectedVisualization)
   })
 })

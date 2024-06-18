@@ -4,18 +4,18 @@ import { HumanizerVisualization, IrCall } from './interfaces'
 
 export const compareHumanizerVisualizations = (
   _calls: IrCall[],
-  _expectedVisualziations: HumanizerVisualization[][]
+  _expectedVisualizations: HumanizerVisualization[][]
 ) => {
   const calls = _calls.map((c) => ({
     ...c,
     fullVisualization: c.fullVisualization?.map((v) => ({ ...v, id: null }))
   }))
-  const expectedVisualziations = _expectedVisualziations.map((vs) =>
+  const expectedVisualizations = _expectedVisualizations.map((vs) =>
     vs.map((v) => ({ ...v, id: null }))
   )
-  expect(calls.length).toBe(expectedVisualziations.length)
+  expect(calls.length).toBe(expectedVisualizations.length)
   calls.forEach((call, i) => {
-    expect(call.fullVisualization?.length).toBe(expectedVisualziations[i].length)
-    expect(call.fullVisualization).toEqual(expectedVisualziations[i])
+    expect(call.fullVisualization?.length).toBe(expectedVisualizations[i].length)
+    expect(call.fullVisualization).toEqual(expectedVisualizations[i])
   })
 }
