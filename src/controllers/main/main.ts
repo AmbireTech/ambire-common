@@ -195,6 +195,7 @@ export class MainController extends EventEmitter {
         await this.updateSelectedAccountPortfolio()
         await this.forceEmitUpdate()
         await this.actions.forceEmitUpdate()
+        await this.addressBook.forceEmitUpdate()
       }
     )
     this.settings = new SettingsController(this.#storage)
