@@ -1,7 +1,8 @@
-import { Storage } from '../../interfaces/storage'
-import { EMPTY_HUMANIZER_META, HUMANIZER_META_KEY, integrateFragments } from './utils'
 import humanizerInfo from '../../consts/humanizer/humanizerInfo.json'
-import { HumanizerFragment, HumanizerMeta } from './interfaces'
+import { HumanizerFragment } from '../../interfaces/humanizer'
+import { Storage } from '../../interfaces/storage'
+import { HumanizerMeta } from './interfaces'
+import { EMPTY_HUMANIZER_META, HUMANIZER_META_KEY, integrateFragments } from './utils'
 
 const LAZY_STORE_DELAY = 1 * 1000
 const LAZY_READ_DELAY = 30 * 1000

@@ -1,14 +1,19 @@
 import { Interface, ZeroHash } from 'ethers'
 
-import AmbireAccount from '../../../../contracts/compiled/AmbireAccount.json'
-import { ENTRY_POINT_MARKER } from '../../../consts/deploy'
-import { AccountOp } from '../../accountOp/accountOp'
-import { HumanizerCallModule, HumanizerMeta, HumanizerVisualization, IrCall } from '../interfaces'
-import { getAction, getAddressVisualization, getKnownName, getLabel } from '../utils'
+import AmbireAccount from '../../../../../contracts/compiled/AmbireAccount.json'
+import { ENTRY_POINT_MARKER } from '../../../../consts/deploy'
+import { AccountOp } from '../../../accountOp/accountOp'
+import {
+  HumanizerCallModule,
+  HumanizerMeta,
+  HumanizerVisualization,
+  IrCall
+} from '../../interfaces'
+import { getAction, getAddressVisualization, getKnownName, getLabel } from '../../utils'
 
 const iface = new Interface(AmbireAccount.abi)
 
-const parsePriviligeCall = (
+const parsePrivilegeCall = (
   humanizerMeta: HumanizerMeta,
   call: IrCall
 ): HumanizerVisualization[] => {
@@ -43,7 +48,7 @@ export const privilegeHumanizer: HumanizerCallModule = (
     ) {
       return {
         ...call,
-        fullVisualization: parsePriviligeCall(humanizerMeta, call)
+        fullVisualization: parsePrivilegeCall(humanizerMeta, call)
       }
     }
     return call
