@@ -1,8 +1,8 @@
 import { Interface, ZeroAddress } from 'ethers'
 
-import { AccountOp } from '../../accountOp/accountOp'
-import { ERC20, ERC721 } from '../const/abis'
-import { HumanizerCallModule, HumanizerMeta, HumanizerPromise, IrCall } from '../interfaces'
+import { AccountOp } from '../../../accountOp/accountOp'
+import { ERC20, ERC721 } from '../../const/abis'
+import { HumanizerCallModule, HumanizerMeta, HumanizerPromise, IrCall } from '../../interfaces'
 import {
   getAction,
   getAddressVisualization,
@@ -12,7 +12,7 @@ import {
   getToken,
   getTokenInfo,
   getUnknownVisualization
-} from '../utils'
+} from '../../utils'
 
 export const genericErc721Humanizer: HumanizerCallModule = (
   accountOp: AccountOp,
@@ -160,19 +160,18 @@ export const genericErc20Humanizer: HumanizerCallModule = (
   }
   const newCalls = currentIrCalls.map((call) => {
     const sigHash = call.data.substring(0, 10)
-    const isToKnownToken = !!getKnownToken(humanizerMeta, call.to)
+    const isTokenKnown = !!getKnownToken(humanizerMeta, call.to)
     // if proper func selector and no such token found in meta
-    // console.log(matcher[sigHash], isToKnownToken)
-    if (matcher[sigHash] && !isToKnownToken)
+    // console.log(matcher[sigHash], isTokenKnown)
+    if (matcher[sigHash] && !isTokenKnown)
       asyncOps.push(() => getTokenInfo(accountOp, call.to, options))
-
-    if (matcher[sigHash] && isToKnownToken)
+    if (matcher[sigHash] && isTokenKnown)
       return {
         ...call,
         fullVisualization: matcher[sigHash](call)
       }
 
-    if (isToKnownToken && !matcher[sigHash])
+    if (isTokenKnown && !matcher[sigHash])
       return {
         ...call,
         fullVisualization: getUnknownVisualization('ERC-20', call)

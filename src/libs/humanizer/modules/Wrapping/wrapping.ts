@@ -1,9 +1,9 @@
 import { Interface, ZeroAddress } from 'ethers'
 
-import { AccountOp } from '../../accountOp/accountOp'
-import { WETH } from '../const/abis'
-import { HumanizerCallModule, HumanizerMeta, IrCall } from '../interfaces'
-import { getUnknownVisualization, getUnwrapping, getWrapping } from '../utils'
+import { AccountOp } from '../../../accountOp/accountOp'
+import { WETH } from '../../const/abis'
+import { HumanizerCallModule, HumanizerMeta, IrCall } from '../../interfaces'
+import { getUnknownVisualization, getUnwrapping, getWrapping } from '../../utils'
 
 const wrapSwapReducer = (calls: IrCall[]) => {
   const newCalls: IrCall[] = []
@@ -52,11 +52,9 @@ const wrapSwapReducer = (calls: IrCall[]) => {
 }
 
 export const wrappingModule: HumanizerCallModule = (
-  accountOp: AccountOp,
+  _: AccountOp,
   irCalls: IrCall[],
-  humanizerMeta: HumanizerMeta,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  options?: any
+  humanizerMeta: HumanizerMeta
 ) => {
   const iface = new Interface(WETH)
   const newCalls = irCalls.map((call: IrCall) => {

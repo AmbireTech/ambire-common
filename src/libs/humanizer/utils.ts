@@ -3,9 +3,9 @@ import { ZeroAddress } from 'ethers'
 
 import { geckoIdMapper } from '../../consts/coingecko'
 import { Fetch } from '../../interfaces/fetch'
+import { HumanizerFragment } from '../../interfaces/humanizer'
 import { Network } from '../../interfaces/network'
 import {
-  HumanizerFragment,
   HumanizerMeta,
   HumanizerSettings,
   HumanizerVisualization,
@@ -120,7 +120,7 @@ export async function getTokenInfo(
       error: new Error(
         `could not find platform id for token info api ${humanizerSettings.networkId}`
       ),
-      level: 'minor'
+      level: 'silent'
     })
     platformId = humanizerSettings.networkId
   }

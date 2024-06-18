@@ -36,7 +36,7 @@ import {
   PreviousHintsStorage,
   TokenResult
 } from '../../libs/portfolio/interfaces'
-import { Portfolio } from '../../libs/portfolio/portfolio'
+import { Portfolio } from '../../libs/portfolio'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { NetworksController } from '../networks/networks'
@@ -50,6 +50,19 @@ export class PortfolioController extends EventEmitter {
   latest: PortfolioControllerState
 
   pending: PortfolioControllerState
+
+  // A queue to prevent race conditions when calling `updateSelectedAccount`.
+  // All calls are queued by network and account.
+  // Each time `updateSelectedAccount` is invoked to update the latest or pending state, the call is added to the queue.
+  // If a previous call is still running, the new call will be queued and executed only after the first one completes,
+  // regardless of whether it succeeds or fails.
+  // Before implementing this queue, multiple `updateSelectedAccount` calls made in a short period of time could cause
+  // the response of the latest call to be overwritten by a slower previous call.
+  #queue: {
+    [accountId: string]: {
+      [networkId: NetworkId]: Promise<void>
+    }
+  }
 
   tokenPreferences: CustomToken[] = []
 
@@ -99,6 +112,7 @@ export class PortfolioController extends EventEmitter {
     super()
     this.latest = {}
     this.pending = {}
+    this.#queue = {}
     this.#portfolioLibs = new Map()
     this.#storage = storage
     this.#fetch = fetch
@@ -172,7 +186,7 @@ export class PortfolioController extends EventEmitter {
     const accountState = this.latest[accountId]
     if (!accountState[network]) accountState[network] = { errors: [], isReady: false, isLoading }
     accountState[network]!.isLoading = isLoading
-    if (!error) {
+    if (error) {
       if (!accountState[network]!.isReady) accountState[network]!.criticalError = error
       else accountState[network]!.errors.push(error)
     }
@@ -407,7 +421,82 @@ export class PortfolioController extends EventEmitter {
     this.emitUpdate()
   }
 
-  // NOTE: we always pass in all `accounts` to ensure that the user of this
+  // By our convention, we always stick with private (#) instead of protected methods.
+  // However, we made a compromise here to allow Jest tests to mock updatePortfolioState.
+  protected async updatePortfolioState(
+    accountId: string,
+    _accountState: AccountState,
+    network: Network,
+    portfolioLib: Portfolio,
+    portfolioProps: Partial<GetOptions>,
+    forceUpdate: boolean
+  ): Promise<boolean> {
+    const hasNonZeroTokens = !!this.#networksWithAssetsByAccounts?.[accountId]?.length
+
+    if (!_accountState[network.id]) {
+      _accountState[network.id] = {
+        isReady: false,
+        isLoading: false,
+        errors: []
+      }
+      this.emitUpdate()
+    }
+    const state = _accountState[network.id]!
+
+    // When the portfolio was called lastly
+    const lastUpdateStartedAt = state.result?.updateStarted
+    if (
+      lastUpdateStartedAt &&
+      Date.now() - lastUpdateStartedAt <= this.#minUpdateInterval &&
+      !forceUpdate
+    )
+      return false
+
+    state.isLoading = true
+    this.emitUpdate()
+
+    const tokenPreferences = this.tokenPreferences
+
+    try {
+      const result = await portfolioLib.get(accountId, {
+        priceRecency: 60000,
+        priceCache: state.result?.priceCache,
+        fetchPinned: !hasNonZeroTokens,
+        tokenPreferences,
+        ...portfolioProps
+      })
+
+      const additionalHints = portfolioProps.additionalHints || []
+
+      _accountState[network.id] = {
+        isReady: true,
+        isLoading: false,
+        errors: result.errors,
+        result: {
+          ...result,
+          tokens: result.tokens.filter((token) =>
+            tokenFilter(token, network, hasNonZeroTokens, additionalHints, tokenPreferences)
+          ),
+          total: getTotal(result.tokens)
+        }
+      }
+      this.emitUpdate()
+      return true
+    } catch (e: any) {
+      this.emitError({
+        level: 'silent',
+        message: "Error while executing the 'get' function in the portfolio library.",
+        error: e
+      })
+      state.isLoading = false
+      if (!state.isReady) state.criticalError = e
+      else state.errors.push(e)
+      this.emitUpdate()
+      return false
+    }
+  }
+
+  // NOTE: we always pass in all `accounts` and `networks` to ensure that the user of this
   // controller doesn't have to update this controller every time that those are updated
 
   // The recommended behavior of the application that this API encourages is:
@@ -429,7 +518,6 @@ export class PortfolioController extends EventEmitter {
   ) {
     await this.#initialLoadPromise
 
-    const hasNonZeroTokens = !!this.#networksWithAssetsByAccounts?.[accountId]?.length
     const selectedAccount = accounts.find((x) => x.addr === accountId)
     if (!selectedAccount) throw new Error('selected account does not exist')
 
@@ -443,75 +531,6 @@ export class PortfolioController extends EventEmitter {
       this.#getAdditionalPortfolio(accountId)
     }
 
-    const updatePortfolioState = async (
-      _accountState: AccountState,
-      network: Network,
-      portfolioLib: Portfolio,
-      portfolioProps: Partial<GetOptions>,
-      forceUpdate: boolean
-    ): Promise<boolean> => {
-      if (!_accountState[network.id]) {
-        _accountState[network.id] = { isReady: false, isLoading: false, errors: [] }
-        this.emitUpdate()
-      }
-      const state = _accountState[network.id]!
-
-      // When the portfolio was called lastly
-      const lastUpdateStartedAt = state.result?.updateStarted
-      if (
-        lastUpdateStartedAt &&
-        Date.now() - lastUpdateStartedAt <= this.#minUpdateInterval &&
-        !forceUpdate
-      )
-        return false
-
-      // Only one loading at a time, ensure there are no race conditions
-      if (state.isLoading && !forceUpdate) return false
-
-      state.isLoading = true
-      this.emitUpdate()
-
-      const tokenPreferences = this.tokenPreferences
-
-      try {
-        const result = await portfolioLib.get(accountId, {
-          priceRecency: 60000,
-          priceCache: state.result?.priceCache,
-          fetchPinned: !hasNonZeroTokens,
-          tokenPreferences,
-          ...portfolioProps
-        })
-
-        const additionalHints = portfolioProps.additionalHints || []
-
-        _accountState[network.id] = {
-          isReady: true,
-          isLoading: false,
-          errors: result.errors,
-          result: {
-            ...result,
-            tokens: result.tokens.filter((token) =>
-              tokenFilter(token, network, hasNonZeroTokens, additionalHints, tokenPreferences)
-            ),
-            total: getTotal(result.tokens)
-          }
-        }
-        this.emitUpdate()
-        return true
-      } catch (e: any) {
-        this.emitError({
-          level: 'silent',
-          message: "Error while executing the 'get' function in the portfolio library.",
-          error: e
-        })
-        state.isLoading = false
-        if (!state.isReady) state.criticalError = e
-        else state.errors.push(e)
-        this.emitUpdate()
-        return false
-      }
-    }
-
     const networks = network ? [network] : this.#networks.networks
     await Promise.all(
       networks.map(async (network) => {
@@ -519,102 +538,131 @@ export class PortfolioController extends EventEmitter {
 
         const portfolioLib = this.initializePortfolioLibIfNeeded(accountId, network.id, network)
 
-        const currentAccountOps = accountOps?.[network.id]
+        const currentAccountOps = accountOps?.[network.id]?.filter(
+          (op) => op.accountAddr === accountId
+        )
         const simulatedAccountOps = pendingState[network.id]?.accountOps
 
-        // We are performing the following extended check because both (or one of both) variables may have an undefined value.
-        // If both variables contain AccountOps, we can simply compare for changes in the AccountOps intent.
-        // However, when one of the variables is not set, two cases arise:
-        // 1. A change occurs if one variable is undefined and the other one holds an AccountOps object.
-        // 2. No change occurs if both variables are undefined.
-        const areAccountOpsChanged =
-          // eslint-disable-next-line prettier/prettier
-          currentAccountOps && simulatedAccountOps
-            ? !isAccountOpsIntentEqual(currentAccountOps, simulatedAccountOps)
-            : currentAccountOps !== simulatedAccountOps
+        if (!this.#queue?.[accountId]?.[network.id])
+          this.#queue[accountId] = {
+            ...this.#queue[accountId],
+            [network.id]: Promise.resolve()
+          }
 
-        const forceUpdate = opts?.forceUpdate || areAccountOpsChanged
+        const updatePromise = async (): Promise<void> => {
+          // We are performing the following extended check because both (or one of both) variables may have an undefined value.
+          // If both variables contain AccountOps, we can simply compare for changes in the AccountOps intent.
+          // However, when one of the variables is not set, two cases arise:
+          // 1. A change occurs if one variable is undefined and the other one holds an AccountOps object.
+          // 2. No change occurs if both variables are undefined.
+          const areAccountOpsChanged =
+            currentAccountOps && simulatedAccountOps
+              ? !isAccountOpsIntentEqual(currentAccountOps, simulatedAccountOps)
+              : currentAccountOps !== simulatedAccountOps
 
-        // Pass in learnedTokens as additionalHints only on areAccountOpsChanged
-        const fallbackHints = (this.#previousHints?.fromExternalAPI &&
-          this.#previousHints?.fromExternalAPI[key]) ?? {
-          erc20s: [],
-          erc721s: {}
-        }
-        const additionalHints =
-          (forceUpdate &&
-            Object.keys(
-              (this.#previousHints?.learnedTokens &&
-                this.#previousHints?.learnedTokens[network.id]) ??
-                {}
-            )) ||
-          []
+          // TODO: The `updateSelectedAccount` function is currently always invoked with `forceUpdate: true` from the application code.
+          // TODO: We decided to implement this improvement once we first address https://github.com/AmbireTech/ambire-app/issues/2335#issue-2345433944
+          // We should rewrite this, and state updates should work in the following manner:
+          // 1. On the Dashboard screen, there is an interval that updates both the latest and pending states.
+          //    Why do we update both states? Even without AccountOps to simulate, fetching the pending state
+          //    is beneficial because if someone sends you a token, you will see it on the Dashboard as a pending token balance.
+          // 2. On the Dashboard, if the user manually triggers a Portfolio update, we should pass `forceUpdate: true` and update both states,
+          //    regardless of any internal portfolio controller limits or caching.
+          // 3. When signing a transaction and we have AccountOps, we have the following two scenarios:
+          //    3.1. The Dashboard interval should continue updating both the latest and pending states,
+          //    and also simulate AccountOps (without further optimizations, such as checking `areAccountOpsChanged` and updating the state only if necessary).
+          //    3.2. The SignAccountOp screen also has a simulation interval that updates both states and simulates the AccountOps.
+          //    Here, we should apply the `areAccountOpsChanged` optimization and update both states only if the AccountOps have changed or have not been simulated yet.
+          const forceUpdate = opts?.forceUpdate || areAccountOpsChanged
 
-        const [isSuccessfulLatestUpdate] = await Promise.all([
-          // Latest state update
-          updatePortfolioState(
-            accountState,
-            network,
-            portfolioLib,
-            {
-              blockTag: 'latest',
-              previousHints: fallbackHints,
-              additionalHints
-            },
+          // Pass in learnedTokens as additionalHints only on areAccountOpsChanged
+          const fallbackHints = (this.#previousHints?.fromExternalAPI &&
+            this.#previousHints?.fromExternalAPI[key]) ?? {
+            erc20s: [],
+            erc721s: {}
+          }
+          const additionalHints =
+            (forceUpdate &&
+              Object.keys(
+                (this.#previousHints?.learnedTokens &&
+                  this.#previousHints?.learnedTokens[network.id]) ??
+                  {}
+              )) ||
+            []
+
+          const [isSuccessfulLatestUpdate] = await Promise.all([
+            // Latest state update
+            this.updatePortfolioState(
+              accountId,
+              accountState,
+              network,
+              portfolioLib,
+              {
+                blockTag: 'latest',
+                previousHints: fallbackHints,
+                additionalHints
+              },
+              forceUpdate
+            ),
+            // Pending state update
+            // We are updating the pending state, only if AccountOps are changed or the application logic requests a force update
             forceUpdate
-          ),
-          // Pending state update
-          // We are updating the pending state, only if AccountOps are changed or the application logic requests a force update
-          forceUpdate
-            ? await updatePortfolioState(
-                pendingState,
-                network,
-                portfolioLib,
-                {
-                  blockTag: 'pending',
-                  previousHints: fallbackHints,
-                  ...(currentAccountOps && {
-                    simulation: {
-                      account: selectedAccount,
-                      accountOps: currentAccountOps
-                    }
-                  }),
-                  isEOA: !isSmartAccount(selectedAccount),
-                  additionalHints
-                },
-                forceUpdate
-              )
-            : Promise.resolve(false)
-        ])
+              ? this.updatePortfolioState(
+                  accountId,
+                  pendingState,
+                  network,
+                  portfolioLib,
+                  {
+                    blockTag: 'pending',
+                    previousHints: fallbackHints,
+                    ...(currentAccountOps && {
+                      simulation: {
+                        account: selectedAccount,
+                        accountOps: currentAccountOps
+                      }
+                    }),
+                    isEOA: !isSmartAccount(selectedAccount),
+                    additionalHints
+                  },
+                  forceUpdate
+                )
+              : Promise.resolve(false)
+          ])
 
-        // Persist latest state in previousHints in the disk storage for further requests
-        if (
-          isSuccessfulLatestUpdate &&
-          !areAccountOpsChanged &&
-          accountState[network.id]?.result?.hintsFromExternalAPI
-        ) {
-          const updatedStoragePreviousHints = getUpdatedHints(
-            accountState[network.id]!.result!.hintsFromExternalAPI as ExternalHintsAPIResponse,
-            accountState[network.id]!.result!.tokens,
-            network.id,
-            this.#previousHints,
-            key,
-            this.tokenPreferences
-          )
+          // Persist latest state in previousHints in the disk storage for further requests
+          if (
+            isSuccessfulLatestUpdate &&
+            !areAccountOpsChanged &&
+            accountState[network.id]?.result?.hintsFromExternalAPI
+          ) {
+            const updatedStoragePreviousHints = getUpdatedHints(
+              accountState[network.id]!.result!.hintsFromExternalAPI as ExternalHintsAPIResponse,
+              accountState[network.id]!.result!.tokens,
+              network.id,
+              this.#previousHints,
+              key,
+              this.tokenPreferences
+            )
 
-          this.#previousHints = updatedStoragePreviousHints
-          await this.#storage.set('previousHints', updatedStoragePreviousHints)
+            this.#previousHints = updatedStoragePreviousHints
+            await this.#storage.set('previousHints', updatedStoragePreviousHints)
+          }
+
+          // We cache the previously simulated AccountOps
+          // in order to compare them with the newly passed AccountOps before executing a new updatePortfolioState.
+          // This allows us to identify any differences between the two.
+          if (currentAccountOps) {
+            pendingState[network.id]!.accountOps = currentAccountOps
+          }
         }
 
-        // We cache the previously simulated AccountOps
-        // in order to compare them with the newly passed AccountOps before executing a new updatePortfolioState.
-        // This allows us to identify any differences between the two.
-        // TODO: If we enable the below line, pending states stopped working in the application (extension).
-        //  In the case we run this logic under a testing environment, then it works as expected.
-        //  As it is not a deal-breaker (for now), we will comment it out and will fix it later this week.
-        // if (isSuccessfulPendingUpdate && currentAccountOps) {
-        //   pendingState[network.id]!.accountOps = currentAccountOps
-        // }
+        // Chain the new updatePromise to the current queue
+        this.#queue[accountId][network.id] = this.#queue[accountId][network.id]
+          .then(updatePromise)
+          .catch(() => updatePromise())
+
+        // Ensure the method waits for the entire queue to resolve
+        await this.#queue[accountId][network.id]
       })
     )
 
