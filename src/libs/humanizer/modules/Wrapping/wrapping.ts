@@ -62,7 +62,8 @@ const wrapSwapReducer = (calls: IrCall[]): IrCall[] => {
       calls[i]?.fullVisualization?.[3]?.address &&
       calls[i + 1]?.fullVisualization?.[3]?.address &&
       calls[i]?.fullVisualization?.[1]?.address === calls[i + 1]?.fullVisualization?.[1]?.address &&
-      calls[i]?.fullVisualization?.[3]?.address === calls[i + 1]?.fullVisualization?.[3]?.address
+      calls[i]?.fullVisualization?.[3]?.address === calls[i + 1]?.fullVisualization?.[3]?.address &&
+      calls[i]?.fullVisualization?.[2]?.content?.startsWith('for')
     ) {
       const newVisualization = [
         getAction('Swap'),
@@ -70,7 +71,7 @@ const wrapSwapReducer = (calls: IrCall[]): IrCall[] => {
           calls[i].fullVisualization![1].address!,
           calls[i].fullVisualization![1].amount! + calls[i + 1].fullVisualization![1].amount!
         ),
-        getLabel('for'),
+        getLabel(calls[i].fullVisualization![2].content!),
         getToken(
           calls[i].fullVisualization![3].address!,
           calls[i].fullVisualization![3].amount! + calls[i + 1].fullVisualization![3].amount!
