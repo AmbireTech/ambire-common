@@ -74,8 +74,6 @@ describe('Across', () => {
         getToken('0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2', 10000000000000000n),
         getLabel('to'),
         getChain(42161n),
-        getLabel('and pay fee'),
-        getToken('0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2', 526084766783100n),
         ...getRecipientText(ZeroAddress, '0xd819A17345efA4f014F289b999d6f79215cff974')
       ]
     ]
