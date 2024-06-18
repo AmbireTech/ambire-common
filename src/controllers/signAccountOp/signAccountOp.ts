@@ -1,6 +1,3 @@
-/* eslint-disable no-restricted-syntax */
-import { AccountsController } from 'controllers/accounts/accounts'
-import { AccountOpAction } from 'controllers/actions/actions'
 import { AbiCoder, Contract, formatUnits, getAddress, Interface, toBeHex } from 'ethers'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
@@ -30,6 +27,9 @@ import {
   shouldUseOneTimeNonce,
   shouldUsePaymaster
 } from '../../libs/userOperation/userOperation'
+/* eslint-disable no-restricted-syntax */
+import { AccountsController } from '../accounts/accounts'
+import { AccountOpAction } from '../actions/actions'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
 import { PortfolioController } from '../portfolio/portfolio'
