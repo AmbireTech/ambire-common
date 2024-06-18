@@ -9,7 +9,7 @@ import { NetworksController } from '../networks/networks'
 import { ProvidersController } from '../providers/providers'
 import { AccountsController } from './accounts'
 
-describe('SignMessageController', () => {
+describe('AccountsController', () => {
   const storage: Storage = produceMemoryStore()
   const accounts = [
     {
@@ -51,7 +51,7 @@ describe('SignMessageController', () => {
   providersCtrl.providers = providers
 
   let accountsCtrl: AccountsController
-  test('should init ActionsController', (done) => {
+  test('should init AccountsController', (done) => {
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     ;(async () => {
       await storage.set('accounts', accounts)

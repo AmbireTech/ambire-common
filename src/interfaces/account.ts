@@ -4,7 +4,7 @@ export type AccountId = string
 
 export type AccountPreferences = {
   label: string
-  pfp: string // URL (https, ipfs or nft721://contractAddr/tokenId)
+  pfp: string // profile picture - acc address as default value to display a unique jazz icon
 }
 
 export interface Account {
@@ -17,6 +17,7 @@ export interface Account {
   creation: AccountCreation | null
   preferences: AccountPreferences
   email?: string
+  newlyCreated?: boolean
 }
 
 export interface AccountCreation {

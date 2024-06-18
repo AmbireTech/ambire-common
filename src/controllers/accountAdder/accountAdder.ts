@@ -68,7 +68,7 @@ export class AccountAdderController extends EventEmitter {
 
   // Accounts which identity is created on the Relayer (if needed), and are ready
   // to be added to the user's account list by the Main Controller
-  readyToAddAccounts: (Account & { newlyCreated?: boolean })[] = []
+  readyToAddAccounts: Account[] = []
 
   // The keys for the `readyToAddAccounts`, that are ready to be added to the
   // user's keystore by the Main Controller
@@ -570,16 +570,11 @@ export class AccountAdderController extends EventEmitter {
     }
 
     this.readyToAddAccounts = [
-      ...accounts.map(
-        (x, i) =>
-          ({
-            ...x.account,
-            preferences: getDefaultAccountPreferences(x.account.addr, this.#accounts.accounts, i),
-            newlyCreated: newlyCreatedAccounts.includes(x.account.addr)
-          } as Account & {
-            newlyCreated?: boolean | undefined
-          })
-      )
+      ...accounts.map((x, i) => ({
+        ...x.account,
+        preferences: getDefaultAccountPreferences(x.account.addr, this.#accounts.accounts, i),
+        newlyCreated: newlyCreatedAccounts.includes(x.account.addr)
+      }))
     ]
     this.readyToAddKeys = readyToAddKeys
     this.readyToAddKeyPreferences = readyToAddKeyPreferences
@@ -871,7 +866,7 @@ export class AccountAdderController extends EventEmitter {
               label: DEFAULT_ACCOUNT_LABEL,
               pfp: addr
             }
-          } as Account,
+          },
           isLinked: true
         }
       ]

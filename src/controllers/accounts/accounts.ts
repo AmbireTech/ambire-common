@@ -28,7 +28,7 @@ export class AccountsController extends EventEmitter {
 
   #providers: ProvidersController
 
-  accounts: (Account & { newlyCreated?: boolean })[] = []
+  accounts: Account[] = []
 
   selectedAccount: AccountId | null = null
 
@@ -150,7 +150,7 @@ export class AccountsController extends EventEmitter {
     return states
   }
 
-  async addAccounts(accounts: (Account & { newlyCreated?: boolean })[] = []) {
+  async addAccounts(accounts: Account[] = []) {
     if (!accounts.length) return
     const alreadyAddedAddressSet = new Set(this.accounts.map((account) => account.addr))
     const newAccountsNotAddedYet = accounts.filter((acc) => !alreadyAddedAddressSet.has(acc.addr))

@@ -283,15 +283,12 @@ export const getDefaultAccountPreferences = (
   accountAddr: string,
   prevAccounts: Account[],
   i: number
-) => {
-  // If an account with the same address already exists, skip,
-  // in order to persist the already stored account preferences.
+): AccountPreferences => {
   const existingAcc = prevAccounts.find(({ addr }) => addr === accountAddr)
-  if (existingAcc) return undefined
-
   const number = prevAccounts.length + (i + 1)
+
   return {
-    label: `Account ${number}`,
+    label: existingAcc ? DEFAULT_ACCOUNT_LABEL : `Account ${number}`,
     pfp: accountAddr // default pfp - a jazz icon generated from the addr
   }
 }

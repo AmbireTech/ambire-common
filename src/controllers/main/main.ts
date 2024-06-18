@@ -193,6 +193,7 @@ export class MainController extends EventEmitter {
       async () => {
         this.activity.init()
         await this.updateSelectedAccountPortfolio()
+        // forceEmitUpdate to update the getters in the FE state of the ctrl
         await this.forceEmitUpdate()
         await this.actions.forceEmitUpdate()
         await this.addressBook.forceEmitUpdate()
