@@ -282,9 +282,9 @@ export const getAccountImportStatus = ({
 export const getDefaultAccountPreferences = (
   accountAddr: string,
   prevAccounts: Account[],
-  i: number
+  i?: number
 ): AccountPreferences => {
-  const number = prevAccounts.length + (i + 1)
+  const number = i ? prevAccounts.length + (i + 1) : prevAccounts.length + 1
 
   return {
     label: `Account ${number}`,
