@@ -26,6 +26,19 @@ const KyberModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]) => 
         getLabel('for'),
         getToken(parseAddressKyber(dstToken), minReturnAmount)
       ]
+    },
+    [iface.getFunction(
+      'swapSimpleMode(address caller, tuple(address srcToken,address dstToken,address[] srcReceivers,uint256[] srcAmounts,address[] feeReceivers,uint256[] feeAmounts,address dstReceiver,uint256 amount,uint256 minReturnAmount,uint256 flags,bytes permit) desc,bytes executorData,bytes clientData)'
+    )?.selector!]: (call: IrCall) => {
+      const {
+        desc: { srcToken, dstToken, amount, minReturnAmount }
+      } = iface.parseTransaction(call)!.args
+      return [
+        getAction('Swap'),
+        getToken(parseAddressKyber(srcToken), amount),
+        getLabel('for'),
+        getToken(parseAddressKyber(dstToken), minReturnAmount)
+      ]
     }
   }
   const newCalls = calls.map((call) => {
