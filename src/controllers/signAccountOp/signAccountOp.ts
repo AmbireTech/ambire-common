@@ -945,7 +945,14 @@ export class SignAccountOpController extends EventEmitter {
               userOperation.nonce = getOneTimeNonce(userOperation)
             }
           } catch (e: any) {
-            return this.#setSigningError(e.message)
+            this.emitError({
+              level: 'major',
+              message: e.message,
+              error: new Error(e.message)
+            })
+            this.status = { type: SigningStatus.ReadyToSign }
+            this.emitUpdate()
+            return
           }
         }
 
