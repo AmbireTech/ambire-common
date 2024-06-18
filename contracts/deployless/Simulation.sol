@@ -2,11 +2,12 @@
 pragma solidity ^0.8.11;
 
 import './Spoof.sol';
+import '../libs/Transaction.sol';
 
 contract Simulation is Spoof {
   struct ToSimulate {
     uint nonce;
-    IAmbireAccount.Transaction[] txns;
+    Transaction[] txns;
   }
 
   function simulate(

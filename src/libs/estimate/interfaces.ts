@@ -1,9 +1,19 @@
 import { TokenResult } from '../portfolio'
 
+export interface BundlerEstimateResult {
+  preVerificationGas: string
+  verificationGasLimit: string
+  callGasLimit: string
+  paymasterVerificationGasLimit: string
+  paymasterPostOpGasLimit: string
+}
+
 export interface Erc4337GasLimits {
   preVerificationGas: string
   verificationGasLimit: string
   callGasLimit: string
+  paymasterVerificationGasLimit: string
+  paymasterPostOpGasLimit: string
   gasPrice: {
     slow: { maxFeePerGas: string; maxPriorityFeePerGas: string }
     medium: { maxFeePerGas: string; maxPriorityFeePerGas: string }

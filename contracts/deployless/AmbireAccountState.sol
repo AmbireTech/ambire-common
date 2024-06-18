@@ -87,7 +87,7 @@ contract AmbireAccountState {
         return IEntryPoint(entryPoint).getNonce(acc, 0);
     }
 
-    function ambireV2Check(IAmbireAccount account) external pure returns(bool) {
+    function ambireV2Check(IAmbireAccount account) external view returns(bool) {
         return account.supportsInterface(0x0a417632) || account.supportsInterface(0x150b7a02);
     }
 }

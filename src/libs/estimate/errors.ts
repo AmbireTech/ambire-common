@@ -1,6 +1,6 @@
 /* this file describes errors during estimation */
 
-import { AbiCoder } from 'ethers'
+import { AbiCoder, isHexString } from 'ethers'
 
 import { Erc4337GasLimits, EstimateResult } from './interfaces'
 
@@ -20,6 +20,7 @@ const expiredSig = '0x5bf6f916'
 
 export function mapTxnErrMsg(contractError: string): string | null {
   let msg = ''
+  let riskOfUnreadableChars = false
   if (contractError.startsWith(errorSig)) {
     try {
       msg = new AbiCoder().decode(['string'], `0x${contractError.slice(10)}`)[0]
@@ -29,7 +30,9 @@ export function mapTxnErrMsg(contractError: string): string | null {
   } else if (contractError === expiredSig) {
     msg = contractError
   } else {
-    msg = Buffer.from(contractError.substring(2), 'hex').toString()
+    const isHex = isHexString(contractError)
+    riskOfUnreadableChars = isHex
+    msg = isHex ? Buffer.from(contractError.substring(2), 'hex').toString() : contractError
   }
 
   if (!msg || msg === '0x') return null
@@ -42,6 +45,15 @@ export function mapTxnErrMsg(contractError: string): string | null {
     return 'Your signer address is not authorized'
   if (contractErrors.find((contractMsg) => msg.includes(contractMsg)))
     return 'This dApp does not support smart wallets'
+  if (
+    msg.includes('IMPOSSIBLE_GAS_CONSUMPTION') ||
+    msg.toLowerCase().includes('insufficient funds')
+  )
+    return 'Insufficient funds for intristic transaction cost'
+  if (msg.includes('paymaster deposit too low')) {
+    return `Paymaster does not have enough funds to execute this request. Please use another payment option or contact support`
+  }
+  if (!riskOfUnreadableChars) return msg
 
   return null
 }
