@@ -50,5 +50,6 @@ export const Across = [
   'function usdcToken() view returns (address)',
   'function wrap()',
   'function wrappedNativeToken() view returns (address)',
-  'receive() payable'
+  'receive() payable',
+  'function deposit(address spokePool,address recipient, address originToken, uint256 amount, uint256 destinationChainId, int64 relayerFeePct, uint32 quoteTimestamp,bytes message, uint256 maxCount) payable'
 ]

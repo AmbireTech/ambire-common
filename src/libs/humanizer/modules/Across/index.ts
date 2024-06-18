@@ -43,6 +43,22 @@ const AcrossModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]) =>
         getChain(destinationChainId),
         ...getRecipientText(accOp.accountAddr, recipient)
       ]
+    },
+    [iface.getFunction(
+      'function deposit(address spokePool,address recipient, address originToken, uint256 amount, uint256 destinationChainId, int64 relayerFeePct, uint32 quoteTimestamp,bytes message, uint256 maxCount) payable'
+    )?.selector!]: (call: IrCall) => {
+      const { recipient, originToken, amount, destinationChainId, relayerFeePct } =
+        iface.parseTransaction(call)!.args
+
+      return [
+        getAction('Bridge'),
+        getToken(originToken, amount),
+        getLabel('to'),
+        getChain(destinationChainId),
+        getLabel('and pay fee'),
+        getToken(originToken, relayerFeePct),
+        ...getRecipientText(accOp.accountAddr, recipient)
+      ]
     }
   }
   const newCalls = calls.map((call) => {
