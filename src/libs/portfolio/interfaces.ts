@@ -1,5 +1,5 @@
 import { Account, AccountId } from '../../interfaces/account'
-import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
+import { Network, NetworkId } from '../../interfaces/network'
 import { AccountOp } from '../accountOp/accountOp'
 import { CustomToken } from './customToken'
 
@@ -13,17 +13,13 @@ export interface GetOptionsSimulation {
   account: Account
 }
 
-export interface TokenResult extends Partial<CustomToken> {
-  address: string
-  symbol: string
+export type TokenResult = Omit<CustomToken, 'standard'> & {
   amount: bigint
-  networkId: NetworkId
   amountPostSimulation?: bigint
-  decimals: number
   priceIn: Price[]
   flags: {
     onGasTank: boolean
-    rewardsType: string | null
+    rewardsType: 'wallet-vesting' | 'wallet-rewards' | null
     canTopUpGasTank: boolean
     isFeeToken: boolean
   }
@@ -50,10 +46,13 @@ export interface ERC721s {
 }
 
 export interface Hints {
-  networkId: string
-  accountAddr: string
   erc20s: string[]
   erc721s: ERC721s
+}
+
+export interface ExternalHintsAPIResponse extends Hints {
+  networkId: string
+  accountAddr: string
   prices: {
     [name: string]: Price
   }
@@ -67,49 +66,7 @@ interface ExtendedError extends Error {
   simulationErrorMsg?: string
 }
 
-export type NetworkState = {
-  isReady: boolean
-  isLoading: boolean
-  criticalError?: ExtendedError
-  errors: ExtendedError[]
-  result?: PortfolioGetResult
-  // We store the previously simulated AccountOps only for the pending state.
-  // Prior to triggering a pending state update, we compare the newly passed AccountOp[] (updateSelectedAccount) with the cached version.
-  // If there are no differences, the update is canceled unless the `forceUpdate` flag is set.
-  accountOps?: AccountOp[]
-}
-
-export type AccountState = {
-  // network id
-  [key: string]: NetworkState | undefined
-}
-
-export type AdditionalAccountState = {
-  // network id
-  [key: string]:
-    | {
-        isReady: boolean
-        isLoading: boolean
-        criticalError?: Error
-        errors: Error[]
-        result?: AdditionalPortfolioGetResult
-      }
-    | undefined
-}
-
-// account => network => PortfolioGetResult, extra fields
-export type PortfolioControllerState = {
-  // account id
-  [key: string]: AccountState
-}
-
-export interface AdditionalPortfolioGetResult {
-  updateStarted: number
-  tokens: TokenResult[]
-  total: { [name: string]: number }
-}
-
-export interface PortfolioGetResult {
+export interface PortfolioLibGetResult {
   updateStarted: number
   discoveryTime: number
   oracleCallTime: number
@@ -118,9 +75,43 @@ export interface PortfolioGetResult {
   tokens: TokenResult[]
   tokenErrors: { error: string; address: string }[]
   collections: CollectionResult[]
-  total: { [name: string]: number }
-  hints: Hints
+  hintsFromExternalAPI: Hints | null
   errors: ExtendedError[]
+}
+
+interface Total {
+  [currency: string]: number
+}
+
+type AdditionalPortfolioProperties = 'updateStarted' | 'tokens'
+
+// Create the final type with some properties optional
+export type AdditionalPortfolioNetworkResult = Partial<PortfolioLibGetResult> &
+  Pick<PortfolioLibGetResult, AdditionalPortfolioProperties> & {
+    total: Total
+  }
+
+type PortfolioNetworkResult = Required<AdditionalPortfolioNetworkResult>
+
+export type NetworkState = {
+  isReady: boolean
+  isLoading: boolean
+  criticalError?: ExtendedError
+  errors: ExtendedError[]
+  result?: PortfolioNetworkResult | AdditionalPortfolioNetworkResult
+  // We store the previously simulated AccountOps only for the pending state.
+  // Prior to triggering a pending state update, we compare the newly passed AccountOp[] (updateSelectedAccount) with the cached version.
+  // If there are no differences, the update is canceled unless the `forceUpdate` flag is set.
+  accountOps?: AccountOp[]
+}
+
+export type AccountState = {
+  [networkId: string]: NetworkState | undefined
+}
+
+export type PortfolioControllerState = {
+  // accountId:networkId:NetworkState
+  [accountId: string]: AccountState
 }
 
 export interface LimitsOptions {
@@ -136,7 +127,7 @@ export interface Limits {
 }
 
 export type PinnedTokens = {
-  networkId: NetworkDescriptor['id']
+  networkId: NetworkId
   address: string
   onGasTank: boolean
   accountId?: AccountId
@@ -160,6 +151,6 @@ export interface GetOptions {
 }
 
 export interface PreviousHintsStorage {
-  learnedTokens: { [key in NetworkId]: { [key: string]: string | null } }
-  fromExternalAPI: { [key: string]: GetOptions['previousHints'] }
+  learnedTokens: { [network in NetworkId]: { [tokenAddress: string]: string | null } }
+  fromExternalAPI: { [networkAndAccountKey: string]: GetOptions['previousHints'] }
 }

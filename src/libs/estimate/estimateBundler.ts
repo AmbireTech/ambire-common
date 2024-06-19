@@ -1,60 +1,20 @@
-import { concat, hexlify, Interface, toBeHex, ZeroAddress } from 'ethers'
+import { Interface, toBeHex, ZeroAddress } from 'ethers'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
-import AmbireAccountFactory from '../../../contracts/compiled/AmbireAccountFactory.json'
-import {
-  AMBIRE_ACCOUNT_FACTORY,
-  AMBIRE_PAYMASTER,
-  ENTRY_POINT_MARKER,
-  ERC_4337_ENTRYPOINT,
-  PROXY_NO_REVERTS
-} from '../../consts/deploy'
 import { Account, AccountStates } from '../../interfaces/account'
-import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
+import { Network } from '../../interfaces/network'
 import { Bundler } from '../../services/bundlers/bundler'
 import { AccountOp, getSignableCalls } from '../accountOp/accountOp'
 import { getFeeCall } from '../calls/calls'
 import { TokenResult } from '../portfolio'
-import { getProxyDeployBytecode } from '../proxyDeploy/deploy'
-import { getAmbireAccountAddress } from '../proxyDeploy/getAmbireAddressTwo'
-import { UserOperation } from '../userOperation/types'
 import {
   getPaymasterDataForEstimate,
   getSigForCalculations,
-  getUserOperation
+  getUserOperation,
+  shouldUsePaymaster
 } from '../userOperation/userOperation'
 import { estimationErrorFormatted } from './errors'
 import { EstimateResult, FeePaymentOption } from './interfaces'
-
-function getUserOpForEstimate(
-  userOp: UserOperation,
-  op: AccountOp,
-  isDeployed: boolean
-): UserOperation {
-  const ambireAccount = new Interface(AmbireAccount.abi)
-  const uOp = { ...userOp }
-
-  if (!isDeployed) {
-    // replace the initCode with one that will not revert in estimation
-    const factoryInterface = new Interface(AmbireAccountFactory.abi)
-    const bytecode = getProxyDeployBytecode(
-      PROXY_NO_REVERTS,
-      [{ addr: ERC_4337_ENTRYPOINT, hash: ENTRY_POINT_MARKER }],
-      { privSlot: 0 }
-    )
-    uOp.sender = getAmbireAccountAddress(AMBIRE_ACCOUNT_FACTORY, bytecode)
-    uOp.initCode = hexlify(
-      concat([
-        AMBIRE_ACCOUNT_FACTORY,
-        factoryInterface.encodeFunctionData('deploy', [bytecode, toBeHex(0, 32)])
-      ])
-    )
-  }
-
-  uOp.callData = ambireAccount.encodeFunctionData('executeBySender', [getSignableCalls(op)])
-  uOp.signature = getSigForCalculations()
-  return uOp
-}
 
 function getFeeTokenForEstimate(feeTokens: TokenResult[]): TokenResult | null {
   if (!feeTokens.length) return null
@@ -77,33 +37,38 @@ function getFeeTokenForEstimate(feeTokens: TokenResult[]): TokenResult | null {
   return gasTankToken ?? null
 }
 
-// try to humanize a bit more the error message
-function mapError(e: Error) {
-  if (e.message.includes('paymaster deposit too low')) {
-    return new Error(
-      `Paymaster with address ${AMBIRE_PAYMASTER} does not have enough funds to execute this request. Please contact support`
-    )
-  }
-
-  return e
-}
-
 export async function bundlerEstimate(
   account: Account,
   accountStates: AccountStates,
   op: AccountOp,
-  network: NetworkDescriptor,
+  network: Network,
   feeTokens: TokenResult[]
 ): Promise<EstimateResult> {
   // we pass an empty array of feePaymentOptions as they are built
   // in an upper level using the balances from Estimation.sol.
   // balances from Estimation.sol reflect the balances after pending txn exec
   const feePaymentOptions: FeePaymentOption[] = []
+
   const localOp = { ...op }
-  const feeToken = getFeeTokenForEstimate(feeTokens)
-  if (feeToken) localOp.feeCall = getFeeCall(feeToken, 1n)
   const accountState = accountStates[localOp.accountAddr][localOp.networkId]
-  const userOp = getUserOperation(account, accountState, localOp)
+  // if there's no entryPointAuthorization, we cannot do the estimation on deploy
+  if (!accountState.isDeployed && (!op.meta || !op.meta.entryPointAuthorization))
+    return estimationErrorFormatted(
+      new Error('Entry point privileges not granted. Please contact support'),
+      { feePaymentOptions }
+    )
+
+  const usesPaymaster = shouldUsePaymaster(network)
+  if (usesPaymaster) {
+    const feeToken = getFeeTokenForEstimate(feeTokens)
+    if (feeToken) localOp.feeCall = getFeeCall(feeToken, 1n)
+  }
+  const userOp = getUserOperation(
+    account,
+    accountState,
+    localOp,
+    !accountState.isDeployed ? op.meta!.entryPointAuthorization : undefined
+  )
   const gasPrices = await Bundler.fetchGasPrices(network).catch(
     () => new Error('Could not fetch gas prices, retrying...')
   )
@@ -114,22 +79,29 @@ export async function bundlerEstimate(
   // preVerificationGas.
   if (network.isOptimistic) {
     // use medium for the gas limit estimation
-    userOp.maxFeePerGas = gasPrices.medium.maxFeePerGas
     userOp.maxPriorityFeePerGas = gasPrices.medium.maxPriorityFeePerGas
+    userOp.maxFeePerGas = gasPrices.medium.maxFeePerGas
   }
 
   // add fake data so simulation works
-  if (network.erc4337.hasPaymaster) userOp.paymasterAndData = getPaymasterDataForEstimate()
+  if (usesPaymaster) {
+    const paymasterUnpacked = getPaymasterDataForEstimate()
+    userOp.paymaster = paymasterUnpacked.paymaster
+    userOp.paymasterPostOpGasLimit = paymasterUnpacked.paymasterPostOpGasLimit
+    userOp.paymasterVerificationGasLimit = paymasterUnpacked.paymasterVerificationGasLimit
+    userOp.paymasterData = paymasterUnpacked.paymasterData
+  }
 
   if (userOp.activatorCall) localOp.activatorCall = userOp.activatorCall
-  const uOp = getUserOpForEstimate(userOp, localOp, accountState.isDeployed)
-  const gasData = await Bundler.estimate(uOp, network).catch((e: any) =>
-    mapError(
-      new Error(
-        e.error && e.error.message ? e.error.message : 'Estimation failed with unknown reason'
-      )
-    )
-  )
+
+  const ambireAccount = new Interface(AmbireAccount.abi)
+  userOp.callData = ambireAccount.encodeFunctionData('executeBySender', [getSignableCalls(localOp)])
+  userOp.signature = getSigForCalculations()
+
+  const shouldStateOverride = !accountState.isErc4337Enabled && accountState.isDeployed
+  const gasData = await Bundler.estimate(userOp, network, shouldStateOverride).catch((e: any) => {
+    return new Error(Bundler.decodeBundlerError(e, 'Estimation failed with unknown reason'))
+  })
   if (gasData instanceof Error)
     return estimationErrorFormatted(gasData as Error, { feePaymentOptions })
 
@@ -149,6 +121,8 @@ export async function bundlerEstimate(
       preVerificationGas: gasData.preVerificationGas,
       verificationGasLimit: gasData.verificationGasLimit,
       callGasLimit: gasData.callGasLimit,
+      paymasterVerificationGasLimit: gasData.paymasterVerificationGasLimit,
+      paymasterPostOpGasLimit: gasData.paymasterPostOpGasLimit,
       gasPrice: { ...gasPrices, ape }
     },
     error: null

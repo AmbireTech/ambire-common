@@ -3,15 +3,17 @@ import fetch from 'node-fetch'
 import { beforeAll, describe, expect, jest, test } from '@jest/globals'
 
 import { produceMemoryStore } from '../../../test/helpers'
+import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { networks } from '../../consts/networks'
 import { Account, AccountStates } from '../../interfaces/account'
-import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
+import { Network } from '../../interfaces/network'
 import { Message } from '../../interfaces/userRequest'
 import { getAccountState } from '../../libs/accountState/accountState'
 import { getRpcProvider } from '../../services/provider'
 import { KeystoreController } from '../keystore/keystore'
 import { InternalSigner } from '../keystore/keystore.test'
-import { SettingsController } from '../settings/settings'
+import { NetworksController } from '../networks/networks'
+import { ProvidersController } from '../providers/providers'
 import { SignMessageController } from './signMessage'
 
 const providers = Object.fromEntries(
@@ -27,7 +29,11 @@ const account: Account = {
       '0x0000000000000000000000000000000000000000000000000000000000000001'
     ]
   ],
-  creation: null
+  creation: null,
+  preferences: {
+    label: DEFAULT_ACCOUNT_LABEL,
+    pfp: '0x9188fdd757Df66B4F693D624Ed6A13a15Cf717D7'
+  }
 }
 
 let accountStates: AccountStates
@@ -40,7 +46,7 @@ const getAccountsInfo = async (accounts: Account[]): Promise<AccountStates> => {
     return [
       acc.addr,
       Object.fromEntries(
-        networks.map((network: NetworkDescriptor, netIndex: number) => {
+        networks.map((network: Network, netIndex: number) => {
           return [network.id, result[netIndex][accIndex]]
         })
       )
@@ -52,7 +58,6 @@ const getAccountsInfo = async (accounts: Account[]): Promise<AccountStates> => {
 describe('SignMessageController', () => {
   let signMessageController: SignMessageController
   let keystore: KeystoreController
-  let settings: SettingsController
 
   beforeAll(async () => {
     accountStates = await getAccountsInfo([account])
@@ -61,12 +66,23 @@ describe('SignMessageController', () => {
   beforeEach(() => {
     const keystoreSigners = { internal: InternalSigner }
     keystore = new KeystoreController(produceMemoryStore(), keystoreSigners)
-    settings = new SettingsController(produceMemoryStore())
-    settings.providers = providers
+    let providersCtrl: ProvidersController
+    const networksCtrl = new NetworksController(
+      produceMemoryStore(),
+      (net) => {
+        providersCtrl.setProvider(net)
+      },
+      (id) => {
+        providersCtrl.removeProvider(id)
+      }
+    )
+    providersCtrl = new ProvidersController(networksCtrl)
+    providersCtrl.providers = providers
 
     signMessageController = new SignMessageController(
       keystore,
-      settings,
+      providersCtrl,
+      networksCtrl,
       {},
       produceMemoryStore(),
       fetch

@@ -1,41 +1,41 @@
-/* eslint-disable no-await-in-loop */
-import { stringify, parse } from '../richJson/richJson'
 import { ErrorRef } from '../../controllers/eventEmitter/eventEmitter'
-
+import { HumanizerFragment } from '../../interfaces/humanizer'
 import { Storage } from '../../interfaces/storage'
 import { Message } from '../../interfaces/userRequest'
 import { AccountOp } from '../accountOp/accountOp'
+/* eslint-disable no-await-in-loop */
+import { parse, stringify } from '../richJson/richJson'
 import { humanizeCalls, humanizePlainTextMessage, humanizeTypedMessage } from './humanizerFuncs'
 import {
   HumanizerCallModule,
-  HumanizerFragment,
+  HumanizerOptions,
   HumanizerParsingModule,
+  HumanizerPromise,
   HumanizerSettings,
   IrCall,
-  IrMessage,
-  HumanizerPromise
+  IrMessage
 } from './interfaces'
+import { addFragsToLazyStore, lazyReadHumanizerMeta } from './lazyStorage'
 import { aaveHumanizer } from './modules/Aave'
-import { fallbackHumanizer } from './modules/fallBackHumanizer'
-import { gasTankModule } from './modules/gasTankModule'
-import { privilegeHumanizer } from './modules/privileges'
-import { sushiSwapModule } from './modules/sushiSwapModule'
-import { genericErc20Humanizer, genericErc721Humanizer } from './modules/tokens'
+import fallbackHumanizer from './modules/FallbackHumanizer'
+import gasTankModule from './modules/GasTankModule'
+import preProcessHumanizer from './modules/PreProcess'
+import privilegeHumanizer from './modules/Privileges'
+import sushiSwapModule from './modules/Sushiswap'
+import { genericErc20Humanizer, genericErc721Humanizer } from './modules/Tokens'
 import { uniswapHumanizer } from './modules/Uniswap'
-// import { oneInchHumanizer } from '.modules/oneInch'
 import { WALLETModule } from './modules/WALLET'
-import { wrappingModule } from './modules/wrapped'
+import wrappingModule from './modules/Wrapping'
 import { parseCalls, parseMessage } from './parsers'
 import { humanizerMetaParsing } from './parsers/humanizerMetaParsing'
-import { preProcessHumanizer } from './modules/preProcessModule'
 import {
   erc20Module,
   erc721Module,
   fallbackEIP712Humanizer,
   permit2Module
 } from './typedMessageModules'
-import { addFragsToLazyStore, lazyReadHumanizerMeta } from './lazyStorage'
 import { HUMANIZER_META_KEY } from './utils'
+
 // from most generic to least generic
 // the final humanization is the final triggered module
 export const humanizerCallModules: HumanizerCallModule[] = [
@@ -46,7 +46,6 @@ export const humanizerCallModules: HumanizerCallModule[] = [
   uniswapHumanizer,
   wrappingModule,
   aaveHumanizer,
-  // oneInchHumanizer,
   WALLETModule,
   privilegeHumanizer,
   sushiSwapModule,
@@ -97,28 +96,30 @@ const sharedHumanization = async <InputDataType extends AccountOp | Message>(
   if ('content' in data) {
     message = parse(stringify(data))
   }
+  const humanizerOptions: HumanizerOptions = {
+    fetch,
+    emitError,
+    network: options?.network
+  }
   for (let i = 0; i <= 3; i++) {
-    // @TODO refactor conditional for nocache
     const totalHumanizerMetaToBeUsed = await lazyReadHumanizerMeta(storage, {
-      nocache: options?.isExtension === false
+      isExtension: options?.isExtension,
+      nocache: options?.nocache
     })
     if ('calls' in data) {
-      //
-      ;[irCalls, asyncOps] = humanizeCalls(op!, humanizerCallModules, totalHumanizerMetaToBeUsed, {
-        fetch,
-        emitError
-      })
+      humanizerOptions.networkId = op!.networkId
+      ;[irCalls, asyncOps] = humanizeCalls(
+        op!,
+        humanizerCallModules,
+        totalHumanizerMetaToBeUsed,
+        humanizerOptions
+      )
       const [parsedCalls, newAsyncOps] = parseCalls(
         op!,
         irCalls,
         parsingModules,
         totalHumanizerMetaToBeUsed,
-        {
-          fetch,
-          emitError,
-          network: options?.network,
-          networkId: op!.networkId
-        }
+        humanizerOptions
       )
       asyncOps.push(...newAsyncOps)
       ;(callback as (response: IrCall[], nonGlobalFrags: HumanizerFragment[]) => void)(
@@ -139,11 +140,12 @@ const sharedHumanization = async <InputDataType extends AccountOp | Message>(
           : humanizePlainTextMessage(message!.content))
       }
 
-      ;[parsedMessage, asyncOps] = parseMessage(humanizerSettings, irMessage, parsingModules, {
-        fetch,
-        emitError,
-        network: options?.network
-      })
+      ;[parsedMessage, asyncOps] = parseMessage(
+        humanizerSettings,
+        irMessage,
+        parsingModules,
+        humanizerOptions
+      )
       ;(callback as (response: IrMessage) => void)(parsedMessage)
     }
 

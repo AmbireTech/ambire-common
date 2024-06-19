@@ -5,7 +5,7 @@ import { GasFeePayment } from '../libs/accountOp/accountOp'
 import { Call } from '../libs/accountOp/types'
 import { getHdPathFromTemplate } from '../utils/hdPath'
 import { Account } from './account'
-import { NetworkDescriptor } from './networkDescriptor'
+import { Network } from './network'
 import { TypedMessage } from './userRequest'
 
 /**
@@ -43,7 +43,7 @@ export interface TxnRequest {
   to: Call['to']
   value?: Call['value']
   data: Call['data']
-  chainId: NetworkDescriptor['chainId']
+  chainId: Network['chainId']
   nonce: number
   gasLimit: GasFeePayment['simulatedGasLimit']
   gasPrice?: bigint
@@ -124,11 +124,11 @@ export type KeystoreSignerType = {
  * (for the accounts that were just imported by the AccountAdder Controller).
  */
 export type ReadyToAddKeys = {
-  internal: { privateKey: string; dedicatedToOneSA: boolean }[]
+  internal: { privateKey: string; dedicatedToOneSA: Key['dedicatedToOneSA'] }[]
   external: {
     addr: Key['addr']
     type: Key['type']
-    dedicatedToOneSA: boolean
+    dedicatedToOneSA: Key['dedicatedToOneSA']
     meta: ExternalKey['meta']
   }[]
 }

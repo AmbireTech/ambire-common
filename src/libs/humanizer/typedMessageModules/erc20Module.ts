@@ -1,8 +1,8 @@
 import { TypedMessage } from '../../../interfaces/userRequest'
-import { HumanizerTypedMessaageModule, HumanizerVisualization } from '../interfaces'
+import { HumanizerTypedMessageModule, HumanizerVisualization } from '../interfaces'
 import { getAction, getAddressVisualization, getDeadline, getLabel, getToken } from '../utils'
 
-export const erc20Module: HumanizerTypedMessaageModule = (tm: TypedMessage) => {
+export const erc20Module: HumanizerTypedMessageModule = (tm: TypedMessage) => {
   if (tm.types.Permit && tm.primaryType === 'Permit') {
     if (
       tm.message.owner &&
@@ -14,7 +14,8 @@ export const erc20Module: HumanizerTypedMessaageModule = (tm: TypedMessage) => {
     ) {
       return {
         fullVisualization: [
-          getAction('Send'),
+          getAction('Grant approval'),
+          getLabel('for'),
           getToken(tm.domain.verifyingContract!, tm.message.value),
           getLabel('to'),
           getAddressVisualization(tm.message.spender),

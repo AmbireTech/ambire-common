@@ -1,8 +1,8 @@
 import { AbiCoder, concat, hexlify, Interface, keccak256, toBeHex } from 'ethers'
-import { NetworkDescriptor } from 'interfaces/networkDescriptor'
+import { Network } from 'interfaces/network'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
-import AmbireAccountFactory from '../../../contracts/compiled/AmbireAccountFactory.json'
+import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json'
 import {
   AMBIRE_PAYMASTER,
   AMBIRE_PAYMASTER_SIGNER,
@@ -11,7 +11,7 @@ import {
 } from '../../consts/deploy'
 import { SPOOF_SIGTYPE } from '../../consts/signatures'
 import { Account, AccountId, AccountOnchainState } from '../../interfaces/account'
-import { AccountOp } from '../accountOp/accountOp'
+import { AccountOp, callToTuple } from '../accountOp/accountOp'
 import { UserOperation } from './types'
 
 export function calculateCallDataCost(callData: string): bigint {
@@ -33,13 +33,19 @@ export function getSigForCalculations() {
   return '0x0dc2d37f7b285a2243b2e1e6ba7195c578c72b395c0f76556f8961b0bca97ddc44e2d7a249598f56081a375837d2b82414c3c94940db3c1e64110108021161ca1c01'
 }
 
-export function getPaymasterDataForEstimate() {
+export function getPaymasterDataForEstimate(): {
+  paymaster: string
+  paymasterData: string
+  paymasterVerificationGasLimit: string
+  paymasterPostOpGasLimit: string
+} {
   const abiCoder = new AbiCoder()
-  const simulationData = abiCoder.encode(
-    ['uint48', 'uint48', 'bytes'],
-    [0, 0, getSigForCalculations()]
-  )
-  return hexlify(concat([AMBIRE_PAYMASTER, simulationData]))
+  return {
+    paymaster: AMBIRE_PAYMASTER,
+    paymasterVerificationGasLimit: toBeHex(0),
+    paymasterPostOpGasLimit: toBeHex(0),
+    paymasterData: abiCoder.encode(['uint48', 'uint48', 'bytes'], [0, 0, getSigForCalculations()])
+  }
 }
 
 // get the call to give privileges to the entry point
@@ -78,16 +84,27 @@ export function getOneTimeNonce(userOperation: UserOperation) {
   const abiCoder = new AbiCoder()
   return `0x${keccak256(
     abiCoder.encode(
-      ['bytes', 'bytes', 'uint256', 'uint256', 'uint256', 'uint256', 'uint256', 'bytes'],
+      ['bytes', 'bytes', 'bytes32', 'uint256', 'bytes32', 'bytes'],
       [
-        userOperation.initCode,
+        userOperation.factory && userOperation.factoryData
+          ? concat([userOperation.factory, userOperation.factoryData])
+          : '0x',
         userOperation.callData,
-        userOperation.callGasLimit,
-        userOperation.verificationGasLimit,
+        concat([
+          toBeHex(userOperation.verificationGasLimit, 16),
+          toBeHex(userOperation.callGasLimit, 16)
+        ]),
         userOperation.preVerificationGas,
-        userOperation.maxFeePerGas,
-        userOperation.maxPriorityFeePerGas,
-        userOperation.paymasterAndData
+        concat([
+          toBeHex(userOperation.maxPriorityFeePerGas, 16),
+          toBeHex(userOperation.maxFeePerGas, 16)
+        ]),
+        concat([
+          userOperation.paymaster!,
+          toBeHex(userOperation.paymasterVerificationGasLimit!, 16),
+          toBeHex(userOperation.paymasterPostOpGasLimit!, 16),
+          userOperation.paymasterData!
+        ])
       ]
     )
   ).substring(18)}${toBeHex(0, 8).substring(2)}`
@@ -100,19 +117,18 @@ export function shouldUseOneTimeNonce(userOp: UserOperation) {
 export function getUserOperation(
   account: Account,
   accountState: AccountOnchainState,
-  accountOp: AccountOp
+  accountOp: AccountOp,
+  entryPointSig?: string
 ): UserOperation {
   const userOp: UserOperation = {
     sender: accountOp.accountAddr,
     nonce: toBeHex(accountState.erc4337Nonce),
-    initCode: '0x',
     callData: '0x',
-    preVerificationGas: toBeHex(0),
     callGasLimit: toBeHex(0),
     verificationGasLimit: toBeHex(0),
+    preVerificationGas: toBeHex(0),
     maxFeePerGas: toBeHex(1),
     maxPriorityFeePerGas: toBeHex(1),
-    paymasterAndData: '0x',
     signature: '0x',
     requestType: 'standard'
   }
@@ -120,23 +136,19 @@ export function getUserOperation(
   // if the account is not deployed, prepare the deploy in the initCode
   if (!accountState.isDeployed) {
     if (!account.creation) throw new Error('Account creation properties are missing')
+    if (!entryPointSig) throw new Error('No entry point authorization signature provided')
 
-    const factoryInterface = new Interface(AmbireAccountFactory.abi)
-    userOp.initCode = hexlify(
-      concat([
-        account.creation.factoryAddr,
-        factoryInterface.encodeFunctionData('deploy', [
-          account.creation.bytecode,
-          account.creation.salt
-        ])
-      ])
-    )
-
-    userOp.requestType = 'activator'
+    const factoryInterface = new Interface(AmbireFactory.abi)
+    userOp.factory = account.creation.factoryAddr
+    userOp.factoryData = factoryInterface.encodeFunctionData('deployAndExecute', [
+      account.creation.bytecode,
+      account.creation.salt,
+      [callToTuple(getActivatorCall(accountOp.accountAddr))],
+      entryPointSig
+    ])
   }
 
-  // give permissions to the entry if there aren't nay
-  if (!accountState.isErc4337Enabled) {
+  if (accountState.isDeployed && !accountState.isErc4337Enabled) {
     userOp.activatorCall = getActivatorCall(accountOp.accountAddr)
     userOp.requestType = 'activator'
   }
@@ -144,38 +156,89 @@ export function getUserOperation(
   return userOp
 }
 
-export function shouldUsePaymaster(network: NetworkDescriptor): boolean {
+export function shouldUsePaymaster(network: Network): boolean {
   // if there's a paymaster on the network, we pay with it. Simple
-  return !!network.erc4337?.hasPaymaster
+  return !!network.erc4337.hasPaymaster
 }
 
-export function isErc4337Broadcast(
-  network: NetworkDescriptor,
-  accountState: AccountOnchainState
-): boolean {
-  // write long to fix typescript issues
-  const isEnabled = network && network.erc4337 ? network.erc4337.enabled : false
+export function isErc4337Broadcast(network: Network, accountState: AccountOnchainState): boolean {
+  // we can broadcast a 4337 if:
+  // - the account is not deployed (we do deployAndExecute in the factoryData)
+  // - the entry point is enabled (standard ops)
+  // - we have a paymaster (through the edge case)
+  const canWeBroadcast4337 =
+    accountState.isErc4337Enabled || shouldUsePaymaster(network) || !accountState.isDeployed
 
-  // if the entry point is not a signer in the account and we don't have a paymaster,
-  // we cannot do an ERC-4337 broadcast as that happens either through
-  // the entry point or the paymaster
-  const isEntryPointSignerOrNetworkHasPaymaster =
-    accountState.isErc4337Enabled || shouldUsePaymaster(network)
-
-  return isEnabled && isEntryPointSignerOrNetworkHasPaymaster && accountState.isV2
+  return network.erc4337.enabled && canWeBroadcast4337 && accountState.isV2
 }
 
-// if the account is v2 account that does not have the entry point as a signer
-// and the network is a 4337 one without a paymaster, the only way to broadcast
-// a txn is through EOA pays for SA. That's why we need this check to include
-// the activator call and the next txn to be ERC-4337
+// for special cases where we broadcast a 4337 operation with an EOA,
+// add the activator call so the use has the entry point attached
 export function shouldIncludeActivatorCall(
-  network: NetworkDescriptor,
+  network: Network,
+  accountState: AccountOnchainState,
+  is4337Broadcast = true
+) {
+  return (
+    accountState.isV2 &&
+    network.erc4337.enabled &&
+    !accountState.isErc4337Enabled &&
+    (accountState.isDeployed || !is4337Broadcast)
+  )
+}
+
+export function getExplorerId(network: Network) {
+  return network.erc4337.explorerId ?? network.id
+}
+
+// if the account is v2 and the network is 4337 and the account hasn't
+// authorized the entry point, he should be asked to do so
+export function shouldAskForEntryPointAuthorization(
+  network: Network,
   accountState: AccountOnchainState
 ) {
   return accountState.isV2 && network.erc4337.enabled && !accountState.isErc4337Enabled
 }
 
-export function getExplorerId(network: NetworkDescriptor) {
-  return network.erc4337.explorerId ?? network.id
+export const ENTRY_POINT_AUTHORIZATION_REQUEST_ID = 'ENTRY_POINT_AUTHORIZATION_REQUEST_ID'
+
+export function getUserOpHash(userOp: UserOperation, chainId: bigint) {
+  const abiCoder = new AbiCoder()
+  const initCode = userOp.factory ? concat([userOp.factory, userOp.factoryData!]) : '0x'
+  const hashInitCode = keccak256(initCode)
+  const hashCallData = keccak256(userOp.callData)
+  const accountGasLimits = concat([
+    toBeHex(userOp.verificationGasLimit.toString(), 16),
+    toBeHex(userOp.callGasLimit.toString(), 16)
+  ])
+  const gasFees = concat([
+    toBeHex(userOp.maxPriorityFeePerGas.toString(), 16),
+    toBeHex(userOp.maxFeePerGas.toString(), 16)
+  ])
+  const paymasterAndData = userOp.paymaster
+    ? concat([
+        userOp.paymaster,
+        toBeHex(userOp.paymasterVerificationGasLimit!.toString(), 16),
+        toBeHex(userOp.paymasterPostOpGasLimit!.toString(), 16),
+        userOp.paymasterData!
+      ])
+    : '0x'
+  const hashPaymasterAndData = keccak256(paymasterAndData)
+  const packed = abiCoder.encode(
+    ['address', 'uint256', 'bytes32', 'bytes32', 'bytes32', 'uint256', 'bytes32', 'bytes32'],
+    [
+      userOp.sender,
+      userOp.nonce,
+      hashInitCode,
+      hashCallData,
+      accountGasLimits,
+      userOp.preVerificationGas,
+      gasFees,
+      hashPaymasterAndData
+    ]
+  )
+  const packedHash = keccak256(packed)
+  return keccak256(
+    abiCoder.encode(['bytes32', 'address', 'uint256'], [packedHash, ERC_4337_ENTRYPOINT, chainId])
+  )
 }

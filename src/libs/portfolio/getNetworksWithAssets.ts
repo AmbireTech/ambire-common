@@ -1,17 +1,17 @@
 import { AccountId } from '../../interfaces/account'
-import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
-import { RPCProviders } from '../../interfaces/settings'
+import { NetworkId } from '../../interfaces/network'
+import { RPCProviders } from '../../interfaces/provider'
 import { AccountState } from './interfaces'
 
 const getAccountNetworksWithAssets = (
   accountId: AccountId,
   accountState: AccountState,
   storageStateByAccount: {
-    [accountId: string]: NetworkDescriptor['id'][]
+    [accountId: string]: NetworkId[]
   },
   providers: RPCProviders
-): NetworkDescriptor['id'][] => {
-  let networksWithAssets: NetworkDescriptor['id'][] = []
+): NetworkId[] => {
+  let networksWithAssets: NetworkId[] = []
 
   Object.keys(accountState).forEach((networkId) => {
     if (!providers[networkId]) return
@@ -39,7 +39,7 @@ const getAccountNetworksWithAssets = (
 
     // RPC is up and we have a result
     const nonZeroTokens = result.tokens.filter(({ amount }) => Number(amount) !== 0)
-    const hasCollectibles = result.collections.length > 0
+    const hasCollectibles = result.collections && result.collections.length > 0
 
     // The account has assets on this network
     if (nonZeroTokens.length || hasCollectibles) {

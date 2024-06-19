@@ -6,19 +6,20 @@ import { getAddress, JsonRpcProvider, Provider, ZeroAddress } from 'ethers'
 import BalanceGetter from '../../../contracts/compiled/BalanceGetter.json'
 import NFTGetter from '../../../contracts/compiled/NFTGetter.json'
 import { PINNED_TOKENS } from '../../consts/pinnedTokens'
-import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
+import { Network } from '../../interfaces/network'
 import { Deployless, fromDescriptor } from '../deployless/deployless'
 import batcher from './batcher'
 import { geckoRequestBatcher, geckoResponseIdentifier } from './gecko'
 import { getNFTs, getTokens } from './getOnchainBalances'
-import { getTotal } from './helpers'
+import { stripExternalHintsAPIResponse } from './helpers'
 import {
   CollectionResult,
+  ExternalHintsAPIResponse,
   GetOptions,
   Hints,
   Limits,
   LimitsOptions,
-  PortfolioGetResult,
+  PortfolioLibGetResult,
   PriceCache,
   TokenResult
 } from './interfaces'
@@ -42,13 +43,9 @@ export const PORTFOLIO_LIB_ERROR_NAMES = {
   PriceFetchError: 'PriceFetchError'
 }
 
-export const getEmptyHints = (networkId: string, accountAddr: string): Hints => ({
-  networkId,
-  accountAddr,
+export const getEmptyHints = (): Hints => ({
   erc20s: [],
-  erc721s: {},
-  prices: {},
-  hasHints: false
+  erc721s: {}
 })
 
 const defaultOptions: GetOptions = {
@@ -62,7 +59,7 @@ const defaultOptions: GetOptions = {
 }
 
 export class Portfolio {
-  network: NetworkDescriptor
+  network: Network
 
   private batchedVelcroDiscovery: Function
 
@@ -72,7 +69,7 @@ export class Portfolio {
 
   private deploylessNfts: Deployless
 
-  constructor(fetch: Function, provider: Provider | JsonRpcProvider, network: NetworkDescriptor) {
+  constructor(fetch: Function, provider: Provider | JsonRpcProvider, network: Network) {
     this.batchedVelcroDiscovery = batcher(fetch, (queue) => {
       const baseCurrencies = [...new Set(queue.map((x) => x.data.baseCurrency))]
       return baseCurrencies.map((baseCurrency) => {
@@ -91,8 +88,8 @@ export class Portfolio {
     this.deploylessNfts = fromDescriptor(provider, NFTGetter, !network.rpcNoStateOverride)
   }
 
-  async get(accountAddr: string, opts: Partial<GetOptions> = {}): Promise<PortfolioGetResult> {
-    const errors: PortfolioGetResult['errors'] = []
+  async get(accountAddr: string, opts: Partial<GetOptions> = {}): Promise<PortfolioLibGetResult> {
+    const errors: PortfolioLibGetResult['errors'] = []
     const localOpts = { ...defaultOptions, ...opts }
     const disableAutoDiscovery = localOpts.disableAutoDiscovery || false
     const { baseCurrency } = localOpts
@@ -105,29 +102,31 @@ export class Portfolio {
 
     // Make sure portfolio lib still works, even in the case Velcro discovery fails.
     // Because of this, we fall back to Velcro default response.
-    let hints: Hints
+    let hints: Hints = getEmptyHints()
+    let hintsFromExternalAPI: ExternalHintsAPIResponse | null = null
+
     try {
       // if the network doesn't have a relayer, velcro will not work
       // but we should not record an error if such is the case
-      hints =
-        this.network.hasRelayer && !disableAutoDiscovery
-          ? await this.batchedVelcroDiscovery({ networkId, accountAddr, baseCurrency })
-          : getEmptyHints(networkId, accountAddr)
+      if (this.network.hasRelayer && !disableAutoDiscovery) {
+        hintsFromExternalAPI = await this.batchedVelcroDiscovery({
+          networkId,
+          accountAddr,
+          baseCurrency
+        })
+        if (hintsFromExternalAPI)
+          hints = stripExternalHintsAPIResponse(hintsFromExternalAPI) as Hints
+      }
     } catch (error: any) {
       errors.push({
         name: PORTFOLIO_LIB_ERROR_NAMES.HintsError,
         message: `Failed to fetch hints from Velcro for networkId (${networkId}): ${error.message}`
       })
-      hints = getEmptyHints(networkId, accountAddr)
     }
-
-    // Always add 0x00 to hints
-    hints.erc20s = [...hints.erc20s, ZeroAddress]
 
     // Enrich hints with the previously found and cached hints, especially in the case the Velcro discovery fails.
     if (localOpts.previousHints) {
       hints = {
-        ...hints,
         // Unique list of previously discovered and currently discovered erc20s
         erc20s: [...localOpts.previousHints.erc20s, ...hints.erc20s],
         // Please note 2 things:
@@ -155,13 +154,14 @@ export class Portfolio {
       ]
     }
 
-    // Remove duplicates
-    hints.erc20s = [...new Set(hints.erc20s.map((erc20) => getAddress(erc20)))]
+    // Remove duplicates and always add ZeroAddress
+    hints.erc20s = [...new Set(hints.erc20s.map((erc20) => getAddress(erc20)).concat(ZeroAddress))]
 
     // This also allows getting prices, this is used for more exotic tokens that cannot be retrieved via Coingecko
     const priceCache: PriceCache = localOpts.priceCache || new Map()
-    for (const addr in hints.prices || {}) {
-      const priceHint = hints.prices[addr]
+    for (const addr in hintsFromExternalAPI?.prices || {}) {
+      const priceHint = hintsFromExternalAPI?.prices[addr]
+      if (!priceHint) continue
       // @TODO consider validating the external response here, before doing the .set; or validating the whole velcro response
       priceCache.set(addr, [start, Array.isArray(priceHint) ? priceHint : [priceHint]])
     }
@@ -239,6 +239,13 @@ export class Portfolio {
           }
         }
 
+        if (!this.network.platformId) {
+          return {
+            ...token,
+            priceIn
+          }
+        }
+
         try {
           const priceData = await this.batchedGecko({
             ...token,
@@ -280,8 +287,7 @@ export class Portfolio {
     const priceUpdateDone = Date.now()
 
     return {
-      // Raw hints response
-      hints,
+      hintsFromExternalAPI: stripExternalHintsAPIResponse(hintsFromExternalAPI),
       errors,
       updateStarted: start,
       discoveryTime: discoveryDone - start,
@@ -292,8 +298,7 @@ export class Portfolio {
       tokenErrors: tokensWithErr
         .filter(([error, result]) => error !== '0x' || result.symbol === '')
         .map(([error, result]) => ({ error, address: result.address })),
-      collections: collections.filter((x) => x.collectibles?.length),
-      total: getTotal(tokensWithPrices)
+      collections: collections.filter((x) => x.collectibles?.length)
     }
   }
 }

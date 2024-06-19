@@ -2,7 +2,7 @@ import { toBeHex } from 'ethers'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import { DEPLOYLESS_SIMULATION_FROM } from '../../consts/deploy'
-import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
+import { Network } from '../../interfaces/network'
 import { getAccountDeployParams, isSmartAccount } from '../account/account'
 import { callToTuple } from '../accountOp/accountOp'
 import { Deployless, DeploylessMode, parseErr } from '../deployless/deployless'
@@ -91,7 +91,7 @@ function getDeploylessOpts(accountAddr: string, opts: Partial<GetOptions>) {
 }
 
 export async function getNFTs(
-  network: NetworkDescriptor,
+  network: Network,
   deployless: Deployless,
   opts: Partial<GetOptions>,
   accountAddr: string,
@@ -132,9 +132,9 @@ export async function getNFTs(
   const { accountOps, account } = opts.simulation
   const [factory, factoryCalldata] = getAccountDeployParams(account)
 
-  const simulationOps = accountOps.map(({ nonce, calls }) => ({
+  const simulationOps = accountOps.map(({ nonce, calls }, idx) => ({
     // EOA starts from a fake, specified nonce
-    nonce: isSmartAccount(account) ? nonce : BigInt(EOA_SIMULATION_NONCE),
+    nonce: isSmartAccount(account) ? nonce : BigInt(EOA_SIMULATION_NONCE) + BigInt(idx),
     calls: calls.map(callToTuple)
   }))
   const [before, after, simulationErr, , , deltaAddressesMapping] = await deployless.call(
@@ -181,7 +181,7 @@ export async function getNFTs(
 }
 
 export async function getTokens(
-  network: NetworkDescriptor,
+  network: Network,
   deployless: Deployless,
   opts: Partial<GetOptions>,
   accountAddr: string,
@@ -211,9 +211,9 @@ export async function getTokens(
     return results.map((token: any, i: number) => [token.error, mapToken(token, tokenAddrs[i])])
   }
   const { accountOps, account } = opts.simulation
-  const simulationOps = accountOps.map(({ nonce, calls }) => ({
+  const simulationOps = accountOps.map(({ nonce, calls }, idx) => ({
     // EOA starts from a fake, specified nonce
-    nonce: isSmartAccount(account) ? nonce : BigInt(EOA_SIMULATION_NONCE),
+    nonce: isSmartAccount(account) ? nonce : BigInt(EOA_SIMULATION_NONCE) + BigInt(idx),
     calls: calls.map(callToTuple)
   }))
   const [factory, factoryCalldata] = getAccountDeployParams(account)

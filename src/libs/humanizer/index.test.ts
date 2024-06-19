@@ -5,6 +5,7 @@ import fetch from 'node-fetch'
 import { describe, expect, jest, test } from '@jest/globals'
 
 import { produceMemoryStore } from '../../../test/helpers'
+import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import humanizerJSON from '../../consts/humanizer/humanizerInfo.json'
 import { ErrorRef } from '../../controllers/eventEmitter/eventEmitter'
 import { Account } from '../../interfaces/account'
@@ -50,7 +51,11 @@ const accounts: Account[] = [
     addr: '0xAAbBbC841F29Dc6b09EF9f6c8fd59DA807bc6248',
     associatedKeys: ['string[]'],
     initialPrivileges: [],
-    creation: null
+    creation: null,
+    preferences: {
+      label: DEFAULT_ACCOUNT_LABEL,
+      pfp: '0xAAbBbC841F29Dc6b09EF9f6c8fd59DA807bc6248'
+    }
   }
 ]
 const keys: Key[] = [

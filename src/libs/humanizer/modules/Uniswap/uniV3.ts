@@ -1,27 +1,24 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable no-console */
 import { Interface, ZeroAddress } from 'ethers'
 
 import { AccountOp } from '../../../accountOp/accountOp'
-import { HumanizerMeta, IrCall } from '../../interfaces'
+import { UniV3Router, UniV3Router2 } from '../../const/abis'
+import { IrCall } from '../../interfaces'
 import {
   getAction,
   getAddressVisualization,
   getDeadline,
-  getKnownAbi,
   getLabel,
   getRecipientText,
   getToken,
   getUnknownVisualization
 } from '../../utils'
+import { HumanizerUniMatcher } from './interfaces'
 import { parsePath } from './utils'
 
 // Stolen from ambire-wallet
-const uniV32Mapping = (
-  humanizerInfo: HumanizerMeta,
-  _options?: any
-): { [key: string]: (a: AccountOp, c: IrCall) => IrCall[] } => {
-  const ifaceV32 = new Interface(getKnownAbi(humanizerInfo, 'UniV3Router2'))
+const uniV32Mapping = (): HumanizerUniMatcher => {
+  const ifaceV32 = new Interface(UniV3Router2)
   return {
     // uint256 is deadline
     // 0x5ae401dc
@@ -30,7 +27,7 @@ const uniV32Mapping = (
       call: IrCall
     ): IrCall[] => {
       const [deadline, calls] = ifaceV32.parseTransaction(call)?.args || []
-      const mappingResult = uniV32Mapping(humanizerInfo)
+      const mappingResult = uniV32Mapping()
       const parsed: IrCall[] = calls
         .map((data: string): IrCall[] => {
           const sigHash = data.slice(0, 10)
@@ -55,7 +52,7 @@ const uniV32Mapping = (
       call: IrCall
     ): IrCall[] => {
       const [calls] = ifaceV32.parseTransaction(call)?.args || []
-      const mappingResult = uniV32Mapping(humanizerInfo)
+      const mappingResult = uniV32Mapping()
       const parsed = calls
         .map((data: string) => {
           const sigHash = data.slice(0, 10)
@@ -75,7 +72,7 @@ const uniV32Mapping = (
       call: IrCall
     ): IrCall[] => {
       const [prevBlockHash, calls] = ifaceV32.parseTransaction(call)?.args || []
-      const mappingResult = uniV32Mapping(humanizerInfo)
+      const mappingResult = uniV32Mapping()
       const parsed = calls
         .map((data: string) => {
           const sigHash = data.slice(0, 10)
@@ -337,11 +334,8 @@ const uniV32Mapping = (
   }
 }
 
-const uniV3Mapping = (
-  humanizerInfo: HumanizerMeta,
-  _options?: any
-): { [key: string]: (a: AccountOp, c: IrCall) => IrCall[] } => {
-  const ifaceV3 = new Interface(getKnownAbi(humanizerInfo, 'UniV3Router'))
+const uniV3Mapping = (): HumanizerUniMatcher => {
+  const ifaceV3 = new Interface(UniV3Router)
   return {
     // 0xac9650d8
     [ifaceV3.getFunction('multicall')?.selector!]: (
@@ -350,7 +344,7 @@ const uniV3Mapping = (
     ): IrCall[] => {
       const args = ifaceV3.parseTransaction(call)?.args || []
       const calls = args[args.length - 1]
-      const mappingResult = uniV3Mapping(humanizerInfo)
+      const mappingResult = uniV3Mapping()
       const parsed = calls
         .map((data: string) => {
           const sigHash = data.slice(0, 10)

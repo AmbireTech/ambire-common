@@ -5,7 +5,7 @@ import { isAddress } from 'ethers'
 import { normalize } from '@ensdomains/eth-ens-namehash'
 
 import { networks } from '../../consts/networks'
-import { RPCProvider } from '../../interfaces/settings'
+import { RPCProvider } from '../../interfaces/provider'
 import { getRpcProvider } from '../provider'
 
 const BIP44_BASE_VALUE = 2147483648

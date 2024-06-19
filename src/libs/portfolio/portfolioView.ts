@@ -1,13 +1,10 @@
 import { Account } from '../../interfaces/account'
-import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
-import { shouldGetAdditionalPortfolio } from './helpers'
+import { Network } from '../../interfaces/network'
 import {
   AccountState,
-  AdditionalAccountState,
-  AdditionalPortfolioGetResult,
   CollectionResult as CollectionResultInterface,
+  NetworkState,
   PortfolioControllerState,
-  PortfolioGetResult,
   TokenResult as TokenResultInterface
 } from './interfaces'
 
@@ -53,41 +50,37 @@ export function calculateAccountPortfolio(
     }
   }
 
-  const selectedAccountData = hasPending
-    ? state.pending[selectedAccount]
-    : state.latest[selectedAccount]
+  let selectedAccountData = state.latest[selectedAccount]
 
-  // In the case we have a pending state we lose the gasTank and rewards data which is fetched on latest only
-  // Either that or we populate pending with them as well on forceUpdate in controller.
-  if (
-    shouldGetAdditionalPortfolio(account) &&
-    hasPending &&
-    state.latest[selectedAccount].gasTank &&
-    state.latest[selectedAccount].rewards
-  ) {
-    selectedAccountData.gasTank = state.latest[selectedAccount].gasTank
+  const pendingAccountStateWithoutCriticalErrors = Object.keys(
+    state.pending[selectedAccount]
+  ).reduce((acc, network) => {
+    // Filter out networks with critical errors
+    if (!state.pending[selectedAccount][network]?.criticalError) {
+      acc[network] = state.pending[selectedAccount][network]
+    }
+    return acc
+  }, {} as AccountState)
 
-    selectedAccountData.rewards = state.latest[selectedAccount].rewards
+  if (hasPending && Object.keys(pendingAccountStateWithoutCriticalErrors).length > 0) {
+    // Mix latest and pending data. This is required because pending state may only have some networks
+    selectedAccountData = {
+      ...selectedAccountData,
+      ...pendingAccountStateWithoutCriticalErrors
+    }
   }
 
-  const isNetworkReady = (networkData: AccountState | AdditionalAccountState | undefined) => {
+  const isNetworkReady = (networkData: NetworkState | undefined) => {
     return (
       (networkData && networkData.isReady && !networkData.isLoading) || networkData?.criticalError
     )
   }
 
   Object.keys(selectedAccountData).forEach((network: string) => {
-    const networkData = selectedAccountData[network] as
-      | AccountState
-      | AdditionalAccountState
-      | undefined
+    const networkData = selectedAccountData[network]
+    const result = networkData?.result
 
-    const result = networkData?.result as
-      | PortfolioGetResult
-      | AdditionalPortfolioGetResult
-      | undefined
-
-    if (isNetworkReady(networkData) && !networkData?.criticalError && result) {
+    if (networkData && isNetworkReady(networkData) && !networkData?.criticalError && result) {
       // In the case we receive BigInt here, convert to number
       const networkTotal = Number(result?.total?.usd) || 0
       newTotalAmount += networkTotal
@@ -119,7 +112,7 @@ export type PendingToken = TokenResultInterface & {
 
 export function calculateTokensPendingState(
   selectedAccount: string,
-  network: NetworkDescriptor,
+  network: Network,
   state: { pending: PortfolioControllerState }
 ): PendingToken[] {
   const pendingData = state.pending[selectedAccount][network.id]
