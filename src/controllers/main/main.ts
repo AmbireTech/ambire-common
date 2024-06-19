@@ -494,7 +494,7 @@ export class MainController extends EventEmitter {
       if (!acc[accountOp.networkId]) acc[accountOp.networkId] = []
       acc[accountOp.networkId].push(accountOp)
       return acc
-    }, accountOpsToBeSignedByNetwork)
+    }, accountOpsToBeSignedByNetwork || {})
 
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.portfolio.updateSelectedAccount(
@@ -1116,7 +1116,7 @@ export class MainController extends EventEmitter {
         if (!acc[accountOp.networkId]) acc[accountOp.networkId] = []
         acc[accountOp.networkId].push(accountOp)
         return acc
-      }, accountOpsToBeSignedByNetwork)
+      }, accountOpsToBeSignedByNetwork || {})
 
       const [, estimation] = await Promise.all([
         // NOTE: we are not emitting an update here because the portfolio controller will do that
