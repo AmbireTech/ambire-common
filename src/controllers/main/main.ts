@@ -471,19 +471,37 @@ export class MainController extends EventEmitter {
   async updateSelectedAccountPortfolio(forceUpdate: boolean = false) {
     if (!this.accounts.selectedAccount) return
 
-    // pass the accountOps if any so we could reflect the pending state
-    const accountOps =
-      this.actions.currentAction?.type === 'accountOp' && this.signAccountOp
-        ? {
-            [this.actions.currentAction.accountOp.networkId]: [this.actions.currentAction.accountOp]
-          }
-        : getAccountOpsByNetwork(this.accounts.selectedAccount, this.actions.visibleActionsQueue)
+    const account = this.accounts.accounts.filter(
+      (a) => a.addr === this.accounts.selectedAccount
+    )[0]
+
+    // for basic accounts, we pass only the currently opened accountOp to be simulated.
+    // If there isn't any, an empty object is passed instead
+    const accountOpsToBeSignedByNetwork = isSmartAccount(account)
+      ? getAccountOpsByNetwork(this.accounts.selectedAccount, this.actions.visibleActionsQueue)
+      : {
+          ...(this.signAccountOp && {
+            [this.signAccountOp.accountOp.networkId]: [this.signAccountOp.accountOp]
+          })
+        }
+
+    // to the accountOpsToBeSigned we add the broadcastedButNotConfirmed accountOps
+    // this is to prevent a potential glitch where the "waiting to be confirmed"
+    // are still not included in the pending block
+    const allAccountOpsToBeSimulated: {
+      [key: string]: AccountOp[]
+    } = this.activity.broadcastedButNotConfirmed.reduce((acc: any, accountOp) => {
+      if (!acc[accountOp.networkId]) acc[accountOp.networkId] = []
+      acc[accountOp.networkId].push(accountOp)
+      return acc
+    }, accountOpsToBeSignedByNetwork)
+
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.portfolio.updateSelectedAccount(
       this.accounts.accounts,
       this.accounts.selectedAccount,
       undefined,
-      accountOps,
+      allAccountOpsToBeSimulated,
       {
         forceUpdate
       }
@@ -1084,6 +1102,22 @@ export class MainController extends EventEmitter {
 
       await this.portfolio.learnTokens(additionalHints, network.id)
 
+      // for basic accounts we pass only the currently opened accountOp to be simulated
+      const accountOpsToBeSignedByNetwork = isSmartAccount(account)
+        ? getAccountOpsByNetwork(localAccountOp.accountAddr, this.actions.visibleActionsQueue)
+        : { [localAccountOp.networkId]: [localAccountOp] }
+
+      // to the accountOpsToBeSigned we add the broadcastedButNotConfirmed accountOps
+      // this is to prevent a potential glitch where the "waiting to be confirmed"
+      // are still not included in the pending block
+      const allAccountOpsToBeSimulated: {
+        [key: string]: AccountOp[]
+      } = this.activity.broadcastedButNotConfirmed.reduce((acc: any, accountOp) => {
+        if (!acc[accountOp.networkId]) acc[accountOp.networkId] = []
+        acc[accountOp.networkId].push(accountOp)
+        return acc
+      }, accountOpsToBeSignedByNetwork)
+
       const [, estimation] = await Promise.all([
         // NOTE: we are not emitting an update here because the portfolio controller will do that
         // NOTE: the portfolio controller has it's own logic of constructing/caching providers, this is intentional, as
@@ -1092,9 +1126,7 @@ export class MainController extends EventEmitter {
           this.accounts.accounts,
           localAccountOp.accountAddr,
           undefined,
-          this.signAccountOp
-            ? { [localAccountOp.networkId]: [localAccountOp] }
-            : getAccountOpsByNetwork(localAccountOp.accountAddr, this.actions.visibleActionsQueue),
+          allAccountOpsToBeSimulated,
           { forceUpdate: true }
         ),
         estimate(
