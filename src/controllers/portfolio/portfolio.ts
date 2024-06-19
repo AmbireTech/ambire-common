@@ -517,7 +517,6 @@ export class PortfolioController extends EventEmitter {
     opts?: { forceUpdate: boolean }
   ) {
     await this.#initialLoadPromise
-
     const selectedAccount = this.#accounts.accounts.find((x) => x.addr === accountId)
     if (!selectedAccount) throw new Error('selected account does not exist')
 

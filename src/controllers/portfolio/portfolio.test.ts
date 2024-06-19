@@ -1,4 +1,3 @@
-import { AccountsController } from 'controllers/accounts/accounts'
 import { ethers, ZeroAddress } from 'ethers'
 
 import { describe, expect, jest } from '@jest/globals'
@@ -11,6 +10,7 @@ import { RPCProviders } from '../../interfaces/provider'
 import { AccountOp } from '../../libs/accountOp/accountOp'
 import { CollectionResult } from '../../libs/portfolio/interfaces'
 import { getRpcProvider } from '../../services/provider'
+import { AccountsController } from '../accounts/accounts'
 import { NetworksController } from '../networks/networks'
 import { ProvidersController } from '../providers/providers'
 import { PortfolioController } from './portfolio'

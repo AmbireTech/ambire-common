@@ -210,6 +210,7 @@ export class MainController extends EventEmitter {
       this.#storage,
       this.providers,
       this.networks,
+      this.accounts,
       relayerUrl
     )
     this.#initialLoadPromise = this.#load()
@@ -469,6 +470,7 @@ export class MainController extends EventEmitter {
   }
 
   async updateSelectedAccountPortfolio(forceUpdate: boolean = false) {
+    await this.#initialLoadPromise
     if (!this.accounts.selectedAccount) return
 
     // pass the accountOps if any so we could reflect the pending state
