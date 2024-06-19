@@ -14,6 +14,7 @@ import {
   getNetworksWithFailedRPCBanners,
   getNetworksWithPortfolioErrorBanners
 } from '../../libs/banners/banners'
+import { Portfolio } from '../../libs/portfolio'
 /* eslint-disable @typescript-eslint/no-use-before-define */
 import { CustomToken } from '../../libs/portfolio/customToken'
 import getAccountNetworksWithAssets from '../../libs/portfolio/getNetworksWithAssets'
@@ -37,8 +38,8 @@ import {
   PreviousHintsStorage,
   TokenResult
 } from '../../libs/portfolio/interfaces'
-import { Portfolio } from '../../libs/portfolio'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
+import { AccountsController } from '../accounts/accounts'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { NetworksController } from '../networks/networks'
 import { ProvidersController } from '../providers/providers'
@@ -98,6 +99,8 @@ export class PortfolioController extends EventEmitter {
 
   #networks: NetworksController
 
+  #accounts: AccountsController
+
   // Holds the initial load promise, so that one can wait until it completes
   #initialLoadPromise: Promise<void>
 
@@ -105,6 +108,7 @@ export class PortfolioController extends EventEmitter {
     storage: Storage,
     providers: ProvidersController,
     networks: NetworksController,
+    accounts: AccountsController,
     relayerUrl: string
   ) {
     super()
@@ -116,6 +120,7 @@ export class PortfolioController extends EventEmitter {
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
     this.#providers = providers
     this.#networks = networks
+    this.#accounts = accounts
     this.temporaryTokens = {}
 
     this.#initialLoadPromise = this.#load()
@@ -124,6 +129,7 @@ export class PortfolioController extends EventEmitter {
   async #load() {
     try {
       await this.#networks.initialLoadPromise
+      await this.#accounts.initialLoadPromise
       this.tokenPreferences = await this.#storage.get('tokenPreferences', [])
       this.#previousHints = await this.#storage.get('previousHints', {})
     } catch (e) {
@@ -264,6 +270,7 @@ export class PortfolioController extends EventEmitter {
     token: { address: TokenResult['address']; networkId: TokenResult['networkId'] },
     accountId: AccountId
   ) {
+    await this.#initialLoadPromise
     if (this.validTokens.erc20[`${token.address}-${token.networkId}`] === true) return
 
     const [isValid, standard]: [boolean, string] = (await validateERC20Token(
@@ -505,17 +512,13 @@ export class PortfolioController extends EventEmitter {
 
   // the purpose of this function is to call it when an account is selected or the queue of accountOps changes
   async updateSelectedAccount(
-    accounts: Account[],
     accountId: AccountId,
     network?: Network,
     accountOps?: { [key: string]: AccountOp[] },
-    opts?: {
-      forceUpdate: boolean
-    }
+    opts?: { forceUpdate: boolean }
   ) {
     await this.#initialLoadPromise
-
-    const selectedAccount = accounts.find((x) => x.addr === accountId)
+    const selectedAccount = this.#accounts.accounts.find((x) => x.addr === accountId)
     if (!selectedAccount) throw new Error('selected account does not exist')
 
     this.#prepareLatestState(selectedAccount)
@@ -663,7 +666,7 @@ export class PortfolioController extends EventEmitter {
       })
     )
 
-    await this.#updateNetworksWithAssets(accounts, accountId, accountState)
+    await this.#updateNetworksWithAssets(this.#accounts.accounts, accountId, accountState)
     this.emitUpdate()
   }
 
