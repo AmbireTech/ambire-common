@@ -546,12 +546,27 @@ export class ActivityController extends EventEmitter {
     })
   }
 
+  get lastAccountOps(): { [key: Network['id']]: SubmittedAccountOp | null } {
+    if (!this.#selectedAccount || !this.#accountsOps[this.#selectedAccount]) return {}
+
+    const accountsOps: { [key: Network['id']]: SubmittedAccountOp | null } = {}
+    Object.keys(this.#accountsOps[this.#selectedAccount]).forEach((networkId) => {
+      if (!this.#accountsOps[this.#selectedAccount!][networkId]) {
+        accountsOps[networkId] = null
+      } else {
+        accountsOps[networkId] = this.#accountsOps[this.#selectedAccount!][networkId][0]
+      }
+    })
+    return accountsOps
+  }
+
   toJSON() {
     return {
       ...this,
       ...super.toJSON(),
       broadcastedButNotConfirmed: this.broadcastedButNotConfirmed, // includes the getter in the stringified instance
-      banners: this.banners // includes the getter in the stringified instance
+      banners: this.banners, // includes the getter in the stringified instance
+      lastAccountOps: this.lastAccountOps // the last account op for each network
     }
   }
 }
