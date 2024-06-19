@@ -270,6 +270,7 @@ export class PortfolioController extends EventEmitter {
     token: { address: TokenResult['address']; networkId: TokenResult['networkId'] },
     accountId: AccountId
   ) {
+    await this.#initialLoadPromise
     if (this.validTokens.erc20[`${token.address}-${token.networkId}`] === true) return
 
     const [isValid, standard]: [boolean, string] = (await validateERC20Token(
