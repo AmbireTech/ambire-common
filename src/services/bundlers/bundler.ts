@@ -1,8 +1,7 @@
 /* eslint-disable no-restricted-syntax */
 /* eslint-disable import/no-extraneous-dependencies */
 /* eslint-disable class-methods-use-this */
-import { ERC_4337_ENTRYPOINT } from '../../../dist/src/consts/deploy'
-import { ENTRY_POINT_MARKER } from '../../consts/deploy'
+import { ENTRY_POINT_MARKER, ERC_4337_ENTRYPOINT } from '../../consts/deploy'
 import { Fetch } from '../../interfaces/fetch'
 import { Network } from '../../interfaces/network'
 import { mapTxnErrMsg } from '../../libs/estimate/errors'
