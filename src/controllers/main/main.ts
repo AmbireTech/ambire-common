@@ -489,8 +489,11 @@ export class MainController extends EventEmitter {
       // are still not included in the pending block
       accountOpsToBeSimulatedByNetwork = this.activity.broadcastedButNotConfirmed.reduce(
         (acc: any, accountOp) => {
-          if (!acc[accountOp.networkId]) acc[accountOp.networkId] = []
-          acc[accountOp.networkId].push(accountOp)
+          // add activity accountOps only if there are accountOpsToBeSigned for that network
+          // to prevent showing pending state when there are no pending txns to be signed
+          if (acc[accountOp.networkId]) {
+            acc[accountOp.networkId].push(accountOp)
+          }
           return acc
         },
         accountOpsToBeSimulatedByNetwork
@@ -1121,8 +1124,11 @@ export class MainController extends EventEmitter {
         // are still not included in the pending block
         accountOpsToBeSimulatedByNetwork = this.activity.broadcastedButNotConfirmed.reduce(
           (acc: any, accountOp) => {
-            if (!acc[accountOp.networkId]) acc[accountOp.networkId] = []
-            acc[accountOp.networkId].push(accountOp)
+            // add activity accountOps only if there are accountOpsToBeSigned for that network
+            // to prevent showing pending state when there are no pending txns to be signed
+            if (acc[accountOp.networkId]) {
+              acc[accountOp.networkId].push(accountOp)
+            }
             return acc
           },
           accountOpsToBeSimulatedByNetwork
