@@ -2,6 +2,7 @@ import chai, { expect } from 'chai'
 import chaiAssertionsCount from 'chai-assertions-count'
 import { ethers } from 'hardhat'
 
+import { DEFAULT_ACCOUNT_LABEL } from '../src/consts/account'
 import { Account } from '../src/interfaces/account'
 
 chai.use(chaiAssertionsCount)
@@ -44,7 +45,11 @@ const trezorSlot7v24337Deployed: Account = {
       '0x7f00000000000000000000000000000000000000000000000000000000000000027fabb251cd0bc873c8f01fdc27fc133835d7b4900eb6429cb319361b180fada709553d602d80604d3d3981f3363d3d373d3d3d363d730e370942ebe4d026d05d2cf477ff386338fc415a5af43d82803e903d91602b57fd5bf3',
     salt: '0x0000000000000000000000000000000000000000000000000000000000000000'
   },
-  initialPrivileges: []
+  initialPrivileges: [],
+  preferences: {
+    label: DEFAULT_ACCOUNT_LABEL,
+    pfp: '0xaA2450102D8C039A69d7B3daA7C13Cf73F55F742'
+  }
 }
 
 const optyDeployed: Account = {
@@ -61,7 +66,11 @@ const optyDeployed: Account = {
       '0xa2256eAFe1DBc474B05973213c86934418fdef22',
       '0x0000000000000000000000000000000000000000000000000000000000000002'
     ]
-  ]
+  ],
+  preferences: {
+    label: DEFAULT_ACCOUNT_LABEL,
+    pfp: '0xCE9B3DcdbE37867EAc9c2ebC24e4Fb2eEC8c5FFc'
+  }
 }
 
 const arbNotDeployed: Account = {
@@ -78,7 +87,11 @@ const arbNotDeployed: Account = {
       '0x3884dD96Da6CDaEAf937301Ff5cC5b0a58478355',
       '0x0000000000000000000000000000000000000000000000000000000000000002'
     ]
-  ]
+  ],
+  preferences: {
+    label: DEFAULT_ACCOUNT_LABEL,
+    pfp: '0x4E6AB66459bD13b9b30A5CbCF28723C7D08172e5'
+  }
 }
 
 export {

@@ -2,8 +2,8 @@ import { getAddress } from 'ethers'
 
 import { Account } from '../../interfaces/account'
 import { Storage } from '../../interfaces/storage'
+import { AccountsController } from '../accounts/accounts'
 import EventEmitter from '../eventEmitter/eventEmitter'
-import { SettingsController } from '../settings/settings'
 
 export type Contact = {
   name: string
@@ -30,38 +30,36 @@ export class AddressBookController extends EventEmitter {
 
   #initialLoadPromise: Promise<void>
 
-  #accounts: Account[] = []
+  #accounts: AccountsController
 
-  #settings: SettingsController
-
-  #selectedAccount: Account['addr'] = ''
-
-  constructor(storage: Storage, accounts: Account[], settings: SettingsController) {
+  constructor(storage: Storage, accounts: AccountsController) {
     super()
 
     this.#storage = storage
     this.#accounts = accounts
-    this.#settings = settings
 
     this.#initialLoadPromise = this.#load()
   }
 
   // Contacts, generated on the fly from the accounts in the wallet (not stored in storage)
   get #walletAccountsSourcedContacts() {
-    return this.#accounts.map((account) => ({
-      name: this.#settings.accountPreferences[account.addr]?.label || '',
+    return this.#accounts.accounts.map((account) => ({
+      name: account.preferences.label,
       address: account.addr,
       isWalletAccount: true
     }))
   }
 
   get contacts() {
+    if (!this.#accounts.selectedAccount) return []
+
     return [...this.#manuallyAddedContacts, ...this.#walletAccountsSourcedContacts].filter(
-      ({ address }) => address.toLowerCase() !== this.#selectedAccount.toLowerCase()
+      ({ address }) => address !== this.#accounts.selectedAccount
     )
   }
 
   async #load() {
+    await this.#accounts.initialLoadPromise
     try {
       this.#manuallyAddedContacts = await this.#storage.get('contacts', [])
       this.emitUpdate()
@@ -102,14 +100,6 @@ export class AddressBookController extends EventEmitter {
       })
       return ''
     }
-  }
-
-  update({ selectedAccount }: { selectedAccount: Account['addr'] }) {
-    if (selectedAccount) {
-      this.#selectedAccount = selectedAccount
-    }
-
-    this.emitUpdate()
   }
 
   async addContact(name: string, address: string) {

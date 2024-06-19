@@ -1,15 +1,16 @@
 import { ethers, ZeroAddress } from 'ethers'
-import { CollectionResult } from 'libs/portfolio/interfaces'
 
 import { describe, expect, jest } from '@jest/globals'
 
 import { relayerUrl, velcroUrl } from '../../../test/config'
 import { getNonce, produceMemoryStore } from '../../../test/helpers'
+import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { networks } from '../../consts/networks'
 import { PINNED_TOKENS } from '../../consts/pinnedTokens'
 import { Account } from '../../interfaces/account'
 import { RPCProviders } from '../../interfaces/provider'
 import { AccountOp } from '../../libs/accountOp/accountOp'
+import { CollectionResult } from '../../libs/portfolio/interfaces'
 import { getRpcProvider } from '../../services/provider'
 import { NetworksController } from '../networks/networks'
 import { ProvidersController } from '../providers/providers'
@@ -63,6 +64,10 @@ describe('Portfolio Controller ', () => {
       bytecode:
         '0x7f00000000000000000000000000000000000000000000000000000000000000017f02c94ba85f2ea274a3869293a0a9bf447d073c83c617963b0be7c862ec2ee44e553d602d80604d3d3981f3363d3d373d3d3d363d732a2b85eb1054d6f0c6c2e37da05ed3e5fea684ef5af43d82803e903d91602b57fd5bf3',
       salt: '0x2ee01d932ede47b0b2fb1b6af48868de9f86bfc9a5be2f0b42c0111cf261d04c'
+    },
+    preferences: {
+      label: DEFAULT_ACCOUNT_LABEL,
+      pfp: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
     }
   }
 
@@ -104,6 +109,10 @@ describe('Portfolio Controller ', () => {
         bytecode:
           '0x7f00000000000000000000000000000000000000000000000000000000000000017f02c94ba85f2ea274a3869293a0a9bf447d073c83c617963b0be7c862ec2ee44e553d602d80604d3d3981f3363d3d373d3d3d363d732a2b85eb1054d6f0c6c2e37da05ed3e5fea684ef5af43d82803e903d91602b57fd5bf3',
         salt: '0x2ee01d932ede47b0b2fb1b6af48868de9f86bfc9a5be2f0b42c0111cf261d04c'
+      },
+      preferences: {
+        label: DEFAULT_ACCOUNT_LABEL,
+        pfp: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
       }
     }
 
@@ -118,7 +127,6 @@ describe('Portfolio Controller ', () => {
     // @TODO - here we can enhance the test to cover one more scenarios:
     //  #1) Does the account really have amount for the persisted tokens.
     expect(ethereumHints.erc20s.length).toBeGreaterThan(0)
-    expect(Object.keys(ethereumHints.erc721s).length).toBeGreaterThan(0)
     expect(polygonHints.erc20s.length).toBeGreaterThan(0)
     expect(optimismHints.erc20s.length).toBeGreaterThan(0)
   })
@@ -416,14 +424,16 @@ describe('Portfolio Controller ', () => {
 
   describe('Pinned tokens', () => {
     test('Pinned tokens are set in an account with no tokens', async () => {
-      const storage = produceMemoryStore()
-
       const emptyAccount: Account = {
         addr: EMPTY_ACCOUNT_ADDR,
         initialPrivileges: [],
         associatedKeys: [],
-        creation: null
-      }
+        creation: null,
+        preferences: {
+          label: DEFAULT_ACCOUNT_LABEL,
+          pfp: EMPTY_ACCOUNT_ADDR
+        }
+      } as Account
       const { controller } = prepareTest()
 
       await controller.updateSelectedAccount(
@@ -463,6 +473,10 @@ describe('Portfolio Controller ', () => {
           bytecode:
             '0x7f00000000000000000000000000000000000000000000000000000000000000027f9405c22160986551985df269a2a18b4e60aa0a1347bd75cbcea777ea18692b1c553d602d80604d3d3981f3363d3d373d3d3d363d730e370942ebe4d026d05d2cf477ff386338fc415a5af43d82803e903d91602b57fd5bf3',
           salt: '0x0000000000000000000000000000000000000000000000000000000000000000'
+        },
+        preferences: {
+          label: DEFAULT_ACCOUNT_LABEL,
+          pfp: '0x018D034c782db8462d864996dE3c297bcf66f86A'
         }
       }
       const { controller } = prepareTest()

@@ -1,12 +1,10 @@
-import { AccountOpAction } from 'controllers/actions/actions'
-/* eslint-disable no-restricted-syntax */
 import { AbiCoder, formatUnits, getAddress, Interface, toBeHex } from 'ethers'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import ERC20 from '../../../contracts/compiled/IERC20.json'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { AMBIRE_PAYMASTER, SINGLETON } from '../../consts/deploy'
-import { Account, AccountStates } from '../../interfaces/account'
+import { Account } from '../../interfaces/account'
 import { ExternalSignerControllers, Key } from '../../interfaces/keystore'
 import { Network } from '../../interfaces/network'
 import { Storage } from '../../interfaces/storage'
@@ -29,6 +27,9 @@ import {
   shouldUseOneTimeNonce,
   shouldUsePaymaster
 } from '../../libs/userOperation/userOperation'
+/* eslint-disable no-restricted-syntax */
+import { AccountsController } from '../accounts/accounts'
+import { AccountOpAction } from '../actions/actions'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
 import { PortfolioController } from '../portfolio/portfolio'
@@ -82,6 +83,8 @@ const CRITICAL_ERRORS = {
 }
 
 export class SignAccountOpController extends EventEmitter {
+  #accounts: AccountsController
+
   #keystore: KeystoreController
 
   #portfolio: PortfolioController
@@ -95,8 +98,6 @@ export class SignAccountOpController extends EventEmitter {
   #fetch: Function
 
   account: Account
-
-  #accountStates: AccountStates
 
   #network: Network
 
@@ -131,12 +132,12 @@ export class SignAccountOpController extends EventEmitter {
   #callRelayer: Function
 
   constructor(
+    accounts: AccountsController,
     keystore: KeystoreController,
     portfolio: PortfolioController,
     providers: ProvidersController,
     externalSignerControllers: ExternalSignerControllers,
     account: Account,
-    accountStates: AccountStates,
     network: Network,
     fromActionId: AccountOpAction['id'],
     accountOp: AccountOp,
@@ -145,12 +146,13 @@ export class SignAccountOpController extends EventEmitter {
     callRelayer: Function
   ) {
     super()
+
+    this.#accounts = accounts
     this.#keystore = keystore
     this.#portfolio = portfolio
     this.#providers = providers
     this.#externalSignerControllers = externalSignerControllers
     this.account = account
-    this.#accountStates = accountStates
     this.#network = network
     this.fromActionId = fromActionId
     this.accountOp = structuredClone(accountOp)
@@ -530,7 +532,7 @@ export class SignAccountOpController extends EventEmitter {
     const callDataAdditionalGasCost = getCallDataAdditionalByNetwork(
       this.accountOp!,
       this.#network,
-      this.#accountStates![this.accountOp!.accountAddr][this.accountOp!.networkId]
+      this.#accounts.accountStates[this.accountOp!.accountAddr][this.accountOp!.networkId]
     )
 
     this.availableFeeOptions.forEach((option) => {
@@ -712,7 +714,8 @@ export class SignAccountOpController extends EventEmitter {
       return null
     }
 
-    const accountState = this.#accountStates[this.accountOp.accountAddr][this.accountOp.networkId]
+    const accountState =
+      this.#accounts.accountStates[this.accountOp.accountAddr][this.accountOp.networkId]
     return {
       paidBy: this.paidBy,
       // we're allowing EOAs to broadcast on 4337 networks as well
@@ -827,7 +830,7 @@ export class SignAccountOpController extends EventEmitter {
 
     if (signer.init) signer.init(this.#externalSignerControllers[this.accountOp.signingKeyType])
     const accountState =
-      this.#accountStates![this.accountOp!.accountAddr][this.accountOp!.networkId]
+      this.#accounts.accountStates[this.accountOp!.accountAddr][this.accountOp!.networkId]
 
     // just in-case: before signing begins, we delete the feeCall;
     // if there's a need for it, it will be added later on in the code.
