@@ -3,6 +3,7 @@ import fetch from 'node-fetch'
 import { beforeAll, describe, expect, jest, test } from '@jest/globals'
 
 import { produceMemoryStore } from '../../../test/helpers'
+import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { networks } from '../../consts/networks'
 import { Account, AccountStates } from '../../interfaces/account'
 import { Network } from '../../interfaces/network'
@@ -28,7 +29,11 @@ const account: Account = {
       '0x0000000000000000000000000000000000000000000000000000000000000001'
     ]
   ],
-  creation: null
+  creation: null,
+  preferences: {
+    label: DEFAULT_ACCOUNT_LABEL,
+    pfp: '0x9188fdd757Df66B4F693D624Ed6A13a15Cf717D7'
+  }
 }
 
 let accountStates: AccountStates

@@ -165,7 +165,7 @@ describe('Deployless', () => {
 
   test('should throw an error for max 24 kb contract size in DeploylessMode.ProxyContract and not throw it in DeploylessMode.StateOverride', async () => {
     expect.assertions(1)
-    const factory = compile('AmbireAccountFactory')
+    const factory = compile('AmbireFactory')
     const abiCoder = new AbiCoder()
     const bytecodeAndArgs = toBeHex(
       concat([factory.bin, abiCoder.encode(['address'], [addressOne])])

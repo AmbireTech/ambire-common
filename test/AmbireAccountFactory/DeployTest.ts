@@ -24,10 +24,10 @@ let factoryAddress: string
 let factoryContract: any
 let dummyBytecode: any
 
-describe('AmbireAccountFactory tests', () => {
+describe('AmbireFactory tests', () => {
   it('deploys the factory', async () => {
     const [signer] = await ethers.getSigners()
-    const factory = await ethers.deployContract('AmbireAccountFactory', [signer.address])
+    const factory = await ethers.deployContract('AmbireFactory', [signer.address])
     factoryAddress = await factory.getAddress()
     factoryContract = factory
   })

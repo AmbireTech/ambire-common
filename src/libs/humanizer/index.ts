@@ -103,9 +103,9 @@ const sharedHumanization = async <InputDataType extends AccountOp | Message>(
     network: options?.network
   }
   for (let i = 0; i <= 3; i++) {
-    // @TODO refactor conditional for nocache
     const totalHumanizerMetaToBeUsed = await lazyReadHumanizerMeta(storage, {
-      nocache: options?.isExtension === false
+      isExtension: options?.isExtension,
+      nocache: options?.nocache
     })
     if ('calls' in data) {
       humanizerOptions.networkId = op!.networkId

@@ -1,12 +1,11 @@
 /* eslint-disable no-restricted-syntax */
-import { AbiCoder, Contract, formatUnits, getAddress, Interface, toBeHex } from 'ethers'
+import { AbiCoder, formatUnits, getAddress, Interface, toBeHex } from 'ethers'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
-import EntryPointAbi from '../../../contracts/compiled/EntryPoint.json'
 import ERC20 from '../../../contracts/compiled/IERC20.json'
 import { FEE_COLLECTOR } from '../../consts/addresses'
-import { AMBIRE_PAYMASTER, ERC_4337_ENTRYPOINT, SINGLETON } from '../../consts/deploy'
-import { Account, AccountStates } from '../../interfaces/account'
+import { AMBIRE_PAYMASTER, SINGLETON } from '../../consts/deploy'
+import { Account } from '../../interfaces/account'
 import { Fetch } from '../../interfaces/fetch'
 import { ExternalSignerControllers, Key } from '../../interfaces/keystore'
 import { Network } from '../../interfaces/network'
@@ -24,11 +23,14 @@ import {
   getActivatorCall,
   getOneTimeNonce,
   getUserOperation,
+  getUserOpHash,
   isErc4337Broadcast,
   shouldIncludeActivatorCall,
   shouldUseOneTimeNonce,
   shouldUsePaymaster
 } from '../../libs/userOperation/userOperation'
+/* eslint-disable no-restricted-syntax */
+import { AccountsController } from '../accounts/accounts'
 import { AccountOpAction } from '../actions/actions'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
@@ -83,6 +85,8 @@ const CRITICAL_ERRORS = {
 }
 
 export class SignAccountOpController extends EventEmitter {
+  #accounts: AccountsController
+
   #keystore: KeystoreController
 
   #portfolio: PortfolioController
@@ -96,8 +100,6 @@ export class SignAccountOpController extends EventEmitter {
   #fetch: Fetch
 
   account: Account
-
-  #accountStates: AccountStates
 
   #network: Network
 
@@ -132,12 +134,12 @@ export class SignAccountOpController extends EventEmitter {
   #callRelayer: Function
 
   constructor(
+    accounts: AccountsController,
     keystore: KeystoreController,
     portfolio: PortfolioController,
     providers: ProvidersController,
     externalSignerControllers: ExternalSignerControllers,
     account: Account,
-    accountStates: AccountStates,
     network: Network,
     fromActionId: AccountOpAction['id'],
     accountOp: AccountOp,
@@ -146,12 +148,13 @@ export class SignAccountOpController extends EventEmitter {
     callRelayer: Function
   ) {
     super()
+
+    this.#accounts = accounts
     this.#keystore = keystore
     this.#portfolio = portfolio
     this.#providers = providers
     this.#externalSignerControllers = externalSignerControllers
     this.account = account
-    this.#accountStates = accountStates
     this.#network = network
     this.fromActionId = fromActionId
     this.accountOp = structuredClone(accountOp)
@@ -531,7 +534,7 @@ export class SignAccountOpController extends EventEmitter {
     const callDataAdditionalGasCost = getCallDataAdditionalByNetwork(
       this.accountOp!,
       this.#network,
-      this.#accountStates![this.accountOp!.accountAddr][this.accountOp!.networkId]
+      this.#accounts.accountStates[this.accountOp!.accountAddr][this.accountOp!.networkId]
     )
 
     this.availableFeeOptions.forEach((option) => {
@@ -713,10 +716,15 @@ export class SignAccountOpController extends EventEmitter {
       return null
     }
 
-    const accountState = this.#accountStates[this.accountOp.accountAddr][this.accountOp.networkId]
+    const accountState =
+      this.#accounts.accountStates[this.accountOp.accountAddr][this.accountOp.networkId]
     return {
       paidBy: this.paidBy,
-      isERC4337: isErc4337Broadcast(this.#network, accountState),
+      // we're allowing EOAs to broadcast on 4337 networks as well
+      // in that case, we don't do user operations
+      isERC4337:
+        this.paidBy === this.accountOp.accountAddr &&
+        isErc4337Broadcast(this.#network, accountState),
       isGasTank: this.feeTokenResult.flags.onGasTank,
       inToken: this.feeTokenResult.address,
       amount: chosenSpeed.amount,
@@ -824,7 +832,7 @@ export class SignAccountOpController extends EventEmitter {
 
     if (signer.init) signer.init(this.#externalSignerControllers[this.accountOp.signingKeyType])
     const accountState =
-      this.#accountStates![this.accountOp!.accountAddr][this.accountOp!.networkId]
+      this.#accounts.accountStates[this.accountOp!.accountAddr][this.accountOp!.networkId]
 
     // just in-case: before signing begins, we delete the feeCall;
     // if there's a need for it, it will be added later on in the code.
@@ -840,10 +848,15 @@ export class SignAccountOpController extends EventEmitter {
     delete this.accountOp.activatorCall
 
     // @EntryPoint activation
-    // if the account is v2 without the entry point signer being a signer
-    // and the network is 4337 but doesn't have a paymaster, we should activate
-    // the entry point and therefore do so here
-    if (shouldIncludeActivatorCall(this.#network, accountState)) {
+    // if we broadcast by an EOA, this is the only way to include
+    // the entry point as a signer
+    if (
+      shouldIncludeActivatorCall(
+        this.#network,
+        accountState,
+        this.accountOp.gasFeePayment.isERC4337
+      )
+    ) {
       this.accountOp.activatorCall = getActivatorCall(this.accountOp.accountAddr)
     }
 
@@ -870,16 +883,33 @@ export class SignAccountOpController extends EventEmitter {
           signer
         )
       } else if (this.accountOp.gasFeePayment.isERC4337) {
-        const userOperation = getUserOperation(this.account, accountState, this.accountOp)
+        // if there's no entryPointAuthorization, the txn will fail
+        if (
+          !accountState.isDeployed &&
+          (!this.accountOp.meta || !this.accountOp.meta.entryPointAuthorization)
+        )
+          return this.#setSigningError('Entry point privileges not granted. Please contact support')
+
+        const userOperation = getUserOperation(
+          this.account,
+          accountState,
+          this.accountOp,
+          !accountState.isDeployed ? this.accountOp.meta!.entryPointAuthorization : undefined
+        )
         userOperation.preVerificationGas = this.estimation!.erc4337GasLimits!.preVerificationGas
         userOperation.callGasLimit = this.estimation!.erc4337GasLimits!.callGasLimit
         userOperation.verificationGasLimit = this.estimation!.erc4337GasLimits!.verificationGasLimit
+        userOperation.paymasterVerificationGasLimit =
+          this.estimation!.erc4337GasLimits!.paymasterVerificationGasLimit
+        userOperation.paymasterPostOpGasLimit =
+          this.estimation!.erc4337GasLimits!.paymasterPostOpGasLimit
         userOperation.maxFeePerGas = toBeHex(gasFeePayment.gasPrice)
         userOperation.maxPriorityFeePerGas = toBeHex(gasFeePayment.maxPriorityFeePerGas!)
+
         const usesOneTimeNonce = shouldUseOneTimeNonce(userOperation)
         const usesPaymaster = shouldUsePaymaster(this.#network)
-
         if (usesPaymaster) {
+          userOperation.paymaster = AMBIRE_PAYMASTER
           this.#addFeePayment()
         }
 
@@ -909,25 +939,33 @@ export class SignAccountOpController extends EventEmitter {
               {
                 // send without the requestType prop
                 userOperation: (({ requestType, activatorCall, ...o }) => o)(userOperation),
-                paymaster: AMBIRE_PAYMASTER
+                paymaster: AMBIRE_PAYMASTER,
+                bytecode: this.account.creation!.bytecode,
+                salt: this.account.creation!.salt,
+                key: this.account.associatedKeys[0]
               }
             )
-            userOperation.paymasterAndData = response.data.paymasterAndData
+            userOperation.paymasterData = response.data.paymasterData
             if (usesOneTimeNonce) {
               userOperation.nonce = getOneTimeNonce(userOperation)
             }
           } catch (e: any) {
-            return this.#setSigningError(e.message)
+            this.emitError({
+              level: 'major',
+              message: e.message,
+              error: new Error(e.message)
+            })
+            this.status = { type: SigningStatus.ReadyToSign }
+            this.emitUpdate()
+            return
           }
         }
 
         if (userOperation.requestType === 'standard') {
-          const provider = this.#providers.providers[this.accountOp.networkId]
-          const entryPoint = new Contract(ERC_4337_ENTRYPOINT, EntryPointAbi, provider)
           const typedData = getTypedData(
             this.#network.chainId,
             this.accountOp.accountAddr,
-            await entryPoint.getUserOpHash(userOperation)
+            getUserOpHash(userOperation, this.#network.chainId)
           )
           const signature = wrapStandard(await signer.signTypedData(typedData))
           userOperation.signature = signature

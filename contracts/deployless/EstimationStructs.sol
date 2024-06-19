@@ -2,6 +2,7 @@
 pragma solidity 0.8.19;
 
 import './IAmbireAccount.sol';
+import '../libs/Transaction.sol';
 
 contract EstimationStructs {
   // NOTE: this contract doesn't need to be aware of ERC-4337 or entryPoint/entryPoint.getNonce()
@@ -11,7 +12,7 @@ contract EstimationStructs {
   struct AccountOp {
     IAmbireAccount account;
     uint nonce;
-    IAmbireAccount.Transaction[] calls;
+    Transaction[] calls;
     bytes signature;
   }
 

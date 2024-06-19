@@ -1,6 +1,6 @@
-/* eslint-disable @typescript-eslint/no-floating-promises */
 import { getCreate2Address, JsonRpcProvider, keccak256 } from 'ethers'
 
+import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { PROXY_AMBIRE_ACCOUNT } from '../../consts/deploy'
 import {
   HD_PATH_TEMPLATE_TYPE,
@@ -19,10 +19,11 @@ import { Fetch } from '../../interfaces/fetch'
 import { KeyIterator } from '../../interfaces/keyIterator'
 import { dedicatedToOneSAPriv, ReadyToAddKeys } from '../../interfaces/keystore'
 import { Network, NetworkId } from '../../interfaces/network'
-import { AccountPreferences, KeyPreferences } from '../../interfaces/settings'
+import { KeyPreferences } from '../../interfaces/settings'
 import {
   getAccountImportStatus,
   getBasicAccount,
+  getDefaultAccountPreferences,
   getEmailAccount,
   getSmartAccount,
   isAmbireV1LinkedAccount,
@@ -31,6 +32,8 @@ import {
 } from '../../libs/account/account'
 import { getAccountState } from '../../libs/accountState/accountState'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
+/* eslint-disable @typescript-eslint/no-floating-promises */
+import { AccountsController } from '../accounts/accounts'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
 
@@ -47,7 +50,7 @@ export const DEFAULT_PAGE_SIZE = 5
 export class AccountAdderController extends EventEmitter {
   #callRelayer: Function
 
-  #alreadyImportedAccounts: Account[]
+  #accounts: AccountsController
 
   #keystore: KeystoreController
 
@@ -66,7 +69,7 @@ export class AccountAdderController extends EventEmitter {
 
   // Accounts which identity is created on the Relayer (if needed), and are ready
   // to be added to the user's account list by the Main Controller
-  readyToAddAccounts: (Account & { newlyCreated?: boolean })[] = []
+  readyToAddAccounts: Account[] = []
 
   // The keys for the `readyToAddAccounts`, that are ready to be added to the
   // user's keystore by the Main Controller
@@ -75,10 +78,6 @@ export class AccountAdderController extends EventEmitter {
   // The key preferences for the `readyToAddKeys`, that are ready to be added to
   // the user's settings by the Main Controller
   readyToAddKeyPreferences: KeyPreferences = []
-
-  // The account preferences for the `readyToAddAccounts`, that are ready to be
-  // added to the user's settings by the Main Controller
-  readyToAddAccountPreferences: AccountPreferences = {}
 
   // Identity for the smart accounts must be created on the Relayer, this
   // represents the status of the operation, needed managing UI state
@@ -93,18 +92,18 @@ export class AccountAdderController extends EventEmitter {
   #linkedAccounts: { account: AccountWithNetworkMeta; isLinked: boolean }[] = []
 
   constructor({
-    alreadyImportedAccounts,
+    accounts,
     keystore,
     relayerUrl,
     fetch
   }: {
-    alreadyImportedAccounts: Account[]
+    accounts: AccountsController
     keystore: KeystoreController
     relayerUrl: string
     fetch: Fetch
   }) {
     super()
-    this.#alreadyImportedAccounts = alreadyImportedAccounts
+    this.#accounts = accounts
     this.#keystore = keystore
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
   }
@@ -203,7 +202,7 @@ export class AccountAdderController extends EventEmitter {
       ...acc,
       importStatus: getAccountImportStatus({
         account: acc.account,
-        alreadyImportedAccounts: this.#alreadyImportedAccounts,
+        alreadyImportedAccounts: this.#accounts.accounts,
         keys: this.#keystore.keys,
         accountsOnPage: mergedAccounts,
         keyIteratorType: this.#keyIterator?.type
@@ -254,7 +253,6 @@ export class AccountAdderController extends EventEmitter {
     this.readyToAddAccounts = []
     this.readyToAddKeys = { internal: [], external: [] }
     this.readyToAddKeyPreferences = []
-    this.readyToAddAccountPreferences = {}
     this.isInitialized = false
 
     this.emitUpdate()
@@ -495,7 +493,6 @@ export class AccountAdderController extends EventEmitter {
    */
   async addAccounts(
     accounts: SelectedAccountForImport[] = [],
-    readyToAddAccountPreferences: AccountPreferences = {},
     readyToAddKeys: ReadyToAddKeys = { internal: [], external: [] },
     readyToAddKeyPreferences: KeyPreferences = []
   ) {
@@ -574,14 +571,14 @@ export class AccountAdderController extends EventEmitter {
     }
 
     this.readyToAddAccounts = [
-      ...accounts.map((x) => ({
+      ...accounts.map((x, i) => ({
         ...x.account,
+        preferences: getDefaultAccountPreferences(x.account.addr, this.#accounts.accounts, i),
         newlyCreated: newlyCreatedAccounts.includes(x.account.addr)
       }))
     ]
     this.readyToAddKeys = readyToAddKeys
     this.readyToAddKeyPreferences = readyToAddKeyPreferences
-    this.readyToAddAccountPreferences = readyToAddAccountPreferences
     this.addAccountsStatus = 'SUCCESS'
     await this.forceEmitUpdate()
 
@@ -865,6 +862,10 @@ export class AccountAdderController extends EventEmitter {
               factoryAddr,
               bytecode,
               salt
+            },
+            preferences: {
+              label: DEFAULT_ACCOUNT_LABEL,
+              pfp: addr
             }
           },
           isLinked: true
