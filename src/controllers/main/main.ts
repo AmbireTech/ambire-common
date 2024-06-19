@@ -468,6 +468,15 @@ export class MainController extends EventEmitter {
     )
   }
 
+  async reloadSelectedAccount() {
+    if (!this.accounts.selectedAccount) return
+
+    await Promise.all([
+      this.accounts.updateAccountState(this.accounts.selectedAccount, 'latest'),
+      this.updateSelectedAccountPortfolio(true)
+    ])
+  }
+
   async updateSelectedAccountPortfolio(forceUpdate: boolean = false) {
     if (!this.accounts.selectedAccount) return
 
