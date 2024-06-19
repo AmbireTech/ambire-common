@@ -19,7 +19,10 @@ import { getSASupport, simulateDebugTraceCall } from '../deployless/simulateDepl
 const relayerAdditionalNetworks = [56n, 250n, 1088n]
 
 export const getNetworksWithFailedRPC = ({ providers }: { providers: RPCProviders }): string[] => {
-  return Object.keys(providers).filter((networkId) => !providers[networkId].isWorking)
+  return Object.keys(providers).filter(
+    (networkId) =>
+      typeof providers[networkId].isWorking === 'boolean' && !providers[networkId].isWorking
+  )
 }
 
 async function retryRequest(init: Function, counter = 0): Promise<any> {
@@ -101,7 +104,10 @@ export async function getNetworkInfo(
           hasSingleton: singletonCode !== '0x',
           isSAEnabled: supportsAmbire && singletonCode !== '0x',
           areContractsDeployed,
-          rpcNoStateOverride: predefinedNetwork && predefinedNetwork.rpcNoStateOverride === true ? true : !saSupport.supportsStateOverride,
+          rpcNoStateOverride:
+            predefinedNetwork && predefinedNetwork.rpcNoStateOverride === true
+              ? true
+              : !saSupport.supportsStateOverride,
           erc4337: {
             enabled: predefinedNetwork ? predefinedNetwork.erc4337.enabled : false,
             hasPaymaster: predefinedNetwork ? predefinedNetwork.erc4337.hasPaymaster : false
