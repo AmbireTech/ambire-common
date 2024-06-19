@@ -1132,8 +1132,6 @@ export class MainController extends EventEmitter {
         accountOpsToBeSimulatedByNetwork = { [localAccountOp.networkId]: [localAccountOp] }
       }
 
-      console.log({ accountOpsToBeSimulatedByNetwork })
-
       const [, estimation] = await Promise.all([
         // NOTE: we are not emitting an update here because the portfolio controller will do that
         // NOTE: the portfolio controller has it's own logic of constructing/caching providers, this is intentional, as
