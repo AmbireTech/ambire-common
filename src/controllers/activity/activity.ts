@@ -1,7 +1,7 @@
 import { networks as predefinedNetworks } from '../../consts/networks'
 /* eslint-disable import/no-extraneous-dependencies */
 import { Banner } from '../../interfaces/banner'
-import { Fetch } from '../../interfaces/fetch'
+import { CustomResponse, Fetch } from '../../interfaces/fetch'
 import { Network } from '../../interfaces/network'
 import { Storage } from '../../interfaces/storage'
 import { Message } from '../../interfaces/userRequest'
@@ -328,12 +328,10 @@ export class ActivityController extends EventEmitter {
             try {
               let txnId = accountOp.txnId
               if (accountOp.userOpHash) {
-                const [response, bundlerResult] = await Promise.all([
+                const [response, bundlerResult]: [CustomResponse | null, any] = await Promise.all([
                   !network.predefined
                     ? fetchUserOp(accountOp.userOpHash, this.#fetch, getExplorerId(network))
-                    : new Promise((resolve) => {
-                        resolve(null)
-                      }),
+                    : Promise.resolve(null),
                   Bundler.getStatusAndTxnId(accountOp.userOpHash, network)
                 ])
 

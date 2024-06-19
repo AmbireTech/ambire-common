@@ -1,7 +1,7 @@
 import { HeadersInit, RequestInfo, RequestInit, Response } from 'node-fetch'
 
 // TODO: One sunny day, consider adding specific types for the incoming responses
-interface CustomResponse extends Response {
+export interface CustomResponse extends Response {
   [key: string]: any
 }
 
