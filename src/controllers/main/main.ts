@@ -479,15 +479,9 @@ export class MainController extends EventEmitter {
           }
         : getAccountOpsByNetwork(this.accounts.selectedAccount, this.actions.visibleActionsQueue)
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
-    this.portfolio.updateSelectedAccount(
-      this.accounts.accounts,
-      this.accounts.selectedAccount,
-      undefined,
-      accountOps,
-      {
-        forceUpdate
-      }
-    )
+    this.portfolio.updateSelectedAccount(this.accounts.selectedAccount, undefined, accountOps, {
+      forceUpdate
+    })
   }
 
   async buildUserRequestFromDAppRequest(
@@ -1089,7 +1083,6 @@ export class MainController extends EventEmitter {
         // NOTE: the portfolio controller has it's own logic of constructing/caching providers, this is intentional, as
         // it may have different needs
         this.portfolio.updateSelectedAccount(
-          this.accounts.accounts,
           localAccountOp.accountAddr,
           undefined,
           this.signAccountOp
