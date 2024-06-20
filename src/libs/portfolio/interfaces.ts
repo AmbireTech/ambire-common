@@ -15,6 +15,7 @@ export interface GetOptionsSimulation {
 
 export type TokenResult = Omit<CustomToken, 'standard'> & {
   amount: bigint
+  amountBeforeSimulation?: bigint
   amountPostSimulation?: bigint
   priceIn: Price[]
   flags: {
