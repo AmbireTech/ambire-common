@@ -178,9 +178,7 @@ export async function getNFTs(
       {
         ...token,
         // Please refer to getTokens() for more info regarding `amountBeforeSimulation` calc
-        amountBeforeSimulation: simulationToken
-          ? token.amount - simulationToken.amount
-          : token.amount,
+        simulationAmount: simulationToken ? simulationToken.amount - token.amount : undefined,
         amountPostSimulation: simulationToken ? simulationToken.amount : token.amount
       }
     ]
@@ -264,15 +262,15 @@ export async function getTokens(
     // Deployless simulation contract processing:
     //   - Balance before simulation (before[0]): 10 USDC + 3 USDC = 13 USDC.
     //   - Balance after simulation (after[0]): 10 USDC - 5 USDC + 3 USDC = 8 USDC.
-    // Simulation-only balance displayed on the Sign Screen (we will call it `amountBeforeSimulation`):
-    //   - difference between before and after simulation: 13 USDC - 8 USDC = 5 USDC.
+    // Simulation-only balance displayed on the Sign Screen (we will call it `simulationAmount`):
+    //   - difference between after simulation and before: 8 USDC - 13 USDC = -5 USDC
     // Final balance displayed on the Dashboard (we will call it `amountPostSimulation`):
     //   - after[0], 8 USDC.
     return [
       token.error,
       {
         ...mapToken(token, tokenAddrs[i]),
-        amountBeforeSimulation: simulation ? token.amount - simulation.amount : token.amount,
+        simulationAmount: simulation ? simulation.amount - token.amount : undefined,
         amountPostSimulation: simulation ? simulation.amount : token.amount
       }
     ]

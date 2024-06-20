@@ -123,29 +123,22 @@ export function calculateTokensPendingState(
 
   const { tokens } = pendingData.result
 
-  // sometimes an old pending state that does not yet have amountPostSimulation
+  // sometimes an old pending state that does not yet have amountBeforeSimulation
   // set and breaks the logic below. If that's the case, wait for the
   // simulation to complete
-  if (!tokens.length || !('amountPostSimulation' in tokens[0])) {
+  if (!tokens.length || !('simulationAmount' in tokens[0])) {
     return []
   }
 
-  const tokensWithChangedAmounts = tokens.filter(
-    (token) => token.amount !== token.amountPostSimulation
-  )
+  const tokensWithChangedAmounts = tokens.filter((token) => token.simulationAmount !== undefined)
 
   return tokensWithChangedAmounts.map((token) => {
     let type: PendingToken['type'] = null
-    const amountToSend =
-      token.amount - token.amountPostSimulation! >= 0n
-        ? token.amount - token.amountPostSimulation!
-        : token.amountPostSimulation! - token.amount!
+    const amountToSend = token.simulationAmount!
 
-    if (token.amount > token.amountPostSimulation!) {
+    if (amountToSend > 0n) {
       type = 'send'
-    }
-
-    if (token.amount < token.amountPostSimulation!) {
+    } else {
       type = 'receive'
     }
 
