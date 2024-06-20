@@ -255,7 +255,7 @@ export async function getTokens(
       ? simulationTokens.find((simulationToken: any) => simulationToken.addr === tokenAddrs[i])
       : null
 
-    // Here's the math before `amountBeforeSimulation` and  `amountPostSimulation`.
+    // Here's the math before `simulationAmount` and `amountPostSimulation`.
     // AccountA initial balance: 10 USDC.
     // AccountA attempts to transfer 5 USDC (not signed yet).
     // An external entity sends 3 USDC to AccountA on-chain.
