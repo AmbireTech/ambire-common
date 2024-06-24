@@ -417,13 +417,13 @@ export class MainController extends EventEmitter {
           // 1. get the current account op if any and get its nonce
           // 2. check the activity controller for an accountOp with the same nonce
           // 3. if there is, increate the fees by 12.5% on each level to be able to do RBF
-          if (!this.selectedAccount) {
+          if (!this.accounts.selectedAccount) {
             this.gasPrices[network] = prices
             return
           }
 
           const accountOpsByNetwork = getAccountOpsByNetwork(
-            this.selectedAccount,
+            this.accounts.selectedAccount,
             this.actions.visibleActionsQueue
           )
           const accountOps = accountOpsByNetwork ? accountOpsByNetwork[network] : []
@@ -441,9 +441,9 @@ export class MainController extends EventEmitter {
 
           // take the nonce from the account state
           const currentNonce =
-            this.accountStates[this.selectedAccount] &&
-            this.accountStates[this.selectedAccount][network]
-              ? this.accountStates[this.selectedAccount][network].nonce
+            this.accounts.accountStates[this.accounts.selectedAccount] &&
+            this.accounts.accountStates[this.accounts.selectedAccount][network]
+              ? this.accounts.accountStates[this.accounts.selectedAccount][network].nonce
               : null
           if (currentNonce && currentNonce != lastAccountOp.nonce) {
             this.gasPrices[network] = prices

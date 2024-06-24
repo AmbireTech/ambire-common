@@ -546,14 +546,15 @@ export class ActivityController extends EventEmitter {
   }
 
   get lastAccountOps(): { [key: Network['id']]: SubmittedAccountOp | null } {
-    if (!this.#selectedAccount || !this.#accountsOps[this.#selectedAccount]) return {}
+    if (!this.#accounts.selectedAccount || !this.#accountsOps[this.#accounts.selectedAccount])
+      return {}
 
     const accountsOps: { [key: Network['id']]: SubmittedAccountOp | null } = {}
-    Object.keys(this.#accountsOps[this.#selectedAccount]).forEach((networkId) => {
-      if (!this.#accountsOps[this.#selectedAccount!][networkId]) {
+    Object.keys(this.#accountsOps[this.#accounts.selectedAccount]).forEach((networkId) => {
+      if (!this.#accountsOps[this.#accounts.selectedAccount!][networkId]) {
         accountsOps[networkId] = null
       } else {
-        accountsOps[networkId] = this.#accountsOps[this.#selectedAccount!][networkId][0]
+        accountsOps[networkId] = this.#accountsOps[this.#accounts.selectedAccount!][networkId][0]
       }
     })
     return accountsOps
