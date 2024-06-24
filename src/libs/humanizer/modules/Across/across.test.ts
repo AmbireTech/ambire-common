@@ -58,14 +58,14 @@ describe('Across', () => {
         getToken('0x3c499c542cef5e3811e1192ce70d8cc03d5c3359', 130592n),
         getLabel('for'),
         getToken('0xaf88d065e77c8cC2239327C5EDb3A432268e5831', 107647n),
-        getLabel('on chain'),
+        getLabel('to'),
         getChain(ARBITRUM_CHAIN_ID),
         getDeadline(1718657594n)
       ],
       [
         getAction('Bridge'),
         getToken('0x94b008aa00579c1307b0ef2c499ad98a8ce58e58', 20000000n),
-        getLabel('on chain'),
+        getLabel('to'),
         getChain(ARBITRUM_CHAIN_ID),
         ...getRecipientText('arbitrary address', '0x5f46a9f7e04d78fdb38de0c975d9ca07925fe5b0')
       ],

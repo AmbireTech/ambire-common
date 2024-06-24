@@ -25,7 +25,7 @@ const AcrossModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]) =>
         getToken(inputToken, inputAmount),
         getLabel('for'),
         getToken(outputToken, outputAmount),
-        getLabel('on chain'),
+        getLabel('to'),
         getChain(destinationChainId),
         getDeadline(fillDeadline),
         ...getRecipientText(accOp.accountAddr, recipient)
@@ -39,7 +39,7 @@ const AcrossModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]) =>
       return [
         getAction('Bridge'),
         getToken(originToken, amount),
-        getLabel('on chain'),
+        getLabel('to'),
         getChain(destinationChainId),
         ...getRecipientText(accOp.accountAddr, recipient)
       ]

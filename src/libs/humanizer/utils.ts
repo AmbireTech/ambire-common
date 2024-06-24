@@ -48,8 +48,7 @@ export function getToken(_address: string, amount: bigint): HumanizerVisualizati
 }
 
 export function getChain(chainId: bigint): HumanizerVisualization {
-  // @TODO create chain component
-  return getLabel(`Chain with chainId ${chainId}`)
+  return { type: 'chain', id: randomId(), chainId }
 }
 
 export function getNft(address: string, id: bigint): HumanizerVisualization {
