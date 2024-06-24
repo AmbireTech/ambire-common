@@ -56,6 +56,7 @@ import {
 } from '../../libs/userOperation/userOperation'
 import bundler from '../../services/bundlers'
 import { Bundler } from '../../services/bundlers/bundler'
+import { getIsViewOnly } from '../../utils/accounts'
 import wait from '../../utils/wait'
 import { AccountAdderController } from '../accountAdder/accountAdder'
 import { AccountsController } from '../accounts/accounts'
@@ -970,8 +971,20 @@ export class MainController extends EventEmitter {
       // If the current account is an EOA, only this account can pay the fee,
       // and there's no need for checking other EOA accounts native balances.
       // This is already handled and estimated as a fee option in the estimate library, which is why we pass an empty array here.
-      const EOAaccounts = account?.creation
-        ? this.accounts.accounts.filter((acc) => !acc.creation)
+      //
+      // we're excluding the view only accounts from the natives to check
+      // in all cases EXCEPT the case where we're making an estimation for
+      // the view only account itself. In all other, view only accounts options
+      // should not be present as the user cannot pay the fee with them (no key)
+      const nativeToCheck = account?.creation
+        ? this.accounts.accounts
+            .filter(
+              (acc) =>
+                !isSmartAccount(acc) &&
+                (acc.addr === localAccountOp.accountAddr ||
+                  !getIsViewOnly(this.keystore.keys, acc.associatedKeys))
+            )
+            .map((acc) => acc.addr)
         : []
 
       if (!account)
@@ -1096,10 +1109,9 @@ export class MainController extends EventEmitter {
           this.providers.providers[localAccountOp.networkId],
           network,
           account,
-          this.keystore.keys,
           localAccountOp,
           this.accounts.accountStates,
-          EOAaccounts,
+          nativeToCheck,
           // @TODO - first time calling this, portfolio is still not loaded.
           feeTokens,
           {
@@ -1134,24 +1146,29 @@ export class MainController extends EventEmitter {
             localAccountOp.nonce
       }
 
-      // RBF check
-      // if the nonce is the same and the txn is not erc-4337, do an rbf
-      const notConfirmedOp = this.activity.getNotConfirmedOpIfAny(
-        localAccountOp.accountAddr,
-        localAccountOp.networkId
-      )
-      const rbfAccountOp =
-        !localAccountOp.gasFeePayment?.isERC4337 &&
-        notConfirmedOp &&
-        !notConfirmedOp.gasFeePayment?.isERC4337 &&
-        localAccountOp.nonce == notConfirmedOp.nonce
-          ? notConfirmedOp
-          : null
+      // check if an RBF should be applied for the incoming transaction
+      // for SA conditions are: take the last broadcast but not confirmed accOp
+      // and check if the nonce is the same as the current nonce (non 4337 txns)
+      // for EOA: check the last broadcast but not confirmed txn across SA
+      // as the EOA could've broadcast a txn there + it's own history and
+      // compare the highest found nonce
+      const rbfAccountOps: { [key: string]: SubmittedAccountOp | null } = {}
+      nativeToCheck.push(localAccountOp.accountAddr)
+      nativeToCheck.forEach((accId) => {
+        const notConfirmedOp = this.activity.getNotConfirmedOpIfAny(accId, localAccountOp.networkId)
+        const currentNonce = this.accounts.accountStates[accId][localAccountOp.networkId].nonce
+        rbfAccountOps[accId] =
+          notConfirmedOp &&
+          !notConfirmedOp.gasFeePayment?.isERC4337 &&
+          currentNonce == notConfirmedOp.nonce
+            ? notConfirmedOp
+            : null
+      })
 
       // update the signAccountOp controller once estimation finishes;
       // this eliminates the infinite loading bug if the estimation comes slower
       if (this.signAccountOp && estimation) {
-        this.signAccountOp.update({ estimation, rbfAccountOp })
+        this.signAccountOp.update({ estimation, rbfAccountOps })
       }
 
       // if there's an estimation error, override the pending results

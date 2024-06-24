@@ -205,10 +205,9 @@ export async function estimate(
   provider: Provider | JsonRpcProvider,
   network: Network,
   account: Account,
-  keystoreKeys: Key[],
   op: AccountOp,
   accountStates: AccountStates,
-  EOAaccounts: Account[],
+  nativeToCheck: string[],
   feeTokens: TokenResult[],
   opts?: {
     calculateRefund?: boolean
@@ -250,14 +249,6 @@ export async function estimate(
   if (shouldIncludeActivatorCall(network, accountState, false)) {
     calls.push(getActivatorCall(op.accountAddr))
   }
-
-  // we're excluding the view only accounts from the natives to check
-  // in all cases EXCEPT the case where we're making an estimation for
-  // the view only account itself. In all other, view only accounts options
-  // should not be present as the user cannot pay the fee with them (no key)
-  const nativeToCheck = EOAaccounts.filter(
-    (acc) => acc.addr === op.accountAddr || !getIsViewOnly(keystoreKeys, acc.associatedKeys)
-  ).map((acc) => acc.addr)
 
   // if 4337, delegate
   if (opts && opts.is4337Broadcast) {

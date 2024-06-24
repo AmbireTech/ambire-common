@@ -556,9 +556,6 @@ export class ActivityController extends EventEmitter {
    * statuses to hide the banner of BroadcastButNotConfirmed from the dashboard.
    */
   getNotConfirmedOpIfAny(accId: AccountId, networkId: Network['id']): SubmittedAccountOp | null {
-    // MAJOR TODO:
-    // ADD WHAT TYPE OF PAYMENT IT IS FROM THE SELECT DROP DOWN
-    // AND DETERMINE WHAT'S WHAT FROM THERE
     const acc = this.#accounts.accounts.find((acc) => acc.addr === accId)
     if (!acc) return null
 
