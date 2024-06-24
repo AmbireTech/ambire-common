@@ -192,7 +192,7 @@ export class AccountsController extends EventEmitter {
   }
 
   async updateAccountPreferences(accounts: { addr: string; preferences: AccountPreferences }[]) {
-    await this.withStatus(this.updateAccountPreferences.name, async () =>
+    await this.withStatus('updateAccountPreferences', async () =>
       this.#updateAccountPreferences(accounts)
     )
   }
