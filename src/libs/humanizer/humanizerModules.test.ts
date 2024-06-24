@@ -357,10 +357,9 @@ describe('module tests', () => {
       'Swap 0.830956503484309482 ETH for 2921.794003 USDC',
       'Swap 0.028501 USDC for 0.001000562697269958 ETH',
       'Swap 0.017481 USDC for 0.000233684649287973 AAVE',
-      // @TODO this could be better, but with chain component/visualization type
-      'Bridge 0.130592 USDC for 0.107647 USDC on chain Chain with chainId 42161 already expired and send it to 0x6969174fd72466430a46e18234d0b530c9fd5f49',
-      'Bridge 20.0 USDT on chain Chain with chainId 42161 and send it to 0x5f46a9f7e04d78fdb38de0c975d9ca07925fe5b0',
-      'Bridge 0.01 WETH to Chain with chainId 42161 and send it to 0xd819a17345efa4f014f289b999d6f79215cff974',
+      'Bridge 0.130592 USDC for 0.107647 USDC to chain with id 42161 already expired and send it to 0x6969174fd72466430a46e18234d0b530c9fd5f49',
+      'Bridge 20.0 USDT to chain with id 42161 and send it to 0x5f46a9f7e04d78fdb38de0c975d9ca07925fe5b0',
+      'Bridge 0.01 WETH to chain with id 42161 and send it to 0xd819a17345efa4f014f289b999d6f79215cff974',
       'Swap 40.0 ETH for 7503793600.473780810135445176 SHIB',
       'Swap 0.49991 USDC for 0.629898941662428755 ARB',
       'Cancel order with order hash 0x825...471',

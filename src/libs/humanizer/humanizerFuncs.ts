@@ -75,6 +75,10 @@ export const visualizationToText = (call: IrCall, options: any): string => {
     if (v.type === 'deadline') {
       text += getDeadlineText(v.amount!)
     }
+
+    if (v.type === 'chain') {
+      text += `chain with id ${v.chainId}`
+    }
   })
   if (text) {
     return text
