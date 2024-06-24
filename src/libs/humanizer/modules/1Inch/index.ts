@@ -53,6 +53,22 @@ const OneInchModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]) =
       const token = `0x${BigInt(tokenArg).toString(16).padStart(40, '0')}`
 
       return [getAction('Swap'), getToken(oneInchAddressParser(token), amount)]
+    },
+    [iface.getFunction(
+      'unoswapTo(uint256 to,uint256 token,uint256 amount,uint256 minReturn,uint256 dex)'
+    )?.selector!]: (call: IrCall) => {
+      const { token: tokenArg, amount } = iface.parseTransaction(call)!.args
+      const token = `0x${BigInt(tokenArg).toString(16).padStart(40, '0')}`
+
+      return [getAction('Swap'), getToken(oneInchAddressParser(token), amount)]
+    },
+    [iface.getFunction(
+      'unoswap3(uint256 token,uint256 amount,uint256 minReturn,uint256 dex,uint256 dex2,uint256 dex3)'
+    )?.selector!]: (call: IrCall) => {
+      const { token: tokenArg, amount } = iface.parseTransaction(call)!.args
+      const token = `0x${BigInt(tokenArg).toString(16).padStart(40, '0')}`
+
+      return [getAction('Swap'), getToken(oneInchAddressParser(token), amount)]
     }
   }
   const newCalls = calls.map((call) => {

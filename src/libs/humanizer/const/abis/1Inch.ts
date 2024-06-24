@@ -44,7 +44,7 @@ export const OneInch = [
   'function uniswapV3SwapCallback(int256,int256,bytes)',
   'function unoswap(uint256 token, uint256 amount, uint256 minReturn, uint256 dex)  returns (uint256)',
   'function unoswap2(uint256 token, uint256 amount, uint256 minReturn, uint256 dex, uint256 dex2)',
-  'function unoswap3(uint256,uint256,uint256,uint256,uint256,uint256) returns (uint256)',
+  'function unoswap3(uint256 token,uint256 amount,uint256 minReturn,uint256 dex,uint256 dex2,uint256 dex3) returns (uint256)',
   'function unoswapTo(uint256 to,uint256 token,uint256 amount,uint256 minReturn,uint256 dex) returns (uint256)',
   'function unoswapTo2(uint256,uint256,uint256,uint256,uint256,uint256) returns (uint256)',
   'function unoswapTo3(uint256,uint256,uint256,uint256,uint256,uint256,uint256) returns (uint256)',
