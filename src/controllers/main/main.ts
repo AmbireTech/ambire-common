@@ -203,7 +203,8 @@ export class MainController extends EventEmitter {
         await this.forceEmitUpdate()
         await this.actions.forceEmitUpdate()
         await this.addressBook.forceEmitUpdate()
-      }
+      },
+      this.providers.updateProviderIsWorking.bind(this.providers)
     )
     this.settings = new SettingsController(this.#storage)
     this.portfolio = new PortfolioController(

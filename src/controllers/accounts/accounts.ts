@@ -40,6 +40,8 @@ export class AccountsController extends EventEmitter {
 
   #onSelectAccount: (toAccountAddr: string) => void
 
+  #updateProviderIsWorking: (networkId: NetworkId, isWorking: boolean) => void
+
   // Holds the initial load promise, so that one can wait until it completes
   initialLoadPromise: Promise<void>
 
@@ -47,13 +49,15 @@ export class AccountsController extends EventEmitter {
     storage: Storage,
     providers: ProvidersController,
     networks: NetworksController,
-    onSelectAccount: (toAccountAddr: string) => void
+    onSelectAccount: (toAccountAddr: string) => void,
+    updateProviderIsWorking: (networkId: NetworkId, isWorking: boolean) => void
   ) {
     super()
     this.#storage = storage
     this.#providers = providers
     this.#networks = networks
     this.#onSelectAccount = onSelectAccount
+    this.#updateProviderIsWorking = updateProviderIsWorking
 
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.initialLoadPromise = this.#load()
@@ -129,7 +133,7 @@ export class AccountsController extends EventEmitter {
             blockTag
           )
 
-          this.#providers.updateProviderIsWorking(network.id, true)
+          this.#updateProviderIsWorking(network.id, true)
 
           networkAccountStates.forEach((accountState, index) => {
             const { addr } = accounts.find((acc) => acc.addr === accountState.accountAddr) || {}
@@ -143,7 +147,7 @@ export class AccountsController extends EventEmitter {
             this.accountStates[addr][network.id] = accountState
           })
         } catch {
-          this.#providers.updateProviderIsWorking(network.id, false)
+          this.#updateProviderIsWorking(network.id, false)
         }
 
         this.emitUpdate()

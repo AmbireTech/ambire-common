@@ -70,7 +70,13 @@ describe('AddressBookController', () => {
   )
   providersCtrl = new ProvidersController(networksCtrl)
   providersCtrl.providers = providers
-  const accountsCtrl = new AccountsController(storage, providersCtrl, networksCtrl, () => {})
+  const accountsCtrl = new AccountsController(
+    storage,
+    providersCtrl,
+    networksCtrl,
+    () => {},
+    () => {}
+  )
   const addressBookController = new AddressBookController(storage, accountsCtrl)
 
   const getContactFromName = (name: string) => {
