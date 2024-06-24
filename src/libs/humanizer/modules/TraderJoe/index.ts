@@ -6,7 +6,10 @@ import { HumanizerCallModule, IrCall } from '../../interfaces'
 import { getAction, getDeadline, getLabel, getRecipientText, getToken } from '../../utils'
 
 // @TODO limit order manager
-
+// @TODO those use AVAX in the function method
+// https://snowtrace.io/address/0x60aE616a2155Ee3d9A68541Ba4544862310933d4
+// https://arbiscan.io/address/0xbeE5c10Cf6E4F68f831E11C1D9E59B43560B3642
+// https://arbiscan.io/address/0x7BFd7192E76D950832c77BB412aaE841049D8D9B
 const traderJoeModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]) => {
   const iface = new Interface(JoeRouter)
   const matcher = {

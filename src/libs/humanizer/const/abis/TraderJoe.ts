@@ -1,4 +1,3 @@
-// @TODO check if instead of NATIVE the ocntract uses AVAX on avalanche
 export const JoeRouter = [
   'function addLiquidity(tuple(address,address,uint256,uint256,uint256,uint256,uint256,uint256,uint256,int256[],uint256[],uint256[],address,address,uint256)) returns (uint256,uint256,uint256,uint256,uint256[],uint256[])',
   'function addLiquidityNATIVE(tuple(address,address,uint256,uint256,uint256,uint256,uint256,uint256,uint256,int256[],uint256[],uint256[],address,address,uint256)) payable returns (uint256,uint256,uint256,uint256,uint256[],uint256[])',
