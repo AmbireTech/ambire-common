@@ -3,10 +3,12 @@
 import fetch from 'node-fetch'
 
 import { networks as predefinedNetworks } from '../../consts/networks'
+import { AccountId } from '../../interfaces/account'
 import { Banner } from '../../interfaces/banner'
 import { Network } from '../../interfaces/network'
 import { Storage } from '../../interfaces/storage'
 import { Message } from '../../interfaces/userRequest'
+import { isSmartAccount } from '../../libs/account/account'
 import { AccountOp, AccountOpStatus } from '../../libs/accountOp/accountOp'
 import { getExplorerId } from '../../libs/userOperation/userOperation'
 import { Bundler } from '../../services/bundlers/bundler'
@@ -134,6 +136,8 @@ export class ActivityController extends EventEmitter {
   #networks: NetworksController
 
   #onContractsDeployed: (network: Network) => Promise<void>
+
+  #rbfStatuses = [AccountOpStatus.BroadcastedButNotConfirmed, AccountOpStatus.BroadcastButStuck]
 
   constructor(
     storage: Storage,
@@ -313,13 +317,13 @@ export class ActivityController extends EventEmitter {
 
             shouldEmitUpdate = true
 
-            const declareRejectedIfQuaterPassed = (op: SubmittedAccountOp) => {
+            const declareStuckIfQuaterPassed = (op: SubmittedAccountOp) => {
               const accountOpDate = new Date(op.timestamp)
               accountOpDate.setMinutes(accountOpDate.getMinutes() + 15)
               const aQuaterHasPassed = accountOpDate < new Date()
               if (aQuaterHasPassed) {
                 this.#accountsOps[selectedAccount][networkId][accountOpIndex].status =
-                  AccountOpStatus.Failure
+                  AccountOpStatus.BroadcastButStuck
               }
             }
 
@@ -360,7 +364,7 @@ export class ActivityController extends EventEmitter {
                     txnId = userOps[0].transactionHash
                     this.#accountsOps[selectedAccount][networkId][accountOpIndex].txnId = txnId
                   } else {
-                    declareRejectedIfQuaterPassed(accountOp)
+                    declareStuckIfQuaterPassed(accountOp)
                     return
                   }
                 }
@@ -384,7 +388,7 @@ export class ActivityController extends EventEmitter {
               // if there's no receipt, confirm there's a txn
               // if there's no txn and 15 minutes have passed, declare it a failure
               const txn = await provider.getTransaction(txnId)
-              if (!txn) declareRejectedIfQuaterPassed(accountOp)
+              if (!txn) declareStuckIfQuaterPassed(accountOp)
             } catch {
               this.emitError({
                 level: 'silent',
@@ -545,19 +549,48 @@ export class ActivityController extends EventEmitter {
     })
   }
 
-  get lastAccountOps(): { [key: Network['id']]: SubmittedAccountOp | null } {
-    if (!this.#accounts.selectedAccount || !this.#accountsOps[this.#accounts.selectedAccount])
-      return {}
+  /**
+   * A not confirmed account op can actually be with a status of BroadcastButNotConfirmed
+   * and BroadcastButStuck. Typically, it becomes BroadcastButStuck if not confirmed
+   * in a 15 minutes interval after becoming BroadcastButNotConfirmed. We need two
+   * statuses to hide the banner of BroadcastButNotConfirmed from the dashboard.
+   */
+  getNotConfirmedOpIfAny(accId: AccountId, networkId: Network['id']): SubmittedAccountOp | null {
+    // MAJOR TODO:
+    // ADD WHAT TYPE OF PAYMENT IT IS FROM THE SELECT DROP DOWN
+    // AND DETERMINE WHAT'S WHAT FROM THERE
+    const acc = this.#accounts.accounts.find((acc) => acc.addr === accId)
+    if (!acc) return null
 
-    const accountsOps: { [key: Network['id']]: SubmittedAccountOp | null } = {}
-    Object.keys(this.#accountsOps[this.#accounts.selectedAccount]).forEach((networkId) => {
-      if (!this.#accountsOps[this.#accounts.selectedAccount!][networkId]) {
-        accountsOps[networkId] = null
-      } else {
-        accountsOps[networkId] = this.#accountsOps[this.#accounts.selectedAccount!][networkId][0]
-      }
+    // if the broadcasting account is a smart account, it means relayer
+    // broadcast => it's in this.#accountsOps[acc.addr][networkId]
+    // disregard erc-4337 txns as they shouldn't have an RBF
+    const isSA = isSmartAccount(acc)
+    if (isSA) {
+      if (!this.#accountsOps[acc.addr] || !this.#accountsOps[acc.addr][networkId]) return null
+      if (!this.#rbfStatuses.includes(this.#accountsOps[acc.addr][networkId][0].status!))
+        return null
+
+      return this.#accountsOps[acc.addr][networkId][0]
+    }
+
+    // if the account is an EOA, we have to go through all the smart accounts
+    // to check whether the EOA has made a broadcast for them
+    const theEOAandSAaccounts = this.#accounts.accounts.filter(
+      (acc) => isSmartAccount(acc) || acc.addr === accId
+    )
+    const ops: SubmittedAccountOp[] = []
+    theEOAandSAaccounts.forEach((acc) => {
+      if (!this.#accountsOps[acc.addr] || !this.#accountsOps[acc.addr][networkId]) return
+      const op = this.#accountsOps[acc.addr][networkId].find(
+        (op) =>
+          this.#rbfStatuses.includes(this.#accountsOps[acc.addr][networkId][0].status!) &&
+          op.gasFeePayment?.paidBy === acc.addr
+      )
+      if (!op) return
+      ops.push(op)
     })
-    return accountsOps
+    return !ops.length ? null : ops.reduce((m, e) => (e.nonce > m.nonce ? e : m))
   }
 
   toJSON() {
@@ -565,8 +598,7 @@ export class ActivityController extends EventEmitter {
       ...this,
       ...super.toJSON(),
       broadcastedButNotConfirmed: this.broadcastedButNotConfirmed, // includes the getter in the stringified instance
-      banners: this.banners, // includes the getter in the stringified instance
-      lastAccountOps: this.lastAccountOps // the last account op for each network
+      banners: this.banners // includes the getter in the stringified instance
     }
   }
 }

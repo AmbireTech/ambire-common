@@ -409,55 +409,10 @@ export class MainController extends EventEmitter {
     await Promise.all(
       gasPriceNetworks.map(async (network) => {
         try {
-          const prices = await getGasPriceRecommendations(
+          this.gasPrices[network] = await getGasPriceRecommendations(
             this.providers.providers[network],
             this.networks.networks.find((net) => net.id === network)!
           )
-
-          // 1. get the current account op if any and get its nonce
-          // 2. check the activity controller for an accountOp with the same nonce
-          // 3. if there is, increate the fees by 12.5% on each level to be able to do RBF
-          if (!this.accounts.selectedAccount) {
-            this.gasPrices[network] = prices
-            return
-          }
-
-          const accountOpsByNetwork = getAccountOpsByNetwork(
-            this.accounts.selectedAccount,
-            this.actions.visibleActionsQueue
-          )
-          const accountOps = accountOpsByNetwork ? accountOpsByNetwork[network] : []
-          if (!accountOps.length) {
-            this.gasPrices[network] = prices
-            return
-          }
-
-          const lastAccountOp = this.activity.lastAccountOps[network]
-          // no RBF if erc-4337
-          if (!lastAccountOp || lastAccountOp.gasFeePayment?.isERC4337) {
-            this.gasPrices[network] = prices
-            return
-          }
-
-          // take the nonce from the account state
-          const currentNonce =
-            this.accounts.accountStates[this.accounts.selectedAccount] &&
-            this.accounts.accountStates[this.accounts.selectedAccount][network]
-              ? this.accounts.accountStates[this.accounts.selectedAccount][network].nonce
-              : null
-          if (currentNonce && currentNonce != lastAccountOp.nonce) {
-            this.gasPrices[network] = prices
-            return
-          }
-
-          // modify the prices by 12.5% and do an RBF
-          this.gasPrices[network] = prices.map((price) => {
-            if ('gasPrice' in price) price.gasPrice = price.gasPrice + price.gasPrice / 8n
-            if ('baseFeePerGas' in price)
-              price.baseFeePerGas = price.baseFeePerGas + price.baseFeePerGas / 8n
-
-            return price
-          })
         } catch (e: any) {
           this.emitError({
             level: 'major',
@@ -1179,10 +1134,24 @@ export class MainController extends EventEmitter {
             localAccountOp.nonce
       }
 
+      // RBF check
+      // if the nonce is the same and the txn is not erc-4337, do an rbf
+      const notConfirmedOp = this.activity.getNotConfirmedOpIfAny(
+        localAccountOp.accountAddr,
+        localAccountOp.networkId
+      )
+      const rbfAccountOp =
+        !localAccountOp.gasFeePayment?.isERC4337 &&
+        notConfirmedOp &&
+        !notConfirmedOp.gasFeePayment?.isERC4337 &&
+        localAccountOp.nonce == notConfirmedOp.nonce
+          ? notConfirmedOp
+          : null
+
       // update the signAccountOp controller once estimation finishes;
       // this eliminates the infinite loading bug if the estimation comes slower
       if (this.signAccountOp && estimation) {
-        this.signAccountOp.update({ estimation })
+        this.signAccountOp.update({ estimation, rbfAccountOp })
       }
 
       // if there's an estimation error, override the pending results
@@ -1563,10 +1532,11 @@ export class MainController extends EventEmitter {
       }
     }
 
+    const replacementFeeLow = error.message.indexOf('replacement fee too low') !== -1
     this.emitError({ level: 'major', message, error })
     // To enable another try for signing in case of broadcast fail
     // broadcast is called in the FE only after successful signing
-    this.signAccountOp?.updateStatusToReadyToSign()
+    this.signAccountOp?.updateStatusToReadyToSign(replacementFeeLow)
     this.broadcastStatus = 'INITIAL'
     this.emitUpdate()
   }
