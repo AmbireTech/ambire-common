@@ -1,5 +1,5 @@
 import { Key } from '../../interfaces/keystore'
-import { AccountPreferences, KeyPreferences } from '../../interfaces/settings'
+import { KeyPreferences } from '../../interfaces/settings'
 import { Storage } from '../../interfaces/storage'
 import { isValidAddress } from '../../services/address'
 import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter'
@@ -7,8 +7,6 @@ import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter'
 const STATUS_WRAPPED_METHODS = {} as const
 
 export class SettingsController extends EventEmitter {
-  accountPreferences: AccountPreferences = {}
-
   keyPreferences: KeyPreferences = []
 
   #storage: Storage
@@ -24,11 +22,7 @@ export class SettingsController extends EventEmitter {
 
   async #load() {
     try {
-      ;[this.accountPreferences, this.keyPreferences] = await Promise.all([
-        // Should get the storage data from all keys here
-        this.#storage.get('accountPreferences', {}),
-        this.#storage.get('keyPreferences', [])
-      ])
+      this.keyPreferences = await this.#storage.get('keyPreferences', [])
 
       this.emitUpdate()
     } catch (e) {
@@ -43,10 +37,7 @@ export class SettingsController extends EventEmitter {
 
   async #storePreferences() {
     try {
-      await Promise.all([
-        this.#storage.set('accountPreferences', this.accountPreferences),
-        this.#storage.set('keyPreferences', this.keyPreferences)
-      ])
+      await this.#storage.set('keyPreferences', this.keyPreferences)
     } catch (e) {
       this.emitError({
         message:
@@ -55,43 +46,6 @@ export class SettingsController extends EventEmitter {
         error: new Error('settings: failed to store updated settings')
       })
     }
-  }
-
-  async addAccountPreferences(newAccountPreferences: AccountPreferences) {
-    if (!Object.keys(newAccountPreferences).length) return
-
-    if (Object.keys(newAccountPreferences).some((key) => !isValidAddress(key))) {
-      return this.#throwInvalidAddress(Object.keys(newAccountPreferences))
-    }
-
-    // TODO: Check if this addresses exist in the imported addressed? Might be an overkill.
-    // Update the account preferences with the new values incoming
-    Object.keys(newAccountPreferences).forEach((key) => {
-      this.accountPreferences[key] = {
-        ...this.accountPreferences[key],
-        ...newAccountPreferences[key]
-      }
-    })
-
-    await this.#storePreferences()
-
-    // We use `await` here to ensure that an outer function can await the emit to be dispatched to the application.
-    // Consider the following example:
-    // 1. In MainController's onAccountAdderSuccess, we process the newly added accounts from AccountAdder.
-    // 2. Within this function, we await the completion of both Settings methods:
-    // await Promise.all([
-    //   this.settings.addKeyPreferences(this.accountAdder.readyToAddKeyPreferences),
-    //   this.settings.addAccountPreferences(this.accountAdder.readyToAddAccountPreferences),
-    // ])
-    // 3. Once both Promises are resolved, the MainController status is set to 'SUCCESS', indicating successful account importation.
-    // However, there's a catch. If we don't `await` here, both Promises will resolve,
-    // and MainController's onAccountAdderSuccess will change its status to 'SUCCESS'.
-    // Consequently, at the application level, components will be able to access the newly imported accounts,
-    // but the Settings' accountsPreferences may not have been updated yet.
-    //
-    // We've previously encountered this issue in AccountsPersonalizeScreen,
-    // and it happens from time to time, which is why we implemented this fix.
-    await this.forceEmitUpdate()
   }
 
   async addKeyPreferences(newKeyPreferences: KeyPreferences) {
@@ -120,11 +74,8 @@ export class SettingsController extends EventEmitter {
     // We use `await` here to ensure that an outer function can await the emit to be dispatched to the application.
     // Consider the following example:
     // 1. In MainController's onAccountAdderSuccess, we process the newly added accounts from AccountAdder.
-    // 2. Within this function, we await the completion of both Settings methods:
-    // await Promise.all([
-    //   this.settings.addKeyPreferences(this.accountAdder.readyToAddKeyPreferences),
-    //   this.settings.addAccountPreferences(this.accountAdder.readyToAddAccountPreferences),
-    // ])
+    // 2. Within this function, we await the completion of:
+    // await this.settings.addKeyPreferences(this.accountAdder.readyToAddKeyPreferences)
     // 3. Once both Promises are resolved, the MainController status is set to 'SUCCESS', indicating successful account importation.
     // However, there's a catch. If we don't `await` here, both Promises will resolve,
     // and MainController's onAccountAdderSuccess will change its status to 'SUCCESS'.
@@ -134,27 +85,6 @@ export class SettingsController extends EventEmitter {
     // We've previously encountered this issue in AccountsPersonalizeScreen,
     // and it happens from time to time, which is why we implemented this fix.
     await this.forceEmitUpdate()
-  }
-
-  async removeAccountPreferences(accountPreferenceKeys: Array<keyof AccountPreferences> = []) {
-    if (!accountPreferenceKeys.length) return
-
-    // There's nothing to delete
-    if (!Object.keys(this.accountPreferences).length) return
-
-    if (accountPreferenceKeys.some((key) => !isValidAddress(key))) {
-      return this.#throwInvalidAddress(accountPreferenceKeys)
-    }
-
-    accountPreferenceKeys.forEach((key) => {
-      // Cast to AccountPreferences, since above the case when the
-      // accountPreferences is empty (and there is nothing to delete) is handled
-      delete (this.accountPreferences as AccountPreferences)[key]
-    })
-
-    await this.#storePreferences()
-
-    this.emitUpdate()
   }
 
   async removeKeyPreferences(keyPreferencesToRemove: { addr: Key['addr']; type: Key['type'] }[]) {
