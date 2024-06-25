@@ -1160,7 +1160,7 @@ export class MainController extends EventEmitter {
         rbfAccountOps[accId] =
           notConfirmedOp &&
           !notConfirmedOp.gasFeePayment?.isERC4337 &&
-          currentNonce == notConfirmedOp.nonce
+          currentNonce === notConfirmedOp.nonce
             ? notConfirmedOp
             : null
       })
