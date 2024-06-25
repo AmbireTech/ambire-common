@@ -3,10 +3,14 @@ import { Interface, ZeroAddress } from 'ethers'
 import { AccountOp } from '../../../accountOp/accountOp'
 import { OneInch } from '../../const/abis/1Inch'
 import { HumanizerCallModule, IrCall } from '../../interfaces'
-import { getAction, getLabel, getRecipientText, getToken } from '../../utils'
-
-const oneInchAddressParser = (address: string) =>
-  address.slice(2).toLocaleLowerCase() === 'e'.repeat(40) ? ZeroAddress : address
+import {
+  eToNative,
+  getAction,
+  getLabel,
+  getRecipientText,
+  getToken,
+  uintToAddress
+} from '../../utils'
 
 const OneInchModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]) => {
   const iface = new Interface(OneInch)
@@ -25,9 +29,9 @@ const OneInchModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]) =
     )?.selector!]: (call: IrCall) => {
       const { token: tokenArg, amount } = iface.parseTransaction(call)!.args
 
-      const token = `0x${BigInt(tokenArg).toString(16).padStart(40, '0')}`
+      const token = uintToAddress(tokenArg)
 
-      return [getAction('Swap'), getToken(oneInchAddressParser(token), amount)]
+      return [getAction('Swap'), getToken(eToNative(token), amount)]
     },
     [iface.getFunction(
       'swap(address executor,tuple(address srcToken,address dstToken,address srcReceiver,address dstReceiver,uint256 amount,uint256 minReturnAmount,uint256 flags) desc,bytes data)'
@@ -37,38 +41,38 @@ const OneInchModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]) =
       } = iface.parseTransaction(call)!.args
       return [
         getAction('Swap'),
-        getToken(oneInchAddressParser(srcToken), amount),
+        getToken(eToNative(srcToken), amount),
         getLabel('for'),
-        getToken(oneInchAddressParser(dstToken), minReturnAmount),
+        getToken(eToNative(dstToken), minReturnAmount),
         ...getRecipientText(accOp.accountAddr, dstReceiver)
       ]
     },
     [iface.getFunction('ethUnoswap(uint256, uint256)')?.selector!]: (call: IrCall) => {
-      return [getAction('Swap'), getToken(oneInchAddressParser(ZeroAddress), call.value)]
+      return [getAction('Swap'), getToken(ZeroAddress, call.value)]
     },
     [iface.getFunction('unoswap(uint256 token,uint256 amount,uint256 minReturn,uint256 dex)')
       ?.selector!]: (call: IrCall) => {
       const { token: tokenArg, amount } = iface.parseTransaction(call)!.args
 
-      const token = `0x${BigInt(tokenArg).toString(16).padStart(40, '0')}`
+      const token = uintToAddress(tokenArg)
 
-      return [getAction('Swap'), getToken(oneInchAddressParser(token), amount)]
+      return [getAction('Swap'), getToken(eToNative(token), amount)]
     },
     [iface.getFunction(
       'unoswapTo(uint256 to,uint256 token,uint256 amount,uint256 minReturn,uint256 dex)'
     )?.selector!]: (call: IrCall) => {
       const { token: tokenArg, amount } = iface.parseTransaction(call)!.args
-      const token = `0x${BigInt(tokenArg).toString(16).padStart(40, '0')}`
+      const token = uintToAddress(tokenArg)
 
-      return [getAction('Swap'), getToken(oneInchAddressParser(token), amount)]
+      return [getAction('Swap'), getToken(eToNative(token), amount)]
     },
     [iface.getFunction(
       'unoswap3(uint256 token,uint256 amount,uint256 minReturn,uint256 dex,uint256 dex2,uint256 dex3)'
     )?.selector!]: (call: IrCall) => {
       const { token: tokenArg, amount } = iface.parseTransaction(call)!.args
-      const token = `0x${BigInt(tokenArg).toString(16).padStart(40, '0')}`
+      const token = uintToAddress(tokenArg)
 
-      return [getAction('Swap'), getToken(oneInchAddressParser(token), amount)]
+      return [getAction('Swap'), getToken(eToNative(token), amount)]
     }
   }
   const newCalls = calls.map((call) => {

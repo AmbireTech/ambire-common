@@ -229,3 +229,9 @@ export const integrateFragments = (
 }
 
 export const EMPTY_HUMANIZER_META = { abis: { NO_ABI: {} }, knownAddresses: {} }
+
+export const uintToAddress = (uint: bigint): string =>
+  `0x${BigInt(uint).toString(16).slice(-40).padStart(40, '0')}`
+
+export const eToNative = (address: string): string =>
+  address.slice(2).toLocaleLowerCase() === 'e'.repeat(40) ? ZeroAddress : address

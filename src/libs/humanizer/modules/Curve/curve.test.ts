@@ -3,7 +3,7 @@ import { AccountOp } from '../../../accountOp/accountOp'
 import { HumanizerMeta } from '../../interfaces'
 import { compareHumanizerVisualizations } from '../../testHelpers'
 import { getAction, getLabel, getToken } from '../../utils'
-import curveModule from './'
+import curveModule from '.'
 
 const transactions = [
   {

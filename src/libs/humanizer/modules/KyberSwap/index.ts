@@ -1,12 +1,9 @@
-import { Interface, ZeroAddress } from 'ethers'
+import { Interface } from 'ethers'
 
 import { AccountOp } from '../../../accountOp/accountOp'
 import { KyberSwap } from '../../const/abis'
 import { HumanizerCallModule, IrCall } from '../../interfaces'
-import { getAction, getLabel, getToken } from '../../utils'
-
-const parseAddressKyber = (address: string) =>
-  address.slice(2).toLocaleLowerCase() === 'e'.repeat(40) ? ZeroAddress : address
+import { eToNative, getAction, getLabel, getToken } from '../../utils'
 
 const KyberModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]) => {
   const iface = new Interface(KyberSwap)
@@ -22,9 +19,9 @@ const KyberModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]) => 
       } = iface.parseTransaction(call)!.args
       return [
         getAction('Swap'),
-        getToken(parseAddressKyber(srcToken), amount),
+        getToken(eToNative(srcToken), amount),
         getLabel('for'),
-        getToken(parseAddressKyber(dstToken), minReturnAmount)
+        getToken(eToNative(dstToken), minReturnAmount)
       ]
     },
     [iface.getFunction(
@@ -35,9 +32,9 @@ const KyberModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]) => 
       } = iface.parseTransaction(call)!.args
       return [
         getAction('Swap'),
-        getToken(parseAddressKyber(srcToken), amount),
+        getToken(eToNative(srcToken), amount),
         getLabel('for'),
-        getToken(parseAddressKyber(dstToken), minReturnAmount)
+        getToken(eToNative(dstToken), minReturnAmount)
       ]
     }
   }
