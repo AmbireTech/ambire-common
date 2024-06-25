@@ -4,6 +4,7 @@ import { Network } from 'interfaces/network'
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json'
 import {
+  AMBIRE_ACCOUNT_FACTORY,
   AMBIRE_PAYMASTER,
   AMBIRE_PAYMASTER_SIGNER,
   ENTRY_POINT_MARKER,
@@ -176,10 +177,13 @@ export function isErc4337Broadcast(network: Network, accountState: AccountOnchai
 // add the activator call so the use has the entry point attached
 export function shouldIncludeActivatorCall(
   network: Network,
+  account: Account,
   accountState: AccountOnchainState,
   is4337Broadcast = true
 ) {
   return (
+    account.creation &&
+    account.creation.factoryAddr === AMBIRE_ACCOUNT_FACTORY &&
     accountState.isV2 &&
     network.erc4337.enabled &&
     !accountState.isErc4337Enabled &&
@@ -193,11 +197,20 @@ export function getExplorerId(network: Network) {
 
 // if the account is v2 and the network is 4337 and the account hasn't
 // authorized the entry point, he should be asked to do so
+//
+// addition: if the account is the 0.7.0 one
 export function shouldAskForEntryPointAuthorization(
   network: Network,
+  account: Account,
   accountState: AccountOnchainState
 ) {
-  return accountState.isV2 && network.erc4337.enabled && !accountState.isErc4337Enabled
+  return (
+    account.creation &&
+    account.creation.factoryAddr === AMBIRE_ACCOUNT_FACTORY &&
+    accountState.isV2 &&
+    network.erc4337.enabled &&
+    !accountState.isErc4337Enabled
+  )
 }
 
 export const ENTRY_POINT_AUTHORIZATION_REQUEST_ID = 'ENTRY_POINT_AUTHORIZATION_REQUEST_ID'

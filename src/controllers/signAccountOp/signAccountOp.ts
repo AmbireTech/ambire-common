@@ -4,7 +4,6 @@ import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import ERC20 from '../../../contracts/compiled/IERC20.json'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { AMBIRE_PAYMASTER, SINGLETON } from '../../consts/deploy'
-import { SubmittedAccountOp } from '../../controllers/activity/activity'
 import { Account } from '../../interfaces/account'
 import { ExternalSignerControllers, Key } from '../../interfaces/keystore'
 import { Network } from '../../interfaces/network'
@@ -31,6 +30,7 @@ import {
 /* eslint-disable no-restricted-syntax */
 import { AccountsController } from '../accounts/accounts'
 import { AccountOpAction } from '../actions/actions'
+import { SubmittedAccountOp } from '../activity/activity'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
 import { PortfolioController } from '../portfolio/portfolio'
@@ -585,6 +585,7 @@ export class SignAccountOpController extends EventEmitter {
     const gasUsed = this.estimation!.gasUsed
     const callDataAdditionalGasCost = getCallDataAdditionalByNetwork(
       this.accountOp,
+      this.account,
       this.#network,
       this.#accounts.accountStates[this.accountOp!.accountAddr][this.accountOp!.networkId]
     )
@@ -918,6 +919,7 @@ export class SignAccountOpController extends EventEmitter {
     if (
       shouldIncludeActivatorCall(
         this.#network,
+        this.account,
         accountState,
         this.accountOp.gasFeePayment.isERC4337
       )
