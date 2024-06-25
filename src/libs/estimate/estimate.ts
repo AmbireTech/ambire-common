@@ -23,7 +23,7 @@ import { bundlerEstimate } from './estimateBundler'
 import { estimateEOA } from './estimateEOA'
 import { estimateGas } from './estimateGas'
 import { estimateWithRetries } from './estimateWithRetries'
-import { ArbitrumL1Fee, EstimateResult, FeePaymentOption } from './interfaces'
+import { EstimateResult, FeePaymentOption } from './interfaces'
 import { refund } from './refund'
 
 const abiCoder = new AbiCoder()
