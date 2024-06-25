@@ -1,3 +1,4 @@
+import { Fetch } from '../../interfaces/fetch'
 import { Storage } from '../../interfaces/storage'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import EventEmitter from '../eventEmitter/eventEmitter'
@@ -27,6 +28,8 @@ export class InviteController extends EventEmitter {
 
   inviteStatus: Invite['status'] = INVITE_STATUS.UNVERIFIED
 
+  verifiedCode: Invite['verifiedCode'] = null
+
   #initialLoadPromise: Promise<void>
 
   constructor({
@@ -35,7 +38,7 @@ export class InviteController extends EventEmitter {
     storage
   }: {
     relayerUrl: string
-    fetch: Function
+    fetch: Fetch
     storage: Storage
   }) {
     super()
@@ -53,6 +56,7 @@ export class InviteController extends EventEmitter {
     })
 
     this.inviteStatus = invite.status
+    this.verifiedCode = invite.verifiedCode
     this.emitUpdate()
   }
 
@@ -69,6 +73,7 @@ export class InviteController extends EventEmitter {
       if (!res.success) throw new Error(res.message || "Couldn't verify the invite code")
 
       this.inviteStatus = INVITE_STATUS.VERIFIED
+      this.verifiedCode = code
       this.emitUpdate()
 
       const verifiedAt = Date.now()

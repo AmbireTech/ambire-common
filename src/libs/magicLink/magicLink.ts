@@ -1,3 +1,5 @@
+import { Fetch } from '../../interfaces/fetch'
+
 export interface MagicLinkData {
   key: string
   secret?: String // this will not be return in prod mode
@@ -13,7 +15,7 @@ export interface RequestMagicLinkResult {
 export async function requestMagicLink(
   email: String,
   relayerUrl: String,
-  fetch: Function,
+  fetch: Fetch,
   options?: { autoConfirm?: boolean }
 ): Promise<MagicLinkData> {
   const resp = await fetch(`${relayerUrl}/email-vault/request-key/${email}`)

@@ -821,7 +821,7 @@ describe('estimate', () => {
       feeTokens
     )
 
-    response.feePaymentOptions.map((option) => expect(option.addedNative).toBeGreaterThan(0n))
+    response.feePaymentOptions.map((option) => expect(option.addedNative).toBe(0n))
   })
 
   it('[ERC-4337]:Optimism | not deployed | should work', async () => {

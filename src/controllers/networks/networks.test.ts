@@ -1,10 +1,11 @@
 /* eslint-disable @typescript-eslint/no-floating-promises */
 
-import { AddNetworkRequestParams, NetworkInfo } from 'interfaces/network'
+import fetch from 'node-fetch'
 
 import { describe, expect, test } from '@jest/globals'
 
 import { produceMemoryStore } from '../../../test/helpers'
+import { AddNetworkRequestParams, NetworkInfo } from '../../interfaces/network'
 import { NetworksController } from './networks'
 
 describe('Networks Controller', () => {
@@ -12,6 +13,7 @@ describe('Networks Controller', () => {
   beforeEach(() => {
     networksController = new NetworksController(
       produceMemoryStore(),
+      fetch,
       () => {},
       () => {}
     )

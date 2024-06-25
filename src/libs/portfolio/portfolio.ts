@@ -6,6 +6,7 @@ import { getAddress, JsonRpcProvider, Provider, ZeroAddress } from 'ethers'
 import BalanceGetter from '../../../contracts/compiled/BalanceGetter.json'
 import NFTGetter from '../../../contracts/compiled/NFTGetter.json'
 import { PINNED_TOKENS } from '../../consts/pinnedTokens'
+import { Fetch } from '../../interfaces/fetch'
 import { Network } from '../../interfaces/network'
 import { Deployless, fromDescriptor } from '../deployless/deployless'
 import batcher from './batcher'
@@ -70,7 +71,7 @@ export class Portfolio {
   private deploylessNfts: Deployless
 
   constructor(
-    fetch: Function,
+    fetch: Fetch,
     provider: Provider | JsonRpcProvider,
     network: Network,
     velcroUrl: string

@@ -1,4 +1,5 @@
 import { ErrorRef } from '../../controllers/eventEmitter/eventEmitter'
+import { Fetch } from '../../interfaces/fetch'
 import { HumanizerFragment } from '../../interfaces/humanizer'
 import { Storage } from '../../interfaces/storage'
 import { Message } from '../../interfaces/userRequest'
@@ -16,13 +17,18 @@ import {
   IrMessage
 } from './interfaces'
 import { addFragsToLazyStore, lazyReadHumanizerMeta } from './lazyStorage'
+import OneInchModule from './modules/1Inch'
 import { aaveHumanizer } from './modules/Aave'
+import AcrossModule from './modules/Across'
+import curveModule from './modules/Curve'
 import fallbackHumanizer from './modules/FallbackHumanizer'
 import gasTankModule from './modules/GasTankModule'
+import KyberSwap from './modules/KyberSwap'
 import preProcessHumanizer from './modules/PreProcess'
 import privilegeHumanizer from './modules/Privileges'
 import sushiSwapModule from './modules/Sushiswap'
 import { genericErc20Humanizer, genericErc721Humanizer } from './modules/Tokens'
+import traderJoeModule from './modules/TraderJoe'
 import { uniswapHumanizer } from './modules/Uniswap'
 import { WALLETModule } from './modules/WALLET'
 import wrappingModule from './modules/Wrapping'
@@ -44,6 +50,11 @@ export const humanizerCallModules: HumanizerCallModule[] = [
   genericErc721Humanizer,
   gasTankModule,
   uniswapHumanizer,
+  curveModule,
+  traderJoeModule,
+  KyberSwap,
+  AcrossModule,
+  OneInchModule,
   wrappingModule,
   aaveHumanizer,
   WALLETModule,
@@ -62,7 +73,7 @@ const humanizerTMModules = [erc20Module, erc721Module, permit2Module, fallbackEI
 export const humanizeAccountOp = async (
   storage: Storage,
   accountOp: AccountOp,
-  fetch: Function,
+  fetch: Fetch,
   emitError: Function
 ): Promise<IrCall[]> => {
   const storedHumanizerMeta = await storage.get(HUMANIZER_META_KEY, {})
@@ -78,7 +89,7 @@ export const humanizeAccountOp = async (
 const sharedHumanization = async <InputDataType extends AccountOp | Message>(
   data: InputDataType,
   storage: Storage,
-  fetch: Function,
+  fetch: Fetch,
   callback:
     | ((response: IrCall[], nonGlobalFrags: HumanizerFragment[]) => void)
     | ((response: IrMessage) => void),
@@ -173,7 +184,7 @@ const sharedHumanization = async <InputDataType extends AccountOp | Message>(
 const callsHumanizer = async (
   accountOp: AccountOp,
   storage: Storage,
-  fetch: Function,
+  fetch: Fetch,
   callback: (irCalls: IrCall[], nonGlobalFrags: HumanizerFragment[]) => void,
   emitError: (err: ErrorRef) => void,
   options?: any
@@ -184,7 +195,7 @@ const callsHumanizer = async (
 const messageHumanizer = async (
   message: Message,
   storage: Storage,
-  fetch: Function,
+  fetch: Fetch,
   callback: (msgs: IrMessage) => void,
   emitError: (err: ErrorRef) => void,
   options?: any

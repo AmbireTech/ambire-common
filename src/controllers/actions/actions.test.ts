@@ -1,4 +1,5 @@
 import EventEmitter from 'events'
+import fetch from 'node-fetch'
 
 import { describe, expect, test } from '@jest/globals'
 
@@ -60,6 +61,7 @@ describe('SignMessageController', () => {
   let providersCtrl: ProvidersController
   const networksCtrl = new NetworksController(
     storage,
+    fetch,
     (net) => {
       providersCtrl.setProvider(net)
     },
@@ -116,7 +118,7 @@ describe('SignMessageController', () => {
 
       if (emitCounter === 2) {
         actionsCtrl.addOrUpdateAction(action2)
-        expect(actionsCtrl.actionWindowId).toEqual(1)
+        expect(actionsCtrl.actionWindow.id).toEqual(1)
       }
     })
 
@@ -147,7 +149,7 @@ describe('SignMessageController', () => {
         expect(actionsCtrl.currentAction?.id).not.toEqual(null)
         // update does not change the currently selectedAction
         expect(actionsCtrl.currentAction?.id).not.toEqual(updatedAction2.id)
-        expect(actionsCtrl.actionWindowId).toEqual(1)
+        expect(actionsCtrl.actionWindow.id).toEqual(1)
         unsubscribe()
         done()
       }
@@ -175,7 +177,7 @@ describe('SignMessageController', () => {
         expect(actionsCtrl.actionsQueue).toHaveLength(3)
         expect(actionsCtrl.visibleActionsQueue).toHaveLength(3)
         expect(actionsCtrl.currentAction).toEqual(action3)
-        expect(actionsCtrl.actionWindowId).toEqual(1)
+        expect(actionsCtrl.actionWindow.id).toEqual(1)
         unsubscribe()
         done()
       }
@@ -195,7 +197,7 @@ describe('SignMessageController', () => {
       if (emitCounter === 1) {
         expect(actionsCtrl.actionsQueue).toHaveLength(3)
         expect(actionsCtrl.visibleActionsQueue).toHaveLength(2)
-        expect(actionsCtrl.actionWindowId).toEqual(1)
+        expect(actionsCtrl.actionWindow.id).toEqual(1)
 
         await accountsCtrl.selectAccount('0xAa0e9a1E2D2CcF2B867fda047bb5394BEF1883E0')
         await actionsCtrl.forceEmitUpdate()
@@ -214,7 +216,7 @@ describe('SignMessageController', () => {
       emitCounter++
 
       if (emitCounter === 1) {
-        expect(actionsCtrl.actionWindowId).toBe(null)
+        expect(actionsCtrl.actionWindow.id).toBe(null)
         expect(actionsCtrl.actionsQueue).toHaveLength(2) // benzin action should be removed
         expect(actionsCtrl.currentAction).toEqual(null)
 
@@ -231,7 +233,7 @@ describe('SignMessageController', () => {
       emitCounter++
 
       if (emitCounter === 2) {
-        expect(actionsCtrl.actionWindowId).toBe(2) // action-window is reopened on setCurrentAction
+        expect(actionsCtrl.actionWindow.id).toBe(2) // action-window is reopened on setCurrentAction
         unsubscribe()
         done()
       }
@@ -250,14 +252,14 @@ describe('SignMessageController', () => {
     const unsubscribe = actionsCtrl.onUpdate(async () => {
       emitCounter++
       if (emitCounter === 2) {
-        expect(actionsCtrl.actionWindowId).toBe(null)
+        expect(actionsCtrl.actionWindow.id).toBe(null)
         expect(actionsCtrl.actionsQueue).toHaveLength(0)
         expect(actionsCtrl.currentAction).toBe(null)
         unsubscribe()
         done()
       }
       if (emitCounter === 1) {
-        expect(actionsCtrl.actionWindowId).toEqual(2)
+        expect(actionsCtrl.actionWindow.id).toEqual(2)
         expect(actionsCtrl.actionsQueue).toHaveLength(1)
         expect(actionsCtrl.currentAction?.id).toBe(2)
         actionsCtrl.removeAction(2)

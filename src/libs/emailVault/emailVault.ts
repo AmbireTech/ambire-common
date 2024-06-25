@@ -1,10 +1,11 @@
-import { relayerCall } from '../relayerCall/relayerCall'
 import {
   EmailVaultData,
+  EmailVaultOperation,
   EmailVaultSecret,
-  RecoveryKey,
-  EmailVaultOperation
+  RecoveryKey
 } from '../../interfaces/emailVault'
+import { Fetch } from '../../interfaces/fetch'
+import { relayerCall } from '../relayerCall/relayerCall'
 
 export interface Secret {
   key: String
@@ -22,7 +23,7 @@ export interface EmailVaultInfo {
 export class EmailVault {
   private callRelayer: Function
 
-  constructor(fetch: Function, relayerUrl: string) {
+  constructor(fetch: Fetch, relayerUrl: string) {
     this.callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
   }
 
