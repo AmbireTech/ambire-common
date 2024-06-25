@@ -305,7 +305,7 @@ export function migrateAccountPreferencesToAccounts(
   return accounts.map((a) => {
     return {
       ...a,
-      preferences: accountPreferences[a.addr]
+      preferences: accountPreferences[a.addr] || { label: DEFAULT_ACCOUNT_LABEL, pfp: a.addr }
     }
   })
 }
