@@ -1,4 +1,5 @@
 import { ethers, ZeroAddress } from 'ethers'
+import fetch from 'node-fetch'
 
 import { describe, expect, jest } from '@jest/globals'
 
@@ -96,6 +97,7 @@ const prepareTest = () => {
   let providersCtrl: ProvidersController
   const networksCtrl = new NetworksController(
     storage,
+    fetch,
     (net) => {
       providersCtrl.setProvider(net)
     },
@@ -108,6 +110,7 @@ const prepareTest = () => {
   const accountsCtrl = new AccountsController(storage, providersCtrl, networksCtrl, () => {})
   const controller = new PortfolioController(
     storage,
+    fetch,
     providersCtrl,
     networksCtrl,
     accountsCtrl,
@@ -358,7 +361,7 @@ describe('Portfolio Controller ', () => {
     //   const accountOp = await getAccountOp()
     //
     //   const storage = produceMemoryStore()
-    //   const controller = new PortfolioController(storage, relayerUrl)
+    //   const controller = new PortfolioController(storage, fetch, relayerUrl)
     //   let pendingState1: any
     //   let pendingState2: any
     //   controller.onUpdate(() => {

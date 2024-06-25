@@ -1,9 +1,8 @@
 /* eslint-disable import/no-extraneous-dependencies */
 
-import fetch from 'node-fetch'
-
 import { AMBIRE_ACCOUNT_FACTORY, OPTIMISTIC_ORACLE, SINGLETON } from '../../consts/deploy'
 import { networks as predefinedNetworks } from '../../consts/networks'
+import { Fetch } from '../../interfaces/fetch'
 import {
   Network,
   NetworkFeature,
@@ -37,6 +36,7 @@ async function retryRequest(init: Function, counter = 0): Promise<any> {
 }
 
 export async function getNetworkInfo(
+  fetch: Fetch,
   rpcUrl: string,
   chainId: bigint,
   callback: (networkInfo: NetworkInfoLoading<NetworkInfo>) => void
@@ -101,7 +101,10 @@ export async function getNetworkInfo(
           hasSingleton: singletonCode !== '0x',
           isSAEnabled: supportsAmbire && singletonCode !== '0x',
           areContractsDeployed,
-          rpcNoStateOverride: predefinedNetwork && predefinedNetwork.rpcNoStateOverride === true ? true : !saSupport.supportsStateOverride,
+          rpcNoStateOverride:
+            predefinedNetwork && predefinedNetwork.rpcNoStateOverride === true
+              ? true
+              : !saSupport.supportsStateOverride,
           erc4337: {
             enabled: predefinedNetwork ? predefinedNetwork.erc4337.enabled : false,
             hasPaymaster: predefinedNetwork ? predefinedNetwork.erc4337.hasPaymaster : false

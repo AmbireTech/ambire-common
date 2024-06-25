@@ -1,4 +1,5 @@
 import EventEmitter from 'events'
+import fetch from 'node-fetch'
 
 import { describe, expect, test } from '@jest/globals'
 
@@ -60,6 +61,7 @@ describe('SignMessageController', () => {
   let providersCtrl: ProvidersController
   const networksCtrl = new NetworksController(
     storage,
+    fetch,
     (net) => {
       providersCtrl.setProvider(net)
     },

@@ -1,10 +1,8 @@
 /* eslint-disable no-restricted-syntax */
 /* eslint-disable import/no-extraneous-dependencies */
 /* eslint-disable class-methods-use-this */
-
-import fetch from 'node-fetch'
-
 import { ENTRY_POINT_MARKER, ERC_4337_ENTRYPOINT } from '../../consts/deploy'
+import { Fetch } from '../../interfaces/fetch'
 import { Network } from '../../interfaces/network'
 import { mapTxnErrMsg } from '../../libs/estimate/errors'
 import { BundlerEstimateResult } from '../../libs/estimate/interfaces'
@@ -149,7 +147,7 @@ export class Bundler {
   }
 
   // use this request to check if the bundler supports the network
-  static async isNetworkSupported(chainId: bigint) {
+  static async isNetworkSupported(fetch: Fetch, chainId: bigint) {
     const url = `https://api.pimlico.io/health?apikey=${process.env.REACT_APP_PIMLICO_API_KEY}&chain-id=${chainId}`
     const result = await fetch(url)
     return result.status === 200

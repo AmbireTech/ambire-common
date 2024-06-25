@@ -1,10 +1,7 @@
-/* eslint-disable import/no-extraneous-dependencies */
-
-import fetch from 'node-fetch'
-
 import { networks as predefinedNetworks } from '../../consts/networks'
 import { AccountId } from '../../interfaces/account'
 import { Banner } from '../../interfaces/banner'
+import { CustomResponse, Fetch } from '../../interfaces/fetch'
 import { Network } from '../../interfaces/network'
 import { Storage } from '../../interfaces/storage'
 import { Message } from '../../interfaces/userRequest'
@@ -105,6 +102,8 @@ const trim = <T>(items: T[], maxSize = 1000): void => {
 export class ActivityController extends EventEmitter {
   #storage: Storage
 
+  #fetch: Fetch
+
   #initialLoadPromise: Promise<void>
 
   #accounts: AccountsController
@@ -141,6 +140,7 @@ export class ActivityController extends EventEmitter {
 
   constructor(
     storage: Storage,
+    fetch: Fetch,
     accounts: AccountsController,
     providers: ProvidersController,
     networks: NetworksController,
@@ -148,6 +148,7 @@ export class ActivityController extends EventEmitter {
   ) {
     super()
     this.#storage = storage
+    this.#fetch = fetch
     this.#accounts = accounts
     this.#providers = providers
     this.#networks = networks
@@ -330,12 +331,10 @@ export class ActivityController extends EventEmitter {
             try {
               let txnId = accountOp.txnId
               if (accountOp.userOpHash) {
-                const [response, bundlerResult] = await Promise.all([
+                const [response, bundlerResult]: [CustomResponse | null, any] = await Promise.all([
                   !network.predefined
-                    ? fetchUserOp(accountOp.userOpHash, fetch, getExplorerId(network))
-                    : new Promise((resolve) => {
-                        resolve(null)
-                      }),
+                    ? fetchUserOp(accountOp.userOpHash, this.#fetch, getExplorerId(network))
+                    : Promise.resolve(null),
                   Bundler.getStatusAndTxnId(accountOp.userOpHash, network)
                 ])
 

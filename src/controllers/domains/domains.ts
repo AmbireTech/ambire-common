@@ -1,5 +1,6 @@
 import { getAddress } from 'ethers'
 
+import { Fetch } from '../../interfaces/fetch'
 import { RPCProviders } from '../../interfaces/provider'
 import { reverseLookupEns } from '../../services/ensDomains'
 import { reverseLookupUD } from '../../services/unstoppableDomains'
@@ -23,13 +24,13 @@ const PERSIST_DOMAIN_FOR_IN_MS = 15 * 60 * 1000
 export class DomainsController extends EventEmitter {
   #providers: RPCProviders = {}
 
-  #fetch: Function
+  #fetch: Fetch
 
   domains: Domains = {}
 
   loadingAddresses: string[] = []
 
-  constructor(providers: RPCProviders, fetch: Function) {
+  constructor(providers: RPCProviders, fetch: Fetch) {
     super()
     this.#providers = providers
     this.#fetch = fetch
