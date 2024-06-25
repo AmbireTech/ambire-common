@@ -533,6 +533,7 @@ export class SignAccountOpController extends EventEmitter {
     const gasUsed = this.estimation!.gasUsed
     const callDataAdditionalGasCost = getCallDataAdditionalByNetwork(
       this.accountOp!,
+      this.account,
       this.#network,
       this.#accounts.accountStates[this.accountOp!.accountAddr][this.accountOp!.networkId]
     )
@@ -853,6 +854,7 @@ export class SignAccountOpController extends EventEmitter {
     if (
       shouldIncludeActivatorCall(
         this.#network,
+        this.account,
         accountState,
         this.accountOp.gasFeePayment.isERC4337
       )

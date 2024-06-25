@@ -17,13 +17,18 @@ import {
   IrMessage
 } from './interfaces'
 import { addFragsToLazyStore, lazyReadHumanizerMeta } from './lazyStorage'
+import OneInchModule from './modules/1Inch'
 import { aaveHumanizer } from './modules/Aave'
+import AcrossModule from './modules/Across'
+import curveModule from './modules/Curve'
 import fallbackHumanizer from './modules/FallbackHumanizer'
 import gasTankModule from './modules/GasTankModule'
+import KyberSwap from './modules/KyberSwap'
 import preProcessHumanizer from './modules/PreProcess'
 import privilegeHumanizer from './modules/Privileges'
 import sushiSwapModule from './modules/Sushiswap'
 import { genericErc20Humanizer, genericErc721Humanizer } from './modules/Tokens'
+import traderJoeModule from './modules/TraderJoe'
 import { uniswapHumanizer } from './modules/Uniswap'
 import { WALLETModule } from './modules/WALLET'
 import wrappingModule from './modules/Wrapping'
@@ -45,6 +50,11 @@ export const humanizerCallModules: HumanizerCallModule[] = [
   genericErc721Humanizer,
   gasTankModule,
   uniswapHumanizer,
+  curveModule,
+  traderJoeModule,
+  KyberSwap,
+  AcrossModule,
+  OneInchModule,
   wrappingModule,
   aaveHumanizer,
   WALLETModule,

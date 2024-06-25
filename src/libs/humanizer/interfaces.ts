@@ -8,7 +8,7 @@ import { Call } from '../accountOp/types'
 // @TODO properties to be removed - decimals,readableAmount?symbol, name
 // @TODO add properties humanizerMeta
 export type HumanizerVisualization = {
-  type: 'token' | 'address' | 'label' | 'action' | 'nft' | 'danger' | 'deadline'
+  type: 'token' | 'address' | 'label' | 'action' | 'nft' | 'danger' | 'deadline' | 'chain'
   address?: string
   content?: string
   amount?: bigint
@@ -17,6 +17,7 @@ export type HumanizerVisualization = {
   // humanizerMeta?: HumanizerMetaAddress
   id: number
   nftId?: bigint
+  chainId?: bigint
   isHidden?: boolean
 }
 export interface IrCall extends Call {

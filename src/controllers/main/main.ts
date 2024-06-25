@@ -213,6 +213,7 @@ export class MainController extends EventEmitter {
       this.#fetch,
       this.providers,
       this.networks,
+      this.accounts,
       relayerUrl
     )
     this.#initialLoadPromise = this.#load()
@@ -473,6 +474,7 @@ export class MainController extends EventEmitter {
   }
 
   async updateSelectedAccountPortfolio(forceUpdate: boolean = false) {
+    await this.#initialLoadPromise
     if (!this.accounts.selectedAccount) return
 
     // pass the accountOps if any so we could reflect the pending state
@@ -483,15 +485,9 @@ export class MainController extends EventEmitter {
           }
         : getAccountOpsByNetwork(this.accounts.selectedAccount, this.actions.visibleActionsQueue)
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
-    this.portfolio.updateSelectedAccount(
-      this.accounts.accounts,
-      this.accounts.selectedAccount,
-      undefined,
-      accountOps,
-      {
-        forceUpdate
-      }
-    )
+    this.portfolio.updateSelectedAccount(this.accounts.selectedAccount, undefined, accountOps, {
+      forceUpdate
+    })
   }
 
   async buildUserRequestFromDAppRequest(
@@ -730,7 +726,7 @@ export class MainController extends EventEmitter {
 
       if (account.creation) {
         const network = this.networks.networks.filter((n) => n.id === meta.networkId)[0]
-        if (shouldAskForEntryPointAuthorization(network, accountState)) {
+        if (shouldAskForEntryPointAuthorization(network, account, accountState)) {
           if (
             this.actions.visibleActionsQueue.find(
               (a) =>
@@ -1093,7 +1089,6 @@ export class MainController extends EventEmitter {
         // NOTE: the portfolio controller has it's own logic of constructing/caching providers, this is intentional, as
         // it may have different needs
         this.portfolio.updateSelectedAccount(
-          this.accounts.accounts,
           localAccountOp.accountAddr,
           undefined,
           this.signAccountOp
