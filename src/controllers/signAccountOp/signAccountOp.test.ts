@@ -331,6 +331,7 @@ const init = async (
   let providersCtrl: ProvidersController
   const networksCtrl = new NetworksController(
     storage,
+    fetch,
     (net) => {
       providersCtrl.setProvider(net)
     },
@@ -347,6 +348,7 @@ const init = async (
 
   const portfolio = new PortfolioController(
     storage,
+    fetch,
     providersCtrl,
     networksCtrl,
     accountsCtrl,

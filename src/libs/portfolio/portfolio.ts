@@ -6,6 +6,7 @@ import { getAddress, JsonRpcProvider, Provider, ZeroAddress } from 'ethers'
 import BalanceGetter from '../../../contracts/compiled/BalanceGetter.json'
 import NFTGetter from '../../../contracts/compiled/NFTGetter.json'
 import { PINNED_TOKENS } from '../../consts/pinnedTokens'
+import { Fetch } from '../../interfaces/fetch'
 import { Network } from '../../interfaces/network'
 import { Deployless, fromDescriptor } from '../deployless/deployless'
 import batcher from './batcher'
@@ -69,7 +70,7 @@ export class Portfolio {
 
   private deploylessNfts: Deployless
 
-  constructor(fetch: Function, provider: Provider | JsonRpcProvider, network: Network) {
+  constructor(fetch: Fetch, provider: Provider | JsonRpcProvider, network: Network) {
     this.batchedVelcroDiscovery = batcher(fetch, (queue) => {
       const baseCurrencies = [...new Set(queue.map((x) => x.data.baseCurrency))]
       return baseCurrencies.map((baseCurrency) => {

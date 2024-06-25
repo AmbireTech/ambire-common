@@ -16,6 +16,7 @@ import { AMBIRE_ACCOUNT_FACTORY, SINGLETON } from '../../consts/deploy'
 import { AccountId } from '../../interfaces/account'
 import { Banner } from '../../interfaces/banner'
 import { DappProviderRequest } from '../../interfaces/dapp'
+import { Fetch } from '../../interfaces/fetch'
 import {
   ExternalSignerControllers,
   Key,
@@ -83,7 +84,7 @@ const STATUS_WRAPPED_METHODS = {
 export class MainController extends EventEmitter {
   #storage: Storage
 
-  #fetch: Function
+  #fetch: Fetch
 
   // Holds the initial load promise, so that one can wait until it completes
   #initialLoadPromise: Promise<void>
@@ -165,7 +166,7 @@ export class MainController extends EventEmitter {
     onBroadcastSuccess
   }: {
     storage: Storage
-    fetch: Function
+    fetch: Fetch
     relayerUrl: string
     keystoreSigners: Partial<{ [key in Key['type']]: KeystoreSignerType }>
     externalSignerControllers: ExternalSignerControllers
@@ -182,6 +183,7 @@ export class MainController extends EventEmitter {
     this.#externalSignerControllers = externalSignerControllers
     this.networks = new NetworksController(
       this.#storage,
+      this.#fetch,
       async (network: Network) => {
         this.providers.setProvider(network)
         await this.accounts.updateAccountStates('latest', [network.id])
@@ -208,6 +210,7 @@ export class MainController extends EventEmitter {
     this.settings = new SettingsController(this.#storage)
     this.portfolio = new PortfolioController(
       this.#storage,
+      this.#fetch,
       this.providers,
       this.networks,
       this.accounts,
@@ -246,6 +249,7 @@ export class MainController extends EventEmitter {
     })
     this.activity = new ActivityController(
       this.#storage,
+      this.#fetch,
       this.accounts,
       this.providers,
       this.networks,
