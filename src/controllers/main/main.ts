@@ -198,13 +198,14 @@ export class MainController extends EventEmitter {
       this.#storage,
       this.providers,
       this.networks,
-      async () => {
+      async (toAccountAddr: string) => {
         this.activity.init()
         await this.updateSelectedAccountPortfolio()
         // forceEmitUpdate to update the getters in the FE state of the ctrl
         await this.forceEmitUpdate()
         await this.actions.forceEmitUpdate()
         await this.addressBook.forceEmitUpdate()
+        this.dapps.broadcastDappSessionEvent('accountsChanged', [toAccountAddr])
       }
     )
     this.settings = new SettingsController(this.#storage)
