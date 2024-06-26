@@ -199,4 +199,67 @@ const networks: Network[] = [
   }
 ]
 
-export { networks }
+const extraNetworks = [
+  {
+    id: 'linea',
+    name: 'Linea',
+    nativeAssetSymbol: 'ETH',
+    rpcUrls: [
+      'https://linea.decubate.com',
+      'https://linea.blockpi.network/v1/rpc/public',
+      'https://1rpc.io/linea',
+      'https://linea.drpc.org',
+      'https://rpc.linea.build'
+    ],
+    selectedRpcUrl: 'https://linea.decubate.com	',
+    // rpcNoStateOverride: false,
+    chainId: 59144n,
+    explorerUrl: 'https://lineascan.build',
+    // erc4337: {
+    //   enabled: false,
+    //   hasPaymaster: false
+    // },
+    // isSAEnabled: true,
+    // areContractsDeployed: true,
+    // hasRelayer: true,
+    // hasDebugTraceCall: false,
+    platformId: 'linea',
+    nativeAssetId: 'ethereum',
+    // hasSingleton: true,
+    features: []
+    // feeOptions: {
+    //   is1559: true,
+    //   feeIncrease: 100n
+    // },
+    // predefined: true
+  },
+  {
+    id: 'blast',
+    name: 'Blast Mainnet',
+    nativeAssetSymbol: 'ETH',
+    rpcUrls: ['https://rpc.blastblockchain.com'],
+    selectedRpcUrl: 'https://rpc.blastblockchain.com',
+    rpcNoStateOverride: false,
+    chainId: 238n,
+    explorerUrl: 'https://blastexplorer.io',
+    erc4337: {
+      enabled: false,
+      hasPaymaster: false
+    },
+    isSAEnabled: true,
+    areContractsDeployed: true,
+    hasRelayer: true,
+    hasDebugTraceCall: false,
+    platformId: 'blast',
+    nativeAssetId: 'ethereum',
+    hasSingleton: true,
+    features: [],
+    feeOptions: {
+      is1559: true,
+      feeIncrease: 100n
+    },
+    predefined: true
+  }
+]
+
+export { networks, extraNetworks }
