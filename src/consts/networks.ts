@@ -223,7 +223,6 @@ const extraNetworks = [
     name: 'Blast Mainnet',
     nativeAssetSymbol: 'ETH',
     rpcUrls: [
-      'wss://blast-rpc.publicnode.com',
       'https://blast-rpc.publicnode.com',
       'https://rpc.envelop.is/blast',
       'https://rpc.blast.io',
