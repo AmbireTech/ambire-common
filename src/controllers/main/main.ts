@@ -1558,6 +1558,7 @@ export class MainController extends EventEmitter {
     // To enable another try for signing in case of broadcast fail
     // broadcast is called in the FE only after successful signing
     this.signAccountOp?.updateStatusToReadyToSign(replacementFeeLow)
+    if (replacementFeeLow) this.estimateSignAccountOp()
     this.broadcastStatus = 'INITIAL'
     this.emitUpdate()
   }
