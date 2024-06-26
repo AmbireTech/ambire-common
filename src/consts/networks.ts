@@ -199,6 +199,7 @@ const networks: Network[] = [
   }
 ]
 
+// used for benzin
 const extraNetworks = [
   {
     id: 'linea',
@@ -212,26 +213,10 @@ const extraNetworks = [
       'https://rpc.linea.build'
     ],
     selectedRpcUrl: 'https://linea.decubate.com	',
-    // rpcNoStateOverride: false,
     chainId: 59144n,
     explorerUrl: 'https://lineascan.build',
-    // erc4337: {
-    //   enabled: false,
-    //   hasPaymaster: false
-    // },
-    // isSAEnabled: true,
-    // areContractsDeployed: true,
-    // hasRelayer: true,
-    // hasDebugTraceCall: false,
     platformId: 'linea',
-    nativeAssetId: 'ethereum',
-    // hasSingleton: true,
-    features: []
-    // feeOptions: {
-    //   is1559: true,
-    //   feeIncrease: 100n
-    // },
-    // predefined: true
+    nativeAssetId: 'ethereum'
   },
   {
     id: 'blast',
@@ -239,26 +224,10 @@ const extraNetworks = [
     nativeAssetSymbol: 'ETH',
     rpcUrls: ['https://rpc.blastblockchain.com'],
     selectedRpcUrl: 'https://rpc.blastblockchain.com',
-    rpcNoStateOverride: false,
     chainId: 238n,
     explorerUrl: 'https://blastexplorer.io',
-    erc4337: {
-      enabled: false,
-      hasPaymaster: false
-    },
-    isSAEnabled: true,
-    areContractsDeployed: true,
-    hasRelayer: true,
-    hasDebugTraceCall: false,
     platformId: 'blast',
-    nativeAssetId: 'ethereum',
-    hasSingleton: true,
-    features: [],
-    feeOptions: {
-      is1559: true,
-      feeIncrease: 100n
-    },
-    predefined: true
+    nativeAssetId: 'ethereum'
   }
 ]
 
