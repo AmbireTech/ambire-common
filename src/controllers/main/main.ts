@@ -478,9 +478,7 @@ export class MainController extends EventEmitter {
     await this.#initialLoadPromise
     if (!this.accounts.selectedAccount) return
 
-    const account = this.accounts.accounts.filter(
-      (a) => a.addr === this.accounts.selectedAccount
-    )[0]
+    const account = this.accounts.accounts.find((a) => a.addr === this.accounts.selectedAccount)
 
     let accountOpsToBeSimulatedByNetwork: {
       [key: string]: AccountOp[]
