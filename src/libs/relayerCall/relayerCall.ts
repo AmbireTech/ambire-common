@@ -1,4 +1,5 @@
 /* eslint-disable no-prototype-builtins */
+import { Fetch } from '../../interfaces/fetch'
 import { parse, stringify } from '../richJson/richJson'
 
 class RelayerError extends Error {
@@ -15,7 +16,7 @@ class RelayerError extends Error {
 
 export async function relayerCallUncaught(
   url: string,
-  fetch: Function,
+  fetch: Fetch,
   method: string = 'GET',
   body: any = null,
   headers: any = null
@@ -51,7 +52,7 @@ export async function relayerCallUncaught(
 export async function relayerCall(
   this: {
     url: string
-    fetch: Function
+    fetch: Fetch
   },
   path: string,
   method: string = 'GET',

@@ -16,6 +16,7 @@ import { AMBIRE_ACCOUNT_FACTORY, SINGLETON } from '../../consts/deploy'
 import { AccountId } from '../../interfaces/account'
 import { Banner } from '../../interfaces/banner'
 import { DappProviderRequest } from '../../interfaces/dapp'
+import { Fetch } from '../../interfaces/fetch'
 import {
   ExternalSignerControllers,
   Key,
@@ -83,7 +84,7 @@ const STATUS_WRAPPED_METHODS = {
 export class MainController extends EventEmitter {
   #storage: Storage
 
-  #fetch: Function
+  #fetch: Fetch
 
   // Holds the initial load promise, so that one can wait until it completes
   #initialLoadPromise: Promise<void>
@@ -165,7 +166,7 @@ export class MainController extends EventEmitter {
     onBroadcastSuccess
   }: {
     storage: Storage
-    fetch: Function
+    fetch: Fetch
     relayerUrl: string
     keystoreSigners: Partial<{ [key in Key['type']]: KeystoreSignerType }>
     externalSignerControllers: ExternalSignerControllers
@@ -182,6 +183,7 @@ export class MainController extends EventEmitter {
     this.#externalSignerControllers = externalSignerControllers
     this.networks = new NetworksController(
       this.#storage,
+      this.#fetch,
       async (network: Network) => {
         this.providers.setProvider(network)
         await this.accounts.updateAccountStates('latest', [network.id])
@@ -208,8 +210,10 @@ export class MainController extends EventEmitter {
     this.settings = new SettingsController(this.#storage)
     this.portfolio = new PortfolioController(
       this.#storage,
+      this.#fetch,
       this.providers,
       this.networks,
+      this.accounts,
       relayerUrl
     )
     this.#initialLoadPromise = this.#load()
@@ -245,6 +249,7 @@ export class MainController extends EventEmitter {
     })
     this.activity = new ActivityController(
       this.#storage,
+      this.#fetch,
       this.accounts,
       this.providers,
       this.networks,
@@ -469,6 +474,7 @@ export class MainController extends EventEmitter {
   }
 
   async updateSelectedAccountPortfolio(forceUpdate: boolean = false) {
+    await this.#initialLoadPromise
     if (!this.accounts.selectedAccount) return
 
     const account = this.accounts.accounts.filter(
@@ -483,21 +489,6 @@ export class MainController extends EventEmitter {
       accountOpsToBeSimulatedByNetwork =
         getAccountOpsByNetwork(this.accounts.selectedAccount, this.actions.visibleActionsQueue) ||
         {}
-
-      // to the accountOpsToBeSigned we add the broadcastedButNotConfirmed accountOps only for SA
-      // this is to prevent a potential glitch where the "waiting to be confirmed"
-      // are still not included in the pending block
-      accountOpsToBeSimulatedByNetwork = this.activity.broadcastedButNotConfirmed.reduce(
-        (acc: any, accountOp) => {
-          // add activity accountOps only if there are accountOpsToBeSigned for that network
-          // to prevent showing pending state when there are no pending txns to be signed
-          if (acc[accountOp.networkId]) {
-            acc[accountOp.networkId].push(accountOp)
-          }
-          return acc
-        },
-        accountOpsToBeSimulatedByNetwork
-      )
     } else if (!isSmartAccount(account) && this.signAccountOp) {
       // for basic accounts we pass only the currently opened accountOp (if any) to be simulated
       accountOpsToBeSimulatedByNetwork = {
@@ -507,13 +498,10 @@ export class MainController extends EventEmitter {
 
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.portfolio.updateSelectedAccount(
-      this.accounts.accounts,
       this.accounts.selectedAccount,
       undefined,
       accountOpsToBeSimulatedByNetwork,
-      {
-        forceUpdate
-      }
+      { forceUpdate }
     )
   }
 
@@ -753,7 +741,7 @@ export class MainController extends EventEmitter {
 
       if (account.creation) {
         const network = this.networks.networks.filter((n) => n.id === meta.networkId)[0]
-        if (shouldAskForEntryPointAuthorization(network, accountState)) {
+        if (shouldAskForEntryPointAuthorization(network, account, accountState)) {
           if (
             this.actions.visibleActionsQueue.find(
               (a) =>
@@ -1118,21 +1106,6 @@ export class MainController extends EventEmitter {
       if (isSmartAccount(account)) {
         accountOpsToBeSimulatedByNetwork =
           getAccountOpsByNetwork(localAccountOp.accountAddr, this.actions.visibleActionsQueue) || {}
-
-        // to the accountOpsToBeSigned we add the broadcastedButNotConfirmed accountOps only for SA
-        // this is to prevent a potential glitch where the "waiting to be confirmed"
-        // are still not included in the pending block
-        accountOpsToBeSimulatedByNetwork = this.activity.broadcastedButNotConfirmed.reduce(
-          (acc: any, accountOp) => {
-            // add activity accountOps only if there are accountOpsToBeSigned for that network
-            // to prevent showing pending state when there are no pending txns to be signed
-            if (acc[accountOp.networkId]) {
-              acc[accountOp.networkId].push(accountOp)
-            }
-            return acc
-          },
-          accountOpsToBeSimulatedByNetwork
-        )
       } else {
         // for basic accounts we pass only the currently opened accountOp to be simulated
         accountOpsToBeSimulatedByNetwork = { [localAccountOp.networkId]: [localAccountOp] }
@@ -1143,7 +1116,6 @@ export class MainController extends EventEmitter {
         // NOTE: the portfolio controller has it's own logic of constructing/caching providers, this is intentional, as
         // it may have different needs
         this.portfolio.updateSelectedAccount(
-          this.accounts.accounts,
           localAccountOp.accountAddr,
           undefined,
           accountOpsToBeSimulatedByNetwork,

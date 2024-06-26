@@ -331,6 +331,7 @@ const init = async (
   let providersCtrl: ProvidersController
   const networksCtrl = new NetworksController(
     storage,
+    fetch,
     (net) => {
       providersCtrl.setProvider(net)
     },
@@ -347,13 +348,15 @@ const init = async (
 
   const portfolio = new PortfolioController(
     storage,
+    fetch,
     providersCtrl,
     networksCtrl,
+    accountsCtrl,
     'https://staging-relayer.ambire.com'
   )
   const { op, nativeToCheck, feeTokens } = accountOp
   const network = networksCtrl.networks.find((x) => x.id === op.networkId)!
-  await portfolio.updateSelectedAccount(accountsCtrl.accounts, account.addr, network)
+  await portfolio.updateSelectedAccount(account.addr, network)
   const provider = getRpcProvider(network.rpcUrls, network.chainId)
 
   const prices = gasPricesMock || (await gasPricesLib.getGasPriceRecommendations(provider, network))

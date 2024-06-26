@@ -1,3 +1,4 @@
+/* eslint-disable no-restricted-syntax */
 import { AbiCoder, formatUnits, getAddress, Interface, toBeHex } from 'ethers'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
@@ -5,6 +6,7 @@ import ERC20 from '../../../contracts/compiled/IERC20.json'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { AMBIRE_PAYMASTER, SINGLETON } from '../../consts/deploy'
 import { Account } from '../../interfaces/account'
+import { Fetch } from '../../interfaces/fetch'
 import { ExternalSignerControllers, Key } from '../../interfaces/keystore'
 import { Network } from '../../interfaces/network'
 import { Storage } from '../../interfaces/storage'
@@ -95,7 +97,7 @@ export class SignAccountOpController extends EventEmitter {
 
   #storage: Storage
 
-  #fetch: Function
+  #fetch: Fetch
 
   account: Account
 
@@ -142,7 +144,7 @@ export class SignAccountOpController extends EventEmitter {
     fromActionId: AccountOpAction['id'],
     accountOp: AccountOp,
     storage: Storage,
-    fetch: Function,
+    fetch: Fetch,
     callRelayer: Function
   ) {
     super()
@@ -531,6 +533,7 @@ export class SignAccountOpController extends EventEmitter {
     const gasUsed = this.estimation!.gasUsed
     const callDataAdditionalGasCost = getCallDataAdditionalByNetwork(
       this.accountOp!,
+      this.account,
       this.#network,
       this.#accounts.accountStates[this.accountOp!.accountAddr][this.accountOp!.networkId]
     )
@@ -851,6 +854,7 @@ export class SignAccountOpController extends EventEmitter {
     if (
       shouldIncludeActivatorCall(
         this.#network,
+        this.account,
         accountState,
         this.accountOp.gasFeePayment.isERC4337
       )
