@@ -8,7 +8,9 @@ import { wrapEthSign, wrapExternallyValidated, wrapTypedData } from '../ambireSi
 import { abiCoder, chainId, expect, provider } from '../config'
 import {
   buildUserOp,
+  getAccountGasLimits,
   getDKIMValidatorData,
+  getGasFees,
   getPriviledgeTxnWithCustomHash,
   getSignerKey,
   getTargetNonce
@@ -93,7 +95,10 @@ async function deployAmbireAccountAndEntryPointAndPaymaster(validatorDataOptions
   const { signerKey, hash } = getSignerKey(await dkimRecovery.getAddress(), validatorData)
   const { ambireAccountAddress: addr } = await deployAmbireAccountHardhatNetwork([
     { addr: signerKey, hash },
-    { addr: signerWithPrivs.address, hash: '0x0000000000000000000000000000000000000000000000000000000000000001' }
+    {
+      addr: signerWithPrivs.address,
+      hash: '0x0000000000000000000000000000000000000000000000000000000000000001'
+    }
   ])
   ambireAccountAddress = addr
   account = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, signerWithPrivs)
@@ -206,7 +211,7 @@ describe('ERC4337 DKIM sigMode Both', () => {
     replayTargetNonceOp.nonce = `${targetNonce.substring(0, targetNonce.length - 2)}01`
     await expect(entryPoint.handleOps([replayTargetNonceOp], relayer))
       .to.be.revertedWithCustomError(entryPoint, 'FailedOp')
-      .withArgs(0, 'AA23 reverted: validateUserOp: execute(): one-time nonce is wrong')
+      .withArgs(0, 'AA24 signature error')
 
     // try to replay with a valid paymaster signature, should fail
     // and should not allow to reuse the nonce
@@ -214,7 +219,7 @@ describe('ERC4337 DKIM sigMode Both', () => {
       sender: ambireAccountAddress,
       signedNonce: ethers.toBeHex(0, 1),
       callData: account.interface.encodeFunctionData('executeMultiple', [[[txns, finalSig]]]),
-      callGasLimit: ethers.toBeHex(510000)
+      callGasLimit: 510000
     })
     secondUserOperation.nonce = getTargetNonce(secondUserOperation)
     await expect(entryPoint.handleOps([secondUserOperation], relayer)).to.emit(
@@ -408,7 +413,7 @@ describe('ERC4337 DKIM sigMode OnlyDKIM', () => {
       sender: ambireAccountAddress,
       signedNonce: ethers.toBeHex(0, 1),
       callData: account.interface.encodeFunctionData('executeMultiple', [[[[], finalSig]]]),
-      callGasLimit: ethers.toBeHex(440000)
+      callGasLimit: 440000
     })
     thirdUserOperation.nonce = getTargetNonce(thirdUserOperation)
     await expect(entryPoint.handleOps([thirdUserOperation], relayer)).to.emit(
@@ -428,7 +433,7 @@ describe('ERC4337 DKIM sigMode OnlyDKIM', () => {
       sender: ambireAccountAddress,
       signedNonce: ethers.toBeHex(0, 1),
       callData: account.interface.encodeFunctionData('executeMultiple', [[[txns, finalSig]]]),
-      callGasLimit: ethers.toBeHex(440000)
+      callGasLimit: 440000
     })
     forthUserOperation.nonce = getTargetNonce(forthUserOperation)
     await entryPoint.handleOps([forthUserOperation], relayer)
@@ -449,7 +454,7 @@ describe('ERC4337 DKIM sigMode OnlyDKIM', () => {
       sender: ambireAccountAddress,
       signedNonce: ethers.toBeHex(0, 1),
       callData: account.interface.encodeFunctionData('executeMultiple', [[[txns, finalSig]]]),
-      callGasLimit: ethers.toBeHex(445000)
+      callGasLimit: 445000
     })
     fifthUserOperation.nonce = getTargetNonce(fifthUserOperation)
     await expect(entryPoint.handleOps([fifthUserOperation], relayer)).to.emit(
@@ -570,7 +575,7 @@ describe('ERC4337 DKIM sigMode OnlySecond', () => {
       sender: ambireAccountAddress,
       signedNonce: ethers.toBeHex(0, 1),
       callData: account.interface.encodeFunctionData('executeMultiple', [[[txns, finalSig]]]),
-      callGasLimit: ethers.toBeHex(600000)
+      callGasLimit: 600000
     })
     thirdUserOperation.nonce = getTargetNonce(thirdUserOperation)
     await entryPoint.handleOps([thirdUserOperation], relayer)
@@ -591,7 +596,7 @@ describe('ERC4337 DKIM sigMode OnlySecond', () => {
       sender: ambireAccountAddress,
       signedNonce: ethers.toBeHex(0, 1),
       callData: account.interface.encodeFunctionData('executeMultiple', [[[txns, finalSig]]]),
-      callGasLimit: ethers.toBeHex(510000)
+      callGasLimit: 510000
     })
     forthUserOp.nonce = getTargetNonce(forthUserOp)
     await expect(entryPoint.handleOps([forthUserOp], relayer)).to.emit(
@@ -727,7 +732,10 @@ describe('DKIM sigMode Both with acceptUnknownSelectors true', () => {
     )
     const { ambireAccountAddress: addr } = await deployAmbireAccountHardhatNetwork([
       { addr: signerKey, hash },
-      { addr: signerWithPrivs.address, hash: '0x0000000000000000000000000000000000000000000000000000000000000001' }
+      {
+        addr: signerWithPrivs.address,
+        hash: '0x0000000000000000000000000000000000000000000000000000000000000001'
+      }
     ])
     ambireAccountAddress = addr
     account = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, signerWithPrivs)
@@ -916,7 +924,7 @@ describe('DKIM sigMode OnlySecond with a timelock of 2 minutes', () => {
       sender: ambireAccountAddress,
       signedNonce: ethers.toBeHex(0, 1),
       callData: account.interface.encodeFunctionData('executeMultiple', [[[[], finalSig]]]),
-      callGasLimit: ethers.toBeHex(456000)
+      callGasLimit: 456000
     })
     thirdUserOp.nonce = getTargetNonce(thirdUserOp)
     await expect(entryPoint.handleOps([thirdUserOp], relayer)).to.emit(
@@ -987,16 +995,17 @@ describe('ERC4337 DKIM sigMode OnlyDKIM with valid entry point that validates ev
       nonce: ethers.toBeHex(newNonce, 1),
       initCode: '0x',
       callData: account.interface.encodeFunctionData('executeBySender', [[]]),
-      callGasLimit: ethers.toBeHex(100000),
-      verificationGasLimit: ethers.toBeHex(500000),
-      preVerificationGas: ethers.toBeHex(50000),
-      maxFeePerGas: ethers.toBeHex(100000),
-      maxPriorityFeePerGas: ethers.toBeHex(100000),
+      accountGasLimits: getAccountGasLimits(500000, 100000),
+      preVerificationGas: 500000n,
+      gasFees: getGasFees(100000, 100000),
       paymasterAndData: '0x',
       signature: finalSig
     }
+    const isSigMode = (error: string) => {
+      return Buffer.from(error.substring(2), 'hex').toString().includes('SV_SIGMODE')
+    }
     await expect(entryPoint.handleOps([userOperation], relayer))
-      .to.be.revertedWithCustomError(entryPoint, 'FailedOp')
-      .withArgs(0, 'AA23 reverted: SV_SIGMODE')
+      .to.be.revertedWithCustomError(entryPoint, 'FailedOpWithRevert')
+      .withArgs(0, 'AA23 reverted', isSigMode)
   })
 })

@@ -1,4 +1,6 @@
 import { ErrorRef } from '../../controllers/eventEmitter/eventEmitter'
+import { Fetch } from '../../interfaces/fetch'
+import { HumanizerFragment } from '../../interfaces/humanizer'
 import { Storage } from '../../interfaces/storage'
 import { Message } from '../../interfaces/userRequest'
 import { AccountOp } from '../accountOp/accountOp'
@@ -7,7 +9,7 @@ import { parse, stringify } from '../richJson/richJson'
 import { humanizeCalls, humanizePlainTextMessage, humanizeTypedMessage } from './humanizerFuncs'
 import {
   HumanizerCallModule,
-  HumanizerFragment,
+  HumanizerOptions,
   HumanizerParsingModule,
   HumanizerPromise,
   HumanizerSettings,
@@ -15,17 +17,21 @@ import {
   IrMessage
 } from './interfaces'
 import { addFragsToLazyStore, lazyReadHumanizerMeta } from './lazyStorage'
+import OneInchModule from './modules/1Inch'
 import { aaveHumanizer } from './modules/Aave'
-import { fallbackHumanizer } from './modules/fallBackHumanizer'
-import { gasTankModule } from './modules/gasTankModule'
-import { preProcessHumanizer } from './modules/preProcessModule'
-import { privilegeHumanizer } from './modules/privileges'
-import { sushiSwapModule } from './modules/sushiSwapModule'
-import { genericErc20Humanizer, genericErc721Humanizer } from './modules/tokens'
+import AcrossModule from './modules/Across'
+import curveModule from './modules/Curve'
+import fallbackHumanizer from './modules/FallbackHumanizer'
+import gasTankModule from './modules/GasTankModule'
+import KyberSwap from './modules/KyberSwap'
+import preProcessHumanizer from './modules/PreProcess'
+import privilegeHumanizer from './modules/Privileges'
+import sushiSwapModule from './modules/Sushiswap'
+import { genericErc20Humanizer, genericErc721Humanizer } from './modules/Tokens'
+import traderJoeModule from './modules/TraderJoe'
 import { uniswapHumanizer } from './modules/Uniswap'
-// import { oneInchHumanizer } from '.modules/oneInch'
 import { WALLETModule } from './modules/WALLET'
-import { wrappingModule } from './modules/wrapped'
+import wrappingModule from './modules/Wrapping'
 import { parseCalls, parseMessage } from './parsers'
 import { humanizerMetaParsing } from './parsers/humanizerMetaParsing'
 import {
@@ -44,9 +50,13 @@ export const humanizerCallModules: HumanizerCallModule[] = [
   genericErc721Humanizer,
   gasTankModule,
   uniswapHumanizer,
+  curveModule,
+  traderJoeModule,
+  KyberSwap,
+  AcrossModule,
+  OneInchModule,
   wrappingModule,
   aaveHumanizer,
-  // oneInchHumanizer,
   WALLETModule,
   privilegeHumanizer,
   sushiSwapModule,
@@ -63,7 +73,7 @@ const humanizerTMModules = [erc20Module, erc721Module, permit2Module, fallbackEI
 export const humanizeAccountOp = async (
   storage: Storage,
   accountOp: AccountOp,
-  fetch: Function,
+  fetch: Fetch,
   emitError: Function
 ): Promise<IrCall[]> => {
   const storedHumanizerMeta = await storage.get(HUMANIZER_META_KEY, {})
@@ -79,7 +89,7 @@ export const humanizeAccountOp = async (
 const sharedHumanization = async <InputDataType extends AccountOp | Message>(
   data: InputDataType,
   storage: Storage,
-  fetch: Function,
+  fetch: Fetch,
   callback:
     | ((response: IrCall[], nonGlobalFrags: HumanizerFragment[]) => void)
     | ((response: IrMessage) => void),
@@ -97,18 +107,18 @@ const sharedHumanization = async <InputDataType extends AccountOp | Message>(
   if ('content' in data) {
     message = parse(stringify(data))
   }
-  const humanizerOptions = {
+  const humanizerOptions: HumanizerOptions = {
     fetch,
     emitError,
     network: options?.network
   }
   for (let i = 0; i <= 3; i++) {
-    // @TODO refactor conditional for nocache
     const totalHumanizerMetaToBeUsed = await lazyReadHumanizerMeta(storage, {
-      nocache: options?.isExtension === false
+      isExtension: options?.isExtension,
+      nocache: options?.nocache
     })
     if ('calls' in data) {
-      //
+      humanizerOptions.networkId = op!.networkId
       ;[irCalls, asyncOps] = humanizeCalls(
         op!,
         humanizerCallModules,
@@ -174,7 +184,7 @@ const sharedHumanization = async <InputDataType extends AccountOp | Message>(
 const callsHumanizer = async (
   accountOp: AccountOp,
   storage: Storage,
-  fetch: Function,
+  fetch: Fetch,
   callback: (irCalls: IrCall[], nonGlobalFrags: HumanizerFragment[]) => void,
   emitError: (err: ErrorRef) => void,
   options?: any
@@ -185,7 +195,7 @@ const callsHumanizer = async (
 const messageHumanizer = async (
   message: Message,
   storage: Storage,
-  fetch: Function,
+  fetch: Fetch,
   callback: (msgs: IrMessage) => void,
   emitError: (err: ErrorRef) => void,
   options?: any

@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable no-console */
 import { Interface, ZeroAddress } from 'ethers'
 
@@ -14,8 +13,7 @@ import {
   getToken,
   getUnknownVisualization
 } from '../../utils'
-// eslint-disable-next-line import/no-cycle
-import { HumanizerUniMatcher } from '.'
+import { HumanizerUniMatcher } from './interfaces'
 import { parsePath } from './utils'
 
 // Stolen from ambire-wallet

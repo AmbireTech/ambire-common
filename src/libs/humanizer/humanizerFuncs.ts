@@ -1,6 +1,6 @@
 import { formatUnits } from 'ethers'
 
-import { MAX_UINT256 } from '../../consts/deploy'
+import { MAX_UINT160, MAX_UINT256 } from '../../consts/deploy'
 import { ErrorRef } from '../../controllers/eventEmitter/eventEmitter'
 import { Message, PlainTextMessage, TypedMessage } from '../../interfaces/userRequest'
 import { AccountOp } from '../accountOp/accountOp'
@@ -8,7 +8,7 @@ import {
   HumanizerCallModule,
   HumanizerMeta,
   HumanizerPromise,
-  HumanizerTypedMessaageModule,
+  HumanizerTypedMessageModule,
   HumanizerVisualization,
   IrCall,
   IrMessage
@@ -57,7 +57,7 @@ export const visualizationToText = (call: IrCall, options: any): string => {
       text += v?.humanizerMeta?.name ? `${v.address} (${v?.humanizerMeta?.name})` : v.address
     if (v.type === 'token') {
       if (v.humanizerMeta?.token) {
-        if (v.amount === MAX_UINT256) {
+        if (v.amount === MAX_UINT256 || v.amount === MAX_UINT160) {
           text += `all ${
             v.humanizerMeta.token?.symbol ? v.humanizerMeta.token?.symbol : `${v.address} token`
           }`
@@ -75,20 +75,24 @@ export const visualizationToText = (call: IrCall, options: any): string => {
     if (v.type === 'deadline') {
       text += getDeadlineText(v.amount!)
     }
+
+    if (v.type === 'chain') {
+      text += `chain with id ${v.chainId}`
+    }
   })
   if (text) {
     return text
   }
   options.emitError({
     message: 'visualizationToText: Something went wrong with humanization',
-    errror: new Error(`visualizationToText couldn't convert the txn to text, ${call}`),
+    error: new Error(`visualizationToText couldn't convert the txn to text, ${call}`),
     level: 'silent'
   })
   return `Call to ${call.to} with ${call.value} value and ${call.data} data`
 }
 
 export const humanizeTypedMessage = (
-  modules: HumanizerTypedMessaageModule[],
+  modules: HumanizerTypedMessageModule[],
   tm: TypedMessage
   // only fullVisualization and warnings
 ): Omit<IrMessage, keyof Message> => {

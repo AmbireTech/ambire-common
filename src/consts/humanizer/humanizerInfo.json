@@ -18599,6 +18599,11 @@
             "address": "0x5ff137d4b0fdcd49dca30c7cf57e578a026d2789",
             "isSC": {}
         },
+        "0x0000000071727de22e5e9d8baf0edac6f37da032": {
+            "name": "Account abstraction entry point v0.7.0",
+            "address": "0x0000000071727de22e5e9d8baf0edac6f37da032",
+            "isSC": {}
+        },
         "0x0000000000085d4780b73119b644ae5ecd22b376": {
             "name": "TUSD token contract",
             "address": "0x0000000000085d4780b73119b644ae5ecd22b376",

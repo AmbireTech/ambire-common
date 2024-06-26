@@ -3,6 +3,7 @@ import fetch from 'node-fetch'
 import { expect } from '@jest/globals'
 
 import { produceMemoryStore } from '../../../test/helpers'
+import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import humanizerInfo from '../../consts/humanizer/humanizerInfo.json'
 import { networks } from '../../consts/networks'
@@ -31,7 +32,11 @@ const PLACEHOLDER_SELECTED_ACCOUNT: Account = {
     bytecode: '0x000',
     salt: '0x000'
   },
-  initialPrivileges: [['0x00', '0x01']]
+  initialPrivileges: [['0x00', '0x01']],
+  preferences: {
+    label: DEFAULT_ACCOUNT_LABEL,
+    pfp: '0xc4A6bB5139123bD6ba0CF387828a9A3a73EF8D1e'
+  }
 }
 const XWALLET_ADDRESS = '0x47Cd7E91C3CBaAF266369fe8518345fc4FC12935'
 
@@ -48,6 +53,7 @@ const providers = Object.fromEntries(
 let providersCtrl: ProvidersController
 const networksCtrl = new NetworksController(
   produceMemoryStore(),
+  fetch,
   (net) => {
     providersCtrl.setProvider(net)
   },

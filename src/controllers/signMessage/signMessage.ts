@@ -1,6 +1,7 @@
 import { hexlify, isHexString, toUtf8Bytes } from 'ethers'
 
 import { Account, AccountStates } from '../../interfaces/account'
+import { Fetch } from '../../interfaces/fetch'
 import { ExternalSignerControllers, Key } from '../../interfaces/keystore'
 import { Network } from '../../interfaces/network'
 import { Storage } from '../../interfaces/storage'
@@ -31,7 +32,7 @@ export class SignMessageController extends EventEmitter {
 
   #storage: Storage
 
-  #fetch: Function
+  #fetch: Fetch
 
   #accounts: Account[] | null = null
 
@@ -69,7 +70,7 @@ export class SignMessageController extends EventEmitter {
     networks: NetworksController,
     externalSignerControllers: ExternalSignerControllers,
     storage: Storage,
-    fetch: Function
+    fetch: Fetch
   ) {
     super()
 
@@ -232,11 +233,6 @@ export class SignMessageController extends EventEmitter {
         )
       }
 
-      // https://eips.ethereum.org/EIPS/eip-6492
-      if (account.creation && !accountState.isDeployed) {
-        signature = wrapCounterfactualSign(signature, account.creation!)
-      }
-
       const personalMsgToValidate =
         typeof this.messageToSign.content.message === 'string'
           ? hexStringToUint8Array(this.messageToSign.content.message)
@@ -247,7 +243,11 @@ export class SignMessageController extends EventEmitter {
         // the signer is always the account even if the actual
         // signature is from a key that has privs to the account
         signer: this.messageToSign?.accountAddr,
-        signature,
+        signature:
+          account.creation && !accountState.isDeployed
+            ? // https://eips.ethereum.org/EIPS/eip-6492
+              wrapCounterfactualSign(signature, account.creation!)
+            : signature,
         // @ts-ignore TODO: Be aware of the type mismatch, could cause troubles
         message: this.messageToSign.content.kind === 'message' ? personalMsgToValidate : undefined,
         typedData:

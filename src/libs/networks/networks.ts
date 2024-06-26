@@ -1,17 +1,8 @@
 /* eslint-disable import/no-extraneous-dependencies */
 
-import { Contract } from 'ethers'
-import fetch from 'node-fetch'
-
-import EntryPointAbi from '../../../contracts/compiled/EntryPoint.json'
-import {
-  AMBIRE_ACCOUNT_FACTORY,
-  AMBIRE_PAYMASTER,
-  ERC_4337_ENTRYPOINT,
-  OPTIMISTIC_ORACLE,
-  SINGLETON
-} from '../../consts/deploy'
+import { AMBIRE_ACCOUNT_FACTORY, OPTIMISTIC_ORACLE, SINGLETON } from '../../consts/deploy'
 import { networks as predefinedNetworks } from '../../consts/networks'
+import { Fetch } from '../../interfaces/fetch'
 import {
   Network,
   NetworkFeature,
@@ -20,9 +11,11 @@ import {
   NetworkInfoLoading
 } from '../../interfaces/network'
 import { RPCProviders } from '../../interfaces/provider'
-import { Bundler } from '../../services/bundlers/bundler'
 import { getRpcProvider } from '../../services/provider'
 import { getSASupport, simulateDebugTraceCall } from '../deployless/simulateDeployCall'
+
+// bnb, fantom, metis
+const relayerAdditionalNetworks = [56n, 250n, 1088n]
 
 export const getNetworksWithFailedRPC = ({ providers }: { providers: RPCProviders }): string[] => {
   return Object.keys(providers).filter((networkId) => !providers[networkId].isWorking)
@@ -43,6 +36,7 @@ async function retryRequest(init: Function, counter = 0): Promise<any> {
 }
 
 export async function getNetworkInfo(
+  fetch: Fetch,
   rpcUrl: string,
   chainId: bigint,
   callback: (networkInfo: NetworkInfoLoading<NetworkInfo>) => void
@@ -84,34 +78,18 @@ export async function getNetworkInfo(
     Promise.all([
       (async () => {
         const responses = await Promise.all([
-          retryRequest(() => provider.getCode(ERC_4337_ENTRYPOINT)),
-          Bundler.isNetworkSupported(chainId).catch(() => false)
-        ]).catch((e: Error) => raiseFlagged(e, ['0x', false]))
-        const [entryPointCode, hasBundler] = responses
-        const has4337 = entryPointCode !== '0x' && hasBundler
-        let hasPaymaster = false
-        if (has4337) {
-          const entryPoint = new Contract(ERC_4337_ENTRYPOINT, EntryPointAbi, provider)
-          const paymasterBalance = await entryPoint.balanceOf(AMBIRE_PAYMASTER)
-          hasPaymaster = paymasterBalance.toString() > 0
-        }
-        networkInfo = {
-          ...networkInfo,
-          erc4337: { enabled: has4337, hasPaymaster }
-        }
-
-        callback(networkInfo)
-      })(),
-      (async () => {
-        const responses = await Promise.all([
           retryRequest(() => provider.getCode(SINGLETON)),
           retryRequest(() => provider.getCode(AMBIRE_ACCOUNT_FACTORY)),
           retryRequest(() => getSASupport(provider))
+          // retryRequest(() => provider.getCode(ERC_4337_ENTRYPOINT)),
+          // Bundler.isNetworkSupported(chainId).catch(() => false)
         ]).catch((e: Error) =>
           raiseFlagged(e, ['0x', '0x', { addressMatches: false, supportsStateOverride: false }])
         )
         const [singletonCode, factoryCode, saSupport] = responses
         const areContractsDeployed = factoryCode !== '0x'
+        // const has4337 = entryPointCode !== '0x' && hasBundler
+        const predefinedNetwork = predefinedNetworks.find((net) => net.chainId === chainId)
         // Ambire support is as follows:
         // - either the addresses match after simulation, that's perfect
         // - or we can't do the simulation with this RPC but we have the factory
@@ -123,7 +101,14 @@ export async function getNetworkInfo(
           hasSingleton: singletonCode !== '0x',
           isSAEnabled: supportsAmbire && singletonCode !== '0x',
           areContractsDeployed,
-          rpcNoStateOverride: !saSupport.supportsStateOverride
+          rpcNoStateOverride:
+            predefinedNetwork && predefinedNetwork.rpcNoStateOverride === true
+              ? true
+              : !saSupport.supportsStateOverride,
+          erc4337: {
+            enabled: predefinedNetwork ? predefinedNetwork.erc4337.enabled : false,
+            hasPaymaster: predefinedNetwork ? predefinedNetwork.erc4337.hasPaymaster : false
+          }
         }
 
         callback(networkInfo)
@@ -365,7 +350,7 @@ export async function migrateNetworkPreferencesToNetworks(networkPreferences: {
       ...preference,
       ...networkInfo,
       features: getFeaturesByNetworkProperties(networkInfo),
-      hasRelayer: false,
+      hasRelayer: relayerAdditionalNetworks.includes(preference.chainId!),
       predefined: false
     } as Network
   })

@@ -2,9 +2,10 @@ import dotenv from 'dotenv'
 import { ZeroAddress } from 'ethers'
 
 import { geckoIdMapper } from '../../consts/coingecko'
+import { Fetch } from '../../interfaces/fetch'
+import { HumanizerFragment } from '../../interfaces/humanizer'
 import { Network } from '../../interfaces/network'
 import {
-  HumanizerFragment,
   HumanizerMeta,
   HumanizerSettings,
   HumanizerVisualization,
@@ -45,6 +46,10 @@ export function getToken(_address: string, amount: bigint): HumanizerVisualizati
     amount: BigInt(amount),
     id: randomId()
   }
+}
+
+export function getChain(chainId: bigint): HumanizerVisualization {
+  return { type: 'chain', id: randomId(), chainId }
 }
 
 export function getNft(address: string, id: bigint): HumanizerVisualization {
@@ -89,7 +94,7 @@ export function getDeadline(deadlineSecs: bigint | number): HumanizerVisualizati
  * This is used by benzina and hence we cannot wrap the errors in emitError
  */
 // @TODO this shouldn't be here, a more suitable place would be portfolio/gecko
-export async function getNativePrice(network: Network, fetch: Function): Promise<number> {
+export async function getNativePrice(network: Network, fetch: Fetch): Promise<number> {
   const platformId = geckoIdMapper(ZeroAddress, network)
   if (!platformId) {
     throw new Error(`getNativePrice: ${network.name} is not supported`)
@@ -119,7 +124,7 @@ export async function getTokenInfo(
       error: new Error(
         `could not find platform id for token info api ${humanizerSettings.networkId}`
       ),
-      level: 'minor'
+      level: 'silent'
     })
     platformId = humanizerSettings.networkId
   }
@@ -225,3 +230,9 @@ export const integrateFragments = (
 }
 
 export const EMPTY_HUMANIZER_META = { abis: { NO_ABI: {} }, knownAddresses: {} }
+
+export const uintToAddress = (uint: bigint): string =>
+  `0x${BigInt(uint).toString(16).slice(-40).padStart(40, '0')}`
+
+export const eToNative = (address: string): string =>
+  address.slice(2).toLocaleLowerCase() === 'e'.repeat(40) ? ZeroAddress : address
