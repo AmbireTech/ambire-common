@@ -70,6 +70,7 @@ export interface Network {
   isOptimistic?: boolean
   flagged?: boolean
   predefined: boolean
+  wrappedAddr?: string
 }
 
 export interface AddNetworkRequestParams {

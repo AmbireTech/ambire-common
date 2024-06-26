@@ -1,6 +1,7 @@
 import { SignMessageAction } from 'controllers/actions/actions'
 import { TypedDataDomain, TypedDataField } from 'ethers'
 
+import { Call as AccountOpCall } from '../libs/accountOp/types'
 import { AccountId } from './account'
 import { DappProviderRequest } from './dapp'
 import { HumanizerFragment } from './humanizer'
@@ -11,6 +12,10 @@ export interface Call {
   to: string
   value: bigint
   data: string
+}
+export interface Calls {
+  kind: 'calls'
+  calls: AccountOpCall[]
 }
 export interface PlainTextMessage {
   kind: 'message'
@@ -39,7 +44,7 @@ export interface Message {
 
 export interface SignUserRequest {
   id: string | number
-  action: Call | PlainTextMessage | TypedMessage | { kind: 'benzin' }
+  action: Call | Calls | PlainTextMessage | TypedMessage | { kind: 'benzin' }
   session?: DappProviderRequest['session']
   meta: {
     isSignAction: true
