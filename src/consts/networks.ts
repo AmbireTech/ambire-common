@@ -222,12 +222,36 @@ const extraNetworks = [
     id: 'blast',
     name: 'Blast Mainnet',
     nativeAssetSymbol: 'ETH',
-    rpcUrls: ['https://rpc.blastblockchain.com'],
-    selectedRpcUrl: 'https://rpc.blastblockchain.com',
-    chainId: 238n,
+    rpcUrls: [
+      'wss://blast-rpc.publicnode.com',
+      'https://blast-rpc.publicnode.com',
+      'https://rpc.envelop.is/blast',
+      'https://rpc.blast.io',
+      'https://blast.din.dev/rpc',
+      'https://blastl2-mainnet.public.blastapi.io	'
+    ],
+    selectedRpcUrl: 'https://rpc.blast.io',
+    chainId: 81457n,
     explorerUrl: 'https://blastexplorer.io',
     platformId: 'blast',
     nativeAssetId: 'ethereum'
+  },
+  {
+    id: 'andromeda',
+    name: 'Metis Andromeda Mainnet',
+    nativeAssetSymbol: 'METIS',
+    rpcUrls: [
+      'https://andromeda.metis.io/?owner=1088',
+      'https://metis-mainnet.public.blastapi.io',
+      'https://metis.api.onfinality.io/public',
+      'https://metis-pokt.nodies.app',
+      'https://metis.drpc.org'
+    ],
+    selectedRpcUrl: 'https://andromeda.metis.io/?owner=1088',
+    chainId: 1088n,
+    explorerUrl: 'https://explorer.metis.io',
+    platformId: 'metis-andromeda',
+    nativeAssetId: 'metis-token'
   }
 ]
 
