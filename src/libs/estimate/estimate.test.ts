@@ -8,6 +8,7 @@ import structuredClone from '@ungap/structured-clone'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import ERC20 from '../../../contracts/compiled/IERC20.json'
+import { velcroUrl } from '../../../test/config'
 import { getNativeToCheckFromEOAs, getNonce } from '../../../test/helpers'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { FEE_COLLECTOR } from '../../consts/addresses'
@@ -211,7 +212,7 @@ const feeTokens = [
 //   }
 // ]
 
-const portfolio = new Portfolio(fetch, provider, ethereum)
+const portfolio = new Portfolio(fetch, provider, ethereum, velcroUrl)
 
 const providers = Object.fromEntries(
   networks.map((network) => [network.id, getRpcProvider(network.rpcUrls, network.chainId)])

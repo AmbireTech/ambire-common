@@ -161,6 +161,7 @@ export class MainController extends EventEmitter {
     storage,
     fetch,
     relayerUrl,
+    velcroUrl,
     keystoreSigners,
     externalSignerControllers,
     windowManager,
@@ -169,6 +170,7 @@ export class MainController extends EventEmitter {
     storage: Storage
     fetch: Fetch
     relayerUrl: string
+    velcroUrl: string
     keystoreSigners: Partial<{ [key in Key['type']]: KeystoreSignerType }>
     externalSignerControllers: ExternalSignerControllers
     windowManager: WindowManager
@@ -215,7 +217,8 @@ export class MainController extends EventEmitter {
       this.providers,
       this.networks,
       this.accounts,
-      relayerUrl
+      relayerUrl,
+      velcroUrl
     )
     this.#initialLoadPromise = this.#load()
     this.emailVault = new EmailVaultController(

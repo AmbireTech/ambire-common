@@ -6,7 +6,7 @@ import fetch from 'node-fetch'
 import { describe, expect, jest, test } from '@jest/globals'
 import structuredClone from '@ungap/structured-clone'
 
-import { trezorSlot7v24337Deployed } from '../../../test/config'
+import { trezorSlot7v24337Deployed, velcroUrl } from '../../../test/config'
 import { getNativeToCheckFromEOAs, produceMemoryStore } from '../../../test/helpers'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { FEE_COLLECTOR } from '../../consts/addresses'
@@ -353,7 +353,8 @@ const init = async (
     providersCtrl,
     networksCtrl,
     accountsCtrl,
-    'https://staging-relayer.ambire.com'
+    'https://staging-relayer.ambire.com',
+    velcroUrl
   )
   const { op, nativeToCheck, feeTokens } = accountOp
   const network = networksCtrl.networks.find((x) => x.id === op.networkId)!
