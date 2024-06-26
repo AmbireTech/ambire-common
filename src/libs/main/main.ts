@@ -74,8 +74,6 @@ export const makeSmartAccountOpAction = ({
       userRequests
     })
   }
-  console.log(userRequests)
-  console.log(accountOp)
   return {
     id: `${account.addr}-${networkId}`, // SA accountOpAction id
     type: 'accountOp',
