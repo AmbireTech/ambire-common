@@ -87,6 +87,33 @@ const wrapSwapReducer = (calls: IrCall[]): IrCall[] => {
       })
       i += 1
       updated = true
+    } else if (
+      (calls[i]?.fullVisualization?.length || 0) >= 4 &&
+      calls[i]?.fullVisualization?.[3]?.type === 'token' &&
+      calls[i]?.fullVisualization?.[3]?.address &&
+      calls[i]?.fullVisualization?.[0].content?.includes('Swap') &&
+      calls[i]?.fullVisualization?.[1]?.amount === calls[i].value &&
+      calls[i]?.fullVisualization?.[1]?.amount === calls[i + 1]?.fullVisualization?.[1]?.amount &&
+      // @NOTE: there is not check for swap's tokens
+      calls[i + 1]?.fullVisualization?.[0].content?.includes('Withdraw') &&
+      calls[i + 1]?.fullVisualization?.[1]?.address === ZeroAddress
+    ) {
+      const newVisualization = [
+        getAction('Swap'),
+        getToken(ZeroAddress, calls[i].value),
+        getLabel('for'),
+        getToken(calls[i].fullVisualization![3].address!, calls[i].fullVisualization![3].amount!)
+      ]
+      newCalls.push({
+        to: calls[i].to,
+        value: calls[i].value + calls[i + 1].value,
+        // second's call data is omitted
+        data: calls[i].data,
+        fromUserRequestId: calls[i].fromUserRequestId,
+        fullVisualization: newVisualization
+      })
+      i += 1
+      updated = true
     } else {
       newCalls.push(calls[i])
     }
