@@ -1,13 +1,16 @@
 /* eslint-disable class-methods-use-this */
 import fetch from 'node-fetch'
+
 import { expect } from '@jest/globals'
-import { KeystoreController } from '../keystore/keystore'
-import { requestMagicLink } from '../../libs/magicLink/magicLink'
-import { EmailVaultController, EmailVaultState } from './emailVault'
+
+import { relayerUrl } from '../../../test/config'
+import { produceMemoryStore } from '../../../test/helpers'
+import { Key } from '../../interfaces/keystore'
 import { Storage } from '../../interfaces/storage'
 import { EmailVault } from '../../libs/emailVault/emailVault'
-import { Key } from '../../interfaces/keystore'
-import { produceMemoryStore } from '../../../test/helpers'
+import { requestMagicLink } from '../../libs/magicLink/magicLink'
+import { KeystoreController } from '../keystore/keystore'
+import { EmailVaultController, EmailVaultState } from './emailVault'
 
 class InternalSigner {
   key
@@ -38,8 +41,6 @@ const getRandomEmail = () => {
   return `unufri+${Math.random().toString().slice(2)}@ambire.com`
 }
 let storage: Storage
-const relayerUrl: string = 'https://staging-relayer.ambire.com'
-// const relayerUrl: string = 'http://localhost:1934'
 let keystore: KeystoreController
 let email: string
 const testingOptions = { autoConfirmMagicLink: true }

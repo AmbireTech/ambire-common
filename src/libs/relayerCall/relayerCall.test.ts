@@ -5,6 +5,7 @@ import { describe, expect, test } from '@jest/globals'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import ERC20 from '../../../contracts/compiled/IERC20.json'
+import { relayerUrl } from '../../../test/config'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { networks } from '../../consts/networks'
 import { getRpcProvider } from '../../services/provider'
@@ -12,7 +13,7 @@ import { relayerCall } from './relayerCall'
 
 const polygon = networks.find((net) => net.id === 'polygon')!
 const provider = getRpcProvider(polygon.rpcUrls, polygon.chainId)
-const callRelayer = relayerCall.bind({ url: 'https://staging-relayer.ambire.com', fetch })
+const callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
 const testAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
 
 describe('Relayer', () => {

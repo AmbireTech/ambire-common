@@ -1,19 +1,16 @@
-import { beforeAll, describe, expect, test } from '@jest/globals'
-import fetch from 'node-fetch'
 import { Wallet } from 'ethers'
+import fetch from 'node-fetch'
 
+import { beforeAll, describe, expect, test } from '@jest/globals'
+
+import { relayerUrl } from '../../../test/config'
 import { OperationRequestType } from '../../interfaces/emailVault'
+import { requestMagicLink } from '../magicLink/magicLink'
 import { relayerCall } from '../relayerCall/relayerCall'
 import { EmailVault } from './emailVault'
-import { requestMagicLink } from '../magicLink/magicLink'
 
 let email: String
 let email2: String
-
-// @NOTE: this should be changed in future tests. We should have proper e2e tests with email inbox reading. Once done, this isn't needed
-// Relayer has to be start with NODE_ENV === 'testing' to retrive the secret for email vonfirmation
-const relayerUrl = 'https://staging-relayer.ambire.com'
-// const relayerUrl: string = 'http://localhost:1934'
 
 const callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
 const emailVault = new EmailVault(fetch, relayerUrl)
