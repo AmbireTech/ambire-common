@@ -85,6 +85,8 @@ export class PortfolioController extends EventEmitter {
 
   #callRelayer: Function
 
+  #velcroUrl: string
+
   #networksWithAssetsByAccounts: {
     [accountId: string]: NetworkId[]
   } = {}
@@ -111,7 +113,8 @@ export class PortfolioController extends EventEmitter {
     providers: ProvidersController,
     networks: NetworksController,
     accounts: AccountsController,
-    relayerUrl: string
+    relayerUrl: string,
+    velcroUrl: string
   ) {
     super()
     this.latest = {}
@@ -121,6 +124,7 @@ export class PortfolioController extends EventEmitter {
     this.#storage = storage
     this.#fetch = fetch
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
+    this.#velcroUrl = velcroUrl
     this.#providers = providers
     this.#networks = networks
     this.#accounts = accounts
@@ -302,7 +306,10 @@ export class PortfolioController extends EventEmitter {
         // eslint-disable-next-line no-underscore-dangle
         providers[network.id]?._getConnection().url
     ) {
-      this.#portfolioLibs.set(key, new Portfolio(this.#fetch, providers[network.id], network))
+      this.#portfolioLibs.set(
+        key,
+        new Portfolio(this.#fetch, providers[network.id], network, this.#velcroUrl)
+      )
     }
     return this.#portfolioLibs.get(key)!
   }

@@ -4,6 +4,7 @@ import fetch from 'node-fetch'
 
 import { describe, expect, test } from '@jest/globals'
 
+import { relayerUrl, velcroUrl } from '../../../test/config'
 import { produceMemoryStore } from '../../../test/helpers'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
@@ -58,7 +59,6 @@ describe('Main Controller ', () => {
   ]
 
   const storage = produceMemoryStore()
-  const relayerUrl = 'https://staging-relayer.ambire.com'
   const email = 'unufri@ambire.com'
   storage.set('accounts', accounts)
   let controller: MainController
@@ -69,7 +69,8 @@ describe('Main Controller ', () => {
       relayerUrl,
       keystoreSigners: { internal: KeystoreSigner },
       externalSignerControllers: {},
-      windowManager
+      windowManager,
+      velcroUrl
     })
     // eslint-disable-next-line no-promise-executor-return
     await new Promise((resolve) => {
@@ -181,7 +182,8 @@ describe('Main Controller ', () => {
       relayerUrl,
       windowManager,
       keystoreSigners: { internal: KeystoreSigner },
-      externalSignerControllers: {}
+      externalSignerControllers: {},
+      velcroUrl
     })
 
     const signerAddr = '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
@@ -260,7 +262,8 @@ describe('Main Controller ', () => {
       relayerUrl,
       windowManager,
       keystoreSigners: { internal: KeystoreSigner },
-      externalSignerControllers: {}
+      externalSignerControllers: {},
+      velcroUrl
     })
 
     mainCtrl.accounts.accounts = [
