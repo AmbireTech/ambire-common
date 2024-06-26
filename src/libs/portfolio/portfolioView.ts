@@ -1,4 +1,5 @@
 import { Account } from '../../interfaces/account'
+import { Network } from '../../interfaces/network'
 import {
   AccountState,
   CollectionResult as CollectionResultInterface,
@@ -102,4 +103,49 @@ export function calculateAccountPortfolio(
     collections: updatedCollections,
     isAllReady: allReady
   }
+}
+
+export type PendingToken = TokenResultInterface & {
+  amountToSend: TokenResultInterface['amount']
+  type: 'send' | 'receive' | null
+}
+
+export function calculateTokensPendingState(
+  selectedAccount: string,
+  network: Network,
+  state: { pending: PortfolioControllerState }
+): PendingToken[] {
+  const pendingData = state.pending[selectedAccount][network.id]
+
+  if (!pendingData || !pendingData.isReady || !pendingData.result) {
+    return []
+  }
+
+  const { tokens } = pendingData.result
+
+  // sometimes an old pending state that does not yet have amountBeforeSimulation
+  // set and breaks the logic below. If that's the case, wait for the
+  // simulation to complete
+  if (!tokens.length || !('simulationAmount' in tokens[0])) {
+    return []
+  }
+
+  const tokensWithChangedAmounts = tokens.filter((token) => token.simulationAmount !== undefined)
+
+  return tokensWithChangedAmounts.map((token) => {
+    let type: PendingToken['type'] = null
+    const amountToSend = token.simulationAmount!
+
+    if (amountToSend > 0n) {
+      type = 'send'
+    } else {
+      type = 'receive'
+    }
+
+    return {
+      ...token,
+      amountToSend,
+      type
+    }
+  })
 }
