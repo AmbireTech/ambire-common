@@ -51,13 +51,18 @@ const uniV32Mapping = (): HumanizerUniMatcher => {
       accountOp: AccountOp,
       call: IrCall
     ): IrCall[] => {
+      console.log('watafak')
       const [calls] = ifaceV32.parseTransaction(call)?.args || []
       const mappingResult = uniV32Mapping()
       const parsed = calls
         .map((data: string) => {
           const sigHash = data.slice(0, 10)
+          console.log({ sigHash })
           const humanizer = mappingResult[sigHash]
-          return humanizer ? humanizer(accountOp, { ...call, data }) : null
+          console.log(!!humanizer)
+          return humanizer
+            ? humanizer(accountOp, { ...call, data })
+            : { ...call, data, fullVisualization: [getAction('Unknown action')] }
         })
         .flat()
         .filter((x: any) => x)
@@ -77,7 +82,9 @@ const uniV32Mapping = (): HumanizerUniMatcher => {
         .map((data: string) => {
           const sigHash = data.slice(0, 10)
           const humanizer = mappingResult[sigHash]
-          return humanizer ? humanizer(accountOp, { ...call, data }) : null
+          return humanizer
+            ? humanizer(accountOp, { ...call, data })
+            : { ...call, data, fullVisualization: [getAction('Unknown action')] }
         })
         .map((newCall: IrCall) => {
           return {
@@ -145,10 +152,9 @@ const uniV32Mapping = (): HumanizerUniMatcher => {
       ]
     },
     // 0x5023b4df
-    [ifaceV32.getFunction('exactOutputSingle')?.selector!]: (
-      accountOp: AccountOp,
-      call: IrCall
-    ): IrCall[] => {
+    [ifaceV32.getFunction(
+      'exactOutputSingle((address tokenIn, address tokenOut, uint24 fee, address recipient, uint256 amountOut, uint256 amountInMaximum, uint160 sqrtPriceLimitX96) params)'
+    )?.selector!]: (accountOp: AccountOp, call: IrCall): IrCall[] => {
       const [params] = ifaceV32.parseTransaction(call)?.args || []
       return [
         {
@@ -160,6 +166,38 @@ const uniV32Mapping = (): HumanizerUniMatcher => {
             getToken(params.tokenOut, params.amountOut),
             ...getRecipientText(accountOp.accountAddr, params.recipient)
           ]
+        }
+      ]
+    },
+    // 0xdb3e2198
+    [ifaceV32.getFunction(
+      'exactOutputSingle((address tokenIn, address tokenOut, uint24 fee, address recipient, uint256 deadline, uint256 amountOut, uint256 amountInMaximum, uint160 sqrtPriceLimitX96) params)'
+    )?.selector!]: (accountOp: AccountOp, call: IrCall): IrCall[] => {
+      const [params] = ifaceV32.parseTransaction(call)?.args || []
+      return [
+        {
+          ...call,
+          fullVisualization: [
+            getAction('Swap up to'),
+            getToken(params.tokenIn, params.amountInMaximum),
+            getLabel('for'),
+            getToken(params.tokenOut, params.amountOut),
+            ...getRecipientText(accountOp.accountAddr, params.recipient),
+            getDeadline(params.deadline)
+          ]
+        }
+      ]
+    },
+
+    // 0x12210e8a
+    [ifaceV32.getFunction('refundETH()')?.selector!]: (
+      accountOp: AccountOp,
+      call: IrCall
+    ): IrCall[] => {
+      return [
+        {
+          ...call,
+          fullVisualization: [getAction('Withdraw'), getToken(ZeroAddress, call.value)]
         }
       ]
     },
@@ -349,7 +387,9 @@ const uniV3Mapping = (): HumanizerUniMatcher => {
         .map((data: string) => {
           const sigHash = data.slice(0, 10)
           const humanizer = mappingResult[sigHash]
-          return humanizer ? humanizer(accountOp, { ...call, data }) : null
+          return humanizer
+            ? humanizer(accountOp, { ...call, data })
+            : { ...call, data, fullVisualization: [getAction('Unknown action')] }
         })
         .flat()
         .filter((x: any) => x)
