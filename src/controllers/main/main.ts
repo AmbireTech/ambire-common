@@ -13,7 +13,7 @@ import {
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json'
 import { AMBIRE_ACCOUNT_FACTORY, SINGLETON } from '../../consts/deploy'
-import { AccountId } from '../../interfaces/account'
+import { AccountId, AccountOnchainState } from '../../interfaces/account'
 import { Banner } from '../../interfaces/banner'
 import { DappProviderRequest } from '../../interfaces/dapp'
 import { Fetch } from '../../interfaces/fetch'
@@ -744,34 +744,7 @@ export class MainController extends EventEmitter {
       if (account.creation) {
         const network = this.networks.networks.filter((n) => n.id === meta.networkId)[0]
         if (shouldAskForEntryPointAuthorization(network, account, accountState)) {
-          if (
-            this.actions.visibleActionsQueue.find(
-              (a) =>
-                a.id === ENTRY_POINT_AUTHORIZATION_REQUEST_ID &&
-                (a as SignMessageAction).userRequest.meta.networkId === meta.networkId
-            )
-          ) {
-            this.emitUpdate()
-            return
-          }
-          const typedMessageAction = await getEntryPointAuthorization(
-            meta.accountAddr,
-            network.chainId,
-            BigInt(accountState.nonce)
-          )
-          await this.addUserRequest({
-            id: ENTRY_POINT_AUTHORIZATION_REQUEST_ID,
-            action: typedMessageAction,
-            meta: {
-              isSignAction: true,
-              accountAddr: meta.accountAddr,
-              networkId: meta.networkId
-            },
-            session: req.session,
-            dappPromise: req?.dappPromise
-              ? { reject: req?.dappPromise?.reject, resolve: () => {} }
-              : undefined
-          } as SignUserRequest)
+          await this.addEntryPointAuthorization(req, network, accountState)
           this.emitUpdate()
           return
         }
@@ -796,6 +769,34 @@ export class MainController extends EventEmitter {
           userRequest: req
         })
         this.actions.addOrUpdateAction(accountOpAction, withPriority)
+      }
+    } else if (action.kind === 'calls') {
+      await this.#ensureAccountInfo(meta.accountAddr, meta.networkId)
+      if (this.signAccOpInitError) return
+
+      const account = this.accounts.accounts.find((x) => x.addr === meta.accountAddr)!
+      if (!isSmartAccount(account))
+        throw new Error(`batchCallsFromUserRequests: tried to batch for EOA account`)
+
+      const accountState = this.accounts.accountStates[meta.accountAddr][meta.networkId]
+      const network = this.networks.networks.filter((n) => n.id === meta.networkId)[0]
+      if (shouldAskForEntryPointAuthorization(network, account, accountState)) {
+        await this.addEntryPointAuthorization(req, network, accountState)
+        this.emitUpdate()
+        return
+      }
+
+      const accountOpAction = makeSmartAccountOpAction({
+        account,
+        networkId: meta.networkId,
+        nonce: accountState.nonce,
+        userRequests: this.userRequests,
+        actionsQueue: this.actions.actionsQueue
+      })
+      this.actions.addOrUpdateAction(accountOpAction, withPriority)
+      if (this.signAccountOp && this.signAccountOp.fromActionId === accountOpAction.id) {
+        this.signAccountOp.update({ accountOp: accountOpAction.accountOp })
+        this.estimateSignAccountOp()
       }
     } else {
       let actionType: 'dappRequest' | 'benzin' | 'signMessage' = 'dappRequest'
@@ -887,6 +888,41 @@ export class MainController extends EventEmitter {
       this.actions.removeAction(id)
     }
     this.emitUpdate()
+  }
+
+  async addEntryPointAuthorization(
+    req: UserRequest,
+    network: Network,
+    accountState: AccountOnchainState
+  ) {
+    if (
+      this.actions.visibleActionsQueue.find(
+        (a) =>
+          a.id === ENTRY_POINT_AUTHORIZATION_REQUEST_ID &&
+          (a as SignMessageAction).userRequest.meta.networkId === req.meta.networkId
+      )
+    ) {
+      return
+    }
+
+    const typedMessageAction = await getEntryPointAuthorization(
+      req.meta.accountAddr,
+      network.chainId,
+      BigInt(accountState.nonce)
+    )
+    await this.addUserRequest({
+      id: ENTRY_POINT_AUTHORIZATION_REQUEST_ID,
+      action: typedMessageAction,
+      meta: {
+        isSignAction: true,
+        accountAddr: req.meta.accountAddr,
+        networkId: req.meta.networkId
+      },
+      session: req.session,
+      dappPromise: req?.dappPromise
+        ? { reject: req?.dappPromise?.reject, resolve: () => {} }
+        : undefined
+    } as SignUserRequest)
   }
 
   async addNetwork(network: AddNetworkRequestParams) {

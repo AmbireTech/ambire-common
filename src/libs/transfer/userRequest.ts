@@ -37,7 +37,9 @@ function buildTransferUserRequest({
   // if the top up is a native one, we should wrap the native before sending it
   // as otherwise a Transfer event is not emitted and the top up will not be
   // recorded
-  const isNativeTopUp = Number(selectedToken.address) === 0 && recipientAddress === FEE_COLLECTOR
+  const isNativeTopUp =
+    Number(selectedToken.address) === 0 &&
+    recipientAddress.toLowerCase() === FEE_COLLECTOR.toLowerCase()
   if (isNativeTopUp) {
     // if not predefined network, we cannot make a native top up
     const network = networks.find((net) => net.id === selectedToken.networkId)
