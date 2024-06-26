@@ -51,15 +51,12 @@ const uniV32Mapping = (): HumanizerUniMatcher => {
       accountOp: AccountOp,
       call: IrCall
     ): IrCall[] => {
-      console.log('watafak')
       const [calls] = ifaceV32.parseTransaction(call)?.args || []
       const mappingResult = uniV32Mapping()
       const parsed = calls
         .map((data: string) => {
           const sigHash = data.slice(0, 10)
-          console.log({ sigHash })
           const humanizer = mappingResult[sigHash]
-          console.log(!!humanizer)
           return humanizer
             ? humanizer(accountOp, { ...call, data })
             : { ...call, data, fullVisualization: [getAction('Unknown action')] }
@@ -111,13 +108,11 @@ const uniV32Mapping = (): HumanizerUniMatcher => {
     },
     // NOTE: selfPermit is not supported cause it requires an ecrecover signature
     // 0x04e45aaf
-    [ifaceV32.getFunction('exactInputSingle')?.selector!]: (
-      accountOp: AccountOp,
-      call: IrCall
-    ): IrCall[] => {
+    [ifaceV32.getFunction(
+      'exactInputSingle((address tokenIn, address tokenOut, uint24 fee, address recipient, uint256 amountIn, uint256 amountOutMinimum, uint160 sqrtPriceLimitX96))'
+    )?.selector!]: (accountOp: AccountOp, call: IrCall): IrCall[] => {
       const [params] = ifaceV32.parseTransaction(call)?.args || []
       // @TODO: consider fees
-      // console.log(params)
       return [
         {
           ...call,
@@ -127,6 +122,25 @@ const uniV32Mapping = (): HumanizerUniMatcher => {
             getLabel('for at least'),
             getToken(params.tokenOut, params.amountOutMinimum),
             ...getRecipientText(accountOp.accountAddr, params.recipient)
+          ]
+        }
+      ]
+    },
+    // 0x414bf389
+    [ifaceV32.getFunction(
+      'exactInputSingle((address tokenIn, address tokenOut, uint24 fee, address recipient, uint256 deadline, uint256 amountIn, uint256 amountOutMinimum, uint160 sqrtPriceLimitX96))'
+    )?.selector!]: (accountOp: AccountOp, call: IrCall): IrCall[] => {
+      const [params] = ifaceV32.parseTransaction(call)?.args || []
+      return [
+        {
+          ...call,
+          fullVisualization: [
+            getAction('Swap'),
+            getToken(params.tokenIn, params.amountIn),
+            getLabel('for at least'),
+            getToken(params.tokenOut, params.amountOutMinimum),
+            ...getRecipientText(accountOp.accountAddr, params.recipient),
+            getDeadline(params.deadline)
           ]
         }
       ]
