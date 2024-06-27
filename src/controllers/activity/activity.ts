@@ -315,13 +315,13 @@ export class ActivityController extends EventEmitter {
 
             shouldEmitUpdate = true
 
-            const declareRejectedIfQuaterPassed = (op: SubmittedAccountOp) => {
+            const declareStuckIfQuaterPassed = (op: SubmittedAccountOp) => {
               const accountOpDate = new Date(op.timestamp)
               accountOpDate.setMinutes(accountOpDate.getMinutes() + 15)
               const aQuaterHasPassed = accountOpDate < new Date()
               if (aQuaterHasPassed) {
                 this.#accountsOps[selectedAccount][networkId][accountOpIndex].status =
-                  AccountOpStatus.Failure
+                  AccountOpStatus.BroadcastButStuck
               }
             }
 
@@ -360,7 +360,7 @@ export class ActivityController extends EventEmitter {
                     txnId = userOps[0].transactionHash
                     this.#accountsOps[selectedAccount][networkId][accountOpIndex].txnId = txnId
                   } else {
-                    declareRejectedIfQuaterPassed(accountOp)
+                    declareStuckIfQuaterPassed(accountOp)
                     return
                   }
                 }
@@ -384,7 +384,7 @@ export class ActivityController extends EventEmitter {
               // if there's no receipt, confirm there's a txn
               // if there's no txn and 15 minutes have passed, declare it a failure
               const txn = await provider.getTransaction(txnId)
-              if (!txn) declareRejectedIfQuaterPassed(accountOp)
+              if (!txn) declareStuckIfQuaterPassed(accountOp)
             } catch {
               this.emitError({
                 level: 'silent',
