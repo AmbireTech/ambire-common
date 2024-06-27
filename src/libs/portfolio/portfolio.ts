@@ -186,6 +186,7 @@ export class Portfolio {
         )
       )
     ])
+    const [ tokensWithErrResult, blockNumber ] = tokensWithErr
 
     // Re-map/filter into our format
     const getPriceFromCache = (address: string) => {
@@ -202,8 +203,8 @@ export class Portfolio {
     const tokenFilter = ([error, result]: [string, TokenResult]): boolean =>
       error === '0x' && !!result.symbol
 
-    const tokensWithoutPrices = tokensWithErr
-      .filter((tokenWithErr) => tokenFilter(tokenWithErr))
+    const tokensWithoutPrices = tokensWithErrResult
+      .filter((tokensWithErrResult) => tokenFilter(tokensWithErrResult))
       .map(([, result]) => result)
 
     const unfilteredCollections = collectionsWithErr.map(([error, x], i) => {
@@ -296,7 +297,8 @@ export class Portfolio {
       priceUpdateTime: priceUpdateDone - oracleCallDone,
       priceCache,
       tokens: tokensWithPrices,
-      tokenErrors: tokensWithErr
+      blockNumber,
+      tokenErrors: tokensWithErrResult
         .filter(([error, result]) => error !== '0x' || result.symbol === '')
         .map(([error, result]) => ({ error, address: result.address })),
       collections: collections.filter((x) => x.collectibles?.length)

@@ -209,7 +209,7 @@ export async function getTokens(
       deploylessOpts
     )
 
-    return results.map((token: any, i: number) => [token.error, mapToken(token, tokenAddrs[i])])
+    return [results.map((token: any, i: number) => [token.error, mapToken(token, tokenAddrs[i])]), blockNumber]
   }
   const { accountOps, account } = opts.simulation
   const simulationOps = accountOps.map(({ nonce, calls }, idx) => ({
@@ -218,7 +218,7 @@ export async function getTokens(
     calls: calls.map(callToTuple)
   }))
   const [factory, factoryCalldata] = getAccountDeployParams(account)
-  const [before, after, simulationErr, , blockNumber, deltaAddressesMapping] = await deployless.call(
+  const [before, after, simulationErr, ,blockNumber, deltaAddressesMapping] = await deployless.call(
     'simulateAndGetBalances',
     [
       accountAddr,
@@ -230,6 +230,7 @@ export async function getTokens(
     ],
     deploylessOpts
   )
+  console.log('before, after, simulationErr, ,blockNumber, deltaAddressesMapping', before, after, simulationErr,blockNumber, deltaAddressesMapping)
 
   const beforeNonce = before[1]
   const afterNonce = after[1]
@@ -245,8 +246,8 @@ export async function getTokens(
         addr: deltaAddressesMapping[tokenIndex]
       }))
     : null
-
-  return before[0].map((token: any, i: number) => {
+      debugger
+  return [before[0].map((token: any, i: number) => {
     const simulation = simulationTokens
       ? simulationTokens.find((simulationToken: any) => simulationToken.addr === tokenAddrs[i])
       : null
@@ -258,5 +259,5 @@ export async function getTokens(
         amountPostSimulation: simulation ? simulation.amount : token.amount
       }
     ]
-  })
+  }), blockNumber]
 }
