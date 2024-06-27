@@ -3,7 +3,7 @@ import { Interface, ZeroAddress } from 'ethers'
 
 import { AccountOp } from '../../../accountOp/accountOp'
 import { UniV3Router, UniV3Router2 } from '../../const/abis'
-import { IrCall } from '../../interfaces'
+import { HumanizerVisualization, IrCall } from '../../interfaces'
 import {
   getAction,
   getAddressVisualization,
@@ -16,13 +16,14 @@ import {
 import { HumanizerUniMatcher } from './interfaces'
 import { parsePath } from './utils'
 
-// Stolen from ambire-wallet
+const getUniRecipientText = (accAddr: string, recAddr: string): HumanizerVisualization[] =>
+  recAddr === ZeroAddress ? [] : getRecipientText(accAddr, recAddr)
+
 const uniV32Mapping = (): HumanizerUniMatcher => {
   const ifaceV32 = new Interface(UniV3Router2)
   return {
-    // uint256 is deadline
     // 0x5ae401dc
-    [ifaceV32.getFunction('multicall(uint256,bytes[])')?.selector!]: (
+    [ifaceV32.getFunction('multicall(uint256 deadline,bytes[])')?.selector!]: (
       accountOp: AccountOp,
       call: IrCall
     ): IrCall[] => {
@@ -67,9 +68,8 @@ const uniV32Mapping = (): HumanizerUniMatcher => {
         ? parsed
         : [{ ...call, fullVisualization: getUnknownVisualization('Uni V3', call) }]
     },
-    // bytes32 is prevBlockHash
     // 0x1f0464d1
-    [ifaceV32.getFunction('multicall(bytes32, bytes[])')?.selector!]: (
+    [ifaceV32.getFunction('multicall(bytes32 prevBlockHash, bytes[])')?.selector!]: (
       accountOp: AccountOp,
       call: IrCall
     ): IrCall[] => {
@@ -121,7 +121,7 @@ const uniV32Mapping = (): HumanizerUniMatcher => {
             getToken(params.tokenIn, params.amountIn),
             getLabel('for at least'),
             getToken(params.tokenOut, params.amountOutMinimum),
-            ...getRecipientText(accountOp.accountAddr, params.recipient)
+            ...getUniRecipientText(accountOp.accountAddr, params.recipient)
           ]
         }
       ]
@@ -131,6 +131,7 @@ const uniV32Mapping = (): HumanizerUniMatcher => {
       'exactInputSingle((address tokenIn, address tokenOut, uint24 fee, address recipient, uint256 deadline, uint256 amountIn, uint256 amountOutMinimum, uint160 sqrtPriceLimitX96))'
     )?.selector!]: (accountOp: AccountOp, call: IrCall): IrCall[] => {
       const [params] = ifaceV32.parseTransaction(call)?.args || []
+      console.log(params.recipient)
       return [
         {
           ...call,
@@ -139,7 +140,7 @@ const uniV32Mapping = (): HumanizerUniMatcher => {
             getToken(params.tokenIn, params.amountIn),
             getLabel('for at least'),
             getToken(params.tokenOut, params.amountOutMinimum),
-            ...getRecipientText(accountOp.accountAddr, params.recipient),
+            ...getUniRecipientText(accountOp.accountAddr, params.recipient),
             getDeadline(params.deadline)
           ]
         }
@@ -160,7 +161,7 @@ const uniV32Mapping = (): HumanizerUniMatcher => {
             getToken(path[0], params.amountIn),
             getLabel('for at least'),
             getToken(path[path.length - 1], params.amountOutMinimum),
-            ...getRecipientText(accountOp.accountAddr, params.recipient)
+            ...getUniRecipientText(accountOp.accountAddr, params.recipient)
           ]
         }
       ]
@@ -178,7 +179,7 @@ const uniV32Mapping = (): HumanizerUniMatcher => {
             getToken(params.tokenIn, params.amountInMaximum),
             getLabel('for'),
             getToken(params.tokenOut, params.amountOut),
-            ...getRecipientText(accountOp.accountAddr, params.recipient)
+            ...getUniRecipientText(accountOp.accountAddr, params.recipient)
           ]
         }
       ]
@@ -196,7 +197,7 @@ const uniV32Mapping = (): HumanizerUniMatcher => {
             getToken(params.tokenIn, params.amountInMaximum),
             getLabel('for'),
             getToken(params.tokenOut, params.amountOut),
-            ...getRecipientText(accountOp.accountAddr, params.recipient),
+            ...getUniRecipientText(accountOp.accountAddr, params.recipient),
             getDeadline(params.deadline)
           ]
         }
@@ -230,7 +231,7 @@ const uniV32Mapping = (): HumanizerUniMatcher => {
             getToken(path[path.length - 1], params.amountInMaximum),
             getLabel('for'),
             getToken(path[0], params.amountOut),
-            ...getRecipientText(accountOp.accountAddr, params.recipient)
+            ...getUniRecipientText(accountOp.accountAddr, params.recipient)
           ]
         }
       ]
@@ -249,7 +250,7 @@ const uniV32Mapping = (): HumanizerUniMatcher => {
             getToken(path[0], amountInMax),
             getLabel('for'),
             getToken(path[path.length - 1], amountOut),
-            ...getRecipientText(accountOp.accountAddr, to)
+            ...getUniRecipientText(accountOp.accountAddr, to)
           ]
         }
       ]
@@ -268,7 +269,7 @@ const uniV32Mapping = (): HumanizerUniMatcher => {
             getToken(path[0], amountIn),
             getLabel('for at least'),
             getToken(path[path.length - 1], amountOutMin),
-            ...getRecipientText(accountOp.accountAddr, to)
+            ...getUniRecipientText(accountOp.accountAddr, to)
           ]
         }
       ]
@@ -286,9 +287,8 @@ const uniV32Mapping = (): HumanizerUniMatcher => {
         }
       ]
     },
-    // address is recipient
     // 0x49404b7c
-    [ifaceV32.getFunction('unwrapWETH9(uint256,address)')?.selector!]: (
+    [ifaceV32.getFunction('unwrapWETH9(uint256,address recipient)')?.selector!]: (
       accountOp: AccountOp,
       call: IrCall
     ): IrCall[] => {
@@ -299,7 +299,7 @@ const uniV32Mapping = (): HumanizerUniMatcher => {
           fullVisualization: [
             getAction('Unwrap'),
             getToken(ZeroAddress, amountMin),
-            ...getRecipientText(accountOp.accountAddr, recipient)
+            ...getUniRecipientText(accountOp.accountAddr, recipient)
           ]
         }
       ]
@@ -334,7 +334,7 @@ const uniV32Mapping = (): HumanizerUniMatcher => {
             getAction('Sweep'),
             getLabel('at least'),
             getToken(token, amountMinimum),
-            ...getRecipientText(accountOp.accountAddr, recipient)
+            ...getUniRecipientText(accountOp.accountAddr, recipient)
           ]
         }
       ]
@@ -378,7 +378,7 @@ const uniV32Mapping = (): HumanizerUniMatcher => {
             getToken(token, feeBips),
             getLabel('to'),
             getAddressVisualization(feeRecipient),
-            ...getRecipientText(accountOp.accountAddr, recipient)
+            ...getUniRecipientText(accountOp.accountAddr, recipient)
           ]
         }
       ]
@@ -427,7 +427,7 @@ const uniV3Mapping = (): HumanizerUniMatcher => {
             getToken(params.tokenIn, params.amountIn),
             getLabel('for at least'),
             getToken(params.tokenOut, params.amountOutMinimum),
-            ...getRecipientText(accountOp.accountAddr, params.recipient),
+            ...getUniRecipientText(accountOp.accountAddr, params.recipient),
             getDeadline(params.deadline)
           ]
         }
@@ -448,7 +448,7 @@ const uniV3Mapping = (): HumanizerUniMatcher => {
             getToken(path[0], params.amountIn),
             getLabel('for at least'),
             getToken(path[path.length - 1], params.amountOutMinimum),
-            ...getRecipientText(accountOp.accountAddr, params.recipient),
+            ...getUniRecipientText(accountOp.accountAddr, params.recipient),
             getDeadline(params.deadline)
           ]
         }
@@ -468,7 +468,7 @@ const uniV3Mapping = (): HumanizerUniMatcher => {
             getToken(params.tokenIn, params.amountInMaximum),
             getLabel('for'),
             getToken(params.tokenOut, params.amountOut),
-            ...getRecipientText(accountOp.accountAddr, params.recipient),
+            ...getUniRecipientText(accountOp.accountAddr, params.recipient),
             getDeadline(params.deadline)
           ]
         }
@@ -489,7 +489,7 @@ const uniV3Mapping = (): HumanizerUniMatcher => {
             getToken(path[path.length - 1], params.amountInMaximum),
             getLabel('for'),
             getToken(path[0], params.amountOut),
-            ...getRecipientText(accountOp.accountAddr, params.recipient),
+            ...getUniRecipientText(accountOp.accountAddr, params.recipient),
             getDeadline(params.deadline)
           ]
         }
@@ -507,7 +507,7 @@ const uniV3Mapping = (): HumanizerUniMatcher => {
           fullVisualization: [
             getAction('Unwrap'),
             getToken(ZeroAddress, amountMin),
-            ...getRecipientText(accountOp.accountAddr, recipient)
+            ...getUniRecipientText(accountOp.accountAddr, recipient)
           ]
         }
       ]
@@ -529,13 +529,12 @@ const uniV3Mapping = (): HumanizerUniMatcher => {
             getToken(ZeroAddress, feeBips),
             getLabel('to'),
             getAddressVisualization(feeRecipient),
-            ...getRecipientText(accountOp.accountAddr, recipient)
+            ...getUniRecipientText(accountOp.accountAddr, recipient)
           ]
         }
       ]
     },
     // 0x12210e8a
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     [ifaceV3.getFunction('refundETH()')?.selector!]: (
       _accountOp: AccountOp,
       call: IrCall
