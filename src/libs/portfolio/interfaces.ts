@@ -1,5 +1,5 @@
 import { Account, AccountId } from '../../interfaces/account'
-import { Network, NetworkId } from '../../interfaces/network'
+import { NetworkId } from '../../interfaces/network'
 import { AccountOp } from '../accountOp/accountOp'
 import { CustomToken } from './customToken'
 
@@ -11,6 +11,10 @@ export interface Price {
 export interface GetOptionsSimulation {
   accountOps: AccountOp[]
   account: Account
+  // @approvals
+  // all the addresses found by the humanizer that will be allowed
+  // to spend tokens after the transaction concludes
+  spenders: string[]
 }
 
 export type TokenResult = Omit<CustomToken, 'standard'> & {

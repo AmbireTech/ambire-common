@@ -1099,6 +1099,19 @@ export class MainController extends EventEmitter {
       const stringAddr: any = result.length ? result.flat(Infinity) : []
       additionalHints!.push(...stringAddr)
 
+      // get all the approvals
+      const spenders: string[] = humanization
+        .map((call: any) => {
+          if (!call.fullVisualization) return null
+
+          const action = call.fullVisualization.find((vis: any) => vis.type === 'action')
+          if (!action || action.content !== 'Grant approval') return null
+
+          const toAddr = call.fullVisualization.find((vis: any) => vis.type === 'address')
+          return !toAddr ? null : toAddr.address
+        })
+        .filter((addr: any) => isAddress(addr))
+
       await this.portfolio.learnTokens(additionalHints, network.id)
 
       let accountOpsToBeSimulatedByNetwork: {
@@ -1121,7 +1134,7 @@ export class MainController extends EventEmitter {
           localAccountOp.accountAddr,
           undefined,
           accountOpsToBeSimulatedByNetwork,
-          { forceUpdate: true }
+          { forceUpdate: true, spenders }
         ),
         estimate(
           this.providers.providers[localAccountOp.networkId],

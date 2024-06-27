@@ -215,7 +215,7 @@ export async function getTokens(
 
     return results.map((token: any, i: number) => [token.error, mapToken(token, tokenAddrs[i])])
   }
-  const { accountOps, account } = opts.simulation
+  const { accountOps, account, spenders } = opts.simulation
   const simulationOps = accountOps.map(({ nonce, calls }, idx) => ({
     // EOA starts from a fake, specified nonce
     nonce: isSmartAccount(account) ? nonce : BigInt(EOA_SIMULATION_NONCE) + BigInt(idx),
@@ -230,7 +230,8 @@ export async function getTokens(
       tokenAddrs,
       factory,
       factoryCalldata,
-      simulationOps.map((op) => Object.values(op))
+      simulationOps.map((op) => Object.values(op)),
+      spenders
     ],
     deploylessOpts
   )

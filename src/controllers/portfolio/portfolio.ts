@@ -525,7 +525,7 @@ export class PortfolioController extends EventEmitter {
     accountId: AccountId,
     network?: Network,
     accountOps?: { [key: string]: AccountOp[] },
-    opts?: { forceUpdate: boolean }
+    opts?: { forceUpdate: boolean; spenders?: string[] }
   ) {
     await this.#initialLoadPromise
     const selectedAccount = this.#accounts.accounts.find((x) => x.addr === accountId)
@@ -628,7 +628,8 @@ export class PortfolioController extends EventEmitter {
                     ...(currentAccountOps && {
                       simulation: {
                         account: selectedAccount,
-                        accountOps: currentAccountOps
+                        accountOps: currentAccountOps,
+                        spenders: opts?.spenders ?? []
                       }
                     }),
                     isEOA: !isSmartAccount(selectedAccount),
