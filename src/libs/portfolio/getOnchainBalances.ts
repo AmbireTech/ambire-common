@@ -209,13 +209,15 @@ export async function getTokens(
   if (!opts.simulation) {
     const [results] = await deployless.call(
       'getBalances',
-      [accountAddr, tokenAddrs],
+      [accountAddr, tokenAddrs, []],
       deploylessOpts
     )
 
     return results.map((token: any, i: number) => [token.error, mapToken(token, tokenAddrs[i])])
   }
   const { accountOps, account, spenders } = opts.simulation
+  console.log('spenders in simulation')
+  console.log(spenders)
   const simulationOps = accountOps.map(({ nonce, calls }, idx) => ({
     // EOA starts from a fake, specified nonce
     nonce: isSmartAccount(account) ? nonce : BigInt(EOA_SIMULATION_NONCE) + BigInt(idx),
@@ -236,6 +238,8 @@ export async function getTokens(
     deploylessOpts
   )
 
+  console.log(before)
+  console.log(after)
   const beforeNonce = before[1]
   const afterNonce = after[1]
   handleSimulationError(simulationErr, beforeNonce, afterNonce, simulationOps)

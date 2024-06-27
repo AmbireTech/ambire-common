@@ -14,7 +14,7 @@ export interface GetOptionsSimulation {
   // @approvals
   // all the addresses found by the humanizer that will be allowed
   // to spend tokens after the transaction concludes
-  spenders: string[]
+  spenders?: string[]
 }
 
 export type TokenResult = Omit<CustomToken, 'standard'> & {
