@@ -246,7 +246,6 @@ export async function getTokens(
         addr: deltaAddressesMapping[tokenIndex]
       }))
     : null
-      debugger
   return [before[0].map((token: any, i: number) => {
     const simulation = simulationTokens
       ? simulationTokens.find((simulationToken: any) => simulationToken.addr === tokenAddrs[i])
