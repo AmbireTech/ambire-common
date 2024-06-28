@@ -3,6 +3,7 @@ import fetch from 'node-fetch'
 
 import { describe, expect, jest } from '@jest/globals'
 
+import { relayerUrl, velcroUrl } from '../../../test/config'
 import { getNonce, produceMemoryStore } from '../../../test/helpers'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { networks } from '../../consts/networks'
@@ -15,8 +16,6 @@ import { AccountsController } from '../accounts/accounts'
 import { NetworksController } from '../networks/networks'
 import { ProvidersController } from '../providers/providers'
 import { PortfolioController } from './portfolio'
-
-const relayerUrl = 'https://staging-relayer.ambire.com'
 
 const EMPTY_ACCOUNT_ADDR = '0xA098B9BccaDd9BAEc311c07433e94C9d260CbC07'
 
@@ -114,7 +113,8 @@ const prepareTest = () => {
     providersCtrl,
     networksCtrl,
     accountsCtrl,
-    relayerUrl
+    relayerUrl,
+    velcroUrl
   )
 
   return { storage, controller }
