@@ -3,14 +3,7 @@ import { Interface, ZeroAddress } from 'ethers'
 import { AccountOp } from '../../../accountOp/accountOp'
 import { WETH } from '../../const/abis'
 import { HumanizerCallModule, HumanizerMeta, IrCall } from '../../interfaces'
-import {
-  getAction,
-  getLabel,
-  getToken,
-  getUnknownVisualization,
-  getUnwrapping,
-  getWrapping
-} from '../../utils'
+import { getToken, getUnknownVisualization, getUnwrapping, getWrapping } from '../../utils'
 
 const wrapSwapReducer = (calls: IrCall[]): IrCall[] => {
   const newCalls: IrCall[] = []
@@ -65,18 +58,12 @@ const wrapSwapReducer = (calls: IrCall[]): IrCall[] => {
       calls[i]?.fullVisualization?.[3]?.address === calls[i + 1]?.fullVisualization?.[3]?.address &&
       calls[i]?.fullVisualization?.[2]?.content?.startsWith('for')
     ) {
-      const newVisualization = [
-        getAction('Swap'),
-        getToken(
-          calls[i].fullVisualization![1].address!,
-          calls[i].fullVisualization![1].amount! + calls[i + 1].fullVisualization![1].amount!
-        ),
-        getLabel(calls[i].fullVisualization![2].content!),
-        getToken(
-          calls[i].fullVisualization![3].address!,
-          calls[i].fullVisualization![3].amount! + calls[i + 1].fullVisualization![3].amount!
-        )
-      ]
+      const newVisualization = calls[i + 1]?.fullVisualization!
+      newVisualization[1].amount =
+        calls[i]!.fullVisualization![1].amount! + calls[i + 1].fullVisualization![1].amount!
+      newVisualization[3].amount =
+        calls[i]!.fullVisualization![3].amount! + calls[i + 1].fullVisualization![3].amount!
+
       newCalls.push({
         to: calls[i].to,
         value: calls[i].value + calls[i + 1].value,
@@ -98,12 +85,12 @@ const wrapSwapReducer = (calls: IrCall[]): IrCall[] => {
       calls[i + 1]?.fullVisualization?.[0].content?.includes('Withdraw') &&
       calls[i + 1]?.fullVisualization?.[1]?.address === ZeroAddress
     ) {
-      const newVisualization = [
-        getAction('Swap'),
-        getToken(ZeroAddress, calls[i].value),
-        getLabel('for'),
-        getToken(calls[i].fullVisualization![3].address!, calls[i].fullVisualization![3].amount!)
-      ]
+      const newVisualization = calls[i].fullVisualization!
+      newVisualization[1] = getToken(ZeroAddress, calls[i].value)
+      newVisualization[3] = getToken(
+        calls[i].fullVisualization![3].address!,
+        calls[i].fullVisualization![3].amount!
+      )
       newCalls.push({
         to: calls[i].to,
         value: calls[i].value + calls[i + 1].value,
