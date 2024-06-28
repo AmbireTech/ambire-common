@@ -18,7 +18,7 @@ export function calculateAccountPortfolio(
   selectedAccount: string | null,
   state: { latest: PortfolioControllerState; pending: PortfolioControllerState },
   accountPortfolio: AccountPortfolio,
-  account: Account
+  hasSignAccountOp: null | boolean
 ) {
   const updatedTokens: TokenResultInterface[] = []
   const updatedCollections: CollectionResultInterface[] = []
@@ -56,10 +56,10 @@ export function calculateAccountPortfolio(
   ).reduce((acc, network) => {
     // Filter out networks with critical errors
     // and pending state which is with newer blockNumber
-
+    // or has sign account op
     const isPendingNewer = state.pending[selectedAccount][network]?.result?.blockNumber >= selectedAccountData[network]?.result?.blockNumber
-    console.log('isPendingNewer', isPendingNewer)
-    if (!state.pending[selectedAccount][network]?.criticalError && isPendingNewer) {
+    
+    if (!state.pending[selectedAccount][network]?.criticalError && isPendingNewer || !state.pending[selectedAccount][network]?.criticalError && hasSignAccountOp) {
       acc[network] = state.pending[selectedAccount][network]
     }
     return acc
