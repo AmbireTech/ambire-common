@@ -230,7 +230,6 @@ export async function getTokens(
     ],
     deploylessOpts
   )
-  console.log('before, after, simulationErr, ,blockNumber, deltaAddressesMapping', before, after, simulationErr,blockNumber, deltaAddressesMapping)
 
   const beforeNonce = before[1]
   const afterNonce = after[1]

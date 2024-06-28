@@ -58,7 +58,7 @@ export function calculateAccountPortfolio(
     // Filter out networks with critical errors
     // and pending state which is with newer blockNumber
 
-    const isPendingNewer = state.pending[selectedAccount][network]?.result?.blockNumber > selectedAccountData[network]?.result?.blockNumber
+    const isPendingNewer = state.pending[selectedAccount][network]?.result?.blockNumber >= selectedAccountData[network]?.result?.blockNumber
     console.log('isPendingNewer', isPendingNewer)
     if (!state.pending[selectedAccount][network]?.criticalError && isPendingNewer) {
       acc[network] = state.pending[selectedAccount][network]
