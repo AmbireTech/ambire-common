@@ -1,4 +1,3 @@
-/* eslint-disable no-console */
 import { Interface, ZeroAddress } from 'ethers'
 
 import { AccountOp } from '../../../accountOp/accountOp'
@@ -14,8 +13,6 @@ import {
 } from '../../utils'
 import { HumanizerUniMatcher } from './interfaces'
 import { getUniRecipientText, parsePath } from './utils'
-
-/// TODO, use this in all uniswaps
 
 const uniV32Mapping = (): HumanizerUniMatcher => {
   const ifaceV32 = new Interface(UniV3Router2)
@@ -129,7 +126,7 @@ const uniV32Mapping = (): HumanizerUniMatcher => {
       'exactInputSingle((address tokenIn, address tokenOut, uint24 fee, address recipient, uint256 deadline, uint256 amountIn, uint256 amountOutMinimum, uint160 sqrtPriceLimitX96))'
     )?.selector!]: (accountOp: AccountOp, call: IrCall): IrCall[] => {
       const [params] = ifaceV32.parseTransaction(call)?.args || []
-      console.log(params.recipient)
+
       return [
         {
           ...call,
