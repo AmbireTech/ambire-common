@@ -49,6 +49,7 @@ import {
   adjustEntryPointAuthorization,
   getEntryPointAuthorization
 } from '../../libs/signMessage/signMessage'
+import { debugTraceCall } from '../../libs/tracer/debugTraceCall'
 import { buildTransferUserRequest } from '../../libs/transfer/userRequest'
 import {
   ENTRY_POINT_AUTHORIZATION_REQUEST_ID,
@@ -386,6 +387,19 @@ export class MainController extends EventEmitter {
     MainController.signAccountOpListener() // unsubscribes for further updates
     this.updateSelectedAccountPortfolio(true)
 
+    this.emitUpdate()
+  }
+
+  async traceCall(actionId: AccountOpAction['id'], estimation: EstimateResult) {
+    const accountOp = getAccountOpFromAction(actionId, this.actions.actionsQueue)
+    if (!accountOp) return
+
+    const network = this.networks.networks.find((net) => net.id === accountOp?.networkId)
+    if (!network) return
+
+    const provider = this.providers.providers[network.id]
+    const gasPrice = this.gasPrices[network.id]
+    await debugTraceCall(accountOp, provider, estimation.gasUsed, gasPrice)
     this.emitUpdate()
   }
 
@@ -1018,63 +1032,14 @@ export class MainController extends EventEmitter {
       const feeTokens =
         [...networkFeeTokens, ...gasTankFeeTokens].filter((t) => t.flags.isFeeToken) || []
 
-      // if the network's chosen RPC supports debug_traceCall, we
-      // make an additional simulation for each call in the accountOp
-      let promises: any[] = []
-      if (network.hasDebugTraceCall) {
-        // 65gwei, try to make it work most of the times on ethereum
-        let gasPrice = 65000000000n
-        // calculate the fast gas price to use in simulation
-        if (
-          this.gasPrices[localAccountOp.networkId] &&
-          this.gasPrices[localAccountOp.networkId].length
-        ) {
-          const fast = this.gasPrices[localAccountOp.networkId][2]
-          gasPrice =
-            'gasPrice' in fast ? fast.gasPrice : fast.baseFeePerGas + fast.maxPriorityFeePerGas
-          // increase the gas price with 10% to try to get above the min baseFee
-          gasPrice += gasPrice / 10n
-        }
-        // 200k, try to make it work most of the times on ethereum
-        let gas = 200000n
-        if (this.signAccountOp.estimation) {
-          gas = this.signAccountOp.estimation.gasUsed
-        }
-        const provider = this.providers.providers[localAccountOp.networkId]
-        promises = localAccountOp.calls.map((call) => {
-          return provider
-            .send('debug_traceCall', [
-              {
-                to: call.to,
-                value: toQuantity(call.value.toString()),
-                data: call.data,
-                from: localAccountOp.accountAddr,
-                gasPrice: toQuantity(gasPrice.toString()),
-                gas: toQuantity(gas.toString())
-              },
-              'latest',
-              {
-                tracer:
-                  "{data: [], fault: function (log) {}, step: function (log) { if (log.op.toString() === 'LOG3') { this.data.push([ toHex(log.contract.getAddress()), '0x' + ('0000000000000000000000000000000000000000' + log.stack.peek(4).toString(16)).slice(-40)])}}, result: function () { return this.data }}",
-                enableMemory: false,
-                enableReturnData: true,
-                disableStorage: true
-              }
-            ])
-            .catch((e: any) => {
-              console.log(e)
-              return [ZeroAddress]
-            })
-        })
-      }
-      const result = await Promise.all([
-        ...promises,
-        humanizeAccountOp(this.#storage, localAccountOp, this.#fetch, this.emitError)
-      ])
-      const humanization = result[result.length - 1]
-
       // Reverse lookup addresses and save them in memory so they
       // can be read from the UI
+      const humanization = await humanizeAccountOp(
+        this.#storage,
+        localAccountOp,
+        this.#fetch,
+        this.emitError
+      )
       humanization.forEach((call: any) => {
         if (!call.fullVisualization) return
 
@@ -1095,9 +1060,6 @@ export class MainController extends EventEmitter {
         )
         .flat()
         .filter((x: any) => isAddress(x))
-      result.pop()
-      const stringAddr: any = result.length ? result.flat(Infinity) : []
-      additionalHints!.push(...stringAddr)
 
       await this.portfolio.learnTokens(additionalHints, network.id)
 
