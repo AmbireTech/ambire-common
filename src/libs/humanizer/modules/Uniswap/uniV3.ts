@@ -3,21 +3,19 @@ import { Interface, ZeroAddress } from 'ethers'
 
 import { AccountOp } from '../../../accountOp/accountOp'
 import { UniV3Router, UniV3Router2 } from '../../const/abis'
-import { HumanizerVisualization, IrCall } from '../../interfaces'
+import { IrCall } from '../../interfaces'
 import {
   getAction,
   getAddressVisualization,
   getDeadline,
   getLabel,
-  getRecipientText,
   getToken,
   getUnknownVisualization
 } from '../../utils'
 import { HumanizerUniMatcher } from './interfaces'
-import { parsePath } from './utils'
+import { getUniRecipientText, parsePath } from './utils'
 
-const getUniRecipientText = (accAddr: string, recAddr: string): HumanizerVisualization[] =>
-  recAddr === ZeroAddress ? [] : getRecipientText(accAddr, recAddr)
+/// TODO, use this in all uniswaps
 
 const uniV32Mapping = (): HumanizerUniMatcher => {
   const ifaceV32 = new Interface(UniV3Router2)

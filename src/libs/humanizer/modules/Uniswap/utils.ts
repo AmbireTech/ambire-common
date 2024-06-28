@@ -1,3 +1,8 @@
+import { ZeroAddress } from 'ethers'
+
+import { HumanizerVisualization } from '../../interfaces'
+import { getRecipientText } from '../../utils'
+
 export function parsePath(pathBytes: any) {
   // some decodePacked fun
   // can we do this with Ethers AbiCoder? probably not
@@ -8,3 +13,6 @@ export function parsePath(pathBytes: any) {
   }
   return path
 }
+
+export const getUniRecipientText = (accAddr: string, recAddr: string): HumanizerVisualization[] =>
+  recAddr === ZeroAddress ? [] : getRecipientText(accAddr, recAddr)
