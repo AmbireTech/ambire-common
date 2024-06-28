@@ -1,6 +1,9 @@
-import { JsonRpcProvider, Provider, toQuantity, ZeroAddress } from 'ethers'
+import { JsonRpcProvider, toQuantity, ZeroAddress } from 'ethers'
 
+import BalanceGetter from '../../../contracts/compiled/BalanceGetter.json'
+import { DEPLOYLESS_SIMULATION_FROM } from '../../consts/deploy'
 import { AccountOp } from '../accountOp/accountOp'
+import { DeploylessMode, fromDescriptor } from '../deployless/deployless'
 import { GasRecommendation } from '../gasPrice/gasPrice'
 
 export async function debugTraceCall(
@@ -8,9 +11,9 @@ export async function debugTraceCall(
   provider: JsonRpcProvider,
   gasUsed: bigint,
   gasPrices: GasRecommendation[]
-) {
+): Promise<string[]> {
   const fast = gasPrices.find((gas: any) => gas.name === 'fast')
-  if (!fast) return null
+  if (!fast) return []
 
   const gasPrice =
     'gasPrice' in fast ? fast.gasPrice : fast.baseFeePerGas + fast.maxPriorityFeePerGas
@@ -41,8 +44,20 @@ export async function debugTraceCall(
         })
     })
   )
+  const foundAddresses = [...new Set(results.flat(Infinity))]
 
-  console.log(results)
+  // we set the 3rd param to "true" as we don't need state override
+  const deploylessTokens = fromDescriptor(provider, BalanceGetter, true)
+  const opts = {
+    blockTag: 'latest',
+    from: DEPLOYLESS_SIMULATION_FROM,
+    mode: DeploylessMode.ProxyContract
+  }
+  const [tokensWithErr] = await deploylessTokens.call(
+    'getBalances',
+    [op.accountAddr, foundAddresses],
+    opts
+  )
 
-  return results
+  return foundAddresses.filter((addr, i) => tokensWithErr[i].error === '0x')
 }

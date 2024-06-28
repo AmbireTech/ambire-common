@@ -681,8 +681,9 @@ export class PortfolioController extends EventEmitter {
   }
 
   // Learn new tokens from humanizer and debug_traceCall
-  async learnTokens(tokenAddresses: string[] | undefined, networkId: NetworkId) {
-    if (!tokenAddresses) return
+  // return: whether new tokens have been learned
+  async learnTokens(tokenAddresses: string[] | undefined, networkId: NetworkId): Promise<boolean> {
+    if (!tokenAddresses) return false
 
     if (!this.#previousHints.learnedTokens) this.#previousHints.learnedTokens = {}
 
@@ -696,7 +697,7 @@ export class PortfolioController extends EventEmitter {
       return acc
     }, {})
 
-    if (!Object.keys(tokensToLearn).length) return
+    if (!Object.keys(tokensToLearn).length) return false
     // Add new tokens in the beginning of the list
     networkLearnedTokens = { ...tokensToLearn, ...networkLearnedTokens }
 
@@ -713,6 +714,7 @@ export class PortfolioController extends EventEmitter {
 
     this.#previousHints.learnedTokens[networkId] = networkLearnedTokens
     await this.#storage.set('previousHints', this.#previousHints)
+    return true
   }
 
   get networksWithAssets() {

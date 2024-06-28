@@ -41,7 +41,11 @@ import { estimate } from '../../libs/estimate/estimate'
 import { EstimateResult } from '../../libs/estimate/interfaces'
 import { GasRecommendation, getGasPriceRecommendations } from '../../libs/gasPrice/gasPrice'
 import { humanizeAccountOp } from '../../libs/humanizer'
-import { makeBasicAccountOpAction, makeSmartAccountOpAction } from '../../libs/main/main'
+import {
+  getAccountOpsForSimulation,
+  makeBasicAccountOpAction,
+  makeSmartAccountOpAction
+} from '../../libs/main/main'
 import { GetOptions, TokenResult } from '../../libs/portfolio/interfaces'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { parse } from '../../libs/richJson/richJson'
@@ -399,8 +403,24 @@ export class MainController extends EventEmitter {
 
     const provider = this.providers.providers[network.id]
     const gasPrice = this.gasPrices[network.id]
-    await debugTraceCall(accountOp, provider, estimation.gasUsed, gasPrice)
-    this.emitUpdate()
+    const addresses = await debugTraceCall(accountOp, provider, estimation.gasUsed, gasPrice)
+    const learnedNewTokens = await this.portfolio.learnTokens(addresses, network.id)
+
+    // update the portfolio only if new tokens are found through tracing
+    if (learnedNewTokens) {
+      const account = this.accounts.accounts.find((acc) => acc.addr === accountOp.accountAddr)!
+      const accountOpsToBeSimulatedByNetwork = getAccountOpsForSimulation(
+        account,
+        this.actions.visibleActionsQueue,
+        accountOp
+      )
+      this.portfolio.updateSelectedAccount(
+        accountOp.accountAddr,
+        network,
+        accountOpsToBeSimulatedByNetwork,
+        { forceUpdate: true }
+      )
+    }
   }
 
   async updateAccountsOpsStatuses() {
@@ -497,20 +517,11 @@ export class MainController extends EventEmitter {
 
     const account = this.accounts.accounts.find((a) => a.addr === this.accounts.selectedAccount)
 
-    let accountOpsToBeSimulatedByNetwork: {
-      [key: string]: AccountOp[]
-    } = {}
-
-    if (isSmartAccount(account)) {
-      accountOpsToBeSimulatedByNetwork =
-        getAccountOpsByNetwork(this.accounts.selectedAccount, this.actions.visibleActionsQueue) ||
-        {}
-    } else if (!isSmartAccount(account) && this.signAccountOp) {
-      // for basic accounts we pass only the currently opened accountOp (if any) to be simulated
-      accountOpsToBeSimulatedByNetwork = {
-        [this.signAccountOp.accountOp.networkId]: [this.signAccountOp.accountOp]
-      }
-    }
+    const accountOpsToBeSimulatedByNetwork = getAccountOpsForSimulation(
+      account!,
+      this.actions.visibleActionsQueue,
+      this.signAccountOp ? this.signAccountOp.accountOp : null
+    )
 
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.portfolio.updateSelectedAccount(
@@ -1063,17 +1074,11 @@ export class MainController extends EventEmitter {
 
       await this.portfolio.learnTokens(additionalHints, network.id)
 
-      let accountOpsToBeSimulatedByNetwork: {
-        [key: string]: AccountOp[]
-      } = {}
-
-      if (isSmartAccount(account)) {
-        accountOpsToBeSimulatedByNetwork =
-          getAccountOpsByNetwork(localAccountOp.accountAddr, this.actions.visibleActionsQueue) || {}
-      } else {
-        // for basic accounts we pass only the currently opened accountOp to be simulated
-        accountOpsToBeSimulatedByNetwork = { [localAccountOp.networkId]: [localAccountOp] }
-      }
+      const accountOpsToBeSimulatedByNetwork = getAccountOpsForSimulation(
+        account!,
+        this.actions.visibleActionsQueue,
+        localAccountOp
+      )
 
       const [, estimation] = await Promise.all([
         // NOTE: we are not emitting an update here because the portfolio controller will do that
