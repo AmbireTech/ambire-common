@@ -381,10 +381,14 @@ export class MainController extends EventEmitter {
   }
 
   destroySignAccOp() {
+    if (!this.signAccountOp) return
+
     this.signAccountOp = null
     this.signAccOpInitError = null
     MainController.signAccountOpListener() // unsubscribes for further updates
-    this.updateSelectedAccountPortfolio(true)
+
+    // NOTE: no need to update the portfolio here as an update is
+    // fired upon removeUserRequest
 
     this.emitUpdate()
   }
@@ -477,7 +481,7 @@ export class MainController extends EventEmitter {
     )
   }
 
-  async updateSelectedAccountPortfolio(forceUpdate: boolean = false) {
+  async updateSelectedAccountPortfolio(forceUpdate: boolean = false, network?: Network) {
     await this.#initialLoadPromise
     if (!this.accounts.selectedAccount) return
 
@@ -501,7 +505,7 @@ export class MainController extends EventEmitter {
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.portfolio.updateSelectedAccount(
       this.accounts.selectedAccount,
-      undefined,
+      network,
       accountOpsToBeSimulatedByNetwork,
       { forceUpdate }
     )
@@ -843,6 +847,8 @@ export class MainController extends EventEmitter {
 
     // update the pending stuff to be signed
     const { action, meta } = req
+    const network = this.networks.networks.find((net) => net.id === meta.networkId)!
+
     if (action.kind === 'call') {
       const account = this.accounts.accounts.find((x) => x.addr === meta.accountAddr)
       if (!account)
@@ -859,7 +865,7 @@ export class MainController extends EventEmitter {
           | undefined
         // accountOp has just been rejected
         if (!accountOpAction) {
-          this.updateSelectedAccountPortfolio(true)
+          this.updateSelectedAccountPortfolio(true, network)
           this.emitUpdate()
           return
         }
@@ -877,11 +883,11 @@ export class MainController extends EventEmitter {
           }
         } else {
           this.actions.removeAction(`${meta.accountAddr}-${meta.networkId}`)
-          this.updateSelectedAccountPortfolio(true)
+          this.updateSelectedAccountPortfolio(true, network)
         }
       } else {
         this.actions.removeAction(id)
-        this.updateSelectedAccountPortfolio(true)
+        this.updateSelectedAccountPortfolio(true, network)
       }
     } else {
       this.actions.removeAction(id)
@@ -948,6 +954,13 @@ export class MainController extends EventEmitter {
         this.removeUserRequest(uReq.id)
       }
     }
+
+    // destroy sign account op if no actions left for account
+    const accountOpsLeftForAcc = (
+      this.actions.actionsQueue.filter((a) => a.type === 'accountOp') as AccountOpAction[]
+    ).filter((action) => action.accountOp.accountAddr === accountOp.accountAddr)
+    if (!accountOpsLeftForAcc.length) this.destroySignAccOp()
+
     this.emitUpdate()
   }
 
@@ -1119,7 +1132,7 @@ export class MainController extends EventEmitter {
         // it may have different needs
         this.portfolio.updateSelectedAccount(
           localAccountOp.accountAddr,
-          undefined,
+          network,
           accountOpsToBeSimulatedByNetwork,
           { forceUpdate: true }
         ),
