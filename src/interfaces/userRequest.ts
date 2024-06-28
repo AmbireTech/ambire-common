@@ -7,15 +7,13 @@ import { DappProviderRequest } from './dapp'
 import { HumanizerFragment } from './humanizer'
 import { NetworkId } from './network'
 
-export interface Call {
-  kind: 'call'
-  to: string
-  value: bigint
-  data: string
-}
 export interface Calls {
   kind: 'calls'
-  calls: AccountOpCall[]
+  calls: {
+    to: string
+    value: bigint
+    data: string
+  }[]
 }
 export interface PlainTextMessage {
   kind: 'message'
@@ -44,7 +42,7 @@ export interface Message {
 
 export interface SignUserRequest {
   id: string | number
-  action: Call | Calls | PlainTextMessage | TypedMessage | { kind: 'benzin' }
+  action: Calls | PlainTextMessage | TypedMessage | { kind: 'benzin' }
   session?: DappProviderRequest['session']
   meta: {
     isSignAction: true
@@ -62,7 +60,7 @@ export interface SignUserRequest {
 export interface DappUserRequest {
   id: string | number
   action: {
-    kind: Exclude<string, 'call' | 'message' | 'typedMessage' | 'benzin'>
+    kind: Exclude<string, 'calls' | 'message' | 'typedMessage' | 'benzin'>
     params: any
   }
   session: DappProviderRequest['session']

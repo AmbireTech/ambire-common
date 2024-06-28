@@ -51,7 +51,7 @@ function buildTransferUserRequest({
 
     const wrapped = new Interface(WETH)
     const deposit = wrapped.encodeFunctionData('deposit')
-    const txns: Calls = {
+    const calls: Calls = {
       kind: 'calls' as const,
       calls: [
         {
@@ -68,7 +68,7 @@ function buildTransferUserRequest({
     }
     return {
       id: new Date().getTime(),
-      action: txns,
+      action: calls,
       meta: {
         isSignAction: true,
         networkId: selectedToken.networkId,
@@ -78,16 +78,24 @@ function buildTransferUserRequest({
   }
 
   const txn = {
-    kind: 'call' as const,
-    to: selectedToken.address,
-    value: BigInt(0),
-    data: ERC20.encodeFunctionData('transfer', [recipientAddress, bigNumberHexAmount])
+    kind: 'calls' as const,
+    calls: [
+      {
+        to: selectedToken.address,
+        value: BigInt(0),
+        data: ERC20.encodeFunctionData('transfer', [recipientAddress, bigNumberHexAmount])
+      }
+    ]
   }
 
   if (Number(selectedToken.address) === 0) {
-    txn.to = recipientAddress
-    txn.value = BigInt(bigNumberHexAmount)
-    txn.data = '0x'
+    txn.calls = [
+      {
+        to: recipientAddress,
+        value: BigInt(bigNumberHexAmount),
+        data: '0x'
+      }
+    ]
   }
 
   return {

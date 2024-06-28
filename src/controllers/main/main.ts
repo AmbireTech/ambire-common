@@ -25,7 +25,7 @@ import {
 } from '../../interfaces/keystore'
 import { AddNetworkRequestParams, Network, NetworkId } from '../../interfaces/network'
 import { Storage } from '../../interfaces/storage'
-import { Call, DappUserRequest, SignUserRequest, UserRequest } from '../../interfaces/userRequest'
+import { Calls, DappUserRequest, SignUserRequest, UserRequest } from '../../interfaces/userRequest'
 import { WindowManager } from '../../interfaces/window'
 import { isSmartAccount } from '../../libs/account/account'
 import { AccountOp, AccountOpStatus, getSignableCalls } from '../../libs/accountOp/accountOp'
@@ -465,11 +465,11 @@ export class MainController extends EventEmitter {
 
   #batchCallsFromUserRequests(accountAddr: AccountId, networkId: NetworkId): AccountOpCall[] {
     // Note: we use reduce instead of filter/map so that the compiler can deduce that we're checking .kind
-    return (this.userRequests.filter((r) => r.action.kind === 'call') as SignUserRequest[]).reduce(
+    return (this.userRequests.filter((r) => r.action.kind === 'calls') as SignUserRequest[]).reduce(
       (uCalls: AccountOpCall[], req) => {
         if (req.meta.networkId === networkId && req.meta.accountAddr === accountAddr) {
-          const { to, value, data } = req.action as Call
-          uCalls.push({ to, value, data, fromUserRequestId: req.id })
+          const { calls } = req.action as Calls
+          calls.map((call) => uCalls.push({ ...call, fromUserRequestId: req.id }))
         }
         return uCalls
       },
@@ -523,7 +523,7 @@ export class MainController extends EventEmitter {
       throw ethErrors.rpc.internal()
     }
 
-    if (kind === 'call') {
+    if (kind === 'calls') {
       const transaction = request.params[0]
       const accountAddr = getAddress(transaction.from)
       const network = this.networks.networks.find(
@@ -538,8 +538,13 @@ export class MainController extends EventEmitter {
         id: new Date().getTime(),
         action: {
           kind,
-          ...transaction,
-          value: transaction.value ? getBigInt(transaction.value) : 0n
+          calls: [
+            {
+              to: transaction.to,
+              value: transaction.value ? getBigInt(transaction.value) : 0n,
+              data: transaction.data
+            }
+          ]
         },
         meta: { isSignAction: true, accountAddr, networkId: network.id },
         dappPromise
@@ -707,7 +712,7 @@ export class MainController extends EventEmitter {
       this.userRequests = this.userRequests.filter(
         (r) =>
           !(
-            r.action.kind === 'call' &&
+            r.action.kind === 'calls' &&
             r.meta.accountAddr === userRequest.meta.accountAddr &&
             r.meta.networkId === userRequest.meta.networkId
           )
@@ -727,7 +732,7 @@ export class MainController extends EventEmitter {
     }
 
     const { id, action, meta } = req
-    if (action.kind === 'call') {
+    if (action.kind === 'calls') {
       // @TODO
       // one solution would be to, instead of checking, have a promise that we always await here, that is responsible for fetching
       // account data; however, this won't work with EOA accountOps, which have to always pick the first userRequest for a particular acc/network,
@@ -769,34 +774,6 @@ export class MainController extends EventEmitter {
           userRequest: req
         })
         this.actions.addOrUpdateAction(accountOpAction, withPriority)
-      }
-    } else if (action.kind === 'calls') {
-      await this.#ensureAccountInfo(meta.accountAddr, meta.networkId)
-      if (this.signAccOpInitError) return
-
-      const account = this.accounts.accounts.find((x) => x.addr === meta.accountAddr)!
-      if (!isSmartAccount(account))
-        throw new Error(`batchCallsFromUserRequests: tried to batch for EOA account`)
-
-      const accountState = this.accounts.accountStates[meta.accountAddr][meta.networkId]
-      const network = this.networks.networks.filter((n) => n.id === meta.networkId)[0]
-      if (shouldAskForEntryPointAuthorization(network, account, accountState)) {
-        await this.addEntryPointAuthorization(req, network, accountState)
-        this.emitUpdate()
-        return
-      }
-
-      const accountOpAction = makeSmartAccountOpAction({
-        account,
-        networkId: meta.networkId,
-        nonce: accountState.nonce,
-        userRequests: this.userRequests,
-        actionsQueue: this.actions.actionsQueue
-      })
-      this.actions.addOrUpdateAction(accountOpAction, withPriority)
-      if (this.signAccountOp && this.signAccountOp.fromActionId === accountOpAction.id) {
-        this.signAccountOp.update({ accountOp: accountOpAction.accountOp })
-        this.estimateSignAccountOp()
       }
     } else {
       let actionType: 'dappRequest' | 'benzin' | 'signMessage' = 'dappRequest'
@@ -844,7 +821,7 @@ export class MainController extends EventEmitter {
 
     // update the pending stuff to be signed
     const { action, meta } = req
-    if (action.kind === 'call') {
+    if (action.kind === 'calls') {
       const account = this.accounts.accounts.find((x) => x.addr === meta.accountAddr)
       if (!account)
         throw new Error(
