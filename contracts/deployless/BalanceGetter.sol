@@ -37,7 +37,7 @@ contract BalanceGetter is Simulation {
   function getBalances(
     IAmbireAccount account,
     address[] calldata tokenAddrs
-  ) public view returns (TokenInfo[] memory, uint) {
+  ) public view returns (TokenInfo[] memory, uint256) {
     uint len = tokenAddrs.length;
     TokenInfo[] memory results = new TokenInfo[](len);
     for (uint256 i = 0; i < len; i++) {
@@ -127,7 +127,8 @@ contract BalanceGetter is Simulation {
 
     afterSimulation.nonce = account.nonce();
     if (afterSimulation.nonce != before.nonce) {
-      before.balances = results;
+      (TokenInfo[] memory resultsAfterSimulation, ) = getBalances(account, tokenAddrs);
+      afterSimulation.balances = resultsAfterSimulation;
 
       (TokenInfo[] memory deltaAfter) = getDelta(before.balances, afterSimulation.balances, tokenAddrs);
       afterSimulation.balances = deltaAfter;
