@@ -88,10 +88,14 @@ describe('Main Controller ', () => {
     const req: UserRequest = {
       id: 1,
       action: {
-        kind: 'call',
-        to: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
-        value: BigInt(0),
-        data: '0xa9059cbb000000000000000000000000e5a4dad2ea987215460379ab285df87136e83bea00000000000000000000000000000000000000000000000000000000005040aa'
+        kind: 'calls',
+        calls: [
+          {
+            to: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
+            value: BigInt(0),
+            data: '0xa9059cbb000000000000000000000000e5a4dad2ea987215460379ab285df87136e83bea00000000000000000000000000000000000000000000000000000000005040aa'
+          }
+        ]
       },
       meta: {
         isSignAction: true,
@@ -107,10 +111,14 @@ describe('Main Controller ', () => {
     const req: UserRequest = {
       id: 1,
       action: {
-        kind: 'call',
-        to: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
-        value: BigInt(0),
-        data: '0xa9059cbb000000000000000000000000e5a4dad2ea987215460379ab285df87136e83bea00000000000000000000000000000000000000000000000000000000005040aa'
+        kind: 'calls',
+        calls: [
+          {
+            to: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
+            value: BigInt(0),
+            data: '0xa9059cbb000000000000000000000000e5a4dad2ea987215460379ab285df87136e83bea00000000000000000000000000000000000000000000000000000000005040aa'
+          }
+        ]
       },
       meta: {
         isSignAction: true,
