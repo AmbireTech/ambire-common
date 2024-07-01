@@ -474,7 +474,7 @@ export class MainController extends EventEmitter {
     if (!this.accounts.selectedAccount) return
 
     await Promise.all([
-      this.accounts.updateAccountState(this.accounts.selectedAccount, 'latest'),
+      this.accounts.updateAccountState(this.accounts.selectedAccount, 'pending'),
       this.updateSelectedAccountPortfolio(true)
     ])
   }
