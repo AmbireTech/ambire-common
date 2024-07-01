@@ -146,7 +146,8 @@ export class AccountsController extends EventEmitter {
 
             this.accountStates[addr][network.id] = accountState
           })
-        } catch {
+        } catch (err) {
+          console.error('account state update error: ', err)
           this.#updateProviderIsWorking(network.id, false)
         }
 
