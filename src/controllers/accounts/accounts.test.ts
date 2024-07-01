@@ -1,3 +1,5 @@
+import fetch from 'node-fetch'
+
 import { describe, expect, test } from '@jest/globals'
 
 import { produceMemoryStore } from '../../../test/helpers'
@@ -40,6 +42,7 @@ describe('AccountsController', () => {
   let providersCtrl: ProvidersController
   const networksCtrl = new NetworksController(
     storage,
+    fetch,
     (net) => {
       providersCtrl.setProvider(net)
     },

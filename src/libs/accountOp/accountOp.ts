@@ -31,7 +31,8 @@ export enum AccountOpStatus {
   Success = 'success',
   Failure = 'failure',
   Rejected = 'rejected',
-  UnknownButPastNonce = 'unknown-but-past-nonce'
+  UnknownButPastNonce = 'unknown-but-past-nonce',
+  BroadcastButStuck = 'broadcast-but-stuck'
 }
 
 // Equivalent to ERC-4337 UserOp, but more universal than it since a AccountOp can be transformed to

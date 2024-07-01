@@ -1,3 +1,5 @@
+import fetch from 'node-fetch'
+
 import { describe, expect } from '@jest/globals'
 
 import { produceMemoryStore } from '../../../test/helpers'
@@ -63,6 +65,7 @@ describe('Activity Controller ', () => {
       let providersCtrl: ProvidersController
       const networksCtrl = new NetworksController(
         storage,
+        fetch,
         (net) => {
           providersCtrl.setProvider(net)
         },
@@ -83,6 +86,7 @@ describe('Activity Controller ', () => {
       accountsCtrl.selectedAccount = '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
       const controller = new ActivityController(
         storage,
+        fetch,
         accountsCtrl,
         providersCtrl,
         networksCtrl,
@@ -130,6 +134,7 @@ describe('Activity Controller ', () => {
       let providersCtrl: ProvidersController
       const networksCtrl = new NetworksController(
         storage,
+        fetch,
         (net) => {
           providersCtrl.setProvider(net)
         },
@@ -150,6 +155,7 @@ describe('Activity Controller ', () => {
       accountsCtrl.selectedAccount = '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
       const controller = new ActivityController(
         storage,
+        fetch,
         accountsCtrl,
         providersCtrl,
         networksCtrl,
@@ -281,6 +287,7 @@ describe('Activity Controller ', () => {
       let providersCtrl: ProvidersController
       const networksCtrl = new NetworksController(
         storage,
+        fetch,
         (net) => {
           providersCtrl.setProvider(net)
         },
@@ -301,6 +308,7 @@ describe('Activity Controller ', () => {
       accountsCtrl.selectedAccount = '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
       const controller = new ActivityController(
         storage,
+        fetch,
         accountsCtrl,
         providersCtrl,
         networksCtrl,
@@ -345,6 +353,7 @@ describe('Activity Controller ', () => {
       let providersCtrl: ProvidersController
       const networksCtrl = new NetworksController(
         storage,
+        fetch,
         (net) => {
           providersCtrl.setProvider(net)
         },
@@ -365,6 +374,7 @@ describe('Activity Controller ', () => {
       accountsCtrl.selectedAccount = '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
       const controller = new ActivityController(
         storage,
+        fetch,
         accountsCtrl,
         providersCtrl,
         networksCtrl,
@@ -411,6 +421,7 @@ describe('Activity Controller ', () => {
       let providersCtrl: ProvidersController
       const networksCtrl = new NetworksController(
         storage,
+        fetch,
         (net) => {
           providersCtrl.setProvider(net)
         },
@@ -431,6 +442,7 @@ describe('Activity Controller ', () => {
       accountsCtrl.selectedAccount = '0xa07D75aacEFd11b425AF7181958F0F85c312f143'
       const controller = new ActivityController(
         storage,
+        fetch,
         accountsCtrl,
         providersCtrl,
         networksCtrl,
@@ -480,6 +492,7 @@ describe('Activity Controller ', () => {
       let providersCtrl: ProvidersController
       const networksCtrl = new NetworksController(
         storage,
+        fetch,
         (net) => {
           providersCtrl.setProvider(net)
         },
@@ -500,6 +513,7 @@ describe('Activity Controller ', () => {
       accountsCtrl.selectedAccount = '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
       const controller = new ActivityController(
         storage,
+        fetch,
         accountsCtrl,
         providersCtrl,
         networksCtrl,
@@ -555,6 +569,7 @@ describe('Activity Controller ', () => {
       let providersCtrl: ProvidersController
       const networksCtrl = new NetworksController(
         storage,
+        fetch,
         (net) => {
           providersCtrl.setProvider(net)
         },
@@ -575,6 +590,7 @@ describe('Activity Controller ', () => {
       accountsCtrl.selectedAccount = '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
       const controller = new ActivityController(
         storage,
+        fetch,
         accountsCtrl,
         providersCtrl,
         networksCtrl,
@@ -621,6 +637,7 @@ describe('Activity Controller ', () => {
       let providersCtrl: ProvidersController
       const networksCtrl = new NetworksController(
         storage,
+        fetch,
         (net) => {
           providersCtrl.setProvider(net)
         },
@@ -641,6 +658,7 @@ describe('Activity Controller ', () => {
       accountsCtrl.selectedAccount = '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
       const controller = new ActivityController(
         storage,
+        fetch,
         accountsCtrl,
         providersCtrl,
         networksCtrl,
@@ -692,6 +710,7 @@ describe('Activity Controller ', () => {
       let providersCtrl: ProvidersController
       const networksCtrl = new NetworksController(
         storage,
+        fetch,
         (net) => {
           providersCtrl.setProvider(net)
         },
@@ -712,6 +731,7 @@ describe('Activity Controller ', () => {
       accountsCtrl.selectedAccount = '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
       const controller = new ActivityController(
         storage,
+        fetch,
         accountsCtrl,
         providersCtrl,
         networksCtrl,

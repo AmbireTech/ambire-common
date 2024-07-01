@@ -19,12 +19,11 @@ import {
   shouldUsePaymaster
 } from '../userOperation/userOperation'
 import { catchEstimationFailure, estimationErrorFormatted, mapTxnErrMsg } from './errors'
-import { estimateArbitrumL1GasUsed } from './estimateArbitrum'
 import { bundlerEstimate } from './estimateBundler'
 import { estimateEOA } from './estimateEOA'
 import { estimateGas } from './estimateGas'
 import { estimateWithRetries } from './estimateWithRetries'
-import { ArbitrumL1Fee, EstimateResult, FeePaymentOption } from './interfaces'
+import { EstimateResult, FeePaymentOption } from './interfaces'
 import { refund } from './refund'
 
 const abiCoder = new AbiCoder()
@@ -86,6 +85,7 @@ export async function estimate4337(
     }
   })
 
+  const accountState = accountStates[op.accountAddr][op.networkId]
   const checkInnerCallsArgs = [
     account.addr,
     ...getAccountDeployParams(account),
@@ -96,7 +96,7 @@ export async function estimate4337(
       op.accountOpToExecuteBefore?.signature || '0x'
     ],
     [account.addr, op.nonce || 1, calls, '0x'],
-    getProbableCallData(op, accountStates[op.accountAddr][op.networkId], network),
+    getProbableCallData(account, op, accountState, network),
     account.associatedKeys,
     filteredFeeTokens.map((feeToken) => feeToken.address),
     FEE_COLLECTOR,
@@ -110,7 +110,8 @@ export async function estimate4337(
         blockTag
       })
       .catch(catchEstimationFailure),
-    bundlerEstimate(account, accountStates, op, network, feeTokens)
+    bundlerEstimate(account, accountStates, op, network, feeTokens),
+    estimateGas(account, op, provider, accountState).catch(() => 0n)
   ])
   const ambireEstimation = estimations[0]
   const bundlerEstimationResult: EstimateResult = estimations[1]
@@ -168,6 +169,11 @@ export async function estimate4337(
       deployment.gasUsed + accountOpToExecuteBefore.gasUsed + accountOp.gasUsed
     delete bundlerEstimationResult.erc4337GasLimits
     bundlerEstimationResult.error = null
+
+    // also include the estimate_gas call. If it's bigger, use it
+    const estimateGasCall = estimations[2]
+    if (bundlerEstimationResult.gasUsed < estimateGasCall)
+      bundlerEstimationResult.gasUsed = estimateGasCall
   }
 
   // add the availableAmount after the simulation
@@ -247,7 +253,7 @@ export async function estimate(
   // is deployed for some reason, we should include the activator
   const calls = [...op.calls]
   const accountState = accountStates[op.accountAddr][op.networkId]
-  if (shouldIncludeActivatorCall(network, accountState, false)) {
+  if (shouldIncludeActivatorCall(network, account, accountState, false)) {
     calls.push(getActivatorCall(op.accountAddr))
   }
 
@@ -295,7 +301,7 @@ export async function estimate(
       'uint256' // gasLimit
     ],
     [
-      getProbableCallData(op, accountState, network),
+      getProbableCallData(account, op, accountState, network),
       op.accountAddr,
       FEE_COLLECTOR,
       100000,
@@ -331,8 +337,7 @@ export async function estimate(
         blockTag
       })
       .catch(catchEstimationFailure),
-    estimateArbitrumL1GasUsed(op, account, accountState, provider).catch(catchEstimationFailure),
-    estimateGas(account, op, provider).catch(() => 0n)
+    estimateGas(account, op, provider, accountState).catch(() => 0n)
   ]
   const estimations = await estimateWithRetries(initializeRequests)
   if (estimations instanceof Error) return estimationErrorFormatted(estimations)
@@ -354,22 +359,12 @@ export async function estimate(
   let gasUsed = deployment.gasUsed + accountOpToExecuteBefore.gasUsed + accountOp.gasUsed
 
   // if estimateGas brings a bigger estimation than Estimation.sol, use it
-  const customlyEstimatedGas = estimations[2]
+  const customlyEstimatedGas = estimations[1]
   if (gasUsed < customlyEstimatedGas) gasUsed = customlyEstimatedGas
 
   // WARNING: calculateRefund will 100% NOT work in all cases we have
   // So a warning not to assume this is working
   if (opts?.calculateRefund) gasUsed = await refund(account, op, provider, gasUsed)
-
-  // if the network is arbitrum, we get the addedNative from the arbitrum
-  // estimation. Otherwise, we get it from the OP stack oracle
-  // if the network is not an L2, all these will default to 0n
-  const arbitrumEstimation: ArbitrumL1Fee = estimations[1]
-  const l1Fee = network.id !== 'arbitrum' ? l1GasEstimation.fee : arbitrumEstimation.noFee
-  const l1FeeWithNativePayment =
-    network.id !== 'arbitrum' ? l1GasEstimation.feeWithNativePayment : arbitrumEstimation.withFee
-  const l1FeeWithTransferPayment =
-    network.id !== 'arbitrum' ? l1GasEstimation.feeWithTransferPayment : arbitrumEstimation.withFee
 
   const feeTokenOptions: FeePaymentOption[] = filteredFeeTokens.map(
     (token: TokenResult, key: number) => {
@@ -387,7 +382,9 @@ export async function estimate(
         // setting it to 5000n just be sure
         gasUsed: token.flags.onGasTank ? 5000n : feeTokenOutcomes[key].gasUsed,
         addedNative:
-          token.address === ZeroAddress ? l1FeeWithNativePayment : l1FeeWithTransferPayment,
+          token.address === ZeroAddress
+            ? l1GasEstimation.feeWithNativePayment
+            : l1GasEstimation.feeWithTransferPayment,
         token
       }
     }
@@ -401,7 +398,7 @@ export async function estimate(
     (balance: bigint, key: number) => ({
       paidBy: nativeToCheck[key],
       availableAmount: balance,
-      addedNative: l1Fee,
+      addedNative: l1GasEstimation.fee,
       token: nativeToken
     })
   )

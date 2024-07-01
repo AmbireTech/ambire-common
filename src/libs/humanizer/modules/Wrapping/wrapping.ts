@@ -3,10 +3,18 @@ import { Interface, ZeroAddress } from 'ethers'
 import { AccountOp } from '../../../accountOp/accountOp'
 import { WETH } from '../../const/abis'
 import { HumanizerCallModule, HumanizerMeta, IrCall } from '../../interfaces'
-import { getUnknownVisualization, getUnwrapping, getWrapping } from '../../utils'
+import {
+  getAction,
+  getLabel,
+  getToken,
+  getUnknownVisualization,
+  getUnwrapping,
+  getWrapping
+} from '../../utils'
 
-const wrapSwapReducer = (calls: IrCall[]) => {
+const wrapSwapReducer = (calls: IrCall[]): IrCall[] => {
   const newCalls: IrCall[] = []
+  let updated = false
   for (let i = 0; i < calls.length; i++) {
     if (
       // swapping x amount of token for y of WETH and unwrapping y WETH for y ETH
@@ -27,6 +35,7 @@ const wrapSwapReducer = (calls: IrCall[]) => {
         fullVisualization: newVisualization
       })
       i += 1
+      updated = true
     } else if (
       calls[i]?.fullVisualization?.[0].content?.includes('Wrap') &&
       calls[i + 1]?.fullVisualization?.[0].content?.includes('Swap') &&
@@ -44,11 +53,45 @@ const wrapSwapReducer = (calls: IrCall[]) => {
         fullVisualization: newVisualization
       })
       i += 1
+      updated = true
+    } else if (
+      calls[i]?.fullVisualization?.[0].content?.includes('Swap') &&
+      calls[i + 1]?.fullVisualization?.[0].content?.includes('Swap') &&
+      calls[i]?.fullVisualization?.[1]?.address &&
+      calls[i + 1]?.fullVisualization?.[1]?.address &&
+      calls[i]?.fullVisualization?.[3]?.address &&
+      calls[i + 1]?.fullVisualization?.[3]?.address &&
+      calls[i]?.fullVisualization?.[1]?.address === calls[i + 1]?.fullVisualization?.[1]?.address &&
+      calls[i]?.fullVisualization?.[3]?.address === calls[i + 1]?.fullVisualization?.[3]?.address &&
+      calls[i]?.fullVisualization?.[2]?.content?.startsWith('for')
+    ) {
+      const newVisualization = [
+        getAction('Swap'),
+        getToken(
+          calls[i].fullVisualization![1].address!,
+          calls[i].fullVisualization![1].amount! + calls[i + 1].fullVisualization![1].amount!
+        ),
+        getLabel(calls[i].fullVisualization![2].content!),
+        getToken(
+          calls[i].fullVisualization![3].address!,
+          calls[i].fullVisualization![3].amount! + calls[i + 1].fullVisualization![3].amount!
+        )
+      ]
+      newCalls.push({
+        to: calls[i].to,
+        value: calls[i].value + calls[i + 1].value,
+        // second's call data is omitted
+        data: calls[i].data,
+        fromUserRequestId: calls[i].fromUserRequestId,
+        fullVisualization: newVisualization
+      })
+      i += 1
+      updated = true
     } else {
       newCalls.push(calls[i])
     }
   }
-  return newCalls
+  return updated ? wrapSwapReducer(newCalls) : newCalls
 }
 
 export const wrappingModule: HumanizerCallModule = (

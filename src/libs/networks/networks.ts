@@ -1,9 +1,8 @@
 /* eslint-disable import/no-extraneous-dependencies */
 
-import fetch from 'node-fetch'
-
 import { AMBIRE_ACCOUNT_FACTORY, OPTIMISTIC_ORACLE, SINGLETON } from '../../consts/deploy'
 import { networks as predefinedNetworks } from '../../consts/networks'
+import { Fetch } from '../../interfaces/fetch'
 import {
   Network,
   NetworkFeature,
@@ -40,6 +39,7 @@ async function retryRequest(init: Function, counter = 0): Promise<any> {
 }
 
 export async function getNetworkInfo(
+  fetch: Fetch,
   rpcUrl: string,
   chainId: bigint,
   callback: (networkInfo: NetworkInfoLoading<NetworkInfo>) => void

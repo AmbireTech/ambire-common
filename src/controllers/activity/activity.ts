@@ -1,9 +1,7 @@
-/* eslint-disable import/no-extraneous-dependencies */
-
-import fetch from 'node-fetch'
-
 import { networks as predefinedNetworks } from '../../consts/networks'
+/* eslint-disable import/no-extraneous-dependencies */
 import { Banner } from '../../interfaces/banner'
+import { CustomResponse, Fetch } from '../../interfaces/fetch'
 import { Network } from '../../interfaces/network'
 import { Storage } from '../../interfaces/storage'
 import { Message } from '../../interfaces/userRequest'
@@ -103,6 +101,8 @@ const trim = <T>(items: T[], maxSize = 1000): void => {
 export class ActivityController extends EventEmitter {
   #storage: Storage
 
+  #fetch: Fetch
+
   #initialLoadPromise: Promise<void>
 
   #accounts: AccountsController
@@ -137,6 +137,7 @@ export class ActivityController extends EventEmitter {
 
   constructor(
     storage: Storage,
+    fetch: Fetch,
     accounts: AccountsController,
     providers: ProvidersController,
     networks: NetworksController,
@@ -144,6 +145,7 @@ export class ActivityController extends EventEmitter {
   ) {
     super()
     this.#storage = storage
+    this.#fetch = fetch
     this.#accounts = accounts
     this.#providers = providers
     this.#networks = networks
@@ -313,25 +315,23 @@ export class ActivityController extends EventEmitter {
 
             shouldEmitUpdate = true
 
-            const declareRejectedIfQuaterPassed = (op: SubmittedAccountOp) => {
+            const declareStuckIfQuaterPassed = (op: SubmittedAccountOp) => {
               const accountOpDate = new Date(op.timestamp)
               accountOpDate.setMinutes(accountOpDate.getMinutes() + 15)
               const aQuaterHasPassed = accountOpDate < new Date()
               if (aQuaterHasPassed) {
                 this.#accountsOps[selectedAccount][networkId][accountOpIndex].status =
-                  AccountOpStatus.Failure
+                  AccountOpStatus.BroadcastButStuck
               }
             }
 
             try {
               let txnId = accountOp.txnId
               if (accountOp.userOpHash) {
-                const [response, bundlerResult] = await Promise.all([
+                const [response, bundlerResult]: [CustomResponse | null, any] = await Promise.all([
                   !network.predefined
-                    ? fetchUserOp(accountOp.userOpHash, fetch, getExplorerId(network))
-                    : new Promise((resolve) => {
-                        resolve(null)
-                      }),
+                    ? fetchUserOp(accountOp.userOpHash, this.#fetch, getExplorerId(network))
+                    : Promise.resolve(null),
                   Bundler.getStatusAndTxnId(accountOp.userOpHash, network)
                 ])
 
@@ -360,7 +360,7 @@ export class ActivityController extends EventEmitter {
                     txnId = userOps[0].transactionHash
                     this.#accountsOps[selectedAccount][networkId][accountOpIndex].txnId = txnId
                   } else {
-                    declareRejectedIfQuaterPassed(accountOp)
+                    declareStuckIfQuaterPassed(accountOp)
                     return
                   }
                 }
@@ -384,7 +384,7 @@ export class ActivityController extends EventEmitter {
               // if there's no receipt, confirm there's a txn
               // if there's no txn and 15 minutes have passed, declare it a failure
               const txn = await provider.getTransaction(txnId)
-              if (!txn) declareRejectedIfQuaterPassed(accountOp)
+              if (!txn) declareStuckIfQuaterPassed(accountOp)
             } catch {
               this.emitError({
                 level: 'silent',

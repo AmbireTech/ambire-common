@@ -6,7 +6,7 @@ import fetch from 'node-fetch'
 import { describe, expect, jest, test } from '@jest/globals'
 import structuredClone from '@ungap/structured-clone'
 
-import { trezorSlot7v24337Deployed } from '../../../test/config'
+import { trezorSlot7v24337Deployed, velcroUrl } from '../../../test/config'
 import { produceMemoryStore } from '../../../test/helpers'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { FEE_COLLECTOR } from '../../consts/addresses'
@@ -331,6 +331,7 @@ const init = async (
   let providersCtrl: ProvidersController
   const networksCtrl = new NetworksController(
     storage,
+    fetch,
     (net) => {
       providersCtrl.setProvider(net)
     },
@@ -353,10 +354,12 @@ const init = async (
 
   const portfolio = new PortfolioController(
     storage,
+    fetch,
     providersCtrl,
     networksCtrl,
     accountsCtrl,
-    'https://staging-relayer.ambire.com'
+    'https://staging-relayer.ambire.com',
+    velcroUrl
   )
   const { op, nativeToCheck, feeTokens } = accountOp
   const network = networksCtrl.networks.find((x) => x.id === op.networkId)!

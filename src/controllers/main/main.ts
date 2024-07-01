@@ -16,6 +16,7 @@ import { AMBIRE_ACCOUNT_FACTORY, SINGLETON } from '../../consts/deploy'
 import { AccountId } from '../../interfaces/account'
 import { Banner } from '../../interfaces/banner'
 import { DappProviderRequest } from '../../interfaces/dapp'
+import { Fetch } from '../../interfaces/fetch'
 import {
   ExternalSignerControllers,
   Key,
@@ -83,7 +84,7 @@ const STATUS_WRAPPED_METHODS = {
 export class MainController extends EventEmitter {
   #storage: Storage
 
-  #fetch: Function
+  #fetch: Fetch
 
   // Holds the initial load promise, so that one can wait until it completes
   #initialLoadPromise: Promise<void>
@@ -159,14 +160,16 @@ export class MainController extends EventEmitter {
     storage,
     fetch,
     relayerUrl,
+    velcroUrl,
     keystoreSigners,
     externalSignerControllers,
     windowManager,
     onBroadcastSuccess
   }: {
     storage: Storage
-    fetch: Function
+    fetch: Fetch
     relayerUrl: string
+    velcroUrl: string
     keystoreSigners: Partial<{ [key in Key['type']]: KeystoreSignerType }>
     externalSignerControllers: ExternalSignerControllers
     windowManager: WindowManager
@@ -182,6 +185,7 @@ export class MainController extends EventEmitter {
     this.#externalSignerControllers = externalSignerControllers
     this.networks = new NetworksController(
       this.#storage,
+      this.#fetch,
       async (network: Network) => {
         this.providers.setProvider(network)
         await this.accounts.updateAccountStates('latest', [network.id])
@@ -196,23 +200,26 @@ export class MainController extends EventEmitter {
       this.#storage,
       this.providers,
       this.networks,
-      async () => {
+      async (toAccountAddr: string) => {
         this.activity.init()
         await this.updateSelectedAccountPortfolio()
         // forceEmitUpdate to update the getters in the FE state of the ctrl
         await this.forceEmitUpdate()
         await this.actions.forceEmitUpdate()
         await this.addressBook.forceEmitUpdate()
+        this.dapps.broadcastDappSessionEvent('accountsChanged', [toAccountAddr])
       },
       this.providers.updateProviderIsWorking.bind(this.providers)
     )
     this.settings = new SettingsController(this.#storage)
     this.portfolio = new PortfolioController(
       this.#storage,
+      this.#fetch,
       this.providers,
       this.networks,
       this.accounts,
-      relayerUrl
+      relayerUrl,
+      velcroUrl
     )
     this.#initialLoadPromise = this.#load()
     this.emailVault = new EmailVaultController(
@@ -247,6 +254,7 @@ export class MainController extends EventEmitter {
     })
     this.activity = new ActivityController(
       this.#storage,
+      this.#fetch,
       this.accounts,
       this.providers,
       this.networks,
@@ -374,10 +382,14 @@ export class MainController extends EventEmitter {
   }
 
   destroySignAccOp() {
+    if (!this.signAccountOp) return
+
     this.signAccountOp = null
     this.signAccOpInitError = null
     MainController.signAccountOpListener() // unsubscribes for further updates
-    this.updateSelectedAccountPortfolio(true)
+
+    // NOTE: no need to update the portfolio here as an update is
+    // fired upon removeUserRequest
 
     this.emitUpdate()
   }
@@ -479,21 +491,34 @@ export class MainController extends EventEmitter {
     ])
   }
 
-  async updateSelectedAccountPortfolio(forceUpdate: boolean = false) {
+  async updateSelectedAccountPortfolio(forceUpdate: boolean = false, network?: Network) {
     await this.#initialLoadPromise
     if (!this.accounts.selectedAccount) return
 
-    // pass the accountOps if any so we could reflect the pending state
-    const accountOps =
-      this.actions.currentAction?.type === 'accountOp' && this.signAccountOp
-        ? {
-            [this.actions.currentAction.accountOp.networkId]: [this.actions.currentAction.accountOp]
-          }
-        : getAccountOpsByNetwork(this.accounts.selectedAccount, this.actions.visibleActionsQueue)
+    const account = this.accounts.accounts.find((a) => a.addr === this.accounts.selectedAccount)
+
+    let accountOpsToBeSimulatedByNetwork: {
+      [key: string]: AccountOp[]
+    } = {}
+
+    if (isSmartAccount(account)) {
+      accountOpsToBeSimulatedByNetwork =
+        getAccountOpsByNetwork(this.accounts.selectedAccount, this.actions.visibleActionsQueue) ||
+        {}
+    } else if (!isSmartAccount(account) && this.signAccountOp) {
+      // for basic accounts we pass only the currently opened accountOp (if any) to be simulated
+      accountOpsToBeSimulatedByNetwork = {
+        [this.signAccountOp.accountOp.networkId]: [this.signAccountOp.accountOp]
+      }
+    }
+
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
-    this.portfolio.updateSelectedAccount(this.accounts.selectedAccount, undefined, accountOps, {
-      forceUpdate
-    })
+    this.portfolio.updateSelectedAccount(
+      this.accounts.selectedAccount,
+      network,
+      accountOpsToBeSimulatedByNetwork,
+      { forceUpdate }
+    )
   }
 
   async buildUserRequestFromDAppRequest(
@@ -732,7 +757,7 @@ export class MainController extends EventEmitter {
 
       if (account.creation) {
         const network = this.networks.networks.filter((n) => n.id === meta.networkId)[0]
-        if (shouldAskForEntryPointAuthorization(network, accountState)) {
+        if (shouldAskForEntryPointAuthorization(network, account, accountState)) {
           if (
             this.actions.visibleActionsQueue.find(
               (a) =>
@@ -832,6 +857,8 @@ export class MainController extends EventEmitter {
 
     // update the pending stuff to be signed
     const { action, meta } = req
+    const network = this.networks.networks.find((net) => net.id === meta.networkId)!
+
     if (action.kind === 'call') {
       const account = this.accounts.accounts.find((x) => x.addr === meta.accountAddr)
       if (!account)
@@ -848,7 +875,7 @@ export class MainController extends EventEmitter {
           | undefined
         // accountOp has just been rejected
         if (!accountOpAction) {
-          this.updateSelectedAccountPortfolio(true)
+          this.updateSelectedAccountPortfolio(true, network)
           this.emitUpdate()
           return
         }
@@ -866,11 +893,11 @@ export class MainController extends EventEmitter {
           }
         } else {
           this.actions.removeAction(`${meta.accountAddr}-${meta.networkId}`)
-          this.updateSelectedAccountPortfolio(true)
+          this.updateSelectedAccountPortfolio(true, network)
         }
       } else {
         this.actions.removeAction(id)
-        this.updateSelectedAccountPortfolio(true)
+        this.updateSelectedAccountPortfolio(true, network)
       }
     } else {
       this.actions.removeAction(id)
@@ -937,6 +964,13 @@ export class MainController extends EventEmitter {
         this.removeUserRequest(uReq.id)
       }
     }
+
+    // destroy sign account op if no actions left for account
+    const accountOpsLeftForAcc = (
+      this.actions.actionsQueue.filter((a) => a.type === 'accountOp') as AccountOpAction[]
+    ).filter((action) => action.accountOp.accountAddr === accountOp.accountAddr)
+    if (!accountOpsLeftForAcc.length) this.destroySignAccOp()
+
     this.emitUpdate()
   }
 
@@ -1090,16 +1124,26 @@ export class MainController extends EventEmitter {
 
       await this.portfolio.learnTokens(additionalHints, network.id)
 
+      let accountOpsToBeSimulatedByNetwork: {
+        [key: string]: AccountOp[]
+      } = {}
+
+      if (isSmartAccount(account)) {
+        accountOpsToBeSimulatedByNetwork =
+          getAccountOpsByNetwork(localAccountOp.accountAddr, this.actions.visibleActionsQueue) || {}
+      } else {
+        // for basic accounts we pass only the currently opened accountOp to be simulated
+        accountOpsToBeSimulatedByNetwork = { [localAccountOp.networkId]: [localAccountOp] }
+      }
+
       const [, estimation] = await Promise.all([
         // NOTE: we are not emitting an update here because the portfolio controller will do that
         // NOTE: the portfolio controller has it's own logic of constructing/caching providers, this is intentional, as
         // it may have different needs
         this.portfolio.updateSelectedAccount(
           localAccountOp.accountAddr,
-          undefined,
-          this.signAccountOp
-            ? { [localAccountOp.networkId]: [localAccountOp] }
-            : getAccountOpsByNetwork(localAccountOp.accountAddr, this.actions.visibleActionsQueue),
+          network,
+          accountOpsToBeSimulatedByNetwork,
           { forceUpdate: true }
         ),
         estimate(

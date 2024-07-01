@@ -2,6 +2,7 @@ import dotenv from 'dotenv'
 import { ZeroAddress } from 'ethers'
 
 import { geckoIdMapper } from '../../consts/coingecko'
+import { Fetch } from '../../interfaces/fetch'
 import { HumanizerFragment } from '../../interfaces/humanizer'
 import { Network } from '../../interfaces/network'
 import {
@@ -47,6 +48,10 @@ export function getToken(_address: string, amount: bigint): HumanizerVisualizati
   }
 }
 
+export function getChain(chainId: bigint): HumanizerVisualization {
+  return { type: 'chain', id: randomId(), chainId }
+}
+
 export function getNft(address: string, id: bigint): HumanizerVisualization {
   return { type: 'nft', address, id: randomId(), nftId: id }
 }
@@ -89,7 +94,7 @@ export function getDeadline(deadlineSecs: bigint | number): HumanizerVisualizati
  * This is used by benzina and hence we cannot wrap the errors in emitError
  */
 // @TODO this shouldn't be here, a more suitable place would be portfolio/gecko
-export async function getNativePrice(network: Network, fetch: Function): Promise<number> {
+export async function getNativePrice(network: Network, fetch: Fetch): Promise<number> {
   const platformId = geckoIdMapper(ZeroAddress, network)
   if (!platformId) {
     throw new Error(`getNativePrice: ${network.name} is not supported`)
@@ -225,3 +230,9 @@ export const integrateFragments = (
 }
 
 export const EMPTY_HUMANIZER_META = { abis: { NO_ABI: {} }, knownAddresses: {} }
+
+export const uintToAddress = (uint: bigint): string =>
+  `0x${BigInt(uint).toString(16).slice(-40).padStart(40, '0')}`
+
+export const eToNative = (address: string): string =>
+  address.slice(2).toLocaleLowerCase() === 'e'.repeat(40) ? ZeroAddress : address

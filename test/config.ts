@@ -17,6 +17,8 @@ const addressFour = '0x90F79bf6EB2c4f870365E785982E1f101E93b906'
 const AmbireAccount = require('../contracts/compiled/AmbireAccount.json')
 const AmbireFactory = require('../contracts/compiled/AmbireFactory.json')
 
+const relayerUrl = 'https://staging-relayer.ambire.com'
+const velcroUrl = 'https://relayer.ambire.com/velcro-v3'
 const localhost = 'http://127.0.0.1:8545'
 const validSig = '0x1626ba7e'
 const invalidSig = '0xffffffff'
@@ -118,5 +120,7 @@ export {
   assertion,
   trezorSlot7v24337Deployed,
   optyDeployed,
-  arbNotDeployed
+  arbNotDeployed,
+  relayerUrl,
+  velcroUrl
 }

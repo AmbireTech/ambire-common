@@ -1,7 +1,9 @@
+import { Fetch } from '../../interfaces/fetch'
+
 export interface QueueElement {
   resolve: Function
   reject: Function
-  fetch: Function
+  fetch: Fetch
   data: any
 }
 
@@ -13,7 +15,7 @@ export interface Request {
 export type RequestGenerator = (queue: QueueElement[]) => Request[]
 
 export default function batcher(
-  fetch: Function,
+  fetch: Fetch,
   requestGenerator: RequestGenerator,
   batchDebounce: number = 0
 ): Function {
@@ -39,7 +41,7 @@ export default function batcher(
             if (body.length !== queueSegment.length)
               throw new Error('internal error: queue length and response length mismatch')
             queueSegment.forEach(({ resolve }, i) => resolve(body[i]))
-          } else if (queueSegment.every((x) => typeof x.data['responseIdentifier'] === 'string')) {
+          } else if (queueSegment.every((x) => typeof x.data.responseIdentifier === 'string')) {
             queueSegment.forEach(({ resolve, data }) =>
               resolve(body[data.responseIdentifier as string])
             )
