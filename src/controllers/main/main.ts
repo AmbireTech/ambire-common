@@ -396,11 +396,15 @@ export class MainController extends EventEmitter {
     const network = this.networks.networks.find((net) => net.id === accountOp?.networkId)
     if (!network || !network.hasDebugTraceCall) return
 
+    const account = this.accounts.accounts.find((acc) => acc.addr === accountOp.accountAddr)!
+    const state = this.accounts.accountStates[accountOp.accountAddr][accountOp.networkId]
     const provider = this.providers.providers[network.id]
     const gasPrice = this.gasPrices[network.id]
     const addresses = await debugTraceCall(
+      account,
       accountOp,
       provider,
+      state,
       estimation.gasUsed,
       gasPrice,
       !network.rpcNoStateOverride
@@ -409,7 +413,6 @@ export class MainController extends EventEmitter {
 
     // update the portfolio only if new tokens were found through tracing
     if (learnedNewTokens) {
-      const account = this.accounts.accounts.find((acc) => acc.addr === accountOp.accountAddr)!
       this.portfolio.updateSelectedAccount(
         accountOp.accountAddr,
         network,
