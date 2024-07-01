@@ -1,4 +1,4 @@
-import { JsonRpcProvider, toQuantity, ZeroAddress } from 'ethers'
+import { JsonRpcProvider, toBeHex, toQuantity, ZeroAddress } from 'ethers'
 
 import BalanceGetter from '../../../contracts/compiled/BalanceGetter.json'
 import { DEPLOYLESS_SIMULATION_FROM } from '../../consts/deploy'
@@ -10,7 +10,8 @@ export async function debugTraceCall(
   op: AccountOp,
   provider: JsonRpcProvider,
   gasUsed: bigint,
-  gasPrices: GasRecommendation[]
+  gasPrices: GasRecommendation[],
+  supportsStateOverride: boolean
 ): Promise<string[]> {
   const fast = gasPrices.find((gas: any) => gas.name === 'fast')
   if (!fast) return []
@@ -36,7 +37,14 @@ export async function debugTraceCall(
               "{data: [], fault: function (log) {}, step: function (log) { if (log.op.toString() === 'LOG3') { this.data.push([ toHex(log.contract.getAddress()), '0x' + ('0000000000000000000000000000000000000000' + log.stack.peek(4).toString(16)).slice(-40)])}}, result: function () { return this.data }}",
             enableMemory: false,
             enableReturnData: true,
-            disableStorage: true
+            disableStorage: true,
+            stateOverrides: supportsStateOverride
+              ? {
+                  [op.accountAddr]: {
+                    balance: '0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff'
+                  }
+                }
+              : {}
           }
         ])
         .catch((e: any) => {

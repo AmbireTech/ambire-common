@@ -398,7 +398,13 @@ export class MainController extends EventEmitter {
 
     const provider = this.providers.providers[network.id]
     const gasPrice = this.gasPrices[network.id]
-    const addresses = await debugTraceCall(accountOp, provider, estimation.gasUsed, gasPrice)
+    const addresses = await debugTraceCall(
+      accountOp,
+      provider,
+      estimation.gasUsed,
+      gasPrice,
+      !network.rpcNoStateOverride
+    )
     const learnedNewTokens = await this.portfolio.learnTokens(addresses, network.id)
 
     // update the portfolio only if new tokens were found through tracing
