@@ -15,6 +15,6 @@ export function parsePath(pathBytes: any) {
 }
 
 export const getUniRecipientText = (accAddr: string, recAddr: string): HumanizerVisualization[] =>
-  ['0x0000000000000000000000000000000000000001', ZeroAddress, accAddr].includes(recAddr)
+  ['0x0000000000000000000000000000000000000001', ZeroAddress].includes(recAddr)
     ? []
     : getRecipientText(accAddr, recAddr)
