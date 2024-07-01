@@ -209,8 +209,8 @@ export class Portfolio {
       error === '0x' && !!result.symbol
 
     const tokensWithoutPrices = tokensWithErrResult
-      .filter((tokensWithErrResult) => tokenFilter(tokensWithErrResult))
-      .map(([, result]) => result)
+      .filter((tokensWithErrResult: [string,TokenResult]) => tokenFilter(tokensWithErrResult))
+      .map(([, result]: [any, TokenResult]) => result)
 
     const unfilteredCollections = collectionsWithErr.map(([error, x], i) => {
       const address = collectionsHints[i][0] as unknown as string
@@ -233,7 +233,7 @@ export class Portfolio {
     // Update prices and set the priceIn for each token by reference,
     // updating the final tokens array as a result
     const tokensWithPrices = await Promise.all(
-      tokensWithoutPrices.map(async (token) => {
+      tokensWithoutPrices.map(async (token: { address: string }) => {
         let priceIn: TokenResult['priceIn'] = []
         const cachedPriceIn = getPriceFromCache(token.address)
 
@@ -304,8 +304,8 @@ export class Portfolio {
       tokens: tokensWithPrices,
       blockNumber,
       tokenErrors: tokensWithErrResult
-        .filter(([error, result]) => error !== '0x' || result.symbol === '')
-        .map(([error, result]) => ({ error, address: result.address })),
+        .filter(([error, result]: [string, TokenResult]) => error !== '0x' || result.symbol === '')
+        .map(([error, result]: [string, TokenResult]) => ({ error, address: result.address })),
       collections: collections.filter((x) => x.collectibles?.length)
     }
   }
