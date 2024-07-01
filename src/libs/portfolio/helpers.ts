@@ -289,7 +289,11 @@ export const tokenFilter = (
     return pinnedToken.networkId === network.id && pinnedToken.address === token.address
   })
 
-  const isInAdditionalHints = additionalHints?.includes(token.address)
+  // make the comparisson to lowercase as otherwise, it doesn't work
+  const hintsLowerCase = additionalHints
+    ? additionalHints.map((hint) => hint.toLowerCase())
+    : undefined
+  const isInAdditionalHints = hintsLowerCase?.includes(token.address.toLowerCase())
 
   // if the amount is 0
   // return the token if it's pinned and requested
