@@ -1,14 +1,6 @@
 import { ethErrors } from 'eth-rpc-errors'
 /* eslint-disable @typescript-eslint/brace-style */
-import {
-  getAddress,
-  getBigInt,
-  Interface,
-  isAddress,
-  toQuantity,
-  TransactionResponse,
-  ZeroAddress
-} from 'ethers'
+import { getAddress, getBigInt, Interface, isAddress, TransactionResponse } from 'ethers'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json'
@@ -33,8 +25,7 @@ import { Call as AccountOpCall } from '../../libs/accountOp/types'
 import {
   dappRequestMethodToActionKind,
   getAccountOpActionsByNetwork,
-  getAccountOpFromAction,
-  getAccountOpsByNetwork
+  getAccountOpFromAction
 } from '../../libs/actions/actions'
 import { getAccountOpBanners } from '../../libs/banners/banners'
 import { estimate } from '../../libs/estimate/estimate'
@@ -403,25 +394,20 @@ export class MainController extends EventEmitter {
     if (!accountOp) return
 
     const network = this.networks.networks.find((net) => net.id === accountOp?.networkId)
-    if (!network) return
+    if (!network || !network.hasDebugTraceCall) return
 
     const provider = this.providers.providers[network.id]
     const gasPrice = this.gasPrices[network.id]
     const addresses = await debugTraceCall(accountOp, provider, estimation.gasUsed, gasPrice)
     const learnedNewTokens = await this.portfolio.learnTokens(addresses, network.id)
 
-    // update the portfolio only if new tokens are found through tracing
+    // update the portfolio only if new tokens were found through tracing
     if (learnedNewTokens) {
       const account = this.accounts.accounts.find((acc) => acc.addr === accountOp.accountAddr)!
-      const accountOpsToBeSimulatedByNetwork = getAccountOpsForSimulation(
-        account,
-        this.actions.visibleActionsQueue,
-        accountOp
-      )
       this.portfolio.updateSelectedAccount(
         accountOp.accountAddr,
         network,
-        accountOpsToBeSimulatedByNetwork,
+        getAccountOpsForSimulation(account, this.actions.visibleActionsQueue, accountOp),
         { forceUpdate: true }
       )
     }
