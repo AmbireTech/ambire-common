@@ -1262,7 +1262,7 @@ export class MainController extends EventEmitter {
         if (signer.init) signer.init(this.#externalSignerControllers[feePayerKey.type])
 
         throw new Error(
-          `feePayerKeyAddr: ${feePayerKey.addr},  feePayerKeyType: ${feePayerKey.type}, signerKeyAddr ${signer.key.addr}`
+          `feePayerKeyAddr: ${feePayerKey.addr},  feePayerKeyType: ${feePayerKey.type}, signerKeyAddr ${signer.key.addr}, walletAddress: ${signer.walletKey}`
         )
 
         const gasFeePayment = accountOp.gasFeePayment!
