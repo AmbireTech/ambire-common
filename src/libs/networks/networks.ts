@@ -12,7 +12,7 @@ import {
 } from '../../interfaces/network'
 import { RPCProviders } from '../../interfaces/provider'
 import { getRpcProvider } from '../../services/provider'
-import { getSASupport, simulateDebugTraceCall } from '../deployless/simulateDeployCall'
+import { getSASupport } from '../deployless/simulateDeployCall'
 
 // bnb, fantom, metis
 const relayerAdditionalNetworks = [56n, 250n, 1088n]
@@ -50,7 +50,6 @@ export async function getNetworkInfo(
     erc4337: 'LOADING',
     areContractsDeployed: 'LOADING',
     feeOptions: 'LOADING',
-    hasDebugTraceCall: 'LOADING',
     platformId: 'LOADING',
     nativeAssetId: 'LOADING',
     flagged: 'LOADING'
@@ -134,14 +133,6 @@ export async function getNetworkInfo(
         callback(networkInfo)
       })(),
       (async () => {
-        const hasDebugTraceCall = await retryRequest(() => simulateDebugTraceCall(provider)).catch(
-          () => false
-        )
-        networkInfo = { ...networkInfo, hasDebugTraceCall }
-
-        callback(networkInfo)
-      })(),
-      (async () => {
         const coingeckoRequest = await fetch(
           `https://cena.ambire.com/api/v3/platform/${Number(chainId)}`
         ).catch(() => ({
@@ -201,7 +192,6 @@ export function getFeaturesByNetworkProperties(
     areContractsDeployed,
     erc4337,
     rpcNoStateOverride,
-    hasDebugTraceCall,
     nativeAssetId,
     chainId,
     hasSingleton
@@ -264,15 +254,15 @@ export function getFeaturesByNetworkProperties(
     }
   }
 
-  if ([rpcNoStateOverride, hasDebugTraceCall].every((p) => p !== 'LOADING')) {
+  if ([rpcNoStateOverride].every((p) => p !== 'LOADING')) {
     const isPredefinedNetwork = predefinedNetworks.find((net) => net.chainId === chainId)
-    if (!rpcNoStateOverride && (hasDebugTraceCall || isPredefinedNetwork)) {
+    if (!rpcNoStateOverride && isPredefinedNetwork) {
       updateFeature('simulation', {
         level: 'success',
         title: 'Transaction simulation is fully supported',
         msg: 'This feature offers a proactive approach to blockchain security by a process used to predict the outcome of a transaction before it is broadcasted to the blockchain.'
       })
-    } else if (!rpcNoStateOverride && !hasDebugTraceCall) {
+    } else if (!rpcNoStateOverride) {
       updateFeature('simulation', {
         level: 'warning',
         title: 'Transaction simulation is partially supported',
@@ -338,7 +328,6 @@ export async function migrateNetworkPreferencesToNetworks(networkPreferences: {
       erc4337: preference.erc4337 ?? { enabled: false, hasPaymaster: false },
       areContractsDeployed: preference.areContractsDeployed ?? false,
       feeOptions: { is1559: (preference as any).is1559 ?? false },
-      hasDebugTraceCall: preference.hasDebugTraceCall ?? false,
       platformId: preference.platformId ?? '',
       nativeAssetId: preference.nativeAssetId ?? '',
       flagged: preference.flagged ?? false,

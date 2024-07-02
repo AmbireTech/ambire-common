@@ -394,7 +394,7 @@ export class MainController extends EventEmitter {
     if (!accountOp) return
 
     const network = this.networks.networks.find((net) => net.id === accountOp?.networkId)
-    if (!network || !network.hasDebugTraceCall) return
+    if (!network) return
 
     const account = this.accounts.accounts.find((acc) => acc.addr === accountOp.accountAddr)!
     const state = this.accounts.accountStates[accountOp.accountAddr][accountOp.networkId]
