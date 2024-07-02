@@ -82,7 +82,6 @@ export class NetworksController extends EventEmitter {
         erc4337: network.erc4337,
         areContractsDeployed: network.areContractsDeployed,
         feeOptions: network.feeOptions,
-        hasDebugTraceCall: network.hasDebugTraceCall,
         platformId: network.platformId,
         nativeAssetId: network.nativeAssetId,
         flagged: network.flagged ?? false,
