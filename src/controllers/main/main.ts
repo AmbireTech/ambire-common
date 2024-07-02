@@ -1257,13 +1257,17 @@ export class MainController extends EventEmitter {
             )
           )
         }
+
         const signer = await this.keystore.getSigner(feePayerKey.addr, feePayerKey.type)
         if (signer.init) signer.init(this.#externalSignerControllers[feePayerKey.type])
+
+        throw new Error(
+          `feePayerKeyAddr: ${feePayerKey.addr},  feePayerKeyType: ${feePayerKey.type}, signerKeyAddr ${signer.key.addr}`
+        )
 
         const gasFeePayment = accountOp.gasFeePayment!
         const { to, value, data } = accountOp.calls[0]
         const rawTxn: TxnRequest = {
-          from: accountOp.accountAddr,
           to,
           value,
           data,
@@ -1537,7 +1541,7 @@ export class MainController extends EventEmitter {
   }
 
   #throwAccountOpBroadcastError(error: Error) {
-    let message =
+    const message =
       error?.message ||
       'Unable to broadcast the transaction. Please try again or contact Ambire support if the issue persists.'
 
