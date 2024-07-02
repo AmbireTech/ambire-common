@@ -5,24 +5,28 @@ import fetch from 'node-fetch'
 /* eslint-disable no-new */
 import { describe, expect, test } from '@jest/globals'
 
+import { relayerUrl } from '../../../test/config'
 import { produceMemoryStore } from '../../../test/helpers'
+import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import {
   BIP44_STANDARD_DERIVATION_TEMPLATE,
   SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET
 } from '../../consts/derivation'
 import { networks } from '../../consts/networks'
 import { Account } from '../../interfaces/account'
+import { Storage } from '../../interfaces/storage'
 import { isSmartAccount } from '../../libs/account/account'
 import { getPrivateKeyFromSeed, KeyIterator } from '../../libs/keyIterator/keyIterator'
 import { getRpcProvider } from '../../services/provider'
+import { AccountsController } from '../accounts/accounts'
 import { KeystoreController } from '../keystore/keystore'
+import { NetworksController } from '../networks/networks'
+import { ProvidersController } from '../providers/providers'
 import { AccountAdderController, DEFAULT_PAGE, DEFAULT_PAGE_SIZE } from './accountAdder'
 
 const providers = Object.fromEntries(
   networks.map((network) => [network.id, getRpcProvider(network.rpcUrls, network.chainId)])
 )
-
-const relayerUrl = 'https://staging-relayer.ambire.com'
 
 const key1to11BasicAccPublicAddresses = Array.from(
   { length: 11 },
@@ -66,14 +70,34 @@ const basicAccount: Account = {
   initialPrivileges: [
     [key1PublicAddress, '0x0000000000000000000000000000000000000000000000000000000000000001']
   ],
-  creation: null
+  creation: null,
+  preferences: {
+    label: DEFAULT_ACCOUNT_LABEL,
+    pfp: key1PublicAddress
+  }
 }
 
 describe('AccountAdder', () => {
   let accountAdder: AccountAdderController
+  const storage: Storage = produceMemoryStore()
+  let providersCtrl: ProvidersController
+  const networksCtrl = new NetworksController(
+    storage,
+    fetch,
+    (net) => {
+      providersCtrl.setProvider(net)
+    },
+    (id) => {
+      providersCtrl.removeProvider(id)
+    }
+  )
+  providersCtrl = new ProvidersController(networksCtrl)
+  providersCtrl.providers = providers
+
+  const accountsCtrl = new AccountsController(storage, providersCtrl, networksCtrl, () => {})
   beforeEach(() => {
     accountAdder = new AccountAdderController({
-      alreadyImportedAccounts: [],
+      accounts: accountsCtrl,
       keystore: new KeystoreController(produceMemoryStore(), {}),
       relayerUrl,
       fetch
@@ -122,7 +146,7 @@ describe('AccountAdder', () => {
     accountAdder.setPage({ page: 1, networks, providers })
     accountAdder.selectAccount(basicAccount)
     accountAdder.deselectAccount(basicAccount)
-    accountAdder.addAccounts([], {}, { internal: [], external: [] }, [])
+    accountAdder.addAccounts([], { internal: [], external: [] }, [])
   })
 
   test('should throw if AccountAdder controller gets initialized, but the keyIterator is missing', (done) => {

@@ -1,16 +1,17 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable class-methods-use-this */
 /* eslint-disable @typescript-eslint/no-useless-constructor */
-/* eslint-disable max-classes-per-file */
-import { describe, expect, test } from '@jest/globals'
 import fetch from 'node-fetch'
 
+/* eslint-disable max-classes-per-file */
+import { describe, expect, test } from '@jest/globals'
+
+import { relayerUrl } from '../../../test/config'
 import { requestMagicLink } from './magicLink'
 
 const playstationEmail = 'playstation'
 const exMagicLinkKey = 'b12239309b38294f4075463ff131ac8cfe32ef2f99fc'
 const email = 'unufri+playstation@ambire.com'
-const relayerUrl = 'https://staging-relayer.ambire.com'
 
 describe('MagicLink', () => {
   test('should return key for session', async () => {

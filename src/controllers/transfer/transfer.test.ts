@@ -2,7 +2,9 @@ import fetch from 'node-fetch'
 
 import { expect } from '@jest/globals'
 
+import { velcroUrl } from '../../../test/config'
 import { produceMemoryStore } from '../../../test/helpers'
+import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import humanizerInfo from '../../consts/humanizer/humanizerInfo.json'
 import { networks } from '../../consts/networks'
@@ -31,13 +33,17 @@ const PLACEHOLDER_SELECTED_ACCOUNT: Account = {
     bytecode: '0x000',
     salt: '0x000'
   },
-  initialPrivileges: [['0x00', '0x01']]
+  initialPrivileges: [['0x00', '0x01']],
+  preferences: {
+    label: DEFAULT_ACCOUNT_LABEL,
+    pfp: '0xc4A6bB5139123bD6ba0CF387828a9A3a73EF8D1e'
+  }
 }
 const XWALLET_ADDRESS = '0x47Cd7E91C3CBaAF266369fe8518345fc4FC12935'
 
 const CONTACTS: Contacts = []
-const ethPortfolio = new Portfolio(fetch, provider, ethereum)
-const polygonPortfolio = new Portfolio(fetch, polygonProvider, polygon)
+const ethPortfolio = new Portfolio(fetch, provider, ethereum, velcroUrl)
+const polygonPortfolio = new Portfolio(fetch, polygonProvider, polygon, velcroUrl)
 
 let transferController: TransferController
 
@@ -48,6 +54,7 @@ const providers = Object.fromEntries(
 let providersCtrl: ProvidersController
 const networksCtrl = new NetworksController(
   produceMemoryStore(),
+  fetch,
   (net) => {
     providersCtrl.setProvider(net)
   },

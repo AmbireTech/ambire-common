@@ -1,3 +1,4 @@
+// eslint-disable-next-line import/no-cycle
 import { AccountOpAction, Action } from '../../controllers/actions/actions'
 import { DappProviderRequest } from '../../interfaces/dapp'
 import { AccountOp } from '../accountOp/accountOp'
@@ -61,4 +62,26 @@ export const getAccountOpFromAction = (
   const accountOpAction = actions.find((a) => a.id === accountOpActionId) as AccountOpAction
   if (!accountOpAction) return undefined
   return accountOpAction.accountOp
+}
+
+export const messageOnNewAction = (action: Action, addType: 'push' | 'unshift' | 'update') => {
+  let requestType = ''
+  if (action.type === 'accountOp') requestType = 'Sign Transaction'
+  if (action.type === 'signMessage') requestType = 'Sign Message'
+  if (action.type === 'dappRequest') {
+    if (action.userRequest.action.kind === 'dappConnect') requestType = 'Dapp Connect'
+    if (action.userRequest.action.kind === 'walletAddEthereumChain') requestType = 'Add Chain'
+    if (action.userRequest.action.kind === 'walletWatchAsset') requestType = 'Watch Asset'
+    if (action.userRequest.action.kind === 'ethGetEncryptionPublicKey')
+      requestType = 'Get Encryption Public Key'
+  }
+
+  if (addType === 'push') {
+    return `A new${requestType ? ` ${requestType} ` : ' '}request was queued.`
+  }
+  if (addType === 'unshift') {
+    return `A new${requestType ? ` ${requestType} ` : ' '}request was added.`
+  }
+
+  return `${requestType ? ` ${requestType} ` : ' '}request was updated.`
 }

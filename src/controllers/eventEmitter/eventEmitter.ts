@@ -57,7 +57,7 @@ export default class EventEmitter {
    * Without the `forceEmitUpdate` option, the application will only render the very first and last status updates,
    * batching the ones in between.
    */
-  protected async forceEmitUpdate() {
+  async forceEmitUpdate() {
     await wait(1)
     // eslint-disable-next-line no-restricted-syntax
     for (const i of this.#callbacksWithId) i.cb(true)

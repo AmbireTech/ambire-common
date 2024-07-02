@@ -8,13 +8,12 @@ import {
   getAddressVisualization,
   getDeadline,
   getLabel,
-  getRecipientText,
   getToken,
   getUnknownVisualization,
   getWrapping
 } from '../../utils'
 import { COMMANDS, COMMANDS_DESCRIPTIONS } from './Commands'
-import { parsePath } from './utils'
+import { getUniRecipientText, parsePath } from './utils'
 
 const coder = new AbiCoder()
 
@@ -205,7 +204,7 @@ export const uniUniversalRouter = (
                   fullVisualization: [
                     getAction('Unwrap'),
                     getToken(ZeroAddress, params.amountMin),
-                    ...getRecipientText(accountOp.accountAddr, params.recipient)
+                    ...getUniRecipientText(accountOp.accountAddr, params.recipient)
                   ]
                 })
             } else

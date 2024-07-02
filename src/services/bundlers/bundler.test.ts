@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-floating-promises */
 
 import { AbiCoder, Interface, keccak256, parseEther, parseUnits, toBeHex, Wallet } from 'ethers'
+import fetch from 'node-fetch'
 
 import { describe, expect, test } from '@jest/globals'
 
@@ -8,6 +9,7 @@ import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json'
 import ERC20 from '../../../contracts/compiled/IERC20.json'
 import { getAccountsInfo } from '../../../test/helpers'
+import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
 import { networks } from '../../consts/networks'
@@ -45,7 +47,11 @@ const smartAccDeployed: Account = {
       '0x7f00000000000000000000000000000000000000000000000000000000000000027ff33cc417366b7e38d2706a67ab46f85465661c28b864b521441180d15df82251553d602d80604d3d3981f3363d3d373d3d3d363d731cde6a53e9a411eaaf9d11e3e8c653a3e379d5355af43d82803e903d91602b57fd5bf3',
     salt: '0x0000000000000000000000000000000000000000000000000000000000000000'
   },
-  associatedKeys: ['0xBd84Cc40a5b5197B5B61919c22A55e1c46d2A3bb']
+  associatedKeys: ['0xBd84Cc40a5b5197B5B61919c22A55e1c46d2A3bb'],
+  preferences: {
+    label: DEFAULT_ACCOUNT_LABEL,
+    pfp: '0x8E5F6c1F0b134657A546932C3eC9169E1633a39b'
+  }
 }
 
 const mantle: Network = {
@@ -131,10 +137,10 @@ describe('Bundler tests', () => {
   describe('Basic tests', () => {
     test('should check if the network is supported by the bundler', async () => {
       // it supports mantle
-      const mantleShouldBeSupported = await Bundler.isNetworkSupported(5000n)
+      const mantleShouldBeSupported = await Bundler.isNetworkSupported(fetch, 5000n)
       expect(mantleShouldBeSupported).toBe(true)
       // it doesn't support filecoin
-      const filecoinShouldNotBeSupported = await Bundler.isNetworkSupported(134n)
+      const filecoinShouldNotBeSupported = await Bundler.isNetworkSupported(fetch, 134n)
       expect(filecoinShouldNotBeSupported).toBe(false)
     })
   })

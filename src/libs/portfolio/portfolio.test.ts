@@ -4,7 +4,9 @@ import fetch from 'node-fetch'
 import { describe, expect, jest, test } from '@jest/globals'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
+import { velcroUrl } from '../../../test/config'
 import { monitor, stopMonitoring } from '../../../test/helpers/requests'
+import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { networks } from '../../consts/networks'
 import { Account } from '../../interfaces/account'
 import { AccountOp } from '../accountOp/accountOp'
@@ -16,7 +18,7 @@ describe('Portfolio', () => {
   const ethereum = networks.find((x) => x.id === 'ethereum')
   if (!ethereum) throw new Error('unable to find ethereum network in consts')
   const provider = new JsonRpcProvider('https://invictus.ambire.com/ethereum')
-  const portfolio = new Portfolio(fetch, provider, ethereum)
+  const portfolio = new Portfolio(fetch, provider, ethereum, velcroUrl)
 
   async function getNonce(address: string) {
     const accountContract = new ethers.Contract(address, AmbireAccount.abi, provider)
@@ -88,8 +90,12 @@ describe('Portfolio', () => {
         bytecode:
           '0x7f00000000000000000000000000000000000000000000000000000000000000017f02c94ba85f2ea274a3869293a0a9bf447d073c83c617963b0be7c862ec2ee44e553d602d80604d3d3981f3363d3d373d3d3d363d732a2b85eb1054d6f0c6c2e37da05ed3e5fea684ef5af43d82803e903d91602b57fd5bf3',
         salt: '0x2ee01d932ede47b0b2fb1b6af48868de9f86bfc9a5be2f0b42c0111cf261d04c'
+      },
+      preferences: {
+        label: DEFAULT_ACCOUNT_LABEL,
+        pfp: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
       }
-    }
+    } as Account
     const postSimulation = await portfolio.get('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8', {
       simulation: { accountOps: [accountOp], account }
     })
@@ -139,6 +145,10 @@ describe('Portfolio', () => {
         bytecode:
           '0x7f00000000000000000000000000000000000000000000000000000000000000017fc00d23fd13e6cc01978ac25779646c3ba8aa974211c51a8b0f257a4593a6b7d3553d602d80604d3d3981f3363d3d373d3d3d363d732a2b85eb1054d6f0c6c2e37da05ed3e5fea684ef5af43d82803e903d91602b57fd5bf3',
         salt: '0x0000000000000000000000000000000000000000000000000000000000000001'
+      },
+      preferences: {
+        label: DEFAULT_ACCOUNT_LABEL,
+        pfp: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
       }
     }
 
@@ -171,7 +181,7 @@ describe('Portfolio', () => {
       return jest.fn((url: any) => {
         // @ts-ignore
         const { Response } = jest.requireActual('node-fetch')
-        if (url.includes('https://relayer.ambire.com/velcro-v3/multi-hints')) {
+        if (url.includes(`${velcroUrl}/multi-hints`)) {
           const body = stringify({ message: 'API error' })
           const headers = { status: 200 }
 
@@ -183,7 +193,7 @@ describe('Portfolio', () => {
       })
     })
 
-    const portfolioInner = new Portfolio(fetch, provider, ethereum)
+    const portfolioInner = new Portfolio(fetch, provider, ethereum, velcroUrl)
     const previousHints = {
       erc20s: [
         '0x0000000000000000000000000000000000000000',
@@ -230,7 +240,11 @@ describe('Portfolio', () => {
       addr: acc,
       associatedKeys: [acc],
       creation: null,
-      initialPrivileges: []
+      initialPrivileges: [],
+      preferences: {
+        label: DEFAULT_ACCOUNT_LABEL,
+        pfp: acc
+      }
     }
     const postSimulation = await portfolio.get(acc, {
       simulation: { accountOps: [accountOp], account },
@@ -249,7 +263,11 @@ describe('Portfolio', () => {
       addr: acc,
       associatedKeys: [acc],
       creation: null,
-      initialPrivileges: []
+      initialPrivileges: [],
+      preferences: {
+        label: DEFAULT_ACCOUNT_LABEL,
+        pfp: acc
+      }
     }
     const postSimulation = await portfolio.get(acc, {
       simulation: { accountOps: [], account },
@@ -284,7 +302,11 @@ describe('Portfolio', () => {
       addr: acc,
       associatedKeys: [acc],
       creation: null,
-      initialPrivileges: []
+      initialPrivileges: [],
+      preferences: {
+        label: DEFAULT_ACCOUNT_LABEL,
+        pfp: acc
+      }
     }
     const postSimulation = await portfolio.get(acc, {
       simulation: { accountOps: [accountOp], account },
@@ -323,6 +345,10 @@ describe('Portfolio', () => {
         bytecode:
           '0x7f00000000000000000000000000000000000000000000000000000000000000017f02c94ba85f2ea274a3869293a0a9bf447d073c83c617963b0be7c862ec2ee44e553d602d80604d3d3981f3363d3d373d3d3d363d732a2b85eb1054d6f0c6c2e37da05ed3e5fea684ef5af43d82803e903d91602b57fd5bf3',
         salt: '0x2ee01d932ede47b0b2fb1b6af48868de9f86bfc9a5be2f0b42c0111cf261d04c'
+      },
+      preferences: {
+        label: DEFAULT_ACCOUNT_LABEL,
+        pfp: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
       }
     }
     try {
@@ -379,7 +405,11 @@ describe('Portfolio', () => {
           '0x7f00000000000000000000000000000000000000000000000000000000000000017f02c94ba85f2ea274a3869293a0a9bf447d073c83c617963b0be7c862ec2ee44e553d602d80604d3d3981f3363d3d373d3d3d363d732a2b85eb1054d6f0c6c2e37da05ed3e5fea684ef5af43d82803e903d91602b57fd5bf3',
         salt: '0x2ee01d932ede47b0b2fb1b6af48868de9f86bfc9a5be2f0b42c0111cf261d04c'
       },
-      initialPrivileges: []
+      initialPrivileges: [],
+      preferences: {
+        label: DEFAULT_ACCOUNT_LABEL,
+        pfp: acc
+      }
     }
 
     try {
@@ -420,7 +450,11 @@ describe('Portfolio', () => {
           '0x7f00000000000000000000000000000000000000000000000000000000000000017f02c94ba85f2ea274a3869293a0a9bf447d073c83c617963b0be7c862ec2ee44e553d602d80604d3d3981f3363d3d373d3d3d363d732a2b85eb1054d6f0c6c2e37da05ed3e5fea684ef5af43d82803e903d91602b57fd5bf3',
         salt: '0x2ee01d932ede47b0b2fb1b6af48868de9f86bfc9a5be2f0b42c0111cf261d04c'
       },
-      initialPrivileges: []
+      initialPrivileges: [],
+      preferences: {
+        label: DEFAULT_ACCOUNT_LABEL,
+        pfp: acc
+      }
     }
 
     try {
@@ -459,6 +493,10 @@ describe('Portfolio', () => {
         bytecode:
           '0x7f00000000000000000000000000000000000000000000000000000000000000017f02c94ba85f2ea274a3869293a0a9bf447d073c83c617963b0be7c862ec2ee44e553d602d80604d3d3981f3363d3d373d3d3d363d732a2b85eb1054d6f0c6c2e37da05ed3e5fea684ef5af43d82803e903d91602b57fd5bf3',
         salt: '0x2ee01d932ede47b0b2fb1b6af48868de9f86bfc9a5be2f0b42c0111cf261d04c'
+      },
+      preferences: {
+        label: DEFAULT_ACCOUNT_LABEL,
+        pfp: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
       }
     }
     const secondAccountOp = { ...accountOp }
@@ -503,6 +541,10 @@ describe('Portfolio', () => {
         bytecode:
           '0x7f00000000000000000000000000000000000000000000000000000000000000017f02c94ba85f2ea274a3869293a0a9bf447d073c83c617963b0be7c862ec2ee44e553d602d80604d3d3981f3363d3d373d3d3d363d732a2b85eb1054d6f0c6c2e37da05ed3e5fea684ef5af43d82803e903d91602b57fd5bf3',
         salt: '0x2ee01d932ede47b0b2fb1b6af48868de9f86bfc9a5be2f0b42c0111cf261d04c'
+      },
+      preferences: {
+        label: DEFAULT_ACCOUNT_LABEL,
+        pfp: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
       }
     }
     const secondAccountOp = { ...accountOp }

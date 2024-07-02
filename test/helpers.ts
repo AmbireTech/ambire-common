@@ -117,7 +117,7 @@ function produceMemoryStore(): Storage {
       return Promise.resolve(serialized ? parse(serialized) : defaultValue)
     },
     set: (key, value) => {
-      storage.set(key, stringify(value))
+      storage.set(key, typeof value === 'string' ? value : stringify(value))
       return Promise.resolve(null)
     },
     remove: (key) => {

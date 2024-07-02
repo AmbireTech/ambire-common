@@ -8,7 +8,9 @@ import structuredClone from '@ungap/structured-clone'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import ERC20 from '../../../contracts/compiled/IERC20.json'
+import { velcroUrl } from '../../../test/config'
 import { getNonce } from '../../../test/helpers'
+import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
 import { networks } from '../../consts/networks'
@@ -53,7 +55,11 @@ const smartAccDeployed: Account = {
       '0x7f00000000000000000000000000000000000000000000000000000000000000027ff33cc417366b7e38d2706a67ab46f85465661c28b864b521441180d15df82251553d602d80604d3d3981f3363d3d373d3d3d363d731cde6a53e9a411eaaf9d11e3e8c653a3e379d5355af43d82803e903d91602b57fd5bf3',
     salt: '0x0000000000000000000000000000000000000000000000000000000000000000'
   },
-  associatedKeys: ['0xBd84Cc40a5b5197B5B61919c22A55e1c46d2A3bb']
+  associatedKeys: ['0xBd84Cc40a5b5197B5B61919c22A55e1c46d2A3bb'],
+  preferences: {
+    label: DEFAULT_ACCOUNT_LABEL,
+    pfp: '0x8E5F6c1F0b134657A546932C3eC9169E1633a39b'
+  }
 }
 
 // Used to determine if an account is view-only or not
@@ -122,6 +128,10 @@ const v1Acc: Account = {
     bytecode:
       '0x7f28d4ea8f825adb036e9b306b2269570e63d2aa5bd10751437d98ed83551ba1cd7fa57498058891e98f45f8abb85dafbcd30f3d8b3ab586dfae2e0228bbb1de7018553d602d80604d3d3981f3363d3d373d3d3d363d732a2b85eb1054d6f0c6c2e37da05ed3e5fea684ef5af43d82803e903d91602b57fd5bf3',
     salt: '0x0000000000000000000000000000000000000000000000000000000000000001'
+  },
+  preferences: {
+    label: DEFAULT_ACCOUNT_LABEL,
+    pfp: '0xa07D75aacEFd11b425AF7181958F0F85c312f143'
   }
 }
 const to = '0x68b3465833fb72a70ecdf485e0e4c7bd8665fc45'
@@ -148,20 +158,32 @@ const viewOnlyAcc = {
   addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
   creation: null,
   initialPrivileges: [],
-  associatedKeys: ['0x77777777789A8BBEE6C64381e5E89E501fb0e4c8']
-}
+  associatedKeys: ['0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'],
+  preferences: {
+    label: DEFAULT_ACCOUNT_LABEL,
+    pfp: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+  }
+} as Account
 const nativeToCheck: Account[] = [
   {
     addr: '0x0000000000000000000000000000000000000001',
     initialPrivileges: [],
     associatedKeys: ['0x0000000000000000000000000000000000000001'],
-    creation: null
+    creation: null,
+    preferences: {
+      label: DEFAULT_ACCOUNT_LABEL,
+      pfp: '0x0000000000000000000000000000000000000001'
+    }
   },
   {
     addr: FEE_COLLECTOR,
     initialPrivileges: [],
     associatedKeys: ['0x0000000000000000000000000000000000000001'],
-    creation: null
+    creation: null,
+    preferences: {
+      label: DEFAULT_ACCOUNT_LABEL,
+      pfp: FEE_COLLECTOR
+    }
   },
   viewOnlyAcc
 ]
@@ -242,7 +264,7 @@ const feeTokens = [
 //   }
 // ]
 
-const portfolio = new Portfolio(fetch, provider, ethereum)
+const portfolio = new Portfolio(fetch, provider, ethereum, velcroUrl)
 
 const providers = Object.fromEntries(
   networks.map((network) => [network.id, getRpcProvider(network.rpcUrls, network.chainId)])
@@ -273,7 +295,11 @@ const smartAccountv2eip712: Account = {
       '0x7f00000000000000000000000000000000000000000000000000000000000000027fa70e7c3e588683d0493e3cad10209993d632b6631bc4637b53a4174bad869718553d602d80604d3d3981f3363d3d373d3d3d363d730e370942ebe4d026d05d2cf477ff386338fc415a5af43d82803e903d91602b57fd5bf3',
     salt: '0x0000000000000000000000000000000000000000000000000000000000000000'
   },
-  initialPrivileges: []
+  initialPrivileges: [],
+  preferences: {
+    label: DEFAULT_ACCOUNT_LABEL,
+    pfp: '0x4AA524DDa82630cE769e5C9d7ec7a45B94a41bc6'
+  }
 }
 
 const trezorSlot6v2NotDeployed: Account = {
@@ -285,7 +311,11 @@ const trezorSlot6v2NotDeployed: Account = {
       '0x7f00000000000000000000000000000000000000000000000000000000000000027f3369d2838e4eeae4638428c523923f47cfb9039c70a8c40d546493e82c7ba866553d602d80604d3d3981f3363d3d373d3d3d363d730e370942ebe4d026d05d2cf477ff386338fc415a5af43d82803e903d91602b57fd5bf3',
     salt: '0x0000000000000000000000000000000000000000000000000000000000000000'
   },
-  initialPrivileges: []
+  initialPrivileges: [],
+  preferences: {
+    label: DEFAULT_ACCOUNT_LABEL,
+    pfp: '0x29e54b17CAe69edaf2D7138053c23436aac1B379'
+  }
 }
 
 describe('estimate', () => {
@@ -299,7 +329,11 @@ describe('estimate', () => {
           '0x0000000000000000000000000000000000000000000000000000000000000001'
         ]
       ],
-      creation: null
+      creation: null,
+      preferences: {
+        label: DEFAULT_ACCOUNT_LABEL,
+        pfp: '0x40b38765696e3d5d8d9d834d8aad4bb6e418e489'
+      }
     }
 
     const call: Call = {
@@ -347,7 +381,11 @@ describe('estimate', () => {
       addr,
       associatedKeys: [addr],
       initialPrivileges: [],
-      creation: null
+      creation: null,
+      preferences: {
+        label: DEFAULT_ACCOUNT_LABEL,
+        pfp: addr
+      }
     }
 
     // send all the native balance the user has in a call
@@ -394,7 +432,11 @@ describe('estimate', () => {
       addr,
       associatedKeys: [addr],
       initialPrivileges: [],
-      creation: null
+      creation: null,
+      preferences: {
+        label: DEFAULT_ACCOUNT_LABEL,
+        pfp: addr
+      }
     }
 
     // this should be a valid txn
@@ -446,7 +488,11 @@ describe('estimate', () => {
       addr,
       associatedKeys: [addr],
       initialPrivileges: [],
-      creation: null
+      creation: null,
+      preferences: {
+        label: DEFAULT_ACCOUNT_LABEL,
+        pfp: addr
+      }
     }
 
     // this should be an invalid txn
@@ -710,6 +756,10 @@ describe('estimate', () => {
         bytecode:
           '0x7f00000000000000000000000000000000000000000000000000000000000000017fc00d23fd13e6cc01978ac25779646c3ba8aa974211c51a8b0f257a4593a6b7d3553d602d80604d3d3981f3363d3d373d3d3d363d732a2b85eb1054d6f0c6c2e37da05ed3e5fea684ef5af43d82803e903d91602b57fd5bf3',
         salt: '0x0000000000000000000000000000000000000000000000000000000000000001'
+      },
+      preferences: {
+        label: DEFAULT_ACCOUNT_LABEL,
+        pfp: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
       }
     }
 
@@ -771,7 +821,7 @@ describe('estimate', () => {
       feeTokens
     )
 
-    response.feePaymentOptions.map((option) => expect(option.addedNative).toBeGreaterThan(0n))
+    response.feePaymentOptions.map((option) => expect(option.addedNative).toBe(0n))
   })
 
   it('[ERC-4337]:Optimism | not deployed | should work', async () => {
