@@ -464,12 +464,12 @@ describe('AccountAdder', () => {
 
   test('should retrieve all internal keys selected 1) basic accounts and 2) smart accounts', (done) => {
     // Subscription to select accounts
-    let emitCounter1 = 0
-    const unsubscribe1 = accountAdder.onUpdate(() => {
-      emitCounter1++
+    let emitCounter = 0
+    const unsubscribe = accountAdder.onUpdate(() => {
+      emitCounter++
 
       // First - init, second - start deriving, third - deriving done
-      if (emitCounter1 === 3) {
+      if (emitCounter === 3) {
         accountAdder.selectAccount(basicAccount)
         const firstSmartAccount = accountAdder.accountsOnPage.find(
           (x) => x.slot === 1 && isSmartAccount(x.account)
@@ -479,15 +479,7 @@ describe('AccountAdder', () => {
         )
         if (firstSmartAccount) accountAdder.selectAccount(firstSmartAccount.account)
         if (secondSmartAccount) accountAdder.selectAccount(secondSmartAccount.account)
-      }
-    })
 
-    let emitCounter2 = 0
-    const unsubscribe2 = accountAdder.onUpdate(() => {
-      emitCounter2++
-
-      // Select account emit is triggered
-      if (emitCounter2 === 5) {
         const internalKeys = accountAdder.retrieveInternalKeysOfSelectedAccounts()
 
         expect(internalKeys).toHaveLength(3)
@@ -504,8 +496,7 @@ describe('AccountAdder', () => {
           dedicatedToOneSA: true
         })
 
-        unsubscribe1()
-        unsubscribe2()
+        unsubscribe()
         done()
       }
     })
