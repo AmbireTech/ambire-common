@@ -208,7 +208,8 @@ export class MainController extends EventEmitter {
         await this.actions.forceEmitUpdate()
         await this.addressBook.forceEmitUpdate()
         this.dapps.broadcastDappSessionEvent('accountsChanged', [toAccountAddr])
-      }
+      },
+      this.providers.updateProviderIsWorking.bind(this.providers)
     )
     this.settings = new SettingsController(this.#storage)
     this.portfolio = new PortfolioController(
@@ -479,6 +480,15 @@ export class MainController extends EventEmitter {
       },
       []
     )
+  }
+
+  async reloadSelectedAccount() {
+    if (!this.accounts.selectedAccount) return
+
+    await Promise.all([
+      this.accounts.updateAccountState(this.accounts.selectedAccount, 'pending'),
+      this.updateSelectedAccountPortfolio(true)
+    ])
   }
 
   async updateSelectedAccountPortfolio(forceUpdate: boolean = false, network?: Network) {

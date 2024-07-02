@@ -341,7 +341,13 @@ const init = async (
   )
   providersCtrl = new ProvidersController(networksCtrl)
   providersCtrl.providers = providers
-  const accountsCtrl = new AccountsController(storage, providersCtrl, networksCtrl, () => {})
+  const accountsCtrl = new AccountsController(
+    storage,
+    providersCtrl,
+    networksCtrl,
+    () => {},
+    () => {}
+  )
   await accountsCtrl.initialLoadPromise
   await networksCtrl.initialLoadPromise
   await providersCtrl.initialLoadPromise

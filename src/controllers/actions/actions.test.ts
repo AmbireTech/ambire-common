@@ -76,7 +76,13 @@ describe('SignMessageController', () => {
   let actionsCtrl: ActionsController
   test('should init ActionsController', async () => {
     await storage.set('accounts', accounts)
-    accountsCtrl = new AccountsController(storage, providersCtrl, networksCtrl, () => {})
+    accountsCtrl = new AccountsController(
+      storage,
+      providersCtrl,
+      networksCtrl,
+      () => {},
+      () => {}
+    )
     await accountsCtrl.initialLoadPromise
     await networksCtrl.initialLoadPromise
     await providersCtrl.initialLoadPromise

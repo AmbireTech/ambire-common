@@ -178,7 +178,16 @@ export class Deployless {
               ])
             )
           })
-    const returnDataRaw = mapResponse(await mapError(callPromise))
+
+    // The ethers' providers retry failed calls every 1 second, making numerous attempts before finally resolving the promise.
+    // To prevent prolonged retries, we use Promise.race to set a 10-second timeout. This way, the callPromise will either resolve
+    // or the timeout promise will reject after 10 seconds, whichever occurs first.
+    const callPromisedWithResolveTimeout = Promise.race([
+      callPromise,
+      new Promise((_resolve, reject) => setTimeout(() => reject(new Error('rpc-timeout')), 10000))
+    ])
+
+    const returnDataRaw = mapResponse(await mapError(callPromisedWithResolveTimeout))
     return this.iface.decodeFunctionResult(methodName, returnDataRaw)
   }
 }

@@ -75,7 +75,13 @@ describe('Activity Controller ', () => {
       )
       providersCtrl = new ProvidersController(networksCtrl)
       providersCtrl.providers = providers
-      const accountsCtrl = new AccountsController(storage, providersCtrl, networksCtrl, () => {})
+      const accountsCtrl = new AccountsController(
+        storage,
+        providersCtrl,
+        networksCtrl,
+        () => {},
+        () => {}
+      )
       await accountsCtrl.initialLoadPromise
       accountsCtrl.selectedAccount = '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
       const controller = new ActivityController(
@@ -138,7 +144,13 @@ describe('Activity Controller ', () => {
       )
       providersCtrl = new ProvidersController(networksCtrl)
       providersCtrl.providers = providers
-      const accountsCtrl = new AccountsController(storage, providersCtrl, networksCtrl, () => {})
+      const accountsCtrl = new AccountsController(
+        storage,
+        providersCtrl,
+        networksCtrl,
+        () => {},
+        () => {}
+      )
       await accountsCtrl.initialLoadPromise
       accountsCtrl.selectedAccount = '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
       const controller = new ActivityController(
@@ -285,7 +297,13 @@ describe('Activity Controller ', () => {
       )
       providersCtrl = new ProvidersController(networksCtrl)
       providersCtrl.providers = providers
-      const accountsCtrl = new AccountsController(storage, providersCtrl, networksCtrl, () => {})
+      const accountsCtrl = new AccountsController(
+        storage,
+        providersCtrl,
+        networksCtrl,
+        () => {},
+        () => {}
+      )
       await accountsCtrl.initialLoadPromise
       accountsCtrl.selectedAccount = '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
       const controller = new ActivityController(
@@ -345,7 +363,13 @@ describe('Activity Controller ', () => {
       )
       providersCtrl = new ProvidersController(networksCtrl)
       providersCtrl.providers = providers
-      const accountsCtrl = new AccountsController(storage, providersCtrl, networksCtrl, () => {})
+      const accountsCtrl = new AccountsController(
+        storage,
+        providersCtrl,
+        networksCtrl,
+        () => {},
+        () => {}
+      )
       await accountsCtrl.initialLoadPromise
       accountsCtrl.selectedAccount = '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
       const controller = new ActivityController(
@@ -407,7 +431,13 @@ describe('Activity Controller ', () => {
       )
       providersCtrl = new ProvidersController(networksCtrl)
       providersCtrl.providers = providers
-      const accountsCtrl = new AccountsController(storage, providersCtrl, networksCtrl, () => {})
+      const accountsCtrl = new AccountsController(
+        storage,
+        providersCtrl,
+        networksCtrl,
+        () => {},
+        () => {}
+      )
       await accountsCtrl.initialLoadPromise
       accountsCtrl.selectedAccount = '0xa07D75aacEFd11b425AF7181958F0F85c312f143'
       const controller = new ActivityController(
@@ -472,7 +502,13 @@ describe('Activity Controller ', () => {
       )
       providersCtrl = new ProvidersController(networksCtrl)
       providersCtrl.providers = providers
-      const accountsCtrl = new AccountsController(storage, providersCtrl, networksCtrl, () => {})
+      const accountsCtrl = new AccountsController(
+        storage,
+        providersCtrl,
+        networksCtrl,
+        () => {},
+        () => {}
+      )
       await accountsCtrl.initialLoadPromise
       accountsCtrl.selectedAccount = '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
       const controller = new ActivityController(
@@ -543,7 +579,13 @@ describe('Activity Controller ', () => {
       )
       providersCtrl = new ProvidersController(networksCtrl)
       providersCtrl.providers = providers
-      const accountsCtrl = new AccountsController(storage, providersCtrl, networksCtrl, () => {})
+      const accountsCtrl = new AccountsController(
+        storage,
+        providersCtrl,
+        networksCtrl,
+        () => {},
+        () => {}
+      )
       await accountsCtrl.initialLoadPromise
       accountsCtrl.selectedAccount = '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
       const controller = new ActivityController(
@@ -605,7 +647,13 @@ describe('Activity Controller ', () => {
       )
       providersCtrl = new ProvidersController(networksCtrl)
       providersCtrl.providers = providers
-      const accountsCtrl = new AccountsController(storage, providersCtrl, networksCtrl, () => {})
+      const accountsCtrl = new AccountsController(
+        storage,
+        providersCtrl,
+        networksCtrl,
+        () => {},
+        () => {}
+      )
       await accountsCtrl.initialLoadPromise
       accountsCtrl.selectedAccount = '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
       const controller = new ActivityController(
@@ -672,7 +720,13 @@ describe('Activity Controller ', () => {
       )
       providersCtrl = new ProvidersController(networksCtrl)
       providersCtrl.providers = providers
-      const accountsCtrl = new AccountsController(storage, providersCtrl, networksCtrl, () => {})
+      const accountsCtrl = new AccountsController(
+        storage,
+        providersCtrl,
+        networksCtrl,
+        () => {},
+        () => {}
+      )
       await accountsCtrl.initialLoadPromise
       accountsCtrl.selectedAccount = '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
       const controller = new ActivityController(
