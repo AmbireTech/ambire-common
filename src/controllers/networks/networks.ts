@@ -106,8 +106,8 @@ export class NetworksController extends EventEmitter {
     this.#networks = storedNetworks
     predefinedNetworks.forEach((n) => {
       this.#networks[n.id] = {
-        ...n, // add the latest structure of the predefined network
-        ...(this.#networks[n.id] || {}) // override with stored props for the network
+        ...n, // add the latest structure of the predefined network to include the new props that are not in storage yet
+        ...(this.#networks[n.id] || {}) // override with stored props
       }
     })
     // without await to avoid performance impact on load
