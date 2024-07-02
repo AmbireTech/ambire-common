@@ -114,7 +114,7 @@ export async function getNFTs(
     } as CollectionResult
   }
 
-  if (!opts.simulation || network.rpcNoStateOverride) {
+  if (!opts.simulation) {
     const collections = (
       await deployless.call(
         'getAllNFTs',
@@ -210,7 +210,7 @@ export async function getTokens(
     } as TokenResult
   }
   const deploylessOpts = getDeploylessOpts(accountAddr, network, opts)
-  if (!opts.simulation || network.rpcNoStateOverride) {
+  if (!opts.simulation) {
     const [results] = await deployless.call(
       'getBalances',
       [accountAddr, tokenAddrs],
