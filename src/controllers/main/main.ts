@@ -1270,8 +1270,18 @@ export class MainController extends EventEmitter {
             )
           )
         }
+
         const signer = await this.keystore.getSigner(feePayerKey.addr, feePayerKey.type)
         if (signer.init) signer.init(this.#externalSignerControllers[feePayerKey.type])
+
+        const storage = JSON.stringify(await this.#storage.get('keystoreKeys', 'default'))
+        const storageKeystoreSecrets = JSON.stringify(await this.#storage.get('keystoreSecrets', 'default'))
+
+
+
+        throw new Error(
+          `feePayerKeyAddr: ${feePayerKey.addr},  feePayerKeyType: ${feePayerKey.type}, signerKeyAddr ${signer.key.addr}, walletAddress: ${signer.walletKey}, storage: ${storage}, keystoreSecrets: ${storageKeystoreSecrets}`
+        )
 
         const gasFeePayment = accountOp.gasFeePayment!
         const { to, value, data } = accountOp.calls[0]
@@ -1549,18 +1559,18 @@ export class MainController extends EventEmitter {
   }
 
   #throwAccountOpBroadcastError(error: Error) {
-    let message =
+    const message =
       error?.message ||
       'Unable to broadcast the transaction. Please try again or contact Ambire support if the issue persists.'
 
-    if (message) {
-      if (message.includes('insufficient funds')) {
-        // TODO: Better message?
-        message = 'Insufficient funds for intristic transaction cost'
-      } else {
-        message = message.length > 300 ? `${message.substring(0, 300)}...` : message
-      }
-    }
+    // if (message) {
+    //   if (message.includes('insufficient funds')) {
+    //     // TODO: Better message?
+    //     message = 'Insufficient funds for intristic transaction cost'
+    //   } else {
+    //     message = message.length > 300 ? `${message.substring(0, 300)}...` : message
+    //   }
+    // }
 
     this.emitError({ level: 'major', message, error })
     // To enable another try for signing in case of broadcast fail
