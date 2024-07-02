@@ -1263,6 +1263,7 @@ export class MainController extends EventEmitter {
         const gasFeePayment = accountOp.gasFeePayment!
         const { to, value, data } = accountOp.calls[0]
         const rawTxn: TxnRequest = {
+          from: accountOp.accountAddr,
           to,
           value,
           data,

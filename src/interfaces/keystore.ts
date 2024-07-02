@@ -40,6 +40,7 @@ export interface ExternalSignerController {
 export type ExternalSignerControllers = Partial<{ [key in Key['type']]: ExternalSignerController }>
 
 export interface TxnRequest {
+  from?: string
   to: Call['to']
   value?: Call['value']
   data: Call['data']
