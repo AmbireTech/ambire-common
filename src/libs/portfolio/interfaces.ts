@@ -87,7 +87,9 @@ interface Total {
 type AdditionalPortfolioProperties = 'updateStarted' | 'tokens'
 
 // Create the final type with some properties optional
-export type AdditionalPortfolioNetworkResult = Partial<PortfolioLibGetResult> &
+export type AdditionalPortfolioNetworkResult = Partial<PortfolioLibGetResult> & {
+  claimableRewardsData: any
+} &
   Pick<PortfolioLibGetResult, AdditionalPortfolioProperties> & {
     total: Total
   }
