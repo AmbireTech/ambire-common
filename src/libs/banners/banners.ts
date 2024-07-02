@@ -10,7 +10,7 @@ import { getNetworksWithFailedRPC } from '../networks/networks'
 import { PORTFOLIO_LIB_ERROR_NAMES } from '../portfolio/portfolio'
 
 export const getDappActionRequestsBanners = (actions: ActionFromActionsQueue[]): Banner[] => {
-  const requests = actions.filter((a) => a.type !== 'accountOp')
+  const requests = actions.filter((a) => !['accountOp', 'benzin'].includes(a.type))
   if (!requests.length) return []
 
   return [
