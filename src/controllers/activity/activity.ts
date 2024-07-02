@@ -1,10 +1,11 @@
 import { networks as predefinedNetworks } from '../../consts/networks'
-/* eslint-disable import/no-extraneous-dependencies */
+import { AccountId } from '../../interfaces/account'
 import { Banner } from '../../interfaces/banner'
 import { CustomResponse, Fetch } from '../../interfaces/fetch'
 import { Network } from '../../interfaces/network'
 import { Storage } from '../../interfaces/storage'
 import { Message } from '../../interfaces/userRequest'
+import { isSmartAccount } from '../../libs/account/account'
 import { AccountOp, AccountOpStatus } from '../../libs/accountOp/accountOp'
 import { getExplorerId } from '../../libs/userOperation/userOperation'
 import { Bundler } from '../../services/bundlers/bundler'
@@ -134,6 +135,8 @@ export class ActivityController extends EventEmitter {
   #networks: NetworksController
 
   #onContractsDeployed: (network: Network) => Promise<void>
+
+  #rbfStatuses = [AccountOpStatus.BroadcastedButNotConfirmed, AccountOpStatus.BroadcastButStuck]
 
   constructor(
     storage: Storage,
@@ -543,6 +546,47 @@ export class ActivityController extends EventEmitter {
         ]
       } as Banner
     })
+  }
+
+  /**
+   * A not confirmed account op can actually be with a status of BroadcastButNotConfirmed
+   * and BroadcastButStuck. Typically, it becomes BroadcastButStuck if not confirmed
+   * in a 15 minutes interval after becoming BroadcastButNotConfirmed. We need two
+   * statuses to hide the banner of BroadcastButNotConfirmed from the dashboard.
+   */
+  getNotConfirmedOpIfAny(accId: AccountId, networkId: Network['id']): SubmittedAccountOp | null {
+    const acc = this.#accounts.accounts.find((acc) => acc.addr === accId)
+    if (!acc) return null
+
+    // if the broadcasting account is a smart account, it means relayer
+    // broadcast => it's in this.#accountsOps[acc.addr][networkId]
+    // disregard erc-4337 txns as they shouldn't have an RBF
+    const isSA = isSmartAccount(acc)
+    if (isSA) {
+      if (!this.#accountsOps[acc.addr] || !this.#accountsOps[acc.addr][networkId]) return null
+      if (!this.#rbfStatuses.includes(this.#accountsOps[acc.addr][networkId][0].status!))
+        return null
+
+      return this.#accountsOps[acc.addr][networkId][0]
+    }
+
+    // if the account is an EOA, we have to go through all the smart accounts
+    // to check whether the EOA has made a broadcast for them
+    const theEOAandSAaccounts = this.#accounts.accounts.filter(
+      (acc) => isSmartAccount(acc) || acc.addr === accId
+    )
+    const ops: SubmittedAccountOp[] = []
+    theEOAandSAaccounts.forEach((acc) => {
+      if (!this.#accountsOps[acc.addr] || !this.#accountsOps[acc.addr][networkId]) return
+      const op = this.#accountsOps[acc.addr][networkId].find(
+        (op) =>
+          this.#rbfStatuses.includes(this.#accountsOps[acc.addr][networkId][0].status!) &&
+          op.gasFeePayment?.paidBy === acc.addr
+      )
+      if (!op) return
+      ops.push(op)
+    })
+    return !ops.length ? null : ops.reduce((m, e) => (e.nonce > m.nonce ? e : m))
   }
 
   toJSON() {

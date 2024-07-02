@@ -4,9 +4,7 @@ import Estimation from '../../../contracts/compiled/Estimation.json'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { DEPLOYLESS_SIMULATION_FROM, OPTIMISTIC_ORACLE } from '../../consts/deploy'
 import { Account, AccountStates } from '../../interfaces/account'
-import { Key } from '../../interfaces/keystore'
 import { Network } from '../../interfaces/network'
-import { getIsViewOnly } from '../../utils/accounts'
 import { getAccountDeployParams, isSmartAccount } from '../account/account'
 import { AccountOp } from '../accountOp/accountOp'
 import { Call } from '../accountOp/types'
@@ -211,10 +209,9 @@ export async function estimate(
   provider: Provider | JsonRpcProvider,
   network: Network,
   account: Account,
-  keystoreKeys: Key[],
   op: AccountOp,
   accountStates: AccountStates,
-  EOAaccounts: Account[],
+  nativeToCheck: string[],
   feeTokens: TokenResult[],
   opts?: {
     calculateRefund?: boolean
@@ -256,14 +253,6 @@ export async function estimate(
   if (shouldIncludeActivatorCall(network, account, accountState, false)) {
     calls.push(getActivatorCall(op.accountAddr))
   }
-
-  // we're excluding the view only accounts from the natives to check
-  // in all cases EXCEPT the case where we're making an estimation for
-  // the view only account itself. In all other, view only accounts options
-  // should not be present as the user cannot pay the fee with them (no key)
-  const nativeToCheck = EOAaccounts.filter(
-    (acc) => acc.addr === op.accountAddr || !getIsViewOnly(keystoreKeys, acc.associatedKeys)
-  ).map((acc) => acc.addr)
 
   // if 4337, delegate
   if (opts && opts.is4337Broadcast) {

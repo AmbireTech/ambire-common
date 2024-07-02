@@ -1,13 +1,16 @@
-import { BaseContract, getBytes, hexlify, JsonRpcProvider, toBeHex } from 'ethers'
+import { BaseContract, getBytes, hexlify, JsonRpcProvider } from 'ethers'
 import { ethers } from 'hardhat'
 import secp256k1 from 'secp256k1'
 
 import { Account, AccountStates } from '../src/interfaces/account'
+import { Key } from '../src/interfaces/keystore'
 import { Network } from '../src/interfaces/network'
 import { RPCProviders } from '../src/interfaces/provider'
 import { Storage } from '../src/interfaces/storage'
+import { isSmartAccount } from '../src/libs/account/account'
 import { getAccountState } from '../src/libs/accountState/accountState'
 import { parse, stringify } from '../src/libs/richJson/richJson'
+import { getIsViewOnly } from '../src/utils/accounts'
 import { abiCoder, addressOne, addressTwo, AmbireAccount, pk1 } from './config'
 
 async function sendFunds(to: string, ether: number) {
@@ -246,6 +249,71 @@ const getAccountsInfo = async (
   return Object.fromEntries(states)
 }
 
+// Used to determine if an account is view-only or not
+// and subsequently if it should be included in the fee payment options
+const addrWithDeploySignature = '0x52C37FD54BD02E9240e8558e28b11e0Dc22d8e85'
+const MOCK_KEYSTORE_KEYS: Key[] = [
+  {
+    addr: '0x71c3D24a627f0416db45107353d8d0A5ae0401ae',
+    type: 'trezor',
+    dedicatedToOneSA: true,
+    isExternallyStored: true,
+    meta: {
+      deviceId: 'doesnt-matter',
+      deviceModel: 'doesnt-matter',
+      hdPathTemplate: "m/44'/60'/0'/0/<account>",
+      index: 2
+    }
+  },
+  {
+    type: 'internal',
+    addr: '0xd6e371526cdaeE04cd8AF225D42e37Bc14688D9E',
+    dedicatedToOneSA: false,
+    meta: null,
+    isExternallyStored: false
+  },
+  {
+    type: 'internal',
+    addr: '0x141A14B5C4dbA2aC7a7943E02eDFE2E7eDfdA28F',
+    dedicatedToOneSA: false,
+    meta: null,
+    isExternallyStored: false
+  },
+  {
+    type: 'internal',
+    addr: '0x0000000000000000000000000000000000000001',
+    dedicatedToOneSA: false,
+    meta: null,
+    isExternallyStored: false
+  },
+  {
+    type: 'internal',
+    addr: '0xa8eEaC54343F94CfEEB3492e07a7De72bDFD118a',
+    dedicatedToOneSA: false,
+    meta: null,
+    isExternallyStored: false
+  },
+  {
+    type: 'internal',
+    addr: addrWithDeploySignature,
+    dedicatedToOneSA: true,
+    meta: null,
+    isExternallyStored: false
+  }
+]
+
+function getNativeToCheckFromEOAs(eoas: Account[], account: Account) {
+  return account?.creation
+    ? eoas
+        .filter(
+          (acc) =>
+            !isSmartAccount(acc) &&
+            (acc.addr === account.addr || !getIsViewOnly(MOCK_KEYSTORE_KEYS, acc.associatedKeys))
+        )
+        .map((acc) => acc.addr)
+    : []
+}
+
 export {
   sendFunds,
   getPriviledgeTxn,
@@ -259,5 +327,6 @@ export {
   getTargetNonce,
   getAccountsInfo,
   getAccountGasLimits,
-  getGasFees
+  getGasFees,
+  getNativeToCheckFromEOAs
 }
