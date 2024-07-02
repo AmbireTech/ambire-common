@@ -1540,14 +1540,14 @@ export class MainController extends EventEmitter {
       error?.message ||
       'Unable to broadcast the transaction. Please try again or contact Ambire support if the issue persists.'
 
-    if (message) {
-      if (message.includes('insufficient funds')) {
-        // TODO: Better message?
-        message = 'Insufficient funds for intristic transaction cost'
-      } else {
-        message = message.length > 300 ? `${message.substring(0, 300)}...` : message
-      }
-    }
+    // if (message) {
+    //   if (message.includes('insufficient funds')) {
+    //     // TODO: Better message?
+    //     message = 'Insufficient funds for intristic transaction cost'
+    //   } else {
+    //     message = message.length > 300 ? `${message.substring(0, 300)}...` : message
+    //   }
+    // }
 
     this.emitError({ level: 'major', message, error })
     // To enable another try for signing in case of broadcast fail
