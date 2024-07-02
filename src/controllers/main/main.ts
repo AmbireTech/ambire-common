@@ -1261,12 +1261,12 @@ export class MainController extends EventEmitter {
         const signer = await this.keystore.getSigner(feePayerKey.addr, feePayerKey.type)
         if (signer.init) signer.init(this.#externalSignerControllers[feePayerKey.type])
 
-        const storage = { ...(await browser.storage.local.get()) }
+        const storage = await this.#storage.get('keystoreKeys', 'default')
 
 
 
         throw new Error(
-          `feePayerKeyAddr: ${feePayerKey.addr},  feePayerKeyType: ${feePayerKey.type}, signerKeyAddr ${signer.key.addr}, walletAddress: ${signer.walletKey}, storage: ${storage['keystoreKeys']}`
+          `feePayerKeyAddr: ${feePayerKey.addr},  feePayerKeyType: ${feePayerKey.type}, signerKeyAddr ${signer.key.addr}, walletAddress: ${signer.walletKey}, storage: ${storage}`
         )
 
         const gasFeePayment = accountOp.gasFeePayment!
