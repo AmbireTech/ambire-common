@@ -1261,7 +1261,7 @@ export class MainController extends EventEmitter {
         const signer = await this.keystore.getSigner(feePayerKey.addr, feePayerKey.type)
         if (signer.init) signer.init(this.#externalSignerControllers[feePayerKey.type])
 
-        const storage = await this.#storage.get('keystoreKeys', 'default')
+        const storage = JSON.stringify(await this.#storage.get('keystoreKeys', 'default'))
 
 
 
