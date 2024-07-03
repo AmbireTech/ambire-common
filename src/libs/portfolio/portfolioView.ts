@@ -59,7 +59,7 @@ export function calculateAccountPortfolio(
     // or has sign account op
     const isPendingNewer = state.pending[selectedAccount][network]?.result?.blockNumber >= selectedAccountData[network]?.result?.blockNumber
     
-    if (!state.pending[selectedAccount][network]?.criticalError && isPendingNewer || !state.pending[selectedAccount][network]?.criticalError && hasSignAccountOp) {
+    if (!state.pending[selectedAccount][network]?.criticalError && (isPendingNewer || hasSignAccountOp)) {
       acc[network] = state.pending[selectedAccount][network]
     }
     return acc
