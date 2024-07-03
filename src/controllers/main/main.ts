@@ -557,7 +557,11 @@ export class MainController extends EventEmitter {
       // TODO: if address is in this.accounts in theory the user should be able to sign
       // e.g. if an acc from the wallet is used as a signer of another wallet
       if (getAddress(msdAddress) !== this.accounts.selectedAccount) {
-        dappPromise.reject(ethErrors.provider.userRejectedRequest('must use the current user address to sign'))
+        dappPromise.reject(
+          ethErrors.provider.userRejectedRequest(
+            'the dApp is trying to sign using an address different from the currently selected account. Try re-connecting.'
+          )
+        )
         return
       }
 
@@ -592,7 +596,9 @@ export class MainController extends EventEmitter {
       // TODO: if address is in this.accounts in theory the user should be able to sign
       // e.g. if an acc from the wallet is used as a signer of another wallet
       if (getAddress(msdAddress) !== this.accounts.selectedAccount) {
-        dappPromise.reject(ethErrors.provider.userRejectedRequest('must use the current user address to sign'))
+        dappPromise.reject(
+          ethErrors.provider.userRejectedRequest('must use the current user address to sign')
+        )
         return
       }
 
