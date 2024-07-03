@@ -7,6 +7,8 @@ import { TypedMessage } from '../../interfaces/userRequest'
 export class KeystoreSigner implements KeystoreSignerInterface {
   key: Key
 
+  walletKey: string
+
   #signer: Wallet
 
   constructor(_key: Key, _privKey?: string) {
@@ -16,6 +18,7 @@ export class KeystoreSigner implements KeystoreSignerInterface {
 
     this.key = _key
     this.#signer = new Wallet(_privKey)
+    this.walletKey = this.#signer.address
   }
 
   async signRawTransaction(params: TransactionRequest) {
