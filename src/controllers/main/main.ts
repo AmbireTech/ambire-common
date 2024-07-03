@@ -557,7 +557,9 @@ export class MainController extends EventEmitter {
       // TODO: if address is in this.accounts in theory the user should be able to sign
       // e.g. if an acc from the wallet is used as a signer of another wallet
       if (getAddress(msdAddress) !== this.accounts.selectedAccount) {
-        dappPromise.reject(ethErrors.provider.userRejectedRequest('must use the current user address to sign'))
+        dappPromise.reject(
+          ethErrors.provider.userRejectedRequest('must use the current user address to sign')
+        )
         return
       }
 
@@ -592,7 +594,9 @@ export class MainController extends EventEmitter {
       // TODO: if address is in this.accounts in theory the user should be able to sign
       // e.g. if an acc from the wallet is used as a signer of another wallet
       if (getAddress(msdAddress) !== this.accounts.selectedAccount) {
-        dappPromise.reject(ethErrors.provider.userRejectedRequest('must use the current user address to sign'))
+        dappPromise.reject(
+          ethErrors.provider.userRejectedRequest('must use the current user address to sign')
+        )
         return
       }
 
@@ -746,8 +750,18 @@ export class MainController extends EventEmitter {
       const accountState = this.accounts.accountStates[meta.accountAddr][meta.networkId]
 
       if (account.creation) {
-        const network = this.networks.networks.filter((n) => n.id === meta.networkId)[0]
-        if (shouldAskForEntryPointAuthorization(network, account, accountState)) {
+        const network = this.networks.networks.find((n) => n.id === meta.networkId)!
+
+        // find me the accountOp for the network if any, it's always 1 for SA
+        const currentAccountOpAction = this.actions.actionsQueue.find(
+          (a) =>
+            a.type === 'accountOp' &&
+            a.accountOp.accountAddr === account.addr &&
+            a.accountOp.networkId === network.id
+        ) as AccountOpAction | undefined
+
+        const hasAuthorized = !!currentAccountOpAction?.accountOp?.meta?.entryPointAuthorization
+        if (shouldAskForEntryPointAuthorization(network, account, accountState, hasAuthorized)) {
           if (
             this.actions.visibleActionsQueue.find(
               (a) =>
