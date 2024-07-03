@@ -756,8 +756,18 @@ export class MainController extends EventEmitter {
       const accountState = this.accounts.accountStates[meta.accountAddr][meta.networkId]
 
       if (account.creation) {
-        const network = this.networks.networks.filter((n) => n.id === meta.networkId)[0]
-        if (shouldAskForEntryPointAuthorization(network, account, accountState)) {
+        const network = this.networks.networks.find((n) => n.id === meta.networkId)!
+
+        // find me the accountOp for the network if any, it's always 1 for SA
+        const currentAccountOpAction = this.actions.actionsQueue.find(
+          (a) =>
+            a.type === 'accountOp' &&
+            a.accountOp.accountAddr === account.addr &&
+            a.accountOp.networkId === network.id
+        ) as AccountOpAction | undefined
+
+        const hasAuthorized = !!currentAccountOpAction?.accountOp?.meta?.entryPointAuthorization
+        if (shouldAskForEntryPointAuthorization(network, account, accountState, hasAuthorized)) {
           if (
             this.actions.visibleActionsQueue.find(
               (a) =>

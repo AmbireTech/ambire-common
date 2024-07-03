@@ -202,8 +202,11 @@ export function getExplorerId(network: Network) {
 export function shouldAskForEntryPointAuthorization(
   network: Network,
   account: Account,
-  accountState: AccountOnchainState
+  accountState: AccountOnchainState,
+  alreadySigned: boolean
 ) {
+  if (alreadySigned) return false
+
   return (
     account.creation &&
     account.creation.factoryAddr === AMBIRE_ACCOUNT_FACTORY &&
