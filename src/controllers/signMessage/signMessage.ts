@@ -47,6 +47,7 @@ export class SignMessageController extends EventEmitter {
 
   isInitialized: boolean = false
 
+  // TODO: Delete status
   status: 'INITIAL' | 'LOADING' | 'DONE' = 'INITIAL'
 
   dapp: {
@@ -157,7 +158,7 @@ export class SignMessageController extends EventEmitter {
     this.emitUpdate()
   }
 
-  async sign() {
+  async #sign() {
     if (!this.isInitialized || !this.messageToSign) {
       this.#throwNotInitialized()
       return
@@ -287,6 +288,10 @@ export class SignMessageController extends EventEmitter {
       this.status = 'DONE'
       this.emitUpdate()
     }
+  }
+
+  async sign() {
+    await this.withStatus('sign', () => this.#sign())
   }
 
   #throwNotInitialized() {
