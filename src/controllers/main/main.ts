@@ -558,7 +558,10 @@ export class MainController extends EventEmitter {
       // e.g. if an acc from the wallet is used as a signer of another wallet
       if (getAddress(msdAddress) !== this.accounts.selectedAccount) {
         dappPromise.reject(
-          ethErrors.provider.userRejectedRequest('must use the current user address to sign')
+          ethErrors.provider.userRejectedRequest(
+            // if updating, check https://github.com/AmbireTech/ambire-wallet/pull/1627
+            'the dApp is trying to sign using an address different from the currently selected account. Try re-connecting.'
+          )
         )
         return
       }
@@ -595,7 +598,10 @@ export class MainController extends EventEmitter {
       // e.g. if an acc from the wallet is used as a signer of another wallet
       if (getAddress(msdAddress) !== this.accounts.selectedAccount) {
         dappPromise.reject(
-          ethErrors.provider.userRejectedRequest('must use the current user address to sign')
+          ethErrors.provider.userRejectedRequest(
+            // if updating, check https://github.com/AmbireTech/ambire-wallet/pull/1627
+            'the dApp is trying to sign using an address different from the currently selected account. Try re-connecting.'
+          )
         )
         return
       }
