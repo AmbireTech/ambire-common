@@ -239,6 +239,7 @@ export class SignMessageController extends EventEmitter {
           : this.messageToSign.content.message
 
       const isValidSignature = await verifyMessage({
+        network,
         provider: this.#providers.providers[network?.id || 'ethereum'],
         // the signer is always the account even if the actual
         // signature is from a key that has privs to the account
