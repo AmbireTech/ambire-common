@@ -1,6 +1,6 @@
 import erc20Abi from 'adex-protocol-eth/abi/ERC20.json'
 import { Interface, parseUnits } from 'ethers'
-import { SignUserRequest } from 'interfaces/userRequest'
+import { Call, SignUserRequest } from 'interfaces/userRequest'
 
 import WALLETSupplyControllerABI from '../../../contracts/compiled/WALLETSupplyController.json'
 import { TokenResult } from '../../libs/portfolio'
@@ -25,9 +25,9 @@ function buildClaimWalletRequest({
   claimableRewardsData,
 }: { selectedAccount: string, selectedToken: TokenResult, claimableRewardsData: any }): SignUserRequest | null {
   const txn = {
-    kind: 'call' as const,
+    kind: 'call' as Call['kind'],
     to: supplyControllerAddress,
-    value: '0x0',
+    value: BigInt(0),
     data: supplyControllerInterface.encodeFunctionData('claimWithRootUpdate', [
       claimableRewardsData?.totalClaimable,
       claimableRewardsData?.proof,
