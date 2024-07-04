@@ -20,7 +20,9 @@ import { ProvidersController } from '../providers/providers'
 
 const STATUS_WRAPPED_METHODS = {
   selectAccount: 'INITIAL',
-  updateAccountPreferences: 'INITIAL'
+  updateAccountPreferences: 'INITIAL',
+  updateAccountStates: 'INITIAL',
+  updateAccountState: 'INITIAL'
 } as const
 
 export class AccountsController extends EventEmitter {
@@ -101,7 +103,10 @@ export class AccountsController extends EventEmitter {
   }
 
   async updateAccountStates(blockTag: string | number = 'latest', networks: NetworkId[] = []) {
-    this.#updateAccountStates(this.accounts, blockTag, networks)
+    await this.withStatus(
+      'updateAccountStates',
+      async () => await this.#updateAccountStates(this.accounts, blockTag, networks)
+    )
   }
 
   async updateAccountState(accountAddr: Account['addr'], blockTag: string | number = 'latest') {
@@ -109,7 +114,10 @@ export class AccountsController extends EventEmitter {
 
     if (!accountData) return
 
-    this.#updateAccountStates([accountData], blockTag)
+    await this.withStatus(
+      'updateAccountState',
+      async () => await this.#updateAccountStates([accountData], blockTag)
+    )
   }
 
   async #updateAccountStates(
