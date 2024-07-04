@@ -720,7 +720,7 @@ export class PortfolioController extends EventEmitter {
     delete this.pending[address]
     delete this.#networksWithAssetsByAccounts[address]
 
-    this.#settings.networks.forEach((network) => {
+    this.#networks.networks.forEach((network) => {
       const key = `${network.id}:${address}`
 
       if (key in this.#previousHints.fromExternalAPI) {
