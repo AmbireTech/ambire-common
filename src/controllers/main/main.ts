@@ -411,9 +411,10 @@ export class MainController extends EventEmitter {
 
     this.signMessage.init(params)
 
-    const broadcastSignedMessageIfNeeded = () => {
-      if (this.signMessage.statuses.sign === 'SUCCESS') {
-        this.broadcastSignedMessage(this.signMessage)
+    const broadcastSignedMessageIfNeeded = async () => {
+      if (this.signMessage.statuses.sign === 'SUCCESS' && this.signMessage.signedMessage) {
+        // TODO: Error handling!
+        this.broadcastSignedMessage(this.signMessage.signedMessage)
       }
     }
 
@@ -423,8 +424,8 @@ export class MainController extends EventEmitter {
   destroySignMessage() {
     if (!this.signMessage.isInitialized) return
 
-    this.signMessage.reset()
     MainController.signMessageListener()
+    this.signMessage.reset()
   }
 
   async updateAccountsOpsStatuses() {
