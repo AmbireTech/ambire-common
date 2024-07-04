@@ -13,7 +13,7 @@ import {
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json'
 import { AMBIRE_ACCOUNT_FACTORY, SINGLETON } from '../../consts/deploy'
-import { AccountId } from '../../interfaces/account'
+import { Account, AccountId } from '../../interfaces/account'
 import { Banner } from '../../interfaces/banner'
 import { DappProviderRequest } from '../../interfaces/dapp'
 import { Fetch } from '../../interfaces/fetch'
@@ -456,37 +456,18 @@ export class MainController extends EventEmitter {
   removeAccount(address: Account['addr']) {
     // Compute account keys that are only associated with this account
     const accountAssociatedKeys =
-      this.accounts.find((acc) => acc.addr === address)?.associatedKeys || []
+      this.accounts.accounts.find((acc) => acc.addr === address)?.associatedKeys || []
     const keysInKeystore = this.keystore.keys
     const importedAccountKeys = keysInKeystore.filter((key) =>
       accountAssociatedKeys.includes(key.addr)
     )
     const solelyAccountKeys = importedAccountKeys.filter((key) => {
-      const isKeyAssociatedWithOtherAccounts = this.accounts.some(
+      const isKeyAssociatedWithOtherAccounts = this.accounts.accounts.some(
         (acc) => acc.addr !== address && acc.associatedKeys.includes(key.addr)
       )
 
       return !isKeyAssociatedWithOtherAccounts
     })
-
-    // Update the main controller
-    const nextAccounts = this.accounts.filter((acc) => acc.addr !== address)
-
-    this.accounts.length = 0
-    this.accounts.push(...nextAccounts)
-    this.#storage.set('accounts', nextAccounts)
-
-    if (this.selectedAccount?.toLowerCase() === address.toLowerCase()) {
-      const nextSelectedAccount = getDefaultSelectedAccount(nextAccounts)?.addr
-
-      if (nextSelectedAccount) {
-        this.selectAccount(nextSelectedAccount)
-      } else {
-        this.selectedAccount = null
-      }
-    }
-
-    this.emitUpdate()
 
     // Remove account keys from the keystore
     for (const key of solelyAccountKeys) {
@@ -494,11 +475,11 @@ export class MainController extends EventEmitter {
     }
 
     // Remove account data from sub-controllers
+    this.accounts.removeAccountData(address)
     this.portfolio.removeAccountData(address)
     this.activity.removeAccountData(address)
     this.actions.removeAccountData(address)
     this.signMessage.removeAccountData(address)
-    this.settings.removeAccountData(address, solelyAccountKeys)
 
     if (this.signAccountOp?.account.addr === address) {
       this.destroySignAccOp()

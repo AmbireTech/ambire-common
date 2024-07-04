@@ -724,12 +724,13 @@ export class PortfolioController extends EventEmitter {
       const key = `${network.id}:${address}`
 
       if (key in this.#previousHints.fromExternalAPI) {
-        delete this.#previousHints.fromExternalAPI[`${network.id}:${address}`]
+        delete this.#previousHints.fromExternalAPI[key]
       }
       if (key in this.#portfolioLibs) {
         this.#portfolioLibs.delete(key)
       }
     })
+    this.#storage.set('previousHints', this.#previousHints)
     this.#storage.set('networksWithAssetsByAccount', this.#networksWithAssetsByAccounts)
 
     this.emitUpdate()
