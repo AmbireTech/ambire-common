@@ -471,6 +471,7 @@ export class MainController extends EventEmitter {
 
     // Remove account keys from the keystore
     for (const key of solelyAccountKeys) {
+      this.settings.removeKeyPreferences([{ addr: key.addr, type: key.type }])
       this.keystore.removeKey(key.addr, key.type)
     }
 
