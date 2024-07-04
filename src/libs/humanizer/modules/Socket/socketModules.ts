@@ -13,11 +13,15 @@ import {
   getToken
 } from '../../utils'
 
+// @TODO check all additional data provided
+// @TODO consider fees everywhere
 export const SocketModule: HumanizerCallModule = (accountOp: AccountOp, irCalls: IrCall[]) => {
   const iface = new Interface([
     ...SocketViaAcross,
     'function performAction(address fromToken, address toToken, uint256 amount, address receiverAddress, bytes32 metadata, bytes swapExtraData) payable returns (uint256)',
-    'function performActionWithIn(address fromToken, address toToken, uint256 amount, bytes32 metadata, bytes swapExtraData) payable returns (uint256, address)'
+    'function performActionWithIn(address fromToken, address toToken, uint256 amount, bytes32 metadata, bytes swapExtraData) payable returns (uint256, address)',
+    'function bridgeERC20To(uint256,bytes32,address,address,uint256,uint32,uint256)',
+    'function transformERC20(address,address,uint256,uint256,(uint32,bytes)[])'
   ])
   const matcher = {
     [`${
@@ -110,31 +114,21 @@ export const SocketModule: HumanizerCallModule = (accountOp: AccountOp, irCalls:
         'function performAction(address fromToken, address toToken, uint256 amount, address receiverAddress, bytes32 metadata, bytes swapExtraData)'
       )?.selector
     }`]: (call: IrCall): IrCall => {
-      const { fromToken, toToken, amount, receiverAddress } = iface.parseTransaction(call)!.args
+      const { fromToken, toToken, amount, receiverAddress, swapExtraData } =
+        iface.parseTransaction(call)!.args
+      // @TODO fees
+      // http://localhost:19006/?networkId=polygon&txnId=0x42ebe28c1c02a6c98ad458e15f3fdff90d531d0c2b2fddfeeac46dcda7e421ba
+      let outAmount = 0n
+      if (swapExtraData.startsWith('0x415565b0'))
+        outAmount = iface.parseTransaction({ data: swapExtraData })!.args[3]
+
       return {
         ...call,
         fullVisualization: [
           getAction('Bridge'),
-          getToken(eToNative(fromToken), 0n),
+          getToken(eToNative(fromToken), amount),
           getLabel('for'),
-          getToken(eToNative(toToken), amount),
-          ...getRecipientText(accountOp.accountAddr, receiverAddress)
-        ]
-      }
-    },
-    [`${
-      iface.getFunction(
-        'function performAction(address fromToken, address toToken, uint256 amount, address receiverAddress, bytes32 metadata, bytes swapExtraData)'
-      )?.selector
-    }`]: (call: IrCall): IrCall => {
-      const { fromToken, toToken, amount, receiverAddress } = iface.parseTransaction(call)!.args
-      return {
-        ...call,
-        fullVisualization: [
-          getAction('Bridge'),
-          getToken(eToNative(fromToken), 0n),
-          getLabel('for'),
-          getToken(eToNative(toToken), amount),
+          getToken(eToNative(toToken), outAmount),
           ...getRecipientText(accountOp.accountAddr, receiverAddress)
         ]
       }
@@ -163,6 +157,25 @@ export const SocketModule: HumanizerCallModule = (accountOp: AccountOp, irCalls:
           ...getRecipientText(sender, receiver)
         ]
       }
+    },
+    [`${
+      iface.getFunction('bridgeERC20To(uint256,bytes32,address,address,uint256,uint32,uint256)')
+        ?.selector
+    }`]: (call: IrCall): IrCall => {
+      const [amount, id, recipient, token, chainId, unknown1, fee] =
+        iface.parseTransaction(call)!.args
+      return {
+        ...call,
+        fullVisualization: [
+          getAction('Bridge'),
+          getToken(eToNative(token), amount),
+          getLabel('for'),
+          getToken(token, BigInt(amount - fee)),
+          getLabel('to'),
+          getChain(chainId),
+          ...getRecipientText(accountOp.accountAddr, recipient)
+        ]
+      }
     }
   }
 
@@ -171,11 +184,13 @@ export const SocketModule: HumanizerCallModule = (accountOp: AccountOp, irCalls:
       ..._call,
       data: `0x${_call.data.slice(10)}`
     }
-    console.log(_call.data)
     if (matcher[call.data.slice(0, 10)]) {
-      return matcher[call.data.slice(0, 10)](call)
+      return {
+        ..._call,
+        fullVisualization: matcher[call.data.slice(0, 10)](call).fullVisualization
+      }
     }
-    return call
+    return _call
   })
   return [newCalls, []]
   // return [accountOp.calls, []]
