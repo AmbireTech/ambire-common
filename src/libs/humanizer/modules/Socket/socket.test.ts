@@ -36,6 +36,7 @@ const accountOp: AccountOp = {
   // humanizerMeta: {}
 }
 
+// @TODO add more tests
 describe('socket', () => {
   test('basic', () => {
     const expectedVisualization = [
@@ -43,7 +44,7 @@ describe('socket', () => {
         getAction('Bridge'),
         getToken('0x4200000000000000000000000000000000000042', 2008021737164118026n),
         getLabel('for'),
-        getToken('0x3c499c542cef5e3811e1192ce70d8cc03d5c3359', 3094288n),
+        getToken('0x0b2c639c533813f4aa9d7837caf62653d097ff85', 3094288n),
         getLabel('on'),
         getChain(137n),
         getDeadline(1720088255n)

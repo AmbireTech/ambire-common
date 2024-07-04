@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 import { Interface, ZeroAddress } from 'ethers'
 
 import { AccountOp } from '../../../accountOp/accountOp'
