@@ -40,7 +40,7 @@ describe('socket', () => {
   test('basic', () => {
     const expectedVisualization = [
       [
-        getAction('Swap'),
+        getAction('Bridge'),
         getToken('0x4200000000000000000000000000000000000042', 2008021737164118026n),
         getLabel('for'),
         getToken('0x3c499c542cef5e3811e1192ce70d8cc03d5c3359', 3094288n),

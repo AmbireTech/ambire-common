@@ -21,7 +21,8 @@ export const SocketModule: HumanizerCallModule = (accountOp: AccountOp, irCalls:
     'function performAction(address fromToken, address toToken, uint256 amount, address receiverAddress, bytes32 metadata, bytes swapExtraData) payable returns (uint256)',
     'function performActionWithIn(address fromToken, address toToken, uint256 amount, bytes32 metadata, bytes swapExtraData) payable returns (uint256, address)',
     'function bridgeERC20To(uint256,bytes32,address,address,uint256,uint32,uint256)',
-    'function transformERC20(address,address,uint256,uint256,(uint32,bytes)[])'
+    'function transformERC20(address,address,uint256,uint256,(uint32,bytes)[])',
+    'function bridgeNativeTo(address receiverAddress, address customBridgeAddress, uint32 l2Gas, uint256 amount, bytes32 metadata, bytes data)'
   ])
   const matcher = {
     [`${
@@ -48,7 +49,7 @@ export const SocketModule: HumanizerCallModule = (accountOp: AccountOp, irCalls:
         return {
           ...call,
           fullVisualization: [
-            getAction('Swap'),
+            getAction('Bridge'),
             getToken(eToNative(fromToken), amount),
             getLabel('for'),
             getToken(eToNative(toToken), outputAmount),
@@ -62,7 +63,7 @@ export const SocketModule: HumanizerCallModule = (accountOp: AccountOp, irCalls:
       return {
         ...call,
         fullVisualization: [
-          getAction('Swap'),
+          getAction('Bridge'),
           getLabel('undetected token'),
           getLabel('for'),
           getToken(eToNative(outputToken), outputAmount),
@@ -174,6 +175,22 @@ export const SocketModule: HumanizerCallModule = (accountOp: AccountOp, irCalls:
           getLabel('to'),
           getChain(chainId),
           ...getRecipientText(accountOp.accountAddr, recipient)
+        ]
+      }
+    },
+    [`${
+      iface.getFunction(
+        'bridgeNativeTo(address receiverAddress, address customBridgeAddress, uint32 l2Gas, uint256 amount, bytes32 metadata, bytes data)'
+      )?.selector
+    }`]: (call: IrCall): IrCall => {
+      const { receiverAddress, customBridgeAddress, l2Gas, amount, metadata, data } =
+        iface.parseTransaction(call)!.args
+      return {
+        ...call,
+        fullVisualization: [
+          getAction('Bridge'),
+          getToken(ZeroAddress, amount),
+          ...getRecipientText(accountOp.accountAddr, receiverAddress)
         ]
       }
     }
