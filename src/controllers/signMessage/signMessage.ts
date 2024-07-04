@@ -16,10 +16,14 @@ import {
 } from '../../libs/signMessage/signMessage'
 import hexStringToUint8Array from '../../utils/hexStringToUint8Array'
 import { SignedMessage } from '../activity/activity'
-import EventEmitter from '../eventEmitter/eventEmitter'
+import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
 import { NetworksController } from '../networks/networks'
 import { ProvidersController } from '../providers/providers'
+
+const STATUS_WRAPPED_METHODS = {
+  sign: 'INITIAL'
+} as const
 
 export class SignMessageController extends EventEmitter {
   #keystore: KeystoreController
@@ -49,6 +53,8 @@ export class SignMessageController extends EventEmitter {
 
   // TODO: Delete status
   status: 'INITIAL' | 'LOADING' | 'DONE' = 'INITIAL'
+
+  statuses: Statuses<keyof typeof STATUS_WRAPPED_METHODS> = STATUS_WRAPPED_METHODS
 
   dapp: {
     name: string
