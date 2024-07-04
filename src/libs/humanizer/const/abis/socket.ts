@@ -1,0 +1,21 @@
+export const SocketViaAcross = [
+  //   'constructor(address,address,address,address) nonpayable',
+  'function ACROSS_ERC20_EXTERNAL_BRIDGE_FUNCTION_SELECTOR() view returns (bytes4)',
+  'function ACROSS_NATIVE_EXTERNAL_BRIDGE_FUNCTION_SELECTOR() view returns (bytes4)',
+  'function ACROSS_SWAP_BRIDGE_SELECTOR() view returns (bytes4)',
+  'function AcrossIdentifier() view returns (bytes32)',
+  'function BRIDGE_AFTER_SWAP_SELECTOR() view returns (bytes4)',
+  'function NATIVE_TOKEN_ADDRESS() view returns (address)',
+  'function WETH() view returns (address)',
+  'function bridgeAfterSwap(uint256,bytes) payable',
+  'function bridgeERC20To(uint256,tuple(address[],address[],uint256[],uint32[],uint256,bytes32)) payable',
+  'function bridgeNativeTo(uint256,tuple(address[],address,uint256[],uint32[],uint256,bytes32)) payable',
+  'function rescueEther(address,uint256)',
+  'function rescueFunds(address,address,uint256)',
+  'function socketDeployFactory() view returns (address)',
+  'function socketGateway() view returns (address)',
+  'function socketRoute() view returns (address)',
+  'function spokePool() view returns (address)',
+  'function spokePoolAddress() view returns (address)',
+  'function swapAndBridge(uint32 swapId,bytes swapData,tuple(address[] senderReceiverAddresses,address outputToken,uint256[] outputAmountToChainIdArray,uint32[] quoteAndDeadlineTimeStamps,uint256 bridgeFee,bytes32 metadata) acrossBridgeData) payable'
+]
