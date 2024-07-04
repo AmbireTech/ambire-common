@@ -51,9 +51,6 @@ export class SignMessageController extends EventEmitter {
 
   isInitialized: boolean = false
 
-  // TODO: Delete status
-  status: 'INITIAL' | 'LOADING' | 'DONE' = 'INITIAL'
-
   statuses: Statuses<keyof typeof STATUS_WRAPPED_METHODS> = STATUS_WRAPPED_METHODS
 
   dapp: {
@@ -149,7 +146,6 @@ export class SignMessageController extends EventEmitter {
     this.signedMessage = null
     this.signingKeyAddr = null
     this.humanReadable = null
-    this.status = 'INITIAL'
     this.emitUpdate()
   }
 
@@ -177,9 +173,6 @@ export class SignMessageController extends EventEmitter {
         error: new Error('No request to sign.')
       })
     }
-
-    this.status = 'LOADING'
-    this.emitUpdate()
 
     try {
       this.#signer = await this.#keystore.getSigner(this.signingKeyAddr, this.signingKeyType)
@@ -290,14 +283,11 @@ export class SignMessageController extends EventEmitter {
         message: e?.message || 'Something went wrong while signing the message. Please try again.',
         error
       })
-    } finally {
-      this.status = 'DONE'
-      this.emitUpdate()
     }
   }
 
   async sign() {
-    await this.withStatus('sign', () => this.#sign())
+    await this.withStatus('sign', async () => this.#sign())
   }
 
   #throwNotInitialized() {
