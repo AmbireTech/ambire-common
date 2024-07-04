@@ -106,7 +106,13 @@ const prepareTest = () => {
   )
   providersCtrl = new ProvidersController(networksCtrl)
   providersCtrl.providers = providers
-  const accountsCtrl = new AccountsController(storage, providersCtrl, networksCtrl, () => {})
+  const accountsCtrl = new AccountsController(
+    storage,
+    providersCtrl,
+    networksCtrl,
+    () => {},
+    () => {}
+  )
   const controller = new PortfolioController(
     storage,
     fetch,
