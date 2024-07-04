@@ -1,8 +1,9 @@
 import { hexlify, isHexString, toUtf8Bytes } from 'ethers'
 
 import { Account, AccountStates } from '../../interfaces/account'
+import { Fetch } from '../../interfaces/fetch'
 import { ExternalSignerControllers, Key } from '../../interfaces/keystore'
-import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
+import { Network } from '../../interfaces/network'
 import { Storage } from '../../interfaces/storage'
 import { Message } from '../../interfaces/userRequest'
 import { messageHumanizer } from '../../libs/humanizer'
@@ -17,18 +18,21 @@ import hexStringToUint8Array from '../../utils/hexStringToUint8Array'
 import { SignedMessage } from '../activity/activity'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
-import { SettingsController } from '../settings/settings'
+import { NetworksController } from '../networks/networks'
+import { ProvidersController } from '../providers/providers'
 
 export class SignMessageController extends EventEmitter {
   #keystore: KeystoreController
 
-  #settings: SettingsController
+  #providers: ProvidersController
+
+  #networks: NetworksController
 
   #externalSignerControllers: ExternalSignerControllers
 
   #storage: Storage
 
-  #fetch: Function
+  #fetch: Fetch
 
   #accounts: Account[] | null = null
 
@@ -62,15 +66,17 @@ export class SignMessageController extends EventEmitter {
 
   constructor(
     keystore: KeystoreController,
-    settings: SettingsController,
+    providers: ProvidersController,
+    networks: NetworksController,
     externalSignerControllers: ExternalSignerControllers,
     storage: Storage,
-    fetch: Function
+    fetch: Fetch
   ) {
     super()
 
     this.#keystore = keystore
-    this.#settings = settings
+    this.#providers = providers
+    this.#networks = networks
     this.#externalSignerControllers = externalSignerControllers
     this.#storage = storage
     this.#fetch = fetch
@@ -97,7 +103,10 @@ export class SignMessageController extends EventEmitter {
       this.messageToSign = messageToSign
       this.#accounts = accounts
       this.#accountStates = accountStates
-
+      const network = this.#networks.networks.find(
+        (n: Network) => n.id === this.messageToSign?.networkId
+      )
+      // eslint-disable-next-line @typescript-eslint/no-floating-promises
       messageHumanizer(
         messageToSign,
         this.#storage,
@@ -106,7 +115,8 @@ export class SignMessageController extends EventEmitter {
           this.humanReadable = humanizedMessage
           this.emitUpdate()
         },
-        (err) => this.emitError(err)
+        (err) => this.emitError(err),
+        { network }
       )
 
       this.isInitialized = true
@@ -174,10 +184,10 @@ export class SignMessageController extends EventEmitter {
           'Account details needed for the signing mechanism are not found. Please try again, re-import your account or contact support if nothing else helps.'
         )
       }
-      const network = this.#settings.networks.find(
+      const network = this.#networks.networks.find(
         // @ts-ignore this.messageToSign is not null and it has a check
         // but typescript malfunctions here
-        (n: NetworkDescriptor) => n.id === this.messageToSign.networkId
+        (n: Network) => n.id === this.messageToSign.networkId
       )
       if (!network) {
         throw new Error('Network not supported on Ambire. Please contract support.')
@@ -223,22 +233,21 @@ export class SignMessageController extends EventEmitter {
         )
       }
 
-      // https://eips.ethereum.org/EIPS/eip-6492
-      if (account.creation && !accountState.isDeployed) {
-        signature = wrapCounterfactualSign(signature, account.creation!)
-      }
-
       const personalMsgToValidate =
         typeof this.messageToSign.content.message === 'string'
           ? hexStringToUint8Array(this.messageToSign.content.message)
           : this.messageToSign.content.message
 
       const isValidSignature = await verifyMessage({
-        provider: this.#settings.providers[network?.id || 'ethereum'],
+        provider: this.#providers.providers[network?.id || 'ethereum'],
         // the signer is always the account even if the actual
         // signature is from a key that has privs to the account
         signer: this.messageToSign?.accountAddr,
-        signature,
+        signature:
+          account.creation && !accountState.isDeployed
+            ? // https://eips.ethereum.org/EIPS/eip-6492
+              wrapCounterfactualSign(signature, account.creation!)
+            : signature,
         // @ts-ignore TODO: Be aware of the type mismatch, could cause troubles
         message: this.messageToSign.content.kind === 'message' ? personalMsgToValidate : undefined,
         typedData:

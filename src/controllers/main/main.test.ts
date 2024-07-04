@@ -4,7 +4,9 @@ import fetch from 'node-fetch'
 
 import { describe, expect, test } from '@jest/globals'
 
+import { relayerUrl, velcroUrl } from '../../../test/config'
 import { produceMemoryStore } from '../../../test/helpers'
+import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
 import { BIP44_STANDARD_DERIVATION_TEMPLATE } from '../../consts/derivation'
 import { SelectedAccountForImport } from '../../interfaces/account'
@@ -57,7 +59,6 @@ describe('Main Controller ', () => {
   ]
 
   const storage = produceMemoryStore()
-  const relayerUrl = 'https://staging-relayer.ambire.com'
   const email = 'unufri@ambire.com'
   storage.set('accounts', accounts)
   let controller: MainController
@@ -69,8 +70,7 @@ describe('Main Controller ', () => {
       keystoreSigners: { internal: KeystoreSigner },
       externalSignerControllers: {},
       windowManager,
-      getDapp: () => undefined,
-      onUpdateDappSelectedAccount: () => {}
+      velcroUrl
     })
     // eslint-disable-next-line no-promise-executor-return
     await new Promise((resolve) => {
@@ -99,9 +99,17 @@ describe('Main Controller ', () => {
         networkId: 'ethereum'
       }
     }
-    await controller.addUserRequest(req)
-    expect(controller.actions.actionsQueue.length).toBe(1)
     // @TODO test if nonce is correctly set
+    controller.accounts.onUpdate(async () => {
+      // The main controller doesn't wait for account state. This is not a problem in the
+      // real world because users can't interact with a network without state.
+      // Even if someone manages to open a user request without having state for that network
+      // (for example through a dApp) it will be handled in the UI
+      if ('ethereum' in Object.keys(controller.accounts.accountStates)) {
+        await controller.addUserRequest(req)
+        expect(controller.actions.actionsQueue.length).toBe(1)
+      }
+    })
   })
   test('Remove a user request', async () => {
     const req: UserRequest = {
@@ -181,10 +189,9 @@ describe('Main Controller ', () => {
       fetch,
       relayerUrl,
       windowManager,
-      getDapp: () => undefined,
       keystoreSigners: { internal: KeystoreSigner },
       externalSignerControllers: {},
-      onUpdateDappSelectedAccount: () => {}
+      velcroUrl
     })
 
     const signerAddr = '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
@@ -193,9 +200,10 @@ describe('Main Controller ', () => {
 
     // Same mechanism to generating this one as used for the
     // `accountNotDeployed` in accountState.test.ts
+    const addr = getAmbireAccountAddress(AMBIRE_ACCOUNT_FACTORY, bytecode)
     const accountPendingCreation: SelectedAccountForImport = {
       account: {
-        addr: getAmbireAccountAddress(AMBIRE_ACCOUNT_FACTORY, bytecode),
+        addr,
         associatedKeys: [signerAddr],
         creation: {
           factoryAddr: AMBIRE_ACCOUNT_FACTORY,
@@ -207,7 +215,11 @@ describe('Main Controller ', () => {
             '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
             '0x0000000000000000000000000000000000000000000000000000000000000001'
           ]
-        ]
+        ],
+        preferences: {
+          label: DEFAULT_ACCOUNT_LABEL,
+          pfp: addr
+        }
       },
       accountKeys: [{ addr: signerAddr, index: 0, slot: 1 }],
       isLinked: false
@@ -234,21 +246,18 @@ describe('Main Controller ', () => {
       emitCounter++
       addAccounts()
     }
-    await new Promise((resolve) => {
-      const unsubscribe = controller.onUpdate(() => {
-        emitCounter++
 
-        if (emitCounter === 2 && controller.isReady) addAccounts()
+    const unsubscribe = controller.onUpdate(() => {
+      emitCounter++
+      if (emitCounter === 2 && controller.isReady) addAccounts()
 
-        if (controller.statuses.onAccountAdderSuccess === 'SUCCESS') {
-          expect(controller.accounts).toContainEqual({
-            ...accountPendingCreation.account,
-            newlyCreated: false
-          })
-          unsubscribe()
-          resolve(true)
-        }
-      })
+      if (controller.statuses.onAccountAdderSuccess === 'SUCCESS') {
+        expect(controller.accounts.accounts).toContainEqual({
+          ...accountPendingCreation.account,
+          newlyCreated: false
+        })
+        unsubscribe()
+      }
     })
   })
 
@@ -260,13 +269,12 @@ describe('Main Controller ', () => {
       fetch,
       relayerUrl,
       windowManager,
-      getDapp: () => undefined,
       keystoreSigners: { internal: KeystoreSigner },
       externalSignerControllers: {},
-      onUpdateDappSelectedAccount: () => {}
+      velcroUrl
     })
 
-    mainCtrl.accounts = [
+    mainCtrl.accounts.accounts = [
       {
         addr: '0x0af4DF1eBE058F424F7995BbE02D50C5e74bf033',
         associatedKeys: ['0x699380c785819B2f400cb646b12C4C60b4dc7fcA'],
@@ -276,20 +284,23 @@ describe('Main Controller ', () => {
             '0x0000000000000000000000000000000000000000000000000000000000000001'
           ]
         ],
-        creation: accounts[0].creation
+        creation: accounts[0].creation,
+        preferences: {
+          label: DEFAULT_ACCOUNT_LABEL,
+          pfp: '0x0af4DF1eBE058F424F7995BbE02D50C5e74bf033'
+        }
       }
     ]
 
     let emitCounter = 0
     const unsubscribe = mainCtrl.onUpdate(() => {
       emitCounter++
-
       if (emitCounter === 3) {
-        expect(mainCtrl.accounts[0].associatedKeys.length).toEqual(2)
-        expect(mainCtrl.accounts[0].associatedKeys).toContain(
+        expect(mainCtrl.accounts.accounts[0].associatedKeys.length).toEqual(2)
+        expect(mainCtrl.accounts.accounts[0].associatedKeys).toContain(
           '0x699380c785819B2f400cb646b12C4C60b4dc7fcA'
         )
-        expect(mainCtrl.accounts[0].associatedKeys).toContain(
+        expect(mainCtrl.accounts.accounts[0].associatedKeys).toContain(
           '0xb1b2d032AA2F52347fbcfd08E5C3Cc55216E8404'
         )
         unsubscribe()
@@ -298,7 +309,7 @@ describe('Main Controller ', () => {
     })
 
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
-    mainCtrl.addAccounts([
+    mainCtrl.accounts.addAccounts([
       {
         addr: '0x0af4DF1eBE058F424F7995BbE02D50C5e74bf033',
         associatedKeys: ['0xb1b2d032AA2F52347fbcfd08E5C3Cc55216E8404'],
@@ -308,8 +319,52 @@ describe('Main Controller ', () => {
             '0x0000000000000000000000000000000000000000000000000000000000000001'
           ]
         ],
-        creation: accounts[0].creation
+        creation: accounts[0].creation,
+        preferences: {
+          label: DEFAULT_ACCOUNT_LABEL,
+          pfp: '0x0af4DF1eBE058F424F7995BbE02D50C5e74bf033'
+        }
       }
     ])
+  })
+
+  test('should check if network features get displayed correctly for ethereum', (done) => {
+    let checks = 0
+    controller.networks.onUpdate(() => {
+      if (controller.networks.statuses.updateNetwork === 'SUCCESS' && checks > 3) {
+        const eth = controller.networks.networks.find((net) => net.id === 'ethereum')!
+        expect(eth.areContractsDeployed).toEqual(true)
+        done()
+      }
+      if (checks === 3) {
+        const eth = controller.networks.networks.find((net) => net.id === 'ethereum')!
+        expect(eth.areContractsDeployed).toEqual(false)
+        controller.setContractsDeployedToTrueIfDeployed(eth)
+      }
+
+      checks++
+    })
+
+    const eth = controller.networks.networks.find((net) => net.id === 'ethereum')!
+    expect(eth?.features.length).toBe(3)
+
+    const saSupport = eth?.features.find((feat) => feat.id === 'saSupport')!
+    expect(saSupport).not.toBe(null)
+    expect(saSupport).not.toBe(undefined)
+    expect(saSupport!.level).toBe('success')
+    expect(saSupport!.title).toBe("Ambire's smart wallets")
+
+    const simulation = eth?.features.find((feat) => feat.id === 'simulation')
+    expect(simulation).not.toBe(null)
+    expect(simulation).not.toBe(undefined)
+    expect(simulation!.level).toBe('success')
+
+    const prices = eth?.features.find((feat) => feat.id === 'prices')
+    expect(prices).not.toBe(null)
+    expect(prices).not.toBe(undefined)
+    expect(prices!.level).toBe('success')
+
+    // set first to false so we could test setContractsDeployedToTrueIfDeployed
+    controller.networks.updateNetwork({ areContractsDeployed: false }, 'ethereum')
   })
 })

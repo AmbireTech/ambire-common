@@ -4,7 +4,10 @@ import { Account } from '../../interfaces/account'
 import { DappUserRequest, SignUserRequest, UserRequest } from '../../interfaces/userRequest'
 import { WindowManager } from '../../interfaces/window'
 import { AccountOp } from '../../libs/accountOp/accountOp'
+// eslint-disable-next-line import/no-cycle
+import { messageOnNewAction } from '../../libs/actions/actions'
 import { getDappActionRequestsBanners } from '../../libs/banners/banners'
+import { AccountsController } from '../accounts/accounts'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
 export type AccountOpAction = {
@@ -45,11 +48,26 @@ export type Action = AccountOpAction | SignMessageAction | BenzinAction | DappRe
  * All pending/unresolved actions can be accessed later from the banners on the Dashboard screen.
  */
 export class ActionsController extends EventEmitter {
-  #selectedAccount: string | null
+  #accounts: AccountsController
 
   #windowManager: WindowManager
 
-  actionWindowId: number | null = null
+  actionWindow: {
+    id: number | null
+    loaded: boolean
+    pendingMessage: {
+      message: string
+      options?: {
+        timeout?: number
+        type?: 'error' | 'success' | 'info' | 'warning'
+        sticky?: boolean
+      }
+    } | null
+  } = {
+    id: null,
+    loaded: false,
+    pendingMessage: null
+  }
 
   actionsQueue: Action[] = []
 
@@ -60,13 +78,13 @@ export class ActionsController extends EventEmitter {
   get visibleActionsQueue(): Action[] {
     return this.actionsQueue.filter((a) => {
       if (a.type === 'accountOp') {
-        return a.accountOp.accountAddr === this.#selectedAccount
+        return a.accountOp.accountAddr === this.#accounts.selectedAccount
       }
       if (a.type === 'signMessage') {
-        return a.userRequest.meta.accountAddr === this.#selectedAccount
+        return a.userRequest.meta.accountAddr === this.#accounts.selectedAccount
       }
       if (a.type === 'benzin') {
-        return a.userRequest.meta.accountAddr === this.#selectedAccount
+        return a.userRequest.meta.accountAddr === this.#accounts.selectedAccount
       }
 
       return false
@@ -74,24 +92,26 @@ export class ActionsController extends EventEmitter {
   }
 
   constructor({
-    selectedAccount,
+    accounts,
     windowManager,
     onActionWindowClose
   }: {
-    selectedAccount: string | null
+    accounts: AccountsController
     windowManager: WindowManager
     onActionWindowClose: () => void
   }) {
     super()
 
-    this.#selectedAccount = selectedAccount
+    this.#accounts = accounts
     this.#windowManager = windowManager
     this.#onActionWindowClose = onActionWindowClose
 
     this.#windowManager.event.on('windowRemoved', (winId: number) => {
-      if (winId === this.actionWindowId) {
+      if (winId === this.actionWindow.id) {
         this.#onActionWindowClose()
-        this.actionWindowId = null
+        this.actionWindow.id = null
+        this.actionWindow.loaded = false
+        this.actionWindow.pendingMessage = null
         this.currentAction = null
 
         this.actionsQueue = this.actionsQueue.filter((a) => !['benzin'].includes(a.type))
@@ -100,16 +120,11 @@ export class ActionsController extends EventEmitter {
     })
   }
 
-  update({ selectedAccount }: { selectedAccount?: string | null }) {
-    if (selectedAccount) this.#selectedAccount = selectedAccount
-
-    this.emitUpdate()
-  }
-
   addOrUpdateAction(newAction: Action, withPriority?: boolean) {
     const actionIndex = this.actionsQueue.findIndex((a) => a.id === newAction.id)
     if (actionIndex !== -1) {
       this.actionsQueue[actionIndex] = newAction
+      this.sendNewActionMessage(newAction, 'update')
       const currentAction = withPriority
         ? this.visibleActionsQueue[0] || null
         : this.currentAction || this.visibleActionsQueue[0] || null
@@ -121,12 +136,8 @@ export class ActionsController extends EventEmitter {
       this.actionsQueue.unshift(newAction)
     } else {
       this.actionsQueue.push(newAction)
-      if (this.actionWindowId && newAction.type !== 'benzin') {
-        this.#windowManager.sendWindowToastMessage('A new action request was added to the queue.', {
-          type: 'success'
-        })
-      }
     }
+    this.sendNewActionMessage(newAction, withPriority ? 'unshift' : 'push')
     const currentAction = withPriority
       ? this.visibleActionsQueue[0] || null
       : this.currentAction || this.visibleActionsQueue[0] || null
@@ -148,7 +159,7 @@ export class ActionsController extends EventEmitter {
     this.currentAction = nextAction
 
     if (!this.currentAction) {
-      !!this.actionWindowId && this.#windowManager.remove(this.actionWindowId)
+      !!this.actionWindow.id && this.#windowManager.remove(this.actionWindow.id)
     } else {
       this.openActionWindow()
     }
@@ -172,20 +183,49 @@ export class ActionsController extends EventEmitter {
     this.#setCurrentAction(action)
   }
 
+  sendNewActionMessage(newAction: Action, type: 'push' | 'unshift' | 'update') {
+    if (this.visibleActionsQueue.length > 1 && newAction.type !== 'benzin') {
+      if (this.actionWindow.loaded) {
+        this.#windowManager.sendWindowToastMessage(messageOnNewAction(newAction, type), {
+          type: 'success'
+        })
+      } else {
+        this.actionWindow.pendingMessage = {
+          message: messageOnNewAction(newAction, type),
+          options: { type: 'success' }
+        }
+      }
+    }
+  }
+
   openActionWindow() {
-    if (this.actionWindowId !== null) {
+    if (this.actionWindow.id !== null) {
       this.focusActionWindow()
     } else {
       this.#windowManager.open().then((winId) => {
-        this.actionWindowId = winId!
+        this.actionWindow.id = winId!
         this.emitUpdate()
       })
     }
   }
 
   focusActionWindow = () => {
-    if (!this.visibleActionsQueue.length || !this.currentAction || !this.actionWindowId) return
-    this.#windowManager.focus(this.actionWindowId)
+    if (!this.visibleActionsQueue.length || !this.currentAction || !this.actionWindow.id) return
+    this.#windowManager.focus(this.actionWindow.id)
+  }
+
+  setWindowLoaded() {
+    if (!this.actionWindow.id) return
+    this.actionWindow.loaded = true
+
+    if (this.actionWindow.pendingMessage) {
+      this.#windowManager.sendWindowToastMessage(
+        this.actionWindow.pendingMessage.message,
+        this.actionWindow.pendingMessage.options
+      )
+      this.actionWindow.pendingMessage = null
+    }
+    this.emitUpdate()
   }
 
   removeAccountData(address: Account['addr']) {

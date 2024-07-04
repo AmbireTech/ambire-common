@@ -6,7 +6,7 @@ import Estimation from '../../../contracts/compiled/Estimation.json'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { OPTIMISTIC_ORACLE } from '../../consts/deploy'
 import { Account, AccountStates } from '../../interfaces/account'
-import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
+import { Network } from '../../interfaces/network'
 import { AccountOp } from '../accountOp/accountOp'
 import { DeploylessMode, fromDescriptor } from '../deployless/deployless'
 import { EOA_SIMULATION_NONCE } from '../portfolio/getOnchainBalances'
@@ -38,7 +38,7 @@ export async function estimateEOA(
   account: Account,
   op: AccountOp,
   accountStates: AccountStates,
-  network: NetworkDescriptor,
+  network: Network,
   provider: JsonRpcProvider | Provider,
   feeTokens: TokenResult[],
   blockFrom: string,

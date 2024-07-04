@@ -2,7 +2,7 @@ import { toBeHex } from 'ethers'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import { DEPLOYLESS_SIMULATION_FROM } from '../../consts/deploy'
-import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
+import { Network } from '../../interfaces/network'
 import { getAccountDeployParams, isSmartAccount } from '../account/account'
 import { callToTuple } from '../accountOp/accountOp'
 import { Deployless, DeploylessMode, parseErr } from '../deployless/deployless'
@@ -91,7 +91,7 @@ function getDeploylessOpts(accountAddr: string, opts: Partial<GetOptions>) {
 }
 
 export async function getNFTs(
-  network: NetworkDescriptor,
+  network: Network,
   deployless: Deployless,
   opts: Partial<GetOptions>,
   accountAddr: string,
@@ -175,13 +175,18 @@ export async function getNFTs(
 
     return [
       beforeToken.error,
-      { ...token, amountPostSimulation: simulationToken ? simulationToken.amount : token.amount }
+      {
+        ...token,
+        // Please refer to getTokens() for more info regarding `amountBeforeSimulation` calc
+        simulationAmount: simulationToken ? simulationToken.amount - token.amount : undefined,
+        amountPostSimulation: simulationToken ? simulationToken.amount : token.amount
+      }
     ]
   })
 }
 
 export async function getTokens(
-  network: NetworkDescriptor,
+  network: Network,
   deployless: Deployless,
   opts: Partial<GetOptions>,
   accountAddr: string,
@@ -250,10 +255,22 @@ export async function getTokens(
       ? simulationTokens.find((simulationToken: any) => simulationToken.addr === tokenAddrs[i])
       : null
 
+    // Here's the math before `simulationAmount` and `amountPostSimulation`.
+    // AccountA initial balance: 10 USDC.
+    // AccountA attempts to transfer 5 USDC (not signed yet).
+    // An external entity sends 3 USDC to AccountA on-chain.
+    // Deployless simulation contract processing:
+    //   - Balance before simulation (before[0]): 10 USDC + 3 USDC = 13 USDC.
+    //   - Balance after simulation (after[0]): 10 USDC - 5 USDC + 3 USDC = 8 USDC.
+    // Simulation-only balance displayed on the Sign Screen (we will call it `simulationAmount`):
+    //   - difference between after simulation and before: 8 USDC - 13 USDC = -5 USDC
+    // Final balance displayed on the Dashboard (we will call it `amountPostSimulation`):
+    //   - after[0], 8 USDC.
     return [
       token.error,
       {
         ...mapToken(token, tokenAddrs[i]),
+        simulationAmount: simulation ? simulation.amount - token.amount : undefined,
         amountPostSimulation: simulation ? simulation.amount : token.amount
       }
     ]

@@ -1,54 +1,97 @@
+import fetch from 'node-fetch'
+
 import { describe, expect } from '@jest/globals'
 
 import { produceMemoryStore } from '../../../test/helpers'
-import { AccountStates } from '../../interfaces/account'
-import { SettingsController } from '../settings/settings'
+import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
+import { networks } from '../../consts/networks'
+import { RPCProviders } from '../../interfaces/provider'
+import { getRpcProvider } from '../../services/provider'
+import { AccountsController } from '../accounts/accounts'
+import { NetworksController } from '../networks/networks'
+import { ProvidersController } from '../providers/providers'
 import { ActivityController, SignedMessage, SubmittedAccountOp } from './activity'
 
 const INIT_PARAMS = {
-  selectedAccount: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
-  filters: {
-    account: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
-    network: 'ethereum'
-  }
+  account: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
+  network: 'ethereum'
 }
 
+const providers: RPCProviders = {}
+
+networks.forEach((network) => {
+  providers[network.id] = getRpcProvider(network.rpcUrls, network.chainId)
+  providers[network.id].isWorking = true
+})
+
 describe('Activity Controller ', () => {
-  const accounts = {
-    '0xa07D75aacEFd11b425AF7181958F0F85c312f143': {
-      ethereum: {
-        accountAddr: '0xa07D75aacEFd11b425AF7181958F0F85c312f143',
-        nonce: 379n,
-        isDeployed: true,
-        associatedKeys: ['0xd6e371526cdaeE04cd8AF225D42e37Bc14688D9E'],
-        isV2: false,
-        scheduledRecoveries: [],
-        balance: 0n,
-        isEOA: false,
-        deployError: false
+  const accounts = [
+    {
+      addr: '0xa07D75aacEFd11b425AF7181958F0F85c312f143',
+      associatedKeys: ['0xd6e371526cdaeE04cd8AF225D42e37Bc14688D9E'],
+      initialPrivileges: [],
+      creation: {
+        factoryAddr: '0xBf07a0Df119Ca234634588fbDb5625594E2a5BCA',
+        bytecode:
+          '0x7f28d4ea8f825adb036e9b306b2269570e63d2aa5bd10751437d98ed83551ba1cd7fa57498058891e98f45f8abb85dafbcd30f3d8b3ab586dfae2e0228bbb1de7018553d602d80604d3d3981f3363d3d373d3d3d363d732a2b85eb1054d6f0c6c2e37da05ed3e5fea684ef5af43d82803e903d91602b57fd5bf3',
+        salt: '0x0000000000000000000000000000000000000000000000000000000000000001'
+      },
+      preferences: {
+        label: DEFAULT_ACCOUNT_LABEL,
+        pfp: '0xa07D75aacEFd11b425AF7181958F0F85c312f143'
       }
     },
-    '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5': {
-      ethereum: {
-        accountAddr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
-        nonce: 225n,
-        isDeployed: true,
-        associatedKeys: ['0xd6e371526cdaeE04cd8AF225D42e37Bc14688D9E'],
-        isV2: true,
-        scheduledRecoveries: [],
-        balance: 0n,
-        isEOA: false,
-        deployError: false
+    {
+      addr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
+      initialPrivileges: [],
+      associatedKeys: ['0x5Be214147EA1AE3653f289E17fE7Dc17A73AD175'],
+      creation: {
+        factoryAddr: '0xBf07a0Df119Ca234634588fbDb5625594E2a5BCA',
+        bytecode:
+          '0x7f00000000000000000000000000000000000000000000000000000000000000017f02c94ba85f2ea274a3869293a0a9bf447d073c83c617963b0be7c862ec2ee44e553d602d80604d3d3981f3363d3d373d3d3d363d732a2b85eb1054d6f0c6c2e37da05ed3e5fea684ef5af43d82803e903d91602b57fd5bf3',
+        salt: '0x2ee01d932ede47b0b2fb1b6af48868de9f86bfc9a5be2f0b42c0111cf261d04c'
+      },
+      preferences: {
+        label: DEFAULT_ACCOUNT_LABEL,
+        pfp: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
       }
     }
-  } as unknown as AccountStates
+  ]
 
   describe('AccountsOps', () => {
     test('Retrieved from Controller and persisted in Storage', async () => {
       const storage = produceMemoryStore()
-      const settings = new SettingsController(storage)
-      const controller = new ActivityController(storage, accounts, settings)
-
+      await storage.set('accounts', accounts)
+      let providersCtrl: ProvidersController
+      const networksCtrl = new NetworksController(
+        storage,
+        fetch,
+        (net) => {
+          providersCtrl.setProvider(net)
+        },
+        (id) => {
+          providersCtrl.removeProvider(id)
+        }
+      )
+      providersCtrl = new ProvidersController(networksCtrl)
+      providersCtrl.providers = providers
+      const accountsCtrl = new AccountsController(
+        storage,
+        providersCtrl,
+        networksCtrl,
+        () => {},
+        () => {}
+      )
+      await accountsCtrl.initialLoadPromise
+      accountsCtrl.selectedAccount = '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
+      const controller = new ActivityController(
+        storage,
+        fetch,
+        accountsCtrl,
+        providersCtrl,
+        networksCtrl,
+        () => Promise.resolve()
+      )
       controller.init(INIT_PARAMS)
 
       const accountOp = {
@@ -87,8 +130,37 @@ describe('Activity Controller ', () => {
 
     test('Pagination and filtration handled correctly', async () => {
       const storage = produceMemoryStore()
-      const settings = new SettingsController(storage)
-      const controller = new ActivityController(storage, accounts, settings)
+      await storage.set('accounts', accounts)
+      let providersCtrl: ProvidersController
+      const networksCtrl = new NetworksController(
+        storage,
+        fetch,
+        (net) => {
+          providersCtrl.setProvider(net)
+        },
+        (id) => {
+          providersCtrl.removeProvider(id)
+        }
+      )
+      providersCtrl = new ProvidersController(networksCtrl)
+      providersCtrl.providers = providers
+      const accountsCtrl = new AccountsController(
+        storage,
+        providersCtrl,
+        networksCtrl,
+        () => {},
+        () => {}
+      )
+      await accountsCtrl.initialLoadPromise
+      accountsCtrl.selectedAccount = '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
+      const controller = new ActivityController(
+        storage,
+        fetch,
+        accountsCtrl,
+        providersCtrl,
+        networksCtrl,
+        () => Promise.resolve()
+      )
 
       controller.init(INIT_PARAMS)
 
@@ -211,8 +283,37 @@ describe('Activity Controller ', () => {
 
     test('`success` status is set correctly', async () => {
       const storage = produceMemoryStore()
-      const settings = new SettingsController(storage)
-      const controller = new ActivityController(storage, accounts, settings)
+      await storage.set('accounts', accounts)
+      let providersCtrl: ProvidersController
+      const networksCtrl = new NetworksController(
+        storage,
+        fetch,
+        (net) => {
+          providersCtrl.setProvider(net)
+        },
+        (id) => {
+          providersCtrl.removeProvider(id)
+        }
+      )
+      providersCtrl = new ProvidersController(networksCtrl)
+      providersCtrl.providers = providers
+      const accountsCtrl = new AccountsController(
+        storage,
+        providersCtrl,
+        networksCtrl,
+        () => {},
+        () => {}
+      )
+      await accountsCtrl.initialLoadPromise
+      accountsCtrl.selectedAccount = '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
+      const controller = new ActivityController(
+        storage,
+        fetch,
+        accountsCtrl,
+        providersCtrl,
+        networksCtrl,
+        () => Promise.resolve()
+      )
 
       controller.init(INIT_PARAMS)
 
@@ -238,9 +339,7 @@ describe('Activity Controller ', () => {
 
       await controller.addAccountOp(accountOp)
       await controller.updateAccountsOpsStatuses()
-      const controllerAccountsOps = controller.accountsOps
-
-      expect(controllerAccountsOps).toEqual({
+      expect(controller.accountsOps).toEqual({
         items: [{ ...accountOp, status: 'success' }], //  we expect success here
         itemsTotal: 1,
         currentPage: 0,
@@ -250,8 +349,37 @@ describe('Activity Controller ', () => {
 
     test('`failed` status is set correctly', async () => {
       const storage = produceMemoryStore()
-      const settings = new SettingsController(storage)
-      const controller = new ActivityController(storage, accounts, settings)
+      await storage.set('accounts', accounts)
+      let providersCtrl: ProvidersController
+      const networksCtrl = new NetworksController(
+        storage,
+        fetch,
+        (net) => {
+          providersCtrl.setProvider(net)
+        },
+        (id) => {
+          providersCtrl.removeProvider(id)
+        }
+      )
+      providersCtrl = new ProvidersController(networksCtrl)
+      providersCtrl.providers = providers
+      const accountsCtrl = new AccountsController(
+        storage,
+        providersCtrl,
+        networksCtrl,
+        () => {},
+        () => {}
+      )
+      await accountsCtrl.initialLoadPromise
+      accountsCtrl.selectedAccount = '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
+      const controller = new ActivityController(
+        storage,
+        fetch,
+        accountsCtrl,
+        providersCtrl,
+        networksCtrl,
+        () => Promise.resolve()
+      )
 
       controller.init(INIT_PARAMS)
 
@@ -289,15 +417,41 @@ describe('Activity Controller ', () => {
 
     test('`Unknown but past nonce` status is set correctly', async () => {
       const storage = produceMemoryStore()
-      const settings = new SettingsController(storage)
-      const controller = new ActivityController(storage, accounts, settings)
+      await storage.set('accounts', accounts)
+      let providersCtrl: ProvidersController
+      const networksCtrl = new NetworksController(
+        storage,
+        fetch,
+        (net) => {
+          providersCtrl.setProvider(net)
+        },
+        (id) => {
+          providersCtrl.removeProvider(id)
+        }
+      )
+      providersCtrl = new ProvidersController(networksCtrl)
+      providersCtrl.providers = providers
+      const accountsCtrl = new AccountsController(
+        storage,
+        providersCtrl,
+        networksCtrl,
+        () => {},
+        () => {}
+      )
+      await accountsCtrl.initialLoadPromise
+      accountsCtrl.selectedAccount = '0xa07D75aacEFd11b425AF7181958F0F85c312f143'
+      const controller = new ActivityController(
+        storage,
+        fetch,
+        accountsCtrl,
+        providersCtrl,
+        networksCtrl,
+        () => Promise.resolve()
+      )
 
       controller.init({
-        selectedAccount: '0xa07D75aacEFd11b425AF7181958F0F85c312f143',
-        filters: {
-          account: '0xa07D75aacEFd11b425AF7181958F0F85c312f143',
-          network: 'ethereum'
-        }
+        account: '0xa07D75aacEFd11b425AF7181958F0F85c312f143',
+        network: 'ethereum'
       })
 
       const accountOp = {
@@ -334,8 +488,37 @@ describe('Activity Controller ', () => {
 
     test('Keeps no more than 1000 items', async () => {
       const storage = produceMemoryStore()
-      const settings = new SettingsController(storage)
-      const controller = new ActivityController(storage, accounts, settings)
+      await storage.set('accounts', accounts)
+      let providersCtrl: ProvidersController
+      const networksCtrl = new NetworksController(
+        storage,
+        fetch,
+        (net) => {
+          providersCtrl.setProvider(net)
+        },
+        (id) => {
+          providersCtrl.removeProvider(id)
+        }
+      )
+      providersCtrl = new ProvidersController(networksCtrl)
+      providersCtrl.providers = providers
+      const accountsCtrl = new AccountsController(
+        storage,
+        providersCtrl,
+        networksCtrl,
+        () => {},
+        () => {}
+      )
+      await accountsCtrl.initialLoadPromise
+      accountsCtrl.selectedAccount = '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
+      const controller = new ActivityController(
+        storage,
+        fetch,
+        accountsCtrl,
+        providersCtrl,
+        networksCtrl,
+        () => Promise.resolve()
+      )
 
       controller.init(INIT_PARAMS)
 
@@ -382,8 +565,37 @@ describe('Activity Controller ', () => {
   describe('SignedMessages', () => {
     test('Retrieved from Controller and persisted in Storage', async () => {
       const storage = produceMemoryStore()
-      const settings = new SettingsController(storage)
-      const controller = new ActivityController(storage, accounts, settings)
+      await storage.set('accounts', accounts)
+      let providersCtrl: ProvidersController
+      const networksCtrl = new NetworksController(
+        storage,
+        fetch,
+        (net) => {
+          providersCtrl.setProvider(net)
+        },
+        (id) => {
+          providersCtrl.removeProvider(id)
+        }
+      )
+      providersCtrl = new ProvidersController(networksCtrl)
+      providersCtrl.providers = providers
+      const accountsCtrl = new AccountsController(
+        storage,
+        providersCtrl,
+        networksCtrl,
+        () => {},
+        () => {}
+      )
+      await accountsCtrl.initialLoadPromise
+      accountsCtrl.selectedAccount = '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
+      const controller = new ActivityController(
+        storage,
+        fetch,
+        accountsCtrl,
+        providersCtrl,
+        networksCtrl,
+        () => Promise.resolve()
+      )
 
       controller.init(INIT_PARAMS)
 
@@ -421,8 +633,37 @@ describe('Activity Controller ', () => {
 
     test('Pagination and filtration handled correctly', async () => {
       const storage = produceMemoryStore()
-      const settings = new SettingsController(storage)
-      const controller = new ActivityController(storage, accounts, settings)
+      await storage.set('accounts', accounts)
+      let providersCtrl: ProvidersController
+      const networksCtrl = new NetworksController(
+        storage,
+        fetch,
+        (net) => {
+          providersCtrl.setProvider(net)
+        },
+        (id) => {
+          providersCtrl.removeProvider(id)
+        }
+      )
+      providersCtrl = new ProvidersController(networksCtrl)
+      providersCtrl.providers = providers
+      const accountsCtrl = new AccountsController(
+        storage,
+        providersCtrl,
+        networksCtrl,
+        () => {},
+        () => {}
+      )
+      await accountsCtrl.initialLoadPromise
+      accountsCtrl.selectedAccount = '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
+      const controller = new ActivityController(
+        storage,
+        fetch,
+        accountsCtrl,
+        providersCtrl,
+        networksCtrl,
+        () => Promise.resolve()
+      )
 
       controller.init(INIT_PARAMS)
 
@@ -465,8 +706,37 @@ describe('Activity Controller ', () => {
 
     test('Keeps no more than 1000 items', async () => {
       const storage = produceMemoryStore()
-      const settings = new SettingsController(storage)
-      const controller = new ActivityController(storage, accounts, settings)
+      await storage.set('accounts', accounts)
+      let providersCtrl: ProvidersController
+      const networksCtrl = new NetworksController(
+        storage,
+        fetch,
+        (net) => {
+          providersCtrl.setProvider(net)
+        },
+        (id) => {
+          providersCtrl.removeProvider(id)
+        }
+      )
+      providersCtrl = new ProvidersController(networksCtrl)
+      providersCtrl.providers = providers
+      const accountsCtrl = new AccountsController(
+        storage,
+        providersCtrl,
+        networksCtrl,
+        () => {},
+        () => {}
+      )
+      await accountsCtrl.initialLoadPromise
+      accountsCtrl.selectedAccount = '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
+      const controller = new ActivityController(
+        storage,
+        fetch,
+        accountsCtrl,
+        providersCtrl,
+        networksCtrl,
+        () => Promise.resolve()
+      )
 
       controller.init(INIT_PARAMS)
 

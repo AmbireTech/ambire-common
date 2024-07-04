@@ -5,7 +5,7 @@
     "noEmit": false,
     "noEmitOnError": true,
     "noEmitHelpers": true,
-    "lib": ["ESNext"],
+    "lib": ["ESNext", "DOM"],
     "target": "ESNext",
     "moduleResolution": "node",
     "allowSyntheticDefaultImports": true,

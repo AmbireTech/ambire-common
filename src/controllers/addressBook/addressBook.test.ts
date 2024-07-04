@@ -1,12 +1,19 @@
+import fetch from 'node-fetch'
+
 import { expect, jest } from '@jest/globals'
 
 import { produceMemoryStore } from '../../../test/helpers'
+import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
+import { networks } from '../../consts/networks'
 import { Account } from '../../interfaces/account'
-import { AccountPreferences } from '../../interfaces/settings'
-import { SettingsController } from '../settings/settings'
+import { Storage } from '../../interfaces/storage'
+import { getRpcProvider } from '../../services/provider'
+import { AccountsController } from '../accounts/accounts'
+import { NetworksController } from '../networks/networks'
+import { ProvidersController } from '../providers/providers'
 import { AddressBookController } from './addressBook'
 
-const storage = produceMemoryStore()
+const storage: Storage = produceMemoryStore()
 
 let errors = 0
 
@@ -18,37 +25,62 @@ const MOCK_ACCOUNTS: Account[] = [
     addr: '0x598cD170E9b90e9c7E57e18B47D589ceC119744c',
     associatedKeys: [],
     initialPrivileges: [],
-    creation: null
+    creation: null,
+    preferences: {
+      label: DEFAULT_ACCOUNT_LABEL,
+      pfp: '0x598cD170E9b90e9c7E57e18B47D589ceC119744c'
+    }
   },
   {
     addr: '0x66fE93c51726e6FD51668B0B0434ffcedD604d08',
     associatedKeys: [],
     initialPrivileges: [],
-    creation: null
+    creation: null,
+    preferences: {
+      label: 'Account 1',
+      pfp: '0x66fE93c51726e6FD51668B0B0434ffcedD604d08'
+    }
   },
   {
     addr: '0x31800a810A2d9C3315dc714e1Eb988bd6A641eF0',
     associatedKeys: [],
     initialPrivileges: [],
-    creation: null
+    creation: null,
+    preferences: {
+      label: 'Account 2',
+      pfp: '0x31800a810A2d9C3315dc714e1Eb988bd6A641eF0'
+    }
   }
 ]
 
-const MOCK_ACCOUNT_PREFERENCES: AccountPreferences = {
-  '0x66fE93c51726e6FD51668B0B0434ffcedD604d08': {
-    label: 'Account 1',
-    pfp: '0x66fE93c51726e6FD51668B0B0434ffcedD604d08'
-  },
-  '0x31800a810A2d9C3315dc714e1Eb988bd6A641eF0': {
-    label: 'Account 2',
-    pfp: '0x31800a810A2d9C3315dc714e1Eb988bd6A641eF0'
-  }
-}
+storage.set('accounts', MOCK_ACCOUNTS)
+
+const providers = Object.fromEntries(
+  networks.map((network) => [network.id, getRpcProvider(network.rpcUrls, network.chainId)])
+)
 
 describe('AddressBookController', () => {
-  const addressBookController = new AddressBookController(storage, MOCK_ACCOUNTS, {
-    accountPreferences: MOCK_ACCOUNT_PREFERENCES
-  } as SettingsController)
+  let providersCtrl: ProvidersController
+  const networksCtrl = new NetworksController(
+    storage,
+    fetch,
+    (net) => {
+      providersCtrl.setProvider(net)
+    },
+    (id) => {
+      providersCtrl.removeProvider(id)
+    }
+  )
+  providersCtrl = new ProvidersController(networksCtrl)
+  providersCtrl.providers = providers
+  const accountsCtrl = new AccountsController(
+    storage,
+    providersCtrl,
+    networksCtrl,
+    () => {},
+    () => {}
+  )
+  const addressBookController = new AddressBookController(storage, accountsCtrl)
 
   const getContactFromName = (name: string) => {
     return addressBookController.contacts.find((contact) => contact.name === name)
@@ -57,10 +89,8 @@ describe('AddressBookController', () => {
   // 'any' is on purpose, to override 'emitError' prop (which is protected)
   ;(addressBookController as any).emitError = mockEmitError
 
-  it('wallet accounts are in contacts', () => {
-    addressBookController.update({
-      selectedAccount: '0x598cD170E9b90e9c7E57e18B47D589ceC119744c'
-    })
+  it('wallet accounts are in contacts', async () => {
+    await accountsCtrl.selectAccount('0x598cD170E9b90e9c7E57e18B47D589ceC119744c')
     expect(getContactFromName('Account 1')?.isWalletAccount).toBeTruthy()
     expect(getContactFromName('Account 1')?.address).toEqual(
       '0x66fE93c51726e6FD51668B0B0434ffcedD604d08'

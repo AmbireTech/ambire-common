@@ -9,7 +9,7 @@ const deployless_1 = require("../deployless/deployless");
 const account_1 = require("../account/account");
 const Estimation_json_1 = __importDefault(require("../../../contracts/compiled/Estimation.json"));
 const AmbireAccount_json_1 = __importDefault(require("../../../contracts/compiled/AmbireAccount.json"));
-const AmbireAccountFactory_json_1 = __importDefault(require("../../../contracts/compiled/AmbireAccountFactory.json"));
+const AmbireAccountFactory_json_1 = __importDefault(require("../../../contracts/compiled/AmbireFactory.json"));
 async function estimate(provider, network, account, op, nativeToCheck, feeTokens, opts, fromAddrHavingNative, blockFrom = '0x0000000000000000000000000000000000000001', blockTag = 'latest') {
     if (!account.creation) {
         if (op.calls.length !== 1) {

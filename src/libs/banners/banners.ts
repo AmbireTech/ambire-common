@@ -4,13 +4,13 @@ import { AccountOpAction, Action as ActionFromActionsQueue } from 'controllers/a
 import { PortfolioController } from '../../controllers/portfolio/portfolio'
 import { Account, AccountId } from '../../interfaces/account'
 import { Action, Banner } from '../../interfaces/banner'
-import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
-import { RPCProviders } from '../../interfaces/settings'
+import { Network, NetworkId } from '../../interfaces/network'
+import { RPCProviders } from '../../interfaces/provider'
+import { getNetworksWithFailedRPC } from '../networks/networks'
 import { PORTFOLIO_LIB_ERROR_NAMES } from '../portfolio/portfolio'
-import { getNetworksWithFailedRPC } from '../settings/settings'
 
 export const getDappActionRequestsBanners = (actions: ActionFromActionsQueue[]): Banner[] => {
-  const requests = actions.filter((a) => a.type !== 'accountOp')
+  const requests = actions.filter((a) => !['accountOp', 'benzin'].includes(a.type))
   if (!requests.length) return []
 
   return [
@@ -41,7 +41,7 @@ export const getAccountOpBanners = ({
 
   selectedAccount: string
   accounts: Account[]
-  networks: NetworkDescriptor[]
+  networks: Network[]
 }): Banner[] => {
   if (!accountOpActionsByNetwork) return []
   const txnBanners: Banner[] = []
@@ -137,15 +137,15 @@ export const getNetworksWithFailedRPCBanners = ({
   networksWithAssets
 }: {
   providers: RPCProviders
-  networks: NetworkDescriptor[]
-  networksWithAssets: NetworkDescriptor['id'][]
+  networks: Network[]
+  networksWithAssets: NetworkId[]
 }): Banner[] => {
   const banners: Banner[] = []
   const networkIds = getNetworksWithFailedRPC({ providers }).filter((networkId) =>
     networksWithAssets.includes(networkId)
   )
 
-  const networksData = networkIds.map((id) => networks.find((n: NetworkDescriptor) => n.id === id)!)
+  const networksData = networkIds.map((id) => networks.find((n: Network) => n.id === id)!)
 
   const allFailed = networksData.length === networks.length
 
@@ -196,7 +196,7 @@ export const getNetworksWithPortfolioErrorBanners = ({
   networks,
   portfolioLatest
 }: {
-  networks: NetworkDescriptor[]
+  networks: Network[]
   portfolioLatest: PortfolioController['latest']
 }): Banner[] => {
   const banners: Banner[] = []
@@ -226,7 +226,7 @@ export const getNetworksWithPortfolioErrorBanners = ({
       const portfolioForNetwork = accPortfolio[network]
       const criticalError = portfolioForNetwork?.criticalError
 
-      const networkData = networks.find((n: NetworkDescriptor) => n.id === network)
+      const networkData = networks.find((n: Network) => n.id === network)
 
       if (!portfolioForNetwork || !networkData || portfolioForNetwork.isLoading) return
 

@@ -1,9 +1,9 @@
+import { AccountOp } from '../../../accountOp/accountOp'
+import { HumanizerCallModule, IrCall } from '../../interfaces'
+import { checkIfUnknownAction, getUnknownVisualization } from '../../utils'
+import { StakingPools } from './stakingPools'
 // update return ir to be {...ir,calls:newCalls} instead of {calls:newCalls} everywhere
 import { WALLETSupplyControllerMapping } from './WALLETSupplyController'
-import { StakingPools } from './stakingPools'
-import { HumanizerCallModule, HumanizerMeta, IrCall } from '../../interfaces'
-import { AccountOp } from '../../../accountOp/accountOp'
-import { checkIfUnknownAction, getUnknownVisualization } from '../../utils'
 
 const stakingAddresses = [
   '0x47cd7e91c3cbaaf266369fe8518345fc4fc12935',
@@ -12,16 +12,10 @@ const stakingAddresses = [
 ]
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
-export const WALLETModule: HumanizerCallModule = (
-  accountOp: AccountOp,
-  irCalls: IrCall[],
-  humanizerMeta: HumanizerMeta,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  options?: any
-) => {
+export const WALLETModule: HumanizerCallModule = (_: AccountOp, irCalls: IrCall[]) => {
   const matcher = {
-    supplyController: WALLETSupplyControllerMapping(humanizerMeta),
-    stakingPool: StakingPools(humanizerMeta)
+    supplyController: WALLETSupplyControllerMapping(),
+    stakingPool: StakingPools()
   }
   const newCalls = irCalls.map((call: IrCall) => {
     if (
@@ -31,7 +25,7 @@ export const WALLETModule: HumanizerCallModule = (
       if (matcher.stakingPool[call.data.slice(0, 10)]) {
         return {
           ...call,
-          fullVisualization: matcher.stakingPool[call.data.slice(0, 10)](accountOp, call)
+          fullVisualization: matcher.stakingPool[call.data.slice(0, 10)](call)
         }
       }
       return {
@@ -42,7 +36,7 @@ export const WALLETModule: HumanizerCallModule = (
     if (matcher.supplyController[call.data.slice(0, 10)]) {
       return {
         ...call,
-        fullVisualization: matcher.supplyController[call.data.slice(0, 10)](accountOp, call)
+        fullVisualization: matcher.supplyController[call.data.slice(0, 10)](call)
       }
     }
     return call

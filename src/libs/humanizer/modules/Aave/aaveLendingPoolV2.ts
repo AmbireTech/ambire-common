@@ -1,11 +1,12 @@
 import { Interface } from 'ethers'
 
 import { AccountOp } from '../../../accountOp/accountOp'
-import { HumanizerMeta, IrCall } from '../../interfaces'
-import { getAction, getKnownAbi, getLabel, getOnBehalfOf, getToken } from '../../utils'
+import { AaveLendingPoolV2 } from '../../const/abis'
+import { IrCall } from '../../interfaces'
+import { getAction, getLabel, getOnBehalfOf, getToken } from '../../utils'
 
-export const aaveLendingPoolV2 = (humanizerInfo: HumanizerMeta): { [key: string]: Function } => {
-  const iface = new Interface(getKnownAbi(humanizerInfo, 'AaveLendingPoolV2'))
+export const aaveLendingPoolV2 = (): { [key: string]: Function } => {
+  const iface = new Interface(AaveLendingPoolV2)
   const matcher = {
     [iface.getFunction('deposit')?.selector!]: (accountOp: AccountOp, call: IrCall) => {
       const [asset, amount, onBehalf] = iface.parseTransaction(call)?.args || []

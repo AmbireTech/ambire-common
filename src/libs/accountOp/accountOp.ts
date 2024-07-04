@@ -1,8 +1,9 @@
 import { AbiCoder, getBytes, keccak256 } from 'ethers'
 
+import { AccountId } from '../../interfaces/account'
+import { HumanizerFragment } from '../../interfaces/humanizer'
 import { Key } from '../../interfaces/keystore'
-import { NetworkId } from '../../interfaces/networkDescriptor'
-import { HumanizerFragment } from '../humanizer/interfaces'
+import { NetworkId } from '../../interfaces/network'
 import { stringify } from '../richJson/richJson'
 import { UserOperation } from '../userOperation/types'
 import { Call } from './types'
@@ -29,7 +30,9 @@ export enum AccountOpStatus {
   BroadcastedButNotConfirmed = 'broadcasted-but-not-confirmed',
   Success = 'success',
   Failure = 'failure',
-  UnknownButPastNonce = 'unknown-but-past-nonce'
+  Rejected = 'rejected',
+  UnknownButPastNonce = 'unknown-but-past-nonce',
+  BroadcastButStuck = 'broadcast-but-stuck'
 }
 
 // Equivalent to ERC-4337 UserOp, but more universal than it since a AccountOp can be transformed to
@@ -71,6 +74,11 @@ export interface AccountOp {
   status?: AccountOpStatus
   // in the case of ERC-4337, we need an UserOperation structure for the AccountOp
   asUserOperation?: UserOperation
+  // all kinds of custom accountOp properties that are needed in specific cases
+  meta?: {
+    // pass the entry point authorization signature for the deploy 4337 txn
+    entryPointAuthorization?: string
+  }
 }
 
 export function callToTuple(call: Call): [string, string, string] {
@@ -116,11 +124,28 @@ export function isAccountOpsIntentEqual(
   return stringify(createIntent(accountOps1)) === stringify(createIntent(accountOps2))
 }
 
-export function getSignableCalls(op: AccountOp) {
+export function getSignableCalls(op: AccountOp): [string, string, string][] {
   const callsToSign = op.calls.map((call: Call) => callToTuple(call))
   if (op.activatorCall) callsToSign.push(callToTuple(op.activatorCall))
   if (op.feeCall) callsToSign.push(callToTuple(op.feeCall))
   return callsToSign
+}
+
+export function getSignableHash(
+  addr: AccountId,
+  chainId: bigint,
+  nonce: bigint,
+  calls: [string, string, string][]
+): Uint8Array {
+  const abiCoder = new AbiCoder()
+  return getBytes(
+    keccak256(
+      abiCoder.encode(
+        ['address', 'uint', 'uint', 'tuple(address, uint, bytes)[]'],
+        [addr, chainId, nonce, calls]
+      )
+    )
+  )
 }
 
 /**
@@ -149,13 +174,5 @@ export function getSignableCalls(op: AccountOp) {
  * @returns Uint8Array
  */
 export function accountOpSignableHash(op: AccountOp, chainId: bigint): Uint8Array {
-  const abiCoder = new AbiCoder()
-  return getBytes(
-    keccak256(
-      abiCoder.encode(
-        ['address', 'uint', 'uint', 'tuple(address, uint, bytes)[]'],
-        [op.accountAddr, chainId, op.nonce ?? 0n, getSignableCalls(op)]
-      )
-    )
-  )
+  return getSignableHash(op.accountAddr, chainId, op.nonce ?? 0n, getSignableCalls(op))
 }

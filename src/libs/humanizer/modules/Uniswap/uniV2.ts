@@ -1,22 +1,14 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
 import { Interface, ZeroAddress } from 'ethers'
 
 import { AccountOp } from '../../../accountOp/accountOp'
-import { HumanizerMeta, IrCall } from '../../interfaces'
-import {
-  getAction,
-  getDeadline,
-  getKnownAbi,
-  getLabel,
-  getRecipientText,
-  getToken
-} from '../../utils'
+import { UniV2Router } from '../../const/abis'
+import { IrCall } from '../../interfaces'
+import { getAction, getDeadline, getLabel, getToken } from '../../utils'
+import { HumanizerUniMatcher } from './interfaces'
+import { getUniRecipientText } from './utils'
 
-const uniV2Mapping = (
-  humanizerInfo: HumanizerMeta,
-  _options?: any
-): { [key: string]: (a: AccountOp, c: IrCall) => IrCall[] } => {
-  const iface = new Interface(getKnownAbi(humanizerInfo, 'UniV2Router'))
+const uniV2Mapping = (): HumanizerUniMatcher => {
+  const iface = new Interface(UniV2Router)
   return {
     // ordered in the same order as the router
     [iface.getFunction('swapExactTokensForTokens')?.selector!]: (
@@ -33,7 +25,7 @@ const uniV2Mapping = (
             getToken(path[0], amountIn),
             getLabel('for at least'),
             getToken(outputAsset, amountOutMin),
-            ...getRecipientText(accountOp.accountAddr, to),
+            ...getUniRecipientText(accountOp.accountAddr, to),
             getDeadline(deadline)
           ]
         }
@@ -54,7 +46,7 @@ const uniV2Mapping = (
             getToken(path[0], amountInMax),
             getLabel('for at least'),
             getToken(outputAsset, amountOut),
-            ...getRecipientText(accountOp.accountAddr, to),
+            ...getUniRecipientText(accountOp.accountAddr, to),
             getDeadline(deadline)
           ]
         }
@@ -75,7 +67,7 @@ const uniV2Mapping = (
             getToken(ZeroAddress, value),
             getLabel('for at least'),
             getToken(outputAsset, amountOutMin),
-            ...getRecipientText(accountOp.accountAddr, to),
+            ...getUniRecipientText(accountOp.accountAddr, to),
             getDeadline(deadline)
           ]
         }
@@ -95,7 +87,7 @@ const uniV2Mapping = (
             getToken(path[0], amountInMax),
             getLabel('for at least'),
             getToken(ZeroAddress, amountOut),
-            ...getRecipientText(accountOp.accountAddr, to),
+            ...getUniRecipientText(accountOp.accountAddr, to),
             getDeadline(deadline)
           ]
         }
@@ -114,7 +106,7 @@ const uniV2Mapping = (
             getToken(path[0], amountIn),
             getLabel('for at least'),
             getToken(ZeroAddress, amountOutMin),
-            ...getRecipientText(accountOp.accountAddr, to),
+            ...getUniRecipientText(accountOp.accountAddr, to),
             getDeadline(deadline)
           ]
         }
@@ -136,7 +128,7 @@ const uniV2Mapping = (
             getToken(ZeroAddress, value),
             getLabel('for at least'),
             getToken(outputAsset, amountOut),
-            ...getRecipientText(accountOp.accountAddr, to),
+            ...getUniRecipientText(accountOp.accountAddr, to),
             getDeadline(deadline)
           ]
         }
@@ -165,7 +157,7 @@ const uniV2Mapping = (
             getToken(tokenA, amountADesired),
             getLabel('and'),
             getToken(tokenB, amountBDesired),
-            ...getRecipientText(accountOp.accountAddr, to),
+            ...getUniRecipientText(accountOp.accountAddr, to),
             getDeadline(deadline)
           ]
         }
@@ -186,7 +178,7 @@ const uniV2Mapping = (
             getToken(token, amountTokenDesired),
             getLabel('and'),
             getToken(ZeroAddress, value),
-            ...getRecipientText(accountOp.accountAddr, to),
+            ...getUniRecipientText(accountOp.accountAddr, to),
             getDeadline(deadline)
           ]
         }
@@ -207,7 +199,7 @@ const uniV2Mapping = (
             getToken(tokenA, amountAMin),
             getLabel('and'),
             getToken(tokenB, amountBMin),
-            ...getRecipientText(accountOp.accountAddr, to),
+            ...getUniRecipientText(accountOp.accountAddr, to),
             getDeadline(deadline)
           ]
         }
@@ -228,7 +220,7 @@ const uniV2Mapping = (
             getToken(token, amountTokenMin),
             getLabel('and'),
             getToken(ZeroAddress, amountETHMin),
-            ...getRecipientText(accountOp.accountAddr, to),
+            ...getUniRecipientText(accountOp.accountAddr, to),
             getDeadline(deadline)
           ]
         }

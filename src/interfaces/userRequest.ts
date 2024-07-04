@@ -1,10 +1,10 @@
 import { SignMessageAction } from 'controllers/actions/actions'
 import { TypedDataDomain, TypedDataField } from 'ethers'
 
-import { HumanizerFragment } from '../libs/humanizer/interfaces'
 import { AccountId } from './account'
 import { DappProviderRequest } from './dapp'
-import { NetworkId } from './networkDescriptor'
+import { HumanizerFragment } from './humanizer'
+import { NetworkId } from './network'
 
 export interface Call {
   kind: 'call'

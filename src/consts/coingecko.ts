@@ -1,9 +1,9 @@
 import { ZeroAddress } from 'ethers'
 
-import { NetworkDescriptor } from '../interfaces/networkDescriptor'
+import { Network } from '../interfaces/network'
 
 // @TODO some form of a constants list
-export function geckoIdMapper(address: string, network: NetworkDescriptor): string | null {
+export function geckoIdMapper(address: string, network: Network): string | null {
   if (address === ZeroAddress) return network.nativeAssetId
 
   // we currently can't map aave so we're leaving this

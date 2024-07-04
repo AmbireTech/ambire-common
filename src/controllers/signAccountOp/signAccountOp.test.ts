@@ -6,16 +6,16 @@ import fetch from 'node-fetch'
 import { describe, expect, jest, test } from '@jest/globals'
 import structuredClone from '@ungap/structured-clone'
 
-import { trezorSlot7v24337Deployed } from '../../../test/config'
+import { trezorSlot7v24337Deployed, velcroUrl } from '../../../test/config'
 import { produceMemoryStore } from '../../../test/helpers'
+import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import humanizerJSON from '../../consts/humanizer/humanizerInfo.json'
 import { networks } from '../../consts/networks'
-import { Account, AccountStates } from '../../interfaces/account'
-import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
+import { Account } from '../../interfaces/account'
+import { NetworkId } from '../../interfaces/network'
 import { Storage } from '../../interfaces/storage'
 import { AccountOp, accountOpSignableHash } from '../../libs/accountOp/accountOp'
-import { getAccountState } from '../../libs/accountState/accountState'
 import { estimate } from '../../libs/estimate/estimate'
 import { EstimateResult } from '../../libs/estimate/interfaces'
 import * as gasPricesLib from '../../libs/gasPrice/gasPrice'
@@ -25,34 +25,18 @@ import { TokenResult } from '../../libs/portfolio'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { getTypedData } from '../../libs/signMessage/signMessage'
 import { getRpcProvider } from '../../services/provider'
+import { AccountsController } from '../accounts/accounts'
 import { KeystoreController } from '../keystore/keystore'
+import { NetworksController } from '../networks/networks'
 import { PortfolioController } from '../portfolio/portfolio'
-import { SettingsController } from '../settings/settings'
+import { ProvidersController } from '../providers/providers'
 import { getFeeSpeedIdentifier } from './helper'
 import { SignAccountOpController } from './signAccountOp'
 
 global.structuredClone = structuredClone as any
-
 const providers = Object.fromEntries(
   networks.map((network) => [network.id, getRpcProvider(network.rpcUrls, network.chainId)])
 )
-
-const getAccountsInfo = async (accounts: Account[]): Promise<AccountStates> => {
-  const result = await Promise.all(
-    networks.map((network) => getAccountState(providers[network.id], network, accounts))
-  )
-  const states = accounts.map((acc: Account, accIndex: number) => {
-    return [
-      acc.addr,
-      Object.fromEntries(
-        networks.map((network: NetworkDescriptor, netIndex: number) => {
-          return [network.id, result[netIndex][accIndex]]
-        })
-      )
-    ]
-  })
-  return Object.fromEntries(states)
-}
 
 const createAccountOp = (
   account: Account,
@@ -78,7 +62,11 @@ const createAccountOp = (
       addr: '0xAa0e9a1E2D2CcF2B867fda047bb5394BEF1883E0',
       associatedKeys: ['0xAa0e9a1E2D2CcF2B867fda047bb5394BEF1883E0'],
       initialPrivileges: [],
-      creation: null
+      creation: null,
+      preferences: {
+        label: DEFAULT_ACCOUNT_LABEL,
+        pfp: '0xAa0e9a1E2D2CcF2B867fda047bb5394BEF1883E0'
+      }
     }
   ]
   const feeTokens = [
@@ -124,7 +112,11 @@ const createEOAAccountOp = (account: Account) => {
       addr: account.addr,
       associatedKeys: [account.addr],
       initialPrivileges: [],
-      creation: null
+      creation: null,
+      preferences: {
+        label: DEFAULT_ACCOUNT_LABEL,
+        pfp: account.addr
+      }
     }
   ]
   const feeTokens = [
@@ -175,21 +167,33 @@ const eoaAccount: Account = {
   addr: eoaSigner.keyPublicAddress,
   associatedKeys: [eoaSigner.keyPublicAddress],
   initialPrivileges: [],
-  creation: null
+  creation: null,
+  preferences: {
+    label: DEFAULT_ACCOUNT_LABEL,
+    pfp: eoaSigner.keyPublicAddress
+  }
 }
 
 const trezorEoa: Account = {
   addr: '0x71c3D24a627f0416db45107353d8d0A5ae0401ae',
   associatedKeys: ['0x71c3D24a627f0416db45107353d8d0A5ae0401ae'],
   initialPrivileges: [],
-  creation: null
+  creation: null,
+  preferences: {
+    label: DEFAULT_ACCOUNT_LABEL,
+    pfp: '0x71c3D24a627f0416db45107353d8d0A5ae0401ae'
+  }
 }
 
 const otherEoa: Account = {
   addr: '0x71c3D24a627f0416db45107353d8d0A5ae0402ae',
   associatedKeys: ['0x71c3D24a627f0416db45107353d8d0A5ae0401ae'],
   initialPrivileges: [],
-  creation: null
+  creation: null,
+  preferences: {
+    label: DEFAULT_ACCOUNT_LABEL,
+    pfp: '0x71c3D24a627f0416db45107353d8d0A5ae0402ae'
+  }
 }
 
 const smartAccount: Account = {
@@ -206,7 +210,11 @@ const smartAccount: Account = {
       '0x141A14B5C4dbA2aC7a7943E02eDFE2E7eDfdA28F',
       '0x0000000000000000000000000000000000000000000000000000000000000001'
     ]
-  ]
+  ],
+  preferences: {
+    label: DEFAULT_ACCOUNT_LABEL,
+    pfp: '0x4AA524DDa82630cE769e5C9d7ec7a45B94a41bc6'
+  }
 }
 
 const v1Account = {
@@ -218,6 +226,10 @@ const v1Account = {
     bytecode:
       '0x7f28d4ea8f825adb036e9b306b2269570e63d2aa5bd10751437d98ed83551ba1cd7fa57498058891e98f45f8abb85dafbcd30f3d8b3ab586dfae2e0228bbb1de7018553d602d80604d3d3981f3363d3d373d3d3d363d732a2b85eb1054d6f0c6c2e37da05ed3e5fea684ef5af43d82803e903d91602b57fd5bf3',
     salt: '0x0000000000000000000000000000000000000000000000000000000000000001'
+  },
+  preferences: {
+    label: DEFAULT_ACCOUNT_LABEL,
+    pfp: '0xa07D75aacEFd11b425AF7181958F0F85c312f143'
   }
 }
 
@@ -309,21 +321,52 @@ const init = async (
 ) => {
   const storage: Storage = produceMemoryStore()
   await storage.set(HUMANIZER_META_KEY, humanizerMeta)
-
+  await storage.set('accounts', [account])
   const keystore = new KeystoreController(storage, { internal: KeystoreSigner })
   await keystore.addSecret('passphrase', signer.pass, '', false)
   await keystore.unlockWithSecret('passphrase', signer.pass)
 
   await keystore.addKeys([{ privateKey: signer.privKey, dedicatedToOneSA: true }])
 
+  let providersCtrl: ProvidersController
+  const networksCtrl = new NetworksController(
+    storage,
+    fetch,
+    (net) => {
+      providersCtrl.setProvider(net)
+    },
+    (id) => {
+      providersCtrl.removeProvider(id)
+    }
+  )
+  providersCtrl = new ProvidersController(networksCtrl)
+  providersCtrl.providers = providers
+  const accountsCtrl = new AccountsController(
+    storage,
+    providersCtrl,
+    networksCtrl,
+    () => {},
+    () => {}
+  )
+  await accountsCtrl.initialLoadPromise
+  await networksCtrl.initialLoadPromise
+  await providersCtrl.initialLoadPromise
+
+  const portfolio = new PortfolioController(
+    storage,
+    fetch,
+    providersCtrl,
+    networksCtrl,
+    accountsCtrl,
+    'https://staging-relayer.ambire.com',
+    velcroUrl
+  )
   const { op, nativeToCheck, feeTokens } = accountOp
-  const network = networks.find((x) => x.id === op.networkId)!
+  const network = networksCtrl.networks.find((x) => x.id === op.networkId)!
+  await portfolio.updateSelectedAccount(account.addr, network)
   const provider = getRpcProvider(network.rpcUrls, network.chainId)
-  const accounts = [account]
-  const accountStates = await getAccountsInfo(accounts)
 
   const prices = gasPricesMock || (await gasPricesLib.getGasPriceRecommendations(provider, network))
-
   const estimation =
     estimationMock ||
     (await estimate(
@@ -332,15 +375,10 @@ const init = async (
       account,
       keystore.keys,
       op,
-      accountStates,
+      accountsCtrl.accountStates,
       nativeToCheck,
       feeTokens
     ))
-
-  const settings = new SettingsController(storage)
-  settings.providers = providers
-  const portfolio = new PortfolioController(storage, settings, 'https://staging-relayer.ambire.com')
-  await portfolio.updateSelectedAccount(accounts, networks, account.addr)
 
   if (portfolio.latest?.[account.addr][op.networkId]!.result) {
     portfolio!.latest[account.addr][op.networkId]!.result!.tokens = [
@@ -377,12 +415,12 @@ const init = async (
 
   const callRelayer = relayerCall.bind({ url: '', fetch })
   const controller = new SignAccountOpController(
+    accountsCtrl,
     keystore,
     portfolio,
-    settings,
+    providersCtrl,
     {},
     account,
-    accountStates,
     networks.find((n) => n.id === op.networkId)!,
     1,
     op,

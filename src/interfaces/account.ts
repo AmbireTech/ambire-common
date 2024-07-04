@@ -1,6 +1,11 @@
-import { NetworkDescriptor } from './networkDescriptor'
+import { Network } from './network'
 
 export type AccountId = string
+
+export type AccountPreferences = {
+  label: string
+  pfp: string // profile picture - acc address as default value to display a unique jazz icon
+}
 
 export interface Account {
   addr: AccountId
@@ -10,7 +15,9 @@ export interface Account {
   initialPrivileges: [string, string][]
   // Creation data; `null` in case of an EOA
   creation: AccountCreation | null
+  preferences: AccountPreferences
   email?: string
+  newlyCreated?: boolean
 }
 
 export interface AccountCreation {
@@ -49,7 +56,7 @@ type AccountDerivationMeta = {
   isLinked: boolean // linked accounts are also smart accounts, so use a flag to differentiate
 }
 
-export type AccountWithNetworkMeta = Account & { usedOnNetworks: NetworkDescriptor[] }
+export type AccountWithNetworkMeta = Account & { usedOnNetworks: Network[] }
 
 /**
  * The account that is derived programmatically and internally by Ambire.

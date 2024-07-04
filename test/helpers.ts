@@ -1,14 +1,14 @@
-import { BaseContract, JsonRpcProvider } from 'ethers'
+import { BaseContract, getBytes, hexlify, JsonRpcProvider, toBeHex } from 'ethers'
 import { ethers } from 'hardhat'
+import secp256k1 from 'secp256k1'
 
 import { Account, AccountStates } from '../src/interfaces/account'
-import { NetworkDescriptor } from '../src/interfaces/networkDescriptor'
-import { RPCProviders } from '../src/interfaces/settings'
+import { Network } from '../src/interfaces/network'
+import { RPCProviders } from '../src/interfaces/provider'
 import { Storage } from '../src/interfaces/storage'
 import { getAccountState } from '../src/libs/accountState/accountState'
 import { parse, stringify } from '../src/libs/richJson/richJson'
-import { wrapEthSign, wrapTypedData } from './ambireSign'
-import { abiCoder, addressOne, addressTwo, AmbireAccount, chainId } from './config'
+import { abiCoder, addressOne, addressTwo, AmbireAccount, pk1 } from './config'
 
 async function sendFunds(to: string, ether: number) {
   const [signer] = await ethers.getSigners()
@@ -117,25 +117,35 @@ function produceMemoryStore(): Storage {
       return Promise.resolve(serialized ? parse(serialized) : defaultValue)
     },
     set: (key, value) => {
-      storage.set(key, stringify(value))
+      storage.set(key, typeof value === 'string' ? value : stringify(value))
+      return Promise.resolve(null)
+    },
+    remove: (key) => {
+      storage.delete(key)
       return Promise.resolve(null)
     }
   }
 }
 
+function getAccountGasLimits(verificationGasLimit: number, callGasLimit: number) {
+  return ethers.concat([ethers.toBeHex(verificationGasLimit, 16), ethers.toBeHex(callGasLimit, 16)])
+}
+
+function getGasFees(maxPriorityFeePerGas: number, maxFeePerGas: number) {
+  return ethers.concat([ethers.toBeHex(maxPriorityFeePerGas, 16), ethers.toBeHex(maxFeePerGas, 16)])
+}
+
 async function buildUserOp(paymaster: BaseContract, entryPointAddr: string, options: any = {}) {
-  const [relayer, sender] = await ethers.getSigners()
+  const [, sender] = await ethers.getSigners()
 
   const userOp = {
     sender: options.sender ?? sender.address,
     nonce: options.userOpNonce ?? ethers.toBeHex(0, 1),
     initCode: options.initCode ?? '0x',
     callData: options.callData ?? '0x',
-    callGasLimit: options.callGasLimit ?? ethers.toBeHex(500000),
-    verificationGasLimit: ethers.toBeHex(500000),
-    preVerificationGas: ethers.toBeHex(500000),
-    maxFeePerGas: ethers.toBeHex(500000),
-    maxPriorityFeePerGas: ethers.toBeHex(500000),
+    accountGasLimits: getAccountGasLimits(400000, options.callGasLimit ?? 500000),
+    preVerificationGas: 500000n,
+    gasFees: getGasFees(300000, 200000),
     paymasterAndData: '0x',
     signature: '0x'
   }
@@ -153,14 +163,12 @@ async function buildUserOp(paymaster: BaseContract, entryPointAddr: string, opti
         'uint256',
         'bytes',
         'bytes',
+        'bytes32',
         'uint256',
-        'uint256',
-        'uint256',
-        'uint256',
-        'uint256'
+        'bytes32'
       ],
       [
-        options.chainId ?? 31337,
+        options.chainId ?? 31337n,
         await paymaster.getAddress(),
         entryPointAddr,
         validUntil,
@@ -169,28 +177,31 @@ async function buildUserOp(paymaster: BaseContract, entryPointAddr: string, opti
         options.signedNonce ?? userOp.nonce,
         userOp.initCode,
         userOp.callData,
-        userOp.callGasLimit,
-        userOp.verificationGasLimit,
+        userOp.accountGasLimits,
         userOp.preVerificationGas,
-        userOp.maxFeePerGas,
-        userOp.maxPriorityFeePerGas
+        userOp.gasFees
       ]
     )
   )
-  const typedData = wrapTypedData(chainId, await paymaster.getAddress(), hash)
-  const signature = wrapEthSign(
-    await relayer.signTypedData(typedData.domain, typedData.types, typedData.value)
-  )
+  const ecdsa = secp256k1.ecdsaSign(getBytes(hash), getBytes(pk1))
+  const signatureNoWrap = `${hexlify(ecdsa.signature)}${ecdsa.recid === 0 ? '1B' : '1C'}`
+  const signature = `${signatureNoWrap}00`
 
   // abi.decode(userOp.paymasterAndData[20:], (uint48, uint48, bytes))
   const paymasterData = abiCoder.encode(
     ['uint48', 'uint48', 'bytes'],
     [validUntil, validAfter, signature]
   )
+  const paymasterVerificationGasLimit = ethers.toBeHex(400000, 16)
+  const paymasterPostOp = ethers.toBeHex(0, 16)
   const paymasterAndData = ethers.hexlify(
-    ethers.concat([await paymaster.getAddress(), paymasterData])
+    ethers.concat([
+      await paymaster.getAddress(),
+      paymasterVerificationGasLimit,
+      paymasterPostOp,
+      paymasterData
+    ])
   )
-  // (uint48 validUntil, uint48 validAfter, bytes memory signature) = abi.decode(userOp.paymasterAndData[20:], (uint48, uint48, bytes));
 
   userOp.paymasterAndData = paymasterAndData
   return userOp
@@ -200,15 +211,13 @@ function getTargetNonce(userOperation: any) {
   return `0x${ethers
     .keccak256(
       abiCoder.encode(
-        ['bytes', 'bytes', 'uint256', 'uint256', 'uint256', 'uint256', 'uint256', 'bytes'],
+        ['bytes', 'bytes', 'bytes32', 'uint256', 'bytes32', 'bytes'],
         [
           userOperation.initCode,
           userOperation.callData,
-          userOperation.callGasLimit,
-          userOperation.verificationGasLimit,
+          userOperation.accountGasLimits,
           userOperation.preVerificationGas,
-          userOperation.maxFeePerGas,
-          userOperation.maxPriorityFeePerGas,
+          userOperation.gasFees,
           userOperation.paymasterAndData
         ]
       )
@@ -217,7 +226,7 @@ function getTargetNonce(userOperation: any) {
 }
 
 const getAccountsInfo = async (
-  networks: NetworkDescriptor[],
+  networks: Network[],
   providers: RPCProviders,
   accounts: Account[]
 ): Promise<AccountStates> => {
@@ -228,7 +237,7 @@ const getAccountsInfo = async (
     return [
       acc.addr,
       Object.fromEntries(
-        networks.map((network: NetworkDescriptor, netIndex: number) => {
+        networks.map((network: Network, netIndex: number) => {
           return [network.id, result[netIndex][accIndex]]
         })
       )
@@ -248,5 +257,7 @@ export {
   getPriviledgeTxnWithCustomHash,
   buildUserOp,
   getTargetNonce,
-  getAccountsInfo
+  getAccountsInfo,
+  getAccountGasLimits,
+  getGasFees
 }

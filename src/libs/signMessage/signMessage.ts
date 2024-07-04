@@ -17,13 +17,19 @@ import {
 
 import UniversalSigValidator from '../../../contracts/compiled/UniversalSigValidator.json'
 import { PERMIT_2_ADDRESS, UNISWAP_UNIVERSAL_ROUTERS } from '../../consts/addresses'
-import { Account, AccountCreation, AccountOnchainState } from '../../interfaces/account'
+import { Account, AccountCreation, AccountId, AccountOnchainState } from '../../interfaces/account'
 import { KeystoreSigner } from '../../interfaces/keystore'
-import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
+import { Network } from '../../interfaces/network'
 import { TypedMessage } from '../../interfaces/userRequest'
 import hexStringToUint8Array from '../../utils/hexStringToUint8Array'
-import { AccountOp, accountOpSignableHash } from '../accountOp/accountOp'
+import {
+  AccountOp,
+  accountOpSignableHash,
+  callToTuple,
+  getSignableHash
+} from '../accountOp/accountOp'
 import { fromDescriptor } from '../deployless/deployless'
+import { getActivatorCall } from '../userOperation/userOperation'
 
 /**
  * For Unprotected signatures, we need to append 00 at the end
@@ -233,7 +239,7 @@ export async function verifyMessage({
 
 // Authorize the execute calls according to the version of the smart account
 export async function getExecuteSignature(
-  network: NetworkDescriptor,
+  network: Network,
   accountOp: AccountOp,
   accountState: AccountOnchainState,
   signer: KeystoreSigner
@@ -257,7 +263,7 @@ export async function getExecuteSignature(
 
 export async function getPlainTextSignature(
   message: string | Uint8Array,
-  network: NetworkDescriptor,
+  network: Network,
   account: Account,
   accountState: AccountOnchainState,
   signer: KeystoreSigner
@@ -309,7 +315,7 @@ export async function getEIP712Signature(
   account: Account,
   accountState: AccountOnchainState,
   signer: KeystoreSigner,
-  network: NetworkDescriptor
+  network: Network
 ): Promise<string> {
   if (!message.types.EIP712Domain) {
     throw new Error(
@@ -358,4 +364,16 @@ export async function getEIP712Signature(
   throw new Error(
     `Signer with address ${signer.key.addr} does not have privileges to execute this operation. Please choose a different signer and try again`
   )
+}
+
+// get the typedData for the first ERC-4337 deploy txn
+export async function getEntryPointAuthorization(addr: AccountId, chainId: bigint, nonce: bigint) {
+  const hash = getSignableHash(addr, chainId, nonce, [callToTuple(getActivatorCall(addr))])
+  return getTypedData(chainId, addr, hexlify(hash))
+}
+
+// since normally when we sign an EIP-712 request, we wrap it in Unprotected,
+// we adjust the entry point authorization signature so we could execute a txn
+export function adjustEntryPointAuthorization(signature: string): string {
+  return wrapStandard(signature.substring(0, signature.length - 2))
 }
