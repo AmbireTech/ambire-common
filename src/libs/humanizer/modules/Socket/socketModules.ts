@@ -21,6 +21,7 @@ import {
 export const SocketModule: HumanizerCallModule = (accountOp: AccountOp, irCalls: IrCall[]) => {
   const iface = new Interface([
     ...SocketViaAcross,
+    // @TODO move to more appropriate place all funcs
     'function performAction(address fromToken, address toToken, uint256 amount, address receiverAddress, bytes32 metadata, bytes swapExtraData) payable returns (uint256)',
     'function performActionWithIn(address fromToken, address toToken, uint256 amount, bytes32 metadata, bytes swapExtraData) payable returns (uint256, address)',
     'function bridgeERC20To(uint256,bytes32,address,address,uint256,uint32,uint256)',
@@ -48,6 +49,7 @@ export const SocketModule: HumanizerCallModule = (accountOp: AccountOp, irCalls:
           // metadata
         }
       } = iface.parseTransaction(call)!.args
+      // @TODO no harcoded sighashes
       if (swapData.startsWith('0xee8f0b86')) {
         const { fromToken, amount, toToken } = iface.parseTransaction({
           data: swapData
@@ -124,6 +126,7 @@ export const SocketModule: HumanizerCallModule = (accountOp: AccountOp, irCalls:
       const { fromToken, toToken, amount, receiverAddress, swapExtraData, metadata } =
         iface.parseTransaction(call)!.args
       let outAmount = 0n
+      // @TODO no harcoded sighashes
       if (swapExtraData.startsWith('0x415565b0'))
         outAmount = iface.parseTransaction({ data: swapExtraData })!.args[3]
 
@@ -277,11 +280,13 @@ export const SocketModule: HumanizerCallModule = (accountOp: AccountOp, irCalls:
           delegate
         }
       } = iface.parseTransaction(call)!.args
+      // @TODO no harcoded sighashes
       if (swapData.startsWith('0xee8f0b86')) {
         const { fromToken, toToken, amount, swapExtraData } = iface.parseTransaction({
           data: swapData
         })!.args
         let outAmount = 0n
+        // @TODO no harcoded sighashes
         if (swapExtraData.startsWith('0x415565b0'))
           outAmount = iface.parseTransaction({ data: swapExtraData })!.args[3]
 
