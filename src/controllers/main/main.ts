@@ -1561,7 +1561,6 @@ export class MainController extends EventEmitter {
     this.broadcastStatus = 'LOADING'
     this.emitUpdate()
 
-    await this.activity.addSignedMessage(signedMessage, signedMessage.accountAddr)
     if (signedMessage.fromActionId === ENTRY_POINT_AUTHORIZATION_REQUEST_ID) {
       const accountOpAction = makeSmartAccountOpAction({
         account: this.accounts.accounts.filter((a) => a.addr === signedMessage.accountAddr)[0],
@@ -1583,6 +1582,9 @@ export class MainController extends EventEmitter {
       this.onBroadcastSuccess(
         signedMessage.content.kind === 'typedMessage' ? 'typed-data' : 'message'
       )
+
+    // TODO: In the rare case when this might error, the user won't be notified
+    await this.activity.addSignedMessage(signedMessage, signedMessage.accountAddr)
 
     this.broadcastStatus = 'DONE'
     this.emitUpdate()
