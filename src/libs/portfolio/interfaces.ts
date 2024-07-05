@@ -87,14 +87,14 @@ interface Total {
 type AdditionalPortfolioProperties = 'updateStarted' | 'tokens'
 
 export type ClaimableRewardsData = {
-  addr: string;
-  fromBalanceClaimable: number;
-  fromADXClaimable: number;
-  totalClaimable: string;
-  leaf: string;
-  proof: string[];
-  root: string;
-  signedRoot: string;
+  addr: string
+  fromBalanceClaimable: number
+  fromADXClaimable: number
+  totalClaimable: string
+  leaf: string
+  proof: string[]
+  root: string
+  signedRoot: string
 }
 
 // Create the final type with some properties optional
