@@ -163,15 +163,15 @@ export class SignMessageController extends EventEmitter {
   async #sign() {
     if (!this.isInitialized || !this.messageToSign) {
       this.#throwNotInitialized()
-      return
+      return Promise.reject(new Error('signMessage: controller not initialized'))
     }
 
     if (!this.signingKeyAddr || !this.signingKeyType) {
-      return this.emitError({
-        level: 'major',
-        message: 'Please select a signing key and try again.',
-        error: new Error('No request to sign.')
-      })
+      const message = 'Please select a signing key and try again.'
+      const error = new Error('No request to sign.')
+      this.emitError({ level: 'major', message, error })
+
+      return Promise.reject(error)
     }
 
     try {
@@ -277,15 +277,11 @@ export class SignMessageController extends EventEmitter {
       }
     } catch (e: any) {
       const error = e instanceof Error ? e : new Error(`Signing failed. Error details: ${e}`)
+      const message =
+        e?.message || 'Something went wrong while signing the message. Please try again.'
+      this.emitError({ level: 'major', message, error })
 
-      this.emitError({
-        level: 'major',
-        message: e?.message || 'Something went wrong while signing the message. Please try again.',
-        error
-      })
-
-      // TODO: Need to reject in order to get the ERROR status eventually.
-      // return Promise.reject(e)
+      return Promise.reject(error)
     }
   }
 
