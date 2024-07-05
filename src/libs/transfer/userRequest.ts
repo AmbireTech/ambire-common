@@ -3,7 +3,8 @@ import { Interface, parseUnits } from 'ethers'
 import { Call, SignUserRequest } from 'interfaces/userRequest'
 
 import WALLETSupplyControllerABI from '../../../contracts/compiled/WALLETSupplyController.json'
-import { TokenResult } from '../../libs/portfolio'
+import { SUPPLY_CONTROLLER_ADDR, WALLET_STAKING_ADDR } from '../../consts/addresses'
+import { ClaimableRewardsData, TokenResult } from '../../libs/portfolio'
 import { getSanitizedAmount } from './amount'
 
 const ERC20 = new Interface(erc20Abi)
@@ -16,17 +17,14 @@ interface BuildUserRequestParams {
   recipientAddress: string
 }
 
-const supplyControllerAddress = '0xA69B8074CE03A33B13057B1e9D37DCDE0024Aaff'
-const WALLET_STAKING_ADDR = '0x47Cd7E91C3CBaAF266369fe8518345fc4FC12935'
-
 function buildClaimWalletRequest({
   selectedAccount,
   selectedToken,
   claimableRewardsData,
-}: { selectedAccount: string, selectedToken: TokenResult, claimableRewardsData: any }): SignUserRequest | null {
+}: { selectedAccount: string, selectedToken: TokenResult, claimableRewardsData: ClaimableRewardsData }): SignUserRequest | null {
   const txn = {
     kind: 'call' as Call['kind'],
-    to: supplyControllerAddress,
+    to: SUPPLY_CONTROLLER_ADDR,
     value: BigInt(0),
     data: supplyControllerInterface.encodeFunctionData('claimWithRootUpdate', [
       claimableRewardsData?.totalClaimable,

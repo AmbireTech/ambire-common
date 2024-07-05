@@ -681,33 +681,6 @@ export class MainController extends EventEmitter {
     await this.addUserRequest(userRequest)
   }
 
-  async claimWallet(
-    selectedToken: TokenResult,
-    claimableRewardsData: any,
-  ) {
-    await this.#initialLoadPromise
-    if (!this.accounts.selectedAccount) return
-
-    const userRequest = buildClaimWalletRequest({
-      selectedAccount: this.accounts.selectedAccount,
-      selectedToken,
-      claimableRewardsData
-    })
-
-    if (!userRequest) {
-      this.emitError({
-        level: 'major',
-        message: 'Unexpected error while building signAccountOp request',
-        error: new Error(
-          'buildUserRequestFromTransferRequest: bad parameters passed to buildTransferUserRequest'
-        )
-      })
-      return
-    }
-
-    await this.addUserRequest(userRequest)
-  }
-
   resolveUserRequest(data: any, requestId: UserRequest['id']) {
     const userRequest = this.userRequests.find((r) => r.id === requestId)
     if (!userRequest) return // TODO: emit error
