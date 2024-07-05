@@ -208,7 +208,8 @@ export class MainController extends EventEmitter {
         await this.actions.forceEmitUpdate()
         await this.addressBook.forceEmitUpdate()
         this.dapps.broadcastDappSessionEvent('accountsChanged', [toAccountAddr])
-      }
+      },
+      this.providers.updateProviderIsWorking.bind(this.providers)
     )
     this.settings = new SettingsController(this.#storage)
     this.portfolio = new PortfolioController(
@@ -381,10 +382,14 @@ export class MainController extends EventEmitter {
   }
 
   destroySignAccOp() {
+    if (!this.signAccountOp) return
+
     this.signAccountOp = null
     this.signAccOpInitError = null
     MainController.signAccountOpListener() // unsubscribes for further updates
-    this.updateSelectedAccountPortfolio(true)
+
+    // NOTE: no need to update the portfolio here as an update is
+    // fired upon removeUserRequest
 
     this.emitUpdate()
   }
@@ -457,8 +462,8 @@ export class MainController extends EventEmitter {
     }
     // If this still didn't work, re-load
     if (!this.accounts.accountStates[accountAddr]?.[networkId])
-      await this.accounts.updateAccountStates()
-    // If this still didn't work, throw error: this prob means that we're calling for a non-existant acc/network
+      await this.accounts.updateAccountState(accountAddr, networkId)
+    // If this still didn't work, throw error: this prob means that we're calling for a non-existent acc/network
     if (!this.accounts.accountStates[accountAddr]?.[networkId])
       this.signAccOpInitError = `Failed to retrieve account info for ${networkId}, because of one of the following reasons: 1) network doesn't exist, 2) RPC is down for this network`
   }
@@ -477,7 +482,16 @@ export class MainController extends EventEmitter {
     )
   }
 
-  async updateSelectedAccountPortfolio(forceUpdate: boolean = false) {
+  async reloadSelectedAccount() {
+    if (!this.accounts.selectedAccount) return
+
+    await Promise.all([
+      this.accounts.updateAccountState(this.accounts.selectedAccount, 'pending'),
+      this.updateSelectedAccountPortfolio(true)
+    ])
+  }
+
+  async updateSelectedAccountPortfolio(forceUpdate: boolean = false, network?: Network) {
     await this.#initialLoadPromise
     if (!this.accounts.selectedAccount) return
 
@@ -501,7 +515,7 @@ export class MainController extends EventEmitter {
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.portfolio.updateSelectedAccount(
       this.accounts.selectedAccount,
-      undefined,
+      network,
       accountOpsToBeSimulatedByNetwork,
       { forceUpdate }
     )
@@ -553,7 +567,12 @@ export class MainController extends EventEmitter {
       // TODO: if address is in this.accounts in theory the user should be able to sign
       // e.g. if an acc from the wallet is used as a signer of another wallet
       if (getAddress(msdAddress) !== this.accounts.selectedAccount) {
-        dappPromise.resolve('Invalid parameters: must use the current user address to sign')
+        dappPromise.reject(
+          ethErrors.provider.userRejectedRequest(
+            // if updating, check https://github.com/AmbireTech/ambire-wallet/pull/1627
+            'the dApp is trying to sign using an address different from the currently selected account. Try re-connecting.'
+          )
+        )
         return
       }
 
@@ -588,7 +607,12 @@ export class MainController extends EventEmitter {
       // TODO: if address is in this.accounts in theory the user should be able to sign
       // e.g. if an acc from the wallet is used as a signer of another wallet
       if (getAddress(msdAddress) !== this.accounts.selectedAccount) {
-        dappPromise.resolve('Invalid parameters: must use the current user address to sign')
+        dappPromise.reject(
+          ethErrors.provider.userRejectedRequest(
+            // if updating, check https://github.com/AmbireTech/ambire-wallet/pull/1627
+            'the dApp is trying to sign using an address different from the currently selected account. Try re-connecting.'
+          )
+        )
         return
       }
 
@@ -742,8 +766,18 @@ export class MainController extends EventEmitter {
       const accountState = this.accounts.accountStates[meta.accountAddr][meta.networkId]
 
       if (account.creation) {
-        const network = this.networks.networks.filter((n) => n.id === meta.networkId)[0]
-        if (shouldAskForEntryPointAuthorization(network, account, accountState)) {
+        const network = this.networks.networks.find((n) => n.id === meta.networkId)!
+
+        // find me the accountOp for the network if any, it's always 1 for SA
+        const currentAccountOpAction = this.actions.actionsQueue.find(
+          (a) =>
+            a.type === 'accountOp' &&
+            a.accountOp.accountAddr === account.addr &&
+            a.accountOp.networkId === network.id
+        ) as AccountOpAction | undefined
+
+        const hasAuthorized = !!currentAccountOpAction?.accountOp?.meta?.entryPointAuthorization
+        if (shouldAskForEntryPointAuthorization(network, account, accountState, hasAuthorized)) {
           if (
             this.actions.visibleActionsQueue.find(
               (a) =>
@@ -843,6 +877,8 @@ export class MainController extends EventEmitter {
 
     // update the pending stuff to be signed
     const { action, meta } = req
+    const network = this.networks.networks.find((net) => net.id === meta.networkId)!
+
     if (action.kind === 'call') {
       const account = this.accounts.accounts.find((x) => x.addr === meta.accountAddr)
       if (!account)
@@ -859,7 +895,7 @@ export class MainController extends EventEmitter {
           | undefined
         // accountOp has just been rejected
         if (!accountOpAction) {
-          this.updateSelectedAccountPortfolio(true)
+          this.updateSelectedAccountPortfolio(true, network)
           this.emitUpdate()
           return
         }
@@ -877,11 +913,11 @@ export class MainController extends EventEmitter {
           }
         } else {
           this.actions.removeAction(`${meta.accountAddr}-${meta.networkId}`)
-          this.updateSelectedAccountPortfolio(true)
+          this.updateSelectedAccountPortfolio(true, network)
         }
       } else {
         this.actions.removeAction(id)
-        this.updateSelectedAccountPortfolio(true)
+        this.updateSelectedAccountPortfolio(true, network)
       }
     } else {
       this.actions.removeAction(id)
@@ -948,6 +984,13 @@ export class MainController extends EventEmitter {
         this.removeUserRequest(uReq.id)
       }
     }
+
+    // destroy sign account op if no actions left for account
+    const accountOpsLeftForAcc = (
+      this.actions.actionsQueue.filter((a) => a.type === 'accountOp') as AccountOpAction[]
+    ).filter((action) => action.accountOp.accountAddr === accountOp.accountAddr)
+    if (!accountOpsLeftForAcc.length) this.destroySignAccOp()
+
     this.emitUpdate()
   }
 
@@ -1119,7 +1162,7 @@ export class MainController extends EventEmitter {
         // it may have different needs
         this.portfolio.updateSelectedAccount(
           localAccountOp.accountAddr,
-          undefined,
+          network,
           accountOpsToBeSimulatedByNetwork,
           { forceUpdate: true }
         ),
