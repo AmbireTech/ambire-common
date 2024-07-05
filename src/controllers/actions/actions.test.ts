@@ -14,6 +14,31 @@ import { NetworksController } from '../networks/networks'
 import { ProvidersController } from '../providers/providers'
 import { ActionsController, BenzinAction, DappRequestAction } from './actions'
 
+const REQUEST_1: DappUserRequest = {
+  id: 1,
+  action: { kind: 'dappConnect', params: {} },
+  meta: { isSignAction: false },
+  session: { name: '', icon: '', origin: '' },
+  dappPromise: { resolve: () => {}, reject: () => {} }
+}
+const REQUEST_2: DappUserRequest = {
+  id: 2,
+  action: { kind: 'dappConnect', params: {} },
+  meta: { isSignAction: false },
+  session: { name: '', icon: '', origin: '' },
+  dappPromise: { resolve: () => {}, reject: () => {} }
+}
+const ACTION_1: DappRequestAction = {
+  id: REQUEST_1.id,
+  type: 'dappRequest',
+  userRequest: REQUEST_1
+}
+const ACTION_2: DappRequestAction = {
+  id: REQUEST_2.id,
+  type: 'dappRequest',
+  userRequest: REQUEST_2
+}
+
 describe('Actions Controller', () => {
   const event = new EventEmitter()
   let windowId = 0
@@ -95,42 +120,25 @@ describe('Actions Controller', () => {
     expect(actionsCtrl).toBeDefined()
   })
   test('should add actions to actionsQueue', (done) => {
-    const req1: DappUserRequest = {
-      id: 1,
-      action: { kind: 'dappConnect', params: {} },
-      meta: { isSignAction: false },
-      session: { name: '', icon: '', origin: '' },
-      dappPromise: { resolve: () => {}, reject: () => {} }
-    }
-    const req2: DappUserRequest = {
-      id: 2,
-      action: { kind: 'dappConnect', params: {} },
-      meta: { isSignAction: false },
-      session: { name: '', icon: '', origin: '' },
-      dappPromise: { resolve: () => {}, reject: () => {} }
-    }
-    const action1: DappRequestAction = { id: req1.id, type: 'dappRequest', userRequest: req1 }
-    const action2: DappRequestAction = { id: req2.id, type: 'dappRequest', userRequest: req2 }
-
     let emitCounter = 0
     const unsubscribe = actionsCtrl.onUpdate(async () => {
       emitCounter++
       if (emitCounter === 3) {
         expect(actionsCtrl.actionsQueue).toHaveLength(2)
-        expect(actionsCtrl.currentAction).toEqual(action1)
+        expect(actionsCtrl.currentAction).toEqual(ACTION_1)
         unsubscribe()
         done()
       }
 
       if (emitCounter === 2) {
-        actionsCtrl.addOrUpdateAction(action2)
+        actionsCtrl.addOrUpdateAction(ACTION_2)
         expect(actionsCtrl.actionWindow.id).toEqual(1)
       }
     })
 
-    actionsCtrl.addOrUpdateAction(action1)
+    actionsCtrl.addOrUpdateAction(ACTION_1)
     expect(actionsCtrl.actionsQueue).toHaveLength(1)
-    expect(actionsCtrl.currentAction).toEqual(action1)
+    expect(actionsCtrl.currentAction).toEqual(ACTION_1)
   })
   test('should update action', (done) => {
     const updatedReq2: DappUserRequest = {
@@ -275,6 +283,15 @@ describe('Actions Controller', () => {
     actionsCtrl.removeAction(1)
   })
   test('removeAccountData', async () => {
-    console.log(actionsCtrl)
+    // Add actions to the queue
+    actionsCtrl.addOrUpdateAction(ACTION_1)
+    actionsCtrl.addOrUpdateAction(ACTION_2)
+
+    expect(actionsCtrl.actionsQueue.length).toBeGreaterThanOrEqual(2)
+
+    // Remove account data
+    actionsCtrl.removeAccountData('0xAa0e9a1E2D2CcF2B867fda047bb5394BEF1883E0')
+
+    expect(actionsCtrl.actionsQueue).toHaveLength(0)
   })
 })

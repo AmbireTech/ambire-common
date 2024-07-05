@@ -235,4 +235,24 @@ describe('SignMessageController', () => {
     signMessageController.setSigningKey(signingKeyAddr, 'internal')
     signMessageController.sign()
   })
+  test('removeAccountData', () => {
+    const messageToSign: Message = {
+      fromActionId: 1,
+      content: {
+        kind: 'message',
+        message: '0x74657374'
+      },
+      accountAddr: '0x9188fdd757Df66B4F693D624Ed6A13a15Cf717D7',
+      signature: null,
+      networkId: 'ethereum'
+    }
+
+    signMessageController.init({ messageToSign, accounts: [account], accountStates })
+
+    expect(signMessageController.isInitialized).toBeTruthy()
+
+    signMessageController.removeAccountData(account.addr)
+
+    expect(signMessageController.isInitialized).toBeFalsy()
+  })
 })
