@@ -49,7 +49,7 @@ import {
   adjustEntryPointAuthorization,
   getEntryPointAuthorization
 } from '../../libs/signMessage/signMessage'
-import { buildClaimWalletRequest, buildTransferUserRequest } from '../../libs/transfer/userRequest'
+import { buildTransferUserRequest } from '../../libs/transfer/userRequest'
 import {
   ENTRY_POINT_AUTHORIZATION_REQUEST_ID,
   isErc4337Broadcast,
