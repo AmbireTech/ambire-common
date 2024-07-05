@@ -43,7 +43,7 @@ describe('socket', () => {
       [
         getAction('Bridge'),
         getToken('0x4200000000000000000000000000000000000042', 2008021737164118026n),
-        getLabel('for'),
+        getLabel('to'),
         getToken('0x0b2c639c533813f4aa9d7837caf62653d097ff85', 3094288n),
         getLabel('on'),
         getChain(137n),
