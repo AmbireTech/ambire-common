@@ -408,7 +408,7 @@ export class MainController extends EventEmitter {
     accounts: Account[]
     accountStates: AccountStates
   }) {
-    // TODO: Check if the controller is already initiated
+    if (this.signMessage.isInitialized) return
 
     this.signMessage.init(params)
 
