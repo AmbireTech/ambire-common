@@ -196,10 +196,7 @@ export class PortfolioController extends EventEmitter {
     const accountState = this.latest[accountId]
     if (!accountState[network]) accountState[network] = { errors: [], isReady: false, isLoading }
     accountState[network]!.isLoading = isLoading
-    if (error) {
-      if (!accountState[network]!.isReady) accountState[network]!.criticalError = error
-      else accountState[network]!.errors.push(error)
-    }
+    if (error) accountState[network]!.criticalError = error
   }
 
   #prepareLatestState(selectedAccount: Account) {
@@ -503,9 +500,9 @@ export class PortfolioController extends EventEmitter {
         error: e
       })
       state.isLoading = false
-      if (!state.isReady) state.criticalError = e
-      else state.errors.push(e)
+      state.criticalError = e
       this.emitUpdate()
+
       return false
     }
   }
@@ -729,7 +726,8 @@ export class PortfolioController extends EventEmitter {
     })
     const networksWithPortfolioErrorBanners = getNetworksWithPortfolioErrorBanners({
       networks: this.#networks.networks,
-      portfolioLatest: this.latest
+      portfolioLatest: this.latest,
+      providers: this.#providers.providers
     })
 
     return [...networksWithFailedRPCBanners, ...networksWithPortfolioErrorBanners]

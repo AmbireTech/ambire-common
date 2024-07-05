@@ -63,7 +63,7 @@ export interface ExternalHintsAPIResponse extends Hints {
   error?: string
 }
 
-interface ExtendedError extends Error {
+export interface ExtendedError extends Error {
   simulationErrorMsg?: string
 }
 
