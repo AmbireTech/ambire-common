@@ -216,7 +216,8 @@ export class MainController extends EventEmitter {
         await this.actions.forceEmitUpdate()
         await this.addressBook.forceEmitUpdate()
         this.dapps.broadcastDappSessionEvent('accountsChanged', [toAccountAddr])
-      }
+      },
+      this.providers.updateProviderIsWorking.bind(this.providers)
     )
     this.settings = new SettingsController(this.#storage)
     this.portfolio = new PortfolioController(
@@ -500,8 +501,8 @@ export class MainController extends EventEmitter {
     }
     // If this still didn't work, re-load
     if (!this.accounts.accountStates[accountAddr]?.[networkId])
-      await this.accounts.updateAccountStates()
-    // If this still didn't work, throw error: this prob means that we're calling for a non-existant acc/network
+      await this.accounts.updateAccountState(accountAddr, networkId)
+    // If this still didn't work, throw error: this prob means that we're calling for a non-existent acc/network
     if (!this.accounts.accountStates[accountAddr]?.[networkId])
       this.signAccOpInitError = `Failed to retrieve account info for ${networkId}, because of one of the following reasons: 1) network doesn't exist, 2) RPC is down for this network`
   }
@@ -518,6 +519,15 @@ export class MainController extends EventEmitter {
       },
       []
     )
+  }
+
+  async reloadSelectedAccount() {
+    if (!this.accounts.selectedAccount) return
+
+    await Promise.all([
+      this.accounts.updateAccountState(this.accounts.selectedAccount, 'pending'),
+      this.updateSelectedAccountPortfolio(true)
+    ])
   }
 
   async updateSelectedAccountPortfolio(forceUpdate: boolean = false, network?: Network) {

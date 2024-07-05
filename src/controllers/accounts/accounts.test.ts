@@ -58,7 +58,13 @@ describe('AccountsController', () => {
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     ;(async () => {
       await storage.set('accounts', accounts)
-      accountsCtrl = new AccountsController(storage, providersCtrl, networksCtrl, () => {})
+      accountsCtrl = new AccountsController(
+        storage,
+        providersCtrl,
+        networksCtrl,
+        () => {},
+        () => {}
+      )
       expect(accountsCtrl).toBeDefined()
       let emitCounter = 0
       const unsubscribe = accountsCtrl.onUpdate(() => {
