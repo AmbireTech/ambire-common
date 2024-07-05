@@ -146,6 +146,7 @@ export class SignMessageController extends EventEmitter {
     this.#accounts = null
     this.signedMessage = null
     this.signingKeyAddr = null
+    this.signingKeyType = null
     this.humanReadable = null
     this.emitUpdate()
   }
