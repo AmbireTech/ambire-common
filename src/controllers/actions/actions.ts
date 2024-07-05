@@ -87,7 +87,7 @@ export class ActionsController extends EventEmitter {
         return a.userRequest.meta.accountAddr === this.#accounts.selectedAccount
       }
 
-      return false
+      return true
     })
   }
 
@@ -240,7 +240,7 @@ export class ActionsController extends EventEmitter {
         return a.userRequest.meta.accountAddr !== address
       }
 
-      return false
+      return true
     })
 
     this.emitUpdate()

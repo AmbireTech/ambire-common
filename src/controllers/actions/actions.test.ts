@@ -292,6 +292,10 @@ describe('Actions Controller', () => {
     // Remove account data
     actionsCtrl.removeAccountData('0xAa0e9a1E2D2CcF2B867fda047bb5394BEF1883E0')
 
-    expect(actionsCtrl.actionsQueue).toHaveLength(0)
+    const globalActions = actionsCtrl.actionsQueue.filter(
+      (a) => !['accountOp', 'signMessage', 'benzin'].includes(a?.type)
+    )
+
+    expect(actionsCtrl.actionsQueue).toHaveLength(globalActions.length)
   })
 })
