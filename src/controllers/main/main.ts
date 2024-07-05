@@ -414,12 +414,8 @@ export class MainController extends EventEmitter {
 
     const broadcastSignedMessageIfNeeded = async () => {
       if (this.signMessage.statuses.sign === 'SUCCESS' && this.signMessage.signedMessage) {
-        // TODO: Error handling!
-        try {
-          await this.broadcastSignedMessage(this.signMessage.signedMessage)
-        } catch (e) {
-          console.error('Error while broadcasting signed message', e)
-        }
+        // TODO: This fails silently. We should handle it better.
+        await this.broadcastSignedMessage(this.signMessage.signedMessage)
       }
     }
 
