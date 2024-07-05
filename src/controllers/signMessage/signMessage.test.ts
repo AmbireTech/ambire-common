@@ -148,7 +148,8 @@ describe('SignMessageController', () => {
         expect(signMessageController.signedMessage).toBeNull()
         expect(signMessageController.signedMessage).toBeNull()
         expect(signMessageController.signingKeyAddr).toBeNull()
-        expect(signMessageController.status).toBe('INITIAL')
+        expect(signMessageController.signingKeyType).toBeNull()
+        expect(signMessageController.statuses.sign).toBe('INITIAL')
         done()
       }
     })
@@ -209,7 +210,7 @@ describe('SignMessageController', () => {
       emitCounter++
 
       if (emitCounter === 3) {
-        expect(signMessageController.status).toBe('LOADING')
+        expect(signMessageController.statuses.sign).toBe('LOADING')
       }
 
       // 1 - init
@@ -217,8 +218,11 @@ describe('SignMessageController', () => {
       // 3 - call sign - loading starts
       // 4 - async humanization or sign completion
       // 5 - sign completes
-      if ((emitCounter === 4 && signMessageController.status === 'DONE') || emitCounter === 5) {
-        expect(signMessageController.status).toBe('DONE')
+      if (
+        (emitCounter === 4 && signMessageController.statuses.sign === 'SUCCESS') ||
+        emitCounter === 5
+      ) {
+        expect(signMessageController.statuses.sign).toBe('SUCCESS')
         expect(mockSigner.signMessage).toHaveBeenCalledWith(messageToSign.content.message)
         expect(signMessageController.signedMessage?.signature).toBe(dummySignature)
 
