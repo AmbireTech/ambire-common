@@ -302,7 +302,7 @@ export class SignMessageController extends EventEmitter {
 
   static #throwMissingSigningKey() {
     const message = 'Please select a signing key and try again.'
-    const error = new Error('No request to sign.')
+    const error = new Error('signMessage: missing selected signing key')
 
     return Promise.reject(new EmittableError({ level: 'major', message, error }))
   }
