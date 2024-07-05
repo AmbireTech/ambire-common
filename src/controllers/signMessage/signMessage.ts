@@ -16,7 +16,7 @@ import {
 } from '../../libs/signMessage/signMessage'
 import hexStringToUint8Array from '../../utils/hexStringToUint8Array'
 import { SignedMessage } from '../activity/activity'
-import EventEmitter, { ErrorRef, Statuses } from '../eventEmitter/eventEmitter'
+import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
 import { NetworksController } from '../networks/networks'
 import { ProvidersController } from '../providers/providers'
@@ -150,11 +150,6 @@ export class SignMessageController extends EventEmitter {
   }
 
   setSigningKey(signingKeyAddr: Key['addr'], signingKeyType: Key['type']) {
-    if (!this.isInitialized) {
-      this.#throwNotInitialized()
-      return
-    }
-
     this.signingKeyAddr = signingKeyAddr
     this.signingKeyType = signingKeyType
     this.emitUpdate()
