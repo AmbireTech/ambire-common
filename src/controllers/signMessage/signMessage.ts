@@ -1,5 +1,6 @@
 import { hexlify, isHexString, toUtf8Bytes } from 'ethers'
 
+import EmittableError from '../../classes/EmittableError'
 import { Account, AccountStates } from '../../interfaces/account'
 import { Fetch } from '../../interfaces/fetch'
 import { ExternalSignerControllers, Key } from '../../interfaces/keystore'
@@ -156,17 +157,16 @@ export class SignMessageController extends EventEmitter {
   }
 
   async #sign() {
-    if (!this.isInitialized || !this.messageToSign) {
-      this.#throwNotInitialized()
-      return Promise.reject(new Error('signMessage: controller not initialized'))
+    if (!this.isInitialized) {
+      return SignMessageController.#throwNotInitialized()
+    }
+
+    if (!this.messageToSign) {
+      return SignMessageController.#throwMissingMessage()
     }
 
     if (!this.signingKeyAddr || !this.signingKeyType) {
-      const message = 'Please select a signing key and try again.'
-      const error = new Error('No request to sign.')
-      this.emitError({ level: 'major', message, error })
-
-      return Promise.reject(error)
+      return SignMessageController.#throwMissingSigningKey()
     }
 
     try {
@@ -274,9 +274,8 @@ export class SignMessageController extends EventEmitter {
       const error = e instanceof Error ? e : new Error(`Signing failed. Error details: ${e}`)
       const message =
         e?.message || 'Something went wrong while signing the message. Please try again.'
-      this.emitError({ level: 'major', message, error })
 
-      return Promise.reject(error)
+      return Promise.reject(new EmittableError({ level: 'major', message, error }))
     }
   }
 
@@ -284,12 +283,26 @@ export class SignMessageController extends EventEmitter {
     await this.withStatus('sign', async () => this.#sign())
   }
 
-  #throwNotInitialized() {
-    this.emitError({
-      level: 'major',
-      message:
-        'Looks like there is an error while processing your sign message. Please retry, or contact support if issue persists.',
-      error: new Error('signMessage: controller not initialized')
-    })
+  static #throwNotInitialized() {
+    const message =
+      'Looks like there is an error while processing your sign message. Please retry, or contact support if issue persists.'
+    const error = new Error('signMessage: controller not initialized')
+
+    return Promise.reject(new EmittableError({ level: 'major', message, error }))
+  }
+
+  static #throwMissingMessage() {
+    const message =
+      'Looks like there is an error while processing your sign message. Please retry, or contact support if issue persists.'
+    const error = new Error('signMessage: missing message to sign')
+
+    return Promise.reject(new EmittableError({ level: 'major', message, error }))
+  }
+
+  static #throwMissingSigningKey() {
+    const message = 'Please select a signing key and try again.'
+    const error = new Error('No request to sign.')
+
+    return Promise.reject(new EmittableError({ level: 'major', message, error }))
   }
 }
