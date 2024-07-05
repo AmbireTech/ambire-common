@@ -1,12 +1,20 @@
 import { Interface, ZeroAddress } from 'ethers'
 
+import { FEE_COLLECTOR } from '../../../../consts/addresses'
 import { AccountOp } from '../../../accountOp/accountOp'
 import { WETH } from '../../const/abis'
 import { HumanizerCallModule, HumanizerMeta, IrCall } from '../../interfaces'
-import { getToken, getUnknownVisualization, getUnwrapping, getWrapping } from '../../utils'
+import {
+  getAction,
+  getToken,
+  getUnknownVisualization,
+  getUnwrapping,
+  getWrapping
+} from '../../utils'
 
 const wrapSwapReducer = (calls: IrCall[]): IrCall[] => {
   const newCalls: IrCall[] = []
+  // @TODO optimize to not require update=true on every match case
   let updated = false
   for (let i = 0; i < calls.length; i++) {
     if (
@@ -98,6 +106,25 @@ const wrapSwapReducer = (calls: IrCall[]): IrCall[] => {
         data: calls[i].data,
         fromUserRequestId: calls[i].fromUserRequestId,
         fullVisualization: newVisualization
+      })
+      i += 1
+      updated = true
+    } else if (
+      calls[i].fullVisualization?.[0]?.content === 'Wrap' &&
+      calls[i + 1].fullVisualization?.[0]?.content === 'Fuel gas tank with' &&
+      calls[i].fullVisualization?.[1].amount &&
+      calls[i + 1].fullVisualization?.[1].amount &&
+      calls[i].fullVisualization?.[1].amount === calls[i + 1].fullVisualization?.[1].amount
+    ) {
+      newCalls.push({
+        ...calls,
+        to: FEE_COLLECTOR,
+        data: '0x',
+        value: calls[i].value + calls[i + 1].value,
+        fullVisualization: [
+          getAction('Fuel gas tank with'),
+          getToken(ZeroAddress, calls[i + 1].fullVisualization![1].amount!)
+        ]
       })
       i += 1
       updated = true

@@ -1,13 +1,16 @@
-import { zeroAddress } from 'ethereumjs-util'
 import { ZeroAddress } from 'ethers'
 
 import { expect } from '@jest/globals'
 
+import { FEE_COLLECTOR } from '../../../../consts/addresses'
 import humanizerInfo from '../../../../consts/humanizer/humanizerInfo.json'
 import { AccountOp } from '../../../accountOp/accountOp'
+import { visualizationToText } from '../../humanizerFuncs'
 import { HumanizerMeta, HumanizerVisualization, IrCall } from '../../interfaces'
 import { compareHumanizerVisualizations } from '../../testHelpers'
 import { getAction, getDeadline, getLabel, getToken } from '../../utils'
+import gasTankModule from '../GasTankModule'
+import { genericErc20Humanizer } from '../Tokens'
 import { uniswapHumanizer } from '../Uniswap'
 import { getUniRecipientText } from '../Uniswap/utils'
 import { wrappingModule } from './wrapping'
@@ -48,6 +51,20 @@ const transactions = {
       to: '0x337827814155ECBf24D20231fCA4444F530C0555',
       value: 14458487476752767n,
       data: '0xac9650d800000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000001800000000000000000000000000000000000000000000000000000000000000104db3e21980000000000000000000000004300000000000000000000000000000000000004000000000000000000000000430000000000000000000000000000000000000300000000000000000000000000000000000000000000000000000000000001f400000000000000000000000020e9f0c7c59ded2167680b491f5ae61e2407a8af000000000000000000000000000000000000000000000000000000006675a3da000000000000000000000000000000000000000000000002b5e3af16b188000000000000000000000000000000000000000000000000000000335deaf20a917f000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000412210e8a00000000000000000000000000000000000000000000000000000000'
+    }
+    // @TODO add mergind of multiple swaps (ETH-DOG example)
+  ],
+  // wrap and fuel gas tank with native
+  gasTankTopupWithNative: [
+    {
+      to: '0x4200000000000000000000000000000000000006',
+      value: 649637990000000n,
+      data: '0xd0e30db0'
+    },
+    {
+      to: '0x4200000000000000000000000000000000000006',
+      value: 0n,
+      data: '0xa9059cbb000000000000000000000000942f9ce5d9a33a82f88d233aeb3292e68023034800000000000000000000000000000000000000000000000000024ed7a1a06580'
     }
   ]
 }
@@ -160,7 +177,6 @@ describe('wrapping', () => {
     )
 
     ;[irCalls] = wrappingModule(accountOp, irCalls, humanizerInfo as HumanizerMeta)
-
     const expectedHumanization = [
       [
         getAction('Swap'),
@@ -182,6 +198,23 @@ describe('wrapping', () => {
       ]
     ]
     expect(irCalls.length).toBe(expectedHumanization.length)
+    compareHumanizerVisualizations(irCalls, expectedHumanization)
+  })
+
+  test('Merge gastank topup with native', () => {
+    let [irCalls] = genericErc20Humanizer(
+      accountOp,
+      transactions.gasTankTopupWithNative,
+      humanizerInfo as HumanizerMeta
+    )
+    ;[irCalls] = gasTankModule(accountOp, irCalls, humanizerInfo as HumanizerMeta)
+    ;[irCalls] = wrappingModule(accountOp, irCalls, humanizerInfo as HumanizerMeta)
+    const expectedHumanization = [
+      [getAction('Fuel gas tank with'), getToken(ZeroAddress, 649637990000000n)]
+    ]
+    expect(irCalls[0].value).toBe(649637990000000n)
+    expect(irCalls[0].to).toBe(FEE_COLLECTOR)
+    expect(irCalls[0].data).toBe('0x')
     compareHumanizerVisualizations(irCalls, expectedHumanization)
   })
 })
