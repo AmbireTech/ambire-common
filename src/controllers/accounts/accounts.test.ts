@@ -112,7 +112,6 @@ describe('AccountsController', () => {
   })
   test('removeAccountData', async () => {
     await accountsCtrl.updateAccountStates()
-    console.log(accountsCtrl.accounts, accountsCtrl.accountStates)
     expect(accountsCtrl.accounts.length).toBeGreaterThan(0)
     expect(accountsCtrl.selectedAccount).not.toBeNull()
     expect(Object.keys(accountsCtrl.accountStates).length).toBeGreaterThan(0)
