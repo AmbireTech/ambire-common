@@ -283,6 +283,9 @@ export class SignMessageController extends EventEmitter {
         message: e?.message || 'Something went wrong while signing the message. Please try again.',
         error
       })
+
+      // TODO: Need to reject in order to get the ERROR status eventually.
+      // return Promise.reject(e)
     }
   }
 
