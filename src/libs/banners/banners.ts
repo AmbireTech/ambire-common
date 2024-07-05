@@ -228,11 +228,11 @@ export const getNetworksWithPortfolioErrorBanners = ({
       const portfolioForNetwork = accPortfolio[network]
       const criticalError = portfolioForNetwork?.criticalError
 
-      let networkName = null
+      let networkName: string | null = null
 
       if (network === 'gasTank') networkName = 'Gas Tank'
       else if (network === 'rewards') networkName = 'Rewards'
-      else networkName = networks.find((n) => n.id === network)?.name
+      else networkName = networks.find((n) => n.id === network)?.name ?? null
 
       if (!portfolioForNetwork || !networkName || portfolioForNetwork.isLoading) return
 
