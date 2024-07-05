@@ -7,6 +7,7 @@ import { HumanizerCallModule, IrCall } from '../../interfaces'
 import {
   eToNative,
   getAction,
+  getAddressVisualization,
   getChain,
   getDeadline,
   getLabel,
@@ -16,6 +17,7 @@ import {
 
 // @TODO check all additional data provided
 // @TODO consider fees everywhere
+// @TODO add automated tests
 export const SocketModule: HumanizerCallModule = (accountOp: AccountOp, irCalls: IrCall[]) => {
   const iface = new Interface([
     ...SocketViaAcross,
@@ -164,6 +166,34 @@ export const SocketModule: HumanizerCallModule = (accountOp: AccountOp, irCalls:
     },
     [`${
       iface.getFunction(
+        'bridgeERC20To(uint256 amount, (uint256 toChainId, uint256 slippage, uint256 relayerFee, uint32 dstChainDomain, address token, address receiverAddress, bytes32 metadata, bytes callData, address delegate) connextBridgeData)'
+      )?.selector
+    }`]: (call: IrCall): IrCall => {
+      const {
+        amount,
+        connextBridgeData: {
+          toChainId,
+          dstChainDomain,
+          token,
+          receiverAddress,
+          metadata,
+          callData,
+          delegate
+        }
+      } = iface.parseTransaction(call)!.args
+      return {
+        ...call,
+        fullVisualization: [
+          getAction('Bridge'),
+          getToken(eToNative(token), amount),
+          getLabel('to'),
+          getChain(toChainId),
+          ...getRecipientText(accountOp.accountAddr, receiverAddress)
+        ]
+      }
+    },
+    [`${
+      iface.getFunction(
         'bridgeNativeTo(uint256 amount, bytes32 metadata, address receiverAddress, uint256 toChainId, (address swapAdapter, address tokenOut, uint256 minAmountOut, uint256 deadline, bytes rawParams) originQuery, (address swapAdapter, address tokenOut, uint256 minAmountOut, uint256 deadline, bytes rawParams) destinationQuery)'
       )?.selector
     }`]: (call: IrCall): IrCall => {
@@ -223,6 +253,8 @@ export const SocketModule: HumanizerCallModule = (accountOp: AccountOp, irCalls:
         fullVisualization: [
           getAction('Bridge'),
           getToken(ZeroAddress, amount),
+          getLabel('via'),
+          getAddressVisualization(customBridgeAddress),
           ...getRecipientText(accountOp.accountAddr, receiverAddress)
         ]
       }
@@ -249,7 +281,6 @@ export const SocketModule: HumanizerCallModule = (accountOp: AccountOp, irCalls:
         const { fromToken, toToken, amount, swapExtraData } = iface.parseTransaction({
           data: swapData
         })!.args
-
         let outAmount = 0n
         if (swapExtraData.startsWith('0x415565b0'))
           outAmount = iface.parseTransaction({ data: swapExtraData })!.args[3]
