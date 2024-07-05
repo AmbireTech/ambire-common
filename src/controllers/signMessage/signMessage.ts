@@ -16,7 +16,7 @@ import {
 } from '../../libs/signMessage/signMessage'
 import hexStringToUint8Array from '../../utils/hexStringToUint8Array'
 import { SignedMessage } from '../activity/activity'
-import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter'
+import EventEmitter, { ErrorRef, Statuses } from '../eventEmitter/eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
 import { NetworksController } from '../networks/networks'
 import { ProvidersController } from '../providers/providers'
@@ -289,6 +289,10 @@ export class SignMessageController extends EventEmitter {
     await this.withStatus('sign', async () => this.#sign())
   }
 
+  get readyToSign() {
+    return this.isInitialized && this.signingKeyAddr && this.signingKeyType && this.messageToSign
+  }
+
   #throwNotInitialized() {
     this.emitError({
       level: 'major',
@@ -296,5 +300,12 @@ export class SignMessageController extends EventEmitter {
         'Looks like there is an error while processing your sign message. Please retry, or contact support if issue persists.',
       error: new Error('signMessage: controller not initialized')
     })
+  }
+
+  toJSON(): this & { emittedErrors: ErrorRef[] } {
+    return {
+      ...this,
+      readyToSign: this.readyToSign
+    }
   }
 }
