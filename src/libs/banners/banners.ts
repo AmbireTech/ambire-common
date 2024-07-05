@@ -258,9 +258,9 @@ export const getNetworksWithPortfolioErrorBanners = ({
     if (networkNamesWithPriceFetchError.length) {
       banners.push({
         accountAddr: accId,
-        id: `${accId}-portfolio-price-fetch-error`,
-        type: 'error',
-        title: `Failed to retrieve prices for ${networkNamesWithCriticalError.join(', ')}`,
+        id: `${accId}-portfolio-prices-error`,
+        type: 'warning',
+        title: `Failed to retrieve prices for ${networkNamesWithPriceFetchError.join(', ')}`,
         text: 'Affected features: account balances, asset prices. Reload the account or try again later.',
         actions: []
       })
