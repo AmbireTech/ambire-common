@@ -470,10 +470,22 @@ export class MainController extends EventEmitter {
     })
 
     // Remove account keys from the keystore
-    for (const key of solelyAccountKeys) {
-      this.settings.removeKeyPreferences([{ addr: key.addr, type: key.type }])
-      this.keystore.removeKey(key.addr, key.type)
-    }
+    solelyAccountKeys.forEach((key) => {
+      this.settings.removeKeyPreferences([{ addr: key.addr, type: key.type }]).catch((e) => {
+        this.emitError({
+          level: 'major',
+          message: 'Failed to remove key preferences',
+          error: e
+        })
+      })
+      this.keystore.removeKey(key.addr, key.type).catch((e) => {
+        this.emitError({
+          level: 'major',
+          message: 'Failed to remove key',
+          error: e
+        })
+      })
+    })
 
     // Remove account data from sub-controllers
     this.accounts.removeAccountData(address)

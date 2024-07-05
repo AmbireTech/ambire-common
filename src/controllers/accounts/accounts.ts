@@ -101,7 +101,7 @@ export class AccountsController extends EventEmitter {
       return
     }
     // TODO: error handling, trying to switch to account that does not exist
-    if (!this.accounts.find((acc) => acc.addr === toAccountAddr)) return    
+    if (!this.accounts.find((acc) => acc.addr === toAccountAddr)) return
     this.selectedAccount = toAccountAddr
     await this.#storage.set('selectedAccount', toAccountAddr)
     this.#onSelectAccount(toAccountAddr)
@@ -211,11 +211,11 @@ export class AccountsController extends EventEmitter {
     this.emitUpdate()
   }
 
-  removeAccountData(address: Account['addr']) {
+  async removeAccountData(address: Account['addr']) {
     this.accounts = this.accounts.filter((acc) => acc.addr !== address)
 
     if (this.selectedAccount === address) {
-      this.#selectAccount(this.accounts[0]?.addr)
+      await this.#selectAccount(this.accounts[0]?.addr)
     }
 
     delete this.accountStates[address]

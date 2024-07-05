@@ -14,7 +14,7 @@ import { NetworksController } from '../networks/networks'
 import { ProvidersController } from '../providers/providers'
 import { ActionsController, BenzinAction, DappRequestAction } from './actions'
 
-describe('SignMessageController', () => {
+describe('Actions Controller', () => {
   const event = new EventEmitter()
   let windowId = 0
   const windowManager = {
@@ -273,5 +273,8 @@ describe('SignMessageController', () => {
     })
 
     actionsCtrl.removeAction(1)
+  })
+  test('removeAccountData', async () => {
+    console.log(actionsCtrl)
   })
 })
