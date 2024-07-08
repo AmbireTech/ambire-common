@@ -12,6 +12,7 @@ import {
   getWrapping
 } from '../../utils'
 
+// @TODO move to a separate module
 const wrapSwapReducer = (calls: IrCall[]): IrCall[] => {
   const newCalls: IrCall[] = []
   // @TODO optimize to not require update=true on every match case
