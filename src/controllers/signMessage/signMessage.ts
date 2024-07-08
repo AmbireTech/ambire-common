@@ -16,6 +16,7 @@ import {
   wrapCounterfactualSign
 } from '../../libs/signMessage/signMessage'
 import hexStringToUint8Array from '../../utils/hexStringToUint8Array'
+import { AccountsController } from '../accounts/accounts'
 import { SignedMessage } from '../activity/activity'
 import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
@@ -73,6 +74,7 @@ export class SignMessageController extends EventEmitter {
     keystore: KeystoreController,
     providers: ProvidersController,
     networks: NetworksController,
+    accounts: AccountsController,
     externalSignerControllers: ExternalSignerControllers,
     storage: Storage,
     fetch: Fetch
@@ -85,29 +87,16 @@ export class SignMessageController extends EventEmitter {
     this.#externalSignerControllers = externalSignerControllers
     this.#storage = storage
     this.#fetch = fetch
+    this.#accounts = accounts.accounts
+    this.#accountStates = accounts.accountStates
   }
 
-  init({
-    dapp,
-    messageToSign,
-    accounts,
-    accountStates
-  }: {
-    dapp?: {
-      name: string
-      icon: string
-    }
-    messageToSign: Message
-    accounts: Account[]
-    accountStates: AccountStates
-  }) {
+  init({ dapp, messageToSign }: { dapp?: { name: string; icon: string }; messageToSign: Message }) {
     if (['message', 'typedMessage'].includes(messageToSign.content.kind)) {
       if (dapp) {
         this.dapp = dapp
       }
       this.messageToSign = messageToSign
-      this.#accounts = accounts
-      this.#accountStates = accountStates
       const network = this.#networks.networks.find(
         (n: Network) => n.id === this.messageToSign?.networkId
       )
@@ -142,8 +131,6 @@ export class SignMessageController extends EventEmitter {
     this.isInitialized = false
     this.dapp = null
     this.messageToSign = null
-    this.#accountStates = null
-    this.#accounts = null
     this.signedMessage = null
     this.signingKeyAddr = null
     this.signingKeyType = null

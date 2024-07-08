@@ -10,6 +10,7 @@ import { Network } from '../../interfaces/network'
 import { Message } from '../../interfaces/userRequest'
 import { getAccountState } from '../../libs/accountState/accountState'
 import { getRpcProvider } from '../../services/provider'
+import { AccountsController } from '../accounts/accounts'
 import { KeystoreController } from '../keystore/keystore'
 import { InternalSigner } from '../keystore/keystore.test'
 import { NetworksController } from '../networks/networks'
@@ -63,7 +64,7 @@ describe('SignMessageController', () => {
     accountStates = await getAccountsInfo([account])
   })
 
-  beforeEach(() => {
+  beforeEach(async () => {
     const keystoreSigners = { internal: InternalSigner }
     keystore = new KeystoreController(produceMemoryStore(), keystoreSigners)
     let providersCtrl: ProvidersController
@@ -80,10 +81,24 @@ describe('SignMessageController', () => {
     providersCtrl = new ProvidersController(networksCtrl)
     providersCtrl.providers = providers
 
+    const storage = produceMemoryStore()
+    await storage.set('accounts', [account])
+    await storage.set('selectedAccount', account.addr)
+
+    const accountsCtrl = new AccountsController(
+      produceMemoryStore(),
+      providersCtrl,
+      networksCtrl,
+      () => {},
+      () => {}
+    )
+    accountsCtrl.accountStates = accountStates
+
     signMessageController = new SignMessageController(
       keystore,
       providersCtrl,
       networksCtrl,
+      accountsCtrl,
       {},
       produceMemoryStore(),
       fetch
@@ -113,7 +128,7 @@ describe('SignMessageController', () => {
       }
     })
 
-    signMessageController.init({ messageToSign, accounts: [account], accountStates: {} })
+    signMessageController.init({ messageToSign })
   })
 
   test('should not initialize with an invalid message kind', () => {
@@ -131,7 +146,7 @@ describe('SignMessageController', () => {
     // 'any' is on purpose, to override 'emitError' prop (which is protected)
     ;(signMessageController as any).emitError = mockEmitError
 
-    signMessageController.init({ messageToSign, accounts: [account], accountStates: {} })
+    signMessageController.init({ messageToSign })
 
     expect(signMessageController.isInitialized).toBeFalsy()
     expect(mockEmitError).toHaveBeenCalled()
@@ -170,7 +185,7 @@ describe('SignMessageController', () => {
     }
     const signingKeyAddr = '0x9188fdd757Df66B4F693D624Ed6A13a15Cf717D7'
 
-    signMessageController.init({ messageToSign, accounts: [account], accountStates: {} })
+    signMessageController.init({ messageToSign })
     signMessageController.setSigningKey(signingKeyAddr, 'internal')
 
     expect(signMessageController.signingKeyAddr).toBe(signingKeyAddr)
@@ -231,11 +246,7 @@ describe('SignMessageController', () => {
       }
     })
 
-    signMessageController.init({
-      messageToSign,
-      accounts: [account],
-      accountStates
-    })
+    signMessageController.init({ messageToSign })
     signMessageController.setSigningKey(signingKeyAddr, 'internal')
     signMessageController.sign()
   })

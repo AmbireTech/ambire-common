@@ -239,6 +239,7 @@ export class MainController extends EventEmitter {
       this.keystore,
       this.providers,
       this.networks,
+      this.accounts,
       this.#externalSignerControllers,
       this.#storage,
       this.#fetch
