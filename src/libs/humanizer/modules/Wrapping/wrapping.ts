@@ -131,32 +131,22 @@ const wrapSwapReducer = (calls: IrCall[]): IrCall[] => {
       i += 1
       updated = true
       // @TODo add test http://localhost:19006/?networkId=base&txnId=0x8c9cf6f2981218108625b6bae8a539d26257d65b7ced2d54f0d59402502177ed
-      }else if(
-        calls[i]?.fullVisualization?.[0].content?.includes('Swap') &&
-        calls[i+1]?.fullVisualization?.[0].content?.includes('Send') &&
-        calls[i]?.fullVisualization?.[3].address &&
-        calls[i]?.fullVisualization?.[3].address === calls[i+1]?.fullVisualization?.[1].address 
-      ){
-        let newVisualization = calls[i].fullVisualization
-        newVisualization![3].amount = calls[i].fullVisualization![3].amount! - calls[i+1].fullVisualization![1].amount!
+    } else if (
+      calls[i]?.fullVisualization?.[0].content?.includes('Swap') &&
+      calls[i + 1]?.fullVisualization?.[0].content?.includes('Send') &&
+      calls[i]?.fullVisualization?.[3].address &&
+      calls[i]?.fullVisualization?.[3].address === calls[i + 1]?.fullVisualization?.[1].address
+    ) {
+      const newVisualization = calls[i].fullVisualization
+      newVisualization![3].amount =
+        calls[i].fullVisualization![3].amount! - calls[i + 1].fullVisualization![1].amount!
 
-        newCalls.push({
-          ...calls[i],
-          fullVisualization: newVisualization
-        })
-        updated = true
-        i++
-      // @TODo add test http://localhost:19006/?networkId=base&txnId=0x8c9cf6f2981218108625b6bae8a539d26257d65b7ced2d54f0d59402502177ed
-      }else if(
-        calls[i]?.fullVisualization?.[0].content?.includes('Swap') &&
-        calls[i+1]?.fullVisualization?.[0].content?.includes('Take') &&
-        calls[i]?.fullVisualization?.[3].address &&
-        calls[i]?.fullVisualization?.[3].address === calls[i+1]?.fullVisualization?.[2].address && 
-        calls[i]?.fullVisualization?.[3].amount === calls[i+1]?.fullVisualization?.[2].amount 
-      ){
-        newCalls.push(calls[i])
-        updated = true
-        i++
+      newCalls.push({
+        ...calls[i],
+        fullVisualization: newVisualization
+      })
+      updated = true
+      i++
     } else {
       newCalls.push(calls[i])
     }
