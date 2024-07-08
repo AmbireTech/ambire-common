@@ -1530,6 +1530,10 @@ export class MainController extends EventEmitter {
     this.emitUpdate()
   }
 
+  // TODO: Figure out better name for this method
+  // TODO: Re-use `withStatus` instead of the broadcastStatus flag
+  // TODO: The `broadcastStatus` flag gets re-used here and for signing an
+  // account op too, that could lead to troubles. It should be separated.
   async broadcastSignedMessage(signedMessage: SignedMessage) {
     this.broadcastStatus = 'LOADING'
     this.emitUpdate()
