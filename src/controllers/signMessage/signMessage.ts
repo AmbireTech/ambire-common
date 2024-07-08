@@ -1,7 +1,6 @@
 import { hexlify, isHexString, toUtf8Bytes } from 'ethers'
 
 import EmittableError from '../../classes/EmittableError'
-import { Account, AccountStates } from '../../interfaces/account'
 import { Fetch } from '../../interfaces/fetch'
 import { ExternalSignerControllers, Key } from '../../interfaces/keystore'
 import { Network } from '../../interfaces/network'
@@ -40,16 +39,12 @@ export class SignMessageController extends EventEmitter {
 
   #fetch: Fetch
 
-  #accounts: Account[] | null = null
+  #accounts: AccountsController
 
   // this is the signer from keystore.ts
   // we don't have a correct return type at getSigner so
   // I'm leaving it as any
   #signer: any
-
-  // TODO: use it to determine whether the account is deployed and if not
-  // apply EIP6492 but first the msg to sign should include the address of the account
-  #accountStates: AccountStates | null = null
 
   isInitialized: boolean = false
 
@@ -87,8 +82,7 @@ export class SignMessageController extends EventEmitter {
     this.#externalSignerControllers = externalSignerControllers
     this.#storage = storage
     this.#fetch = fetch
-    this.#accounts = accounts.accounts
-    this.#accountStates = accounts.accountStates
+    this.#accounts = accounts
   }
 
   init({ dapp, messageToSign }: { dapp?: { name: string; icon: string }; messageToSign: Message }) {
@@ -161,7 +155,9 @@ export class SignMessageController extends EventEmitter {
       this.#signer = await this.#keystore.getSigner(this.signingKeyAddr, this.signingKeyType)
       if (this.#signer.init) this.#signer.init(this.#externalSignerControllers[this.signingKeyType])
 
-      const account = this.#accounts!.find((acc) => acc.addr === this.messageToSign?.accountAddr)
+      const account = this.#accounts.accounts.find(
+        (acc) => acc.addr === this.messageToSign?.accountAddr
+      )
       if (!account) {
         throw new Error(
           'Account details needed for the signing mechanism are not found. Please try again, re-import your account or contact support if nothing else helps.'
@@ -176,7 +172,7 @@ export class SignMessageController extends EventEmitter {
         throw new Error('Network not supported on Ambire. Please contract support.')
       }
 
-      const accountState = this.#accountStates![account.addr][network!.id]
+      const accountState = this.#accounts.accountStates[account.addr][network!.id]
       let signature
       try {
         if (this.messageToSign.content.kind === 'message') {
