@@ -393,6 +393,7 @@ export class PortfolioController extends EventEmitter {
       .flat()
       .map((t: any) => ({
         ...t,
+        symbol: t.address === "0x47Cd7E91C3CBaAF266369fe8518345fc4FC12935" ? 'xWALLET' : t.symbol,
         flags: getFlags(res.data.rewards, 'rewards', t.networkId, t.address)
       }))
 
