@@ -1,9 +1,9 @@
 import erc20Abi from 'adex-protocol-eth/abi/ERC20.json'
 import { Interface, parseUnits } from 'ethers'
-import { Call, SignUserRequest } from 'interfaces/userRequest'
 
 import WALLETSupplyControllerABI from '../../../contracts/compiled/WALLETSupplyController.json'
 import { SUPPLY_CONTROLLER_ADDR, WALLET_STAKING_ADDR } from '../../consts/addresses'
+import { Call, SignUserRequest } from '../../interfaces/userRequest'
 import { ClaimableRewardsData, TokenResult } from '../../libs/portfolio'
 import { getSanitizedAmount } from './amount'
 
