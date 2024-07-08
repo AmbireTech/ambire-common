@@ -81,24 +81,16 @@ describe('SignMessageController', () => {
     providersCtrl = new ProvidersController(networksCtrl)
     providersCtrl.providers = providers
 
-    const storage = produceMemoryStore()
-    await storage.set('accounts', [account])
-    await storage.set('selectedAccount', account.addr)
-
-    const accountsCtrl = new AccountsController(
-      produceMemoryStore(),
-      providersCtrl,
-      networksCtrl,
-      () => {},
-      () => {}
-    )
-    accountsCtrl.accountStates = accountStates
+    const mockedAccountsCtrl = {
+      accountStates,
+      accounts: [account]
+    } as AccountsController
 
     signMessageController = new SignMessageController(
       keystore,
       providersCtrl,
       networksCtrl,
-      accountsCtrl,
+      mockedAccountsCtrl,
       {},
       produceMemoryStore(),
       fetch
