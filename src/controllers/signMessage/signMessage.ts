@@ -271,6 +271,8 @@ export class SignMessageController extends EventEmitter {
         signature,
         dapp: this.dapp
       }
+
+      return this.signedMessage
     } catch (e: any) {
       const error = e instanceof Error ? e : new Error(`Signing failed. Error details: ${e}`)
       const message =
