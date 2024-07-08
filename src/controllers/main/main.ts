@@ -13,7 +13,7 @@ import {
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json'
 import { AMBIRE_ACCOUNT_FACTORY, SINGLETON } from '../../consts/deploy'
-import { Account, AccountId, AccountStates } from '../../interfaces/account'
+import { AccountId } from '../../interfaces/account'
 import { Banner } from '../../interfaces/banner'
 import { DappProviderRequest } from '../../interfaces/dapp'
 import { Fetch } from '../../interfaces/fetch'
@@ -25,13 +25,7 @@ import {
 } from '../../interfaces/keystore'
 import { AddNetworkRequestParams, Network, NetworkId } from '../../interfaces/network'
 import { Storage } from '../../interfaces/storage'
-import {
-  Call,
-  DappUserRequest,
-  Message,
-  SignUserRequest,
-  UserRequest
-} from '../../interfaces/userRequest'
+import { Call, DappUserRequest, SignUserRequest, UserRequest } from '../../interfaces/userRequest'
 import { WindowManager } from '../../interfaces/window'
 import { isSmartAccount } from '../../libs/account/account'
 import { AccountOp, AccountOpStatus, getSignableCalls } from '../../libs/accountOp/accountOp'
@@ -132,8 +126,6 @@ export class MainController extends EventEmitter {
   signAccountOp: SignAccountOpController | null = null
 
   static signAccountOpListener: ReturnType<EventEmitter['onUpdate']> = () => {}
-
-  static signMessageListener: ReturnType<EventEmitter['onUpdate']> = () => {}
 
   signAccOpInitError: string | null = null
 
@@ -402,31 +394,12 @@ export class MainController extends EventEmitter {
     this.emitUpdate()
   }
 
-  initSignMessage(params: {
-    dapp: { name: string; icon: string }
-    messageToSign: Message
-    accounts: Account[]
-    accountStates: AccountStates
-  }) {
-    if (this.signMessage.isInitialized) return
+  async signMessageSign() {
+    await this.signMessage.sign()
 
-    this.signMessage.init(params)
-
-    const broadcastSignedMessageIfNeeded = async () => {
-      if (this.signMessage.statuses.sign === 'SUCCESS' && this.signMessage.signedMessage) {
-        // TODO: This fails silently. We should handle it better.
-        await this.broadcastSignedMessage(this.signMessage.signedMessage)
-      }
+    if (this.signMessage.signedMessage) {
+      await this.broadcastSignedMessage(this.signMessage.signedMessage)
     }
-
-    MainController.signMessageListener = this.signMessage.onUpdate(broadcastSignedMessageIfNeeded)
-  }
-
-  resetSignMessage() {
-    if (!this.signMessage.isInitialized) return
-
-    MainController.signMessageListener()
-    this.signMessage.reset()
   }
 
   async updateAccountsOpsStatuses() {
