@@ -242,14 +242,14 @@ export const getNetworksWithPortfolioErrorBanners = ({
         criticalError &&
         (['gasTank', 'rewards'].includes(network) || providers[network].isWorking)
       ) {
-        networkNamesWithCriticalError.push(networkName)
+        networkNamesWithCriticalError.push(networkName as string)
         // If there is a critical error, we don't need to check for price fetch error
         return
       }
 
       portfolioForNetwork?.errors.forEach((err: any) => {
         if (err?.name === PORTFOLIO_LIB_ERROR_NAMES.PriceFetchError) {
-          networkNamesWithPriceFetchError.push(networkName)
+          networkNamesWithPriceFetchError.push(networkName as string)
           return
         }
       })
