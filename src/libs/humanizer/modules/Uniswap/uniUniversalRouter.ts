@@ -95,19 +95,20 @@ export const uniUniversalRouter = (
                 ]
               })
             } else if (command === COMMANDS.SWEEP) {
-              // @NOTE: no need to be displayed, generally uses sentinel values
-              // @TODO: research more
-              // const { inputsDetails } = COMMANDS_DESCRIPTIONS.SWEEP
-              // const params = extractParams(inputsDetails, inputs[index])
-              // console.log({ params })
-              // parsed.push({
-              //   ...call,
-              //   fullVisualization: [
-              //     getAction('Take'),
-              //     getLabel('at least'),
-              //     getToken(params.token, params.amountMin)
-              //   ]
-              // })
+              // this call should not be displayed but we add it here to remove it later in in squasher/reducer
+              // The assumption is that there should not be an exact out swap without a sweep with the same value
+              // if this assumption is correct this humanization is removed at later stage of the humanization pipeline
+              // if this assumption is wrong then this will be displayed to the user
+              const { inputsDetails } = COMMANDS_DESCRIPTIONS.SWEEP
+              const params = extractParams(inputsDetails, inputs[index])
+              parsed.push({
+                ...call,
+                fullVisualization: [
+                  getAction('Take'),
+                  getLabel('at least'),
+                  getToken(params.token, params.amountMin)
+                ]
+              })
             } else if (command === COMMANDS.PAY_PORTION) {
               // @NOTE: this is used for paying fee although its already calculated in the humanized response
               // @NOTE: no need to be displayed but we can add warning id the fee is too high?
@@ -124,8 +125,11 @@ export const uniUniversalRouter = (
               //   ]
               // })
             } else if (command === COMMANDS.TRANSFER) {
-              // @NOTE: this is used for paying fee although its already calculated in the humanized response
-              // @NOTE: no need to be displayed but we can add warning id the fee is too high?
+              // when we swap with exact out the ui displays amount X for out token
+              // the actual swap is X + small fee
+              // and this is the small fee that is to be sent to the fee collector of uniswap
+              // at later stage of the humanizer pipeline if swap with the same token is present exactly before this transfer
+              // we will subtract the amount from the swap and remove this call from the visualization
               const { inputsDetails } = COMMANDS_DESCRIPTIONS.TRANSFER
               const params = extractParams(inputsDetails, inputs[index])
               parsed.push({
