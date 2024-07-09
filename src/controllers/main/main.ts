@@ -13,7 +13,7 @@ import {
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json'
 import { AMBIRE_ACCOUNT_FACTORY, SINGLETON } from '../../consts/deploy'
-import { AccountId } from '../../interfaces/account'
+import { Account, AccountId } from '../../interfaces/account'
 import { Banner } from '../../interfaces/banner'
 import { DappProviderRequest } from '../../interfaces/dapp'
 import { Fetch } from '../../interfaces/fetch'
@@ -451,6 +451,52 @@ export class MainController extends EventEmitter {
     const factoryCode = await provider.getCode(AMBIRE_ACCOUNT_FACTORY)
     if (factoryCode === '0x') return
     await this.networks.updateNetwork({ areContractsDeployed: true }, network.id)
+  }
+
+  removeAccount(address: Account['addr']) {
+    // Compute account keys that are only associated with this account
+    const accountAssociatedKeys =
+      this.accounts.accounts.find((acc) => acc.addr === address)?.associatedKeys || []
+    const keysInKeystore = this.keystore.keys
+    const importedAccountKeys = keysInKeystore.filter((key) =>
+      accountAssociatedKeys.includes(key.addr)
+    )
+    const solelyAccountKeys = importedAccountKeys.filter((key) => {
+      const isKeyAssociatedWithOtherAccounts = this.accounts.accounts.some(
+        (acc) => acc.addr !== address && acc.associatedKeys.includes(key.addr)
+      )
+
+      return !isKeyAssociatedWithOtherAccounts
+    })
+
+    // Remove account keys from the keystore
+    solelyAccountKeys.forEach((key) => {
+      this.settings.removeKeyPreferences([{ addr: key.addr, type: key.type }]).catch((e) => {
+        this.emitError({
+          level: 'major',
+          message: 'Failed to remove key preferences',
+          error: e
+        })
+      })
+      this.keystore.removeKey(key.addr, key.type).catch((e) => {
+        this.emitError({
+          level: 'major',
+          message: 'Failed to remove key',
+          error: e
+        })
+      })
+    })
+
+    // Remove account data from sub-controllers
+    this.accounts.removeAccountData(address)
+    this.portfolio.removeAccountData(address)
+    this.activity.removeAccountData(address)
+    this.actions.removeAccountData(address)
+    this.signMessage.removeAccountData(address)
+
+    if (this.signAccountOp?.account.addr === address) {
+      this.destroySignAccOp()
+    }
   }
 
   async #ensureAccountInfo(accountAddr: AccountId, networkId: NetworkId) {

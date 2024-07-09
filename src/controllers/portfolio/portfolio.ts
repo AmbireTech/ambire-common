@@ -716,6 +716,27 @@ export class PortfolioController extends EventEmitter {
     await this.#storage.set('previousHints', this.#previousHints)
   }
 
+  removeAccountData(address: Account['addr']) {
+    delete this.latest[address]
+    delete this.pending[address]
+    delete this.#networksWithAssetsByAccounts[address]
+
+    this.#networks.networks.forEach((network) => {
+      const key = `${network.id}:${address}`
+
+      if (key in this.#previousHints.fromExternalAPI) {
+        delete this.#previousHints.fromExternalAPI[key]
+      }
+      if (key in this.#portfolioLibs) {
+        this.#portfolioLibs.delete(key)
+      }
+    })
+    this.#storage.set('previousHints', this.#previousHints)
+    this.#storage.set('networksWithAssetsByAccount', this.#networksWithAssetsByAccounts)
+
+    this.emitUpdate()
+  }
+
   get networksWithAssets() {
     return [...new Set(Object.values(this.#networksWithAssetsByAccounts).flat())]
   }

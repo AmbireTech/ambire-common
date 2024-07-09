@@ -91,8 +91,15 @@ export class AccountsController extends EventEmitter {
     await this.withStatus('selectAccount', async () => this.#selectAccount(toAccountAddr))
   }
 
-  async #selectAccount(toAccountAddr: string) {
+  async #selectAccount(toAccountAddr: string | null) {
     await this.initialLoadPromise
+
+    if (!toAccountAddr) {
+      this.selectedAccount = null
+      await this.#storage.remove('selectedAccount')
+      this.emitUpdate()
+      return
+    }
     // TODO: error handling, trying to switch to account that does not exist
     if (!this.accounts.find((acc) => acc.addr === toAccountAddr)) return
     this.selectedAccount = toAccountAddr
@@ -201,6 +208,19 @@ export class AccountsController extends EventEmitter {
     }
     await this.updateAccountStates()
 
+    this.emitUpdate()
+  }
+
+  async removeAccountData(address: Account['addr']) {
+    this.accounts = this.accounts.filter((acc) => acc.addr !== address)
+
+    if (this.selectedAccount === address) {
+      await this.#selectAccount(this.accounts[0]?.addr)
+    }
+
+    delete this.accountStates[address]
+
+    this.#storage.set('accounts', this.accounts)
     this.emitUpdate()
   }
 
