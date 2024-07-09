@@ -244,7 +244,7 @@ describe('SignMessageController', () => {
       networkId: 'ethereum'
     }
 
-    signMessageController.init({ messageToSign, accounts: [account], accountStates })
+    signMessageController.init({ messageToSign })
 
     expect(signMessageController.isInitialized).toBeTruthy()
 
