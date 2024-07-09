@@ -10,6 +10,7 @@ import { Network } from '../../interfaces/network'
 import { Message } from '../../interfaces/userRequest'
 import { getAccountState } from '../../libs/accountState/accountState'
 import { getRpcProvider } from '../../services/provider'
+import { AccountsController } from '../accounts/accounts'
 import { KeystoreController } from '../keystore/keystore'
 import { InternalSigner } from '../keystore/keystore.test'
 import { NetworksController } from '../networks/networks'
@@ -63,7 +64,7 @@ describe('SignMessageController', () => {
     accountStates = await getAccountsInfo([account])
   })
 
-  beforeEach(() => {
+  beforeEach(async () => {
     const keystoreSigners = { internal: InternalSigner }
     keystore = new KeystoreController(produceMemoryStore(), keystoreSigners)
     let providersCtrl: ProvidersController
@@ -80,17 +81,23 @@ describe('SignMessageController', () => {
     providersCtrl = new ProvidersController(networksCtrl)
     providersCtrl.providers = providers
 
+    const mockedAccountsCtrl = {
+      accountStates,
+      accounts: [account]
+    } as AccountsController
+
     signMessageController = new SignMessageController(
       keystore,
       providersCtrl,
       networksCtrl,
+      mockedAccountsCtrl,
       {},
       produceMemoryStore(),
       fetch
     )
   })
 
-  test('should initialize with a valid message', (done) => {
+  test('should initialize with a valid message and then - reset', (done) => {
     const messageToSign: Message = {
       fromActionId: 1,
       content: {
@@ -103,17 +110,29 @@ describe('SignMessageController', () => {
     }
 
     let emitCounter = 0
-    signMessageController.onUpdate(() => {
+    const unsubscribe = signMessageController.onUpdate(() => {
       emitCounter++
 
       if (emitCounter === 1) {
         expect(signMessageController.isInitialized).toBeTruthy()
         expect(signMessageController.messageToSign).toEqual(messageToSign)
+        return signMessageController.reset()
+      }
+
+      if (emitCounter === 2) {
+        expect(signMessageController.isInitialized).toBeFalsy()
+        expect(signMessageController.messageToSign).toBeNull()
+        expect(signMessageController.signedMessage).toBeNull()
+        expect(signMessageController.signedMessage).toBeNull()
+        expect(signMessageController.signingKeyAddr).toBeNull()
+        expect(signMessageController.signingKeyType).toBeNull()
+        expect(signMessageController.statuses.sign).toBe('INITIAL')
+        unsubscribe()
         done()
       }
     })
 
-    signMessageController.init({ messageToSign, accounts: [account], accountStates: {} })
+    signMessageController.init({ messageToSign })
   })
 
   test('should not initialize with an invalid message kind', () => {
@@ -131,29 +150,10 @@ describe('SignMessageController', () => {
     // 'any' is on purpose, to override 'emitError' prop (which is protected)
     ;(signMessageController as any).emitError = mockEmitError
 
-    signMessageController.init({ messageToSign, accounts: [account], accountStates: {} })
+    signMessageController.init({ messageToSign })
 
     expect(signMessageController.isInitialized).toBeFalsy()
     expect(mockEmitError).toHaveBeenCalled()
-  })
-
-  test('should reset the controller', (done) => {
-    let emitCounter = 0
-    signMessageController.onUpdate(() => {
-      emitCounter++
-
-      if (emitCounter === 1) {
-        expect(signMessageController.isInitialized).toBeFalsy()
-        expect(signMessageController.messageToSign).toBeNull()
-        expect(signMessageController.signedMessage).toBeNull()
-        expect(signMessageController.signedMessage).toBeNull()
-        expect(signMessageController.signingKeyAddr).toBeNull()
-        expect(signMessageController.status).toBe('INITIAL')
-        done()
-      }
-    })
-
-    signMessageController.reset()
   })
 
   test('should set signing key address', () => {
@@ -169,7 +169,7 @@ describe('SignMessageController', () => {
     }
     const signingKeyAddr = '0x9188fdd757Df66B4F693D624Ed6A13a15Cf717D7'
 
-    signMessageController.init({ messageToSign, accounts: [account], accountStates: {} })
+    signMessageController.init({ messageToSign })
     signMessageController.setSigningKey(signingKeyAddr, 'internal')
 
     expect(signMessageController.signingKeyAddr).toBe(signingKeyAddr)
@@ -205,11 +205,11 @@ describe('SignMessageController', () => {
     const getSignerSpy = jest.spyOn(keystore, 'getSigner').mockResolvedValue(mockSigner)
 
     let emitCounter = 0
-    signMessageController.onUpdate(() => {
+    const unsubscribe = signMessageController.onUpdate(() => {
       emitCounter++
 
       if (emitCounter === 3) {
-        expect(signMessageController.status).toBe('LOADING')
+        expect(signMessageController.statuses.sign).toBe('LOADING')
       }
 
       // 1 - init
@@ -217,21 +217,18 @@ describe('SignMessageController', () => {
       // 3 - call sign - loading starts
       // 4 - async humanization or sign completion
       // 5 - sign completes
-      if ((emitCounter === 4 && signMessageController.status === 'DONE') || emitCounter === 5) {
-        expect(signMessageController.status).toBe('DONE')
+      if (signMessageController.statuses.sign === 'SUCCESS') {
+        expect(signMessageController.statuses.sign).toBe('SUCCESS')
         expect(mockSigner.signMessage).toHaveBeenCalledWith(messageToSign.content.message)
         expect(signMessageController.signedMessage?.signature).toBe(dummySignature)
 
         getSignerSpy.mockRestore() // cleans up the spy
+        unsubscribe()
         done()
       }
     })
 
-    signMessageController.init({
-      messageToSign,
-      accounts: [account],
-      accountStates
-    })
+    signMessageController.init({ messageToSign })
     signMessageController.setSigningKey(signingKeyAddr, 'internal')
     signMessageController.sign()
   })
@@ -247,7 +244,7 @@ describe('SignMessageController', () => {
       networkId: 'ethereum'
     }
 
-    signMessageController.init({ messageToSign, accounts: [account], accountStates })
+    signMessageController.init({ messageToSign })
 
     expect(signMessageController.isInitialized).toBeTruthy()
 

@@ -61,7 +61,7 @@ import wait from '../../utils/wait'
 import { AccountAdderController } from '../accountAdder/accountAdder'
 import { AccountsController } from '../accounts/accounts'
 import { AccountOpAction, ActionsController, SignMessageAction } from '../actions/actions'
-import { ActivityController, SignedMessage, SubmittedAccountOp } from '../activity/activity'
+import { ActivityController, SubmittedAccountOp } from '../activity/activity'
 import { AddressBookController } from '../addressBook/addressBook'
 import { DappsController } from '../dapps/dapps'
 import { DomainsController } from '../domains/domains'
@@ -154,7 +154,11 @@ export class MainController extends EventEmitter {
 
   #windowManager: WindowManager
 
-  onBroadcastSuccess?: (type: 'message' | 'typed-data' | 'account-op') => void
+  /**
+   * Callback that gets triggered when the signing process of a message or an
+   * account op (including the broadcast step) gets finalized.
+   */
+  onSignSuccess: (type: 'message' | 'typed-data' | 'account-op') => void
 
   constructor({
     storage,
@@ -164,7 +168,7 @@ export class MainController extends EventEmitter {
     keystoreSigners,
     externalSignerControllers,
     windowManager,
-    onBroadcastSuccess
+    onSignSuccess
   }: {
     storage: Storage
     fetch: Fetch
@@ -173,7 +177,7 @@ export class MainController extends EventEmitter {
     keystoreSigners: Partial<{ [key in Key['type']]: KeystoreSignerType }>
     externalSignerControllers: ExternalSignerControllers
     windowManager: WindowManager
-    onBroadcastSuccess?: (type: 'message' | 'typed-data' | 'account-op') => void
+    onSignSuccess?: (type: 'message' | 'typed-data' | 'account-op') => void
   }) {
     super()
     this.#storage = storage
@@ -239,6 +243,7 @@ export class MainController extends EventEmitter {
       this.keystore,
       this.providers,
       this.networks,
+      this.accounts,
       this.#externalSignerControllers,
       this.#storage,
       this.#fetch
@@ -264,7 +269,7 @@ export class MainController extends EventEmitter {
     )
     this.domains = new DomainsController(this.providers.providers, this.#fetch)
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch: this.#fetch })
-    this.onBroadcastSuccess = onBroadcastSuccess
+    this.onSignSuccess = onSignSuccess || (() => {})
   }
 
   async #load(): Promise<void> {
@@ -392,6 +397,39 @@ export class MainController extends EventEmitter {
     // fired upon removeUserRequest
 
     this.emitUpdate()
+  }
+
+  async signMessageSign() {
+    await this.signMessage.sign()
+
+    const signedMessage = this.signMessage.signedMessage
+    // Error handling on the prev step will notify the user, it's fine to return here
+    if (!signedMessage) return
+
+    if (signedMessage.fromActionId === ENTRY_POINT_AUTHORIZATION_REQUEST_ID) {
+      const accountOpAction = makeSmartAccountOpAction({
+        account: this.accounts.accounts.filter((a) => a.addr === signedMessage.accountAddr)[0],
+        networkId: signedMessage.networkId,
+        nonce:
+          this.accounts.accountStates[signedMessage.accountAddr][signedMessage.networkId].nonce,
+        userRequests: this.userRequests,
+        actionsQueue: this.actions.actionsQueue
+      })
+      if (!accountOpAction.accountOp.meta) accountOpAction.accountOp.meta = {}
+      accountOpAction.accountOp.meta.entryPointAuthorization = adjustEntryPointAuthorization(
+        signedMessage.signature as string
+      )
+
+      this.actions.addOrUpdateAction(accountOpAction, true)
+    }
+
+    await this.resolveUserRequest({ hash: signedMessage.signature }, signedMessage.fromActionId)
+
+    this.onSignSuccess(signedMessage.content.kind === 'typedMessage' ? 'typed-data' : 'message')
+
+    // TODO: In the rare case when this might error, the user won't be notified,
+    // since `this.resolveUserRequest` closes the action window.
+    await this.activity.addSignedMessage(signedMessage, signedMessage.accountAddr)
   }
 
   async updateAccountsOpsStatuses() {
@@ -1558,47 +1596,12 @@ export class MainController extends EventEmitter {
       )
 
       console.log('broadcasted:', transactionRes)
-      !!this.onBroadcastSuccess && this.onBroadcastSuccess('account-op')
+      this.onSignSuccess('account-op')
       this.broadcastStatus = 'DONE'
       this.emitUpdate()
       await wait(1)
     }
 
-    this.broadcastStatus = 'INITIAL'
-    this.emitUpdate()
-  }
-
-  async broadcastSignedMessage(signedMessage: SignedMessage) {
-    this.broadcastStatus = 'LOADING'
-    this.emitUpdate()
-
-    await this.activity.addSignedMessage(signedMessage, signedMessage.accountAddr)
-    if (signedMessage.fromActionId === ENTRY_POINT_AUTHORIZATION_REQUEST_ID) {
-      const accountOpAction = makeSmartAccountOpAction({
-        account: this.accounts.accounts.filter((a) => a.addr === signedMessage.accountAddr)[0],
-        networkId: signedMessage.networkId,
-        nonce:
-          this.accounts.accountStates[signedMessage.accountAddr][signedMessage.networkId].nonce,
-        userRequests: this.userRequests,
-        actionsQueue: this.actions.actionsQueue
-      })
-      if (!accountOpAction.accountOp.meta) accountOpAction.accountOp.meta = {}
-      accountOpAction.accountOp.meta.entryPointAuthorization = adjustEntryPointAuthorization(
-        signedMessage.signature as string
-      )
-
-      this.actions.addOrUpdateAction(accountOpAction, true)
-    }
-    await this.resolveUserRequest({ hash: signedMessage.signature }, signedMessage.fromActionId)
-    !!this.onBroadcastSuccess &&
-      this.onBroadcastSuccess(
-        signedMessage.content.kind === 'typedMessage' ? 'typed-data' : 'message'
-      )
-
-    this.broadcastStatus = 'DONE'
-    this.emitUpdate()
-
-    await wait(1)
     this.broadcastStatus = 'INITIAL'
     this.emitUpdate()
   }
