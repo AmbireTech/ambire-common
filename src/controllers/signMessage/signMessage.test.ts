@@ -97,7 +97,7 @@ describe('SignMessageController', () => {
     )
   })
 
-  test('should initialize with a valid message', (done) => {
+  test('should initialize with a valid message and then - reset', (done) => {
     const messageToSign: Message = {
       fromActionId: 1,
       content: {
@@ -110,12 +110,24 @@ describe('SignMessageController', () => {
     }
 
     let emitCounter = 0
-    signMessageController.onUpdate(() => {
+    const unsubscribe = signMessageController.onUpdate(() => {
       emitCounter++
 
       if (emitCounter === 1) {
         expect(signMessageController.isInitialized).toBeTruthy()
         expect(signMessageController.messageToSign).toEqual(messageToSign)
+        return signMessageController.reset()
+      }
+
+      if (emitCounter === 2) {
+        expect(signMessageController.isInitialized).toBeFalsy()
+        expect(signMessageController.messageToSign).toBeNull()
+        expect(signMessageController.signedMessage).toBeNull()
+        expect(signMessageController.signedMessage).toBeNull()
+        expect(signMessageController.signingKeyAddr).toBeNull()
+        expect(signMessageController.signingKeyType).toBeNull()
+        expect(signMessageController.statuses.sign).toBe('INITIAL')
+        unsubscribe()
         done()
       }
     })
@@ -142,26 +154,6 @@ describe('SignMessageController', () => {
 
     expect(signMessageController.isInitialized).toBeFalsy()
     expect(mockEmitError).toHaveBeenCalled()
-  })
-
-  test('should reset the controller', (done) => {
-    let emitCounter = 0
-    signMessageController.onUpdate(() => {
-      emitCounter++
-
-      if (emitCounter === 1) {
-        expect(signMessageController.isInitialized).toBeFalsy()
-        expect(signMessageController.messageToSign).toBeNull()
-        expect(signMessageController.signedMessage).toBeNull()
-        expect(signMessageController.signedMessage).toBeNull()
-        expect(signMessageController.signingKeyAddr).toBeNull()
-        expect(signMessageController.signingKeyType).toBeNull()
-        expect(signMessageController.statuses.sign).toBe('INITIAL')
-        done()
-      }
-    })
-
-    signMessageController.reset()
   })
 
   test('should set signing key address', () => {
@@ -213,7 +205,7 @@ describe('SignMessageController', () => {
     const getSignerSpy = jest.spyOn(keystore, 'getSigner').mockResolvedValue(mockSigner)
 
     let emitCounter = 0
-    signMessageController.onUpdate(() => {
+    const unsubscribe = signMessageController.onUpdate(() => {
       emitCounter++
 
       if (emitCounter === 3) {
@@ -231,6 +223,7 @@ describe('SignMessageController', () => {
         expect(signMessageController.signedMessage?.signature).toBe(dummySignature)
 
         getSignerSpy.mockRestore() // cleans up the spy
+        unsubscribe()
         done()
       }
     })
