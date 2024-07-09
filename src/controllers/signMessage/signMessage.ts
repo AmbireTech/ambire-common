@@ -86,6 +86,11 @@ export class SignMessageController extends EventEmitter {
   }
 
   init({ dapp, messageToSign }: { dapp?: { name: string; icon: string }; messageToSign: Message }) {
+    // In the unlikely case that the signMessage controller was already
+    // initialized, but not reset, force reset it to prevent misleadingly
+    // displaying the prev sign message request.
+    if (this.isInitialized) this.reset()
+
     if (['message', 'typedMessage'].includes(messageToSign.content.kind)) {
       if (dapp) {
         this.dapp = dapp
@@ -122,6 +127,8 @@ export class SignMessageController extends EventEmitter {
   }
 
   reset() {
+    if (!this.isInitialized) return
+
     this.isInitialized = false
     this.dapp = null
     this.messageToSign = null
