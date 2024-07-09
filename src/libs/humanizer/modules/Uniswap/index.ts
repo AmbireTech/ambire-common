@@ -32,6 +32,7 @@ const reduceMulticall = (calls: IrCall[]): IrCall[] => {
 
       newCalls.push({
         ...calls[i],
+        value: calls[i].value + calls[i + 1].value,
         fullVisualization: newVisualization
       })
       updated = true
@@ -88,6 +89,9 @@ export const uniswapHumanizer: HumanizerCallModule = (
       const squashedCalls = reduceMulticall(resultingCalls)
 
       squashedCalls.forEach((hc: IrCall, index: number) =>
+        // @TODO this might be bad design choice, must be further discussed
+        // a more appropriate, safe and UX-y approach would be to have all subcalls into one bubble
+        // we should discuss
         // if multicall has value it shouldn't result in multiple calls with value
         index === 0 ? newCalls.push(hc) : newCalls.push({ ...hc, value: 0n })
       )
