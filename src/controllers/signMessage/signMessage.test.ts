@@ -225,10 +225,7 @@ describe('SignMessageController', () => {
       // 3 - call sign - loading starts
       // 4 - async humanization or sign completion
       // 5 - sign completes
-      if (
-        (emitCounter === 4 && signMessageController.statuses.sign === 'SUCCESS') ||
-        emitCounter === 5
-      ) {
+      if (signMessageController.statuses.sign === 'SUCCESS') {
         expect(signMessageController.statuses.sign).toBe('SUCCESS')
         expect(mockSigner.signMessage).toHaveBeenCalledWith(messageToSign.content.message)
         expect(signMessageController.signedMessage?.signature).toBe(dummySignature)
