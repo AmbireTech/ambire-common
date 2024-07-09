@@ -154,7 +154,11 @@ export class MainController extends EventEmitter {
 
   #windowManager: WindowManager
 
-  onBroadcastSuccess?: (type: 'message' | 'typed-data' | 'account-op') => void
+  /**
+   * Callback that gets triggered when the signing process of a message or an
+   * account op (including the broadcast step) gets finalized.
+   */
+  onSignSuccess: (type: 'message' | 'typed-data' | 'account-op') => void
 
   constructor({
     storage,
@@ -164,7 +168,7 @@ export class MainController extends EventEmitter {
     keystoreSigners,
     externalSignerControllers,
     windowManager,
-    onBroadcastSuccess
+    onSignSuccess
   }: {
     storage: Storage
     fetch: Fetch
@@ -173,7 +177,7 @@ export class MainController extends EventEmitter {
     keystoreSigners: Partial<{ [key in Key['type']]: KeystoreSignerType }>
     externalSignerControllers: ExternalSignerControllers
     windowManager: WindowManager
-    onBroadcastSuccess?: (type: 'message' | 'typed-data' | 'account-op') => void
+    onSignSuccess?: (type: 'message' | 'typed-data' | 'account-op') => void
   }) {
     super()
     this.#storage = storage
@@ -265,7 +269,7 @@ export class MainController extends EventEmitter {
     )
     this.domains = new DomainsController(this.providers.providers, this.#fetch)
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch: this.#fetch })
-    this.onBroadcastSuccess = onBroadcastSuccess
+    this.onSignSuccess = onSignSuccess || (() => {})
   }
 
   async #load(): Promise<void> {
@@ -421,10 +425,7 @@ export class MainController extends EventEmitter {
 
     await this.resolveUserRequest({ hash: signedMessage.signature }, signedMessage.fromActionId)
 
-    !!this.onBroadcastSuccess &&
-      this.onBroadcastSuccess(
-        signedMessage.content.kind === 'typedMessage' ? 'typed-data' : 'message'
-      )
+    this.onSignSuccess(signedMessage.content.kind === 'typedMessage' ? 'typed-data' : 'message')
 
     // TODO: In the rare case when this might error, the user won't be notified,
     // since `this.resolveUserRequest` closes the action window.
@@ -1549,7 +1550,7 @@ export class MainController extends EventEmitter {
       )
 
       console.log('broadcasted:', transactionRes)
-      !!this.onBroadcastSuccess && this.onBroadcastSuccess('account-op')
+      this.onSignSuccess('account-op')
       this.broadcastStatus = 'DONE'
       this.emitUpdate()
       await wait(1)
