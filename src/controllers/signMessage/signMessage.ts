@@ -1,6 +1,7 @@
 import { hexlify, isHexString, toUtf8Bytes } from 'ethers'
 
 import EmittableError from '../../classes/EmittableError'
+import { Account } from '../../interfaces/account'
 import { Fetch } from '../../interfaces/fetch'
 import { ExternalSignerControllers, Key } from '../../interfaces/keystore'
 import { Network } from '../../interfaces/network'
@@ -274,6 +275,12 @@ export class SignMessageController extends EventEmitter {
 
   async sign() {
     await this.withStatus('sign', async () => this.#sign())
+  }
+
+  removeAccountData(address: Account['addr']) {
+    if (this.messageToSign?.accountAddr.toLowerCase() === address.toLowerCase()) {
+      this.reset()
+    }
   }
 
   static #throwNotInitialized() {
