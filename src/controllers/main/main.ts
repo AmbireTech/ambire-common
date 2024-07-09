@@ -599,6 +599,7 @@ export class MainController extends EventEmitter {
         action: {
           kind,
           ...transaction,
+          data: transaction.data || '0x',
           value: transaction.value ? getBigInt(transaction.value) : 0n
         },
         meta: { isSignAction: true, accountAddr, networkId: network.id },
