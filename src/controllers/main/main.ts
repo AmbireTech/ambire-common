@@ -61,7 +61,7 @@ import wait from '../../utils/wait'
 import { AccountAdderController } from '../accountAdder/accountAdder'
 import { AccountsController } from '../accounts/accounts'
 import { AccountOpAction, ActionsController, SignMessageAction } from '../actions/actions'
-import { ActivityController, SignedMessage, SubmittedAccountOp } from '../activity/activity'
+import { ActivityController, SubmittedAccountOp } from '../activity/activity'
 import { AddressBookController } from '../addressBook/addressBook'
 import { DappsController } from '../dapps/dapps'
 import { DomainsController } from '../domains/domains'
@@ -398,9 +398,37 @@ export class MainController extends EventEmitter {
   async signMessageSign() {
     await this.signMessage.sign()
 
-    if (this.signMessage.signedMessage) {
-      await this.broadcastSignedMessage(this.signMessage.signedMessage)
+    const signedMessage = this.signMessage.signedMessage
+    // Error handling on the prev step will notify the user, it's fine to return here
+    if (!signedMessage) return
+
+    if (signedMessage.fromActionId === ENTRY_POINT_AUTHORIZATION_REQUEST_ID) {
+      const accountOpAction = makeSmartAccountOpAction({
+        account: this.accounts.accounts.filter((a) => a.addr === signedMessage.accountAddr)[0],
+        networkId: signedMessage.networkId,
+        nonce:
+          this.accounts.accountStates[signedMessage.accountAddr][signedMessage.networkId].nonce,
+        userRequests: this.userRequests,
+        actionsQueue: this.actions.actionsQueue
+      })
+      if (!accountOpAction.accountOp.meta) accountOpAction.accountOp.meta = {}
+      accountOpAction.accountOp.meta.entryPointAuthorization = adjustEntryPointAuthorization(
+        signedMessage.signature as string
+      )
+
+      this.actions.addOrUpdateAction(accountOpAction, true)
     }
+
+    await this.resolveUserRequest({ hash: signedMessage.signature }, signedMessage.fromActionId)
+
+    !!this.onBroadcastSuccess &&
+      this.onBroadcastSuccess(
+        signedMessage.content.kind === 'typedMessage' ? 'typed-data' : 'message'
+      )
+
+    // TODO: In the rare case when this might error, the user won't be notified,
+    // since `this.resolveUserRequest` closes the action window.
+    await this.activity.addSignedMessage(signedMessage, signedMessage.accountAddr)
   }
 
   async updateAccountsOpsStatuses() {
@@ -1527,47 +1555,6 @@ export class MainController extends EventEmitter {
       await wait(1)
     }
 
-    this.broadcastStatus = 'INITIAL'
-    this.emitUpdate()
-  }
-
-  // TODO: Figure out better name for this method
-  // TODO: Re-use `withStatus` instead of the broadcastStatus flag
-  // TODO: The `broadcastStatus` flag gets re-used here and for signing an
-  // account op too, that could lead to troubles. It should be separated.
-  async broadcastSignedMessage(signedMessage: SignedMessage) {
-    this.broadcastStatus = 'LOADING'
-    this.emitUpdate()
-
-    if (signedMessage.fromActionId === ENTRY_POINT_AUTHORIZATION_REQUEST_ID) {
-      const accountOpAction = makeSmartAccountOpAction({
-        account: this.accounts.accounts.filter((a) => a.addr === signedMessage.accountAddr)[0],
-        networkId: signedMessage.networkId,
-        nonce:
-          this.accounts.accountStates[signedMessage.accountAddr][signedMessage.networkId].nonce,
-        userRequests: this.userRequests,
-        actionsQueue: this.actions.actionsQueue
-      })
-      if (!accountOpAction.accountOp.meta) accountOpAction.accountOp.meta = {}
-      accountOpAction.accountOp.meta.entryPointAuthorization = adjustEntryPointAuthorization(
-        signedMessage.signature as string
-      )
-
-      this.actions.addOrUpdateAction(accountOpAction, true)
-    }
-    await this.resolveUserRequest({ hash: signedMessage.signature }, signedMessage.fromActionId)
-    !!this.onBroadcastSuccess &&
-      this.onBroadcastSuccess(
-        signedMessage.content.kind === 'typedMessage' ? 'typed-data' : 'message'
-      )
-
-    // TODO: In the rare case when this might error, the user won't be notified
-    await this.activity.addSignedMessage(signedMessage, signedMessage.accountAddr)
-
-    this.broadcastStatus = 'DONE'
-    this.emitUpdate()
-
-    await wait(1)
     this.broadcastStatus = 'INITIAL'
     this.emitUpdate()
   }
