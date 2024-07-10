@@ -83,6 +83,7 @@ export async function estimate4337(
     }
   })
 
+  const accountState = accountStates[op.accountAddr][op.networkId]
   const checkInnerCallsArgs = [
     account.addr,
     ...getAccountDeployParams(account),
@@ -93,7 +94,7 @@ export async function estimate4337(
       op.accountOpToExecuteBefore?.signature || '0x'
     ],
     [account.addr, op.nonce || 1, calls, '0x'],
-    getProbableCallData(account, op, accountStates[op.accountAddr][op.networkId], network),
+    getProbableCallData(account, op, accountState, network),
     account.associatedKeys,
     filteredFeeTokens.map((feeToken) => feeToken.address),
     FEE_COLLECTOR,
@@ -108,7 +109,7 @@ export async function estimate4337(
       })
       .catch(catchEstimationFailure),
     bundlerEstimate(account, accountStates, op, network, feeTokens),
-    estimateGas(account, op, provider).catch(() => 0n)
+    estimateGas(account, op, provider, accountState).catch(() => 0n)
   ])
   const ambireEstimation = estimations[0]
   const bundlerEstimationResult: EstimateResult = estimations[1]
@@ -325,7 +326,7 @@ export async function estimate(
         blockTag
       })
       .catch(catchEstimationFailure),
-    estimateGas(account, op, provider).catch(() => 0n)
+    estimateGas(account, op, provider, accountState).catch(() => 0n)
   ]
   const estimations = await estimateWithRetries(initializeRequests)
   if (estimations instanceof Error) return estimationErrorFormatted(estimations)

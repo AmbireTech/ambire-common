@@ -14,7 +14,6 @@ const networks: Network[] = [
     isSAEnabled: true,
     areContractsDeployed: true,
     hasRelayer: true,
-    hasDebugTraceCall: false,
     platformId: 'ethereum',
     nativeAssetId: 'ethereum',
     hasSingleton: true,
@@ -35,7 +34,6 @@ const networks: Network[] = [
     isSAEnabled: true,
     areContractsDeployed: true,
     hasRelayer: true,
-    hasDebugTraceCall: false,
     platformId: 'polygon-pos',
     nativeAssetId: 'matic-network',
     hasSingleton: true,
@@ -56,7 +54,6 @@ const networks: Network[] = [
     isSAEnabled: true,
     areContractsDeployed: true,
     hasRelayer: true,
-    hasDebugTraceCall: false,
     platformId: 'optimistic-ethereum',
     nativeAssetId: 'ethereum',
     hasSingleton: true,
@@ -83,7 +80,6 @@ const networks: Network[] = [
     isSAEnabled: true,
     areContractsDeployed: true,
     hasRelayer: true,
-    hasDebugTraceCall: false,
     platformId: 'avalanche',
     nativeAssetId: 'avalanche-2',
     hasSingleton: true,
@@ -111,7 +107,6 @@ const networks: Network[] = [
     isSAEnabled: true,
     areContractsDeployed: true,
     hasRelayer: true,
-    hasDebugTraceCall: false,
     platformId: 'arbitrum-one',
     nativeAssetId: 'ethereum',
     hasSingleton: true,
@@ -139,7 +134,6 @@ const networks: Network[] = [
     isSAEnabled: true,
     areContractsDeployed: true,
     hasRelayer: true,
-    hasDebugTraceCall: false,
     platformId: 'base',
     nativeAssetId: 'ethereum',
     hasSingleton: true,
@@ -162,7 +156,6 @@ const networks: Network[] = [
     isSAEnabled: true,
     areContractsDeployed: true,
     hasRelayer: true,
-    hasDebugTraceCall: false,
     platformId: 'scroll',
     nativeAssetId: 'ethereum',
     hasSingleton: true,
@@ -186,7 +179,6 @@ const networks: Network[] = [
     isSAEnabled: true,
     areContractsDeployed: true,
     hasRelayer: true,
-    hasDebugTraceCall: false,
     platformId: 'xdai',
     nativeAssetId: 'xdai',
     hasSingleton: true,
@@ -199,4 +191,59 @@ const networks: Network[] = [
   }
 ]
 
-export { networks }
+// used for benzin
+const extraNetworks = [
+  {
+    id: 'linea',
+    name: 'Linea',
+    nativeAssetSymbol: 'ETH',
+    rpcUrls: [
+      'https://linea.decubate.com',
+      'https://linea.blockpi.network/v1/rpc/public',
+      'https://1rpc.io/linea',
+      'https://linea.drpc.org',
+      'https://rpc.linea.build'
+    ],
+    selectedRpcUrl: 'https://linea.decubate.com	',
+    chainId: 59144n,
+    explorerUrl: 'https://lineascan.build',
+    platformId: 'linea',
+    nativeAssetId: 'ethereum'
+  },
+  {
+    id: 'blast',
+    name: 'Blast Mainnet',
+    nativeAssetSymbol: 'ETH',
+    rpcUrls: [
+      'https://blast-rpc.publicnode.com',
+      'https://rpc.envelop.is/blast',
+      'https://rpc.blast.io',
+      'https://blast.din.dev/rpc',
+      'https://blastl2-mainnet.public.blastapi.io	'
+    ],
+    selectedRpcUrl: 'https://rpc.blast.io',
+    chainId: 81457n,
+    explorerUrl: 'https://blastexplorer.io',
+    platformId: 'blast',
+    nativeAssetId: 'ethereum'
+  },
+  {
+    id: 'andromeda',
+    name: 'Metis Andromeda Mainnet',
+    nativeAssetSymbol: 'METIS',
+    rpcUrls: [
+      'https://andromeda.metis.io/?owner=1088',
+      'https://metis-mainnet.public.blastapi.io',
+      'https://metis.api.onfinality.io/public',
+      'https://metis-pokt.nodies.app',
+      'https://metis.drpc.org'
+    ],
+    selectedRpcUrl: 'https://andromeda.metis.io/?owner=1088',
+    chainId: 1088n,
+    explorerUrl: 'https://explorer.metis.io',
+    platformId: 'metis-andromeda',
+    nativeAssetId: 'metis-token'
+  }
+]
+
+export { networks, extraNetworks }

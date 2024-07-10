@@ -1,5 +1,6 @@
 import { networks as predefinedNetworks } from '../../consts/networks'
-import { AccountId } from '../../interfaces/account'
+/* eslint-disable import/no-extraneous-dependencies */
+import { Account, AccountId } from '../../interfaces/account'
 import { Banner } from '../../interfaces/banner'
 import { CustomResponse, Fetch } from '../../interfaces/fetch'
 import { Network } from '../../interfaces/network'
@@ -499,6 +500,25 @@ export class ActivityController extends EventEmitter {
     this.emitUpdate()
   }
 
+  removeAccountData(address: Account['addr']) {
+    delete this.#accountsOps[address]
+    delete this.#signedMessages[address]
+
+    this.accountsOps = this.filterAndPaginateAccountOps(
+      this.#accountsOps,
+      this.accountsOpsPagination
+    )
+    this.signedMessages = this.filterAndPaginateSignedMessages(
+      this.#signedMessages,
+      this.signedMessagesPagination
+    )
+
+    this.#storage.set('accountsOps', this.#accountsOps)
+    this.#storage.set('signedMessages', this.#signedMessages)
+
+    this.emitUpdate()
+  }
+
   #throwNotInitialized() {
     this.emitError({
       level: 'major',
@@ -555,7 +575,7 @@ export class ActivityController extends EventEmitter {
    * statuses to hide the banner of BroadcastButNotConfirmed from the dashboard.
    */
   getNotConfirmedOpIfAny(accId: AccountId, networkId: Network['id']): SubmittedAccountOp | null {
-    const acc = this.#accounts.accounts.find((acc) => acc.addr === accId)
+    const acc = this.#accounts.accounts.find((oneA) => oneA.addr === accId)
     if (!acc) return null
 
     // if the broadcasting account is a smart account, it means relayer
@@ -573,15 +593,15 @@ export class ActivityController extends EventEmitter {
     // if the account is an EOA, we have to go through all the smart accounts
     // to check whether the EOA has made a broadcast for them
     const theEOAandSAaccounts = this.#accounts.accounts.filter(
-      (acc) => isSmartAccount(acc) || acc.addr === accId
+      (oneA) => isSmartAccount(oneA) || oneA.addr === accId
     )
     const ops: SubmittedAccountOp[] = []
-    theEOAandSAaccounts.forEach((acc) => {
-      if (!this.#accountsOps[acc.addr] || !this.#accountsOps[acc.addr][networkId]) return
-      const op = this.#accountsOps[acc.addr][networkId].find(
-        (op) =>
-          this.#rbfStatuses.includes(this.#accountsOps[acc.addr][networkId][0].status!) &&
-          op.gasFeePayment?.paidBy === acc.addr
+    theEOAandSAaccounts.forEach((oneA) => {
+      if (!this.#accountsOps[oneA.addr] || !this.#accountsOps[oneA.addr][networkId]) return
+      const op = this.#accountsOps[oneA.addr][networkId].find(
+        (oneOp) =>
+          this.#rbfStatuses.includes(this.#accountsOps[oneA.addr][networkId][0].status!) &&
+          oneOp.gasFeePayment?.paidBy === oneA.addr
       )
       if (!op) return
       ops.push(op)

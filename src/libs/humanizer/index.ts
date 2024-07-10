@@ -26,6 +26,7 @@ import gasTankModule from './modules/GasTankModule'
 import KyberSwap from './modules/KyberSwap'
 import preProcessHumanizer from './modules/PreProcess'
 import privilegeHumanizer from './modules/Privileges'
+import { SocketModule } from './modules/Socket'
 import sushiSwapModule from './modules/Sushiswap'
 import { genericErc20Humanizer, genericErc721Humanizer } from './modules/Tokens'
 import traderJoeModule from './modules/TraderJoe'
@@ -53,6 +54,7 @@ export const humanizerCallModules: HumanizerCallModule[] = [
   curveModule,
   traderJoeModule,
   KyberSwap,
+  SocketModule,
   AcrossModule,
   OneInchModule,
   wrappingModule,

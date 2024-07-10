@@ -385,6 +385,11 @@ export class SignAccountOpController extends EventEmitter {
     if (this.estimation?.error) {
       this.status = { type: SigningStatus.EstimationError }
     }
+    // if there are estimation errors and the status is estimation error,
+    // reset it as otherwise it stays like that forever
+    else if (this.status?.type === SigningStatus.EstimationError) {
+      this.status = null
+    }
 
     if (feeToken && paidBy) {
       this.paidBy = paidBy
