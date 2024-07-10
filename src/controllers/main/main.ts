@@ -429,7 +429,7 @@ export class MainController extends EventEmitter {
     }
   }
 
-  async signMessageSign() {
+  async handleSignMessage() {
     await this.signMessage.sign()
 
     const signedMessage = this.signMessage.signedMessage
