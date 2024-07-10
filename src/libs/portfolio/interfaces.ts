@@ -86,10 +86,22 @@ interface Total {
 
 type AdditionalPortfolioProperties = 'updateStarted' | 'tokens'
 
+export type ClaimableRewardsData = {
+  addr: string
+  fromBalanceClaimable: number
+  fromADXClaimable: number
+  totalClaimable: string
+  leaf: string
+  proof: string[]
+  root: string
+  signedRoot: string
+}
+
 // Create the final type with some properties optional
 export type AdditionalPortfolioNetworkResult = Partial<PortfolioLibGetResult> &
   Pick<PortfolioLibGetResult, AdditionalPortfolioProperties> & {
-    total: Total
+    total: Total,
+    claimableRewardsData?: ClaimableRewardsData
   }
 
 type PortfolioNetworkResult = Required<AdditionalPortfolioNetworkResult>
@@ -99,7 +111,7 @@ export type NetworkState = {
   isLoading: boolean
   criticalError?: ExtendedError
   errors: ExtendedError[]
-  result?: PortfolioNetworkResult | AdditionalPortfolioNetworkResult
+  result?: PortfolioNetworkResult |  AdditionalPortfolioNetworkResult
   // We store the previously simulated AccountOps only for the pending state.
   // Prior to triggering a pending state update, we compare the newly passed AccountOp[] (updateSelectedAccount) with the cached version.
   // If there are no differences, the update is canceled unless the `forceUpdate` flag is set.

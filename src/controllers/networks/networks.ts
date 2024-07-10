@@ -82,7 +82,6 @@ export class NetworksController extends EventEmitter {
         erc4337: network.erc4337,
         areContractsDeployed: network.areContractsDeployed,
         feeOptions: network.feeOptions,
-        hasDebugTraceCall: network.hasDebugTraceCall,
         platformId: network.platformId,
         nativeAssetId: network.nativeAssetId,
         flagged: network.flagged ?? false,
@@ -105,7 +104,10 @@ export class NetworksController extends EventEmitter {
     }
     this.#networks = storedNetworks
     predefinedNetworks.forEach((n) => {
-      this.#networks[n.id] = n
+      this.#networks[n.id] = {
+        ...n, // add the latest structure of the predefined network to include the new props that are not in storage yet
+        ...(this.#networks[n.id] || {}) // override with stored props
+      }
     })
     // without await to avoid performance impact on load
     // needed to keep the networks storage up to date with the latest from predefinedNetworks

@@ -326,9 +326,9 @@ describe('module tests', () => {
   })
 
   // TODO: look into improper texification for  unrecognized tokens
-  test.only('visualization to text', async () => {
+  test('visualization to text', async () => {
     const expectedTexification = [
-      'Swap 50844.919041919270406243 XLRT for at least 0.137930462904193673 ETH and send it to 0x0000000000000000000000000000000000000000 (Blackhole) already expired',
+      'Swap 50844.919041919270406243 XLRT for at least 0.137930462904193673 ETH already expired',
       'Swap 0.941 WETH for at least 5158707941840645403045 0x6e975115250b05c828ecb8ededb091975fc20a5d token and send it to 0xbb6c8c037b9cc3bf1a4c4188d92e5d86bfce76a8 already expired',
       'Swap 422.775565331912310692 SHARES for at least 2454.922038 USDC and send it to 0xca124b356bf11dc153b886ecb4596b5cb9395c41 already expired',
       'Swap up to 4825320403256397423633 0x6e975115250b05c828ecb8ededb091975fc20a5d token for 0.941 WETH and send it to 0xbb6c8c037b9cc3bf1a4c4188d92e5d86bfce76a8 already expired',
@@ -354,9 +354,9 @@ describe('module tests', () => {
       'Revoke access of 0x6969174fd72466430a46e18234d0b530c9fd5f49',
       'Swap 0.16584932261084917 ETH for 0.306362852500472325 CRV',
       'Swap 0.07 USDC for 0.000019459257603515 ETH',
-      'Swap 0.830956503484309482 ETH for 2921.794003 USDC',
-      'Swap 0.028501 USDC for 0.001000562697269958 ETH',
-      'Swap 0.017481 USDC for 0.000233684649287973 AAVE',
+      'Swap 0.830956503484309482 ETH for 2921.794003 USDC and send it to 0xd8da6bf26964af9d7eed9e03e53415d37aa96045 already expired',
+      'Swap 0.028501 USDC for 0.001000562697269958 ETH and send it to 0x6969174fd72466430a46e18234d0b530c9fd5f49 already expired',
+      'Swap 0.017481 USDC for 0.000233684649287973 AAVE and send it to 0x6969174fd72466430a46e18234d0b530c9fd5f49 already expired',
       'Bridge 0.130592 USDC for 0.107647 USDC to chain with id 42161 already expired and send it to 0x6969174fd72466430a46e18234d0b530c9fd5f49',
       'Bridge 20.0 USDT to chain with id 42161 and send it to 0x5f46a9f7e04d78fdb38de0c975d9ca07925fe5b0',
       'Bridge 0.01 WETH to chain with id 42161 and send it to 0xd819a17345efa4f014f289b999d6f79215cff974',

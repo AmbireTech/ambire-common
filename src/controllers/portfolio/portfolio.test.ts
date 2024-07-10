@@ -106,7 +106,13 @@ const prepareTest = () => {
   )
   providersCtrl = new ProvidersController(networksCtrl)
   providersCtrl.providers = providers
-  const accountsCtrl = new AccountsController(storage, providersCtrl, networksCtrl, () => {})
+  const accountsCtrl = new AccountsController(
+    storage,
+    providersCtrl,
+    networksCtrl,
+    () => {},
+    () => {}
+  )
   const controller = new PortfolioController(
     storage,
     fetch,
@@ -637,5 +643,22 @@ describe('Portfolio Controller ', () => {
         expect(hiddenToken).toBeTruthy()
       })
     })
+  })
+  test('removeAccountData', async () => {
+    const { controller } = prepareTest()
+    await controller.updateSelectedAccount(account.addr)
+    await controller.updateSelectedAccount(account.addr, undefined, undefined, {
+      forceUpdate: true
+    })
+
+    expect(controller.latest[account.addr]).toBeTruthy()
+    expect(controller.pending[account.addr]).toBeTruthy()
+    expect(controller.networksWithAssets.length).not.toEqual(0)
+
+    controller.removeAccountData(account.addr)
+
+    expect(controller.latest[account.addr]).not.toBeTruthy()
+    expect(controller.pending[account.addr]).not.toBeTruthy()
+    expect(controller.networksWithAssets.length).toEqual(0)
   })
 })

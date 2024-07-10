@@ -70,7 +70,6 @@ describe('Networks Controller', () => {
         expect(mantleNetworkInfo?.nativeAssetId).toBe('mantle')
         // simulation is somewhat supported
         expect(mantleNetworkInfo?.rpcNoStateOverride).toBe(false)
-        expect(mantleNetworkInfo?.hasDebugTraceCall).toBe(false)
         mantleNetwork = {
           name: 'Mantle',
           rpcUrls: [networksController.networkToAddOrUpdate?.rpcUrl],
@@ -194,7 +193,6 @@ describe('Networks Controller', () => {
 
   //       // simulation is somewhat supported
   //       expect(fantomNetwork?.rpcNoStateOverride).toBe(false)
-  //       expect(fantomNetwork?.hasDebugTraceCall).toBe(false)
 
   //       // coingecko
   //       expect(fantomNetwork?.platformId).toBe('fantom')

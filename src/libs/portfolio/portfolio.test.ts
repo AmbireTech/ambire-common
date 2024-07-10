@@ -35,7 +35,6 @@ describe('Portfolio', () => {
     // number of paginated requests accordingly.
     await Promise.all([
       portfolio.get('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'),
-      portfolio.get('0x8F493C12c4F5FF5Fd510549E1e28EA3dD101E850'),
       portfolio.get('0xe750Fff1AA867DFb52c9f98596a0faB5e05d30A6')
     ])
 

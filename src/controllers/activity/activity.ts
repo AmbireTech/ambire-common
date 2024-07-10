@@ -1,5 +1,6 @@
 import { networks as predefinedNetworks } from '../../consts/networks'
 /* eslint-disable import/no-extraneous-dependencies */
+import { Account } from '../../interfaces/account'
 import { Banner } from '../../interfaces/banner'
 import { CustomResponse, Fetch } from '../../interfaces/fetch'
 import { Network } from '../../interfaces/network'
@@ -493,6 +494,25 @@ export class ActivityController extends EventEmitter {
       this.#signedMessages,
       this.signedMessagesPagination
     )
+    this.emitUpdate()
+  }
+
+  removeAccountData(address: Account['addr']) {
+    delete this.#accountsOps[address]
+    delete this.#signedMessages[address]
+
+    this.accountsOps = this.filterAndPaginateAccountOps(
+      this.#accountsOps,
+      this.accountsOpsPagination
+    )
+    this.signedMessages = this.filterAndPaginateSignedMessages(
+      this.#signedMessages,
+      this.signedMessagesPagination
+    )
+
+    this.#storage.set('accountsOps', this.#accountsOps)
+    this.#storage.set('signedMessages', this.#signedMessages)
+
     this.emitUpdate()
   }
 

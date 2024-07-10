@@ -4,6 +4,8 @@ import humanizerInfo from '../../../../consts/humanizer/humanizerInfo.json'
 import { ErrorRef } from '../../../../controllers/eventEmitter/eventEmitter'
 import { AccountOp } from '../../../accountOp/accountOp'
 import { HumanizerMeta, HumanizerVisualization, IrCall } from '../../interfaces'
+import { compareHumanizerVisualizations } from '../../testHelpers'
+import { getAction, getAddressVisualization, getDeadline, getLabel, getToken } from '../../utils'
 import { uniswapHumanizer } from '.'
 
 const transactions = {
@@ -103,192 +105,83 @@ describe('uniswap', () => {
   test('uniV3', () => {
     const expectedhumanization = [
       [
-        { type: 'action', content: 'Swap' },
-        {
-          type: 'token',
-          address: '0x8a3c710e41cd95799c535f22dbae371d7c858651',
-          amount: 50844919041919270406243n
-        },
-        { type: 'label', content: 'for at least' },
-        {
-          type: 'token',
-          address: '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2',
-          amount: 137930462904193673n
-        },
-        { type: 'label', content: 'and send it to' },
-        {
-          type: 'address',
-          address: '0x0000000000000000000000000000000000000000'
-        },
-        { type: 'deadline', amount: 1692784103000n }
+        getAction('Swap'),
+        getToken('0x8a3c710e41cd95799c535f22dbae371d7c858651', 50844919041919270406243n),
+        getLabel('for at least'),
+        getToken('0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2', 137930462904193673n),
+        getDeadline(1692784103n)
       ],
       [
-        { type: 'action', content: 'Unwrap' },
-        {
-          type: 'token',
-          address: '0x0000000000000000000000000000000000000000',
-          amount: 137930462904193673n
-        },
-        { type: 'label', content: 'and send it to' },
-        {
-          type: 'address',
-          address: '0xbc5a0707cc6c731debea1f0388a4240df93259e4'
-        }
+        getAction('Unwrap'),
+        getToken('0x0000000000000000000000000000000000000000', 137930462904193673n),
+        getLabel('and send it to'),
+        getAddressVisualization('0xbc5a0707cc6c731debea1f0388a4240df93259e4')
       ],
       [
-        { type: 'action', content: 'Swap' },
-        {
-          type: 'token',
-          address: '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2',
-          amount: 941000000000000000n
-        },
-        { type: 'label', content: 'for at least' },
-        {
-          type: 'token',
-          address: '0x6e975115250b05c828ecb8ededb091975fc20a5d',
-          amount: 5158707941840645403045n
-        },
-        { type: 'label', content: 'and send it to' },
-        {
-          type: 'address',
-          address: '0xbb6c8c037b9cc3bf1a4c4188d92e5d86bfce76a8'
-        },
-        { type: 'deadline', amount: 1692786121000n }
+        getAction('Swap'),
+        getToken('0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2', 941000000000000000n),
+        getLabel('for at least'),
+        getToken('0x6e975115250b05c828ecb8ededb091975fc20a5d', 5158707941840645403045n),
+        getLabel('and send it to'),
+        getAddressVisualization('0xbb6c8c037b9cc3bf1a4c4188d92e5d86bfce76a8'),
+        getDeadline(1692786121n)
       ],
       [
-        { type: 'action', content: 'Swap' },
-        {
-          type: 'token',
-          address: '0xebb82c932759b515b2efc1cfbb6bf2f6dbace404',
-          amount: 422775565331912310692n
-        },
-        { type: 'label', content: 'for at least' },
-        {
-          type: 'token',
-          address: '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48',
-          amount: 2454922038n
-        },
-        { type: 'label', content: 'and send it to' },
-        {
-          type: 'address',
-          address: '0xca124b356bf11dc153b886ecb4596b5cb9395c41'
-        },
-        { type: 'deadline', amount: 1692781751000n }
+        getAction('Swap'),
+        getToken('0xebb82c932759b515b2efc1cfbb6bf2f6dbace404', 422775565331912310692n),
+        getLabel('for at least'),
+        getToken('0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48', 2454922038n),
+        getLabel('and send it to'),
+        getAddressVisualization('0xca124b356bf11dc153b886ecb4596b5cb9395c41'),
+        getDeadline(1692781751n)
       ],
       [
-        { type: 'action', content: 'Swap up to' },
-        {
-          type: 'token',
-          address: '0x6e975115250b05c828ecb8ededb091975fc20a5d',
-          amount: 4825320403256397423633n
-        },
-        { type: 'label', content: 'for' },
-        {
-          type: 'token',
-          address: '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2',
-          amount: 941000000000000000n
-        },
-        { type: 'label', content: 'and send it to' },
-        {
-          type: 'address',
-          address: '0xbb6c8c037b9cc3bf1a4c4188d92e5d86bfce76a8'
-        },
-        { type: 'deadline', amount: 1692784529000n }
+        getAction('Swap up to'),
+        getToken('0x6e975115250b05c828ecb8ededb091975fc20a5d', 4825320403256397423633n),
+        getLabel('for'),
+        getToken('0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2', 941000000000000000n),
+        getLabel('and send it to'),
+        getAddressVisualization('0xbb6c8c037b9cc3bf1a4c4188d92e5d86bfce76a8'),
+        getDeadline(1692784529n)
+      ],
+      [getAction('Wrap'), getToken('0x0000000000000000000000000000000000000000', 100000000000000n)],
+      [
+        getAction('Swap'),
+        getToken('0x4200000000000000000000000000000000000006', 100000000000000n),
+        getLabel('for at least'),
+        getToken('0x0b2c639c533813f4aa9d7837caf62653d097ff85', 178131n),
+        getDeadline(1699015475n)
       ],
       [
-        { type: 'action', content: 'Wrap' },
-        {
-          type: 'token',
-          address: '0x0000000000000000000000000000000000000000',
-          amount: 100000000000000n
-        }
+        getAction('Swap'),
+        getToken('0xff970a61a04b1ca14834a43f5de4533ebddb5cc8', 100000000n),
+        getLabel('for at least'),
+        getToken('0x2e9a6df78e42a30712c10a9dc4b1c8656f8f2879', 72003605256085551n),
+        getLabel('and send it to'),
+        getAddressVisualization('0x02a3109c4ce8354ee771feac419b5da04ef15761'),
+        getDeadline(1700232005n)
       ],
       [
-        { type: 'action', content: 'Swap' },
-        {
-          type: 'token',
-          address: '0x4200000000000000000000000000000000000006',
-          amount: 100000000000000n
-        },
-        { type: 'label', content: 'for at least' },
-        {
-          type: 'token',
-          address: '0x0b2c639c533813f4aa9d7837caf62653d097ff85',
-          amount: 178131n
-        },
-        { type: 'deadline', amount: 1699015475000n }
-      ],
-      [
-        { type: 'action', content: 'Swap' },
-        {
-          type: 'token',
-          address: '0xff970a61a04b1ca14834a43f5de4533ebddb5cc8',
-          amount: 100000000n
-        },
-        { type: 'label', content: 'for at least' },
-        {
-          type: 'token',
-          address: '0x2e9a6df78e42a30712c10a9dc4b1c8656f8f2879',
-          amount: 72003605256085551n
-        },
-        { type: 'label', content: 'and send it to' },
-        {
-          type: 'address',
-          address: '0x02a3109c4ce8354ee771feac419b5da04ef15761'
-        },
-        { type: 'deadline', amount: 1700232005000n }
-      ],
-      [
-        {
-          type: 'action',
-          content: 'Grant approval'
-        },
-        {
-          type: 'label',
-          content: 'for'
-        },
-        {
-          type: 'token',
-          address: '0x3c499c542cef5e3811e1192ce70d8cc03d5c3359',
-          amount: 1461501637330902918203684832716283019655932542975n
-        },
-        {
-          type: 'label',
-          content: 'to'
-        },
+        getAction('Grant approval'),
+        getLabel('for'),
+        getToken(
+          '0x3c499c542cef5e3811e1192ce70d8cc03d5c3359',
+          1461501637330902918203684832716283019655932542975n
+        ),
+        getLabel('to'),
 
-        {
-          type: 'address',
-          address: '0x643770e279d5d0733f21d6dc03a8efbabf3255b4'
-        }
+        getAddressVisualization('0x643770e279d5d0733f21d6dc03a8efbabf3255b4')
       ],
       [
-        { type: 'action', content: 'Swap' },
-        {
-          type: 'token',
-          address: '0x3c499c542cef5e3811e1192ce70d8cc03d5c3359',
-          amount: 10000n
-        },
-        { type: 'label', content: 'for at least' },
-        {
-          type: 'token',
-          address: '0x0d500b1d8e8ef31e21c99d1db9a6444d3adf1270',
-          amount: 10337979384133110n
-        },
-        { type: 'deadline', amount: 1708105881000n }
+        getAction('Swap'),
+        getToken('0x3c499c542cef5e3811e1192ce70d8cc03d5c3359', 10000n),
+        getLabel('for at least'),
+        getToken('0x0d500b1d8e8ef31e21c99d1db9a6444d3adf1270', 10337979384133110n),
+        getDeadline(1708105881n)
       ],
       [
-        { type: 'action', content: 'Unwrap' },
-        {
-          type: 'token',
-          address: '0x0000000000000000000000000000000000000000',
-          amount: 10337979384133110n
-        },
-        { type: 'label', content: 'and send it to' },
-        {
-          type: 'address',
-          address: '0x0000000000000000000000000000000000000001'
-        }
+        getAction('Unwrap'),
+        getToken('0x0000000000000000000000000000000000000000', 10337979384133110n)
       ]
     ]
     accountOp.calls = [...transactions.secondBatch]
@@ -297,12 +190,7 @@ describe('uniswap', () => {
       emitedError: moockEmitError
     })
     expect(irCalls.length).toBe(expectedhumanization.length)
-    irCalls.forEach((c, i) => {
-      expect(c?.fullVisualization?.length).toEqual(expectedhumanization[i].length)
-      c?.fullVisualization?.forEach((v: HumanizerVisualization, j: number) => {
-        expect(v).toMatchObject(expectedhumanization[i][j])
-      })
-    })
+    compareHumanizerVisualizations(irCalls, expectedhumanization as HumanizerVisualization[][])
   })
 
   test('uniSwap', () => {
@@ -311,58 +199,31 @@ describe('uniswap', () => {
     const [calls] = uniswapHumanizer(accountOp, irCalls, humanizerInfo as HumanizerMeta)
     const expectedVisualization = [
       [
-        { type: 'action', content: 'Swap' },
-        {
-          type: 'token',
-          address: '0x88800092ff476844f74dc2fc427974bbee2794ae',
-          amount: 1000000000000000000000n
-        },
-        { type: 'label', content: 'for at least' },
-        {
-          type: 'token',
-          address: '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48'
-        },
-        { type: 'deadline', amount: 1690449491000n }
+        getAction('Swap'),
+        getToken('0x88800092ff476844f74dc2fc427974bbee2794ae', 1000000000000000000000n),
+        getLabel('for at least'),
+        getToken('0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48', 8605812n),
+        getDeadline(1690449491n)
       ],
       [
-        { type: 'action', content: 'Swap up to' },
-        {
-          type: 'token',
-          address: '0xade00c28244d5ce17d72e40330b1c318cd12b7c3'
-        },
-        { type: 'label', content: 'for' },
-        {
-          type: 'token',
-          address: '0x6b175474e89094c44da98b954eedeac495271d0f'
-        },
-        { type: 'deadline', amount: 1690448831000n }
+        getAction('Swap up to'),
+        getToken('0xade00c28244d5ce17d72e40330b1c318cd12b7c3', 700615739821805074156n),
+        getLabel('for'),
+        getToken('0x6b175474e89094c44da98b954eedeac495271d0f', 100000000000000000000n),
+        getDeadline(1690448831n)
       ],
       [
-        { type: 'action', content: 'Swap up to' },
-        {
-          type: 'token',
-          address: '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2'
-        },
-        { type: 'label', content: 'for' },
-        {
-          type: 'token',
-          address: '0x046eee2cc3188071c02bfc1745a6b17c656e3f3d'
-        },
-        { type: 'label', content: 'and send it to' },
-        {
-          type: 'address',
-          address: '0x5a5be6b067d6b5b018adbcd27ee6972105b3b400'
-        },
-        { type: 'deadline', amount: 1691677015000n }
+        getAction('Swap up to'),
+        getToken('0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2', 1843430147568080264n),
+        getLabel('for'),
+        getToken('0x046eee2cc3188071c02bfc1745a6b17c656e3f3d', 21436976040000000000000n),
+        getLabel('and send it to'),
+        getAddressVisualization('0x5a5be6b067d6b5b018adbcd27ee6972105b3b400'),
+        getDeadline(1691677015n)
       ],
-      [{ type: 'action', content: 'Refund' }]
+      [getAction('Refund')]
     ]
     expect(calls.length).toEqual(expectedVisualization.length)
-    calls.forEach((c, i) => {
-      expect(c?.fullVisualization?.length).toBe(expectedVisualization[i].length)
-      c?.fullVisualization?.forEach((v: HumanizerVisualization, j: number) => {
-        expect(v).toMatchObject(expectedVisualization[i][j])
-      })
-    })
+    compareHumanizerVisualizations(calls, expectedVisualization as HumanizerVisualization[][])
   })
 })

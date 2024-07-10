@@ -1,20 +1,59 @@
 import erc20Abi from 'adex-protocol-eth/abi/ERC20.json'
 import { Interface, parseUnits } from 'ethers'
 
+import WALLETSupplyControllerABI from '../../../contracts/compiled/WALLETSupplyController.json'
 import WETH from '../../../contracts/compiled/WETH.json'
-import { FEE_COLLECTOR } from '../../consts/addresses'
+import { FEE_COLLECTOR, SUPPLY_CONTROLLER_ADDR, WALLET_STAKING_ADDR } from '../../consts/addresses'
 import { networks } from '../../consts/networks'
 import { Calls, SignUserRequest } from '../../interfaces/userRequest'
-import { TokenResult } from '../../libs/portfolio'
+import { ClaimableRewardsData, TokenResult } from '../portfolio'
 import { getSanitizedAmount } from './amount'
 
 const ERC20 = new Interface(erc20Abi)
+const supplyControllerInterface = new Interface(WALLETSupplyControllerABI)
 
 interface BuildUserRequestParams {
   amount: string
   selectedToken: TokenResult
   selectedAccount: string
   recipientAddress: string
+}
+
+function buildClaimWalletRequest({
+  selectedAccount,
+  selectedToken,
+  claimableRewardsData
+}: {
+  selectedAccount: string
+  selectedToken: TokenResult
+  claimableRewardsData: ClaimableRewardsData
+}): SignUserRequest | null {
+  const txn = {
+    kind: 'calls' as Calls['kind'],
+    calls: [
+      {
+        to: SUPPLY_CONTROLLER_ADDR,
+        value: BigInt(0),
+        data: supplyControllerInterface.encodeFunctionData('claimWithRootUpdate', [
+          claimableRewardsData?.totalClaimable,
+          claimableRewardsData?.proof,
+          0, // penalty bps, at the moment we run with 0; it's a safety feature to hardcode it
+          WALLET_STAKING_ADDR, // staking pool addr
+          claimableRewardsData?.root,
+          claimableRewardsData?.signedRoot
+        ])
+      }
+    ]
+  }
+  return {
+    id: new Date().getTime(),
+    action: txn,
+    meta: {
+      isSignAction: true,
+      networkId: selectedToken.networkId,
+      accountAddr: selectedAccount
+    }
+  }
 }
 
 function buildTransferUserRequest({
@@ -109,4 +148,4 @@ function buildTransferUserRequest({
   }
 }
 
-export { buildTransferUserRequest }
+export { buildTransferUserRequest, buildClaimWalletRequest }
