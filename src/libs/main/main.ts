@@ -3,7 +3,10 @@ import { Account, AccountId } from '../../interfaces/account'
 import { NetworkId } from '../../interfaces/network'
 import { Call, SignUserRequest, UserRequest } from '../../interfaces/userRequest'
 import generateSpoofSig from '../../utils/generateSpoofSig'
+import { isSmartAccount } from '../account/account'
+import { AccountOp } from '../accountOp/accountOp'
 import { Call as AccountOpCall } from '../accountOp/types'
+import { getAccountOpsByNetwork } from '../actions/actions'
 
 export const batchCallsFromUserRequests = ({
   accountAddr,
@@ -106,4 +109,21 @@ export const makeBasicAccountOpAction = ({
     type: 'accountOp',
     accountOp
   }
+}
+
+export const getAccountOpsForSimulation = (
+  account: Account,
+  visibleActionsQueue: Action[],
+  // pass the account op along only in the case of a basic account
+  // with an open sign account op screen
+  op?: AccountOp | null
+): {
+  [key: string]: AccountOp[]
+} => {
+  if (isSmartAccount(account))
+    return getAccountOpsByNetwork(account.addr, visibleActionsQueue) || {}
+
+  if (op) return { [op.networkId]: [op] }
+
+  return {}
 }

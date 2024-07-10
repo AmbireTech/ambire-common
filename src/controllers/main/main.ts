@@ -1,14 +1,6 @@
 import { ethErrors } from 'eth-rpc-errors'
 /* eslint-disable @typescript-eslint/brace-style */
-import {
-  getAddress,
-  getBigInt,
-  Interface,
-  isAddress,
-  toQuantity,
-  TransactionResponse,
-  ZeroAddress
-} from 'ethers'
+import { getAddress, getBigInt, Interface, isAddress, TransactionResponse } from 'ethers'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json'
@@ -33,15 +25,18 @@ import { Call as AccountOpCall } from '../../libs/accountOp/types'
 import {
   dappRequestMethodToActionKind,
   getAccountOpActionsByNetwork,
-  getAccountOpFromAction,
-  getAccountOpsByNetwork
+  getAccountOpFromAction
 } from '../../libs/actions/actions'
 import { getAccountOpBanners } from '../../libs/banners/banners'
 import { estimate } from '../../libs/estimate/estimate'
 import { EstimateResult } from '../../libs/estimate/interfaces'
 import { GasRecommendation, getGasPriceRecommendations } from '../../libs/gasPrice/gasPrice'
 import { humanizeAccountOp } from '../../libs/humanizer'
-import { makeBasicAccountOpAction, makeSmartAccountOpAction } from '../../libs/main/main'
+import {
+  getAccountOpsForSimulation,
+  makeBasicAccountOpAction,
+  makeSmartAccountOpAction
+} from '../../libs/main/main'
 import { GetOptions, TokenResult } from '../../libs/portfolio/interfaces'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { parse } from '../../libs/richJson/richJson'
@@ -49,6 +44,7 @@ import {
   adjustEntryPointAuthorization,
   getEntryPointAuthorization
 } from '../../libs/signMessage/signMessage'
+import { debugTraceCall } from '../../libs/tracer/debugTraceCall'
 import { buildTransferUserRequest } from '../../libs/transfer/userRequest'
 import {
   ENTRY_POINT_AUTHORIZATION_REQUEST_ID,
@@ -399,6 +395,39 @@ export class MainController extends EventEmitter {
     this.emitUpdate()
   }
 
+  async traceCall(actionId: AccountOpAction['id'], estimation: EstimateResult) {
+    const accountOp = getAccountOpFromAction(actionId, this.actions.actionsQueue)
+    if (!accountOp) return
+
+    const network = this.networks.networks.find((net) => net.id === accountOp?.networkId)
+    if (!network) return
+
+    const account = this.accounts.accounts.find((acc) => acc.addr === accountOp.accountAddr)!
+    const state = this.accounts.accountStates[accountOp.accountAddr][accountOp.networkId]
+    const provider = this.providers.providers[network.id]
+    const gasPrice = this.gasPrices[network.id]
+    const addresses = await debugTraceCall(
+      account,
+      accountOp,
+      provider,
+      state,
+      estimation.gasUsed,
+      gasPrice,
+      !network.rpcNoStateOverride
+    )
+    const learnedNewTokens = await this.portfolio.learnTokens(addresses, network.id)
+
+    // update the portfolio only if new tokens were found through tracing
+    if (learnedNewTokens) {
+      this.portfolio.updateSelectedAccount(
+        accountOp.accountAddr,
+        network,
+        getAccountOpsForSimulation(account, this.actions.visibleActionsQueue, accountOp),
+        { forceUpdate: true }
+      )
+    }
+  }
+
   async signMessageSign() {
     await this.signMessage.sign()
 
@@ -581,20 +610,11 @@ export class MainController extends EventEmitter {
 
     const account = this.accounts.accounts.find((a) => a.addr === this.accounts.selectedAccount)
 
-    let accountOpsToBeSimulatedByNetwork: {
-      [key: string]: AccountOp[]
-    } = {}
-
-    if (isSmartAccount(account)) {
-      accountOpsToBeSimulatedByNetwork =
-        getAccountOpsByNetwork(this.accounts.selectedAccount, this.actions.visibleActionsQueue) ||
-        {}
-    } else if (!isSmartAccount(account) && this.signAccountOp) {
-      // for basic accounts we pass only the currently opened accountOp (if any) to be simulated
-      accountOpsToBeSimulatedByNetwork = {
-        [this.signAccountOp.accountOp.networkId]: [this.signAccountOp.accountOp]
-      }
-    }
+    const accountOpsToBeSimulatedByNetwork = getAccountOpsForSimulation(
+      account!,
+      this.actions.visibleActionsQueue,
+      this.signAccountOp ? this.signAccountOp.accountOp : null
+    )
 
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.portfolio.updateSelectedAccount(
@@ -1145,63 +1165,14 @@ export class MainController extends EventEmitter {
       const feeTokens =
         [...networkFeeTokens, ...gasTankFeeTokens].filter((t) => t.flags.isFeeToken) || []
 
-      // if the network's chosen RPC supports debug_traceCall, we
-      // make an additional simulation for each call in the accountOp
-      let promises: any[] = []
-      if (network.hasDebugTraceCall) {
-        // 65gwei, try to make it work most of the times on ethereum
-        let gasPrice = 65000000000n
-        // calculate the fast gas price to use in simulation
-        if (
-          this.gasPrices[localAccountOp.networkId] &&
-          this.gasPrices[localAccountOp.networkId].length
-        ) {
-          const fast = this.gasPrices[localAccountOp.networkId][2]
-          gasPrice =
-            'gasPrice' in fast ? fast.gasPrice : fast.baseFeePerGas + fast.maxPriorityFeePerGas
-          // increase the gas price with 10% to try to get above the min baseFee
-          gasPrice += gasPrice / 10n
-        }
-        // 200k, try to make it work most of the times on ethereum
-        let gas = 200000n
-        if (this.signAccountOp.estimation) {
-          gas = this.signAccountOp.estimation.gasUsed
-        }
-        const provider = this.providers.providers[localAccountOp.networkId]
-        promises = localAccountOp.calls.map((call) => {
-          return provider
-            .send('debug_traceCall', [
-              {
-                to: call.to,
-                value: toQuantity(call.value.toString()),
-                data: call.data,
-                from: localAccountOp.accountAddr,
-                gasPrice: toQuantity(gasPrice.toString()),
-                gas: toQuantity(gas.toString())
-              },
-              'latest',
-              {
-                tracer:
-                  "{data: [], fault: function (log) {}, step: function (log) { if (log.op.toString() === 'LOG3') { this.data.push([ toHex(log.contract.getAddress()), '0x' + ('0000000000000000000000000000000000000000' + log.stack.peek(4).toString(16)).slice(-40)])}}, result: function () { return this.data }}",
-                enableMemory: false,
-                enableReturnData: true,
-                disableStorage: true
-              }
-            ])
-            .catch((e: any) => {
-              console.log(e)
-              return [ZeroAddress]
-            })
-        })
-      }
-      const result = await Promise.all([
-        ...promises,
-        humanizeAccountOp(this.#storage, localAccountOp, this.#fetch, this.emitError)
-      ])
-      const humanization = result[result.length - 1]
-
       // Reverse lookup addresses and save them in memory so they
       // can be read from the UI
+      const humanization = await humanizeAccountOp(
+        this.#storage,
+        localAccountOp,
+        this.#fetch,
+        this.emitError
+      )
       humanization.forEach((call: any) => {
         if (!call.fullVisualization) return
 
@@ -1222,23 +1193,14 @@ export class MainController extends EventEmitter {
         )
         .flat()
         .filter((x: any) => isAddress(x))
-      result.pop()
-      const stringAddr: any = result.length ? result.flat(Infinity) : []
-      additionalHints!.push(...stringAddr)
 
       await this.portfolio.learnTokens(additionalHints, network.id)
 
-      let accountOpsToBeSimulatedByNetwork: {
-        [key: string]: AccountOp[]
-      } = {}
-
-      if (isSmartAccount(account)) {
-        accountOpsToBeSimulatedByNetwork =
-          getAccountOpsByNetwork(localAccountOp.accountAddr, this.actions.visibleActionsQueue) || {}
-      } else {
-        // for basic accounts we pass only the currently opened accountOp to be simulated
-        accountOpsToBeSimulatedByNetwork = { [localAccountOp.networkId]: [localAccountOp] }
-      }
+      const accountOpsToBeSimulatedByNetwork = getAccountOpsForSimulation(
+        account!,
+        this.actions.visibleActionsQueue,
+        localAccountOp
+      )
 
       const [, estimation] = await Promise.all([
         // NOTE: we are not emitting an update here because the portfolio controller will do that
