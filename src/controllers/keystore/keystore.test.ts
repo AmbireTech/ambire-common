@@ -416,6 +416,37 @@ describe('KeystoreController', () => {
     const keystoreUid = await keystore.getKeyStoreUid()
     expect(keystoreUid.length).toBe(128)
   })
+  test('should remove key', async () => {
+    const keyLengthBefore = keystore.keys.length
+    // An internal key and a trezor key with the same public address
+    const keysWithSamePublicAddress = keystore.keys.filter(
+      (x) => x.addr === '0xe95DB32209A2E132B262Ab12BAFf8F6007e30254'
+    )
+
+    // First remove the internal key
+    const internalKeyToRemove = keysWithSamePublicAddress.find((x) => x.type === 'internal')
+
+    expect(keysWithSamePublicAddress.length).toBeGreaterThanOrEqual(2)
+
+    await keystore.removeKey(internalKeyToRemove?.addr || '', internalKeyToRemove?.type || '')
+
+    expect(keystore.keys.length).toBe(keyLengthBefore - 1)
+
+    const keysWithSamePublicAddressAfter = keystore.keys.filter(
+      (x) => x.addr === '0xe95DB32209A2E132B262Ab12BAFf8F6007e30254'
+    )
+
+    const hwWalletKeyToRemove = keysWithSamePublicAddressAfter.find((x) => x.type === 'trezor')
+
+    // Make sure the trezor key is not removed
+    expect(hwWalletKeyToRemove).toBeDefined()
+
+    // Remove the trezor key
+    await keystore.removeKey(hwWalletKeyToRemove?.addr || '', hwWalletKeyToRemove?.type || '')
+
+    // Make sure both keys are removed
+    expect(keystore.keys.length).toBe(keyLengthBefore - 2)
+  })
 })
 
 describe('import/export with pub key test', () => {
