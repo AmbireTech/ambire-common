@@ -19,7 +19,7 @@ import { AddNetworkRequestParams, Network, NetworkId } from '../../interfaces/ne
 import { Storage } from '../../interfaces/storage'
 import { Call, DappUserRequest, SignUserRequest, UserRequest } from '../../interfaces/userRequest'
 import { WindowManager } from '../../interfaces/window'
-import { isSmartAccount } from '../../libs/account/account'
+import { getDefaultSelectedAccount, isSmartAccount } from '../../libs/account/account'
 import { AccountOp, AccountOpStatus, getSignableCalls } from '../../libs/accountOp/accountOp'
 import { Call as AccountOpCall } from '../../libs/accountOp/types'
 import {
@@ -300,6 +300,8 @@ export class MainController extends EventEmitter {
           // Add accounts first, because some of the next steps have validation
           // if accounts exists.
           await this.accounts.addAccounts(this.accountAdder.readyToAddAccounts)
+          const accountToSelect = getDefaultSelectedAccount(this.accountAdder.readyToAddAccounts)
+          if (accountToSelect) await this.accounts.selectAccount(accountToSelect.addr)
 
           // Then add keys, because some of the next steps could have validation
           // if keys exists. Should be separate (not combined in Promise.all,
