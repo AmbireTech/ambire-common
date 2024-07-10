@@ -396,8 +396,8 @@ export class MainController extends EventEmitter {
     this.emitUpdate()
   }
 
-  async traceCall(actionId: AccountOpAction['id'], estimation: EstimateResult) {
-    const accountOp = getAccountOpFromAction(actionId, this.actions.actionsQueue)
+  async traceCall(estimation: EstimateResult) {
+    const accountOp = this.signAccountOp?.accountOp
     if (!accountOp) return
 
     const network = this.networks.networks.find((net) => net.id === accountOp?.networkId)
@@ -1212,7 +1212,7 @@ export class MainController extends EventEmitter {
       const accountOpsToBeSimulatedByNetwork = getAccountOpsForSimulation(
         account!,
         this.actions.visibleActionsQueue,
-        localAccountOp
+        this.signAccountOp?.accountOp
       )
 
       const [, estimation] = await Promise.all([
@@ -1256,14 +1256,16 @@ export class MainController extends EventEmitter {
 
       // if the nonce from the estimation is different than the one in localAccountOp,
       // override all places that contain the old nonce with the correct one
+      // and start a new estimation
       if (estimation && BigInt(estimation.currentAccountNonce) !== localAccountOp.nonce) {
         localAccountOp.nonce = BigInt(estimation.currentAccountNonce)
-
-        this.signAccountOp.accountOp.nonce = localAccountOp.nonce
+        this.signAccountOp.accountOp.nonce = BigInt(estimation.currentAccountNonce)
 
         if (this.accounts.accountStates?.[localAccountOp.accountAddr]?.[localAccountOp.networkId])
           this.accounts.accountStates[localAccountOp.accountAddr][localAccountOp.networkId].nonce =
             localAccountOp.nonce
+
+        this.estimateSignAccountOp()
       }
 
       // check if an RBF should be applied for the incoming transaction
@@ -1276,7 +1278,7 @@ export class MainController extends EventEmitter {
       nativeToCheck.push(localAccountOp.accountAddr)
       nativeToCheck.forEach((accId) => {
         const notConfirmedOp = this.activity.getNotConfirmedOpIfAny(accId, localAccountOp.networkId)
-        const currentNonce = this.accounts.accountStates[accId][localAccountOp.networkId].nonce
+        const currentNonce = this.accounts.accountStates?.[accId]?.[localAccountOp.networkId].nonce
         rbfAccountOps[accId] =
           notConfirmedOp &&
           !notConfirmedOp.gasFeePayment?.isERC4337 &&

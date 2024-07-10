@@ -1,4 +1,4 @@
-import { ZeroAddress } from 'ethers'
+import { getAddress, ZeroAddress } from 'ethers'
 
 import { Account, AccountId } from '../../interfaces/account'
 import { Fetch } from '../../interfaces/fetch'
@@ -393,7 +393,7 @@ export class PortfolioController extends EventEmitter {
       .flat()
       .map((t: any) => ({
         ...t,
-        symbol: t.address === "0x47Cd7E91C3CBaAF266369fe8518345fc4FC12935" ? 'xWALLET' : t.symbol,
+        symbol: t.address === '0x47Cd7E91C3CBaAF266369fe8518345fc4FC12935' ? 'xWALLET' : t.symbol,
         flags: getFlags(res.data.rewards, 'rewards', t.networkId, t.address)
       }))
 
@@ -691,8 +691,11 @@ export class PortfolioController extends EventEmitter {
     let networkLearnedTokens: PreviousHintsStorage['learnedTokens'][''] =
       this.#previousHints.learnedTokens[networkId] || {}
 
+    const alreadyLearned = Object.keys(networkLearnedTokens).map((addr) => getAddress(addr))
+
     const tokensToLearn = tokenAddresses.reduce((acc: { [key: string]: null }, address) => {
       if (address === ZeroAddress) return acc
+      if (alreadyLearned.includes(getAddress(address))) return acc
 
       acc[address] = acc[address] || null // Keep the timestamp of all learned tokens
       return acc
