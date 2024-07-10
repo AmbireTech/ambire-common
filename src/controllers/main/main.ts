@@ -4,6 +4,7 @@ import { getAddress, getBigInt, Interface, isAddress, TransactionResponse } from
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json'
+import EmittableError from '../../classes/EmittableError'
 import { AMBIRE_ACCOUNT_FACTORY, SINGLETON } from '../../consts/deploy'
 import { Account, AccountId } from '../../interfaces/account'
 import { Banner } from '../../interfaces/banner'
@@ -75,7 +76,8 @@ import { SignAccountOpController, SigningStatus } from '../signAccountOp/signAcc
 import { SignMessageController } from '../signMessage/signMessage'
 
 const STATUS_WRAPPED_METHODS = {
-  onAccountAdderSuccess: 'INITIAL'
+  onAccountAdderSuccess: 'INITIAL',
+  removeAccount: 'INITIAL'
 } as const
 
 export class MainController extends EventEmitter {
@@ -521,7 +523,7 @@ export class MainController extends EventEmitter {
     await this.networks.updateNetwork({ areContractsDeployed: true }, network.id)
   }
 
-  removeAccount(address: Account['addr']) {
+  #removeAccountKeyData(address: Account['addr']) {
     // Compute account keys that are only associated with this account
     const accountAssociatedKeys =
       this.accounts.accounts.find((acc) => acc.addr === address)?.associatedKeys || []
@@ -540,31 +542,46 @@ export class MainController extends EventEmitter {
     // Remove account keys from the keystore
     solelyAccountKeys.forEach((key) => {
       this.settings.removeKeyPreferences([{ addr: key.addr, type: key.type }]).catch((e) => {
-        this.emitError({
+        throw new EmittableError({
           level: 'major',
-          message: 'Failed to remove key preferences',
+          message: 'Failed to remove account key preferences',
           error: e
         })
       })
       this.keystore.removeKey(key.addr, key.type).catch((e) => {
-        this.emitError({
+        throw new EmittableError({
           level: 'major',
-          message: 'Failed to remove key',
+          message: 'Failed to remove account key',
           error: e
         })
       })
     })
+  }
 
-    // Remove account data from sub-controllers
-    this.accounts.removeAccountData(address)
-    this.portfolio.removeAccountData(address)
-    this.activity.removeAccountData(address)
-    this.actions.removeAccountData(address)
-    this.signMessage.removeAccountData(address)
+  async removeAccount(address: Account['addr']) {
+    await this.withStatus('removeAccount', async () => {
+      try {
+        this.#removeAccountKeyData(address)
+        // Remove account data from sub-controllers
+        await this.accounts.removeAccountData(address)
+        this.portfolio.removeAccountData(address)
+        this.activity.removeAccountData(address)
+        this.actions.removeAccountData(address)
+        this.signMessage.removeAccountData(address)
 
-    if (this.signAccountOp?.account.addr === address) {
-      this.destroySignAccOp()
-    }
+        if (this.signAccountOp?.account.addr === address) {
+          this.destroySignAccOp()
+        }
+
+        this.emitUpdate()
+      } catch (e: any) {
+        throw new EmittableError({
+          level: 'major',
+          message: 'Failed to remove account',
+          error: e || new Error('Failed to remove account')
+        })
+      }
+    })
   }
 
   async #ensureAccountInfo(accountAddr: AccountId, networkId: NetworkId) {
