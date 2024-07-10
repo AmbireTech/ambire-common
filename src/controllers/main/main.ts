@@ -71,11 +71,12 @@ import { PortfolioController } from '../portfolio/portfolio'
 import { ProvidersController } from '../providers/providers'
 import { SettingsController } from '../settings/settings'
 /* eslint-disable no-underscore-dangle */
-import { SignAccountOpController, SigningStatus } from '../signAccountOp/signAccountOp'
+import { SignAccountOpController } from '../signAccountOp/signAccountOp'
 import { SignMessageController } from '../signMessage/signMessage'
 
 const STATUS_WRAPPED_METHODS = {
-  onAccountAdderSuccess: 'INITIAL'
+  onAccountAdderSuccess: 'INITIAL',
+  broadcastSignedAccountOp: 'INITIAL'
 } as const
 
 export class MainController extends EventEmitter {
@@ -122,8 +123,6 @@ export class MainController extends EventEmitter {
 
   signAccountOp: SignAccountOpController | null = null
 
-  static signAccountOpListener: ReturnType<EventEmitter['onUpdate']> = () => {}
-
   signAccOpInitError: string | null = null
 
   activity!: ActivityController
@@ -143,9 +142,10 @@ export class MainController extends EventEmitter {
 
   accountOpsToBeConfirmed: { [key: string]: { [key: string]: AccountOp } } = {}
 
-  lastUpdate: Date = new Date()
+  // TODO: Temporary solution to expose the fee payer key during Account Op broadcast.
+  feePayerKey: Key | null = null
 
-  broadcastStatus: 'INITIAL' | 'LOADING' | 'DONE' = 'INITIAL'
+  lastUpdate: Date = new Date()
 
   statuses: Statuses<keyof typeof STATUS_WRAPPED_METHODS> = STATUS_WRAPPED_METHODS
 
@@ -359,36 +359,29 @@ export class MainController extends EventEmitter {
       this.#callRelayer
     )
 
-    const broadcastSignedAccountOpIfNeeded = async () => {
-      // Signing is completed, therefore broadcast the transaction
-      if (
-        this.signAccountOp &&
-        this.signAccountOp.accountOp.signature &&
-        this.signAccountOp.status?.type === SigningStatus.Done
-      ) {
-        await this.broadcastSignedAccountOp(
-          this.signAccountOp.accountOp,
-          this.signAccountOp.estimation!,
-          this.signAccountOp.fromActionId
-        )
-      }
-    }
-    MainController.signAccountOpListener = this.signAccountOp.onUpdate(
-      broadcastSignedAccountOpIfNeeded
-    )
-
     this.emitUpdate()
 
     this.updateSignAccountOpGasPrice()
     this.estimateSignAccountOp()
   }
 
+  async handleSignAccountOp() {
+    if (!this.signAccountOp) return
+
+    await this.signAccountOp.sign()
+
+    // Error handling on the prev step will notify the user, it's fine to return here
+    if (!this.signAccountOp.accountOp.signature) return
+
+    await this.withStatus('broadcastSignedAccountOp', async () => this.#broadcastSignedAccountOp())
+  }
+
   destroySignAccOp() {
     if (!this.signAccountOp) return
 
+    this.feePayerKey = null
     this.signAccountOp = null
     this.signAccOpInitError = null
-    MainController.signAccountOpListener() // unsubscribes for further updates
 
     // NOTE: no need to update the portfolio here as an update is
     // fired upon removeUserRequest
@@ -1317,15 +1310,18 @@ export class MainController extends EventEmitter {
    *   4. for smart accounts, when the Relayer does the broadcast.
    *
    */
-  async broadcastSignedAccountOp(
-    accountOp: AccountOp,
-    estimation: EstimateResult,
-    actionId: AccountOpAction['id']
-  ) {
-    this.broadcastStatus = 'LOADING'
-    this.emitUpdate()
+  async #broadcastSignedAccountOp() {
+    const accountOp = this.signAccountOp?.accountOp
+    const estimation = this.signAccountOp?.estimation
+    const actionId = this.signAccountOp?.fromActionId
 
-    if (!accountOp.signingKeyAddr || !accountOp.signingKeyType || !accountOp.signature) {
+    if (
+      !accountOp ||
+      !estimation ||
+      !accountOp.signingKeyAddr ||
+      !accountOp.signingKeyType ||
+      !accountOp.signature
+    ) {
       return this.#throwAccountOpBroadcastError(new Error('AccountOp missing props'))
     }
 
@@ -1377,6 +1373,9 @@ export class MainController extends EventEmitter {
             )
           )
         }
+        this.feePayerKey = feePayerKey
+        this.emitUpdate()
+
         const signer = await this.keystore.getSigner(feePayerKey.addr, feePayerKey.type)
         if (signer.init) signer.init(this.#externalSignerControllers[feePayerKey.type])
 
@@ -1439,6 +1438,9 @@ export class MainController extends EventEmitter {
           )
         )
       }
+
+      this.feePayerKey = feePayerKey
+      this.emitUpdate()
 
       const accountState = this.accounts.accountStates[accountOp.accountAddr][accountOp.networkId]
       let data
@@ -1590,12 +1592,9 @@ export class MainController extends EventEmitter {
 
       console.log('broadcasted:', transactionRes)
       this.onSignSuccess('account-op')
-      this.broadcastStatus = 'DONE'
-      this.emitUpdate()
-      await wait(1)
     }
 
-    this.broadcastStatus = 'INITIAL'
+    this.feePayerKey = null
     this.emitUpdate()
   }
 
@@ -1640,7 +1639,6 @@ export class MainController extends EventEmitter {
     // broadcast is called in the FE only after successful signing
     this.signAccountOp?.updateStatusToReadyToSign(replacementFeeLow)
     if (replacementFeeLow) this.estimateSignAccountOp()
-    this.broadcastStatus = 'INITIAL'
     this.emitUpdate()
   }
 
