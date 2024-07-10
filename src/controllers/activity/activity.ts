@@ -399,13 +399,20 @@ export class ActivityController extends EventEmitter {
               })
             }
 
+            // fixed: we should check the account state of the one paying
+            // the fee as his nonce gets incremented:
+            // - EOA, SA by EOA: the account op holds the EOA nonce
+            // - relayer, 4337: the account op holds the SA nonce
+            const payedByState =
+              this.#accounts.accountStates[accountOp.gasFeePayment!.paidBy] &&
+              this.#accounts.accountStates[accountOp.gasFeePayment!.paidBy][accountOp.networkId]
+                ? this.#accounts.accountStates[accountOp.gasFeePayment!.paidBy][accountOp.networkId]
+                : null
+
             if (
-              (!accountOp.userOpHash &&
-                this.#accounts.accountStates[accountOp.accountAddr][accountOp.networkId].nonce >
-                  accountOp.nonce) ||
-              (accountOp.userOpHash &&
-                this.#accounts.accountStates[accountOp.accountAddr][accountOp.networkId]
-                  .erc4337Nonce > accountOp.nonce)
+              payedByState &&
+              ((!accountOp.userOpHash && payedByState.nonce > accountOp.nonce) ||
+                (accountOp.userOpHash && payedByState.erc4337Nonce > accountOp.nonce))
             ) {
               this.#accountsOps[selectedAccount][networkId][accountOpIndex].status =
                 AccountOpStatus.UnknownButPastNonce
