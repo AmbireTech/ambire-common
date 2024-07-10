@@ -7,7 +7,7 @@ export const preProcessHumanizer: HumanizerCallModule = (
 ) => {
   const newCalls = currentIrCalls.map((_call) => {
     const call = { ..._call }
-    if (call.data === null) {
+    if (!call.data) {
       call.data = '0x'
     }
     return call

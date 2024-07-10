@@ -5,7 +5,7 @@ import { getAddress, getBigInt, Interface, isAddress, TransactionResponse } from
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json'
 import { AMBIRE_ACCOUNT_FACTORY, SINGLETON } from '../../consts/deploy'
-import { AccountId } from '../../interfaces/account'
+import { Account, AccountId } from '../../interfaces/account'
 import { Banner } from '../../interfaces/banner'
 import { DappProviderRequest } from '../../interfaces/dapp'
 import { Fetch } from '../../interfaces/fetch'
@@ -57,7 +57,7 @@ import wait from '../../utils/wait'
 import { AccountAdderController } from '../accountAdder/accountAdder'
 import { AccountsController } from '../accounts/accounts'
 import { AccountOpAction, ActionsController, SignMessageAction } from '../actions/actions'
-import { ActivityController, SignedMessage, SubmittedAccountOp } from '../activity/activity'
+import { ActivityController, SubmittedAccountOp } from '../activity/activity'
 import { AddressBookController } from '../addressBook/addressBook'
 import { DappsController } from '../dapps/dapps'
 import { DomainsController } from '../domains/domains'
@@ -150,7 +150,11 @@ export class MainController extends EventEmitter {
 
   #windowManager: WindowManager
 
-  onBroadcastSuccess?: (type: 'message' | 'typed-data' | 'account-op') => void
+  /**
+   * Callback that gets triggered when the signing process of a message or an
+   * account op (including the broadcast step) gets finalized.
+   */
+  onSignSuccess: (type: 'message' | 'typed-data' | 'account-op') => void
 
   constructor({
     storage,
@@ -160,7 +164,7 @@ export class MainController extends EventEmitter {
     keystoreSigners,
     externalSignerControllers,
     windowManager,
-    onBroadcastSuccess
+    onSignSuccess
   }: {
     storage: Storage
     fetch: Fetch
@@ -169,7 +173,7 @@ export class MainController extends EventEmitter {
     keystoreSigners: Partial<{ [key in Key['type']]: KeystoreSignerType }>
     externalSignerControllers: ExternalSignerControllers
     windowManager: WindowManager
-    onBroadcastSuccess?: (type: 'message' | 'typed-data' | 'account-op') => void
+    onSignSuccess?: (type: 'message' | 'typed-data' | 'account-op') => void
   }) {
     super()
     this.#storage = storage
@@ -204,7 +208,8 @@ export class MainController extends EventEmitter {
         await this.actions.forceEmitUpdate()
         await this.addressBook.forceEmitUpdate()
         this.dapps.broadcastDappSessionEvent('accountsChanged', [toAccountAddr])
-      }
+      },
+      this.providers.updateProviderIsWorking.bind(this.providers)
     )
     this.settings = new SettingsController(this.#storage)
     this.portfolio = new PortfolioController(
@@ -234,6 +239,7 @@ export class MainController extends EventEmitter {
       this.keystore,
       this.providers,
       this.networks,
+      this.accounts,
       this.#externalSignerControllers,
       this.#storage,
       this.#fetch
@@ -259,7 +265,7 @@ export class MainController extends EventEmitter {
     )
     this.domains = new DomainsController(this.providers.providers, this.#fetch)
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch: this.#fetch })
-    this.onBroadcastSuccess = onBroadcastSuccess
+    this.onSignSuccess = onSignSuccess || (() => {})
   }
 
   async #load(): Promise<void> {
@@ -422,6 +428,39 @@ export class MainController extends EventEmitter {
     }
   }
 
+  async signMessageSign() {
+    await this.signMessage.sign()
+
+    const signedMessage = this.signMessage.signedMessage
+    // Error handling on the prev step will notify the user, it's fine to return here
+    if (!signedMessage) return
+
+    if (signedMessage.fromActionId === ENTRY_POINT_AUTHORIZATION_REQUEST_ID) {
+      const accountOpAction = makeSmartAccountOpAction({
+        account: this.accounts.accounts.filter((a) => a.addr === signedMessage.accountAddr)[0],
+        networkId: signedMessage.networkId,
+        nonce:
+          this.accounts.accountStates[signedMessage.accountAddr][signedMessage.networkId].nonce,
+        userRequests: this.userRequests,
+        actionsQueue: this.actions.actionsQueue
+      })
+      if (!accountOpAction.accountOp.meta) accountOpAction.accountOp.meta = {}
+      accountOpAction.accountOp.meta.entryPointAuthorization = adjustEntryPointAuthorization(
+        signedMessage.signature as string
+      )
+
+      this.actions.addOrUpdateAction(accountOpAction, true)
+    }
+
+    await this.resolveUserRequest({ hash: signedMessage.signature }, signedMessage.fromActionId)
+
+    this.onSignSuccess(signedMessage.content.kind === 'typedMessage' ? 'typed-data' : 'message')
+
+    // TODO: In the rare case when this might error, the user won't be notified,
+    // since `this.resolveUserRequest` closes the action window.
+    await this.activity.addSignedMessage(signedMessage, signedMessage.accountAddr)
+  }
+
   async updateAccountsOpsStatuses() {
     await this.#initialLoadPromise
 
@@ -481,6 +520,52 @@ export class MainController extends EventEmitter {
     await this.networks.updateNetwork({ areContractsDeployed: true }, network.id)
   }
 
+  removeAccount(address: Account['addr']) {
+    // Compute account keys that are only associated with this account
+    const accountAssociatedKeys =
+      this.accounts.accounts.find((acc) => acc.addr === address)?.associatedKeys || []
+    const keysInKeystore = this.keystore.keys
+    const importedAccountKeys = keysInKeystore.filter((key) =>
+      accountAssociatedKeys.includes(key.addr)
+    )
+    const solelyAccountKeys = importedAccountKeys.filter((key) => {
+      const isKeyAssociatedWithOtherAccounts = this.accounts.accounts.some(
+        (acc) => acc.addr !== address && acc.associatedKeys.includes(key.addr)
+      )
+
+      return !isKeyAssociatedWithOtherAccounts
+    })
+
+    // Remove account keys from the keystore
+    solelyAccountKeys.forEach((key) => {
+      this.settings.removeKeyPreferences([{ addr: key.addr, type: key.type }]).catch((e) => {
+        this.emitError({
+          level: 'major',
+          message: 'Failed to remove key preferences',
+          error: e
+        })
+      })
+      this.keystore.removeKey(key.addr, key.type).catch((e) => {
+        this.emitError({
+          level: 'major',
+          message: 'Failed to remove key',
+          error: e
+        })
+      })
+    })
+
+    // Remove account data from sub-controllers
+    this.accounts.removeAccountData(address)
+    this.portfolio.removeAccountData(address)
+    this.activity.removeAccountData(address)
+    this.actions.removeAccountData(address)
+    this.signMessage.removeAccountData(address)
+
+    if (this.signAccountOp?.account.addr === address) {
+      this.destroySignAccOp()
+    }
+  }
+
   async #ensureAccountInfo(accountAddr: AccountId, networkId: NetworkId) {
     await this.#initialLoadPromise
     // Initial sanity check: does this account even exist?
@@ -490,8 +575,8 @@ export class MainController extends EventEmitter {
     }
     // If this still didn't work, re-load
     if (!this.accounts.accountStates[accountAddr]?.[networkId])
-      await this.accounts.updateAccountStates()
-    // If this still didn't work, throw error: this prob means that we're calling for a non-existant acc/network
+      await this.accounts.updateAccountState(accountAddr, networkId)
+    // If this still didn't work, throw error: this prob means that we're calling for a non-existent acc/network
     if (!this.accounts.accountStates[accountAddr]?.[networkId])
       this.signAccOpInitError = `Failed to retrieve account info for ${networkId}, because of one of the following reasons: 1) network doesn't exist, 2) RPC is down for this network`
   }
@@ -508,6 +593,15 @@ export class MainController extends EventEmitter {
       },
       []
     )
+  }
+
+  async reloadSelectedAccount() {
+    if (!this.accounts.selectedAccount) return
+
+    await Promise.all([
+      this.accounts.updateAccountState(this.accounts.selectedAccount, 'pending'),
+      this.updateSelectedAccountPortfolio(true)
+    ])
   }
 
   async updateSelectedAccountPortfolio(forceUpdate: boolean = false, network?: Network) {
@@ -577,7 +671,12 @@ export class MainController extends EventEmitter {
       // TODO: if address is in this.accounts in theory the user should be able to sign
       // e.g. if an acc from the wallet is used as a signer of another wallet
       if (getAddress(msdAddress) !== this.accounts.selectedAccount) {
-        dappPromise.resolve('Invalid parameters: must use the current user address to sign')
+        dappPromise.reject(
+          ethErrors.provider.userRejectedRequest(
+            // if updating, check https://github.com/AmbireTech/ambire-wallet/pull/1627
+            'the dApp is trying to sign using an address different from the currently selected account. Try re-connecting.'
+          )
+        )
         return
       }
 
@@ -612,7 +711,12 @@ export class MainController extends EventEmitter {
       // TODO: if address is in this.accounts in theory the user should be able to sign
       // e.g. if an acc from the wallet is used as a signer of another wallet
       if (getAddress(msdAddress) !== this.accounts.selectedAccount) {
-        dappPromise.resolve('Invalid parameters: must use the current user address to sign')
+        dappPromise.reject(
+          ethErrors.provider.userRejectedRequest(
+            // if updating, check https://github.com/AmbireTech/ambire-wallet/pull/1627
+            'the dApp is trying to sign using an address different from the currently selected account. Try re-connecting.'
+          )
+        )
         return
       }
 
@@ -766,8 +870,18 @@ export class MainController extends EventEmitter {
       const accountState = this.accounts.accountStates[meta.accountAddr][meta.networkId]
 
       if (account.creation) {
-        const network = this.networks.networks.filter((n) => n.id === meta.networkId)[0]
-        if (shouldAskForEntryPointAuthorization(network, account, accountState)) {
+        const network = this.networks.networks.find((n) => n.id === meta.networkId)!
+
+        // find me the accountOp for the network if any, it's always 1 for SA
+        const currentAccountOpAction = this.actions.actionsQueue.find(
+          (a) =>
+            a.type === 'accountOp' &&
+            a.accountOp.accountAddr === account.addr &&
+            a.accountOp.networkId === network.id
+        ) as AccountOpAction | undefined
+
+        const hasAuthorized = !!currentAccountOpAction?.accountOp?.meta?.entryPointAuthorization
+        if (shouldAskForEntryPointAuthorization(network, account, accountState, hasAuthorized)) {
           if (
             this.actions.visibleActionsQueue.find(
               (a) =>
@@ -1444,47 +1558,12 @@ export class MainController extends EventEmitter {
       )
 
       console.log('broadcasted:', transactionRes)
-      !!this.onBroadcastSuccess && this.onBroadcastSuccess('account-op')
+      this.onSignSuccess('account-op')
       this.broadcastStatus = 'DONE'
       this.emitUpdate()
       await wait(1)
     }
 
-    this.broadcastStatus = 'INITIAL'
-    this.emitUpdate()
-  }
-
-  async broadcastSignedMessage(signedMessage: SignedMessage) {
-    this.broadcastStatus = 'LOADING'
-    this.emitUpdate()
-
-    await this.activity.addSignedMessage(signedMessage, signedMessage.accountAddr)
-    if (signedMessage.fromActionId === ENTRY_POINT_AUTHORIZATION_REQUEST_ID) {
-      const accountOpAction = makeSmartAccountOpAction({
-        account: this.accounts.accounts.filter((a) => a.addr === signedMessage.accountAddr)[0],
-        networkId: signedMessage.networkId,
-        nonce:
-          this.accounts.accountStates[signedMessage.accountAddr][signedMessage.networkId].nonce,
-        userRequests: this.userRequests,
-        actionsQueue: this.actions.actionsQueue
-      })
-      if (!accountOpAction.accountOp.meta) accountOpAction.accountOp.meta = {}
-      accountOpAction.accountOp.meta.entryPointAuthorization = adjustEntryPointAuthorization(
-        signedMessage.signature as string
-      )
-
-      this.actions.addOrUpdateAction(accountOpAction, true)
-    }
-    await this.resolveUserRequest({ hash: signedMessage.signature }, signedMessage.fromActionId)
-    !!this.onBroadcastSuccess &&
-      this.onBroadcastSuccess(
-        signedMessage.content.kind === 'typedMessage' ? 'typed-data' : 'message'
-      )
-
-    this.broadcastStatus = 'DONE'
-    this.emitUpdate()
-
-    await wait(1)
     this.broadcastStatus = 'INITIAL'
     this.emitUpdate()
   }

@@ -115,7 +115,7 @@ export const getAccountOpsForSimulation = (
   account: Account,
   visibleActionsQueue: Action[],
   // pass the account op along only in the case of a basic account
-  // with an open sing account op screen
+  // with an open sign account op screen
   op?: AccountOp | null
 ): {
   [key: string]: AccountOp[]
