@@ -253,6 +253,11 @@ export class MainController extends EventEmitter {
       windowManager,
       onActionWindowClose: () => {
         this.userRequests = this.userRequests.filter((r) => r.action.kind !== 'benzin')
+
+        if (this.actions.currentAction?.type === 'signMessage' && this.actions.currentAction?.id) {
+          this.rejectUserRequest('User rejected the request', this.actions.currentAction.id)
+        }
+
         this.emitUpdate()
       }
     })
