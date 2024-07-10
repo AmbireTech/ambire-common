@@ -4,6 +4,7 @@ import { getAddress, getBigInt, Interface, isAddress, TransactionResponse } from
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json'
+import EmittableError from '../../classes/EmittableError'
 import { AMBIRE_ACCOUNT_FACTORY, SINGLETON } from '../../consts/deploy'
 import { Account, AccountId } from '../../interfaces/account'
 import { Banner } from '../../interfaces/banner'
@@ -1634,12 +1635,12 @@ export class MainController extends EventEmitter {
     }
 
     const replacementFeeLow = error.message.indexOf('replacement fee too low') !== -1
-    this.emitError({ level: 'major', message, error })
     // To enable another try for signing in case of broadcast fail
     // broadcast is called in the FE only after successful signing
     this.signAccountOp?.updateStatusToReadyToSign(replacementFeeLow)
     if (replacementFeeLow) this.estimateSignAccountOp()
-    this.emitUpdate()
+
+    return Promise.reject(new EmittableError({ level: 'major', message, error }))
   }
 
   // includes the getters in the stringified instance
