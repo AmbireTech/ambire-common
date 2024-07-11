@@ -1,13 +1,7 @@
 import { getAddress, isAddress } from 'ethers'
 
-import {
-  Account,
-  AccountId,
-  AccountOnchainState,
-  AccountPreferences,
-  AccountStates
-} from '../../interfaces/account'
-import { Network, NetworkId } from '../../interfaces/network'
+import { Account, AccountId, AccountPreferences, AccountStates } from '../../interfaces/account'
+import { NetworkId } from '../../interfaces/network'
 import { Storage } from '../../interfaces/storage'
 import {
   getDefaultSelectedAccount,
