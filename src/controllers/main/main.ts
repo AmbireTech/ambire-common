@@ -73,7 +73,7 @@ import { PortfolioController } from '../portfolio/portfolio'
 import { ProvidersController } from '../providers/providers'
 import { SettingsController } from '../settings/settings'
 /* eslint-disable no-underscore-dangle */
-import { SignAccountOpController } from '../signAccountOp/signAccountOp'
+import { SignAccountOpController, SigningStatus } from '../signAccountOp/signAccountOp'
 import { SignMessageController } from '../signMessage/signMessage'
 
 const STATUS_WRAPPED_METHODS = {
@@ -373,7 +373,7 @@ export class MainController extends EventEmitter {
     await this.signAccountOp.sign()
 
     // Error handling on the prev step will notify the user, it's fine to return here
-    if (!this.signAccountOp.accountOp.signature) return
+    if (this.signAccountOp.status?.type !== SigningStatus.Done) return
 
     await this.withStatus('broadcastSignedAccountOp', async () => this.#broadcastSignedAccountOp())
   }
