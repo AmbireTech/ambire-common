@@ -19,7 +19,8 @@ const networks: Network[] = [
     hasSingleton: true,
     features: [],
     feeOptions: { is1559: true },
-    predefined: true
+    predefined: true,
+    wrappedAddr: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2'
   },
   {
     id: 'polygon',
@@ -39,7 +40,8 @@ const networks: Network[] = [
     hasSingleton: true,
     features: [],
     feeOptions: { is1559: false, feeIncrease: 10n },
-    predefined: true
+    predefined: true,
+    wrappedAddr: '0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270'
   },
   {
     id: 'optimism',
@@ -65,7 +67,8 @@ const networks: Network[] = [
       maxPriorityFee: 100n
     },
     isOptimistic: true,
-    predefined: true
+    predefined: true,
+    wrappedAddr: '0x4200000000000000000000000000000000000006'
   },
   {
     id: 'avalanche',
@@ -88,7 +91,8 @@ const networks: Network[] = [
       is1559: true,
       minBaseFee: 25000000000n // 25 gwei
     },
-    predefined: true
+    predefined: true,
+    wrappedAddr: '0xb31f66aa3c1e785363f0875a1b74e27b85fd66c7'
   },
   {
     id: 'arbitrum',
@@ -116,7 +120,8 @@ const networks: Network[] = [
       minBaseFee: 100000000n, // 1 gwei
       maxPriorityFee: 100n
     },
-    predefined: true
+    predefined: true,
+    wrappedAddr: '0x82af49447d8a07e3bd95bd0d56f35241523fbab1'
   },
   {
     id: 'base',
@@ -141,7 +146,8 @@ const networks: Network[] = [
     feeOptions: {
       is1559: true
     },
-    predefined: true
+    predefined: true,
+    wrappedAddr: '0x4200000000000000000000000000000000000006'
   },
   {
     id: 'scroll',
@@ -161,7 +167,8 @@ const networks: Network[] = [
     hasSingleton: true,
     features: [],
     feeOptions: { is1559: false },
-    predefined: true
+    predefined: true,
+    wrappedAddr: '0x5300000000000000000000000000000000000004'
   },
   {
     id: 'gnosis',
