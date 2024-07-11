@@ -22,11 +22,6 @@ export interface Erc4337GasLimits {
   }
 }
 
-export interface ArbitrumL1Fee {
-  noFee: bigint
-  withFee: bigint
-}
-
 export interface FeePaymentOption {
   availableAmount: bigint
   paidBy: string

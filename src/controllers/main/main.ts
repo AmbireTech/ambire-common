@@ -489,31 +489,27 @@ export class MainController extends EventEmitter {
   async #updateGasPrice() {
     await this.#initialLoadPromise
 
-    // We want to update the gas price only for the networks having account ops.
-    // Together with that, we make sure `ethereum` is included, as we always want to know its gas price (once we have a gas indicator, we will need it).
-    // Note<Bobby>: remove ethereum as the above currently is not true
-    const gasPriceNetworks = [
-      ...new Set(this.userRequests.map((r) => r.meta.networkId).filter(Boolean))
-    ]
+    // if there's no signAccountOp initialized, we don't want to fetch gas
+    const accOp = this.signAccountOp?.accountOp ?? null
+    if (!accOp) return
 
-    await Promise.all(
-      gasPriceNetworks.map(async (network) => {
-        try {
-          this.gasPrices[network] = await getGasPriceRecommendations(
-            this.providers.providers[network],
-            this.networks.networks.find((net) => net.id === network)!
-          )
-        } catch (e: any) {
-          this.emitError({
-            level: 'major',
-            message: `Unable to get gas price for ${
-              this.networks.networks.find((n) => n.id === network)?.name
-            }`,
-            error: new Error(`Failed to fetch gas price: ${e?.message}`)
-          })
-        }
+    const network = this.networks.networks.find((net) => net.id === accOp.networkId)
+    if (!network) return // shouldn't happen
+
+    const gasPrice = await getGasPriceRecommendations(
+      this.providers.providers[network.id],
+      network
+    ).catch((e) => {
+      this.emitError({
+        level: 'major',
+        message: `Unable to get gas price for ${network.id}`,
+        error: new Error(`Failed to fetch gas price: ${e?.message}`)
       })
-    )
+      return null
+    })
+
+    if (!gasPrice) return
+    this.gasPrices[network.id] = gasPrice
   }
 
   // call this function after a call to the singleton has been made
@@ -629,6 +625,7 @@ export class MainController extends EventEmitter {
     ])
   }
 
+  // eslint-disable-next-line default-param-last
   async updateSelectedAccountPortfolio(forceUpdate: boolean = false, network?: Network) {
     await this.#initialLoadPromise
     if (!this.accounts.selectedAccount) return
