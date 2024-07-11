@@ -898,7 +898,7 @@ export class MainController extends EventEmitter {
       if (this.signAccOpInitError) {
         return req.dappPromise?.reject(
           ethErrors.provider.custom({
-            code: -32603,
+            code: 1001,
             message: this.signAccOpInitError
           })
         )
