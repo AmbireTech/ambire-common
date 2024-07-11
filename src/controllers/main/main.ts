@@ -30,7 +30,7 @@ import {
 } from '../../libs/actions/actions'
 import { getAccountOpBanners } from '../../libs/banners/banners'
 import { estimate } from '../../libs/estimate/estimate'
-import { EstimateResult } from '../../libs/estimate/interfaces'
+import { BundlerGasPrice, EstimateResult } from '../../libs/estimate/interfaces'
 import { GasRecommendation, getGasPriceRecommendations } from '../../libs/gasPrice/gasPrice'
 import { humanizeAccountOp } from '../../libs/humanizer'
 import {
@@ -142,6 +142,9 @@ export class MainController extends EventEmitter {
 
   // network => GasRecommendation[]
   gasPrices: { [key: string]: GasRecommendation[] } = {}
+
+  // network => BundlerGasPrice
+  bundlerGasPrices: { [key: string]: BundlerGasPrice } = {}
 
   accountOpsToBeConfirmed: { [key: string]: { [key: string]: AccountOp } } = {}
 
@@ -496,20 +499,28 @@ export class MainController extends EventEmitter {
     const network = this.networks.networks.find((net) => net.id === accOp.networkId)
     if (!network) return // shouldn't happen
 
-    const gasPrice = await getGasPriceRecommendations(
-      this.providers.providers[network.id],
-      network
-    ).catch((e) => {
-      this.emitError({
-        level: 'major',
-        message: `Unable to get gas price for ${network.id}`,
-        error: new Error(`Failed to fetch gas price: ${e?.message}`)
-      })
-      return null
-    })
+    const is4337 = isErc4337Broadcast(
+      network,
+      this.accounts.accountStates[accOp.accountAddr][accOp.networkId]
+    )
+    const bundlerFetch = async () => {
+      if (!is4337) return null
+      return Bundler.fetchGasPrices(network).catch(() => null)
+    }
+    const [gasPrice, bundlerGas] = await Promise.all([
+      getGasPriceRecommendations(this.providers.providers[network.id], network).catch((e) => {
+        this.emitError({
+          level: 'major',
+          message: `Unable to get gas price for ${network.id}`,
+          error: new Error(`Failed to fetch gas price: ${e?.message}`)
+        })
+        return null
+      }),
+      bundlerFetch()
+    ])
 
-    if (!gasPrice) return
-    this.gasPrices[network.id] = gasPrice
+    if (gasPrice) this.gasPrices[network.id] = gasPrice
+    if (bundlerGas) this.bundlerGasPrices[network.id] = bundlerGas
   }
 
   // call this function after a call to the singleton has been made
@@ -1144,7 +1155,13 @@ export class MainController extends EventEmitter {
     // the time we get here. To prevent issues, we check one more time
     if (!this.signAccountOp) return
 
-    this.signAccountOp.update({ gasPrices: this.gasPrices[networkId] })
+    this.signAccountOp.update({
+      gasPrices: this.gasPrices[networkId],
+      bundlerGasPrices:
+        this.bundlerGasPrices && this.bundlerGasPrices[networkId]
+          ? this.bundlerGasPrices[networkId]
+          : undefined
+    })
     this.emitUpdate()
   }
 

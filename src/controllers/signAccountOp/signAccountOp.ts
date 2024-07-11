@@ -12,7 +12,7 @@ import { Network } from '../../interfaces/network'
 import { Storage } from '../../interfaces/storage'
 import { isSmartAccount } from '../../libs/account/account'
 import { AccountOp, GasFeePayment, getSignableCalls } from '../../libs/accountOp/accountOp'
-import { EstimateResult, FeePaymentOption } from '../../libs/estimate/interfaces'
+import { BundlerGasPrice, EstimateResult, FeePaymentOption } from '../../libs/estimate/interfaces'
 import { GasRecommendation, getCallDataAdditionalByNetwork } from '../../libs/gasPrice/gasPrice'
 import { callsHumanizer } from '../../libs/humanizer'
 import { IrCall } from '../../libs/humanizer/interfaces'
@@ -109,6 +109,8 @@ export class SignAccountOpController extends EventEmitter {
   accountOp: AccountOp
 
   gasPrices: GasRecommendation[] | null = null
+
+  bundlerGasPrices: BundlerGasPrice | null = null
 
   estimation: EstimateResult | null = null
 
@@ -340,7 +342,8 @@ export class SignAccountOpController extends EventEmitter {
     signingKeyType,
     accountOp,
     gasUsedTooHighAgreed,
-    rbfAccountOps
+    rbfAccountOps,
+    bundlerGasPrices
   }: {
     accountOp?: AccountOp
     gasPrices?: GasRecommendation[]
@@ -352,6 +355,7 @@ export class SignAccountOpController extends EventEmitter {
     signingKeyType?: Key['type']
     gasUsedTooHighAgreed?: boolean
     rbfAccountOps?: { [key: string]: SubmittedAccountOp | null }
+    bundlerGasPrices?: BundlerGasPrice
   }) {
     // once the user commits to the things he sees on his screen,
     // we need to be sure nothing changes afterwards.
@@ -421,6 +425,11 @@ export class SignAccountOpController extends EventEmitter {
             this.feeTokenResult!.symbol.toLocaleLowerCase() &&
           option.token.flags.onGasTank === this.feeTokenResult!.flags.onGasTank
       )
+    }
+
+    // update the bundler gas prices
+    if (this.estimation?.erc4337GasLimits && bundlerGasPrices) {
+      this.estimation.erc4337GasLimits.gasPrice = bundlerGasPrices
     }
 
     // calculate the fee speeds if either there are no feeSpeeds
