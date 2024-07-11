@@ -376,7 +376,12 @@ export class MainController extends EventEmitter {
   }
 
   async handleSignAccountOp() {
-    if (!this.signAccountOp) return
+    if (!this.signAccountOp) {
+      const message =
+        'The signing process was not initialized as expected. Please try again later or contact Ambire support if the issue persists.'
+      const error = new Error('SignAccountOp is not initialized')
+      return this.emitError({ level: 'major', message, error })
+    }
 
     await this.signAccountOp.sign()
 
