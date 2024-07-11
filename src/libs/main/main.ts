@@ -1,6 +1,6 @@
 import { AccountOpAction, Action } from '../../controllers/actions/actions'
 import { Account, AccountId } from '../../interfaces/account'
-import { NetworkId } from '../../interfaces/network'
+import { Network, NetworkId } from '../../interfaces/network'
 import { Calls, SignUserRequest, UserRequest } from '../../interfaces/userRequest'
 import generateSpoofSig from '../../utils/generateSpoofSig'
 import { isSmartAccount } from '../account/account'
@@ -118,15 +118,19 @@ export const makeBasicAccountOpAction = ({
 export const getAccountOpsForSimulation = (
   account: Account,
   visibleActionsQueue: Action[],
+  network?: Network,
   op?: AccountOp | null
 ): {
   [key: string]: AccountOp[]
 } => {
-  // if there's an op passed, it takes precedence
-  if (op) return { [op.networkId]: [op] }
+  const isSmart = isSmartAccount(account)
 
-  if (isSmartAccount(account))
-    return getAccountOpsByNetwork(account.addr, visibleActionsQueue) || {}
+  // if there's an op and the account is either smart or the network supports
+  // state override, we pass it along. We do not support simulation for
+  // EOAs on networks without state override (but it works for SA)
+  if (op && (isSmart || (network && !network.rpcNoStateOverride))) return { [op.networkId]: [op] }
+
+  if (isSmart) return getAccountOpsByNetwork(account.addr, visibleActionsQueue) || {}
 
   return {}
 }
