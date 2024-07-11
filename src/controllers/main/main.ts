@@ -1290,10 +1290,10 @@ export class MainController extends EventEmitter {
       // if the signAccountOp has been deleted, don't continue as the request has already finished
       if (!this.signAccountOp) return
 
-      // if the nonce from the estimation is different than the one in localAccountOp,
-      // override all places that contain the old nonce with the correct one
+      // if the nonce from the estimation is bigger than the one in localAccountOp,
+      // override the accountState and accountOp with the newly detected nonce
       // and start a new estimation
-      if (estimation && BigInt(estimation.currentAccountNonce) !== localAccountOp.nonce) {
+      if (estimation && BigInt(estimation.currentAccountNonce) > (localAccountOp.nonce ?? 0n)) {
         localAccountOp.nonce = BigInt(estimation.currentAccountNonce)
         this.signAccountOp.accountOp.nonce = BigInt(estimation.currentAccountNonce)
 
