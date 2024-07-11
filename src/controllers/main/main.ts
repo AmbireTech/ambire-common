@@ -1412,7 +1412,7 @@ export class MainController extends EventEmitter {
           // TODO: Implement a way to choose the key type to broadcast with.
           feePayerKeys.find((key) => key.type === accountOp.signingKeyType) || feePayerKeys[0]
         if (!feePayerKey) {
-          return this.#throwBroadcastAccountOp(
+          return await this.#throwBroadcastAccountOp(
             new Error(
               `Key with address ${shortenAddress(
                 accountOp.gasFeePayment!.paidBy,
@@ -1620,34 +1620,34 @@ export class MainController extends EventEmitter {
       }
     }
 
-    if (transactionRes) {
-      const submittedAccountOp: SubmittedAccountOp = {
-        ...accountOp,
-        status: AccountOpStatus.BroadcastedButNotConfirmed,
-        txnId: transactionRes.hash,
-        nonce: BigInt(transactionRes.nonce),
-        timestamp: new Date().getTime(),
-        isSingletonDeploy: !!accountOp.calls.find((call) => getAddress(call.to) === SINGLETON)
-      }
-      if (accountOp.gasFeePayment?.isERC4337) {
-        submittedAccountOp.userOpHash = transactionRes.hash
-      }
-      await this.activity.addAccountOp(submittedAccountOp)
-      await this.resolveAccountOpAction(
-        {
-          hash: transactionRes?.hash || null,
-          networkId: network.id,
-          isUserOp: !!accountOp?.asUserOperation
-        },
-        actionId
+    if (!transactionRes)
+      return this.#throwBroadcastAccountOp(
+        new Error('No transaction response received after being broadcasted.')
       )
 
-      console.log('broadcasted:', transactionRes)
-      this.onSignSuccess('account-op')
+    const submittedAccountOp: SubmittedAccountOp = {
+      ...accountOp,
+      status: AccountOpStatus.BroadcastedButNotConfirmed,
+      txnId: transactionRes.hash,
+      nonce: BigInt(transactionRes.nonce),
+      timestamp: new Date().getTime(),
+      isSingletonDeploy: !!accountOp.calls.find((call) => getAddress(call.to) === SINGLETON)
     }
+    if (accountOp.gasFeePayment?.isERC4337) {
+      submittedAccountOp.userOpHash = transactionRes.hash
+    }
+    await this.activity.addAccountOp(submittedAccountOp)
+    await this.resolveAccountOpAction(
+      {
+        hash: transactionRes?.hash || null,
+        networkId: network.id,
+        isUserOp: !!accountOp?.asUserOperation
+      },
+      actionId
+    )
 
-    this.feePayerKey = null
-    this.emitUpdate()
+    this.onSignSuccess('account-op')
+    return Promise.resolve(submittedAccountOp)
   }
 
   // ! IMPORTANT !
