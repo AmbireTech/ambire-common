@@ -254,7 +254,8 @@ export class MainController extends EventEmitter {
       onActionWindowClose: () => {
         this.userRequests = this.userRequests.filter((r) => r.action.kind !== 'benzin')
 
-        if (this.actions.currentAction?.type === 'signMessage' && this.actions.currentAction?.id) {
+        // Reject all requests on action window close, except for accountOp(s) as they can be batched
+        if (this.actions.currentAction?.type !== 'accountOp' && this.actions.currentAction?.id) {
           this.rejectUserRequest('User rejected the request', this.actions.currentAction.id)
         }
 
