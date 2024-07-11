@@ -7,7 +7,7 @@ import { describe, expect, jest, test } from '@jest/globals'
 import structuredClone from '@ungap/structured-clone'
 
 import { trezorSlot7v24337Deployed, velcroUrl } from '../../../test/config'
-import { produceMemoryStore } from '../../../test/helpers'
+import { getNativeToCheckFromEOAs, produceMemoryStore } from '../../../test/helpers'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import humanizerJSON from '../../consts/humanizer/humanizerInfo.json'
@@ -33,10 +33,11 @@ import { ProvidersController } from '../providers/providers'
 import { getFeeSpeedIdentifier } from './helper'
 import { SignAccountOpController } from './signAccountOp'
 
-global.structuredClone = structuredClone as any
 const providers = Object.fromEntries(
   networks.map((network) => [network.id, getRpcProvider(network.rpcUrls, network.chainId)])
 )
+
+global.structuredClone = structuredClone as any
 
 const createAccountOp = (
   account: Account,
@@ -341,7 +342,13 @@ const init = async (
   )
   providersCtrl = new ProvidersController(networksCtrl)
   providersCtrl.providers = providers
-  const accountsCtrl = new AccountsController(storage, providersCtrl, networksCtrl, () => {})
+  const accountsCtrl = new AccountsController(
+    storage,
+    providersCtrl,
+    networksCtrl,
+    () => {},
+    () => {}
+  )
   await accountsCtrl.initialLoadPromise
   await networksCtrl.initialLoadPromise
   await providersCtrl.initialLoadPromise
@@ -367,10 +374,9 @@ const init = async (
       provider,
       network,
       account,
-      keystore.keys,
       op,
       accountsCtrl.accountStates,
-      nativeToCheck,
+      getNativeToCheckFromEOAs(nativeToCheck, account),
       feeTokens
     ))
 
@@ -809,7 +815,7 @@ describe('SignAccountOp Controller ', () => {
 
     expect(controller.availableFeeOptions.length).toBe(3)
     controller.availableFeeOptions.forEach((option) => {
-      const identifier = getFeeSpeedIdentifier(option, smartAccount.addr)
+      const identifier = getFeeSpeedIdentifier(option, smartAccount.addr, null)
       expect(controller.feeSpeeds[identifier]).not.toBe(undefined)
       expect(controller.feeSpeeds[identifier].length).not.toBe(0)
     })
@@ -931,7 +937,11 @@ describe('SignAccountOp Controller ', () => {
     })
 
     expect(controller.availableFeeOptions.length).toBe(1)
-    const identifier = getFeeSpeedIdentifier(controller.availableFeeOptions[0], smartAccount.addr)
+    const identifier = getFeeSpeedIdentifier(
+      controller.availableFeeOptions[0],
+      smartAccount.addr,
+      null
+    )
     expect(controller.feeSpeeds[identifier]).not.toBe(undefined)
     expect(controller.feeSpeeds[identifier].length).toBe(0)
 
@@ -1213,11 +1223,13 @@ describe('SignAccountOp Controller ', () => {
     expect(controller.availableFeeOptions.length).toBe(3)
     const firstIdentity = getFeeSpeedIdentifier(
       controller.availableFeeOptions[0],
-      smartAccount.addr
+      smartAccount.addr,
+      null
     )
     const secondIdentity = getFeeSpeedIdentifier(
       controller.availableFeeOptions[1],
-      smartAccount.addr
+      smartAccount.addr,
+      null
     )
     expect(firstIdentity).toBe(secondIdentity)
     expect(Object.keys(controller.feeSpeeds).length).toBe(1)

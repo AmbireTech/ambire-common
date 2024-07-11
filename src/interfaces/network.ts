@@ -24,7 +24,6 @@ export interface NetworkInfo {
   erc4337: { enabled: boolean; hasPaymaster: boolean }
   areContractsDeployed: boolean
   feeOptions: { is1559: boolean }
-  hasDebugTraceCall: boolean
   platformId: string
   nativeAssetId: string
   flagged: boolean
@@ -62,7 +61,6 @@ export interface Network {
   features: NetworkFeature[]
   hasRelayer: boolean
   hasSingleton: boolean
-  hasDebugTraceCall: boolean
   platformId: string
   nativeAssetId: string
   iconUrls?: string[]
@@ -70,6 +68,7 @@ export interface Network {
   isOptimistic?: boolean
   flagged?: boolean
   predefined: boolean
+  wrappedAddr?: string
 }
 
 export interface AddNetworkRequestParams {

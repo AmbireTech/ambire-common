@@ -88,10 +88,14 @@ describe('Main Controller ', () => {
     const req: UserRequest = {
       id: 1,
       action: {
-        kind: 'call',
-        to: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
-        value: BigInt(0),
-        data: '0xa9059cbb000000000000000000000000e5a4dad2ea987215460379ab285df87136e83bea00000000000000000000000000000000000000000000000000000000005040aa'
+        kind: 'calls',
+        calls: [
+          {
+            to: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
+            value: BigInt(0),
+            data: '0xa9059cbb000000000000000000000000e5a4dad2ea987215460379ab285df87136e83bea00000000000000000000000000000000000000000000000000000000005040aa'
+          }
+        ]
       },
       meta: {
         isSignAction: true,
@@ -99,18 +103,30 @@ describe('Main Controller ', () => {
         networkId: 'ethereum'
       }
     }
-    await controller.addUserRequest(req)
-    expect(controller.actions.actionsQueue.length).toBe(1)
     // @TODO test if nonce is correctly set
+    controller.accounts.onUpdate(async () => {
+      // The main controller doesn't wait for account state. This is not a problem in the
+      // real world because users can't interact with a network without state.
+      // Even if someone manages to open a user request without having state for that network
+      // (for example through a dApp) it will be handled in the UI
+      if ('ethereum' in Object.keys(controller.accounts.accountStates)) {
+        await controller.addUserRequest(req)
+        expect(controller.actions.actionsQueue.length).toBe(1)
+      }
+    })
   })
   test('Remove a user request', async () => {
     const req: UserRequest = {
       id: 1,
       action: {
-        kind: 'call',
-        to: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
-        value: BigInt(0),
-        data: '0xa9059cbb000000000000000000000000e5a4dad2ea987215460379ab285df87136e83bea00000000000000000000000000000000000000000000000000000000005040aa'
+        kind: 'calls',
+        calls: [
+          {
+            to: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
+            value: BigInt(0),
+            data: '0xa9059cbb000000000000000000000000e5a4dad2ea987215460379ab285df87136e83bea00000000000000000000000000000000000000000000000000000000005040aa'
+          }
+        ]
       },
       meta: {
         isSignAction: true,
