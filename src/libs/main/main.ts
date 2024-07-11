@@ -1,7 +1,7 @@
 import { AccountOpAction, Action } from '../../controllers/actions/actions'
 import { Account, AccountId } from '../../interfaces/account'
 import { NetworkId } from '../../interfaces/network'
-import { Call, SignUserRequest, UserRequest } from '../../interfaces/userRequest'
+import { Calls, SignUserRequest, UserRequest } from '../../interfaces/userRequest'
 import generateSpoofSig from '../../utils/generateSpoofSig'
 import { isSmartAccount } from '../account/account'
 import { AccountOp } from '../accountOp/accountOp'
@@ -17,11 +17,11 @@ export const batchCallsFromUserRequests = ({
   networkId: NetworkId
   userRequests: UserRequest[]
 }): AccountOpCall[] => {
-  return (userRequests.filter((r) => r.action.kind === 'call') as SignUserRequest[]).reduce(
+  return (userRequests.filter((r) => r.action.kind === 'calls') as SignUserRequest[]).reduce(
     (uCalls: AccountOpCall[], req) => {
       if (req.meta.networkId === networkId && req.meta.accountAddr === accountAddr) {
-        const { to, value, data } = req.action as Call
-        uCalls.push({ to, value, data, fromUserRequestId: req.id })
+        const { calls } = req.action as Calls
+        calls.forEach((call) => uCalls.push({ ...call, fromUserRequestId: req.id }))
       }
       return uCalls
     },
@@ -93,7 +93,7 @@ export const makeBasicAccountOpAction = ({
   nonce: bigint | null
   userRequest: UserRequest
 }): AccountOpAction => {
-  const { to, value, data } = userRequest.action as Call
+  const { calls } = userRequest.action as Calls
   const accountOp = {
     accountAddr: account.addr,
     networkId,
@@ -104,7 +104,7 @@ export const makeBasicAccountOpAction = ({
     nonce,
     signature: account.associatedKeys[0] ? generateSpoofSig(account.associatedKeys[0]) : null,
     accountOpToExecuteBefore: null, // @TODO from pending recoveries
-    calls: [{ to, value, data, fromUserRequestId: userRequest.id }]
+    calls: calls.map((call) => ({ ...call, fromUserRequestId: userRequest.id }))
   }
 
   return {
