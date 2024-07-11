@@ -52,6 +52,10 @@ export const makeSmartAccountOpAction = ({
       networkId,
       userRequests
     })
+    // the nonce might have changed during estimation because of
+    // a nonce discrepancy issue. This makes sure we're with the
+    // latest nonce should the user decide to batch
+    accountOpAction.accountOp.nonce = nonce
     return accountOpAction
   }
 

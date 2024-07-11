@@ -344,6 +344,13 @@ export class MainController extends EventEmitter {
       return null
     }
 
+    // on init, set the accountOp nonce to the latest one we know
+    // it could happen that the user inits a userRequest with an old
+    // accountState and therefore caching the old nonce in the accountOp.
+    // we make sure the latest nonce is set when initing signAccountOp
+    const state = this.accounts.accountStates?.[accountOp.accountAddr]?.[accountOp.networkId]
+    if (state) accountOp.nonce = state.nonce
+
     this.signAccOpInitError = null
 
     this.signAccountOp = new SignAccountOpController(
