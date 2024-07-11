@@ -895,7 +895,14 @@ export class MainController extends EventEmitter {
       // 4) manage recalc on removeUserRequest too in order to handle EOAs
       // @TODO consider re-using this whole block in removeUserRequest
       await this.#ensureAccountInfo(meta.accountAddr, meta.networkId)
-      if (this.signAccOpInitError) return
+      if (this.signAccOpInitError) {
+        return req.dappPromise?.reject(
+          ethErrors.provider.custom({
+            code: -32603,
+            message: this.signAccOpInitError
+          })
+        )
+      }
 
       const account = this.accounts.accounts.find((x) => x.addr === meta.accountAddr)!
       const accountState = this.accounts.accountStates[meta.accountAddr][meta.networkId]
