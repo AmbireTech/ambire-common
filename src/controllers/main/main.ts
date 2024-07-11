@@ -55,6 +55,7 @@ import {
 import bundler from '../../services/bundlers'
 import { Bundler } from '../../services/bundlers/bundler'
 import { getIsViewOnly } from '../../utils/accounts'
+import shortenAddress from '../../utils/shortenAddress'
 import wait from '../../utils/wait'
 import { AccountAdderController } from '../accountAdder/accountAdder'
 import { AccountsController } from '../accounts/accounts'
@@ -1338,7 +1339,7 @@ export class MainController extends EventEmitter {
 
     if (!account) {
       return this.#throwBroadcastAccountOp(
-        new Error(`Account with address ${accountOp.accountAddr} not found.`)
+        new Error(`Account with address ${shortenAddress(accountOp.accountAddr, 13)} not found.`)
       )
     }
 
@@ -1368,9 +1369,10 @@ export class MainController extends EventEmitter {
         if (!feePayerKey) {
           return this.#throwBroadcastAccountOp(
             new Error(
-              `Key with address: ${accountOp.gasFeePayment!.paidBy} for account with address: ${
-                accountOp.accountAddr
-              } not found.`
+              `Key with address ${shortenAddress(
+                accountOp.gasFeePayment!.paidBy,
+                13
+              )} for account with address ${shortenAddress(accountOp.accountAddr, 13)} not found.`
             )
           )
         }
@@ -1433,9 +1435,10 @@ export class MainController extends EventEmitter {
       if (!feePayerKey) {
         return this.#throwBroadcastAccountOp(
           new Error(
-            `Key with address: ${accountOp.gasFeePayment!.paidBy} for account with address: ${
-              accountOp.accountAddr
-            } not found.`
+            `Key with address ${shortenAddress(
+              accountOp.gasFeePayment!.paidBy,
+              13
+            )} for account with address ${shortenAddress(accountOp.accountAddr, 13)} not found.`
           )
         )
       }
@@ -1512,7 +1515,10 @@ export class MainController extends EventEmitter {
       if (!userOperation) {
         return this.#throwBroadcastAccountOp(
           new Error(
-            `Trying to broadcast an ERC-4337 request but userOperation is not set for ${accountOp.accountAddr}`
+            `Trying to broadcast an ERC-4337 request but userOperation is not set for the account with address ${shortenAddress(
+              accountOp.accountAddr,
+              13
+            )}`
           )
         )
       }
