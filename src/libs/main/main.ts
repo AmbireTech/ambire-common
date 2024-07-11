@@ -52,6 +52,10 @@ export const makeSmartAccountOpAction = ({
       networkId,
       userRequests
     })
+    // the nonce might have changed during estimation because of
+    // a nonce discrepancy issue. This makes sure we're with the
+    // latest nonce should the user decide to batch
+    accountOpAction.accountOp.nonce = nonce
     return accountOpAction
   }
 
@@ -114,16 +118,15 @@ export const makeBasicAccountOpAction = ({
 export const getAccountOpsForSimulation = (
   account: Account,
   visibleActionsQueue: Action[],
-  // pass the account op along only in the case of a basic account
-  // with an open sign account op screen
   op?: AccountOp | null
 ): {
   [key: string]: AccountOp[]
 } => {
+  // if there's an op passed, it takes precedence
+  if (op) return { [op.networkId]: [op] }
+
   if (isSmartAccount(account))
     return getAccountOpsByNetwork(account.addr, visibleActionsQueue) || {}
-
-  if (op) return { [op.networkId]: [op] }
 
   return {}
 }
