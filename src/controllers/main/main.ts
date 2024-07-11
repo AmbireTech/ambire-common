@@ -677,7 +677,7 @@ export class MainController extends EventEmitter {
       if (!network) {
         throw ethErrors.provider.chainDisconnected('Transaction failed - unknown network')
       }
-      delete transaction.from
+
       userRequest = {
         id: new Date().getTime(),
         action: {
