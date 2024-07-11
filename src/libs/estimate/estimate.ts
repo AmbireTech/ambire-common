@@ -157,7 +157,12 @@ export async function estimate4337(
     bundlerEstimationResult.error instanceof Error
       ? bundlerEstimationResult.error
       : ambireEstimationError
-  bundlerEstimationResult.currentAccountNonce = Number(outcomeNonce - 1n)
+
+  // if Estimation.sol estimate is a success, it means the nonce has incremented
+  // so we subtract 1 from it. If it's an error, we return the old one
+  bundlerEstimationResult.currentAccountNonce = accountOp.success
+    ? Number(outcomeNonce - 1n)
+    : Number(outcomeNonce)
 
   // if there's a bundler error but there's no ambire estimator error,
   // set the estimation to standard EOA broadcast and continue
@@ -394,9 +399,9 @@ export async function estimate(
 
   return {
     gasUsed,
-    // the nonce from EstimateResult is incremented but we always want
-    // to return the current nonce. That's why we subtract 1
-    currentAccountNonce: Number(nonce - 1n),
+    // if Estimation.sol estimate is a success, it means the nonce has incremented
+    // so we subtract 1 from it. If it's an error, we return the old one
+    currentAccountNonce: accountOp.success ? Number(nonce - 1n) : Number(nonce),
     feePaymentOptions: [...feeTokenOptions, ...nativeTokenOptions],
     error: getInnerCallFailure(accountOp) || getNonceDiscrepancyFailure(op, nonce)
   }
