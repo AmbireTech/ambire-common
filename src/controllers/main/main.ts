@@ -252,14 +252,12 @@ export class MainController extends EventEmitter {
       accounts: this.accounts,
       windowManager,
       onActionWindowClose: () => {
-        this.userRequests = this.userRequests.filter((r) => r.action.kind !== 'benzin')
+        if (!this.actions.currentAction?.id) return
 
-        // Reject all requests on action window close, except for accountOp(s) as they can be batched
-        if (this.actions.currentAction?.type !== 'accountOp' && this.actions.currentAction?.id) {
-          this.rejectUserRequest('User rejected the request', this.actions.currentAction.id)
-        }
+        // Don't reject the user request if the current action is an accountOp
+        if (this.actions.currentAction?.type === 'accountOp') return
 
-        this.emitUpdate()
+        this.rejectUserRequest('User rejected the request', this.actions.currentAction.id)
       }
     })
     this.activity = new ActivityController(
