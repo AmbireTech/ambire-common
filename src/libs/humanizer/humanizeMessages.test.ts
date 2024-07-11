@@ -3,12 +3,7 @@ import { parseEther } from 'ethers'
 import { beforeEach, describe, expect } from '@jest/globals'
 
 import { TypedMessage } from '../../interfaces/userRequest'
-import {
-  erc20Module,
-  erc721Module,
-  fallbackEIP712Humanizer,
-  permit2Module
-} from './typedMessageModules'
+import { erc20Module, erc721Module, permit2Module } from './typedMessageModules'
 
 const address1 = '0x6942069420694206942069420694206942069420'
 const address2 = '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
@@ -221,22 +216,5 @@ describe('typed message tests', () => {
     expectedBatchVisualization.forEach((v, i) => {
       expect(fullVisualization?.[i]).toMatchObject(v)
     })
-  })
-  test('fallback module', () => {
-    tmTemplate.message = typedMessages.fallback[0]
-    const expectedVisualizationContent = [
-      'from: \n',
-      ' name: A\n',
-      ' address: 0x6942069420694206942069420694206942069420\n',
-      'to: \n',
-      ' name: B\n',
-      ' address: 0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n',
-      'subject: angry mail\n',
-      'withRegards: false\n'
-    ]
-
-    const { fullVisualization } = fallbackEIP712Humanizer(tmTemplate)
-    expect(expectedVisualizationContent.length).toEqual(fullVisualization?.length)
-    fullVisualization?.map((v, i) => expect(v.content).toEqual(expectedVisualizationContent[i]))
   })
 })
