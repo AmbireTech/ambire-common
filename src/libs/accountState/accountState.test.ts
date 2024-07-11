@@ -43,11 +43,7 @@ describe('AccountState', () => {
       addr: '0x1f9090aaE28b8a3dCeaDf281B0F12828e676c326',
       associatedKeys: [],
       initialPrivileges: [],
-      creation: {
-        factoryAddr: '0x0000000000000000000000000000000000000000',
-        bytecode: '0x00',
-        salt: '0x0'
-      },
+      creation: null,
       preferences: {
         label: DEFAULT_ACCOUNT_LABEL,
         pfp: '0x1f9090aaE28b8a3dCeaDf281B0F12828e676c326'
@@ -58,11 +54,7 @@ describe('AccountState', () => {
       addr: '0xf5ffA17725754dC00adB255fF296E4177B0982c7',
       associatedKeys: [],
       initialPrivileges: [],
-      creation: {
-        factoryAddr: '0x0000000000000000000000000000000000000000',
-        bytecode: '0x00',
-        salt: '0x0'
-      },
+      creation: null,
       preferences: {
         label: DEFAULT_ACCOUNT_LABEL,
         pfp: '0xf5ffA17725754dC00adB255fF296E4177B0982c7'

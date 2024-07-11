@@ -16,7 +16,6 @@ describe('Network features', () => {
       erc4337: { enabled: true, hasPaymaster: true },
       areContractsDeployed: true,
       feeOptions: { is1559: true },
-      hasDebugTraceCall: true,
       platformId: 'ethereum',
       nativeAssetId: 'ethereum',
       flagged: false

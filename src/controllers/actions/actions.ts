@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-floating-promises */
 
+import { Account } from '../../interfaces/account'
 import { DappUserRequest, SignUserRequest, UserRequest } from '../../interfaces/userRequest'
 import { WindowManager } from '../../interfaces/window'
 import { AccountOp } from '../../libs/accountOp/accountOp'
@@ -75,23 +76,19 @@ export class ActionsController extends EventEmitter {
   #onActionWindowClose: () => void
 
   get visibleActionsQueue(): Action[] {
-    if (!this.#accounts.selectedAccount) return []
+    return this.actionsQueue.filter((a) => {
+      if (a.type === 'accountOp') {
+        return a.accountOp.accountAddr === this.#accounts.selectedAccount
+      }
+      if (a.type === 'signMessage') {
+        return a.userRequest.meta.accountAddr === this.#accounts.selectedAccount
+      }
+      if (a.type === 'benzin') {
+        return a.userRequest.meta.accountAddr === this.#accounts.selectedAccount
+      }
 
-    return (
-      this.actionsQueue.map((a) => {
-        if (a.type === 'accountOp') {
-          return a.accountOp.accountAddr === this.#accounts.selectedAccount ? a : undefined
-        }
-        if (a.type === 'signMessage') {
-          return a.userRequest.meta.accountAddr === this.#accounts.selectedAccount ? a : undefined
-        }
-        if (a.type === 'benzin') {
-          return a.userRequest.meta.accountAddr === this.#accounts.selectedAccount ? a : undefined
-        }
-
-        return a
-      }) as (Action | undefined)[]
-    ).filter(Boolean) as Action[]
+      return true
+    })
   }
 
   constructor({
@@ -228,6 +225,24 @@ export class ActionsController extends EventEmitter {
       )
       this.actionWindow.pendingMessage = null
     }
+    this.emitUpdate()
+  }
+
+  removeAccountData(address: Account['addr']) {
+    this.actionsQueue = this.actionsQueue.filter((a) => {
+      if (a.type === 'accountOp') {
+        return a.accountOp.accountAddr !== address
+      }
+      if (a.type === 'signMessage') {
+        return a.userRequest.meta.accountAddr !== address
+      }
+      if (a.type === 'benzin') {
+        return a.userRequest.meta.accountAddr !== address
+      }
+
+      return true
+    })
+
     this.emitUpdate()
   }
 

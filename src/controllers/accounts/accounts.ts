@@ -91,8 +91,15 @@ export class AccountsController extends EventEmitter {
     await this.withStatus('selectAccount', async () => this.#selectAccount(toAccountAddr))
   }
 
-  async #selectAccount(toAccountAddr: string) {
+  async #selectAccount(toAccountAddr: string | null) {
     await this.initialLoadPromise
+
+    if (!toAccountAddr) {
+      this.selectedAccount = null
+      await this.#storage.remove('selectedAccount')
+      this.emitUpdate()
+      return
+    }
     // TODO: error handling, trying to switch to account that does not exist
     if (!this.accounts.find((acc) => acc.addr === toAccountAddr)) return
     this.selectedAccount = toAccountAddr
@@ -103,9 +110,8 @@ export class AccountsController extends EventEmitter {
   }
 
   async updateAccountStates(blockTag: string | number = 'latest', networks: NetworkId[] = []) {
-    await this.withStatus(
-      'updateAccountStates',
-      async () => await this.#updateAccountStates(this.accounts, blockTag, networks)
+    await this.withStatus('updateAccountStates', async () =>
+      this.#updateAccountStates(this.accounts, blockTag, networks)
     )
   }
 
@@ -114,9 +120,8 @@ export class AccountsController extends EventEmitter {
 
     if (!accountData) return
 
-    await this.withStatus(
-      'updateAccountState',
-      async () => await this.#updateAccountStates([accountData], blockTag)
+    await this.withStatus('updateAccountState', async () =>
+      this.#updateAccountStates([accountData], blockTag)
     )
   }
 
@@ -195,12 +200,26 @@ export class AccountsController extends EventEmitter {
     this.accounts = nextAccounts
     await this.#storage.set('accounts', nextAccounts)
 
-    if (!this.selectedAccount) {
-      const defaultSelectedAccount = getDefaultSelectedAccount(accounts)
-      if (defaultSelectedAccount) this.#selectAccount(defaultSelectedAccount.addr)
+    const defaultSelectedAccount = getDefaultSelectedAccount(accounts)
+    if (defaultSelectedAccount) {
+      await this.#selectAccount(defaultSelectedAccount.addr)
     }
+
     await this.updateAccountStates()
 
+    this.emitUpdate()
+  }
+
+  async removeAccountData(address: Account['addr']) {
+    this.accounts = this.accounts.filter((acc) => acc.addr !== address)
+
+    if (this.selectedAccount === address) {
+      await this.#selectAccount(this.accounts[0]?.addr)
+    }
+
+    delete this.accountStates[address]
+
+    this.#storage.set('accounts', this.accounts)
     this.emitUpdate()
   }
 

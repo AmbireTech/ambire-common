@@ -91,6 +91,11 @@ export class AccountAdderController extends EventEmitter {
 
   #linkedAccounts: { account: AccountWithNetworkMeta; isLinked: boolean }[] = []
 
+  // This prevents the recalculation of getters that use accounts during the execution of addAccounts.
+  // Without this, the controller incorrectly identifies newly added accounts as those from a previous session,
+  // leading to unpredictable behavior on the AccountAdderScreen
+  #alreadyImportedAccountsOnControllerInit: Account[] = []
+
   constructor({
     accounts,
     keystore,
@@ -202,7 +207,7 @@ export class AccountAdderController extends EventEmitter {
       ...acc,
       importStatus: getAccountImportStatus({
         account: acc.account,
-        alreadyImportedAccounts: this.#accounts.accounts,
+        alreadyImportedAccounts: this.#alreadyImportedAccountsOnControllerInit,
         keys: this.#keystore.keys,
         accountsOnPage: mergedAccounts,
         keyIteratorType: this.#keyIterator?.type
@@ -228,6 +233,7 @@ export class AccountAdderController extends EventEmitter {
     this.pageSize = pageSize || DEFAULT_PAGE_SIZE
     this.hdPathTemplate = hdPathTemplate
     this.isInitialized = true
+    this.#alreadyImportedAccountsOnControllerInit = this.#accounts.accounts
 
     this.emitUpdate()
   }
