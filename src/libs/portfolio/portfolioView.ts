@@ -71,7 +71,7 @@ export function calculateAccountPortfolio(
 
   const isNetworkReady = (networkData: NetworkState | undefined) => {
     return (
-      (networkData && networkData.isReady && !networkData.isLoading) || networkData?.criticalError
+      networkData && (networkData.isReady || networkData?.criticalError) && !networkData.isLoading
     )
   }
 
@@ -79,7 +79,7 @@ export function calculateAccountPortfolio(
     const networkData = selectedAccountData[network]
     const result = networkData?.result
 
-    if (networkData && isNetworkReady(networkData) && !networkData?.criticalError && result) {
+    if (networkData && isNetworkReady(networkData) && result) {
       // In the case we receive BigInt here, convert to number
       const networkTotal = Number(result?.total?.usd) || 0
       newTotalAmount += networkTotal
