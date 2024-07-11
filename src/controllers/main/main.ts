@@ -432,7 +432,7 @@ export class MainController extends EventEmitter {
       this.portfolio.updateSelectedAccount(
         accountOp.accountAddr,
         network,
-        getAccountOpsForSimulation(account, this.actions.visibleActionsQueue, accountOp),
+        getAccountOpsForSimulation(account, this.actions.visibleActionsQueue, network, accountOp),
         { forceUpdate: true }
       )
     }
@@ -638,6 +638,7 @@ export class MainController extends EventEmitter {
     const accountOpsToBeSimulatedByNetwork = getAccountOpsForSimulation(
       account!,
       this.actions.visibleActionsQueue,
+      network,
       this.signAccountOp ? this.signAccountOp.accountOp : null
     )
 
@@ -1248,6 +1249,7 @@ export class MainController extends EventEmitter {
       const accountOpsToBeSimulatedByNetwork = getAccountOpsForSimulation(
         account!,
         this.actions.visibleActionsQueue,
+        network,
         this.signAccountOp?.accountOp
       )
 
