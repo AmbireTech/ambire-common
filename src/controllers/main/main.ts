@@ -600,7 +600,7 @@ export class MainController extends EventEmitter {
     }
     // If this still didn't work, re-load
     if (!this.accounts.accountStates[accountAddr]?.[networkId])
-      await this.accounts.updateAccountState(accountAddr, networkId)
+      await this.accounts.updateAccountState(accountAddr, 'pending', [networkId])
     // If this still didn't work, throw error: this prob means that we're calling for a non-existent acc/network
     if (!this.accounts.accountStates[accountAddr]?.[networkId])
       this.signAccOpInitError = `Failed to retrieve account info for ${networkId}, because of one of the following reasons: 1) network doesn't exist, 2) RPC is down for this network`
