@@ -110,9 +110,8 @@ export class AccountsController extends EventEmitter {
   }
 
   async updateAccountStates(blockTag: string | number = 'latest', networks: NetworkId[] = []) {
-    await this.withStatus(
-      'updateAccountStates',
-      async () => await this.#updateAccountStates(this.accounts, blockTag, networks)
+    await this.withStatus('updateAccountStates', async () =>
+      this.#updateAccountStates(this.accounts, blockTag, networks)
     )
   }
 
@@ -121,9 +120,8 @@ export class AccountsController extends EventEmitter {
 
     if (!accountData) return
 
-    await this.withStatus(
-      'updateAccountState',
-      async () => await this.#updateAccountStates([accountData], blockTag)
+    await this.withStatus('updateAccountState', async () =>
+      this.#updateAccountStates([accountData], blockTag)
     )
   }
 
@@ -202,10 +200,11 @@ export class AccountsController extends EventEmitter {
     this.accounts = nextAccounts
     await this.#storage.set('accounts', nextAccounts)
 
-    if (!this.selectedAccount) {
-      const defaultSelectedAccount = getDefaultSelectedAccount(accounts)
-      if (defaultSelectedAccount) this.#selectAccount(defaultSelectedAccount.addr)
+    const defaultSelectedAccount = getDefaultSelectedAccount(accounts)
+    if (defaultSelectedAccount) {
+      await this.#selectAccount(defaultSelectedAccount.addr)
     }
+
     await this.updateAccountStates()
 
     this.emitUpdate()
