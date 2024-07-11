@@ -1,9 +1,14 @@
 import { formatUnits, ZeroAddress } from 'ethers'
 
+import { SubmittedAccountOp } from '../../controllers/activity/activity'
 import { FeePaymentOption } from '../../libs/estimate/interfaces'
 import { Price, TokenResult } from '../../libs/portfolio'
 
-export function getFeeSpeedIdentifier(option: FeePaymentOption, accountAddr: string) {
+export function getFeeSpeedIdentifier(
+  option: FeePaymentOption,
+  accountAddr: string,
+  rbfAccountOp: SubmittedAccountOp | null
+) {
   // if the token is native and we're paying with EOA, we do not need
   // a different identifier as the fee speed calculations will be the same
   // regardless of the EOA address
@@ -12,7 +17,7 @@ export function getFeeSpeedIdentifier(option: FeePaymentOption, accountAddr: str
 
   return `${paidBy}:${option.token.address}:${option.token.symbol.toLowerCase()}:${
     option.token.flags.onGasTank ? 'gasTank' : 'feeToken'
-  }`
+  }${rbfAccountOp ? `rbf-${option.paidBy}` : ''}`
 }
 
 export function getTokenUsdAmount(token: TokenResult, gasAmount: bigint): string {

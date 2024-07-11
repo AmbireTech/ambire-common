@@ -459,7 +459,11 @@ export class KeystoreController extends EventEmitter {
         )
       })
 
-    this.#keystoreKeys = keys.filter((x) => x.addr === addr && x.type === type)
+    this.#keystoreKeys = keys.filter((key) => {
+      const isMatching = key.addr === addr && key.type === type
+
+      return !isMatching
+    })
     await this.#storage.set('keystoreKeys', this.#keystoreKeys)
   }
 

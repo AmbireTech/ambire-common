@@ -58,7 +58,13 @@ describe('AccountsController', () => {
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     ;(async () => {
       await storage.set('accounts', accounts)
-      accountsCtrl = new AccountsController(storage, providersCtrl, networksCtrl, () => {})
+      accountsCtrl = new AccountsController(
+        storage,
+        providersCtrl,
+        networksCtrl,
+        () => {},
+        () => {}
+      )
       expect(accountsCtrl).toBeDefined()
       let emitCounter = 0
       const unsubscribe = accountsCtrl.onUpdate(() => {
@@ -103,5 +109,21 @@ describe('AccountsController', () => {
         }
       }
     ])
+  })
+  test('removeAccountData', async () => {
+    await accountsCtrl.updateAccountStates()
+    expect(accountsCtrl.accounts.length).toBeGreaterThan(0)
+    expect(accountsCtrl.selectedAccount).not.toBeNull()
+    expect(Object.keys(accountsCtrl.accountStates).length).toBeGreaterThan(0)
+
+    await accountsCtrl.removeAccountData('0xAa0e9a1E2D2CcF2B867fda047bb5394BEF1883E0')
+
+    expect(accountsCtrl.selectedAccount).toEqual('0x71c3D24a627f0416db45107353d8d0A5ae0401ae')
+
+    await accountsCtrl.removeAccountData('0x71c3D24a627f0416db45107353d8d0A5ae0401ae')
+
+    expect(accountsCtrl.accounts.length).toEqual(0)
+    expect(accountsCtrl.selectedAccount).toBeNull()
+    expect(Object.keys(accountsCtrl.accountStates).length).toEqual(0)
   })
 })

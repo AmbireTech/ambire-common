@@ -326,7 +326,7 @@ describe('module tests', () => {
   })
 
   // TODO: look into improper texification for  unrecognized tokens
-  test.only('visualization to text', async () => {
+  test('visualization to text', async () => {
     const expectedTexification = [
       'Swap 50844.919041919270406243 XLRT for at least 0.137930462904193673 ETH already expired',
       'Swap 0.941 WETH for at least 5158707941840645403045 0x6e975115250b05c828ecb8ededb091975fc20a5d token and send it to 0xbb6c8c037b9cc3bf1a4c4188d92e5d86bfce76a8 already expired',
