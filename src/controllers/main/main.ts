@@ -1681,8 +1681,7 @@ export class MainController extends EventEmitter {
   }
 
   #throwBroadcastAccountOp({ message: _msg, error: _err }: { message?: string; error?: Error }) {
-    let message =
-      _msg || `Unable to broadcast the transaction. Reason: ${_err?.message || 'unknown'}`
+    let message = _msg || `Unable to broadcast the transaction. ${_err?.message || 'unknown'}`
 
     // Enhance the error incoming for this corner case
     if (message.includes('insufficient funds'))
@@ -1693,7 +1692,7 @@ export class MainController extends EventEmitter {
 
     // If not explicitly stated, add a generic message to contact support
     if (!message.includes('contact support'))
-      message += ' Please try again later or contact Ambire support if the issue persists.'
+      message += ' Please try again or contact support for help.'
 
     const error = _err || new Error(message)
     const replacementFeeLow = error?.message.includes('replacement fee too low')
