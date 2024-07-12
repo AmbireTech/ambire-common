@@ -35,12 +35,7 @@ import { WALLETModule } from './modules/WALLET'
 import wrappingModule from './modules/Wrapping'
 import { parseCalls, parseMessage } from './parsers'
 import { humanizerMetaParsing } from './parsers/humanizerMetaParsing'
-import {
-  erc20Module,
-  erc721Module,
-  fallbackEIP712Humanizer,
-  permit2Module
-} from './typedMessageModules'
+import { erc20Module, erc721Module, permit2Module } from './typedMessageModules'
 import { HUMANIZER_META_KEY } from './utils'
 
 // from most generic to least generic
@@ -69,7 +64,7 @@ const parsingModules: HumanizerParsingModule[] = [humanizerMetaParsing]
 
 // from least generic to most generic
 // the final visualization and warnings are from the first triggered module
-const humanizerTMModules = [erc20Module, erc721Module, permit2Module, fallbackEIP712Humanizer]
+const humanizerTMModules = [erc20Module, erc721Module, permit2Module]
 
 // @TODO to be removed
 export const humanizeAccountOp = async (

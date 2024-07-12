@@ -85,7 +85,7 @@ export async function debugTraceCall(
           : {}
       }
     ])
-    .catch((e: any) => {
+    .catch(() => {
       return [ZeroAddress]
     })
   const foundAddresses = [...new Set(results.flat(Infinity))]

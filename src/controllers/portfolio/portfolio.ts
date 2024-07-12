@@ -1,4 +1,4 @@
-import { ZeroAddress } from 'ethers'
+import { getAddress, ZeroAddress } from 'ethers'
 
 import { Account, AccountId } from '../../interfaces/account'
 import { Fetch } from '../../interfaces/fetch'
@@ -196,10 +196,7 @@ export class PortfolioController extends EventEmitter {
     const accountState = this.latest[accountId]
     if (!accountState[network]) accountState[network] = { errors: [], isReady: false, isLoading }
     accountState[network]!.isLoading = isLoading
-    if (error) {
-      if (!accountState[network]!.isReady) accountState[network]!.criticalError = error
-      else accountState[network]!.errors.push(error)
-    }
+    if (error) accountState[network]!.criticalError = error
   }
 
   #prepareLatestState(selectedAccount: Account) {
@@ -393,7 +390,7 @@ export class PortfolioController extends EventEmitter {
       .flat()
       .map((t: any) => ({
         ...t,
-        symbol: t.address === "0x47Cd7E91C3CBaAF266369fe8518345fc4FC12935" ? 'xWALLET' : t.symbol,
+        symbol: t.address === '0x47Cd7E91C3CBaAF266369fe8518345fc4FC12935' ? 'xWALLET' : t.symbol,
         flags: getFlags(res.data.rewards, 'rewards', t.networkId, t.address)
       }))
 
@@ -504,9 +501,9 @@ export class PortfolioController extends EventEmitter {
         error: e
       })
       state.isLoading = false
-      if (!state.isReady) state.criticalError = e
-      else state.errors.push(e)
+      state.criticalError = e
       this.emitUpdate()
+
       return false
     }
   }
@@ -691,8 +688,11 @@ export class PortfolioController extends EventEmitter {
     let networkLearnedTokens: PreviousHintsStorage['learnedTokens'][''] =
       this.#previousHints.learnedTokens[networkId] || {}
 
+    const alreadyLearned = Object.keys(networkLearnedTokens).map((addr) => getAddress(addr))
+
     const tokensToLearn = tokenAddresses.reduce((acc: { [key: string]: null }, address) => {
       if (address === ZeroAddress) return acc
+      if (alreadyLearned.includes(getAddress(address))) return acc
 
       acc[address] = acc[address] || null // Keep the timestamp of all learned tokens
       return acc
@@ -753,7 +753,8 @@ export class PortfolioController extends EventEmitter {
     })
     const networksWithPortfolioErrorBanners = getNetworksWithPortfolioErrorBanners({
       networks: this.#networks.networks,
-      portfolioLatest: this.latest
+      portfolioLatest: this.latest,
+      providers: this.#providers.providers
     })
 
     return [...networksWithFailedRPCBanners, ...networksWithPortfolioErrorBanners]

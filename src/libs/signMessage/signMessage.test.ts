@@ -124,6 +124,7 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
     )
     const provider = getRpcProvider(ethereumNetwork.rpcUrls, ethereumNetwork.chainId)
     const firstRes = await verifyMessage({
+      network: ethereumNetwork,
       provider,
       signer: eoaSigner.keyPublicAddress,
       signature: signatureForPlainText,
@@ -139,6 +140,7 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
       signer
     )
     const secondRes = await verifyMessage({
+      network: ethereumNetwork,
       provider,
       signer: eoaSigner.keyPublicAddress,
       signature: signatureForUint8Array,
@@ -154,6 +156,7 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
       signer
     )
     const thirdRes = await verifyMessage({
+      network: ethereumNetwork,
       provider,
       signer: eoaSigner.keyPublicAddress,
       signature: signatureForNumberAsString,
@@ -177,6 +180,7 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
 
     const provider = getRpcProvider(polygonNetwork.rpcUrls, polygonNetwork.chainId)
     const res = await verifyMessage({
+      network: polygonNetwork,
       provider,
       signer: smartAccount.addr,
       signature: signatureForPlainText,
@@ -205,6 +209,7 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
 
     const provider = getRpcProvider(polygonNetwork.rpcUrls, polygonNetwork.chainId)
     const res = await verifyMessage({
+      network: polygonNetwork,
       provider,
       signer: v1Account.addr,
       signature: signatureForPlainText,
@@ -252,6 +257,7 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
       ethereumNetwork
     )
     const res = await verifyMessage({
+      network: ethereumNetwork,
       provider,
       signer: eoaSigner.keyPublicAddress,
       signature: eip712Sig,
@@ -273,6 +279,7 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
     )
 
     const secondRes = await verifyMessage({
+      network: ethereumNetwork,
       provider,
       signer: eoaSigner.keyPublicAddress,
       signature: eip712SigNum,
@@ -302,6 +309,7 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
 
     const provider = getRpcProvider(polygonNetwork.rpcUrls, polygonNetwork.chainId)
     const res = await verifyMessage({
+      network: polygonNetwork,
       provider,
       signer: smartAccount.addr,
       signature: eip712Sig,
@@ -338,6 +346,7 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
 
     const provider = getRpcProvider(polygonNetwork.rpcUrls, polygonNetwork.chainId)
     const res = await verifyMessage({
+      network: ethereumNetwork,
       provider,
       signer: v1Account.addr,
       signature: eip712Sig,
@@ -365,6 +374,7 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
 
     const provider = getRpcProvider(polygonNetwork.rpcUrls, polygonNetwork.chainId)
     const res = await verifyMessage({
+      network: ethereumNetwork,
       provider,
       signer: v1Account.addr,
       signature: eip712Sig,
@@ -422,6 +432,7 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: false', () => {
     expect(isValidSig).toBe(contractSuccess)
 
     const res = await verifyMessage({
+      network: polygonNetwork,
       provider,
       signer: smartAccount.addr,
       signature: signatureForPlainText,

@@ -143,6 +143,7 @@ export function mapSignatureV(sigRaw: string) {
 }
 
 type Props = {
+  network?: Network
   provider?: JsonRpcProvider
   signer?: string
   signature: string | Uint8Array
@@ -165,6 +166,7 @@ type Props = {
  * Note: you only need to pass one of: typedData, finalDigest, message
  */
 export async function verifyMessage({
+  network,
   provider,
   signer,
   signature,
@@ -208,7 +210,11 @@ export async function verifyMessage({
   const coder = new AbiCoder()
   let callResult
   try {
-    const deploylessVerify = fromDescriptor(provider!, UniversalSigValidator, true)
+    const deploylessVerify = fromDescriptor(
+      provider!,
+      UniversalSigValidator,
+      !network!.rpcNoStateOverride
+    )
     const deploylessRes = await deploylessVerify.call('isValidSigWithSideEffects', [
       signer,
       finalDigest,
