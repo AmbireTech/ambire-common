@@ -252,12 +252,14 @@ export class MainController extends EventEmitter {
       accounts: this.accounts,
       windowManager,
       onActionWindowClose: () => {
-        if (!this.actions.currentAction?.id) return
-
-        // Don't reject the user request if the current action is an accountOp
-        if (this.actions.currentAction?.type === 'accountOp') return
-
-        this.rejectUserRequest('User rejected the request', this.actions.currentAction.id)
+        const userRequestsToRejectOnWindowClose = this.userRequests.filter(
+          (r) => r.action.kind !== 'calls'
+        )
+        userRequestsToRejectOnWindowClose.forEach((r) =>
+          r.dappPromise?.reject(ethErrors.provider.userRejectedRequest())
+        )
+        this.userRequests = this.userRequests.filter((r) => r.action.kind === 'calls')
+        this.emitUpdate()
       }
     })
     this.activity = new ActivityController(

@@ -108,13 +108,13 @@ export class ActionsController extends EventEmitter {
 
     this.#windowManager.event.on('windowRemoved', (winId: number) => {
       if (winId === this.actionWindow.id) {
-        this.#onActionWindowClose()
         this.actionWindow.id = null
         this.actionWindow.loaded = false
         this.actionWindow.pendingMessage = null
         this.currentAction = null
 
-        this.actionsQueue = this.actionsQueue.filter((a) => !['benzin'].includes(a.type))
+        this.actionsQueue = this.actionsQueue.filter((a) => a.type === 'accountOp')
+        this.#onActionWindowClose()
         this.emitUpdate()
       }
     })
