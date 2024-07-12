@@ -629,6 +629,7 @@ export class MainController extends EventEmitter {
     ])
   }
 
+  // eslint-disable-next-line default-param-last
   async updateSelectedAccountPortfolio(forceUpdate: boolean = false, network?: Network) {
     await this.#initialLoadPromise
     if (!this.accounts.selectedAccount) return
@@ -1304,6 +1305,11 @@ export class MainController extends EventEmitter {
             localAccountOp.nonce
 
         this.estimateSignAccountOp()
+
+        // returning here means estimation will not be set => better UX as
+        // the user will not see the error "nonce discrepancy" but instead
+        // just wait for the new estimation
+        return
       }
 
       // check if an RBF should be applied for the incoming transaction
