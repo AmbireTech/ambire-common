@@ -77,7 +77,8 @@ import { SignMessageController } from '../signMessage/signMessage'
 
 const STATUS_WRAPPED_METHODS = {
   onAccountAdderSuccess: 'INITIAL',
-  removeAccount: 'INITIAL'
+  removeAccount: 'INITIAL',
+  reloadSelectedAccount: 'INITIAL'
 } as const
 
 export class MainController extends EventEmitter {
@@ -620,14 +621,17 @@ export class MainController extends EventEmitter {
     )
   }
 
-  async reloadSelectedAccount() {
+  async #reloadSelectedAccount() {
     if (!this.accounts.selectedAccount) return
 
     await Promise.all([
-      this.accounts.statuses.updateAccountState !== 'LOADING' &&
-        this.accounts.updateAccountState(this.accounts.selectedAccount, 'pending'),
+      this.accounts.updateAccountState(this.accounts.selectedAccount, 'pending'),
       this.updateSelectedAccountPortfolio(true)
     ])
+  }
+
+  reloadSelectedAccount() {
+    return this.withStatus('reloadSelectedAccount', async () => this.#reloadSelectedAccount())
   }
 
   // eslint-disable-next-line default-param-last
