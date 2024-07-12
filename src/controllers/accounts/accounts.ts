@@ -144,8 +144,6 @@ export class AccountsController extends EventEmitter {
             blockTag
           )
 
-          network.id === 'ethereum' && console.log('account state', networkAccountStates)
-
           this.#updateProviderIsWorking(network.id, true)
 
           networkAccountStates.forEach((accountState) => {
