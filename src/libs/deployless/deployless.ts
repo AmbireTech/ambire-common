@@ -145,7 +145,7 @@ export class Deployless {
       throw new Error('state override passed but not requested')
     }
     if (opts.mode === DeploylessMode.StateOverride && !this.stateOverrideSupported) {
-      throw new Error('state override requested but not supported')
+      throw new Error(`${methodName}: state override requested but not supported`)
     }
 
     const callData = this.iface.encodeFunctionData(methodName, args)

@@ -9,13 +9,13 @@ import structuredClone from '@ungap/structured-clone'
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import ERC20 from '../../../contracts/compiled/IERC20.json'
 import { velcroUrl } from '../../../test/config'
-import { getNonce } from '../../../test/helpers'
+import { getNativeToCheckFromEOAs, getNonce } from '../../../test/helpers'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
 import { networks } from '../../consts/networks'
 import { Account, AccountStates } from '../../interfaces/account'
-import { dedicatedToOneSAPriv, Key } from '../../interfaces/keystore'
+import { dedicatedToOneSAPriv } from '../../interfaces/keystore'
 import { Network } from '../../interfaces/network'
 import { getRpcProvider } from '../../services/provider'
 import { getSmartAccount } from '../account/account'
@@ -61,58 +61,6 @@ const smartAccDeployed: Account = {
     pfp: '0x8E5F6c1F0b134657A546932C3eC9169E1633a39b'
   }
 }
-
-// Used to determine if an account is view-only or not
-// and subsequently if it should be included in the fee payment options
-const MOCK_KEYSTORE_KEYS: Key[] = [
-  {
-    addr: '0x71c3D24a627f0416db45107353d8d0A5ae0401ae',
-    type: 'trezor',
-    dedicatedToOneSA: true,
-    isExternallyStored: true,
-    meta: {
-      deviceId: 'doesnt-matter',
-      deviceModel: 'doesnt-matter',
-      hdPathTemplate: "m/44'/60'/0'/0/<account>",
-      index: 2
-    }
-  },
-  {
-    type: 'internal',
-    addr: '0xd6e371526cdaeE04cd8AF225D42e37Bc14688D9E',
-    dedicatedToOneSA: false,
-    meta: null,
-    isExternallyStored: false
-  },
-  {
-    type: 'internal',
-    addr: '0x141A14B5C4dbA2aC7a7943E02eDFE2E7eDfdA28F',
-    dedicatedToOneSA: false,
-    meta: null,
-    isExternallyStored: false
-  },
-  {
-    type: 'internal',
-    addr: '0x0000000000000000000000000000000000000001',
-    dedicatedToOneSA: false,
-    meta: null,
-    isExternallyStored: false
-  },
-  {
-    type: 'internal',
-    addr: '0xa8eEaC54343F94CfEEB3492e07a7De72bDFD118a',
-    dedicatedToOneSA: false,
-    meta: null,
-    isExternallyStored: false
-  },
-  {
-    type: 'internal',
-    addr: addrWithDeploySignature,
-    dedicatedToOneSA: true,
-    meta: null,
-    isExternallyStored: false
-  }
-]
 
 const v1Acc: Account = {
   addr: '0xa07D75aacEFd11b425AF7181958F0F85c312f143',
@@ -360,7 +308,6 @@ describe('estimate', () => {
       provider,
       ethereum,
       EOAAccount,
-      MOCK_KEYSTORE_KEYS,
       op,
       accountStates,
       [],
@@ -414,7 +361,6 @@ describe('estimate', () => {
       providerPolygon,
       polygon,
       EOAAccount,
-      MOCK_KEYSTORE_KEYS,
       op,
       accountStates,
       [],
@@ -470,7 +416,6 @@ describe('estimate', () => {
       providerPolygon,
       polygon,
       EOAAccount,
-      MOCK_KEYSTORE_KEYS,
       op,
       accountStates,
       [],
@@ -524,7 +469,6 @@ describe('estimate', () => {
       providerPolygon,
       polygon,
       EOAAccount,
-      MOCK_KEYSTORE_KEYS,
       op,
       accountStates,
       [],
@@ -562,10 +506,9 @@ describe('estimate', () => {
       provider,
       ethereum,
       v1Acc,
-      MOCK_KEYSTORE_KEYS,
       op,
       accountStates,
-      nativeToCheck,
+      getNativeToCheckFromEOAs(nativeToCheck, v1Acc),
       feeTokens
     )
     const usdtOutcome = response.feePaymentOptions!.find(
@@ -629,10 +572,9 @@ describe('estimate', () => {
       provider,
       ethereum,
       v1Acc,
-      MOCK_KEYSTORE_KEYS,
       op,
       accountStates,
-      nativeToCheck,
+      getNativeToCheckFromEOAs(nativeToCheck, v1Acc),
       feeTokens
     )
 
@@ -662,10 +604,9 @@ describe('estimate', () => {
       provider,
       ethereum,
       viewOnlyAcc,
-      MOCK_KEYSTORE_KEYS,
       op,
       accountStates,
-      nativeToCheck,
+      getNativeToCheckFromEOAs(nativeToCheck, viewOnlyAcc),
       feeTokens
     )
 
@@ -719,20 +660,18 @@ describe('estimate', () => {
       provider,
       ethereum,
       v1Acc,
-      MOCK_KEYSTORE_KEYS,
       op,
       accountStates,
-      nativeToCheck,
+      getNativeToCheckFromEOAs(nativeToCheck, v1Acc),
       feeTokens
     )
     const responseWithExecuteBefore = await estimate(
       provider,
       ethereum,
       v1Acc,
-      MOCK_KEYSTORE_KEYS,
       opWithExecuteBefore,
       accountStates,
-      nativeToCheck,
+      getNativeToCheckFromEOAs(nativeToCheck, v1Acc),
       feeTokens,
       { calculateRefund: true }
     )
@@ -783,10 +722,9 @@ describe('estimate', () => {
       providerOptimism,
       optimism,
       accountOptimism,
-      MOCK_KEYSTORE_KEYS,
       opOptimism,
       accountStates,
-      nativeToCheck,
+      getNativeToCheckFromEOAs(nativeToCheck, accountOptimism),
       feeTokens
     )
 
@@ -814,10 +752,9 @@ describe('estimate', () => {
       providerArbitrum,
       arbitrum,
       smartAccountv2eip712,
-      MOCK_KEYSTORE_KEYS,
       opArbitrum,
       accountStates,
-      nativeToCheck,
+      getNativeToCheckFromEOAs(nativeToCheck, smartAccountv2eip712),
       feeTokens
     )
 
@@ -853,10 +790,9 @@ describe('estimate', () => {
       providerOptimism,
       optimism,
       smartAcc,
-      MOCK_KEYSTORE_KEYS,
       opOptimism,
       accountStates,
-      nativeToCheck,
+      getNativeToCheckFromEOAs(nativeToCheck, smartAcc),
       feeTokens,
       { is4337Broadcast: true }
     )
@@ -904,10 +840,9 @@ describe('estimate', () => {
       providerOptimism,
       optimism,
       smartAcc,
-      MOCK_KEYSTORE_KEYS,
       opOptimism,
       accountStates,
-      nativeToCheck,
+      getNativeToCheckFromEOAs(nativeToCheck, smartAcc),
       feeTokens,
       { is4337Broadcast: true }
     )
@@ -948,10 +883,9 @@ describe('estimate', () => {
       providerOptimism,
       optimism,
       smartAccDeployed,
-      MOCK_KEYSTORE_KEYS,
       opOptimism,
       accountStates,
-      nativeToCheck,
+      getNativeToCheckFromEOAs(nativeToCheck, smartAccDeployed),
       feeTokens,
       { is4337Broadcast: true }
     )
@@ -992,10 +926,9 @@ describe('estimate', () => {
       providerArbitrum,
       clonedArb,
       trezorSlot6v2NotDeployed,
-      MOCK_KEYSTORE_KEYS,
       opArbitrum,
       accountStates,
-      nativeToCheck,
+      getNativeToCheckFromEOAs(nativeToCheck, trezorSlot6v2NotDeployed),
       feeTokens,
       { is4337Broadcast: false }
     )
@@ -1025,10 +958,9 @@ describe('estimate', () => {
       providerPolygon,
       polygon,
       smartAccountv2eip712,
-      MOCK_KEYSTORE_KEYS,
       opPolygonFailBzNoFunds,
       accountStates,
-      nativeToCheck,
+      getNativeToCheckFromEOAs(nativeToCheck, smartAccountv2eip712),
       feeTokens
     )
     expect(response.error).not.toBe(null)
@@ -1054,10 +986,9 @@ describe('estimate', () => {
       providerPolygon,
       polygon,
       { ...smartAccountv2eip712, associatedKeys: [trezorSlot6v2NotDeployed.associatedKeys[0]] },
-      MOCK_KEYSTORE_KEYS,
       opPolygonFailBzNoFunds,
       accountStates,
-      nativeToCheck,
+      getNativeToCheckFromEOAs(nativeToCheck, smartAccountv2eip712),
       feeTokens
     )
     expect(response.error).not.toBe(null)
@@ -1083,10 +1014,9 @@ describe('estimate', () => {
       provider,
       ethereum,
       v1Acc,
-      MOCK_KEYSTORE_KEYS,
       op,
       accountStates,
-      nativeToCheck,
+      getNativeToCheckFromEOAs(nativeToCheck, v1Acc),
       feeTokens
     )
 
