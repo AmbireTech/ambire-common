@@ -152,16 +152,19 @@ export async function estimate4337(
     // if there's a bundler error only, it means we cannot do ERC-4337
     // but we can do broadcast by EOA
     feePaymentOptions = []
-    bundlerEstimationResult.gasUsed =
-      deployment.gasUsed + accountOpToExecuteBefore.gasUsed + accountOp.gasUsed
     delete bundlerEstimationResult.erc4337GasLimits
     bundlerEstimationResult.error = null
-
-    // also include the estimate_gas call. If it's bigger, use it
-    const estimateGasCall = estimations[2]
-    if (bundlerEstimationResult.gasUsed < estimateGasCall)
-      bundlerEstimationResult.gasUsed = estimateGasCall
   }
+
+  // set the gasUsed to the biggest one found from all estimations
+  const bigIntMax = (...args: bigint[]): bigint => args.reduce((m, e) => (e > m ? e : m))
+  const ambireGas = deployment.gasUsed + accountOpToExecuteBefore.gasUsed + accountOp.gasUsed
+  const estimateGasCall = estimations[2]
+  bundlerEstimationResult.gasUsed = bigIntMax(
+    bundlerEstimationResult.gasUsed,
+    estimateGasCall,
+    ambireGas
+  )
 
   // add the availableAmount after the simulation
   bundlerEstimationResult.feePaymentOptions = feePaymentOptions.map(
