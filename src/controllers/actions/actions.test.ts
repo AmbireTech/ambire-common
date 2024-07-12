@@ -231,7 +231,7 @@ describe('Actions Controller', () => {
 
       if (emitCounter === 1) {
         expect(actionsCtrl.actionWindow.id).toBe(null)
-        expect(actionsCtrl.actionsQueue).toHaveLength(2) // benzin action should be removed
+        expect(actionsCtrl.actionsQueue).toHaveLength(0)
         expect(actionsCtrl.currentAction).toEqual(null)
 
         unsubscribe()
@@ -245,21 +245,32 @@ describe('Actions Controller', () => {
     let emitCounter = 0
     const unsubscribe = actionsCtrl.onUpdate(async () => {
       emitCounter++
-
-      if (emitCounter === 2) {
-        expect(actionsCtrl.actionWindow.id).toBe(2) // action-window is reopened on setCurrentAction
+      if (emitCounter === 5) {
+        expect(actionsCtrl.currentAction?.id).toEqual(2)
         unsubscribe()
         done()
       }
+      if (emitCounter === 4) {
+        expect(actionsCtrl.actionWindow.id).toEqual(3)
+        actionsCtrl.setCurrentActionById(2)
+      }
+      if (emitCounter === 3) {
+        expect(actionsCtrl.actionWindow.id).toEqual(2)
+      }
+      if (emitCounter === 2) {
+        expect(actionsCtrl.currentAction?.id).toEqual(1)
+        expect(actionsCtrl.actionsQueue).toHaveLength(2)
+      }
 
       if (emitCounter === 1) {
-        expect(actionsCtrl.currentAction?.id).toEqual(2)
+        expect(actionsCtrl.currentAction?.id).toEqual(1)
+        expect(actionsCtrl.actionsQueue).toHaveLength(1)
       }
     })
 
-    expect(actionsCtrl.actionsQueue).toHaveLength(2)
-    expect(actionsCtrl.visibleActionsQueue).toHaveLength(2)
-    actionsCtrl.setCurrentActionById(2)
+    // Add actions to the queue
+    actionsCtrl.addOrUpdateAction(ACTION_1)
+    actionsCtrl.addOrUpdateAction(ACTION_2)
   })
   test('should remove actions from actionsQueue', (done) => {
     let emitCounter = 0
@@ -273,7 +284,7 @@ describe('Actions Controller', () => {
         done()
       }
       if (emitCounter === 1) {
-        expect(actionsCtrl.actionWindow.id).toEqual(2)
+        expect(actionsCtrl.actionWindow.id).toEqual(3)
         expect(actionsCtrl.actionsQueue).toHaveLength(1)
         expect(actionsCtrl.currentAction?.id).toBe(2)
         actionsCtrl.removeAction(2)

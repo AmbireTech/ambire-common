@@ -252,7 +252,13 @@ export class MainController extends EventEmitter {
       accounts: this.accounts,
       windowManager,
       onActionWindowClose: () => {
-        this.userRequests = this.userRequests.filter((r) => r.action.kind !== 'benzin')
+        const userRequestsToRejectOnWindowClose = this.userRequests.filter(
+          (r) => r.action.kind !== 'calls'
+        )
+        userRequestsToRejectOnWindowClose.forEach((r) =>
+          r.dappPromise?.reject(ethErrors.provider.userRejectedRequest())
+        )
+        this.userRequests = this.userRequests.filter((r) => r.action.kind === 'calls')
         this.emitUpdate()
       }
     })
