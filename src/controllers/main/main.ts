@@ -1683,6 +1683,11 @@ export class MainController extends EventEmitter {
       if (message.includes('insufficient funds')) {
         // TODO: Better message?
         message = 'Insufficient funds for intristic transaction cost'
+      } else if (message.includes('pimlico_getUserOperationGasPrice')) {
+        // sometimes the bundler returns an error of low maxFeePerGas
+        // in that case, recalculate prices and prompt the user to try again
+        message = 'Fee too low. Please select a higher transaction speed and try again'
+        this.updateSignAccountOpGasPrice()
       } else {
         message = message.length > 300 ? `${message.substring(0, 300)}...` : message
       }
