@@ -1,13 +1,7 @@
 import { getAddress, isAddress } from 'ethers'
 
-import {
-  Account,
-  AccountId,
-  AccountOnchainState,
-  AccountPreferences,
-  AccountStates
-} from '../../interfaces/account'
-import { Network, NetworkId } from '../../interfaces/network'
+import { Account, AccountId, AccountPreferences, AccountStates } from '../../interfaces/account'
+import { NetworkId } from '../../interfaces/network'
 import { Storage } from '../../interfaces/storage'
 import {
   getDefaultSelectedAccount,
@@ -148,7 +142,7 @@ export class AccountsController extends EventEmitter {
 
           this.#updateProviderIsWorking(network.id, true)
 
-          networkAccountStates.forEach((accountState, index) => {
+          networkAccountStates.forEach((accountState) => {
             const { addr } = accounts.find((acc) => acc.addr === accountState.accountAddr) || {}
 
             if (!addr) return
