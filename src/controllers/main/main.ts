@@ -670,11 +670,9 @@ export class MainController extends EventEmitter {
     const kind = dappRequestMethodToActionKind(request.method)
     const dapp = this.dapps.getDapp(request.origin)
 
-    if (!this.accounts.selectedAccount) {
-      throw ethErrors.rpc.internal()
-    }
-
     if (kind === 'calls') {
+      if (!this.accounts.selectedAccount) throw ethErrors.rpc.internal()
+
       const transaction = request.params[0]
       const accountAddr = getAddress(transaction.from)
       const network = this.networks.networks.find(
@@ -701,6 +699,8 @@ export class MainController extends EventEmitter {
         dappPromise
       } as SignUserRequest
     } else if (kind === 'message') {
+      if (!this.accounts.selectedAccount) throw ethErrors.rpc.internal()
+
       const msg = request.params
       if (!msg) {
         throw ethErrors.rpc.invalidRequest('No msg request to sign')
@@ -741,6 +741,8 @@ export class MainController extends EventEmitter {
         dappPromise
       } as SignUserRequest
     } else if (kind === 'typedMessage') {
+      if (!this.accounts.selectedAccount) throw ethErrors.rpc.internal()
+
       const msg = request.params
       if (!msg) {
         throw ethErrors.rpc.invalidRequest('No msg request to sign')
