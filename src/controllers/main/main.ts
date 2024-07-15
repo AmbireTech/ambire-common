@@ -55,6 +55,7 @@ import {
 import bundler from '../../services/bundlers'
 import { Bundler } from '../../services/bundlers/bundler'
 import { getIsViewOnly } from '../../utils/accounts'
+import shortenAddress from '../../utils/shortenAddress'
 import wait from '../../utils/wait'
 import { AccountAdderController } from '../accountAdder/accountAdder'
 import { AccountsController } from '../accounts/accounts'
@@ -77,6 +78,7 @@ import { SignMessageController } from '../signMessage/signMessage'
 
 const STATUS_WRAPPED_METHODS = {
   onAccountAdderSuccess: 'INITIAL',
+  broadcastSignedAccountOp: 'INITIAL',
   removeAccount: 'INITIAL'
 } as const
 
@@ -124,8 +126,6 @@ export class MainController extends EventEmitter {
 
   signAccountOp: SignAccountOpController | null = null
 
-  static signAccountOpListener: ReturnType<EventEmitter['onUpdate']> = () => {}
-
   signAccOpInitError: string | null = null
 
   activity!: ActivityController
@@ -145,9 +145,10 @@ export class MainController extends EventEmitter {
 
   accountOpsToBeConfirmed: { [key: string]: { [key: string]: AccountOp } } = {}
 
-  lastUpdate: Date = new Date()
+  // TODO: Temporary solution to expose the fee payer key during Account Op broadcast.
+  feePayerKey: Key | null = null
 
-  broadcastStatus: 'INITIAL' | 'LOADING' | 'DONE' = 'INITIAL'
+  lastUpdate: Date = new Date()
 
   statuses: Statuses<keyof typeof STATUS_WRAPPED_METHODS> = STATUS_WRAPPED_METHODS
 
@@ -374,36 +375,34 @@ export class MainController extends EventEmitter {
       this.#callRelayer
     )
 
-    const broadcastSignedAccountOpIfNeeded = async () => {
-      // Signing is completed, therefore broadcast the transaction
-      if (
-        this.signAccountOp &&
-        this.signAccountOp.accountOp.signature &&
-        this.signAccountOp.status?.type === SigningStatus.Done
-      ) {
-        await this.broadcastSignedAccountOp(
-          this.signAccountOp.accountOp,
-          this.signAccountOp.estimation!,
-          this.signAccountOp.fromActionId
-        )
-      }
-    }
-    MainController.signAccountOpListener = this.signAccountOp.onUpdate(
-      broadcastSignedAccountOpIfNeeded
-    )
-
     this.emitUpdate()
 
     this.updateSignAccountOpGasPrice()
     this.estimateSignAccountOp()
   }
 
+  async handleSignAccountOp() {
+    if (!this.signAccountOp) {
+      const message =
+        'The signing process was not initialized as expected. Please try again later or contact Ambire support if the issue persists.'
+      const error = new Error('SignAccountOp is not initialized')
+      return this.emitError({ level: 'major', message, error })
+    }
+
+    await this.signAccountOp.sign()
+
+    // Error handling on the prev step will notify the user, it's fine to return here
+    if (this.signAccountOp.status?.type !== SigningStatus.Done) return
+
+    await this.withStatus('broadcastSignedAccountOp', async () => this.#broadcastSignedAccountOp())
+  }
+
   destroySignAccOp() {
     if (!this.signAccountOp) return
 
+    this.feePayerKey = null
     this.signAccountOp = null
     this.signAccOpInitError = null
-    MainController.signAccountOpListener() // unsubscribes for further updates
 
     // NOTE: no need to update the portfolio here as an update is
     // fired upon removeUserRequest
@@ -1376,16 +1375,20 @@ export class MainController extends EventEmitter {
    *   4. for smart accounts, when the Relayer does the broadcast.
    *
    */
-  async broadcastSignedAccountOp(
-    accountOp: AccountOp,
-    estimation: EstimateResult,
-    actionId: AccountOpAction['id']
-  ) {
-    this.broadcastStatus = 'LOADING'
-    this.emitUpdate()
+  async #broadcastSignedAccountOp() {
+    const accountOp = this.signAccountOp?.accountOp
+    const estimation = this.signAccountOp?.estimation
+    const actionId = this.signAccountOp?.fromActionId
 
-    if (!accountOp.signingKeyAddr || !accountOp.signingKeyType || !accountOp.signature) {
-      return this.#throwAccountOpBroadcastError(new Error('AccountOp missing props'))
+    if (
+      !accountOp ||
+      !estimation ||
+      !actionId ||
+      !accountOp.signingKeyAddr ||
+      !accountOp.signingKeyType ||
+      !accountOp.signature
+    ) {
+      return this.#throwBroadcastAccountOp({ message: 'Missing mandatory transaction details.' })
     }
 
     const provider = this.providers.providers[accountOp.networkId]
@@ -1393,21 +1396,21 @@ export class MainController extends EventEmitter {
     const network = this.networks.networks.find((n) => n.id === accountOp.networkId)
 
     if (!provider) {
-      return this.#throwAccountOpBroadcastError(
-        new Error(`Provider for networkId: ${accountOp.networkId} not found`)
-      )
+      return this.#throwBroadcastAccountOp({
+        message: `Provider for ${network?.name || `with id ${accountOp.networkId}`} not found.`
+      })
     }
 
     if (!account) {
-      return this.#throwAccountOpBroadcastError(
-        new Error(`Account with address: ${accountOp.accountAddr} not found`)
-      )
+      return this.#throwBroadcastAccountOp({
+        message: `Account with address ${shortenAddress(accountOp.accountAddr, 13)} not found.`
+      })
     }
 
     if (!network) {
-      return this.#throwAccountOpBroadcastError(
-        new Error(`Network with id: ${accountOp.networkId} not found`)
-      )
+      return this.#throwBroadcastAccountOp({
+        message: `Network with id ${accountOp.networkId} not found.`
+      })
     }
 
     let transactionRes: TransactionResponse | { hash: string; nonce: number } | null = null
@@ -1428,14 +1431,16 @@ export class MainController extends EventEmitter {
           // TODO: Implement a way to choose the key type to broadcast with.
           feePayerKeys.find((key) => key.type === accountOp.signingKeyType) || feePayerKeys[0]
         if (!feePayerKey) {
-          return this.#throwAccountOpBroadcastError(
-            new Error(
-              `Key with address: ${accountOp.gasFeePayment!.paidBy} for account with address: ${
-                accountOp.accountAddr
-              } not found`
-            )
-          )
+          return await this.#throwBroadcastAccountOp({
+            message: `Key with address ${shortenAddress(
+              accountOp.gasFeePayment!.paidBy,
+              13
+            )} for account with address ${shortenAddress(accountOp.accountAddr, 13)} not found.`
+          })
         }
+        this.feePayerKey = feePayerKey
+        this.emitUpdate()
+
         const signer = await this.keystore.getSigner(feePayerKey.addr, feePayerKey.type)
         if (signer.init) signer.init(this.#externalSignerControllers[feePayerKey.type])
 
@@ -1472,8 +1477,8 @@ export class MainController extends EventEmitter {
             `Transaction couldn't be broadcasted on the ${network.name} network. Reason: ${reason}`
           )
         }
-      } catch (e: any) {
-        return this.#throwAccountOpBroadcastError(e)
+      } catch (error: any) {
+        return this.#throwBroadcastAccountOp({ error })
       }
     }
     // Smart account but EOA pays the fee
@@ -1490,14 +1495,16 @@ export class MainController extends EventEmitter {
         // TODO: Implement a way to choose the key type to broadcast with.
         feePayerKeys.find((key) => key.type === accountOp.signingKeyType) || feePayerKeys[0]
       if (!feePayerKey) {
-        return this.#throwAccountOpBroadcastError(
-          new Error(
-            `Key with address: ${accountOp.gasFeePayment!.paidBy} for account with address: ${
-              accountOp.accountAddr
-            } not found`
-          )
-        )
+        return this.#throwBroadcastAccountOp({
+          message: `Key with address ${shortenAddress(
+            accountOp.gasFeePayment!.paidBy,
+            13
+          )} for account with address ${shortenAddress(accountOp.accountAddr, 13)} not found.`
+        })
       }
+
+      this.feePayerKey = feePayerKey
+      this.emitUpdate()
 
       const accountState = this.accounts.accountStates[accountOp.accountAddr][accountOp.networkId]
       let data
@@ -1558,19 +1565,20 @@ export class MainController extends EventEmitter {
             `Transaction couldn't be broadcasted on the ${network.name} network. Reason: ${reason}`
           )
         }
-      } catch (e: any) {
-        return this.#throwAccountOpBroadcastError(e)
+      } catch (error: any) {
+        return this.#throwBroadcastAccountOp({ error })
       }
     }
     // Smart account, the ERC-4337 way
     else if (accountOp.gasFeePayment && accountOp.gasFeePayment.isERC4337) {
       const userOperation = accountOp.asUserOperation
       if (!userOperation) {
-        return this.#throwAccountOpBroadcastError(
-          new Error(
-            `Trying to broadcast an ERC-4337 request but userOperation is not set for ${accountOp.accountAddr}`
-          )
-        )
+        return this.#throwBroadcastAccountOp({
+          message: `Trying to broadcast an ERC-4337 request but userOperation is not set for the account with address ${shortenAddress(
+            accountOp.accountAddr,
+            13
+          )}`
+        })
       }
 
       // broadcast through bundler's service
@@ -1578,21 +1586,17 @@ export class MainController extends EventEmitter {
       try {
         userOperationHash = await bundler.broadcast(userOperation, network!)
       } catch (e: any) {
-        return this.#throwAccountOpBroadcastError(
-          new Error(
-            (Bundler as any).decodeBundlerError(
-              e,
-              'Bundler broadcast failed. Please try broadcasting by an EOA or contact support'
-            )
+        return this.#throwBroadcastAccountOp({
+          message: Bundler.decodeBundlerError(
+            e,
+            'Bundler broadcast failed. Please try broadcasting by an EOA or contact support.'
           )
-        )
+        })
       }
       if (!userOperationHash) {
-        return this.#throwAccountOpBroadcastError(
-          new Error(
-            'Bundler broadcast failed. Please try broadcasting by an EOA or contact support'
-          )
-        )
+        return this.#throwBroadcastAccountOp({
+          message: 'Bundler broadcast failed. Please try broadcasting by an EOA or contact support.'
+        })
       }
 
       // broadcast the userOperationHash
@@ -1620,42 +1624,39 @@ export class MainController extends EventEmitter {
           hash: response.txId,
           nonce: Number(accountOp.nonce)
         }
-      } catch (e: any) {
-        return this.#throwAccountOpBroadcastError(e)
+      } catch (error: any) {
+        return this.#throwBroadcastAccountOp({ error })
       }
     }
 
-    if (transactionRes) {
-      const submittedAccountOp: SubmittedAccountOp = {
-        ...accountOp,
-        status: AccountOpStatus.BroadcastedButNotConfirmed,
-        txnId: transactionRes.hash,
-        nonce: BigInt(transactionRes.nonce),
-        timestamp: new Date().getTime(),
-        isSingletonDeploy: !!accountOp.calls.find((call) => getAddress(call.to) === SINGLETON)
-      }
-      if (accountOp.gasFeePayment?.isERC4337) {
-        submittedAccountOp.userOpHash = transactionRes.hash
-      }
-      await this.activity.addAccountOp(submittedAccountOp)
-      await this.resolveAccountOpAction(
-        {
-          hash: transactionRes?.hash || null,
-          networkId: network.id,
-          isUserOp: !!accountOp?.asUserOperation
-        },
-        actionId
-      )
+    if (!transactionRes)
+      return this.#throwBroadcastAccountOp({
+        message: 'No transaction response received after being broadcasted.'
+      })
 
-      console.log('broadcasted:', transactionRes)
-      this.onSignSuccess('account-op')
-      this.broadcastStatus = 'DONE'
-      this.emitUpdate()
-      await wait(1)
+    const submittedAccountOp: SubmittedAccountOp = {
+      ...accountOp,
+      status: AccountOpStatus.BroadcastedButNotConfirmed,
+      txnId: transactionRes.hash,
+      nonce: BigInt(transactionRes.nonce),
+      timestamp: new Date().getTime(),
+      isSingletonDeploy: !!accountOp.calls.find((call) => getAddress(call.to) === SINGLETON)
     }
+    if (accountOp.gasFeePayment?.isERC4337) {
+      submittedAccountOp.userOpHash = transactionRes.hash
+    }
+    await this.activity.addAccountOp(submittedAccountOp)
+    await this.resolveAccountOpAction(
+      {
+        hash: transactionRes?.hash || null,
+        networkId: network.id,
+        isUserOp: !!accountOp?.asUserOperation
+      },
+      actionId
+    )
 
-    this.broadcastStatus = 'INITIAL'
-    this.emitUpdate()
+    this.onSignSuccess('account-op')
+    return Promise.resolve(submittedAccountOp)
   }
 
   // ! IMPORTANT !
@@ -1679,28 +1680,30 @@ export class MainController extends EventEmitter {
     return [...accountOpBanners]
   }
 
-  #throwAccountOpBroadcastError(error: Error) {
-    let message =
-      error?.message ||
-      'Unable to broadcast the transaction. Please try again or contact Ambire support if the issue persists.'
+  #throwBroadcastAccountOp({ message: _msg, error: _err }: { message?: string; error?: Error }) {
+    let message = _msg || `Unable to broadcast the transaction. ${_err?.message || 'unknown'}`
 
-    if (message) {
-      if (message.includes('insufficient funds')) {
-        // TODO: Better message?
-        message = 'Insufficient funds for intristic transaction cost'
-      } else {
-        message = message.length > 300 ? `${message.substring(0, 300)}...` : message
-      }
-    }
+    // Enhance the error incoming for this corner case
+    if (message.includes('insufficient funds'))
+      message = 'Insufficient funds to cover the fee for broadcasting the transaction.'
 
-    const replacementFeeLow = error.message.indexOf('replacement fee too low') !== -1
-    this.emitError({ level: 'major', message, error })
+    // Trip the error message, errors coming from the RPC can be huuuuuge
+    message = message.length > 300 ? `${message.substring(0, 300)}...` : message
+
+    // If not explicitly stated, add a generic message to contact support
+    if (!message.includes('contact support'))
+      message += ' Please try again or contact support for help.'
+
+    const error = _err || new Error(message)
+    const replacementFeeLow = error?.message.includes('replacement fee too low')
     // To enable another try for signing in case of broadcast fail
     // broadcast is called in the FE only after successful signing
     this.signAccountOp?.updateStatusToReadyToSign(replacementFeeLow)
     if (replacementFeeLow) this.estimateSignAccountOp()
-    this.broadcastStatus = 'INITIAL'
-    this.emitUpdate()
+
+    this.feePayerKey = null
+
+    return Promise.reject(new EmittableError({ level: 'major', message, error }))
   }
 
   // includes the getters in the stringified instance
