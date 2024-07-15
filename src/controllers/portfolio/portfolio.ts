@@ -646,6 +646,7 @@ export class PortfolioController extends EventEmitter {
             const updatedStoragePreviousHints = getUpdatedHints(
               accountState[network.id]!.result!.hintsFromExternalAPI as ExternalHintsAPIResponse,
               accountState[network.id]!.result!.tokens,
+              accountState[network.id]!.result!.tokenErrors,
               network.id,
               this.#previousHints,
               key,
