@@ -13,7 +13,7 @@ import {
   IrCall,
   IrMessage
 } from './interfaces'
-import { getAction, getDeadlineText, getLabel, integrateFragments } from './utils'
+import { getAction, getDeadlineText, getHumanMessage, integrateFragments } from './utils'
 
 export function humanizeCalls(
   _accountOp: AccountOp,
@@ -107,6 +107,6 @@ export const humanizePlainTextMessage = (
   m: PlainTextMessage
   // only full visualization and warnings
 ): Omit<IrMessage, keyof Message> => ({
-  fullVisualization: [getAction('Sign message:'), getLabel(m.message as string)],
+  fullVisualization: [getAction('Sign message:'), getHumanMessage(m.message)],
   warnings: []
 })

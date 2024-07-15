@@ -255,7 +255,13 @@ export class MainController extends EventEmitter {
       accounts: this.accounts,
       windowManager,
       onActionWindowClose: () => {
-        this.userRequests = this.userRequests.filter((r) => r.action.kind !== 'benzin')
+        const userRequestsToRejectOnWindowClose = this.userRequests.filter(
+          (r) => r.action.kind !== 'calls'
+        )
+        userRequestsToRejectOnWindowClose.forEach((r) =>
+          r.dappPromise?.reject(ethErrors.provider.userRejectedRequest())
+        )
+        this.userRequests = this.userRequests.filter((r) => r.action.kind === 'calls')
         this.emitUpdate()
       }
     })
@@ -903,7 +909,14 @@ export class MainController extends EventEmitter {
       // 4) manage recalc on removeUserRequest too in order to handle EOAs
       // @TODO consider re-using this whole block in removeUserRequest
       await this.#ensureAccountInfo(meta.accountAddr, meta.networkId)
-      if (this.signAccOpInitError) return
+      if (this.signAccOpInitError) {
+        return req.dappPromise?.reject(
+          ethErrors.provider.custom({
+            code: 1001,
+            message: this.signAccOpInitError
+          })
+        )
+      }
 
       const account = this.accounts.accounts.find((x) => x.addr === meta.accountAddr)!
       const accountState = this.accounts.accountStates[meta.accountAddr][meta.networkId]
@@ -1318,6 +1331,11 @@ export class MainController extends EventEmitter {
             localAccountOp.nonce
 
         this.estimateSignAccountOp()
+
+        // returning here means estimation will not be set => better UX as
+        // the user will not see the error "nonce discrepancy" but instead
+        // just wait for the new estimation
+        return
       }
 
       // check if an RBF should be applied for the incoming transaction
