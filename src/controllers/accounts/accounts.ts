@@ -1,13 +1,7 @@
 import { getAddress, isAddress } from 'ethers'
 
-import {
-  Account,
-  AccountId,
-  AccountOnchainState,
-  AccountPreferences,
-  AccountStates
-} from '../../interfaces/account'
-import { Network, NetworkId } from '../../interfaces/network'
+import { Account, AccountId, AccountPreferences, AccountStates } from '../../interfaces/account'
+import { NetworkId } from '../../interfaces/network'
 import { Storage } from '../../interfaces/storage'
 import {
   getDefaultSelectedAccount,
@@ -115,13 +109,17 @@ export class AccountsController extends EventEmitter {
     )
   }
 
-  async updateAccountState(accountAddr: Account['addr'], blockTag: string | number = 'latest') {
+  async updateAccountState(
+    accountAddr: Account['addr'],
+    blockTag: 'pending' | 'latest' = 'latest',
+    networks: NetworkId[] = []
+  ) {
     const accountData = this.accounts.find((account) => account.addr === accountAddr)
 
     if (!accountData) return
 
     await this.withStatus('updateAccountState', async () =>
-      this.#updateAccountStates([accountData], blockTag)
+      this.#updateAccountStates([accountData], blockTag, networks)
     )
   }
 
@@ -148,10 +146,8 @@ export class AccountsController extends EventEmitter {
 
           this.#updateProviderIsWorking(network.id, true)
 
-          networkAccountStates.forEach((accountState, index) => {
-            const { addr } = accounts.find((acc) => acc.addr === accountState.accountAddr) || {}
-
-            if (!addr) return
+          networkAccountStates.forEach((accountState) => {
+            const addr = accountState.accountAddr
 
             if (!this.accountStates[addr]) {
               this.accountStates[addr] = {}
@@ -160,7 +156,7 @@ export class AccountsController extends EventEmitter {
             this.accountStates[addr][network.id] = accountState
           })
         } catch (err) {
-          console.error('account state update error: ', err)
+          console.error(`account state update error for ${network.name}: `, err)
           this.#updateProviderIsWorking(network.id, false)
         }
 
