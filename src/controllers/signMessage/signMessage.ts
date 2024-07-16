@@ -86,11 +86,19 @@ export class SignMessageController extends EventEmitter {
     this.#accounts = accounts
   }
 
-  init({ dapp, messageToSign }: { dapp?: { name: string; icon: string }; messageToSign: Message }) {
+  async init({
+    dapp,
+    messageToSign
+  }: {
+    dapp?: { name: string; icon: string }
+    messageToSign: Message
+  }) {
     // In the unlikely case that the signMessage controller was already
     // initialized, but not reset, force reset it to prevent misleadingly
     // displaying the prev sign message request.
     if (this.isInitialized) this.reset()
+
+    await this.#accounts.initialLoadPromise
 
     if (['message', 'typedMessage'].includes(messageToSign.content.kind)) {
       if (dapp) {
@@ -180,7 +188,7 @@ export class SignMessageController extends EventEmitter {
         throw new Error('Network not supported on Ambire. Please contract support.')
       }
 
-      const accountState = this.#accounts.accountStates[account.addr][network!.id]
+      const accountState = this.#accounts.accountStates[account.addr][network.id]
       let signature
       try {
         if (this.messageToSign.content.kind === 'message') {

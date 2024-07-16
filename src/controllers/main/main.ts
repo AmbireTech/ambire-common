@@ -444,6 +444,15 @@ export class MainController extends EventEmitter {
   }
 
   async handleSignMessage() {
+    const accountAddr = this.signMessage.messageToSign?.accountAddr
+    const networkId = this.signMessage.messageToSign?.networkId
+
+    // Could (rarely) happen if not even a single account state is fetched yet
+    const shouldForceUpdateAndWaitForAccountState =
+      accountAddr && networkId && !this.accounts.accountStates[accountAddr]?.[networkId]
+    if (shouldForceUpdateAndWaitForAccountState)
+      await this.accounts.updateAccountState(accountAddr, 'latest', [networkId])
+
     await this.signMessage.sign()
 
     const signedMessage = this.signMessage.signedMessage
