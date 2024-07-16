@@ -525,6 +525,23 @@ describe('Portfolio Controller ', () => {
 
       expect(token).toBeTruthy()
     })
+
+    test('Learned tokens to avoid persisting non-ERC20 tokens', async () => {
+      const BANANA_TOKEN_ADDR = '0x94e496474F1725f1c1824cB5BDb92d7691A4F03a'
+      const SMART_CONTRACT_ADDR = '0xa8202f888b9b2dfa5ceb2204865018133f6f179a'
+      const { storage, controller } = prepareTest()
+
+      await controller.learnTokens([BANANA_TOKEN_ADDR, SMART_CONTRACT_ADDR], 'ethereum')
+
+      await controller.updateSelectedAccount(account.addr, undefined, undefined, {
+        forceUpdate: true
+      })
+
+      const previousHintsStorage = await storage.get('previousHints', {})
+
+      expect(previousHintsStorage.learnedTokens?.ethereum).not.toHaveProperty(SMART_CONTRACT_ADDR)
+    })
+
     test("Learned token timestamp isn't updated if the token is found by the external hints api", async () => {
       const { storage, controller } = prepareTest()
 
