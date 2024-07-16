@@ -1326,6 +1326,25 @@ export class MainController extends EventEmitter {
         return
       }
 
+      if (
+        estimation &&
+        estimation.nonFatalErrors &&
+        estimation.nonFatalErrors.find((err) => err.cause === '4337_INVALID_NONCE') &&
+        this.accounts.accountStates?.[localAccountOp.accountAddr]?.[localAccountOp.networkId]
+      ) {
+        this.accounts
+          .updateAccountState(localAccountOp.accountAddr, 'latest', [localAccountOp.networkId])
+          .then(() => this.estimateSignAccountOp())
+          .catch((error) =>
+            this.emitError({
+              level: 'silent',
+              message:
+                'Failed to refetch the account state after encountering a 4337_INVALID_NONCE error',
+              error
+            })
+          )
+      }
+
       // check if an RBF should be applied for the incoming transaction
       // for SA conditions are: take the last broadcast but not confirmed accOp
       // and check if the nonce is the same as the current nonce (non 4337 txns)
