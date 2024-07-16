@@ -160,7 +160,7 @@ export class MainController extends EventEmitter {
    */
   onSignSuccess: (
     type: 'message' | 'typed-data' | 'account-op',
-    meta?: { networkIds?: NetworkId[] }
+    meta?: { networkId?: NetworkId }
   ) => void
 
   constructor({
@@ -182,7 +182,7 @@ export class MainController extends EventEmitter {
     windowManager: WindowManager
     onSignSuccess?: (
       type: 'message' | 'typed-data' | 'account-op',
-      meta?: { networkIds?: NetworkId[] }
+      meta?: { networkId?: NetworkId }
     ) => void
   }) {
     super()
@@ -1663,7 +1663,7 @@ export class MainController extends EventEmitter {
       actionId
     )
 
-    this.onSignSuccess('account-op', { networkIds: [submittedAccountOp.networkId] })
+    this.onSignSuccess('account-op', { networkId: submittedAccountOp.networkId })
     return Promise.resolve(submittedAccountOp)
   }
 
