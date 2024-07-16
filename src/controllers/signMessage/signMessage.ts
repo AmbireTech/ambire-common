@@ -188,12 +188,6 @@ export class SignMessageController extends EventEmitter {
         throw new Error('Network not supported on Ambire. Please contract support.')
       }
 
-      // Could (rarely) happen if not even a single account state is fetched yet
-      const shouldForceUpdateAndWaitForAccountState =
-        !this.#accounts.accountStates[account.addr]?.[network.id]
-      if (shouldForceUpdateAndWaitForAccountState)
-        await this.#accounts.updateAccountState(account.addr, 'latest', [network.id])
-
       const accountState = this.#accounts.accountStates[account.addr][network.id]
       let signature
       try {

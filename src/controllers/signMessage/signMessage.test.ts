@@ -48,6 +48,7 @@ const messageToSign: Message = {
 describe('SignMessageController', () => {
   let signMessageController: SignMessageController
   let keystore: KeystoreController
+  let accountsCtrl: AccountsController
 
   beforeEach(async () => {
     const storage = produceMemoryStore()
@@ -67,7 +68,7 @@ describe('SignMessageController', () => {
     providersCtrl = new ProvidersController(networksCtrl)
     providersCtrl.providers = providers
 
-    const accountsCtrl = new AccountsController(
+    accountsCtrl = new AccountsController(
       storage,
       providersCtrl,
       networksCtrl,
@@ -130,6 +131,7 @@ describe('SignMessageController', () => {
     expect(signMessageController.signingKeyType).toBe('internal')
   })
 
+  // TODO: Would be better to test the signing via the Main controller -> handleSignMessage instead
   test('should sign a message', async () => {
     const signingKeyAddr = account.addr
     const dummySignature =
@@ -146,6 +148,11 @@ describe('SignMessageController', () => {
 
     await signMessageController.init({ messageToSign })
     signMessageController.setSigningKey(signingKeyAddr, 'internal')
+
+    await accountsCtrl.updateAccountState(messageToSign.accountAddr, 'latest', [
+      messageToSign.networkId
+    ])
+
     await signMessageController.sign()
 
     // expect(mockSigner.signMessage).toHaveBeenCalledWith(messageToSign.content.message)
