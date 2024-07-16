@@ -26,6 +26,6 @@ export const compareVisualizations = (
 ) => {
   expect(v1.length).toBe(v2.length)
   v1.forEach((v, i) => {
-    expect({ ...v, id: null }).toMatchObject({ ...v2[i], id: null })
+    expect({ ...v2[i], id: null }).toMatchObject({ ...v, id: null })
   })
 }

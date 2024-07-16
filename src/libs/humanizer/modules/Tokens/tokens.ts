@@ -3,7 +3,7 @@ import { Interface, ZeroAddress } from 'ethers'
 import { AccountOp } from '../../../accountOp/accountOp'
 import { ERC20, ERC721 } from '../../const/abis'
 import { HumanizerCallModule, HumanizerPromise, IrCall } from '../../interfaces'
-import { getAction, getAddressVisualization, getLabel, getNft, getToken } from '../../utils'
+import { getAction, getAddressVisualization, getLabel, getToken } from '../../utils'
 
 // @TODO merge this with the  erc20 humanizer module as sometimes
 // we see no difference between the two
@@ -17,13 +17,13 @@ export const genericErc721Humanizer: HumanizerCallModule = (
     return args[0] === accountOp.accountAddr
       ? [
           getAction('Send'),
-          getNft(call.to, args[2]),
+          getToken(call.to, args[2]),
           getLabel('to'),
           getAddressVisualization(args[1])
         ]
       : [
           getAction('Transfer'),
-          getNft(call.to, args[2]),
+          getToken(call.to, args[2]),
           getLabel('from'),
           getAddressVisualization(args[0]),
           getLabel('to'),
@@ -34,11 +34,11 @@ export const genericErc721Humanizer: HumanizerCallModule = (
     [iface.getFunction('approve')?.selector!]: (call: IrCall) => {
       const args = iface.parseTransaction(call)?.args.toArray() || []
       return args[0] === ZeroAddress
-        ? [getAction('Revoke approval'), getLabel('for'), getNft(call.to, args[1])]
+        ? [getAction('Revoke approval'), getLabel('for'), getToken(call.to, args[1])]
         : [
             getAction('Grant approval'),
             getLabel('for'),
-            getNft(call.to, args[1]),
+            getToken(call.to, args[1]),
             getLabel('to'),
             getAddressVisualization(args[0])
           ]
@@ -49,7 +49,7 @@ export const genericErc721Humanizer: HumanizerCallModule = (
         ? [
             getAction('Grant approval'),
             getLabel('for all nfts'),
-            getNft(call.to, args[1]),
+            getToken(call.to, args[1]),
             getLabel('to'),
             getAddressVisualization(args[0])
           ]

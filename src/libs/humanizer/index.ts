@@ -38,8 +38,8 @@ import { HUMANIZER_META_KEY } from './utils'
 // the final humanization is the final triggered module
 export const humanizerCallModules: HumanizerCallModule[] = [
   preProcessHumanizer,
-  genericErc20Humanizer,
   genericErc721Humanizer,
+  genericErc20Humanizer,
   gasTankModule,
   uniswapHumanizer,
   curveModule,

@@ -6,6 +6,7 @@ import { produceMemoryStore } from '../../../../../test/helpers'
 import { ErrorRef } from '../../../../controllers/eventEmitter/eventEmitter'
 import { HumanizerFragment } from '../../../../interfaces/humanizer'
 import { AccountOp } from '../../../accountOp/accountOp'
+import { IrCall } from '../../interfaces'
 import { EMPTY_HUMANIZER_META, HUMANIZER_META_KEY, integrateFragments } from '../../utils'
 import { fallbackHumanizer } from './fallBackHumanizer'
 

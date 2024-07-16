@@ -52,10 +52,6 @@ export function getChain(chainId: bigint): HumanizerVisualization {
   return { type: 'chain', id: randomId(), chainId }
 }
 
-export function getNft(address: string, id: bigint): HumanizerVisualization {
-  return { type: 'nft', address, id: randomId(), nftId: id }
-}
-
 export function getOnBehalfOf(onBehalfOf: string, sender: string): HumanizerVisualization[] {
   return onBehalfOf.toLowerCase() !== sender.toLowerCase()
     ? [getLabel('on behalf of'), getAddressVisualization(onBehalfOf)]
