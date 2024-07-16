@@ -10,9 +10,7 @@ import { humanizeCalls, humanizePlainTextMessage, humanizeTypedMessage } from '.
 import {
   HumanizerCallModule,
   HumanizerOptions,
-  HumanizerParsingModule,
   HumanizerPromise,
-  HumanizerSettings,
   IrCall,
   IrMessage
 } from './interfaces'
@@ -33,8 +31,6 @@ import traderJoeModule from './modules/TraderJoe'
 import { uniswapHumanizer } from './modules/Uniswap'
 import { WALLETModule } from './modules/WALLET'
 import wrappingModule from './modules/Wrapping'
-import { parseCalls, parseMessage } from './parsers'
-import { humanizerMetaParsing } from './parsers/humanizerMetaParsing'
 import { erc20Module, erc721Module, permit2Module } from './typedMessageModules'
 import { HUMANIZER_META_KEY } from './utils'
 
@@ -59,8 +55,6 @@ export const humanizerCallModules: HumanizerCallModule[] = [
   sushiSwapModule,
   fallbackHumanizer
 ]
-
-const parsingModules: HumanizerParsingModule[] = [humanizerMetaParsing]
 
 // from least generic to most generic
 // the final visualization and warnings are from the first triggered module
@@ -97,7 +91,6 @@ const sharedHumanization = async <InputDataType extends AccountOp | Message>(
   let message: Message | null = null
   let irCalls: IrCall[] = []
   let asyncOps: HumanizerPromise[] = []
-  let parsedMessage: IrMessage
   if ('calls' in data) {
     op = parse(stringify(data))
   }
@@ -122,25 +115,12 @@ const sharedHumanization = async <InputDataType extends AccountOp | Message>(
         totalHumanizerMetaToBeUsed,
         humanizerOptions
       )
-      const [parsedCalls, newAsyncOps] = parseCalls(
-        op!,
-        irCalls,
-        parsingModules,
-        totalHumanizerMetaToBeUsed,
-        humanizerOptions
-      )
-      asyncOps.push(...newAsyncOps)
       ;(callback as (response: IrCall[], nonGlobalFrags: HumanizerFragment[]) => void)(
-        parsedCalls,
+        irCalls,
         op!.humanizerMetaFragments || []
       )
       //
     } else if ('content' in data) {
-      const humanizerSettings: HumanizerSettings = {
-        accountAddr: message!.accountAddr,
-        networkId: message?.networkId || 'ethereum',
-        humanizerMeta: totalHumanizerMetaToBeUsed
-      }
       const irMessage: IrMessage = {
         ...message!,
         ...(message!.content.kind === 'typedMessage'
@@ -148,13 +128,7 @@ const sharedHumanization = async <InputDataType extends AccountOp | Message>(
           : humanizePlainTextMessage(message!.content))
       }
 
-      ;[parsedMessage, asyncOps] = parseMessage(
-        humanizerSettings,
-        irMessage,
-        parsingModules,
-        humanizerOptions
-      )
-      ;(callback as (response: IrMessage) => void)(parsedMessage)
+      ;(callback as (response: IrMessage) => void)(irMessage)
     }
 
     // if we are in the history no more than 1 cycle and no async operations

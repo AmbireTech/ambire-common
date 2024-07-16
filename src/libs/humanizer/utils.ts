@@ -114,7 +114,7 @@ export async function getNativePrice(network: Network, fetch: Fetch): Promise<nu
   return response[platformId].usd
 }
 
-// @TODO maybe this shouldn't be here, more suitable place would be humanizer/modules/tokens
+// @TODO this should be moved outside of the humanizer as we should not use it in the humanizer
 export async function getTokenInfo(
   humanizerSettings: HumanizerSettings,
   address: string,
@@ -197,18 +197,12 @@ export function getUnwrapping(
   ].filter((x) => x) as HumanizerVisualization[]
 }
 
+// @TODO cant this be used in the <Address component>
 export function getKnownName(
   humanizerMeta: HumanizerMeta | undefined,
   address: string
 ): string | undefined {
   return humanizerMeta?.knownAddresses?.[address.toLowerCase()]?.name
-}
-
-export function getKnownToken(
-  humanizerMeta: HumanizerMeta | undefined,
-  address: string
-): { decimals: number; symbol: string } | undefined {
-  return humanizerMeta?.knownAddresses?.[address.toLowerCase()]?.token
 }
 
 export const integrateFragments = (

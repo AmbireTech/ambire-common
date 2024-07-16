@@ -2,22 +2,14 @@ import { Interface, ZeroAddress } from 'ethers'
 
 import { AccountOp } from '../../../accountOp/accountOp'
 import { ERC20, ERC721 } from '../../const/abis'
-import { HumanizerCallModule, HumanizerMeta, HumanizerPromise, IrCall } from '../../interfaces'
-import {
-  getAction,
-  getAddressVisualization,
-  getKnownToken,
-  getLabel,
-  getNft,
-  getToken,
-  getTokenInfo,
-  getUnknownVisualization
-} from '../../utils'
+import { HumanizerCallModule, HumanizerPromise, IrCall } from '../../interfaces'
+import { getAction, getAddressVisualization, getLabel, getNft, getToken } from '../../utils'
 
+// @TODO merge this with the  erc20 humanizer module as sometimes
+// we see no difference between the two
 export const genericErc721Humanizer: HumanizerCallModule = (
   accountOp: AccountOp,
-  currentIrCalls: IrCall[],
-  humanizerMeta: HumanizerMeta
+  currentIrCalls: IrCall[]
 ) => {
   const iface = new Interface(ERC721)
   const nftTransferVisualization = (call: IrCall) => {
@@ -75,17 +67,8 @@ export const genericErc721Humanizer: HumanizerCallModule = (
   }
 
   const newCalls = currentIrCalls.map((call) => {
-    // the humanizer works like this:
-    // first, humanize ERC-20
-    // second, humanize ERC-721
-    // but the sigHash for approve is the same on both standards
-    // so on approve, ERC-20 humanization is replaced by ERC-721.
-    // that's why we check if it's a known token to prevent humanization.
-    // If it's not a known token, using the same humanization is okay as
-    // we cannot humanize it further
-    const isActuallyKnownToken = !!getKnownToken(humanizerMeta, call.to)
     // could do additional check if it is actually NFT contract
-    return matcher[call.data.substring(0, 10)] && !isActuallyKnownToken
+    return matcher[call.data.substring(0, 10)]
       ? {
           ...call,
           fullVisualization: matcher[call.data.substring(0, 10)](call)
@@ -97,9 +80,7 @@ export const genericErc721Humanizer: HumanizerCallModule = (
 
 export const genericErc20Humanizer: HumanizerCallModule = (
   accountOp: AccountOp,
-  currentIrCalls: IrCall[],
-  humanizerMeta: HumanizerMeta,
-  options?: any
+  currentIrCalls: IrCall[]
 ) => {
   const asyncOps: HumanizerPromise[] = []
   const iface = new Interface(ERC20)
@@ -160,23 +141,12 @@ export const genericErc20Humanizer: HumanizerCallModule = (
   }
   const newCalls = currentIrCalls.map((call) => {
     const sigHash = call.data.substring(0, 10)
-    const isTokenKnown = !!getKnownToken(humanizerMeta, call.to)
-    // if proper func selector and no such token found in meta
-    // console.log(matcher[sigHash], isTokenKnown)
-    if (matcher[sigHash] && !isTokenKnown)
-      asyncOps.push(() => getTokenInfo(accountOp, call.to, options))
-    if (matcher[sigHash] && isTokenKnown)
-      return {
-        ...call,
-        fullVisualization: matcher[sigHash](call)
-      }
-
-    if (isTokenKnown && !matcher[sigHash])
-      return {
-        ...call,
-        fullVisualization: getUnknownVisualization('ERC-20', call)
-      }
-    return call
+    return matcher[sigHash]
+      ? {
+          ...call,
+          fullVisualization: matcher[sigHash](call)
+        }
+      : call
   })
   return [newCalls, asyncOps]
 }
