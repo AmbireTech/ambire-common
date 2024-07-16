@@ -74,10 +74,6 @@ describe('SignMessageController', () => {
       () => {},
       () => {}
     )
-    // Internally, it waits Networks and Providers to be loaded
-    await accountsCtrl.initialLoadPromise
-
-    await accountsCtrl.updateAccountState(account.addr, 'latest')
 
     signMessageController = new SignMessageController(
       keystore,
@@ -85,13 +81,13 @@ describe('SignMessageController', () => {
       networksCtrl,
       accountsCtrl,
       {},
-      produceMemoryStore(),
+      storage,
       fetch
     )
   })
 
-  test('should initialize with a valid message and then - reset', () => {
-    signMessageController.init({ messageToSign })
+  test('should initialize with a valid message and then - reset', async () => {
+    await signMessageController.init({ messageToSign })
     expect(signMessageController.isInitialized).toBeTruthy()
     expect(signMessageController.messageToSign).toEqual(messageToSign)
 
@@ -103,7 +99,7 @@ describe('SignMessageController', () => {
     expect(signMessageController.signingKeyType).toBeNull()
   })
 
-  test('should not initialize with an invalid message kind', () => {
+  test('should not initialize with an invalid message kind', async () => {
     const invalidMessageToSign: Message = {
       id: 1,
       content: {
@@ -118,16 +114,16 @@ describe('SignMessageController', () => {
     // 'any' is on purpose, to override 'emitError' prop (which is protected)
     ;(signMessageController as any).emitError = mockEmitError
 
-    signMessageController.init({ messageToSign: invalidMessageToSign })
+    await signMessageController.init({ messageToSign: invalidMessageToSign })
 
     expect(signMessageController.isInitialized).toBeFalsy()
     expect(mockEmitError).toHaveBeenCalled()
   })
 
-  test('should set signing key address', () => {
+  test('should set signing key address', async () => {
     const signingKeyAddr = account.addr
 
-    signMessageController.init({ messageToSign })
+    await signMessageController.init({ messageToSign })
     signMessageController.setSigningKey(signingKeyAddr, 'internal')
 
     expect(signMessageController.signingKeyAddr).toBe(signingKeyAddr)
@@ -148,7 +144,7 @@ describe('SignMessageController', () => {
     // @ts-ignore spy on the getSigner method and mock its implementation
     const getSignerSpy = jest.spyOn(keystore, 'getSigner').mockResolvedValue(mockSigner)
 
-    signMessageController.init({ messageToSign })
+    await signMessageController.init({ messageToSign })
     signMessageController.setSigningKey(signingKeyAddr, 'internal')
     await signMessageController.sign()
 
@@ -157,8 +153,8 @@ describe('SignMessageController', () => {
 
     getSignerSpy.mockRestore() // cleans up the spy
   })
-  test('removeAccountData', () => {
-    signMessageController.init({ messageToSign })
+  test('removeAccountData', async () => {
+    await signMessageController.init({ messageToSign })
     expect(signMessageController.isInitialized).toBeTruthy()
 
     signMessageController.removeAccountData(account.addr)
