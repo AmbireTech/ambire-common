@@ -247,8 +247,8 @@ export async function estimate(
   }
 
   // if 4337, delegate
-  if (opts && opts.is4337Broadcast) {
-    const estimationResult: EstimateResult = await estimate4337(
+  if (opts && opts.is4337Broadcast)
+    return estimate4337(
       account,
       op,
       calls,
@@ -259,8 +259,6 @@ export async function estimate(
       blockTag,
       nativeToCheck
     )
-    return estimationResult
-  }
 
   const deploylessEstimator = fromDescriptor(provider, Estimation, !network.rpcNoStateOverride)
   const optimisticOracle = network.isOptimistic ? OPTIMISTIC_ORACLE : ZeroAddress

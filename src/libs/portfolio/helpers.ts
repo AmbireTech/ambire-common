@@ -9,6 +9,7 @@ import { RPCProvider } from '../../interfaces/provider'
 import { isSmartAccount } from '../account/account'
 import { CustomToken } from './customToken'
 import {
+  AdditionalPortfolioNetworkResult,
   ExternalHintsAPIResponse,
   PortfolioLibGetResult,
   PreviousHintsStorage,
@@ -203,6 +204,7 @@ const getLowercaseAddressArrayForNetwork = (
 export function getUpdatedHints(
   latestHintsFromExternalAPI: ExternalHintsAPIResponse,
   tokens: TokenResult[],
+  tokenErrors: AdditionalPortfolioNetworkResult['tokenErrors'],
   networkId: NetworkId,
   storagePreviousHints: PreviousHintsStorage,
   key: string,
@@ -219,6 +221,29 @@ export function getUpdatedHints(
 
   // The keys in learnedTokens are addresses of tokens
   const networkLearnedTokenAddresses = Object.keys(networkLearnedTokens)
+
+  // Self-cleaning mechanism for removing non-ERC20 items from the learned tokens.
+  // There's a possibility that the discovered tokens (from debug_traceCall or mostly Humanizer) include items that are not ERC20 tokens.
+  // For instance, a SmartContract address can be passed as a learned token.
+  // Thanks to BalanceGetter, we know which tokens encounter an error when we try to update the portfolio.
+  // All the errors are collected in `tokenErrors`, and if we cannot retrieve its balance,
+  // the contract returns `bytes('unkn')`, which is equal to `0x756e6b6e`.
+  // Note:
+  // When we extract tokens from `debug_traceCall`, we are already filtering the tokens the same way as here (relying on BalanceGetter).
+  // However, for the Humanizer tokens, we skipped that check because the Humanizer is invoked more frequently on the Sign screen,
+  // and this validation may slow down the performance of the page. Because of this, we perform the check here, where we are calling BalanceGetter anyway.
+  const unknownBalanceError = '0x756e6b6e'
+  const networkLearnedTokenAddressesHavingError = networkLearnedTokenAddresses.filter(
+    (tokenAddress) => {
+      const hasError = !!tokenErrors?.find(
+        (errorToken) =>
+          errorToken.address.toLowerCase() === tokenAddress.toLowerCase() &&
+          errorToken.error === unknownBalanceError
+      )
+
+      return hasError
+    }
+  )
 
   if (networkLearnedTokenAddresses.length) {
     // Lowercase all addresses outside of the loop for better performance
@@ -240,9 +265,21 @@ export function getUpdatedHints(
     )
 
     // Update the timestamp of learned tokens
+    // and self-clean non-ERC20 items.
     // eslint-disable-next-line no-restricted-syntax
     for (const address of networkLearnedTokenAddresses) {
       const lowercaseAddress = address.toLowerCase()
+
+      // Delete non-ERC20 items from the learned tokens
+      if (
+        networkLearnedTokenAddressesHavingError.find(
+          (errorToken) => errorToken.toLowerCase() === lowercaseAddress
+        )
+      ) {
+        delete learnedTokens[networkId][lowercaseAddress]
+        // eslint-disable-next-line no-continue
+        continue
+      }
 
       const isPinned = lowercaseNetworkPinnedTokenAddresses.includes(lowercaseAddress)
       const isTokenPreference = lowercaseNetworkPreferenceTokenAddresses.includes(lowercaseAddress)

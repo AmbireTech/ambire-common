@@ -567,24 +567,26 @@ export class SignAccountOpController extends EventEmitter {
    * If the nonce of the current account op and the last account op are the same,
    * do an RBF increase or otherwise the user cannot broadcast the txn
    */
-  #rbfIncrease(accId: string, amount: bigint): bigint {
-    // TODO: think this over
+  #rbfIncrease(accId: string, gasPrice: bigint): bigint {
     // if there was an error on the signed account op with a
     // replacement fee too low, we increase by 12.5% the signed account op
+    // IF the new estimation is not actually higher
     if (this.replacementFeeLow && this.signedAccountOp && this.signedAccountOp.gasFeePayment) {
       const bumpFees =
-        this.signedAccountOp.gasFeePayment.amount + this.signedAccountOp.gasFeePayment.amount / 8n
-      return amount > bumpFees ? amount : bumpFees
+        this.signedAccountOp.gasFeePayment.gasPrice +
+        this.signedAccountOp.gasFeePayment.gasPrice / 8n
+      return gasPrice > bumpFees ? gasPrice : bumpFees
     }
 
     // if no RBF option for this paidBy option, return the amount
     const rbfOp = this.rbfAccountOps[accId]
-    if (!rbfOp || !rbfOp.gasFeePayment) return amount
+    if (!rbfOp || !rbfOp.gasFeePayment) return gasPrice
 
     // increase by a minimum of 12.5% the last broadcast txn and use that
     // or use the current gas estimation if it's more
-    const lastTxnAmountIncreased = rbfOp.gasFeePayment.amount + rbfOp.gasFeePayment.amount / 8n
-    return amount > lastTxnAmountIncreased ? amount : lastTxnAmountIncreased
+    const lastTxnGasPriceIncreased =
+      rbfOp.gasFeePayment.gasPrice + rbfOp.gasFeePayment.gasPrice / 8n
+    return gasPrice > lastTxnGasPriceIncreased ? gasPrice : lastTxnGasPriceIncreased
   }
 
   get #feeSpeedsLoading() {
@@ -675,6 +677,7 @@ export class SignAccountOpController extends EventEmitter {
 
         // EOA
         if (!isSmartAccount(this.account)) {
+          gasPrice = this.#rbfIncrease(this.account.addr, gasPrice)
           simulatedGasLimit = gasUsed
 
           if (getAddress(this.accountOp.calls[0].to) === SINGLETON) {
@@ -682,14 +685,14 @@ export class SignAccountOpController extends EventEmitter {
           }
 
           amount = simulatedGasLimit * gasPrice + option.addedNative
-          amount = this.#rbfIncrease(this.account.addr, amount)
         } else if (option.paidBy !== this.accountOp.accountAddr) {
           // Smart account, but EOA pays the fee
+          gasPrice = this.#rbfIncrease(option.paidBy, gasPrice)
           simulatedGasLimit = gasUsed + callDataAdditionalGasCost
           amount = simulatedGasLimit * gasPrice + option.addedNative
-          amount = this.#rbfIncrease(option.paidBy, amount)
         } else {
           // Relayer
+          gasPrice = this.#rbfIncrease(this.account.addr, gasPrice)
           simulatedGasLimit = gasUsed + callDataAdditionalGasCost + option.gasUsed!
           amount = SignAccountOpController.getAmountAfterFeeTokenConvert(
             simulatedGasLimit,
@@ -699,7 +702,6 @@ export class SignAccountOpController extends EventEmitter {
             option.addedNative
           )
           amount = this.#increaseFee(amount)
-          amount = this.#rbfIncrease(this.account.addr, amount)
         }
 
         const feeSpeed: SpeedCalc = {
