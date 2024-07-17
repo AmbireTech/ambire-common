@@ -307,25 +307,18 @@ export function getUpdatedHints(
 
 export const tokenFilter = (
   token: TokenResult,
-  tokens: TokenResult[],
+  nativeToken: TokenResult,
   network: { id: NetworkId },
   hasNonZeroTokens: boolean,
   additionalHints: string[] | undefined,
-  tokenPreferences: CustomToken[]
+  isTokenPreference: boolean
 ): boolean => {
-  const isTokenPreference = tokenPreferences?.find((tokenPreference) => {
-    return tokenPreference.address === token.address && tokenPreference.networkId === network.id
-  })
-  if (isTokenPreference) {
-    token.isHidden = isTokenPreference.isHidden
-  }
+  if (isTokenPreference) return true
 
-  const nativeToken = tokens.find((t) => t.address === ZeroAddress)
   const isERC20NativeRepresentation =
     token.symbol === nativeToken?.symbol &&
     token.amount === nativeToken.amount &&
-    token.address !== ZeroAddress &&
-    !isTokenPreference
+    token.address !== ZeroAddress
 
   if (isERC20NativeRepresentation) return false
 
@@ -336,7 +329,7 @@ export const tokenFilter = (
     return pinnedToken.networkId === network.id && pinnedToken.address === token.address
   })
 
-  // make the comparisson to lowercase as otherwise, it doesn't work
+  // make the comparison to lowercase as otherwise, it doesn't work
   const hintsLowerCase = additionalHints
     ? additionalHints.map((hint) => hint.toLowerCase())
     : undefined
@@ -346,5 +339,32 @@ export const tokenFilter = (
   // return the token if it's pinned and requested
   const pinnedRequested = isPinned && !hasNonZeroTokens
 
-  return !!isTokenPreference || isInAdditionalHints || pinnedRequested
+  return isInAdditionalHints || pinnedRequested
+}
+
+export const processTokens = (
+  tokenResults: TokenResult[],
+  network: { id: NetworkId },
+  hasNonZeroTokens: boolean,
+  additionalHints: string[] | undefined,
+  tokenPreferences: CustomToken[]
+): TokenResult[] => {
+  const nativeToken = tokenResults.find((token) => token.address === ZeroAddress)
+
+  return tokenResults.reduce((tokens, tokenResult) => {
+    const token = { ...tokenResult }
+
+    const preference = tokenPreferences?.find((tokenPreference) => {
+      return tokenPreference.address === token.address && tokenPreference.networkId === network.id
+    })
+
+    if (preference) {
+      token.isHidden = preference.isHidden
+    }
+
+    if (tokenFilter(token, nativeToken!, network, hasNonZeroTokens, additionalHints, !!preference))
+      tokens.push(token)
+
+    return tokens
+  }, [] as TokenResult[])
 }
