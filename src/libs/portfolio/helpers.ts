@@ -313,8 +313,13 @@ export const tokenFilter = (
   additionalHints: string[] | undefined,
   isTokenPreference: boolean
 ): boolean => {
+  // always include tokens added as a preference
   if (isTokenPreference) return true
 
+  // Never add ERC20 tokens that represent the network's native token.
+  // For instance, on Polygon, we have this token: `0x0000000000000000000000000000000000001010`.
+  // It mimics the native MATIC token (same symbol, same amount) and is shown twice in the Dashboard.
+  // From a user's perspective, the token is duplicated and counted twice in the balance.
   const isERC20NativeRepresentation =
     token.symbol === nativeToken?.symbol &&
     token.amount === nativeToken.amount &&
@@ -342,6 +347,10 @@ export const tokenFilter = (
   return isInAdditionalHints || pinnedRequested
 }
 
+/**
+ * Filter the TokenResult[] by certain criteria (please refer to `tokenFilter` for more details)
+ * and set the token.isHidden flag.
+ */
 export const processTokens = (
   tokenResults: TokenResult[],
   network: { id: NetworkId },
@@ -349,6 +358,8 @@ export const processTokens = (
   additionalHints: string[] | undefined,
   tokenPreferences: CustomToken[]
 ): TokenResult[] => {
+  // We need to know the native token in order to execute our filtration logic in tokenFilter.
+  // For performance reasons, we define it here once, instead of during every single iteration in the reduce method.
   const nativeToken = tokenResults.find((token) => token.address === ZeroAddress)
 
   return tokenResults.reduce((tokens, tokenResult) => {
