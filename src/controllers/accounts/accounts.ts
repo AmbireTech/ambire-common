@@ -82,7 +82,7 @@ export class AccountsController extends EventEmitter {
   }
 
   async selectAccount(toAccountAddr: string) {
-    await this.withStatus('selectAccount', async () => this.#selectAccount(toAccountAddr))
+    await this.withStatus('selectAccount', async () => this.#selectAccount(toAccountAddr), true)
   }
 
   async #selectAccount(toAccountAddr: string | null) {
@@ -220,8 +220,10 @@ export class AccountsController extends EventEmitter {
   }
 
   async updateAccountPreferences(accounts: { addr: string; preferences: AccountPreferences }[]) {
-    await this.withStatus('updateAccountPreferences', async () =>
-      this.#updateAccountPreferences(accounts)
+    await this.withStatus(
+      'updateAccountPreferences',
+      async () => this.#updateAccountPreferences(accounts),
+      true
     )
   }
 
