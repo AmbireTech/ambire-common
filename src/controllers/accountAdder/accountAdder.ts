@@ -577,11 +577,19 @@ export class AccountAdderController extends EventEmitter {
     }
 
     this.readyToAddAccounts = [
-      ...accounts.map((x, i) => ({
-        ...x.account,
-        preferences: getDefaultAccountPreferences(x.account.addr, this.#accounts.accounts, i),
-        newlyCreated: newlyCreatedAccounts.includes(x.account.addr)
-      }))
+      ...accounts.map((x, i) => {
+        const alreadyImportedAcc = this.#accounts.accounts.find((a) => a.addr === x.account.addr)
+
+        return {
+          ...x.account,
+          // Persist the already imported account preferences on purpose, otherwise,
+          // re-importing the same account via different key type(s) would reset them.
+          preferences: alreadyImportedAcc
+            ? alreadyImportedAcc.preferences
+            : getDefaultAccountPreferences(x.account.addr, this.#accounts.accounts, i),
+          newlyCreated: newlyCreatedAccounts.includes(x.account.addr)
+        }
+      })
     ]
     this.readyToAddKeys = readyToAddKeys
     this.readyToAddKeyPreferences = readyToAddKeyPreferences
