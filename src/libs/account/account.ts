@@ -9,6 +9,7 @@ import {
   AccountId,
   AccountOnPage,
   AccountPreferences,
+  AccountStates,
   ImportStatus
 } from '../../interfaces/account'
 import { Key } from '../../interfaces/keystore'
@@ -179,6 +180,11 @@ export const isAmbireV1LinkedAccount = (factoryAddr?: string) =>
   factoryAddr === '0xBf07a0Df119Ca234634588fbDb5625594E2a5BCA'
 
 export const isSmartAccount = (account: Account | undefined) => !!account && !!account.creation
+
+export const isBasicAccount = (account: Account | undefined) => !isSmartAccount(account)
+
+export const isSmartAccountDeployed = (accountNetworkState: AccountStates[string][string]) =>
+  accountNetworkState?.isDeployed
 
 /**
  * Checks if a (basic) EOA account is a derived one,
