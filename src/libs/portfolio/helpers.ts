@@ -320,9 +320,6 @@ export const tokenFilter = (
     token.isHidden = isTokenPreference.isHidden
   }
 
-  // always include > 0 amount and native token
-  if (token.amount > 0 || token.address === ZeroAddress) return true
-
   const nativeToken = tokens.find((t) => t.address === ZeroAddress)
   const isERC20NativeRepresentation =
     token.symbol === nativeToken?.symbol &&
@@ -331,6 +328,9 @@ export const tokenFilter = (
     !isTokenPreference
 
   if (isERC20NativeRepresentation) return false
+
+  // always include > 0 amount and native token
+  if (token.amount > 0 || token.address === ZeroAddress) return true
 
   const isPinned = !!PINNED_TOKENS.find((pinnedToken) => {
     return pinnedToken.networkId === network.id && pinnedToken.address === token.address
