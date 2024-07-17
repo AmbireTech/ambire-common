@@ -158,10 +158,7 @@ export class MainController extends EventEmitter {
    * Callback that gets triggered when the signing process of a message or an
    * account op (including the broadcast step) gets finalized.
    */
-  onSignSuccess: (
-    type: 'message' | 'typed-data' | 'account-op',
-    meta?: { networkId?: NetworkId }
-  ) => void
+  onSignSuccess: (type: 'message' | 'typed-data' | 'account-op') => void
 
   constructor({
     storage,
@@ -180,10 +177,7 @@ export class MainController extends EventEmitter {
     keystoreSigners: Partial<{ [key in Key['type']]: KeystoreSignerType }>
     externalSignerControllers: ExternalSignerControllers
     windowManager: WindowManager
-    onSignSuccess?: (
-      type: 'message' | 'typed-data' | 'account-op',
-      meta?: { networkId?: NetworkId }
-    ) => void
+    onSignSuccess?: (type: 'message' | 'typed-data' | 'account-op') => void
   }) {
     super()
     this.#storage = storage
@@ -1686,7 +1680,7 @@ export class MainController extends EventEmitter {
       actionId
     )
 
-    this.onSignSuccess('account-op', { networkId: submittedAccountOp.networkId })
+    this.onSignSuccess('account-op')
     return Promise.resolve(submittedAccountOp)
   }
 
