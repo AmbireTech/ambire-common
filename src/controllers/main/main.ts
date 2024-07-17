@@ -455,9 +455,20 @@ export class MainController extends EventEmitter {
 
     // Could (rarely) happen if not even a single account state is fetched yet
     const shouldForceUpdateAndWaitForAccountState =
-      accountAddr && networkId && !this.accounts.accountStates[accountAddr]?.[networkId]
+      accountAddr && networkId && !this.accounts.accountStates?.[accountAddr]?.[networkId]
     if (shouldForceUpdateAndWaitForAccountState)
       await this.accounts.updateAccountState(accountAddr, 'latest', [networkId])
+
+    const isAccountStateStillMissing =
+      !accountAddr || !networkId || !this.accounts.accountStates?.[accountAddr]?.[networkId]
+    if (isAccountStateStillMissing) {
+      const message =
+        'Unable to sign the message. During the preparation step, required account data failed to get received. Please try again later or contact Ambire support.'
+      const error = new Error(
+        `The account state of ${accountAddr} is missing for the network with id ${networkId}.`
+      )
+      return this.emitError({ level: 'major', message, error })
+    }
 
     await this.signMessage.sign()
 
