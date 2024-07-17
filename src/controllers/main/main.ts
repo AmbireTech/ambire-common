@@ -158,7 +158,10 @@ export class MainController extends EventEmitter {
    * Callback that gets triggered when the signing process of a message or an
    * account op (including the broadcast step) gets finalized.
    */
-  onSignSuccess: (type: 'message' | 'typed-data' | 'account-op') => void
+  onSignSuccess: (
+    type: 'message' | 'typed-data' | 'account-op',
+    meta?: { networkId?: NetworkId }
+  ) => void
 
   constructor({
     storage,
@@ -177,7 +180,10 @@ export class MainController extends EventEmitter {
     keystoreSigners: Partial<{ [key in Key['type']]: KeystoreSignerType }>
     externalSignerControllers: ExternalSignerControllers
     windowManager: WindowManager
-    onSignSuccess?: (type: 'message' | 'typed-data' | 'account-op') => void
+    onSignSuccess?: (
+      type: 'message' | 'typed-data' | 'account-op',
+      meta?: { networkId?: NetworkId }
+    ) => void
   }) {
     super()
     this.#storage = storage
@@ -444,6 +450,15 @@ export class MainController extends EventEmitter {
   }
 
   async handleSignMessage() {
+    const accountAddr = this.signMessage.messageToSign?.accountAddr
+    const networkId = this.signMessage.messageToSign?.networkId
+
+    // Could (rarely) happen if not even a single account state is fetched yet
+    const shouldForceUpdateAndWaitForAccountState =
+      accountAddr && networkId && !this.accounts.accountStates[accountAddr]?.[networkId]
+    if (shouldForceUpdateAndWaitForAccountState)
+      await this.accounts.updateAccountState(accountAddr, 'latest', [networkId])
+
     await this.signMessage.sign()
 
     const signedMessage = this.signMessage.signedMessage
@@ -1326,6 +1341,30 @@ export class MainController extends EventEmitter {
         return
       }
 
+      if (
+        estimation &&
+        estimation.nonFatalErrors &&
+        estimation.nonFatalErrors.find((err) => err.cause === '4337_INVALID_NONCE') &&
+        this.accounts.accountStates?.[localAccountOp.accountAddr]?.[localAccountOp.networkId]
+      ) {
+        this.accounts
+          .updateAccountState(localAccountOp.accountAddr, 'latest', [localAccountOp.networkId])
+          .then(() => this.estimateSignAccountOp())
+          .catch((error) =>
+            this.emitError({
+              level: 'major',
+              message:
+                'Failed to refetch the account state. Please try again to initialize your transaction',
+              error
+            })
+          )
+
+        // returning here means estimation will not be set => better UX as
+        // the user will not see the warning but instead
+        // just wait for the new estimation
+        return
+      }
+
       // check if an RBF should be applied for the incoming transaction
       // for SA conditions are: take the last broadcast but not confirmed accOp
       // and check if the nonce is the same as the current nonce (non 4337 txns)
@@ -1416,11 +1455,6 @@ export class MainController extends EventEmitter {
     }
 
     let transactionRes: TransactionResponse | { hash: string; nonce: number } | null = null
-    const feeTokenEstimation = estimation.feePaymentOptions.find(
-      (option) =>
-        option.token.address === accountOp.gasFeePayment?.inToken &&
-        option.paidBy === accountOp.gasFeePayment?.paidBy
-    )!
 
     // Basic account (EOA)
     if (!isSmartAccount(account)) {
@@ -1458,14 +1492,12 @@ export class MainController extends EventEmitter {
         }
 
         // if it's eip1559, send it as such. If no, go to legacy
-        const gasPrice =
-          (gasFeePayment.amount - feeTokenEstimation.addedNative) / gasFeePayment.simulatedGasLimit
         if (gasFeePayment.maxPriorityFeePerGas !== undefined) {
-          rawTxn.maxFeePerGas = gasPrice
+          rawTxn.maxFeePerGas = gasFeePayment.gasPrice
           rawTxn.maxPriorityFeePerGas = gasFeePayment.maxPriorityFeePerGas
           rawTxn.type = 2
         } else {
-          rawTxn.gasPrice = gasPrice
+          rawTxn.gasPrice = gasFeePayment.gasPrice
           rawTxn.type = 0
         }
 
@@ -1533,9 +1565,6 @@ export class MainController extends EventEmitter {
         const signer = await this.keystore.getSigner(feePayerKey.addr, feePayerKey.type)
         if (signer.init) signer.init(this.#externalSignerControllers[feePayerKey.type])
 
-        const gasPrice =
-          (accountOp.gasFeePayment.amount - feeTokenEstimation.addedNative) /
-          accountOp.gasFeePayment.simulatedGasLimit
         const rawTxn: TxnRequest = {
           to,
           data,
@@ -1549,11 +1578,11 @@ export class MainController extends EventEmitter {
         }
 
         if (accountOp.gasFeePayment.maxPriorityFeePerGas !== undefined) {
-          rawTxn.maxFeePerGas = gasPrice
+          rawTxn.maxFeePerGas = accountOp.gasFeePayment.gasPrice
           rawTxn.maxPriorityFeePerGas = accountOp.gasFeePayment.maxPriorityFeePerGas
           rawTxn.type = 2
         } else {
-          rawTxn.gasPrice = gasPrice
+          rawTxn.gasPrice = accountOp.gasFeePayment.gasPrice
           rawTxn.type = 0
         }
 
@@ -1657,7 +1686,7 @@ export class MainController extends EventEmitter {
       actionId
     )
 
-    this.onSignSuccess('account-op')
+    this.onSignSuccess('account-op', { networkId: submittedAccountOp.networkId })
     return Promise.resolve(submittedAccountOp)
   }
 

@@ -86,10 +86,15 @@ export function estimationErrorFormatted(
   opts?: {
     feePaymentOptions?: EstimateResult['feePaymentOptions']
     erc4337GasLimits?: Erc4337GasLimits
+    nonFatalErrors?: Error[]
   }
 ): EstimateResult {
   const feePaymentOptions = opts?.feePaymentOptions ?? []
-  const finalsOps = { ...opts, feePaymentOptions }
+  const finalsOps = {
+    ...opts,
+    feePaymentOptions,
+    nonFatalErrors: opts?.nonFatalErrors ?? undefined
+  }
 
   return {
     gasUsed: 0n,

@@ -102,8 +102,18 @@ export async function bundlerEstimate(
   const gasData = await Bundler.estimate(userOp, network, shouldStateOverride).catch((e: any) => {
     return new Error(Bundler.decodeBundlerError(e, 'Estimation failed with unknown reason'))
   })
-  if (gasData instanceof Error)
-    return estimationErrorFormatted(gasData as Error, { feePaymentOptions })
+  if (gasData instanceof Error) {
+    const nonFatalErrors: Error[] = []
+    // if the bundler estimation fails, add a nonFatalError so we can react to
+    // it on the FE. The BE at a later stage decides if this error is actually
+    // fatal (at estimate.ts -> estimate4337)
+    nonFatalErrors.push(new Error('Bundler estimation failed', { cause: '4337_ESTIMATION' }))
+
+    if (gasData.message.indexOf('AA25 invalid account nonce') !== -1) {
+      nonFatalErrors.push(new Error('4337 invalid account nonce', { cause: '4337_INVALID_NONCE' }))
+    }
+    return estimationErrorFormatted(gasData as Error, { feePaymentOptions, nonFatalErrors })
+  }
 
   const apeMaxFee = BigInt(gasPrices.fast.maxFeePerGas) + BigInt(gasPrices.fast.maxFeePerGas) / 5n
   const apePriority =
