@@ -1346,12 +1346,17 @@ export class MainController extends EventEmitter {
           .then(() => this.estimateSignAccountOp())
           .catch((error) =>
             this.emitError({
-              level: 'silent',
+              level: 'major',
               message:
-                'Failed to refetch the account state after encountering a 4337_INVALID_NONCE error',
+                'Failed to refetch the account state. Please try again to initialize your transaction',
               error
             })
           )
+
+        // returning here means estimation will not be set => better UX as
+        // the user will not see the warning but instead
+        // just wait for the new estimation
+        return
       }
 
       // check if an RBF should be applied for the incoming transaction
