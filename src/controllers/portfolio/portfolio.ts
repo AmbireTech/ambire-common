@@ -487,7 +487,14 @@ export class PortfolioController extends EventEmitter {
         result: {
           ...result,
           tokens: result.tokens.filter((token) =>
-            tokenFilter(token, network, hasNonZeroTokens, additionalHints, tokenPreferences)
+            tokenFilter(
+              token,
+              result.tokens,
+              network,
+              hasNonZeroTokens,
+              additionalHints,
+              tokenPreferences
+            )
           ),
           total: getTotal(result.tokens)
         }

@@ -307,6 +307,7 @@ export function getUpdatedHints(
 
 export const tokenFilter = (
   token: TokenResult,
+  tokens: TokenResult[],
   network: { id: NetworkId },
   hasNonZeroTokens: boolean,
   additionalHints: string[] | undefined,
@@ -321,6 +322,15 @@ export const tokenFilter = (
 
   // always include > 0 amount and native token
   if (token.amount > 0 || token.address === ZeroAddress) return true
+
+  const nativeToken = tokens.find((t) => t.address === ZeroAddress)
+  const isERC20NativeRepresentation =
+    token.symbol === nativeToken?.symbol &&
+    token.amount === nativeToken.amount &&
+    token.address !== ZeroAddress &&
+    !isTokenPreference
+
+  if (isERC20NativeRepresentation) return false
 
   const isPinned = !!PINNED_TOKENS.find((pinnedToken) => {
     return pinnedToken.networkId === network.id && pinnedToken.address === token.address
