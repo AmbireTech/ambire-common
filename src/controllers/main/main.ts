@@ -1425,11 +1425,6 @@ export class MainController extends EventEmitter {
     }
 
     let transactionRes: TransactionResponse | { hash: string; nonce: number } | null = null
-    const feeTokenEstimation = estimation.feePaymentOptions.find(
-      (option) =>
-        option.token.address === accountOp.gasFeePayment?.inToken &&
-        option.paidBy === accountOp.gasFeePayment?.paidBy
-    )!
 
     // Basic account (EOA)
     if (!isSmartAccount(account)) {
@@ -1467,14 +1462,12 @@ export class MainController extends EventEmitter {
         }
 
         // if it's eip1559, send it as such. If no, go to legacy
-        const gasPrice =
-          (gasFeePayment.amount - feeTokenEstimation.addedNative) / gasFeePayment.simulatedGasLimit
         if (gasFeePayment.maxPriorityFeePerGas !== undefined) {
-          rawTxn.maxFeePerGas = gasPrice
+          rawTxn.maxFeePerGas = gasFeePayment.gasPrice
           rawTxn.maxPriorityFeePerGas = gasFeePayment.maxPriorityFeePerGas
           rawTxn.type = 2
         } else {
-          rawTxn.gasPrice = gasPrice
+          rawTxn.gasPrice = gasFeePayment.gasPrice
           rawTxn.type = 0
         }
 
@@ -1542,9 +1535,6 @@ export class MainController extends EventEmitter {
         const signer = await this.keystore.getSigner(feePayerKey.addr, feePayerKey.type)
         if (signer.init) signer.init(this.#externalSignerControllers[feePayerKey.type])
 
-        const gasPrice =
-          (accountOp.gasFeePayment.amount - feeTokenEstimation.addedNative) /
-          accountOp.gasFeePayment.simulatedGasLimit
         const rawTxn: TxnRequest = {
           to,
           data,
@@ -1558,11 +1548,11 @@ export class MainController extends EventEmitter {
         }
 
         if (accountOp.gasFeePayment.maxPriorityFeePerGas !== undefined) {
-          rawTxn.maxFeePerGas = gasPrice
+          rawTxn.maxFeePerGas = accountOp.gasFeePayment.gasPrice
           rawTxn.maxPriorityFeePerGas = accountOp.gasFeePayment.maxPriorityFeePerGas
           rawTxn.type = 2
         } else {
-          rawTxn.gasPrice = gasPrice
+          rawTxn.gasPrice = accountOp.gasFeePayment.gasPrice
           rawTxn.type = 0
         }
 
