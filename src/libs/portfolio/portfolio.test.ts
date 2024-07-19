@@ -569,8 +569,9 @@ describe('Portfolio', () => {
 
     try {
       await failingPortfolio.get('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8')
-    } catch (e) {
+    } catch (e: any) {
       didThrow = true
+      expect(e?.message).toContain('server response 404')
     }
 
     expect(didThrow).toBe(true)
