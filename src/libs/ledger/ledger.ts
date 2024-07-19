@@ -18,7 +18,7 @@ export const normalizeLedgerMessage = (error?: string): string => {
     error.includes('0x650f') ||
     error.includes('0x6511')
   ) {
-    return 'Could not connect to your Ledger device. Please make sure it is connected, unlocked and running the Ethereum app.'
+    return 'Could not connect to your Ledger device. Please make sure it is unlocked and running the Ethereum app.'
   }
   if (error.includes('0x6e00') || error.includes('0x6b00')) {
     return 'Your Ledger device requires a firmware and Ethereum App update.'
