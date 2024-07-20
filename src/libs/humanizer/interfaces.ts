@@ -5,8 +5,7 @@ import { Message, TypedMessage } from '../../interfaces/userRequest'
 import { AccountOp } from '../accountOp/accountOp'
 import { Call } from '../accountOp/types'
 
-// @TODO properties to be removed - decimals,readableAmount?symbol, name
-// @TODO add properties humanizerMeta
+// @TODO remove property humanizerMeta
 export type HumanizerVisualization = {
   type: 'token' | 'address' | 'label' | 'action' | 'danger' | 'deadline' | 'chain' | 'message'
   address?: string
