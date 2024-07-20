@@ -27,8 +27,8 @@ const reduceMulticall = (calls: IrCall[]): IrCall[] => {
       calls[i]?.fullVisualization?.[3].address === calls[i + 1]?.fullVisualization?.[1].address
     ) {
       const newVisualization = calls[i].fullVisualization
-      newVisualization![3].amount =
-        calls[i].fullVisualization![3].amount! - calls[i + 1].fullVisualization![1].amount!
+      newVisualization![3].value =
+        calls[i].fullVisualization![3].value! - calls[i + 1].fullVisualization![1].value!
 
       newCalls.push({
         ...calls[i],

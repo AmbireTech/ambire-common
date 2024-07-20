@@ -38,13 +38,18 @@ export function getAddressVisualization(_address: string): HumanizerVisualizatio
   return { type: 'address', address, id: randomId() }
 }
 
-export function getToken(_address: string, amount: bigint): HumanizerVisualization {
+export function getToken(
+  _address: string,
+  amount: bigint,
+  isHidden?: boolean
+): HumanizerVisualization {
   const address = _address.toLowerCase()
   return {
     type: 'token',
     address,
-    amount: BigInt(amount),
-    id: randomId()
+    value: BigInt(amount),
+    id: randomId(),
+    isHidden
   }
 }
 
@@ -80,7 +85,7 @@ export function getDeadline(deadlineSecs: bigint | number): HumanizerVisualizati
   const deadline = BigInt(deadlineSecs) * 1000n
   return {
     type: 'deadline',
-    amount: deadline,
+    value: deadline,
     id: randomId()
   }
 }

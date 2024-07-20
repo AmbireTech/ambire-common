@@ -151,7 +151,7 @@ describe('Tokens', () => {
       ).toMatchObject({
         type: 'token',
         address: expect.anything(),
-        amount: expect.anything()
+        value: expect.anything()
       })
     })
   })

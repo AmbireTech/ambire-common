@@ -5,7 +5,7 @@ import { expect } from '@jest/globals'
 import { FEE_COLLECTOR } from '../../../../consts/addresses'
 import humanizerInfo from '../../../../consts/humanizer/humanizerInfo.json'
 import { AccountOp } from '../../../accountOp/accountOp'
-import { HumanizerMeta, HumanizerVisualization, IrCall } from '../../interfaces'
+import { HumanizerMeta, IrCall } from '../../interfaces'
 import { compareHumanizerVisualizations } from '../../testHelpers'
 import { getAction, getDeadline, getLabel, getToken } from '../../utils'
 import gasTankModule from '../GasTankModule'
@@ -94,33 +94,20 @@ describe('wrapping', () => {
     accountOp.calls = [...transactions.weth]
     let irCalls: IrCall[] = accountOp.calls
     ;[irCalls] = wrappingModule(accountOp, irCalls, humanizerInfo as HumanizerMeta)
-    expect(irCalls[0].fullVisualization?.length).toBe(3)
-    expect(irCalls[0]?.fullVisualization![0]).toMatchObject({ type: 'action', content: 'Wrap' })
-    expect(irCalls[0]?.fullVisualization![1]).toMatchObject({
-      type: 'token',
-      address: '0x0000000000000000000000000000000000000000',
-      amount: transactions.weth[0].value
-    })
-    expect(irCalls[0]?.fullVisualization![2]).toMatchObject({
-      type: 'token',
-      address: '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2',
-      amount: 0n,
-      isHidden: true
-    })
-
-    expect(irCalls[1].fullVisualization?.length).toBe(3)
-    expect(irCalls[1]?.fullVisualization![0]).toMatchObject({ type: 'action', content: 'Unwrap' })
-    expect(irCalls[1]?.fullVisualization![1]).toMatchObject({
-      type: 'token',
-      address: '0x0000000000000000000000000000000000000000',
-      amount: 8900000000000000n
-    })
-    expect(irCalls[0]?.fullVisualization![2]).toMatchObject({
-      type: 'token',
-      address: '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2',
-      amount: 0n,
-      isHidden: true
-    })
+    const expectedHumanization = [
+      [
+        getAction('Wrap'),
+        getToken('0x0000000000000000000000000000000000000000', transactions.weth[0].value),
+        getToken('0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2', 0n, true)
+      ],
+      [
+        getAction('Unwrap'),
+        getToken('0x0000000000000000000000000000000000000000', 8900000000000000n),
+        getToken('0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2', 0n, true)
+      ],
+      []
+    ]
+    compareHumanizerVisualizations(irCalls, expectedHumanization)
   })
 
   test('SWAP WRAP/UNWRAPS', () => {
@@ -146,25 +133,15 @@ describe('wrapping', () => {
     ]
 
     const expectedHumanization = [
-      { type: 'action', content: 'Swap' },
-      {
-        type: 'token',
-        address: '0xdac17f958d2ee523a2206206994597c13d831ec7',
-        amount: 1000000000n
-      },
-      { type: 'label', content: '0x123456789' },
-      {
-        type: 'token',
-        address: '0x0000000000000000000000000000000000000000',
-        amount: 1000000000n
-      }
+      getAction('Swap'),
+      getToken('0xdac17f958d2ee523a2206206994597c13d831ec7', 1000000000n),
+      getLabel('0x123456789'),
+      getToken('0x0000000000000000000000000000000000000000', 1000000000n)
     ]
 
     const [newCalls] = wrappingModule(accountOp, calls, humanizerInfo as HumanizerMeta)
     expect(newCalls.length).toBe(1)
-    newCalls[0].fullVisualization?.map((v: HumanizerVisualization, i: number) =>
-      expect(v).toMatchObject(expectedHumanization[i])
-    )
+    compareHumanizerVisualizations(newCalls, [expectedHumanization])
   })
 
   test('merge swaps', () => {

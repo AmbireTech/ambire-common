@@ -1,18 +1,15 @@
 import fetch from 'node-fetch'
 
-import { describe, expect, test } from '@jest/globals'
+import { describe, test } from '@jest/globals'
 
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import _humanizerInfo from '../../consts/humanizer/humanizerInfo.json'
 import { networks } from '../../consts/networks'
 import { ErrorRef } from '../../controllers/eventEmitter/eventEmitter'
-import { HumanizerFragment } from '../../interfaces/humanizer'
 import { AccountOp } from '../accountOp/accountOp'
-import { humanizeCalls, visualizationToText } from './humanizerFuncs'
+import { humanizeCalls } from './humanizerFuncs'
 import { humanizerCallModules as humanizerModules } from './index'
 import { HumanizerMeta, IrCall } from './interfaces'
-import { humanizerMetaParsing } from './parsers/humanizerMetaParsing'
-import { integrateFragments } from './utils'
 
 const humanizerInfo = _humanizerInfo as HumanizerMeta
 const accountOp: AccountOp = {
@@ -373,7 +370,7 @@ describe('module tests', () => {
       .map((key: string) => transactions[key])
       .flat()
     accountOp.calls = allCalls
-    let [irCalls, asyncOps] = humanizeCalls(
+    const [irCalls, asyncOps] = humanizeCalls(
       accountOp,
       humanizerModules,
       humanizerInfo,
