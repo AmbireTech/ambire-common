@@ -184,7 +184,7 @@ export async function getNFTs(
     simulationToken?.collectibles?.forEach((newCollectible: bigint) => {
       if (!beforeToken[2].includes(newCollectible)) receiving.push(newCollectible)
     })
-    console.log({ receiving, sending })
+
     return [
       beforeToken.error,
       {
