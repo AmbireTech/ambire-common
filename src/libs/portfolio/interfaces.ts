@@ -29,10 +29,6 @@ export type TokenResult = Omit<CustomToken, 'standard'> & {
 export interface CollectionResult extends TokenResult {
   name: string
   collectibles: bigint[]
-  postSimulation?: {
-    sending?: bigint[]
-    receiving?: bigint[]
-  }
 }
 
 export type PriceCache = Map<string, [number, Price[]]>
@@ -104,7 +100,7 @@ export type ClaimableRewardsData = {
 // Create the final type with some properties optional
 export type AdditionalPortfolioNetworkResult = Partial<PortfolioLibGetResult> &
   Pick<PortfolioLibGetResult, AdditionalPortfolioProperties> & {
-    total: Total
+    total: Total,
     claimableRewardsData?: ClaimableRewardsData
   }
 
@@ -115,7 +111,7 @@ export type NetworkState = {
   isLoading: boolean
   criticalError?: ExtendedError
   errors: ExtendedError[]
-  result?: PortfolioNetworkResult | AdditionalPortfolioNetworkResult
+  result?: PortfolioNetworkResult |  AdditionalPortfolioNetworkResult
   // We store the previously simulated AccountOps only for the pending state.
   // Prior to triggering a pending state update, we compare the newly passed AccountOp[] (updateSelectedAccount) with the cached version.
   // If there are no differences, the update is canceled unless the `forceUpdate` flag is set.
