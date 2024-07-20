@@ -5,31 +5,55 @@ import { Message, TypedMessage } from '../../interfaces/userRequest'
 import { AccountOp } from '../accountOp/accountOp'
 import { Call } from '../accountOp/types'
 
-// @TODO properties to be removed - decimals,readableAmount?symbol, name
-// @TODO add properties humanizerMeta
-export type HumanizerVisualization = {
-  type:
-    | 'token'
-    | 'address'
-    | 'label'
-    | 'action'
-    | 'nft'
-    | 'danger'
-    | 'deadline'
-    | 'chain'
-    | 'message'
-  address?: string
-  content?: string
-  amount?: bigint
-  humanizerMeta?: HumanizerMetaAddress
-  warning?: boolean
-  // humanizerMeta?: HumanizerMetaAddress
-  id: number
-  nftId?: bigint
-  chainId?: bigint
-  isHidden?: boolean
-  messageContent?: Uint8Array | string
+type HumanizerToken = {
+  type: 'token'
+  address: 'string'
+  value: bigint
 }
+
+type HumanizerAddress = {
+  type: 'address'
+  address: string
+}
+
+type HumanizerChain = {
+  type: 'chain'
+  value: bigint
+}
+
+type HumanizerLabel = {
+  type: 'label'
+  content: string
+}
+
+type HumanizerAction = {
+  type: 'action'
+  content: string
+}
+
+type HumanizerDeadline = {
+  type: 'deadline'
+  value: bigint
+}
+type HumanizerMessage = {
+  type: 'message'
+  content: string
+}
+
+type HumanizerTypeEnum =
+  | HumanizerToken
+  | HumanizerAddress
+  | HumanizerChain
+  | HumanizerMessage
+  | HumanizerLabel
+  | HumanizerAction
+  | HumanizerDeadline
+
+export type HumanizerVisualization = {
+  id: number
+  isHidden?: boolean
+} & HumanizerTypeEnum
+
 export interface IrCall extends Call {
   fullVisualization?: HumanizerVisualization[]
   warnings?: HumanizerWarning[]
