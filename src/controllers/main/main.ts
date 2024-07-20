@@ -444,6 +444,26 @@ export class MainController extends EventEmitter {
   }
 
   async handleSignMessage() {
+    const accountAddr = this.signMessage.messageToSign?.accountAddr
+    const networkId = this.signMessage.messageToSign?.networkId
+
+    // Could (rarely) happen if not even a single account state is fetched yet
+    const shouldForceUpdateAndWaitForAccountState =
+      accountAddr && networkId && !this.accounts.accountStates?.[accountAddr]?.[networkId]
+    if (shouldForceUpdateAndWaitForAccountState)
+      await this.accounts.updateAccountState(accountAddr, 'latest', [networkId])
+
+    const isAccountStateStillMissing =
+      !accountAddr || !networkId || !this.accounts.accountStates?.[accountAddr]?.[networkId]
+    if (isAccountStateStillMissing) {
+      const message =
+        'Unable to sign the message. During the preparation step, required account data failed to get received. Please try again later or contact Ambire support.'
+      const error = new Error(
+        `The account state of ${accountAddr} is missing for the network with id ${networkId}.`
+      )
+      return this.emitError({ level: 'major', message, error })
+    }
+
     await this.signMessage.sign()
 
     const signedMessage = this.signMessage.signedMessage
@@ -1326,6 +1346,30 @@ export class MainController extends EventEmitter {
         return
       }
 
+      if (
+        estimation &&
+        estimation.nonFatalErrors &&
+        estimation.nonFatalErrors.find((err) => err.cause === '4337_INVALID_NONCE') &&
+        this.accounts.accountStates?.[localAccountOp.accountAddr]?.[localAccountOp.networkId]
+      ) {
+        this.accounts
+          .updateAccountState(localAccountOp.accountAddr, 'latest', [localAccountOp.networkId])
+          .then(() => this.estimateSignAccountOp())
+          .catch((error) =>
+            this.emitError({
+              level: 'major',
+              message:
+                'Failed to refetch the account state. Please try again to initialize your transaction',
+              error
+            })
+          )
+
+        // returning here means estimation will not be set => better UX as
+        // the user will not see the warning but instead
+        // just wait for the new estimation
+        return
+      }
+
       // check if an RBF should be applied for the incoming transaction
       // for SA conditions are: take the last broadcast but not confirmed accOp
       // and check if the nonce is the same as the current nonce (non 4337 txns)
@@ -1381,6 +1425,7 @@ export class MainController extends EventEmitter {
     const accountOp = this.signAccountOp?.accountOp
     const estimation = this.signAccountOp?.estimation
     const actionId = this.signAccountOp?.fromActionId
+    const contactSupportPrompt = 'Please try again or contact support if the problem persists.'
 
     if (
       !accountOp ||
@@ -1390,7 +1435,8 @@ export class MainController extends EventEmitter {
       !accountOp.signingKeyType ||
       !accountOp.signature
     ) {
-      return this.#throwBroadcastAccountOp({ message: 'Missing mandatory transaction details.' })
+      const message = `Missing mandatory transaction details. ${contactSupportPrompt}`
+      return this.#throwBroadcastAccountOp({ message })
     }
 
     const provider = this.providers.providers[accountOp.networkId]
@@ -1398,29 +1444,23 @@ export class MainController extends EventEmitter {
     const network = this.networks.networks.find((n) => n.id === accountOp.networkId)
 
     if (!provider) {
-      return this.#throwBroadcastAccountOp({
-        message: `Provider for ${network?.name || `with id ${accountOp.networkId}`} not found.`
-      })
+      const networkName = network?.name || `network with id ${accountOp.networkId}`
+      const message = `Provider for ${networkName} not found. ${contactSupportPrompt}`
+      return this.#throwBroadcastAccountOp({ message })
     }
 
     if (!account) {
-      return this.#throwBroadcastAccountOp({
-        message: `Account with address ${shortenAddress(accountOp.accountAddr, 13)} not found.`
-      })
+      const addr = shortenAddress(accountOp.accountAddr, 13)
+      const message = `Account with address ${addr} not found. ${contactSupportPrompt}`
+      return this.#throwBroadcastAccountOp({ message })
     }
 
     if (!network) {
-      return this.#throwBroadcastAccountOp({
-        message: `Network with id ${accountOp.networkId} not found.`
-      })
+      const message = `Network with id ${accountOp.networkId} not found. ${contactSupportPrompt}`
+      return this.#throwBroadcastAccountOp({ message })
     }
 
     let transactionRes: TransactionResponse | { hash: string; nonce: number } | null = null
-    const feeTokenEstimation = estimation.feePaymentOptions.find(
-      (option) =>
-        option.token.address === accountOp.gasFeePayment?.inToken &&
-        option.paidBy === accountOp.gasFeePayment?.paidBy
-    )!
 
     // Basic account (EOA)
     if (!isSmartAccount(account)) {
@@ -1433,12 +1473,10 @@ export class MainController extends EventEmitter {
           // TODO: Implement a way to choose the key type to broadcast with.
           feePayerKeys.find((key) => key.type === accountOp.signingKeyType) || feePayerKeys[0]
         if (!feePayerKey) {
-          return await this.#throwBroadcastAccountOp({
-            message: `Key with address ${shortenAddress(
-              accountOp.gasFeePayment!.paidBy,
-              13
-            )} for account with address ${shortenAddress(accountOp.accountAddr, 13)} not found.`
-          })
+          const missingKeyAddr = shortenAddress(accountOp.gasFeePayment!.paidBy, 13)
+          const accAddr = shortenAddress(accountOp.accountAddr, 13)
+          const message = `Key with address ${missingKeyAddr} for account with address ${accAddr} not found. ${contactSupportPrompt}`
+          return await this.#throwBroadcastAccountOp({ message })
         }
         this.feePayerKey = feePayerKey
         this.emitUpdate()
@@ -1458,14 +1496,12 @@ export class MainController extends EventEmitter {
         }
 
         // if it's eip1559, send it as such. If no, go to legacy
-        const gasPrice =
-          (gasFeePayment.amount - feeTokenEstimation.addedNative) / gasFeePayment.simulatedGasLimit
         if (gasFeePayment.maxPriorityFeePerGas !== undefined) {
-          rawTxn.maxFeePerGas = gasPrice
+          rawTxn.maxFeePerGas = gasFeePayment.gasPrice
           rawTxn.maxPriorityFeePerGas = gasFeePayment.maxPriorityFeePerGas
           rawTxn.type = 2
         } else {
-          rawTxn.gasPrice = gasPrice
+          rawTxn.gasPrice = gasFeePayment.gasPrice
           rawTxn.type = 0
         }
 
@@ -1497,12 +1533,10 @@ export class MainController extends EventEmitter {
         // TODO: Implement a way to choose the key type to broadcast with.
         feePayerKeys.find((key) => key.type === accountOp.signingKeyType) || feePayerKeys[0]
       if (!feePayerKey) {
-        return this.#throwBroadcastAccountOp({
-          message: `Key with address ${shortenAddress(
-            accountOp.gasFeePayment!.paidBy,
-            13
-          )} for account with address ${shortenAddress(accountOp.accountAddr, 13)} not found.`
-        })
+        const missingKeyAddr = shortenAddress(accountOp.gasFeePayment!.paidBy, 13)
+        const accAddr = shortenAddress(accountOp.accountAddr, 13)
+        const message = `Key with address ${missingKeyAddr} for account with address ${accAddr} not found.`
+        return this.#throwBroadcastAccountOp({ message })
       }
 
       this.feePayerKey = feePayerKey
@@ -1533,9 +1567,6 @@ export class MainController extends EventEmitter {
         const signer = await this.keystore.getSigner(feePayerKey.addr, feePayerKey.type)
         if (signer.init) signer.init(this.#externalSignerControllers[feePayerKey.type])
 
-        const gasPrice =
-          (accountOp.gasFeePayment.amount - feeTokenEstimation.addedNative) /
-          accountOp.gasFeePayment.simulatedGasLimit
         const rawTxn: TxnRequest = {
           to,
           data,
@@ -1549,11 +1580,11 @@ export class MainController extends EventEmitter {
         }
 
         if (accountOp.gasFeePayment.maxPriorityFeePerGas !== undefined) {
-          rawTxn.maxFeePerGas = gasPrice
+          rawTxn.maxFeePerGas = accountOp.gasFeePayment.gasPrice
           rawTxn.maxPriorityFeePerGas = accountOp.gasFeePayment.maxPriorityFeePerGas
           rawTxn.type = 2
         } else {
-          rawTxn.gasPrice = gasPrice
+          rawTxn.gasPrice = accountOp.gasFeePayment.gasPrice
           rawTxn.type = 0
         }
 
@@ -1575,12 +1606,9 @@ export class MainController extends EventEmitter {
     else if (accountOp.gasFeePayment && accountOp.gasFeePayment.isERC4337) {
       const userOperation = accountOp.asUserOperation
       if (!userOperation) {
-        return this.#throwBroadcastAccountOp({
-          message: `Trying to broadcast an ERC-4337 request but userOperation is not set for the account with address ${shortenAddress(
-            accountOp.accountAddr,
-            13
-          )}`
-        })
+        const accAddr = shortenAddress(accountOp.accountAddr, 13)
+        const message = `Trying to broadcast an ERC-4337 request but userOperation is not set for the account with address ${accAddr}`
+        return this.#throwBroadcastAccountOp({ message })
       }
 
       // broadcast through bundler's service
@@ -1683,7 +1711,7 @@ export class MainController extends EventEmitter {
   }
 
   #throwBroadcastAccountOp({ message: _msg, error: _err }: { message?: string; error?: Error }) {
-    let message = _msg || `Unable to broadcast the transaction. ${_err?.message || 'unknown'}`
+    let message = _msg || _err?.message || 'Unable to broadcast the transaction.'
 
     // Enhance the error incoming for this corner case
     if (message.includes('insufficient funds'))
@@ -1691,10 +1719,6 @@ export class MainController extends EventEmitter {
 
     // Trip the error message, errors coming from the RPC can be huuuuuge
     message = message.length > 300 ? `${message.substring(0, 300)}...` : message
-
-    // If not explicitly stated, add a generic message to contact support
-    if (!message.includes('contact support'))
-      message += ' Please try again or contact support for help.'
 
     const error = _err || new Error(message)
     const replacementFeeLow = error?.message.includes('replacement fee too low')

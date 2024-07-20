@@ -44,4 +44,10 @@ export interface EstimateResult {
   feePaymentOptions: FeePaymentOption[]
   erc4337GasLimits?: Erc4337GasLimits
   error: Error | null
+  // put here errors that are not fatal to the signing process
+  // but reactable if known
+  // example: bundler simulation fails because of incorrect 4337 nonce.
+  // The user can still broadcast with EOA but we can also react
+  // to this error by setting the correct nonce and re-estimating
+  nonFatalErrors?: Error[]
 }
