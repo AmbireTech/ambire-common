@@ -1,21 +1,9 @@
-import { ZeroAddress } from 'ethers'
-
-import { expect } from '@jest/globals'
-
-import { FEE_COLLECTOR } from '../../../../consts/addresses'
 import humanizerInfo from '../../../../consts/humanizer/humanizerInfo.json'
 import { AccountOp } from '../../../accountOp/accountOp'
 import { HumanizerMeta, IrCall } from '../../interfaces'
 import { compareHumanizerVisualizations } from '../../testHelpers'
-import { getAction, getDeadline, getLabel, getToken } from '../../utils'
-import gasTankModule from '../GasTankModule'
-import { genericErc20Humanizer } from '../Tokens'
-import { uniswapHumanizer } from '../Uniswap'
-import { getUniRecipientText } from '../Uniswap/utils'
+import { getAction, getToken } from '../../utils'
 import { wrappingModule } from './wrapping'
-
-const TETHER_ADDRESS = '0xdac17f958d2ee523a2206206994597c13d831ec7'
-const WETH_ADDRESS = '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2'
 
 const transactions = {
   weth: [
