@@ -382,7 +382,6 @@ const uniV3Mapping = (): HumanizerUniMatcher => {
     },
     // 0x12210e8a
     [ifaceV3.getFunction('refundETH()')?.selector!]: (): HumanizerVisualization[] => {
-      console.log('refunded')
       return [getAction('Refund')]
     }
   }

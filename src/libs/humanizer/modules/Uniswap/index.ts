@@ -50,12 +50,10 @@ export const uniswapHumanizer: HumanizerCallModule = (
       const fullVisualization = knownUniswapVersion[sigHash](accountOp, call)
       // @TODO add visualization squashing
       newCalls.push({ ...call, fullVisualization })
-      console.log(fullVisualization[0].content)
 
       // if unknown address, but known sighash
     } else if (fallbackFlatUniswapsMather[sigHash]) {
       const fullVisualization = fallbackFlatUniswapsMather[sigHash](accountOp, call)
-      console.log(fullVisualization[0].content)
       newCalls.push({ ...call, fullVisualization })
     } else {
       newCalls.push(call)
