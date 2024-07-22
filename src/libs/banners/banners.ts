@@ -161,7 +161,7 @@ export const getNetworksWithFailedRPCBanners = ({
 
   networksWithMultipleRpcUrls.forEach((n) => {
     banners.push({
-      id: 'rpcs-down',
+      id: 'custom-rpcs-down',
       type: 'error',
       title: `Failed to retrieve network data for ${n.name}. You can try selecting another RPC URL`,
       text: 'Affected features: visible assets, sign message/transaction, ENS/UD domain resolving, add account.',
@@ -250,7 +250,6 @@ export const getNetworksWithPortfolioErrorBanners = ({
       portfolioForNetwork?.errors.forEach((err: any) => {
         if (err?.name === PORTFOLIO_LIB_ERROR_NAMES.PriceFetchError) {
           networkNamesWithPriceFetchError.push(networkName as string)
-          return
         }
       })
     })
