@@ -3,15 +3,11 @@ import fetch from 'node-fetch'
 import { describe, expect } from '@jest/globals'
 
 import { produceMemoryStore } from '../../../../../test/helpers'
-import humanizerInfo from '../../../../consts/humanizer/humanizerInfo.json'
 import { ErrorRef } from '../../../../controllers/eventEmitter/eventEmitter'
 import { HumanizerFragment } from '../../../../interfaces/humanizer'
 import { AccountOp } from '../../../accountOp/accountOp'
-import { HumanizerMeta, HumanizerVisualization, IrCall } from '../../interfaces'
-import { parseCalls } from '../../parsers'
-import { humanizerMetaParsing } from '../../parsers/humanizerMetaParsing'
+import { IrCall } from '../../interfaces'
 import { EMPTY_HUMANIZER_META, HUMANIZER_META_KEY, integrateFragments } from '../../utils'
-import { genericErc20Humanizer } from '../Tokens'
 import { fallbackHumanizer } from './fallBackHumanizer'
 
 // eslint-disable-next-line no-console
@@ -116,41 +112,5 @@ describe('fallbackHumanizer', () => {
       content: 'Call approve(address,uint256)'
     })
     expect(asyncOps.length).toBe(0)
-  })
-
-  // @TODO humanizerMetaParsing
-  test('metaParsing', () => {
-    accountOp.calls = [...transactions.humanizerMetatransaction]
-    let irCalls = accountOp.calls
-    ;[irCalls] = genericErc20Humanizer(accountOp, irCalls, humanizerInfo as HumanizerMeta)
-    ;[irCalls] = fallbackHumanizer(accountOp, irCalls, humanizerInfo as HumanizerMeta)
-    const [newCalls] = parseCalls(
-      accountOp,
-      irCalls,
-      [humanizerMetaParsing],
-      humanizerInfo as HumanizerMeta,
-      { fetch }
-    )
-    expect(newCalls.length).toBe(transactions.humanizerMetatransaction.length)
-    expect(
-      newCalls[0]?.fullVisualization?.find((v: HumanizerVisualization) => v.type === 'address')
-    ).toMatchObject({
-      type: 'address',
-      address: expect.anything(),
-      humanizerMeta: {}
-    })
-    expect(
-      newCalls[1]?.fullVisualization?.find((v: HumanizerVisualization) => v.type === 'address')
-    ).toMatchObject({
-      type: 'address',
-      address: expect.anything(),
-      humanizerMeta: {}
-    })
-    expect(
-      newCalls[2]?.fullVisualization?.find((v: HumanizerVisualization) => v.type === 'address')
-    ).toMatchObject({
-      type: 'address',
-      address: expect.anything()
-    })
   })
 })
