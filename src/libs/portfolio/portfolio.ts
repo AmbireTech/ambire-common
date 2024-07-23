@@ -74,7 +74,7 @@ export class Portfolio {
     fetch: Fetch,
     provider: Provider | JsonRpcProvider,
     network: Network,
-    velcroUrl: string
+    velcroUrl?: string
   ) {
     this.batchedVelcroDiscovery = batcher(fetch, (queue) => {
       const baseCurrencies = [...new Set(queue.map((x) => x.data.baseCurrency))]
@@ -167,6 +167,7 @@ export class Portfolio {
     const priceCache: PriceCache = localOpts.priceCache || new Map()
     for (const addr in hintsFromExternalAPI?.prices || {}) {
       const priceHint = hintsFromExternalAPI?.prices[addr]
+      // eslint-disable-next-line no-continue
       if (!priceHint) continue
       // @TODO consider validating the external response here, before doing the .set; or validating the whole velcro response
       priceCache.set(addr, [start, Array.isArray(priceHint) ? priceHint : [priceHint]])
