@@ -6,11 +6,13 @@ import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json'
 import EmittableError from '../../classes/EmittableError'
 import { AMBIRE_ACCOUNT_FACTORY, SINGLETON } from '../../consts/deploy'
+import { BIP44_LEDGER_DERIVATION_TEMPLATE } from '../../consts/derivation'
 import { Account, AccountId, AccountOnchainState } from '../../interfaces/account'
 import { Banner } from '../../interfaces/banner'
 import { DappProviderRequest } from '../../interfaces/dapp'
 import { Fetch } from '../../interfaces/fetch'
 import {
+  ExternalSignerController,
   ExternalSignerControllers,
   Key,
   KeystoreSignerType,
@@ -79,7 +81,8 @@ import { SignMessageController } from '../signMessage/signMessage'
 const STATUS_WRAPPED_METHODS = {
   onAccountAdderSuccess: 'INITIAL',
   broadcastSignedAccountOp: 'INITIAL',
-  removeAccount: 'INITIAL'
+  removeAccount: 'INITIAL',
+  handleAccountAdderInitLedger: 'INITIAL'
 } as const
 
 export class MainController extends EventEmitter {
@@ -494,6 +497,52 @@ export class MainController extends EventEmitter {
     // TODO: In the rare case when this might error, the user won't be notified,
     // since `this.resolveUserRequest` closes the action window.
     await this.activity.addSignedMessage(signedMessage, signedMessage.accountAddr)
+  }
+
+  async #handleAccountAdderInitLedger(
+    ledgerCtrl: ExternalSignerController,
+    LedgerKeyIterator: any
+  ) {
+    if (this.accountAdder.isInitialized) this.accountAdder.reset()
+
+    try {
+      // The second time a connection gets requested onwards,
+      // the Ledger device throws with "invalid channel" error.
+      // To overcome this, always make sure to clean up before starting
+      // a new session, if the device is already unlocked.
+      if (ledgerCtrl.sdkSession) await ledgerCtrl.cleanUp()
+
+      await ledgerCtrl.unlock()
+
+      const { walletSDK } = ledgerCtrl
+      // Should never happen
+      if (!walletSDK) {
+        const message = 'Could not establish connection with the ledger device'
+        throw new EmittableError({ message, level: 'major', error: new Error(message) })
+      }
+
+      const keyIterator = new LedgerKeyIterator({ walletSDK })
+      this.accountAdder.init({
+        keyIterator,
+        hdPathTemplate: BIP44_LEDGER_DERIVATION_TEMPLATE
+      })
+
+      // TODO: This doesn't throw `EmittableError`s, but emits an error event
+      return await this.accountAdder.setPage({
+        page: 1,
+        networks: this.networks.networks,
+        providers: this.providers.providers
+      })
+    } catch (error: any) {
+      const message = error?.message || 'Could not unlock the Ledger device. Please try again.'
+      throw new EmittableError({ message, level: 'major', error })
+    }
+  }
+
+  async handleAccountAdderInitLedger(ledgerCtrl: ExternalSignerController, LedgerKeyIterator: any) {
+    await this.withStatus('handleAccountAdderInitLedger', async () =>
+      this.#handleAccountAdderInitLedger(ledgerCtrl, LedgerKeyIterator)
+    )
   }
 
   async updateAccountsOpsStatuses() {
