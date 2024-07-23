@@ -30,6 +30,7 @@ export interface ExternalSignerController {
   unlockedPathKeyAddr: string
   cleanUp: () => void // Trezor and Ledger specific
   // TODO: Refine the rest of the props
+  walletSDK?: any // Ledger specific
   isWebHID?: boolean // Ledger specific
   transport?: any // Ledger specific
   appName?: string // Lattice specific

@@ -12,7 +12,6 @@ import { Banner } from '../../interfaces/banner'
 import { DappProviderRequest } from '../../interfaces/dapp'
 import { Fetch } from '../../interfaces/fetch'
 import {
-  ExternalSignerController,
   ExternalSignerControllers,
   Key,
   KeystoreSignerType,
@@ -500,12 +499,18 @@ export class MainController extends EventEmitter {
   }
 
   async #handleAccountAdderInitLedger(
-    ledgerCtrl: ExternalSignerController,
-    LedgerKeyIterator: any
+    LedgerKeyIterator: any // TODO: KeyIterator type mismatch
   ) {
     if (this.accountAdder.isInitialized) this.accountAdder.reset()
 
     try {
+      const ledgerCtrl = this.#externalSignerControllers.ledger
+      if (!ledgerCtrl) {
+        const message =
+          'Could not initialize connection with your Ledger device. Please try again later or contact Ambire support.'
+        throw new EmittableError({ message, level: 'major', error: new Error(message) })
+      }
+
       // The second time a connection gets requested onwards,
       // the Ledger device throws with "invalid channel" error.
       // To overcome this, always make sure to clean up before starting
@@ -514,20 +519,17 @@ export class MainController extends EventEmitter {
 
       await ledgerCtrl.unlock()
 
-      const { walletSDK } = ledgerCtrl
-      // Should never happen
-      if (!walletSDK) {
-        const message = 'Could not establish connection with the ledger device'
+      if (!ledgerCtrl.walletSDK) {
+        const message = 'Could not establish connection with the Ledger device'
         throw new EmittableError({ message, level: 'major', error: new Error(message) })
       }
 
-      const keyIterator = new LedgerKeyIterator({ walletSDK })
+      const keyIterator = new LedgerKeyIterator({ walletSDK: ledgerCtrl.walletSDK })
       this.accountAdder.init({
         keyIterator,
         hdPathTemplate: BIP44_LEDGER_DERIVATION_TEMPLATE
       })
 
-      // TODO: This doesn't throw `EmittableError`s, but emits an error event
       return await this.accountAdder.setPage({
         page: 1,
         networks: this.networks.networks,
@@ -539,9 +541,9 @@ export class MainController extends EventEmitter {
     }
   }
 
-  async handleAccountAdderInitLedger(ledgerCtrl: ExternalSignerController, LedgerKeyIterator: any) {
+  async handleAccountAdderInitLedger(LedgerKeyIterator: any /* TODO: KeyIterator type mismatch */) {
     await this.withStatus('handleAccountAdderInitLedger', async () =>
-      this.#handleAccountAdderInitLedger(ledgerCtrl, LedgerKeyIterator)
+      this.#handleAccountAdderInitLedger(LedgerKeyIterator)
     )
   }
 
