@@ -1,5 +1,5 @@
 import { Account, AccountId } from '../../interfaces/account'
-import { Network, NetworkId } from '../../interfaces/network'
+import { NetworkId } from '../../interfaces/network'
 import { AccountOp } from '../accountOp/accountOp'
 import { CustomToken } from './customToken'
 

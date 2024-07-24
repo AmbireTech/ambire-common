@@ -176,13 +176,16 @@ export async function getNFTs(
       : null
 
     const token = mapToken(beforeToken)
-    const [receiving, sending]: [bigint[], bigint[]] = [[], []]
-    beforeToken[2].forEach((oldCollectible: bigint) => {
+    const receiving: bigint[] = []
+    const sending: bigint[] = []
+
+    token.collectibles.forEach((oldCollectible: bigint) => {
+      // the first check is required because if there are no changes we will always have !undefined from the second check
       if (simulationToken?.collectibles && !simulationToken?.collectibles?.includes(oldCollectible))
         sending.push(oldCollectible)
     })
     simulationToken?.collectibles?.forEach((newCollectible: bigint) => {
-      if (!beforeToken[2].includes(newCollectible)) receiving.push(newCollectible)
+      if (!token.collectibles.includes(newCollectible)) receiving.push(newCollectible)
     })
 
     return [
