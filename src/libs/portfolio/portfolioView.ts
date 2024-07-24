@@ -1,4 +1,3 @@
-import { Account } from '../../interfaces/account'
 import {
   AccountState,
   CollectionResult as CollectionResultInterface,
@@ -17,8 +16,7 @@ interface AccountPortfolio {
 export function calculateAccountPortfolio(
   selectedAccount: string | null,
   state: { latest: PortfolioControllerState; pending: PortfolioControllerState },
-  accountPortfolio: AccountPortfolio,
-  account: Account
+  accountPortfolio: AccountPortfolio
 ) {
   const updatedTokens: TokenResultInterface[] = []
   const updatedCollections: CollectionResultInterface[] = []
