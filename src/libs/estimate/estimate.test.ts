@@ -62,6 +62,28 @@ const smartAccDeployed: Account = {
   }
 }
 
+const smartAccv2point0Deployed: Account = {
+  addr: '0x4E6AB66459bD13b9b30A5CbCF28723C7D08172e5',
+  initialPrivileges: [
+    [
+      '0x3884dD96Da6CDaEAf937301Ff5cC5b0a58478355',
+      '0x0000000000000000000000000000000000000000000000000000000000000002'
+    ]
+  ],
+  associatedKeys: ['0x3884dD96Da6CDaEAf937301Ff5cC5b0a58478355'],
+  // the info below is incorrect as we don't have it
+  creation: {
+    factoryAddr: AMBIRE_ACCOUNT_FACTORY,
+    bytecode:
+      '0x7f00000000000000000000000000000000000000000000000000000000000000027ff33cc417366b7e38d2706a67ab46f85465661c28b864b521441180d15df82251553d602d80604d3d3981f3363d3d373d3d3d363d731cde6a53e9a411eaaf9d11e3e8c653a3e379d5355af43d82803e903d91602b57fd5bf3',
+    salt: '0x0000000000000000000000000000000000000000000000000000000000000000'
+  },
+  preferences: {
+    label: DEFAULT_ACCOUNT_LABEL,
+    pfp: '0x8E5F6c1F0b134657A546932C3eC9169E1633a39b'
+  }
+}
+
 const v1Acc: Account = {
   addr: '0xa07D75aacEFd11b425AF7181958F0F85c312f143',
   associatedKeys: ['0xd6e371526cdaeE04cd8AF225D42e37Bc14688D9E'],
@@ -862,6 +884,60 @@ describe('estimate', () => {
     expect(response.feePaymentOptions![0].token).not.toBe(null)
   })
 
+  it('[ERC-4337]:Optimism | not deployed | should result in an user operation error and therefore erc4337GasLimits should be undefined', async () => {
+    const privs = [
+      {
+        addr: addrWithDeploySignature,
+        hash: dedicatedToOneSAPriv
+      }
+    ]
+    const ERC20Interface = new Interface(ERC20.abi)
+    const smartAcc = await getSmartAccount(privs)
+    const opOptimism: AccountOp = {
+      accountAddr: smartAcc.addr,
+      signingKeyAddr: smartAcc.associatedKeys[0],
+      signingKeyType: null,
+      gasLimit: null,
+      gasFeePayment: null,
+      networkId: 'optimism',
+      nonce: 0n,
+      signature: '0x',
+      calls: [
+        {
+          to: '0x94b008aA00579c1307B0EF2c499aD98a8ce58e58',
+          value: 0n,
+          data: ERC20Interface.encodeFunctionData('transfer', [FEE_COLLECTOR, 100])
+        }
+      ],
+      accountOpToExecuteBefore: null,
+      meta: {
+        entryPointAuthorization:
+          '0x05404ea5dfa13ddd921cda3f587af6927cc127ee174b57c9891491bfc1f0d3d005f649f8a1fc9147405f064507bae08816638cfc441c4d0dc4eb6640e16621991b01'
+      }
+    }
+    const accountStates = await getAccountsInfo([smartAcc])
+    const response = await estimate(
+      providerOptimism,
+      optimism,
+      smartAcc,
+      opOptimism,
+      accountStates,
+      getNativeToCheckFromEOAs(nativeToCheck, smartAcc),
+      feeTokens,
+      { is4337Broadcast: true }
+    )
+
+    expect(response.error).not.toBe(null)
+    expect(response.error?.message).toBe(
+      'UserOperation reverted during simulation with reason: ERC20: transfer amount exceeds balance'
+    )
+
+    expect(response.erc4337GasLimits).toBe(undefined)
+    expect(response.feePaymentOptions.length).toBeGreaterThan(0)
+    expect(response.feePaymentOptions![0].token).not.toBe(undefined)
+    expect(response.feePaymentOptions![0].token).not.toBe(null)
+  })
+
   it('[ERC-4337]:Optimism | deployed account | should work', async () => {
     const ambAcc = new Contract(smartAccDeployed.addr, AmbireAccount.abi, providerOptimism)
     const nonce = await ambAcc.nonce()
@@ -902,6 +978,46 @@ describe('estimate', () => {
     expect(response.feePaymentOptions.length).toBeGreaterThan(0)
     expect(response.feePaymentOptions![0].token).not.toBe(undefined)
     expect(response.feePaymentOptions![0].token).not.toBe(null)
+  })
+
+  it('[ERC-4337]:Optimism | deployed account | v2.0 | should give EOA broadcast options', async () => {
+    const ambAcc = new Contract(smartAccv2point0Deployed.addr, AmbireAccount.abi, providerOptimism)
+    const nonce = await ambAcc.nonce()
+    const opOptimism: AccountOp = {
+      accountAddr: smartAccv2point0Deployed.addr,
+      signingKeyAddr: smartAccv2point0Deployed.associatedKeys[0],
+      signingKeyType: null,
+      gasLimit: null,
+      gasFeePayment: null,
+      networkId: 'optimism',
+      nonce,
+      signature: '0x',
+      calls: [{ to: FEE_COLLECTOR, value: 1n, data: '0x' }],
+      accountOpToExecuteBefore: null
+    }
+    const accountStates = await getAccountsInfo([smartAccv2point0Deployed])
+    const response = await estimate(
+      // it doesn't matter in this case
+      providerOptimism,
+      optimism,
+      smartAccv2point0Deployed,
+      opOptimism,
+      accountStates,
+      getNativeToCheckFromEOAs(nativeToCheck, smartAccv2point0Deployed),
+      feeTokens,
+      { is4337Broadcast: true }
+    )
+
+    expect(response.error).toBe(null)
+    expect(response.erc4337GasLimits).toBe(undefined)
+
+    expect(response.feePaymentOptions.length).toBeGreaterThan(0)
+    expect(response.feePaymentOptions![0].token).not.toBe(undefined)
+    expect(response.feePaymentOptions![0].token).not.toBe(null)
+    response.feePaymentOptions.forEach((option) => {
+      expect(option.paidBy).not.toBe(smartAccv2point0Deployed.addr)
+      expect(option.token.address).toBe(ZeroAddress)
+    })
   })
 
   it('[EOA-for-SA]:Arbitrum | should return native fee payment options even if hasRelayer = false', async () => {

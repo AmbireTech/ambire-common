@@ -109,9 +109,8 @@ describe('uniswap', () => {
         getToken('0x8a3c710e41cd95799c535f22dbae371d7c858651', 50844919041919270406243n),
         getLabel('for at least'),
         getToken('0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2', 137930462904193673n),
-        getDeadline(1692784103n)
-      ],
-      [
+        getDeadline(1692784103n),
+        getLabel('and'),
         getAction('Unwrap'),
         getToken('0x0000000000000000000000000000000000000000', 137930462904193673n),
         getLabel('and send it to'),
@@ -144,8 +143,10 @@ describe('uniswap', () => {
         getAddressVisualization('0xbb6c8c037b9cc3bf1a4c4188d92e5d86bfce76a8'),
         getDeadline(1692784529n)
       ],
-      [getAction('Wrap'), getToken('0x0000000000000000000000000000000000000000', 100000000000000n)],
       [
+        getAction('Wrap'),
+        getToken('0x0000000000000000000000000000000000000000', 100000000000000n),
+        getLabel('and'),
         getAction('Swap'),
         getToken('0x4200000000000000000000000000000000000006', 100000000000000n),
         getLabel('for at least'),
@@ -169,17 +170,14 @@ describe('uniswap', () => {
           1461501637330902918203684832716283019655932542975n
         ),
         getLabel('to'),
-
-        getAddressVisualization('0x643770e279d5d0733f21d6dc03a8efbabf3255b4')
-      ],
-      [
+        getAddressVisualization('0x643770e279d5d0733f21d6dc03a8efbabf3255b4'),
+        getLabel('and'),
         getAction('Swap'),
         getToken('0x3c499c542cef5e3811e1192ce70d8cc03d5c3359', 10000n),
         getLabel('for at least'),
         getToken('0x0d500b1d8e8ef31e21c99d1db9a6444d3adf1270', 10337979384133110n),
-        getDeadline(1708105881n)
-      ],
-      [
+        getDeadline(1708105881n),
+        getLabel('and'),
         getAction('Unwrap'),
         getToken('0x0000000000000000000000000000000000000000', 10337979384133110n)
       ]
@@ -219,9 +217,10 @@ describe('uniswap', () => {
         getToken('0x046eee2cc3188071c02bfc1745a6b17c656e3f3d', 21436976040000000000000n),
         getLabel('and send it to'),
         getAddressVisualization('0x5a5be6b067d6b5b018adbcd27ee6972105b3b400'),
-        getDeadline(1691677015n)
-      ],
-      [getAction('Refund')]
+        getDeadline(1691677015n),
+        getLabel('and'),
+        getAction('Refund')
+      ]
     ]
     expect(calls.length).toEqual(expectedVisualization.length)
     compareHumanizerVisualizations(calls, expectedVisualization as HumanizerVisualization[][])

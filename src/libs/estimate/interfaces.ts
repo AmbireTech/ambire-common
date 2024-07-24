@@ -8,23 +8,20 @@ export interface BundlerEstimateResult {
   paymasterPostOpGasLimit: string
 }
 
+export interface BundlerGasPrice {
+  slow: { maxFeePerGas: string; maxPriorityFeePerGas: string }
+  medium: { maxFeePerGas: string; maxPriorityFeePerGas: string }
+  fast: { maxFeePerGas: string; maxPriorityFeePerGas: string }
+  ape: { maxFeePerGas: string; maxPriorityFeePerGas: string }
+}
+
 export interface Erc4337GasLimits {
   preVerificationGas: string
   verificationGasLimit: string
   callGasLimit: string
   paymasterVerificationGasLimit: string
   paymasterPostOpGasLimit: string
-  gasPrice: {
-    slow: { maxFeePerGas: string; maxPriorityFeePerGas: string }
-    medium: { maxFeePerGas: string; maxPriorityFeePerGas: string }
-    fast: { maxFeePerGas: string; maxPriorityFeePerGas: string }
-    ape: { maxFeePerGas: string; maxPriorityFeePerGas: string }
-  }
-}
-
-export interface ArbitrumL1Fee {
-  noFee: bigint
-  withFee: bigint
+  gasPrice: BundlerGasPrice
 }
 
 export interface FeePaymentOption {

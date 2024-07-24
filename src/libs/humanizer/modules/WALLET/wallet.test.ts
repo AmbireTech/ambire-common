@@ -1,9 +1,9 @@
-import { expect } from '@jest/globals'
-
 import humanizerInfo from '../../../../consts/humanizer/humanizerInfo.json'
 import { AccountOp } from '../../../accountOp/accountOp'
-import { HumanizerMeta, HumanizerVisualization, IrCall } from '../../interfaces'
-import { WALLETModule } from '.'
+import { HumanizerMeta, IrCall } from '../../interfaces'
+import { compareHumanizerVisualizations } from '../../testHelpers'
+import { getAction, getAddressVisualization, getLabel, getToken } from '../../utils'
+import { WALLETModule } from './'
 
 const transactions = {
   WALLET: [
@@ -50,55 +50,30 @@ describe('wallet', () => {
     // humanizerMeta: {}
   }
   test('WALLET', () => {
-    const expectedhumanization = [
+    const expectedHumanization = [
       [
-        { type: 'action', content: 'Deposit' },
-        {
-          type: 'token',
-          address: '0x88800092ff476844f74dc2fc427974bbee2794ae',
-          amount: 10000000000000000000000n
-        },
-        { type: 'label', content: 'to' },
-        {
-          type: 'address',
-          address: '0x47cd7e91c3cbaaf266369fe8518345fc4fc12935'
-        }
+        getAction('Deposit'),
+        getToken('0x88800092ff476844f74dc2fc427974bbee2794ae', 10000000000000000000000n),
+        getLabel('to'),
+        getAddressVisualization('0x47cd7e91c3cbaaf266369fe8518345fc4fc12935')
       ],
       [
-        { type: 'action', content: 'Leave' },
-        { type: 'label', content: 'with' },
-        {
-          type: 'token',
-          address: '0x88800092ff476844f74dc2fc427974bbee2794ae',
-          amount: 2527275889852892335882193n
-        },
-        {
-          type: 'address',
-          address: '0x47cd7e91c3cbaaf266369fe8518345fc4fc12935'
-        }
+        getAction('Leave'),
+        getLabel('with'),
+        getToken('0x88800092ff476844f74dc2fc427974bbee2794ae', 2527275889852892335882193n),
+        getAddressVisualization('0x47cd7e91c3cbaaf266369fe8518345fc4fc12935')
       ],
       [
-        { type: 'action', content: 'Rage leave' },
-        { type: 'label', content: 'with' },
-        {
-          type: 'token',
-          address: '0x88800092ff476844f74dc2fc427974bbee2794ae',
-          amount: 2019750399052452828721n
-        },
-        {
-          type: 'address',
-          address: '0x47cd7e91c3cbaaf266369fe8518345fc4fc12935'
-        }
+        getAction('Rage leave'),
+        getLabel('with'),
+        getToken('0x88800092ff476844f74dc2fc427974bbee2794ae', 2019750399052452828721n),
+        getAddressVisualization('0x47cd7e91c3cbaaf266369fe8518345fc4fc12935')
       ]
     ]
     accountOp.calls = [...transactions.WALLET]
     let irCalls: IrCall[] = accountOp.calls
     ;[irCalls] = WALLETModule(accountOp, irCalls, humanizerInfo as HumanizerMeta)
 
-    irCalls.forEach((c, i) =>
-      c?.fullVisualization?.forEach((v: HumanizerVisualization, j: number) =>
-        expect(v).toMatchObject(expectedhumanization[i][j])
-      )
-    )
+    compareHumanizerVisualizations(irCalls, expectedHumanization)
   })
 })

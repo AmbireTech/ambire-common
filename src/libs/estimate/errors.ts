@@ -2,7 +2,7 @@
 
 import { AbiCoder, isHexString } from 'ethers'
 
-import { Erc4337GasLimits, EstimateResult } from './interfaces'
+import { EstimateResult } from './interfaces'
 
 const contractErrors = [
   'caller is a contract',
@@ -85,7 +85,6 @@ export function estimationErrorFormatted(
   error: Error,
   opts?: {
     feePaymentOptions?: EstimateResult['feePaymentOptions']
-    erc4337GasLimits?: Erc4337GasLimits
     nonFatalErrors?: Error[]
   }
 ): EstimateResult {

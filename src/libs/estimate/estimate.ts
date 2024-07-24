@@ -1,4 +1,4 @@
-import { AbiCoder, JsonRpcProvider, Provider, toBeHex, ZeroAddress } from 'ethers'
+import { AbiCoder, JsonRpcProvider, Provider, ZeroAddress } from 'ethers'
 
 import Estimation from '../../../contracts/compiled/Estimation.json'
 import { FEE_COLLECTOR } from '../../consts/addresses'
@@ -109,7 +109,7 @@ export async function estimate4337(
       })
       .catch(catchEstimationFailure),
     bundlerEstimate(account, accountStates, op, network, feeTokens),
-    estimateGas(account, op, provider, accountState).catch(() => 0n)
+    estimateGas(account, op, provider, accountState, network).catch(() => 0n)
   ])
   const ambireEstimation = estimations[0]
   const bundlerEstimationResult: EstimateResult = estimations[1]
@@ -117,22 +117,7 @@ export async function estimate4337(
     return estimationErrorFormatted(
       // give priority to the bundler error if both estimations end up with an error
       bundlerEstimationResult.error ?? ambireEstimation,
-      {
-        feePaymentOptions,
-        erc4337GasLimits: {
-          preVerificationGas: toBeHex(0),
-          verificationGasLimit: toBeHex(0),
-          callGasLimit: toBeHex(0),
-          paymasterVerificationGasLimit: toBeHex(0),
-          paymasterPostOpGasLimit: toBeHex(0),
-          gasPrice: {
-            slow: { maxFeePerGas: toBeHex(0), maxPriorityFeePerGas: toBeHex(0) },
-            medium: { maxFeePerGas: toBeHex(0), maxPriorityFeePerGas: toBeHex(0) },
-            fast: { maxFeePerGas: toBeHex(0), maxPriorityFeePerGas: toBeHex(0) },
-            ape: { maxFeePerGas: toBeHex(0), maxPriorityFeePerGas: toBeHex(0) }
-          }
-        }
-      }
+      { feePaymentOptions }
     )
   }
   // // if there's a bundler error only, remove the smart account payment options
@@ -153,31 +138,33 @@ export async function estimate4337(
   const ambireEstimationError =
     getInnerCallFailure(accountOp) || getNonceDiscrepancyFailure(op, outcomeNonce)
 
-  bundlerEstimationResult.error =
-    bundlerEstimationResult.error instanceof Error
-      ? bundlerEstimationResult.error
-      : ambireEstimationError
-
   // if Estimation.sol estimate is a success, it means the nonce has incremented
   // so we subtract 1 from it. If it's an error, we return the old one
   bundlerEstimationResult.currentAccountNonce = accountOp.success
     ? Number(outcomeNonce - 1n)
     : Number(outcomeNonce)
 
-  // if there's a bundler error but there's no ambire estimator error,
-  // set the estimation to standard EOA broadcast and continue
-  if (!ambireEstimationError && bundlerEstimationResult.error) {
+  if (ambireEstimationError && !bundlerEstimationResult.error) {
+    // if there's an ambire estimation error, we do not allow the txn
+    // to be executed as it means it will most certainly fail
+    bundlerEstimationResult.error = ambireEstimationError
+  } else if (!ambireEstimationError && bundlerEstimationResult.error) {
+    // if there's a bundler error only, it means we cannot do ERC-4337
+    // but we can do broadcast by EOA
     feePaymentOptions = []
-    bundlerEstimationResult.gasUsed =
-      deployment.gasUsed + accountOpToExecuteBefore.gasUsed + accountOp.gasUsed
     delete bundlerEstimationResult.erc4337GasLimits
     bundlerEstimationResult.error = null
-
-    // also include the estimate_gas call. If it's bigger, use it
-    const estimateGasCall = estimations[2]
-    if (bundlerEstimationResult.gasUsed < estimateGasCall)
-      bundlerEstimationResult.gasUsed = estimateGasCall
   }
+
+  // set the gasUsed to the biggest one found from all estimations
+  const bigIntMax = (...args: bigint[]): bigint => args.reduce((m, e) => (e > m ? e : m))
+  const ambireGas = deployment.gasUsed + accountOpToExecuteBefore.gasUsed + accountOp.gasUsed
+  const estimateGasCall = estimations[2]
+  bundlerEstimationResult.gasUsed = bigIntMax(
+    bundlerEstimationResult.gasUsed,
+    estimateGasCall,
+    ambireGas
+  )
 
   // add the availableAmount after the simulation
   bundlerEstimationResult.feePaymentOptions = feePaymentOptions.map(
@@ -329,7 +316,7 @@ export async function estimate(
         blockTag
       })
       .catch(catchEstimationFailure),
-    estimateGas(account, op, provider, accountState).catch(() => 0n)
+    estimateGas(account, op, provider, accountState, network).catch(() => 0n)
   ]
   const estimations = await estimateWithRetries(initializeRequests)
   if (estimations instanceof Error) return estimationErrorFormatted(estimations)
