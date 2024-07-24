@@ -542,6 +542,49 @@ describe('Portfolio Controller ', () => {
       expect(previousHintsStorage.learnedTokens?.ethereum).not.toHaveProperty(SMART_CONTRACT_ADDR)
     })
 
+    test('Portfolio should filter out ER20 tokens these mimic native tokens (same symbol and amount)', async () => {
+      const ERC_20_MATIC_ADDR = '0x0000000000000000000000000000000000001010'
+      const { controller } = prepareTest()
+
+      await controller.learnTokens([ERC_20_MATIC_ADDR], 'polygon')
+
+      await controller.updateSelectedAccount(account.addr, undefined, undefined, {
+        forceUpdate: true
+      })
+
+      const hasErc20Matic = controller.latest[account.addr].polygon!.result!.tokens.find(
+        (token) => token.address === ERC_20_MATIC_ADDR
+      )
+
+      expect(hasErc20Matic).toBeFalsy()
+    })
+
+    test('Portfolio should not filter out ERC20 tokens that mimic native tokens when they are added as preferences (custom tokens)', async () => {
+      const ERC_20_MATIC_ADDR = '0x0000000000000000000000000000000000001010'
+      const { controller } = prepareTest()
+
+      const tokenInPreferences = {
+        address: ERC_20_MATIC_ADDR,
+        networkId: 'polygon',
+        standard: 'ERC20',
+        name: 'MATIC',
+        symbol: 'MATIC',
+        decimals: 18
+      }
+
+      await controller.updateTokenPreferences([tokenInPreferences])
+
+      await controller.updateSelectedAccount(account.addr, undefined, undefined, {
+        forceUpdate: true
+      })
+
+      const hasErc20Matic = controller.latest[account.addr].polygon!.result!.tokens.find(
+        (token) => token.address === ERC_20_MATIC_ADDR
+      )
+
+      expect(hasErc20Matic).toBeTruthy()
+    })
+
     test("Learned token timestamp isn't updated if the token is found by the external hints api", async () => {
       const { storage, controller } = prepareTest()
 

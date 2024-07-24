@@ -307,17 +307,25 @@ export function getUpdatedHints(
 
 export const tokenFilter = (
   token: TokenResult,
+  nativeToken: TokenResult,
   network: { id: NetworkId },
   hasNonZeroTokens: boolean,
   additionalHints: string[] | undefined,
-  tokenPreferences: CustomToken[]
+  isTokenPreference: boolean
 ): boolean => {
-  const isTokenPreference = tokenPreferences?.find((tokenPreference) => {
-    return tokenPreference.address === token.address && tokenPreference.networkId === network.id
-  })
-  if (isTokenPreference) {
-    token.isHidden = isTokenPreference.isHidden
-  }
+  // always include tokens added as a preference
+  if (isTokenPreference) return true
+
+  // Never add ERC20 tokens that represent the network's native token.
+  // For instance, on Polygon, we have this token: `0x0000000000000000000000000000000000001010`.
+  // It mimics the native MATIC token (same symbol, same amount) and is shown twice in the Dashboard.
+  // From a user's perspective, the token is duplicated and counted twice in the balance.
+  const isERC20NativeRepresentation =
+    token.symbol === nativeToken?.symbol &&
+    token.amount === nativeToken.amount &&
+    token.address !== ZeroAddress
+
+  if (isERC20NativeRepresentation) return false
 
   // always include > 0 amount and native token
   if (token.amount > 0 || token.address === ZeroAddress) return true
@@ -326,7 +334,7 @@ export const tokenFilter = (
     return pinnedToken.networkId === network.id && pinnedToken.address === token.address
   })
 
-  // make the comparisson to lowercase as otherwise, it doesn't work
+  // make the comparison to lowercase as otherwise, it doesn't work
   const hintsLowerCase = additionalHints
     ? additionalHints.map((hint) => hint.toLowerCase())
     : undefined
@@ -336,5 +344,38 @@ export const tokenFilter = (
   // return the token if it's pinned and requested
   const pinnedRequested = isPinned && !hasNonZeroTokens
 
-  return !!isTokenPreference || isInAdditionalHints || pinnedRequested
+  return isInAdditionalHints || pinnedRequested
+}
+
+/**
+ * Filter the TokenResult[] by certain criteria (please refer to `tokenFilter` for more details)
+ * and set the token.isHidden flag.
+ */
+export const processTokens = (
+  tokenResults: TokenResult[],
+  network: { id: NetworkId },
+  hasNonZeroTokens: boolean,
+  additionalHints: string[] | undefined,
+  tokenPreferences: CustomToken[]
+): TokenResult[] => {
+  // We need to know the native token in order to execute our filtration logic in tokenFilter.
+  // For performance reasons, we define it here once, instead of during every single iteration in the reduce method.
+  const nativeToken = tokenResults.find((token) => token.address === ZeroAddress)
+
+  return tokenResults.reduce((tokens, tokenResult) => {
+    const token = { ...tokenResult }
+
+    const preference = tokenPreferences?.find((tokenPreference) => {
+      return tokenPreference.address === token.address && tokenPreference.networkId === network.id
+    })
+
+    if (preference) {
+      token.isHidden = preference.isHidden
+    }
+
+    if (tokenFilter(token, nativeToken!, network, hasNonZeroTokens, additionalHints, !!preference))
+      tokens.push(token)
+
+    return tokens
+  }, [] as TokenResult[])
 }

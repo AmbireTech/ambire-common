@@ -1,4 +1,6 @@
 import { AccountOp } from '../../../accountOp/accountOp'
-import { IrCall } from '../../interfaces'
+import { HumanizerVisualization, IrCall } from '../../interfaces'
 
-export type HumanizerUniMatcher = { [key: string]: (a: AccountOp, c: IrCall) => IrCall[] }
+export type HumanizerUniMatcher = {
+  [key: string]: (a: AccountOp, c: IrCall) => HumanizerVisualization[]
+}

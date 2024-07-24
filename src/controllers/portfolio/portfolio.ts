@@ -22,8 +22,8 @@ import {
   getPinnedGasTankTokens,
   getTotal,
   getUpdatedHints,
+  processTokens,
   shouldGetAdditionalPortfolio,
-  tokenFilter,
   validateERC20Token
 } from '../../libs/portfolio/helpers'
 /* eslint-disable no-param-reassign */
@@ -480,16 +480,22 @@ export class PortfolioController extends EventEmitter {
 
       const additionalHints = portfolioProps.additionalHints || []
 
+      const processedTokens = processTokens(
+        result.tokens,
+        network,
+        hasNonZeroTokens,
+        additionalHints,
+        tokenPreferences
+      )
+
       _accountState[network.id] = {
         isReady: true,
         isLoading: false,
         errors: result.errors,
         result: {
           ...result,
-          tokens: result.tokens.filter((token) =>
-            tokenFilter(token, network, hasNonZeroTokens, additionalHints, tokenPreferences)
-          ),
-          total: getTotal(result.tokens)
+          tokens: processedTokens,
+          total: getTotal(processedTokens)
         }
       }
       this.emitUpdate()
