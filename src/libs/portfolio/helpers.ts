@@ -2,6 +2,7 @@ import { Contract, ZeroAddress } from 'ethers'
 
 import IERC20 from '../../../contracts/compiled/IERC20.json'
 import gasTankFeeTokens from '../../consts/gasTankFeeTokens'
+import humanizerInfo from '../../consts/humanizer/humanizerInfo.json'
 import { PINNED_TOKENS } from '../../consts/pinnedTokens'
 import { Account, AccountId } from '../../interfaces/account'
 import { NetworkId } from '../../interfaces/network'
@@ -347,6 +348,32 @@ export const tokenFilter = (
   return isInAdditionalHints || pinnedRequested
 }
 
+const getTokenSafetyLevel = (token: TokenResult) => {
+  let safetyLevel = 'unknown' as 'unknown' | 'trusted' | 'spoof'
+
+  if (token.address === ZeroAddress) {
+    return 'trusted'
+  }
+
+  Object.values(humanizerInfo.knownAddresses).forEach((value) => {
+    const isMatching = value.address.toLowerCase() === token.address.toLowerCase()
+
+    if (!isMatching) return
+
+    const isTrusted = value.name.toLowerCase().includes(token.symbol.toLowerCase())
+
+    if (isTrusted) {
+      safetyLevel = 'trusted'
+      return
+    }
+    if (!isTrusted && safetyLevel !== 'trusted') {
+      safetyLevel = 'spoof'
+    }
+  })
+
+  return safetyLevel
+}
+
 /**
  * Filter the TokenResult[] by certain criteria (please refer to `tokenFilter` for more details)
  * and set the token.isHidden flag.
@@ -364,6 +391,7 @@ export const processTokens = (
 
   return tokenResults.reduce((tokens, tokenResult) => {
     const token = { ...tokenResult }
+    const safetyLevel = getTokenSafetyLevel(token)
 
     const preference = tokenPreferences?.find((tokenPreference) => {
       return tokenPreference.address === token.address && tokenPreference.networkId === network.id
@@ -372,6 +400,8 @@ export const processTokens = (
     if (preference) {
       token.isHidden = preference.isHidden
     }
+
+    token.flags.safetyLevel = safetyLevel
 
     if (tokenFilter(token, nativeToken!, network, hasNonZeroTokens, additionalHints, !!preference))
       tokens.push(token)
