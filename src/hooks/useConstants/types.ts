@@ -170,6 +170,7 @@ type HumanizerInfoAbisKeysType =
   | 'ERC20'
   | 'SwappinGatewayV2'
   | 'SwappinNFTV2'
+  | 'ParaswapRouter'
 
 type HumanizerInfoAbisType = {
   [key in HumanizerInfoAbisKeysType]: HumanizerInfoAbiType[]

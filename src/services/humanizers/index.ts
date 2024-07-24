@@ -5,23 +5,24 @@ import AaveWethGatewayV2 from './AaveWethGatewayV2'
 import AmbireBatcher from './AmbireBatcher'
 import AmbireFactory from './AmbireFactory'
 import AmbireIdentity from './AmbireIdentity'
+import Bungee from './Bungee'
+import CowSwap from './CowSwap'
 import ERC20 from './ERC20'
 import ERC721 from './ERC721'
+import GMX from './GMX'
+import Joe from './Joe'
+import Lido from './Lido'
+import MeanFinance from './MeanFinance'
 import Movr from './Movr'
 import OneInch from './OneInch'
 import OpenSea from './OpenSea'
+import Paraswap from './Paraswap'
 import UniRouters from './UniRouters'
 import UniswapV3Pool from './UniswapV3Pool'
 import WALLETStakingPool from './WALLETStakingPool'
 import WALLETSupplyController from './WALLETSupplyController'
 import WETH from './WETH'
 import YearnTesseractVault from './YearnTesseractVault'
-import Bungee from './Bungee'
-import CowSwap from './CowSwap'
-import MeanFinance from './MeanFinance'
-import GMX from './GMX'
-import Lido from './Lido'
-import Joe from './Joe'
 
 const all = (humanizerInfo: HumanizerInfoType) => ({
   ...UniRouters(humanizerInfo),
@@ -46,6 +47,7 @@ const all = (humanizerInfo: HumanizerInfoType) => ({
   ...MeanFinance(humanizerInfo),
   ...GMX(humanizerInfo),
   ...Lido(humanizerInfo),
-  ...Joe(humanizerInfo)
+  ...Joe(humanizerInfo),
+  ...Paraswap(humanizerInfo)
 })
 export default all
