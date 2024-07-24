@@ -1,6 +1,8 @@
 /* eslint-disable no-restricted-syntax */
 /* eslint-disable import/no-extraneous-dependencies */
 /* eslint-disable class-methods-use-this */
+import { toBeHex } from 'ethers'
+
 import { ENTRY_POINT_MARKER, ERC_4337_ENTRYPOINT } from '../../consts/deploy'
 import { Fetch } from '../../interfaces/fetch'
 import { Network } from '../../interfaces/network'
@@ -185,14 +187,24 @@ export class Bundler {
     slow: { maxFeePerGas: string; maxPriorityFeePerGas: string }
     medium: { maxFeePerGas: string; maxPriorityFeePerGas: string }
     fast: { maxFeePerGas: string; maxPriorityFeePerGas: string }
+    ape: { maxFeePerGas: string; maxPriorityFeePerGas: string }
   }> {
     const url = `https://api.pimlico.io/v2/${network.chainId}/rpc?apikey=${process.env.REACT_APP_PIMLICO_API_KEY}`
     const provider = getRpcProvider([url], network.chainId)
     const results = await provider.send('pimlico_getUserOperationGasPrice', [])
+
+    const apeMaxFee = BigInt(results.fast.maxFeePerGas) + BigInt(results.fast.maxFeePerGas) / 5n
+    const apePriority =
+      BigInt(results.fast.maxPriorityFeePerGas) + BigInt(results.fast.maxPriorityFeePerGas) / 5n
+
     return {
       slow: results.slow,
       medium: results.standard,
-      fast: results.fast
+      fast: results.fast,
+      ape: {
+        maxFeePerGas: toBeHex(apeMaxFee),
+        maxPriorityFeePerGas: toBeHex(apePriority)
+      }
     }
   }
 
