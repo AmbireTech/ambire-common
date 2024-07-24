@@ -530,7 +530,13 @@ export class MainController extends EventEmitter {
     )
     const bundlerFetch = async () => {
       if (!is4337) return null
-      return Bundler.fetchGasPrices(network).catch(() => null)
+      return Bundler.fetchGasPrices(network).catch((e) => {
+        this.emitError({
+          level: 'silent',
+          message: "Failed to fetch the bundler's gas price",
+          error: e
+        })
+      })
     }
     const [gasPrice, bundlerGas] = await Promise.all([
       getGasPriceRecommendations(this.providers.providers[network.id], network).catch((e) => {
@@ -1191,10 +1197,7 @@ export class MainController extends EventEmitter {
 
     this.signAccountOp.update({
       gasPrices: this.gasPrices[networkId],
-      bundlerGasPrices:
-        this.bundlerGasPrices && this.bundlerGasPrices[networkId]
-          ? this.bundlerGasPrices[networkId]
-          : undefined
+      bundlerGasPrices: this.bundlerGasPrices[networkId]
     })
     this.emitUpdate()
   }
@@ -1529,7 +1532,7 @@ export class MainController extends EventEmitter {
           )
         }
       } catch (error: any) {
-        return this.#throwBroadcastAccountOp({ error })
+        return this.#throwBroadcastAccountOp({ error, network })
       }
     }
     // Smart account but EOA pays the fee
@@ -1612,7 +1615,7 @@ export class MainController extends EventEmitter {
           )
         }
       } catch (error: any) {
-        return this.#throwBroadcastAccountOp({ error })
+        return this.#throwBroadcastAccountOp({ error, network })
       }
     }
     // Smart account, the ERC-4337 way
@@ -1633,7 +1636,8 @@ export class MainController extends EventEmitter {
           message: Bundler.decodeBundlerError(
             e,
             'Bundler broadcast failed. Please try broadcasting by an EOA or contact support.'
-          )
+          ),
+          network
         })
       }
       if (!userOperationHash) {
@@ -1668,7 +1672,7 @@ export class MainController extends EventEmitter {
           nonce: Number(accountOp.nonce)
         }
       } catch (error: any) {
-        return this.#throwBroadcastAccountOp({ error })
+        return this.#throwBroadcastAccountOp({ error, network })
       }
     }
 
@@ -1723,13 +1727,22 @@ export class MainController extends EventEmitter {
     return [...accountOpBanners]
   }
 
-  #throwBroadcastAccountOp({ message: _msg, error: _err }: { message?: string; error?: Error }) {
+  #throwBroadcastAccountOp({
+    message: _msg,
+    error: _err,
+    network
+  }: {
+    message?: string
+    error?: Error
+    network?: Network
+  }) {
     let message = _msg || _err?.message || 'Unable to broadcast the transaction.'
 
     if (message) {
       if (message.includes('insufficient funds')) {
-        // TODO: Better message?
-        message = 'Insufficient funds for intristic transaction cost'
+        if (network)
+          message = `You don't have enough ${network.nativeAssetSymbol} to cover the transaction fee`
+        else message = "You don't have enough native to cover the transaction fee"
       } else if (message.includes('pimlico_getUserOperationGasPrice')) {
         // sometimes the bundler returns an error of low maxFeePerGas
         // in that case, recalculate prices and prompt the user to try again
