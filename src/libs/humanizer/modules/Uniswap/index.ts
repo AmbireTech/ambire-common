@@ -5,44 +5,6 @@ import { uniUniversalRouter } from './uniUniversalRouter'
 import { uniV2Mapping } from './uniV2'
 import { uniV32Mapping, uniV3Mapping } from './uniV3'
 
-// this function reduces calls only within uniswaps context. It does virtually the same thins as wrapSwapReducer, but wrapSwapReducer
-// lacks the context that is needed for squashing multicalls ONLY SOMETIMES
-// lets say a multicall swaps and sends value, but after that we have another send.(2 calls that result in 3 IrCalls)
-// this function will squash only the first two, because they originate from the same multicall
-// this behavior is achievable with the wrapSwapReducer, but should not be there as
-// it has no way of knowing that the third call (send) should not be squashed with the multicall
-const reduceMulticall = (calls: IrCall[]): IrCall[] => {
-  const newCalls: IrCall[] = []
-  // @TODO optimize to not require update=true on every match case
-  let updated = false
-  for (let i = 0; i < calls.length; i++) {
-    // @TODO add test http://localhost:19006/?networkId=base&txnId=0x8c9cf6f2981218108625b6bae8a539d26257d65b7ced2d54f0d59402502177ed
-    // should say only swap ETH for 1 WALLET
-    // @TODo add test http://localhost:19006/index.html?txnId=0x33e39c985d9abc5f5f3f980db1ca645ce676c622566aa26ad2f180f65c1eab2c&networkId=arbitrum
-    // should say swap 0.5 and send 0.1
-    if (
-      calls[i]?.fullVisualization?.[0].content?.includes('Swap') &&
-      calls[i + 1]?.fullVisualization?.[0].content?.includes('Send') &&
-      calls[i]?.fullVisualization?.[3].address &&
-      calls[i]?.fullVisualization?.[3].address === calls[i + 1]?.fullVisualization?.[1].address
-    ) {
-      const newVisualization = calls[i].fullVisualization
-      newVisualization![3].value =
-        calls[i].fullVisualization![3].value! - calls[i + 1].fullVisualization![1].value!
-
-      newCalls.push({
-        ...calls[i],
-        value: calls[i].value + calls[i + 1].value,
-        fullVisualization: newVisualization
-      })
-      updated = true
-      i++
-    } else {
-      newCalls.push(calls[i])
-    }
-  }
-  return updated ? reduceMulticall(newCalls) : newCalls
-}
 export const uniswapHumanizer: HumanizerCallModule = (
   accountOp: AccountOp,
   currentIrCalls: IrCall[],
@@ -85,21 +47,14 @@ export const uniswapHumanizer: HumanizerCallModule = (
 
     const knownUniswapVersion = matcher[call.to.toLowerCase()]
     if (knownUniswapVersion && knownUniswapVersion?.[sigHash]) {
-      const resultingCalls = knownUniswapVersion[sigHash](accountOp, call)
-      const squashedCalls = reduceMulticall(resultingCalls)
+      const fullVisualization = knownUniswapVersion[sigHash](accountOp, call)
+      // @TODO add visualization squashing
+      newCalls.push({ ...call, fullVisualization })
 
-      squashedCalls.forEach((hc: IrCall, index: number) =>
-        // @TODO this might be bad design choice, must be further discussed
-        // a more appropriate, safe and UX-y approach would be to have all subcalls into one bubble
-        // we should discuss
-        // if multicall has value it shouldn't result in multiple calls with value
-        index === 0 ? newCalls.push(hc) : newCalls.push({ ...hc, value: 0n })
-      )
       // if unknown address, but known sighash
     } else if (fallbackFlatUniswapsMather[sigHash]) {
-      fallbackFlatUniswapsMather[sigHash](accountOp, call).forEach((hc: IrCall, index: number) => {
-        newCalls.push({ ...hc, value: index === 0 ? hc.value : 0n })
-      })
+      const fullVisualization = fallbackFlatUniswapsMather[sigHash](accountOp, call)
+      newCalls.push({ ...call, fullVisualization })
     } else {
       newCalls.push(call)
     }

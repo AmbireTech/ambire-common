@@ -11,6 +11,7 @@ import {
   NetworkInfoLoading
 } from '../../interfaces/network'
 import { RPCProviders } from '../../interfaces/provider'
+import { Bundler } from '../../services/bundlers/bundler'
 import { getRpcProvider } from '../../services/provider'
 import { getSASupport } from '../deployless/simulateDeployCall'
 
@@ -82,13 +83,13 @@ export async function getNetworkInfo(
         const responses = await Promise.all([
           retryRequest(() => provider.getCode(SINGLETON)),
           retryRequest(() => provider.getCode(AMBIRE_ACCOUNT_FACTORY)),
-          retryRequest(() => getSASupport(provider))
+          retryRequest(() => getSASupport(provider)),
+          Bundler.isNetworkSupported(fetch, chainId).catch(() => false)
           // retryRequest(() => provider.getCode(ERC_4337_ENTRYPOINT)),
-          // Bundler.isNetworkSupported(chainId).catch(() => false)
         ]).catch((e: Error) =>
           raiseFlagged(e, ['0x', '0x', { addressMatches: false, supportsStateOverride: false }])
         )
-        const [singletonCode, factoryCode, saSupport] = responses
+        const [singletonCode, factoryCode, saSupport, is4337enabled] = responses
         const areContractsDeployed = factoryCode !== '0x'
         // const has4337 = entryPointCode !== '0x' && hasBundler
         const predefinedNetwork = predefinedNetworks.find((net) => net.chainId === chainId)
@@ -108,7 +109,7 @@ export async function getNetworkInfo(
               ? true
               : !saSupport.supportsStateOverride,
           erc4337: {
-            enabled: predefinedNetwork ? predefinedNetwork.erc4337.enabled : false,
+            enabled: predefinedNetwork ? predefinedNetwork.erc4337.enabled : is4337enabled,
             hasPaymaster: predefinedNetwork ? predefinedNetwork.erc4337.hasPaymaster : false
           }
         }

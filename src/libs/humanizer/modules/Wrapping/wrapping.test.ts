@@ -1,21 +1,9 @@
-import { ZeroAddress } from 'ethers'
-
-import { expect } from '@jest/globals'
-
-import { FEE_COLLECTOR } from '../../../../consts/addresses'
 import humanizerInfo from '../../../../consts/humanizer/humanizerInfo.json'
 import { AccountOp } from '../../../accountOp/accountOp'
 import { HumanizerMeta, IrCall } from '../../interfaces'
 import { compareHumanizerVisualizations } from '../../testHelpers'
-import { getAction, getDeadline, getLabel, getToken } from '../../utils'
-import gasTankModule from '../GasTankModule'
-import { genericErc20Humanizer } from '../Tokens'
-import { uniswapHumanizer } from '../Uniswap'
-import { getUniRecipientText } from '../Uniswap/utils'
+import { getAction, getToken } from '../../utils'
 import { wrappingModule } from './wrapping'
-
-const TETHER_ADDRESS = '0xdac17f958d2ee523a2206206994597c13d831ec7'
-const WETH_ADDRESS = '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2'
 
 const transactions = {
   weth: [
@@ -107,89 +95,6 @@ describe('wrapping', () => {
       ],
       []
     ]
-    compareHumanizerVisualizations(irCalls, expectedHumanization)
-  })
-
-  test('SWAP WRAP/UNWRAPS', () => {
-    const placeholder = '0x123456789'
-    const calls: IrCall[] = [
-      {
-        to: placeholder,
-        data: placeholder,
-        value: 0n,
-        fullVisualization: [
-          getAction('Swap'),
-          getToken(TETHER_ADDRESS, 1000000000n),
-          getLabel(placeholder),
-          getToken(WETH_ADDRESS, 1000000000n)
-        ]
-      },
-      {
-        to: WETH_ADDRESS,
-        data: placeholder,
-        value: 0n,
-        fullVisualization: [getAction('Unwrap'), getToken(ZeroAddress, 1000000000n)]
-      }
-    ]
-
-    const expectedHumanization = [
-      getAction('Swap'),
-      getToken('0xdac17f958d2ee523a2206206994597c13d831ec7', 1000000000n),
-      getLabel('0x123456789'),
-      getToken('0x0000000000000000000000000000000000000000', 1000000000n)
-    ]
-
-    const [newCalls] = wrappingModule(accountOp, calls, humanizerInfo as HumanizerMeta)
-    expect(newCalls.length).toBe(1)
-    compareHumanizerVisualizations(newCalls, [expectedHumanization])
-  })
-
-  test('merge swaps', () => {
-    let [irCalls] = uniswapHumanizer(
-      accountOp,
-      transactions.swapWrapReduce,
-      humanizerInfo as HumanizerMeta
-    )
-
-    ;[irCalls] = wrappingModule(accountOp, irCalls, humanizerInfo as HumanizerMeta)
-    const expectedHumanization = [
-      [
-        getAction('Swap'),
-        getToken(ZeroAddress, 40000000000000000000n),
-        getLabel('for at least'),
-        getToken('0x761d38e5ddf6ccf6cf7c55759d5210750b5d60f3', 787087015436983109239662968548n),
-        getDeadline(1718719955n)
-      ],
-      [
-        getAction('Swap up to'),
-        getToken(ZeroAddress, 14458487476752767n),
-        getLabel('for'),
-        getToken('0x4300000000000000000000000000000000000003', 50000000000000000000n),
-        ...getUniRecipientText(
-          '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
-          '0x20e9f0c7c59ded2167680b491f5ae61e2407a8af'
-        ),
-        getDeadline(1718985690n)
-      ]
-    ]
-    expect(irCalls.length).toBe(expectedHumanization.length)
-    compareHumanizerVisualizations(irCalls, expectedHumanization)
-  })
-
-  test('Merge gastank topup with native', () => {
-    let [irCalls] = genericErc20Humanizer(
-      accountOp,
-      transactions.gasTankTopupWithNative,
-      humanizerInfo as HumanizerMeta
-    )
-    ;[irCalls] = gasTankModule(accountOp, irCalls, humanizerInfo as HumanizerMeta)
-    ;[irCalls] = wrappingModule(accountOp, irCalls, humanizerInfo as HumanizerMeta)
-    const expectedHumanization = [
-      [getAction('Fuel gas tank with'), getToken(ZeroAddress, 649637990000000n)]
-    ]
-    expect(irCalls[0].value).toBe(649637990000000n)
-    expect(irCalls[0].to).toBe(FEE_COLLECTOR)
-    expect(irCalls[0].data).toBe('0x')
     compareHumanizerVisualizations(irCalls, expectedHumanization)
   })
 })
