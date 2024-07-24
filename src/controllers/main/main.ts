@@ -693,12 +693,14 @@ export class MainController extends EventEmitter {
   async buildUserRequestFromDAppRequest(
     request: DappProviderRequest,
     dappPromise: {
+      session: { name: string; origin: string; icon: string }
       resolve: (data: any) => void
       reject: (data: any) => void
     }
   ) {
     await this.#initialLoadPromise
     let userRequest = null
+    let withPriority = false
     const kind = dappRequestMethodToActionKind(request.method)
     const dapp = this.dapps.getDapp(request.origin)
 
@@ -707,6 +709,12 @@ export class MainController extends EventEmitter {
 
       const transaction = request.params[0]
       const accountAddr = getAddress(transaction.from)
+      const account = this.accounts.accounts.find((a) => a.addr === accountAddr)
+
+      if (!account) {
+        throw ethErrors.provider.unauthorized('Transaction failed - unknown account address')
+      }
+
       const network = this.networks.networks.find(
         (n) => Number(n.chainId) === Number(dapp?.chainId)
       )
@@ -730,6 +738,15 @@ export class MainController extends EventEmitter {
         meta: { isSignAction: true, accountAddr, networkId: network.id },
         dappPromise
       } as SignUserRequest
+      if (!account.creation) {
+        const otherUserRequestFromSameDapp = this.userRequests.find(
+          (r) => r.dappPromise?.session?.origin === dappPromise?.session?.origin
+        )
+
+        if (!otherUserRequestFromSameDapp && !!dappPromise?.session?.origin) {
+          withPriority = true
+        }
+      }
     } else if (kind === 'message') {
       if (!this.accounts.selectedAccount) throw ethErrors.rpc.internal()
 
@@ -846,8 +863,18 @@ export class MainController extends EventEmitter {
       } as DappUserRequest
     }
 
+    if (userRequest.action.kind !== 'calls') {
+      const otherUserRequestFromSameDapp = this.userRequests.find(
+        (r) => r.dappPromise?.session?.origin === dappPromise?.session?.origin
+      )
+
+      if (!otherUserRequestFromSameDapp && !!dappPromise?.session?.origin) {
+        withPriority = true
+      }
+    }
+
     if (userRequest) {
-      await this.addUserRequest(userRequest)
+      await this.addUserRequest(userRequest, withPriority)
       this.emitUpdate()
     }
   }
@@ -878,7 +905,7 @@ export class MainController extends EventEmitter {
       return
     }
 
-    await this.addUserRequest(userRequest)
+    await this.addUserRequest(userRequest, true)
   }
 
   resolveUserRequest(data: any, requestId: UserRequest['id']) {
@@ -1254,7 +1281,7 @@ export class MainController extends EventEmitter {
         )
 
       // Take the fee tokens from two places: the user's tokens and his gasTank
-      // The gastTank tokens participate on each network as they belong everywhere
+      // The gasTank tokens participate on each network as they belong everywhere
       // NOTE: at some point we should check all the "?" signs below and if
       // an error pops out, we should notify the user about it
       const networkFeeTokens =
