@@ -168,7 +168,7 @@ export class ActionsController extends EventEmitter {
   }
 
   setCurrentActionById(actionId: Action['id']) {
-    const action = this.visibleActionsQueue.find((a) => a.id === actionId)
+    const action = this.visibleActionsQueue.find((a) => a.id.toString() === actionId.toString())
 
     if (!action) return
 
