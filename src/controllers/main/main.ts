@@ -887,6 +887,8 @@ export class MainController extends EventEmitter {
     await this.#initialLoadPromise
     if (!this.accounts.selectedAccount) return
 
+    const account = this.accounts.accounts.find((a) => a.addr === this.accounts.selectedAccount)!
+
     const userRequest = buildTransferUserRequest({
       selectedAccount: this.accounts.selectedAccount,
       amount,
@@ -905,7 +907,7 @@ export class MainController extends EventEmitter {
       return
     }
 
-    await this.addUserRequest(userRequest, true)
+    await this.addUserRequest(userRequest, !account.creation)
   }
 
   resolveUserRequest(data: any, requestId: UserRequest['id']) {
