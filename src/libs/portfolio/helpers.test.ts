@@ -43,6 +43,7 @@ describe('Portfolio helpers', () => {
         accountAddr: TEST_ACCOUNT_ADDRESS
       },
       tokens,
+      [],
       'ethereum',
       {
         learnedTokens: {

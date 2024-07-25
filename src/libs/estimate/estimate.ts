@@ -1,12 +1,10 @@
-import { AbiCoder, JsonRpcProvider, Provider, toBeHex, ZeroAddress } from 'ethers'
+import { AbiCoder, JsonRpcProvider, Provider, ZeroAddress } from 'ethers'
 
 import Estimation from '../../../contracts/compiled/Estimation.json'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { DEPLOYLESS_SIMULATION_FROM, OPTIMISTIC_ORACLE } from '../../consts/deploy'
 import { Account, AccountStates } from '../../interfaces/account'
-import { Key } from '../../interfaces/keystore'
 import { Network } from '../../interfaces/network'
-import { getIsViewOnly } from '../../utils/accounts'
 import { getAccountDeployParams, isSmartAccount } from '../account/account'
 import { AccountOp } from '../accountOp/accountOp'
 import { Call } from '../accountOp/types'
@@ -85,6 +83,7 @@ export async function estimate4337(
     }
   })
 
+  const accountState = accountStates[op.accountAddr][op.networkId]
   const checkInnerCallsArgs = [
     account.addr,
     ...getAccountDeployParams(account),
@@ -95,7 +94,7 @@ export async function estimate4337(
       op.accountOpToExecuteBefore?.signature || '0x'
     ],
     [account.addr, op.nonce || 1, calls, '0x'],
-    getProbableCallData(account, op, accountStates[op.accountAddr][op.networkId], network),
+    getProbableCallData(account, op, accountState, network),
     account.associatedKeys,
     filteredFeeTokens.map((feeToken) => feeToken.address),
     FEE_COLLECTOR,
@@ -110,7 +109,7 @@ export async function estimate4337(
       })
       .catch(catchEstimationFailure),
     bundlerEstimate(account, accountStates, op, network, feeTokens),
-    estimateGas(account, op, provider).catch(() => 0n)
+    estimateGas(account, op, provider, accountState, network).catch(() => 0n)
   ])
   const ambireEstimation = estimations[0]
   const bundlerEstimationResult: EstimateResult = estimations[1]
@@ -118,22 +117,7 @@ export async function estimate4337(
     return estimationErrorFormatted(
       // give priority to the bundler error if both estimations end up with an error
       bundlerEstimationResult.error ?? ambireEstimation,
-      {
-        feePaymentOptions,
-        erc4337GasLimits: {
-          preVerificationGas: toBeHex(0),
-          verificationGasLimit: toBeHex(0),
-          callGasLimit: toBeHex(0),
-          paymasterVerificationGasLimit: toBeHex(0),
-          paymasterPostOpGasLimit: toBeHex(0),
-          gasPrice: {
-            slow: { maxFeePerGas: toBeHex(0), maxPriorityFeePerGas: toBeHex(0) },
-            medium: { maxFeePerGas: toBeHex(0), maxPriorityFeePerGas: toBeHex(0) },
-            fast: { maxFeePerGas: toBeHex(0), maxPriorityFeePerGas: toBeHex(0) },
-            ape: { maxFeePerGas: toBeHex(0), maxPriorityFeePerGas: toBeHex(0) }
-          }
-        }
-      }
+      { feePaymentOptions }
     )
   }
   // // if there's a bundler error only, remove the smart account payment options
@@ -154,26 +138,33 @@ export async function estimate4337(
   const ambireEstimationError =
     getInnerCallFailure(accountOp) || getNonceDiscrepancyFailure(op, outcomeNonce)
 
-  bundlerEstimationResult.error =
-    bundlerEstimationResult.error instanceof Error
-      ? bundlerEstimationResult.error
-      : ambireEstimationError
-  bundlerEstimationResult.currentAccountNonce = Number(outcomeNonce - 1n)
+  // if Estimation.sol estimate is a success, it means the nonce has incremented
+  // so we subtract 1 from it. If it's an error, we return the old one
+  bundlerEstimationResult.currentAccountNonce = accountOp.success
+    ? Number(outcomeNonce - 1n)
+    : Number(outcomeNonce)
 
-  // if there's a bundler error but there's no ambire estimator error,
-  // set the estimation to standard EOA broadcast and continue
-  if (!ambireEstimationError && bundlerEstimationResult.error) {
+  if (ambireEstimationError && !bundlerEstimationResult.error) {
+    // if there's an ambire estimation error, we do not allow the txn
+    // to be executed as it means it will most certainly fail
+    bundlerEstimationResult.error = ambireEstimationError
+  } else if (!ambireEstimationError && bundlerEstimationResult.error) {
+    // if there's a bundler error only, it means we cannot do ERC-4337
+    // but we can do broadcast by EOA
     feePaymentOptions = []
-    bundlerEstimationResult.gasUsed =
-      deployment.gasUsed + accountOpToExecuteBefore.gasUsed + accountOp.gasUsed
     delete bundlerEstimationResult.erc4337GasLimits
     bundlerEstimationResult.error = null
-
-    // also include the estimate_gas call. If it's bigger, use it
-    const estimateGasCall = estimations[2]
-    if (bundlerEstimationResult.gasUsed < estimateGasCall)
-      bundlerEstimationResult.gasUsed = estimateGasCall
   }
+
+  // set the gasUsed to the biggest one found from all estimations
+  const bigIntMax = (...args: bigint[]): bigint => args.reduce((m, e) => (e > m ? e : m))
+  const ambireGas = deployment.gasUsed + accountOpToExecuteBefore.gasUsed + accountOp.gasUsed
+  const estimateGasCall = estimations[2]
+  bundlerEstimationResult.gasUsed = bigIntMax(
+    bundlerEstimationResult.gasUsed,
+    estimateGasCall,
+    ambireGas
+  )
 
   // add the availableAmount after the simulation
   bundlerEstimationResult.feePaymentOptions = feePaymentOptions.map(
@@ -210,10 +201,9 @@ export async function estimate(
   provider: Provider | JsonRpcProvider,
   network: Network,
   account: Account,
-  keystoreKeys: Key[],
   op: AccountOp,
   accountStates: AccountStates,
-  EOAaccounts: Account[],
+  nativeToCheck: string[],
   feeTokens: TokenResult[],
   opts?: {
     calculateRefund?: boolean
@@ -256,17 +246,9 @@ export async function estimate(
     calls.push(getActivatorCall(op.accountAddr))
   }
 
-  // we're excluding the view only accounts from the natives to check
-  // in all cases EXCEPT the case where we're making an estimation for
-  // the view only account itself. In all other, view only accounts options
-  // should not be present as the user cannot pay the fee with them (no key)
-  const nativeToCheck = EOAaccounts.filter(
-    (acc) => acc.addr === op.accountAddr || !getIsViewOnly(keystoreKeys, acc.associatedKeys)
-  ).map((acc) => acc.addr)
-
   // if 4337, delegate
-  if (opts && opts.is4337Broadcast) {
-    const estimationResult: EstimateResult = await estimate4337(
+  if (opts && opts.is4337Broadcast)
+    return estimate4337(
       account,
       op,
       calls,
@@ -277,8 +259,6 @@ export async function estimate(
       blockTag,
       nativeToCheck
     )
-    return estimationResult
-  }
 
   const deploylessEstimator = fromDescriptor(provider, Estimation, !network.rpcNoStateOverride)
   const optimisticOracle = network.isOptimistic ? OPTIMISTIC_ORACLE : ZeroAddress
@@ -336,7 +316,7 @@ export async function estimate(
         blockTag
       })
       .catch(catchEstimationFailure),
-    estimateGas(account, op, provider).catch(() => 0n)
+    estimateGas(account, op, provider, accountState, network).catch(() => 0n)
   ]
   const estimations = await estimateWithRetries(initializeRequests)
   if (estimations instanceof Error) return estimationErrorFormatted(estimations)
@@ -404,9 +384,9 @@ export async function estimate(
 
   return {
     gasUsed,
-    // the nonce from EstimateResult is incremented but we always want
-    // to return the current nonce. That's why we subtract 1
-    currentAccountNonce: Number(nonce - 1n),
+    // if Estimation.sol estimate is a success, it means the nonce has incremented
+    // so we subtract 1 from it. If it's an error, we return the old one
+    currentAccountNonce: accountOp.success ? Number(nonce - 1n) : Number(nonce),
     feePaymentOptions: [...feeTokenOptions, ...nativeTokenOptions],
     error: getInnerCallFailure(accountOp) || getNonceDiscrepancyFailure(op, nonce)
   }

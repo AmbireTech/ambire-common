@@ -91,6 +91,11 @@ export class AccountAdderController extends EventEmitter {
 
   #linkedAccounts: { account: AccountWithNetworkMeta; isLinked: boolean }[] = []
 
+  // This prevents the recalculation of getters that use accounts during the execution of addAccounts.
+  // Without this, the controller incorrectly identifies newly added accounts as those from a previous session,
+  // leading to unpredictable behavior on the AccountAdderScreen
+  #alreadyImportedAccountsOnControllerInit: Account[] = []
+
   constructor({
     accounts,
     keystore,
@@ -202,7 +207,7 @@ export class AccountAdderController extends EventEmitter {
       ...acc,
       importStatus: getAccountImportStatus({
         account: acc.account,
-        alreadyImportedAccounts: this.#accounts.accounts,
+        alreadyImportedAccounts: this.#alreadyImportedAccountsOnControllerInit,
         keys: this.#keystore.keys,
         accountsOnPage: mergedAccounts,
         keyIteratorType: this.#keyIterator?.type
@@ -228,6 +233,7 @@ export class AccountAdderController extends EventEmitter {
     this.pageSize = pageSize || DEFAULT_PAGE_SIZE
     this.hdPathTemplate = hdPathTemplate
     this.isInitialized = true
+    this.#alreadyImportedAccountsOnControllerInit = this.#accounts.accounts
 
     this.emitUpdate()
   }
@@ -571,11 +577,19 @@ export class AccountAdderController extends EventEmitter {
     }
 
     this.readyToAddAccounts = [
-      ...accounts.map((x, i) => ({
-        ...x.account,
-        preferences: getDefaultAccountPreferences(x.account.addr, this.#accounts.accounts, i),
-        newlyCreated: newlyCreatedAccounts.includes(x.account.addr)
-      }))
+      ...accounts.map((x, i) => {
+        const alreadyImportedAcc = this.#accounts.accounts.find((a) => a.addr === x.account.addr)
+
+        return {
+          ...x.account,
+          // Persist the already imported account preferences on purpose, otherwise,
+          // re-importing the same account via different key type(s) would reset them.
+          preferences: alreadyImportedAcc
+            ? alreadyImportedAcc.preferences
+            : getDefaultAccountPreferences(x.account.addr, this.#accounts.accounts, i),
+          newlyCreated: newlyCreatedAccounts.includes(x.account.addr)
+        }
+      })
     ]
     this.readyToAddKeys = readyToAddKeys
     this.readyToAddKeyPreferences = readyToAddKeyPreferences

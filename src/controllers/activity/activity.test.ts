@@ -17,6 +17,82 @@ const INIT_PARAMS = {
   network: 'ethereum'
 }
 
+const ACCOUNTS = [
+  {
+    addr: '0xa07D75aacEFd11b425AF7181958F0F85c312f143',
+    associatedKeys: ['0xd6e371526cdaeE04cd8AF225D42e37Bc14688D9E'],
+    initialPrivileges: [],
+    creation: {
+      factoryAddr: '0xBf07a0Df119Ca234634588fbDb5625594E2a5BCA',
+      bytecode:
+        '0x7f28d4ea8f825adb036e9b306b2269570e63d2aa5bd10751437d98ed83551ba1cd7fa57498058891e98f45f8abb85dafbcd30f3d8b3ab586dfae2e0228bbb1de7018553d602d80604d3d3981f3363d3d373d3d3d363d732a2b85eb1054d6f0c6c2e37da05ed3e5fea684ef5af43d82803e903d91602b57fd5bf3',
+      salt: '0x0000000000000000000000000000000000000000000000000000000000000001'
+    },
+    preferences: {
+      label: DEFAULT_ACCOUNT_LABEL,
+      pfp: '0xa07D75aacEFd11b425AF7181958F0F85c312f143'
+    }
+  },
+  {
+    addr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
+    initialPrivileges: [],
+    associatedKeys: ['0x5Be214147EA1AE3653f289E17fE7Dc17A73AD175'],
+    creation: {
+      factoryAddr: '0xBf07a0Df119Ca234634588fbDb5625594E2a5BCA',
+      bytecode:
+        '0x7f00000000000000000000000000000000000000000000000000000000000000017f02c94ba85f2ea274a3869293a0a9bf447d073c83c617963b0be7c862ec2ee44e553d602d80604d3d3981f3363d3d373d3d3d363d732a2b85eb1054d6f0c6c2e37da05ed3e5fea684ef5af43d82803e903d91602b57fd5bf3',
+      salt: '0x2ee01d932ede47b0b2fb1b6af48868de9f86bfc9a5be2f0b42c0111cf261d04c'
+    },
+    preferences: {
+      label: DEFAULT_ACCOUNT_LABEL,
+      pfp: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
+    }
+  }
+]
+
+const SUBMITTED_ACCOUNT_OP = {
+  accountAddr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
+  signingKeyAddr: '0x5Be214147EA1AE3653f289E17fE7Dc17A73AD175',
+  gasLimit: null,
+  gasFeePayment: {
+    isERC4337: false,
+    isGasTank: false,
+    paidBy: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
+    inToken: '0x0000000000000000000000000000000000000000',
+    amount: 1n,
+    simulatedGasLimit: 1n,
+    gasPrice: 1n
+  },
+  networkId: 'ethereum',
+  nonce: 225n,
+  signature: '0x0000000000000000000000005be214147ea1ae3653f289e17fe7dc17a73ad17503',
+  calls: [
+    {
+      to: '0x18Ce9CF7156584CDffad05003410C3633EFD1ad0',
+      value: BigInt(0),
+      data: '0x23b872dd000000000000000000000000b674f3fd5f43464db0448a57529eaf37f04ccea500000000000000000000000077777777789a8bbee6c64381e5e89e501fb0e4c80000000000000000000000000000000000000000000000000000000000000089'
+    }
+  ],
+  txnId: '0x891e12877c24a8292fd73fd741897682f38a7bcd497374a6b68e8add89e1c0fb',
+  status: 'broadcasted-but-not-confirmed'
+} as SubmittedAccountOp
+
+const SIGNED_MESSAGE: SignedMessage = {
+  fromActionId: 1,
+  accountAddr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
+  dapp: {
+    icon: '',
+    name: 'dapp-name'
+  },
+  timestamp: 1701345600000,
+  content: {
+    kind: 'message',
+    message: '0x123456'
+  },
+  signature: '0x0000000000000000000000005be214147ea1ae3653f289e17fe7dc17a73ad17503',
+  networkId: 'ethereum'
+}
+
 const providers: RPCProviders = {}
 
 networks.forEach((network) => {
@@ -24,140 +100,85 @@ networks.forEach((network) => {
   providers[network.id].isWorking = true
 })
 
-describe('Activity Controller ', () => {
-  const accounts = [
-    {
-      addr: '0xa07D75aacEFd11b425AF7181958F0F85c312f143',
-      associatedKeys: ['0xd6e371526cdaeE04cd8AF225D42e37Bc14688D9E'],
-      initialPrivileges: [],
-      creation: {
-        factoryAddr: '0xBf07a0Df119Ca234634588fbDb5625594E2a5BCA',
-        bytecode:
-          '0x7f28d4ea8f825adb036e9b306b2269570e63d2aa5bd10751437d98ed83551ba1cd7fa57498058891e98f45f8abb85dafbcd30f3d8b3ab586dfae2e0228bbb1de7018553d602d80604d3d3981f3363d3d373d3d3d363d732a2b85eb1054d6f0c6c2e37da05ed3e5fea684ef5af43d82803e903d91602b57fd5bf3',
-        salt: '0x0000000000000000000000000000000000000000000000000000000000000001'
-      },
-      preferences: {
-        label: DEFAULT_ACCOUNT_LABEL,
-        pfp: '0xa07D75aacEFd11b425AF7181958F0F85c312f143'
-      }
+const prepareTest = async () => {
+  const storage = produceMemoryStore()
+  await storage.set('accounts', ACCOUNTS)
+  let providersCtrl: ProvidersController
+  const networksCtrl = new NetworksController(
+    storage,
+    fetch,
+    (net) => {
+      providersCtrl.setProvider(net)
     },
-    {
-      addr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
-      initialPrivileges: [],
-      associatedKeys: ['0x5Be214147EA1AE3653f289E17fE7Dc17A73AD175'],
-      creation: {
-        factoryAddr: '0xBf07a0Df119Ca234634588fbDb5625594E2a5BCA',
-        bytecode:
-          '0x7f00000000000000000000000000000000000000000000000000000000000000017f02c94ba85f2ea274a3869293a0a9bf447d073c83c617963b0be7c862ec2ee44e553d602d80604d3d3981f3363d3d373d3d3d363d732a2b85eb1054d6f0c6c2e37da05ed3e5fea684ef5af43d82803e903d91602b57fd5bf3',
-        salt: '0x2ee01d932ede47b0b2fb1b6af48868de9f86bfc9a5be2f0b42c0111cf261d04c'
-      },
-      preferences: {
-        label: DEFAULT_ACCOUNT_LABEL,
-        pfp: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
-      }
+    (id) => {
+      providersCtrl.removeProvider(id)
     }
-  ]
+  )
+  providersCtrl = new ProvidersController(networksCtrl)
+  providersCtrl.providers = providers
+  const accountsCtrl = new AccountsController(
+    storage,
+    providersCtrl,
+    networksCtrl,
+    () => {},
+    () => {}
+  )
+  await accountsCtrl.initialLoadPromise
+  accountsCtrl.selectedAccount = '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
+  const controller = new ActivityController(
+    storage,
+    fetch,
+    accountsCtrl,
+    providersCtrl,
+    networksCtrl,
+    () => Promise.resolve()
+  )
 
+  controller.init(INIT_PARAMS)
+
+  return {
+    controller,
+    storage
+  }
+}
+
+describe('Activity Controller ', () => {
   describe('AccountsOps', () => {
     test('Retrieved from Controller and persisted in Storage', async () => {
-      const storage = produceMemoryStore()
-      await storage.set('accounts', accounts)
-      let providersCtrl: ProvidersController
-      const networksCtrl = new NetworksController(
-        storage,
-        fetch,
-        (net) => {
-          providersCtrl.setProvider(net)
-        },
-        (id) => {
-          providersCtrl.removeProvider(id)
-        }
-      )
-      providersCtrl = new ProvidersController(networksCtrl)
-      providersCtrl.providers = providers
-      const accountsCtrl = new AccountsController(storage, providersCtrl, networksCtrl, () => {})
-      await accountsCtrl.initialLoadPromise
-      accountsCtrl.selectedAccount = '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
-      const controller = new ActivityController(
-        storage,
-        fetch,
-        accountsCtrl,
-        providersCtrl,
-        networksCtrl,
-        () => Promise.resolve()
-      )
-      controller.init(INIT_PARAMS)
+      const { controller, storage } = await prepareTest()
 
-      const accountOp = {
-        accountAddr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
-        signingKeyAddr: '0x5Be214147EA1AE3653f289E17fE7Dc17A73AD175',
-        gasLimit: null,
-        gasFeePayment: null,
-        networkId: 'ethereum',
-        nonce: 225n,
-        signature: '0x0000000000000000000000005be214147ea1ae3653f289e17fe7dc17a73ad17503',
-        calls: [
-          {
-            to: '0x18Ce9CF7156584CDffad05003410C3633EFD1ad0',
-            value: BigInt(0),
-            data: '0x23b872dd000000000000000000000000b674f3fd5f43464db0448a57529eaf37f04ccea500000000000000000000000077777777789a8bbee6c64381e5e89e501fb0e4c80000000000000000000000000000000000000000000000000000000000000089'
-          }
-        ],
-        txnId: '0x891e12877c24a8292fd73fd741897682f38a7bcd497374a6b68e8add89e1c0fb',
-        status: 'broadcasted-but-not-confirmed'
-      } as SubmittedAccountOp
-
-      await controller.addAccountOp(accountOp)
+      await controller.addAccountOp(SUBMITTED_ACCOUNT_OP)
       const controllerAccountsOps = controller.accountsOps
       const storageAccountsOps = await storage.get('accountsOps', {})
 
       expect(controllerAccountsOps).toEqual({
-        items: [{ ...accountOp, status: 'broadcasted-but-not-confirmed' }], // everytime we add a new AccountOp, it gets broadcasted-but-not-confirmed status
+        items: [{ ...SUBMITTED_ACCOUNT_OP, status: 'broadcasted-but-not-confirmed' }], // everytime we add a new AccountOp, it gets broadcasted-but-not-confirmed status
         itemsTotal: 1,
         currentPage: 0,
         maxPages: 1
       })
       expect(storageAccountsOps['0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'].ethereum).toEqual([
-        { ...accountOp, status: 'broadcasted-but-not-confirmed' }
+        { ...SUBMITTED_ACCOUNT_OP, status: 'broadcasted-but-not-confirmed' }
       ])
     })
 
     test('Pagination and filtration handled correctly', async () => {
-      const storage = produceMemoryStore()
-      await storage.set('accounts', accounts)
-      let providersCtrl: ProvidersController
-      const networksCtrl = new NetworksController(
-        storage,
-        fetch,
-        (net) => {
-          providersCtrl.setProvider(net)
-        },
-        (id) => {
-          providersCtrl.removeProvider(id)
-        }
-      )
-      providersCtrl = new ProvidersController(networksCtrl)
-      providersCtrl.providers = providers
-      const accountsCtrl = new AccountsController(storage, providersCtrl, networksCtrl, () => {})
-      await accountsCtrl.initialLoadPromise
-      accountsCtrl.selectedAccount = '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
-      const controller = new ActivityController(
-        storage,
-        fetch,
-        accountsCtrl,
-        providersCtrl,
-        networksCtrl,
-        () => Promise.resolve()
-      )
-
-      controller.init(INIT_PARAMS)
+      const { controller } = await prepareTest()
 
       const accountsOps = [
         {
           accountAddr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
           signingKeyAddr: '0x5Be214147EA1AE3653f289E17fE7Dc17A73AD175',
           gasLimit: null,
-          gasFeePayment: null,
+          gasFeePayment: {
+            isERC4337: false,
+            isGasTank: false,
+            paidBy: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
+            inToken: '0x0000000000000000000000000000000000000000',
+            amount: 1n,
+            simulatedGasLimit: 1n,
+            gasPrice: 1n
+          },
           networkId: 'ethereum',
           nonce: 225n,
           signature: '0x0000000000000000000000005be214147ea1ae3653f289e17fe7dc17a73ad17503',
@@ -175,7 +196,15 @@ describe('Activity Controller ', () => {
           accountAddr: '0x40b38765696e3d5d8d9d834d8aad4bb6e418e489',
           signingKeyAddr: '0x5Be214147EA1AE3653f289E17fE7Dc17A73AD175',
           gasLimit: null,
-          gasFeePayment: null,
+          gasFeePayment: {
+            isERC4337: false,
+            isGasTank: false,
+            paidBy: '0x40b38765696e3d5d8d9d834d8aad4bb6e418e489',
+            inToken: '0x0000000000000000000000000000000000000000',
+            amount: 1n,
+            simulatedGasLimit: 1n,
+            gasPrice: 1n
+          },
           networkId: 'ethereum',
           nonce: 225n,
           signature: '0x0000000000000000000000005be214147ea1ae3653f289e17fe7dc17a73ad17503',
@@ -193,7 +222,15 @@ describe('Activity Controller ', () => {
           accountAddr: '0x40b38765696e3d5d8d9d834d8aad4bb6e418e489',
           signingKeyAddr: '0x5Be214147EA1AE3653f289E17fE7Dc17A73AD175',
           gasLimit: null,
-          gasFeePayment: null,
+          gasFeePayment: {
+            isERC4337: false,
+            isGasTank: false,
+            paidBy: '0x40b38765696e3d5d8d9d834d8aad4bb6e418e489',
+            inToken: '0x0000000000000000000000000000000000000000',
+            amount: 1n,
+            simulatedGasLimit: 1n,
+            gasPrice: 1n
+          },
           networkId: 'optimism',
           nonce: 225n,
           signature: '0x0000000000000000000000005be214147ea1ae3653f289e17fe7dc17a73ad17503',
@@ -211,7 +248,15 @@ describe('Activity Controller ', () => {
           accountAddr: '0x40b38765696e3d5d8d9d834d8aad4bb6e418e489',
           signingKeyAddr: '0x5Be214147EA1AE3653f289E17fE7Dc17A73AD175',
           gasLimit: null,
-          gasFeePayment: null,
+          gasFeePayment: {
+            isERC4337: false,
+            isGasTank: false,
+            paidBy: '0x40b38765696e3d5d8d9d834d8aad4bb6e418e489',
+            inToken: '0x0000000000000000000000000000000000000000',
+            amount: 1n,
+            simulatedGasLimit: 1n,
+            gasPrice: 1n
+          },
           networkId: 'optimism',
           nonce: 225n,
           signature: '0x0000000000000000000000005be214147ea1ae3653f289e17fe7dc17a73ad17503',
@@ -248,7 +293,15 @@ describe('Activity Controller ', () => {
             accountAddr: '0x40b38765696e3d5d8d9d834d8aad4bb6e418e489',
             signingKeyAddr: '0x5Be214147EA1AE3653f289E17fE7Dc17A73AD175',
             gasLimit: null,
-            gasFeePayment: null,
+            gasFeePayment: {
+              isERC4337: false,
+              isGasTank: false,
+              paidBy: '0x40b38765696e3d5d8d9d834d8aad4bb6e418e489',
+              inToken: '0x0000000000000000000000000000000000000000',
+              amount: 1n,
+              simulatedGasLimit: 1n,
+              gasPrice: 1n
+            },
             networkId: 'optimism',
             nonce: 225n,
             signature: '0x0000000000000000000000005be214147ea1ae3653f289e17fe7dc17a73ad17503',
@@ -270,40 +323,21 @@ describe('Activity Controller ', () => {
     })
 
     test('`success` status is set correctly', async () => {
-      const storage = produceMemoryStore()
-      await storage.set('accounts', accounts)
-      let providersCtrl: ProvidersController
-      const networksCtrl = new NetworksController(
-        storage,
-        fetch,
-        (net) => {
-          providersCtrl.setProvider(net)
-        },
-        (id) => {
-          providersCtrl.removeProvider(id)
-        }
-      )
-      providersCtrl = new ProvidersController(networksCtrl)
-      providersCtrl.providers = providers
-      const accountsCtrl = new AccountsController(storage, providersCtrl, networksCtrl, () => {})
-      await accountsCtrl.initialLoadPromise
-      accountsCtrl.selectedAccount = '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
-      const controller = new ActivityController(
-        storage,
-        fetch,
-        accountsCtrl,
-        providersCtrl,
-        networksCtrl,
-        () => Promise.resolve()
-      )
-
-      controller.init(INIT_PARAMS)
+      const { controller } = await prepareTest()
 
       const accountOp = {
         accountAddr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
         signingKeyAddr: '0x5Be214147EA1AE3653f289E17fE7Dc17A73AD175',
         gasLimit: null,
-        gasFeePayment: null,
+        gasFeePayment: {
+          isERC4337: false,
+          isGasTank: false,
+          paidBy: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
+          inToken: '0x0000000000000000000000000000000000000000',
+          amount: 1n,
+          simulatedGasLimit: 1n,
+          gasPrice: 1n
+        },
         networkId: 'ethereum',
         nonce: 225n,
         signature: '0x0000000000000000000000005be214147ea1ae3653f289e17fe7dc17a73ad17503',
@@ -330,40 +364,21 @@ describe('Activity Controller ', () => {
     })
 
     test('`failed` status is set correctly', async () => {
-      const storage = produceMemoryStore()
-      await storage.set('accounts', accounts)
-      let providersCtrl: ProvidersController
-      const networksCtrl = new NetworksController(
-        storage,
-        fetch,
-        (net) => {
-          providersCtrl.setProvider(net)
-        },
-        (id) => {
-          providersCtrl.removeProvider(id)
-        }
-      )
-      providersCtrl = new ProvidersController(networksCtrl)
-      providersCtrl.providers = providers
-      const accountsCtrl = new AccountsController(storage, providersCtrl, networksCtrl, () => {})
-      await accountsCtrl.initialLoadPromise
-      accountsCtrl.selectedAccount = '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
-      const controller = new ActivityController(
-        storage,
-        fetch,
-        accountsCtrl,
-        providersCtrl,
-        networksCtrl,
-        () => Promise.resolve()
-      )
-
-      controller.init(INIT_PARAMS)
+      const { controller } = await prepareTest()
 
       const accountOp = {
         accountAddr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
         signingKeyAddr: '0x5Be214147EA1AE3653f289E17fE7Dc17A73AD175',
         gasLimit: null,
-        gasFeePayment: null,
+        gasFeePayment: {
+          isERC4337: false,
+          isGasTank: false,
+          paidBy: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
+          inToken: '0x0000000000000000000000000000000000000000',
+          amount: 1n,
+          simulatedGasLimit: 1n,
+          gasPrice: 1n
+        },
         networkId: 'ethereum',
         nonce: 225n,
         signature: '0x0000000000000000000000005be214147ea1ae3653f289e17fe7dc17a73ad17503',
@@ -393,7 +408,7 @@ describe('Activity Controller ', () => {
 
     test('`Unknown but past nonce` status is set correctly', async () => {
       const storage = produceMemoryStore()
-      await storage.set('accounts', accounts)
+      await storage.set('accounts', ACCOUNTS)
       let providersCtrl: ProvidersController
       const networksCtrl = new NetworksController(
         storage,
@@ -407,7 +422,13 @@ describe('Activity Controller ', () => {
       )
       providersCtrl = new ProvidersController(networksCtrl)
       providersCtrl.providers = providers
-      const accountsCtrl = new AccountsController(storage, providersCtrl, networksCtrl, () => {})
+      const accountsCtrl = new AccountsController(
+        storage,
+        providersCtrl,
+        networksCtrl,
+        () => {},
+        () => {}
+      )
       await accountsCtrl.initialLoadPromise
       accountsCtrl.selectedAccount = '0xa07D75aacEFd11b425AF7181958F0F85c312f143'
       const controller = new ActivityController(
@@ -428,7 +449,15 @@ describe('Activity Controller ', () => {
         accountAddr: '0xa07D75aacEFd11b425AF7181958F0F85c312f143',
         signingKeyAddr: '0x5Be214147EA1AE3653f289E17fE7Dc17A73AD175',
         gasLimit: null,
-        gasFeePayment: null,
+        gasFeePayment: {
+          isERC4337: false,
+          isGasTank: false,
+          paidBy: '0xa07D75aacEFd11b425AF7181958F0F85c312f143',
+          inToken: '0x0000000000000000000000000000000000000000',
+          amount: 1n,
+          simulatedGasLimit: 1n,
+          gasPrice: 1n
+        },
         networkId: 'ethereum',
         nonce: 225n,
         signature: '0x0000000000000000000000005be214147ea1ae3653f289e17fe7dc17a73ad17503',
@@ -457,40 +486,21 @@ describe('Activity Controller ', () => {
     })
 
     test('Keeps no more than 1000 items', async () => {
-      const storage = produceMemoryStore()
-      await storage.set('accounts', accounts)
-      let providersCtrl: ProvidersController
-      const networksCtrl = new NetworksController(
-        storage,
-        fetch,
-        (net) => {
-          providersCtrl.setProvider(net)
-        },
-        (id) => {
-          providersCtrl.removeProvider(id)
-        }
-      )
-      providersCtrl = new ProvidersController(networksCtrl)
-      providersCtrl.providers = providers
-      const accountsCtrl = new AccountsController(storage, providersCtrl, networksCtrl, () => {})
-      await accountsCtrl.initialLoadPromise
-      accountsCtrl.selectedAccount = '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
-      const controller = new ActivityController(
-        storage,
-        fetch,
-        accountsCtrl,
-        providersCtrl,
-        networksCtrl,
-        () => Promise.resolve()
-      )
-
-      controller.init(INIT_PARAMS)
+      const { controller } = await prepareTest()
 
       const accountOp = {
         accountAddr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
         signingKeyAddr: '0x5Be214147EA1AE3653f289E17fE7Dc17A73AD175',
         gasLimit: null,
-        gasFeePayment: null,
+        gasFeePayment: {
+          isERC4337: false,
+          isGasTank: false,
+          paidBy: '0xa07D75aacEFd11b425AF7181958F0F85c312f143',
+          inToken: '0x0000000000000000000000000000000000000000',
+          amount: 1n,
+          simulatedGasLimit: 1n,
+          gasPrice: 1n
+        },
         networkId: 'ethereum',
         nonce: 225n,
         signature: '0x0000000000000000000000005be214147ea1ae3653f289e17fe7dc17a73ad17503',
@@ -528,34 +538,7 @@ describe('Activity Controller ', () => {
 
   describe('SignedMessages', () => {
     test('Retrieved from Controller and persisted in Storage', async () => {
-      const storage = produceMemoryStore()
-      await storage.set('accounts', accounts)
-      let providersCtrl: ProvidersController
-      const networksCtrl = new NetworksController(
-        storage,
-        fetch,
-        (net) => {
-          providersCtrl.setProvider(net)
-        },
-        (id) => {
-          providersCtrl.removeProvider(id)
-        }
-      )
-      providersCtrl = new ProvidersController(networksCtrl)
-      providersCtrl.providers = providers
-      const accountsCtrl = new AccountsController(storage, providersCtrl, networksCtrl, () => {})
-      await accountsCtrl.initialLoadPromise
-      accountsCtrl.selectedAccount = '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
-      const controller = new ActivityController(
-        storage,
-        fetch,
-        accountsCtrl,
-        providersCtrl,
-        networksCtrl,
-        () => Promise.resolve()
-      )
-
-      controller.init(INIT_PARAMS)
+      const { controller, storage } = await prepareTest()
 
       const signedMessage: SignedMessage = {
         fromActionId: 1,
@@ -590,54 +573,20 @@ describe('Activity Controller ', () => {
     })
 
     test('Pagination and filtration handled correctly', async () => {
-      const storage = produceMemoryStore()
-      await storage.set('accounts', accounts)
-      let providersCtrl: ProvidersController
-      const networksCtrl = new NetworksController(
-        storage,
-        fetch,
-        (net) => {
-          providersCtrl.setProvider(net)
-        },
-        (id) => {
-          providersCtrl.removeProvider(id)
-        }
+      const { controller } = await prepareTest()
+
+      await controller.addSignedMessage(
+        SIGNED_MESSAGE,
+        '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
       )
-      providersCtrl = new ProvidersController(networksCtrl)
-      providersCtrl.providers = providers
-      const accountsCtrl = new AccountsController(storage, providersCtrl, networksCtrl, () => {})
-      await accountsCtrl.initialLoadPromise
-      accountsCtrl.selectedAccount = '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
-      const controller = new ActivityController(
-        storage,
-        fetch,
-        accountsCtrl,
-        providersCtrl,
-        networksCtrl,
-        () => Promise.resolve()
+      await controller.addSignedMessage(
+        SIGNED_MESSAGE,
+        '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
       )
-
-      controller.init(INIT_PARAMS)
-
-      const signedMessage: SignedMessage = {
-        fromActionId: 1,
-        accountAddr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
-        dapp: {
-          icon: '',
-          name: 'dapp-name'
-        },
-        timestamp: 1701345600000,
-        content: {
-          kind: 'message',
-          message: '0x74657374'
-        },
-        signature: '0x0000000000000000000000005be214147ea1ae3653f289e17fe7dc17a73ad17503',
-        networkId: 'ethereum'
-      }
-
-      await controller.addSignedMessage(signedMessage, '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5')
-      await controller.addSignedMessage(signedMessage, '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5')
-      await controller.addSignedMessage(signedMessage, '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5')
+      await controller.addSignedMessage(
+        SIGNED_MESSAGE,
+        '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
+      )
 
       // For the following criteria, we have 2 matching SignedMessages, these will be paginated on 2 pages (1 Message per page)
       await controller.setSignedMessagesPagination({ fromPage: 1, itemsPerPage: 1 })
@@ -649,7 +598,7 @@ describe('Activity Controller ', () => {
       const controllerSignedMessages = controller.signedMessages
 
       expect(controllerSignedMessages).toEqual({
-        items: [signedMessage],
+        items: [SIGNED_MESSAGE],
         itemsTotal: 3,
         currentPage: 1, // index based
         maxPages: 3
@@ -657,53 +606,10 @@ describe('Activity Controller ', () => {
     })
 
     test('Keeps no more than 1000 items', async () => {
-      const storage = produceMemoryStore()
-      await storage.set('accounts', accounts)
-      let providersCtrl: ProvidersController
-      const networksCtrl = new NetworksController(
-        storage,
-        fetch,
-        (net) => {
-          providersCtrl.setProvider(net)
-        },
-        (id) => {
-          providersCtrl.removeProvider(id)
-        }
-      )
-      providersCtrl = new ProvidersController(networksCtrl)
-      providersCtrl.providers = providers
-      const accountsCtrl = new AccountsController(storage, providersCtrl, networksCtrl, () => {})
-      await accountsCtrl.initialLoadPromise
-      accountsCtrl.selectedAccount = '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
-      const controller = new ActivityController(
-        storage,
-        fetch,
-        accountsCtrl,
-        providersCtrl,
-        networksCtrl,
-        () => Promise.resolve()
-      )
-
-      controller.init(INIT_PARAMS)
-
-      const signedMessage: SignedMessage = {
-        fromActionId: 1,
-        accountAddr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
-        dapp: {
-          icon: '',
-          name: 'dapp-name'
-        },
-        timestamp: 1701345600000,
-        content: {
-          kind: 'message',
-          message: '0x123456'
-        },
-        signature: '0x0000000000000000000000005be214147ea1ae3653f289e17fe7dc17a73ad17503',
-        networkId: 'ethereum'
-      }
+      const { controller } = await prepareTest()
 
       const signedMessages = Array.from(Array(1500).keys()).map((key) => ({
-        ...signedMessage,
+        ...SIGNED_MESSAGE,
         signature: key.toString()
       }))
 
@@ -722,5 +628,20 @@ describe('Activity Controller ', () => {
       expect(controllerSignedMessages!.items[0].signature).toEqual('1499')
       expect(controllerSignedMessages!.items[999].signature).toEqual('500')
     })
+  })
+  test('removeAccountData', async () => {
+    const { controller } = await prepareTest()
+    // Add an accountOp
+    await controller.addAccountOp(SUBMITTED_ACCOUNT_OP)
+    // Add a signedMessage
+    await controller.addSignedMessage(SIGNED_MESSAGE, '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5')
+    // Validate that they are in the controller
+    expect(controller.accountsOps?.items.length).toEqual(1)
+    expect(controller.signedMessages?.items.length).toEqual(1)
+    // Remove account data
+    controller.removeAccountData('0xB674F3fd5F43464dB0448a57529eAF37F04cceA5')
+    // Validate that the account data is removed
+    expect(controller.accountsOps?.items.length).toEqual(0)
+    expect(controller.signedMessages?.items.length).toEqual(0)
   })
 })

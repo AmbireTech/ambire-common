@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-floating-promises */
 
+import { Account } from '../../interfaces/account'
 import { DappUserRequest, SignUserRequest, UserRequest } from '../../interfaces/userRequest'
 import { WindowManager } from '../../interfaces/window'
 import { AccountOp } from '../../libs/accountOp/accountOp'
@@ -75,23 +76,19 @@ export class ActionsController extends EventEmitter {
   #onActionWindowClose: () => void
 
   get visibleActionsQueue(): Action[] {
-    if (!this.#accounts.selectedAccount) return []
+    return this.actionsQueue.filter((a) => {
+      if (a.type === 'accountOp') {
+        return a.accountOp.accountAddr === this.#accounts.selectedAccount
+      }
+      if (a.type === 'signMessage') {
+        return a.userRequest.meta.accountAddr === this.#accounts.selectedAccount
+      }
+      if (a.type === 'benzin') {
+        return a.userRequest.meta.accountAddr === this.#accounts.selectedAccount
+      }
 
-    return (
-      this.actionsQueue.map((a) => {
-        if (a.type === 'accountOp') {
-          return a.accountOp.accountAddr === this.#accounts.selectedAccount ? a : undefined
-        }
-        if (a.type === 'signMessage') {
-          return a.userRequest.meta.accountAddr === this.#accounts.selectedAccount ? a : undefined
-        }
-        if (a.type === 'benzin') {
-          return a.userRequest.meta.accountAddr === this.#accounts.selectedAccount ? a : undefined
-        }
-
-        return a
-      }) as (Action | undefined)[]
-    ).filter(Boolean) as Action[]
+      return true
+    })
   }
 
   constructor({
@@ -111,13 +108,13 @@ export class ActionsController extends EventEmitter {
 
     this.#windowManager.event.on('windowRemoved', (winId: number) => {
       if (winId === this.actionWindow.id) {
-        this.#onActionWindowClose()
         this.actionWindow.id = null
         this.actionWindow.loaded = false
         this.actionWindow.pendingMessage = null
         this.currentAction = null
 
-        this.actionsQueue = this.actionsQueue.filter((a) => !['benzin'].includes(a.type))
+        this.actionsQueue = this.actionsQueue.filter((a) => a.type === 'accountOp')
+        this.#onActionWindowClose()
         this.emitUpdate()
       }
     })
@@ -171,7 +168,7 @@ export class ActionsController extends EventEmitter {
   }
 
   setCurrentActionById(actionId: Action['id']) {
-    const action = this.visibleActionsQueue.find((a) => a.id === actionId)
+    const action = this.visibleActionsQueue.find((a) => a.id.toString() === actionId.toString())
 
     if (!action) return
 
@@ -228,6 +225,24 @@ export class ActionsController extends EventEmitter {
       )
       this.actionWindow.pendingMessage = null
     }
+    this.emitUpdate()
+  }
+
+  removeAccountData(address: Account['addr']) {
+    this.actionsQueue = this.actionsQueue.filter((a) => {
+      if (a.type === 'accountOp') {
+        return a.accountOp.accountAddr !== address
+      }
+      if (a.type === 'signMessage') {
+        return a.userRequest.meta.accountAddr !== address
+      }
+      if (a.type === 'benzin') {
+        return a.userRequest.meta.accountAddr !== address
+      }
+
+      return true
+    })
+
     this.emitUpdate()
   }
 

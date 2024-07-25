@@ -10,7 +10,7 @@ import { getNetworksWithFailedRPC } from '../networks/networks'
 import { PORTFOLIO_LIB_ERROR_NAMES } from '../portfolio/portfolio'
 
 export const getDappActionRequestsBanners = (actions: ActionFromActionsQueue[]): Banner[] => {
-  const requests = actions.filter((a) => a.type !== 'accountOp')
+  const requests = actions.filter((a) => !['accountOp', 'benzin'].includes(a.type))
   if (!requests.length) return []
 
   return [
@@ -161,8 +161,8 @@ export const getNetworksWithFailedRPCBanners = ({
 
   networksWithMultipleRpcUrls.forEach((n) => {
     banners.push({
-      id: 'rpcs-down',
-      type: 'warning',
+      id: 'custom-rpcs-down',
+      type: 'error',
       title: `Failed to retrieve network data for ${n.name}. You can try selecting another RPC URL`,
       text: 'Affected features: visible assets, sign message/transaction, ENS/UD domain resolving, add account.',
       actions: [
@@ -181,7 +181,7 @@ export const getNetworksWithFailedRPCBanners = ({
 
   banners.push({
     id: 'rpcs-down',
-    type: 'warning',
+    type: 'error',
     title: `Failed to retrieve network data for ${networksToGroupInSingleBanner
       .map((n) => n.name)
       .join(', ')} (RPC malfunction)`,
@@ -194,10 +194,12 @@ export const getNetworksWithFailedRPCBanners = ({
 
 export const getNetworksWithPortfolioErrorBanners = ({
   networks,
-  portfolioLatest
+  portfolioLatest,
+  providers
 }: {
   networks: Network[]
   portfolioLatest: PortfolioController['latest']
+  providers: RPCProviders
 }): Banner[] => {
   const banners: Banner[] = []
 
@@ -219,30 +221,37 @@ export const getNetworksWithPortfolioErrorBanners = ({
 
     if (!accPortfolio) return
 
-    const networkNamesWithPriceFetchError: string[] = []
     const networkNamesWithCriticalError: string[] = []
+    const networkNamesWithPriceFetchError: string[] = []
 
     Object.keys(accPortfolio).forEach((network) => {
       const portfolioForNetwork = accPortfolio[network]
       const criticalError = portfolioForNetwork?.criticalError
 
-      const networkData = networks.find((n: Network) => n.id === network)
+      let networkName: string | null = null
 
-      if (!portfolioForNetwork || !networkData || portfolioForNetwork.isLoading) return
+      if (network === 'gasTank') networkName = 'Gas Tank'
+      else if (network === 'rewards') networkName = 'Rewards'
+      else networkName = networks.find((n) => n.id === network)?.name ?? null
 
-      if (criticalError) {
-        networkNamesWithCriticalError.push(networkData.name)
+      if (!portfolioForNetwork || !networkName || portfolioForNetwork.isLoading) return
+
+      // Don't display an error banner if the RPC isn't working because an RPC error banner is already displayed.
+      // In case of additional networks don't check the RPC as there isn't one
+      if (
+        criticalError &&
+        (['gasTank', 'rewards'].includes(network) || providers[network].isWorking)
+      ) {
+        networkNamesWithCriticalError.push(networkName as string)
         // If there is a critical error, we don't need to check for price fetch error
         return
       }
 
-      const priceFetchError = portfolioForNetwork?.errors.find(
-        (err: any) => err?.name === PORTFOLIO_LIB_ERROR_NAMES.PriceFetchError
-      )
-
-      if (priceFetchError) {
-        networkNamesWithPriceFetchError.push(networkData.name)
-      }
+      portfolioForNetwork?.errors.forEach((err: any) => {
+        if (err?.name === PORTFOLIO_LIB_ERROR_NAMES.PriceFetchError) {
+          networkNamesWithPriceFetchError.push(networkName as string)
+        }
+      })
     })
 
     if (networkNamesWithPriceFetchError.length) {
@@ -251,7 +260,7 @@ export const getNetworksWithPortfolioErrorBanners = ({
         id: `${accId}-portfolio-prices-error`,
         type: 'warning',
         title: `Failed to retrieve prices for ${networkNamesWithPriceFetchError.join(', ')}`,
-        text: 'Affected features: account balances, asset prices. Please try again later or contact support.',
+        text: 'Affected features: account balances, asset prices. Reload the account or try again later.',
         actions: []
       })
     }
@@ -263,7 +272,7 @@ export const getNetworksWithPortfolioErrorBanners = ({
         title: `Failed to retrieve the portfolio data for ${networkNamesWithCriticalError.join(
           ', '
         )}`,
-        text: 'Affected features: account balances, visible assets. Please try again later or contact support.',
+        text: 'Affected features: account balances, visible assets. Reload the account or try again later.',
         actions: []
       })
     }

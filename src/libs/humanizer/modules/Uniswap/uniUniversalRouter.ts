@@ -2,19 +2,19 @@ import { AbiCoder, Interface, ZeroAddress } from 'ethers'
 
 import { AccountOp } from '../../../accountOp/accountOp'
 import { UniswapUniversalRouter } from '../../const/abis'
-import { IrCall } from '../../interfaces'
+import { HumanizerVisualization, IrCall } from '../../interfaces'
 import {
   getAction,
   getAddressVisualization,
   getDeadline,
   getLabel,
-  getRecipientText,
   getToken,
   getUnknownVisualization,
   getWrapping
 } from '../../utils'
 import { COMMANDS, COMMANDS_DESCRIPTIONS } from './Commands'
-import { parsePath } from './utils'
+import { HumanizerUniMatcher } from './interfaces'
+import { getUniRecipientText, joinWithAndLabel, parsePath } from './utils'
 
 const coder = new AbiCoder()
 
@@ -50,9 +50,7 @@ function parseCommands(commands: string, emitError?: Function): string[] | null 
   }
 }
 
-export const uniUniversalRouter = (
-  options?: any
-): { [x: string]: (a: AccountOp, c: IrCall) => IrCall[] } => {
+export const uniUniversalRouter = (options?: any): HumanizerUniMatcher => {
   const ifaceUniversalRouter = new Interface(UniswapUniversalRouter)
   return {
     [`${
@@ -62,7 +60,7 @@ export const uniUniversalRouter = (
     }`]: (accountOp: AccountOp, call: IrCall) => {
       const [commands, inputs, deadline] = ifaceUniversalRouter.parseTransaction(call)?.args || []
       const parsedCommands = parseCommands(commands, options?.emitError)
-      const parsed: IrCall[] = []
+      const parsed: HumanizerVisualization[][] = []
 
       parsedCommands
         ? parsedCommands.forEach((command: string, index: number) => {
@@ -70,37 +68,31 @@ export const uniUniversalRouter = (
               const { inputsDetails } = COMMANDS_DESCRIPTIONS.V3_SWAP_EXACT_IN
               const params = extractParams(inputsDetails, inputs[index])
               const path = parsePath(params.path)
-              parsed.push({
-                ...call,
-                fullVisualization: [
-                  getAction('Swap'),
-                  getToken(path[0], params.amountIn),
-                  getLabel('for at least'),
-                  getToken(path[path.length - 1], params.amountOutMin),
-                  getDeadline(deadline)
-                ]
-              })
+              parsed.push([
+                getAction('Swap'),
+                getToken(path[0], params.amountIn),
+                getLabel('for at least'),
+                getToken(path[path.length - 1], params.amountOutMin),
+                getDeadline(deadline)
+              ])
             } else if (command === COMMANDS.V3_SWAP_EXACT_OUT) {
               const { inputsDetails } = COMMANDS_DESCRIPTIONS.V3_SWAP_EXACT_OUT
               const params = extractParams(inputsDetails, inputs[index])
               const path = parsePath(params.path)
 
-              parsed.push({
-                ...call,
-                fullVisualization: [
-                  getAction('Swap up  to'),
-                  getToken(path[path.length - 1], params.amountInMax),
-                  getLabel('for'),
-                  getToken(path[0], params.amountOut),
-                  getDeadline(deadline)
-                ]
-              })
+              parsed.push([
+                getAction('Swap up  to'),
+                getToken(path[path.length - 1], params.amountInMax),
+                getLabel('for'),
+                getToken(path[0], params.amountOut),
+                getDeadline(deadline)
+              ])
             } else if (command === COMMANDS.SWEEP) {
-              // @NOTE: no need to be displayed, generally uses sentinel values
-              // @TODO: research more
+              // this call is can be ignored as it only ensures that the wanted swap
+              // actually results in the output funds being sent to the user
+              // if there is any problem with this call, the simulation should detect it
               // const { inputsDetails } = COMMANDS_DESCRIPTIONS.SWEEP
               // const params = extractParams(inputsDetails, inputs[index])
-              // console.log({ params })
               // parsed.push({
               //   ...call,
               //   fullVisualization: [
@@ -125,49 +117,43 @@ export const uniUniversalRouter = (
               //   ]
               // })
             } else if (command === COMMANDS.TRANSFER) {
-              // @NOTE: this is used for paying fee although its already calculated in the humanized response
-              // @NOTE: no need to be displayed but we can add warning id the fee is too high?
+              // when we swap with exact out the ui displays amount X for out token
+              // the actual swap is X + small fee
+              // and this is the small fee that is to be sent to the fee collector of uniswap
+              // at later stage of the humanizer pipeline if swap with the same token is present exactly before this transfer
+              // we will subtract the amount from the swap and remove this call from the visualization
               const { inputsDetails } = COMMANDS_DESCRIPTIONS.TRANSFER
               const params = extractParams(inputsDetails, inputs[index])
-              parsed.push({
-                ...call,
-                fullVisualization: [
-                  getAction('Send'),
-                  getToken(params.token, params.value),
-                  getLabel('to'),
-                  getAddressVisualization(params.recipient)
-                ]
-              })
+              parsed.push([
+                getAction('Send'),
+                getToken(params.token, params.value),
+                getLabel('to'),
+                getAddressVisualization(params.recipient)
+              ])
             } else if (command === COMMANDS.V2_SWAP_EXACT_IN) {
               const { inputsDetails } = COMMANDS_DESCRIPTIONS.V2_SWAP_EXACT_IN
               const params = extractParams(inputsDetails, inputs[index])
               const path = params.path
 
-              parsed.push({
-                ...call,
-                fullVisualization: [
-                  getAction('Swap'),
-                  getToken(path[0], params.amountIn),
-                  getLabel('for at least'),
-                  getToken(path[path.length - 1], params.amountOutMin),
-                  getDeadline(deadline)
-                ]
-              })
+              parsed.push([
+                getAction('Swap'),
+                getToken(path[0], params.amountIn),
+                getLabel('for at least'),
+                getToken(path[path.length - 1], params.amountOutMin),
+                getDeadline(deadline)
+              ])
             } else if (command === COMMANDS.V2_SWAP_EXACT_OUT) {
               const { inputsDetails } = COMMANDS_DESCRIPTIONS.V2_SWAP_EXACT_OUT
               const params = extractParams(inputsDetails, inputs[index])
               const path = params.path
 
-              parsed.push({
-                ...call,
-                fullVisualization: [
-                  getAction('Swap up  to'),
-                  getToken(path[0], params.amountInMax),
-                  getLabel('for'),
-                  getToken(path[path.length - 1], params.amountOut),
-                  getDeadline(deadline)
-                ]
-              })
+              parsed.push([
+                getAction('Swap up  to'),
+                getToken(path[0], params.amountInMax),
+                getLabel('for'),
+                getToken(path[path.length - 1], params.amountOut),
+                getDeadline(deadline)
+              ])
             } else if (command === COMMANDS.PERMIT2_PERMIT) {
               const {
                 permit: {
@@ -177,43 +163,32 @@ export const uniUniversalRouter = (
                 }
                 // signature
               } = extractParams(COMMANDS_DESCRIPTIONS.PERMIT2_PERMIT.inputsDetails, inputs[index])
-              parsed.push({
-                ...call,
-                fullVisualization: [
-                  getAction('Grant approval'),
-                  getLabel('for'),
-                  getToken(token, amount),
-                  getLabel('to'),
-                  getAddressVisualization(spender)
-                ]
-              })
+              parsed.push([
+                getAction('Grant approval'),
+                getLabel('for'),
+                getToken(token, amount),
+                getLabel('to'),
+                getAddressVisualization(spender)
+              ])
             } else if (command === COMMANDS.WRAP_ETH) {
               const { inputsDetails } = COMMANDS_DESCRIPTIONS.WRAP_ETH
               const params = extractParams(inputsDetails, inputs[index])
-              params.amountMin &&
-                parsed.push({
-                  ...call,
-                  fullVisualization: getWrapping(ZeroAddress, params.amountMin)
-                })
+              params.amountMin && parsed.push(getWrapping(ZeroAddress, params.amountMin))
             } else if (command === COMMANDS.UNWRAP_WETH) {
               const { inputsDetails } = COMMANDS_DESCRIPTIONS.UNWRAP_WETH
               const params = extractParams(inputsDetails, inputs[index])
 
               params.amountMin &&
-                parsed.push({
-                  ...call,
-                  fullVisualization: [
-                    getAction('Unwrap'),
-                    getToken(ZeroAddress, params.amountMin),
-                    ...getRecipientText(accountOp.accountAddr, params.recipient)
-                  ]
-                })
-            } else
-              parsed.push({ ...call, fullVisualization: getUnknownVisualization('Uni V3', call) })
+                parsed.push([
+                  getAction('Unwrap'),
+                  getToken(ZeroAddress, params.amountMin),
+                  ...getUniRecipientText(accountOp.accountAddr, params.recipient)
+                ])
+            } else parsed.push(getUnknownVisualization('Uni V3', call))
           })
-        : parsed.push({ ...call, fullVisualization: getUnknownVisualization('Uni V3', call) })
+        : parsed.push(getUnknownVisualization('Uniswap V3', call))
 
-      return parsed
+      return joinWithAndLabel(parsed)
     }
   }
 }

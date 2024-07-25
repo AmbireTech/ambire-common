@@ -1,16 +1,14 @@
 import { ZeroAddress } from 'ethers'
 
+import { FEE_COLLECTOR } from '../../../../consts/addresses'
 import { AccountOp } from '../../../accountOp/accountOp'
-import { HumanizerCallModule, HumanizerMeta, IrCall } from '../../interfaces'
-import { getAction, getKnownName, getToken } from '../../utils'
+import { HumanizerCallModule, IrCall } from '../../interfaces'
+import { getAction, getToken } from '../../utils'
 
-export const gasTankModule: HumanizerCallModule = (
-  _: AccountOp,
-  irCalls: IrCall[],
-  humanizerMeta: HumanizerMeta
-) => {
+export const gasTankModule: HumanizerCallModule = (_: AccountOp, irCalls: IrCall[]) => {
   const newCalls = irCalls.map((call) => {
-    if (getKnownName(humanizerMeta, call.to) === 'Gas Tank')
+    // @TODO fix those upper/lowercase
+    if (call.to.toLowerCase() === FEE_COLLECTOR.toLowerCase())
       return {
         ...call,
         fullVisualization: [getAction('Fuel gas tank with'), getToken(ZeroAddress, call.value)]
@@ -20,7 +18,7 @@ export const gasTankModule: HumanizerCallModule = (
       call.fullVisualization?.[1]?.type === 'token' &&
       call.fullVisualization?.[2]?.content === 'to' &&
       call.fullVisualization?.[3].type === 'address' &&
-      getKnownName(humanizerMeta, call.fullVisualization[3].address!) === 'Gas Tank'
+      call.fullVisualization[3].address!.toLowerCase() === FEE_COLLECTOR.toLowerCase()
     )
       return {
         ...call,

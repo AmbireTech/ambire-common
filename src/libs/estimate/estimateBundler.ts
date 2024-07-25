@@ -1,4 +1,4 @@
-import { Interface, toBeHex, ZeroAddress } from 'ethers'
+import { Interface, ZeroAddress } from 'ethers'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import { Account, AccountStates } from '../../interfaces/account'
@@ -69,18 +69,18 @@ export async function bundlerEstimate(
     localOp,
     !accountState.isDeployed ? op.meta!.entryPointAuthorization : undefined
   )
-  const gasPrices = await Bundler.fetchGasPrices(network).catch(
+  const gasPrice = await Bundler.fetchGasPrices(network).catch(
     () => new Error('Could not fetch gas prices, retrying...')
   )
-  if (gasPrices instanceof Error) return estimationErrorFormatted(gasPrices, { feePaymentOptions })
+  if (gasPrice instanceof Error) return estimationErrorFormatted(gasPrice, { feePaymentOptions })
 
   // add the maxFeePerGas and maxPriorityFeePerGas only if the network
   // is optimistic as the bundler uses these values to determine the
   // preVerificationGas.
   if (network.isOptimistic) {
     // use medium for the gas limit estimation
-    userOp.maxPriorityFeePerGas = gasPrices.medium.maxPriorityFeePerGas
-    userOp.maxFeePerGas = gasPrices.medium.maxFeePerGas
+    userOp.maxPriorityFeePerGas = gasPrice.medium.maxPriorityFeePerGas
+    userOp.maxFeePerGas = gasPrice.medium.maxFeePerGas
   }
 
   // add fake data so simulation works
@@ -102,15 +102,17 @@ export async function bundlerEstimate(
   const gasData = await Bundler.estimate(userOp, network, shouldStateOverride).catch((e: any) => {
     return new Error(Bundler.decodeBundlerError(e, 'Estimation failed with unknown reason'))
   })
-  if (gasData instanceof Error)
-    return estimationErrorFormatted(gasData as Error, { feePaymentOptions })
+  if (gasData instanceof Error) {
+    const nonFatalErrors: Error[] = []
+    // if the bundler estimation fails, add a nonFatalError so we can react to
+    // it on the FE. The BE at a later stage decides if this error is actually
+    // fatal (at estimate.ts -> estimate4337)
+    nonFatalErrors.push(new Error('Bundler estimation failed', { cause: '4337_ESTIMATION' }))
 
-  const apeMaxFee = BigInt(gasPrices.fast.maxFeePerGas) + BigInt(gasPrices.fast.maxFeePerGas) / 5n
-  const apePriority =
-    BigInt(gasPrices.fast.maxPriorityFeePerGas) + BigInt(gasPrices.fast.maxPriorityFeePerGas) / 5n
-  const ape = {
-    maxFeePerGas: toBeHex(apeMaxFee),
-    maxPriorityFeePerGas: toBeHex(apePriority)
+    if (gasData.message.indexOf('AA25 invalid account nonce') !== -1) {
+      nonFatalErrors.push(new Error('4337 invalid account nonce', { cause: '4337_INVALID_NONCE' }))
+    }
+    return estimationErrorFormatted(gasData as Error, { feePaymentOptions, nonFatalErrors })
   }
 
   return {
@@ -123,7 +125,7 @@ export async function bundlerEstimate(
       callGasLimit: gasData.callGasLimit,
       paymasterVerificationGasLimit: gasData.paymasterVerificationGasLimit,
       paymasterPostOpGasLimit: gasData.paymasterPostOpGasLimit,
-      gasPrice: { ...gasPrices, ape }
+      gasPrice
     },
     error: null
   }

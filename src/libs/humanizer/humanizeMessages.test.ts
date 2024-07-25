@@ -3,17 +3,14 @@ import { parseEther } from 'ethers'
 import { beforeEach, describe, expect } from '@jest/globals'
 
 import { TypedMessage } from '../../interfaces/userRequest'
-import {
-  erc20Module,
-  erc721Module,
-  fallbackEIP712Humanizer,
-  permit2Module
-} from './typedMessageModules'
+import { compareVisualizations } from './testHelpers'
+import { erc20Module, erc721Module, permit2Module } from './typedMessageModules'
+import { getAction, getAddressVisualization, getDeadline, getLabel, getToken } from './utils'
 
 const address1 = '0x6942069420694206942069420694206942069420'
 const address2 = '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
 const WETH_ADDRESS = '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2'
-
+const NFT_ADDRESS = '0x026224A2940bFE258D0dbE947919B62fE321F042'
 const typedMessages = {
   erc20: [
     {
@@ -112,131 +109,80 @@ describe('typed message tests', () => {
   })
   test('erc20 module', () => {
     const expectedVisualization = [
-      { type: 'action', content: 'Grant approval' },
-      { type: 'label', content: 'for' },
-      {
-        type: 'token',
-        address: WETH_ADDRESS
-      },
-      { type: 'label', content: 'to' },
-      {
-        type: 'address',
-        address: address2
-      },
-      { type: 'deadline', amount: 968187600000n }
+      getAction('Grant approval'),
+      getLabel('for'),
+      getToken(WETH_ADDRESS, 1000000000000000000n),
+      getLabel('to'),
+      getAddressVisualization(address2),
+      getDeadline(968187600n)
     ]
 
     tmTemplate.message = typedMessages.erc20[0]
     const { fullVisualization } = erc20Module(tmTemplate)
-    expect(expectedVisualization.length).toEqual(fullVisualization?.length)
-    fullVisualization?.forEach((v, i) => expect(v).toMatchObject(expectedVisualization[i]))
+    expect(fullVisualization).toBeTruthy()
+    compareVisualizations(fullVisualization!, expectedVisualization)
   })
   test('erc721 module', () => {
     const expectedVisualization = [
-      { type: 'action', content: 'Permit use of' },
-      {
-        type: 'nft',
-        address: WETH_ADDRESS
-      },
-      { type: 'label', content: 'to' },
-      {
-        type: 'address',
-        address: address2
-      },
-      { type: 'deadline', amount: 968187600000n }
+      getAction('Permit use of'),
+      getToken(NFT_ADDRESS, 1n),
+      getLabel('to'),
+      getAddressVisualization(address2),
+      getDeadline(968187600n)
     ]
 
     tmTemplate.message = typedMessages.erc721[0]
+    tmTemplate.domain.verifyingContract = NFT_ADDRESS
     const { fullVisualization } = erc721Module(tmTemplate)
-    expect(expectedVisualization.length).toEqual(fullVisualization?.length)
-    fullVisualization?.forEach((v, i) => expect(v).toMatchObject(expectedVisualization[i]))
+    expect(fullVisualization).toBeTruthy()
+    compareVisualizations(fullVisualization!, expectedVisualization)
   })
 
   test('permit2 single module', () => {
     const expectedSingleVisualization = [
-      { type: 'action', content: 'Permit' },
-      {
-        type: 'address',
-        address: '0x000000000022d473030f116ddee9f6b43ac78ba3'
-      },
-      { type: 'label', content: 'to use' },
-      {
-        type: 'token',
-        address: '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2',
-        amount: 1000000000000000000n
-      },
-      { type: 'label', content: 'for time period' },
-      { type: 'deadline', amount: 968187600000n },
-      { type: 'label', content: 'this whole signatuere' },
-      { type: 'deadline', amount: 968187600000n }
+      getAction('Permit'),
+      getAddressVisualization('0x000000000022d473030f116ddee9f6b43ac78ba3'),
+      getLabel('to use'),
+      getToken(WETH_ADDRESS, 1000000000000000000n),
+      getLabel('for time period'),
+      getDeadline(968187600n),
+      getLabel('this whole signatuere'),
+      getDeadline(968187600n)
     ]
     tmTemplate.types = { PermitSingle: [{ name: 'details', type: 'PermitDetails' }] }
     tmTemplate.domain.verifyingContract = '0x000000000022d473030f116ddee9f6b43ac78ba3'
     tmTemplate.message = typedMessages.permit2[0]
     const { fullVisualization } = permit2Module(tmTemplate)
-    expect(expectedSingleVisualization.length).toEqual(fullVisualization?.length)
-    fullVisualization?.forEach((v, i) => expect(v).toMatchObject(expectedSingleVisualization[i]))
+    expect(fullVisualization).toBeTruthy()
+    compareVisualizations(fullVisualization!, expectedSingleVisualization)
   })
 
   test('permit2 module batch permit', () => {
     const expectedBatchVisualization = [
-      { type: 'label', content: 'Permit #1' },
-      { type: 'action', content: 'Permit' },
-      {
-        type: 'address',
-        address: '0x000000000022d473030f116ddee9f6b43ac78ba3'
-      },
-      { type: 'label', content: 'to use' },
-      {
-        type: 'token',
-        address: '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2',
-        amount: 1000000000000000000n
-      },
-      { type: 'label', content: 'for time period' },
-      { type: 'deadline', amount: 968187600000n },
-      { type: 'label', content: 'this whole signatuere' },
-      { type: 'deadline', amount: 968187600000n },
-      { type: 'label', content: 'Permit #2' },
-      { type: 'action', content: 'Permit' },
-      {
-        type: 'address',
-        address: '0x000000000022d473030f116ddee9f6b43ac78ba3'
-      },
-      { type: 'label', content: 'to use' },
-      {
-        type: 'token',
-        address: '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2',
-        amount: 500000000000000000n
-      },
-      { type: 'label', content: 'for time period' },
-      { type: 'deadline', amount: 969187600000n },
-      { type: 'label', content: 'this whole signatuere' },
-      { type: 'deadline', amount: 968187600000n }
+      getLabel('Permit #1'),
+      getAction('Permit'),
+      getAddressVisualization('0x000000000022d473030f116ddee9f6b43ac78ba3'),
+      getLabel('to use'),
+      getToken(WETH_ADDRESS, 1000000000000000000n),
+      getLabel('for time period'),
+      getDeadline(968187600n),
+      getLabel('this whole signatuere'),
+      getDeadline(968187600n),
+      getLabel('Permit #2'),
+      getAction('Permit'),
+      getAddressVisualization('0x000000000022d473030f116ddee9f6b43ac78ba3'),
+      getLabel('to use'),
+      getToken(WETH_ADDRESS, 500000000000000000n),
+      getLabel('for time period'),
+      getDeadline(969187600n),
+      getLabel('this whole signatuere'),
+      getDeadline(968187600n)
     ]
     tmTemplate.types = { PermitBatch: [{ name: 'details', type: 'PermitDetails[]' }] }
     tmTemplate.domain.verifyingContract = '0x000000000022d473030f116ddee9f6b43ac78ba3'
     tmTemplate.message = typedMessages.permit2[1]
     const { fullVisualization } = permit2Module(tmTemplate)
-    expect(fullVisualization?.length).toEqual(expectedBatchVisualization.length)
-    expectedBatchVisualization.forEach((v, i) => {
-      expect(fullVisualization?.[i]).toMatchObject(v)
-    })
-  })
-  test('fallback module', () => {
-    tmTemplate.message = typedMessages.fallback[0]
-    const expectedVisualizationContent = [
-      'from: \n',
-      ' name: A\n',
-      ' address: 0x6942069420694206942069420694206942069420\n',
-      'to: \n',
-      ' name: B\n',
-      ' address: 0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n',
-      'subject: angry mail\n',
-      'withRegards: false\n'
-    ]
-
-    const { fullVisualization } = fallbackEIP712Humanizer(tmTemplate)
-    expect(expectedVisualizationContent.length).toEqual(fullVisualization?.length)
-    fullVisualization?.map((v, i) => expect(v.content).toEqual(expectedVisualizationContent[i]))
+    expect(fullVisualization).toBeTruthy()
+    compareVisualizations(fullVisualization!, expectedBatchVisualization)
   })
 })

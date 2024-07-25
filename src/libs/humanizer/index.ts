@@ -10,9 +10,7 @@ import { humanizeCalls, humanizePlainTextMessage, humanizeTypedMessage } from '.
 import {
   HumanizerCallModule,
   HumanizerOptions,
-  HumanizerParsingModule,
   HumanizerPromise,
-  HumanizerSettings,
   IrCall,
   IrMessage
 } from './interfaces'
@@ -26,33 +24,28 @@ import gasTankModule from './modules/GasTankModule'
 import KyberSwap from './modules/KyberSwap'
 import preProcessHumanizer from './modules/PreProcess'
 import privilegeHumanizer from './modules/Privileges'
+import { SocketModule } from './modules/Socket'
 import sushiSwapModule from './modules/Sushiswap'
 import { genericErc20Humanizer, genericErc721Humanizer } from './modules/Tokens'
 import traderJoeModule from './modules/TraderJoe'
 import { uniswapHumanizer } from './modules/Uniswap'
 import { WALLETModule } from './modules/WALLET'
 import wrappingModule from './modules/Wrapping'
-import { parseCalls, parseMessage } from './parsers'
-import { humanizerMetaParsing } from './parsers/humanizerMetaParsing'
-import {
-  erc20Module,
-  erc721Module,
-  fallbackEIP712Humanizer,
-  permit2Module
-} from './typedMessageModules'
+import { erc20Module, erc721Module, permit2Module } from './typedMessageModules'
 import { HUMANIZER_META_KEY } from './utils'
 
 // from most generic to least generic
 // the final humanization is the final triggered module
 export const humanizerCallModules: HumanizerCallModule[] = [
   preProcessHumanizer,
-  genericErc20Humanizer,
   genericErc721Humanizer,
+  genericErc20Humanizer,
   gasTankModule,
   uniswapHumanizer,
   curveModule,
   traderJoeModule,
   KyberSwap,
+  SocketModule,
   AcrossModule,
   OneInchModule,
   wrappingModule,
@@ -63,11 +56,9 @@ export const humanizerCallModules: HumanizerCallModule[] = [
   fallbackHumanizer
 ]
 
-const parsingModules: HumanizerParsingModule[] = [humanizerMetaParsing]
-
 // from least generic to most generic
 // the final visualization and warnings are from the first triggered module
-const humanizerTMModules = [erc20Module, erc721Module, permit2Module, fallbackEIP712Humanizer]
+const humanizerTMModules = [erc20Module, erc721Module, permit2Module]
 
 // @TODO to be removed
 export const humanizeAccountOp = async (
@@ -100,7 +91,6 @@ const sharedHumanization = async <InputDataType extends AccountOp | Message>(
   let message: Message | null = null
   let irCalls: IrCall[] = []
   let asyncOps: HumanizerPromise[] = []
-  let parsedMessage: IrMessage
   if ('calls' in data) {
     op = parse(stringify(data))
   }
@@ -125,25 +115,12 @@ const sharedHumanization = async <InputDataType extends AccountOp | Message>(
         totalHumanizerMetaToBeUsed,
         humanizerOptions
       )
-      const [parsedCalls, newAsyncOps] = parseCalls(
-        op!,
-        irCalls,
-        parsingModules,
-        totalHumanizerMetaToBeUsed,
-        humanizerOptions
-      )
-      asyncOps.push(...newAsyncOps)
       ;(callback as (response: IrCall[], nonGlobalFrags: HumanizerFragment[]) => void)(
-        parsedCalls,
+        irCalls,
         op!.humanizerMetaFragments || []
       )
       //
     } else if ('content' in data) {
-      const humanizerSettings: HumanizerSettings = {
-        accountAddr: message!.accountAddr,
-        networkId: message?.networkId || 'ethereum',
-        humanizerMeta: totalHumanizerMetaToBeUsed
-      }
       const irMessage: IrMessage = {
         ...message!,
         ...(message!.content.kind === 'typedMessage'
@@ -151,13 +128,7 @@ const sharedHumanization = async <InputDataType extends AccountOp | Message>(
           : humanizePlainTextMessage(message!.content))
       }
 
-      ;[parsedMessage, asyncOps] = parseMessage(
-        humanizerSettings,
-        irMessage,
-        parsingModules,
-        humanizerOptions
-      )
-      ;(callback as (response: IrMessage) => void)(parsedMessage)
+      ;(callback as (response: IrMessage) => void)(irMessage)
     }
 
     // if we are in the history no more than 1 cycle and no async operations

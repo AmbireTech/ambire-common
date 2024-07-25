@@ -11,14 +11,18 @@ import {
   NetworkInfoLoading
 } from '../../interfaces/network'
 import { RPCProviders } from '../../interfaces/provider'
+import { Bundler } from '../../services/bundlers/bundler'
 import { getRpcProvider } from '../../services/provider'
-import { getSASupport, simulateDebugTraceCall } from '../deployless/simulateDeployCall'
+import { getSASupport } from '../deployless/simulateDeployCall'
 
 // bnb, fantom, metis
 const relayerAdditionalNetworks = [56n, 250n, 1088n]
 
 export const getNetworksWithFailedRPC = ({ providers }: { providers: RPCProviders }): string[] => {
-  return Object.keys(providers).filter((networkId) => !providers[networkId].isWorking)
+  return Object.keys(providers).filter(
+    (networkId) =>
+      typeof providers[networkId].isWorking === 'boolean' && !providers[networkId].isWorking
+  )
 }
 
 async function retryRequest(init: Function, counter = 0): Promise<any> {
@@ -50,7 +54,6 @@ export async function getNetworkInfo(
     erc4337: 'LOADING',
     areContractsDeployed: 'LOADING',
     feeOptions: 'LOADING',
-    hasDebugTraceCall: 'LOADING',
     platformId: 'LOADING',
     nativeAssetId: 'LOADING',
     flagged: 'LOADING'
@@ -80,13 +83,13 @@ export async function getNetworkInfo(
         const responses = await Promise.all([
           retryRequest(() => provider.getCode(SINGLETON)),
           retryRequest(() => provider.getCode(AMBIRE_ACCOUNT_FACTORY)),
-          retryRequest(() => getSASupport(provider))
+          retryRequest(() => getSASupport(provider)),
+          Bundler.isNetworkSupported(fetch, chainId).catch(() => false)
           // retryRequest(() => provider.getCode(ERC_4337_ENTRYPOINT)),
-          // Bundler.isNetworkSupported(chainId).catch(() => false)
         ]).catch((e: Error) =>
           raiseFlagged(e, ['0x', '0x', { addressMatches: false, supportsStateOverride: false }])
         )
-        const [singletonCode, factoryCode, saSupport] = responses
+        const [singletonCode, factoryCode, saSupport, is4337enabled] = responses
         const areContractsDeployed = factoryCode !== '0x'
         // const has4337 = entryPointCode !== '0x' && hasBundler
         const predefinedNetwork = predefinedNetworks.find((net) => net.chainId === chainId)
@@ -106,7 +109,7 @@ export async function getNetworkInfo(
               ? true
               : !saSupport.supportsStateOverride,
           erc4337: {
-            enabled: predefinedNetwork ? predefinedNetwork.erc4337.enabled : false,
+            enabled: predefinedNetwork ? predefinedNetwork.erc4337.enabled : is4337enabled,
             hasPaymaster: predefinedNetwork ? predefinedNetwork.erc4337.hasPaymaster : false
           }
         }
@@ -130,14 +133,6 @@ export async function getNetworkInfo(
         const feeOptions = { is1559: block?.baseFeePerGas !== null }
 
         networkInfo = { ...networkInfo, feeOptions }
-
-        callback(networkInfo)
-      })(),
-      (async () => {
-        const hasDebugTraceCall = await retryRequest(() => simulateDebugTraceCall(provider)).catch(
-          () => false
-        )
-        networkInfo = { ...networkInfo, hasDebugTraceCall }
 
         callback(networkInfo)
       })(),
@@ -201,7 +196,6 @@ export function getFeaturesByNetworkProperties(
     areContractsDeployed,
     erc4337,
     rpcNoStateOverride,
-    hasDebugTraceCall,
     nativeAssetId,
     chainId,
     hasSingleton
@@ -264,15 +258,15 @@ export function getFeaturesByNetworkProperties(
     }
   }
 
-  if ([rpcNoStateOverride, hasDebugTraceCall].every((p) => p !== 'LOADING')) {
+  if ([rpcNoStateOverride].every((p) => p !== 'LOADING')) {
     const isPredefinedNetwork = predefinedNetworks.find((net) => net.chainId === chainId)
-    if (!rpcNoStateOverride && (hasDebugTraceCall || isPredefinedNetwork)) {
+    if (!rpcNoStateOverride && isPredefinedNetwork) {
       updateFeature('simulation', {
         level: 'success',
         title: 'Transaction simulation is fully supported',
         msg: 'This feature offers a proactive approach to blockchain security by a process used to predict the outcome of a transaction before it is broadcasted to the blockchain.'
       })
-    } else if (!rpcNoStateOverride && !hasDebugTraceCall) {
+    } else if (!rpcNoStateOverride) {
       updateFeature('simulation', {
         level: 'warning',
         title: 'Transaction simulation is partially supported',
@@ -338,7 +332,6 @@ export async function migrateNetworkPreferencesToNetworks(networkPreferences: {
       erc4337: preference.erc4337 ?? { enabled: false, hasPaymaster: false },
       areContractsDeployed: preference.areContractsDeployed ?? false,
       feeOptions: { is1559: (preference as any).is1559 ?? false },
-      hasDebugTraceCall: preference.hasDebugTraceCall ?? false,
       platformId: preference.platformId ?? '',
       nativeAssetId: preference.nativeAssetId ?? '',
       flagged: preference.flagged ?? false,

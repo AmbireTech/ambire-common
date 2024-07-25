@@ -2,7 +2,7 @@
 
 import { AbiCoder, isHexString } from 'ethers'
 
-import { Erc4337GasLimits, EstimateResult } from './interfaces'
+import { EstimateResult } from './interfaces'
 
 const contractErrors = [
   'caller is a contract',
@@ -51,7 +51,11 @@ export function mapTxnErrMsg(contractError: string): string | null {
   )
     return 'Insufficient funds for intristic transaction cost'
   if (msg.includes('paymaster deposit too low')) {
-    return `Paymaster does not have enough funds to execute this request. Please use another payment option or contact support`
+    return 'Paymaster does not have enough funds to execute this request. Please use another payment option or contact support'
+  }
+  // a really long error appears when the message is unknown. We shorten it
+  if (msg.includes('unknown custom error')) {
+    return null
   }
   if (!riskOfUnreadableChars) return msg
 
@@ -81,11 +85,15 @@ export function estimationErrorFormatted(
   error: Error,
   opts?: {
     feePaymentOptions?: EstimateResult['feePaymentOptions']
-    erc4337GasLimits?: Erc4337GasLimits
+    nonFatalErrors?: Error[]
   }
 ): EstimateResult {
   const feePaymentOptions = opts?.feePaymentOptions ?? []
-  const finalsOps = { ...opts, feePaymentOptions }
+  const finalsOps = {
+    ...opts,
+    feePaymentOptions,
+    nonFatalErrors: opts?.nonFatalErrors ?? undefined
+  }
 
   return {
     gasUsed: 0n,

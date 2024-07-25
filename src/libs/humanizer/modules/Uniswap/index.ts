@@ -1,6 +1,5 @@
 import { AccountOp } from '../../../accountOp/accountOp'
-import { HumanizerCallModule, HumanizerMeta, HumanizerWarning, IrCall } from '../../interfaces'
-import { getUnknownVisualization, getWarning } from '../../utils'
+import { HumanizerCallModule, HumanizerMeta, IrCall } from '../../interfaces'
 import { HumanizerUniMatcher } from './interfaces'
 import { uniUniversalRouter } from './uniUniversalRouter'
 import { uniV2Mapping } from './uniV2'
@@ -41,34 +40,21 @@ export const uniswapHumanizer: HumanizerCallModule = (
     // arbitrum
     '0x5e325eda8064b456f4781070c0738d849c824258': uniUniversalRouterObj
   }
-  const fallbackFlatUniswapsObject = Object.values(matcher).reduce((a, b) => ({ ...a, ...b }), {})
+  const fallbackFlatUniswapsMather = Object.values(matcher).reduce((a, b) => ({ ...a, ...b }), {})
   const newCalls: IrCall[] = []
   currentIrCalls.forEach((call: IrCall) => {
     const sigHash = call.data.substring(0, 10)
-    // check against sus contracts with same func selectors
-    const matchedObj = matcher[call.to.toLowerCase()]
-    // if known address
-    if (matchedObj) {
-      if (matchedObj?.[sigHash]) {
-        matchedObj[sigHash](accountOp, call).forEach((hc: IrCall, index: number) =>
-          // if multicall has value it shouldn't result in multiple calls with value
-          index === 0 ? newCalls.push(hc) : newCalls.push({ ...hc, value: 0n })
-        )
-      } else {
-        newCalls.push({
-          ...call,
-          fullVisualization: getUnknownVisualization('Uniswap', call)
-        })
-      }
+
+    const knownUniswapVersion = matcher[call.to.toLowerCase()]
+    if (knownUniswapVersion && knownUniswapVersion?.[sigHash]) {
+      const fullVisualization = knownUniswapVersion[sigHash](accountOp, call)
+      // @TODO add visualization squashing
+      newCalls.push({ ...call, fullVisualization })
+
       // if unknown address, but known sighash
-    } else if (fallbackFlatUniswapsObject[sigHash]) {
-      fallbackFlatUniswapsObject[sigHash](accountOp, call).forEach((hc: IrCall, index: number) => {
-        // if multicall has value it shouldn't result in multiple calls with value
-        const warnings: HumanizerWarning[] = [getWarning('Unknown uniswap address', 'alarm')]
-        index === 0
-          ? newCalls.push({ ...hc, warnings })
-          : newCalls.push({ ...hc, value: 0n, warnings })
-      })
+    } else if (fallbackFlatUniswapsMather[sigHash]) {
+      const fullVisualization = fallbackFlatUniswapsMather[sigHash](accountOp, call)
+      newCalls.push({ ...call, fullVisualization })
     } else {
       newCalls.push(call)
     }

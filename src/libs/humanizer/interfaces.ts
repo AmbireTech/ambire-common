@@ -5,20 +5,19 @@ import { Message, TypedMessage } from '../../interfaces/userRequest'
 import { AccountOp } from '../accountOp/accountOp'
 import { Call } from '../accountOp/types'
 
-// @TODO properties to be removed - decimals,readableAmount?symbol, name
-// @TODO add properties humanizerMeta
+// @TODO remove property humanizerMeta
 export type HumanizerVisualization = {
-  type: 'token' | 'address' | 'label' | 'action' | 'nft' | 'danger' | 'deadline' | 'chain'
+  type: 'token' | 'address' | 'label' | 'action' | 'danger' | 'deadline' | 'chain' | 'message'
   address?: string
   content?: string
-  amount?: bigint
+  value?: bigint
   humanizerMeta?: HumanizerMetaAddress
   warning?: boolean
   // humanizerMeta?: HumanizerMetaAddress
   id: number
-  nftId?: bigint
   chainId?: bigint
   isHidden?: boolean
+  messageContent?: Uint8Array | string
 }
 export interface IrCall extends Call {
   fullVisualization?: HumanizerVisualization[]

@@ -1,27 +1,12 @@
 import { ethers } from 'ethers'
-import fetch from 'node-fetch'
 
 import { describe, expect, test } from '@jest/globals'
 
 import humanizerInfo from '../../../../consts/humanizer/humanizerInfo.json'
-import { networks } from '../../../../consts/networks'
-import { ErrorRef } from '../../../../controllers/eventEmitter/eventEmitter'
 import { AccountOp } from '../../../accountOp/accountOp'
-import { parse, stringify } from '../../../richJson/richJson'
 import { HumanizerMeta, HumanizerVisualization, IrCall } from '../../interfaces'
 import { genericErc20Humanizer, genericErc721Humanizer } from '.'
 
-// eslint-disable-next-line no-console
-const mockEmitError = (e: ErrorRef) => console.log(e)
-
-// const mockedFetchForTokens = async (url: string) => {
-//   const usdtAddress = '0xdAC17F958D2ee523a2206206994597C13D831ec7'
-//   return url === `https://api.coingecko.com/api/v3/coins/ethereum/contract/${usdtAddress}`
-//     ? {
-//         json: async () => ({ symbol: 'usdt', detail_platforms: { ethereum: { decimal_place: 6 } } })
-//       }
-//     : {}
-// }
 const accountOp: AccountOp = {
   accountAddr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
   networkId: 'ethereum',
@@ -146,42 +131,17 @@ const transactions = {
   ]
 }
 
+// @TODO add proper test expected visualizations
 describe('Tokens', () => {
   beforeEach(async () => {
     accountOp.calls = []
   })
 
-  test('getTokenInfo', async () => {
-    accountOp.calls = transactions.erc20
-    const humanizerMeta = parse(stringify(humanizerInfo))
-    delete humanizerMeta!.knownAddresses['0xdac17f958d2ee523a2206206994597c13d831ec7'].token
-    if (humanizerMeta)
-      Object.keys(humanizerMeta.knownAddresses).forEach((k) => {
-        delete humanizerMeta?.knownAddresses[k]
-      })
-    const irCalls: IrCall[] = accountOp.calls
-    const [, asyncOps] = genericErc20Humanizer(accountOp, irCalls, humanizerMeta, {
-      fetch,
-      emitError: mockEmitError,
-      network: networks[0]
-    })
-    const asyncData = await Promise.all(asyncOps.map((i) => i()))
-
-    expect(asyncData[0]).toMatchObject({
-      key: irCalls[0].to.toLowerCase(),
-      type: 'token',
-      value: {
-        decimals: 6,
-        symbol: 'USDT'
-      }
-    })
-  })
   // @TODO err
   test('genericErc20Humanizer', () => {
     accountOp.calls = [...transactions.erc20]
     const irCalls: IrCall[] = accountOp.calls
     const [newCalls] = genericErc20Humanizer(accountOp, irCalls, humanizerInfo as HumanizerMeta, {
-      fetch,
       networkId: 'ethereum'
     })
     expect(newCalls.length).toBe(transactions.erc20.length)
@@ -191,7 +151,7 @@ describe('Tokens', () => {
       ).toMatchObject({
         type: 'token',
         address: expect.anything(),
-        amount: expect.anything()
+        value: expect.anything()
       })
     })
   })

@@ -1,4 +1,3 @@
-import { Account } from '../../interfaces/account'
 import {
   AccountState,
   CollectionResult as CollectionResultInterface,
@@ -54,12 +53,23 @@ export function calculateAccountPortfolio(
   const pendingAccountStateWithoutCriticalErrors = Object.keys(
     state.pending[selectedAccount]
   ).reduce((acc, network) => {
+    if (
+      !selectedAccountData[network]?.result?.blockNumber ||
+      !state.pending[selectedAccount][network]?.result?.blockNumber
+    )
+      return acc
+
     // Filter out networks with critical errors
     // and pending state which is with newer blockNumber
     // or has sign account op
-    const isPendingNewer = state.pending[selectedAccount][network]?.result?.blockNumber >= selectedAccountData[network]?.result?.blockNumber
-    
-    if (!state.pending[selectedAccount][network]?.criticalError && (isPendingNewer || hasSignAccountOp)) {
+    const isPendingNewer =
+      state.pending[selectedAccount][network]?.result?.blockNumber! >=
+      selectedAccountData[network]?.result?.blockNumber!
+
+    if (
+      !state.pending[selectedAccount][network]?.criticalError &&
+      (isPendingNewer || hasSignAccountOp)
+    ) {
       acc[network] = state.pending[selectedAccount][network]
     }
     return acc
@@ -75,7 +85,7 @@ export function calculateAccountPortfolio(
 
   const isNetworkReady = (networkData: NetworkState | undefined) => {
     return (
-      (networkData && networkData.isReady && !networkData.isLoading) || networkData?.criticalError
+      networkData && (networkData.isReady || networkData?.criticalError) && !networkData.isLoading
     )
   }
 
@@ -83,7 +93,7 @@ export function calculateAccountPortfolio(
     const networkData = selectedAccountData[network]
     const result = networkData?.result
 
-    if (networkData && isNetworkReady(networkData) && !networkData?.criticalError && result) {
+    if (networkData && isNetworkReady(networkData) && result) {
       // In the case we receive BigInt here, convert to number
       const networkTotal = Number(result?.total?.usd) || 0
       newTotalAmount += networkTotal

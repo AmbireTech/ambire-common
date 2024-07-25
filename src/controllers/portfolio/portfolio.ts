@@ -1,4 +1,4 @@
-import { ZeroAddress } from 'ethers'
+import { getAddress, ZeroAddress } from 'ethers'
 
 import { Account, AccountId } from '../../interfaces/account'
 import { Fetch } from '../../interfaces/fetch'
@@ -22,8 +22,8 @@ import {
   getPinnedGasTankTokens,
   getTotal,
   getUpdatedHints,
+  processTokens,
   shouldGetAdditionalPortfolio,
-  tokenFilter,
   validateERC20Token
 } from '../../libs/portfolio/helpers'
 /* eslint-disable no-param-reassign */
@@ -196,10 +196,7 @@ export class PortfolioController extends EventEmitter {
     const accountState = this.latest[accountId]
     if (!accountState[network]) accountState[network] = { errors: [], isReady: false, isLoading }
     accountState[network]!.isLoading = isLoading
-    if (error) {
-      if (!accountState[network]!.isReady) accountState[network]!.criticalError = error
-      else accountState[network]!.errors.push(error)
-    }
+    if (error) accountState[network]!.criticalError = error
   }
 
   #prepareLatestState(selectedAccount: Account) {
@@ -393,6 +390,7 @@ export class PortfolioController extends EventEmitter {
       .flat()
       .map((t: any) => ({
         ...t,
+        symbol: t.address === '0x47Cd7E91C3CBaAF266369fe8518345fc4FC12935' ? 'xWALLET' : t.symbol,
         flags: getFlags(res.data.rewards, 'rewards', t.networkId, t.address)
       }))
 
@@ -482,16 +480,22 @@ export class PortfolioController extends EventEmitter {
 
       const additionalHints = portfolioProps.additionalHints || []
 
+      const processedTokens = processTokens(
+        result.tokens,
+        network,
+        hasNonZeroTokens,
+        additionalHints,
+        tokenPreferences
+      )
+
       _accountState[network.id] = {
         isReady: true,
         isLoading: false,
         errors: result.errors,
         result: {
           ...result,
-          tokens: result.tokens.filter((token) =>
-            tokenFilter(token, network, hasNonZeroTokens, additionalHints, tokenPreferences)
-          ),
-          total: getTotal(result.tokens)
+          tokens: processedTokens,
+          total: getTotal(processedTokens)
         }
       }
       this.emitUpdate()
@@ -503,9 +507,9 @@ export class PortfolioController extends EventEmitter {
         error: e
       })
       state.isLoading = false
-      if (!state.isReady) state.criticalError = e
-      else state.errors.push(e)
+      state.criticalError = e
       this.emitUpdate()
+
       return false
     }
   }
@@ -648,6 +652,7 @@ export class PortfolioController extends EventEmitter {
             const updatedStoragePreviousHints = getUpdatedHints(
               accountState[network.id]!.result!.hintsFromExternalAPI as ExternalHintsAPIResponse,
               accountState[network.id]!.result!.tokens,
+              accountState[network.id]!.result!.tokenErrors,
               network.id,
               this.#previousHints,
               key,
@@ -681,22 +686,26 @@ export class PortfolioController extends EventEmitter {
   }
 
   // Learn new tokens from humanizer and debug_traceCall
-  async learnTokens(tokenAddresses: string[] | undefined, networkId: NetworkId) {
-    if (!tokenAddresses) return
+  // return: whether new tokens have been learned
+  async learnTokens(tokenAddresses: string[] | undefined, networkId: NetworkId): Promise<boolean> {
+    if (!tokenAddresses) return false
 
     if (!this.#previousHints.learnedTokens) this.#previousHints.learnedTokens = {}
 
     let networkLearnedTokens: PreviousHintsStorage['learnedTokens'][''] =
       this.#previousHints.learnedTokens[networkId] || {}
 
+    const alreadyLearned = Object.keys(networkLearnedTokens).map((addr) => getAddress(addr))
+
     const tokensToLearn = tokenAddresses.reduce((acc: { [key: string]: null }, address) => {
       if (address === ZeroAddress) return acc
+      if (alreadyLearned.includes(getAddress(address))) return acc
 
       acc[address] = acc[address] || null // Keep the timestamp of all learned tokens
       return acc
     }, {})
 
-    if (!Object.keys(tokensToLearn).length) return
+    if (!Object.keys(tokensToLearn).length) return false
     // Add new tokens in the beginning of the list
     networkLearnedTokens = { ...tokensToLearn, ...networkLearnedTokens }
 
@@ -713,6 +722,28 @@ export class PortfolioController extends EventEmitter {
 
     this.#previousHints.learnedTokens[networkId] = networkLearnedTokens
     await this.#storage.set('previousHints', this.#previousHints)
+    return true
+  }
+
+  removeAccountData(address: Account['addr']) {
+    delete this.latest[address]
+    delete this.pending[address]
+    delete this.#networksWithAssetsByAccounts[address]
+
+    this.#networks.networks.forEach((network) => {
+      const key = `${network.id}:${address}`
+
+      if (key in this.#previousHints.fromExternalAPI) {
+        delete this.#previousHints.fromExternalAPI[key]
+      }
+      if (key in this.#portfolioLibs) {
+        this.#portfolioLibs.delete(key)
+      }
+    })
+    this.#storage.set('previousHints', this.#previousHints)
+    this.#storage.set('networksWithAssetsByAccount', this.#networksWithAssetsByAccounts)
+
+    this.emitUpdate()
   }
 
   get networksWithAssets() {
@@ -729,7 +760,8 @@ export class PortfolioController extends EventEmitter {
     })
     const networksWithPortfolioErrorBanners = getNetworksWithPortfolioErrorBanners({
       networks: this.#networks.networks,
-      portfolioLatest: this.latest
+      portfolioLatest: this.latest,
+      providers: this.#providers.providers
     })
 
     return [...networksWithFailedRPCBanners, ...networksWithPortfolioErrorBanners]

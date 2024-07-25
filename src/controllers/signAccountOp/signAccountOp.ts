@@ -12,7 +12,7 @@ import { Network } from '../../interfaces/network'
 import { Storage } from '../../interfaces/storage'
 import { isSmartAccount } from '../../libs/account/account'
 import { AccountOp, GasFeePayment, getSignableCalls } from '../../libs/accountOp/accountOp'
-import { EstimateResult, FeePaymentOption } from '../../libs/estimate/interfaces'
+import { BundlerGasPrice, EstimateResult, FeePaymentOption } from '../../libs/estimate/interfaces'
 import { GasRecommendation, getCallDataAdditionalByNetwork } from '../../libs/gasPrice/gasPrice'
 import { callsHumanizer } from '../../libs/humanizer'
 import { IrCall } from '../../libs/humanizer/interfaces'
@@ -32,6 +32,7 @@ import {
 /* eslint-disable no-restricted-syntax */
 import { AccountsController } from '../accounts/accounts'
 import { AccountOpAction } from '../actions/actions'
+import { SubmittedAccountOp } from '../activity/activity'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
 import { PortfolioController } from '../portfolio/portfolio'
@@ -109,6 +110,8 @@ export class SignAccountOpController extends EventEmitter {
 
   gasPrices: GasRecommendation[] | null = null
 
+  bundlerGasPrices: BundlerGasPrice | null = null
+
   estimation: EstimateResult | null = null
 
   feeSpeeds: {
@@ -132,6 +135,12 @@ export class SignAccountOpController extends EventEmitter {
   gasUsedTooHighAgreed: boolean
 
   #callRelayer: Function
+
+  rbfAccountOps: { [key: string]: SubmittedAccountOp | null }
+
+  signedAccountOp: AccountOp | null
+
+  replacementFeeLow: boolean
 
   constructor(
     accounts: AccountsController,
@@ -165,6 +174,9 @@ export class SignAccountOpController extends EventEmitter {
     this.#humanizeAccountOp()
     this.gasUsedTooHigh = false
     this.gasUsedTooHighAgreed = false
+    this.rbfAccountOps = {}
+    this.signedAccountOp = null
+    this.replacementFeeLow = false
   }
 
   get isInitialized(): boolean {
@@ -245,7 +257,11 @@ export class SignAccountOpController extends EventEmitter {
     // if there's no gasFeePayment calculate but there is: 1) feeTokenResult
     // 2) selectedOption and 3) gasSpeeds for selectedOption => return an error
     if (!this.accountOp.gasFeePayment && this.feeTokenResult && this.selectedOption) {
-      const identifier = getFeeSpeedIdentifier(this.selectedOption, this.accountOp.accountAddr)
+      const identifier = getFeeSpeedIdentifier(
+        this.selectedOption,
+        this.accountOp.accountAddr,
+        this.rbfAccountOps[this.selectedOption.paidBy]
+      )
       if (this.hasSpeeds(identifier))
         errors.push('Please select a token and an account for paying the gas fee.')
     }
@@ -277,7 +293,11 @@ export class SignAccountOpController extends EventEmitter {
     }
 
     if (!this.#feeSpeedsLoading && this.selectedOption) {
-      const identifier = getFeeSpeedIdentifier(this.selectedOption, this.accountOp.accountAddr)
+      const identifier = getFeeSpeedIdentifier(
+        this.selectedOption,
+        this.accountOp.accountAddr,
+        this.rbfAccountOps[this.selectedOption.paidBy]
+      )
       if (!this.hasSpeeds(identifier)) {
         if (!this.feeTokenResult?.priceIn.length) {
           errors.push(
@@ -292,7 +312,11 @@ export class SignAccountOpController extends EventEmitter {
     }
 
     if (this.selectedOption) {
-      const identifier = getFeeSpeedIdentifier(this.selectedOption, this.accountOp.accountAddr)
+      const identifier = getFeeSpeedIdentifier(
+        this.selectedOption,
+        this.accountOp.accountAddr,
+        this.rbfAccountOps[this.selectedOption.paidBy]
+      )
       if (
         this.hasSpeeds(identifier) &&
         this.feeSpeeds[identifier].some((speed) => speed.amountUsd === null)
@@ -317,7 +341,9 @@ export class SignAccountOpController extends EventEmitter {
     signingKeyAddr,
     signingKeyType,
     accountOp,
-    gasUsedTooHighAgreed
+    gasUsedTooHighAgreed,
+    rbfAccountOps,
+    bundlerGasPrices
   }: {
     accountOp?: AccountOp
     gasPrices?: GasRecommendation[]
@@ -328,6 +354,8 @@ export class SignAccountOpController extends EventEmitter {
     signingKeyAddr?: Key['addr']
     signingKeyType?: Key['type']
     gasUsedTooHighAgreed?: boolean
+    rbfAccountOps?: { [key: string]: SubmittedAccountOp | null }
+    bundlerGasPrices?: BundlerGasPrice
   }) {
     // once the user commits to the things he sees on his screen,
     // we need to be sure nothing changes afterwards.
@@ -360,6 +388,10 @@ export class SignAccountOpController extends EventEmitter {
 
     if (this.estimation?.error) {
       this.status = { type: SigningStatus.EstimationError }
+    } else if (this.status?.type === SigningStatus.EstimationError) {
+      // if there are estimation errors and the status is estimation error,
+      // reset it as otherwise it stays like that forever
+      this.status = null
     }
 
     if (feeToken && paidBy) {
@@ -378,6 +410,9 @@ export class SignAccountOpController extends EventEmitter {
 
     if (gasUsedTooHighAgreed !== undefined) this.gasUsedTooHighAgreed = gasUsedTooHighAgreed
 
+    // set the rbf is != undefined
+    if (rbfAccountOps) this.rbfAccountOps = rbfAccountOps
+
     // Set defaults, if some of the optional params are omitted
     this.#setDefaults()
 
@@ -392,6 +427,11 @@ export class SignAccountOpController extends EventEmitter {
       )
     }
 
+    // update the bundler gas prices
+    if (this.estimation?.erc4337GasLimits && bundlerGasPrices) {
+      this.estimation.erc4337GasLimits.gasPrice = bundlerGasPrices
+    }
+
     // calculate the fee speeds if either there are no feeSpeeds
     // or any of properties for update is requested
     if (!Object.keys(this.feeSpeeds).length || accountOp || gasPrices || estimation) {
@@ -403,7 +443,7 @@ export class SignAccountOpController extends EventEmitter {
     this.updateStatusToReadyToSign()
   }
 
-  updateStatusToReadyToSign() {
+  updateStatusToReadyToSign(replacementFeeLow = false) {
     const isInTheMiddleOfSigning = this.status?.type === SigningStatus.InProgress
 
     const criticalErrors = this.errors.filter(
@@ -426,6 +466,9 @@ export class SignAccountOpController extends EventEmitter {
       (!this.gasUsedTooHigh || this.gasUsedTooHighAgreed)
     ) {
       this.status = { type: SigningStatus.ReadyToSign }
+
+      // do not reset this once triggered
+      if (replacementFeeLow) this.replacementFeeLow = replacementFeeLow
     }
 
     this.emitUpdate()
@@ -520,6 +563,32 @@ export class SignAccountOpController extends EventEmitter {
     return amount + (amount * this.#network.feeOptions.feeIncrease) / 100n
   }
 
+  /**
+   * If the nonce of the current account op and the last account op are the same,
+   * do an RBF increase or otherwise the user cannot broadcast the txn
+   */
+  #rbfIncrease(accId: string, gasPrice: bigint): bigint {
+    // if there was an error on the signed account op with a
+    // replacement fee too low, we increase by 12.5% the signed account op
+    // IF the new estimation is not actually higher
+    if (this.replacementFeeLow && this.signedAccountOp && this.signedAccountOp.gasFeePayment) {
+      const bumpFees =
+        this.signedAccountOp.gasFeePayment.gasPrice +
+        this.signedAccountOp.gasFeePayment.gasPrice / 8n
+      return gasPrice > bumpFees ? gasPrice : bumpFees
+    }
+
+    // if no RBF option for this paidBy option, return the amount
+    const rbfOp = this.rbfAccountOps[accId]
+    if (!rbfOp || !rbfOp.gasFeePayment) return gasPrice
+
+    // increase by a minimum of 12.5% the last broadcast txn and use that
+    // or use the current gas estimation if it's more
+    const lastTxnGasPriceIncreased =
+      rbfOp.gasFeePayment.gasPrice + rbfOp.gasFeePayment.gasPrice / 8n
+    return gasPrice > lastTxnGasPriceIncreased ? gasPrice : lastTxnGasPriceIncreased
+  }
+
   get #feeSpeedsLoading() {
     return !this.isInitialized || !this.gasPrices
   }
@@ -532,7 +601,7 @@ export class SignAccountOpController extends EventEmitter {
 
     const gasUsed = this.estimation!.gasUsed
     const callDataAdditionalGasCost = getCallDataAdditionalByNetwork(
-      this.accountOp!,
+      this.accountOp,
       this.account,
       this.#network,
       this.#accounts.accountStates[this.accountOp!.accountAddr][this.accountOp!.networkId]
@@ -541,7 +610,13 @@ export class SignAccountOpController extends EventEmitter {
     this.availableFeeOptions.forEach((option) => {
       // if a calculation has been made, do not make it again
       // EOA pays for SA is the most common case for this scenario
-      const identifier = getFeeSpeedIdentifier(option, this.accountOp.accountAddr)
+      //
+      // addition: make sure there's no rbfAccountOps as well
+      const identifier = getFeeSpeedIdentifier(
+        option,
+        this.accountOp.accountAddr,
+        this.rbfAccountOps[option.paidBy]
+      )
       if (this.hasSpeeds(identifier)) {
         return
       }
@@ -602,6 +677,7 @@ export class SignAccountOpController extends EventEmitter {
 
         // EOA
         if (!isSmartAccount(this.account)) {
+          gasPrice = this.#rbfIncrease(this.account.addr, gasPrice)
           simulatedGasLimit = gasUsed
 
           if (getAddress(this.accountOp.calls[0].to) === SINGLETON) {
@@ -609,12 +685,14 @@ export class SignAccountOpController extends EventEmitter {
           }
 
           amount = simulatedGasLimit * gasPrice + option.addedNative
-        } else if (option.paidBy !== this.accountOp!.accountAddr) {
+        } else if (option.paidBy !== this.accountOp.accountAddr) {
           // Smart account, but EOA pays the fee
+          gasPrice = this.#rbfIncrease(option.paidBy, gasPrice)
           simulatedGasLimit = gasUsed + callDataAdditionalGasCost
           amount = simulatedGasLimit * gasPrice + option.addedNative
         } else {
           // Relayer
+          gasPrice = this.#rbfIncrease(this.account.addr, gasPrice)
           simulatedGasLimit = gasUsed + callDataAdditionalGasCost + option.gasUsed!
           amount = SignAccountOpController.getAmountAfterFeeTokenConvert(
             simulatedGasLimit,
@@ -699,7 +777,11 @@ export class SignAccountOpController extends EventEmitter {
     // emit an error here but proceed and show an explanation to the user
     // in get errors()
     // check test: Signing [Relayer]: ... priceIn | native/Ratio
-    const identifier = getFeeSpeedIdentifier(this.selectedOption, this.accountOp.accountAddr)
+    const identifier = getFeeSpeedIdentifier(
+      this.selectedOption,
+      this.accountOp.accountAddr,
+      this.rbfAccountOps[this.selectedOption.paidBy]
+    )
     if (!this.feeSpeeds[identifier].length) {
       return null
     }
@@ -987,6 +1069,7 @@ export class SignAccountOpController extends EventEmitter {
       }
 
       this.status = { type: SigningStatus.Done }
+      this.signedAccountOp = structuredClone(this.accountOp)
       this.emitUpdate()
     } catch (error: any) {
       this.#setSigningError(error?.message, SigningStatus.ReadyToSign)

@@ -68,25 +68,29 @@ function handleSimulationError(
   }
 }
 
-function getDeploylessOpts(accountAddr: string, opts: Partial<GetOptions>) {
+function getDeploylessOpts(accountAddr: string, network: Network, opts: Partial<GetOptions>) {
   return {
     blockTag: opts.blockTag,
     from: DEPLOYLESS_SIMULATION_FROM,
-    mode: opts.isEOA ? DeploylessMode.StateOverride : DeploylessMode.Detect,
-    stateToOverride: opts.isEOA
-      ? {
-          [accountAddr]: {
-            code: AmbireAccount.binRuntime,
-            stateDiff: {
-              // if we use 0x00...01 we get a geth bug: "invalid argument 2: hex number with leading zero digits\" - on some RPC providers
-              [`0x${privSlot(0, 'address', accountAddr, 'bytes32')}`]:
-                '0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
-              // any number with leading zeros is not supported on some RPCs
-              [toBeHex(1, 32)]: EOA_SIMULATION_NONCE
+    mode:
+      !network.rpcNoStateOverride && opts.isEOA
+        ? DeploylessMode.StateOverride
+        : DeploylessMode.Detect,
+    stateToOverride:
+      !network.rpcNoStateOverride && opts.isEOA
+        ? {
+            [accountAddr]: {
+              code: AmbireAccount.binRuntime,
+              stateDiff: {
+                // if we use 0x00...01 we get a geth bug: "invalid argument 2: hex number with leading zero digits\" - on some RPC providers
+                [`0x${privSlot(0, 'address', accountAddr, 'bytes32')}`]:
+                  '0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
+                // any number with leading zeros is not supported on some RPCs
+                [toBeHex(1, 32)]: EOA_SIMULATION_NONCE
+              }
             }
           }
-        }
-      : null
+        : null
   }
 }
 
@@ -98,7 +102,7 @@ export async function getNFTs(
   tokenAddrs: [string, any][],
   limits: LimitsOptions
 ): Promise<[number, CollectionResult][]> {
-  const deploylessOpts = getDeploylessOpts(accountAddr, opts)
+  const deploylessOpts = getDeploylessOpts(accountAddr, network, opts)
   const mapToken = (token: any) => {
     return {
       name: token.name,
@@ -205,7 +209,7 @@ export async function getTokens(
       flags: getFlags({}, network.id, network.id, address)
     } as TokenResult
   }
-  const deploylessOpts = getDeploylessOpts(accountAddr, opts)
+  const deploylessOpts = getDeploylessOpts(accountAddr, network, opts)
   if (!opts.simulation) {
    
     const [results, blockNumber] = await deployless.call(

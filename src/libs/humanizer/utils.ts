@@ -38,22 +38,23 @@ export function getAddressVisualization(_address: string): HumanizerVisualizatio
   return { type: 'address', address, id: randomId() }
 }
 
-export function getToken(_address: string, amount: bigint): HumanizerVisualization {
+export function getToken(
+  _address: string,
+  amount: bigint,
+  isHidden?: boolean
+): HumanizerVisualization {
   const address = _address.toLowerCase()
   return {
     type: 'token',
     address,
-    amount: BigInt(amount),
-    id: randomId()
+    value: BigInt(amount),
+    id: randomId(),
+    isHidden
   }
 }
 
 export function getChain(chainId: bigint): HumanizerVisualization {
   return { type: 'chain', id: randomId(), chainId }
-}
-
-export function getNft(address: string, id: bigint): HumanizerVisualization {
-  return { type: 'nft', address, id: randomId(), nftId: id }
 }
 
 export function getOnBehalfOf(onBehalfOf: string, sender: string): HumanizerVisualization[] {
@@ -84,11 +85,14 @@ export function getDeadline(deadlineSecs: bigint | number): HumanizerVisualizati
   const deadline = BigInt(deadlineSecs) * 1000n
   return {
     type: 'deadline',
-    amount: deadline,
+    value: deadline,
     id: randomId()
   }
 }
 
+export function getHumanMessage(message: Uint8Array | string): HumanizerVisualization {
+  return { type: 'message', messageContent: message, id: randomId() }
+}
 /**
  * Make a request to coingecko to fetch the latest price of the native token.
  * This is used by benzina and hence we cannot wrap the errors in emitError
@@ -111,7 +115,7 @@ export async function getNativePrice(network: Network, fetch: Fetch): Promise<nu
   return response[platformId].usd
 }
 
-// @TODO maybe this shouldn't be here, more suitable place would be humanizer/modules/tokens
+// @TODO this should be moved outside of the humanizer as we should not use it in the humanizer
 export async function getTokenInfo(
   humanizerSettings: HumanizerSettings,
   address: string,
@@ -194,18 +198,12 @@ export function getUnwrapping(
   ].filter((x) => x) as HumanizerVisualization[]
 }
 
+// @TODO cant this be used in the <Address component>
 export function getKnownName(
   humanizerMeta: HumanizerMeta | undefined,
   address: string
 ): string | undefined {
   return humanizerMeta?.knownAddresses?.[address.toLowerCase()]?.name
-}
-
-export function getKnownToken(
-  humanizerMeta: HumanizerMeta | undefined,
-  address: string
-): { decimals: number; symbol: string } | undefined {
-  return humanizerMeta?.knownAddresses?.[address.toLowerCase()]?.token
 }
 
 export const integrateFragments = (

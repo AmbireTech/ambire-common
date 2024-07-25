@@ -9,6 +9,7 @@ import { RPCProvider } from '../../interfaces/provider'
 import { isSmartAccount } from '../account/account'
 import { CustomToken } from './customToken'
 import {
+  AdditionalPortfolioNetworkResult,
   ExternalHintsAPIResponse,
   PortfolioLibGetResult,
   PreviousHintsStorage,
@@ -203,6 +204,7 @@ const getLowercaseAddressArrayForNetwork = (
 export function getUpdatedHints(
   latestHintsFromExternalAPI: ExternalHintsAPIResponse,
   tokens: TokenResult[],
+  tokenErrors: AdditionalPortfolioNetworkResult['tokenErrors'],
   networkId: NetworkId,
   storagePreviousHints: PreviousHintsStorage,
   key: string,
@@ -219,6 +221,29 @@ export function getUpdatedHints(
 
   // The keys in learnedTokens are addresses of tokens
   const networkLearnedTokenAddresses = Object.keys(networkLearnedTokens)
+
+  // Self-cleaning mechanism for removing non-ERC20 items from the learned tokens.
+  // There's a possibility that the discovered tokens (from debug_traceCall or mostly Humanizer) include items that are not ERC20 tokens.
+  // For instance, a SmartContract address can be passed as a learned token.
+  // Thanks to BalanceGetter, we know which tokens encounter an error when we try to update the portfolio.
+  // All the errors are collected in `tokenErrors`, and if we cannot retrieve its balance,
+  // the contract returns `bytes('unkn')`, which is equal to `0x756e6b6e`.
+  // Note:
+  // When we extract tokens from `debug_traceCall`, we are already filtering the tokens the same way as here (relying on BalanceGetter).
+  // However, for the Humanizer tokens, we skipped that check because the Humanizer is invoked more frequently on the Sign screen,
+  // and this validation may slow down the performance of the page. Because of this, we perform the check here, where we are calling BalanceGetter anyway.
+  const unknownBalanceError = '0x756e6b6e'
+  const networkLearnedTokenAddressesHavingError = networkLearnedTokenAddresses.filter(
+    (tokenAddress) => {
+      const hasError = !!tokenErrors?.find(
+        (errorToken) =>
+          errorToken.address.toLowerCase() === tokenAddress.toLowerCase() &&
+          errorToken.error === unknownBalanceError
+      )
+
+      return hasError
+    }
+  )
 
   if (networkLearnedTokenAddresses.length) {
     // Lowercase all addresses outside of the loop for better performance
@@ -240,9 +265,21 @@ export function getUpdatedHints(
     )
 
     // Update the timestamp of learned tokens
+    // and self-clean non-ERC20 items.
     // eslint-disable-next-line no-restricted-syntax
     for (const address of networkLearnedTokenAddresses) {
       const lowercaseAddress = address.toLowerCase()
+
+      // Delete non-ERC20 items from the learned tokens
+      if (
+        networkLearnedTokenAddressesHavingError.find(
+          (errorToken) => errorToken.toLowerCase() === lowercaseAddress
+        )
+      ) {
+        delete learnedTokens[networkId][lowercaseAddress]
+        // eslint-disable-next-line no-continue
+        continue
+      }
 
       const isPinned = lowercaseNetworkPinnedTokenAddresses.includes(lowercaseAddress)
       const isTokenPreference = lowercaseNetworkPreferenceTokenAddresses.includes(lowercaseAddress)
@@ -270,17 +307,25 @@ export function getUpdatedHints(
 
 export const tokenFilter = (
   token: TokenResult,
+  nativeToken: TokenResult,
   network: { id: NetworkId },
   hasNonZeroTokens: boolean,
   additionalHints: string[] | undefined,
-  tokenPreferences: CustomToken[]
+  isTokenPreference: boolean
 ): boolean => {
-  const isTokenPreference = tokenPreferences?.find((tokenPreference) => {
-    return tokenPreference.address === token.address && tokenPreference.networkId === network.id
-  })
-  if (isTokenPreference) {
-    token.isHidden = isTokenPreference.isHidden
-  }
+  // always include tokens added as a preference
+  if (isTokenPreference) return true
+
+  // Never add ERC20 tokens that represent the network's native token.
+  // For instance, on Polygon, we have this token: `0x0000000000000000000000000000000000001010`.
+  // It mimics the native MATIC token (same symbol, same amount) and is shown twice in the Dashboard.
+  // From a user's perspective, the token is duplicated and counted twice in the balance.
+  const isERC20NativeRepresentation =
+    token.symbol === nativeToken?.symbol &&
+    token.amount === nativeToken.amount &&
+    token.address !== ZeroAddress
+
+  if (isERC20NativeRepresentation) return false
 
   // always include > 0 amount and native token
   if (token.amount > 0 || token.address === ZeroAddress) return true
@@ -289,11 +334,48 @@ export const tokenFilter = (
     return pinnedToken.networkId === network.id && pinnedToken.address === token.address
   })
 
-  const isInAdditionalHints = additionalHints?.includes(token.address)
+  // make the comparison to lowercase as otherwise, it doesn't work
+  const hintsLowerCase = additionalHints
+    ? additionalHints.map((hint) => hint.toLowerCase())
+    : undefined
+  const isInAdditionalHints = hintsLowerCase?.includes(token.address.toLowerCase())
 
   // if the amount is 0
   // return the token if it's pinned and requested
   const pinnedRequested = isPinned && !hasNonZeroTokens
 
-  return !!isTokenPreference || isInAdditionalHints || pinnedRequested
+  return isInAdditionalHints || pinnedRequested
+}
+
+/**
+ * Filter the TokenResult[] by certain criteria (please refer to `tokenFilter` for more details)
+ * and set the token.isHidden flag.
+ */
+export const processTokens = (
+  tokenResults: TokenResult[],
+  network: { id: NetworkId },
+  hasNonZeroTokens: boolean,
+  additionalHints: string[] | undefined,
+  tokenPreferences: CustomToken[]
+): TokenResult[] => {
+  // We need to know the native token in order to execute our filtration logic in tokenFilter.
+  // For performance reasons, we define it here once, instead of during every single iteration in the reduce method.
+  const nativeToken = tokenResults.find((token) => token.address === ZeroAddress)
+
+  return tokenResults.reduce((tokens, tokenResult) => {
+    const token = { ...tokenResult }
+
+    const preference = tokenPreferences?.find((tokenPreference) => {
+      return tokenPreference.address === token.address && tokenPreference.networkId === network.id
+    })
+
+    if (preference) {
+      token.isHidden = preference.isHidden
+    }
+
+    if (tokenFilter(token, nativeToken!, network, hasNonZeroTokens, additionalHints, !!preference))
+      tokens.push(token)
+
+    return tokens
+  }, [] as TokenResult[])
 }

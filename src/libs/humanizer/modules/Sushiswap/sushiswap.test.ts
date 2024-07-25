@@ -3,6 +3,8 @@ import { describe, expect } from '@jest/globals'
 import humanizerInfo from '../../../../consts/humanizer/humanizerInfo.json'
 import { AccountOp } from '../../../accountOp/accountOp'
 import { HumanizerMeta, HumanizerVisualization, IrCall } from '../../interfaces'
+import { compareHumanizerVisualizations } from '../../testHelpers'
+import { getAction, getLabel, getRecipientText, getToken } from '../../utils'
 import { sushiSwapModule } from './sushiSwapModule'
 
 const transactions: { [key: string]: Array<IrCall> } = {
@@ -41,26 +43,20 @@ const accountOp: AccountOp = {
 
 describe('sushiSwap', () => {
   test('basic', () => {
-    const expectedhumanization: Partial<HumanizerVisualization>[] = [
-      { type: 'action', content: 'Swap' },
-      {
-        type: 'token',
-        address: '0x0d500b1d8e8ef31e21c99d1db9a6444d3adf1270',
-        amount: 400000000000000n
-      },
-      { type: 'label', content: 'for' },
-      {
-        type: 'token',
-        address: '0x8f3cf7ad23cd3cadbd9735aff958023239c6a063',
-        amount: 348830169184669n
-      }
+    const expectedhumanization: HumanizerVisualization[] = [
+      getAction('Swap'),
+      getToken('0x0d500b1d8e8ef31e21c99d1db9a6444d3adf1270', 400000000000000n),
+      getLabel('for'),
+      getToken('0x8f3cf7ad23cd3cadbd9735aff958023239c6a063', 348830169184669n),
+      ...getRecipientText(
+        '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
+        '0x6969174fd72466430a46e18234d0b530c9fd5f49'
+      )
     ]
     accountOp.calls = [...transactions.sushiSwapCalls]
     let irCalls: IrCall[] = accountOp.calls
     ;[irCalls] = sushiSwapModule(accountOp, irCalls, humanizerInfo as HumanizerMeta)
     expect(irCalls.length).toBe(1)
-    expectedhumanization.forEach((h: Partial<HumanizerVisualization>, i: number) => {
-      expect(irCalls[0]?.fullVisualization?.[i]).toMatchObject(h)
-    })
+    compareHumanizerVisualizations(irCalls, [expectedhumanization])
   })
 })
