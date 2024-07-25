@@ -6,6 +6,7 @@ import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json'
 import EmittableError from '../../classes/EmittableError'
 import { AMBIRE_ACCOUNT_FACTORY, SINGLETON } from '../../consts/deploy'
+import { BIP44_LEDGER_DERIVATION_TEMPLATE } from '../../consts/derivation'
 import { Account, AccountId, AccountOnchainState } from '../../interfaces/account'
 import { Banner } from '../../interfaces/banner'
 import { DappProviderRequest } from '../../interfaces/dapp'
@@ -79,7 +80,8 @@ import { SignMessageController } from '../signMessage/signMessage'
 const STATUS_WRAPPED_METHODS = {
   onAccountAdderSuccess: 'INITIAL',
   broadcastSignedAccountOp: 'INITIAL',
-  removeAccount: 'INITIAL'
+  removeAccount: 'INITIAL',
+  handleAccountAdderInitLedger: 'INITIAL'
 } as const
 
 export class MainController extends EventEmitter {
@@ -499,6 +501,55 @@ export class MainController extends EventEmitter {
     await this.activity.addSignedMessage(signedMessage, signedMessage.accountAddr)
   }
 
+  async #handleAccountAdderInitLedger(
+    LedgerKeyIterator: any // TODO: KeyIterator type mismatch
+  ) {
+    if (this.accountAdder.isInitialized) this.accountAdder.reset()
+
+    try {
+      const ledgerCtrl = this.#externalSignerControllers.ledger
+      if (!ledgerCtrl) {
+        const message =
+          'Could not initialize connection with your Ledger device. Please try again later or contact Ambire support.'
+        throw new EmittableError({ message, level: 'major', error: new Error(message) })
+      }
+
+      // The second time a connection gets requested onwards,
+      // the Ledger device throws with "invalid channel" error.
+      // To overcome this, always make sure to clean up before starting
+      // a new session, if the device is already unlocked.
+      if (ledgerCtrl.sdkSession) await ledgerCtrl.cleanUp()
+
+      await ledgerCtrl.unlock()
+
+      if (!ledgerCtrl.walletSDK) {
+        const message = 'Could not establish connection with the Ledger device'
+        throw new EmittableError({ message, level: 'major', error: new Error(message) })
+      }
+
+      const keyIterator = new LedgerKeyIterator({ walletSDK: ledgerCtrl.walletSDK })
+      this.accountAdder.init({
+        keyIterator,
+        hdPathTemplate: BIP44_LEDGER_DERIVATION_TEMPLATE
+      })
+
+      return await this.accountAdder.setPage({
+        page: 1,
+        networks: this.networks.networks,
+        providers: this.providers.providers
+      })
+    } catch (error: any) {
+      const message = error?.message || 'Could not unlock the Ledger device. Please try again.'
+      throw new EmittableError({ message, level: 'major', error })
+    }
+  }
+
+  async handleAccountAdderInitLedger(LedgerKeyIterator: any /* TODO: KeyIterator type mismatch */) {
+    await this.withStatus('handleAccountAdderInitLedger', async () =>
+      this.#handleAccountAdderInitLedger(LedgerKeyIterator)
+    )
+  }
+
   async updateAccountsOpsStatuses() {
     await this.#initialLoadPromise
 
@@ -693,12 +744,14 @@ export class MainController extends EventEmitter {
   async buildUserRequestFromDAppRequest(
     request: DappProviderRequest,
     dappPromise: {
+      session: { name: string; origin: string; icon: string }
       resolve: (data: any) => void
       reject: (data: any) => void
     }
   ) {
     await this.#initialLoadPromise
     let userRequest = null
+    let withPriority = false
     const kind = dappRequestMethodToActionKind(request.method)
     const dapp = this.dapps.getDapp(request.origin)
 
@@ -707,6 +760,12 @@ export class MainController extends EventEmitter {
 
       const transaction = request.params[0]
       const accountAddr = getAddress(transaction.from)
+      const account = this.accounts.accounts.find((a) => a.addr === accountAddr)
+
+      if (!account) {
+        throw ethErrors.provider.unauthorized('Transaction failed - unknown account address')
+      }
+
       const network = this.networks.networks.find(
         (n) => Number(n.chainId) === Number(dapp?.chainId)
       )
@@ -730,6 +789,15 @@ export class MainController extends EventEmitter {
         meta: { isSignAction: true, accountAddr, networkId: network.id },
         dappPromise
       } as SignUserRequest
+      if (!account.creation) {
+        const otherUserRequestFromSameDapp = this.userRequests.find(
+          (r) => r.dappPromise?.session?.origin === dappPromise?.session?.origin
+        )
+
+        if (!otherUserRequestFromSameDapp && !!dappPromise?.session?.origin) {
+          withPriority = true
+        }
+      }
     } else if (kind === 'message') {
       if (!this.accounts.selectedAccount) throw ethErrors.rpc.internal()
 
@@ -846,8 +914,18 @@ export class MainController extends EventEmitter {
       } as DappUserRequest
     }
 
+    if (userRequest.action.kind !== 'calls') {
+      const otherUserRequestFromSameDapp = this.userRequests.find(
+        (r) => r.dappPromise?.session?.origin === dappPromise?.session?.origin
+      )
+
+      if (!otherUserRequestFromSameDapp && !!dappPromise?.session?.origin) {
+        withPriority = true
+      }
+    }
+
     if (userRequest) {
-      await this.addUserRequest(userRequest)
+      await this.addUserRequest(userRequest, withPriority)
       this.emitUpdate()
     }
   }
@@ -859,6 +937,8 @@ export class MainController extends EventEmitter {
   ) {
     await this.#initialLoadPromise
     if (!this.accounts.selectedAccount) return
+
+    const account = this.accounts.accounts.find((a) => a.addr === this.accounts.selectedAccount)!
 
     const userRequest = buildTransferUserRequest({
       selectedAccount: this.accounts.selectedAccount,
@@ -878,7 +958,7 @@ export class MainController extends EventEmitter {
       return
     }
 
-    await this.addUserRequest(userRequest)
+    await this.addUserRequest(userRequest, !account.creation)
   }
 
   resolveUserRequest(data: any, requestId: UserRequest['id']) {
@@ -1254,7 +1334,7 @@ export class MainController extends EventEmitter {
         )
 
       // Take the fee tokens from two places: the user's tokens and his gasTank
-      // The gastTank tokens participate on each network as they belong everywhere
+      // The gasTank tokens participate on each network as they belong everywhere
       // NOTE: at some point we should check all the "?" signs below and if
       // an error pops out, we should notify the user about it
       const networkFeeTokens =
