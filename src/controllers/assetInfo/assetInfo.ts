@@ -5,20 +5,14 @@ import { Network, NetworkId } from '../../interfaces/network'
 import { GetOptions, Portfolio } from '../../libs/portfolio'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
-type AssetInfos = {
-  [addressAndChain: string]: 
-  { isLoading: false, 
-    type: 'ERC-20'
-    decimals: number
-    symbol: string
-  }
+export type AssetInfo =
+  | { type: 'ERC-20'; decimals: number; symbol: string }
   | {
-    type: 'ERC-721'
-    name: string
-    isLoading:false
-  }
-  |  { isLoading: true }
-}
+      type: 'ERC-721'
+      name: string
+      isLoading: false
+    }
+  | { type: 'LOADING' }
 
 /**
  * Asset Info controller- responsible for handling the token and nft metadata
@@ -29,7 +23,7 @@ export class AssetInfoController extends EventEmitter {
 
   #hasScheduledFetching: { [network: NetworkId]: boolean } = {}
 
-  assetInfos: AssetInfos = {}
+  assetInfos: { [addressAndNetwork: string]: AssetInfo } = {}
 
   #loadingNetworkAddressPairs: { address: string; network: NetworkId }[] = []
 
@@ -44,21 +38,28 @@ export class AssetInfoController extends EventEmitter {
     const options: Partial<GetOptions> = { disableAutoDiscovery: true, additionalHints: addresses }
     const portfolioResponse = await portfolio.get(ZeroAddress, options)
 
-    portfolioResponse.tokens.forEach(t=>{
-      this.assetInfos[`${t?.address}:${t?.networkId}`] = { type:'ERC-20', decimals: t?.decimals, symbol: t?.symbol , isLoading:false }
+    portfolioResponse.tokens.forEach((t) => {
+      this.assetInfos[`${t?.address}:${t?.networkId}`] = {
+        type: 'ERC-20',
+        decimals: t?.decimals,
+        symbol: t?.symbol
+      }
     })
     this.emitUpdate()
   }
 
+  // @TODO add nfts
   /**
-   * Resolves the ENS and UD names for an address if such exist.
+   * Resolves symbol and decimals for tokens or name for nfts.
    */
   async resolveAssetInfo(address: string, network: Network, urgency?: number) {
     const checksummedAddress = getAddress(address)
     const isAlreadyFound = !!this.assetInfos[`${checksummedAddress}:${network}`]
+    // this is also a guard for not adding assets that are currently loading
     if (isAlreadyFound) return
-    if (!this.#hasScheduledFetching[network.id]){
-      this.assetInfos[`${checksummedAddress}:${network}`] = { isLoading: true }
+
+    if (!this.#hasScheduledFetching[network.id]) {
+      this.assetInfos[`${checksummedAddress}:${network}`] = { type: 'LOADING' }
       this.#loadingNetworkAddressPairs.push({ address: checksummedAddress, network: network.id })
       this.#hasScheduledFetching[network.id] = true
       setTimeout(() => {
@@ -77,11 +78,12 @@ export class AssetInfoController extends EventEmitter {
           })
         })
         // remove tokens we just updated
-        this.#loadingNetworkAddressPairs = this.#loadingNetworkAddressPairs
-            .filter((x) => x.network !== network.id)
-        
+        this.#loadingNetworkAddressPairs = this.#loadingNetworkAddressPairs.filter(
+          (x) => x.network !== network.id
+        )
+
         this.#hasScheduledFetching[network.id] = false
-      }, urgency || 200)
+      }, urgency || 500)
     }
 
     this.emitUpdate()
