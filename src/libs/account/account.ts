@@ -292,6 +292,13 @@ export const getDefaultAccountPreferences = (
   }
 }
 
+export const DEFAULT_KEY_LABEL_PATTERN = /^Key (\d+)$/
+export const getDefaultKeyLabel = (prevKeys: Key[], i: number) => {
+  const number = prevKeys.length + i + 1
+
+  return `Key ${number}`
+}
+
 // As of version 4.25.0, a new Account interface has been introduced,
 // merging the previously separate Account and AccountPreferences interfaces.
 // This change requires a migration due to the introduction of a new controller, AccountsController,
