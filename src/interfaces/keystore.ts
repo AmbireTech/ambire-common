@@ -31,9 +31,8 @@ export interface ExternalSignerController {
   cleanUp: () => void // Trezor and Ledger specific
   isInitiated?: boolean // Trezor specific
   initialLoadPromise?: Promise<void> // Trezor specific
-  walletSDK: any // Ledger and Trezor specific.
+  walletSDK?: any // Ledger and Trezor specific.
   // TODO: Refine the rest of the props
-  walletSDK?: any // Ledger specific
   isWebHID?: boolean // Ledger specific
   transport?: any // Ledger specific
   appName?: string // Lattice specific
