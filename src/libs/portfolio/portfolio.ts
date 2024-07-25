@@ -191,6 +191,7 @@ export class Portfolio {
         )
       )
     ])
+    const [ tokensWithErrResult, blockNumber ] = tokensWithErr
 
     // Re-map/filter into our format
     const getPriceFromCache = (address: string) => {
@@ -207,9 +208,9 @@ export class Portfolio {
     const tokenFilter = ([error, result]: [string, TokenResult]): boolean =>
       error === '0x' && !!result.symbol
 
-    const tokensWithoutPrices = tokensWithErr
-      .filter((tokenWithErr) => tokenFilter(tokenWithErr))
-      .map(([, result]) => result)
+    const tokensWithoutPrices = tokensWithErrResult
+      .filter((tokensWithErrResult: [string,TokenResult]) => tokenFilter(tokensWithErrResult))
+      .map(([, result]: [any, TokenResult]) => result)
 
     const unfilteredCollections = collectionsWithErr.map(([error, x], i) => {
       const address = collectionsHints[i][0] as unknown as string
@@ -232,7 +233,7 @@ export class Portfolio {
     // Update prices and set the priceIn for each token by reference,
     // updating the final tokens array as a result
     const tokensWithPrices = await Promise.all(
-      tokensWithoutPrices.map(async (token) => {
+      tokensWithoutPrices.map(async (token: { address: string }) => {
         let priceIn: TokenResult['priceIn'] = []
         const cachedPriceIn = getPriceFromCache(token.address)
 
@@ -301,9 +302,10 @@ export class Portfolio {
       priceUpdateTime: priceUpdateDone - oracleCallDone,
       priceCache,
       tokens: tokensWithPrices,
-      tokenErrors: tokensWithErr
-        .filter(([error, result]) => error !== '0x' || result.symbol === '')
-        .map(([error, result]) => ({ error, address: result.address })),
+      blockNumber,
+      tokenErrors: tokensWithErrResult
+        .filter(([error, result]: [string, TokenResult]) => error !== '0x' || result.symbol === '')
+        .map(([error, result]: [string, TokenResult]) => ({ error, address: result.address })),
       collections: collections.filter((x) => x.collectibles?.length)
     }
   }

@@ -54,7 +54,7 @@ describe('Networks Controller', () => {
         if (isLoading) return
         const mantleNetworkInfo: NetworkInfo = networkInfoLoading as NetworkInfo
         // mantle has the entry point uploaded
-        expect(mantleNetworkInfo?.erc4337.enabled).toBe(false)
+        expect(mantleNetworkInfo?.erc4337.enabled).toBe(true)
         expect(mantleNetworkInfo?.erc4337.hasPaymaster).toBe(false)
         // has smart accounts
         expect(mantleNetworkInfo?.isSAEnabled).toBe(true)
