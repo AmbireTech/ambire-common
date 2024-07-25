@@ -52,6 +52,7 @@ export interface SignUserRequest {
   }
   // defined only when SignUserRequest is built from a DappRequest
   dappPromise?: {
+    session: { name: string; origin: string; icon: string }
     resolve: (data: any) => void
     reject: (data: any) => void
   }
@@ -69,6 +70,7 @@ export interface DappUserRequest {
     [key: string]: any
   }
   dappPromise: {
+    session: { name: string; origin: string; icon: string }
     resolve: (data: any) => void
     reject: (data: any) => void
   }
