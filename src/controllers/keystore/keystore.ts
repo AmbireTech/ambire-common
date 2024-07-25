@@ -28,8 +28,7 @@ import {
   KeystoreSignerType,
   MainKey,
   MainKeyEncryptedWithSecret,
-  StoredKey,
-  StoredSeed
+  StoredKey
 } from '../../interfaces/keystore'
 import { Storage } from '../../interfaces/storage'
 import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter'
@@ -87,7 +86,7 @@ export class KeystoreController extends EventEmitter {
 
   #storage: Storage
 
-  #keystoreMainSeed: string | null = null
+  #keystoreDefaultSeed: string | null = null
 
   #keystoreSigners: Partial<{ [key in Key['type']]: KeystoreSignerType }>
 
@@ -119,7 +118,7 @@ export class KeystoreController extends EventEmitter {
 
   async #load() {
     try {
-      this.#keystoreMainSeed = await this.#storage.get('keystoreMainSeed', null)
+      this.#keystoreDefaultSeed = await this.#storage.get('keystoreDefaultSeed', null)
       this.#keystoreKeys = await this.#storage.get('keystoreKeys', [])
       this.keyStoreUid = await this.#storage.get('keyStoreUid', null)
     } catch (e) {
@@ -362,7 +361,7 @@ export class KeystoreController extends EventEmitter {
       })
     }
 
-    if (this.#keystoreMainSeed) {
+    if (this.#keystoreDefaultSeed) {
       throw new EmittableError({
         message: 'You can have only one primary seed phrase for that wallet',
         level: 'major',
@@ -373,8 +372,8 @@ export class KeystoreController extends EventEmitter {
     // Set up the cipher
     const counter = new aes.Counter(this.#mainKey!.iv) // TS compiler fails to detect we check for null above
     const aesCtr = new aes.ModeOfOperation.ctr(this.#mainKey!.key, counter) // TS compiler fails to detect we check for null above
-    this.#keystoreMainSeed = hexlify(aesCtr.encrypt(new TextEncoder().encode(seed)))
-    await this.#storage.set('keystoreMainSeed', this.#keystoreMainSeed)
+    this.#keystoreDefaultSeed = hexlify(aesCtr.encrypt(new TextEncoder().encode(seed)))
+    await this.#storage.set('keystoreDefaultSeed', this.#keystoreDefaultSeed)
 
     this.emitUpdate()
   }
@@ -614,9 +613,9 @@ export class KeystoreController extends EventEmitter {
     await this.#initialLoadPromise
 
     if (!this.isUnlocked) throw new Error('keystore: not unlocked')
-    if (!this.#keystoreMainSeed) throw new Error('keystore: no seed phrase added yet')
+    if (!this.#keystoreDefaultSeed) throw new Error('keystore: no seed phrase added yet')
 
-    const encryptedSeedBytes = getBytes(this.#keystoreMainSeed)
+    const encryptedSeedBytes = getBytes(this.#keystoreDefaultSeed)
     // @ts-ignore
     const counter = new aes.Counter(this.#mainKey.iv)
     // @ts-ignore
@@ -673,8 +672,8 @@ export class KeystoreController extends EventEmitter {
     return this.#keystoreSecrets.some((x) => x.id === 'password')
   }
 
-  get hasKeystoreMainSeed() {
-    return !!this.#keystoreMainSeed
+  get hasKeystoreDefaultSeed() {
+    return !!this.#keystoreDefaultSeed
   }
 
   toJSON() {
@@ -684,7 +683,7 @@ export class KeystoreController extends EventEmitter {
       isUnlocked: this.isUnlocked, // includes the getter in the stringified instance
       keys: this.keys,
       hasPasswordSecret: this.hasPasswordSecret,
-      hasKeystoreMainSeed: this.hasKeystoreMainSeed
+      hasKeystoreDefaultSeed: this.hasKeystoreDefaultSeed
     }
   }
 }
