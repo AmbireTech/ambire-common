@@ -78,6 +78,7 @@ export interface PortfolioLibGetResult {
   collections: CollectionResult[]
   hintsFromExternalAPI: Hints | null
   errors: ExtendedError[]
+  blockNumber: number
 }
 
 interface Total {

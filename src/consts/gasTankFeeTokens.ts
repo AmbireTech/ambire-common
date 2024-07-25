@@ -91,6 +91,13 @@ export default [
     icon: 'https://assets.coingecko.com/coins/images/279/large/ethereum.png'
   },
   {
+    address: '0x4200000000000000000000000000000000000006',
+    symbol: 'weth',
+    networkId: 'optimism',
+    decimals: 18,
+    icon: 'https://assets.coingecko.com/coins/images/2518/small/weth.png'
+  },
+  {
     address: '0x0000000000000000000000000000000000000000',
     symbol: 'okt',
     networkId: 'okc',
@@ -540,6 +547,13 @@ export default [
     networkId: 'arbitrum',
     decimals: 18,
     icon: 'https://assets.coingecko.com/coins/images/9956/small/4943.png'
+  },
+  {
+    address: '0x82aF49447D8a07e3bd95BD0d56f35241523fBab1',
+    symbol: 'weth',
+    networkId: 'arbitrum',
+    decimals: 18,
+    icon: 'https://assets.coingecko.com/coins/images/2518/small/weth.png'
   },
   {
     address: '0x382bB369d343125BfB2117af9c149795C6C65C50',
