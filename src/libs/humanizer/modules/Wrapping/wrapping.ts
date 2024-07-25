@@ -1,141 +1,9 @@
 import { Interface, ZeroAddress } from 'ethers'
 
-import { FEE_COLLECTOR } from '../../../../consts/addresses'
 import { AccountOp } from '../../../accountOp/accountOp'
 import { WETH } from '../../const/abis'
 import { HumanizerCallModule, HumanizerMeta, IrCall } from '../../interfaces'
-import {
-  getAction,
-  getToken,
-  getUnknownVisualization,
-  getUnwrapping,
-  getWrapping
-} from '../../utils'
-
-// @TODO move to a separate module
-const wrapSwapReducer = (calls: IrCall[]): IrCall[] => {
-  const newCalls: IrCall[] = []
-  // @TODO optimize to not require update=true on every match case
-  let updated = false
-  for (let i = 0; i < calls.length; i++) {
-    if (
-      // swapping x amount of token for y of WETH and unwrapping y WETH for y ETH
-      calls[i]?.fullVisualization?.[0].content?.includes('Swap') &&
-      calls[i + 1]?.fullVisualization?.[0].content?.includes('Unwrap') &&
-      calls[i + 1]?.fullVisualization?.[1].address &&
-      calls[i]?.fullVisualization?.[3].value === calls[i + 1]?.fullVisualization?.[1]?.value
-    ) {
-      const newVisualization = calls[i]?.fullVisualization!
-      newVisualization[3].address = ZeroAddress
-
-      newCalls.push({
-        to: calls[i].to,
-        value: calls[i].value + calls[i + 1].value,
-        // the unwrap call.data is omitted
-        data: calls[i].data,
-        fromUserRequestId: calls[i].fromUserRequestId,
-        fullVisualization: newVisualization
-      })
-      i += 1
-      updated = true
-    } else if (
-      calls[i]?.fullVisualization?.[0].content?.includes('Wrap') &&
-      calls[i + 1]?.fullVisualization?.[0].content?.includes('Swap') &&
-      calls[i].value === calls[i + 1]?.fullVisualization?.[1].value &&
-      calls[i + 1]?.fullVisualization?.[1].address
-    ) {
-      const newVisualization = calls[i + 1]?.fullVisualization!
-      newVisualization[1].address = ZeroAddress
-      newCalls.push({
-        to: calls[i + 1].to,
-        value: calls[i].value + calls[i + 1].value,
-        // the wrap data is omitted
-        data: calls[i + 1].data,
-        fromUserRequestId: calls[i].fromUserRequestId,
-        fullVisualization: newVisualization
-      })
-      i += 1
-      updated = true
-    } else if (
-      calls[i]?.fullVisualization?.[0].content?.includes('Swap') &&
-      calls[i + 1]?.fullVisualization?.[0].content?.includes('Swap') &&
-      calls[i]?.fullVisualization?.[1]?.address &&
-      calls[i + 1]?.fullVisualization?.[1]?.address &&
-      calls[i]?.fullVisualization?.[3]?.address &&
-      calls[i + 1]?.fullVisualization?.[3]?.address &&
-      calls[i]?.fullVisualization?.[1]?.address === calls[i + 1]?.fullVisualization?.[1]?.address &&
-      calls[i]?.fullVisualization?.[3]?.address === calls[i + 1]?.fullVisualization?.[3]?.address &&
-      calls[i]?.fullVisualization?.[2]?.content?.startsWith('for')
-    ) {
-      const newVisualization = calls[i + 1]?.fullVisualization!
-      newVisualization[1].value =
-        calls[i]!.fullVisualization![1].value! + calls[i + 1].fullVisualization![1].value!
-      newVisualization[3].value =
-        calls[i]!.fullVisualization![3].value! + calls[i + 1].fullVisualization![3].value!
-
-      newCalls.push({
-        to: calls[i].to,
-        value: calls[i].value + calls[i + 1].value,
-        // second's call data is omitted
-        data: calls[i].data,
-        fromUserRequestId: calls[i].fromUserRequestId,
-        fullVisualization: newVisualization
-      })
-      i += 1
-      updated = true
-    } else if (
-      (calls[i]?.fullVisualization?.length || 0) >= 4 &&
-      calls[i]?.fullVisualization?.[3]?.type === 'token' &&
-      calls[i]?.fullVisualization?.[3]?.address &&
-      calls[i]?.fullVisualization?.[0].content?.includes('Swap') &&
-      calls[i]?.fullVisualization?.[1]?.value === calls[i].value &&
-      calls[i]?.fullVisualization?.[1]?.value === calls[i + 1]?.fullVisualization?.[1]?.value &&
-      // @NOTE: there is not check for swap's tokens
-      calls[i + 1]?.fullVisualization?.[0].content?.includes('Withdraw') &&
-      calls[i + 1]?.fullVisualization?.[1]?.address === ZeroAddress
-    ) {
-      const newVisualization = calls[i].fullVisualization!
-      newVisualization[1] = getToken(ZeroAddress, calls[i].value)
-      newVisualization[3] = getToken(
-        calls[i].fullVisualization![3].address!,
-        calls[i].fullVisualization![3].value!
-      )
-      newCalls.push({
-        to: calls[i].to,
-        value: calls[i].value + calls[i + 1].value,
-        // second's call data is omitted
-        data: calls[i].data,
-        fromUserRequestId: calls[i].fromUserRequestId,
-        fullVisualization: newVisualization
-      })
-      i += 1
-      updated = true
-      // @TODO to add test
-    } else if (
-      calls[i].fullVisualization?.[0]?.content === 'Wrap' &&
-      calls[i + 1].fullVisualization?.[0]?.content === 'Fuel gas tank with' &&
-      calls[i].fullVisualization?.[1].value &&
-      calls[i + 1].fullVisualization?.[1].value &&
-      calls[i].fullVisualization?.[1].value === calls[i + 1].fullVisualization?.[1].value
-    ) {
-      newCalls.push({
-        ...calls,
-        to: FEE_COLLECTOR,
-        data: '0x',
-        value: calls[i].value + calls[i + 1].value,
-        fullVisualization: [
-          getAction('Fuel gas tank with'),
-          getToken(ZeroAddress, calls[i + 1].fullVisualization![1].value!)
-        ]
-      })
-      i += 1
-      updated = true
-    } else {
-      newCalls.push(calls[i])
-    }
-  }
-  return updated ? wrapSwapReducer(newCalls) : newCalls
-}
+import { getUnknownVisualization, getUnwrapping, getWrapping } from '../../utils'
 
 export const wrappingModule: HumanizerCallModule = (
   _: AccountOp,
@@ -176,6 +44,5 @@ export const wrappingModule: HumanizerCallModule = (
     }
     return call
   })
-  const parsedCalls = wrapSwapReducer(newCalls)
-  return [parsedCalls, []]
+  return [newCalls, []]
 }

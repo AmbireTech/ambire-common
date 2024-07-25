@@ -1,4 +1,3 @@
-import { Account } from '../../interfaces/account'
 import {
   AccountState,
   CollectionResult as CollectionResultInterface,
@@ -18,7 +17,7 @@ export function calculateAccountPortfolio(
   selectedAccount: string | null,
   state: { latest: PortfolioControllerState; pending: PortfolioControllerState },
   accountPortfolio: AccountPortfolio,
-  account: Account
+  hasSignAccountOp: null | boolean
 ) {
   const updatedTokens: TokenResultInterface[] = []
   const updatedCollections: CollectionResultInterface[] = []
@@ -54,8 +53,23 @@ export function calculateAccountPortfolio(
   const pendingAccountStateWithoutCriticalErrors = Object.keys(
     state.pending[selectedAccount]
   ).reduce((acc, network) => {
+    if (
+      !selectedAccountData[network]?.result?.blockNumber ||
+      !state.pending[selectedAccount][network]?.result?.blockNumber
+    )
+      return acc
+
     // Filter out networks with critical errors
-    if (!state.pending[selectedAccount][network]?.criticalError) {
+    // and pending state which is with newer blockNumber
+    // or has sign account op
+    const isPendingNewer =
+      state.pending[selectedAccount][network]?.result?.blockNumber! >=
+      selectedAccountData[network]?.result?.blockNumber!
+
+    if (
+      !state.pending[selectedAccount][network]?.criticalError &&
+      (isPendingNewer || hasSignAccountOp)
+    ) {
       acc[network] = state.pending[selectedAccount][network]
     }
     return acc

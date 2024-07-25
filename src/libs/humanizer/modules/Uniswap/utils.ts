@@ -1,7 +1,7 @@
 import { ZeroAddress } from 'ethers'
 
 import { HumanizerVisualization } from '../../interfaces'
-import { getRecipientText } from '../../utils'
+import { getLabel, getRecipientText } from '../../utils'
 
 export function parsePath(pathBytes: any) {
   // some decodePacked fun
@@ -18,3 +18,14 @@ export const getUniRecipientText = (accAddr: string, recAddr: string): Humanizer
   ['0x0000000000000000000000000000000000000001', ZeroAddress].includes(recAddr)
     ? []
     : getRecipientText(accAddr, recAddr)
+
+/**
+ * @example
+ * // supposed to work like, but join returns a string
+ * input.join(getLabel('and'))
+ */
+export const joinWithAndLabel = (
+  humanizations: HumanizerVisualization[][]
+): HumanizerVisualization[] => {
+  return humanizations.reduce((acc, arr) => [...acc, ...arr, getLabel('and')], []).slice(0, -1)
+}
