@@ -6,22 +6,28 @@ import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json'
 import EmittableError from '../../classes/EmittableError'
 import { AMBIRE_ACCOUNT_FACTORY, SINGLETON } from '../../consts/deploy'
-import { BIP44_LEDGER_DERIVATION_TEMPLATE } from '../../consts/derivation'
+import { BIP44_LEDGER_DERIVATION_TEMPLATE, HD_PATH_TEMPLATE_TYPE } from '../../consts/derivation'
 import { Account, AccountId, AccountOnchainState } from '../../interfaces/account'
 import { Banner } from '../../interfaces/banner'
 import { DappProviderRequest } from '../../interfaces/dapp'
 import { Fetch } from '../../interfaces/fetch'
 import {
+  ExternalKey,
   ExternalSignerControllers,
   Key,
   KeystoreSignerType,
+  ReadyToAddKeys,
   TxnRequest
 } from '../../interfaces/keystore'
 import { AddNetworkRequestParams, Network, NetworkId } from '../../interfaces/network'
 import { Storage } from '../../interfaces/storage'
 import { Calls, DappUserRequest, SignUserRequest, UserRequest } from '../../interfaces/userRequest'
 import { WindowManager } from '../../interfaces/window'
-import { isSmartAccount } from '../../libs/account/account'
+import {
+  getDefaultKeyLabel,
+  isDerivedForSmartAccountKeyOnly,
+  isSmartAccount
+} from '../../libs/account/account'
 import { AccountOp, AccountOpStatus, getSignableCalls } from '../../libs/accountOp/accountOp'
 import { Call as AccountOpCall } from '../../libs/accountOp/types'
 import {
@@ -296,6 +302,7 @@ export class MainController extends EventEmitter {
     this.updateSelectedAccountPortfolio()
 
     /**
+     * TODO: Remove:
      * Listener that gets triggered as a finalization step of adding new
      * accounts via the AccountAdder controller flow.
      *
@@ -331,6 +338,99 @@ export class MainController extends EventEmitter {
 
     this.isReady = true
     this.emitUpdate()
+  }
+
+  async handleAddAccounts() {
+    await this.#initialLoadPromise
+
+    const readyToAddKeys: ReadyToAddKeys = { internal: [], external: [] }
+
+    if (this.accountAdder.type === 'internal') {
+      readyToAddKeys.internal = this.accountAdder.retrieveInternalKeysOfSelectedAccounts()
+    } else {
+      // External keys flow
+      const keyType = this.accountAdder.type as ExternalKey['type']
+
+      const ledgerCtrl = this.#externalSignerControllers.ledger
+      const trezorCtrl = this.#externalSignerControllers.trezor
+      const latticeCtrl = this.#externalSignerControllers.lattice
+
+      if (!ledgerCtrl && !trezorCtrl && !latticeCtrl) {
+        const message =
+          'During the account import preparation step, Ambire could not retrieve hardware wallet required information. Please try again later or contact Ambire support.'
+        return this.emitError({ level: 'major', message, error: new Error(message) })
+      }
+
+      const deviceIds: { [key in ExternalKey['type']]: string } = {
+        ledger: ledgerCtrl?.deviceId || 'unknown',
+        trezor: trezorCtrl?.deviceId || 'unknown',
+        lattice: latticeCtrl?.deviceId || 'unknown'
+      }
+
+      const deviceModels: { [key in ExternalKey['type']]: string } = {
+        ledger: ledgerCtrl?.deviceModel || 'unknown',
+        trezor: trezorCtrl?.deviceModel || 'unknown',
+        lattice: latticeCtrl?.deviceModel || 'unknown'
+      }
+
+      const readyToAddExternalKeys = this.accountAdder.selectedAccounts.flatMap(({ accountKeys }) =>
+        accountKeys.map(({ addr, index }) => ({
+          addr,
+          type: keyType,
+          dedicatedToOneSA: isDerivedForSmartAccountKeyOnly(index),
+          meta: {
+            deviceId: deviceIds[keyType],
+            deviceModel: deviceModels[keyType],
+            // always defined in the case of external keys
+            hdPathTemplate: this.accountAdder.hdPathTemplate as HD_PATH_TEMPLATE_TYPE,
+            index
+          }
+        }))
+      )
+
+      readyToAddKeys.external = readyToAddExternalKeys
+    }
+
+    const readyToAddKeyPreferences = this.accountAdder.selectedAccounts.flatMap(
+      ({ account, accountKeys }) =>
+        accountKeys
+          .filter(({ addr }) => {
+            const hasPreferences = this.settings.keyPreferences.some(
+              (pref) => pref.addr === addr && pref.type === (this.accountAdder.type as Key['type'])
+            )
+
+            // Skip keys that already have preferences. Otherwise,
+            // the preferences would get reset to default.
+            return !hasPreferences
+          })
+          .map(({ addr }, i: number) => ({
+            addr,
+            type: this.accountAdder.type as Key['type'],
+            label: getDefaultKeyLabel(
+              this.keystore.keys.filter((key) => account.associatedKeys.includes(key.addr)),
+              i
+            )
+          }))
+    )
+
+    await this.accountAdder.addAccounts(
+      this.accountAdder.selectedAccounts,
+      readyToAddKeys,
+      readyToAddKeyPreferences
+    )
+
+    // Add accounts first, because some of the next steps have validation
+    // if accounts exists.
+    await this.accounts.addAccounts(this.accountAdder.readyToAddAccounts)
+
+    // Then add keys, because some of the next steps could have validation
+    // if keys exists. Should be separate (not combined in Promise.all,
+    // since firing multiple keystore actions is not possible
+    // (the #wrapKeystoreAction listens for the first one to finish and
+    // skips the parallel one, if one is requested).
+    await this.keystore.addKeys(this.accountAdder.readyToAddKeys.internal)
+    await this.keystore.addKeysExternallyStored(this.accountAdder.readyToAddKeys.external)
+    await this.settings.addKeyPreferences(this.accountAdder.readyToAddKeyPreferences)
   }
 
   initSignAccOp(actionId: AccountOpAction['id']): null | void {
