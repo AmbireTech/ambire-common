@@ -13,7 +13,9 @@ export type AssetInfo =
       isLoading: false
     }
   | { type: 'LOADING' }
+  | { type: 'NON-ASSET' }
 
+const DEBOUNCE_TIMEOUT = 500
 /**
  * Asset Info controller- responsible for handling the token and nft metadata
  * Resolved names are saved in `assetInfo` for a short period of time(15 minutes) to avoid unnecessary lookups.
@@ -21,11 +23,12 @@ export type AssetInfo =
 export class AssetInfoController extends EventEmitter {
   #fetch: Fetch
 
-  #hasScheduledFetching: { [network: NetworkId]: boolean } = {}
+  #loadingNetworkAddressPairs: { address: string; network: NetworkId }[] = []
+
+  // public for testing purposes
+  hasScheduledFetching: { [network: NetworkId]: boolean } = {}
 
   assetInfos: { [addressAndNetwork: string]: AssetInfo } = {}
-
-  #loadingNetworkAddressPairs: { address: string; network: NetworkId }[] = []
 
   constructor(fetch: Fetch) {
     super()
@@ -52,16 +55,16 @@ export class AssetInfoController extends EventEmitter {
   /**
    * Resolves symbol and decimals for tokens or name for nfts.
    */
-  async resolveAssetInfo(address: string, network: Network, urgency?: number) {
+  async resolveAssetInfo(address: string, network: Network) {
     const checksummedAddress = getAddress(address)
     const isAlreadyFound = !!this.assetInfos[`${checksummedAddress}:${network}`]
     // this is also a guard for not adding assets that are currently loading
     if (isAlreadyFound) return
 
-    if (!this.#hasScheduledFetching[network.id]) {
+    if (!this.hasScheduledFetching[network.id]) {
       this.assetInfos[`${checksummedAddress}:${network}`] = { type: 'LOADING' }
       this.#loadingNetworkAddressPairs.push({ address: checksummedAddress, network: network.id })
-      this.#hasScheduledFetching[network.id] = true
+      this.hasScheduledFetching[network.id] = true
       setTimeout(() => {
         this.#executeBatchedFetch(
           this.#loadingNetworkAddressPairs
@@ -82,10 +85,9 @@ export class AssetInfoController extends EventEmitter {
           (x) => x.network !== network.id
         )
 
-        this.#hasScheduledFetching[network.id] = false
-      }, urgency || 500)
+        this.hasScheduledFetching[network.id] = false
+      }, DEBOUNCE_TIMEOUT)
+      this.emitUpdate()
     }
-
-    this.emitUpdate()
   }
 }
