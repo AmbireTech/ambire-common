@@ -101,6 +101,7 @@ export async function estimate4337(
     nativeToCheck,
     network.isOptimistic ? OPTIMISTIC_ORACLE : ZeroAddress
   ]
+
   const estimations = await Promise.all([
     deploylessEstimator
       .call('estimate', checkInnerCallsArgs, {
@@ -109,7 +110,7 @@ export async function estimate4337(
       })
       .catch(catchEstimationFailure),
     bundlerEstimate(account, accountStates, op, network, feeTokens),
-    estimateGas(account, op, provider, accountState, network).catch(() => 0n)
+    estimateGas(account, op, provider, accountState, network, feeTokens).catch(() => 0n)
   ])
   const ambireEstimation = estimations[0]
   const bundlerEstimationResult: EstimateResult = estimations[1]
@@ -316,7 +317,7 @@ export async function estimate(
         blockTag
       })
       .catch(catchEstimationFailure),
-    estimateGas(account, op, provider, accountState, network).catch(() => 0n)
+    estimateGas(account, op, provider, accountState, network, feeTokens).catch(() => 0n)
   ]
   const estimations = await estimateWithRetries(initializeRequests)
   if (estimations instanceof Error) return estimationErrorFormatted(estimations)
