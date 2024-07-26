@@ -19,14 +19,22 @@ const REQUEST_1: DappUserRequest = {
   action: { kind: 'dappConnect', params: {} },
   meta: { isSignAction: false },
   session: { name: '', icon: '', origin: '' },
-  dappPromise: { resolve: () => {}, reject: () => {} }
+  dappPromise: {
+    resolve: () => {},
+    reject: () => {},
+    session: { name: 'Test dApp', origin: 'https://test-dApp.com', icon: '' }
+  }
 }
 const REQUEST_2: DappUserRequest = {
   id: 2,
   action: { kind: 'dappConnect', params: {} },
   meta: { isSignAction: false },
   session: { name: '', icon: '', origin: '' },
-  dappPromise: { resolve: () => {}, reject: () => {} }
+  dappPromise: {
+    resolve: () => {},
+    reject: () => {},
+    session: { name: 'Test dApp', origin: 'https://test-dApp.com', icon: '' }
+  }
 }
 const ACTION_1: DappRequestAction = {
   id: REQUEST_1.id,
@@ -146,7 +154,11 @@ describe('Actions Controller', () => {
       action: { kind: 'dappConnect', params: { someUpdatedParams: {} } },
       meta: { isSignAction: false },
       session: { name: '', icon: '', origin: '' },
-      dappPromise: { resolve: () => {}, reject: () => {} }
+      dappPromise: {
+        resolve: () => {},
+        reject: () => {},
+        session: { name: 'Test dApp', origin: 'https://test-dApp.com', icon: '' }
+      }
     }
     const updatedAction2: DappRequestAction = {
       id: updatedReq2.id,
