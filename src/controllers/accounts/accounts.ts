@@ -178,6 +178,8 @@ export class AccountsController extends EventEmitter {
         ...acc,
         // reset the `newlyCreated` state for all already added accounts
         newlyCreated: false,
+        // reset the `newlyAdded` state for all accounts added on prev sessions
+        newlyAdded: false,
         // Merge the existing and new associated keys for the account (if the
         // account was already imported). This ensures up-to-date keys,
         // considering changes post-import (associated keys of the smart
@@ -190,7 +192,7 @@ export class AccountsController extends EventEmitter {
           ])
         )
       })),
-      ...newAccountsNotAddedYet
+      ...newAccountsNotAddedYet.map((a) => ({ ...a, newlyAdded: true }))
     ]
 
     this.accounts = nextAccounts

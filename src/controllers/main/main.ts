@@ -6,8 +6,16 @@ import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json'
 import EmittableError from '../../classes/EmittableError'
 import { AMBIRE_ACCOUNT_FACTORY, SINGLETON } from '../../consts/deploy'
-import { BIP44_LEDGER_DERIVATION_TEMPLATE } from '../../consts/derivation'
-import { Account, AccountId, AccountOnchainState } from '../../interfaces/account'
+import {
+  BIP44_LEDGER_DERIVATION_TEMPLATE,
+  BIP44_STANDARD_DERIVATION_TEMPLATE
+} from '../../consts/derivation'
+import {
+  Account,
+  AccountId,
+  AccountOnchainState,
+  AccountWithNetworkMeta
+} from '../../interfaces/account'
 import { Banner } from '../../interfaces/banner'
 import { DappProviderRequest } from '../../interfaces/dapp'
 import { Fetch } from '../../interfaces/fetch'
@@ -34,6 +42,8 @@ import { estimate } from '../../libs/estimate/estimate'
 import { BundlerGasPrice, EstimateResult } from '../../libs/estimate/interfaces'
 import { GasRecommendation, getGasPriceRecommendations } from '../../libs/gasPrice/gasPrice'
 import { humanizeAccountOp } from '../../libs/humanizer'
+import { KeyIterator } from '../../libs/keyIterator/keyIterator'
+import { getDefaultKeyLabel } from '../../libs/keys/keys'
 import {
   getAccountOpsForSimulation,
   makeBasicAccountOpAction,
@@ -81,7 +91,8 @@ const STATUS_WRAPPED_METHODS = {
   onAccountAdderSuccess: 'INITIAL',
   broadcastSignedAccountOp: 'INITIAL',
   removeAccount: 'INITIAL',
-  handleAccountAdderInitLedger: 'INITIAL'
+  handleAccountAdderInitLedger: 'INITIAL',
+  importSmartAccountFromDefaultSeed: 'INITIAL'
 } as const
 
 export class MainController extends EventEmitter {
@@ -323,6 +334,7 @@ export class MainController extends EventEmitter {
           await this.keystore.addKeys(this.accountAdder.readyToAddKeys.internal)
           await this.keystore.addKeysExternallyStored(this.accountAdder.readyToAddKeys.external)
           await this.settings.addKeyPreferences(this.accountAdder.readyToAddKeyPreferences)
+          await this.accountAdder.reset()
         },
         true
       )
@@ -331,6 +343,94 @@ export class MainController extends EventEmitter {
 
     this.isReady = true
     this.emitUpdate()
+  }
+
+  async importSmartAccountFromDefaultSeed(seed?: string) {
+    await this.withStatus('importSmartAccountFromDefaultSeed', async () => {
+      if (this.accountAdder.isInitialized) this.accountAdder.reset()
+      if (seed && !this.keystore.hasKeystoreDefaultSeed) {
+        await this.keystore.addSeed(seed)
+      }
+
+      const defaultSeed = await this.keystore.getSeed()
+
+      if (!defaultSeed) {
+        throw new EmittableError({
+          message:
+            'Failed to retrieve default seed phrase from keystore. Please try again or contact Ambire support if the issue persists.',
+          level: 'major',
+          error: new Error('failed to retrieve default seed phrase from keystore')
+        })
+      }
+
+      const keyIterator = new KeyIterator(defaultSeed)
+      this.accountAdder.init({
+        keyIterator,
+        hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
+        pageSize: 1
+      })
+
+      let currentPage: number = 1
+      let isAccountAlreadyAdded: boolean
+      let nextSmartAccount: AccountWithNetworkMeta | undefined
+
+      const findNextSmartAccount = async () => {
+        do {
+          // eslint-disable-next-line no-await-in-loop
+          await this.accountAdder.setPage({
+            page: currentPage,
+            networks: this.networks.networks,
+            providers: this.providers.providers
+          })
+
+          nextSmartAccount = this.accountAdder.accountsOnPage.find(
+            ({ isLinked, account }) => !isLinked && isSmartAccount(account)
+          )?.account
+
+          if (!nextSmartAccount) break
+
+          isAccountAlreadyAdded = !!this.accounts.accounts.find(
+            // eslint-disable-next-line @typescript-eslint/no-loop-func
+            (a) => a.addr === nextSmartAccount!.addr
+          )
+
+          currentPage++
+        } while (isAccountAlreadyAdded)
+      }
+
+      await findNextSmartAccount()
+
+      if (!nextSmartAccount) {
+        throw new EmittableError({
+          message:
+            'Internal error while looking for account to add. Please start the process all over again and if the issue persists contact Ambire support.',
+          level: 'major',
+          error: new Error('Internal error: Failed to find a smart account to add')
+        })
+      }
+
+      await this.accountAdder.selectAccount(nextSmartAccount)
+
+      const readyToAddKeys = this.accountAdder.retrieveInternalKeysOfSelectedAccounts()
+
+      const readyToAddKeyPreferences = this.accountAdder.selectedAccounts.flatMap(
+        ({ account, accountKeys }) =>
+          accountKeys.map(({ addr }, i: number) => ({
+            addr,
+            type: 'seed',
+            label: getDefaultKeyLabel(
+              this.keystore.keys.filter((key) => account.associatedKeys.includes(key.addr)),
+              i
+            )
+          }))
+      )
+
+      await this.accountAdder.addAccounts(
+        this.accountAdder.selectedAccounts,
+        { internal: readyToAddKeys, external: [] },
+        readyToAddKeyPreferences
+      )
+    })
   }
 
   initSignAccOp(actionId: AccountOpAction['id']): null | void {
