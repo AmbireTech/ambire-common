@@ -344,9 +344,11 @@ export class TransferController extends EventEmitter {
 
     if (this.amountFieldMode === 'fiat') {
       this.amountInFiat = fieldValue
-      const t = (Number(fieldValue) / tokenPrice).toFixed(this.selectedToken?.decimals).slice(0, -1)
+      const convertedAmount = (Number(fieldValue) / tokenPrice)
+        .toFixed(this.selectedToken?.decimals)
+        .slice(0, -1)
 
-      this.amount = String(t)
+      this.amount = String(parseFloat(convertedAmount))
       return
     }
     if (this.amountFieldMode === 'token') {
