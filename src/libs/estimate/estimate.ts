@@ -8,6 +8,7 @@ import { Network } from '../../interfaces/network'
 import { getAccountDeployParams, isSmartAccount } from '../account/account'
 import { AccountOp } from '../accountOp/accountOp'
 import { Call } from '../accountOp/types'
+import { getFeeCall } from '../calls/calls'
 import { fromDescriptor } from '../deployless/deployless'
 import { getProbableCallData } from '../gasPrice/gasPrice'
 import { TokenResult } from '../portfolio'
@@ -20,6 +21,7 @@ import { catchEstimationFailure, estimationErrorFormatted, mapTxnErrMsg } from '
 import { bundlerEstimate } from './estimateBundler'
 import { estimateEOA } from './estimateEOA'
 import { estimateGas } from './estimateGas'
+import { getFeeTokenForEstimate } from './estimateHelpers'
 import { estimateWithRetries } from './estimateWithRetries'
 import { EstimateResult, FeePaymentOption } from './interfaces'
 import { refund } from './refund'
@@ -102,6 +104,13 @@ export async function estimate4337(
     network.isOptimistic ? OPTIMISTIC_ORACLE : ZeroAddress
   ]
 
+  // add the feeCall to estimateGas. We do it only here as it's handled
+  // in the relayer case but not in 4337 mode
+  const estimateGasOp = { ...op }
+  if (shouldUsePaymaster(network)) {
+    const feeToken = getFeeTokenForEstimate(feeTokens)
+    if (feeToken) estimateGasOp.feeCall = getFeeCall(feeToken, 1n)
+  }
   const estimations = await Promise.all([
     deploylessEstimator
       .call('estimate', checkInnerCallsArgs, {
@@ -110,7 +119,7 @@ export async function estimate4337(
       })
       .catch(catchEstimationFailure),
     bundlerEstimate(account, accountStates, op, network, feeTokens),
-    estimateGas(account, op, provider, accountState, network, feeTokens).catch(() => 0n)
+    estimateGas(account, estimateGasOp, provider, accountState, network).catch(() => 0n)
   ])
   const ambireEstimation = estimations[0]
   const bundlerEstimationResult: EstimateResult = estimations[1]
@@ -317,7 +326,7 @@ export async function estimate(
         blockTag
       })
       .catch(catchEstimationFailure),
-    estimateGas(account, op, provider, accountState, network, feeTokens).catch(() => 0n)
+    estimateGas(account, op, provider, accountState, network).catch(() => 0n)
   ]
   const estimations = await estimateWithRetries(initializeRequests)
   if (estimations instanceof Error) return estimationErrorFormatted(estimations)

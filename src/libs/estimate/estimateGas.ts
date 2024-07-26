@@ -8,10 +8,6 @@ import { Network } from '../../interfaces/network'
 import { getRpcProvider } from '../../services/provider'
 import { getSpoof } from '../account/account'
 import { AccountOp, getSignableCalls } from '../accountOp/accountOp'
-import { getFeeCall } from '../calls/calls'
-import { TokenResult } from '../portfolio'
-import { shouldUsePaymaster } from '../userOperation/userOperation'
-import { getFeeTokenForEstimate } from './estimateHelpers'
 
 // Use this estimateGas only for SA estimations
 export async function estimateGas(
@@ -19,27 +15,18 @@ export async function estimateGas(
   op: AccountOp,
   provider: Provider | JsonRpcProvider,
   accountState: AccountOnchainState,
-  network: Network,
-  feeTokens: TokenResult[]
+  network: Network
 ): Promise<bigint> {
   if (!account.creation) throw new Error('Use this estimation only for smart accounts')
-
-  // add the feeCall to estimateGas if we're using a paymaster
-  // or the network is predefined
-  const localOp = { ...op }
-  if (network.predefined || shouldUsePaymaster(network)) {
-    const feeToken = getFeeTokenForEstimate(feeTokens)
-    if (feeToken) localOp.feeCall = getFeeCall(feeToken, 1n)
-  }
 
   const saAbi = new Interface(AmbireAccount.abi)
   const factoryAbi = new Interface(AmbireFactory.abi)
   const callData = accountState.isDeployed
-    ? saAbi.encodeFunctionData('execute', [getSignableCalls(localOp), getSpoof(account)])
+    ? saAbi.encodeFunctionData('execute', [getSignableCalls(op), getSpoof(account)])
     : factoryAbi.encodeFunctionData('deployAndExecute', [
         account.creation.bytecode,
         account.creation.salt,
-        getSignableCalls(localOp),
+        getSignableCalls(op),
         getSpoof(account)
       ])
 
