@@ -1,4 +1,4 @@
-import { formatUnits, isAddress } from 'ethers'
+import { formatUnits, isAddress, parseUnits } from 'ethers'
 
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { Account } from '../../interfaces/account'
@@ -120,7 +120,14 @@ export class TransferController extends EventEmitter {
     )?.price
     if (!tokenPrice || !Number(this.maxAmount)) return '0'
 
-    return String(Number(this.maxAmount) * tokenPrice)
+    const maxAmount = getTokenAmount(this.selectedToken)
+    const tokenPriceBigInt = parseUnits(
+      tokenPrice.toFixed(this.selectedToken.decimals),
+      this.selectedToken.decimals
+    )
+    const pow = BigInt(10 ** this.selectedToken.decimals)
+
+    return formatUnits((maxAmount * tokenPriceBigInt) / pow, this.selectedToken.decimals)
   }
 
   resetForm() {
@@ -342,13 +349,16 @@ export class TransferController extends EventEmitter {
       return
     }
 
-    if (this.amountFieldMode === 'fiat') {
+    if (this.amountFieldMode === 'fiat' && this.selectedToken?.decimals) {
       this.amountInFiat = fieldValue
-      const convertedAmount = (Number(fieldValue) / tokenPrice)
-        .toFixed(this.selectedToken?.decimals)
-        .slice(0, -1)
+      const fieldValueBigInt = parseUnits(fieldValue, this.selectedToken.decimals * 2)
 
-      this.amount = String(parseFloat(convertedAmount))
+      const priceBigInt = parseUnits(
+        tokenPrice.toFixed(this.selectedToken.decimals),
+        this.selectedToken.decimals
+      )
+
+      this.amount = formatUnits(fieldValueBigInt / priceBigInt, this.selectedToken.decimals)
       return
     }
     if (this.amountFieldMode === 'token') {
