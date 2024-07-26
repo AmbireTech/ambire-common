@@ -31,6 +31,8 @@ const DEFAULT_VALIDATION_FORM_MSGS = {
   }
 }
 
+const HARD_CODED_CURRENCY = 'usd'
+
 export class TransferController extends EventEmitter {
   #networks: Network[] = []
 
@@ -47,6 +49,10 @@ export class TransferController extends EventEmitter {
   isSWWarningAgreed = false
 
   amount = ''
+
+  amountInFiat = ''
+
+  amountFieldMode: 'fiat' | 'token' = 'token'
 
   addressState: AddressState = { ...DEFAULT_ADDRESS_STATE }
 
@@ -73,6 +79,7 @@ export class TransferController extends EventEmitter {
     if (!token || Number(getTokenAmount(token)) === 0) {
       this.#selectedToken = null
       this.amount = ''
+      this.amountInFiat = ''
       return
     }
 
@@ -85,6 +92,7 @@ export class TransferController extends EventEmitter {
       prevSelectedToken?.networkId !== token?.networkId
     ) {
       this.amount = ''
+      this.amountInFiat = ''
       this.#setSWWarningVisibleIfNeeded()
     }
   }
@@ -93,7 +101,7 @@ export class TransferController extends EventEmitter {
     return this.#selectedToken
   }
 
-  get maxAmount() {
+  get maxAmount(): string {
     if (
       !this.selectedToken ||
       getTokenAmount(this.selectedToken) === 0n ||
@@ -101,11 +109,23 @@ export class TransferController extends EventEmitter {
     )
       return '0'
 
-    return formatUnits(getTokenAmount(this.selectedToken), Number(this.selectedToken.decimals))
+    return formatUnits(getTokenAmount(this.selectedToken), this.selectedToken.decimals)
+  }
+
+  get maxAmountInFiat(): string {
+    if (!this.selectedToken || getTokenAmount(this.selectedToken) === 0n) return '0'
+
+    const tokenPrice = this.selectedToken?.priceIn.find(
+      (p) => p.baseCurrency === HARD_CODED_CURRENCY
+    )?.price
+    if (!tokenPrice || !Number(this.maxAmount)) return '0'
+
+    return String(Number(this.maxAmount) * tokenPrice)
   }
 
   resetForm() {
     this.amount = ''
+    this.amountInFiat = ''
     this.addressState = { ...DEFAULT_ADDRESS_STATE }
     this.isRecipientAddressUnknown = false
     this.isRecipientAddressUnknownAgreed = false
@@ -141,7 +161,12 @@ export class TransferController extends EventEmitter {
 
     // Validate the amount
     if (this.selectedToken) {
-      validationFormMsgsNew.amount = validateSendTransferAmount(this.amount, this.selectedToken)
+      validationFormMsgsNew.amount = validateSendTransferAmount(
+        this.amount,
+        Number(this.maxAmount),
+        Number(this.maxAmountInFiat),
+        this.selectedToken
+      )
     }
 
     return validationFormMsgsNew
@@ -153,7 +178,13 @@ export class TransferController extends EventEmitter {
     // if the amount is set, it's enough in topUp mode
     if (this.isTopUp) {
       return (
-        this.selectedToken && validateSendTransferAmount(this.amount, this.selectedToken).success
+        this.selectedToken &&
+        validateSendTransferAmount(
+          this.amount,
+          Number(this.maxAmount),
+          Number(this.maxAmountInFiat),
+          this.selectedToken
+        ).success
       )
     }
 
@@ -193,7 +224,8 @@ export class TransferController extends EventEmitter {
     isRecipientAddressUnknownAgreed,
     isTopUp,
     networks,
-    contacts
+    contacts,
+    amountFieldMode
   }: TransferUpdate) {
     if (humanizerInfo) {
       this.#humanizerInfo = humanizerInfo
@@ -210,7 +242,7 @@ export class TransferController extends EventEmitter {
     }
     if (selectedAccountData) {
       if (this.#selectedAccountData?.addr !== selectedAccountData.addr) {
-        this.amount = ''
+        this.#setAmount('')
       }
       this.#selectedAccountData = selectedAccountData
     }
@@ -219,8 +251,12 @@ export class TransferController extends EventEmitter {
     }
     // If we do a regular check the value won't update if it's '' or '0'
     if (typeof amount === 'string') {
-      this.amount = amount
+      this.#setAmount(amount)
     }
+    if (amountFieldMode) {
+      this.amountFieldMode = amountFieldMode
+    }
+
     if (addressState) {
       this.addressState = {
         ...this.addressState,
@@ -289,6 +325,40 @@ export class TransferController extends EventEmitter {
     this.checkIsRecipientAddressUnknown()
   }
 
+  #setAmount(fieldValue: string) {
+    if (!fieldValue) {
+      this.amount = ''
+      this.amountInFiat = ''
+      return
+    }
+
+    const tokenPrice = this.selectedToken?.priceIn.find(
+      (p) => p.baseCurrency === HARD_CODED_CURRENCY
+    )?.price
+
+    if (!tokenPrice) {
+      this.amount = fieldValue
+      this.amountInFiat = ''
+      return
+    }
+
+    if (this.amountFieldMode === 'fiat') {
+      this.amountInFiat = fieldValue
+      const t = (Number(fieldValue) / tokenPrice).toFixed(this.selectedToken?.decimals).slice(0, -1)
+
+      this.amount = String(t)
+      return
+    }
+    if (this.amountFieldMode === 'token') {
+      this.amount = fieldValue
+      const formattedAmount = Number(this.amount)
+
+      if (!formattedAmount) return
+
+      this.amountInFiat = String(formattedAmount * tokenPrice)
+    }
+  }
+
   #setSWWarningVisibleIfNeeded() {
     if (!this.#selectedAccountData) return
 
@@ -315,7 +385,8 @@ export class TransferController extends EventEmitter {
       isFormValid: this.isFormValid,
       isInitialized: this.isInitialized,
       selectedToken: this.selectedToken,
-      maxAmount: this.maxAmount
+      maxAmount: this.maxAmount,
+      maxAmountInFiat: this.maxAmountInFiat
     }
   }
 }

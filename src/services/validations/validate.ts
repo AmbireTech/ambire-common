@@ -1,4 +1,4 @@
-import { formatUnits, getAddress, parseUnits } from 'ethers'
+import { getAddress, parseUnits } from 'ethers'
 import isEmail from 'validator/es/lib/isEmail'
 
 import { TokenResult } from '../../libs/portfolio'
@@ -125,6 +125,8 @@ const validateSendTransferAddress = (
 
 const validateSendTransferAmount = (
   amount: string,
+  maxAmount: number,
+  maxAmountInFiat: number,
   selectedAsset: TokenResult
 ): ValidateReturnType => {
   const sanitizedAmount = getSanitizedAmount(amount, selectedAsset.decimals)
@@ -156,10 +158,9 @@ const validateSendTransferAmount = (
       if (currentAmount > getTokenAmount(selectedAsset)) {
         return {
           success: false,
-          message: `The amount is greater than the asset's balance: ${formatUnits(
-            getTokenAmount(selectedAsset),
-            Number(selectedAsset.decimals)
-          )} ${selectedAsset?.symbol}.`
+          message: `The amount is greater than the asset's balance: ${Number(maxAmount) || 0} ${
+            selectedAsset?.symbol
+          }${maxAmountInFiat ? `/ ${Number(maxAmountInFiat)} USD.` : ''}`
         }
       }
     }
