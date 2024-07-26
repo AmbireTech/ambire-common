@@ -80,6 +80,7 @@ export class TransferController extends EventEmitter {
       this.#selectedToken = null
       this.amount = ''
       this.amountInFiat = ''
+      this.amountFieldMode = 'token'
       return
     }
 
@@ -91,6 +92,9 @@ export class TransferController extends EventEmitter {
       prevSelectedToken?.address !== token?.address ||
       prevSelectedToken?.networkId !== token?.networkId
     ) {
+      if (!token.priceIn.length) {
+        this.amountFieldMode = 'token'
+      }
       this.amount = ''
       this.amountInFiat = ''
       this.#setSWWarningVisibleIfNeeded()
