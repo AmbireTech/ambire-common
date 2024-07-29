@@ -6,6 +6,7 @@ import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json'
 import EmittableError from '../../classes/EmittableError'
 import { AMBIRE_ACCOUNT_FACTORY, SINGLETON } from '../../consts/deploy'
+import { BIP44_LEDGER_DERIVATION_TEMPLATE } from '../../consts/derivation'
 import { Account, AccountId, AccountOnchainState } from '../../interfaces/account'
 import { Banner } from '../../interfaces/banner'
 import { DappProviderRequest } from '../../interfaces/dapp'
@@ -30,7 +31,7 @@ import {
 } from '../../libs/actions/actions'
 import { getAccountOpBanners } from '../../libs/banners/banners'
 import { estimate } from '../../libs/estimate/estimate'
-import { EstimateResult } from '../../libs/estimate/interfaces'
+import { BundlerGasPrice, EstimateResult } from '../../libs/estimate/interfaces'
 import { GasRecommendation, getGasPriceRecommendations } from '../../libs/gasPrice/gasPrice'
 import { humanizeAccountOp } from '../../libs/humanizer'
 import {
@@ -80,7 +81,8 @@ import { SignMessageController } from '../signMessage/signMessage'
 const STATUS_WRAPPED_METHODS = {
   onAccountAdderSuccess: 'INITIAL',
   broadcastSignedAccountOp: 'INITIAL',
-  removeAccount: 'INITIAL'
+  removeAccount: 'INITIAL',
+  handleAccountAdderInitLedger: 'INITIAL'
 } as const
 
 export class MainController extends EventEmitter {
@@ -145,6 +147,9 @@ export class MainController extends EventEmitter {
 
   // network => GasRecommendation[]
   gasPrices: { [key: string]: GasRecommendation[] } = {}
+
+  // network => BundlerGasPrice
+  bundlerGasPrices: { [key: string]: BundlerGasPrice } = {}
 
   accountOpsToBeConfirmed: { [key: string]: { [key: string]: AccountOp } } = {}
 
@@ -500,6 +505,55 @@ export class MainController extends EventEmitter {
     await this.activity.addSignedMessage(signedMessage, signedMessage.accountAddr)
   }
 
+  async #handleAccountAdderInitLedger(
+    LedgerKeyIterator: any // TODO: KeyIterator type mismatch
+  ) {
+    if (this.accountAdder.isInitialized) this.accountAdder.reset()
+
+    try {
+      const ledgerCtrl = this.#externalSignerControllers.ledger
+      if (!ledgerCtrl) {
+        const message =
+          'Could not initialize connection with your Ledger device. Please try again later or contact Ambire support.'
+        throw new EmittableError({ message, level: 'major', error: new Error(message) })
+      }
+
+      // The second time a connection gets requested onwards,
+      // the Ledger device throws with "invalid channel" error.
+      // To overcome this, always make sure to clean up before starting
+      // a new session, if the device is already unlocked.
+      if (ledgerCtrl.sdkSession) await ledgerCtrl.cleanUp()
+
+      await ledgerCtrl.unlock()
+
+      if (!ledgerCtrl.walletSDK) {
+        const message = 'Could not establish connection with the Ledger device'
+        throw new EmittableError({ message, level: 'major', error: new Error(message) })
+      }
+
+      const keyIterator = new LedgerKeyIterator({ walletSDK: ledgerCtrl.walletSDK })
+      this.accountAdder.init({
+        keyIterator,
+        hdPathTemplate: BIP44_LEDGER_DERIVATION_TEMPLATE
+      })
+
+      return await this.accountAdder.setPage({
+        page: 1,
+        networks: this.networks.networks,
+        providers: this.providers.providers
+      })
+    } catch (error: any) {
+      const message = error?.message || 'Could not unlock the Ledger device. Please try again.'
+      throw new EmittableError({ message, level: 'major', error })
+    }
+  }
+
+  async handleAccountAdderInitLedger(LedgerKeyIterator: any /* TODO: KeyIterator type mismatch */) {
+    await this.withStatus('handleAccountAdderInitLedger', async () =>
+      this.#handleAccountAdderInitLedger(LedgerKeyIterator)
+    )
+  }
+
   async updateAccountsOpsStatuses() {
     await this.#initialLoadPromise
 
@@ -518,31 +572,41 @@ export class MainController extends EventEmitter {
   async #updateGasPrice() {
     await this.#initialLoadPromise
 
-    // We want to update the gas price only for the networks having account ops.
-    // Together with that, we make sure `ethereum` is included, as we always want to know its gas price (once we have a gas indicator, we will need it).
-    // Note<Bobby>: remove ethereum as the above currently is not true
-    const gasPriceNetworks = [
-      ...new Set(this.userRequests.map((r) => r.meta.networkId).filter(Boolean))
-    ]
+    // if there's no signAccountOp initialized, we don't want to fetch gas
+    const accOp = this.signAccountOp?.accountOp ?? null
+    if (!accOp) return
 
-    await Promise.all(
-      gasPriceNetworks.map(async (network) => {
-        try {
-          this.gasPrices[network] = await getGasPriceRecommendations(
-            this.providers.providers[network],
-            this.networks.networks.find((net) => net.id === network)!
-          )
-        } catch (e: any) {
-          this.emitError({
-            level: 'major',
-            message: `Unable to get gas price for ${
-              this.networks.networks.find((n) => n.id === network)?.name
-            }`,
-            error: new Error(`Failed to fetch gas price: ${e?.message}`)
-          })
-        }
-      })
+    const network = this.networks.networks.find((net) => net.id === accOp.networkId)
+    if (!network) return // shouldn't happen
+
+    const is4337 = isErc4337Broadcast(
+      network,
+      this.accounts.accountStates[accOp.accountAddr][accOp.networkId]
     )
+    const bundlerFetch = async () => {
+      if (!is4337) return null
+      return Bundler.fetchGasPrices(network).catch((e) => {
+        this.emitError({
+          level: 'silent',
+          message: "Failed to fetch the bundler's gas price",
+          error: e
+        })
+      })
+    }
+    const [gasPrice, bundlerGas] = await Promise.all([
+      getGasPriceRecommendations(this.providers.providers[network.id], network).catch((e) => {
+        this.emitError({
+          level: 'major',
+          message: `Unable to get gas price for ${network.id}`,
+          error: new Error(`Failed to fetch gas price: ${e?.message}`)
+        })
+        return null
+      }),
+      bundlerFetch()
+    ])
+
+    if (gasPrice) this.gasPrices[network.id] = gasPrice
+    if (bundlerGas) this.bundlerGasPrices[network.id] = bundlerGas
   }
 
   // call this function after a call to the singleton has been made
@@ -652,8 +716,22 @@ export class MainController extends EventEmitter {
   async reloadSelectedAccount() {
     if (!this.accounts.selectedAccount) return
 
+    const isUpdatingAccount = this.accounts.statuses.updateAccountState !== 'INITIAL'
+
     await Promise.all([
-      this.accounts.updateAccountState(this.accounts.selectedAccount, 'pending'),
+      // When we trigger `reloadSelectedAccount` (for instance, from Dashboard -> Refresh balance icon),
+      // it's very likely that the account state is already in the process of being updated.
+      // If we try to run the same action, `withStatus` validation will throw an error.
+      // So, we perform this safety check to prevent the error.
+      // However, even if we don't trigger an update here, it's not a big problem,
+      // as the account state will be updated anyway, and its update will be very recent.
+      !isUpdatingAccount
+        ? this.accounts.updateAccountState(this.accounts.selectedAccount, 'pending')
+        : Promise.resolve(),
+      // `updateSelectedAccountPortfolio` doesn't rely on `withStatus` validation internally,
+      // as the PortfolioController already exposes flags that are highly sufficient for the UX.
+      // Additionally, if we trigger the portfolio update twice (i.e., running a long-living interval + force update from the Dashboard),
+      // there won't be any error thrown, as all portfolio updates are queued and they don't use the `withStatus` helper.
       this.updateSelectedAccountPortfolio(true)
     ])
   }
@@ -684,12 +762,14 @@ export class MainController extends EventEmitter {
   async buildUserRequestFromDAppRequest(
     request: DappProviderRequest,
     dappPromise: {
+      session: { name: string; origin: string; icon: string }
       resolve: (data: any) => void
       reject: (data: any) => void
     }
   ) {
     await this.#initialLoadPromise
     let userRequest = null
+    let withPriority = false
     const kind = dappRequestMethodToActionKind(request.method)
     const dapp = this.dapps.getDapp(request.origin)
 
@@ -698,6 +778,12 @@ export class MainController extends EventEmitter {
 
       const transaction = request.params[0]
       const accountAddr = getAddress(transaction.from)
+      const account = this.accounts.accounts.find((a) => a.addr === accountAddr)
+
+      if (!account) {
+        throw ethErrors.provider.unauthorized('Transaction failed - unknown account address')
+      }
+
       const network = this.networks.networks.find(
         (n) => Number(n.chainId) === Number(dapp?.chainId)
       )
@@ -721,6 +807,15 @@ export class MainController extends EventEmitter {
         meta: { isSignAction: true, accountAddr, networkId: network.id },
         dappPromise
       } as SignUserRequest
+      if (!account.creation) {
+        const otherUserRequestFromSameDapp = this.userRequests.find(
+          (r) => r.dappPromise?.session?.origin === dappPromise?.session?.origin
+        )
+
+        if (!otherUserRequestFromSameDapp && !!dappPromise?.session?.origin) {
+          withPriority = true
+        }
+      }
     } else if (kind === 'message') {
       if (!this.accounts.selectedAccount) throw ethErrors.rpc.internal()
 
@@ -837,8 +932,18 @@ export class MainController extends EventEmitter {
       } as DappUserRequest
     }
 
+    if (userRequest.action.kind !== 'calls') {
+      const otherUserRequestFromSameDapp = this.userRequests.find(
+        (r) => r.dappPromise?.session?.origin === dappPromise?.session?.origin
+      )
+
+      if (!otherUserRequestFromSameDapp && !!dappPromise?.session?.origin) {
+        withPriority = true
+      }
+    }
+
     if (userRequest) {
-      await this.addUserRequest(userRequest)
+      await this.addUserRequest(userRequest, withPriority)
       this.emitUpdate()
     }
   }
@@ -850,6 +955,8 @@ export class MainController extends EventEmitter {
   ) {
     await this.#initialLoadPromise
     if (!this.accounts.selectedAccount) return
+
+    const account = this.accounts.accounts.find((a) => a.addr === this.accounts.selectedAccount)!
 
     const userRequest = buildTransferUserRequest({
       selectedAccount: this.accounts.selectedAccount,
@@ -869,7 +976,7 @@ export class MainController extends EventEmitter {
       return
     }
 
-    await this.addUserRequest(userRequest)
+    await this.addUserRequest(userRequest, !account.creation)
   }
 
   resolveUserRequest(data: any, requestId: UserRequest['id']) {
@@ -1186,7 +1293,10 @@ export class MainController extends EventEmitter {
     // the time we get here. To prevent issues, we check one more time
     if (!this.signAccountOp) return
 
-    this.signAccountOp.update({ gasPrices: this.gasPrices[networkId] })
+    this.signAccountOp.update({
+      gasPrices: this.gasPrices[networkId],
+      bundlerGasPrices: this.bundlerGasPrices[networkId]
+    })
     this.emitUpdate()
   }
 
@@ -1242,7 +1352,7 @@ export class MainController extends EventEmitter {
         )
 
       // Take the fee tokens from two places: the user's tokens and his gasTank
-      // The gastTank tokens participate on each network as they belong everywhere
+      // The gasTank tokens participate on each network as they belong everywhere
       // NOTE: at some point we should check all the "?" signs below and if
       // an error pops out, we should notify the user about it
       const networkFeeTokens =
@@ -1520,7 +1630,7 @@ export class MainController extends EventEmitter {
           )
         }
       } catch (error: any) {
-        return this.#throwBroadcastAccountOp({ error })
+        return this.#throwBroadcastAccountOp({ error, network })
       }
     }
     // Smart account but EOA pays the fee
@@ -1603,7 +1713,7 @@ export class MainController extends EventEmitter {
           )
         }
       } catch (error: any) {
-        return this.#throwBroadcastAccountOp({ error })
+        return this.#throwBroadcastAccountOp({ error, network })
       }
     }
     // Smart account, the ERC-4337 way
@@ -1624,7 +1734,8 @@ export class MainController extends EventEmitter {
           message: Bundler.decodeBundlerError(
             e,
             'Bundler broadcast failed. Please try broadcasting by an EOA or contact support.'
-          )
+          ),
+          network
         })
       }
       if (!userOperationHash) {
@@ -1659,7 +1770,7 @@ export class MainController extends EventEmitter {
           nonce: Number(accountOp.nonce)
         }
       } catch (error: any) {
-        return this.#throwBroadcastAccountOp({ error })
+        return this.#throwBroadcastAccountOp({ error, network })
       }
     }
 
@@ -1714,15 +1825,32 @@ export class MainController extends EventEmitter {
     return [...accountOpBanners]
   }
 
-  #throwBroadcastAccountOp({ message: _msg, error: _err }: { message?: string; error?: Error }) {
+  #throwBroadcastAccountOp({
+    message: _msg,
+    error: _err,
+    network
+  }: {
+    message?: string
+    error?: Error
+    network?: Network
+  }) {
     let message = _msg || _err?.message || 'Unable to broadcast the transaction.'
 
-    // Enhance the error incoming for this corner case
-    if (message.includes('insufficient funds'))
-      message = 'Insufficient funds to cover the fee for broadcasting the transaction.'
-
-    // Trip the error message, errors coming from the RPC can be huuuuuge
-    message = message.length > 300 ? `${message.substring(0, 300)}...` : message
+    if (message) {
+      if (message.includes('insufficient funds')) {
+        if (network)
+          message = `You don't have enough ${network.nativeAssetSymbol} to cover the transaction fee`
+        else message = "You don't have enough native to cover the transaction fee"
+      } else if (message.includes('pimlico_getUserOperationGasPrice')) {
+        // sometimes the bundler returns an error of low maxFeePerGas
+        // in that case, recalculate prices and prompt the user to try again
+        message = 'Fee too low. Please select a higher transaction speed and try again'
+        this.updateSignAccountOpGasPrice()
+      } else {
+        // Trip the error message, errors coming from the RPC can be huuuuuge
+        message = message.length > 300 ? `${message.substring(0, 300)}...` : message
+      }
+    }
 
     const error = _err || new Error(message)
     const replacementFeeLow = error?.message.includes('replacement fee too low')
