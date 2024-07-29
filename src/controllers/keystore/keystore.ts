@@ -353,6 +353,13 @@ export class KeystoreController extends EventEmitter {
   async #addSeed(seed: string) {
     await this.#initialLoadPromise
 
+    if (this.#mainKey === null)
+      throw new EmittableError({
+        message: KEYSTORE_UNEXPECTED_ERROR_MESSAGE,
+        level: 'major',
+        error: new Error('keystore: needs to be unlocked')
+      })
+
     if (!Mnemonic.isValidMnemonic(seed)) {
       throw new EmittableError({
         message: 'You are trying to store an invalid seed phrase.',
@@ -363,9 +370,11 @@ export class KeystoreController extends EventEmitter {
 
     if (this.#keystoreDefaultSeed) {
       throw new EmittableError({
-        message: 'You can have only one primary seed phrase for that wallet',
+        message: 'You can have only one default seed phrase for that wallet',
         level: 'major',
-        error: new Error('keystore: seed phase already added')
+        error: new Error(
+          'keystore: seed phase already added. Storing multiple seed phrases not supported yet'
+        )
       })
     }
 
