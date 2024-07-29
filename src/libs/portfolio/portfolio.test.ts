@@ -20,7 +20,6 @@ describe('Portfolio', () => {
   const ethereum = networks.find((x) => x.id === 'ethereum')
   if (!ethereum) throw new Error('unable to find ethereum network in consts')
   const provider = new JsonRpcProvider('https://invictus.ambire.com/ethereum')
-  const usdtContract = new Contract(USDT_ADDRESS, ERC20, provider)
   const portfolio = new Portfolio(fetch, provider, ethereum, velcroUrl)
 
   async function getNonce(address: string) {
@@ -28,6 +27,7 @@ describe('Portfolio', () => {
     return accountContract.nonce()
   }
   async function getSafeSendUSDTTransaction(from: string, to: string, amount: bigint) {
+    const usdtContract = new Contract(USDT_ADDRESS, ERC20, provider)
     const usdtBalance = await usdtContract.balanceOf(from)
     expect(usdtBalance).toBeGreaterThan(amount)
     return {
@@ -230,10 +230,7 @@ describe('Portfolio', () => {
   })
 
   test('simulation works for EOAs', async () => {
-    const sendingAmount = 5259434n
     const acc = '0x7a15866aFfD2149189Aa52EB8B40a8F9166441D9'
-    const usdtBalance = await usdtContract.balanceOf(acc)
-    expect(usdtBalance).toBeGreaterThan(sendingAmount)
     const accountOp: any = {
       accountAddr: acc,
       signingKeyAddr: acc,
@@ -243,14 +240,11 @@ describe('Portfolio', () => {
       nonce: BigInt(EOA_SIMULATION_NONCE),
       signature: '0x',
       calls: [
-        {
-          to: USDT_ADDRESS,
-          value: BigInt(0),
-          data: usdtContract.interface.encodeFunctionData('transfer', [
-            '0xe5a4dad2ea987215460379ab285df87136e83bea',
-            sendingAmount
-          ])
-        }
+        await getSafeSendUSDTTransaction(
+          acc,
+          '0xe5a4dad2ea987215460379ab285df87136e83bea',
+          5259434n
+        )
       ]
     }
     const account: Account = {
@@ -337,11 +331,7 @@ describe('Portfolio', () => {
   })
 
   test('token simulation should throw a simulation error if the account op nonce is lower or higher than the original contract nonce', async () => {
-    const sendingAmount = 5259434n
-
     const acc = '0x7a15866aFfD2149189Aa52EB8B40a8F9166441D9'
-    const usdtBalance = await usdtContract.balanceOf(acc)
-    expect(usdtBalance).toBeGreaterThan(sendingAmount)
     const accountOp: any = {
       accountAddr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
       signingKeyAddr: '0xe5a4Dad2Ea987215460379Ab285DF87136E83BEA',
@@ -351,14 +341,11 @@ describe('Portfolio', () => {
       nonce: 0n,
       signature: '0x',
       calls: [
-        {
-          to: USDT_ADDRESS,
-          value: BigInt(0),
-          data: usdtContract.interface.encodeFunctionData('transfer', [
-            '0xe5a4dad2ea987215460379ab285df87136e83bea',
-            sendingAmount
-          ])
-        }
+        await getSafeSendUSDTTransaction(
+          acc,
+          '0xe5a4dad2ea987215460379ab285df87136e83bea',
+          5259434n
+        )
       ]
     }
     const account = {
