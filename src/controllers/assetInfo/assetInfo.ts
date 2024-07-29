@@ -18,7 +18,6 @@ export type AssetInfo =
 const DEBOUNCE_TIMEOUT = 500
 /**
  * Asset Info controller- responsible for handling the token and nft metadata
- * Resolved names are saved in `assetInfo` for a short period of time(15 minutes) to avoid unnecessary lookups.
  */
 export class AssetInfoController extends EventEmitter {
   #fetch: Fetch
