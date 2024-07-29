@@ -1,4 +1,4 @@
-import { AbiCoder, ethers, JsonRpcProvider } from 'ethers'
+import { AbiCoder, Contract, ethers, JsonRpcProvider } from 'ethers'
 import fetch from 'node-fetch'
 
 import { describe, expect, jest, test } from '@jest/globals'
@@ -10,19 +10,31 @@ import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { networks } from '../../consts/networks'
 import { Account } from '../../interfaces/account'
 import { AccountOp } from '../accountOp/accountOp'
+import { ERC20 } from '../humanizer/const/abis'
 import { stringify } from '../richJson/richJson'
 import { EOA_SIMULATION_NONCE } from './getOnchainBalances'
 import { Portfolio } from './portfolio'
 
 describe('Portfolio', () => {
+  const USDT_ADDRESS = '0xdAC17F958D2ee523a2206206994597C13D831ec7'
   const ethereum = networks.find((x) => x.id === 'ethereum')
   if (!ethereum) throw new Error('unable to find ethereum network in consts')
   const provider = new JsonRpcProvider('https://invictus.ambire.com/ethereum')
+  const usdtContract = new Contract(USDT_ADDRESS, ERC20, provider)
   const portfolio = new Portfolio(fetch, provider, ethereum, velcroUrl)
 
   async function getNonce(address: string) {
-    const accountContract = new ethers.Contract(address, AmbireAccount.abi, provider)
+    const accountContract = new Contract(address, AmbireAccount.abi, provider)
     return accountContract.nonce()
+  }
+  async function getSafeSendUSDTTransaction(from: string, to: string, amount: bigint) {
+    const usdtBalance = await usdtContract.balanceOf(from)
+    expect(usdtBalance).toBeGreaterThan(amount)
+    return {
+      to: USDT_ADDRESS,
+      value: 0n,
+      data: usdtContract.interface.encodeFunctionData('transfer', [to, amount])
+    }
   }
 
   test('batching works', async () => {
@@ -73,11 +85,11 @@ describe('Portfolio', () => {
       nonce: await getNonce('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'),
       signature: '0x000000000000000000000000e5a4Dad2Ea987215460379Ab285DF87136E83BEA03',
       calls: [
-        {
-          to: '0xdAC17F958D2ee523a2206206994597C13D831ec7',
-          value: BigInt(0),
-          data: '0xa9059cbb000000000000000000000000e5a4dad2ea987215460379ab285df87136e83bea00000000000000000000000000000000000000000000000000000000005040aa'
-        }
+        await getSafeSendUSDTTransaction(
+          '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+          '0xe5a4dad2ea987215460379ab285df87136e83bea',
+          1000000n
+        )
       ]
     }
     const account = {
@@ -218,7 +230,10 @@ describe('Portfolio', () => {
   })
 
   test('simulation works for EOAs', async () => {
+    const sendingAmount = 5259434n
     const acc = '0x7a15866aFfD2149189Aa52EB8B40a8F9166441D9'
+    const usdtBalance = await usdtContract.balanceOf(acc)
+    expect(usdtBalance).toBeGreaterThan(sendingAmount)
     const accountOp: any = {
       accountAddr: acc,
       signingKeyAddr: acc,
@@ -229,9 +244,12 @@ describe('Portfolio', () => {
       signature: '0x',
       calls: [
         {
-          to: '0xdAC17F958D2ee523a2206206994597C13D831ec7',
+          to: USDT_ADDRESS,
           value: BigInt(0),
-          data: '0xa9059cbb000000000000000000000000e5a4dad2ea987215460379ab285df87136e83bea00000000000000000000000000000000000000000000000000000000005040aa'
+          data: usdtContract.interface.encodeFunctionData('transfer', [
+            '0xe5a4dad2ea987215460379ab285df87136e83bea',
+            sendingAmount
+          ])
         }
       ]
     }
@@ -319,6 +337,11 @@ describe('Portfolio', () => {
   })
 
   test('token simulation should throw a simulation error if the account op nonce is lower or higher than the original contract nonce', async () => {
+    const sendingAmount = 5259434n
+
+    const acc = '0x7a15866aFfD2149189Aa52EB8B40a8F9166441D9'
+    const usdtBalance = await usdtContract.balanceOf(acc)
+    expect(usdtBalance).toBeGreaterThan(sendingAmount)
     const accountOp: any = {
       accountAddr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
       signingKeyAddr: '0xe5a4Dad2Ea987215460379Ab285DF87136E83BEA',
@@ -329,9 +352,12 @@ describe('Portfolio', () => {
       signature: '0x',
       calls: [
         {
-          to: '0xdAC17F958D2ee523a2206206994597C13D831ec7',
+          to: USDT_ADDRESS,
           value: BigInt(0),
-          data: '0xa9059cbb000000000000000000000000e5a4dad2ea987215460379ab285df87136e83bea00000000000000000000000000000000000000000000000000000000005040aa'
+          data: usdtContract.interface.encodeFunctionData('transfer', [
+            '0xe5a4dad2ea987215460379ab285df87136e83bea',
+            sendingAmount
+          ])
         }
       ]
     }
@@ -388,7 +414,7 @@ describe('Portfolio', () => {
       signature: '0x',
       calls: [
         {
-          to: '0xdAC17F958D2ee523a2206206994597C13D831ec7',
+          to: USDT_ADDRESS,
           value: BigInt(0),
           data: '0xa9059cbb000000000000000000000000e5a4dad2ea987215460379ab285df87136e83bea00000000000000000000000000000000000000000000000000000000005040aa'
         }
@@ -432,11 +458,11 @@ describe('Portfolio', () => {
       nonce: BigInt(EOA_SIMULATION_NONCE),
       signature: '0x',
       calls: [
-        {
-          to: '0xdAC17F958D2ee523a2206206994597C13D831ec7',
-          value: BigInt(0),
-          data: '0xa9059cbb000000000000000000000000e5a4dad2ea987215460379ab285df87136e83bea00000000000000000000000000000000000000000000000000000000005040aa'
-        }
+        await getSafeSendUSDTTransaction(
+          acc,
+          '0xe5a4dad2ea987215460379ab285df87136e83bea',
+          5259434n
+        )
       ]
     }
     const account: Account = {
@@ -476,11 +502,11 @@ describe('Portfolio', () => {
       nonce: await getNonce('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'),
       signature: '0x000000000000000000000000e5a4Dad2Ea987215460379Ab285DF87136E83BEA03',
       calls: [
-        {
-          to: '0xdAC17F958D2ee523a2206206994597C13D831ec7',
-          value: BigInt(0),
-          data: '0xa9059cbb000000000000000000000000e5a4dad2ea987215460379ab285df87136e83bea00000000000000000000000000000000000000000000000000000000005040aa'
-        }
+        await getSafeSendUSDTTransaction(
+          '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+          '0xe5a4dad2ea987215460379ab285df87136e83bea',
+          1000000n
+        )
       ]
     }
     const account = {
@@ -524,11 +550,11 @@ describe('Portfolio', () => {
       nonce: await getNonce('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'),
       signature: '0x000000000000000000000000e5a4Dad2Ea987215460379Ab285DF87136E83BEA03',
       calls: [
-        {
-          to: '0xdAC17F958D2ee523a2206206994597C13D831ec7',
-          value: BigInt(0),
-          data: '0xa9059cbb000000000000000000000000e5a4dad2ea987215460379ab285df87136e83bea00000000000000000000000000000000000000000000000000000000005040aa'
-        }
+        await getSafeSendUSDTTransaction(
+          '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+          '0xe5a4dad2ea987215460379ab285df87136e83bea',
+          1000000n
+        )
       ]
     }
     const account = {
