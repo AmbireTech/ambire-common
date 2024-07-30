@@ -416,7 +416,7 @@ export class MainController extends EventEmitter {
         ({ account, accountKeys }) =>
           accountKeys.map(({ addr }, i: number) => ({
             addr,
-            type: 'seed',
+            type: 'internal',
             label: getDefaultKeyLabel(
               this.keystore.keys.filter((key) => account.associatedKeys.includes(key.addr)),
               i
