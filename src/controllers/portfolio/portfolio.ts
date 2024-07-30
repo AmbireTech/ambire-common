@@ -7,8 +7,6 @@ import { Network, NetworkId } from '../../interfaces/network'
 import { Storage } from '../../interfaces/storage'
 import { isSmartAccount } from '../../libs/account/account'
 import { AccountOp, isAccountOpsIntentEqual } from '../../libs/accountOp/accountOp'
-/* eslint-disable no-restricted-syntax */
-// eslint-disable-next-line import/no-cycle
 import {
   getNetworksWithFailedRPCBanners,
   getNetworksWithPortfolioErrorBanners
@@ -26,10 +24,11 @@ import {
   shouldGetAdditionalPortfolio,
   validateERC20Token
 } from '../../libs/portfolio/helpers'
-/* eslint-disable no-param-reassign */
-/* eslint-disable import/no-extraneous-dependencies */
+/* eslint-disable no-restricted-syntax */
+// eslint-disable-next-line import/no-cycle
 import {
   AccountState,
+  ERC721s,
   ExternalHintsAPIResponse,
   GetOptions,
   PortfolioControllerState,
@@ -95,7 +94,8 @@ export class PortfolioController extends EventEmitter {
 
   #previousHints: PreviousHintsStorage = {
     fromExternalAPI: {},
-    learnedTokens: {}
+    learnedTokens: {},
+    learnedNfts: {}
   }
 
   #providers: ProvidersController
@@ -440,20 +440,29 @@ export class PortfolioController extends EventEmitter {
     _accountState: AccountState,
     network: Network,
     portfolioLib: Portfolio,
-    portfolioProps: Partial<GetOptions>,
+    _portfolioProps: Partial<GetOptions>,
     forceUpdate: boolean
   ): Promise<boolean> {
     const hasNonZeroTokens = !!this.#networksWithAssetsByAccounts?.[accountId]?.length
-
-    if (!_accountState[network.id]) {
-      _accountState[network.id] = {
+    const accountState = { ..._accountState }
+    const portfolioProps = { ..._portfolioProps }
+    if (!portfolioProps.previousHints) portfolioProps.previousHints = { erc20s: [], erc721s: {} }
+    portfolioProps.previousHints.erc721s = Object.fromEntries(
+      Object.entries(this.#previousHints?.learnedNfts?.[network.id] || {}).map(([k, v]) => [
+        k,
+        { isKnown: false, tokens: v.map((i) => i.toString()) }
+      ])
+    )
+    this.#previousHints.learnedNfts
+    if (!accountState[network.id]) {
+      accountState[network.id] = {
         isReady: false,
         isLoading: false,
         errors: []
       }
       this.emitUpdate()
     }
-    const state = _accountState[network.id]!
+    const state = accountState[network.id]!
 
     // When the portfolio was called lastly
     const lastUpdateStartedAt = state.result?.updateStarted
@@ -488,7 +497,7 @@ export class PortfolioController extends EventEmitter {
         tokenPreferences
       )
 
-      _accountState[network.id] = {
+      accountState[network.id] = {
         isReady: true,
         isLoading: false,
         errors: result.errors,
@@ -721,6 +730,31 @@ export class PortfolioController extends EventEmitter {
     }
 
     this.#previousHints.learnedTokens[networkId] = networkLearnedTokens
+    await this.#storage.set('previousHints', this.#previousHints)
+    return true
+  }
+
+  async learnNfts(
+    nftsData: [string, bigint[]][] | undefined,
+    networkId: NetworkId
+  ): Promise<boolean> {
+    if (!nftsData || !nftsData?.length) return false
+    if (!this.#previousHints.learnedNfts) this.#previousHints.learnedNfts = {}
+    const networkLearnedNfts: PreviousHintsStorage['learnedNfts'][''] =
+      this.#previousHints.learnedNfts[networkId] || {}
+
+    const newAddrToId = nftsData.map(([addr, ids]) => ids.map((id) => `${addr}:${id}`)).flat()
+    const alreadyLearnedAddrToId = Object.entries(networkLearnedNfts)
+      .map(([addr, ids]) => ids.map((id) => `${addr}:${id}`))
+      .flat()
+    if (newAddrToId.every((i) => alreadyLearnedAddrToId.includes(i))) return false
+    nftsData.forEach(([addr, ids]) => {
+      if (addr === ZeroAddress) return
+      if (!networkLearnedNfts[addr]) networkLearnedNfts[addr] = ids
+      else networkLearnedNfts[addr] = Array.from(new Set([...ids, ...networkLearnedNfts[addr]]))
+    })
+
+    this.#previousHints.learnedNfts[networkId] = networkLearnedNfts
     await this.#storage.set('previousHints', this.#previousHints)
     return true
   }

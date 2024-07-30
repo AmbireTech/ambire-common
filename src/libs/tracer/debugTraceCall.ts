@@ -53,7 +53,7 @@ export async function debugTraceCall(
   gasUsed: bigint,
   gasPrices: GasRecommendation[],
   supportsStateOverride: boolean
-): Promise<{ tokens: string[]; nfts: [string, string[]][] }> {
+): Promise<{ tokens: string[]; nfts: [string, bigint[]][] }> {
   const fast = gasPrices.find((gas: any) => gas.name === 'fast')
   if (!fast) return { tokens: [], nfts: [] }
 
@@ -123,8 +123,8 @@ export async function debugTraceCall(
       res[i.address].add(i.tokenId)
       return res
     }, {})
-  const foundNftTransfers: [string, string[]][] = Object.entries(foundNftTransfersObject).map(
-    ([k, v]) => [k, Array.from(v).map((i) => BigInt(i).toString(10))]
+  const foundNftTransfers: [string, bigint[]][] = Object.entries(foundNftTransfersObject).map(
+    ([k, v]) => [k, Array.from(v).map((i) => BigInt(i))]
   )
 
   // we set the 3rd param to "true" as we don't need state override

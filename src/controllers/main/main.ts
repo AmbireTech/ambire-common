@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-floating-promises */
 import { ethErrors } from 'eth-rpc-errors'
 /* eslint-disable @typescript-eslint/brace-style */
 import { getAddress, getBigInt, Interface, isAddress, TransactionResponse } from 'ethers'
@@ -436,9 +437,9 @@ export class MainController extends EventEmitter {
       !network.rpcNoStateOverride
     )
     const learnedNewTokens = await this.portfolio.learnTokens(tokens, network.id)
-
+    const learnedNewNfts = await this.portfolio.learnNfts(nfts, network.id)
     // update the portfolio only if new tokens were found through tracing
-    if (learnedNewTokens) {
+    if (learnedNewTokens || learnedNewNfts) {
       this.portfolio.updateSelectedAccount(
         accountOp.accountAddr,
         network,
