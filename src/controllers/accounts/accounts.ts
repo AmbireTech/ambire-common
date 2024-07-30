@@ -236,7 +236,7 @@ export class AccountsController extends EventEmitter {
       if (isAddress(account.preferences.pfp)) {
         account.preferences.pfp = getAddress(account.preferences.pfp)
       }
-      return { ...acc, preferences: account.preferences }
+      return { ...acc, preferences: account.preferences, newlyAdded: false }
     })
     await this.#storage.set('accounts', this.accounts)
     this.emitUpdate()
