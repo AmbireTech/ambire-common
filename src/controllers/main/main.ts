@@ -712,8 +712,22 @@ export class MainController extends EventEmitter {
   async reloadSelectedAccount() {
     if (!this.accounts.selectedAccount) return
 
+    const isUpdatingAccount = this.accounts.statuses.updateAccountState !== 'INITIAL'
+
     await Promise.all([
-      this.accounts.updateAccountState(this.accounts.selectedAccount, 'pending'),
+      // When we trigger `reloadSelectedAccount` (for instance, from Dashboard -> Refresh balance icon),
+      // it's very likely that the account state is already in the process of being updated.
+      // If we try to run the same action, `withStatus` validation will throw an error.
+      // So, we perform this safety check to prevent the error.
+      // However, even if we don't trigger an update here, it's not a big problem,
+      // as the account state will be updated anyway, and its update will be very recent.
+      !isUpdatingAccount
+        ? this.accounts.updateAccountState(this.accounts.selectedAccount, 'pending')
+        : Promise.resolve(),
+      // `updateSelectedAccountPortfolio` doesn't rely on `withStatus` validation internally,
+      // as the PortfolioController already exposes flags that are highly sufficient for the UX.
+      // Additionally, if we trigger the portfolio update twice (i.e., running a long-living interval + force update from the Dashboard),
+      // there won't be any error thrown, as all portfolio updates are queued and they don't use the `withStatus` helper.
       this.updateSelectedAccountPortfolio(true)
     ])
   }
@@ -724,12 +738,15 @@ export class MainController extends EventEmitter {
     if (!this.accounts.selectedAccount) return
 
     const account = this.accounts.accounts.find((a) => a.addr === this.accounts.selectedAccount)
+    const signAccountOpNetworkId = this.signAccountOp?.accountOp.networkId
+    const networkData =
+      network || this.networks.networks.find((n) => n.id === signAccountOpNetworkId)
 
     const accountOpsToBeSimulatedByNetwork = getAccountOpsForSimulation(
       account!,
       this.actions.visibleActionsQueue,
-      network,
-      this.signAccountOp ? this.signAccountOp.accountOp : null
+      networkData,
+      this.signAccountOp?.accountOp
     )
 
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
