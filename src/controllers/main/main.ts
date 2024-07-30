@@ -429,7 +429,6 @@ export class MainController extends EventEmitter {
         { internal: readyToAddKeys, external: [] },
         readyToAddKeyPreferences
       )
-      this.accountAdder.reset()
     })
   }
 
