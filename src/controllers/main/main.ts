@@ -334,7 +334,6 @@ export class MainController extends EventEmitter {
           await this.keystore.addKeys(this.accountAdder.readyToAddKeys.internal)
           await this.keystore.addKeysExternallyStored(this.accountAdder.readyToAddKeys.external)
           await this.settings.addKeyPreferences(this.accountAdder.readyToAddKeyPreferences)
-          await this.accountAdder.reset()
         },
         true
       )
@@ -430,6 +429,7 @@ export class MainController extends EventEmitter {
         { internal: readyToAddKeys, external: [] },
         readyToAddKeyPreferences
       )
+      this.accountAdder.reset()
     })
   }
 
