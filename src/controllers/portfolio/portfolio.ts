@@ -7,6 +7,7 @@ import { Network, NetworkId } from '../../interfaces/network'
 import { Storage } from '../../interfaces/storage'
 import { isSmartAccount } from '../../libs/account/account'
 import { AccountOp, isAccountOpsIntentEqual } from '../../libs/accountOp/accountOp'
+// eslint-disable-next-line import/no-cycle
 import {
   getNetworksWithFailedRPCBanners,
   getNetworksWithPortfolioErrorBanners
@@ -28,7 +29,6 @@ import {
 // eslint-disable-next-line import/no-cycle
 import {
   AccountState,
-  ERC721s,
   ExternalHintsAPIResponse,
   GetOptions,
   PortfolioControllerState,
