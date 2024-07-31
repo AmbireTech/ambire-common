@@ -172,7 +172,7 @@ describe('Portfolio', () => {
     if (!collection || collection.amountPostSimulation === undefined) {
       throw new Error('Collection not found or `amountPostSimulation` is not calculated')
     }
-
+    expect(collection.postSimulation?.sending?.[0]).toBe(137n)
     expect(collection.amount - collection.amountPostSimulation).toBe(1n)
   })
 
