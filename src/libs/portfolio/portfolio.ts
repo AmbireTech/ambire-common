@@ -192,7 +192,7 @@ export class Portfolio {
         )
       )
     ])
-    const [ tokensWithErrResult, blockNumber ] = tokensWithErr
+    const [tokensWithErrResult, blockNumber] = tokensWithErr
 
     // Re-map/filter into our format
     const getPriceFromCache = (address: string) => {
@@ -210,7 +210,7 @@ export class Portfolio {
       error === '0x' && !!result.symbol
 
     const tokensWithoutPrices = tokensWithErrResult
-      .filter((tokensWithErrResult: [string,TokenResult]) => tokenFilter(tokensWithErrResult))
+      .filter((_tokensWithErrResult: [string, TokenResult]) => tokenFilter(_tokensWithErrResult))
       .map(([, result]: [any, TokenResult]) => result)
 
     const unfilteredCollections = collectionsWithErr.map(([error, x], i) => {

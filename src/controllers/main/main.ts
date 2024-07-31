@@ -742,12 +742,15 @@ export class MainController extends EventEmitter {
     if (!this.accounts.selectedAccount) return
 
     const account = this.accounts.accounts.find((a) => a.addr === this.accounts.selectedAccount)
+    const signAccountOpNetworkId = this.signAccountOp?.accountOp.networkId
+    const networkData =
+      network || this.networks.networks.find((n) => n.id === signAccountOpNetworkId)
 
     const accountOpsToBeSimulatedByNetwork = getAccountOpsForSimulation(
       account!,
       this.actions.visibleActionsQueue,
-      network,
-      this.signAccountOp ? this.signAccountOp.accountOp : null
+      networkData,
+      this.signAccountOp?.accountOp
     )
 
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
