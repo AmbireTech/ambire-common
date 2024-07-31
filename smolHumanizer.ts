@@ -61,7 +61,7 @@ async function scrapeSignatures () {
 				const isFound = !!signaturesFiltered.find(x => x && x[1] === sig)
 				total++
 				if (isFound) found++
-				if (sig === '3593564c') parseUniUniversal({ data: txn.input, value: txn.value, to: txn.to, from: txn.from })
+				if (sig === '3593564c') console.log('parsed from uni:', parseUniUniversal({ data: txn.input, value: txn.value, to: txn.to, from: txn.from }))
 			}
 		}
 	}
@@ -145,6 +145,11 @@ function parseUniUniversal(txn: any) {
 				// @TODO we need to care about this if we do WETH?
 				const [recipient, amount1, amount2, path, /*tokensInRouter*/] =  abiCoder.decode(['address', 'uint256', 'uint256', pathType, 'bool'], commandArgs[idx])
 
+				const tokenInRaw = isV2 ? path[0] : path.slice(0, 42)
+				const tokenOutRaw = isV2 ? path[path.length - 1] : '0x' + path.slice(-40)
+				const tokenIn = getAddress(tokenInRaw)
+				const tokenOut = getAddress(tokenOutRaw)
+
 				// @TODO document that we do not need to flag sweeps as used, we just need to find the sweep that matches our command
 				// @TODO consider comparing the amount too
 				const sweep = sweeps.find(x => x && x.token === tokenOut)
@@ -158,10 +163,6 @@ function parseUniUniversal(txn: any) {
 					// just in case
 					return []
 				}
-				const tokenInRaw = isV2 ? path[0] : path.slice(0, 42)
-				const tokenOutRaw = isV2 ? path[path.length - 1] : '0x' + path.slice(-40)
-				const tokenIn = getAddress(tokenInRaw)
-				const tokenOut = getAddress(tokenOutRaw)
 				// how to handle the case case of a different recipient:
 				// find the `sweep`, find the recipient to implement different recipient
 				// sweep not found -> unknown interaction; sweep found to 0x01 -> nothing, sweep found but not to 0x01 -> add a transfer action
@@ -201,7 +202,7 @@ function parseUniUniversal(txn: any) {
 
 			// 13 is PERMIT2_TRANSFER_FROM_BATCH
 		}).flat().filter(x => x)
-		console.log(mapped)
+
 		return mapped
 	} else {
 		return [{
