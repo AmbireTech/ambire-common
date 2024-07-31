@@ -9,6 +9,7 @@ import { isSmartAccount } from '../../libs/account/account'
 import { HumanizerMeta } from '../../libs/humanizer/interfaces'
 import { TokenResult } from '../../libs/portfolio'
 import { getTokenAmount } from '../../libs/portfolio/helpers'
+import { getSanitizedAmount } from '../../libs/transfer/amount'
 import { validateSendTransferAddress, validateSendTransferAmount } from '../../services/validations'
 import { Contacts } from '../addressBook/addressBook'
 import EventEmitter from '../eventEmitter/eventEmitter'
@@ -125,13 +126,13 @@ export class TransferController extends EventEmitter {
     if (!tokenPrice || !Number(this.maxAmount)) return '0'
 
     const maxAmount = getTokenAmount(this.selectedToken)
-    const tokenPriceBigInt = parseUnits(
-      tokenPrice.toFixed(this.selectedToken.decimals),
-      this.selectedToken.decimals
-    )
-    const pow = BigInt(10 ** this.selectedToken.decimals)
+    const tokenPriceDecimals = String(tokenPrice).split('.')[1]?.length || 0
+    const tokenPriceBigInt = parseUnits(String(tokenPrice), tokenPriceDecimals)
 
-    return formatUnits((maxAmount * tokenPriceBigInt) / pow, this.selectedToken.decimals)
+    return formatUnits(
+      maxAmount * tokenPriceBigInt,
+      this.selectedToken.decimals + tokenPriceDecimals
+    )
   }
 
   resetForm() {
@@ -355,23 +356,34 @@ export class TransferController extends EventEmitter {
 
     if (this.amountFieldMode === 'fiat' && this.selectedToken?.decimals) {
       this.amountInFiat = fieldValue
-      const fieldValueBigInt = parseUnits(fieldValue, this.selectedToken.decimals * 2)
 
-      const priceBigInt = parseUnits(
-        tokenPrice.toFixed(this.selectedToken.decimals),
-        this.selectedToken.decimals
-      )
+      // Get the number of decimals
+      const amountInFiatDecimals = fieldValue.split('.')[1]?.length || 0
+      const tokenPriceDecimals = String(tokenPrice).split('.')[1]?.length || 0
+      // Convert the numbers to big int
+      const amountInFiatBigInt = parseUnits(fieldValue, amountInFiatDecimals + tokenPriceDecimals) // Add the decimals of the token price
+      const tokenPriceBigInt = parseUnits(String(tokenPrice), tokenPriceDecimals)
 
-      this.amount = formatUnits(fieldValueBigInt / priceBigInt, this.selectedToken.decimals)
+      this.amount = formatUnits(amountInFiatBigInt / tokenPriceBigInt, amountInFiatDecimals)
       return
     }
     if (this.amountFieldMode === 'token') {
       this.amount = fieldValue
-      const formattedAmount = Number(this.amount)
+
+      if (!this.selectedToken) return
+
+      const sanitizedFieldValue = getSanitizedAmount(fieldValue, this.selectedToken.decimals)
+      const formattedAmount = parseUnits(sanitizedFieldValue, this.selectedToken.decimals)
 
       if (!formattedAmount) return
 
-      this.amountInFiat = String(formattedAmount * tokenPrice)
+      const tokenPriceDecimals = String(tokenPrice).split('.')[1]?.length || 0
+      const tokenPriceBigInt = parseUnits(String(tokenPrice), tokenPriceDecimals)
+
+      this.amountInFiat = formatUnits(
+        formattedAmount * tokenPriceBigInt,
+        this.selectedToken.decimals + tokenPriceDecimals
+      )
     }
   }
 
