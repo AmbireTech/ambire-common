@@ -105,6 +105,15 @@ contract AmbireAccount is IAmbireAccount {
 	}
 
 	/**
+	 * @notice  Returns the privilege level of a certain address (key)
+	 * @param   key  the address we want to check the privileges to
+	 * @return  bytes4  is it a success or a failure
+	 */
+	function privilegeLevel(address key) internal virtual view returns (uint256) {
+		return uint256(privileges[key]);
+	}
+
+	/**
 	 * @notice  Useful when we need to do multiple operations but ignore failures in some of them
 	 * @param   to  address we're sending value to
 	 * @param   value  the amount
@@ -162,13 +171,13 @@ contract AmbireAccount is IAmbireAccount {
 				signature,
 				true
 			);
-			require(privileges[signerKey] != bytes32(0), 'INSUFFICIENT_PRIVILEGE');
+			require(privilegeLevel(signerKey) != 0, 'INSUFFICIENT_PRIVILEGE');
 		}
 
 		executeBatch(calls);
 
 		// The actual anti-bricking mechanism - do not allow a signerKey to drop their own privileges
-		require(privileges[signerKey] != bytes32(0), 'PRIVILEGE_NOT_DOWNGRADED');
+		require(privilegeLevel(signerKey) != 0, 'PRIVILEGE_NOT_DOWNGRADED');
 	}
 
 	/**
@@ -185,10 +194,10 @@ contract AmbireAccount is IAmbireAccount {
 	 * @param   calls  the transaction we're executing
 	 */
 	function executeBySender(Transaction[] calldata calls) external payable {
-		require(privileges[msg.sender] != bytes32(0), 'INSUFFICIENT_PRIVILEGE');
+		require(privilegeLevel(msg.sender) != 0, 'INSUFFICIENT_PRIVILEGE');
 		executeBatch(calls);
 		// again, anti-bricking
-		require(privileges[msg.sender] != bytes32(0), 'PRIVILEGE_NOT_DOWNGRADED');
+		require(privilegeLevel(msg.sender) != 0, 'PRIVILEGE_NOT_DOWNGRADED');
 	}
 
 	/**
@@ -253,7 +262,7 @@ contract AmbireAccount is IAmbireAccount {
 	 */
 	function isValidSignature(bytes32 hash, bytes calldata signature) external view returns (bytes4) {
 		(address recovered, bool usedUnprotected) = SignatureValidator.recoverAddrAllowUnprotected(hash, signature, false);
-		if (uint256(privileges[recovered]) > (usedUnprotected ? 1 : 0)) {
+		if (privilegeLevel(recovered) > (usedUnprotected ? 1 : 0)) {
 			// bytes4(keccak256("isValidSignature(bytes32,bytes)")
 			return 0x1626ba7e;
 		} else {
@@ -348,7 +357,7 @@ contract AmbireAccount is IAmbireAccount {
 
 		// this is replay-safe because userOpHash is retrieved like this: keccak256(abi.encode(userOp.hash(), address(this), block.chainid))
 		address signer = SignatureValidator.recoverAddr(userOpHash, op.signature, true);
-		if (privileges[signer] == bytes32(0)) return SIG_VALIDATION_FAILED;
+		if (privilegeLevel(signer) == 0) return SIG_VALIDATION_FAILED;
 
 		return SIG_VALIDATION_SUCCESS;
 	}
