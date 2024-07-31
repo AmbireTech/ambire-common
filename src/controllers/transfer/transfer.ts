@@ -14,6 +14,33 @@ import { validateSendTransferAddress, validateSendTransferAmount } from '../../s
 import { Contacts } from '../addressBook/addressBook'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
+const convertTokenPriceToBigInt = (
+  tokenPrice: number
+): {
+  tokenPriceBigInt: bigint
+  tokenPriceDecimals: number
+} => {
+  const tokenPriceString = String(tokenPrice)
+
+  // Scientific notation handling
+  if (tokenPriceString.includes('e')) {
+    const [base, rawExponent] = tokenPriceString.split('e')
+    const exponent = Math.abs(Number(rawExponent))
+
+    const { tokenPriceBigInt, tokenPriceDecimals: baseDecimals } = convertTokenPriceToBigInt(
+      Number(base)
+    )
+
+    return { tokenPriceBigInt, tokenPriceDecimals: baseDecimals + exponent }
+  }
+
+  // Regular number handling
+  const tokenPriceDecimals = tokenPriceString.split('.')[1]?.length || 0
+  const tokenPriceBigInt = parseUnits(tokenPriceString, tokenPriceDecimals)
+
+  return { tokenPriceBigInt, tokenPriceDecimals }
+}
+
 const DEFAULT_ADDRESS_STATE = {
   fieldValue: '',
   ensAddress: '',
@@ -126,8 +153,7 @@ export class TransferController extends EventEmitter {
     if (!tokenPrice || !Number(this.maxAmount)) return '0'
 
     const maxAmount = getTokenAmount(this.selectedToken)
-    const tokenPriceDecimals = String(tokenPrice).split('.')[1]?.length || 0
-    const tokenPriceBigInt = parseUnits(String(tokenPrice), tokenPriceDecimals)
+    const { tokenPriceBigInt, tokenPriceDecimals } = convertTokenPriceToBigInt(tokenPrice)
 
     return formatUnits(
       maxAmount * tokenPriceBigInt,
@@ -359,10 +385,10 @@ export class TransferController extends EventEmitter {
 
       // Get the number of decimals
       const amountInFiatDecimals = fieldValue.split('.')[1]?.length || 0
-      const tokenPriceDecimals = String(tokenPrice).split('.')[1]?.length || 0
+      const { tokenPriceBigInt, tokenPriceDecimals } = convertTokenPriceToBigInt(tokenPrice)
+
       // Convert the numbers to big int
       const amountInFiatBigInt = parseUnits(fieldValue, amountInFiatDecimals + tokenPriceDecimals) // Add the decimals of the token price
-      const tokenPriceBigInt = parseUnits(String(tokenPrice), tokenPriceDecimals)
 
       this.amount = formatUnits(amountInFiatBigInt / tokenPriceBigInt, amountInFiatDecimals)
       return
@@ -377,8 +403,7 @@ export class TransferController extends EventEmitter {
 
       if (!formattedAmount) return
 
-      const tokenPriceDecimals = String(tokenPrice).split('.')[1]?.length || 0
-      const tokenPriceBigInt = parseUnits(String(tokenPrice), tokenPriceDecimals)
+      const { tokenPriceBigInt, tokenPriceDecimals } = convertTokenPriceToBigInt(tokenPrice)
 
       this.amountInFiat = formatUnits(
         formattedAmount * tokenPriceBigInt,
