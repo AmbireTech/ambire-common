@@ -19,6 +19,7 @@ const convertTokenPriceToBigInt = (
 ): {
   tokenPriceBigInt: bigint
   tokenPriceDecimals: number
+  tokenPriceLength: number
 } => {
   const tokenPriceString = String(tokenPrice)
 
@@ -31,14 +32,18 @@ const convertTokenPriceToBigInt = (
       Number(base)
     )
 
-    return { tokenPriceBigInt, tokenPriceDecimals: baseDecimals + exponent }
+    return {
+      tokenPriceBigInt,
+      tokenPriceDecimals: baseDecimals + exponent,
+      tokenPriceLength: String(tokenPriceBigInt).length
+    }
   }
 
   // Regular number handling
   const tokenPriceDecimals = tokenPriceString.split('.')[1]?.length || 0
   const tokenPriceBigInt = parseUnits(tokenPriceString, tokenPriceDecimals)
 
-  return { tokenPriceBigInt, tokenPriceDecimals }
+  return { tokenPriceBigInt, tokenPriceDecimals, tokenPriceLength: tokenPriceString.length }
 }
 
 const DEFAULT_ADDRESS_STATE = {
@@ -385,12 +390,17 @@ export class TransferController extends EventEmitter {
 
       // Get the number of decimals
       const amountInFiatDecimals = fieldValue.split('.')[1]?.length || 0
-      const { tokenPriceBigInt, tokenPriceDecimals } = convertTokenPriceToBigInt(tokenPrice)
+      const { tokenPriceBigInt, tokenPriceDecimals, tokenPriceLength } =
+        convertTokenPriceToBigInt(tokenPrice)
 
       // Convert the numbers to big int
-      const amountInFiatBigInt = parseUnits(fieldValue, amountInFiatDecimals + tokenPriceDecimals) // Add the decimals of the token price
+      const amountInFiatBigInt = parseUnits(fieldValue, amountInFiatDecimals + tokenPriceLength)
 
-      this.amount = formatUnits(amountInFiatBigInt / tokenPriceBigInt, amountInFiatDecimals)
+      this.amount = formatUnits(
+        amountInFiatBigInt / tokenPriceBigInt,
+        // Don't lose precision
+        amountInFiatDecimals + (tokenPriceLength - tokenPriceDecimals)
+      )
       return
     }
     if (this.amountFieldMode === 'token') {
