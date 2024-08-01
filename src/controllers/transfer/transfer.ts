@@ -1,4 +1,4 @@
-import { formatUnits, isAddress } from 'ethers'
+import { formatUnits, isAddress, parseUnits } from 'ethers'
 
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { Account } from '../../interfaces/account'
@@ -9,9 +9,46 @@ import { isSmartAccount } from '../../libs/account/account'
 import { HumanizerMeta } from '../../libs/humanizer/interfaces'
 import { TokenResult } from '../../libs/portfolio'
 import { getTokenAmount } from '../../libs/portfolio/helpers'
+import { getSanitizedAmount } from '../../libs/transfer/amount'
 import { validateSendTransferAddress, validateSendTransferAmount } from '../../services/validations'
 import { Contacts } from '../addressBook/addressBook'
 import EventEmitter from '../eventEmitter/eventEmitter'
+
+const CONVERSION_PRECISION = 16
+const CONVERSION_PRECISION_POW = BigInt(10 ** CONVERSION_PRECISION)
+
+/**
+ * Converts floating point token price to big int
+ */
+const convertTokenPriceToBigInt = (
+  tokenPrice: number
+): {
+  tokenPriceBigInt: bigint
+  tokenPriceDecimals: number
+} => {
+  const tokenPriceString = String(tokenPrice)
+
+  // Scientific notation handling
+  if (tokenPriceString.includes('e')) {
+    const [base, rawExponent] = tokenPriceString.split('e')
+    const exponent = Math.abs(Number(rawExponent))
+
+    const { tokenPriceBigInt, tokenPriceDecimals: baseDecimals } = convertTokenPriceToBigInt(
+      Number(base)
+    )
+
+    return {
+      tokenPriceBigInt,
+      tokenPriceDecimals: baseDecimals + exponent
+    }
+  }
+
+  // Regular number handling
+  const tokenPriceDecimals = tokenPriceString.split('.')[1]?.length || 0
+  const tokenPriceBigInt = parseUnits(tokenPriceString, tokenPriceDecimals)
+
+  return { tokenPriceBigInt, tokenPriceDecimals }
+}
 
 const DEFAULT_ADDRESS_STATE = {
   fieldValue: '',
@@ -31,6 +68,8 @@ const DEFAULT_VALIDATION_FORM_MSGS = {
   }
 }
 
+const HARD_CODED_CURRENCY = 'usd'
+
 export class TransferController extends EventEmitter {
   #networks: Network[] = []
 
@@ -47,6 +86,10 @@ export class TransferController extends EventEmitter {
   isSWWarningAgreed = false
 
   amount = ''
+
+  amountInFiat = ''
+
+  amountFieldMode: 'fiat' | 'token' = 'token'
 
   addressState: AddressState = { ...DEFAULT_ADDRESS_STATE }
 
@@ -73,6 +116,8 @@ export class TransferController extends EventEmitter {
     if (!token || Number(getTokenAmount(token)) === 0) {
       this.#selectedToken = null
       this.amount = ''
+      this.amountInFiat = ''
+      this.amountFieldMode = 'token'
       return
     }
 
@@ -84,7 +129,11 @@ export class TransferController extends EventEmitter {
       prevSelectedToken?.address !== token?.address ||
       prevSelectedToken?.networkId !== token?.networkId
     ) {
+      if (!token.priceIn.length) {
+        this.amountFieldMode = 'token'
+      }
       this.amount = ''
+      this.amountInFiat = ''
       this.#setSWWarningVisibleIfNeeded()
     }
   }
@@ -93,7 +142,7 @@ export class TransferController extends EventEmitter {
     return this.#selectedToken
   }
 
-  get maxAmount() {
+  get maxAmount(): string {
     if (
       !this.selectedToken ||
       getTokenAmount(this.selectedToken) === 0n ||
@@ -101,11 +150,31 @@ export class TransferController extends EventEmitter {
     )
       return '0'
 
-    return formatUnits(getTokenAmount(this.selectedToken), Number(this.selectedToken.decimals))
+    return formatUnits(getTokenAmount(this.selectedToken), this.selectedToken.decimals)
+  }
+
+  get maxAmountInFiat(): string {
+    if (!this.selectedToken || getTokenAmount(this.selectedToken) === 0n) return '0'
+
+    const tokenPrice = this.selectedToken?.priceIn.find(
+      (p) => p.baseCurrency === HARD_CODED_CURRENCY
+    )?.price
+    if (!tokenPrice || !Number(this.maxAmount)) return '0'
+
+    const maxAmount = getTokenAmount(this.selectedToken)
+    const { tokenPriceBigInt, tokenPriceDecimals } = convertTokenPriceToBigInt(tokenPrice)
+
+    // Multiply the max amount by the token price. The calculation is done in big int to avoid precision loss
+    return formatUnits(
+      maxAmount * tokenPriceBigInt,
+      // Shift the decimal point by the number of decimals in the token price
+      this.selectedToken.decimals + tokenPriceDecimals
+    )
   }
 
   resetForm() {
     this.amount = ''
+    this.amountInFiat = ''
     this.addressState = { ...DEFAULT_ADDRESS_STATE }
     this.isRecipientAddressUnknown = false
     this.isRecipientAddressUnknownAgreed = false
@@ -141,7 +210,12 @@ export class TransferController extends EventEmitter {
 
     // Validate the amount
     if (this.selectedToken) {
-      validationFormMsgsNew.amount = validateSendTransferAmount(this.amount, this.selectedToken)
+      validationFormMsgsNew.amount = validateSendTransferAmount(
+        this.amount,
+        Number(this.maxAmount),
+        Number(this.maxAmountInFiat),
+        this.selectedToken
+      )
     }
 
     return validationFormMsgsNew
@@ -153,7 +227,13 @@ export class TransferController extends EventEmitter {
     // if the amount is set, it's enough in topUp mode
     if (this.isTopUp) {
       return (
-        this.selectedToken && validateSendTransferAmount(this.amount, this.selectedToken).success
+        this.selectedToken &&
+        validateSendTransferAmount(
+          this.amount,
+          Number(this.maxAmount),
+          Number(this.maxAmountInFiat),
+          this.selectedToken
+        ).success
       )
     }
 
@@ -193,7 +273,8 @@ export class TransferController extends EventEmitter {
     isRecipientAddressUnknownAgreed,
     isTopUp,
     networks,
-    contacts
+    contacts,
+    amountFieldMode
   }: TransferUpdate) {
     if (humanizerInfo) {
       this.#humanizerInfo = humanizerInfo
@@ -210,7 +291,7 @@ export class TransferController extends EventEmitter {
     }
     if (selectedAccountData) {
       if (this.#selectedAccountData?.addr !== selectedAccountData.addr) {
-        this.amount = ''
+        this.#setAmount('')
       }
       this.#selectedAccountData = selectedAccountData
     }
@@ -219,8 +300,12 @@ export class TransferController extends EventEmitter {
     }
     // If we do a regular check the value won't update if it's '' or '0'
     if (typeof amount === 'string') {
-      this.amount = amount
+      this.#setAmount(amount)
     }
+    if (amountFieldMode) {
+      this.amountFieldMode = amountFieldMode
+    }
+
     if (addressState) {
       this.addressState = {
         ...this.addressState,
@@ -289,6 +374,62 @@ export class TransferController extends EventEmitter {
     this.checkIsRecipientAddressUnknown()
   }
 
+  #setAmount(fieldValue: string) {
+    if (!fieldValue) {
+      this.amount = ''
+      this.amountInFiat = ''
+      return
+    }
+
+    const tokenPrice = this.selectedToken?.priceIn.find(
+      (p) => p.baseCurrency === HARD_CODED_CURRENCY
+    )?.price
+
+    if (!tokenPrice) {
+      this.amount = fieldValue
+      this.amountInFiat = ''
+      return
+    }
+
+    if (this.amountFieldMode === 'fiat' && this.selectedToken?.decimals) {
+      this.amountInFiat = fieldValue
+
+      // Get the number of decimals
+      const amountInFiatDecimals = fieldValue.split('.')[1]?.length || 0
+      const { tokenPriceBigInt, tokenPriceDecimals } = convertTokenPriceToBigInt(tokenPrice)
+
+      // Convert the numbers to big int
+      const amountInFiatBigInt = parseUnits(fieldValue, amountInFiatDecimals)
+
+      this.amount = formatUnits(
+        (amountInFiatBigInt * CONVERSION_PRECISION_POW) / tokenPriceBigInt,
+        // Shift the decimal point by the number of decimals in the token price
+        amountInFiatDecimals + CONVERSION_PRECISION - tokenPriceDecimals
+      )
+
+      return
+    }
+    if (this.amountFieldMode === 'token') {
+      this.amount = fieldValue
+
+      if (!this.selectedToken) return
+
+      const sanitizedFieldValue = getSanitizedAmount(fieldValue, this.selectedToken.decimals)
+      // Convert the field value to big int
+      const formattedAmount = parseUnits(sanitizedFieldValue, this.selectedToken.decimals)
+
+      if (!formattedAmount) return
+
+      const { tokenPriceBigInt, tokenPriceDecimals } = convertTokenPriceToBigInt(tokenPrice)
+
+      this.amountInFiat = formatUnits(
+        formattedAmount * tokenPriceBigInt,
+        // Shift the decimal point by the number of decimals in the token price
+        this.selectedToken.decimals + tokenPriceDecimals
+      )
+    }
+  }
+
   #setSWWarningVisibleIfNeeded() {
     if (!this.#selectedAccountData) return
 
@@ -315,7 +456,8 @@ export class TransferController extends EventEmitter {
       isFormValid: this.isFormValid,
       isInitialized: this.isInitialized,
       selectedToken: this.selectedToken,
-      maxAmount: this.maxAmount
+      maxAmount: this.maxAmount,
+      maxAmountInFiat: this.maxAmountInFiat
     }
   }
 }
