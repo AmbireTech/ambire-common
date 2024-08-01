@@ -845,6 +845,7 @@ export class SignAccountOpController extends EventEmitter {
   #setSigningError(error: string, type = SigningStatus.UnableToSign) {
     this.status = { type, error }
     this.emitUpdate()
+    return Promise.reject(this.status)
   }
 
   #addFeePayment() {
@@ -948,7 +949,7 @@ export class SignAccountOpController extends EventEmitter {
       // In case of EOA account
       if (!isSmartAccount(this.account)) {
         if (this.accountOp.calls.length !== 1)
-          return this.#setSigningError(
+          return await this.#setSigningError(
             'Tried to sign an EOA transaction with multiple or zero calls.'
           )
 
@@ -972,7 +973,9 @@ export class SignAccountOpController extends EventEmitter {
           !accountState.isDeployed &&
           (!this.accountOp.meta || !this.accountOp.meta.entryPointAuthorization)
         )
-          return this.#setSigningError('Entry point privileges not granted. Please contact support')
+          return await this.#setSigningError(
+            'Entry point privileges not granted. Please contact support'
+          )
 
         const userOperation = getUserOperation(
           this.account,
@@ -1041,7 +1044,7 @@ export class SignAccountOpController extends EventEmitter {
             })
             this.status = { type: SigningStatus.ReadyToSign }
             this.emitUpdate()
-            return
+            return Promise.reject(this.status)
           }
         }
 
@@ -1071,8 +1074,9 @@ export class SignAccountOpController extends EventEmitter {
       this.status = { type: SigningStatus.Done }
       this.signedAccountOp = structuredClone(this.accountOp)
       this.emitUpdate()
+      return this.signedAccountOp
     } catch (error: any) {
-      this.#setSigningError(error?.message, SigningStatus.ReadyToSign)
+      return this.#setSigningError(error?.message, SigningStatus.ReadyToSign)
     }
   }
 

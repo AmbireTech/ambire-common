@@ -388,6 +388,8 @@ export class MainController extends EventEmitter {
   }
 
   async #handleSignAccountOp() {
+    console.log('handleSignAccountOp gets called')
+
     if (!this.signAccountOp) {
       const message =
         'The signing process was not initialized as expected. Please try again later or contact Ambire support if the issue persists.'
@@ -398,13 +400,17 @@ export class MainController extends EventEmitter {
     await this.signAccountOp.sign()
 
     // Error handling on the prev step will notify the user, it's fine to return here
-    if (this.signAccountOp.status?.type !== SigningStatus.Done) return
+    if (this.signAccountOp.status?.type !== SigningStatus.Done) return Promise.reject()
 
-    await this.withStatus('broadcastSignedAccountOp', async () => this.#broadcastSignedAccountOp())
+    await this.withStatus(
+      'broadcastSignedAccountOp',
+      async () => this.#broadcastSignedAccountOp(),
+      false
+    )
   }
 
   async handleSignAccountOp() {
-    await this.withStatus('handleSignAccountOp', async () => this.#handleSignAccountOp())
+    await this.withStatus('handleSignAccountOp', async () => this.#handleSignAccountOp(), false)
   }
 
   destroySignAccOp() {
