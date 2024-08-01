@@ -455,7 +455,7 @@ describe('KeystoreController', () => {
   })
   test('should get default seed phrase', async () => {
     expect(!!keystore.hasKeystoreDefaultSeed).toBeTruthy()
-    const decryptedDefaultSeedPhrase = await keystore.getSeed()
+    const decryptedDefaultSeedPhrase = await keystore.getDefaultSeed()
     expect(decryptedDefaultSeedPhrase).toEqual(process.env.SEED)
   })
 })
