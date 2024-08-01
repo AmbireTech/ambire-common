@@ -63,7 +63,6 @@ import { AccountsController } from '../accounts/accounts'
 import { AccountOpAction, ActionsController, SignMessageAction } from '../actions/actions'
 import { ActivityController, SubmittedAccountOp } from '../activity/activity'
 import { AddressBookController } from '../addressBook/addressBook'
-import { AssetInfoController } from '../assetInfo/assetInfo'
 import { DappsController } from '../dapps/dapps'
 import { DomainsController } from '../domains/domains'
 import { EmailVaultController } from '../emailVault/emailVault'
@@ -138,8 +137,6 @@ export class MainController extends EventEmitter {
   addressBook: AddressBookController
 
   domains: DomainsController
-
-  assetInfo: AssetInfoController
 
   accounts: AccountsController
 
@@ -282,7 +279,6 @@ export class MainController extends EventEmitter {
       }
     )
     this.domains = new DomainsController(this.providers.providers, this.#fetch)
-    this.assetInfo = new AssetInfoController(this.#fetch)
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch: this.#fetch })
     this.onSignSuccess = onSignSuccess || (() => {})
   }
