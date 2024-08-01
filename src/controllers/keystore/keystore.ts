@@ -86,7 +86,7 @@ export class KeystoreController extends EventEmitter {
 
   #storage: Storage
 
-  #keystoreDefaultSeed: string | null = null
+  #keystoreSeeds: string[] = []
 
   #keystoreSigners: Partial<{ [key in Key['type']]: KeystoreSignerType }>
 
@@ -118,7 +118,7 @@ export class KeystoreController extends EventEmitter {
 
   async #load() {
     try {
-      this.#keystoreDefaultSeed = await this.#storage.get('keystoreDefaultSeed', null)
+      this.#keystoreSeeds = await this.#storage.get('keystoreSeeds', [])
       this.#keystoreKeys = await this.#storage.get('keystoreKeys', [])
       this.keyStoreUid = await this.#storage.get('keyStoreUid', null)
     } catch (e) {
@@ -368,7 +368,9 @@ export class KeystoreController extends EventEmitter {
       })
     }
 
-    if (this.#keystoreDefaultSeed) {
+    // Currently we support only one seed phrase to be added to the keystore
+    // this fist seed phrase will become the default seed phrase of the wallet
+    if (this.#keystoreSeeds.length) {
       throw new EmittableError({
         message: 'You can have only one default seed phrase for that wallet',
         level: 'major',
@@ -381,8 +383,8 @@ export class KeystoreController extends EventEmitter {
     // Set up the cipher
     const counter = new aes.Counter(this.#mainKey!.iv) // TS compiler fails to detect we check for null above
     const aesCtr = new aes.ModeOfOperation.ctr(this.#mainKey!.key, counter) // TS compiler fails to detect we check for null above
-    this.#keystoreDefaultSeed = hexlify(aesCtr.encrypt(new TextEncoder().encode(seed)))
-    await this.#storage.set('keystoreDefaultSeed', this.#keystoreDefaultSeed)
+    this.#keystoreSeeds.push(hexlify(aesCtr.encrypt(new TextEncoder().encode(seed))))
+    await this.#storage.set('keystoreSeeds', this.#keystoreSeeds)
 
     this.emitUpdate()
   }
@@ -618,13 +620,13 @@ export class KeystoreController extends EventEmitter {
     return new SignerInitializer(key)
   }
 
-  async getSeed() {
+  async getDefaultSeed() {
     await this.#initialLoadPromise
 
     if (!this.isUnlocked) throw new Error('keystore: not unlocked')
-    if (!this.#keystoreDefaultSeed) throw new Error('keystore: no seed phrase added yet')
+    if (!this.#keystoreSeeds.length) throw new Error('keystore: no seed phrase added yet')
 
-    const encryptedSeedBytes = getBytes(this.#keystoreDefaultSeed)
+    const encryptedSeedBytes = getBytes(this.#keystoreSeeds[0])
     // @ts-ignore
     const counter = new aes.Counter(this.#mainKey.iv)
     // @ts-ignore
@@ -682,7 +684,7 @@ export class KeystoreController extends EventEmitter {
   }
 
   get hasKeystoreDefaultSeed() {
-    return !!this.#keystoreDefaultSeed
+    return !!this.#keystoreSeeds.length
   }
 
   toJSON() {

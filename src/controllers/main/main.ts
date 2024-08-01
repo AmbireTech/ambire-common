@@ -351,7 +351,7 @@ export class MainController extends EventEmitter {
         await this.keystore.addSeed(seed)
       }
 
-      const defaultSeed = await this.keystore.getSeed()
+      const defaultSeed = await this.keystore.getDefaultSeed()
 
       if (!defaultSeed) {
         throw new EmittableError({
