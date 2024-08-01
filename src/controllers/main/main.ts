@@ -81,7 +81,8 @@ const STATUS_WRAPPED_METHODS = {
   onAccountAdderSuccess: 'INITIAL',
   broadcastSignedAccountOp: 'INITIAL',
   removeAccount: 'INITIAL',
-  handleAccountAdderInitLedger: 'INITIAL'
+  handleAccountAdderInitLedger: 'INITIAL',
+  handleSignAccountOp: 'INITIAL'
 } as const
 
 export class MainController extends EventEmitter {
@@ -386,7 +387,7 @@ export class MainController extends EventEmitter {
     this.estimateSignAccountOp()
   }
 
-  async handleSignAccountOp() {
+  async #handleSignAccountOp() {
     if (!this.signAccountOp) {
       const message =
         'The signing process was not initialized as expected. Please try again later or contact Ambire support if the issue persists.'
@@ -400,6 +401,10 @@ export class MainController extends EventEmitter {
     if (this.signAccountOp.status?.type !== SigningStatus.Done) return
 
     await this.withStatus('broadcastSignedAccountOp', async () => this.#broadcastSignedAccountOp())
+  }
+
+  async handleSignAccountOp() {
+    await this.withStatus('handleSignAccountOp', async () => this.#handleSignAccountOp())
   }
 
   destroySignAccOp() {
