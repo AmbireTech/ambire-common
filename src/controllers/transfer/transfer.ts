@@ -14,6 +14,12 @@ import { validateSendTransferAddress, validateSendTransferAmount } from '../../s
 import { Contacts } from '../addressBook/addressBook'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
+const CONVERSION_PRECISION = 16
+const CONVERSION_PRECISION_POW = BigInt(10 ** CONVERSION_PRECISION)
+
+/**
+ * Converts floating point token price to big int
+ */
 const convertTokenPriceToBigInt = (
   tokenPrice: number
 ): {
@@ -158,8 +164,10 @@ export class TransferController extends EventEmitter {
     const maxAmount = getTokenAmount(this.selectedToken)
     const { tokenPriceBigInt, tokenPriceDecimals } = convertTokenPriceToBigInt(tokenPrice)
 
+    // Multiply the max amount by the token price. The calculation is done in big int to avoid precision loss
     return formatUnits(
       maxAmount * tokenPriceBigInt,
+      // Shift the decimal point by the number of decimals in the token price
       this.selectedToken.decimals + tokenPriceDecimals
     )
   }
@@ -392,13 +400,11 @@ export class TransferController extends EventEmitter {
 
       // Convert the numbers to big int
       const amountInFiatBigInt = parseUnits(fieldValue, amountInFiatDecimals)
-      const precision = 16
-      const pow = BigInt(10 ** precision)
 
       this.amount = formatUnits(
-        (amountInFiatBigInt * pow) / tokenPriceBigInt,
-        // Don't lose precision
-        amountInFiatDecimals + precision - tokenPriceDecimals
+        (amountInFiatBigInt * CONVERSION_PRECISION_POW) / tokenPriceBigInt,
+        // Shift the decimal point by the number of decimals in the token price
+        amountInFiatDecimals + CONVERSION_PRECISION - tokenPriceDecimals
       )
 
       return
@@ -409,6 +415,7 @@ export class TransferController extends EventEmitter {
       if (!this.selectedToken) return
 
       const sanitizedFieldValue = getSanitizedAmount(fieldValue, this.selectedToken.decimals)
+      // Convert the field value to big int
       const formattedAmount = parseUnits(sanitizedFieldValue, this.selectedToken.decimals)
 
       if (!formattedAmount) return
@@ -417,6 +424,7 @@ export class TransferController extends EventEmitter {
 
       this.amountInFiat = formatUnits(
         formattedAmount * tokenPriceBigInt,
+        // Shift the decimal point by the number of decimals in the token price
         this.selectedToken.decimals + tokenPriceDecimals
       )
     }
