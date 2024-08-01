@@ -1,4 +1,3 @@
-/* eslint-disable no-param-reassign */
 import { getAddress, ZeroAddress } from 'ethers'
 
 import { Account, AccountId } from '../../interfaces/account'
