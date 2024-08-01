@@ -447,11 +447,11 @@ export class PortfolioController extends EventEmitter {
     if (!portfolioProps.previousHints) portfolioProps.previousHints = { erc20s: [], erc721s: {} }
     portfolioProps.previousHints.erc721s = Object.fromEntries(
       Object.entries(this.#previousHints?.learnedNfts?.[network.id] || {}).map(([k, v]) => [
-        k,
+        getAddress(k),
         { isKnown: false, tokens: v.map((i) => i.toString()) }
       ])
     )
-    this.#previousHints.learnedNfts
+
     if (!_accountState[network.id]) {
       _accountState[network.id] = {
         isReady: false,
