@@ -1,3 +1,4 @@
+/* eslint-disable no-param-reassign */
 import { getAddress, ZeroAddress } from 'ethers'
 
 import { Account, AccountId } from '../../interfaces/account'
@@ -440,12 +441,10 @@ export class PortfolioController extends EventEmitter {
     _accountState: AccountState,
     network: Network,
     portfolioLib: Portfolio,
-    _portfolioProps: Partial<GetOptions>,
+    portfolioProps: Partial<GetOptions>,
     forceUpdate: boolean
   ): Promise<boolean> {
     const hasNonZeroTokens = !!this.#networksWithAssetsByAccounts?.[accountId]?.length
-    const accountState = { ..._accountState }
-    const portfolioProps = { ..._portfolioProps }
     if (!portfolioProps.previousHints) portfolioProps.previousHints = { erc20s: [], erc721s: {} }
     portfolioProps.previousHints.erc721s = Object.fromEntries(
       Object.entries(this.#previousHints?.learnedNfts?.[network.id] || {}).map(([k, v]) => [
@@ -454,15 +453,15 @@ export class PortfolioController extends EventEmitter {
       ])
     )
     this.#previousHints.learnedNfts
-    if (!accountState[network.id]) {
-      accountState[network.id] = {
+    if (!_accountState[network.id]) {
+      _accountState[network.id] = {
         isReady: false,
         isLoading: false,
         errors: []
       }
       this.emitUpdate()
     }
-    const state = accountState[network.id]!
+    const state = _accountState[network.id]!
 
     // When the portfolio was called lastly
     const lastUpdateStartedAt = state.result?.updateStarted
@@ -497,7 +496,7 @@ export class PortfolioController extends EventEmitter {
         tokenPreferences
       )
 
-      accountState[network.id] = {
+      _accountState[network.id] = {
         isReady: true,
         isLoading: false,
         errors: result.errors,
