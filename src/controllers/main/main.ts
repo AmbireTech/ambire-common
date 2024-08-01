@@ -345,91 +345,95 @@ export class MainController extends EventEmitter {
   }
 
   async importSmartAccountFromDefaultSeed(seed?: string) {
-    await this.withStatus('importSmartAccountFromDefaultSeed', async () => {
-      if (this.accountAdder.isInitialized) this.accountAdder.reset()
-      if (seed && !this.keystore.hasKeystoreDefaultSeed) {
-        await this.keystore.addSeed(seed)
-      }
+    await this.withStatus(
+      'importSmartAccountFromDefaultSeed',
+      async () => {
+        if (this.accountAdder.isInitialized) this.accountAdder.reset()
+        if (seed && !this.keystore.hasKeystoreDefaultSeed) {
+          await this.keystore.addSeed(seed)
+        }
 
-      const defaultSeed = await this.keystore.getDefaultSeed()
+        const defaultSeed = await this.keystore.getDefaultSeed()
 
-      if (!defaultSeed) {
-        throw new EmittableError({
-          message:
-            'Failed to retrieve default seed phrase from keystore. Please try again or contact Ambire support if the issue persists.',
-          level: 'major',
-          error: new Error('failed to retrieve default seed phrase from keystore')
-        })
-      }
-
-      const keyIterator = new KeyIterator(defaultSeed)
-      this.accountAdder.init({
-        keyIterator,
-        hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
-        pageSize: 1
-      })
-
-      let currentPage: number = 1
-      let isAccountAlreadyAdded: boolean
-      let nextSmartAccount: AccountWithNetworkMeta | undefined
-
-      const findNextSmartAccount = async () => {
-        do {
-          // eslint-disable-next-line no-await-in-loop
-          await this.accountAdder.setPage({
-            page: currentPage,
-            networks: this.networks.networks,
-            providers: this.providers.providers
+        if (!defaultSeed) {
+          throw new EmittableError({
+            message:
+              'Failed to retrieve default seed phrase from keystore. Please try again or contact Ambire support if the issue persists.',
+            level: 'major',
+            error: new Error('failed to retrieve default seed phrase from keystore')
           })
+        }
 
-          nextSmartAccount = this.accountAdder.accountsOnPage.find(
-            ({ isLinked, account }) => !isLinked && isSmartAccount(account)
-          )?.account
-
-          if (!nextSmartAccount) break
-
-          isAccountAlreadyAdded = !!this.accounts.accounts.find(
-            // eslint-disable-next-line @typescript-eslint/no-loop-func
-            (a) => a.addr === nextSmartAccount!.addr
-          )
-
-          currentPage++
-        } while (isAccountAlreadyAdded)
-      }
-
-      await findNextSmartAccount()
-
-      if (!nextSmartAccount) {
-        throw new EmittableError({
-          message:
-            'Internal error while looking for account to add. Please start the process all over again and if the issue persists contact Ambire support.',
-          level: 'major',
-          error: new Error('Internal error: Failed to find a smart account to add')
+        const keyIterator = new KeyIterator(defaultSeed)
+        this.accountAdder.init({
+          keyIterator,
+          hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
+          pageSize: 1
         })
-      }
 
-      await this.accountAdder.selectAccount(nextSmartAccount)
+        let currentPage: number = 1
+        let isAccountAlreadyAdded: boolean
+        let nextSmartAccount: AccountWithNetworkMeta | undefined
 
-      const readyToAddKeys = this.accountAdder.retrieveInternalKeysOfSelectedAccounts()
+        const findNextSmartAccount = async () => {
+          do {
+            // eslint-disable-next-line no-await-in-loop
+            await this.accountAdder.setPage({
+              page: currentPage,
+              networks: this.networks.networks,
+              providers: this.providers.providers
+            })
 
-      const readyToAddKeyPreferences = this.accountAdder.selectedAccounts.flatMap(
-        ({ account, accountKeys }) =>
-          accountKeys.map(({ addr }, i: number) => ({
-            addr,
-            type: 'internal',
-            label: getDefaultKeyLabel(
-              this.keystore.keys.filter((key) => account.associatedKeys.includes(key.addr)),
-              i
+            nextSmartAccount = this.accountAdder.accountsOnPage.find(
+              ({ isLinked, account }) => !isLinked && isSmartAccount(account)
+            )?.account
+
+            if (!nextSmartAccount) break
+
+            isAccountAlreadyAdded = !!this.accounts.accounts.find(
+              // eslint-disable-next-line @typescript-eslint/no-loop-func
+              (a) => a.addr === nextSmartAccount!.addr
             )
-          }))
-      )
 
-      await this.accountAdder.addAccounts(
-        this.accountAdder.selectedAccounts,
-        { internal: readyToAddKeys, external: [] },
-        readyToAddKeyPreferences
-      )
-    })
+            currentPage++
+          } while (isAccountAlreadyAdded)
+        }
+
+        await findNextSmartAccount()
+
+        if (!nextSmartAccount) {
+          throw new EmittableError({
+            message:
+              'Internal error while looking for account to add. Please start the process all over again and if the issue persists contact Ambire support.',
+            level: 'major',
+            error: new Error('Internal error: Failed to find a smart account to add')
+          })
+        }
+
+        this.accountAdder.selectAccount(nextSmartAccount)
+
+        const readyToAddKeys = this.accountAdder.retrieveInternalKeysOfSelectedAccounts()
+
+        const readyToAddKeyPreferences = this.accountAdder.selectedAccounts.flatMap(
+          ({ account, accountKeys }) =>
+            accountKeys.map(({ addr }, i: number) => ({
+              addr,
+              type: 'internal',
+              label: getDefaultKeyLabel(
+                this.keystore.keys.filter((key) => account.associatedKeys.includes(key.addr)),
+                i
+              )
+            }))
+        )
+
+        await this.accountAdder.addAccounts(
+          this.accountAdder.selectedAccounts,
+          { internal: readyToAddKeys, external: [] },
+          readyToAddKeyPreferences
+        )
+      },
+      true
+    )
   }
 
   initSignAccOp(actionId: AccountOpAction['id']): null | void {
