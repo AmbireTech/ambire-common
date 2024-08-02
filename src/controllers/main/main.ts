@@ -79,7 +79,7 @@ import { SignMessageController } from '../signMessage/signMessage'
 
 const STATUS_WRAPPED_METHODS = {
   onAccountAdderSuccess: 'INITIAL',
-  handleSignAccountOp: 'INITIAL',
+  signAccountOp: 'INITIAL',
   broadcastSignedAccountOp: 'INITIAL',
   removeAccount: 'INITIAL',
   handleAccountAdderInitLedger: 'INITIAL'
@@ -387,9 +387,9 @@ export class MainController extends EventEmitter {
     this.estimateSignAccountOp()
   }
 
-  async handleSignAccountOp(n) {
+  async handleSignAccountOp() {
     await this.withStatus(
-      'handleSignAccountOp',
+      'signAccountOp',
       async () => {
         const wasAlreadySigned = this.signAccountOp?.status?.type === SigningStatus.Done
         if (wasAlreadySigned) return Promise.resolve()
@@ -408,7 +408,7 @@ export class MainController extends EventEmitter {
     )
 
     // Error handling on the prev step will notify the user, it's fine to return here
-    if (this.signAccountOp?.status?.type !== SigningStatus.Done) return Promise.reject()
+    if (this.signAccountOp?.status?.type !== SigningStatus.Done) return
 
     return this.withStatus(
       'broadcastSignedAccountOp',
