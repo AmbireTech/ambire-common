@@ -3,12 +3,18 @@ import { JsonRpcProvider, ZeroAddress } from 'ethers'
 import { Network, NetworkId } from '../../interfaces/network'
 import { GetOptions, Portfolio } from '../../libs/portfolio'
 
-const scheduledActions: { [network in NetworkId]: { callback: Function; address: string }[] } = {}
+const scheduledActions: {
+  [network in NetworkId]?: {
+    promise: Promise<any>
+    data: { callback: Function; address: string }[]
+  }
+} = {}
 
-async function executeBatchedFetch(network: Network) {
+export async function executeBatchedFetch(network: Network): Promise<any> {
   const provider = new JsonRpcProvider(network.rpcUrls[0])
-  const allAddresses = scheduledActions[network.id].map((i) => i.address)
-  const portfolio = new Portfolio(fetch, provider, network)
+  const allAddresses =
+    Array.from(new Set(scheduledActions[network.id]?.data.map((i) => i.address))) || []
+  const portfolio = new Portfolio(fetch as any, provider, network)
   const options: Partial<GetOptions> = {
     disableAutoDiscovery: true,
     previousHints: {
@@ -25,7 +31,7 @@ async function executeBatchedFetch(network: Network) {
     }
   }
   const portfolioResponse = await portfolio.get(ZeroAddress, options)
-  scheduledActions[network.id].forEach((i) => {
+  scheduledActions[network.id]?.data.forEach((i) => {
     const tokenInfo =
       (i.address,
       portfolioResponse.tokens.find(
@@ -36,7 +42,7 @@ async function executeBatchedFetch(network: Network) {
       portfolioResponse.collections.find(
         (t) => t.address.toLocaleLowerCase() === i.address.toLowerCase()
       ))
-    console.log(portfolioResponse.collections)
+
     i.callback({ tokenInfo, nftInfo })
   })
 }
@@ -45,13 +51,25 @@ async function executeBatchedFetch(network: Network) {
 /**
  * Resolves symbol and decimals for tokens or name for nfts.
  */
-export async function resolveAssetInfo(address: string, network: Network, callback: Function) {
-  if (!scheduledActions[network.id]?.length) {
-    scheduledActions[network.id] = [{ address, callback }]
-    setTimeout(async () => {
-      await executeBatchedFetch(network)
-    }, 500)
+export async function resolveAssetInfo(
+  address: string,
+  network: Network,
+  callback: Function
+): Promise<any> {
+  if (!scheduledActions[network.id]?.data?.length) {
+    scheduledActions[network.id] = {
+      promise: new Promise((resolve, reject) => {
+        setTimeout(async () => {
+          await executeBatchedFetch(network).catch(reject)
+          scheduledActions[network.id] = undefined
+          resolve(0)
+        }, 500)
+      }),
+      data: [{ address, callback }]
+    }
   } else {
-    scheduledActions[network.id].push({ address, callback })
+    scheduledActions[network.id]?.data.push({ address, callback })
   }
+  // we are returning a promise so we can await the full execution
+  return scheduledActions[network.id]?.promise
 }

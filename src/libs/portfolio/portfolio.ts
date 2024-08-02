@@ -191,7 +191,7 @@ export class Portfolio {
         )
       )
     ])
-    console.log({ collectionsWithErr })
+
     const [tokensWithErrResult, blockNumber] = tokensWithErr
 
     // Re-map/filter into our format
