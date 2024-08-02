@@ -1,3 +1,5 @@
+import fetch from 'node-fetch'
+
 import { expect, jest } from '@jest/globals'
 
 import { networks } from '../../consts/networks'
@@ -7,6 +9,9 @@ const WETH_ADDRESS = '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2'
 const USDC_ADDRESS = '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48'
 const LOBSTER_ADDRESS = '0x026224A2940bFE258D0dbE947919B62fE321F042'
 const UNISWAP_ROUTER = '0xE592427A0AEce92De3Edee1F18E0157C05861564'
+
+global.fetch = fetch as any
+
 describe('Asset info service', () => {
   test.only('Fetches all tokens and NFTS correctly', async () => {
     jest.spyOn(assetInfo, 'executeBatchedFetch')
@@ -33,5 +38,6 @@ describe('Asset info service', () => {
     expect(wethCallback).toBeCalledTimes(1)
     expect(usdcCallback).toBeCalledTimes(1)
     expect(lobsterCallback).toBeCalledTimes(1)
+    expect(uniswapCallback).toBeCalledTimes(1)
   })
 })
