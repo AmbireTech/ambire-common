@@ -79,10 +79,10 @@ import { SignMessageController } from '../signMessage/signMessage'
 
 const STATUS_WRAPPED_METHODS = {
   onAccountAdderSuccess: 'INITIAL',
+  handleSignAccountOp: 'INITIAL',
   broadcastSignedAccountOp: 'INITIAL',
   removeAccount: 'INITIAL',
-  handleAccountAdderInitLedger: 'INITIAL',
-  handleSignAccountOp: 'INITIAL'
+  handleAccountAdderInitLedger: 'INITIAL'
 } as const
 
 export class MainController extends EventEmitter {
@@ -387,30 +387,34 @@ export class MainController extends EventEmitter {
     this.estimateSignAccountOp()
   }
 
-  async #handleSignAccountOp() {
-    console.log('handleSignAccountOp gets called')
+  async handleSignAccountOp(n) {
+    await this.withStatus(
+      'handleSignAccountOp',
+      async () => {
+        const wasAlreadySigned = this.signAccountOp?.status?.type === SigningStatus.Done
+        if (wasAlreadySigned) return Promise.resolve()
 
-    if (!this.signAccountOp) {
-      const message =
-        'The signing process was not initialized as expected. Please try again later or contact Ambire support if the issue persists.'
-      const error = new Error('SignAccountOp is not initialized')
-      return this.emitError({ level: 'major', message, error })
-    }
+        if (!this.signAccountOp) {
+          const message =
+            'The signing process was not initialized as expected. Please try again later or contact Ambire support if the issue persists.'
+          const error = new Error('SignAccountOp is not initialized')
+          this.emitError({ level: 'major', message, error })
+          return Promise.reject(error)
+        }
 
-    await this.signAccountOp.sign()
+        return this.signAccountOp.sign()
+      },
+      false
+    )
 
     // Error handling on the prev step will notify the user, it's fine to return here
-    if (this.signAccountOp.status?.type !== SigningStatus.Done) return Promise.reject()
+    if (this.signAccountOp?.status?.type !== SigningStatus.Done) return Promise.reject()
 
-    await this.withStatus(
+    return this.withStatus(
       'broadcastSignedAccountOp',
       async () => this.#broadcastSignedAccountOp(),
       false
     )
-  }
-
-  async handleSignAccountOp() {
-    await this.withStatus('handleSignAccountOp', async () => this.#handleSignAccountOp(), false)
   }
 
   destroySignAccOp() {
