@@ -120,15 +120,21 @@ export class ActionsController extends EventEmitter {
     })
   }
 
-  addOrUpdateAction(newAction: Action, withPriority?: boolean) {
+  addOrUpdateAction(
+    newAction: Action,
+    withPriority?: boolean,
+    executionType: 'queue' | 'open' = 'open'
+  ) {
     const actionIndex = this.actionsQueue.findIndex((a) => a.id === newAction.id)
     if (actionIndex !== -1) {
       this.actionsQueue[actionIndex] = newAction
-      this.sendNewActionMessage(newAction, 'update')
-      const currentAction = withPriority
-        ? this.visibleActionsQueue[0] || null
-        : this.currentAction || this.visibleActionsQueue[0] || null
-      this.#setCurrentAction(currentAction)
+      if (executionType === 'open') {
+        this.sendNewActionMessage(newAction, 'update')
+        const currentAction = withPriority
+          ? this.visibleActionsQueue[0] || null
+          : this.currentAction || this.visibleActionsQueue[0] || null
+        this.#setCurrentAction(currentAction)
+      }
       return
     }
 
@@ -137,11 +143,14 @@ export class ActionsController extends EventEmitter {
     } else {
       this.actionsQueue.push(newAction)
     }
-    this.sendNewActionMessage(newAction, withPriority ? 'unshift' : 'push')
-    const currentAction = withPriority
-      ? this.visibleActionsQueue[0] || null
-      : this.currentAction || this.visibleActionsQueue[0] || null
-    this.#setCurrentAction(currentAction)
+
+    if (executionType === 'open') {
+      this.sendNewActionMessage(newAction, withPriority ? 'unshift' : 'push')
+      const currentAction = withPriority
+        ? this.visibleActionsQueue[0] || null
+        : this.currentAction || this.visibleActionsQueue[0] || null
+      this.#setCurrentAction(currentAction)
+    }
   }
 
   removeAction(actionId: Action['id']) {

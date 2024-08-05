@@ -950,7 +950,8 @@ export class MainController extends EventEmitter {
   async buildTransferUserRequest(
     amount: string,
     recipientAddress: string,
-    selectedToken: TokenResult
+    selectedToken: TokenResult,
+    executionType: 'queue' | 'open' = 'open'
   ) {
     await this.#initialLoadPromise
     if (!this.accounts.selectedAccount) return
@@ -975,7 +976,7 @@ export class MainController extends EventEmitter {
       return
     }
 
-    await this.addUserRequest(userRequest, !account.creation)
+    await this.addUserRequest(userRequest, !account.creation, executionType)
   }
 
   resolveUserRequest(data: any, requestId: UserRequest['id']) {
@@ -1016,7 +1017,11 @@ export class MainController extends EventEmitter {
     this.emitUpdate()
   }
 
-  async addUserRequest(req: UserRequest, withPriority?: boolean) {
+  async addUserRequest(
+    req: UserRequest,
+    withPriority?: boolean,
+    executionType: 'queue' | 'open' = 'open'
+  ) {
     if (withPriority) {
       this.userRequests.unshift(req)
     } else {
@@ -1070,7 +1075,7 @@ export class MainController extends EventEmitter {
           userRequests: this.userRequests,
           actionsQueue: this.actions.actionsQueue
         })
-        this.actions.addOrUpdateAction(accountOpAction, withPriority)
+        this.actions.addOrUpdateAction(accountOpAction, withPriority, executionType)
         if (this.signAccountOp && this.signAccountOp.fromActionId === accountOpAction.id) {
           this.signAccountOp.update({ accountOp: accountOpAction.accountOp })
           this.estimateSignAccountOp()
@@ -1082,7 +1087,7 @@ export class MainController extends EventEmitter {
           nonce: accountState.nonce,
           userRequest: req
         })
-        this.actions.addOrUpdateAction(accountOpAction, withPriority)
+        this.actions.addOrUpdateAction(accountOpAction, withPriority, executionType)
       }
     } else {
       let actionType: 'dappRequest' | 'benzin' | 'signMessage' = 'dappRequest'
@@ -1111,7 +1116,8 @@ export class MainController extends EventEmitter {
           type: actionType,
           userRequest: req as UserRequest as never
         },
-        withPriority
+        withPriority,
+        executionType
       )
     }
 
