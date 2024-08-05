@@ -10,7 +10,7 @@ const scheduledActions: {
   }
 } = {}
 
-export async function executeBatchedFetch(network: Network): Promise<any> {
+export async function executeBatchedFetch(network: Network): Promise<void> {
   const provider = new JsonRpcProvider(network.rpcUrls[0])
   const allAddresses =
     Array.from(new Set(scheduledActions[network.id]?.data.map((i) => i.address))) || []
@@ -55,7 +55,7 @@ export async function resolveAssetInfo(
   address: string,
   network: Network,
   callback: Function
-): Promise<any> {
+): Promise<void> {
   if (!scheduledActions[network.id]?.data?.length) {
     scheduledActions[network.id] = {
       promise: new Promise((resolve, reject) => {
