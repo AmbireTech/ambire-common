@@ -492,11 +492,8 @@ export class MainController extends EventEmitter {
 
     await this.resolveUserRequest({ hash: signedMessage.signature }, signedMessage.fromActionId)
     await this.#notificationManager.create({
-      title: 'Successfully signed',
-      message:
-        signedMessage.content.kind === 'typedMessage'
-          ? 'TypedData was successfully signed'
-          : 'Message was successfully signed'
+      title: 'Done!',
+      message: 'The Message was successfully signed.'
     })
 
     // TODO: In the rare case when this might error, the user won't be notified,
@@ -1802,8 +1799,8 @@ export class MainController extends EventEmitter {
       actionId
     )
     await this.#notificationManager.create({
-      title: 'Successfully signed',
-      message: 'Your transaction was successfully signed and broadcasted to the network'
+      title: 'Done!',
+      message: 'The transaction was successfully signed and broadcasted to the network.'
     })
     return Promise.resolve(submittedAccountOp)
   }
