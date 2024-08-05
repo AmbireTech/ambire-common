@@ -562,6 +562,9 @@ export class ActivityController extends EventEmitter {
       return {
         id: accountOp.txnId,
         type: 'success',
+        // TODO: We should pass the category, once we figure out how to determine the pending to be confirmed account ops:
+        // @link: https://github.com/AmbireTech/ambire-app/issues/2162#issuecomment-2191731436
+        // category: 'pending-to-be-confirmed-acc-op',
         title: 'Transaction successfully signed and sent!\nCheck it out on the block explorer!',
         text: '',
         actions: [
