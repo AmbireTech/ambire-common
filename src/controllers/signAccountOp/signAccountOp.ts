@@ -889,24 +889,33 @@ export class SignAccountOpController extends EventEmitter {
   async sign() {
     if (!this.readyToSign)
       return this.#setSigningError(
-        'We are unable to sign your transaction as some of the mandatory signing fields have not been set.'
+        'Unable to sign the transaction. During the preparation step, required transaction data failed to get received. Please try again later or contact Ambire support.'
       )
 
     // when signing begings, we stop immediatelly state updates on the controller
     // by changing the status to InProgress. Check update() for more info
     this.status = { type: SigningStatus.InProgress }
 
-    if (!this.accountOp?.signingKeyAddr || !this.accountOp?.signingKeyType)
-      return this.#setSigningError('We cannot sign your transaction. Please choose a signer key.')
+    if (!this.accountOp?.signingKeyAddr || !this.accountOp?.signingKeyType) {
+      const message =
+        'Unable to sign the transaction. During the preparation step, required signing key information was found missing. Please try again later or contact Ambire support.'
+      return this.#setSigningError(message, SigningStatus.ReadyToSign)
+    }
 
-    if (!this.accountOp?.gasFeePayment)
-      return this.#setSigningError('Please select a token and an account for paying the gas fee.')
+    if (!this.accountOp?.gasFeePayment) {
+      const message =
+        'Unable to sign the transaction. During the preparation step, required information about paying the gas fee was found missing. Please try again later or contact Ambire support.'
+      return this.#setSigningError(message, SigningStatus.ReadyToSign)
+    }
 
     const signer = await this.#keystore.getSigner(
       this.accountOp.signingKeyAddr,
       this.accountOp.signingKeyType
     )
-    if (!signer) return this.#setSigningError('no available signer')
+    if (!signer)
+      return this.#setSigningError(
+        'Unable to sign the transaction. During the preparation step, required account key information was found missing. Please try again later or contact Ambire support.'
+      )
 
     // we update the FE with the changed status (in progress) only after the checks
     // above confirm everything is okay to prevent two different state updates
