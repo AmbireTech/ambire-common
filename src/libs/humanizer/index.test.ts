@@ -246,7 +246,8 @@ describe('Humanizer main function', () => {
         getAction('Send'),
         getToken('0x0000000000000000000000000000000000000000', 1000000000000000000n),
         getLabel('to'),
-        getAddressVisualization('0xc4ce03b36f057591b2a360d773edb9896255051e')
+        getAddressVisualization('0xc4ce03b36f057591b2a360d773edb9896255051e'),
+        getToken('0xc4ce03b36f057591b2a360d773edb9896255051e', 0n, true)
       ],
       [
         getAction('Grant approval'),
@@ -256,7 +257,8 @@ describe('Humanizer main function', () => {
           115792089237316195423570985008687907853269984665640564039457584007913129639935n
         ),
         getLabel('to'),
-        getAddressVisualization('0xe5c783ee536cf5e63e792988335c4255169be4e1')
+        getAddressVisualization('0xe5c783ee536cf5e63e792988335c4255169be4e1'),
+        getToken('0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2', 0n, true)
       ]
     ]
     const onUpdate = jest.fn((newCalls: IrCall[]) => {
@@ -271,15 +273,16 @@ describe('Humanizer main function', () => {
     const expectedVisualizations = [
       getAction('Call buy(uint256)'),
       getLabel('from'),
-      getAddressVisualization('0x519856887af544de7e67f51a4f2271521b01432b')
+      getAddressVisualization('0x519856887af544de7e67f51a4f2271521b01432b'),
+      getToken('0x519856887af544de7e67f51a4f2271521b01432b', 0n, true)
     ]
     let iterations = 0
     const onUpdate = jest.fn((newCalls: IrCall[]) => {
       if (iterations === 0) {
-        expect(newCalls[0]?.fullVisualization?.length).toBe(3)
+        expect(newCalls[0]?.fullVisualization?.length).toBe(4)
         compareVisualizations([newCalls[0].fullVisualization?.[0]!], [getAction('Unknown action')])
       } else if (iterations === 1) {
-        expect(newCalls[0]?.fullVisualization?.length).toBe(3)
+        expect(newCalls[0]?.fullVisualization?.length).toBe(4)
         compareVisualizations(newCalls[0].fullVisualization || [], expectedVisualizations)
       }
       iterations += 1
@@ -401,14 +404,16 @@ describe('with (Account | Key)[] arg', () => {
         getLabel('for'),
         getToken('0xdac17f958d2ee523a2206206994597c13d831ec7', 1000000000n),
         getLabel('to'),
-        getAddressVisualization(accounts[0].addr.toLowerCase())
+        getAddressVisualization(accounts[0].addr.toLowerCase()),
+        getToken('0xdac17f958d2ee523a2206206994597c13d831ec7', 0n, true)
       ],
       [
         getAction('Grant approval'),
         getLabel('for'),
         getToken('0xdac17f958d2ee523a2206206994597c13d831ec7', 1000000000n),
         getLabel('to'),
-        getAddressVisualization(keys[0].addr.toLowerCase())
+        getAddressVisualization(keys[0].addr.toLowerCase()),
+        getToken('0xdac17f958d2ee523a2206206994597c13d831ec7', 0n, true)
       ]
     ]
     accountOp.calls = [...transactions.accountOrKeyArg]
