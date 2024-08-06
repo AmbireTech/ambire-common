@@ -40,6 +40,7 @@ import { KeystoreController } from '../keystore/keystore'
 export const DEFAULT_PAGE = 1
 export const DEFAULT_PAGE_SIZE = 5
 const DEFAULT_SHOULD_SEARCH_FOR_LINKED_ACCOUNTS = true
+const DEFAULT_SHOULD_GET_ACCOUNTS_USED_ON_NETWORKS = true
 
 /**
  * Account Adder Controller
@@ -62,6 +63,8 @@ export class AccountAdderController extends EventEmitter {
   isInitialized: boolean = false
 
   shouldSearchForLinkedAccounts = DEFAULT_SHOULD_SEARCH_FOR_LINKED_ACCOUNTS
+
+  shouldGetAccountsUsedOnNetworks = DEFAULT_SHOULD_GET_ACCOUNTS_USED_ON_NETWORKS
 
   // This is only the index of the current page
   page: number = DEFAULT_PAGE
@@ -223,13 +226,15 @@ export class AccountAdderController extends EventEmitter {
     page,
     pageSize,
     hdPathTemplate,
-    shouldSearchForLinkedAccounts = DEFAULT_SHOULD_SEARCH_FOR_LINKED_ACCOUNTS
+    shouldSearchForLinkedAccounts = DEFAULT_SHOULD_SEARCH_FOR_LINKED_ACCOUNTS,
+    shouldGetAccountsUsedOnNetworks = DEFAULT_SHOULD_GET_ACCOUNTS_USED_ON_NETWORKS
   }: {
     keyIterator: KeyIterator | null
     page?: number
     pageSize?: number
     hdPathTemplate: HD_PATH_TEMPLATE_TYPE
     shouldSearchForLinkedAccounts?: boolean
+    shouldGetAccountsUsedOnNetworks?: boolean
   }): void {
     this.#keyIterator = keyIterator
     if (!this.#keyIterator) return this.#throwMissingKeyIterator()
@@ -240,6 +245,7 @@ export class AccountAdderController extends EventEmitter {
     this.isInitialized = true
     this.#alreadyImportedAccountsOnControllerInit = this.#accounts.accounts
     this.shouldSearchForLinkedAccounts = shouldSearchForLinkedAccounts
+    this.shouldGetAccountsUsedOnNetworks = shouldGetAccountsUsedOnNetworks
 
     this.emitUpdate()
   }
@@ -259,6 +265,7 @@ export class AccountAdderController extends EventEmitter {
     this.pageSize = DEFAULT_PAGE_SIZE
     this.hdPathTemplate = undefined
     this.shouldSearchForLinkedAccounts = DEFAULT_SHOULD_SEARCH_FOR_LINKED_ACCOUNTS
+    this.shouldGetAccountsUsedOnNetworks = DEFAULT_SHOULD_GET_ACCOUNTS_USED_ON_NETWORKS
 
     this.addAccountsStatus = 'INITIAL'
     this.#derivedAccounts = []
@@ -747,6 +754,10 @@ export class AccountAdderController extends EventEmitter {
     networks: Network[]
     providers: { [key: string]: JsonRpcProvider }
   }): Promise<DerivedAccount[]> {
+    if (!this.shouldGetAccountsUsedOnNetworks) {
+      return accounts.map((a) => ({ ...a, account: { ...a.account, usedOnNetworks: [] } }))
+    }
+
     const accountsObj: { [key: Account['addr']]: DerivedAccount } = Object.fromEntries(
       accounts.map((a) => [a.account.addr, { ...a, account: { ...a.account, usedOnNetworks: [] } }])
     )
