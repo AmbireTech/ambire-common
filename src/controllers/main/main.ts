@@ -793,8 +793,6 @@ export class MainController extends EventEmitter {
       if (!network) {
         throw ethErrors.provider.chainDisconnected('Transaction failed - unknown network')
       }
-      // wallet_sendCalls might come with paymaster capabilities(ERC-7677)
-      const capabilities = isWalletSendCalls ? request.params[0].capabilities : undefined
       userRequest = {
         id: new Date().getTime(),
         action: {
@@ -805,7 +803,7 @@ export class MainController extends EventEmitter {
             value: txn.value ? getBigInt(txn.value) : 0n
           }))
         },
-        meta: { isSignAction: true, accountAddr, networkId: network.id, capabilities },
+        meta: { isSignAction: true, accountAddr, networkId: network.id },
         dappPromise
       } as SignUserRequest
       if (!account.creation) {
@@ -1849,6 +1847,14 @@ export class MainController extends EventEmitter {
         // in that case, recalculate prices and prompt the user to try again
         message = 'Fee too low. Please select a higher transaction speed and try again'
         this.updateSignAccountOpGasPrice()
+      } else if (
+        message.includes('Transaction underpriced. Please select a higher fee and try again')
+      ) {
+        // this error comes from the relayer when using the paymaster service.
+        // as it could be from lower PVG, we should reestimate as well
+        message = 'Fee too low. Please select a higher transaction speed and try again'
+        this.updateSignAccountOpGasPrice()
+        this.estimateSignAccountOp()
       } else {
         // Trip the error message, errors coming from the RPC can be huuuuuge
         message = message.length > 300 ? `${message.substring(0, 300)}...` : message

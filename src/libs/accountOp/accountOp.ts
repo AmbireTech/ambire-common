@@ -78,12 +78,6 @@ export interface AccountOp {
   meta?: {
     // pass the entry point authorization signature for the deploy 4337 txn
     entryPointAuthorization?: string
-    // ERC-7677
-    capabilities?: {
-      paymasterService?: {
-        url: string
-      }
-    }
   }
 }
 

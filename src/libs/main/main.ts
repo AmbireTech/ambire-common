@@ -29,38 +29,6 @@ export const batchCallsFromUserRequests = ({
   )
 }
 
-// ERC-7677: paymaster sponsorship
-// add to the meta of the accountOp a paymasterService if available. It is if:
-// - passed in one userRequest (length of calls doesn't matter)
-// - passed in multiple userRequest (same paymaster url)
-const getPaymasterMetaCapabilities = (
-  userRequests: UserRequest[],
-  accountAddr: string,
-  networkId: string
-) => {
-  const userRequestsForAccountOp = userRequests.filter(
-    (req) =>
-      req.action.kind === 'call' &&
-      req.meta.accountAddr === accountAddr &&
-      req.meta.networkId === networkId
-  )
-  const userRequestWithPaymasterService = userRequestsForAccountOp.filter(
-    (req) => req.meta.capabilities?.paymasterService?.url
-  )
-  // if all the user requests don't have a paymasterService attached, a sponsorship cannot happen
-  if (userRequestsForAccountOp.length !== userRequestWithPaymasterService.length) return undefined
-
-  // if all the requests don't point to the same URL, a sponsorship cannot happen
-  const paymasterServiceUrl =
-    userRequestWithPaymasterService[0].meta.capabilities.paymasterService.url
-  const areAllUrlsTheSame = userRequestWithPaymasterService.every(
-    (x) => x.meta.capabilities.paymasterService.url === paymasterServiceUrl
-  )
-  if (!areAllUrlsTheSame) return undefined
-
-  return { paymasterService: { url: paymasterServiceUrl } }
-}
-
 export const makeSmartAccountOpAction = ({
   account,
   networkId,
@@ -77,7 +45,6 @@ export const makeSmartAccountOpAction = ({
   const accountOpAction = actionsQueue.find(
     (a) => a.type === 'accountOp' && a.id === `${account.addr}-${networkId}`
   ) as AccountOpAction | undefined
-  const capabilities = getPaymasterMetaCapabilities(userRequests, account.addr, networkId)
 
   if (accountOpAction) {
     accountOpAction.accountOp.calls = batchCallsFromUserRequests({
@@ -85,11 +52,6 @@ export const makeSmartAccountOpAction = ({
       networkId,
       userRequests
     })
-
-    // set the meta.capabilities
-    if (!accountOpAction.accountOp.meta)
-      accountOpAction.accountOp.meta = capabilities ? { capabilities } : undefined
-    else accountOpAction.accountOp.meta.capabilities = capabilities ?? undefined
 
     // the nonce might have changed during estimation because of
     // a nonce discrepancy issue. This makes sure we're with the
@@ -112,8 +74,7 @@ export const makeSmartAccountOpAction = ({
       accountAddr: account.addr,
       networkId,
       userRequests
-    }),
-    meta: capabilities ? { capabilities } : undefined
+    })
   }
   return {
     id: `${account.addr}-${networkId}`, // SA accountOpAction id
