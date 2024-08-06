@@ -195,7 +195,7 @@ describe('Actions Controller', () => {
       meta: {
         isSignAction: true,
         accountAddr: '0xAa0e9a1E2D2CcF2B867fda047bb5394BEF1883E0',
-        networkId: 'ethereum'
+        chainId: 1n
       }
     }
     const action3: BenzinAction = { id: req3.id, type: 'benzin', userRequest: req3 }

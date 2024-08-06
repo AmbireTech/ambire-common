@@ -1,7 +1,6 @@
 import { SignMessageAction } from 'controllers/actions/actions'
 import { TypedDataDomain, TypedDataField } from 'ethers'
 
-import { Call as AccountOpCall } from '../libs/accountOp/types'
 import { AccountId } from './account'
 import { DappProviderRequest } from './dapp'
 import { HumanizerFragment } from './humanizer'
@@ -47,7 +46,8 @@ export interface SignUserRequest {
   meta: {
     isSignAction: true
     accountAddr: AccountId
-    networkId: NetworkId
+    chainId?: bigint
+    networkId?: NetworkId
     [key: string]: any
   }
   // defined only when SignUserRequest is built from a DappRequest
