@@ -9,7 +9,16 @@ import {
   encryptWithPublicKey,
   publicKeyByPrivateKey
 } from 'eth-crypto'
-import { concat, getBytes, hexlify, keccak256, randomBytes, toUtf8Bytes, Wallet } from 'ethers'
+import {
+  concat,
+  getBytes,
+  hexlify,
+  keccak256,
+  Mnemonic,
+  randomBytes,
+  toUtf8Bytes,
+  Wallet
+} from 'ethers'
 import scrypt from 'scrypt-js'
 
 import EmittableError from '../../classes/EmittableError'
@@ -32,6 +41,7 @@ const KEYSTORE_UNEXPECTED_ERROR_MESSAGE =
 const STATUS_WRAPPED_METHODS = {
   unlockWithSecret: 'INITIAL',
   addSecret: 'INITIAL',
+  addSeed: 'INITIAL',
   removeSecret: 'INITIAL',
   addKeys: 'INITIAL',
   addKeysExternallyStored: 'INITIAL',
@@ -76,6 +86,8 @@ export class KeystoreController extends EventEmitter {
 
   #storage: Storage
 
+  #keystoreSeeds: string[] = []
+
   #keystoreSigners: Partial<{ [key in Key['type']]: KeystoreSignerType }>
 
   #keystoreKeys: StoredKey[] = []
@@ -106,6 +118,7 @@ export class KeystoreController extends EventEmitter {
 
   async #load() {
     try {
+      this.#keystoreSeeds = await this.#storage.get('keystoreSeeds', [])
       this.#keystoreKeys = await this.#storage.get('keystoreKeys', [])
       this.keyStoreUid = await this.#storage.get('keyStoreUid', null)
     } catch (e) {
@@ -337,6 +350,49 @@ export class KeystoreController extends EventEmitter {
     })
   }
 
+  async #addSeed(seed: string) {
+    await this.#initialLoadPromise
+
+    if (this.#mainKey === null)
+      throw new EmittableError({
+        message: KEYSTORE_UNEXPECTED_ERROR_MESSAGE,
+        level: 'major',
+        error: new Error('keystore: needs to be unlocked')
+      })
+
+    if (!Mnemonic.isValidMnemonic(seed)) {
+      throw new EmittableError({
+        message: 'You are trying to store an invalid seed phrase.',
+        level: 'major',
+        error: new Error('keystore: trying to add an invalid seed phrase')
+      })
+    }
+
+    // Currently we support only one seed phrase to be added to the keystore
+    // this fist seed phrase will become the default seed phrase of the wallet
+    if (this.#keystoreSeeds.length) {
+      throw new EmittableError({
+        message: 'You can have only one default seed phrase for that wallet',
+        level: 'major',
+        error: new Error(
+          'keystore: seed phase already added. Storing multiple seed phrases not supported yet'
+        )
+      })
+    }
+
+    // Set up the cipher
+    const counter = new aes.Counter(this.#mainKey!.iv) // TS compiler fails to detect we check for null above
+    const aesCtr = new aes.ModeOfOperation.ctr(this.#mainKey!.key, counter) // TS compiler fails to detect we check for null above
+    this.#keystoreSeeds.push(hexlify(aesCtr.encrypt(new TextEncoder().encode(seed))))
+    await this.#storage.set('keystoreSeeds', this.#keystoreSeeds)
+
+    this.emitUpdate()
+  }
+
+  async addSeed(seed: string) {
+    await this.withStatus('addSeed', () => this.#addSeed(seed))
+  }
+
   async #addKeysExternallyStored(keysToAdd: ExternalKey[]) {
     await this.#initialLoadPromise
 
@@ -564,6 +620,21 @@ export class KeystoreController extends EventEmitter {
     return new SignerInitializer(key)
   }
 
+  async getDefaultSeed() {
+    await this.#initialLoadPromise
+
+    if (!this.isUnlocked) throw new Error('keystore: not unlocked')
+    if (!this.#keystoreSeeds.length) throw new Error('keystore: no seed phrase added yet')
+
+    const encryptedSeedBytes = getBytes(this.#keystoreSeeds[0])
+    // @ts-ignore
+    const counter = new aes.Counter(this.#mainKey.iv)
+    // @ts-ignore
+    const aesCtr = new aes.ModeOfOperation.ctr(this.#mainKey.key, counter)
+    const decryptedSeedBytes = aesCtr.decrypt(encryptedSeedBytes)
+    return new TextDecoder().decode(decryptedSeedBytes)
+  }
+
   async #changeKeystorePassword(newSecret: string, oldSecret?: string) {
     await this.#initialLoadPromise
 
@@ -612,13 +683,18 @@ export class KeystoreController extends EventEmitter {
     return this.#keystoreSecrets.some((x) => x.id === 'password')
   }
 
+  get hasKeystoreDefaultSeed() {
+    return !!this.#keystoreSeeds.length
+  }
+
   toJSON() {
     return {
       ...this,
       ...super.toJSON(),
       isUnlocked: this.isUnlocked, // includes the getter in the stringified instance
       keys: this.keys,
-      hasPasswordSecret: this.hasPasswordSecret
+      hasPasswordSecret: this.hasPasswordSecret,
+      hasKeystoreDefaultSeed: this.hasKeystoreDefaultSeed
     }
   }
 }
