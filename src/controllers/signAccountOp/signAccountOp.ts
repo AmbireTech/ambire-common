@@ -900,13 +900,13 @@ export class SignAccountOpController extends EventEmitter {
     if (!this.accountOp?.signingKeyAddr || !this.accountOp?.signingKeyType) {
       const message =
         'Unable to sign the transaction. During the preparation step, required signing key information was found missing. Please try again later or contact Ambire support.'
-      return this.#setSigningError(message, SigningStatus.ReadyToSign)
+      return this.#setSigningError(message)
     }
 
     if (!this.accountOp?.gasFeePayment) {
       const message =
         'Unable to sign the transaction. During the preparation step, required information about paying the gas fee was found missing. Please try again later or contact Ambire support.'
-      return this.#setSigningError(message, SigningStatus.ReadyToSign)
+      return this.#setSigningError(message)
     }
 
     const signer = await this.#keystore.getSigner(
