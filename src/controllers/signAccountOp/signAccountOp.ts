@@ -3,6 +3,7 @@ import { AbiCoder, formatUnits, getAddress, Interface, toBeHex } from 'ethers'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import ERC20 from '../../../contracts/compiled/IERC20.json'
+import EmittableError from '../../classes/EmittableError'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { AMBIRE_PAYMASTER, SINGLETON } from '../../consts/deploy'
 import { Account } from '../../interfaces/account'
@@ -845,7 +846,7 @@ export class SignAccountOpController extends EventEmitter {
   #setSigningError(error: string, type = SigningStatus.UnableToSign) {
     this.status = { type, error }
     this.emitUpdate()
-    return Promise.reject(this.status)
+    throw new EmittableError({ message: error, level: 'silent', error: new Error(error) })
   }
 
   #addFeePayment() {
@@ -958,8 +959,8 @@ export class SignAccountOpController extends EventEmitter {
       // In case of EOA account
       if (!isSmartAccount(this.account)) {
         if (this.accountOp.calls.length !== 1)
-          return await this.#setSigningError(
-            'Tried to sign an EOA transaction with multiple or zero calls.'
+          return this.#setSigningError(
+            'Unable to sign the transaction, because it has multiple or zero calls. Please try again later or contact Ambire support.'
           )
 
         // In legacy mode, we sign the transaction directly.
@@ -982,8 +983,8 @@ export class SignAccountOpController extends EventEmitter {
           !accountState.isDeployed &&
           (!this.accountOp.meta || !this.accountOp.meta.entryPointAuthorization)
         )
-          return await this.#setSigningError(
-            'Entry point privileges not granted. Please contact support'
+          return this.#setSigningError(
+            'Entry point privileges not granted. Please try again later or contact Ambire support.'
           )
 
         const userOperation = getUserOperation(
