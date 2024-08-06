@@ -961,7 +961,7 @@ export class SignAccountOpController extends EventEmitter {
       if (!isSmartAccount(this.account)) {
         if (this.accountOp.calls.length !== 1) {
           const callCount = this.accountOp.calls.length > 1 ? 'multiple' : 'zero'
-          const message = `Unable to sign the transaction, because it has ${callCount} calls. Please try again later or contact Ambire support.`
+          const message = `Unable to sign the transaction because it has ${callCount} calls. ${RETRY_TO_INIT_ACCOUNT_OP_MSG}`
           return this.#setSigningError(message)
         }
 
@@ -986,7 +986,7 @@ export class SignAccountOpController extends EventEmitter {
           (!this.accountOp.meta || !this.accountOp.meta.entryPointAuthorization)
         )
           return this.#setSigningError(
-            'Entry point privileges not granted. Please try again later or contact Ambire support.'
+            `Unable to sign the transaction because entry point privileges were not granted. ${RETRY_TO_INIT_ACCOUNT_OP_MSG}`
           )
 
         const userOperation = getUserOperation(
