@@ -47,7 +47,6 @@ export async function executeBatchedFetch(network: Network): Promise<void> {
   })
 }
 
-// @TODO add nfts
 /**
  * Resolves symbol and decimals for tokens or name for nfts.
  */
