@@ -447,6 +447,17 @@ describe('KeystoreController', () => {
     // Make sure both keys are removed
     expect(keystore.keys.length).toBe(keyLengthBefore - 2)
   })
+  test('should add keystore default seed phrase', async () => {
+    expect(!!keystore.hasKeystoreDefaultSeed).toBeFalsy()
+    expect(keystore.isUnlocked).toBeTruthy()
+    await keystore.addSeed(process.env.SEED)
+    expect(!!keystore.hasKeystoreDefaultSeed).toBeTruthy()
+  })
+  test('should get default seed phrase', async () => {
+    expect(!!keystore.hasKeystoreDefaultSeed).toBeTruthy()
+    const decryptedDefaultSeedPhrase = await keystore.getDefaultSeed()
+    expect(decryptedDefaultSeedPhrase).toEqual(process.env.SEED)
+  })
 })
 
 describe('import/export with pub key test', () => {

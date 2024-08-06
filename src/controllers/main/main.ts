@@ -6,8 +6,16 @@ import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json'
 import EmittableError from '../../classes/EmittableError'
 import { AMBIRE_ACCOUNT_FACTORY, SINGLETON } from '../../consts/deploy'
-import { BIP44_LEDGER_DERIVATION_TEMPLATE } from '../../consts/derivation'
-import { Account, AccountId, AccountOnchainState } from '../../interfaces/account'
+import {
+  BIP44_LEDGER_DERIVATION_TEMPLATE,
+  BIP44_STANDARD_DERIVATION_TEMPLATE
+} from '../../consts/derivation'
+import {
+  Account,
+  AccountId,
+  AccountOnchainState,
+  AccountWithNetworkMeta
+} from '../../interfaces/account'
 import { Banner } from '../../interfaces/banner'
 import { DappProviderRequest } from '../../interfaces/dapp'
 import { Fetch } from '../../interfaces/fetch'
@@ -18,6 +26,7 @@ import {
   TxnRequest
 } from '../../interfaces/keystore'
 import { AddNetworkRequestParams, Network, NetworkId } from '../../interfaces/network'
+import { NotificationManager } from '../../interfaces/notification'
 import { Storage } from '../../interfaces/storage'
 import { Calls, DappUserRequest, SignUserRequest, UserRequest } from '../../interfaces/userRequest'
 import { WindowManager } from '../../interfaces/window'
@@ -34,6 +43,8 @@ import { estimate } from '../../libs/estimate/estimate'
 import { BundlerGasPrice, EstimateResult } from '../../libs/estimate/interfaces'
 import { GasRecommendation, getGasPriceRecommendations } from '../../libs/gasPrice/gasPrice'
 import { humanizeAccountOp } from '../../libs/humanizer'
+import { KeyIterator } from '../../libs/keyIterator/keyIterator'
+import { getDefaultKeyLabel } from '../../libs/keys/keys'
 import {
   getAccountOpsForSimulation,
   makeBasicAccountOpAction,
@@ -81,7 +92,8 @@ const STATUS_WRAPPED_METHODS = {
   onAccountAdderSuccess: 'INITIAL',
   broadcastSignedAccountOp: 'INITIAL',
   removeAccount: 'INITIAL',
-  handleAccountAdderInitLedger: 'INITIAL'
+  handleAccountAdderInitLedger: 'INITIAL',
+  importSmartAccountFromDefaultSeed: 'INITIAL'
 } as const
 
 export class MainController extends EventEmitter {
@@ -159,11 +171,7 @@ export class MainController extends EventEmitter {
 
   #windowManager: WindowManager
 
-  /**
-   * Callback that gets triggered when the signing process of a message or an
-   * account op (including the broadcast step) gets finalized.
-   */
-  onSignSuccess: (type: 'message' | 'typed-data' | 'account-op') => void
+  #notificationManager: NotificationManager
 
   constructor({
     storage,
@@ -173,7 +181,7 @@ export class MainController extends EventEmitter {
     keystoreSigners,
     externalSignerControllers,
     windowManager,
-    onSignSuccess
+    notificationManager
   }: {
     storage: Storage
     fetch: Fetch
@@ -182,12 +190,13 @@ export class MainController extends EventEmitter {
     keystoreSigners: Partial<{ [key in Key['type']]: KeystoreSignerType }>
     externalSignerControllers: ExternalSignerControllers
     windowManager: WindowManager
-    onSignSuccess?: (type: 'message' | 'typed-data' | 'account-op') => void
+    notificationManager: NotificationManager
   }) {
     super()
     this.#storage = storage
     this.#fetch = fetch
     this.#windowManager = windowManager
+    this.#notificationManager = notificationManager
 
     this.invite = new InviteController({ relayerUrl, fetch, storage: this.#storage })
     this.keystore = new KeystoreController(this.#storage, keystoreSigners)
@@ -257,6 +266,7 @@ export class MainController extends EventEmitter {
     this.actions = new ActionsController({
       accounts: this.accounts,
       windowManager,
+      notificationManager,
       onActionWindowClose: () => {
         const userRequestsToRejectOnWindowClose = this.userRequests.filter(
           (r) => r.action.kind !== 'calls'
@@ -280,7 +290,6 @@ export class MainController extends EventEmitter {
     )
     this.domains = new DomainsController(this.providers.providers, this.#fetch)
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch: this.#fetch })
-    this.onSignSuccess = onSignSuccess || (() => {})
   }
 
   async #load(): Promise<void> {
@@ -331,6 +340,100 @@ export class MainController extends EventEmitter {
 
     this.isReady = true
     this.emitUpdate()
+  }
+
+  async importSmartAccountFromDefaultSeed(seed?: string) {
+    await this.withStatus(
+      'importSmartAccountFromDefaultSeed',
+      async () => {
+        if (this.accountAdder.isInitialized) this.accountAdder.reset()
+        if (seed && !this.keystore.hasKeystoreDefaultSeed) {
+          await this.keystore.addSeed(seed)
+        }
+
+        const defaultSeed = await this.keystore.getDefaultSeed()
+
+        if (!defaultSeed) {
+          throw new EmittableError({
+            message:
+              'Failed to retrieve default seed phrase from keystore. Please try again or contact Ambire support if the issue persists.',
+            level: 'major',
+            error: new Error('failed to retrieve default seed phrase from keystore')
+          })
+        }
+
+        const keyIterator = new KeyIterator(defaultSeed)
+        this.accountAdder.init({
+          keyIterator,
+          hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
+          pageSize: 1,
+          shouldGetAccountsUsedOnNetworks: false,
+          shouldSearchForLinkedAccounts: false
+        })
+
+        let currentPage: number = 1
+        let isAccountAlreadyAdded: boolean
+        let nextSmartAccount: AccountWithNetworkMeta | undefined
+
+        const findNextSmartAccount = async () => {
+          do {
+            // eslint-disable-next-line no-await-in-loop
+            await this.accountAdder.setPage({
+              page: currentPage,
+              networks: this.networks.networks,
+              providers: this.providers.providers
+            })
+
+            nextSmartAccount = this.accountAdder.accountsOnPage.find(
+              ({ isLinked, account }) => !isLinked && isSmartAccount(account)
+            )?.account
+
+            if (!nextSmartAccount) break
+
+            isAccountAlreadyAdded = !!this.accounts.accounts.find(
+              // eslint-disable-next-line @typescript-eslint/no-loop-func
+              (a) => a.addr === nextSmartAccount!.addr
+            )
+
+            currentPage++
+          } while (isAccountAlreadyAdded)
+        }
+
+        await findNextSmartAccount()
+
+        if (!nextSmartAccount) {
+          throw new EmittableError({
+            message:
+              'Internal error while looking for account to add. Please start the process all over again and if the issue persists contact Ambire support.',
+            level: 'major',
+            error: new Error('Internal error: Failed to find a smart account to add')
+          })
+        }
+
+        this.accountAdder.selectAccount(nextSmartAccount)
+
+        const readyToAddKeys = this.accountAdder.retrieveInternalKeysOfSelectedAccounts()
+
+        const readyToAddKeyPreferences = this.accountAdder.selectedAccounts.flatMap(
+          ({ account, accountKeys }) =>
+            accountKeys.map(({ addr }, i: number) => ({
+              addr,
+              type: 'internal',
+              label: getDefaultKeyLabel(
+                this.keystore.keys.filter((key) => account.associatedKeys.includes(key.addr)),
+                i
+              )
+            }))
+        )
+
+        await this.accountAdder.addAccounts(
+          this.accountAdder.selectedAccounts,
+          { internal: readyToAddKeys, external: [] },
+          readyToAddKeyPreferences
+        )
+      },
+      true
+    )
   }
 
   initSignAccOp(actionId: AccountOpAction['id']): null | void {
@@ -493,8 +596,10 @@ export class MainController extends EventEmitter {
     }
 
     await this.resolveUserRequest({ hash: signedMessage.signature }, signedMessage.fromActionId)
-
-    this.onSignSuccess(signedMessage.content.kind === 'typedMessage' ? 'typed-data' : 'message')
+    await this.#notificationManager.create({
+      title: 'Done!',
+      message: 'The Message was successfully signed.'
+    })
 
     // TODO: In the rare case when this might error, the user won't be notified,
     // since `this.resolveUserRequest` closes the action window.
@@ -1798,8 +1903,10 @@ export class MainController extends EventEmitter {
       },
       actionId
     )
-
-    this.onSignSuccess('account-op')
+    await this.#notificationManager.create({
+      title: 'Done!',
+      message: 'The transaction was successfully signed and broadcasted to the network.'
+    })
     return Promise.resolve(submittedAccountOp)
   }
 

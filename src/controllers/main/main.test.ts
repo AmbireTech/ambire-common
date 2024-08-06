@@ -24,6 +24,11 @@ const windowManager = {
   event: new EventEmitter(),
   sendWindowToastMessage: () => {}
 }
+
+const notificationManager = {
+  create: () => Promise.resolve()
+}
+
 describe('Main Controller ', () => {
   const accounts = [
     {
@@ -70,6 +75,7 @@ describe('Main Controller ', () => {
       keystoreSigners: { internal: KeystoreSigner },
       externalSignerControllers: {},
       windowManager,
+      notificationManager,
       velcroUrl
     })
     // eslint-disable-next-line no-promise-executor-return
@@ -197,6 +203,7 @@ describe('Main Controller ', () => {
       fetch,
       relayerUrl,
       windowManager,
+      notificationManager,
       keystoreSigners: { internal: KeystoreSigner },
       externalSignerControllers: {},
       velcroUrl
@@ -277,6 +284,7 @@ describe('Main Controller ', () => {
       fetch,
       relayerUrl,
       windowManager,
+      notificationManager,
       keystoreSigners: { internal: KeystoreSigner },
       externalSignerControllers: {},
       velcroUrl
