@@ -490,7 +490,7 @@ export class MainController extends EventEmitter {
     this.estimateSignAccountOp()
   }
 
-  async handleSignAccountOp() {
+  async handleSignAndBroadcastAccountOp() {
     await this.withStatus(
       'signAccountOp',
       async () => {
