@@ -507,7 +507,7 @@ export class MainController extends EventEmitter {
 
         return this.signAccountOp.sign()
       },
-      false
+      true
     )
 
     // Error handling on the prev step will notify the user, it's fine to return here
@@ -516,7 +516,7 @@ export class MainController extends EventEmitter {
     return this.withStatus(
       'broadcastSignedAccountOp',
       async () => this.#broadcastSignedAccountOp(),
-      false
+      true
     )
   }
 
