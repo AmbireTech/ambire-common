@@ -9,8 +9,8 @@ export type AccountPreferences = {
 
 export interface Account {
   addr: AccountId
-  // Associated keys that can control thte account
-  // For EOAs thits must be set to [account.addr]
+  // Associated keys that can control the account
+  // For EOAs this must be set to [account.addr]
   associatedKeys: string[]
   initialPrivileges: [string, string][]
   // Creation data; `null` in case of an EOA
@@ -18,6 +18,7 @@ export interface Account {
   preferences: AccountPreferences
   email?: string
   newlyCreated?: boolean
+  newlyAdded?: boolean
 }
 
 export interface AccountCreation {
