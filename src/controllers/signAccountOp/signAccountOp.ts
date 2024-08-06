@@ -86,6 +86,9 @@ const CRITICAL_ERRORS = {
   eoaInsufficientFunds: 'Insufficient funds to cover the fee.'
 }
 
+const RETRY_TO_INIT_ACCOUNT_OP_MSG =
+  'Please attempt to initiate the transaction again or contact Ambire support.'
+
 export class SignAccountOpController extends EventEmitter {
   #accounts: AccountsController
 
@@ -888,24 +891,22 @@ export class SignAccountOpController extends EventEmitter {
   }
 
   async sign() {
-    if (!this.readyToSign)
-      return this.#setSigningError(
-        'Unable to sign the transaction. During the preparation step, required transaction data failed to get received. Please try again later or contact Ambire support.'
-      )
+    if (!this.readyToSign) {
+      const message = `Unable to sign the transaction. During the preparation step, the necessary transaction data was not received. ${RETRY_TO_INIT_ACCOUNT_OP_MSG}`
+      return this.#setSigningError(message)
+    }
 
     // when signing begings, we stop immediatelly state updates on the controller
     // by changing the status to InProgress. Check update() for more info
     this.status = { type: SigningStatus.InProgress }
 
     if (!this.accountOp?.signingKeyAddr || !this.accountOp?.signingKeyType) {
-      const message =
-        'Unable to sign the transaction. During the preparation step, required signing key information was found missing. Please try again later or contact Ambire support.'
+      const message = `Unable to sign the transaction. During the preparation step, required signing key information was found missing. ${RETRY_TO_INIT_ACCOUNT_OP_MSG}`
       return this.#setSigningError(message)
     }
 
     if (!this.accountOp?.gasFeePayment) {
-      const message =
-        'Unable to sign the transaction. During the preparation step, required information about paying the gas fee was found missing. Please try again later or contact Ambire support.'
+      const message = `Unable to sign the transaction. During the preparation step, required information about paying the gas fee was found missing. ${RETRY_TO_INIT_ACCOUNT_OP_MSG}`
       return this.#setSigningError(message)
     }
 
@@ -913,10 +914,10 @@ export class SignAccountOpController extends EventEmitter {
       this.accountOp.signingKeyAddr,
       this.accountOp.signingKeyType
     )
-    if (!signer)
-      return this.#setSigningError(
-        'Unable to sign the transaction. During the preparation step, required account key information was found missing. Please try again later or contact Ambire support.'
-      )
+    if (!signer) {
+      const message = `Unable to sign the transaction. During the preparation step, required account key information was found missing. ${RETRY_TO_INIT_ACCOUNT_OP_MSG}`
+      return this.#setSigningError(message)
+    }
 
     // we update the FE with the changed status (in progress) only after the checks
     // above confirm everything is okay to prevent two different state updates
