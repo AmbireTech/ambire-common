@@ -958,10 +958,11 @@ export class SignAccountOpController extends EventEmitter {
     try {
       // In case of EOA account
       if (!isSmartAccount(this.account)) {
-        if (this.accountOp.calls.length !== 1)
-          return this.#setSigningError(
-            'Unable to sign the transaction, because it has multiple or zero calls. Please try again later or contact Ambire support.'
-          )
+        if (this.accountOp.calls.length !== 1) {
+          const callCount = this.accountOp.calls.length > 1 ? 'multiple' : 'zero'
+          const message = `Unable to sign the transaction, because it has ${callCount} calls. Please try again later or contact Ambire support.`
+          return this.#setSigningError(message)
+        }
 
         // In legacy mode, we sign the transaction directly.
         // that means the signing will happen on broadcast and here
