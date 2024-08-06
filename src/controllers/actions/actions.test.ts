@@ -64,6 +64,10 @@ describe('Actions Controller', () => {
     sendWindowToastMessage: () => {}
   }
 
+  const notificationManager = {
+    create: () => Promise.resolve()
+  }
+
   const storage: Storage = produceMemoryStore()
   const accounts = [
     {
@@ -123,6 +127,7 @@ describe('Actions Controller', () => {
     actionsCtrl = new ActionsController({
       accounts: accountsCtrl,
       windowManager,
+      notificationManager,
       onActionWindowClose: () => {}
     })
     expect(actionsCtrl).toBeDefined()

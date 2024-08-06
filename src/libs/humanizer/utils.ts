@@ -174,28 +174,12 @@ export function getUnknownVisualization(name: string, call: IrCall): HumanizerVi
   return unknownVisualization
 }
 
-export function getWrapping(
-  address: string,
-  amount: bigint,
-  hiddenAssetAddress?: string
-): HumanizerVisualization[] {
-  return [
-    getAction('Wrap'),
-    getToken(address, amount),
-    hiddenAssetAddress && { ...getToken(hiddenAssetAddress, 0n), isHidden: true }
-  ].filter((x) => x) as HumanizerVisualization[]
+export function getWrapping(address: string, amount: bigint): HumanizerVisualization[] {
+  return [getAction('Wrap'), getToken(address, amount)]
 }
 
-export function getUnwrapping(
-  address: string,
-  amount: bigint,
-  hiddenAssetAddress?: string
-): HumanizerVisualization[] {
-  return [
-    getAction('Unwrap'),
-    getToken(address, amount),
-    hiddenAssetAddress && { ...getToken(hiddenAssetAddress, 0n), isHidden: true }
-  ].filter((x) => x) as HumanizerVisualization[]
+export function getUnwrapping(address: string, amount: bigint): HumanizerVisualization[] {
+  return [getAction('Unwrap'), getToken(address, amount)]
 }
 
 // @TODO cant this be used in the <Address component>

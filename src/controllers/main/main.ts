@@ -18,6 +18,7 @@ import {
   TxnRequest
 } from '../../interfaces/keystore'
 import { AddNetworkRequestParams, Network, NetworkId } from '../../interfaces/network'
+import { NotificationManager } from '../../interfaces/notification'
 import { Storage } from '../../interfaces/storage'
 import { Calls, DappUserRequest, SignUserRequest, UserRequest } from '../../interfaces/userRequest'
 import { WindowManager } from '../../interfaces/window'
@@ -160,11 +161,7 @@ export class MainController extends EventEmitter {
 
   #windowManager: WindowManager
 
-  /**
-   * Callback that gets triggered when the signing process of a message or an
-   * account op (including the broadcast step) gets finalized.
-   */
-  onSignSuccess: (type: 'message' | 'typed-data' | 'account-op') => void
+  #notificationManager: NotificationManager
 
   constructor({
     storage,
@@ -174,7 +171,7 @@ export class MainController extends EventEmitter {
     keystoreSigners,
     externalSignerControllers,
     windowManager,
-    onSignSuccess
+    notificationManager
   }: {
     storage: Storage
     fetch: Fetch
@@ -183,12 +180,13 @@ export class MainController extends EventEmitter {
     keystoreSigners: Partial<{ [key in Key['type']]: KeystoreSignerType }>
     externalSignerControllers: ExternalSignerControllers
     windowManager: WindowManager
-    onSignSuccess?: (type: 'message' | 'typed-data' | 'account-op') => void
+    notificationManager: NotificationManager
   }) {
     super()
     this.#storage = storage
     this.#fetch = fetch
     this.#windowManager = windowManager
+    this.#notificationManager = notificationManager
 
     this.invite = new InviteController({ relayerUrl, fetch, storage: this.#storage })
     this.keystore = new KeystoreController(this.#storage, keystoreSigners)
@@ -258,6 +256,7 @@ export class MainController extends EventEmitter {
     this.actions = new ActionsController({
       accounts: this.accounts,
       windowManager,
+      notificationManager,
       onActionWindowClose: () => {
         const userRequestsToRejectOnWindowClose = this.userRequests.filter(
           (r) => r.action.kind !== 'calls'
@@ -281,7 +280,6 @@ export class MainController extends EventEmitter {
     )
     this.domains = new DomainsController(this.providers.providers, this.#fetch)
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch: this.#fetch })
-    this.onSignSuccess = onSignSuccess || (() => {})
   }
 
   async #load(): Promise<void> {
@@ -508,8 +506,10 @@ export class MainController extends EventEmitter {
     }
 
     await this.resolveUserRequest({ hash: signedMessage.signature }, signedMessage.fromActionId)
-
-    this.onSignSuccess(signedMessage.content.kind === 'typedMessage' ? 'typed-data' : 'message')
+    await this.#notificationManager.create({
+      title: 'Done!',
+      message: 'The Message was successfully signed.'
+    })
 
     // TODO: In the rare case when this might error, the user won't be notified,
     // since `this.resolveUserRequest` closes the action window.
@@ -1813,8 +1813,10 @@ export class MainController extends EventEmitter {
       },
       actionId
     )
-
-    this.onSignSuccess('account-op')
+    await this.#notificationManager.create({
+      title: 'Done!',
+      message: 'The transaction was successfully signed and broadcasted to the network.'
+    })
     return Promise.resolve(submittedAccountOp)
   }
 
