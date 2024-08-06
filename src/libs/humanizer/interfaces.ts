@@ -6,19 +6,27 @@ import { AccountOp } from '../accountOp/accountOp'
 import { Call } from '../accountOp/types'
 
 // @TODO remove property humanizerMeta
-export type HumanizerVisualization = {
-  type: 'token' | 'address' | 'label' | 'action' | 'danger' | 'deadline' | 'chain' | 'message'
-  address?: string
-  content?: string
-  value?: bigint
-  humanizerMeta?: HumanizerMetaAddress
-  warning?: boolean
-  // humanizerMeta?: HumanizerMetaAddress
-  id: number
-  chainId?: bigint
-  isHidden?: boolean
-  messageContent?: Uint8Array | string
-}
+export type HumanizerVisualization =
+  | {
+      type: 'address' | 'label' | 'action' | 'danger' | 'deadline' | 'chain' | 'message'
+      address?: string
+      content?: string
+      value?: bigint
+      humanizerMeta?: HumanizerMetaAddress
+      warning?: boolean
+      // humanizerMeta?: HumanizerMetaAddress
+      id: number
+      chainId?: bigint
+      messageContent?: Uint8Array | string
+    }
+  | {
+      type: 'token'
+      address: string
+      value: bigint
+      id: number
+      chainId?: bigint
+      isHidden?: boolean
+    }
 export interface IrCall extends Call {
   fullVisualization?: HumanizerVisualization[]
   warnings?: HumanizerWarning[]
