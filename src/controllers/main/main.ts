@@ -366,7 +366,9 @@ export class MainController extends EventEmitter {
         this.accountAdder.init({
           keyIterator,
           hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
-          pageSize: 1
+          pageSize: 1,
+          shouldGetAccountsUsedOnNetworks: false,
+          shouldSearchForLinkedAccounts: false
         })
 
         let currentPage: number = 1
