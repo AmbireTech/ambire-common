@@ -2,8 +2,8 @@ import { Block, Interface, Provider } from 'ethers'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json'
-import { AccountOnchainState } from '../../interfaces/account'
-import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
+import { Account, AccountOnchainState } from '../../interfaces/account'
+import { Network } from '../../interfaces/network'
 import { AccountOp, getSignableCalls } from '../accountOp/accountOp'
 import { getActivatorCall, shouldIncludeActivatorCall } from '../userOperation/userOperation'
 
@@ -109,7 +109,7 @@ async function refetchBlock(
 
 export async function getGasPriceRecommendations(
   provider: Provider,
-  network: NetworkDescriptor,
+  network: Network,
   blockTag: string | number = -1
 ): Promise<GasRecommendation[]> {
   const lastBlock = await refetchBlock(provider, blockTag)
@@ -166,15 +166,16 @@ export async function getGasPriceRecommendations(
 }
 
 export function getProbableCallData(
+  account: Account,
   accountOp: AccountOp,
   accountState: AccountOnchainState,
-  network: NetworkDescriptor
+  network: Network
 ): string {
   let estimationCallData
 
   // include the activator call for estimation if any
   const localOp = { ...accountOp }
-  if (shouldIncludeActivatorCall(network, accountState)) {
+  if (shouldIncludeActivatorCall(network, account, accountState, false)) {
     localOp.activatorCall = getActivatorCall(localOp.accountAddr)
   }
 
@@ -210,14 +211,15 @@ export function getProbableCallData(
 
 export function getCallDataAdditionalByNetwork(
   accountOp: AccountOp,
-  network: NetworkDescriptor,
+  account: Account,
+  network: Network,
   accountState: AccountOnchainState
 ): bigint {
   // no additional call data is required for arbitrum as the bytes are already
   // added in the calculation for the L1 fee
   if (network.id === 'arbitrum') return 0n
 
-  const estimationCallData = getProbableCallData(accountOp, accountState, network)
+  const estimationCallData = getProbableCallData(account, accountOp, accountState, network)
   const FIXED_OVERHEAD = 21000n
   const bytes = Buffer.from(estimationCallData.substring(2))
   const nonZeroBytes = BigInt(bytes.filter((b) => b).length)

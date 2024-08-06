@@ -1,6 +1,6 @@
-/* eslint-disable @typescript-eslint/no-floating-promises */
 import { getCreate2Address, JsonRpcProvider, keccak256 } from 'ethers'
 
+import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { PROXY_AMBIRE_ACCOUNT } from '../../consts/deploy'
 import {
   HD_PATH_TEMPLATE_TYPE,
@@ -15,13 +15,15 @@ import {
   DerivedAccountWithoutNetworkMeta,
   SelectedAccountForImport
 } from '../../interfaces/account'
+import { Fetch } from '../../interfaces/fetch'
 import { KeyIterator } from '../../interfaces/keyIterator'
 import { dedicatedToOneSAPriv, ReadyToAddKeys } from '../../interfaces/keystore'
-import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
-import { AccountPreferences, KeyPreferences } from '../../interfaces/settings'
+import { Network, NetworkId } from '../../interfaces/network'
+import { KeyPreferences } from '../../interfaces/settings'
 import {
   getAccountImportStatus,
   getBasicAccount,
+  getDefaultAccountPreferences,
   getEmailAccount,
   getSmartAccount,
   isAmbireV1LinkedAccount,
@@ -30,6 +32,8 @@ import {
 } from '../../libs/account/account'
 import { getAccountState } from '../../libs/accountState/accountState'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
+/* eslint-disable @typescript-eslint/no-floating-promises */
+import { AccountsController } from '../accounts/accounts'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
 
@@ -46,7 +50,7 @@ export const DEFAULT_PAGE_SIZE = 5
 export class AccountAdderController extends EventEmitter {
   #callRelayer: Function
 
-  #alreadyImportedAccounts: Account[]
+  #accounts: AccountsController
 
   #keystore: KeystoreController
 
@@ -65,7 +69,7 @@ export class AccountAdderController extends EventEmitter {
 
   // Accounts which identity is created on the Relayer (if needed), and are ready
   // to be added to the user's account list by the Main Controller
-  readyToAddAccounts: (Account & { newlyCreated?: boolean })[] = []
+  readyToAddAccounts: Account[] = []
 
   // The keys for the `readyToAddAccounts`, that are ready to be added to the
   // user's keystore by the Main Controller
@@ -74,10 +78,6 @@ export class AccountAdderController extends EventEmitter {
   // The key preferences for the `readyToAddKeys`, that are ready to be added to
   // the user's settings by the Main Controller
   readyToAddKeyPreferences: KeyPreferences = []
-
-  // The account preferences for the `readyToAddAccounts`, that are ready to be
-  // added to the user's settings by the Main Controller
-  readyToAddAccountPreferences: AccountPreferences = {}
 
   // Identity for the smart accounts must be created on the Relayer, this
   // represents the status of the operation, needed managing UI state
@@ -91,19 +91,24 @@ export class AccountAdderController extends EventEmitter {
 
   #linkedAccounts: { account: AccountWithNetworkMeta; isLinked: boolean }[] = []
 
+  // This prevents the recalculation of getters that use accounts during the execution of addAccounts.
+  // Without this, the controller incorrectly identifies newly added accounts as those from a previous session,
+  // leading to unpredictable behavior on the AccountAdderScreen
+  #alreadyImportedAccountsOnControllerInit: Account[] = []
+
   constructor({
-    alreadyImportedAccounts,
+    accounts,
     keystore,
     relayerUrl,
     fetch
   }: {
-    alreadyImportedAccounts: Account[]
+    accounts: AccountsController
     keystore: KeystoreController
     relayerUrl: string
-    fetch: Function
+    fetch: Fetch
   }) {
     super()
-    this.#alreadyImportedAccounts = alreadyImportedAccounts
+    this.#accounts = accounts
     this.#keystore = keystore
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
   }
@@ -202,7 +207,7 @@ export class AccountAdderController extends EventEmitter {
       ...acc,
       importStatus: getAccountImportStatus({
         account: acc.account,
-        alreadyImportedAccounts: this.#alreadyImportedAccounts,
+        alreadyImportedAccounts: this.#alreadyImportedAccountsOnControllerInit,
         keys: this.#keystore.keys,
         accountsOnPage: mergedAccounts,
         keyIteratorType: this.#keyIterator?.type
@@ -228,6 +233,7 @@ export class AccountAdderController extends EventEmitter {
     this.pageSize = pageSize || DEFAULT_PAGE_SIZE
     this.hdPathTemplate = hdPathTemplate
     this.isInitialized = true
+    this.#alreadyImportedAccountsOnControllerInit = this.#accounts.accounts
 
     this.emitUpdate()
   }
@@ -253,7 +259,6 @@ export class AccountAdderController extends EventEmitter {
     this.readyToAddAccounts = []
     this.readyToAddKeys = { internal: [], external: [] }
     this.readyToAddKeyPreferences = []
-    this.readyToAddAccountPreferences = {}
     this.isInitialized = false
 
     this.emitUpdate()
@@ -266,7 +271,7 @@ export class AccountAdderController extends EventEmitter {
     providers
   }: {
     path: HD_PATH_TEMPLATE_TYPE
-    networks: NetworkDescriptor[]
+    networks: Network[]
     providers: { [key: string]: JsonRpcProvider }
   }): void {
     this.hdPathTemplate = path
@@ -420,7 +425,7 @@ export class AccountAdderController extends EventEmitter {
     providers
   }: {
     page: number
-    networks: NetworkDescriptor[]
+    networks: Network[]
     providers: { [key: string]: JsonRpcProvider }
   }): Promise<void> {
     if (!this.isInitialized) return this.#throwNotInitialized()
@@ -494,7 +499,6 @@ export class AccountAdderController extends EventEmitter {
    */
   async addAccounts(
     accounts: SelectedAccountForImport[] = [],
-    readyToAddAccountPreferences: AccountPreferences = {},
     readyToAddKeys: ReadyToAddKeys = { internal: [], external: [] },
     readyToAddKeyPreferences: KeyPreferences = []
   ) {
@@ -573,14 +577,22 @@ export class AccountAdderController extends EventEmitter {
     }
 
     this.readyToAddAccounts = [
-      ...accounts.map((x) => ({
-        ...x.account,
-        newlyCreated: newlyCreatedAccounts.includes(x.account.addr)
-      }))
+      ...accounts.map((x, i) => {
+        const alreadyImportedAcc = this.#accounts.accounts.find((a) => a.addr === x.account.addr)
+
+        return {
+          ...x.account,
+          // Persist the already imported account preferences on purpose, otherwise,
+          // re-importing the same account via different key type(s) would reset them.
+          preferences: alreadyImportedAcc
+            ? alreadyImportedAcc.preferences
+            : getDefaultAccountPreferences(x.account.addr, this.#accounts.accounts, i),
+          newlyCreated: newlyCreatedAccounts.includes(x.account.addr)
+        }
+      })
     ]
     this.readyToAddKeys = readyToAddKeys
     this.readyToAddKeyPreferences = readyToAddKeyPreferences
-    this.readyToAddAccountPreferences = readyToAddAccountPreferences
     this.addAccountsStatus = 'SUCCESS'
     await this.forceEmitUpdate()
 
@@ -625,7 +637,7 @@ export class AccountAdderController extends EventEmitter {
     networks,
     providers
   }: {
-    networks: NetworkDescriptor[]
+    networks: Network[]
     providers: { [key: string]: JsonRpcProvider }
   }): Promise<DerivedAccount[]> {
     // Should never happen, because before the #deriveAccounts method gets
@@ -724,14 +736,14 @@ export class AccountAdderController extends EventEmitter {
     providers
   }: {
     accounts: DerivedAccountWithoutNetworkMeta[]
-    networks: NetworkDescriptor[]
+    networks: Network[]
     providers: { [key: string]: JsonRpcProvider }
   }): Promise<DerivedAccount[]> {
     const accountsObj: { [key: Account['addr']]: DerivedAccount } = Object.fromEntries(
       accounts.map((a) => [a.account.addr, { ...a, account: { ...a.account, usedOnNetworks: [] } }])
     )
 
-    const networkLookup: { [key: NetworkDescriptor['id']]: NetworkDescriptor } = {}
+    const networkLookup: { [key: NetworkId]: Network } = {}
     networks.forEach((network) => {
       networkLookup[network.id] = network
     })
@@ -806,7 +818,7 @@ export class AccountAdderController extends EventEmitter {
     providers
   }: {
     accounts: Account[]
-    networks: NetworkDescriptor[]
+    networks: Network[]
     providers: { [key: string]: JsonRpcProvider }
   }) {
     if (accounts.length === 0) return
@@ -864,6 +876,10 @@ export class AccountAdderController extends EventEmitter {
               factoryAddr,
               bytecode,
               salt
+            },
+            preferences: {
+              label: DEFAULT_ACCOUNT_LABEL,
+              pfp: addr
             }
           },
           isLinked: true

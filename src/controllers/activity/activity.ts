@@ -1,18 +1,20 @@
-/* eslint-disable import/no-extraneous-dependencies */
-
-import { SettingsController } from 'controllers/settings/settings'
-import fetch from 'node-fetch'
-
 import { networks as predefinedNetworks } from '../../consts/networks'
-import { AccountId, AccountStates } from '../../interfaces/account'
+/* eslint-disable import/no-extraneous-dependencies */
+import { Account, AccountId } from '../../interfaces/account'
 import { Banner } from '../../interfaces/banner'
+import { CustomResponse, Fetch } from '../../interfaces/fetch'
+import { Network } from '../../interfaces/network'
 import { Storage } from '../../interfaces/storage'
 import { Message } from '../../interfaces/userRequest'
+import { isSmartAccount } from '../../libs/account/account'
 import { AccountOp, AccountOpStatus } from '../../libs/accountOp/accountOp'
 import { getExplorerId } from '../../libs/userOperation/userOperation'
 import { Bundler } from '../../services/bundlers/bundler'
 import { fetchUserOp } from '../../services/explorers/jiffyscan'
+import { AccountsController } from '../accounts/accounts'
 import EventEmitter from '../eventEmitter/eventEmitter'
+import { NetworksController } from '../networks/networks'
+import { ProvidersController } from '../providers/providers'
 
 export interface Pagination {
   fromPage: number
@@ -101,9 +103,11 @@ const trim = <T>(items: T[], maxSize = 1000): void => {
 export class ActivityController extends EventEmitter {
   #storage: Storage
 
+  #fetch: Fetch
+
   #initialLoadPromise: Promise<void>
 
-  #accountStates: AccountStates
+  #accounts: AccountsController
 
   #accountsOps: InternalAccountsOps = {}
 
@@ -127,19 +131,34 @@ export class ActivityController extends EventEmitter {
 
   isInitialized: boolean = false
 
-  #settings: SettingsController
+  #providers: ProvidersController
 
-  #selectedAccount: AccountId | null = null
+  #networks: NetworksController
 
-  constructor(storage: Storage, accountStates: AccountStates, settings: SettingsController) {
+  #onContractsDeployed: (network: Network) => Promise<void>
+
+  #rbfStatuses = [AccountOpStatus.BroadcastedButNotConfirmed, AccountOpStatus.BroadcastButStuck]
+
+  constructor(
+    storage: Storage,
+    fetch: Fetch,
+    accounts: AccountsController,
+    providers: ProvidersController,
+    networks: NetworksController,
+    onContractsDeployed: (network: Network) => Promise<void>
+  ) {
     super()
     this.#storage = storage
-    this.#accountStates = accountStates
-    this.#settings = settings
+    this.#fetch = fetch
+    this.#accounts = accounts
+    this.#providers = providers
+    this.#networks = networks
+    this.#onContractsDeployed = onContractsDeployed
     this.#initialLoadPromise = this.#load()
   }
 
   async #load(): Promise<void> {
+    await this.#accounts.initialLoadPromise
     const [accountsOps, signedMessages] = await Promise.all([
       this.#storage.get('accountsOps', {}),
       this.#storage.get('signedMessages', {})
@@ -148,11 +167,11 @@ export class ActivityController extends EventEmitter {
     this.#accountsOps = accountsOps
     this.#signedMessages = signedMessages
 
+    this.init()
     this.emitUpdate()
   }
 
-  init({ selectedAccount, filters }: { selectedAccount: AccountId | null; filters?: Filters }) {
-    this.#selectedAccount = selectedAccount
+  init(filters?: Filters) {
     this.isInitialized = true
 
     if (filters) {
@@ -172,7 +191,6 @@ export class ActivityController extends EventEmitter {
   }
 
   reset() {
-    this.#selectedAccount = null
     this.filters = null
     this.isInitialized = false
     this.emitUpdate()
@@ -231,22 +249,21 @@ export class ActivityController extends EventEmitter {
   }
 
   async addAccountOp(accountOp: SubmittedAccountOp) {
+    await this.#initialLoadPromise
+
     if (!this.isInitialized) {
       this.#throwNotInitialized()
       return
     }
 
-    await this.#initialLoadPromise
+    const { accountAddr, networkId } = accountOp
 
-    const account = accountOp.accountAddr
-    const network = accountOp.networkId
-
-    if (!this.#accountsOps[account]) this.#accountsOps[account] = {}
-    if (!this.#accountsOps[account][network]) this.#accountsOps[account][network] = []
+    if (!this.#accountsOps[accountAddr]) this.#accountsOps[accountAddr] = {}
+    if (!this.#accountsOps[accountAddr][networkId]) this.#accountsOps[accountAddr][networkId] = []
 
     // newest SubmittedAccountOp goes first in the list
-    this.#accountsOps[account][network].unshift({ ...accountOp })
-    trim(this.#accountsOps[account][network])
+    this.#accountsOps[accountAddr][networkId].unshift({ ...accountOp })
+    trim(this.#accountsOps[accountAddr][networkId])
 
     this.accountsOps = this.filterAndPaginateAccountOps(
       this.#accountsOps,
@@ -275,7 +292,7 @@ export class ActivityController extends EventEmitter {
 
     // Here we don't rely on `this.isInitialized` flag, as it checks for both `this.filters.account` and `this.filters.network` existence.
     // Banners are network agnostic, and that's the reason we check for `this.filters.account` only and having this.#accountsOps loaded.
-    if (!this.#selectedAccount || !this.#accountsOps[this.#selectedAccount])
+    if (!this.#accounts.selectedAccount || !this.#accountsOps[this.#accounts.selectedAccount])
       return { shouldEmitUpdate: false, shouldUpdatePortfolio: false }
 
     // This flag tracks the changes to AccountsOps statuses
@@ -285,56 +302,52 @@ export class ActivityController extends EventEmitter {
     let shouldUpdatePortfolio = false
 
     await Promise.all(
-      Object.keys(this.#accountsOps[this.#selectedAccount]).map(async (network) => {
-        const networkConfig = this.#settings.networks.find((x) => x.id === network)!
-        const provider = this.#settings.providers[networkConfig.id]
+      Object.keys(this.#accountsOps[this.#accounts.selectedAccount]).map(async (networkId) => {
+        const network = this.#networks.networks.find((x) => x.id === networkId)
+        if (!network) return
+        const provider = this.#providers.providers[network.id]
 
-        const selectedAccount = this.#selectedAccount
+        const selectedAccount = this.#accounts.selectedAccount
 
         if (!selectedAccount) return
 
         return Promise.all(
-          this.#accountsOps[selectedAccount][network].map(async (accountOp, accountOpIndex) => {
+          this.#accountsOps[selectedAccount][networkId].map(async (accountOp, accountOpIndex) => {
             // Don't update the current network account ops statuses,
             // as the statuses are already updated in the previous calls.
             if (accountOp.status !== AccountOpStatus.BroadcastedButNotConfirmed) return
 
             shouldEmitUpdate = true
 
-            const declareRejectedIfQuaterPassed = (op: SubmittedAccountOp) => {
+            const declareStuckIfQuaterPassed = (op: SubmittedAccountOp) => {
               const accountOpDate = new Date(op.timestamp)
               accountOpDate.setMinutes(accountOpDate.getMinutes() + 15)
               const aQuaterHasPassed = accountOpDate < new Date()
               if (aQuaterHasPassed) {
-                this.#accountsOps[selectedAccount][network][accountOpIndex].status =
-                  AccountOpStatus.Failure
+                this.#accountsOps[selectedAccount][networkId][accountOpIndex].status =
+                  AccountOpStatus.BroadcastButStuck
               }
             }
 
             try {
               let txnId = accountOp.txnId
               if (accountOp.userOpHash) {
-                const isCustomNetwork = !predefinedNetworks.find(
-                  (net) => net.id === networkConfig.id
-                )
-                const [response, bundlerResult] = await Promise.all([
-                  !isCustomNetwork
-                    ? fetchUserOp(accountOp.userOpHash, fetch, getExplorerId(networkConfig))
-                    : new Promise((resolve) => {
-                        resolve(null)
-                      }),
-                  Bundler.getStatusAndTxnId(accountOp.userOpHash, networkConfig)
+                const [response, bundlerResult]: [CustomResponse | null, any] = await Promise.all([
+                  !network.predefined
+                    ? fetchUserOp(accountOp.userOpHash, this.#fetch, getExplorerId(network))
+                    : Promise.resolve(null),
+                  Bundler.getStatusAndTxnId(accountOp.userOpHash, network)
                 ])
 
                 if (bundlerResult.status === 'rejected') {
-                  this.#accountsOps[selectedAccount][network][accountOpIndex].status =
+                  this.#accountsOps[selectedAccount][networkId][accountOpIndex].status =
                     AccountOpStatus.Rejected
                   return
                 }
 
                 if (bundlerResult.transactionHash) {
                   txnId = bundlerResult.transactionHash
-                  this.#accountsOps[selectedAccount][network][accountOpIndex].txnId = txnId
+                  this.#accountsOps[selectedAccount][networkId][accountOpIndex].txnId = txnId
                 } else {
                   // on custom networks the response is null
                   if (!response) return
@@ -349,9 +362,9 @@ export class ActivityController extends EventEmitter {
                   // indexed, yet, so we wait
                   if (userOps.length) {
                     txnId = userOps[0].transactionHash
-                    this.#accountsOps[selectedAccount][network][accountOpIndex].txnId = txnId
+                    this.#accountsOps[selectedAccount][networkId][accountOpIndex].txnId = txnId
                   } else {
-                    declareRejectedIfQuaterPassed(accountOp)
+                    declareStuckIfQuaterPassed(accountOp)
                     return
                   }
                 }
@@ -359,18 +372,15 @@ export class ActivityController extends EventEmitter {
 
               const receipt = await provider.getTransactionReceipt(txnId)
               if (receipt) {
-                this.#accountsOps[selectedAccount][network][accountOpIndex].status = receipt.status
-                  ? AccountOpStatus.Success
-                  : AccountOpStatus.Failure
+                this.#accountsOps[selectedAccount][networkId][accountOpIndex].status =
+                  receipt.status ? AccountOpStatus.Success : AccountOpStatus.Failure
 
                 if (receipt.status) {
                   shouldUpdatePortfolio = true
                 }
 
                 if (accountOp.isSingletonDeploy && receipt.status) {
-                  // the below promise has a catch() inside
-                  /* eslint-disable @typescript-eslint/no-floating-promises */
-                  this.#settings.setContractsDeployedToTrueIfDeployed(networkConfig)
+                  await this.#onContractsDeployed(network)
                 }
                 return
               }
@@ -378,7 +388,7 @@ export class ActivityController extends EventEmitter {
               // if there's no receipt, confirm there's a txn
               // if there's no txn and 15 minutes have passed, declare it a failure
               const txn = await provider.getTransaction(txnId)
-              if (!txn) declareRejectedIfQuaterPassed(accountOp)
+              if (!txn) declareStuckIfQuaterPassed(accountOp)
             } catch {
               this.emitError({
                 level: 'silent',
@@ -389,15 +399,22 @@ export class ActivityController extends EventEmitter {
               })
             }
 
+            // fixed: we should check the account state of the one paying
+            // the fee as his nonce gets incremented:
+            // - EOA, SA by EOA: the account op holds the EOA nonce
+            // - relayer, 4337: the account op holds the SA nonce
+            const payedByState =
+              this.#accounts.accountStates[accountOp.gasFeePayment!.paidBy] &&
+              this.#accounts.accountStates[accountOp.gasFeePayment!.paidBy][accountOp.networkId]
+                ? this.#accounts.accountStates[accountOp.gasFeePayment!.paidBy][accountOp.networkId]
+                : null
+
             if (
-              (!accountOp.userOpHash &&
-                this.#accountStates[accountOp.accountAddr][accountOp.networkId].nonce >
-                  accountOp.nonce) ||
-              (accountOp.userOpHash &&
-                this.#accountStates[accountOp.accountAddr][accountOp.networkId].erc4337Nonce >
-                  accountOp.nonce)
+              payedByState &&
+              ((!accountOp.userOpHash && payedByState.nonce > accountOp.nonce) ||
+                (accountOp.userOpHash && payedByState.erc4337Nonce > accountOp.nonce))
             ) {
-              this.#accountsOps[selectedAccount][network][accountOpIndex].status =
+              this.#accountsOps[selectedAccount][networkId][accountOpIndex].status =
                 AccountOpStatus.UnknownButPastNonce
               shouldUpdatePortfolio = true
             }
@@ -490,6 +507,25 @@ export class ActivityController extends EventEmitter {
     this.emitUpdate()
   }
 
+  removeAccountData(address: Account['addr']) {
+    delete this.#accountsOps[address]
+    delete this.#signedMessages[address]
+
+    this.accountsOps = this.filterAndPaginateAccountOps(
+      this.#accountsOps,
+      this.accountsOpsPagination
+    )
+    this.signedMessages = this.filterAndPaginateSignedMessages(
+      this.#signedMessages,
+      this.signedMessagesPagination
+    )
+
+    this.#storage.set('accountsOps', this.#accountsOps)
+    this.#storage.set('signedMessages', this.#signedMessages)
+
+    this.emitUpdate()
+  }
+
   #throwNotInitialized() {
     this.emitError({
       level: 'major',
@@ -502,16 +538,18 @@ export class ActivityController extends EventEmitter {
   get broadcastedButNotConfirmed(): SubmittedAccountOp[] {
     // Here we don't rely on `this.isInitialized` flag, as it checks for both `this.filters.account` and `this.filters.network` existence.
     // Banners are network agnostic, and that's the reason we check for `this.filters.account` only and having this.#accountsOps loaded.
-    if (!this.#selectedAccount || !this.#accountsOps[this.#selectedAccount]) return []
+    if (!this.#accounts.selectedAccount || !this.#accountsOps[this.#accounts.selectedAccount])
+      return []
 
-    return Object.values(this.#accountsOps[this.#selectedAccount])
+    return Object.values(this.#accountsOps[this.#accounts.selectedAccount])
       .flat()
       .filter((accountOp) => accountOp.status === AccountOpStatus.BroadcastedButNotConfirmed)
   }
 
   get banners(): Banner[] {
+    if (!this.#networks.isInitialized) return []
     return this.broadcastedButNotConfirmed.map((accountOp) => {
-      const network = this.#settings.networks.find((x) => x.id === accountOp.networkId)!
+      const network = this.#networks.networks.find((x) => x.id === accountOp.networkId)!
 
       const isCustomNetwork = !predefinedNetworks.find((net) => net.id === network.id)
       const url =
@@ -535,6 +573,47 @@ export class ActivityController extends EventEmitter {
         ]
       } as Banner
     })
+  }
+
+  /**
+   * A not confirmed account op can actually be with a status of BroadcastButNotConfirmed
+   * and BroadcastButStuck. Typically, it becomes BroadcastButStuck if not confirmed
+   * in a 15 minutes interval after becoming BroadcastButNotConfirmed. We need two
+   * statuses to hide the banner of BroadcastButNotConfirmed from the dashboard.
+   */
+  getNotConfirmedOpIfAny(accId: AccountId, networkId: Network['id']): SubmittedAccountOp | null {
+    const acc = this.#accounts.accounts.find((oneA) => oneA.addr === accId)
+    if (!acc) return null
+
+    // if the broadcasting account is a smart account, it means relayer
+    // broadcast => it's in this.#accountsOps[acc.addr][networkId]
+    // disregard erc-4337 txns as they shouldn't have an RBF
+    const isSA = isSmartAccount(acc)
+    if (isSA) {
+      if (!this.#accountsOps[acc.addr] || !this.#accountsOps[acc.addr][networkId]) return null
+      if (!this.#rbfStatuses.includes(this.#accountsOps[acc.addr][networkId][0].status!))
+        return null
+
+      return this.#accountsOps[acc.addr][networkId][0]
+    }
+
+    // if the account is an EOA, we have to go through all the smart accounts
+    // to check whether the EOA has made a broadcast for them
+    const theEOAandSAaccounts = this.#accounts.accounts.filter(
+      (oneA) => isSmartAccount(oneA) || oneA.addr === accId
+    )
+    const ops: SubmittedAccountOp[] = []
+    theEOAandSAaccounts.forEach((oneA) => {
+      if (!this.#accountsOps[oneA.addr] || !this.#accountsOps[oneA.addr][networkId]) return
+      const op = this.#accountsOps[oneA.addr][networkId].find(
+        (oneOp) =>
+          this.#rbfStatuses.includes(this.#accountsOps[oneA.addr][networkId][0].status!) &&
+          oneOp.gasFeePayment?.paidBy === oneA.addr
+      )
+      if (!op) return
+      ops.push(op)
+    })
+    return !ops.length ? null : ops.reduce((m, e) => (e.nonce > m.nonce ? e : m))
   }
 
   toJSON() {

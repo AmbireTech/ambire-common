@@ -5,6 +5,7 @@ import { parseEther } from 'ethers'
 import { describe, expect, test } from '@jest/globals'
 
 import { getAccountsInfo } from '../../../test/helpers'
+import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
 import { networks } from '../../consts/networks'
 import { Account } from '../../interfaces/account'
@@ -33,7 +34,11 @@ const smartAccDeployed: Account = {
       '0x7f00000000000000000000000000000000000000000000000000000000000000027ff33cc417366b7e38d2706a67ab46f85465661c28b864b521441180d15df82251553d602d80604d3d3981f3363d3d373d3d3d363d731cde6a53e9a411eaaf9d11e3e8c653a3e379d5355af43d82803e903d91602b57fd5bf3',
     salt: '0x0000000000000000000000000000000000000000000000000000000000000000'
   },
-  associatedKeys: ['0xBd84Cc40a5b5197B5B61919c22A55e1c46d2A3bb']
+  associatedKeys: ['0xBd84Cc40a5b5197B5B61919c22A55e1c46d2A3bb'],
+  preferences: {
+    label: DEFAULT_ACCOUNT_LABEL,
+    pfp: '0x8E5F6c1F0b134657A546932C3eC9169E1633a39b'
+  }
 }
 
 describe('Bundler estimation tests', () => {
@@ -62,7 +67,7 @@ describe('Bundler estimation tests', () => {
         accountOpToExecuteBefore: null,
         meta: {
           entryPointAuthorization:
-            '0x5bb97ff398c6d4e44f38c81e256d0797c124fe39cc0c5cf66c082c135cb5946879588d3c3f02efe587b8ea01de567c962355640e7da5197cb23f150c6a9fd4101c01'
+            '0x05404ea5dfa13ddd921cda3f587af6927cc127ee174b57c9891491bfc1f0d3d005f649f8a1fc9147405f064507bae08816638cfc441c4d0dc4eb6640e16621991b01'
         }
       }
       const usedNetworks = [optimism]

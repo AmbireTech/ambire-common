@@ -1,7 +1,8 @@
-import { Storage } from '../../interfaces/storage'
-import { EMPTY_HUMANIZER_META, HUMANIZER_META_KEY, integrateFragments } from './utils'
 import humanizerInfo from '../../consts/humanizer/humanizerInfo.json'
-import { HumanizerFragment, HumanizerMeta } from './interfaces'
+import { HumanizerFragment } from '../../interfaces/humanizer'
+import { Storage } from '../../interfaces/storage'
+import { HumanizerMeta } from './interfaces'
+import { EMPTY_HUMANIZER_META, HUMANIZER_META_KEY, integrateFragments } from './utils'
 
 const LAZY_STORE_DELAY = 1 * 1000
 const LAZY_READ_DELAY = 30 * 1000
@@ -12,8 +13,11 @@ let lastTimeRead = 0
 
 export async function lazyReadHumanizerMeta(
   storage: Storage,
-  options?: { nocache?: boolean }
+  options?: { isExtension?: boolean; nocache?: boolean }
 ): Promise<HumanizerMeta> {
+  if (options?.isExtension !== undefined && !options?.isExtension) {
+    return humanizerInfo as HumanizerMeta
+  }
   if (Date.now() - lastTimeRead > LAZY_READ_DELAY || options?.nocache) {
     memoryHumanizerMeta = await storage.get(HUMANIZER_META_KEY, humanizerInfo)
     lastTimeRead = Date.now()

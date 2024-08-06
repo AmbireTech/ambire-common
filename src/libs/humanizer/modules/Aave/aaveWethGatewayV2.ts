@@ -1,11 +1,12 @@
 import { Interface, ZeroAddress } from 'ethers'
 
 import { AccountOp } from '../../../accountOp/accountOp'
-import { HumanizerMeta, IrCall } from '../../interfaces'
-import { getAction, getKnownAbi, getLabel, getOnBehalfOf, getToken } from '../../utils'
+import { AaveWethGatewayV2 } from '../../const/abis'
+import { IrCall } from '../../interfaces'
+import { getAction, getLabel, getOnBehalfOf, getToken } from '../../utils'
 
-export const aaveWethGatewayV2 = (humanizerInfo: HumanizerMeta): { [key: string]: Function } => {
-  const iface = new Interface(getKnownAbi(humanizerInfo, 'AaveWethGatewayV2'))
+export const aaveWethGatewayV2 = (): { [key: string]: Function } => {
+  const iface = new Interface(AaveWethGatewayV2)
   return {
     [iface.getFunction('depositETH')?.selector!]: (accountOp: AccountOp, call: IrCall) => {
       const [, onBehalfOf] = iface.parseTransaction(call)?.args || []

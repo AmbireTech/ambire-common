@@ -1,14 +1,14 @@
 import { SignMessageAction } from 'controllers/actions/actions'
 import { TypedDataDomain, TypedDataField } from 'ethers'
 
-import { HumanizerFragment } from '../libs/humanizer/interfaces'
 import { AccountId } from './account'
 import { DappProviderRequest } from './dapp'
-import { NetworkId } from './networkDescriptor'
+import { HumanizerFragment } from './humanizer'
+import { NetworkId } from './network'
 
-export interface Call {
-  kind: 'call'
-  txns: {
+export interface Calls {
+  kind: 'calls'
+  calls: {
     to: string
     value: bigint
     data: string
@@ -41,7 +41,7 @@ export interface Message {
 
 export interface SignUserRequest {
   id: string | number
-  action: Call | PlainTextMessage | TypedMessage | { kind: 'benzin' }
+  action: Calls | PlainTextMessage | TypedMessage | { kind: 'benzin' }
   session?: DappProviderRequest['session']
   meta: {
     isSignAction: true
@@ -56,6 +56,7 @@ export interface SignUserRequest {
   }
   // defined only when SignUserRequest is built from a DappRequest
   dappPromise?: {
+    session: { name: string; origin: string; icon: string }
     resolve: (data: any) => void
     reject: (data: any) => void
   }
@@ -64,7 +65,7 @@ export interface SignUserRequest {
 export interface DappUserRequest {
   id: string | number
   action: {
-    kind: Exclude<string, 'call' | 'message' | 'typedMessage' | 'benzin'>
+    kind: Exclude<string, 'calls' | 'message' | 'typedMessage' | 'benzin'>
     params: any
   }
   session: DappProviderRequest['session']
@@ -73,6 +74,7 @@ export interface DappUserRequest {
     [key: string]: any
   }
   dappPromise: {
+    session: { name: string; origin: string; icon: string }
     resolve: (data: any) => void
     reject: (data: any) => void
   }

@@ -5,6 +5,7 @@ import fetch from 'node-fetch'
 import { describe, expect, jest, test } from '@jest/globals'
 
 import { produceMemoryStore } from '../../../test/helpers'
+import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import humanizerJSON from '../../consts/humanizer/humanizerInfo.json'
 import { ErrorRef } from '../../controllers/eventEmitter/eventEmitter'
 import { Account } from '../../interfaces/account'
@@ -13,8 +14,18 @@ import { Storage } from '../../interfaces/storage'
 import { Message, TypedMessage } from '../../interfaces/userRequest'
 import { AccountOp } from '../accountOp/accountOp'
 import { callsHumanizer, messageHumanizer } from './index'
-import { HumanizerVisualization, IrCall, IrMessage } from './interfaces'
-import { EMPTY_HUMANIZER_META, HUMANIZER_META_KEY } from './utils'
+import { IrCall, IrMessage } from './interfaces'
+import { compareHumanizerVisualizations, compareVisualizations } from './testHelpers'
+import {
+  EMPTY_HUMANIZER_META,
+  getAction,
+  getAddressVisualization,
+  getDeadline,
+  getHumanMessage,
+  getLabel,
+  getToken,
+  HUMANIZER_META_KEY
+} from './utils'
 
 // const address1 = '0x6942069420694206942069420694206942069420'
 const address2 = '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
@@ -50,7 +61,11 @@ const accounts: Account[] = [
     addr: '0xAAbBbC841F29Dc6b09EF9f6c8fd59DA807bc6248',
     associatedKeys: ['string[]'],
     initialPrivileges: [],
-    creation: null
+    creation: null,
+    preferences: {
+      label: DEFAULT_ACCOUNT_LABEL,
+      pfp: '0xAAbBbC841F29Dc6b09EF9f6c8fd59DA807bc6248'
+    }
   }
 ]
 const keys: Key[] = [
@@ -228,41 +243,26 @@ describe('Humanizer main function', () => {
     // const ir: Ir = []
     const expectedVisualizations = [
       [
-        { type: 'action', content: 'Send' },
-        {
-          type: 'token',
-          address: '0x0000000000000000000000000000000000000000',
-          amount: 1000000000000000000n
-        },
-        { type: 'label', content: 'to' },
-        {
-          type: 'address',
-          address: '0xc4ce03b36f057591b2a360d773edb9896255051e'
-        }
+        getAction('Send'),
+        getToken('0x0000000000000000000000000000000000000000', 1000000000000000000n),
+        getLabel('to'),
+        getAddressVisualization('0xc4ce03b36f057591b2a360d773edb9896255051e'),
+        getToken('0xc4ce03b36f057591b2a360d773edb9896255051e', 0n, true)
       ],
       [
-        { type: 'action', content: 'Grant approval' },
-        { type: 'label', content: 'for' },
-        {
-          type: 'token',
-          address: '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2',
-          amount: 115792089237316195423570985008687907853269984665640564039457584007913129639935n,
-          humanizerMeta: { token: { symbol: 'WETH', decimals: 18 } }
-        },
-        { type: 'label', content: 'to' },
-        {
-          type: 'address',
-          address: '0xe5c783ee536cf5e63e792988335c4255169be4e1',
-          humanizerMeta: { name: 'OpenSea (old)', isSC: {} }
-        }
+        getAction('Grant approval'),
+        getLabel('for'),
+        getToken(
+          '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2',
+          115792089237316195423570985008687907853269984665640564039457584007913129639935n
+        ),
+        getLabel('to'),
+        getAddressVisualization('0xe5c783ee536cf5e63e792988335c4255169be4e1'),
+        getToken('0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2', 0n, true)
       ]
     ]
     const onUpdate = jest.fn((newCalls: IrCall[]) => {
-      newCalls.forEach((call, i) => {
-        call.fullVisualization?.forEach((v, j) => {
-          expect(v).toMatchObject(expectedVisualizations[i][j])
-        })
-      })
+      compareHumanizerVisualizations(newCalls, expectedVisualizations)
     })
     accountOp.calls = [...transactions.generic]
     await callsHumanizer(accountOp, storage, fetch, onUpdate, emitError)
@@ -271,26 +271,19 @@ describe('Humanizer main function', () => {
 
   test('unknown func selector humanize with asyncop', async () => {
     const expectedVisualizations = [
-      { type: 'action', content: 'Call buy(uint256)' },
-      { type: 'label', content: 'from' },
-      {
-        type: 'address',
-        address: '0x519856887af544de7e67f51a4f2271521b01432b'
-      }
+      getAction('Call buy(uint256)'),
+      getLabel('from'),
+      getAddressVisualization('0x519856887af544de7e67f51a4f2271521b01432b'),
+      getToken('0x519856887af544de7e67f51a4f2271521b01432b', 0n, true)
     ]
     let iterations = 0
     const onUpdate = jest.fn((newCalls: IrCall[]) => {
       if (iterations === 0) {
-        expect(newCalls[0]?.fullVisualization?.length).toBe(3)
-        expect(newCalls[0]?.fullVisualization?.[0]).toMatchObject({
-          type: 'action',
-          content: 'Unknown action'
-        })
+        expect(newCalls[0]?.fullVisualization?.length).toBe(4)
+        compareVisualizations([newCalls[0].fullVisualization?.[0]!], [getAction('Unknown action')])
       } else if (iterations === 1) {
-        expect(newCalls[0]?.fullVisualization?.length).toBe(3)
-        newCalls[0]?.fullVisualization?.forEach((v: HumanizerVisualization, i: number) =>
-          expect(v).toMatchObject(expectedVisualizations[i])
-        )
+        expect(newCalls[0]?.fullVisualization?.length).toBe(4)
+        compareVisualizations(newCalls[0].fullVisualization || [], expectedVisualizations)
       }
       iterations += 1
     })
@@ -359,77 +352,35 @@ describe('TypedMessages', () => {
       }
     ]
     const expectedVisualizations = [
-      { type: 'label', content: 'Permit #1' },
-      { type: 'action', content: 'Permit' },
-      {
-        type: 'address',
-        address: '0x000000000022d473030f116ddee9f6b43ac78ba3',
-        humanizerMeta: {
-          name: 'Permit2',
-          address: '0x000000000022d473030f116ddee9f6b43ac78ba3',
-          isSC: {}
-        }
-      },
-      { type: 'label', content: 'to use' },
-      {
-        type: 'token',
-        address: '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2',
-        amount: 1000000000000000000n,
-        humanizerMeta: {
-          name: 'Wrapped ETH',
-          address: '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2',
-          isSC: {},
-          token: { decimals: 18, symbol: 'WETH' }
-        }
-      },
-      { type: 'label', content: 'for time period' },
-      { type: 'deadline', amount: 968187600000n },
-      { type: 'label', content: 'this whole signatuere' },
-      { type: 'deadline', amount: 968187600000n },
-      { type: 'label', content: 'Permit #2' },
-      { type: 'action', content: 'Permit' },
-      {
-        type: 'address',
-        address: '0x000000000022d473030f116ddee9f6b43ac78ba3',
-        humanizerMeta: {
-          name: 'Permit2',
-          address: '0x000000000022d473030f116ddee9f6b43ac78ba3',
-          isSC: {}
-        }
-      },
-      { type: 'label', content: 'to use' },
-      {
-        type: 'token',
-        address: '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2',
-        amount: 500000000000000000n,
-        humanizerMeta: {
-          name: 'Wrapped ETH',
-          address: '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2',
-          isSC: {},
-          token: { decimals: 18, symbol: 'WETH' }
-        }
-      },
-      { type: 'label', content: 'for time period' },
-      { type: 'deadline', amount: 969187600000n },
-      { type: 'label', content: 'this whole signatuere' },
-      { type: 'deadline', amount: 968187600000n }
+      getLabel('Permit #1'),
+      getAction('Permit'),
+      getAddressVisualization('0x000000000022d473030f116ddee9f6b43ac78ba3'),
+      getLabel('to use'),
+      getToken('0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2', 1000000000000000000n),
+      getLabel('for time period'),
+      getDeadline(968187600n),
+      getLabel('this whole signatuere'),
+      getDeadline(968187600n),
+      getLabel('Permit #2'),
+      getAction('Permit'),
+      getAddressVisualization('0x000000000022d473030f116ddee9f6b43ac78ba3'),
+      getLabel('to use'),
+      getToken('0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2', 500000000000000000n),
+      getLabel('for time period'),
+      getDeadline(969187600n),
+      getLabel('this whole signatuere'),
+      getDeadline(968187600n)
     ]
     const onUpdate = jest.fn((newMessage: IrMessage) => {
-      if (newMessage.fromActionId === 1)
-        newMessage.fullVisualization?.forEach((v, i) =>
-          expect(v).toMatchObject(expectedVisualizations[i])
-        )
+      if (newMessage.fromActionId === 1) {
+        compareVisualizations(newMessage.fullVisualization || [], expectedVisualizations)
+      }
       if (newMessage.fromActionId === 2) {
-        expect(newMessage.fullVisualization).not.toBeNull()
-        expect(newMessage.fullVisualization?.length).toBe(2)
-        expect(newMessage.fullVisualization![0]).toMatchObject({
-          type: 'action',
-          content: 'Sign message:'
-        })
-        expect(newMessage.fullVisualization![1]).toMatchObject({
-          type: 'label',
-          content: 'random message'
-        })
+        expect(newMessage.fullVisualization).toBeTruthy()
+        compareVisualizations(newMessage.fullVisualization || [], [
+          getAction('Sign message:'),
+          getHumanMessage('random message')
+        ])
       }
     })
 
@@ -449,28 +400,26 @@ describe('with (Account | Key)[] arg', () => {
   test('with calls', async () => {
     const expectedVisualizations = [
       [
-        { type: 'action', content: 'Grant approval' },
-        { type: 'label', content: 'for' },
-        { type: 'token' },
-        { type: 'label', content: 'to' },
-        { address: accounts[0].addr.toLowerCase() }
+        getAction('Grant approval'),
+        getLabel('for'),
+        getToken('0xdac17f958d2ee523a2206206994597c13d831ec7', 1000000000n),
+        getLabel('to'),
+        getAddressVisualization(accounts[0].addr.toLowerCase()),
+        getToken('0xdac17f958d2ee523a2206206994597c13d831ec7', 0n, true)
       ],
       [
-        { type: 'action', content: 'Grant approval' },
-        { type: 'label', content: 'for' },
-        { type: 'token' },
-        { type: 'label', content: 'to' },
-        { address: keys[0].addr.toLowerCase() }
+        getAction('Grant approval'),
+        getLabel('for'),
+        getToken('0xdac17f958d2ee523a2206206994597c13d831ec7', 1000000000n),
+        getLabel('to'),
+        getAddressVisualization(keys[0].addr.toLowerCase()),
+        getToken('0xdac17f958d2ee523a2206206994597c13d831ec7', 0n, true)
       ]
     ]
     accountOp.calls = [...transactions.accountOrKeyArg]
 
     const onUpdate = jest.fn((newCalls: IrCall[]) => {
-      newCalls.forEach((c, i) =>
-        c.fullVisualization?.forEach((v, j) =>
-          expect(v).toMatchObject(expectedVisualizations[i][j])
-        )
-      )
+      compareHumanizerVisualizations(newCalls, expectedVisualizations)
     })
 
     await callsHumanizer(accountOp, storage, fetch, onUpdate, emitError)

@@ -1,11 +1,53 @@
 import EventEmitter from 'events'
+import fetch from 'node-fetch'
 
 import { describe, expect, test } from '@jest/globals'
 
+import { produceMemoryStore } from '../../../test/helpers'
+import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
+import { networks } from '../../consts/networks'
+import { Storage } from '../../interfaces/storage'
 import { DappUserRequest, SignUserRequest } from '../../interfaces/userRequest'
+import { getRpcProvider } from '../../services/provider'
+import { AccountsController } from '../accounts/accounts'
+import { NetworksController } from '../networks/networks'
+import { ProvidersController } from '../providers/providers'
 import { ActionsController, BenzinAction, DappRequestAction } from './actions'
 
-describe('SignMessageController', () => {
+const REQUEST_1: DappUserRequest = {
+  id: 1,
+  action: { kind: 'dappConnect', params: {} },
+  meta: { isSignAction: false },
+  session: { name: '', icon: '', origin: '' },
+  dappPromise: {
+    resolve: () => {},
+    reject: () => {},
+    session: { name: 'Test dApp', origin: 'https://test-dApp.com', icon: '' }
+  }
+}
+const REQUEST_2: DappUserRequest = {
+  id: 2,
+  action: { kind: 'dappConnect', params: {} },
+  meta: { isSignAction: false },
+  session: { name: '', icon: '', origin: '' },
+  dappPromise: {
+    resolve: () => {},
+    reject: () => {},
+    session: { name: 'Test dApp', origin: 'https://test-dApp.com', icon: '' }
+  }
+}
+const ACTION_1: DappRequestAction = {
+  id: REQUEST_1.id,
+  type: 'dappRequest',
+  userRequest: REQUEST_1
+}
+const ACTION_2: DappRequestAction = {
+  id: REQUEST_2.id,
+  type: 'dappRequest',
+  userRequest: REQUEST_2
+}
+
+describe('Actions Controller', () => {
   const event = new EventEmitter()
   let windowId = 0
   const windowManager = {
@@ -22,53 +64,94 @@ describe('SignMessageController', () => {
     sendWindowToastMessage: () => {}
   }
 
+  const notificationManager = {
+    create: () => Promise.resolve()
+  }
+
+  const storage: Storage = produceMemoryStore()
+  const accounts = [
+    {
+      addr: '0xAa0e9a1E2D2CcF2B867fda047bb5394BEF1883E0',
+      associatedKeys: ['0xAa0e9a1E2D2CcF2B867fda047bb5394BEF1883E0'],
+      initialPrivileges: [],
+      creation: null,
+      preferences: {
+        label: DEFAULT_ACCOUNT_LABEL,
+        pfp: '0xAa0e9a1E2D2CcF2B867fda047bb5394BEF1883E0'
+      }
+    },
+    {
+      addr: '0x71c3D24a627f0416db45107353d8d0A5ae0401ae',
+      associatedKeys: ['0x71c3D24a627f0416db45107353d8d0A5ae0401ae'],
+      initialPrivileges: [],
+      creation: null,
+      preferences: {
+        label: DEFAULT_ACCOUNT_LABEL,
+        pfp: '0x71c3D24a627f0416db45107353d8d0A5ae0401ae'
+      }
+    }
+  ]
+  const providers = Object.fromEntries(
+    networks.map((network) => [network.id, getRpcProvider(network.rpcUrls, network.chainId)])
+  )
+
+  let providersCtrl: ProvidersController
+  const networksCtrl = new NetworksController(
+    storage,
+    fetch,
+    (net) => {
+      providersCtrl.setProvider(net)
+    },
+    (id) => {
+      providersCtrl.removeProvider(id)
+    }
+  )
+  providersCtrl = new ProvidersController(networksCtrl)
+  providersCtrl.providers = providers
+
+  let accountsCtrl: AccountsController
   let actionsCtrl: ActionsController
-  test('should init ActionsController', () => {
+  test('should init ActionsController', async () => {
+    await storage.set('accounts', accounts)
+    accountsCtrl = new AccountsController(
+      storage,
+      providersCtrl,
+      networksCtrl,
+      () => {},
+      () => {}
+    )
+    await accountsCtrl.initialLoadPromise
+    await networksCtrl.initialLoadPromise
+    await providersCtrl.initialLoadPromise
+    accountsCtrl.selectedAccount = '0xAa0e9a1E2D2CcF2B867fda047bb5394BEF1883E0'
     actionsCtrl = new ActionsController({
-      selectedAccount: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+      accounts: accountsCtrl,
       windowManager,
+      notificationManager,
       onActionWindowClose: () => {}
     })
     expect(actionsCtrl).toBeDefined()
   })
   test('should add actions to actionsQueue', (done) => {
-    const req1: DappUserRequest = {
-      id: 1,
-      action: { kind: 'dappConnect', params: {} },
-      meta: { isSignAction: false },
-      session: { name: '', icon: '', origin: '' },
-      dappPromise: { resolve: () => {}, reject: () => {} }
-    }
-    const req2: DappUserRequest = {
-      id: 2,
-      action: { kind: 'dappConnect', params: {} },
-      meta: { isSignAction: false },
-      session: { name: '', icon: '', origin: '' },
-      dappPromise: { resolve: () => {}, reject: () => {} }
-    }
-    const action1: DappRequestAction = { id: req1.id, type: 'dappRequest', userRequest: req1 }
-    const action2: DappRequestAction = { id: req2.id, type: 'dappRequest', userRequest: req2 }
-
     let emitCounter = 0
     const unsubscribe = actionsCtrl.onUpdate(async () => {
       emitCounter++
-
       if (emitCounter === 3) {
         expect(actionsCtrl.actionsQueue).toHaveLength(2)
-        expect(actionsCtrl.currentAction).toEqual(action1)
+        expect(actionsCtrl.currentAction).toEqual(ACTION_1)
         unsubscribe()
         done()
       }
 
       if (emitCounter === 2) {
-        actionsCtrl.addOrUpdateAction(action2)
-        expect(actionsCtrl.actionWindowId).toEqual(1)
+        actionsCtrl.addOrUpdateAction(ACTION_2)
+        expect(actionsCtrl.actionWindow.id).toEqual(1)
       }
     })
 
-    actionsCtrl.addOrUpdateAction(action1)
+    actionsCtrl.addOrUpdateAction(ACTION_1)
     expect(actionsCtrl.actionsQueue).toHaveLength(1)
-    expect(actionsCtrl.currentAction).toEqual(action1)
+    expect(actionsCtrl.currentAction).toEqual(ACTION_1)
   })
   test('should update action', (done) => {
     const updatedReq2: DappUserRequest = {
@@ -76,7 +159,11 @@ describe('SignMessageController', () => {
       action: { kind: 'dappConnect', params: { someUpdatedParams: {} } },
       meta: { isSignAction: false },
       session: { name: '', icon: '', origin: '' },
-      dappPromise: { resolve: () => {}, reject: () => {} }
+      dappPromise: {
+        resolve: () => {},
+        reject: () => {},
+        session: { name: 'Test dApp', origin: 'https://test-dApp.com', icon: '' }
+      }
     }
     const updatedAction2: DappRequestAction = {
       id: updatedReq2.id,
@@ -93,7 +180,7 @@ describe('SignMessageController', () => {
         expect(actionsCtrl.currentAction?.id).not.toEqual(null)
         // update does not change the currently selectedAction
         expect(actionsCtrl.currentAction?.id).not.toEqual(updatedAction2.id)
-        expect(actionsCtrl.actionWindowId).toEqual(1)
+        expect(actionsCtrl.actionWindow.id).toEqual(1)
         unsubscribe()
         done()
       }
@@ -107,7 +194,7 @@ describe('SignMessageController', () => {
       action: { kind: 'benzin' },
       meta: {
         isSignAction: true,
-        accountAddr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+        accountAddr: '0xAa0e9a1E2D2CcF2B867fda047bb5394BEF1883E0',
         networkId: 'ethereum'
       }
     }
@@ -121,7 +208,7 @@ describe('SignMessageController', () => {
         expect(actionsCtrl.actionsQueue).toHaveLength(3)
         expect(actionsCtrl.visibleActionsQueue).toHaveLength(3)
         expect(actionsCtrl.currentAction).toEqual(action3)
-        expect(actionsCtrl.actionWindowId).toEqual(1)
+        expect(actionsCtrl.actionWindow.id).toEqual(1)
         unsubscribe()
         done()
       }
@@ -141,13 +228,18 @@ describe('SignMessageController', () => {
       if (emitCounter === 1) {
         expect(actionsCtrl.actionsQueue).toHaveLength(3)
         expect(actionsCtrl.visibleActionsQueue).toHaveLength(2)
-        expect(actionsCtrl.actionWindowId).toEqual(1)
-        actionsCtrl.update({ selectedAccount: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8' })
+        expect(actionsCtrl.actionWindow.id).toEqual(1)
+
+        await accountsCtrl.selectAccount('0xAa0e9a1E2D2CcF2B867fda047bb5394BEF1883E0')
+        await actionsCtrl.forceEmitUpdate()
         unsubscribe()
         done()
       }
     })
-    actionsCtrl.update({ selectedAccount: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48' })
+    ;(async () => {
+      await accountsCtrl.selectAccount('0x71c3D24a627f0416db45107353d8d0A5ae0401ae')
+      actionsCtrl.forceEmitUpdate()
+    })()
   })
   test('on window close', (done) => {
     let emitCounter = 0
@@ -155,8 +247,8 @@ describe('SignMessageController', () => {
       emitCounter++
 
       if (emitCounter === 1) {
-        expect(actionsCtrl.actionWindowId).toBe(null)
-        expect(actionsCtrl.actionsQueue).toHaveLength(2) // benzin action should be removed
+        expect(actionsCtrl.actionWindow.id).toBe(null)
+        expect(actionsCtrl.actionsQueue).toHaveLength(0)
         expect(actionsCtrl.currentAction).toEqual(null)
 
         unsubscribe()
@@ -170,35 +262,46 @@ describe('SignMessageController', () => {
     let emitCounter = 0
     const unsubscribe = actionsCtrl.onUpdate(async () => {
       emitCounter++
-
-      if (emitCounter === 2) {
-        expect(actionsCtrl.actionWindowId).toBe(2) // action-window is reopened on setCurrentAction
+      if (emitCounter === 5) {
+        expect(actionsCtrl.currentAction?.id).toEqual(2)
         unsubscribe()
         done()
       }
+      if (emitCounter === 4) {
+        expect(actionsCtrl.actionWindow.id).toEqual(3)
+        actionsCtrl.setCurrentActionById(2)
+      }
+      if (emitCounter === 3) {
+        expect(actionsCtrl.actionWindow.id).toEqual(2)
+      }
+      if (emitCounter === 2) {
+        expect(actionsCtrl.currentAction?.id).toEqual(1)
+        expect(actionsCtrl.actionsQueue).toHaveLength(2)
+      }
 
       if (emitCounter === 1) {
-        expect(actionsCtrl.currentAction?.id).toEqual(2)
+        expect(actionsCtrl.currentAction?.id).toEqual(1)
+        expect(actionsCtrl.actionsQueue).toHaveLength(1)
       }
     })
 
-    expect(actionsCtrl.actionsQueue).toHaveLength(2)
-    expect(actionsCtrl.visibleActionsQueue).toHaveLength(2)
-    actionsCtrl.setCurrentActionById(2)
+    // Add actions to the queue
+    actionsCtrl.addOrUpdateAction(ACTION_1)
+    actionsCtrl.addOrUpdateAction(ACTION_2)
   })
   test('should remove actions from actionsQueue', (done) => {
     let emitCounter = 0
     const unsubscribe = actionsCtrl.onUpdate(async () => {
       emitCounter++
       if (emitCounter === 2) {
-        expect(actionsCtrl.actionWindowId).toBe(null)
+        expect(actionsCtrl.actionWindow.id).toBe(null)
         expect(actionsCtrl.actionsQueue).toHaveLength(0)
         expect(actionsCtrl.currentAction).toBe(null)
         unsubscribe()
         done()
       }
       if (emitCounter === 1) {
-        expect(actionsCtrl.actionWindowId).toEqual(2)
+        expect(actionsCtrl.actionWindow.id).toEqual(3)
         expect(actionsCtrl.actionsQueue).toHaveLength(1)
         expect(actionsCtrl.currentAction?.id).toBe(2)
         actionsCtrl.removeAction(2)
@@ -206,5 +309,21 @@ describe('SignMessageController', () => {
     })
 
     actionsCtrl.removeAction(1)
+  })
+  test('removeAccountData', async () => {
+    // Add actions to the queue
+    actionsCtrl.addOrUpdateAction(ACTION_1)
+    actionsCtrl.addOrUpdateAction(ACTION_2)
+
+    expect(actionsCtrl.actionsQueue.length).toBeGreaterThanOrEqual(2)
+
+    // Remove account data
+    actionsCtrl.removeAccountData('0xAa0e9a1E2D2CcF2B867fda047bb5394BEF1883E0')
+
+    const globalActions = actionsCtrl.actionsQueue.filter(
+      (a) => !['accountOp', 'signMessage', 'benzin'].includes(a?.type)
+    )
+
+    expect(actionsCtrl.actionsQueue).toHaveLength(globalActions.length)
   })
 })

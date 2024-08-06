@@ -2,15 +2,19 @@ import fetch from 'node-fetch'
 
 import { expect } from '@jest/globals'
 
+import { velcroUrl } from '../../../test/config'
 import { produceMemoryStore } from '../../../test/helpers'
+import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import humanizerInfo from '../../consts/humanizer/humanizerInfo.json'
 import { networks } from '../../consts/networks'
+import { Account } from '../../interfaces/account'
 import { HumanizerMeta } from '../../libs/humanizer/interfaces'
 import { Portfolio } from '../../libs/portfolio'
 import { getRpcProvider } from '../../services/provider'
 import { Contacts } from '../addressBook/addressBook'
-import { SettingsController } from '../settings/settings'
+import { NetworksController } from '../networks/networks'
+import { ProvidersController } from '../providers/providers'
 import { TransferController } from './transfer'
 
 const ethereum = networks.find((x) => x.id === 'ethereum')
@@ -21,25 +25,49 @@ if (!ethereum || !polygon) throw new Error('Failed to find ethereum in networks'
 const provider = getRpcProvider(ethereum.rpcUrls, ethereum.chainId)
 const polygonProvider = getRpcProvider(polygon.rpcUrls, polygon.chainId)
 const PLACEHOLDER_RECIPIENT = '0xC2E6dFcc2C6722866aD65F211D5757e1D2879337'
-const PLACEHOLDER_RECIPIENT_LOWERCASE = PLACEHOLDER_RECIPIENT.toLowerCase()
-const PLACEHOLDER_SELECTED_ACCOUNT = '0xc4A6bB5139123bD6ba0CF387828a9A3a73EF8D1e'
+const PLACEHOLDER_SELECTED_ACCOUNT: Account = {
+  addr: '0xc4A6bB5139123bD6ba0CF387828a9A3a73EF8D1e',
+  associatedKeys: ['0xC2E6dFcc2C6722866aD65F211D5757e1D2879337'],
+  creation: {
+    factoryAddr: '0x00',
+    bytecode: '0x000',
+    salt: '0x000'
+  },
+  initialPrivileges: [['0x00', '0x01']],
+  preferences: {
+    label: DEFAULT_ACCOUNT_LABEL,
+    pfp: '0xc4A6bB5139123bD6ba0CF387828a9A3a73EF8D1e'
+  }
+}
 const XWALLET_ADDRESS = '0x47Cd7E91C3CBaAF266369fe8518345fc4FC12935'
 
 const CONTACTS: Contacts = []
-const ethPortfolio = new Portfolio(fetch, provider, ethereum)
-const polygonPortfolio = new Portfolio(fetch, polygonProvider, polygon)
+const ethPortfolio = new Portfolio(fetch, provider, ethereum, velcroUrl)
+const polygonPortfolio = new Portfolio(fetch, polygonProvider, polygon, velcroUrl)
 
 let transferController: TransferController
-let errorCount = 0
-const settingsController = new SettingsController(produceMemoryStore())
+
 const providers = Object.fromEntries(
   networks.map((network) => [network.id, getRpcProvider(network.rpcUrls, network.chainId)])
 )
-settingsController.providers = providers
+
+let providersCtrl: ProvidersController
+const networksCtrl = new NetworksController(
+  produceMemoryStore(),
+  fetch,
+  (net) => {
+    providersCtrl.setProvider(net)
+  },
+  (id) => {
+    providersCtrl.removeProvider(id)
+  }
+)
+providersCtrl = new ProvidersController(networksCtrl)
+providersCtrl.providers = providers
 
 const getTokens = async () => {
-  const ethAccPortfolio = await ethPortfolio.get(PLACEHOLDER_SELECTED_ACCOUNT)
-  const polygonAccPortfolio = await polygonPortfolio.get(PLACEHOLDER_SELECTED_ACCOUNT)
+  const ethAccPortfolio = await ethPortfolio.get(PLACEHOLDER_SELECTED_ACCOUNT.addr)
+  const polygonAccPortfolio = await polygonPortfolio.get(PLACEHOLDER_SELECTED_ACCOUNT.addr)
 
   return [...ethAccPortfolio.tokens, ...polygonAccPortfolio.tokens]
 }
@@ -49,7 +77,7 @@ describe('Transfer Controller', () => {
     transferController = new TransferController(
       humanizerInfo as HumanizerMeta,
       PLACEHOLDER_SELECTED_ACCOUNT,
-      settingsController.networks
+      networksCtrl.networks
     )
     transferController.update({
       contacts: CONTACTS

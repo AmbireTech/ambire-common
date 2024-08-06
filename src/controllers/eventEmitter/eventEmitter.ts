@@ -57,7 +57,7 @@ export default class EventEmitter {
    * Without the `forceEmitUpdate` option, the application will only render the very first and last status updates,
    * batching the ones in between.
    */
-  protected async forceEmitUpdate() {
+  async forceEmitUpdate() {
     await wait(1)
     // eslint-disable-next-line no-restricted-syntax
     for (const i of this.#callbacksWithId) i.cb(true)
@@ -96,7 +96,13 @@ export default class EventEmitter {
     // of different sub-controllers simultaneously.
     if ((someStatusIsLoading && !allowConcurrentActions) || this.statuses[callName] !== 'INITIAL') {
       this.emitError({
-        level: 'minor',
+        level:
+          // Silence this error in prod to avoid displaying wired error messages.
+          // The only benefit of displaying it is for devs to see when an action is dispatched twice.
+          // TODO: If this happens on PROD, ideally we should get an error report somehow somewhere.
+          process.env.APP_ENV === 'production' && process.env.IS_TESTING !== 'true'
+            ? 'silent'
+            : 'minor',
         message: `Please wait for the completion of the previous action before initiating another one.', ${callName}`,
         error: new Error(
           'Another function is already being handled by withStatus refrain from invoking a second function.'

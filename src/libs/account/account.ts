@@ -1,9 +1,16 @@
-import { AbiCoder, hexlify, Interface, toBeHex, toUtf8Bytes, ZeroAddress } from 'ethers'
+import { AbiCoder, getAddress, hexlify, Interface, toBeHex, toUtf8Bytes, ZeroAddress } from 'ethers'
 
+import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
 import { SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET } from '../../consts/derivation'
 import { SPOOF_SIGTYPE } from '../../consts/signatures'
-import { Account, AccountOnPage, ImportStatus } from '../../interfaces/account'
+import {
+  Account,
+  AccountId,
+  AccountOnPage,
+  AccountPreferences,
+  ImportStatus
+} from '../../interfaces/account'
 import { Key } from '../../interfaces/keystore'
 import { DKIM_VALIDATOR_ADDR, getSignerKey, RECOVERY_DEFAULTS } from '../dkim/recovery'
 import { KeyIterator } from '../keyIterator/keyIterator'
@@ -48,26 +55,35 @@ export function getAccountDeployParams(account: Account): [string, string] {
   ]
 }
 
-export function getBasicAccount(key: string): Account {
+export function getBasicAccount(addr: string): Account {
   return {
-    addr: key,
-    associatedKeys: [key],
+    addr,
+    associatedKeys: [addr],
     initialPrivileges: [],
-    creation: null
+    creation: null,
+    preferences: {
+      label: DEFAULT_ACCOUNT_LABEL,
+      pfp: addr
+    }
   }
 }
 
 export async function getSmartAccount(privileges: PrivLevels[]): Promise<Account> {
   const bytecode = await getBytecode(privileges)
+  const addr = getAmbireAccountAddress(AMBIRE_ACCOUNT_FACTORY, bytecode)
 
   return {
-    addr: getAmbireAccountAddress(AMBIRE_ACCOUNT_FACTORY, bytecode),
+    addr,
     initialPrivileges: privileges.map((priv) => [priv.addr, priv.hash]),
     associatedKeys: privileges.map((priv) => priv.addr),
     creation: {
       factoryAddr: AMBIRE_ACCOUNT_FACTORY,
       bytecode,
       salt: toBeHex(0, 32)
+    },
+    preferences: {
+      label: DEFAULT_ACCOUNT_LABEL,
+      pfp: addr
     }
   }
 }
@@ -162,14 +178,14 @@ export async function getEmailAccount(
 export const isAmbireV1LinkedAccount = (factoryAddr?: string) =>
   factoryAddr === '0xBf07a0Df119Ca234634588fbDb5625594E2a5BCA'
 
-export const isSmartAccount = (account: Account) => !!account && !!account.creation
+export const isSmartAccount = (account: Account | undefined) => !!account && !!account.creation
 
 /**
  * Checks if a (basic) EOA account is a derived one,
  * that is meant to be used as a smart account key only.
  */
-export const isDerivedForSmartAccountKeyOnly = (index: number) =>
-  index >= SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET
+export const isDerivedForSmartAccountKeyOnly = (index?: number) =>
+  typeof index === 'number' && index >= SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET
 
 export const getDefaultSelectedAccount = (accounts: Account[]) => {
   if (accounts.length === 0) return null
@@ -261,4 +277,35 @@ export const getAccountImportStatus = ({
   // Since there are `importedKeysForThisAcc`, as a fallback -
   // for all other scenarios this account has been imported with different keys.
   return ImportStatus.ImportedWithDifferentKeys
+}
+
+export const getDefaultAccountPreferences = (
+  accountAddr: string,
+  prevAccounts: Account[],
+  i?: number
+): AccountPreferences => {
+  const number = i ? prevAccounts.length + (i + 1) : prevAccounts.length + 1
+
+  return {
+    label: `Account ${number}`,
+    pfp: getAddress(accountAddr) // default pfp - a jazz icon generated from the addr
+  }
+}
+
+// As of version 4.25.0, a new Account interface has been introduced,
+// merging the previously separate Account and AccountPreferences interfaces.
+// This change requires a migration due to the introduction of a new controller, AccountsController,
+// which now manages both accounts and their preferences.
+export function migrateAccountPreferencesToAccounts(
+  accountPreferences: {
+    [key: AccountId]: AccountPreferences
+  },
+  accounts: Account[]
+) {
+  return accounts.map((a) => {
+    return {
+      ...a,
+      preferences: accountPreferences[a.addr] || { label: DEFAULT_ACCOUNT_LABEL, pfp: a.addr }
+    }
+  })
 }

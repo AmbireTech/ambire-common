@@ -1,8 +1,8 @@
 import { Interface } from 'ethers'
 
-import { AccountOp } from '../../../accountOp/accountOp'
-import { IrCall } from '../../interfaces'
-import { getAction, getAddressVisualization, getKnownAbi, getLabel, getToken } from '../../utils'
+import { StakingPool } from '../../const/abis'
+import { HumanizerVisualization, IrCall } from '../../interfaces'
+import { getAction, getAddressVisualization, getLabel, getToken } from '../../utils'
 
 const STAKING_POOLS: { [key: string]: { [key: string]: string } } = {
   '0x47cd7e91c3cbaaf266369fe8518345fc4fc12935': {
@@ -21,10 +21,10 @@ const STAKING_POOLS: { [key: string]: { [key: string]: string } } = {
 }
 // const WALLET_TOKEN_ADDR = '0x88800092ff476844f74dc2fc427974bbee2794ae'
 
-export const StakingPools = (humanizerInfo: any) => {
-  const iface = new Interface(getKnownAbi(humanizerInfo, 'StakingPool'))
+export const StakingPools = (): { [key: string]: (c: IrCall) => HumanizerVisualization[] } => {
+  const iface = new Interface(StakingPool)
   return {
-    [iface.getFunction('enter')?.selector!]: (accountOp: AccountOp, call: IrCall) => {
+    [iface.getFunction('enter')?.selector!]: (call: IrCall) => {
       const { amount } = iface.parseTransaction(call)!.args
       return [
         getAction('Deposit'),
@@ -33,7 +33,7 @@ export const StakingPools = (humanizerInfo: any) => {
         getAddressVisualization(call.to)
       ]
     },
-    [iface.getFunction('leave')?.selector!]: (accountOp: AccountOp, call: IrCall) => {
+    [iface.getFunction('leave')?.selector!]: (call: IrCall) => {
       const { shares } = iface.parseTransaction(call)!.args
 
       return [
@@ -43,7 +43,7 @@ export const StakingPools = (humanizerInfo: any) => {
         getAddressVisualization(call.to)
       ]
     },
-    [iface.getFunction('withdraw')?.selector!]: (accountOp: AccountOp, call: IrCall) => {
+    [iface.getFunction('withdraw')?.selector!]: (call: IrCall) => {
       const { shares } = iface.parseTransaction(call)!.args
       return [
         getAction('Withdraw'),
@@ -53,7 +53,7 @@ export const StakingPools = (humanizerInfo: any) => {
       ]
     },
 
-    [iface.getFunction('rageLeave')?.selector!]: (accountOp: AccountOp, call: IrCall) => {
+    [iface.getFunction('rageLeave')?.selector!]: (call: IrCall) => {
       const { shares } = iface.parseTransaction(call)!.args
       return [
         getAction('Rage leave'),

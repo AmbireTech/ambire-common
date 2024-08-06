@@ -1,11 +1,17 @@
-import { formatUnits, getAddress, parseUnits } from 'ethers'
+import { getAddress, parseUnits } from 'ethers'
 import isEmail from 'validator/es/lib/isEmail'
 
 import { TokenResult } from '../../libs/portfolio'
 import { getTokenAmount } from '../../libs/portfolio/helpers'
+import { getSanitizedAmount } from '../../libs/transfer/amount'
 import { isValidAddress } from '../address'
 
-const validateAddress = (address: string) => {
+type ValidateReturnType = {
+  success: boolean
+  message: string
+}
+
+const validateAddress = (address: string): ValidateReturnType => {
   if (!(address && address.length)) {
     return {
       success: false,
@@ -32,7 +38,7 @@ const validateAddress = (address: string) => {
   return { success: true, message: '' }
 }
 
-const validateAddAuthSignerAddress = (address: string, selectedAcc: any) => {
+const validateAddAuthSignerAddress = (address: string, selectedAcc: any): ValidateReturnType => {
   const isValidAddr = validateAddress(address)
   if (!isValidAddr.success) return isValidAddr
 
@@ -43,7 +49,7 @@ const validateAddAuthSignerAddress = (address: string, selectedAcc: any) => {
     }
   }
 
-  return { success: true }
+  return { success: true, message: '' }
 }
 
 const validateSendTransferAddress = (
@@ -57,7 +63,7 @@ const validateSendTransferAddress = (
   isRecipientDomainResolving: boolean,
   isSWWarningVisible?: boolean,
   isSWWarningAgreed?: boolean
-) => {
+): ValidateReturnType => {
   // Basic validation is handled in the AddressInput component and we don't want to overwrite it.
   if (!isValidAddress(address) || isRecipientDomainResolving) {
     return {
@@ -117,15 +123,22 @@ const validateSendTransferAddress = (
   return { success: true, message: '' }
 }
 
-const validateSendTransferAmount = (amount: string, selectedAsset: TokenResult) => {
-  if (!(amount && amount.length)) {
+const validateSendTransferAmount = (
+  amount: string,
+  maxAmount: number,
+  maxAmountInFiat: number,
+  selectedAsset: TokenResult
+): ValidateReturnType => {
+  const sanitizedAmount = getSanitizedAmount(amount, selectedAsset.decimals)
+
+  if (!(sanitizedAmount && sanitizedAmount.length)) {
     return {
       success: false,
       message: ''
     }
   }
 
-  if (!(amount && Number(amount) > 0)) {
+  if (!(sanitizedAmount && Number(sanitizedAmount) > 0)) {
     return {
       success: false,
       message: 'The amount must be greater than 0.'
@@ -133,27 +146,31 @@ const validateSendTransferAmount = (amount: string, selectedAsset: TokenResult) 
   }
 
   try {
-    if (amount && selectedAsset && selectedAsset.decimals) {
-      if (Number(amount) < 1 / 10 ** selectedAsset.decimals)
+    if (sanitizedAmount && selectedAsset && selectedAsset.decimals) {
+      if (Number(sanitizedAmount) < 1 / 10 ** selectedAsset.decimals)
         return {
           success: false,
           message: 'Token amount too low.'
         }
 
-      const currentAmount: bigint = parseUnits(amount, selectedAsset.decimals)
+      const currentAmount: bigint = parseUnits(sanitizedAmount, selectedAsset.decimals)
 
       if (currentAmount > getTokenAmount(selectedAsset)) {
         return {
           success: false,
-          message: `The amount is greater than the asset's balance: ${formatUnits(
-            getTokenAmount(selectedAsset),
-            Number(selectedAsset.decimals)
-          )} ${selectedAsset?.symbol}.`
+          message: `The amount is greater than the asset's balance: ${Number(maxAmount) || 0} ${
+            selectedAsset?.symbol
+          }${maxAmountInFiat ? `/ ${Number(maxAmountInFiat)} USD.` : ''}`
         }
       }
     }
   } catch (e) {
     console.error(e)
+
+    return {
+      success: false,
+      message: 'Invalid amount.'
+    }
   }
 
   return { success: true, message: '' }
@@ -171,7 +188,7 @@ const validateSendNftAddress = (
   isUDAddress: boolean,
   isEnsAddress: boolean,
   isRecipientDomainResolving: boolean
-) => {
+): ValidateReturnType => {
   const isValidAddr = validateSendTransferAddress(
     address,
     selectedAcc,
@@ -202,7 +219,7 @@ const validateSendNftAddress = (
     }
   }
 
-  return { success: true }
+  return { success: true, message: '' }
 }
 
 const isValidCode = (code: string) => code.length === 6

@@ -1,1 +1,6 @@
 .eslintrc.js
+node_modules
+coverage
+babel_cache
+artifacts
+dist

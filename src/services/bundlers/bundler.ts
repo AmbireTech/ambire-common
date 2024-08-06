@@ -1,11 +1,12 @@
 /* eslint-disable no-restricted-syntax */
 /* eslint-disable import/no-extraneous-dependencies */
 /* eslint-disable class-methods-use-this */
-
-import fetch from 'node-fetch'
+import { toBeHex } from 'ethers'
 
 import { ENTRY_POINT_MARKER, ERC_4337_ENTRYPOINT } from '../../consts/deploy'
-import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
+import { Fetch } from '../../interfaces/fetch'
+import { Network } from '../../interfaces/network'
+import { mapTxnErrMsg } from '../../libs/estimate/errors'
 import { BundlerEstimateResult } from '../../libs/estimate/interfaces'
 import { Gas1559Recommendation } from '../../libs/gasPrice/gasPrice'
 import { privSlot } from '../../libs/proxyDeploy/deploy'
@@ -29,7 +30,7 @@ export class Bundler {
    * @param userOperationHash
    * @returns Receipt | null
    */
-  async getReceipt(userOperationHash: string, network: NetworkDescriptor) {
+  async getReceipt(userOperationHash: string, network: Network) {
     const url = `https://api.pimlico.io/v2/${network.chainId}/rpc?apikey=${process.env.REACT_APP_PIMLICO_API_KEY}`
     const provider = getRpcProvider([url], network.chainId)
     return provider.send('eth_getUserOperationReceipt', [userOperationHash])
@@ -42,7 +43,7 @@ export class Bundler {
    * @param network
    * @returns https://docs.alchemy.com/reference/eth-getuseroperationreceipt
    */
-  async poll(userOperationHash: string, network: NetworkDescriptor): Promise<any> {
+  async poll(userOperationHash: string, network: Network): Promise<any> {
     const receipt = await this.getReceipt(userOperationHash, network)
     if (!receipt) {
       const delayPromise = (ms: number) =>
@@ -64,7 +65,7 @@ export class Bundler {
    */
   async pollTxnHash(
     userOperationHash: string,
-    network: NetworkDescriptor
+    network: Network
   ): Promise<{ transactionHash: string; status: string }> {
     const result = await Bundler.getStatusAndTxnId(userOperationHash, network)
 
@@ -90,7 +91,7 @@ export class Bundler {
    * @param UserOperation userOperation
    * @returns userOperationHash
    */
-  async broadcast(userOperation: UserOperation, network: NetworkDescriptor): Promise<string> {
+  async broadcast(userOperation: UserOperation, network: Network): Promise<string> {
     const url = `https://api.pimlico.io/v2/${network.chainId}/rpc?apikey=${process.env.REACT_APP_PIMLICO_API_KEY}`
     const provider = getRpcProvider([url], network.chainId)
 
@@ -100,22 +101,19 @@ export class Bundler {
     ])
   }
 
-  static async getStatusAndTxnId(userOperationHash: string, network: NetworkDescriptor) {
+  static async getStatusAndTxnId(userOperationHash: string, network: Network) {
     const url = `https://api.pimlico.io/v2/${network.chainId}/rpc?apikey=${process.env.REACT_APP_PIMLICO_API_KEY}`
     const provider = getRpcProvider([url], network.chainId)
     return provider.send('pimlico_getUserOperationStatus', [userOperationHash])
   }
 
-  static async getUserOpGasPrice(network: NetworkDescriptor) {
+  static async getUserOpGasPrice(network: Network) {
     const url = `https://api.pimlico.io/v2/${network.chainId}/rpc?apikey=${process.env.REACT_APP_PIMLICO_API_KEY}`
     const provider = getRpcProvider([url], network.chainId)
     return provider.send('pimlico_getUserOperationGasPrice', [])
   }
 
-  async pollGetUserOpGasPrice(
-    network: NetworkDescriptor,
-    counter = 0
-  ): Promise<Gas1559Recommendation[]> {
+  async pollGetUserOpGasPrice(network: Network, counter = 0): Promise<Gas1559Recommendation[]> {
     if (counter >= 5) {
       throw new Error('unable to fetch bundler gas prices')
     }
@@ -151,7 +149,7 @@ export class Bundler {
   }
 
   // use this request to check if the bundler supports the network
-  static async isNetworkSupported(chainId: bigint) {
+  static async isNetworkSupported(fetch: Fetch, chainId: bigint) {
     const url = `https://api.pimlico.io/health?apikey=${process.env.REACT_APP_PIMLICO_API_KEY}&chain-id=${chainId}`
     const result = await fetch(url)
     return result.status === 200
@@ -159,7 +157,7 @@ export class Bundler {
 
   static async estimate(
     userOperation: UserOperation,
-    network: NetworkDescriptor,
+    network: Network,
     shouldStateOverride = false
   ): Promise<BundlerEstimateResult> {
     const url = `https://api.pimlico.io/v2/${network.chainId}/rpc?apikey=${process.env.REACT_APP_PIMLICO_API_KEY}`
@@ -185,27 +183,38 @@ export class Bundler {
     ])
   }
 
-  static async fetchGasPrices(network: NetworkDescriptor): Promise<{
+  static async fetchGasPrices(network: Network): Promise<{
     slow: { maxFeePerGas: string; maxPriorityFeePerGas: string }
     medium: { maxFeePerGas: string; maxPriorityFeePerGas: string }
     fast: { maxFeePerGas: string; maxPriorityFeePerGas: string }
+    ape: { maxFeePerGas: string; maxPriorityFeePerGas: string }
   }> {
     const url = `https://api.pimlico.io/v2/${network.chainId}/rpc?apikey=${process.env.REACT_APP_PIMLICO_API_KEY}`
     const provider = getRpcProvider([url], network.chainId)
     const results = await provider.send('pimlico_getUserOperationGasPrice', [])
+
+    const apeMaxFee = BigInt(results.fast.maxFeePerGas) + BigInt(results.fast.maxFeePerGas) / 5n
+    const apePriority =
+      BigInt(results.fast.maxPriorityFeePerGas) + BigInt(results.fast.maxPriorityFeePerGas) / 5n
+
     return {
       slow: results.slow,
       medium: results.standard,
-      fast: results.fast
+      fast: results.fast,
+      ape: {
+        maxFeePerGas: toBeHex(apeMaxFee),
+        maxPriorityFeePerGas: toBeHex(apePriority)
+      }
     }
   }
 
-  static async estimateSponsorship(
-    userOperation: UserOperation | null,
-    network: NetworkDescriptor,
-    shouldStateOverride = false
-  ): Promise<BundlerEstimateResult | undefined> {
-    if (!userOperation) return undefined
-    return Bundler.estimate(userOperation, network, shouldStateOverride)
+  // used when catching errors from bundler requests
+  static decodeBundlerError(e: any, defaultMsg: string): string {
+    let errMsg = e.error.message ? e.error.message : defaultMsg
+    const hex = errMsg.indexOf('0x') !== -1 ? errMsg.substring(errMsg.indexOf('0x')) : null
+    const decodedHex = hex ? mapTxnErrMsg(hex) : null
+    if (decodedHex) errMsg = errMsg.replace(hex, decodedHex)
+    const finalMsg = mapTxnErrMsg(errMsg)
+    return finalMsg ?? errMsg
   }
 }

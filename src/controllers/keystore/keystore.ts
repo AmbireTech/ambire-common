@@ -210,9 +210,7 @@ export class KeystoreController extends EventEmitter {
   }
 
   async unlockWithSecret(secretId: string, secret: string) {
-    await this.withStatus(this.unlockWithSecret.name, () =>
-      this.#unlockWithSecret(secretId, secret)
-    )
+    await this.withStatus('unlockWithSecret', () => this.#unlockWithSecret(secretId, secret))
   }
 
   async #addSecret(
@@ -297,7 +295,7 @@ export class KeystoreController extends EventEmitter {
   }
 
   async addSecret(secretId: string, secret: string, extraEntropy: string, leaveUnlocked: boolean) {
-    await this.withStatus(this.addSecret.name, () =>
+    await this.withStatus('addSecret', () =>
       this.#addSecret(secretId, secret, extraEntropy, leaveUnlocked)
     )
   }
@@ -317,7 +315,7 @@ export class KeystoreController extends EventEmitter {
   }
 
   async removeSecret(secretId: string) {
-    await this.withStatus(this.removeSecret.name, () => this.#removeSecret(secretId))
+    await this.withStatus('removeSecret', () => this.#removeSecret(secretId))
   }
 
   get keys(): Key[] {
@@ -379,9 +377,7 @@ export class KeystoreController extends EventEmitter {
   }
 
   async addKeysExternallyStored(keysToAdd: ExternalKey[]) {
-    await this.withStatus(this.addKeysExternallyStored.name, () =>
-      this.#addKeysExternallyStored(keysToAdd)
-    )
+    await this.withStatus('addKeysExternallyStored', () => this.#addKeysExternallyStored(keysToAdd))
   }
 
   async #addKeys(keysToAdd: { privateKey: string; dedicatedToOneSA: boolean }[]) {
@@ -441,7 +437,7 @@ export class KeystoreController extends EventEmitter {
   }
 
   async addKeys(keysToAdd: { privateKey: string; dedicatedToOneSA: boolean }[]) {
-    await this.withStatus(this.addKeys.name, () => this.#addKeys(keysToAdd))
+    await this.withStatus('addKeys', () => this.#addKeys(keysToAdd))
   }
 
   async removeKey(addr: Key['addr'], type: Key['type']) {
@@ -463,7 +459,11 @@ export class KeystoreController extends EventEmitter {
         )
       })
 
-    this.#keystoreKeys = keys.filter((x) => x.addr === addr && x.type === type)
+    this.#keystoreKeys = keys.filter((key) => {
+      const isMatching = key.addr === addr && key.type === type
+
+      return !isMatching
+    })
     await this.#storage.set('keystoreKeys', this.#keystoreKeys)
   }
 
@@ -598,7 +598,7 @@ export class KeystoreController extends EventEmitter {
   }
 
   async changeKeystorePassword(newSecret: string, oldSecret?: string) {
-    await this.withStatus(this.changeKeystorePassword.name, () =>
+    await this.withStatus('changeKeystorePassword', () =>
       this.#changeKeystorePassword(newSecret, oldSecret)
     )
   }

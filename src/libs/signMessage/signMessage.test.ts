@@ -4,11 +4,12 @@ import { beforeAll, describe, expect, test } from '@jest/globals'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import { produceMemoryStore } from '../../../test/helpers'
+import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { PERMIT_2_ADDRESS } from '../../consts/addresses'
 import { networks } from '../../consts/networks'
 import { KeystoreController } from '../../controllers/keystore/keystore'
 import { Account, AccountStates } from '../../interfaces/account'
-import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
+import { Network } from '../../interfaces/network'
 import { Storage } from '../../interfaces/storage'
 import { getRpcProvider } from '../../services/provider'
 import { getAccountState } from '../accountState/accountState'
@@ -38,7 +39,11 @@ const eoaAccount: Account = {
   addr: eoaSigner.keyPublicAddress,
   associatedKeys: [eoaSigner.keyPublicAddress],
   creation: null,
-  initialPrivileges: []
+  initialPrivileges: [],
+  preferences: {
+    label: DEFAULT_ACCOUNT_LABEL,
+    pfp: eoaSigner.keyPublicAddress
+  }
 }
 
 const smartAccount: Account = {
@@ -50,7 +55,11 @@ const smartAccount: Account = {
       '0x7f00000000000000000000000000000000000000000000000000000000000000027f4cddd6c90a7055aa3d00deceb0664950d2f31114946678b79df2a5540a3238f8553d602d80604d3d3981f3363d3d373d3d3d363d730e370942ebe4d026d05d2cf477ff386338fc415a5af43d82803e903d91602b57fd5bf3',
     salt: '0x0000000000000000000000000000000000000000000000000000000000000000'
   },
-  initialPrivileges: []
+  initialPrivileges: [],
+  preferences: {
+    label: DEFAULT_ACCOUNT_LABEL,
+    pfp: '0x26d6a373397d553595Cd6A7BBaBD86DEbd60a1Cc'
+  }
 }
 
 const v1Account: Account = {
@@ -62,7 +71,11 @@ const v1Account: Account = {
       '0x7f00000000000000000000000000000000000000000000000000000000000000017f832a45b3e3616710ac5703e98191d3827c46e7f1107596b00d26584abe24d690553d602d80604d3d3981f3363d3d373d3d3d363d732a2b85eb1054d6f0c6c2e37da05ed3e5fea684ef5af43d82803e903d91602b57fd5bf3',
     salt: '0x0000000000000000000000000000000000000000000000000000000000000001'
   },
-  initialPrivileges: []
+  initialPrivileges: [],
+  preferences: {
+    label: DEFAULT_ACCOUNT_LABEL,
+    pfp: '0x254D526978D15C9619288949f9419e918977F9F3'
+  }
 }
 
 const providers = Object.fromEntries(
@@ -77,7 +90,7 @@ const getAccountsInfo = async (accounts: Account[]): Promise<AccountStates> => {
     return [
       acc.addr,
       Object.fromEntries(
-        networks.map((network: NetworkDescriptor, netIndex: number) => {
+        networks.map((network: Network, netIndex: number) => {
           return [network.id, result[netIndex][accIndex]]
         })
       )
@@ -111,6 +124,7 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
     )
     const provider = getRpcProvider(ethereumNetwork.rpcUrls, ethereumNetwork.chainId)
     const firstRes = await verifyMessage({
+      network: ethereumNetwork,
       provider,
       signer: eoaSigner.keyPublicAddress,
       signature: signatureForPlainText,
@@ -126,6 +140,7 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
       signer
     )
     const secondRes = await verifyMessage({
+      network: ethereumNetwork,
       provider,
       signer: eoaSigner.keyPublicAddress,
       signature: signatureForUint8Array,
@@ -141,6 +156,7 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
       signer
     )
     const thirdRes = await verifyMessage({
+      network: ethereumNetwork,
       provider,
       signer: eoaSigner.keyPublicAddress,
       signature: signatureForNumberAsString,
@@ -164,6 +180,7 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
 
     const provider = getRpcProvider(polygonNetwork.rpcUrls, polygonNetwork.chainId)
     const res = await verifyMessage({
+      network: polygonNetwork,
       provider,
       signer: smartAccount.addr,
       signature: signatureForPlainText,
@@ -192,6 +209,7 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
 
     const provider = getRpcProvider(polygonNetwork.rpcUrls, polygonNetwork.chainId)
     const res = await verifyMessage({
+      network: polygonNetwork,
       provider,
       signer: v1Account.addr,
       signature: signatureForPlainText,
@@ -239,6 +257,7 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
       ethereumNetwork
     )
     const res = await verifyMessage({
+      network: ethereumNetwork,
       provider,
       signer: eoaSigner.keyPublicAddress,
       signature: eip712Sig,
@@ -260,6 +279,7 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
     )
 
     const secondRes = await verifyMessage({
+      network: ethereumNetwork,
       provider,
       signer: eoaSigner.keyPublicAddress,
       signature: eip712SigNum,
@@ -289,6 +309,7 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
 
     const provider = getRpcProvider(polygonNetwork.rpcUrls, polygonNetwork.chainId)
     const res = await verifyMessage({
+      network: polygonNetwork,
       provider,
       signer: smartAccount.addr,
       signature: eip712Sig,
@@ -325,6 +346,7 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
 
     const provider = getRpcProvider(polygonNetwork.rpcUrls, polygonNetwork.chainId)
     const res = await verifyMessage({
+      network: ethereumNetwork,
       provider,
       signer: v1Account.addr,
       signature: eip712Sig,
@@ -352,6 +374,7 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
 
     const provider = getRpcProvider(polygonNetwork.rpcUrls, polygonNetwork.chainId)
     const res = await verifyMessage({
+      network: ethereumNetwork,
       provider,
       signer: v1Account.addr,
       signature: eip712Sig,
@@ -409,6 +432,7 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: false', () => {
     expect(isValidSig).toBe(contractSuccess)
 
     const res = await verifyMessage({
+      network: polygonNetwork,
       provider,
       signer: smartAccount.addr,
       signature: signatureForPlainText,

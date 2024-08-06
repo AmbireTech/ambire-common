@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-floating-promises */
 
 import { AbiCoder, Interface, keccak256, parseEther, parseUnits, toBeHex, Wallet } from 'ethers'
+import fetch from 'node-fetch'
 
 import { describe, expect, test } from '@jest/globals'
 
@@ -8,12 +9,13 @@ import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json'
 import ERC20 from '../../../contracts/compiled/IERC20.json'
 import { getAccountsInfo } from '../../../test/helpers'
+import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
 import { networks } from '../../consts/networks'
 import { Account } from '../../interfaces/account'
 import { dedicatedToOneSAPriv } from '../../interfaces/keystore'
-import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
+import { Network } from '../../interfaces/network'
 import { getSmartAccount } from '../../libs/account/account'
 import { AccountOp, callToTuple, getSignableCalls } from '../../libs/accountOp/accountOp'
 import { getTypedData, wrapStandard } from '../../libs/signMessage/signMessage'
@@ -45,14 +47,19 @@ const smartAccDeployed: Account = {
       '0x7f00000000000000000000000000000000000000000000000000000000000000027ff33cc417366b7e38d2706a67ab46f85465661c28b864b521441180d15df82251553d602d80604d3d3981f3363d3d373d3d3d363d731cde6a53e9a411eaaf9d11e3e8c653a3e379d5355af43d82803e903d91602b57fd5bf3',
     salt: '0x0000000000000000000000000000000000000000000000000000000000000000'
   },
-  associatedKeys: ['0xBd84Cc40a5b5197B5B61919c22A55e1c46d2A3bb']
+  associatedKeys: ['0xBd84Cc40a5b5197B5B61919c22A55e1c46d2A3bb'],
+  preferences: {
+    label: DEFAULT_ACCOUNT_LABEL,
+    pfp: '0x8E5F6c1F0b134657A546932C3eC9169E1633a39b'
+  }
 }
 
-const mantle = {
+const mantle: Network = {
   id: 'mantle',
   name: 'mantle',
   nativeAssetSymbol: 'MNT',
   rpcUrls: ['https://mantle-rpc.publicnode.com'],
+  selectedRpcUrl: 'https://mantle-rpc.publicnode.com',
   rpcNoStateOverride: false,
   chainId: 5000n,
   explorerUrl: 'https://explorer.mantle.xyz',
@@ -60,24 +67,24 @@ const mantle = {
     enabled: true,
     hasPaymaster: false
   },
-  unstoppableDomainsChain: 'ERC20',
   isSAEnabled: true,
   areContractsDeployed: true,
   hasRelayer: false,
-  hasDebugTraceCall: false,
   platformId: 'mantle',
   nativeAssetId: 'mantle',
   hasSingleton: true,
   features: [],
   feeOptions: {
     is1559: true
-  }
+  },
+  predefined: false
 }
-const base = {
+const base: Network = {
   id: 'base',
   name: 'base',
   nativeAssetSymbol: 'ETH',
-  rpcUrls: ['https://mainnet.base.org	'],
+  rpcUrls: ['https://mainnet.base.org'],
+  selectedRpcUrl: 'https://mainnet.base.org',
   rpcNoStateOverride: false,
   chainId: 8453n,
   explorerUrl: 'https://basescan.org/',
@@ -85,21 +92,20 @@ const base = {
     enabled: true,
     hasPaymaster: false
   },
-  unstoppableDomainsChain: 'ERC20',
   isSAEnabled: true,
   areContractsDeployed: true,
   hasRelayer: false,
-  hasDebugTraceCall: false,
   platformId: 'base',
   nativeAssetId: 'base',
   hasSingleton: true,
   features: [],
   feeOptions: {
     is1559: true
-  }
+  },
+  predefined: false
 }
 
-export async function getDeploySignature(smartAcc: Account, network: NetworkDescriptor) {
+export async function getDeploySignature(smartAcc: Account, network: Network) {
   // CODE FOR getting a valid deploy signature if you have the PK
   const nonce = 0
   const call = getActivatorCall(smartAcc.addr)
@@ -129,10 +135,10 @@ describe('Bundler tests', () => {
   describe('Basic tests', () => {
     test('should check if the network is supported by the bundler', async () => {
       // it supports mantle
-      const mantleShouldBeSupported = await Bundler.isNetworkSupported(5000n)
+      const mantleShouldBeSupported = await Bundler.isNetworkSupported(fetch, 5000n)
       expect(mantleShouldBeSupported).toBe(true)
       // it doesn't support filecoin
-      const filecoinShouldNotBeSupported = await Bundler.isNetworkSupported(134n)
+      const filecoinShouldNotBeSupported = await Bundler.isNetworkSupported(fetch, 134n)
       expect(filecoinShouldNotBeSupported).toBe(false)
     })
   })
@@ -173,7 +179,7 @@ describe('Bundler tests', () => {
         smartAcc,
         accountState,
         opOptimism,
-        '0x5bb97ff398c6d4e44f38c81e256d0797c124fe39cc0c5cf66c082c135cb5946879588d3c3f02efe587b8ea01de567c962355640e7da5197cb23f150c6a9fd4101c01'
+        '0x05404ea5dfa13ddd921cda3f587af6927cc127ee174b57c9891491bfc1f0d3d005f649f8a1fc9147405f064507bae08816638cfc441c4d0dc4eb6640e16621991b01'
       )
 
       const ambireInterface = new Interface(AmbireAccount.abi)
@@ -227,7 +233,7 @@ describe('Bundler tests', () => {
         smartAcc,
         accountState,
         opOptimism,
-        '0x5bb97ff398c6d4e44f38c81e256d0797c124fe39cc0c5cf66c082c135cb5946879588d3c3f02efe587b8ea01de567c962355640e7da5197cb23f150c6a9fd4101c01'
+        '0x05404ea5dfa13ddd921cda3f587af6927cc127ee174b57c9891491bfc1f0d3d005f649f8a1fc9147405f064507bae08816638cfc441c4d0dc4eb6640e16621991b01'
       )
       const ambireInterface = new Interface(AmbireAccount.abi)
       userOp.callData = ambireInterface.encodeFunctionData('executeBySender', [
@@ -294,7 +300,7 @@ describe('Bundler tests', () => {
         smartAcc,
         accountState,
         opOptimism,
-        '0x5bb97ff398c6d4e44f38c81e256d0797c124fe39cc0c5cf66c082c135cb5946879588d3c3f02efe587b8ea01de567c962355640e7da5197cb23f150c6a9fd4101c01'
+        '0x05404ea5dfa13ddd921cda3f587af6927cc127ee174b57c9891491bfc1f0d3d005f649f8a1fc9147405f064507bae08816638cfc441c4d0dc4eb6640e16621991b01'
       )
 
       const ambireInterface = new Interface(AmbireAccount.abi)
@@ -486,7 +492,7 @@ describe('Bundler tests', () => {
         smartAcc,
         accountState,
         opMantle,
-        '0xca26bc0302589b1cf4dd3ff7b725661d5dcb5a059385b9adfe8c8b8250f9548f43fe655a4dfe895594158d3ebe8d95f83068f35188affb4dbad8a906daff8c361c01'
+        '0x38d93f334162dbbbf5115b6a73051426663be3083e698ec89f6db4dc520e8029531bbe508ba2461401fb2f39d9cab723c8b1b5e85cd15841cad6615b7107ae351b01'
       )
 
       const ambireInterface = new Interface(AmbireAccount.abi)
@@ -544,7 +550,7 @@ describe('Bundler tests', () => {
         smartAcc,
         accountState,
         opMantle,
-        '0xca26bc0302589b1cf4dd3ff7b725661d5dcb5a059385b9adfe8c8b8250f9548f43fe655a4dfe895594158d3ebe8d95f83068f35188affb4dbad8a906daff8c361c01'
+        '0x38d93f334162dbbbf5115b6a73051426663be3083e698ec89f6db4dc520e8029531bbe508ba2461401fb2f39d9cab723c8b1b5e85cd15841cad6615b7107ae351b01'
       )
 
       const ambireInterface = new Interface(AmbireAccount.abi)
@@ -594,9 +600,6 @@ describe('Bundler tests', () => {
       userOp.callData = ambireInterface.encodeFunctionData('executeBySender', [
         getSignableCalls(opBase)
       ])
-      const paymasterAndData = getPaymasterDataForEstimate()
-      userOp.paymaster = paymasterAndData.paymaster
-      userOp.paymasterData = paymasterAndData.paymasterData
       userOp.signature = getSigForCalculations()
       const bundlerEstimate = await Bundler.estimate(userOp, base)
       expect(bundlerEstimate).toHaveProperty('preVerificationGas')

@@ -8,20 +8,22 @@ import structuredClone from '@ungap/structured-clone'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import ERC20 from '../../../contracts/compiled/IERC20.json'
-import { getNonce } from '../../../test/helpers'
+import { velcroUrl } from '../../../test/config'
+import { getNativeToCheckFromEOAs, getNonce } from '../../../test/helpers'
+import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
 import { networks } from '../../consts/networks'
 import { Account, AccountStates } from '../../interfaces/account'
-import { dedicatedToOneSAPriv, Key } from '../../interfaces/keystore'
-import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
+import { dedicatedToOneSAPriv } from '../../interfaces/keystore'
+import { Network } from '../../interfaces/network'
 import { getRpcProvider } from '../../services/provider'
 import { getSmartAccount } from '../account/account'
 import { AccountOp } from '../accountOp/accountOp'
 import { Call } from '../accountOp/types'
 import { getAccountState } from '../accountState/accountState'
 import { Portfolio } from '../portfolio/portfolio'
-import { estimate, estimate4337 } from './estimate'
+import { estimate } from './estimate'
 
 const ethereum = networks.find((x) => x.id === 'ethereum')!
 ethereum.areContractsDeployed = true
@@ -53,60 +55,34 @@ const smartAccDeployed: Account = {
       '0x7f00000000000000000000000000000000000000000000000000000000000000027ff33cc417366b7e38d2706a67ab46f85465661c28b864b521441180d15df82251553d602d80604d3d3981f3363d3d373d3d3d363d731cde6a53e9a411eaaf9d11e3e8c653a3e379d5355af43d82803e903d91602b57fd5bf3',
     salt: '0x0000000000000000000000000000000000000000000000000000000000000000'
   },
-  associatedKeys: ['0xBd84Cc40a5b5197B5B61919c22A55e1c46d2A3bb']
+  associatedKeys: ['0xBd84Cc40a5b5197B5B61919c22A55e1c46d2A3bb'],
+  preferences: {
+    label: DEFAULT_ACCOUNT_LABEL,
+    pfp: '0x8E5F6c1F0b134657A546932C3eC9169E1633a39b'
+  }
 }
 
-// Used to determine if an account is view-only or not
-// and subsequently if it should be included in the fee payment options
-const MOCK_KEYSTORE_KEYS: Key[] = [
-  {
-    addr: '0x71c3D24a627f0416db45107353d8d0A5ae0401ae',
-    type: 'trezor',
-    dedicatedToOneSA: true,
-    isExternallyStored: true,
-    meta: {
-      deviceId: 'doesnt-matter',
-      deviceModel: 'doesnt-matter',
-      hdPathTemplate: "m/44'/60'/0'/0/<account>",
-      index: 2
-    }
+const smartAccv2point0Deployed: Account = {
+  addr: '0x4E6AB66459bD13b9b30A5CbCF28723C7D08172e5',
+  initialPrivileges: [
+    [
+      '0x3884dD96Da6CDaEAf937301Ff5cC5b0a58478355',
+      '0x0000000000000000000000000000000000000000000000000000000000000002'
+    ]
+  ],
+  associatedKeys: ['0x3884dD96Da6CDaEAf937301Ff5cC5b0a58478355'],
+  // the info below is incorrect as we don't have it
+  creation: {
+    factoryAddr: AMBIRE_ACCOUNT_FACTORY,
+    bytecode:
+      '0x7f00000000000000000000000000000000000000000000000000000000000000027ff33cc417366b7e38d2706a67ab46f85465661c28b864b521441180d15df82251553d602d80604d3d3981f3363d3d373d3d3d363d731cde6a53e9a411eaaf9d11e3e8c653a3e379d5355af43d82803e903d91602b57fd5bf3',
+    salt: '0x0000000000000000000000000000000000000000000000000000000000000000'
   },
-  {
-    type: 'internal',
-    addr: '0xd6e371526cdaeE04cd8AF225D42e37Bc14688D9E',
-    dedicatedToOneSA: false,
-    meta: null,
-    isExternallyStored: false
-  },
-  {
-    type: 'internal',
-    addr: '0x141A14B5C4dbA2aC7a7943E02eDFE2E7eDfdA28F',
-    dedicatedToOneSA: false,
-    meta: null,
-    isExternallyStored: false
-  },
-  {
-    type: 'internal',
-    addr: '0x0000000000000000000000000000000000000001',
-    dedicatedToOneSA: false,
-    meta: null,
-    isExternallyStored: false
-  },
-  {
-    type: 'internal',
-    addr: '0xa8eEaC54343F94CfEEB3492e07a7De72bDFD118a',
-    dedicatedToOneSA: false,
-    meta: null,
-    isExternallyStored: false
-  },
-  {
-    type: 'internal',
-    addr: addrWithDeploySignature,
-    dedicatedToOneSA: true,
-    meta: null,
-    isExternallyStored: false
+  preferences: {
+    label: DEFAULT_ACCOUNT_LABEL,
+    pfp: '0x8E5F6c1F0b134657A546932C3eC9169E1633a39b'
   }
-]
+}
 
 const v1Acc: Account = {
   addr: '0xa07D75aacEFd11b425AF7181958F0F85c312f143',
@@ -122,6 +98,10 @@ const v1Acc: Account = {
     bytecode:
       '0x7f28d4ea8f825adb036e9b306b2269570e63d2aa5bd10751437d98ed83551ba1cd7fa57498058891e98f45f8abb85dafbcd30f3d8b3ab586dfae2e0228bbb1de7018553d602d80604d3d3981f3363d3d373d3d3d363d732a2b85eb1054d6f0c6c2e37da05ed3e5fea684ef5af43d82803e903d91602b57fd5bf3',
     salt: '0x0000000000000000000000000000000000000000000000000000000000000001'
+  },
+  preferences: {
+    label: DEFAULT_ACCOUNT_LABEL,
+    pfp: '0xa07D75aacEFd11b425AF7181958F0F85c312f143'
   }
 }
 const to = '0x68b3465833fb72a70ecdf485e0e4c7bd8665fc45'
@@ -148,20 +128,32 @@ const viewOnlyAcc = {
   addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
   creation: null,
   initialPrivileges: [],
-  associatedKeys: ['0x77777777789A8BBEE6C64381e5E89E501fb0e4c8']
-}
+  associatedKeys: ['0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'],
+  preferences: {
+    label: DEFAULT_ACCOUNT_LABEL,
+    pfp: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+  }
+} as Account
 const nativeToCheck: Account[] = [
   {
     addr: '0x0000000000000000000000000000000000000001',
     initialPrivileges: [],
     associatedKeys: ['0x0000000000000000000000000000000000000001'],
-    creation: null
+    creation: null,
+    preferences: {
+      label: DEFAULT_ACCOUNT_LABEL,
+      pfp: '0x0000000000000000000000000000000000000001'
+    }
   },
   {
     addr: FEE_COLLECTOR,
     initialPrivileges: [],
     associatedKeys: ['0x0000000000000000000000000000000000000001'],
-    creation: null
+    creation: null,
+    preferences: {
+      label: DEFAULT_ACCOUNT_LABEL,
+      pfp: FEE_COLLECTOR
+    }
   },
   viewOnlyAcc
 ]
@@ -242,7 +234,7 @@ const feeTokens = [
 //   }
 // ]
 
-const portfolio = new Portfolio(fetch, provider, ethereum)
+const portfolio = new Portfolio(fetch, provider, ethereum, velcroUrl)
 
 const providers = Object.fromEntries(
   networks.map((network) => [network.id, getRpcProvider(network.rpcUrls, network.chainId)])
@@ -255,7 +247,7 @@ const getAccountsInfo = async (accounts: Account[]): Promise<AccountStates> => {
     return [
       acc.addr,
       Object.fromEntries(
-        networks.map((network: NetworkDescriptor, netIndex: number) => {
+        networks.map((network: Network, netIndex: number) => {
           return [network.id, result[netIndex][accIndex]]
         })
       )
@@ -273,7 +265,11 @@ const smartAccountv2eip712: Account = {
       '0x7f00000000000000000000000000000000000000000000000000000000000000027fa70e7c3e588683d0493e3cad10209993d632b6631bc4637b53a4174bad869718553d602d80604d3d3981f3363d3d373d3d3d363d730e370942ebe4d026d05d2cf477ff386338fc415a5af43d82803e903d91602b57fd5bf3',
     salt: '0x0000000000000000000000000000000000000000000000000000000000000000'
   },
-  initialPrivileges: []
+  initialPrivileges: [],
+  preferences: {
+    label: DEFAULT_ACCOUNT_LABEL,
+    pfp: '0x4AA524DDa82630cE769e5C9d7ec7a45B94a41bc6'
+  }
 }
 
 const trezorSlot6v2NotDeployed: Account = {
@@ -285,7 +281,11 @@ const trezorSlot6v2NotDeployed: Account = {
       '0x7f00000000000000000000000000000000000000000000000000000000000000027f3369d2838e4eeae4638428c523923f47cfb9039c70a8c40d546493e82c7ba866553d602d80604d3d3981f3363d3d373d3d3d363d730e370942ebe4d026d05d2cf477ff386338fc415a5af43d82803e903d91602b57fd5bf3',
     salt: '0x0000000000000000000000000000000000000000000000000000000000000000'
   },
-  initialPrivileges: []
+  initialPrivileges: [],
+  preferences: {
+    label: DEFAULT_ACCOUNT_LABEL,
+    pfp: '0x29e54b17CAe69edaf2D7138053c23436aac1B379'
+  }
 }
 
 describe('estimate', () => {
@@ -299,7 +299,11 @@ describe('estimate', () => {
           '0x0000000000000000000000000000000000000000000000000000000000000001'
         ]
       ],
-      creation: null
+      creation: null,
+      preferences: {
+        label: DEFAULT_ACCOUNT_LABEL,
+        pfp: '0x40b38765696e3d5d8d9d834d8aad4bb6e418e489'
+      }
     }
 
     const call: Call = {
@@ -326,7 +330,6 @@ describe('estimate', () => {
       provider,
       ethereum,
       EOAAccount,
-      MOCK_KEYSTORE_KEYS,
       op,
       accountStates,
       [],
@@ -347,7 +350,11 @@ describe('estimate', () => {
       addr,
       associatedKeys: [addr],
       initialPrivileges: [],
-      creation: null
+      creation: null,
+      preferences: {
+        label: DEFAULT_ACCOUNT_LABEL,
+        pfp: addr
+      }
     }
 
     // send all the native balance the user has in a call
@@ -376,7 +383,6 @@ describe('estimate', () => {
       providerPolygon,
       polygon,
       EOAAccount,
-      MOCK_KEYSTORE_KEYS,
       op,
       accountStates,
       [],
@@ -394,7 +400,11 @@ describe('estimate', () => {
       addr,
       associatedKeys: [addr],
       initialPrivileges: [],
-      creation: null
+      creation: null,
+      preferences: {
+        label: DEFAULT_ACCOUNT_LABEL,
+        pfp: addr
+      }
     }
 
     // this should be a valid txn
@@ -428,7 +438,6 @@ describe('estimate', () => {
       providerPolygon,
       polygon,
       EOAAccount,
-      MOCK_KEYSTORE_KEYS,
       op,
       accountStates,
       [],
@@ -446,7 +455,11 @@ describe('estimate', () => {
       addr,
       associatedKeys: [addr],
       initialPrivileges: [],
-      creation: null
+      creation: null,
+      preferences: {
+        label: DEFAULT_ACCOUNT_LABEL,
+        pfp: addr
+      }
     }
 
     // this should be an invalid txn
@@ -478,7 +491,6 @@ describe('estimate', () => {
       providerPolygon,
       polygon,
       EOAAccount,
-      MOCK_KEYSTORE_KEYS,
       op,
       accountStates,
       [],
@@ -516,10 +528,9 @@ describe('estimate', () => {
       provider,
       ethereum,
       v1Acc,
-      MOCK_KEYSTORE_KEYS,
       op,
       accountStates,
-      nativeToCheck,
+      getNativeToCheckFromEOAs(nativeToCheck, v1Acc),
       feeTokens
     )
     const usdtOutcome = response.feePaymentOptions!.find(
@@ -583,10 +594,9 @@ describe('estimate', () => {
       provider,
       ethereum,
       v1Acc,
-      MOCK_KEYSTORE_KEYS,
       op,
       accountStates,
-      nativeToCheck,
+      getNativeToCheckFromEOAs(nativeToCheck, v1Acc),
       feeTokens
     )
 
@@ -616,10 +626,9 @@ describe('estimate', () => {
       provider,
       ethereum,
       viewOnlyAcc,
-      MOCK_KEYSTORE_KEYS,
       op,
       accountStates,
-      nativeToCheck,
+      getNativeToCheckFromEOAs(nativeToCheck, viewOnlyAcc),
       feeTokens
     )
 
@@ -673,20 +682,18 @@ describe('estimate', () => {
       provider,
       ethereum,
       v1Acc,
-      MOCK_KEYSTORE_KEYS,
       op,
       accountStates,
-      nativeToCheck,
+      getNativeToCheckFromEOAs(nativeToCheck, v1Acc),
       feeTokens
     )
     const responseWithExecuteBefore = await estimate(
       provider,
       ethereum,
       v1Acc,
-      MOCK_KEYSTORE_KEYS,
       opWithExecuteBefore,
       accountStates,
-      nativeToCheck,
+      getNativeToCheckFromEOAs(nativeToCheck, v1Acc),
       feeTokens,
       { calculateRefund: true }
     )
@@ -710,6 +717,10 @@ describe('estimate', () => {
         bytecode:
           '0x7f00000000000000000000000000000000000000000000000000000000000000017fc00d23fd13e6cc01978ac25779646c3ba8aa974211c51a8b0f257a4593a6b7d3553d602d80604d3d3981f3363d3d373d3d3d363d732a2b85eb1054d6f0c6c2e37da05ed3e5fea684ef5af43d82803e903d91602b57fd5bf3',
         salt: '0x0000000000000000000000000000000000000000000000000000000000000001'
+      },
+      preferences: {
+        label: DEFAULT_ACCOUNT_LABEL,
+        pfp: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
       }
     }
 
@@ -733,10 +744,9 @@ describe('estimate', () => {
       providerOptimism,
       optimism,
       accountOptimism,
-      MOCK_KEYSTORE_KEYS,
       opOptimism,
       accountStates,
-      nativeToCheck,
+      getNativeToCheckFromEOAs(nativeToCheck, accountOptimism),
       feeTokens
     )
 
@@ -764,14 +774,13 @@ describe('estimate', () => {
       providerArbitrum,
       arbitrum,
       smartAccountv2eip712,
-      MOCK_KEYSTORE_KEYS,
       opArbitrum,
       accountStates,
-      nativeToCheck,
+      getNativeToCheckFromEOAs(nativeToCheck, smartAccountv2eip712),
       feeTokens
     )
 
-    response.feePaymentOptions.map((option) => expect(option.addedNative).toBeGreaterThan(0n))
+    response.feePaymentOptions.map((option) => expect(option.addedNative).toBe(0n))
   })
 
   it('[ERC-4337]:Optimism | not deployed | should work', async () => {
@@ -795,7 +804,7 @@ describe('estimate', () => {
       accountOpToExecuteBefore: null,
       meta: {
         entryPointAuthorization:
-          '0x5bb97ff398c6d4e44f38c81e256d0797c124fe39cc0c5cf66c082c135cb5946879588d3c3f02efe587b8ea01de567c962355640e7da5197cb23f150c6a9fd4101c01'
+          '0x05404ea5dfa13ddd921cda3f587af6927cc127ee174b57c9891491bfc1f0d3d005f649f8a1fc9147405f064507bae08816638cfc441c4d0dc4eb6640e16621991b01'
       }
     }
     const accountStates = await getAccountsInfo([smartAcc])
@@ -803,10 +812,9 @@ describe('estimate', () => {
       providerOptimism,
       optimism,
       smartAcc,
-      MOCK_KEYSTORE_KEYS,
       opOptimism,
       accountStates,
-      nativeToCheck,
+      getNativeToCheckFromEOAs(nativeToCheck, smartAcc),
       feeTokens,
       { is4337Broadcast: true }
     )
@@ -846,7 +854,7 @@ describe('estimate', () => {
       accountOpToExecuteBefore: null,
       meta: {
         entryPointAuthorization:
-          '0x5bb97ff398c6d4e44f38c81e256d0797c124fe39cc0c5cf66c082c135cb5946879588d3c3f02efe587b8ea01de567c962355640e7da5197cb23f150c6a9fd4101c01'
+          '0x05404ea5dfa13ddd921cda3f587af6927cc127ee174b57c9891491bfc1f0d3d005f649f8a1fc9147405f064507bae08816638cfc441c4d0dc4eb6640e16621991b01'
       }
     }
     const accountStates = await getAccountsInfo([smartAcc])
@@ -854,24 +862,77 @@ describe('estimate', () => {
       providerOptimism,
       optimism,
       smartAcc,
-      MOCK_KEYSTORE_KEYS,
       opOptimism,
       accountStates,
-      nativeToCheck,
+      getNativeToCheckFromEOAs(nativeToCheck, smartAcc),
       feeTokens,
       { is4337Broadcast: true }
     )
 
     expect(response.error).not.toBe(null)
-    expect(response.error?.message).toBe('Insufficient funds for intristic transaction cost')
+    expect(response.error?.message).toBe('Transaction reverted: invalid call in the bundle')
 
     expect(response.erc4337GasLimits).not.toBe(undefined)
-    expect(BigInt(response.erc4337GasLimits!.callGasLimit)).toBe(0n)
-    expect(BigInt(response.erc4337GasLimits!.verificationGasLimit)).toBe(0n)
-    expect(BigInt(response.erc4337GasLimits!.preVerificationGas)).toBe(0n)
-    expect(BigInt(response.erc4337GasLimits!.paymasterPostOpGasLimit)).toBe(0n)
-    expect(BigInt(response.erc4337GasLimits!.paymasterVerificationGasLimit)).toBe(0n)
+    expect(BigInt(response.erc4337GasLimits!.callGasLimit)).toBeGreaterThan(0n)
+    expect(BigInt(response.erc4337GasLimits!.verificationGasLimit)).toBeGreaterThan(0n)
+    expect(BigInt(response.erc4337GasLimits!.preVerificationGas)).toBeGreaterThan(0n)
+    expect(BigInt(response.erc4337GasLimits!.paymasterPostOpGasLimit)).toBeGreaterThan(0n)
+    expect(BigInt(response.erc4337GasLimits!.paymasterVerificationGasLimit)).toBeGreaterThan(0n)
 
+    expect(response.feePaymentOptions.length).toBeGreaterThan(0)
+    expect(response.feePaymentOptions![0].token).not.toBe(undefined)
+    expect(response.feePaymentOptions![0].token).not.toBe(null)
+  })
+
+  it('[ERC-4337]:Optimism | not deployed | should result in an user operation error and therefore erc4337GasLimits should be undefined', async () => {
+    const privs = [
+      {
+        addr: addrWithDeploySignature,
+        hash: dedicatedToOneSAPriv
+      }
+    ]
+    const ERC20Interface = new Interface(ERC20.abi)
+    const smartAcc = await getSmartAccount(privs)
+    const opOptimism: AccountOp = {
+      accountAddr: smartAcc.addr,
+      signingKeyAddr: smartAcc.associatedKeys[0],
+      signingKeyType: null,
+      gasLimit: null,
+      gasFeePayment: null,
+      networkId: 'optimism',
+      nonce: 0n,
+      signature: '0x',
+      calls: [
+        {
+          to: '0x94b008aA00579c1307B0EF2c499aD98a8ce58e58',
+          value: 0n,
+          data: ERC20Interface.encodeFunctionData('transfer', [FEE_COLLECTOR, 100])
+        }
+      ],
+      accountOpToExecuteBefore: null,
+      meta: {
+        entryPointAuthorization:
+          '0x05404ea5dfa13ddd921cda3f587af6927cc127ee174b57c9891491bfc1f0d3d005f649f8a1fc9147405f064507bae08816638cfc441c4d0dc4eb6640e16621991b01'
+      }
+    }
+    const accountStates = await getAccountsInfo([smartAcc])
+    const response = await estimate(
+      providerOptimism,
+      optimism,
+      smartAcc,
+      opOptimism,
+      accountStates,
+      getNativeToCheckFromEOAs(nativeToCheck, smartAcc),
+      feeTokens,
+      { is4337Broadcast: true }
+    )
+
+    expect(response.error).not.toBe(null)
+    expect(response.error?.message).toBe(
+      'UserOperation reverted during simulation with reason: ERC20: transfer amount exceeds balance'
+    )
+
+    expect(response.erc4337GasLimits).toBe(undefined)
     expect(response.feePaymentOptions.length).toBeGreaterThan(0)
     expect(response.feePaymentOptions![0].token).not.toBe(undefined)
     expect(response.feePaymentOptions![0].token).not.toBe(null)
@@ -898,10 +959,9 @@ describe('estimate', () => {
       providerOptimism,
       optimism,
       smartAccDeployed,
-      MOCK_KEYSTORE_KEYS,
       opOptimism,
       accountStates,
-      nativeToCheck,
+      getNativeToCheckFromEOAs(nativeToCheck, smartAccDeployed),
       feeTokens,
       { is4337Broadcast: true }
     )
@@ -918,6 +978,46 @@ describe('estimate', () => {
     expect(response.feePaymentOptions.length).toBeGreaterThan(0)
     expect(response.feePaymentOptions![0].token).not.toBe(undefined)
     expect(response.feePaymentOptions![0].token).not.toBe(null)
+  })
+
+  it('[ERC-4337]:Optimism | deployed account | v2.0 | should give EOA broadcast options', async () => {
+    const ambAcc = new Contract(smartAccv2point0Deployed.addr, AmbireAccount.abi, providerOptimism)
+    const nonce = await ambAcc.nonce()
+    const opOptimism: AccountOp = {
+      accountAddr: smartAccv2point0Deployed.addr,
+      signingKeyAddr: smartAccv2point0Deployed.associatedKeys[0],
+      signingKeyType: null,
+      gasLimit: null,
+      gasFeePayment: null,
+      networkId: 'optimism',
+      nonce,
+      signature: '0x',
+      calls: [{ to: FEE_COLLECTOR, value: 1n, data: '0x' }],
+      accountOpToExecuteBefore: null
+    }
+    const accountStates = await getAccountsInfo([smartAccv2point0Deployed])
+    const response = await estimate(
+      // it doesn't matter in this case
+      providerOptimism,
+      optimism,
+      smartAccv2point0Deployed,
+      opOptimism,
+      accountStates,
+      getNativeToCheckFromEOAs(nativeToCheck, smartAccv2point0Deployed),
+      feeTokens,
+      { is4337Broadcast: true }
+    )
+
+    expect(response.error).toBe(null)
+    expect(response.erc4337GasLimits).toBe(undefined)
+
+    expect(response.feePaymentOptions.length).toBeGreaterThan(0)
+    expect(response.feePaymentOptions![0].token).not.toBe(undefined)
+    expect(response.feePaymentOptions![0].token).not.toBe(null)
+    response.feePaymentOptions.forEach((option) => {
+      expect(option.paidBy).not.toBe(smartAccv2point0Deployed.addr)
+      expect(option.token.address).toBe(ZeroAddress)
+    })
   })
 
   it('[EOA-for-SA]:Arbitrum | should return native fee payment options even if hasRelayer = false', async () => {
@@ -942,10 +1042,9 @@ describe('estimate', () => {
       providerArbitrum,
       clonedArb,
       trezorSlot6v2NotDeployed,
-      MOCK_KEYSTORE_KEYS,
       opArbitrum,
       accountStates,
-      nativeToCheck,
+      getNativeToCheckFromEOAs(nativeToCheck, trezorSlot6v2NotDeployed),
       feeTokens,
       { is4337Broadcast: false }
     )
@@ -954,49 +1053,6 @@ describe('estimate', () => {
     expect(response.feePaymentOptions[0].token).not.toBe(null)
     expect(response.feePaymentOptions[0].token).not.toBe(undefined)
     expect(response.feePaymentOptions[0].token.address).toBe(ZeroAddress)
-  })
-
-  it('[ERC-4337]:Arbitrum | should fail because of a broken provider but still return fee options', async () => {
-    const opArbitrum: AccountOp = {
-      accountAddr: trezorSlot6v2NotDeployed.addr,
-      signingKeyAddr: trezorSlot6v2NotDeployed.associatedKeys[0],
-      signingKeyType: null,
-      gasLimit: null,
-      gasFeePayment: null,
-      networkId: 'arbitrum',
-      nonce: 1n,
-      signature: spoofSig,
-      calls: [{ to, value: BigInt(100000000000), data: '0x' }],
-      accountOpToExecuteBefore: null
-    }
-    const accountStates = await getAccountsInfo([trezorSlot6v2NotDeployed])
-    const brokenProvider = getRpcProvider(arbitrum.rpcUrls, arbitrum.chainId)
-    const handler2 = {
-      get(target: any, prop: any) {
-        if (prop === 'send') throw new Error('no sends')
-      }
-    }
-    const proxyProvider = new Proxy(brokenProvider, handler2)
-    const response = await estimate4337(
-      trezorSlot6v2NotDeployed,
-      opArbitrum,
-      opArbitrum.calls,
-      accountStates,
-      arbitrum,
-      proxyProvider,
-      feeTokens,
-      'latest'
-    )
-
-    expect(response.error).not.toBe(null)
-    expect(response.error?.message).toBe('no sends')
-
-    expect(response.feePaymentOptions.length).toBeGreaterThan(0)
-
-    expect(response.erc4337GasLimits).not.toBe(undefined)
-    expect(BigInt(response.erc4337GasLimits!.callGasLimit)).toBe(0n)
-    expect(BigInt(response.erc4337GasLimits!.verificationGasLimit)).toBe(0n)
-    expect(BigInt(response.erc4337GasLimits!.preVerificationGas)).toBe(0n)
   })
 
   it('estimates a polygon request with insufficient funds for txn and estimation should fail with transaction reverted', async () => {
@@ -1018,10 +1074,9 @@ describe('estimate', () => {
       providerPolygon,
       polygon,
       smartAccountv2eip712,
-      MOCK_KEYSTORE_KEYS,
       opPolygonFailBzNoFunds,
       accountStates,
-      nativeToCheck,
+      getNativeToCheckFromEOAs(nativeToCheck, smartAccountv2eip712),
       feeTokens
     )
     expect(response.error).not.toBe(null)
@@ -1047,10 +1102,9 @@ describe('estimate', () => {
       providerPolygon,
       polygon,
       { ...smartAccountv2eip712, associatedKeys: [trezorSlot6v2NotDeployed.associatedKeys[0]] },
-      MOCK_KEYSTORE_KEYS,
       opPolygonFailBzNoFunds,
       accountStates,
-      nativeToCheck,
+      getNativeToCheckFromEOAs(nativeToCheck, smartAccountv2eip712),
       feeTokens
     )
     expect(response.error).not.toBe(null)
@@ -1076,10 +1130,9 @@ describe('estimate', () => {
       provider,
       ethereum,
       v1Acc,
-      MOCK_KEYSTORE_KEYS,
       op,
       accountStates,
-      nativeToCheck,
+      getNativeToCheckFromEOAs(nativeToCheck, v1Acc),
       feeTokens
     )
 

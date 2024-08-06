@@ -2,6 +2,7 @@ import { ethers } from 'ethers'
 
 import { describe, expect, test } from '@jest/globals'
 
+import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import {
   AMBIRE_ACCOUNT_FACTORY,
   ENTRY_POINT_MARKER,
@@ -31,6 +32,10 @@ describe('AccountState', () => {
         bytecode:
           '0x7f00000000000000000000000000000000000000000000000000000000000000017f02c94ba85f2ea274a3869293a0a9bf447d073c83c617963b0be7c862ec2ee44e553d602d80604d3d3981f3363d3d373d3d3d363d732a2b85eb1054d6f0c6c2e37da05ed3e5fea684ef5af43d82803e903d91602b57fd5bf3',
         salt: '0x2ee01d932ede47b0b2fb1b6af48868de9f86bfc9a5be2f0b42c0111cf261d04c'
+      },
+      preferences: {
+        label: DEFAULT_ACCOUNT_LABEL,
+        pfp: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
       }
     }
 
@@ -38,10 +43,10 @@ describe('AccountState', () => {
       addr: '0x1f9090aaE28b8a3dCeaDf281B0F12828e676c326',
       associatedKeys: [],
       initialPrivileges: [],
-      creation: {
-        factoryAddr: '0x0000000000000000000000000000000000000000',
-        bytecode: '0x00',
-        salt: '0x0'
+      creation: null,
+      preferences: {
+        label: DEFAULT_ACCOUNT_LABEL,
+        pfp: '0x1f9090aaE28b8a3dCeaDf281B0F12828e676c326'
       }
     }
 
@@ -49,10 +54,10 @@ describe('AccountState', () => {
       addr: '0xf5ffA17725754dC00adB255fF296E4177B0982c7',
       associatedKeys: [],
       initialPrivileges: [],
-      creation: {
-        factoryAddr: '0x0000000000000000000000000000000000000000',
-        bytecode: '0x00',
-        salt: '0x0'
+      creation: null,
+      preferences: {
+        label: DEFAULT_ACCOUNT_LABEL,
+        pfp: '0xf5ffA17725754dC00adB255fF296E4177B0982c7'
       }
     }
 
@@ -64,14 +69,19 @@ describe('AccountState', () => {
       }
     ]
     const bytecode = await getBytecode(privileges)
+    const addr = getAmbireAccountAddress(AMBIRE_ACCOUNT_FACTORY, bytecode)
     const accountNotDeployed: Account = {
-      addr: getAmbireAccountAddress(AMBIRE_ACCOUNT_FACTORY, bytecode),
+      addr,
       associatedKeys: [signerAddr],
       initialPrivileges: privileges.map((priv) => [priv.addr, priv.hash]),
       creation: {
         factoryAddr: AMBIRE_ACCOUNT_FACTORY,
         bytecode,
         salt: ethers.toBeHex(0, 32)
+      },
+      preferences: {
+        label: DEFAULT_ACCOUNT_LABEL,
+        pfp: addr
       }
     }
 
@@ -91,6 +101,10 @@ describe('AccountState', () => {
         bytecode:
           '0x60017fbacd3e9e8aed42b26f997f28d90ae31f73d67222ec769cf7d8552e5f95f8f48d5560017f1937f135cfb1fb953b515a8d5a0f5ab4b8f1cdca7d9080fc3462633d71b5eb05553d602d8060523d3981f3363d3d373d3d3d363d73ff69afde895b381ee71e17c60350ae4c70b16a925af43d82803e903d91602b57fd5bf3',
         salt: '0x0000000000000000000000000000000000000000000000000000000000000000'
+      },
+      preferences: {
+        label: DEFAULT_ACCOUNT_LABEL,
+        pfp: '0xD1cE5E6AE56693D2D3D52b2EBDf969C1D7901971'
       }
     }
 
@@ -117,6 +131,10 @@ describe('AccountState', () => {
         factoryAddr: AMBIRE_ACCOUNT_FACTORY,
         bytecode: bytecodeErc4337,
         salt: '0x0'
+      },
+      preferences: {
+        label: DEFAULT_ACCOUNT_LABEL,
+        pfp: '0x76b277955846313Ec50F26eD155C26f5aED295B1'
       }
     }
 

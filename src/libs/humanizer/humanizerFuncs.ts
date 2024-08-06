@@ -1,6 +1,3 @@
-import { formatUnits } from 'ethers'
-
-import { MAX_UINT256 } from '../../consts/deploy'
 import { ErrorRef } from '../../controllers/eventEmitter/eventEmitter'
 import { Message, PlainTextMessage, TypedMessage } from '../../interfaces/userRequest'
 import { AccountOp } from '../accountOp/accountOp'
@@ -8,12 +5,11 @@ import {
   HumanizerCallModule,
   HumanizerMeta,
   HumanizerPromise,
-  HumanizerTypedMessaageModule,
-  HumanizerVisualization,
+  HumanizerTypedMessageModule,
   IrCall,
   IrMessage
 } from './interfaces'
-import { getAction, getDeadlineText, getLabel, integrateFragments } from './utils'
+import { getAction, getHumanMessage, integrateFragments } from './utils'
 
 export function humanizeCalls(
   _accountOp: AccountOp,
@@ -45,50 +41,8 @@ export function humanizeCalls(
   }
   return [currentCalls, asyncOps, error]
 }
-
-export const visualizationToText = (call: IrCall, options: any): string => {
-  let text = ''
-  const visualization = call?.fullVisualization?.filter((i) => !i.isHidden)
-  visualization?.forEach((v: HumanizerVisualization, i: number) => {
-    // if not first iteration
-    if (i) text += ' '
-    if (v.type === 'action' || v.type === 'label') text += `${v.content}`
-    if (v.type === 'address')
-      text += v?.humanizerMeta?.name ? `${v.address} (${v?.humanizerMeta?.name})` : v.address
-    if (v.type === 'token') {
-      if (v.humanizerMeta?.token) {
-        if (v.amount === MAX_UINT256) {
-          text += `all ${
-            v.humanizerMeta.token?.symbol ? v.humanizerMeta.token?.symbol : `${v.address} token`
-          }`
-        } else {
-          text += `${formatUnits(v.amount!, v.humanizerMeta.token.decimals)} ${
-            v.humanizerMeta.token?.symbol ? v.humanizerMeta.token?.symbol : `${v.address} token`
-          }`
-        }
-      } else if (v.amount === MAX_UINT256) {
-        text += `all ${v.address} token`
-      } else {
-        text += `${v.amount} ${v.address} token`
-      }
-    }
-    if (v.type === 'deadline') {
-      text += getDeadlineText(v.amount!)
-    }
-  })
-  if (text) {
-    return text
-  }
-  options.emitError({
-    message: 'visualizationToText: Something went wrong with humanization',
-    errror: new Error(`visualizationToText couldn't convert the txn to text, ${call}`),
-    level: 'silent'
-  })
-  return `Call to ${call.to} with ${call.value} value and ${call.data} data`
-}
-
 export const humanizeTypedMessage = (
-  modules: HumanizerTypedMessaageModule[],
+  modules: HumanizerTypedMessageModule[],
   tm: TypedMessage
   // only fullVisualization and warnings
 ): Omit<IrMessage, keyof Message> => {
@@ -103,6 +57,6 @@ export const humanizePlainTextMessage = (
   m: PlainTextMessage
   // only full visualization and warnings
 ): Omit<IrMessage, keyof Message> => ({
-  fullVisualization: [getAction('Sign message:'), getLabel(m.message as string)],
+  fullVisualization: [getAction('Sign message:'), getHumanMessage(m.message)],
   warnings: []
 })

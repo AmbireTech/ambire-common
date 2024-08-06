@@ -19,10 +19,15 @@ import UniversalSigValidator from '../../../contracts/compiled/UniversalSigValid
 import { PERMIT_2_ADDRESS, UNISWAP_UNIVERSAL_ROUTERS } from '../../consts/addresses'
 import { Account, AccountCreation, AccountId, AccountOnchainState } from '../../interfaces/account'
 import { KeystoreSigner } from '../../interfaces/keystore'
-import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
+import { Network } from '../../interfaces/network'
 import { TypedMessage } from '../../interfaces/userRequest'
 import hexStringToUint8Array from '../../utils/hexStringToUint8Array'
-import { AccountOp, accountOpSignableHash, getSignableHash } from '../accountOp/accountOp'
+import {
+  AccountOp,
+  accountOpSignableHash,
+  callToTuple,
+  getSignableHash
+} from '../accountOp/accountOp'
 import { fromDescriptor } from '../deployless/deployless'
 import { getActivatorCall } from '../userOperation/userOperation'
 
@@ -138,6 +143,7 @@ export function mapSignatureV(sigRaw: string) {
 }
 
 type Props = {
+  network?: Network
   provider?: JsonRpcProvider
   signer?: string
   signature: string | Uint8Array
@@ -160,6 +166,7 @@ type Props = {
  * Note: you only need to pass one of: typedData, finalDigest, message
  */
 export async function verifyMessage({
+  network,
   provider,
   signer,
   signature,
@@ -203,7 +210,11 @@ export async function verifyMessage({
   const coder = new AbiCoder()
   let callResult
   try {
-    const deploylessVerify = fromDescriptor(provider!, UniversalSigValidator, true)
+    const deploylessVerify = fromDescriptor(
+      provider!,
+      UniversalSigValidator,
+      !network!.rpcNoStateOverride
+    )
     const deploylessRes = await deploylessVerify.call('isValidSigWithSideEffects', [
       signer,
       finalDigest,
@@ -234,7 +245,7 @@ export async function verifyMessage({
 
 // Authorize the execute calls according to the version of the smart account
 export async function getExecuteSignature(
-  network: NetworkDescriptor,
+  network: Network,
   accountOp: AccountOp,
   accountState: AccountOnchainState,
   signer: KeystoreSigner
@@ -258,7 +269,7 @@ export async function getExecuteSignature(
 
 export async function getPlainTextSignature(
   message: string | Uint8Array,
-  network: NetworkDescriptor,
+  network: Network,
   account: Account,
   accountState: AccountOnchainState,
   signer: KeystoreSigner
@@ -310,7 +321,7 @@ export async function getEIP712Signature(
   account: Account,
   accountState: AccountOnchainState,
   signer: KeystoreSigner,
-  network: NetworkDescriptor
+  network: Network
 ): Promise<string> {
   if (!message.types.EIP712Domain) {
     throw new Error(
@@ -363,7 +374,7 @@ export async function getEIP712Signature(
 
 // get the typedData for the first ERC-4337 deploy txn
 export async function getEntryPointAuthorization(addr: AccountId, chainId: bigint, nonce: bigint) {
-  const hash = getSignableHash(addr, chainId, nonce, [getActivatorCall(addr)])
+  const hash = getSignableHash(addr, chainId, nonce, [callToTuple(getActivatorCall(addr))])
   return getTypedData(chainId, addr, hexlify(hash))
 }
 

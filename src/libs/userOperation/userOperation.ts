@@ -1,9 +1,10 @@
 import { AbiCoder, concat, hexlify, Interface, keccak256, toBeHex } from 'ethers'
-import { NetworkDescriptor } from 'interfaces/networkDescriptor'
+import { Network } from 'interfaces/network'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json'
 import {
+  AMBIRE_ACCOUNT_FACTORY,
   AMBIRE_PAYMASTER,
   AMBIRE_PAYMASTER_SIGNER,
   ENTRY_POINT_MARKER,
@@ -156,15 +157,12 @@ export function getUserOperation(
   return userOp
 }
 
-export function shouldUsePaymaster(network: NetworkDescriptor): boolean {
+export function shouldUsePaymaster(network: Network): boolean {
   // if there's a paymaster on the network, we pay with it. Simple
   return !!network.erc4337.hasPaymaster
 }
 
-export function isErc4337Broadcast(
-  network: NetworkDescriptor,
-  accountState: AccountOnchainState
-): boolean {
+export function isErc4337Broadcast(network: Network, accountState: AccountOnchainState): boolean {
   // we can broadcast a 4337 if:
   // - the account is not deployed (we do deployAndExecute in the factoryData)
   // - the entry point is enabled (standard ops)
@@ -175,33 +173,47 @@ export function isErc4337Broadcast(
   return network.erc4337.enabled && canWeBroadcast4337 && accountState.isV2
 }
 
-// if the account is v2 account that does not have the entry point as a signer
-// and the network is a 4337 one without a paymaster, the only way to broadcast
-// a txn is through EOA pays for SA. That's why we need this check to include
-// the activator call and the next txn to be ERC-4337
+// for special cases where we broadcast a 4337 operation with an EOA,
+// add the activator call so the use has the entry point attached
 export function shouldIncludeActivatorCall(
-  network: NetworkDescriptor,
-  accountState: AccountOnchainState
+  network: Network,
+  account: Account,
+  accountState: AccountOnchainState,
+  is4337Broadcast = true
 ) {
   return (
+    account.creation &&
+    account.creation.factoryAddr === AMBIRE_ACCOUNT_FACTORY &&
     accountState.isV2 &&
     network.erc4337.enabled &&
     !accountState.isErc4337Enabled &&
-    accountState.isDeployed
+    (accountState.isDeployed || !is4337Broadcast)
   )
 }
 
-export function getExplorerId(network: NetworkDescriptor) {
+export function getExplorerId(network: Network) {
   return network.erc4337.explorerId ?? network.id
 }
 
 // if the account is v2 and the network is 4337 and the account hasn't
 // authorized the entry point, he should be asked to do so
+//
+// addition: if the account is the 0.7.0 one
 export function shouldAskForEntryPointAuthorization(
-  network: NetworkDescriptor,
-  accountState: AccountOnchainState
+  network: Network,
+  account: Account,
+  accountState: AccountOnchainState,
+  alreadySigned: boolean
 ) {
-  return accountState.isV2 && network.erc4337.enabled && !accountState.isErc4337Enabled
+  if (alreadySigned) return false
+
+  return (
+    account.creation &&
+    account.creation.factoryAddr === AMBIRE_ACCOUNT_FACTORY &&
+    accountState.isV2 &&
+    network.erc4337.enabled &&
+    !accountState.isErc4337Enabled
+  )
 }
 
 export const ENTRY_POINT_AUTHORIZATION_REQUEST_ID = 'ENTRY_POINT_AUTHORIZATION_REQUEST_ID'

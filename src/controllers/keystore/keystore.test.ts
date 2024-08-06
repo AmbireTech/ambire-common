@@ -157,8 +157,8 @@ describe('KeystoreController', () => {
   test('should not add twice internal key that is already added', (done) => {
     // two keys with the same private key
     const keysWithPrivateKeyAlreadyAdded = [
-      { privateKey: privKey, dedicatedToOneSA: true },
-      { privateKey: privKey, dedicatedToOneSA: true }
+      { privateKey: privKey, dedicatedToOneSA: false },
+      { privateKey: privKey, dedicatedToOneSA: false }
     ]
 
     const anotherPrivateKeyNotAddedYet =
@@ -194,7 +194,7 @@ describe('KeystoreController', () => {
     keystore.addKeysExternallyStored([
       {
         addr: publicAddress,
-        dedicatedToOneSA: true,
+        dedicatedToOneSA: false,
         type: 'trezor',
         meta: {
           deviceId: '1',
@@ -224,7 +224,7 @@ describe('KeystoreController', () => {
       {
         addr: publicAddress,
         type: 'trezor' as 'trezor',
-        dedicatedToOneSA: true,
+        dedicatedToOneSA: false,
         meta: {
           deviceId: '1',
           deviceModel: 'trezor',
@@ -236,7 +236,7 @@ describe('KeystoreController', () => {
       {
         addr: publicAddress,
         type: 'trezor' as 'trezor',
-        dedicatedToOneSA: true,
+        dedicatedToOneSA: false,
         meta: {
           deviceId: '1',
           deviceModel: 'trezor',
@@ -252,7 +252,7 @@ describe('KeystoreController', () => {
       {
         addr: anotherAddressNotAddedYet,
         type: 'trezor' as 'trezor',
-        dedicatedToOneSA: true,
+        dedicatedToOneSA: false,
         meta: {
           deviceId: '1',
           deviceModel: 'trezor',
@@ -264,7 +264,7 @@ describe('KeystoreController', () => {
       {
         addr: anotherAddressNotAddedYet,
         type: 'trezor' as 'trezor',
-        dedicatedToOneSA: true,
+        dedicatedToOneSA: false,
         meta: {
           deviceId: '1',
           deviceModel: 'trezor',
@@ -298,7 +298,7 @@ describe('KeystoreController', () => {
       {
         addr: keyPublicAddress,
         type: 'trezor' as 'trezor',
-        dedicatedToOneSA: true,
+        dedicatedToOneSA: false,
         meta: {
           deviceId: '1',
           deviceModel: 'trezor',
@@ -309,7 +309,7 @@ describe('KeystoreController', () => {
       {
         addr: keyPublicAddress,
         type: 'trezor' as 'trezor',
-        dedicatedToOneSA: true,
+        dedicatedToOneSA: false,
         meta: {
           deviceId: '1',
           deviceModel: 'trezor',
@@ -320,7 +320,7 @@ describe('KeystoreController', () => {
       {
         addr: keyPublicAddress,
         type: 'ledger' as 'ledger',
-        dedicatedToOneSA: true,
+        dedicatedToOneSA: false,
         meta: {
           deviceId: '1',
           deviceModel: 'trezor',
@@ -416,6 +416,37 @@ describe('KeystoreController', () => {
     const keystoreUid = await keystore.getKeyStoreUid()
     expect(keystoreUid.length).toBe(128)
   })
+  test('should remove key', async () => {
+    const keyLengthBefore = keystore.keys.length
+    // An internal key and a trezor key with the same public address
+    const keysWithSamePublicAddress = keystore.keys.filter(
+      (x) => x.addr === '0xe95DB32209A2E132B262Ab12BAFf8F6007e30254'
+    )
+
+    // First remove the internal key
+    const internalKeyToRemove = keysWithSamePublicAddress.find((x) => x.type === 'internal')
+
+    expect(keysWithSamePublicAddress.length).toBeGreaterThanOrEqual(2)
+
+    await keystore.removeKey(internalKeyToRemove?.addr || '', internalKeyToRemove?.type || '')
+
+    expect(keystore.keys.length).toBe(keyLengthBefore - 1)
+
+    const keysWithSamePublicAddressAfter = keystore.keys.filter(
+      (x) => x.addr === '0xe95DB32209A2E132B262Ab12BAFf8F6007e30254'
+    )
+
+    const hwWalletKeyToRemove = keysWithSamePublicAddressAfter.find((x) => x.type === 'trezor')
+
+    // Make sure the trezor key is not removed
+    expect(hwWalletKeyToRemove).toBeDefined()
+
+    // Remove the trezor key
+    await keystore.removeKey(hwWalletKeyToRemove?.addr || '', hwWalletKeyToRemove?.type || '')
+
+    // Make sure both keys are removed
+    expect(keystore.keys.length).toBe(keyLengthBefore - 2)
+  })
 })
 
 describe('import/export with pub key test', () => {
@@ -468,6 +499,6 @@ describe('import/export with pub key test', () => {
         unsubscribe2()
       }
     })
-    keystore.addKeys([{ privateKey: wallet.privateKey.slice(2), dedicatedToOneSA: true }])
+    keystore.addKeys([{ privateKey: wallet.privateKey.slice(2), dedicatedToOneSA: false }])
   })
 })

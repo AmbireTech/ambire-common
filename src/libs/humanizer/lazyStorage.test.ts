@@ -1,9 +1,10 @@
 import { expect, jest } from '@jest/globals'
+
+import { HumanizerFragment } from '../../interfaces/humanizer'
 // import { parse, stringify } from '../richJson/richJson'
 import { stringify } from '../richJson/richJson'
 import { addFragsToLazyStore, lazyReadHumanizerMeta } from './lazyStorage'
 import { EMPTY_HUMANIZER_META, HUMANIZER_META_KEY } from './utils'
-import { HumanizerFragment } from './interfaces'
 
 const frag: HumanizerFragment = {
   type: 'selector',
@@ -79,10 +80,12 @@ describe('lazy storage', () => {
     await addFragsToLazyStore(storage, [frag])
     expect(storage.set.mock.calls.length).toEqual(initialWriteCount + 1)
 
+    // eslint-disable-next-line @typescript-eslint/no-floating-promises
     addFragsToLazyStore(storage, [frag], { urgent: true })
     expect(storage.set.mock.calls.length).toEqual(initialWriteCount + 2)
 
     // if this fails, it is running the func slower that specified time
+    // eslint-disable-next-line @typescript-eslint/no-floating-promises
     addFragsToLazyStore(storage, [frag])
     expect(storage.set.mock.calls.length).toEqual(initialWriteCount + 2)
   })

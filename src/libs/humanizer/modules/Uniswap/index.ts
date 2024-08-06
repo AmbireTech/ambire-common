@@ -1,25 +1,23 @@
 import { AccountOp } from '../../../accountOp/accountOp'
-import { HumanizerCallModule, HumanizerMeta, HumanizerWarning, IrCall } from '../../interfaces'
-import { getUnknownVisualization, getWarning } from '../../utils'
-import { uniUniversalRouter } from './uniUnivarsalRouter'
+import { HumanizerCallModule, HumanizerMeta, IrCall } from '../../interfaces'
+import { HumanizerUniMatcher } from './interfaces'
+import { uniUniversalRouter } from './uniUniversalRouter'
 import { uniV2Mapping } from './uniV2'
 import { uniV32Mapping, uniV3Mapping } from './uniV3'
 
 export const uniswapHumanizer: HumanizerCallModule = (
   accountOp: AccountOp,
   currentIrCalls: IrCall[],
-  humanizerMeta: HumanizerMeta,
+  _: HumanizerMeta,
   options?: any
 ) => {
-  const uniV2MappingObj = uniV2Mapping(humanizerMeta, options)
-  const uniV3MappingObj = uniV3Mapping(humanizerMeta, options)
-  const uniV32MappingObj = uniV32Mapping(humanizerMeta, options)
-  const uniUniversalRouterObj = uniUniversalRouter(humanizerMeta, options)
+  const uniV2MappingObj = uniV2Mapping()
+  const uniV3MappingObj = uniV3Mapping()
+  const uniV32MappingObj = uniV32Mapping()
+  const uniUniversalRouterObj = uniUniversalRouter(options)
 
   const matcher: {
-    [address: string]: {
-      [selector: string]: (a: AccountOp, c: IrCall) => IrCall[]
-    }
+    [address: string]: HumanizerUniMatcher
   } = {
     '0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D': uniV2MappingObj,
     '0xe592427a0aece92de3edee1f18e0157c05861564': uniV3MappingObj,
@@ -42,34 +40,21 @@ export const uniswapHumanizer: HumanizerCallModule = (
     // arbitrum
     '0x5e325eda8064b456f4781070c0738d849c824258': uniUniversalRouterObj
   }
-  const fallbackFlatUniswapsObject = Object.values(matcher).reduce((a, b) => ({ ...a, ...b }), {})
+  const fallbackFlatUniswapsMather = Object.values(matcher).reduce((a, b) => ({ ...a, ...b }), {})
   const newCalls: IrCall[] = []
   currentIrCalls.forEach((call: IrCall) => {
     const sigHash = call.data.substring(0, 10)
-    // check against sus contracts with same func selectors
-    const matchedObj = matcher[call.to.toLowerCase()]
-    // if known address
-    if (matchedObj) {
-      if (matchedObj?.[sigHash]) {
-        matchedObj[sigHash](accountOp, call).forEach((hc: IrCall, index: number) =>
-          // if multicall has value it shouldnt result in multiple calls with value
-          index === 0 ? newCalls.push(hc) : newCalls.push({ ...hc, value: 0n })
-        )
-      } else {
-        newCalls.push({
-          ...call,
-          fullVisualization: getUnknownVisualization('Uniswap', call)
-        })
-      }
+
+    const knownUniswapVersion = matcher[call.to.toLowerCase()]
+    if (knownUniswapVersion && knownUniswapVersion?.[sigHash]) {
+      const fullVisualization = knownUniswapVersion[sigHash](accountOp, call)
+      // @TODO add visualization squashing
+      newCalls.push({ ...call, fullVisualization })
+
       // if unknown address, but known sighash
-    } else if (fallbackFlatUniswapsObject[sigHash]) {
-      fallbackFlatUniswapsObject[sigHash](accountOp, call).forEach((hc: IrCall, index: number) => {
-        // if multicall has value it shouldnt result in multiple calls with value
-        const warnings: HumanizerWarning[] = [getWarning('Unknown uniswap address', 'alarm')]
-        index === 0
-          ? newCalls.push({ ...hc, warnings })
-          : newCalls.push({ ...hc, value: 0n, warnings })
-      })
+    } else if (fallbackFlatUniswapsMather[sigHash]) {
+      const fullVisualization = fallbackFlatUniswapsMather[sigHash](accountOp, call)
+      newCalls.push({ ...call, fullVisualization })
     } else {
       newCalls.push(call)
     }

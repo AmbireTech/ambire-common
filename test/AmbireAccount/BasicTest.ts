@@ -1,4 +1,4 @@
-import { hashMessage } from 'ethers'
+import { AbiCoder, hashMessage } from 'ethers'
 import { ethers } from 'hardhat'
 
 import { wrapEIP712, wrapEthSign, wrapTypedData } from '../ambireSign'
@@ -283,5 +283,8 @@ describe('Basic Ambire Account tests', () => {
     const isValidStandardWrap = await contract.isValidSignature(hashMessage(msg), wrapEIP712(s))
     expect(isValid).to.equal('0x1626ba7e')
     expect(isValidStandardWrap).to.equal('0x1626ba7e')
+
+    const sig =
+      '0x4ce8f0098cb129da7f55fcfdaeabe9b9194ff8638eae29061dce9f4340e4b56b018587f78b996cdc66241607615d8fef4ca68d352c222f464ed4a09919e95d2f00'
   })
 })

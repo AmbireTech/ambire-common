@@ -1,12 +1,9 @@
-import { Interface, toBeHex, ZeroAddress } from 'ethers'
-import { UserOperation } from 'libs/userOperation/types'
+import { Interface, ZeroAddress } from 'ethers'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
-import { AMBIRE_PAYMASTER } from '../../consts/deploy'
 import { Account, AccountStates } from '../../interfaces/account'
-import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
+import { Network } from '../../interfaces/network'
 import { Bundler } from '../../services/bundlers/bundler'
-import { getPaymasterStubData } from '../../services/sponsorship/paymasterSponsor'
 import { AccountOp, getSignableCalls } from '../accountOp/accountOp'
 import { getFeeCall } from '../calls/calls'
 import { TokenResult } from '../portfolio'
@@ -16,7 +13,7 @@ import {
   getUserOperation,
   shouldUsePaymaster
 } from '../userOperation/userOperation'
-import { estimationErrorFormatted, mapTxnErrMsg } from './errors'
+import { estimationErrorFormatted } from './errors'
 import { EstimateResult, FeePaymentOption } from './interfaces'
 
 function getFeeTokenForEstimate(feeTokens: TokenResult[]): TokenResult | null {
@@ -40,59 +37,11 @@ function getFeeTokenForEstimate(feeTokens: TokenResult[]): TokenResult | null {
   return gasTankToken ?? null
 }
 
-// try to humanize a bit more the error message
-function mapError(e: Error) {
-  if (e.message.includes('paymaster deposit too low')) {
-    return new Error(
-      `Paymaster with address ${AMBIRE_PAYMASTER} does not have enough funds to execute this request. Please contact support`
-    )
-  }
-
-  return e
-}
-
-function getEstimationError(e: any): Error {
-  let errMsg = e.error.message ? e.error.message : 'Estimation failed with unknown reason'
-  const hex = errMsg.indexOf('0x') !== -1 ? errMsg.substring(errMsg.indexOf('0x')) : null
-  const decodedHex = hex ? mapTxnErrMsg(hex) : null
-  if (decodedHex) errMsg = errMsg.replace(hex, decodedHex)
-  return mapError(new Error(errMsg))
-}
-
-async function getSponsoredUserOp(
-  op: AccountOp,
-  userOp: UserOperation,
-  network: NetworkDescriptor
-): Promise<UserOperation | null> {
-  if (!op.meta?.capabilities?.paymasterService?.url) return null
-
-  const sponsoredUserOp = { ...userOp }
-  const localOp = { ...op }
-
-  // delete the fee call as we're not including it in the sponsorship
-  delete localOp.feeCall
-  const ambireAccount = new Interface(AmbireAccount.abi)
-  sponsoredUserOp.callData = ambireAccount.encodeFunctionData('executeBySender', [
-    getSignableCalls(localOp)
-  ])
-  const stubData = await getPaymasterStubData(
-    op.meta?.capabilities?.paymasterService?.url,
-    network,
-    userOp
-  )
-  sponsoredUserOp.paymaster = stubData.paymaster
-  sponsoredUserOp.paymasterPostOpGasLimit = stubData.paymasterPostOpGasLimit
-  sponsoredUserOp.paymasterVerificationGasLimit = stubData.paymasterVerificationGasLimit
-  sponsoredUserOp.paymasterData = stubData.paymasterData
-  sponsoredUserOp.signature = getSigForCalculations()
-  return sponsoredUserOp
-}
-
 export async function bundlerEstimate(
   account: Account,
   accountStates: AccountStates,
   op: AccountOp,
-  network: NetworkDescriptor,
+  network: Network,
   feeTokens: TokenResult[]
 ): Promise<EstimateResult> {
   // we pass an empty array of feePaymentOptions as they are built
@@ -120,18 +69,18 @@ export async function bundlerEstimate(
     localOp,
     !accountState.isDeployed ? op.meta!.entryPointAuthorization : undefined
   )
-  const gasPrices = await Bundler.fetchGasPrices(network).catch(
+  const gasPrice = await Bundler.fetchGasPrices(network).catch(
     () => new Error('Could not fetch gas prices, retrying...')
   )
-  if (gasPrices instanceof Error) return estimationErrorFormatted(gasPrices, { feePaymentOptions })
+  if (gasPrice instanceof Error) return estimationErrorFormatted(gasPrice, { feePaymentOptions })
 
   // add the maxFeePerGas and maxPriorityFeePerGas only if the network
   // is optimistic as the bundler uses these values to determine the
   // preVerificationGas.
   if (network.isOptimistic) {
     // use medium for the gas limit estimation
-    userOp.maxPriorityFeePerGas = gasPrices.medium.maxPriorityFeePerGas
-    userOp.maxFeePerGas = gasPrices.medium.maxFeePerGas
+    userOp.maxPriorityFeePerGas = gasPrice.medium.maxPriorityFeePerGas
+    userOp.maxFeePerGas = gasPrice.medium.maxFeePerGas
   }
 
   // set the callData
@@ -150,52 +99,34 @@ export async function bundlerEstimate(
 
   userOp.signature = getSigForCalculations()
   const shouldStateOverride = !accountState.isErc4337Enabled && accountState.isDeployed
-  const sponsoredUserOp = await getSponsoredUserOp(op, userOp, network)
-  const [gasData, sponsoredGasData] = await Promise.all([
-    Bundler.estimate(userOp, network, shouldStateOverride).catch((e: any) => getEstimationError(e)),
-    Bundler.estimateSponsorship(sponsoredUserOp, network, shouldStateOverride).catch((e: any) =>
-      getEstimationError(e)
-    )
-  ])
-  if (gasData instanceof Error && (!sponsoredGasData || sponsoredGasData instanceof Error))
-    return estimationErrorFormatted(gasData as Error, { feePaymentOptions })
+  const gasData = await Bundler.estimate(userOp, network, shouldStateOverride).catch((e: any) => {
+    return new Error(Bundler.decodeBundlerError(e, 'Estimation failed with unknown reason'))
+  })
+  if (gasData instanceof Error) {
+    const nonFatalErrors: Error[] = []
+    // if the bundler estimation fails, add a nonFatalError so we can react to
+    // it on the FE. The BE at a later stage decides if this error is actually
+    // fatal (at estimate.ts -> estimate4337)
+    nonFatalErrors.push(new Error('Bundler estimation failed', { cause: '4337_ESTIMATION' }))
 
-  const apeMaxFee = BigInt(gasPrices.fast.maxFeePerGas) + BigInt(gasPrices.fast.maxFeePerGas) / 5n
-  const apePriority =
-    BigInt(gasPrices.fast.maxPriorityFeePerGas) + BigInt(gasPrices.fast.maxPriorityFeePerGas) / 5n
-  const ape = {
-    maxFeePerGas: toBeHex(apeMaxFee),
-    maxPriorityFeePerGas: toBeHex(apePriority)
+    if (gasData.message.indexOf('AA25 invalid account nonce') !== -1) {
+      nonFatalErrors.push(new Error('4337 invalid account nonce', { cause: '4337_INVALID_NONCE' }))
+    }
+    return estimationErrorFormatted(gasData as Error, { feePaymentOptions, nonFatalErrors })
   }
-
-  const erc4337GasLimits = !(gasData instanceof Error)
-    ? {
-        preVerificationGas: gasData.preVerificationGas,
-        verificationGasLimit: gasData.verificationGasLimit,
-        callGasLimit: gasData.callGasLimit,
-        paymasterVerificationGasLimit: gasData.paymasterVerificationGasLimit,
-        paymasterPostOpGasLimit: gasData.paymasterPostOpGasLimit,
-        gasPrice: { ...gasPrices, ape }
-      }
-    : undefined
-  const sponsorship =
-    sponsoredGasData && !(sponsoredGasData instanceof Error)
-      ? {
-          preVerificationGas: sponsoredGasData.preVerificationGas,
-          verificationGasLimit: sponsoredGasData.verificationGasLimit,
-          callGasLimit: sponsoredGasData.callGasLimit,
-          paymasterVerificationGasLimit: sponsoredGasData.paymasterVerificationGasLimit,
-          paymasterPostOpGasLimit: sponsoredGasData.paymasterPostOpGasLimit,
-          gasPrice: { ...gasPrices, ape }
-        }
-      : undefined
 
   return {
     gasUsed: !(gasData instanceof Error) ? BigInt(gasData.callGasLimit) : 0n,
     currentAccountNonce: Number(op.nonce),
     feePaymentOptions,
-    erc4337GasLimits,
-    sponsorship,
+    erc4337GasLimits: {
+      preVerificationGas: gasData.preVerificationGas,
+      verificationGasLimit: gasData.verificationGasLimit,
+      callGasLimit: gasData.callGasLimit,
+      paymasterVerificationGasLimit: gasData.paymasterVerificationGasLimit,
+      paymasterPostOpGasLimit: gasData.paymasterPostOpGasLimit,
+      gasPrice
+    },
     error: null
   }
 }
