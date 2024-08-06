@@ -12,12 +12,7 @@ import { Network } from '../../interfaces/network'
 import { Storage } from '../../interfaces/storage'
 import { isSmartAccount } from '../../libs/account/account'
 import { AccountOp, GasFeePayment, getSignableCalls } from '../../libs/accountOp/accountOp'
-import {
-  BundlerGasPrice,
-  Erc4337GasLimits,
-  EstimateResult,
-  FeePaymentOption
-} from '../../libs/estimate/interfaces'
+import { BundlerGasPrice, EstimateResult, FeePaymentOption } from '../../libs/estimate/interfaces'
 import { GasRecommendation, getCallDataAdditionalByNetwork } from '../../libs/gasPrice/gasPrice'
 import { callsHumanizer } from '../../libs/humanizer'
 import { IrCall } from '../../libs/humanizer/interfaces'
@@ -632,14 +627,14 @@ export class SignAccountOpController extends EventEmitter {
         return
       }
 
-      if (this.estimation?.erc4337GasLimits || this.estimation?.sponsorship) {
-        const limits =
-          this.estimation?.erc4337GasLimits ?? (this.estimation?.sponsorship as Erc4337GasLimits)
+      const erc4337GasLimits = this.estimation?.erc4337GasLimits
+      if (erc4337GasLimits) {
         const speeds: SpeedCalc[] = []
         const usesPaymaster = shouldUsePaymaster(this.#network)
 
-        for (const [speed, speedValue] of Object.entries(limits.gasPrice)) {
-          const simulatedGasLimit = BigInt(limits.callGasLimit) + BigInt(limits.preVerificationGas)
+        for (const [speed, speedValue] of Object.entries(erc4337GasLimits.gasPrice)) {
+          const simulatedGasLimit =
+            BigInt(erc4337GasLimits.callGasLimit) + BigInt(erc4337GasLimits.preVerificationGas)
           const gasPrice = BigInt(speedValue.maxFeePerGas)
           let amount = SignAccountOpController.getAmountAfterFeeTokenConvert(
             simulatedGasLimit,
@@ -985,14 +980,13 @@ export class SignAccountOpController extends EventEmitter {
           this.accountOp,
           !accountState.isDeployed ? this.accountOp.meta!.entryPointAuthorization : undefined
         )
-        const limits = this.selectedOption?.isSponsorship
-          ? (this.estimation!.sponsorship as Erc4337GasLimits)
-          : (this.estimation!.erc4337GasLimits as Erc4337GasLimits)
-        userOperation.preVerificationGas = limits.preVerificationGas
-        userOperation.callGasLimit = limits.callGasLimit
-        userOperation.verificationGasLimit = limits.verificationGasLimit
-        userOperation.paymasterVerificationGasLimit = limits.paymasterVerificationGasLimit
-        userOperation.paymasterPostOpGasLimit = limits.paymasterPostOpGasLimit
+        userOperation.preVerificationGas = this.estimation!.erc4337GasLimits!.preVerificationGas
+        userOperation.callGasLimit = this.estimation!.erc4337GasLimits!.callGasLimit
+        userOperation.verificationGasLimit = this.estimation!.erc4337GasLimits!.verificationGasLimit
+        userOperation.paymasterVerificationGasLimit =
+          this.estimation!.erc4337GasLimits!.paymasterVerificationGasLimit
+        userOperation.paymasterPostOpGasLimit =
+          this.estimation!.erc4337GasLimits!.paymasterPostOpGasLimit
         userOperation.maxFeePerGas = toBeHex(gasFeePayment.gasPrice)
         userOperation.maxPriorityFeePerGas = toBeHex(gasFeePayment.maxPriorityFeePerGas!)
 

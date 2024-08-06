@@ -24,7 +24,7 @@ import { Calls, DappUserRequest, SignUserRequest, UserRequest } from '../../inte
 import { WindowManager } from '../../interfaces/window'
 import { isSmartAccount } from '../../libs/account/account'
 import { AccountOp, AccountOpStatus, getSignableCalls } from '../../libs/accountOp/accountOp'
-import { Call as AccountOpCall } from '../../libs/accountOp/types'
+import { Call } from '../../libs/accountOp/types'
 import {
   dappRequestMethodToActionKind,
   getAccountOpActionsByNetwork,
@@ -695,10 +695,10 @@ export class MainController extends EventEmitter {
       this.signAccOpInitError = `Failed to retrieve account info for ${networkId}, because of one of the following reasons: 1) network doesn't exist, 2) RPC is down for this network`
   }
 
-  #batchCallsFromUserRequests(accountAddr: AccountId, networkId: NetworkId): AccountOpCall[] {
+  #batchCallsFromUserRequests(accountAddr: AccountId, networkId: NetworkId): Call[] {
     // Note: we use reduce instead of filter/map so that the compiler can deduce that we're checking .kind
     return (this.userRequests.filter((r) => r.action.kind === 'calls') as SignUserRequest[]).reduce(
-      (uCalls: AccountOpCall[], req) => {
+      (uCalls: Call[], req) => {
         if (req.meta.networkId === networkId && req.meta.accountAddr === accountAddr) {
           const { calls } = req.action as Calls
           calls.map((call) => uCalls.push({ ...call, fromUserRequestId: req.id }))
@@ -776,7 +776,7 @@ export class MainController extends EventEmitter {
       if (!this.accounts.selectedAccount) throw ethErrors.rpc.internal()
 
       const isWalletSendCalls = !!request.params[0].calls
-      const transactions: Calls['calls'] = isWalletSendCalls
+      const calls: Calls['calls'] = isWalletSendCalls
         ? request.params[0].calls
         : [request.params[0]]
       const accountAddr = getAddress(request.params[0].from)
@@ -797,10 +797,10 @@ export class MainController extends EventEmitter {
         id: new Date().getTime(),
         action: {
           kind,
-          calls: transactions.map((txn) => ({
-            to: txn.to,
-            data: txn.data || '0x',
-            value: txn.value ? getBigInt(txn.value) : 0n
+          calls: calls.map((call) => ({
+            to: call.to,
+            data: call.data || '0x',
+            value: call.value ? getBigInt(call.value) : 0n
           }))
         },
         meta: { isSignAction: true, accountAddr, networkId: network.id },

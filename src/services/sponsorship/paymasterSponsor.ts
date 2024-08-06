@@ -1,3 +1,6 @@
+// NOTE: THIS ISN'T CURRENTLY USED ANYWHERE
+// BUT KEEPING THE CODE HERE AS IT'S GOING TO BE IN A FUTURE PR
+
 import { ERC_4337_ENTRYPOINT } from '../../consts/deploy'
 import { Network } from '../../interfaces/network'
 import { UserOperation } from '../../libs/userOperation/types'

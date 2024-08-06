@@ -83,11 +83,6 @@ export async function bundlerEstimate(
     userOp.maxFeePerGas = gasPrice.medium.maxFeePerGas
   }
 
-  // set the callData
-  if (userOp.activatorCall) localOp.activatorCall = userOp.activatorCall
-  const ambireAccount = new Interface(AmbireAccount.abi)
-  userOp.callData = ambireAccount.encodeFunctionData('executeBySender', [getSignableCalls(localOp)])
-
   // add fake data so simulation works
   if (usesPaymaster) {
     const paymasterUnpacked = getPaymasterDataForEstimate()
@@ -97,6 +92,11 @@ export async function bundlerEstimate(
     userOp.paymasterData = paymasterUnpacked.paymasterData
   }
 
+  // set the callData
+  if (userOp.activatorCall) localOp.activatorCall = userOp.activatorCall
+
+  const ambireAccount = new Interface(AmbireAccount.abi)
+  userOp.callData = ambireAccount.encodeFunctionData('executeBySender', [getSignableCalls(localOp)])
   userOp.signature = getSigForCalculations()
   const shouldStateOverride = !accountState.isErc4337Enabled && accountState.isDeployed
   const gasData = await Bundler.estimate(userOp, network, shouldStateOverride).catch((e: any) => {
@@ -116,7 +116,7 @@ export async function bundlerEstimate(
   }
 
   return {
-    gasUsed: !(gasData instanceof Error) ? BigInt(gasData.callGasLimit) : 0n,
+    gasUsed: BigInt(gasData.callGasLimit),
     currentAccountNonce: Number(op.nonce),
     feePaymentOptions,
     erc4337GasLimits: {
