@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-floating-promises */
 
 import { Account } from '../../interfaces/account'
+import { NotificationManager } from '../../interfaces/notification'
 import { DappUserRequest, SignUserRequest, UserRequest } from '../../interfaces/userRequest'
 import { WindowManager } from '../../interfaces/window'
 import { AccountOp } from '../../libs/accountOp/accountOp'
@@ -52,6 +53,8 @@ export class ActionsController extends EventEmitter {
 
   #windowManager: WindowManager
 
+  #notificationManager: NotificationManager
+
   actionWindow: {
     id: number | null
     loaded: boolean
@@ -94,19 +97,22 @@ export class ActionsController extends EventEmitter {
   constructor({
     accounts,
     windowManager,
+    notificationManager,
     onActionWindowClose
   }: {
     accounts: AccountsController
     windowManager: WindowManager
+    notificationManager: NotificationManager
     onActionWindowClose: () => void
   }) {
     super()
 
     this.#accounts = accounts
     this.#windowManager = windowManager
+    this.#notificationManager = notificationManager
     this.#onActionWindowClose = onActionWindowClose
 
-    this.#windowManager.event.on('windowRemoved', (winId: number) => {
+    this.#windowManager.event.on('windowRemoved', async (winId: number) => {
       if (winId === this.actionWindow.id) {
         this.actionWindow.id = null
         this.actionWindow.loaded = false
@@ -114,6 +120,15 @@ export class ActionsController extends EventEmitter {
         this.currentAction = null
 
         this.actionsQueue = this.actionsQueue.filter((a) => a.type === 'accountOp')
+        if (this.actionsQueue.length) {
+          await this.#notificationManager.create({
+            title:
+              this.actionsQueue.length > 1
+                ? `${this.actionsQueue.length} transactions queued`
+                : 'Transaction queued',
+            message: 'Queued pending transactions are available on your Dashboard.'
+          })
+        }
         this.#onActionWindowClose()
         this.emitUpdate()
       }
@@ -168,7 +183,7 @@ export class ActionsController extends EventEmitter {
   }
 
   setCurrentActionById(actionId: Action['id']) {
-    const action = this.visibleActionsQueue.find((a) => a.id === actionId)
+    const action = this.visibleActionsQueue.find((a) => a.id.toString() === actionId.toString())
 
     if (!action) return
 

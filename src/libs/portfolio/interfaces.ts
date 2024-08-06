@@ -30,6 +30,10 @@ export type TokenResult = Omit<CustomToken, 'standard'> & {
 export interface CollectionResult extends TokenResult {
   name: string
   collectibles: bigint[]
+  postSimulation?: {
+    sending?: bigint[]
+    receiving?: bigint[]
+  }
 }
 
 export type PriceCache = Map<string, [number, Price[]]>
@@ -79,6 +83,7 @@ export interface PortfolioLibGetResult {
   collections: CollectionResult[]
   hintsFromExternalAPI: Hints | null
   errors: ExtendedError[]
+  blockNumber: number
 }
 
 interface Total {
