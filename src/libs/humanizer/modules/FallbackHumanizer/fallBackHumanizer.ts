@@ -14,6 +14,7 @@ import {
   checkIfUnknownAction,
   getAction,
   getAddressVisualization,
+  getKnownName,
   getLabel,
   getToken
 } from '../../utils'
@@ -179,19 +180,17 @@ export const fallbackHumanizer: HumanizerCallModule = (
         })
       }
       if (knownSigHashes[call.data.slice(0, 10)]) {
+        //  from function asd(address asd) returns ... => asd(address asd)
+
+        const functionName = knownSigHashes[call.data.slice(0, 10)].signature
+          .split('function ')
+          .filter((x) => x !== '')[0]
+          .split('(')
+          .filter((x) => x !== '')[0]
+        const contractName = getKnownName(humanizerMeta, call.to)
+        if (contractName) visualization.push(getAction(`${contractName}: ${functionName}`))
+        else visualization.push(getAction(`Call ${functionName} function`))
         visualization.push(
-          getAction(
-            `Call ${
-              //  from function asd(address asd) returns ... => asd(address asd)
-              knownSigHashes[call.data.slice(0, 10)].signature
-                .split('function ')
-                .filter((x) => x !== '')[0]
-                .split(' returns')
-                .filter((x) => x !== '')[0]
-            }`
-          ),
-          getLabel('from'),
-          getAddressVisualization(call.to),
           ...extractedAddresses.map(
             (a): HumanizerVisualization => ({ ...getToken(a, 0n), isHidden: true })
           )
