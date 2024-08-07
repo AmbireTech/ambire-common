@@ -61,6 +61,11 @@ export type Promo = {
   }
 }
 
+export type ExtensionKey = {
+  key: string
+  used: boolean
+}
+
 export type RelayerRewardsBalance = {
   balanceFromADX: number
   balanceInUSD: number
@@ -82,6 +87,7 @@ export type RelayerRewardsData = {
     xWALLETAPY: number
     promo?: null | Promo
     balance: RelayerRewardsBalance
+    extensionKey: ExtensionKey
   }
   errMsg: null
   isLoading: boolean
@@ -101,6 +107,7 @@ export type RewardsState = {
   totalLifetimeRewards: number
   promo?: null | Promo
   balance: RelayerRewardsBalance
+  extensionKey: ExtensionKey
 }
 
 export interface UseRewardsReturnType {
