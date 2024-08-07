@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 
 import useCacheBreak from '../useCacheBreak'
 import {
+  ExtensionKey,
   Multiplier,
   Promo,
   RelayerRewardsBalance,
@@ -27,6 +28,10 @@ const initialState = {
       balanceFromADX: 0,
       balanceInUSD: 0,
       effectiveBalanceInUSD: 0
+    },
+    extensionKey: {
+      key: '',
+      used: false
     }
   },
   errMsg: null,
@@ -51,6 +56,10 @@ const rewardsInitialState = {
     balanceFromADX: 0,
     balanceInUSD: 0,
     effectiveBalanceInUSD: 0
+  },
+  extensionKey: {
+    key: '',
+    used: false
   }
 }
 
@@ -81,6 +90,7 @@ export default function useRewards({
       | number
       | Multiplier[]
       | Promo
+      | ExtensionKey
       | { [key in RewardIds]: number }
       | RelayerRewardsBalance
     >(data.rewards.map(({ _id, rewards: r }) => [_id, r[accountId] || 0]))
@@ -110,6 +120,7 @@ export default function useRewards({
       .reduce((a, b) => a + b, 0)
 
     rewardsDetails.promo = (data.promo as Promo) || null
+    rewardsDetails.extensionKey = data.extensionKey
 
     setRewards(rewardsDetails as RewardsState)
     setLastUpdated(Date.now())
