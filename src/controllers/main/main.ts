@@ -93,6 +93,7 @@ const STATUS_WRAPPED_METHODS = {
   broadcastSignedAccountOp: 'INITIAL',
   removeAccount: 'INITIAL',
   handleAccountAdderInitLedger: 'INITIAL',
+  handleAccountAdderInitLattice: 'INITIAL',
   importSmartAccountFromDefaultSeed: 'INITIAL'
 } as const
 
@@ -652,6 +653,46 @@ export class MainController extends EventEmitter {
   async handleAccountAdderInitLedger(LedgerKeyIterator: any /* TODO: KeyIterator type mismatch */) {
     await this.withStatus('handleAccountAdderInitLedger', async () =>
       this.#handleAccountAdderInitLedger(LedgerKeyIterator)
+    )
+  }
+
+  async #handleAccountAdderInitLattice(
+    LatticeKeyIterator: any /* TODO: KeyIterator type mismatch */
+  ) {
+    if (this.accountAdder.isInitialized) this.accountAdder.reset()
+
+    try {
+      const latticeCtrl = this.#externalSignerControllers.lattice
+      if (!latticeCtrl) {
+        const message =
+          'Could not initialize connection with your Lattice1 device. Please try again later or contact Ambire support.'
+        throw new EmittableError({ message, level: 'major', error: new Error(message) })
+      }
+
+      await latticeCtrl.unlock(undefined, undefined, true)
+
+      const { sdkSession } = latticeCtrl
+      this.accountAdder.init({
+        keyIterator: new LatticeKeyIterator({ sdkSession }),
+        hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
+      })
+
+      return await this.accountAdder.setPage({
+        page: 1,
+        networks: this.networks.networks,
+        providers: this.providers.providers
+      })
+    } catch (error: any) {
+      const message = error?.message || 'Could not unlock the Lattice1 device. Please try again.'
+      throw new EmittableError({ message, level: 'major', error })
+    }
+  }
+
+  async handleAccountAdderInitLattice(
+    LatticeKeyIterator: any /* TODO: KeyIterator type mismatch */
+  ) {
+    await this.withStatus('handleAccountAdderInitLattice', async () =>
+      this.#handleAccountAdderInitLattice(LatticeKeyIterator)
     )
   }
 
