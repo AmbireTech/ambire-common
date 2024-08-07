@@ -4,6 +4,7 @@ import { FEE_COLLECTOR } from '../../consts/addresses'
 import { Account } from '../../interfaces/account'
 import { AddressState } from '../../interfaces/domains'
 import { Network } from '../../interfaces/network'
+import { Storage } from '../../interfaces/storage'
 import { TransferUpdate } from '../../interfaces/transfer'
 import { isSmartAccount } from '../../libs/account/account'
 import { HumanizerMeta } from '../../libs/humanizer/interfaces'
@@ -71,6 +72,8 @@ const DEFAULT_VALIDATION_FORM_MSGS = {
 const HARD_CODED_CURRENCY = 'usd'
 
 export class TransferController extends EventEmitter {
+  #storage: Storage
+
   #networks: Network[] = []
 
   #addressBookContacts: Contacts = []
@@ -101,13 +104,45 @@ export class TransferController extends EventEmitter {
 
   isTopUp: boolean = false
 
-  constructor(humanizerInfo: HumanizerMeta, selectedAccountData: Account, networks: Network[]) {
+  #shouldSkipTransactionQueuedModal: boolean = false
+
+  // Holds the initial load promise, so that one can wait until it completes
+  #initialLoadPromise: Promise<void>
+
+  constructor(
+    storage: Storage,
+    humanizerInfo: HumanizerMeta,
+    selectedAccountData: Account,
+    networks: Network[]
+  ) {
     super()
 
+    this.#storage = storage
     this.#humanizerInfo = humanizerInfo
     this.#selectedAccountData = selectedAccountData
     this.#networks = networks
 
+    this.#initialLoadPromise = this.#load()
+    this.emitUpdate()
+  }
+
+  async #load() {
+    this.#shouldSkipTransactionQueuedModal = await this.#storage.get(
+      'shouldSkipTransactionQueuedModal',
+      false
+    )
+
+    this.emitUpdate()
+  }
+
+  get shouldSkipTransactionQueuedModal() {
+    return this.#shouldSkipTransactionQueuedModal
+  }
+
+  set shouldSkipTransactionQueuedModal(value: boolean) {
+    this.#shouldSkipTransactionQueuedModal = value
+    // eslint-disable-next-line @typescript-eslint/no-floating-promises
+    this.#storage.set('shouldSkipTransactionQueuedModal', value)
     this.emitUpdate()
   }
 
@@ -457,7 +492,8 @@ export class TransferController extends EventEmitter {
       isInitialized: this.isInitialized,
       selectedToken: this.selectedToken,
       maxAmount: this.maxAmount,
-      maxAmountInFiat: this.maxAmountInFiat
+      maxAmountInFiat: this.maxAmountInFiat,
+      shouldSkipTransactionQueuedModal: this.shouldSkipTransactionQueuedModal
     }
   }
 }
