@@ -2,7 +2,14 @@ import humanizerInfo from '../../../../consts/humanizer/humanizerInfo.json'
 import { AccountOp } from '../../../accountOp/accountOp'
 import { HumanizerMeta } from '../../interfaces'
 import { compareHumanizerVisualizations } from '../../testHelpers'
-import { getAction, getChain, getDeadline, getLabel, getToken } from '../../utils'
+import {
+  getAction,
+  getChain,
+  getDeadline,
+  getLabel,
+  getToken,
+  getTokenWithChain
+} from '../../utils'
 import AcrossModule from '../Across'
 import { SocketModule } from '.'
 
@@ -44,7 +51,7 @@ describe('socket', () => {
         getAction('Bridge'),
         getToken('0x4200000000000000000000000000000000000042', 2008021737164118026n),
         getLabel('to'),
-        getToken('0x0b2c639c533813f4aa9d7837caf62653d097ff85', 3094288n),
+        getTokenWithChain('0x0b2c639c533813f4aa9d7837caf62653d097ff85', 3094288n, 137n),
         getLabel('on'),
         getChain(137n),
         getDeadline(1720088255n)

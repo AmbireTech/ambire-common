@@ -12,7 +12,8 @@ import {
   getDeadline,
   getLabel,
   getRecipientText,
-  getToken
+  getToken,
+  getTokenWithChain
 } from '../../utils'
 
 // @TODO check all additional data provided
@@ -58,7 +59,7 @@ export const SocketModule: HumanizerCallModule = (accountOp: AccountOp, irCalls:
             getAction('Bridge'),
             getToken(eToNative(fromToken), amount),
             getLabel('to'),
-            getToken(eToNative(toToken), outputAmount),
+            getTokenWithChain(eToNative(toToken), outputAmount, dstChain),
             getLabel('on'),
             getChain(dstChain),
             getDeadline(quoteAndDeadlineTimeStamps[0]),
@@ -72,7 +73,7 @@ export const SocketModule: HumanizerCallModule = (accountOp: AccountOp, irCalls:
           getAction('Bridge'),
           getLabel('undetected token'),
           getLabel('to'),
-          getToken(eToNative(outputToken), outputAmount),
+          getTokenWithChain(eToNative(outputToken), outputAmount, dstChain),
           getLabel('on'),
           getChain(dstChain),
           getDeadline(quoteAndDeadlineTimeStamps[0]),
@@ -104,7 +105,7 @@ export const SocketModule: HumanizerCallModule = (accountOp: AccountOp, irCalls:
             getAction('Bridge'),
             getToken(ZeroAddress, amount),
             getLabel('to'),
-            getToken(eToNative(outputToken), outputAmount),
+            getTokenWithChain(eToNative(outputToken), outputAmount, chainId),
             getLabel('on'),
             getChain(chainId),
             getDeadline(quoteAndDeadlineTimeStamps[0]),
@@ -158,7 +159,7 @@ export const SocketModule: HumanizerCallModule = (accountOp: AccountOp, irCalls:
           getAction('Bridge'),
           getToken(eToNative(inputToken), amount),
           getLabel('to'),
-          getToken(eToNative(outputToken), outputAmount),
+          getTokenWithChain(eToNative(outputToken), outputAmount, chainId),
           getLabel('on'),
           getChain(chainId),
           ...getRecipientText(sender, receiver)
@@ -212,7 +213,11 @@ export const SocketModule: HumanizerCallModule = (accountOp: AccountOp, irCalls:
           getAction('Bridge'),
           getToken(eToNative(tokenOut), amount),
           getLabel('to'),
-          getToken(eToNative(destinationQuery.tokenOut), destinationQuery.minAmountOut),
+          getTokenWithChain(
+            eToNative(destinationQuery.tokenOut),
+            destinationQuery.minAmountOut,
+            toChainId
+          ),
           getLabel('on'),
           getChain(toChainId),
           getDeadline(deadline),
@@ -232,7 +237,7 @@ export const SocketModule: HumanizerCallModule = (accountOp: AccountOp, irCalls:
           getAction('Bridge'),
           getToken(eToNative(token), amount),
           getLabel('to'),
-          getToken(eToNative(token), amount),
+          getTokenWithChain(eToNative(token), amount, chainId),
           getLabel('on'),
           getChain(chainId),
           ...getRecipientText(accountOp.accountAddr, recipient)
@@ -403,8 +408,14 @@ export const SocketModule: HumanizerCallModule = (accountOp: AccountOp, irCalls:
             getAction('Bridge'),
             getToken(eToNative(fromToken), amount),
             getLabel('to'),
-            getToken(eToNative(toToken), outAmount),
-            ...(chainId ? [getLabel('on'), getChain(chainId)] : []),
+
+            ...(chainId
+              ? [
+                  getTokenWithChain(eToNative(toToken), outAmount, chainId),
+                  getLabel('on'),
+                  getChain(chainId)
+                ]
+              : [getToken(eToNative(toToken), outAmount)]),
             ...getRecipientText(accountOp.accountAddr, receiverAddress)
           ].filter((x) => x)
         }
