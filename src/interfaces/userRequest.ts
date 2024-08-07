@@ -46,8 +46,7 @@ export interface SignUserRequest {
   meta: {
     isSignAction: true
     accountAddr: AccountId
-    chainId?: bigint
-    networkId?: NetworkId
+    networkId: NetworkId
     [key: string]: any
   }
   // defined only when SignUserRequest is built from a DappRequest
