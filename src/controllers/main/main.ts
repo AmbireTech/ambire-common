@@ -1332,10 +1332,17 @@ export class MainController extends EventEmitter {
     if (!accountOpAction) return
 
     const { accountOp } = accountOpAction as AccountOpAction
+    const chainId = this.networks.networks.find(
+      (network) => network.id === accountOp.networkId
+    )?.chainId
+
+    if (!chainId) return
+
     const meta: SignUserRequest['meta'] = {
       isSignAction: true,
       accountAddr: accountOp.accountAddr,
-      networkId: accountOp.networkId,
+      chainId,
+      networkId: '',
       txnId: null,
       userOpHash: null
     }
