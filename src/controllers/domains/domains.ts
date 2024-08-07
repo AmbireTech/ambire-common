@@ -101,10 +101,11 @@ export class DomainsController extends EventEmitter {
     try {
       udName = (await reverseLookupUD(checksummedAddress)) || null
     } catch (e: any) {
-      if (EXPECTED_UD_ERROR_MESSAGES.some((expectedMessage) => e.message.includes(expectedMessage)))
-        return
-
-      console.error('UD reverse lookup unexpected error', e)
+      if (
+        !EXPECTED_UD_ERROR_MESSAGES.some((expectedMessage) => e.message.includes(expectedMessage))
+      ) {
+        console.error('UD reverse lookup unexpected error', e)
+      }
     }
 
     this.domains[checksummedAddress] = {
