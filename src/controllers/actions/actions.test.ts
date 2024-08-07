@@ -194,6 +194,7 @@ describe('Actions Controller', () => {
       action: { kind: 'benzin' },
       meta: {
         isSignAction: true,
+        networkId: '',
         accountAddr: '0xAa0e9a1E2D2CcF2B867fda047bb5394BEF1883E0',
         chainId: 1n
       }

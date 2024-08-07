@@ -1237,6 +1237,7 @@ export class MainController extends EventEmitter {
       isSignAction: true,
       accountAddr: accountOp.accountAddr,
       chainId,
+      networkId: '',
       txnId: null,
       userOpHash: null
     }
