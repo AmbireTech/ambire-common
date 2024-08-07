@@ -24,7 +24,9 @@ export interface ExternalSignerController {
   deviceId: string
   isUnlocked: (path?: string, expectedKeyOnThisPath?: string) => boolean
   unlock: (
-    path?: ReturnType<typeof getHdPathFromTemplate>
+    path?: ReturnType<typeof getHdPathFromTemplate>,
+    expectedKeyOnThisPath?: string,
+    shouldOpenLatticeConnectorInTab?: boolean // Lattice specific
   ) => Promise<'ALREADY_UNLOCKED' | 'JUST_UNLOCKED'>
   unlockedPath: string
   unlockedPathKeyAddr: string
