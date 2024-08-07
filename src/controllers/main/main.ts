@@ -1367,12 +1367,16 @@ export class MainController extends EventEmitter {
     this.emitUpdate()
   }
 
-  rejectAccountOpAction(err: string, actionId: AccountOpAction['id']) {
+  rejectAccountOpAction(
+    err: string,
+    actionId: AccountOpAction['id'],
+    shouldOpenNextAction: boolean
+  ) {
     const accountOpAction = this.actions.actionsQueue.find((a) => a.id === actionId)
     if (!accountOpAction) return
 
     const { accountOp } = accountOpAction as AccountOpAction
-    this.actions.removeAction(actionId)
+    this.actions.removeAction(actionId, shouldOpenNextAction)
     // eslint-disable-next-line no-restricted-syntax
     for (const call of accountOp.calls) {
       const uReq = this.userRequests.find((r) => r.id === call.fromUserRequestId)

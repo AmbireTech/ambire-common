@@ -168,9 +168,11 @@ export class ActionsController extends EventEmitter {
     }
   }
 
-  removeAction(actionId: Action['id']) {
+  removeAction(actionId: Action['id'], shouldOpenNextAction: boolean) {
     this.actionsQueue = this.actionsQueue.filter((a) => a.id !== actionId)
-    this.#setCurrentAction(this.visibleActionsQueue[0] || null)
+    if (shouldOpenNextAction) {
+      this.#setCurrentAction(this.visibleActionsQueue[0] || null)
+    }
   }
 
   #setCurrentAction(nextAction: Action | null) {
