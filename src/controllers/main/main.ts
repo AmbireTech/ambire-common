@@ -1538,10 +1538,11 @@ export class MainController extends EventEmitter {
         this.signAccountOp?.accountOp
       )
 
-      const [, estimation] = await Promise.all([
+      const [, , estimation] = await Promise.all([
         // NOTE: we are not emitting an update here because the portfolio controller will do that
         // NOTE: the portfolio controller has it's own logic of constructing/caching providers, this is intentional, as
         // it may have different needs
+        this.accounts.updateAccountState(localAccountOp.accountAddr, 'pending', [network.id]),
         this.portfolio.updateSelectedAccount(
           localAccountOp.accountAddr,
           network,
