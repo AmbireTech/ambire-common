@@ -90,6 +90,7 @@ import { SignMessageController } from '../signMessage/signMessage'
 
 const STATUS_WRAPPED_METHODS = {
   onAccountAdderSuccess: 'INITIAL',
+  signAccountOp: 'INITIAL',
   broadcastSignedAccountOp: 'INITIAL',
   removeAccount: 'INITIAL',
   handleAccountAdderInitLedger: 'INITIAL',
@@ -489,20 +490,34 @@ export class MainController extends EventEmitter {
     this.estimateSignAccountOp()
   }
 
-  async handleSignAccountOp() {
-    if (!this.signAccountOp) {
-      const message =
-        'The signing process was not initialized as expected. Please try again later or contact Ambire support if the issue persists.'
-      const error = new Error('SignAccountOp is not initialized')
-      return this.emitError({ level: 'major', message, error })
-    }
+  async handleSignAndBroadcastAccountOp() {
+    await this.withStatus(
+      'signAccountOp',
+      async () => {
+        const wasAlreadySigned = this.signAccountOp?.status?.type === SigningStatus.Done
+        if (wasAlreadySigned) return Promise.resolve()
 
-    await this.signAccountOp.sign()
+        if (!this.signAccountOp) {
+          const message =
+            'The signing process was not initialized as expected. Please try again later or contact Ambire support if the issue persists.'
+          const error = new Error('SignAccountOp is not initialized')
+          this.emitError({ level: 'major', message, error })
+          return Promise.reject(error)
+        }
+
+        return this.signAccountOp.sign()
+      },
+      true
+    )
 
     // Error handling on the prev step will notify the user, it's fine to return here
-    if (this.signAccountOp.status?.type !== SigningStatus.Done) return
+    if (this.signAccountOp?.status?.type !== SigningStatus.Done) return
 
-    await this.withStatus('broadcastSignedAccountOp', async () => this.#broadcastSignedAccountOp())
+    return this.withStatus(
+      'broadcastSignedAccountOp',
+      async () => this.#broadcastSignedAccountOp(),
+      true
+    )
   }
 
   destroySignAccOp() {
@@ -1055,7 +1070,8 @@ export class MainController extends EventEmitter {
   async buildTransferUserRequest(
     amount: string,
     recipientAddress: string,
-    selectedToken: TokenResult
+    selectedToken: TokenResult,
+    executionType: 'queue' | 'open' = 'open'
   ) {
     await this.#initialLoadPromise
     if (!this.accounts.selectedAccount) return
@@ -1080,7 +1096,7 @@ export class MainController extends EventEmitter {
       return
     }
 
-    await this.addUserRequest(userRequest, !account.creation)
+    await this.addUserRequest(userRequest, !account.creation, executionType)
   }
 
   resolveUserRequest(data: any, requestId: UserRequest['id']) {
@@ -1121,7 +1137,11 @@ export class MainController extends EventEmitter {
     this.emitUpdate()
   }
 
-  async addUserRequest(req: UserRequest, withPriority?: boolean) {
+  async addUserRequest(
+    req: UserRequest,
+    withPriority?: boolean,
+    executionType: 'queue' | 'open' = 'open'
+  ) {
     if (withPriority) {
       this.userRequests.unshift(req)
     } else {
@@ -1175,7 +1195,7 @@ export class MainController extends EventEmitter {
           userRequests: this.userRequests,
           actionsQueue: this.actions.actionsQueue
         })
-        this.actions.addOrUpdateAction(accountOpAction, withPriority)
+        this.actions.addOrUpdateAction(accountOpAction, withPriority, executionType)
         if (this.signAccountOp && this.signAccountOp.fromActionId === accountOpAction.id) {
           this.signAccountOp.update({ accountOp: accountOpAction.accountOp })
           this.estimateSignAccountOp()
@@ -1187,7 +1207,7 @@ export class MainController extends EventEmitter {
           nonce: accountState.nonce,
           userRequest: req
         })
-        this.actions.addOrUpdateAction(accountOpAction, withPriority)
+        this.actions.addOrUpdateAction(accountOpAction, withPriority, executionType)
       }
     } else {
       let actionType: 'dappRequest' | 'benzin' | 'signMessage' = 'dappRequest'
@@ -1216,7 +1236,8 @@ export class MainController extends EventEmitter {
           type: actionType,
           userRequest: req as UserRequest as never
         },
-        withPriority
+        withPriority,
+        executionType
       )
     }
 
@@ -1368,12 +1389,16 @@ export class MainController extends EventEmitter {
     this.emitUpdate()
   }
 
-  rejectAccountOpAction(err: string, actionId: AccountOpAction['id']) {
+  rejectAccountOpAction(
+    err: string,
+    actionId: AccountOpAction['id'],
+    shouldOpenNextAction: boolean
+  ) {
     const accountOpAction = this.actions.actionsQueue.find((a) => a.id === actionId)
     if (!accountOpAction) return
 
     const { accountOp } = accountOpAction as AccountOpAction
-    this.actions.removeAction(actionId)
+    this.actions.removeAction(actionId, shouldOpenNextAction)
     // eslint-disable-next-line no-restricted-syntax
     for (const call of accountOp.calls) {
       const uReq = this.userRequests.find((r) => r.id === call.fromUserRequestId)
