@@ -3,6 +3,7 @@ import { AbiCoder, formatUnits, getAddress, Interface, toBeHex } from 'ethers'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import ERC20 from '../../../contracts/compiled/IERC20.json'
+import EmittableError from '../../classes/EmittableError'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { AMBIRE_PAYMASTER, SINGLETON } from '../../consts/deploy'
 import { Account } from '../../interfaces/account'
@@ -84,6 +85,9 @@ const NON_CRITICAL_ERRORS = {
 const CRITICAL_ERRORS = {
   eoaInsufficientFunds: 'Insufficient funds to cover the fee.'
 }
+
+const RETRY_TO_INIT_ACCOUNT_OP_MSG =
+  'Please attempt to initiate the transaction again or contact Ambire support.'
 
 export class SignAccountOpController extends EventEmitter {
   #accounts: AccountsController
@@ -845,6 +849,7 @@ export class SignAccountOpController extends EventEmitter {
   #setSigningError(error: string, type = SigningStatus.UnableToSign) {
     this.status = { type, error }
     this.emitUpdate()
+    throw new EmittableError({ message: error, level: 'silent', error: new Error(error) })
   }
 
   #addFeePayment() {
@@ -886,26 +891,33 @@ export class SignAccountOpController extends EventEmitter {
   }
 
   async sign() {
-    if (!this.readyToSign)
-      return this.#setSigningError(
-        'We are unable to sign your transaction as some of the mandatory signing fields have not been set.'
-      )
+    if (!this.readyToSign) {
+      const message = `Unable to sign the transaction. During the preparation step, the necessary transaction data was not received. ${RETRY_TO_INIT_ACCOUNT_OP_MSG}`
+      return this.#setSigningError(message)
+    }
 
     // when signing begings, we stop immediatelly state updates on the controller
     // by changing the status to InProgress. Check update() for more info
     this.status = { type: SigningStatus.InProgress }
 
-    if (!this.accountOp?.signingKeyAddr || !this.accountOp?.signingKeyType)
-      return this.#setSigningError('We cannot sign your transaction. Please choose a signer key.')
+    if (!this.accountOp?.signingKeyAddr || !this.accountOp?.signingKeyType) {
+      const message = `Unable to sign the transaction. During the preparation step, required signing key information was found missing. ${RETRY_TO_INIT_ACCOUNT_OP_MSG}`
+      return this.#setSigningError(message)
+    }
 
-    if (!this.accountOp?.gasFeePayment)
-      return this.#setSigningError('Please select a token and an account for paying the gas fee.')
+    if (!this.accountOp?.gasFeePayment) {
+      const message = `Unable to sign the transaction. During the preparation step, required information about paying the gas fee was found missing. ${RETRY_TO_INIT_ACCOUNT_OP_MSG}`
+      return this.#setSigningError(message)
+    }
 
     const signer = await this.#keystore.getSigner(
       this.accountOp.signingKeyAddr,
       this.accountOp.signingKeyType
     )
-    if (!signer) return this.#setSigningError('no available signer')
+    if (!signer) {
+      const message = `Unable to sign the transaction. During the preparation step, required account key information was found missing. ${RETRY_TO_INIT_ACCOUNT_OP_MSG}`
+      return this.#setSigningError(message)
+    }
 
     // we update the FE with the changed status (in progress) only after the checks
     // above confirm everything is okay to prevent two different state updates
@@ -947,10 +959,11 @@ export class SignAccountOpController extends EventEmitter {
     try {
       // In case of EOA account
       if (!isSmartAccount(this.account)) {
-        if (this.accountOp.calls.length !== 1)
-          return this.#setSigningError(
-            'Tried to sign an EOA transaction with multiple or zero calls.'
-          )
+        if (this.accountOp.calls.length !== 1) {
+          const callCount = this.accountOp.calls.length > 1 ? 'multiple' : 'zero'
+          const message = `Unable to sign the transaction because it has ${callCount} calls. ${RETRY_TO_INIT_ACCOUNT_OP_MSG}`
+          return this.#setSigningError(message)
+        }
 
         // In legacy mode, we sign the transaction directly.
         // that means the signing will happen on broadcast and here
@@ -972,7 +985,9 @@ export class SignAccountOpController extends EventEmitter {
           !accountState.isDeployed &&
           (!this.accountOp.meta || !this.accountOp.meta.entryPointAuthorization)
         )
-          return this.#setSigningError('Entry point privileges not granted. Please contact support')
+          return this.#setSigningError(
+            `Unable to sign the transaction because entry point privileges were not granted. ${RETRY_TO_INIT_ACCOUNT_OP_MSG}`
+          )
 
         const userOperation = getUserOperation(
           this.account,
@@ -1041,7 +1056,7 @@ export class SignAccountOpController extends EventEmitter {
             })
             this.status = { type: SigningStatus.ReadyToSign }
             this.emitUpdate()
-            return
+            return Promise.reject(this.status)
           }
         }
 
@@ -1071,8 +1086,9 @@ export class SignAccountOpController extends EventEmitter {
       this.status = { type: SigningStatus.Done }
       this.signedAccountOp = structuredClone(this.accountOp)
       this.emitUpdate()
+      return this.signedAccountOp
     } catch (error: any) {
-      this.#setSigningError(error?.message, SigningStatus.ReadyToSign)
+      return this.#setSigningError(error?.message, SigningStatus.ReadyToSign)
     }
   }
 
