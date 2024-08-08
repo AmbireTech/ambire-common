@@ -90,6 +90,7 @@ import { SignMessageController } from '../signMessage/signMessage'
 
 const STATUS_WRAPPED_METHODS = {
   onAccountAdderSuccess: 'INITIAL',
+  signAccountOp: 'INITIAL',
   broadcastSignedAccountOp: 'INITIAL',
   removeAccount: 'INITIAL',
   handleAccountAdderInitLedger: 'INITIAL',
@@ -489,20 +490,34 @@ export class MainController extends EventEmitter {
     this.estimateSignAccountOp()
   }
 
-  async handleSignAccountOp() {
-    if (!this.signAccountOp) {
-      const message =
-        'The signing process was not initialized as expected. Please try again later or contact Ambire support if the issue persists.'
-      const error = new Error('SignAccountOp is not initialized')
-      return this.emitError({ level: 'major', message, error })
-    }
+  async handleSignAndBroadcastAccountOp() {
+    await this.withStatus(
+      'signAccountOp',
+      async () => {
+        const wasAlreadySigned = this.signAccountOp?.status?.type === SigningStatus.Done
+        if (wasAlreadySigned) return Promise.resolve()
 
-    await this.signAccountOp.sign()
+        if (!this.signAccountOp) {
+          const message =
+            'The signing process was not initialized as expected. Please try again later or contact Ambire support if the issue persists.'
+          const error = new Error('SignAccountOp is not initialized')
+          this.emitError({ level: 'major', message, error })
+          return Promise.reject(error)
+        }
+
+        return this.signAccountOp.sign()
+      },
+      true
+    )
 
     // Error handling on the prev step will notify the user, it's fine to return here
-    if (this.signAccountOp.status?.type !== SigningStatus.Done) return
+    if (this.signAccountOp?.status?.type !== SigningStatus.Done) return
 
-    await this.withStatus('broadcastSignedAccountOp', async () => this.#broadcastSignedAccountOp())
+    return this.withStatus(
+      'broadcastSignedAccountOp',
+      async () => this.#broadcastSignedAccountOp(),
+      true
+    )
   }
 
   destroySignAccOp() {
@@ -1338,10 +1353,17 @@ export class MainController extends EventEmitter {
     if (!accountOpAction) return
 
     const { accountOp } = accountOpAction as AccountOpAction
+    const chainId = this.networks.networks.find(
+      (network) => network.id === accountOp.networkId
+    )?.chainId
+
+    if (!chainId) return
+
     const meta: SignUserRequest['meta'] = {
       isSignAction: true,
       accountAddr: accountOp.accountAddr,
-      networkId: accountOp.networkId,
+      chainId,
+      networkId: '',
       txnId: null,
       userOpHash: null
     }
