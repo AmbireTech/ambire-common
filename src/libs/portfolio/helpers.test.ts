@@ -51,6 +51,7 @@ describe('Portfolio helpers', () => {
             [LEARNED_TOKEN_WITH_BALANCE_ADDRESS]: null
           }
         },
+        learnedNfts: {},
         fromExternalAPI: {
           [key]: {
             erc20s: [],
