@@ -3,11 +3,13 @@ import { Contract, ZeroAddress } from 'ethers'
 import IERC20 from '../../../contracts/compiled/IERC20.json'
 import gasTankFeeTokens from '../../consts/gasTankFeeTokens'
 import humanizerInfo from '../../consts/humanizer/humanizerInfo.json'
+import { networks } from '../../consts/networks'
 import { PINNED_TOKENS } from '../../consts/pinnedTokens'
 import { Account, AccountId } from '../../interfaces/account'
 import { NetworkId } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
 import { isSmartAccount } from '../account/account'
+import { HumanizerMeta } from '../humanizer/interfaces'
 import { CustomToken } from './customToken'
 import {
   AdditionalPortfolioNetworkResult,
@@ -348,28 +350,40 @@ export const tokenFilter = (
   return isInAdditionalHints || pinnedRequested
 }
 
-const getTokenSafetyLevel = (token: TokenResult) => {
-  let safetyLevel = 'unknown' as 'unknown' | 'trusted' | 'spoof'
+const getTokenSafetyLevel = (token: TokenResult): TokenResult['flags']['safetyLevel'] => {
+  let safetyLevel: TokenResult['flags']['safetyLevel'] = 'unknown'
 
-  if (token.address === ZeroAddress) {
-    return 'trusted'
-  }
+  const hasFlags = token.flags.canTopUpGasTank || token.flags.isFeeToken || token.flags.onGasTank
 
-  Object.values(humanizerInfo.knownAddresses).forEach((value) => {
-    const isMatching = value.address.toLowerCase() === token.address.toLowerCase()
+  if (token.address === ZeroAddress || hasFlags) return 'trusted'
 
-    if (!isMatching) return
+  const canTokenBeChecked = networks.some((network) => network.id === token.networkId)
 
-    const isTrusted = value.name.toLowerCase().includes(token.symbol.toLowerCase())
+  // If the token is on a custom network we can't check if it's spoof
+  // thus we can't trust it
+  if (!canTokenBeChecked) return undefined
 
-    if (isTrusted) {
+  Object.values(humanizerInfo.knownAddresses as unknown as HumanizerMeta).some((value) => {
+    // Skip non-token values
+    if (!value.token) return false
+
+    // The token is found in the humanizer
+    if (value.address.toLowerCase() === token.address.toLowerCase()) {
       safetyLevel = 'trusted'
-      return
+      return true
     }
-    if (!isTrusted && safetyLevel !== 'trusted') {
+
+    // The token is found in the humanizer with a different address
+    if (value.token?.symbol?.toLowerCase() === token.symbol.toLowerCase()) {
       safetyLevel = 'spoof'
+      // Don't break the loop, as we want to check if there's a trusted token with the same symbol
     }
+
+    return false
   })
+
+  // As long as the token isn't spoof and there is a price we can trust it
+  if (safetyLevel === 'unknown' && token.priceIn.length) return 'trusted'
 
   return safetyLevel
 }
