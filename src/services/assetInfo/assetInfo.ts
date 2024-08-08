@@ -53,7 +53,10 @@ export async function executeBatchedFetch(network: Network): Promise<void> {
 export async function resolveAssetInfo(
   address: string,
   network: Network,
-  callback: Function
+  callback: (arg: {
+    tokenInfo?: { decimals: number; symbol: string }
+    nftInfo: { name: string }
+  }) => void
 ): Promise<void> {
   if (!scheduledActions[network.id]?.data?.length) {
     scheduledActions[network.id] = {
