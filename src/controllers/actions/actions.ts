@@ -149,6 +149,8 @@ export class ActionsController extends EventEmitter {
           ? this.visibleActionsQueue[0] || null
           : this.currentAction || this.visibleActionsQueue[0] || null
         this.#setCurrentAction(currentAction)
+      } else {
+        this.emitUpdate()
       }
       return
     }
@@ -165,6 +167,8 @@ export class ActionsController extends EventEmitter {
         ? this.visibleActionsQueue[0] || null
         : this.currentAction || this.visibleActionsQueue[0] || null
       this.#setCurrentAction(currentAction)
+    } else {
+      this.emitUpdate()
     }
   }
 
