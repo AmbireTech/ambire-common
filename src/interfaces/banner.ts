@@ -3,11 +3,13 @@ import { AccountOpAction } from 'controllers/actions/actions'
 import { Network } from './network'
 
 export type BannerType = 'error' | 'warning' | 'info' | 'success'
+export type BannerCategory = 'pending-to-be-signed-acc-op' | 'pending-to-be-confirmed-acc-op'
 
 export interface Banner {
   id: number | string
   accountAddr?: string
   type: BannerType
+  category?: BannerCategory
   title: string
   text: string
   actions: Action[]
@@ -31,6 +33,7 @@ export type Action =
       meta: {
         err: string
         actionId: AccountOpAction['id']
+        shouldOpenNextAction: boolean
       }
     }
   | {
