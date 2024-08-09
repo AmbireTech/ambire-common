@@ -1183,7 +1183,7 @@ export class MainController extends EventEmitter {
 
         const hasAuthorized = !!currentAccountOpAction?.accountOp?.meta?.entryPointAuthorization
         if (shouldAskForEntryPointAuthorization(network, account, accountState, hasAuthorized)) {
-          await this.addEntryPointAuthorization(req, network, accountState)
+          await this.addEntryPointAuthorization(req, network, accountState, executionType)
           this.emitUpdate()
           return
         }
@@ -1306,7 +1306,8 @@ export class MainController extends EventEmitter {
   async addEntryPointAuthorization(
     req: UserRequest,
     network: Network,
-    accountState: AccountOnchainState
+    accountState: AccountOnchainState,
+    executionType: 'queue' | 'open' = 'open'
   ) {
     if (
       this.actions.visibleActionsQueue.find(
@@ -1315,6 +1316,7 @@ export class MainController extends EventEmitter {
           (a as SignMessageAction).userRequest.meta.networkId === req.meta.networkId
       )
     ) {
+      this.actions.setCurrentActionById(ENTRY_POINT_AUTHORIZATION_REQUEST_ID)
       return
     }
 
@@ -1323,19 +1325,23 @@ export class MainController extends EventEmitter {
       network.chainId,
       BigInt(accountState.nonce)
     )
-    await this.addUserRequest({
-      id: ENTRY_POINT_AUTHORIZATION_REQUEST_ID,
-      action: typedMessageAction,
-      meta: {
-        isSignAction: true,
-        accountAddr: req.meta.accountAddr,
-        networkId: req.meta.networkId
-      },
-      session: req.session,
-      dappPromise: req?.dappPromise
-        ? { reject: req?.dappPromise?.reject, resolve: () => {} }
-        : undefined
-    } as SignUserRequest)
+    await this.addUserRequest(
+      {
+        id: ENTRY_POINT_AUTHORIZATION_REQUEST_ID,
+        action: typedMessageAction,
+        meta: {
+          isSignAction: true,
+          accountAddr: req.meta.accountAddr,
+          networkId: req.meta.networkId
+        },
+        session: req.session,
+        dappPromise: req?.dappPromise
+          ? { reject: req?.dappPromise?.reject, resolve: () => {} }
+          : undefined
+      } as SignUserRequest,
+      true,
+      executionType
+    )
   }
 
   async addNetwork(network: AddNetworkRequestParams) {
