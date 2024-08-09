@@ -3,7 +3,7 @@ import { AbiCoder, Interface, ZeroAddress } from 'ethers'
 import ERC20 from '../../../contracts/compiled/IERC20.json'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { DEPLOYLESS_SIMULATION_FROM } from '../../consts/deploy'
-import { Call } from '../../libs/accountOp/types'
+import { Call } from '../accountOp/types'
 import { TokenResult } from '../portfolio'
 
 export function getFeeCall(feeToken: TokenResult, amountToSend: bigint): Call {

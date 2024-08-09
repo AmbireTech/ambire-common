@@ -1,4 +1,4 @@
-import { Interface, ZeroAddress } from 'ethers'
+import { Interface } from 'ethers'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import { Account, AccountStates } from '../../interfaces/account'
@@ -14,28 +14,8 @@ import {
   shouldUsePaymaster
 } from '../userOperation/userOperation'
 import { estimationErrorFormatted } from './errors'
+import { getFeeTokenForEstimate } from './estimateHelpers'
 import { EstimateResult, FeePaymentOption } from './interfaces'
-
-function getFeeTokenForEstimate(feeTokens: TokenResult[]): TokenResult | null {
-  if (!feeTokens.length) return null
-
-  const erc20token = feeTokens.find(
-    (feeToken) =>
-      feeToken.address !== ZeroAddress && !feeToken.flags.onGasTank && feeToken.amount > 0n
-  )
-  if (erc20token) return erc20token
-
-  const nativeToken = feeTokens.find(
-    (feeToken) =>
-      feeToken.address === ZeroAddress && !feeToken.flags.onGasTank && feeToken.amount > 0n
-  )
-  if (nativeToken) return nativeToken
-
-  const gasTankToken = feeTokens.find(
-    (feeToken) => feeToken.flags.onGasTank && feeToken.amount > 0n
-  )
-  return gasTankToken ?? null
-}
 
 export async function bundlerEstimate(
   account: Account,

@@ -33,6 +33,7 @@ export type Action =
       meta: {
         err: string
         actionId: AccountOpAction['id']
+        shouldOpenNextAction: boolean
       }
     }
   | {

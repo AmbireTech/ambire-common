@@ -610,7 +610,7 @@ describe('SignAccountOp Controller ', () => {
     expect(errors.length).toBe(1)
     expect(errors[0]).toBe('Insufficient funds to cover the fee.')
 
-    await controller.sign()
+    await expect(controller.sign()).rejects.toThrow()
     expect(controller.status?.type).toBe('unable-to-sign')
   })
 
@@ -685,7 +685,7 @@ describe('SignAccountOp Controller ', () => {
     expect(errors.length).toBe(1)
     expect(errors[0]).toBe('Insufficient funds to cover the fee.')
 
-    await controller.sign()
+    await expect(controller.sign()).rejects.toThrow()
     expect(controller.status?.type).toBe('unable-to-sign')
   })
 
@@ -951,7 +951,7 @@ describe('SignAccountOp Controller ', () => {
       `Currently, ${controller.availableFeeOptions[0].token.symbol} is unavailable as a fee token as we're experiencing troubles fetching its price. Please select another or contact support`
     )
 
-    await controller.sign()
+    await expect(controller.sign()).rejects.toThrow()
     expect(controller.accountOp?.signature).toBe(null)
   })
 
@@ -1354,7 +1354,7 @@ describe('SignAccountOp Controller ', () => {
       "Signing is not possible with the selected account's token as it doesn't have sufficient funds to cover the gas payment fee."
     )
 
-    await controller.sign()
+    await expect(controller.sign()).rejects.toThrow()
     expect(controller.status?.type).toBe('unable-to-sign')
   })
 

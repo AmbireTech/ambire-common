@@ -75,6 +75,7 @@ const getTokens = async () => {
 describe('Transfer Controller', () => {
   test('should initialize', async () => {
     transferController = new TransferController(
+      produceMemoryStore(),
       humanizerInfo as HumanizerMeta,
       PLACEHOLDER_SELECTED_ACCOUNT,
       networksCtrl.networks
