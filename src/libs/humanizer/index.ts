@@ -19,6 +19,7 @@ import OneInchModule from './modules/1Inch'
 import { aaveHumanizer } from './modules/Aave'
 import AcrossModule from './modules/Across'
 import curveModule from './modules/Curve'
+import { deploymentModule } from './modules/Deplyment'
 import fallbackHumanizer from './modules/FallbackHumanizer'
 import gasTankModule from './modules/GasTankModule'
 import KyberSwap from './modules/KyberSwap'
@@ -39,6 +40,7 @@ import { HUMANIZER_META_KEY } from './utils'
 // the final humanization is the final triggered module
 export const humanizerCallModules: HumanizerCallModule[] = [
   preProcessHumanizer,
+  deploymentModule,
   genericErc721Humanizer,
   genericErc20Humanizer,
   gasTankModule,

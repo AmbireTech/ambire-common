@@ -1,4 +1,4 @@
-import { FetchRequest, JsonRpcProvider, ZeroAddress } from 'ethers'
+import { JsonRpcProvider, ZeroAddress } from 'ethers'
 
 import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json'
 import { AMBIRE_ACCOUNT_FACTORY, DEPLOYLESS_SIMULATION_FROM } from '../../consts/deploy'

@@ -14,7 +14,7 @@ import { Storage } from '../../interfaces/storage'
 import { isSmartAccount } from '../../libs/account/account'
 import { AccountOp, GasFeePayment, getSignableCalls } from '../../libs/accountOp/accountOp'
 import { BundlerGasPrice, EstimateResult, FeePaymentOption } from '../../libs/estimate/interfaces'
-import { GasRecommendation, getCallDataAdditionalByNetwork } from '../../libs/gasPrice/gasPrice'
+import { GasRecommendation, getProbableCallData } from '../../libs/gasPrice/gasPrice'
 import { callsHumanizer } from '../../libs/humanizer'
 import { IrCall } from '../../libs/humanizer/interfaces'
 import { Price, TokenResult } from '../../libs/portfolio'
@@ -228,6 +228,25 @@ export class SignAccountOpController extends EventEmitter {
       (err) => this.emitError(err),
       { network: this.#network }
     ).catch((err) => this.emitError(err))
+  }
+
+  getCallDataAdditionalByNetwork(): bigint {
+    // no additional call data is required for arbitrum as the bytes are already
+    // added in the calculation for the L1 fee
+    if (this.#network.id === 'arbitrum' || !isSmartAccount(this.account)) return 0n
+
+    const estimationCallData = getProbableCallData(
+      this.account,
+      this.accountOp,
+      this.#accounts.accountStates[this.accountOp.accountAddr][this.accountOp.networkId],
+      this.#network
+    )
+    const FIXED_OVERHEAD = 21000n
+    const bytes = Buffer.from(estimationCallData.substring(2))
+    const nonZeroBytes = BigInt(bytes.filter((b) => b).length)
+    const zeroBytes = BigInt(BigInt(bytes.length) - nonZeroBytes)
+    const txDataGas = zeroBytes * 4n + nonZeroBytes * 16n
+    return txDataGas + FIXED_OVERHEAD
   }
 
   get errors(): string[] {
@@ -604,12 +623,6 @@ export class SignAccountOpController extends EventEmitter {
     this.feeSpeeds = {}
 
     const gasUsed = this.estimation!.gasUsed
-    const callDataAdditionalGasCost = getCallDataAdditionalByNetwork(
-      this.accountOp,
-      this.account,
-      this.#network,
-      this.#accounts.accountStates[this.accountOp!.accountAddr][this.accountOp!.networkId]
-    )
 
     this.availableFeeOptions.forEach((option) => {
       // if a calculation has been made, do not make it again
@@ -684,7 +697,7 @@ export class SignAccountOpController extends EventEmitter {
           gasPrice = this.#rbfIncrease(this.account.addr, gasPrice)
           simulatedGasLimit = gasUsed
 
-          if (getAddress(this.accountOp.calls[0].to) === SINGLETON) {
+          if (this.accountOp.calls[0].to && getAddress(this.accountOp.calls[0].to) === SINGLETON) {
             simulatedGasLimit = getGasUsed(simulatedGasLimit)
           }
 
@@ -692,12 +705,12 @@ export class SignAccountOpController extends EventEmitter {
         } else if (option.paidBy !== this.accountOp.accountAddr) {
           // Smart account, but EOA pays the fee
           gasPrice = this.#rbfIncrease(option.paidBy, gasPrice)
-          simulatedGasLimit = gasUsed + callDataAdditionalGasCost
+          simulatedGasLimit = gasUsed + this.getCallDataAdditionalByNetwork()
           amount = simulatedGasLimit * gasPrice + option.addedNative
         } else {
           // Relayer
           gasPrice = this.#rbfIncrease(this.account.addr, gasPrice)
-          simulatedGasLimit = gasUsed + callDataAdditionalGasCost + option.gasUsed!
+          simulatedGasLimit = gasUsed + this.getCallDataAdditionalByNetwork() + option.gasUsed!
           amount = SignAccountOpController.getAmountAfterFeeTokenConvert(
             simulatedGasLimit,
             gasPrice,
