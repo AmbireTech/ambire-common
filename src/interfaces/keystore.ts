@@ -30,7 +30,7 @@ export interface ExternalSignerController {
   ) => Promise<'ALREADY_UNLOCKED' | 'JUST_UNLOCKED'>
   unlockedPath: string
   unlockedPathKeyAddr: string
-  walletSDK?: any
+  walletSDK?: any // Either the wallet own SDK or its session, each wallet having specifics
   cleanUp: () => void // Trezor and Ledger specific
   isInitiated?: boolean // Trezor specific
   initialLoadPromise?: Promise<void> // Trezor specific
