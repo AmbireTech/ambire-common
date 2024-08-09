@@ -94,6 +94,7 @@ const STATUS_WRAPPED_METHODS = {
   broadcastSignedAccountOp: 'INITIAL',
   removeAccount: 'INITIAL',
   handleAccountAdderInitLedger: 'INITIAL',
+  handleAccountAdderInitLattice: 'INITIAL',
   importSmartAccountFromDefaultSeed: 'INITIAL'
 } as const
 
@@ -634,11 +635,13 @@ export class MainController extends EventEmitter {
         throw new EmittableError({ message, level: 'major', error: new Error(message) })
       }
 
-      // The second time a connection gets requested onwards,
+      // Once a session with the Ledger device gets initiated, the user might
+      // use the device with another app. In this scenario, when coming back to
+      // Ambire (the second time a connection gets requested onwards),
       // the Ledger device throws with "invalid channel" error.
       // To overcome this, always make sure to clean up before starting
-      // a new session, if the device is already unlocked.
-      if (ledgerCtrl.sdkSession) await ledgerCtrl.cleanUp()
+      // a new session when retrieving keys, in case there already is one.
+      if (ledgerCtrl.walletSDK) await ledgerCtrl.cleanUp()
 
       await ledgerCtrl.unlock()
 
@@ -667,6 +670,46 @@ export class MainController extends EventEmitter {
   async handleAccountAdderInitLedger(LedgerKeyIterator: any /* TODO: KeyIterator type mismatch */) {
     await this.withStatus('handleAccountAdderInitLedger', async () =>
       this.#handleAccountAdderInitLedger(LedgerKeyIterator)
+    )
+  }
+
+  async #handleAccountAdderInitLattice(
+    LatticeKeyIterator: any /* TODO: KeyIterator type mismatch */
+  ) {
+    if (this.accountAdder.isInitialized) this.accountAdder.reset()
+
+    try {
+      const latticeCtrl = this.#externalSignerControllers.lattice
+      if (!latticeCtrl) {
+        const message =
+          'Could not initialize connection with your Lattice1 device. Please try again later or contact Ambire support.'
+        throw new EmittableError({ message, level: 'major', error: new Error(message) })
+      }
+
+      await latticeCtrl.unlock(undefined, undefined, true)
+
+      const { walletSDK } = latticeCtrl
+      this.accountAdder.init({
+        keyIterator: new LatticeKeyIterator({ walletSDK }),
+        hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
+      })
+
+      return await this.accountAdder.setPage({
+        page: 1,
+        networks: this.networks.networks,
+        providers: this.providers.providers
+      })
+    } catch (error: any) {
+      const message = error?.message || 'Could not unlock the Lattice1 device. Please try again.'
+      throw new EmittableError({ message, level: 'major', error })
+    }
+  }
+
+  async handleAccountAdderInitLattice(
+    LatticeKeyIterator: any /* TODO: KeyIterator type mismatch */
+  ) {
+    await this.withStatus('handleAccountAdderInitLattice', async () =>
+      this.#handleAccountAdderInitLattice(LatticeKeyIterator)
     )
   }
 
@@ -1183,7 +1226,7 @@ export class MainController extends EventEmitter {
 
         const hasAuthorized = !!currentAccountOpAction?.accountOp?.meta?.entryPointAuthorization
         if (shouldAskForEntryPointAuthorization(network, account, accountState, hasAuthorized)) {
-          await this.addEntryPointAuthorization(req, network, accountState)
+          await this.addEntryPointAuthorization(req, network, accountState, executionType)
           this.emitUpdate()
           return
         }
@@ -1306,7 +1349,8 @@ export class MainController extends EventEmitter {
   async addEntryPointAuthorization(
     req: UserRequest,
     network: Network,
-    accountState: AccountOnchainState
+    accountState: AccountOnchainState,
+    executionType: 'queue' | 'open' = 'open'
   ) {
     if (
       this.actions.visibleActionsQueue.find(
@@ -1315,6 +1359,7 @@ export class MainController extends EventEmitter {
           (a as SignMessageAction).userRequest.meta.networkId === req.meta.networkId
       )
     ) {
+      this.actions.setCurrentActionById(ENTRY_POINT_AUTHORIZATION_REQUEST_ID)
       return
     }
 
@@ -1323,19 +1368,23 @@ export class MainController extends EventEmitter {
       network.chainId,
       BigInt(accountState.nonce)
     )
-    await this.addUserRequest({
-      id: ENTRY_POINT_AUTHORIZATION_REQUEST_ID,
-      action: typedMessageAction,
-      meta: {
-        isSignAction: true,
-        accountAddr: req.meta.accountAddr,
-        networkId: req.meta.networkId
-      },
-      session: req.session,
-      dappPromise: req?.dappPromise
-        ? { reject: req?.dappPromise?.reject, resolve: () => {} }
-        : undefined
-    } as SignUserRequest)
+    await this.addUserRequest(
+      {
+        id: ENTRY_POINT_AUTHORIZATION_REQUEST_ID,
+        action: typedMessageAction,
+        meta: {
+          isSignAction: true,
+          accountAddr: req.meta.accountAddr,
+          networkId: req.meta.networkId
+        },
+        session: req.session,
+        dappPromise: req?.dappPromise
+          ? { reject: req?.dappPromise?.reject, resolve: () => {} }
+          : undefined
+      } as SignUserRequest,
+      true,
+      executionType
+    )
   }
 
   async addNetwork(network: AddNetworkRequestParams) {
