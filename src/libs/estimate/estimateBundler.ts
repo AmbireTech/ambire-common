@@ -72,12 +72,12 @@ export async function bundlerEstimate(
     userOp.paymasterData = paymasterUnpacked.paymasterData
   }
 
+  // set the callData
   if (userOp.activatorCall) localOp.activatorCall = userOp.activatorCall
 
   const ambireAccount = new Interface(AmbireAccount.abi)
   userOp.callData = ambireAccount.encodeFunctionData('executeBySender', [getSignableCalls(localOp)])
   userOp.signature = getSigForCalculations()
-
   const shouldStateOverride = !accountState.isErc4337Enabled && accountState.isDeployed
   const gasData = await Bundler.estimate(userOp, network, shouldStateOverride).catch((e: any) => {
     return new Error(Bundler.decodeBundlerError(e, 'Estimation failed with unknown reason'))
