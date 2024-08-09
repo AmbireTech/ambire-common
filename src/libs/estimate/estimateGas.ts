@@ -9,6 +9,7 @@ import { getRpcProvider } from '../../services/provider'
 import { getSpoof } from '../account/account'
 import { AccountOp, getSignableCalls } from '../accountOp/accountOp'
 
+// Use this estimateGas only for SA estimations
 export async function estimateGas(
   account: Account,
   op: AccountOp,
