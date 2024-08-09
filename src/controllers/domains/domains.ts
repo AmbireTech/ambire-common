@@ -17,6 +17,12 @@ interface Domains {
 // 15 minutes
 const PERSIST_DOMAIN_FOR_IN_MS = 15 * 60 * 1000
 
+const EXPECTED_UD_ERROR_MESSAGES = [
+  'Only absolute URLs are supported',
+  'unexpected character at line 1 column 1 of the JSON data',
+  'Unexpected token'
+]
+
 /**
  * Domains controller- responsible for handling the reverse lookup of addresses to ENS and UD names.
  * Resolved names are saved in `domains` for a short period of time(15 minutes) to avoid unnecessary lookups.
@@ -95,7 +101,9 @@ export class DomainsController extends EventEmitter {
     try {
       udName = (await reverseLookupUD(checksummedAddress)) || null
     } catch (e: any) {
-      if (!e?.message?.includes('Only absolute URLs are supported')) {
+      if (
+        !EXPECTED_UD_ERROR_MESSAGES.some((expectedMessage) => e.message.includes(expectedMessage))
+      ) {
         console.error('UD reverse lookup unexpected error', e)
       }
     }

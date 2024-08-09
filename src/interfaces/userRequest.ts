@@ -1,7 +1,6 @@
 import { SignMessageAction } from 'controllers/actions/actions'
 import { TypedDataDomain, TypedDataField } from 'ethers'
 
-import { Call as AccountOpCall } from '../libs/accountOp/types'
 import { AccountId } from './account'
 import { DappProviderRequest } from './dapp'
 import { HumanizerFragment } from './humanizer'

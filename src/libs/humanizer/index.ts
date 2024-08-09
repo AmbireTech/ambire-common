@@ -22,6 +22,7 @@ import curveModule from './modules/Curve'
 import fallbackHumanizer from './modules/FallbackHumanizer'
 import gasTankModule from './modules/GasTankModule'
 import KyberSwap from './modules/KyberSwap'
+import { postProcessing } from './modules/PostProcessing/postProcessModule'
 import preProcessHumanizer from './modules/PreProcess'
 import privilegeHumanizer from './modules/Privileges'
 import { SocketModule } from './modules/Socket'
@@ -53,7 +54,8 @@ export const humanizerCallModules: HumanizerCallModule[] = [
   WALLETModule,
   privilegeHumanizer,
   sushiSwapModule,
-  fallbackHumanizer
+  fallbackHumanizer,
+  postProcessing
 ]
 
 // from least generic to most generic
