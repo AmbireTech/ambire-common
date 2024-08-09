@@ -686,9 +686,9 @@ export class MainController extends EventEmitter {
 
       await latticeCtrl.unlock(undefined, undefined, true)
 
-      const { sdkSession } = latticeCtrl
+      const { walletSDK } = latticeCtrl
       this.accountAdder.init({
-        keyIterator: new LatticeKeyIterator({ sdkSession }),
+        keyIterator: new LatticeKeyIterator({ walletSDK }),
         hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
       })
 

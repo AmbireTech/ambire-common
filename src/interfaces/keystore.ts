@@ -30,15 +30,14 @@ export interface ExternalSignerController {
   ) => Promise<'ALREADY_UNLOCKED' | 'JUST_UNLOCKED'>
   unlockedPath: string
   unlockedPathKeyAddr: string
+  walletSDK?: any
   cleanUp: () => void // Trezor and Ledger specific
   isInitiated?: boolean // Trezor specific
   initialLoadPromise?: Promise<void> // Trezor specific
-  walletSDK?: any // Ledger and Trezor specific.
   // TODO: Refine the rest of the props
   isWebHID?: boolean // Ledger specific
   transport?: any // Ledger specific
   appName?: string // Lattice specific
-  sdkSession?: any // Lattice specific
   creds?: any // Lattice specific
   network?: any // Lattice specific
 }
