@@ -55,7 +55,7 @@ export async function resolveAssetInfo(
   network: Network,
   callback: (arg: {
     tokenInfo?: { decimals: number; symbol: string }
-    nftInfo: { name: string }
+    nftInfo?: { name: string }
   }) => void
 ): Promise<void> {
   if (!scheduledActions[network.id]?.data?.length) {
