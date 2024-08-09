@@ -573,12 +573,16 @@ export class SignAccountOpController extends EventEmitter {
    */
   #rbfIncrease(accId: string, gasPrice: bigint): bigint {
     // if there was an error on the signed account op with a
-    // replacement fee too low, we increase by 12.5% the signed account op
+    // replacement fee too low, we increase the signed account op
     // IF the new estimation is not actually higher
+    // Also, we increase if by 12.5% on l1 and by 50% on l2s as 12.5%
+    // is nowhere near enough for an RBF to happen on l2s
+    const delimeter = this.#network.isOptimistic ? 2n : 8n
+
     if (this.replacementFeeLow && this.signedAccountOp && this.signedAccountOp.gasFeePayment) {
       const bumpFees =
         this.signedAccountOp.gasFeePayment.gasPrice +
-        this.signedAccountOp.gasFeePayment.gasPrice / 8n
+        this.signedAccountOp.gasFeePayment.gasPrice / delimeter
       return gasPrice > bumpFees ? gasPrice : bumpFees
     }
 
@@ -589,7 +593,7 @@ export class SignAccountOpController extends EventEmitter {
     // increase by a minimum of 12.5% the last broadcast txn and use that
     // or use the current gas estimation if it's more
     const lastTxnGasPriceIncreased =
-      rbfOp.gasFeePayment.gasPrice + rbfOp.gasFeePayment.gasPrice / 8n
+      rbfOp.gasFeePayment.gasPrice + rbfOp.gasFeePayment.gasPrice / delimeter
     return gasPrice > lastTxnGasPriceIncreased ? gasPrice : lastTxnGasPriceIncreased
   }
 
