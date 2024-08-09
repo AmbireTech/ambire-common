@@ -1188,7 +1188,9 @@ export class MainController extends EventEmitter {
           network: network.id
         })
         const entryPointAuthorizationMessageFromHistory = this.activity.signedMessages?.items.find(
-          (message) => message.fromActionId === ENTRY_POINT_AUTHORIZATION_REQUEST_ID
+          (message) =>
+            message.fromActionId === ENTRY_POINT_AUTHORIZATION_REQUEST_ID &&
+            message.networkId === network.id
         )
         if (
           shouldAskForEntryPointAuthorization(network, account, accountState, hasAuthorized) &&
