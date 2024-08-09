@@ -11,7 +11,7 @@ export const deploymentModule: HumanizerCallModule = (
     irCall.to === undefined
       ? {
           ...irCall,
-          fullVisualization: [getAction('Deploying smart contract')]
+          fullVisualization: [getAction('Deploy a smart contract')]
         }
       : irCall
   )
