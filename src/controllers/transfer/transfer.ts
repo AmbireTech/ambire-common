@@ -327,6 +327,7 @@ export class TransferController extends EventEmitter {
     if (selectedAccountData) {
       if (this.#selectedAccountData?.addr !== selectedAccountData.addr) {
         this.#setAmount('')
+        this.selectedToken = null
       }
       this.#selectedAccountData = selectedAccountData
     }
