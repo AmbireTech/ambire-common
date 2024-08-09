@@ -635,11 +635,13 @@ export class MainController extends EventEmitter {
         throw new EmittableError({ message, level: 'major', error: new Error(message) })
       }
 
-      // The second time a connection gets requested onwards,
+      // Once a session with the Ledger device gets initiated, the user might
+      // use the device with another app. In this scenario, when coming back to
+      // Ambire (the second time a connection gets requested onwards),
       // the Ledger device throws with "invalid channel" error.
       // To overcome this, always make sure to clean up before starting
-      // a new session, if the device is already unlocked.
-      if (ledgerCtrl.sdkSession) await ledgerCtrl.cleanUp()
+      // a new session when retrieving keys, in case there already is one.
+      if (ledgerCtrl.walletSDK) await ledgerCtrl.cleanUp()
 
       await ledgerCtrl.unlock()
 
