@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-floating-promises */
 import fetch from 'node-fetch'
 
 import { expect, jest } from '@jest/globals'
@@ -12,19 +13,22 @@ const LOBSTER_ADDRESS = '0x026224A2940bFE258D0dbE947919B62fE321F042'
 const UNISWAP_ROUTER = '0xE592427A0AEce92De3Edee1F18E0157C05861564'
 
 global.fetch = fetch as any
-
+interface CallbackArgs {
+  nftInfo?: { name: string }
+  tokenInfo?: { decimals: number; symbol: string }
+}
 describe('Asset info service', () => {
   test('Fetches all tokens and NFTS correctly', async () => {
     jest.spyOn(assetInfo, 'executeBatchedFetch')
 
-    const wethCallback = jest.fn(({ tokenInfo }) =>
+    const wethCallback = jest.fn(({ tokenInfo }: CallbackArgs) =>
       expect(tokenInfo).toMatchObject({ symbol: 'WETH', decimals: 18 })
     )
 
-    const usdcCallback = jest.fn(({ tokenInfo }) => {
+    const usdcCallback = jest.fn(({ tokenInfo }: CallbackArgs) => {
       expect(tokenInfo).toMatchObject({ symbol: 'USDC', decimals: 6 })
     })
-    const lobsterCallback = jest.fn(({ nftInfo }) => {
+    const lobsterCallback = jest.fn(({ nftInfo }: CallbackArgs) => {
       expect(nftInfo).toMatchObject({ name: 'lobsterdao' })
     })
     const uniswapCallback = jest.fn((res: any) => {

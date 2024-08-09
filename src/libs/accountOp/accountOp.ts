@@ -2,6 +2,7 @@ import { AbiCoder, getBytes, keccak256 } from 'ethers'
 
 import { AccountId } from '../../interfaces/account'
 import { HumanizerFragment } from '../../interfaces/humanizer'
+// eslint-disable-next-line import/no-cycle
 import { Key } from '../../interfaces/keystore'
 import { NetworkId } from '../../interfaces/network'
 import { stringify } from '../richJson/richJson'
@@ -19,6 +20,8 @@ export interface GasFeePayment {
   isGasTank: boolean
   paidBy: string
   inToken: string
+  // optional, because older versions of the extension did not have this stored locally
+  networkId?: NetworkId
   amount: bigint
   simulatedGasLimit: bigint
   gasPrice: bigint
