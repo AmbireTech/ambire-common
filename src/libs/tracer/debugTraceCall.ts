@@ -61,31 +61,32 @@ export async function debugTraceCall(
     'gasPrice' in fast ? fast.gasPrice : fast.baseFeePerGas + fast.maxPriorityFeePerGas
 
   const params = getFunctionParams(account, op, accountState)
-  const results: any[] = await provider
-    .send('debug_traceCall', [
-      {
-        to: params.to,
-        value: toQuantity(params.value.toString()),
-        data: params.data,
-        from: params.from,
-        gasPrice: toQuantity(gasPrice.toString()),
-        gas: toQuantity(gasUsed.toString())
-      },
-      'latest',
-      {
-        tracer: `{
+  const results: ({ erc: 20; address: string } | { erc: 721; address: string; tokenId: string })[] =
+    await provider
+      .send('debug_traceCall', [
+        {
+          to: params.to,
+          value: toQuantity(params.value.toString()),
+          data: params.data,
+          from: params.from,
+          gasPrice: toQuantity(gasPrice.toString()),
+          gas: toQuantity(gasUsed.toString())
+        },
+        'latest',
+        {
+          tracer: `{
           data: [], 
           fault: function (log) {}, 
           step: function (log) { 
             if (log.op.toString() === 'LOG3') { 
               this.data.push(toHex({
-                type:"ERC-20",
+                erc: 20,
                 address: log.contract.getAddress()
               }))
             }
             if (log.op.toString() === 'LOG4') { 
               this.data.push({
-                type:"ERC-721",
+                erc: 721,
                 address: toHex(log.contract.getAddress()),
                 tokenId: '0x' + log.stack.peek(5).toString(16)
               })
@@ -96,35 +97,33 @@ export async function debugTraceCall(
           }
         }`,
 
-        enableMemory: false,
-        enableReturnData: true,
-        disableStorage: true,
-        stateOverrides: supportsStateOverride
-          ? {
-              [params.from]: {
-                balance: '0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff'
+          enableMemory: false,
+          enableReturnData: true,
+          disableStorage: true,
+          stateOverrides: supportsStateOverride
+            ? {
+                [params.from]: {
+                  balance: '0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff'
+                }
               }
-            }
-          : {}
-      }
-    ])
-    .catch((e) => {
-      console.log(e)
-      return [ZeroAddress]
-    })
+            : {}
+        }
+      ])
+      .catch((e) => {
+        console.log(e)
+        return [ZeroAddress]
+      })
 
-  const foundTokens = [
-    ...new Set(results.filter((i) => i?.type === 'ERC-20').map((i) => i.address))
-  ]
+  const foundTokens = [...new Set(results.filter((i) => i?.erc === 20).map((i) => i.address))]
   const foundNftTransfersObject = results
-    .filter((i) => i?.type === 'ERC-721')
+    .filter((i) => i?.erc === 721)
     .reduce((res: { [address: string]: Set<bigint> }, i: any) => {
       if (!res[i?.address]) res[i?.address] = new Set()
       res[i.address].add(i.tokenId)
       return res
     }, {})
   const foundNftTransfers: [string, bigint[]][] = Object.entries(foundNftTransfersObject).map(
-    ([k, v]) => [k, Array.from(v).map((i) => BigInt(i))]
+    ([address, id]) => [address, Array.from(id).map((i) => BigInt(i))]
   )
 
   // we set the 3rd param to "true" as we don't need state override
@@ -136,22 +135,19 @@ export async function debugTraceCall(
     from: DEPLOYLESS_SIMULATION_FROM,
     mode: DeploylessMode.ProxyContract
   }
-  const [tokensWithErr] = await deploylessTokens.call(
-    'getBalances',
-    [op.accountAddr, foundTokens],
-    opts
-  )
-
-  const [nftsWithErr] = await deploylessNfts.call(
-    'getAllNFTs',
-    [
-      op.accountAddr,
-      foundNftTransfers.map((i) => i[0]),
-      foundNftTransfers.map((i) => i[1]),
-      NFT_COLLECTION_LIMIT
-    ],
-    opts
-  )
+  const [[tokensWithErr], [nftsWithErr]] = await Promise.all([
+    deploylessTokens.call('getBalances', [op.accountAddr, foundTokens], opts),
+    deploylessNfts.call(
+      'getAllNFTs',
+      [
+        op.accountAddr,
+        foundNftTransfers.map((i) => i[0]),
+        foundNftTransfers.map((i) => i[1]),
+        NFT_COLLECTION_LIMIT
+      ],
+      opts
+    )
+  ])
   return {
     tokens: foundTokens.filter((addr, i) => tokensWithErr[i].error === '0x'),
     nfts: foundNftTransfers.filter((nft, i) => nftsWithErr[i].error === '0x')

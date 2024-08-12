@@ -736,7 +736,7 @@ export class PortfolioController extends EventEmitter {
     nftsData: [string, bigint[]][] | undefined,
     networkId: NetworkId
   ): Promise<boolean> {
-    if (!nftsData || !nftsData?.length) return false
+    if (!nftsData?.length) return false
     if (!this.#previousHints.learnedNfts) this.#previousHints.learnedNfts = {}
     const networkLearnedNfts: PreviousHintsStorage['learnedNfts'][''] =
       this.#previousHints.learnedNfts[networkId] || {}
