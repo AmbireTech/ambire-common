@@ -56,6 +56,7 @@ export const getAccountOpBanners = ({
         txnBanners.push({
           id: `${selectedAccount}-${netId}`,
           type: 'info',
+          category: 'pending-to-be-signed-acc-op',
           title: `Transaction waiting to be signed ${network.name ? `on ${network.name}` : ''}`,
           text: '', // TODO:
           actions: [
@@ -64,7 +65,8 @@ export const getAccountOpBanners = ({
               actionName: 'reject-accountOp',
               meta: {
                 err: 'User rejected the transaction request.',
-                actionId: action.id
+                actionId: action.id,
+                shouldOpenNextAction: false
               }
             },
             {

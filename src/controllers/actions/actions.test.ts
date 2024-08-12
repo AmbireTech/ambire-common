@@ -64,6 +64,10 @@ describe('Actions Controller', () => {
     sendWindowToastMessage: () => {}
   }
 
+  const notificationManager = {
+    create: () => Promise.resolve()
+  }
+
   const storage: Storage = produceMemoryStore()
   const accounts = [
     {
@@ -123,6 +127,7 @@ describe('Actions Controller', () => {
     actionsCtrl = new ActionsController({
       accounts: accountsCtrl,
       windowManager,
+      notificationManager,
       onActionWindowClose: () => {}
     })
     expect(actionsCtrl).toBeDefined()
@@ -189,8 +194,9 @@ describe('Actions Controller', () => {
       action: { kind: 'benzin' },
       meta: {
         isSignAction: true,
+        networkId: '',
         accountAddr: '0xAa0e9a1E2D2CcF2B867fda047bb5394BEF1883E0',
-        networkId: 'ethereum'
+        chainId: 1n
       }
     }
     const action3: BenzinAction = { id: req3.id, type: 'benzin', userRequest: req3 }

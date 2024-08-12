@@ -4,7 +4,15 @@ import humanizerInfo from '../../../../consts/humanizer/humanizerInfo.json'
 import { AccountOp } from '../../../accountOp/accountOp'
 import { HumanizerMeta } from '../../interfaces'
 import { compareHumanizerVisualizations } from '../../testHelpers'
-import { getAction, getChain, getDeadline, getLabel, getRecipientText, getToken } from '../../utils'
+import {
+  getAction,
+  getChain,
+  getDeadline,
+  getLabel,
+  getRecipientText,
+  getToken,
+  getTokenWithChain
+} from '../../utils'
 import AcrossModule from '.'
 
 const transactions = [
@@ -57,7 +65,7 @@ describe('Across', () => {
         getAction('Bridge'),
         getToken('0x3c499c542cef5e3811e1192ce70d8cc03d5c3359', 130592n),
         getLabel('for'),
-        getToken('0xaf88d065e77c8cC2239327C5EDb3A432268e5831', 107647n),
+        getTokenWithChain('0xaf88d065e77c8cC2239327C5EDb3A432268e5831', 107647n, ARBITRUM_CHAIN_ID),
         getLabel('to'),
         getChain(ARBITRUM_CHAIN_ID),
         getDeadline(1718657594n)

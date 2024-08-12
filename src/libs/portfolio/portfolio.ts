@@ -74,7 +74,7 @@ export class Portfolio {
     fetch: Fetch,
     provider: Provider | JsonRpcProvider,
     network: Network,
-    velcroUrl: string
+    velcroUrl?: string
   ) {
     this.batchedVelcroDiscovery = batcher(fetch, (queue) => {
       const baseCurrencies = [...new Set(queue.map((x) => x.data.baseCurrency))]
@@ -179,7 +179,6 @@ export class Portfolio {
       ? LIMITS.deploylessProxyMode
       : LIMITS.deploylessStateOverrideMode
     const collectionsHints = Object.entries(hints.erc721s)
-
     const [tokensWithErr, collectionsWithErr] = await Promise.all([
       flattenResults(
         paginate(hints.erc20s, limits.erc20).map((page) =>
@@ -192,6 +191,7 @@ export class Portfolio {
         )
       )
     ])
+
     const [tokensWithErrResult, blockNumber] = tokensWithErr
 
     // Re-map/filter into our format
@@ -293,7 +293,6 @@ export class Portfolio {
       })
     )
     const priceUpdateDone = Date.now()
-
     return {
       hintsFromExternalAPI: stripExternalHintsAPIResponse(hintsFromExternalAPI),
       errors,
@@ -307,7 +306,7 @@ export class Portfolio {
       tokenErrors: tokensWithErrResult
         .filter(([error, result]: [string, TokenResult]) => error !== '0x' || result.symbol === '')
         .map(([error, result]: [string, TokenResult]) => ({ error, address: result.address })),
-      collections: collections.filter((x) => x.collectibles?.length)
+      collections
     }
   }
 }
