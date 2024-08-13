@@ -1181,8 +1181,6 @@ export class MainController extends EventEmitter {
             a.accountOp.networkId === network.id
         ) as AccountOpAction | undefined
 
-        const hasAuthorized = !!currentAccountOpAction?.accountOp?.meta?.entryPointAuthorization
-
         this.activity.setFilters({
           account: account.addr,
           network: network.id
@@ -1192,10 +1190,11 @@ export class MainController extends EventEmitter {
             message.fromActionId === ENTRY_POINT_AUTHORIZATION_REQUEST_ID &&
             message.networkId === network.id
         )
-        if (
-          shouldAskForEntryPointAuthorization(network, account, accountState, hasAuthorized) &&
-          !entryPointAuthorizationMessageFromHistory
-        ) {
+        const hasAuthorized =
+          !!currentAccountOpAction?.accountOp?.meta?.entryPointAuthorization ||
+          !!entryPointAuthorizationMessageFromHistory
+
+        if (shouldAskForEntryPointAuthorization(network, account, accountState, hasAuthorized)) {
           await this.addEntryPointAuthorization(req, network, accountState, executionType)
           this.emitUpdate()
           return
