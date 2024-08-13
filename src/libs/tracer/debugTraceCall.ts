@@ -1,4 +1,4 @@
-import { Interface, JsonRpcProvider, toQuantity, ZeroAddress } from 'ethers'
+import { getAddress, Interface, JsonRpcProvider, toQuantity, ZeroAddress } from 'ethers'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json'
@@ -78,11 +78,11 @@ export async function debugTraceCall(
           data: [], 
           fault: function (log) {}, 
           step: function (log) { 
-            if (log.op.toString() === 'LOG3') { 
-              this.data.push(toHex({
+            if (log.op.toString() === 'LOG3') {
+              this.data.push({
                 erc: 20,
-                address: log.contract.getAddress()
-              }))
+                address: toHex(log.contract.getAddress())
+              })
             }
             if (log.op.toString() === 'LOG4') { 
               this.data.push({
@@ -114,7 +114,9 @@ export async function debugTraceCall(
         return [ZeroAddress]
       })
 
-  const foundTokens = [...new Set(results.filter((i) => i?.erc === 20).map((i) => i.address))]
+  const foundTokens = [
+    ...new Set(results.filter((i) => i?.erc === 20).map((i) => getAddress(i.address)))
+  ]
   const foundNftTransfersObject = results
     .filter((i) => i?.erc === 721)
     .reduce((res: { [address: string]: Set<bigint> }, i: any) => {
@@ -123,7 +125,7 @@ export async function debugTraceCall(
       return res
     }, {})
   const foundNftTransfers: [string, bigint[]][] = Object.entries(foundNftTransfersObject).map(
-    ([address, id]) => [address, Array.from(id).map((i) => BigInt(i))]
+    ([address, id]) => [getAddress(address), Array.from(id).map((i) => BigInt(i))]
   )
 
   // we set the 3rd param to "true" as we don't need state override
