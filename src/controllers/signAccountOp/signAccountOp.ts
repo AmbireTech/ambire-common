@@ -1,12 +1,24 @@
 /* eslint-disable no-restricted-syntax */
-import { AbiCoder, formatUnits, getAddress, Interface, toBeHex, ZeroAddress } from 'ethers'
+import {
+  AbiCoder,
+  formatEther,
+  formatUnits,
+  getAddress,
+  Interface,
+  toBeHex,
+  ZeroAddress
+} from 'ethers'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import ERC20 from '../../../contracts/compiled/IERC20.json'
 import EmittableError from '../../classes/EmittableError'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { AMBIRE_PAYMASTER, SINGLETON } from '../../consts/deploy'
-import { SA_ERC20_TRANSFER_GAS_USED, SA_NATIVE_TRANSFER_GAS_USED } from '../../consts/signAccountOp'
+import {
+  GAS_TANK_TRANSFER_GAS_USED,
+  SA_ERC20_TRANSFER_GAS_USED,
+  SA_NATIVE_TRANSFER_GAS_USED
+} from '../../consts/signAccountOp'
 import { Account } from '../../interfaces/account'
 import { Fetch } from '../../interfaces/fetch'
 import { ExternalSignerControllers, Key } from '../../interfaces/keystore'
@@ -849,16 +861,6 @@ export class SignAccountOpController extends EventEmitter {
 
   get gasSavedUSD(): number | null {
     if (!this.selectedOption?.token.flags.onGasTank) return null
-    if (!this.selectedOption.gasUsed) return null
-    const isNativeSelected = this.selectedOption.token.address === ZeroAddress
-    const gasUsedNative =
-      this.availableFeeOptions.find(
-        (option) => option.token.address === ZeroAddress && !option.token.flags.onGasTank
-      )?.gasUsed || SA_NATIVE_TRANSFER_GAS_USED
-    const gasUsedERC20 =
-      this.availableFeeOptions.find(
-        (option) => option.token.address !== ZeroAddress && !option.token.flags.onGasTank
-      )?.gasUsed || SA_ERC20_TRANSFER_GAS_USED
 
     const identifier = getFeeSpeedIdentifier(
       this.selectedOption,
@@ -871,20 +873,36 @@ export class SignAccountOpController extends EventEmitter {
     const gasPrice = selectedFeeSpeedData?.gasPrice
     if (!gasPrice) return null
 
-    const gasUsedWithoutGasTank = isNativeSelected ? gasUsedNative : gasUsedERC20
-
-    const gasSavedInTokenAmount = (gasUsedWithoutGasTank - this.selectedOption.gasUsed) * gasPrice
-    const gasSavedParsed = formatUnits(
-      gasSavedInTokenAmount,
-      Number(this.selectedOption.token.decimals)
+    // get the native token from the portfolio to calculate prices
+    const native = this.#portfolio.latest[this.accountOp.accountAddr][
+      this.accountOp.networkId
+    ]?.result?.tokens.find(
+      (token) => token.address === '0x0000000000000000000000000000000000000000'
     )
-    const price = this.selectedOption.token.priceIn[0]?.price
+    if (!native) return null
+    const nativePrice = native.priceIn.find((price) => price.baseCurrency === 'usd')?.price
+    if (!nativePrice) return null
 
-    if (!price) return null
+    // 4337 gasUsed is set to 0 in the estimation as we rely
+    // on the bundler for the estimation entirely => use hardcode value
+    const gasUsedSelectedOption =
+      this.selectedOption.gasUsed && this.selectedOption.gasUsed > 0n
+        ? this.selectedOption.gasUsed
+        : GAS_TANK_TRANSFER_GAS_USED
+    const isNativeSelected = this.selectedOption.token.address === ZeroAddress
+    const gasUsedNative =
+      this.availableFeeOptions.find(
+        (option) => option.token.address === ZeroAddress && !option.token.flags.onGasTank
+      )?.gasUsed || SA_NATIVE_TRANSFER_GAS_USED
+    const gasUsedERC20 =
+      this.availableFeeOptions.find(
+        (option) => option.token.address !== ZeroAddress && !option.token.flags.onGasTank
+      )?.gasUsed || SA_ERC20_TRANSFER_GAS_USED
 
-    const amountUsd = Number(gasSavedParsed) * price
+    const gasUsedWithoutGasTank = isNativeSelected ? gasUsedNative : gasUsedERC20
+    const gasSavedInNative = formatEther((gasUsedWithoutGasTank - gasUsedSelectedOption) * gasPrice)
 
-    return amountUsd
+    return Number(gasSavedInNative) * nativePrice
   }
 
   #setSigningError(error: string, type = SigningStatus.UnableToSign) {
