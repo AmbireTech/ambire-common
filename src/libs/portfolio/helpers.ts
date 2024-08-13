@@ -55,7 +55,10 @@ export function getFlags(
   )
 
   const canTopUpGasTank = foundFeeToken && !foundFeeToken?.disableGasTankDeposit
-  const isFeeToken = address === ZeroAddress || !!foundFeeToken
+  const isFeeToken =
+    address === ZeroAddress ||
+    (foundFeeToken && !foundFeeToken.disableGasTankUsage) ||
+    tokenNetwork === 'gasTank'
 
   return {
     onGasTank,
