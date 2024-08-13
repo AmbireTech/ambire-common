@@ -12,7 +12,6 @@ interface FeeOptions {
   elasticityMultiplier?: bigint
   baseFeeMaxChangeDenominator?: bigint
   feeIncrease?: bigint // should we increase the relayer fee in %
-  maxPriorityFee?: bigint
 }
 
 export interface NetworkInfo {
