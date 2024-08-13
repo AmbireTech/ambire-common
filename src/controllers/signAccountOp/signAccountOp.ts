@@ -714,9 +714,6 @@ export class SignAccountOpController extends EventEmitter {
               )
             : undefined
 
-        console.log('max priority')
-        console.log(maxPriorityFeePerGas)
-
         const gasPrice =
           'maxPriorityFeePerGas' in gasRecommendation
             ? (gasRecommendation as Gas1559Recommendation).baseFeePerGas + maxPriorityFeePerGas!
