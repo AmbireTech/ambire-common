@@ -590,25 +590,16 @@ export class SignAccountOpController extends EventEmitter {
   ): bigint {
     // when doing an RBF, make sure the min gas for the current speed
     // is at least 12% bigger than the previous speed
-    const prevSpeedGas =
-      prevSpeed && prevSpeed[gasPropertyName]
-        ? prevSpeed[gasPropertyName] + prevSpeed[gasPropertyName] / 8n
-        : 0n
-    const min = prevSpeedGas > calculatedGas ? prevSpeedGas : calculatedGas
+    const prevSpeedGas = prevSpeed ? prevSpeed[gasPropertyName] : undefined
+    const prevSpeedGasIncreased = prevSpeedGas ? prevSpeedGas + prevSpeedGas / 8n : 0n
+    const min = prevSpeedGasIncreased > calculatedGas ? prevSpeedGasIncreased : calculatedGas
 
     // if there was an error on the signed account op with a
     // replacement fee too low, we increase by 13% the signed account op
     // IF the new estimation is not actually higher
-    if (
-      this.replacementFeeLow &&
-      this.signedAccountOp &&
-      this.signedAccountOp.gasFeePayment &&
-      this.signedAccountOp.gasFeePayment[gasPropertyName]
-    ) {
-      const bumpFees =
-        this.signedAccountOp.gasFeePayment[gasPropertyName] +
-        this.signedAccountOp.gasFeePayment[gasPropertyName] / 8n +
-        this.signedAccountOp.gasFeePayment[gasPropertyName] / 100n
+    if (this.replacementFeeLow && this.signedAccountOp && this.signedAccountOp.gasFeePayment) {
+      const prevGas = this.signedAccountOp.gasFeePayment[gasPropertyName] ?? undefined
+      const bumpFees = prevGas ? prevGas + prevGas / 8n + prevGas / 100n : 0n
       return min > bumpFees ? min : bumpFees
     }
 
@@ -619,10 +610,8 @@ export class SignAccountOpController extends EventEmitter {
 
     // increase by a minimum of 13% the last broadcast txn and use that
     // or use the current gas estimation if it's more
-    const lastTxnGasPriceIncreased =
-      rbfOp.gasFeePayment[gasPropertyName] +
-      rbfOp.gasFeePayment[gasPropertyName] / 8n +
-      rbfOp.gasFeePayment[gasPropertyName] / 100n
+    const rbfGas = rbfOp.gasFeePayment[gasPropertyName] ?? 0n
+    const lastTxnGasPriceIncreased = rbfGas + rbfGas / 8n + rbfGas / 100n
     return min > lastTxnGasPriceIncreased ? min : lastTxnGasPriceIncreased
   }
 

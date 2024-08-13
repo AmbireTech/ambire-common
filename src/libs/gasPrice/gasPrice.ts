@@ -142,10 +142,12 @@ export async function getGasPriceRecommendations(
     }
 
     const tips = filterOutliers(txns.map((x) => x.maxPriorityFeePerGas!).filter((x) => x > 0))
+    console.log(tips)
     const fee: Gas1559Recommendation[] = []
     speeds.forEach(({ name, baseFeeAddBps }, i) => {
       const baseFee = expectedBaseFee + (expectedBaseFee * baseFeeAddBps) / 10000n
       let maxPriorityFeePerGas = average(nthGroup(tips, i, speeds.length))
+      console.log(maxPriorityFeePerGas)
 
       // set a bare minimum of 200n for maxPriorityFeePerGas
       maxPriorityFeePerGas = maxPriorityFeePerGas >= 200n ? maxPriorityFeePerGas : 200n
