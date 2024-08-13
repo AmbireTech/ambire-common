@@ -1,11 +1,24 @@
 /* eslint-disable no-restricted-syntax */
-import { AbiCoder, formatUnits, getAddress, Interface, toBeHex } from 'ethers'
+import {
+  AbiCoder,
+  formatEther,
+  formatUnits,
+  getAddress,
+  Interface,
+  toBeHex,
+  ZeroAddress
+} from 'ethers'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import ERC20 from '../../../contracts/compiled/IERC20.json'
 import EmittableError from '../../classes/EmittableError'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { AMBIRE_PAYMASTER, SINGLETON } from '../../consts/deploy'
+import {
+  GAS_TANK_TRANSFER_GAS_USED,
+  SA_ERC20_TRANSFER_GAS_USED,
+  SA_NATIVE_TRANSFER_GAS_USED
+} from '../../consts/signAccountOp'
 import { Account } from '../../interfaces/account'
 import { Fetch } from '../../interfaces/fetch'
 import { ExternalSignerControllers, Key } from '../../interfaces/keystore'
@@ -885,6 +898,52 @@ export class SignAccountOpController extends EventEmitter {
     return Object.values(FeeSpeed) as string[]
   }
 
+  get gasSavedUSD(): number | null {
+    if (!this.selectedOption?.token.flags.onGasTank) return null
+
+    const identifier = getFeeSpeedIdentifier(
+      this.selectedOption,
+      this.accountOp.accountAddr,
+      this.rbfAccountOps[this.selectedOption.paidBy]
+    )
+    const selectedFeeSpeedData = this.feeSpeeds[identifier].find(
+      (speed) => speed.type === this.selectedFeeSpeed
+    )
+    const gasPrice = selectedFeeSpeedData?.gasPrice
+    if (!gasPrice) return null
+
+    // get the native token from the portfolio to calculate prices
+    const native = this.#portfolio.latest[this.accountOp.accountAddr][
+      this.accountOp.networkId
+    ]?.result?.tokens.find(
+      (token) => token.address === '0x0000000000000000000000000000000000000000'
+    )
+    if (!native) return null
+    const nativePrice = native.priceIn.find((price) => price.baseCurrency === 'usd')?.price
+    if (!nativePrice) return null
+
+    // 4337 gasUsed is set to 0 in the estimation as we rely
+    // on the bundler for the estimation entirely => use hardcode value
+    const gasUsedSelectedOption =
+      this.selectedOption.gasUsed && this.selectedOption.gasUsed > 0n
+        ? this.selectedOption.gasUsed
+        : GAS_TANK_TRANSFER_GAS_USED
+    const isNativeSelected = this.selectedOption.token.address === ZeroAddress
+    const gasUsedNative =
+      this.availableFeeOptions.find(
+        (option) => option.token.address === ZeroAddress && !option.token.flags.onGasTank
+      )?.gasUsed || SA_NATIVE_TRANSFER_GAS_USED
+    const gasUsedERC20 =
+      this.availableFeeOptions.find(
+        (option) => option.token.address !== ZeroAddress && !option.token.flags.onGasTank
+      )?.gasUsed || SA_ERC20_TRANSFER_GAS_USED
+
+    const gasUsedWithoutGasTank = isNativeSelected ? gasUsedNative : gasUsedERC20
+    const gasSavedInNative = formatEther((gasUsedWithoutGasTank - gasUsedSelectedOption) * gasPrice)
+
+    return Number(gasSavedInNative) * nativePrice
+  }
+
   #setSigningError(error: string, type = SigningStatus.UnableToSign) {
     this.status = { type, error }
     this.emitUpdate()
@@ -1143,7 +1202,8 @@ export class SignAccountOpController extends EventEmitter {
       speedOptions: this.speedOptions,
       selectedOption: this.selectedOption,
       account: this.account,
-      errors: this.errors
+      errors: this.errors,
+      gasSavedUSD: this.gasSavedUSD
     }
   }
 }
