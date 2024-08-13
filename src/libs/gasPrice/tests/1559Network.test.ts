@@ -133,25 +133,25 @@ describe('1559 Network gas price tests', () => {
   test('should return the lowest maxPriorityFeePerGas for a block with less than 4 txns', async () => {
     const params = {
       transactions: [
-        { maxPriorityFeePerGas: 100n },
-        { maxPriorityFeePerGas: 98n },
-        { maxPriorityFeePerGas: 99n }
+        { maxPriorityFeePerGas: 300n },
+        { maxPriorityFeePerGas: 252n },
+        { maxPriorityFeePerGas: 252n }
       ]
     }
     const provider = MockProvider.init(params)
     const gasPrice = await getGasPriceRecommendations(provider, network)
     const expectations = {
       slow: {
-        maxPriorityFeePerGas: 98n
+        maxPriorityFeePerGas: 252n
       },
       medium: {
-        maxPriorityFeePerGas: 98n
+        maxPriorityFeePerGas: 283n // 12% more
       },
       fast: {
-        maxPriorityFeePerGas: 98n
+        maxPriorityFeePerGas: 318n // 12% more
       },
       ape: {
-        maxPriorityFeePerGas: 98n
+        maxPriorityFeePerGas: 357n // 12% more
       }
     }
     const slow: any = gasPrice[0]
@@ -163,74 +163,74 @@ describe('1559 Network gas price tests', () => {
     const ape: any = gasPrice[3]
     expect(ape.maxPriorityFeePerGas).toBe(expectations.ape.maxPriorityFeePerGas)
   })
-  test('makes a maxPriorityFeePerGas prediction with an empty block and returns 0n for maxPriorityFeePerGas', async () => {
+  test('makes a maxPriorityFeePerGas prediction with an empty block and returns 200n for slow as that is the minimum but 12% more for each after', async () => {
     const params = {
       transactions: []
     }
     const provider = MockProvider.init(params)
     const gasPrice = await getGasPriceRecommendations(provider, network)
     const slow: any = gasPrice[0]
-    expect(slow.maxPriorityFeePerGas).toBe(0n)
+    expect(slow.maxPriorityFeePerGas).toBe(200n)
     const medium: any = gasPrice[1]
-    expect(medium.maxPriorityFeePerGas).toBe(0n)
+    expect(medium.maxPriorityFeePerGas).toBe(225n)
     const fast: any = gasPrice[2]
-    expect(fast.maxPriorityFeePerGas).toBe(0n)
+    expect(fast.maxPriorityFeePerGas).toBe(253n)
     const ape: any = gasPrice[3]
-    expect(ape.maxPriorityFeePerGas).toBe(0n)
+    expect(ape.maxPriorityFeePerGas).toBe(284n)
   })
   test('should remove an outlier from a group of 17, making the group 16, and calculate average at a step of 4, disregarding none', async () => {
     const params = {
       transactions: [
-        { maxPriorityFeePerGas: 10n },
-        { maxPriorityFeePerGas: 10n },
-        { maxPriorityFeePerGas: 10n },
-        { maxPriorityFeePerGas: 10n },
-        { maxPriorityFeePerGas: 10n },
-        { maxPriorityFeePerGas: 10n },
-        { maxPriorityFeePerGas: 10n },
-        { maxPriorityFeePerGas: 10n },
-        { maxPriorityFeePerGas: 10n },
-        { maxPriorityFeePerGas: 10n },
-        { maxPriorityFeePerGas: 10n },
-        { maxPriorityFeePerGas: 50n },
-        { maxPriorityFeePerGas: 50n },
-        { maxPriorityFeePerGas: 50n },
-        { maxPriorityFeePerGas: 100n },
-        { maxPriorityFeePerGas: 100n },
-        { maxPriorityFeePerGas: 10000n } // removed as an outlier
+        { maxPriorityFeePerGas: 210n },
+        { maxPriorityFeePerGas: 210n },
+        { maxPriorityFeePerGas: 210n },
+        { maxPriorityFeePerGas: 210n },
+        { maxPriorityFeePerGas: 210n },
+        { maxPriorityFeePerGas: 210n },
+        { maxPriorityFeePerGas: 210n },
+        { maxPriorityFeePerGas: 210n },
+        { maxPriorityFeePerGas: 210n },
+        { maxPriorityFeePerGas: 210n },
+        { maxPriorityFeePerGas: 210n },
+        { maxPriorityFeePerGas: 250n },
+        { maxPriorityFeePerGas: 250n },
+        { maxPriorityFeePerGas: 300n },
+        { maxPriorityFeePerGas: 400n },
+        { maxPriorityFeePerGas: 400n },
+        { maxPriorityFeePerGas: 1000000n } // removed as an outlier
       ]
     }
     const provider = MockProvider.init(params)
     const gasPrice = await getGasPriceRecommendations(provider, network)
     const slow: any = gasPrice[0]
-    expect(slow.maxPriorityFeePerGas).toBe(10n)
+    expect(slow.maxPriorityFeePerGas).toBe(210n)
     const medium: any = gasPrice[1]
-    expect(medium.maxPriorityFeePerGas).toBe(10n)
+    expect(medium.maxPriorityFeePerGas).toBe(236n)
     const fast: any = gasPrice[2]
-    expect(fast.maxPriorityFeePerGas).toBe(20n)
+    expect(fast.maxPriorityFeePerGas).toBe(265n)
     const ape: any = gasPrice[3]
-    expect(ape.maxPriorityFeePerGas).toBe(75n)
+    expect(ape.maxPriorityFeePerGas).toBe(337n)
   })
   test('should remove outliers from a group of 19, making the group 15, and return an average for each speed at a step of 3 for slow, medium and fast, and an avg of the remaining 6 for ape', async () => {
     const params = {
       transactions: [
         { maxPriorityFeePerGas: 1n }, // removed as an outlier
         { maxPriorityFeePerGas: 1n }, // removed as an outlier
-        { maxPriorityFeePerGas: 100n },
-        { maxPriorityFeePerGas: 100n },
-        { maxPriorityFeePerGas: 100n },
-        { maxPriorityFeePerGas: 110n },
-        { maxPriorityFeePerGas: 110n },
-        { maxPriorityFeePerGas: 110n },
-        { maxPriorityFeePerGas: 110n },
-        { maxPriorityFeePerGas: 110n },
-        { maxPriorityFeePerGas: 110n },
-        { maxPriorityFeePerGas: 110n },
-        { maxPriorityFeePerGas: 120n },
-        { maxPriorityFeePerGas: 120n },
-        { maxPriorityFeePerGas: 120n },
-        { maxPriorityFeePerGas: 150n },
-        { maxPriorityFeePerGas: 150n },
+        { maxPriorityFeePerGas: 200n },
+        { maxPriorityFeePerGas: 200n },
+        { maxPriorityFeePerGas: 200n },
+        { maxPriorityFeePerGas: 210n },
+        { maxPriorityFeePerGas: 210n },
+        { maxPriorityFeePerGas: 210n },
+        { maxPriorityFeePerGas: 210n },
+        { maxPriorityFeePerGas: 210n },
+        { maxPriorityFeePerGas: 210n },
+        { maxPriorityFeePerGas: 210n },
+        { maxPriorityFeePerGas: 220n },
+        { maxPriorityFeePerGas: 220n },
+        { maxPriorityFeePerGas: 220n },
+        { maxPriorityFeePerGas: 250n },
+        { maxPriorityFeePerGas: 250n },
         { maxPriorityFeePerGas: 10000n }, // removed as an outlier
         { maxPriorityFeePerGas: 20000n } // removed as an outlier
       ]
@@ -238,13 +238,13 @@ describe('1559 Network gas price tests', () => {
     const provider = MockProvider.init(params)
     const gasPrice = await getGasPriceRecommendations(provider, network)
     const slow: any = gasPrice[0]
-    expect(slow.maxPriorityFeePerGas).toBe(100n)
+    expect(slow.maxPriorityFeePerGas).toBe(200n)
     const medium: any = gasPrice[1]
-    expect(medium.maxPriorityFeePerGas).toBe(110n)
+    expect(medium.maxPriorityFeePerGas).toBe(225n)
     const fast: any = gasPrice[2]
-    expect(fast.maxPriorityFeePerGas).toBe(110n)
+    expect(fast.maxPriorityFeePerGas).toBe(253n)
     const ape: any = gasPrice[3]
-    expect(ape.maxPriorityFeePerGas).toBe(128n)
+    expect(ape.maxPriorityFeePerGas).toBe(284n)
   })
   test('should remove 0s from maxPriorityFeePerGas but should keep 1s because they are not outliers, and should calculate an average of every group of 4 for slow, medium and fast, and an average of the remaining 5 for ape', async () => {
     const params = {
@@ -252,36 +252,36 @@ describe('1559 Network gas price tests', () => {
         { maxPriorityFeePerGas: 0n }, // removed because no 0s are allowed
         { maxPriorityFeePerGas: 0n }, // removed because no 0s are allowed
         { maxPriorityFeePerGas: 0n }, // removed because no 0s are allowed
-        { maxPriorityFeePerGas: 1n },
-        { maxPriorityFeePerGas: 1n },
-        { maxPriorityFeePerGas: 40n },
-        { maxPriorityFeePerGas: 40n },
-        { maxPriorityFeePerGas: 45n },
-        { maxPriorityFeePerGas: 50n },
-        { maxPriorityFeePerGas: 50n },
-        { maxPriorityFeePerGas: 50n },
-        { maxPriorityFeePerGas: 55n },
-        { maxPriorityFeePerGas: 55n },
-        { maxPriorityFeePerGas: 55n },
-        { maxPriorityFeePerGas: 55n },
-        { maxPriorityFeePerGas: 70n },
-        { maxPriorityFeePerGas: 70n },
-        { maxPriorityFeePerGas: 72n },
-        { maxPriorityFeePerGas: 85n },
-        { maxPriorityFeePerGas: 85n },
-        { maxPriorityFeePerGas: 500n }, // removed as an outlier
-        { maxPriorityFeePerGas: 500n } // removed as an outlier
+        { maxPriorityFeePerGas: 201n },
+        { maxPriorityFeePerGas: 201n },
+        { maxPriorityFeePerGas: 240n },
+        { maxPriorityFeePerGas: 240n },
+        { maxPriorityFeePerGas: 245n },
+        { maxPriorityFeePerGas: 250n },
+        { maxPriorityFeePerGas: 250n },
+        { maxPriorityFeePerGas: 250n },
+        { maxPriorityFeePerGas: 255n },
+        { maxPriorityFeePerGas: 255n },
+        { maxPriorityFeePerGas: 255n },
+        { maxPriorityFeePerGas: 255n },
+        { maxPriorityFeePerGas: 270n },
+        { maxPriorityFeePerGas: 270n },
+        { maxPriorityFeePerGas: 272n },
+        { maxPriorityFeePerGas: 285n },
+        { maxPriorityFeePerGas: 285n },
+        { maxPriorityFeePerGas: 2500n }, // removed as an outlier
+        { maxPriorityFeePerGas: 2500n } // removed as an outlier
       ]
     }
     const provider = MockProvider.init(params)
     const gasPrice = await getGasPriceRecommendations(provider, network)
     const slow: any = gasPrice[0]
-    expect(slow.maxPriorityFeePerGas).toBe(20n)
+    expect(slow.maxPriorityFeePerGas).toBe(220n)
     const medium: any = gasPrice[1]
-    expect(medium.maxPriorityFeePerGas).toBe(48n)
+    expect(medium.maxPriorityFeePerGas).toBe(248n)
     const fast: any = gasPrice[2]
-    expect(fast.maxPriorityFeePerGas).toBe(55n)
+    expect(fast.maxPriorityFeePerGas).toBe(279n)
     const ape: any = gasPrice[3]
-    expect(ape.maxPriorityFeePerGas).toBe(76n)
+    expect(ape.maxPriorityFeePerGas).toBe(313n)
   })
 })

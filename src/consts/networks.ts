@@ -63,8 +63,7 @@ const networks: Network[] = [
     feeOptions: {
       is1559: true,
       elasticityMultiplier: 6n,
-      baseFeeMaxChangeDenominator: 50n,
-      maxPriorityFee: 100n
+      baseFeeMaxChangeDenominator: 50n
     },
     isOptimistic: true,
     predefined: true,
@@ -117,8 +116,7 @@ const networks: Network[] = [
     features: [],
     feeOptions: {
       is1559: true,
-      minBaseFee: 100000000n, // 1 gwei
-      maxPriorityFee: 100n
+      minBaseFee: 100000000n // 1 gwei
     },
     predefined: true,
     wrappedAddr: '0x82af49447d8a07e3bd95bd0d56f35241523fbab1'
