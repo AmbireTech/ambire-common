@@ -83,6 +83,8 @@ export interface PortfolioLibGetResult {
   hintsFromExternalAPI: Hints | null
   errors: ExtendedError[]
   blockNumber: number
+  beforeNonce: bigint
+  afterNonce: bigint
 }
 
 interface Total {

@@ -207,7 +207,7 @@ export async function getTokens(
   opts: Partial<GetOptions>,
   accountAddr: string,
   tokenAddrs: string[]
-): Promise<[TokenResult, number][]> {
+): Promise<[TokenResult, number, bigint, bigint][]> {
   const mapToken = (token: any, address: string) => {
     return {
       amount: token.amount,
@@ -295,6 +295,8 @@ export async function getTokens(
         }
       ]
     }),
-    blockNumber
+    blockNumber,
+    beforeNonce,
+    afterNonce
   ]
 }

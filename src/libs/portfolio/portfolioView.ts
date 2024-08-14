@@ -11,6 +11,13 @@ interface AccountPortfolio {
   collections: CollectionResultInterface[]
   totalAmount: number
   isAllReady: boolean
+  portfolioNonces: { [networkId: string]: bigint }
+  tokenAmounts: {
+    latestAmount: bigint
+    pendingAmount: bigint
+    address: string
+    networkId: string
+  }[]
 }
 
 export function calculateAccountPortfolio(
@@ -30,7 +37,9 @@ export function calculateAccountPortfolio(
       tokens: accountPortfolio?.tokens || [],
       collections: accountPortfolio?.collections || [],
       totalAmount: accountPortfolio?.totalAmount || 0,
-      isAllReady: true
+      isAllReady: true,
+      portfolioNonces: accountPortfolio?.portfolioNonces || {},
+      tokenAmounts: accountPortfolio?.tokenAmounts || []
     }
   }
 
@@ -44,7 +53,9 @@ export function calculateAccountPortfolio(
       tokens: accountPortfolio?.tokens || [],
       collections: accountPortfolio?.collections || [],
       totalAmount: accountPortfolio?.totalAmount || 0,
-      isAllReady: false
+      isAllReady: false,
+      portfolioNonces: accountPortfolio?.portfolioNonces || {},
+      tokenAmounts: accountPortfolio?.tokenAmounts || []
     }
   }
 
@@ -112,10 +123,45 @@ export function calculateAccountPortfolio(
     }
   })
 
+  const portfolioNonces = Object.keys(state.pending[selectedAccount]).reduce((acc, networkId) => {
+    const beforeNonce = state.pending[selectedAccount!][networkId]?.result?.beforeNonce
+    if (beforeNonce !== undefined) {
+      acc[networkId] = beforeNonce
+    }
+
+    return acc
+  }, {} as { [networkId: string]: bigint })
+
+  const tokenAmounts = Object.keys(state.pending[selectedAccount]).reduce((acc, networkId) => {
+    const pendingTokens = state.pending[selectedAccount!][networkId]?.result?.tokens
+
+    if (!pendingTokens) return acc
+
+    const mergedTokens = pendingTokens.map((pendingToken) => {
+      const latestToken = state.latest[selectedAccount!][networkId]?.result?.tokens.find(
+        (_latestToken) => {
+          return _latestToken.address === pendingToken.address
+        }
+      )
+
+      return {
+        latestAmount: latestToken!.amount,
+        pendingAmount: pendingToken.amount,
+        address: latestToken!.address,
+        networkId
+      }
+    })
+
+    return [...acc, ...mergedTokens]
+  }, [] as { latestAmount: bigint; pendingAmount: bigint; address: string; networkId: string }[])
+
   return {
     totalAmount: newTotalAmount,
     tokens: updatedTokens,
     collections: updatedCollections,
-    isAllReady: allReady
+    isAllReady: allReady,
+    // TODO: Docs. Better naming.
+    portfolioNonces,
+    tokenAmounts
   }
 }

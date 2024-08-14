@@ -546,6 +546,45 @@ export class ActivityController extends EventEmitter {
       .filter((accountOp) => accountOp.status === AccountOpStatus.BroadcastedButNotConfirmed)
   }
 
+  // TODO: Documentation. Here, we retrieve nonces that are either already confirmed and known, or those that have been broadcasted and are in the process of being confirmed.
+  //   We use this information to determine the token's pending badge status (whether it is pending-to-be-confirmed or pending-to-be-signed).
+  //   By knowing the latest AccOp nonce, we can compare it with the portfolio's pending simulation nonce. If the ActivityNonce is higher,
+  //   we can conclude that the badge is pending-to-be-confirmed. In all other cases, if the portfolio nonce is newer, then the badge is still pending-to-be-signed.
+  // TODO: Document the reason for relying on this workaround instead of the RPC's pending/latest state.
+  get lastKnownNonce(): { [networkId: string]: bigint } {
+    // Here we don't rely on `this.isInitialized` flag, as it checks for both `this.filters.account` and `this.filters.network` existence.
+    // Banners are network agnostic, and that's the reason we check for `this.filters.account` only and having this.#accountsOps loaded.
+    if (!this.#accounts.selectedAccount || !this.#accountsOps[this.#accounts.selectedAccount])
+      return {}
+
+    return Object.values(this.#accountsOps[this.#accounts.selectedAccount])
+      .flat()
+      .reduce(
+        (acc, accountOp) => {
+          const successStatuses = [
+            AccountOpStatus.BroadcastedButNotConfirmed,
+            AccountOpStatus.Success,
+            AccountOpStatus.UnknownButPastNonce
+          ]
+
+          if (!successStatuses.includes(accountOp.status!)) return acc
+
+          if (!acc[accountOp.networkId]) {
+            acc[accountOp.networkId] = accountOp.nonce
+          } else {
+            acc[accountOp.networkId] =
+              accountOp.nonce > acc[accountOp.networkId]
+                ? accountOp.nonce
+                : acc[accountOp.networkId]
+          }
+
+          return acc
+        },
+
+        {} as { [networkId: string]: bigint }
+      )
+  }
+
   get banners(): Banner[] {
     if (!this.#networks.isInitialized) return []
     return this.broadcastedButNotConfirmed.map((accountOp) => {
@@ -624,6 +663,7 @@ export class ActivityController extends EventEmitter {
       ...this,
       ...super.toJSON(),
       broadcastedButNotConfirmed: this.broadcastedButNotConfirmed, // includes the getter in the stringified instance
+      lastKnownNonce: this.lastKnownNonce,
       banners: this.banners // includes the getter in the stringified instance
     }
   }

@@ -221,7 +221,10 @@ export class MainController extends EventEmitter {
       this.networks,
       async (toAccountAddr: string) => {
         this.activity.init()
-        await this.updateSelectedAccountPortfolio()
+        // TODO: To be determined. In all other instances, we always fetch the pending state, but here we omitted it.
+        //   We should verify if this was done intentionally.
+        //   If we don't fetch it here, we can handle the latest/pending token delta for pending-to-be-confirmed badge.
+        await this.updateSelectedAccountPortfolio(true)
         // forceEmitUpdate to update the getters in the FE state of the ctrl
         await this.forceEmitUpdate()
         await this.actions.forceEmitUpdate()
@@ -303,7 +306,10 @@ export class MainController extends EventEmitter {
     await this.networks.initialLoadPromise
     await this.providers.initialLoadPromise
     await this.accounts.initialLoadPromise
-    this.updateSelectedAccountPortfolio()
+    // TODO: To be determined. In all other instances, we always fetch the pending state, but here we omitted it.
+    //   We should verify if this was done intentionally.
+    //   If we don't fetch it here, we can handle the latest/pending token delta for pending-to-be-confirmed badge.
+    this.updateSelectedAccountPortfolio(true)
 
     /**
      * Listener that gets triggered as a finalization step of adding new
