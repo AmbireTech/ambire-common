@@ -388,8 +388,6 @@ export class ActivityController extends EventEmitter {
               // if there's no receipt, confirm there's a txn
               // if there's no txn and 15 minutes have passed, declare it a failure
               const txn = await provider.getTransaction(txnId)
-              console.log('the found txn')
-              console.log(txn)
               if (!txn) declareStuckIfQuaterPassed(accountOp)
               else return
             } catch {
