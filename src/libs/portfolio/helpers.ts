@@ -59,7 +59,7 @@ export function getFlags(
     address === ZeroAddress ||
     // disable if not in gas tank
     (foundFeeToken && !foundFeeToken.disableGasUsage) ||
-    tokenNetwork === 'gasTank'
+    networkId === 'gasTank'
 
   return {
     onGasTank,
