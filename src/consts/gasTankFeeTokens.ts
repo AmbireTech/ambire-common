@@ -171,7 +171,7 @@ export default [
     address: '0x47Cd7E91C3CBaAF266369fe8518345fc4FC12935',
     disableGasTankDeposit: true,
     // disable if not in gas tank
-    disableGasUsage: true,
+    disableAsFeeToken: true,
     symbol: 'xwallet',
     networkId: 'ethereum',
     decimals: 18,
