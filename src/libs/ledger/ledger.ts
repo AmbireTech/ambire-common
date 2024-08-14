@@ -27,5 +27,24 @@ export const normalizeLedgerMessage = (error?: string): string => {
     return 'Rejected by your Ledger device.'
   }
 
-  return `Could not connect to your Ledger device. Please close any other apps that may be trying to access your Ledger device (including wallet apps installed on your computer and web apps). Device error: ${error}`
+  return `Could not connect to your Ledger device. Please close any other apps that may be accessing your Ledger device (including wallet apps on your computer and web apps). Ensure your Ledger device is connected and responsive. Device error: ${error}`
+}
+
+/**
+ * Handles the scenario where Ledger device hangs indefinitely during an
+ * operation. Happens in some cases when the Ledger device gets connected to
+ * Ambire, then another app is accessing the Ledger device and then user comes
+ * back to Ambire (without unplug-plugging the Ledger).
+ */
+const TIMEOUT_FOR_LEDGER_OPERATION = 5000
+export const withLedgerTimeoutProtection = async <T>(operation: () => Promise<T>): Promise<T> => {
+  const timeout = new Promise<never>((_, reject) => {
+    setTimeout(() => {
+      const message =
+        'Could not connect to your Ledger device for an extended period. Please close any other apps that may be accessing your Ledger device (including wallet apps on your computer and web apps). Ensure your Ledger device is connected and responsive.'
+      reject(new Error(message))
+    }, TIMEOUT_FOR_LEDGER_OPERATION)
+  })
+
+  return Promise.race([operation(), timeout])
 }
