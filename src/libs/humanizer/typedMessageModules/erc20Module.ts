@@ -1,8 +1,10 @@
-import { TypedMessage } from '../../../interfaces/userRequest'
+import { Message } from '../../../interfaces/userRequest'
 import { HumanizerTypedMessageModule, HumanizerVisualization } from '../interfaces'
 import { getAction, getAddressVisualization, getDeadline, getLabel, getToken } from '../utils'
 
-export const erc20Module: HumanizerTypedMessageModule = (tm: TypedMessage) => {
+export const erc20Module: HumanizerTypedMessageModule = (message: Message) => {
+  if (message.content.kind !== 'typedMessage') return { fullVisualization: [] }
+  const tm = message.content
   if (tm.types.Permit && tm.primaryType === 'Permit') {
     if (
       tm.message.owner &&

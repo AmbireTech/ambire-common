@@ -126,7 +126,7 @@ const sharedHumanization = async <InputDataType extends AccountOp | Message>(
       const irMessage: IrMessage = {
         ...message!,
         ...(message!.content.kind === 'typedMessage'
-          ? humanizeTypedMessage(humanizerTMModules, message!.content)
+          ? humanizeTypedMessage(humanizerTMModules, message!)
           : humanizePlainTextMessage(message!.content))
       }
 

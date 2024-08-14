@@ -1,4 +1,4 @@
-import { TypedMessage } from '../../../interfaces/userRequest'
+import { Message } from '../../../interfaces/userRequest'
 import { HumanizerTypedMessageModule, HumanizerVisualization } from '../interfaces'
 import { getAction, getAddressVisualization, getDeadline, getLabel, getToken } from '../utils'
 
@@ -17,7 +17,9 @@ const visualizePermit = (
   if (getDeadline(deadline)) res.push(getDeadline(deadline) as HumanizerVisualization)
   return res
 }
-export const erc721Module: HumanizerTypedMessageModule = (tm: TypedMessage) => {
+export const erc721Module: HumanizerTypedMessageModule = (message: Message) => {
+  if (message.content.kind !== 'typedMessage') return { fullVisualization: [] }
+  const tm = message.content
   if (tm.types.Permit && tm.primaryType === 'Permit') {
     if (tm.message.spender && tm.message.tokenId && tm.message.nonce && tm.message.deadline) {
       return {
