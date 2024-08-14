@@ -7,6 +7,8 @@ export interface KeyIterator {
   subType?: 'seed' | 'private-key'
   /** The wallet native SDK instance, if any exists */
   walletSDK?: any
+  /** The wallet controller, for the hardware wallets only */
+  controller?: any
   /** Retrieves the the public addresses (accounts) from specific indexes */
   retrieve: (
     fromToArr: { from: number; to: number }[],
