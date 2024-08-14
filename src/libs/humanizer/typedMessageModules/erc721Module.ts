@@ -20,16 +20,21 @@ const visualizePermit = (
 export const erc721Module: HumanizerTypedMessageModule = (message: Message) => {
   if (message.content.kind !== 'typedMessage') return { fullVisualization: [] }
   const tm = message.content
-  if (tm.types.Permit && tm.primaryType === 'Permit') {
-    if (tm.message.spender && tm.message.tokenId && tm.message.nonce && tm.message.deadline) {
-      return {
-        fullVisualization: visualizePermit(
-          tm.message.spender,
-          tm.message.tokenId,
-          tm.message.deadline,
-          tm.domain.verifyingContract as string
-        )
-      }
+  if (
+    tm.types.Permit &&
+    tm.primaryType === 'Permit' &&
+    tm.message.spender &&
+    tm.message.tokenId &&
+    tm.message.nonce &&
+    tm.message.deadline
+  ) {
+    return {
+      fullVisualization: visualizePermit(
+        tm.message.spender,
+        tm.message.tokenId,
+        tm.message.deadline,
+        tm.domain.verifyingContract as string
+      )
     }
   }
   return { fullVisualization: [] }
