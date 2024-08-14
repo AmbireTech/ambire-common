@@ -27,5 +27,8 @@ export const normalizeLedgerMessage = (error?: string): string => {
     return 'Rejected by your Ledger device.'
   }
 
+  // Indicates a custom timeout error, no need to normalize
+  if (error.includes('Could not connect to your Ledger device for an extended period')) return error
+
   return `Could not connect to your Ledger device. Please close any other apps that may be accessing your Ledger device (including wallet apps on your computer and web apps). Ensure your Ledger is responsive. Unplug and plug it again. Device error: ${error}`
 }
