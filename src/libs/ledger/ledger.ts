@@ -27,5 +27,5 @@ export const normalizeLedgerMessage = (error?: string): string => {
     return 'Rejected by your Ledger device.'
   }
 
-  return error
+  return `Could not connect to your Ledger device. Please close any other apps that may be trying to access your Ledger device (including wallet apps installed on your computer and web apps). Device error: ${error}`
 }
