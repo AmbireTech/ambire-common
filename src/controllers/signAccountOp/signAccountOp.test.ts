@@ -37,8 +37,7 @@ const providers = Object.fromEntries(
   networks.map((network) => [network.id, getRpcProvider(network.rpcUrls, network.chainId)])
 )
 
-// @TODO delete or uncomment this
-// global.structuredClone = structuredClone as any
+global.structuredClone = structuredClone as any
 
 const createAccountOp = (
   account: Account,
