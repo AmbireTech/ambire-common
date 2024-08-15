@@ -18,33 +18,33 @@ describe('Debug tracecall detection for transactions', () => {
   let state: AccountOnchainState
   beforeAll(async () => {
     account = {
-      addr: '0xd034DDc997283B8179A12fE8d36a7356F01f2Ddd',
+      addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
       initialPrivileges: [
         [
-          '0xdb26AEEa3B986887FEabA661dF6d211E725797A0',
+          '0xe5a4Dad2Ea987215460379Ab285DF87136E83BEA',
           '0x0000000000000000000000000000000000000000000000000000000000000002'
         ]
       ],
-      associatedKeys: ['0xdb26AEEa3B986887FEabA661dF6d211E725797A0'],
+      associatedKeys: ['0xe5a4Dad2Ea987215460379Ab285DF87136E83BEA'],
       creation: {
         factoryAddr: '0x26cE6745A633030A6faC5e64e41D21fb6246dc2d',
         bytecode:
           '0x7f00000000000000000000000000000000000000000000000000000000000000027fa27fd83f65c3d89187ef0fd4fe62738d42ec134f8b2d8bf78612bd1cad581bb5553d602d80604d3d3981f3363d3d373d3d3d363d730f2aa7bcda3d9d210df69a394b6965cb2566c8285af43d82803e903d91602b57fd5bf3',
         salt: '0x0000000000000000000000000000000000000000000000000000000000000000'
       },
-      preferences: { label: 'TEST SMART', pfp: '0xd034DDc997283B8179A12fE8d36a7356F01f2Ddd' },
+      preferences: { label: 'TEST SMART', pfp: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8' },
       // usedOnNetworks: [],
       newlyCreated: false,
       newlyAdded: false
     }
     accountOp = {
-      accountAddr: '0xd034DDc997283B8179A12fE8d36a7356F01f2Ddd',
+      accountAddr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
       networkId: 'polygon',
-      signingKeyAddr: '0xdb26AEEa3B986887FEabA661dF6d211E725797A0',
+      signingKeyAddr: '0xe5a4Dad2Ea987215460379Ab285DF87136E83BEA',
       signingKeyType: 'internal',
       gasLimit: null,
       gasFeePayment: {
-        paidBy: '0xd034DDc997283B8179A12fE8d36a7356F01f2Ddd',
+        paidBy: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
         isERC4337: false,
         isGasTank: false,
         inToken: '0x0000000000000000000000000000000000000000',
@@ -65,12 +65,12 @@ describe('Debug tracecall detection for transactions', () => {
       ]
     }
     state = {
-      accountAddr: '0xd034DDc997283B8179A12fE8d36a7356F01f2Ddd',
+      accountAddr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
       nonce: 1n,
       erc4337Nonce: 115792089237316195423570985008687907853269984665640564039457584007913129639935n,
       isDeployed: true,
       associatedKeysPriviliges: {
-        '0xdb26AEEa3B986887FEabA661dF6d211E725797A0':
+        '0xe5a4Dad2Ea987215460379Ab285DF87136E83BEA':
           '0x0000000000000000000000000000000000000000000000000000000000000002'
       },
       isV2: true,
@@ -90,7 +90,7 @@ describe('Debug tracecall detection for transactions', () => {
         value: 0n,
         data: nftIface.encodeFunctionData(
           'transferFrom(address from, address to, uint256 tokenId)',
-          [account.addr, '0x73573bacB097a65786ebD7968e5775CbB89c7357', 3n]
+          [account.addr, '0xC2E6dFcc2C6722866aD65F211D5757e1D2879337', 3n]
         )
       },
       {
@@ -98,7 +98,7 @@ describe('Debug tracecall detection for transactions', () => {
         value: 0n,
         data: nftIface.encodeFunctionData(
           'transferFrom(address from, address to, uint256 tokenId)',
-          ['0x73573bacB097a65786ebD7968e5775CbB89c7357', account.addr, 2n]
+          ['0xC2E6dFcc2C6722866aD65F211D5757e1D2879337', account.addr, 4n]
         )
       },
       // usdt transfer
@@ -106,7 +106,7 @@ describe('Debug tracecall detection for transactions', () => {
         to: '0xc2132D05D31c914a87C6611C10748AEb04B58e8F',
         value: 0n,
         data: tokenIface.encodeFunctionData('transfer', [
-          '0x73573bacB097a65786ebD7968e5775CbB89c7357',
+          '0xC2E6dFcc2C6722866aD65F211D5757e1D2879337',
           1000000
         ])
       },
@@ -116,7 +116,7 @@ describe('Debug tracecall detection for transactions', () => {
         value: 0n,
         data: tokenIface.encodeFunctionData(
           'transferFrom(address from, address to, uint256 tokenId)',
-          ['0x73573bacB097a65786ebD7968e5775CbB89c7357', account.addr, 1000000]
+          ['0xd034DDc997283B8179A12fE8d36a7356F01f2Ddd', account.addr, 1]
         )
       }
     ]
@@ -134,7 +134,7 @@ describe('Debug tracecall detection for transactions', () => {
 
     expect(res.nfts.length).toBe(1)
     expect(res.nfts[0][0]).toBe('0xB7330C592dC5fEaFdA855867B1E172be3a8d4aBf')
-    expect(res.nfts[0][1]).toContain(2n)
+    expect(res.nfts[0][1]).toContain(4n)
     expect(res.nfts[0][1]).toContain(3n)
     expect(res.tokens.length).toBe(2)
     expect(res.tokens).toContain('0xc2132D05D31c914a87C6611C10748AEb04B58e8F')
