@@ -289,9 +289,9 @@ export class SignAccountOpController extends EventEmitter {
     }
 
     if (
-      this.selectedOption &&
-      this.accountOp.gasFeePayment &&
-      this.selectedOption.availableAmount < this.accountOp.gasFeePayment.amount
+      !this.selectedOption ||
+      (this.accountOp.gasFeePayment &&
+        this.selectedOption.availableAmount < this.accountOp.gasFeePayment.amount)
     ) {
       // show a different error message depending on whether SA/EOA
       errors.push(
