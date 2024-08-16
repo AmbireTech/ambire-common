@@ -136,15 +136,15 @@ export class KeyIterator implements KeyIteratorInterface {
           return []
         }
 
-        // Private keys for accounts used as smart account keys should be derived
+        // Before v4.31.0, private keys for accounts used as smart account keys
+        // were derived. That's no longer the case. Importing private keys
+        // does not generate smart accounts anymore.
         const isPrivateKeyThatShouldBeDerived =
-          !!this.#privateKey &&
-          isValidPrivateKey(this.#privateKey) &&
-          index >= SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET
+          isValidPrivateKey(this.#privateKey) && index >= SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET
         if (isPrivateKeyThatShouldBeDerived) {
           // Should never happen
           console.error(
-            'keyIterator: since v4.31.0, smart accounts are not derived from private keys'
+            'keyIterator: since v4.31.0, private keys should not be derived and importing them does not retrieve a smart account'
           )
           return []
         }
