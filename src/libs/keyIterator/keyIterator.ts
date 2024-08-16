@@ -77,11 +77,9 @@ export class KeyIterator implements KeyIteratorInterface {
 
       if (this.#privateKey) {
         const shouldDerive = from >= SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET
-        // Since v4.31.0, do not retrieve smart accounts for the private key
-        // type. That's because we can't use the common derivation offset
-        // (SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET), and deriving smart
-        // accounts out of the private key (with another approach - salt and
-        // extra entropy) was creating confusion.
+        // Before v4.31.0, private keys for accounts used as smart account keys
+        // were derived. That's no longer the case. Importing private keys
+        // does not generate smart accounts anymore.
         if (!shouldDerive) keys.push(new Wallet(this.#privateKey).address)
       }
 
