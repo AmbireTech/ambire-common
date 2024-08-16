@@ -29,3 +29,59 @@ export const joinWithAndLabel = (
 ): HumanizerVisualization[] => {
   return humanizations.reduce((acc, arr) => [...acc, ...arr, getLabel('and')], []).slice(0, -1)
 }
+
+export const uniReduce = (calls: HumanizerVisualization[][]): HumanizerVisualization[] => {
+  const reduced: HumanizerVisualization[][] = []
+  for (let i = 0; i < calls.length; i++) {
+    if (i === calls.length - 1) {
+      reduced.push(calls[i])
+      // eslint-disable-next-line no-continue
+      continue
+    }
+
+    const current = calls[i]
+    const next = calls[i + 1]
+    if (
+      current.length >= 4 &&
+      next.length === 2 &&
+      current[0].content?.includes('Swap') &&
+      next[0].content?.includes('Unwrap') &&
+      current[3].type === 'token' &&
+      next[1].type === 'token' &&
+      current[3].value === next[1].value &&
+      next[1].address === ZeroAddress
+    ) {
+      current[3].address = ZeroAddress
+      reduced.push(current)
+      i++
+    } else if (
+      current.length === 2 &&
+      next.length >= 4 &&
+      current[0].content?.includes('Wrap') &&
+      next[0].content?.includes('Swap') &&
+      current[1].type === 'token' &&
+      next[1].type === 'token' &&
+      current[1].value === next[1].value
+    ) {
+      next[1].address = ZeroAddress
+      reduced.push(next)
+      i++
+    } else if (
+      current.length >= 4 &&
+      next.length >= 4 &&
+      current[0].content?.includes('Swap') &&
+      next[0].content?.includes('Swap') &&
+      [current[1], current[3], next[1], next[3]].every((t) => t.type === 'token') &&
+      current[1].address === next[1].address &&
+      current[3].address === next[3].address
+    ) {
+      current[1].value! += next[1].value!
+      current[3].value! += next[3].value!
+      reduced.push(current)
+      i++
+    } else {
+      reduced.push(current)
+    }
+  }
+  return calls.length === reduced.length ? joinWithAndLabel(calls) : uniReduce(reduced)
+}

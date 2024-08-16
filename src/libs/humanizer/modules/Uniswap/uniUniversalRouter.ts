@@ -14,7 +14,7 @@ import {
 } from '../../utils'
 import { COMMANDS, COMMANDS_DESCRIPTIONS } from './Commands'
 import { HumanizerUniMatcher } from './interfaces'
-import { getUniRecipientText, joinWithAndLabel, parsePath } from './utils'
+import { getUniRecipientText, parsePath, uniReduce } from './utils'
 
 const coder = new AbiCoder()
 
@@ -188,7 +188,7 @@ export const uniUniversalRouter = (options?: any): HumanizerUniMatcher => {
           })
         : parsed.push(getUnknownVisualization('Uniswap V3', call))
 
-      return joinWithAndLabel(parsed)
+      return uniReduce(parsed)
     }
   }
 }
