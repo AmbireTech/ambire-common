@@ -24,7 +24,7 @@ import { Fetch } from '../../interfaces/fetch'
 import { ExternalSignerControllers, Key } from '../../interfaces/keystore'
 import { Network } from '../../interfaces/network'
 import { Storage } from '../../interfaces/storage'
-import { isSmartAccount } from '../../libs/account/account'
+import { isAmbireV1LinkedAccount, isSmartAccount } from '../../libs/account/account'
 import { AccountOp, GasFeePayment, getSignableCalls } from '../../libs/accountOp/accountOp'
 import { BundlerGasPrice, EstimateResult, FeePaymentOption } from '../../libs/estimate/interfaces'
 import {
@@ -253,6 +253,20 @@ export class SignAccountOpController extends EventEmitter {
 
     if (!this.isInitialized) return errors
 
+    const isAmbireV1 = isAmbireV1LinkedAccount(this.account?.creation?.factoryAddr)
+
+    const isAmbireV1AndNetworkNotSupported = isAmbireV1 && !this.#network?.hasRelayer
+
+    // This must be the first error check!
+    if (isAmbireV1AndNetworkNotSupported) {
+      errors.push(
+        'Ambire v1 accounts are not supported on this network. To interact with this network, please use an Ambire v2 Smart Account or a Basic Account. You can still use v1 accounts on any network that is natively integrated with the Ambire web and mobile wallets.'
+      )
+
+      // Don't show any other errors
+      return errors
+    }
+
     // if there's an estimation error, show it
     if (this.estimation?.error) {
       errors.push(this.estimation.error.message)
@@ -293,12 +307,29 @@ export class SignAccountOpController extends EventEmitter {
       this.accountOp.gasFeePayment &&
       this.selectedOption.availableAmount < this.accountOp.gasFeePayment.amount
     ) {
-      // show a different error message depending on whether SA/EOA
-      errors.push(
-        isSmartAccount(this.account)
-          ? "Signing is not possible with the selected account's token as it doesn't have sufficient funds to cover the gas payment fee."
-          : CRITICAL_ERRORS.eoaInsufficientFunds
+      const speedCoverage = []
+      const identifier = getFeeSpeedIdentifier(
+        this.selectedOption,
+        this.accountOp.accountAddr,
+        this.rbfAccountOps[this.selectedOption.paidBy]
       )
+
+      this.feeSpeeds[identifier].forEach((speed) => {
+        if (this.selectedOption && this.selectedOption.availableAmount >= speed.amount)
+          speedCoverage.push(speed.type)
+      })
+
+      if (speedCoverage.length === 0) {
+        errors.push(
+          isSmartAccount(this.account)
+            ? "Signing is not possible with the selected account's token as it doesn't have sufficient funds to cover the gas payment fee."
+            : CRITICAL_ERRORS.eoaInsufficientFunds
+        )
+      } else {
+        errors.push(
+          'The selected speed is not available due to insufficient funds. Please select a slower speed.'
+        )
+      }
     }
 
     // If signing fails, we know the exact error and aim to forward it to the remaining errors,
@@ -351,7 +382,13 @@ export class SignAccountOpController extends EventEmitter {
   }
 
   get readyToSign() {
-    return !!this.status && this.status?.type === SigningStatus.ReadyToSign
+    const criticalErrors = this.errors.filter(
+      (error) => !Object.values(NON_CRITICAL_ERRORS).includes(error)
+    )
+
+    return (
+      !!this.status && this.status?.type === SigningStatus.ReadyToSign && !criticalErrors.length
+    )
   }
 
   update({
