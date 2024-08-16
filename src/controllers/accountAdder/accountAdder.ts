@@ -675,11 +675,20 @@ export class AccountAdderController extends EventEmitter {
       [
         // Indices for the basic (EOA) accounts
         { from: startIdx, to: endIdx },
-        // Indices for the smart accounts
-        {
-          from: startIdx + SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET,
-          to: endIdx + SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET
-        }
+        // Indices for the smart accounts.
+        // Since v4.31.0, do not retrieve smart accounts for the private key
+        // type. That's because we can't use the common derivation offset
+        // (SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET), and deriving smart
+        // accounts out of the private key (with another approach - salt and
+        // extra entropy) was creating confusion.
+        ...(this.#keyIterator.type === 'private-key'
+          ? []
+          : [
+              {
+                from: startIdx + SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET,
+                to: endIdx + SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET
+              }
+            ])
       ],
       this.hdPathTemplate
     )
