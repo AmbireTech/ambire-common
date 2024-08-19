@@ -68,7 +68,7 @@ export enum SigningStatus {
 
 type UnableToSignStatus = {
   type: SigningStatus.UnableToSign
-  error: string
+  error?: string
 }
 
 export type Status =
@@ -334,7 +334,7 @@ export class SignAccountOpController extends EventEmitter {
 
     // If signing fails, we know the exact error and aim to forward it to the remaining errors,
     // as the application will exclusively render `signAccountOp.errors`.
-    if (this.status?.type === SigningStatus.UnableToSign) {
+    if (this.status?.type === SigningStatus.UnableToSign && this.status.error) {
       errors.push(this.status.error)
     }
 
@@ -382,13 +382,7 @@ export class SignAccountOpController extends EventEmitter {
   }
 
   get readyToSign() {
-    const criticalErrors = this.errors.filter(
-      (error) => !Object.values(NON_CRITICAL_ERRORS).includes(error)
-    )
-
-    return (
-      !!this.status && this.status?.type === SigningStatus.ReadyToSign && !criticalErrors.length
-    )
+    return !!this.status && this.status?.type === SigningStatus.ReadyToSign
   }
 
   update({
@@ -499,15 +493,20 @@ export class SignAccountOpController extends EventEmitter {
 
     // Here, we expect to have most of the fields set, so we can safely set GasFeePayment
     this.#setGasFeePayment()
-    this.updateStatusToReadyToSign()
+    this.updateStatus()
   }
 
-  updateStatusToReadyToSign(replacementFeeLow = false) {
+  updateStatus(replacementFeeLow = false) {
     const isInTheMiddleOfSigning = this.status?.type === SigningStatus.InProgress
 
     const criticalErrors = this.errors.filter(
       (error) => !Object.values(NON_CRITICAL_ERRORS).includes(error)
     )
+    if (criticalErrors.length) {
+      this.status = { type: SigningStatus.UnableToSign }
+      this.emitUpdate()
+      return
+    }
 
     if (
       this.isInitialized &&
@@ -990,7 +989,7 @@ export class SignAccountOpController extends EventEmitter {
     return Number(gasSavedInNative) * nativePrice
   }
 
-  #setSigningError(error: string, type = SigningStatus.UnableToSign) {
+  #setSigningError(error: string, type = SigningStatus.ReadyToSign) {
     this.status = { type, error }
     this.emitUpdate()
     throw new EmittableError({ message: error, level: 'silent', error: new Error(error) })
@@ -1232,7 +1231,7 @@ export class SignAccountOpController extends EventEmitter {
       this.emitUpdate()
       return this.signedAccountOp
     } catch (error: any) {
-      return this.#setSigningError(error?.message, SigningStatus.ReadyToSign)
+      return this.#setSigningError(error?.message)
     }
   }
 
