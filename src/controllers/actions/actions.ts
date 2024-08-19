@@ -121,6 +121,10 @@ export class ActionsController extends EventEmitter {
   }
 
   addOrUpdateAction(newAction: Action, withPriority?: boolean) {
+    if (withPriority) {
+      // remove the benzin action if a new actions is added
+      this.actionsQueue = this.actionsQueue.filter((a) => a.type !== 'benzin')
+    }
     const actionIndex = this.actionsQueue.findIndex((a) => a.id === newAction.id)
     if (actionIndex !== -1) {
       this.actionsQueue[actionIndex] = newAction
