@@ -102,11 +102,19 @@ export type ClaimableRewardsData = {
   signedRoot: string
 }
 
+export type AddrVestingData = {
+  addr: string
+  rate: string
+  start: string
+  end: string
+}
+
 // Create the final type with some properties optional
 export type AdditionalPortfolioNetworkResult = Partial<PortfolioLibGetResult> &
   Pick<PortfolioLibGetResult, AdditionalPortfolioProperties> & {
     total: Total
     claimableRewardsData?: ClaimableRewardsData
+    addrVestingData?: AddrVestingData 
   }
 
 type PortfolioNetworkResult = Required<AdditionalPortfolioNetworkResult>
