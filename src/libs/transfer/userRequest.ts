@@ -27,7 +27,7 @@ function buildMintVestingRequest({
   selectedAccount: string
   selectedToken: TokenResult
   addrVestingData: AddrVestingData
-}): SignUserRequest | null {
+}): SignUserRequest {
   const txn = {
     kind: 'calls' as Calls['kind'],
     calls: [
@@ -61,7 +61,7 @@ function buildClaimWalletRequest({
   selectedAccount: string
   selectedToken: TokenResult
   claimableRewardsData: ClaimableRewardsData
-}): SignUserRequest | null {
+}): SignUserRequest {
   const txn = {
     kind: 'calls' as Calls['kind'],
     calls: [
