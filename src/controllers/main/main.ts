@@ -611,15 +611,13 @@ export class MainController extends EventEmitter {
       this.actions.addOrUpdateAction(accountOpAction, true)
     }
 
+    await this.activity.addSignedMessage(signedMessage, signedMessage.accountAddr)
     await this.resolveUserRequest({ hash: signedMessage.signature }, signedMessage.fromActionId)
+
     await this.#notificationManager.create({
       title: 'Done!',
       message: 'The Message was successfully signed.'
     })
-
-    // TODO: In the rare case when this might error, the user won't be notified,
-    // since `this.resolveUserRequest` closes the action window.
-    await this.activity.addSignedMessage(signedMessage, signedMessage.accountAddr)
   }
 
   async #handleAccountAdderInitLedger(
@@ -650,7 +648,7 @@ export class MainController extends EventEmitter {
         throw new EmittableError({ message, level: 'major', error: new Error(message) })
       }
 
-      const keyIterator = new LedgerKeyIterator({ walletSDK: ledgerCtrl.walletSDK })
+      const keyIterator = new LedgerKeyIterator({ controller: ledgerCtrl })
       this.accountAdder.init({
         keyIterator,
         hdPathTemplate: BIP44_LEDGER_DERIVATION_TEMPLATE
@@ -2057,7 +2055,7 @@ export class MainController extends EventEmitter {
     const replacementFeeLow = error?.message.includes('replacement fee too low')
     // To enable another try for signing in case of broadcast fail
     // broadcast is called in the FE only after successful signing
-    this.signAccountOp?.updateStatusToReadyToSign(replacementFeeLow)
+    this.signAccountOp?.updateStatus(replacementFeeLow)
     if (replacementFeeLow) this.estimateSignAccountOp()
 
     this.feePayerKey = null
