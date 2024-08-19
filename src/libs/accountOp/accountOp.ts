@@ -158,7 +158,7 @@ export function isAccountOpsIntentEqual(
 }
 
 export function getSignableCalls(op: AccountOp): [string, string, string][] {
-  const callsToSign = op.calls.map((call: Call) => callToTuple(call))
+  const callsToSign = op.calls.map(toSingletonCall).map(callToTuple)
   if (op.activatorCall) callsToSign.push(callToTuple(op.activatorCall))
   if (op.feeCall) callsToSign.push(callToTuple(op.feeCall))
   return callsToSign
