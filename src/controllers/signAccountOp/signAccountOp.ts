@@ -272,8 +272,8 @@ export class SignAccountOpController extends EventEmitter {
       errors.push(this.estimation.error.message)
     }
 
-    const availableFeeOptions = this.availableFeeOptions
-    if (!availableFeeOptions.length) errors.push(CRITICAL_ERRORS.eoaInsufficientFunds)
+    // this error should never happen as availableFeeOptions should always have the native option
+    if (!this.availableFeeOptions.length) errors.push(CRITICAL_ERRORS.eoaInsufficientFunds)
 
     // This error should not happen, as in the update method we are always setting a default signer.
     // It may occur, only if there are no available signer.
@@ -923,7 +923,16 @@ export class SignAccountOpController extends EventEmitter {
     if (!this.isInitialized) return []
 
     // FeeOptions having amount
-    return this.estimation!.feePaymentOptions.filter((feeOption) => feeOption.availableAmount)
+    const withAmounts = this.estimation!.feePaymentOptions.filter(
+      (feeOption) => feeOption.availableAmount
+    )
+    if (withAmounts.length) return withAmounts
+
+    // if there are no fee options with amounts, return the native option
+    const native = this.estimation!.feePaymentOptions.find(
+      (feeOption) => feeOption.token.address === ZeroAddress
+    )
+    return native ? [native] : []
   }
 
   get accountKeyStoreKeys(): Key[] {
