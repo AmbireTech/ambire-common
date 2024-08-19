@@ -648,7 +648,7 @@ export class MainController extends EventEmitter {
         throw new EmittableError({ message, level: 'major', error: new Error(message) })
       }
 
-      const keyIterator = new LedgerKeyIterator({ walletSDK: ledgerCtrl.walletSDK })
+      const keyIterator = new LedgerKeyIterator({ controller: ledgerCtrl })
       this.accountAdder.init({
         keyIterator,
         hdPathTemplate: BIP44_LEDGER_DERIVATION_TEMPLATE

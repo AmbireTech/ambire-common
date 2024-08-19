@@ -477,7 +477,7 @@ export class AccountAdderController extends EventEmitter {
       }
     } catch (e: any) {
       this.emitError({
-        message: 'Retrieving accounts was canceled or failed.',
+        message: e?.message,
         error: e?.message || 'accountAdder: failed to derive accounts',
         level: 'major'
       })
