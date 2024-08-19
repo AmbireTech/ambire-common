@@ -11,7 +11,6 @@ import {
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import ERC20 from '../../../contracts/compiled/IERC20.json'
-import EmittableError from '../../classes/EmittableError'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { AMBIRE_PAYMASTER, SINGLETON } from '../../consts/deploy'
 import {
@@ -66,16 +65,10 @@ export enum SigningStatus {
   Done = 'done'
 }
 
-type UnableToSignStatus = {
-  type: SigningStatus.UnableToSign
-  error?: string
+export type Status = {
+  // @TODO: get rid of the object and just use the type
+  type: SigningStatus
 }
-
-export type Status =
-  | UnableToSignStatus
-  | {
-      type: Exclude<SigningStatus, SigningStatus.UnableToSign>
-    }
 
 export enum FeeSpeed {
   Slow = 'slow',
@@ -97,9 +90,11 @@ type SpeedCalc = {
 // declare the statuses we don't want state updates on
 const noStateUpdateStatuses = [SigningStatus.InProgress, SigningStatus.Done]
 
+/** Errors that don't prevent signing */
 const NON_CRITICAL_ERRORS = {
   feeUsdEstimation: 'Unable to estimate the transaction fee in USD.'
 }
+/** Technically all errors are critical, except NON_CRITICAL_ERRORS */
 const CRITICAL_ERRORS = {
   eoaInsufficientFunds: 'Insufficient funds to cover the fee.'
 }
@@ -330,12 +325,6 @@ export class SignAccountOpController extends EventEmitter {
           'The selected speed is not available due to insufficient funds. Please select a slower speed.'
         )
       }
-    }
-
-    // If signing fails, we know the exact error and aim to forward it to the remaining errors,
-    // as the application will exclusively render `signAccountOp.errors`.
-    if (this.status?.type === SigningStatus.UnableToSign && this.status.error) {
-      errors.push(this.status.error)
     }
 
     // The signing might fail, tell the user why but allow the user to retry signing,
@@ -992,10 +981,8 @@ export class SignAccountOpController extends EventEmitter {
     return Number(gasSavedInNative) * nativePrice
   }
 
-  #setSigningError(error: string, type = SigningStatus.ReadyToSign) {
-    this.status = { type, error }
-    this.emitUpdate()
-    throw new EmittableError({ message: error, level: 'silent', error: new Error(error) })
+  #emitSigningError(error: string) {
+    this.emitError({ level: 'major', message: error, error: new Error(error) })
   }
 
   #addFeePayment() {
@@ -1039,7 +1026,7 @@ export class SignAccountOpController extends EventEmitter {
   async sign() {
     if (!this.readyToSign) {
       const message = `Unable to sign the transaction. During the preparation step, the necessary transaction data was not received. ${RETRY_TO_INIT_ACCOUNT_OP_MSG}`
-      return this.#setSigningError(message)
+      return this.#emitSigningError(message)
     }
 
     // when signing begings, we stop immediatelly state updates on the controller
@@ -1048,12 +1035,12 @@ export class SignAccountOpController extends EventEmitter {
 
     if (!this.accountOp?.signingKeyAddr || !this.accountOp?.signingKeyType) {
       const message = `Unable to sign the transaction. During the preparation step, required signing key information was found missing. ${RETRY_TO_INIT_ACCOUNT_OP_MSG}`
-      return this.#setSigningError(message)
+      return this.#emitSigningError(message)
     }
 
     if (!this.accountOp?.gasFeePayment) {
       const message = `Unable to sign the transaction. During the preparation step, required information about paying the gas fee was found missing. ${RETRY_TO_INIT_ACCOUNT_OP_MSG}`
-      return this.#setSigningError(message)
+      return this.#emitSigningError(message)
     }
 
     const signer = await this.#keystore.getSigner(
@@ -1062,7 +1049,7 @@ export class SignAccountOpController extends EventEmitter {
     )
     if (!signer) {
       const message = `Unable to sign the transaction. During the preparation step, required account key information was found missing. ${RETRY_TO_INIT_ACCOUNT_OP_MSG}`
-      return this.#setSigningError(message)
+      return this.#emitSigningError(message)
     }
 
     // we update the FE with the changed status (in progress) only after the checks
@@ -1108,7 +1095,7 @@ export class SignAccountOpController extends EventEmitter {
         if (this.accountOp.calls.length !== 1) {
           const callCount = this.accountOp.calls.length > 1 ? 'multiple' : 'zero'
           const message = `Unable to sign the transaction because it has ${callCount} calls. ${RETRY_TO_INIT_ACCOUNT_OP_MSG}`
-          return this.#setSigningError(message)
+          return this.#emitSigningError(message)
         }
 
         // In legacy mode, we sign the transaction directly.
@@ -1131,7 +1118,7 @@ export class SignAccountOpController extends EventEmitter {
           !accountState.isDeployed &&
           (!this.accountOp.meta || !this.accountOp.meta.entryPointAuthorization)
         )
-          return this.#setSigningError(
+          return this.#emitSigningError(
             `Unable to sign the transaction because entry point privileges were not granted. ${RETRY_TO_INIT_ACCOUNT_OP_MSG}`
           )
 
@@ -1234,7 +1221,7 @@ export class SignAccountOpController extends EventEmitter {
       this.emitUpdate()
       return this.signedAccountOp
     } catch (error: any) {
-      return this.#setSigningError(error?.message)
+      return this.#emitSigningError(error?.message)
     }
   }
 
