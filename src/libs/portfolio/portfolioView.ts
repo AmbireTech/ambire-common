@@ -59,9 +59,11 @@ export function calculateAccountPortfolio(
     )
       return acc
 
-    // Filter out networks with critical errors
-    // and pending state which is with newer blockNumber
-    // or has sign account op
+    // Filter out networks with critical errors.
+    // Additionally, use the pending state if either of the following conditions is true:
+    // - The pending block number is newer than the latest. Keep in mind that we always update both the latest and pending portfolio state,
+    //   regardless of whether we have an acc op for simulation or not. Because of this, if the pending state is newer, we use it in place of the latest state.
+    // - We have a signed acc op, meaning we are performing a simulation and want to visualize pending badges (pending-to-be-confirmed and pending-to-be-signed).
     const isPendingNewer =
       state.pending[selectedAccount][network]?.result?.blockNumber! >=
       selectedAccountData[network]?.result?.blockNumber!

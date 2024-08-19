@@ -24,19 +24,21 @@ export interface ExternalSignerController {
   deviceId: string
   isUnlocked: (path?: string, expectedKeyOnThisPath?: string) => boolean
   unlock: (
-    path?: ReturnType<typeof getHdPathFromTemplate>
+    path?: ReturnType<typeof getHdPathFromTemplate>,
+    expectedKeyOnThisPath?: string,
+    shouldOpenLatticeConnectorInTab?: boolean // Lattice specific
   ) => Promise<'ALREADY_UNLOCKED' | 'JUST_UNLOCKED'>
   unlockedPath: string
   unlockedPathKeyAddr: string
+  walletSDK?: any // Either the wallet own SDK or its session, each wallet having specifics
   cleanUp: () => void // Trezor and Ledger specific
   isInitiated?: boolean // Trezor specific
   initialLoadPromise?: Promise<void> // Trezor specific
-  walletSDK?: any // Ledger and Trezor specific.
+  retrieveAddresses: (paths: string[]) => Promise<string[]> // Ledger specific
   // TODO: Refine the rest of the props
   isWebHID?: boolean // Ledger specific
   transport?: any // Ledger specific
   appName?: string // Lattice specific
-  sdkSession?: any // Lattice specific
   creds?: any // Lattice specific
   network?: any // Lattice specific
 }

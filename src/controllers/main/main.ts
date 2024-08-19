@@ -6,8 +6,16 @@ import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json'
 import EmittableError from '../../classes/EmittableError'
 import { AMBIRE_ACCOUNT_FACTORY, SINGLETON } from '../../consts/deploy'
-import { BIP44_LEDGER_DERIVATION_TEMPLATE } from '../../consts/derivation'
-import { Account, AccountId, AccountOnchainState } from '../../interfaces/account'
+import {
+  BIP44_LEDGER_DERIVATION_TEMPLATE,
+  BIP44_STANDARD_DERIVATION_TEMPLATE
+} from '../../consts/derivation'
+import {
+  Account,
+  AccountId,
+  AccountOnchainState,
+  AccountWithNetworkMeta
+} from '../../interfaces/account'
 import { Banner } from '../../interfaces/banner'
 import { DappProviderRequest } from '../../interfaces/dapp'
 import { Fetch } from '../../interfaces/fetch'
@@ -35,6 +43,8 @@ import { estimate } from '../../libs/estimate/estimate'
 import { BundlerGasPrice, EstimateResult } from '../../libs/estimate/interfaces'
 import { GasRecommendation, getGasPriceRecommendations } from '../../libs/gasPrice/gasPrice'
 import { humanizeAccountOp } from '../../libs/humanizer'
+import { KeyIterator } from '../../libs/keyIterator/keyIterator'
+import { getDefaultKeyLabel } from '../../libs/keys/keys'
 import {
   getAccountOpsForSimulation,
   makeBasicAccountOpAction,
@@ -80,9 +90,12 @@ import { SignMessageController } from '../signMessage/signMessage'
 
 const STATUS_WRAPPED_METHODS = {
   onAccountAdderSuccess: 'INITIAL',
+  signAccountOp: 'INITIAL',
   broadcastSignedAccountOp: 'INITIAL',
   removeAccount: 'INITIAL',
-  handleAccountAdderInitLedger: 'INITIAL'
+  handleAccountAdderInitLedger: 'INITIAL',
+  handleAccountAdderInitLattice: 'INITIAL',
+  importSmartAccountFromDefaultSeed: 'INITIAL'
 } as const
 
 export class MainController extends EventEmitter {
@@ -331,6 +344,100 @@ export class MainController extends EventEmitter {
     this.emitUpdate()
   }
 
+  async importSmartAccountFromDefaultSeed(seed?: string) {
+    await this.withStatus(
+      'importSmartAccountFromDefaultSeed',
+      async () => {
+        if (this.accountAdder.isInitialized) this.accountAdder.reset()
+        if (seed && !this.keystore.hasKeystoreDefaultSeed) {
+          await this.keystore.addSeed(seed)
+        }
+
+        const defaultSeed = await this.keystore.getDefaultSeed()
+
+        if (!defaultSeed) {
+          throw new EmittableError({
+            message:
+              'Failed to retrieve default seed phrase from keystore. Please try again or contact Ambire support if the issue persists.',
+            level: 'major',
+            error: new Error('failed to retrieve default seed phrase from keystore')
+          })
+        }
+
+        const keyIterator = new KeyIterator(defaultSeed)
+        this.accountAdder.init({
+          keyIterator,
+          hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
+          pageSize: 1,
+          shouldGetAccountsUsedOnNetworks: false,
+          shouldSearchForLinkedAccounts: false
+        })
+
+        let currentPage: number = 1
+        let isAccountAlreadyAdded: boolean
+        let nextSmartAccount: AccountWithNetworkMeta | undefined
+
+        const findNextSmartAccount = async () => {
+          do {
+            // eslint-disable-next-line no-await-in-loop
+            await this.accountAdder.setPage({
+              page: currentPage,
+              networks: this.networks.networks,
+              providers: this.providers.providers
+            })
+
+            nextSmartAccount = this.accountAdder.accountsOnPage.find(
+              ({ isLinked, account }) => !isLinked && isSmartAccount(account)
+            )?.account
+
+            if (!nextSmartAccount) break
+
+            isAccountAlreadyAdded = !!this.accounts.accounts.find(
+              // eslint-disable-next-line @typescript-eslint/no-loop-func
+              (a) => a.addr === nextSmartAccount!.addr
+            )
+
+            currentPage++
+          } while (isAccountAlreadyAdded)
+        }
+
+        await findNextSmartAccount()
+
+        if (!nextSmartAccount) {
+          throw new EmittableError({
+            message:
+              'Internal error while looking for account to add. Please start the process all over again and if the issue persists contact Ambire support.',
+            level: 'major',
+            error: new Error('Internal error: Failed to find a smart account to add')
+          })
+        }
+
+        this.accountAdder.selectAccount(nextSmartAccount)
+
+        const readyToAddKeys = this.accountAdder.retrieveInternalKeysOfSelectedAccounts()
+
+        const readyToAddKeyPreferences = this.accountAdder.selectedAccounts.flatMap(
+          ({ account, accountKeys }) =>
+            accountKeys.map(({ addr }, i: number) => ({
+              addr,
+              type: 'internal',
+              label: getDefaultKeyLabel(
+                this.keystore.keys.filter((key) => account.associatedKeys.includes(key.addr)),
+                i
+              )
+            }))
+        )
+
+        await this.accountAdder.addAccounts(
+          this.accountAdder.selectedAccounts,
+          { internal: readyToAddKeys, external: [] },
+          readyToAddKeyPreferences
+        )
+      },
+      true
+    )
+  }
+
   initSignAccOp(actionId: AccountOpAction['id']): null | void {
     const accountOp = getAccountOpFromAction(actionId, this.actions.actionsQueue)
     if (!accountOp) {
@@ -384,20 +491,34 @@ export class MainController extends EventEmitter {
     this.estimateSignAccountOp()
   }
 
-  async handleSignAccountOp() {
-    if (!this.signAccountOp) {
-      const message =
-        'The signing process was not initialized as expected. Please try again later or contact Ambire support if the issue persists.'
-      const error = new Error('SignAccountOp is not initialized')
-      return this.emitError({ level: 'major', message, error })
-    }
+  async handleSignAndBroadcastAccountOp() {
+    await this.withStatus(
+      'signAccountOp',
+      async () => {
+        const wasAlreadySigned = this.signAccountOp?.status?.type === SigningStatus.Done
+        if (wasAlreadySigned) return Promise.resolve()
 
-    await this.signAccountOp.sign()
+        if (!this.signAccountOp) {
+          const message =
+            'The signing process was not initialized as expected. Please try again later or contact Ambire support if the issue persists.'
+          const error = new Error('SignAccountOp is not initialized')
+          this.emitError({ level: 'major', message, error })
+          return Promise.reject(error)
+        }
+
+        return this.signAccountOp.sign()
+      },
+      true
+    )
 
     // Error handling on the prev step will notify the user, it's fine to return here
-    if (this.signAccountOp.status?.type !== SigningStatus.Done) return
+    if (this.signAccountOp?.status?.type !== SigningStatus.Done) return
 
-    await this.withStatus('broadcastSignedAccountOp', async () => this.#broadcastSignedAccountOp())
+    return this.withStatus(
+      'broadcastSignedAccountOp',
+      async () => this.#broadcastSignedAccountOp(),
+      true
+    )
   }
 
   destroySignAccOp() {
@@ -490,15 +611,13 @@ export class MainController extends EventEmitter {
       this.actions.addOrUpdateAction(accountOpAction, true)
     }
 
+    await this.activity.addSignedMessage(signedMessage, signedMessage.accountAddr)
     await this.resolveUserRequest({ hash: signedMessage.signature }, signedMessage.fromActionId)
+
     await this.#notificationManager.create({
       title: 'Done!',
       message: 'The Message was successfully signed.'
     })
-
-    // TODO: In the rare case when this might error, the user won't be notified,
-    // since `this.resolveUserRequest` closes the action window.
-    await this.activity.addSignedMessage(signedMessage, signedMessage.accountAddr)
   }
 
   async #handleAccountAdderInitLedger(
@@ -514,11 +633,13 @@ export class MainController extends EventEmitter {
         throw new EmittableError({ message, level: 'major', error: new Error(message) })
       }
 
-      // The second time a connection gets requested onwards,
+      // Once a session with the Ledger device gets initiated, the user might
+      // use the device with another app. In this scenario, when coming back to
+      // Ambire (the second time a connection gets requested onwards),
       // the Ledger device throws with "invalid channel" error.
       // To overcome this, always make sure to clean up before starting
-      // a new session, if the device is already unlocked.
-      if (ledgerCtrl.sdkSession) await ledgerCtrl.cleanUp()
+      // a new session when retrieving keys, in case there already is one.
+      if (ledgerCtrl.walletSDK) await ledgerCtrl.cleanUp()
 
       await ledgerCtrl.unlock()
 
@@ -527,7 +648,7 @@ export class MainController extends EventEmitter {
         throw new EmittableError({ message, level: 'major', error: new Error(message) })
       }
 
-      const keyIterator = new LedgerKeyIterator({ walletSDK: ledgerCtrl.walletSDK })
+      const keyIterator = new LedgerKeyIterator({ controller: ledgerCtrl })
       this.accountAdder.init({
         keyIterator,
         hdPathTemplate: BIP44_LEDGER_DERIVATION_TEMPLATE
@@ -547,6 +668,46 @@ export class MainController extends EventEmitter {
   async handleAccountAdderInitLedger(LedgerKeyIterator: any /* TODO: KeyIterator type mismatch */) {
     await this.withStatus('handleAccountAdderInitLedger', async () =>
       this.#handleAccountAdderInitLedger(LedgerKeyIterator)
+    )
+  }
+
+  async #handleAccountAdderInitLattice(
+    LatticeKeyIterator: any /* TODO: KeyIterator type mismatch */
+  ) {
+    if (this.accountAdder.isInitialized) this.accountAdder.reset()
+
+    try {
+      const latticeCtrl = this.#externalSignerControllers.lattice
+      if (!latticeCtrl) {
+        const message =
+          'Could not initialize connection with your Lattice1 device. Please try again later or contact Ambire support.'
+        throw new EmittableError({ message, level: 'major', error: new Error(message) })
+      }
+
+      await latticeCtrl.unlock(undefined, undefined, true)
+
+      const { walletSDK } = latticeCtrl
+      this.accountAdder.init({
+        keyIterator: new LatticeKeyIterator({ walletSDK }),
+        hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
+      })
+
+      return await this.accountAdder.setPage({
+        page: 1,
+        networks: this.networks.networks,
+        providers: this.providers.providers
+      })
+    } catch (error: any) {
+      const message = error?.message || 'Could not unlock the Lattice1 device. Please try again.'
+      throw new EmittableError({ message, level: 'major', error })
+    }
+  }
+
+  async handleAccountAdderInitLattice(
+    LatticeKeyIterator: any /* TODO: KeyIterator type mismatch */
+  ) {
+    await this.withStatus('handleAccountAdderInitLattice', async () =>
+      this.#handleAccountAdderInitLattice(LatticeKeyIterator)
     )
   }
 
@@ -950,7 +1111,8 @@ export class MainController extends EventEmitter {
   async buildTransferUserRequest(
     amount: string,
     recipientAddress: string,
-    selectedToken: TokenResult
+    selectedToken: TokenResult,
+    executionType: 'queue' | 'open' = 'open'
   ) {
     await this.#initialLoadPromise
     if (!this.accounts.selectedAccount) return
@@ -975,7 +1137,7 @@ export class MainController extends EventEmitter {
       return
     }
 
-    await this.addUserRequest(userRequest, !account.creation)
+    await this.addUserRequest(userRequest, !account.creation, executionType)
   }
 
   resolveUserRequest(data: any, requestId: UserRequest['id']) {
@@ -1016,7 +1178,11 @@ export class MainController extends EventEmitter {
     this.emitUpdate()
   }
 
-  async addUserRequest(req: UserRequest, withPriority?: boolean) {
+  async addUserRequest(
+    req: UserRequest,
+    withPriority?: boolean,
+    executionType: 'queue' | 'open' = 'open'
+  ) {
     if (withPriority) {
       this.userRequests.unshift(req)
     } else {
@@ -1056,9 +1222,21 @@ export class MainController extends EventEmitter {
             a.accountOp.networkId === network.id
         ) as AccountOpAction | undefined
 
-        const hasAuthorized = !!currentAccountOpAction?.accountOp?.meta?.entryPointAuthorization
+        this.activity.setFilters({
+          account: account.addr,
+          network: network.id
+        })
+        const entryPointAuthorizationMessageFromHistory = this.activity.signedMessages?.items.find(
+          (message) =>
+            message.fromActionId === ENTRY_POINT_AUTHORIZATION_REQUEST_ID &&
+            message.networkId === network.id
+        )
+        const hasAuthorized =
+          !!currentAccountOpAction?.accountOp?.meta?.entryPointAuthorization ||
+          !!entryPointAuthorizationMessageFromHistory
+
         if (shouldAskForEntryPointAuthorization(network, account, accountState, hasAuthorized)) {
-          await this.addEntryPointAuthorization(req, network, accountState)
+          await this.addEntryPointAuthorization(req, network, accountState, executionType)
           this.emitUpdate()
           return
         }
@@ -1068,9 +1246,11 @@ export class MainController extends EventEmitter {
           networkId: meta.networkId,
           nonce: accountState.nonce,
           userRequests: this.userRequests,
-          actionsQueue: this.actions.actionsQueue
+          actionsQueue: this.actions.actionsQueue,
+          entryPointAuthorizationSignature:
+            entryPointAuthorizationMessageFromHistory?.signature ?? undefined
         })
-        this.actions.addOrUpdateAction(accountOpAction, withPriority)
+        this.actions.addOrUpdateAction(accountOpAction, withPriority, executionType)
         if (this.signAccountOp && this.signAccountOp.fromActionId === accountOpAction.id) {
           this.signAccountOp.update({ accountOp: accountOpAction.accountOp })
           this.estimateSignAccountOp()
@@ -1082,7 +1262,7 @@ export class MainController extends EventEmitter {
           nonce: accountState.nonce,
           userRequest: req
         })
-        this.actions.addOrUpdateAction(accountOpAction, withPriority)
+        this.actions.addOrUpdateAction(accountOpAction, withPriority, executionType)
       }
     } else {
       let actionType: 'dappRequest' | 'benzin' | 'signMessage' = 'dappRequest'
@@ -1111,7 +1291,8 @@ export class MainController extends EventEmitter {
           type: actionType,
           userRequest: req as UserRequest as never
         },
-        withPriority
+        withPriority,
+        executionType
       )
     }
 
@@ -1180,7 +1361,8 @@ export class MainController extends EventEmitter {
   async addEntryPointAuthorization(
     req: UserRequest,
     network: Network,
-    accountState: AccountOnchainState
+    accountState: AccountOnchainState,
+    executionType: 'queue' | 'open' = 'open'
   ) {
     if (
       this.actions.visibleActionsQueue.find(
@@ -1189,6 +1371,7 @@ export class MainController extends EventEmitter {
           (a as SignMessageAction).userRequest.meta.networkId === req.meta.networkId
       )
     ) {
+      this.actions.setCurrentActionById(ENTRY_POINT_AUTHORIZATION_REQUEST_ID)
       return
     }
 
@@ -1197,19 +1380,23 @@ export class MainController extends EventEmitter {
       network.chainId,
       BigInt(accountState.nonce)
     )
-    await this.addUserRequest({
-      id: ENTRY_POINT_AUTHORIZATION_REQUEST_ID,
-      action: typedMessageAction,
-      meta: {
-        isSignAction: true,
-        accountAddr: req.meta.accountAddr,
-        networkId: req.meta.networkId
-      },
-      session: req.session,
-      dappPromise: req?.dappPromise
-        ? { reject: req?.dappPromise?.reject, resolve: () => {} }
-        : undefined
-    } as SignUserRequest)
+    await this.addUserRequest(
+      {
+        id: ENTRY_POINT_AUTHORIZATION_REQUEST_ID,
+        action: typedMessageAction,
+        meta: {
+          isSignAction: true,
+          accountAddr: req.meta.accountAddr,
+          networkId: req.meta.networkId
+        },
+        session: req.session,
+        dappPromise: req?.dappPromise
+          ? { reject: req?.dappPromise?.reject, resolve: () => {} }
+          : undefined
+      } as SignUserRequest,
+      true,
+      executionType
+    )
   }
 
   async addNetwork(network: AddNetworkRequestParams) {
@@ -1227,10 +1414,17 @@ export class MainController extends EventEmitter {
     if (!accountOpAction) return
 
     const { accountOp } = accountOpAction as AccountOpAction
+    const chainId = this.networks.networks.find(
+      (network) => network.id === accountOp.networkId
+    )?.chainId
+
+    if (!chainId) return
+
     const meta: SignUserRequest['meta'] = {
       isSignAction: true,
       accountAddr: accountOp.accountAddr,
-      networkId: accountOp.networkId,
+      chainId,
+      networkId: '',
       txnId: null,
       userOpHash: null
     }
@@ -1256,12 +1450,16 @@ export class MainController extends EventEmitter {
     this.emitUpdate()
   }
 
-  rejectAccountOpAction(err: string, actionId: AccountOpAction['id']) {
+  rejectAccountOpAction(
+    err: string,
+    actionId: AccountOpAction['id'],
+    shouldOpenNextAction: boolean
+  ) {
     const accountOpAction = this.actions.actionsQueue.find((a) => a.id === actionId)
     if (!accountOpAction) return
 
     const { accountOp } = accountOpAction as AccountOpAction
-    this.actions.removeAction(actionId)
+    this.actions.removeAction(actionId, shouldOpenNextAction)
     // eslint-disable-next-line no-restricted-syntax
     for (const call of accountOp.calls) {
       const uReq = this.userRequests.find((r) => r.id === call.fromUserRequestId)
@@ -1865,7 +2063,7 @@ export class MainController extends EventEmitter {
     const replacementFeeLow = error?.message.includes('replacement fee too low')
     // To enable another try for signing in case of broadcast fail
     // broadcast is called in the FE only after successful signing
-    this.signAccountOp?.updateStatusToReadyToSign(replacementFeeLow)
+    this.signAccountOp?.updateStatus(replacementFeeLow)
     if (replacementFeeLow) this.estimateSignAccountOp()
 
     this.feePayerKey = null

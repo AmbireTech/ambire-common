@@ -388,7 +388,8 @@ export class ActivityController extends EventEmitter {
               // if there's no receipt, confirm there's a txn
               // if there's no txn and 15 minutes have passed, declare it a failure
               const txn = await provider.getTransaction(txnId)
-              if (!txn) declareStuckIfQuaterPassed(accountOp)
+              if (txn) return
+              declareStuckIfQuaterPassed(accountOp)
             } catch {
               this.emitError({
                 level: 'silent',
@@ -562,6 +563,9 @@ export class ActivityController extends EventEmitter {
       return {
         id: accountOp.txnId,
         type: 'success',
+        // TODO: We should pass the category, once we figure out how to determine the pending to be confirmed account ops:
+        // @link: https://github.com/AmbireTech/ambire-app/issues/2162#issuecomment-2191731436
+        // category: 'pending-to-be-confirmed-acc-op',
         title: 'Transaction successfully signed and sent!\nCheck it out on the block explorer!',
         text: '',
         actions: [

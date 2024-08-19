@@ -39,6 +39,8 @@ import { KeystoreController } from '../keystore/keystore'
 
 export const DEFAULT_PAGE = 1
 export const DEFAULT_PAGE_SIZE = 5
+const DEFAULT_SHOULD_SEARCH_FOR_LINKED_ACCOUNTS = true
+const DEFAULT_SHOULD_GET_ACCOUNTS_USED_ON_NETWORKS = true
 
 /**
  * Account Adder Controller
@@ -59,6 +61,10 @@ export class AccountAdderController extends EventEmitter {
   hdPathTemplate?: HD_PATH_TEMPLATE_TYPE
 
   isInitialized: boolean = false
+
+  shouldSearchForLinkedAccounts = DEFAULT_SHOULD_SEARCH_FOR_LINKED_ACCOUNTS
+
+  shouldGetAccountsUsedOnNetworks = DEFAULT_SHOULD_GET_ACCOUNTS_USED_ON_NETWORKS
 
   // This is only the index of the current page
   page: number = DEFAULT_PAGE
@@ -219,12 +225,16 @@ export class AccountAdderController extends EventEmitter {
     keyIterator,
     page,
     pageSize,
-    hdPathTemplate
+    hdPathTemplate,
+    shouldSearchForLinkedAccounts = DEFAULT_SHOULD_SEARCH_FOR_LINKED_ACCOUNTS,
+    shouldGetAccountsUsedOnNetworks = DEFAULT_SHOULD_GET_ACCOUNTS_USED_ON_NETWORKS
   }: {
     keyIterator: KeyIterator | null
     page?: number
     pageSize?: number
     hdPathTemplate: HD_PATH_TEMPLATE_TYPE
+    shouldSearchForLinkedAccounts?: boolean
+    shouldGetAccountsUsedOnNetworks?: boolean
   }): void {
     this.#keyIterator = keyIterator
     if (!this.#keyIterator) return this.#throwMissingKeyIterator()
@@ -234,6 +244,8 @@ export class AccountAdderController extends EventEmitter {
     this.hdPathTemplate = hdPathTemplate
     this.isInitialized = true
     this.#alreadyImportedAccountsOnControllerInit = this.#accounts.accounts
+    this.shouldSearchForLinkedAccounts = shouldSearchForLinkedAccounts
+    this.shouldGetAccountsUsedOnNetworks = shouldGetAccountsUsedOnNetworks
 
     this.emitUpdate()
   }
@@ -252,6 +264,8 @@ export class AccountAdderController extends EventEmitter {
     this.page = DEFAULT_PAGE
     this.pageSize = DEFAULT_PAGE_SIZE
     this.hdPathTemplate = undefined
+    this.shouldSearchForLinkedAccounts = DEFAULT_SHOULD_SEARCH_FOR_LINKED_ACCOUNTS
+    this.shouldGetAccountsUsedOnNetworks = DEFAULT_SHOULD_GET_ACCOUNTS_USED_ON_NETWORKS
 
     this.addAccountsStatus = 'INITIAL'
     this.#derivedAccounts = []
@@ -463,13 +477,14 @@ export class AccountAdderController extends EventEmitter {
       }
     } catch (e: any) {
       this.emitError({
-        message: 'Retrieving accounts was canceled or failed.',
+        message: e?.message,
         error: e?.message || 'accountAdder: failed to derive accounts',
         level: 'major'
       })
     }
     this.accountsLoading = false
     this.emitUpdate()
+
     this.#findAndSetLinkedAccounts({
       accounts: this.#derivedAccounts
         .filter(
@@ -652,20 +667,28 @@ export class AccountAdderController extends EventEmitter {
     const startIdx = (this.page - 1) * this.pageSize
     const endIdx = (this.page - 1) * this.pageSize + (this.pageSize - 1)
 
+    const indicesToRetrieve = [
+      { from: startIdx, to: endIdx } // Indices for the basic (EOA) accounts
+    ]
+    // Since v4.31.0, do not retrieve smart accounts for the private key
+    // type. That's because we can't use the common derivation offset
+    // (SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET), and deriving smart
+    // accounts out of the private key (with another approach - salt and
+    // extra entropy) was creating confusion.
+    const shouldRetrieveSmartAccountIndices = this.#keyIterator.type !== 'private-key'
+    if (shouldRetrieveSmartAccountIndices) {
+      // Indices for the smart accounts.
+      indicesToRetrieve.push({
+        from: startIdx + SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET,
+        to: endIdx + SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET
+      })
+    }
     // Combine the requests for all accounts in one call to the keyIterator.
     // That's optimization primarily focused on hardware wallets, to reduce the
     // number of calls to the hardware device. This is important, especially
     // for Trezor, because it fires a confirmation popup for each call.
     const combinedBasicAndSmartAccKeys = await this.#keyIterator.retrieve(
-      [
-        // Indices for the basic (EOA) accounts
-        { from: startIdx, to: endIdx },
-        // Indices for the smart accounts
-        {
-          from: startIdx + SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET,
-          to: endIdx + SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET
-        }
-      ],
+      indicesToRetrieve,
       this.hdPathTemplate
     )
 
@@ -739,6 +762,10 @@ export class AccountAdderController extends EventEmitter {
     networks: Network[]
     providers: { [key: string]: JsonRpcProvider }
   }): Promise<DerivedAccount[]> {
+    if (!this.shouldGetAccountsUsedOnNetworks) {
+      return accounts.map((a) => ({ ...a, account: { ...a.account, usedOnNetworks: [] } }))
+    }
+
     const accountsObj: { [key: Account['addr']]: DerivedAccount } = Object.fromEntries(
       accounts.map((a) => [a.account.addr, { ...a, account: { ...a.account, usedOnNetworks: [] } }])
     )
@@ -821,6 +848,8 @@ export class AccountAdderController extends EventEmitter {
     networks: Network[]
     providers: { [key: string]: JsonRpcProvider }
   }) {
+    if (!this.shouldSearchForLinkedAccounts) return
+
     if (accounts.length === 0) return
 
     this.linkedAccountsLoading = true
