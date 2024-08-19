@@ -147,16 +147,19 @@ export async function getGasPriceRecommendations(
       const baseFee = expectedBaseFee + (expectedBaseFee * baseFeeAddBps) / 10000n
       let maxPriorityFeePerGas = average(nthGroup(tips, i, speeds.length))
 
-      // set a bare minimum of 200n for maxPriorityFeePerGas
-      maxPriorityFeePerGas = maxPriorityFeePerGas >= 200n ? maxPriorityFeePerGas : 200n
+      // set a bare minimum of 100000n for maxPriorityFeePerGas
+      maxPriorityFeePerGas = maxPriorityFeePerGas >= 100000n ? maxPriorityFeePerGas : 100000n
 
       // compare the maxPriorityFeePerGas with the previous speed
       // if it's not at least 12% bigger, then replace the calculated one
       // with at least 12% bigger maxPriorityFeePerGas.
       // This is most impactufull on L2s where txns get stuck for low maxPriorityFeePerGas
+      //
+      // if the speed is ape, make it 50% more
       const prevSpeed = fee.length ? fee[i - 1].maxPriorityFeePerGas : null
       if (prevSpeed) {
-        const min = prevSpeed + prevSpeed / 8n
+        const divider = name === 'ape' ? 2n : 8n
+        const min = prevSpeed + prevSpeed / divider
         if (maxPriorityFeePerGas < min) maxPriorityFeePerGas = min
       }
 
