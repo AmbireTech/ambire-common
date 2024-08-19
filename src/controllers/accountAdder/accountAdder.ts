@@ -667,20 +667,28 @@ export class AccountAdderController extends EventEmitter {
     const startIdx = (this.page - 1) * this.pageSize
     const endIdx = (this.page - 1) * this.pageSize + (this.pageSize - 1)
 
+    const indicesToRetrieve = [
+      { from: startIdx, to: endIdx } // Indices for the basic (EOA) accounts
+    ]
+    // Since v4.31.0, do not retrieve smart accounts for the private key
+    // type. That's because we can't use the common derivation offset
+    // (SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET), and deriving smart
+    // accounts out of the private key (with another approach - salt and
+    // extra entropy) was creating confusion.
+    const shouldRetrieveSmartAccountIndices = this.#keyIterator.type !== 'private-key'
+    if (shouldRetrieveSmartAccountIndices) {
+      // Indices for the smart accounts.
+      indicesToRetrieve.push({
+        from: startIdx + SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET,
+        to: endIdx + SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET
+      })
+    }
     // Combine the requests for all accounts in one call to the keyIterator.
     // That's optimization primarily focused on hardware wallets, to reduce the
     // number of calls to the hardware device. This is important, especially
     // for Trezor, because it fires a confirmation popup for each call.
     const combinedBasicAndSmartAccKeys = await this.#keyIterator.retrieve(
-      [
-        // Indices for the basic (EOA) accounts
-        { from: startIdx, to: endIdx },
-        // Indices for the smart accounts
-        {
-          from: startIdx + SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET,
-          to: endIdx + SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET
-        }
-      ],
+      indicesToRetrieve,
       this.hdPathTemplate
     )
 
