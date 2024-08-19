@@ -602,7 +602,7 @@ export class SignAccountOpController extends EventEmitter {
     prevSpeed: SpeedCalc | null
   ): bigint {
     // ape speed gets 50% increase
-    const divider = prevSpeed && prevSpeed.type === FeeSpeed.Ape ? 2n : 8n
+    const divider = prevSpeed && prevSpeed.type === FeeSpeed.Fast ? 2n : 8n
 
     // when doing an RBF, make sure the min gas for the current speed
     // is at least 12% bigger than the previous speed
