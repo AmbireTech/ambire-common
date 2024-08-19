@@ -34,6 +34,7 @@ import { uniswapHumanizer } from './modules/Uniswap'
 import { WALLETModule } from './modules/WALLET'
 import wrappingModule from './modules/Wrapping'
 import { erc20Module, erc721Module, permit2Module } from './typedMessageModules'
+import { entryPointModule } from './typedMessageModules/entryPointModule'
 import { HUMANIZER_META_KEY } from './utils'
 
 // from most generic to least generic
@@ -62,7 +63,7 @@ export const humanizerCallModules: HumanizerCallModule[] = [
 
 // from least generic to most generic
 // the final visualization and warnings are from the first triggered module
-const humanizerTMModules = [erc20Module, erc721Module, permit2Module]
+const humanizerTMModules = [erc20Module, erc721Module, permit2Module, entryPointModule]
 
 // @TODO to be removed
 export const humanizeAccountOp = async (
@@ -128,7 +129,7 @@ const sharedHumanization = async <InputDataType extends AccountOp | Message>(
       const irMessage: IrMessage = {
         ...message!,
         ...(message!.content.kind === 'typedMessage'
-          ? humanizeTypedMessage(humanizerTMModules, message!.content)
+          ? humanizeTypedMessage(humanizerTMModules, message!)
           : humanizePlainTextMessage(message!.content))
       }
 

@@ -1,11 +1,24 @@
 /* eslint-disable no-restricted-syntax */
-import { AbiCoder, formatUnits, getAddress, Interface, toBeHex } from 'ethers'
+import {
+  AbiCoder,
+  formatEther,
+  formatUnits,
+  getAddress,
+  Interface,
+  toBeHex,
+  ZeroAddress
+} from 'ethers'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import ERC20 from '../../../contracts/compiled/IERC20.json'
 import EmittableError from '../../classes/EmittableError'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { AMBIRE_PAYMASTER, SINGLETON } from '../../consts/deploy'
+import {
+  GAS_TANK_TRANSFER_GAS_USED,
+  SA_ERC20_TRANSFER_GAS_USED,
+  SA_NATIVE_TRANSFER_GAS_USED
+} from '../../consts/signAccountOp'
 import { Account } from '../../interfaces/account'
 import { Fetch } from '../../interfaces/fetch'
 import { ExternalSignerControllers, Key } from '../../interfaces/keystore'
@@ -14,7 +27,12 @@ import { Storage } from '../../interfaces/storage'
 import { isSmartAccount } from '../../libs/account/account'
 import { AccountOp, GasFeePayment, getSignableCalls } from '../../libs/accountOp/accountOp'
 import { BundlerGasPrice, EstimateResult, FeePaymentOption } from '../../libs/estimate/interfaces'
-import { GasRecommendation, getProbableCallData } from '../../libs/gasPrice/gasPrice'
+import {
+  Gas1559Recommendation,
+  GasPriceRecommendation,
+  GasRecommendation,
+  getProbableCallData
+} from '../../libs/gasPrice/gasPrice'
 import { callsHumanizer } from '../../libs/humanizer'
 import { IrCall } from '../../libs/humanizer/interfaces'
 import { Price, TokenResult } from '../../libs/portfolio'
@@ -589,27 +607,44 @@ export class SignAccountOpController extends EventEmitter {
   /**
    * If the nonce of the current account op and the last account op are the same,
    * do an RBF increase or otherwise the user cannot broadcast the txn
+   *
+   * calculatedGas: it should be either the whole gasPrice if the network doesn't
+   * support EIP-1559 OR it should the maxPriorityFeePerGas if the network
+   * supports EIP-1559
+   *
+   * gasPropertyName: pass gasPrice if no EIP-1559; otherwise: maxPriorityFeePerGas
    */
-  #rbfIncrease(accId: string, gasPrice: bigint): bigint {
+  #rbfIncrease(
+    accId: string,
+    calculatedGas: bigint,
+    gasPropertyName: 'gasPrice' | 'maxPriorityFeePerGas',
+    prevSpeed: SpeedCalc | null
+  ): bigint {
+    // when doing an RBF, make sure the min gas for the current speed
+    // is at least 12% bigger than the previous speed
+    const prevSpeedGas = prevSpeed ? prevSpeed[gasPropertyName] : undefined
+    const prevSpeedGasIncreased = prevSpeedGas ? prevSpeedGas + prevSpeedGas / 8n : 0n
+    const min = prevSpeedGasIncreased > calculatedGas ? prevSpeedGasIncreased : calculatedGas
+
     // if there was an error on the signed account op with a
-    // replacement fee too low, we increase by 12.5% the signed account op
+    // replacement fee too low, we increase by 13% the signed account op
     // IF the new estimation is not actually higher
     if (this.replacementFeeLow && this.signedAccountOp && this.signedAccountOp.gasFeePayment) {
-      const bumpFees =
-        this.signedAccountOp.gasFeePayment.gasPrice +
-        this.signedAccountOp.gasFeePayment.gasPrice / 8n
-      return gasPrice > bumpFees ? gasPrice : bumpFees
+      const prevGas = this.signedAccountOp.gasFeePayment[gasPropertyName] ?? undefined
+      const bumpFees = prevGas ? prevGas + prevGas / 8n + prevGas / 100n : 0n
+      return min > bumpFees ? min : bumpFees
     }
 
     // if no RBF option for this paidBy option, return the amount
     const rbfOp = this.rbfAccountOps[accId]
-    if (!rbfOp || !rbfOp.gasFeePayment) return gasPrice
+    if (!rbfOp || !rbfOp.gasFeePayment || !rbfOp.gasFeePayment[gasPropertyName])
+      return calculatedGas
 
-    // increase by a minimum of 12.5% the last broadcast txn and use that
+    // increase by a minimum of 13% the last broadcast txn and use that
     // or use the current gas estimation if it's more
-    const lastTxnGasPriceIncreased =
-      rbfOp.gasFeePayment.gasPrice + rbfOp.gasFeePayment.gasPrice / 8n
-    return gasPrice > lastTxnGasPriceIncreased ? gasPrice : lastTxnGasPriceIncreased
+    const rbfGas = rbfOp.gasFeePayment[gasPropertyName] ?? 0n
+    const lastTxnGasPriceIncreased = rbfGas + rbfGas / 8n + rbfGas / 100n
+    return min > lastTxnGasPriceIncreased ? min : lastTxnGasPriceIncreased
   }
 
   get #feeSpeedsLoading() {
@@ -678,23 +713,45 @@ export class SignAccountOpController extends EventEmitter {
         return
       }
 
-      ;(this.gasPrices || []).forEach((gasRecommendation) => {
+      ;(this.gasPrices || []).forEach((gasRecommendation, i) => {
         let amount
         let simulatedGasLimit
+        const prevSpeed =
+          this.feeSpeeds[identifier] && this.feeSpeeds[identifier].length
+            ? this.feeSpeeds[identifier][i - 1]
+            : null
 
-        let gasPrice = 0n
-        // As GasRecommendation type is a result of the union between GasPriceRecommendation and Gas1559Recommendation,
-        // then the both types don't have the same interface/props.
-        // Therefore, we need to check for a prop existence, before accessing it.
-        // GasPriceRecommendation
-        if ('gasPrice' in gasRecommendation) gasPrice = gasRecommendation.gasPrice
-        // Gas1559Recommendation
-        if ('baseFeePerGas' in gasRecommendation)
-          gasPrice = gasRecommendation.baseFeePerGas + gasRecommendation.maxPriorityFeePerGas
+        // gasRecommendation can come as GasPriceRecommendation or Gas1559Recommendation
+        // depending whether the network supports EIP-1559 and is it enabled on our side.
+        // To check, we use maxPriorityFeePerGas. If it's set => EIP-1559.
+        // After, we call #rbfIncrease on maxPriorityFeePerGas if set which either returns
+        // the maxPriorityFeePerGas without doing anything (most cases) or if there's a
+        // pending txn in the mempool, it bumps maxPriorityFeePerGas by 12.5% to enable RBF.
+        // Finally, we calculate the gasPrice:
+        // - EIP-1559: baseFeePerGas + maxPriorityFeePerGas
+        // - Normal: gasRecommendation.gasPrice #rbfIncreased (same logic as for maxPriorityFeePerGas RBF)
+        const maxPriorityFeePerGas =
+          'maxPriorityFeePerGas' in gasRecommendation
+            ? this.#rbfIncrease(
+                option.paidBy,
+                gasRecommendation.maxPriorityFeePerGas,
+                'maxPriorityFeePerGas',
+                prevSpeed
+              )
+            : undefined
+
+        const gasPrice =
+          'maxPriorityFeePerGas' in gasRecommendation
+            ? (gasRecommendation as Gas1559Recommendation).baseFeePerGas + maxPriorityFeePerGas!
+            : this.#rbfIncrease(
+                option.paidBy,
+                (gasRecommendation as GasPriceRecommendation).gasPrice,
+                'gasPrice',
+                prevSpeed
+              )
 
         // EOA
         if (!isSmartAccount(this.account)) {
-          gasPrice = this.#rbfIncrease(this.account.addr, gasPrice)
           simulatedGasLimit = gasUsed
 
           if (this.accountOp.calls[0].to && getAddress(this.accountOp.calls[0].to) === SINGLETON) {
@@ -704,12 +761,10 @@ export class SignAccountOpController extends EventEmitter {
           amount = simulatedGasLimit * gasPrice + option.addedNative
         } else if (option.paidBy !== this.accountOp.accountAddr) {
           // Smart account, but EOA pays the fee
-          gasPrice = this.#rbfIncrease(option.paidBy, gasPrice)
           simulatedGasLimit = gasUsed + this.getCallDataAdditionalByNetwork()
           amount = simulatedGasLimit * gasPrice + option.addedNative
         } else {
           // Relayer
-          gasPrice = this.#rbfIncrease(this.account.addr, gasPrice)
           simulatedGasLimit = gasUsed + this.getCallDataAdditionalByNetwork() + option.gasUsed!
           amount = SignAccountOpController.getAmountAfterFeeTokenConvert(
             simulatedGasLimit,
@@ -728,10 +783,7 @@ export class SignAccountOpController extends EventEmitter {
           amountFormatted: formatUnits(amount, Number(option.token.decimals)),
           amountUsd: getTokenUsdAmount(option.token, amount),
           gasPrice,
-          maxPriorityFeePerGas:
-            'maxPriorityFeePerGas' in gasRecommendation
-              ? gasRecommendation.maxPriorityFeePerGas
-              : undefined
+          maxPriorityFeePerGas
         }
         if (this.feeSpeeds[identifier] === undefined) this.feeSpeeds[identifier] = []
         this.feeSpeeds[identifier].push(feeSpeed)
@@ -857,6 +909,52 @@ export class SignAccountOpController extends EventEmitter {
   // eslint-disable-next-line class-methods-use-this
   get speedOptions() {
     return Object.values(FeeSpeed) as string[]
+  }
+
+  get gasSavedUSD(): number | null {
+    if (!this.selectedOption?.token.flags.onGasTank) return null
+
+    const identifier = getFeeSpeedIdentifier(
+      this.selectedOption,
+      this.accountOp.accountAddr,
+      this.rbfAccountOps[this.selectedOption.paidBy]
+    )
+    const selectedFeeSpeedData = this.feeSpeeds[identifier].find(
+      (speed) => speed.type === this.selectedFeeSpeed
+    )
+    const gasPrice = selectedFeeSpeedData?.gasPrice
+    if (!gasPrice) return null
+
+    // get the native token from the portfolio to calculate prices
+    const native = this.#portfolio.latest[this.accountOp.accountAddr][
+      this.accountOp.networkId
+    ]?.result?.tokens.find(
+      (token) => token.address === '0x0000000000000000000000000000000000000000'
+    )
+    if (!native) return null
+    const nativePrice = native.priceIn.find((price) => price.baseCurrency === 'usd')?.price
+    if (!nativePrice) return null
+
+    // 4337 gasUsed is set to 0 in the estimation as we rely
+    // on the bundler for the estimation entirely => use hardcode value
+    const gasUsedSelectedOption =
+      this.selectedOption.gasUsed && this.selectedOption.gasUsed > 0n
+        ? this.selectedOption.gasUsed
+        : GAS_TANK_TRANSFER_GAS_USED
+    const isNativeSelected = this.selectedOption.token.address === ZeroAddress
+    const gasUsedNative =
+      this.availableFeeOptions.find(
+        (option) => option.token.address === ZeroAddress && !option.token.flags.onGasTank
+      )?.gasUsed || SA_NATIVE_TRANSFER_GAS_USED
+    const gasUsedERC20 =
+      this.availableFeeOptions.find(
+        (option) => option.token.address !== ZeroAddress && !option.token.flags.onGasTank
+      )?.gasUsed || SA_ERC20_TRANSFER_GAS_USED
+
+    const gasUsedWithoutGasTank = isNativeSelected ? gasUsedNative : gasUsedERC20
+    const gasSavedInNative = formatEther((gasUsedWithoutGasTank - gasUsedSelectedOption) * gasPrice)
+
+    return Number(gasSavedInNative) * nativePrice
   }
 
   #setSigningError(error: string, type = SigningStatus.UnableToSign) {
@@ -1117,7 +1215,8 @@ export class SignAccountOpController extends EventEmitter {
       speedOptions: this.speedOptions,
       selectedOption: this.selectedOption,
       account: this.account,
-      errors: this.errors
+      errors: this.errors,
+      gasSavedUSD: this.gasSavedUSD
     }
   }
 }
