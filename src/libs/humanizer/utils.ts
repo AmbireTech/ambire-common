@@ -41,7 +41,8 @@ export function getAddressVisualization(_address: string): HumanizerVisualizatio
 export function getToken(
   _address: string,
   amount: bigint,
-  isHidden?: boolean
+  isHidden?: boolean,
+  chainId?: bigint
 ): HumanizerVisualization {
   const address = _address.toLowerCase()
   return {
@@ -49,8 +50,16 @@ export function getToken(
     address,
     value: BigInt(amount),
     id: randomId(),
-    isHidden
+    isHidden,
+    chainId
   }
+}
+export function getTokenWithChain(
+  address: string,
+  amount: bigint,
+  chainId?: bigint
+): HumanizerVisualization {
+  return getToken(address, amount, undefined, chainId)
 }
 
 export function getChain(chainId: bigint): HumanizerVisualization {
@@ -174,28 +183,12 @@ export function getUnknownVisualization(name: string, call: IrCall): HumanizerVi
   return unknownVisualization
 }
 
-export function getWrapping(
-  address: string,
-  amount: bigint,
-  hiddenAssetAddress?: string
-): HumanizerVisualization[] {
-  return [
-    getAction('Wrap'),
-    getToken(address, amount),
-    hiddenAssetAddress && { ...getToken(hiddenAssetAddress, 0n), isHidden: true }
-  ].filter((x) => x) as HumanizerVisualization[]
+export function getWrapping(address: string, amount: bigint): HumanizerVisualization[] {
+  return [getAction('Wrap'), getToken(address, amount)]
 }
 
-export function getUnwrapping(
-  address: string,
-  amount: bigint,
-  hiddenAssetAddress?: string
-): HumanizerVisualization[] {
-  return [
-    getAction('Unwrap'),
-    getToken(address, amount),
-    hiddenAssetAddress && { ...getToken(hiddenAssetAddress, 0n), isHidden: true }
-  ].filter((x) => x) as HumanizerVisualization[]
+export function getUnwrapping(address: string, amount: bigint): HumanizerVisualization[] {
+  return [getAction('Unwrap'), getToken(address, amount)]
 }
 
 // @TODO cant this be used in the <Address component>

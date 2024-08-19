@@ -3,7 +3,15 @@ import { Interface } from 'ethers'
 import { AccountOp } from '../../../accountOp/accountOp'
 import { Across } from '../../const/abis'
 import { HumanizerCallModule, IrCall } from '../../interfaces'
-import { getAction, getChain, getDeadline, getLabel, getRecipientText, getToken } from '../../utils'
+import {
+  getAction,
+  getChain,
+  getDeadline,
+  getLabel,
+  getRecipientText,
+  getToken,
+  getTokenWithChain
+} from '../../utils'
 
 const AcrossModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]) => {
   const iface = new Interface(Across)
@@ -24,7 +32,7 @@ const AcrossModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]) =>
         getAction('Bridge'),
         getToken(inputToken, inputAmount),
         getLabel('for'),
-        getToken(outputToken, outputAmount),
+        getTokenWithChain(outputToken, outputAmount, destinationChainId),
         getLabel('to'),
         getChain(destinationChainId),
         getDeadline(fillDeadline),

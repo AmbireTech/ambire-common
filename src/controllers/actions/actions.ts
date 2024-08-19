@@ -1,12 +1,14 @@
 /* eslint-disable @typescript-eslint/no-floating-promises */
 
 import { Account } from '../../interfaces/account'
+import { NotificationManager } from '../../interfaces/notification'
 import { DappUserRequest, SignUserRequest, UserRequest } from '../../interfaces/userRequest'
 import { WindowManager } from '../../interfaces/window'
 import { AccountOp } from '../../libs/accountOp/accountOp'
 // eslint-disable-next-line import/no-cycle
 import { messageOnNewAction } from '../../libs/actions/actions'
 import { getDappActionRequestsBanners } from '../../libs/banners/banners'
+import { ENTRY_POINT_AUTHORIZATION_REQUEST_ID } from '../../libs/userOperation/userOperation'
 import { AccountsController } from '../accounts/accounts'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
@@ -52,6 +54,8 @@ export class ActionsController extends EventEmitter {
 
   #windowManager: WindowManager
 
+  #notificationManager: NotificationManager
+
   actionWindow: {
     id: number | null
     loaded: boolean
@@ -94,19 +98,22 @@ export class ActionsController extends EventEmitter {
   constructor({
     accounts,
     windowManager,
+    notificationManager,
     onActionWindowClose
   }: {
     accounts: AccountsController
     windowManager: WindowManager
+    notificationManager: NotificationManager
     onActionWindowClose: () => void
   }) {
     super()
 
     this.#accounts = accounts
     this.#windowManager = windowManager
+    this.#notificationManager = notificationManager
     this.#onActionWindowClose = onActionWindowClose
 
-    this.#windowManager.event.on('windowRemoved', (winId: number) => {
+    this.#windowManager.event.on('windowRemoved', async (winId: number) => {
       if (winId === this.actionWindow.id) {
         this.actionWindow.id = null
         this.actionWindow.loaded = false
@@ -114,13 +121,26 @@ export class ActionsController extends EventEmitter {
         this.currentAction = null
 
         this.actionsQueue = this.actionsQueue.filter((a) => a.type === 'accountOp')
+        if (this.actionsQueue.length) {
+          await this.#notificationManager.create({
+            title:
+              this.actionsQueue.length > 1
+                ? `${this.actionsQueue.length} transactions queued`
+                : 'Transaction queued',
+            message: 'Queued pending transactions are available on your Dashboard.'
+          })
+        }
         this.#onActionWindowClose()
         this.emitUpdate()
       }
     })
   }
 
-  addOrUpdateAction(newAction: Action, withPriority?: boolean) {
+  addOrUpdateAction(
+    newAction: Action,
+    withPriority?: boolean,
+    executionType: 'queue' | 'open' = 'open'
+  ) {
     if (withPriority) {
       // remove the benzin action if a new actions is added
       this.actionsQueue = this.actionsQueue.filter((a) => a.type !== 'benzin')
@@ -128,11 +148,15 @@ export class ActionsController extends EventEmitter {
     const actionIndex = this.actionsQueue.findIndex((a) => a.id === newAction.id)
     if (actionIndex !== -1) {
       this.actionsQueue[actionIndex] = newAction
-      this.sendNewActionMessage(newAction, 'update')
-      const currentAction = withPriority
-        ? this.visibleActionsQueue[0] || null
-        : this.currentAction || this.visibleActionsQueue[0] || null
-      this.#setCurrentAction(currentAction)
+      if (executionType === 'open') {
+        this.sendNewActionMessage(newAction, 'update')
+        const currentAction = withPriority
+          ? this.visibleActionsQueue[0] || null
+          : this.currentAction || this.visibleActionsQueue[0] || null
+        this.#setCurrentAction(currentAction)
+      } else {
+        this.emitUpdate()
+      }
       return
     }
 
@@ -141,16 +165,23 @@ export class ActionsController extends EventEmitter {
     } else {
       this.actionsQueue.push(newAction)
     }
-    this.sendNewActionMessage(newAction, withPriority ? 'unshift' : 'push')
-    const currentAction = withPriority
-      ? this.visibleActionsQueue[0] || null
-      : this.currentAction || this.visibleActionsQueue[0] || null
-    this.#setCurrentAction(currentAction)
+
+    if (executionType === 'open') {
+      this.sendNewActionMessage(newAction, withPriority ? 'unshift' : 'push')
+      const currentAction = withPriority
+        ? this.visibleActionsQueue[0] || null
+        : this.currentAction || this.visibleActionsQueue[0] || null
+      this.#setCurrentAction(currentAction)
+    } else {
+      this.emitUpdate()
+    }
   }
 
-  removeAction(actionId: Action['id']) {
+  removeAction(actionId: Action['id'], shouldOpenNextAction: boolean = true) {
     this.actionsQueue = this.actionsQueue.filter((a) => a.id !== actionId)
-    this.#setCurrentAction(this.visibleActionsQueue[0] || null)
+    if (shouldOpenNextAction) {
+      this.#setCurrentAction(this.visibleActionsQueue[0] || null)
+    }
   }
 
   #setCurrentAction(nextAction: Action | null) {
@@ -173,8 +204,15 @@ export class ActionsController extends EventEmitter {
 
   setCurrentActionById(actionId: Action['id']) {
     const action = this.visibleActionsQueue.find((a) => a.id.toString() === actionId.toString())
+    if (!action) {
+      const entryPointAction = this.visibleActionsQueue.find(
+        (a) => a.id.toString() === ENTRY_POINT_AUTHORIZATION_REQUEST_ID
+      )
 
-    if (!action) return
+      if (entryPointAction) this.#setCurrentAction(entryPointAction)
+
+      return
+    }
 
     this.#setCurrentAction(action)
   }
@@ -182,7 +220,14 @@ export class ActionsController extends EventEmitter {
   setCurrentActionByIndex(actionIndex: number) {
     const action = this.visibleActionsQueue[actionIndex]
 
-    if (!action) return
+    if (!action) {
+      const entryPointAction = this.visibleActionsQueue.find(
+        (a) => a.id.toString() === ENTRY_POINT_AUTHORIZATION_REQUEST_ID
+      )
+      if (entryPointAction) this.#setCurrentAction(entryPointAction)
+
+      return
+    }
 
     this.#setCurrentAction(action)
   }
