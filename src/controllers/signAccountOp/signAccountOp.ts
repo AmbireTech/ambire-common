@@ -601,10 +601,13 @@ export class SignAccountOpController extends EventEmitter {
     gasPropertyName: 'gasPrice' | 'maxPriorityFeePerGas',
     prevSpeed: SpeedCalc | null
   ): bigint {
+    // ape speed gets 50% increase
+    const divider = prevSpeed && prevSpeed.type === FeeSpeed.Ape ? 2n : 8n
+
     // when doing an RBF, make sure the min gas for the current speed
     // is at least 12% bigger than the previous speed
     const prevSpeedGas = prevSpeed ? prevSpeed[gasPropertyName] : undefined
-    const prevSpeedGasIncreased = prevSpeedGas ? prevSpeedGas + prevSpeedGas / 8n : 0n
+    const prevSpeedGasIncreased = prevSpeedGas ? prevSpeedGas + prevSpeedGas / divider : 0n
     const min = prevSpeedGasIncreased > calculatedGas ? prevSpeedGasIncreased : calculatedGas
 
     // if there was an error on the signed account op with a
@@ -612,7 +615,7 @@ export class SignAccountOpController extends EventEmitter {
     // IF the new estimation is not actually higher
     if (this.replacementFeeLow && this.signedAccountOp && this.signedAccountOp.gasFeePayment) {
       const prevGas = this.signedAccountOp.gasFeePayment[gasPropertyName] ?? undefined
-      const bumpFees = prevGas ? prevGas + prevGas / 8n + prevGas / 100n : 0n
+      const bumpFees = prevGas ? prevGas + prevGas / divider + prevGas / 100n : 0n
       return min > bumpFees ? min : bumpFees
     }
 
@@ -624,7 +627,7 @@ export class SignAccountOpController extends EventEmitter {
     // increase by a minimum of 13% the last broadcast txn and use that
     // or use the current gas estimation if it's more
     const rbfGas = rbfOp.gasFeePayment[gasPropertyName] ?? 0n
-    const lastTxnGasPriceIncreased = rbfGas + rbfGas / 8n + rbfGas / 100n
+    const lastTxnGasPriceIncreased = rbfGas + rbfGas / divider + rbfGas / 100n
     return min > lastTxnGasPriceIncreased ? min : lastTxnGasPriceIncreased
   }
 
