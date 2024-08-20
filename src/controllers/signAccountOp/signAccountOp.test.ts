@@ -37,7 +37,7 @@ const providers = Object.fromEntries(
   networks.map((network) => [network.id, getRpcProvider(network.rpcUrls, network.chainId)])
 )
 
-global.structuredClone = structuredClone as any
+// global.structuredClone = structuredClone as any
 
 const createAccountOp = (
   account: Account,
@@ -529,7 +529,7 @@ describe('SignAccountOp Controller ', () => {
       isERC4337: false,
       isGasTank: false,
       inToken: '0x0000000000000000000000000000000000000000',
-      networkId: 'ethereum',
+      feeTokenNetworkId: 'ethereum',
       amount: 6005000n, // ((300 + 300) × 10000) + 10000, i.e. ((baseFee + priorityFee) * gasUsed) + addedNative
       simulatedGasLimit: 10000n, // 10000, i.e. gasUsed,
       maxPriorityFeePerGas: 300n,
@@ -1249,7 +1249,7 @@ describe('SignAccountOp Controller ', () => {
       isERC4337: false,
       isGasTank: false,
       inToken: '0x0000000000000000000000000000000000000000',
-      networkId: 'polygon',
+      feeTokenNetworkId: 'polygon',
       amount: 9005000n, // (300 + 300) × (10000+5000) + 10000, i.e. (baseFee + priorityFee) * (gasUsed + additionalCall) + addedNative
       simulatedGasLimit: 15000n, // 10000 + 5000, i.e. gasUsed + additionalCall
       maxPriorityFeePerGas: 300n,

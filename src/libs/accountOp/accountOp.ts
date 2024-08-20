@@ -21,7 +21,7 @@ export interface GasFeePayment {
   paidBy: string
   inToken: string
   // optional, because older versions of the extension did not have this stored locally
-  networkId?: NetworkId
+  feeTokenNetworkId?: NetworkId
   amount: bigint
   simulatedGasLimit: bigint
   gasPrice: bigint
