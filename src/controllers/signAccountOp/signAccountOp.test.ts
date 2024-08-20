@@ -31,12 +31,13 @@ import { NetworksController } from '../networks/networks'
 import { PortfolioController } from '../portfolio/portfolio'
 import { ProvidersController } from '../providers/providers'
 import { getFeeSpeedIdentifier } from './helper'
-import { SignAccountOpController } from './signAccountOp'
+import { SignAccountOpController, SigningStatus } from './signAccountOp'
 
 const providers = Object.fromEntries(
   networks.map((network) => [network.id, getRpcProvider(network.rpcUrls, network.chainId)])
 )
 
+// // @ts-ignore
 global.structuredClone = structuredClone as any
 
 const createAccountOp = (
@@ -540,7 +541,7 @@ describe('SignAccountOp Controller ', () => {
     expect(controller.status).toEqual({ type: 'done' })
   })
 
-  test('Signing [EOA]: should return an error if the availableAmount is 0', async () => {
+  test('Signing [EOA]: should emit an error if the availableAmount is 0', async () => {
     const { controller, estimation, prices } = await init(
       eoaAccount,
       createEOAAccountOp(eoaAccount),
@@ -598,6 +599,10 @@ describe('SignAccountOp Controller ', () => {
       ]
     )
 
+    let errorCount = 0
+    const mockEmitError = jest.fn(() => errorCount++)
+    ;(controller as any).emitError = mockEmitError
+
     controller.update({
       gasPrices: prices,
       estimation,
@@ -607,15 +612,12 @@ describe('SignAccountOp Controller ', () => {
       paidBy: eoaAccount.addr
     })
 
-    const errors = controller.errors
-    expect(errors.length).toBe(1)
-    expect(errors[0]).toBe('Insufficient funds to cover the fee.')
+    await controller.sign()
 
-    await expect(controller.sign()).rejects.toThrow()
-    expect(controller.status?.type).toBe('unable-to-sign')
+    expect(errorCount).toBe(1)
   })
 
-  test('Signing [EOA]: should return an error if the availableAmount is lower than required', async () => {
+  test('Signing [EOA]: should emit an error if the availableAmount is lower than required', async () => {
     const { controller, estimation, prices } = await init(
       eoaAccount,
       createEOAAccountOp(eoaAccount),
@@ -673,6 +675,10 @@ describe('SignAccountOp Controller ', () => {
       ]
     )
 
+    let errorCount = 0
+    const mockEmitError = jest.fn(() => errorCount++)
+    ;(controller as any).emitError = mockEmitError
+
     controller.update({
       gasPrices: prices,
       estimation,
@@ -682,12 +688,9 @@ describe('SignAccountOp Controller ', () => {
       paidBy: eoaAccount.addr
     })
 
-    const errors = controller.errors
-    expect(errors.length).toBe(1)
-    expect(errors[0]).toBe('Insufficient funds to cover the fee.')
+    await controller.sign()
 
-    await expect(controller.sign()).rejects.toThrow()
-    expect(controller.status?.type).toBe('unable-to-sign')
+    expect(errorCount).toBe(1)
   })
 
   test('Signing [Relayer]: Smart account paying with ERC-20 token.', async () => {
@@ -951,8 +954,9 @@ describe('SignAccountOp Controller ', () => {
     expect(errors[0]).toBe(
       `Currently, ${controller.availableFeeOptions[0].token.symbol} is unavailable as a fee token as we're experiencing troubles fetching its price. Please select another or contact support`
     )
+    expect(controller.status?.type).toBe(SigningStatus.UnableToSign)
+    await controller.sign()
 
-    await expect(controller.sign()).rejects.toThrow()
     expect(controller.accountOp?.signature).toBe(null)
   })
 
@@ -1356,8 +1360,10 @@ describe('SignAccountOp Controller ', () => {
       "Signing is not possible with the selected account's token as it doesn't have sufficient funds to cover the gas payment fee."
     )
 
-    await expect(controller.sign()).rejects.toThrow()
-    expect(controller.status?.type).toBe('unable-to-sign')
+    expect(controller.status?.type).toBe(SigningStatus.UnableToSign)
+    await controller.sign()
+
+    expect(controller.signedAccountOp?.signature).toBeFalsy()
   })
 
   test('Signing [V1 with EOA payment]: working case', async () => {

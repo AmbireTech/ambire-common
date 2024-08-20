@@ -1,8 +1,8 @@
 import { formatUnits, ZeroAddress } from 'ethers'
 
-import { SubmittedAccountOp } from '../../controllers/activity/activity'
 import { FeePaymentOption } from '../../libs/estimate/interfaces'
 import { Price, TokenResult } from '../../libs/portfolio'
+import { SubmittedAccountOp } from '../activity/activity'
 
 export function getFeeSpeedIdentifier(
   option: FeePaymentOption,

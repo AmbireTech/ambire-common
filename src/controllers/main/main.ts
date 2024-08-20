@@ -611,15 +611,13 @@ export class MainController extends EventEmitter {
       this.actions.addOrUpdateAction(accountOpAction, true)
     }
 
+    await this.activity.addSignedMessage(signedMessage, signedMessage.accountAddr)
     await this.resolveUserRequest({ hash: signedMessage.signature }, signedMessage.fromActionId)
+
     await this.#notificationManager.create({
       title: 'Done!',
       message: 'The Message was successfully signed.'
     })
-
-    // TODO: In the rare case when this might error, the user won't be notified,
-    // since `this.resolveUserRequest` closes the action window.
-    await this.activity.addSignedMessage(signedMessage, signedMessage.accountAddr)
   }
 
   async #handleAccountAdderInitLedger(
@@ -650,7 +648,7 @@ export class MainController extends EventEmitter {
         throw new EmittableError({ message, level: 'major', error: new Error(message) })
       }
 
-      const keyIterator = new LedgerKeyIterator({ walletSDK: ledgerCtrl.walletSDK })
+      const keyIterator = new LedgerKeyIterator({ controller: ledgerCtrl })
       this.accountAdder.init({
         keyIterator,
         hdPathTemplate: BIP44_LEDGER_DERIVATION_TEMPLATE
@@ -1224,7 +1222,19 @@ export class MainController extends EventEmitter {
             a.accountOp.networkId === network.id
         ) as AccountOpAction | undefined
 
-        const hasAuthorized = !!currentAccountOpAction?.accountOp?.meta?.entryPointAuthorization
+        this.activity.setFilters({
+          account: account.addr,
+          network: network.id
+        })
+        const entryPointAuthorizationMessageFromHistory = this.activity.signedMessages?.items.find(
+          (message) =>
+            message.fromActionId === ENTRY_POINT_AUTHORIZATION_REQUEST_ID &&
+            message.networkId === network.id
+        )
+        const hasAuthorized =
+          !!currentAccountOpAction?.accountOp?.meta?.entryPointAuthorization ||
+          !!entryPointAuthorizationMessageFromHistory
+
         if (shouldAskForEntryPointAuthorization(network, account, accountState, hasAuthorized)) {
           await this.addEntryPointAuthorization(req, network, accountState, executionType)
           this.emitUpdate()
@@ -1236,7 +1246,9 @@ export class MainController extends EventEmitter {
           networkId: meta.networkId,
           nonce: accountState.nonce,
           userRequests: this.userRequests,
-          actionsQueue: this.actions.actionsQueue
+          actionsQueue: this.actions.actionsQueue,
+          entryPointAuthorizationSignature:
+            entryPointAuthorizationMessageFromHistory?.signature ?? undefined
         })
         this.actions.addOrUpdateAction(accountOpAction, withPriority, executionType)
         if (this.signAccountOp && this.signAccountOp.fromActionId === accountOpAction.id) {
@@ -2043,7 +2055,7 @@ export class MainController extends EventEmitter {
     const replacementFeeLow = error?.message.includes('replacement fee too low')
     // To enable another try for signing in case of broadcast fail
     // broadcast is called in the FE only after successful signing
-    this.signAccountOp?.updateStatusToReadyToSign(replacementFeeLow)
+    this.signAccountOp?.updateStatus(SigningStatus.ReadyToSign, replacementFeeLow)
     if (replacementFeeLow) this.estimateSignAccountOp()
 
     this.feePayerKey = null

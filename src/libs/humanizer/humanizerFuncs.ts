@@ -1,5 +1,5 @@
 import { ErrorRef } from '../../controllers/eventEmitter/eventEmitter'
-import { Message, PlainTextMessage, TypedMessage } from '../../interfaces/userRequest'
+import { Message, PlainTextMessage } from '../../interfaces/userRequest'
 import { AccountOp } from '../accountOp/accountOp'
 import {
   HumanizerCallModule,
@@ -43,7 +43,7 @@ export function humanizeCalls(
 }
 export const humanizeTypedMessage = (
   modules: HumanizerTypedMessageModule[],
-  tm: TypedMessage
+  tm: Message
   // only fullVisualization and warnings
 ): Omit<IrMessage, keyof Message> => {
   // runs all modules and takes the first non empty array
