@@ -477,7 +477,19 @@ export class SignAccountOpController extends EventEmitter {
     this.updateStatus()
   }
 
-  updateStatus(replacementFeeLow = false) {
+  updateStatus(forceStatusChange?: SigningStatus, replacementFeeLow = false) {
+    // use this to go back to ReadyToSign when a broadcasting error is emitted
+    if (forceStatusChange) {
+      this.status = { type: forceStatusChange }
+      this.emitUpdate()
+      return
+    }
+
+    // no status updates on these two
+    const isInTheMiddleOfSigning = this.status?.type === SigningStatus.InProgress
+    const isDone = this.status?.type === SigningStatus.Done
+    if (isInTheMiddleOfSigning || isDone) return
+
     // if we have an estimation error, set the state so and return
     if (this.estimation?.error) {
       this.status = { type: SigningStatus.EstimationError }
@@ -494,17 +506,12 @@ export class SignAccountOpController extends EventEmitter {
       return
     }
 
-    const isInTheMiddleOfSigning = this.status?.type === SigningStatus.InProgress
     if (
       this.isInitialized &&
       this.estimation &&
       this.accountOp?.signingKeyAddr &&
       this.accountOp?.signingKeyType &&
       this.accountOp?.gasFeePayment &&
-      // Update if status is NOT already set (that's the initial state update)
-      // or in general if the user is not in the middle of signing (otherwise
-      // it resets the loading state back to ready to sign)
-      (!this.status || !isInTheMiddleOfSigning) &&
       // if the gas used is too high, do not allow the user to sign
       // until he explicitly agrees to the risks
       (!this.gasUsedTooHigh || this.gasUsedTooHighAgreed)
@@ -517,13 +524,8 @@ export class SignAccountOpController extends EventEmitter {
       return
     }
 
-    // reset the status if not in progress / done
-    // and didn't update to any of the above
-    const isDone = this.status?.type === SigningStatus.Done
-    if (!isInTheMiddleOfSigning && !isDone) {
-      this.status = null
-    }
-
+    // reset the status if a valid state was not found
+    this.status = null
     this.emitUpdate()
   }
 
@@ -987,8 +989,9 @@ export class SignAccountOpController extends EventEmitter {
     return Number(gasSavedInNative) * nativePrice
   }
 
-  #emitSigningError(error: string) {
+  #emitSigningErrorAndResetToReadyToSign(error: string) {
     this.emitError({ level: 'major', message: error, error: new Error(error) })
+    this.status = { type: SigningStatus.ReadyToSign }
   }
 
   #addFeePayment() {
@@ -1032,7 +1035,7 @@ export class SignAccountOpController extends EventEmitter {
   async sign() {
     if (!this.readyToSign) {
       const message = `Unable to sign the transaction. During the preparation step, the necessary transaction data was not received. ${RETRY_TO_INIT_ACCOUNT_OP_MSG}`
-      return this.#emitSigningError(message)
+      return this.#emitSigningErrorAndResetToReadyToSign(message)
     }
 
     // when signing begings, we stop immediatelly state updates on the controller
@@ -1041,12 +1044,12 @@ export class SignAccountOpController extends EventEmitter {
 
     if (!this.accountOp?.signingKeyAddr || !this.accountOp?.signingKeyType) {
       const message = `Unable to sign the transaction. During the preparation step, required signing key information was found missing. ${RETRY_TO_INIT_ACCOUNT_OP_MSG}`
-      return this.#emitSigningError(message)
+      return this.#emitSigningErrorAndResetToReadyToSign(message)
     }
 
     if (!this.accountOp?.gasFeePayment) {
       const message = `Unable to sign the transaction. During the preparation step, required information about paying the gas fee was found missing. ${RETRY_TO_INIT_ACCOUNT_OP_MSG}`
-      return this.#emitSigningError(message)
+      return this.#emitSigningErrorAndResetToReadyToSign(message)
     }
 
     const signer = await this.#keystore.getSigner(
@@ -1055,7 +1058,7 @@ export class SignAccountOpController extends EventEmitter {
     )
     if (!signer) {
       const message = `Unable to sign the transaction. During the preparation step, required account key information was found missing. ${RETRY_TO_INIT_ACCOUNT_OP_MSG}`
-      return this.#emitSigningError(message)
+      return this.#emitSigningErrorAndResetToReadyToSign(message)
     }
 
     // we update the FE with the changed status (in progress) only after the checks
@@ -1101,7 +1104,7 @@ export class SignAccountOpController extends EventEmitter {
         if (this.accountOp.calls.length !== 1) {
           const callCount = this.accountOp.calls.length > 1 ? 'multiple' : 'zero'
           const message = `Unable to sign the transaction because it has ${callCount} calls. ${RETRY_TO_INIT_ACCOUNT_OP_MSG}`
-          return this.#emitSigningError(message)
+          return this.#emitSigningErrorAndResetToReadyToSign(message)
         }
 
         // In legacy mode, we sign the transaction directly.
@@ -1124,7 +1127,7 @@ export class SignAccountOpController extends EventEmitter {
           !accountState.isDeployed &&
           (!this.accountOp.meta || !this.accountOp.meta.entryPointAuthorization)
         )
-          return this.#emitSigningError(
+          return this.#emitSigningErrorAndResetToReadyToSign(
             `Unable to sign the transaction because entry point privileges were not granted. ${RETRY_TO_INIT_ACCOUNT_OP_MSG}`
           )
 
@@ -1227,7 +1230,7 @@ export class SignAccountOpController extends EventEmitter {
       this.emitUpdate()
       return this.signedAccountOp
     } catch (error: any) {
-      return this.#emitSigningError(error?.message)
+      return this.#emitSigningErrorAndResetToReadyToSign(error?.message)
     }
   }
 
