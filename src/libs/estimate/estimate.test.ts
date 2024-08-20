@@ -1139,6 +1139,8 @@ describe('estimate', () => {
     )
 
     expect(response.error).not.toBe(null)
-    expect(response.error?.message).toBe('Swap expired')
+    expect(response.error?.message).toBe(
+      'Transaction cannot be sent because the swap has expired. Please return to the dApp interface and try again.'
+    )
   })
 })
