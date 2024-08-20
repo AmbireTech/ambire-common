@@ -212,7 +212,7 @@ export class AccountsController extends EventEmitter {
   }
 
   async removeAccountData(address: Account['addr']) {
-    this.accounts = this.accounts.filter((acc) => acc.addr !== address)
+    this.accounts = getUniqueAccountsArray(this.accounts.filter((acc) => acc.addr !== address))
     if (this.selectedAccount === address) await this.#selectAccount(this.accounts[0]?.addr)
     delete this.accountStates[address]
     this.#storage.set('accounts', this.accounts)
@@ -228,14 +228,16 @@ export class AccountsController extends EventEmitter {
   }
 
   async #updateAccountPreferences(accounts: { addr: string; preferences: AccountPreferences }[]) {
-    this.accounts = this.accounts.map((acc) => {
-      const account = accounts.find((a) => a.addr === acc.addr)
-      if (!account) return acc
-      if (isAddress(account.preferences.pfp)) {
-        account.preferences.pfp = getAddress(account.preferences.pfp)
-      }
-      return { ...acc, preferences: account.preferences, newlyAdded: false }
-    })
+    this.accounts = getUniqueAccountsArray(
+      this.accounts.map((acc) => {
+        const account = accounts.find((a) => a.addr === acc.addr)
+        if (!account) return acc
+        if (isAddress(account.preferences.pfp)) {
+          account.preferences.pfp = getAddress(account.preferences.pfp)
+        }
+        return { ...acc, preferences: account.preferences, newlyAdded: false }
+      })
+    )
     await this.#storage.set('accounts', this.accounts)
     this.emitUpdate()
   }
