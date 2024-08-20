@@ -142,7 +142,8 @@ const networks: Network[] = [
     hasSingleton: true,
     features: [],
     feeOptions: {
-      is1559: true
+      is1559: true,
+      minBaseFeeEqualToLastBlock: true
     },
     predefined: true,
     wrappedAddr: '0x4200000000000000000000000000000000000006'
