@@ -184,6 +184,7 @@ export async function estimate4337(
 
       const localOp = { ...option }
       localOp.availableAmount = feeTokenOutcomes[index][1]
+      localOp.token.amount = feeTokenOutcomes[index][1]
       return localOp
     }
   )
@@ -197,7 +198,10 @@ export async function estimate4337(
       paidBy: nativeToCheck[key],
       availableAmount: balance,
       addedNative: l1GasEstimation.fee,
-      token: nativeToken
+      token: {
+        ...nativeToken,
+        amount: balance
+      }
     })
   )
   bundlerEstimationResult.feePaymentOptions = [
@@ -357,9 +361,10 @@ export async function estimate(
 
   const feeTokenOptions: FeePaymentOption[] = filteredFeeTokens.map(
     (token: TokenResult, key: number) => {
+      const availableAmount = token.flags.onGasTank ? token.amount : feeTokenOutcomes[key].amount
       return {
         paidBy: account.addr,
-        availableAmount: token.flags.onGasTank ? token.amount : feeTokenOutcomes[key].amount,
+        availableAmount,
         // gasUsed for the gas tank tokens is smaller because of the commitment:
         // ['gasTank', amount, symbol]
         // and this commitment costs onchain:
@@ -374,7 +379,10 @@ export async function estimate(
           token.address === ZeroAddress
             ? l1GasEstimation.feeWithNativePayment
             : l1GasEstimation.feeWithTransferPayment,
-        token
+        token: {
+          ...token,
+          amount: availableAmount
+        }
       }
     }
   )
@@ -388,7 +396,10 @@ export async function estimate(
       paidBy: nativeToCheck[key],
       availableAmount: balance,
       addedNative: l1GasEstimation.fee,
-      token: nativeToken
+      token: {
+        ...nativeToken,
+        amount: balance
+      }
     })
   )
 
