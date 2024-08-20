@@ -38,20 +38,20 @@ export function mapTxnErrMsg(contractError: string): string | null {
   if (!msg || msg === '0x') return null
 
   if (msg.includes('Router: EXPIRED') || msg.includes('Transaction too old') || msg === expiredSig)
-    return 'Swap expired'
+    return 'Transaction cannot be sent because the swap has expired. Please return to the dApp interface and try again.'
   if (msg.includes('Router: INSUFFICIENT_OUTPUT_AMOUNT'))
-    return 'Swap will suffer slippage higher than your requirements'
+    return 'Transaction cannot be sent because the slippage tolerance exceeds the set limit. Please return to the dApp interface to adjust your slippage tolerance or try again.'
   if (msg.includes('SPOOF_ERROR') || msg.includes('INSUFFICIENT_PRIVILEGE'))
-    return 'Your signer address is not authorized'
+    return 'Transaction cannot be sent because the account key is not authorized to sign.'
   if (contractErrors.find((contractMsg) => msg.includes(contractMsg)))
-    return 'This dApp does not support smart wallets'
+    return 'This dApp does not support Smart Account wallets. It can be used only with a Basic Account (EOA).'
   if (
     msg.includes('IMPOSSIBLE_GAS_CONSUMPTION') ||
     msg.toLowerCase().includes('insufficient funds')
   )
-    return 'Insufficient funds for intristic transaction cost'
+    return 'Transaction cannot be sent because of insufficient fee tokens in your account. Please transfer additional fee tokens to cover the transaction cost and try again.'
   if (msg.includes('paymaster deposit too low')) {
-    return 'Paymaster does not have enough funds to execute this request. Please use another payment option or contact support'
+    return 'Transaction cannot be sent because the Paymaster does not have enough funds. Please choose to pay fee with another option or contact Ambire support for assistance.'
   }
   // a really long error appears when the message is unknown. We shorten it
   if (msg.includes('unknown custom error')) {
