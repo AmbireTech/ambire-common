@@ -74,7 +74,6 @@ function getNetworkMinBaseFee(network: Network, lastBlock: Block): bigint {
   if (network.feeOptions.minBaseFee) return network.feeOptions.minBaseFee
 
   // if we don't have a config, we return 0
-  console.log(network.feeOptions)
   if (network.predefined && !network.feeOptions.minBaseFeeEqualToLastBlock) return 0n
 
   // if it's a custom network and it has EIP-1559, set the minimum
