@@ -428,14 +428,6 @@ export class SignAccountOpController extends EventEmitter {
     // We do this only if strictly specified as null
     if (estimation === null) this.estimation = null
 
-    if (this.estimation?.error) {
-      this.status = { type: SigningStatus.EstimationError }
-    } else if (this.status?.type === SigningStatus.EstimationError) {
-      // if there are estimation errors and the status is estimation error,
-      // reset it as otherwise it stays like that forever
-      this.status = null
-    }
-
     if (feeToken && paidBy) {
       this.paidBy = paidBy
       this.feeTokenResult = feeToken
@@ -486,7 +478,12 @@ export class SignAccountOpController extends EventEmitter {
   }
 
   updateStatus(replacementFeeLow = false) {
-    const isInTheMiddleOfSigning = this.status?.type === SigningStatus.InProgress
+    // if we have an estimation error, set the state so and return
+    if (this.estimation?.error) {
+      this.status = { type: SigningStatus.EstimationError }
+      this.emitUpdate()
+      return
+    }
 
     const criticalErrors = this.errors.filter(
       (error) => !Object.values(NON_CRITICAL_ERRORS).includes(error)
@@ -497,13 +494,13 @@ export class SignAccountOpController extends EventEmitter {
       return
     }
 
+    const isInTheMiddleOfSigning = this.status?.type === SigningStatus.InProgress
     if (
       this.isInitialized &&
       this.estimation &&
       this.accountOp?.signingKeyAddr &&
       this.accountOp?.signingKeyType &&
       this.accountOp?.gasFeePayment &&
-      !criticalErrors.length &&
       // Update if status is NOT already set (that's the initial state update)
       // or in general if the user is not in the middle of signing (otherwise
       // it resets the loading state back to ready to sign)
@@ -516,6 +513,15 @@ export class SignAccountOpController extends EventEmitter {
 
       // do not reset this once triggered
       if (replacementFeeLow) this.replacementFeeLow = replacementFeeLow
+      this.emitUpdate()
+      return
+    }
+
+    // reset the status if not in progress / done
+    // and didn't update to any of the above
+    const isDone = this.status?.type === SigningStatus.Done
+    if (!isInTheMiddleOfSigning && !isDone) {
+      this.status = null
     }
 
     this.emitUpdate()
