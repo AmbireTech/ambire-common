@@ -902,6 +902,7 @@ export class SignAccountOpController extends EventEmitter {
         isErc4337Broadcast(this.#network, accountState),
       isGasTank: this.feeTokenResult.flags.onGasTank,
       inToken: this.feeTokenResult.address,
+      feeTokenNetworkId: this.feeTokenResult.networkId,
       amount: chosenSpeed.amount,
       simulatedGasLimit: chosenSpeed.simulatedGasLimit,
       gasPrice: chosenSpeed.gasPrice,
