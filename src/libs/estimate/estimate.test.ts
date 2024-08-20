@@ -1108,7 +1108,9 @@ describe('estimate', () => {
       feeTokens
     )
     expect(response.error).not.toBe(null)
-    expect(response.error?.message).toBe('Your signer address is not authorized')
+    expect(response.error?.message).toBe(
+      'Transaction cannot be sent because the account key is not authorized to sign.'
+    )
   })
 
   it('[v1] estimates an expired uniswap swap and it should display error properly', async () => {
