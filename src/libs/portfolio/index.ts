@@ -1,4 +1,5 @@
 import {
+  AddrVestingData,
   ClaimableRewardsData,
   CollectionResult,
   GetOptions,
@@ -9,4 +10,4 @@ import { Portfolio } from './portfolio'
 
 export { Portfolio }
 
-export type { Price, TokenResult, ClaimableRewardsData, CollectionResult, GetOptions }
+export type { Price, TokenResult, ClaimableRewardsData, AddrVestingData, CollectionResult, GetOptions }

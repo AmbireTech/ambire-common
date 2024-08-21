@@ -2063,7 +2063,7 @@ export class MainController extends EventEmitter {
     const replacementFeeLow = error?.message.includes('replacement fee too low')
     // To enable another try for signing in case of broadcast fail
     // broadcast is called in the FE only after successful signing
-    this.signAccountOp?.updateStatus(replacementFeeLow)
+    this.signAccountOp?.updateStatus(SigningStatus.ReadyToSign, replacementFeeLow)
     if (replacementFeeLow) this.estimateSignAccountOp()
 
     this.feePayerKey = null
