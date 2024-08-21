@@ -85,6 +85,18 @@ export const uniReduce = (_calls: HumanizerVisualization[][]): HumanizerVisualiz
         calls[i]![3].value = calls[i]![3].value! + calls[j]![3].value!
         delete calls[j]
       }
+
+      if (
+        calls[i] &&
+        calls[j] &&
+        isSwap(calls[i]!) &&
+        calls[j]![0].content?.includes('Send') &&
+        calls[j]![1].type === 'token' &&
+        calls[i]![3].value! / 400n >= calls[j]![1].value!
+      ) {
+        calls[i]![3].value = calls[i]![3].value! - calls[j]![1].value!
+        delete calls[j]
+      }
     }
   }
   const res = calls.filter((x) => x) as HumanizerVisualization[][]
