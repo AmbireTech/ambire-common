@@ -1623,13 +1623,7 @@ export class MainController extends EventEmitter {
               network,
               this.accounts.accountStates[localAccountOp.accountAddr][localAccountOp.networkId]
             )
-          },
-          '0x0000000000000000000000000000000000000001',
-          this.activity.broadcastedButNotConfirmed.filter(
-            (op) => op.networkId === localAccountOp.networkId
-          ).length
-            ? 'pending'
-            : 'latest'
+          }
         ).catch((e) => {
           this.emitError({
             level: 'major',
@@ -1669,15 +1663,17 @@ export class MainController extends EventEmitter {
           localAccountOp.nonce === lastTxn.nonce
 
         if (hasNonceDiscrepancy || SAHasOldNonceOnARelayerNetwork) {
-          // wait 1s before re-estimating
-          await new Promise((r) => {
-            setTimeout(r, 1000)
-          })
-
-          // returning here means estimation will not be set => better UX as
-          // the user will not see the error "nonce discrepancy" but instead
-          // just wait for the new estimation
-          this.estimateSignAccountOp()
+          this.accounts
+            .updateAccountState(localAccountOp.accountAddr, 'pending', [localAccountOp.networkId])
+            .then(() => this.estimateSignAccountOp())
+            .catch((error) =>
+              this.emitError({
+                level: 'major',
+                message:
+                  'Failed to refetch the account state. Please try again to initialize your transaction',
+                error
+              })
+            )
           return
         }
       }
@@ -1689,7 +1685,7 @@ export class MainController extends EventEmitter {
         this.accounts.accountStates?.[localAccountOp.accountAddr]?.[localAccountOp.networkId]
       ) {
         this.accounts
-          .updateAccountState(localAccountOp.accountAddr, 'latest', [localAccountOp.networkId])
+          .updateAccountState(localAccountOp.accountAddr, 'pending', [localAccountOp.networkId])
           .then(() => this.estimateSignAccountOp())
           .catch((error) =>
             this.emitError({

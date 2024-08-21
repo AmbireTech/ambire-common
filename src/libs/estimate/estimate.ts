@@ -224,7 +224,7 @@ export async function estimate(
     is4337Broadcast?: boolean
   },
   blockFrom: string = '0x0000000000000000000000000000000000000001',
-  blockTag: string | number = 'latest'
+  blockTag: string | number = 'pending'
 ): Promise<EstimateResult> {
   // if EOA, delegate
   if (!isSmartAccount(account))
