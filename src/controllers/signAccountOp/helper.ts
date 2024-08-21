@@ -41,8 +41,7 @@ export function getSignificantBalanceDecreaseWarning(
   latest: PortfolioControllerState,
   pending: PortfolioControllerState,
   networkId: Network['id'],
-  accountAddr: string,
-  previousWarnings: Warning[]
+  accountAddr: string
 ): Warning | null {
   const latestNetworkData = latest?.[accountAddr]?.[networkId]
   const pendingNetworkData = pending?.[accountAddr]?.[networkId]
@@ -51,9 +50,6 @@ export function getSignificantBalanceDecreaseWarning(
     !latestNetworkData.isLoading &&
     pendingNetworkData &&
     !pendingNetworkData.isLoading
-  const significantBalanceDecreaseWarning = previousWarnings.find(
-    (warning) => warning === WARNINGS.significantBalanceDecrease
-  )
 
   if (canDetermineIfBalanceWillDecrease) {
     const latestTotal = getAccountPortfolioTotal(latest[accountAddr], ['rewards', 'gasTank'])
@@ -64,10 +60,6 @@ export function getSignificantBalanceDecreaseWarning(
 
     if (!willBalanceDecreaseByMoreThan10Percent) return null
 
-    return WARNINGS.significantBalanceDecrease
-  }
-
-  if (significantBalanceDecreaseWarning) {
     return WARNINGS.significantBalanceDecrease
   }
 

@@ -378,8 +378,7 @@ export class SignAccountOpController extends EventEmitter {
       this.#portfolio.latest,
       this.#portfolio.pending,
       this.accountOp.networkId,
-      this.accountOp.accountAddr,
-      this.warnings
+      this.accountOp.accountAddr
     )
 
     if (significantBalanceDecreaseWarning) warnings.push(significantBalanceDecreaseWarning)
