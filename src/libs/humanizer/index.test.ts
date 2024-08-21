@@ -11,7 +11,7 @@ import { ErrorRef } from '../../controllers/eventEmitter/eventEmitter'
 import { Account } from '../../interfaces/account'
 import { Key } from '../../interfaces/keystore'
 import { Storage } from '../../interfaces/storage'
-import { Message, TypedMessage } from '../../interfaces/userRequest'
+import { TypedMessage } from '../../interfaces/userRequest'
 import { AccountOp } from '../accountOp/accountOp'
 import { callsHumanizer, messageHumanizer } from './index'
 import { IrCall, IrMessage } from './interfaces'
@@ -21,7 +21,6 @@ import {
   getAction,
   getAddressVisualization,
   getDeadline,
-  getHumanMessage,
   getLabel,
   getToken,
   HUMANIZER_META_KEY
@@ -331,26 +330,14 @@ describe('TypedMessages', () => {
       message,
       primaryType: 'Permit'
     }
-    // public humanizeMessages(accountOp: AccountOp, messages: Message[]) {
-    const messages: Message[] = [
-      {
-        fromActionId: 1,
-        accountAddr: accountOp.accountAddr,
-        content: tmTemplate,
-        signature: null,
-        networkId: 'ethereum'
-      },
-      {
-        fromActionId: 2,
-        accountAddr: accountOp.accountAddr,
-        content: {
-          kind: 'message',
-          message: 'random message'
-        },
-        signature: null,
-        networkId: 'ethereum'
-      }
-    ]
+    const fullMessage = {
+      fromActionId: 1,
+      accountAddr: accountOp.accountAddr,
+      content: tmTemplate,
+      signature: null,
+      networkId: 'ethereum'
+    }
+
     const expectedVisualizations = [
       getLabel('Permit #1'),
       getAction('Permit'),
@@ -375,18 +362,10 @@ describe('TypedMessages', () => {
       if (newMessage.fromActionId === 1) {
         compareVisualizations(newMessage.fullVisualization || [], expectedVisualizations)
       }
-      if (newMessage.fromActionId === 2) {
-        expect(newMessage.fullVisualization).toBeTruthy()
-        compareVisualizations(newMessage.fullVisualization || [], [
-          getAction('Sign message:'),
-          getHumanMessage('random message')
-        ])
-      }
     })
 
-    await messageHumanizer(messages[0], storage, fetch, onUpdate, emitError)
-    await messageHumanizer(messages[1], storage, fetch, onUpdate, emitError)
-    expect(onUpdate).toHaveBeenCalledTimes(2)
+    await messageHumanizer(fullMessage, storage, fetch, onUpdate, emitError)
+    expect(onUpdate).toHaveBeenCalledTimes(1)
   })
 })
 

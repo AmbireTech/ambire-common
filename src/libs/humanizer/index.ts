@@ -6,7 +6,7 @@ import { Message } from '../../interfaces/userRequest'
 import { AccountOp } from '../accountOp/accountOp'
 /* eslint-disable no-await-in-loop */
 import { parse, stringify } from '../richJson/richJson'
-import { humanizeCalls, humanizePlainTextMessage, humanizeTypedMessage } from './humanizerFuncs'
+import { humanizeCalls, humanizeTypedMessage } from './humanizerFuncs'
 import {
   HumanizerCallModule,
   HumanizerOptions,
@@ -123,12 +123,10 @@ const sharedHumanization = async <InputDataType extends AccountOp | Message>(
         op!.humanizerMetaFragments || []
       )
       //
-    } else if ('content' in data) {
+    } else if ('content' in data && message!.content.kind === 'typedMessage') {
       const irMessage: IrMessage = {
         ...message!,
-        ...(message!.content.kind === 'typedMessage'
-          ? humanizeTypedMessage(humanizerTMModules, message!)
-          : humanizePlainTextMessage(message!.content))
+        ...humanizeTypedMessage(humanizerTMModules, message!)
       }
 
       ;(callback as (response: IrMessage) => void)(irMessage)
