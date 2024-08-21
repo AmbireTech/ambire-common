@@ -1,4 +1,3 @@
-/* eslint-disable no-restricted-syntax */
 import {
   AbiCoder,
   formatEther,
@@ -13,15 +12,23 @@ import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import ERC20 from '../../../contracts/compiled/IERC20.json'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { AMBIRE_PAYMASTER, SINGLETON } from '../../consts/deploy'
+/* eslint-disable no-restricted-syntax */
+import {
+  ERRORS,
+  NON_CRITICAL_ERRORS,
+  RETRY_TO_INIT_ACCOUNT_OP_MSG,
+  WARNINGS
+} from '../../consts/signAccountOp/errorHandling'
 import {
   GAS_TANK_TRANSFER_GAS_USED,
   SA_ERC20_TRANSFER_GAS_USED,
   SA_NATIVE_TRANSFER_GAS_USED
-} from '../../consts/signAccountOp'
+} from '../../consts/signAccountOp/gas'
 import { Account } from '../../interfaces/account'
 import { Fetch } from '../../interfaces/fetch'
 import { ExternalSignerControllers, Key } from '../../interfaces/keystore'
 import { Network } from '../../interfaces/network'
+import { Warning } from '../../interfaces/signAccountOp'
 import { Storage } from '../../interfaces/storage'
 import { isAmbireV1LinkedAccount, isSmartAccount } from '../../libs/account/account'
 import { AccountOp, GasFeePayment, getSignableCalls } from '../../libs/accountOp/accountOp'
@@ -90,36 +97,6 @@ type SpeedCalc = {
 
 // declare the statuses we don't want state updates on
 const noStateUpdateStatuses = [SigningStatus.InProgress, SigningStatus.Done]
-
-/** Errors that don't prevent signing */
-const NON_CRITICAL_ERRORS = {
-  feeUsdEstimation: 'Unable to estimate the transaction fee in USD.'
-}
-/** Technically all errors are critical, except NON_CRITICAL_ERRORS */
-const CRITICAL_ERRORS = {
-  eoaInsufficientFunds: 'Insufficient funds to cover the fee.'
-}
-
-type Warning = {
-  id: string
-  title: string
-  text: string
-  promptBeforeSign: boolean
-  displayBeforeSign: boolean
-}
-
-const SIGN_WARNINGS: { [key: string]: Warning } = {
-  significantBalanceDecrease: {
-    id: 'significantBalanceDecrease',
-    title: 'Significant Account Balance Decrease',
-    text: 'The transaction you are about to sign will significantly decrease your account balance. Please review the transaction details carefully.',
-    promptBeforeSign: true,
-    displayBeforeSign: true
-  }
-}
-
-const RETRY_TO_INIT_ACCOUNT_OP_MSG =
-  'Please attempt to initiate the transaction again or contact Ambire support.'
 
 export class SignAccountOpController extends EventEmitter {
   #accounts: AccountsController
@@ -286,7 +263,7 @@ export class SignAccountOpController extends EventEmitter {
     }
 
     // this error should never happen as availableFeeOptions should always have the native option
-    if (!this.availableFeeOptions.length) errors.push(CRITICAL_ERRORS.eoaInsufficientFunds)
+    if (!this.availableFeeOptions.length) errors.push(ERRORS.eoaInsufficientFunds)
 
     // This error should not happen, as in the update method we are always setting a default signer.
     // It may occur, only if there are no available signer.
@@ -336,7 +313,7 @@ export class SignAccountOpController extends EventEmitter {
         errors.push(
           isSmartAccount(this.account)
             ? "Signing is not possible with the selected account's token as it doesn't have sufficient funds to cover the gas payment fee."
-            : CRITICAL_ERRORS.eoaInsufficientFunds
+            : ERRORS.eoaInsufficientFunds
         )
       } else {
         errors.push(
@@ -414,7 +391,7 @@ export class SignAccountOpController extends EventEmitter {
         latestOnNetwork - pendingOnNetwork > latestTotal * 0.1
 
       if (willBalanceDecreaseByMoreThan10Percent) {
-        warnings.push(SIGN_WARNINGS.significantBalanceDecrease)
+        warnings.push(WARNINGS.significantBalanceDecrease)
       }
     }
 
