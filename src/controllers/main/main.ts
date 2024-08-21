@@ -1623,7 +1623,13 @@ export class MainController extends EventEmitter {
               network,
               this.accounts.accountStates[localAccountOp.accountAddr][localAccountOp.networkId]
             )
-          }
+          },
+          '0x0000000000000000000000000000000000000001',
+          this.activity.broadcastedButNotConfirmed.filter(
+            (op) => op.networkId === localAccountOp.networkId
+          ).length
+            ? 'pending'
+            : 'latest'
         ).catch((e) => {
           this.emitError({
             level: 'major',
@@ -1638,23 +1644,42 @@ export class MainController extends EventEmitter {
       // if the signAccountOp has been deleted, don't continue as the request has already finished
       if (!this.signAccountOp) return
 
-      // if the nonce from the estimation is bigger than the one in localAccountOp,
-      // override the accountState and accountOp with the newly detected nonce
-      // and start a new estimation
-      if (estimation && BigInt(estimation.currentAccountNonce) > (localAccountOp.nonce ?? 0n)) {
-        localAccountOp.nonce = BigInt(estimation.currentAccountNonce)
-        this.signAccountOp.accountOp.nonce = BigInt(estimation.currentAccountNonce)
+      if (estimation) {
+        const currentNonceAhead =
+          BigInt(estimation.currentAccountNonce) > (localAccountOp.nonce ?? 0n)
 
-        if (this.accounts.accountStates?.[localAccountOp.accountAddr]?.[localAccountOp.networkId])
-          this.accounts.accountStates[localAccountOp.accountAddr][localAccountOp.networkId].nonce =
-            localAccountOp.nonce
+        // if the nonce from the estimation is bigger than the one in localAccountOp,
+        // override the accountState and accountOp with the newly detected nonce
+        if (currentNonceAhead) {
+          localAccountOp.nonce = BigInt(estimation.currentAccountNonce)
+          this.signAccountOp.accountOp.nonce = BigInt(estimation.currentAccountNonce)
 
-        this.estimateSignAccountOp()
+          if (this.accounts.accountStates?.[localAccountOp.accountAddr]?.[localAccountOp.networkId])
+            this.accounts.accountStates[localAccountOp.accountAddr][
+              localAccountOp.networkId
+            ].nonce = localAccountOp.nonce
+        }
 
-        // returning here means estimation will not be set => better UX as
-        // the user will not see the error "nonce discrepancy" but instead
-        // just wait for the new estimation
-        return
+        const hasNonceDiscrepancy = estimation.error?.cause === 'NONCE_FAILURE'
+        const lastTxn = this.activity.getLastTxn(localAccountOp.networkId)
+        const SAHasOldNonceOnARelayerNetwork =
+          isSmartAccount(account) &&
+          !network.erc4337.enabled &&
+          lastTxn &&
+          localAccountOp.nonce === lastTxn.nonce
+
+        if (hasNonceDiscrepancy || SAHasOldNonceOnARelayerNetwork) {
+          // wait 1s before re-estimating
+          await new Promise((r) => {
+            setTimeout(r, 1000)
+          })
+
+          // returning here means estimation will not be set => better UX as
+          // the user will not see the error "nonce discrepancy" but instead
+          // just wait for the new estimation
+          this.estimateSignAccountOp()
+          return
+        }
       }
 
       if (

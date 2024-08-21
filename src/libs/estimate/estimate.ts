@@ -38,7 +38,7 @@ function getInnerCallFailure(estimationOp: { success: boolean; err: string }): E
   })
 }
 
-// the outcomeNonce should always be equat to the nonce in accountOp + 1
+// the outcomeNonce should always be equal to the nonce in accountOp + 1
 // that's an indication of transaction success
 function getNonceDiscrepancyFailure(op: AccountOp, outcomeNonce: number): Error | null {
   if (op.nonce !== null && op.nonce + 1n === BigInt(outcomeNonce)) return null
