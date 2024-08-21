@@ -1,4 +1,4 @@
-import { Interface, JsonRpcProvider } from 'ethers'
+import { Interface, JsonRpcProvider, MaxUint256, solidityPackedKeccak256 } from 'ethers'
 
 import { beforeAll, expect } from '@jest/globals'
 
@@ -121,6 +121,24 @@ describe('Debug tracecall detection for transactions', () => {
       }
     ]
 
+    const approvalStorageSlotUSDC = solidityPackedKeccak256(
+      ['uint256', 'uint256'],
+      [
+        '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+        solidityPackedKeccak256(
+          ['uint256', 'uint256'],
+          ['0xd034DDc997283B8179A12fE8d36a7356F01f2Ddd', 10]
+        )
+      ]
+    )
+    const overrideData = {
+      '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359': {
+        stateDiff: {
+          [approvalStorageSlotUSDC]: `0x${MaxUint256.toString(16)}`
+        }
+      }
+    }
+
     const res = await debugTraceCall(
       account,
       accountOp,
@@ -128,8 +146,9 @@ describe('Debug tracecall detection for transactions', () => {
       state,
       // a lot of gas
       100000000000000n,
-      [{ name: 'fast', gasPrice: 33831818155n }],
-      true
+      [{ name: 'fast', gasPrice: 338318181550000000n }],
+      true,
+      overrideData
     )
 
     expect(res.nfts.length).toBe(1)
