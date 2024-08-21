@@ -81,7 +81,7 @@ export const uniUniversalRouter = (options?: any): HumanizerUniMatcher => {
               const path = parsePath(params.path)
 
               parsed.push([
-                getAction('Swap up  to'),
+                getAction('Swap up to'),
                 getToken(path[path.length - 1], params.amountInMax),
                 getLabel('for'),
                 getToken(path[0], params.amountOut),
@@ -148,7 +148,7 @@ export const uniUniversalRouter = (options?: any): HumanizerUniMatcher => {
               const path = params.path
 
               parsed.push([
-                getAction('Swap up  to'),
+                getAction('Swap up to'),
                 getToken(path[0], params.amountInMax),
                 getLabel('for'),
                 getToken(path[path.length - 1], params.amountOut),
