@@ -26,27 +26,33 @@ export const joinWithAndLabel = (
   return humanizations.reduce((acc, arr) => [...acc, ...arr, getLabel('and')], []).slice(0, -1)
 }
 
-const isSwap = (call: HumanizerVisualization[]) =>
+const isSwap = (call: HumanizerVisualization[] | undefined) =>
+  call &&
   call.length >= 4 &&
   call[0].content?.includes('Swap') &&
   call[1].type === 'token' &&
   call[3].type === 'token'
 
+const isWrap = (call: HumanizerVisualization[] | undefined) =>
+  call && call.length >= 2 && call[0].content?.includes('Wrap') && call[1].type === 'token'
+
+const isUnwrap = (call: HumanizerVisualization[] | undefined) =>
+  call && call.length >= 2 && call[0].content?.includes('Unwrap') && call[1].type === 'token'
+
+const isSend = (call: HumanizerVisualization[] | undefined) =>
+  call &&
+  call.length >= 4 &&
+  call[0].content?.includes('Send') &&
+  call[1].type === 'token' &&
+  call[2]?.content?.includes('to') &&
+  call[3].type === 'address'
 export const uniReduce = (_calls: HumanizerVisualization[][]): HumanizerVisualization[] => {
   const calls: (HumanizerVisualization[] | undefined)[] = _calls
   for (let i = 0; i < calls.length; i++) {
-    if (!calls[i]) continue
-    if (!isSwap(calls[i]!)) continue
     let doneFlag = false
     // looks for wraps before the swap
     for (let j = 0; j < i; j++) {
-      if (
-        calls[i] &&
-        calls[j] &&
-        calls[j]!.length >= 2 &&
-        calls[j]![0].content?.includes('Wrap') &&
-        calls[j]![1].value === calls[i]![1].value
-      ) {
+      if (isSwap(calls[i]) && isWrap(calls[j]) && calls[j]![1].value === calls[i]![1].value) {
         calls[i]![1].address = ZeroAddress
         delete calls[j]
         doneFlag = true
@@ -56,14 +62,7 @@ export const uniReduce = (_calls: HumanizerVisualization[][]): HumanizerVisualiz
     if (doneFlag) continue
 
     for (let j = i + 1; j < calls.length; j++) {
-      if (
-        calls[i] &&
-        calls[j] &&
-        calls[i]!.length >= 4 &&
-        calls[j]!.length >= 2 &&
-        calls[j]![0].content?.includes('Unwrap') &&
-        calls[j]![1].value === calls[i]![3].value
-      ) {
+      if (isSwap(calls[i]) && isUnwrap(calls[j]) && calls[j]![1].value === calls[i]![3].value) {
         calls[i]![3].address = ZeroAddress
         delete calls[j]
         doneFlag = true
@@ -74,8 +73,6 @@ export const uniReduce = (_calls: HumanizerVisualization[][]): HumanizerVisualiz
     for (let j = 0; j < calls.length; j++) {
       if (
         i !== j &&
-        calls[i] &&
-        calls[j] &&
         isSwap(calls[i]!) &&
         isSwap(calls[j]!) &&
         calls[i]![1].address === calls[j]![1].address &&
@@ -87,11 +84,8 @@ export const uniReduce = (_calls: HumanizerVisualization[][]): HumanizerVisualiz
       }
 
       if (
-        calls[i] &&
-        calls[j] &&
+        isSend(calls[j]) &&
         isSwap(calls[i]!) &&
-        calls[j]![0].content?.includes('Send') &&
-        calls[j]![1].type === 'token' &&
         calls[i]![3].value! / 400n >= calls[j]![1].value!
       ) {
         calls[i]![3].value = calls[i]![3].value! - calls[j]![1].value!
