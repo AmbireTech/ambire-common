@@ -37,7 +37,12 @@ export function mapTxnErrMsg(contractError: string): string | null {
 
   if (!msg || msg === '0x') return null
 
-  if (msg.includes('Router: EXPIRED') || msg.includes('Transaction too old') || msg === expiredSig)
+  if (
+    msg.includes('Router: EXPIRED') ||
+    msg.includes('Transaction too old') ||
+    msg === expiredSig ||
+    msg.includes(expiredSig)
+  )
     return 'Swap expired'
   if (msg.includes('Router: INSUFFICIENT_OUTPUT_AMOUNT'))
     return 'Swap will suffer slippage higher than your requirements'
