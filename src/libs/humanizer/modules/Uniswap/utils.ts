@@ -27,62 +27,66 @@ export const joinWithAndLabel = (
 }
 
 const isSwap = (call: HumanizerVisualization[]) =>
-  call.length >= 4 && call[0].content?.includes('Swap') && call[1].type === 'token'
+  call.length >= 4 &&
+  call[0].content?.includes('Swap') &&
+  call[1].type === 'token' &&
+  call[3].type === 'token'
 
 export const uniReduce = (_calls: HumanizerVisualization[][]): HumanizerVisualization[] => {
-  const calls = _calls
+  const calls: (HumanizerVisualization[] | undefined)[] = _calls
   for (let i = 0; i < calls.length; i++) {
     if (!calls[i]) continue
-    if (!isSwap(calls[i])) continue
-
-    const foundIndexOfWrapToRemove = calls.findIndex(
-      (wrapCall) =>
-        wrapCall &&
-        wrapCall[0]?.content?.includes('Wrap') &&
-        wrapCall[1]?.value === calls[i][1]?.value &&
-        wrapCall[1].address === ZeroAddress
-    )
-    if (foundIndexOfWrapToRemove !== -1) {
-      delete calls[foundIndexOfWrapToRemove]
-      calls[i][1].address = ZeroAddress
+    if (!isSwap(calls[i]!)) continue
+    let doneFlag = false
+    // looks for wraps before the swap
+    for (let j = 0; j < i; j++) {
+      if (
+        calls[i] &&
+        calls[j] &&
+        calls[j]!.length >= 2 &&
+        calls[j]![0].content?.includes('Wrap') &&
+        calls[j]![1].value === calls[i]![1].value
+      ) {
+        calls[i]![1].address = ZeroAddress
+        delete calls[j]
+        doneFlag = true
+        break
+      }
     }
+    if (doneFlag) continue
 
-    const foundIndexOfUnwrapToRemove = calls.findIndex(
-      (unwrapCall) =>
-        unwrapCall &&
-        unwrapCall[0]?.content?.includes('Unwrap') &&
-        unwrapCall[1]?.value === calls[i][3]?.value &&
-        unwrapCall[1].address === ZeroAddress
-    )
-
-    if (foundIndexOfUnwrapToRemove !== -1) {
-      delete calls[foundIndexOfUnwrapToRemove]
-      calls[i][3].address = ZeroAddress
+    for (let j = i + 1; j < calls.length; j++) {
+      if (
+        calls[i] &&
+        calls[j] &&
+        calls[i]!.length >= 4 &&
+        calls[j]!.length >= 2 &&
+        calls[j]![0].content?.includes('Unwrap') &&
+        calls[j]![1].value === calls[i]![3].value
+      ) {
+        calls[i]![3].address = ZeroAddress
+        delete calls[j]
+        doneFlag = true
+        break
+      }
     }
-
-    // swaps with the same assets, not the current
-    const similarSwaps = calls.filter(
-      (c, j) =>
-        j !== i &&
-        isSwap(c) &&
-        c[1].address === calls[i][1]?.address &&
-        c[3].address === calls[i][3]?.address
-    )
-
-    similarSwaps.forEach((similarSwap) => {
-      const indexOfSimilarSwapToRemove = calls.findIndex(
-        (call) =>
-          isSwap(call) &&
-          call[1].address === similarSwap[1]?.address &&
-          call[3].address === similarSwap[3]?.address &&
-          call[1].value === similarSwap[1]?.value &&
-          call[3].value === similarSwap[3]?.value
-      )
-      calls[i][1].value = calls[i][1].value! + calls[indexOfSimilarSwapToRemove][1].value!
-      calls[i][3].value = calls[i][3].value! + calls[indexOfSimilarSwapToRemove][3].value!
-      delete calls[indexOfSimilarSwapToRemove]
-    })
+    if (doneFlag) continue
+    for (let j = 0; j < calls.length; j++) {
+      if (
+        i !== j &&
+        calls[i] &&
+        calls[j] &&
+        isSwap(calls[i]!) &&
+        isSwap(calls[j]!) &&
+        calls[i]![1].address === calls[j]![1].address &&
+        calls[i]![3].address === calls[j]![3].address
+      ) {
+        calls[i]![1].value = calls[i]![1].value! + calls[j]![1].value!
+        calls[i]![3].value = calls[i]![3].value! + calls[j]![3].value!
+        delete calls[j]
+      }
+    }
   }
-  const res = calls.filter((x) => x)
+  const res = calls.filter((x) => x) as HumanizerVisualization[][]
   return res.length === calls.length ? joinWithAndLabel(res) : uniReduce(res)
 }
