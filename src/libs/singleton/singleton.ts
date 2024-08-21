@@ -1,3 +1,15 @@
+import {
+  getAddress,
+  getCreate2Address,
+  Interface,
+  JsonRpcProvider,
+  keccak256,
+  Provider
+} from 'ethers'
+
+import { SINGLETON } from '../../consts/deploy'
+import { Call } from '../accountOp/types'
+
 // Special exception for the singleton deployer:
 // Estimation on various networks depends entirely on the RPC
 // implementation of eth_estimateGas. On ethereum, the RPC tends
@@ -23,4 +35,41 @@ export function getGasUsed(gasUsed: bigint): bigint {
   if (gasUsed > 10000000n) return gasUsed * 5n
 
   return gasUsed
+}
+
+// if there's a call to the singleton deployer, check if the
+// contract is not already deployed
+export async function isContractDeployed(
+  provider: JsonRpcProvider | Provider,
+  call: Call
+): Promise<boolean> {
+  if (!call.to || getAddress(call.to) !== SINGLETON) return false
+
+  try {
+    const singletonABI = [
+      {
+        inputs: [
+          { internalType: 'bytes', name: '_initCode', type: 'bytes' },
+          { internalType: 'bytes32', name: '_salt', type: 'bytes32' }
+        ],
+        name: 'deploy',
+        outputs: [{ internalType: 'address payable', name: 'createdContract', type: 'address' }],
+        stateMutability: 'nonpayable',
+        type: 'function'
+      }
+    ]
+    const singletonInterface = new Interface(singletonABI)
+    const [bytecode, salt] = singletonInterface.decodeFunctionData('deploy', call.data)
+    const addr = getCreate2Address(SINGLETON, salt, keccak256(bytecode))
+    const code = await provider.getCode(addr)
+    return code !== '0x'
+  } catch (e: any) {
+    // if the code above didn't work, just report the error and move on
+    // as it's not the end of the world
+    //
+    // this code is more for an UX improvement
+    console.log(e)
+  }
+
+  return false
 }

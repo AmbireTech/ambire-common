@@ -11,6 +11,7 @@ import { AccountOp } from '../accountOp/accountOp'
 import { DeploylessMode, fromDescriptor } from '../deployless/deployless'
 import { EOA_SIMULATION_NONCE } from '../portfolio/getOnchainBalances'
 import { privSlot } from '../proxyDeploy/deploy'
+import { isContractDeployed } from '../singleton/singleton'
 import { catchEstimationFailure, estimationErrorFormatted } from './errors'
 import { estimateWithRetries } from './estimateWithRetries'
 import { EstimateResult } from './interfaces'
@@ -104,7 +105,8 @@ export async function estimateEOA(
             from: blockFrom,
             blockTag
           })
-          .catch(catchEstimationFailure)
+          .catch(catchEstimationFailure),
+    isContractDeployed(provider, call)
   ]
   const result = await estimateWithRetries(initializeRequests)
   const feePaymentOptions = [
@@ -135,10 +137,11 @@ export async function estimateEOA(
     gasUsed = gasUsedEstimateGas
   }
 
+  const contractAlreadyDeployed = result[2]
   return {
     gasUsed,
     currentAccountNonce: nonce,
     feePaymentOptions,
-    error: result instanceof Error ? result : null
+    error: contractAlreadyDeployed ? new Error('Contract already deployed') : null
   }
 }
