@@ -99,9 +99,6 @@ export function getDeadline(deadlineSecs: bigint | number): HumanizerVisualizati
   }
 }
 
-export function getHumanMessage(message: Uint8Array | string): HumanizerVisualization {
-  return { type: 'message', messageContent: message, id: randomId() }
-}
 /**
  * Make a request to coingecko to fetch the latest price of the native token.
  * This is used by benzina and hence we cannot wrap the errors in emitError

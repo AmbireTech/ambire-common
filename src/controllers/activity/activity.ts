@@ -620,6 +620,17 @@ export class ActivityController extends EventEmitter {
     return !ops.length ? null : ops.reduce((m, e) => (e.nonce > m.nonce ? e : m))
   }
 
+  getLastTxn(networkId: Network['id']): SubmittedAccountOp | null {
+    if (
+      !this.#accounts.selectedAccount ||
+      !this.#accountsOps[this.#accounts.selectedAccount] ||
+      !this.#accountsOps[this.#accounts.selectedAccount][networkId]
+    )
+      return null
+
+    return this.#accountsOps[this.#accounts.selectedAccount][networkId][0]
+  }
+
   toJSON() {
     return {
       ...this,
