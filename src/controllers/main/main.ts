@@ -1638,23 +1638,44 @@ export class MainController extends EventEmitter {
       // if the signAccountOp has been deleted, don't continue as the request has already finished
       if (!this.signAccountOp) return
 
-      // if the nonce from the estimation is bigger than the one in localAccountOp,
-      // override the accountState and accountOp with the newly detected nonce
-      // and start a new estimation
-      if (estimation && BigInt(estimation.currentAccountNonce) > (localAccountOp.nonce ?? 0n)) {
-        localAccountOp.nonce = BigInt(estimation.currentAccountNonce)
-        this.signAccountOp.accountOp.nonce = BigInt(estimation.currentAccountNonce)
+      if (estimation) {
+        const currentNonceAhead =
+          BigInt(estimation.currentAccountNonce) > (localAccountOp.nonce ?? 0n)
 
-        if (this.accounts.accountStates?.[localAccountOp.accountAddr]?.[localAccountOp.networkId])
-          this.accounts.accountStates[localAccountOp.accountAddr][localAccountOp.networkId].nonce =
-            localAccountOp.nonce
+        // if the nonce from the estimation is bigger than the one in localAccountOp,
+        // override the accountState and accountOp with the newly detected nonce
+        if (currentNonceAhead) {
+          localAccountOp.nonce = BigInt(estimation.currentAccountNonce)
+          this.signAccountOp.accountOp.nonce = BigInt(estimation.currentAccountNonce)
 
-        this.estimateSignAccountOp()
+          if (this.accounts.accountStates?.[localAccountOp.accountAddr]?.[localAccountOp.networkId])
+            this.accounts.accountStates[localAccountOp.accountAddr][
+              localAccountOp.networkId
+            ].nonce = localAccountOp.nonce
+        }
 
-        // returning here means estimation will not be set => better UX as
-        // the user will not see the error "nonce discrepancy" but instead
-        // just wait for the new estimation
-        return
+        const hasNonceDiscrepancy = estimation.error?.cause === 'NONCE_FAILURE'
+        const lastTxn = this.activity.getLastTxn(localAccountOp.networkId)
+        const SAHasOldNonceOnARelayerNetwork =
+          isSmartAccount(account) &&
+          !network.erc4337.enabled &&
+          lastTxn &&
+          localAccountOp.nonce === lastTxn.nonce
+
+        if (hasNonceDiscrepancy || SAHasOldNonceOnARelayerNetwork) {
+          this.accounts
+            .updateAccountState(localAccountOp.accountAddr, 'pending', [localAccountOp.networkId])
+            .then(() => this.estimateSignAccountOp())
+            .catch((error) =>
+              this.emitError({
+                level: 'major',
+                message:
+                  'Failed to refetch the account state. Please try again to initialize your transaction',
+                error
+              })
+            )
+          return
+        }
       }
 
       if (
@@ -1664,7 +1685,7 @@ export class MainController extends EventEmitter {
         this.accounts.accountStates?.[localAccountOp.accountAddr]?.[localAccountOp.networkId]
       ) {
         this.accounts
-          .updateAccountState(localAccountOp.accountAddr, 'latest', [localAccountOp.networkId])
+          .updateAccountState(localAccountOp.accountAddr, 'pending', [localAccountOp.networkId])
           .then(() => this.estimateSignAccountOp())
           .catch((error) =>
             this.emitError({
