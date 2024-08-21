@@ -114,7 +114,7 @@ export type AdditionalPortfolioNetworkResult = Partial<PortfolioLibGetResult> &
   Pick<PortfolioLibGetResult, AdditionalPortfolioProperties> & {
     total: Total
     claimableRewardsData?: ClaimableRewardsData
-    addrVestingData?: AddrVestingData 
+    addrVestingData?: AddrVestingData
   }
 
 type PortfolioNetworkResult = Required<AdditionalPortfolioNetworkResult>

@@ -16,8 +16,7 @@ import { AMBIRE_PAYMASTER, SINGLETON } from '../../consts/deploy'
 import {
   ERRORS,
   NON_CRITICAL_ERRORS,
-  RETRY_TO_INIT_ACCOUNT_OP_MSG,
-  WARNINGS
+  RETRY_TO_INIT_ACCOUNT_OP_MSG
 } from '../../consts/signAccountOp/errorHandling'
 import {
   GAS_TANK_TRANSFER_GAS_USED,
@@ -42,7 +41,6 @@ import {
 import { callsHumanizer } from '../../libs/humanizer'
 import { IrCall } from '../../libs/humanizer/interfaces'
 import { Price, TokenResult } from '../../libs/portfolio'
-import { getAccountPortfolioTotal } from '../../libs/portfolio/helpers'
 import { getExecuteSignature, getTypedData, wrapStandard } from '../../libs/signMessage/signMessage'
 import { getGasUsed } from '../../libs/singleton/singleton'
 import {
@@ -63,7 +61,11 @@ import EventEmitter from '../eventEmitter/eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
 import { PortfolioController } from '../portfolio/portfolio'
 import { ProvidersController } from '../providers/providers'
-import { getFeeSpeedIdentifier, getTokenUsdAmount } from './helper'
+import {
+  getFeeSpeedIdentifier,
+  getSignificantBalanceDecreaseWarning,
+  getTokenUsdAmount
+} from './helper'
 
 export enum SigningStatus {
   EstimationError = 'estimation-error',
@@ -371,29 +373,16 @@ export class SignAccountOpController extends EventEmitter {
 
   get warnings(): Warning[] {
     const warnings = []
-    const latestNetworkData =
-      this.#portfolio.latest?.[this.accountOp.accountAddr]?.[this.accountOp.networkId]
-    const pendingNetworkData =
-      this.#portfolio.pending?.[this.accountOp.accountAddr]?.[this.accountOp.networkId]
 
-    if (
-      latestNetworkData &&
-      !latestNetworkData.isLoading &&
-      pendingNetworkData &&
-      !pendingNetworkData.isLoading
-    ) {
-      const latestTotal = getAccountPortfolioTotal(
-        this.#portfolio.latest[this.accountOp.accountAddr]
-      )
-      const latestOnNetwork = latestNetworkData.result?.total.usd || 0
-      const pendingOnNetwork = pendingNetworkData.result?.total.usd || 0
-      const willBalanceDecreaseByMoreThan10Percent =
-        latestOnNetwork - pendingOnNetwork > latestTotal * 0.1
+    const significantBalanceDecreaseWarning = getSignificantBalanceDecreaseWarning(
+      this.#portfolio.latest,
+      this.#portfolio.pending,
+      this.accountOp.networkId,
+      this.accountOp.accountAddr,
+      this.warnings
+    )
 
-      if (willBalanceDecreaseByMoreThan10Percent) {
-        warnings.push(WARNINGS.significantBalanceDecrease)
-      }
-    }
+    if (significantBalanceDecreaseWarning) warnings.push(significantBalanceDecreaseWarning)
 
     return warnings
   }
