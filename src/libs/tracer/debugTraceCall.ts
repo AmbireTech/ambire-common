@@ -52,7 +52,8 @@ export async function debugTraceCall(
   accountState: AccountOnchainState,
   gasUsed: bigint,
   gasPrices: GasRecommendation[],
-  supportsStateOverride: boolean
+  supportsStateOverride: boolean,
+  overrideData?: any
 ): Promise<{ tokens: string[]; nfts: [string, bigint[]][] }> {
   const fast = gasPrices.find((gas: any) => gas.name === 'fast')
   if (!fast) return { tokens: [], nfts: [] }
@@ -104,14 +105,15 @@ export async function debugTraceCall(
             ? {
                 [params.from]: {
                   balance: '0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff'
-                }
+                },
+                ...overrideData
               }
             : {}
         }
       ])
       .catch((e) => {
         console.log(e)
-        return [ZeroAddress]
+        return [{ erc: 20, address: ZeroAddress }]
       })
 
   const foundTokens = [
