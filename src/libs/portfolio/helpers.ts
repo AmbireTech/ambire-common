@@ -9,6 +9,7 @@ import { RPCProvider } from '../../interfaces/provider'
 import { isSmartAccount } from '../account/account'
 import { CustomToken } from './customToken'
 import {
+  AccountState,
   AdditionalPortfolioNetworkResult,
   ExternalHintsAPIResponse,
   PortfolioLibGetResult,
@@ -131,6 +132,15 @@ export const getTotal = (t: TokenResult[]) =>
 
     return localCur
   }, {})
+
+export const getAccountPortfolioTotal = (accountPortfolio: AccountState) => {
+  if (!accountPortfolio) return 0
+
+  return Object.values(accountPortfolio).reduce((acc, network) => {
+    const networkTotalAmountUSD = network?.result?.total.usd || 0
+    return acc + networkTotalAmountUSD
+  }, 0)
+}
 
 export const getPinnedGasTankTokens = (
   availableGasTankAssets: TokenResult[],

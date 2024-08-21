@@ -35,6 +35,7 @@ import {
 import { callsHumanizer } from '../../libs/humanizer'
 import { IrCall } from '../../libs/humanizer/interfaces'
 import { Price, TokenResult } from '../../libs/portfolio'
+import { getAccountPortfolioTotal } from '../../libs/portfolio/helpers'
 import { getExecuteSignature, getTypedData, wrapStandard } from '../../libs/signMessage/signMessage'
 import { getGasUsed } from '../../libs/singleton/singleton'
 import {
@@ -97,6 +98,24 @@ const NON_CRITICAL_ERRORS = {
 /** Technically all errors are critical, except NON_CRITICAL_ERRORS */
 const CRITICAL_ERRORS = {
   eoaInsufficientFunds: 'Insufficient funds to cover the fee.'
+}
+
+type Warning = {
+  id: string
+  title: string
+  text: string
+  promptBeforeSign: boolean
+  displayBeforeSign: boolean
+}
+
+const SIGN_WARNINGS: { [key: string]: Warning } = {
+  significantBalanceDecrease: {
+    id: 'significantBalanceDecrease',
+    title: 'Significant Account Balance Decrease',
+    text: 'The transaction you are about to sign will significantly decrease your account balance. Please review the transaction details carefully.',
+    promptBeforeSign: true,
+    displayBeforeSign: true
+  }
 }
 
 const RETRY_TO_INIT_ACCOUNT_OP_MSG =
@@ -249,7 +268,6 @@ export class SignAccountOpController extends EventEmitter {
     if (!this.isInitialized) return errors
 
     const isAmbireV1 = isAmbireV1LinkedAccount(this.account?.creation?.factoryAddr)
-
     const isAmbireV1AndNetworkNotSupported = isAmbireV1 && !this.#network?.hasRelayer
 
     // This must be the first error check!
@@ -372,6 +390,35 @@ export class SignAccountOpController extends EventEmitter {
 
   get readyToSign() {
     return !!this.status && this.status?.type === SigningStatus.ReadyToSign
+  }
+
+  get warnings(): Warning[] {
+    const warnings = []
+    const latestNetworkData =
+      this.#portfolio.latest?.[this.accountOp.accountAddr]?.[this.accountOp.networkId]
+    const pendingNetworkData =
+      this.#portfolio.pending?.[this.accountOp.accountAddr]?.[this.accountOp.networkId]
+
+    if (
+      latestNetworkData &&
+      !latestNetworkData.isLoading &&
+      pendingNetworkData &&
+      !pendingNetworkData.isLoading
+    ) {
+      const latestTotal = getAccountPortfolioTotal(
+        this.#portfolio.latest[this.accountOp.accountAddr]
+      )
+      const latestOnNetwork = latestNetworkData.result?.total.usd || 0
+      const pendingOnNetwork = pendingNetworkData.result?.total.usd || 0
+      const willBalanceDecreaseByMoreThan10Percent =
+        latestOnNetwork - pendingOnNetwork > latestTotal * 0.1
+
+      if (willBalanceDecreaseByMoreThan10Percent) {
+        warnings.push(SIGN_WARNINGS.significantBalanceDecrease)
+      }
+    }
+
+    return warnings
   }
 
   update({
@@ -1247,7 +1294,8 @@ export class SignAccountOpController extends EventEmitter {
       selectedOption: this.selectedOption,
       account: this.account,
       errors: this.errors,
-      gasSavedUSD: this.gasSavedUSD
+      gasSavedUSD: this.gasSavedUSD,
+      warnings: this.warnings
     }
   }
 }
