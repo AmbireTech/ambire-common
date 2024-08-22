@@ -909,7 +909,6 @@ export class MainController extends EventEmitter {
       networkData,
       this.signAccountOp?.accountOp
     )
-    console.log('accountOpsToBeSimulatedByNetwork', accountOpsToBeSimulatedByNetwork)
 
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.portfolio.updateSelectedAccount(
@@ -1471,7 +1470,6 @@ export class MainController extends EventEmitter {
       this.destroySignAccOp()
     }
     this.actions.removeAction(actionId, shouldOpenNextAction)
-
     // eslint-disable-next-line no-restricted-syntax
     for (const call of accountOp.calls) {
       const uReq = this.userRequests.find((r) => r.id === call.fromUserRequestId)
