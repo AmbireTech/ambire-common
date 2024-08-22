@@ -7,7 +7,6 @@ import { Network, NetworkId } from '../../interfaces/network'
 import { Storage } from '../../interfaces/storage'
 import { isSmartAccount } from '../../libs/account/account'
 import { AccountOp, isAccountOpsIntentEqual } from '../../libs/accountOp/accountOp'
-/* eslint-disable no-restricted-syntax */
 // eslint-disable-next-line import/no-cycle
 import {
   getNetworksWithFailedRPCBanners,
@@ -26,8 +25,8 @@ import {
   shouldGetAdditionalPortfolio,
   validateERC20Token
 } from '../../libs/portfolio/helpers'
-/* eslint-disable no-param-reassign */
-/* eslint-disable import/no-extraneous-dependencies */
+/* eslint-disable no-restricted-syntax */
+// eslint-disable-next-line import/no-cycle
 import {
   AccountState,
   ExternalHintsAPIResponse,
@@ -95,7 +94,8 @@ export class PortfolioController extends EventEmitter {
 
   #previousHints: PreviousHintsStorage = {
     fromExternalAPI: {},
-    learnedTokens: {}
+    learnedTokens: {},
+    learnedNfts: {}
   }
 
   #providers: ProvidersController
@@ -444,6 +444,13 @@ export class PortfolioController extends EventEmitter {
     forceUpdate: boolean
   ): Promise<boolean> {
     const hasNonZeroTokens = !!this.#networksWithAssetsByAccounts?.[accountId]?.length
+    if (!portfolioProps.previousHints) portfolioProps.previousHints = { erc20s: [], erc721s: {} }
+    portfolioProps.previousHints.erc721s = Object.fromEntries(
+      Object.entries(this.#previousHints?.learnedNfts?.[network.id] || {}).map(([k, v]) => [
+        getAddress(k),
+        { isKnown: false, tokens: v.map((i) => i.toString()) }
+      ])
+    )
 
     if (!_accountState[network.id]) {
       _accountState[network.id] = {
@@ -721,6 +728,31 @@ export class PortfolioController extends EventEmitter {
     }
 
     this.#previousHints.learnedTokens[networkId] = networkLearnedTokens
+    await this.#storage.set('previousHints', this.#previousHints)
+    return true
+  }
+
+  async learnNfts(
+    nftsData: [string, bigint[]][] | undefined,
+    networkId: NetworkId
+  ): Promise<boolean> {
+    if (!nftsData?.length) return false
+    if (!this.#previousHints.learnedNfts) this.#previousHints.learnedNfts = {}
+    const networkLearnedNfts: PreviousHintsStorage['learnedNfts'][''] =
+      this.#previousHints.learnedNfts[networkId] || {}
+
+    const newAddrToId = nftsData.map(([addr, ids]) => ids.map((id) => `${addr}:${id}`)).flat()
+    const alreadyLearnedAddrToId = Object.entries(networkLearnedNfts)
+      .map(([addr, ids]) => ids.map((id) => `${addr}:${id}`))
+      .flat()
+    if (newAddrToId.every((i) => alreadyLearnedAddrToId.includes(i))) return false
+    nftsData.forEach(([addr, ids]) => {
+      if (addr === ZeroAddress) return
+      if (!networkLearnedNfts[addr]) networkLearnedNfts[addr] = ids
+      else networkLearnedNfts[addr] = Array.from(new Set([...ids, ...networkLearnedNfts[addr]]))
+    })
+
+    this.#previousHints.learnedNfts[networkId] = networkLearnedNfts
     await this.#storage.set('previousHints', this.#previousHints)
     return true
   }
