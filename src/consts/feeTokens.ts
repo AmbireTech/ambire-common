@@ -127,5 +127,10 @@ export default [
     // USDC
     address: '0xaf88d065e77c8cC2239327C5EDb3A432268e5831',
     networkId: 'arbitrum'
+  },
+  // WAVAX
+  {
+    address: '0xb31f66aa3c1e785363f0875a1b74e27b85fd66c7',
+    network: 'avalanche'
   }
 ]
