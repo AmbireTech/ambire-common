@@ -611,15 +611,13 @@ export class MainController extends EventEmitter {
       this.actions.addOrUpdateAction(accountOpAction, true)
     }
 
+    await this.activity.addSignedMessage(signedMessage, signedMessage.accountAddr)
     await this.resolveUserRequest({ hash: signedMessage.signature }, signedMessage.fromActionId)
+
     await this.#notificationManager.create({
       title: 'Done!',
       message: 'The Message was successfully signed.'
     })
-
-    // TODO: In the rare case when this might error, the user won't be notified,
-    // since `this.resolveUserRequest` closes the action window.
-    await this.activity.addSignedMessage(signedMessage, signedMessage.accountAddr)
   }
 
   async #handleAccountAdderInitLedger(
@@ -650,7 +648,7 @@ export class MainController extends EventEmitter {
         throw new EmittableError({ message, level: 'major', error: new Error(message) })
       }
 
-      const keyIterator = new LedgerKeyIterator({ walletSDK: ledgerCtrl.walletSDK })
+      const keyIterator = new LedgerKeyIterator({ controller: ledgerCtrl })
       this.accountAdder.init({
         keyIterator,
         hdPathTemplate: BIP44_LEDGER_DERIVATION_TEMPLATE
@@ -1224,7 +1222,19 @@ export class MainController extends EventEmitter {
             a.accountOp.networkId === network.id
         ) as AccountOpAction | undefined
 
-        const hasAuthorized = !!currentAccountOpAction?.accountOp?.meta?.entryPointAuthorization
+        this.activity.setFilters({
+          account: account.addr,
+          network: network.id
+        })
+        const entryPointAuthorizationMessageFromHistory = this.activity.signedMessages?.items.find(
+          (message) =>
+            message.fromActionId === ENTRY_POINT_AUTHORIZATION_REQUEST_ID &&
+            message.networkId === network.id
+        )
+        const hasAuthorized =
+          !!currentAccountOpAction?.accountOp?.meta?.entryPointAuthorization ||
+          !!entryPointAuthorizationMessageFromHistory
+
         if (shouldAskForEntryPointAuthorization(network, account, accountState, hasAuthorized)) {
           await this.addEntryPointAuthorization(req, network, accountState, executionType)
           this.emitUpdate()
@@ -1236,7 +1246,9 @@ export class MainController extends EventEmitter {
           networkId: meta.networkId,
           nonce: accountState.nonce,
           userRequests: this.userRequests,
-          actionsQueue: this.actions.actionsQueue
+          actionsQueue: this.actions.actionsQueue,
+          entryPointAuthorizationSignature:
+            entryPointAuthorizationMessageFromHistory?.signature ?? undefined
         })
         this.actions.addOrUpdateAction(accountOpAction, withPriority, executionType)
         if (this.signAccountOp && this.signAccountOp.fromActionId === accountOpAction.id) {
@@ -1626,23 +1638,44 @@ export class MainController extends EventEmitter {
       // if the signAccountOp has been deleted, don't continue as the request has already finished
       if (!this.signAccountOp) return
 
-      // if the nonce from the estimation is bigger than the one in localAccountOp,
-      // override the accountState and accountOp with the newly detected nonce
-      // and start a new estimation
-      if (estimation && BigInt(estimation.currentAccountNonce) > (localAccountOp.nonce ?? 0n)) {
-        localAccountOp.nonce = BigInt(estimation.currentAccountNonce)
-        this.signAccountOp.accountOp.nonce = BigInt(estimation.currentAccountNonce)
+      if (estimation) {
+        const currentNonceAhead =
+          BigInt(estimation.currentAccountNonce) > (localAccountOp.nonce ?? 0n)
 
-        if (this.accounts.accountStates?.[localAccountOp.accountAddr]?.[localAccountOp.networkId])
-          this.accounts.accountStates[localAccountOp.accountAddr][localAccountOp.networkId].nonce =
-            localAccountOp.nonce
+        // if the nonce from the estimation is bigger than the one in localAccountOp,
+        // override the accountState and accountOp with the newly detected nonce
+        if (currentNonceAhead) {
+          localAccountOp.nonce = BigInt(estimation.currentAccountNonce)
+          this.signAccountOp.accountOp.nonce = BigInt(estimation.currentAccountNonce)
 
-        this.estimateSignAccountOp()
+          if (this.accounts.accountStates?.[localAccountOp.accountAddr]?.[localAccountOp.networkId])
+            this.accounts.accountStates[localAccountOp.accountAddr][
+              localAccountOp.networkId
+            ].nonce = localAccountOp.nonce
+        }
 
-        // returning here means estimation will not be set => better UX as
-        // the user will not see the error "nonce discrepancy" but instead
-        // just wait for the new estimation
-        return
+        const hasNonceDiscrepancy = estimation.error?.cause === 'NONCE_FAILURE'
+        const lastTxn = this.activity.getLastTxn(localAccountOp.networkId)
+        const SAHasOldNonceOnARelayerNetwork =
+          isSmartAccount(account) &&
+          !network.erc4337.enabled &&
+          lastTxn &&
+          localAccountOp.nonce === lastTxn.nonce
+
+        if (hasNonceDiscrepancy || SAHasOldNonceOnARelayerNetwork) {
+          this.accounts
+            .updateAccountState(localAccountOp.accountAddr, 'pending', [localAccountOp.networkId])
+            .then(() => this.estimateSignAccountOp())
+            .catch((error) =>
+              this.emitError({
+                level: 'major',
+                message:
+                  'Failed to refetch the account state. Please try again to initialize your transaction',
+                error
+              })
+            )
+          return
+        }
       }
 
       if (
@@ -1652,7 +1685,7 @@ export class MainController extends EventEmitter {
         this.accounts.accountStates?.[localAccountOp.accountAddr]?.[localAccountOp.networkId]
       ) {
         this.accounts
-          .updateAccountState(localAccountOp.accountAddr, 'latest', [localAccountOp.networkId])
+          .updateAccountState(localAccountOp.accountAddr, 'pending', [localAccountOp.networkId])
           .then(() => this.estimateSignAccountOp())
           .catch((error) =>
             this.emitError({
@@ -2043,7 +2076,7 @@ export class MainController extends EventEmitter {
     const replacementFeeLow = error?.message.includes('replacement fee too low')
     // To enable another try for signing in case of broadcast fail
     // broadcast is called in the FE only after successful signing
-    this.signAccountOp?.updateStatusToReadyToSign(replacementFeeLow)
+    this.signAccountOp?.updateStatus(SigningStatus.ReadyToSign, replacementFeeLow)
     if (replacementFeeLow) this.estimateSignAccountOp()
 
     this.feePayerKey = null

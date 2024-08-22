@@ -38,7 +38,7 @@ function getInnerCallFailure(estimationOp: { success: boolean; err: string }): E
   })
 }
 
-// the outcomeNonce should always be equat to the nonce in accountOp + 1
+// the outcomeNonce should always be equal to the nonce in accountOp + 1
 // that's an indication of transaction success
 function getNonceDiscrepancyFailure(op: AccountOp, outcomeNonce: number): Error | null {
   if (op.nonce !== null && op.nonce + 1n === BigInt(outcomeNonce)) return null
@@ -184,6 +184,7 @@ export async function estimate4337(
 
       const localOp = { ...option }
       localOp.availableAmount = feeTokenOutcomes[index][1]
+      localOp.token.amount = feeTokenOutcomes[index][1]
       return localOp
     }
   )
@@ -197,7 +198,10 @@ export async function estimate4337(
       paidBy: nativeToCheck[key],
       availableAmount: balance,
       addedNative: l1GasEstimation.fee,
-      token: nativeToken
+      token: {
+        ...nativeToken,
+        amount: balance
+      }
     })
   )
   bundlerEstimationResult.feePaymentOptions = [
@@ -220,7 +224,7 @@ export async function estimate(
     is4337Broadcast?: boolean
   },
   blockFrom: string = '0x0000000000000000000000000000000000000001',
-  blockTag: string | number = 'latest'
+  blockTag: string | number = 'pending'
 ): Promise<EstimateResult> {
   // if EOA, delegate
   if (!isSmartAccount(account))
@@ -357,9 +361,10 @@ export async function estimate(
 
   const feeTokenOptions: FeePaymentOption[] = filteredFeeTokens.map(
     (token: TokenResult, key: number) => {
+      const availableAmount = token.flags.onGasTank ? token.amount : feeTokenOutcomes[key].amount
       return {
         paidBy: account.addr,
-        availableAmount: token.flags.onGasTank ? token.amount : feeTokenOutcomes[key].amount,
+        availableAmount,
         // gasUsed for the gas tank tokens is smaller because of the commitment:
         // ['gasTank', amount, symbol]
         // and this commitment costs onchain:
@@ -374,7 +379,10 @@ export async function estimate(
           token.address === ZeroAddress
             ? l1GasEstimation.feeWithNativePayment
             : l1GasEstimation.feeWithTransferPayment,
-        token
+        token: {
+          ...token,
+          amount: availableAmount
+        }
       }
     }
   )
@@ -388,7 +396,10 @@ export async function estimate(
       paidBy: nativeToCheck[key],
       availableAmount: balance,
       addedNative: l1GasEstimation.fee,
-      token: nativeToken
+      token: {
+        ...nativeToken,
+        amount: balance
+      }
     })
   )
 

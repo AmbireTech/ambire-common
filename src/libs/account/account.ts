@@ -11,9 +11,9 @@ import {
   AccountPreferences,
   ImportStatus
 } from '../../interfaces/account'
+import { KeyIterator } from '../../interfaces/keyIterator'
 import { Key } from '../../interfaces/keystore'
 import { DKIM_VALIDATOR_ADDR, getSignerKey, RECOVERY_DEFAULTS } from '../dkim/recovery'
-import { KeyIterator } from '../keyIterator/keyIterator'
 import { getBytecode } from '../proxyDeploy/bytecode'
 import { PrivLevels } from '../proxyDeploy/deploy'
 import { getAmbireAccountAddress } from '../proxyDeploy/getAmbireAddressTwo'
@@ -176,7 +176,7 @@ export async function getEmailAccount(
 }
 
 export const isAmbireV1LinkedAccount = (factoryAddr?: string) =>
-  factoryAddr === '0xBf07a0Df119Ca234634588fbDb5625594E2a5BCA'
+  factoryAddr && getAddress(factoryAddr) === '0xBf07a0Df119Ca234634588fbDb5625594E2a5BCA'
 
 export const isSmartAccount = (account: Account | undefined) => !!account && !!account.creation
 
@@ -308,4 +308,8 @@ export function migrateAccountPreferencesToAccounts(
       preferences: accountPreferences[a.addr] || { label: DEFAULT_ACCOUNT_LABEL, pfp: a.addr }
     }
   })
+}
+
+export function getUniqueAccountsArray(accounts: Account[]) {
+  return Array.from(new Map(accounts.map((account) => [account.addr, account])).values())
 }
