@@ -909,6 +909,7 @@ export class MainController extends EventEmitter {
       networkData,
       this.signAccountOp?.accountOp
     )
+    console.log('accountOpsToBeSimulatedByNetwork', accountOpsToBeSimulatedByNetwork)
 
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.portfolio.updateSelectedAccount(
@@ -1345,10 +1346,16 @@ export class MainController extends EventEmitter {
             this.estimateSignAccountOp()
           }
         } else {
+          if (this.signAccountOp && this.signAccountOp.fromActionId === accountOpAction.id) {
+            this.destroySignAccOp()
+          }
           this.actions.removeAction(`${meta.accountAddr}-${meta.networkId}`)
           this.updateSelectedAccountPortfolio(true, network)
         }
       } else {
+        if (this.signAccountOp && this.signAccountOp.fromActionId === req.id) {
+          this.destroySignAccOp()
+        }
         this.actions.removeAction(id)
         this.updateSelectedAccountPortfolio(true, network)
       }
@@ -1458,8 +1465,13 @@ export class MainController extends EventEmitter {
     const accountOpAction = this.actions.actionsQueue.find((a) => a.id === actionId)
     if (!accountOpAction) return
 
-    const { accountOp } = accountOpAction as AccountOpAction
+    const { accountOp, id } = accountOpAction as AccountOpAction
+
+    if (this.signAccountOp && this.signAccountOp.fromActionId === id) {
+      this.destroySignAccOp()
+    }
     this.actions.removeAction(actionId, shouldOpenNextAction)
+
     // eslint-disable-next-line no-restricted-syntax
     for (const call of accountOp.calls) {
       const uReq = this.userRequests.find((r) => r.id === call.fromUserRequestId)
@@ -1469,12 +1481,6 @@ export class MainController extends EventEmitter {
         this.removeUserRequest(uReq.id)
       }
     }
-
-    // destroy sign account op if no actions left for account
-    const accountOpsLeftForAcc = (
-      this.actions.actionsQueue.filter((a) => a.type === 'accountOp') as AccountOpAction[]
-    ).filter((action) => action.accountOp.accountAddr === accountOp.accountAddr)
-    if (!accountOpsLeftForAcc.length) this.destroySignAccOp()
 
     this.emitUpdate()
   }
