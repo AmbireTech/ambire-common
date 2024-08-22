@@ -252,6 +252,8 @@ export const getNetworksWithPortfolioErrorBanners = ({
       portfolioForNetwork?.errors.forEach((err: any) => {
         if (err?.name === PORTFOLIO_LIB_ERROR_NAMES.PriceFetchError) {
           networkNamesWithPriceFetchError.push(networkName as string)
+        } else if (err?.name === PORTFOLIO_LIB_ERROR_NAMES.HintsError) {
+          networkNamesWithCriticalError.push(networkName as string)
         }
       })
     })
