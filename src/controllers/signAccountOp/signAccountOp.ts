@@ -157,6 +157,8 @@ export class SignAccountOpController extends EventEmitter {
 
   replacementFeeLow: boolean
 
+  warnings: Warning[] = []
+
   constructor(
     accounts: AccountsController,
     keystore: KeystoreController,
@@ -371,7 +373,7 @@ export class SignAccountOpController extends EventEmitter {
     return !!this.status && this.status?.type === SigningStatus.ReadyToSign
   }
 
-  get warnings(): Warning[] {
+  calculateWarnings() {
     const warnings = []
 
     const significantBalanceDecreaseWarning = getSignificantBalanceDecreaseWarning(
@@ -383,7 +385,7 @@ export class SignAccountOpController extends EventEmitter {
 
     if (significantBalanceDecreaseWarning) warnings.push(significantBalanceDecreaseWarning)
 
-    return warnings
+    this.warnings = warnings
   }
 
   update({
@@ -1260,8 +1262,7 @@ export class SignAccountOpController extends EventEmitter {
       selectedOption: this.selectedOption,
       account: this.account,
       errors: this.errors,
-      gasSavedUSD: this.gasSavedUSD,
-      warnings: this.warnings
+      gasSavedUSD: this.gasSavedUSD
     }
   }
 }
