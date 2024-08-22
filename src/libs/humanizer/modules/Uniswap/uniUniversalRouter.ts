@@ -14,7 +14,7 @@ import {
 } from '../../utils'
 import { COMMANDS, COMMANDS_DESCRIPTIONS } from './Commands'
 import { HumanizerUniMatcher } from './interfaces'
-import { getUniRecipientText, joinWithAndLabel, parsePath } from './utils'
+import { getUniRecipientText, parsePath, uniReduce } from './utils'
 
 const coder = new AbiCoder()
 
@@ -81,7 +81,7 @@ export const uniUniversalRouter = (options?: any): HumanizerUniMatcher => {
               const path = parsePath(params.path)
 
               parsed.push([
-                getAction('Swap up  to'),
+                getAction('Swap up to'),
                 getToken(path[path.length - 1], params.amountInMax),
                 getLabel('for'),
                 getToken(path[0], params.amountOut),
@@ -148,7 +148,7 @@ export const uniUniversalRouter = (options?: any): HumanizerUniMatcher => {
               const path = params.path
 
               parsed.push([
-                getAction('Swap up  to'),
+                getAction('Swap up to'),
                 getToken(path[0], params.amountInMax),
                 getLabel('for'),
                 getToken(path[path.length - 1], params.amountOut),
@@ -188,7 +188,7 @@ export const uniUniversalRouter = (options?: any): HumanizerUniMatcher => {
           })
         : parsed.push(getUnknownVisualization('Uniswap V3', call))
 
-      return joinWithAndLabel(parsed)
+      return uniReduce(parsed)
     }
   }
 }
