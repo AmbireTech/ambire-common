@@ -859,7 +859,7 @@ export class MainController extends EventEmitter {
   }
 
   // eslint-disable-next-line default-param-last
-  async updateSelectedAccountPortfolio(forceUpdate: boolean = false, network?: Network) {
+  async updateSelectedAccountPortfolio(forceUpdate: boolean = true, network?: Network) {
     await this.#initialLoadPromise
     if (!this.accounts.selectedAccount) return
 
