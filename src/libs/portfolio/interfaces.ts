@@ -178,5 +178,6 @@ export interface GetOptions {
 
 export interface PreviousHintsStorage {
   learnedTokens: { [network in NetworkId]: { [tokenAddress: string]: string | null } }
+  learnedNfts: { [network in NetworkId]: { [nftAddress: string]: bigint[] } }
   fromExternalAPI: { [networkAndAccountKey: string]: GetOptions['previousHints'] }
 }

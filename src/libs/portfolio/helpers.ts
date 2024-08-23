@@ -219,7 +219,7 @@ export function getUpdatedHints(
   if (!previousHints.fromExternalAPI) previousHints.fromExternalAPI = {}
   if (!previousHints.learnedTokens) previousHints.learnedTokens = {}
 
-  const { learnedTokens } = previousHints
+  const { learnedTokens, learnedNfts } = previousHints
   const latestERC20HintsFromExternalAPI = latestHintsFromExternalAPI?.erc20s || []
   const networkLearnedTokens = learnedTokens[networkId] || {}
 
@@ -305,7 +305,8 @@ export function getUpdatedHints(
 
   return {
     fromExternalAPI: previousHints.fromExternalAPI,
-    learnedTokens
+    learnedTokens,
+    learnedNfts
   }
 }
 
