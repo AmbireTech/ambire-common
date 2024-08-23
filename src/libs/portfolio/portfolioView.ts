@@ -11,7 +11,7 @@ interface AccountPortfolio {
   collections: CollectionResultInterface[]
   totalAmount: number
   isAllReady: boolean
-  portfolioNonces: { [networkId: string]: bigint }
+  simulationNonces: { [networkId: string]: bigint }
   tokenAmounts: {
     latestAmount: bigint
     pendingAmount: bigint
@@ -38,7 +38,7 @@ export function calculateAccountPortfolio(
       collections: accountPortfolio?.collections || [],
       totalAmount: accountPortfolio?.totalAmount || 0,
       isAllReady: true,
-      portfolioNonces: accountPortfolio?.portfolioNonces || {},
+      simulationNonces: accountPortfolio?.simulationNonces || {},
       tokenAmounts: accountPortfolio?.tokenAmounts || []
     }
   }
@@ -54,7 +54,7 @@ export function calculateAccountPortfolio(
       collections: accountPortfolio?.collections || [],
       totalAmount: accountPortfolio?.totalAmount || 0,
       isAllReady: false,
-      portfolioNonces: accountPortfolio?.portfolioNonces || {},
+      simulationNonces: accountPortfolio?.simulationNonces || {},
       tokenAmounts: accountPortfolio?.tokenAmounts || []
     }
   }
@@ -123,7 +123,8 @@ export function calculateAccountPortfolio(
     }
   })
 
-  const portfolioNonces = Object.keys(state.pending[selectedAccount]).reduce((acc, networkId) => {
+  // TODO: Docs + TS.
+  const simulationNonces = Object.keys(state.pending[selectedAccount]).reduce((acc, networkId) => {
     const beforeNonce = state.pending[selectedAccount!][networkId]?.result?.beforeNonce
     if (beforeNonce !== undefined) {
       acc[networkId] = beforeNonce
@@ -132,22 +133,23 @@ export function calculateAccountPortfolio(
     return acc
   }, {} as { [networkId: string]: bigint })
 
-  const tokenAmounts = Object.keys(state.pending[selectedAccount]).reduce((acc, networkId) => {
-    const pendingTokens = state.pending[selectedAccount!][networkId]?.result?.tokens
+  // TODO: Docs + TS.
+  const tokenAmounts = Object.keys(state.latest[selectedAccount]).reduce((acc, networkId) => {
+    const latestTokens = state.latest[selectedAccount!][networkId]?.result?.tokens
 
-    if (!pendingTokens) return acc
+    if (!latestTokens) return acc
 
-    const mergedTokens = pendingTokens.map((pendingToken) => {
-      const latestToken = state.latest[selectedAccount!][networkId]?.result?.tokens.find(
-        (_latestToken) => {
-          return _latestToken.address === pendingToken.address
+    const mergedTokens = latestTokens.map((latestToken) => {
+      const pendingToken = state.pending[selectedAccount!][networkId]?.result?.tokens.find(
+        (pending) => {
+          return pending.address === latestToken.address
         }
       )
 
       return {
-        latestAmount: latestToken!.amount,
-        pendingAmount: pendingToken.amount,
-        address: latestToken!.address,
+        latestAmount: latestToken.amount || 0n,
+        pendingAmount: pendingToken?.amount || 0n,
+        address: latestToken.address,
         networkId
       }
     })
@@ -160,8 +162,7 @@ export function calculateAccountPortfolio(
     tokens: updatedTokens,
     collections: updatedCollections,
     isAllReady: allReady,
-    // TODO: Docs. Better naming.
-    portfolioNonces,
+    simulationNonces,
     tokenAmounts
   }
 }
