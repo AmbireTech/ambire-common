@@ -8,6 +8,7 @@ import { AccountOp } from '../../libs/accountOp/accountOp'
 // eslint-disable-next-line import/no-cycle
 import { messageOnNewAction } from '../../libs/actions/actions'
 import { getDappActionRequestsBanners } from '../../libs/banners/banners'
+import { ENTRY_POINT_AUTHORIZATION_REQUEST_ID } from '../../libs/userOperation/userOperation'
 import { AccountsController } from '../accounts/accounts'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
@@ -140,6 +141,10 @@ export class ActionsController extends EventEmitter {
     withPriority?: boolean,
     executionType: 'queue' | 'open' = 'open'
   ) {
+    if (withPriority) {
+      // remove the benzin action if a new actions is added
+      this.actionsQueue = this.actionsQueue.filter((a) => a.type !== 'benzin')
+    }
     const actionIndex = this.actionsQueue.findIndex((a) => a.id === newAction.id)
     if (actionIndex !== -1) {
       this.actionsQueue[actionIndex] = newAction
@@ -199,8 +204,15 @@ export class ActionsController extends EventEmitter {
 
   setCurrentActionById(actionId: Action['id']) {
     const action = this.visibleActionsQueue.find((a) => a.id.toString() === actionId.toString())
+    if (!action) {
+      const entryPointAction = this.visibleActionsQueue.find(
+        (a) => a.id.toString() === ENTRY_POINT_AUTHORIZATION_REQUEST_ID
+      )
 
-    if (!action) return
+      if (entryPointAction) this.#setCurrentAction(entryPointAction)
+
+      return
+    }
 
     this.#setCurrentAction(action)
   }
@@ -208,7 +220,14 @@ export class ActionsController extends EventEmitter {
   setCurrentActionByIndex(actionIndex: number) {
     const action = this.visibleActionsQueue[actionIndex]
 
-    if (!action) return
+    if (!action) {
+      const entryPointAction = this.visibleActionsQueue.find(
+        (a) => a.id.toString() === ENTRY_POINT_AUTHORIZATION_REQUEST_ID
+      )
+      if (entryPointAction) this.#setCurrentAction(entryPointAction)
+
+      return
+    }
 
     this.#setCurrentAction(action)
   }

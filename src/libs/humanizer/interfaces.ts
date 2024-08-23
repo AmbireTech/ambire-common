@@ -1,7 +1,7 @@
 import { Account } from '../../interfaces/account'
 import { HumanizerFragment } from '../../interfaces/humanizer'
 import { Network, NetworkId } from '../../interfaces/network'
-import { Message, TypedMessage } from '../../interfaces/userRequest'
+import { Message } from '../../interfaces/userRequest'
 import { AccountOp } from '../accountOp/accountOp'
 import { Call } from '../accountOp/types'
 
@@ -52,7 +52,7 @@ export interface HumanizerCallModule {
 }
 
 export interface HumanizerTypedMessageModule {
-  (typedMessage: TypedMessage): Omit<IrMessage, keyof Message>
+  (typedMessage: Message): Omit<IrMessage, keyof Message>
 }
 
 export interface AbiFragment {

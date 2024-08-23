@@ -55,7 +55,11 @@ export function getFlags(
   )
 
   const canTopUpGasTank = foundFeeToken && !foundFeeToken?.disableGasTankDeposit
-  const isFeeToken = address === ZeroAddress || !!foundFeeToken
+  const isFeeToken =
+    address === ZeroAddress ||
+    // disable if not in gas tank
+    (foundFeeToken && !foundFeeToken.disableAsFeeToken) ||
+    networkId === 'gasTank'
 
   return {
     onGasTank,
@@ -215,7 +219,7 @@ export function getUpdatedHints(
   if (!previousHints.fromExternalAPI) previousHints.fromExternalAPI = {}
   if (!previousHints.learnedTokens) previousHints.learnedTokens = {}
 
-  const { learnedTokens } = previousHints
+  const { learnedTokens, learnedNfts } = previousHints
   const latestERC20HintsFromExternalAPI = latestHintsFromExternalAPI?.erc20s || []
   const networkLearnedTokens = learnedTokens[networkId] || {}
 
@@ -301,7 +305,8 @@ export function getUpdatedHints(
 
   return {
     fromExternalAPI: previousHints.fromExternalAPI,
-    learnedTokens
+    learnedTokens,
+    learnedNfts
   }
 }
 

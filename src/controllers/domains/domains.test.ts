@@ -36,6 +36,7 @@ describe('Domains', () => {
 
     expect(domainsController.domains[ENS.address].ens).toBe(ENS.name)
   })
+  // UD reverse lookup is removed for now
   it.skip('should reverse lookup (UD)', async () => {
     await domainsController.reverseLookup(UD.address)
 

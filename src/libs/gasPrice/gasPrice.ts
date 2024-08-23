@@ -69,6 +69,26 @@ function average(data: bigint[]): bigint {
   return data.reduce((a, b) => a + b, 0n) / BigInt(data.length)
 }
 
+function getNetworkMinBaseFee(network: Network, lastBlock: Block): bigint {
+  // if we have a minBaseFee set in our config, use it
+  if (network.feeOptions.minBaseFee) return network.feeOptions.minBaseFee
+
+  // if we don't have a config, we return 0
+  if (network.predefined && !network.feeOptions.minBaseFeeEqualToLastBlock) return 0n
+
+  // if it's a custom network and it has EIP-1559, set the minimum
+  // to the lastBlock's baseFeePerGas. Every chain is free to tweak
+  // its EIP-1559 implementation as it deems fit. Therefore, we have no
+  // guarantee the 12.5% block base fee reduction will actually happen.
+  // if it doesn't and we reduce the baseFee with our calculations,
+  // most often than not the transaction will just get stuck.
+  //
+  // Transaction fees are no longer an issue on L2s.
+  // Having the user spend a fraction of the cent more is way better
+  // than having his txns constantly getting stuck
+  return lastBlock.baseFeePerGas ?? 0n
+}
+
 // if there's an RPC issue, try refetching the block at least
 // 5 times before declaring a failure
 async function refetchBlock(
@@ -137,26 +157,38 @@ export async function getGasPriceRecommendations(
     }
 
     // if the estimated fee is below the chain minimum, set it to the min
-    if (network.feeOptions.minBaseFee && expectedBaseFee < network.feeOptions.minBaseFee) {
-      expectedBaseFee = network.feeOptions.minBaseFee
-    }
+    const minBaseFee = getNetworkMinBaseFee(network, lastBlock)
+    if (expectedBaseFee < minBaseFee) expectedBaseFee = minBaseFee
 
     const tips = filterOutliers(txns.map((x) => x.maxPriorityFeePerGas!).filter((x) => x > 0))
-    return speeds.map(({ name, baseFeeAddBps }, i) => {
+    const fee: Gas1559Recommendation[] = []
+    speeds.forEach(({ name, baseFeeAddBps }, i) => {
       const baseFee = expectedBaseFee + (expectedBaseFee * baseFeeAddBps) / 10000n
+      let maxPriorityFeePerGas = average(nthGroup(tips, i, speeds.length))
 
-      // maxPriorityFeePerGas is important for networks with longer block time
-      // like Ethereum (12s) but not at all for L2s with instant block creation.
-      // For L2s we hardcode the maxPriorityFee to 100n
-      const maxPriorityFeePerGas =
-        network.feeOptions.maxPriorityFee ?? average(nthGroup(tips, i, speeds.length))
+      // set a bare minimum of 100000n for maxPriorityFeePerGas
+      maxPriorityFeePerGas = maxPriorityFeePerGas >= 100000n ? maxPriorityFeePerGas : 100000n
 
-      return {
+      // compare the maxPriorityFeePerGas with the previous speed
+      // if it's not at least 12% bigger, then replace the calculated one
+      // with at least 12% bigger maxPriorityFeePerGas.
+      // This is most impactufull on L2s where txns get stuck for low maxPriorityFeePerGas
+      //
+      // if the speed is ape, make it 50% more
+      const prevSpeed = fee.length ? fee[i - 1].maxPriorityFeePerGas : null
+      if (prevSpeed) {
+        const divider = name === 'ape' ? 2n : 8n
+        const min = prevSpeed + prevSpeed / divider
+        if (maxPriorityFeePerGas < min) maxPriorityFeePerGas = min
+      }
+
+      fee.push({
         name,
         baseFeePerGas: baseFee,
         maxPriorityFeePerGas
-      }
+      })
     })
+    return fee
   }
   const prices = filterOutliers(txns.map((x) => x.gasPrice!).filter((x) => x > 0))
   return speeds.map(({ name }, i) => ({

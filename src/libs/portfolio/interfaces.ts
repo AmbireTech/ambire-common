@@ -104,11 +104,19 @@ export type ClaimableRewardsData = {
   signedRoot: string
 }
 
+export type AddrVestingData = {
+  addr: string
+  rate: string
+  start: string
+  end: string
+}
+
 // Create the final type with some properties optional
 export type AdditionalPortfolioNetworkResult = Partial<PortfolioLibGetResult> &
   Pick<PortfolioLibGetResult, AdditionalPortfolioProperties> & {
     total: Total
     claimableRewardsData?: ClaimableRewardsData
+    addrVestingData?: AddrVestingData 
   }
 
 type PortfolioNetworkResult = Required<AdditionalPortfolioNetworkResult>
@@ -172,5 +180,6 @@ export interface GetOptions {
 
 export interface PreviousHintsStorage {
   learnedTokens: { [network in NetworkId]: { [tokenAddress: string]: string | null } }
+  learnedNfts: { [network in NetworkId]: { [nftAddress: string]: bigint[] } }
   fromExternalAPI: { [networkAndAccountKey: string]: GetOptions['previousHints'] }
 }

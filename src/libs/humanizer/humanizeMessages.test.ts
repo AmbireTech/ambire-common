@@ -2,9 +2,11 @@ import { parseEther } from 'ethers'
 
 import { beforeEach, describe, expect } from '@jest/globals'
 
-import { TypedMessage } from '../../interfaces/userRequest'
+import { Message, TypedMessage } from '../../interfaces/userRequest'
+import { ENTRY_POINT_AUTHORIZATION_REQUEST_ID } from '../userOperation/userOperation'
 import { compareVisualizations } from './testHelpers'
 import { erc20Module, erc721Module, permit2Module } from './typedMessageModules'
+import { entryPointModule } from './typedMessageModules/entryPointModule'
 import { getAction, getAddressVisualization, getDeadline, getLabel, getToken } from './utils'
 
 const address1 = '0x6942069420694206942069420694206942069420'
@@ -78,33 +80,27 @@ const typedMessages = {
   ]
 }
 
-let tmTemplate: TypedMessage = {
-  kind: 'typedMessage',
-  domain: {
-    name: 'random contract',
-    version: '1',
-    chainId: 1n,
-    verifyingContract: WETH_ADDRESS,
-    salt: '1'
-  },
-  types: { Permit: [] },
-  message: {},
-  primaryType: 'Permit'
-}
+let messageTemplate: Message
 describe('typed message tests', () => {
   beforeEach(() => {
-    tmTemplate = {
-      kind: 'typedMessage',
-      domain: {
-        name: 'random contract',
-        version: '1',
-        chainId: 1n,
-        verifyingContract: WETH_ADDRESS,
-        salt: '1'
-      },
-      types: { Permit: [] },
-      message: {},
-      primaryType: 'Permit'
+    messageTemplate = {
+      fromActionId: 'randomActionId',
+      accountAddr: address1,
+      networkId: 'ethereum',
+      signature: null,
+      content: {
+        kind: 'typedMessage',
+        domain: {
+          name: 'random contract',
+          version: '1',
+          chainId: 1n,
+          verifyingContract: WETH_ADDRESS,
+          salt: '1'
+        },
+        types: { Permit: [] },
+        message: {},
+        primaryType: 'Permit'
+      }
     }
   })
   test('erc20 module', () => {
@@ -117,8 +113,8 @@ describe('typed message tests', () => {
       getDeadline(968187600n)
     ]
 
-    tmTemplate.message = typedMessages.erc20[0]
-    const { fullVisualization } = erc20Module(tmTemplate)
+    messageTemplate.content.message = typedMessages.erc20[0]
+    const { fullVisualization } = erc20Module(messageTemplate)
     expect(fullVisualization).toBeTruthy()
     compareVisualizations(fullVisualization!, expectedVisualization)
   })
@@ -131,9 +127,9 @@ describe('typed message tests', () => {
       getDeadline(968187600n)
     ]
 
-    tmTemplate.message = typedMessages.erc721[0]
-    tmTemplate.domain.verifyingContract = NFT_ADDRESS
-    const { fullVisualization } = erc721Module(tmTemplate)
+    messageTemplate.content.message = typedMessages.erc721[0]
+    ;(messageTemplate.content as TypedMessage).domain.verifyingContract = NFT_ADDRESS
+    const { fullVisualization } = erc721Module(messageTemplate)
     expect(fullVisualization).toBeTruthy()
     compareVisualizations(fullVisualization!, expectedVisualization)
   })
@@ -149,10 +145,13 @@ describe('typed message tests', () => {
       getLabel('this whole signatuere'),
       getDeadline(968187600n)
     ]
-    tmTemplate.types = { PermitSingle: [{ name: 'details', type: 'PermitDetails' }] }
-    tmTemplate.domain.verifyingContract = '0x000000000022d473030f116ddee9f6b43ac78ba3'
-    tmTemplate.message = typedMessages.permit2[0]
-    const { fullVisualization } = permit2Module(tmTemplate)
+    ;(messageTemplate.content as TypedMessage).types = {
+      PermitSingle: [{ name: 'details', type: 'PermitDetails' }]
+    }
+    ;(messageTemplate.content as TypedMessage).domain.verifyingContract =
+      '0x000000000022d473030f116ddee9f6b43ac78ba3'
+    messageTemplate.content.message = typedMessages.permit2[0]
+    const { fullVisualization } = permit2Module(messageTemplate)
     expect(fullVisualization).toBeTruthy()
     compareVisualizations(fullVisualization!, expectedSingleVisualization)
   })
@@ -178,11 +177,24 @@ describe('typed message tests', () => {
       getLabel('this whole signatuere'),
       getDeadline(968187600n)
     ]
-    tmTemplate.types = { PermitBatch: [{ name: 'details', type: 'PermitDetails[]' }] }
-    tmTemplate.domain.verifyingContract = '0x000000000022d473030f116ddee9f6b43ac78ba3'
-    tmTemplate.message = typedMessages.permit2[1]
-    const { fullVisualization } = permit2Module(tmTemplate)
+    ;(messageTemplate.content as TypedMessage).types = {
+      PermitBatch: [{ name: 'details', type: 'PermitDetails[]' }]
+    }
+    ;(messageTemplate.content as TypedMessage).domain.verifyingContract =
+      '0x000000000022d473030f116ddee9f6b43ac78ba3'
+    messageTemplate.content.message = typedMessages.permit2[1]
+    const { fullVisualization } = permit2Module(messageTemplate)
     expect(fullVisualization).toBeTruthy()
     compareVisualizations(fullVisualization!, expectedBatchVisualization)
+  })
+
+  test('Entry point module', () => {
+    messageTemplate.fromActionId = ENTRY_POINT_AUTHORIZATION_REQUEST_ID
+    const { fullVisualization } = entryPointModule(messageTemplate)
+    expect(fullVisualization?.length).toBe(1)
+    expect(fullVisualization?.[0]).toMatchObject({
+      type: 'action',
+      content: 'Authorize entry point'
+    })
   })
 })

@@ -388,7 +388,8 @@ export class ActivityController extends EventEmitter {
               // if there's no receipt, confirm there's a txn
               // if there's no txn and 15 minutes have passed, declare it a failure
               const txn = await provider.getTransaction(txnId)
-              if (!txn) declareStuckIfQuaterPassed(accountOp)
+              if (txn) return
+              declareStuckIfQuaterPassed(accountOp)
             } catch {
               this.emitError({
                 level: 'silent',
@@ -654,6 +655,17 @@ export class ActivityController extends EventEmitter {
       ops.push(op)
     })
     return !ops.length ? null : ops.reduce((m, e) => (e.nonce > m.nonce ? e : m))
+  }
+
+  getLastTxn(networkId: Network['id']): SubmittedAccountOp | null {
+    if (
+      !this.#accounts.selectedAccount ||
+      !this.#accountsOps[this.#accounts.selectedAccount] ||
+      !this.#accountsOps[this.#accounts.selectedAccount][networkId]
+    )
+      return null
+
+    return this.#accountsOps[this.#accounts.selectedAccount][networkId][0]
   }
 
   toJSON() {
