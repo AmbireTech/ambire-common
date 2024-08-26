@@ -223,9 +223,8 @@ export class MainController extends EventEmitter {
       this.networks,
       async (toAccountAddr: string) => {
         this.activity.init()
-        // TODO: To be determined. In all other instances, we always fetch the pending state, but here we omitted it.
-        //   We should verify if this was done intentionally.
-        //   If we don't fetch it here, we can handle the latest/pending token delta for pending-to-be-confirmed badge.
+        // TODO: We agreed to always fetch the latest and pending states.
+        // To achieve this, we need to refactor how we use forceUpdate to obtain pending state updates.
         await this.updateSelectedAccountPortfolio(true)
         // forceEmitUpdate to update the getters in the FE state of the ctrl
         await this.forceEmitUpdate()
@@ -308,9 +307,8 @@ export class MainController extends EventEmitter {
     await this.networks.initialLoadPromise
     await this.providers.initialLoadPromise
     await this.accounts.initialLoadPromise
-    // TODO: To be determined. In all other instances, we always fetch the pending state, but here we omitted it.
-    //   We should verify if this was done intentionally.
-    //   If we don't fetch it here, we can handle the latest/pending token delta for pending-to-be-confirmed badge.
+    // TODO: We agreed to always fetch the latest and pending states.
+    // To achieve this, we need to refactor how we use forceUpdate to obtain pending state updates.
     this.updateSelectedAccountPortfolio(true)
 
     /**
