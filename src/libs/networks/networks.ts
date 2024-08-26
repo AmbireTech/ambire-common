@@ -193,13 +193,14 @@ export function getFeaturesByNetworkProperties(
   const {
     flagged,
     isSAEnabled,
-    areContractsDeployed,
     erc4337,
     rpcNoStateOverride,
     nativeAssetId,
     chainId,
     hasSingleton
   } = networkInfo
+
+  const areContractsDeployed = false
 
   const updateFeature = (
     id: string,
