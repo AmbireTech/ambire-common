@@ -6,11 +6,13 @@ import { produceMemoryStore } from '../../../test/helpers'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { networks } from '../../consts/networks'
 import { RPCProviders } from '../../interfaces/provider'
+import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
+import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { getRpcProvider } from '../../services/provider'
 import { AccountsController } from '../accounts/accounts'
 import { NetworksController } from '../networks/networks'
 import { ProvidersController } from '../providers/providers'
-import { ActivityController, SignedMessage, SubmittedAccountOp } from './activity'
+import { ActivityController, SignedMessage } from './activity'
 
 const INIT_PARAMS = {
   account: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
@@ -100,6 +102,8 @@ networks.forEach((network) => {
   providers[network.id].isWorking = true
 })
 
+const callRelayer = relayerCall.bind({ url: '', fetch })
+
 const prepareTest = async () => {
   const storage = produceMemoryStore()
   await storage.set('accounts', ACCOUNTS)
@@ -128,6 +132,7 @@ const prepareTest = async () => {
   const controller = new ActivityController(
     storage,
     fetch,
+    callRelayer,
     accountsCtrl,
     providersCtrl,
     networksCtrl,
@@ -434,6 +439,7 @@ describe('Activity Controller ', () => {
       const controller = new ActivityController(
         storage,
         fetch,
+        callRelayer,
         accountsCtrl,
         providersCtrl,
         networksCtrl,

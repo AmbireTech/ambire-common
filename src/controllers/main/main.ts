@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-floating-promises */
 import { ethErrors } from 'eth-rpc-errors'
 /* eslint-disable @typescript-eslint/brace-style */
-import { getAddress, getBigInt, Interface, isAddress, TransactionResponse } from 'ethers'
+import { getAddress, getBigInt, Interface, isAddress } from 'ethers'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json'
@@ -33,6 +33,7 @@ import { Calls, DappUserRequest, SignUserRequest, UserRequest } from '../../inte
 import { WindowManager } from '../../interfaces/window'
 import { isSmartAccount } from '../../libs/account/account'
 import { AccountOp, AccountOpStatus, getSignableCalls } from '../../libs/accountOp/accountOp'
+import { AccountOpIdentifiedBy, SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 import { Call as AccountOpCall } from '../../libs/accountOp/types'
 import {
   dappRequestMethodToActionKind,
@@ -73,7 +74,7 @@ import wait from '../../utils/wait'
 import { AccountAdderController } from '../accountAdder/accountAdder'
 import { AccountsController } from '../accounts/accounts'
 import { AccountOpAction, ActionsController, SignMessageAction } from '../actions/actions'
-import { ActivityController, SubmittedAccountOp } from '../activity/activity'
+import { ActivityController } from '../activity/activity'
 import { AddressBookController } from '../addressBook/addressBook'
 import { DappsController } from '../dapps/dapps'
 import { DomainsController } from '../domains/domains'
@@ -102,12 +103,12 @@ const STATUS_WRAPPED_METHODS = {
 export class MainController extends EventEmitter {
   #storage: Storage
 
-  #fetch: Fetch
+  fetch: Fetch
 
   // Holds the initial load promise, so that one can wait until it completes
   #initialLoadPromise: Promise<void>
 
-  #callRelayer: Function
+  callRelayer: Function
 
   isReady: boolean = false
 
@@ -197,7 +198,7 @@ export class MainController extends EventEmitter {
   }) {
     super()
     this.#storage = storage
-    this.#fetch = fetch
+    this.fetch = fetch
     this.#windowManager = windowManager
     this.#notificationManager = notificationManager
 
@@ -206,7 +207,7 @@ export class MainController extends EventEmitter {
     this.#externalSignerControllers = externalSignerControllers
     this.networks = new NetworksController(
       this.#storage,
-      this.#fetch,
+      this.fetch,
       async (network: Network) => {
         this.providers.setProvider(network)
         await this.accounts.updateAccountStates('latest', [network.id])
@@ -235,7 +236,7 @@ export class MainController extends EventEmitter {
     this.settings = new SettingsController(this.#storage)
     this.portfolio = new PortfolioController(
       this.#storage,
-      this.#fetch,
+      this.fetch,
       this.providers,
       this.networks,
       this.accounts,
@@ -243,17 +244,12 @@ export class MainController extends EventEmitter {
       velcroUrl
     )
     this.#initialLoadPromise = this.#load()
-    this.emailVault = new EmailVaultController(
-      this.#storage,
-      this.#fetch,
-      relayerUrl,
-      this.keystore
-    )
+    this.emailVault = new EmailVaultController(this.#storage, this.fetch, relayerUrl, this.keystore)
     this.accountAdder = new AccountAdderController({
       accounts: this.accounts,
       keystore: this.keystore,
       relayerUrl,
-      fetch: this.#fetch
+      fetch: this.fetch
     })
     this.addressBook = new AddressBookController(this.#storage, this.accounts)
     this.signMessage = new SignMessageController(
@@ -263,7 +259,7 @@ export class MainController extends EventEmitter {
       this.accounts,
       this.#externalSignerControllers,
       this.#storage,
-      this.#fetch
+      this.fetch
     )
     this.dapps = new DappsController(this.#storage)
     this.actions = new ActionsController({
@@ -281,9 +277,11 @@ export class MainController extends EventEmitter {
         this.emitUpdate()
       }
     })
+    this.callRelayer = relayerCall.bind({ url: relayerUrl, fetch: this.fetch })
     this.activity = new ActivityController(
       this.#storage,
-      this.#fetch,
+      this.fetch,
+      this.callRelayer,
       this.accounts,
       this.providers,
       this.networks,
@@ -291,8 +289,7 @@ export class MainController extends EventEmitter {
         await this.setContractsDeployedToTrueIfDeployed(network)
       }
     )
-    this.domains = new DomainsController(this.providers.providers, this.#fetch)
-    this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch: this.#fetch })
+    this.domains = new DomainsController(this.providers.providers, this.fetch)
   }
 
   async #load(): Promise<void> {
@@ -482,8 +479,8 @@ export class MainController extends EventEmitter {
       actionId,
       accountOp,
       this.#storage,
-      this.#fetch,
-      this.#callRelayer
+      this.fetch,
+      this.callRelayer
     )
 
     this.emitUpdate()
@@ -1435,7 +1432,12 @@ export class MainController extends EventEmitter {
       txnId: null,
       userOpHash: null
     }
-    data?.isUserOp ? (meta.userOpHash = data.hash) : (meta.txnId = data.hash)
+    if (data.submittedAccountOp) {
+      // can be undefined, check submittedAccountOp.ts
+      meta.txnId = data.submittedAccountOp.txnId
+
+      meta.identifiedBy = data.submittedAccountOp.identifiedBy
+    }
     const benzinUserRequest: SignUserRequest = {
       id: new Date().getTime(),
       action: { kind: 'benzin' },
@@ -1573,7 +1575,7 @@ export class MainController extends EventEmitter {
       const humanization = await humanizeAccountOp(
         this.#storage,
         localAccountOp,
-        this.#fetch,
+        this.fetch,
         this.emitError
       )
       humanization.forEach((call: any) => {
@@ -1799,7 +1801,11 @@ export class MainController extends EventEmitter {
       return this.#throwBroadcastAccountOp({ message })
     }
 
-    let transactionRes: TransactionResponse | { hash: string; nonce: number } | null = null
+    let transactionRes: {
+      txnId?: string
+      nonce: number
+      identifiedBy: AccountOpIdentifiedBy
+    } | null = null
 
     // Basic account (EOA)
     if (!isSmartAccount(account)) {
@@ -1846,7 +1852,12 @@ export class MainController extends EventEmitter {
 
         const signedTxn = await signer.signRawTransaction(rawTxn)
         try {
-          transactionRes = await provider.broadcastTransaction(signedTxn)
+          const broadcastRes = await provider.broadcastTransaction(signedTxn)
+          transactionRes = {
+            txnId: broadcastRes.hash,
+            nonce: broadcastRes.nonce,
+            identifiedBy: 'txnId'
+          }
         } catch (e: any) {
           const reason = e?.message || 'unknown'
 
@@ -1929,7 +1940,12 @@ export class MainController extends EventEmitter {
 
         const signedTxn = await signer.signRawTransaction(rawTxn)
         try {
-          transactionRes = await provider.broadcastTransaction(signedTxn)
+          const broadcastRes = await provider.broadcastTransaction(signedTxn)
+          transactionRes = {
+            txnId: broadcastRes.hash,
+            nonce: broadcastRes.nonce,
+            identifiedBy: 'txnId'
+          }
         } catch (e: any) {
           const reason = e?.message || 'unknown'
 
@@ -1969,10 +1985,9 @@ export class MainController extends EventEmitter {
         })
       }
 
-      // broadcast the userOperationHash
       transactionRes = {
-        hash: userOperationHash,
-        nonce: Number(userOperation.nonce)
+        nonce: Number(userOperation.nonce),
+        identifiedBy: { userOpHash: userOperationHash }
       }
     }
     // Smart account, the Relayer way
@@ -1985,14 +2000,15 @@ export class MainController extends EventEmitter {
           signer: { address: accountOp.signingKeyAddr },
           nonce: Number(accountOp.nonce)
         }
-        const response = await this.#callRelayer(
+        const response = await this.callRelayer(
           `/identity/${accountOp.accountAddr}/${accountOp.networkId}/submit`,
           'POST',
           body
         )
         transactionRes = {
-          hash: response.txId,
-          nonce: Number(accountOp.nonce)
+          txnId: response.txId,
+          nonce: Number(accountOp.nonce),
+          identifiedBy: { id: response.id }
         }
       } catch (error: any) {
         return this.#throwBroadcastAccountOp({ error, network })
@@ -2007,20 +2023,18 @@ export class MainController extends EventEmitter {
     const submittedAccountOp: SubmittedAccountOp = {
       ...accountOp,
       status: AccountOpStatus.BroadcastedButNotConfirmed,
-      txnId: transactionRes.hash,
+      txnId: transactionRes.txnId,
       nonce: BigInt(transactionRes.nonce),
+      identifiedBy: transactionRes.identifiedBy,
       timestamp: new Date().getTime(),
       isSingletonDeploy: !!accountOp.calls.find((call) => getAddress(call.to) === SINGLETON)
-    }
-    if (accountOp.gasFeePayment?.isERC4337) {
-      submittedAccountOp.userOpHash = transactionRes.hash
     }
     await this.activity.addAccountOp(submittedAccountOp)
     await this.resolveAccountOpAction(
       {
-        hash: transactionRes?.hash || null,
         networkId: network.id,
-        isUserOp: !!accountOp?.asUserOperation
+        isUserOp: !!accountOp?.asUserOperation,
+        submittedAccountOp
       },
       actionId
     )

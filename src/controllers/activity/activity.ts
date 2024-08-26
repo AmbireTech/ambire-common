@@ -2,15 +2,18 @@ import { networks as predefinedNetworks } from '../../consts/networks'
 /* eslint-disable import/no-extraneous-dependencies */
 import { Account, AccountId } from '../../interfaces/account'
 import { Banner } from '../../interfaces/banner'
-import { CustomResponse, Fetch } from '../../interfaces/fetch'
+import { Fetch } from '../../interfaces/fetch'
 import { Network } from '../../interfaces/network'
 import { Storage } from '../../interfaces/storage'
 import { Message } from '../../interfaces/userRequest'
 import { isSmartAccount } from '../../libs/account/account'
-import { AccountOp, AccountOpStatus } from '../../libs/accountOp/accountOp'
-import { getExplorerId } from '../../libs/userOperation/userOperation'
-import { Bundler } from '../../services/bundlers/bundler'
-import { fetchUserOp } from '../../services/explorers/jiffyscan'
+import { AccountOpStatus } from '../../libs/accountOp/accountOp'
+import {
+  fetchTxnId,
+  getFetchedUserOpHash,
+  isIdentifiedByUserOpHash,
+  SubmittedAccountOp
+} from '../../libs/accountOp/submittedAccountOp'
 import { AccountsController } from '../accounts/accounts'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { NetworksController } from '../networks/networks'
@@ -26,15 +29,6 @@ interface PaginationResult<T> {
   itemsTotal: number
   currentPage: number
   maxPages: number
-}
-
-export interface SubmittedAccountOp extends AccountOp {
-  txnId: string
-  nonce: bigint
-  success?: boolean
-  userOpHash?: string
-  timestamp: number
-  isSingletonDeploy?: boolean
 }
 
 export interface SignedMessage extends Message {
@@ -139,9 +133,12 @@ export class ActivityController extends EventEmitter {
 
   #rbfStatuses = [AccountOpStatus.BroadcastedButNotConfirmed, AccountOpStatus.BroadcastButStuck]
 
+  #callRelayer: Function
+
   constructor(
     storage: Storage,
     fetch: Fetch,
+    callRelayer: Function,
     accounts: AccountsController,
     providers: ProvidersController,
     networks: NetworksController,
@@ -150,6 +147,7 @@ export class ActivityController extends EventEmitter {
     super()
     this.#storage = storage
     this.#fetch = fetch
+    this.#callRelayer = callRelayer
     this.#accounts = accounts
     this.#providers = providers
     this.#networks = networks
@@ -329,47 +327,26 @@ export class ActivityController extends EventEmitter {
               }
             }
 
+            const fetchTxnIdResult = await fetchTxnId(
+              accountOp,
+              network,
+              this.#fetch,
+              this.#callRelayer
+            )
+            if (fetchTxnIdResult.status === 'rejected') {
+              this.#accountsOps[selectedAccount][networkId][accountOpIndex].status =
+                AccountOpStatus.Rejected
+              return
+            }
+            if (fetchTxnIdResult.status === 'not_found') {
+              declareStuckIfQuaterPassed(accountOp)
+              return
+            }
+
+            const txnId = fetchTxnIdResult.txnId as string
+            this.#accountsOps[selectedAccount][networkId][accountOpIndex].txnId = txnId
+
             try {
-              let txnId = accountOp.txnId
-              if (accountOp.userOpHash) {
-                const [response, bundlerResult]: [CustomResponse | null, any] = await Promise.all([
-                  !network.predefined
-                    ? fetchUserOp(accountOp.userOpHash, this.#fetch, getExplorerId(network))
-                    : Promise.resolve(null),
-                  Bundler.getStatusAndTxnId(accountOp.userOpHash, network)
-                ])
-
-                if (bundlerResult.status === 'rejected') {
-                  this.#accountsOps[selectedAccount][networkId][accountOpIndex].status =
-                    AccountOpStatus.Rejected
-                  return
-                }
-
-                if (bundlerResult.transactionHash) {
-                  txnId = bundlerResult.transactionHash
-                  this.#accountsOps[selectedAccount][networkId][accountOpIndex].txnId = txnId
-                } else {
-                  // on custom networks the response is null
-                  if (!response) return
-
-                  // nothing we can do if we don't have information
-                  if (response.status !== 200) return
-
-                  const data = await response.json()
-                  const userOps = data.userOps
-
-                  // if there are not user ops, it means the userOpHash is not
-                  // indexed, yet, so we wait
-                  if (userOps.length) {
-                    txnId = userOps[0].transactionHash
-                    this.#accountsOps[selectedAccount][networkId][accountOpIndex].txnId = txnId
-                  } else {
-                    declareStuckIfQuaterPassed(accountOp)
-                    return
-                  }
-                }
-              }
-
               const receipt = await provider.getTransactionReceipt(txnId)
               if (receipt) {
                 this.#accountsOps[selectedAccount][networkId][accountOpIndex].status =
@@ -409,11 +386,12 @@ export class ActivityController extends EventEmitter {
               this.#accounts.accountStates[accountOp.gasFeePayment!.paidBy][accountOp.networkId]
                 ? this.#accounts.accountStates[accountOp.gasFeePayment!.paidBy][accountOp.networkId]
                 : null
+            const isUserOp = isIdentifiedByUserOpHash(accountOp.identifiedBy)
 
             if (
               payedByState &&
-              ((!accountOp.userOpHash && payedByState.nonce > accountOp.nonce) ||
-                (accountOp.userOpHash && payedByState.erc4337Nonce > accountOp.nonce))
+              ((!isUserOp && payedByState.nonce > accountOp.nonce) ||
+                (isUserOp && payedByState.erc4337Nonce > accountOp.nonce))
             ) {
               this.#accountsOps[selectedAccount][networkId][accountOpIndex].status =
                 AccountOpStatus.UnknownButPastNonce
@@ -553,11 +531,11 @@ export class ActivityController extends EventEmitter {
       const network = this.#networks.networks.find((x) => x.id === accountOp.networkId)!
 
       const isCustomNetwork = !predefinedNetworks.find((net) => net.id === network.id)
+      const isUserOp = isIdentifiedByUserOpHash(accountOp.identifiedBy)
+      const isNotConfirmed = accountOp.status === AccountOpStatus.BroadcastedButNotConfirmed
       const url =
-        accountOp.userOpHash && accountOp.txnId === accountOp.userOpHash && !isCustomNetwork
-          ? `https://jiffyscan.xyz/userOpHash/${accountOp.userOpHash}?network=${getExplorerId(
-              network
-            )}`
+        isUserOp && isNotConfirmed && !isCustomNetwork
+          ? `https://jiffyscan.xyz/userOpHash/${getFetchedUserOpHash(accountOp.identifiedBy)}`
           : `${network.explorerUrl}/tx/${accountOp.txnId}`
 
       return {
