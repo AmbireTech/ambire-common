@@ -1,5 +1,5 @@
 import { ErrorRef } from '../../controllers/eventEmitter/eventEmitter'
-import { Message, PlainTextMessage } from '../../interfaces/userRequest'
+import { Message } from '../../interfaces/userRequest'
 import { AccountOp } from '../accountOp/accountOp'
 import {
   HumanizerCallModule,
@@ -9,7 +9,7 @@ import {
   IrCall,
   IrMessage
 } from './interfaces'
-import { getAction, getHumanMessage, integrateFragments } from './utils'
+import { integrateFragments } from './utils'
 
 export function humanizeCalls(
   _accountOp: AccountOp,
@@ -52,11 +52,3 @@ export const humanizeTypedMessage = (
     .filter((p) => p.fullVisualization?.length)[0]
   return { fullVisualization, warnings }
 }
-
-export const humanizePlainTextMessage = (
-  m: PlainTextMessage
-  // only full visualization and warnings
-): Omit<IrMessage, keyof Message> => ({
-  fullVisualization: [getAction('Sign message:'), getHumanMessage(m.message)],
-  warnings: []
-})

@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-floating-promises */
 import { ethErrors } from 'eth-rpc-errors'
 /* eslint-disable @typescript-eslint/brace-style */
 import { getAddress, getBigInt, Interface, isAddress, TransactionResponse } from 'ethers'
@@ -545,7 +546,7 @@ export class MainController extends EventEmitter {
     const state = this.accounts.accountStates[accountOp.accountAddr][accountOp.networkId]
     const provider = this.providers.providers[network.id]
     const gasPrice = this.gasPrices[network.id]
-    const addresses = await debugTraceCall(
+    const { tokens, nfts } = await debugTraceCall(
       account,
       accountOp,
       provider,
@@ -554,10 +555,10 @@ export class MainController extends EventEmitter {
       gasPrice,
       !network.rpcNoStateOverride
     )
-    const learnedNewTokens = await this.portfolio.learnTokens(addresses, network.id)
-
+    const learnedNewTokens = await this.portfolio.learnTokens(tokens, network.id)
+    const learnedNewNfts = await this.portfolio.learnNfts(nfts, network.id)
     // update the portfolio only if new tokens were found through tracing
-    if (learnedNewTokens) {
+    if (learnedNewTokens || learnedNewNfts) {
       this.portfolio.updateSelectedAccount(
         accountOp.accountAddr,
         network,
@@ -1222,10 +1223,16 @@ export class MainController extends EventEmitter {
             a.accountOp.networkId === network.id
         ) as AccountOpAction | undefined
 
-        this.activity.setFilters({
+        const activityFilters = {
           account: account.addr,
           network: network.id
-        })
+        }
+        if (!this.activity.isInitialized) {
+          this.activity.init(activityFilters)
+        } else {
+          this.activity.setFilters(activityFilters)
+        }
+
         const entryPointAuthorizationMessageFromHistory = this.activity.signedMessages?.items.find(
           (message) =>
             message.fromActionId === ENTRY_POINT_AUTHORIZATION_REQUEST_ID &&
@@ -1345,10 +1352,16 @@ export class MainController extends EventEmitter {
             this.estimateSignAccountOp()
           }
         } else {
+          if (this.signAccountOp && this.signAccountOp.fromActionId === accountOpAction.id) {
+            this.destroySignAccOp()
+          }
           this.actions.removeAction(`${meta.accountAddr}-${meta.networkId}`)
           this.updateSelectedAccountPortfolio(true, network)
         }
       } else {
+        if (this.signAccountOp && this.signAccountOp.fromActionId === req.id) {
+          this.destroySignAccOp()
+        }
         this.actions.removeAction(id)
         this.updateSelectedAccountPortfolio(true, network)
       }
@@ -1458,7 +1471,11 @@ export class MainController extends EventEmitter {
     const accountOpAction = this.actions.actionsQueue.find((a) => a.id === actionId)
     if (!accountOpAction) return
 
-    const { accountOp } = accountOpAction as AccountOpAction
+    const { accountOp, id } = accountOpAction as AccountOpAction
+
+    if (this.signAccountOp && this.signAccountOp.fromActionId === id) {
+      this.destroySignAccOp()
+    }
     this.actions.removeAction(actionId, shouldOpenNextAction)
     // eslint-disable-next-line no-restricted-syntax
     for (const call of accountOp.calls) {
@@ -1469,12 +1486,6 @@ export class MainController extends EventEmitter {
         this.removeUserRequest(uReq.id)
       }
     }
-
-    // destroy sign account op if no actions left for account
-    const accountOpsLeftForAcc = (
-      this.actions.actionsQueue.filter((a) => a.type === 'accountOp') as AccountOpAction[]
-    ).filter((action) => action.accountOp.accountAddr === accountOp.accountAddr)
-    if (!accountOpsLeftForAcc.length) this.destroySignAccOp()
 
     this.emitUpdate()
   }
@@ -1638,23 +1649,44 @@ export class MainController extends EventEmitter {
       // if the signAccountOp has been deleted, don't continue as the request has already finished
       if (!this.signAccountOp) return
 
-      // if the nonce from the estimation is bigger than the one in localAccountOp,
-      // override the accountState and accountOp with the newly detected nonce
-      // and start a new estimation
-      if (estimation && BigInt(estimation.currentAccountNonce) > (localAccountOp.nonce ?? 0n)) {
-        localAccountOp.nonce = BigInt(estimation.currentAccountNonce)
-        this.signAccountOp.accountOp.nonce = BigInt(estimation.currentAccountNonce)
+      if (estimation) {
+        const currentNonceAhead =
+          BigInt(estimation.currentAccountNonce) > (localAccountOp.nonce ?? 0n)
 
-        if (this.accounts.accountStates?.[localAccountOp.accountAddr]?.[localAccountOp.networkId])
-          this.accounts.accountStates[localAccountOp.accountAddr][localAccountOp.networkId].nonce =
-            localAccountOp.nonce
+        // if the nonce from the estimation is bigger than the one in localAccountOp,
+        // override the accountState and accountOp with the newly detected nonce
+        if (currentNonceAhead) {
+          localAccountOp.nonce = BigInt(estimation.currentAccountNonce)
+          this.signAccountOp.accountOp.nonce = BigInt(estimation.currentAccountNonce)
 
-        this.estimateSignAccountOp()
+          if (this.accounts.accountStates?.[localAccountOp.accountAddr]?.[localAccountOp.networkId])
+            this.accounts.accountStates[localAccountOp.accountAddr][
+              localAccountOp.networkId
+            ].nonce = localAccountOp.nonce
+        }
 
-        // returning here means estimation will not be set => better UX as
-        // the user will not see the error "nonce discrepancy" but instead
-        // just wait for the new estimation
-        return
+        const hasNonceDiscrepancy = estimation.error?.cause === 'NONCE_FAILURE'
+        const lastTxn = this.activity.getLastTxn(localAccountOp.networkId)
+        const SAHasOldNonceOnARelayerNetwork =
+          isSmartAccount(account) &&
+          !network.erc4337.enabled &&
+          lastTxn &&
+          localAccountOp.nonce === lastTxn.nonce
+
+        if (hasNonceDiscrepancy || SAHasOldNonceOnARelayerNetwork) {
+          this.accounts
+            .updateAccountState(localAccountOp.accountAddr, 'pending', [localAccountOp.networkId])
+            .then(() => this.estimateSignAccountOp())
+            .catch((error) =>
+              this.emitError({
+                level: 'major',
+                message:
+                  'Failed to refetch the account state. Please try again to initialize your transaction',
+                error
+              })
+            )
+          return
+        }
       }
 
       if (
@@ -1664,7 +1696,7 @@ export class MainController extends EventEmitter {
         this.accounts.accountStates?.[localAccountOp.accountAddr]?.[localAccountOp.networkId]
       ) {
         this.accounts
-          .updateAccountState(localAccountOp.accountAddr, 'latest', [localAccountOp.networkId])
+          .updateAccountState(localAccountOp.accountAddr, 'pending', [localAccountOp.networkId])
           .then(() => this.estimateSignAccountOp())
           .catch((error) =>
             this.emitError({

@@ -37,7 +37,12 @@ export function mapTxnErrMsg(contractError: string): string | null {
 
   if (!msg || msg === '0x') return null
 
-  if (msg.includes('Router: EXPIRED') || msg.includes('Transaction too old') || msg === expiredSig)
+  if (
+    msg.includes('Router: EXPIRED') ||
+    msg.includes('Transaction too old') ||
+    msg === expiredSig ||
+    msg.includes(expiredSig)
+  )
     return 'Transaction cannot be sent because the swap has expired. Please return to the dApp interface and try again.'
   if (msg.includes('Router: INSUFFICIENT_OUTPUT_AMOUNT'))
     return 'Transaction cannot be sent because the slippage tolerance exceeds the set limit. Please return to the dApp interface to adjust your slippage tolerance or try again.'
