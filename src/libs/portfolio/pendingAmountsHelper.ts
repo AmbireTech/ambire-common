@@ -1,6 +1,6 @@
 import { formatUnits } from 'ethers'
 
-type PendingAmounts = {
+export type PendingAmounts = {
   isPending: boolean
   pendingBalance: number // TODO, better to return bigint
   pendingBalanceUSD: number // TODO, move it to formatPendingAmounts helper
@@ -47,11 +47,11 @@ export const calculatePendingAmounts = (
   simulationDelta?: bigint, // pending delta (this is the amount of the simulation itself)
   activityNonce?: bigint,
   portfolioNonce?: bigint
-): PendingAmounts | {} => {
+): PendingAmounts | undefined => {
   const latestPendingDelta = pendingAmount - latestAmount
 
   // There is no Pending state changes
-  if (latestPendingDelta === 0n && !simulationDelta) return {}
+  if (latestPendingDelta === 0n && !simulationDelta) return undefined
 
   let pendingBalance
 
