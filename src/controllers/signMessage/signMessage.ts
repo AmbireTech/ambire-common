@@ -209,7 +209,7 @@ export class SignMessageController extends EventEmitter {
         if (this.messageToSign.content.kind === 'typedMessage') {
           if (account.creation && this.messageToSign.content.primaryType === 'Permit') {
             throw new Error(
-              'Please, change the approval type to "Transaction" in the dApp, because signing a \'Permit\' message approval is not supported on Smart Accounts.'
+              'It looks like that this dApp doesn\'t detect Smart Account wallets, and requested incompatible approval type. Please, go back to the dApp and change the approval type to "Transaction", which is supported by Smart Account wallets.'
             )
           }
 
