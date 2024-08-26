@@ -182,7 +182,9 @@ describe('Deployless', () => {
         mode: DeploylessMode.ProxyContract
       })
     } catch (e: any) {
-      expect(e.message).toBe('24kb call data size limit reached, use StateOverride mode')
+      expect(e.message).toBe(
+        'Transaction cannot be sent because the 24kb call data size limit has been reached. Please use StateOverride mode instead.'
+      )
     }
   })
 
