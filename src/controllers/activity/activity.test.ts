@@ -323,7 +323,8 @@ describe('Activity Controller ', () => {
               }
             ],
             status: 'broadcasted-but-not-confirmed', // everytime we add a new AccountOp, it gets broadcasted-but-not-confirmed status
-            txnId: '0x891e12877c24a8292fd73fd741897682f38a7bcd497374a6b68e8add89e1c0fb'
+            txnId: '0x891e12877c24a8292fd73fd741897682f38a7bcd497374a6b68e8add89e1c0fb',
+            identifiedBy: 'txnId'
           }
         ],
         itemsTotal: 2,
