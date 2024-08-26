@@ -6,8 +6,6 @@ describe('Portfolio -> Pending Amounts Helper', () => {
     test('[PendingToBeSigned] - Having simulation and the AccOp is not broadcasted yet; should result in `pendingToBeSigned` badge', async () => {
       const latestAmount = 2000000000000000000n
       const pendingAmount = 2000000000000000000n
-      const priceUSD = 0.5
-      const decimals = 18
       const amountPostSimulation = 1000000000000000000n
       const activityNonce = 1n
       const portfolioNonce = 2n
@@ -17,8 +15,6 @@ describe('Portfolio -> Pending Amounts Helper', () => {
       const result = calculatePendingAmounts(
         latestAmount,
         pendingAmount,
-        priceUSD,
-        decimals,
         amountPostSimulation,
         simulationDelta,
         activityNonce,
@@ -27,8 +23,7 @@ describe('Portfolio -> Pending Amounts Helper', () => {
 
       expect(result).toEqual({
         isPending: true,
-        pendingBalance: 1,
-        pendingBalanceUSD: 0.5,
+        pendingBalance: 1000000000000000000n,
         pendingToBeSigned: -1000000000000000000n // Here we expect pendingToBeSigned property
       })
     })
@@ -36,8 +31,6 @@ describe('Portfolio -> Pending Amounts Helper', () => {
     test('[PendingToBeConfirmed] - Having simulation, but the AccOp is already broadcasted (but not confirmed); should result in pendingToBeConfirmed badge', async () => {
       const latestAmount = 2000000000000000000n
       const pendingAmount = 2000000000000000000n
-      const priceUSD = 0.5
-      const decimals = 18
       const amountPostSimulation = 1000000000000000000n
 
       // Once the AccOp is broadcasted and added to the Activity, there is a brief period
@@ -50,8 +43,6 @@ describe('Portfolio -> Pending Amounts Helper', () => {
       const result = calculatePendingAmounts(
         latestAmount,
         pendingAmount,
-        priceUSD,
-        decimals,
         amountPostSimulation,
         simulationDelta,
         activityNonce,
@@ -60,8 +51,7 @@ describe('Portfolio -> Pending Amounts Helper', () => {
 
       expect(result).toEqual({
         isPending: true,
-        pendingBalance: 1,
-        pendingBalanceUSD: 0.5,
+        pendingBalance: 1000000000000000000n,
         pendingToBeConfirmed: -1000000000000000000n // Here we expect pendingToBeConfirmed property
       })
     })
@@ -71,8 +61,6 @@ describe('Portfolio -> Pending Amounts Helper', () => {
       const latestAmount = 1000000000000000000n
       const pendingAmount = 2000000000000000000n
 
-      const priceUSD = 0.5
-      const decimals = 18
       const amountPostSimulation = undefined
       const activityNonce = 2n
       const portfolioNonce = undefined
@@ -81,8 +69,6 @@ describe('Portfolio -> Pending Amounts Helper', () => {
       const result = calculatePendingAmounts(
         latestAmount,
         pendingAmount,
-        priceUSD,
-        decimals,
         amountPostSimulation,
         simulationDelta,
         activityNonce,
@@ -91,8 +77,7 @@ describe('Portfolio -> Pending Amounts Helper', () => {
 
       expect(result).toEqual({
         isPending: true,
-        pendingBalance: 2,
-        pendingBalanceUSD: 1,
+        pendingBalance: 2000000000000000000n,
         pendingToBeConfirmed: 1000000000000000000n // Here we expect pendingToBeConfirmed property
       })
     })
@@ -102,8 +87,6 @@ describe('Portfolio -> Pending Amounts Helper', () => {
       const latestAmount = 2000000000000000000n
       const pendingAmount = 3000000000000000000n
 
-      const priceUSD = 0.5
-      const decimals = 18
       const amountPostSimulation = 4000000000000000000n
       const activityNonce = 1n
       const portfolioNonce = 2n
@@ -114,8 +97,6 @@ describe('Portfolio -> Pending Amounts Helper', () => {
       const result = calculatePendingAmounts(
         latestAmount,
         pendingAmount,
-        priceUSD,
-        decimals,
         amountPostSimulation,
         simulationDelta,
         activityNonce,
@@ -124,8 +105,7 @@ describe('Portfolio -> Pending Amounts Helper', () => {
 
       expect(result).toEqual({
         isPending: true,
-        pendingBalance: 4,
-        pendingBalanceUSD: 2,
+        pendingBalance: 4000000000000000000n,
         pendingToBeSigned: 1000000000000000000n, // Here we expect pendingToBeSigned property
         pendingToBeConfirmed: 1000000000000000000n // Here we expect pendingToBeConfirmed property
       })
@@ -136,8 +116,6 @@ describe('Portfolio -> Pending Amounts Helper', () => {
       const latestAmount = 2000000000000000000n
       const pendingAmount = 3000000000000000000n
 
-      const priceUSD = 0.5
-      const decimals = 18
       const amountPostSimulation = 4000000000000000000n
 
       // Here we know that having the same nonces, it means we have BroadcastedButNotConfirmed AccOp
@@ -150,8 +128,6 @@ describe('Portfolio -> Pending Amounts Helper', () => {
       const result = calculatePendingAmounts(
         latestAmount,
         pendingAmount,
-        priceUSD,
-        decimals,
         amountPostSimulation,
         simulationDelta,
         activityNonce,
@@ -160,8 +136,7 @@ describe('Portfolio -> Pending Amounts Helper', () => {
 
       expect(result).toEqual({
         isPending: true,
-        pendingBalance: 4,
-        pendingBalanceUSD: 2,
+        pendingBalance: 4000000000000000000n,
         // We expect the sum of both deltas here: `latestPendingDelta` + `simulationDelta`
         pendingToBeConfirmed: 2000000000000000000n // Here we expect pendingToBeConfirmed property
       })

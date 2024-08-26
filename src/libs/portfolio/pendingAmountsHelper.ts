@@ -1,9 +1,6 @@
-import { formatUnits } from 'ethers'
-
 export type PendingAmounts = {
   isPending: boolean
-  pendingBalance: number // TODO, better to return bigint
-  pendingBalanceUSD: number // TODO, move it to formatPendingAmounts helper
+  pendingBalance: bigint
   pendingToBeSigned?: bigint
   pendingToBeConfirmed?: bigint
 }
@@ -41,8 +38,6 @@ export type PendingAmounts = {
 export const calculatePendingAmounts = (
   latestAmount: bigint,
   pendingAmount: bigint,
-  priceUSD: number,
-  decimals: number,
   amountPostSimulation?: bigint,
   simulationDelta?: bigint, // pending delta (this is the amount of the simulation itself)
   activityNonce?: bigint,
@@ -56,17 +51,14 @@ export const calculatePendingAmounts = (
   let pendingBalance
 
   if (latestPendingDelta && !amountPostSimulation) {
-    pendingBalance = parseFloat(formatUnits(pendingAmount, decimals))
+    pendingBalance = pendingAmount
   } else {
-    pendingBalance = parseFloat(formatUnits(amountPostSimulation!, decimals))
+    pendingBalance = amountPostSimulation!
   }
-
-  const pendingBalanceUSD = priceUSD && pendingBalance ? pendingBalance * priceUSD : undefined
 
   const result: any = {
     isPending: true,
-    pendingBalance,
-    pendingBalanceUSD
+    pendingBalance
   }
 
   if (simulationDelta) {
