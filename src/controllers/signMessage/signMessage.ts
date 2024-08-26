@@ -207,6 +207,12 @@ export class SignMessageController extends EventEmitter {
         }
 
         if (this.messageToSign.content.kind === 'typedMessage') {
+          if (account.creation && this.messageToSign.content.primaryType === 'Permit') {
+            throw new Error(
+              'Please, change the approval type to "Transaction" from the dApp, because signing a \'Permit\' message approval is not supported on Smart Accounts.'
+            )
+          }
+
           signature = await getEIP712Signature(
             this.messageToSign.content,
             account,
