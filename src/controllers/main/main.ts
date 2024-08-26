@@ -1223,10 +1223,16 @@ export class MainController extends EventEmitter {
             a.accountOp.networkId === network.id
         ) as AccountOpAction | undefined
 
-        this.activity.setFilters({
+        const activityFilters = {
           account: account.addr,
           network: network.id
-        })
+        }
+        if (!this.activity.isInitialized) {
+          this.activity.init(activityFilters)
+        } else {
+          this.activity.setFilters(activityFilters)
+        }
+
         const entryPointAuthorizationMessageFromHistory = this.activity.signedMessages?.items.find(
           (message) =>
             message.fromActionId === ENTRY_POINT_AUTHORIZATION_REQUEST_ID &&
@@ -1346,10 +1352,16 @@ export class MainController extends EventEmitter {
             this.estimateSignAccountOp()
           }
         } else {
+          if (this.signAccountOp && this.signAccountOp.fromActionId === accountOpAction.id) {
+            this.destroySignAccOp()
+          }
           this.actions.removeAction(`${meta.accountAddr}-${meta.networkId}`)
           this.updateSelectedAccountPortfolio(true, network)
         }
       } else {
+        if (this.signAccountOp && this.signAccountOp.fromActionId === req.id) {
+          this.destroySignAccOp()
+        }
         this.actions.removeAction(id)
         this.updateSelectedAccountPortfolio(true, network)
       }
@@ -1459,7 +1471,11 @@ export class MainController extends EventEmitter {
     const accountOpAction = this.actions.actionsQueue.find((a) => a.id === actionId)
     if (!accountOpAction) return
 
-    const { accountOp } = accountOpAction as AccountOpAction
+    const { accountOp, id } = accountOpAction as AccountOpAction
+
+    if (this.signAccountOp && this.signAccountOp.fromActionId === id) {
+      this.destroySignAccOp()
+    }
     this.actions.removeAction(actionId, shouldOpenNextAction)
     // eslint-disable-next-line no-restricted-syntax
     for (const call of accountOp.calls) {
@@ -1470,12 +1486,6 @@ export class MainController extends EventEmitter {
         this.removeUserRequest(uReq.id)
       }
     }
-
-    // destroy sign account op if no actions left for account
-    const accountOpsLeftForAcc = (
-      this.actions.actionsQueue.filter((a) => a.type === 'accountOp') as AccountOpAction[]
-    ).filter((action) => action.accountOp.accountAddr === accountOp.accountAddr)
-    if (!accountOpsLeftForAcc.length) this.destroySignAccOp()
 
     this.emitUpdate()
   }
