@@ -1,11 +1,12 @@
 import { ZeroAddress } from 'ethers'
-import { compareHumanizerVisualizations } from 'libs/humanizer/testHelpers'
 
 import { describe } from '@jest/globals'
 
 import humanizerInfo from '../../../../consts/humanizer/humanizerInfo.json'
 import { HumanizerMeta, HumanizerVisualization, IrCall } from '../../interfaces'
+import { compareHumanizerVisualizations } from '../../testHelpers'
 import { getAction, getToken } from '../../utils'
+import { genericErc20Humanizer } from '../Tokens'
 import { gasTankModule } from './gasTankModule'
 
 const txns: IrCall[] = [
@@ -29,10 +30,11 @@ describe('gasTank', () => {
       [getAction('Fuel gas tank with'), getToken(ZeroAddress, 10n ** 18n)],
       [
         getAction('Fuel gas tank with'),
-        getToken('0x88800092fF476844f74dC2FC427974BBee2794Ae', 17307300000000000000n)
+        getToken('0x88800092fF476844f74dC2FC427974BBee2794Ae', 1730725133158241533952n)
       ]
     ]
-    const [irCalls] = gasTankModule({} as any, txns, humanizerInfo as HumanizerMeta)
+    let [irCalls] = genericErc20Humanizer({} as any, txns, humanizerInfo as HumanizerMeta)
+    ;[irCalls] = gasTankModule({} as any, irCalls, humanizerInfo as HumanizerMeta)
     compareHumanizerVisualizations(irCalls, expectedVisualizations)
   })
 })

@@ -19,7 +19,7 @@ export const gasTankModule: HumanizerCallModule = (_: AccountOp, irCalls: IrCall
         const [text] = new AbiCoder().decode(['string', 'uint256', 'string'], call.data)
         // mostly useful for filtering out call in benzin
         if (text === 'gasTank')
-          return { ...call, fullVisualization: [getAction('Pay feee with gas tank')] }
+          return { ...call, fullVisualization: [getAction('Pay fee with gas tank')] }
       } catch (e) {
         // do nothing
       }
