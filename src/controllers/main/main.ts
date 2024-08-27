@@ -2009,6 +2009,8 @@ export class MainController extends EventEmitter {
           'POST',
           body
         )
+        if (!response.success) throw new Error(response.message)
+
         transactionRes = {
           txnId: response.txId,
           nonce: Number(accountOp.nonce),

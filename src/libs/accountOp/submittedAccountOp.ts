@@ -131,9 +131,16 @@ export async function fetchTxnId(
   const id = (op.identifiedBy as Relayer).id
   let response = null
   try {
-    response = await callRelayer(`/get-txn-id/${id}`)
+    response = await callRelayer(`/v2/get-txn-id/${id}`)
   } catch (e) {
     console.log(`relayer responded with an error when trying to find the txnId: ${e}`)
+    return {
+      status: 'not_found',
+      txnId: null
+    }
+  }
+
+  if (!response.data.txId) {
     return {
       status: 'not_found',
       txnId: null
