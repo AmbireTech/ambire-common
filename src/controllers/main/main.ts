@@ -83,7 +83,6 @@ import { KeystoreController } from '../keystore/keystore'
 import { NetworksController } from '../networks/networks'
 import { PortfolioController } from '../portfolio/portfolio'
 import { ProvidersController } from '../providers/providers'
-import { SettingsController } from '../settings/settings'
 /* eslint-disable no-underscore-dangle */
 import { SignAccountOpController, SigningStatus } from '../signAccountOp/signAccountOp'
 import { SignMessageController } from '../signMessage/signMessage'
@@ -138,15 +137,13 @@ export class MainController extends EventEmitter {
   // @TODO emailVaults
   emailVault: EmailVaultController
 
-  signMessage!: SignMessageController
+  signMessage: SignMessageController
 
   signAccountOp: SignAccountOpController | null = null
 
   signAccOpInitError: string | null = null
 
-  activity!: ActivityController
-
-  settings: SettingsController
+  activity: ActivityController
 
   addressBook: AddressBookController
 
@@ -231,7 +228,6 @@ export class MainController extends EventEmitter {
       },
       this.providers.updateProviderIsWorking.bind(this.providers)
     )
-    this.settings = new SettingsController(this.#storage)
     this.portfolio = new PortfolioController(
       this.#storage,
       this.#fetch,
@@ -784,13 +780,6 @@ export class MainController extends EventEmitter {
 
     // Remove account keys from the keystore
     solelyAccountKeys.forEach((key) => {
-      this.settings.removeKeyPreferences([{ addr: key.addr, type: key.type }]).catch((e) => {
-        throw new EmittableError({
-          level: 'major',
-          message: 'Failed to remove account key preferences',
-          error: e
-        })
-      })
       this.keystore.removeKey(key.addr, key.type).catch((e) => {
         throw new EmittableError({
           level: 'major',

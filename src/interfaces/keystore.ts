@@ -147,3 +147,7 @@ export type ReadyToAddKeys = {
     meta: ExternalKey['meta']
   }[]
 }
+
+export type KeyPreferences = {
+  label: string
+}

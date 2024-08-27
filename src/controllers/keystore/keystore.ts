@@ -25,6 +25,7 @@ import EmittableError from '../../classes/EmittableError'
 import {
   ExternalKey,
   Key,
+  KeyPreferences,
   KeystoreSignerType,
   MainKey,
   MainKeyEncryptedWithSecret,
@@ -32,7 +33,7 @@ import {
   StoredKey
 } from '../../interfaces/keystore'
 import { Storage } from '../../interfaces/storage'
-import { getDefaultKeyLabel, getExistingKeyLabel } from '../../libs/keys/keys'
+import { getDefaultKeyLabel } from '../../libs/keys/keys'
 import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter'
 
 const scryptDefaults = { N: 131072, r: 8, p: 1, dkLen: 64 }
@@ -47,7 +48,8 @@ const STATUS_WRAPPED_METHODS = {
   removeSecret: 'INITIAL',
   addKeys: 'INITIAL',
   addKeysExternallyStored: 'INITIAL',
-  changeKeystorePassword: 'INITIAL'
+  changeKeystorePassword: 'INITIAL',
+  updateKeyPreferences: 'INITIAL'
 } as const
 
 function getBytesForSecret(secret: string): ArrayLike<number> {
@@ -689,6 +691,26 @@ export class KeystoreController extends EventEmitter {
     await this.withStatus('changeKeystorePassword', () =>
       this.#changeKeystorePassword(newSecret, oldSecret)
     )
+  }
+
+  async updateKeyPreferences(
+    keys: { addr: Key['addr']; type: Key['type']; preferences: KeyPreferences }[]
+  ) {
+    await this.withStatus('updateKeyPreferences', async () => this.#updateKeyPreferences(keys))
+  }
+
+  async #updateKeyPreferences(
+    keys: { addr: Key['addr']; type: Key['type']; preferences: KeyPreferences }[]
+  ) {
+    this.#keystoreKeys = this.#keystoreKeys.map((keystoreKey) => {
+      const key = keys.find((k) => k.addr === keystoreKey.addr && k.type === keystoreKey.type)
+
+      if (!key) return keystoreKey
+
+      return { ...keystoreKey, ...key.preferences }
+    })
+    await this.#storage.set('keystoreKeys', this.#keystoreKeys)
+    this.emitUpdate()
   }
 
   resetErrorState() {
