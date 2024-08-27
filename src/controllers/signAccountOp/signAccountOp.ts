@@ -71,6 +71,10 @@ export enum SigningStatus {
   EstimationError = 'estimation-error',
   UnableToSign = 'unable-to-sign',
   ReadyToSign = 'ready-to-sign',
+  /**
+   * Used to prevent state updates while the user is resolving warnings, connecting a hardware wallet, etc.
+   * Signing is allowed in this state, but the state of the controller should not change.
+   */
   UpdatesPaused = 'updates-paused',
   InProgress = 'in-progress',
   Done = 'done'
@@ -375,7 +379,11 @@ export class SignAccountOpController extends EventEmitter {
   }
 
   get readyToSign() {
-    return !!this.status && this.status?.type === SigningStatus.ReadyToSign
+    return (
+      !!this.status &&
+      (this.status?.type === SigningStatus.ReadyToSign ||
+        this.status?.type !== SigningStatus.UpdatesPaused)
+    )
   }
 
   calculateWarnings() {
@@ -1054,9 +1062,7 @@ export class SignAccountOpController extends EventEmitter {
   }
 
   async sign() {
-    // Signing status is changed to InProgress in certain cases in order to freeze
-    // estimation updates. Signing while InProgress should be allowed.
-    if (!this.readyToSign && this.status?.type !== SigningStatus.UpdatesPaused) {
+    if (!this.readyToSign) {
       const message = `Unable to sign the transaction. During the preparation step, the necessary transaction data was not received. ${RETRY_TO_INIT_ACCOUNT_OP_MSG}`
       return this.#emitSigningErrorAndResetToReadyToSign(message)
     }
