@@ -71,6 +71,7 @@ export enum SigningStatus {
   EstimationError = 'estimation-error',
   UnableToSign = 'unable-to-sign',
   ReadyToSign = 'ready-to-sign',
+  UpdatesPaused = 'updates-paused',
   InProgress = 'in-progress',
   Done = 'done'
 }
@@ -98,7 +99,11 @@ type SpeedCalc = {
 }
 
 // declare the statuses we don't want state updates on
-const noStateUpdateStatuses = [SigningStatus.InProgress, SigningStatus.Done]
+const noStateUpdateStatuses = [
+  SigningStatus.InProgress,
+  SigningStatus.Done,
+  SigningStatus.UpdatesPaused
+]
 
 export class SignAccountOpController extends EventEmitter {
   #accounts: AccountsController
@@ -1049,7 +1054,9 @@ export class SignAccountOpController extends EventEmitter {
   }
 
   async sign() {
-    if (!this.readyToSign) {
+    // Signing status is changed to InProgress in certain cases in order to freeze
+    // estimation updates. Signing while InProgress should be allowed.
+    if (!this.readyToSign && this.status?.type !== SigningStatus.UpdatesPaused) {
       const message = `Unable to sign the transaction. During the preparation step, the necessary transaction data was not received. ${RETRY_TO_INIT_ACCOUNT_OP_MSG}`
       return this.#emitSigningErrorAndResetToReadyToSign(message)
     }
