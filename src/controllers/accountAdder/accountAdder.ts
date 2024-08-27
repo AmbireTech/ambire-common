@@ -19,7 +19,6 @@ import { Fetch } from '../../interfaces/fetch'
 import { KeyIterator } from '../../interfaces/keyIterator'
 import { dedicatedToOneSAPriv, ReadyToAddKeys } from '../../interfaces/keystore'
 import { Network, NetworkId } from '../../interfaces/network'
-import { KeyPreferences } from '../../interfaces/settings'
 import {
   getAccountImportStatus,
   getBasicAccount,
@@ -425,7 +424,11 @@ export class AccountAdderController extends EventEmitter {
       return []
     }
 
-    return this.#keyIterator?.retrieveInternalKeys(this.selectedAccounts, this.hdPathTemplate)
+    return this.#keyIterator?.retrieveInternalKeys(
+      this.selectedAccounts,
+      this.hdPathTemplate,
+      this.#keystore.keys
+    )
   }
 
   async setPage({
@@ -540,7 +543,6 @@ export class AccountAdderController extends EventEmitter {
         addr: account.addr,
         ...(account.email ? { email: account.email } : {}),
         associatedKeys: account.initialPrivileges,
-
         creation: {
           factoryAddr: account.creation!.factoryAddr,
           salt: account.creation!.salt,

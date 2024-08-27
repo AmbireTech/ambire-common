@@ -28,10 +28,11 @@ import {
   KeystoreSignerType,
   MainKey,
   MainKeyEncryptedWithSecret,
+  ReadyToAddKeys,
   StoredKey
 } from '../../interfaces/keystore'
 import { Storage } from '../../interfaces/storage'
-import { getDefaultKeyLabel } from '../../libs/keys/keys'
+import { getDefaultKeyLabel, getExistingKeyLabel } from '../../libs/keys/keys'
 import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter'
 
 const scryptDefaults = { N: 131072, r: 8, p: 1, dkLen: 64 }
@@ -439,7 +440,7 @@ export class KeystoreController extends EventEmitter {
     await this.withStatus('addKeysExternallyStored', () => this.#addKeysExternallyStored(keysToAdd))
   }
 
-  async #addKeys(keysToAdd: { privateKey: string; label: string; dedicatedToOneSA: boolean }[]) {
+  async #addKeys(keysToAdd: ReadyToAddKeys['internal']) {
     await this.#initialLoadPromise
     if (!keysToAdd.length) return
     if (this.#mainKey === null)
@@ -464,7 +465,7 @@ export class KeystoreController extends EventEmitter {
     const keys = this.#keystoreKeys
 
     const newKeys: StoredKey[] = uniqueKeysToAdd
-      .map(({ privateKey, dedicatedToOneSA, label }, i) => {
+      .map(({ addr, type, label, privateKey, dedicatedToOneSA, meta }) => {
         // eslint-disable-next-line no-param-reassign
         privateKey = privateKey.substring(0, 2) === '0x' ? privateKey.substring(2) : privateKey
 
@@ -472,17 +473,13 @@ export class KeystoreController extends EventEmitter {
         const counter = new aes.Counter(this.#mainKey!.iv) // TS compiler fails to detect we check for null above
         const aesCtr = new aes.ModeOfOperation.ctr(this.#mainKey!.key, counter) // TS compiler fails to detect we check for null above
 
-        // Store the key
-        // Terminology: this private key represents an EOA wallet, which is why ethers calls it Wallet, but we treat it as a key here
-        const wallet = new Wallet(privateKey)
         return {
-          addr: wallet.address,
-          type: 'internal' as 'internal',
-          label: label || getDefaultKeyLabel(this.keys, i),
+          addr,
+          type,
+          label,
           dedicatedToOneSA,
-          // @TODO: consider an MAC?
-          privKey: hexlify(aesCtr.encrypt(aes.utils.hex.toBytes(privateKey))),
-          meta: null
+          privKey: hexlify(aesCtr.encrypt(aes.utils.hex.toBytes(privateKey))), // TODO: consider a MAC?
+          meta
         }
       })
       // No need to re-add keys that are already added, private key never changes
@@ -496,7 +493,7 @@ export class KeystoreController extends EventEmitter {
     await this.#storage.set('keystoreKeys', nextKeys)
   }
 
-  async addKeys(keysToAdd: { privateKey: string; label: string; dedicatedToOneSA: boolean }[]) {
+  async addKeys(keysToAdd: ReadyToAddKeys['internal']) {
     await this.withStatus('addKeys', () => this.#addKeys(keysToAdd))
   }
 
@@ -583,7 +580,23 @@ export class KeystoreController extends EventEmitter {
     )
     if (!privateKey) throw new Error('keystore: wrong encryptedSk or private key')
 
-    await this.addKeys([{ privateKey, dedicatedToOneSA }])
+    const keyToAdd: {
+      addr: Key['addr']
+      label: string
+      type: 'internal'
+      privateKey: string
+      dedicatedToOneSA: Key['dedicatedToOneSA']
+      meta: null
+    } = {
+      addr: new Wallet(privateKey).address,
+      privateKey,
+      label: getDefaultKeyLabel(this.keys, 0),
+      type: 'internal',
+      dedicatedToOneSA,
+      meta: null
+    }
+
+    await this.addKeys([keyToAdd])
   }
 
   async getSigner(keyAddress: Key['addr'], keyType: Key['type']) {
