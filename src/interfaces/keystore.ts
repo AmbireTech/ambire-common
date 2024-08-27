@@ -101,6 +101,7 @@ export const dedicatedToOneSAPriv =
 export type InternalKey = {
   addr: Account['addr']
   type: 'internal'
+  label: string
   dedicatedToOneSA: boolean
   meta: null
 }
@@ -108,6 +109,7 @@ export type InternalKey = {
 export type ExternalKey = {
   addr: Account['addr']
   type: 'trezor' | 'ledger' | 'lattice' | string
+  label: string
   dedicatedToOneSA: boolean
   meta: {
     deviceId: string

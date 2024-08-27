@@ -6,3 +6,13 @@ export const getDefaultKeyLabel = (prevKeys: Key[], i: number) => {
 
   return `Key ${number}`
 }
+
+export const getExistingKeyLabel = (keys: Key[], addr: string, accountAdderType?: Key['type']) => {
+  let key: Key | undefined
+  if (accountAdderType) {
+    key = keys.find((k) => k.addr === addr && k.type === accountAdderType)
+  } else {
+    key = keys.find((k) => k.addr === addr)
+  }
+  return key?.label
+}

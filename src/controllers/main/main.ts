@@ -45,7 +45,6 @@ import { BundlerGasPrice, EstimateResult } from '../../libs/estimate/interfaces'
 import { GasRecommendation, getGasPriceRecommendations } from '../../libs/gasPrice/gasPrice'
 import { humanizeAccountOp } from '../../libs/humanizer'
 import { KeyIterator } from '../../libs/keyIterator/keyIterator'
-import { getDefaultKeyLabel } from '../../libs/keys/keys'
 import {
   getAccountOpsForSimulation,
   makeBasicAccountOpAction,
@@ -334,7 +333,6 @@ export class MainController extends EventEmitter {
           // skips the parallel one, if one is requested).
           await this.keystore.addKeys(this.accountAdder.readyToAddKeys.internal)
           await this.keystore.addKeysExternallyStored(this.accountAdder.readyToAddKeys.external)
-          await this.settings.addKeyPreferences(this.accountAdder.readyToAddKeyPreferences)
         },
         true
       )
@@ -417,23 +415,10 @@ export class MainController extends EventEmitter {
 
         const readyToAddKeys = this.accountAdder.retrieveInternalKeysOfSelectedAccounts()
 
-        const readyToAddKeyPreferences = this.accountAdder.selectedAccounts.flatMap(
-          ({ account, accountKeys }) =>
-            accountKeys.map(({ addr }, i: number) => ({
-              addr,
-              type: 'internal',
-              label: getDefaultKeyLabel(
-                this.keystore.keys.filter((key) => account.associatedKeys.includes(key.addr)),
-                i
-              )
-            }))
-        )
-
-        await this.accountAdder.addAccounts(
-          this.accountAdder.selectedAccounts,
-          { internal: readyToAddKeys, external: [] },
-          readyToAddKeyPreferences
-        )
+        await this.accountAdder.addAccounts(this.accountAdder.selectedAccounts, {
+          internal: readyToAddKeys,
+          external: []
+        })
       },
       true
     )

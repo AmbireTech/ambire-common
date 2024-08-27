@@ -31,6 +31,7 @@ import {
   StoredKey
 } from '../../interfaces/keystore'
 import { Storage } from '../../interfaces/storage'
+import { getDefaultKeyLabel } from '../../libs/keys/keys'
 import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter'
 
 const scryptDefaults = { N: 131072, r: 8, p: 1, dkLen: 64 }
@@ -332,17 +333,18 @@ export class KeystoreController extends EventEmitter {
   }
 
   get keys(): Key[] {
-    return this.#keystoreKeys.map(({ addr, type, dedicatedToOneSA, meta }) => {
+    return this.#keystoreKeys.map(({ addr, type, label, dedicatedToOneSA, meta }) => {
       // Written with this 'internal' type guard (if) on purpose, because this
       // way TypeScript will be able to narrow down the types properly and infer
       // the return type of the map function correctly.
       if (type === 'internal') {
-        return { addr, type, dedicatedToOneSA, meta, isExternallyStored: false }
+        return { addr, type, label, dedicatedToOneSA, meta, isExternallyStored: false }
       }
 
       return {
         addr,
         type,
+        label,
         dedicatedToOneSA,
         meta: meta as ExternalKey['meta'],
         isExternallyStored: true
@@ -414,9 +416,10 @@ export class KeystoreController extends EventEmitter {
     const keys = this.#keystoreKeys
 
     const newKeys = uniqueKeysToAdd
-      .map(({ addr, type, dedicatedToOneSA, meta }) => ({
+      .map(({ addr, type, label, dedicatedToOneSA, meta }) => ({
         addr,
         type,
+        label,
         dedicatedToOneSA,
         meta,
         privKey: null
@@ -436,7 +439,7 @@ export class KeystoreController extends EventEmitter {
     await this.withStatus('addKeysExternallyStored', () => this.#addKeysExternallyStored(keysToAdd))
   }
 
-  async #addKeys(keysToAdd: { privateKey: string; dedicatedToOneSA: boolean }[]) {
+  async #addKeys(keysToAdd: { privateKey: string; label: string; dedicatedToOneSA: boolean }[]) {
     await this.#initialLoadPromise
     if (!keysToAdd.length) return
     if (this.#mainKey === null)
@@ -461,7 +464,7 @@ export class KeystoreController extends EventEmitter {
     const keys = this.#keystoreKeys
 
     const newKeys: StoredKey[] = uniqueKeysToAdd
-      .map(({ privateKey, dedicatedToOneSA }) => {
+      .map(({ privateKey, dedicatedToOneSA, label }, i) => {
         // eslint-disable-next-line no-param-reassign
         privateKey = privateKey.substring(0, 2) === '0x' ? privateKey.substring(2) : privateKey
 
@@ -475,6 +478,7 @@ export class KeystoreController extends EventEmitter {
         return {
           addr: wallet.address,
           type: 'internal' as 'internal',
+          label: label || getDefaultKeyLabel(this.keys, i),
           dedicatedToOneSA,
           // @TODO: consider an MAC?
           privKey: hexlify(aesCtr.encrypt(aes.utils.hex.toBytes(privateKey))),
@@ -492,7 +496,7 @@ export class KeystoreController extends EventEmitter {
     await this.#storage.set('keystoreKeys', nextKeys)
   }
 
-  async addKeys(keysToAdd: { privateKey: string; dedicatedToOneSA: boolean }[]) {
+  async addKeys(keysToAdd: { privateKey: string; label: string; dedicatedToOneSA: boolean }[]) {
     await this.withStatus('addKeys', () => this.#addKeys(keysToAdd))
   }
 

@@ -74,9 +74,7 @@ export class SettingsController extends EventEmitter {
     // We use `await` here to ensure that an outer function can await the emit to be dispatched to the application.
     // Consider the following example:
     // 1. In MainController's onAccountAdderSuccess, we process the newly added accounts from AccountAdder.
-    // 2. Within this function, we await the completion of:
-    // await this.settings.addKeyPreferences(this.accountAdder.readyToAddKeyPreferences)
-    // 3. Once both Promises are resolved, the MainController status is set to 'SUCCESS', indicating successful account importation.
+    // 2. Once the Promise is resolved, the MainController status is set to 'SUCCESS', indicating successful account importation.
     // However, there's a catch. If we don't `await` here, both Promises will resolve,
     // and MainController's onAccountAdderSuccess will change its status to 'SUCCESS'.
     // Consequently, at the application level, components will be able to access the newly imported accounts,
