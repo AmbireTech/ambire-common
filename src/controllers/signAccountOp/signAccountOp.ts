@@ -382,7 +382,7 @@ export class SignAccountOpController extends EventEmitter {
     return (
       !!this.status &&
       (this.status?.type === SigningStatus.ReadyToSign ||
-        this.status?.type !== SigningStatus.UpdatesPaused)
+        this.status?.type === SigningStatus.UpdatesPaused)
     )
   }
 
