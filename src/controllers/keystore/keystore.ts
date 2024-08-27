@@ -33,7 +33,7 @@ import {
   StoredKey
 } from '../../interfaces/keystore'
 import { Storage } from '../../interfaces/storage'
-import { getDefaultKeyLabel } from '../../libs/keys/keys'
+import { getDefaultKeyLabel, migrateKeyPreferencesToKeystoreKeys } from '../../libs/keys/keys'
 import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter'
 
 const scryptDefaults = { N: 131072, r: 8, p: 1, dkLen: 64 }
@@ -122,9 +122,23 @@ export class KeystoreController extends EventEmitter {
 
   async #load() {
     try {
-      this.#keystoreSeeds = await this.#storage.get('keystoreSeeds', [])
-      this.#keystoreKeys = await this.#storage.get('keystoreKeys', [])
-      this.keyStoreUid = await this.#storage.get('keyStoreUid', null)
+      const [keystoreSeeds, keyStoreUid, keystoreKeys, keyPreferences] = await Promise.all([
+        this.#storage.get('keystoreSeeds', []),
+        this.#storage.get('keyStoreUid', null),
+        this.#storage.get('keystoreKeys', []),
+        this.#storage.get('keyPreferences', [])
+      ])
+      this.#keystoreSeeds = keystoreSeeds
+      this.keyStoreUid = keyStoreUid
+
+      // key preferences migration
+      if (keyPreferences) {
+        this.#keystoreKeys = migrateKeyPreferencesToKeystoreKeys(keyPreferences, keystoreKeys)
+        await this.#storage.set('keystoreKeys', this.#keystoreKeys)
+        await this.#storage.remove('keyPreferences')
+      } else {
+        this.#keystoreKeys = keystoreKeys
+      }
     } catch (e) {
       this.emitError({
         message:
