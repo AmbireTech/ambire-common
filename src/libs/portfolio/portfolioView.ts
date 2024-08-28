@@ -126,7 +126,7 @@ export function calculateAccountPortfolio(
   // For more details, see: calculatePendingAmounts.
   const simulationNonces = Object.keys(state.pending[selectedAccount]).reduce((acc, networkId) => {
     const beforeNonce = state.pending[selectedAccount!][networkId]?.result?.beforeNonce
-    if (beforeNonce !== undefined) {
+    if (typeof beforeNonce === 'bigint') {
       acc[networkId] = beforeNonce
     }
 
