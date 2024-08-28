@@ -993,6 +993,7 @@ export class SignAccountOpController extends EventEmitter {
   #emitSigningErrorAndResetToReadyToSign(error: string) {
     this.emitError({ level: 'major', message: error, error: new Error(error) })
     this.status = { type: SigningStatus.ReadyToSign }
+    this.emitUpdate()
   }
 
   #addFeePayment() {

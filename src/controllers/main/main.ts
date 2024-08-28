@@ -981,10 +981,10 @@ export class MainController extends EventEmitter {
       if (!msg) {
         throw ethErrors.rpc.invalidRequest('No msg request to sign')
       }
-      const msdAddress = getAddress(msg?.[1])
+      const msgAddress = getAddress(msg?.[1])
       // TODO: if address is in this.accounts in theory the user should be able to sign
       // e.g. if an acc from the wallet is used as a signer of another wallet
-      if (getAddress(msdAddress) !== this.accounts.selectedAccount) {
+      if (msgAddress !== this.accounts.selectedAccount) {
         dappPromise.reject(
           ethErrors.provider.userRejectedRequest(
             // if updating, check https://github.com/AmbireTech/ambire-wallet/pull/1627
@@ -1011,7 +1011,7 @@ export class MainController extends EventEmitter {
         session: request.session,
         meta: {
           isSignAction: true,
-          accountAddr: msdAddress,
+          accountAddr: msgAddress,
           networkId: network.id
         },
         dappPromise
@@ -1023,10 +1023,10 @@ export class MainController extends EventEmitter {
       if (!msg) {
         throw ethErrors.rpc.invalidRequest('No msg request to sign')
       }
-      const msdAddress = getAddress(msg?.[0])
+      const msgAddress = getAddress(msg?.[0])
       // TODO: if address is in this.accounts in theory the user should be able to sign
       // e.g. if an acc from the wallet is used as a signer of another wallet
-      if (getAddress(msdAddress) !== this.accounts.selectedAccount) {
+      if (msgAddress !== this.accounts.selectedAccount) {
         dappPromise.reject(
           ethErrors.provider.userRejectedRequest(
             // if updating, check https://github.com/AmbireTech/ambire-wallet/pull/1627
@@ -1075,7 +1075,7 @@ export class MainController extends EventEmitter {
         session: request.session,
         meta: {
           isSignAction: true,
-          accountAddr: msdAddress,
+          accountAddr: msgAddress,
           networkId: network.id
         },
         dappPromise

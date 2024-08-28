@@ -26,6 +26,9 @@ export const normalizeLedgerMessage = (error?: string): string => {
   if (error.includes('0x6985')) {
     return 'Rejected by your Ledger device.'
   }
+  if (error.toLowerCase().includes('please enable blind signing')) {
+    return 'Blind Signing is disabled on your Ledger device. To sign this transaction, please enable Blind Signing (formerly called Contract Data) in the Ethereum app settings on your Ledger device, then try again.'
+  }
 
   // Indicates a custom timeout error, no need to normalize
   if (error.includes('Could not connect to your Ledger device for an extended period')) return error
