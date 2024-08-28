@@ -225,6 +225,17 @@ export class Portfolio {
       ] as [string, CollectionResult]
     })
 
+    hintsFromExternalAPI = {
+      networkId,
+      accountAddr,
+      prices: {},
+      hasHints: !!tokensWithoutPrices.length,
+      erc721s: {},
+      ...hintsFromExternalAPI,
+      erc20s: tokensWithoutPrices
+        .filter((x: TokenResult) => x.amount > 0n)
+        .map((x: TokenResult) => x.address)
+    }
     const collections = unfilteredCollections
       .filter((preFilterCollection) => tokenFilter(preFilterCollection))
       .map(([, collection]) => collection)
