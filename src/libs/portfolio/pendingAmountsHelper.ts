@@ -37,11 +37,11 @@ export const calculatePendingAmounts = (
   simulationDelta?: bigint, // pending delta (this is the amount of the simulation itself)
   activityNonce?: bigint,
   portfolioNonce?: bigint
-): PendingAmounts | undefined => {
+): PendingAmounts | null => {
   const latestPendingDelta = pendingAmount - latestAmount
 
   // There is no Pending state changes
-  if (latestPendingDelta === 0n && !simulationDelta) return undefined
+  if (latestPendingDelta === 0n && !simulationDelta) return null
 
   let pendingBalance
 
@@ -51,7 +51,7 @@ export const calculatePendingAmounts = (
     pendingBalance = amountPostSimulation!
   }
 
-  const result: any = {
+  const result: PendingAmounts = {
     isPending: true,
     pendingBalance
   }
@@ -74,10 +74,9 @@ export const calculatePendingAmounts = (
 
   // Please refer to the function documentation, rare case #2
   if (latestPendingDelta) {
-    const pendingToBeConfirmed = result.pendingToBeConfirmed
+    result.pendingToBeConfirmed = result.pendingToBeConfirmed
       ? result.pendingToBeConfirmed + latestPendingDelta
       : latestPendingDelta
-    result.pendingToBeConfirmed = pendingToBeConfirmed
   }
 
   return result
