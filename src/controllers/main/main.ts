@@ -1750,6 +1750,8 @@ export class MainController extends EventEmitter {
         message: 'Estimation error',
         error
       })
+    } finally {
+      this.signAccountOp?.calculateWarnings()
     }
   }
 

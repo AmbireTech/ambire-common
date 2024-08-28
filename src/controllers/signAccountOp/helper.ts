@@ -1,8 +1,13 @@
 import { formatUnits, ZeroAddress } from 'ethers'
 
+import { WARNINGS } from '../../consts/signAccountOp/errorHandling'
+import { Network } from '../../interfaces/network'
+import { Warning } from '../../interfaces/signAccountOp'
 import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 import { FeePaymentOption } from '../../libs/estimate/interfaces'
 import { Price, TokenResult } from '../../libs/portfolio'
+import { getAccountPortfolioTotal } from '../../libs/portfolio/helpers'
+import { PortfolioControllerState } from '../../libs/portfolio/interfaces'
 
 export function getFeeSpeedIdentifier(
   option: FeePaymentOption,
@@ -30,4 +35,33 @@ export function getTokenUsdAmount(token: TokenResult, gasAmount: bigint): string
 
   // 18 it's because we multiply usdPrice * 1e18 and here we need to deduct it
   return formatUnits(BigInt(gasAmount) * usdPriceFormatted, 18 + token.decimals)
+}
+
+export function getSignificantBalanceDecreaseWarning(
+  latest: PortfolioControllerState,
+  pending: PortfolioControllerState,
+  networkId: Network['id'],
+  accountAddr: string
+): Warning | null {
+  const latestNetworkData = latest?.[accountAddr]?.[networkId]
+  const pendingNetworkData = pending?.[accountAddr]?.[networkId]
+  const canDetermineIfBalanceWillDecrease =
+    latestNetworkData &&
+    !latestNetworkData.isLoading &&
+    pendingNetworkData &&
+    !pendingNetworkData.isLoading
+
+  if (canDetermineIfBalanceWillDecrease) {
+    const latestTotal = getAccountPortfolioTotal(latest[accountAddr], ['rewards', 'gasTank'])
+    const latestOnNetwork = latestNetworkData.result?.total.usd || 0
+    const pendingOnNetwork = pendingNetworkData.result?.total.usd || 0
+    const willBalanceDecreaseByMoreThan10Percent =
+      latestOnNetwork - pendingOnNetwork > latestTotal * 0.1
+
+    if (!willBalanceDecreaseByMoreThan10Percent) return null
+
+    return WARNINGS.significantBalanceDecrease
+  }
+
+  return null
 }
