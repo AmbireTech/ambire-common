@@ -4,7 +4,7 @@ import {
   NetworkState,
   PortfolioControllerState,
   TokenResult as TokenResultInterface,
-  SimulationNonces,
+  NetworkNonces,
   TokenAmount
 } from './interfaces'
 
@@ -13,7 +13,7 @@ interface AccountPortfolio {
   collections: CollectionResultInterface[]
   totalAmount: number
   isAllReady: boolean
-  simulationNonces: SimulationNonces
+  simulationNonces: NetworkNonces
   tokenAmounts: TokenAmount[]
 }
 
@@ -131,7 +131,7 @@ export function calculateAccountPortfolio(
     }
 
     return acc
-  }, {} as SimulationNonces)
+  }, {} as NetworkNonces)
 
   // We need the latest and pending token amounts for the selected account, especially for calculating the Pending badges.
   // You might wonder why we don't retrieve this data directly from the PortfolioController. Here's the reasoning:

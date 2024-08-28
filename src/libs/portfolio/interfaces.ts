@@ -184,7 +184,7 @@ export interface PreviousHintsStorage {
   fromExternalAPI: { [networkAndAccountKey: string]: GetOptions['previousHints'] }
 }
 
-export interface SimulationNonces {
+export interface NetworkNonces {
   [networkId: string]: bigint
 }
 

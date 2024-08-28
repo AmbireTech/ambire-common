@@ -15,6 +15,7 @@ import { AccountsController } from '../accounts/accounts'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { NetworksController } from '../networks/networks'
 import { ProvidersController } from '../providers/providers'
+import { NetworkNonces } from '../../libs/portfolio/interfaces'
 
 export interface Pagination {
   fromPage: number
@@ -555,7 +556,7 @@ export class ActivityController extends EventEmitter {
   // we can conclude that the badge is PendingToBeConfirmed.
   // In all other cases, if the portfolio nonce is newer, then the badge is still PendingToBeSigned.
   // More info: calculatePendingAmounts.
-  get lastKnownNonce(): { [networkId: string]: bigint } {
+  get lastKnownNonce(): NetworkNonces {
     // Here we don't rely on `this.isInitialized` flag, as it checks for both `this.filters.account` and `this.filters.network` existence.
     // Banners are network agnostic, and that's the reason we check for `this.filters.account` only and having this.#accountsOps loaded.
     if (!this.#accounts.selectedAccount || !this.#accountsOps[this.#accounts.selectedAccount])
@@ -585,7 +586,7 @@ export class ActivityController extends EventEmitter {
           return acc
         },
 
-        {} as { [networkId: string]: bigint }
+        {} as NetworkNonces
       )
   }
 
