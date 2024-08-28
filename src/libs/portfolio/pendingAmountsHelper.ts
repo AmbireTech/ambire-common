@@ -66,17 +66,18 @@ export const calculatePendingAmounts = (
     const hasPendingToBeConfirmed = activityNonce && activityNonce === portfolioNonce
 
     if (hasPendingToBeConfirmed) {
+      // Main scenario #2.
       result.pendingToBeConfirmed = simulationDelta
     } else {
+      // Main scenario #1.
       result.pendingToBeSigned = simulationDelta
     }
   }
 
-  // Please refer to the function documentation, rare case #2
   if (latestPendingDelta) {
     result.pendingToBeConfirmed = result.pendingToBeConfirmed
-      ? result.pendingToBeConfirmed + latestPendingDelta
-      : latestPendingDelta
+      ? result.pendingToBeConfirmed + latestPendingDelta // Rare scenario #2.
+      : latestPendingDelta // Main scenario #3.
   }
 
   return result
