@@ -621,11 +621,12 @@ export class KeystoreController extends EventEmitter {
     const storedKey = keys.find((x: StoredKey) => x.addr === keyAddress && x.type === keyType)
 
     if (!storedKey) throw new Error('keystore: key not found')
-    const { addr, type, dedicatedToOneSA, meta } = storedKey
+    const { addr, type, label, dedicatedToOneSA, meta } = storedKey
 
     const key = {
       addr,
       type,
+      label,
       dedicatedToOneSA,
       meta,
       isExternallyStored: type !== 'internal'
