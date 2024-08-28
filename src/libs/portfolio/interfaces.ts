@@ -194,3 +194,17 @@ export interface TokenAmount {
   address: string
   networkId: string
 }
+
+export type PendingAmounts = {
+  isPending: boolean
+  pendingBalance: bigint
+  pendingToBeSigned?: bigint
+  pendingToBeConfirmed?: bigint
+}
+
+export type FormattedPendingAmounts = PendingAmounts & {
+  pendingBalanceFormatted: string
+  pendingBalanceUSDFormatted?: string
+  pendingToBeSignedFormatted?: string
+  pendingToBeConfirmedFormatted?: string
+}

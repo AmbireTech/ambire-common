@@ -1,9 +1,4 @@
-export type PendingAmounts = {
-  isPending: boolean
-  pendingBalance: bigint
-  pendingToBeSigned?: bigint
-  pendingToBeConfirmed?: bigint
-}
+import { PendingAmounts } from './interfaces'
 
 /**
  * Function for calculating the pending balance and the delta amounts
