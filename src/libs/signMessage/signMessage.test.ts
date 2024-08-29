@@ -113,7 +113,9 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
         type: 'internal' as 'internal',
         label: 'Key 1',
         dedicatedToOneSA: true,
-        meta: null
+        meta: {
+          timestamp: new Date().getTime()
+        }
       },
       {
         addr: new Wallet(v1siger.privKey).address,
@@ -121,7 +123,9 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
         label: 'Key 2',
         privateKey: v1siger.privKey,
         dedicatedToOneSA: false,
-        meta: null
+        meta: {
+          timestamp: new Date().getTime()
+        }
       }
     ])
   })

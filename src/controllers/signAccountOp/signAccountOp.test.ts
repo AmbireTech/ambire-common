@@ -335,7 +335,9 @@ const init = async (
       label: 'Key 1',
       privateKey: signer.privKey,
       dedicatedToOneSA: true,
-      meta: null
+      meta: {
+        timestamp: new Date().getTime()
+      }
     }
   ])
 

@@ -74,7 +74,9 @@ const keys: Key[] = [
     label: 'Key 1',
     dedicatedToOneSA: true,
     isExternallyStored: true,
-    meta: null
+    meta: {
+      timestamp: new Date().getTime()
+    }
   }
 ]
 const transactions = {

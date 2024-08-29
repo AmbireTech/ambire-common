@@ -24,6 +24,7 @@ import scrypt from 'scrypt-js'
 import EmittableError from '../../classes/EmittableError'
 import {
   ExternalKey,
+  InternalKey,
   Key,
   KeyPreferences,
   KeystoreSignerType,
@@ -602,14 +603,16 @@ export class KeystoreController extends EventEmitter {
       type: 'internal'
       privateKey: string
       dedicatedToOneSA: Key['dedicatedToOneSA']
-      meta: null
+      meta: InternalKey['meta']
     } = {
       addr: new Wallet(privateKey).address,
       privateKey,
       label: getDefaultKeyLabel(this.keys, 0),
       type: 'internal',
       dedicatedToOneSA,
-      meta: null
+      meta: {
+        timestamp: new Date().getTime()
+      }
     }
 
     await this.addKeys([keyToAdd])

@@ -147,7 +147,9 @@ describe('KeystoreController', () => {
         type: 'internal',
         privateKey: privKey,
         dedicatedToOneSA: true,
-        meta: null
+        meta: {
+          timestamp: new Date().getTime()
+        }
       }
     ])
 
@@ -172,7 +174,9 @@ describe('KeystoreController', () => {
         type: 'internal' as 'internal',
         privateKey: privKey,
         dedicatedToOneSA: false,
-        meta: null
+        meta: {
+          timestamp: new Date().getTime()
+        }
       },
       {
         addr: new Wallet(privKey).address,
@@ -180,7 +184,9 @@ describe('KeystoreController', () => {
         type: 'internal' as 'internal',
         privateKey: privKey,
         dedicatedToOneSA: false,
-        meta: null
+        meta: {
+          timestamp: new Date().getTime()
+        }
       }
     ]
 
@@ -195,7 +201,9 @@ describe('KeystoreController', () => {
         type: 'internal' as 'internal',
         privateKey: anotherPrivateKeyNotAddedYet,
         dedicatedToOneSA: false,
-        meta: null
+        meta: {
+          timestamp: new Date().getTime()
+        }
       },
       // test key 4 with the same private key as key 3
       {
@@ -204,7 +212,9 @@ describe('KeystoreController', () => {
         type: 'internal' as 'internal',
         privateKey: anotherPrivateKeyNotAddedYet,
         dedicatedToOneSA: false,
-        meta: null
+        meta: {
+          timestamp: new Date().getTime()
+        }
       }
     ]
 
@@ -238,7 +248,8 @@ describe('KeystoreController', () => {
           deviceId: '1',
           deviceModel: 'trezor',
           hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
-          index: 1
+          index: 1,
+          timestamp: new Date().getTime()
         }
       }
     ])
@@ -268,7 +279,8 @@ describe('KeystoreController', () => {
           deviceId: '1',
           deviceModel: 'trezor',
           hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
-          index: 1
+          index: 1,
+          timestamp: new Date().getTime()
         }
       },
       // test key 2 with the same id (public address) as test key 1'
@@ -281,7 +293,8 @@ describe('KeystoreController', () => {
           deviceId: '1',
           deviceModel: 'trezor',
           hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
-          index: 1
+          index: 1,
+          timestamp: new Date().getTime()
         }
       }
     ]
@@ -298,7 +311,8 @@ describe('KeystoreController', () => {
           deviceId: '1',
           deviceModel: 'trezor',
           hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
-          index: 1
+          index: 1,
+          timestamp: new Date().getTime()
         }
       },
       // test key 4 with the same private key as key 3',
@@ -311,7 +325,8 @@ describe('KeystoreController', () => {
           deviceId: '1',
           deviceModel: 'trezor',
           hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
-          index: 1
+          index: 1,
+          timestamp: new Date().getTime()
         }
       }
     ]
@@ -346,7 +361,8 @@ describe('KeystoreController', () => {
           deviceId: '1',
           deviceModel: 'trezor',
           hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
-          index: 1
+          index: 1,
+          timestamp: new Date().getTime()
         }
       },
       {
@@ -358,7 +374,8 @@ describe('KeystoreController', () => {
           deviceId: '1',
           deviceModel: 'trezor',
           hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
-          index: 1
+          index: 1,
+          timestamp: new Date().getTime()
         }
       },
       {
@@ -370,7 +387,8 @@ describe('KeystoreController', () => {
           deviceId: '1',
           deviceModel: 'trezor',
           hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
-          index: 1
+          index: 1,
+          timestamp: new Date().getTime()
         }
       }
     ]
@@ -542,7 +560,9 @@ describe('import/export with pub key test', () => {
             isExternallyStored: false,
             label: 'Key 1',
             type: 'internal',
-            meta: null
+            meta: {
+              timestamp: new Date().getTime()
+            }
           },
           privKey: wallet.privateKey.slice(2)
         })
@@ -562,7 +582,9 @@ describe('import/export with pub key test', () => {
         type: 'internal',
         privateKey: wallet.privateKey.slice(2),
         dedicatedToOneSA: false,
-        meta: null
+        meta: {
+          timestamp: new Date().getTime()
+        }
       }
     ])
   })

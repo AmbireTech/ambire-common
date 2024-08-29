@@ -17,7 +17,9 @@ const key: Key = {
   label: 'Key 1',
   dedicatedToOneSA: true,
   isExternallyStored: false,
-  meta: null
+  meta: {
+    timestamp: new Date().getTime()
+  }
 }
 
 describe('KeystoreSigner', () => {
