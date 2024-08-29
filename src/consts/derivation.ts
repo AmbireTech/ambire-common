@@ -33,7 +33,10 @@ export interface DerivationOption {
 export const DERIVATION_OPTIONS: DerivationOption[] = [
   { label: 'BIP44 Standard (MetaMask, Trezor, Grid+)', value: BIP44_STANDARD_DERIVATION_TEMPLATE },
   { label: 'BIP44 Ledger Live', value: BIP44_LEDGER_DERIVATION_TEMPLATE },
-  { label: 'Legacy (MyEtherWallet, MyCrypto)', value: LEGACY_POPULAR_DERIVATION_TEMPLATE }
+  {
+    label: 'Ledger Legacy (MyEtherWallet, MyCrypto)',
+    value: LEGACY_POPULAR_DERIVATION_TEMPLATE
+  }
 ]
 
 /**
