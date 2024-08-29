@@ -3,7 +3,7 @@ import { getAddress } from 'ethers'
 import { Fetch } from '../../interfaces/fetch'
 import { RPCProviders } from '../../interfaces/provider'
 import { reverseLookupEns } from '../../services/ensDomains'
-import { reverseLookupUD } from '../../services/unstoppableDomains'
+// import { reverseLookupUD } from '../../services/unstoppableDomains'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
 interface Domains {
@@ -17,11 +17,11 @@ interface Domains {
 // 15 minutes
 const PERSIST_DOMAIN_FOR_IN_MS = 15 * 60 * 1000
 
-const EXPECTED_UD_ERROR_MESSAGES = [
-  'Only absolute URLs are supported',
-  'unexpected character at line 1 column 1 of the JSON data',
-  'Unexpected token'
-]
+// const EXPECTED_UD_ERROR_MESSAGES = [
+//   'Only absolute URLs are supported',
+//   'unexpected character at line 1 column 1 of the JSON data',
+//   'Unexpected token'
+// ]
 
 /**
  * Domains controller- responsible for handling the reverse lookup of addresses to ENS and UD names.
@@ -90,7 +90,6 @@ export class DomainsController extends EventEmitter {
     this.emitUpdate()
 
     let ensName = null
-    let udName = null
 
     try {
       ensName = (await reverseLookupEns(checksummedAddress, this.#providers.ethereum)) || null
@@ -98,19 +97,22 @@ export class DomainsController extends EventEmitter {
       console.error('ENS reverse lookup unexpected error', e)
     }
 
-    try {
-      udName = (await reverseLookupUD(checksummedAddress)) || null
-    } catch (e: any) {
-      if (
-        !EXPECTED_UD_ERROR_MESSAGES.some((expectedMessage) => e.message.includes(expectedMessage))
-      ) {
-        console.error('UD reverse lookup unexpected error', e)
-      }
-    }
+    // Don't reverse lookup UD names for now
+    // https://github.com/AmbireTech/ambire-app/issues/2681#issuecomment-2299460748
+    // If UD is ever needed, rewrite using Promise.all
+    // try {
+    //   udName = (await reverseLookupUD(checksummedAddress)) || null
+    // } catch (e: any) {
+    //   if (
+    //     !EXPECTED_UD_ERROR_MESSAGES.some((expectedMessage) => e.message.includes(expectedMessage))
+    //   ) {
+    //     console.error('UD reverse lookup unexpected error', e)
+    //   }
+    // }
 
     this.domains[checksummedAddress] = {
       ens: ensName,
-      ud: udName,
+      ud: null,
       savedAt: Date.now()
     }
 

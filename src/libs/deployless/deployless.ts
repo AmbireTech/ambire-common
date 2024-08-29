@@ -246,21 +246,23 @@ export function parseErr(data: string): string | null {
     }
   }
   if (data.startsWith(invalidPath)) {
-    return 'Invalid swap path. Sometimes the router fails to pass correctly the swap parameters. Please try again to reinit the swap'
+    return 'Transaction cannot be sent due to invalid swap path provided by the dApp that initiated the request. Please return to the dApp interface and try again.'
   }
   // uniswap expired error
   if (data === expiredSwap) {
-    return 'Swap expired'
+    return 'Transaction cannot be sent because the swap has expired. Please return to the dApp interface and try again.'
   }
   // uniswap signature expired error
   if (data.startsWith(expiredSig)) {
-    return 'Signature expired'
+    return 'Transaction cannot be sent because the signature involved in this swap has expired. Please return to the dApp interface and try again.'
   }
   return null
 }
 
 function checkDataSize(data: string): string {
   if (getBytes(data).length >= 24576)
-    throw new Error('24kb call data size limit reached, use StateOverride mode')
+    throw new Error(
+      'Transaction cannot be sent because the 24kb call data size limit has been reached. Please use StateOverride mode instead.'
+    )
   return data
 }

@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-floating-promises */
 import { ethErrors } from 'eth-rpc-errors'
 /* eslint-disable @typescript-eslint/brace-style */
 import { getAddress, getBigInt, Interface, isAddress, TransactionResponse } from 'ethers'
@@ -545,7 +546,7 @@ export class MainController extends EventEmitter {
     const state = this.accounts.accountStates[accountOp.accountAddr][accountOp.networkId]
     const provider = this.providers.providers[network.id]
     const gasPrice = this.gasPrices[network.id]
-    const addresses = await debugTraceCall(
+    const { tokens, nfts } = await debugTraceCall(
       account,
       accountOp,
       provider,
@@ -554,10 +555,10 @@ export class MainController extends EventEmitter {
       gasPrice,
       !network.rpcNoStateOverride
     )
-    const learnedNewTokens = await this.portfolio.learnTokens(addresses, network.id)
-
+    const learnedNewTokens = await this.portfolio.learnTokens(tokens, network.id)
+    const learnedNewNfts = await this.portfolio.learnNfts(nfts, network.id)
     // update the portfolio only if new tokens were found through tracing
-    if (learnedNewTokens) {
+    if (learnedNewTokens || learnedNewNfts) {
       this.portfolio.updateSelectedAccount(
         accountOp.accountAddr,
         network,
@@ -983,10 +984,10 @@ export class MainController extends EventEmitter {
       if (!msg) {
         throw ethErrors.rpc.invalidRequest('No msg request to sign')
       }
-      const msdAddress = getAddress(msg?.[1])
+      const msgAddress = getAddress(msg?.[1])
       // TODO: if address is in this.accounts in theory the user should be able to sign
       // e.g. if an acc from the wallet is used as a signer of another wallet
-      if (getAddress(msdAddress) !== this.accounts.selectedAccount) {
+      if (msgAddress !== this.accounts.selectedAccount) {
         dappPromise.reject(
           ethErrors.provider.userRejectedRequest(
             // if updating, check https://github.com/AmbireTech/ambire-wallet/pull/1627
@@ -1013,7 +1014,7 @@ export class MainController extends EventEmitter {
         session: request.session,
         meta: {
           isSignAction: true,
-          accountAddr: msdAddress,
+          accountAddr: msgAddress,
           networkId: network.id
         },
         dappPromise
@@ -1025,10 +1026,10 @@ export class MainController extends EventEmitter {
       if (!msg) {
         throw ethErrors.rpc.invalidRequest('No msg request to sign')
       }
-      const msdAddress = getAddress(msg?.[0])
+      const msgAddress = getAddress(msg?.[0])
       // TODO: if address is in this.accounts in theory the user should be able to sign
       // e.g. if an acc from the wallet is used as a signer of another wallet
-      if (getAddress(msdAddress) !== this.accounts.selectedAccount) {
+      if (msgAddress !== this.accounts.selectedAccount) {
         dappPromise.reject(
           ethErrors.provider.userRejectedRequest(
             // if updating, check https://github.com/AmbireTech/ambire-wallet/pull/1627
@@ -1077,7 +1078,7 @@ export class MainController extends EventEmitter {
         session: request.session,
         meta: {
           isSignAction: true,
-          accountAddr: msdAddress,
+          accountAddr: msgAddress,
           networkId: network.id
         },
         dappPromise
@@ -1222,10 +1223,16 @@ export class MainController extends EventEmitter {
             a.accountOp.networkId === network.id
         ) as AccountOpAction | undefined
 
-        this.activity.setFilters({
+        const activityFilters = {
           account: account.addr,
           network: network.id
-        })
+        }
+        if (!this.activity.isInitialized) {
+          this.activity.init(activityFilters)
+        } else {
+          this.activity.setFilters(activityFilters)
+        }
+
         const entryPointAuthorizationMessageFromHistory = this.activity.signedMessages?.items.find(
           (message) =>
             message.fromActionId === ENTRY_POINT_AUTHORIZATION_REQUEST_ID &&
@@ -1345,10 +1352,16 @@ export class MainController extends EventEmitter {
             this.estimateSignAccountOp()
           }
         } else {
+          if (this.signAccountOp && this.signAccountOp.fromActionId === accountOpAction.id) {
+            this.destroySignAccOp()
+          }
           this.actions.removeAction(`${meta.accountAddr}-${meta.networkId}`)
           this.updateSelectedAccountPortfolio(true, network)
         }
       } else {
+        if (this.signAccountOp && this.signAccountOp.fromActionId === req.id) {
+          this.destroySignAccOp()
+        }
         this.actions.removeAction(id)
         this.updateSelectedAccountPortfolio(true, network)
       }
@@ -1458,7 +1471,11 @@ export class MainController extends EventEmitter {
     const accountOpAction = this.actions.actionsQueue.find((a) => a.id === actionId)
     if (!accountOpAction) return
 
-    const { accountOp } = accountOpAction as AccountOpAction
+    const { accountOp, id } = accountOpAction as AccountOpAction
+
+    if (this.signAccountOp && this.signAccountOp.fromActionId === id) {
+      this.destroySignAccOp()
+    }
     this.actions.removeAction(actionId, shouldOpenNextAction)
     // eslint-disable-next-line no-restricted-syntax
     for (const call of accountOp.calls) {
@@ -1469,12 +1486,6 @@ export class MainController extends EventEmitter {
         this.removeUserRequest(uReq.id)
       }
     }
-
-    // destroy sign account op if no actions left for account
-    const accountOpsLeftForAcc = (
-      this.actions.actionsQueue.filter((a) => a.type === 'accountOp') as AccountOpAction[]
-    ).filter((action) => action.accountOp.accountAddr === accountOp.accountAddr)
-    if (!accountOpsLeftForAcc.length) this.destroySignAccOp()
 
     this.emitUpdate()
   }
@@ -1737,6 +1748,8 @@ export class MainController extends EventEmitter {
         message: 'Estimation error',
         error
       })
+    } finally {
+      this.signAccountOp?.calculateWarnings()
     }
   }
 
