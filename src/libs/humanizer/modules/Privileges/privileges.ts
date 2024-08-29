@@ -49,5 +49,5 @@ export const privilegeHumanizer: HumanizerCallModule = (
     }
     return call
   })
-  return [newCalls, []]
+  return newCalls
 }

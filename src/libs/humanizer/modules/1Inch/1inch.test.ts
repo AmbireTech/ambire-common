@@ -5,7 +5,7 @@ import { AccountOp } from '../../../accountOp/accountOp'
 import { HumanizerMeta } from '../../interfaces'
 import { compareHumanizerVisualizations } from '../../testHelpers'
 import { getAction, getLabel, getRecipientText, getToken } from '../../utils'
-import OneInchModule from '.'
+import OneInchModule from './'
 
 // @TODO
 // https://github.com/AmbireTech/ambire-app/issues/2376
@@ -101,7 +101,7 @@ describe('1Inch', () => {
         getToken('0x8f3cf7ad23cd3cadbd9735aff958023239c6a063', 493000000000000000000n)
       ]
     ]
-    const [calls] = OneInchModule(accountOp, transactions, humanizerInfo as HumanizerMeta)
-    compareHumanizerVisualizations(calls, expectedVisualization)
+    const irCalls = OneInchModule(accountOp, transactions, humanizerInfo as HumanizerMeta)
+    compareHumanizerVisualizations(irCalls, expectedVisualization)
   })
 })

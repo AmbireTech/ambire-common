@@ -59,5 +59,5 @@ export const uniswapHumanizer: HumanizerCallModule = (
       newCalls.push(call)
     }
   })
-  return [newCalls, []]
+  return newCalls
 }

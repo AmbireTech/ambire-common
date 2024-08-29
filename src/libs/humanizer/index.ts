@@ -1,20 +1,18 @@
+import humanizerInfo from '../../consts/humanizer/humanizerInfo.json'
 import { ErrorRef } from '../../controllers/eventEmitter/eventEmitter'
 import { Fetch } from '../../interfaces/fetch'
-import { HumanizerFragment } from '../../interfaces/humanizer'
 import { Storage } from '../../interfaces/storage'
 import { Message } from '../../interfaces/userRequest'
 import { AccountOp } from '../accountOp/accountOp'
-/* eslint-disable no-await-in-loop */
 import { parse, stringify } from '../richJson/richJson'
 import { humanizeCalls, humanizeTypedMessage } from './humanizerFuncs'
 import {
   HumanizerCallModule,
+  HumanizerMeta,
   HumanizerOptions,
-  HumanizerPromise,
   IrCall,
   IrMessage
 } from './interfaces'
-import { addFragsToLazyStore, lazyReadHumanizerMeta } from './lazyStorage'
 import OneInchModule from './modules/1Inch'
 import { aaveHumanizer } from './modules/Aave'
 import AcrossModule from './modules/Across'
@@ -70,9 +68,7 @@ export const humanizeAccountOp = async (
   fetch: Fetch,
   emitError: Function
 ): Promise<IrCall[]> => {
-  const storedHumanizerMeta = await storage.get(HUMANIZER_META_KEY, {})
-
-  const [irCalls] = humanizeCalls(accountOp, humanizerCallModules, storedHumanizerMeta, {
+  const irCalls = humanizeCalls(accountOp, humanizerCallModules, humanizerInfo as HumanizerMeta, {
     fetch,
     emitError
   })
@@ -82,10 +78,9 @@ export const humanizeAccountOp = async (
 
 const sharedHumanization = async <InputDataType extends AccountOp | Message>(
   data: InputDataType,
-  storage: Storage,
   fetch: Fetch,
   callback:
-    | ((response: IrCall[], nonGlobalFrags: HumanizerFragment[]) => void)
+    | ((response: IrCall[]) => void)
     | ((response: IrMessage) => void),
   emitError: (err: ErrorRef) => void,
   options?: any
@@ -93,7 +88,6 @@ const sharedHumanization = async <InputDataType extends AccountOp | Message>(
   let op: AccountOp
   let message: Message | null = null
   let irCalls: IrCall[] = []
-  let asyncOps: HumanizerPromise[] = []
   if ('calls' in data) {
     op = parse(stringify(data))
   }
@@ -105,74 +99,46 @@ const sharedHumanization = async <InputDataType extends AccountOp | Message>(
     emitError,
     network: options?.network
   }
-  for (let i = 0; i <= 3; i++) {
-    const totalHumanizerMetaToBeUsed = await lazyReadHumanizerMeta(storage, {
-      isExtension: options?.isExtension,
-      nocache: options?.nocache
-    })
-    if ('calls' in data) {
-      humanizerOptions.networkId = op!.networkId
-      ;[irCalls, asyncOps] = humanizeCalls(
-        op!,
-        humanizerCallModules,
-        totalHumanizerMetaToBeUsed,
-        humanizerOptions
-      )
-      ;(callback as (response: IrCall[], nonGlobalFrags: HumanizerFragment[]) => void)(
-        irCalls,
-        op!.humanizerMetaFragments || []
-      )
-      //
-    } else if ('content' in data && message!.content.kind === 'typedMessage') {
-      const irMessage: IrMessage = {
-        ...message!,
-        ...humanizeTypedMessage(humanizerTMModules, message!)
-      }
 
-      ;(callback as (response: IrMessage) => void)(irMessage)
+  if ('calls' in data) {
+    humanizerOptions.networkId = op!.networkId
+    irCalls = humanizeCalls(
+      op!,
+      humanizerCallModules,
+      humanizerInfo as HumanizerMeta,
+      humanizerOptions
+    )
+    ;(callback as (response: IrCall[]) => void)(
+      irCalls
+    )
+  } else if ('content' in data && message!.content.kind === 'typedMessage') {
+    const irMessage: IrMessage = {
+      ...message!,
+      ...humanizeTypedMessage(humanizerTMModules, message!)
     }
 
-    // if we are in the history no more than 1 cycle and no async operations
-    if (options?.noAsyncOperations) return
-
-    const humanizerFragments = await Promise.all(
-      asyncOps.map((asyncOperation) => asyncOperation())
-    ).then((frags) => frags.filter((x) => x) as HumanizerFragment[])
-    const globalFragments = humanizerFragments.filter((f) => f.isGlobal)
-    const nonGlobalFragments = humanizerFragments.filter((f) => !f.isGlobal)
-    if ('calls' in data)
-      // @TODO we should store the non global frags in the op
-      op!.humanizerMetaFragments = [...(op!.humanizerMetaFragments || []), ...nonGlobalFragments]
-    if ('content' in data)
-      message!.humanizerFragments = [...(message!.humanizerFragments || []), ...nonGlobalFragments]
-    await addFragsToLazyStore(storage, globalFragments, {
-      urgent: options?.isExtension === false
-    })
-
-    if (!humanizerFragments.length) return
+    ;(callback as (response: IrMessage) => void)(irMessage)
   }
 }
 
 const callsHumanizer = async (
   accountOp: AccountOp,
-  storage: Storage,
   fetch: Fetch,
-  callback: (irCalls: IrCall[], nonGlobalFrags: HumanizerFragment[]) => void,
+  callback: (irCalls: IrCall[]) => void,
   emitError: (err: ErrorRef) => void,
   options?: any
 ) => {
-  await sharedHumanization(accountOp, storage, fetch, callback, emitError, options)
+  await sharedHumanization(accountOp,  fetch, callback, emitError, options)
 }
 
 const messageHumanizer = async (
   message: Message,
-  storage: Storage,
   fetch: Fetch,
   callback: (msgs: IrMessage) => void,
   emitError: (err: ErrorRef) => void,
   options?: any
 ) => {
-  await sharedHumanization(message, storage, fetch, callback, emitError, options)
+  await sharedHumanization(message,  fetch, callback, emitError, options)
 }
 
 export { callsHumanizer, messageHumanizer, HUMANIZER_META_KEY }

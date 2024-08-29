@@ -1,13 +1,11 @@
+import { HumanizerMeta } from 'libs/humanizer/interfaces'
 import fetch from 'node-fetch'
 
 import { describe, expect } from '@jest/globals'
 
-import { produceMemoryStore } from '../../../../../test/helpers'
+import humanizerInfo from '../../../../consts/humanizer/humanizerInfo.json'
 import { ErrorRef } from '../../../../controllers/eventEmitter/eventEmitter'
-import { HumanizerFragment } from '../../../../interfaces/humanizer'
 import { AccountOp } from '../../../accountOp/accountOp'
-import { IrCall } from '../../interfaces'
-import { EMPTY_HUMANIZER_META, HUMANIZER_META_KEY, integrateFragments } from '../../utils'
 import { fallbackHumanizer } from './fallBackHumanizer'
 
 // eslint-disable-next-line no-console
@@ -89,28 +87,15 @@ const transactions = {
 }
 describe('fallbackHumanizer', () => {
   test('fallback', async () => {
-    const storage = produceMemoryStore()
-    await storage.set(HUMANIZER_META_KEY, { abis: { NO_ABI: {} }, knownAddresses: {} })
     accountOp.calls = [...transactions.generic]
-    let irCalls: IrCall[] = accountOp.calls
-    let asyncOps = []
-    ;[irCalls, asyncOps] = fallbackHumanizer(accountOp, irCalls, EMPTY_HUMANIZER_META, {
+    
+    let irCalls = fallbackHumanizer(accountOp, accountOp.calls, humanizerInfo as HumanizerMeta, {
       fetch,
       emitError: mockEmitError
     })
-    asyncOps = (await Promise.all(asyncOps.map((i) => i()))).filter((a) => a) as HumanizerFragment[]
-    expect(asyncOps.length).toBe(1)
-    expect(asyncOps[0]).toMatchObject({ key: '0x095ea7b3' })
-    ;[irCalls, asyncOps] = fallbackHumanizer(
-      accountOp,
-      irCalls,
-      integrateFragments(EMPTY_HUMANIZER_META, asyncOps),
-      { fetch }
-    )
     expect(irCalls[1]?.fullVisualization?.[0]).toMatchObject({
       type: 'action',
-      content: 'Call approve(address,uint256)'
+      content: 'Call approve(address _spender, uint256 _value)'
     })
-    expect(asyncOps.length).toBe(0)
   })
 })

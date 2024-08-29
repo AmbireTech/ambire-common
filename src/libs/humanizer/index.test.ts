@@ -10,7 +10,6 @@ import humanizerJSON from '../../consts/humanizer/humanizerInfo.json'
 import { ErrorRef } from '../../controllers/eventEmitter/eventEmitter'
 import { Account } from '../../interfaces/account'
 import { Key } from '../../interfaces/keystore'
-import { Storage } from '../../interfaces/storage'
 import { TypedMessage } from '../../interfaces/userRequest'
 import { AccountOp } from '../accountOp/accountOp'
 import { callsHumanizer, messageHumanizer } from './index'
@@ -232,10 +231,7 @@ const emitError = jest.fn((err: ErrorRef) => {
   console.log(err)
 })
 describe('Humanizer main function', () => {
-  let storage: Storage
   beforeEach(async () => {
-    storage = produceMemoryStore()
-    await storage.set(HUMANIZER_META_KEY, humanizerMeta)
     accountOp.calls = []
   })
 
@@ -265,40 +261,12 @@ describe('Humanizer main function', () => {
       compareHumanizerVisualizations(newCalls, expectedVisualizations)
     })
     accountOp.calls = [...transactions.generic]
-    await callsHumanizer(accountOp, storage, fetch, onUpdate, emitError)
+    await callsHumanizer(accountOp, fetch, onUpdate, emitError)
     expect(onUpdate).toHaveBeenCalledTimes(1)
-  })
-
-  test('unknown func selector humanize with asyncop', async () => {
-    const expectedVisualizations = [
-      getAction('Call buy(uint256)'),
-      getLabel('from'),
-      getAddressVisualization('0x519856887af544de7e67f51a4f2271521b01432b'),
-      getToken('0x519856887af544de7e67f51a4f2271521b01432b', 0n, true)
-    ]
-    let iterations = 0
-    const onUpdate = jest.fn((newCalls: IrCall[]) => {
-      if (iterations === 0) {
-        expect(newCalls[0]?.fullVisualization?.length).toBe(4)
-        compareVisualizations([newCalls[0].fullVisualization?.[0]!], [getAction('Unknown action')])
-      } else if (iterations === 1) {
-        expect(newCalls[0]?.fullVisualization?.length).toBe(4)
-        compareVisualizations(newCalls[0].fullVisualization || [], expectedVisualizations)
-      }
-      iterations += 1
-    })
-    accountOp.calls = [...transactions.unknownFuncSelector]
-    await callsHumanizer(accountOp, storage, fetch, onUpdate, emitError)
-    expect(onUpdate).toHaveBeenCalledTimes(2)
   })
 })
 
 describe('TypedMessages', () => {
-  let storage: Storage
-  beforeEach(async () => {
-    storage = produceMemoryStore()
-    await storage.set(HUMANIZER_META_KEY, EMPTY_HUMANIZER_META)
-  })
   test('simple humanization', async () => {
     const message = {
       details: [
@@ -365,16 +333,13 @@ describe('TypedMessages', () => {
       }
     })
 
-    await messageHumanizer(fullMessage, storage, fetch, onUpdate, emitError)
+    await messageHumanizer(fullMessage,  fetch, onUpdate, emitError)
     expect(onUpdate).toHaveBeenCalledTimes(1)
   })
 })
 
 describe('with (Account | Key)[] arg', () => {
-  let storage: Storage
   beforeEach(async () => {
-    storage = produceMemoryStore()
-    await storage.set(HUMANIZER_META_KEY, humanizerMeta)
     accountOp.calls = []
   })
   test('with calls', async () => {
@@ -402,7 +367,7 @@ describe('with (Account | Key)[] arg', () => {
       compareHumanizerVisualizations(newCalls, expectedVisualizations)
     })
 
-    await callsHumanizer(accountOp, storage, fetch, onUpdate, emitError)
+    await callsHumanizer(accountOp,  fetch, onUpdate, emitError)
     expect(onUpdate).toHaveBeenCalledTimes(1)
   })
 })

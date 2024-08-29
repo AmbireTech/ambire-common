@@ -1,5 +1,4 @@
 import { Account } from '../../interfaces/account'
-import { HumanizerFragment } from '../../interfaces/humanizer'
 import { Network, NetworkId } from '../../interfaces/network'
 import { Message } from '../../interfaces/userRequest'
 import { AccountOp } from '../accountOp/accountOp'
@@ -12,7 +11,6 @@ export type HumanizerVisualization = (
       address?: string
       content?: string
       value?: bigint
-      humanizerMeta?: HumanizerMetaAddress
       warning?: boolean
       // humanizerMeta?: HumanizerMetaAddress
       chainId?: bigint
@@ -42,13 +40,9 @@ export interface Ir {
   messages: IrMessage[]
 }
 
-export type HumanizerPromise = () => Promise<HumanizerFragment | null>
 // @TODO make humanizer options interface
 export interface HumanizerCallModule {
-  (AccountOp: AccountOp, calls: IrCall[], humanizerMeta: HumanizerMeta, options?: any): [
-    IrCall[],
-    HumanizerPromise[]
-  ]
+  (AccountOp: AccountOp, calls: IrCall[], humanizerMeta: HumanizerMeta, options?: any): IrCall[]
 }
 
 export interface HumanizerTypedMessageModule {
@@ -93,7 +87,6 @@ export interface HumanizerParsingModule {
   (humanizerSettings: HumanizerSettings, visualization: HumanizerVisualization[], options?: any): [
     HumanizerVisualization[],
     HumanizerWarning[],
-    HumanizerPromise[]
   ]
 }
 export interface HumanizerOptions {

@@ -33,8 +33,8 @@ describe('gasTank', () => {
         getToken('0x88800092fF476844f74dC2FC427974BBee2794Ae', 1730725133158241533952n)
       ]
     ]
-    let [irCalls] = genericErc20Humanizer({} as any, txns, humanizerInfo as HumanizerMeta)
-    ;[irCalls] = gasTankModule({} as any, irCalls, humanizerInfo as HumanizerMeta)
+    let irCalls = genericErc20Humanizer({} as any, txns, humanizerInfo as HumanizerMeta)
+    irCalls = gasTankModule({} as any, irCalls, humanizerInfo as HumanizerMeta)
     compareHumanizerVisualizations(irCalls, expectedVisualizations)
   })
 })

@@ -38,5 +38,5 @@ export const sushiSwapModule: HumanizerCallModule = (accountOp: AccountOp, irCal
     }
     return call
   })
-  return [newCalls, []]
+  return newCalls
 }

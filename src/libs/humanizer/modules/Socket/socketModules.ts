@@ -447,5 +447,5 @@ export const SocketModule: HumanizerCallModule = (accountOp: AccountOp, irCalls:
     }
     return _call
   })
-  return [newCalls, []]
+  return newCalls
 }
