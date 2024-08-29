@@ -542,6 +542,7 @@ describe('import/export with pub key test', () => {
 
   test('import Key With Public Key Encryption', (done) => {
     let exported: Encrypted
+    const timestamp = new Date().getTime()
     const unsubscribe = keystore.onUpdate(async () => {
       if (keystore.statuses.addKeys === 'SUCCESS') {
         expect(keystore.keys[0]).toMatchObject({ addr: wallet.address, type: 'internal' })
@@ -560,9 +561,7 @@ describe('import/export with pub key test', () => {
             isExternallyStored: false,
             label: 'Key 1',
             type: 'internal',
-            meta: {
-              timestamp: new Date().getTime()
-            }
+            meta: { timestamp }
           },
           privKey: wallet.privateKey.slice(2)
         })
@@ -582,9 +581,7 @@ describe('import/export with pub key test', () => {
         type: 'internal',
         privateKey: wallet.privateKey.slice(2),
         dedicatedToOneSA: false,
-        meta: {
-          timestamp: new Date().getTime()
-        }
+        meta: { timestamp }
       }
     ])
   })

@@ -435,7 +435,9 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: false', () => {
         type: 'internal' as 'internal',
         label: 'Key 1',
         dedicatedToOneSA: false,
-        meta: null
+        meta: {
+          timestamp: new Date().getTime()
+        }
       }
     ])
   })
