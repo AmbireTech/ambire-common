@@ -1,5 +1,6 @@
 /* eslint-disable new-cap */
 import { HDNodeWallet, Mnemonic, Wallet } from 'ethers'
+import { Key } from 'interfaces/keystore'
 
 import {
   HD_PATH_TEMPLATE_TYPE,
@@ -9,6 +10,7 @@ import { SelectedAccountForImport } from '../../interfaces/account'
 import { KeyIterator as KeyIteratorInterface } from '../../interfaces/keyIterator'
 import { getHdPathFromTemplate } from '../../utils/hdPath'
 import { isDerivedForSmartAccountKeyOnly } from '../account/account'
+import { getDefaultKeyLabel, getExistingKeyLabel } from '../keys/keys'
 
 export function isValidPrivateKey(value: string): boolean {
   try {
@@ -101,7 +103,8 @@ export class KeyIterator implements KeyIteratorInterface {
 
   retrieveInternalKeys(
     selectedAccountsForImport: SelectedAccountForImport[],
-    hdPathTemplate: HD_PATH_TEMPLATE_TYPE
+    hdPathTemplate: HD_PATH_TEMPLATE_TYPE,
+    keystoreKeys: Key[]
   ) {
     return selectedAccountsForImport.flatMap((acc) => {
       // Should never happen
@@ -110,7 +113,7 @@ export class KeyIterator implements KeyIteratorInterface {
         return []
       }
 
-      return acc.accountKeys.flatMap(({ index }: { index: number }) => {
+      return acc.accountKeys.flatMap(({ index }: { index: number }, i) => {
         // In case it is a seed, the private keys have to be extracted
         if (this.subType === 'seed') {
           if (!this.#seedPhrase) {
@@ -119,10 +122,20 @@ export class KeyIterator implements KeyIteratorInterface {
             return []
           }
 
+          const privateKey = getPrivateKeyFromSeed(this.#seedPhrase, index, hdPathTemplate)
           return [
             {
-              privateKey: getPrivateKeyFromSeed(this.#seedPhrase, index, hdPathTemplate),
-              dedicatedToOneSA: isDerivedForSmartAccountKeyOnly(index)
+              addr: new Wallet(privateKey).address,
+              type: 'internal' as 'internal',
+              label:
+                getExistingKeyLabel(keystoreKeys, acc.account.addr, this.type) ||
+                getDefaultKeyLabel(
+                  keystoreKeys.filter((key) => acc.account.associatedKeys.includes(key.addr)),
+                  i
+                ),
+              privateKey,
+              dedicatedToOneSA: isDerivedForSmartAccountKeyOnly(index),
+              meta: null
             }
           ]
         }
@@ -147,7 +160,21 @@ export class KeyIterator implements KeyIteratorInterface {
           return []
         }
 
-        return [{ privateKey: this.#privateKey, dedicatedToOneSA: false }]
+        return [
+          {
+            addr: new Wallet(this.#privateKey).address,
+            type: 'internal' as 'internal',
+            label:
+              getExistingKeyLabel(keystoreKeys, acc.account.addr, this.type) ||
+              getDefaultKeyLabel(
+                keystoreKeys.filter((key) => acc.account.associatedKeys.includes(key.addr)),
+                0
+              ),
+            privateKey: this.#privateKey,
+            dedicatedToOneSA: false,
+            meta: null
+          }
+        ]
       })
     })
   }
