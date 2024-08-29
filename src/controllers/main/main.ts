@@ -249,6 +249,8 @@ export class MainController extends EventEmitter {
     this.accountAdder = new AccountAdderController({
       accounts: this.accounts,
       keystore: this.keystore,
+      networks: this.networks,
+      providers: this.providers,
       relayerUrl,
       fetch: this.#fetch
     })
@@ -379,11 +381,7 @@ export class MainController extends EventEmitter {
         const findNextSmartAccount = async () => {
           do {
             // eslint-disable-next-line no-await-in-loop
-            await this.accountAdder.setPage({
-              page: currentPage,
-              networks: this.networks.networks,
-              providers: this.providers.providers
-            })
+            await this.accountAdder.setPage({ page: currentPage })
 
             nextSmartAccount = this.accountAdder.accountsOnPage.find(
               ({ isLinked, account }) => !isLinked && isSmartAccount(account)
@@ -640,11 +638,7 @@ export class MainController extends EventEmitter {
         hdPathTemplate: BIP44_LEDGER_DERIVATION_TEMPLATE
       })
 
-      return await this.accountAdder.setPage({
-        page: 1,
-        networks: this.networks.networks,
-        providers: this.providers.providers
-      })
+      return await this.accountAdder.setPage({ page: 1 })
     } catch (error: any) {
       const message = error?.message || 'Could not unlock the Ledger device. Please try again.'
       throw new EmittableError({ message, level: 'major', error })
@@ -678,11 +672,7 @@ export class MainController extends EventEmitter {
         hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
       })
 
-      return await this.accountAdder.setPage({
-        page: 1,
-        networks: this.networks.networks,
-        providers: this.providers.providers
-      })
+      return await this.accountAdder.setPage({ page: 1 })
     } catch (error: any) {
       const message = error?.message || 'Could not unlock the Lattice1 device. Please try again.'
       throw new EmittableError({ message, level: 'major', error })

@@ -105,6 +105,8 @@ describe('AccountAdder', () => {
     accountAdder = new AccountAdderController({
       accounts: accountsCtrl,
       keystore: new KeystoreController(produceMemoryStore(), {}),
+      networks: networksCtrl,
+      providers: providersCtrl,
       relayerUrl,
       fetch
     })
@@ -149,7 +151,7 @@ describe('AccountAdder', () => {
       }
     })
 
-    accountAdder.setPage({ page: 1, networks, providers })
+    accountAdder.setPage({ page: 1 })
     accountAdder.selectAccount(basicAccount)
     accountAdder.deselectAccount(basicAccount)
     accountAdder.addAccounts([], { internal: [], external: [] })
@@ -227,7 +229,7 @@ describe('AccountAdder', () => {
       pageSize: PAGE_SIZE,
       hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
     })
-    accountAdder.setPage({ page: 1, networks, providers })
+    accountAdder.setPage({ page: 1 })
   })
 
   test('should start the searching for linked accounts', (done) => {
@@ -249,7 +251,7 @@ describe('AccountAdder', () => {
       pageSize: 4,
       hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
     })
-    accountAdder.setPage({ page: 1, networks, providers })
+    accountAdder.setPage({ page: 1 })
   })
 
   test('should find linked accounts', (done) => {
@@ -259,7 +261,7 @@ describe('AccountAdder', () => {
       pageSize: 3,
       hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
     })
-    accountAdder.setPage({ page: 1, networks, providers })
+    accountAdder.setPage({ page: 1 })
 
     let emitCounter = 0
     const unsubscribe = accountAdder.onUpdate(() => {
@@ -333,7 +335,7 @@ describe('AccountAdder', () => {
       pageSize: 1,
       hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
     })
-    accountAdder.setPage({ page: 1, networks, providers })
+    accountAdder.setPage({ page: 1 })
   })
 
   test('should NOT be able to select the same account more than once', (done) => {
@@ -383,7 +385,7 @@ describe('AccountAdder', () => {
       pageSize: 1,
       hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
     })
-    accountAdder.setPage({ page: 1, networks, providers })
+    accountAdder.setPage({ page: 1 })
   })
 
   test('should be able to select all the keys of a selected basic account (always one key)', (done) => {
@@ -421,7 +423,7 @@ describe('AccountAdder', () => {
       keyIterator,
       hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
     })
-    accountAdder.setPage({ page: 1, networks, providers })
+    accountAdder.setPage({ page: 1 })
   })
 
   test('should be able to select all the keys of a selected smart account (derived key)', (done) => {
@@ -465,7 +467,7 @@ describe('AccountAdder', () => {
       keyIterator,
       hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
     })
-    accountAdder.setPage({ page: 1, networks, providers })
+    accountAdder.setPage({ page: 1 })
   })
 
   test('should retrieve all internal keys selected 1) basic accounts and 2) smart accounts', (done) => {
@@ -529,6 +531,6 @@ describe('AccountAdder', () => {
       keyIterator,
       hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
     })
-    accountAdder.setPage({ page: 1, networks, providers })
+    accountAdder.setPage({ page: 1 })
   })
 })
