@@ -284,8 +284,8 @@ export class AccountAdderController extends EventEmitter {
     this.emitUpdate()
   }
 
-  setHDPathTemplate({ path }: { path: HD_PATH_TEMPLATE_TYPE }): void {
-    this.hdPathTemplate = path
+  setHDPathTemplate({ hdPathTemplate }: { hdPathTemplate: HD_PATH_TEMPLATE_TYPE }): void {
+    this.hdPathTemplate = hdPathTemplate
     this.page = DEFAULT_PAGE
     this.emitUpdate()
     // get the first page with the new hdPathTemplate (derivation)
