@@ -25,15 +25,15 @@ export type HD_PATH_TEMPLATE_TYPE =
   | typeof BIP44_LEDGER_DERIVATION_TEMPLATE
   | typeof LEGACY_POPULAR_DERIVATION_TEMPLATE
 
-export interface HDPath {
+export interface DerivationOption {
   label: string
-  path: HD_PATH_TEMPLATE_TYPE
+  value: HD_PATH_TEMPLATE_TYPE
 }
 
-export const HD_PATHS: HDPath[] = [
-  { label: 'BIP44 (MetaMask, Trezor, GridPlus)', path: BIP44_STANDARD_DERIVATION_TEMPLATE },
-  { label: 'BIP44 (Ledger Live)', path: BIP44_LEDGER_DERIVATION_TEMPLATE },
-  { label: 'Legacy (Ledger, MyEtherWallet, MyCrypto)', path: LEGACY_POPULAR_DERIVATION_TEMPLATE }
+export const DERIVATION_OPTIONS: DerivationOption[] = [
+  { label: 'BIP44 Standard (MetaMask, Trezor, Grid+)', value: BIP44_STANDARD_DERIVATION_TEMPLATE },
+  { label: 'BIP44 Ledger Live', value: BIP44_LEDGER_DERIVATION_TEMPLATE },
+  { label: 'Legacy (MyEtherWallet, MyCrypto)', value: LEGACY_POPULAR_DERIVATION_TEMPLATE }
 ]
 
 /**
