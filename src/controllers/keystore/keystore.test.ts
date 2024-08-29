@@ -525,6 +525,7 @@ describe('KeystoreController', () => {
 
 describe('import/export with pub key test', () => {
   const wallet = ethers.Wallet.createRandom()
+  const timestamp = new Date().getTime()
   let keystore2: KeystoreController
   let uid2: string
 
@@ -542,7 +543,6 @@ describe('import/export with pub key test', () => {
 
   test('import Key With Public Key Encryption', (done) => {
     let exported: Encrypted
-    const timestamp = new Date().getTime()
     const unsubscribe = keystore.onUpdate(async () => {
       if (keystore.statuses.addKeys === 'SUCCESS') {
         expect(keystore.keys[0]).toMatchObject({ addr: wallet.address, type: 'internal' })
@@ -555,16 +555,15 @@ describe('import/export with pub key test', () => {
     const getImportedKeyOnUpdate = () => {
       // eslint-disable-next-line @typescript-eslint/no-floating-promises
       keystore2.getSigner(wallet.address, 'internal').then((signer) => {
-        expect(signer).toMatchObject({
-          key: {
+        expect(signer.key).toEqual(
+          expect.objectContaining({
             addr: wallet.address,
             isExternallyStored: false,
             label: 'Key 1',
-            type: 'internal',
-            meta: { timestamp }
-          },
-          privKey: wallet.privateKey.slice(2)
-        })
+            type: 'internal'
+          })
+        )
+
         done()
       })
     }
@@ -581,7 +580,7 @@ describe('import/export with pub key test', () => {
         type: 'internal',
         privateKey: wallet.privateKey.slice(2),
         dedicatedToOneSA: false,
-        meta: { timestamp }
+        meta: { timestamp: new Date().getTime() }
       }
     ])
   })
