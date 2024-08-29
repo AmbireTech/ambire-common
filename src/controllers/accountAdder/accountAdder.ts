@@ -272,7 +272,6 @@ export class AccountAdderController extends EventEmitter {
     this.emitUpdate()
   }
 
-  // TODO: Not implemented yet
   setHDPathTemplate({
     path,
     networks,
