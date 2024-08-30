@@ -39,8 +39,6 @@ import {
   GasRecommendation,
   getCallDataAdditionalByNetwork
 } from '../../libs/gasPrice/gasPrice'
-import { humanizeAccountOp } from '../../libs/humanizer'
-import { IrCall } from '../../libs/humanizer/interfaces'
 import { Price, TokenResult } from '../../libs/portfolio'
 import { getExecuteSignature, getTypedData, wrapStandard } from '../../libs/signMessage/signMessage'
 import { getGasUsed } from '../../libs/singleton/singleton'
@@ -150,8 +148,6 @@ export class SignAccountOpController extends EventEmitter {
 
   selectedOption: FeePaymentOption | undefined = undefined
 
-  humanReadable: IrCall[] = []
-
   status: Status | null = null
 
   gasUsedTooHigh: boolean
@@ -197,7 +193,6 @@ export class SignAccountOpController extends EventEmitter {
     this.#fetch = fetch
     this.#callRelayer = callRelayer
 
-    this.#humanizeAccountOp()
     this.gasUsedTooHigh = false
     this.gasUsedTooHighAgreed = false
     this.rbfAccountOps = {}
@@ -236,10 +231,6 @@ export class SignAccountOpController extends EventEmitter {
   // check if speeds are set for the given identifier
   hasSpeeds(identifier: string) {
     return this.feeSpeeds[identifier] !== undefined && this.feeSpeeds[identifier].length
-  }
-
-  #humanizeAccountOp() {
-    this.humanReadable = humanizeAccountOp(this.accountOp, { network: this.#network })
   }
 
   get errors(): string[] {
@@ -427,11 +418,6 @@ export class SignAccountOpController extends EventEmitter {
       return
     }
 
-    if (accountOp) {
-      this.accountOp = structuredClone(accountOp)
-      this.#humanizeAccountOp()
-    }
-
     if (gasPrices) this.gasPrices = gasPrices
 
     if (estimation) {
@@ -553,7 +539,6 @@ export class SignAccountOpController extends EventEmitter {
     this.paidBy = null
     this.feeTokenResult = null
     this.status = null
-    this.humanReadable = []
     this.emitUpdate()
   }
 

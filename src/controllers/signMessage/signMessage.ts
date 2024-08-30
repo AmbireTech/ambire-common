@@ -7,8 +7,6 @@ import { ExternalSignerControllers, Key } from '../../interfaces/keystore'
 import { Network } from '../../interfaces/network'
 import { Storage } from '../../interfaces/storage'
 import { Message } from '../../interfaces/userRequest'
-import { humanizeMessage } from '../../libs/humanizer'
-import { IrMessage } from '../../libs/humanizer/interfaces'
 import {
   getEIP712Signature,
   getPlainTextSignature,
@@ -62,8 +60,6 @@ export class SignMessageController extends EventEmitter {
 
   signingKeyType: Key['type'] | null = null
 
-  humanReadable: IrMessage | null = null
-
   signedMessage: SignedMessage | null = null
 
   constructor(
@@ -105,7 +101,6 @@ export class SignMessageController extends EventEmitter {
         this.dapp = dapp
       }
       this.messageToSign = messageToSign
-      this.humanReadable = humanizeMessage(messageToSign)
       this.isInitialized = true
       this.emitUpdate()
     } else {
@@ -129,7 +124,6 @@ export class SignMessageController extends EventEmitter {
     this.signedMessage = null
     this.signingKeyAddr = null
     this.signingKeyType = null
-    this.humanReadable = null
     this.emitUpdate()
   }
 
