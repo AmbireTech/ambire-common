@@ -33,7 +33,7 @@ import { Calls, DappUserRequest, SignUserRequest, UserRequest } from '../../inte
 import { WindowManager } from '../../interfaces/window'
 import { isSmartAccount } from '../../libs/account/account'
 import { AccountOp, AccountOpStatus, getSignableCalls } from '../../libs/accountOp/accountOp'
-import { Call as AccountOpCall } from '../../libs/accountOp/types'
+import { Call } from '../../libs/accountOp/types'
 import {
   dappRequestMethodToActionKind,
   getAccountOpActionsByNetwork,
@@ -835,10 +835,10 @@ export class MainController extends EventEmitter {
       this.signAccOpInitError = `Failed to retrieve account info for ${networkId}, because of one of the following reasons: 1) network doesn't exist, 2) RPC is down for this network`
   }
 
-  #batchCallsFromUserRequests(accountAddr: AccountId, networkId: NetworkId): AccountOpCall[] {
+  #batchCallsFromUserRequests(accountAddr: AccountId, networkId: NetworkId): Call[] {
     // Note: we use reduce instead of filter/map so that the compiler can deduce that we're checking .kind
     return (this.userRequests.filter((r) => r.action.kind === 'calls') as SignUserRequest[]).reduce(
-      (uCalls: AccountOpCall[], req) => {
+      (uCalls: Call[], req) => {
         if (req.meta.networkId === networkId && req.meta.accountAddr === accountAddr) {
           const { calls } = req.action as Calls
           calls.map((call) => uCalls.push({ ...call, fromUserRequestId: req.id }))
@@ -915,8 +915,11 @@ export class MainController extends EventEmitter {
     if (kind === 'calls') {
       if (!this.accounts.selectedAccount) throw ethErrors.rpc.internal()
 
-      const transaction = request.params[0]
-      const accountAddr = getAddress(transaction.from)
+      const isWalletSendCalls = !!request.params[0].calls
+      const calls: Calls['calls'] = isWalletSendCalls
+        ? request.params[0].calls
+        : [request.params[0]]
+      const accountAddr = getAddress(request.params[0].from)
       const account = this.accounts.accounts.find((a) => a.addr === accountAddr)
 
       if (!account) {
@@ -930,18 +933,15 @@ export class MainController extends EventEmitter {
       if (!network) {
         throw ethErrors.provider.chainDisconnected('Transaction failed - unknown network')
       }
-
       userRequest = {
         id: new Date().getTime(),
         action: {
           kind,
-          calls: [
-            {
-              to: transaction.to,
-              value: transaction.value ? getBigInt(transaction.value) : 0n,
-              data: transaction.data || '0x'
-            }
-          ]
+          calls: calls.map((call) => ({
+            to: call.to,
+            data: call.data || '0x',
+            value: call.value ? getBigInt(call.value) : 0n
+          }))
         },
         meta: { isSignAction: true, accountAddr, networkId: network.id },
         dappPromise
@@ -2063,6 +2063,14 @@ export class MainController extends EventEmitter {
         // in that case, recalculate prices and prompt the user to try again
         message = 'Fee too low. Please select a higher transaction speed and try again'
         this.updateSignAccountOpGasPrice()
+      } else if (
+        message.includes('Transaction underpriced. Please select a higher fee and try again')
+      ) {
+        // this error comes from the relayer when using the paymaster service.
+        // as it could be from lower PVG, we should reestimate as well
+        message = 'Fee too low. Please select a higher transaction speed and try again'
+        this.updateSignAccountOpGasPrice()
+        this.estimateSignAccountOp()
       } else {
         // Trip the error message, errors coming from the RPC can be huuuuuge
         message = message.length > 300 ? `${message.substring(0, 300)}...` : message
