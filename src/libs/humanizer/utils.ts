@@ -4,19 +4,11 @@ import { ZeroAddress } from 'ethers'
 import { geckoIdMapper } from '../../consts/coingecko'
 import { Fetch } from '../../interfaces/fetch'
 import { Network } from '../../interfaces/network'
-import {
-  HumanizerMeta,
-  HumanizerSettings,
-  HumanizerVisualization,
-  HumanizerWarning,
-  IrCall
-} from './interfaces'
+import { HumanizerMeta, HumanizerVisualization, HumanizerWarning, IrCall } from './interfaces'
 
 dotenv.config()
 
 const baseUrlCena = 'https://cena.ambire.com/api/v3'
-
-export const HUMANIZER_META_KEY = 'HumanizerMetaV2'
 
 export function getWarning(
   content: string,
@@ -119,7 +111,6 @@ export async function getNativePrice(network: Network, fetch: Fetch): Promise<nu
 
   return response[platformId].usd
 }
-
 
 export function checkIfUnknownAction(v: Array<HumanizerVisualization>): boolean {
   try {

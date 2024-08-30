@@ -77,18 +77,7 @@ export interface HumanizerMeta {
     [address: string]: HumanizerMetaAddress
   }
 }
-export interface HumanizerSettings {
-  humanizerMeta?: HumanizerMeta
-  networkId: NetworkId
-  accountAddr: string
-}
 
-export interface HumanizerParsingModule {
-  (humanizerSettings: HumanizerSettings, visualization: HumanizerVisualization[], options?: any): [
-    HumanizerVisualization[],
-    HumanizerWarning[]
-  ]
-}
 export interface HumanizerOptions {
   network?: Network
   networkId?: NetworkId

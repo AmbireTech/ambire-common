@@ -28,7 +28,6 @@ import { WALLETModule } from './modules/WALLET'
 import wrappingModule from './modules/Wrapping'
 import { erc20Module, erc721Module, permit2Module } from './typedMessageModules'
 import { entryPointModule } from './typedMessageModules/entryPointModule'
-import { HUMANIZER_META_KEY } from './utils'
 
 // from most generic to least generic
 // the final humanization is the final triggered module
@@ -60,7 +59,7 @@ const humanizerTMModules = [erc20Module, erc721Module, permit2Module, entryPoint
 const humanizeAccountOp = (_accountOp: AccountOp, options: HumanizerOptions): IrCall[] => {
   const accountOp = parse(stringify(_accountOp))
   const humanizerOptions: HumanizerOptions = {
-    network: options?.network,
+    ...options,
     networkId: accountOp.networkId
   }
 
@@ -81,4 +80,4 @@ const humanizeMessage = (_message: Message): IrMessage => {
   return { ...message, fullVisualization, warnings }
 }
 
-export { humanizeAccountOp, humanizeMessage, HUMANIZER_META_KEY }
+export { humanizeAccountOp, humanizeMessage }

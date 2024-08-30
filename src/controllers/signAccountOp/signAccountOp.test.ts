@@ -19,7 +19,6 @@ import { AccountOp, accountOpSignableHash } from '../../libs/accountOp/accountOp
 import { estimate } from '../../libs/estimate/estimate'
 import { EstimateResult } from '../../libs/estimate/interfaces'
 import * as gasPricesLib from '../../libs/gasPrice/gasPrice'
-import { HUMANIZER_META_KEY } from '../../libs/humanizer'
 import { KeystoreSigner } from '../../libs/keystoreSigner/keystoreSigner'
 import { TokenResult } from '../../libs/portfolio'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
@@ -322,7 +321,6 @@ const init = async (
   gasPricesMock?: gasPricesLib.GasRecommendation[]
 ) => {
   const storage: Storage = produceMemoryStore()
-  await storage.set(HUMANIZER_META_KEY, humanizerMeta)
   await storage.set('accounts', [account])
   const keystore = new KeystoreController(storage, { internal: KeystoreSigner })
   await keystore.addSecret('passphrase', signer.pass, '', false)
