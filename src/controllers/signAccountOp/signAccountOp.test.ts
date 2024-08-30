@@ -10,7 +10,6 @@ import { trezorSlot7v24337Deployed, velcroUrl } from '../../../test/config'
 import { getNativeToCheckFromEOAs, produceMemoryStore } from '../../../test/helpers'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { FEE_COLLECTOR } from '../../consts/addresses'
-import humanizerJSON from '../../consts/humanizer/humanizerInfo.json'
 import { networks } from '../../consts/networks'
 import { Account } from '../../interfaces/account'
 import { NetworkId } from '../../interfaces/network'
@@ -152,8 +151,6 @@ const createEOAAccountOp = (account: Account) => {
 
   return { op, nativeToCheck, feeTokens }
 }
-
-const humanizerMeta = humanizerJSON
 
 const eoaSigner = {
   privKey: '0x1941fd49fae923cae5ba789ac8ed2662066861960c7aa339443e76d309a80f6f',
