@@ -1,5 +1,4 @@
-import { BIP44_STANDARD_DERIVATION_TEMPLATE, HD_PATH_TEMPLATE_TYPE } from 'consts/derivation'
-
+import { BIP44_STANDARD_DERIVATION_TEMPLATE, HD_PATH_TEMPLATE_TYPE } from '../../consts/derivation'
 import { Key, StoredKey } from '../../interfaces/keystore'
 
 export const DEFAULT_KEY_LABEL_PATTERN = /^Key (\d+)$/
