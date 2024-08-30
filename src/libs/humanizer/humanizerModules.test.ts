@@ -3,15 +3,12 @@ import fetch from 'node-fetch'
 import { describe, test } from '@jest/globals'
 
 import { FEE_COLLECTOR } from '../../consts/addresses'
-import _humanizerInfo from '../../consts/humanizer/humanizerInfo.json'
 import { networks } from '../../consts/networks'
 import { ErrorRef } from '../../controllers/eventEmitter/eventEmitter'
 import { AccountOp } from '../accountOp/accountOp'
-import { humanizeCalls } from './humanizerFuncs'
-import { humanizerCallModules as humanizerModules } from './index'
-import { HumanizerMeta, IrCall } from './interfaces'
+import { humanizeAccountOp } from './index'
+import { IrCall } from './interfaces'
 
-const humanizerInfo = _humanizerInfo as HumanizerMeta
 const accountOp: AccountOp = {
   accountAddr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
   networkId: 'ethereum',
@@ -321,7 +318,7 @@ describe('module tests', () => {
     emitedErrors = []
   })
 
-  // TODO: look into improper texification for  unrecognized tokens
+  // TODO: we need this for detecting collisions
   test.skip('visualization to text', async () => {
     const expectedTexification = [
       'Swap 50844.919041919270406243 XLRT for at least 0.137930462904193673 ETH already expired',
@@ -370,12 +367,7 @@ describe('module tests', () => {
       .map((key: string) => transactions[key])
       .flat()
     accountOp.calls = allCalls
-    const [irCalls, asyncOps] = humanizeCalls(
-      accountOp,
-      humanizerModules,
-      humanizerInfo,
-      standartOptions
-    )
+    const irCalls = humanizeAccountOp(accountOp, standartOptions)
     // irCalls.forEach((c: IrCall, i) => {
     //   console.log(c.fullVisualization, i)
     // })

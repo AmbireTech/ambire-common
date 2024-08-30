@@ -1,35 +1,21 @@
 /* eslint-disable no-console */
 import { ethers } from 'ethers'
-import fetch from 'node-fetch'
 
-import { describe, expect, jest, test } from '@jest/globals'
+import { describe, test } from '@jest/globals'
 
-import { produceMemoryStore } from '../../../test/helpers'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
-import humanizerJSON from '../../consts/humanizer/humanizerInfo.json'
-import { ErrorRef } from '../../controllers/eventEmitter/eventEmitter'
 import { Account } from '../../interfaces/account'
 import { Key } from '../../interfaces/keystore'
 import { TypedMessage } from '../../interfaces/userRequest'
 import { AccountOp } from '../accountOp/accountOp'
-import { callsHumanizer, messageHumanizer } from './index'
-import { IrCall, IrMessage } from './interfaces'
+import { humanizeAccountOp, humanizeMessage } from './index'
 import { compareHumanizerVisualizations, compareVisualizations } from './testHelpers'
-import {
-  EMPTY_HUMANIZER_META,
-  getAction,
-  getAddressVisualization,
-  getDeadline,
-  getLabel,
-  getToken,
-  HUMANIZER_META_KEY
-} from './utils'
+import { getAction, getAddressVisualization, getDeadline, getLabel, getToken } from './utils'
 
 // const address1 = '0x6942069420694206942069420694206942069420'
 const address2 = '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
 const WETH_ADDRESS = '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2'
 
-const humanizerMeta = humanizerJSON
 const accountOp: AccountOp = {
   accountAddr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
   networkId: 'ethereum',
@@ -227,9 +213,6 @@ const transactions = {
   ]
 }
 
-const emitError = jest.fn((err: ErrorRef) => {
-  console.log(err)
-})
 describe('Humanizer main function', () => {
   beforeEach(async () => {
     accountOp.calls = []
@@ -257,12 +240,10 @@ describe('Humanizer main function', () => {
         getToken('0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2', 0n, true)
       ]
     ]
-    const onUpdate = jest.fn((newCalls: IrCall[]) => {
-      compareHumanizerVisualizations(newCalls, expectedVisualizations)
-    })
+
     accountOp.calls = [...transactions.generic]
-    await callsHumanizer(accountOp, fetch, onUpdate, emitError)
-    expect(onUpdate).toHaveBeenCalledTimes(1)
+    const irCalls = humanizeAccountOp(accountOp, {})
+    compareHumanizerVisualizations(irCalls, expectedVisualizations)
   })
 })
 
@@ -327,14 +308,9 @@ describe('TypedMessages', () => {
       getLabel('this whole signatuere'),
       getDeadline(968187600n)
     ]
-    const onUpdate = jest.fn((newMessage: IrMessage) => {
-      if (newMessage.fromActionId === 1) {
-        compareVisualizations(newMessage.fullVisualization || [], expectedVisualizations)
-      }
-    })
 
-    await messageHumanizer(fullMessage,  fetch, onUpdate, emitError)
-    expect(onUpdate).toHaveBeenCalledTimes(1)
+    const irMessage = humanizeMessage(fullMessage)
+    compareVisualizations(irMessage.fullVisualization || [], expectedVisualizations)
   })
 })
 
@@ -363,11 +339,7 @@ describe('with (Account | Key)[] arg', () => {
     ]
     accountOp.calls = [...transactions.accountOrKeyArg]
 
-    const onUpdate = jest.fn((newCalls: IrCall[]) => {
-      compareHumanizerVisualizations(newCalls, expectedVisualizations)
-    })
-
-    await callsHumanizer(accountOp,  fetch, onUpdate, emitError)
-    expect(onUpdate).toHaveBeenCalledTimes(1)
+    const irCalls = humanizeAccountOp(accountOp, {})
+    compareHumanizerVisualizations(irCalls, expectedVisualizations)
   })
 })

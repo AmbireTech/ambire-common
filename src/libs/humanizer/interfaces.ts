@@ -86,12 +86,10 @@ export interface HumanizerSettings {
 export interface HumanizerParsingModule {
   (humanizerSettings: HumanizerSettings, visualization: HumanizerVisualization[], options?: any): [
     HumanizerVisualization[],
-    HumanizerWarning[],
+    HumanizerWarning[]
   ]
 }
 export interface HumanizerOptions {
-  fetch?: Function
-  emitError?: Function
   network?: Network
   networkId?: NetworkId
 }

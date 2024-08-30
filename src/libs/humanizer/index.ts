@@ -1,11 +1,7 @@
 import humanizerInfo from '../../consts/humanizer/humanizerInfo.json'
-import { ErrorRef } from '../../controllers/eventEmitter/eventEmitter'
-import { Fetch } from '../../interfaces/fetch'
-import { Storage } from '../../interfaces/storage'
 import { Message } from '../../interfaces/userRequest'
 import { AccountOp } from '../accountOp/accountOp'
 import { parse, stringify } from '../richJson/richJson'
-import { humanizeCalls, humanizeTypedMessage } from './humanizerFuncs'
 import {
   HumanizerCallModule,
   HumanizerMeta,
@@ -61,84 +57,29 @@ export const humanizerCallModules: HumanizerCallModule[] = [
 // the final visualization and warnings are from the first triggered module
 const humanizerTMModules = [erc20Module, erc721Module, permit2Module, entryPointModule]
 
-// @TODO to be removed
-export const humanizeAccountOp = async (
-  storage: Storage,
-  accountOp: AccountOp,
-  fetch: Fetch,
-  emitError: Function
-): Promise<IrCall[]> => {
-  const irCalls = humanizeCalls(accountOp, humanizerCallModules, humanizerInfo as HumanizerMeta, {
-    fetch,
-    emitError
-  })
-
-  return irCalls
-}
-
-const sharedHumanization = async <InputDataType extends AccountOp | Message>(
-  data: InputDataType,
-  fetch: Fetch,
-  callback:
-    | ((response: IrCall[]) => void)
-    | ((response: IrMessage) => void),
-  emitError: (err: ErrorRef) => void,
-  options?: any
-) => {
-  let op: AccountOp
-  let message: Message | null = null
-  let irCalls: IrCall[] = []
-  if ('calls' in data) {
-    op = parse(stringify(data))
-  }
-  if ('content' in data) {
-    message = parse(stringify(data))
-  }
+const humanizeAccountOp = (_accountOp: AccountOp, options: HumanizerOptions): IrCall[] => {
+  const accountOp = parse(stringify(_accountOp))
   const humanizerOptions: HumanizerOptions = {
-    fetch,
-    emitError,
-    network: options?.network
+    network: options?.network,
+    networkId: accountOp.networkId
   }
 
-  if ('calls' in data) {
-    humanizerOptions.networkId = op!.networkId
-    irCalls = humanizeCalls(
-      op!,
-      humanizerCallModules,
-      humanizerInfo as HumanizerMeta,
-      humanizerOptions
-    )
-    ;(callback as (response: IrCall[]) => void)(
-      irCalls
-    )
-  } else if ('content' in data && message!.content.kind === 'typedMessage') {
-    const irMessage: IrMessage = {
-      ...message!,
-      ...humanizeTypedMessage(humanizerTMModules, message!)
-    }
-
-    ;(callback as (response: IrMessage) => void)(irMessage)
-  }
+  let currentCalls: IrCall[] = accountOp.calls
+  humanizerCallModules.forEach((hm) => {
+    currentCalls = hm(accountOp, currentCalls, humanizerInfo as HumanizerMeta, humanizerOptions)
+  })
+  return currentCalls
 }
 
-const callsHumanizer = async (
-  accountOp: AccountOp,
-  fetch: Fetch,
-  callback: (irCalls: IrCall[]) => void,
-  emitError: (err: ErrorRef) => void,
-  options?: any
-) => {
-  await sharedHumanization(accountOp,  fetch, callback, emitError, options)
+const humanizeMessage = (_message: Message): IrMessage => {
+  const message = parse(stringify(_message))
+
+  // runs all modules and takes the first non empty array
+  const { fullVisualization, warnings } = humanizerTMModules
+    .map((m) => m(message))
+    .filter((p) => p.fullVisualization?.length)[0]
+
+  return { ...message, fullVisualization, warnings }
 }
 
-const messageHumanizer = async (
-  message: Message,
-  fetch: Fetch,
-  callback: (msgs: IrMessage) => void,
-  emitError: (err: ErrorRef) => void,
-  options?: any
-) => {
-  await sharedHumanization(message,  fetch, callback, emitError, options)
-}
-
-export { callsHumanizer, messageHumanizer, HUMANIZER_META_KEY }
+export { humanizeAccountOp, humanizeMessage, HUMANIZER_META_KEY }

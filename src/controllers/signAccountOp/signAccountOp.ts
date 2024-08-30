@@ -38,7 +38,7 @@ import {
   GasRecommendation,
   getCallDataAdditionalByNetwork
 } from '../../libs/gasPrice/gasPrice'
-import { callsHumanizer } from '../../libs/humanizer'
+import { humanizeAccountOp } from '../../libs/humanizer'
 import { IrCall } from '../../libs/humanizer/interfaces'
 import { Price, TokenResult } from '../../libs/portfolio'
 import { getExecuteSignature, getTypedData, wrapStandard } from '../../libs/signMessage/signMessage'
@@ -239,17 +239,7 @@ export class SignAccountOpController extends EventEmitter {
   }
 
   #humanizeAccountOp() {
-    callsHumanizer(
-      this.accountOp,
-      this.#storage,
-      this.#fetch,
-      (humanizedCalls) => {
-        this.humanReadable = humanizedCalls
-        this.emitUpdate()
-      },
-      (err) => this.emitError(err),
-      { network: this.#network }
-    ).catch((err) => this.emitError(err))
+    this.humanReadable = humanizeAccountOp(this.accountOp, { network: this.#network })
   }
 
   get errors(): string[] {
