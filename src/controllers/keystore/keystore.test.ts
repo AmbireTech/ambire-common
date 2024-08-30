@@ -495,7 +495,10 @@ describe('KeystoreController', () => {
   test('should add keystore default seed phrase', async () => {
     expect(!!keystore.hasKeystoreDefaultSeed).toBeFalsy()
     expect(keystore.isUnlocked).toBeTruthy()
-    await keystore.addSeed(process.env.SEED)
+    await keystore.addSeed({
+      seed: process.env.SEED,
+      hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
+    })
     expect(!!keystore.hasKeystoreDefaultSeed).toBeTruthy()
   })
   test('should get default seed phrase', async () => {
