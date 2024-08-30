@@ -128,6 +128,8 @@ export class SignAccountOpController extends EventEmitter {
 
   #network: Network
 
+  #blockGasLimit: bigint | undefined = undefined
+
   fromActionId: AccountOpAction['id']
 
   accountOp: AccountOp
@@ -277,8 +279,8 @@ export class SignAccountOpController extends EventEmitter {
 
     if (
       this.estimation?.gasUsed &&
-      this.#network.blockGasLimit &&
-      this.estimation?.gasUsed > this.#network.blockGasLimit
+      this.#blockGasLimit &&
+      this.estimation?.gasUsed > this.#blockGasLimit
     ) {
       errors.push('Transaction reverted with estimation too high: above block limit')
     }
@@ -424,7 +426,8 @@ export class SignAccountOpController extends EventEmitter {
     accountOp,
     gasUsedTooHighAgreed,
     rbfAccountOps,
-    bundlerGasPrices
+    bundlerGasPrices,
+    blockGasLimit
   }: {
     accountOp?: AccountOp
     gasPrices?: GasRecommendation[]
@@ -437,6 +440,7 @@ export class SignAccountOpController extends EventEmitter {
     gasUsedTooHighAgreed?: boolean
     rbfAccountOps?: { [key: string]: SubmittedAccountOp | null }
     bundlerGasPrices?: BundlerGasPrice
+    blockGasLimit?: bigint
   }) {
     // once the user commits to the things he sees on his screen,
     // we need to be sure nothing changes afterwards.
@@ -454,12 +458,12 @@ export class SignAccountOpController extends EventEmitter {
       this.#humanizeAccountOp()
     }
 
+    if (blockGasLimit) this.#blockGasLimit = blockGasLimit
+
     if (gasPrices) this.gasPrices = gasPrices
 
     if (estimation) {
-      this.gasUsedTooHigh = !!(
-        this.#network.blockGasLimit && estimation.gasUsed > this.#network.blockGasLimit / 4n
-      )
+      this.gasUsedTooHigh = !!(this.#blockGasLimit && estimation.gasUsed > this.#blockGasLimit / 4n)
       this.estimation = estimation
       // on each estimation update, set the newest account nonce
       this.accountOp.nonce = BigInt(estimation.currentAccountNonce)

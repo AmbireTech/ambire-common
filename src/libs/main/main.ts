@@ -1,13 +1,18 @@
+import { JsonRpcProvider, Provider } from 'ethers'
+
 import { AccountOpAction, Action } from '../../controllers/actions/actions'
-import { Account, AccountId } from '../../interfaces/account'
+import { Account, AccountId, AccountOnchainState } from '../../interfaces/account'
 import { Network, NetworkId } from '../../interfaces/network'
 import { Calls, SignUserRequest, UserRequest } from '../../interfaces/userRequest'
+import { Bundler } from '../../services/bundlers/bundler'
 import generateSpoofSig from '../../utils/generateSpoofSig'
 import { isSmartAccount } from '../account/account'
 import { AccountOp } from '../accountOp/accountOp'
 import { Call } from '../accountOp/types'
 import { getAccountOpsByNetwork } from '../actions/actions'
+import { GasRecommendation, getGasPriceRecommendations } from '../gasPrice/gasPrice'
 import { adjustEntryPointAuthorization } from '../signMessage/signMessage'
+import { isErc4337Broadcast } from '../userOperation/userOperation'
 
 export const batchCallsFromUserRequests = ({
   accountAddr,
@@ -143,4 +148,52 @@ export const getAccountOpsForSimulation = (
   if (isSmart) return getAccountOpsByNetwork(account.addr, visibleActionsQueue) || {}
 
   return {}
+}
+
+export async function updateGasPrice(
+  network: Network,
+  accountState: AccountOnchainState,
+  provider: JsonRpcProvider | Provider,
+  emitError: Function
+): Promise<{
+  gasPrice?: GasRecommendation[]
+  blockGasLimit?: bigint
+  bundlerGas?: {
+    slow: { maxFeePerGas: string; maxPriorityFeePerGas: string }
+    medium: { maxFeePerGas: string; maxPriorityFeePerGas: string }
+    fast: { maxFeePerGas: string; maxPriorityFeePerGas: string }
+    ape: { maxFeePerGas: string; maxPriorityFeePerGas: string }
+  }
+}> {
+  const is4337 = isErc4337Broadcast(network, accountState)
+
+  const bundlerFetch = async () => {
+    if (!is4337) return undefined
+    return Bundler.fetchGasPrices(network).catch((e) => {
+      emitError({
+        level: 'silent',
+        message: "Failed to fetch the bundler's gas price",
+        error: e
+      })
+      return undefined
+    })
+  }
+
+  const [gasPriceData, bundlerGas] = await Promise.all([
+    getGasPriceRecommendations(provider, network).catch((e) => {
+      emitError({
+        level: 'major',
+        message: `Unable to get gas price for ${network.id}`,
+        error: new Error(`Failed to fetch gas price: ${e?.message}`)
+      })
+      return undefined
+    }),
+    bundlerFetch()
+  ])
+
+  return {
+    gasPrice: gasPriceData?.gasPrice,
+    blockGasLimit: gasPriceData?.blockGasLimit,
+    bundlerGas
+  }
 }
