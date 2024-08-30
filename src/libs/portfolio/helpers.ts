@@ -4,11 +4,12 @@ import IERC20 from '../../../contracts/compiled/IERC20.json'
 import gasTankFeeTokens from '../../consts/gasTankFeeTokens'
 import { PINNED_TOKENS } from '../../consts/pinnedTokens'
 import { Account, AccountId } from '../../interfaces/account'
-import { NetworkId } from '../../interfaces/network'
+import { Network, NetworkId } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
 import { isSmartAccount } from '../account/account'
 import { CustomToken } from './customToken'
 import {
+  AccountState,
   AdditionalPortfolioNetworkResult,
   ExternalHintsAPIResponse,
   PortfolioLibGetResult,
@@ -131,6 +132,21 @@ export const getTotal = (t: TokenResult[]) =>
 
     return localCur
   }, {})
+
+export const getAccountPortfolioTotal = (
+  accountPortfolio: AccountState,
+  excludeNetworks: Network['id'][] = []
+) => {
+  if (!accountPortfolio) return 0
+
+  return Object.keys(accountPortfolio).reduce((acc, key) => {
+    if (excludeNetworks.includes(key)) return acc
+
+    const networkData = accountPortfolio[key]
+    const networkTotalAmountUSD = networkData?.result?.total.usd || 0
+    return acc + networkTotalAmountUSD
+  }, 0)
+}
 
 export const getPinnedGasTankTokens = (
   availableGasTankAssets: TokenResult[],

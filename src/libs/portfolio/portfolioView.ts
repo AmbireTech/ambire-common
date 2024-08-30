@@ -3,7 +3,9 @@ import {
   CollectionResult as CollectionResultInterface,
   NetworkState,
   PortfolioControllerState,
-  TokenResult as TokenResultInterface
+  TokenResult as TokenResultInterface,
+  NetworkNonces,
+  TokenAmount
 } from './interfaces'
 
 interface AccountPortfolio {
@@ -11,6 +13,8 @@ interface AccountPortfolio {
   collections: CollectionResultInterface[]
   totalAmount: number
   isAllReady: boolean
+  simulationNonces: NetworkNonces
+  tokenAmounts: TokenAmount[]
 }
 
 export function calculateAccountPortfolio(
@@ -30,7 +34,9 @@ export function calculateAccountPortfolio(
       tokens: accountPortfolio?.tokens || [],
       collections: accountPortfolio?.collections || [],
       totalAmount: accountPortfolio?.totalAmount || 0,
-      isAllReady: true
+      isAllReady: true,
+      simulationNonces: accountPortfolio?.simulationNonces || {},
+      tokenAmounts: accountPortfolio?.tokenAmounts || []
     }
   }
 
@@ -44,7 +50,9 @@ export function calculateAccountPortfolio(
       tokens: accountPortfolio?.tokens || [],
       collections: accountPortfolio?.collections || [],
       totalAmount: accountPortfolio?.totalAmount || 0,
-      isAllReady: false
+      isAllReady: false,
+      simulationNonces: accountPortfolio?.simulationNonces || {},
+      tokenAmounts: accountPortfolio?.tokenAmounts || []
     }
   }
 
@@ -112,10 +120,62 @@ export function calculateAccountPortfolio(
     }
   })
 
+  // For the selected account's pending state, create a SimulationNonces mapping,
+  // which associates each network with its corresponding pending simulation beforeNonce.
+  // This nonce information is crucial for determining the PendingToBeSigned or PendingToBeConfirmed Dashboard badges.
+  // For more details, see: calculatePendingAmounts.
+  const simulationNonces = Object.keys(state.pending[selectedAccount]).reduce((acc, networkId) => {
+    const beforeNonce = state.pending[selectedAccount!][networkId]?.result?.beforeNonce
+    if (typeof beforeNonce === 'bigint') {
+      acc[networkId] = beforeNonce
+    }
+
+    return acc
+  }, {} as NetworkNonces)
+
+  // We need the latest and pending token amounts for the selected account, especially for calculating the Pending badges.
+  // You might wonder why we don't retrieve this data directly from the PortfolioController. Here's the reasoning:
+  //
+  // 1. We could attach the latest amount to the controller's pending state.
+  //    However, this would mix the latest and pending data within the controller's logic, which we want to avoid.
+  //
+  // 2. Alternatively, we could fetch the latest and pending token amounts at the component level as needed.
+  //    While this seems simpler, there's a catch:
+  //    The PortfolioView is recalculated whenever certain properties change.
+  //    If we don't retrieve the latest and pending amounts within the same React update cycle,
+  //    they might become out of sync with the PortfolioView state.
+  //    Therefore, the safest and cleanest approach is to calculate these amounts during the same cycle as the PortfolioView.
+  //
+  // For more details, see: calculatePendingAmounts.
+  const tokenAmounts = Object.keys(state.latest[selectedAccount]).reduce((acc, networkId) => {
+    const latestTokens = state.latest[selectedAccount!][networkId]?.result?.tokens
+
+    if (!latestTokens) return acc
+
+    const mergedTokens = latestTokens.map((latestToken) => {
+      const pendingToken = state.pending[selectedAccount!][networkId]?.result?.tokens.find(
+        (pending) => {
+          return pending.address === latestToken.address
+        }
+      )
+
+      return {
+        latestAmount: latestToken.amount || 0n,
+        pendingAmount: pendingToken?.amount || 0n,
+        address: latestToken.address,
+        networkId
+      }
+    })
+
+    return [...acc, ...mergedTokens]
+  }, [] as TokenAmount[])
+
   return {
     totalAmount: newTotalAmount,
     tokens: updatedTokens,
     collections: updatedCollections,
-    isAllReady: allReady
+    isAllReady: allReady,
+    simulationNonces,
+    tokenAmounts
   }
 }
