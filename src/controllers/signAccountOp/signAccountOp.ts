@@ -275,6 +275,18 @@ export class SignAccountOpController extends EventEmitter {
       errors.push(this.estimation.error.message)
     }
 
+    if (
+      this.estimation?.gasUsed &&
+      this.#network.blockGasLimit &&
+      this.estimation?.gasUsed > this.#network.blockGasLimit
+    ) {
+      errors.push('Transaction reverted with estimation too high: above block limit')
+    }
+
+    if (this.estimation?.gasUsed && this.estimation?.gasUsed > 500000000n) {
+      errors.push('Unreasonably high estimation. This transaction will probably fail')
+    }
+
     // this error should never happen as availableFeeOptions should always have the native option
     if (!this.availableFeeOptions.length) errors.push(ERRORS.eoaInsufficientFunds)
 
@@ -445,7 +457,9 @@ export class SignAccountOpController extends EventEmitter {
     if (gasPrices) this.gasPrices = gasPrices
 
     if (estimation) {
-      this.gasUsedTooHigh = estimation.gasUsed > 10000000n
+      this.gasUsedTooHigh = !!(
+        this.#network.blockGasLimit && estimation.gasUsed > this.#network.blockGasLimit / 4n
+      )
       this.estimation = estimation
       // on each estimation update, set the newest account nonce
       this.accountOp.nonce = BigInt(estimation.currentAccountNonce)

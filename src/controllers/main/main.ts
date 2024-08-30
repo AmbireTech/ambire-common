@@ -736,7 +736,7 @@ export class MainController extends EventEmitter {
         })
       })
     }
-    const [gasPrice, bundlerGas] = await Promise.all([
+    const [gasPriceData, bundlerGas] = await Promise.all([
       getGasPriceRecommendations(this.providers.providers[network.id], network).catch((e) => {
         this.emitError({
           level: 'major',
@@ -748,7 +748,11 @@ export class MainController extends EventEmitter {
       bundlerFetch()
     ])
 
-    if (gasPrice) this.gasPrices[network.id] = gasPrice
+    if (gasPriceData) {
+      this.gasPrices[network.id] = gasPriceData.gasPrice
+      // this.networks.updateBlockGasLimit(gasPriceData.blockGasLimit, network.id)
+      this.networks.updateBlockGasLimit(1000000n, network.id)
+    }
     if (bundlerGas) this.bundlerGasPrices[network.id] = bundlerGas
   }
 
