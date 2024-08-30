@@ -66,6 +66,16 @@ export function getRelayerId(identifiedBy: AccountOpIdentifiedBy): string {
   return (identifiedBy as Relayer).id
 }
 
+export function getAccountOpIdentifier(
+  identifiedBy: AccountOpIdentifiedBy,
+  txnId?: string | null
+): string {
+  if (isIdentifiedByTxn(identifiedBy)) return `Transaction:${txnId as string}`
+  if (isIdentifiedByUserOpHash(identifiedBy))
+    return `UserOperation:${getFetchedUserOpHash(identifiedBy)}`
+  return `Relayer:${getRelayerId(identifiedBy)}`
+}
+
 export async function fetchTxnId(
   op: SubmittedAccountOp | { identifiedBy: AccountOpIdentifiedBy; txnId?: string | null },
   network: Network,
@@ -154,7 +164,7 @@ export async function fetchTxnId(
 }
 
 export async function pollTxnId(
-  op: SubmittedAccountOp,
+  op: SubmittedAccountOp | { identifiedBy: AccountOpIdentifiedBy; txnId?: string | null },
   network: Network,
   fetchFn: Fetch,
   callRelayer: Function
