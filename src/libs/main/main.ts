@@ -5,7 +5,7 @@ import { Calls, SignUserRequest, UserRequest } from '../../interfaces/userReques
 import generateSpoofSig from '../../utils/generateSpoofSig'
 import { isSmartAccount } from '../account/account'
 import { AccountOp } from '../accountOp/accountOp'
-import { Call as AccountOpCall } from '../accountOp/types'
+import { Call } from '../accountOp/types'
 import { getAccountOpsByNetwork } from '../actions/actions'
 import { adjustEntryPointAuthorization } from '../signMessage/signMessage'
 
@@ -17,9 +17,9 @@ export const batchCallsFromUserRequests = ({
   accountAddr: AccountId
   networkId: NetworkId
   userRequests: UserRequest[]
-}): AccountOpCall[] => {
+}): Call[] => {
   return (userRequests.filter((r) => r.action.kind === 'calls') as SignUserRequest[]).reduce(
-    (uCalls: AccountOpCall[], req) => {
+    (uCalls: Call[], req) => {
       if (req.meta.networkId === networkId && req.meta.accountAddr === accountAddr) {
         const { calls } = req.action as Calls
         calls.forEach((call) => uCalls.push({ ...call, fromUserRequestId: req.id }))

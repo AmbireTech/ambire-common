@@ -73,6 +73,7 @@ export default [
     address: '0x0000000000000000000000000000000000000000',
     symbol: 'xdai',
     networkId: 'gnosis',
+    disableGasTankDeposit: true,
     decimals: 18,
     icon: 'https://assets.coingecko.com/coins/images/11062/large/Identity-Primary-DarkBG.png'
   },
@@ -357,6 +358,13 @@ export default [
     icon: 'https://assets.coingecko.com/coins/images/9956/small/4943.png'
   },
   {
+    address: '0xb31f66aa3c1e785363f0875a1b74e27b85fd66c7',
+    symbol: 'wavax',
+    networkId: 'avalanche',
+    decimals: 18,
+    icon: 'https://assets.coingecko.com/coins/images/15075/small/wrapped-avax.png'
+  },
+  {
     address: '0xd586E7F844cEa2F87f50152665BCbc2C279D8d70',
     symbol: 'dai',
     networkId: 'avalanche',
@@ -484,6 +492,7 @@ export default [
     address: '0xDDAfbb505ad214D7b80b1f830fcCc89B60fb7A83',
     symbol: 'usdc',
     networkId: 'gnosis',
+    disableGasTankDeposit: true,
     decimals: 6,
     icon: 'https://assets.coingecko.com/coins/images/6319/small/USD_Coin_icon.png'
   },
@@ -491,6 +500,7 @@ export default [
     address: '0x4ECaBa5870353805a9F068101A40E0f32ed605C6',
     symbol: 'usdt',
     networkId: 'gnosis',
+    disableGasTankDeposit: true,
     decimals: 6,
     icon: 'https://assets.coingecko.com/coins/images/325/small/Tether-logo.png'
   },

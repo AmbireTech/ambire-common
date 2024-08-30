@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-floating-promises */
 import { ethErrors } from 'eth-rpc-errors'
 /* eslint-disable @typescript-eslint/brace-style */
-import { getAddress, getBigInt, Interface, isAddress, TransactionResponse } from 'ethers'
+import { getAddress, getBigInt, Interface, isAddress } from 'ethers'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json'
@@ -33,7 +33,8 @@ import { Calls, DappUserRequest, SignUserRequest, UserRequest } from '../../inte
 import { WindowManager } from '../../interfaces/window'
 import { isSmartAccount } from '../../libs/account/account'
 import { AccountOp, AccountOpStatus, getSignableCalls } from '../../libs/accountOp/accountOp'
-import { Call as AccountOpCall } from '../../libs/accountOp/types'
+import { AccountOpIdentifiedBy, SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
+import { Call } from '../../libs/accountOp/types'
 import {
   dappRequestMethodToActionKind,
   getAccountOpActionsByNetwork,
@@ -45,7 +46,6 @@ import { BundlerGasPrice, EstimateResult } from '../../libs/estimate/interfaces'
 import { GasRecommendation, getGasPriceRecommendations } from '../../libs/gasPrice/gasPrice'
 import { humanizeAccountOp } from '../../libs/humanizer'
 import { KeyIterator } from '../../libs/keyIterator/keyIterator'
-import { getDefaultKeyLabel } from '../../libs/keys/keys'
 import {
   getAccountOpsForSimulation,
   makeBasicAccountOpAction,
@@ -73,7 +73,7 @@ import wait from '../../utils/wait'
 import { AccountAdderController } from '../accountAdder/accountAdder'
 import { AccountsController } from '../accounts/accounts'
 import { AccountOpAction, ActionsController, SignMessageAction } from '../actions/actions'
-import { ActivityController, SubmittedAccountOp } from '../activity/activity'
+import { ActivityController } from '../activity/activity'
 import { AddressBookController } from '../addressBook/addressBook'
 import { DappsController } from '../dapps/dapps'
 import { DomainsController } from '../domains/domains'
@@ -84,7 +84,6 @@ import { KeystoreController } from '../keystore/keystore'
 import { NetworksController } from '../networks/networks'
 import { PortfolioController } from '../portfolio/portfolio'
 import { ProvidersController } from '../providers/providers'
-import { SettingsController } from '../settings/settings'
 /* eslint-disable no-underscore-dangle */
 import { SignAccountOpController, SigningStatus } from '../signAccountOp/signAccountOp'
 import { SignMessageController } from '../signMessage/signMessage'
@@ -102,12 +101,12 @@ const STATUS_WRAPPED_METHODS = {
 export class MainController extends EventEmitter {
   #storage: Storage
 
-  #fetch: Fetch
+  fetch: Fetch
 
   // Holds the initial load promise, so that one can wait until it completes
   #initialLoadPromise: Promise<void>
 
-  #callRelayer: Function
+  callRelayer: Function
 
   isReady: boolean = false
 
@@ -139,15 +138,13 @@ export class MainController extends EventEmitter {
   // @TODO emailVaults
   emailVault: EmailVaultController
 
-  signMessage!: SignMessageController
+  signMessage: SignMessageController
 
   signAccountOp: SignAccountOpController | null = null
 
   signAccOpInitError: string | null = null
 
-  activity!: ActivityController
-
-  settings: SettingsController
+  activity: ActivityController
 
   addressBook: AddressBookController
 
@@ -197,7 +194,7 @@ export class MainController extends EventEmitter {
   }) {
     super()
     this.#storage = storage
-    this.#fetch = fetch
+    this.fetch = fetch
     this.#windowManager = windowManager
     this.#notificationManager = notificationManager
 
@@ -206,7 +203,7 @@ export class MainController extends EventEmitter {
     this.#externalSignerControllers = externalSignerControllers
     this.networks = new NetworksController(
       this.#storage,
-      this.#fetch,
+      this.fetch,
       async (network: Network) => {
         this.providers.setProvider(network)
         await this.accounts.updateAccountStates('latest', [network.id])
@@ -223,7 +220,9 @@ export class MainController extends EventEmitter {
       this.networks,
       async (toAccountAddr: string) => {
         this.activity.init()
-        await this.updateSelectedAccountPortfolio()
+        // TODO: We agreed to always fetch the latest and pending states.
+        // To achieve this, we need to refactor how we use forceUpdate to obtain pending state updates.
+        await this.updateSelectedAccountPortfolio(true)
         // forceEmitUpdate to update the getters in the FE state of the ctrl
         await this.forceEmitUpdate()
         await this.actions.forceEmitUpdate()
@@ -232,10 +231,9 @@ export class MainController extends EventEmitter {
       },
       this.providers.updateProviderIsWorking.bind(this.providers)
     )
-    this.settings = new SettingsController(this.#storage)
     this.portfolio = new PortfolioController(
       this.#storage,
-      this.#fetch,
+      this.fetch,
       this.providers,
       this.networks,
       this.accounts,
@@ -243,17 +241,12 @@ export class MainController extends EventEmitter {
       velcroUrl
     )
     this.#initialLoadPromise = this.#load()
-    this.emailVault = new EmailVaultController(
-      this.#storage,
-      this.#fetch,
-      relayerUrl,
-      this.keystore
-    )
+    this.emailVault = new EmailVaultController(this.#storage, this.fetch, relayerUrl, this.keystore)
     this.accountAdder = new AccountAdderController({
       accounts: this.accounts,
       keystore: this.keystore,
       relayerUrl,
-      fetch: this.#fetch
+      fetch: this.fetch
     })
     this.addressBook = new AddressBookController(this.#storage, this.accounts)
     this.signMessage = new SignMessageController(
@@ -263,7 +256,7 @@ export class MainController extends EventEmitter {
       this.accounts,
       this.#externalSignerControllers,
       this.#storage,
-      this.#fetch
+      this.fetch
     )
     this.dapps = new DappsController(this.#storage)
     this.actions = new ActionsController({
@@ -281,9 +274,11 @@ export class MainController extends EventEmitter {
         this.emitUpdate()
       }
     })
+    this.callRelayer = relayerCall.bind({ url: relayerUrl, fetch: this.fetch })
     this.activity = new ActivityController(
       this.#storage,
-      this.#fetch,
+      this.fetch,
+      this.callRelayer,
       this.accounts,
       this.providers,
       this.networks,
@@ -291,8 +286,7 @@ export class MainController extends EventEmitter {
         await this.setContractsDeployedToTrueIfDeployed(network)
       }
     )
-    this.domains = new DomainsController(this.providers.providers, this.#fetch)
-    this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch: this.#fetch })
+    this.domains = new DomainsController(this.providers.providers, this.fetch)
   }
 
   async #load(): Promise<void> {
@@ -305,7 +299,9 @@ export class MainController extends EventEmitter {
     await this.networks.initialLoadPromise
     await this.providers.initialLoadPromise
     await this.accounts.initialLoadPromise
-    this.updateSelectedAccountPortfolio()
+    // TODO: We agreed to always fetch the latest and pending states.
+    // To achieve this, we need to refactor how we use forceUpdate to obtain pending state updates.
+    this.updateSelectedAccountPortfolio(true)
 
     /**
      * Listener that gets triggered as a finalization step of adding new
@@ -334,7 +330,6 @@ export class MainController extends EventEmitter {
           // skips the parallel one, if one is requested).
           await this.keystore.addKeys(this.accountAdder.readyToAddKeys.internal)
           await this.keystore.addKeysExternallyStored(this.accountAdder.readyToAddKeys.external)
-          await this.settings.addKeyPreferences(this.accountAdder.readyToAddKeyPreferences)
         },
         true
       )
@@ -417,23 +412,10 @@ export class MainController extends EventEmitter {
 
         const readyToAddKeys = this.accountAdder.retrieveInternalKeysOfSelectedAccounts()
 
-        const readyToAddKeyPreferences = this.accountAdder.selectedAccounts.flatMap(
-          ({ account, accountKeys }) =>
-            accountKeys.map(({ addr }, i: number) => ({
-              addr,
-              type: 'internal',
-              label: getDefaultKeyLabel(
-                this.keystore.keys.filter((key) => account.associatedKeys.includes(key.addr)),
-                i
-              )
-            }))
-        )
-
-        await this.accountAdder.addAccounts(
-          this.accountAdder.selectedAccounts,
-          { internal: readyToAddKeys, external: [] },
-          readyToAddKeyPreferences
-        )
+        await this.accountAdder.addAccounts(this.accountAdder.selectedAccounts, {
+          internal: readyToAddKeys,
+          external: []
+        })
       },
       true
     )
@@ -482,8 +464,8 @@ export class MainController extends EventEmitter {
       actionId,
       accountOp,
       this.#storage,
-      this.#fetch,
-      this.#callRelayer
+      this.fetch,
+      this.callRelayer
     )
 
     this.emitUpdate()
@@ -799,13 +781,6 @@ export class MainController extends EventEmitter {
 
     // Remove account keys from the keystore
     solelyAccountKeys.forEach((key) => {
-      this.settings.removeKeyPreferences([{ addr: key.addr, type: key.type }]).catch((e) => {
-        throw new EmittableError({
-          level: 'major',
-          message: 'Failed to remove account key preferences',
-          error: e
-        })
-      })
       this.keystore.removeKey(key.addr, key.type).catch((e) => {
         throw new EmittableError({
           level: 'major',
@@ -857,10 +832,10 @@ export class MainController extends EventEmitter {
       this.signAccOpInitError = `Failed to retrieve account info for ${networkId}, because of one of the following reasons: 1) network doesn't exist, 2) RPC is down for this network`
   }
 
-  #batchCallsFromUserRequests(accountAddr: AccountId, networkId: NetworkId): AccountOpCall[] {
+  #batchCallsFromUserRequests(accountAddr: AccountId, networkId: NetworkId): Call[] {
     // Note: we use reduce instead of filter/map so that the compiler can deduce that we're checking .kind
     return (this.userRequests.filter((r) => r.action.kind === 'calls') as SignUserRequest[]).reduce(
-      (uCalls: AccountOpCall[], req) => {
+      (uCalls: Call[], req) => {
         if (req.meta.networkId === networkId && req.meta.accountAddr === accountAddr) {
           const { calls } = req.action as Calls
           calls.map((call) => uCalls.push({ ...call, fromUserRequestId: req.id }))
@@ -895,7 +870,7 @@ export class MainController extends EventEmitter {
   }
 
   // eslint-disable-next-line default-param-last
-  async updateSelectedAccountPortfolio(forceUpdate: boolean = false, network?: Network) {
+  async updateSelectedAccountPortfolio(forceUpdate: boolean = true, network?: Network) {
     await this.#initialLoadPromise
     if (!this.accounts.selectedAccount) return
 
@@ -937,8 +912,11 @@ export class MainController extends EventEmitter {
     if (kind === 'calls') {
       if (!this.accounts.selectedAccount) throw ethErrors.rpc.internal()
 
-      const transaction = request.params[0]
-      const accountAddr = getAddress(transaction.from)
+      const isWalletSendCalls = !!request.params[0].calls
+      const calls: Calls['calls'] = isWalletSendCalls
+        ? request.params[0].calls
+        : [request.params[0]]
+      const accountAddr = getAddress(request.params[0].from)
       const account = this.accounts.accounts.find((a) => a.addr === accountAddr)
 
       if (!account) {
@@ -952,18 +930,15 @@ export class MainController extends EventEmitter {
       if (!network) {
         throw ethErrors.provider.chainDisconnected('Transaction failed - unknown network')
       }
-
       userRequest = {
         id: new Date().getTime(),
         action: {
           kind,
-          calls: [
-            {
-              to: transaction.to,
-              value: transaction.value ? getBigInt(transaction.value) : 0n,
-              data: transaction.data || '0x'
-            }
-          ]
+          calls: calls.map((call) => ({
+            to: call.to,
+            data: call.data || '0x',
+            value: call.value ? getBigInt(call.value) : 0n
+          }))
         },
         meta: { isSignAction: true, accountAddr, networkId: network.id },
         dappPromise
@@ -984,10 +959,10 @@ export class MainController extends EventEmitter {
       if (!msg) {
         throw ethErrors.rpc.invalidRequest('No msg request to sign')
       }
-      const msdAddress = getAddress(msg?.[1])
+      const msgAddress = getAddress(msg?.[1])
       // TODO: if address is in this.accounts in theory the user should be able to sign
       // e.g. if an acc from the wallet is used as a signer of another wallet
-      if (getAddress(msdAddress) !== this.accounts.selectedAccount) {
+      if (msgAddress !== this.accounts.selectedAccount) {
         dappPromise.reject(
           ethErrors.provider.userRejectedRequest(
             // if updating, check https://github.com/AmbireTech/ambire-wallet/pull/1627
@@ -1014,7 +989,7 @@ export class MainController extends EventEmitter {
         session: request.session,
         meta: {
           isSignAction: true,
-          accountAddr: msdAddress,
+          accountAddr: msgAddress,
           networkId: network.id
         },
         dappPromise
@@ -1026,10 +1001,10 @@ export class MainController extends EventEmitter {
       if (!msg) {
         throw ethErrors.rpc.invalidRequest('No msg request to sign')
       }
-      const msdAddress = getAddress(msg?.[0])
+      const msgAddress = getAddress(msg?.[0])
       // TODO: if address is in this.accounts in theory the user should be able to sign
       // e.g. if an acc from the wallet is used as a signer of another wallet
-      if (getAddress(msdAddress) !== this.accounts.selectedAccount) {
+      if (msgAddress !== this.accounts.selectedAccount) {
         dappPromise.reject(
           ethErrors.provider.userRejectedRequest(
             // if updating, check https://github.com/AmbireTech/ambire-wallet/pull/1627
@@ -1078,7 +1053,7 @@ export class MainController extends EventEmitter {
         session: request.session,
         meta: {
           isSignAction: true,
-          accountAddr: msdAddress,
+          accountAddr: msgAddress,
           networkId: network.id
         },
         dappPromise
@@ -1258,9 +1233,15 @@ export class MainController extends EventEmitter {
             entryPointAuthorizationMessageFromHistory?.signature ?? undefined
         })
         this.actions.addOrUpdateAction(accountOpAction, withPriority, executionType)
-        if (this.signAccountOp && this.signAccountOp.fromActionId === accountOpAction.id) {
-          this.signAccountOp.update({ accountOp: accountOpAction.accountOp })
-          this.estimateSignAccountOp()
+        if (this.signAccountOp) {
+          if (this.signAccountOp.fromActionId === accountOpAction.id) {
+            this.signAccountOp.update({ accountOp: accountOpAction.accountOp })
+            this.estimateSignAccountOp()
+          }
+        } else {
+          // Even without an initialized SignAccountOpController or Screen, we should still update the portfolio and run the simulation.
+          // It's necessary to continue operating with the token `amountPostSimulation` amount.
+          this.updateSelectedAccountPortfolio(true, network)
         }
       } else {
         const accountOpAction = makeBasicAccountOpAction({
@@ -1441,7 +1422,12 @@ export class MainController extends EventEmitter {
       txnId: null,
       userOpHash: null
     }
-    data?.isUserOp ? (meta.userOpHash = data.hash) : (meta.txnId = data.hash)
+    if (data.submittedAccountOp) {
+      // can be undefined, check submittedAccountOp.ts
+      meta.txnId = data.submittedAccountOp.txnId
+
+      meta.identifiedBy = data.submittedAccountOp.identifiedBy
+    }
     const benzinUserRequest: SignUserRequest = {
       id: new Date().getTime(),
       action: { kind: 'benzin' },
@@ -1577,7 +1563,7 @@ export class MainController extends EventEmitter {
       const humanization = await humanizeAccountOp(
         this.#storage,
         localAccountOp,
-        this.#fetch,
+        this.fetch,
         this.emitError
       )
       humanization.forEach((call: any) => {
@@ -1748,6 +1734,8 @@ export class MainController extends EventEmitter {
         message: 'Estimation error',
         error
       })
+    } finally {
+      this.signAccountOp?.calculateWarnings()
     }
   }
 
@@ -1803,7 +1791,11 @@ export class MainController extends EventEmitter {
       return this.#throwBroadcastAccountOp({ message })
     }
 
-    let transactionRes: TransactionResponse | { hash: string; nonce: number } | null = null
+    let transactionRes: {
+      txnId?: string
+      nonce: number
+      identifiedBy: AccountOpIdentifiedBy
+    } | null = null
 
     // Basic account (EOA)
     if (!isSmartAccount(account)) {
@@ -1850,7 +1842,15 @@ export class MainController extends EventEmitter {
 
         const signedTxn = await signer.signRawTransaction(rawTxn)
         try {
-          transactionRes = await provider.broadcastTransaction(signedTxn)
+          const broadcastRes = await provider.broadcastTransaction(signedTxn)
+          transactionRes = {
+            txnId: broadcastRes.hash,
+            nonce: broadcastRes.nonce,
+            identifiedBy: {
+              type: 'Transaction',
+              identifier: broadcastRes.hash
+            }
+          }
         } catch (e: any) {
           const reason = e?.message || 'unknown'
 
@@ -1933,7 +1933,15 @@ export class MainController extends EventEmitter {
 
         const signedTxn = await signer.signRawTransaction(rawTxn)
         try {
-          transactionRes = await provider.broadcastTransaction(signedTxn)
+          const broadcastRes = await provider.broadcastTransaction(signedTxn)
+          transactionRes = {
+            txnId: broadcastRes.hash,
+            nonce: broadcastRes.nonce,
+            identifiedBy: {
+              type: 'Transaction',
+              identifier: broadcastRes.hash
+            }
+          }
         } catch (e: any) {
           const reason = e?.message || 'unknown'
 
@@ -1973,10 +1981,12 @@ export class MainController extends EventEmitter {
         })
       }
 
-      // broadcast the userOperationHash
       transactionRes = {
-        hash: userOperationHash,
-        nonce: Number(userOperation.nonce)
+        nonce: Number(userOperation.nonce),
+        identifiedBy: {
+          type: 'UserOperation',
+          identifier: userOperationHash
+        }
       }
     }
     // Smart account, the Relayer way
@@ -1989,14 +1999,20 @@ export class MainController extends EventEmitter {
           signer: { address: accountOp.signingKeyAddr },
           nonce: Number(accountOp.nonce)
         }
-        const response = await this.#callRelayer(
+        const response = await this.callRelayer(
           `/identity/${accountOp.accountAddr}/${accountOp.networkId}/submit`,
           'POST',
           body
         )
+        if (!response.success) throw new Error(response.message)
+
         transactionRes = {
-          hash: response.txId,
-          nonce: Number(accountOp.nonce)
+          txnId: response.txId,
+          nonce: Number(accountOp.nonce),
+          identifiedBy: {
+            type: 'Relayer',
+            identifier: response.id
+          }
         }
       } catch (error: any) {
         return this.#throwBroadcastAccountOp({ error, network })
@@ -2011,20 +2027,18 @@ export class MainController extends EventEmitter {
     const submittedAccountOp: SubmittedAccountOp = {
       ...accountOp,
       status: AccountOpStatus.BroadcastedButNotConfirmed,
-      txnId: transactionRes.hash,
+      txnId: transactionRes.txnId,
       nonce: BigInt(transactionRes.nonce),
+      identifiedBy: transactionRes.identifiedBy,
       timestamp: new Date().getTime(),
       isSingletonDeploy: !!accountOp.calls.find((call) => getAddress(call.to) === SINGLETON)
-    }
-    if (accountOp.gasFeePayment?.isERC4337) {
-      submittedAccountOp.userOpHash = transactionRes.hash
     }
     await this.activity.addAccountOp(submittedAccountOp)
     await this.resolveAccountOpAction(
       {
-        hash: transactionRes?.hash || null,
         networkId: network.id,
-        isUserOp: !!accountOp?.asUserOperation
+        isUserOp: !!accountOp?.asUserOperation,
+        submittedAccountOp
       },
       actionId
     )
@@ -2077,6 +2091,14 @@ export class MainController extends EventEmitter {
         // in that case, recalculate prices and prompt the user to try again
         message = 'Fee too low. Please select a higher transaction speed and try again'
         this.updateSignAccountOpGasPrice()
+      } else if (
+        message.includes('Transaction underpriced. Please select a higher fee and try again')
+      ) {
+        // this error comes from the relayer when using the paymaster service.
+        // as it could be from lower PVG, we should reestimate as well
+        message = 'Fee too low. Please select a higher transaction speed and try again'
+        this.updateSignAccountOpGasPrice()
+        this.estimateSignAccountOp()
       } else {
         // Trip the error message, errors coming from the RPC can be huuuuuge
         message = message.length > 300 ? `${message.substring(0, 300)}...` : message

@@ -192,7 +192,7 @@ export class Portfolio {
       )
     ])
 
-    const [tokensWithErrResult, blockNumber] = tokensWithErr
+    const [tokensWithErrResult, blockNumber, beforeNonce, afterNonce] = tokensWithErr
 
     // Re-map/filter into our format
     const getPriceFromCache = (address: string) => {
@@ -302,6 +302,8 @@ export class Portfolio {
       priceUpdateTime: priceUpdateDone - oracleCallDone,
       priceCache,
       tokens: tokensWithPrices,
+      beforeNonce,
+      afterNonce,
       blockNumber,
       tokenErrors: tokensWithErrResult
         .filter(([error, result]: [string, TokenResult]) => error !== '0x' || result.symbol === '')

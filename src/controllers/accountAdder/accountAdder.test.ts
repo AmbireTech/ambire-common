@@ -152,7 +152,7 @@ describe('AccountAdder', () => {
     accountAdder.setPage({ page: 1, networks, providers })
     accountAdder.selectAccount(basicAccount)
     accountAdder.deselectAccount(basicAccount)
-    accountAdder.addAccounts([], { internal: [], external: [] }, [])
+    accountAdder.addAccounts([], { internal: [], external: [] })
   })
 
   test('should throw if AccountAdder controller gets initialized, but the keyIterator is missing', (done) => {
@@ -489,18 +489,35 @@ describe('AccountAdder', () => {
         const internalKeys = accountAdder.retrieveInternalKeysOfSelectedAccounts()
 
         expect(internalKeys).toHaveLength(3)
-        expect(internalKeys).toContainEqual({
-          privateKey: key1PrivateKey,
-          dedicatedToOneSA: false
-        })
-        expect(internalKeys).toContainEqual({
-          privateKey: key1UsedForSmartAccKeysOnlyPrivateKey,
-          dedicatedToOneSA: true
-        })
-        expect(internalKeys).toContainEqual({
-          privateKey: key2UsedForSmartAccKeysOnlyPrivateKey,
-          dedicatedToOneSA: true
-        })
+        const firstKey = internalKeys.filter((k) => k.privateKey === key1PrivateKey)[0]
+        const secondKey = internalKeys.filter(
+          (k) => k.privateKey === key1UsedForSmartAccKeysOnlyPrivateKey
+        )[0]
+        const thirdKey = internalKeys.filter(
+          (k) => k.privateKey === key2UsedForSmartAccKeysOnlyPrivateKey
+        )[0]
+
+        expect(firstKey).toEqual(
+          expect.objectContaining({
+            privateKey: key1PrivateKey,
+            label: 'Key 1',
+            dedicatedToOneSA: false
+          })
+        )
+        expect(secondKey).toEqual(
+          expect.objectContaining({
+            privateKey: key1UsedForSmartAccKeysOnlyPrivateKey,
+            label: 'Key 1',
+            dedicatedToOneSA: true
+          })
+        )
+        expect(thirdKey).toEqual(
+          expect.objectContaining({
+            privateKey: key2UsedForSmartAccKeysOnlyPrivateKey,
+            label: 'Key 1',
+            dedicatedToOneSA: true
+          })
+        )
 
         unsubscribe()
         done()
