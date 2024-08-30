@@ -9,7 +9,9 @@ import { relayerUrl } from '../../../test/config'
 import { produceMemoryStore } from '../../../test/helpers'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import {
+  BIP44_LEDGER_DERIVATION_TEMPLATE,
   BIP44_STANDARD_DERIVATION_TEMPLATE,
+  DERIVATION_OPTIONS,
   SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET
 } from '../../consts/derivation'
 import { networks } from '../../consts/networks'
@@ -532,5 +534,41 @@ describe('AccountAdder', () => {
       hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
     })
     accountAdder.setPage({ page: 1 })
+  })
+
+  DERIVATION_OPTIONS.forEach(({ label, value }) => {
+    test(`should derive correctly ${label}`, async () => {
+      const keyIterator = new KeyIterator(process.env.SEED)
+      const pageSize = 5
+      accountAdder.init({ keyIterator, hdPathTemplate: value, pageSize })
+
+      // Checks page 1 Basic Accounts
+      await accountAdder.setPage({ page: 1 })
+      const basicAccountsOnFirstPage = accountAdder.accountsOnPage.filter(
+        (x) => !isSmartAccount(x.account)
+      )
+      const key1to5BasicAccPublicAddresses = Array.from(
+        { length: pageSize },
+        (_, i) => new Wallet(getPrivateKeyFromSeed(process.env.SEED, i, value)).address
+      )
+      basicAccountsOnFirstPage.forEach((x) => {
+        const address = x.account.addr
+        expect(address).toBe(key1to5BasicAccPublicAddresses[x.index])
+      })
+
+      // Checks page 2 Basic Accounts
+      await accountAdder.setPage({ page: 2 })
+      const basicAccountsOnSecondPage = accountAdder.accountsOnPage.filter(
+        (x) => !isSmartAccount(x.account)
+      )
+      const key6to10BasicAccPublicAddresses = Array.from(
+        { length: pageSize },
+        (_, i) => new Wallet(getPrivateKeyFromSeed(process.env.SEED, i + pageSize, value)).address
+      )
+      basicAccountsOnSecondPage.forEach((x) => {
+        const address = x.account.addr
+        expect(address).toBe(key6to10BasicAccPublicAddresses[x.index - pageSize])
+      })
+    })
   })
 })
