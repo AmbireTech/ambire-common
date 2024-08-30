@@ -101,6 +101,7 @@ export const dedicatedToOneSAPriv =
 export type InternalKey = {
   addr: Account['addr']
   type: 'internal'
+  label: string
   dedicatedToOneSA: boolean
   meta: null
 }
@@ -108,6 +109,7 @@ export type InternalKey = {
 export type ExternalKey = {
   addr: Account['addr']
   type: 'trezor' | 'ledger' | 'lattice' | string
+  label: string
   dedicatedToOneSA: boolean
   meta: {
     deviceId: string
@@ -129,11 +131,23 @@ export type KeystoreSignerType = {
  * (for the accounts that were just imported by the AccountAdder Controller).
  */
 export type ReadyToAddKeys = {
-  internal: { privateKey: string; dedicatedToOneSA: Key['dedicatedToOneSA'] }[]
+  internal: {
+    addr: Key['addr']
+    label: string
+    type: 'internal'
+    privateKey: string
+    dedicatedToOneSA: Key['dedicatedToOneSA']
+    meta: null
+  }[]
   external: {
     addr: Key['addr']
+    label: string
     type: Key['type']
     dedicatedToOneSA: Key['dedicatedToOneSA']
     meta: ExternalKey['meta']
   }[]
+}
+
+export type KeyPreferences = {
+  label: string
 }

@@ -34,7 +34,7 @@ import { WindowManager } from '../../interfaces/window'
 import { isSmartAccount } from '../../libs/account/account'
 import { AccountOp, AccountOpStatus, getSignableCalls } from '../../libs/accountOp/accountOp'
 import { AccountOpIdentifiedBy, SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
-import { Call as AccountOpCall } from '../../libs/accountOp/types'
+import { Call } from '../../libs/accountOp/types'
 import {
   dappRequestMethodToActionKind,
   getAccountOpActionsByNetwork,
@@ -46,7 +46,6 @@ import { BundlerGasPrice, EstimateResult } from '../../libs/estimate/interfaces'
 import { GasRecommendation, getGasPriceRecommendations } from '../../libs/gasPrice/gasPrice'
 import { humanizeAccountOp } from '../../libs/humanizer'
 import { KeyIterator } from '../../libs/keyIterator/keyIterator'
-import { getDefaultKeyLabel } from '../../libs/keys/keys'
 import {
   getAccountOpsForSimulation,
   makeBasicAccountOpAction,
@@ -85,7 +84,6 @@ import { KeystoreController } from '../keystore/keystore'
 import { NetworksController } from '../networks/networks'
 import { PortfolioController } from '../portfolio/portfolio'
 import { ProvidersController } from '../providers/providers'
-import { SettingsController } from '../settings/settings'
 /* eslint-disable no-underscore-dangle */
 import { SignAccountOpController, SigningStatus } from '../signAccountOp/signAccountOp'
 import { SignMessageController } from '../signMessage/signMessage'
@@ -140,15 +138,13 @@ export class MainController extends EventEmitter {
   // @TODO emailVaults
   emailVault: EmailVaultController
 
-  signMessage!: SignMessageController
+  signMessage: SignMessageController
 
   signAccountOp: SignAccountOpController | null = null
 
   signAccOpInitError: string | null = null
 
-  activity!: ActivityController
-
-  settings: SettingsController
+  activity: ActivityController
 
   addressBook: AddressBookController
 
@@ -224,7 +220,9 @@ export class MainController extends EventEmitter {
       this.networks,
       async (toAccountAddr: string) => {
         this.activity.init()
-        await this.updateSelectedAccountPortfolio()
+        // TODO: We agreed to always fetch the latest and pending states.
+        // To achieve this, we need to refactor how we use forceUpdate to obtain pending state updates.
+        await this.updateSelectedAccountPortfolio(true)
         // forceEmitUpdate to update the getters in the FE state of the ctrl
         await this.forceEmitUpdate()
         await this.actions.forceEmitUpdate()
@@ -233,7 +231,6 @@ export class MainController extends EventEmitter {
       },
       this.providers.updateProviderIsWorking.bind(this.providers)
     )
-    this.settings = new SettingsController(this.#storage)
     this.portfolio = new PortfolioController(
       this.#storage,
       this.fetch,
@@ -302,7 +299,9 @@ export class MainController extends EventEmitter {
     await this.networks.initialLoadPromise
     await this.providers.initialLoadPromise
     await this.accounts.initialLoadPromise
-    this.updateSelectedAccountPortfolio()
+    // TODO: We agreed to always fetch the latest and pending states.
+    // To achieve this, we need to refactor how we use forceUpdate to obtain pending state updates.
+    this.updateSelectedAccountPortfolio(true)
 
     /**
      * Listener that gets triggered as a finalization step of adding new
@@ -331,7 +330,6 @@ export class MainController extends EventEmitter {
           // skips the parallel one, if one is requested).
           await this.keystore.addKeys(this.accountAdder.readyToAddKeys.internal)
           await this.keystore.addKeysExternallyStored(this.accountAdder.readyToAddKeys.external)
-          await this.settings.addKeyPreferences(this.accountAdder.readyToAddKeyPreferences)
         },
         true
       )
@@ -414,23 +412,10 @@ export class MainController extends EventEmitter {
 
         const readyToAddKeys = this.accountAdder.retrieveInternalKeysOfSelectedAccounts()
 
-        const readyToAddKeyPreferences = this.accountAdder.selectedAccounts.flatMap(
-          ({ account, accountKeys }) =>
-            accountKeys.map(({ addr }, i: number) => ({
-              addr,
-              type: 'internal',
-              label: getDefaultKeyLabel(
-                this.keystore.keys.filter((key) => account.associatedKeys.includes(key.addr)),
-                i
-              )
-            }))
-        )
-
-        await this.accountAdder.addAccounts(
-          this.accountAdder.selectedAccounts,
-          { internal: readyToAddKeys, external: [] },
-          readyToAddKeyPreferences
-        )
+        await this.accountAdder.addAccounts(this.accountAdder.selectedAccounts, {
+          internal: readyToAddKeys,
+          external: []
+        })
       },
       true
     )
@@ -796,13 +781,6 @@ export class MainController extends EventEmitter {
 
     // Remove account keys from the keystore
     solelyAccountKeys.forEach((key) => {
-      this.settings.removeKeyPreferences([{ addr: key.addr, type: key.type }]).catch((e) => {
-        throw new EmittableError({
-          level: 'major',
-          message: 'Failed to remove account key preferences',
-          error: e
-        })
-      })
       this.keystore.removeKey(key.addr, key.type).catch((e) => {
         throw new EmittableError({
           level: 'major',
@@ -854,10 +832,10 @@ export class MainController extends EventEmitter {
       this.signAccOpInitError = `Failed to retrieve account info for ${networkId}, because of one of the following reasons: 1) network doesn't exist, 2) RPC is down for this network`
   }
 
-  #batchCallsFromUserRequests(accountAddr: AccountId, networkId: NetworkId): AccountOpCall[] {
+  #batchCallsFromUserRequests(accountAddr: AccountId, networkId: NetworkId): Call[] {
     // Note: we use reduce instead of filter/map so that the compiler can deduce that we're checking .kind
     return (this.userRequests.filter((r) => r.action.kind === 'calls') as SignUserRequest[]).reduce(
-      (uCalls: AccountOpCall[], req) => {
+      (uCalls: Call[], req) => {
         if (req.meta.networkId === networkId && req.meta.accountAddr === accountAddr) {
           const { calls } = req.action as Calls
           calls.map((call) => uCalls.push({ ...call, fromUserRequestId: req.id }))
@@ -892,7 +870,7 @@ export class MainController extends EventEmitter {
   }
 
   // eslint-disable-next-line default-param-last
-  async updateSelectedAccountPortfolio(forceUpdate: boolean = false, network?: Network) {
+  async updateSelectedAccountPortfolio(forceUpdate: boolean = true, network?: Network) {
     await this.#initialLoadPromise
     if (!this.accounts.selectedAccount) return
 
@@ -934,8 +912,11 @@ export class MainController extends EventEmitter {
     if (kind === 'calls') {
       if (!this.accounts.selectedAccount) throw ethErrors.rpc.internal()
 
-      const transaction = request.params[0]
-      const accountAddr = getAddress(transaction.from)
+      const isWalletSendCalls = !!request.params[0].calls
+      const calls: Calls['calls'] = isWalletSendCalls
+        ? request.params[0].calls
+        : [request.params[0]]
+      const accountAddr = getAddress(request.params[0].from)
       const account = this.accounts.accounts.find((a) => a.addr === accountAddr)
 
       if (!account) {
@@ -949,18 +930,15 @@ export class MainController extends EventEmitter {
       if (!network) {
         throw ethErrors.provider.chainDisconnected('Transaction failed - unknown network')
       }
-
       userRequest = {
         id: new Date().getTime(),
         action: {
           kind,
-          calls: [
-            {
-              to: transaction.to,
-              value: transaction.value ? getBigInt(transaction.value) : 0n,
-              data: transaction.data || '0x'
-            }
-          ]
+          calls: calls.map((call) => ({
+            to: call.to,
+            data: call.data || '0x',
+            value: call.value ? getBigInt(call.value) : 0n
+          }))
         },
         meta: { isSignAction: true, accountAddr, networkId: network.id },
         dappPromise
@@ -1255,9 +1233,15 @@ export class MainController extends EventEmitter {
             entryPointAuthorizationMessageFromHistory?.signature ?? undefined
         })
         this.actions.addOrUpdateAction(accountOpAction, withPriority, executionType)
-        if (this.signAccountOp && this.signAccountOp.fromActionId === accountOpAction.id) {
-          this.signAccountOp.update({ accountOp: accountOpAction.accountOp })
-          this.estimateSignAccountOp()
+        if (this.signAccountOp) {
+          if (this.signAccountOp.fromActionId === accountOpAction.id) {
+            this.signAccountOp.update({ accountOp: accountOpAction.accountOp })
+            this.estimateSignAccountOp()
+          }
+        } else {
+          // Even without an initialized SignAccountOpController or Screen, we should still update the portfolio and run the simulation.
+          // It's necessary to continue operating with the token `amountPostSimulation` amount.
+          this.updateSelectedAccountPortfolio(true, network)
         }
       } else {
         const accountOpAction = makeBasicAccountOpAction({
@@ -2095,6 +2079,14 @@ export class MainController extends EventEmitter {
         // in that case, recalculate prices and prompt the user to try again
         message = 'Fee too low. Please select a higher transaction speed and try again'
         this.updateSignAccountOpGasPrice()
+      } else if (
+        message.includes('Transaction underpriced. Please select a higher fee and try again')
+      ) {
+        // this error comes from the relayer when using the paymaster service.
+        // as it could be from lower PVG, we should reestimate as well
+        message = 'Fee too low. Please select a higher transaction speed and try again'
+        this.updateSignAccountOpGasPrice()
+        this.estimateSignAccountOp()
       } else {
         // Trip the error message, errors coming from the RPC can be huuuuuge
         message = message.length > 300 ? `${message.substring(0, 300)}...` : message

@@ -18,6 +18,7 @@ import { AccountsController } from '../accounts/accounts'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { NetworksController } from '../networks/networks'
 import { ProvidersController } from '../providers/providers'
+import { NetworkNonces } from '../../libs/portfolio/interfaces'
 
 export interface Pagination {
   fromPage: number
@@ -525,6 +526,48 @@ export class ActivityController extends EventEmitter {
       .filter((accountOp) => accountOp.status === AccountOpStatus.BroadcastedButNotConfirmed)
   }
 
+  // Here, we retrieve nonces that are either already confirmed and known,
+  // or those that have been broadcasted and are in the process of being confirmed.
+  // We use this information to determine the token's pending badge status (whether it is PendingToBeConfirmed or PendingToBeSigned).
+  // By knowing the latest AccOp nonce, we can compare it with the portfolio's pending simulation nonce.
+  // If the ActivityNonce is the same as the simulation beforeNonce,
+  // we can conclude that the badge is PendingToBeConfirmed.
+  // In all other cases, if the portfolio nonce is newer, then the badge is still PendingToBeSigned.
+  // More info: calculatePendingAmounts.
+  get lastKnownNonce(): NetworkNonces {
+    // Here we don't rely on `this.isInitialized` flag, as it checks for both `this.filters.account` and `this.filters.network` existence.
+    // Banners are network agnostic, and that's the reason we check for `this.filters.account` only and having this.#accountsOps loaded.
+    if (!this.#accounts.selectedAccount || !this.#accountsOps[this.#accounts.selectedAccount])
+      return {}
+
+    return Object.values(this.#accountsOps[this.#accounts.selectedAccount])
+      .flat()
+      .reduce(
+        (acc, accountOp) => {
+          const successStatuses = [
+            AccountOpStatus.BroadcastedButNotConfirmed,
+            AccountOpStatus.Success,
+            AccountOpStatus.UnknownButPastNonce
+          ]
+
+          if (!successStatuses.includes(accountOp.status!)) return acc
+
+          if (!acc[accountOp.networkId]) {
+            acc[accountOp.networkId] = accountOp.nonce
+          } else {
+            acc[accountOp.networkId] =
+              accountOp.nonce > acc[accountOp.networkId]
+                ? accountOp.nonce
+                : acc[accountOp.networkId]
+          }
+
+          return acc
+        },
+
+        {} as NetworkNonces
+      )
+  }
+
   get banners(): Banner[] {
     if (!this.#networks.isInitialized) return []
     return this.broadcastedButNotConfirmed.map((accountOp) => {
@@ -541,9 +584,7 @@ export class ActivityController extends EventEmitter {
       return {
         id: accountOp.txnId,
         type: 'success',
-        // TODO: We should pass the category, once we figure out how to determine the pending to be confirmed account ops:
-        // @link: https://github.com/AmbireTech/ambire-app/issues/2162#issuecomment-2191731436
-        // category: 'pending-to-be-confirmed-acc-op',
+        category: 'pending-to-be-confirmed-acc-op',
         title: 'Transaction successfully signed and sent!\nCheck it out on the block explorer!',
         text: '',
         actions: [
@@ -614,6 +655,7 @@ export class ActivityController extends EventEmitter {
       ...this,
       ...super.toJSON(),
       broadcastedButNotConfirmed: this.broadcastedButNotConfirmed, // includes the getter in the stringified instance
+      lastKnownNonce: this.lastKnownNonce,
       banners: this.banners // includes the getter in the stringified instance
     }
   }
