@@ -1846,7 +1846,10 @@ export class MainController extends EventEmitter {
           transactionRes = {
             txnId: broadcastRes.hash,
             nonce: broadcastRes.nonce,
-            identifiedBy: 'txnId'
+            identifiedBy: {
+              type: 'Transaction',
+              identifier: broadcastRes.hash
+            }
           }
         } catch (e: any) {
           const reason = e?.message || 'unknown'
@@ -1934,7 +1937,10 @@ export class MainController extends EventEmitter {
           transactionRes = {
             txnId: broadcastRes.hash,
             nonce: broadcastRes.nonce,
-            identifiedBy: 'txnId'
+            identifiedBy: {
+              type: 'Transaction',
+              identifier: broadcastRes.hash
+            }
           }
         } catch (e: any) {
           const reason = e?.message || 'unknown'
@@ -1977,7 +1983,10 @@ export class MainController extends EventEmitter {
 
       transactionRes = {
         nonce: Number(userOperation.nonce),
-        identifiedBy: { userOpHash: userOperationHash }
+        identifiedBy: {
+          type: 'UserOperation',
+          identifier: userOperationHash
+        }
       }
     }
     // Smart account, the Relayer way
@@ -2000,7 +2009,10 @@ export class MainController extends EventEmitter {
         transactionRes = {
           txnId: response.txId,
           nonce: Number(accountOp.nonce),
-          identifiedBy: { id: response.id }
+          identifiedBy: {
+            type: 'Relayer',
+            identifier: response.id
+          }
         }
       } catch (error: any) {
         return this.#throwBroadcastAccountOp({ error, network })

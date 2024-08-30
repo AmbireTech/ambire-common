@@ -28,14 +28,10 @@ import { AccountOp } from './accountOp'
  * userOps, the only difference is that we get a userOpHash instead of a
  * database ID record
  */
-type Transaction = 'txnId'
-type UserOpHash = {
-  userOpHash: string
+export type AccountOpIdentifiedBy = {
+  type: 'Transaction' | 'UserOperation' | 'Relayer'
+  identifier: string
 }
-type Relayer = {
-  id: 'string'
-}
-export type AccountOpIdentifiedBy = Transaction | UserOpHash | Relayer
 
 export interface SubmittedAccountOp extends AccountOp {
   txnId?: string
@@ -47,49 +43,31 @@ export interface SubmittedAccountOp extends AccountOp {
 }
 
 export function isIdentifiedByTxn(identifiedBy: AccountOpIdentifiedBy): boolean {
-  return identifiedBy === 'txnId'
+  return identifiedBy.type === 'Transaction'
 }
 
 export function isIdentifiedByUserOpHash(identifiedBy: AccountOpIdentifiedBy): boolean {
-  return (identifiedBy as UserOpHash).userOpHash !== undefined
+  return identifiedBy.type === 'UserOperation'
 }
 
 export function isIdentifiedByRelayer(identifiedBy: AccountOpIdentifiedBy): boolean {
-  return (identifiedBy as Relayer).id !== undefined
-}
-
-export function getFetchedUserOpHash(identifiedBy: AccountOpIdentifiedBy): string {
-  return (identifiedBy as UserOpHash).userOpHash
-}
-
-export function getRelayerId(identifiedBy: AccountOpIdentifiedBy): string {
-  return (identifiedBy as Relayer).id
-}
-
-export function getAccountOpIdentifier(
-  identifiedBy: AccountOpIdentifiedBy,
-  txnId?: string | null
-): string {
-  if (isIdentifiedByTxn(identifiedBy)) return `Transaction:${txnId as string}`
-  if (isIdentifiedByUserOpHash(identifiedBy))
-    return `UserOperation:${getFetchedUserOpHash(identifiedBy)}`
-  return `Relayer:${getRelayerId(identifiedBy)}`
+  return identifiedBy.type === 'Relayer'
 }
 
 export async function fetchTxnId(
-  op: SubmittedAccountOp | { identifiedBy: AccountOpIdentifiedBy; txnId?: string | null },
+  identifiedBy: AccountOpIdentifiedBy,
   network: Network,
   fetchFn: Fetch,
   callRelayer: Function
 ): Promise<{ status: string; txnId: string | null }> {
-  if (isIdentifiedByTxn(op.identifiedBy))
+  if (isIdentifiedByTxn(identifiedBy))
     return {
       status: 'success',
-      txnId: op.txnId as string
+      txnId: identifiedBy.identifier
     }
 
-  if (isIdentifiedByUserOpHash(op.identifiedBy)) {
-    const userOpHash = (op.identifiedBy as UserOpHash).userOpHash
+  if (isIdentifiedByUserOpHash(identifiedBy)) {
+    const userOpHash = identifiedBy.identifier
     const [response, bundlerResult]: [CustomResponse | null, any] = await Promise.all([
       fetchUserOp(userOpHash, fetchFn),
       Bundler.getStatusAndTxnId(userOpHash, network)
@@ -138,7 +116,7 @@ export async function fetchTxnId(
     }
   }
 
-  const id = (op.identifiedBy as Relayer).id
+  const id = identifiedBy.identifier
   let response = null
   try {
     response = await callRelayer(`/v2/get-txn-id/${id}`)
@@ -164,12 +142,12 @@ export async function fetchTxnId(
 }
 
 export async function pollTxnId(
-  op: SubmittedAccountOp | { identifiedBy: AccountOpIdentifiedBy; txnId?: string | null },
+  identifiedBy: AccountOpIdentifiedBy,
   network: Network,
   fetchFn: Fetch,
   callRelayer: Function
 ): Promise<string | null> {
-  const fetchTxnIdResult = await fetchTxnId(op, network, fetchFn, callRelayer)
+  const fetchTxnIdResult = await fetchTxnId(identifiedBy, network, fetchFn, callRelayer)
   if (fetchTxnIdResult.status === 'rejected') return null
 
   if (fetchTxnIdResult.status === 'not_found') {
@@ -178,7 +156,7 @@ export async function pollTxnId(
         setTimeout(resolve, 1500)
       })
     await delayPromise()
-    return pollTxnId(op, network, fetchFn, callRelayer)
+    return pollTxnId(identifiedBy, network, fetchFn, callRelayer)
   }
 
   return fetchTxnIdResult.txnId

@@ -10,15 +10,14 @@ import { isSmartAccount } from '../../libs/account/account'
 import { AccountOpStatus } from '../../libs/accountOp/accountOp'
 import {
   fetchTxnId,
-  getFetchedUserOpHash,
   isIdentifiedByUserOpHash,
   SubmittedAccountOp
 } from '../../libs/accountOp/submittedAccountOp'
+import { NetworkNonces } from '../../libs/portfolio/interfaces'
 import { AccountsController } from '../accounts/accounts'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { NetworksController } from '../networks/networks'
 import { ProvidersController } from '../providers/providers'
-import { NetworkNonces } from '../../libs/portfolio/interfaces'
 
 export interface Pagination {
   fromPage: number
@@ -329,7 +328,7 @@ export class ActivityController extends EventEmitter {
             }
 
             const fetchTxnIdResult = await fetchTxnId(
-              accountOp,
+              accountOp.identifiedBy,
               network,
               this.#fetch,
               this.#callRelayer
@@ -578,7 +577,7 @@ export class ActivityController extends EventEmitter {
       const isNotConfirmed = accountOp.status === AccountOpStatus.BroadcastedButNotConfirmed
       const url =
         isUserOp && isNotConfirmed && !isCustomNetwork
-          ? `https://jiffyscan.xyz/userOpHash/${getFetchedUserOpHash(accountOp.identifiedBy)}`
+          ? `https://jiffyscan.xyz/userOpHash/${accountOp.identifiedBy.identifier}`
           : `${network.explorerUrl}/tx/${accountOp.txnId}`
 
       return {
