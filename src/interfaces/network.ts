@@ -3,7 +3,6 @@ export type NetworkId = string
 export interface Erc4337settings {
   enabled: boolean
   hasPaymaster: boolean
-  explorerId?: string // what is the network id according to the explorer
 }
 
 interface FeeOptions {
