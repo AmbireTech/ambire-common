@@ -77,7 +77,10 @@ const SUBMITTED_ACCOUNT_OP = {
   ],
   txnId: '0x891e12877c24a8292fd73fd741897682f38a7bcd497374a6b68e8add89e1c0fb',
   status: 'broadcasted-but-not-confirmed',
-  identifiedBy: 'txnId'
+  identifiedBy: {
+    type: 'Transaction',
+    identifier: '0x891e12877c24a8292fd73fd741897682f38a7bcd497374a6b68e8add89e1c0fb'
+  }
 } as SubmittedAccountOp
 
 const SIGNED_MESSAGE: SignedMessage = {
@@ -197,7 +200,10 @@ describe('Activity Controller ', () => {
           ],
           txnId: '0x891e12877c24a8292fd73fd741897682f38a7bcd497374a6b68e8add89e1c0fb',
           status: 'broadcasted-but-not-confirmed',
-          identifiedBy: 'txnId'
+          identifiedBy: {
+            type: 'Transaction',
+            identifier: '0x891e12877c24a8292fd73fd741897682f38a7bcd497374a6b68e8add89e1c0fb'
+          }
         },
         {
           accountAddr: '0x40b38765696e3d5d8d9d834d8aad4bb6e418e489',
@@ -224,7 +230,10 @@ describe('Activity Controller ', () => {
           ],
           txnId: '0x891e12877c24a8292fd73fd741897682f38a7bcd497374a6b68e8add89e1c0fb',
           status: 'broadcasted-but-not-confirmed',
-          identifiedBy: 'txnId'
+          identifiedBy: {
+            type: 'Transaction',
+            identifier: '0x891e12877c24a8292fd73fd741897682f38a7bcd497374a6b68e8add89e1c0fb'
+          }
         },
         {
           accountAddr: '0x40b38765696e3d5d8d9d834d8aad4bb6e418e489',
@@ -251,7 +260,10 @@ describe('Activity Controller ', () => {
           ],
           txnId: '0x891e12877c24a8292fd73fd741897682f38a7bcd497374a6b68e8add89e1c0fb',
           status: 'broadcasted-but-not-confirmed',
-          identifiedBy: 'txnId'
+          identifiedBy: {
+            type: 'Transaction',
+            identifier: '0x891e12877c24a8292fd73fd741897682f38a7bcd497374a6b68e8add89e1c0fb'
+          }
         },
         {
           accountAddr: '0x40b38765696e3d5d8d9d834d8aad4bb6e418e489',
@@ -278,7 +290,10 @@ describe('Activity Controller ', () => {
           ],
           txnId: '0x891e12877c24a8292fd73fd741897682f38a7bcd497374a6b68e8add89e1c0fb',
           status: 'broadcasted-but-not-confirmed',
-          identifiedBy: 'txnId'
+          identifiedBy: {
+            type: 'Transaction',
+            identifier: '0x891e12877c24a8292fd73fd741897682f38a7bcd497374a6b68e8add89e1c0fb'
+          }
         }
       ] as SubmittedAccountOp[]
 
@@ -324,7 +339,10 @@ describe('Activity Controller ', () => {
             ],
             status: 'broadcasted-but-not-confirmed', // everytime we add a new AccountOp, it gets broadcasted-but-not-confirmed status
             txnId: '0x891e12877c24a8292fd73fd741897682f38a7bcd497374a6b68e8add89e1c0fb',
-            identifiedBy: 'txnId'
+            identifiedBy: {
+              type: 'Transaction',
+              identifier: '0x891e12877c24a8292fd73fd741897682f38a7bcd497374a6b68e8add89e1c0fb'
+            }
           }
         ],
         itemsTotal: 2,
@@ -362,7 +380,10 @@ describe('Activity Controller ', () => {
         // this txn is already mined and has `success` status
         txnId: '0x891e12877c24a8292fd73fd741897682f38a7bcd497374a6b68e8add89e1c0fb',
         status: 'broadcasted-but-not-confirmed',
-        identifiedBy: 'txnId'
+        identifiedBy: {
+          type: 'Transaction',
+          identifier: '0x891e12877c24a8292fd73fd741897682f38a7bcd497374a6b68e8add89e1c0fb'
+        }
       } as SubmittedAccountOp
 
       await controller.addAccountOp(accountOp)
@@ -404,7 +425,10 @@ describe('Activity Controller ', () => {
         // this txn is already mined, but has `fail` status
         txnId: '0x67ec3acc5274a88c50d1e79e9b9d4c2c3d5e0e3ba3cc33b32d65f3fdb3b5a258',
         status: 'broadcasted-but-not-confirmed',
-        identifiedBy: 'txnId'
+        identifiedBy: {
+          type: 'Transaction',
+          identifier: '0x67ec3acc5274a88c50d1e79e9b9d4c2c3d5e0e3ba3cc33b32d65f3fdb3b5a258'
+        }
       } as SubmittedAccountOp
 
       await controller.addAccountOp(accountOp)
@@ -485,7 +509,10 @@ describe('Activity Controller ', () => {
         // wrong txn id, so we can simulate nullish getTransactionReceipt()
         txnId: '0x0000000000000000000000000000000000000000000000000000000000000001',
         status: 'broadcasted-but-not-confirmed',
-        identifiedBy: 'txnId'
+        identifiedBy: {
+          type: 'Transaction',
+          identifier: '0x0000000000000000000000000000000000000000000000000000000000000001'
+        }
       } as SubmittedAccountOp
 
       await controller.addAccountOp(accountOp)
@@ -528,7 +555,10 @@ describe('Activity Controller ', () => {
         ],
         txnId: '0x891e12877c24a8292fd73fd741897682f38a7bcd497374a6b68e8add89e1c0fb',
         status: 'broadcasted-but-not-confirmed',
-        identifiedBy: 'txnId'
+        identifiedBy: {
+          type: 'Transaction',
+          identifier: '0x891e12877c24a8292fd73fd741897682f38a7bcd497374a6b68e8add89e1c0fb'
+        }
       } as SubmittedAccountOp
 
       const accountsOps = Array.from(Array(1500).keys()).map((key) => ({
