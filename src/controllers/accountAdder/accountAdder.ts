@@ -290,6 +290,7 @@ export class AccountAdderController extends EventEmitter {
     this.emitUpdate()
     // get the first page with the new hdPathTemplate (derivation)
     this.setPage({ page: DEFAULT_PAGE })
+    // TODO: Reset the selected accounts when the HD path is changed?
   }
 
   #getAccountKeys(account: Account, accountsOnPageWithThisAcc: AccountOnPage[]) {
