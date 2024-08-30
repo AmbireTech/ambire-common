@@ -12,7 +12,7 @@ import {
   getUnknownVisualization
 } from '../../utils'
 import { HumanizerUniMatcher } from './interfaces'
-import { getUniRecipientText, joinWithAndLabel, parsePath } from './utils'
+import { getUniRecipientText, parsePath, uniReduce } from './utils'
 
 const uniV32Mapping = (): HumanizerUniMatcher => {
   const ifaceV32 = new Interface(UniV3Router2)
@@ -31,7 +31,7 @@ const uniV32Mapping = (): HumanizerUniMatcher => {
           return humanizer ? humanizer(accountOp, { ...call, data }) : [getAction('Unknown action')]
         }
       )
-      const res = joinWithAndLabel(parsed)
+      const res = uniReduce(parsed)
       return res.length ? [...res, getDeadline(deadline)] : getUnknownVisualization('Uni V3', call)
     },
     // 0xac9650d8
@@ -46,7 +46,7 @@ const uniV32Mapping = (): HumanizerUniMatcher => {
         const humanizer = mappingResult[sigHash]
         return humanizer ? humanizer(accountOp, { ...call, data }) : [getAction('Unknown action')]
       })
-      return joinWithAndLabel(parsed)
+      return uniReduce(parsed)
     },
     // 0x1f0464d1
     [ifaceV32.getFunction('multicall(bytes32 prevBlockHash, bytes[])')?.selector!]: (
@@ -63,7 +63,7 @@ const uniV32Mapping = (): HumanizerUniMatcher => {
         }
       )
       return parsed.length
-        ? joinWithAndLabel(parsed)
+        ? uniReduce(parsed)
         : [...getUnknownVisualization('Uni V3', call), getLabel(`after block ${prevBlockHash}`)]
     },
     // NOTE: selfPermit is not supported cause it requires an ecrecover signature
@@ -284,7 +284,7 @@ const uniV3Mapping = (): HumanizerUniMatcher => {
         return humanizer ? humanizer(accountOp, { ...call, data }) : [getAction('Unknown action')]
       })
 
-      return parsed.length ? joinWithAndLabel(parsed) : getUnknownVisualization('Uni V3', call)
+      return parsed.length ? uniReduce(parsed) : getUnknownVisualization('Uni V3', call)
     },
     // -------------------------------------------------------------------------------------------------
     // NOTE: selfPermit is not supported cause it requires an ecrecover signature

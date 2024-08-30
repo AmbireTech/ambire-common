@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-floating-promises */
 import { ethErrors } from 'eth-rpc-errors'
 /* eslint-disable @typescript-eslint/brace-style */
 import { getAddress, getBigInt, Interface, isAddress, TransactionResponse } from 'ethers'
@@ -44,7 +45,6 @@ import { BundlerGasPrice, EstimateResult } from '../../libs/estimate/interfaces'
 import { GasRecommendation, getGasPriceRecommendations } from '../../libs/gasPrice/gasPrice'
 import { humanizeAccountOp } from '../../libs/humanizer'
 import { KeyIterator } from '../../libs/keyIterator/keyIterator'
-import { getDefaultKeyLabel } from '../../libs/keys/keys'
 import {
   getAccountOpsForSimulation,
   makeBasicAccountOpAction,
@@ -83,7 +83,6 @@ import { KeystoreController } from '../keystore/keystore'
 import { NetworksController } from '../networks/networks'
 import { PortfolioController } from '../portfolio/portfolio'
 import { ProvidersController } from '../providers/providers'
-import { SettingsController } from '../settings/settings'
 /* eslint-disable no-underscore-dangle */
 import { SignAccountOpController, SigningStatus } from '../signAccountOp/signAccountOp'
 import { SignMessageController } from '../signMessage/signMessage'
@@ -138,15 +137,13 @@ export class MainController extends EventEmitter {
   // @TODO emailVaults
   emailVault: EmailVaultController
 
-  signMessage!: SignMessageController
+  signMessage: SignMessageController
 
   signAccountOp: SignAccountOpController | null = null
 
   signAccOpInitError: string | null = null
 
-  activity!: ActivityController
-
-  settings: SettingsController
+  activity: ActivityController
 
   addressBook: AddressBookController
 
@@ -222,7 +219,9 @@ export class MainController extends EventEmitter {
       this.networks,
       async (toAccountAddr: string) => {
         this.activity.init()
-        await this.updateSelectedAccountPortfolio()
+        // TODO: We agreed to always fetch the latest and pending states.
+        // To achieve this, we need to refactor how we use forceUpdate to obtain pending state updates.
+        await this.updateSelectedAccountPortfolio(true)
         // forceEmitUpdate to update the getters in the FE state of the ctrl
         await this.forceEmitUpdate()
         await this.actions.forceEmitUpdate()
@@ -231,7 +230,6 @@ export class MainController extends EventEmitter {
       },
       this.providers.updateProviderIsWorking.bind(this.providers)
     )
-    this.settings = new SettingsController(this.#storage)
     this.portfolio = new PortfolioController(
       this.#storage,
       this.#fetch,
@@ -304,7 +302,9 @@ export class MainController extends EventEmitter {
     await this.networks.initialLoadPromise
     await this.providers.initialLoadPromise
     await this.accounts.initialLoadPromise
-    this.updateSelectedAccountPortfolio()
+    // TODO: We agreed to always fetch the latest and pending states.
+    // To achieve this, we need to refactor how we use forceUpdate to obtain pending state updates.
+    this.updateSelectedAccountPortfolio(true)
 
     /**
      * Listener that gets triggered as a finalization step of adding new
@@ -333,7 +333,6 @@ export class MainController extends EventEmitter {
           // skips the parallel one, if one is requested).
           await this.keystore.addKeys(this.accountAdder.readyToAddKeys.internal)
           await this.keystore.addKeysExternallyStored(this.accountAdder.readyToAddKeys.external)
-          await this.settings.addKeyPreferences(this.accountAdder.readyToAddKeyPreferences)
         },
         true
       )
@@ -416,23 +415,10 @@ export class MainController extends EventEmitter {
 
         const readyToAddKeys = this.accountAdder.retrieveInternalKeysOfSelectedAccounts()
 
-        const readyToAddKeyPreferences = this.accountAdder.selectedAccounts.flatMap(
-          ({ account, accountKeys }) =>
-            accountKeys.map(({ addr }, i: number) => ({
-              addr,
-              type: 'internal',
-              label: getDefaultKeyLabel(
-                this.keystore.keys.filter((key) => account.associatedKeys.includes(key.addr)),
-                i
-              )
-            }))
-        )
-
-        await this.accountAdder.addAccounts(
-          this.accountAdder.selectedAccounts,
-          { internal: readyToAddKeys, external: [] },
-          readyToAddKeyPreferences
-        )
+        await this.accountAdder.addAccounts(this.accountAdder.selectedAccounts, {
+          internal: readyToAddKeys,
+          external: []
+        })
       },
       true
     )
@@ -545,7 +531,7 @@ export class MainController extends EventEmitter {
     const state = this.accounts.accountStates[accountOp.accountAddr][accountOp.networkId]
     const provider = this.providers.providers[network.id]
     const gasPrice = this.gasPrices[network.id]
-    const addresses = await debugTraceCall(
+    const { tokens, nfts } = await debugTraceCall(
       account,
       accountOp,
       provider,
@@ -554,10 +540,10 @@ export class MainController extends EventEmitter {
       gasPrice,
       !network.rpcNoStateOverride
     )
-    const learnedNewTokens = await this.portfolio.learnTokens(addresses, network.id)
-
+    const learnedNewTokens = await this.portfolio.learnTokens(tokens, network.id)
+    const learnedNewNfts = await this.portfolio.learnNfts(nfts, network.id)
     // update the portfolio only if new tokens were found through tracing
-    if (learnedNewTokens) {
+    if (learnedNewTokens || learnedNewNfts) {
       this.portfolio.updateSelectedAccount(
         accountOp.accountAddr,
         network,
@@ -798,13 +784,6 @@ export class MainController extends EventEmitter {
 
     // Remove account keys from the keystore
     solelyAccountKeys.forEach((key) => {
-      this.settings.removeKeyPreferences([{ addr: key.addr, type: key.type }]).catch((e) => {
-        throw new EmittableError({
-          level: 'major',
-          message: 'Failed to remove account key preferences',
-          error: e
-        })
-      })
       this.keystore.removeKey(key.addr, key.type).catch((e) => {
         throw new EmittableError({
           level: 'major',
@@ -894,7 +873,7 @@ export class MainController extends EventEmitter {
   }
 
   // eslint-disable-next-line default-param-last
-  async updateSelectedAccountPortfolio(forceUpdate: boolean = false, network?: Network) {
+  async updateSelectedAccountPortfolio(forceUpdate: boolean = true, network?: Network) {
     await this.#initialLoadPromise
     if (!this.accounts.selectedAccount) return
 
@@ -983,10 +962,10 @@ export class MainController extends EventEmitter {
       if (!msg) {
         throw ethErrors.rpc.invalidRequest('No msg request to sign')
       }
-      const msdAddress = getAddress(msg?.[1])
+      const msgAddress = getAddress(msg?.[1])
       // TODO: if address is in this.accounts in theory the user should be able to sign
       // e.g. if an acc from the wallet is used as a signer of another wallet
-      if (getAddress(msdAddress) !== this.accounts.selectedAccount) {
+      if (msgAddress !== this.accounts.selectedAccount) {
         dappPromise.reject(
           ethErrors.provider.userRejectedRequest(
             // if updating, check https://github.com/AmbireTech/ambire-wallet/pull/1627
@@ -1013,7 +992,7 @@ export class MainController extends EventEmitter {
         session: request.session,
         meta: {
           isSignAction: true,
-          accountAddr: msdAddress,
+          accountAddr: msgAddress,
           networkId: network.id
         },
         dappPromise
@@ -1025,10 +1004,10 @@ export class MainController extends EventEmitter {
       if (!msg) {
         throw ethErrors.rpc.invalidRequest('No msg request to sign')
       }
-      const msdAddress = getAddress(msg?.[0])
+      const msgAddress = getAddress(msg?.[0])
       // TODO: if address is in this.accounts in theory the user should be able to sign
       // e.g. if an acc from the wallet is used as a signer of another wallet
-      if (getAddress(msdAddress) !== this.accounts.selectedAccount) {
+      if (msgAddress !== this.accounts.selectedAccount) {
         dappPromise.reject(
           ethErrors.provider.userRejectedRequest(
             // if updating, check https://github.com/AmbireTech/ambire-wallet/pull/1627
@@ -1077,7 +1056,7 @@ export class MainController extends EventEmitter {
         session: request.session,
         meta: {
           isSignAction: true,
-          accountAddr: msdAddress,
+          accountAddr: msgAddress,
           networkId: network.id
         },
         dappPromise
@@ -1222,10 +1201,16 @@ export class MainController extends EventEmitter {
             a.accountOp.networkId === network.id
         ) as AccountOpAction | undefined
 
-        this.activity.setFilters({
+        const activityFilters = {
           account: account.addr,
           network: network.id
-        })
+        }
+        if (!this.activity.isInitialized) {
+          this.activity.init(activityFilters)
+        } else {
+          this.activity.setFilters(activityFilters)
+        }
+
         const entryPointAuthorizationMessageFromHistory = this.activity.signedMessages?.items.find(
           (message) =>
             message.fromActionId === ENTRY_POINT_AUTHORIZATION_REQUEST_ID &&
@@ -1251,9 +1236,15 @@ export class MainController extends EventEmitter {
             entryPointAuthorizationMessageFromHistory?.signature ?? undefined
         })
         this.actions.addOrUpdateAction(accountOpAction, withPriority, executionType)
-        if (this.signAccountOp && this.signAccountOp.fromActionId === accountOpAction.id) {
-          this.signAccountOp.update({ accountOp: accountOpAction.accountOp })
-          this.estimateSignAccountOp()
+        if (this.signAccountOp) {
+          if (this.signAccountOp.fromActionId === accountOpAction.id) {
+            this.signAccountOp.update({ accountOp: accountOpAction.accountOp })
+            this.estimateSignAccountOp()
+          }
+        } else {
+          // Even without an initialized SignAccountOpController or Screen, we should still update the portfolio and run the simulation.
+          // It's necessary to continue operating with the token `amountPostSimulation` amount.
+          this.updateSelectedAccountPortfolio(true, network)
         }
       } else {
         const accountOpAction = makeBasicAccountOpAction({
@@ -1345,10 +1336,16 @@ export class MainController extends EventEmitter {
             this.estimateSignAccountOp()
           }
         } else {
+          if (this.signAccountOp && this.signAccountOp.fromActionId === accountOpAction.id) {
+            this.destroySignAccOp()
+          }
           this.actions.removeAction(`${meta.accountAddr}-${meta.networkId}`)
           this.updateSelectedAccountPortfolio(true, network)
         }
       } else {
+        if (this.signAccountOp && this.signAccountOp.fromActionId === req.id) {
+          this.destroySignAccOp()
+        }
         this.actions.removeAction(id)
         this.updateSelectedAccountPortfolio(true, network)
       }
@@ -1458,7 +1455,11 @@ export class MainController extends EventEmitter {
     const accountOpAction = this.actions.actionsQueue.find((a) => a.id === actionId)
     if (!accountOpAction) return
 
-    const { accountOp } = accountOpAction as AccountOpAction
+    const { accountOp, id } = accountOpAction as AccountOpAction
+
+    if (this.signAccountOp && this.signAccountOp.fromActionId === id) {
+      this.destroySignAccOp()
+    }
     this.actions.removeAction(actionId, shouldOpenNextAction)
     // eslint-disable-next-line no-restricted-syntax
     for (const call of accountOp.calls) {
@@ -1469,12 +1470,6 @@ export class MainController extends EventEmitter {
         this.removeUserRequest(uReq.id)
       }
     }
-
-    // destroy sign account op if no actions left for account
-    const accountOpsLeftForAcc = (
-      this.actions.actionsQueue.filter((a) => a.type === 'accountOp') as AccountOpAction[]
-    ).filter((action) => action.accountOp.accountAddr === accountOp.accountAddr)
-    if (!accountOpsLeftForAcc.length) this.destroySignAccOp()
 
     this.emitUpdate()
   }
@@ -1638,23 +1633,44 @@ export class MainController extends EventEmitter {
       // if the signAccountOp has been deleted, don't continue as the request has already finished
       if (!this.signAccountOp) return
 
-      // if the nonce from the estimation is bigger than the one in localAccountOp,
-      // override the accountState and accountOp with the newly detected nonce
-      // and start a new estimation
-      if (estimation && BigInt(estimation.currentAccountNonce) > (localAccountOp.nonce ?? 0n)) {
-        localAccountOp.nonce = BigInt(estimation.currentAccountNonce)
-        this.signAccountOp.accountOp.nonce = BigInt(estimation.currentAccountNonce)
+      if (estimation) {
+        const currentNonceAhead =
+          BigInt(estimation.currentAccountNonce) > (localAccountOp.nonce ?? 0n)
 
-        if (this.accounts.accountStates?.[localAccountOp.accountAddr]?.[localAccountOp.networkId])
-          this.accounts.accountStates[localAccountOp.accountAddr][localAccountOp.networkId].nonce =
-            localAccountOp.nonce
+        // if the nonce from the estimation is bigger than the one in localAccountOp,
+        // override the accountState and accountOp with the newly detected nonce
+        if (currentNonceAhead) {
+          localAccountOp.nonce = BigInt(estimation.currentAccountNonce)
+          this.signAccountOp.accountOp.nonce = BigInt(estimation.currentAccountNonce)
 
-        this.estimateSignAccountOp()
+          if (this.accounts.accountStates?.[localAccountOp.accountAddr]?.[localAccountOp.networkId])
+            this.accounts.accountStates[localAccountOp.accountAddr][
+              localAccountOp.networkId
+            ].nonce = localAccountOp.nonce
+        }
 
-        // returning here means estimation will not be set => better UX as
-        // the user will not see the error "nonce discrepancy" but instead
-        // just wait for the new estimation
-        return
+        const hasNonceDiscrepancy = estimation.error?.cause === 'NONCE_FAILURE'
+        const lastTxn = this.activity.getLastTxn(localAccountOp.networkId)
+        const SAHasOldNonceOnARelayerNetwork =
+          isSmartAccount(account) &&
+          !network.erc4337.enabled &&
+          lastTxn &&
+          localAccountOp.nonce === lastTxn.nonce
+
+        if (hasNonceDiscrepancy || SAHasOldNonceOnARelayerNetwork) {
+          this.accounts
+            .updateAccountState(localAccountOp.accountAddr, 'pending', [localAccountOp.networkId])
+            .then(() => this.estimateSignAccountOp())
+            .catch((error) =>
+              this.emitError({
+                level: 'major',
+                message:
+                  'Failed to refetch the account state. Please try again to initialize your transaction',
+                error
+              })
+            )
+          return
+        }
       }
 
       if (
@@ -1664,7 +1680,7 @@ export class MainController extends EventEmitter {
         this.accounts.accountStates?.[localAccountOp.accountAddr]?.[localAccountOp.networkId]
       ) {
         this.accounts
-          .updateAccountState(localAccountOp.accountAddr, 'latest', [localAccountOp.networkId])
+          .updateAccountState(localAccountOp.accountAddr, 'pending', [localAccountOp.networkId])
           .then(() => this.estimateSignAccountOp())
           .catch((error) =>
             this.emitError({
@@ -1716,6 +1732,8 @@ export class MainController extends EventEmitter {
         message: 'Estimation error',
         error
       })
+    } finally {
+      this.signAccountOp?.calculateWarnings()
     }
   }
 

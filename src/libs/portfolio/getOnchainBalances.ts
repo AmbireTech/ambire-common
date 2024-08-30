@@ -172,7 +172,9 @@ export async function getNFTs(
 
   return before[0].map((beforeToken: any, i: number) => {
     const simulationToken = simulationTokens
-      ? simulationTokens.find((token: any) => token.addr === tokenAddrs[i][0])
+      ? simulationTokens.find(
+          (token: any) => token.addr.toLowerCase() === tokenAddrs[i][0].toLowerCase()
+        )
       : null
 
     const token = mapToken(beforeToken)
@@ -207,7 +209,7 @@ export async function getTokens(
   opts: Partial<GetOptions>,
   accountAddr: string,
   tokenAddrs: string[]
-): Promise<[TokenResult, number][]> {
+): Promise<[TokenResult, number, bigint, bigint][]> {
   const mapToken = (token: any, address: string) => {
     return {
       amount: token.amount,
@@ -295,6 +297,8 @@ export async function getTokens(
         }
       ]
     }),
-    blockNumber
+    blockNumber,
+    beforeNonce,
+    afterNonce
   ]
 }

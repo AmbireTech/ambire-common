@@ -19,7 +19,6 @@ import { Fetch } from '../../interfaces/fetch'
 import { KeyIterator } from '../../interfaces/keyIterator'
 import { dedicatedToOneSAPriv, ReadyToAddKeys } from '../../interfaces/keystore'
 import { Network, NetworkId } from '../../interfaces/network'
-import { KeyPreferences } from '../../interfaces/settings'
 import {
   getAccountImportStatus,
   getBasicAccount,
@@ -80,10 +79,6 @@ export class AccountAdderController extends EventEmitter {
   // The keys for the `readyToAddAccounts`, that are ready to be added to the
   // user's keystore by the Main Controller
   readyToAddKeys: ReadyToAddKeys = { internal: [], external: [] }
-
-  // The key preferences for the `readyToAddKeys`, that are ready to be added to
-  // the user's settings by the Main Controller
-  readyToAddKeyPreferences: KeyPreferences = []
 
   // Identity for the smart accounts must be created on the Relayer, this
   // represents the status of the operation, needed managing UI state
@@ -272,7 +267,6 @@ export class AccountAdderController extends EventEmitter {
     this.#linkedAccounts = []
     this.readyToAddAccounts = []
     this.readyToAddKeys = { internal: [], external: [] }
-    this.readyToAddKeyPreferences = []
     this.isInitialized = false
 
     this.emitUpdate()
@@ -430,7 +424,11 @@ export class AccountAdderController extends EventEmitter {
       return []
     }
 
-    return this.#keyIterator?.retrieveInternalKeys(this.selectedAccounts, this.hdPathTemplate)
+    return this.#keyIterator?.retrieveInternalKeys(
+      this.selectedAccounts,
+      this.hdPathTemplate,
+      this.#keystore.keys
+    )
   }
 
   async setPage({
@@ -514,8 +512,7 @@ export class AccountAdderController extends EventEmitter {
    */
   async addAccounts(
     accounts: SelectedAccountForImport[] = [],
-    readyToAddKeys: ReadyToAddKeys = { internal: [], external: [] },
-    readyToAddKeyPreferences: KeyPreferences = []
+    readyToAddKeys: ReadyToAddKeys = { internal: [], external: [] }
   ) {
     if (!this.isInitialized) return this.#throwNotInitialized()
     if (!this.#keyIterator) return this.#throwMissingKeyIterator()
@@ -546,7 +543,6 @@ export class AccountAdderController extends EventEmitter {
         addr: account.addr,
         ...(account.email ? { email: account.email } : {}),
         associatedKeys: account.initialPrivileges,
-
         creation: {
           factoryAddr: account.creation!.factoryAddr,
           salt: account.creation!.salt,
@@ -607,7 +603,6 @@ export class AccountAdderController extends EventEmitter {
       })
     ]
     this.readyToAddKeys = readyToAddKeys
-    this.readyToAddKeyPreferences = readyToAddKeyPreferences
     this.addAccountsStatus = 'SUCCESS'
     await this.forceEmitUpdate()
 

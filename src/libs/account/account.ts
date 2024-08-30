@@ -309,3 +309,7 @@ export function migrateAccountPreferencesToAccounts(
     }
   })
 }
+
+export function getUniqueAccountsArray(accounts: Account[]) {
+  return Array.from(new Map(accounts.map((account) => [account.addr, account])).values())
+}

@@ -328,7 +328,16 @@ const init = async (
   await keystore.addSecret('passphrase', signer.pass, '', false)
   await keystore.unlockWithSecret('passphrase', signer.pass)
 
-  await keystore.addKeys([{ privateKey: signer.privKey, dedicatedToOneSA: true }])
+  await keystore.addKeys([
+    {
+      addr: signer.keyPublicAddress,
+      type: 'internal',
+      label: 'Key 1',
+      privateKey: signer.privKey,
+      dedicatedToOneSA: true,
+      meta: null
+    }
+  ])
 
   let providersCtrl: ProvidersController
   const networksCtrl = new NetworksController(

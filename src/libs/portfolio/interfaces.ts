@@ -83,6 +83,8 @@ export interface PortfolioLibGetResult {
   hintsFromExternalAPI: Hints | null
   errors: ExtendedError[]
   blockNumber: number
+  beforeNonce: bigint
+  afterNonce: bigint
 }
 
 interface Total {
@@ -114,7 +116,7 @@ export type AdditionalPortfolioNetworkResult = Partial<PortfolioLibGetResult> &
   Pick<PortfolioLibGetResult, AdditionalPortfolioProperties> & {
     total: Total
     claimableRewardsData?: ClaimableRewardsData
-    addrVestingData?: AddrVestingData 
+    addrVestingData?: AddrVestingData
   }
 
 type PortfolioNetworkResult = Required<AdditionalPortfolioNetworkResult>
@@ -178,5 +180,31 @@ export interface GetOptions {
 
 export interface PreviousHintsStorage {
   learnedTokens: { [network in NetworkId]: { [tokenAddress: string]: string | null } }
+  learnedNfts: { [network in NetworkId]: { [nftAddress: string]: bigint[] } }
   fromExternalAPI: { [networkAndAccountKey: string]: GetOptions['previousHints'] }
+}
+
+export interface NetworkNonces {
+  [networkId: string]: bigint
+}
+
+export interface TokenAmount {
+  latestAmount: bigint
+  pendingAmount: bigint
+  address: string
+  networkId: string
+}
+
+export type PendingAmounts = {
+  isPending: boolean
+  pendingBalance: bigint
+  pendingToBeSigned?: bigint
+  pendingToBeConfirmed?: bigint
+}
+
+export type FormattedPendingAmounts = PendingAmounts & {
+  pendingBalanceFormatted: string
+  pendingBalanceUSDFormatted?: string
+  pendingToBeSignedFormatted?: string
+  pendingToBeConfirmedFormatted?: string
 }

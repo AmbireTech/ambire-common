@@ -137,6 +137,7 @@ describe('Account', () => {
     const key: Key = {
       addr: basicAccount.addr,
       type: 'internal',
+      label: 'Key 1',
       dedicatedToOneSA: false,
       meta: null,
       isExternallyStored: false
@@ -183,6 +184,7 @@ describe('Account', () => {
       addr: basicAccount.addr,
       type: 'trezor',
       dedicatedToOneSA: true,
+      label: 'Key 1',
       meta: {
         deviceId: '123',
         deviceModel: '1',
@@ -244,6 +246,7 @@ describe('Account', () => {
       addr: basicAccount.addr,
       type: 'trezor',
       dedicatedToOneSA: true,
+      label: 'Key 1',
       meta: {
         deviceId: '123',
         deviceModel: '1',
@@ -268,6 +271,7 @@ describe('Account', () => {
       addr: anotherBasicAccount.addr,
       type: 'trezor',
       dedicatedToOneSA: false,
+      label: 'Key 1',
       meta: {
         deviceId: '123',
         deviceModel: '1',
@@ -280,6 +284,7 @@ describe('Account', () => {
     const anotherBasicAccountKeyWithDifferentKeyType: Key = {
       addr: anotherBasicAccount.addr,
       type: 'internal',
+      label: 'Key 1',
       dedicatedToOneSA: false,
       meta: null,
       isExternallyStored: false
