@@ -1560,12 +1560,7 @@ export class MainController extends EventEmitter {
 
       // Reverse lookup addresses and save them in memory so they
       // can be read from the UI
-      const humanization = await humanizeAccountOp(
-        this.#storage,
-        localAccountOp,
-        this.fetch,
-        this.emitError
-      )
+      const humanization = humanizeAccountOp(localAccountOp, {})
       humanization.forEach((call: any) => {
         if (!call.fullVisualization) return
 
