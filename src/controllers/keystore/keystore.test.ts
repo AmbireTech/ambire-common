@@ -504,7 +504,8 @@ describe('KeystoreController', () => {
   test('should get default seed phrase', async () => {
     expect(!!keystore.hasKeystoreDefaultSeed).toBeTruthy()
     const decryptedDefaultSeedPhrase = await keystore.getDefaultSeed()
-    expect(decryptedDefaultSeedPhrase).toEqual(process.env.SEED)
+    expect(decryptedDefaultSeedPhrase.seed).toEqual(process.env.SEED)
+    expect(decryptedDefaultSeedPhrase.hdPathTemplate).toEqual(BIP44_STANDARD_DERIVATION_TEMPLATE)
   })
 })
 

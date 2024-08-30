@@ -366,10 +366,10 @@ export class MainController extends EventEmitter {
           })
         }
 
-        const keyIterator = new KeyIterator(defaultSeed)
+        const keyIterator = new KeyIterator(defaultSeed.seed)
         this.accountAdder.init({
           keyIterator,
-          hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
+          hdPathTemplate: defaultSeed.hdPathTemplate,
           pageSize: 1,
           shouldGetAccountsUsedOnNetworks: false,
           shouldSearchForLinkedAccounts: false

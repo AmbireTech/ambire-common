@@ -681,13 +681,15 @@ export class KeystoreController extends EventEmitter {
     if (!this.isUnlocked) throw new Error('keystore: not unlocked')
     if (!this.#keystoreSeeds.length) throw new Error('keystore: no seed phrase added yet')
 
+    const hdPathTemplate = this.#keystoreSeeds[0].hdPathTemplate
     const encryptedSeedBytes = getBytes(this.#keystoreSeeds[0].seed)
     // @ts-ignore
     const counter = new aes.Counter(this.#mainKey.iv)
     // @ts-ignore
     const aesCtr = new aes.ModeOfOperation.ctr(this.#mainKey.key, counter)
     const decryptedSeedBytes = aesCtr.decrypt(encryptedSeedBytes)
-    return new TextDecoder().decode(decryptedSeedBytes)
+    const decryptedSeed = new TextDecoder().decode(decryptedSeedBytes)
+    return { seed: decryptedSeed, hdPathTemplate }
   }
 
   async #changeKeystorePassword(newSecret: string, oldSecret?: string) {
