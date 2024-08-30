@@ -270,8 +270,9 @@ export class NetworksController extends EventEmitter {
     await this.withStatus('updateNetwork', () => this.#updateNetwork(network, networkId))
   }
 
-  updateBlockGasLimit(blockGasLimit: bigint, networkId: NetworkId) {
+  updateNetworkBlockGasLimit(blockGasLimit: bigint, networkId: NetworkId) {
     this.#networks[networkId].blockGasLimit = blockGasLimit
+    this.emitUpdate()
   }
 
   async removeNetwork(id: NetworkId) {

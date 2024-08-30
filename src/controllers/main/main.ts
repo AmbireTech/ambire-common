@@ -750,8 +750,7 @@ export class MainController extends EventEmitter {
 
     if (gasPriceData) {
       this.gasPrices[network.id] = gasPriceData.gasPrice
-      // this.networks.updateBlockGasLimit(gasPriceData.blockGasLimit, network.id)
-      this.networks.updateBlockGasLimit(1000000n, network.id)
+      this.networks.updateNetworkBlockGasLimit(gasPriceData.blockGasLimit, network.id)
     }
     if (bundlerGas) this.bundlerGasPrices[network.id] = bundlerGas
   }
