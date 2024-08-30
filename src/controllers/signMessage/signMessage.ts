@@ -7,7 +7,7 @@ import { ExternalSignerControllers, Key } from '../../interfaces/keystore'
 import { Network } from '../../interfaces/network'
 import { Storage } from '../../interfaces/storage'
 import { Message } from '../../interfaces/userRequest'
-import { messageHumanizer } from '../../libs/humanizer'
+import { humanizeMessage } from '../../libs/humanizer'
 import { IrMessage } from '../../libs/humanizer/interfaces'
 import {
   getEIP712Signature,
@@ -105,22 +105,7 @@ export class SignMessageController extends EventEmitter {
         this.dapp = dapp
       }
       this.messageToSign = messageToSign
-      const network = this.#networks.networks.find(
-        (n: Network) => n.id === this.messageToSign?.networkId
-      )
-      // eslint-disable-next-line @typescript-eslint/no-floating-promises
-      messageHumanizer(
-        messageToSign,
-        this.#storage,
-        this.#fetch,
-        (humanizedMessage: IrMessage) => {
-          this.humanReadable = humanizedMessage
-          this.emitUpdate()
-        },
-        (err) => this.emitError(err),
-        { network }
-      )
-
+      this.humanReadable = humanizeMessage(messageToSign)
       this.isInitialized = true
       this.emitUpdate()
     } else {

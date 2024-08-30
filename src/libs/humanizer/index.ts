@@ -75,9 +75,8 @@ const humanizeMessage = (_message: Message): IrMessage => {
   const message = parse(stringify(_message))
 
   // runs all modules and takes the first non empty array
-  const { fullVisualization, warnings } = humanizerTMModules
-    .map((m) => m(message))
-    .filter((p) => p.fullVisualization?.length)[0]
+  const { fullVisualization, warnings } =
+    humanizerTMModules.map((m) => m(message)).filter((p) => p.fullVisualization?.length)[0] || {}
 
   return { ...message, fullVisualization, warnings }
 }
