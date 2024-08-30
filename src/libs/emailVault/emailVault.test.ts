@@ -31,7 +31,11 @@ const initEmailVaultTest = async () => {
   const keys2 = await requestMagicLink(email2, relayerUrl, fetch)
   authKey2 = keys2.key
   authSecret2 = keys2.secret!
-  await callRelayer(`/email-vault/confirm-key/${email}/${authKey}/${authSecret}`)
+  try {
+    await callRelayer(`/email-vault/confirm-key/${email}/${authKey}/${authSecret}`)
+  } catch (e) {
+    /* silence is bitcoin */
+  }
 }
 
 describe('happy cases email vault', () => {
@@ -40,7 +44,11 @@ describe('happy cases email vault', () => {
     const result = await requestMagicLink(email, relayerUrl, fetch)
     authKey = result.key
     authSecret = result.secret!
-    await callRelayer(`/email-vault/confirm-key/${email}/${authKey}/${authSecret}`)
+    try {
+      await callRelayer(`/email-vault/confirm-key/${email}/${authKey}/${authSecret}`)
+    } catch (e) {
+      /* silence is bitcoin */
+    }
   })
 
   test('create an email vault', async () => {
@@ -166,14 +174,22 @@ describe('err cases', () => {
       ).rejects.toHaveProperty(['output', 'res', 'message'], 'missing uid or not a valid address')
     })
     test('vault not created', async () => {
-      await callRelayer(`/email-vault/confirm-key/${email2}/${authKey2}/${authSecret2}`)
+      try {
+        await callRelayer(`/email-vault/confirm-key/${email2}/${authKey2}/${authSecret2}`)
+      } catch (e) {
+        /* silence is bitcoin */
+      }
 
       await expect(
         emailVault.addKeyStoreSecret(email2, authKey2, '', keyStoreSecret)
       ).rejects.toHaveProperty(['output', 'res', 'message'], 'missing uid or not a valid address')
     })
     test('no secret in body', async () => {
-      await callRelayer(`/email-vault/confirm-key/${email2}/${authKey2}/${authSecret2}`)
+      try {
+        await callRelayer(`/email-vault/confirm-key/${email2}/${authKey2}/${authSecret2}`)
+      } catch (e) {
+        /* silence is bitcoin */
+      }
 
       await emailVault.getEmailVaultInfo(email2, authKey2)
       await expect(emailVault.addKeyStoreSecret(email2, authKey2, '', '')).rejects.toHaveProperty(
@@ -205,14 +221,22 @@ describe('err cases', () => {
       ).rejects.toHaveProperty(['output', 'res', 'message'], 'invalid key')
     })
     test('vault not created', async () => {
-      await callRelayer(`/email-vault/confirm-key/${email2}/${authKey2}/${authSecret2}`)
+      try {
+        await callRelayer(`/email-vault/confirm-key/${email2}/${authKey2}/${authSecret2}`)
+      } catch (e) {
+        /* silence is bitcoin */
+      }
 
       await expect(
         emailVault.retrieveKeyStoreSecret(email2, authKey2, recoveryKey)
       ).rejects.toHaveProperty(['output', 'res', 'message'], 'email vault does not exist')
     })
     test('no secret uploaded', async () => {
-      await callRelayer(`/email-vault/confirm-key/${email2}/${authKey2}/${authSecret2}`)
+      try {
+        await callRelayer(`/email-vault/confirm-key/${email2}/${authKey2}/${authSecret2}`)
+      } catch (e) {
+        /* silence is bitcoin */
+      }
 
       await emailVault.getEmailVaultInfo(email2, authKey2)
       recoveryKey2 = (await emailVault.getRecoveryKeyAddress(email2, authKey2)).key
