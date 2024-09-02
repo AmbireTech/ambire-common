@@ -64,6 +64,8 @@ export class PortfolioController extends EventEmitter {
     }
   }
 
+  #toBeLearnedTokens: { [network in NetworkId]: string[] }
+
   tokenPreferences: CustomToken[] = []
 
   validTokens: any = { erc20: {}, erc721: {} }
@@ -129,6 +131,7 @@ export class PortfolioController extends EventEmitter {
     this.#networks = networks
     this.#accounts = accounts
     this.temporaryTokens = {}
+    this.#toBeLearnedTokens = {}
 
     this.#initialLoadPromise = this.#load()
   }
@@ -596,20 +599,24 @@ export class PortfolioController extends EventEmitter {
           //    Here, we should apply the `areAccountOpsChanged` optimization and update both states only if the AccountOps have changed or have not been simulated yet.
           const forceUpdate = opts?.forceUpdate || areAccountOpsChanged
 
-          // Pass in learnedTokens as additionalHints only on areAccountOpsChanged
           const fallbackHints = (this.#previousHints?.fromExternalAPI &&
             this.#previousHints?.fromExternalAPI[key]) ?? {
             erc20s: [],
             erc721s: {}
           }
-          const additionalHints =
-            (forceUpdate &&
-              Object.keys(
-                (this.#previousHints?.learnedTokens &&
-                  this.#previousHints?.learnedTokens[network.id]) ??
-                  {}
-              )) ||
-            []
+
+          const tobeLearnedTokens = Object.keys(
+            (this.#toBeLearnedTokens && this.#toBeLearnedTokens[network.id]) ?? {}
+          )
+
+          const additionalHints = [
+            Object.keys(
+              (this.#previousHints?.learnedTokens &&
+                this.#previousHints?.learnedTokens[network.id]) ??
+                {}
+            ),
+            ...tobeLearnedTokens
+          ]
 
           const [isSuccessfulLatestUpdate] = await Promise.all([
             // Latest state update
@@ -663,7 +670,8 @@ export class PortfolioController extends EventEmitter {
               network.id,
               this.#previousHints,
               key,
-              this.tokenPreferences
+              this.tokenPreferences,
+              tobeLearnedTokens
             )
 
             this.#previousHints = updatedStoragePreviousHints
@@ -690,6 +698,34 @@ export class PortfolioController extends EventEmitter {
 
     await this.#updateNetworksWithAssets(this.#accounts.accounts, accountId, accountState)
     this.emitUpdate()
+  }
+
+  addTokensToBeLearned(tokenAddresses: string[], networkId: NetworkId) {
+    if (!tokenAddresses) return false
+    if (!this.#toBeLearnedTokens) this.#toBeLearnedTokens = {}
+    if (!this.#toBeLearnedTokens[networkId]) this.#toBeLearnedTokens[networkId] = []
+
+    let networkToBeLearnedTokens = this.#toBeLearnedTokens[networkId] || []
+    const networkLearnedTokens = this.#previousHints.learnedTokens[networkId] || {}
+
+    const alreadyLearned = networkToBeLearnedTokens.map((addr) => getAddress(addr))
+    const alreadyLearnedTokens = Object.keys(networkLearnedTokens).map((addr) => getAddress(addr))
+
+    const tokensToLearn = tokenAddresses.filter((address) => {
+      const normalizedAddress = getAddress(address)
+      return (
+        !alreadyLearned.includes(normalizedAddress) &&
+        !alreadyLearnedTokens.includes(normalizedAddress) &&
+        !address === ZeroAddress
+      )
+    })
+
+    if (!tokensToLearn.length) return false
+
+    networkToBeLearnedTokens = [...tokensToLearn, ...networkToBeLearnedTokens]
+
+    this.#toBeLearnedTokens[networkId] = networkToBeLearnedTokens
+    return true
   }
 
   // Learn new tokens from humanizer and debug_traceCall
@@ -719,7 +755,7 @@ export class PortfolioController extends EventEmitter {
     // Reached limit
     if (LEARNED_TOKENS_NETWORK_LIMIT - Object.keys(networkLearnedTokens).length < 0) {
       const learnedTokensArray = Object.entries(networkLearnedTokens).sort(
-        (a, b) => Number(a[1]) - Number(b[1])
+        (a, b) => Number(b[1]) - Number(a[1])
       )
 
       networkLearnedTokens = Object.fromEntries(

@@ -1601,7 +1601,7 @@ export class MainController extends EventEmitter {
         .flat()
         .filter((x: any) => isAddress(x))
 
-      await this.portfolio.learnTokens(additionalHints, network.id)
+      this.portfolio.addTokensToBeLearned(additionalHints, network.id)
 
       const accountOpsToBeSimulatedByNetwork = getAccountOpsForSimulation(
         account!,

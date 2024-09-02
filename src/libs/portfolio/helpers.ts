@@ -212,7 +212,8 @@ export function getUpdatedHints(
   networkId: NetworkId,
   storagePreviousHints: PreviousHintsStorage,
   key: string,
-  tokenPreferences: CustomToken[]
+  tokenPreferences: CustomToken[],
+  tobeLearnedTokens: string[]
 ): PreviousHintsStorage {
   const previousHints = { ...storagePreviousHints }
 
@@ -289,9 +290,16 @@ export function getUpdatedHints(
       const isTokenPreference = lowercaseNetworkPreferenceTokenAddresses.includes(lowercaseAddress)
       const isTokenInExternalAPIHints =
         lowercaseERC20HintsFromExternalAPI.includes(lowercaseAddress)
+      const isTokenInToBeLearnedTokens = tobeLearnedTokens.includes(lowercaseAddress)
       const hasBalance = lowercaseNetworkTokenAddressesWithBalance.includes(lowercaseAddress)
 
-      if (!isTokenInExternalAPIHints && !isPinned && !isTokenPreference && hasBalance) {
+      if (
+        !isTokenInExternalAPIHints &&
+        isTokenInToBeLearnedTokens &&
+        !isPinned &&
+        !isTokenPreference &&
+        hasBalance
+      ) {
         // Don't set the timestamp back to null if the account doesn't have balance for the token
         // as learnedTokens aren't account specific and one account can have balance for the token
         // while other don't
@@ -299,7 +307,6 @@ export function getUpdatedHints(
       }
     }
   }
-
   // Update the external hints for [network:account] with the latest from the external API
   previousHints.fromExternalAPI[key] = latestHintsFromExternalAPI
 
