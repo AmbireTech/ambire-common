@@ -605,17 +605,13 @@ export class PortfolioController extends EventEmitter {
             erc721s: {}
           }
 
-          const tobeLearnedTokens = Object.keys(
-            (this.#toBeLearnedTokens && this.#toBeLearnedTokens[network.id]) ?? {}
-          )
-
           const additionalHints = [
-            Object.keys(
+            ...Object.keys(
               (this.#previousHints?.learnedTokens &&
                 this.#previousHints?.learnedTokens[network.id]) ??
                 {}
             ),
-            ...tobeLearnedTokens
+            ...((this.#toBeLearnedTokens && this.#toBeLearnedTokens[network.id]) ?? [])
           ]
 
           const [isSuccessfulLatestUpdate] = await Promise.all([
@@ -670,8 +666,7 @@ export class PortfolioController extends EventEmitter {
               network.id,
               this.#previousHints,
               key,
-              this.tokenPreferences,
-              tobeLearnedTokens
+              this.tokenPreferences
             )
 
             this.#previousHints = updatedStoragePreviousHints
@@ -701,23 +696,17 @@ export class PortfolioController extends EventEmitter {
   }
 
   addTokensToBeLearned(tokenAddresses: string[], networkId: NetworkId) {
-    if (!tokenAddresses) return false
-    if (!this.#toBeLearnedTokens) this.#toBeLearnedTokens = {}
+    if (!tokenAddresses.length) return false
     if (!this.#toBeLearnedTokens[networkId]) this.#toBeLearnedTokens[networkId] = []
 
-    let networkToBeLearnedTokens = this.#toBeLearnedTokens[networkId] || []
-    const networkLearnedTokens = this.#previousHints.learnedTokens[networkId] || {}
+    let networkToBeLearnedTokens = this.#toBeLearnedTokens[networkId]
 
     const alreadyLearned = networkToBeLearnedTokens.map((addr) => getAddress(addr))
-    const alreadyLearnedTokens = Object.keys(networkLearnedTokens).map((addr) => getAddress(addr))
 
     const tokensToLearn = tokenAddresses.filter((address) => {
       const normalizedAddress = getAddress(address)
-      return (
-        !alreadyLearned.includes(normalizedAddress) &&
-        !alreadyLearnedTokens.includes(normalizedAddress) &&
-        !address === ZeroAddress
-      )
+
+      return !alreadyLearned.includes(normalizedAddress)
     })
 
     if (!tokensToLearn.length) return false
@@ -754,6 +743,9 @@ export class PortfolioController extends EventEmitter {
 
     // Reached limit
     if (LEARNED_TOKENS_NETWORK_LIMIT - Object.keys(networkLearnedTokens).length < 0) {
+      // Convert learned tokens into an array of [address, timestamp] pairs and sort by timestamp in descending order.
+      // This ensures that tokens with the most recent timestamps are prioritized for retention,
+      // and tokens with the oldest timestamps are deleted last when the limit is exceeded.
       const learnedTokensArray = Object.entries(networkLearnedTokens).sort(
         (a, b) => Number(b[1]) - Number(a[1])
       )
