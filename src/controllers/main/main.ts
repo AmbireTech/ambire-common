@@ -625,7 +625,8 @@ export class MainController extends EventEmitter {
       // a new session when retrieving keys, in case there already is one.
       if (ledgerCtrl.walletSDK) await ledgerCtrl.cleanUp()
 
-      await ledgerCtrl.unlock()
+      const hdPathTemplate = BIP44_LEDGER_DERIVATION_TEMPLATE
+      await ledgerCtrl.unlock(hdPathTemplate)
 
       if (!ledgerCtrl.walletSDK) {
         const message = 'Could not establish connection with the Ledger device'
@@ -633,10 +634,7 @@ export class MainController extends EventEmitter {
       }
 
       const keyIterator = new LedgerKeyIterator({ controller: ledgerCtrl })
-      this.accountAdder.init({
-        keyIterator,
-        hdPathTemplate: BIP44_LEDGER_DERIVATION_TEMPLATE
-      })
+      this.accountAdder.init({ keyIterator, hdPathTemplate })
 
       return await this.accountAdder.setPage({ page: 1 })
     } catch (error: any) {
@@ -664,12 +662,13 @@ export class MainController extends EventEmitter {
         throw new EmittableError({ message, level: 'major', error: new Error(message) })
       }
 
-      await latticeCtrl.unlock(undefined, undefined, true)
+      const hdPathTemplate = BIP44_STANDARD_DERIVATION_TEMPLATE
+      await latticeCtrl.unlock(hdPathTemplate, undefined, true)
 
       const { walletSDK } = latticeCtrl
       this.accountAdder.init({
         keyIterator: new LatticeKeyIterator({ walletSDK }),
-        hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
+        hdPathTemplate
       })
 
       return await this.accountAdder.setPage({ page: 1 })
