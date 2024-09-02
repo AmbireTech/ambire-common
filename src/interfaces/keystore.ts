@@ -19,12 +19,11 @@ import { TypedMessage } from './userRequest'
  */
 export interface ExternalSignerController {
   type: string
-  hdPathTemplate: HD_PATH_TEMPLATE_TYPE
   deviceModel: string
   deviceId: string
   isUnlocked: (path?: string, expectedKeyOnThisPath?: string) => boolean
   unlock: (
-    path?: ReturnType<typeof getHdPathFromTemplate>,
+    path: ReturnType<typeof getHdPathFromTemplate>,
     expectedKeyOnThisPath?: string,
     shouldOpenLatticeConnectorInTab?: boolean // Lattice specific
   ) => Promise<'ALREADY_UNLOCKED' | 'JUST_UNLOCKED'>
