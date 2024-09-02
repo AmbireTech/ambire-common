@@ -1,10 +1,7 @@
-import fetch from 'node-fetch'
-
 import { describe, test } from '@jest/globals'
 
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { networks } from '../../consts/networks'
-import { ErrorRef } from '../../controllers/eventEmitter/eventEmitter'
 import { AccountOp } from '../accountOp/accountOp'
 import { humanizeAccountOp } from './index'
 import { IrCall } from './interfaces'
@@ -309,13 +306,10 @@ const transactions: { [key: string]: Array<IrCall> } = {
   ]
 }
 
-let emitedErrors: ErrorRef[] = []
-const moockEmitError = (e: ErrorRef) => emitedErrors.push(e)
-const standartOptions = { fetch, emitError: moockEmitError, network: networks[0] }
+const standartOptions = { network: networks[0] }
 describe('module tests', () => {
   beforeEach(async () => {
     accountOp.calls = []
-    emitedErrors = []
   })
 
   // TODO: we need this for detecting collisions

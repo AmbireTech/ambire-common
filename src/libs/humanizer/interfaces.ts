@@ -42,7 +42,12 @@ export interface Ir {
 
 // @TODO make humanizer options interface
 export interface HumanizerCallModule {
-  (AccountOp: AccountOp, calls: IrCall[], humanizerMeta: HumanizerMeta, options?: any): IrCall[]
+  (
+    AccountOp: AccountOp,
+    calls: IrCall[],
+    humanizerMeta: HumanizerMeta,
+    options?: HumanizerOptions
+  ): IrCall[]
 }
 
 export interface HumanizerTypedMessageModule {

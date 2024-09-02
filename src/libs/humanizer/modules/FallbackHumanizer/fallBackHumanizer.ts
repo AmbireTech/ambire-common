@@ -37,8 +37,7 @@ function extractAddresses(data: string, _selector: string): string[] {
 export const fallbackHumanizer: HumanizerCallModule = (
   accountOp: AccountOp,
   currentIrCalls: IrCall[],
-  humanizerMeta: HumanizerMeta,
-  options?: any
+  humanizerMeta: HumanizerMeta
 ) => {
   const newCalls = currentIrCalls.map((call) => {
     if (call.fullVisualization && !checkIfUnknownAction(call?.fullVisualization)) return call
@@ -50,20 +49,14 @@ export const fallbackHumanizer: HumanizerCallModule = (
     const visualization: Array<HumanizerVisualization> = []
     if (call.data !== '0x') {
       let extractedAddresses: string[] = []
-      if (knownSigHashes[call.data.slice(0, 10)]?.signature){
+      if (knownSigHashes[call.data.slice(0, 10)]?.signature) {
         try {
-            extractedAddresses = extractAddresses(
-              call.data,
-              knownSigHashes[call.data.slice(0, 10)].signature
-            )
+          extractedAddresses = extractAddresses(
+            call.data,
+            knownSigHashes[call.data.slice(0, 10)].signature
+          )
         } catch (e) {
-          options.emitError({
-            message: 'Failed to extract addresses and token from this txn',
-            level: 'minor',
-            error: new Error(
-              `Internal error fallback module: Failed to extract addresses and token from this txn ${e}`
-            )
-          })
+          console.error('Humanizer: fallback: Could not decode addresses from calldata')
         }
         visualization.push(
           getAction(
@@ -95,7 +88,7 @@ export const fallbackHumanizer: HumanizerCallModule = (
       visualization.push(getAction('Send'), getToken(ZeroAddress, call.value))
       if (call.data === '0x') visualization.push(getLabel('to'), getAddressVisualization(call.to))
     }
-  
+
     return {
       ...call,
       fullVisualization: visualization.length
