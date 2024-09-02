@@ -113,9 +113,6 @@ const accountOp: AccountOp = {
   // humanizerMeta: {}
 }
 
-const emitedErrors: ErrorRef[] = []
-const moockEmitError = (e: ErrorRef) => emitedErrors.push(e)
-
 describe('uniswap', () => {
   test('uniV3', () => {
     const expectedhumanization = [
@@ -189,7 +186,6 @@ describe('uniswap', () => {
     accountOp.calls = [...transactions.secondBatch]
     let irCalls: IrCall[] = accountOp.calls
     irCalls = uniswapHumanizer(accountOp, irCalls, humanizerInfo as HumanizerMeta, {
-      emitedError: moockEmitError
     })
     expect(irCalls.length).toBe(expectedhumanization.length)
     compareHumanizerVisualizations(irCalls, expectedhumanization as HumanizerVisualization[][])
