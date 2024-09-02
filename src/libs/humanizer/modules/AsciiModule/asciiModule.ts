@@ -3,7 +3,13 @@ import { toUtf8String } from 'ethers'
 
 import { AccountOp } from '../../../accountOp/accountOp'
 import { HumanizerCallModule, IrCall } from '../../interfaces'
-import { checkIfUnknownAction, getText } from '../../utils'
+import {
+  checkIfUnknownAction,
+  getAction,
+  getAddressVisualization,
+  getLabel,
+  getText
+} from '../../utils'
 
 export const asciiModule: HumanizerCallModule = (
   accountOp: AccountOp,
@@ -15,7 +21,7 @@ export const asciiModule: HumanizerCallModule = (
     try {
       return {
         ...call,
-        fullVisualization: [getText(toUtf8String(call.data))]
+        fullVisualization: [getAction('Send message'), getLabel('to'), getAddressVisualization(call.to),getAction(':'), getText(toUtf8String(call.data))]
       }
     } catch (_) {
       return call
