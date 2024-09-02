@@ -286,10 +286,13 @@ export class AccountAdderController extends EventEmitter {
 
   setHDPathTemplate({ hdPathTemplate }: { hdPathTemplate: HD_PATH_TEMPLATE_TYPE }): void {
     this.hdPathTemplate = hdPathTemplate
-    this.page = DEFAULT_PAGE
-    this.emitUpdate()
-    // get the first page with the new hdPathTemplate (derivation)
-    this.setPage({ page: DEFAULT_PAGE })
+
+    // Reset the currently selected accounts, because for the keys of these
+    // accounts, as of v4.32.0, we don't store their hd path. When import
+    // completes, only the latest hd path of the controller is stored.
+    this.selectedAccounts = []
+
+    this.setPage({ page: DEFAULT_PAGE }) // takes the user back on the first page
   }
 
   #getAccountKeys(account: Account, accountsOnPageWithThisAcc: AccountOnPage[]) {

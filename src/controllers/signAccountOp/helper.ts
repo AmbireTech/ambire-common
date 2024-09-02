@@ -3,11 +3,11 @@ import { formatUnits, ZeroAddress } from 'ethers'
 import { WARNINGS } from '../../consts/signAccountOp/errorHandling'
 import { Network } from '../../interfaces/network'
 import { Warning } from '../../interfaces/signAccountOp'
+import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 import { FeePaymentOption } from '../../libs/estimate/interfaces'
 import { Price, TokenResult } from '../../libs/portfolio'
 import { getAccountPortfolioTotal } from '../../libs/portfolio/helpers'
 import { PortfolioControllerState } from '../../libs/portfolio/interfaces'
-import { SubmittedAccountOp } from '../activity/activity'
 
 export function getFeeSpeedIdentifier(
   option: FeePaymentOption,
