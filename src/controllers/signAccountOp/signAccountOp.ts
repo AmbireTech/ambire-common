@@ -13,11 +13,7 @@ import ERC20 from '../../../contracts/compiled/IERC20.json'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { AMBIRE_PAYMASTER, SINGLETON } from '../../consts/deploy'
 /* eslint-disable no-restricted-syntax */
-import {
-  ERRORS,
-  NON_CRITICAL_ERRORS,
-  RETRY_TO_INIT_ACCOUNT_OP_MSG
-} from '../../consts/signAccountOp/errorHandling'
+import { ERRORS, RETRY_TO_INIT_ACCOUNT_OP_MSG } from '../../consts/signAccountOp/errorHandling'
 import {
   GAS_TANK_TRANSFER_GAS_USED,
   SA_ERC20_TRANSFER_GAS_USED,
@@ -63,6 +59,7 @@ import { PortfolioController } from '../portfolio/portfolio'
 import { ProvidersController } from '../providers/providers'
 import {
   getFeeSpeedIdentifier,
+  getFeeTokenPriceUnavailableWarning,
   getSignificantBalanceDecreaseWarning,
   getTokenUsdAmount
 } from './helper'
@@ -361,20 +358,6 @@ export class SignAccountOpController extends EventEmitter {
       }
     }
 
-    if (this.selectedOption) {
-      const identifier = getFeeSpeedIdentifier(
-        this.selectedOption,
-        this.accountOp.accountAddr,
-        this.rbfAccountOps[this.selectedOption.paidBy]
-      )
-      if (
-        this.hasSpeeds(identifier) &&
-        this.feeSpeeds[identifier].some((speed) => speed.amountUsd === null)
-      ) {
-        errors.push(NON_CRITICAL_ERRORS.feeUsdEstimation)
-      }
-    }
-
     return errors
   }
 
@@ -387,7 +370,7 @@ export class SignAccountOpController extends EventEmitter {
   }
 
   calculateWarnings() {
-    const warnings = []
+    const warnings: Warning[] = []
 
     const significantBalanceDecreaseWarning = getSignificantBalanceDecreaseWarning(
       this.#portfolio.latest,
@@ -396,9 +379,26 @@ export class SignAccountOpController extends EventEmitter {
       this.accountOp.accountAddr
     )
 
+    if (this.selectedOption) {
+      const identifier = getFeeSpeedIdentifier(
+        this.selectedOption,
+        this.accountOp.accountAddr,
+        this.rbfAccountOps[this.selectedOption.paidBy]
+      )
+      const feeTokenHasPrice = this.feeSpeeds[identifier]?.every((speed) => !!speed.amountUsd)
+      const feeTokenPriceUnavailableWarning = getFeeTokenPriceUnavailableWarning(
+        !!this.hasSpeeds(identifier),
+        feeTokenHasPrice
+      )
+
+      if (feeTokenPriceUnavailableWarning) warnings.push(feeTokenPriceUnavailableWarning)
+    }
+
     if (significantBalanceDecreaseWarning) warnings.push(significantBalanceDecreaseWarning)
 
     this.warnings = warnings
+
+    this.emitUpdate()
   }
 
   update({
@@ -502,6 +502,7 @@ export class SignAccountOpController extends EventEmitter {
     // Here, we expect to have most of the fields set, so we can safely set GasFeePayment
     this.#setGasFeePayment()
     this.updateStatus()
+    this.calculateWarnings()
   }
 
   updateStatus(forceStatusChange?: SigningStatus, replacementFeeLow = false) {
@@ -524,10 +525,7 @@ export class SignAccountOpController extends EventEmitter {
       return
     }
 
-    const criticalErrors = this.errors.filter(
-      (error) => !Object.values(NON_CRITICAL_ERRORS).includes(error)
-    )
-    if (criticalErrors.length) {
+    if (this.errors.length) {
       this.status = { type: SigningStatus.UnableToSign }
       this.emitUpdate()
       return
