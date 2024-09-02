@@ -122,12 +122,12 @@ export class ActionsController extends EventEmitter {
 
         this.actionsQueue = this.actionsQueue.filter((a) => a.type === 'accountOp')
         if (this.actionsQueue.length) {
-          await this.#notificationManager.create({
+          await this.#notificationManager.createNotification({
             title:
               this.actionsQueue.length > 1
                 ? `${this.actionsQueue.length} transactions queued`
                 : 'Transaction queued',
-            message: 'Queued pending transactions are available on your Dashboard.'
+            description: 'Queued pending transactions are available on your Dashboard.'
           })
         }
         this.#onActionWindowClose()

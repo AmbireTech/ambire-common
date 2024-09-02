@@ -1,11 +1,11 @@
 export interface NotificationManager {
-  create: ({
+  createNotification: ({
     title,
-    message,
-    icon
+    description,
+    timeout
   }: {
     title: string
-    message: string
-    icon?: string
-  }) => Promise<void>
+    description: string
+    timeout?: number
+  }) => void
 }

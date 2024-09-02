@@ -597,9 +597,9 @@ export class MainController extends EventEmitter {
     await this.activity.addSignedMessage(signedMessage, signedMessage.accountAddr)
     await this.resolveUserRequest({ hash: signedMessage.signature }, signedMessage.fromActionId)
 
-    await this.#notificationManager.create({
+    await this.#notificationManager.createNotification({
       title: 'Done!',
-      message: 'The Message was successfully signed.'
+      description: 'The Message was successfully signed.'
     })
   }
 
@@ -2042,9 +2042,9 @@ export class MainController extends EventEmitter {
       },
       actionId
     )
-    await this.#notificationManager.create({
+    await this.#notificationManager.createNotification({
       title: 'Done!',
-      message: 'The transaction was successfully signed and broadcasted to the network.'
+      description: 'The transaction was successfully signed and broadcasted to the network.'
     })
     return Promise.resolve(submittedAccountOp)
   }
