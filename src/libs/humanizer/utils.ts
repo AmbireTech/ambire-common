@@ -112,12 +112,8 @@ export async function getNativePrice(network: Network, fetch: Fetch): Promise<nu
   return response[platformId].usd
 }
 
-export function checkIfUnknownAction(v: Array<HumanizerVisualization>): boolean {
-  try {
-    return !!(v[0].type === 'action' && v?.[0]?.content?.startsWith('Unknown action'))
-  } catch (e) {
-    return false
-  }
+export function checkIfUnknownAction(v: HumanizerVisualization[] | undefined): boolean {
+  return !!(v && v[0]?.type === 'action' && v?.[0]?.content?.startsWith('Unknown action'))
 }
 
 export function getUnknownVisualization(name: string, call: IrCall): HumanizerVisualization[] {
