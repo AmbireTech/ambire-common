@@ -1438,9 +1438,9 @@ export class MainController extends EventEmitter {
   }
 
   async updateSignAccountOpGasPrice() {
-    await this.#initialLoadPromise
-
     if (!this.signAccountOp) return
+
+    await this.#initialLoadPromise
 
     const accOp = this.signAccountOp.accountOp
     const networkId = accOp.networkId
