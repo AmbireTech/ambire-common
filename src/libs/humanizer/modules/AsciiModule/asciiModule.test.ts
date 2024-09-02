@@ -5,7 +5,7 @@ import { ErrorRef } from '../../../../controllers/eventEmitter/eventEmitter'
 import { AccountOp } from '../../../accountOp/accountOp'
 import { HumanizerMeta } from '../../interfaces'
 import { compareHumanizerVisualizations, compareVisualizations } from '../../testHelpers'
-import { getText } from '../../utils'
+import { getAction, getAddressVisualization, getLabel, getText } from '../../utils'
 import { asciiModule } from './asciiModule'
 
 const accountOp: AccountOp = {
@@ -31,19 +31,19 @@ const accountOp: AccountOp = {
   // humanizerMeta: {}
 }
 const transactions = [
-    { to: '0xc4ce03b36f057591b2a360d773edb9896255051e', value: 0n, data: '0x68656c6c6f' },
-    { to: '0xc4ce03b36f057591b2a360d773edb9896255051e', value: 1n, data: '0x68656c6c6f' },
-    { to: '0xc4ce03b36f057591b2a360d773edb9896255051e', value: 0n, data: '0x536F6D65206578616D706C65206F6E636861696E2074657874206D657373616765' },
+    { to: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8', value: 0n, data: '0x68656c6c6f' },
+    { to: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8', value: 1n, data: '0x68656c6c6f' },
+    { to: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8', value: 0n, data: '0x536F6D65206578616D706C65206F6E636861696E2074657874206D657373616765' },
   ]
 describe('asciiHumanizer', () => {
   test('basic functionality', async () => {
+    const humanizationPrefix = [getAction('Send this message'),getLabel('to') ,getAddressVisualization('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8')]
     accountOp.calls = transactions
     
     let irCalls = asciiModule(accountOp, accountOp.calls, humanizerInfo as HumanizerMeta)
     
-    expect(irCalls[0].fullVisualization?.length).toBe(1)
     expect(irCalls[1].fullVisualization).toBeFalsy()
-    compareVisualizations(irCalls[0].fullVisualization!, [getText('hello')])
-    compareVisualizations(irCalls[2].fullVisualization!, [getText('Some example onchain text message')])
+    compareVisualizations(irCalls[0].fullVisualization!, [...humanizationPrefix,getText('hello')])
+    compareVisualizations(irCalls[2].fullVisualization!, [...humanizationPrefix,getText('Some example onchain text message')])
   })
 })

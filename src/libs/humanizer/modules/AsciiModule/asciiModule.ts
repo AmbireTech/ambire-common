@@ -21,12 +21,11 @@ export const asciiModule: HumanizerCallModule = (
     try {
       return {
         ...call,
-        fullVisualization: [getAction('Send message'), getLabel('to'), getAddressVisualization(call.to),getAction(':'), getText(toUtf8String(call.data))]
+        fullVisualization: [getAction('Send this message'), getLabel('to'), getAddressVisualization(call.to), getText(toUtf8String(call.data))]
       }
     } catch (_) {
       return call
     }
   })
-  console.log(newCalls.map(i=>i.fullVisualization))
   return newCalls
 }
