@@ -1693,24 +1693,22 @@ export class MainController extends EventEmitter {
             : null
       })
 
+      // if there's an estimation error, override the pending results
+      if (estimation && estimation.error) {
+        this.portfolio.overridePendingResults(localAccountOp)
+      }
       // update the signAccountOp controller once estimation finishes;
       // this eliminates the infinite loading bug if the estimation comes slower
       if (this.signAccountOp && estimation) {
         this.signAccountOp.update({ estimation, rbfAccountOps })
       }
-
-      // if there's an estimation error, override the pending results
-      if (estimation && estimation.error) {
-        this.portfolio.overridePendingResults(localAccountOp)
-      }
     } catch (error: any) {
+      this.signAccountOp?.calculateWarnings()
       this.emitError({
         level: 'silent',
         message: 'Estimation error',
         error
       })
-    } finally {
-      this.signAccountOp?.calculateWarnings()
     }
   }
 

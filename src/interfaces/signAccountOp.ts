@@ -1,7 +1,7 @@
 type Warning = {
   id: string
   title: string
-  text: string
+  text?: string
   promptBeforeSign: boolean
   displayBeforeSign: boolean
 }
