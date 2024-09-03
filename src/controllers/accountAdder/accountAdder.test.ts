@@ -246,7 +246,7 @@ describe('AccountAdder', () => {
     accountAdder.setPage({ page: 1 })
   })
 
-  test.only('should find linked accounts', async () => {
+  test('should find linked accounts', async () => {
     const keyIterator = new KeyIterator(process.env.SEED)
     await accountAdder.init({
       keyIterator,
