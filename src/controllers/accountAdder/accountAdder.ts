@@ -241,7 +241,7 @@ export class AccountAdderController extends EventEmitter {
     return !!this.#keyIterator?.isSeedMatching?.(defaultSeed.seed)
   }
 
-  #getInitialHdPathTemplate = async (defaultHdPathTemplate: HD_PATH_TEMPLATE_TYPE) => {
+  async #getInitialHdPathTemplate(defaultHdPathTemplate: HD_PATH_TEMPLATE_TYPE) {
     if (!this.isInitializedWithDefaultSeed) return defaultHdPathTemplate
 
     const defaultSeed = await this.#keystore.getDefaultSeed()
