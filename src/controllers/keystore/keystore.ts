@@ -22,6 +22,7 @@ import {
 import scrypt from 'scrypt-js'
 
 import EmittableError from '../../classes/EmittableError'
+import { HD_PATH_TEMPLATE_TYPE } from '../../consts/derivation'
 import {
   ExternalKey,
   Key,
@@ -431,6 +432,24 @@ export class KeystoreController extends EventEmitter {
 
   async addSeed(keystoreSeed: KeystoreSeed) {
     await this.withStatus('addSeed', () => this.#addSeed(keystoreSeed))
+  }
+
+  async changeDefaultSeedHdPathTemplateIfNeeded(nextHdPathTemplate?: HD_PATH_TEMPLATE_TYPE) {
+    if (!nextHdPathTemplate) return // should never happen
+
+    await this.#initialLoadPromise
+
+    if (!this.isUnlocked) throw new Error('keystore: not unlocked')
+    if (!this.#keystoreSeeds.length) throw new Error('keystore: no seed phrase added yet')
+
+    const isTheSameHdPathTemplate = this.#keystoreSeeds[0].hdPathTemplate === nextHdPathTemplate
+    if (isTheSameHdPathTemplate) return
+
+    // As of v4.33.0 we support only one seed phrase (default seed) to be added to the keystore
+    this.#keystoreSeeds[0].hdPathTemplate = nextHdPathTemplate
+    await this.#storage.set('keystoreSeeds', this.#keystoreSeeds)
+
+    this.emitUpdate()
   }
 
   async #addKeysExternallyStored(keysToAdd: ExternalKey[]) {

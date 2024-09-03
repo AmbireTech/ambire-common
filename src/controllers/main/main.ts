@@ -334,7 +334,12 @@ export class MainController extends EventEmitter {
           await this.keystore.addKeys(this.accountAdder.readyToAddKeys.internal)
           await this.keystore.addKeysExternallyStored(this.accountAdder.readyToAddKeys.external)
 
-          // TODO: Update derivation of the default seed, if needed.
+          // Update the default seed `hdPathTemplate` if accounts were added from
+          // the default seed, so when user opts in to "Import a new Smart Account
+          // from the default Seed Phrase" the next account is derived based
+          // on the latest `hdPathTemplate` chosen in the AccountAdder.
+          if (this.accountAdder.isInitializedWithDefaultSeed)
+            this.keystore.changeDefaultSeedHdPathTemplateIfNeeded(this.accountAdder.hdPathTemplate)
         },
         true
       )
