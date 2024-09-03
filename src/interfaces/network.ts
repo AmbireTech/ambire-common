@@ -70,6 +70,7 @@ export interface Network {
   flagged?: boolean
   predefined: boolean
   wrappedAddr?: string
+  blockGasLimit?: bigint
 }
 
 export interface AddNetworkRequestParams {
