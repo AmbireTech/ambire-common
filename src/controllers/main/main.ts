@@ -23,7 +23,6 @@ import { Fetch } from '../../interfaces/fetch'
 import {
   ExternalSignerControllers,
   Key,
-  KeystoreSeed,
   KeystoreSignerType,
   TxnRequest
 } from '../../interfaces/keystore'
@@ -350,17 +349,16 @@ export class MainController extends EventEmitter {
     this.emitUpdate()
   }
 
-  async importSmartAccountFromDefaultSeed(keystoreSeed?: KeystoreSeed) {
+  async importSmartAccountFromDefaultSeed(seed?: string) {
     await this.withStatus(
       'importSmartAccountFromDefaultSeed',
       async () => {
         if (this.accountAdder.isInitialized) this.accountAdder.reset()
-        if (keystoreSeed && !this.keystore.hasKeystoreDefaultSeed) {
-          await this.keystore.addSeed(keystoreSeed)
+        if (seed && !this.keystore.hasKeystoreDefaultSeed) {
+          await this.keystore.addSeed({ seed, hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE })
         }
 
         const defaultSeed = await this.keystore.getDefaultSeed()
-
         if (!defaultSeed) {
           throw new EmittableError({
             message:
