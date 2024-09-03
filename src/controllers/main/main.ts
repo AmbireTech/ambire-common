@@ -43,14 +43,13 @@ import {
 import { getAccountOpBanners } from '../../libs/banners/banners'
 import { estimate } from '../../libs/estimate/estimate'
 import { BundlerGasPrice, EstimateResult } from '../../libs/estimate/interfaces'
-import { GasRecommendation } from '../../libs/gasPrice/gasPrice'
+import { GasRecommendation, getGasPriceRecommendations } from '../../libs/gasPrice/gasPrice'
 import { humanizeAccountOp } from '../../libs/humanizer'
 import { KeyIterator } from '../../libs/keyIterator/keyIterator'
 import {
   getAccountOpsForSimulation,
   makeBasicAccountOpAction,
-  makeSmartAccountOpAction,
-  updateGasPrice
+  makeSmartAccountOpAction
 } from '../../libs/main/main'
 import { GetOptions, TokenResult } from '../../libs/portfolio/interfaces'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
@@ -1437,24 +1436,57 @@ export class MainController extends EventEmitter {
     this.emitUpdate()
   }
 
+  async #getGasPrice() {
+    await this.#initialLoadPromise
+
+    // if there's no signAccountOp initialized, we don't want to fetch gas
+    const accOp = this.signAccountOp?.accountOp ?? null
+    if (!accOp) return undefined
+
+    const network = this.networks.networks.find((net) => net.id === accOp.networkId)
+    if (!network) return undefined // shouldn't happen
+
+    const is4337 = isErc4337Broadcast(
+      network,
+      this.accounts.accountStates[accOp.accountAddr][accOp.networkId]
+    )
+    const bundlerFetch = async () => {
+      if (!is4337) return null
+      return Bundler.fetchGasPrices(network).catch((e) => {
+        this.emitError({
+          level: 'silent',
+          message: "Failed to fetch the bundler's gas price",
+          error: e
+        })
+      })
+    }
+    const [gasPriceData, bundlerGas] = await Promise.all([
+      getGasPriceRecommendations(this.providers.providers[network.id], network).catch((e) => {
+        this.emitError({
+          level: 'major',
+          message: `Unable to get gas price for ${network.id}`,
+          error: new Error(`Failed to fetch gas price: ${e?.message}`)
+        })
+        return null
+      }),
+      bundlerFetch()
+    ])
+
+    return {
+      gasPrice: gasPriceData?.gasPrice,
+      blockGasLimit: gasPriceData?.blockGasLimit,
+      bundlerGas
+    }
+  }
+
   async updateSignAccountOpGasPrice() {
     if (!this.signAccountOp) return
 
-    await this.#initialLoadPromise
-
     const accOp = this.signAccountOp.accountOp
-    const networkId = accOp.networkId
-    const network = this.networks.networks.find((net) => net.id === networkId)!
-    const accountState = this.accounts.accountStates[accOp.accountAddr][networkId]
-    const gasData = await updateGasPrice(
-      network,
-      accountState,
-      this.providers.providers[network.id],
-      this.emitError
-    )
+    const gasData = await this.#getGasPrice()
 
-    if (gasData.gasPrice) this.gasPrices[network.id] = gasData.gasPrice
-    if (gasData.bundlerGas) this.bundlerGasPrices[network.id] = gasData.bundlerGas
+    if (gasData && gasData.gasPrice) this.gasPrices[accOp.networkId] = gasData.gasPrice
+    if (gasData && gasData.bundlerGas) this.bundlerGasPrices[accOp.networkId] = gasData.bundlerGas
 
     // there's a chance signAccountOp gets destroyed between the time
     // the first "if (!this.signAccountOp) return" is performed and
@@ -1462,9 +1494,9 @@ export class MainController extends EventEmitter {
     if (!this.signAccountOp) return
 
     this.signAccountOp.update({
-      gasPrices: this.gasPrices[networkId],
-      bundlerGasPrices: this.bundlerGasPrices[networkId],
-      blockGasLimit: gasData.blockGasLimit
+      gasPrices: this.gasPrices[accOp.networkId],
+      bundlerGasPrices: this.bundlerGasPrices[accOp.networkId],
+      blockGasLimit: gasData?.blockGasLimit
     })
     this.emitUpdate()
   }
