@@ -1436,7 +1436,7 @@ export class MainController extends EventEmitter {
     this.emitUpdate()
   }
 
-  async #getGasPrice() {
+  async #updateGasPrice() {
     await this.#initialLoadPromise
 
     // if there's no signAccountOp initialized, we don't want to fetch gas
@@ -1472,10 +1472,11 @@ export class MainController extends EventEmitter {
       bundlerFetch()
     ])
 
+    if (gasPriceData && gasPriceData.gasPrice) this.gasPrices[network.id] = gasPriceData.gasPrice
+    if (bundlerGas) this.bundlerGasPrices[network.id] = bundlerGas
+
     return {
-      gasPrice: gasPriceData?.gasPrice,
-      blockGasLimit: gasPriceData?.blockGasLimit,
-      bundlerGas
+      blockGasLimit: gasPriceData?.blockGasLimit
     }
   }
 
@@ -1483,10 +1484,7 @@ export class MainController extends EventEmitter {
     if (!this.signAccountOp) return
 
     const accOp = this.signAccountOp.accountOp
-    const gasData = await this.#getGasPrice()
-
-    if (gasData && gasData.gasPrice) this.gasPrices[accOp.networkId] = gasData.gasPrice
-    if (gasData && gasData.bundlerGas) this.bundlerGasPrices[accOp.networkId] = gasData.bundlerGas
+    const gasData = await this.#updateGasPrice()
 
     // there's a chance signAccountOp gets destroyed between the time
     // the first "if (!this.signAccountOp) return" is performed and
@@ -1496,7 +1494,7 @@ export class MainController extends EventEmitter {
     this.signAccountOp.update({
       gasPrices: this.gasPrices[accOp.networkId],
       bundlerGasPrices: this.bundlerGasPrices[accOp.networkId],
-      blockGasLimit: gasData?.blockGasLimit
+      blockGasLimit: gasData && gasData.blockGasLimit ? gasData.blockGasLimit : undefined
     })
     this.emitUpdate()
   }
