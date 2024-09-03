@@ -159,6 +159,8 @@ export class SignAccountOpController extends EventEmitter {
 
   #callRelayer: Function
 
+  #reEstimate: Function
+
   rbfAccountOps: { [key: string]: SubmittedAccountOp | null }
 
   signedAccountOp: AccountOp | null
@@ -179,7 +181,8 @@ export class SignAccountOpController extends EventEmitter {
     accountOp: AccountOp,
     storage: Storage,
     fetch: Fetch,
-    callRelayer: Function
+    callRelayer: Function,
+    reEstimate: Function
   ) {
     super()
 
@@ -195,6 +198,7 @@ export class SignAccountOpController extends EventEmitter {
     this.#storage = storage
     this.#fetch = fetch
     this.#callRelayer = callRelayer
+    this.#reEstimate = reEstimate
 
     this.#humanizeAccountOp()
     this.gasUsedTooHigh = false
@@ -1243,6 +1247,7 @@ export class SignAccountOpController extends EventEmitter {
             })
             this.status = { type: SigningStatus.ReadyToSign }
             this.emitUpdate()
+            this.#reEstimate()
             return Promise.reject(this.status)
           }
         }

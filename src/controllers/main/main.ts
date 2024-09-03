@@ -465,7 +465,10 @@ export class MainController extends EventEmitter {
       accountOp,
       this.#storage,
       this.fetch,
-      this.callRelayer
+      this.callRelayer,
+      () => {
+        this.estimateSignAccountOp()
+      }
     )
 
     this.emitUpdate()
