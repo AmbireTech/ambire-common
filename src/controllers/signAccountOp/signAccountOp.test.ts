@@ -36,7 +36,7 @@ const providers = Object.fromEntries(
 )
 
 // // @ts-ignore
-global.structuredClone = structuredClone as any
+// global.structuredClone = structuredClone as any
 
 const createAccountOp = (
   account: Account,
@@ -424,14 +424,11 @@ const init = async (
     accountsCtrl,
     keystore,
     portfolio,
-    providersCtrl,
     {},
     account,
     networks.find((n) => n.id === op.networkId)!,
     1,
     op,
-    storage,
-    fetch,
     callRelayer,
     () => {}
   )

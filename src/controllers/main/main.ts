@@ -457,14 +457,11 @@ export class MainController extends EventEmitter {
       this.accounts,
       this.keystore,
       this.portfolio,
-      this.providers,
       this.#externalSignerControllers,
       account,
       network,
       actionId,
       accountOp,
-      this.#storage,
-      this.fetch,
       this.callRelayer,
       () => {
         this.estimateSignAccountOp()

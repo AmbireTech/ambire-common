@@ -20,11 +20,9 @@ import {
   SA_NATIVE_TRANSFER_GAS_USED
 } from '../../consts/signAccountOp/gas'
 import { Account } from '../../interfaces/account'
-import { Fetch } from '../../interfaces/fetch'
 import { ExternalSignerControllers, Key } from '../../interfaces/keystore'
 import { Network } from '../../interfaces/network'
 import { Warning } from '../../interfaces/signAccountOp'
-import { Storage } from '../../interfaces/storage'
 import { isAmbireV1LinkedAccount, isSmartAccount } from '../../libs/account/account'
 import { AccountOp, GasFeePayment, getSignableCalls } from '../../libs/accountOp/accountOp'
 import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
@@ -54,7 +52,6 @@ import { AccountOpAction } from '../actions/actions'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
 import { PortfolioController } from '../portfolio/portfolio'
-import { ProvidersController } from '../providers/providers'
 import {
   getFeeSpeedIdentifier,
   getFeeTokenPriceUnavailableWarning,
@@ -111,13 +108,7 @@ export class SignAccountOpController extends EventEmitter {
 
   #portfolio: PortfolioController
 
-  #providers: ProvidersController
-
   #externalSignerControllers: ExternalSignerControllers
-
-  #storage: Storage
-
-  #fetch: Fetch
 
   account: Account
 
@@ -169,14 +160,11 @@ export class SignAccountOpController extends EventEmitter {
     accounts: AccountsController,
     keystore: KeystoreController,
     portfolio: PortfolioController,
-    providers: ProvidersController,
     externalSignerControllers: ExternalSignerControllers,
     account: Account,
     network: Network,
     fromActionId: AccountOpAction['id'],
     accountOp: AccountOp,
-    storage: Storage,
-    fetch: Fetch,
     callRelayer: Function,
     reEstimate: Function
   ) {
@@ -185,14 +173,11 @@ export class SignAccountOpController extends EventEmitter {
     this.#accounts = accounts
     this.#keystore = keystore
     this.#portfolio = portfolio
-    this.#providers = providers
     this.#externalSignerControllers = externalSignerControllers
     this.account = account
     this.#network = network
     this.fromActionId = fromActionId
     this.accountOp = structuredClone(accountOp)
-    this.#storage = storage
-    this.#fetch = fetch
     this.#callRelayer = callRelayer
     this.#reEstimate = reEstimate
 
