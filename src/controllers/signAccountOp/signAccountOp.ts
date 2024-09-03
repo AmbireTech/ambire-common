@@ -125,6 +125,8 @@ export class SignAccountOpController extends EventEmitter {
 
   #network: Network
 
+  #blockGasLimit: bigint | undefined = undefined
+
   fromActionId: AccountOpAction['id']
 
   accountOp: AccountOp
@@ -272,6 +274,18 @@ export class SignAccountOpController extends EventEmitter {
       errors.push(this.estimation.error.message)
     }
 
+    if (
+      this.estimation?.gasUsed &&
+      this.#blockGasLimit &&
+      this.estimation?.gasUsed > this.#blockGasLimit
+    ) {
+      errors.push('Transaction reverted with estimation too high: above block limit')
+    }
+
+    if (this.estimation?.gasUsed && this.estimation?.gasUsed > 500000000n) {
+      errors.push('Unreasonably high estimation. This transaction will probably fail')
+    }
+
     // this error should never happen as availableFeeOptions should always have the native option
     if (!this.availableFeeOptions.length) errors.push(ERRORS.eoaInsufficientFunds)
 
@@ -412,7 +426,8 @@ export class SignAccountOpController extends EventEmitter {
     accountOp,
     gasUsedTooHighAgreed,
     rbfAccountOps,
-    bundlerGasPrices
+    bundlerGasPrices,
+    blockGasLimit
   }: {
     accountOp?: AccountOp
     gasPrices?: GasRecommendation[]
@@ -425,6 +440,7 @@ export class SignAccountOpController extends EventEmitter {
     gasUsedTooHighAgreed?: boolean
     rbfAccountOps?: { [key: string]: SubmittedAccountOp | null }
     bundlerGasPrices?: BundlerGasPrice
+    blockGasLimit?: bigint
   }) {
     // once the user commits to the things he sees on his screen,
     // we need to be sure nothing changes afterwards.
@@ -442,10 +458,12 @@ export class SignAccountOpController extends EventEmitter {
       this.#humanizeAccountOp()
     }
 
+    if (blockGasLimit) this.#blockGasLimit = blockGasLimit
+
     if (gasPrices) this.gasPrices = gasPrices
 
     if (estimation) {
-      this.gasUsedTooHigh = estimation.gasUsed > 10000000n
+      this.gasUsedTooHigh = !!(this.#blockGasLimit && estimation.gasUsed > this.#blockGasLimit / 4n)
       this.estimation = estimation
       // on each estimation update, set the newest account nonce
       this.accountOp.nonce = BigInt(estimation.currentAccountNonce)
