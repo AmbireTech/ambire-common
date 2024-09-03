@@ -241,6 +241,13 @@ export class AccountAdderController extends EventEmitter {
     return !!this.#keyIterator?.isSeedMatching?.(defaultSeed.seed)
   }
 
+  #getInitialHdPathTemplate = async (defaultHdPathTemplate: HD_PATH_TEMPLATE_TYPE) => {
+    if (!this.isInitializedWithDefaultSeed) return defaultHdPathTemplate
+
+    const defaultSeed = await this.#keystore.getDefaultSeed()
+    return defaultSeed.hdPathTemplate || defaultHdPathTemplate
+  }
+
   async init({
     keyIterator,
     page,
@@ -261,9 +268,9 @@ export class AccountAdderController extends EventEmitter {
 
     this.page = page || DEFAULT_PAGE
     this.pageSize = pageSize || DEFAULT_PAGE_SIZE
-    this.hdPathTemplate = hdPathTemplate
-    this.isInitialized = true
     this.isInitializedWithDefaultSeed = await this.#isKeyIteratorInitializedWithTheDefaultSeed()
+    this.hdPathTemplate = await this.#getInitialHdPathTemplate(hdPathTemplate)
+    this.isInitialized = true
     this.#alreadyImportedAccountsOnControllerInit = this.#accounts.accounts
     this.shouldSearchForLinkedAccounts = shouldSearchForLinkedAccounts
     this.shouldGetAccountsUsedOnNetworks = shouldGetAccountsUsedOnNetworks
