@@ -240,11 +240,11 @@ describe('Main Controller ', () => {
       isLinked: false
     }
 
-    const addAccounts = () => {
+    const addAccounts = async () => {
       const keyIterator = new KeyIterator(
         '0x574f261b776b26b1ad75a991173d0e8ca2ca1d481bd7822b2b58b2ef8a969f12'
       )
-      controller.accountAdder.init({
+      await controller.accountAdder.init({
         keyIterator,
         hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
       })
@@ -259,12 +259,12 @@ describe('Main Controller ', () => {
     // check if the controller is ready outside of the onUpdate first and add the accounts.
     if (controller.isReady && emitCounter === 0) {
       emitCounter++
-      addAccounts()
+      await addAccounts()
     }
 
-    const unsubscribe = controller.onUpdate(() => {
+    const unsubscribe = controller.onUpdate(async () => {
       emitCounter++
-      if (emitCounter === 2 && controller.isReady) addAccounts()
+      if (emitCounter === 2 && controller.isReady) await addAccounts()
 
       if (controller.statuses.onAccountAdderSuccess === 'SUCCESS') {
         expect(controller.accounts.accounts).toContainEqual({

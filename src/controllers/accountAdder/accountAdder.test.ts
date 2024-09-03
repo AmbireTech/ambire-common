@@ -9,7 +9,6 @@ import { relayerUrl } from '../../../test/config'
 import { produceMemoryStore } from '../../../test/helpers'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import {
-  BIP44_LEDGER_DERIVATION_TEMPLATE,
   BIP44_STANDARD_DERIVATION_TEMPLATE,
   DERIVATION_OPTIONS,
   SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET
@@ -114,28 +113,19 @@ describe('AccountAdder', () => {
     })
   })
 
-  test('should initialize', (done) => {
-    let emitCounter = 0
-    const unsubscribe = accountAdder.onUpdate(() => {
-      emitCounter++
-
-      if (emitCounter === 1) {
-        expect(accountAdder.page).toEqual(DEFAULT_PAGE)
-        expect(accountAdder.pageSize).toEqual(DEFAULT_PAGE_SIZE)
-        expect(accountAdder.isInitialized).toBeTruthy()
-        expect(accountAdder.selectedAccounts).toEqual([])
-        expect(accountAdder.hdPathTemplate).toEqual(BIP44_STANDARD_DERIVATION_TEMPLATE)
-
-        unsubscribe()
-        done()
-      }
-    })
-
+  test('should initialize', async () => {
     const keyIterator = new KeyIterator(process.env.SEED)
-    accountAdder.init({
+    await accountAdder.init({
       keyIterator,
       hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
     })
+
+    expect(accountAdder.page).toEqual(DEFAULT_PAGE)
+    expect(accountAdder.pageSize).toEqual(DEFAULT_PAGE_SIZE)
+    expect(accountAdder.isInitialized).toBeTruthy()
+    expect(accountAdder.isInitializedWithDefaultSeed).toBeFalsy()
+    expect(accountAdder.selectedAccounts).toEqual([])
+    expect(accountAdder.hdPathTemplate).toEqual(BIP44_STANDARD_DERIVATION_TEMPLATE)
   })
 
   test('should throw if AccountAdder controller method is requested, but the controller was not initialized beforehand', (done) => {
@@ -256,44 +246,48 @@ describe('AccountAdder', () => {
     accountAdder.setPage({ page: 1 })
   })
 
-  test('should find linked accounts', (done) => {
+  test.only('should find linked accounts', async () => {
     const keyIterator = new KeyIterator(process.env.SEED)
-    accountAdder.init({
+    await accountAdder.init({
       keyIterator,
       pageSize: 3,
       hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
     })
     accountAdder.setPage({ page: 1 })
 
-    let emitCounter = 0
-    const unsubscribe = accountAdder.onUpdate(() => {
-      emitCounter++
+    return new Promise((resolve) => {
+      let emitCounter = 0
+      const unsubscribe = accountAdder.onUpdate(() => {
+        emitCounter++
 
-      // First emit is triggered when account derivation is done, int the
-      // second emit it should start the searching for linked accounts,
-      // on the third emit there should be linked accounts fetched
-      if (emitCounter === 3) {
-        expect(accountAdder.linkedAccountsLoading).toBe(false)
-        const linkedAccountsOnPage = accountAdder.accountsOnPage.filter(({ isLinked }) => isLinked)
+        // First emit is triggered when account derivation is done, int the
+        // second emit it should start the searching for linked accounts,
+        // on the third emit there should be linked accounts fetched
+        if (emitCounter === 3) {
+          expect(accountAdder.linkedAccountsLoading).toBe(false)
+          const linkedAccountsOnPage = accountAdder.accountsOnPage.filter(
+            ({ isLinked }) => isLinked
+          )
 
-        const accountsOnSlot1 = linkedAccountsOnPage
-          .filter(({ slot }) => slot === 1)
-          .map(({ account }) => account.addr)
-        // This account was manually added as a signer to one of our test accounts
-        expect(accountsOnSlot1).toContain('0x740523d7876Fbb8AF246c5B307f26d4b2D2BFDA9')
+          const accountsOnSlot1 = linkedAccountsOnPage
+            .filter(({ slot }) => slot === 1)
+            .map(({ account }) => account.addr)
+          // This account was manually added as a signer to one of our test accounts
+          expect(accountsOnSlot1).toContain('0x740523d7876Fbb8AF246c5B307f26d4b2D2BFDA9')
 
-        const accountsOnSlot3 = linkedAccountsOnPage
-          .filter(({ slot }) => slot === 3)
-          .map(({ account }) => account.addr)
-        // These accounts was manually added as signers to our test accounts
-        expect(accountsOnSlot3).toContain('0x0ace96748e66F42EBeA22D777C2a99eA2c83D8A6')
-        expect(accountsOnSlot3).toContain('0xc583f33d502dE560dd2C60D4103043d5998A98E5')
-        expect(accountsOnSlot3).toContain('0x63caaD57Cd66A69A4c56b595E3A4a1e4EeA066d8')
-        expect(accountsOnSlot3).toContain('0x619A6a273c628891dD0994218BC0625947653AC7')
-        expect(accountsOnSlot3).toContain('0x7ab87ab041EB1c4f0d4f4d1ABD5b0973B331e2E7')
-        unsubscribe()
-        done()
-      }
+          const accountsOnSlot3 = linkedAccountsOnPage
+            .filter(({ slot }) => slot === 3)
+            .map(({ account }) => account.addr)
+          // These accounts was manually added as signers to our test accounts
+          expect(accountsOnSlot3).toContain('0x0ace96748e66F42EBeA22D777C2a99eA2c83D8A6')
+          expect(accountsOnSlot3).toContain('0xc583f33d502dE560dd2C60D4103043d5998A98E5')
+          expect(accountsOnSlot3).toContain('0x63caaD57Cd66A69A4c56b595E3A4a1e4EeA066d8')
+          expect(accountsOnSlot3).toContain('0x619A6a273c628891dD0994218BC0625947653AC7')
+          expect(accountsOnSlot3).toContain('0x7ab87ab041EB1c4f0d4f4d1ABD5b0973B331e2E7')
+          unsubscribe()
+          resolve(null)
+        }
+      })
     })
   })
 
@@ -540,7 +534,7 @@ describe('AccountAdder', () => {
     test(`should derive correctly ${label}`, async () => {
       const keyIterator = new KeyIterator(process.env.SEED)
       const pageSize = 5
-      accountAdder.init({ keyIterator, hdPathTemplate: value, pageSize })
+      await accountAdder.init({ keyIterator, hdPathTemplate: value, pageSize })
 
       // Checks page 1 Basic Accounts
       await accountAdder.setPage({ page: 1 })
