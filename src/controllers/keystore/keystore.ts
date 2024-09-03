@@ -139,11 +139,10 @@ export class KeystoreController extends EventEmitter {
       // key preferences migration
       if (keyPreferences) {
         this.#keystoreKeys = migrateKeyPreferencesToKeystoreKeys(keyPreferences, keystoreKeys)
-        this.#keystoreKeys = migrateKeyMetaNullToKeyMetaCreatedAt(this.#keystoreKeys)
-
         await this.#storage.set('keystoreKeys', this.#keystoreKeys)
         await this.#storage.remove('keyPreferences')
       } else {
+        this.#keystoreKeys = migrateKeyMetaNullToKeyMetaCreatedAt(this.#keystoreKeys)
         this.#keystoreKeys = keystoreKeys
       }
     } catch (e) {
