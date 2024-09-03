@@ -9,7 +9,7 @@ import { Price, TokenResult } from '../../libs/portfolio'
 import { getAccountPortfolioTotal } from '../../libs/portfolio/helpers'
 import { PortfolioControllerState } from '../../libs/portfolio/interfaces'
 
-export function getFeeSpeedIdentifier(
+function getFeeSpeedIdentifier(
   option: FeePaymentOption,
   accountAddr: string,
   rbfAccountOp: SubmittedAccountOp | null
@@ -25,7 +25,7 @@ export function getFeeSpeedIdentifier(
   }${rbfAccountOp ? `rbf-${option.paidBy}` : ''}`
 }
 
-export function getTokenUsdAmount(token: TokenResult, gasAmount: bigint): string {
+function getTokenUsdAmount(token: TokenResult, gasAmount: bigint): string {
   const isUsd = (price: Price) => price.baseCurrency === 'usd'
   const usdPrice = token.priceIn.find(isUsd)?.price
 
@@ -37,7 +37,7 @@ export function getTokenUsdAmount(token: TokenResult, gasAmount: bigint): string
   return formatUnits(BigInt(gasAmount) * usdPriceFormatted, 18 + token.decimals)
 }
 
-export function getSignificantBalanceDecreaseWarning(
+function getSignificantBalanceDecreaseWarning(
   latest: PortfolioControllerState,
   pending: PortfolioControllerState,
   networkId: Network['id'],
@@ -64,4 +64,25 @@ export function getSignificantBalanceDecreaseWarning(
   }
 
   return null
+}
+
+const getFeeTokenPriceUnavailableWarning = (
+  hasSpeed: boolean,
+  feeTokenHasPrice: boolean
+): Warning | null => {
+  if (!hasSpeed || feeTokenHasPrice) return null
+
+  return {
+    id: 'feeTokenPriceUnavailable',
+    title: 'Unable to estimate the transaction fee in USD.',
+    promptBeforeSign: false,
+    displayBeforeSign: true
+  }
+}
+
+export {
+  getFeeSpeedIdentifier,
+  getTokenUsdAmount,
+  getSignificantBalanceDecreaseWarning,
+  getFeeTokenPriceUnavailableWarning
 }

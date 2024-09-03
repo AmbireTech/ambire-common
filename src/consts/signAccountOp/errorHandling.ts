@@ -1,9 +1,5 @@
 import { Warning } from '../../interfaces/signAccountOp'
 
-/** Errors that don't prevent signing */
-const NON_CRITICAL_ERRORS = {
-  feeUsdEstimation: 'Unable to estimate the transaction fee in USD.'
-}
 const ERRORS = {
   eoaInsufficientFunds: 'Insufficient funds to cover the fee.'
 }
@@ -21,4 +17,4 @@ const WARNINGS: { [key: string]: Warning } = {
 const RETRY_TO_INIT_ACCOUNT_OP_MSG =
   'Please attempt to initiate the transaction again or contact Ambire support.'
 
-export { NON_CRITICAL_ERRORS, ERRORS, WARNINGS, RETRY_TO_INIT_ACCOUNT_OP_MSG }
+export { ERRORS, WARNINGS, RETRY_TO_INIT_ACCOUNT_OP_MSG }
