@@ -202,7 +202,8 @@ export type PendingAmounts = {
   pendingToBeConfirmed?: bigint
 }
 
-export type FormattedPendingAmounts = PendingAmounts & {
+export type FormattedPendingAmounts = Omit<PendingAmounts, 'pendingBalance'> & {
+  pendingBalance: string
   pendingBalanceFormatted: string
   pendingBalanceUSDFormatted?: string
   pendingToBeSignedFormatted?: string
