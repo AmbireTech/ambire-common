@@ -75,7 +75,7 @@ const keys: Key[] = [
     dedicatedToOneSA: true,
     isExternallyStored: true,
     meta: {
-      timestamp: new Date().getTime()
+      createdAt: new Date().getTime()
     }
   }
 ]

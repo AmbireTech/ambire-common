@@ -136,7 +136,7 @@ export class KeyIterator implements KeyIteratorInterface {
               privateKey,
               dedicatedToOneSA: isDerivedForSmartAccountKeyOnly(index),
               meta: {
-                timestamp: new Date().getTime()
+                createdAt: new Date().getTime()
               }
             }
           ]
@@ -175,7 +175,7 @@ export class KeyIterator implements KeyIteratorInterface {
             privateKey: this.#privateKey,
             dedicatedToOneSA: false,
             meta: {
-              timestamp: new Date().getTime()
+              createdAt: new Date().getTime()
             }
           }
         ]

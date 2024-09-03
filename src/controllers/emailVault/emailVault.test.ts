@@ -141,7 +141,7 @@ describe('happy cases', () => {
         privateKey: keys[0].privateKey,
         dedicatedToOneSA: false,
         meta: {
-          timestamp: new Date().getTime()
+          createdAt: new Date().getTime()
         }
       }
     ])
@@ -153,7 +153,7 @@ describe('happy cases', () => {
         privateKey: keys[1].privateKey,
         dedicatedToOneSA: false,
         meta: {
-          timestamp: new Date().getTime()
+          createdAt: new Date().getTime()
         }
       }
     ])

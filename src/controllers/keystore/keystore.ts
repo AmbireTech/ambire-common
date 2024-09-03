@@ -34,7 +34,11 @@ import {
   StoredKey
 } from '../../interfaces/keystore'
 import { Storage } from '../../interfaces/storage'
-import { getDefaultKeyLabel, migrateKeyPreferencesToKeystoreKeys } from '../../libs/keys/keys'
+import {
+  getDefaultKeyLabel,
+  migrateKeyMetaNullToKeyMetaCreatedAt,
+  migrateKeyPreferencesToKeystoreKeys
+} from '../../libs/keys/keys'
 import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter'
 
 const scryptDefaults = { N: 131072, r: 8, p: 1, dkLen: 64 }
@@ -135,6 +139,8 @@ export class KeystoreController extends EventEmitter {
       // key preferences migration
       if (keyPreferences) {
         this.#keystoreKeys = migrateKeyPreferencesToKeystoreKeys(keyPreferences, keystoreKeys)
+        this.#keystoreKeys = migrateKeyMetaNullToKeyMetaCreatedAt(this.#keystoreKeys)
+
         await this.#storage.set('keystoreKeys', this.#keystoreKeys)
         await this.#storage.remove('keyPreferences')
       } else {
@@ -611,7 +617,7 @@ export class KeystoreController extends EventEmitter {
       type: 'internal',
       dedicatedToOneSA,
       meta: {
-        timestamp: new Date().getTime()
+        createdAt: new Date().getTime()
       }
     }
 

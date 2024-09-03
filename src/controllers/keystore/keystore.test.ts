@@ -148,7 +148,7 @@ describe('KeystoreController', () => {
         privateKey: privKey,
         dedicatedToOneSA: true,
         meta: {
-          timestamp: new Date().getTime()
+          createdAt: new Date().getTime()
         }
       }
     ])
@@ -175,7 +175,7 @@ describe('KeystoreController', () => {
         privateKey: privKey,
         dedicatedToOneSA: false,
         meta: {
-          timestamp: new Date().getTime()
+          createdAt: new Date().getTime()
         }
       },
       {
@@ -185,7 +185,7 @@ describe('KeystoreController', () => {
         privateKey: privKey,
         dedicatedToOneSA: false,
         meta: {
-          timestamp: new Date().getTime()
+          createdAt: new Date().getTime()
         }
       }
     ]
@@ -202,7 +202,7 @@ describe('KeystoreController', () => {
         privateKey: anotherPrivateKeyNotAddedYet,
         dedicatedToOneSA: false,
         meta: {
-          timestamp: new Date().getTime()
+          createdAt: new Date().getTime()
         }
       },
       // test key 4 with the same private key as key 3
@@ -213,7 +213,7 @@ describe('KeystoreController', () => {
         privateKey: anotherPrivateKeyNotAddedYet,
         dedicatedToOneSA: false,
         meta: {
-          timestamp: new Date().getTime()
+          createdAt: new Date().getTime()
         }
       }
     ]
@@ -249,7 +249,7 @@ describe('KeystoreController', () => {
           deviceModel: 'trezor',
           hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
           index: 1,
-          timestamp: new Date().getTime()
+          createdAt: new Date().getTime()
         }
       }
     ])
@@ -280,7 +280,7 @@ describe('KeystoreController', () => {
           deviceModel: 'trezor',
           hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
           index: 1,
-          timestamp: new Date().getTime()
+          createdAt: new Date().getTime()
         }
       },
       // test key 2 with the same id (public address) as test key 1'
@@ -294,7 +294,7 @@ describe('KeystoreController', () => {
           deviceModel: 'trezor',
           hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
           index: 1,
-          timestamp: new Date().getTime()
+          createdAt: new Date().getTime()
         }
       }
     ]
@@ -312,7 +312,7 @@ describe('KeystoreController', () => {
           deviceModel: 'trezor',
           hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
           index: 1,
-          timestamp: new Date().getTime()
+          createdAt: new Date().getTime()
         }
       },
       // test key 4 with the same private key as key 3',
@@ -326,7 +326,7 @@ describe('KeystoreController', () => {
           deviceModel: 'trezor',
           hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
           index: 1,
-          timestamp: new Date().getTime()
+          createdAt: new Date().getTime()
         }
       }
     ]
@@ -362,7 +362,7 @@ describe('KeystoreController', () => {
           deviceModel: 'trezor',
           hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
           index: 1,
-          timestamp: new Date().getTime()
+          createdAt: new Date().getTime()
         }
       },
       {
@@ -375,7 +375,7 @@ describe('KeystoreController', () => {
           deviceModel: 'trezor',
           hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
           index: 1,
-          timestamp: new Date().getTime()
+          createdAt: new Date().getTime()
         }
       },
       {
@@ -388,7 +388,7 @@ describe('KeystoreController', () => {
           deviceModel: 'trezor',
           hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
           index: 1,
-          timestamp: new Date().getTime()
+          createdAt: new Date().getTime()
         }
       }
     ]
@@ -580,7 +580,7 @@ describe('import/export with pub key test', () => {
         type: 'internal',
         privateKey: wallet.privateKey.slice(2),
         dedicatedToOneSA: false,
-        meta: { timestamp: new Date().getTime() }
+        meta: { createdAt: new Date().getTime() }
       }
     ])
   })

@@ -26,7 +26,7 @@ export interface KeyIterator {
     privateKey: string
     dedicatedToOneSA: boolean
     meta: {
-      timestamp: number
+      createdAt: number
     }
   }[]
 }

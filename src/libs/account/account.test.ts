@@ -140,7 +140,7 @@ describe('Account', () => {
       label: 'Key 1',
       dedicatedToOneSA: false,
       meta: {
-        timestamp: new Date().getTime()
+        createdAt: new Date().getTime()
       },
       isExternallyStored: false
     }
@@ -192,7 +192,7 @@ describe('Account', () => {
         deviceModel: '1',
         hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
         index: 0,
-        timestamp: new Date().getTime()
+        createdAt: new Date().getTime()
       },
       isExternallyStored: false
     }
@@ -255,7 +255,7 @@ describe('Account', () => {
         deviceModel: '1',
         hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
         index: 0,
-        timestamp: new Date().getTime()
+        createdAt: new Date().getTime()
       },
       isExternallyStored: false
     }
@@ -281,7 +281,7 @@ describe('Account', () => {
         deviceModel: '1',
         hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
         index: 1,
-        timestamp: new Date().getTime()
+        createdAt: new Date().getTime()
       },
       isExternallyStored: false
     }
@@ -292,7 +292,7 @@ describe('Account', () => {
       label: 'Key 1',
       dedicatedToOneSA: false,
       meta: {
-        timestamp: new Date().getTime()
+        createdAt: new Date().getTime()
       },
       isExternallyStored: false
     }

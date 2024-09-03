@@ -104,7 +104,7 @@ export type InternalKey = {
   label: string
   dedicatedToOneSA: boolean
   meta: {
-    timestamp: number
+    createdAt: number | null
     [key: string]: any
   }
 }
@@ -119,7 +119,7 @@ export type ExternalKey = {
     deviceModel: string
     hdPathTemplate: HD_PATH_TEMPLATE_TYPE
     index: number
-    timestamp: number
+    createdAt: number | null
     [key: string]: any
   }
 }

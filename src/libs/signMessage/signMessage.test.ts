@@ -114,7 +114,7 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
         label: 'Key 1',
         dedicatedToOneSA: true,
         meta: {
-          timestamp: new Date().getTime()
+          createdAt: new Date().getTime()
         }
       },
       {
@@ -124,7 +124,7 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
         privateKey: v1siger.privKey,
         dedicatedToOneSA: false,
         meta: {
-          timestamp: new Date().getTime()
+          createdAt: new Date().getTime()
         }
       }
     ])
@@ -436,7 +436,7 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: false', () => {
         label: 'Key 1',
         dedicatedToOneSA: false,
         meta: {
-          timestamp: new Date().getTime()
+          createdAt: new Date().getTime()
         }
       }
     ])

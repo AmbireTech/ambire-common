@@ -18,7 +18,7 @@ const key: Key = {
   dedicatedToOneSA: true,
   isExternallyStored: false,
   meta: {
-    timestamp: new Date().getTime()
+    createdAt: new Date().getTime()
   }
 }
 

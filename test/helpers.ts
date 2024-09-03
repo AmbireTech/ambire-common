@@ -264,7 +264,7 @@ const MOCK_KEYSTORE_KEYS: Key[] = [
       deviceModel: 'doesnt-matter',
       hdPathTemplate: "m/44'/60'/0'/0/<account>",
       index: 2,
-      timestamp: new Date().getTime()
+      createdAt: new Date().getTime()
     }
   },
   {
@@ -273,7 +273,7 @@ const MOCK_KEYSTORE_KEYS: Key[] = [
     label: 'Key 2',
     dedicatedToOneSA: false,
     meta: {
-      timestamp: new Date().getTime()
+      createdAt: new Date().getTime()
     },
     isExternallyStored: false
   },
@@ -283,7 +283,7 @@ const MOCK_KEYSTORE_KEYS: Key[] = [
     label: 'Key 3',
     dedicatedToOneSA: false,
     meta: {
-      timestamp: new Date().getTime()
+      createdAt: new Date().getTime()
     },
     isExternallyStored: false
   },
@@ -293,7 +293,7 @@ const MOCK_KEYSTORE_KEYS: Key[] = [
     label: 'Key 4',
     dedicatedToOneSA: false,
     meta: {
-      timestamp: new Date().getTime()
+      createdAt: new Date().getTime()
     },
     isExternallyStored: false
   },
@@ -303,7 +303,7 @@ const MOCK_KEYSTORE_KEYS: Key[] = [
     label: 'Key 5',
     dedicatedToOneSA: false,
     meta: {
-      timestamp: new Date().getTime()
+      createdAt: new Date().getTime()
     },
     isExternallyStored: false
   },
@@ -313,7 +313,7 @@ const MOCK_KEYSTORE_KEYS: Key[] = [
     label: 'Key 6',
     dedicatedToOneSA: true,
     meta: {
-      timestamp: new Date().getTime()
+      createdAt: new Date().getTime()
     },
     isExternallyStored: false
   }
