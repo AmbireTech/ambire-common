@@ -309,6 +309,14 @@ export function getUpdatedHints(
   }
 }
 
+export const getTokensReadyToLearn = (toBeLearnedTokens: string[], resultTokens: TokenResult[]) => {
+  if (!toBeLearnedTokens.length || !resultTokens || !resultTokens.length) return []
+
+  return toBeLearnedTokens.filter((address) =>
+    resultTokens.find((resultToken) => resultToken.address === address && resultToken.amount > 0n)
+  )
+}
+
 export const tokenFilter = (
   token: TokenResult,
   nativeToken: TokenResult,
