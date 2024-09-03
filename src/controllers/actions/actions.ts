@@ -127,7 +127,8 @@ export class ActionsController extends EventEmitter {
               this.actionsQueue.length > 1
                 ? `${this.actionsQueue.length} transactions queued`
                 : 'Transaction queued',
-            description: 'Queued pending transactions are available on your Dashboard.'
+            description: 'Queued pending transactions are available on your Dashboard.',
+            timeout: 5500
           })
         }
         this.#onActionWindowClose()
