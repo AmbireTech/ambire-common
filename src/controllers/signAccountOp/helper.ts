@@ -3,13 +3,13 @@ import { formatUnits, ZeroAddress } from 'ethers'
 import { WARNINGS } from '../../consts/signAccountOp/errorHandling'
 import { Network } from '../../interfaces/network'
 import { Warning } from '../../interfaces/signAccountOp'
+import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 import { FeePaymentOption } from '../../libs/estimate/interfaces'
 import { Price, TokenResult } from '../../libs/portfolio'
 import { getAccountPortfolioTotal } from '../../libs/portfolio/helpers'
 import { PortfolioControllerState } from '../../libs/portfolio/interfaces'
-import { SubmittedAccountOp } from '../activity/activity'
 
-export function getFeeSpeedIdentifier(
+function getFeeSpeedIdentifier(
   option: FeePaymentOption,
   accountAddr: string,
   rbfAccountOp: SubmittedAccountOp | null
@@ -25,7 +25,7 @@ export function getFeeSpeedIdentifier(
   }${rbfAccountOp ? `rbf-${option.paidBy}` : ''}`
 }
 
-export function getTokenUsdAmount(token: TokenResult, gasAmount: bigint): string {
+function getTokenUsdAmount(token: TokenResult, gasAmount: bigint): string {
   const isUsd = (price: Price) => price.baseCurrency === 'usd'
   const usdPrice = token.priceIn.find(isUsd)?.price
 
@@ -37,7 +37,7 @@ export function getTokenUsdAmount(token: TokenResult, gasAmount: bigint): string
   return formatUnits(BigInt(gasAmount) * usdPriceFormatted, 18 + token.decimals)
 }
 
-export function getSignificantBalanceDecreaseWarning(
+function getSignificantBalanceDecreaseWarning(
   latest: PortfolioControllerState,
   pending: PortfolioControllerState,
   networkId: Network['id'],
@@ -64,4 +64,20 @@ export function getSignificantBalanceDecreaseWarning(
   }
 
   return null
+}
+
+const getFeeTokenPriceUnavailableWarning = (
+  hasSpeed: boolean,
+  feeTokenHasPrice: boolean
+): Warning | null => {
+  if (!hasSpeed || feeTokenHasPrice) return null
+
+  return WARNINGS.feeTokenPriceUnavailable
+}
+
+export {
+  getFeeSpeedIdentifier,
+  getTokenUsdAmount,
+  getSignificantBalanceDecreaseWarning,
+  getFeeTokenPriceUnavailableWarning
 }
