@@ -11,6 +11,12 @@ const WARNINGS: { [key: string]: Warning } = {
     text: 'The transaction you are about to sign will significantly decrease your account balance. Please review the transaction details carefully.',
     promptBeforeSign: true,
     displayBeforeSign: true
+  },
+  feeTokenPriceUnavailable: {
+    id: 'feeTokenPriceUnavailable',
+    title: 'Unable to estimate the transaction fee in USD.',
+    promptBeforeSign: false,
+    displayBeforeSign: true
   }
 }
 

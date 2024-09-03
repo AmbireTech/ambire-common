@@ -72,12 +72,7 @@ const getFeeTokenPriceUnavailableWarning = (
 ): Warning | null => {
   if (!hasSpeed || feeTokenHasPrice) return null
 
-  return {
-    id: 'feeTokenPriceUnavailable',
-    title: 'Unable to estimate the transaction fee in USD.',
-    promptBeforeSign: false,
-    displayBeforeSign: true
-  }
+  return WARNINGS.feeTokenPriceUnavailable
 }
 
 export {
