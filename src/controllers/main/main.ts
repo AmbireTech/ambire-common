@@ -333,6 +333,8 @@ export class MainController extends EventEmitter {
           // skips the parallel one, if one is requested).
           await this.keystore.addKeys(this.accountAdder.readyToAddKeys.internal)
           await this.keystore.addKeysExternallyStored(this.accountAdder.readyToAddKeys.external)
+
+          // TODO: Update derivation of the default seed, if needed.
         },
         true
       )
@@ -364,7 +366,7 @@ export class MainController extends EventEmitter {
         }
 
         const keyIterator = new KeyIterator(defaultSeed.seed)
-        this.accountAdder.init({
+        await this.accountAdder.init({
           keyIterator,
           hdPathTemplate: defaultSeed.hdPathTemplate,
           pageSize: 1,
@@ -632,7 +634,7 @@ export class MainController extends EventEmitter {
       }
 
       const keyIterator = new LedgerKeyIterator({ controller: ledgerCtrl })
-      this.accountAdder.init({ keyIterator, hdPathTemplate })
+      await this.accountAdder.init({ keyIterator, hdPathTemplate })
 
       return await this.accountAdder.setPage({ page: 1 })
     } catch (error: any) {
@@ -664,7 +666,7 @@ export class MainController extends EventEmitter {
       await latticeCtrl.unlock(hdPathTemplate, undefined, true)
 
       const { walletSDK } = latticeCtrl
-      this.accountAdder.init({
+      await this.accountAdder.init({
         keyIterator: new LatticeKeyIterator({ walletSDK }),
         hdPathTemplate
       })

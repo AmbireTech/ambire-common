@@ -67,6 +67,8 @@ export class AccountAdderController extends EventEmitter {
 
   isInitialized: boolean = false
 
+  isInitializedWithDefaultSeed: boolean = false
+
   shouldSearchForLinkedAccounts = DEFAULT_SHOULD_SEARCH_FOR_LINKED_ACCOUNTS
 
   shouldGetAccountsUsedOnNetworks = DEFAULT_SHOULD_GET_ACCOUNTS_USED_ON_NETWORKS
@@ -228,7 +230,16 @@ export class AccountAdderController extends EventEmitter {
     }))
   }
 
-  init({
+  async #isKeyIteratorInitializedWithTheDefaultSeed() {
+    if (this.#keyIterator?.subType !== 'seed') return false
+
+    const defaultSeed = await this.#keystore.getDefaultSeed()
+    if (!defaultSeed) return false
+
+    return !!this.#keyIterator?.isSeedMatching?.(defaultSeed.seed)
+  }
+
+  async init({
     keyIterator,
     page,
     pageSize,
@@ -242,7 +253,7 @@ export class AccountAdderController extends EventEmitter {
     hdPathTemplate: HD_PATH_TEMPLATE_TYPE
     shouldSearchForLinkedAccounts?: boolean
     shouldGetAccountsUsedOnNetworks?: boolean
-  }): void {
+  }) {
     this.#keyIterator = keyIterator
     if (!this.#keyIterator) return this.#throwMissingKeyIterator()
 
@@ -250,6 +261,7 @@ export class AccountAdderController extends EventEmitter {
     this.pageSize = pageSize || DEFAULT_PAGE_SIZE
     this.hdPathTemplate = hdPathTemplate
     this.isInitialized = true
+    this.isInitializedWithDefaultSeed = await this.#isKeyIteratorInitializedWithTheDefaultSeed()
     this.#alreadyImportedAccountsOnControllerInit = this.#accounts.accounts
     this.shouldSearchForLinkedAccounts = shouldSearchForLinkedAccounts
     this.shouldGetAccountsUsedOnNetworks = shouldGetAccountsUsedOnNetworks
