@@ -13,7 +13,8 @@ describe('1559 Network gas price tests', () => {
       transactions: []
     }
     const provider = MockProvider.init(params)
-    const gasPrice = await getGasPriceRecommendations(provider, network)
+    const gasPriceData = await getGasPriceRecommendations(provider, network)
+    const gasPrice = gasPriceData.gasPrice
     const slow: any = gasPrice[0]
     expect(slow.gasPrice).toBe(0n)
     const medium: any = gasPrice[1]
@@ -33,7 +34,8 @@ describe('1559 Network gas price tests', () => {
       ]
     }
     const provider = MockProvider.init(params)
-    const gasPrice = await getGasPriceRecommendations(provider, network)
+    const gasPriceData = await getGasPriceRecommendations(provider, network)
+    const gasPrice = gasPriceData.gasPrice
     const slow: any = gasPrice[0]
     expect(slow.gasPrice).toBe(100n)
     const medium: any = gasPrice[1]
@@ -69,7 +71,8 @@ describe('1559 Network gas price tests', () => {
       ]
     }
     const provider = MockProvider.init(params)
-    const gasPrice = await getGasPriceRecommendations(provider, network)
+    const gasPriceData = await getGasPriceRecommendations(provider, network)
+    const gasPrice = gasPriceData.gasPrice
     const slow: any = gasPrice[0]
     expect(slow.gasPrice).toBe(100n)
     const medium: any = gasPrice[1]
@@ -108,7 +111,8 @@ describe('1559 Network gas price tests', () => {
       ]
     }
     const provider = MockProvider.init(params)
-    const gasPrice = await getGasPriceRecommendations(provider, network)
+    const gasPriceData = await getGasPriceRecommendations(provider, network)
+    const gasPrice = gasPriceData.gasPrice
     const slow: any = gasPrice[0]
     expect(slow.gasPrice).toBe(20n)
     const medium: any = gasPrice[1]

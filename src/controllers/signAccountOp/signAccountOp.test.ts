@@ -372,7 +372,8 @@ const init = async (
   await portfolio.updateSelectedAccount(account.addr, network)
   const provider = getRpcProvider(network.rpcUrls, network.chainId)
 
-  const prices = gasPricesMock || (await gasPricesLib.getGasPriceRecommendations(provider, network))
+  const prices =
+    gasPricesMock || (await gasPricesLib.getGasPriceRecommendations(provider, network)).gasPrice
   const estimation =
     estimationMock ||
     (await estimate(
@@ -431,7 +432,8 @@ const init = async (
     op,
     storage,
     fetch,
-    callRelayer
+    callRelayer,
+    () => {}
   )
 
   return { controller, prices, estimation }
