@@ -37,6 +37,7 @@ import {
 import { Storage } from '../../interfaces/storage'
 import {
   getDefaultKeyLabel,
+  getShouldMigrateKeystoreSeedsWithoutHdPath,
   migrateKeyPreferencesToKeystoreKeys,
   migrateKeystoreSeedsWithoutHdPathTemplate
 } from '../../libs/keys/keys'
@@ -137,13 +138,9 @@ export class KeystoreController extends EventEmitter {
       this.keyStoreUid = keyStoreUid
 
       // keystore seeds migration
-      const shouldMigrateKeystoreSeedsWithoutHdPath =
-        this.#keystoreSeeds.length &&
-        this.#keystoreSeeds.some((seed) => !seed.hdPathTemplate) &&
-        this.#keystoreSeeds.every((seed) => typeof seed === 'string')
-      if (shouldMigrateKeystoreSeedsWithoutHdPath) {
+      if (getShouldMigrateKeystoreSeedsWithoutHdPath(keystoreSeeds)) {
         // Cast to the old type (string[]) to avoid TS errors
-        const preMigrationKeystoreSeeds = this.#keystoreSeeds as unknown as string[]
+        const preMigrationKeystoreSeeds = keystoreSeeds as unknown as string[]
         this.#keystoreSeeds = migrateKeystoreSeedsWithoutHdPathTemplate(preMigrationKeystoreSeeds)
         await this.#storage.set('keystoreSeeds', this.#keystoreSeeds)
       } else {
