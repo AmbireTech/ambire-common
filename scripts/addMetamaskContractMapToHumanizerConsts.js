@@ -20,7 +20,7 @@ fetch('https://raw.githubusercontent.com/MetaMask/contract-metadata/master/contr
         address: address.toLowerCase(),
         name: info.name,
         token:
-          info.symbol && info.decimals
+          !info.erc721 && info.symbol && info.decimals
             ? { decimals: info.decimals, symbol: info.symbol }
             : alreadyPresentData?.token,
         isSC: {}
