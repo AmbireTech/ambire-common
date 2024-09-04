@@ -140,7 +140,16 @@ describe('KeystoreController', () => {
   })
 
   test('should add an internal key', (done) => {
-    keystore.addKeys([{ privateKey: privKey, dedicatedToOneSA: true }])
+    keystore.addKeys([
+      {
+        addr: new Wallet(privKey).address,
+        label: 'Key 1',
+        type: 'internal',
+        privateKey: privKey,
+        dedicatedToOneSA: true,
+        meta: null
+      }
+    ])
 
     const unsubscribe = keystore.onUpdate(async () => {
       if (keystore.statuses.addKeys === 'SUCCESS') {
@@ -157,8 +166,22 @@ describe('KeystoreController', () => {
   test('should not add twice internal key that is already added', (done) => {
     // two keys with the same private key
     const keysWithPrivateKeyAlreadyAdded = [
-      { privateKey: privKey, dedicatedToOneSA: false },
-      { privateKey: privKey, dedicatedToOneSA: false }
+      {
+        addr: new Wallet(privKey).address,
+        label: 'Key 1',
+        type: 'internal' as 'internal',
+        privateKey: privKey,
+        dedicatedToOneSA: false,
+        meta: null
+      },
+      {
+        addr: new Wallet(privKey).address,
+        label: 'Key 2',
+        type: 'internal' as 'internal',
+        privateKey: privKey,
+        dedicatedToOneSA: false,
+        meta: null
+      }
     ]
 
     const anotherPrivateKeyNotAddedYet =
@@ -166,9 +189,23 @@ describe('KeystoreController', () => {
     const anotherPrivateKeyPublicAddress = '0x9188fdd757Df66B4F693D624Ed6A13a15Cf717D7'
     const keysWithPrivateKeyDuplicatedInParams = [
       // test key 3
-      { privateKey: anotherPrivateKeyNotAddedYet, dedicatedToOneSA: false },
+      {
+        addr: new Wallet(anotherPrivateKeyNotAddedYet).address,
+        label: 'Key 2',
+        type: 'internal' as 'internal',
+        privateKey: anotherPrivateKeyNotAddedYet,
+        dedicatedToOneSA: false,
+        meta: null
+      },
       // test key 4 with the same private key as key 3
-      { privateKey: anotherPrivateKeyNotAddedYet, dedicatedToOneSA: false }
+      {
+        addr: new Wallet(anotherPrivateKeyNotAddedYet).address,
+        label: 'Key 2',
+        type: 'internal' as 'internal',
+        privateKey: anotherPrivateKeyNotAddedYet,
+        dedicatedToOneSA: false,
+        meta: null
+      }
     ]
 
     keystore.addKeys([...keysWithPrivateKeyAlreadyAdded, ...keysWithPrivateKeyDuplicatedInParams])
@@ -196,6 +233,7 @@ describe('KeystoreController', () => {
         addr: publicAddress,
         dedicatedToOneSA: false,
         type: 'trezor',
+        label: 'Trezor Key 1',
         meta: {
           deviceId: '1',
           deviceModel: 'trezor',
@@ -225,6 +263,7 @@ describe('KeystoreController', () => {
         addr: publicAddress,
         type: 'trezor' as 'trezor',
         dedicatedToOneSA: false,
+        label: 'Trezor Key 1',
         meta: {
           deviceId: '1',
           deviceModel: 'trezor',
@@ -237,6 +276,7 @@ describe('KeystoreController', () => {
         addr: publicAddress,
         type: 'trezor' as 'trezor',
         dedicatedToOneSA: false,
+        label: 'Trezor Key 2',
         meta: {
           deviceId: '1',
           deviceModel: 'trezor',
@@ -253,6 +293,7 @@ describe('KeystoreController', () => {
         addr: anotherAddressNotAddedYet,
         type: 'trezor' as 'trezor',
         dedicatedToOneSA: false,
+        label: 'Trezor Key 3',
         meta: {
           deviceId: '1',
           deviceModel: 'trezor',
@@ -265,6 +306,7 @@ describe('KeystoreController', () => {
         addr: anotherAddressNotAddedYet,
         type: 'trezor' as 'trezor',
         dedicatedToOneSA: false,
+        label: 'Trezor Key 4',
         meta: {
           deviceId: '1',
           deviceModel: 'trezor',
@@ -299,6 +341,7 @@ describe('KeystoreController', () => {
         addr: keyPublicAddress,
         type: 'trezor' as 'trezor',
         dedicatedToOneSA: false,
+        label: 'Trezor Key 1',
         meta: {
           deviceId: '1',
           deviceModel: 'trezor',
@@ -310,6 +353,7 @@ describe('KeystoreController', () => {
         addr: keyPublicAddress,
         type: 'trezor' as 'trezor',
         dedicatedToOneSA: false,
+        label: 'Trezor Key 2',
         meta: {
           deviceId: '1',
           deviceModel: 'trezor',
@@ -321,6 +365,7 @@ describe('KeystoreController', () => {
         addr: keyPublicAddress,
         type: 'ledger' as 'ledger',
         dedicatedToOneSA: false,
+        label: 'Trezor Key 3',
         meta: {
           deviceId: '1',
           deviceModel: 'trezor',
@@ -495,7 +540,7 @@ describe('import/export with pub key test', () => {
           key: {
             addr: wallet.address,
             isExternallyStored: false,
-            // label,
+            label: 'Key 1',
             type: 'internal',
             meta: null
           },
@@ -510,6 +555,15 @@ describe('import/export with pub key test', () => {
         unsubscribe2()
       }
     })
-    keystore.addKeys([{ privateKey: wallet.privateKey.slice(2), dedicatedToOneSA: false }])
+    keystore.addKeys([
+      {
+        addr: wallet.address,
+        label: 'Key 1',
+        type: 'internal',
+        privateKey: wallet.privateKey.slice(2),
+        dedicatedToOneSA: false,
+        meta: null
+      }
+    ])
   })
 })

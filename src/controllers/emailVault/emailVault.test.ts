@@ -133,8 +133,26 @@ describe('happy cases', () => {
     // used to add keystore uid
     await keystore.addSecret('smth', 'secret', '', false)
     await keystore.unlockWithSecret('smth', 'secret')
-    await keystore.addKeys([{ privateKey: keys[0].privateKey, dedicatedToOneSA: false }])
-    await keystore.addKeys([{ privateKey: keys[1].privateKey, dedicatedToOneSA: false }])
+    await keystore.addKeys([
+      {
+        addr: keys[0].address,
+        type: 'internal',
+        label: 'Key 1',
+        privateKey: keys[0].privateKey,
+        dedicatedToOneSA: false,
+        meta: null
+      }
+    ])
+    await keystore.addKeys([
+      {
+        addr: keys[1].address,
+        type: 'internal',
+        label: 'Key 2',
+        privateKey: keys[1].privateKey,
+        dedicatedToOneSA: false,
+        meta: null
+      }
+    ])
 
     // ev 2
     const ev2 = new EmailVaultController(storage2, fetch, relayerUrl, keystore2, testingOptions)

@@ -258,6 +258,7 @@ const MOCK_KEYSTORE_KEYS: Key[] = [
     type: 'trezor',
     dedicatedToOneSA: true,
     isExternallyStored: true,
+    label: 'Trezor Key 1',
     meta: {
       deviceId: 'doesnt-matter',
       deviceModel: 'doesnt-matter',
@@ -268,6 +269,7 @@ const MOCK_KEYSTORE_KEYS: Key[] = [
   {
     type: 'internal',
     addr: '0xd6e371526cdaeE04cd8AF225D42e37Bc14688D9E',
+    label: 'Key 2',
     dedicatedToOneSA: false,
     meta: null,
     isExternallyStored: false
@@ -275,6 +277,7 @@ const MOCK_KEYSTORE_KEYS: Key[] = [
   {
     type: 'internal',
     addr: '0x141A14B5C4dbA2aC7a7943E02eDFE2E7eDfdA28F',
+    label: 'Key 3',
     dedicatedToOneSA: false,
     meta: null,
     isExternallyStored: false
@@ -282,6 +285,7 @@ const MOCK_KEYSTORE_KEYS: Key[] = [
   {
     type: 'internal',
     addr: '0x0000000000000000000000000000000000000001',
+    label: 'Key 4',
     dedicatedToOneSA: false,
     meta: null,
     isExternallyStored: false
@@ -289,6 +293,7 @@ const MOCK_KEYSTORE_KEYS: Key[] = [
   {
     type: 'internal',
     addr: '0xa8eEaC54343F94CfEEB3492e07a7De72bDFD118a',
+    label: 'Key 5',
     dedicatedToOneSA: false,
     meta: null,
     isExternallyStored: false
@@ -296,6 +301,7 @@ const MOCK_KEYSTORE_KEYS: Key[] = [
   {
     type: 'internal',
     addr: addrWithDeploySignature,
+    label: 'Key 6',
     dedicatedToOneSA: true,
     meta: null,
     isExternallyStored: false

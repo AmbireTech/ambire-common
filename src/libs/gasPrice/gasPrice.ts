@@ -131,7 +131,7 @@ export async function getGasPriceRecommendations(
   provider: Provider,
   network: Network,
   blockTag: string | number = -1
-): Promise<GasRecommendation[]> {
+): Promise<{ gasPrice: GasRecommendation[]; blockGasLimit: bigint }> {
   const lastBlock = await refetchBlock(provider, blockTag)
   // https://github.com/ethers-io/ethers.js/issues/3683#issuecomment-1436554995
   const txns = lastBlock.prefetchedTransactions
@@ -188,13 +188,14 @@ export async function getGasPriceRecommendations(
         maxPriorityFeePerGas
       })
     })
-    return fee
+    return { gasPrice: fee, blockGasLimit: lastBlock.gasLimit }
   }
   const prices = filterOutliers(txns.map((x) => x.gasPrice!).filter((x) => x > 0))
-  return speeds.map(({ name }, i) => ({
+  const fee = speeds.map(({ name }, i) => ({
     name,
     gasPrice: average(nthGroup(prices, i, speeds.length))
   }))
+  return { gasPrice: fee, blockGasLimit: lastBlock.gasLimit }
 }
 
 export function getProbableCallData(
