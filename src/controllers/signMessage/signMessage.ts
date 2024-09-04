@@ -191,6 +191,7 @@ export class SignMessageController extends EventEmitter {
       const accountState = this.#accounts.accountStates[account.addr][network.id]
       let signature
       try {
+        debugger
         if (this.messageToSign.content.kind === 'message') {
           const message = this.messageToSign.content.message
           this.messageToSign.content.message = isHexString(message)
@@ -234,6 +235,12 @@ export class SignMessageController extends EventEmitter {
         )
       }
 
+      signature =
+        account.creation && !accountState.isDeployed
+          ? // https://eips.ethereum.org/EIPS/eip-6492
+            wrapCounterfactualSign(signature, account.creation!)
+          : signature
+
       const personalMsgToValidate =
         typeof this.messageToSign.content.message === 'string'
           ? hexStringToUint8Array(this.messageToSign.content.message)
@@ -245,11 +252,7 @@ export class SignMessageController extends EventEmitter {
         // the signer is always the account even if the actual
         // signature is from a key that has privs to the account
         signer: this.messageToSign?.accountAddr,
-        signature:
-          account.creation && !accountState.isDeployed
-            ? // https://eips.ethereum.org/EIPS/eip-6492
-              wrapCounterfactualSign(signature, account.creation!)
-            : signature,
+        signature,
         // @ts-ignore TODO: Be aware of the type mismatch, could cause troubles
         message: this.messageToSign.content.kind === 'message' ? personalMsgToValidate : undefined,
         typedData:
