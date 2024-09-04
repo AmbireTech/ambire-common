@@ -105,7 +105,6 @@ export type InternalKey = {
   dedicatedToOneSA: boolean
   meta: {
     createdAt: number | null
-    [key: string]: any
   }
 }
 
@@ -120,7 +119,6 @@ export type ExternalKey = {
     hdPathTemplate: HD_PATH_TEMPLATE_TYPE
     index: number
     createdAt: number | null
-    [key: string]: any
   }
 }
 
