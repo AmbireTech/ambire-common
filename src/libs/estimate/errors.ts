@@ -55,6 +55,7 @@ export function mapTxnErrMsg(contractError: string): string | null {
     msg.toLowerCase().includes('insufficient funds')
   )
     return 'Transaction cannot be sent because of insufficient fee tokens in your account. Please transfer additional fee tokens to cover the transaction cost and try again.'
+  if (msg.includes('missing revert data')) return null
   if (msg.includes('paymaster deposit too low')) {
     return 'Transaction cannot be sent because the Paymaster does not have enough funds. Please choose to pay fee with another option or contact Ambire support for assistance.'
   }

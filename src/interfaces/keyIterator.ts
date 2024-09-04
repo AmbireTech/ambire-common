@@ -17,6 +17,14 @@ export interface KeyIterator {
   /** Retrieves the private keys (optional, for hot wallets only) */
   retrieveInternalKeys?: (
     selectedAccountsForImport: SelectedAccountForImport[],
-    hdPathTemplate: HD_PATH_TEMPLATE_TYPE
-  ) => { privateKey: string; dedicatedToOneSA: boolean }[]
+    hdPathTemplate: HD_PATH_TEMPLATE_TYPE,
+    keystoreKeys: Key[]
+  ) => {
+    addr: string
+    type: 'internal'
+    label: string
+    privateKey: string
+    dedicatedToOneSA: boolean
+    meta: null
+  }[]
 }

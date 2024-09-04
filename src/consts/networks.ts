@@ -104,8 +104,7 @@ const networks: Network[] = [
     explorerUrl: 'https://arbiscan.io',
     erc4337: {
       enabled: true,
-      hasPaymaster: true,
-      explorerId: 'arbitrum-one'
+      hasPaymaster: true
     },
     isSAEnabled: true,
     areContractsDeployed: true,

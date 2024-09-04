@@ -261,7 +261,7 @@ export class PortfolioController extends EventEmitter {
   }
 
   // make the pending results the same as the latest ones
-  async overridePendingResults(accountOp: AccountOp) {
+  overridePendingResults(accountOp: AccountOp) {
     if (
       this.pending[accountOp.accountAddr] &&
       this.pending[accountOp.accountAddr][accountOp.networkId] &&
