@@ -286,7 +286,11 @@ export class SignAccountOpController extends EventEmitter {
       errors.push('Transaction reverted with estimation too high: above block limit')
     }
 
-    if (this.estimation?.gasUsed && this.estimation?.gasUsed > 500000000n) {
+    if (
+      this.#network.predefined &&
+      this.estimation?.gasUsed &&
+      this.estimation?.gasUsed > 500000000n
+    ) {
       errors.push('Unreasonably high estimation. This transaction will probably fail')
     }
 
