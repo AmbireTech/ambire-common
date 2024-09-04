@@ -38,6 +38,7 @@ import {
 import { Storage } from '../../interfaces/storage'
 import {
   getDefaultKeyLabel,
+  getShouldMigrateKeyMetaNullToKeyMetaCreatedAt,
   getShouldMigrateKeystoreSeedsWithoutHdPath,
   migrateKeyMetaNullToKeyMetaCreatedAt,
   migrateKeyPreferencesToKeystoreKeys,
@@ -139,7 +140,6 @@ export class KeystoreController extends EventEmitter {
       ])
       this.keyStoreUid = keyStoreUid
 
-      // keystore seeds migration
       if (getShouldMigrateKeystoreSeedsWithoutHdPath(keystoreSeeds)) {
         // Cast to the old type (string[]) to avoid TS errors
         const preMigrationKeystoreSeeds = keystoreSeeds as unknown as string[]
@@ -149,14 +149,18 @@ export class KeystoreController extends EventEmitter {
         this.#keystoreSeeds = keystoreSeeds
       }
 
-      // key preferences migration
-      if (keyPreferences) {
+      const shouldMigrateKeyPreferencesToKeystoreKeys = keyPreferences.length > 0
+      if (shouldMigrateKeyPreferencesToKeystoreKeys) {
         this.#keystoreKeys = migrateKeyPreferencesToKeystoreKeys(keyPreferences, keystoreKeys)
         await this.#storage.set('keystoreKeys', this.#keystoreKeys)
         await this.#storage.remove('keyPreferences')
       } else {
-        this.#keystoreKeys = migrateKeyMetaNullToKeyMetaCreatedAt(this.#keystoreKeys)
         this.#keystoreKeys = keystoreKeys
+      }
+
+      if (getShouldMigrateKeyMetaNullToKeyMetaCreatedAt(this.#keystoreKeys)) {
+        this.#keystoreKeys = migrateKeyMetaNullToKeyMetaCreatedAt(this.#keystoreKeys)
+        await this.#storage.set('keystoreKeys', this.#keystoreKeys)
       }
     } catch (e) {
       this.emitError({
