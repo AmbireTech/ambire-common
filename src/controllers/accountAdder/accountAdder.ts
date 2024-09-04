@@ -306,7 +306,7 @@ export class AccountAdderController extends EventEmitter {
     this.emitUpdate()
   }
 
-  async setHDPathTemplate({ hdPathTemplate }: { hdPathTemplate: HD_PATH_TEMPLATE_TYPE }): void {
+  async setHDPathTemplate({ hdPathTemplate }: { hdPathTemplate: HD_PATH_TEMPLATE_TYPE }) {
     this.hdPathTemplate = hdPathTemplate
 
     // Reset the currently selected accounts, because for the keys of these
