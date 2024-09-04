@@ -326,7 +326,8 @@ export function getUpdatedHints(
 }
 
 export const getTokensReadyToLearn = (toBeLearnedTokens: string[], resultTokens: TokenResult[]) => {
-  if (!toBeLearnedTokens.length || !resultTokens || !resultTokens.length) return []
+  if (!toBeLearnedTokens || !resultTokens) return []
+  if (!resultTokens.length || !resultTokens.length) return []
 
   return toBeLearnedTokens.filter((address) =>
     resultTokens.find((resultToken) => resultToken.address === address && resultToken.amount > 0n)

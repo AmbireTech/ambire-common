@@ -2,6 +2,7 @@ import { ethers, ZeroAddress } from 'ethers'
 import fetch from 'node-fetch'
 
 import { describe, expect, jest } from '@jest/globals'
+import structuredClone from '@ungap/structured-clone'
 
 import { relayerUrl, velcroUrl } from '../../../test/config'
 import { getNonce, produceMemoryStore } from '../../../test/helpers'
@@ -614,22 +615,58 @@ describe('Portfolio Controller ', () => {
     })
   })
 
-  test('To be learned token is returned from portfolio', async () => {
-    const { controller } = prepareTest()
-
+  test('To be learned token is returned from portfolio and updated with timestamp in learnedTokens', async () => {
+    const { storage, controller } = prepareTest()
+    const ethereum = networks.find((network) => network.id === 'ethereum')!
+    const clonedEthereum = structuredClone(ethereum)
+    clonedEthereum.hasRelayer = false
+  
     await controller.addTokensToBeLearned(
-      ['0x7Fc66500c84A76Ad7e9c93437bFc5Ac33E2DDaE9'],
+      ['0xADE00C28244d5CE17D72E40330B1c318cD12B7c3'],
       'ethereum'
     )
 
-    await controller.updateSelectedAccount(account.addr, undefined, undefined, {
-      forceUpdate: true
+    await controller.updateSelectedAccount(account.addr, clonedEthereum, undefined, {
+      forceUpdate: true,
     })
 
     const toBeLearnedToken = controller.latest[account.addr].ethereum?.result?.tokens.find(
-      (token) => token.address === '0x7Fc66500c84A76Ad7e9c93437bFc5Ac33E2DDaE9'
+      (token) => token.address === '0xADE00C28244d5CE17D72E40330B1c318cD12B7c3' && token.amount > 0n
     )
     expect(toBeLearnedToken).toBeTruthy()
+
+    const previousHintsStorage = await storage.get('previousHints', {})
+    const firstTokenOnEthInLearned =
+      previousHintsStorage.learnedTokens?.ethereum[toBeLearnedToken!.address]
+
+    expect(firstTokenOnEthInLearned).toBeTruthy()
+  })
+
+  test('To be learned token is returned from portfolio and updated with timestamp in learnedTokens', async () => {
+    const { storage, controller } = prepareTest()
+    const ethereum = networks.find((network) => network.id === 'ethereum')!
+    const clonedEthereum = structuredClone(ethereum)
+    clonedEthereum.hasRelayer = false
+  
+    await controller.addTokensToBeLearned(
+      ['0xADE00C28244d5CE17D72E40330B1c318cD12B7c3'],
+      'ethereum'
+    )
+
+    await controller.updateSelectedAccount(account.addr, clonedEthereum, undefined, {
+      forceUpdate: true,
+    })
+
+    const toBeLearnedToken = controller.latest[account.addr].ethereum?.result?.tokens.find(
+      (token) => token.address === '0xADE00C28244d5CE17D72E40330B1c318cD12B7c3' && token.amount > 0n
+    )
+    expect(toBeLearnedToken).toBeTruthy()
+
+    const previousHintsStorage = await storage.get('previousHints', {})
+    const firstTokenOnEthInLearned =
+      previousHintsStorage.learnedTokens?.ethereum[toBeLearnedToken!.address]
+
+    expect(firstTokenOnEthInLearned).toBeTruthy()
   })
 
   test('Native tokens are fetched for all networks', async () => {
