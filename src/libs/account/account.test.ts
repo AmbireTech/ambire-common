@@ -34,7 +34,7 @@ const basicAccount: Account = {
 describe('Account', () => {
   test('should return basic account', () => {
     expect.assertions(1)
-    const newBasicAccount = getBasicAccount(keyPublicAddress)
+    const newBasicAccount = getBasicAccount(keyPublicAddress, [])
     expect(newBasicAccount as Account).toStrictEqual(basicAccount)
   })
   test('should return smartAccount', async () => {
@@ -43,7 +43,7 @@ describe('Account', () => {
       addr: keyPublicAddress,
       hash: dedicatedToOneSAPriv
     }
-    const newSmartAccount = await getSmartAccount([priv])
+    const newSmartAccount = await getSmartAccount([priv], [])
     const bytecode = await getBytecode([priv])
     const accountNotDeployed = {
       addr: getAmbireAccountAddress(AMBIRE_ACCOUNT_FACTORY, bytecode),
@@ -181,7 +181,7 @@ describe('Account', () => {
       addr: keyPublicAddress,
       hash: dedicatedToOneSAPriv
     }
-    const smartAccount = await getSmartAccount([priv])
+    const smartAccount = await getSmartAccount([priv], [])
     const key: Key = {
       addr: basicAccount.addr,
       type: 'trezor',
@@ -243,7 +243,7 @@ describe('Account', () => {
       addr: keyPublicAddress,
       hash: dedicatedToOneSAPriv
     }
-    const smartAccountWithIncompleteAssociatedKeys = await getSmartAccount([priv])
+    const smartAccountWithIncompleteAssociatedKeys = await getSmartAccount([priv], [])
 
     const oneOfTheSmartAccountKeys: Key = {
       addr: basicAccount.addr,

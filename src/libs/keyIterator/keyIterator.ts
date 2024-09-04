@@ -182,4 +182,13 @@ export class KeyIterator implements KeyIteratorInterface {
       })
     })
   }
+
+  isSeedMatching(seedPhraseToCompareWith: string) {
+    if (!this.#seedPhrase) return false
+
+    return (
+      Mnemonic.fromPhrase(this.#seedPhrase).phrase ===
+      Mnemonic.fromPhrase(seedPhraseToCompareWith).phrase
+    )
+  }
 }
