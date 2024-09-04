@@ -42,6 +42,23 @@ export function migrateKeyPreferencesToKeystoreKeys(
   })
 }
 
+// As of version 4.33.0, we introduced createdAt prop to the Key interface to help with sorting and add more details for the Keys.
+export const getShouldMigrateKeyMetaNullToKeyMetaCreatedAt = (keystoreKeys: StoredKey[]) =>
+  keystoreKeys.some((key) => {
+    const internalKeyWithoutMeta = key.type === 'internal' && !key.meta
+    const externalKeyWithoutCreatedAt = key.type !== 'internal' && !('createdAt' in key.meta)
+
+    return internalKeyWithoutMeta || externalKeyWithoutCreatedAt
+  })
+export function migrateKeyMetaNullToKeyMetaCreatedAt(keystoreKeys: StoredKey[]) {
+  return keystoreKeys.map((key) => {
+    if (!key.meta) return { ...key, meta: { createdAt: null } } as StoredKey
+    if (!key.meta.createdAt) return { ...key, meta: { ...key.meta, createdAt: null } } as StoredKey
+
+    return key
+  })
+}
+
 // As of version v4.33.0, user can change the HD path when importing a seed.
 // Migration is needed because previously the HD path was not stored,
 // and the default used was `BIP44_STANDARD_DERIVATION_TEMPLATE`.

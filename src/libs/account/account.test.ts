@@ -139,7 +139,9 @@ describe('Account', () => {
       type: 'internal',
       label: 'Key 1',
       dedicatedToOneSA: false,
-      meta: null,
+      meta: {
+        createdAt: new Date().getTime()
+      },
       isExternallyStored: false
     }
     const accountsOnPage: Omit<AccountOnPage, 'importStatus'>[] = [
@@ -189,7 +191,8 @@ describe('Account', () => {
         deviceId: '123',
         deviceModel: '1',
         hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
-        index: 0
+        index: 0,
+        createdAt: new Date().getTime()
       },
       isExternallyStored: false
     }
@@ -251,7 +254,8 @@ describe('Account', () => {
         deviceId: '123',
         deviceModel: '1',
         hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
-        index: 0
+        index: 0,
+        createdAt: new Date().getTime()
       },
       isExternallyStored: false
     }
@@ -276,7 +280,8 @@ describe('Account', () => {
         deviceId: '123',
         deviceModel: '1',
         hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
-        index: 1
+        index: 1,
+        createdAt: new Date().getTime()
       },
       isExternallyStored: false
     }
@@ -286,7 +291,9 @@ describe('Account', () => {
       type: 'internal',
       label: 'Key 1',
       dedicatedToOneSA: false,
-      meta: null,
+      meta: {
+        createdAt: new Date().getTime()
+      },
       isExternallyStored: false
     }
 
