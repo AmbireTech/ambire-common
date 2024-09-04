@@ -615,10 +615,19 @@ describe('Portfolio Controller ', () => {
     })
   })
 
-  test('To be learned token is returned from portfolio and not passed to learnedTokens (without balance)', async () => {
+  test('To be learned token is returned from portfolio and not passed to learnedTokens (as it is without balance)', async () => {
     const { storage, controller } = prepareTest()
     const ethereum = networks.find((network) => network.id === 'ethereum')!
     const clonedEthereum = structuredClone(ethereum)
+    // In order to test whether toBeLearned token is passed and persisted in learnedTokens correctly we need to:
+    // 1. make sure we pass a token we know is with balance to toBeLearned list.
+    // 2. retrieve the token from portfolio and check if it is found.
+    // 3. check if the token is persisted in learnedTokens with timestamp.
+    // in learnedTokens as a new token, when found with balance from toBeLearned list.
+    
+    // This will work on networks without relayer support so we mock one,
+    // otherwise the token will be fetched from the relayer and won't be available for learnedTokens,
+    // but will be stored in fromExternalAPI.
     clonedEthereum.hasRelayer = false
   
     await controller.addTokensToBeLearned(
@@ -637,15 +646,24 @@ describe('Portfolio Controller ', () => {
     expect(toBeLearnedToken).toBeTruthy()
 
     const previousHintsStorage = await storage.get('previousHints', {})
-    const tokenIsNotInLearnedTokens =
+    const tokenInLearnedTokens =
       previousHintsStorage.learnedTokens?.ethereum && previousHintsStorage.learnedTokens?.ethereum[toBeLearnedToken!.address]
 
-    expect(tokenIsNotInLearnedTokens).toBeFalsy()
+    expect(tokenInLearnedTokens).toBeFalsy()
   })
 
   test('To be learned token is returned from portfolio and updated with timestamp in learnedTokens', async () => {
     const { storage, controller } = prepareTest()
     const ethereum = networks.find((network) => network.id === 'ethereum')!
+    // In order to test whether toBeLearned token is passed and persisted in learnedTokens correctly we need to:
+    // 1. make sure we pass a token we know is with balance to toBeLearned list.
+    // 2. retrieve the token from portfolio and check if it is found.
+    // 3. check if the token is persisted in learnedTokens with timestamp.
+    // in learnedTokens as a new token, when found with balance from toBeLearned list.
+    
+    // This will work on networks without relayer support so we mock one,
+    // otherwise the token will be fetched from the relayer and won't be available for learnedTokens,
+    // but will be stored in fromExternalAPI.
     const clonedEthereum = structuredClone(ethereum)
     clonedEthereum.hasRelayer = false
   
@@ -668,33 +686,6 @@ describe('Portfolio Controller ', () => {
       previousHintsStorage.learnedTokens?.ethereum[toBeLearnedToken!.address]
 
     expect(tokenInLearnedTokens).toBeTruthy()
-  })
-
-  test('To be learned token is returned from portfolio and updated with timestamp in learnedTokens', async () => {
-    const { storage, controller } = prepareTest()
-    const ethereum = networks.find((network) => network.id === 'ethereum')!
-    const clonedEthereum = structuredClone(ethereum)
-    clonedEthereum.hasRelayer = false
-  
-    await controller.addTokensToBeLearned(
-      ['0xADE00C28244d5CE17D72E40330B1c318cD12B7c3'],
-      'ethereum'
-    )
-
-    await controller.updateSelectedAccount(account.addr, clonedEthereum, undefined, {
-      forceUpdate: true,
-    })
-
-    const toBeLearnedToken = controller.latest[account.addr].ethereum?.result?.tokens.find(
-      (token) => token.address === '0xADE00C28244d5CE17D72E40330B1c318cD12B7c3' && token.amount > 0n
-    )
-    expect(toBeLearnedToken).toBeTruthy()
-
-    const previousHintsStorage = await storage.get('previousHints', {})
-    const firstTokenOnEthInLearned =
-      previousHintsStorage.learnedTokens?.ethereum[toBeLearnedToken!.address]
-
-    expect(firstTokenOnEthInLearned).toBeTruthy()
   })
 
   test('Native tokens are fetched for all networks', async () => {

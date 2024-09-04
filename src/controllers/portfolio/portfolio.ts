@@ -714,9 +714,14 @@ export class PortfolioController extends EventEmitter {
     const alreadyLearned = networkToBeLearnedTokens.map((addr) => getAddress(addr))
 
     const tokensToLearn = tokenAddresses.filter((address) => {
-      const normalizedAddress = getAddress(address)
+      let normalizedAddress
+      try {
+        normalizedAddress = getAddress(address)
+      } catch (e) {
+        console.error('Error while normalizing token address', e)
+      }
 
-      return !alreadyLearned.includes(normalizedAddress)
+      return normalizedAddress && !alreadyLearned.includes(normalizedAddress)
     })
 
     if (!tokensToLearn.length) return false
