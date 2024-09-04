@@ -46,7 +46,7 @@ export function migrateKeyPreferencesToKeystoreKeys(
 export const getShouldMigrateKeyMetaNullToKeyMetaCreatedAt = (keystoreKeys: StoredKey[]) =>
   keystoreKeys.some((key) => {
     const internalKeyWithoutMeta = key.type === 'internal' && !key.meta
-    const externalKeyWithoutCreatedAt = key.type !== 'internal' && 'createdAt' in key.meta
+    const externalKeyWithoutCreatedAt = key.type !== 'internal' && !('createdAt' in key.meta)
 
     return internalKeyWithoutMeta || externalKeyWithoutCreatedAt
   })
