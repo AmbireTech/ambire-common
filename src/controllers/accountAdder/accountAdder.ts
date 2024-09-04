@@ -713,13 +713,16 @@ export class AccountAdderController extends EventEmitter {
       const slot = startIdx + (index + 1)
 
       // The derived EOA (basic) account which is the key for the smart account
-      const account = getBasicAccount(smartAccKey)
+      const account = getBasicAccount(smartAccKey, this.#accounts.accounts)
       const indexWithOffset = slot - 1 + SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET
       accounts.push({ account, isLinked: false, slot, index: indexWithOffset })
 
       // Derive the Ambire (smart) account
       smartAccountsPromises.push(
-        getSmartAccount([{ addr: smartAccKey, hash: dedicatedToOneSAPriv }])
+        getSmartAccount(
+          [{ addr: smartAccKey, hash: dedicatedToOneSAPriv }],
+          this.#accounts.accounts
+        )
           .then((smartAccount) => {
             return { account: smartAccount, isLinked: false, slot, index: slot - 1 }
           })
@@ -745,7 +748,7 @@ export class AccountAdderController extends EventEmitter {
       const slot = startIdx + (index + 1)
 
       // The EOA (basic) account on this slot
-      const account = getBasicAccount(basicAccKey)
+      const account = getBasicAccount(basicAccKey, this.#accounts.accounts)
       accounts.push({ account, isLinked: false, slot, index: slot - 1 })
     }
 
@@ -886,6 +889,8 @@ export class AccountAdderController extends EventEmitter {
 
         return []
       }
+
+      const existingAccount = this.#accounts.accounts.find((acc) => acc.addr === addr)
       return [
         {
           account: {
@@ -902,8 +907,8 @@ export class AccountAdderController extends EventEmitter {
               salt
             },
             preferences: {
-              label: DEFAULT_ACCOUNT_LABEL,
-              pfp: addr
+              label: existingAccount?.preferences.label || DEFAULT_ACCOUNT_LABEL,
+              pfp: existingAccount?.preferences?.pfp || addr
             }
           },
           isLinked: true

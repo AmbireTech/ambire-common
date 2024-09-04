@@ -55,22 +55,27 @@ export function getAccountDeployParams(account: Account): [string, string] {
   ]
 }
 
-export function getBasicAccount(addr: string): Account {
+export function getBasicAccount(addr: string, existingAccounts: Account[]): Account {
+  const { preferences } = existingAccounts.find((acc) => acc.addr === addr) || {}
   return {
     addr,
     associatedKeys: [addr],
     initialPrivileges: [],
     creation: null,
     preferences: {
-      label: DEFAULT_ACCOUNT_LABEL,
-      pfp: addr
+      label: preferences?.label || DEFAULT_ACCOUNT_LABEL,
+      pfp: preferences?.pfp || addr
     }
   }
 }
 
-export async function getSmartAccount(privileges: PrivLevels[]): Promise<Account> {
+export async function getSmartAccount(
+  privileges: PrivLevels[],
+  existingAccounts: Account[]
+): Promise<Account> {
   const bytecode = await getBytecode(privileges)
   const addr = getAmbireAccountAddress(AMBIRE_ACCOUNT_FACTORY, bytecode)
+  const { preferences } = existingAccounts.find((acc) => acc.addr === addr) || {}
 
   return {
     addr,
@@ -82,8 +87,8 @@ export async function getSmartAccount(privileges: PrivLevels[]): Promise<Account
       salt: toBeHex(0, 32)
     },
     preferences: {
-      label: DEFAULT_ACCOUNT_LABEL,
-      pfp: addr
+      label: preferences?.label || DEFAULT_ACCOUNT_LABEL,
+      pfp: preferences?.pfp || addr
     }
   }
 }
@@ -172,7 +177,7 @@ export async function getEmailAccount(
   )
   const { hash } = getSignerKey(validatorAddr, validatorData)
   const privileges = [{ addr: associatedKey, hash }]
-  return getSmartAccount(privileges)
+  return getSmartAccount(privileges, [])
 }
 
 export const isAmbireV1LinkedAccount = (factoryAddr?: string) =>
