@@ -23,7 +23,10 @@ fetch('https://raw.githubusercontent.com/MetaMask/contract-metadata/master/contr
           !info.erc721 && info.symbol && info.decimals
             ? { decimals: info.decimals, symbol: info.symbol }
             : alreadyPresentData?.token,
-        isSC: {}
+        isSC: {},
+        logo: info.logo
+          ? `https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/${info.logo}`
+          : undefined
       }
     })
     return fsPromises.writeFile(humanizerInfoPath, JSON.stringify(humanizerInfo, null, 4), 'utf8')
