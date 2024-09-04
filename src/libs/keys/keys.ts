@@ -42,7 +42,7 @@ export function migrateKeyPreferencesToKeystoreKeys(
   })
 }
 
-// As of version 4.33.0, user can change the HD path when importing a seed.
+// As of version v4.33.0, user can change the HD path when importing a seed.
 // Migration is needed because previously the HD path was not stored,
 // and the default used was `BIP44_STANDARD_DERIVATION_TEMPLATE`.
 export const getShouldMigrateKeystoreSeedsWithoutHdPath = (
