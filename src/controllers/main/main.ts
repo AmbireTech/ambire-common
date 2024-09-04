@@ -469,7 +469,10 @@ export class MainController extends EventEmitter {
       accountOp,
       this.#storage,
       this.fetch,
-      this.callRelayer
+      this.callRelayer,
+      () => {
+        this.estimateSignAccountOp()
+      }
     )
 
     this.emitUpdate()
@@ -702,46 +705,6 @@ export class MainController extends EventEmitter {
         this.updateSelectedAccountPortfolio(true)
       }
     }
-  }
-
-  async #updateGasPrice() {
-    await this.#initialLoadPromise
-
-    // if there's no signAccountOp initialized, we don't want to fetch gas
-    const accOp = this.signAccountOp?.accountOp ?? null
-    if (!accOp) return
-
-    const network = this.networks.networks.find((net) => net.id === accOp.networkId)
-    if (!network) return // shouldn't happen
-
-    const is4337 = isErc4337Broadcast(
-      network,
-      this.accounts.accountStates[accOp.accountAddr][accOp.networkId]
-    )
-    const bundlerFetch = async () => {
-      if (!is4337) return null
-      return Bundler.fetchGasPrices(network).catch((e) => {
-        this.emitError({
-          level: 'silent',
-          message: "Failed to fetch the bundler's gas price",
-          error: e
-        })
-      })
-    }
-    const [gasPrice, bundlerGas] = await Promise.all([
-      getGasPriceRecommendations(this.providers.providers[network.id], network).catch((e) => {
-        this.emitError({
-          level: 'major',
-          message: `Unable to get gas price for ${network.id}`,
-          error: new Error(`Failed to fetch gas price: ${e?.message}`)
-        })
-        return null
-      }),
-      bundlerFetch()
-    ])
-
-    if (gasPrice) this.gasPrices[network.id] = gasPrice
-    if (bundlerGas) this.bundlerGasPrices[network.id] = bundlerGas
   }
 
   // call this function after a call to the singleton has been made
@@ -1471,11 +1434,55 @@ export class MainController extends EventEmitter {
     this.emitUpdate()
   }
 
+  async #updateGasPrice() {
+    await this.#initialLoadPromise
+
+    // if there's no signAccountOp initialized, we don't want to fetch gas
+    const accOp = this.signAccountOp?.accountOp ?? null
+    if (!accOp) return undefined
+
+    const network = this.networks.networks.find((net) => net.id === accOp.networkId)
+    if (!network) return undefined // shouldn't happen
+
+    const is4337 = isErc4337Broadcast(
+      network,
+      this.accounts.accountStates[accOp.accountAddr][accOp.networkId]
+    )
+    const bundlerFetch = async () => {
+      if (!is4337) return null
+      return Bundler.fetchGasPrices(network).catch((e) => {
+        this.emitError({
+          level: 'silent',
+          message: "Failed to fetch the bundler's gas price",
+          error: e
+        })
+      })
+    }
+    const [gasPriceData, bundlerGas] = await Promise.all([
+      getGasPriceRecommendations(this.providers.providers[network.id], network).catch((e) => {
+        this.emitError({
+          level: 'major',
+          message: `Unable to get gas price for ${network.id}`,
+          error: new Error(`Failed to fetch gas price: ${e?.message}`)
+        })
+        return null
+      }),
+      bundlerFetch()
+    ])
+
+    if (gasPriceData && gasPriceData.gasPrice) this.gasPrices[network.id] = gasPriceData.gasPrice
+    if (bundlerGas) this.bundlerGasPrices[network.id] = bundlerGas
+
+    return {
+      blockGasLimit: gasPriceData?.blockGasLimit
+    }
+  }
+
   async updateSignAccountOpGasPrice() {
     if (!this.signAccountOp) return
-    const networkId = this.signAccountOp.accountOp.networkId
 
-    await this.#updateGasPrice()
+    const accOp = this.signAccountOp.accountOp
+    const gasData = await this.#updateGasPrice()
 
     // there's a chance signAccountOp gets destroyed between the time
     // the first "if (!this.signAccountOp) return" is performed and
@@ -1483,8 +1490,9 @@ export class MainController extends EventEmitter {
     if (!this.signAccountOp) return
 
     this.signAccountOp.update({
-      gasPrices: this.gasPrices[networkId],
-      bundlerGasPrices: this.bundlerGasPrices[networkId]
+      gasPrices: this.gasPrices[accOp.networkId],
+      bundlerGasPrices: this.bundlerGasPrices[accOp.networkId],
+      blockGasLimit: gasData && gasData.blockGasLimit ? gasData.blockGasLimit : undefined
     })
     this.emitUpdate()
   }
@@ -1713,24 +1721,22 @@ export class MainController extends EventEmitter {
             : null
       })
 
+      // if there's an estimation error, override the pending results
+      if (estimation && estimation.error) {
+        this.portfolio.overridePendingResults(localAccountOp)
+      }
       // update the signAccountOp controller once estimation finishes;
       // this eliminates the infinite loading bug if the estimation comes slower
       if (this.signAccountOp && estimation) {
         this.signAccountOp.update({ estimation, rbfAccountOps })
       }
-
-      // if there's an estimation error, override the pending results
-      if (estimation && estimation.error) {
-        this.portfolio.overridePendingResults(localAccountOp)
-      }
     } catch (error: any) {
+      this.signAccountOp?.calculateWarnings()
       this.emitError({
         level: 'silent',
         message: 'Estimation error',
         error
       })
-    } finally {
-      this.signAccountOp?.calculateWarnings()
     }
   }
 
