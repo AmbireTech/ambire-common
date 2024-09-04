@@ -232,7 +232,7 @@ export class SignAccountOpController extends EventEmitter {
 
   #setGasFeePayment() {
     if (this.isInitialized && this.paidBy && this.selectedFeeSpeed && this.feeTokenResult) {
-      this.accountOp!.gasFeePayment = this.#getGasFeePayment()
+      this.accountOp.gasFeePayment = this.#getGasFeePayment()
     }
   }
 
@@ -286,7 +286,11 @@ export class SignAccountOpController extends EventEmitter {
       errors.push('Transaction reverted with estimation too high: above block limit')
     }
 
-    if (this.estimation?.gasUsed && this.estimation?.gasUsed > 500000000n) {
+    if (
+      this.#network.predefined &&
+      this.estimation?.gasUsed &&
+      this.estimation?.gasUsed > 500000000n
+    ) {
       errors.push('Unreasonably high estimation. This transaction will probably fail')
     }
 
@@ -487,8 +491,8 @@ export class SignAccountOpController extends EventEmitter {
     }
 
     if (signingKeyAddr && signingKeyType && this.isInitialized) {
-      this.accountOp!.signingKeyAddr = signingKeyAddr
-      this.accountOp!.signingKeyType = signingKeyType
+      this.accountOp.signingKeyAddr = signingKeyAddr
+      this.accountOp.signingKeyType = signingKeyType
     }
 
     if (gasUsedTooHighAgreed !== undefined) this.gasUsedTooHighAgreed = gasUsedTooHighAgreed
@@ -726,7 +730,7 @@ export class SignAccountOpController extends EventEmitter {
       this.accountOp,
       this.account,
       this.#network,
-      this.#accounts.accountStates[this.accountOp!.accountAddr][this.accountOp!.networkId]
+      this.#accounts.accountStates[this.accountOp.accountAddr][this.accountOp.networkId]
     )
 
     this.availableFeeOptions.forEach((option) => {
@@ -1047,35 +1051,35 @@ export class SignAccountOpController extends EventEmitter {
     // In case of gas tank token fee payment, we need to include one more call to account op
     const abiCoder = new AbiCoder()
 
-    if (this.accountOp!.gasFeePayment!.isGasTank) {
-      this.accountOp!.feeCall = {
+    if (this.accountOp.gasFeePayment!.isGasTank) {
+      this.accountOp.feeCall = {
         to: FEE_COLLECTOR,
         value: 0n,
         data: abiCoder.encode(
           ['string', 'uint256', 'string'],
-          ['gasTank', this.accountOp!.gasFeePayment!.amount, this.feeTokenResult?.symbol]
+          ['gasTank', this.accountOp.gasFeePayment!.amount, this.feeTokenResult?.symbol]
         )
       }
 
       return
     }
 
-    if (this.accountOp!.gasFeePayment!.inToken === '0x0000000000000000000000000000000000000000') {
+    if (this.accountOp.gasFeePayment!.inToken === '0x0000000000000000000000000000000000000000') {
       // native payment
-      this.accountOp!.feeCall = {
+      this.accountOp.feeCall = {
         to: FEE_COLLECTOR,
-        value: this.accountOp!.gasFeePayment!.amount,
+        value: this.accountOp.gasFeePayment!.amount,
         data: '0x'
       }
     } else {
       // token payment
       const ERC20Interface = new Interface(ERC20.abi)
-      this.accountOp!.feeCall = {
-        to: this.accountOp!.gasFeePayment!.inToken,
+      this.accountOp.feeCall = {
+        to: this.accountOp.gasFeePayment!.inToken,
         value: 0n,
         data: ERC20Interface.encodeFunctionData('transfer', [
           FEE_COLLECTOR,
-          this.accountOp!.gasFeePayment!.amount
+          this.accountOp.gasFeePayment!.amount
         ])
       }
     }
@@ -1118,7 +1122,7 @@ export class SignAccountOpController extends EventEmitter {
 
     if (signer.init) signer.init(this.#externalSignerControllers[this.accountOp.signingKeyType])
     const accountState =
-      this.#accounts.accountStates[this.accountOp!.accountAddr][this.accountOp!.networkId]
+      this.#accounts.accountStates[this.accountOp.accountAddr][this.accountOp.networkId]
 
     // just in-case: before signing begins, we delete the feeCall;
     // if there's a need for it, it will be added later on in the code.
