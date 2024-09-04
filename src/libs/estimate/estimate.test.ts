@@ -790,7 +790,7 @@ describe('estimate', () => {
         hash: dedicatedToOneSAPriv
       }
     ]
-    const smartAcc = await getSmartAccount(privs)
+    const smartAcc = await getSmartAccount(privs, [])
     const opOptimism: AccountOp = {
       accountAddr: smartAcc.addr,
       signingKeyAddr: smartAcc.associatedKeys[0],
@@ -840,7 +840,7 @@ describe('estimate', () => {
         hash: dedicatedToOneSAPriv
       }
     ]
-    const smartAcc = await getSmartAccount(privs)
+    const smartAcc = await getSmartAccount(privs, [])
     const opOptimism: AccountOp = {
       accountAddr: smartAcc.addr,
       signingKeyAddr: smartAcc.associatedKeys[0],
@@ -892,7 +892,7 @@ describe('estimate', () => {
       }
     ]
     const ERC20Interface = new Interface(ERC20.abi)
-    const smartAcc = await getSmartAccount(privs)
+    const smartAcc = await getSmartAccount(privs, [])
     const opOptimism: AccountOp = {
       accountAddr: smartAcc.addr,
       signingKeyAddr: smartAcc.associatedKeys[0],
