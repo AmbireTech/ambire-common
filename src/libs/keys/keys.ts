@@ -1,4 +1,5 @@
-import { Key, StoredKey } from '../../interfaces/keystore'
+import { BIP44_STANDARD_DERIVATION_TEMPLATE, HD_PATH_TEMPLATE_TYPE } from '../../consts/derivation'
+import { Key, KeystoreSeed, StoredKey } from '../../interfaces/keystore'
 
 export const DEFAULT_KEY_LABEL_PATTERN = /^Key (\d+)$/
 export const getDefaultKeyLabel = (prevKeys: Key[], i: number) => {
@@ -39,4 +40,21 @@ export function migrateKeyPreferencesToKeystoreKeys(
 
     return key
   })
+}
+
+// As of version v4.33.0, user can change the HD path when importing a seed.
+// Migration is needed because previously the HD path was not stored,
+// and the default used was `BIP44_STANDARD_DERIVATION_TEMPLATE`.
+export const getShouldMigrateKeystoreSeedsWithoutHdPath = (
+  keystoreSeeds: string[] | KeystoreSeed[]
+) =>
+  // @ts-ignore TS complains, but we know that keystoreSeeds is either an array of strings or an array of objects
+  !!keystoreSeeds?.length && keystoreSeeds.every((seed) => typeof seed === 'string')
+export function migrateKeystoreSeedsWithoutHdPathTemplate(
+  prevKeystoreSeeds: string[]
+): { seed: string; hdPathTemplate: HD_PATH_TEMPLATE_TYPE }[] {
+  return prevKeystoreSeeds.map((seed) => ({
+    seed,
+    hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
+  }))
 }

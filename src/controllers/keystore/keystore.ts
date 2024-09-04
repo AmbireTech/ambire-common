@@ -22,10 +22,12 @@ import {
 import scrypt from 'scrypt-js'
 
 import EmittableError from '../../classes/EmittableError'
+import { HD_PATH_TEMPLATE_TYPE } from '../../consts/derivation'
 import {
   ExternalKey,
   Key,
   KeyPreferences,
+  KeystoreSeed,
   KeystoreSignerType,
   MainKey,
   MainKeyEncryptedWithSecret,
@@ -33,7 +35,12 @@ import {
   StoredKey
 } from '../../interfaces/keystore'
 import { Storage } from '../../interfaces/storage'
-import { getDefaultKeyLabel, migrateKeyPreferencesToKeystoreKeys } from '../../libs/keys/keys'
+import {
+  getDefaultKeyLabel,
+  getShouldMigrateKeystoreSeedsWithoutHdPath,
+  migrateKeyPreferencesToKeystoreKeys,
+  migrateKeystoreSeedsWithoutHdPathTemplate
+} from '../../libs/keys/keys'
 import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter'
 
 const scryptDefaults = { N: 131072, r: 8, p: 1, dkLen: 64 }
@@ -90,7 +97,7 @@ export class KeystoreController extends EventEmitter {
 
   #storage: Storage
 
-  #keystoreSeeds: string[] = []
+  #keystoreSeeds: KeystoreSeed[] = []
 
   #keystoreSigners: Partial<{ [key in Key['type']]: KeystoreSignerType }>
 
@@ -128,8 +135,17 @@ export class KeystoreController extends EventEmitter {
         this.#storage.get('keystoreKeys', []),
         this.#storage.get('keyPreferences', [])
       ])
-      this.#keystoreSeeds = keystoreSeeds
       this.keyStoreUid = keyStoreUid
+
+      // keystore seeds migration
+      if (getShouldMigrateKeystoreSeedsWithoutHdPath(keystoreSeeds)) {
+        // Cast to the old type (string[]) to avoid TS errors
+        const preMigrationKeystoreSeeds = keystoreSeeds as unknown as string[]
+        this.#keystoreSeeds = migrateKeystoreSeedsWithoutHdPathTemplate(preMigrationKeystoreSeeds)
+        await this.#storage.set('keystoreSeeds', this.#keystoreSeeds)
+      } else {
+        this.#keystoreSeeds = keystoreSeeds
+      }
 
       // key preferences migration
       if (keyPreferences) {
@@ -369,7 +385,7 @@ export class KeystoreController extends EventEmitter {
     })
   }
 
-  async #addSeed(seed: string) {
+  async #addSeed({ seed, hdPathTemplate }: KeystoreSeed) {
     await this.#initialLoadPromise
 
     if (this.#mainKey === null)
@@ -402,14 +418,35 @@ export class KeystoreController extends EventEmitter {
     // Set up the cipher
     const counter = new aes.Counter(this.#mainKey!.iv) // TS compiler fails to detect we check for null above
     const aesCtr = new aes.ModeOfOperation.ctr(this.#mainKey!.key, counter) // TS compiler fails to detect we check for null above
-    this.#keystoreSeeds.push(hexlify(aesCtr.encrypt(new TextEncoder().encode(seed))))
+    this.#keystoreSeeds.push({
+      seed: hexlify(aesCtr.encrypt(new TextEncoder().encode(seed))),
+      hdPathTemplate
+    })
     await this.#storage.set('keystoreSeeds', this.#keystoreSeeds)
 
     this.emitUpdate()
   }
 
-  async addSeed(seed: string) {
-    await this.withStatus('addSeed', () => this.#addSeed(seed))
+  async addSeed(keystoreSeed: KeystoreSeed) {
+    await this.withStatus('addSeed', () => this.#addSeed(keystoreSeed))
+  }
+
+  async changeDefaultSeedHdPathTemplateIfNeeded(nextHdPathTemplate?: HD_PATH_TEMPLATE_TYPE) {
+    if (!nextHdPathTemplate) return // should never happen
+
+    await this.#initialLoadPromise
+
+    if (!this.isUnlocked) throw new Error('keystore: not unlocked')
+    if (!this.#keystoreSeeds.length) throw new Error('keystore: no seed phrase added yet')
+
+    const isTheSameHdPathTemplate = this.#keystoreSeeds[0].hdPathTemplate === nextHdPathTemplate
+    if (isTheSameHdPathTemplate) return
+
+    // As of v4.33.0 we support only one seed phrase (default seed) to be added to the keystore
+    this.#keystoreSeeds[0].hdPathTemplate = nextHdPathTemplate
+    await this.#storage.set('keystoreSeeds', this.#keystoreSeeds)
+
+    this.emitUpdate()
   }
 
   async #addKeysExternallyStored(keysToAdd: ExternalKey[]) {
@@ -660,13 +697,15 @@ export class KeystoreController extends EventEmitter {
     if (!this.isUnlocked) throw new Error('keystore: not unlocked')
     if (!this.#keystoreSeeds.length) throw new Error('keystore: no seed phrase added yet')
 
-    const encryptedSeedBytes = getBytes(this.#keystoreSeeds[0])
+    const hdPathTemplate = this.#keystoreSeeds[0].hdPathTemplate
+    const encryptedSeedBytes = getBytes(this.#keystoreSeeds[0].seed)
     // @ts-ignore
     const counter = new aes.Counter(this.#mainKey.iv)
     // @ts-ignore
     const aesCtr = new aes.ModeOfOperation.ctr(this.#mainKey.key, counter)
     const decryptedSeedBytes = aesCtr.decrypt(encryptedSeedBytes)
-    return new TextDecoder().decode(decryptedSeedBytes)
+    const decryptedSeed = new TextDecoder().decode(decryptedSeedBytes)
+    return { seed: decryptedSeed, hdPathTemplate }
   }
 
   async #changeKeystorePassword(newSecret: string, oldSecret?: string) {
