@@ -659,11 +659,9 @@ export class PortfolioController extends EventEmitter {
             isSuccessfulLatestUpdate &&
             !areAccountOpsChanged &&
             accountState[network.id]?.result?.hintsFromExternalAPI
-          ) {
-            const readyToLearnTokens = getTokensReadyToLearn(
-              this.#toBeLearnedTokens[network.id],
-              accountState[network.id]!.result!.tokens
-            )
+          ) { 
+
+            const readyToLearnTokens = getTokensReadyToLearn(this.#toBeLearnedTokens[network.id], accountState[network.id]!.result!.tokens)
 
             if (readyToLearnTokens.length) {
               await this.learnTokens(readyToLearnTokens, network.id)
@@ -733,7 +731,7 @@ export class PortfolioController extends EventEmitter {
     if (!tokenAddresses) return false
 
     if (!this.#previousHints.learnedTokens) this.#previousHints.learnedTokens = {}
-
+    console.log('koga se vikash be')
     let networkLearnedTokens: PreviousHintsStorage['learnedTokens'][''] =
       this.#previousHints.learnedTokens[networkId] || {}
 
