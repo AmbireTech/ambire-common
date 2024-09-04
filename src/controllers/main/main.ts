@@ -540,7 +540,7 @@ export class MainController extends EventEmitter {
       gasPrice,
       !network.rpcNoStateOverride
     )
-    const learnedNewTokens = await this.portfolio.learnTokens(tokens, network.id)
+    const learnedNewTokens = this.portfolio.addTokensToBeLearned(tokens, network.id)
     const learnedNewNfts = await this.portfolio.learnNfts(nfts, network.id)
     // update the portfolio only if new tokens were found through tracing
     if (learnedNewTokens || learnedNewNfts) {
