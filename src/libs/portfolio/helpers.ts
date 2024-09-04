@@ -315,6 +315,7 @@ export function getUpdatedHints(
       }
     }
   }
+
   // Update the external hints for [network:account] with the latest from the external API
   previousHints.fromExternalAPI[key] = latestHintsFromExternalAPI
 
@@ -323,14 +324,6 @@ export function getUpdatedHints(
     learnedTokens,
     learnedNfts
   }
-}
-
-export const getTokensReadyToLearn = (toBeLearnedTokens: string[], resultTokens: TokenResult[]) => {
-  if (!toBeLearnedTokens.length || !resultTokens || !resultTokens.length) return []
-
-  return toBeLearnedTokens.filter((address) =>
-    resultTokens.find((resultToken) => resultToken.address === address && resultToken.amount > 0n)
-  )
 }
 
 export const tokenFilter = (
