@@ -27,4 +27,6 @@ export interface KeyIterator {
     dedicatedToOneSA: boolean
     meta: null
   }[]
+  /** Checks if the seed matches the key iterator's seed (optional, for hot wallets) */
+  isSeedMatching?: (seedToCompareWith: string) => boolean
 }

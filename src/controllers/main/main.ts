@@ -332,6 +332,13 @@ export class MainController extends EventEmitter {
           // skips the parallel one, if one is requested).
           await this.keystore.addKeys(this.accountAdder.readyToAddKeys.internal)
           await this.keystore.addKeysExternallyStored(this.accountAdder.readyToAddKeys.external)
+
+          // Update the default seed `hdPathTemplate` if accounts were added from
+          // the default seed, so when user opts in to "Import a new Smart Account
+          // from the default Seed Phrase" the next account is derived based
+          // on the latest `hdPathTemplate` chosen in the AccountAdder.
+          if (this.accountAdder.isInitializedWithDefaultSeed)
+            this.keystore.changeDefaultSeedHdPathTemplateIfNeeded(this.accountAdder.hdPathTemplate)
         },
         true
       )
@@ -348,11 +355,10 @@ export class MainController extends EventEmitter {
       async () => {
         if (this.accountAdder.isInitialized) this.accountAdder.reset()
         if (seed && !this.keystore.hasKeystoreDefaultSeed) {
-          await this.keystore.addSeed(seed)
+          await this.keystore.addSeed({ seed, hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE })
         }
 
         const defaultSeed = await this.keystore.getDefaultSeed()
-
         if (!defaultSeed) {
           throw new EmittableError({
             message:
@@ -362,10 +368,10 @@ export class MainController extends EventEmitter {
           })
         }
 
-        const keyIterator = new KeyIterator(defaultSeed)
-        this.accountAdder.init({
+        const keyIterator = new KeyIterator(defaultSeed.seed)
+        await this.accountAdder.init({
           keyIterator,
-          hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
+          hdPathTemplate: defaultSeed.hdPathTemplate,
           pageSize: 1,
           shouldGetAccountsUsedOnNetworks: false,
           shouldSearchForLinkedAccounts: false
@@ -634,7 +640,7 @@ export class MainController extends EventEmitter {
       }
 
       const keyIterator = new LedgerKeyIterator({ controller: ledgerCtrl })
-      this.accountAdder.init({ keyIterator, hdPathTemplate })
+      await this.accountAdder.init({ keyIterator, hdPathTemplate })
 
       return await this.accountAdder.setPage({ page: 1 })
     } catch (error: any) {
@@ -666,7 +672,7 @@ export class MainController extends EventEmitter {
       await latticeCtrl.unlock(hdPathTemplate, undefined, true)
 
       const { walletSDK } = latticeCtrl
-      this.accountAdder.init({
+      await this.accountAdder.init({
         keyIterator: new LatticeKeyIterator({ walletSDK }),
         hdPathTemplate
       })
