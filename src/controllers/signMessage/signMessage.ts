@@ -191,7 +191,6 @@ export class SignMessageController extends EventEmitter {
       const accountState = this.#accounts.accountStates[account.addr][network.id]
       let signature
       try {
-        debugger
         if (this.messageToSign.content.kind === 'message') {
           const message = this.messageToSign.content.message
           this.messageToSign.content.message = isHexString(message)
