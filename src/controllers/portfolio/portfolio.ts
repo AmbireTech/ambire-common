@@ -19,6 +19,7 @@ import getAccountNetworksWithAssets from '../../libs/portfolio/getNetworksWithAs
 import {
   getFlags,
   getPinnedGasTankTokens,
+  getTokensReadyToLearn,
   getTotal,
   getUpdatedHints,
   processTokens,
@@ -63,6 +64,8 @@ export class PortfolioController extends EventEmitter {
       [networkId: NetworkId]: Promise<void>
     }
   }
+
+  #toBeLearnedTokens: { [network in NetworkId]: string[] }
 
   tokenPreferences: CustomToken[] = []
 
@@ -129,6 +132,7 @@ export class PortfolioController extends EventEmitter {
     this.#networks = networks
     this.#accounts = accounts
     this.temporaryTokens = {}
+    this.#toBeLearnedTokens = {}
 
     this.#initialLoadPromise = this.#load()
   }
@@ -596,20 +600,20 @@ export class PortfolioController extends EventEmitter {
           //    Here, we should apply the `areAccountOpsChanged` optimization and update both states only if the AccountOps have changed or have not been simulated yet.
           const forceUpdate = opts?.forceUpdate || areAccountOpsChanged
 
-          // Pass in learnedTokens as additionalHints only on areAccountOpsChanged
           const fallbackHints = (this.#previousHints?.fromExternalAPI &&
             this.#previousHints?.fromExternalAPI[key]) ?? {
             erc20s: [],
             erc721s: {}
           }
-          const additionalHints =
-            (forceUpdate &&
-              Object.keys(
-                (this.#previousHints?.learnedTokens &&
-                  this.#previousHints?.learnedTokens[network.id]) ??
-                  {}
-              )) ||
-            []
+
+          const additionalHints = [
+            ...Object.keys(
+              (this.#previousHints?.learnedTokens &&
+                this.#previousHints?.learnedTokens[network.id]) ??
+                {}
+            ),
+            ...((this.#toBeLearnedTokens && this.#toBeLearnedTokens[network.id]) ?? [])
+          ]
 
           const [isSuccessfulLatestUpdate] = await Promise.all([
             // Latest state update
@@ -655,7 +659,14 @@ export class PortfolioController extends EventEmitter {
             isSuccessfulLatestUpdate &&
             !areAccountOpsChanged &&
             accountState[network.id]?.result?.hintsFromExternalAPI
-          ) {
+          ) { 
+
+            const readyToLearnTokens = getTokensReadyToLearn(this.#toBeLearnedTokens[network.id], accountState[network.id]!.result!.tokens)
+
+            if (readyToLearnTokens.length) {
+              await this.learnTokens(readyToLearnTokens, network.id)
+            }
+
             const updatedStoragePreviousHints = getUpdatedHints(
               accountState[network.id]!.result!.hintsFromExternalAPI as ExternalHintsAPIResponse,
               accountState[network.id]!.result!.tokens,
@@ -692,13 +703,35 @@ export class PortfolioController extends EventEmitter {
     this.emitUpdate()
   }
 
+  addTokensToBeLearned(tokenAddresses: string[], networkId: NetworkId) {
+    if (!tokenAddresses.length) return false
+    if (!this.#toBeLearnedTokens[networkId]) this.#toBeLearnedTokens[networkId] = []
+
+    let networkToBeLearnedTokens = this.#toBeLearnedTokens[networkId]
+
+    const alreadyLearned = networkToBeLearnedTokens.map((addr) => getAddress(addr))
+
+    const tokensToLearn = tokenAddresses.filter((address) => {
+      const normalizedAddress = getAddress(address)
+
+      return !alreadyLearned.includes(normalizedAddress)
+    })
+
+    if (!tokensToLearn.length) return false
+
+    networkToBeLearnedTokens = [...tokensToLearn, ...networkToBeLearnedTokens]
+
+    this.#toBeLearnedTokens[networkId] = networkToBeLearnedTokens
+    return true
+  }
+
   // Learn new tokens from humanizer and debug_traceCall
   // return: whether new tokens have been learned
   async learnTokens(tokenAddresses: string[] | undefined, networkId: NetworkId): Promise<boolean> {
     if (!tokenAddresses) return false
 
     if (!this.#previousHints.learnedTokens) this.#previousHints.learnedTokens = {}
-
+    console.log('koga se vikash be')
     let networkLearnedTokens: PreviousHintsStorage['learnedTokens'][''] =
       this.#previousHints.learnedTokens[networkId] || {}
 
@@ -718,8 +751,11 @@ export class PortfolioController extends EventEmitter {
 
     // Reached limit
     if (LEARNED_TOKENS_NETWORK_LIMIT - Object.keys(networkLearnedTokens).length < 0) {
+      // Convert learned tokens into an array of [address, timestamp] pairs and sort by timestamp in descending order.
+      // This ensures that tokens with the most recent timestamps are prioritized for retention,
+      // and tokens with the oldest timestamps are deleted last when the limit is exceeded.
       const learnedTokensArray = Object.entries(networkLearnedTokens).sort(
-        (a, b) => Number(a[1]) - Number(b[1])
+        (a, b) => Number(b[1]) - Number(a[1])
       )
 
       networkLearnedTokens = Object.fromEntries(

@@ -614,6 +614,24 @@ describe('Portfolio Controller ', () => {
     })
   })
 
+  test('To be learned token is returned from portfolio', async () => {
+    const { controller } = prepareTest()
+
+    await controller.addTokensToBeLearned(
+      ['0x7Fc66500c84A76Ad7e9c93437bFc5Ac33E2DDaE9'],
+      'ethereum'
+    )
+
+    await controller.updateSelectedAccount(account.addr, undefined, undefined, {
+      forceUpdate: true
+    })
+
+    const toBeLearnedToken = controller.latest[account.addr].ethereum?.result?.tokens.find(
+      (token) => token.address === '0x7Fc66500c84A76Ad7e9c93437bFc5Ac33E2DDaE9'
+    )
+    expect(toBeLearnedToken).toBeTruthy()
+  })
+
   test('Native tokens are fetched for all networks', async () => {
     const { controller } = prepareTest()
 
