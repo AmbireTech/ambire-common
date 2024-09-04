@@ -44,7 +44,12 @@ export function migrateKeyPreferencesToKeystoreKeys(
 
 // As of version 4.33.0, we introduced createdAt prop to the Key interface to help with sorting and add more details for the Keys.
 export const getShouldMigrateKeyMetaNullToKeyMetaCreatedAt = (keystoreKeys: StoredKey[]) =>
-  keystoreKeys.some((key) => !key.meta)
+  keystoreKeys.some((key) => {
+    const internalKeyWithoutMeta = key.type === 'internal' && !key.meta
+    const externalKeyWithoutCreatedAt = key.type !== 'internal' && 'createdAt' in key.meta
+
+    return internalKeyWithoutMeta || externalKeyWithoutCreatedAt
+  })
 export function migrateKeyMetaNullToKeyMetaCreatedAt(keystoreKeys: StoredKey[]) {
   return keystoreKeys.map((key) => {
     if (!key.meta) return { ...key, meta: { createdAt: null } } as StoredKey
