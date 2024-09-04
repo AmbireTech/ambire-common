@@ -615,6 +615,34 @@ describe('Portfolio Controller ', () => {
     })
   })
 
+  test('To be learned token is returned from portfolio and not passed to learnedTokens (without balance)', async () => {
+    const { storage, controller } = prepareTest()
+    const ethereum = networks.find((network) => network.id === 'ethereum')!
+    const clonedEthereum = structuredClone(ethereum)
+    clonedEthereum.hasRelayer = false
+  
+    await controller.addTokensToBeLearned(
+      ['0xA0b73E1Ff0B80914AB6fe0444E65848C4C34450b'],
+      'ethereum'
+    )
+
+    await controller.updateSelectedAccount(account.addr, clonedEthereum, undefined, {
+      forceUpdate: true,
+    })
+
+    const toBeLearnedToken = controller.latest[account.addr].ethereum?.result?.tokens.find(
+      (token) => token.address === '0xA0b73E1Ff0B80914AB6fe0444E65848C4C34450b'
+    )
+
+    expect(toBeLearnedToken).toBeTruthy()
+
+    const previousHintsStorage = await storage.get('previousHints', {})
+    const tokenIsNotInLearnedTokens =
+      previousHintsStorage.learnedTokens?.ethereum && previousHintsStorage.learnedTokens?.ethereum[toBeLearnedToken!.address]
+
+    expect(tokenIsNotInLearnedTokens).toBeFalsy()
+  })
+
   test('To be learned token is returned from portfolio and updated with timestamp in learnedTokens', async () => {
     const { storage, controller } = prepareTest()
     const ethereum = networks.find((network) => network.id === 'ethereum')!
@@ -636,10 +664,10 @@ describe('Portfolio Controller ', () => {
     expect(toBeLearnedToken).toBeTruthy()
 
     const previousHintsStorage = await storage.get('previousHints', {})
-    const firstTokenOnEthInLearned =
+    const tokenInLearnedTokens =
       previousHintsStorage.learnedTokens?.ethereum[toBeLearnedToken!.address]
 
-    expect(firstTokenOnEthInLearned).toBeTruthy()
+    expect(tokenInLearnedTokens).toBeTruthy()
   })
 
   test('To be learned token is returned from portfolio and updated with timestamp in learnedTokens', async () => {
