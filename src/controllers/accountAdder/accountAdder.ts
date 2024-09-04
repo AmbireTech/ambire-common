@@ -419,7 +419,7 @@ export class AccountAdderController extends EventEmitter {
     this.emitUpdate()
   }
 
-  async deselectAccount(account: Account) {
+  deselectAccount(account: Account) {
     if (!this.isInitialized) return this.#throwNotInitialized()
     if (!this.#keyIterator) return this.#throwMissingKeyIterator()
 
@@ -503,7 +503,7 @@ export class AccountAdderController extends EventEmitter {
     this.accountsLoading = false
     this.emitUpdate()
 
-    this.#findAndSetLinkedAccounts({
+    await this.#findAndSetLinkedAccounts({
       accounts: this.#derivedAccounts
         .filter(
           (acc) =>
