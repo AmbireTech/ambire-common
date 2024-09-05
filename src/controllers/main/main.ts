@@ -67,6 +67,7 @@ import {
 } from '../../libs/userOperation/userOperation'
 import bundler from '../../services/bundlers'
 import { Bundler } from '../../services/bundlers/bundler'
+import { Socket } from '../../services/socket/api'
 import { getIsViewOnly } from '../../utils/accounts'
 import shortenAddress from '../../utils/shortenAddress'
 import wait from '../../utils/wait'
@@ -181,7 +182,8 @@ export class MainController extends EventEmitter {
     keystoreSigners,
     externalSignerControllers,
     windowManager,
-    notificationManager
+    notificationManager,
+    socket
   }: {
     storage: Storage
     fetch: Fetch
@@ -191,6 +193,7 @@ export class MainController extends EventEmitter {
     externalSignerControllers: ExternalSignerControllers
     windowManager: WindowManager
     notificationManager: NotificationManager
+    socket: Socket
   }) {
     super()
     this.#storage = storage
