@@ -105,7 +105,7 @@ describe('AccountAdder', () => {
   beforeEach(() => {
     accountAdder = new AccountAdderController({
       accounts: accountsCtrl,
-      keystore: new KeystoreController(produceMemoryStore(), {}),
+      keystore: new KeystoreController(storage, {}),
       networks: networksCtrl,
       providers: providersCtrl,
       relayerUrl,
@@ -115,17 +115,17 @@ describe('AccountAdder', () => {
 
   test('should initialize', async () => {
     const keyIterator = new KeyIterator(process.env.SEED)
-    await accountAdder.init({
-      keyIterator,
-      hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
-    })
+    const hdPathTemplate = BIP44_STANDARD_DERIVATION_TEMPLATE
+    await accountAdder.init({ keyIterator, hdPathTemplate })
 
     expect(accountAdder.page).toEqual(DEFAULT_PAGE)
     expect(accountAdder.pageSize).toEqual(DEFAULT_PAGE_SIZE)
     expect(accountAdder.isInitialized).toBeTruthy()
     expect(accountAdder.isInitializedWithDefaultSeed).toBeFalsy()
     expect(accountAdder.selectedAccounts).toEqual([])
-    expect(accountAdder.hdPathTemplate).toEqual(BIP44_STANDARD_DERIVATION_TEMPLATE)
+    expect(accountAdder.hdPathTemplate).toEqual(hdPathTemplate)
+    expect(accountAdder.shouldGetAccountsUsedOnNetworks).toBeTruthy()
+    expect(accountAdder.shouldSearchForLinkedAccounts).toBeTruthy()
   })
 
   test('should throw if AccountAdder controller method is requested, but the controller was not initialized beforehand', (done) => {
