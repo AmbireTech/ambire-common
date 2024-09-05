@@ -50,7 +50,7 @@ describe('Bundler estimation tests', () => {
           hash: dedicatedToOneSAPriv
         }
       ]
-      const smartAcc = await getSmartAccount(privs)
+      const smartAcc = await getSmartAccount(privs, [])
       const opOptimism: AccountOp = {
         accountAddr: smartAcc.addr,
         signingKeyAddr: smartAcc.associatedKeys[0],

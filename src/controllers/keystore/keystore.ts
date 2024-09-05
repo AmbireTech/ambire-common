@@ -25,6 +25,7 @@ import EmittableError from '../../classes/EmittableError'
 import { HD_PATH_TEMPLATE_TYPE } from '../../consts/derivation'
 import {
   ExternalKey,
+  InternalKey,
   Key,
   KeyPreferences,
   KeystoreSeed,
@@ -37,7 +38,9 @@ import {
 import { Storage } from '../../interfaces/storage'
 import {
   getDefaultKeyLabel,
+  getShouldMigrateKeyMetaNullToKeyMetaCreatedAt,
   getShouldMigrateKeystoreSeedsWithoutHdPath,
+  migrateKeyMetaNullToKeyMetaCreatedAt,
   migrateKeyPreferencesToKeystoreKeys,
   migrateKeystoreSeedsWithoutHdPathTemplate
 } from '../../libs/keys/keys'
@@ -137,7 +140,6 @@ export class KeystoreController extends EventEmitter {
       ])
       this.keyStoreUid = keyStoreUid
 
-      // keystore seeds migration
       if (getShouldMigrateKeystoreSeedsWithoutHdPath(keystoreSeeds)) {
         // Cast to the old type (string[]) to avoid TS errors
         const preMigrationKeystoreSeeds = keystoreSeeds as unknown as string[]
@@ -147,13 +149,18 @@ export class KeystoreController extends EventEmitter {
         this.#keystoreSeeds = keystoreSeeds
       }
 
-      // key preferences migration
-      if (keyPreferences) {
+      const shouldMigrateKeyPreferencesToKeystoreKeys = keyPreferences.length > 0
+      if (shouldMigrateKeyPreferencesToKeystoreKeys) {
         this.#keystoreKeys = migrateKeyPreferencesToKeystoreKeys(keyPreferences, keystoreKeys)
         await this.#storage.set('keystoreKeys', this.#keystoreKeys)
         await this.#storage.remove('keyPreferences')
       } else {
         this.#keystoreKeys = keystoreKeys
+      }
+
+      if (getShouldMigrateKeyMetaNullToKeyMetaCreatedAt(this.#keystoreKeys)) {
+        this.#keystoreKeys = migrateKeyMetaNullToKeyMetaCreatedAt(this.#keystoreKeys)
+        await this.#storage.set('keystoreKeys', this.#keystoreKeys)
       }
     } catch (e) {
       this.emitError({
@@ -639,14 +646,16 @@ export class KeystoreController extends EventEmitter {
       type: 'internal'
       privateKey: string
       dedicatedToOneSA: Key['dedicatedToOneSA']
-      meta: null
+      meta: InternalKey['meta']
     } = {
       addr: new Wallet(privateKey).address,
       privateKey,
       label: getDefaultKeyLabel(this.keys, 0),
       type: 'internal',
       dedicatedToOneSA,
-      meta: null
+      meta: {
+        createdAt: new Date().getTime()
+      }
     }
 
     await this.addKeys([keyToAdd])

@@ -102,7 +102,9 @@ export type InternalKey = {
   type: 'internal'
   label: string
   dedicatedToOneSA: boolean
-  meta: null
+  meta: {
+    createdAt: number | null
+  }
 }
 
 export type ExternalKey = {
@@ -115,6 +117,7 @@ export type ExternalKey = {
     deviceModel: string
     hdPathTemplate: HD_PATH_TEMPLATE_TYPE
     index: number
+    createdAt: number | null
   }
 }
 
@@ -138,7 +141,7 @@ export type ReadyToAddKeys = {
     type: 'internal'
     privateKey: string
     dedicatedToOneSA: Key['dedicatedToOneSA']
-    meta: null
+    meta: InternalKey['meta']
   }[]
   external: {
     addr: Key['addr']

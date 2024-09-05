@@ -122,6 +122,15 @@ export class Portfolio {
         })
         if (hintsFromExternalAPI)
           hints = stripExternalHintsAPIResponse(hintsFromExternalAPI) as Hints
+      } else if (!this.network.hasRelayer) {
+        hintsFromExternalAPI = {
+          networkId,
+          accountAddr,
+          hasHints: false,
+          erc20s: [],
+          erc721s: {},
+          prices: {}
+        }
       }
     } catch (error: any) {
       errors.push({
