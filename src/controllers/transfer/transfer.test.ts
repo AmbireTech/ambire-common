@@ -112,11 +112,11 @@ describe('Transfer Controller', () => {
   })
   test('should show SW warning', async () => {
     const tokens = await getTokens()
-    const maticOnPolygon = tokens.find(
+    const polOnPolygon = tokens.find(
       (t) => t.address === '0x0000000000000000000000000000000000000000' && t.networkId === 'polygon'
     )
 
-    transferController.update({ selectedToken: maticOnPolygon })
+    transferController.update({ selectedToken: polOnPolygon })
     expect(transferController.isSWWarningVisible).toBe(true)
   })
   test('should change selected token', async () => {

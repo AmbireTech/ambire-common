@@ -25,7 +25,7 @@ const networks: Network[] = [
   {
     id: 'polygon',
     name: 'Polygon',
-    nativeAssetSymbol: 'MATIC',
+    nativeAssetSymbol: 'POL',
     rpcUrls: ['https://invictus.ambire.com/polygon'],
     selectedRpcUrl: 'https://invictus.ambire.com/polygon',
     rpcNoStateOverride: false,
