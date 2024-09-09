@@ -2,10 +2,8 @@ import { hexlify, isHexString, toUtf8Bytes } from 'ethers'
 
 import EmittableError from '../../classes/EmittableError'
 import { Account } from '../../interfaces/account'
-import { Fetch } from '../../interfaces/fetch'
 import { ExternalSignerControllers, Key } from '../../interfaces/keystore'
 import { Network } from '../../interfaces/network'
-import { Storage } from '../../interfaces/storage'
 import { Message } from '../../interfaces/userRequest'
 import {
   getEIP712Signature,
@@ -33,10 +31,6 @@ export class SignMessageController extends EventEmitter {
   #networks: NetworksController
 
   #externalSignerControllers: ExternalSignerControllers
-
-  #storage: Storage
-
-  #fetch: Fetch
 
   #accounts: AccountsController
 
@@ -67,9 +61,7 @@ export class SignMessageController extends EventEmitter {
     providers: ProvidersController,
     networks: NetworksController,
     accounts: AccountsController,
-    externalSignerControllers: ExternalSignerControllers,
-    storage: Storage,
-    fetch: Fetch
+    externalSignerControllers: ExternalSignerControllers
   ) {
     super()
 
@@ -77,8 +69,6 @@ export class SignMessageController extends EventEmitter {
     this.#providers = providers
     this.#networks = networks
     this.#externalSignerControllers = externalSignerControllers
-    this.#storage = storage
-    this.#fetch = fetch
     this.#accounts = accounts
   }
 

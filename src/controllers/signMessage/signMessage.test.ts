@@ -1,14 +1,12 @@
 import fetch from 'node-fetch'
 
-import { beforeAll, describe, expect, jest, test } from '@jest/globals'
+import { describe, expect, jest, test } from '@jest/globals'
 
 import { produceMemoryStore } from '../../../test/helpers'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { networks } from '../../consts/networks'
-import { Account, AccountStates } from '../../interfaces/account'
-import { Network } from '../../interfaces/network'
+import { Account } from '../../interfaces/account'
 import { Message } from '../../interfaces/userRequest'
-import { getAccountState } from '../../libs/accountState/accountState'
 import { getRpcProvider } from '../../services/provider'
 import { AccountsController } from '../accounts/accounts'
 import { KeystoreController } from '../keystore/keystore'
@@ -81,9 +79,7 @@ describe('SignMessageController', () => {
       providersCtrl,
       networksCtrl,
       accountsCtrl,
-      {},
-      storage,
-      fetch
+      {}
     )
   })
 

@@ -254,9 +254,7 @@ export class MainController extends EventEmitter {
       this.providers,
       this.networks,
       this.accounts,
-      this.#externalSignerControllers,
-      this.#storage,
-      this.fetch
+      this.#externalSignerControllers
     )
     this.dapps = new DappsController(this.#storage)
     this.actions = new ActionsController({
