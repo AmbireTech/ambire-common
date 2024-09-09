@@ -151,7 +151,7 @@ describe('Bundler tests', () => {
           hash: dedicatedToOneSAPriv
         }
       ]
-      const smartAcc = await getSmartAccount(privs)
+      const smartAcc = await getSmartAccount(privs, [])
 
       const opOptimism: AccountOp = {
         accountAddr: smartAcc.addr,
@@ -210,7 +210,7 @@ describe('Bundler tests', () => {
           hash: dedicatedToOneSAPriv
         }
       ]
-      const smartAcc = await getSmartAccount(privs)
+      const smartAcc = await getSmartAccount(privs, [])
       const opOptimism: AccountOp = {
         accountAddr: smartAcc.addr,
         signingKeyAddr: smartAcc.associatedKeys[0],
@@ -267,7 +267,7 @@ describe('Bundler tests', () => {
           hash: dedicatedToOneSAPriv
         }
       ]
-      const smartAcc = await getSmartAccount(privs)
+      const smartAcc = await getSmartAccount(privs, [])
       const ERC20Interface = new Interface(ERC20.abi)
       const opOptimism: AccountOp = {
         accountAddr: smartAcc.addr,
@@ -467,7 +467,7 @@ describe('Bundler tests', () => {
           hash: dedicatedToOneSAPriv
         }
       ]
-      const smartAcc = await getSmartAccount(privs)
+      const smartAcc = await getSmartAccount(privs, [])
 
       const opMantle: AccountOp = {
         accountAddr: smartAcc.addr,
@@ -518,7 +518,7 @@ describe('Bundler tests', () => {
           hash: dedicatedToOneSAPriv
         }
       ]
-      const smartAcc = await getSmartAccount(privs)
+      const smartAcc = await getSmartAccount(privs, [])
       const ERC20Interface = new Interface(ERC20.abi)
       const opMantle: AccountOp = {
         accountAddr: smartAcc.addr,

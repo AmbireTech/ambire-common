@@ -245,6 +245,8 @@ export class MainController extends EventEmitter {
     this.accountAdder = new AccountAdderController({
       accounts: this.accounts,
       keystore: this.keystore,
+      networks: this.networks,
+      providers: this.providers,
       relayerUrl,
       fetch: this.fetch
     })
@@ -328,6 +330,13 @@ export class MainController extends EventEmitter {
           // skips the parallel one, if one is requested).
           await this.keystore.addKeys(this.accountAdder.readyToAddKeys.internal)
           await this.keystore.addKeysExternallyStored(this.accountAdder.readyToAddKeys.external)
+
+          // Update the default seed `hdPathTemplate` if accounts were added from
+          // the default seed, so when user opts in to "Import a new Smart Account
+          // from the default Seed Phrase" the next account is derived based
+          // on the latest `hdPathTemplate` chosen in the AccountAdder.
+          if (this.accountAdder.isInitializedWithDefaultSeed)
+            this.keystore.changeDefaultSeedHdPathTemplateIfNeeded(this.accountAdder.hdPathTemplate)
         },
         true
       )
@@ -344,11 +353,10 @@ export class MainController extends EventEmitter {
       async () => {
         if (this.accountAdder.isInitialized) this.accountAdder.reset()
         if (seed && !this.keystore.hasKeystoreDefaultSeed) {
-          await this.keystore.addSeed(seed)
+          await this.keystore.addSeed({ seed, hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE })
         }
 
         const defaultSeed = await this.keystore.getDefaultSeed()
-
         if (!defaultSeed) {
           throw new EmittableError({
             message:
@@ -358,10 +366,10 @@ export class MainController extends EventEmitter {
           })
         }
 
-        const keyIterator = new KeyIterator(defaultSeed)
-        this.accountAdder.init({
+        const keyIterator = new KeyIterator(defaultSeed.seed)
+        await this.accountAdder.init({
           keyIterator,
-          hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
+          hdPathTemplate: defaultSeed.hdPathTemplate,
           pageSize: 1,
           shouldGetAccountsUsedOnNetworks: false,
           shouldSearchForLinkedAccounts: false
@@ -374,11 +382,7 @@ export class MainController extends EventEmitter {
         const findNextSmartAccount = async () => {
           do {
             // eslint-disable-next-line no-await-in-loop
-            await this.accountAdder.setPage({
-              page: currentPage,
-              networks: this.networks.networks,
-              providers: this.providers.providers
-            })
+            await this.accountAdder.setPage({ page: currentPage })
 
             nextSmartAccount = this.accountAdder.accountsOnPage.find(
               ({ isLinked, account }) => !isLinked && isSmartAccount(account)
@@ -535,7 +539,7 @@ export class MainController extends EventEmitter {
       gasPrice,
       !network.rpcNoStateOverride
     )
-    const learnedNewTokens = await this.portfolio.learnTokens(tokens, network.id)
+    const learnedNewTokens = this.portfolio.addTokensToBeLearned(tokens, network.id)
     const learnedNewNfts = await this.portfolio.learnNfts(nfts, network.id)
     // update the portfolio only if new tokens were found through tracing
     if (learnedNewTokens || learnedNewNfts) {
@@ -622,7 +626,8 @@ export class MainController extends EventEmitter {
       // a new session when retrieving keys, in case there already is one.
       if (ledgerCtrl.walletSDK) await ledgerCtrl.cleanUp()
 
-      await ledgerCtrl.unlock()
+      const hdPathTemplate = BIP44_LEDGER_DERIVATION_TEMPLATE
+      await ledgerCtrl.unlock(hdPathTemplate)
 
       if (!ledgerCtrl.walletSDK) {
         const message = 'Could not establish connection with the Ledger device'
@@ -630,16 +635,9 @@ export class MainController extends EventEmitter {
       }
 
       const keyIterator = new LedgerKeyIterator({ controller: ledgerCtrl })
-      this.accountAdder.init({
-        keyIterator,
-        hdPathTemplate: BIP44_LEDGER_DERIVATION_TEMPLATE
-      })
+      await this.accountAdder.init({ keyIterator, hdPathTemplate })
 
-      return await this.accountAdder.setPage({
-        page: 1,
-        networks: this.networks.networks,
-        providers: this.providers.providers
-      })
+      return await this.accountAdder.setPage({ page: 1 })
     } catch (error: any) {
       const message = error?.message || 'Could not unlock the Ledger device. Please try again.'
       throw new EmittableError({ message, level: 'major', error })
@@ -665,19 +663,16 @@ export class MainController extends EventEmitter {
         throw new EmittableError({ message, level: 'major', error: new Error(message) })
       }
 
-      await latticeCtrl.unlock(undefined, undefined, true)
+      const hdPathTemplate = BIP44_STANDARD_DERIVATION_TEMPLATE
+      await latticeCtrl.unlock(hdPathTemplate, undefined, true)
 
       const { walletSDK } = latticeCtrl
-      this.accountAdder.init({
+      await this.accountAdder.init({
         keyIterator: new LatticeKeyIterator({ walletSDK }),
-        hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
+        hdPathTemplate
       })
 
-      return await this.accountAdder.setPage({
-        page: 1,
-        networks: this.networks.networks,
-        providers: this.providers.providers
-      })
+      return await this.accountAdder.setPage({ page: 1 })
     } catch (error: any) {
       const message = error?.message || 'Could not unlock the Lattice1 device. Please try again.'
       throw new EmittableError({ message, level: 'major', error })
@@ -1584,7 +1579,7 @@ export class MainController extends EventEmitter {
         .flat()
         .filter((x: any) => isAddress(x))
 
-      await this.portfolio.learnTokens(additionalHints, network.id)
+      this.portfolio.addTokensToBeLearned(additionalHints, network.id)
 
       const accountOpsToBeSimulatedByNetwork = getAccountOpsForSimulation(
         account!,

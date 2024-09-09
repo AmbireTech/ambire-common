@@ -1,4 +1,4 @@
-import { FetchRequest, JsonRpcProvider, ZeroAddress } from 'ethers'
+import { JsonRpcProvider, ZeroAddress } from 'ethers'
 
 import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json'
 import { AMBIRE_ACCOUNT_FACTORY, DEPLOYLESS_SIMULATION_FROM } from '../../consts/deploy'
@@ -13,12 +13,15 @@ import { DeploylessMode, fromDescriptor } from './deployless'
 export async function getSASupport(
   provider: JsonRpcProvider
 ): Promise<{ addressMatches: boolean; supportsStateOverride: boolean }> {
-  const smartAccount = await getSmartAccount([
-    {
-      addr: DEPLOYLESS_SIMULATION_FROM,
-      hash: '0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff'
-    }
-  ])
+  const smartAccount = await getSmartAccount(
+    [
+      {
+        addr: DEPLOYLESS_SIMULATION_FROM,
+        hash: '0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff'
+      }
+    ],
+    []
+  )
   const deploylessOptions = {
     blockTag: 'latest',
     from: DEPLOYLESS_SIMULATION_FROM,
