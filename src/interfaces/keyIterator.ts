@@ -25,6 +25,10 @@ export interface KeyIterator {
     label: string
     privateKey: string
     dedicatedToOneSA: boolean
-    meta: null
+    meta: {
+      createdAt: number
+    }
   }[]
+  /** Checks if the seed matches the key iterator's seed (optional, for hot wallets) */
+  isSeedMatching?: (seedToCompareWith: string) => boolean
 }

@@ -1,5 +1,3 @@
-// @ts-nocheck
-// TODO: add types
 import { Resolution } from '@unstoppabledomains/resolution'
 
 import { networks } from '../../consts/networks'
@@ -30,31 +28,35 @@ function getMessage(e?: string) {
   return 'Domain is not registered'
 }
 
-async function resolveAddress(domain) {
+async function resolveAddress(domain: string) {
   return resolution
     .addr(domain, 'ETH')
     .then((addr) => ({ success: true, address: addr }))
     .catch((e) => ({ success: false, code: e.code, message: getMessage(e.code) }))
 }
 
-async function resolveAddressMultiChain(domain, currency, chain) {
+async function resolveAddressMultiChain(domain: string, currency: string, chain: string) {
   return resolution
     .multiChainAddr(domain, currency, chain)
     .then((addr) => ({ success: true, address: addr }))
     .catch((e) => ({ success: false, code: e.code, message: getMessage(e.code) }))
 }
 
-async function resolveUDomain(domain, currency?: any, chain?: any): Promise<string> {
+async function resolveUDomain(domain: string, currency?: any, chain?: any): Promise<string> {
   const [nativeUDAddress, customUDAddress] = await Promise.all([
     resolveAddress(domain),
     resolveAddressMultiChain(domain, currency, chain)
   ])
-  // eslint-disable-next-line no-nested-ternary
-  return customUDAddress.success
-    ? customUDAddress.address
-    : nativeUDAddress.success
-    ? nativeUDAddress.address
-    : ''
+
+  if (customUDAddress.success && 'address' in customUDAddress && customUDAddress.address) {
+    return customUDAddress.address
+  }
+
+  if (nativeUDAddress.success && 'address' in nativeUDAddress && nativeUDAddress.address) {
+    return nativeUDAddress.address
+  }
+
+  return ''
 }
 
 async function reverseLookupUD(address: string): Promise<string | null> {

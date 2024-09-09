@@ -34,7 +34,7 @@ const basicAccount: Account = {
 describe('Account', () => {
   test('should return basic account', () => {
     expect.assertions(1)
-    const newBasicAccount = getBasicAccount(keyPublicAddress)
+    const newBasicAccount = getBasicAccount(keyPublicAddress, [])
     expect(newBasicAccount as Account).toStrictEqual(basicAccount)
   })
   test('should return smartAccount', async () => {
@@ -43,7 +43,7 @@ describe('Account', () => {
       addr: keyPublicAddress,
       hash: dedicatedToOneSAPriv
     }
-    const newSmartAccount = await getSmartAccount([priv])
+    const newSmartAccount = await getSmartAccount([priv], [])
     const bytecode = await getBytecode([priv])
     const accountNotDeployed = {
       addr: getAmbireAccountAddress(AMBIRE_ACCOUNT_FACTORY, bytecode),
@@ -139,7 +139,9 @@ describe('Account', () => {
       type: 'internal',
       label: 'Key 1',
       dedicatedToOneSA: false,
-      meta: null,
+      meta: {
+        createdAt: new Date().getTime()
+      },
       isExternallyStored: false
     }
     const accountsOnPage: Omit<AccountOnPage, 'importStatus'>[] = [
@@ -179,7 +181,7 @@ describe('Account', () => {
       addr: keyPublicAddress,
       hash: dedicatedToOneSAPriv
     }
-    const smartAccount = await getSmartAccount([priv])
+    const smartAccount = await getSmartAccount([priv], [])
     const key: Key = {
       addr: basicAccount.addr,
       type: 'trezor',
@@ -189,7 +191,8 @@ describe('Account', () => {
         deviceId: '123',
         deviceModel: '1',
         hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
-        index: 0
+        index: 0,
+        createdAt: new Date().getTime()
       },
       isExternallyStored: false
     }
@@ -240,7 +243,7 @@ describe('Account', () => {
       addr: keyPublicAddress,
       hash: dedicatedToOneSAPriv
     }
-    const smartAccountWithIncompleteAssociatedKeys = await getSmartAccount([priv])
+    const smartAccountWithIncompleteAssociatedKeys = await getSmartAccount([priv], [])
 
     const oneOfTheSmartAccountKeys: Key = {
       addr: basicAccount.addr,
@@ -251,7 +254,8 @@ describe('Account', () => {
         deviceId: '123',
         deviceModel: '1',
         hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
-        index: 0
+        index: 0,
+        createdAt: new Date().getTime()
       },
       isExternallyStored: false
     }
@@ -276,7 +280,8 @@ describe('Account', () => {
         deviceId: '123',
         deviceModel: '1',
         hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
-        index: 1
+        index: 1,
+        createdAt: new Date().getTime()
       },
       isExternallyStored: false
     }
@@ -286,7 +291,9 @@ describe('Account', () => {
       type: 'internal',
       label: 'Key 1',
       dedicatedToOneSA: false,
-      meta: null,
+      meta: {
+        createdAt: new Date().getTime()
+      },
       isExternallyStored: false
     }
 

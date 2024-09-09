@@ -135,7 +135,9 @@ export class KeyIterator implements KeyIteratorInterface {
                 ),
               privateKey,
               dedicatedToOneSA: isDerivedForSmartAccountKeyOnly(index),
-              meta: null
+              meta: {
+                createdAt: new Date().getTime()
+              }
             }
           ]
         }
@@ -172,10 +174,21 @@ export class KeyIterator implements KeyIteratorInterface {
               ),
             privateKey: this.#privateKey,
             dedicatedToOneSA: false,
-            meta: null
+            meta: {
+              createdAt: new Date().getTime()
+            }
           }
         ]
       })
     })
+  }
+
+  isSeedMatching(seedPhraseToCompareWith: string) {
+    if (!this.#seedPhrase) return false
+
+    return (
+      Mnemonic.fromPhrase(this.#seedPhrase).phrase ===
+      Mnemonic.fromPhrase(seedPhraseToCompareWith).phrase
+    )
   }
 }

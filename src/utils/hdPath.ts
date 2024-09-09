@@ -12,9 +12,9 @@ export const getHDPathIndices = (hdPathTemplate: HD_PATH_TEMPLATE_TYPE, insertId
   path.forEach((_idx) => {
     const isHardened = _idx[_idx.length - 1] === "'"
     let idx = isHardened ? HARDENED_OFFSET : 0
-    // If there is an `x` in the path string, we will use it to insert our
+    // If there is an `<account>` in the path string, we will use it to insert our
     // index. This is useful for e.g. Ledger Live path. Most paths have the
-    // changing index as the last one, so having an `x` in the path isn't
+    // changing index as the last one, so having an `<account>` in the path isn't
     // usually necessary.
     if (_idx.indexOf('<account>') > -1) {
       idx += insertIdx
@@ -26,7 +26,7 @@ export const getHDPathIndices = (hdPathTemplate: HD_PATH_TEMPLATE_TYPE, insertId
     }
     indices.push(idx)
   })
-  // If this path string does not include an `x`, we just append the index
+  // If this path string does not include an `<account>`, we just append the index
   // to the end of the extracted set
   if (usedX === false) {
     indices.push(insertIdx)

@@ -67,6 +67,8 @@ export class AccountAdderController extends EventEmitter {
 
   isInitialized: boolean = false
 
+  isInitializedWithDefaultSeed: boolean = false
+
   shouldSearchForLinkedAccounts = DEFAULT_SHOULD_SEARCH_FOR_LINKED_ACCOUNTS
 
   shouldGetAccountsUsedOnNetworks = DEFAULT_SHOULD_GET_ACCOUNTS_USED_ON_NETWORKS
@@ -228,7 +230,25 @@ export class AccountAdderController extends EventEmitter {
     }))
   }
 
-  init({
+  async #isKeyIteratorInitializedWithTheDefaultSeed() {
+    if (this.#keyIterator?.subType !== 'seed') return false
+
+    if (!this.#keystore.hasKeystoreDefaultSeed) return false
+
+    const defaultSeed = await this.#keystore.getDefaultSeed()
+    if (!defaultSeed) return false
+
+    return !!this.#keyIterator?.isSeedMatching?.(defaultSeed.seed)
+  }
+
+  async #getInitialHdPathTemplate(defaultHdPathTemplate: HD_PATH_TEMPLATE_TYPE) {
+    if (!this.isInitializedWithDefaultSeed) return defaultHdPathTemplate
+
+    const defaultSeed = await this.#keystore.getDefaultSeed()
+    return defaultSeed.hdPathTemplate || defaultHdPathTemplate
+  }
+
+  async init({
     keyIterator,
     page,
     pageSize,
@@ -242,13 +262,14 @@ export class AccountAdderController extends EventEmitter {
     hdPathTemplate: HD_PATH_TEMPLATE_TYPE
     shouldSearchForLinkedAccounts?: boolean
     shouldGetAccountsUsedOnNetworks?: boolean
-  }): void {
+  }) {
     this.#keyIterator = keyIterator
     if (!this.#keyIterator) return this.#throwMissingKeyIterator()
 
     this.page = page || DEFAULT_PAGE
     this.pageSize = pageSize || DEFAULT_PAGE_SIZE
-    this.hdPathTemplate = hdPathTemplate
+    this.isInitializedWithDefaultSeed = await this.#isKeyIteratorInitializedWithTheDefaultSeed()
+    this.hdPathTemplate = await this.#getInitialHdPathTemplate(hdPathTemplate)
     this.isInitialized = true
     this.#alreadyImportedAccountsOnControllerInit = this.#accounts.accounts
     this.shouldSearchForLinkedAccounts = shouldSearchForLinkedAccounts
@@ -280,6 +301,7 @@ export class AccountAdderController extends EventEmitter {
     this.readyToAddAccounts = []
     this.readyToAddKeys = { internal: [], external: [] }
     this.isInitialized = false
+    this.isInitializedWithDefaultSeed = false
 
     this.emitUpdate()
   }
@@ -691,13 +713,16 @@ export class AccountAdderController extends EventEmitter {
       const slot = startIdx + (index + 1)
 
       // The derived EOA (basic) account which is the key for the smart account
-      const account = getBasicAccount(smartAccKey)
+      const account = getBasicAccount(smartAccKey, this.#accounts.accounts)
       const indexWithOffset = slot - 1 + SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET
       accounts.push({ account, isLinked: false, slot, index: indexWithOffset })
 
       // Derive the Ambire (smart) account
       smartAccountsPromises.push(
-        getSmartAccount([{ addr: smartAccKey, hash: dedicatedToOneSAPriv }])
+        getSmartAccount(
+          [{ addr: smartAccKey, hash: dedicatedToOneSAPriv }],
+          this.#accounts.accounts
+        )
           .then((smartAccount) => {
             return { account: smartAccount, isLinked: false, slot, index: slot - 1 }
           })
@@ -723,7 +748,7 @@ export class AccountAdderController extends EventEmitter {
       const slot = startIdx + (index + 1)
 
       // The EOA (basic) account on this slot
-      const account = getBasicAccount(basicAccKey)
+      const account = getBasicAccount(basicAccKey, this.#accounts.accounts)
       accounts.push({ account, isLinked: false, slot, index: slot - 1 })
     }
 
@@ -864,6 +889,8 @@ export class AccountAdderController extends EventEmitter {
 
         return []
       }
+
+      const existingAccount = this.#accounts.accounts.find((acc) => acc.addr === addr)
       return [
         {
           account: {
@@ -880,8 +907,8 @@ export class AccountAdderController extends EventEmitter {
               salt
             },
             preferences: {
-              label: DEFAULT_ACCOUNT_LABEL,
-              pfp: addr
+              label: existingAccount?.preferences.label || DEFAULT_ACCOUNT_LABEL,
+              pfp: existingAccount?.preferences?.pfp || addr
             }
           },
           isLinked: true
