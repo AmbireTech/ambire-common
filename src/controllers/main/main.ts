@@ -292,7 +292,6 @@ export class MainController extends EventEmitter {
   async #clearLegacyStorage() {
     // last version with HumanizerMetaV2 is 4.33.0.
     // it was used for persisting learnt data for humanizer
-    console.log('ooooooooooooook cleared')
     await this.#storage.remove('HumanizerMetaV2')
   }
 
