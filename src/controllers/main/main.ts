@@ -1561,7 +1561,6 @@ export class MainController extends EventEmitter {
       const feeTokens =
         [...networkFeeTokens, ...gasTankFeeTokens].filter((t) => t.flags.isFeeToken) || []
 
-      // Reverse lookup addresses and save them in memory so they
       // can be read from the UI
       const humanization = humanizeAccountOp(localAccountOp, {})
       humanization.forEach((call: any) => {

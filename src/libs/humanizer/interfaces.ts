@@ -12,7 +12,6 @@ export type HumanizerVisualization = (
       content?: string
       value?: bigint
       warning?: boolean
-      // humanizerMeta?: HumanizerMetaAddress
       chainId?: bigint
       messageContent?: Uint8Array | string
     }

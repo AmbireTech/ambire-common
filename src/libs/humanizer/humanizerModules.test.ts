@@ -361,41 +361,5 @@ describe('module tests', () => {
       .map((key: string) => transactions[key])
       .flat()
     accountOp.calls = allCalls
-    const irCalls = humanizeAccountOp(accountOp, standartOptions)
-    // irCalls.forEach((c: IrCall, i) => {
-    //   console.log(c.fullVisualization, i)
-    // })
-    // let [parsedCalls, newAsyncOps] = parseCalls(
-    //   accountOp,
-    //   irCalls,
-    //   [humanizerMetaParsing],
-    //   humanizerInfo,
-    //   standartOptions
-    // )
-    // irCalls = parsedCalls
-    // asyncOps.push(...newAsyncOps)
-    // const frags: HumanizerFragment[] = (await Promise.all(asyncOps.map((i) => i()))).filter(
-    //   (x) => x
-    // ) as HumanizerFragment[]
-    // // @TODO use new combination function
-    // const newHumanizerMeta = integrateFragments(humanizerInfo as HumanizerMeta, frags)
-    // ;[irCalls, asyncOps] = humanizeCalls(
-    //   accountOp,
-    //   humanizerModules,
-    //   newHumanizerMeta,
-    //   standartOptions
-    // )
-    // ;[parsedCalls, newAsyncOps] = parseCalls(
-    //   accountOp,
-    //   irCalls,
-    //   [humanizerMetaParsing],
-    //   humanizerInfo,
-    //   standartOptions
-    // )
-    // irCalls = parsedCalls
-    // asyncOps.push(...newAsyncOps)
-    // const res = irCalls.map((call: IrCall) => visualizationToText(call, standartOptions))
-    // expect(expectedTexification.length).toBe(res.length)
-    // expectedTexification.forEach((et: string, i: number) => expect(res[i]).toEqual(et))
   })
 })
