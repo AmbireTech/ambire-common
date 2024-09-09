@@ -337,7 +337,7 @@ export const getTokensReadyToLearn = (toBeLearnedTokens: string[], resultTokens:
 export const tokenFilter = (
   token: TokenResult,
   nativeToken: TokenResult,
-  network: { id: NetworkId },
+  network: Network,
   hasNonZeroTokens: boolean,
   additionalHints: string[] | undefined,
   isTokenPreference: boolean
@@ -350,7 +350,8 @@ export const tokenFilter = (
   // It mimics the native POL token (same symbol, same amount) and is shown twice in the Dashboard.
   // From a user's perspective, the token is duplicated and counted twice in the balance.
   const isERC20NativeRepresentation =
-    token.symbol === nativeToken?.symbol &&
+    (token.symbol === nativeToken?.symbol ||
+      network.oldNativeAssetSymbols?.includes(token.symbol)) &&
     token.amount === nativeToken.amount &&
     token.address !== ZeroAddress
 
@@ -382,7 +383,7 @@ export const tokenFilter = (
  */
 export const processTokens = (
   tokenResults: TokenResult[],
-  network: { id: NetworkId },
+  network: Network,
   hasNonZeroTokens: boolean,
   additionalHints: string[] | undefined,
   tokenPreferences: CustomToken[]
