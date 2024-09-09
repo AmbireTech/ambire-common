@@ -289,12 +289,6 @@ export class MainController extends EventEmitter {
     this.domains = new DomainsController(this.providers.providers, this.fetch)
   }
 
-  async #clearLegacyStorage() {
-    // last version with HumanizerMetaV2 is 4.33.0.
-    // it was used for persisting learnt data for humanizer
-    await this.#storage.remove('HumanizerMetaV2')
-  }
-
   async #load(): Promise<void> {
     this.isReady = false
     // #load is called in the constructor which is synchronous
@@ -350,7 +344,6 @@ export class MainController extends EventEmitter {
     this.accountAdder.onUpdate(onAccountAdderSuccess)
 
     this.isReady = true
-    this.#clearLegacyStorage()
     this.emitUpdate()
   }
 
