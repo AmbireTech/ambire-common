@@ -25,7 +25,7 @@ const networks: Network[] = [
   {
     id: 'polygon',
     name: 'Polygon',
-    nativeAssetSymbol: 'MATIC',
+    nativeAssetSymbol: 'POL',
     rpcUrls: ['https://invictus.ambire.com/polygon'],
     selectedRpcUrl: 'https://invictus.ambire.com/polygon',
     rpcNoStateOverride: false,
@@ -41,7 +41,8 @@ const networks: Network[] = [
     features: [],
     feeOptions: { is1559: false, feeIncrease: 10n },
     predefined: true,
-    wrappedAddr: '0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270'
+    wrappedAddr: '0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270',
+    oldNativeAssetSymbols: ['MATIC']
   },
   {
     id: 'optimism',

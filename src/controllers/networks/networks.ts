@@ -107,7 +107,9 @@ export class NetworksController extends EventEmitter {
       this.#networks[n.id] = {
         ...n, // add the latest structure of the predefined network to include the new props that are not in storage yet
         ...(this.#networks[n.id] || {}), // override with stored props
-        feeOptions: n.feeOptions // feeOptions should take predefined priority
+        feeOptions: n.feeOptions, // feeOptions should take predefined priority
+        nativeAssetId: n.nativeAssetId, // nativeAssetId should take predefined priority
+        nativeAssetSymbol: n.nativeAssetSymbol // nativeAssetSymbol should take predefined priority
       }
     })
     // without await to avoid performance impact on load
