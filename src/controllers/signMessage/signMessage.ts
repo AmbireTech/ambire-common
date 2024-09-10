@@ -234,8 +234,14 @@ export class SignMessageController extends EventEmitter {
         )
       }
 
+      // if the account is not deployed, it should be wrapped with EIP-6492
+      // magic bytes. The only exception is when we're asking the user to
+      // sign an AmbireOperation (entry point deploy)
       signature =
-        account.creation && !accountState.isDeployed
+        account.creation &&
+        !accountState.isDeployed &&
+        (this.messageToSign.content.kind !== 'typedMessage' ||
+          this.messageToSign.content.primaryType !== 'AmbireOperation')
           ? // https://eips.ethereum.org/EIPS/eip-6492
             wrapCounterfactualSign(signature, account.creation!)
           : signature
@@ -251,7 +257,14 @@ export class SignMessageController extends EventEmitter {
         // the signer is always the account even if the actual
         // signature is from a key that has privs to the account
         signer: this.messageToSign?.accountAddr,
-        signature,
+        // for verification, if the signature is an AmbireOperation,
+        // wrap in with the magic bytes
+        signature:
+          this.messageToSign.content.kind === 'typedMessage' &&
+          this.messageToSign.content.primaryType === 'AmbireOperation'
+            ? // https://eips.ethereum.org/EIPS/eip-6492
+              wrapCounterfactualSign(signature, account.creation!)
+            : signature,
         // @ts-ignore TODO: Be aware of the type mismatch, could cause troubles
         message: this.messageToSign.content.kind === 'message' ? personalMsgToValidate : undefined,
         typedData:
