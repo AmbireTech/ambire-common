@@ -315,7 +315,6 @@ export function getUpdatedHints(
       }
     }
   }
-
   // Update the external hints for [network:account] with the latest from the external API
   previousHints.fromExternalAPI[key] = latestHintsFromExternalAPI
 
@@ -326,10 +325,19 @@ export function getUpdatedHints(
   }
 }
 
+export const getTokensReadyToLearn = (toBeLearnedTokens: string[], resultTokens: TokenResult[]) => {
+  if (!toBeLearnedTokens || !resultTokens || !toBeLearnedTokens.length || !resultTokens.length)
+    return []
+
+  return toBeLearnedTokens.filter((address) =>
+    resultTokens.find((resultToken) => resultToken.address === address && resultToken.amount > 0n)
+  )
+}
+
 export const tokenFilter = (
   token: TokenResult,
   nativeToken: TokenResult,
-  network: { id: NetworkId },
+  network: Network,
   hasNonZeroTokens: boolean,
   additionalHints: string[] | undefined,
   isTokenPreference: boolean
@@ -339,10 +347,11 @@ export const tokenFilter = (
 
   // Never add ERC20 tokens that represent the network's native token.
   // For instance, on Polygon, we have this token: `0x0000000000000000000000000000000000001010`.
-  // It mimics the native MATIC token (same symbol, same amount) and is shown twice in the Dashboard.
+  // It mimics the native POL token (same symbol, same amount) and is shown twice in the Dashboard.
   // From a user's perspective, the token is duplicated and counted twice in the balance.
   const isERC20NativeRepresentation =
-    token.symbol === nativeToken?.symbol &&
+    (token.symbol === nativeToken?.symbol ||
+      network.oldNativeAssetSymbols?.includes(token.symbol)) &&
     token.amount === nativeToken.amount &&
     token.address !== ZeroAddress
 
@@ -374,7 +383,7 @@ export const tokenFilter = (
  */
 export const processTokens = (
   tokenResults: TokenResult[],
-  network: { id: NetworkId },
+  network: Network,
   hasNonZeroTokens: boolean,
   additionalHints: string[] | undefined,
   tokenPreferences: CustomToken[]

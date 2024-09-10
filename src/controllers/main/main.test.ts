@@ -232,7 +232,7 @@ describe('Main Controller ', () => {
           ]
         ],
         preferences: {
-          label: DEFAULT_ACCOUNT_LABEL,
+          label: 'Account 4', // because there are 3 in the storage before this one
           pfp: addr
         }
       },
@@ -240,15 +240,15 @@ describe('Main Controller ', () => {
       isLinked: false
     }
 
-    const addAccounts = () => {
+    const addAccounts = async () => {
       const keyIterator = new KeyIterator(
         '0x574f261b776b26b1ad75a991173d0e8ca2ca1d481bd7822b2b58b2ef8a969f12'
       )
-      controller.accountAdder.init({
+      await controller.accountAdder.init({
         keyIterator,
         hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
       })
-      controller.accountAdder.addAccounts([accountPendingCreation]).catch(console.error)
+      await controller.accountAdder.addAccounts([accountPendingCreation]).catch(console.error)
     }
 
     let emitCounter = 0
@@ -259,20 +259,24 @@ describe('Main Controller ', () => {
     // check if the controller is ready outside of the onUpdate first and add the accounts.
     if (controller.isReady && emitCounter === 0) {
       emitCounter++
-      addAccounts()
+      await addAccounts()
     }
 
-    const unsubscribe = controller.onUpdate(() => {
-      emitCounter++
-      if (emitCounter === 2 && controller.isReady) addAccounts()
+    return new Promise((resolve) => {
+      const unsubscribe = controller.onUpdate(async () => {
+        emitCounter++
+        if (emitCounter === 2 && controller.isReady) await addAccounts()
 
-      if (controller.statuses.onAccountAdderSuccess === 'SUCCESS') {
-        expect(controller.accounts.accounts).toContainEqual({
-          ...accountPendingCreation.account,
-          newlyCreated: false
-        })
-        unsubscribe()
-      }
+        if (controller.statuses.onAccountAdderSuccess === 'SUCCESS') {
+          expect(controller.accounts.accounts).toContainEqual({
+            ...accountPendingCreation.account,
+            newlyAdded: true,
+            newlyCreated: false
+          })
+          unsubscribe()
+          resolve(null)
+        }
+      })
     })
   })
 

@@ -140,7 +140,9 @@ describe('happy cases', () => {
         label: 'Key 1',
         privateKey: keys[0].privateKey,
         dedicatedToOneSA: false,
-        meta: null
+        meta: {
+          createdAt: new Date().getTime()
+        }
       }
     ])
     await keystore.addKeys([
@@ -150,7 +152,9 @@ describe('happy cases', () => {
         label: 'Key 2',
         privateKey: keys[1].privateKey,
         dedicatedToOneSA: false,
-        meta: null
+        meta: {
+          createdAt: new Date().getTime()
+        }
       }
     ])
 

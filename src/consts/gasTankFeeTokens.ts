@@ -8,7 +8,7 @@ export default [
   },
   {
     address: '0x0000000000000000000000000000000000000000',
-    symbol: 'matic',
+    symbol: 'pol',
     networkId: 'polygon',
     decimals: 18,
     icon: 'https://assets.coingecko.com/coins/images/4713/large/matic-token-icon.png'

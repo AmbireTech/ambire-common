@@ -19,12 +19,11 @@ import { TypedMessage } from './userRequest'
  */
 export interface ExternalSignerController {
   type: string
-  hdPathTemplate: HD_PATH_TEMPLATE_TYPE
   deviceModel: string
   deviceId: string
   isUnlocked: (path?: string, expectedKeyOnThisPath?: string) => boolean
   unlock: (
-    path?: ReturnType<typeof getHdPathFromTemplate>,
+    path: ReturnType<typeof getHdPathFromTemplate>,
     expectedKeyOnThisPath?: string,
     shouldOpenLatticeConnectorInTab?: boolean // Lattice specific
   ) => Promise<'ALREADY_UNLOCKED' | 'JUST_UNLOCKED'>
@@ -103,7 +102,9 @@ export type InternalKey = {
   type: 'internal'
   label: string
   dedicatedToOneSA: boolean
-  meta: null
+  meta: {
+    createdAt: number | null
+  }
 }
 
 export type ExternalKey = {
@@ -116,10 +117,13 @@ export type ExternalKey = {
     deviceModel: string
     hdPathTemplate: HD_PATH_TEMPLATE_TYPE
     index: number
+    createdAt: number | null
   }
 }
 
 export type StoredKey = (InternalKey & { privKey: string }) | (ExternalKey & { privKey: null })
+
+export type KeystoreSeed = { seed: string; hdPathTemplate: HD_PATH_TEMPLATE_TYPE }
 
 export type KeystoreSignerType = {
   new (key: Key, privateKey?: string): KeystoreSigner
@@ -137,7 +141,7 @@ export type ReadyToAddKeys = {
     type: 'internal'
     privateKey: string
     dedicatedToOneSA: Key['dedicatedToOneSA']
-    meta: null
+    meta: InternalKey['meta']
   }[]
   external: {
     addr: Key['addr']
