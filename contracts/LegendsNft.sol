@@ -8,7 +8,7 @@ import "@openzeppelin/contracts/utils/Strings.sol";
 
 using Strings for uint256;
 
-contract Legends is IERC721Metadata, ERC721Enumerable, Ownable {
+contract LegendsNFT is IERC721Metadata, ERC721Enumerable, Ownable {
 
     constructor() ERC721("AmbireLegends", "AML") Ownable() {}
     
