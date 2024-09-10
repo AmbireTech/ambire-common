@@ -10,7 +10,7 @@ using Strings for uint256;
 
 contract Legends is IERC721Metadata, ERC721Enumerable, Ownable {
 
-    constructor() ERC721("AmbireLegends", "AML") Ownable(msg.sender) {}
+    constructor() ERC721("AmbireLegends", "AML") Ownable() {}
     
     string baseURI;
 
@@ -21,7 +21,7 @@ contract Legends is IERC721Metadata, ERC721Enumerable, Ownable {
     }
 
     function tokenURI(uint256 tokenId) public view override(ERC721, IERC721Metadata) returns (string memory) {
-        _requireOwned(tokenId);
+        _requireMinted(tokenId);
 
         return bytes(baseURI).length > 0 ? string.concat(baseURI, tokenId.toString()) : "";
     }
@@ -31,23 +31,23 @@ contract Legends is IERC721Metadata, ERC721Enumerable, Ownable {
     }
 
     // Soulbound
-    function approve(address to, uint256 tokenId) public view override(ERC721, IERC721) {
+    function approve(address, uint256) public pure override(ERC721, IERC721) {
         revert("Soulbound: cannot approve token transfer");
     }
 
-    function setApprovalForAll(address operator, bool approved) public view override(ERC721, IERC721) {
+    function setApprovalForAll(address, bool) public pure override(ERC721, IERC721) {
         revert("Soulbound: cannot set approval for all");
     }
 
-    function transferFrom(address from, address to, uint256 tokenId) public view override(ERC721, IERC721) {
+    function transferFrom(address, address, uint256) public pure override(ERC721, IERC721) {
         revert("Soulbound: cannot transfer nft");
     }
 
-    function safeTransferFrom(address from, address to, uint256 tokenId) public view override(ERC721, IERC721) {
+    function safeTransferFrom(address, address, uint256) public pure override(ERC721, IERC721) {
         revert("Soulbound: cannot transfer nft");
     }
 
-    function safeTransferFrom(address from, address to, uint256 tokenId, bytes memory data) public view override(ERC721, IERC721) {
+    function safeTransferFrom(address, address, uint256, bytes memory ) public pure override(ERC721, IERC721) {
         revert("Soulbound: cannot transfer nft");
     }
 }
