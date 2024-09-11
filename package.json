@@ -4,7 +4,7 @@
   "description": "Common ground for the Ambire apps",
   "scripts": {
     "humanizer:update:metamaskContactMetadata": "node scripts/updateHumanizerInfoWithMetaMaskContactMetadata.js",
-    "generate:combineHumanizerJsons": "node scripts/combineHumanizerJsons.js",
+    "humanizer:generate:combineHumanizerJsons": "node scripts/combineHumanizerJsons.js",
     "compile:contracts": "ts-node scripts/compileContracts.js",
     "hardhat": "npx hardhat compile; npx hardhat test",
     "jest": "jest --forceExit",
