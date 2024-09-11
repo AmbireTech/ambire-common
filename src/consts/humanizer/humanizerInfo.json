@@ -64483,15 +64483,6 @@
             },
             "isSC": {}
         },
-        "0x0000000000000000000000000000000000001010": {
-            "name": "MATIC token contract",
-            "address": "0x0000000000000000000000000000000000001010",
-            "token": {
-                "decimals": 18,
-                "symbol": "MATIC"
-            },
-            "isSC": {}
-        },
         "0x3c499c542cef5e3811e1192ce70d8cc03d5c3359": {
             "name": "USDC token contract",
             "address": "0x3c499c542cef5e3811e1192ce70d8cc03d5c3359",
@@ -81132,14 +81123,6 @@
                 "symbol": "WZRD-BUSD LP"
             },
             "isSC": {}
-        },
-        "0x0000000000000000000000000000000000000000": {
-            "name": "MATIC token contract",
-            "address": "0x0000000000000000000000000000000000000000",
-            "token": {
-                "decimals": 18,
-                "symbol": "MATIC"
-            }
         },
         "0xd9a4cb9dc9296e111c66dfacab8be034ee2e1c2c": {
             "name": "ADX-LOYALTY token contract",
