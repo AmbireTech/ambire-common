@@ -3,7 +3,7 @@
   "name": "ambire-common",
   "description": "Common ground for the Ambire apps",
   "scripts": {
-    "humanizer:addMMList": "node scripts/addMetamaskContractMapToHumanizerConsts.js",
+    "humanizer:update:metamaskContactMetadata": "node scripts/updateHumanizerInfoWithMetaMaskContactMetadata.js",
     "generate:combineHumanizerJsons": "node scripts/combineHumanizerJsons.js",
     "compile:contracts": "ts-node scripts/compileContracts.js",
     "hardhat": "npx hardhat compile; npx hardhat test",
