@@ -6,7 +6,7 @@ import "@openzeppelin/contracts/token/ERC721/extensions/IERC721Metadata.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/Strings.sol"; 
 
-using Strings for uint256;
+using Strings for address;
 
 contract LegendsNFT is IERC721Metadata, ERC721Enumerable, Ownable {
 
@@ -22,8 +22,7 @@ contract LegendsNFT is IERC721Metadata, ERC721Enumerable, Ownable {
 
     function tokenURI(uint256 tokenId) public view override(ERC721, IERC721Metadata) returns (string memory) {
         _requireMinted(tokenId);
-
-        return bytes(baseURI).length > 0 ? string.concat(baseURI, tokenId.toString()) : "";
+        return string(abi.encodePacked(baseURI, address(uint160(tokenId)).toHexString()));
     }
 
     function setBaseUri(string calldata _baseURI) public onlyOwner {

@@ -23,7 +23,7 @@ describe('Legends nft', () => {
   it('tokenURI', async () => {
     await legendsNftContract.mint()
     expect(await legendsNftContract.tokenURI(BigInt(signer.address))).eq(
-      `https://relayer.ambire.com/${BigInt(signer.address)}`
+      `https://relayer.ambire.com/${signer.address.toLowerCase()}`
     )
   })
 
