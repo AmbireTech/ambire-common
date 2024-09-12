@@ -8,7 +8,7 @@ import structuredClone from '@ungap/structured-clone'
 
 import { trezorSlot7v24337Deployed, velcroUrl } from '../../../test/config'
 import { getNativeToCheckFromEOAs, produceMemoryStore } from '../../../test/helpers'
-import { suppressConsole } from '../../../test/helpers/console'
+import { suppressConsole } from '../../../test/helpers/console.test'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import humanizerJSON from '../../consts/humanizer/humanizerInfo.json'

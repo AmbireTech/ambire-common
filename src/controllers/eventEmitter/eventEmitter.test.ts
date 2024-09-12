@@ -1,5 +1,6 @@
 import { expect, jest } from '@jest/globals'
 
+import { suppressConsole } from '../../../test/helpers/console.test'
 import EventEmitter, { ErrorRef } from './eventEmitter'
 
 describe('EventEmitter', () => {
@@ -49,6 +50,7 @@ describe('EventEmitter', () => {
   })
 
   describe('Expecting error', () => {
+    suppressConsole()
     it('should unsubscribe from error events', () => {
       const mockErrorCallback = jest.fn()
       const unsubscribe = eventEmitter.onError(mockErrorCallback)

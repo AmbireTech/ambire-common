@@ -10,7 +10,7 @@ import { ethers, Wallet } from 'ethers'
 import { describe, expect, test } from '@jest/globals'
 
 import { produceMemoryStore } from '../../../test/helpers'
-import { suppressConsole } from '../../../test/helpers/console'
+import { suppressConsole } from '../../../test/helpers/console.test'
 import { BIP44_STANDARD_DERIVATION_TEMPLATE } from '../../consts/derivation'
 import { ExternalKey, Key } from '../../interfaces/keystore'
 import { getPrivateKeyFromSeed } from '../../libs/keyIterator/keyIterator'
