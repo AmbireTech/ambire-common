@@ -184,17 +184,13 @@ export class Deployless {
     // or the timeout promise will reject after 10 seconds, whichever occurs first.
     const callPromisedWithResolveTimeout = Promise.race([
       callPromise,
-      // Testing timeout is 20 seconds, while regular timeout is 10 seconds
-      // This is to prevent the test from failing due to the timeout
-      new Promise((_resolve, reject) => {
-        setTimeout(
-          () => reject(new Error('rpc-timeout')),
-          process.env.IS_TESTING === 'true' ? 20000 : 10000
-        )
-      })
+      new Promise((_resolve, reject) => setTimeout(() => reject(new Error('rpc-timeout')), 10000))
     ])
 
-    const returnDataRaw = mapResponse(await mapError(callPromisedWithResolveTimeout))
+    const isTesting = process.env.IS_TESTING === 'true'
+    const returnDataRaw = mapResponse(
+      await mapError(isTesting ? callPromise : callPromisedWithResolveTimeout)
+    )
     return this.iface.decodeFunctionResult(methodName, returnDataRaw)
   }
 }
