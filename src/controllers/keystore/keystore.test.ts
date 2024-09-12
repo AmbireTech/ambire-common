@@ -10,7 +10,7 @@ import { ethers, Wallet } from 'ethers'
 import { describe, expect, test } from '@jest/globals'
 
 import { produceMemoryStore } from '../../../test/helpers'
-import { suppressConsole } from '../../../test/helpers/console.test'
+import { suppressConsole } from '../../../test/helpers/console'
 import { BIP44_STANDARD_DERIVATION_TEMPLATE } from '../../consts/derivation'
 import { ExternalKey, Key } from '../../interfaces/keystore'
 import { getPrivateKeyFromSeed } from '../../libs/keyIterator/keyIterator'
@@ -78,8 +78,15 @@ describe('KeystoreController', () => {
   })
 
   describe('Negative cases', () => {
-    suppressConsole()
+    let consoleSuppressor: { restore: () => void }
 
+    beforeEach(() => {
+      consoleSuppressor = suppressConsole()
+    })
+
+    afterEach(() => {
+      consoleSuppressor.restore()
+    })
     test('should not unlock with non-existent secret (when no secrets exist)', (done) => {
       keystore.unlockWithSecret('password', pass)
 
@@ -112,8 +119,15 @@ describe('KeystoreController', () => {
   })
 
   describe('Negative cases', () => {
-    suppressConsole()
+    let consoleSuppressor: { restore: () => void }
 
+    beforeEach(() => {
+      consoleSuppressor = suppressConsole()
+    })
+
+    afterEach(() => {
+      consoleSuppressor.restore()
+    })
     test('should not unlock with non-existent secret (when secrets exist)', (done) => {
       keystore.unlockWithSecret('playstation', '')
 
@@ -445,7 +459,16 @@ describe('KeystoreController', () => {
   })
 
   describe('Negative cases', () => {
-    suppressConsole()
+    let consoleSuppressor: { restore: () => void }
+
+    beforeEach(() => {
+      consoleSuppressor = suppressConsole()
+    })
+
+    afterEach(() => {
+      consoleSuppressor.restore()
+    })
+
     test('should not get a signer', () => {
       expect(
         keystore.getSigner('0xc7E32B118989296eaEa88D86Bd9041Feca77Ed36', 'internal')

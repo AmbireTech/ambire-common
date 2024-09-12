@@ -1,6 +1,6 @@
 import { expect, jest } from '@jest/globals'
 
-import { suppressConsole } from '../../../test/helpers/console.test'
+import { suppressConsole } from '../../../test/helpers/console'
 import EventEmitter, { ErrorRef } from './eventEmitter'
 
 describe('EventEmitter', () => {
@@ -49,32 +49,33 @@ describe('EventEmitter', () => {
     // expect(eventEmitter.callbacks.length).toBe(0)
   })
 
-  describe('Expecting error', () => {
-    suppressConsole()
-    it('should unsubscribe from error events', () => {
-      const mockErrorCallback = jest.fn()
-      const unsubscribe = eventEmitter.onError(mockErrorCallback)
+  it('should unsubscribe from error events', () => {
+    const consoleSuppressor = suppressConsole()
 
-      const sampleError: ErrorRef = {
-        message: 'Something went wrong',
-        level: 'major',
-        error: new Error('Sample error')
-      }
+    const mockErrorCallback = jest.fn()
+    const unsubscribe = eventEmitter.onError(mockErrorCallback)
 
-      // Trigger an error.
-      // Using 'as any' to access protected method for testing
-      ;(eventEmitter as any).emitError(sampleError)
-      ;(eventEmitter as any).emitError(sampleError)
+    const sampleError: ErrorRef = {
+      message: 'Something went wrong',
+      level: 'major',
+      error: new Error('Sample error')
+    }
 
-      expect(mockErrorCallback).toHaveBeenCalledWith(sampleError)
-      expect(mockErrorCallback).toHaveBeenCalledTimes(2)
+    // Trigger an error.
+    // Using 'as any' to access protected method for testing
+    ;(eventEmitter as any).emitError(sampleError)
+    ;(eventEmitter as any).emitError(sampleError)
 
-      unsubscribe()
+    expect(mockErrorCallback).toHaveBeenCalledWith(sampleError)
+    expect(mockErrorCallback).toHaveBeenCalledTimes(2)
 
-      // Trigger another error
-      ;(eventEmitter as any).emitError(sampleError)
-      // Count should remain 2, indicating the callback was not called again
-      expect(mockErrorCallback).toHaveBeenCalledTimes(2)
-    })
+    unsubscribe()
+
+    // Trigger another error
+    ;(eventEmitter as any).emitError(sampleError)
+    // Count should remain 2, indicating the callback was not called again
+    expect(mockErrorCallback).toHaveBeenCalledTimes(2)
+
+    consoleSuppressor.restore()
   })
 })

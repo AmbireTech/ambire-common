@@ -8,7 +8,7 @@ import structuredClone from '@ungap/structured-clone'
 
 import { trezorSlot7v24337Deployed, velcroUrl } from '../../../test/config'
 import { getNativeToCheckFromEOAs, produceMemoryStore } from '../../../test/helpers'
-import { suppressConsole } from '../../../test/helpers/console.test'
+import { suppressConsole } from '../../../test/helpers/console'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import humanizerJSON from '../../consts/humanizer/humanizerInfo.json'
@@ -882,7 +882,16 @@ describe('SignAccountOp Controller ', () => {
   })
 
   describe('Negative cases', () => {
-    suppressConsole()
+    let consoleSuppressor: { restore: () => void }
+
+    beforeEach(() => {
+      consoleSuppressor = suppressConsole()
+    })
+
+    afterEach(() => {
+      consoleSuppressor.restore()
+    })
+
     test('Signing [Relayer]: should return an error if paying with ERC-20 token but no priceIn | nativeRatio available.', async () => {
       const networkId = 'polygon'
       const network = networks.find((net) => net.id === networkId)!
@@ -1302,7 +1311,16 @@ describe('SignAccountOp Controller ', () => {
   })
 
   describe('Negative cases', () => {
-    suppressConsole()
+    let consoleSuppressor: { restore: () => void }
+
+    beforeEach(() => {
+      consoleSuppressor = suppressConsole()
+    })
+
+    afterEach(() => {
+      consoleSuppressor.restore()
+    })
+
     test('Signing [SA with EOA payment]: not enough funds to cover the fee', async () => {
       const network = networks.find((net) => net.id === 'polygon')!
       const { controller, estimation, prices } = await init(

@@ -7,7 +7,7 @@ import { describe, expect, test } from '@jest/globals'
 
 import { relayerUrl } from '../../../test/config'
 import { produceMemoryStore } from '../../../test/helpers'
-import { suppressConsole } from '../../../test/helpers/console.test'
+import { suppressConsole } from '../../../test/helpers/console'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import {
   BIP44_STANDARD_DERIVATION_TEMPLATE,
@@ -130,8 +130,15 @@ describe('AccountAdder', () => {
   })
 
   describe('Negative tests', () => {
-    suppressConsole()
+    let consoleSuppressor: { restore: () => void }
 
+    beforeEach(() => {
+      consoleSuppressor = suppressConsole()
+    })
+
+    afterEach(() => {
+      consoleSuppressor.restore()
+    })
     test('should throw if AccountAdder controller method is requested, but the controller was not initialized beforehand', (done) => {
       const unsubscribe = accountAdder.onError(() => {
         const notInitializedErrorsCount = accountAdder.emittedErrors.filter(
