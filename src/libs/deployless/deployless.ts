@@ -187,10 +187,7 @@ export class Deployless {
       new Promise((_resolve, reject) => setTimeout(() => reject(new Error('rpc-timeout')), 10000))
     ])
 
-    const isTesting = process.env.IS_TESTING === 'true'
-    const returnDataRaw = mapResponse(
-      await mapError(isTesting ? callPromise : callPromisedWithResolveTimeout)
-    )
+    const returnDataRaw = mapResponse(await mapError(callPromisedWithResolveTimeout))
     return this.iface.decodeFunctionResult(methodName, returnDataRaw)
   }
 }
