@@ -10,6 +10,7 @@ import { ethers, Wallet } from 'ethers'
 import { describe, expect, test } from '@jest/globals'
 
 import { produceMemoryStore } from '../../../test/helpers'
+import { suppressConsole } from '../../../test/helpers/console'
 import { BIP44_STANDARD_DERIVATION_TEMPLATE } from '../../consts/derivation'
 import { ExternalKey, Key } from '../../interfaces/keystore'
 import { getPrivateKeyFromSeed } from '../../libs/keyIterator/keyIterator'
@@ -76,20 +77,24 @@ describe('KeystoreController', () => {
     expect(keystore).toBeDefined()
   })
 
-  test('should not unlock with non-existent secret (when no secrets exist)', (done) => {
-    keystore.unlockWithSecret('password', pass)
+  describe('Negative cases', () => {
+    suppressConsole()
 
-    const unsubscribeUpdate = keystore.onUpdate(async () => {
-      if (keystore.statuses.unlockWithSecret === 'ERROR') {
-        expect(keystore.isUnlocked).toBe(false)
-        unsubscribeUpdate()
-        done()
-      }
+    test('should not unlock with non-existent secret (when no secrets exist)', (done) => {
+      keystore.unlockWithSecret('password', pass)
+
+      const unsubscribeUpdate = keystore.onUpdate(async () => {
+        if (keystore.statuses.unlockWithSecret === 'ERROR') {
+          expect(keystore.isUnlocked).toBe(false)
+          unsubscribeUpdate()
+          done()
+        }
+      })
     })
-  })
 
-  test('should throw an error if trying to get uid before adding secrets', () => {
-    expect(keystore.getKeyStoreUid()).rejects.toThrow('keystore: adding secret before get uid')
+    test('should throw an error if trying to get uid before adding secrets', () => {
+      expect(keystore.getKeyStoreUid()).rejects.toThrow('keystore: adding secret before get uid')
+    })
   })
 
   test('should add a secret', (done) => {
@@ -106,24 +111,28 @@ describe('KeystoreController', () => {
     })
   })
 
-  test('should not unlock with non-existent secret (when secrets exist)', (done) => {
-    keystore.unlockWithSecret('playstation', '')
+  describe('Negative cases', () => {
+    suppressConsole()
 
-    const unsubscribeUpdate = keystore.onUpdate(async () => {
-      if (keystore.statuses.unlockWithSecret === 'ERROR') {
-        expect(keystore.isUnlocked).toBe(false)
-        unsubscribeUpdate()
-        done()
+    test('should not unlock with non-existent secret (when secrets exist)', (done) => {
+      keystore.unlockWithSecret('playstation', '')
+
+      const unsubscribeUpdate = keystore.onUpdate(async () => {
+        if (keystore.statuses.unlockWithSecret === 'ERROR') {
+          expect(keystore.isUnlocked).toBe(false)
+          unsubscribeUpdate()
+          done()
+        }
+      })
+    })
+
+    test('should not unlock with wrong secret', async () => {
+      try {
+        await keystore.unlockWithSecret('password', `${pass}1`)
+      } catch {
+        expect(keystore.statuses.unlockWithSecret).toBe('ERROR')
       }
     })
-  })
-
-  test('should not unlock with wrong secret', async () => {
-    try {
-      await keystore.unlockWithSecret('password', `${pass}1`)
-    } catch {
-      expect(keystore.statuses.unlockWithSecret).toBe('ERROR')
-    }
   })
 
   test('should unlock with secret', (done) => {
@@ -435,43 +444,44 @@ describe('KeystoreController', () => {
     expect(internalSigner.key.addr).toEqual(keyPublicAddress)
   })
 
-  test('should not get a signer', () => {
-    expect(
-      keystore.getSigner('0xc7E32B118989296eaEa88D86Bd9041Feca77Ed36', 'internal')
-    ).rejects.toThrow('keystore: key not found')
-  })
-
-  test('should throw not unlocked', (done) => {
-    const unsubscribe = keystore.onUpdate(async () => {
-      expect(keystore.getSigner(keyPublicAddress, 'internal')).rejects.toThrow(
-        'keystore: not unlocked'
-      )
-
-      unsubscribe()
-      done()
+  describe('Negative cases', () => {
+    suppressConsole()
+    test('should not get a signer', () => {
+      expect(
+        keystore.getSigner('0xc7E32B118989296eaEa88D86Bd9041Feca77Ed36', 'internal')
+      ).rejects.toThrow('keystore: key not found')
     })
-
-    keystore.lock()
-  })
-
-  test('should export key backup, create wallet and compare public address', (done) => {
-    // changeKeystorePassword changed the password in the tests above so now unlock with the new password
-    keystore.unlockWithSecret('password', `${pass}1`)
-
-    const unsubscribe = keystore.onUpdate(async () => {
-      console.log(keystore.statuses.unlockWithSecret)
-      if (keystore.statuses.unlockWithSecret === 'SUCCESS') {
-        const keyBackup = await keystore.exportKeyWithPasscode(
-          keyPublicAddress,
-          'internal',
-          'goshoPazara'
+    test('should throw not unlocked', (done) => {
+      const unsubscribe = keystore.onUpdate(async () => {
+        expect(keystore.getSigner(keyPublicAddress, 'internal')).rejects.toThrow(
+          'keystore: not unlocked'
         )
-        const wallet = await Wallet.fromEncryptedJson(JSON.parse(keyBackup), 'goshoPazara')
-        expect(wallet.address).toBe(keyPublicAddress)
 
         unsubscribe()
         done()
-      }
+      })
+
+      keystore.lock()
+    })
+
+    test('should export key backup, create wallet and compare public address', (done) => {
+      // changeKeystorePassword changed the password in the tests above so now unlock with the new password
+      keystore.unlockWithSecret('password', `${pass}1`)
+
+      const unsubscribe = keystore.onUpdate(async () => {
+        if (keystore.statuses.unlockWithSecret === 'SUCCESS') {
+          const keyBackup = await keystore.exportKeyWithPasscode(
+            keyPublicAddress,
+            'internal',
+            'goshoPazara'
+          )
+          const wallet = await Wallet.fromEncryptedJson(JSON.parse(keyBackup), 'goshoPazara')
+          expect(wallet.address).toBe(keyPublicAddress)
+
+          unsubscribe()
+          done()
+        }
+      })
     })
   })
 

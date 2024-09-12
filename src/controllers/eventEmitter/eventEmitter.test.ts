@@ -48,29 +48,31 @@ describe('EventEmitter', () => {
     // expect(eventEmitter.callbacks.length).toBe(0)
   })
 
-  it('should unsubscribe from error events', () => {
-    const mockErrorCallback = jest.fn()
-    const unsubscribe = eventEmitter.onError(mockErrorCallback)
+  describe('Expecting error', () => {
+    it('should unsubscribe from error events', () => {
+      const mockErrorCallback = jest.fn()
+      const unsubscribe = eventEmitter.onError(mockErrorCallback)
 
-    const sampleError: ErrorRef = {
-      message: 'Something went wrong',
-      level: 'major',
-      error: new Error('Sample error')
-    }
+      const sampleError: ErrorRef = {
+        message: 'Something went wrong',
+        level: 'major',
+        error: new Error('Sample error')
+      }
 
-    // Trigger an error.
-    // Using 'as any' to access protected method for testing
-    ;(eventEmitter as any).emitError(sampleError)
-    ;(eventEmitter as any).emitError(sampleError)
+      // Trigger an error.
+      // Using 'as any' to access protected method for testing
+      ;(eventEmitter as any).emitError(sampleError)
+      ;(eventEmitter as any).emitError(sampleError)
 
-    expect(mockErrorCallback).toHaveBeenCalledWith(sampleError)
-    expect(mockErrorCallback).toHaveBeenCalledTimes(2)
+      expect(mockErrorCallback).toHaveBeenCalledWith(sampleError)
+      expect(mockErrorCallback).toHaveBeenCalledTimes(2)
 
-    unsubscribe()
+      unsubscribe()
 
-    // Trigger another error
-    ;(eventEmitter as any).emitError(sampleError)
-    // Count should remain 2, indicating the callback was not called again
-    expect(mockErrorCallback).toHaveBeenCalledTimes(2)
+      // Trigger another error
+      ;(eventEmitter as any).emitError(sampleError)
+      // Count should remain 2, indicating the callback was not called again
+      expect(mockErrorCallback).toHaveBeenCalledTimes(2)
+    })
   })
 })
