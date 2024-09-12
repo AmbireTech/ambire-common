@@ -543,7 +543,7 @@ describe('Portfolio Controller ', () => {
       expect(previousHintsStorage.learnedTokens?.ethereum).not.toHaveProperty(SMART_CONTRACT_ADDR)
     })
 
-    test('Portfolio should filter out ER20 tokens these mimic native tokens (same symbol and amount)', async () => {
+    test('Portfolio should filter out ER20 tokens that mimic native tokens (same symbol and amount)', async () => {
       const ERC_20_MATIC_ADDR = '0x0000000000000000000000000000000000001010'
       const { controller } = prepareTest()
 
@@ -624,19 +624,19 @@ describe('Portfolio Controller ', () => {
     // 2. retrieve the token from portfolio and check if it is found.
     // 3. check if the token is persisted in learnedTokens with timestamp.
     // in learnedTokens as a new token, when found with balance from toBeLearned list.
-    
+
     // This will work on networks without relayer support so we mock one,
     // otherwise the token will be fetched from the relayer and won't be available for learnedTokens,
     // but will be stored in fromExternalAPI.
     clonedEthereum.hasRelayer = false
-  
+
     await controller.addTokensToBeLearned(
       ['0xA0b73E1Ff0B80914AB6fe0444E65848C4C34450b'],
       'ethereum'
     )
 
     await controller.updateSelectedAccount(account.addr, clonedEthereum, undefined, {
-      forceUpdate: true,
+      forceUpdate: true
     })
 
     const toBeLearnedToken = controller.latest[account.addr].ethereum?.result?.tokens.find(
@@ -647,7 +647,8 @@ describe('Portfolio Controller ', () => {
 
     const previousHintsStorage = await storage.get('previousHints', {})
     const tokenInLearnedTokens =
-      previousHintsStorage.learnedTokens?.ethereum && previousHintsStorage.learnedTokens?.ethereum[toBeLearnedToken!.address]
+      previousHintsStorage.learnedTokens?.ethereum &&
+      previousHintsStorage.learnedTokens?.ethereum[toBeLearnedToken!.address]
 
     expect(tokenInLearnedTokens).toBeFalsy()
   })
@@ -660,20 +661,20 @@ describe('Portfolio Controller ', () => {
     // 2. retrieve the token from portfolio and check if it is found.
     // 3. check if the token is persisted in learnedTokens with timestamp.
     // in learnedTokens as a new token, when found with balance from toBeLearned list.
-    
+
     // This will work on networks without relayer support so we mock one,
     // otherwise the token will be fetched from the relayer and won't be available for learnedTokens,
     // but will be stored in fromExternalAPI.
     const clonedEthereum = structuredClone(ethereum)
     clonedEthereum.hasRelayer = false
-  
+
     await controller.addTokensToBeLearned(
       ['0xADE00C28244d5CE17D72E40330B1c318cD12B7c3'],
       'ethereum'
     )
 
     await controller.updateSelectedAccount(account.addr, clonedEthereum, undefined, {
-      forceUpdate: true,
+      forceUpdate: true
     })
 
     const toBeLearnedToken = controller.latest[account.addr].ethereum?.result?.tokens.find(

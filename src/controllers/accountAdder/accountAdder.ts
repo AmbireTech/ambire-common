@@ -306,7 +306,7 @@ export class AccountAdderController extends EventEmitter {
     this.emitUpdate()
   }
 
-  setHDPathTemplate({ hdPathTemplate }: { hdPathTemplate: HD_PATH_TEMPLATE_TYPE }): void {
+  async setHDPathTemplate({ hdPathTemplate }: { hdPathTemplate: HD_PATH_TEMPLATE_TYPE }) {
     this.hdPathTemplate = hdPathTemplate
 
     // Reset the currently selected accounts, because for the keys of these
@@ -314,7 +314,7 @@ export class AccountAdderController extends EventEmitter {
     // completes, only the latest hd path of the controller is stored.
     this.selectedAccounts = []
 
-    this.setPage({ page: DEFAULT_PAGE }) // takes the user back on the first page
+    await this.setPage({ page: DEFAULT_PAGE }) // takes the user back on the first page
   }
 
   #getAccountKeys(account: Account, accountsOnPageWithThisAcc: AccountOnPage[]) {
@@ -419,7 +419,7 @@ export class AccountAdderController extends EventEmitter {
     this.emitUpdate()
   }
 
-  async deselectAccount(account: Account) {
+  deselectAccount(account: Account) {
     if (!this.isInitialized) return this.#throwNotInitialized()
     if (!this.#keyIterator) return this.#throwMissingKeyIterator()
 
@@ -503,7 +503,7 @@ export class AccountAdderController extends EventEmitter {
     this.accountsLoading = false
     this.emitUpdate()
 
-    this.#findAndSetLinkedAccounts({
+    await this.#findAndSetLinkedAccounts({
       accounts: this.#derivedAccounts
         .filter(
           (acc) =>
