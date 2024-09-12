@@ -665,7 +665,7 @@ describe('Activity Controller ', () => {
         await controller.addSignedMessage(sm, '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5')
       }
 
-      await controller.setSignedMessagesPagination({ fromPage: 0, itemsPerPage: 1000 })
+      controller.setSignedMessagesPagination({ fromPage: 0, itemsPerPage: 1000 })
       const controllerSignedMessages = controller.signedMessages
 
       expect(controllerSignedMessages!.itemsTotal).toEqual(1000)

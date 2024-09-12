@@ -39,7 +39,7 @@ const providers = Object.fromEntries(
 )
 
 // @ts-ignore
-global.structuredClone = structuredClone as any
+// global.structuredClone = structuredClone as any
 
 const createAccountOp = (
   account: Account,
