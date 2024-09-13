@@ -8,4 +8,5 @@ export interface Call {
   // multiple calls can be associated with the same user request, for example
   // when a batching request is made
   fromUserRequestId?: UserRequest['id']
+  meta?: { dapp?: { name?: string; icon?: string } }
 }

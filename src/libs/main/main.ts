@@ -114,7 +114,16 @@ export const makeBasicAccountOpAction = ({
     nonce,
     signature: account.associatedKeys[0] ? generateSpoofSig(account.associatedKeys[0]) : null,
     accountOpToExecuteBefore: null, // @TODO from pending recoveries
-    calls: calls.map((call) => ({ ...call, fromUserRequestId: userRequest.id }))
+    calls: calls.map((call) => ({
+      ...call,
+      fromUserRequestId: userRequest.id,
+      meta: {
+        dapp: {
+          name: userRequest?.dappPromise?.session?.name,
+          icon: userRequest?.dappPromise?.session?.icon
+        }
+      }
+    }))
   }
 
   return {

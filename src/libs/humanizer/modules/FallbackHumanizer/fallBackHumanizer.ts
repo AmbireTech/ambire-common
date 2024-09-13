@@ -3,6 +3,7 @@ import { Interface, isAddress, ZeroAddress } from 'ethers'
 
 import { AccountOp } from '../../../accountOp/accountOp'
 import {
+  AbiFragment,
   HumanizerCallModule,
   HumanizerMeta,
   HumanizerVisualization,
@@ -35,60 +36,55 @@ function extractAddresses(data: string, _selector: string): string[] {
 }
 
 export const fallbackHumanizer: HumanizerCallModule = (
-  accountOp: AccountOp,
+  _: AccountOp,
   currentIrCalls: IrCall[],
   humanizerMeta: HumanizerMeta
 ) => {
   const newCalls = currentIrCalls.map((call) => {
     if (call.fullVisualization && !checkIfUnknownAction(call?.fullVisualization)) return call
-
-    const knownSigHashes: HumanizerMeta['abis']['NO_ABI'] = Object.values(
-      humanizerMeta.abis as HumanizerMeta['abis']
-    ).reduce((a, b) => ({ ...a, ...b }), {})
-
+    const dappName = call?.meta?.dapp?.name
     const visualization: Array<HumanizerVisualization> = []
     if (call.data !== '0x') {
-      let extractedAddresses: string[] = []
-      if (knownSigHashes[call.data.slice(0, 10)]?.signature) {
+      let knownSigHash: AbiFragment | undefined
+      Object.values(humanizerMeta.abis).some((abi) => {
+        Object.values(abi).some((s) => {
+          if (s.selector === call.data.slice(0, 10)) {
+            knownSigHash = s
+            return true
+          }
+          return false
+        })
+        return !!knownSigHash
+      })
+
+      if (knownSigHash?.signature) {
+        let extractedAddresses: string[] = []
+        const functionName = knownSigHash.signature
+          .split('function ')
+          .filter((x) => x !== '')[0]
+          .split('(')
+          .filter((x) => x !== '')[0]
         try {
-          extractedAddresses = extractAddresses(
-            call.data,
-            knownSigHashes[call.data.slice(0, 10)].signature
+          extractedAddresses = extractAddresses(call.data, knownSigHash.signature)
+          visualization.push(
+            ...extractedAddresses.map((a) => ({ ...getToken(a, 0n), isHidden: true }))
           )
         } catch (e) {
           console.error('Humanizer: fallback: Could not decode addresses from calldata')
         }
-        visualization.push(
-          getAction(
-            `Call ${
-              //  from function asd(address asd) returns ... => asd(address asd)
-              knownSigHashes[call.data.slice(0, 10)].signature
-                .split('function ')
-                .filter((x) => x !== '')[0]
-                .split(' returns')
-                .filter((x) => x !== '')[0]
-            }`
-          ),
-          getLabel('from'),
-          getAddressVisualization(call.to),
-          ...extractedAddresses.map(
-            (a): HumanizerVisualization => ({ ...getToken(a, 0n), isHidden: true })
-          )
-        )
+        if (dappName) visualization.push(getAction(`${dappName}: ${functionName}`))
+        else visualization.push(getAction(`Call ${functionName} function`))
       } else {
-        visualization.push(
-          getAction('Unknown action'),
-          getLabel('to'),
-          getAddressVisualization(call.to)
-        )
+        // eslint-disable-next-line no-lonely-if
+        if (dappName) visualization.push(getAction(`${dappName}: unknown call`))
+        else visualization.push(getAction('Unknown call to'), getAddressVisualization(call.to))
       }
     }
     if (call.value) {
-      if (call.data !== '0x') visualization.push(getLabel('and'))
-      visualization.push(getAction('Send'), getToken(ZeroAddress, call.value))
-      if (call.data === '0x') visualization.push(getLabel('to'), getAddressVisualization(call.to))
+      if (call.data !== '0x')
+        visualization.push(getLabel('with'), getToken(ZeroAddress, call.value))
+      else visualization.push(getAction('Send'), getLabel('to'), getAddressVisualization(call.to))
     }
-
     return {
       ...call,
       fullVisualization: visualization.length
