@@ -113,6 +113,11 @@ export class DappsController extends EventEmitter {
   addDapp(dapp: Dapp) {
     if (!this.isReady) return
 
+    if (dapp.url.includes(chrome.runtime.id)) {
+      // eslint-disable-next-line no-param-reassign
+      dapp.url = chrome.runtime.id
+    }
+
     const doesAlreadyExist = this.dapps.find((d) => d.url === dapp.url)
     if (doesAlreadyExist) {
       this.updateDapp(dapp.url, {
@@ -129,6 +134,11 @@ export class DappsController extends EventEmitter {
   updateDapp(url: string, dapp: Partial<Dapp>) {
     if (!this.isReady) return
 
+    if (url.includes(chrome.runtime.id)) {
+      // eslint-disable-next-line no-param-reassign
+      url = chrome.runtime.id
+    }
+
     this.dapps = this.dapps.map((d) => {
       if (d.url === url) return { ...d, ...dapp }
       return d
@@ -139,6 +149,11 @@ export class DappsController extends EventEmitter {
   removeDapp(url: string) {
     if (!this.isReady) return
 
+    if (url.includes(chrome.runtime.id)) {
+      // eslint-disable-next-line no-param-reassign
+      url = chrome.runtime.id
+    }
+
     // do not remove predefined dapps
     if (predefinedDapps.find((d) => d.url === url)) return
 
@@ -147,6 +162,11 @@ export class DappsController extends EventEmitter {
   }
 
   hasPermission(url: string) {
+    if (url.includes(chrome.runtime.id)) {
+      // eslint-disable-next-line no-param-reassign
+      url = chrome.runtime.id
+    }
+
     const dapp = this.dapps.find((d) => d.url === url)
     if (!dapp) return false
 
@@ -155,6 +175,11 @@ export class DappsController extends EventEmitter {
 
   getDapp(url: string) {
     if (!this.isReady) return
+
+    if (url.includes(chrome.runtime.id)) {
+      // eslint-disable-next-line no-param-reassign
+      url = chrome.runtime.id
+    }
 
     return this.dapps.find((d) => d.url === url)
   }
