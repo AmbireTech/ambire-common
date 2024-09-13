@@ -263,7 +263,7 @@ const nativeFeeToken: TokenResult = {
 
 const nativeFeeTokenPolygon: TokenResult = {
   address: '0x0000000000000000000000000000000000000000',
-  symbol: 'MATIC',
+  symbol: 'POL',
   amount: 1000n,
   networkId: 'polygon',
   decimals: Number(18),
@@ -278,7 +278,7 @@ const nativeFeeTokenPolygon: TokenResult = {
 
 const gasTankToken: TokenResult = {
   address: '0x0000000000000000000000000000000000000000',
-  symbol: 'MATIC',
+  symbol: 'POL',
   amount: 323871237812612123123n,
   networkId: 'polygon',
   decimals: Number(18),
@@ -717,7 +717,7 @@ describe('SignAccountOp Controller ', () => {
             token: {
               address: '0x0000000000000000000000000000000000000000',
               amount: 1n,
-              symbol: 'matic',
+              symbol: 'POL',
               networkId: 'polygon',
               decimals: 18,
               priceIn: [],
@@ -984,7 +984,7 @@ describe('SignAccountOp Controller ', () => {
             token: {
               address: '0x0000000000000000000000000000000000000000',
               amount: 1n,
-              symbol: 'matic',
+              symbol: 'POL',
               networkId: 'polygon',
               decimals: 18,
               priceIn: [],
@@ -1112,7 +1112,7 @@ describe('SignAccountOp Controller ', () => {
     expect(controller.accountOp.feeCall!.data).toEqual(
       abiCoder.encode(
         ['string', 'uint256', 'string'],
-        ['gasTank', controller.accountOp!.gasFeePayment!.amount, 'MATIC']
+        ['gasTank', controller.accountOp!.gasFeePayment!.amount, 'POL']
       )
     )
 
@@ -1132,13 +1132,13 @@ describe('SignAccountOp Controller ', () => {
         feePaymentOptions: [
           {
             paidBy: eoaAccount.addr,
-            availableAmount: 1000000000000000000n, // 1 MATIC
+            availableAmount: 1000000000000000000n, // 1 POL
             gasUsed: 0n,
             addedNative: 5000n,
             token: {
               address: '0x0000000000000000000000000000000000000000',
               amount: 1n,
-              symbol: 'matic',
+              symbol: 'POL',
               networkId: 'polygon',
               decimals: 18,
               priceIn: [],
@@ -1152,13 +1152,13 @@ describe('SignAccountOp Controller ', () => {
           },
           {
             paidBy: trezorEoa.addr,
-            availableAmount: 2000000000000000000n, // 1 MATIC
+            availableAmount: 2000000000000000000n, // 1 POL
             gasUsed: 0n,
             addedNative: 5000n,
             token: {
               address: '0x0000000000000000000000000000000000000000',
               amount: 1n,
-              symbol: 'matic',
+              symbol: 'POL',
               networkId: 'polygon',
               decimals: 18,
               priceIn: [],
@@ -1172,13 +1172,13 @@ describe('SignAccountOp Controller ', () => {
           },
           {
             paidBy: otherEoa.addr,
-            availableAmount: 3000000000000000000n, // 1 MATIC
+            availableAmount: 3000000000000000000n, // 1 POL
             gasUsed: 0n,
             addedNative: 5000n,
             token: {
               address: '0x0000000000000000000000000000000000000000',
               amount: 1n,
-              symbol: 'matic',
+              symbol: 'POL',
               networkId: 'polygon',
               decimals: 18,
               priceIn: [],
@@ -1307,7 +1307,7 @@ describe('SignAccountOp Controller ', () => {
             token: {
               address: '0x0000000000000000000000000000000000000000',
               amount: 1n,
-              symbol: 'matic',
+              symbol: 'POL',
               networkId: 'polygon',
               decimals: 18,
               priceIn: [],
