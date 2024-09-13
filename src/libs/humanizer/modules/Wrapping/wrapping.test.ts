@@ -67,7 +67,7 @@ describe('wrapping', () => {
   test('WETH', () => {
     accountOp.calls = [...transactions.weth]
     let irCalls: IrCall[] = accountOp.calls
-    ;[irCalls] = wrappingModule(accountOp, irCalls, humanizerInfo as HumanizerMeta)
+    irCalls = wrappingModule(accountOp, irCalls, humanizerInfo as HumanizerMeta)
     const expectedHumanization = [
       [
         getAction('Wrap'),

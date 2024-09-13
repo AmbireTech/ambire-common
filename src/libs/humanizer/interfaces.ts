@@ -1,5 +1,4 @@
 import { Account } from '../../interfaces/account'
-import { HumanizerFragment } from '../../interfaces/humanizer'
 import { Network, NetworkId } from '../../interfaces/network'
 import { Message } from '../../interfaces/userRequest'
 import { AccountOp } from '../accountOp/accountOp'
@@ -12,9 +11,7 @@ export type HumanizerVisualization = (
       address?: string
       content?: string
       value?: bigint
-      humanizerMeta?: HumanizerMetaAddress
       warning?: boolean
-      // humanizerMeta?: HumanizerMetaAddress
       chainId?: bigint
       messageContent?: Uint8Array | string
     }
@@ -42,13 +39,14 @@ export interface Ir {
   messages: IrMessage[]
 }
 
-export type HumanizerPromise = () => Promise<HumanizerFragment | null>
 // @TODO make humanizer options interface
 export interface HumanizerCallModule {
-  (AccountOp: AccountOp, calls: IrCall[], humanizerMeta: HumanizerMeta, options?: any): [
-    IrCall[],
-    HumanizerPromise[]
-  ]
+  (
+    AccountOp: AccountOp,
+    calls: IrCall[],
+    humanizerMeta: HumanizerMeta,
+    options?: HumanizerOptions
+  ): IrCall[]
 }
 
 export interface HumanizerTypedMessageModule {
@@ -83,22 +81,8 @@ export interface HumanizerMeta {
     [address: string]: HumanizerMetaAddress
   }
 }
-export interface HumanizerSettings {
-  humanizerMeta?: HumanizerMeta
-  networkId: NetworkId
-  accountAddr: string
-}
 
-export interface HumanizerParsingModule {
-  (humanizerSettings: HumanizerSettings, visualization: HumanizerVisualization[], options?: any): [
-    HumanizerVisualization[],
-    HumanizerWarning[],
-    HumanizerPromise[]
-  ]
-}
 export interface HumanizerOptions {
-  fetch?: Function
-  emitError?: Function
   network?: Network
   networkId?: NetworkId
 }

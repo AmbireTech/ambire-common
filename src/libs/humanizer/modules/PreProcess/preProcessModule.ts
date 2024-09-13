@@ -12,5 +12,5 @@ export const preProcessHumanizer: HumanizerCallModule = (
     }
     return call
   })
-  return [newCalls, []]
+  return newCalls
 }

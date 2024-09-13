@@ -3,7 +3,7 @@ import { AccountOp } from '../../../accountOp/accountOp'
 import { HumanizerMeta } from '../../interfaces'
 import { compareHumanizerVisualizations } from '../../testHelpers'
 import { getAction, getLabel, getToken } from '../../utils'
-import curveModule from '.'
+import curveModule from './'
 
 const transactions = [
   {
@@ -56,8 +56,8 @@ describe('curve', () => {
         getToken('0x0000000000000000000000000000000000000000', 19459257603515n)
       ]
     ]
-    const [calls] = curveModule(accountOp, transactions, humanizerInfo as HumanizerMeta)
+    const irCalls = curveModule(accountOp, transactions, humanizerInfo as HumanizerMeta)
 
-    compareHumanizerVisualizations(calls, expectedVisualization)
+    compareHumanizerVisualizations(irCalls, expectedVisualization)
   })
 })

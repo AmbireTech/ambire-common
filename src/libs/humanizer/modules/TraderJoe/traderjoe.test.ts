@@ -124,8 +124,8 @@ describe('trader joe', () => {
         getDeadline(1718636208n)
       ]
     ]
-    const [calls] = traderJoe(accountOp, transactions, humanizerInfo as HumanizerMeta)
+    const irCalls = traderJoe(accountOp, transactions, humanizerInfo as HumanizerMeta)
 
-    compareHumanizerVisualizations(calls, expectedVisualization)
+    compareHumanizerVisualizations(irCalls, expectedVisualization)
   })
 })

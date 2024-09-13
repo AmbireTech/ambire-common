@@ -20,11 +20,9 @@ import {
   SA_NATIVE_TRANSFER_GAS_USED
 } from '../../consts/signAccountOp/gas'
 import { Account } from '../../interfaces/account'
-import { Fetch } from '../../interfaces/fetch'
 import { ExternalSignerControllers, Key } from '../../interfaces/keystore'
 import { Network } from '../../interfaces/network'
 import { Warning } from '../../interfaces/signAccountOp'
-import { Storage } from '../../interfaces/storage'
 import { isAmbireV1LinkedAccount, isSmartAccount } from '../../libs/account/account'
 import { AccountOp, GasFeePayment, getSignableCalls } from '../../libs/accountOp/accountOp'
 import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
@@ -35,8 +33,6 @@ import {
   GasRecommendation,
   getCallDataAdditionalByNetwork
 } from '../../libs/gasPrice/gasPrice'
-import { callsHumanizer } from '../../libs/humanizer'
-import { IrCall } from '../../libs/humanizer/interfaces'
 import { Price, TokenResult } from '../../libs/portfolio'
 import { getExecuteSignature, getTypedData, wrapStandard } from '../../libs/signMessage/signMessage'
 import { getGasUsed } from '../../libs/singleton/singleton'
@@ -56,7 +52,6 @@ import { AccountOpAction } from '../actions/actions'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
 import { PortfolioController } from '../portfolio/portfolio'
-import { ProvidersController } from '../providers/providers'
 import {
   getFeeSpeedIdentifier,
   getFeeTokenPriceUnavailableWarning,
@@ -113,13 +108,7 @@ export class SignAccountOpController extends EventEmitter {
 
   #portfolio: PortfolioController
 
-  #providers: ProvidersController
-
   #externalSignerControllers: ExternalSignerControllers
-
-  #storage: Storage
-
-  #fetch: Fetch
 
   account: Account
 
@@ -149,8 +138,6 @@ export class SignAccountOpController extends EventEmitter {
 
   selectedOption: FeePaymentOption | undefined = undefined
 
-  humanReadable: IrCall[] = []
-
   status: Status | null = null
 
   gasUsedTooHigh: boolean
@@ -173,14 +160,11 @@ export class SignAccountOpController extends EventEmitter {
     accounts: AccountsController,
     keystore: KeystoreController,
     portfolio: PortfolioController,
-    providers: ProvidersController,
     externalSignerControllers: ExternalSignerControllers,
     account: Account,
     network: Network,
     fromActionId: AccountOpAction['id'],
     accountOp: AccountOp,
-    storage: Storage,
-    fetch: Fetch,
     callRelayer: Function,
     reEstimate: Function
   ) {
@@ -189,18 +173,14 @@ export class SignAccountOpController extends EventEmitter {
     this.#accounts = accounts
     this.#keystore = keystore
     this.#portfolio = portfolio
-    this.#providers = providers
     this.#externalSignerControllers = externalSignerControllers
     this.account = account
     this.#network = network
     this.fromActionId = fromActionId
     this.accountOp = structuredClone(accountOp)
-    this.#storage = storage
-    this.#fetch = fetch
     this.#callRelayer = callRelayer
     this.#reEstimate = reEstimate
 
-    this.#humanizeAccountOp()
     this.gasUsedTooHigh = false
     this.gasUsedTooHighAgreed = false
     this.rbfAccountOps = {}
@@ -239,20 +219,6 @@ export class SignAccountOpController extends EventEmitter {
   // check if speeds are set for the given identifier
   hasSpeeds(identifier: string) {
     return this.feeSpeeds[identifier] !== undefined && this.feeSpeeds[identifier].length
-  }
-
-  #humanizeAccountOp() {
-    callsHumanizer(
-      this.accountOp,
-      this.#storage,
-      this.#fetch,
-      (humanizedCalls) => {
-        this.humanReadable = humanizedCalls
-        this.emitUpdate()
-      },
-      (err) => this.emitError(err),
-      { network: this.#network }
-    ).catch((err) => this.emitError(err))
   }
 
   get errors(): string[] {
@@ -461,11 +427,6 @@ export class SignAccountOpController extends EventEmitter {
       return
     }
 
-    if (accountOp) {
-      this.accountOp = structuredClone(accountOp)
-      this.#humanizeAccountOp()
-    }
-
     if (blockGasLimit) this.#blockGasLimit = blockGasLimit
 
     if (gasPrices) this.gasPrices = gasPrices
@@ -587,7 +548,6 @@ export class SignAccountOpController extends EventEmitter {
     this.paidBy = null
     this.feeTokenResult = null
     this.status = null
-    this.humanReadable = []
     this.emitUpdate()
   }
 
