@@ -3,21 +3,12 @@ import { ZeroAddress } from 'ethers'
 
 import { geckoIdMapper } from '../../consts/coingecko'
 import { Fetch } from '../../interfaces/fetch'
-import { HumanizerFragment } from '../../interfaces/humanizer'
 import { Network } from '../../interfaces/network'
-import {
-  HumanizerMeta,
-  HumanizerSettings,
-  HumanizerVisualization,
-  HumanizerWarning,
-  IrCall
-} from './interfaces'
+import { HumanizerMeta, HumanizerVisualization, HumanizerWarning, IrCall } from './interfaces'
 
 dotenv.config()
 
 const baseUrlCena = 'https://cena.ambire.com/api/v3'
-
-export const HUMANIZER_META_KEY = 'HumanizerMetaV2'
 
 export function getWarning(
   content: string,
@@ -121,50 +112,8 @@ export async function getNativePrice(network: Network, fetch: Fetch): Promise<nu
   return response[platformId].usd
 }
 
-// @TODO this should be moved outside of the humanizer as we should not use it in the humanizer
-export async function getTokenInfo(
-  humanizerSettings: HumanizerSettings,
-  address: string,
-  options: any
-): Promise<HumanizerFragment | null> {
-  let platformId = options?.network?.platformId
-  if (!platformId) {
-    options.emitError({
-      message: 'getTokenInfo: could not find platform id for token info api',
-      error: new Error(
-        `could not find platform id for token info api ${humanizerSettings.networkId}`
-      ),
-      level: 'silent'
-    })
-    platformId = humanizerSettings.networkId
-  }
-
-  try {
-    const queryUrl = `${baseUrlCena}/coins/${platformId}/contract/${address}`
-    let response = await options.fetch(queryUrl)
-    response = await response.json()
-    if (response.symbol && response.detail_platforms?.[platformId]?.decimal_place)
-      return {
-        type: 'token',
-        key: address.toLowerCase(),
-        value: {
-          symbol: response.symbol.toUpperCase(),
-          decimals: response.detail_platforms?.[platformId]?.decimal_place
-        },
-        isGlobal: true
-      }
-    return null
-  } catch (e: any) {
-    return null
-  }
-}
-
-export function checkIfUnknownAction(v: Array<HumanizerVisualization>): boolean {
-  try {
-    return !!(v[0].type === 'action' && v?.[0]?.content?.startsWith('Unknown action'))
-  } catch (e) {
-    return false
-  }
+export function checkIfUnknownAction(v: HumanizerVisualization[] | undefined): boolean {
+  return !!(v && v[0]?.type === 'action' && v?.[0]?.content?.startsWith('Unknown action'))
 }
 
 export function getUnknownVisualization(name: string, call: IrCall): HumanizerVisualization[] {
@@ -194,27 +143,6 @@ export function getKnownName(
   address: string
 ): string | undefined {
   return humanizerMeta?.knownAddresses?.[address.toLowerCase()]?.name
-}
-
-export const integrateFragments = (
-  _humanizerMeta: HumanizerMeta,
-  fragments: HumanizerFragment[]
-): HumanizerMeta => {
-  const humanizerMeta = _humanizerMeta
-  fragments.forEach((f) => {
-    // @TODO rename types to singular  also add enum
-    if (f.type === 'abis') humanizerMeta.abis[f.key] = f.value
-    if (f.type === 'selector') humanizerMeta.abis.NO_ABI[f.key] = f.value
-    if (f.type === 'knownAddresses')
-      humanizerMeta.knownAddresses[f.key] = { ...humanizerMeta.knownAddresses[f.key], ...f.value }
-    if (f.type === 'token') {
-      humanizerMeta.knownAddresses[f.key] = {
-        ...humanizerMeta.knownAddresses?.[f.key],
-        token: f.value
-      }
-    }
-  })
-  return humanizerMeta
 }
 
 export const EMPTY_HUMANIZER_META = { abis: { NO_ABI: {} }, knownAddresses: {} }

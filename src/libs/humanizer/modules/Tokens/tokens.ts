@@ -2,7 +2,7 @@ import { Interface, ZeroAddress } from 'ethers'
 
 import { AccountOp } from '../../../accountOp/accountOp'
 import { ERC20, ERC721 } from '../../const/abis'
-import { HumanizerCallModule, HumanizerPromise, IrCall } from '../../interfaces'
+import { HumanizerCallModule, IrCall } from '../../interfaces'
 import { getAction, getAddressVisualization, getLabel, getToken } from '../../utils'
 
 // @TODO merge this with the  erc20 humanizer module as sometimes
@@ -75,14 +75,13 @@ export const genericErc721Humanizer: HumanizerCallModule = (
         }
       : call
   })
-  return [newCalls, []]
+  return newCalls
 }
 
 export const genericErc20Humanizer: HumanizerCallModule = (
   accountOp: AccountOp,
   currentIrCalls: IrCall[]
 ) => {
-  const asyncOps: HumanizerPromise[] = []
   const iface = new Interface(ERC20)
   const matcher = {
     [iface.getFunction('approve')?.selector!]: (call: IrCall) => {
@@ -148,5 +147,5 @@ export const genericErc20Humanizer: HumanizerCallModule = (
         }
       : call
   })
-  return [newCalls, asyncOps]
+  return newCalls
 }

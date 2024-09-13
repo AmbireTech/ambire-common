@@ -259,9 +259,7 @@ export class MainController extends EventEmitter {
       this.providers,
       this.networks,
       this.accounts,
-      this.#externalSignerControllers,
-      this.#storage,
-      this.fetch
+      this.#externalSignerControllers
     )
     this.dapps = new DappsController(this.#storage)
     this.actions = new ActionsController({
@@ -464,14 +462,11 @@ export class MainController extends EventEmitter {
       this.accounts,
       this.keystore,
       this.portfolio,
-      this.providers,
       this.#externalSignerControllers,
       account,
       network,
       actionId,
       accountOp,
-      this.#storage,
-      this.fetch,
       this.callRelayer,
       () => {
         this.estimateSignAccountOp()
@@ -1564,14 +1559,8 @@ export class MainController extends EventEmitter {
       const feeTokens =
         [...networkFeeTokens, ...gasTankFeeTokens].filter((t) => t.flags.isFeeToken) || []
 
-      // Reverse lookup addresses and save them in memory so they
       // can be read from the UI
-      const humanization = await humanizeAccountOp(
-        this.#storage,
-        localAccountOp,
-        this.fetch,
-        this.emitError
-      )
+      const humanization = humanizeAccountOp(localAccountOp, {})
       humanization.forEach((call: any) => {
         if (!call.fullVisualization) return
 

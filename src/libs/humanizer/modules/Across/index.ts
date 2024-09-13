@@ -72,7 +72,7 @@ const AcrossModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]) =>
     return { ...call, fullVisualization: matcher[call.data.slice(0, 10)](call) }
   })
 
-  return [newCalls, []]
+  return newCalls
 }
 
 export default AcrossModule

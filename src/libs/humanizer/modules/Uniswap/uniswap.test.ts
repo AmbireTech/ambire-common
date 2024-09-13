@@ -8,7 +8,7 @@ import { AccountOp } from '../../../accountOp/accountOp'
 import { HumanizerMeta, HumanizerVisualization, IrCall } from '../../interfaces'
 import { compareHumanizerVisualizations } from '../../testHelpers'
 import { getAction, getAddressVisualization, getDeadline, getLabel, getToken } from '../../utils'
-import { uniswapHumanizer } from '.'
+import { uniswapHumanizer } from './'
 
 const transactions = {
   firstBatch: [
@@ -113,9 +113,6 @@ const accountOp: AccountOp = {
   // humanizerMeta: {}
 }
 
-const emitedErrors: ErrorRef[] = []
-const moockEmitError = (e: ErrorRef) => emitedErrors.push(e)
-
 describe('uniswap', () => {
   test('uniV3', () => {
     const expectedhumanization = [
@@ -188,8 +185,7 @@ describe('uniswap', () => {
     ]
     accountOp.calls = [...transactions.secondBatch]
     let irCalls: IrCall[] = accountOp.calls
-    ;[irCalls] = uniswapHumanizer(accountOp, irCalls, humanizerInfo as HumanizerMeta, {
-      emitedError: moockEmitError
+    irCalls = uniswapHumanizer(accountOp, irCalls, humanizerInfo as HumanizerMeta, {
     })
     expect(irCalls.length).toBe(expectedhumanization.length)
     compareHumanizerVisualizations(irCalls, expectedhumanization as HumanizerVisualization[][])
@@ -197,8 +193,7 @@ describe('uniswap', () => {
 
   test('uniSwap', () => {
     accountOp.calls = [...transactions.firstBatch]
-    const irCalls: IrCall[] = accountOp.calls
-    const [calls] = uniswapHumanizer(accountOp, irCalls, humanizerInfo as HumanizerMeta)
+    const irCalls = uniswapHumanizer(accountOp, accountOp.calls, humanizerInfo as HumanizerMeta)
     const expectedVisualization = [
       [
         getAction('Swap'),
@@ -226,13 +221,12 @@ describe('uniswap', () => {
         getAction('Refund')
       ]
     ]
-    expect(calls.length).toEqual(expectedVisualization.length)
-    compareHumanizerVisualizations(calls, expectedVisualization as HumanizerVisualization[][])
+    expect(irCalls.length).toEqual(expectedVisualization.length)
+    compareHumanizerVisualizations(irCalls, expectedVisualization as HumanizerVisualization[][])
   })
   test('Reduce', () => {
     accountOp.calls = [...transactions.reduce]
-    const irCalls: IrCall[] = accountOp.calls
-    const [calls] = uniswapHumanizer(accountOp, irCalls, humanizerInfo as HumanizerMeta)
+    let irCalls = uniswapHumanizer(accountOp, accountOp.calls, humanizerInfo as HumanizerMeta)
     const expectedVisualization = [
       [
         getAction('Swap'),
@@ -249,7 +243,7 @@ describe('uniswap', () => {
         getDeadline(1724237675n)
       ]
     ]
-    expect(calls.length).toEqual(expectedVisualization.length)
-    compareHumanizerVisualizations(calls, expectedVisualization as HumanizerVisualization[][])
+    expect(irCalls.length).toEqual(expectedVisualization.length)
+    compareHumanizerVisualizations(irCalls, expectedVisualization as HumanizerVisualization[][])
   })
 })
