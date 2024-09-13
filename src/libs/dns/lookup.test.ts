@@ -4,6 +4,7 @@ import lookup from './lookup'
 
 describe('Lookup', () => {
   beforeEach(() => {
+    // Don't spam the console with logs
     console.info = jest.fn()
   })
   test('should generated a valid lookup to a DNS address that has DNS SEC', async () => {

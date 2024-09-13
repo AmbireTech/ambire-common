@@ -134,7 +134,9 @@ const prepareTest = async () => {
 }
 
 describe('Activity Controller ', () => {
-  // Do this only once
+  // Setup other controllers only once!
+  // Otherwise account states will be fetched in every tests and the RPC may timeout or throw
+  // errors
   beforeAll(async () => {
     await storage.set('accounts', ACCOUNTS)
 
@@ -162,6 +164,7 @@ describe('Activity Controller ', () => {
   })
 
   // Clear activity storage after each test
+  // but keep accounts, providers etc.
   afterEach(async () => {
     await storage.remove('accountsOps')
     await storage.remove('signedMessages')
