@@ -2,13 +2,9 @@ import { hexlify, isHexString, toUtf8Bytes } from 'ethers'
 
 import EmittableError from '../../classes/EmittableError'
 import { Account } from '../../interfaces/account'
-import { Fetch } from '../../interfaces/fetch'
 import { ExternalSignerControllers, Key } from '../../interfaces/keystore'
 import { Network } from '../../interfaces/network'
-import { Storage } from '../../interfaces/storage'
 import { Message } from '../../interfaces/userRequest'
-import { messageHumanizer } from '../../libs/humanizer'
-import { IrMessage } from '../../libs/humanizer/interfaces'
 import {
   getEIP712Signature,
   getPlainTextSignature,
@@ -36,10 +32,6 @@ export class SignMessageController extends EventEmitter {
 
   #externalSignerControllers: ExternalSignerControllers
 
-  #storage: Storage
-
-  #fetch: Fetch
-
   #accounts: AccountsController
 
   // this is the signer from keystore.ts
@@ -62,8 +54,6 @@ export class SignMessageController extends EventEmitter {
 
   signingKeyType: Key['type'] | null = null
 
-  humanReadable: IrMessage | null = null
-
   signedMessage: SignedMessage | null = null
 
   constructor(
@@ -71,9 +61,7 @@ export class SignMessageController extends EventEmitter {
     providers: ProvidersController,
     networks: NetworksController,
     accounts: AccountsController,
-    externalSignerControllers: ExternalSignerControllers,
-    storage: Storage,
-    fetch: Fetch
+    externalSignerControllers: ExternalSignerControllers
   ) {
     super()
 
@@ -81,8 +69,6 @@ export class SignMessageController extends EventEmitter {
     this.#providers = providers
     this.#networks = networks
     this.#externalSignerControllers = externalSignerControllers
-    this.#storage = storage
-    this.#fetch = fetch
     this.#accounts = accounts
   }
 
@@ -105,22 +91,6 @@ export class SignMessageController extends EventEmitter {
         this.dapp = dapp
       }
       this.messageToSign = messageToSign
-      const network = this.#networks.networks.find(
-        (n: Network) => n.id === this.messageToSign?.networkId
-      )
-      // eslint-disable-next-line @typescript-eslint/no-floating-promises
-      messageHumanizer(
-        messageToSign,
-        this.#storage,
-        this.#fetch,
-        (humanizedMessage: IrMessage) => {
-          this.humanReadable = humanizedMessage
-          this.emitUpdate()
-        },
-        (err) => this.emitError(err),
-        { network }
-      )
-
       this.isInitialized = true
       this.emitUpdate()
     } else {
@@ -144,7 +114,6 @@ export class SignMessageController extends EventEmitter {
     this.signedMessage = null
     this.signingKeyAddr = null
     this.signingKeyType = null
-    this.humanReadable = null
     this.emitUpdate()
   }
 
@@ -234,8 +203,14 @@ export class SignMessageController extends EventEmitter {
         )
       }
 
+      // if the account is not deployed, it should be wrapped with EIP-6492
+      // magic bytes. The only exception is when we're asking the user to
+      // sign an AmbireOperation (entry point deploy)
       signature =
-        account.creation && !accountState.isDeployed
+        account.creation &&
+        !accountState.isDeployed &&
+        (this.messageToSign.content.kind !== 'typedMessage' ||
+          this.messageToSign.content.primaryType !== 'AmbireOperation')
           ? // https://eips.ethereum.org/EIPS/eip-6492
             wrapCounterfactualSign(signature, account.creation!)
           : signature
@@ -251,7 +226,14 @@ export class SignMessageController extends EventEmitter {
         // the signer is always the account even if the actual
         // signature is from a key that has privs to the account
         signer: this.messageToSign?.accountAddr,
-        signature,
+        // for verification, if the signature is an AmbireOperation,
+        // wrap in with the magic bytes
+        signature:
+          this.messageToSign.content.kind === 'typedMessage' &&
+          this.messageToSign.content.primaryType === 'AmbireOperation'
+            ? // https://eips.ethereum.org/EIPS/eip-6492
+              wrapCounterfactualSign(signature, account.creation!)
+            : signature,
         // @ts-ignore TODO: Be aware of the type mismatch, could cause troubles
         message: this.messageToSign.content.kind === 'message' ? personalMsgToValidate : undefined,
         typedData:

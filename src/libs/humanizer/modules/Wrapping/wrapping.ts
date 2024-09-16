@@ -44,5 +44,5 @@ export const wrappingModule: HumanizerCallModule = (
     }
     return call
   })
-  return [newCalls, []]
+  return newCalls
 }

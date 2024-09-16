@@ -1,10 +1,10 @@
 {
-  "version": "2.23.0",
+  "version": "2.24.0",
   "name": "ambire-common",
   "description": "Common ground for the Ambire apps",
   "scripts": {
-    "generate:humanizerSelectorsAndNames": "node scripts/compileContractSelectorsAndNames.js",
-    "generate:combineHumanizerJsons": "node scripts/combineHumanizerJsons.js",
+    "humanizer:update:metamaskContactMetadata": "node scripts/updateHumanizerInfoWithMetaMaskContactMetadata.js",
+    "humanizer:generate:combineHumanizerJsons": "node scripts/combineHumanizerJsons.js",
     "compile:contracts": "ts-node scripts/compileContracts.js",
     "hardhat": "npx hardhat compile; npx hardhat test",
     "jest": "jest --forceExit",
@@ -45,6 +45,7 @@
     "@nomicfoundation/hardhat-ethers": "^3.0.0",
     "@types/aes-js": "^3.1.1",
     "@types/chai": "^4.3.4",
+    "@types/jest": "^26.0.14",
     "@types/mocha": "^10.0.1",
     "@types/node": "^18.16.1",
     "@types/node-fetch": "^2.6.11",

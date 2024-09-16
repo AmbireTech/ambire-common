@@ -1,5 +1,5 @@
 import { AccountOp } from '../../../accountOp/accountOp'
-import { HumanizerCallModule, HumanizerMeta, IrCall } from '../../interfaces'
+import { HumanizerCallModule, IrCall } from '../../interfaces'
 import { HumanizerUniMatcher } from './interfaces'
 import { uniUniversalRouter } from './uniUniversalRouter'
 import { uniV2Mapping } from './uniV2'
@@ -7,14 +7,12 @@ import { uniV32Mapping, uniV3Mapping } from './uniV3'
 
 export const uniswapHumanizer: HumanizerCallModule = (
   accountOp: AccountOp,
-  currentIrCalls: IrCall[],
-  _: HumanizerMeta,
-  options?: any
+  currentIrCalls: IrCall[]
 ) => {
   const uniV2MappingObj = uniV2Mapping()
   const uniV3MappingObj = uniV3Mapping()
   const uniV32MappingObj = uniV32Mapping()
-  const uniUniversalRouterObj = uniUniversalRouter(options)
+  const uniUniversalRouterObj = uniUniversalRouter()
 
   const matcher: {
     [address: string]: HumanizerUniMatcher
@@ -59,5 +57,5 @@ export const uniswapHumanizer: HumanizerCallModule = (
       newCalls.push(call)
     }
   })
-  return [newCalls, []]
+  return newCalls
 }

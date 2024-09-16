@@ -5,7 +5,7 @@ import { describe, expect, test } from '@jest/globals'
 import humanizerInfo from '../../../../consts/humanizer/humanizerInfo.json'
 import { AccountOp } from '../../../accountOp/accountOp'
 import { HumanizerMeta, HumanizerVisualization, IrCall } from '../../interfaces'
-import { genericErc20Humanizer, genericErc721Humanizer } from '.'
+import { genericErc20Humanizer, genericErc721Humanizer } from './'
 
 const accountOp: AccountOp = {
   accountAddr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
@@ -140,12 +140,11 @@ describe('Tokens', () => {
   // @TODO err
   test('genericErc20Humanizer', () => {
     accountOp.calls = [...transactions.erc20]
-    const irCalls: IrCall[] = accountOp.calls
-    const [newCalls] = genericErc20Humanizer(accountOp, irCalls, humanizerInfo as HumanizerMeta, {
+    const irCalls = genericErc20Humanizer(accountOp, accountOp.calls, humanizerInfo as HumanizerMeta, {
       networkId: 'ethereum'
     })
-    expect(newCalls.length).toBe(transactions.erc20.length)
-    newCalls.forEach((c) => {
+    expect(irCalls.length).toBe(transactions.erc20.length)
+    irCalls.forEach((c) => {
       expect(
         c?.fullVisualization?.find((v: HumanizerVisualization) => v.type === 'token')
       ).toMatchObject({
@@ -158,13 +157,12 @@ describe('Tokens', () => {
 
   test('genericErc721Humanizer', () => {
     accountOp.calls = [...transactions.erc721]
-    const irCalls: IrCall[] = accountOp.calls
-    const [newCalls] = genericErc721Humanizer(accountOp, irCalls, humanizerInfo as HumanizerMeta, {
+    const irCalls = genericErc721Humanizer(accountOp, accountOp.calls, humanizerInfo as HumanizerMeta, {
       networkId: 'ethereum'
     })
 
-    expect(newCalls.length).toBe(transactions.erc721.length)
-    newCalls.forEach((c) => {
+    expect(irCalls.length).toBe(transactions.erc721.length)
+    irCalls.forEach((c) => {
       expect(c?.fullVisualization).not.toBeNull()
     })
   })

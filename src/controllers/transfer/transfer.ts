@@ -12,44 +12,12 @@ import { TokenResult } from '../../libs/portfolio'
 import { getTokenAmount } from '../../libs/portfolio/helpers'
 import { getSanitizedAmount } from '../../libs/transfer/amount'
 import { validateSendTransferAddress, validateSendTransferAmount } from '../../services/validations'
+import { convertTokenPriceToBigInt } from '../../utils/numbers/formatters'
 import { Contacts } from '../addressBook/addressBook'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
 const CONVERSION_PRECISION = 16
 const CONVERSION_PRECISION_POW = BigInt(10 ** CONVERSION_PRECISION)
-
-/**
- * Converts floating point token price to big int
- */
-const convertTokenPriceToBigInt = (
-  tokenPrice: number
-): {
-  tokenPriceBigInt: bigint
-  tokenPriceDecimals: number
-} => {
-  const tokenPriceString = String(tokenPrice)
-
-  // Scientific notation handling
-  if (tokenPriceString.includes('e')) {
-    const [base, rawExponent] = tokenPriceString.split('e')
-    const exponent = Math.abs(Number(rawExponent))
-
-    const { tokenPriceBigInt, tokenPriceDecimals: baseDecimals } = convertTokenPriceToBigInt(
-      Number(base)
-    )
-
-    return {
-      tokenPriceBigInt,
-      tokenPriceDecimals: baseDecimals + exponent
-    }
-  }
-
-  // Regular number handling
-  const tokenPriceDecimals = tokenPriceString.split('.')[1]?.length || 0
-  const tokenPriceBigInt = parseUnits(tokenPriceString, tokenPriceDecimals)
-
-  return { tokenPriceBigInt, tokenPriceDecimals }
-}
 
 const DEFAULT_ADDRESS_STATE = {
   fieldValue: '',

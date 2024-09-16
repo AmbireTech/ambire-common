@@ -14,5 +14,5 @@ export const aaveHumanizer: HumanizerCallModule = (accountOp: AccountOp, irCalls
       ? { ...call, fullVisualization: matcher[sigHash](accountOp, call) }
       : call
   })
-  return [newCalls, []]
+  return newCalls
 }

@@ -1,7 +1,6 @@
 import { AbiCoder, getBytes, keccak256 } from 'ethers'
 
 import { AccountId } from '../../interfaces/account'
-import { HumanizerFragment } from '../../interfaces/humanizer'
 // eslint-disable-next-line import/no-cycle
 import { Key } from '../../interfaces/keystore'
 import { NetworkId } from '../../interfaces/network'
@@ -70,9 +69,6 @@ export interface AccountOp {
   // however, in practice we only use this for recovery atm and we never have a case with more than one
   // Supporting this can done relatively easily via executeMany() for v2 accounts, and with multiple UserOps via 4337 (again v2 accs)
   accountOpToExecuteBefore: AccountOp | null
-  // this is the humanizer meta info that is supposed to be frozen in time
-  // expressed as HumanizerFragments that can be integrated in the passed humanizer meta object
-  humanizerMetaFragments?: HumanizerFragment[]
   txnId?: string
   status?: AccountOpStatus
   // in the case of ERC-4337, we need an UserOperation structure for the AccountOp
