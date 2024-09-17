@@ -90,7 +90,6 @@ export class AccountsController extends EventEmitter {
 
   async #selectAccount(toAccountAddr: string | null) {
     await this.initialLoadPromise
-
     if (!toAccountAddr) {
       this.selectedAccount = null
       await this.#storage.remove('selectedAccount')

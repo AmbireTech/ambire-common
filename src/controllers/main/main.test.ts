@@ -348,23 +348,7 @@ describe('Main Controller ', () => {
     ])
   })
 
-  test('should check if network features get displayed correctly for ethereum', (done) => {
-    let checks = 0
-    controller.networks.onUpdate(() => {
-      if (controller.networks.statuses.updateNetwork === 'SUCCESS' && checks > 3) {
-        const eth = controller.networks.networks.find((net) => net.id === 'ethereum')!
-        expect(eth.areContractsDeployed).toEqual(true)
-        done()
-      }
-      if (checks === 3) {
-        const eth = controller.networks.networks.find((net) => net.id === 'ethereum')!
-        expect(eth.areContractsDeployed).toEqual(false)
-        controller.setContractsDeployedToTrueIfDeployed(eth)
-      }
-
-      checks++
-    })
-
+  test('should check if network features get displayed correctly for ethereum', async () => {
     const eth = controller.networks.networks.find((net) => net.id === 'ethereum')!
     expect(eth?.features.length).toBe(3)
 
@@ -385,6 +369,13 @@ describe('Main Controller ', () => {
     expect(prices!.level).toBe('success')
 
     // set first to false so we could test setContractsDeployedToTrueIfDeployed
-    controller.networks.updateNetwork({ areContractsDeployed: false }, 'ethereum')
+    await controller.networks.updateNetwork({ areContractsDeployed: false }, 'ethereum')
+
+    const eth2 = controller.networks.networks.find((net) => net.id === 'ethereum')!
+    expect(eth2.areContractsDeployed).toEqual(false)
+    await controller.setContractsDeployedToTrueIfDeployed(eth2)
+
+    const eth3 = controller.networks.networks.find((net) => net.id === 'ethereum')!
+    expect(eth3.areContractsDeployed).toEqual(true)
   })
 })

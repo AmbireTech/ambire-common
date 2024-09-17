@@ -108,31 +108,13 @@ networks.forEach((network) => {
 
 const callRelayer = relayerCall.bind({ url: '', fetch })
 
+let providersCtrl: ProvidersController
+let accountsCtrl: AccountsController
+let networksCtrl: NetworksController
+
+const storage = produceMemoryStore()
+
 const prepareTest = async () => {
-  const storage = produceMemoryStore()
-  await storage.set('accounts', ACCOUNTS)
-  let providersCtrl: ProvidersController
-  const networksCtrl = new NetworksController(
-    storage,
-    fetch,
-    (net) => {
-      providersCtrl.setProvider(net)
-    },
-    (id) => {
-      providersCtrl.removeProvider(id)
-    }
-  )
-  providersCtrl = new ProvidersController(networksCtrl)
-  providersCtrl.providers = providers
-  const accountsCtrl = new AccountsController(
-    storage,
-    providersCtrl,
-    networksCtrl,
-    () => {},
-    () => {}
-  )
-  await accountsCtrl.initialLoadPromise
-  accountsCtrl.selectedAccount = '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
   const controller = new ActivityController(
     storage,
     fetch,
@@ -152,9 +134,45 @@ const prepareTest = async () => {
 }
 
 describe('Activity Controller ', () => {
+  // Setup other controllers only once!
+  // Otherwise account states will be fetched in every tests and the RPC may timeout or throw
+  // errors
+  beforeAll(async () => {
+    await storage.set('accounts', ACCOUNTS)
+
+    networksCtrl = new NetworksController(
+      storage,
+      fetch,
+      (net) => {
+        providersCtrl.setProvider(net)
+      },
+      (id) => {
+        providersCtrl.removeProvider(id)
+      }
+    )
+    providersCtrl = new ProvidersController(networksCtrl)
+    providersCtrl.providers = providers
+    accountsCtrl = new AccountsController(
+      storage,
+      providersCtrl,
+      networksCtrl,
+      () => {},
+      () => {}
+    )
+    await accountsCtrl.initialLoadPromise
+    accountsCtrl.selectedAccount = '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
+  })
+
+  // Clear activity storage after each test
+  // but keep accounts, providers etc.
+  afterEach(async () => {
+    await storage.remove('accountsOps')
+    await storage.remove('signedMessages')
+  })
+
   describe('AccountsOps', () => {
     test('Retrieved from Controller and persisted in Storage', async () => {
-      const { controller, storage } = await prepareTest()
+      const { controller } = await prepareTest()
 
       await controller.addAccountOp(SUBMITTED_ACCOUNT_OP)
       const controllerAccountsOps = controller.accountsOps
@@ -444,30 +462,8 @@ describe('Activity Controller ', () => {
     })
 
     test('`Unknown but past nonce` status is set correctly', async () => {
-      const storage = produceMemoryStore()
-      await storage.set('accounts', ACCOUNTS)
-      let providersCtrl: ProvidersController
-      const networksCtrl = new NetworksController(
-        storage,
-        fetch,
-        (net) => {
-          providersCtrl.setProvider(net)
-        },
-        (id) => {
-          providersCtrl.removeProvider(id)
-        }
-      )
-      providersCtrl = new ProvidersController(networksCtrl)
-      providersCtrl.providers = providers
-      const accountsCtrl = new AccountsController(
-        storage,
-        providersCtrl,
-        networksCtrl,
-        () => {},
-        () => {}
-      )
-      await accountsCtrl.initialLoadPromise
-      accountsCtrl.selectedAccount = '0xa07D75aacEFd11b425AF7181958F0F85c312f143'
+      await accountsCtrl.selectAccount('0xa07D75aacEFd11b425AF7181958F0F85c312f143')
+      await accountsCtrl.updateAccountState('0xa07D75aacEFd11b425AF7181958F0F85c312f143')
       const controller = new ActivityController(
         storage,
         fetch,
@@ -584,7 +580,7 @@ describe('Activity Controller ', () => {
 
   describe('SignedMessages', () => {
     test('Retrieved from Controller and persisted in Storage', async () => {
-      const { controller, storage } = await prepareTest()
+      const { controller } = await prepareTest()
 
       const signedMessage: SignedMessage = {
         fromActionId: 1,
@@ -665,7 +661,7 @@ describe('Activity Controller ', () => {
         await controller.addSignedMessage(sm, '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5')
       }
 
-      await controller.setSignedMessagesPagination({ fromPage: 0, itemsPerPage: 1000 })
+      controller.setSignedMessagesPagination({ fromPage: 0, itemsPerPage: 1000 })
       const controllerSignedMessages = controller.signedMessages
 
       expect(controllerSignedMessages!.itemsTotal).toEqual(1000)
