@@ -31,6 +31,11 @@ import {
 import { fromDescriptor } from '../deployless/deployless'
 import { getActivatorCall } from '../userOperation/userOperation'
 
+// EIP6492 signature ends in magicBytes, which ends with a 0x92,
+// which makes it is impossible for it to collide with a valid ecrecover signature if packed in the r,s,v format,
+// as 0x92 is not a valid value for v.
+const magicBytes = '6492649264926492649264926492649264926492649264926492649264926492'
+
 /**
  * For Unprotected signatures, we need to append 00 at the end
  * for ambire to recognize it
@@ -116,11 +121,6 @@ export const getTypedData = (
  * @returns {string} - EIP6492 signature
  */
 export const wrapCounterfactualSign = (signature: string, creation: AccountCreation) => {
-  // EIP6492 signature ends in magicBytes, which ends with a 0x92,
-  // which makes it is impossible for it to collide with a valid ecrecover signature if packed in the r,s,v format,
-  // as 0x92 is not a valid value for v.
-  const magicBytes = '6492649264926492649264926492649264926492649264926492649264926492'
-
   const ABI = ['function deploy(bytes code, uint256 salt)']
   const iface = new Interface(ABI)
   const factoryCallData = iface.encodeFunctionData('deploy', [creation.bytecode, creation.salt])
@@ -378,8 +378,20 @@ export async function getEntryPointAuthorization(addr: AccountId, chainId: bigin
   return getTypedData(chainId, addr, hexlify(hash))
 }
 
-// since normally when we sign an EIP-712 request, we wrap it in Unprotected,
-// we adjust the entry point authorization signature so we could execute a txn
 export function adjustEntryPointAuthorization(signature: string): string {
-  return wrapStandard(signature.substring(0, signature.length - 2))
+  let entryPointSig = signature
+
+  // if thet signature is wrapepd in magicBytes because of eip-6492, unwrap it
+  if (signature.endsWith(magicBytes)) {
+    const coder = new AbiCoder()
+    const decoded = coder.decode(
+      ['address', 'bytes', 'bytes'],
+      signature.substring(0, signature.length - magicBytes.length)
+    )
+    entryPointSig = decoded[2]
+  }
+
+  // since normally when we sign an EIP-712 request, we wrap it in Unprotected,
+  // we adjust the entry point authorization signature so we could execute a txn
+  return wrapStandard(entryPointSig.substring(0, entryPointSig.length - 2))
 }
