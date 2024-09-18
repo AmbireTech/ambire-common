@@ -67,7 +67,6 @@ import {
 } from '../../libs/userOperation/userOperation'
 import bundler from '../../services/bundlers'
 import { Bundler } from '../../services/bundlers/bundler'
-import { Socket } from '../../services/socket/api'
 import { getIsViewOnly } from '../../utils/accounts'
 import shortenAddress from '../../utils/shortenAddress'
 import wait from '../../utils/wait'
@@ -185,8 +184,7 @@ export class MainController extends EventEmitter {
     keystoreSigners,
     externalSignerControllers,
     windowManager,
-    notificationManager,
-    socket
+    notificationManager
   }: {
     storage: Storage
     fetch: Fetch
@@ -196,7 +194,6 @@ export class MainController extends EventEmitter {
     externalSignerControllers: ExternalSignerControllers
     windowManager: WindowManager
     notificationManager: NotificationManager
-    socket: Socket
   }) {
     super()
     this.#storage = storage
@@ -264,7 +261,7 @@ export class MainController extends EventEmitter {
       this.accounts,
       this.#externalSignerControllers
     )
-    this.swapAndBridge = new SwapAndBridgeController()
+    this.swapAndBridge = new SwapAndBridgeController({ fetch: this.fetch })
     this.dapps = new DappsController(this.#storage)
     this.actions = new ActionsController({
       accounts: this.accounts,
@@ -309,6 +306,8 @@ export class MainController extends EventEmitter {
     // TODO: We agreed to always fetch the latest and pending states.
     // To achieve this, we need to refactor how we use forceUpdate to obtain pending state updates.
     this.updateSelectedAccountPortfolio(true)
+
+    await this.swapAndBridge.updateToTokenList()
 
     /**
      * Listener that gets triggered as a finalization step of adding new
