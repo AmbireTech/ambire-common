@@ -7,6 +7,7 @@ import { describe, expect, test } from '@jest/globals'
 
 import { relayerUrl } from '../../../test/config'
 import { produceMemoryStore } from '../../../test/helpers'
+import { suppressConsoleBeforeEach } from '../../../test/helpers/console'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import {
   BIP44_STANDARD_DERIVATION_TEMPLATE,
@@ -128,41 +129,44 @@ describe('AccountAdder', () => {
     expect(accountAdder.shouldSearchForLinkedAccounts).toBeTruthy()
   })
 
-  test('should throw if AccountAdder controller method is requested, but the controller was not initialized beforehand', (done) => {
-    const unsubscribe = accountAdder.onError(() => {
-      const notInitializedErrorsCount = accountAdder.emittedErrors.filter(
-        (e) =>
-          e.error.message ===
-          'accountAdder: requested a method of the AccountAdder controller, but the controller was not initialized'
-      ).length
+  describe('Negative tests', () => {
+    suppressConsoleBeforeEach()
+    test('should throw if AccountAdder controller method is requested, but the controller was not initialized beforehand', (done) => {
+      const unsubscribe = accountAdder.onError(() => {
+        const notInitializedErrorsCount = accountAdder.emittedErrors.filter(
+          (e) =>
+            e.error.message ===
+            'accountAdder: requested a method of the AccountAdder controller, but the controller was not initialized'
+        ).length
 
-      if (notInitializedErrorsCount === 4) {
-        expect(notInitializedErrorsCount).toEqual(4)
-        unsubscribe()
-        done()
-      }
+        if (notInitializedErrorsCount === 4) {
+          expect(notInitializedErrorsCount).toEqual(4)
+          unsubscribe()
+          done()
+        }
+      })
+
+      accountAdder.setPage({ page: 1 })
+      accountAdder.selectAccount(basicAccount)
+      accountAdder.deselectAccount(basicAccount)
+      accountAdder.addAccounts([], { internal: [], external: [] })
     })
 
-    accountAdder.setPage({ page: 1 })
-    accountAdder.selectAccount(basicAccount)
-    accountAdder.deselectAccount(basicAccount)
-    accountAdder.addAccounts([], { internal: [], external: [] })
-  })
+    test('should throw if AccountAdder controller gets initialized, but the keyIterator is missing', (done) => {
+      const unsubscribe = accountAdder.onError(() => {
+        const missingKeyIteratorError = accountAdder.emittedErrors.find(
+          (e) => e.error.message === 'accountAdder: missing keyIterator'
+        )
 
-  test('should throw if AccountAdder controller gets initialized, but the keyIterator is missing', (done) => {
-    const unsubscribe = accountAdder.onError(() => {
-      const missingKeyIteratorError = accountAdder.emittedErrors.find(
-        (e) => e.error.message === 'accountAdder: missing keyIterator'
-      )
+        if (missingKeyIteratorError) {
+          expect(missingKeyIteratorError).toBeTruthy()
+          unsubscribe()
+          done()
+        }
+      })
 
-      if (missingKeyIteratorError) {
-        expect(missingKeyIteratorError).toBeTruthy()
-        unsubscribe()
-        done()
-      }
+      accountAdder.init({ keyIterator: null, hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE })
     })
-
-    accountAdder.init({ keyIterator: null, hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE })
   })
 
   test('should retrieve one smart account and one basic account on every slot (per page)', async () => {

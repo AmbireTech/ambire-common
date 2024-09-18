@@ -1,5 +1,5 @@
 {
-  "version": "2.24.0",
+  "version": "2.25.0",
   "name": "ambire-common",
   "description": "Common ground for the Ambire apps",
   "scripts": {
@@ -45,6 +45,7 @@
     "@nomicfoundation/hardhat-ethers": "^3.0.0",
     "@types/aes-js": "^3.1.1",
     "@types/chai": "^4.3.4",
+    "@types/jest": "^26.0.14",
     "@types/mocha": "^10.0.1",
     "@types/node": "^18.16.1",
     "@types/node-fetch": "^2.6.11",
