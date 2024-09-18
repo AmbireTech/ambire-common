@@ -307,6 +307,8 @@ export class MainController extends EventEmitter {
     // To achieve this, we need to refactor how we use forceUpdate to obtain pending state updates.
     this.updateSelectedAccountPortfolio(true)
 
+    // TODO: Temporarily update token list on load, but ideally, this should get
+    // initially triggered only when user lands on the Swap & Bridge screen.
     await this.swapAndBridge.updateToTokenList()
 
     /**
