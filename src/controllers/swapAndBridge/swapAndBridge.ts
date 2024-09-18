@@ -39,6 +39,34 @@ export class SwapAndBridgeController extends EventEmitter {
     this.emitUpdate()
   }
 
+  async updateFromToken({
+    fromTokenAddress,
+    fromChainId
+  }: {
+    fromTokenAddress: TokenResult['address']
+    fromChainId: number
+  }) {
+    this.fromTokenAddress = fromTokenAddress
+    this.fromChainId = fromChainId
+    this.emitUpdate()
+
+    await this.updateToTokenList()
+  }
+
+  async updateToChainId(toChainId: number) {
+    this.toChainId = toChainId
+    this.emitUpdate()
+
+    await this.updateToTokenList()
+  }
+
+  async updateToTokenAddress(toTokenAddress: TokenResult['address']) {
+    this.toTokenAddress = toTokenAddress
+    this.emitUpdate()
+
+    await this.updateQuote()
+  }
+
   async updateToTokenList() {
     if (this.fromChainId === null || this.toChainId === null) return
 
