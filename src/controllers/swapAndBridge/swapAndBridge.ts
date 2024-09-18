@@ -1,6 +1,6 @@
 import EventEmitter from '../eventEmitter/eventEmitter'
 
-export class SwapController extends EventEmitter {
+export class SwapAndBridgeController extends EventEmitter {
   constructor() {
     super()
     this.emitUpdate()

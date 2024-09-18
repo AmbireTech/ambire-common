@@ -113,6 +113,11 @@ export class DappsController extends EventEmitter {
   addDapp(dapp: Dapp) {
     if (!this.isReady) return
 
+    if (dapp.url.includes(chrome.runtime.id)) {
+      // eslint-disable-next-line no-param-reassign
+      dapp.url = chrome.runtime.id
+    }
+
     const doesAlreadyExist = this.dapps.find((d) => d.url === dapp.url)
     if (doesAlreadyExist) {
       this.updateDapp(dapp.url, {

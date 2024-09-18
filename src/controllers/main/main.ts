@@ -88,6 +88,7 @@ import { ProvidersController } from '../providers/providers'
 /* eslint-disable no-underscore-dangle */
 import { SignAccountOpController, SigningStatus } from '../signAccountOp/signAccountOp'
 import { SignMessageController } from '../signMessage/signMessage'
+import { SwapAndBridgeController } from '../swapAndBridge/swapAndBridge'
 
 const STATUS_WRAPPED_METHODS = {
   onAccountAdderSuccess: 'INITIAL',
@@ -140,6 +141,8 @@ export class MainController extends EventEmitter {
   emailVault: EmailVaultController
 
   signMessage: SignMessageController
+
+  swapAndBridge: SwapAndBridgeController
 
   signAccountOp: SignAccountOpController | null = null
 
@@ -261,6 +264,7 @@ export class MainController extends EventEmitter {
       this.accounts,
       this.#externalSignerControllers
     )
+    this.swapAndBridge = new SwapAndBridgeController()
     this.dapps = new DappsController(this.#storage)
     this.actions = new ActionsController({
       accounts: this.accounts,
