@@ -63,8 +63,9 @@ export class SocketAPI {
       toTokenAddress: normalizeNativeTokenAddressIfNeeded(toTokenAddress),
       fromAmount: fromAmount.toString(),
       userAddress,
+      // TODO: Figure out why passing this prop is causing error 500 in the API
+      // feeTakerAddress: AMBIRE_FEE_TAKER_ADDRESSES[fromChainId],
       isContractCall: isSmartAccount.toString(), // only get quotes with that are compatible with contracts
-      feeTakerAddress: AMBIRE_FEE_TAKER_ADDRESSES[fromChainId],
       // TODO: To be discussed if we should allow user to change any of these below:
       sort: 'time',
       uniqueRoutesPerBridge: 'true', // return only best route per bridge using the sort criteria
