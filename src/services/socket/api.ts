@@ -1,9 +1,5 @@
 import { Fetch, RequestInitWithCustomHeaders } from '../../interfaces/fetch'
-
-const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000'
-// Yes, this is a real address. It's similar to the zero address. It's just a fancy
-// looking address that nobody knows the private key of. Some people use it to burn funds.
-const NULL_ADDRESS = '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee'
+import { AMBIRE_FEE_TAKER_ADDRESSES, NULL_ADDRESS, ZERO_ADDRESS } from './constants'
 
 /**
  * Socket API expects to receive null address instead of the zero address for
@@ -68,6 +64,7 @@ export class SocketAPI {
       fromAmount: fromAmount.toString(),
       userAddress,
       isContractCall: isSmartAccount.toString(), // only get quotes with that are compatible with contracts
+      feeTakerAddress: AMBIRE_FEE_TAKER_ADDRESSES[fromChainId],
       // TODO: To be discussed if we should allow user to change any of these below:
       sort: 'time',
       uniqueRoutesPerBridge: 'true', // return only best route per bridge using the sort criteria
