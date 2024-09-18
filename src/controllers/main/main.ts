@@ -261,7 +261,7 @@ export class MainController extends EventEmitter {
       this.accounts,
       this.#externalSignerControllers
     )
-    this.swapAndBridge = new SwapAndBridgeController({ fetch: this.fetch })
+    this.swapAndBridge = new SwapAndBridgeController({ fetch: this.fetch, accounts: this.accounts })
     this.dapps = new DappsController(this.#storage)
     this.actions = new ActionsController({
       accounts: this.accounts,
