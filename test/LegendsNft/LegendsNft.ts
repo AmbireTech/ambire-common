@@ -8,7 +8,8 @@ describe('Legends nft', () => {
   beforeEach('successfully deploys the ambire account', async () => {
     ;[signer, signer2] = await ethers.getSigners()
     legendsNftContract = await ethers.deployContract('LegendsNFT')
-    await legendsNftContract.setBaseUri('https://relayer.ambire.com/')
+    await legendsNftContract.setBaseUri('random data')
+    await legendsNftContract.setBaseUri('https://relayer.ambire.com/legends/nft-meta/')
   })
   it('token mint', async () => {
     expect(await legendsNftContract.balanceOf(signer.address)).eq(0)
@@ -23,7 +24,7 @@ describe('Legends nft', () => {
   it('tokenURI', async () => {
     await legendsNftContract.mint()
     expect(await legendsNftContract.tokenURI(BigInt(signer.address))).eq(
-      `https://relayer.ambire.com/${signer.address.toLowerCase()}`
+      `https://relayer.ambire.com/legends/nft-meta/${signer.address.toLowerCase()}`
     )
   })
 
