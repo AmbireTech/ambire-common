@@ -31,6 +31,15 @@ export class SwapAndBridgeController extends EventEmitter {
     symbol: string
   }[] = []
 
+  fromTokenList: {
+    address: TokenResult['address']
+    chainId: number
+    decimals: number
+    logoURI: string
+    name: string
+    symbol: string
+  }[] = []
+
   constructor({ fetch, accounts }: { fetch: Fetch; accounts: AccountsController }) {
     super()
     this.#accounts = accounts
@@ -73,6 +82,15 @@ export class SwapAndBridgeController extends EventEmitter {
     this.toTokenList = await this.#socketAPI.getToTokenList({
       fromChainId: this.fromChainId,
       toChainId: this.toChainId
+    })
+    this.emitUpdate()
+  }
+
+  async updateFromTokenList() {
+    if (this.fromChainId === null) return
+
+    this.fromTokenList = await this.#socketAPI.getFromTokenList({
+      fromChainId: this.fromChainId
     })
     this.emitUpdate()
   }

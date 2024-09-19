@@ -31,10 +31,27 @@ export class SocketAPI {
     const url = `${this.#baseUrl}/token-lists/to-token-list?${params.toString()}`
 
     let response = await this.#fetch(url, { headers: this.#headers })
-    if (!response.ok) throw new Error('Failed to fetch token list')
+    const fallbackError = new Error('Failed to fetch to token list') // TODO: improve wording
+    if (!response.ok) throw fallbackError
 
     response = await response.json()
-    if (!response.success) throw new Error('Failed to fetch token list')
+    if (!response.success) throw fallbackError
+
+    return response.result
+  }
+
+  async getFromTokenList({ fromChainId }: { fromChainId: number }) {
+    const params = new URLSearchParams({
+      fromChainId: fromChainId.toString()
+    })
+    const url = `${this.#baseUrl}/token-lists/from-token-list?${params.toString()}`
+
+    let response = await this.#fetch(url, { headers: this.#headers })
+    const fallbackError = new Error('Failed to fetch from token list') // TODO: improve wording
+    if (!response.ok) throw fallbackError
+
+    response = await response.json()
+    if (!response.success) throw fallbackError
 
     return response.result
   }
