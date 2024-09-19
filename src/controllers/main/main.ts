@@ -311,7 +311,7 @@ export class MainController extends EventEmitter {
     // initially triggered only when user lands on the Swap & Bridge screen.
     await this.swapAndBridge.updateFromTokenList()
     await this.swapAndBridge.updateToTokenList()
-    await this.swapAndBridge.updateQuote()
+    // await this.swapAndBridge.updateQuote()
 
     /**
      * Listener that gets triggered as a finalization step of adding new

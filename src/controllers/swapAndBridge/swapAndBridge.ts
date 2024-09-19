@@ -10,11 +10,11 @@ export class SwapAndBridgeController extends EventEmitter {
 
   #socketAPI: SocketAPI
 
-  fromTokenAddress: TokenResult['address'] | null = '0x0000000000000000000000000000000000000000' // temporary hardcoded as default
-
   fromChainId: number | null = 1 // temporary hardcoded as default
 
-  fromAmount: string = '1000000000000000000' // temporary hardcoded as default, that's 1 ETH
+  fromSelectedToken: TokenResult | null
+
+  fromAmount: string = ''
 
   toTokenAddress: TokenResult['address'] | null = '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48' // temporary hardcoded as default (USDC)
 
@@ -48,6 +48,34 @@ export class SwapAndBridgeController extends EventEmitter {
     this.emitUpdate()
   }
 
+  update({
+    fromAmount,
+    fromChainId,
+    fromSelectedToken
+  }: {
+    fromAmount?: string
+    fromChainId?: bigint | number
+    fromSelectedToken?: TokenResult | null
+  }) {
+    if (fromAmount !== undefined) {
+      this.fromAmount = fromAmount
+    }
+
+    if (fromChainId) {
+      this.fromChainId = Number(fromChainId)
+      // eslint-disable-next-line @typescript-eslint/no-floating-promises
+      this.updateToTokenList()
+    }
+
+    if (fromSelectedToken) {
+      this.fromSelectedToken = fromSelectedToken
+      // eslint-disable-next-line @typescript-eslint/no-floating-promises
+      this.updateToTokenList()
+    }
+
+    this.emitUpdate()
+  }
+
   async updateFromToken({
     fromTokenAddress,
     fromChainId
@@ -77,7 +105,7 @@ export class SwapAndBridgeController extends EventEmitter {
   }
 
   async updateToTokenList() {
-    if (this.fromChainId === null || this.toChainId === null) return
+    if (!this.fromChainId || !this.toChainId) return
 
     this.toTokenList = await this.#socketAPI.getToTokenList({
       fromChainId: this.fromChainId,
@@ -87,11 +115,12 @@ export class SwapAndBridgeController extends EventEmitter {
   }
 
   async updateFromTokenList() {
-    if (this.fromChainId === null) return
+    if (!this.fromChainId) return
 
     this.fromTokenList = await this.#socketAPI.getFromTokenList({
       fromChainId: this.fromChainId
     })
+
     this.emitUpdate()
   }
 
