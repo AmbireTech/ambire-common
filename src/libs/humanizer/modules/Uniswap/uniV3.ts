@@ -8,6 +8,7 @@ import {
   getAddressVisualization,
   getDeadline,
   getLabel,
+  getRecipientText,
   getToken,
   getUnknownVisualization
 } from '../../utils'
@@ -43,9 +44,18 @@ const uniV32Mapping = (): HumanizerUniMatcher => {
       const mappingResult = uniV32Mapping()
       const parsed = calls.map((data: string): HumanizerVisualization[] => {
         const sigHash = data.slice(0, 10)
+        console.log('asd')
+        console.log(
+          ifaceV32.getFunction(
+            'function mint((address token0, address token1, uint24 fee, int24 tickLower, int24 tickUpper, uint256 amount0Desired, uint256 amount1Desired, uint256 amount0Min, uint256 amount1Min, address recipient, uint256 deadline) params) payable returns (uint256 tokenId, uint128 liquidity, uint256 amount0, uint256 amount1)'
+          )?.selector
+        )
+        console.log(sigHash)
         const humanizer = mappingResult[sigHash]
         return humanizer ? humanizer(accountOp, { ...call, data }) : [getAction('Unknown action')]
       })
+      console.log(parsed)
+      console.log(uniReduce(parsed))
       return uniReduce(parsed)
     },
     // 0x1f0464d1
@@ -262,6 +272,36 @@ const uniV32Mapping = (): HumanizerUniMatcher => {
         getLabel('to'),
         getAddressVisualization(feeRecipient),
         ...getUniRecipientText(accountOp.accountAddr, recipient)
+      ]
+    },
+    // 0x88316456
+    [`${
+      ifaceV32.getFunction(
+        'mint((address,address,uint24,int24,int24,uint256,uint256,uint256,uint256,address,uint256))'
+      )?.selector
+    }`]: (accountOp: AccountOp, call: IrCall): HumanizerVisualization[] => {
+      const [
+        [
+          token0,
+          token1,
+          fee,
+          tickLower,
+          tickUpper,
+          amount0Desired,
+          amount1Desired,
+          amount0Min,
+          amount1Min,
+          recipient,
+          deadline
+        ]
+      ] = ifaceV32.parseTransaction(call)?.args || []
+      return [
+        getAction('Add liquidity'),
+        getToken(token0, amount0Min),
+        getToken(token0, amount0Desired),
+        getLabel('pair'),
+        ...getRecipientText(accountOp.accountAddr, recipient),
+        getDeadline(deadline)
       ]
     }
   }
