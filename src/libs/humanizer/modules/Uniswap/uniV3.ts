@@ -290,7 +290,7 @@ const uniV32Mapping = (): HumanizerUniMatcher => {
       return [
         getAction('Add liquidity'),
         getToken(token0, amount0Min),
-        getToken(token0, amount0Desired),
+        getToken(token1, amount1Min),
         getLabel('pair'),
         ...getRecipientText(accountOp.accountAddr, recipient),
         getDeadline(deadline)
