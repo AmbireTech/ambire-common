@@ -9,15 +9,17 @@ import "@openzeppelin/contracts/utils/Strings.sol";
 using Strings for address;
 
 contract LegendsNFT is IERC721Metadata, ERC721Enumerable, Ownable {
+    event PickedCharacter(uint indexed heroType);
 
     constructor() ERC721("AmbireLegends", "AML") Ownable() {}
     
     string baseURI;
 
-    function mint() public {
+    function mint(uint heroType) public {
         // single mint allowed
         // using address for front-end simplification
         _mint(msg.sender, uint256(uint160(msg.sender)));
+        emit PickedCharacter(heroType);
     }
 
     function tokenURI(uint256 tokenId) public view override(ERC721, IERC721Metadata) returns (string memory) {

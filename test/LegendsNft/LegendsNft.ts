@@ -13,16 +13,16 @@ describe('Legends nft', () => {
   })
   it('token mint', async () => {
     expect(await legendsNftContract.balanceOf(signer.address)).eq(0)
-    await expect(legendsNftContract.mint()).to.not.be.reverted
+    await expect(legendsNftContract.mint(1)).to.not.be.reverted
     expect(await legendsNftContract.balanceOf(signer.address)).eq(1)
-    await expect(legendsNftContract.mint()).to.be.revertedWith('ERC721: token already minted')
+    await expect(legendsNftContract.mint(1)).to.be.revertedWith('ERC721: token already minted')
     expect(await legendsNftContract.balanceOf(signer.address)).eq(1)
-    await expect(legendsNftContract.connect(signer2).mint()).to.not.be.reverted
+    await expect(legendsNftContract.connect(signer2).mint(2)).to.not.be.reverted
     expect(await legendsNftContract.balanceOf(signer2.address)).eq(1)
   })
 
   it('tokenURI', async () => {
-    await legendsNftContract.mint()
+    await legendsNftContract.mint(1)
     expect(await legendsNftContract.tokenURI(BigInt(signer.address))).eq(
       `https://relayer.ambire.com/legends/nft-meta/${signer.address.toLowerCase()}`
     )
@@ -35,8 +35,8 @@ describe('Legends nft', () => {
   })
 
   it('try to transfer or approve', async () => {
-    await legendsNftContract.mint()
-    await legendsNftContract.connect(signer2).mint()
+    await legendsNftContract.mint(2)
+    await legendsNftContract.connect(signer2).mint(2)
 
     await expect(
       legendsNftContract.transferFrom(signer.address, signer2.address, BigInt(signer.address))
