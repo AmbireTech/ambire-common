@@ -3,7 +3,6 @@ import { ZeroAddress } from 'ethers'
 import { expect } from '@jest/globals'
 
 import humanizerInfo from '../../../../consts/humanizer/humanizerInfo.json'
-import { ErrorRef } from '../../../../controllers/eventEmitter/eventEmitter'
 import { AccountOp } from '../../../accountOp/accountOp'
 import { HumanizerMeta, HumanizerVisualization, IrCall } from '../../interfaces'
 import { compareHumanizerVisualizations } from '../../testHelpers'
