@@ -1,4 +1,5 @@
 import { expect } from 'chai'
+import { hexlify } from 'ethers'
 import { ethers } from 'hardhat'
 
 describe('Legends nft', () => {
@@ -7,7 +8,9 @@ describe('Legends nft', () => {
   let signer2: any
   beforeEach('successfully deploys the ambire account', async () => {
     ;[signer, signer2] = await ethers.getSigners()
-    legendsNftContract = await ethers.deployContract('LegendsNFT')
+    const LegendsNftContract = await ethers.getContractFactory('LegendsNFT')
+    legendsNftContract = await LegendsNftContract.deploy()
+
     await legendsNftContract.setBaseUri('random data')
     await legendsNftContract.setBaseUri('https://relayer.ambire.com/legends/nft-meta/')
   })
@@ -59,5 +62,27 @@ describe('Legends nft', () => {
     await expect(legendsNftContract.setApprovalForAll(signer2.address, true)).to.be.rejectedWith(
       'Soulbound: cannot set approval for all'
     )
+  })
+  it('opensea update', async () => {
+    const supportsInterface721 = await legendsNftContract.supportsInterface(hexlify('0x80ac58cd'))
+    const supportsInterface721Enumerable = await legendsNftContract.supportsInterface(
+      hexlify('0x780e9d63')
+    )
+    const supportsInterface4906 = await legendsNftContract.supportsInterface(hexlify('0x49064906'))
+    expect(supportsInterface721).eq(true)
+    expect(supportsInterface721Enumerable).eq(true)
+    expect(supportsInterface4906).eq(true)
+    const tx = await legendsNftContract.updateOpenSeaInfo(
+      0n,
+      115792089237316195423570985008687907853269984665640564039457584007913129639935n
+    )
+    const { logs } = await tx.wait()
+    expect(logs.length).to.eq(1)
+    expect(logs[0].address).to.eq(legendsNftContract.target)
+    expect(logs[0].args[0]).to.eq(0n)
+    expect(logs[0].args[1]).to.eq(
+      115792089237316195423570985008687907853269984665640564039457584007913129639935n
+    )
+    expect(logs[0].fragment.name).to.eq('BatchMetadataUpdate')
   })
 })

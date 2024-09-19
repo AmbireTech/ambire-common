@@ -8,12 +8,19 @@ import "@openzeppelin/contracts/utils/Strings.sol";
 
 using Strings for address;
 
+
 contract LegendsNFT is IERC721Metadata, ERC721Enumerable, Ownable {
+    event BatchMetadataUpdate(uint256 _fromTokenId, uint256 _toTokenId);
+    event MetadataUpdate(uint256 _tokenId);
     event PickedCharacter(uint indexed heroType);
 
-    constructor() ERC721("AmbireLegends", "AML") Ownable() {}
-    
     string baseURI;
+
+    constructor() ERC721("AmbireLegends", "AML") Ownable() {}
+
+    function supportsInterface(bytes4 interfaceId) public view override(ERC721Enumerable, IERC165) returns(bool) {
+        return interfaceId == 0x49064906 || super.supportsInterface(interfaceId);
+    }
 
     function mint(uint heroType) public {
         // single mint allowed
@@ -29,6 +36,11 @@ contract LegendsNFT is IERC721Metadata, ERC721Enumerable, Ownable {
 
     function setBaseUri(string calldata _baseURI) public onlyOwner {
         baseURI = _baseURI;
+    }
+
+    // this is used only for 
+    function updateOpenSeaInfo(uint from, uint to) public {
+        emit BatchMetadataUpdate(from, to);
     }
 
     // Soulbound
