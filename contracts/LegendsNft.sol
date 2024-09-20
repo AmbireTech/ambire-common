@@ -16,7 +16,7 @@ contract LegendsNFT is IERC721Metadata, ERC721Enumerable, Ownable {
 
     string baseURI;
 
-    constructor() ERC721("AmbireLegends", "AML") Ownable() {}
+    constructor() ERC721("Ambire Legends", "AML") Ownable() {}
 
     function supportsInterface(bytes4 interfaceId) public view override(ERC721Enumerable, IERC165) returns(bool) {
         return interfaceId == 0x49064906 || super.supportsInterface(interfaceId);

@@ -1,37 +1,13 @@
 require('dotenv').config()
-const { ethers } = require('ethers')
-const fs = require('fs')
-const path = require('path')
+// eslint-disable-next-line import/no-extraneous-dependencies
+const { ethers } = require('hardhat')
 
 async function main() {
-  // Connect to the Ethereum network
-  const provider = new ethers.JsonRpcProvider('https://invictus.ambire.com/base')
+  const nft = await ethers.deployContract('LegendsNFT')
 
-  // Wallet with private key
-  const wallet = new ethers.Wallet(process.env.PRIVATE_KEY, provider)
+  await nft.waitForDeployment()
 
-  const contractName = 'LegendsNFT'
-  const contractPath = path.join(
-    __dirname,
-    `../artifacts/contracts/LegendsNft.sol/${contractName}.json`
-  )
-  console.log(contractPath)
-  const contractData = JSON.parse(fs.readFileSync(contractPath, 'utf8'))
-
-  const contractFactory = new ethers.ContractFactory(
-    contractData.abi,
-    contractData.bytecode,
-    wallet
-  )
-
-  const contract = await contractFactory.deploy()
-
-  console.log('Deploying...')
-
-  // Wait for the deployment to be mined
-  await contract.deployed()
-
-  console.log(`${contract.address}`)
+  console.log(`NFT Contract Deployed at ${nft.target}`)
 }
 
 main().catch((error) => {
