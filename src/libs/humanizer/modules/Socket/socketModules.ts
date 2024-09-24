@@ -62,7 +62,7 @@ export const SocketModule: HumanizerCallModule = (accountOp: AccountOp, irCalls:
             getTokenWithChain(eToNative(toToken), outputAmount, dstChain),
             getLabel('on'),
             getChain(dstChain),
-            getDeadline(quoteAndDeadlineTimeStamps[0]),
+            getDeadline(quoteAndDeadlineTimeStamps[1]),
             ...getRecipientText(senderAddress, recipientAddress)
           ]
         }
@@ -76,7 +76,7 @@ export const SocketModule: HumanizerCallModule = (accountOp: AccountOp, irCalls:
           getTokenWithChain(eToNative(outputToken), outputAmount, dstChain),
           getLabel('on'),
           getChain(dstChain),
-          getDeadline(quoteAndDeadlineTimeStamps[0]),
+          getDeadline(quoteAndDeadlineTimeStamps[1]),
           ...getRecipientText(senderAddress, recipientAddress)
         ]
       }
@@ -108,7 +108,7 @@ export const SocketModule: HumanizerCallModule = (accountOp: AccountOp, irCalls:
             getTokenWithChain(eToNative(outputToken), outputAmount, chainId),
             getLabel('on'),
             getChain(chainId),
-            getDeadline(quoteAndDeadlineTimeStamps[0]),
+            getDeadline(quoteAndDeadlineTimeStamps[1]),
             ...getRecipientText(sender, receiver)
           ]
         }
