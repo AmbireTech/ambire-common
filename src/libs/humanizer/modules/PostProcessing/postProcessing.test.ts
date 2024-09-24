@@ -6,7 +6,7 @@ import { postProcessing } from './postProcessModule'
 
 describe('postProcessing', () => {
   test('add hidden token hint', () => {
-    const [irCalls] = postProcessing(
+    const irCalls = postProcessing(
       {} as any,
       [
         {

@@ -574,6 +574,10 @@ describe('Portfolio', () => {
     }
   })
   test('errors caused by a malfunctioning RPC are not swallowed', async () => {
+    const originalLog = console.log
+    // Ignore Failed to start rpc error
+    console.log = jest.fn()
+
     const failingProvider = new JsonRpcProvider('https://invictus.ambire.com/ethereum-fail')
 
     const failingPortfolio = new Portfolio(fetch, failingProvider, ethereum, velcroUrl)
@@ -588,5 +592,8 @@ describe('Portfolio', () => {
     }
 
     expect(didThrow).toBe(true)
+    console.log = originalLog
+    // Destroy the failing provider
+    failingProvider.destroy()
   })
 })

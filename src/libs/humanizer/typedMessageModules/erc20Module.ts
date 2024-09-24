@@ -36,7 +36,7 @@ export const erc20Module: HumanizerTypedMessageModule = (message: Message) => {
   ) {
     return {
       fullVisualization: [
-        getLabel('Approve'),
+        getAction('Approve'),
         getAddressVisualization(tm.message.spender),
         getLabel('to use'),
         getToken(tm.message.details.token, BigInt(tm.message.details.amount)),

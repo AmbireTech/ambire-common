@@ -3,7 +3,7 @@ import { expect } from '@jest/globals'
 import humanizerInfo from '../../../../consts/humanizer/humanizerInfo.json'
 import { AccountOp } from '../../../accountOp/accountOp'
 import { HumanizerMeta, HumanizerVisualization, IrCall } from '../../interfaces'
-import { aaveHumanizer } from '.'
+import { aaveHumanizer } from './'
 
 const transactions: { [key: string]: Array<IrCall> } = {
   aaveLendingPoolV2: [
@@ -93,7 +93,7 @@ describe('AAVE', () => {
     ]
     accountOp.calls = [...transactions.aaveLendingPoolV2, ...transactions.aaveWethGatewayV2]
     let irCalls: IrCall[] = accountOp.calls
-    ;[irCalls] = aaveHumanizer(accountOp, irCalls, humanizerInfo as HumanizerMeta)
+    irCalls = aaveHumanizer(accountOp, irCalls, humanizerInfo as HumanizerMeta)
     irCalls.forEach((c, i) =>
       c?.fullVisualization?.forEach((v: HumanizerVisualization, j: number) =>
         expect(v).toMatchObject(expectedhumanization[i][j])

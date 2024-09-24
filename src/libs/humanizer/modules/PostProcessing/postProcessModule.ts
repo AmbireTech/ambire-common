@@ -7,5 +7,5 @@ export const postProcessing: HumanizerCallModule = (_: AccountOp, currentIrCalls
     ..._call,
     fullVisualization: [...(_call?.fullVisualization || []), getToken(_call.to, 0n, true)]
   }))
-  return [newCalls, []]
+  return newCalls
 }

@@ -36,5 +36,5 @@ export const gasTankModule: HumanizerCallModule = (_: AccountOp, irCalls: IrCall
       }
     return call
   })
-  return [newCalls, []]
+  return newCalls
 }

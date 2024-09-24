@@ -37,6 +37,8 @@ export function mapTxnErrMsg(contractError: string): string | null {
 
   if (!msg || msg === '0x') return null
 
+  if (msg === '80' || msg.includes('reason="80"'))
+    return "This operation is not supported by the smart contract you're interacting with. This may be due to contract limitations, insufficient permissions, or unmet conditions required for this transaction."
   if (
     msg.includes('Router: EXPIRED') ||
     msg.includes('Transaction too old') ||
