@@ -68,31 +68,31 @@ export class SwapAndBridgeController extends EventEmitter {
     if (fromChainId) {
       this.fromChainId = Number(fromChainId)
       // eslint-disable-next-line @typescript-eslint/no-floating-promises
-      this.#updateToTokenList()
+      this.updateToTokenList()
     }
 
     if (fromSelectedToken) {
       this.fromSelectedToken = fromSelectedToken
       // eslint-disable-next-line @typescript-eslint/no-floating-promises
-      this.#updateToTokenList()
+      this.updateToTokenList()
     }
 
     if (toChainId) {
       this.toChainId = Number(toChainId)
       // eslint-disable-next-line @typescript-eslint/no-floating-promises
-      this.#updateFromTokenList()
+      this.updateFromTokenList()
     }
 
     if (toSelectedToken) {
       this.toSelectedToken = toSelectedToken
       // eslint-disable-next-line @typescript-eslint/no-floating-promises
-      this.#updateFromTokenList()
+      this.updateFromTokenList()
     }
 
     this.emitUpdate()
   }
 
-  async #updateToTokenList() {
+  async updateToTokenList() {
     if (!this.fromChainId || !this.toChainId) return
 
     this.toTokenList = await this.#socketAPI.getToTokenList({
@@ -102,7 +102,7 @@ export class SwapAndBridgeController extends EventEmitter {
     this.emitUpdate()
   }
 
-  async #updateFromTokenList() {
+  async updateFromTokenList() {
     if (!this.fromChainId) return
 
     this.fromTokenList = await this.#socketAPI.getFromTokenList({
