@@ -10,15 +10,15 @@ export class SwapAndBridgeController extends EventEmitter {
 
   #socketAPI: SocketAPI
 
-  fromChainId: number | null = 1 // temporary hardcoded as default
+  fromChainId: number | null = 1
 
-  fromSelectedToken: TokenResult | null
+  fromSelectedToken: TokenResult | null = null
 
   fromAmount: string = ''
 
-  toTokenAddress: TokenResult['address'] | null = '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48' // temporary hardcoded as default (USDC)
+  toChainId: number | null = 10
 
-  toChainId: number | null = 1 // temporary hardcoded as default
+  toSelectedToken: TokenResult | null = null
 
   quote: any = null // TODO: Define type
 
@@ -51,11 +51,15 @@ export class SwapAndBridgeController extends EventEmitter {
   update({
     fromAmount,
     fromChainId,
-    fromSelectedToken
+    fromSelectedToken,
+    toChainId,
+    toSelectedToken
   }: {
     fromAmount?: string
     fromChainId?: bigint | number
     fromSelectedToken?: TokenResult | null
+    toChainId?: number | null
+    toSelectedToken?: TokenResult | null
   }) {
     if (fromAmount !== undefined) {
       this.fromAmount = fromAmount
@@ -64,47 +68,31 @@ export class SwapAndBridgeController extends EventEmitter {
     if (fromChainId) {
       this.fromChainId = Number(fromChainId)
       // eslint-disable-next-line @typescript-eslint/no-floating-promises
-      this.updateToTokenList()
+      this.#updateToTokenList()
     }
 
     if (fromSelectedToken) {
       this.fromSelectedToken = fromSelectedToken
       // eslint-disable-next-line @typescript-eslint/no-floating-promises
-      this.updateToTokenList()
+      this.#updateToTokenList()
+    }
+
+    if (toChainId) {
+      this.toChainId = Number(toChainId)
+      // eslint-disable-next-line @typescript-eslint/no-floating-promises
+      this.#updateFromTokenList()
+    }
+
+    if (toSelectedToken) {
+      this.toSelectedToken = toSelectedToken
+      // eslint-disable-next-line @typescript-eslint/no-floating-promises
+      this.#updateFromTokenList()
     }
 
     this.emitUpdate()
   }
 
-  async updateFromToken({
-    fromTokenAddress,
-    fromChainId
-  }: {
-    fromTokenAddress: TokenResult['address']
-    fromChainId: number
-  }) {
-    this.fromTokenAddress = fromTokenAddress
-    this.fromChainId = fromChainId
-    this.emitUpdate()
-
-    await this.updateToTokenList()
-  }
-
-  async updateToChainId(toChainId: number) {
-    this.toChainId = toChainId
-    this.emitUpdate()
-
-    await this.updateToTokenList()
-  }
-
-  async updateToTokenAddress(toTokenAddress: TokenResult['address']) {
-    this.toTokenAddress = toTokenAddress
-    this.emitUpdate()
-
-    await this.updateQuote()
-  }
-
-  async updateToTokenList() {
+  async #updateToTokenList() {
     if (!this.fromChainId || !this.toChainId) return
 
     this.toTokenList = await this.#socketAPI.getToTokenList({
@@ -114,7 +102,7 @@ export class SwapAndBridgeController extends EventEmitter {
     this.emitUpdate()
   }
 
-  async updateFromTokenList() {
+  async #updateFromTokenList() {
     if (!this.fromChainId) return
 
     this.fromTokenList = await this.#socketAPI.getFromTokenList({
@@ -128,8 +116,8 @@ export class SwapAndBridgeController extends EventEmitter {
     if (
       this.fromChainId === null ||
       this.toChainId === null ||
-      this.fromTokenAddress === null ||
-      this.toTokenAddress === null ||
+      this.fromSelectedToken === null ||
+      this.toSelectedToken === null ||
       this.#accounts.selectedAccount === null
     )
       return // TODO: Throw meaningful error if any of the required fields are null
@@ -139,9 +127,9 @@ export class SwapAndBridgeController extends EventEmitter {
     )
     this.quote = await this.#socketAPI.quote({
       fromChainId: this.fromChainId,
-      fromTokenAddress: this.fromTokenAddress,
+      fromTokenAddress: this.fromSelectedToken.address,
       toChainId: this.toChainId,
-      toTokenAddress: this.toTokenAddress,
+      toTokenAddress: this.toSelectedToken.address,
       fromAmount: this.fromAmount,
       userAddress: this.#accounts.selectedAccount,
       isSmartAccount: isSmartAccount(selectedAccount)
