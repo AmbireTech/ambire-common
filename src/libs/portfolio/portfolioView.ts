@@ -20,8 +20,8 @@ interface AccountPortfolio {
 export function calculateAccountPortfolio(
   selectedAccount: string | null,
   state: { latest: PortfolioControllerState; pending: PortfolioControllerState },
-  accountPortfolio: AccountPortfolio,
-  hasSignAccountOp: null | boolean
+  accountPortfolio?: AccountPortfolio,
+  hasSignAccountOp?: boolean
 ) {
   const updatedTokens: TokenResultInterface[] = []
   const updatedCollections: CollectionResultInterface[] = []
