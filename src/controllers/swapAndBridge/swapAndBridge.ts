@@ -18,7 +18,7 @@ export class SwapAndBridgeController extends EventEmitter {
 
   toChainId: number | null = 10
 
-  toSelectedToken: TokenResult | null = null
+  toSelectedTokenAddress: string | null = null
 
   quote: any = null // TODO: Define type
 
@@ -26,15 +26,7 @@ export class SwapAndBridgeController extends EventEmitter {
     address: TokenResult['address']
     chainId: number
     decimals: number
-    logoURI: string
-    name: string
-    symbol: string
-  }[] = []
-
-  fromTokenList: {
-    address: TokenResult['address']
-    chainId: number
-    decimals: number
+    icon: string
     logoURI: string
     name: string
     symbol: string
@@ -48,18 +40,24 @@ export class SwapAndBridgeController extends EventEmitter {
     this.emitUpdate()
   }
 
+  init() {
+    this.reset()
+    // eslint-disable-next-line @typescript-eslint/no-floating-promises
+    this.updateToTokenList(false)
+  }
+
   update({
     fromAmount,
     fromChainId,
     fromSelectedToken,
     toChainId,
-    toSelectedToken
+    toSelectedTokenAddress
   }: {
     fromAmount?: string
     fromChainId?: bigint | number
     fromSelectedToken?: TokenResult | null
     toChainId?: number | null
-    toSelectedToken?: TokenResult | null
+    toSelectedTokenAddress?: string | null
   }) {
     if (fromAmount !== undefined) {
       this.fromAmount = fromAmount
@@ -67,33 +65,47 @@ export class SwapAndBridgeController extends EventEmitter {
 
     if (fromChainId) {
       this.fromChainId = Number(fromChainId)
+      this.toTokenList = []
       // eslint-disable-next-line @typescript-eslint/no-floating-promises
-      this.updateToTokenList()
+      this.updateToTokenList(true)
     }
 
     if (fromSelectedToken) {
       this.fromSelectedToken = fromSelectedToken
-      // eslint-disable-next-line @typescript-eslint/no-floating-promises
-      this.updateToTokenList()
     }
 
     if (toChainId) {
       this.toChainId = Number(toChainId)
+      this.toTokenList = []
       // eslint-disable-next-line @typescript-eslint/no-floating-promises
-      this.updateFromTokenList()
+      this.updateToTokenList(true)
     }
 
-    if (toSelectedToken) {
-      this.toSelectedToken = toSelectedToken
-      // eslint-disable-next-line @typescript-eslint/no-floating-promises
-      this.updateFromTokenList()
+    if (toSelectedTokenAddress) {
+      this.toSelectedTokenAddress = toSelectedTokenAddress
     }
 
     this.emitUpdate()
   }
 
-  async updateToTokenList() {
+  reset() {
+    this.fromChainId = 1
+    this.fromSelectedToken = null
+    this.fromAmount = ''
+    this.toChainId = 10
+    this.toSelectedTokenAddress = null
+    this.quote = null
+
+    this.emitUpdate()
+  }
+
+  async updateToTokenList(shouldReset: boolean) {
     if (!this.fromChainId || !this.toChainId) return
+
+    if (shouldReset) {
+      this.toTokenList = []
+      this.emitUpdate()
+    }
 
     this.toTokenList = await this.#socketAPI.getToTokenList({
       fromChainId: this.fromChainId,
@@ -102,22 +114,12 @@ export class SwapAndBridgeController extends EventEmitter {
     this.emitUpdate()
   }
 
-  async updateFromTokenList() {
-    if (!this.fromChainId) return
-
-    this.fromTokenList = await this.#socketAPI.getFromTokenList({
-      fromChainId: this.fromChainId
-    })
-
-    this.emitUpdate()
-  }
-
   async updateQuote() {
     if (
       this.fromChainId === null ||
       this.toChainId === null ||
       this.fromSelectedToken === null ||
-      this.toSelectedToken === null ||
+      this.toSelectedTokenAddress === null ||
       this.#accounts.selectedAccount === null
     )
       return // TODO: Throw meaningful error if any of the required fields are null
@@ -129,7 +131,7 @@ export class SwapAndBridgeController extends EventEmitter {
       fromChainId: this.fromChainId,
       fromTokenAddress: this.fromSelectedToken.address,
       toChainId: this.toChainId,
-      toTokenAddress: this.toSelectedToken.address,
+      toTokenAddress: this.toSelectedTokenAddress,
       fromAmount: this.fromAmount,
       userAddress: this.#accounts.selectedAccount,
       isSmartAccount: isSmartAccount(selectedAccount)
@@ -139,7 +141,8 @@ export class SwapAndBridgeController extends EventEmitter {
 
   toJSON() {
     return {
-      ...this
+      ...this,
+      ...super.toJSON()
     }
   }
 }
