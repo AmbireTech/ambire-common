@@ -4,7 +4,11 @@ import { isSmartAccount } from '../../libs/account/account'
 import { TokenResult } from '../../libs/portfolio'
 import { SocketAPI } from '../../services/socket/api'
 import { AccountsController } from '../accounts/accounts'
-import EventEmitter from '../eventEmitter/eventEmitter'
+import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter'
+
+const STATUS_WRAPPED_METHODS = {
+  updateToTokenList: 'INITIAL'
+} as const
 
 export class SwapAndBridgeController extends EventEmitter {
   #accounts: AccountsController
@@ -23,7 +27,11 @@ export class SwapAndBridgeController extends EventEmitter {
 
   quote: any = null // TODO: Define type
 
+  portfolioTokenList: TokenResult[] = []
+
   toTokenList: SocketAPIToken[] = []
+
+  statuses: Statuses<keyof typeof STATUS_WRAPPED_METHODS> = STATUS_WRAPPED_METHODS
 
   constructor({ fetch, accounts }: { fetch: Fetch; accounts: AccountsController }) {
     super()
@@ -44,13 +52,15 @@ export class SwapAndBridgeController extends EventEmitter {
     fromChainId,
     fromSelectedToken,
     toChainId,
-    toSelectedToken
+    toSelectedToken,
+    portfolioTokenList
   }: {
     fromAmount?: string
     fromChainId?: bigint | number
     fromSelectedToken?: TokenResult | null
     toChainId?: number | null
     toSelectedToken?: SocketAPIToken | null
+    portfolioTokenList?: TokenResult[]
   }) {
     if (fromAmount !== undefined) {
       this.fromAmount = fromAmount
@@ -78,6 +88,14 @@ export class SwapAndBridgeController extends EventEmitter {
       this.toSelectedToken = toSelectedToken
     }
 
+    if (portfolioTokenList) {
+      this.portfolioTokenList = portfolioTokenList
+
+      if (!this.fromSelectedToken) {
+        this.fromSelectedToken = this.portfolioTokenList[0] || null
+      }
+    }
+
     this.emitUpdate()
   }
 
@@ -88,23 +106,30 @@ export class SwapAndBridgeController extends EventEmitter {
     this.toChainId = 10
     this.toSelectedToken = null
     this.quote = null
+    this.portfolioTokenList = []
 
     this.emitUpdate()
   }
 
   async updateToTokenList(shouldReset: boolean) {
-    if (!this.fromChainId || !this.toChainId) return
+    await this.withStatus('updateToTokenList', async () => {
+      if (!this.fromChainId || !this.toChainId) return
 
-    if (shouldReset) {
-      this.toTokenList = []
+      if (shouldReset) {
+        this.toTokenList = []
+        this.emitUpdate()
+      }
+
+      this.toTokenList = await this.#socketAPI.getToTokenList({
+        fromChainId: this.fromChainId,
+        toChainId: this.toChainId
+      })
+
+      if (!this.toSelectedToken) {
+        this.toSelectedToken = this.toTokenList[0] || null
+      }
       this.emitUpdate()
-    }
-
-    this.toTokenList = await this.#socketAPI.getToTokenList({
-      fromChainId: this.fromChainId,
-      toChainId: this.toChainId
     })
-    this.emitUpdate()
   }
 
   async updateQuote() {
@@ -124,7 +149,7 @@ export class SwapAndBridgeController extends EventEmitter {
       fromChainId: this.fromChainId,
       fromTokenAddress: this.fromSelectedToken.address,
       toChainId: this.toChainId,
-      toTokenAddress: this.toSelectedToken,
+      toTokenAddress: this.toSelectedToken.address,
       fromAmount: this.fromAmount,
       userAddress: this.#accounts.selectedAccount,
       isSmartAccount: isSmartAccount(selectedAccount)
