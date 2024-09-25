@@ -1,4 +1,5 @@
 import { Fetch } from '../../interfaces/fetch'
+import { SocketAPIToken } from '../../interfaces/swapAndBridge'
 import { isSmartAccount } from '../../libs/account/account'
 import { TokenResult } from '../../libs/portfolio'
 import { SocketAPI } from '../../services/socket/api'
@@ -18,19 +19,11 @@ export class SwapAndBridgeController extends EventEmitter {
 
   toChainId: number | null = 10
 
-  toSelectedTokenAddress: string | null = null
+  toSelectedToken: SocketAPIToken | null = null
 
   quote: any = null // TODO: Define type
 
-  toTokenList: {
-    address: TokenResult['address']
-    chainId: number
-    decimals: number
-    icon: string
-    logoURI: string
-    name: string
-    symbol: string
-  }[] = []
+  toTokenList: SocketAPIToken[] = []
 
   constructor({ fetch, accounts }: { fetch: Fetch; accounts: AccountsController }) {
     super()
@@ -51,13 +44,13 @@ export class SwapAndBridgeController extends EventEmitter {
     fromChainId,
     fromSelectedToken,
     toChainId,
-    toSelectedTokenAddress
+    toSelectedToken
   }: {
     fromAmount?: string
     fromChainId?: bigint | number
     fromSelectedToken?: TokenResult | null
     toChainId?: number | null
-    toSelectedTokenAddress?: string | null
+    toSelectedToken?: SocketAPIToken | null
   }) {
     if (fromAmount !== undefined) {
       this.fromAmount = fromAmount
@@ -81,8 +74,8 @@ export class SwapAndBridgeController extends EventEmitter {
       this.updateToTokenList(true)
     }
 
-    if (toSelectedTokenAddress) {
-      this.toSelectedTokenAddress = toSelectedTokenAddress
+    if (toSelectedToken) {
+      this.toSelectedToken = toSelectedToken
     }
 
     this.emitUpdate()
@@ -93,7 +86,7 @@ export class SwapAndBridgeController extends EventEmitter {
     this.fromSelectedToken = null
     this.fromAmount = ''
     this.toChainId = 10
-    this.toSelectedTokenAddress = null
+    this.toSelectedToken = null
     this.quote = null
 
     this.emitUpdate()
@@ -119,7 +112,7 @@ export class SwapAndBridgeController extends EventEmitter {
       this.fromChainId === null ||
       this.toChainId === null ||
       this.fromSelectedToken === null ||
-      this.toSelectedTokenAddress === null ||
+      this.toSelectedToken === null ||
       this.#accounts.selectedAccount === null
     )
       return // TODO: Throw meaningful error if any of the required fields are null
@@ -131,7 +124,7 @@ export class SwapAndBridgeController extends EventEmitter {
       fromChainId: this.fromChainId,
       fromTokenAddress: this.fromSelectedToken.address,
       toChainId: this.toChainId,
-      toTokenAddress: this.toSelectedTokenAddress,
+      toTokenAddress: this.toSelectedToken,
       fromAmount: this.fromAmount,
       userAddress: this.#accounts.selectedAccount,
       isSmartAccount: isSmartAccount(selectedAccount)
