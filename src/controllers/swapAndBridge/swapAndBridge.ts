@@ -1,14 +1,24 @@
+import { formatUnits, parseUnits } from 'ethers'
+
 import { Fetch } from '../../interfaces/fetch'
 import { SocketAPIToken } from '../../interfaces/swapAndBridge'
 import { isSmartAccount } from '../../libs/account/account'
 import { TokenResult } from '../../libs/portfolio'
+import { getTokenAmount } from '../../libs/portfolio/helpers'
+import { getSanitizedAmount } from '../../libs/transfer/amount'
 import { SocketAPI } from '../../services/socket/api'
+import { convertTokenPriceToBigInt } from '../../utils/numbers/formatters'
 import { AccountsController } from '../accounts/accounts'
 import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter'
 
 const STATUS_WRAPPED_METHODS = {
   updateToTokenList: 'INITIAL'
 } as const
+
+const HARD_CODED_CURRENCY = 'usd'
+
+const CONVERSION_PRECISION = 16
+const CONVERSION_PRECISION_POW = BigInt(10 ** CONVERSION_PRECISION)
 
 export class SwapAndBridgeController extends EventEmitter {
   #accounts: AccountsController
@@ -20,6 +30,10 @@ export class SwapAndBridgeController extends EventEmitter {
   fromSelectedToken: TokenResult | null = null
 
   fromAmount: string = ''
+
+  fromAmountInFiat: string = ''
+
+  fromAmountFieldMode: 'fiat' | 'token' = 'token'
 
   toChainId: number | null = 10
 
@@ -41,6 +55,36 @@ export class SwapAndBridgeController extends EventEmitter {
     this.emitUpdate()
   }
 
+  get maxFromAmount(): string {
+    if (
+      !this.fromSelectedToken ||
+      getTokenAmount(this.fromSelectedToken) === 0n ||
+      !this.fromSelectedToken.decimals
+    )
+      return '0'
+
+    return formatUnits(getTokenAmount(this.fromSelectedToken), this.fromSelectedToken.decimals)
+  }
+
+  get maxFromAmountInFiat(): string {
+    if (!this.fromSelectedToken || getTokenAmount(this.fromSelectedToken) === 0n) return '0'
+
+    const tokenPrice = this.fromSelectedToken?.priceIn.find(
+      (p) => p.baseCurrency === HARD_CODED_CURRENCY
+    )?.price
+    if (!tokenPrice || !Number(this.maxFromAmount)) return '0'
+
+    const maxAmount = getTokenAmount(this.fromSelectedToken)
+    const { tokenPriceBigInt, tokenPriceDecimals } = convertTokenPriceToBigInt(tokenPrice)
+
+    // Multiply the max amount by the token price. The calculation is done in big int to avoid precision loss
+    return formatUnits(
+      maxAmount * tokenPriceBigInt,
+      // Shift the decimal point by the number of decimals in the token price
+      this.fromSelectedToken.decimals + tokenPriceDecimals
+    )
+  }
+
   init() {
     this.reset()
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
@@ -49,6 +93,8 @@ export class SwapAndBridgeController extends EventEmitter {
 
   update({
     fromAmount,
+    fromAmountInFiat,
+    fromAmountFieldMode,
     fromChainId,
     fromSelectedToken,
     toChainId,
@@ -56,6 +102,8 @@ export class SwapAndBridgeController extends EventEmitter {
     portfolioTokenList
   }: {
     fromAmount?: string
+    fromAmountInFiat?: string
+    fromAmountFieldMode?: 'fiat' | 'token'
     fromChainId?: bigint | number
     fromSelectedToken?: TokenResult | null
     toChainId?: number | null
@@ -64,6 +112,70 @@ export class SwapAndBridgeController extends EventEmitter {
   }) {
     if (fromAmount !== undefined) {
       this.fromAmount = fromAmount
+      ;(() => {
+        if (fromAmount === '') {
+          this.fromAmountInFiat = ''
+          return
+        }
+
+        const tokenPrice = this.fromSelectedToken?.priceIn.find(
+          (p) => p.baseCurrency === HARD_CODED_CURRENCY
+        )?.price
+
+        if (!tokenPrice) {
+          this.fromAmountInFiat = ''
+          return
+        }
+
+        if (this.fromAmountFieldMode === 'fiat' && this.fromSelectedToken?.decimals) {
+          this.fromAmountInFiat = fromAmount
+
+          // Get the number of decimals
+          const amountInFiatDecimals = fromAmount.split('.')[1]?.length || 0
+          const { tokenPriceBigInt, tokenPriceDecimals } = convertTokenPriceToBigInt(tokenPrice)
+
+          // Convert the numbers to big int
+          const amountInFiatBigInt = parseUnits(fromAmount, amountInFiatDecimals)
+
+          this.fromAmount = formatUnits(
+            (amountInFiatBigInt * CONVERSION_PRECISION_POW) / tokenPriceBigInt,
+            // Shift the decimal point by the number of decimals in the token price
+            amountInFiatDecimals + CONVERSION_PRECISION - tokenPriceDecimals
+          )
+
+          return
+        }
+        if (this.fromAmountFieldMode === 'token') {
+          this.fromAmount = fromAmount
+
+          if (!this.fromSelectedToken) return
+
+          const sanitizedFieldValue = getSanitizedAmount(
+            fromAmount,
+            this.fromSelectedToken.decimals
+          )
+          // Convert the field value to big int
+          const formattedAmount = parseUnits(sanitizedFieldValue, this.fromSelectedToken.decimals)
+
+          if (!formattedAmount) return
+
+          const { tokenPriceBigInt, tokenPriceDecimals } = convertTokenPriceToBigInt(tokenPrice)
+
+          this.fromAmountInFiat = formatUnits(
+            formattedAmount * tokenPriceBigInt,
+            // Shift the decimal point by the number of decimals in the token price
+            this.fromSelectedToken.decimals + tokenPriceDecimals
+          )
+        }
+      })()
+    }
+
+    if (fromAmountInFiat !== undefined) {
+      this.fromAmountInFiat = fromAmountInFiat
+    }
+
+    if (fromAmountFieldMode) {
+      this.fromAmountFieldMode = fromAmountFieldMode
     }
 
     if (fromChainId) {
@@ -75,6 +187,10 @@ export class SwapAndBridgeController extends EventEmitter {
 
     if (fromSelectedToken) {
       this.fromSelectedToken = fromSelectedToken
+
+      this.fromAmount = ''
+      this.fromAmountInFiat = ''
+      this.fromAmountFieldMode = 'token'
     }
 
     if (toChainId) {
@@ -103,6 +219,8 @@ export class SwapAndBridgeController extends EventEmitter {
     this.fromChainId = 1
     this.fromSelectedToken = null
     this.fromAmount = ''
+    this.fromAmountInFiat = ''
+    this.fromAmountFieldMode = 'token'
     this.toChainId = 10
     this.toSelectedToken = null
     this.quote = null
@@ -160,7 +278,9 @@ export class SwapAndBridgeController extends EventEmitter {
   toJSON() {
     return {
       ...this,
-      ...super.toJSON()
+      ...super.toJSON(),
+      maxFromAmount: this.maxFromAmount,
+      maxFromAmountInFiat: this.maxFromAmountInFiat
     }
   }
 }
