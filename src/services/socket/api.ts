@@ -82,7 +82,7 @@ export class SocketAPI {
     fromTokenAddress: string
     toChainId: number
     toTokenAddress: string
-    fromAmount: string
+    fromAmount: bigint
     userAddress: string
     isSmartAccount: boolean
   }) {

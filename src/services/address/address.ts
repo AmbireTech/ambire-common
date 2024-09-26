@@ -1,3 +1,5 @@
+import { getAddress } from 'ethers'
+
 import { HumanizerInfoType } from '../../../v1/hooks/useConstants'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 
@@ -20,4 +22,12 @@ const isHumanizerKnownTokenOrSmartContract = (
   )
 }
 
-export { isValidAddress, isHumanizerKnownTokenOrSmartContract }
+const formatNativeTokenAddressIfNeeded = (address: string) => {
+  if (getAddress(address) === '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE') {
+    return '0x0000000000000000000000000000000000000000'
+  }
+
+  return address
+}
+
+export { isValidAddress, isHumanizerKnownTokenOrSmartContract, formatNativeTokenAddressIfNeeded }

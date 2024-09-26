@@ -1,15 +1,17 @@
 import { formatUnits, parseUnits } from 'ethers'
 
 import { Fetch } from '../../interfaces/fetch'
-import { SocketAPIToken } from '../../interfaces/swapAndBridge'
+import { SocketAPIQuote, SocketAPIToken } from '../../interfaces/swapAndBridge'
 import { isSmartAccount } from '../../libs/account/account'
 import { TokenResult } from '../../libs/portfolio'
 import { getTokenAmount } from '../../libs/portfolio/helpers'
 import { getSanitizedAmount } from '../../libs/transfer/amount'
+import { formatNativeTokenAddressIfNeeded } from '../../services/address'
 import { SocketAPI } from '../../services/socket/api'
 import { convertTokenPriceToBigInt } from '../../utils/numbers/formatters'
 import { AccountsController } from '../accounts/accounts'
 import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter'
+import { NetworksController } from '../networks/networks'
 
 const STATUS_WRAPPED_METHODS = {
   updateToTokenList: 'INITIAL'
@@ -22,6 +24,8 @@ const CONVERSION_PRECISION_POW = BigInt(10 ** CONVERSION_PRECISION)
 
 export class SwapAndBridgeController extends EventEmitter {
   #accounts: AccountsController
+
+  #networks: NetworksController
 
   #socketAPI: SocketAPI
 
@@ -39,7 +43,9 @@ export class SwapAndBridgeController extends EventEmitter {
 
   toSelectedToken: SocketAPIToken | null = null
 
-  quote: any = null // TODO: Define type
+  toAmount: string = ''
+
+  quote: SocketAPIQuote | null = null
 
   portfolioTokenList: TokenResult[] = []
 
@@ -47,9 +53,18 @@ export class SwapAndBridgeController extends EventEmitter {
 
   statuses: Statuses<keyof typeof STATUS_WRAPPED_METHODS> = STATUS_WRAPPED_METHODS
 
-  constructor({ fetch, accounts }: { fetch: Fetch; accounts: AccountsController }) {
+  constructor({
+    fetch,
+    accounts,
+    networks
+  }: {
+    fetch: Fetch
+    accounts: AccountsController
+    networks: NetworksController
+  }) {
     super()
     this.#accounts = accounts
+    this.#networks = networks
     this.#socketAPI = new SocketAPI({ fetch })
 
     this.emitUpdate()
@@ -91,25 +106,24 @@ export class SwapAndBridgeController extends EventEmitter {
     this.updateToTokenList(false)
   }
 
-  update({
-    fromAmount,
-    fromAmountInFiat,
-    fromAmountFieldMode,
-    fromChainId,
-    fromSelectedToken,
-    toChainId,
-    toSelectedToken,
-    portfolioTokenList
-  }: {
+  updateForm(props: {
     fromAmount?: string
     fromAmountInFiat?: string
     fromAmountFieldMode?: 'fiat' | 'token'
     fromChainId?: bigint | number
     fromSelectedToken?: TokenResult | null
-    toChainId?: number | null
+    toChainId?: bigint | number
     toSelectedToken?: SocketAPIToken | null
-    portfolioTokenList?: TokenResult[]
   }) {
+    const {
+      fromAmount,
+      fromAmountInFiat,
+      fromAmountFieldMode,
+      fromChainId,
+      fromSelectedToken,
+      toChainId,
+      toSelectedToken
+    } = props
     if (fromAmount !== undefined) {
       this.fromAmount = fromAmount
       ;(() => {
@@ -180,7 +194,6 @@ export class SwapAndBridgeController extends EventEmitter {
 
     if (fromChainId) {
       this.fromChainId = Number(fromChainId)
-      this.toTokenList = []
       // eslint-disable-next-line @typescript-eslint/no-floating-promises
       this.updateToTokenList(true)
     }
@@ -195,7 +208,6 @@ export class SwapAndBridgeController extends EventEmitter {
 
     if (toChainId) {
       this.toChainId = Number(toChainId)
-      this.toTokenList = []
       // eslint-disable-next-line @typescript-eslint/no-floating-promises
       this.updateToTokenList(true)
     }
@@ -204,14 +216,7 @@ export class SwapAndBridgeController extends EventEmitter {
       this.toSelectedToken = toSelectedToken
     }
 
-    if (portfolioTokenList) {
-      this.portfolioTokenList = portfolioTokenList
-
-      if (!this.fromSelectedToken) {
-        this.fromSelectedToken = this.portfolioTokenList[0] || null
-      }
-    }
-
+    this.#updateQuote()
     this.emitUpdate()
   }
 
@@ -223,8 +228,21 @@ export class SwapAndBridgeController extends EventEmitter {
     this.fromAmountFieldMode = 'token'
     this.toChainId = 10
     this.toSelectedToken = null
+    this.toAmount = ''
     this.quote = null
     this.portfolioTokenList = []
+
+    this.emitUpdate()
+  }
+
+  updatePortfolioTokenList(portfolioTokenList: TokenResult[]) {
+    this.portfolioTokenList = portfolioTokenList
+
+    if (!this.fromSelectedToken) {
+      this.updateForm({
+        fromSelectedToken: this.portfolioTokenList[0] || null
+      })
+    }
 
     this.emitUpdate()
   }
@@ -235,6 +253,7 @@ export class SwapAndBridgeController extends EventEmitter {
 
       if (shouldReset) {
         this.toTokenList = []
+        this.toAmount = ''
         this.emitUpdate()
       }
 
@@ -244,35 +263,84 @@ export class SwapAndBridgeController extends EventEmitter {
       })
 
       if (!this.toSelectedToken) {
-        this.toSelectedToken = this.toTokenList[0] || null
+        this.updateForm({
+          toSelectedToken: this.toTokenList[0] || null
+        })
       }
       this.emitUpdate()
     })
   }
 
-  async updateQuote() {
+  async #updateQuote() {
     if (
-      this.fromChainId === null ||
-      this.toChainId === null ||
-      this.fromSelectedToken === null ||
-      this.toSelectedToken === null ||
-      this.#accounts.selectedAccount === null
-    )
-      return // TODO: Throw meaningful error if any of the required fields are null
+      !this.fromChainId ||
+      !this.toChainId ||
+      !this.fromAmount ||
+      !this.fromSelectedToken ||
+      !this.toSelectedToken ||
+      !this.#accounts.selectedAccount
+    ) {
+      if (this.quote) {
+        this.quote = null
+        this.emitUpdate()
+      }
+      return
+    }
 
     const selectedAccount = this.#accounts.accounts.find(
       (a) => a.addr === this.#accounts.selectedAccount
     )
-    this.quote = await this.#socketAPI.quote({
+
+    const bigNumberHexFromAmount = `0x${parseUnits(this.fromAmount).toString(16)}`
+
+    if (this.quote) {
+      const isFromAmountSame =
+        this.quote.route.fromAmount === BigInt(bigNumberHexFromAmount).toString()
+      const isFromNetworkSame = this.quote.fromChainId === this.fromChainId
+      const isFromAddressSame =
+        formatNativeTokenAddressIfNeeded(this.quote.fromAsset.address) ===
+        this.fromSelectedToken.address
+      const isToNetworkSame = this.quote.toChainId === this.toChainId
+      const isToAddressSame =
+        formatNativeTokenAddressIfNeeded(this.quote.toAsset.address) ===
+        this.toSelectedToken.address
+
+      if (
+        isFromAmountSame &&
+        isFromNetworkSame &&
+        isFromAddressSame &&
+        isToNetworkSame &&
+        isToAddressSame
+      ) {
+        return
+      }
+    }
+
+    if (this.quote) {
+      this.quote = null
+      this.emitUpdate()
+    }
+
+    const quoteResult = await this.#socketAPI.quote({
       fromChainId: this.fromChainId,
       fromTokenAddress: this.fromSelectedToken.address,
       toChainId: this.toChainId,
       toTokenAddress: this.toSelectedToken.address,
-      fromAmount: this.fromAmount,
+      fromAmount: BigInt(bigNumberHexFromAmount),
       userAddress: this.#accounts.selectedAccount,
       isSmartAccount: isSmartAccount(selectedAccount)
     })
-    this.emitUpdate()
+
+    if (quoteResult) {
+      this.quote = {
+        fromAsset: quoteResult.fromAsset,
+        fromChainId: quoteResult.fromChainId,
+        toAsset: quoteResult.toAsset,
+        toChainId: quoteResult.toChainId,
+        route: quoteResult.routes[0]
+      }
+      this.emitUpdate()
+    }
   }
 
   toJSON() {
