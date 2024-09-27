@@ -9,23 +9,9 @@ export interface SocketAPIToken {
 }
 
 export interface SocketAPIQuote {
-  fromAsset: {
-    address: string
-    chainId: number
-    decimals: number
-    icon: string
-    name: string
-    symbol: string
-  }
+  fromAsset: SocketAPIToken
   fromChainId: number
-  toAsset: {
-    address: string
-    chainId: number
-    decimals: number
-    icon: string
-    name: string
-    symbol: string
-  }
+  toAsset: SocketAPIToken
   toChainId: number
   route: {
     routeId: string
@@ -37,7 +23,7 @@ export interface SocketAPIQuote {
     totalGasFeesInUsd: number
     recipient: string
     sender: string
-    userTxs: object[]
+    userTxs: (SocketAPIBridgeUserTx | SocketAPISwapUserTx)[]
     receivedValueInUsd: number
     inputValueInUsd: number
     outputValueInUsd: number
@@ -46,17 +32,61 @@ export interface SocketAPIQuote {
     integratorFee: {
       feeTakerAddress: string
       amount: string
-      asset: {
-        name: string
-        address: string
-        icon: string
-        decimals: number
-        symbol: string
-        chainId: string
-      }
+      asset: SocketAPIToken
     }
     chainGasBalances: object
     minimumGasBalances: object
     extraData: object
   }
+}
+
+export interface SocketAPISwapUserTx {
+  userTxType: 'dex-swap'
+  userTxIndex: number
+  txType: string
+  fromAsset: SocketAPIToken
+  toAsset: SocketAPIToken
+  chainId: number
+  fromAmount: string
+  toAmount: string
+  swapSlippage: number
+  sender: string
+  recipient: string
+  protocol: {
+    displayName: string
+    icon: string
+    name: string
+  }
+  minAmountOut: string
+  gasFees: {
+    gasAmount: string
+    gasLimit: number
+    feesInUsd: number
+    asset: SocketAPIToken
+  }
+  approvalData: unknown
+}
+
+export interface SocketAPIBridgeUserTx {
+  userTxType: 'fund-movr'
+  userTxIndex: number
+  txType: string
+  toAsset: SocketAPIToken
+  toAmount: string
+  steps: any[]
+  stepCount: number
+  serviceTime: number
+  sender: string
+  routePath: string
+  recipient: string
+  maxServiceTime: number
+  gasFees: {
+    gasAmount: string
+    gasLimit: number
+    feesInUsd: number
+    asset: SocketAPIToken
+  }
+  chainId: number
+  bridgeSlippage: number
+  approvalData: unknown
 }
