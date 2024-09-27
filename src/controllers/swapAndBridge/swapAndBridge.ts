@@ -15,13 +15,22 @@ import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter'
 import { NetworksController } from '../networks/networks'
 
 const STATUS_WRAPPED_METHODS = {
-  updateToTokenList: 'INITIAL'
+  updateToTokenList: 'INITIAL',
+  updateQuote: 'INITIAL'
 } as const
 
 const HARD_CODED_CURRENCY = 'usd'
 
 const CONVERSION_PRECISION = 16
 const CONVERSION_PRECISION_POW = BigInt(10 ** CONVERSION_PRECISION)
+
+export enum SwapAndBridgeFormStatus {
+  Empty = 'empty',
+  Invalid = 'invalid',
+  FetchingRoutes = 'fetching-routes',
+  NoRoutesFound = 'no-routes-found',
+  ReadyToSubmit = 'ready-to-submit'
+}
 
 export class SwapAndBridgeController extends EventEmitter {
   #accounts: AccountsController
@@ -99,20 +108,24 @@ export class SwapAndBridgeController extends EventEmitter {
     )
   }
 
-  get isFormValidToFetchQuote() {
-    return (
-      this.fromChainId &&
-      this.toChainId &&
-      this.fromAmount &&
-      this.fromSelectedToken &&
-      this.toSelectedToken &&
-      this.#accounts.selectedAccount &&
-      this.validateFromAmount.success
+  get formStatus() {
+    if (
+      !this.fromChainId ||
+      !this.toChainId ||
+      !this.fromAmount ||
+      !this.fromSelectedToken ||
+      !this.toSelectedToken
     )
-  }
+      return SwapAndBridgeFormStatus.Empty
 
-  get isFormValidToProceed() {
-    return this.isFormValidToFetchQuote && this.quote?.route
+    if (this.validateFromAmount.message) return SwapAndBridgeFormStatus.Invalid
+
+    if (this.statuses.updateQuote !== 'INITIAL') return SwapAndBridgeFormStatus.FetchingRoutes
+
+    if (this.statuses.updateQuote === 'INITIAL' && !this.quote?.route)
+      return SwapAndBridgeFormStatus.NoRoutesFound
+
+    return SwapAndBridgeFormStatus.ReadyToSubmit
   }
 
   get validateFromAmount() {
@@ -296,73 +309,91 @@ export class SwapAndBridgeController extends EventEmitter {
   }
 
   async #updateQuote() {
-    if (!this.isFormValidToFetchQuote) {
-      if (this.quote) {
-        this.quote = null
-        this.emitUpdate()
-      }
-      return
-    }
+    await this.withStatus(
+      'updateQuote',
+      async () => {
+        if (!this.#getIsFormValidToFetchQuote()) {
+          if (this.quote) {
+            this.quote = null
+            this.emitUpdate()
+          }
+          return
+        }
 
-    const selectedAccount = this.#accounts.accounts.find(
-      (a) => a.addr === this.#accounts.selectedAccount
+        const selectedAccount = this.#accounts.accounts.find(
+          (a) => a.addr === this.#accounts.selectedAccount
+        )
+
+        const sanitizedFromAmount = getSanitizedAmount(
+          this.fromAmount,
+          this.fromSelectedToken!.decimals
+        )
+
+        const bigNumberHexFromAmount = `0x${parseUnits(sanitizedFromAmount).toString(16)}`
+
+        if (this.quote) {
+          const isFromAmountSame =
+            this.quote.route.fromAmount === BigInt(bigNumberHexFromAmount).toString()
+          const isFromNetworkSame = this.quote.fromChainId === this.fromChainId
+          const isFromAddressSame =
+            formatNativeTokenAddressIfNeeded(this.quote.fromAsset.address) ===
+            this.fromSelectedToken!.address
+          const isToNetworkSame = this.quote.toChainId === this.toChainId
+          const isToAddressSame =
+            formatNativeTokenAddressIfNeeded(this.quote.toAsset.address) ===
+            this.toSelectedToken!.address
+
+          if (
+            isFromAmountSame &&
+            isFromNetworkSame &&
+            isFromAddressSame &&
+            isToNetworkSame &&
+            isToAddressSame
+          ) {
+            return
+          }
+        }
+
+        if (this.quote) {
+          this.quote = null
+          this.emitUpdate()
+        }
+
+        const quoteResult = await this.#socketAPI.quote({
+          fromChainId: this.fromChainId!,
+          fromTokenAddress: this.fromSelectedToken!.address,
+          toChainId: this.toChainId!,
+          toTokenAddress: this.toSelectedToken!.address,
+          fromAmount: BigInt(bigNumberHexFromAmount),
+          userAddress: this.#accounts.selectedAccount!,
+          isSmartAccount: isSmartAccount(selectedAccount)
+        })
+
+        if (this.#getIsFormValidToFetchQuote() && quoteResult && quoteResult?.routes?.[0]) {
+          this.quote = {
+            fromAsset: quoteResult.fromAsset,
+            fromChainId: quoteResult.fromChainId,
+            toAsset: quoteResult.toAsset,
+            toChainId: quoteResult.toChainId,
+            route: quoteResult.routes[0]
+          }
+          this.emitUpdate()
+        }
+      },
+      true
     )
+  }
 
-    const sanitizedFromAmount = getSanitizedAmount(
-      this.fromAmount,
-      this.fromSelectedToken!.decimals
+  #getIsFormValidToFetchQuote() {
+    return (
+      this.fromChainId &&
+      this.toChainId &&
+      this.fromAmount &&
+      this.fromSelectedToken &&
+      this.toSelectedToken &&
+      this.#accounts.selectedAccount &&
+      this.validateFromAmount.success
     )
-
-    const bigNumberHexFromAmount = `0x${parseUnits(sanitizedFromAmount).toString(16)}`
-
-    if (this.quote) {
-      const isFromAmountSame =
-        this.quote.route.fromAmount === BigInt(bigNumberHexFromAmount).toString()
-      const isFromNetworkSame = this.quote.fromChainId === this.fromChainId
-      const isFromAddressSame =
-        formatNativeTokenAddressIfNeeded(this.quote.fromAsset.address) ===
-        this.fromSelectedToken!.address
-      const isToNetworkSame = this.quote.toChainId === this.toChainId
-      const isToAddressSame =
-        formatNativeTokenAddressIfNeeded(this.quote.toAsset.address) ===
-        this.toSelectedToken!.address
-
-      if (
-        isFromAmountSame &&
-        isFromNetworkSame &&
-        isFromAddressSame &&
-        isToNetworkSame &&
-        isToAddressSame
-      ) {
-        return
-      }
-    }
-
-    if (this.quote) {
-      this.quote = null
-      this.emitUpdate()
-    }
-
-    const quoteResult = await this.#socketAPI.quote({
-      fromChainId: this.fromChainId!,
-      fromTokenAddress: this.fromSelectedToken!.address,
-      toChainId: this.toChainId!,
-      toTokenAddress: this.toSelectedToken!.address,
-      fromAmount: BigInt(bigNumberHexFromAmount),
-      userAddress: this.#accounts.selectedAccount!,
-      isSmartAccount: isSmartAccount(selectedAccount)
-    })
-
-    if (this.isFormValidToFetchQuote && quoteResult && quoteResult?.routes?.[0]) {
-      this.quote = {
-        fromAsset: quoteResult.fromAsset,
-        fromChainId: quoteResult.fromChainId,
-        toAsset: quoteResult.toAsset,
-        toChainId: quoteResult.toChainId,
-        route: quoteResult.routes[0]
-      }
-      this.emitUpdate()
-    }
   }
 
   toJSON() {
@@ -371,9 +402,8 @@ export class SwapAndBridgeController extends EventEmitter {
       ...super.toJSON(),
       maxFromAmount: this.maxFromAmount,
       maxFromAmountInFiat: this.maxFromAmountInFiat,
-      isFormValidToFetchQuote: this.isFormValidToFetchQuote,
-      isFormValidToProceed: this.isFormValidToProceed,
-      validateFromAmount: this.validateFromAmount
+      validateFromAmount: this.validateFromAmount,
+      formStatus: this.formStatus
     }
   }
 }
