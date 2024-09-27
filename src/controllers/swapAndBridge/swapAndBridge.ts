@@ -8,6 +8,7 @@ import { getTokenAmount } from '../../libs/portfolio/helpers'
 import { getSanitizedAmount } from '../../libs/transfer/amount'
 import { formatNativeTokenAddressIfNeeded } from '../../services/address'
 import { SocketAPI } from '../../services/socket/api'
+import { validateSendTransferAmount } from '../../services/validations/validate'
 import { convertTokenPriceToBigInt } from '../../utils/numbers/formatters'
 import { AccountsController } from '../accounts/accounts'
 import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter'
@@ -42,8 +43,6 @@ export class SwapAndBridgeController extends EventEmitter {
   toChainId: number | null = 10
 
   toSelectedToken: SocketAPIToken | null = null
-
-  toAmount: string = ''
 
   quote: SocketAPIQuote | null = null
 
@@ -97,6 +96,33 @@ export class SwapAndBridgeController extends EventEmitter {
       maxAmount * tokenPriceBigInt,
       // Shift the decimal point by the number of decimals in the token price
       this.fromSelectedToken.decimals + tokenPriceDecimals
+    )
+  }
+
+  get isFormValidToFetchQuote() {
+    return (
+      this.fromChainId &&
+      this.toChainId &&
+      this.fromAmount &&
+      this.fromSelectedToken &&
+      this.toSelectedToken &&
+      this.#accounts.selectedAccount &&
+      this.validateFromAmount.success
+    )
+  }
+
+  get isFormValidToProceed() {
+    return this.isFormValidToFetchQuote && this.quote?.route
+  }
+
+  get validateFromAmount() {
+    if (!this.fromSelectedToken) return { success: false, message: '' }
+
+    return validateSendTransferAmount(
+      this.fromAmount,
+      Number(this.maxFromAmount),
+      Number(this.maxFromAmountInFiat),
+      this.fromSelectedToken
     )
   }
 
@@ -228,7 +254,6 @@ export class SwapAndBridgeController extends EventEmitter {
     this.fromAmountFieldMode = 'token'
     this.toChainId = 10
     this.toSelectedToken = null
-    this.toAmount = ''
     this.quote = null
     this.portfolioTokenList = []
 
@@ -253,7 +278,6 @@ export class SwapAndBridgeController extends EventEmitter {
 
       if (shouldReset) {
         this.toTokenList = []
-        this.toAmount = ''
         this.emitUpdate()
       }
 
@@ -272,14 +296,7 @@ export class SwapAndBridgeController extends EventEmitter {
   }
 
   async #updateQuote() {
-    if (
-      !this.fromChainId ||
-      !this.toChainId ||
-      !this.fromAmount ||
-      !this.fromSelectedToken ||
-      !this.toSelectedToken ||
-      !this.#accounts.selectedAccount
-    ) {
+    if (!this.isFormValidToFetchQuote) {
       if (this.quote) {
         this.quote = null
         this.emitUpdate()
@@ -291,7 +308,12 @@ export class SwapAndBridgeController extends EventEmitter {
       (a) => a.addr === this.#accounts.selectedAccount
     )
 
-    const bigNumberHexFromAmount = `0x${parseUnits(this.fromAmount).toString(16)}`
+    const sanitizedFromAmount = getSanitizedAmount(
+      this.fromAmount,
+      this.fromSelectedToken!.decimals
+    )
+
+    const bigNumberHexFromAmount = `0x${parseUnits(sanitizedFromAmount).toString(16)}`
 
     if (this.quote) {
       const isFromAmountSame =
@@ -299,11 +321,11 @@ export class SwapAndBridgeController extends EventEmitter {
       const isFromNetworkSame = this.quote.fromChainId === this.fromChainId
       const isFromAddressSame =
         formatNativeTokenAddressIfNeeded(this.quote.fromAsset.address) ===
-        this.fromSelectedToken.address
+        this.fromSelectedToken!.address
       const isToNetworkSame = this.quote.toChainId === this.toChainId
       const isToAddressSame =
         formatNativeTokenAddressIfNeeded(this.quote.toAsset.address) ===
-        this.toSelectedToken.address
+        this.toSelectedToken!.address
 
       if (
         isFromAmountSame &&
@@ -322,16 +344,16 @@ export class SwapAndBridgeController extends EventEmitter {
     }
 
     const quoteResult = await this.#socketAPI.quote({
-      fromChainId: this.fromChainId,
-      fromTokenAddress: this.fromSelectedToken.address,
-      toChainId: this.toChainId,
-      toTokenAddress: this.toSelectedToken.address,
+      fromChainId: this.fromChainId!,
+      fromTokenAddress: this.fromSelectedToken!.address,
+      toChainId: this.toChainId!,
+      toTokenAddress: this.toSelectedToken!.address,
       fromAmount: BigInt(bigNumberHexFromAmount),
-      userAddress: this.#accounts.selectedAccount,
+      userAddress: this.#accounts.selectedAccount!,
       isSmartAccount: isSmartAccount(selectedAccount)
     })
 
-    if (quoteResult) {
+    if (this.isFormValidToFetchQuote && quoteResult && quoteResult?.routes?.[0]) {
       this.quote = {
         fromAsset: quoteResult.fromAsset,
         fromChainId: quoteResult.fromChainId,
@@ -348,7 +370,10 @@ export class SwapAndBridgeController extends EventEmitter {
       ...this,
       ...super.toJSON(),
       maxFromAmount: this.maxFromAmount,
-      maxFromAmountInFiat: this.maxFromAmountInFiat
+      maxFromAmountInFiat: this.maxFromAmountInFiat,
+      isFormValidToFetchQuote: this.isFormValidToFetchQuote,
+      isFormValidToProceed: this.isFormValidToProceed,
+      validateFromAmount: this.validateFromAmount
     }
   }
 }
