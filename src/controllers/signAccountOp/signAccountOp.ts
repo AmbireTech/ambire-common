@@ -480,6 +480,12 @@ export class SignAccountOpController extends EventEmitter {
       this.estimation.erc4337GasLimits.gasPrice = bundlerGasPrices
     }
 
+    const shouldUpdateAccountOpCalls =
+      accountOp && accountOp.calls.length !== this.accountOp.calls.length
+    if (shouldUpdateAccountOpCalls) {
+      this.accountOp.calls = accountOp.calls
+    }
+
     // calculate the fee speeds if either there are no feeSpeeds
     // or any of properties for update is requested
     if (!Object.keys(this.feeSpeeds).length || accountOp || gasPrices || estimation) {
