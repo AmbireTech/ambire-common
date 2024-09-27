@@ -253,9 +253,11 @@ export class KeystoreController extends EventEmitter {
     const aesCtr = new aes.ModeOfOperation.ctr(derivedKey, counter)
     const mac = keccak256(concat([macPrefix, aesEncrypted.ciphertext]))
     if (mac !== aesEncrypted.mac) {
-      this.errorMessage = 'Invalid Device Password.'
+      this.errorMessage = 'Incorrect password. Please try again.'
       this.emitUpdate()
-      return
+
+      const error = new Error(this.errorMessage)
+      throw new EmittableError({ level: 'silent', message: this.errorMessage, error })
     }
     this.errorMessage = ''
 
