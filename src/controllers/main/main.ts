@@ -199,7 +199,7 @@ export class MainController extends EventEmitter {
     this.#notificationManager = notificationManager
 
     this.invite = new InviteController({ relayerUrl, fetch, storage: this.#storage })
-    this.keystore = new KeystoreController(this.#storage, keystoreSigners)
+    this.keystore = new KeystoreController(this.#storage, keystoreSigners, windowManager)
     this.#externalSignerControllers = externalSignerControllers
     this.networks = new NetworksController(
       this.#storage,

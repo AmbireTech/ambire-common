@@ -36,6 +36,7 @@ import {
   StoredKey
 } from '../../interfaces/keystore'
 import { Storage } from '../../interfaces/storage'
+import { WindowManager } from '../../interfaces/window'
 import {
   getDefaultKeyLabel,
   getShouldMigrateKeyMetaNullToKeyMetaCreatedAt,
@@ -117,15 +118,19 @@ export class KeystoreController extends EventEmitter {
   // Holds the initial load promise, so that one can wait until it completes
   #initialLoadPromise: Promise<void>
 
+  #windowManager: WindowManager
+
   constructor(
     _storage: Storage,
-    _keystoreSigners: Partial<{ [key in Key['type']]: KeystoreSignerType }>
+    _keystoreSigners: Partial<{ [key in Key['type']]: KeystoreSignerType }>,
+    windowManager: WindowManager
   ) {
     super()
     this.#storage = _storage
     this.#keystoreSigners = _keystoreSigners
     this.#mainKey = null
     this.keyStoreUid = null
+    this.#windowManager = windowManager
 
     this.#initialLoadPromise = this.#load()
   }
@@ -603,15 +608,12 @@ export class KeystoreController extends EventEmitter {
     return JSON.stringify(keyBackup)
   }
 
-  /*
-    DOCS
-    keyAddress: string - the address of the key you want to export
-    publicKey: string - the public key, with which to asymmetrically encypt it (used for key sync with other device's keystoreId)
-  */
-  async exportKeyWithPublicKeyEncryption(
-    keyAddress: string,
-    publicKey: string
-  ): Promise<Encrypted> {
+  async sendPrivateKeyToUi(keyAddress: string) {
+    const decryptedPrivateKey = await this.#getPrivateKey(keyAddress)
+    this.#windowManager.sendWindowUiMessage({ privateKey: `0x${decryptedPrivateKey}` })
+  }
+
+  async #getPrivateKey(keyAddress: string): Promise<string> {
     await this.#initialLoadPromise
     if (this.#mainKey === null) throw new Error('keystore: needs to be unlocked')
     const keys = this.#keystoreKeys
@@ -626,7 +628,19 @@ export class KeystoreController extends EventEmitter {
     const aesCtr = new aes.ModeOfOperation.ctr(this.#mainKey.key, counter)
     // encrypt the pk of keyAddress with publicKey
     const decryptedBytes = aesCtr.decrypt(encryptedBytes)
-    const decryptedPrivateKey = aes.utils.hex.fromBytes(decryptedBytes)
+    return aes.utils.hex.fromBytes(decryptedBytes)
+  }
+
+  /*
+    DOCS
+    keyAddress: string - the address of the key you want to export
+    publicKey: string - the public key, with which to asymmetrically encypt it (used for key sync with other device's keystoreId)
+  */
+  async exportKeyWithPublicKeyEncryption(
+    keyAddress: string,
+    publicKey: string
+  ): Promise<Encrypted> {
+    const decryptedPrivateKey = await this.#getPrivateKey(keyAddress)
     const result = await encryptWithPublicKey(publicKey, decryptedPrivateKey)
 
     return result
