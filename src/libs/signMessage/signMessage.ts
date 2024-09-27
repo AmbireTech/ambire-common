@@ -292,6 +292,7 @@ export async function getPlainTextSignature(
 
   if (!accountState.isV2) {
     const humanReadableMsg = message instanceof Uint8Array ? hexlify(message) : message
+    // issue win this if
     if (humanReadableMsg.toLowerCase().indexOf(account.addr.toLowerCase()) !== -1) {
       return wrapUnprotected(await signer.signMessage(messageHex))
     }
