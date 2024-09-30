@@ -11,7 +11,7 @@ import {
   getTokenWithChain
 } from '../../utils'
 import AcrossModule from '../Across'
-import { SocketModule } from './'
+import { SocketModule } from '.'
 
 const transactions = [
   {
@@ -54,7 +54,7 @@ describe('socket', () => {
         getTokenWithChain('0x0b2c639c533813f4aa9d7837caf62653d097ff85', 3094288n, 137n),
         getLabel('on'),
         getChain(137n),
-        getDeadline(1720088255n)
+        getDeadline(1720109765n)
       ]
     ]
     let irCalls = SocketModule(accountOp, transactions, humanizerInfo as HumanizerMeta)
