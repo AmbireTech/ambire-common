@@ -14,7 +14,6 @@ import {
   TypedDataEncoder,
   TypedDataField
 } from 'ethers'
-import { humanizeMessage } from 'libs/humanizer'
 
 import UniversalSigValidator from '../../../contracts/compiled/UniversalSigValidator.json'
 import { PERMIT_2_ADDRESS, UNISWAP_UNIVERSAL_ROUTERS } from '../../consts/addresses'
