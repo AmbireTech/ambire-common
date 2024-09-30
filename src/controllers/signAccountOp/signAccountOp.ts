@@ -397,13 +397,12 @@ export class SignAccountOpController extends EventEmitter {
     speed,
     signingKeyAddr,
     signingKeyType,
-    accountOp,
+    calls,
     gasUsedTooHighAgreed,
     rbfAccountOps,
     bundlerGasPrices,
     blockGasLimit
   }: {
-    accountOp?: AccountOp
     gasPrices?: GasRecommendation[]
     estimation?: EstimateResult | null
     feeToken?: TokenResult
@@ -411,6 +410,7 @@ export class SignAccountOpController extends EventEmitter {
     speed?: FeeSpeed
     signingKeyAddr?: Key['addr']
     signingKeyType?: Key['type']
+    calls?: AccountOp['calls']
     gasUsedTooHighAgreed?: boolean
     rbfAccountOps?: { [key: string]: SubmittedAccountOp | null }
     bundlerGasPrices?: BundlerGasPrice
@@ -427,13 +427,7 @@ export class SignAccountOpController extends EventEmitter {
       return
     }
 
-    const shouldUpdateAccountOp =
-      accountOp &&
-      accountOp.networkId === this.accountOp.networkId &&
-      accountOp.accountAddr === this.accountOp.accountAddr
-    if (shouldUpdateAccountOp) {
-      this.accountOp = { ...this.accountOp, ...accountOp }
-    }
+    if (Array.isArray(calls)) this.accountOp.calls = calls
 
     if (blockGasLimit) this.#blockGasLimit = blockGasLimit
 
@@ -490,7 +484,7 @@ export class SignAccountOpController extends EventEmitter {
 
     // calculate the fee speeds if either there are no feeSpeeds
     // or any of properties for update is requested
-    if (!Object.keys(this.feeSpeeds).length || accountOp || gasPrices || estimation) {
+    if (!Object.keys(this.feeSpeeds).length || Array.isArray(calls) || gasPrices || estimation) {
       this.#updateFeeSpeeds()
     }
 
