@@ -214,7 +214,7 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
     const accountStates = await getAccountsInfo([v1Account])
     const signer = await keystore.getSigner(v1siger.keyPublicAddress, 'internal')
 
-    const msg = hexlify(toUtf8Bytes(`test for ${v1Account.addr}`))
+    const msg = `test for ${v1Account.addr}`
     const signatureForPlainText = await getPlainTextSignature(
       msg,
       polygonNetwork,
