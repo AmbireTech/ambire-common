@@ -1,4 +1,4 @@
-import { Contract, hashMessage, hexlify, toUtf8Bytes, TypedDataEncoder, Wallet } from 'ethers'
+import { Contract, hashMessage, toUtf8Bytes, TypedDataEncoder, Wallet } from 'ethers'
 
 import { beforeAll, describe, expect, test } from '@jest/globals'
 
