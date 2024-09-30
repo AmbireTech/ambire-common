@@ -427,6 +427,14 @@ export class SignAccountOpController extends EventEmitter {
       return
     }
 
+    const shouldUpdateAccountOp =
+      accountOp &&
+      accountOp.networkId === this.accountOp.networkId &&
+      accountOp.accountAddr === this.accountOp.accountAddr
+    if (shouldUpdateAccountOp) {
+      this.accountOp = { ...this.accountOp, ...accountOp }
+    }
+
     if (blockGasLimit) this.#blockGasLimit = blockGasLimit
 
     if (gasPrices) this.gasPrices = gasPrices
@@ -478,12 +486,6 @@ export class SignAccountOpController extends EventEmitter {
     // update the bundler gas prices
     if (this.estimation?.erc4337GasLimits && bundlerGasPrices) {
       this.estimation.erc4337GasLimits.gasPrice = bundlerGasPrices
-    }
-
-    const shouldUpdateAccountOpCalls =
-      accountOp && accountOp.calls.length !== this.accountOp.calls.length
-    if (shouldUpdateAccountOpCalls) {
-      this.accountOp.calls = accountOp.calls
     }
 
     // calculate the fee speeds if either there are no feeSpeeds
