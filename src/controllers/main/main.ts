@@ -1140,7 +1140,7 @@ export class MainController extends EventEmitter {
       const account = this.accounts.accounts.find((x) => x.addr === meta.accountAddr)!
       const accountState = this.accounts.accountStates[meta.accountAddr][meta.networkId]
 
-      if (account.creation) {
+      if (isSmartAccount(account)) {
         const network = this.networks.networks.find((n) => n.id === meta.networkId)!
 
         // find me the accountOp for the network if any, it's always 1 for SA
@@ -1188,7 +1188,7 @@ export class MainController extends EventEmitter {
         this.actions.addOrUpdateAction(accountOpAction, withPriority, executionType)
         if (this.signAccountOp) {
           if (this.signAccountOp.fromActionId === accountOpAction.id) {
-            this.signAccountOp.update({ accountOp: accountOpAction.accountOp })
+            this.signAccountOp.update({ calls: accountOpAction.accountOp.calls })
             this.estimateSignAccountOp()
           }
         } else {
@@ -1260,7 +1260,7 @@ export class MainController extends EventEmitter {
           `batchCallsFromUserRequests: tried to run for non-existent account ${meta.accountAddr}`
         )
 
-      if (account.creation) {
+      if (isSmartAccount(account)) {
         const accountOpIndex = this.actions.actionsQueue.findIndex(
           (a) => a.type === 'accountOp' && a.id === `${meta.accountAddr}-${meta.networkId}`
         )
@@ -1282,7 +1282,7 @@ export class MainController extends EventEmitter {
           this.actions.addOrUpdateAction(accountOpAction)
 
           if (this.signAccountOp && this.signAccountOp.fromActionId === accountOpAction.id) {
-            this.signAccountOp.update({ accountOp: accountOpAction.accountOp, estimation: null })
+            this.signAccountOp.update({ calls: accountOpAction.accountOp.calls, estimation: null })
             this.estimateSignAccountOp()
           }
         } else {
