@@ -84,6 +84,8 @@ export class Portfolio {
           .map((x) => x.data.networkId)
           .join(',')}&accounts=${queueSegment
           .map((x) => x.data.accountAddr)
+          .join(',')}&sigs=${queueSegment
+          .map((x) => x.data.keysCount)
           .join(',')}&baseCurrency=${baseCurrency}`
         return { queueSegment, url }
       })
@@ -94,7 +96,10 @@ export class Portfolio {
     this.deploylessNfts = fromDescriptor(provider, NFTGetter, !network.rpcNoStateOverride)
   }
 
-  async get(accountAddr: string, opts: Partial<GetOptions> = {}): Promise<PortfolioLibGetResult> {
+  async get(
+    { accountId: accountAddr, accountKeysCount }: { accountId: string; accountKeysCount: number },
+    opts: Partial<GetOptions> = {}
+  ): Promise<PortfolioLibGetResult> {
     const errors: PortfolioLibGetResult['errors'] = []
     const localOpts = { ...defaultOptions, ...opts }
     const disableAutoDiscovery = localOpts.disableAutoDiscovery || false
@@ -118,6 +123,7 @@ export class Portfolio {
         hintsFromExternalAPI = await this.batchedVelcroDiscovery({
           networkId,
           accountAddr,
+          accountKeysCount,
           baseCurrency
         })
         if (hintsFromExternalAPI)

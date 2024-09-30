@@ -40,6 +40,7 @@ import {
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { AccountsController } from '../accounts/accounts'
 import EventEmitter from '../eventEmitter/eventEmitter'
+import { KeystoreController } from '../keystore/keystore'
 import { NetworksController } from '../networks/networks'
 import { ProvidersController } from '../providers/providers'
 
@@ -107,6 +108,8 @@ export class PortfolioController extends EventEmitter {
 
   #accounts: AccountsController
 
+  #keystore: KeystoreController
+
   // Holds the initial load promise, so that one can wait until it completes
   #initialLoadPromise: Promise<void>
 
@@ -116,6 +119,7 @@ export class PortfolioController extends EventEmitter {
     providers: ProvidersController,
     networks: NetworksController,
     accounts: AccountsController,
+    keystore: KeystoreController,
     relayerUrl: string,
     velcroUrl: string
   ) {
@@ -131,6 +135,7 @@ export class PortfolioController extends EventEmitter {
     this.#providers = providers
     this.#networks = networks
     this.#accounts = accounts
+    this.#keystore = keystore
     this.temporaryTokens = {}
     this.#toBeLearnedTokens = {}
 
@@ -337,11 +342,19 @@ export class PortfolioController extends EventEmitter {
     this.emitUpdate()
 
     try {
-      const result = await portfolioLib.get(accountId, {
-        priceRecency: 60000,
-        additionalHints: [additionalHint, ...temporaryTokensToFetch.map((x) => x.address)],
-        disableAutoDiscovery: true
-      })
+      const account = this.#accounts.accounts.find((x) => x.addr === accountId)
+      const accountKeysCount = this.#keystore.keys.filter((k) =>
+        account?.associatedKeys.includes(k.addr)
+      ).length
+
+      const result = await portfolioLib.get(
+        { accountId, accountKeysCount },
+        {
+          priceRecency: 60000,
+          additionalHints: [additionalHint, ...temporaryTokensToFetch.map((x) => x.address)],
+          disableAutoDiscovery: true
+        }
+      )
       this.temporaryTokens[network.id] = {
         isLoading: false,
         errors: [],
@@ -481,13 +494,21 @@ export class PortfolioController extends EventEmitter {
     const tokenPreferences = this.tokenPreferences
 
     try {
-      const result = await portfolioLib.get(accountId, {
-        priceRecency: 60000,
-        priceCache: state.result?.priceCache,
-        fetchPinned: !hasNonZeroTokens,
-        tokenPreferences,
-        ...portfolioProps
-      })
+      const account = this.#accounts.accounts.find((x) => x.addr === accountId)
+      const accountKeysCount = this.#keystore.keys.filter((k) =>
+        account?.associatedKeys.includes(k.addr)
+      ).length
+
+      const result = await portfolioLib.get(
+        { accountId, accountKeysCount },
+        {
+          priceRecency: 60000,
+          priceCache: state.result?.priceCache,
+          fetchPinned: !hasNonZeroTokens,
+          tokenPreferences,
+          ...portfolioProps
+        }
+      )
 
       const additionalHints = portfolioProps.additionalHints || []
 
