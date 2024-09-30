@@ -14,6 +14,7 @@ import {
   TypedDataEncoder,
   TypedDataField
 } from 'ethers'
+import { humanizeMessage } from 'libs/humanizer'
 
 import UniversalSigValidator from '../../../contracts/compiled/UniversalSigValidator.json'
 import { PERMIT_2_ADDRESS, UNISWAP_UNIVERSAL_ROUTERS } from '../../consts/addresses'
@@ -292,8 +293,15 @@ export async function getPlainTextSignature(
 
   if (!accountState.isV2) {
     const humanReadableMsg = message instanceof Uint8Array ? hexlify(message) : message
-    // issue win this if
-    if (humanReadableMsg.toLowerCase().indexOf(account.addr.toLowerCase()) !== -1) {
+    // NOTE: tmp fix for allowing some plaintext signatures for V1 accounts
+    // the problem was that some signatures are passed as ascii and some are hex from the original ascii
+    const lowerCaseAddr = hexlify(toUtf8Bytes(account.addr.toLowerCase().slice(2)))
+    const checksummedCaseAddr = hexlify(toUtf8Bytes(account.addr.slice(2)))
+    if (
+      humanReadableMsg.toLowerCase().includes(account.addr.toLowerCase()) ||
+      humanReadableMsg.includes(lowerCaseAddr.slice(2)) ||
+      humanReadableMsg.includes(checksummedCaseAddr.slice(2))
+    ) {
       return wrapUnprotected(await signer.signMessage(messageHex))
     }
 
