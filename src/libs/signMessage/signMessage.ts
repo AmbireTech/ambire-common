@@ -291,15 +291,23 @@ export async function getPlainTextSignature(
   }
 
   if (!accountState.isV2) {
+    const lowercaseHexAddrWithout0x = hexlify(toUtf8Bytes(account.addr.toLowerCase().slice(2)))
+    const checksummedHexAddrWithout0x = hexlify(toUtf8Bytes(account.addr.slice(2)))
+    const asciiAddrLowerCase = account.addr.toLowerCase()
     const humanReadableMsg = message instanceof Uint8Array ? hexlify(message) : message
-    // NOTE: tmp fix for allowing some plaintext signatures for V1 accounts
-    // the problem was that some signatures are passed as ascii and some are hex from the original ascii
-    const lowerCaseAddr = hexlify(toUtf8Bytes(account.addr.toLowerCase().slice(2)))
-    const checksummedCaseAddr = hexlify(toUtf8Bytes(account.addr.slice(2)))
+
+    const isAsciiAddressInMessage = humanReadableMsg.toLowerCase().includes(asciiAddrLowerCase)
+    const isLowercaseHexAddressInMessage = humanReadableMsg.includes(
+      lowercaseHexAddrWithout0x.slice(2)
+    )
+    const isChecksummedHexAddressInMessage = humanReadableMsg.includes(
+      checksummedHexAddrWithout0x.slice(2)
+    )
+
     if (
-      humanReadableMsg.toLowerCase().includes(account.addr.toLowerCase()) ||
-      humanReadableMsg.includes(lowerCaseAddr.slice(2)) ||
-      humanReadableMsg.includes(checksummedCaseAddr.slice(2))
+      isAsciiAddressInMessage ||
+      isLowercaseHexAddressInMessage ||
+      isChecksummedHexAddressInMessage
     ) {
       return wrapUnprotected(await signer.signMessage(messageHex))
     }

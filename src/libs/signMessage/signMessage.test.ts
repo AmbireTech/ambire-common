@@ -1,4 +1,4 @@
-import { Contract, hashMessage, toUtf8Bytes, TypedDataEncoder, Wallet } from 'ethers'
+import { Contract, hashMessage, hexlify, toUtf8Bytes, TypedDataEncoder, Wallet } from 'ethers'
 
 import { beforeAll, describe, expect, test } from '@jest/globals'
 
@@ -214,7 +214,7 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
     const accountStates = await getAccountsInfo([v1Account])
     const signer = await keystore.getSigner(v1siger.keyPublicAddress, 'internal')
 
-    const msg = `test for ${v1Account.addr}`
+    const msg = hexlify(toUtf8Bytes(`test for ${v1Account.addr}`))
     const signatureForPlainText = await getPlainTextSignature(
       msg,
       polygonNetwork,
