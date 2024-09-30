@@ -85,7 +85,7 @@ export class Portfolio {
           .join(',')}&accounts=${queueSegment
           .map((x) => x.data.accountAddr)
           .join(',')}&sigs=${queueSegment
-          .map((x) => x.data.keysCount)
+          .map((x) => x.data.accountKeysCount)
           .join(',')}&baseCurrency=${baseCurrency}`
         return { queueSegment, url }
       })
