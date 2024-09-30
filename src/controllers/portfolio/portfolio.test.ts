@@ -14,6 +14,7 @@ import { AccountOp } from '../../libs/accountOp/accountOp'
 import { CollectionResult } from '../../libs/portfolio/interfaces'
 import { getRpcProvider } from '../../services/provider'
 import { AccountsController } from '../accounts/accounts'
+import { KeystoreController } from '../keystore/keystore'
 import { NetworksController } from '../networks/networks'
 import { ProvidersController } from '../providers/providers'
 import { PortfolioController } from './portfolio'
@@ -114,12 +115,14 @@ const prepareTest = () => {
     () => {},
     () => {}
   )
+  const keystoreCtrl = new KeystoreController(storage, {})
   const controller = new PortfolioController(
     storage,
     fetch,
     providersCtrl,
     networksCtrl,
     accountsCtrl,
+    keystoreCtrl,
     relayerUrl,
     velcroUrl
   )
