@@ -5,6 +5,7 @@ import { SocketAPIQuote, SocketAPIToken } from '../../interfaces/swapAndBridge'
 import { isSmartAccount } from '../../libs/account/account'
 import { TokenResult } from '../../libs/portfolio'
 import { getTokenAmount } from '../../libs/portfolio/helpers'
+import { getQuoteRouteSteps } from '../../libs/swapAndBridge/swapAndBridge'
 import { getSanitizedAmount } from '../../libs/transfer/amount'
 import { formatNativeTokenAddressIfNeeded } from '../../services/address'
 import { SocketAPI } from '../../services/socket/api'
@@ -375,7 +376,8 @@ export class SwapAndBridgeController extends EventEmitter {
             fromChainId: quoteResult.fromChainId,
             toAsset: quoteResult.toAsset,
             toChainId: quoteResult.toChainId,
-            route: quoteResult.routes[0]
+            route: quoteResult.routes[0],
+            routeSteps: getQuoteRouteSteps(quoteResult.routes[0].userTxs)
           }
           this.emitUpdate()
         }

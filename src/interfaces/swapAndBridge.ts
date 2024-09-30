@@ -23,7 +23,7 @@ export interface SocketAPIQuote {
     totalGasFeesInUsd: number
     recipient: string
     sender: string
-    userTxs: (SocketAPIBridgeUserTx | SocketAPISwapUserTx)[]
+    userTxs: SocketAPIUserTx[]
     receivedValueInUsd: number
     inputValueInUsd: number
     outputValueInUsd: number
@@ -38,6 +38,7 @@ export interface SocketAPIQuote {
     minimumGasBalances: object
     extraData: object
   }
+  routeSteps: SocketAPIStep[]
 }
 
 export interface SocketAPISwapUserTx {
@@ -73,7 +74,7 @@ export interface SocketAPIBridgeUserTx {
   txType: string
   toAsset: SocketAPIToken
   toAmount: string
-  steps: any[]
+  steps: SocketAPIStep[]
   stepCount: number
   serviceTime: number
   sender: string
@@ -90,3 +91,58 @@ export interface SocketAPIBridgeUserTx {
   bridgeSlippage: number
   approvalData: unknown
 }
+
+export interface SocketApiSwapStep {
+  chainId: number
+  fromAmount: string
+  fromAsset: SocketAPIToken
+  gasFees: {
+    gasAmount: string
+    gasLimit: number
+    feesInUsd: number
+    asset: SocketAPIToken
+  }
+  minAmountOut: string
+  protocol: {
+    name: string
+    displayName: string
+    icon: string
+  }
+  swapSlippage: number
+  toAmount: string
+  toAsset: SocketAPIToken
+  type: 'middleware' | 'swap'
+}
+
+export interface SocketApiBridgeStep {
+  fromChainId: number
+  toChainId: number
+  fromAmount: string
+  fromAsset: SocketAPIToken
+  gasFees: {
+    gasAmount: string
+    gasLimit: number
+    feesInUsd: number
+    asset: SocketAPIToken
+  }
+  minAmountOut: string
+  protocol: {
+    name: string
+    displayName: string
+    icon: string
+  }
+  protocolFees: {
+    amount: string
+    asset: SocketAPIToken
+  }
+  bridgeSlippage: number
+  toAmount: string
+  toAsset: SocketAPIToken
+  serviceTime: number
+  maxServiceTime: number
+  type: 'bridge'
+}
+
+export type SocketAPIStep = SocketApiSwapStep | SocketApiBridgeStep
+
+export type SocketAPIUserTx = SocketAPISwapUserTx | SocketAPIBridgeUserTx
