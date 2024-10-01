@@ -12,6 +12,7 @@ import {
   getNetworksWithFailedRPCBanners,
   getNetworksWithPortfolioErrorBanners
 } from '../../libs/banners/banners'
+import { getAccountKeysCount } from '../../libs/keys/keys'
 import { Portfolio } from '../../libs/portfolio'
 /* eslint-disable @typescript-eslint/no-use-before-define */
 import { CustomToken } from '../../libs/portfolio/customToken'
@@ -342,13 +343,14 @@ export class PortfolioController extends EventEmitter {
     this.emitUpdate()
 
     try {
-      const account = this.#accounts.accounts.find((x) => x.addr === accountId)
-      const accountKeysCount = this.#keystore.keys.filter((k) =>
-        account?.associatedKeys.includes(k.addr)
-      ).length
+      const accountKeysCount = getAccountKeysCount({
+        accountAddr: accountId,
+        accounts: this.#accounts.accounts,
+        keys: this.#keystore.keys
+      })
 
       const result = await portfolioLib.get(
-        { accountId, accountKeysCount },
+        { accountAddr: accountId, accountKeysCount },
         {
           priceRecency: 60000,
           additionalHints: [additionalHint, ...temporaryTokensToFetch.map((x) => x.address)],
@@ -494,13 +496,14 @@ export class PortfolioController extends EventEmitter {
     const tokenPreferences = this.tokenPreferences
 
     try {
-      const account = this.#accounts.accounts.find((x) => x.addr === accountId)
-      const accountKeysCount = this.#keystore.keys.filter((k) =>
-        account?.associatedKeys.includes(k.addr)
-      ).length
+      const accountKeysCount = getAccountKeysCount({
+        accountAddr: accountId,
+        accounts: this.#accounts.accounts,
+        keys: this.#keystore.keys
+      })
 
       const result = await portfolioLib.get(
-        { accountId, accountKeysCount },
+        { accountAddr: accountId, accountKeysCount },
         {
           priceRecency: 60000,
           priceCache: state.result?.priceCache,
