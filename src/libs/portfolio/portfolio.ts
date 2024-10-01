@@ -97,14 +97,14 @@ export class Portfolio {
   }
 
   async get(
-    { accountId, accountKeysCount }: { accountId: string; accountKeysCount: number },
+    { accountAddr, accountKeysCount = 0 }: { accountAddr: string; accountKeysCount?: number },
     opts: Partial<GetOptions> = {}
   ): Promise<PortfolioLibGetResult> {
     const errors: PortfolioLibGetResult['errors'] = []
     const localOpts = { ...defaultOptions, ...opts }
     const disableAutoDiscovery = localOpts.disableAutoDiscovery || false
     const { baseCurrency } = localOpts
-    if (localOpts.simulation && localOpts.simulation.account.addr !== accountId)
+    if (localOpts.simulation && localOpts.simulation.account.addr !== accountAddr)
       throw new Error('wrong account passed')
 
     // Get hints (addresses to check on-chain) via Velcro
@@ -122,7 +122,7 @@ export class Portfolio {
       if (this.network.hasRelayer && !disableAutoDiscovery) {
         hintsFromExternalAPI = await this.batchedVelcroDiscovery({
           networkId,
-          accountAddr: accountId,
+          accountAddr,
           accountKeysCount,
           baseCurrency
         })
@@ -131,7 +131,7 @@ export class Portfolio {
       } else if (!this.network.hasRelayer) {
         hintsFromExternalAPI = {
           networkId,
-          accountAddr: accountId,
+          accountAddr,
           hasHints: false,
           erc20s: [],
           erc721s: {},

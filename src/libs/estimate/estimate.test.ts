@@ -515,7 +515,9 @@ describe('estimate', () => {
       accountOpToExecuteBefore: null
     }
 
-    const portfolioResponse = await portfolio.get('0xa07D75aacEFd11b425AF7181958F0F85c312f143')
+    const portfolioResponse = await portfolio.get({
+      accountAddr: '0xa07D75aacEFd11b425AF7181958F0F85c312f143'
+    })
     const usdt = portfolioResponse.tokens.find(
       (token) => token.address === '0xdAC17F958D2ee523a2206206994597C13D831ec7'
     )

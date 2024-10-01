@@ -46,8 +46,8 @@ describe('Portfolio', () => {
     // If more advanced testing is required, we'll need to count the number of hints and calculate the expected
     // number of paginated requests accordingly.
     await Promise.all([
-      portfolio.get('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'),
-      portfolio.get('0xe750Fff1AA867DFb52c9f98596a0faB5e05d30A6')
+      portfolio.get({ accountAddr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8' }),
+      portfolio.get({ accountAddr: '0xe750Fff1AA867DFb52c9f98596a0faB5e05d30A6' })
     ])
 
     stopMonitoring()
@@ -107,9 +107,12 @@ describe('Portfolio', () => {
         pfp: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
       }
     } as Account
-    const postSimulation = await portfolio.get('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8', {
-      simulation: { accountOps: [accountOp], account }
-    })
+    const postSimulation = await portfolio.get(
+      { accountAddr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8' },
+      {
+        simulation: { accountOps: [accountOp], account }
+      }
+    )
     const entry = postSimulation.tokens.find((x) => x.symbol === 'USDT')
 
     if (!entry || entry.amountPostSimulation === undefined) {
@@ -163,9 +166,12 @@ describe('Portfolio', () => {
       }
     }
 
-    const postSimulation = await portfolio.get('0xB674F3fd5F43464dB0448a57529eAF37F04cceA5', {
-      simulation: { accountOps: [accountOp], account }
-    })
+    const postSimulation = await portfolio.get(
+      { accountAddr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5' },
+      {
+        simulation: { accountOps: [accountOp], account }
+      }
+    )
 
     const collection = postSimulation.collections.find((c) => c.symbol === 'NFT Fiesta')
 
@@ -177,11 +183,16 @@ describe('Portfolio', () => {
   })
 
   test('price cache works', async () => {
-    const { priceCache } = await portfolio.get('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8')
-    const resultTwo = await portfolio.get('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8', {
-      priceCache,
-      priceRecency: 60000
+    const { priceCache } = await portfolio.get({
+      accountAddr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
     })
+    const resultTwo = await portfolio.get(
+      { accountAddr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8' },
+      {
+        priceCache,
+        priceRecency: 60000
+      }
+    )
     expect(resultTwo.priceUpdateTime).toBeLessThanOrEqual(3)
     expect(resultTwo.tokens.every((x) => x.priceIn.length)).toBe(true)
   })
@@ -213,9 +224,12 @@ describe('Portfolio', () => {
       ],
       erc721s: {}
     }
-    const result = await portfolioInner.get('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8', {
-      previousHints
-    })
+    const result = await portfolioInner.get(
+      { accountAddr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8' },
+      {
+        previousHints
+      }
+    )
 
     // Restore node-fetch module
     jest.mock('node-fetch', () => {
@@ -257,10 +271,13 @@ describe('Portfolio', () => {
         pfp: acc
       }
     }
-    const postSimulation = await portfolio.get(acc, {
-      simulation: { accountOps: [accountOp], account },
-      isEOA: true
-    })
+    const postSimulation = await portfolio.get(
+      { accountAddr: acc },
+      {
+        simulation: { accountOps: [accountOp], account },
+        isEOA: true
+      }
+    )
     const entry = postSimulation.tokens.find((x) => x.symbol === 'USDT')
     if (!entry || entry.amountPostSimulation === undefined) {
       throw new Error('Entry not found or `amountPostSimulation` is not calculated')
@@ -280,10 +297,13 @@ describe('Portfolio', () => {
         pfp: acc
       }
     }
-    const postSimulation = await portfolio.get(acc, {
-      simulation: { accountOps: [], account },
-      isEOA: true
-    })
+    const postSimulation = await portfolio.get(
+      { accountAddr: acc },
+      {
+        simulation: { accountOps: [], account },
+        isEOA: true
+      }
+    )
     const entry = postSimulation.tokens.find((x) => x.symbol === 'USDT')
     if (!entry || entry.amountPostSimulation === undefined) {
       throw new Error('Entry not found or `amountPostSimulation` is not calculated')
@@ -319,10 +339,13 @@ describe('Portfolio', () => {
         pfp: acc
       }
     }
-    const postSimulation = await portfolio.get(acc, {
-      simulation: { accountOps: [accountOp], account },
-      isEOA: true
-    })
+    const postSimulation = await portfolio.get(
+      { accountAddr: acc },
+      {
+        simulation: { accountOps: [accountOp], account },
+        isEOA: true
+      }
+    )
     const entry = postSimulation.tokens.find((x) => x.symbol === 'ETH')
     if (!entry || entry.amountPostSimulation === undefined) {
       throw new Error('Entry not found or `amountPostSimulation` is not calculated')
@@ -364,9 +387,12 @@ describe('Portfolio', () => {
       }
     }
     try {
-      await portfolio.get('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8', {
-        simulation: { accountOps: [accountOp], account }
-      })
+      await portfolio.get(
+        { accountAddr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8' },
+        {
+          simulation: { accountOps: [accountOp], account }
+        }
+      )
       // should throw an error and never come here
       expect(true).toBe(false)
     } catch (e: any) {
@@ -377,9 +403,12 @@ describe('Portfolio', () => {
 
     accountOp.nonce = 99999999999999999999999999999999999999999n
     try {
-      await portfolio.get('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8', {
-        simulation: { accountOps: [accountOp], account }
-      })
+      await portfolio.get(
+        { accountAddr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8' },
+        {
+          simulation: { accountOps: [accountOp], account }
+        }
+      )
       // should throw an error and never come here
       expect(true).toBe(false)
     } catch (e: any) {
@@ -425,10 +454,13 @@ describe('Portfolio', () => {
     }
 
     try {
-      await portfolio.get(acc, {
-        simulation: { accountOps: [accountOp], account },
-        isEOA: true
-      })
+      await portfolio.get(
+        { accountAddr: acc },
+        {
+          simulation: { accountOps: [accountOp], account },
+          isEOA: true
+        }
+      )
     } catch (e: any) {
       expect(e.message).toBe('simulation error: Spoof failed: no keys')
     }
@@ -470,10 +502,13 @@ describe('Portfolio', () => {
     }
 
     try {
-      await portfolio.get(acc, {
-        simulation: { accountOps: [accountOp], account },
-        isEOA: true
-      })
+      await portfolio.get(
+        { accountAddr: acc },
+        {
+          simulation: { accountOps: [accountOp], account },
+          isEOA: true
+        }
+      )
     } catch (e: any) {
       expect(e.message).toBe('simulation error: Spoof failed: wrong keys')
     }
@@ -513,9 +548,12 @@ describe('Portfolio', () => {
     }
     const secondAccountOp = { ...accountOp }
     secondAccountOp.nonce = accountOp.nonce + 1n
-    const postSimulation = await portfolio.get('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8', {
-      simulation: { accountOps: [accountOp, secondAccountOp], account }
-    })
+    const postSimulation = await portfolio.get(
+      { accountAddr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8' },
+      {
+        simulation: { accountOps: [accountOp, secondAccountOp], account }
+      }
+    )
     const entry = postSimulation.tokens.find((x) => x.symbol === 'USDT')
 
     if (!entry || entry.amountPostSimulation === undefined) {
@@ -562,9 +600,12 @@ describe('Portfolio', () => {
     const secondAccountOp = { ...accountOp }
     secondAccountOp.nonce = accountOp.nonce + 2n // wrong, should be +1n
     try {
-      await portfolio.get('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8', {
-        simulation: { accountOps: [accountOp, secondAccountOp], account }
-      })
+      await portfolio.get(
+        { accountAddr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8' },
+        {
+          simulation: { accountOps: [accountOp, secondAccountOp], account }
+        }
+      )
       // portfolio.get should revert and not come here
       expect(true).toBe(false)
     } catch (e: any) {
@@ -585,7 +626,7 @@ describe('Portfolio', () => {
     let didThrow = false
 
     try {
-      await failingPortfolio.get('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8')
+      await failingPortfolio.get({ accountAddr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8' })
     } catch (e: any) {
       didThrow = true
       expect(e?.message).toContain('server response 404')

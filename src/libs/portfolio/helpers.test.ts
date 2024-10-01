@@ -21,9 +21,12 @@ const TEST_ACCOUNT_ADDRESS = '0xc4A6bB5139123bD6ba0CF387828a9A3a73EF8D1e'
 const LEARNED_TOKEN_WITH_BALANCE_ADDRESS = '0x335F4e66B9B61CEE5CeaDE4e727FCEC20156B2F0'
 
 const getTokens = async () => {
-  const ethAccPortfolio = await ethPortfolio.get(TEST_ACCOUNT_ADDRESS, {
-    additionalHints: [LEARNED_TOKEN_WITH_BALANCE_ADDRESS]
-  })
+  const ethAccPortfolio = await ethPortfolio.get(
+    { accountAddr: TEST_ACCOUNT_ADDRESS },
+    {
+      additionalHints: [LEARNED_TOKEN_WITH_BALANCE_ADDRESS]
+    }
+  )
 
   return ethAccPortfolio.tokens
 }

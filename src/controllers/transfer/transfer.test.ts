@@ -66,8 +66,10 @@ providersCtrl = new ProvidersController(networksCtrl)
 providersCtrl.providers = providers
 
 const getTokens = async () => {
-  const ethAccPortfolio = await ethPortfolio.get(PLACEHOLDER_SELECTED_ACCOUNT.addr)
-  const polygonAccPortfolio = await polygonPortfolio.get(PLACEHOLDER_SELECTED_ACCOUNT.addr)
+  const ethAccPortfolio = await ethPortfolio.get({ accountAddr: PLACEHOLDER_SELECTED_ACCOUNT.addr })
+  const polygonAccPortfolio = await polygonPortfolio.get({
+    accountAddr: PLACEHOLDER_SELECTED_ACCOUNT.addr
+  })
 
   return [...ethAccPortfolio.tokens, ...polygonAccPortfolio.tokens]
 }

@@ -30,7 +30,7 @@ export async function executeBatchedFetch(network: Network): Promise<void> {
       )
     }
   }
-  const portfolioResponse = await portfolio.get(ZeroAddress, options)
+  const portfolioResponse = await portfolio.get({ accountAddr: ZeroAddress }, options)
   scheduledActions[network.id]?.data.forEach((i) => {
     const tokenInfo =
       (i.address,
