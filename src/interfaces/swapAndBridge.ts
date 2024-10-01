@@ -146,3 +146,16 @@ export interface SocketApiBridgeStep {
 export type SocketAPIStep = SocketApiSwapStep | SocketApiBridgeStep
 
 export type SocketAPIUserTx = SocketAPISwapUserTx | SocketAPIBridgeUserTx
+
+export type SocketAPISendTransactionRequest = {
+  activeRouteId: number
+  approvalData: any
+  chainId: number
+  totalUserTx: number
+  txData: string
+  txTarget: string
+  txType: 'eth_sendTransaction'
+  userTxIndex: number
+  userTxType: 'fund-movr' | 'dex-swap'
+  value: string
+}

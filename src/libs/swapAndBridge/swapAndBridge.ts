@@ -1,4 +1,10 @@
-import { SocketAPIStep, SocketAPIUserTx } from '../../interfaces/swapAndBridge'
+import { SignUserRequest } from 'interfaces/userRequest'
+
+import {
+  SocketAPISendTransactionRequest,
+  SocketAPIStep,
+  SocketAPIUserTx
+} from '../../interfaces/swapAndBridge'
 
 const getQuoteRouteSteps = (userTxs: SocketAPIUserTx[]) => {
   return userTxs.reduce((stepsAcc: SocketAPIStep[], tx) => {
@@ -23,8 +29,32 @@ const getQuoteRouteSteps = (userTxs: SocketAPIUserTx[]) => {
   }, [])
 }
 
-const buildSwapAndBridgeUserRequest = (userTx: SocketAPIUserTx) => {
+const buildSwapAndBridgeUserRequest = (
+  userTx: SocketAPISendTransactionRequest,
+  networkId: string,
+  accountAddr: string
+) => {
   console.log('userTx', userTx)
+  const txn = {
+    kind: 'calls' as const,
+    calls: [
+      {
+        to: userTx.txTarget,
+        value: BigInt(userTx.value),
+        data: userTx.txData
+      }
+    ]
+  }
+
+  return {
+    id: new Date().getTime(),
+    action: txn,
+    meta: {
+      isSignAction: true,
+      networkId,
+      accountAddr
+    }
+  } as SignUserRequest
 }
 
 export { getQuoteRouteSteps, buildSwapAndBridgeUserRequest }

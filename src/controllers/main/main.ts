@@ -1083,7 +1083,10 @@ export class MainController extends EventEmitter {
     await this.withStatus(
       'buildSwapAndBridgeUserRequest',
       async () => {
-        if (this.swapAndBridge.formStatus !== SwapAndBridgeFormStatus.ReadyToSubmit) {
+        if (
+          !this.accounts.selectedAccount ||
+          this.swapAndBridge.formStatus !== SwapAndBridgeFormStatus.ReadyToSubmit
+        ) {
           this.emitError({
             level: 'major',
             message: 'Unexpected error while building swap & bridge request',
@@ -1091,8 +1094,30 @@ export class MainController extends EventEmitter {
           })
         }
 
+        const account = this.accounts.accounts.find(
+          (a) => a.addr === this.accounts.selectedAccount
+        )!
+
         const firstTransaction = await this.swapAndBridge.getRouteStart()
-        buildSwapAndBridgeUserRequest(firstTransaction)
+        this.swapAndBridge.addActiveRoute({
+          activeRouteId: firstTransaction.activeRouteId,
+          userTxIndex: firstTransaction.userTxIndex
+        })
+        const userRequest = buildSwapAndBridgeUserRequest(
+          firstTransaction,
+          this.swapAndBridge.fromSelectedToken!.networkId,
+          account.addr
+        )
+
+        if (!userRequest) {
+          this.emitError({
+            level: 'major',
+            message: 'Unexpected error while building swap & bridge request',
+            error: new Error('buildSwapAndBridgeUserRequest: bad parameters passed')
+          })
+        }
+
+        await this.addUserRequest(userRequest, !account.creation, 'open')
       },
       true
     )

@@ -1,7 +1,11 @@
 import { formatUnits, parseUnits } from 'ethers'
 
 import { Fetch } from '../../interfaces/fetch'
-import { SocketAPIQuote, SocketAPIToken } from '../../interfaces/swapAndBridge'
+import {
+  SocketAPIQuote,
+  SocketAPISendTransactionRequest,
+  SocketAPIToken
+} from '../../interfaces/swapAndBridge'
 import { isSmartAccount } from '../../libs/account/account'
 import { TokenResult } from '../../libs/portfolio'
 import { getTokenAmount } from '../../libs/portfolio/helpers'
@@ -61,6 +65,12 @@ export class SwapAndBridgeController extends EventEmitter {
   toTokenList: SocketAPIToken[] = []
 
   routePriority: 'output' | 'time' = 'output'
+
+  activeRoutes: {
+    activeRouteId: SocketAPISendTransactionRequest['activeRouteId']
+    userTxIndex: SocketAPISendTransactionRequest['userTxIndex']
+    route: SocketAPIQuote['route']
+  }[] = []
 
   statuses: Statuses<keyof typeof STATUS_WRAPPED_METHODS> = STATUS_WRAPPED_METHODS
 
@@ -416,6 +426,17 @@ export class SwapAndBridgeController extends EventEmitter {
     })
 
     return routeResult
+  }
+
+  addActiveRoute(activeRoute: {
+    activeRouteId: SocketAPISendTransactionRequest['activeRouteId']
+    userTxIndex: SocketAPISendTransactionRequest['userTxIndex']
+  }) {
+    if (!this.quote?.route) return
+
+    this.activeRoutes.push({ ...activeRoute, route: this.quote.route })
+
+    this.emitUpdate()
   }
 
   #getIsFormValidToFetchQuote() {
