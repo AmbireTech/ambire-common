@@ -1,4 +1,5 @@
 import { Fetch, RequestInitWithCustomHeaders } from '../../interfaces/fetch'
+import { SocketAPIQuote } from '../../interfaces/swapAndBridge'
 import { AMBIRE_FEE_TAKER_ADDRESSES, NULL_ADDRESS, ZERO_ADDRESS } from './constants'
 
 /**
@@ -109,6 +110,41 @@ export class SocketAPI {
 
     response = await response.json()
     if (!response.success) throw new Error('Failed to fetch quote')
+
+    return response.result
+  }
+
+  async startRoute({
+    fromChainId,
+    toChainId,
+    fromAssetAddress,
+    toAssetAddress,
+    route
+  }: {
+    fromChainId: number
+    toChainId: number
+    fromAssetAddress: string
+    toAssetAddress: string
+    route: SocketAPIQuote['route']
+  }) {
+    const params = {
+      fromChainId,
+      toChainId,
+      fromAssetAddress,
+      toAssetAddress,
+      includeFirstTxDetails: true,
+      route
+    }
+
+    let response = await this.#fetch(`${this.#baseUrl}/route/start`, {
+      method: 'POST',
+      headers: this.#headers,
+      body: JSON.stringify(params)
+    })
+    if (!response.ok) throw new Error('Failed to start the route')
+
+    response = await response.json()
+    if (!response.success) throw new Error('Failed to start the route')
 
     return response.result
   }

@@ -123,8 +123,7 @@ export class SwapAndBridgeController extends EventEmitter {
 
     if (this.statuses.updateQuote !== 'INITIAL') return SwapAndBridgeFormStatus.FetchingRoutes
 
-    if (this.statuses.updateQuote === 'INITIAL' && !this.quote?.route)
-      return SwapAndBridgeFormStatus.NoRoutesFound
+    if (!this.quote?.route) return SwapAndBridgeFormStatus.NoRoutesFound
 
     return SwapAndBridgeFormStatus.ReadyToSubmit
   }
@@ -384,6 +383,20 @@ export class SwapAndBridgeController extends EventEmitter {
       },
       true
     )
+  }
+
+  async submitForm() {
+    if (this.formStatus !== SwapAndBridgeFormStatus.ReadyToSubmit) return
+
+    const routeResult = await this.#socketAPI.startRoute({
+      fromChainId: this.quote!.fromChainId,
+      fromAssetAddress: this.quote!.fromAsset.address,
+      toChainId: this.quote!.toChainId,
+      toAssetAddress: this.quote!.toAsset.address,
+      route: this.quote!.route
+    })
+
+    console.log(routeResult)
   }
 
   #getIsFormValidToFetchQuote() {
