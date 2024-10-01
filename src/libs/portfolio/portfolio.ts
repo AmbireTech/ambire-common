@@ -77,9 +77,18 @@ export class Portfolio {
     velcroUrl?: string
   ) {
     this.batchedVelcroDiscovery = batcher(fetch, (queue) => {
-      const baseCurrencies = [...new Set(queue.map((x) => x.data.baseCurrency))]
+      // Strip out duplicates, different parts of the code may request same data
+      // (example: requesting portfolio latest and pending)
+      const uniqueQueue = queue.filter(
+        (x, i, self) =>
+          i === self.findIndex((t) => t.data.accountAddr === x.data.accountAddr) &&
+          i === self.findIndex((t) => t.data.networkId === x.data.networkId) &&
+          i === self.findIndex((t) => t.data.baseCurrency === x.data.baseCurrency)
+      )
+
+      const baseCurrencies = [...new Set(uniqueQueue.map((x) => x.data.baseCurrency))]
       return baseCurrencies.map((baseCurrency) => {
-        const queueSegment = queue.filter((x) => x.data.baseCurrency === baseCurrency)
+        const queueSegment = uniqueQueue.filter((x) => x.data.baseCurrency === baseCurrency)
         const url = `${velcroUrl}/multi-hints?networks=${queueSegment
           .map((x) => x.data.networkId)
           .join(',')}&accounts=${queueSegment
