@@ -291,8 +291,24 @@ export async function getPlainTextSignature(
   }
 
   if (!accountState.isV2) {
+    const lowercaseHexAddrWithout0x = hexlify(toUtf8Bytes(account.addr.toLowerCase().slice(2)))
+    const checksummedHexAddrWithout0x = hexlify(toUtf8Bytes(account.addr.slice(2)))
+    const asciiAddrLowerCase = account.addr.toLowerCase()
     const humanReadableMsg = message instanceof Uint8Array ? hexlify(message) : message
-    if (humanReadableMsg.toLowerCase().indexOf(account.addr.toLowerCase()) !== -1) {
+
+    const isAsciiAddressInMessage = humanReadableMsg.toLowerCase().includes(asciiAddrLowerCase)
+    const isLowercaseHexAddressInMessage = humanReadableMsg.includes(
+      lowercaseHexAddrWithout0x.slice(2)
+    )
+    const isChecksummedHexAddressInMessage = humanReadableMsg.includes(
+      checksummedHexAddrWithout0x.slice(2)
+    )
+
+    if (
+      isAsciiAddressInMessage ||
+      isLowercaseHexAddressInMessage ||
+      isChecksummedHexAddressInMessage
+    ) {
       return wrapUnprotected(await signer.signMessage(messageHex))
     }
 
