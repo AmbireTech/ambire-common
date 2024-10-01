@@ -367,6 +367,7 @@ const init = async (
     providersCtrl,
     networksCtrl,
     accountsCtrl,
+    keystore,
     'https://staging-relayer.ambire.com',
     velcroUrl
   )
