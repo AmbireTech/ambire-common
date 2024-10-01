@@ -60,6 +60,8 @@ export class SwapAndBridgeController extends EventEmitter {
 
   toTokenList: SocketAPIToken[] = []
 
+  routePriority: 'output' | 'time' = 'output'
+
   statuses: Statuses<keyof typeof STATUS_WRAPPED_METHODS> = STATUS_WRAPPED_METHODS
 
   constructor({
@@ -153,6 +155,7 @@ export class SwapAndBridgeController extends EventEmitter {
     fromSelectedToken?: TokenResult | null
     toChainId?: bigint | number
     toSelectedToken?: SocketAPIToken | null
+    routePriority?: 'output' | 'time'
   }) {
     const {
       fromAmount,
@@ -161,7 +164,8 @@ export class SwapAndBridgeController extends EventEmitter {
       fromChainId,
       fromSelectedToken,
       toChainId,
-      toSelectedToken
+      toSelectedToken,
+      routePriority
     } = props
     if (fromAmount !== undefined) {
       this.fromAmount = fromAmount
@@ -232,9 +236,11 @@ export class SwapAndBridgeController extends EventEmitter {
     }
 
     if (fromChainId) {
-      this.fromChainId = Number(fromChainId)
-      // eslint-disable-next-line @typescript-eslint/no-floating-promises
-      this.updateToTokenList(true)
+      if (this.fromChainId !== Number(fromChainId)) {
+        this.fromChainId = Number(fromChainId)
+        // eslint-disable-next-line @typescript-eslint/no-floating-promises
+        this.updateToTokenList(true)
+      }
     }
 
     if (fromSelectedToken) {
@@ -246,13 +252,20 @@ export class SwapAndBridgeController extends EventEmitter {
     }
 
     if (toChainId) {
-      this.toChainId = Number(toChainId)
-      // eslint-disable-next-line @typescript-eslint/no-floating-promises
-      this.updateToTokenList(true)
+      if (this.toChainId !== Number(toChainId)) {
+        this.toChainId = Number(toChainId)
+        // eslint-disable-next-line @typescript-eslint/no-floating-promises
+        this.updateToTokenList(true)
+      }
     }
 
     if (toSelectedToken) {
       this.toSelectedToken = toSelectedToken
+    }
+
+    if (routePriority) {
+      this.routePriority = routePriority
+      if (this.quote) this.quote = null
     }
 
     this.#updateQuote()
@@ -286,26 +299,31 @@ export class SwapAndBridgeController extends EventEmitter {
   }
 
   async updateToTokenList(shouldReset: boolean) {
-    await this.withStatus('updateToTokenList', async () => {
-      if (!this.fromChainId || !this.toChainId) return
+    await this.withStatus(
+      'updateToTokenList',
+      async () => {
+        if (!this.fromChainId || !this.toChainId) return
 
-      if (shouldReset) {
-        this.toTokenList = []
-        this.emitUpdate()
-      }
+        if (shouldReset) {
+          this.toTokenList = []
+          this.emitUpdate()
+        }
 
-      this.toTokenList = await this.#socketAPI.getToTokenList({
-        fromChainId: this.fromChainId,
-        toChainId: this.toChainId
-      })
-
-      if (!this.toSelectedToken) {
-        this.updateForm({
-          toSelectedToken: this.toTokenList[0] || null
+        this.toTokenList = await this.#socketAPI.getToTokenList({
+          fromChainId: this.fromChainId,
+          toChainId: this.toChainId
         })
-      }
-      this.emitUpdate()
-    })
+
+        if (!this.toSelectedToken) {
+          this.updateForm({
+            toSelectedToken: this.toTokenList[0] || null
+          })
+        }
+        this.emitUpdate()
+      },
+      true,
+      'silent'
+    )
   }
 
   async #updateQuote() {
@@ -324,12 +342,10 @@ export class SwapAndBridgeController extends EventEmitter {
           (a) => a.addr === this.#accounts.selectedAccount
         )
 
-        const sanitizedFromAmount = getSanitizedAmount(
+        const bigNumberHexFromAmount = `0x${parseUnits(
           this.fromAmount,
           this.fromSelectedToken!.decimals
-        )
-
-        const bigNumberHexFromAmount = `0x${parseUnits(sanitizedFromAmount).toString(16)}`
+        ).toString(16)}`
 
         if (this.quote) {
           const isFromAmountSame =
@@ -366,7 +382,8 @@ export class SwapAndBridgeController extends EventEmitter {
           toTokenAddress: this.toSelectedToken!.address,
           fromAmount: BigInt(bigNumberHexFromAmount),
           userAddress: this.#accounts.selectedAccount!,
-          isSmartAccount: isSmartAccount(selectedAccount)
+          isSmartAccount: isSmartAccount(selectedAccount),
+          sort: this.routePriority
         })
 
         if (this.#getIsFormValidToFetchQuote() && quoteResult && quoteResult?.routes?.[0]) {

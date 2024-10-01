@@ -77,7 +77,8 @@ export class SocketAPI {
     toTokenAddress,
     fromAmount,
     userAddress,
-    isSmartAccount
+    isSmartAccount,
+    sort
   }: {
     fromChainId: number
     fromTokenAddress: string
@@ -86,6 +87,7 @@ export class SocketAPI {
     fromAmount: bigint
     userAddress: string
     isSmartAccount: boolean
+    sort: 'time' | 'output'
   }) {
     const params = new URLSearchParams({
       fromChainId: fromChainId.toString(),
@@ -97,11 +99,9 @@ export class SocketAPI {
       // TODO: Figure out why passing this prop is causing error 500 in the API
       // feeTakerAddress: AMBIRE_FEE_TAKER_ADDRESSES[fromChainId],
       isContractCall: isSmartAccount.toString(), // only get quotes with that are compatible with contracts
-      // TODO: To be discussed if we should allow user to change any of these below:
-      sort: 'time',
-      uniqueRoutesPerBridge: 'true', // return only best route per bridge using the sort criteria
-      defaultSwapSlippage: '0.5',
-      defaultBridgeSlippage: '0.5'
+      sort,
+      singleTxOnly: 'false',
+      defaultSwapSlippage: '1'
     })
     const url = `${this.#baseUrl}/quote?${params.toString()}`
 
