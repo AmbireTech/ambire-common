@@ -244,8 +244,16 @@ export class SwapAndBridgeController extends EventEmitter {
     }
 
     if (fromSelectedToken) {
-      this.fromSelectedToken = fromSelectedToken
+      if (this.fromSelectedToken?.networkId !== fromSelectedToken.networkId) {
+        const network = this.#networks.networks.find((n) => n.id === fromSelectedToken.networkId)
+        if (network) {
+          this.fromChainId = Number(network.chainId)
+          // eslint-disable-next-line @typescript-eslint/no-floating-promises
+          this.updateToTokenList(true)
+        }
+      }
 
+      this.fromSelectedToken = fromSelectedToken
       this.fromAmount = ''
       this.fromAmountInFiat = ''
       this.fromAmountFieldMode = 'token'
@@ -306,6 +314,7 @@ export class SwapAndBridgeController extends EventEmitter {
 
         if (shouldReset) {
           this.toTokenList = []
+          this.toSelectedToken = null
           this.emitUpdate()
         }
 
@@ -314,11 +323,8 @@ export class SwapAndBridgeController extends EventEmitter {
           toChainId: this.toChainId
         })
 
-        if (!this.toSelectedToken) {
-          this.updateForm({
-            toSelectedToken: this.toTokenList[0] || null
-          })
-        }
+        if (!this.toSelectedToken) this.updateForm({ toSelectedToken: this.toTokenList[0] || null })
+
         this.emitUpdate()
       },
       true,
@@ -342,14 +348,10 @@ export class SwapAndBridgeController extends EventEmitter {
           (a) => a.addr === this.#accounts.selectedAccount
         )
 
-        const bigNumberHexFromAmount = `0x${parseUnits(
-          this.fromAmount,
-          this.fromSelectedToken!.decimals
-        ).toString(16)}`
+        const bigintFromAmount = parseUnits(this.fromAmount, this.fromSelectedToken!.decimals)
 
         if (this.quote) {
-          const isFromAmountSame =
-            this.quote.route.fromAmount === BigInt(bigNumberHexFromAmount).toString()
+          const isFromAmountSame = this.quote.route.fromAmount === bigintFromAmount.toString()
           const isFromNetworkSame = this.quote.fromChainId === this.fromChainId
           const isFromAddressSame =
             formatNativeTokenAddressIfNeeded(this.quote.fromAsset.address) ===
@@ -380,7 +382,7 @@ export class SwapAndBridgeController extends EventEmitter {
           fromTokenAddress: this.fromSelectedToken!.address,
           toChainId: this.toChainId!,
           toTokenAddress: this.toSelectedToken!.address,
-          fromAmount: BigInt(bigNumberHexFromAmount),
+          fromAmount: bigintFromAmount,
           userAddress: this.#accounts.selectedAccount!,
           isSmartAccount: isSmartAccount(selectedAccount),
           sort: this.routePriority
@@ -402,7 +404,7 @@ export class SwapAndBridgeController extends EventEmitter {
     )
   }
 
-  async submitForm() {
+  async getRouteStart() {
     if (this.formStatus !== SwapAndBridgeFormStatus.ReadyToSubmit) return
 
     const routeResult = await this.#socketAPI.startRoute({
@@ -413,7 +415,7 @@ export class SwapAndBridgeController extends EventEmitter {
       route: this.quote!.route
     })
 
-    console.log(routeResult)
+    return routeResult
   }
 
   #getIsFormValidToFetchQuote() {

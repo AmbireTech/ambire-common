@@ -58,6 +58,7 @@ import {
   adjustEntryPointAuthorization,
   getEntryPointAuthorization
 } from '../../libs/signMessage/signMessage'
+import { buildSwapAndBridgeUserRequest } from '../../libs/swapAndBridge/swapAndBridge'
 import { debugTraceCall } from '../../libs/tracer/debugTraceCall'
 import { buildTransferUserRequest } from '../../libs/transfer/userRequest'
 import {
@@ -87,7 +88,7 @@ import { ProvidersController } from '../providers/providers'
 /* eslint-disable no-underscore-dangle */
 import { SignAccountOpController, SigningStatus } from '../signAccountOp/signAccountOp'
 import { SignMessageController } from '../signMessage/signMessage'
-import { SwapAndBridgeController } from '../swapAndBridge/swapAndBridge'
+import { SwapAndBridgeController, SwapAndBridgeFormStatus } from '../swapAndBridge/swapAndBridge'
 
 const STATUS_WRAPPED_METHODS = {
   onAccountAdderSuccess: 'INITIAL',
@@ -96,7 +97,8 @@ const STATUS_WRAPPED_METHODS = {
   removeAccount: 'INITIAL',
   handleAccountAdderInitLedger: 'INITIAL',
   handleAccountAdderInitLattice: 'INITIAL',
-  importSmartAccountFromDefaultSeed: 'INITIAL'
+  importSmartAccountFromDefaultSeed: 'INITIAL',
+  buildSwapAndBridgeUserRequest: 'INITIAL'
 } as const
 
 export class MainController extends EventEmitter {
@@ -1075,6 +1077,25 @@ export class MainController extends EventEmitter {
     }
 
     await this.addUserRequest(userRequest, !account.creation, executionType)
+  }
+
+  async buildSwapAndBridgeUserRequest() {
+    await this.withStatus(
+      'buildSwapAndBridgeUserRequest',
+      async () => {
+        if (this.swapAndBridge.formStatus !== SwapAndBridgeFormStatus.ReadyToSubmit) {
+          this.emitError({
+            level: 'major',
+            message: 'Unexpected error while building swap & bridge request',
+            error: new Error('buildSwapAndBridgeUserRequest: bad parameters passed')
+          })
+        }
+
+        const firstTransaction = await this.swapAndBridge.getRouteStart()
+        buildSwapAndBridgeUserRequest(firstTransaction)
+      },
+      true
+    )
   }
 
   resolveUserRequest(data: any, requestId: UserRequest['id']) {

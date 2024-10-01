@@ -23,4 +23,8 @@ const getQuoteRouteSteps = (userTxs: SocketAPIUserTx[]) => {
   }, [])
 }
 
-export { getQuoteRouteSteps }
+const buildSwapAndBridgeUserRequest = (userTx: SocketAPIUserTx) => {
+  console.log('userTx', userTx)
+}
+
+export { getQuoteRouteSteps, buildSwapAndBridgeUserRequest }
