@@ -142,6 +142,7 @@ export class SocketAPI {
     }
 
     let response = await this.#fetch(`${this.#baseUrl}/route/start`, {
+      // @ts-ignore
       method: 'POST',
       headers: this.#headers,
       body: JSON.stringify(params)
@@ -169,6 +170,19 @@ export class SocketAPI {
       txHash
     })
     const url = `${this.#baseUrl}/route/prepare?${params.toString()}`
+
+    let response = await this.#fetch(url, { headers: this.#headers })
+    if (!response.ok) throw new Error('Failed to update route')
+
+    response = await response.json()
+    if (!response.success) throw new Error('Failed to update route')
+
+    return response.result
+  }
+
+  async updateActiveRoute(activeRouteId: SocketAPISendTransactionRequest['activeRouteId']) {
+    const params = new URLSearchParams({ activeRouteId: activeRouteId.toString() })
+    const url = `${this.#baseUrl}/route/active-routes?${params.toString()}`
 
     let response = await this.#fetch(url, { headers: this.#headers })
     if (!response.ok) throw new Error('Failed to update route')

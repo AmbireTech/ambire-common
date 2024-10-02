@@ -165,5 +165,5 @@ export type ActiveRoute = {
   userTxIndex: SocketAPISendTransactionRequest['userTxIndex']
   userTxHash: string | null
   route: SocketAPIQuote['route']
-  routeStatus: 'in-progress' | 'ready' | 'completed'
+  routeStatus: 'waiting-to-be-started' | 'in-progress' | 'ready' | 'completed'
 }

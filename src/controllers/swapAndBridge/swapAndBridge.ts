@@ -1,6 +1,5 @@
 import { formatUnits, parseUnits } from 'ethers'
 
-import { Fetch } from '../../interfaces/fetch'
 import {
   ActiveRoute,
   SocketAPIQuote,
@@ -72,18 +71,18 @@ export class SwapAndBridgeController extends EventEmitter {
   statuses: Statuses<keyof typeof STATUS_WRAPPED_METHODS> = STATUS_WRAPPED_METHODS
 
   constructor({
-    fetch,
     accounts,
-    networks
+    networks,
+    socketAPI
   }: {
-    fetch: Fetch
     accounts: AccountsController
     networks: NetworksController
+    socketAPI: SocketAPI
   }) {
     super()
     this.#accounts = accounts
     this.#networks = networks
-    this.#socketAPI = new SocketAPI({ fetch })
+    this.#socketAPI = socketAPI
 
     this.emitUpdate()
   }
@@ -152,10 +151,17 @@ export class SwapAndBridgeController extends EventEmitter {
     return this.activeRoutes.filter((r) => r.routeStatus === 'in-progress' && r.userTxHash)
   }
 
-  init() {
+  initForm() {
     this.resetForm()
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.updateToTokenList(false)
+    this.activeRoutes.forEach((r) => {
+      // eslint-disable-next-line @typescript-eslint/no-floating-promises
+      ;(async () => {
+        const res = await this.#socketAPI.updateActiveRoute(r.activeRouteId)
+        this.updateActiveRoute(r.activeRouteId, { route: res })
+      })()
+    })
   }
 
   updateForm(props: {
@@ -468,7 +474,7 @@ export class SwapAndBridgeController extends EventEmitter {
       ...activeRoute,
       userTxHash: null,
       route: this.quote.route,
-      routeStatus: 'in-progress'
+      routeStatus: 'waiting-to-be-started'
     })
     this.resetForm()
 

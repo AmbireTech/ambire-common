@@ -72,6 +72,7 @@ import {
 } from '../../libs/userOperation/userOperation'
 import bundler from '../../services/bundlers'
 import { Bundler } from '../../services/bundlers/bundler'
+import { SocketAPI } from '../../services/socket/api'
 import { getIsViewOnly } from '../../utils/accounts'
 import shortenAddress from '../../utils/shortenAddress'
 import wait from '../../utils/wait'
@@ -146,6 +147,8 @@ export class MainController extends EventEmitter {
   emailVault: EmailVaultController
 
   signMessage: SignMessageController
+
+  #socketAPI: SocketAPI
 
   swapAndBridge: SwapAndBridgeController
 
@@ -267,10 +270,11 @@ export class MainController extends EventEmitter {
       this.accounts,
       this.#externalSignerControllers
     )
+    this.#socketAPI = new SocketAPI({ fetch: this.fetch })
     this.swapAndBridge = new SwapAndBridgeController({
-      fetch: this.fetch,
       accounts: this.accounts,
-      networks: this.networks
+      networks: this.networks,
+      socketAPI: this.#socketAPI
     })
     this.dapps = new DappsController(this.#storage)
     this.actions = new ActionsController({
@@ -1083,14 +1087,21 @@ export class MainController extends EventEmitter {
     await this.addUserRequest(userRequest, !account.creation, executionType)
   }
 
-  async buildSwapAndBridgeUserRequest() {
+  async buildSwapAndBridgeUserRequest(activeRouteId?: number) {
     await this.withStatus(
       'buildSwapAndBridgeUserRequest',
       async () => {
-        if (
-          !this.accounts.selectedAccount ||
-          this.swapAndBridge.formStatus !== SwapAndBridgeFormStatus.ReadyToSubmit
-        ) {
+        let transaction
+
+        if (this.swapAndBridge.formStatus === SwapAndBridgeFormStatus.ReadyToSubmit) {
+          transaction = await this.swapAndBridge.getRouteStartUserTx()
+        }
+
+        if (activeRouteId) {
+          transaction = await this.#socketAPI.getNextRouteUserTx(activeRouteId)
+        }
+
+        if (!this.accounts.selectedAccount || !transaction) {
           this.emitError({
             level: 'major',
             message: 'Unexpected error while building swap & bridge request',
@@ -1102,16 +1113,26 @@ export class MainController extends EventEmitter {
           (a) => a.addr === this.accounts.selectedAccount
         )!
 
-        const firstTransaction = await this.swapAndBridge.getRouteStartUserTx()
         const userRequest = buildSwapAndBridgeUserRequest(
-          firstTransaction,
+          transaction,
           this.swapAndBridge.fromSelectedToken!.networkId,
           account.addr
         )
-        this.swapAndBridge.addActiveRoute({
-          activeRouteId: firstTransaction.activeRouteId,
-          userTxIndex: firstTransaction.userTxIndex
-        })
+
+        if (this.swapAndBridge.formStatus === SwapAndBridgeFormStatus.ReadyToSubmit) {
+          this.swapAndBridge.addActiveRoute({
+            activeRouteId: transaction.activeRouteId,
+            userTxIndex: transaction.userTxIndex
+          })
+        }
+
+        if (activeRouteId) {
+          this.swapAndBridge.updateActiveRoute(activeRouteId, {
+            userTxIndex: transaction.userTxIndex,
+            userTxHash: null,
+            routeStatus: 'in-progress'
+          })
+        }
 
         if (!userRequest) {
           this.emitError({
@@ -1460,7 +1481,10 @@ export class MainController extends EventEmitter {
       this.callRelayer
     )
     if (typeof actionId === 'number') {
-      this.swapAndBridge.updateActiveRoute(actionId, { userTxHash: txnId })
+      this.swapAndBridge.updateActiveRoute(actionId, {
+        userTxHash: txnId,
+        routeStatus: 'in-progress'
+      })
     }
     this.actions.removeAction(actionId)
 
