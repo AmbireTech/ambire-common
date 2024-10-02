@@ -1,5 +1,5 @@
 import { Fetch, RequestInitWithCustomHeaders } from '../../interfaces/fetch'
-import { SocketAPIQuote } from '../../interfaces/swapAndBridge'
+import { SocketAPIQuote, SocketAPISendTransactionRequest } from '../../interfaces/swapAndBridge'
 import { AMBIRE_FEE_TAKER_ADDRESSES, NULL_ADDRESS, ZERO_ADDRESS } from './constants'
 
 /**
@@ -145,6 +145,44 @@ export class SocketAPI {
 
     response = await response.json()
     if (!response.success) throw new Error('Failed to start the route')
+
+    return response.result
+  }
+
+  async getRouteStatus({
+    activeRouteId,
+    userTxIndex,
+    txHash
+  }: {
+    activeRouteId: SocketAPISendTransactionRequest['activeRouteId']
+    userTxIndex: SocketAPISendTransactionRequest['userTxIndex']
+    txHash: string
+  }) {
+    const params = new URLSearchParams({
+      activeRouteId: activeRouteId.toString(),
+      userTxIndex: userTxIndex.toString(),
+      txHash
+    })
+    const url = `${this.#baseUrl}/route/prepare?${params.toString()}`
+
+    let response = await this.#fetch(url, { headers: this.#headers })
+    if (!response.ok) throw new Error('Failed to update route')
+
+    response = await response.json()
+    if (!response.success) throw new Error('Failed to update route')
+
+    return response.result
+  }
+
+  async getNextRouteUserTx(activeRouteId: SocketAPISendTransactionRequest['activeRouteId']) {
+    const params = new URLSearchParams({ activeRouteId: activeRouteId.toString() })
+    const url = `${this.#baseUrl}/route/build-next-tx?${params.toString()}`
+
+    let response = await this.#fetch(url, { headers: this.#headers })
+    if (!response.ok) throw new Error('Failed to build next route user tx')
+
+    response = await response.json()
+    if (!response.success) throw new Error('Failed to build next route user tx')
 
     return response.result
   }

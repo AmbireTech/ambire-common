@@ -34,26 +34,15 @@ const buildSwapAndBridgeUserRequest = (
   networkId: string,
   accountAddr: string
 ) => {
-  console.log('userTx', userTx)
   const txn = {
     kind: 'calls' as const,
-    calls: [
-      {
-        to: userTx.txTarget,
-        value: BigInt(userTx.value),
-        data: userTx.txData
-      }
-    ]
+    calls: [{ to: userTx.txTarget, value: BigInt(userTx.value), data: userTx.txData }]
   }
 
   return {
-    id: new Date().getTime(),
+    id: userTx.activeRouteId,
     action: txn,
-    meta: {
-      isSignAction: true,
-      networkId,
-      accountAddr
-    }
+    meta: { isSignAction: true, networkId, accountAddr }
   } as SignUserRequest
 }
 

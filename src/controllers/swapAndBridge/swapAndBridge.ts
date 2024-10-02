@@ -2,6 +2,7 @@ import { formatUnits, parseUnits } from 'ethers'
 
 import { Fetch } from '../../interfaces/fetch'
 import {
+  ActiveRoute,
   SocketAPIQuote,
   SocketAPISendTransactionRequest,
   SocketAPIToken
@@ -66,11 +67,7 @@ export class SwapAndBridgeController extends EventEmitter {
 
   routePriority: 'output' | 'time' = 'output'
 
-  activeRoutes: {
-    activeRouteId: SocketAPISendTransactionRequest['activeRouteId']
-    userTxIndex: SocketAPISendTransactionRequest['userTxIndex']
-    route: SocketAPIQuote['route']
-  }[] = []
+  activeRoutes: ActiveRoute[] = []
 
   statuses: Statuses<keyof typeof STATUS_WRAPPED_METHODS> = STATUS_WRAPPED_METHODS
 
@@ -152,7 +149,7 @@ export class SwapAndBridgeController extends EventEmitter {
   }
 
   init() {
-    this.reset()
+    this.resetForm()
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.updateToTokenList(false)
   }
@@ -254,7 +251,7 @@ export class SwapAndBridgeController extends EventEmitter {
     }
 
     if (fromSelectedToken) {
-      if (this.fromSelectedToken?.networkId !== fromSelectedToken.networkId) {
+      if (this.fromSelectedToken?.networkId !== fromSelectedToken?.networkId) {
         const network = this.#networks.networks.find((n) => n.id === fromSelectedToken.networkId)
         if (network) {
           this.fromChainId = Number(network.chainId)
@@ -290,7 +287,7 @@ export class SwapAndBridgeController extends EventEmitter {
     this.emitUpdate()
   }
 
-  reset() {
+  resetForm() {
     this.fromChainId = 1
     this.fromSelectedToken = null
     this.fromAmount = ''
@@ -300,6 +297,7 @@ export class SwapAndBridgeController extends EventEmitter {
     this.toSelectedToken = null
     this.quote = null
     this.portfolioTokenList = []
+    this.toTokenList = []
 
     this.emitUpdate()
   }
@@ -414,7 +412,7 @@ export class SwapAndBridgeController extends EventEmitter {
     )
   }
 
-  async getRouteStart() {
+  async getRouteStartUserTx() {
     if (this.formStatus !== SwapAndBridgeFormStatus.ReadyToSubmit) return
 
     const routeResult = await this.#socketAPI.startRoute({
@@ -428,13 +426,76 @@ export class SwapAndBridgeController extends EventEmitter {
     return routeResult
   }
 
+  async checkForNextUserTxForActiveRoutes() {
+    const routesWaitingNextTx = this.activeRoutes.filter((r) => r.userTxHash)
+
+    const fetchAndUpdateRoute = async (activeRoute: ActiveRoute) => {
+      const status = await this.#socketAPI.getRouteStatus({
+        activeRouteId: activeRoute.activeRouteId,
+        userTxIndex: activeRoute.userTxIndex,
+        txHash: activeRoute.userTxHash!
+      })
+      if (status === 'completed') {
+        this.removeActiveRoute(activeRoute.activeRouteId)
+      } else if (status === 'ready') {
+        this.updateActiveRoute(activeRoute.activeRouteId, {
+          routeStatus: 'ready'
+        })
+      }
+    }
+
+    await Promise.all(
+      routesWaitingNextTx.map(async (route) => {
+        await fetchAndUpdateRoute(route)
+      })
+    )
+  }
+
   addActiveRoute(activeRoute: {
     activeRouteId: SocketAPISendTransactionRequest['activeRouteId']
     userTxIndex: SocketAPISendTransactionRequest['userTxIndex']
   }) {
     if (!this.quote?.route) return
 
-    this.activeRoutes.push({ ...activeRoute, route: this.quote.route })
+    this.activeRoutes.push({
+      ...activeRoute,
+      userTxHash: null,
+      route: this.quote.route,
+      routeStatus: 'in-progress'
+    })
+    this.resetForm()
+
+    this.emitUpdate()
+  }
+
+  updateActiveRoute(
+    activeRouteId: SocketAPISendTransactionRequest['activeRouteId'],
+    activeRoute: Partial<ActiveRoute>
+  ) {
+    const activeRouteIndex = this.activeRoutes.findIndex((r) => r.activeRouteId === activeRouteId)
+
+    if (activeRouteIndex !== -1) {
+      this.activeRoutes[activeRouteIndex] = {
+        ...this.activeRoutes[activeRouteIndex],
+        ...activeRoute
+      }
+
+      this.emitUpdate()
+    }
+  }
+
+  removeActiveRoute(
+    activeRouteId: SocketAPISendTransactionRequest['activeRouteId'],
+    type: 'force-remove' | 'remove-if-needed' = 'force-remove'
+  ) {
+    const route = this.activeRoutes.find((r) => r.activeRouteId === activeRouteId)
+
+    // used to prevent removing the active route when removing the userRequests after a successful signing
+    if (type === 'remove-if-needed' && route?.userTxHash) {
+      return
+    }
+
+    this.activeRoutes = this.activeRoutes.filter((r) => r.activeRouteId !== activeRouteId)
 
     this.emitUpdate()
   }

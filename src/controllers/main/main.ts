@@ -33,7 +33,11 @@ import { Calls, DappUserRequest, SignUserRequest, UserRequest } from '../../inte
 import { WindowManager } from '../../interfaces/window'
 import { isSmartAccount } from '../../libs/account/account'
 import { AccountOp, AccountOpStatus, getSignableCalls } from '../../libs/accountOp/accountOp'
-import { AccountOpIdentifiedBy, SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
+import {
+  AccountOpIdentifiedBy,
+  pollTxnId,
+  SubmittedAccountOp
+} from '../../libs/accountOp/submittedAccountOp'
 import { Call } from '../../libs/accountOp/types'
 import {
   dappRequestMethodToActionKind,
@@ -1098,16 +1102,16 @@ export class MainController extends EventEmitter {
           (a) => a.addr === this.accounts.selectedAccount
         )!
 
-        const firstTransaction = await this.swapAndBridge.getRouteStart()
-        this.swapAndBridge.addActiveRoute({
-          activeRouteId: firstTransaction.activeRouteId,
-          userTxIndex: firstTransaction.userTxIndex
-        })
+        const firstTransaction = await this.swapAndBridge.getRouteStartUserTx()
         const userRequest = buildSwapAndBridgeUserRequest(
           firstTransaction,
           this.swapAndBridge.fromSelectedToken!.networkId,
           account.addr
         )
+        this.swapAndBridge.addActiveRoute({
+          activeRouteId: firstTransaction.activeRouteId,
+          userTxIndex: firstTransaction.userTxIndex
+        })
 
         if (!userRequest) {
           this.emitError({
@@ -1344,6 +1348,13 @@ export class MainController extends EventEmitter {
             this.destroySignAccOp()
           }
           this.actions.removeAction(`${meta.accountAddr}-${meta.networkId}`)
+          if (
+            this.swapAndBridge.activeRoutes.length &&
+            !this.userRequests.find((uReq) => uReq.id === id)
+          ) {
+            this.swapAndBridge.removeActiveRoute(id as number, 'remove-if-needed')
+          }
+
           this.updateSelectedAccountPortfolio(true, network)
         }
       } else {
@@ -1351,6 +1362,9 @@ export class MainController extends EventEmitter {
           this.destroySignAccOp()
         }
         this.actions.removeAction(id)
+        if (this.swapAndBridge.activeRoutes.length) {
+          this.swapAndBridge.removeActiveRoute(id as number, 'remove-if-needed')
+        }
         this.updateSelectedAccountPortfolio(true, network)
       }
     } else {
@@ -1415,16 +1429,14 @@ export class MainController extends EventEmitter {
     if (!accountOpAction) return
 
     const { accountOp } = accountOpAction as AccountOpAction
-    const chainId = this.networks.networks.find(
-      (network) => network.id === accountOp.networkId
-    )?.chainId
+    const network = this.networks.networks.find((n) => n.id === accountOp.networkId)
 
-    if (!chainId) return
+    if (!network) return
 
     const meta: SignUserRequest['meta'] = {
       isSignAction: true,
       accountAddr: accountOp.accountAddr,
-      chainId,
+      chainId: network.chainId,
       networkId: '',
       txnId: null,
       userOpHash: null
@@ -1441,13 +1453,22 @@ export class MainController extends EventEmitter {
       meta
     }
     await this.addUserRequest(benzinUserRequest, true)
+    const txnId = await pollTxnId(
+      data.submittedAccountOp.identifiedBy,
+      network,
+      this.fetch,
+      this.callRelayer
+    )
+    if (typeof actionId === 'number') {
+      this.swapAndBridge.updateActiveRoute(actionId, { userTxHash: txnId })
+    }
     this.actions.removeAction(actionId)
 
     // eslint-disable-next-line no-restricted-syntax
     for (const call of accountOp.calls) {
       const uReq = this.userRequests.find((r) => r.id === call.fromUserRequestId)
       if (uReq) {
-        uReq.dappPromise?.resolve(data)
+        uReq.dappPromise?.resolve({ hash: txnId })
         // eslint-disable-next-line no-await-in-loop
         this.removeUserRequest(uReq.id)
       }

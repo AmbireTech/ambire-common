@@ -159,3 +159,11 @@ export type SocketAPISendTransactionRequest = {
   userTxType: 'fund-movr' | 'dex-swap'
   value: string
 }
+
+export type ActiveRoute = {
+  activeRouteId: SocketAPISendTransactionRequest['activeRouteId']
+  userTxIndex: SocketAPISendTransactionRequest['userTxIndex']
+  userTxHash: string | null
+  route: SocketAPIQuote['route']
+  routeStatus: 'in-progress' | 'ready' | 'completed'
+}
