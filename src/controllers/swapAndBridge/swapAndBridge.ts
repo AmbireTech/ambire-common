@@ -148,6 +148,10 @@ export class SwapAndBridgeController extends EventEmitter {
     )
   }
 
+  get activeRoutesInProgress() {
+    return this.activeRoutes.filter((r) => r.routeStatus === 'in-progress' && r.userTxHash)
+  }
+
   init() {
     this.resetForm()
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
@@ -427,8 +431,6 @@ export class SwapAndBridgeController extends EventEmitter {
   }
 
   async checkForNextUserTxForActiveRoutes() {
-    const routesWaitingNextTx = this.activeRoutes.filter((r) => r.userTxHash)
-
     const fetchAndUpdateRoute = async (activeRoute: ActiveRoute) => {
       const status = await this.#socketAPI.getRouteStatus({
         activeRouteId: activeRoute.activeRouteId,
@@ -445,7 +447,7 @@ export class SwapAndBridgeController extends EventEmitter {
     }
 
     await Promise.all(
-      routesWaitingNextTx.map(async (route) => {
+      this.activeRoutesInProgress.map(async (route) => {
         await fetchAndUpdateRoute(route)
       })
     )
@@ -519,7 +521,8 @@ export class SwapAndBridgeController extends EventEmitter {
       maxFromAmount: this.maxFromAmount,
       maxFromAmountInFiat: this.maxFromAmountInFiat,
       validateFromAmount: this.validateFromAmount,
-      formStatus: this.formStatus
+      formStatus: this.formStatus,
+      activeRoutesInProgress: this.activeRoutesInProgress
     }
   }
 }
