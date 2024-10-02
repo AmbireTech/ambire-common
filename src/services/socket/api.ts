@@ -1,4 +1,5 @@
 import { Fetch, RequestInitWithCustomHeaders } from '../../interfaces/fetch'
+import { SocketAPIQuote, SocketAPISendTransactionRequest } from '../../interfaces/swapAndBridge'
 import { AMBIRE_FEE_TAKER_ADDRESSES, NULL_ADDRESS, ZERO_ADDRESS } from './constants'
 
 /**
@@ -76,15 +77,17 @@ export class SocketAPI {
     toTokenAddress,
     fromAmount,
     userAddress,
-    isSmartAccount
+    isSmartAccount,
+    sort
   }: {
     fromChainId: number
     fromTokenAddress: string
     toChainId: number
     toTokenAddress: string
-    fromAmount: string
+    fromAmount: bigint
     userAddress: string
     isSmartAccount: boolean
+    sort: 'time' | 'output'
   }) {
     const params = new URLSearchParams({
       fromChainId: fromChainId.toString(),
@@ -96,11 +99,9 @@ export class SocketAPI {
       // TODO: Figure out why passing this prop is causing error 500 in the API
       // feeTakerAddress: AMBIRE_FEE_TAKER_ADDRESSES[fromChainId],
       isContractCall: isSmartAccount.toString(), // only get quotes with that are compatible with contracts
-      // TODO: To be discussed if we should allow user to change any of these below:
-      sort: 'time',
-      uniqueRoutesPerBridge: 'true', // return only best route per bridge using the sort criteria
-      defaultSwapSlippage: '0.5',
-      defaultBridgeSlippage: '0.5'
+      sort,
+      singleTxOnly: 'false',
+      defaultSwapSlippage: '1'
     })
     const url = `${this.#baseUrl}/quote?${params.toString()}`
 
@@ -109,6 +110,79 @@ export class SocketAPI {
 
     response = await response.json()
     if (!response.success) throw new Error('Failed to fetch quote')
+
+    return response.result
+  }
+
+  async startRoute({
+    fromChainId,
+    toChainId,
+    fromAssetAddress,
+    toAssetAddress,
+    route
+  }: {
+    fromChainId: number
+    toChainId: number
+    fromAssetAddress: string
+    toAssetAddress: string
+    route: SocketAPIQuote['route']
+  }) {
+    const params = {
+      fromChainId,
+      toChainId,
+      fromAssetAddress,
+      toAssetAddress,
+      includeFirstTxDetails: true,
+      route
+    }
+
+    let response = await this.#fetch(`${this.#baseUrl}/route/start`, {
+      method: 'POST',
+      headers: this.#headers,
+      body: JSON.stringify(params)
+    })
+    if (!response.ok) throw new Error('Failed to start the route')
+
+    response = await response.json()
+    if (!response.success) throw new Error('Failed to start the route')
+
+    return response.result
+  }
+
+  async getRouteStatus({
+    activeRouteId,
+    userTxIndex,
+    txHash
+  }: {
+    activeRouteId: SocketAPISendTransactionRequest['activeRouteId']
+    userTxIndex: SocketAPISendTransactionRequest['userTxIndex']
+    txHash: string
+  }) {
+    const params = new URLSearchParams({
+      activeRouteId: activeRouteId.toString(),
+      userTxIndex: userTxIndex.toString(),
+      txHash
+    })
+    const url = `${this.#baseUrl}/route/prepare?${params.toString()}`
+
+    let response = await this.#fetch(url, { headers: this.#headers })
+    if (!response.ok) throw new Error('Failed to update route')
+
+    response = await response.json()
+    if (!response.success) throw new Error('Failed to update route')
+
+    return response.result
+  }
+
+  async getNextRouteUserTx(activeRouteId: SocketAPISendTransactionRequest['activeRouteId']) {
+    const params = new URLSearchParams({ activeRouteId: activeRouteId.toString() })
+    const url = `${this.#baseUrl}/route/build-next-tx?${params.toString()}`
+
+    let response = await this.#fetch(url, { headers: this.#headers })
+    if (!response.ok) throw new Error('Failed to build next route user tx')
+
+    response = await response.json()
+    if (!response.success) throw new Error('Failed to build next route user tx')
 
     return response.result
   }

@@ -33,7 +33,11 @@ import { Calls, DappUserRequest, SignUserRequest, UserRequest } from '../../inte
 import { WindowManager } from '../../interfaces/window'
 import { isSmartAccount } from '../../libs/account/account'
 import { AccountOp, AccountOpStatus, getSignableCalls } from '../../libs/accountOp/accountOp'
-import { AccountOpIdentifiedBy, SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
+import {
+  AccountOpIdentifiedBy,
+  pollTxnId,
+  SubmittedAccountOp
+} from '../../libs/accountOp/submittedAccountOp'
 import { Call } from '../../libs/accountOp/types'
 import {
   dappRequestMethodToActionKind,
@@ -58,6 +62,7 @@ import {
   adjustEntryPointAuthorization,
   getEntryPointAuthorization
 } from '../../libs/signMessage/signMessage'
+import { buildSwapAndBridgeUserRequest } from '../../libs/swapAndBridge/swapAndBridge'
 import { debugTraceCall } from '../../libs/tracer/debugTraceCall'
 import { buildTransferUserRequest } from '../../libs/transfer/userRequest'
 import {
@@ -87,7 +92,7 @@ import { ProvidersController } from '../providers/providers'
 /* eslint-disable no-underscore-dangle */
 import { SignAccountOpController, SigningStatus } from '../signAccountOp/signAccountOp'
 import { SignMessageController } from '../signMessage/signMessage'
-import { SwapAndBridgeController } from '../swapAndBridge/swapAndBridge'
+import { SwapAndBridgeController, SwapAndBridgeFormStatus } from '../swapAndBridge/swapAndBridge'
 
 const STATUS_WRAPPED_METHODS = {
   onAccountAdderSuccess: 'INITIAL',
@@ -96,7 +101,8 @@ const STATUS_WRAPPED_METHODS = {
   removeAccount: 'INITIAL',
   handleAccountAdderInitLedger: 'INITIAL',
   handleAccountAdderInitLattice: 'INITIAL',
-  importSmartAccountFromDefaultSeed: 'INITIAL'
+  importSmartAccountFromDefaultSeed: 'INITIAL',
+  buildSwapAndBridgeUserRequest: 'INITIAL'
 } as const
 
 export class MainController extends EventEmitter {
@@ -261,7 +267,11 @@ export class MainController extends EventEmitter {
       this.accounts,
       this.#externalSignerControllers
     )
-    this.swapAndBridge = new SwapAndBridgeController({ fetch: this.fetch, accounts: this.accounts })
+    this.swapAndBridge = new SwapAndBridgeController({
+      fetch: this.fetch,
+      accounts: this.accounts,
+      networks: this.networks
+    })
     this.dapps = new DappsController(this.#storage)
     this.actions = new ActionsController({
       accounts: this.accounts,
@@ -306,12 +316,6 @@ export class MainController extends EventEmitter {
     // TODO: We agreed to always fetch the latest and pending states.
     // To achieve this, we need to refactor how we use forceUpdate to obtain pending state updates.
     this.updateSelectedAccountPortfolio(true)
-
-    // TODO: Temporarily update token list on load, but ideally, this should get
-    // initially triggered only when user lands on the Swap & Bridge screen.
-    await this.swapAndBridge.updateFromTokenList()
-    await this.swapAndBridge.updateToTokenList()
-    // await this.swapAndBridge.updateQuote()
 
     /**
      * Listener that gets triggered as a finalization step of adding new
@@ -1079,6 +1083,50 @@ export class MainController extends EventEmitter {
     await this.addUserRequest(userRequest, !account.creation, executionType)
   }
 
+  async buildSwapAndBridgeUserRequest() {
+    await this.withStatus(
+      'buildSwapAndBridgeUserRequest',
+      async () => {
+        if (
+          !this.accounts.selectedAccount ||
+          this.swapAndBridge.formStatus !== SwapAndBridgeFormStatus.ReadyToSubmit
+        ) {
+          this.emitError({
+            level: 'major',
+            message: 'Unexpected error while building swap & bridge request',
+            error: new Error('buildSwapAndBridgeUserRequest: bad parameters passed')
+          })
+        }
+
+        const account = this.accounts.accounts.find(
+          (a) => a.addr === this.accounts.selectedAccount
+        )!
+
+        const firstTransaction = await this.swapAndBridge.getRouteStartUserTx()
+        const userRequest = buildSwapAndBridgeUserRequest(
+          firstTransaction,
+          this.swapAndBridge.fromSelectedToken!.networkId,
+          account.addr
+        )
+        this.swapAndBridge.addActiveRoute({
+          activeRouteId: firstTransaction.activeRouteId,
+          userTxIndex: firstTransaction.userTxIndex
+        })
+
+        if (!userRequest) {
+          this.emitError({
+            level: 'major',
+            message: 'Unexpected error while building swap & bridge request',
+            error: new Error('buildSwapAndBridgeUserRequest: bad parameters passed')
+          })
+        }
+
+        await this.addUserRequest(userRequest, !account.creation, 'open')
+      },
+      true
+    )
+  }
+
   resolveUserRequest(data: any, requestId: UserRequest['id']) {
     const userRequest = this.userRequests.find((r) => r.id === requestId)
     if (!userRequest) return // TODO: emit error
@@ -1300,6 +1348,13 @@ export class MainController extends EventEmitter {
             this.destroySignAccOp()
           }
           this.actions.removeAction(`${meta.accountAddr}-${meta.networkId}`)
+          if (
+            this.swapAndBridge.activeRoutes.length &&
+            !this.userRequests.find((uReq) => uReq.id === id)
+          ) {
+            this.swapAndBridge.removeActiveRoute(id as number, 'remove-if-needed')
+          }
+
           this.updateSelectedAccountPortfolio(true, network)
         }
       } else {
@@ -1307,6 +1362,9 @@ export class MainController extends EventEmitter {
           this.destroySignAccOp()
         }
         this.actions.removeAction(id)
+        if (this.swapAndBridge.activeRoutes.length) {
+          this.swapAndBridge.removeActiveRoute(id as number, 'remove-if-needed')
+        }
         this.updateSelectedAccountPortfolio(true, network)
       }
     } else {
@@ -1371,16 +1429,14 @@ export class MainController extends EventEmitter {
     if (!accountOpAction) return
 
     const { accountOp } = accountOpAction as AccountOpAction
-    const chainId = this.networks.networks.find(
-      (network) => network.id === accountOp.networkId
-    )?.chainId
+    const network = this.networks.networks.find((n) => n.id === accountOp.networkId)
 
-    if (!chainId) return
+    if (!network) return
 
     const meta: SignUserRequest['meta'] = {
       isSignAction: true,
       accountAddr: accountOp.accountAddr,
-      chainId,
+      chainId: network.chainId,
       networkId: '',
       txnId: null,
       userOpHash: null
@@ -1397,13 +1453,22 @@ export class MainController extends EventEmitter {
       meta
     }
     await this.addUserRequest(benzinUserRequest, true)
+    const txnId = await pollTxnId(
+      data.submittedAccountOp.identifiedBy,
+      network,
+      this.fetch,
+      this.callRelayer
+    )
+    if (typeof actionId === 'number') {
+      this.swapAndBridge.updateActiveRoute(actionId, { userTxHash: txnId })
+    }
     this.actions.removeAction(actionId)
 
     // eslint-disable-next-line no-restricted-syntax
     for (const call of accountOp.calls) {
       const uReq = this.userRequests.find((r) => r.id === call.fromUserRequestId)
       if (uReq) {
-        uReq.dappPromise?.resolve(data)
+        uReq.dappPromise?.resolve({ hash: txnId })
         // eslint-disable-next-line no-await-in-loop
         this.removeUserRequest(uReq.id)
       }
