@@ -1,13 +1,18 @@
 import { Fetch, RequestInitWithCustomHeaders } from '../../interfaces/fetch'
 import { SocketAPIQuote, SocketAPISendTransactionRequest } from '../../interfaces/swapAndBridge'
-import { AMBIRE_FEE_TAKER_ADDRESSES, NULL_ADDRESS, ZERO_ADDRESS } from './constants'
+import {
+  AMBIRE_FEE_TAKER_ADDRESSES,
+  L2_ZERO_ADDRESS,
+  NULL_ADDRESS,
+  ZERO_ADDRESS
+} from './constants'
 
 /**
  * Socket API expects to receive null address instead of the zero address for
  * native tokens.
  */
 const normalizeNativeTokenAddressIfNeeded = (addr: string) =>
-  addr === ZERO_ADDRESS ? NULL_ADDRESS : addr
+  [ZERO_ADDRESS, L2_ZERO_ADDRESS].includes(addr) ? NULL_ADDRESS : addr
 
 export class SocketAPI {
   #fetch: Fetch

@@ -1,4 +1,5 @@
 export const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000'
+export const L2_ZERO_ADDRESS = '0xdeaddeaddeaddeaddeaddeaddeaddeaddead0000'
 
 // Yes, this is a real address. It's similar to the zero address. It's just a fancy
 // looking address that nobody knows the private key of. Some people use it to burn funds.
