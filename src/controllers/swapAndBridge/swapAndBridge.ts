@@ -401,13 +401,18 @@ export class SwapAndBridgeController extends EventEmitter {
         })
 
         if (this.#getIsFormValidToFetchQuote() && quoteResult && quoteResult?.routes?.[0]) {
+          const bestRoute =
+            this.routePriority === 'output'
+              ? quoteResult.routes[0] // API returns highest output first
+              : quoteResult.routes[quoteResult.routes.length - 1] // API returns fastest... last
+
           this.quote = {
             fromAsset: quoteResult.fromAsset,
             fromChainId: quoteResult.fromChainId,
             toAsset: quoteResult.toAsset,
             toChainId: quoteResult.toChainId,
-            route: quoteResult.routes[0],
-            routeSteps: getQuoteRouteSteps(quoteResult.routes[0].userTxs)
+            route: bestRoute,
+            routeSteps: getQuoteRouteSteps(bestRoute.userTxs)
           }
           this.emitUpdate()
         }
