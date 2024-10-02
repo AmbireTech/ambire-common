@@ -1,5 +1,5 @@
 {
-  "version": "2.25.0",
+  "version": "2.26.0",
   "name": "ambire-common",
   "description": "Common ground for the Ambire apps",
   "scripts": {
@@ -43,6 +43,9 @@
     "@ensdomains/dnsprovejs": "^0.4.1",
     "@nomicfoundation/hardhat-chai-matchers": "^2.0.1",
     "@nomicfoundation/hardhat-ethers": "^3.0.0",
+    "@nomicfoundation/hardhat-verify": "^2.0.11",
+    "@nomiclabs/hardhat-etherscan": "^3.1.8",
+    "@openzeppelin/contracts": "^4.9.6",
     "@types/aes-js": "^3.1.1",
     "@types/chai": "^4.3.4",
     "@types/jest": "^26.0.14",
