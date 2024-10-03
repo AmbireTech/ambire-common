@@ -1126,21 +1126,6 @@ export class MainController extends EventEmitter {
 
         const userRequest = buildSwapAndBridgeUserRequest(transaction, network.id, account.addr)
 
-        if (this.swapAndBridge.formStatus === SwapAndBridgeFormStatus.ReadyToSubmit) {
-          this.swapAndBridge.addActiveRoute({
-            activeRouteId: transaction.activeRouteId,
-            userTxIndex: transaction.userTxIndex
-          })
-        }
-
-        if (activeRouteId) {
-          this.swapAndBridge.updateActiveRoute(activeRouteId, {
-            userTxIndex: transaction.userTxIndex,
-            userTxHash: null,
-            routeStatus: 'in-progress'
-          })
-        }
-
         if (!userRequest) {
           this.emitError({
             level: 'major',
@@ -1164,6 +1149,21 @@ export class MainController extends EventEmitter {
           transaction.approvalData ? false : !account.creation,
           transaction.approvalData ? 'queue' : 'open'
         )
+
+        if (this.swapAndBridge.formStatus === SwapAndBridgeFormStatus.ReadyToSubmit) {
+          await this.swapAndBridge.addActiveRoute({
+            activeRouteId: transaction.activeRouteId,
+            userTxIndex: transaction.userTxIndex
+          })
+        }
+
+        if (activeRouteId) {
+          await this.swapAndBridge.updateActiveRoute(activeRouteId, {
+            userTxIndex: transaction.userTxIndex,
+            userTxHash: null,
+            routeStatus: 'in-progress'
+          })
+        }
       },
       true
     )
@@ -1510,12 +1510,11 @@ export class MainController extends EventEmitter {
       (r) => r.meta.activeRouteId && !r.meta.isApproval
     )
 
-    swapAndBridgeUserRequests.forEach((r) => {
-      this.swapAndBridge.updateActiveRoute(r.meta.activeRouteId, {
-        userTxHash: txnId,
-        routeStatus: 'in-progress'
+    await Promise.all(
+      swapAndBridgeUserRequests.map(async (r) => {
+        await this.swapAndBridge.updateActiveRoute(r.meta.activeRouteId, { userTxHash: txnId })
       })
-    })
+    )
 
     this.actions.removeAction(actionId)
 

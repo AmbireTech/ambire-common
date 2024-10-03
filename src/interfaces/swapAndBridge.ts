@@ -171,6 +171,12 @@ export type ActiveRoute = {
   activeRouteId: SocketAPISendTransactionRequest['activeRouteId']
   userTxIndex: SocketAPISendTransactionRequest['userTxIndex']
   userTxHash: string | null
-  route: SocketAPIQuote['route']
-  routeStatus: 'waiting-to-be-started' | 'in-progress' | 'ready' | 'completed'
+  route: Omit<SocketAPIQuote['route'], 'serviceTime' | 'maxServiceTime'> & {
+    createdAt: string
+    updatedAt: string
+    routeStatus: string
+    currentUserTxIndex: number
+    transactionData: { txHash: string }[] | null
+  }
+  routeStatus: 'in-progress' | 'ready' | 'completed'
 }

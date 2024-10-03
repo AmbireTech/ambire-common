@@ -12,7 +12,7 @@ import { getTokenAmount } from '../../libs/portfolio/helpers'
 import { getQuoteRouteSteps, sortTokenListResponse } from '../../libs/swapAndBridge/swapAndBridge'
 import { getSanitizedAmount } from '../../libs/transfer/amount'
 import { formatNativeTokenAddressIfNeeded } from '../../services/address'
-import { normalizeNativeTokenAddressIfNeeded, SocketAPI } from '../../services/socket/api'
+import { SocketAPI } from '../../services/socket/api'
 import { validateSendTransferAmount } from '../../services/validations/validate'
 import { convertTokenPriceToBigInt } from '../../utils/numbers/formatters'
 import { AccountsController } from '../accounts/accounts'
@@ -157,10 +157,7 @@ export class SwapAndBridgeController extends EventEmitter {
     this.updateToTokenList(false)
     this.activeRoutes.forEach((r) => {
       // eslint-disable-next-line @typescript-eslint/no-floating-promises
-      ;(async () => {
-        const res = await this.#socketAPI.updateActiveRoute(r.activeRouteId)
-        this.updateActiveRoute(r.activeRouteId, { route: res })
-      })()
+      this.updateActiveRoute(r.activeRouteId)
     })
   }
 
@@ -450,9 +447,11 @@ export class SwapAndBridgeController extends EventEmitter {
         txHash: activeRoute.userTxHash!
       })
       if (status === 'completed') {
-        this.removeActiveRoute(activeRoute.activeRouteId)
+        await this.updateActiveRoute(activeRoute.activeRouteId, {
+          routeStatus: 'completed'
+        })
       } else if (status === 'ready') {
-        this.updateActiveRoute(activeRoute.activeRouteId, {
+        await this.updateActiveRoute(activeRoute.activeRouteId, {
           routeStatus: 'ready'
         })
       }
@@ -465,34 +464,42 @@ export class SwapAndBridgeController extends EventEmitter {
     )
   }
 
-  addActiveRoute(activeRoute: {
+  async addActiveRoute(activeRoute: {
     activeRouteId: SocketAPISendTransactionRequest['activeRouteId']
     userTxIndex: SocketAPISendTransactionRequest['userTxIndex']
   }) {
-    if (!this.quote?.route) return
-
+    const route = await this.#socketAPI.updateActiveRoute(activeRoute.activeRouteId)
     this.activeRoutes.push({
       ...activeRoute,
+      routeStatus: 'in-progress',
       userTxHash: null,
-      route: this.quote.route,
-      routeStatus: 'waiting-to-be-started'
+      route
     })
     this.resetForm()
 
     this.emitUpdate()
   }
 
-  updateActiveRoute(
+  async updateActiveRoute(
     activeRouteId: SocketAPISendTransactionRequest['activeRouteId'],
-    activeRoute: Partial<ActiveRoute>
+    activeRoute?: Partial<ActiveRoute>
   ) {
     const activeRouteIndex = this.activeRoutes.findIndex((r) => r.activeRouteId === activeRouteId)
 
     if (activeRouteIndex !== -1) {
-      this.activeRoutes[activeRouteIndex] = {
-        ...this.activeRoutes[activeRouteIndex],
-        ...activeRoute
+      const route = await this.#socketAPI.updateActiveRoute(activeRouteId)
+
+      console.log('1', this.activeRoutes[activeRouteIndex])
+      if (activeRoute) {
+        this.activeRoutes[activeRouteIndex] = {
+          ...this.activeRoutes[activeRouteIndex],
+          ...activeRoute,
+          route
+        }
+      } else {
+        this.activeRoutes[activeRouteIndex] = { ...this.activeRoutes[activeRouteIndex], route }
       }
+      console.log('2', this.activeRoutes[activeRouteIndex])
 
       this.emitUpdate()
     }
