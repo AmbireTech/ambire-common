@@ -14,7 +14,10 @@ export const sortTokenListResponse = (
 ) => {
   const normalizedPortfolioTokenList = accountPortfolioTokenList.map((t) => ({
     ...t,
-    address: normalizeNativeTokenAddressIfNeeded(t.address)
+    address: normalizeNativeTokenAddressIfNeeded(
+      // incoming token addresses from Socket (to compare against) are lowercased
+      t.address.toLowerCase()
+    )
   }))
 
   return (
