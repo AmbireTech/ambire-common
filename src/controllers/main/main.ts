@@ -63,7 +63,10 @@ import {
   adjustEntryPointAuthorization,
   getEntryPointAuthorization
 } from '../../libs/signMessage/signMessage'
-import { buildSwapAndBridgeUserRequest } from '../../libs/swapAndBridge/swapAndBridge'
+import {
+  buildSwapAndBridgeApproveUserRequest,
+  buildSwapAndBridgeUserRequest
+} from '../../libs/swapAndBridge/swapAndBridge'
 import { debugTraceCall } from '../../libs/tracer/debugTraceCall'
 import { buildTransferUserRequest } from '../../libs/transfer/userRequest'
 import {
@@ -1146,7 +1149,21 @@ export class MainController extends EventEmitter {
           })
         }
 
-        await this.addUserRequest(userRequest, !account.creation, 'open')
+        if (transaction.approvalData) {
+          const approvalUserRequest = await buildSwapAndBridgeApproveUserRequest(
+            transaction.approvalData!,
+            transaction.activeRouteId,
+            network.id,
+            account.addr
+          )
+          await this.addUserRequest(approvalUserRequest, !account.creation, 'open')
+        }
+
+        await this.addUserRequest(
+          userRequest,
+          transaction.approvalData ? false : !account.creation,
+          transaction.approvalData ? 'queue' : 'open'
+        )
       },
       true
     )
@@ -1484,12 +1501,22 @@ export class MainController extends EventEmitter {
       this.fetch,
       this.callRelayer
     )
-    if (typeof actionId === 'number') {
-      this.swapAndBridge.updateActiveRoute(actionId, {
+
+    const accountOpUserRequests = this.userRequests.filter((r) =>
+      accountOp.calls.some((c) => c.fromUserRequestId === r.id)
+    )
+
+    const swapAndBridgeUserRequests = accountOpUserRequests.filter(
+      (r) => r.meta.activeRouteId && !r.meta.isApproval
+    )
+
+    swapAndBridgeUserRequests.forEach((r) => {
+      this.swapAndBridge.updateActiveRoute(r.meta.activeRouteId, {
         userTxHash: txnId,
         routeStatus: 'in-progress'
       })
-    }
+    })
+
     this.actions.removeAction(actionId)
 
     // eslint-disable-next-line no-restricted-syntax

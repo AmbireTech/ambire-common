@@ -65,7 +65,7 @@ export interface SocketAPISwapUserTx {
     feesInUsd: number
     asset: SocketAPIToken
   }
-  approvalData: unknown
+  approvalData: SocketAPIUserTxApprovalData | null
 }
 
 export interface SocketAPIBridgeUserTx {
@@ -89,7 +89,7 @@ export interface SocketAPIBridgeUserTx {
   }
   chainId: number
   bridgeSlippage: number
-  approvalData: unknown
+  approvalData: SocketAPIUserTxApprovalData | null
 }
 
 export interface SocketApiSwapStep {
@@ -147,9 +147,16 @@ export type SocketAPIStep = SocketApiSwapStep | SocketApiBridgeStep
 
 export type SocketAPIUserTx = SocketAPISwapUserTx | SocketAPIBridgeUserTx
 
+export type SocketAPIUserTxApprovalData = {
+  allowanceTarget: string
+  approvalTokenAddress: string
+  minimumApprovalAmount: string
+  owner: string
+}
+
 export type SocketAPISendTransactionRequest = {
   activeRouteId: number
-  approvalData: any
+  approvalData: SocketAPIUserTxApprovalData | null
   chainId: number
   totalUserTx: number
   txData: string

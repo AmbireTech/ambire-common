@@ -1,8 +1,12 @@
+import { Interface } from 'ethers'
+
+import ERC20 from '../../../contracts/compiled/IERC20.json'
 import {
   SocketAPISendTransactionRequest,
   SocketAPIStep,
   SocketAPIToken,
-  SocketAPIUserTx
+  SocketAPIUserTx,
+  SocketAPIUserTxApprovalData
 } from '../../interfaces/swapAndBridge'
 import { SignUserRequest } from '../../interfaces/userRequest'
 import { normalizeNativeTokenAddressIfNeeded } from '../../services/socket/api'
@@ -59,6 +63,34 @@ const getQuoteRouteSteps = (userTxs: SocketAPIUserTx[]) => {
   }, [])
 }
 
+const buildSwapAndBridgeApproveUserRequest = (
+  approveData: SocketAPIUserTxApprovalData,
+  activeRouteId: number,
+  networkId: string,
+  accountAddr: string
+) => {
+  const erc20Interface = new Interface(ERC20.abi)
+  const txn = {
+    kind: 'calls' as const,
+    calls: [
+      {
+        to: approveData.approvalTokenAddress,
+        value: BigInt('0'),
+        data: erc20Interface.encodeFunctionData('approve', [
+          approveData.allowanceTarget,
+          BigInt(approveData.minimumApprovalAmount)
+        ])
+      }
+    ]
+  }
+
+  return {
+    id: `${activeRouteId}-approval`,
+    action: txn,
+    meta: { isSignAction: true, networkId, accountAddr, activeRouteId, isApproval: true }
+  } as SignUserRequest
+}
+
 const buildSwapAndBridgeUserRequest = (
   userTx: SocketAPISendTransactionRequest,
   networkId: string,
@@ -72,8 +104,8 @@ const buildSwapAndBridgeUserRequest = (
   return {
     id: userTx.activeRouteId,
     action: txn,
-    meta: { isSignAction: true, networkId, accountAddr }
+    meta: { isSignAction: true, networkId, accountAddr, activeRouteId: userTx.activeRouteId }
   } as SignUserRequest
 }
 
-export { getQuoteRouteSteps, buildSwapAndBridgeUserRequest }
+export { getQuoteRouteSteps, buildSwapAndBridgeApproveUserRequest, buildSwapAndBridgeUserRequest }
