@@ -2,6 +2,7 @@
 import { ethErrors } from 'eth-rpc-errors'
 /* eslint-disable @typescript-eslint/brace-style */
 import { getAddress, getBigInt, Interface, isAddress } from 'ethers'
+import { SocketAPISendTransactionRequest } from 'interfaces/swapAndBridge'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json'
@@ -1091,7 +1092,7 @@ export class MainController extends EventEmitter {
     await this.withStatus(
       'buildSwapAndBridgeUserRequest',
       async () => {
-        let transaction
+        let transaction: SocketAPISendTransactionRequest | null = null
 
         if (this.swapAndBridge.formStatus === SwapAndBridgeFormStatus.ReadyToSubmit) {
           transaction = await this.swapAndBridge.getRouteStartUserTx()
@@ -1101,23 +1102,26 @@ export class MainController extends EventEmitter {
           transaction = await this.#socketAPI.getNextRouteUserTx(activeRouteId)
         }
 
+        console.log('transaction', transaction)
+
         if (!this.accounts.selectedAccount || !transaction) {
           this.emitError({
             level: 'major',
             message: 'Unexpected error while building swap & bridge request',
             error: new Error('buildSwapAndBridgeUserRequest: bad parameters passed')
           })
+          return
         }
 
         const account = this.accounts.accounts.find(
           (a) => a.addr === this.accounts.selectedAccount
         )!
 
-        const userRequest = buildSwapAndBridgeUserRequest(
-          transaction,
-          this.swapAndBridge.fromSelectedToken!.networkId,
-          account.addr
-        )
+        const network = this.networks.networks.find(
+          (n) => Number(n.chainId) === transaction!.chainId
+        )!
+
+        const userRequest = buildSwapAndBridgeUserRequest(transaction, network.id, account.addr)
 
         if (this.swapAndBridge.formStatus === SwapAndBridgeFormStatus.ReadyToSubmit) {
           this.swapAndBridge.addActiveRoute({
