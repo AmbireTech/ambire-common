@@ -1,5 +1,9 @@
 import { Fetch, RequestInitWithCustomHeaders } from '../../interfaces/fetch'
-import { SocketAPIQuote, SocketAPISendTransactionRequest } from '../../interfaces/swapAndBridge'
+import {
+  SocketAPIQuote,
+  SocketAPISendTransactionRequest,
+  SocketAPIToken
+} from '../../interfaces/swapAndBridge'
 import {
   AMBIRE_FEE_TAKER_ADDRESSES,
   L2_ZERO_ADDRESS,
@@ -42,10 +46,18 @@ export class SocketAPI {
     }
   }
 
-  async getToTokenList({ fromChainId, toChainId }: { fromChainId: number; toChainId: number }) {
+  async getToTokenList({
+    fromChainId,
+    toChainId
+  }: {
+    fromChainId: number
+    toChainId: number
+  }): Promise<SocketAPIToken[]> {
     const params = new URLSearchParams({
       fromChainId: fromChainId.toString(),
-      toChainId: toChainId.toString()
+      toChainId: toChainId.toString(),
+      // TODO: To be discussed
+      isShortList: 'false'
     })
     const url = `${this.#baseUrl}/token-lists/to-token-list?${params.toString()}`
 
