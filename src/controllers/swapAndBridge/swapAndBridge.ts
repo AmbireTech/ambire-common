@@ -9,10 +9,10 @@ import {
 import { isSmartAccount } from '../../libs/account/account'
 import { TokenResult } from '../../libs/portfolio'
 import { getTokenAmount } from '../../libs/portfolio/helpers'
-import { getQuoteRouteSteps } from '../../libs/swapAndBridge/swapAndBridge'
+import { getQuoteRouteSteps, sortTokenListResponse } from '../../libs/swapAndBridge/swapAndBridge'
 import { getSanitizedAmount } from '../../libs/transfer/amount'
 import { formatNativeTokenAddressIfNeeded } from '../../services/address'
-import { SocketAPI } from '../../services/socket/api'
+import { normalizeNativeTokenAddressIfNeeded, SocketAPI } from '../../services/socket/api'
 import { validateSendTransferAmount } from '../../services/validations/validate'
 import { convertTokenPriceToBigInt } from '../../utils/numbers/formatters'
 import { AccountsController } from '../accounts/accounts'
@@ -336,10 +336,11 @@ export class SwapAndBridgeController extends EventEmitter {
           this.emitUpdate()
         }
 
-        this.toTokenList = await this.#socketAPI.getToTokenList({
+        const toTokenListResponse = await this.#socketAPI.getToTokenList({
           fromChainId: this.fromChainId,
           toChainId: this.toChainId
         })
+        this.toTokenList = sortTokenListResponse(toTokenListResponse, this.portfolioTokenList)
 
         if (!this.toSelectedToken) this.updateForm({ toSelectedToken: this.toTokenList[0] || null })
 
