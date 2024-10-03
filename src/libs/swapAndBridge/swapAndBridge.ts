@@ -43,7 +43,7 @@ export const sortTokenListResponse = (
 const getQuoteRouteSteps = (userTxs: SocketAPIUserTx[]) => {
   return userTxs.reduce((stepsAcc: SocketAPIStep[], tx) => {
     if (tx.userTxType === 'fund-movr') {
-      tx.steps.forEach((s) => stepsAcc.push(s))
+      tx.steps.forEach((s) => stepsAcc.push({ ...s, userTxIndex: tx.userTxIndex }))
     }
     if (tx.userTxType === 'dex-swap') {
       stepsAcc.push({
@@ -56,7 +56,8 @@ const getQuoteRouteSteps = (userTxs: SocketAPIUserTx[]) => {
         swapSlippage: tx.swapSlippage,
         toAmount: tx.toAmount,
         toAsset: tx.toAsset,
-        type: 'swap'
+        type: 'swap',
+        userTxIndex: tx.userTxIndex
       })
     }
     return stepsAcc

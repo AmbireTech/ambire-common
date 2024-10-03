@@ -44,7 +44,7 @@ export class SwapAndBridgeController extends EventEmitter {
 
   #socketAPI: SocketAPI
 
-  sessionId: string
+  sessionId: string | null = null
 
   fromChainId: number | null = 1
 
@@ -157,7 +157,7 @@ export class SwapAndBridgeController extends EventEmitter {
     this.resetForm()
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.updateToTokenList(false)
-    this.activeRoutes = this.activeRoutes.filter((r) => r.routeStatus === 'completed')
+    this.activeRoutes = this.activeRoutes.filter((r) => r.routeStatus !== 'completed')
     this.activeRoutes.forEach((r) => {
       // eslint-disable-next-line @typescript-eslint/no-floating-promises
       this.updateActiveRoute(r.activeRouteId)
@@ -446,11 +446,17 @@ export class SwapAndBridgeController extends EventEmitter {
 
   async checkForNextUserTxForActiveRoutes() {
     const fetchAndUpdateRoute = async (activeRoute: ActiveRoute) => {
-      const status = await this.#socketAPI.getRouteStatus({
-        activeRouteId: activeRoute.activeRouteId,
-        userTxIndex: activeRoute.userTxIndex,
-        txHash: activeRoute.userTxHash!
-      })
+      let status: 'ready' | 'completed' | null = null
+      try {
+        status = await this.#socketAPI.getRouteStatus({
+          activeRouteId: activeRoute.activeRouteId,
+          userTxIndex: activeRoute.userTxIndex,
+          txHash: activeRoute.userTxHash!
+        })
+      } catch (error) {
+        console.error(error)
+      }
+
       if (status === 'completed') {
         await this.updateActiveRoute(activeRoute.activeRouteId, {
           routeStatus: 'completed'

@@ -112,6 +112,7 @@ export interface SocketApiSwapStep {
   toAmount: string
   toAsset: SocketAPIToken
   type: 'middleware' | 'swap'
+  userTxIndex?: number
 }
 
 export interface SocketApiBridgeStep {
@@ -141,6 +142,7 @@ export interface SocketApiBridgeStep {
   serviceTime: number
   maxServiceTime: number
   type: 'bridge'
+  userTxIndex?: number
 }
 
 export type SocketAPIStep = SocketApiSwapStep | SocketApiBridgeStep
