@@ -11,7 +11,7 @@ import {
  * Socket API expects to receive null address instead of the zero address for
  * native tokens.
  */
-const normalizeNativeTokenAddressIfNeeded = (addr: string) =>
+export const normalizeNativeTokenAddressIfNeeded = (addr: string) =>
   [ZERO_ADDRESS, L2_ZERO_ADDRESS].includes(addr) ? NULL_ADDRESS : addr
 
 export class SocketAPI {
