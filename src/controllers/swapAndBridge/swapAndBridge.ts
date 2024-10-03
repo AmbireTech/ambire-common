@@ -44,6 +44,8 @@ export class SwapAndBridgeController extends EventEmitter {
 
   #socketAPI: SocketAPI
 
+  sessionId: string
+
   fromChainId: number | null = 1
 
   fromSelectedToken: TokenResult | null = null
@@ -151,14 +153,17 @@ export class SwapAndBridgeController extends EventEmitter {
     return this.activeRoutes.filter((r) => r.routeStatus === 'in-progress' && r.userTxHash)
   }
 
-  initForm() {
+  initForm(sessionId: string) {
     this.resetForm()
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.updateToTokenList(false)
+    this.activeRoutes = this.activeRoutes.filter((r) => r.routeStatus === 'completed')
     this.activeRoutes.forEach((r) => {
       // eslint-disable-next-line @typescript-eslint/no-floating-promises
       this.updateActiveRoute(r.activeRouteId)
     })
+    this.sessionId = sessionId
+    this.emitUpdate()
   }
 
   updateForm(props: {
