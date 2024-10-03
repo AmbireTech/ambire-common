@@ -179,6 +179,7 @@ export type ActiveRoute = {
     routeStatus: string
     currentUserTxIndex: number
     transactionData: { txHash: string }[] | null
+    userAddress: string
   }
   routeStatus: 'in-progress' | 'ready' | 'completed'
 }

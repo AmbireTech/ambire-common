@@ -500,7 +500,6 @@ export class SwapAndBridgeController extends EventEmitter {
     if (activeRouteIndex !== -1) {
       const route = await this.#socketAPI.updateActiveRoute(activeRouteId)
 
-      console.log('1', this.activeRoutes[activeRouteIndex])
       if (activeRoute) {
         this.activeRoutes[activeRouteIndex] = {
           ...this.activeRoutes[activeRouteIndex],
@@ -510,7 +509,6 @@ export class SwapAndBridgeController extends EventEmitter {
       } else {
         this.activeRoutes[activeRouteIndex] = { ...this.activeRoutes[activeRouteIndex], route }
       }
-      console.log('2', this.activeRoutes[activeRouteIndex])
 
       this.emitUpdate()
     }
