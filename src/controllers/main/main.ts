@@ -331,9 +331,9 @@ export class MainController extends EventEmitter {
           await this.keystore.addKeys(this.accountAdder.readyToAddKeys.internal)
           await this.keystore.addKeysExternallyStored(this.accountAdder.readyToAddKeys.external)
 
-          // Update the default seed `hdPathTemplate` if accounts were added from
-          // the default seed, so when user opts in to "Import a new Smart Account
-          // from the default Seed Phrase" the next account is derived based
+          // Update the saved seed `hdPathTemplate` if accounts were added from
+          // the saved seed, so when user opts in to "Import a new Smart Account
+          // from the saved Seed Phrase" the next account is derived based
           // on the latest `hdPathTemplate` chosen in the AccountAdder.
           if (this.accountAdder.isInitializedWithDefaultSeed)
             this.keystore.changeDefaultSeedHdPathTemplateIfNeeded(this.accountAdder.hdPathTemplate)
@@ -352,7 +352,7 @@ export class MainController extends EventEmitter {
       'importSmartAccountFromDefaultSeed',
       async () => {
         if (this.accountAdder.isInitialized) this.accountAdder.reset()
-        if (seed && !this.keystore.hasKeystoreDefaultSeed) {
+        if (seed && !this.keystore.hasKeystoreSavedSeed) {
           await this.keystore.addSeed({ seed, hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE })
         }
 
@@ -360,9 +360,9 @@ export class MainController extends EventEmitter {
         if (!defaultSeed) {
           throw new EmittableError({
             message:
-              'Failed to retrieve default seed phrase from keystore. Please try again or contact Ambire support if the issue persists.',
+              'Failed to retrieve saved seed phrase from keystore. Please try again or contact Ambire support if the issue persists.',
             level: 'major',
-            error: new Error('failed to retrieve default seed phrase from keystore')
+            error: new Error('failed to retrieve saved seed phrase from keystore')
           })
         }
 

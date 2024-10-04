@@ -233,7 +233,7 @@ export class AccountAdderController extends EventEmitter {
   async #isKeyIteratorInitializedWithTheDefaultSeed() {
     if (this.#keyIterator?.subType !== 'seed') return false
 
-    if (!this.#keystore.hasKeystoreDefaultSeed) return false
+    if (!this.#keystore.hasKeystoreSavedSeed) return false
 
     const defaultSeed = await this.#keystore.getDefaultSeed()
     if (!defaultSeed) return false

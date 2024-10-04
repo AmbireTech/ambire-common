@@ -520,16 +520,16 @@ describe('KeystoreController', () => {
     expect(keystore.keys.length).toBe(keyLengthBefore - 2)
   })
   test('should add keystore default seed phrase', async () => {
-    expect(!!keystore.hasKeystoreDefaultSeed).toBeFalsy()
+    expect(!!keystore.hasKeystoreSavedSeed).toBeFalsy()
     expect(keystore.isUnlocked).toBeTruthy()
     await keystore.addSeed({
       seed: process.env.SEED,
       hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
     })
-    expect(!!keystore.hasKeystoreDefaultSeed).toBeTruthy()
+    expect(!!keystore.hasKeystoreSavedSeed).toBeTruthy()
   })
   test('should get default seed phrase', async () => {
-    expect(!!keystore.hasKeystoreDefaultSeed).toBeTruthy()
+    expect(!!keystore.hasKeystoreSavedSeed).toBeTruthy()
     const decryptedDefaultSeedPhrase = await keystore.getDefaultSeed()
     expect(decryptedDefaultSeedPhrase.seed).toEqual(process.env.SEED)
     expect(decryptedDefaultSeedPhrase.hdPathTemplate).toEqual(BIP44_STANDARD_DERIVATION_TEMPLATE)

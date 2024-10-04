@@ -418,10 +418,10 @@ export class KeystoreController extends EventEmitter {
     }
 
     // Currently we support only one seed phrase to be added to the keystore
-    // this fist seed phrase will become the default seed phrase of the wallet
+    // this fist seed phrase will become the saved seed phrase of the wallet
     if (this.#keystoreSeeds.length) {
       throw new EmittableError({
-        message: 'You can have only one default seed phrase for that wallet',
+        message: 'You can have only one saved seed phrase for that wallet',
         level: 'major',
         error: new Error(
           'keystore: seed phase already added. Storing multiple seed phrases not supported yet'
@@ -456,7 +456,7 @@ export class KeystoreController extends EventEmitter {
     const isTheSameHdPathTemplate = this.#keystoreSeeds[0].hdPathTemplate === nextHdPathTemplate
     if (isTheSameHdPathTemplate) return
 
-    // As of v4.33.0 we support only one seed phrase (default seed) to be added to the keystore
+    // As of v4.33.0 we support only one seed phrase (saved seed) to be added to the keystore
     this.#keystoreSeeds[0].hdPathTemplate = nextHdPathTemplate
     await this.#storage.set('keystoreSeeds', this.#keystoreSeeds)
 
@@ -801,7 +801,7 @@ export class KeystoreController extends EventEmitter {
     return this.#keystoreSecrets.some((x) => x.id === 'password')
   }
 
-  get hasKeystoreDefaultSeed() {
+  get hasKeystoreSavedSeed() {
     return !!this.#keystoreSeeds.length
   }
 
@@ -812,7 +812,7 @@ export class KeystoreController extends EventEmitter {
       isUnlocked: this.isUnlocked, // includes the getter in the stringified instance
       keys: this.keys,
       hasPasswordSecret: this.hasPasswordSecret,
-      hasKeystoreDefaultSeed: this.hasKeystoreDefaultSeed
+      hasKeystoreSavedSeed: this.hasKeystoreSavedSeed
     }
   }
 }
