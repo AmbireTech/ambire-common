@@ -121,6 +121,12 @@ const supportedProtocols: SupportedProtocolType[] = [
     protocols: [],
     balancesProvider: '',
     nftsProvider: ''
+  },
+  {
+    network: 'sei',
+    protocols: [],
+    balancesProvider: '',
+    nftsProvider: ''
   }
   // {
   //     network: 'cronos',
