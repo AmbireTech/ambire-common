@@ -2,6 +2,8 @@ import { Interface } from 'ethers'
 
 import ERC20 from '../../../contracts/compiled/IERC20.json'
 import {
+  ActiveRoute,
+  SocketAPIBridgeUserTx,
   SocketAPISendTransactionRequest,
   SocketAPIStep,
   SocketAPIToken,
@@ -64,6 +66,31 @@ const getQuoteRouteSteps = (userTxs: SocketAPIUserTx[]) => {
   }, [])
 }
 
+const getActiveRoutesLowestServiceTime = (activeRoutes: ActiveRoute[]) => {
+  const serviceTimes: number[] = []
+
+  activeRoutes.forEach((r) =>
+    r.route.userTxs.forEach((tx) => {
+      if ((tx as SocketAPIBridgeUserTx).serviceTime) {
+        serviceTimes.push((tx as SocketAPIBridgeUserTx).serviceTime)
+      }
+    })
+  )
+
+  return serviceTimes.sort((a, b) => a - b)[0]
+}
+
+const getActiveRoutesUpdateInterval = (minServiceTime?: number) => {
+  if (!minServiceTime) return 6000
+
+  if (minServiceTime < 60) return 4000
+  if (minServiceTime <= 180) return 5000
+  if (minServiceTime <= 300) return 7000
+  if (minServiceTime <= 600) return 10000
+
+  return 15000
+}
+
 const buildSwapAndBridgeApproveUserRequest = (
   approveData: SocketAPIUserTxApprovalData,
   activeRouteId: number,
@@ -109,4 +136,10 @@ const buildSwapAndBridgeUserRequest = (
   } as SignUserRequest
 }
 
-export { getQuoteRouteSteps, buildSwapAndBridgeApproveUserRequest, buildSwapAndBridgeUserRequest }
+export {
+  getQuoteRouteSteps,
+  getActiveRoutesLowestServiceTime,
+  getActiveRoutesUpdateInterval,
+  buildSwapAndBridgeApproveUserRequest,
+  buildSwapAndBridgeUserRequest
+}
