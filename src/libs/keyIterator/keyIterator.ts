@@ -7,7 +7,7 @@ import {
 } from '../../consts/derivation'
 import { SelectedAccountForImport } from '../../interfaces/account'
 import { KeyIterator as KeyIteratorInterface } from '../../interfaces/keyIterator'
-import { InternalKeyType, Key } from '../../interfaces/keystore'
+import { Key } from '../../interfaces/keystore'
 import { getHdPathFromTemplate } from '../../utils/hdPath'
 import { isDerivedForSmartAccountKeyOnly } from '../account/account'
 import { getDefaultKeyLabel, getExistingKeyLabel } from '../keys/keys'
@@ -104,8 +104,7 @@ export class KeyIterator implements KeyIteratorInterface {
   retrieveInternalKeys(
     selectedAccountsForImport: SelectedAccountForImport[],
     hdPathTemplate: HD_PATH_TEMPLATE_TYPE,
-    keystoreKeys: Key[],
-    isFromSavedSeed: boolean
+    keystoreKeys: Key[]
   ) {
     return selectedAccountsForImport.flatMap((acc) => {
       // Should never happen
@@ -128,9 +127,6 @@ export class KeyIterator implements KeyIteratorInterface {
             {
               addr: new Wallet(privateKey).address,
               type: 'internal' as 'internal',
-              subType: isFromSavedSeed
-                ? ('savedSeed' as InternalKeyType)
-                : ('notSavedSeed' as InternalKeyType),
               label:
                 getExistingKeyLabel(keystoreKeys, acc.account.addr, this.type) ||
                 getDefaultKeyLabel(
@@ -170,7 +166,6 @@ export class KeyIterator implements KeyIteratorInterface {
           {
             addr: new Wallet(this.#privateKey).address,
             type: 'internal' as 'internal',
-            subType: 'notSavedSeed' as InternalKeyType,
             label:
               getExistingKeyLabel(keystoreKeys, acc.account.addr, this.type) ||
               getDefaultKeyLabel(

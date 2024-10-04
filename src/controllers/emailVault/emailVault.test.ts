@@ -148,7 +148,6 @@ describe('happy cases', () => {
       {
         addr: keys[0].address,
         type: 'internal',
-        subType: 'notSavedSeed',
         label: 'Key 1',
         privateKey: keys[0].privateKey,
         dedicatedToOneSA: false,
@@ -161,7 +160,6 @@ describe('happy cases', () => {
       {
         addr: keys[1].address,
         type: 'internal',
-        subType: 'notSavedSeed',
         label: 'Key 2',
         privateKey: keys[1].privateKey,
         dedicatedToOneSA: false,

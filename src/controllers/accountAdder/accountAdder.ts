@@ -105,10 +105,6 @@ export class AccountAdderController extends EventEmitter {
   // leading to unpredictable behavior on the AccountAdderScreen
   #alreadyImportedAccountsOnControllerInit: Account[] = []
 
-  // indicates whether the account adder is initialized with the saved
-  // seed in the extension
-  #isFromSavedSeed: boolean = false
-
   constructor({
     accounts,
     keystore,
@@ -258,8 +254,7 @@ export class AccountAdderController extends EventEmitter {
     pageSize,
     hdPathTemplate,
     shouldSearchForLinkedAccounts = DEFAULT_SHOULD_SEARCH_FOR_LINKED_ACCOUNTS,
-    shouldGetAccountsUsedOnNetworks = DEFAULT_SHOULD_GET_ACCOUNTS_USED_ON_NETWORKS,
-    isFromSavedSeed = false
+    shouldGetAccountsUsedOnNetworks = DEFAULT_SHOULD_GET_ACCOUNTS_USED_ON_NETWORKS
   }: {
     keyIterator: KeyIterator | null
     page?: number
@@ -267,7 +262,6 @@ export class AccountAdderController extends EventEmitter {
     hdPathTemplate: HD_PATH_TEMPLATE_TYPE
     shouldSearchForLinkedAccounts?: boolean
     shouldGetAccountsUsedOnNetworks?: boolean
-    isFromSavedSeed?: boolean
   }) {
     this.#keyIterator = keyIterator
     if (!this.#keyIterator) return this.#throwMissingKeyIterator()
@@ -280,7 +274,6 @@ export class AccountAdderController extends EventEmitter {
     this.#alreadyImportedAccountsOnControllerInit = this.#accounts.accounts
     this.shouldSearchForLinkedAccounts = shouldSearchForLinkedAccounts
     this.shouldGetAccountsUsedOnNetworks = shouldGetAccountsUsedOnNetworks
-    this.#isFromSavedSeed = isFromSavedSeed
 
     this.emitUpdate()
   }
@@ -462,8 +455,7 @@ export class AccountAdderController extends EventEmitter {
     return this.#keyIterator?.retrieveInternalKeys(
       this.selectedAccounts,
       this.hdPathTemplate,
-      this.#keystore.keys,
-      this.#isFromSavedSeed
+      this.#keystore.keys
     )
   }
 

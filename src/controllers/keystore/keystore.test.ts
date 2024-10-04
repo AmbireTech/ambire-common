@@ -13,7 +13,7 @@ import { describe, expect, test } from '@jest/globals'
 import { produceMemoryStore } from '../../../test/helpers'
 import { suppressConsoleBeforeEach } from '../../../test/helpers/console'
 import { BIP44_STANDARD_DERIVATION_TEMPLATE } from '../../consts/derivation'
-import { ExternalKey, InternalKeyType, Key } from '../../interfaces/keystore'
+import { ExternalKey, Key } from '../../interfaces/keystore'
 import { getPrivateKeyFromSeed } from '../../libs/keyIterator/keyIterator'
 import { stripHexPrefix } from '../../utils/stripHexPrefix'
 import { KeystoreController } from './keystore'
@@ -162,7 +162,6 @@ describe('KeystoreController', () => {
         addr: new Wallet(privKey).address,
         label: 'Key 1',
         type: 'internal',
-        subType: 'notSavedSeed',
         privateKey: privKey,
         dedicatedToOneSA: true,
         meta: {
@@ -190,7 +189,6 @@ describe('KeystoreController', () => {
         addr: new Wallet(privKey).address,
         label: 'Key 1',
         type: 'internal' as 'internal',
-        subType: 'notSavedSeed' as InternalKeyType,
         privateKey: privKey,
         dedicatedToOneSA: false,
         meta: {
@@ -201,7 +199,6 @@ describe('KeystoreController', () => {
         addr: new Wallet(privKey).address,
         label: 'Key 2',
         type: 'internal' as 'internal',
-        subType: 'notSavedSeed' as InternalKeyType,
         privateKey: privKey,
         dedicatedToOneSA: false,
         meta: {
@@ -219,7 +216,6 @@ describe('KeystoreController', () => {
         addr: new Wallet(anotherPrivateKeyNotAddedYet).address,
         label: 'Key 2',
         type: 'internal' as 'internal',
-        subType: 'notSavedSeed' as InternalKeyType,
         privateKey: anotherPrivateKeyNotAddedYet,
         dedicatedToOneSA: false,
         meta: {
@@ -231,7 +227,6 @@ describe('KeystoreController', () => {
         addr: new Wallet(anotherPrivateKeyNotAddedYet).address,
         label: 'Key 2',
         type: 'internal' as 'internal',
-        subType: 'notSavedSeed' as InternalKeyType,
         privateKey: anotherPrivateKeyNotAddedYet,
         dedicatedToOneSA: false,
         meta: {
@@ -606,7 +601,6 @@ describe('import/export with pub key test', () => {
         addr: wallet.address,
         label: 'Key 1',
         type: 'internal',
-        subType: 'notSavedSeed',
         privateKey: wallet.privateKey.slice(2),
         dedicatedToOneSA: false,
         meta: { createdAt: new Date().getTime() }

@@ -26,7 +26,6 @@ import { HD_PATH_TEMPLATE_TYPE } from '../../consts/derivation'
 import {
   ExternalKey,
   InternalKey,
-  InternalKeyType,
   Key,
   KeyPreferences,
   KeystoreSeed,
@@ -386,7 +385,14 @@ export class KeystoreController extends EventEmitter {
       // way TypeScript will be able to narrow down the types properly and infer
       // the return type of the map function correctly.
       if (type === 'internal') {
-        return { addr, type, label, dedicatedToOneSA, meta, isExternallyStored: false }
+        return {
+          addr,
+          type,
+          label,
+          dedicatedToOneSA,
+          meta,
+          isExternallyStored: false
+        }
       }
 
       return {
@@ -533,7 +539,7 @@ export class KeystoreController extends EventEmitter {
     const keys = this.#keystoreKeys
 
     const newKeys: StoredKey[] = uniqueKeysToAdd
-      .map(({ addr, type, subType, label, privateKey, dedicatedToOneSA, meta }) => {
+      .map(({ addr, type, label, privateKey, dedicatedToOneSA, meta }) => {
         // eslint-disable-next-line no-param-reassign
         privateKey = privateKey.substring(0, 2) === '0x' ? privateKey.substring(2) : privateKey
 
@@ -544,7 +550,6 @@ export class KeystoreController extends EventEmitter {
         return {
           addr,
           type,
-          subType,
           label,
           dedicatedToOneSA,
           privKey: hexlify(aesCtr.encrypt(aes.utils.hex.toBytes(privateKey))), // TODO: consider a MAC?
@@ -662,7 +667,6 @@ export class KeystoreController extends EventEmitter {
       addr: Key['addr']
       label: string
       type: 'internal'
-      subType: InternalKeyType
       privateKey: string
       dedicatedToOneSA: Key['dedicatedToOneSA']
       meta: InternalKey['meta']
@@ -671,7 +675,6 @@ export class KeystoreController extends EventEmitter {
       privateKey,
       label: getDefaultKeyLabel(this.keys, 0),
       type: 'internal',
-      subType: 'notSavedSeed',
       dedicatedToOneSA,
       meta: {
         createdAt: new Date().getTime()
