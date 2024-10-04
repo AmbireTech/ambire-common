@@ -372,7 +372,8 @@ export class MainController extends EventEmitter {
           hdPathTemplate: defaultSeed.hdPathTemplate,
           pageSize: 1,
           shouldGetAccountsUsedOnNetworks: false,
-          shouldSearchForLinkedAccounts: false
+          shouldSearchForLinkedAccounts: false,
+          isFromSavedSeed: true
         })
 
         let currentPage: number = 1

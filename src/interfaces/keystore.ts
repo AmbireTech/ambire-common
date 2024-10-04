@@ -97,9 +97,12 @@ export const standardSigningOnlyPriv =
 export const dedicatedToOneSAPriv =
   '0x0000000000000000000000000000000000000000000000000000000000000002'
 
+export type InternalKeyType = 'savedSeed' | 'notSavedSeed'
+
 export type InternalKey = {
   addr: Account['addr']
   type: 'internal'
+  subType?: InternalKeyType
   label: string
   dedicatedToOneSA: boolean
   meta: {
@@ -139,6 +142,7 @@ export type ReadyToAddKeys = {
     addr: Key['addr']
     label: string
     type: 'internal'
+    subType: InternalKeyType
     privateKey: string
     dedicatedToOneSA: Key['dedicatedToOneSA']
     meta: InternalKey['meta']

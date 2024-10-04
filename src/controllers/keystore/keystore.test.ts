@@ -6,13 +6,14 @@
 
 import { Encrypted } from 'eth-crypto'
 import { ethers, Wallet } from 'ethers'
+import { EventEmitter } from 'stream'
 
 import { describe, expect, test } from '@jest/globals'
 
 import { produceMemoryStore } from '../../../test/helpers'
 import { suppressConsoleBeforeEach } from '../../../test/helpers/console'
 import { BIP44_STANDARD_DERIVATION_TEMPLATE } from '../../consts/derivation'
-import { ExternalKey, Key } from '../../interfaces/keystore'
+import { ExternalKey, InternalKeyType, Key } from '../../interfaces/keystore'
 import { getPrivateKeyFromSeed } from '../../libs/keyIterator/keyIterator'
 import { stripHexPrefix } from '../../utils/stripHexPrefix'
 import { KeystoreController } from './keystore'
@@ -61,6 +62,15 @@ class LedgerSigner {
   }
 }
 
+const windowManager = {
+  focus: () => Promise.resolve(),
+  open: () => Promise.resolve(0),
+  remove: () => Promise.resolve(),
+  event: new EventEmitter(),
+  sendWindowToastMessage: () => {},
+  sendWindowUiMessage: () => {}
+}
+
 let keystore: KeystoreController
 const pass = 'hoiHoi'
 const keystoreSigners = { internal: InternalSigner, ledger: LedgerSigner }
@@ -73,7 +83,7 @@ const keyPublicAddress = new ethers.Wallet(privKey).address
 describe('KeystoreController', () => {
   const storage = produceMemoryStore()
   test('should initialize', () => {
-    keystore = new KeystoreController(storage, keystoreSigners)
+    keystore = new KeystoreController(storage, keystoreSigners, windowManager)
     expect(keystore).toBeDefined()
   })
 
@@ -152,6 +162,7 @@ describe('KeystoreController', () => {
         addr: new Wallet(privKey).address,
         label: 'Key 1',
         type: 'internal',
+        subType: 'notSavedSeed',
         privateKey: privKey,
         dedicatedToOneSA: true,
         meta: {
@@ -179,6 +190,7 @@ describe('KeystoreController', () => {
         addr: new Wallet(privKey).address,
         label: 'Key 1',
         type: 'internal' as 'internal',
+        subType: 'notSavedSeed' as InternalKeyType,
         privateKey: privKey,
         dedicatedToOneSA: false,
         meta: {
@@ -189,6 +201,7 @@ describe('KeystoreController', () => {
         addr: new Wallet(privKey).address,
         label: 'Key 2',
         type: 'internal' as 'internal',
+        subType: 'notSavedSeed' as InternalKeyType,
         privateKey: privKey,
         dedicatedToOneSA: false,
         meta: {
@@ -206,6 +219,7 @@ describe('KeystoreController', () => {
         addr: new Wallet(anotherPrivateKeyNotAddedYet).address,
         label: 'Key 2',
         type: 'internal' as 'internal',
+        subType: 'notSavedSeed' as InternalKeyType,
         privateKey: anotherPrivateKeyNotAddedYet,
         dedicatedToOneSA: false,
         meta: {
@@ -217,6 +231,7 @@ describe('KeystoreController', () => {
         addr: new Wallet(anotherPrivateKeyNotAddedYet).address,
         label: 'Key 2',
         type: 'internal' as 'internal',
+        subType: 'notSavedSeed' as InternalKeyType,
         privateKey: anotherPrivateKeyNotAddedYet,
         dedicatedToOneSA: false,
         meta: {
@@ -543,8 +558,8 @@ describe('import/export with pub key test', () => {
   let uid2: string
 
   beforeEach(async () => {
-    keystore = new KeystoreController(produceMemoryStore(), keystoreSigners)
-    keystore2 = new KeystoreController(produceMemoryStore(), keystoreSigners)
+    keystore = new KeystoreController(produceMemoryStore(), keystoreSigners, windowManager)
+    keystore2 = new KeystoreController(produceMemoryStore(), keystoreSigners, windowManager)
 
     await keystore2.addSecret('123', '123', '', false)
     await keystore2.unlockWithSecret('123', '123')
@@ -591,6 +606,7 @@ describe('import/export with pub key test', () => {
         addr: wallet.address,
         label: 'Key 1',
         type: 'internal',
+        subType: 'notSavedSeed',
         privateKey: wallet.privateKey.slice(2),
         dedicatedToOneSA: false,
         meta: { createdAt: new Date().getTime() }

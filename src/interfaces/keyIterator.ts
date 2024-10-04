@@ -1,6 +1,6 @@
 import { HD_PATH_TEMPLATE_TYPE } from '../consts/derivation'
 import { SelectedAccountForImport } from './account'
-import { ExternalSignerController, Key } from './keystore'
+import { ExternalSignerController, InternalKeyType, Key } from './keystore'
 
 export interface KeyIterator {
   type: Key['type']
@@ -18,10 +18,12 @@ export interface KeyIterator {
   retrieveInternalKeys?: (
     selectedAccountsForImport: SelectedAccountForImport[],
     hdPathTemplate: HD_PATH_TEMPLATE_TYPE,
-    keystoreKeys: Key[]
+    keystoreKeys: Key[],
+    isFromSavedSeed: boolean
   ) => {
     addr: string
     type: 'internal'
+    subType: InternalKeyType
     label: string
     privateKey: string
     dedicatedToOneSA: boolean
