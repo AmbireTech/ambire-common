@@ -95,7 +95,7 @@ const STATUS_WRAPPED_METHODS = {
   removeAccount: 'INITIAL',
   handleAccountAdderInitLedger: 'INITIAL',
   handleAccountAdderInitLattice: 'INITIAL',
-  importSmartAccountFromDefaultSeed: 'INITIAL'
+  importSmartAccountFromSavedSeed: 'INITIAL'
 } as const
 
 export class MainController extends EventEmitter {
@@ -337,8 +337,8 @@ export class MainController extends EventEmitter {
           // the saved seed, so when user opts in to "Import a new Smart Account
           // from the saved Seed Phrase" the next account is derived based
           // on the latest `hdPathTemplate` chosen in the AccountAdder.
-          if (this.accountAdder.isInitializedWithDefaultSeed)
-            this.keystore.changeDefaultSeedHdPathTemplateIfNeeded(this.accountAdder.hdPathTemplate)
+          if (this.accountAdder.isInitializedWithSavedSeed)
+            this.keystore.changeSavedSeedHdPathTemplateIfNeeded(this.accountAdder.hdPathTemplate)
         },
         true
       )
@@ -349,17 +349,17 @@ export class MainController extends EventEmitter {
     this.emitUpdate()
   }
 
-  async importSmartAccountFromDefaultSeed(seed?: string) {
+  async importSmartAccountFromSavedSeed(seed?: string) {
     await this.withStatus(
-      'importSmartAccountFromDefaultSeed',
+      'importSmartAccountFromSavedSeed',
       async () => {
         if (this.accountAdder.isInitialized) this.accountAdder.reset()
         if (seed && !this.keystore.hasKeystoreSavedSeed) {
           await this.keystore.addSeed({ seed, hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE })
         }
 
-        const defaultSeed = await this.keystore.getDefaultSeed()
-        if (!defaultSeed) {
+        const savedSeed = await this.keystore.getSavedSeed()
+        if (!savedSeed) {
           throw new EmittableError({
             message:
               'Failed to retrieve saved seed phrase from keystore. Please try again or contact Ambire support if the issue persists.',
@@ -368,10 +368,10 @@ export class MainController extends EventEmitter {
           })
         }
 
-        const keyIterator = new KeyIterator(defaultSeed.seed)
+        const keyIterator = new KeyIterator(savedSeed.seed)
         await this.accountAdder.init({
           keyIterator,
-          hdPathTemplate: defaultSeed.hdPathTemplate,
+          hdPathTemplate: savedSeed.hdPathTemplate,
           pageSize: 1,
           shouldGetAccountsUsedOnNetworks: false,
           shouldSearchForLinkedAccounts: false

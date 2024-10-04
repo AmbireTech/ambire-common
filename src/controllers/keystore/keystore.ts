@@ -452,7 +452,7 @@ export class KeystoreController extends EventEmitter {
     await this.withStatus('addSeed', () => this.#addSeed(keystoreSeed))
   }
 
-  async changeDefaultSeedHdPathTemplateIfNeeded(nextHdPathTemplate?: HD_PATH_TEMPLATE_TYPE) {
+  async changeSavedSeedHdPathTemplateIfNeeded(nextHdPathTemplate?: HD_PATH_TEMPLATE_TYPE) {
     if (!nextHdPathTemplate) return // should never happen
 
     await this.#initialLoadPromise
@@ -723,7 +723,7 @@ export class KeystoreController extends EventEmitter {
     return new SignerInitializer(key)
   }
 
-  async getDefaultSeed() {
+  async getSavedSeed() {
     await this.#initialLoadPromise
 
     if (!this.isUnlocked) throw new Error('keystore: not unlocked')

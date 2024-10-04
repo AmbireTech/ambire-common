@@ -132,7 +132,7 @@ describe('AccountAdder', () => {
     expect(accountAdder.page).toEqual(DEFAULT_PAGE)
     expect(accountAdder.pageSize).toEqual(DEFAULT_PAGE_SIZE)
     expect(accountAdder.isInitialized).toBeTruthy()
-    expect(accountAdder.isInitializedWithDefaultSeed).toBeFalsy()
+    expect(accountAdder.isInitializedWithSavedSeed).toBeFalsy()
     expect(accountAdder.selectedAccounts).toEqual([])
     expect(accountAdder.hdPathTemplate).toEqual(hdPathTemplate)
     expect(accountAdder.shouldGetAccountsUsedOnNetworks).toBeTruthy()
