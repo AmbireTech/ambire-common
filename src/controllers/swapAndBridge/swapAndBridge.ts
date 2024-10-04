@@ -389,7 +389,9 @@ export class SwapAndBridgeController extends EventEmitter {
 
   switchFromAndToTokens() {
     const currentFromSelectedToken = { ...this.fromSelectedToken }
+    const currentFromChainId = this.fromChainId
     const currentToSelectedToken = { ...this.toSelectedToken }
+    const currentToChainId = this.toChainId
 
     // TODO: Figure out if alternatively, if missing in the portfolio, to convert
     // the `SocketAPIToken` to `TokenResult` via `convertSocketAPITokenToTokenResult`
@@ -400,6 +402,15 @@ export class SwapAndBridgeController extends EventEmitter {
           .toLowerCase() === currentToSelectedToken?.address
     )
 
+    // TODO: Notify the user something went wrong? The UI should prevent this from happening.
+    if (!nextFromSelectedToken) return
+
+    this.fromSelectedToken = nextFromSelectedToken
+    this.fromChainId = currentToChainId
+    this.emitUpdate()
+
+    // TODO: Wait for the toTokenList to be updated before switching the toSelectedToken
+
     const nextToSelectedToken = this.toTokenList.find(
       (t: SocketAPIToken) =>
         t.address ===
@@ -408,18 +419,14 @@ export class SwapAndBridgeController extends EventEmitter {
           .toLowerCase()
     )
 
-    if (!nextFromSelectedToken || !nextToSelectedToken) {
-      return // TODO: Notify the user something went wrong? The UI should prevent this from happening.
-    }
+    // TODO: Notify the user something went wrong? The UI should prevent this from happening.
+    if (!nextToSelectedToken) return
 
-    // Reverses the from and to chain ids, since their format is the same
-    ;[this.fromChainId, this.toChainId] = [this.toChainId, this.fromChainId]
-
-    this.fromSelectedToken = nextFromSelectedToken
     this.toSelectedToken = nextToSelectedToken
+    this.toChainId = currentFromChainId
+    this.emitUpdate()
 
     // TODO: Update quote?
-    this.emitUpdate()
   }
 
   async #updateQuote() {
