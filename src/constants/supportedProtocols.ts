@@ -125,8 +125,8 @@ const supportedProtocols: SupportedProtocolType[] = [
   {
     network: 'sei',
     protocols: [],
-    balancesProvider: 'velcro',
-    nftsProvider: 'velcro'
+    balancesProvider: '',
+    nftsProvider: ''
   }
   // {
   //     network: 'cronos',
