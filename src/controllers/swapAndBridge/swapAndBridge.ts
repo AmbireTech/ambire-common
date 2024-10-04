@@ -517,23 +517,41 @@ export class SwapAndBridgeController extends EventEmitter {
     await this.#initialLoadPromise
     const fetchAndUpdateRoute = async (activeRoute: ActiveRoute) => {
       let status: 'ready' | 'completed' | null = null
+      let errorMessage: string | null = null
       try {
-        status = await this.#socketAPI.getRouteStatus({
+        const res = await this.#socketAPI.getRouteStatus({
           activeRouteId: activeRoute.activeRouteId,
           userTxIndex: activeRoute.userTxIndex,
           txHash: activeRoute.userTxHash!
         })
+
+        if (res.statusCode !== 200) {
+          errorMessage =
+            'We have troubles getting the status of this route. Please check back later to proceed.'
+        } else {
+          status = res.result
+        }
       } catch (error) {
-        console.error(error)
+        errorMessage =
+          'We have troubles getting the status of this route. Please check back later to proceed.'
+      }
+
+      if (errorMessage) {
+        await this.updateActiveRoute(activeRoute.activeRouteId, {
+          error: errorMessage
+        })
+        return
       }
 
       if (status === 'completed') {
         await this.updateActiveRoute(activeRoute.activeRouteId, {
-          routeStatus: 'completed'
+          routeStatus: 'completed',
+          error: undefined
         })
       } else if (status === 'ready') {
         await this.updateActiveRoute(activeRoute.activeRouteId, {
-          routeStatus: 'ready'
+          routeStatus: 'ready',
+          error: undefined
         })
       }
     }
