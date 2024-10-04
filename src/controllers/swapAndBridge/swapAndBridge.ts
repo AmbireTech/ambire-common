@@ -13,7 +13,7 @@ import { getTokenAmount } from '../../libs/portfolio/helpers'
 import { getQuoteRouteSteps, sortTokenListResponse } from '../../libs/swapAndBridge/swapAndBridge'
 import { getSanitizedAmount } from '../../libs/transfer/amount'
 import { formatNativeTokenAddressIfNeeded } from '../../services/address'
-import { SocketAPI } from '../../services/socket/api'
+import { normalizeNativeTokenAddressIfNeeded, SocketAPI } from '../../services/socket/api'
 import { validateSendTransferAmount } from '../../services/validations/validate'
 import { convertTokenPriceToBigInt } from '../../utils/numbers/formatters'
 import { AccountsController } from '../accounts/accounts'
@@ -385,6 +385,41 @@ export class SwapAndBridgeController extends EventEmitter {
       true,
       'silent'
     )
+  }
+
+  switchFromAndToTokens() {
+    const currentFromSelectedToken = { ...this.fromSelectedToken }
+    const currentToSelectedToken = { ...this.toSelectedToken }
+
+    // TODO: Figure out if alternatively, if missing in the portfolio, to convert
+    // the `SocketAPIToken` to `TokenResult` via `convertSocketAPITokenToTokenResult`
+    const nextFromSelectedToken = this.portfolioTokenList.find(
+      (token: TokenResult) =>
+        normalizeNativeTokenAddressIfNeeded(token.address)
+          // incoming token addresses from Socket (to compare against) are lowercased
+          .toLowerCase() === currentToSelectedToken?.address
+    )
+
+    const nextToSelectedToken = this.toTokenList.find(
+      (t: SocketAPIToken) =>
+        t.address ===
+        normalizeNativeTokenAddressIfNeeded(currentFromSelectedToken?.address || '')
+          // incoming token addresses from Socket (to compare against) are lowercased
+          .toLowerCase()
+    )
+
+    if (!nextFromSelectedToken || !nextToSelectedToken) {
+      return // TODO: Notify the user something went wrong? The UI should prevent this from happening.
+    }
+
+    // Reverses the from and to chain ids, since their format is the same
+    ;[this.fromChainId, this.toChainId] = [this.toChainId, this.fromChainId]
+
+    this.fromSelectedToken = nextFromSelectedToken
+    this.toSelectedToken = nextToSelectedToken
+
+    // TODO: Update quote?
+    this.emitUpdate()
   }
 
   async #updateQuote() {
