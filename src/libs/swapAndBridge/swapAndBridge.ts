@@ -81,12 +81,12 @@ const getActiveRoutesLowestServiceTime = (activeRoutes: ActiveRoute[]) => {
 }
 
 const getActiveRoutesUpdateInterval = (minServiceTime?: number) => {
-  if (!minServiceTime) return 6000
+  if (!minServiceTime) return 7000
 
-  if (minServiceTime < 60) return 4000
-  if (minServiceTime <= 180) return 5000
-  if (minServiceTime <= 300) return 7000
-  if (minServiceTime <= 600) return 10000
+  if (minServiceTime < 60) return 5000
+  if (minServiceTime <= 180) return 6000
+  if (minServiceTime <= 300) return 8000
+  if (minServiceTime <= 600) return 12000
 
   return 15000
 }
