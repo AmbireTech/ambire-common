@@ -136,7 +136,11 @@ export async function getGasPriceRecommendations(
   // https://github.com/ethers-io/ethers.js/issues/3683#issuecomment-1436554995
   const txns = lastBlock.prefetchedTransactions
 
-  if (network.feeOptions.is1559 && lastBlock.baseFeePerGas != null) {
+  if (
+    network.feeOptions.is1559 &&
+    lastBlock.baseFeePerGas != null &&
+    lastBlock.baseFeePerGas !== 0n
+  ) {
     // https://eips.ethereum.org/EIPS/eip-1559
     const elasticityMultiplier =
       network.feeOptions.elasticityMultiplier ?? DEFAULT_ELASTICITY_MULTIPLIER
