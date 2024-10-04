@@ -1,5 +1,6 @@
 import { formatUnits, parseUnits } from 'ethers'
 
+import { Storage } from '../../interfaces/storage'
 import {
   ActiveRoute,
   SocketAPIQuote,
@@ -42,6 +43,8 @@ export class SwapAndBridgeController extends EventEmitter {
 
   #networks: NetworksController
 
+  #storage: Storage
+
   #socketAPI: SocketAPI
 
   sessionId: string | null = null
@@ -68,23 +71,43 @@ export class SwapAndBridgeController extends EventEmitter {
 
   routePriority: 'output' | 'time' = 'output'
 
-  activeRoutes: ActiveRoute[] = []
+  #activeRoutes: ActiveRoute[] = []
 
   statuses: Statuses<keyof typeof STATUS_WRAPPED_METHODS> = STATUS_WRAPPED_METHODS
+
+  // Holds the initial load promise, so that one can wait until it completes
+  #initialLoadPromise: Promise<void>
 
   constructor({
     accounts,
     networks,
-    socketAPI
+    socketAPI,
+    storage
   }: {
     accounts: AccountsController
     networks: NetworksController
     socketAPI: SocketAPI
+    storage: Storage
   }) {
     super()
     this.#accounts = accounts
     this.#networks = networks
     this.#socketAPI = socketAPI
+    this.#storage = storage
+
+    // eslint-disable-next-line @typescript-eslint/no-floating-promises
+    this.#initialLoadPromise = this.#load()
+  }
+
+  async #load() {
+    await this.#networks.initialLoadPromise
+    await this.#accounts.initialLoadPromise
+
+    const swapAndBridgeActiveRoutes: ActiveRoute[] = await this.#storage.get(
+      'swapAndBridgeActiveRoutes',
+      []
+    )
+    this.activeRoutes = swapAndBridgeActiveRoutes.filter((r) => !!r.userTxHash)
 
     this.emitUpdate()
   }
@@ -153,7 +176,18 @@ export class SwapAndBridgeController extends EventEmitter {
     return this.activeRoutes.filter((r) => r.routeStatus === 'in-progress' && r.userTxHash)
   }
 
-  initForm(sessionId: string) {
+  get activeRoutes() {
+    return this.#activeRoutes
+  }
+
+  set activeRoutes(value: ActiveRoute[]) {
+    this.#activeRoutes = value
+    // eslint-disable-next-line @typescript-eslint/no-floating-promises
+    this.#storage.set('swapAndBridgeActiveRoutes', value)
+  }
+
+  async initForm(sessionId: string) {
+    await this.#initialLoadPromise
     this.resetForm()
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.updateToTokenList(false)
@@ -445,6 +479,7 @@ export class SwapAndBridgeController extends EventEmitter {
   }
 
   async checkForNextUserTxForActiveRoutes() {
+    await this.#initialLoadPromise
     const fetchAndUpdateRoute = async (activeRoute: ActiveRoute) => {
       let status: 'ready' | 'completed' | null = null
       try {
@@ -479,6 +514,7 @@ export class SwapAndBridgeController extends EventEmitter {
     activeRouteId: SocketAPISendTransactionRequest['activeRouteId']
     userTxIndex: SocketAPISendTransactionRequest['userTxIndex']
   }) {
+    await this.#initialLoadPromise
     const route = await this.#socketAPI.updateActiveRoute(activeRoute.activeRouteId)
     this.activeRoutes.push({
       ...activeRoute,
@@ -495,6 +531,7 @@ export class SwapAndBridgeController extends EventEmitter {
     activeRouteId: SocketAPISendTransactionRequest['activeRouteId'],
     activeRoute?: Partial<ActiveRoute>
   ) {
+    await this.#initialLoadPromise
     const activeRouteIndex = this.activeRoutes.findIndex((r) => r.activeRouteId === activeRouteId)
 
     if (activeRouteIndex !== -1) {
@@ -514,7 +551,7 @@ export class SwapAndBridgeController extends EventEmitter {
     }
   }
 
-  removeActiveRoute(
+  async removeActiveRoute(
     activeRouteId: SocketAPISendTransactionRequest['activeRouteId'],
     type: 'force-remove' | 'remove-if-needed' = 'force-remove'
   ) {
@@ -550,7 +587,8 @@ export class SwapAndBridgeController extends EventEmitter {
       maxFromAmountInFiat: this.maxFromAmountInFiat,
       validateFromAmount: this.validateFromAmount,
       formStatus: this.formStatus,
-      activeRoutesInProgress: this.activeRoutesInProgress
+      activeRoutesInProgress: this.activeRoutesInProgress,
+      activeRoutes: this.activeRoutes
     }
   }
 }

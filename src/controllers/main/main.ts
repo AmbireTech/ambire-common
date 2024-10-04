@@ -278,7 +278,8 @@ export class MainController extends EventEmitter {
     this.swapAndBridge = new SwapAndBridgeController({
       accounts: this.accounts,
       networks: this.networks,
-      socketAPI: this.#socketAPI
+      socketAPI: this.#socketAPI,
+      storage: this.#storage
     })
     this.dapps = new DappsController(this.#storage)
     this.actions = new ActionsController({
