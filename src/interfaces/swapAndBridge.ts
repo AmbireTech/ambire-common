@@ -182,4 +182,5 @@ export type ActiveRoute = {
     userAddress: string
   }
   routeStatus: 'in-progress' | 'ready' | 'completed'
+  error?: string
 }

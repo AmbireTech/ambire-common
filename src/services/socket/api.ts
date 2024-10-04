@@ -187,9 +187,7 @@ export class SocketAPI {
     if (!response.ok) throw new Error('Failed to update route')
 
     response = await response.json()
-    if (!response.success) throw new Error('Failed to update route')
-
-    return response.result
+    return response
   }
 
   async updateActiveRoute(activeRouteId: SocketAPISendTransactionRequest['activeRouteId']) {
