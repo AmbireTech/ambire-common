@@ -629,12 +629,7 @@ export class SwapAndBridgeController extends EventEmitter {
     }
   }
 
-  removeActiveRoute(
-    activeRouteId: SocketAPISendTransactionRequest['activeRouteId'],
-    forceRemove: boolean = true
-  ) {
-    const route = this.activeRoutes.find((r) => r.activeRouteId === activeRouteId)
-    if (route?.userTxHash && !forceRemove) return
+  removeActiveRoute(activeRouteId: SocketAPISendTransactionRequest['activeRouteId']) {
     this.activeRoutes = this.activeRoutes.filter((r) => r.activeRouteId !== activeRouteId)
 
     this.emitUpdate()

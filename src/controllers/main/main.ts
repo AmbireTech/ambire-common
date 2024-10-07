@@ -1328,7 +1328,14 @@ export class MainController extends EventEmitter {
   // @TODO allow this to remove multiple OR figure out a way to debounce re-estimations
   // first one sounds more reasonable
   // although the second one can't hurt and can help (or no debounce, just a one-at-a-time queue)
-  removeUserRequest(id: UserRequest['id'], forceRemoveRelatedData: boolean = true) {
+  removeUserRequest(
+    id: UserRequest['id'],
+    options: {
+      shouldRemoveSwapAndBridgeRoute: boolean
+    } = {
+      shouldRemoveSwapAndBridgeRoute: true
+    }
+  ) {
     const req = this.userRequests.find((uReq) => uReq.id === id)
     if (!req) return
 
@@ -1355,7 +1362,7 @@ export class MainController extends EventEmitter {
         // accountOp has just been rejected
         if (!accountOpAction) {
           this.updateSelectedAccountPortfolio(true, network)
-          if (this.swapAndBridge.activeRoutes.length) {
+          if (this.swapAndBridge.activeRoutes.length && options.shouldRemoveSwapAndBridgeRoute) {
             this.swapAndBridge.removeActiveRoute(id as number)
           }
           this.emitUpdate()
@@ -1387,8 +1394,8 @@ export class MainController extends EventEmitter {
         this.actions.removeAction(id)
         this.updateSelectedAccountPortfolio(true, network)
       }
-      if (this.swapAndBridge.activeRoutes.length) {
-        this.swapAndBridge.removeActiveRoute(id as number, forceRemoveRelatedData)
+      if (this.swapAndBridge.activeRoutes.length && options.shouldRemoveSwapAndBridgeRoute) {
+        this.swapAndBridge.removeActiveRoute(id as number)
       }
     } else {
       this.actions.removeAction(id)
@@ -1470,12 +1477,7 @@ export class MainController extends EventEmitter {
 
       meta.identifiedBy = data.submittedAccountOp.identifiedBy
     }
-    const benzinUserRequest: SignUserRequest = {
-      id: new Date().getTime(),
-      action: { kind: 'benzin' },
-      meta
-    }
-    await this.addUserRequest(benzinUserRequest, true)
+
     const txnId = await pollTxnId(
       data.submittedAccountOp.identifiedBy,
       network,
@@ -1497,6 +1499,13 @@ export class MainController extends EventEmitter {
       })
     )
 
+    const benzinUserRequest: SignUserRequest = {
+      id: new Date().getTime(),
+      action: { kind: 'benzin' },
+      meta
+    }
+    await this.addUserRequest(benzinUserRequest, true)
+
     this.actions.removeAction(actionId)
 
     // eslint-disable-next-line no-restricted-syntax
@@ -1505,7 +1514,7 @@ export class MainController extends EventEmitter {
       if (uReq) {
         uReq.dappPromise?.resolve({ hash: txnId })
         // eslint-disable-next-line no-await-in-loop
-        this.removeUserRequest(uReq.id, false)
+        this.removeUserRequest(uReq.id, { shouldRemoveSwapAndBridgeRoute: false })
       }
     }
 
