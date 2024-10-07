@@ -188,10 +188,15 @@ export class SwapAndBridgeController extends EventEmitter {
 
   async initForm(sessionId: string) {
     await this.#initialLoadPromise
-    this.resetForm()
-    // eslint-disable-next-line @typescript-eslint/no-floating-promises
-    this.updateToTokenList(false)
+    this.resetForm() // clear prev session form state
+    // for each new session remove the completed activeRoutes from the previous session
     this.activeRoutes = this.activeRoutes.filter((r) => r.routeStatus !== 'completed')
+    // remove activeRoutes errors from the previous session
+    this.activeRoutes.forEach((r) => {
+      // eslint-disable-next-line no-param-reassign
+      delete r.error
+    })
+    // update the activeRoute.route prop for the new session
     this.activeRoutes.forEach((r) => {
       // eslint-disable-next-line @typescript-eslint/no-floating-promises
       this.updateActiveRoute(r.activeRouteId)
