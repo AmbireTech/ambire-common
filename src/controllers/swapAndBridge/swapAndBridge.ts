@@ -1,4 +1,4 @@
-import { formatUnits, parseUnits } from 'ethers'
+import { formatUnits, getAddress, parseUnits } from 'ethers'
 
 import { Storage } from '../../interfaces/storage'
 import {
@@ -186,6 +186,22 @@ export class SwapAndBridgeController extends EventEmitter {
     this.#storage.set('swapAndBridgeActiveRoutes', value)
   }
 
+  get isSwitchFromAndToTokensEnabled() {
+    if (!this.toSelectedToken) return false
+    if (!this.portfolioTokenList.length) return false
+
+    const toSelectedTokenNetwork = this.#networks.networks.find(
+      (n) => Number(n.chainId) === this.toChainId
+    )!
+
+    return !!this.portfolioTokenList.find(
+      (token: TokenResult) =>
+        getAddress(normalizeNativeTokenAddressIfNeeded(token.address)) ===
+          getAddress(normalizeNativeTokenAddressIfNeeded(this.toSelectedToken!.address)) &&
+        token.networkId === toSelectedTokenNetwork.id
+    )
+  }
+
   async initForm(sessionId: string) {
     await this.#initialLoadPromise
     this.resetForm() // clear prev session form state
@@ -365,7 +381,7 @@ export class SwapAndBridgeController extends EventEmitter {
     this.emitUpdate()
   }
 
-  async updateToTokenList(shouldReset: boolean) {
+  async updateToTokenList(shouldReset: boolean, addressToSelect?: string) {
     await this.withStatus(
       'updateToTokenList',
       async () => {
@@ -383,7 +399,21 @@ export class SwapAndBridgeController extends EventEmitter {
         })
         this.toTokenList = sortTokenListResponse(toTokenListResponse, this.portfolioTokenList)
 
-        if (!this.toSelectedToken) this.updateForm({ toSelectedToken: this.toTokenList[0] || null })
+        if (!this.toSelectedToken) {
+          if (addressToSelect) {
+            const token = this.toTokenList.find(
+              (t) =>
+                getAddress(normalizeNativeTokenAddressIfNeeded(t.address)) ===
+                getAddress(normalizeNativeTokenAddressIfNeeded(addressToSelect))
+            )
+            if (token) {
+              this.updateForm({ toSelectedToken: token })
+              this.emitUpdate()
+              return
+            }
+          }
+          this.updateForm({ toSelectedToken: this.toTokenList[0] || null })
+        }
 
         this.emitUpdate()
       },
@@ -392,43 +422,22 @@ export class SwapAndBridgeController extends EventEmitter {
     )
   }
 
-  switchFromAndToTokens() {
+  async switchFromAndToTokens() {
+    if (!this.isSwitchFromAndToTokensEnabled) return
     const currentFromSelectedToken = { ...this.fromSelectedToken }
-    const currentToSelectedToken = { ...this.toSelectedToken }
 
-    // TODO: Figure out if alternatively, if missing in the portfolio, to convert
-    // the `SocketAPIToken` to `TokenResult` via `convertSocketAPITokenToTokenResult`
-    const nextFromSelectedToken = this.portfolioTokenList.find(
+    const toSelectedTokenNetwork = this.#networks.networks.find(
+      (n) => Number(n.chainId) === this.toChainId
+    )!
+    this.fromSelectedToken = this.portfolioTokenList.find(
       (token: TokenResult) =>
-        normalizeNativeTokenAddressIfNeeded(token.address)
-          // incoming token addresses from Socket (to compare against) are lowercased
-          .toLowerCase() === currentToSelectedToken?.address
-    )
-
-    // TODO: Notify the user something went wrong? The UI should prevent this from happening.
-    if (!nextFromSelectedToken) return
-
-    this.fromSelectedToken = nextFromSelectedToken
+        getAddress(normalizeNativeTokenAddressIfNeeded(token.address)) ===
+          getAddress(normalizeNativeTokenAddressIfNeeded(this.toSelectedToken!.address)) &&
+        token.networkId === toSelectedTokenNetwork.id
+    )!
     // Reverses the from and to chain ids, since their format is the same
     ;[this.fromChainId, this.toChainId] = [this.toChainId, this.fromChainId]
-
-    // TODO: Wait for the toTokenList to be updated before switching the toSelectedToken
-
-    const nextToSelectedToken = this.toTokenList.find(
-      (t: SocketAPIToken) =>
-        t.address ===
-        normalizeNativeTokenAddressIfNeeded(currentFromSelectedToken?.address || '')
-          // incoming token addresses from Socket (to compare against) are lowercased
-          .toLowerCase()
-    )
-
-    // TODO: Notify the user something went wrong? The UI should prevent this from happening.
-    if (!nextToSelectedToken) return
-
-    this.toSelectedToken = nextToSelectedToken
-    this.emitUpdate()
-
-    // TODO: Update quote?
+    await this.updateToTokenList(true, currentFromSelectedToken.address)
   }
 
   async #updateQuote() {
@@ -650,7 +659,8 @@ export class SwapAndBridgeController extends EventEmitter {
       validateFromAmount: this.validateFromAmount,
       formStatus: this.formStatus,
       activeRoutesInProgress: this.activeRoutesInProgress,
-      activeRoutes: this.activeRoutes
+      activeRoutes: this.activeRoutes,
+      isSwitchFromAndToTokensEnabled: this.isSwitchFromAndToTokensEnabled
     }
   }
 }
