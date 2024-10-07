@@ -20,7 +20,8 @@ const networks: Network[] = [
     features: [],
     feeOptions: { is1559: true },
     predefined: true,
-    wrappedAddr: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2'
+    wrappedAddr: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
+    disableEstimateGas: true
   },
   {
     id: 'polygon',

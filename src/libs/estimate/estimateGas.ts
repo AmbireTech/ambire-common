@@ -17,6 +17,8 @@ export async function estimateGas(
   accountState: AccountOnchainState,
   network: Network
 ): Promise<bigint> {
+  if (network.disableEstimateGas) return 0n
+
   if (!account.creation) throw new Error('Use this estimation only for smart accounts')
 
   const saAbi = new Interface(AmbireAccount.abi)
