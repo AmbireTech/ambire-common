@@ -72,6 +72,7 @@ export interface Network {
   wrappedAddr?: string
   blockGasLimit?: bigint
   oldNativeAssetSymbols?: string[]
+  disableEstimateGas?: boolean
 }
 
 export interface AddNetworkRequestParams {
