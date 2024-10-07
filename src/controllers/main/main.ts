@@ -63,10 +63,7 @@ import {
   adjustEntryPointAuthorization,
   getEntryPointAuthorization
 } from '../../libs/signMessage/signMessage'
-import {
-  buildSwapAndBridgeApproveUserRequest,
-  buildSwapAndBridgeUserRequest
-} from '../../libs/swapAndBridge/swapAndBridge'
+import { buildSwapAndBridgeUserRequests } from '../../libs/swapAndBridge/swapAndBridge'
 import { debugTraceCall } from '../../libs/tracer/debugTraceCall'
 import { buildTransferUserRequest } from '../../libs/transfer/userRequest'
 import {
@@ -1106,8 +1103,6 @@ export class MainController extends EventEmitter {
           transaction = await this.#socketAPI.getNextRouteUserTx(activeRouteId)
         }
 
-        console.log('transaction', transaction)
-
         if (!this.accounts.selectedAccount || !transaction) {
           this.emitError({
             level: 'major',
@@ -1125,31 +1120,20 @@ export class MainController extends EventEmitter {
           (n) => Number(n.chainId) === transaction!.chainId
         )!
 
-        const userRequest = buildSwapAndBridgeUserRequest(transaction, network.id, account.addr)
-
-        if (!userRequest) {
-          this.emitError({
-            level: 'major',
-            message: 'Unexpected error while building swap & bridge request',
-            error: new Error('buildSwapAndBridgeUserRequest: bad parameters passed')
-          })
-        }
-
-        if (transaction.approvalData) {
-          const approvalUserRequest = await buildSwapAndBridgeApproveUserRequest(
-            transaction.approvalData!,
-            transaction.activeRouteId,
-            network.id,
-            account.addr
-          )
-          this.addUserRequest(approvalUserRequest, !account.creation, 'open')
-        }
-
-        await this.addUserRequest(
-          userRequest,
-          transaction.approvalData ? false : !account.creation,
-          transaction.approvalData ? 'queue' : 'open'
+        const swapAndBridgeUserRequests = buildSwapAndBridgeUserRequests(
+          transaction,
+          network.id,
+          account
         )
+
+        for (let i = 0; i < swapAndBridgeUserRequests.length; i++) {
+          if (i === 0) {
+            this.addUserRequest(swapAndBridgeUserRequests[i], !account.creation, 'open')
+          } else {
+            // eslint-disable-next-line no-await-in-loop
+            await this.addUserRequest(swapAndBridgeUserRequests[i], false, 'queue')
+          }
+        }
 
         if (this.swapAndBridge.formStatus === SwapAndBridgeFormStatus.ReadyToSubmit) {
           await this.swapAndBridge.addActiveRoute({
@@ -1344,7 +1328,7 @@ export class MainController extends EventEmitter {
   // @TODO allow this to remove multiple OR figure out a way to debounce re-estimations
   // first one sounds more reasonable
   // although the second one can't hurt and can help (or no debounce, just a one-at-a-time queue)
-  removeUserRequest(id: UserRequest['id']) {
+  removeUserRequest(id: UserRequest['id'], forceRemoveRelatedData: boolean = true) {
     const req = this.userRequests.find((uReq) => uReq.id === id)
     if (!req) return
 
@@ -1404,7 +1388,7 @@ export class MainController extends EventEmitter {
         this.updateSelectedAccountPortfolio(true, network)
       }
       if (this.swapAndBridge.activeRoutes.length) {
-        this.swapAndBridge.removeActiveRoute(id as number)
+        this.swapAndBridge.removeActiveRoute(id as number, forceRemoveRelatedData)
       }
     } else {
       this.actions.removeAction(id)
@@ -1521,7 +1505,7 @@ export class MainController extends EventEmitter {
       if (uReq) {
         uReq.dappPromise?.resolve({ hash: txnId })
         // eslint-disable-next-line no-await-in-loop
-        this.removeUserRequest(uReq.id)
+        this.removeUserRequest(uReq.id, false)
       }
     }
 

@@ -2,18 +2,19 @@ import { Interface } from 'ethers'
 
 import ERC20 from '../../../contracts/compiled/IERC20.json'
 import { networks } from '../../consts/networks'
+import { Account } from '../../interfaces/account'
 import {
   ActiveRoute,
   SocketAPIBridgeUserTx,
   SocketAPISendTransactionRequest,
   SocketAPIStep,
   SocketAPIToken,
-  SocketAPIUserTx,
-  SocketAPIUserTxApprovalData
+  SocketAPIUserTx
 } from '../../interfaces/swapAndBridge'
 import { SignUserRequest } from '../../interfaces/userRequest'
 import { formatNativeTokenAddressIfNeeded } from '../../services/address'
 import { normalizeNativeTokenAddressIfNeeded } from '../../services/socket/api'
+import { isSmartAccount } from '../account/account'
 import { Call } from '../accountOp/types'
 import { TokenResult } from '../portfolio'
 
@@ -94,57 +95,100 @@ const getActiveRoutesUpdateInterval = (minServiceTime?: number) => {
   return 15000
 }
 
-const buildSwapAndBridgeApproveUserRequest = (
-  approveData: SocketAPIUserTxApprovalData,
-  activeRouteId: number,
-  networkId: string,
-  accountAddr: string
-) => {
-  const erc20Interface = new Interface(ERC20.abi)
-  const txn = {
-    kind: 'calls' as const,
-    calls: [
-      {
-        to: approveData.approvalTokenAddress,
-        value: BigInt('0'),
-        data: erc20Interface.encodeFunctionData('approve', [
-          approveData.allowanceTarget,
-          BigInt(approveData.minimumApprovalAmount)
-        ]),
-        fromUserRequestId: `${activeRouteId}-approval`
-      } as Call
-    ]
-  }
-
-  return {
-    id: `${activeRouteId}-approval`,
-    action: txn,
-    meta: { isSignAction: true, networkId, accountAddr, activeRouteId, isApproval: true }
-  } as SignUserRequest
-}
-
-const buildSwapAndBridgeUserRequest = (
+const buildSwapAndBridgeUserRequests = (
   userTx: SocketAPISendTransactionRequest,
   networkId: string,
-  accountAddr: string
+  account: Account
 ) => {
-  const txn = {
-    kind: 'calls' as const,
-    calls: [
-      {
-        to: userTx.txTarget,
-        value: BigInt(userTx.value),
-        data: userTx.txData,
+  if (isSmartAccount(account)) {
+    const calls: Call[] = []
+    if (userTx.approvalData) {
+      const erc20Interface = new Interface(ERC20.abi)
+      calls.push({
+        to: userTx.approvalData.approvalTokenAddress,
+        value: BigInt('0'),
+        data: erc20Interface.encodeFunctionData('approve', [
+          userTx.approvalData.allowanceTarget,
+          BigInt(userTx.approvalData.minimumApprovalAmount)
+        ]),
         fromUserRequestId: userTx.activeRouteId
-      } as Call
+      } as Call)
+    }
+
+    calls.push({
+      to: userTx.txTarget,
+      value: BigInt(userTx.value),
+      data: userTx.txData,
+      fromUserRequestId: userTx.activeRouteId
+    } as Call)
+
+    return [
+      {
+        id: userTx.activeRouteId,
+        action: {
+          kind: 'calls' as const,
+          calls
+        },
+        meta: {
+          isSignAction: true,
+          networkId,
+          accountAddr: account.addr,
+          activeRouteId: userTx.activeRouteId
+        }
+      } as SignUserRequest
     ]
   }
+  const requests: SignUserRequest[] = []
+  if (userTx.approvalData) {
+    const erc20Interface = new Interface(ERC20.abi)
+    requests.push({
+      id: `${userTx.activeRouteId}-approval`,
+      action: {
+        kind: 'calls' as const,
+        calls: [
+          {
+            to: userTx.approvalData.approvalTokenAddress,
+            value: BigInt('0'),
+            data: erc20Interface.encodeFunctionData('approve', [
+              userTx.approvalData.allowanceTarget,
+              BigInt(userTx.approvalData.minimumApprovalAmount)
+            ]),
+            fromUserRequestId: `${userTx.activeRouteId}-approval`
+          } as Call
+        ]
+      },
+      meta: {
+        isSignAction: true,
+        networkId,
+        accountAddr: account.addr,
+        activeRouteId: userTx.activeRouteId,
+        isApproval: true
+      }
+    } as SignUserRequest)
+  }
 
-  return {
+  requests.push({
     id: userTx.activeRouteId,
-    action: txn,
-    meta: { isSignAction: true, networkId, accountAddr, activeRouteId: userTx.activeRouteId }
-  } as SignUserRequest
+    action: {
+      kind: 'calls' as const,
+      calls: [
+        {
+          to: userTx.txTarget,
+          value: BigInt(userTx.value),
+          data: userTx.txData,
+          fromUserRequestId: userTx.activeRouteId
+        } as Call
+      ]
+    },
+    meta: {
+      isSignAction: true,
+      networkId,
+      accountAddr: account.addr,
+      activeRouteId: userTx.activeRouteId
+    }
+  } as SignUserRequest)
+
+  return requests
 }
 
 // TODO: Discuss if we should convert `TokenResult` to SocketAPIToken for the
@@ -177,7 +221,6 @@ export {
   getQuoteRouteSteps,
   getActiveRoutesLowestServiceTime,
   getActiveRoutesUpdateInterval,
-  buildSwapAndBridgeApproveUserRequest,
-  buildSwapAndBridgeUserRequest,
+  buildSwapAndBridgeUserRequests,
   convertSocketAPITokenToTokenResult
 }

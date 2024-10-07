@@ -561,6 +561,13 @@ export class SwapAndBridgeController extends EventEmitter {
         return
       }
 
+      const route = this.activeRoutes.find((r) => r.activeRouteId === activeRoute.activeRouteId)
+      if (route?.error) {
+        await this.updateActiveRoute(activeRoute.activeRouteId, {
+          error: undefined
+        })
+      }
+
       if (status === 'completed') {
         await this.updateActiveRoute(activeRoute.activeRouteId, {
           routeStatus: 'completed',
@@ -622,7 +629,12 @@ export class SwapAndBridgeController extends EventEmitter {
     }
   }
 
-  removeActiveRoute(activeRouteId: SocketAPISendTransactionRequest['activeRouteId']) {
+  removeActiveRoute(
+    activeRouteId: SocketAPISendTransactionRequest['activeRouteId'],
+    forceRemove: boolean = true
+  ) {
+    const route = this.activeRoutes.find((r) => r.activeRouteId === activeRouteId)
+    if (route?.userTxHash && !forceRemove) return
     this.activeRoutes = this.activeRoutes.filter((r) => r.activeRouteId !== activeRouteId)
 
     this.emitUpdate()
