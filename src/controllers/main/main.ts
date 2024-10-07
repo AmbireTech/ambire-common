@@ -1142,7 +1142,7 @@ export class MainController extends EventEmitter {
             network.id,
             account.addr
           )
-          await this.addUserRequest(approvalUserRequest, !account.creation, 'open')
+          this.addUserRequest(approvalUserRequest, !account.creation, 'open')
         }
 
         await this.addUserRequest(
@@ -1371,6 +1371,9 @@ export class MainController extends EventEmitter {
         // accountOp has just been rejected
         if (!accountOpAction) {
           this.updateSelectedAccountPortfolio(true, network)
+          if (this.swapAndBridge.activeRoutes.length) {
+            this.swapAndBridge.removeActiveRoute(id as number)
+          }
           this.emitUpdate()
           return
         }
@@ -1391,13 +1394,6 @@ export class MainController extends EventEmitter {
             this.destroySignAccOp()
           }
           this.actions.removeAction(`${meta.accountAddr}-${meta.networkId}`)
-          if (
-            this.swapAndBridge.activeRoutes.length &&
-            !this.userRequests.find((uReq) => uReq.id === id)
-          ) {
-            this.swapAndBridge.removeActiveRoute(id as number, 'remove-if-needed')
-          }
-
           this.updateSelectedAccountPortfolio(true, network)
         }
       } else {
@@ -1405,10 +1401,10 @@ export class MainController extends EventEmitter {
           this.destroySignAccOp()
         }
         this.actions.removeAction(id)
-        if (this.swapAndBridge.activeRoutes.length) {
-          this.swapAndBridge.removeActiveRoute(id as number, 'remove-if-needed')
-        }
         this.updateSelectedAccountPortfolio(true, network)
+      }
+      if (this.swapAndBridge.activeRoutes.length) {
+        this.swapAndBridge.removeActiveRoute(id as number)
       }
     } else {
       this.actions.removeAction(id)
@@ -1551,7 +1547,6 @@ export class MainController extends EventEmitter {
       const uReq = this.userRequests.find((r) => r.id === call.fromUserRequestId)
       if (uReq) {
         uReq.dappPromise?.reject(ethErrors.provider.userRejectedRequest<any>(err))
-        // eslint-disable-next-line no-await-in-loop
         this.removeUserRequest(uReq.id)
       }
     }

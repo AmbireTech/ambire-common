@@ -14,6 +14,7 @@ import {
 import { SignUserRequest } from '../../interfaces/userRequest'
 import { formatNativeTokenAddressIfNeeded } from '../../services/address'
 import { normalizeNativeTokenAddressIfNeeded } from '../../services/socket/api'
+import { Call } from '../accountOp/types'
 import { TokenResult } from '../portfolio'
 
 export const sortTokenListResponse = (
@@ -109,8 +110,9 @@ const buildSwapAndBridgeApproveUserRequest = (
         data: erc20Interface.encodeFunctionData('approve', [
           approveData.allowanceTarget,
           BigInt(approveData.minimumApprovalAmount)
-        ])
-      }
+        ]),
+        fromUserRequestId: `${activeRouteId}-approval`
+      } as Call
     ]
   }
 
@@ -128,7 +130,14 @@ const buildSwapAndBridgeUserRequest = (
 ) => {
   const txn = {
     kind: 'calls' as const,
-    calls: [{ to: userTx.txTarget, value: BigInt(userTx.value), data: userTx.txData }]
+    calls: [
+      {
+        to: userTx.txTarget,
+        value: BigInt(userTx.value),
+        data: userTx.txData,
+        fromUserRequestId: userTx.activeRouteId
+      } as Call
+    ]
   }
 
   return {
