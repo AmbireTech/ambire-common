@@ -1899,6 +1899,7 @@ export class MainController extends EventEmitter {
       return this.#throwBroadcastAccountOp({ message })
     }
 
+    const accountState = this.accounts.accountStates[accountOp.accountAddr][accountOp.networkId]
     let transactionRes: {
       txnId?: string
       nonce: number
@@ -1919,7 +1920,7 @@ export class MainController extends EventEmitter {
           const missingKeyAddr = shortenAddress(accountOp.gasFeePayment!.paidBy, 13)
           const accAddr = shortenAddress(accountOp.accountAddr, 13)
           const message = `Key with address ${missingKeyAddr} for account with address ${accAddr} not found. ${contactSupportPrompt}`
-          return await this.#throwBroadcastAccountOp({ message })
+          return await this.#throwBroadcastAccountOp({ message, accountState })
         }
         this.feePayerKey = feePayerKey
         this.emitUpdate()
@@ -1967,7 +1968,7 @@ export class MainController extends EventEmitter {
           )
         }
       } catch (error: any) {
-        return this.#throwBroadcastAccountOp({ error, network })
+        return this.#throwBroadcastAccountOp({ error, network, accountState })
       }
     }
     // Smart account but EOA pays the fee
@@ -1987,13 +1988,12 @@ export class MainController extends EventEmitter {
         const missingKeyAddr = shortenAddress(accountOp.gasFeePayment!.paidBy, 13)
         const accAddr = shortenAddress(accountOp.accountAddr, 13)
         const message = `Key with address ${missingKeyAddr} for account with address ${accAddr} not found.`
-        return this.#throwBroadcastAccountOp({ message })
+        return this.#throwBroadcastAccountOp({ message, accountState })
       }
 
       this.feePayerKey = feePayerKey
       this.emitUpdate()
 
-      const accountState = this.accounts.accountStates[accountOp.accountAddr][accountOp.networkId]
       let data
       let to
       if (accountState.isDeployed) {
@@ -2058,7 +2058,7 @@ export class MainController extends EventEmitter {
           )
         }
       } catch (error: any) {
-        return this.#throwBroadcastAccountOp({ error, network })
+        return this.#throwBroadcastAccountOp({ error, network, accountState })
       }
     }
     // Smart account, the ERC-4337 way
@@ -2067,7 +2067,7 @@ export class MainController extends EventEmitter {
       if (!userOperation) {
         const accAddr = shortenAddress(accountOp.accountAddr, 13)
         const message = `Trying to broadcast an ERC-4337 request but userOperation is not set for the account with address ${accAddr}`
-        return this.#throwBroadcastAccountOp({ message })
+        return this.#throwBroadcastAccountOp({ message, accountState })
       }
 
       // broadcast through bundler's service
@@ -2080,7 +2080,8 @@ export class MainController extends EventEmitter {
             e,
             'Bundler broadcast failed. Please try broadcasting by an EOA or contact support.'
           ),
-          network
+          network,
+          accountState
         })
       }
       if (!userOperationHash) {
@@ -2123,7 +2124,7 @@ export class MainController extends EventEmitter {
           }
         }
       } catch (error: any) {
-        return this.#throwBroadcastAccountOp({ error, network })
+        return this.#throwBroadcastAccountOp({ error, network, accountState })
       }
     }
 
@@ -2181,11 +2182,13 @@ export class MainController extends EventEmitter {
   #throwBroadcastAccountOp({
     message: _msg,
     error: _err,
-    network
+    network,
+    accountState
   }: {
     message?: string
     error?: Error
     network?: Network
+    accountState?: AccountOnchainState
   }) {
     let message = _msg || _err?.message || 'Unable to broadcast the transaction.'
 
@@ -2207,6 +2210,12 @@ export class MainController extends EventEmitter {
         message = 'Fee too low. Please select a higher transaction speed and try again'
         this.updateSignAccountOpGasPrice()
         this.estimateSignAccountOp()
+      } else if (message.includes('INSUFFICIENT_PRIVILEGE')) {
+        message = `Signer key not supported on this network.${
+          !accountState?.isV2
+            ? 'You can add/change signers from the web wallet or contact support.'
+            : 'Please contact support.'
+        }`
       } else {
         // Trip the error message, errors coming from the RPC can be huuuuuge
         message = message.length > 300 ? `${message.substring(0, 300)}...` : message
