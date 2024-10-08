@@ -61,7 +61,8 @@ describe('Actions Controller', () => {
       event.emit('windowRemoved', windowId)
       return Promise.resolve()
     },
-    sendWindowToastMessage: () => {}
+    sendWindowToastMessage: () => {},
+    sendWindowUiMessage: () => {}
   }
 
   const notificationManager = {

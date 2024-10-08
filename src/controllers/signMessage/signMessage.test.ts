@@ -1,4 +1,5 @@
 import fetch from 'node-fetch'
+import { EventEmitter } from 'stream'
 
 import { describe, expect, jest, test } from '@jest/globals'
 
@@ -35,6 +36,15 @@ const account: Account = {
   }
 }
 
+const windowManager = {
+  focus: () => Promise.resolve(),
+  open: () => Promise.resolve(0),
+  remove: () => Promise.resolve(),
+  event: new EventEmitter(),
+  sendWindowToastMessage: () => {},
+  sendWindowUiMessage: () => {}
+}
+
 const messageToSign: Message = {
   fromActionId: 1,
   content: { kind: 'message', message: '0x74657374' },
@@ -53,7 +63,7 @@ describe('SignMessageController', () => {
     await storage.set('accounts', JSON.stringify([account]))
     await storage.set('selectedAccount', JSON.stringify(account.addr))
 
-    keystore = new KeystoreController(storage, { internal: InternalSigner })
+    keystore = new KeystoreController(storage, { internal: InternalSigner }, windowManager)
     let providersCtrl: ProvidersController
     const networksCtrl = new NetworksController(
       storage,

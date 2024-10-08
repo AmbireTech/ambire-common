@@ -1,4 +1,5 @@
 import { Contract, hashMessage, toUtf8Bytes, TypedDataEncoder, Wallet } from 'ethers'
+import { EventEmitter } from 'stream'
 
 import { beforeAll, describe, expect, test } from '@jest/globals'
 
@@ -99,11 +100,20 @@ const getAccountsInfo = async (accounts: Account[]): Promise<AccountStates> => {
   return Object.fromEntries(states)
 }
 
+const windowManager = {
+  focus: () => Promise.resolve(),
+  open: () => Promise.resolve(0),
+  remove: () => Promise.resolve(),
+  event: new EventEmitter(),
+  sendWindowToastMessage: () => {},
+  sendWindowUiMessage: () => {}
+}
+
 let keystore: KeystoreController
 describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
   beforeAll(async () => {
     const storage: Storage = produceMemoryStore()
-    keystore = new KeystoreController(storage, { internal: KeystoreSigner })
+    keystore = new KeystoreController(storage, { internal: KeystoreSigner }, windowManager)
     await keystore.addSecret('passphrase', eoaSigner.pass, '', false)
     await keystore.unlockWithSecret('passphrase', eoaSigner.pass)
     await keystore.addKeys([
@@ -425,7 +435,7 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
 describe('Sign Message, Keystore with key dedicatedToOneSA: false', () => {
   beforeAll(async () => {
     const storage: Storage = produceMemoryStore()
-    keystore = new KeystoreController(storage, { internal: KeystoreSigner })
+    keystore = new KeystoreController(storage, { internal: KeystoreSigner }, windowManager)
     await keystore.addSecret('passphrase', eoaSigner.pass, '', false)
     await keystore.unlockWithSecret('passphrase', eoaSigner.pass)
     await keystore.addKeys([

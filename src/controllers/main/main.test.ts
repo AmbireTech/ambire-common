@@ -22,7 +22,8 @@ const windowManager = {
   open: () => Promise.resolve(0),
   remove: () => Promise.resolve(),
   event: new EventEmitter(),
-  sendWindowToastMessage: () => {}
+  sendWindowToastMessage: () => {},
+  sendWindowUiMessage: () => {}
 }
 
 const notificationManager = {

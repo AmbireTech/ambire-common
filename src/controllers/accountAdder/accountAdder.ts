@@ -67,7 +67,7 @@ export class AccountAdderController extends EventEmitter {
 
   isInitialized: boolean = false
 
-  isInitializedWithDefaultSeed: boolean = false
+  isInitializedWithSavedSeed: boolean = false
 
   shouldSearchForLinkedAccounts = DEFAULT_SHOULD_SEARCH_FOR_LINKED_ACCOUNTS
 
@@ -230,22 +230,22 @@ export class AccountAdderController extends EventEmitter {
     }))
   }
 
-  async #isKeyIteratorInitializedWithTheDefaultSeed() {
+  async #isKeyIteratorInitializedWithTheSavedSeed() {
     if (this.#keyIterator?.subType !== 'seed') return false
 
-    if (!this.#keystore.hasKeystoreDefaultSeed) return false
+    if (!this.#keystore.hasKeystoreSavedSeed) return false
 
-    const defaultSeed = await this.#keystore.getDefaultSeed()
-    if (!defaultSeed) return false
+    const savedSeed = await this.#keystore.getSavedSeed()
+    if (!savedSeed) return false
 
-    return !!this.#keyIterator?.isSeedMatching?.(defaultSeed.seed)
+    return !!this.#keyIterator?.isSeedMatching?.(savedSeed.seed)
   }
 
   async #getInitialHdPathTemplate(defaultHdPathTemplate: HD_PATH_TEMPLATE_TYPE) {
-    if (!this.isInitializedWithDefaultSeed) return defaultHdPathTemplate
+    if (!this.isInitializedWithSavedSeed) return defaultHdPathTemplate
 
-    const defaultSeed = await this.#keystore.getDefaultSeed()
-    return defaultSeed.hdPathTemplate || defaultHdPathTemplate
+    const savedSeed = await this.#keystore.getSavedSeed()
+    return savedSeed.hdPathTemplate || defaultHdPathTemplate
   }
 
   async init({
@@ -268,7 +268,7 @@ export class AccountAdderController extends EventEmitter {
 
     this.page = page || DEFAULT_PAGE
     this.pageSize = pageSize || DEFAULT_PAGE_SIZE
-    this.isInitializedWithDefaultSeed = await this.#isKeyIteratorInitializedWithTheDefaultSeed()
+    this.isInitializedWithSavedSeed = await this.#isKeyIteratorInitializedWithTheSavedSeed()
     this.hdPathTemplate = await this.#getInitialHdPathTemplate(hdPathTemplate)
     this.isInitialized = true
     this.#alreadyImportedAccountsOnControllerInit = this.#accounts.accounts
@@ -301,7 +301,7 @@ export class AccountAdderController extends EventEmitter {
     this.readyToAddAccounts = []
     this.readyToAddKeys = { internal: [], external: [] }
     this.isInitialized = false
-    this.isInitializedWithDefaultSeed = false
+    this.isInitializedWithSavedSeed = false
 
     this.emitUpdate()
   }

@@ -1,6 +1,5 @@
 /* eslint-disable new-cap */
 import { HDNodeWallet, Mnemonic, Wallet } from 'ethers'
-import { Key } from 'interfaces/keystore'
 
 import {
   HD_PATH_TEMPLATE_TYPE,
@@ -8,6 +7,7 @@ import {
 } from '../../consts/derivation'
 import { SelectedAccountForImport } from '../../interfaces/account'
 import { KeyIterator as KeyIteratorInterface } from '../../interfaces/keyIterator'
+import { Key } from '../../interfaces/keystore'
 import { getHdPathFromTemplate } from '../../utils/hdPath'
 import { isDerivedForSmartAccountKeyOnly } from '../account/account'
 import { getDefaultKeyLabel, getExistingKeyLabel } from '../keys/keys'
