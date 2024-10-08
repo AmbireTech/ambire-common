@@ -328,8 +328,7 @@ export class MainController extends EventEmitter {
           // since firing multiple keystore actions is not possible
           // (the #wrapKeystoreAction listens for the first one to finish and
           // skips the parallel one, if one is requested).
-          console.log('account adder success')
-          console.log(this.accountAdder.readyToAddKeys.internal)
+
           await this.keystore.addKeys(this.accountAdder.readyToAddKeys.internal)
           await this.keystore.addKeysExternallyStored(this.accountAdder.readyToAddKeys.external)
 
