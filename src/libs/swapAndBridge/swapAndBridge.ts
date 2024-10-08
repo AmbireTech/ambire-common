@@ -13,7 +13,6 @@ import {
 } from '../../interfaces/swapAndBridge'
 import { SignUserRequest } from '../../interfaces/userRequest'
 import { formatNativeTokenAddressIfNeeded } from '../../services/address'
-import { normalizeNativeTokenAddressIfNeeded } from '../../services/socket/api'
 import { isSmartAccount } from '../account/account'
 import { Call } from '../accountOp/types'
 import { TokenResult } from '../portfolio'
@@ -22,22 +21,14 @@ export const sortTokenListResponse = (
   tokenListResponse: SocketAPIToken[],
   accountPortfolioTokenList: TokenResult[]
 ) => {
-  const normalizedPortfolioTokenList = accountPortfolioTokenList.map((t) => ({
-    ...t,
-    address: normalizeNativeTokenAddressIfNeeded(
-      // incoming token addresses from Socket (to compare against) are lowercased
-      t.address.toLowerCase()
-    )
-  }))
-
   return (
     tokenListResponse
       // Alphabetically, by project name (not token symbol)
       .sort((a: SocketAPIToken, b: SocketAPIToken) => a.name?.localeCompare(b?.name))
       // Sort fist the tokens that exist in the account portfolio
       .sort((a: SocketAPIToken, b: SocketAPIToken) => {
-        const aInPortfolio = normalizedPortfolioTokenList.some((t) => t.address === a.address)
-        const bInPortfolio = normalizedPortfolioTokenList.some((t) => t.address === b.address)
+        const aInPortfolio = accountPortfolioTokenList.some((t) => t.address === a.address)
+        const bInPortfolio = accountPortfolioTokenList.some((t) => t.address === b.address)
 
         if (aInPortfolio && !bInPortfolio) return -1
         if (!aInPortfolio && bInPortfolio) return 1

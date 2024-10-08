@@ -1,4 +1,4 @@
-import { formatUnits, getAddress, parseUnits } from 'ethers'
+import { formatUnits, parseUnits } from 'ethers'
 
 import { Storage } from '../../interfaces/storage'
 import {
@@ -13,7 +13,7 @@ import { getTokenAmount } from '../../libs/portfolio/helpers'
 import { getQuoteRouteSteps, sortTokenListResponse } from '../../libs/swapAndBridge/swapAndBridge'
 import { getSanitizedAmount } from '../../libs/transfer/amount'
 import { formatNativeTokenAddressIfNeeded } from '../../services/address'
-import { normalizeNativeTokenAddressIfNeeded, SocketAPI } from '../../services/socket/api'
+import { SocketAPI } from '../../services/socket/api'
 import { validateSendTransferAmount } from '../../services/validations/validate'
 import { convertTokenPriceToBigInt } from '../../utils/numbers/formatters'
 import { AccountsController } from '../accounts/accounts'
@@ -196,8 +196,7 @@ export class SwapAndBridgeController extends EventEmitter {
 
     return !!this.portfolioTokenList.find(
       (token: TokenResult) =>
-        getAddress(normalizeNativeTokenAddressIfNeeded(token.address)) ===
-          getAddress(normalizeNativeTokenAddressIfNeeded(this.toSelectedToken!.address)) &&
+        token.address === this.toSelectedToken!.address &&
         token.networkId === toSelectedTokenNetwork.id
     )
   }
@@ -401,11 +400,7 @@ export class SwapAndBridgeController extends EventEmitter {
 
         if (!this.toSelectedToken) {
           if (addressToSelect) {
-            const token = this.toTokenList.find(
-              (t) =>
-                getAddress(normalizeNativeTokenAddressIfNeeded(t.address)) ===
-                getAddress(normalizeNativeTokenAddressIfNeeded(addressToSelect))
-            )
+            const token = this.toTokenList.find((t) => t.address === addressToSelect)
             if (token) {
               this.updateForm({ toSelectedToken: token })
               this.emitUpdate()
@@ -431,8 +426,7 @@ export class SwapAndBridgeController extends EventEmitter {
     )!
     this.fromSelectedToken = this.portfolioTokenList.find(
       (token: TokenResult) =>
-        getAddress(normalizeNativeTokenAddressIfNeeded(token.address)) ===
-          getAddress(normalizeNativeTokenAddressIfNeeded(this.toSelectedToken!.address)) &&
+        token.address === this.toSelectedToken!.address &&
         token.networkId === toSelectedTokenNetwork.id
     )!
     // Reverses the from and to chain ids, since their format is the same

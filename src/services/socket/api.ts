@@ -1,3 +1,5 @@
+import { getAddress } from 'ethers'
+
 import { Fetch, RequestInitWithCustomHeaders } from '../../interfaces/fetch'
 import {
   SocketAPIQuote,
@@ -6,17 +8,33 @@ import {
 } from '../../interfaces/swapAndBridge'
 import {
   AMBIRE_FEE_TAKER_ADDRESSES,
-  L2_ZERO_ADDRESS,
+  ETH_ON_OPTIMISM_LEGACY_ADDRESS,
   NULL_ADDRESS,
   ZERO_ADDRESS
 } from './constants'
 
-/**
- * Socket API expects to receive null address instead of the zero address for
- * native tokens.
- */
-export const normalizeNativeTokenAddressIfNeeded = (addr: string) =>
-  [ZERO_ADDRESS, L2_ZERO_ADDRESS].includes(addr) ? NULL_ADDRESS : addr
+const convertZeroAddressToNullAddressIfNeeded = (addr: string) =>
+  addr === ZERO_ADDRESS ? NULL_ADDRESS : addr
+
+const convertNullAddressToZeroAddressIfNeeded = (addr: string) =>
+  addr === NULL_ADDRESS ? ZERO_ADDRESS : addr
+
+const normalizeIncomingSocketToken = (token: SocketAPIToken) => ({
+  ...token,
+  address:
+    // incoming token addresses from Socket are all lowercased
+    getAddress(
+      // native token addresses come as null address instead of the zero address
+      convertNullAddressToZeroAddressIfNeeded(token.address)
+    )
+})
+
+const normalizeOutgoingSocketTokenAddress = (address: string) =>
+  // Socket expects to receive null address instead of the zero address for native tokens.
+  convertZeroAddressToNullAddressIfNeeded(
+    // Socket works only with all lowercased token addresses, otherwise, bad request
+    address.toLocaleLowerCase()
+  )
 
 export class SocketAPI {
   #fetch: Fetch
@@ -68,7 +86,15 @@ export class SocketAPI {
     response = await response.json()
     if (!response.success) throw fallbackError
 
-    return response.result
+    let { result } = response
+    // Exception for Optimism, strip out the legacy ETH address
+    // TODO: Remove when Socket removes the legacy ETH address from their response
+    if (toChainId === 10)
+      result = result.filter(
+        (token: SocketAPIToken) => token.address !== ETH_ON_OPTIMISM_LEGACY_ADDRESS
+      )
+
+    return result.map(normalizeIncomingSocketToken)
   }
 
   async getFromTokenList({ fromChainId }: { fromChainId: number }) {
@@ -84,7 +110,7 @@ export class SocketAPI {
     response = await response.json()
     if (!response.success) throw fallbackError
 
-    return response.result
+    return response.result.map(normalizeIncomingSocketToken)
   }
 
   async quote({
@@ -108,13 +134,13 @@ export class SocketAPI {
   }) {
     const params = new URLSearchParams({
       fromChainId: fromChainId.toString(),
-      fromTokenAddress: normalizeNativeTokenAddressIfNeeded(fromTokenAddress),
+      fromTokenAddress: normalizeOutgoingSocketTokenAddress(fromTokenAddress),
       toChainId: toChainId.toString(),
-      toTokenAddress: normalizeNativeTokenAddressIfNeeded(toTokenAddress),
+      toTokenAddress: normalizeOutgoingSocketTokenAddress(toTokenAddress),
       fromAmount: fromAmount.toString(),
       userAddress,
       // TODO: Figure out why passing this prop is causing error 500 in the API
-      // feeTakerAddress: AMBIRE_FEE_TAKER_ADDRESSES[fromChainId],
+      // feeTakerAddress: normalizeOutgoingSocketTokenAddress(AMBIRE_FEE_TAKER_ADDRESSES[fromChainId]),
       isContractCall: isSmartAccount.toString(), // only get quotes with that are compatible with contracts
       sort,
       singleTxOnly: 'false',
@@ -128,7 +154,11 @@ export class SocketAPI {
     response = await response.json()
     if (!response.success) throw new Error('Failed to fetch quote')
 
-    return response.result
+    return {
+      ...response.result,
+      fromAsset: normalizeIncomingSocketToken(response.result.fromAsset),
+      toAsset: normalizeIncomingSocketToken(response.result.toAsset)
+    }
   }
 
   async startRoute({
@@ -147,8 +177,8 @@ export class SocketAPI {
     const params = {
       fromChainId,
       toChainId,
-      fromAssetAddress,
-      toAssetAddress,
+      fromAssetAddress: normalizeOutgoingSocketTokenAddress(fromAssetAddress),
+      toAssetAddress: normalizeOutgoingSocketTokenAddress(toAssetAddress),
       includeFirstTxDetails: true,
       route
     }

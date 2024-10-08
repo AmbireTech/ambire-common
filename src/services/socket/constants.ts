@@ -1,9 +1,9 @@
 export const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000'
-export const L2_ZERO_ADDRESS = '0xdeaddeaddeaddeaddeaddeaddeaddeaddead0000'
-
-// Yes, this is a real address. It's similar to the zero address. It's just a fancy
-// looking address that nobody knows the private key of. Some people use it to burn funds.
+// Some services (like Socket) use the null token address to represent the
+// native token as the ZERO_ADDRESS is not standard for it.
 export const NULL_ADDRESS = '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee'
+
+export const ETH_ON_OPTIMISM_LEGACY_ADDRESS = '0xdeaddeaddeaddeaddeaddeaddeaddeaddead0000'
 
 export const AMBIRE_FEE_TAKER_ADDRESSES: { [chainId: number]: string } = {
   324: '0x942f9CE5D9a33a82F88D233AEb3292E680230348',
