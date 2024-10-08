@@ -9,6 +9,7 @@ import {
 import {
   AMBIRE_FEE_TAKER_ADDRESSES,
   ETH_ON_OPTIMISM_LEGACY_ADDRESS,
+  FEE_PERCENT,
   NULL_ADDRESS,
   ZERO_ADDRESS
 } from './constants'
@@ -139,8 +140,9 @@ export class SocketAPI {
       toTokenAddress: normalizeOutgoingSocketTokenAddress(toTokenAddress),
       fromAmount: fromAmount.toString(),
       userAddress,
-      // TODO: Figure out why passing this prop is causing error 500 in the API
-      // feeTakerAddress: normalizeOutgoingSocketTokenAddress(AMBIRE_FEE_TAKER_ADDRESSES[fromChainId]),
+      // TODO: Enable when needed
+      // feeTakerAddress: AMBIRE_FEE_TAKER_ADDRESSES[fromChainId],
+      // feePercent: FEE_PERCENT.toString(),
       isContractCall: isSmartAccount.toString(), // only get quotes with that are compatible with contracts
       sort,
       singleTxOnly: 'false',
