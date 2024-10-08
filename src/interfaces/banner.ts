@@ -3,7 +3,12 @@ import { AccountOpAction } from 'controllers/actions/actions'
 import { Network } from './network'
 
 export type BannerType = 'error' | 'warning' | 'info' | 'info2' | 'success'
-export type BannerCategory = 'pending-to-be-signed-acc-op' | 'pending-to-be-confirmed-acc-op'
+export type BannerCategory =
+  | 'pending-to-be-signed-acc-op'
+  | 'pending-to-be-confirmed-acc-op'
+  | 'swap-and-bridge-in-progress'
+  | 'swap-and-bridge-ready'
+  | 'swap-and-bridge-completed'
 
 export interface Banner {
   id: number | string
@@ -65,5 +70,19 @@ export type Action =
       actionName: 'select-rpc-url'
       meta: {
         network: Network
+      }
+    }
+  | {
+      label: 'Reject'
+      actionName: 'reject-swap-and-bridge'
+      meta: {
+        activeRouteId: number
+      }
+    }
+  | {
+      label: 'Proceed to Next Step'
+      actionName: 'proceed-swap-and-bridge'
+      meta: {
+        activeRouteId: number
       }
     }

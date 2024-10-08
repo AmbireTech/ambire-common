@@ -6,8 +6,60 @@ import { Account, AccountId } from '../../interfaces/account'
 import { Action, Banner } from '../../interfaces/banner'
 import { Network, NetworkId } from '../../interfaces/network'
 import { RPCProviders } from '../../interfaces/provider'
+import { ActiveRoute } from '../../interfaces/swapAndBridge'
 import { getNetworksWithFailedRPC } from '../networks/networks'
 import { PORTFOLIO_LIB_ERROR_NAMES } from '../portfolio/portfolio'
+import { getQuoteRouteSteps } from '../swapAndBridge/swapAndBridge'
+
+export const getSwapAndBridgeBanners = (activeRoutes: ActiveRoute[]): Banner[] => {
+  const getTitle = (route: ActiveRoute) => {
+    const currentTx = route.route.userTxs[route.route.currentUserTxIndex]
+
+    if (route.routeStatus === 'completed') return 'Swap & Bridge Route Completed'
+
+    if (route.routeStatus === 'in-progress') {
+      if (currentTx.userTxType === 'fund-movr') return 'Bridge in Progress'
+      if (currentTx.userTxType === 'dex-swap') return 'Swap in Progress'
+    }
+
+    return 'Pending Swap & Bridge Route'
+  }
+
+  const getDescription = (route: ActiveRoute) => {
+    const userTxTypes = route.route.userTxs.map((t) => t.userTxType)
+    const type = userTxTypes.includes('fund-movr') ? 'Bridging' : 'Swapping'
+    const steps = getQuoteRouteSteps(route.route.userTxs)
+
+    return `${type} ${steps[0].fromAsset.symbol} to ${steps[steps.length - 1].toAsset.symbol}`
+  }
+
+  return activeRoutes.map((r) => {
+    const actions: Action[] = [
+      {
+        label: 'Reject',
+        actionName: 'reject-swap-and-bridge',
+        meta: { activeRouteId: r.activeRouteId }
+      }
+    ]
+
+    if (r.routeStatus === 'ready') {
+      actions.push({
+        label: 'Proceed to Next Step',
+        actionName: 'proceed-swap-and-bridge',
+        meta: { activeRouteId: r.activeRouteId }
+      })
+    }
+
+    return {
+      id: r.activeRouteId,
+      type: 'info',
+      category: `swap-and-bridge-${r.routeStatus}`,
+      title: getTitle(r),
+      text: getDescription(r),
+      actions
+    }
+  })
+}
 
 export const getDappActionRequestsBanners = (actions: ActionFromActionsQueue[]): Banner[] => {
   const requests = actions.filter((a) => !['accountOp', 'benzin'].includes(a.type))

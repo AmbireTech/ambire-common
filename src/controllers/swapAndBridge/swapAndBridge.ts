@@ -1,4 +1,4 @@
-import { formatUnits, parseUnits } from 'ethers'
+import { formatUnits, getAddress, parseUnits } from 'ethers'
 
 import { Storage } from '../../interfaces/storage'
 import {
@@ -8,6 +8,7 @@ import {
   SocketAPIToken
 } from '../../interfaces/swapAndBridge'
 import { isSmartAccount } from '../../libs/account/account'
+import { getSwapAndBridgeBanners } from '../../libs/banners/banners'
 import { TokenResult } from '../../libs/portfolio'
 import { getTokenAmount } from '../../libs/portfolio/helpers'
 import { getQuoteRouteSteps, sortTokenListResponse } from '../../libs/swapAndBridge/swapAndBridge'
@@ -107,7 +108,7 @@ export class SwapAndBridgeController extends EventEmitter {
       'swapAndBridgeActiveRoutes',
       []
     )
-    this.activeRoutes = swapAndBridgeActiveRoutes.filter((r) => !!r.userTxHash)
+    this.activeRoutes = swapAndBridgeActiveRoutes.filter((r) => r.routeStatus !== 'completed')
 
     this.emitUpdate()
   }
@@ -641,6 +642,13 @@ export class SwapAndBridgeController extends EventEmitter {
     )
   }
 
+  get banners() {
+    const activeRoutesForSelectedAccount = this.activeRoutes.filter(
+      (r) => getAddress(r.route.sender || r.route.userAddress) === this.#accounts.selectedAccount
+    )
+    return getSwapAndBridgeBanners(activeRoutesForSelectedAccount)
+  }
+
   toJSON() {
     return {
       ...this,
@@ -651,7 +659,8 @@ export class SwapAndBridgeController extends EventEmitter {
       formStatus: this.formStatus,
       activeRoutesInProgress: this.activeRoutesInProgress,
       activeRoutes: this.activeRoutes,
-      isSwitchFromAndToTokensEnabled: this.isSwitchFromAndToTokensEnabled
+      isSwitchFromAndToTokensEnabled: this.isSwitchFromAndToTokensEnabled,
+      banners: this.banners
     }
   }
 }
