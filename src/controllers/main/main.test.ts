@@ -26,7 +26,7 @@ const windowManager = {
 }
 
 const notificationManager = {
-  create: () => Promise.resolve()
+  createNotification: () => Promise.resolve()
 }
 
 describe('Main Controller ', () => {

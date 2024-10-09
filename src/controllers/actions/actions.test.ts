@@ -65,7 +65,7 @@ describe('Actions Controller', () => {
   }
 
   const notificationManager = {
-    create: () => Promise.resolve()
+    createNotification: () => Promise.resolve()
   }
 
   const storage: Storage = produceMemoryStore()
