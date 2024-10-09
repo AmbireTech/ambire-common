@@ -66,7 +66,8 @@ describe('Legends', () => {
     const expectedVisualizations = [
       [
         getAction('Pick character'),
-        getImage('https://staging-relayer.ambire.com/legends/nft-image/avatar/sorceress-lvl0.png'),
+        getImage('https://staging-relayer.ambire.com/legends/nft-image/avatar/slime-lvl0.png'),
+        getLabel('Slime'),
         getLabel('for Ambire Legends')
       ]
     ]
