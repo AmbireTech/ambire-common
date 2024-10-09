@@ -1,19 +1,15 @@
 import { getAddress, Interface, ZeroAddress } from 'ethers'
 
 import { AccountOp } from '../../../accountOp/accountOp'
+import { Legends } from '../../const/abis/Legends'
 import { HumanizerCallModule, IrCall } from '../../interfaces'
 import { getAction, getAddressVisualization, getLabel } from '../../utils'
 
 const ONCHAIN_TXNS_LEGENDS_ADDRESS = '0x1415926535897932384626433832795028841971'
 const NFT_CONTRACT_ADDRESS = '0x52d067EBB7b06F31AEB645Bd34f92c3Ac13a29ea'
 // @TODO add test
-const LegendsModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]) => {
-  const iface = new Interface([
-    'function mint(uint256 )',
-    'function spinWheel(uint256 random)',
-    'function linkAndAcceptInvite(address INVITEE_V2_ACCOUNT, address INVITEE_EOA_OR_V1, address INVITER_V2, bytes signature)',
-    'function invite(address)'
-  ])
+const legendsModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]) => {
+  const iface = new Interface(Legends)
   const characterTypes = ['Unknown', 'Slime', 'Sorceress', 'Necromancer Vitalik', 'Penguin Paladin']
   const matcher = {
     [iface.getFunction('mint')?.selector!]: (call: IrCall) => {
@@ -36,7 +32,7 @@ const LegendsModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]) =
       const [inviteeV2Account, inviteeEoaOrV1, inviter] = iface.parseTransaction(call)!.args
       // @TODO text
       const acceptInvitationVisualizationPrefix =
-        inviter === ZeroAddress
+        inviter !== ZeroAddress
           ? [
               getAction('Accept invitation'),
               getLabel('from'),
@@ -76,4 +72,4 @@ const LegendsModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]) =
   return newCalls
 }
 
-export default LegendsModule
+export default legendsModule
