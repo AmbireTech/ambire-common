@@ -345,7 +345,7 @@ export class SwapAndBridgeController extends EventEmitter {
       if (this.quote) this.quote = null
     }
 
-    this.#updateQuote()
+    this.updateQuote()
     this.emitUpdate()
   }
 
@@ -430,85 +430,98 @@ export class SwapAndBridgeController extends EventEmitter {
     await this.updateToTokenList(true, currentFromSelectedToken.address)
   }
 
-  async #updateQuote() {
-    await this.withStatus(
-      'updateQuote',
-      async () => {
-        if (!this.#getIsFormValidToFetchQuote()) {
-          if (this.quote) {
-            this.quote = null
-            this.emitUpdate()
-          }
-          return
-        }
-
-        const selectedAccount = this.#accounts.accounts.find(
-          (a) => a.addr === this.#accounts.selectedAccount
-        )
-
-        const sanitizedFromAmount = getSanitizedAmount(
-          this.fromAmount,
-          this.fromSelectedToken!.decimals
-        )
-        const bigintFromAmount = parseUnits(sanitizedFromAmount, this.fromSelectedToken!.decimals)
-
-        if (this.quote) {
-          const isFromAmountSame = this.quote.route.fromAmount === bigintFromAmount.toString()
-          const isFromNetworkSame = this.quote.fromChainId === this.fromChainId
-          const isFromAddressSame =
-            formatNativeTokenAddressIfNeeded(this.quote.fromAsset.address) ===
-            this.fromSelectedToken!.address
-          const isToNetworkSame = this.quote.toChainId === this.toChainId
-          const isToAddressSame =
-            formatNativeTokenAddressIfNeeded(this.quote.toAsset.address) ===
-            this.toSelectedToken!.address
-
-          if (
-            isFromAmountSame &&
-            isFromNetworkSame &&
-            isFromAddressSame &&
-            isToNetworkSame &&
-            isToAddressSame
-          ) {
-            return
-          }
-        }
-
+  async updateQuote(
+    options: {
+      skipQuoteUpdateOnSameValues?: boolean
+      skipPreviousQuoteRemoval?: boolean
+      skipStatusUpdate?: boolean
+    } = {
+      skipQuoteUpdateOnSameValues: true,
+      skipPreviousQuoteRemoval: false,
+      skipStatusUpdate: false
+    }
+  ) {
+    const updateQuoteFunction = async () => {
+      if (!this.#getIsFormValidToFetchQuote()) {
         if (this.quote) {
           this.quote = null
           this.emitUpdate()
         }
+        return
+      }
 
-        const quoteResult = await this.#socketAPI.quote({
-          fromChainId: this.fromChainId!,
-          fromTokenAddress: this.fromSelectedToken!.address,
-          toChainId: this.toChainId!,
-          toTokenAddress: this.toSelectedToken!.address,
-          fromAmount: bigintFromAmount,
-          userAddress: this.#accounts.selectedAccount!,
-          isSmartAccount: isSmartAccount(selectedAccount),
-          sort: this.routePriority
-        })
+      const selectedAccount = this.#accounts.accounts.find(
+        (a) => a.addr === this.#accounts.selectedAccount
+      )
 
-        if (this.#getIsFormValidToFetchQuote() && quoteResult && quoteResult?.routes?.[0]) {
-          const bestRoute =
-            this.routePriority === 'output'
-              ? quoteResult.routes[0] // API returns highest output first
-              : quoteResult.routes[quoteResult.routes.length - 1] // API returns fastest... last
+      const sanitizedFromAmount = getSanitizedAmount(
+        this.fromAmount,
+        this.fromSelectedToken!.decimals
+      )
+      const bigintFromAmount = parseUnits(sanitizedFromAmount, this.fromSelectedToken!.decimals)
 
-          this.quote = {
-            fromAsset: quoteResult.fromAsset,
-            fromChainId: quoteResult.fromChainId,
-            toAsset: quoteResult.toAsset,
-            toChainId: quoteResult.toChainId,
-            route: bestRoute,
-            routeSteps: getQuoteRouteSteps(bestRoute.userTxs)
-          }
-          this.emitUpdate()
+      if (this.quote) {
+        const isFromAmountSame = this.quote.route.fromAmount === bigintFromAmount.toString()
+        const isFromNetworkSame = this.quote.fromChainId === this.fromChainId
+        const isFromAddressSame =
+          formatNativeTokenAddressIfNeeded(this.quote.fromAsset.address) ===
+          this.fromSelectedToken!.address
+        const isToNetworkSame = this.quote.toChainId === this.toChainId
+        const isToAddressSame =
+          formatNativeTokenAddressIfNeeded(this.quote.toAsset.address) ===
+          this.toSelectedToken!.address
+
+        if (
+          options.skipQuoteUpdateOnSameValues &&
+          isFromAmountSame &&
+          isFromNetworkSame &&
+          isFromAddressSame &&
+          isToNetworkSame &&
+          isToAddressSame
+        ) {
+          return
         }
-      },
-      true
-    )
+      }
+
+      if (this.quote && !options.skipPreviousQuoteRemoval) {
+        this.quote = null
+        this.emitUpdate()
+      }
+
+      const quoteResult = await this.#socketAPI.quote({
+        fromChainId: this.fromChainId!,
+        fromTokenAddress: this.fromSelectedToken!.address,
+        toChainId: this.toChainId!,
+        toTokenAddress: this.toSelectedToken!.address,
+        fromAmount: bigintFromAmount,
+        userAddress: this.#accounts.selectedAccount!,
+        isSmartAccount: isSmartAccount(selectedAccount),
+        sort: this.routePriority
+      })
+
+      if (this.#getIsFormValidToFetchQuote() && quoteResult && quoteResult?.routes?.[0]) {
+        const bestRoute =
+          this.routePriority === 'output'
+            ? quoteResult.routes[0] // API returns highest output first
+            : quoteResult.routes[quoteResult.routes.length - 1] // API returns fastest... last
+
+        this.quote = {
+          fromAsset: quoteResult.fromAsset,
+          fromChainId: quoteResult.fromChainId,
+          toAsset: quoteResult.toAsset,
+          toChainId: quoteResult.toChainId,
+          route: bestRoute,
+          routeSteps: getQuoteRouteSteps(bestRoute.userTxs)
+        }
+        this.emitUpdate()
+      }
+    }
+
+    if (options.skipStatusUpdate) {
+      await updateQuoteFunction()
+    } else {
+      await this.withStatus('updateQuote', updateQuoteFunction, true)
+    }
   }
 
   async getRouteStartUserTx() {
