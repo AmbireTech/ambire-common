@@ -244,7 +244,6 @@ export class SwapAndBridgeController extends EventEmitter {
           this.fromAmountInFiat = ''
           return
         }
-
         const tokenPrice = this.fromSelectedToken?.priceIn.find(
           (p) => p.baseCurrency === HARD_CODED_CURRENCY
         )?.price
@@ -447,7 +446,11 @@ export class SwapAndBridgeController extends EventEmitter {
           (a) => a.addr === this.#accounts.selectedAccount
         )
 
-        const bigintFromAmount = parseUnits(this.fromAmount, this.fromSelectedToken!.decimals)
+        const sanitizedFromAmount = getSanitizedAmount(
+          this.fromAmount,
+          this.fromSelectedToken!.decimals
+        )
+        const bigintFromAmount = parseUnits(sanitizedFromAmount, this.fromSelectedToken!.decimals)
 
         if (this.quote) {
           const isFromAmountSame = this.quote.route.fromAmount === bigintFromAmount.toString()
