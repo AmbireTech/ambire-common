@@ -35,11 +35,10 @@ const legendsModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]) =
     [iface.getFunction('mint')?.selector!]: (call: IrCall) => {
       const [heroType] = iface.parseTransaction(call)!.args
 
-      // @TODO add actual nft with image to display
       return [
         getAction('Pick character'),
-        getImage(characterTypes[heroType].type),
-        getLabel(characterTypes[heroType].type || 'Uncreated'),
+        getImage(characterTypes[heroType].image),
+        getLabel(characterTypes[heroType].type || 'Unknown'),
         getLabel('for Ambire Legends')
       ]
     },

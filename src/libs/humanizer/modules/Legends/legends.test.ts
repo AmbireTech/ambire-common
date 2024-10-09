@@ -5,7 +5,7 @@ import { describe, it } from '@jest/globals'
 import { Legends } from '../../const/abis'
 import { HumanizerVisualization, IrCall } from '../../interfaces'
 import { compareHumanizerVisualizations } from '../../testHelpers'
-import { getAction, getAddressVisualization, getLabel } from '../../utils'
+import { getAction, getAddressVisualization, getImage, getLabel } from '../../utils'
 import legendsModule from '.'
 
 const iface = new Interface(Legends)
@@ -64,7 +64,11 @@ describe('Legends', () => {
     ]
     const newCalls = legendsModule({} as any, irCalls, {} as any)
     const expectedVisualizations = [
-      [getAction('Pick character'), getLabel('Slime'), getLabel('for Ambire Legends')]
+      [
+        getAction('Pick character'),
+        getImage('https://staging-relayer.ambire.com/legends/nft-image/avatar/sorceress-lvl0.png'),
+        getLabel('for Ambire Legends')
+      ]
     ]
     compareHumanizerVisualizations(newCalls, expectedVisualizations)
   })
