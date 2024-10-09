@@ -17,6 +17,7 @@ import curveModule from './modules/Curve'
 import fallbackHumanizer from './modules/FallbackHumanizer'
 import gasTankModule from './modules/GasTankModule'
 import KyberSwap from './modules/KyberSwap'
+import legendsModule from './modules/Legends'
 import { postProcessing } from './modules/PostProcessing/postProcessModule'
 import preProcessHumanizer from './modules/PreProcess'
 import privilegeHumanizer from './modules/Privileges'
@@ -49,6 +50,7 @@ export const humanizerCallModules: HumanizerCallModule[] = [
   WALLETModule,
   privilegeHumanizer,
   sushiSwapModule,
+  legendsModule,
   fallbackHumanizer,
   postProcessing
 ]
