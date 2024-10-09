@@ -191,6 +191,7 @@ export class MainController extends EventEmitter {
     fetch,
     relayerUrl,
     velcroUrl,
+    socketApiKey,
     keystoreSigners,
     externalSignerControllers,
     windowManager,
@@ -200,6 +201,7 @@ export class MainController extends EventEmitter {
     fetch: Fetch
     relayerUrl: string
     velcroUrl: string
+    socketApiKey: string
     keystoreSigners: Partial<{ [key in Key['type']]: KeystoreSignerType }>
     externalSignerControllers: ExternalSignerControllers
     windowManager: WindowManager
@@ -271,7 +273,7 @@ export class MainController extends EventEmitter {
       this.accounts,
       this.#externalSignerControllers
     )
-    this.#socketAPI = new SocketAPI({ fetch: this.fetch })
+    this.#socketAPI = new SocketAPI({ apiKey: socketApiKey, fetch: this.fetch })
     this.swapAndBridge = new SwapAndBridgeController({
       accounts: this.accounts,
       networks: this.networks,

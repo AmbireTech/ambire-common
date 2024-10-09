@@ -42,14 +42,16 @@ export class SocketAPI {
 
   #baseUrl = 'https://api.socket.tech/v2'
 
-  #headers: RequestInitWithCustomHeaders['headers'] = {
-    'API-KEY': process.env.SOCKET_API_KEY,
-    Accept: 'application/json',
-    'Content-Type': 'application/json'
-  }
+  #headers: RequestInitWithCustomHeaders['headers']
 
-  constructor({ fetch }: { fetch: Fetch }) {
+  constructor({ fetch, apiKey }: { fetch: Fetch; apiKey: string }) {
     this.#fetch = fetch
+
+    this.#headers = {
+      'API-KEY': apiKey,
+      Accept: 'application/json',
+      'Content-Type': 'application/json'
+    }
   }
 
   async getHealth() {
