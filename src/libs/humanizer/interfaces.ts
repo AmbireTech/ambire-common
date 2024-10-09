@@ -21,6 +21,7 @@ export type HumanizerVisualization = (
       value: bigint
       chainId?: bigint
     }
+  | { type: 'image'; content: string }
 ) & { isHidden?: boolean; id: number; content?: string }
 export interface IrCall extends Call {
   fullVisualization?: HumanizerVisualization[]

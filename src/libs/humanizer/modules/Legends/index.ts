@@ -3,34 +3,51 @@ import { getAddress, Interface, ZeroAddress } from 'ethers'
 import { AccountOp } from '../../../accountOp/accountOp'
 import { Legends } from '../../const/abis/Legends'
 import { HumanizerCallModule, IrCall } from '../../interfaces'
-import { getAction, getAddressVisualization, getLabel } from '../../utils'
+import { getAction, getAddressVisualization, getImage, getLabel } from '../../utils'
 
 const ONCHAIN_TXNS_LEGENDS_ADDRESS = '0x1415926535897932384626433832795028841971'
 const NFT_CONTRACT_ADDRESS = '0x52d067EBB7b06F31AEB645Bd34f92c3Ac13a29ea'
-// @TODO add test
 const legendsModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]) => {
   const iface = new Interface(Legends)
-  const characterTypes = ['Unknown', 'Slime', 'Sorceress', 'Necromancer Vitalik', 'Penguin Paladin']
+  const characterTypes = [
+    {
+      type: 'Unknown',
+      image: 'https://staging-relayer.ambire.com/legends/nft-image/avatar/unknown.png'
+    },
+    {
+      type: 'Slime',
+      image: 'https://staging-relayer.ambire.com/legends/nft-image/avatar/slime-lvl0.png'
+    },
+    {
+      type: 'Sorceress',
+      image: 'https://staging-relayer.ambire.com/legends/nft-image/avatar/sorceress-lvl0.png'
+    },
+    {
+      type: 'Necromancer Vitalik',
+      image: 'https://staging-relayer.ambire.com/legends/nft-image/avatar/necromancer-lvl0.png'
+    },
+    {
+      type: 'Penguin Paladin',
+      image: 'https://staging-relayer.ambire.com/legends/nft-image/avatar/penguin-lvl0.png'
+    }
+  ]
   const matcher = {
     [iface.getFunction('mint')?.selector!]: (call: IrCall) => {
       const [heroType] = iface.parseTransaction(call)!.args
+
       // @TODO add actual nft with image to display
       return [
-        // @TODO text
         getAction('Pick character'),
-        getLabel(characterTypes[heroType] || 'Uncreated'),
+        getImage(characterTypes[heroType].type),
+        getLabel(characterTypes[heroType].type || 'Uncreated'),
         getLabel('for Ambire Legends')
       ]
     },
     [iface.getFunction('spinWheel')?.selector!]: () => {
-      return [
-        // @TODO text
-        getAction('Spin the wheel of fortune')
-      ]
+      return [getAction('Spin the wheel of fortune')]
     },
     [iface.getFunction('linkAndAcceptInvite')?.selector!]: (call: IrCall) => {
       const [inviteeV2Account, inviteeEoaOrV1, inviter] = iface.parseTransaction(call)!.args
-      // @TODO text
       const acceptInvitationVisualizationPrefix =
         inviter !== ZeroAddress
           ? [
@@ -42,7 +59,6 @@ const legendsModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]) =
           : []
       return [
         ...acceptInvitationVisualizationPrefix,
-        // @TODO text
         getAction('Link account'),
         getAddressVisualization(inviteeEoaOrV1),
         getLabel('to'),
@@ -52,12 +68,7 @@ const legendsModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]) =
     [iface.getFunction('invite')?.selector!]: (call: IrCall) => {
       const [invitee] = iface.parseTransaction(call)!.args
 
-      return [
-        // @TODO text
-        getAction('Invite'),
-        getAddressVisualization(invitee),
-        getLabel('to Ambire Legends')
-      ]
+      return [getAction('Invite'), getAddressVisualization(invitee), getLabel('to Ambire Legends')]
     }
   }
   const newCalls = calls.map((call) => {
