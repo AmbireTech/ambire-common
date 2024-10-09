@@ -7,7 +7,7 @@ import { Call } from '../accountOp/types'
 // @TODO remove property humanizerMeta
 export type HumanizerVisualization = (
   | {
-      type: 'address' | 'label' | 'action' | 'danger' | 'deadline' | 'chain' | 'message'
+      type: 'address' | 'label' | 'action' | 'danger' | 'deadline' | 'chain' | 'message' | 'image'
       address?: string
       content?: string
       value?: bigint
@@ -21,7 +21,6 @@ export type HumanizerVisualization = (
       value: bigint
       chainId?: bigint
     }
-  | { type: 'image'; content: string }
 ) & { isHidden?: boolean; id: number; content?: string }
 export interface IrCall extends Call {
   fullVisualization?: HumanizerVisualization[]
