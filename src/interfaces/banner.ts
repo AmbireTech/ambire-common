@@ -28,9 +28,7 @@ export type Action =
   | {
       label: 'Open'
       actionName: 'open-accountOp'
-      meta: {
-        actionId: AccountOpAction['id']
-      }
+      meta: { actionId: AccountOpAction['id'] }
     }
   | {
       label: 'Reject'
@@ -44,17 +42,12 @@ export type Action =
   | {
       label: 'Sync'
       actionName: 'sync-keys'
-      meta: {
-        email: string
-        keys: string[]
-      }
+      meta: { email: string; keys: string[] }
     }
   | {
       label: string
       actionName: 'open-external-url'
-      meta: {
-        url: string
-      }
+      meta: { url: string }
     }
   | {
       label: string
@@ -68,21 +61,20 @@ export type Action =
   | {
       label: 'Select'
       actionName: 'select-rpc-url'
-      meta: {
-        network: Network
-      }
+      meta: { network: Network }
     }
   | {
       label: 'Reject'
       actionName: 'reject-swap-and-bridge'
-      meta: {
-        activeRouteId: number
-      }
+      meta: { activeRouteId: number }
     }
   | {
       label: 'Proceed to Next Step'
       actionName: 'proceed-swap-and-bridge'
-      meta: {
-        activeRouteId: number
-      }
+      meta: { activeRouteId: number }
+    }
+  | {
+      label: 'Got it'
+      actionName: 'close-swap-and-bridge'
+      meta: { activeRouteId: number }
     }

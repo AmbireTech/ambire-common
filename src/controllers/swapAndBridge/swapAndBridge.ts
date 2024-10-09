@@ -104,11 +104,7 @@ export class SwapAndBridgeController extends EventEmitter {
     await this.#networks.initialLoadPromise
     await this.#accounts.initialLoadPromise
 
-    const swapAndBridgeActiveRoutes: ActiveRoute[] = await this.#storage.get(
-      'swapAndBridgeActiveRoutes',
-      []
-    )
-    this.activeRoutes = swapAndBridgeActiveRoutes.filter((r) => r.routeStatus !== 'completed')
+    this.activeRoutes = await this.#storage.get('swapAndBridgeActiveRoutes', [])
 
     this.emitUpdate()
   }
@@ -605,20 +601,25 @@ export class SwapAndBridgeController extends EventEmitter {
     activeRoute?: Partial<ActiveRoute>
   ) {
     await this.#initialLoadPromise
-    const activeRouteIndex = this.activeRoutes.findIndex((r) => r.activeRouteId === activeRouteId)
+    const currentActiveRoutes = [...this.activeRoutes]
+    const activeRouteIndex = currentActiveRoutes.findIndex((r) => r.activeRouteId === activeRouteId)
 
     if (activeRouteIndex !== -1) {
-      const route = await this.#socketAPI.updateActiveRoute(activeRouteId)
+      let route = currentActiveRoutes[activeRouteIndex].route
+      if (activeRoute?.routeStatus) {
+        route = await this.#socketAPI.updateActiveRoute(activeRouteId)
+      }
 
       if (activeRoute) {
-        this.activeRoutes[activeRouteIndex] = {
-          ...this.activeRoutes[activeRouteIndex],
+        currentActiveRoutes[activeRouteIndex] = {
+          ...currentActiveRoutes[activeRouteIndex],
           ...activeRoute,
           route
         }
       } else {
-        this.activeRoutes[activeRouteIndex] = { ...this.activeRoutes[activeRouteIndex], route }
+        currentActiveRoutes[activeRouteIndex] = { ...currentActiveRoutes[activeRouteIndex], route }
       }
+      this.activeRoutes = currentActiveRoutes
 
       this.emitUpdate()
     }

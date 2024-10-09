@@ -13,15 +13,8 @@ import { getQuoteRouteSteps } from '../swapAndBridge/swapAndBridge'
 
 export const getSwapAndBridgeBanners = (activeRoutes: ActiveRoute[]): Banner[] => {
   const getTitle = (route: ActiveRoute) => {
-    const currentTx = route.route.userTxs[route.route.currentUserTxIndex]
-
     if (route.routeStatus === 'completed') return 'Swap & Bridge Route Completed'
-
-    if (route.routeStatus === 'in-progress') {
-      if (currentTx.userTxType === 'fund-movr') return 'Bridge in Progress'
-      if (currentTx.userTxType === 'dex-swap') return 'Swap in Progress'
-    }
-
+    if (route.routeStatus === 'in-progress') return 'Swap & Bridge Route In Progress'
     return 'Pending Swap & Bridge Route'
   }
 
@@ -30,17 +23,32 @@ export const getSwapAndBridgeBanners = (activeRoutes: ActiveRoute[]): Banner[] =
     const type = userTxTypes.includes('fund-movr') ? 'Bridging' : 'Swapping'
     const steps = getQuoteRouteSteps(route.route.userTxs)
 
-    return `${type} ${steps[0].fromAsset.symbol} to ${steps[steps.length - 1].toAsset.symbol}`
+    return `${type} ${steps[0].fromAsset.symbol} to ${
+      steps[steps.length - 1].toAsset.symbol
+    } - (Transaction ${
+      route.routeStatus === 'completed'
+        ? route.route.totalUserTx
+        : route.route.currentUserTxIndex + 1
+    } of ${route.route.totalUserTx})`
   }
 
   return activeRoutes.map((r) => {
-    const actions: Action[] = [
-      {
-        label: 'Reject',
-        actionName: 'reject-swap-and-bridge',
-        meta: { activeRouteId: r.activeRouteId }
-      }
-    ]
+    const actions: Action[] =
+      r.routeStatus === 'completed'
+        ? [
+            {
+              label: 'Got it',
+              actionName: 'close-swap-and-bridge',
+              meta: { activeRouteId: r.activeRouteId }
+            }
+          ]
+        : [
+            {
+              label: 'Reject',
+              actionName: 'reject-swap-and-bridge',
+              meta: { activeRouteId: r.activeRouteId }
+            }
+          ]
 
     if (r.routeStatus === 'ready') {
       actions.push({
@@ -52,7 +60,7 @@ export const getSwapAndBridgeBanners = (activeRoutes: ActiveRoute[]): Banner[] =
 
     return {
       id: r.activeRouteId,
-      type: 'info',
+      type: r.routeStatus === 'completed' ? 'success' : 'info',
       category: `swap-and-bridge-${r.routeStatus}`,
       title: getTitle(r),
       text: getDescription(r),
