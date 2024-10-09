@@ -48,6 +48,8 @@ export class SwapAndBridgeController extends EventEmitter {
 
   #socketAPI: SocketAPI
 
+  isHealthy: boolean | null = null
+
   sessionId: string | null = null
 
   fromChainId: number | null = 1
@@ -200,6 +202,8 @@ export class SwapAndBridgeController extends EventEmitter {
 
   async initForm(sessionId: string) {
     await this.#initialLoadPromise
+    this.isHealthy = await this.#socketAPI.getHealth()
+
     this.resetForm() // clear prev session form state
     // for each new session remove the completed activeRoutes from the previous session
     this.activeRoutes = this.activeRoutes.filter((r) => r.routeStatus !== 'completed')

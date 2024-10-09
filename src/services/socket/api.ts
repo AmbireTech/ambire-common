@@ -56,12 +56,11 @@ export class SocketAPI {
 
   async getHealth() {
     try {
-      // TODO: Figure out if we should do health check for Fund Movr API RPCs (getHealthRPC)
-      let response = await this.#fetch(`${this.#baseUrl}/health`, { headers: this.#headers })
+      const response = await this.#fetch(`${this.#baseUrl}/health`, { headers: this.#headers })
       if (!response.ok) return false
 
-      response = await response.json()
-      return response.ok
+      const body = await response.json()
+      return !!body.ok
     } catch {
       return false
     }
