@@ -100,22 +100,6 @@ export class SocketAPI {
     return result.map(normalizeIncomingSocketToken)
   }
 
-  async getFromTokenList({ fromChainId }: { fromChainId: number }) {
-    const params = new URLSearchParams({
-      fromChainId: fromChainId.toString()
-    })
-    const url = `${this.#baseUrl}/token-lists/from-token-list?${params.toString()}`
-
-    let response = await this.#fetch(url, { headers: this.#headers })
-    const fallbackError = new Error('Failed to fetch from token list') // TODO: improve wording
-    if (!response.ok) throw fallbackError
-
-    response = await response.json()
-    if (!response.success) throw fallbackError
-
-    return response.result.map(normalizeIncomingSocketToken)
-  }
-
   async quote({
     fromChainId,
     fromTokenAddress,
