@@ -36,6 +36,10 @@ const normalizeOutgoingSocketTokenAddress = (address: string) =>
     // Socket works only with all lowercased token addresses, otherwise, bad request
     address.toLocaleLowerCase()
   )
+const normalizeOutgoingSocketToken = (token: SocketAPIToken) => ({
+  ...token,
+  address: normalizeOutgoingSocketTokenAddress(token.address)
+})
 
 export class SocketAPI {
   #fetch: Fetch
@@ -144,7 +148,16 @@ export class SocketAPI {
     return {
       ...response.result,
       fromAsset: normalizeIncomingSocketToken(response.result.fromAsset),
-      toAsset: normalizeIncomingSocketToken(response.result.toAsset)
+      toAsset: normalizeIncomingSocketToken(response.result.toAsset),
+      routes: response.result.routes.map((route: SocketAPIQuote['route']) => ({
+        ...route,
+        userTxs: route.userTxs.map((userTx) => ({
+          ...userTx,
+          // @ts-ignore fromAsset exists on one of the two userTx sub-types
+          fromAsset: userTx.fromAsset ? normalizeIncomingSocketToken(userTx.fromAsset) : undefined,
+          toAsset: normalizeIncomingSocketToken(userTx.toAsset)
+        }))
+      }))
     }
   }
 
@@ -167,7 +180,18 @@ export class SocketAPI {
       fromAssetAddress: normalizeOutgoingSocketTokenAddress(fromAssetAddress),
       toAssetAddress: normalizeOutgoingSocketTokenAddress(toAssetAddress),
       includeFirstTxDetails: true,
-      route
+      route: {
+        ...route,
+        userTxs: route.userTxs.map((userTx) => ({
+          ...userTx,
+          // @ts-ignore fromAsset exists on one of the two userTx sub-types
+          fromAsset: userTx?.fromAsset ? normalizeOutgoingSocketToken(userTx.fromAsset) : undefined,
+          toAsset: {
+            ...userTx.toAsset,
+            address: normalizeOutgoingSocketTokenAddress(userTx.toAsset.address)
+          }
+        }))
+      }
     }
 
     let response = await this.#fetch(`${this.#baseUrl}/route/start`, {
