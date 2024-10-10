@@ -50,7 +50,7 @@ export class SwapAndBridgeController extends EventEmitter {
 
   isHealthy: boolean | null = null
 
-  sessionId: string | null = null
+  sessionIds: string[] = []
 
   fromChainId: number | null = 1
 
@@ -202,22 +202,36 @@ export class SwapAndBridgeController extends EventEmitter {
 
   async initForm(sessionId: string) {
     await this.#initialLoadPromise
-    this.isHealthy = await this.#socketAPI.getHealth()
 
-    this.resetForm() // clear prev session form state
-    // for each new session remove the completed activeRoutes from the previous session
-    this.activeRoutes = this.activeRoutes.filter((r) => r.routeStatus !== 'completed')
-    // remove activeRoutes errors from the previous session
-    this.activeRoutes.forEach((r) => {
-      // eslint-disable-next-line no-param-reassign
-      delete r.error
-    })
-    // update the activeRoute.route prop for the new session
-    this.activeRoutes.forEach((r) => {
-      // eslint-disable-next-line @typescript-eslint/no-floating-promises
-      this.updateActiveRoute(r.activeRouteId)
-    })
-    this.sessionId = sessionId
+    // reset only if there are no other instances opened/active
+    if (!this.sessionIds.length) {
+      this.resetForm() // clear prev session form state
+      // for each new session remove the completed activeRoutes from the previous session
+      this.activeRoutes = this.activeRoutes.filter((r) => r.routeStatus !== 'completed')
+      // remove activeRoutes errors from the previous session
+      this.activeRoutes.forEach((r) => {
+        // eslint-disable-next-line no-param-reassign
+        delete r.error
+      })
+      // update the activeRoute.route prop for the new session
+      this.activeRoutes.forEach((r) => {
+        // eslint-disable-next-line @typescript-eslint/no-floating-promises
+        this.updateActiveRoute(r.activeRouteId)
+      })
+    }
+
+    this.sessionIds.push(sessionId)
+    // eslint-disable-next-line @typescript-eslint/no-floating-promises
+    ;(async () => {
+      this.isHealthy = await this.#socketAPI.getHealth()
+    })()
+
+    this.emitUpdate()
+  }
+
+  unloadScreen(sessionId: string) {
+    this.sessionIds = this.sessionIds.filter((id) => id !== sessionId)
+    if (!this.sessionIds.length) this.resetForm()
     this.emitUpdate()
   }
 
