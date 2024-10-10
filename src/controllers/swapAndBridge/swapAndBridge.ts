@@ -48,6 +48,14 @@ export class SwapAndBridgeController extends EventEmitter {
 
   #socketAPI: SocketAPI
 
+  #activeRoutes: ActiveRoute[] = []
+
+  // used to throttle the updateQuote function
+  #updateQuoteLastCalledTime: number = 0
+
+  // used to throttle the updateToTokenList function
+  #updateToTokenListLastCalledTime: number = 0
+
   isHealthy: boolean | null = null
 
   sessionIds: string[] = []
@@ -73,8 +81,6 @@ export class SwapAndBridgeController extends EventEmitter {
   toTokenList: SocketAPIToken[] = []
 
   routePriority: 'output' | 'time' = 'output'
-
-  #activeRoutes: ActiveRoute[] = []
 
   statuses: Statuses<keyof typeof STATUS_WRAPPED_METHODS> = STATUS_WRAPPED_METHODS
 
@@ -395,6 +401,10 @@ export class SwapAndBridgeController extends EventEmitter {
   }
 
   async updateToTokenList(shouldReset: boolean, addressToSelect?: string) {
+    const now = Date.now()
+    if (now - this.#updateToTokenListLastCalledTime <= 500) return // throttle
+    this.#updateToTokenListLastCalledTime = now
+
     await this.withStatus(
       'updateToTokenList',
       async () => {
@@ -459,6 +469,10 @@ export class SwapAndBridgeController extends EventEmitter {
       skipStatusUpdate: false
     }
   ) {
+    const now = Date.now()
+    if (now - this.#updateQuoteLastCalledTime <= 500) return // throttle
+    this.#updateQuoteLastCalledTime = now
+
     const updateQuoteFunction = async () => {
       if (!this.#getIsFormValidToFetchQuote()) {
         if (this.quote) {
