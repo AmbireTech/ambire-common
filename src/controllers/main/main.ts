@@ -1101,7 +1101,17 @@ export class MainController extends EventEmitter {
           transaction = await this.swapAndBridge.getRouteStartUserTx()
         }
 
+        const account = this.accounts.accounts.find(
+          (a) => a.addr === this.accounts.selectedAccount
+        )!
+
         if (activeRouteId) {
+          this.removeUserRequest(activeRouteId, { shouldRemoveSwapAndBridgeRoute: false })
+          if (!isSmartAccount(account)) {
+            this.removeUserRequest(`${activeRouteId}-approval`, {
+              shouldRemoveSwapAndBridgeRoute: false
+            })
+          }
           transaction = await this.#socketAPI.getNextRouteUserTx(activeRouteId)
         }
 
@@ -1113,10 +1123,6 @@ export class MainController extends EventEmitter {
           })
           return
         }
-
-        const account = this.accounts.accounts.find(
-          (a) => a.addr === this.accounts.selectedAccount
-        )!
 
         const network = this.networks.networks.find(
           (n) => Number(n.chainId) === transaction!.chainId
@@ -1147,8 +1153,7 @@ export class MainController extends EventEmitter {
         if (activeRouteId) {
           await this.swapAndBridge.updateActiveRoute(activeRouteId, {
             userTxIndex: transaction.userTxIndex,
-            userTxHash: null,
-            routeStatus: 'in-progress'
+            userTxHash: null
           })
         }
       },
@@ -1497,7 +1502,10 @@ export class MainController extends EventEmitter {
 
     await Promise.all(
       swapAndBridgeUserRequests.map(async (r) => {
-        await this.swapAndBridge.updateActiveRoute(r.meta.activeRouteId, { userTxHash: txnId })
+        await this.swapAndBridge.updateActiveRoute(r.meta.activeRouteId, {
+          userTxHash: txnId,
+          routeStatus: 'in-progress'
+        })
       })
     )
 

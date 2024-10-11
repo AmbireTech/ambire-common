@@ -630,7 +630,7 @@ export class SwapAndBridgeController extends EventEmitter {
     const route = await this.#socketAPI.updateActiveRoute(activeRoute.activeRouteId)
     this.activeRoutes.push({
       ...activeRoute,
-      routeStatus: 'in-progress',
+      routeStatus: 'ready',
       userTxHash: null,
       route
     })
