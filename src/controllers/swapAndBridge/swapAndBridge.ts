@@ -39,6 +39,16 @@ export enum SwapAndBridgeFormStatus {
   ReadyToSubmit = 'ready-to-submit'
 }
 
+/**
+ * The Swap and Bridge controller is responsible for managing the state and
+ * logic related to swapping and bridging tokens across different networks.
+ * Key responsibilities:
+ *  - Initially setting up the swap and bridge form with the necessary data.
+ *  - Managing form state for token swap and bridge operations (including user preferences).
+ *  - Fetching and updating token lists (from and to).
+ *  - Fetching and updating quotes for token swaps and bridges.
+ *  - Manages token active routes
+ */
 export class SwapAndBridgeController extends EventEmitter {
   #accounts: AccountsController
 
