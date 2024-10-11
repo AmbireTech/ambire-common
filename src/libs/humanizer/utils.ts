@@ -18,8 +18,8 @@ export function getWarning(
 }
 export const randomId = (): number => Math.floor(Math.random() * Number.MAX_SAFE_INTEGER)
 
-export function getLabel(content: string): HumanizerVisualization {
-  return { type: 'label', content, id: randomId() }
+export function getLabel(content: string, isBold?: boolean): HumanizerVisualization {
+  return { type: 'label', content, id: randomId(), isBold }
 }
 export function getAction(content: string): HumanizerVisualization {
   return { type: 'action', content, id: randomId() }
