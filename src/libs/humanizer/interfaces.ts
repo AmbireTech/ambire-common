@@ -14,7 +14,6 @@ export type HumanizerVisualization = (
       warning?: boolean
       chainId?: bigint
       messageContent?: Uint8Array | string
-      isBold?: boolean
     }
   | {
       type: 'token'
@@ -22,7 +21,7 @@ export type HumanizerVisualization = (
       value: bigint
       chainId?: bigint
     }
-) & { isHidden?: boolean; id: number; content?: string }
+) & { isHidden?: boolean; id: number; content?: string; isBold?: boolean }
 export interface IrCall extends Call {
   fullVisualization?: HumanizerVisualization[]
   warnings?: HumanizerWarning[]
