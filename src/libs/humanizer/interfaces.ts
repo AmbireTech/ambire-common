@@ -14,6 +14,7 @@ export type HumanizerVisualization = (
       warning?: boolean
       chainId?: bigint
       messageContent?: Uint8Array | string
+      isBold?: boolean
     }
   | {
       type: 'token'
