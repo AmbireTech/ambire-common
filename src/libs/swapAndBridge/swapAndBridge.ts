@@ -182,36 +182,9 @@ const buildSwapAndBridgeUserRequests = (
   return requests
 }
 
-// TODO: Discuss if we should convert `TokenResult` to SocketAPIToken for the
-// case when switching FROM and TO tokens is requested, but the (prev) TO token
-// is missing for selected account's portfolio (TokenResult[]) tokens.
-const convertSocketAPITokenToTokenResult = (tokenResult: SocketAPIToken): TokenResult => {
-  const networkByChainId = networks.find((n) => Number(n.chainId) === tokenResult?.chainId)
-
-  if (!networkByChainId) throw new Error('Matching network from the token not found.')
-
-  return {
-    address: formatNativeTokenAddressIfNeeded(tokenResult.address),
-    decimals: tokenResult.decimals,
-    symbol: tokenResult.symbol,
-    networkId: networkByChainId.id,
-    // TODO: Pull price info for these fields from the RPC or from the portfolio?
-    priceIn: [],
-    amount: BigInt(0),
-    // TODO: Pull info for these flags from the relayer?
-    flags: {
-      onGasTank: false,
-      rewardsType: null,
-      canTopUpGasTank: false,
-      isFeeToken: false
-    }
-  }
-}
-
 export {
   getQuoteRouteSteps,
   getActiveRoutesLowestServiceTime,
   getActiveRoutesUpdateInterval,
-  buildSwapAndBridgeUserRequests,
-  convertSocketAPITokenToTokenResult
+  buildSwapAndBridgeUserRequests
 }
