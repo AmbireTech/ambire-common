@@ -369,11 +369,16 @@ export class SwapAndBridgeController extends EventEmitter {
       if (this.quote) this.quote = null
     }
 
-    this.updateQuote()
+    if (!this.#getIsFormValidToFetchQuote()) {
+      this.quote = null
+    } else {
+      this.updateQuote()
+    }
+
     this.emitUpdate()
   }
 
-  resetForm() {
+  resetForm(shouldEmit?: boolean) {
     this.fromChainId = 1
     this.fromSelectedToken = null
     this.fromAmount = ''
@@ -385,19 +390,17 @@ export class SwapAndBridgeController extends EventEmitter {
     this.portfolioTokenList = []
     this.toTokenList = []
 
-    this.emitUpdate()
+    if (shouldEmit) this.emitUpdate()
   }
 
   updatePortfolioTokenList(portfolioTokenList: TokenResult[]) {
     this.portfolioTokenList = portfolioTokenList
 
     if (!this.fromSelectedToken) {
-      this.updateForm({
-        fromSelectedToken: this.portfolioTokenList[0] || null
-      })
+      this.updateForm({ fromSelectedToken: this.portfolioTokenList[0] || null })
+    } else {
+      this.emitUpdate()
     }
-
-    this.emitUpdate()
   }
 
   async updateToTokenList(shouldReset: boolean, addressToSelect?: string) {
@@ -474,14 +477,6 @@ export class SwapAndBridgeController extends EventEmitter {
     this.#updateQuoteLastCalledTime = now
 
     const updateQuoteFunction = async () => {
-      if (!this.#getIsFormValidToFetchQuote()) {
-        if (this.quote) {
-          this.quote = null
-          this.emitUpdate()
-        }
-        return
-      }
-
       const selectedAccount = this.#accounts.accounts.find(
         (a) => a.addr === this.#accounts.selectedAccount
       )
@@ -639,9 +634,7 @@ export class SwapAndBridgeController extends EventEmitter {
       userTxHash: null,
       route
     })
-    this.resetForm()
-
-    this.emitUpdate()
+    this.resetForm(true)
   }
 
   async updateActiveRoute(
