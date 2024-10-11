@@ -148,12 +148,28 @@ describe('SwapAndBridge Controller', () => {
   test('should update an activeRoute', async () => {
     const activeRouteId = swapAndBridgeController.activeRoutes[0].activeRouteId
     await swapAndBridgeController.updateActiveRoute(activeRouteId, {
-      routeStatus: 'in-progress'
+      routeStatus: 'in-progress',
+      userTxHash: 'test'
     })
+    await swapAndBridgeController.updateActiveRoute(activeRouteId) // for the coverage
     expect(swapAndBridgeController.activeRoutes).toHaveLength(1)
     expect(swapAndBridgeController.activeRoutes[0].routeStatus).toEqual('in-progress')
     expect(swapAndBridgeController.banners).toHaveLength(1)
     expect(swapAndBridgeController.banners[0].actions).toHaveLength(1)
+  })
+  test('should check for route status', async () => {
+    await swapAndBridgeController.checkForNextUserTxForActiveRoutes()
+    expect(swapAndBridgeController.activeRoutes[0].routeStatus).toEqual('ready')
+    await swapAndBridgeController.updateActiveRoute(
+      swapAndBridgeController.activeRoutes[0].activeRouteId,
+      {
+        routeStatus: 'in-progress',
+        userTxHash: 'test',
+        userTxIndex: 1
+      }
+    )
+    await swapAndBridgeController.checkForNextUserTxForActiveRoutes()
+    expect(swapAndBridgeController.activeRoutes[0].routeStatus).toEqual('completed')
   })
   test('should remove an activeRoute', async () => {
     const activeRouteId = swapAndBridgeController.activeRoutes[0].activeRouteId

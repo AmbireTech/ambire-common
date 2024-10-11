@@ -482,7 +482,7 @@ export class SocketAPIMock {
   }) {
     return {
       success: true,
-      result: 'pending',
+      result: props.userTxIndex === 1 ? 'completed' : 'ready',
       statusCode: 200
     }
   }
