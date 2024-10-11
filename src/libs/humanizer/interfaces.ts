@@ -7,7 +7,7 @@ import { Call } from '../accountOp/types'
 // @TODO remove property humanizerMeta
 export type HumanizerVisualization = (
   | {
-      type: 'address' | 'label' | 'action' | 'danger' | 'deadline' | 'chain' | 'message'
+      type: 'address' | 'label' | 'action' | 'danger' | 'deadline' | 'chain' | 'message' | 'image'
       address?: string
       content?: string
       value?: bigint
