@@ -140,6 +140,7 @@ describe('SwapAndBridge Controller', () => {
       userTxIndex: userTx.userTxIndex
     })
     expect(swapAndBridgeController.activeRoutes).toHaveLength(1)
+    expect(swapAndBridgeController.activeRoutes[0].routeStatus).toEqual('ready')
     expect(swapAndBridgeController.formStatus).toEqual('empty')
     expect(swapAndBridgeController.quote).toBeNull()
     expect(swapAndBridgeController.banners).toHaveLength(1)
