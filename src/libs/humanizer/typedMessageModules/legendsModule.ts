@@ -8,12 +8,8 @@ export const legendsMessageModule: HumanizerTypedMessageModule = (message: Messa
   if (message.content.kind !== 'message' || typeof message.content.message !== 'string')
     return { fullVisualization: [] }
   let messageAsText = message.content.message
-  if (isHexString(message.content.message)) {
-    try {
-      messageAsText = toUtf8String(message.content.message)
-    } catch (e) {
-      console.log(`Humanizer::legendsMessageModule ${e}`)
-    }
+  if (isHexString(message.content.message) && message.content.message.length % 2 === 0) {
+    messageAsText = toUtf8String(message.content.message)
   }
   if (
     messageAsText.startsWith('Assign to Ambire Legends') &&
