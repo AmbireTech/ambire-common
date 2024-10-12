@@ -30,6 +30,7 @@ import { WALLETModule } from './modules/WALLET'
 import wrappingModule from './modules/Wrapping'
 import { erc20Module, erc721Module, permit2Module } from './typedMessageModules'
 import { entryPointModule } from './typedMessageModules/entryPointModule'
+import { legendsMessageModule } from './typedMessageModules/legendsModule'
 
 // from most generic to least generic
 // the final humanization is the final triggered module
@@ -57,7 +58,13 @@ export const humanizerCallModules: HumanizerCallModule[] = [
 
 // from least generic to most generic
 // the final visualization and warnings are from the first triggered module
-const humanizerTMModules = [erc20Module, erc721Module, permit2Module, entryPointModule]
+const humanizerTMModules = [
+  erc20Module,
+  erc721Module,
+  permit2Module,
+  entryPointModule,
+  legendsMessageModule
+]
 
 const humanizeAccountOp = (_accountOp: AccountOp, options: HumanizerOptions): IrCall[] => {
   const accountOp = parse(stringify(_accountOp))
