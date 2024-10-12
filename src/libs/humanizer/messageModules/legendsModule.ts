@@ -18,7 +18,7 @@ export const legendsMessageModule: HumanizerTypedMessageModule = (message: Messa
   )
     return {
       fullVisualization: [
-        getAction('Link this account'),
+        getAction('Agree to link this account'),
         getLabel('to'),
         getAddressVisualization(messageAsText.slice('Assign to Ambire Legends '.length)),
         getLabel('for Ambire Legends', true)
