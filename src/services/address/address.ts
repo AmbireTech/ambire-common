@@ -1,5 +1,3 @@
-import { getAddress } from 'ethers'
-
 import { HumanizerInfoType } from '../../../v1/hooks/useConstants'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 
