@@ -83,8 +83,6 @@ export class SwapAndBridgeController extends EventEmitter {
 
   updateToTokenListStatus: 'INITIAL' | 'LOADING' = 'INITIAL'
 
-  isHealthy: boolean | null = null
-
   sessionIds: string[] = []
 
   fromChainId: number | null = 1
@@ -252,12 +250,13 @@ export class SwapAndBridgeController extends EventEmitter {
     }
 
     this.sessionIds.push(sessionId)
-    // eslint-disable-next-line @typescript-eslint/no-floating-promises
-    ;(async () => {
-      this.isHealthy = await this.#socketAPI.getHealth()
-    })()
+    await this.#socketAPI.updateHealth()
 
     this.emitUpdate()
+  }
+
+  get isHealthy() {
+    return this.#socketAPI.isHealthy
   }
 
   unloadScreen(sessionId: string) {
@@ -768,7 +767,8 @@ export class SwapAndBridgeController extends EventEmitter {
       activeRoutesInProgress: this.activeRoutesInProgress,
       activeRoutes: this.activeRoutes,
       isSwitchFromAndToTokensEnabled: this.isSwitchFromAndToTokensEnabled,
-      banners: this.banners
+      banners: this.banners,
+      isHealthy: this.isHealthy
     }
   }
 }
