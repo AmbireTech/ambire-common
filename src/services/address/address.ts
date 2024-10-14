@@ -22,12 +22,4 @@ const isHumanizerKnownTokenOrSmartContract = (
   )
 }
 
-const formatNativeTokenAddressIfNeeded = (address: string) => {
-  if (getAddress(address) === '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE') {
-    return '0x0000000000000000000000000000000000000000'
-  }
-
-  return address
-}
-
-export { isValidAddress, isHumanizerKnownTokenOrSmartContract, formatNativeTokenAddressIfNeeded }
+export { isValidAddress, isHumanizerKnownTokenOrSmartContract }

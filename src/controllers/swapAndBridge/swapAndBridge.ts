@@ -13,7 +13,6 @@ import { TokenResult } from '../../libs/portfolio'
 import { getTokenAmount } from '../../libs/portfolio/helpers'
 import { getQuoteRouteSteps, sortTokenListResponse } from '../../libs/swapAndBridge/swapAndBridge'
 import { getSanitizedAmount } from '../../libs/transfer/amount'
-import { formatNativeTokenAddressIfNeeded } from '../../services/address'
 import { SocketAPI } from '../../services/socket/api'
 import { validateSendTransferAmount } from '../../services/validations/validate'
 import { convertTokenPriceToBigInt } from '../../utils/numbers/formatters'
@@ -500,13 +499,9 @@ export class SwapAndBridgeController extends EventEmitter {
       if (this.quote) {
         const isFromAmountSame = this.quote.route.fromAmount === bigintFromAmount.toString()
         const isFromNetworkSame = this.quote.fromChainId === this.fromChainId
-        const isFromAddressSame =
-          formatNativeTokenAddressIfNeeded(this.quote.fromAsset.address) ===
-          this.fromSelectedToken!.address
+        const isFromAddressSame = this.quote.fromAsset.address === this.fromSelectedToken!.address
         const isToNetworkSame = this.quote.toChainId === this.toChainId
-        const isToAddressSame =
-          formatNativeTokenAddressIfNeeded(this.quote.toAsset.address) ===
-          this.toSelectedToken!.address
+        const isToAddressSame = this.quote.toAsset.address === this.toSelectedToken!.address
 
         if (
           options.skipQuoteUpdateOnSameValues &&

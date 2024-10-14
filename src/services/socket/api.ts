@@ -155,7 +155,16 @@ export class SocketAPI {
           ...userTx,
           // @ts-ignore fromAsset exists on one of the two userTx sub-types
           fromAsset: userTx.fromAsset ? normalizeIncomingSocketToken(userTx.fromAsset) : undefined,
-          toAsset: normalizeIncomingSocketToken(userTx.toAsset)
+          toAsset: normalizeIncomingSocketToken(userTx.toAsset),
+          // @ts-ignore fromAsset exists on one of the two userTx sub-types
+          steps: userTx.steps
+            ? // @ts-ignore fromAsset exists on one of the two userTx sub-types
+              userTx.steps.map((step) => ({
+                ...step,
+                fromAsset: normalizeIncomingSocketToken(step.fromAsset),
+                toAsset: normalizeIncomingSocketToken(step.toAsset)
+              }))
+            : undefined
         }))
       }))
     }
@@ -189,7 +198,16 @@ export class SocketAPI {
           toAsset: {
             ...userTx.toAsset,
             address: normalizeOutgoingSocketTokenAddress(userTx.toAsset.address)
-          }
+          },
+          // @ts-ignore fromAsset exists on one of the two userTx sub-types
+          steps: userTx.steps
+            ? // @ts-ignore fromAsset exists on one of the two userTx sub-types
+              userTx.steps.map((step) => ({
+                ...step,
+                fromAsset: normalizeOutgoingSocketToken(step.fromAsset),
+                toAsset: normalizeOutgoingSocketToken(step.toAsset)
+              }))
+            : undefined
         }))
       }
     }

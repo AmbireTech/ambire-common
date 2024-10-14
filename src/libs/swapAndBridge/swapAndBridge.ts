@@ -1,7 +1,6 @@
 import { Interface } from 'ethers'
 
 import ERC20 from '../../../contracts/compiled/IERC20.json'
-import { networks } from '../../consts/networks'
 import { Account } from '../../interfaces/account'
 import {
   ActiveRoute,
@@ -12,7 +11,6 @@ import {
   SocketAPIUserTx
 } from '../../interfaces/swapAndBridge'
 import { SignUserRequest } from '../../interfaces/userRequest'
-import { formatNativeTokenAddressIfNeeded } from '../../services/address'
 import { isSmartAccount } from '../account/account'
 import { Call } from '../accountOp/types'
 import { TokenResult } from '../portfolio'
