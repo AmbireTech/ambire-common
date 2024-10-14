@@ -21,6 +21,7 @@ import legendsModule from './modules/Legends'
 import { postProcessing } from './modules/PostProcessing/postProcessModule'
 import preProcessHumanizer from './modules/PreProcess'
 import privilegeHumanizer from './modules/Privileges'
+import singletonFactory from './modules/SingletonFactory'
 import { SocketModule } from './modules/Socket'
 import sushiSwapModule from './modules/Sushiswap'
 import { genericErc20Humanizer, genericErc721Humanizer } from './modules/Tokens'
@@ -51,6 +52,7 @@ export const humanizerCallModules: HumanizerCallModule[] = [
   privilegeHumanizer,
   sushiSwapModule,
   legendsModule,
+  singletonFactory,
   fallbackHumanizer,
   postProcessing
 ]
