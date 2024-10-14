@@ -124,7 +124,6 @@ describe('SwapAndBridge Controller', () => {
     let emitCounter = 0
     const unsubscribe = swapAndBridgeController.onUpdate(async () => {
       emitCounter++
-      console.log(emitCounter)
       if (emitCounter === 3) {
         expect(swapAndBridgeController.formStatus).toEqual('ready-to-submit')
         expect(swapAndBridgeController.quote).not.toBeNull()
@@ -141,7 +140,6 @@ describe('SwapAndBridge Controller', () => {
     let emitCounter = 0
     const unsubscribe = swapAndBridgeController.onUpdate(async () => {
       emitCounter++
-      console.log('emit', emitCounter)
       if (emitCounter === 6) {
         expect(swapAndBridgeController.toChainId).toEqual(8453)
         unsubscribe()
