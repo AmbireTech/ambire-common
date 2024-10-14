@@ -52,6 +52,15 @@ export class SocketAPIMock {
         symbol: 'CBETH',
         chainId: toChainId,
         logoURI: 'https://media.socket.tech/tokens/all/CBETH'
+      },
+      {
+        name: 'USDT',
+        address: '0x94b008aA00579c1307B0EF2c499aD98a8ce58e58',
+        icon: 'https://media.socket.tech/tokens/all/USDT',
+        decimals: 6,
+        symbol: 'USDT',
+        chainId: toChainId,
+        logoURI: 'https://media.socket.tech/tokens/all/USDT'
       }
     ]
   }

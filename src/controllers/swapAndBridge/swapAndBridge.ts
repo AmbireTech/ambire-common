@@ -16,6 +16,7 @@ import { getSanitizedAmount } from '../../libs/transfer/amount'
 import { SocketAPI } from '../../services/socket/api'
 import { validateSendTransferAmount } from '../../services/validations/validate'
 import { convertTokenPriceToBigInt } from '../../utils/numbers/formatters'
+import wait from '../../utils/wait'
 import { AccountsController } from '../accounts/accounts'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { NetworksController } from '../networks/networks'
@@ -61,24 +62,24 @@ export class SwapAndBridgeController extends EventEmitter {
       skipPreviousQuoteRemoval?: boolean
       skipStatusUpdate?: boolean
     }
-    timeoutId: ReturnType<typeof setTimeout> | null
+    throttled: boolean
   } = {
     time: 0,
     options: {},
-    timeoutId: null
+    throttled: false
   }
 
   updateQuoteStatus: 'INITIAL' | 'LOADING' = 'INITIAL'
 
   #updateToTokenListThrottle: {
     time: number
-    timeoutId: ReturnType<typeof setTimeout> | null
+    throttled: boolean
     shouldReset: boolean
     addressToSelect?: string
   } = {
     time: 0,
     shouldReset: true,
-    timeoutId: null
+    throttled: false
   }
 
   updateToTokenListStatus: 'INITIAL' | 'LOADING' = 'INITIAL'
@@ -394,11 +395,7 @@ export class SwapAndBridgeController extends EventEmitter {
       if (this.quote) this.quote = null
     }
 
-    if (!this.#getIsFormValidToFetchQuote()) {
-      this.quote = null
-    } else {
-      this.updateQuote()
-    }
+    this.updateQuote()
 
     this.emitUpdate()
   }
@@ -435,15 +432,14 @@ export class SwapAndBridgeController extends EventEmitter {
       this.#updateToTokenListThrottle.shouldReset = shouldReset
       this.#updateToTokenListThrottle.addressToSelect = addressToSelect
 
-      if (!this.#updateToTokenListThrottle.timeoutId) {
-        this.#updateToTokenListThrottle.timeoutId = setTimeout(() => {
-          // eslint-disable-next-line @typescript-eslint/no-floating-promises
-          this.updateToTokenList(
-            this.#updateToTokenListThrottle.shouldReset,
-            this.#updateToTokenListThrottle.addressToSelect
-          )
-          this.#updateToTokenListThrottle.timeoutId = null
-        }, 500 - timeSinceLastCall)
+      if (!this.#updateToTokenListThrottle.throttled) {
+        this.#updateToTokenListThrottle.throttled = true
+        await wait(500 - timeSinceLastCall)
+        this.#updateToTokenListThrottle.throttled = false
+        await this.updateToTokenList(
+          this.#updateToTokenListThrottle.shouldReset,
+          this.#updateToTokenListThrottle.addressToSelect
+        )
       }
       return
     }
@@ -470,6 +466,7 @@ export class SwapAndBridgeController extends EventEmitter {
           const token = this.toTokenList.find((t) => t.address === addressToSelect)
           if (token) {
             this.updateForm({ toSelectedToken: token })
+            this.updateToTokenListStatus = 'INITIAL'
             this.emitUpdate()
             return
           }
@@ -499,6 +496,7 @@ export class SwapAndBridgeController extends EventEmitter {
         token.address === this.toSelectedToken!.address &&
         token.networkId === toSelectedTokenNetwork.id
     )!
+    this.fromAmount = '' // Reset fromAmount as it may no longer be valid for the new fromSelectedToken
     // Reverses the from and to chain ids, since their format is the same
     ;[this.fromChainId, this.toChainId] = [this.toChainId, this.fromChainId]
     await this.updateToTokenList(true, currentFromSelectedToken.address)
@@ -520,12 +518,11 @@ export class SwapAndBridgeController extends EventEmitter {
     if (timeSinceLastCall <= 500) {
       this.#updateQuoteThrottle.options = options
 
-      if (!this.#updateQuoteThrottle.timeoutId) {
-        this.#updateQuoteThrottle.timeoutId = setTimeout(() => {
-          // eslint-disable-next-line @typescript-eslint/no-floating-promises
-          this.updateQuote(this.#updateQuoteThrottle.options)
-          this.#updateQuoteThrottle.timeoutId = null
-        }, 500 - timeSinceLastCall)
+      if (!this.#updateQuoteThrottle.throttled) {
+        this.#updateQuoteThrottle.throttled = true
+        await wait(500 - timeSinceLastCall)
+        this.#updateQuoteThrottle.throttled = false
+        await this.updateQuote(this.#updateQuoteThrottle.options)
       }
       return
     }
@@ -599,7 +596,6 @@ export class SwapAndBridgeController extends EventEmitter {
             route: bestRoute,
             routeSteps: getQuoteRouteSteps(bestRoute.userTxs)
           }
-          this.emitUpdate()
         }
       } catch (error: any) {
         this.emitError({
@@ -610,11 +606,22 @@ export class SwapAndBridgeController extends EventEmitter {
       }
     }
 
+    if (!this.#getIsFormValidToFetchQuote()) {
+      if (this.quote) {
+        this.quote = null
+        this.emitUpdate()
+      }
+      return
+    }
+
     if (!options.skipStatusUpdate) {
       this.updateQuoteStatus = 'LOADING'
+      this.emitUpdate()
     }
     await updateQuoteFunction()
     this.updateQuoteStatus = 'INITIAL'
+
+    this.emitUpdate()
   }
 
   async getRouteStartUserTx() {

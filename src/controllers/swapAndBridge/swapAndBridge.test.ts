@@ -84,8 +84,8 @@ describe('SwapAndBridge Controller', () => {
     let emitCounter = 0
     const unsubscribe = swapAndBridgeController.onUpdate(async () => {
       emitCounter++
-      if (emitCounter === 7) {
-        expect(swapAndBridgeController.toTokenList).toHaveLength(2)
+      if (emitCounter === 4) {
+        expect(swapAndBridgeController.toTokenList).toHaveLength(3)
         expect(swapAndBridgeController.toSelectedToken).not.toBeNull()
         unsubscribe()
         done()
@@ -103,6 +103,15 @@ describe('SwapAndBridge Controller', () => {
         networkId: 'optimism',
         priceIn: [{ baseCurrency: 'usd', price: 0.99785 }],
         symbol: 'USDT'
+      },
+      {
+        address: '0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf',
+        amount: 1852n,
+        decimals: 8,
+        flags: { onGasTank: false, rewardsType: null, isFeeToken: false, canTopUpGasTank: false },
+        networkId: 'base',
+        priceIn: [{ baseCurrency: 'usd', price: 64325 }],
+        symbol: 'cbBTC'
       }
     ])
     expect(swapAndBridgeController.fromSelectedToken).not.toBeNull()
@@ -115,14 +124,59 @@ describe('SwapAndBridge Controller', () => {
     let emitCounter = 0
     const unsubscribe = swapAndBridgeController.onUpdate(async () => {
       emitCounter++
-      if (emitCounter === 5) {
+      console.log(emitCounter)
+      if (emitCounter === 3) {
         expect(swapAndBridgeController.formStatus).toEqual('ready-to-submit')
         expect(swapAndBridgeController.quote).not.toBeNull()
         unsubscribe()
         done()
       }
-      if (emitCounter === 1) {
+      if (emitCounter === 2) {
         expect(swapAndBridgeController.formStatus).toEqual('fetching-routes')
+      }
+    })
+    swapAndBridgeController.updateForm({ fromAmount: '0.02' })
+  })
+  test('should update toChainId', (done) => {
+    let emitCounter = 0
+    const unsubscribe = swapAndBridgeController.onUpdate(async () => {
+      emitCounter++
+      console.log('emit', emitCounter)
+      if (emitCounter === 6) {
+        expect(swapAndBridgeController.toChainId).toEqual(8453)
+        unsubscribe()
+        done()
+      }
+    })
+    swapAndBridgeController.updateForm({ toChainId: 8453 })
+  })
+  test('should switch from and to tokens', async () => {
+    const prevFromChainId = swapAndBridgeController.fromChainId
+    const prevToChainId = swapAndBridgeController.toChainId
+    const prevFromSelectedTokenAddress = swapAndBridgeController.fromSelectedToken?.address
+    const prevToSelectedTokenAddress = swapAndBridgeController.toSelectedToken?.address
+    await swapAndBridgeController.switchFromAndToTokens()
+    expect(swapAndBridgeController.fromChainId).toEqual(prevToChainId)
+    expect(swapAndBridgeController.toChainId).toEqual(prevFromChainId)
+    expect(swapAndBridgeController.toSelectedToken?.address).toEqual(prevFromSelectedTokenAddress)
+    expect(swapAndBridgeController.fromSelectedToken?.address).toEqual(prevToSelectedTokenAddress)
+    expect(swapAndBridgeController.fromAmount).toEqual('')
+    expect(swapAndBridgeController.formStatus).toEqual('empty')
+    await swapAndBridgeController.switchFromAndToTokens()
+    expect(swapAndBridgeController.fromChainId).toEqual(prevFromChainId)
+    expect(swapAndBridgeController.toChainId).toEqual(prevToChainId)
+    expect(swapAndBridgeController.toSelectedToken?.address).toEqual(prevToSelectedTokenAddress)
+    expect(swapAndBridgeController.fromSelectedToken?.address).toEqual(prevFromSelectedTokenAddress)
+  })
+  test('should update fromAmount to make the form valid again', (done) => {
+    let emitCounter = 0
+    const unsubscribe = swapAndBridgeController.onUpdate(async () => {
+      emitCounter++
+      if (emitCounter === 3) {
+        expect(swapAndBridgeController.formStatus).toEqual('ready-to-submit')
+        expect(swapAndBridgeController.quote).not.toBeNull()
+        unsubscribe()
+        done()
       }
     })
     swapAndBridgeController.updateForm({ fromAmount: '0.02' })
