@@ -578,7 +578,14 @@ export class SwapAndBridgeController extends EventEmitter {
           sort: this.routePriority
         })
 
-        if (this.#getIsFormValidToFetchQuote() && quoteResult && quoteResult?.routes?.[0]) {
+        if (
+          this.#getIsFormValidToFetchQuote() &&
+          quoteResult &&
+          quoteResult?.routes?.[0] &&
+          quoteResult.fromChainId === this.fromChainId &&
+          quoteResult.toChainId === this.toChainId &&
+          quoteResult.toAsset.address === this.toSelectedToken?.address
+        ) {
           const bestRoute =
             this.routePriority === 'output'
               ? quoteResult.routes[0] // API returns highest output first
