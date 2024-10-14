@@ -13,6 +13,8 @@ export class SocketAPIMock {
 
   #headers: RequestInitWithCustomHeaders['headers']
 
+  isHealthy: boolean | null = null
+
   constructor({ fetch, apiKey }: { fetch: Fetch; apiKey: string }) {
     this.#fetch = fetch
 
@@ -25,6 +27,10 @@ export class SocketAPIMock {
 
   async getHealth() {
     return true
+  }
+
+  async updateHealth() {
+    this.isHealthy = await this.getHealth()
   }
 
   async getToTokenList({
