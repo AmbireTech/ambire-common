@@ -48,6 +48,8 @@ export class SocketAPI {
 
   #headers: RequestInitWithCustomHeaders['headers']
 
+  isHealthy: boolean | null = null
+
   constructor({ fetch, apiKey }: { fetch: Fetch; apiKey: string }) {
     this.#fetch = fetch
 
@@ -68,6 +70,17 @@ export class SocketAPI {
     } catch {
       return false
     }
+  }
+
+  async updateHealth() {
+    this.isHealthy = await this.getHealth()
+  }
+
+  async updateHealthIfNeeded() {
+    // Update health status only if previously unhealthy
+    if (this.isHealthy) return
+
+    await this.updateHealth()
   }
 
   async getToTokenList({
@@ -91,6 +104,7 @@ export class SocketAPI {
 
     response = await response.json()
     if (!response.success) throw fallbackError
+    await this.updateHealthIfNeeded()
 
     let { result } = response
     // Exception for Optimism, strip out the legacy ETH address
@@ -144,6 +158,7 @@ export class SocketAPI {
 
     response = await response.json()
     if (!response.success) throw new Error('Failed to fetch quote')
+    await this.updateHealthIfNeeded()
 
     return {
       ...response.result,
@@ -222,6 +237,7 @@ export class SocketAPI {
 
     response = await response.json()
     if (!response.success) throw new Error('Failed to start the route')
+    await this.updateHealthIfNeeded()
 
     return response.result
   }
@@ -244,6 +260,7 @@ export class SocketAPI {
 
     let response = await this.#fetch(url, { headers: this.#headers })
     if (!response.ok) throw new Error('Failed to update route')
+    await this.updateHealthIfNeeded()
 
     response = await response.json()
     return response
@@ -258,6 +275,7 @@ export class SocketAPI {
 
     response = await response.json()
     if (!response.success) throw new Error('Failed to update route')
+    await this.updateHealthIfNeeded()
 
     return response.result
   }
@@ -271,6 +289,7 @@ export class SocketAPI {
 
     response = await response.json()
     if (!response.success) throw new Error('Failed to build next route user tx')
+    await this.updateHealthIfNeeded()
 
     return response.result
   }
