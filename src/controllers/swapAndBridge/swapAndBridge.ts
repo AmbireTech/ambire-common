@@ -17,13 +17,8 @@ import { SocketAPI } from '../../services/socket/api'
 import { validateSendTransferAmount } from '../../services/validations/validate'
 import { convertTokenPriceToBigInt } from '../../utils/numbers/formatters'
 import { AccountsController } from '../accounts/accounts'
-import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter'
+import EventEmitter from '../eventEmitter/eventEmitter'
 import { NetworksController } from '../networks/networks'
-
-const STATUS_WRAPPED_METHODS = {
-  updateToTokenList: 'INITIAL',
-  updateQuote: 'INITIAL'
-} as const
 
 const HARD_CODED_CURRENCY = 'usd'
 
@@ -59,11 +54,34 @@ export class SwapAndBridgeController extends EventEmitter {
 
   #activeRoutes: ActiveRoute[] = []
 
-  // used to throttle the updateQuote function
-  #updateQuoteLastCalledTime: number = 0
+  #updateQuoteThrottle: {
+    time: number
+    options: {
+      skipQuoteUpdateOnSameValues?: boolean
+      skipPreviousQuoteRemoval?: boolean
+      skipStatusUpdate?: boolean
+    }
+    timeoutId: ReturnType<typeof setTimeout> | null
+  } = {
+    time: 0,
+    options: {},
+    timeoutId: null
+  }
 
-  // used to throttle the updateToTokenList function
-  #updateToTokenListLastCalledTime: number = 0
+  updateQuoteStatus: 'INITIAL' | 'LOADING' = 'INITIAL'
+
+  #updateToTokenListThrottle: {
+    time: number
+    timeoutId: ReturnType<typeof setTimeout> | null
+    shouldReset: boolean
+    addressToSelect?: string
+  } = {
+    time: 0,
+    shouldReset: true,
+    timeoutId: null
+  }
+
+  updateToTokenListStatus: 'INITIAL' | 'LOADING' = 'INITIAL'
 
   isHealthy: boolean | null = null
 
@@ -90,8 +108,6 @@ export class SwapAndBridgeController extends EventEmitter {
   toTokenList: SocketAPIToken[] = []
 
   routePriority: 'output' | 'time' = 'output'
-
-  statuses: Statuses<keyof typeof STATUS_WRAPPED_METHODS> = STATUS_WRAPPED_METHODS
 
   // Holds the initial load promise, so that one can wait until it completes
   #initialLoadPromise: Promise<void>
@@ -168,7 +184,7 @@ export class SwapAndBridgeController extends EventEmitter {
 
     if (this.validateFromAmount.message) return SwapAndBridgeFormStatus.Invalid
 
-    if (this.statuses.updateQuote !== 'INITIAL') return SwapAndBridgeFormStatus.FetchingRoutes
+    if (this.updateQuoteStatus !== 'INITIAL') return SwapAndBridgeFormStatus.FetchingRoutes
 
     if (!this.quote?.route) return SwapAndBridgeFormStatus.NoRoutesFound
 
@@ -414,43 +430,61 @@ export class SwapAndBridgeController extends EventEmitter {
 
   async updateToTokenList(shouldReset: boolean, addressToSelect?: string) {
     const now = Date.now()
-    if (now - this.#updateToTokenListLastCalledTime <= 500) return // throttle
-    this.#updateToTokenListLastCalledTime = now
+    const timeSinceLastCall = now - this.#updateToTokenListThrottle.time
+    if (timeSinceLastCall <= 500) {
+      this.#updateToTokenListThrottle.shouldReset = shouldReset
+      this.#updateToTokenListThrottle.addressToSelect = addressToSelect
 
-    await this.withStatus(
-      'updateToTokenList',
-      async () => {
-        if (!this.fromChainId || !this.toChainId) return
+      if (!this.#updateToTokenListThrottle.timeoutId) {
+        this.#updateToTokenListThrottle.timeoutId = setTimeout(() => {
+          // eslint-disable-next-line @typescript-eslint/no-floating-promises
+          this.updateToTokenList(
+            this.#updateToTokenListThrottle.shouldReset,
+            this.#updateToTokenListThrottle.addressToSelect
+          )
+          this.#updateToTokenListThrottle.timeoutId = null
+        }, 500 - timeSinceLastCall)
+      }
+      return
+    }
+    this.updateToTokenListStatus = 'LOADING'
+    this.#updateToTokenListThrottle.time = now
 
-        if (shouldReset) {
-          this.toTokenList = []
-          this.toSelectedToken = null
-          this.emitUpdate()
-        }
+    if (!this.fromChainId || !this.toChainId) return
 
-        const toTokenListResponse = await this.#socketAPI.getToTokenList({
-          fromChainId: this.fromChainId,
-          toChainId: this.toChainId
-        })
-        this.toTokenList = sortTokenListResponse(toTokenListResponse, this.portfolioTokenList)
+    if (shouldReset) {
+      this.toTokenList = []
+      this.toSelectedToken = null
+      this.emitUpdate()
+    }
 
-        if (!this.toSelectedToken) {
-          if (addressToSelect) {
-            const token = this.toTokenList.find((t) => t.address === addressToSelect)
-            if (token) {
-              this.updateForm({ toSelectedToken: token })
-              this.emitUpdate()
-              return
-            }
+    try {
+      const toTokenListResponse = await this.#socketAPI.getToTokenList({
+        fromChainId: this.fromChainId,
+        toChainId: this.toChainId
+      })
+      this.toTokenList = sortTokenListResponse(toTokenListResponse, this.portfolioTokenList)
+
+      if (!this.toSelectedToken) {
+        if (addressToSelect) {
+          const token = this.toTokenList.find((t) => t.address === addressToSelect)
+          if (token) {
+            this.updateForm({ toSelectedToken: token })
+            this.emitUpdate()
+            return
           }
-          this.updateForm({ toSelectedToken: this.toTokenList[0] || null })
         }
-
-        this.emitUpdate()
-      },
-      true,
-      'silent'
-    )
+        this.updateForm({ toSelectedToken: this.toTokenList[0] || null })
+      }
+    } catch (error: any) {
+      this.emitError({
+        error,
+        level: 'major',
+        message: 'Unable to retrieve the token list.'
+      })
+    }
+    this.updateToTokenListStatus = 'INITIAL'
+    this.emitUpdate()
   }
 
   async switchFromAndToTokens() {
@@ -482,8 +516,20 @@ export class SwapAndBridgeController extends EventEmitter {
     }
   ) {
     const now = Date.now()
-    if (now - this.#updateQuoteLastCalledTime <= 500) return // throttle
-    this.#updateQuoteLastCalledTime = now
+    const timeSinceLastCall = now - this.#updateQuoteThrottle.time
+    if (timeSinceLastCall <= 500) {
+      this.#updateQuoteThrottle.options = options
+
+      if (!this.#updateQuoteThrottle.timeoutId) {
+        this.#updateQuoteThrottle.timeoutId = setTimeout(() => {
+          // eslint-disable-next-line @typescript-eslint/no-floating-promises
+          this.updateQuote(this.#updateQuoteThrottle.options)
+          this.#updateQuoteThrottle.timeoutId = null
+        }, 500 - timeSinceLastCall)
+      }
+      return
+    }
+    this.#updateQuoteThrottle.time = now
 
     const updateQuoteFunction = async () => {
       const selectedAccount = this.#accounts.accounts.find(
@@ -520,40 +566,48 @@ export class SwapAndBridgeController extends EventEmitter {
         this.emitUpdate()
       }
 
-      const quoteResult = await this.#socketAPI.quote({
-        fromChainId: this.fromChainId!,
-        fromTokenAddress: this.fromSelectedToken!.address,
-        toChainId: this.toChainId!,
-        toTokenAddress: this.toSelectedToken!.address,
-        fromAmount: bigintFromAmount,
-        userAddress: this.#accounts.selectedAccount!,
-        isSmartAccount: isSmartAccount(selectedAccount),
-        sort: this.routePriority
-      })
+      try {
+        const quoteResult = await this.#socketAPI.quote({
+          fromChainId: this.fromChainId!,
+          fromTokenAddress: this.fromSelectedToken!.address,
+          toChainId: this.toChainId!,
+          toTokenAddress: this.toSelectedToken!.address,
+          fromAmount: bigintFromAmount,
+          userAddress: this.#accounts.selectedAccount!,
+          isSmartAccount: isSmartAccount(selectedAccount),
+          sort: this.routePriority
+        })
 
-      if (this.#getIsFormValidToFetchQuote() && quoteResult && quoteResult?.routes?.[0]) {
-        const bestRoute =
-          this.routePriority === 'output'
-            ? quoteResult.routes[0] // API returns highest output first
-            : quoteResult.routes[quoteResult.routes.length - 1] // API returns fastest... last
+        if (this.#getIsFormValidToFetchQuote() && quoteResult && quoteResult?.routes?.[0]) {
+          const bestRoute =
+            this.routePriority === 'output'
+              ? quoteResult.routes[0] // API returns highest output first
+              : quoteResult.routes[quoteResult.routes.length - 1] // API returns fastest... last
 
-        this.quote = {
-          fromAsset: quoteResult.fromAsset,
-          fromChainId: quoteResult.fromChainId,
-          toAsset: quoteResult.toAsset,
-          toChainId: quoteResult.toChainId,
-          route: bestRoute,
-          routeSteps: getQuoteRouteSteps(bestRoute.userTxs)
+          this.quote = {
+            fromAsset: quoteResult.fromAsset,
+            fromChainId: quoteResult.fromChainId,
+            toAsset: quoteResult.toAsset,
+            toChainId: quoteResult.toChainId,
+            route: bestRoute,
+            routeSteps: getQuoteRouteSteps(bestRoute.userTxs)
+          }
+          this.emitUpdate()
         }
-        this.emitUpdate()
+      } catch (error: any) {
+        this.emitError({
+          error,
+          level: 'major',
+          message: 'Failed to fetch routes for this pair.'
+        })
       }
     }
 
-    if (options.skipStatusUpdate) {
-      await updateQuoteFunction()
-    } else {
-      await this.withStatus('updateQuote', updateQuoteFunction, true)
+    if (!options.skipStatusUpdate) {
+      this.updateQuoteStatus = 'LOADING'
     }
+    await updateQuoteFunction()
+    this.updateQuoteStatus = 'INITIAL'
   }
 
   async getRouteStartUserTx() {
