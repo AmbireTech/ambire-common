@@ -16,6 +16,21 @@ import {
   getTokenWithChain
 } from '../../utils'
 
+// taken from https://stargateprotocol.gitbook.io/stargate/developers/chain-ids
+const STARGATE_CHAIN_IDS: { [key: string]: bigint } = {
+  '101': 1n,
+  '102': 56n,
+  '106': 43114n,
+  '109': 137n,
+  '110': 42161n,
+  '111': 10n,
+  '112': 250n,
+  '151': 1088n,
+  '184': 8453n,
+  '183': 59144n,
+  '177': 2222n,
+  '181': 5000n
+}
 // @TODO check all additional data provided
 // @TODO consider fees everywhere
 // @TODO add automated tests
@@ -158,6 +173,31 @@ export const SocketModule: HumanizerCallModule = (accountOp: AccountOp, irCalls:
         }
       } catch (e) {
         return { ...call }
+      }
+    },
+    [`${
+      iface.getFunction(
+        'bridgeNativeTo(address senderAddress, address receiverAddress, uint256 amount, (uint256 srcPoolId, uint256 dstPoolId, uint256 destinationGasLimit, uint256 minReceivedAmt, uint256 value, uint16 stargateDstChainId, uint32 swapId, bytes32 metadata, bytes swapData, bytes destinationPayload) stargateBridgeExtraData)'
+      )?.selector
+    }`]: (call: IrCall): IrCall => {
+      const {
+        senderAddress,
+        receiverAddress,
+        amount,
+        stargateBridgeExtraData: { minReceivedAmt, stargateDstChainId }
+      } = iface.parseTransaction(call)!.args
+      const chainId = STARGATE_CHAIN_IDS[stargateDstChainId.toString()]
+      return {
+        ...call,
+        fullVisualization: [
+          getAction('Bridge'),
+          getToken(ZeroAddress, amount),
+          getLabel('to'),
+          getTokenWithChain(ZeroAddress, minReceivedAmt),
+          getLabel('on'),
+          getChain(chainId),
+          ...getRecipientText(senderAddress, receiverAddress)
+        ]
       }
     },
 
