@@ -6,7 +6,11 @@ import { DEPLOYLESS_SIMULATION_FROM } from '../../consts/deploy'
 import { Call } from '../accountOp/types'
 import { TokenResult } from '../portfolio'
 
-export function getFeeCall(feeToken: TokenResult, amountToSend: bigint): Call {
+export function getFeeCall(feeToken: TokenResult): Call {
+  // set a bigger number for gas tank / approvals so on
+  // L2s it could calculate the preVerificationGas better
+  const gasTankOrApproveAmount = 500000000n * BigInt(feeToken.decimals)
+
   if (feeToken.flags.onGasTank) {
     const abiCoder = new AbiCoder()
     return {
@@ -14,7 +18,7 @@ export function getFeeCall(feeToken: TokenResult, amountToSend: bigint): Call {
       value: 0n,
       data: abiCoder.encode(
         ['string', 'uint256', 'string'],
-        ['gasTank', amountToSend, feeToken.symbol]
+        ['gasTank', gasTankOrApproveAmount, feeToken.symbol]
       )
     }
   }
@@ -23,7 +27,7 @@ export function getFeeCall(feeToken: TokenResult, amountToSend: bigint): Call {
     // native payment
     return {
       to: FEE_COLLECTOR,
-      value: amountToSend,
+      value: 1n,
       data: '0x'
     }
   }
@@ -33,6 +37,9 @@ export function getFeeCall(feeToken: TokenResult, amountToSend: bigint): Call {
   return {
     to: feeToken.address,
     value: 0n,
-    data: ERC20Interface.encodeFunctionData('approve', [DEPLOYLESS_SIMULATION_FROM, amountToSend])
+    data: ERC20Interface.encodeFunctionData('approve', [
+      DEPLOYLESS_SIMULATION_FROM,
+      gasTankOrApproveAmount
+    ])
   }
 }
