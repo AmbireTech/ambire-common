@@ -109,7 +109,7 @@ export async function estimate4337(
   const estimateGasOp = { ...op }
   if (shouldUsePaymaster(network)) {
     const feeToken = getFeeTokenForEstimate(feeTokens)
-    if (feeToken) estimateGasOp.feeCall = getFeeCall(feeToken, 1n)
+    if (feeToken) estimateGasOp.feeCall = getFeeCall(feeToken)
   }
   const estimations = await Promise.all([
     deploylessEstimator
