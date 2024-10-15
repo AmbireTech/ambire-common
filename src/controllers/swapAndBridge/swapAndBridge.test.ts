@@ -229,4 +229,20 @@ describe('SwapAndBridge Controller', () => {
     expect(swapAndBridgeController.activeRoutes).toHaveLength(0)
     expect(swapAndBridgeController.banners).toHaveLength(0)
   })
+  test('should switch fromAmountFieldMode', () => {
+    swapAndBridgeController.updateForm({ fromAmountFieldMode: 'fiat' })
+    expect(swapAndBridgeController.fromAmountFieldMode).toEqual('fiat')
+    swapAndBridgeController.updateForm({ fromAmount: '1000000' })
+    expect(swapAndBridgeController.fromAmount).toEqual('1000000')
+    expect(swapAndBridgeController.validateFromAmount.success).toEqual(false)
+  })
+  test('should unload screen', () => {
+    swapAndBridgeController.unloadScreen('1')
+    expect(swapAndBridgeController.formStatus).toEqual('empty')
+    expect(swapAndBridgeController.sessionIds.length).toEqual(0)
+  })
+  test('should toJSON()', () => {
+    const json = swapAndBridgeController.toJSON()
+    expect(json).toBeDefined()
+  })
 })
