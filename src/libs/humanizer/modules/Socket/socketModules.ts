@@ -27,7 +27,7 @@ export const SocketModule: HumanizerCallModule = (accountOp: AccountOp, irCalls:
     'function performActionWithIn(address fromToken, address toToken, uint256 amount, bytes32 metadata, bytes swapExtraData) payable returns (uint256, address)',
     'function bridgeERC20To(uint256,bytes32,address,address,uint256,uint32,uint256)',
     'function bridgeERC20To(uint256 amount, (uint256 toChainId, uint256 slippage, uint256 relayerFee, uint32 dstChainDomain, address token, address receiverAddress, bytes32 metadata, bytes callData, address delegate) connextBridgeData)',
-    'function transformERC20(address,address,uint256,uint256,(uint32,bytes)[])',
+    'function transformERC20(address inputToken, address outputToken, uint256 inputTokenAmount, uint256 minOutputTokenAmount, (uint32,bytes)[] transformations)',
     'function swapAndBridge(uint32 swapId, bytes swapData, tuple(uint256 toChainId, uint256 slippage, uint256 relayerFee, uint32 dstChainDomain, address receiverAddress, bytes32 metadata, bytes callData, address delegate) connextBridgeData)'
   ])
   const matcher = {
@@ -79,6 +79,50 @@ export const SocketModule: HumanizerCallModule = (accountOp: AccountOp, irCalls:
           getDeadline(quoteAndDeadlineTimeStamps[1]),
           ...getRecipientText(senderAddress, recipientAddress)
         ]
+      }
+    },
+    [`${iface.getFunction('swapAndBridge(uint32,address,uint256,bytes32,bytes)')?.selector}`]: (
+      call: IrCall
+    ): IrCall => {
+      const [, , chainId, , data] = iface.parseTransaction(call)!.args
+      if (data.startsWith(iface.getFunction('performActionWithIn')!.selector)) {
+        const { fromToken, toToken, amount, swapExtraData } = iface.parseTransaction({
+          ...call,
+          data
+        })!.args
+        if (swapExtraData.startsWith(iface.getFunction('transformERC20')!.selector)) {
+          const { minOutputTokenAmount } = iface.parseTransaction({
+            ...call,
+            data: swapExtraData
+          })!.args
+
+          return {
+            ...call,
+            fullVisualization: [
+              getAction('Bridge'),
+              getToken(fromToken, amount),
+              getLabel('to'),
+              getToken(toToken, minOutputTokenAmount, false, chainId),
+              getLabel('on'),
+              getChain(chainId)
+            ]
+          }
+        }
+        return {
+          ...call,
+          fullVisualization: [
+            getAction('Bridge'),
+            getToken(fromToken, amount),
+            getLabel('to'),
+            getToken(toToken, 0n, false, chainId),
+            getLabel('on'),
+            getChain(chainId)
+          ]
+        }
+      }
+      return {
+        ...call,
+        fullVisualization: [getAction('Bridge'), getLabel('to'), getChain(chainId)]
       }
     },
     [`${
