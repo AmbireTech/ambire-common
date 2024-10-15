@@ -16,6 +16,21 @@ import {
   getTokenWithChain
 } from '../../utils'
 
+// taken from https://stargateprotocol.gitbook.io/stargate/developers/chain-ids
+const STARGATE_CHAIN_IDS: { [key: string]: bigint } = {
+  '101': 1n,
+  '102': 56n,
+  '106': 43114n,
+  '109': 137n,
+  '110': 42161n,
+  '111': 10n,
+  '112': 250n,
+  '151': 1088n,
+  '184': 8453n,
+  '183': 59144n,
+  '177': 2222n,
+  '181': 5000n
+}
 // @TODO check all additional data provided
 // @TODO consider fees everywhere
 // @TODO add automated tests
@@ -27,7 +42,7 @@ export const SocketModule: HumanizerCallModule = (accountOp: AccountOp, irCalls:
     'function performActionWithIn(address fromToken, address toToken, uint256 amount, bytes32 metadata, bytes swapExtraData) payable returns (uint256, address)',
     'function bridgeERC20To(uint256,bytes32,address,address,uint256,uint32,uint256)',
     'function bridgeERC20To(uint256 amount, (uint256 toChainId, uint256 slippage, uint256 relayerFee, uint32 dstChainDomain, address token, address receiverAddress, bytes32 metadata, bytes callData, address delegate) connextBridgeData)',
-    'function transformERC20(address,address,uint256,uint256,(uint32,bytes)[])',
+    'function transformERC20(address inputToken, address outputToken, uint256 inputTokenAmount, uint256 minOutputTokenAmount, (uint32,bytes)[] transformations)',
     'function swapAndBridge(uint32 swapId, bytes swapData, tuple(uint256 toChainId, uint256 slippage, uint256 relayerFee, uint32 dstChainDomain, address receiverAddress, bytes32 metadata, bytes callData, address delegate) connextBridgeData)'
   ])
   const matcher = {
@@ -81,6 +96,50 @@ export const SocketModule: HumanizerCallModule = (accountOp: AccountOp, irCalls:
         ]
       }
     },
+    [`${iface.getFunction('swapAndBridge(uint32,address,uint256,bytes32,bytes)')?.selector}`]: (
+      call: IrCall
+    ): IrCall => {
+      const [, , chainId, , data] = iface.parseTransaction(call)!.args
+      if (data.startsWith(iface.getFunction('performActionWithIn')!.selector)) {
+        const { fromToken, toToken, amount, swapExtraData } = iface.parseTransaction({
+          ...call,
+          data
+        })!.args
+        if (swapExtraData.startsWith(iface.getFunction('transformERC20')!.selector)) {
+          const { minOutputTokenAmount } = iface.parseTransaction({
+            ...call,
+            data: swapExtraData
+          })!.args
+
+          return {
+            ...call,
+            fullVisualization: [
+              getAction('Bridge'),
+              getToken(fromToken, amount),
+              getLabel('to'),
+              getToken(toToken, minOutputTokenAmount, false, chainId),
+              getLabel('on'),
+              getChain(chainId)
+            ]
+          }
+        }
+        return {
+          ...call,
+          fullVisualization: [
+            getAction('Bridge'),
+            getToken(fromToken, amount),
+            getLabel('to'),
+            getToken(toToken, 0n, false, chainId),
+            getLabel('on'),
+            getChain(chainId)
+          ]
+        }
+      }
+      return {
+        ...call,
+        fullVisualization: [getAction('Bridge'), getLabel('to'), getChain(chainId)]
+      }
+    },
     [`${
       iface.getFunction(
         'bridgeNativeTo(uint256 amount, (address[] senderReceiverAddresses, address outputToken, uint256[] outputAmountToChainIdArray, uint32[] quoteAndDeadlineTimeStamps, uint256 bridgeFee, bytes32 metadata) acrossBridgeData)'
@@ -114,6 +173,31 @@ export const SocketModule: HumanizerCallModule = (accountOp: AccountOp, irCalls:
         }
       } catch (e) {
         return { ...call }
+      }
+    },
+    [`${
+      iface.getFunction(
+        'bridgeNativeTo(address senderAddress, address receiverAddress, uint256 amount, (uint256 srcPoolId, uint256 dstPoolId, uint256 destinationGasLimit, uint256 minReceivedAmt, uint256 value, uint16 stargateDstChainId, uint32 swapId, bytes32 metadata, bytes swapData, bytes destinationPayload) stargateBridgeExtraData)'
+      )?.selector
+    }`]: (call: IrCall): IrCall => {
+      const {
+        senderAddress,
+        receiverAddress,
+        amount,
+        stargateBridgeExtraData: { minReceivedAmt, stargateDstChainId }
+      } = iface.parseTransaction(call)!.args
+      const chainId = STARGATE_CHAIN_IDS[stargateDstChainId.toString()]
+      return {
+        ...call,
+        fullVisualization: [
+          getAction('Bridge'),
+          getToken(ZeroAddress, amount),
+          getLabel('to'),
+          getTokenWithChain(ZeroAddress, minReceivedAmt),
+          getLabel('on'),
+          getChain(chainId),
+          ...getRecipientText(senderAddress, receiverAddress)
+        ]
       }
     },
 
