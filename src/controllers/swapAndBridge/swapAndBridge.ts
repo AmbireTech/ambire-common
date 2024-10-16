@@ -4,6 +4,7 @@ import { Storage } from '../../interfaces/storage'
 import {
   ActiveRoute,
   SocketAPIQuote,
+  SocketAPIRoute,
   SocketAPISendTransactionRequest,
   SocketAPIToken
 } from '../../interfaces/swapAndBridge'
@@ -185,7 +186,7 @@ export class SwapAndBridgeController extends EventEmitter {
 
     if (this.updateQuoteStatus !== 'INITIAL') return SwapAndBridgeFormStatus.FetchingRoutes
 
-    if (!this.quote?.route) return SwapAndBridgeFormStatus.NoRoutesFound
+    if (!this.quote?.selectedRoute) return SwapAndBridgeFormStatus.NoRoutesFound
 
     return SwapAndBridgeFormStatus.ReadyToSubmit
   }
@@ -228,6 +229,10 @@ export class SwapAndBridgeController extends EventEmitter {
         token.address === this.toSelectedToken!.address &&
         token.networkId === toSelectedTokenNetwork.id
     )
+  }
+
+  get shouldEnableRoutesSelection() {
+    return !!this.quote && !!this.quote.routes && this.quote.routes.length > 1
   }
 
   async initForm(sessionId: string) {
@@ -539,7 +544,7 @@ export class SwapAndBridgeController extends EventEmitter {
       const bigintFromAmount = parseUnits(sanitizedFromAmount, this.fromSelectedToken!.decimals)
 
       if (this.quote) {
-        const isFromAmountSame = this.quote.route.fromAmount === bigintFromAmount.toString()
+        const isFromAmountSame = this.quote.selectedRoute.fromAmount === bigintFromAmount.toString()
         const isFromNetworkSame = this.quote.fromChainId === this.fromChainId
         const isFromAddressSame = this.quote.fromAsset.address === this.fromSelectedToken!.address
         const isToNetworkSame = this.quote.toChainId === this.toChainId
@@ -592,8 +597,9 @@ export class SwapAndBridgeController extends EventEmitter {
             fromChainId: quoteResult.fromChainId,
             toAsset: quoteResult.toAsset,
             toChainId: quoteResult.toChainId,
-            route: bestRoute,
-            routeSteps: getQuoteRouteSteps(bestRoute.userTxs)
+            selectedRoute: bestRoute,
+            selectedRouteSteps: getQuoteRouteSteps(bestRoute.userTxs),
+            routes: quoteResult.routes
           }
         }
       } catch (error: any) {
@@ -631,7 +637,7 @@ export class SwapAndBridgeController extends EventEmitter {
       fromAssetAddress: this.quote!.fromAsset.address,
       toChainId: this.quote!.toChainId,
       toAssetAddress: this.quote!.toAsset.address,
-      route: this.quote!.route
+      route: this.quote!.selectedRoute
     })
 
     return routeResult
@@ -692,6 +698,16 @@ export class SwapAndBridgeController extends EventEmitter {
         await fetchAndUpdateRoute(route)
       })
     )
+  }
+
+  selectRoute(route: SocketAPIRoute) {
+    if (!this.quote || !this.quote.routes.length || !this.shouldEnableRoutesSelection) return
+    if (this.formStatus !== SwapAndBridgeFormStatus.ReadyToSubmit) return
+
+    this.quote.selectedRoute = route
+    this.quote.selectedRouteSteps = getQuoteRouteSteps(route.userTxs)
+
+    this.emitUpdate()
   }
 
   async addActiveRoute(activeRoute: {
@@ -775,7 +791,8 @@ export class SwapAndBridgeController extends EventEmitter {
       activeRoutes: this.activeRoutes,
       isSwitchFromAndToTokensEnabled: this.isSwitchFromAndToTokensEnabled,
       banners: this.banners,
-      isHealthy: this.isHealthy
+      isHealthy: this.isHealthy,
+      shouldEnableRoutesSelection: this.shouldEnableRoutesSelection
     }
   }
 }
