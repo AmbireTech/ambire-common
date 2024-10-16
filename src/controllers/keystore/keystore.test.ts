@@ -6,6 +6,7 @@
 
 import { Encrypted } from 'eth-crypto'
 import { ethers, Wallet } from 'ethers'
+import { EventEmitter } from 'stream'
 
 import { describe, expect, test } from '@jest/globals'
 
@@ -61,6 +62,15 @@ class LedgerSigner {
   }
 }
 
+const windowManager = {
+  focus: () => Promise.resolve(),
+  open: () => Promise.resolve(0),
+  remove: () => Promise.resolve(),
+  event: new EventEmitter(),
+  sendWindowToastMessage: () => {},
+  sendWindowUiMessage: () => {}
+}
+
 let keystore: KeystoreController
 const pass = 'hoiHoi'
 const keystoreSigners = { internal: InternalSigner, ledger: LedgerSigner }
@@ -73,7 +83,7 @@ const keyPublicAddress = new ethers.Wallet(privKey).address
 describe('KeystoreController', () => {
   const storage = produceMemoryStore()
   test('should initialize', () => {
-    keystore = new KeystoreController(storage, keystoreSigners)
+    keystore = new KeystoreController(storage, keystoreSigners, windowManager)
     expect(keystore).toBeDefined()
   })
 
@@ -520,19 +530,19 @@ describe('KeystoreController', () => {
     expect(keystore.keys.length).toBe(keyLengthBefore - 2)
   })
   test('should add keystore default seed phrase', async () => {
-    expect(!!keystore.hasKeystoreDefaultSeed).toBeFalsy()
+    expect(!!keystore.hasKeystoreSavedSeed).toBeFalsy()
     expect(keystore.isUnlocked).toBeTruthy()
     await keystore.addSeed({
       seed: process.env.SEED,
       hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
     })
-    expect(!!keystore.hasKeystoreDefaultSeed).toBeTruthy()
+    expect(!!keystore.hasKeystoreSavedSeed).toBeTruthy()
   })
   test('should get default seed phrase', async () => {
-    expect(!!keystore.hasKeystoreDefaultSeed).toBeTruthy()
-    const decryptedDefaultSeedPhrase = await keystore.getDefaultSeed()
-    expect(decryptedDefaultSeedPhrase.seed).toEqual(process.env.SEED)
-    expect(decryptedDefaultSeedPhrase.hdPathTemplate).toEqual(BIP44_STANDARD_DERIVATION_TEMPLATE)
+    expect(!!keystore.hasKeystoreSavedSeed).toBeTruthy()
+    const decryptedSavedSeedPhrase = await keystore.getSavedSeed()
+    expect(decryptedSavedSeedPhrase.seed).toEqual(process.env.SEED)
+    expect(decryptedSavedSeedPhrase.hdPathTemplate).toEqual(BIP44_STANDARD_DERIVATION_TEMPLATE)
   })
 })
 
@@ -543,8 +553,8 @@ describe('import/export with pub key test', () => {
   let uid2: string
 
   beforeEach(async () => {
-    keystore = new KeystoreController(produceMemoryStore(), keystoreSigners)
-    keystore2 = new KeystoreController(produceMemoryStore(), keystoreSigners)
+    keystore = new KeystoreController(produceMemoryStore(), keystoreSigners, windowManager)
+    keystore2 = new KeystoreController(produceMemoryStore(), keystoreSigners, windowManager)
 
     await keystore2.addSecret('123', '123', '', false)
     await keystore2.unlockWithSecret('123', '123')
