@@ -640,11 +640,13 @@ export class KeystoreController extends EventEmitter {
     return aes.utils.hex.fromBytes(decryptedBytes)
   }
 
-  /*
-    DOCS
-    keyAddress: string - the address of the key you want to export
-    publicKey: string - the public key, with which to asymmetrically encypt it (used for key sync with other device's keystoreId)
-  */
+  /**
+   * Export with public key encrypt
+   *
+   * @param keyAddress string - the address of the key you want to export
+   * @param publicKey string - the public key, with which to asymmetrically encrypt it (used for key sync with other device's keystoreId)
+   * @returns Encrypted
+   */
   async exportKeyWithPublicKeyEncryption(
     keyAddress: string,
     publicKey: string
