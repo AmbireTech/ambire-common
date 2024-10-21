@@ -467,7 +467,7 @@ export class SocketAPIMock {
     toChainId: number
     fromAssetAddress: string
     toAssetAddress: string
-    route: SocketAPIQuote['route']
+    route: SocketAPIQuote['selectedRoute']
   }) {
     return {
       userTxType: 'fund-movr',
