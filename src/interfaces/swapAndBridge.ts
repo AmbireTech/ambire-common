@@ -13,32 +13,35 @@ export interface SocketAPIQuote {
   fromChainId: number
   toAsset: SocketAPIToken
   toChainId: number
-  route: {
-    routeId: string
-    isOnlySwapRoute: boolean
-    fromAmount: string
-    toAmount: string
-    usedBridgeNames: string[]
-    totalUserTx: number
-    totalGasFeesInUsd: number
-    recipient: string
-    sender: string
-    userTxs: SocketAPIUserTx[]
-    receivedValueInUsd: number
-    inputValueInUsd: number
-    outputValueInUsd: number
-    serviceTime: number
-    maxServiceTime: number
-    integratorFee: {
-      feeTakerAddress: string
-      amount: string
-      asset: SocketAPIToken
-    }
-    chainGasBalances: object
-    minimumGasBalances: object
-    extraData: object
+  selectedRoute: SocketAPIRoute
+  selectedRouteSteps: SocketAPIStep[]
+  routes: SocketAPIRoute[]
+}
+
+export interface SocketAPIRoute {
+  routeId: string
+  isOnlySwapRoute: boolean
+  fromAmount: string
+  toAmount: string
+  usedBridgeNames: string[]
+  totalUserTx: number
+  totalGasFeesInUsd: number
+  recipient: string
+  sender: string
+  userTxs: SocketAPIUserTx[]
+  receivedValueInUsd: number
+  inputValueInUsd: number
+  outputValueInUsd: number
+  serviceTime: number
+  maxServiceTime: number
+  integratorFee: {
+    feeTakerAddress: string
+    amount: string
+    asset: SocketAPIToken
   }
-  routeSteps: SocketAPIStep[]
+  chainGasBalances: object
+  minimumGasBalances: object
+  extraData: object
 }
 
 export interface SocketAPISwapUserTx {
@@ -173,7 +176,7 @@ export type ActiveRoute = {
   activeRouteId: SocketAPISendTransactionRequest['activeRouteId']
   userTxIndex: SocketAPISendTransactionRequest['userTxIndex']
   userTxHash: string | null
-  route: Omit<SocketAPIQuote['route'], 'serviceTime' | 'maxServiceTime'> & {
+  route: Omit<SocketAPIQuote['selectedRoute'], 'serviceTime' | 'maxServiceTime'> & {
     createdAt: string
     updatedAt: string
     routeStatus: string
