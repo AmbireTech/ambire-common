@@ -2,6 +2,7 @@
 import { ethErrors } from 'eth-rpc-errors'
 /* eslint-disable @typescript-eslint/brace-style */
 import { getAddress, getBigInt, Interface, isAddress } from 'ethers'
+import { SocketAPISendTransactionRequest } from 'interfaces/swapAndBridge'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json'
@@ -33,7 +34,11 @@ import { Calls, DappUserRequest, SignUserRequest, UserRequest } from '../../inte
 import { WindowManager } from '../../interfaces/window'
 import { isSmartAccount } from '../../libs/account/account'
 import { AccountOp, AccountOpStatus, getSignableCalls } from '../../libs/accountOp/accountOp'
-import { AccountOpIdentifiedBy, SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
+import {
+  AccountOpIdentifiedBy,
+  pollTxnId,
+  SubmittedAccountOp
+} from '../../libs/accountOp/submittedAccountOp'
 import { Call } from '../../libs/accountOp/types'
 import {
   dappRequestMethodToActionKind,
@@ -58,6 +63,7 @@ import {
   adjustEntryPointAuthorization,
   getEntryPointAuthorization
 } from '../../libs/signMessage/signMessage'
+import { buildSwapAndBridgeUserRequests } from '../../libs/swapAndBridge/swapAndBridge'
 import { debugTraceCall } from '../../libs/tracer/debugTraceCall'
 import { buildTransferUserRequest } from '../../libs/transfer/userRequest'
 import {
@@ -67,6 +73,7 @@ import {
 } from '../../libs/userOperation/userOperation'
 import bundler from '../../services/bundlers'
 import { Bundler } from '../../services/bundlers/bundler'
+import { SocketAPI } from '../../services/socket/api'
 import { getIsViewOnly } from '../../utils/accounts'
 import shortenAddress from '../../utils/shortenAddress'
 import wait from '../../utils/wait'
@@ -87,6 +94,7 @@ import { ProvidersController } from '../providers/providers'
 /* eslint-disable no-underscore-dangle */
 import { SignAccountOpController, SigningStatus } from '../signAccountOp/signAccountOp'
 import { SignMessageController } from '../signMessage/signMessage'
+import { SwapAndBridgeController, SwapAndBridgeFormStatus } from '../swapAndBridge/swapAndBridge'
 
 const STATUS_WRAPPED_METHODS = {
   onAccountAdderSuccess: 'INITIAL',
@@ -95,6 +103,8 @@ const STATUS_WRAPPED_METHODS = {
   removeAccount: 'INITIAL',
   handleAccountAdderInitLedger: 'INITIAL',
   handleAccountAdderInitLattice: 'INITIAL',
+  importSmartAccountFromDefaultSeed: 'INITIAL',
+  buildSwapAndBridgeUserRequest: 'INITIAL',
   importSmartAccountFromSavedSeed: 'INITIAL'
 } as const
 
@@ -140,6 +150,10 @@ export class MainController extends EventEmitter {
 
   signMessage: SignMessageController
 
+  #socketAPI: SocketAPI
+
+  swapAndBridge: SwapAndBridgeController
+
   signAccountOp: SignAccountOpController | null = null
 
   signAccOpInitError: string | null = null
@@ -178,6 +192,7 @@ export class MainController extends EventEmitter {
     fetch,
     relayerUrl,
     velcroUrl,
+    socketApiKey,
     keystoreSigners,
     externalSignerControllers,
     windowManager,
@@ -187,6 +202,7 @@ export class MainController extends EventEmitter {
     fetch: Fetch
     relayerUrl: string
     velcroUrl: string
+    socketApiKey: string
     keystoreSigners: Partial<{ [key in Key['type']]: KeystoreSignerType }>
     externalSignerControllers: ExternalSignerControllers
     windowManager: WindowManager
@@ -258,6 +274,13 @@ export class MainController extends EventEmitter {
       this.accounts,
       this.#externalSignerControllers
     )
+    this.#socketAPI = new SocketAPI({ apiKey: socketApiKey, fetch: this.fetch })
+    this.swapAndBridge = new SwapAndBridgeController({
+      accounts: this.accounts,
+      networks: this.networks,
+      socketAPI: this.#socketAPI,
+      storage: this.#storage
+    })
     this.dapps = new DappsController(this.#storage)
     this.actions = new ActionsController({
       accounts: this.accounts,
@@ -1070,6 +1093,76 @@ export class MainController extends EventEmitter {
     await this.addUserRequest(userRequest, !account.creation, executionType)
   }
 
+  async buildSwapAndBridgeUserRequest(activeRouteId?: number) {
+    await this.withStatus(
+      'buildSwapAndBridgeUserRequest',
+      async () => {
+        let transaction: SocketAPISendTransactionRequest | null = null
+
+        if (this.swapAndBridge.formStatus === SwapAndBridgeFormStatus.ReadyToSubmit) {
+          transaction = await this.swapAndBridge.getRouteStartUserTx()
+        }
+
+        const account = this.accounts.accounts.find(
+          (a) => a.addr === this.accounts.selectedAccount
+        )!
+
+        if (activeRouteId) {
+          this.removeUserRequest(activeRouteId, { shouldRemoveSwapAndBridgeRoute: false })
+          if (!isSmartAccount(account)) {
+            this.removeUserRequest(`${activeRouteId}-approval`, {
+              shouldRemoveSwapAndBridgeRoute: false
+            })
+          }
+          transaction = await this.#socketAPI.getNextRouteUserTx(activeRouteId)
+        }
+
+        if (!this.accounts.selectedAccount || !transaction) {
+          this.emitError({
+            level: 'major',
+            message: 'Unexpected error while building swap & bridge request',
+            error: new Error('buildSwapAndBridgeUserRequest: bad parameters passed')
+          })
+          return
+        }
+
+        const network = this.networks.networks.find(
+          (n) => Number(n.chainId) === transaction!.chainId
+        )!
+
+        const swapAndBridgeUserRequests = buildSwapAndBridgeUserRequests(
+          transaction,
+          network.id,
+          account
+        )
+
+        for (let i = 0; i < swapAndBridgeUserRequests.length; i++) {
+          if (i === 0) {
+            this.addUserRequest(swapAndBridgeUserRequests[i], !account.creation, 'open')
+          } else {
+            // eslint-disable-next-line no-await-in-loop
+            await this.addUserRequest(swapAndBridgeUserRequests[i], false, 'queue')
+          }
+        }
+
+        if (this.swapAndBridge.formStatus === SwapAndBridgeFormStatus.ReadyToSubmit) {
+          await this.swapAndBridge.addActiveRoute({
+            activeRouteId: transaction.activeRouteId,
+            userTxIndex: transaction.userTxIndex
+          })
+        }
+
+        if (activeRouteId) {
+          await this.swapAndBridge.updateActiveRoute(activeRouteId, {
+            userTxIndex: transaction.userTxIndex,
+            userTxHash: null
+          })
+        }
+      },
+      true
+    )
+  }
+
   resolveUserRequest(data: any, requestId: UserRequest['id']) {
     const userRequest = this.userRequests.find((r) => r.id === requestId)
     if (!userRequest) return // TODO: emit error
@@ -1244,7 +1337,14 @@ export class MainController extends EventEmitter {
   // @TODO allow this to remove multiple OR figure out a way to debounce re-estimations
   // first one sounds more reasonable
   // although the second one can't hurt and can help (or no debounce, just a one-at-a-time queue)
-  removeUserRequest(id: UserRequest['id']) {
+  removeUserRequest(
+    id: UserRequest['id'],
+    options: {
+      shouldRemoveSwapAndBridgeRoute: boolean
+    } = {
+      shouldRemoveSwapAndBridgeRoute: true
+    }
+  ) {
     const req = this.userRequests.find((uReq) => uReq.id === id)
     if (!req) return
 
@@ -1271,6 +1371,9 @@ export class MainController extends EventEmitter {
         // accountOp has just been rejected
         if (!accountOpAction) {
           this.updateSelectedAccountPortfolio(true, network)
+          if (this.swapAndBridge.activeRoutes.length && options.shouldRemoveSwapAndBridgeRoute) {
+            this.swapAndBridge.removeActiveRoute(id as number)
+          }
           this.emitUpdate()
           return
         }
@@ -1299,6 +1402,9 @@ export class MainController extends EventEmitter {
         }
         this.actions.removeAction(id)
         this.updateSelectedAccountPortfolio(true, network)
+      }
+      if (this.swapAndBridge.activeRoutes.length && options.shouldRemoveSwapAndBridgeRoute) {
+        this.swapAndBridge.removeActiveRoute(id as number)
       }
     } else {
       this.actions.removeAction(id)
@@ -1362,16 +1468,14 @@ export class MainController extends EventEmitter {
     if (!accountOpAction) return
 
     const { accountOp } = accountOpAction as AccountOpAction
-    const chainId = this.networks.networks.find(
-      (network) => network.id === accountOp.networkId
-    )?.chainId
+    const network = this.networks.networks.find((n) => n.id === accountOp.networkId)
 
-    if (!chainId) return
+    if (!network) return
 
     const meta: SignUserRequest['meta'] = {
       isSignAction: true,
       accountAddr: accountOp.accountAddr,
-      chainId,
+      chainId: network.chainId,
       networkId: '',
       txnId: null,
       userOpHash: null
@@ -1382,21 +1486,47 @@ export class MainController extends EventEmitter {
 
       meta.identifiedBy = data.submittedAccountOp.identifiedBy
     }
+
+    const txnId = await pollTxnId(
+      data.submittedAccountOp.identifiedBy,
+      network,
+      this.fetch,
+      this.callRelayer
+    )
+
+    const accountOpUserRequests = this.userRequests.filter((r) =>
+      accountOp.calls.some((c) => c.fromUserRequestId === r.id)
+    )
+
+    const swapAndBridgeUserRequests = accountOpUserRequests.filter(
+      (r) => r.meta.activeRouteId && !r.meta.isApproval
+    )
+
+    await Promise.all(
+      swapAndBridgeUserRequests.map(async (r) => {
+        await this.swapAndBridge.updateActiveRoute(r.meta.activeRouteId, {
+          userTxHash: txnId,
+          routeStatus: 'in-progress'
+        })
+      })
+    )
+
     const benzinUserRequest: SignUserRequest = {
       id: new Date().getTime(),
       action: { kind: 'benzin' },
       meta
     }
     await this.addUserRequest(benzinUserRequest, true)
+
     this.actions.removeAction(actionId)
 
     // eslint-disable-next-line no-restricted-syntax
     for (const call of accountOp.calls) {
       const uReq = this.userRequests.find((r) => r.id === call.fromUserRequestId)
       if (uReq) {
-        uReq.dappPromise?.resolve(data)
+        uReq.dappPromise?.resolve({ hash: txnId })
         // eslint-disable-next-line no-await-in-loop
-        this.removeUserRequest(uReq.id)
+        this.removeUserRequest(uReq.id, { shouldRemoveSwapAndBridgeRoute: false })
       }
     }
 
@@ -1422,7 +1552,6 @@ export class MainController extends EventEmitter {
       const uReq = this.userRequests.find((r) => r.id === call.fromUserRequestId)
       if (uReq) {
         uReq.dappPromise?.reject(ethErrors.provider.userRejectedRequest<any>(err))
-        // eslint-disable-next-line no-await-in-loop
         this.removeUserRequest(uReq.id)
       }
     }
