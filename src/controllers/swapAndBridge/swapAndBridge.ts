@@ -96,7 +96,7 @@ export class SwapAndBridgeController extends EventEmitter {
 
   fromAmountFieldMode: 'fiat' | 'token' = 'token'
 
-  toChainId: number | null = 10
+  toChainId: number | null = 1
 
   toSelectedToken: SocketAPIToken | null = null
 
