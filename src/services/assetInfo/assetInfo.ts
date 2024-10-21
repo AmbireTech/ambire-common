@@ -11,7 +11,7 @@ const scheduledActions: {
 } = {}
 
 export async function executeBatchedFetch(network: Network): Promise<void> {
-  const provider = new JsonRpcProvider(network.rpcUrls[0])
+  const provider = new JsonRpcProvider(network.selectedRpcUrl || network.rpcUrls[0])
   const allAddresses =
     Array.from(new Set(scheduledActions[network.id]?.data.map((i) => i.address))) || []
   const portfolio = new Portfolio(fetch as any, provider, network)
