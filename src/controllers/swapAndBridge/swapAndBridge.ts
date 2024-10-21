@@ -97,7 +97,7 @@ export class SwapAndBridgeController extends EventEmitter {
 
   fromAmountFieldMode: 'fiat' | 'token' = 'token'
 
-  toChainId: number | null = 10
+  toChainId: number | null = 1
 
   toSelectedToken: SocketAPIToken | null = null
 
@@ -275,7 +275,6 @@ export class SwapAndBridgeController extends EventEmitter {
     fromAmount?: string
     fromAmountInFiat?: string
     fromAmountFieldMode?: 'fiat' | 'token'
-    fromChainId?: bigint | number
     fromSelectedToken?: TokenResult | null
     toChainId?: bigint | number
     toSelectedToken?: SocketAPIToken | null
@@ -285,7 +284,6 @@ export class SwapAndBridgeController extends EventEmitter {
       fromAmount,
       fromAmountInFiat,
       fromAmountFieldMode,
-      fromChainId,
       fromSelectedToken,
       toChainId,
       toSelectedToken,
@@ -358,19 +356,13 @@ export class SwapAndBridgeController extends EventEmitter {
       this.fromAmountFieldMode = fromAmountFieldMode
     }
 
-    if (fromChainId) {
-      if (this.fromChainId !== Number(fromChainId)) {
-        this.fromChainId = Number(fromChainId)
-        // eslint-disable-next-line @typescript-eslint/no-floating-promises
-        this.updateToTokenList(true)
-      }
-    }
-
     if (fromSelectedToken) {
       if (this.fromSelectedToken?.networkId !== fromSelectedToken?.networkId) {
         const network = this.#networks.networks.find((n) => n.id === fromSelectedToken.networkId)
         if (network) {
           this.fromChainId = Number(network.chainId)
+          // defaults to swap after network change (should keep fromChainId and toChainId in sync after fromChainId update)
+          this.toChainId = Number(network.chainId)
           // eslint-disable-next-line @typescript-eslint/no-floating-promises
           this.updateToTokenList(true)
         }
@@ -410,7 +402,7 @@ export class SwapAndBridgeController extends EventEmitter {
     this.fromAmount = ''
     this.fromAmountInFiat = ''
     this.fromAmountFieldMode = 'token'
-    this.toChainId = 10
+    this.toChainId = 1
     this.toSelectedToken = null
     this.quote = null
     this.portfolioTokenList = []
@@ -475,7 +467,6 @@ export class SwapAndBridgeController extends EventEmitter {
             return
           }
         }
-        this.updateForm({ toSelectedToken: this.toTokenList[0] || null })
       }
     } catch (error: any) {
       this.emitError({
