@@ -4,7 +4,7 @@ import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import { Account, AccountStates } from '../../interfaces/account'
 import { Network } from '../../interfaces/network'
 import { Bundler } from '../../services/bundlers/bundler'
-import { AccountOp, getSignableCalls } from '../accountOp/accountOp'
+import { AccountOp, getSignableCallsForBundlerEstimate } from '../accountOp/accountOp'
 import { getFeeCall } from '../calls/calls'
 import { TokenResult } from '../portfolio'
 import {
@@ -41,7 +41,7 @@ export async function bundlerEstimate(
   const usesPaymaster = shouldUsePaymaster(network)
   if (usesPaymaster) {
     const feeToken = getFeeTokenForEstimate(feeTokens)
-    if (feeToken) localOp.feeCall = getFeeCall(feeToken, 1n)
+    if (feeToken) localOp.feeCall = getFeeCall(feeToken)
   }
   const userOp = getUserOperation(
     account,
@@ -76,7 +76,9 @@ export async function bundlerEstimate(
   if (userOp.activatorCall) localOp.activatorCall = userOp.activatorCall
 
   const ambireAccount = new Interface(AmbireAccount.abi)
-  userOp.callData = ambireAccount.encodeFunctionData('executeBySender', [getSignableCalls(localOp)])
+  userOp.callData = ambireAccount.encodeFunctionData('executeBySender', [
+    getSignableCallsForBundlerEstimate(localOp)
+  ])
   userOp.signature = getSigForCalculations()
   const shouldStateOverride = !accountState.isErc4337Enabled && accountState.isDeployed
   const gasData = await Bundler.estimate(userOp, network, shouldStateOverride).catch((e: any) => {

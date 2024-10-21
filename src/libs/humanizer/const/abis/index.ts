@@ -2,6 +2,7 @@ import { OneInch } from './1Inch'
 import { AaveLendingPoolV2, AaveWethGatewayV2 } from './Aave'
 import { Across } from './Across'
 import { KyberSwap } from './KyberSwap'
+import { Legends } from './Legends'
 import { SocketViaAcross } from './socket'
 import { RouteProcessor } from './Sushi'
 import { ERC20, ERC721, WETH } from './Tokens'
@@ -25,5 +26,6 @@ export {
   Across,
   OneInch,
   KyberSwap,
-  SocketViaAcross
+  SocketViaAcross,
+  Legends
 }
