@@ -405,7 +405,7 @@ export class SwapAndBridgeController extends EventEmitter {
     this.fromAmount = ''
     this.fromAmountInFiat = ''
     this.fromAmountFieldMode = 'token'
-    this.toChainId = 10
+    this.toChainId = 1
     this.toSelectedToken = null
     this.quote = null
     this.portfolioTokenList = []
