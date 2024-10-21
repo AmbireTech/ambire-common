@@ -14,7 +14,7 @@ import {
   getRecipientText,
   getToken
 } from '../../utils'
-import { uniswapHumanizer } from './'
+import { uniswapHumanizer } from '.'
 
 const transactions = {
   firstBatch: [
@@ -133,7 +133,7 @@ describe('uniswap', () => {
         getAction('Swap'),
         getToken('0x8a3c710e41cd95799c535f22dbae371d7c858651', 50844919041919270406243n),
         getLabel('for'),
-        getToken('0x0000000000000000000000000000000000000000', 137gs930462904193673n),
+        getToken('0x0000000000000000000000000000000000000000', 137930462904193673n),
         getDeadline(1692784103n)
       ],
       [
