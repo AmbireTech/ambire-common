@@ -20,7 +20,7 @@ const uniV2Mapping = (): HumanizerUniMatcher => {
       return [
         getAction('Swap'),
         getToken(path[0], amountIn),
-        getLabel('for at least'),
+        getLabel('for'),
         getToken(outputAsset, amountOutMin),
         ...getUniRecipientText(accountOp.accountAddr, to),
         getDeadline(deadline)
@@ -36,7 +36,7 @@ const uniV2Mapping = (): HumanizerUniMatcher => {
         getAction('Swap'),
         getLabel('up to'),
         getToken(path[0], amountInMax),
-        getLabel('for at least'),
+        getLabel('for'),
         getToken(outputAsset, amountOut),
         ...getUniRecipientText(accountOp.accountAddr, to),
         getDeadline(deadline)
@@ -52,7 +52,7 @@ const uniV2Mapping = (): HumanizerUniMatcher => {
       return [
         getAction('Swap'),
         getToken(ZeroAddress, value),
-        getLabel('for at least'),
+        getLabel('for'),
         getToken(outputAsset, amountOutMin),
         ...getUniRecipientText(accountOp.accountAddr, to),
         getDeadline(deadline)
@@ -67,7 +67,7 @@ const uniV2Mapping = (): HumanizerUniMatcher => {
         getAction('Swap'),
         getLabel('up to'),
         getToken(path[0], amountInMax),
-        getLabel('for at least'),
+        getLabel('for'),
         getToken(ZeroAddress, amountOut),
         ...getUniRecipientText(accountOp.accountAddr, to),
         getDeadline(deadline)
@@ -81,7 +81,7 @@ const uniV2Mapping = (): HumanizerUniMatcher => {
       return [
         getAction('Swap'),
         getToken(path[0], amountIn),
-        getLabel('for at least'),
+        getLabel('for'),
         getToken(ZeroAddress, amountOutMin),
         ...getUniRecipientText(accountOp.accountAddr, to),
         getDeadline(deadline)
@@ -98,7 +98,7 @@ const uniV2Mapping = (): HumanizerUniMatcher => {
         getAction('Swap'),
         getLabel('up to'),
         getToken(ZeroAddress, value),
-        getLabel('for at least'),
+        getLabel('for'),
         getToken(outputAsset, amountOut),
         ...getUniRecipientText(accountOp.accountAddr, to),
         getDeadline(deadline)
