@@ -578,18 +578,35 @@ export class SwapAndBridgeController extends EventEmitter {
           quoteResult.toChainId === this.toChainId &&
           quoteResult.toAsset.address === this.toSelectedToken?.address
         ) {
-          const bestRoute =
-            this.routePriority === 'output'
-              ? quoteResult.routes[0] // API returns highest output first
-              : quoteResult.routes[quoteResult.routes.length - 1] // API returns fastest... last
+          let routeToSelect
+          let routeToSelectSteps
+
+          const selectedRouteInQuoteRes = this.quote
+            ? quoteResult.routes.find(
+                (r: SocketAPIRoute) =>
+                  r.usedBridgeNames[0] === this.quote!.selectedRoute.usedBridgeNames[0] // because we have only routes with unique bridges
+              )
+            : null
+
+          if (selectedRouteInQuoteRes) {
+            routeToSelect = selectedRouteInQuoteRes
+            routeToSelectSteps = getQuoteRouteSteps(selectedRouteInQuoteRes.userTxs)
+          } else {
+            const bestRoute =
+              this.routePriority === 'output'
+                ? quoteResult.routes[0] // API returns highest output first
+                : quoteResult.routes[quoteResult.routes.length - 1] // API returns fastest... last
+            routeToSelect = bestRoute
+            routeToSelectSteps = getQuoteRouteSteps(bestRoute.userTxs)
+          }
 
           this.quote = {
             fromAsset: quoteResult.fromAsset,
             fromChainId: quoteResult.fromChainId,
             toAsset: quoteResult.toAsset,
             toChainId: quoteResult.toChainId,
-            selectedRoute: bestRoute,
-            selectedRouteSteps: getQuoteRouteSteps(bestRoute.userTxs),
+            selectedRoute: routeToSelect,
+            selectedRouteSteps: routeToSelectSteps,
             routes: quoteResult.routes
           }
         }
