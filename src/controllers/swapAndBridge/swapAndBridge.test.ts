@@ -84,9 +84,9 @@ describe('SwapAndBridge Controller', () => {
     let emitCounter = 0
     const unsubscribe = swapAndBridgeController.onUpdate(async () => {
       emitCounter++
-      if (emitCounter === 4) {
+      if (emitCounter === 3) {
         expect(swapAndBridgeController.toTokenList).toHaveLength(3)
-        expect(swapAndBridgeController.toSelectedToken).not.toBeNull()
+        expect(swapAndBridgeController.toSelectedToken).toBeNull()
         unsubscribe()
         done()
       }
@@ -120,6 +120,30 @@ describe('SwapAndBridge Controller', () => {
     )
     expect(swapAndBridgeController.fromChainId).toEqual(10)
   })
+  test('should update toChainId', (done) => {
+    let emitCounter = 0
+    const unsubscribe = swapAndBridgeController.onUpdate(async () => {
+      emitCounter++
+      if (emitCounter === 3) {
+        expect(swapAndBridgeController.toChainId).toEqual(8453)
+        unsubscribe()
+        done()
+      }
+    })
+    swapAndBridgeController.updateForm({ toChainId: 8453 })
+  })
+  test('should select toToken', (done) => {
+    let emitCounter = 0
+    const unsubscribe = swapAndBridgeController.onUpdate(async () => {
+      emitCounter++
+      if (emitCounter === 1) {
+        expect(swapAndBridgeController.toChainId).toEqual(8453)
+        unsubscribe()
+        done()
+      }
+    })
+    swapAndBridgeController.updateForm({ toSelectedToken: swapAndBridgeController.toTokenList[0] })
+  })
   test('should update fromAmount', (done) => {
     let emitCounter = 0
     const unsubscribe = swapAndBridgeController.onUpdate(async () => {
@@ -135,18 +159,6 @@ describe('SwapAndBridge Controller', () => {
       }
     })
     swapAndBridgeController.updateForm({ fromAmount: '0.02' })
-  })
-  test('should update toChainId', (done) => {
-    let emitCounter = 0
-    const unsubscribe = swapAndBridgeController.onUpdate(async () => {
-      emitCounter++
-      if (emitCounter === 6) {
-        expect(swapAndBridgeController.toChainId).toEqual(8453)
-        unsubscribe()
-        done()
-      }
-    })
-    swapAndBridgeController.updateForm({ toChainId: 8453 })
   })
   test('should switch from and to tokens', async () => {
     const prevFromChainId = swapAndBridgeController.fromChainId
