@@ -130,6 +130,16 @@ export function getSignableCalls(op: AccountOp): [string, string, string][] {
   return callsToSign
 }
 
+export function getSignableCallsForBundlerEstimate(op: AccountOp): [string, string, string][] {
+  const callsToSign = getSignableCalls(op)
+  // add the fee call one more time when doing a bundler estimate
+  // this is because the feeCall during estimation is fake (approve instead
+  // of transfer, incorrect amount) and more ofteh than not, this causes
+  // a lower estimation than the real one, causing bad UX in the process
+  if (op.feeCall) callsToSign.push(callToTuple(op.feeCall))
+  return callsToSign
+}
+
 export function getSignableHash(
   addr: AccountId,
   chainId: bigint,
