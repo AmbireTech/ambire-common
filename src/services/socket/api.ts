@@ -149,7 +149,8 @@ export class SocketAPI {
       isContractCall: isSmartAccount.toString(), // only get quotes with that are compatible with contracts
       sort,
       singleTxOnly: 'false',
-      defaultSwapSlippage: '1'
+      defaultSwapSlippage: '1',
+      uniqueRoutesPerBridge: 'true'
     })
     const url = `${this.#baseUrl}/quote?${params.toString()}`
 
@@ -164,7 +165,7 @@ export class SocketAPI {
       ...response.result,
       fromAsset: normalizeIncomingSocketToken(response.result.fromAsset),
       toAsset: normalizeIncomingSocketToken(response.result.toAsset),
-      routes: response.result.routes.map((route: SocketAPIQuote['route']) => ({
+      routes: response.result.routes.map((route: SocketAPIQuote['selectedRoute']) => ({
         ...route,
         userTxs: route.userTxs.map((userTx) => ({
           ...userTx,
@@ -196,7 +197,7 @@ export class SocketAPI {
     toChainId: number
     fromAssetAddress: string
     toAssetAddress: string
-    route: SocketAPIQuote['route']
+    route: SocketAPIQuote['selectedRoute']
   }) {
     const params = {
       fromChainId,
