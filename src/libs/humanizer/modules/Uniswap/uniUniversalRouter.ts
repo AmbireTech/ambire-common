@@ -65,7 +65,7 @@ export const uniUniversalRouter = (): HumanizerUniMatcher => {
               parsed.push([
                 getAction('Swap'),
                 getToken(path[0], params.amountIn),
-                getLabel('for at least'),
+                getLabel('for'),
                 getToken(path[path.length - 1], params.amountOutMin),
                 getDeadline(deadline)
               ])
@@ -132,7 +132,7 @@ export const uniUniversalRouter = (): HumanizerUniMatcher => {
               parsed.push([
                 getAction('Swap'),
                 getToken(path[0], params.amountIn),
-                getLabel('for at least'),
+                getLabel('for'),
                 getToken(path[path.length - 1], params.amountOutMin),
                 getDeadline(deadline)
               ])
