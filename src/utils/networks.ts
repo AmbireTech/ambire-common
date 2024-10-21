@@ -1,5 +1,6 @@
 import { JsonRpcProvider } from 'ethers'
-import { ChainlistNetwork, Network } from 'interfaces/network'
+
+import { ChainlistNetwork, Network } from '../interfaces/network'
 
 const checkIsRpcUrlWorking = async (rpcUrl: string) => {
   const provider = new JsonRpcProvider(rpcUrl)
