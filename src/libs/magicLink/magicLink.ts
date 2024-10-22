@@ -1,3 +1,4 @@
+import { MagicLinkFlow } from '../../interfaces/emailVault'
 import { Fetch } from '../../interfaces/fetch'
 
 export interface MagicLinkData {
@@ -16,9 +17,13 @@ export async function requestMagicLink(
   email: String,
   relayerUrl: String,
   fetch: Fetch,
-  options?: { autoConfirm?: boolean }
+  options?: { autoConfirm?: boolean; flow?: MagicLinkFlow }
 ): Promise<MagicLinkData> {
-  const resp = await fetch(`${relayerUrl}/email-vault/request-key/${email}`)
+  const flow = options?.flow
+
+  const resp = await fetch(
+    `${relayerUrl}/email-vault/request-key/${email}${flow ? `?flow=${flow}` : ''}`
+  )
   const result: RequestMagicLinkResult = await resp.json()
   if (result?.data?.secret && options?.autoConfirm)
     setTimeout(() => {
