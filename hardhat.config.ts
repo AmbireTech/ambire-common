@@ -8,6 +8,7 @@ import { HardhatUserConfig } from 'hardhat/config'
 
 require('dotenv').config()
 
+if (!process.env.PRIVATE_KEY) throw new Error('NO PK')
 const config: HardhatUserConfig = {
   solidity: {
     version: '0.8.19',
@@ -26,12 +27,11 @@ const config: HardhatUserConfig = {
     token: 'ETH'
   },
   networks: {
-    base: {
-      url: 'https://mainnet.base.org'
-    }
+    base: { url: 'https://mainnet.base.org' },
+    optimism: { url: 'https://invictus.ambire.com/optimism', accounts: [process.env.PRIVATE_KEY!] }
   },
   etherscan: {
-    apiKey: process.env.BASESCAN_API_KEY,
+    apiKey: process.env.API_KEY,
     customChains: [
       {
         network: 'base',
@@ -39,6 +39,14 @@ const config: HardhatUserConfig = {
         urls: {
           apiURL: 'https://api.basescan.org/api',
           browserURL: 'https://api.basescan.org/api'
+        }
+      },
+      {
+        network: 'optimism',
+        chainId: 10,
+        urls: {
+          apiURL: 'https://api-optimistic.etherscan.io/api',
+          browserURL: 'https://optimistic.etherscan.io/'
         }
       }
     ]
