@@ -622,6 +622,11 @@ export class KeystoreController extends EventEmitter {
     this.#windowManager.sendWindowUiMessage({ privateKey: `0x${decryptedPrivateKey}` })
   }
 
+  async sendSeedToUi() {
+    const decrypted = await this.getSavedSeed()
+    this.#windowManager.sendWindowUiMessage({ seed: decrypted.seed })
+  }
+
   async #getPrivateKey(keyAddress: string): Promise<string> {
     await this.#initialLoadPromise
     if (this.#mainKey === null) throw new Error('keystore: needs to be unlocked')
