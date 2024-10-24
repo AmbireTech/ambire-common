@@ -1,5 +1,7 @@
 import { AccountCreation, AccountId } from './account'
 
+export type MagicLinkFlow = 'recovery' | 'setup'
+
 export enum SecretType {
   RecoveryKey = 'recoveryKey',
   KeyStore = 'keyStore',

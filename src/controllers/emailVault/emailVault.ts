@@ -6,6 +6,7 @@ import { Banner } from '../../interfaces/banner'
 import {
   EmailVaultData,
   EmailVaultOperation,
+  MagicLinkFlow,
   OperationRequestType,
   SecretType
 } from '../../interfaces/emailVault'
@@ -165,7 +166,7 @@ export class EmailVaultController extends EventEmitter {
     ])
   }
 
-  async handleMagicLinkKey(email: string, fn?: Function) {
+  async handleMagicLinkKey(email: string, fn?: Function, flow?: MagicLinkFlow) {
     await this.initialLoadPromise
     const currentKey = (await this.#getMagicLinkKey(email))?.key
     if (currentKey) {
@@ -179,7 +180,8 @@ export class EmailVaultController extends EventEmitter {
     this.emitUpdate()
 
     const newKey = await requestMagicLink(email, this.#relayerUrl, this.#fetch, {
-      autoConfirm: this.#autoConfirmMagicLink
+      autoConfirm: this.#autoConfirmMagicLink,
+      flow
     })
 
     const polling = new Polling()
@@ -264,11 +266,11 @@ export class EmailVaultController extends EventEmitter {
     )
   }
 
-  async getEmailVaultInfo(email: string) {
-    await this.withStatus('getEmailVaultInfo', () => this.#getEmailVaultInfo(email))
+  async getEmailVaultInfo(email: string, flow?: MagicLinkFlow) {
+    await this.withStatus('getEmailVaultInfo', () => this.#getEmailVaultInfo(email, flow))
   }
 
-  async #getEmailVaultInfo(email: string): Promise<void> {
+  async #getEmailVaultInfo(email: string, flow?: MagicLinkFlow): Promise<void> {
     const [existsSessionKey, magicLinkKey] = await Promise.all([
       this.#getSessionKey(email),
       this.#getMagicLinkKey(email)
@@ -289,7 +291,7 @@ export class EmailVaultController extends EventEmitter {
         return null
       })
     } else {
-      await this.handleMagicLinkKey(email, () => this.#getEmailVaultInfo(email))
+      await this.handleMagicLinkKey(email, () => this.#getEmailVaultInfo(email, flow), flow)
     }
 
     if (emailVault) {
@@ -310,16 +312,20 @@ export class EmailVaultController extends EventEmitter {
 
   async #uploadKeyStoreSecret(email: string) {
     if (!this.emailVaultStates.email[email]) {
-      await this.#getEmailVaultInfo(email)
+      await this.#getEmailVaultInfo(email, 'setup')
     }
 
     let result: Boolean | null = false
     let magicKey = await this.#getMagicLinkKey(email)
 
     if (!magicKey?.key && !this.#shouldStopConfirmationPolling) {
-      await this.handleMagicLinkKey(email, async () => {
-        magicKey = await this.#getMagicLinkKey(email)
-      })
+      await this.handleMagicLinkKey(
+        email,
+        async () => {
+          magicKey = await this.#getMagicLinkKey(email)
+        },
+        'setup'
+      )
     }
 
     if (this.#shouldStopConfirmationPolling) {
@@ -344,7 +350,7 @@ export class EmailVaultController extends EventEmitter {
       })
 
     if (result) {
-      await this.#getEmailVaultInfo(email)
+      await this.#getEmailVaultInfo(email, 'setup')
     } else {
       this.emitError({
         level: 'minor',
