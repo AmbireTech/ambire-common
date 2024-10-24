@@ -257,7 +257,7 @@ export default function useBalanceOracleFetch({
     // than the 2. stake transaction and the response from balance oracle
     // overrides the correct one
     const shouldWaitForPending =
-      eligibleRequests.length === 1 && eligibleRequests[0].id.includes('approve')
+      eligibleRequests.length === 1 && eligibleRequests[0].id.toString().includes('approve')
 
     if (shouldWaitForPending) return
     const unsignedRequests = eligibleRequests
@@ -743,7 +743,9 @@ export default function useBalanceOracleFetch({
       .filter((token) => token.coingeckoId)
       .filter(
         (token) =>
-         !token?.price === 0 || !token?.priceUpdate || new Date().valueOf() - token.priceUpdate >= minutesToCheckForUpdate
+          !token?.price === 0 ||
+          !token?.priceUpdate ||
+          new Date().valueOf() - token.priceUpdate >= minutesToCheckForUpdate
       )
     const customTokens = constants?.customTokens?.filter((ct) => {
       const tokenToUpdate = tokens.find(
