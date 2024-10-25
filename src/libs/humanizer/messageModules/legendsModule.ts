@@ -1,4 +1,4 @@
-import { isAddress, isHexString, toUtf8String, ZeroAddress } from 'ethers'
+import { isAddress, isHexString, toUtf8Bytes, toUtf8String, ZeroAddress } from 'ethers'
 
 import { Message } from '../../../interfaces/userRequest'
 import { HumanizerTypedMessageModule } from '../interfaces'
@@ -9,7 +9,7 @@ export const legendsMessageModule: HumanizerTypedMessageModule = (message: Messa
     return { fullVisualization: [] }
   let messageAsText = message.content.message
   if (isHexString(message.content.message) && message.content.message.length % 2 === 0) {
-    messageAsText = toUtf8String(message.content.message)
+    messageAsText = toUtf8String(toUtf8Bytes(message.content.message))
   }
   if (
     messageAsText.startsWith('Assign to Ambire Legends') &&
