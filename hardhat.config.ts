@@ -8,7 +8,6 @@ import { HardhatUserConfig } from 'hardhat/config'
 
 require('dotenv').config()
 
-if (!process.env.PRIVATE_KEY) throw new Error('NO PK')
 const config: HardhatUserConfig = {
   solidity: {
     version: '0.8.19',
