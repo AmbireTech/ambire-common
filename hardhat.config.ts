@@ -27,7 +27,10 @@ const config: HardhatUserConfig = {
   },
   networks: {
     base: { url: 'https://mainnet.base.org' },
-    optimism: { url: 'https://invictus.ambire.com/optimism', accounts: [process.env.PRIVATE_KEY!] }
+    optimism: {
+      url: 'https://invictus.ambire.com/optimism',
+      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
+    }
   },
   etherscan: {
     apiKey: process.env.API_KEY,
