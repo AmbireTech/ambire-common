@@ -5,8 +5,14 @@ import { HumanizerTypedMessageModule } from '../interfaces'
 import { getAction, getAddressVisualization, getLabel } from '../utils'
 
 export const legendsMessageModule: HumanizerTypedMessageModule = (message: Message) => {
-  if (message.content.kind !== 'message' || typeof message.content.message !== 'string')
+  if (
+    message.content.kind !== 'message' ||
+    typeof message.content.message !== 'string' ||
+    isHexString(message.content.message)
+  ) {
     return { fullVisualization: [] }
+  }
+
   let messageAsText = message.content.message
   if (isHexString(message.content.message) && message.content.message.length % 2 === 0) {
     messageAsText = toUtf8String(message.content.message)
