@@ -1,3 +1,5 @@
+import { Messenger } from 'interfaces/messenger'
+
 import { Session, SessionProp } from '../../classes/session'
 import predefinedDapps from '../../consts/dappCatalog.json'
 import { Dapp } from '../../interfaces/dapp'
@@ -12,11 +14,11 @@ import EventEmitter from '../eventEmitter/eventEmitter'
 // The possible events include: accountsChanged, chainChanged, disconnect, lock, unlock, and connect.
 
 export class DappsController extends EventEmitter {
-  dappsSessionMap: Map<string, Session>
-
   #dapps: Dapp[] = []
 
   #storage: Storage
+
+  dappSessions: { [key: string]: Session } = {}
 
   // Holds the initial load promise, so that one can wait until it completes
   initialLoadPromise: Promise<void>
@@ -24,7 +26,6 @@ export class DappsController extends EventEmitter {
   constructor(_storage: Storage) {
     super()
 
-    this.dappsSessionMap = new Map<string, Session>()
     this.#storage = _storage
 
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
@@ -46,8 +47,11 @@ export class DappsController extends EventEmitter {
   }
 
   async #load() {
-    let storedDapps: Dapp[]
-    storedDapps = await this.#storage.get('dapps', [])
+    // eslint-disable-next-line prefer-const
+    let [storedDapps, dappSessions] = await Promise.all([
+      this.#storage.get('dapps', []),
+      this.#storage.get('dappSessions', {})
+    ])
     if (!storedDapps.length) {
       storedDapps = predefinedDapps.map((dapp) => ({
         ...dapp,
@@ -59,37 +63,62 @@ export class DappsController extends EventEmitter {
     }
 
     this.#dapps = storedDapps
+    Object.keys(dappSessions).forEach((sessionId) => {
+      const session = new Session(dappSessions[sessionId])
+      this.dappSessions[sessionId] = session
+    })
     this.emitUpdate()
   }
 
-  #createDappSession = (key: string, tabId: number, data: SessionProp | null = null) => {
-    const dappSession = new Session(data, tabId)
-    this.dappsSessionMap.set(key, dappSession)
+  #dappSessionsSet(sessionId: string, session: Session) {
+    this.dappSessions[sessionId] = session
+    this.#storage.set('dappSessions', this.dappSessions)
+  }
+
+  #dappSessionsDelete(sessionId: string) {
+    delete this.dappSessions[sessionId]
+    this.#storage.set('dappSessions', this.dappSessions)
+  }
+
+  #createDappSession = (data: SessionProp) => {
+    const dappSession = new Session(data)
+    this.#dappSessionsSet(dappSession.sessionId, dappSession)
     this.emitUpdate()
 
     return dappSession
   }
 
-  getOrCreateDappSession = (tabId: number, origin: string) => {
-    if (this.dappsSessionMap.has(`${tabId}-${origin}`)) {
-      return this.dappsSessionMap.get(`${tabId}-${origin}`) as Session
+  getOrCreateDappSession = (data: SessionProp) => {
+    if (!data.tabId || !data.origin)
+      throw new Error('Invalid props passed to getOrCreateDappSession')
+
+    if (this.dappSessions[`${data.tabId}-${data.origin}`]) {
+      return this.dappSessions[`${data.tabId}-${data.origin}`]
     }
 
-    return this.#createDappSession(`${tabId}-${origin}`, tabId)
+    return this.#createDappSession(data)
+  }
+
+  setSessionMessenger = (key: string, messenger: Messenger) => {
+    this.dappSessions[key].setMessenger(messenger)
+  }
+
+  setSessionProp = (key: string, props: SessionProp) => {
+    this.dappSessions[key].setProp(props)
   }
 
   deleteDappSession = (key: string) => {
-    this.dappsSessionMap.delete(key)
+    this.#dappSessionsDelete(key)
     this.emitUpdate()
   }
 
   broadcastDappSessionEvent = (ev: any, data?: any, origin?: string) => {
     let dappSessions: { key: string; data: Session }[] = []
-    this.dappsSessionMap.forEach((session, key) => {
-      if (session && this.hasPermission(session.origin)) {
+    Object.keys(this.dappSessions).forEach((key) => {
+      if (this.dappSessions[key] && this.hasPermission(this.dappSessions[key].origin)) {
         dappSessions.push({
           key,
-          data: session
+          data: this.dappSessions[key]
         })
       }
     })
@@ -102,7 +131,7 @@ export class DappsController extends EventEmitter {
       try {
         dappSession.data.sendMessage?.(ev, data)
       } catch (e) {
-        if (this.dappsSessionMap.has(dappSession.key)) {
+        if (this.dappSessions[dappSession.key]) {
           this.deleteDappSession(dappSession.key)
         }
       }
@@ -163,7 +192,6 @@ export class DappsController extends EventEmitter {
     return {
       ...this,
       ...super.toJSON(),
-      dappsSessionMap: Object.fromEntries(this.dappsSessionMap),
       dapps: this.dapps,
       isReady: this.isReady
     }
