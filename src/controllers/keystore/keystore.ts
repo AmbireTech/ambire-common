@@ -56,6 +56,7 @@ const STATUS_WRAPPED_METHODS = {
   unlockWithSecret: 'INITIAL',
   addSecret: 'INITIAL',
   addSeed: 'INITIAL',
+  deleteSavedSeed: 'INITIAL',
   removeSecret: 'INITIAL',
   addKeys: 'INITIAL',
   addKeysExternallyStored: 'INITIAL',
@@ -803,6 +804,19 @@ export class KeystoreController extends EventEmitter {
       return { ...keystoreKey, ...key.preferences }
     })
     await this.#storage.set('keystoreKeys', this.#keystoreKeys)
+    this.emitUpdate()
+  }
+
+  async deleteSavedSeed() {
+    await this.withStatus('deleteSavedSeed', () => this.#deleteSavedSeed())
+  }
+
+  async #deleteSavedSeed() {
+    await this.#initialLoadPromise
+
+    this.#keystoreSeeds = []
+    await this.#storage.set('keystoreSeeds', this.#keystoreSeeds)
+
     this.emitUpdate()
   }
 
