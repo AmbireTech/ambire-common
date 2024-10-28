@@ -79,7 +79,12 @@ import shortenAddress from '../../utils/shortenAddress'
 import wait from '../../utils/wait'
 import { AccountAdderController } from '../accountAdder/accountAdder'
 import { AccountsController } from '../accounts/accounts'
-import { AccountOpAction, ActionsController, SignMessageAction } from '../actions/actions'
+import {
+  AccountOpAction,
+  ActionsController,
+  SignMessageAction,
+  SwitchAccountAction
+} from '../actions/actions'
 import { ActivityController } from '../activity/activity'
 import { AddressBookController } from '../addressBook/addressBook'
 import { DappsController } from '../dapps/dapps'
@@ -937,13 +942,12 @@ export class MainController extends EventEmitter {
         throw ethErrors.rpc.invalidRequest('No msg request to sign')
       }
       const msgAddress = getAddress(msg?.[1])
-      // TODO: if address is in this.accounts in theory the user should be able to sign
-      // e.g. if an acc from the wallet is used as a signer of another wallet
-      if (msgAddress !== this.accounts.selectedAccount) {
+
+      if (!this.accounts.accounts.some((a) => a.addr === msgAddress)) {
         dappPromise.reject(
           ethErrors.provider.userRejectedRequest(
             // if updating, check https://github.com/AmbireTech/ambire-wallet/pull/1627
-            'the dApp is trying to sign using an address different from the currently selected account. Try re-connecting.'
+            'the dApp is trying to sign using an address that is not imported in the extension.'
           )
         )
         return
@@ -979,13 +983,10 @@ export class MainController extends EventEmitter {
         throw ethErrors.rpc.invalidRequest('No msg request to sign')
       }
       const msgAddress = getAddress(msg?.[0])
-      // TODO: if address is in this.accounts in theory the user should be able to sign
-      // e.g. if an acc from the wallet is used as a signer of another wallet
-      if (msgAddress !== this.accounts.selectedAccount) {
+      if (!this.accounts.accounts.some((a) => a.addr === msgAddress)) {
         dappPromise.reject(
           ethErrors.provider.userRejectedRequest(
-            // if updating, check https://github.com/AmbireTech/ambire-wallet/pull/1627
-            'the dApp is trying to sign using an address different from the currently selected account. Try re-connecting.'
+            'the dApp is trying to sign using an address that is not in the extension.'
           )
         )
         return
@@ -1056,7 +1057,46 @@ export class MainController extends EventEmitter {
     }
 
     if (userRequest) {
+      const isASignOperationRequestedForAnotherAccount =
+        userRequest.meta.isSignAction &&
+        userRequest.meta.accountAddr !== this.accounts.selectedAccount
+
+      if (isASignOperationRequestedForAnotherAccount) {
+        const network = this.networks.networks.find(
+          (n) => Number(n.chainId) === Number(dapp?.chainId)
+        )
+
+        if (!network) {
+          throw ethErrors.provider.chainDisconnected('Transaction failed - unknown network')
+        }
+
+        await this.addUserRequest(userRequest, false)
+        await this.addUserRequest(
+          {
+            id: new Date().getTime(),
+            action: {
+              kind: 'switchAccount',
+              params: {}
+            },
+            session: request.session,
+            meta: {
+              accountAddr: this.accounts.selectedAccount,
+              switchToAccountAddr: userRequest.meta.accountAddr,
+              networkId: network.id,
+              isSignAction: false
+            },
+            dappPromise: {
+              session: request.session,
+              resolve: () => {},
+              reject: () => {}
+            }
+          },
+          true
+        )
+        return
+      }
       await this.addUserRequest(userRequest, withPriority)
+
       this.emitUpdate()
     }
   }
@@ -1300,7 +1340,7 @@ export class MainController extends EventEmitter {
         this.actions.addOrUpdateAction(accountOpAction, withPriority, executionType)
       }
     } else {
-      let actionType: 'dappRequest' | 'benzin' | 'signMessage' = 'dappRequest'
+      let actionType: 'dappRequest' | 'benzin' | 'signMessage' | 'switchAccount' = 'dappRequest'
 
       if (req.action.kind === 'typedMessage' || req.action.kind === 'message') {
         actionType = 'signMessage'
@@ -1320,6 +1360,8 @@ export class MainController extends EventEmitter {
         }
       }
       if (req.action.kind === 'benzin') actionType = 'benzin'
+      if (req.action.kind === 'switchAccount') actionType = 'switchAccount'
+
       this.actions.addOrUpdateAction(
         {
           id,
@@ -1556,6 +1598,16 @@ export class MainController extends EventEmitter {
       }
     }
 
+    this.emitUpdate()
+  }
+
+  async resolveSwitchAccountAction(actionId: SwitchAccountAction['id']) {
+    const switchAccountAction = this.actions.actionsQueue.find((a) => a.id === actionId)
+    if (!switchAccountAction || switchAccountAction.type !== 'switchAccount') return
+
+    const { userRequest } = switchAccountAction
+    await this.accounts.selectAccount(userRequest.meta.switchToAccountAddr)
+    this.removeUserRequest(actionId)
     this.emitUpdate()
   }
 

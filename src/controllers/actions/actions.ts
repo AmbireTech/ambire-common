@@ -12,6 +12,17 @@ import { ENTRY_POINT_AUTHORIZATION_REQUEST_ID } from '../../libs/userOperation/u
 import { AccountsController } from '../accounts/accounts'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
+export type SwitchAccountAction = {
+  id: UserRequest['id']
+  type: 'switchAccount'
+  userRequest: {
+    meta: {
+      accountAddr: Account['addr']
+      switchToAccountAddr: Account['addr']
+    }
+  }
+}
+
 export type AccountOpAction = {
   id: SignUserRequest['id']
   type: 'accountOp'
@@ -36,7 +47,12 @@ export type DappRequestAction = {
   userRequest: DappUserRequest
 }
 
-export type Action = AccountOpAction | SignMessageAction | BenzinAction | DappRequestAction
+export type Action =
+  | AccountOpAction
+  | SignMessageAction
+  | BenzinAction
+  | DappRequestAction
+  | SwitchAccountAction
 
 /**
  * The ActionsController is responsible for storing the converted userRequests
@@ -89,6 +105,9 @@ export class ActionsController extends EventEmitter {
       }
       if (a.type === 'benzin') {
         return a.userRequest.meta.accountAddr === this.#accounts.selectedAccount
+      }
+      if (a.type === 'switchAccount') {
+        return a.userRequest.meta.switchToAccountAddr !== this.#accounts.selectedAccount
       }
 
       return true
@@ -179,6 +198,7 @@ export class ActionsController extends EventEmitter {
 
   removeAction(actionId: Action['id'], shouldOpenNextAction: boolean = true) {
     this.actionsQueue = this.actionsQueue.filter((a) => a.id !== actionId)
+    console.log('New actionsQueue:', this.actionsQueue)
     if (shouldOpenNextAction) {
       this.#setCurrentAction(this.visibleActionsQueue[0] || null)
     }
