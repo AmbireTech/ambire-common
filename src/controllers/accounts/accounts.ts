@@ -96,18 +96,23 @@ export class AccountsController extends EventEmitter {
       this.emitUpdate()
       return
     }
-    // TODO: error handling, trying to switch to account that does not exist
-    if (!this.accounts.find((acc) => acc.addr === toAccountAddr)) return
+    if (!this.accounts.find((acc) => acc.addr === toAccountAddr)) {
+      console.error(`Account with address ${toAccountAddr} does not exist`)
+      return
+    }
     this.selectedAccount = toAccountAddr
-    await this.#storage.set('selectedAccount', toAccountAddr)
     this.#onSelectAccount(toAccountAddr)
+    await this.updateAccountState(toAccountAddr)
+    await this.#storage.set('selectedAccount', toAccountAddr)
 
     this.emitUpdate()
   }
 
   async updateAccountStates(blockTag: string | number = 'latest', networks: NetworkId[] = []) {
-    await this.withStatus('updateAccountStates', async () =>
-      this.#updateAccountStates(this.accounts, blockTag, networks)
+    await this.withStatus(
+      'updateAccountStates',
+      async () => this.#updateAccountStates(this.accounts, blockTag, networks),
+      true
     )
   }
 
@@ -120,8 +125,10 @@ export class AccountsController extends EventEmitter {
 
     if (!accountData) return
 
-    await this.withStatus('updateAccountState', async () =>
-      this.#updateAccountStates([accountData], blockTag, networks)
+    await this.withStatus(
+      'updateAccountState',
+      async () => this.#updateAccountStates([accountData], blockTag, networks),
+      true
     )
   }
 
@@ -203,9 +210,8 @@ export class AccountsController extends EventEmitter {
     const defaultSelectedAccount = getDefaultSelectedAccount(accounts)
     if (defaultSelectedAccount) {
       await this.#selectAccount(defaultSelectedAccount.addr)
+      await this.updateAccountState(defaultSelectedAccount.addr)
     }
-
-    await this.updateAccountStates()
 
     this.emitUpdate()
   }
