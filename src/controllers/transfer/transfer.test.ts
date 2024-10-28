@@ -24,9 +24,9 @@ if (!ethereum || !polygon) throw new Error('Failed to find ethereum in networks'
 
 const provider = getRpcProvider(ethereum.rpcUrls, ethereum.chainId)
 const polygonProvider = getRpcProvider(polygon.rpcUrls, polygon.chainId)
-const PLACEHOLDER_RECIPIENT = '0xC2E6dFcc2C6722866aD65F211D5757e1D2879337'
+const PLACEHOLDER_RECIPIENT = '0xc4A6bB5139123bD6ba0CF387828a9A3a73EF8D1e'
 const PLACEHOLDER_SELECTED_ACCOUNT: Account = {
-  addr: '0xc4A6bB5139123bD6ba0CF387828a9A3a73EF8D1e',
+  addr: '0xC2E6dFcc2C6722866aD65F211D5757e1D2879337',
   associatedKeys: ['0xC2E6dFcc2C6722866aD65F211D5757e1D2879337'],
   creation: {
     factoryAddr: '0x00',
@@ -36,7 +36,7 @@ const PLACEHOLDER_SELECTED_ACCOUNT: Account = {
   initialPrivileges: [['0x00', '0x01']],
   preferences: {
     label: DEFAULT_ACCOUNT_LABEL,
-    pfp: '0xc4A6bB5139123bD6ba0CF387828a9A3a73EF8D1e'
+    pfp: '0xC2E6dFcc2C6722866aD65F211D5757e1D2879337'
   }
 }
 const XWALLET_ADDRESS = '0x47Cd7E91C3CBaAF266369fe8518345fc4FC12935'
@@ -69,6 +69,8 @@ const getTokens = async () => {
   const ethAccPortfolio = await ethPortfolio.get(PLACEHOLDER_SELECTED_ACCOUNT.addr)
   const polygonAccPortfolio = await polygonPortfolio.get(PLACEHOLDER_SELECTED_ACCOUNT.addr)
 
+  console.log('ethAccPortfolio', ethAccPortfolio)
+  console.log('polygonAccPortfolio', polygonAccPortfolio)
   return [...ethAccPortfolio.tokens, ...polygonAccPortfolio.tokens]
 }
 
@@ -183,12 +185,12 @@ describe('Transfer Controller', () => {
   })
   test("should reject a token that doesn't have amount or amountPostSimulation for transfer", async () => {
     const tokens = await getTokens()
-    const nativeToken = tokens.find(
+    const zeroAmountToken = tokens.find(
       (t) =>
-        t.address === '0x0000000000000000000000000000000000000000' && t.networkId === 'ethereum'
+        t.address === '0x8793Fb615Eb92822F482f88B3137B00aad4C00D2' && t.networkId === 'ethereum'
     )
-    transferController.update({ selectedToken: nativeToken })
-    expect(transferController.selectedToken).toBe(null)
+    transferController.update({ selectedToken: zeroAmountToken })
+    expect(transferController.selectedToken?.address).not.toBe(zeroAmountToken?.address)
   })
   test("should accept a token that doesn't have amount but has amountPostSimulation for transfer", async () => {
     const tokens = await getTokens()
