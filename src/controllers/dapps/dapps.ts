@@ -1,8 +1,7 @@
-import { Messenger } from 'interfaces/messenger'
-
 import { Session, SessionProp } from '../../classes/session'
 import predefinedDapps from '../../consts/dappCatalog.json'
 import { Dapp } from '../../interfaces/dapp'
+import { Messenger } from '../../interfaces/messenger'
 import { Storage } from '../../interfaces/storage'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
