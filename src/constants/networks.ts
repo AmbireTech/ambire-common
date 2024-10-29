@@ -18,8 +18,7 @@ export enum NETWORKS {
   'scroll' = 'scroll',
   'ethereum-pow' = 'ethereum-pow',
   'rinkeby' = 'rinkeby',
-  'sepolia' = 'sepolia',
-  'sei' = 'sei'
+  'sepolia' = 'sepolia'
 }
 
 export type NetworkId = keyof typeof NETWORKS
@@ -325,23 +324,6 @@ const networks: NetworkType[] = [
     }
   },
   {
-    id: NETWORKS.sei,
-    chainId: 1329,
-    nativeAssetSymbol: 'SEI',
-    name: 'Sei',
-    explorerUrl: 'https://seitrace.com',
-    unstoppableDomainsChain: 'ERC20',
-    hide: true,
-    isGasTankAvailable: false,
-    relayerlessOnly: false,
-    nativeAsset: {
-      address: '0x0000000000000000000000000000000000000000',
-      symbol: 'SEI',
-      coingeckoId: 'sei-network',
-      decimals: 18
-    }
-  },
-  {
     id: NETWORKS['ethereum-pow'],
     chainId: 10001,
     nativeAssetSymbol: 'ETHW',
@@ -397,8 +379,7 @@ export const coingeckoNets = {
   optimism: 'optimistic-ethereum',
   'optimistic-ethereum': 'optimism',
   base: 'base',
-  scroll: 'scroll',
-  sei: 'sei'
+  scroll: 'scroll'
 }
 
 export default networks
