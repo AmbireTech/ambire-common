@@ -2,6 +2,7 @@
 
 import { Account } from '../../interfaces/account'
 import { NotificationManager } from '../../interfaces/notification'
+import { Storage } from '../../interfaces/storage'
 import { DappUserRequest, SignUserRequest, UserRequest } from '../../interfaces/userRequest'
 import { WindowManager } from '../../interfaces/window'
 import { AccountOp } from '../../libs/accountOp/accountOp'
@@ -52,6 +53,8 @@ export type Action = AccountOpAction | SignMessageAction | BenzinAction | DappRe
 export class ActionsController extends EventEmitter {
   #accounts: AccountsController
 
+  #storage: Storage
+
   #windowManager: WindowManager
 
   #notificationManager: NotificationManager
@@ -73,11 +76,23 @@ export class ActionsController extends EventEmitter {
     pendingMessage: null
   }
 
-  actionsQueue: Action[] = []
+  #actionsQueue: Action[] = []
 
   currentAction: Action | null = null
 
   #onActionWindowClose: () => void
+
+  // Holds the initial load promise, so that one can wait until it completes
+  initialLoadPromise: Promise<void>
+
+  get actionsQueue() {
+    return this.#actionsQueue
+  }
+
+  set actionsQueue(val) {
+    this.#actionsQueue = val
+    this.#storage.set('actionsQueue', val)
+  }
 
   get visibleActionsQueue(): Action[] {
     return this.actionsQueue.filter((a) => {
@@ -97,11 +112,13 @@ export class ActionsController extends EventEmitter {
 
   constructor({
     accounts,
+    storage,
     windowManager,
     notificationManager,
     onActionWindowClose
   }: {
     accounts: AccountsController
+    storage: Storage
     windowManager: WindowManager
     notificationManager: NotificationManager
     onActionWindowClose: () => void
@@ -109,6 +126,7 @@ export class ActionsController extends EventEmitter {
     super()
 
     this.#accounts = accounts
+    this.#storage = storage
     this.#windowManager = windowManager
     this.#notificationManager = notificationManager
     this.#onActionWindowClose = onActionWindowClose
@@ -134,6 +152,14 @@ export class ActionsController extends EventEmitter {
         this.emitUpdate()
       }
     })
+
+    // eslint-disable-next-line @typescript-eslint/no-floating-promises
+    this.initialLoadPromise = this.#load()
+  }
+
+  async #load() {
+    await this.#accounts.initialLoadPromise
+    this.#actionsQueue = await this.#storage.get('actionsQueue', [])
   }
 
   addOrUpdateAction(
@@ -141,6 +167,7 @@ export class ActionsController extends EventEmitter {
     withPriority?: boolean,
     executionType: 'queue' | 'open' = 'open'
   ) {
+    console.log('addOrUpdateAction', this.actionsQueue, this.visibleActionsQueue, newAction)
     // remove the benzin action if a new actions is added
     this.actionsQueue = this.actionsQueue.filter((a) => a.type !== 'benzin')
 

@@ -166,7 +166,7 @@ export class MainController extends EventEmitter {
 
   accounts: AccountsController
 
-  userRequests: UserRequest[] = []
+  #userRequests: UserRequest[] = []
 
   // network => GasRecommendation[]
   gasPrices: { [key: string]: GasRecommendation[] } = {}
@@ -186,6 +186,15 @@ export class MainController extends EventEmitter {
   #windowManager: WindowManager
 
   #notificationManager: NotificationManager
+
+  get userRequests() {
+    return this.#userRequests
+  }
+
+  set userRequests(val: UserRequest[]) {
+    this.#userRequests = val
+    this.#storage.set('userRequests', val)
+  }
 
   constructor({
     storage,
@@ -284,6 +293,7 @@ export class MainController extends EventEmitter {
     this.dapps = new DappsController(this.#storage)
     this.actions = new ActionsController({
       accounts: this.accounts,
+      storage: this.#storage,
       windowManager,
       notificationManager,
       onActionWindowClose: () => {
@@ -322,6 +332,10 @@ export class MainController extends EventEmitter {
     await this.networks.initialLoadPromise
     await this.providers.initialLoadPromise
     await this.accounts.initialLoadPromise
+    await this.actions.initialLoadPromise
+
+    this.#userRequests = await this.#storage.get('userRequests', [])
+
     // TODO: We agreed to always fetch the latest and pending states.
     // To achieve this, we need to refactor how we use forceUpdate to obtain pending state updates.
     this.updateSelectedAccountPortfolio(true)
@@ -1206,10 +1220,11 @@ export class MainController extends EventEmitter {
     withPriority?: boolean,
     executionType: 'queue' | 'open' = 'open'
   ) {
+    await this.#initialLoadPromise
     if (withPriority) {
-      this.userRequests.unshift(req)
+      this.userRequests = [req, ...this.userRequests]
     } else {
-      this.userRequests.push(req)
+      this.userRequests = [...this.userRequests, req]
     }
 
     const { id, action, meta } = req
@@ -1315,7 +1330,7 @@ export class MainController extends EventEmitter {
                 'Rejected: Please complete your pending message request before initiating a new one.'
             })
           )
-          this.userRequests.splice(this.userRequests.indexOf(msgReq), 1)
+          this.userRequests = this.userRequests.filter((r) => r.id !== msgReq.id)
           return
         }
       }
@@ -1349,7 +1364,7 @@ export class MainController extends EventEmitter {
     if (!req) return
 
     // remove from the request queue
-    this.userRequests.splice(this.userRequests.indexOf(req), 1)
+    this.userRequests = this.userRequests.filter((r) => r.id !== req.id)
 
     // update the pending stuff to be signed
     const { action, meta } = req
