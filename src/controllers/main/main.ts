@@ -1487,6 +1487,15 @@ export class MainController extends EventEmitter {
       meta.identifiedBy = data.submittedAccountOp.identifiedBy
     }
 
+    const benzinUserRequest: SignUserRequest = {
+      id: new Date().getTime(),
+      action: { kind: 'benzin' },
+      meta
+    }
+    await this.addUserRequest(benzinUserRequest, true)
+
+    this.actions.removeAction(actionId)
+
     const txnId = await pollTxnId(
       data.submittedAccountOp.identifiedBy,
       network,
@@ -1510,15 +1519,6 @@ export class MainController extends EventEmitter {
         })
       })
     )
-
-    const benzinUserRequest: SignUserRequest = {
-      id: new Date().getTime(),
-      action: { kind: 'benzin' },
-      meta
-    }
-    await this.addUserRequest(benzinUserRequest, true)
-
-    this.actions.removeAction(actionId)
 
     // eslint-disable-next-line no-restricted-syntax
     for (const call of accountOp.calls) {
