@@ -2136,7 +2136,7 @@ export class MainController extends EventEmitter {
           }
         }
       } catch (error: any) {
-        return this.#throwBroadcastAccountOp({ error, network, accountState })
+        return this.#throwBroadcastAccountOp({ error, network, accountState, isRelayer: true })
       }
     }
 
@@ -2195,12 +2195,14 @@ export class MainController extends EventEmitter {
     message: _msg,
     error: _err,
     network,
-    accountState
+    accountState,
+    isRelayer = false
   }: {
     message?: string
     error?: Error
     network?: Network
     accountState?: AccountOnchainState
+    isRelayer?: boolean
   }) {
     let message = _msg || _err?.message || 'Unable to broadcast the transaction.'
 
@@ -2228,6 +2230,12 @@ export class MainController extends EventEmitter {
             ? 'You can add/change signers from the web wallet or contact support.'
             : 'Please contact support.'
         }`
+      } else if (
+        message.includes('Ambire relayer') ||
+        (isRelayer && message.includes('Failed to fetch'))
+      ) {
+        message =
+          'Currently, the Ambire relayer seems to be down. Please try again a few moments later or broadcast with an EOA'
       } else {
         // Trip the error message, errors coming from the RPC can be huuuuuge
         message = message.length > 300 ? `${message.substring(0, 300)}...` : message

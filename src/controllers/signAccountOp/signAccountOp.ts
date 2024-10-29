@@ -1206,9 +1206,14 @@ export class SignAccountOpController extends EventEmitter {
               userOperation.nonce = getOneTimeNonce(userOperation)
             }
           } catch (e: any) {
+            let message = e.message
+            if (e.message.includes('Failed to fetch') || e.message.includes('Ambire relayer')) {
+              message =
+                'Currently, the paymaster seems to be down. Please try again a few moments later or broadcast with an EOA'
+            }
             this.emitError({
               level: 'major',
-              message: e.message,
+              message,
               error: new Error(e.message)
             })
             this.status = { type: SigningStatus.ReadyToSign }
