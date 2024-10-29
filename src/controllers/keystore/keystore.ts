@@ -104,6 +104,12 @@ export class KeystoreController extends EventEmitter {
 
   #keystoreSeeds: KeystoreSeed[] = []
 
+  // when importing a seed, save it temporary here before deciding
+  // whether to place it in #keystoreSeeds or delete it
+  //
+  // this should be done only if there isn't a saved seed already
+  #tempSeed: KeystoreSeed | undefined = undefined
+
   #keystoreSigners: Partial<{ [key in Key['type']]: KeystoreSignerType }>
 
   #keystoreKeys: StoredKey[] = []
@@ -407,7 +413,7 @@ export class KeystoreController extends EventEmitter {
     })
   }
 
-  async #addSeed({ seed, hdPathTemplate }: KeystoreSeed) {
+  async #getEncryptedSeed(seed: KeystoreSeed['seed']): Promise<string> {
     await this.#initialLoadPromise
 
     if (this.#mainKey === null)
@@ -429,7 +435,7 @@ export class KeystoreController extends EventEmitter {
     // this fist seed phrase will become the saved seed phrase of the wallet
     if (this.#keystoreSeeds.length) {
       throw new EmittableError({
-        message: 'You can have only one saved seed phrase for that wallet',
+        message: 'You can have only one saved seed in the extension',
         level: 'major',
         error: new Error(
           'keystore: seed phase already added. Storing multiple seed phrases not supported yet'
@@ -439,9 +445,61 @@ export class KeystoreController extends EventEmitter {
 
     // Set up the cipher
     const counter = new aes.Counter(this.#mainKey!.iv) // TS compiler fails to detect we check for null above
-    const aesCtr = new aes.ModeOfOperation.ctr(this.#mainKey!.key, counter) // TS compiler fails to detect we check for null above
+    const aesCtr = new aes.ModeOfOperation.ctr(this.#mainKey!.key, counter) // TS compiler fails to detect we check for null above\
+    return hexlify(aesCtr.encrypt(new TextEncoder().encode(seed)))
+  }
+
+  async addSeedToTemp({ seed, hdPathTemplate }: KeystoreSeed) {
+    this.#tempSeed = {
+      seed: await this.#getEncryptedSeed(seed),
+      hdPathTemplate
+    }
+
+    this.emitUpdate()
+  }
+
+  async deleteTempSeed() {
+    this.#tempSeed = undefined
+    this.emitUpdate()
+  }
+
+  async moveTempSeed() {
+    if (this.#mainKey === null)
+      throw new EmittableError({
+        message: KEYSTORE_UNEXPECTED_ERROR_MESSAGE,
+        level: 'major',
+        error: new Error('keystore: needs to be unlocked')
+      })
+
+    // Currently we support only one seed phrase to be added to the keystore
+    // this fist seed phrase will become the saved seed phrase of the wallet
+    if (this.#keystoreSeeds.length) {
+      throw new EmittableError({
+        message: 'You can have only one saved seed in the extension',
+        level: 'major',
+        error: new Error(
+          'keystore: seed phase already added. Storing multiple seed phrases not supported yet'
+        )
+      })
+    }
+
+    if (!this.#tempSeed) {
+      throw new EmittableError({
+        message:
+          'Imported seed no longer exists in the extension. If you want to save it, please re-import it',
+        level: 'major',
+        error: new Error('keystore: imported seed deleted although a request to save it was made')
+      })
+    }
+
+    this.#keystoreSeeds.push(this.#tempSeed)
+    this.#tempSeed = undefined
+    this.emitUpdate()
+  }
+
+  async #addSeed({ seed, hdPathTemplate }: KeystoreSeed) {
     this.#keystoreSeeds.push({
-      seed: hexlify(aesCtr.encrypt(new TextEncoder().encode(seed))),
+      seed: await this.#getEncryptedSeed(seed),
       hdPathTemplate
     })
     await this.#storage.set('keystoreSeeds', this.#keystoreSeeds)
@@ -833,6 +891,10 @@ export class KeystoreController extends EventEmitter {
     return !!this.#keystoreSeeds.length
   }
 
+  get hasKeystoreTempSeed() {
+    return this.#tempSeed !== undefined
+  }
+
   toJSON() {
     return {
       ...this,
@@ -840,7 +902,8 @@ export class KeystoreController extends EventEmitter {
       isUnlocked: this.isUnlocked, // includes the getter in the stringified instance
       keys: this.keys,
       hasPasswordSecret: this.hasPasswordSecret,
-      hasKeystoreSavedSeed: this.hasKeystoreSavedSeed
+      hasKeystoreSavedSeed: this.hasKeystoreSavedSeed,
+      hasKeystoreTempSeed: this.hasKeystoreTempSeed
     }
   }
 }
