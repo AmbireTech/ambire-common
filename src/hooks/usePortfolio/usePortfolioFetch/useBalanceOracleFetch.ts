@@ -256,6 +256,10 @@ export default function useBalanceOracleFetch({
     // there is an edge case where the 1. approve is slower
     // than the 2. stake transaction and the response from balance oracle
     // overrides the correct one
+
+    // Adding toString() check to handle cases where the id is a number.
+    // In the Hermes engine (used in React Native), this check can fail silently and prevent function execution.
+    // In contrast, in the web app (using a different JavaScript engine), it doesn't fail due to if statement coercion.
     const shouldWaitForPending =
       eligibleRequests.length === 1 && eligibleRequests[0].id.toString().includes('approve')
 
