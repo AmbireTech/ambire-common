@@ -201,6 +201,7 @@ export class KeystoreController extends EventEmitter {
 
   lock() {
     this.#mainKey = null
+    if (this.#tempSeed) this.deleteTempSeed(false)
     this.emitUpdate()
   }
 
@@ -468,9 +469,9 @@ export class KeystoreController extends EventEmitter {
     this.emitUpdate()
   }
 
-  async deleteTempSeed() {
+  deleteTempSeed(shouldUpdate = true) {
     this.#tempSeed = null
-    this.emitUpdate()
+    if (shouldUpdate) this.emitUpdate()
   }
 
   async addTempSeedToKeystoreSeeds() {
