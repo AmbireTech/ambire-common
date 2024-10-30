@@ -1,5 +1,4 @@
 import { AbiCoder, JsonRpcProvider, Provider, toBeHex, ZeroAddress } from 'ethers'
-import { TokenResult } from 'libs/portfolio'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import Estimation from '../../../contracts/compiled/Estimation.json'
@@ -9,6 +8,7 @@ import { Account, AccountStates } from '../../interfaces/account'
 import { Network } from '../../interfaces/network'
 import { AccountOp } from '../accountOp/accountOp'
 import { DeploylessMode, fromDescriptor } from '../deployless/deployless'
+import { TokenResult } from '../portfolio'
 import { EOA_SIMULATION_NONCE } from '../portfolio/getOnchainBalances'
 import { privSlot } from '../proxyDeploy/deploy'
 import { catchEstimationFailure, estimationErrorFormatted } from './errors'
