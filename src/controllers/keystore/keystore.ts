@@ -904,11 +904,11 @@ export class KeystoreController extends EventEmitter {
         id: 'tempSeed',
         type: 'warning',
         category: 'temp-seed-not-confirmed',
-        title: 'Please decide should the seed be stored in the extension!',
+        title: 'You have an unsaved imported seed',
         text: '',
         actions: [
           {
-            label: 'Proceed',
+            label: 'Check',
             actionName: 'confirm-temp-seed'
           }
         ]

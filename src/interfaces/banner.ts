@@ -80,6 +80,6 @@ export type Action =
       meta: { activeRouteId: number }
     }
   | {
-      label: 'Proceed'
+      label: 'Check'
       actionName: 'confirm-temp-seed'
     }
