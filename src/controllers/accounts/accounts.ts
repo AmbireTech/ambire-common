@@ -210,7 +210,11 @@ export class AccountsController extends EventEmitter {
     const defaultSelectedAccount = getDefaultSelectedAccount(accounts)
     if (defaultSelectedAccount) {
       await this.#selectAccount(defaultSelectedAccount.addr)
-      await this.updateAccountState(defaultSelectedAccount.addr)
+      // Don't wait for account state because:
+      // 1. The extension works perfectly fine without it
+      // 2. Some RPCs may be slow and we don't want to block the UI
+      // eslint-disable-next-line @typescript-eslint/no-floating-promises
+      this.updateAccountState(defaultSelectedAccount.addr)
     }
 
     this.emitUpdate()
