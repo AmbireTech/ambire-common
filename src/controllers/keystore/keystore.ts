@@ -23,6 +23,7 @@ import scrypt from 'scrypt-js'
 
 import EmittableError from '../../classes/EmittableError'
 import { HD_PATH_TEMPLATE_TYPE } from '../../consts/derivation'
+import { Banner } from '../../interfaces/banner'
 import {
   ExternalKey,
   InternalKey,
@@ -895,6 +896,26 @@ export class KeystoreController extends EventEmitter {
     return this.#tempSeed !== undefined
   }
 
+  get banners(): Banner[] {
+    if (!this.#tempSeed) return []
+
+    return [
+      {
+        id: 'tempSeed',
+        type: 'warning',
+        category: 'temp-seed-not-confirmed',
+        title: 'Please decide should the seed be stored in the extension!',
+        text: '',
+        actions: [
+          {
+            label: 'Proceed',
+            actionName: 'confirm-temp-seed'
+          }
+        ]
+      }
+    ]
+  }
+
   toJSON() {
     return {
       ...this,
@@ -903,7 +924,8 @@ export class KeystoreController extends EventEmitter {
       keys: this.keys,
       hasPasswordSecret: this.hasPasswordSecret,
       hasKeystoreSavedSeed: this.hasKeystoreSavedSeed,
-      hasKeystoreTempSeed: this.hasKeystoreTempSeed
+      hasKeystoreTempSeed: this.hasKeystoreTempSeed,
+      banners: this.banners
     }
   }
 }
