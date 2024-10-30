@@ -1,3 +1,5 @@
+import '@nomicfoundation/hardhat-chai-matchers'
+
 import { expect } from 'chai'
 import { hexlify } from 'ethers'
 import { ethers } from 'hardhat'
@@ -32,7 +34,7 @@ describe('Legends nft', () => {
   })
 
   it('set base uri not owner', async () => {
-    await expect(legendsNftContract.connect(signer2).setBaseUri('')).to.be.rejectedWith(
+    await expect(legendsNftContract.connect(signer2).setBaseUri('')).to.be.revertedWith(
       'Ownable: caller is not the owner'
     )
   })
@@ -43,10 +45,10 @@ describe('Legends nft', () => {
 
     await expect(
       legendsNftContract.transferFrom(signer.address, signer2.address, BigInt(signer.address))
-    ).to.be.rejectedWith('Soulbound: cannot transfer nft')
+    ).to.be.revertedWith('Soulbound: cannot transfer nft')
     await expect(
       legendsNftContract.safeTransferFrom(signer.address, signer2.address, BigInt(signer.address))
-    ).to.be.rejectedWith('Soulbound: cannot transfer nft')
+    ).to.be.revertedWith('Soulbound: cannot transfer nft')
     await expect(
       legendsNftContract['safeTransferFrom(address,address,uint256,bytes)'](
         signer.address,
@@ -54,13 +56,27 @@ describe('Legends nft', () => {
         BigInt(signer.address),
         ethers.toUtf8Bytes('asd')
       )
-    ).to.be.rejectedWith('Soulbound: cannot transfer nft')
+    ).to.be.revertedWith('Soulbound: cannot transfer nft')
     await expect(
       legendsNftContract.approve(signer2.address, BigInt(signer.address))
-    ).to.be.rejectedWith('Soulbound: cannot approve token transfer')
+    ).to.be.revertedWith('Soulbound: cannot approve token transfer')
 
-    await expect(legendsNftContract.setApprovalForAll(signer2.address, true)).to.be.rejectedWith(
+    await expect(legendsNftContract.setApprovalForAll(signer2.address, true)).to.be.revertedWith(
       'Soulbound: cannot set approval for all'
+    )
+
+    await legendsNftContract.setAllowTransfer(true)
+    await expect(
+      legendsNftContract.connect(signer2).burn(BigInt(signer.address))
+    ).to.be.revertedWith('You cannot burn this NFT.')
+
+    await legendsNftContract.burn(BigInt(signer.address))
+    await legendsNftContract.burn(BigInt(signer2.address))
+    await expect(legendsNftContract.ownerOf(BigInt(signer.address))).to.be.revertedWith(
+      'ERC721: invalid token ID'
+    )
+    await expect(legendsNftContract.ownerOf(BigInt(signer2.address))).to.be.revertedWith(
+      'ERC721: invalid token ID'
     )
   })
   it('opensea update', async () => {
