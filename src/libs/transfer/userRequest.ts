@@ -1,4 +1,3 @@
-import erc20Abi from 'adex-protocol-eth/abi/ERC20.json'
 import { Interface, parseUnits } from 'ethers'
 
 import WALLETSupplyControllerABI from '../../../contracts/compiled/WALLETSupplyController.json'
@@ -8,6 +7,7 @@ import { networks } from '../../consts/networks'
 import { Calls, SignUserRequest } from '../../interfaces/userRequest'
 import { AddrVestingData, ClaimableRewardsData, TokenResult } from '../portfolio'
 import { getSanitizedAmount } from './amount'
+import erc20Abi from './ERC20.json'
 
 const ERC20 = new Interface(erc20Abi)
 const supplyControllerInterface = new Interface(WALLETSupplyControllerABI)
