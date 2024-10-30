@@ -920,7 +920,7 @@ export class KeystoreController extends EventEmitter {
   }
 
   get hasKeystoreTempSeed() {
-    return this.#tempSeed !== undefined
+    return !!this.#tempSeed
   }
 
   get banners(): Banner[] {
