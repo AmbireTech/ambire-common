@@ -16,7 +16,6 @@
     "@jest/globals": "^29.6.1",
     "@ungap/structured-clone": "^1.2.0",
     "aes-js": "^3.1.2",
-    "ambire-constants": "github:AmbireTech/ambire-constants",
     "dotenv": "^16.3.1",
     "eth-crypto": "^2.6.0",
     "eth-rpc-errors": "^4.0.3",
