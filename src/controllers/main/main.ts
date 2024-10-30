@@ -1183,7 +1183,7 @@ export class MainController extends EventEmitter {
 
   rejectUserRequest(err: string, requestId: UserRequest['id']) {
     const userRequest = this.userRequests.find((r) => r.id === requestId)
-    if (!userRequest) return // TODO: emit error
+    if (!userRequest) return
 
     if (requestId === ENTRY_POINT_AUTHORIZATION_REQUEST_ID) {
       this.userRequests = this.userRequests.filter(
@@ -1196,9 +1196,20 @@ export class MainController extends EventEmitter {
       )
     }
 
+    // if the userRequest that is about to be removed is an approval request
+    // find and remove the associated pending transaction request if there is any
+    // this is valid scenario for a swap & bridge txs with a BA
+    if (userRequest.action.kind === 'calls') {
+      const acc = this.accounts.accounts.find((a) => a.addr === userRequest.meta.accountAddr)!
+
+      if (!isSmartAccount(acc) && userRequest.meta.isApproval) {
+        const txUserRequest = this.userRequests.find((r) => r.id === userRequest.meta.activeRouteId)
+        if (txUserRequest) this.removeUserRequest(txUserRequest.id)
+      }
+    }
+
     userRequest.dappPromise?.reject(ethErrors.provider.userRejectedRequest<any>(err))
     this.removeUserRequest(requestId)
-    this.emitUpdate()
   }
 
   async addUserRequest(
@@ -1487,6 +1498,15 @@ export class MainController extends EventEmitter {
       meta.identifiedBy = data.submittedAccountOp.identifiedBy
     }
 
+    const benzinUserRequest: SignUserRequest = {
+      id: new Date().getTime(),
+      action: { kind: 'benzin' },
+      meta
+    }
+    await this.addUserRequest(benzinUserRequest, true)
+
+    this.actions.removeAction(actionId)
+
     const txnId = await pollTxnId(
       data.submittedAccountOp.identifiedBy,
       network,
@@ -1510,15 +1530,6 @@ export class MainController extends EventEmitter {
         })
       })
     )
-
-    const benzinUserRequest: SignUserRequest = {
-      id: new Date().getTime(),
-      action: { kind: 'benzin' },
-      meta
-    }
-    await this.addUserRequest(benzinUserRequest, true)
-
-    this.actions.removeAction(actionId)
 
     // eslint-disable-next-line no-restricted-syntax
     for (const call of accountOp.calls) {
@@ -1549,11 +1560,7 @@ export class MainController extends EventEmitter {
     this.actions.removeAction(actionId, shouldOpenNextAction)
     // eslint-disable-next-line no-restricted-syntax
     for (const call of accountOp.calls) {
-      const uReq = this.userRequests.find((r) => r.id === call.fromUserRequestId)
-      if (uReq) {
-        uReq.dappPromise?.reject(ethErrors.provider.userRejectedRequest<any>(err))
-        this.removeUserRequest(uReq.id)
-      }
+      if (call.fromUserRequestId) this.rejectUserRequest(err, call.fromUserRequestId)
     }
 
     this.emitUpdate()
@@ -1756,6 +1763,31 @@ export class MainController extends EventEmitter {
       // @race
       // if the signAccountOp has been deleted, don't continue as the request has already finished
       if (!this.signAccountOp) return
+
+      // Basic Account (BA) has two pending actions:
+      // 1. Approval transaction
+      // 2. Actual transaction
+      // If the user tries to sign the second action before the approval, the estimation will fail.
+      // This part improves the error message for a better UX
+      if (estimation && estimation.error) {
+        if (!isSmartAccount(account)) {
+          const userRequest = this.userRequests.find(
+            (r) => r.id === this.signAccountOp?.accountOp.calls[0].fromUserRequestId
+          )
+
+          if (userRequest && userRequest.meta.activeRouteId && !userRequest.meta.isApproval) {
+            const hasApprovalReq = this.userRequests.find(
+              (r) => r.id === `${userRequest.meta.activeRouteId}-approval`
+            )
+
+            if (hasApprovalReq) {
+              estimation.error = new Error(
+                'Unable to estimate due to a pending approval. Please sign the approval transaction first to proceed with this transaction.'
+              )
+            }
+          }
+        }
+      }
 
       if (estimation) {
         const currentNonceAhead =
