@@ -56,6 +56,7 @@ const STATUS_WRAPPED_METHODS = {
   unlockWithSecret: 'INITIAL',
   addSecret: 'INITIAL',
   addSeed: 'INITIAL',
+  deleteSavedSeed: 'INITIAL',
   removeSecret: 'INITIAL',
   addKeys: 'INITIAL',
   addKeysExternallyStored: 'INITIAL',
@@ -622,6 +623,11 @@ export class KeystoreController extends EventEmitter {
     this.#windowManager.sendWindowUiMessage({ privateKey: `0x${decryptedPrivateKey}` })
   }
 
+  async sendSeedToUi() {
+    const decrypted = await this.getSavedSeed()
+    this.#windowManager.sendWindowUiMessage({ seed: decrypted.seed })
+  }
+
   async #getPrivateKey(keyAddress: string): Promise<string> {
     await this.#initialLoadPromise
     if (this.#mainKey === null) throw new Error('keystore: needs to be unlocked')
@@ -798,6 +804,19 @@ export class KeystoreController extends EventEmitter {
       return { ...keystoreKey, ...key.preferences }
     })
     await this.#storage.set('keystoreKeys', this.#keystoreKeys)
+    this.emitUpdate()
+  }
+
+  async deleteSavedSeed() {
+    await this.withStatus('deleteSavedSeed', () => this.#deleteSavedSeed())
+  }
+
+  async #deleteSavedSeed() {
+    await this.#initialLoadPromise
+
+    this.#keystoreSeeds = []
+    await this.#storage.set('keystoreSeeds', this.#keystoreSeeds)
+
     this.emitUpdate()
   }
 

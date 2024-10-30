@@ -342,9 +342,6 @@ export const tokenFilter = (
   additionalHints: string[] | undefined,
   isTokenPreference: boolean
 ): boolean => {
-  // always include tokens added as a preference
-  if (isTokenPreference) return true
-
   // Never add ERC20 tokens that represent the network's native token.
   // For instance, on Polygon, we have this token: `0x0000000000000000000000000000000000001010`.
   // It mimics the native POL token (same symbol, same amount) and is shown twice in the Dashboard.
@@ -356,6 +353,9 @@ export const tokenFilter = (
     token.address !== ZeroAddress
 
   if (isERC20NativeRepresentation) return false
+
+  // always include tokens added as a preference
+  if (isTokenPreference) return true
 
   // always include > 0 amount and native token
   if (token.amount > 0 || token.address === ZeroAddress) return true
