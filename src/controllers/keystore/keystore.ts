@@ -22,7 +22,7 @@ import {
 import scrypt from 'scrypt-js'
 
 import EmittableError from '../../classes/EmittableError'
-import { HD_PATH_TEMPLATE_TYPE } from '../../consts/derivation'
+import { DERIVATION_OPTIONS, HD_PATH_TEMPLATE_TYPE } from '../../consts/derivation'
 import { Banner } from '../../interfaces/banner'
 import {
   ExternalKey,
@@ -109,7 +109,7 @@ export class KeystoreController extends EventEmitter {
   // whether to place it in #keystoreSeeds or delete it
   //
   // this should be done only if there isn't a saved seed already
-  #tempSeed: KeystoreSeed | undefined = undefined
+  #tempSeed: KeystoreSeed | null = null
 
   #keystoreSigners: Partial<{ [key in Key['type']]: KeystoreSignerType }>
 
@@ -451,6 +451,15 @@ export class KeystoreController extends EventEmitter {
   }
 
   async addSeedToTemp({ seed, hdPathTemplate }: KeystoreSeed) {
+    const validHdPath = DERIVATION_OPTIONS.some((o) => o.value === hdPathTemplate)
+    if (!validHdPath)
+      throw new EmittableError({
+        message:
+          'Incorrect derivation path when trying to update the temp seed. Please contact support',
+        level: 'major',
+        error: new Error('keystore: hd path to temp seed incorrect')
+      })
+
     this.#tempSeed = {
       seed: await this.#getEncryptedSeed(seed),
       hdPathTemplate
@@ -460,11 +469,11 @@ export class KeystoreController extends EventEmitter {
   }
 
   async deleteTempSeed() {
-    this.#tempSeed = undefined
+    this.#tempSeed = null
     this.emitUpdate()
   }
 
-  async moveTempSeed() {
+  async addTempSeedToKeystoreSeeds() {
     if (this.#mainKey === null)
       throw new EmittableError({
         message: KEYSTORE_UNEXPECTED_ERROR_MESSAGE,
@@ -494,7 +503,8 @@ export class KeystoreController extends EventEmitter {
     }
 
     this.#keystoreSeeds.push(this.#tempSeed)
-    this.#tempSeed = undefined
+    await this.#storage.set('keystoreSeeds', this.#keystoreSeeds)
+    this.#tempSeed = null
     this.emitUpdate()
   }
 
@@ -510,6 +520,22 @@ export class KeystoreController extends EventEmitter {
 
   async addSeed(keystoreSeed: KeystoreSeed) {
     await this.withStatus('addSeed', () => this.#addSeed(keystoreSeed))
+  }
+
+  async changeTempSeedHdPathTemplateIfNeeded(nextHdPathTemplate?: HD_PATH_TEMPLATE_TYPE) {
+    if (!nextHdPathTemplate) return // should never happen
+
+    await this.#initialLoadPromise
+
+    if (!this.isUnlocked) throw new Error('keystore: not unlocked')
+    if (!this.#tempSeed) throw new Error('keystore: no temp seed at the moment')
+
+    const isTheSameHdPathTemplate = this.#tempSeed.hdPathTemplate === nextHdPathTemplate
+    if (isTheSameHdPathTemplate) return
+
+    this.#tempSeed.hdPathTemplate = nextHdPathTemplate
+
+    this.emitUpdate()
   }
 
   async changeSavedSeedHdPathTemplateIfNeeded(nextHdPathTemplate?: HD_PATH_TEMPLATE_TYPE) {
