@@ -78,3 +78,8 @@ export type Action =
       actionName: 'close-swap-and-bridge'
       meta: { activeRouteId: number }
     }
+  | {
+      label: 'Close'
+      actionName: 'hide-activity-banner'
+      meta: { timestamp: number; addr: string; network: string; isReject: boolean }
+    }

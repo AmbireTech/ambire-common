@@ -105,6 +105,8 @@ export class ActivityController extends EventEmitter {
 
   #accountsOps: InternalAccountsOps = {}
 
+  #hiddenActivityBanners: string[] = []
+
   accountsOps: AccountsOps | undefined
 
   #signedMessages: InternalSignedMessages = {}
@@ -157,13 +159,15 @@ export class ActivityController extends EventEmitter {
 
   async #load(): Promise<void> {
     await this.#accounts.initialLoadPromise
-    const [accountsOps, signedMessages] = await Promise.all([
+    const [accountsOps, signedMessages, hiddenBanners] = await Promise.all([
       this.#storage.get('accountsOps', {}),
-      this.#storage.get('signedMessages', {})
+      this.#storage.get('signedMessages', {}),
+      this.#storage.get('hiddenActivityBanners', [])
     ])
 
     this.#accountsOps = accountsOps
     this.#signedMessages = signedMessages
+    this.#hiddenActivityBanners = hiddenBanners
 
     this.init()
     this.emitUpdate()
@@ -506,6 +510,15 @@ export class ActivityController extends EventEmitter {
     this.emitUpdate()
   }
 
+  hideBanner({ addr, network, timestamp }: { addr: string; network: string; timestamp: number }) {
+    this.#hiddenActivityBanners.push(`${addr}-${network}-${timestamp}`)
+
+    /* eslint-disable @typescript-eslint/no-floating-promises */
+    this.#storage.set('hiddenActivityBanners', this.#hiddenActivityBanners)
+
+    this.emitUpdate()
+  }
+
   #throwNotInitialized() {
     this.emitError({
       level: 'major',
@@ -570,32 +583,52 @@ export class ActivityController extends EventEmitter {
 
   get banners(): Banner[] {
     if (!this.#networks.isInitialized) return []
-    return this.broadcastedButNotConfirmed.map((accountOp) => {
-      const network = this.#networks.networks.find((x) => x.id === accountOp.networkId)!
+    return (
+      this.broadcastedButNotConfirmed
+        // do not show a banner for forcefully hidden banners
+        .filter(
+          (op) =>
+            !this.#hiddenActivityBanners.includes(
+              `${op.accountAddr}-${op.networkId}-${op.timestamp}`
+            )
+        )
+        .map((accountOp) => {
+          const network = this.#networks.networks.find((x) => x.id === accountOp.networkId)!
 
-      const isCustomNetwork = !predefinedNetworks.find((net) => net.id === network.id)
-      const isUserOp = isIdentifiedByUserOpHash(accountOp.identifiedBy)
-      const isNotConfirmed = accountOp.status === AccountOpStatus.BroadcastedButNotConfirmed
-      const url =
-        isUserOp && isNotConfirmed && !isCustomNetwork
-          ? `https://jiffyscan.xyz/userOpHash/${accountOp.identifiedBy.identifier}`
-          : `${network.explorerUrl}/tx/${accountOp.txnId}`
+          const isCustomNetwork = !predefinedNetworks.find((net) => net.id === network.id)
+          const isUserOp = isIdentifiedByUserOpHash(accountOp.identifiedBy)
+          const isNotConfirmed = accountOp.status === AccountOpStatus.BroadcastedButNotConfirmed
+          const url =
+            isUserOp && isNotConfirmed && !isCustomNetwork
+              ? `https://jiffyscan.xyz/userOpHash/${accountOp.identifiedBy.identifier}`
+              : `${network.explorerUrl}/tx/${accountOp.txnId}`
 
-      return {
-        id: accountOp.txnId,
-        type: 'success',
-        category: 'pending-to-be-confirmed-acc-op',
-        title: 'Transaction successfully signed and sent!\nCheck it out on the block explorer!',
-        text: '',
-        actions: [
-          {
-            label: 'Check',
-            actionName: 'open-external-url',
-            meta: { url }
-          }
-        ]
-      } as Banner
-    })
+          return {
+            id: accountOp.txnId,
+            type: 'success',
+            category: 'pending-to-be-confirmed-acc-op',
+            title: 'Transaction successfully signed and sent!\nCheck it out on the block explorer!',
+            text: '',
+            actions: [
+              {
+                label: 'Close',
+                actionName: 'hide-activity-banner',
+                meta: {
+                  addr: accountOp.accountAddr,
+                  network: accountOp.networkId,
+                  timestamp: accountOp.timestamp,
+                  isReject: true
+                }
+              },
+              {
+                label: 'Check',
+                actionName: 'open-external-url',
+                meta: { url }
+              }
+            ]
+          } as Banner
+        })
+    )
   }
 
   /**
