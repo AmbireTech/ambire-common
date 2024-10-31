@@ -1,19 +1,20 @@
 import { Messenger } from '../interfaces/messenger'
 
 export interface SessionProp {
-  origin: string
-  icon: string
-  name: string
+  origin?: string
+  icon?: string
+  name?: string
+  tabId?: number
 }
 
 // Each instance of a Session represents an active connection between a dApp and the wallet.
 // For more details on how to use it, refer to the DappsController.
 export class Session {
-  origin = ''
+  origin: string = ''
 
-  icon = ''
+  icon: string = ''
 
-  name = ''
+  name: string = ''
 
   tabId: number | null = null
 
@@ -25,22 +26,29 @@ export class Session {
     }
   }
 
-  constructor(data?: SessionProp | null, tabId?: number) {
-    if (data) {
-      this.setProp(data)
-    }
-    if (tabId) {
-      this.tabId = tabId
-    }
+  constructor(data: SessionProp) {
+    this.setProp(data)
   }
 
   setMessenger(messenger: Messenger) {
     this.messenger = messenger
   }
 
-  setProp({ origin, icon, name }: SessionProp) {
-    this.origin = origin
-    this.icon = icon
-    this.name = name
+  setProp({ origin, icon, name, tabId }: SessionProp) {
+    if (origin) this.origin = origin
+    if (icon) this.icon = icon
+    if (name) this.name = name
+    if (tabId) this.tabId = tabId
+  }
+
+  get sessionId() {
+    return `${this.tabId}-${this.origin}`
+  }
+
+  toJSON() {
+    return {
+      ...this,
+      sessionId: this.sessionId
+    }
   }
 }

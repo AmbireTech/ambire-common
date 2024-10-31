@@ -1,6 +1,6 @@
-import erc20Abi from 'adex-protocol-eth/abi/ERC20.json'
 import { Interface, parseUnits } from 'ethers'
 
+import IERC20 from '../../../contracts/compiled/IERC20.json'
 import WALLETSupplyControllerABI from '../../../contracts/compiled/WALLETSupplyController.json'
 import WETH from '../../../contracts/compiled/WETH.json'
 import { FEE_COLLECTOR, SUPPLY_CONTROLLER_ADDR, WALLET_STAKING_ADDR } from '../../consts/addresses'
@@ -9,7 +9,7 @@ import { Calls, SignUserRequest } from '../../interfaces/userRequest'
 import { AddrVestingData, ClaimableRewardsData, TokenResult } from '../portfolio'
 import { getSanitizedAmount } from './amount'
 
-const ERC20 = new Interface(erc20Abi)
+const ERC20 = new Interface(IERC20.abi)
 const supplyControllerInterface = new Interface(WALLETSupplyControllerABI)
 
 interface BuildUserRequestParams {

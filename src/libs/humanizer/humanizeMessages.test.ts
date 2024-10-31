@@ -4,9 +4,9 @@ import { beforeEach, describe, expect } from '@jest/globals'
 
 import { Message, TypedMessage } from '../../interfaces/userRequest'
 import { ENTRY_POINT_AUTHORIZATION_REQUEST_ID } from '../userOperation/userOperation'
+import { erc20Module, erc721Module, permit2Module } from './messageModules'
+import { entryPointModule } from './messageModules/entryPointModule'
 import { compareVisualizations } from './testHelpers'
-import { erc20Module, erc721Module, permit2Module } from './typedMessageModules'
-import { entryPointModule } from './typedMessageModules/entryPointModule'
 import { getAction, getAddressVisualization, getDeadline, getLabel, getToken } from './utils'
 
 const address1 = '0x6942069420694206942069420694206942069420'
