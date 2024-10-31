@@ -19,15 +19,16 @@ export async function getAAVEPositions(
     const [assets, accountDataRes, assetsErr, accountDataErr] = result
 
     const userAssets = assets.map((asset: any) => ({
-        symbol: asset[0],
-        balance: asset[1],
-        decimals: asset[2],
-        price: asset[3],
-        borrowAssetBalance: asset[4], 
-        stableBorrowAssetBalance: asset[5],
-        currentLiquidityRate: asset[6],
-        currentVariableBorrowRate: asset[7],
-        currentStableBorrowRate: asset[8],
+        address: asset[0], 
+        symbol: asset[1],
+        balance: asset[2],
+        decimals: asset[3],
+        price: asset[4],
+        borrowAssetBalance: asset[5], 
+        stableBorrowAssetBalance: asset[6],
+        currentLiquidityRate: asset[7],
+        currentVariableBorrowRate: asset[8],
+        currentStableBorrowRate: asset[9],
     })).filter((t: any) => t.balance > 0 || t.borrowAssetBalance > 0 || t.stableBorrowAssetBalance > 0)
     
     const accountData = {
@@ -67,6 +68,7 @@ export async function getAAVEPositions(
         positions[0].additionalData.collateralInUSD += (balance * price)
 
         return {
+            address: asset.address,
             symbol: asset.symbol,
             decimals: asset.decimals,
             amount: asset.balance || asset.borrowAssetBalance || asset.stableBorrowAssetBalance,
