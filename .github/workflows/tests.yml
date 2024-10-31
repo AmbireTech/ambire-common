@@ -40,5 +40,7 @@ jobs:
       env:
         SEED: ${{ secrets.SEED }}
         REACT_APP_PIMLICO_API_KEY: ${{ secrets.REACT_APP_PIMLICO_API_KEY }}
+        LEGENDS_NFT_ADDRESS: '0xF51dF52d0a9BEeB7b6E4B6451e729108a115B863'
+
       run: npm run jest
 
