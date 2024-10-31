@@ -1,12 +1,9 @@
-import dotenv from 'dotenv'
 import { ZeroAddress } from 'ethers'
 
 import { geckoIdMapper } from '../../consts/coingecko'
 import { Fetch } from '../../interfaces/fetch'
 import { Network } from '../../interfaces/network'
 import { HumanizerMeta, HumanizerVisualization, HumanizerWarning, IrCall } from './interfaces'
-
-dotenv.config()
 
 const baseUrlCena = 'https://cena.ambire.com/api/v3'
 

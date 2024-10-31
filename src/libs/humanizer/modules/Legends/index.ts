@@ -1,3 +1,4 @@
+import dotenv from 'dotenv'
 import { getAddress, Interface, ZeroAddress } from 'ethers'
 
 import { AccountOp } from '../../../accountOp/accountOp'
@@ -5,8 +6,10 @@ import { Legends } from '../../const/abis/Legends'
 import { HumanizerCallModule, IrCall } from '../../interfaces'
 import { getAction, getAddressVisualization, getImage, getLabel } from '../../utils'
 
+dotenv.config()
+
 const ONCHAIN_TXNS_LEGENDS_ADDRESS = '0x1415926535897932384626433832795028841971'
-const NFT_CONTRACT_ADDRESS = '0x52d067EBB7b06F31AEB645Bd34f92c3Ac13a29ea'
+
 const legendsModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]) => {
   const iface = new Interface(Legends)
   const characterTypes = [
@@ -72,7 +75,9 @@ const legendsModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]) =
   }
   const newCalls = calls.map((call) => {
     if (
-      ![ONCHAIN_TXNS_LEGENDS_ADDRESS, NFT_CONTRACT_ADDRESS].includes(getAddress(call.to)) ||
+      ![ONCHAIN_TXNS_LEGENDS_ADDRESS, process.env.LEGENDS_NFT_ADDRESS].includes(
+        getAddress(call.to)
+      ) ||
       !matcher[call.data.slice(0, 10)]
     )
       return call
