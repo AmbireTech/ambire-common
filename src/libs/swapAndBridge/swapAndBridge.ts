@@ -1,7 +1,8 @@
-import { Interface } from 'ethers'
+import { Contract, Interface, MaxUint256 } from 'ethers'
 
 import ERC20 from '../../../contracts/compiled/IERC20.json'
 import { Account } from '../../interfaces/account'
+import { RPCProvider } from '../../interfaces/provider'
 import {
   ActiveRoute,
   SocketAPIBridgeUserTx,
@@ -84,10 +85,11 @@ const getActiveRoutesUpdateInterval = (minServiceTime?: number) => {
   return 15000
 }
 
-const buildSwapAndBridgeUserRequests = (
+const buildSwapAndBridgeUserRequests = async (
   userTx: SocketAPISendTransactionRequest,
   networkId: string,
-  account: Account
+  account: Account,
+  provider: RPCProvider
 ) => {
   if (isSmartAccount(account)) {
     const calls: Call[] = []
@@ -130,30 +132,49 @@ const buildSwapAndBridgeUserRequests = (
   const requests: SignUserRequest[] = []
   if (userTx.approvalData) {
     const erc20Interface = new Interface(ERC20.abi)
-    requests.push({
-      id: `${userTx.activeRouteId}-approval`,
-      action: {
-        kind: 'calls' as const,
-        calls: [
-          {
-            to: userTx.approvalData.approvalTokenAddress,
-            value: BigInt('0'),
-            data: erc20Interface.encodeFunctionData('approve', [
-              userTx.approvalData.allowanceTarget,
-              BigInt(userTx.approvalData.minimumApprovalAmount)
-            ]),
-            fromUserRequestId: `${userTx.activeRouteId}-approval`
-          } as Call
-        ]
-      },
-      meta: {
-        isSignAction: true,
-        networkId,
-        accountAddr: account.addr,
-        activeRouteId: userTx.activeRouteId,
-        isApproval: true
-      }
-    } as SignUserRequest)
+    let shouldApprove = true
+    try {
+      const erc20Contract = new Contract(
+        userTx.approvalData.approvalTokenAddress,
+        ERC20.abi,
+        provider
+      )
+      const allowance = await erc20Contract.allowance(
+        userTx.approvalData.owner,
+        userTx.approvalData.allowanceTarget
+      )
+      // check if an approval already exists
+      if (BigInt(allowance) === MaxUint256) shouldApprove = false
+    } catch (error) {
+      console.error(error)
+    }
+
+    if (shouldApprove) {
+      requests.push({
+        id: `${userTx.activeRouteId}-approval`,
+        action: {
+          kind: 'calls' as const,
+          calls: [
+            {
+              to: userTx.approvalData.approvalTokenAddress,
+              value: BigInt('0'),
+              data: erc20Interface.encodeFunctionData('approve', [
+                userTx.approvalData.allowanceTarget,
+                MaxUint256 // approve the max possible amount for better UX on BA
+              ]),
+              fromUserRequestId: `${userTx.activeRouteId}-approval`
+            } as Call
+          ]
+        },
+        meta: {
+          isSignAction: true,
+          networkId,
+          accountAddr: account.addr,
+          activeRouteId: userTx.activeRouteId,
+          isApproval: true
+        }
+      } as SignUserRequest)
+    }
   }
 
   requests.push({

@@ -1130,10 +1130,11 @@ export class MainController extends EventEmitter {
           (n) => Number(n.chainId) === transaction!.chainId
         )!
 
-        const swapAndBridgeUserRequests = buildSwapAndBridgeUserRequests(
+        const swapAndBridgeUserRequests = await buildSwapAndBridgeUserRequests(
           transaction,
           network.id,
-          account
+          account,
+          this.providers.providers[network.id]
         )
 
         for (let i = 0; i < swapAndBridgeUserRequests.length; i++) {
