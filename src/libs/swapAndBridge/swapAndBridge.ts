@@ -108,7 +108,6 @@ const buildRevokeApprovalIfNeeded = async (
       data: approveCallData
     })
   } catch (e) {
-    console.log('provider.call', e)
     fails = true
   }
 
