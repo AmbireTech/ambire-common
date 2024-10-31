@@ -69,8 +69,6 @@ const getTokens = async () => {
   const ethAccPortfolio = await ethPortfolio.get(PLACEHOLDER_SELECTED_ACCOUNT.addr)
   const polygonAccPortfolio = await polygonPortfolio.get(PLACEHOLDER_SELECTED_ACCOUNT.addr)
 
-  console.log('ethAccPortfolio', ethAccPortfolio)
-  console.log('polygonAccPortfolio', polygonAccPortfolio)
   return [...ethAccPortfolio.tokens, ...polygonAccPortfolio.tokens]
 }
 
