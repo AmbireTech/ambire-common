@@ -2,6 +2,7 @@
 
 import { ethers } from 'ethers'
 import fetch from 'node-fetch'
+import { EventEmitter } from 'stream'
 
 import { describe, expect, jest, test } from '@jest/globals'
 import structuredClone from '@ungap/structured-clone'
@@ -307,6 +308,15 @@ const usdcFeeToken: TokenResult = {
   }
 }
 
+const windowManager = {
+  focus: () => Promise.resolve(),
+  open: () => Promise.resolve(0),
+  remove: () => Promise.resolve(),
+  event: new EventEmitter(),
+  sendWindowToastMessage: () => {},
+  sendWindowUiMessage: () => {}
+}
+
 const init = async (
   account: Account,
   accountOp: {
@@ -320,7 +330,7 @@ const init = async (
 ) => {
   const storage: Storage = produceMemoryStore()
   await storage.set('accounts', [account])
-  const keystore = new KeystoreController(storage, { internal: KeystoreSigner })
+  const keystore = new KeystoreController(storage, { internal: KeystoreSigner }, windowManager)
   await keystore.addSecret('passphrase', signer.pass, '', false)
   await keystore.unlockWithSecret('passphrase', signer.pass)
 

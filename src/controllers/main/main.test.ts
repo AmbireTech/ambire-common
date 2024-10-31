@@ -17,12 +17,16 @@ import { getBytecode } from '../../libs/proxyDeploy/bytecode'
 import { getAmbireAccountAddress } from '../../libs/proxyDeploy/getAmbireAddressTwo'
 import { MainController } from './main'
 
+// Public API key, shared by Socket, for testing purposes only
+const socketApiKey = '72a5b4b0-e727-48be-8aa1-5da9d62fe635'
+
 const windowManager = {
   focus: () => Promise.resolve(),
   open: () => Promise.resolve(0),
   remove: () => Promise.resolve(),
   event: new EventEmitter(),
-  sendWindowToastMessage: () => {}
+  sendWindowToastMessage: () => {},
+  sendWindowUiMessage: () => {}
 }
 
 const notificationManager = {
@@ -72,6 +76,7 @@ describe('Main Controller ', () => {
       storage,
       fetch,
       relayerUrl,
+      socketApiKey,
       keystoreSigners: { internal: KeystoreSigner },
       externalSignerControllers: {},
       windowManager,
@@ -202,6 +207,7 @@ describe('Main Controller ', () => {
       storage,
       fetch,
       relayerUrl,
+      socketApiKey,
       windowManager,
       notificationManager,
       keystoreSigners: { internal: KeystoreSigner },
@@ -287,6 +293,7 @@ describe('Main Controller ', () => {
       storage,
       fetch,
       relayerUrl,
+      socketApiKey,
       windowManager,
       notificationManager,
       keystoreSigners: { internal: KeystoreSigner },

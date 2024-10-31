@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-floating-promises */
 import { Wallet } from 'ethers'
 import fetch from 'node-fetch'
+import { EventEmitter } from 'stream'
 
 /* eslint-disable no-new */
 import { describe, expect, test } from '@jest/globals'
@@ -25,6 +26,15 @@ import { KeystoreController } from '../keystore/keystore'
 import { NetworksController } from '../networks/networks'
 import { ProvidersController } from '../providers/providers'
 import { AccountAdderController, DEFAULT_PAGE, DEFAULT_PAGE_SIZE } from './accountAdder'
+
+const windowManager = {
+  focus: () => Promise.resolve(),
+  open: () => Promise.resolve(0),
+  remove: () => Promise.resolve(),
+  event: new EventEmitter(),
+  sendWindowToastMessage: () => {},
+  sendWindowUiMessage: () => {}
+}
 
 const providers = Object.fromEntries(
   networks.map((network) => [network.id, getRpcProvider(network.rpcUrls, network.chainId)])
@@ -106,7 +116,7 @@ describe('AccountAdder', () => {
   beforeEach(() => {
     accountAdder = new AccountAdderController({
       accounts: accountsCtrl,
-      keystore: new KeystoreController(storage, {}),
+      keystore: new KeystoreController(storage, {}, windowManager),
       networks: networksCtrl,
       providers: providersCtrl,
       relayerUrl,
@@ -122,7 +132,7 @@ describe('AccountAdder', () => {
     expect(accountAdder.page).toEqual(DEFAULT_PAGE)
     expect(accountAdder.pageSize).toEqual(DEFAULT_PAGE_SIZE)
     expect(accountAdder.isInitialized).toBeTruthy()
-    expect(accountAdder.isInitializedWithDefaultSeed).toBeFalsy()
+    expect(accountAdder.isInitializedWithSavedSeed).toBeFalsy()
     expect(accountAdder.selectedAccounts).toEqual([])
     expect(accountAdder.hdPathTemplate).toEqual(hdPathTemplate)
     expect(accountAdder.shouldGetAccountsUsedOnNetworks).toBeTruthy()

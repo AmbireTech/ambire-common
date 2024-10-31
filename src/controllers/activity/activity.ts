@@ -331,7 +331,8 @@ export class ActivityController extends EventEmitter {
               accountOp.identifiedBy,
               network,
               this.#fetch,
-              this.#callRelayer
+              this.#callRelayer,
+              accountOp
             )
             if (fetchTxnIdResult.status === 'rejected') {
               this.#accountsOps[selectedAccount][networkId][accountOpIndex].status =

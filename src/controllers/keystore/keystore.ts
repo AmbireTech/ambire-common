@@ -36,6 +36,7 @@ import {
   StoredKey
 } from '../../interfaces/keystore'
 import { Storage } from '../../interfaces/storage'
+import { WindowManager } from '../../interfaces/window'
 import {
   getDefaultKeyLabel,
   getShouldMigrateKeyMetaNullToKeyMetaCreatedAt,
@@ -55,6 +56,7 @@ const STATUS_WRAPPED_METHODS = {
   unlockWithSecret: 'INITIAL',
   addSecret: 'INITIAL',
   addSeed: 'INITIAL',
+  deleteSavedSeed: 'INITIAL',
   removeSecret: 'INITIAL',
   addKeys: 'INITIAL',
   addKeysExternallyStored: 'INITIAL',
@@ -117,15 +119,19 @@ export class KeystoreController extends EventEmitter {
   // Holds the initial load promise, so that one can wait until it completes
   #initialLoadPromise: Promise<void>
 
+  #windowManager: WindowManager
+
   constructor(
     _storage: Storage,
-    _keystoreSigners: Partial<{ [key in Key['type']]: KeystoreSignerType }>
+    _keystoreSigners: Partial<{ [key in Key['type']]: KeystoreSignerType }>,
+    windowManager: WindowManager
   ) {
     super()
     this.#storage = _storage
     this.#keystoreSigners = _keystoreSigners
     this.#mainKey = null
     this.keyStoreUid = null
+    this.#windowManager = windowManager
 
     this.#initialLoadPromise = this.#load()
   }
@@ -380,7 +386,14 @@ export class KeystoreController extends EventEmitter {
       // way TypeScript will be able to narrow down the types properly and infer
       // the return type of the map function correctly.
       if (type === 'internal') {
-        return { addr, type, label, dedicatedToOneSA, meta, isExternallyStored: false }
+        return {
+          addr,
+          type,
+          label,
+          dedicatedToOneSA,
+          meta,
+          isExternallyStored: false
+        }
       }
 
       return {
@@ -413,10 +426,10 @@ export class KeystoreController extends EventEmitter {
     }
 
     // Currently we support only one seed phrase to be added to the keystore
-    // this fist seed phrase will become the default seed phrase of the wallet
+    // this fist seed phrase will become the saved seed phrase of the wallet
     if (this.#keystoreSeeds.length) {
       throw new EmittableError({
-        message: 'You can have only one default seed phrase for that wallet',
+        message: 'You can have only one saved seed phrase for that wallet',
         level: 'major',
         error: new Error(
           'keystore: seed phase already added. Storing multiple seed phrases not supported yet'
@@ -440,7 +453,7 @@ export class KeystoreController extends EventEmitter {
     await this.withStatus('addSeed', () => this.#addSeed(keystoreSeed))
   }
 
-  async changeDefaultSeedHdPathTemplateIfNeeded(nextHdPathTemplate?: HD_PATH_TEMPLATE_TYPE) {
+  async changeSavedSeedHdPathTemplateIfNeeded(nextHdPathTemplate?: HD_PATH_TEMPLATE_TYPE) {
     if (!nextHdPathTemplate) return // should never happen
 
     await this.#initialLoadPromise
@@ -451,7 +464,7 @@ export class KeystoreController extends EventEmitter {
     const isTheSameHdPathTemplate = this.#keystoreSeeds[0].hdPathTemplate === nextHdPathTemplate
     if (isTheSameHdPathTemplate) return
 
-    // As of v4.33.0 we support only one seed phrase (default seed) to be added to the keystore
+    // As of v4.33.0 we support only one seed phrase (saved seed) to be added to the keystore
     this.#keystoreSeeds[0].hdPathTemplate = nextHdPathTemplate
     await this.#storage.set('keystoreSeeds', this.#keystoreSeeds)
 
@@ -605,15 +618,17 @@ export class KeystoreController extends EventEmitter {
     return JSON.stringify(keyBackup)
   }
 
-  /*
-    DOCS
-    keyAddress: string - the address of the key you want to export
-    publicKey: string - the public key, with which to asymmetrically encypt it (used for key sync with other device's keystoreId)
-  */
-  async exportKeyWithPublicKeyEncryption(
-    keyAddress: string,
-    publicKey: string
-  ): Promise<Encrypted> {
+  async sendPrivateKeyToUi(keyAddress: string) {
+    const decryptedPrivateKey = await this.#getPrivateKey(keyAddress)
+    this.#windowManager.sendWindowUiMessage({ privateKey: `0x${decryptedPrivateKey}` })
+  }
+
+  async sendSeedToUi() {
+    const decrypted = await this.getSavedSeed()
+    this.#windowManager.sendWindowUiMessage({ seed: decrypted.seed })
+  }
+
+  async #getPrivateKey(keyAddress: string): Promise<string> {
     await this.#initialLoadPromise
     if (this.#mainKey === null) throw new Error('keystore: needs to be unlocked')
     const keys = this.#keystoreKeys
@@ -628,7 +643,21 @@ export class KeystoreController extends EventEmitter {
     const aesCtr = new aes.ModeOfOperation.ctr(this.#mainKey.key, counter)
     // encrypt the pk of keyAddress with publicKey
     const decryptedBytes = aesCtr.decrypt(encryptedBytes)
-    const decryptedPrivateKey = aes.utils.hex.fromBytes(decryptedBytes)
+    return aes.utils.hex.fromBytes(decryptedBytes)
+  }
+
+  /**
+   * Export with public key encrypt
+   *
+   * @param keyAddress string - the address of the key you want to export
+   * @param publicKey string - the public key, with which to asymmetrically encrypt it (used for key sync with other device's keystoreId)
+   * @returns Encrypted
+   */
+  async exportKeyWithPublicKeyEncryption(
+    keyAddress: string,
+    publicKey: string
+  ): Promise<Encrypted> {
+    const decryptedPrivateKey = await this.#getPrivateKey(keyAddress)
     const result = await encryptWithPublicKey(publicKey, decryptedPrivateKey)
 
     return result
@@ -702,7 +731,7 @@ export class KeystoreController extends EventEmitter {
     return new SignerInitializer(key)
   }
 
-  async getDefaultSeed() {
+  async getSavedSeed() {
     await this.#initialLoadPromise
 
     if (!this.isUnlocked) throw new Error('keystore: not unlocked')
@@ -778,6 +807,19 @@ export class KeystoreController extends EventEmitter {
     this.emitUpdate()
   }
 
+  async deleteSavedSeed() {
+    await this.withStatus('deleteSavedSeed', () => this.#deleteSavedSeed())
+  }
+
+  async #deleteSavedSeed() {
+    await this.#initialLoadPromise
+
+    this.#keystoreSeeds = []
+    await this.#storage.set('keystoreSeeds', this.#keystoreSeeds)
+
+    this.emitUpdate()
+  }
+
   resetErrorState() {
     this.errorMessage = ''
     this.emitUpdate()
@@ -787,7 +829,7 @@ export class KeystoreController extends EventEmitter {
     return this.#keystoreSecrets.some((x) => x.id === 'password')
   }
 
-  get hasKeystoreDefaultSeed() {
+  get hasKeystoreSavedSeed() {
     return !!this.#keystoreSeeds.length
   }
 
@@ -798,7 +840,7 @@ export class KeystoreController extends EventEmitter {
       isUnlocked: this.isUnlocked, // includes the getter in the stringified instance
       keys: this.keys,
       hasPasswordSecret: this.hasPasswordSecret,
-      hasKeystoreDefaultSeed: this.hasKeystoreDefaultSeed
+      hasKeystoreSavedSeed: this.hasKeystoreSavedSeed
     }
   }
 }

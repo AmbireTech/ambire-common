@@ -58,7 +58,8 @@ export async function fetchTxnId(
   identifiedBy: AccountOpIdentifiedBy,
   network: Network,
   fetchFn: Fetch,
-  callRelayer: Function
+  callRelayer: Function,
+  op?: AccountOp
 ): Promise<{ status: string; txnId: string | null }> {
   if (isIdentifiedByTxn(identifiedBy))
     return {
@@ -129,6 +130,11 @@ export async function fetchTxnId(
   }
 
   if (!response.data.txId) {
+    if (op && op.txnId)
+      return {
+        status: 'success',
+        txnId: op.txnId
+      }
     return {
       status: 'not_found',
       txnId: null

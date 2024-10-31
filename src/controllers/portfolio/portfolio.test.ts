@@ -560,7 +560,7 @@ describe('Portfolio Controller ', () => {
       expect(hasErc20Matic).toBeFalsy()
     })
 
-    test('Portfolio should not filter out ERC20 tokens that mimic native tokens when they are added as preferences (custom tokens)', async () => {
+    test('Portfolio should filter out ERC20 tokens that mimic native tokens when they are added as preferences (custom tokens)', async () => {
       const ERC_20_MATIC_ADDR = '0x0000000000000000000000000000000000001010'
       const { controller } = prepareTest()
 
@@ -583,7 +583,7 @@ describe('Portfolio Controller ', () => {
         (token) => token.address === ERC_20_MATIC_ADDR
       )
 
-      expect(hasErc20Matic).toBeTruthy()
+      expect(hasErc20Matic).toBeFalsy()
     })
 
     test("Learned token timestamp isn't updated if the token is found by the external hints api", async () => {
