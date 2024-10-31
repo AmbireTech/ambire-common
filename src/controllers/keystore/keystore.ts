@@ -57,6 +57,7 @@ const STATUS_WRAPPED_METHODS = {
   unlockWithSecret: 'INITIAL',
   addSecret: 'INITIAL',
   addSeed: 'INITIAL',
+  moveTempSeedToKeystoreSeeds: 'INITIAL',
   deleteSavedSeed: 'INITIAL',
   removeSecret: 'INITIAL',
   addKeys: 'INITIAL',
@@ -474,7 +475,7 @@ export class KeystoreController extends EventEmitter {
     if (shouldUpdate) this.emitUpdate()
   }
 
-  async addTempSeedToKeystoreSeeds() {
+  async #moveTempSeedToKeystoreSeeds() {
     if (this.#mainKey === null)
       throw new EmittableError({
         message: KEYSTORE_UNEXPECTED_ERROR_MESSAGE,
@@ -507,6 +508,10 @@ export class KeystoreController extends EventEmitter {
     await this.#storage.set('keystoreSeeds', this.#keystoreSeeds)
     this.#tempSeed = null
     this.emitUpdate()
+  }
+
+  async moveTempSeedToKeystoreSeeds() {
+    await this.withStatus('moveTempSeedToKeystoreSeeds', () => this.#moveTempSeedToKeystoreSeeds())
   }
 
   async #addSeed({ seed, hdPathTemplate }: KeystoreSeed) {
