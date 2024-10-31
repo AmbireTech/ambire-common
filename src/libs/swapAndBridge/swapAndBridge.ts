@@ -85,6 +85,45 @@ const getActiveRoutesUpdateInterval = (minServiceTime?: number) => {
   return 15000
 }
 
+const buildRevokeApprovalIfNeeded = async (
+  userTx: SocketAPISendTransactionRequest,
+  account: Account,
+  provider: RPCProvider
+): Promise<Call | undefined> => {
+  if (!userTx.approvalData) return
+  const erc20Contract = new Contract(userTx.approvalData.approvalTokenAddress, ERC20.abi, provider)
+  const requiredAmount = isSmartAccount(account)
+    ? BigInt(userTx.approvalData.minimumApprovalAmount)
+    : MaxUint256
+  const approveCallData = erc20Contract.interface.encodeFunctionData('approve', [
+    userTx.approvalData.allowanceTarget,
+    requiredAmount
+  ])
+
+  let fails = false
+  try {
+    await provider.call({
+      from: account.addr,
+      to: userTx.approvalData.approvalTokenAddress,
+      data: approveCallData
+    })
+  } catch (e) {
+    console.log('provider.call', e)
+    fails = true
+  }
+
+  if (!fails) return
+
+  return {
+    to: userTx.approvalData.approvalTokenAddress,
+    value: BigInt('0'),
+    data: erc20Contract.interface.encodeFunctionData('approve', [
+      userTx.approvalData.allowanceTarget,
+      BigInt(0)
+    ])
+  }
+}
+
 const buildSwapAndBridgeUserRequests = async (
   userTx: SocketAPISendTransactionRequest,
   networkId: string,
@@ -95,6 +134,10 @@ const buildSwapAndBridgeUserRequests = async (
     const calls: Call[] = []
     if (userTx.approvalData) {
       const erc20Interface = new Interface(ERC20.abi)
+
+      const revokeApproval = await buildRevokeApprovalIfNeeded(userTx, account, provider)
+      if (revokeApproval) calls.push(revokeApproval)
+
       calls.push({
         to: userTx.approvalData.approvalTokenAddress,
         value: BigInt('0'),
@@ -147,6 +190,22 @@ const buildSwapAndBridgeUserRequests = async (
       if (BigInt(allowance) === MaxUint256) shouldApprove = false
     } catch (error) {
       console.error(error)
+    }
+
+    const revokeApproval = await buildRevokeApprovalIfNeeded(userTx, account, provider)
+    if (revokeApproval) {
+      shouldApprove = true
+      requests.push({
+        id: `${userTx.activeRouteId}-revoke-approval`,
+        action: { kind: 'calls' as const, calls: [revokeApproval] },
+        meta: {
+          isSignAction: true,
+          networkId,
+          accountAddr: account.addr,
+          activeRouteId: userTx.activeRouteId,
+          isApproval: true
+        }
+      } as SignUserRequest)
     }
 
     if (shouldApprove) {

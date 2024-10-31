@@ -1110,6 +1110,9 @@ export class MainController extends EventEmitter {
         if (activeRouteId) {
           this.removeUserRequest(activeRouteId, { shouldRemoveSwapAndBridgeRoute: false })
           if (!isSmartAccount(account)) {
+            this.removeUserRequest(`${activeRouteId}-revoke-approval`, {
+              shouldRemoveSwapAndBridgeRoute: false
+            })
             this.removeUserRequest(`${activeRouteId}-approval`, {
               shouldRemoveSwapAndBridgeRoute: false
             })
