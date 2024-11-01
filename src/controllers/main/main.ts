@@ -1354,12 +1354,12 @@ export class MainController extends EventEmitter {
     const accountOpIndex = this.actions.actionsQueue.findIndex(
       (a) => a.type === 'accountOp' && a.id === `${op.accountAddr}-${op.networkId}`
     )
-    if (accountOpIndex === -1) return false
-
     const accountOpAction = this.actions.actionsQueue[accountOpIndex] as AccountOpAction | undefined
-    if (!accountOpAction) return false
-
-    return !!this.signAccountOp && this.signAccountOp.fromActionId === accountOpAction.id
+    return (
+      !!this.signAccountOp &&
+      !!accountOpAction &&
+      this.signAccountOp.fromActionId === accountOpAction.id
+    )
   }
 
   // @TODO allow this to remove multiple OR figure out a way to debounce re-estimations
