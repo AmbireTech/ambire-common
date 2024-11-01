@@ -19,7 +19,8 @@
     "eth-rpc-errors": "^4.0.3",
     "ethers": "^6.8.0",
     "events": "^3.3.0",
-    "scrypt-js": "^3.0.1"
+    "scrypt-js": "^3.0.1",
+    "uuid": "9.0.0"
   },
   "peerDependencies": {
     "@ambire/signature-validator": "^1.0.3",

@@ -17,5 +17,8 @@ export interface Position {
   positionType: string
   assets: PositionAsset[]
   network: string
-  additionalData: any | undefined
+  additionalData: {
+    positionId: string
+    [key: string]: any
+  }
 }

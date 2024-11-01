@@ -1,3 +1,4 @@
+import { NetworkId } from '../../interfaces/network'
 import { getAAVEPositions } from '../../libs/defiPositions/aaveV3'
 import { Position } from '../../libs/defiPositions/types'
 import { getUniV3Positions } from '../../libs/defiPositions/uniV3'
@@ -14,6 +15,8 @@ export class DefiPositionsController extends EventEmitter {
   #networks: NetworksController
 
   positions: Position[] = []
+
+  isReady: boolean = false
 
   updateDefiPositionsStatus: 'INITIAL' | 'LOADING' = 'INITIAL'
 
@@ -41,24 +44,32 @@ export class DefiPositionsController extends EventEmitter {
     await this.#accounts.initialLoadPromise
     await this.#networks.initialLoadPromise
     await this.#providers.initialLoadPromise
+
+    this.isReady = true
+    this.emitUpdate()
+
     await this.updatePositions()
   }
 
-  async updatePositions() {
+  async updatePositions(networkId?: NetworkId) {
     if (!this.#accounts.selectedAccount) return
 
     this.updateDefiPositionsStatus = 'LOADING'
     this.emitUpdate()
 
+    const networksToUpdate = networkId
+      ? this.#networks.networks.filter((n) => n.id === networkId)
+      : this.#networks.networks
+
     try {
-      const uniV3PositionsPromises = this.#networks.networks.map(async (n) => {
+      const uniV3PositionsPromises = networksToUpdate.map(async (n) => {
         return getUniV3Positions(
           this.#accounts.selectedAccount!,
           this.#providers.providers[n.id],
           n
         )
       })
-      const aavePositionsPromises = this.#networks.networks.map(async (n) => {
+      const aavePositionsPromises = networksToUpdate.map(async (n) => {
         return getAAVEPositions(this.#accounts.selectedAccount!, this.#providers.providers[n.id], n)
       })
       const positions = (

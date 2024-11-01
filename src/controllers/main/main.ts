@@ -227,6 +227,7 @@ export class MainController extends EventEmitter {
         this.providers.setProvider(network)
         await this.accounts.updateAccountStates('latest', [network.id])
         await this.updateSelectedAccountPortfolio(true)
+        await this.defiPositions.updatePositions(network.id)
       },
       (networkId: NetworkId) => {
         this.providers.removeProvider(networkId)
@@ -242,6 +243,7 @@ export class MainController extends EventEmitter {
         // TODO: We agreed to always fetch the latest and pending states.
         // To achieve this, we need to refactor how we use forceUpdate to obtain pending state updates.
         await this.updateSelectedAccountPortfolio(true)
+        await this.defiPositions.updatePositions()
         // forceEmitUpdate to update the getters in the FE state of the ctrl
         await this.forceEmitUpdate()
         await this.actions.forceEmitUpdate()
@@ -1480,6 +1482,7 @@ export class MainController extends EventEmitter {
   async removeNetwork(id: NetworkId) {
     await this.networks.removeNetwork(id)
     await this.updateSelectedAccountPortfolio(true)
+    await this.defiPositions.updatePositions()
   }
 
   async resolveAccountOpAction(data: any, actionId: AccountOpAction['id']) {
