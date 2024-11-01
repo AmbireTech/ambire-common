@@ -9,6 +9,7 @@ export type BannerCategory =
   | 'swap-and-bridge-in-progress'
   | 'swap-and-bridge-ready'
   | 'swap-and-bridge-completed'
+  | 'temp-seed-not-confirmed'
 
 export interface Banner {
   id: number | string
@@ -77,4 +78,8 @@ export type Action =
       label: 'Got it'
       actionName: 'close-swap-and-bridge'
       meta: { activeRouteId: number }
+    }
+  | {
+      label: 'Check'
+      actionName: 'confirm-temp-seed'
     }
