@@ -511,6 +511,7 @@ export class KeystoreController extends EventEmitter {
   }
 
   async moveTempSeedToKeystoreSeeds() {
+    await this.#initialLoadPromise
     await this.withStatus('moveTempSeedToKeystoreSeeds', () => this.#moveTempSeedToKeystoreSeeds())
   }
 
