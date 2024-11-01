@@ -83,6 +83,7 @@ import { AccountOpAction, ActionsController, SignMessageAction } from '../action
 import { ActivityController } from '../activity/activity'
 import { AddressBookController } from '../addressBook/addressBook'
 import { DappsController } from '../dapps/dapps'
+import { DefiPositionsController } from '../defiPositions/defiPostions'
 import { DomainsController } from '../domains/domains'
 import { EmailVaultController } from '../emailVault/emailVault'
 import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter'
@@ -139,6 +140,8 @@ export class MainController extends EventEmitter {
   accountAdder: AccountAdderController
 
   portfolio: PortfolioController
+
+  defiPositions: DefiPositionsController
 
   dapps: DappsController
 
@@ -256,7 +259,11 @@ export class MainController extends EventEmitter {
       relayerUrl,
       velcroUrl
     )
-    this.#initialLoadPromise = this.#load()
+    this.defiPositions = new DefiPositionsController({
+      accounts: this.accounts,
+      networks: this.networks,
+      providers: this.providers
+    })
     this.emailVault = new EmailVaultController(this.#storage, this.fetch, relayerUrl, this.keystore)
     this.accountAdder = new AccountAdderController({
       accounts: this.accounts,
@@ -310,6 +317,7 @@ export class MainController extends EventEmitter {
       }
     )
     this.domains = new DomainsController(this.providers.providers, this.fetch)
+    this.#initialLoadPromise = this.#load()
   }
 
   async #load(): Promise<void> {
