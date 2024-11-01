@@ -34,6 +34,10 @@ const legendsModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]) =
     {
       type: 'Penguin Paladin',
       image: 'https://staging-relayer.ambire.com/legends/nft-image/avatar/penguin-lvl0.png'
+    },
+    {
+      type: 'Orc Warrior',
+      image: 'https://staging-relayer.ambire.com/legends/nft-image/avatar/orc-lvl0.png'
     }
   ]
   const matcher = {
@@ -42,8 +46,8 @@ const legendsModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]) =
 
       return [
         getAction('Pick character'),
-        getImage(characterTypes[heroType].image),
-        getLabel(characterTypes[heroType].type || 'Unknown', true),
+        getImage(characterTypes[heroType]?.image),
+        getLabel(characterTypes[heroType]?.type || 'Unknown', true),
         getLabel('for Ambire Legends')
       ]
     },
