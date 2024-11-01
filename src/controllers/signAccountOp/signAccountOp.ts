@@ -69,6 +69,7 @@ export enum SigningStatus {
    */
   UpdatesPaused = 'updates-paused',
   InProgress = 'in-progress',
+  WaitingForPaymaster = 'waiting-for-paymaster-response',
   Done = 'done'
 }
 
@@ -98,7 +99,8 @@ type SpeedCalc = {
 const noStateUpdateStatuses = [
   SigningStatus.InProgress,
   SigningStatus.Done,
-  SigningStatus.UpdatesPaused
+  SigningStatus.UpdatesPaused,
+  SigningStatus.WaitingForPaymaster
 ]
 
 export class SignAccountOpController extends EventEmitter {
@@ -503,7 +505,9 @@ export class SignAccountOpController extends EventEmitter {
     }
 
     // no status updates on these two
-    const isInTheMiddleOfSigning = this.status?.type === SigningStatus.InProgress
+    const isInTheMiddleOfSigning =
+      this.status?.type === SigningStatus.InProgress ||
+      this.status?.type === SigningStatus.WaitingForPaymaster
     const isDone = this.status?.type === SigningStatus.Done
     if (isInTheMiddleOfSigning || isDone) return
 
@@ -1076,6 +1080,12 @@ export class SignAccountOpController extends EventEmitter {
       return this.#emitSigningErrorAndResetToReadyToSign(message)
     }
 
+    if (this.accountOp.gasFeePayment.isERC4337 && shouldUsePaymaster(this.#network)) {
+      this.status = { type: SigningStatus.WaitingForPaymaster }
+    } else {
+      this.status = { type: SigningStatus.InProgress }
+    }
+
     // we update the FE with the changed status (in progress) only after the checks
     // above confirm everything is okay to prevent two different state updates
     this.emitUpdate()
@@ -1189,18 +1199,32 @@ export class SignAccountOpController extends EventEmitter {
 
         if (usesPaymaster) {
           try {
-            const response = await this.#callRelayer(
-              `/v2/paymaster/${this.accountOp.networkId}/sign`,
-              'POST',
-              {
+            const santinelTimeoutErr = {}
+            const paymasterTimeout = new Promise((resolve) => {
+              setTimeout(() => {
+                resolve(santinelTimeoutErr)
+              }, 8000)
+            })
+
+            // request the paymaster with a timeout window
+            const response = await Promise.race([
+              this.#callRelayer(`/v2/paymaster/${this.accountOp.networkId}/sign`, 'POST', {
                 // send without the requestType prop
                 userOperation: (({ requestType, activatorCall, ...o }) => o)(userOperation),
                 paymaster: AMBIRE_PAYMASTER,
                 bytecode: this.account.creation!.bytecode,
                 salt: this.account.creation!.salt,
                 key: this.account.associatedKeys[0]
-              }
-            )
+              }),
+              paymasterTimeout
+            ])
+            // the ugly error message below gets replaced after
+            if (response === santinelTimeoutErr) throw new Error('Ambire relayer error')
+
+            // go back to in progress after paymaster has been confirmed
+            this.status = { type: SigningStatus.InProgress }
+            this.emitUpdate()
+
             userOperation.paymasterData = response.data.paymasterData
             if (usesOneTimeNonce) {
               userOperation.nonce = getOneTimeNonce(userOperation)
