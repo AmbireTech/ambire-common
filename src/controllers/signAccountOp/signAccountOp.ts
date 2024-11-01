@@ -150,6 +150,8 @@ export class SignAccountOpController extends EventEmitter {
 
   #reEstimate: Function
 
+  #isSignRequestStillActive: Function
+
   rbfAccountOps: { [key: string]: SubmittedAccountOp | null }
 
   signedAccountOp: AccountOp | null
@@ -168,7 +170,8 @@ export class SignAccountOpController extends EventEmitter {
     fromActionId: AccountOpAction['id'],
     accountOp: AccountOp,
     callRelayer: Function,
-    reEstimate: Function
+    reEstimate: Function,
+    isSignRequestStillActive: Function
   ) {
     super()
 
@@ -182,6 +185,7 @@ export class SignAccountOpController extends EventEmitter {
     this.accountOp = structuredClone(accountOp)
     this.#callRelayer = callRelayer
     this.#reEstimate = reEstimate
+    this.#isSignRequestStillActive = isSignRequestStillActive
 
     this.gasUsedTooHigh = false
     this.gasUsedTooHighAgreed = false
@@ -1233,7 +1237,7 @@ export class SignAccountOpController extends EventEmitter {
             let message = e.message
             if (e.message.includes('Failed to fetch') || e.message.includes('Ambire relayer')) {
               message =
-                'Currently, the paymaster seems to be down. Please try again a few moments later or broadcast with an EOA'
+                'Currently, the paymaster seems to be down. Please try again a few moments later or broadcast with a Basic Account'
             }
             this.emitError({
               level: 'major',
@@ -1246,6 +1250,11 @@ export class SignAccountOpController extends EventEmitter {
             return Promise.reject(this.status)
           }
         }
+
+        // query the application state from memory to understand if the user
+        // hasn't actually rejected the request while waiting for the
+        // paymaster to respond
+        if (!this.#isSignRequestStillActive(this.accountOp)) return
 
         if (userOperation.requestType === 'standard') {
           const typedData = getTypedData(

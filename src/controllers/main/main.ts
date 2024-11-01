@@ -491,6 +491,9 @@ export class MainController extends EventEmitter {
       this.callRelayer,
       () => {
         this.estimateSignAccountOp()
+      },
+      (op: AccountOp) => {
+        return this.isSignRequestStillActive(op)
       }
     )
 
@@ -1343,6 +1346,20 @@ export class MainController extends EventEmitter {
     }
 
     this.emitUpdate()
+  }
+
+  // a method in the main controller to understand whether
+  // signAccountOp is still initialized
+  isSignRequestStillActive(op: AccountOp): boolean {
+    const accountOpIndex = this.actions.actionsQueue.findIndex(
+      (a) => a.type === 'accountOp' && a.id === `${op.accountAddr}-${op.networkId}`
+    )
+    if (accountOpIndex === -1) return false
+
+    const accountOpAction = this.actions.actionsQueue[accountOpIndex] as AccountOpAction | undefined
+    if (!accountOpAction) return false
+
+    return !!this.signAccountOp && this.signAccountOp.fromActionId === accountOpAction.id
   }
 
   // @TODO allow this to remove multiple OR figure out a way to debounce re-estimations
@@ -2267,7 +2284,7 @@ export class MainController extends EventEmitter {
         (isRelayer && message.includes('Failed to fetch'))
       ) {
         message =
-          'Currently, the Ambire relayer seems to be down. Please try again a few moments later or broadcast with an EOA'
+          'Currently, the Ambire relayer seems to be down. Please try again a few moments later or broadcast with a Basic Account'
       } else {
         // Trip the error message, errors coming from the RPC can be huuuuuge
         message = message.length > 300 ? `${message.substring(0, 300)}...` : message
