@@ -9,6 +9,7 @@ export type BannerCategory =
   | 'swap-and-bridge-in-progress'
   | 'swap-and-bridge-ready'
   | 'swap-and-bridge-completed'
+  | 'temp-seed-not-confirmed'
 
 export interface Banner {
   id: number | string
@@ -82,4 +83,8 @@ export type Action =
       label: 'Close'
       actionName: 'hide-activity-banner'
       meta: { timestamp: number; addr: string; network: string; isReject: boolean }
+    }
+  | {
+      label: 'Check'
+      actionName: 'confirm-temp-seed'
     }
