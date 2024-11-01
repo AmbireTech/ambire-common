@@ -40,6 +40,5 @@ jobs:
       env:
         SEED: ${{ secrets.SEED }}
         REACT_APP_PIMLICO_API_KEY: ${{ secrets.REACT_APP_PIMLICO_API_KEY }}
-
       run: npm run jest
 
