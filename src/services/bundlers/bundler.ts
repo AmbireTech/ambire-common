@@ -192,20 +192,33 @@ export class Bundler {
     const url = `https://api.pimlico.io/v2/${network.chainId}/rpc?apikey=${process.env.REACT_APP_PIMLICO_API_KEY}`
     const provider = getRpcProvider([url], network.chainId)
     const results = await provider.send('pimlico_getUserOperationGasPrice', [])
-
-    const apeMaxFee = BigInt(results.fast.maxFeePerGas) + BigInt(results.fast.maxFeePerGas) / 5n
-    const apePriority =
-      BigInt(results.fast.maxPriorityFeePerGas) + BigInt(results.fast.maxPriorityFeePerGas) / 5n
-
-    return {
-      slow: results.slow,
-      medium: results.standard,
-      fast: results.fast,
-      ape: {
-        maxFeePerGas: toBeHex(apeMaxFee),
-        maxPriorityFeePerGas: toBeHex(apePriority)
-      }
+    results.ape = {
+      maxFeePerGas: results.fast.maxFeePerGas,
+      maxPriorityFeePerGas: results.fast.maxPriorityFeePerGas
     }
+
+    // set bigger gas prices
+    // slow: increase by 5%
+    // medium: increase by 6.67%
+    // fast: increase by 10%
+    // ape: increase by 20%
+    const gasPrices: any = {}
+    Object.keys(results).forEach((key: any, index: number) => {
+      const up = BigInt((4 - index) * 5)
+
+      const finalKey = key !== 'standard' ? key : 'medium'
+
+      gasPrices[finalKey] = {
+        maxFeePerGas: toBeHex(
+          BigInt(results[key].maxFeePerGas) + BigInt(results[key].maxFeePerGas) / up
+        ),
+        maxPriorityFeePerGas: toBeHex(
+          BigInt(results[key].maxPriorityFeePerGas) + BigInt(results[key].maxPriorityFeePerGas) / up
+        )
+      }
+    })
+
+    return gasPrices
   }
 
   // used when catching errors from bundler requests

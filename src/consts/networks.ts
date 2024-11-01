@@ -65,7 +65,11 @@ const networks: Network[] = [
     feeOptions: {
       is1559: true,
       elasticityMultiplier: 6n,
-      baseFeeMaxChangeDenominator: 50n
+      baseFeeMaxChangeDenominator: 50n,
+      feeIncrease: 50n,
+      userOpFees: {
+        preVerificationGas: 30n
+      }
     },
     isOptimistic: true,
     predefined: true,
@@ -117,7 +121,8 @@ const networks: Network[] = [
     features: [],
     feeOptions: {
       is1559: true,
-      minBaseFee: 100000000n // 1 gwei
+      minBaseFee: 100000000n, // 1 gwei
+      feeIncrease: 10n
     },
     predefined: true,
     wrappedAddr: '0x82af49447d8a07e3bd95bd0d56f35241523fbab1'
@@ -141,10 +146,12 @@ const networks: Network[] = [
     platformId: 'base',
     nativeAssetId: 'ethereum',
     hasSingleton: true,
+    isOptimistic: true,
     features: [],
     feeOptions: {
       is1559: true,
-      minBaseFeeEqualToLastBlock: true
+      minBaseFeeEqualToLastBlock: true,
+      feeIncrease: 10n
     },
     predefined: true,
     wrappedAddr: '0x4200000000000000000000000000000000000006'
