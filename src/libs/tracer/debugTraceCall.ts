@@ -76,25 +76,26 @@ export async function debugTraceCall(
         'latest',
         {
           tracer: `{
-          data: [], 
-          fault: function (log) {}, 
-          step: function (log) { 
-            if (log.op.toString() === 'LOG3') {
-              this.data.push({
+          discovered: [],
+          fault: function (log) {},
+          step: function (log) {
+            const found = this.discovered.map(ob => ob.address)
+            if (log.contract && log.contract.getAddress() && found.indexOf(toHex(log.contract.getAddress())) === -1) {
+              this.discovered.push({
                 erc: 20,
                 address: toHex(log.contract.getAddress())
               })
             }
-            if (log.op.toString() === 'LOG4') { 
-              this.data.push({
+            if (log.op.toString() === 'LOG4') {
+              this.discovered.push({
                 erc: 721,
                 address: toHex(log.contract.getAddress()),
                 tokenId: '0x' + log.stack.peek(5).toString(16)
               })
             }
-          }, 
-          result: function () { 
-            return this.data 
+          },
+          result: function () {
+            return this.discovered
           }
         }`,
 
@@ -115,7 +116,6 @@ export async function debugTraceCall(
         console.log(e)
         return [{ erc: 20, address: ZeroAddress }]
       })
-
   const foundTokens = [
     ...new Set(results.filter((i) => i?.erc === 20).map((i) => getAddress(i.address)))
   ]
