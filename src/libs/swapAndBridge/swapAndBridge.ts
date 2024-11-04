@@ -180,6 +180,9 @@ const buildSwapAndBridgeUserRequests = (
   return requests
 }
 
+export const getIsBridgeTxn = (userTxType: SocketAPIUserTx['userTxType']) =>
+  userTxType === 'fund-movr'
+
 export {
   getQuoteRouteSteps,
   getActiveRoutesLowestServiceTime,
