@@ -108,7 +108,7 @@ export async function estimate4337(
   // in the relayer case but not in 4337 mode
   const estimateGasOp = { ...op }
   if (shouldUsePaymaster(network)) {
-    const feeToken = getFeeTokenForEstimate(feeTokens)
+    const feeToken = getFeeTokenForEstimate(feeTokens, network)
     if (feeToken) estimateGasOp.feeCall = getFeeCall(feeToken)
   }
   const estimations = await Promise.all([
@@ -176,30 +176,16 @@ export async function estimate4337(
     ambireGas
   )
 
-  const hasGasTankToken = !!feePaymentOptions.find(
-    (opt) => opt.token.flags.onGasTank && opt.token.amount > 0
-  )
   bundlerEstimationResult.feePaymentOptions = feePaymentOptions.map(
     (option: FeePaymentOption, index: number) => {
-      // no rewrites on gasTank
-      if (option.token.flags.onGasTank) return option
-
       // after simulation: add the left over amount as available
       const localOp = { ...option }
-      localOp.availableAmount = feeTokenOutcomes[index][1]
-      localOp.token.amount = feeTokenOutcomes[index][1]
-
-      // if we have a gasTank token available,
-      // increase gasUsed by 1) 10% native or 2) 20% token
-      // as we make the bundler simulation with a gas tank token and callGasLimit
-      // is not enough in this case
-      if (hasGasTankToken && bundlerEstimationResult.erc4337GasLimits?.callGasLimit) {
-        localOp.gasUsed =
-          localOp.token.address === ZeroAddress
-            ? BigInt(bundlerEstimationResult.erc4337GasLimits.callGasLimit) / 10n
-            : BigInt(bundlerEstimationResult.erc4337GasLimits.callGasLimit) / 5n
+      if (!option.token.flags.onGasTank) {
+        localOp.availableAmount = feeTokenOutcomes[index][1]
+        localOp.token.amount = feeTokenOutcomes[index][1]
       }
 
+      localOp.gasUsed = localOp.token.flags.onGasTank ? 5000n : feeTokenOutcomes[index][0]
       return localOp
     }
   )

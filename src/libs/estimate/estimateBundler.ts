@@ -1,4 +1,4 @@
-import { Interface, toBeHex } from 'ethers'
+import { Interface } from 'ethers'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import { Account, AccountStates } from '../../interfaces/account'
@@ -16,14 +16,6 @@ import {
 import { estimationErrorFormatted } from './errors'
 import { getFeeTokenForEstimate } from './estimateHelpers'
 import { EstimateResult, FeePaymentOption } from './interfaces'
-
-function getPreVerificationGas(preVerificationGas: string, network: Network) {
-  if (!network.feeOptions.userOpFees) return preVerificationGas
-  if (!network.feeOptions.userOpFees.preVerificationGas) return preVerificationGas
-
-  const percentage = 100n / network.feeOptions.userOpFees.preVerificationGas
-  return toBeHex(BigInt(preVerificationGas) + BigInt(preVerificationGas) / percentage)
-}
 
 export async function bundlerEstimate(
   account: Account,
@@ -48,7 +40,7 @@ export async function bundlerEstimate(
 
   const usesPaymaster = shouldUsePaymaster(network)
   if (usesPaymaster) {
-    const feeToken = getFeeTokenForEstimate(feeTokens)
+    const feeToken = getFeeTokenForEstimate(feeTokens, network)
     if (feeToken) localOp.feeCall = getFeeCall(feeToken)
   }
   const userOp = getUserOperation(
@@ -110,7 +102,7 @@ export async function bundlerEstimate(
     currentAccountNonce: Number(op.nonce),
     feePaymentOptions,
     erc4337GasLimits: {
-      preVerificationGas: getPreVerificationGas(gasData.preVerificationGas, network),
+      preVerificationGas: gasData.preVerificationGas,
       verificationGasLimit: gasData.verificationGasLimit,
       callGasLimit: gasData.callGasLimit,
       paymasterVerificationGasLimit: gasData.paymasterVerificationGasLimit,
