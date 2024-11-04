@@ -722,7 +722,9 @@ export class SignAccountOpController extends EventEmitter {
 
         for (const [speed, speedValue] of Object.entries(erc4337GasLimits.gasPrice)) {
           const simulatedGasLimit =
-            BigInt(erc4337GasLimits.callGasLimit) + BigInt(erc4337GasLimits.preVerificationGas)
+            BigInt(erc4337GasLimits.callGasLimit) +
+            BigInt(erc4337GasLimits.preVerificationGas) +
+            BigInt(option.gasUsed ?? 0)
           const gasPrice = BigInt(speedValue.maxFeePerGas)
           let amount = SignAccountOpController.getAmountAfterFeeTokenConvert(
             simulatedGasLimit,
@@ -1062,7 +1064,7 @@ export class SignAccountOpController extends EventEmitter {
       return this.#emitSigningErrorAndResetToReadyToSign(message)
     }
 
-    if (!this.accountOp?.gasFeePayment) {
+    if (!this.accountOp?.gasFeePayment || !this.selectedOption) {
       const message = `Unable to sign the transaction. During the preparation step, required information about paying the gas fee was found missing. ${RETRY_TO_INIT_ACCOUNT_OP_MSG}`
       return this.#emitSigningErrorAndResetToReadyToSign(message)
     }
@@ -1153,7 +1155,10 @@ export class SignAccountOpController extends EventEmitter {
           !accountState.isDeployed ? this.accountOp.meta!.entryPointAuthorization : undefined
         )
         userOperation.preVerificationGas = this.estimation!.erc4337GasLimits!.preVerificationGas
-        userOperation.callGasLimit = this.estimation!.erc4337GasLimits!.callGasLimit
+        userOperation.callGasLimit = toBeHex(
+          BigInt(this.estimation!.erc4337GasLimits!.callGasLimit) +
+            (this.selectedOption.gasUsed ?? 0n)
+        )
         userOperation.verificationGasLimit = this.estimation!.erc4337GasLimits!.verificationGasLimit
         userOperation.paymasterVerificationGasLimit =
           this.estimation!.erc4337GasLimits!.paymasterVerificationGasLimit
