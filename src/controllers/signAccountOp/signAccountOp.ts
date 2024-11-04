@@ -1208,13 +1208,6 @@ export class SignAccountOpController extends EventEmitter {
 
         if (usesPaymaster) {
           try {
-            const santinelTimeoutErr = {}
-            const paymasterTimeout = new Promise((resolve) => {
-              setTimeout(() => {
-                resolve(santinelTimeoutErr)
-              }, 8000)
-            })
-
             // request the paymaster with a timeout window
             const response = await Promise.race([
               this.#callRelayer(`/v2/paymaster/${this.accountOp.networkId}/sign`, 'POST', {
@@ -1225,10 +1218,10 @@ export class SignAccountOpController extends EventEmitter {
                 salt: this.account.creation!.salt,
                 key: this.account.associatedKeys[0]
               }),
-              paymasterTimeout
+              new Promise((_resolve, reject) => {
+                setTimeout(() => reject(new Error('Ambire relayer error')), 8000)
+              })
             ])
-            // the ugly error message below gets replaced after
-            if (response === santinelTimeoutErr) throw new Error('Ambire relayer error')
 
             // go back to in progress after paymaster has been confirmed
             this.status = { type: SigningStatus.InProgress }
