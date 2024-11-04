@@ -70,12 +70,12 @@ export type Action =
       meta: { activeRouteId: number }
     }
   | {
-      label: 'Proceed to Next Step'
+      label: 'Proceed to Next Step' | 'Open'
       actionName: 'proceed-swap-and-bridge'
       meta: { activeRouteId: number }
     }
   | {
-      label: 'Got it'
+      label: 'Got it' | 'Close'
       actionName: 'close-swap-and-bridge'
       meta: { activeRouteId: number }
     }
