@@ -18,7 +18,7 @@ const getTitle = (route: ActiveRoute, isBridgeTxn: boolean) => {
   if (route.routeStatus === 'in-progress')
     return isBridgeTxn ? 'Bridge request in progress' : 'Swap request in progress'
 
-  return isBridgeTxn ? 'Bridge request waiting to be signed' : 'Swap request waiting to be signed'
+  return isBridgeTxn ? 'Bridge request awaiting signature' : 'Swap request awaiting signature'
 }
 
 const getDescription = (route: ActiveRoute, isBridgeTxn: boolean) => {
