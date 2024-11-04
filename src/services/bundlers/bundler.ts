@@ -16,6 +16,11 @@ import { getRpcProvider } from '../provider'
 
 require('dotenv').config()
 
+function addExtra(gasInWei: bigint, percentageIncrease: bigint): string {
+  const percent = 100n / percentageIncrease
+  return toBeHex(gasInWei + gasInWei / percent)
+}
+
 export class Bundler {
   /**
    * The default pollWaitTime. This is used to determine
@@ -193,17 +198,22 @@ export class Bundler {
     const provider = getRpcProvider([url], network.chainId)
     const results = await provider.send('pimlico_getUserOperationGasPrice', [])
 
-    const apeMaxFee = BigInt(results.fast.maxFeePerGas) + BigInt(results.fast.maxFeePerGas) / 5n
-    const apePriority =
-      BigInt(results.fast.maxPriorityFeePerGas) + BigInt(results.fast.maxPriorityFeePerGas) / 5n
-
     return {
-      slow: results.slow,
-      medium: results.standard,
-      fast: results.fast,
+      slow: {
+        maxFeePerGas: addExtra(BigInt(results.slow.maxFeePerGas), 5n),
+        maxPriorityFeePerGas: addExtra(BigInt(results.slow.maxPriorityFeePerGas), 5n)
+      },
+      medium: {
+        maxFeePerGas: addExtra(BigInt(results.standard.maxFeePerGas), 7n),
+        maxPriorityFeePerGas: addExtra(BigInt(results.standard.maxPriorityFeePerGas), 7n)
+      },
+      fast: {
+        maxFeePerGas: addExtra(BigInt(results.fast.maxFeePerGas), 10n),
+        maxPriorityFeePerGas: addExtra(BigInt(results.fast.maxPriorityFeePerGas), 10n)
+      },
       ape: {
-        maxFeePerGas: toBeHex(apeMaxFee),
-        maxPriorityFeePerGas: toBeHex(apePriority)
+        maxFeePerGas: addExtra(BigInt(results.fast.maxFeePerGas), 20n),
+        maxPriorityFeePerGas: addExtra(BigInt(results.fast.maxPriorityFeePerGas), 20n)
       }
     }
   }
