@@ -35,11 +35,11 @@ const getDescription = (route: ActiveRoute, isBridgeTxn: boolean) => {
   }`
 
   const assetsText = `${steps[0].fromAsset.symbol} to ${steps[steps.length - 1].toAsset.symbol}`
-  const txnCountText = `(transaction ${
+  const stepsIndexText = `(step ${
     route.routeStatus === 'completed' ? route.route.totalUserTx : route.route.currentUserTxIndex + 1
   } of ${route.route.totalUserTx})`
 
-  return `${actionText} ${assetsText}${route.route.totalUserTx > 1 ? ` ${txnCountText}` : '.'}`
+  return `${actionText} ${assetsText}${route.route.totalUserTx > 1 ? ` ${stepsIndexText}` : '.'}`
 }
 
 export const getSwapAndBridgeBanners = (activeRoutes: ActiveRoute[]): Banner[] => {
