@@ -49,7 +49,7 @@ export const getSwapAndBridgeBanners = (activeRoutes: ActiveRoute[]): Banner[] =
 
     if (['in-progress', 'completed'].includes(r.routeStatus)) {
       actions.push({
-        label: 'Got it',
+        label: r.routeStatus === 'completed' ? 'Got it' : 'Close',
         actionName: 'close-swap-and-bridge',
         meta: { activeRouteId: r.activeRouteId }
       })
