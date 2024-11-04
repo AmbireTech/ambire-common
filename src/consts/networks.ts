@@ -66,8 +66,14 @@ const networks: Network[] = [
       is1559: true,
       elasticityMultiplier: 6n,
       baseFeeMaxChangeDenominator: 50n,
+      // increase the optimism base fee by 50% as it's too low atm
+      // this is to make sure we're getting a bit more than paying
+      // for the transaction
       feeIncrease: 50n,
       userOpFees: {
+        // increase the preVerificationGas by 30% on optimism as more
+        // often than not, the calculated preVerificationGas by the bundler
+        // is not good enough (too small) and the bundler ends up losing money
         preVerificationGas: 30n
       }
     },

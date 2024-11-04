@@ -16,6 +16,11 @@ import { getRpcProvider } from '../provider'
 
 require('dotenv').config()
 
+function addExtra(gasInWei: bigint, percentageIncrease: bigint): string {
+  const percent = 100n / percentageIncrease
+  return toBeHex(gasInWei + gasInWei / percent)
+}
+
 export class Bundler {
   /**
    * The default pollWaitTime. This is used to determine
@@ -192,33 +197,25 @@ export class Bundler {
     const url = `https://api.pimlico.io/v2/${network.chainId}/rpc?apikey=${process.env.REACT_APP_PIMLICO_API_KEY}`
     const provider = getRpcProvider([url], network.chainId)
     const results = await provider.send('pimlico_getUserOperationGasPrice', [])
-    results.ape = {
-      maxFeePerGas: results.fast.maxFeePerGas,
-      maxPriorityFeePerGas: results.fast.maxPriorityFeePerGas
-    }
 
-    // set bigger gas prices
-    // slow: increase by 5%
-    // medium: increase by 6.67%
-    // fast: increase by 10%
-    // ape: increase by 20%
-    const gasPrices: any = {}
-    Object.keys(results).forEach((key: any, index: number) => {
-      const up = BigInt((4 - index) * 5)
-
-      const finalKey = key !== 'standard' ? key : 'medium'
-
-      gasPrices[finalKey] = {
-        maxFeePerGas: toBeHex(
-          BigInt(results[key].maxFeePerGas) + BigInt(results[key].maxFeePerGas) / up
-        ),
-        maxPriorityFeePerGas: toBeHex(
-          BigInt(results[key].maxPriorityFeePerGas) + BigInt(results[key].maxPriorityFeePerGas) / up
-        )
+    return {
+      slow: {
+        maxFeePerGas: addExtra(BigInt(results.slow.maxFeePerGas), 5n),
+        maxPriorityFeePerGas: addExtra(BigInt(results.slow.maxPriorityFeePerGas), 5n)
+      },
+      medium: {
+        maxFeePerGas: addExtra(BigInt(results.standard.maxFeePerGas), 7n),
+        maxPriorityFeePerGas: addExtra(BigInt(results.standard.maxPriorityFeePerGas), 7n)
+      },
+      fast: {
+        maxFeePerGas: addExtra(BigInt(results.fast.maxFeePerGas), 10n),
+        maxPriorityFeePerGas: addExtra(BigInt(results.fast.maxPriorityFeePerGas), 10n)
+      },
+      ape: {
+        maxFeePerGas: addExtra(BigInt(results.fast.maxFeePerGas), 20n),
+        maxPriorityFeePerGas: addExtra(BigInt(results.fast.maxPriorityFeePerGas), 20n)
       }
-    })
-
-    return gasPrices
+    }
   }
 
   // used when catching errors from bundler requests
