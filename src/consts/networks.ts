@@ -65,11 +65,7 @@ const networks: Network[] = [
     feeOptions: {
       is1559: true,
       elasticityMultiplier: 6n,
-      baseFeeMaxChangeDenominator: 50n,
-      // increase the optimism base fee by 50% as it's too low atm
-      // this is to make sure we're getting a bit more than paying
-      // for the transaction
-      feeIncrease: 50n
+      baseFeeMaxChangeDenominator: 50n
     },
     isOptimistic: true,
     predefined: true,
@@ -121,8 +117,7 @@ const networks: Network[] = [
     features: [],
     feeOptions: {
       is1559: true,
-      minBaseFee: 100000000n, // 1 gwei
-      feeIncrease: 10n
+      minBaseFee: 100000000n // 1 gwei
     },
     predefined: true,
     wrappedAddr: '0x82af49447d8a07e3bd95bd0d56f35241523fbab1'
@@ -150,8 +145,7 @@ const networks: Network[] = [
     features: [],
     feeOptions: {
       is1559: true,
-      minBaseFeeEqualToLastBlock: true,
-      feeIncrease: 10n
+      minBaseFeeEqualToLastBlock: true
     },
     predefined: true,
     wrappedAddr: '0x4200000000000000000000000000000000000006'
