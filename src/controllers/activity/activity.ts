@@ -617,7 +617,7 @@ export class ActivityController extends EventEmitter {
                   addr: accountOp.accountAddr,
                   network: accountOp.networkId,
                   timestamp: accountOp.timestamp,
-                  isReject: true
+                  isHideStyle: true
                 }
               },
               {

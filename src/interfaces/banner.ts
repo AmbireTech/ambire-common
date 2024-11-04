@@ -80,9 +80,9 @@ export type Action =
       meta: { activeRouteId: number }
     }
   | {
-      label: 'Close'
+      label: 'Hide'
       actionName: 'hide-activity-banner'
-      meta: { timestamp: number; addr: string; network: string; isReject: boolean }
+      meta: { timestamp: number; addr: string; network: string; isHideStyle: boolean }
     }
   | {
       label: 'Check'
