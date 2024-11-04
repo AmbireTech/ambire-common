@@ -80,12 +80,14 @@ export async function getUniV3Positions(
         network: network.name,
         assets: [
           {
+            address: pos.positionInfo.token0,
             symbol: pos.token0Symbol,
             decimals: pos.token0Decimals,
             amount: BigInt(tokenAmounts.amount0),
             type: AssetType.Liquidity
           },
           {
+            address: pos.positionInfo.token1,
             symbol: pos.token1Symbol,
             decimals: pos.token1Decimals,
             amount: BigInt(tokenAmounts.amount1),

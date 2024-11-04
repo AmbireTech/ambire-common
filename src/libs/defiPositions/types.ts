@@ -5,6 +5,7 @@ export enum AssetType {
 }
 
 export interface PositionAsset {
+  address: string
   symbol: string
   decimals: number
   amount: number
