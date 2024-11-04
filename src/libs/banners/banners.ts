@@ -6,64 +6,76 @@ import { Account, AccountId } from '../../interfaces/account'
 import { Action, Banner } from '../../interfaces/banner'
 import { Network, NetworkId } from '../../interfaces/network'
 import { RPCProviders } from '../../interfaces/provider'
-import { ActiveRoute } from '../../interfaces/swapAndBridge'
+import { ActiveRoute, SocketAPIUserTx } from '../../interfaces/swapAndBridge'
 import { getNetworksWithFailedRPC } from '../networks/networks'
 import { PORTFOLIO_LIB_ERROR_NAMES } from '../portfolio/portfolio'
-import { getQuoteRouteSteps } from '../swapAndBridge/swapAndBridge'
+import { getIsBridgeTxn, getQuoteRouteSteps } from '../swapAndBridge/swapAndBridge'
+
+const getTitle = (route: ActiveRoute, isBridgeTxn: boolean) => {
+  if (route.routeStatus === 'completed')
+    return isBridgeTxn ? 'Bridge request completed' : 'Swap request completed'
+
+  if (route.routeStatus === 'in-progress')
+    return isBridgeTxn ? 'Bridge request in progress' : 'Swap request in progress'
+
+  return isBridgeTxn ? 'Bridge request waiting to be signed' : 'Swap request waiting to be signed'
+}
+
+const getDescription = (route: ActiveRoute, isBridgeTxn: boolean) => {
+  const steps = getQuoteRouteSteps(route.route.userTxs)
+
+  const actionText = `${
+    route.routeStatus === 'completed'
+      ? isBridgeTxn
+        ? 'Bridged'
+        : 'Swapped'
+      : isBridgeTxn
+      ? 'Bridging'
+      : 'Swapping'
+  }`
+
+  const assetsText = `${steps[0].fromAsset.symbol} to ${steps[steps.length - 1].toAsset.symbol}`
+  const txnCountText = `- (Transaction ${
+    route.routeStatus === 'completed' ? route.route.totalUserTx : route.route.currentUserTxIndex + 1
+  } of ${route.route.totalUserTx})`
+
+  return `${actionText} ${assetsText}${route.route.totalUserTx > 1 ? ` ${txnCountText}` : '.'}`
+}
 
 export const getSwapAndBridgeBanners = (activeRoutes: ActiveRoute[]): Banner[] => {
-  const getTitle = (route: ActiveRoute) => {
-    if (route.routeStatus === 'completed') return 'Swap & Bridge Route Completed'
-    if (route.routeStatus === 'in-progress') return 'Swap & Bridge Route In Progress'
-    return 'Pending Swap & Bridge Route'
-  }
-
-  const getDescription = (route: ActiveRoute) => {
-    const userTxTypes = route.route.userTxs.map((t) => t.userTxType)
-    const type = userTxTypes.includes('fund-movr') ? 'Bridging' : 'Swapping'
-    const steps = getQuoteRouteSteps(route.route.userTxs)
-
-    return `${type} ${steps[0].fromAsset.symbol} to ${
-      steps[steps.length - 1].toAsset.symbol
-    } - (Transaction ${
-      route.routeStatus === 'completed'
-        ? route.route.totalUserTx
-        : route.route.currentUserTxIndex + 1
-    } of ${route.route.totalUserTx})`
-  }
-
   return activeRoutes.map((r) => {
-    const actions: Action[] =
-      r.routeStatus === 'completed'
-        ? [
-            {
-              label: 'Got it',
-              actionName: 'close-swap-and-bridge',
-              meta: { activeRouteId: r.activeRouteId }
-            }
-          ]
-        : [
-            {
-              label: 'Reject',
-              actionName: 'reject-swap-and-bridge',
-              meta: { activeRouteId: r.activeRouteId }
-            }
-          ]
+    const isBridgeTxn = r.route.userTxs.some((t) => getIsBridgeTxn(t.userTxType))
+    const actions: Action[] = []
 
-    if (r.routeStatus === 'ready') {
+    if (['in-progress', 'completed'].includes(r.routeStatus)) {
       actions.push({
-        label: 'Proceed to Next Step',
-        actionName: 'proceed-swap-and-bridge',
+        label: 'Got it',
+        actionName: 'close-swap-and-bridge',
         meta: { activeRouteId: r.activeRouteId }
       })
+    }
+
+    if (r.routeStatus === 'ready') {
+      actions.push(
+        {
+          label: 'Reject',
+          actionName: 'reject-swap-and-bridge',
+          meta: { activeRouteId: r.activeRouteId }
+        },
+        {
+          label: isBridgeTxn ? 'Proceed to Next Step' : 'Open',
+          actionName: 'proceed-swap-and-bridge',
+          meta: { activeRouteId: r.activeRouteId }
+        }
+      )
     }
 
     return {
       id: r.activeRouteId,
       type: r.routeStatus === 'completed' ? 'success' : 'info',
       category: `swap-and-bridge-${r.routeStatus}`,
-      title: getTitle(r),
-      text: getDescription(r),
+      title: getTitle(r, isBridgeTxn),
+      text: getDescription(r, isBridgeTxn),
       actions
     }
   })
