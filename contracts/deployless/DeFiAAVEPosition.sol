@@ -254,7 +254,7 @@ contract AAVEPosition {
                 ReserveData memory reserveData = IPOOL(poolAddress).getReserveData(reserves[i]);    
                 uint256 price = IAaveOracle(priceOralceAddr).getAssetPrice(reserves[i]);
                 TokenFromBalance memory aToken;
-                aToken.addr = reserves[i];
+                aToken.addr = reserveData.aTokenAddress;
                 aToken.balance = IATOKEN(reserveData.aTokenAddress).balanceOf(userAddr);
                 aToken.symbol = getTokenSymbol(reserves[i]);
                 aToken.decimals = IATOKEN(reserveData.aTokenAddress).decimals();
@@ -269,7 +269,7 @@ contract AAVEPosition {
                 ReserveDataIronclad memory reserveData = IPOOLIronclad(poolAddress).getReserveData(reserves[i]);    
                 uint256 price = IAaveOracle(priceOralceAddr).getAssetPrice(reserves[i]);
                 TokenFromBalance memory aToken;
-                aToken.addr = reserves[i];
+                aToken.addr = reserveData.aTokenAddress;
                 aToken.balance = IATOKEN(reserveData.aTokenAddress).balanceOf(userAddr);
                 aToken.symbol = getTokenSymbol(reserves[i]);
                 aToken.decimals = IATOKEN(reserveData.aTokenAddress).decimals();

@@ -23,6 +23,7 @@
     "uuid": "9.0.0"
   },
   "peerDependencies": {
+    "@types/uuid": "9.0.0",
     "@ambire/signature-validator": "^1.0.3",
     "@ensdomains/eth-ens-namehash": "^2.0.15",
     "@ethersproject/abstract-signer": "^5.7.0",
