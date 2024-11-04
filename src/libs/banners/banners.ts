@@ -56,7 +56,7 @@ export const getSwapAndBridgeBanners = (activeRoutes: ActiveRoute[]): Banner[] =
     }
 
     if (r.routeStatus === 'ready') {
-      const isNextTnxForBridging = isBridgeTxn && r.route.currentUserTxIndex > 1
+      const isNextTnxForBridging = isBridgeTxn && r.route.currentUserTxIndex >= 1
 
       actions.push(
         {
