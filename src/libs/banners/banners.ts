@@ -35,7 +35,7 @@ const getDescription = (route: ActiveRoute, isBridgeTxn: boolean) => {
   }`
 
   const assetsText = `${steps[0].fromAsset.symbol} to ${steps[steps.length - 1].toAsset.symbol}`
-  const txnCountText = `- (Transaction ${
+  const txnCountText = `(transaction ${
     route.routeStatus === 'completed' ? route.route.totalUserTx : route.route.currentUserTxIndex + 1
   } of ${route.route.totalUserTx})`
 
@@ -56,6 +56,8 @@ export const getSwapAndBridgeBanners = (activeRoutes: ActiveRoute[]): Banner[] =
     }
 
     if (r.routeStatus === 'ready') {
+      const isNextTnxForBridging = isBridgeTxn && r.route.currentUserTxIndex > 1
+
       actions.push(
         {
           label: 'Reject',
@@ -63,7 +65,7 @@ export const getSwapAndBridgeBanners = (activeRoutes: ActiveRoute[]): Banner[] =
           meta: { activeRouteId: r.activeRouteId }
         },
         {
-          label: isBridgeTxn ? 'Proceed to Next Step' : 'Open',
+          label: isNextTnxForBridging ? 'Proceed to Next Step' : 'Open',
           actionName: 'proceed-swap-and-bridge',
           meta: { activeRouteId: r.activeRouteId }
         }
