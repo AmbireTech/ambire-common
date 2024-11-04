@@ -6,7 +6,12 @@ import { HumanizerCallModule, IrCall } from '../../interfaces'
 import { getAction, getAddressVisualization, getImage, getLabel } from '../../utils'
 
 const ONCHAIN_TXNS_LEGENDS_ADDRESS = '0x1415926535897932384626433832795028841971'
-const NFT_CONTRACT_ADDRESS = '0x52d067EBB7b06F31AEB645Bd34f92c3Ac13a29ea'
+const OLD_AND_CURRENT_LEGENDS_NFT_ADDRESSES = [
+  '0x52d067EBB7b06F31AEB645Bd34f92c3Ac13a29ea',
+  '0xcfbAec203431045E9589F70375AC5F529EE55511',
+  '0xF51dF52d0a9BEeB7b6E4B6451e729108a115B863'
+]
+
 const legendsModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]) => {
   const iface = new Interface(Legends)
   const characterTypes = [
@@ -29,6 +34,10 @@ const legendsModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]) =
     {
       type: 'Penguin Paladin',
       image: 'https://staging-relayer.ambire.com/legends/nft-image/avatar/penguin-lvl0.png'
+    },
+    {
+      type: 'Orc Warrior',
+      image: 'https://staging-relayer.ambire.com/legends/nft-image/avatar/orc-lvl0.png'
     }
   ]
   const matcher = {
@@ -37,8 +46,8 @@ const legendsModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]) =
 
       return [
         getAction('Pick character'),
-        getImage(characterTypes[heroType].image),
-        getLabel(characterTypes[heroType].type || 'Unknown', true),
+        getImage(characterTypes[heroType]?.image),
+        getLabel(characterTypes[heroType]?.type || 'Unknown', true),
         getLabel('for Ambire Legends')
       ]
     },
@@ -72,7 +81,9 @@ const legendsModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]) =
   }
   const newCalls = calls.map((call) => {
     if (
-      ![ONCHAIN_TXNS_LEGENDS_ADDRESS, NFT_CONTRACT_ADDRESS].includes(getAddress(call.to)) ||
+      ![ONCHAIN_TXNS_LEGENDS_ADDRESS, ...OLD_AND_CURRENT_LEGENDS_NFT_ADDRESSES].includes(
+        getAddress(call.to)
+      ) ||
       !matcher[call.data.slice(0, 10)]
     )
       return call
