@@ -102,7 +102,7 @@ export class DefiPositionsController extends EventEmitter {
 
           const existingAddresses = new Set(acc[networkId].assets.map((asset) => asset.address))
           assets.forEach((asset) => {
-            if (!existingAddresses.has(asset.address)) {
+            if (!existingAddresses.has(asset.address) && !asset.priceIn) {
               acc[networkId].assets.push(asset)
               existingAddresses.add(asset.address) // Mark this address as added
             }
@@ -138,6 +138,7 @@ export class DefiPositionsController extends EventEmitter {
             if (pos.networkId !== networkId) return pos
 
             const updatedAssets = pos.assets.map((asset) => {
+              if (!body[asset.address.toLowerCase()]) return asset
               const updatedAsset = { ...asset }
 
               updatedAsset.priceIn = Object.entries(body[asset.address.toLowerCase()]).map(

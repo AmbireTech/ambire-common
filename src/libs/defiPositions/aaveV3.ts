@@ -5,7 +5,7 @@ import DeFiPositionsDeploylessCode from '../../../contracts/compiled/DeFiAAVEPos
 import { Network } from '../../interfaces/network'
 import { fromDescriptor } from '../deployless/deployless'
 import { AAVE_V3 } from './defiAddresses'
-import { AssetType, Position } from './types'
+import { AssetType, Position, PositionAsset } from './types'
 
 const AAVE_NO_HEALTH_FACTOR_MAGIC_NUMBER =
   115792089237316195423570985008687907853269984665640564039457584007913129639935n
@@ -93,6 +93,7 @@ export async function getAAVEPositions(
       symbol: asset.symbol,
       decimals: Number(asset.decimals),
       amount: asset.balance || asset.borrowAssetBalance || asset.stableBorrowAssetBalance,
+      priceIn: [{ baseCurrency: 'usd', price }],
       type: asset.balance > 0 ? AssetType.Collateral : AssetType.Borrow,
       additionalData: {
         APY:
@@ -100,7 +101,7 @@ export async function getAAVEPositions(
             ? Number(asset.currentLiquidityRate) / 10 ** 25
             : Number(asset.currentVariableBorrowRate) / 10 ** 25
       }
-    }
+    } as PositionAsset
   })
 
   positions = positions.filter((p) => p.additionalData.positionInUSD !== 0)
