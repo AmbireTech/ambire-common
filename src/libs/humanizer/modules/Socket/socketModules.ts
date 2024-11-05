@@ -3,7 +3,7 @@ import { Interface, ZeroAddress } from 'ethers'
 
 import { AccountOp } from '../../../accountOp/accountOp'
 import { SocketViaAcross } from '../../const/abis'
-import { HumanizerCallModule, IrCall } from '../../interfaces'
+import { HumanizerCallModule, HumanizerVisualization, IrCall } from '../../interfaces'
 import {
   eToNative,
   getAction,
@@ -43,7 +43,9 @@ export const SocketModule: HumanizerCallModule = (accountOp: AccountOp, irCalls:
     'function bridgeERC20To(uint256,bytes32,address,address,uint256,uint32,uint256)',
     'function bridgeERC20To(uint256 amount, (uint256 toChainId, uint256 slippage, uint256 relayerFee, uint32 dstChainDomain, address token, address receiverAddress, bytes32 metadata, bytes callData, address delegate) connextBridgeData)',
     'function transformERC20(address inputToken, address outputToken, uint256 inputTokenAmount, uint256 minOutputTokenAmount, (uint32,bytes)[] transformations)',
-    'function swapAndBridge(uint32 swapId, bytes swapData, tuple(uint256 toChainId, uint256 slippage, uint256 relayerFee, uint32 dstChainDomain, address receiverAddress, bytes32 metadata, bytes callData, address delegate) connextBridgeData)'
+    'function swapAndBridge(uint32 swapId, bytes swapData, tuple(uint256 toChainId, uint256 slippage, uint256 relayerFee, uint32 dstChainDomain, address receiverAddress, bytes32 metadata, bytes callData, address delegate) connextBridgeData)',
+    'function swapAndBridge(uint32 swapId, bytes calldata swapData, tuple (address receiverAddress,address senderAddress,uint256 value,uint256 srcPoolId,uint256 dstPoolId,uint256 minReceivedAmt,uint256 destinationGasLimit,bool isNativeSwapRequired,uint16 stargateDstChainId,uint32 swapId,bytes swapData,bytes32 metadata,bytes destinationPayload) acrossBridgeData) payable'
+    // 'function performActionWithIn(address fromToken, address toToken, uint256 amount, bytes32 metadata, bytes swapExtraData) payable returns (uint256, address)'
   ])
   const matcher = {
     [`${
@@ -514,6 +516,66 @@ export const SocketModule: HumanizerCallModule = (accountOp: AccountOp, irCalls:
           ...(chainId ? [getLabel('on'), getChain(chainId)] : []),
           ...getRecipientText(accountOp.accountAddr, receiverAddress)
         ].filter((x) => x)
+      }
+    },
+    [`${
+      iface.getFunction(
+        'swapAndBridge(uint32 swapId, bytes calldata swapData, tuple (address receiverAddress,address senderAddress,uint256 value,uint256 srcPoolId,uint256 dstPoolId,uint256 minReceivedAmt,uint256 destinationGasLimit,bool isNativeSwapRequired,uint16 stargateDstChainId,uint32 swapId,bytes swapData,bytes32 metadata,bytes destinationPayload) acrossBridgeData)'
+      )?.selector
+    }`]: (call: IrCall): IrCall => {
+      const {
+        swapId,
+        swapData,
+        acrossBridgeData: {
+          receiverAddress,
+          senderAddress,
+          value,
+          srcPoolId,
+          dstPoolId,
+          minReceivedAmt,
+          destinationGasLimit,
+          isNativeSwapRequired,
+          stargateDstChainId,
+          swapId: innerSwapId,
+          swapData: innerSwapData,
+          metadata,
+          destinationPayload
+        }
+      } = iface.parseTransaction(call)!.args
+
+      const dstChain: HumanizerVisualization[] = []
+      const tokensData: HumanizerVisualization[] = []
+      if (STARGATE_CHAIN_IDS[stargateDstChainId])
+        dstChain.push(getChain(STARGATE_CHAIN_IDS[stargateDstChainId]))
+      if (
+        swapData.startsWith(
+          iface.getFunction(
+            'performActionWithIn(address fromToken, address toToken, uint256 amount, bytes32 metadata, bytes swapExtraData) payable returns (uint256, address)'
+          )?.selector
+        )
+      ) {
+        const {
+          fromToken,
+          toToken,
+          amount,
+          metadata: newMeta,
+          swapExtraData
+        } = iface.parseTransaction({
+          ...call,
+          data: swapData
+        })!.args
+        tokensData.push(getToken(fromToken, amount), getLabel('to'), getToken(toToken, value))
+      }
+
+      return {
+        ...call,
+        fullVisualization: [
+          getAction('Bridge'),
+          ...tokensData,
+          getLabel('to'),
+          ...dstChain,
+          ...getRecipientText(senderAddress, receiverAddress)
+        ]
       }
     }
   }
