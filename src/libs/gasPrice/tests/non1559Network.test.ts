@@ -7,7 +7,7 @@ import MockProvider from './MockProvider'
 const network = networks.find((net) => net.id === 'ethereum')!
 
 describe('1559 Network gas price tests', () => {
-  test('should return 0n for gasPrice on an empty block', async () => {
+  test('should NOT return 0n for gasPrice on an empty block as we have a provider back up', async () => {
     const params = {
       baseFeePerGas: null,
       transactions: []
@@ -16,13 +16,13 @@ describe('1559 Network gas price tests', () => {
     const gasPriceData = await getGasPriceRecommendations(provider, network)
     const gasPrice = gasPriceData.gasPrice
     const slow: any = gasPrice[0]
-    expect(slow.gasPrice).toBe(0n)
+    expect(slow.gasPrice).toBe(100n)
     const medium: any = gasPrice[1]
-    expect(medium.gasPrice).toBe(0n)
+    expect(medium.gasPrice).toBe(105n)
     const fast: any = gasPrice[2]
-    expect(fast.gasPrice).toBe(0n)
+    expect(fast.gasPrice).toBe(110n)
     const ape: any = gasPrice[3]
-    expect(ape.gasPrice).toBe(0n)
+    expect(ape.gasPrice).toBe(120n)
   })
   test('should return the lowest maxPriorityFeePerGas for a block with less than 4 txns', async () => {
     const params = {
