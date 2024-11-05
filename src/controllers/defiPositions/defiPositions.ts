@@ -99,12 +99,11 @@ export class DefiPositionsController extends EventEmitter {
           ) as PositionsByProvider[]
         }
         await this.#setAssetPrices(selectedAccountAddr, n.id)
+        this.emitUpdate()
       })
     } catch (error) {
       console.error('updatePositions error:', error)
       // TODO: set a proper error
-    } finally {
-      this.emitUpdate()
     }
   }
 
