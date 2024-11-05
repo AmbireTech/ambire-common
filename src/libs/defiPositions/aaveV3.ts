@@ -83,21 +83,52 @@ export async function getAAVEPositions(
     position.additionalData.deptInUSD += stableBorrow * price
     position.additionalData.collateralInUSD += balance * price
 
-    return {
-      address: asset.address,
-      symbol: asset.symbol,
-      decimals: Number(asset.decimals),
-      amount: asset.balance || asset.borrowAssetBalance || asset.stableBorrowAssetBalance,
-      priceIn: [{ baseCurrency: 'usd', price }],
-      type: asset.balance > 0 ? AssetType.Collateral : AssetType.Borrow,
-      additionalData: {
-        APY:
-          asset.balance > 0
-            ? Number(asset.currentLiquidityRate) / 10 ** 25
-            : Number(asset.currentVariableBorrowRate) / 10 ** 25
-      }
-    } as PositionAsset
-  })
+    const result = []
+    
+    if (asset.balance > 0) {
+      result.push({
+        address: asset.address,
+        symbol: asset.symbol,
+        decimals: asset.decimals,
+        amount: asset.balance,
+        priceIn: [{ baseCurrency: 'usd', price }],
+        type: AssetType.Collateral,
+        additionalData: {
+          APY: Number(asset.currentLiquidityRate) / 10 ** 25
+        }
+      } as PositionAsset)
+    }
+
+    if (asset.stableBorrowAssetBalanc > 0) {
+      result.push({
+        address: asset.address,
+        symbol: asset.symbol,
+        decimals: asset.decimals,
+        amount: asset.stableBorrowAssetBalanc,
+        priceIn: [{ baseCurrency: 'usd', price }],
+        type: AssetType.Borrow,
+        additionalData: {
+          APY: Number(asset.currentStableBorrowRate) / 10 ** 25
+        }
+      } as PositionAsset)
+    }
+
+    if (asset.borrowAssetBalance > 0) {
+      result.push({
+        address: asset.address,
+        symbol: asset.symbol,
+        decimals: asset.decimals,
+        amount: asset.borrowAssetBalance,
+        priceIn: [{ baseCurrency: 'usd', price }],
+        type: AssetType.Borrow,
+        additionalData: {
+          APY: Number(asset.currentVariableBorrowRate) / 10 ** 25
+        }
+      } as PositionAsset)
+    }
+
+    return result
+  }).flat()
 
   if (position.additionalData.positionInUSD === 0 || !position.assets.length) return null
 
