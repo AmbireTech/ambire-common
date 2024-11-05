@@ -83,7 +83,7 @@ import { AccountOpAction, ActionsController, SignMessageAction } from '../action
 import { ActivityController } from '../activity/activity'
 import { AddressBookController } from '../addressBook/addressBook'
 import { DappsController } from '../dapps/dapps'
-import { DefiPositionsController } from '../defiPositions/defiPostions'
+import { DefiPositionsController } from '../defiPositions/defiPositions'
 import { DomainsController } from '../domains/domains'
 import { EmailVaultController } from '../emailVault/emailVault'
 import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter'
