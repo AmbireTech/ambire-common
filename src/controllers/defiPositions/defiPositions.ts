@@ -81,8 +81,69 @@ export class DefiPositionsController extends EventEmitter {
       // TODO: set a proper error
     }
 
+    await this.#setAssetPrices()
+
     this.updateDefiPositionsStatus = 'INITIAL'
     this.emitUpdate()
+  }
+
+  async #setAssetPrices() {
+    const mergedPositionsByNetwork = Object.values(
+      this.positions.reduce(
+        (
+          acc: { [key: string]: { network: Position['network']; assets: Position['assets'] } },
+          { network, assets }
+        ) => {
+          if (!acc[network]) acc[network] = { network, assets: [] }
+
+          const existingAddresses = new Set(acc[network].assets.map((asset) => asset.address))
+          assets.forEach((asset) => {
+            if (!existingAddresses.has(asset.address)) {
+              acc[network].assets.push(asset)
+              existingAddresses.add(asset.address) // Mark this address as added
+            }
+          })
+
+          return acc
+        },
+        {}
+      )
+    )
+
+    const dedup = (x: any[]) => x.filter((y, i) => x.indexOf(y) === i)
+    const cenaUrls = mergedPositionsByNetwork.map((pos) => ({
+      networkId: pos.network.toLowerCase(),
+      url: `https://cena.ambire.com/api/v3/simple/token_price/${pos.network.toLowerCase()}?contract_addresses=${dedup(
+        pos.assets.map((a) => a.address)
+      ).join('%2C')}&vs_currencies=usd`
+    }))
+
+    await Promise.all(
+      cenaUrls.map(async ({ url, networkId }) => {
+        try {
+          const resp = await fetch(url)
+          const body = await resp.json()
+          if (resp.status !== 200) throw body
+          // eslint-disable-next-line no-prototype-builtins
+          if (body.hasOwnProperty('message')) throw body
+          // eslint-disable-next-line no-prototype-builtins
+          if (body.hasOwnProperty('error')) throw body
+
+          this.positions = this.positions.map((pos) => {
+            if (pos.network.toLowerCase() !== networkId) return pos
+            return {
+              ...pos,
+              assets: pos.assets.map((a) => ({
+                ...a,
+                additionalData: { ...a.additionalData, priceIn: body[a.address.toLowerCase()] }
+              }))
+            }
+          })
+        } catch (error) {
+          console.error(error)
+        }
+      })
+    )
   }
 
   toJSON() {
