@@ -7,6 +7,9 @@ import { fromDescriptor } from '../deployless/deployless'
 import { AAVE_V3 } from './defiAddresses'
 import { AssetType, Position } from './types'
 
+const AAVE_NO_HEALTH_FACTOR_MAGIC_NUMBER =
+  115792089237316195423570985008687907853269984665640564039457584007913129639935n
+
 export async function getAAVEPositions(
   userAddr: string,
   provider: Provider | JsonRpcProvider,
@@ -52,13 +55,17 @@ export async function getAAVEPositions(
     healthFactor: accountDataRes[5]
   }
 
+  if (accountData.healthFactor === AAVE_NO_HEALTH_FACTOR_MAGIC_NUMBER) {
+    accountData.healthFactor = null
+  }
+
   let positions: Position[] = [
     {
       providerName: 'AAVE v3',
       positionType: 'Lending',
       additionalData: {
         positionId: uuidv4(),
-        healthRate: Number(accountData.healthFactor) / 1e18,
+        healthRate: accountData.healthFactor ? Number(accountData.healthFactor) / 1e18 : null,
         positionInUSD: 0,
         deptInUSD: 0,
         collateralInUSD: 0,
