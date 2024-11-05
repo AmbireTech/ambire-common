@@ -3,7 +3,6 @@ import { TypedDataDomain, TypedDataField } from 'ethers'
 
 import { AccountId } from './account'
 import { DappProviderRequest } from './dapp'
-import { HumanizerFragment } from './humanizer'
 import { NetworkId } from './network'
 
 export interface Calls {
@@ -34,9 +33,6 @@ export interface Message {
   networkId: NetworkId
   content: PlainTextMessage | TypedMessage
   signature: string | null
-  // those are the async non global data fragments that are obtained via the humanizer and stored
-  // in the Message so we can visualize it better and fatter later
-  humanizerFragments?: HumanizerFragment[]
 }
 
 export interface SignUserRequest {
