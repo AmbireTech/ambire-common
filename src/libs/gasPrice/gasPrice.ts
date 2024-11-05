@@ -167,7 +167,6 @@ export async function getGasPriceRecommendations(
   blockTag: string | number = -1
 ): Promise<{ gasPrice: GasRecommendation[]; blockGasLimit: bigint }> {
   const lastBlock = await refetchBlock(provider, blockTag)
-
   // https://github.com/ethers-io/ethers.js/issues/3683#issuecomment-1436554995
   const txns = lastBlock.prefetchedTransactions
 

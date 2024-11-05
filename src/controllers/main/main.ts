@@ -1604,12 +1604,6 @@ export class MainController extends EventEmitter {
       bundlerFetch()
     ])
 
-    console.log('the gas price data')
-    console.log(gasPriceData)
-
-    console.log('bundler gas')
-    console.log(bundlerGas)
-
     if (gasPriceData && gasPriceData.gasPrice) this.gasPrices[network.id] = gasPriceData.gasPrice
     if (bundlerGas) this.bundlerGasPrices[network.id] = bundlerGas
 
