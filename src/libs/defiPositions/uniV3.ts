@@ -4,14 +4,14 @@ import DeFiPositionsDeploylessCode from '../../../contracts/compiled/DeFiUniswap
 import { Network } from '../../interfaces/network'
 import { fromDescriptor } from '../deployless/deployless'
 import { UNISWAP_V3 } from './defiAddresses'
-import { AssetType, Position } from './types'
+import { AssetType, Position, PositionsByProvider } from './types'
 import { uniV3DataToPortfolioPosition } from './univ3Math'
 
 export async function getUniV3Positions(
   userAddr: string,
   provider: Provider | JsonRpcProvider,
   network: Network
-): Promise<Position[] | null> {
+): Promise<PositionsByProvider | null> {
   const networkId = network.id
   if (networkId && !UNISWAP_V3[networkId as keyof typeof UNISWAP_V3]) return null
 
@@ -70,14 +70,11 @@ export async function getUniV3Positions(
         pos.positionInfo.tickUpper
       )
       return {
-        providerName: 'Uniswap V3',
-        positionType: 'Liquidity Pool',
+        id: pos.positionId.toString(),
         additionalData: {
           inRange: tokenAmounts.isInRage,
-          liquidity: pos.positionInfo.liquidity,
-          positionId: pos.positionId.toString()
+          liquidity: pos.positionInfo.liquidity
         },
-        networkId: network.id,
         assets: [
           {
             address: pos.positionInfo.token0,
@@ -98,5 +95,13 @@ export async function getUniV3Positions(
     })
     .filter((p: Position) => p.additionalData.liquidity !== BigInt(0))
 
-  return positions
+  if (positions.length === 0) return null
+
+  return {
+    providerName: 'Uniswap V3',
+    networkId,
+    type: 'liquidity-pool',
+    positions,
+    positionInUSD: 0 // @TODO
+  }
 }

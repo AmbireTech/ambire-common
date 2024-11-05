@@ -5,7 +5,7 @@ import DeFiPositionsDeploylessCode from '../../../contracts/compiled/DeFiAAVEPos
 import { Network } from '../../interfaces/network'
 import { fromDescriptor } from '../deployless/deployless'
 import { AAVE_V3 } from './defiAddresses'
-import { AssetType, Position, PositionAsset } from './types'
+import { AssetType, PositionAsset, PositionsByProvider } from './types'
 
 const AAVE_NO_HEALTH_FACTOR_MAGIC_NUMBER =
   115792089237316195423570985008687907853269984665640564039457584007913129639935n
@@ -14,7 +14,7 @@ export async function getAAVEPositions(
   userAddr: string,
   provider: Provider | JsonRpcProvider,
   network: Network
-): Promise<Position[] | null> {
+): Promise<PositionsByProvider | null> {
   const networkId = network.id
   if (networkId && !AAVE_V3[networkId as keyof typeof AAVE_V3]) return null
 
@@ -59,34 +59,29 @@ export async function getAAVEPositions(
     accountData.healthFactor = null
   }
 
-  let positions: Position[] = [
-    {
-      providerName: 'AAVE v3',
-      positionType: 'Lending',
-      additionalData: {
-        positionId: uuidv4(),
-        healthRate: accountData.healthFactor ? Number(accountData.healthFactor) / 1e18 : null,
-        positionInUSD: 0,
-        deptInUSD: 0,
-        collateralInUSD: 0,
-        availableBorrowInUSD: Number(accountData.availableBorrowsBase) / 1e8
-      },
-      networkId: network.id,
-      assets: []
-    }
-  ]
+  const position = {
+    id: uuidv4(),
+    additionalData: {
+      healthRate: accountData.healthFactor ? Number(accountData.healthFactor) / 1e18 : null,
+      positionInUSD: 0,
+      deptInUSD: 0,
+      collateralInUSD: 0,
+      availableBorrowInUSD: Number(accountData.availableBorrowsBase) / 1e8
+    },
+    assets: []
+  }
 
-  positions[0].assets = userAssets.map((asset: any) => {
+  position.assets = userAssets.map((asset: any) => {
     const balance = Number(asset.balance) / 10 ** Number(asset.decimals)
     const price = Number(asset.price) / 1e8
     const borrow = (Number(asset.borrowAssetBalance) / 10 ** Number(asset.decimals)) * -1
     const stableBorrow =
       (Number(asset.stableBorrowAssetBalance) / 10 ** Number(asset.decimals)) * -1
 
-    positions[0].additionalData.positionInUSD += (balance + borrow + stableBorrow) * price
-    positions[0].additionalData.deptInUSD += borrow * price
-    positions[0].additionalData.deptInUSD += stableBorrow * price
-    positions[0].additionalData.collateralInUSD += balance * price
+    position.additionalData.positionInUSD += (balance + borrow + stableBorrow) * price
+    position.additionalData.deptInUSD += borrow * price
+    position.additionalData.deptInUSD += stableBorrow * price
+    position.additionalData.collateralInUSD += balance * price
 
     return {
       address: asset.address,
@@ -104,7 +99,13 @@ export async function getAAVEPositions(
     } as PositionAsset
   })
 
-  positions = positions.filter((p) => p.additionalData.positionInUSD !== 0)
+  if (position.additionalData.positionInUSD === 0 || !position.assets.length) return null
 
-  return positions.length ? positions : null
+  return {
+    providerName: 'AAVE v3',
+    networkId,
+    type: 'lending',
+    positions: [position],
+    positionInUSD: position.additionalData.positionInUSD
+  }
 }
