@@ -71,64 +71,66 @@ export async function getAAVEPositions(
     assets: []
   }
 
-  position.assets = userAssets.map((asset: any) => {
-    const balance = Number(asset.balance) / 10 ** Number(asset.decimals)
-    const price = Number(asset.price) / 1e8
-    const borrow = (Number(asset.borrowAssetBalance) / 10 ** Number(asset.decimals)) * -1
-    const stableBorrow =
-      (Number(asset.stableBorrowAssetBalance) / 10 ** Number(asset.decimals)) * -1
+  position.assets = userAssets
+    .map((asset: any) => {
+      const balance = Number(asset.balance) / 10 ** Number(asset.decimals)
+      const price = Number(asset.price) / 1e8
+      const borrow = (Number(asset.borrowAssetBalance) / 10 ** Number(asset.decimals)) * -1
+      const stableBorrow =
+        (Number(asset.stableBorrowAssetBalance) / 10 ** Number(asset.decimals)) * -1
 
-    position.additionalData.positionInUSD += (balance + borrow + stableBorrow) * price
-    position.additionalData.deptInUSD += borrow * price
-    position.additionalData.deptInUSD += stableBorrow * price
-    position.additionalData.collateralInUSD += balance * price
+      position.additionalData.positionInUSD += (balance + borrow + stableBorrow) * price
+      position.additionalData.deptInUSD += borrow * price
+      position.additionalData.deptInUSD += stableBorrow * price
+      position.additionalData.collateralInUSD += balance * price
 
-    const result = []
-    
-    if (asset.balance > 0) {
-      result.push({
-        address: asset.address,
-        symbol: asset.symbol,
-        decimals: asset.decimals,
-        amount: asset.balance,
-        priceIn: [{ baseCurrency: 'usd', price }],
-        type: AssetType.Collateral,
-        additionalData: {
-          APY: Number(asset.currentLiquidityRate) / 10 ** 25
-        }
-      } as PositionAsset)
-    }
+      const assetsResult = []
 
-    if (asset.stableBorrowAssetBalanc > 0) {
-      result.push({
-        address: asset.address,
-        symbol: asset.symbol,
-        decimals: asset.decimals,
-        amount: asset.stableBorrowAssetBalanc,
-        priceIn: [{ baseCurrency: 'usd', price }],
-        type: AssetType.Borrow,
-        additionalData: {
-          APY: Number(asset.currentStableBorrowRate) / 10 ** 25
-        }
-      } as PositionAsset)
-    }
+      if (asset.balance > 0) {
+        assetsResult.push({
+          address: asset.address,
+          symbol: asset.symbol,
+          decimals: asset.decimals,
+          amount: asset.balance,
+          priceIn: [{ baseCurrency: 'usd', price }],
+          type: AssetType.Collateral,
+          additionalData: {
+            APY: Number(asset.currentLiquidityRate) / 10 ** 25
+          }
+        } as PositionAsset)
+      }
 
-    if (asset.borrowAssetBalance > 0) {
-      result.push({
-        address: asset.address,
-        symbol: asset.symbol,
-        decimals: asset.decimals,
-        amount: asset.borrowAssetBalance,
-        priceIn: [{ baseCurrency: 'usd', price }],
-        type: AssetType.Borrow,
-        additionalData: {
-          APY: Number(asset.currentVariableBorrowRate) / 10 ** 25
-        }
-      } as PositionAsset)
-    }
+      if (asset.stableBorrowAssetBalanc > 0) {
+        assetsResult.push({
+          address: asset.address,
+          symbol: asset.symbol,
+          decimals: asset.decimals,
+          amount: asset.stableBorrowAssetBalanc,
+          priceIn: [{ baseCurrency: 'usd', price }],
+          type: AssetType.Borrow,
+          additionalData: {
+            APY: Number(asset.currentStableBorrowRate) / 10 ** 25
+          }
+        } as PositionAsset)
+      }
 
-    return result
-  }).flat()
+      if (asset.borrowAssetBalance > 0) {
+        assetsResult.push({
+          address: asset.address,
+          symbol: asset.symbol,
+          decimals: asset.decimals,
+          amount: asset.borrowAssetBalance,
+          priceIn: [{ baseCurrency: 'usd', price }],
+          type: AssetType.Borrow,
+          additionalData: {
+            APY: Number(asset.currentVariableBorrowRate) / 10 ** 25
+          }
+        } as PositionAsset)
+      }
+
+      return assetsResult
+    })
+    .flat()
 
   if (position.additionalData.positionInUSD === 0 || !position.assets.length) return null
 

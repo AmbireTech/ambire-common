@@ -2,6 +2,7 @@ import { NetworkId } from '../../interfaces/network'
 import { getAAVEPositions } from '../../libs/defiPositions/aaveV3'
 import { DeFiPositionsState, PositionsByProvider } from '../../libs/defiPositions/types'
 import { getUniV3Positions } from '../../libs/defiPositions/uniV3'
+import { safeTokenAmountAndNumberMultiplication } from '../../utils/numbers/formatters'
 import { AccountsController } from '../accounts/accounts'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { NetworksController } from '../networks/networks'
@@ -142,23 +143,53 @@ export class DefiPositionsController extends EventEmitter {
           return positionsByProvider
 
         const updatedPositions = positionsByProvider.positions.map((position) => {
+          let positionInUSD = position.additionalData.positionInUSD || 0
+
           const updatedAssets = position.assets.map((asset) => {
             const priceData = body[asset.address.toLowerCase()]
             if (!priceData) return asset
 
+            const priceIn = Object.entries(priceData).map(([currency, price]) => ({
+              baseCurrency: currency,
+              price: price as number
+            }))
+
+            const priceInUSD = priceIn.find((p) => p.baseCurrency === 'usd')?.price
+            if (!priceInUSD) return asset
+
+            const assetValue = safeTokenAmountAndNumberMultiplication(
+              asset.amount,
+              asset.decimals,
+              priceInUSD
+            )
+
+            positionInUSD += Number(assetValue)
+
             return {
               ...asset,
-              priceIn: Object.entries(priceData).map(([currency, price]) => ({
-                baseCurrency: currency,
-                price: price as number
-              }))
+              priceIn
             }
           })
 
-          return { ...position, assets: updatedAssets }
+          return {
+            ...position,
+            assets: updatedAssets,
+            additionalData: {
+              positionInUSD
+            }
+          }
         })
 
-        return { ...positionsByProvider, positions: updatedPositions }
+        let positionInUSD = positionsByProvider.positionInUSD
+
+        // Already set in the corresponding lib
+        if (!positionInUSD) {
+          positionInUSD = updatedPositions.reduce((prevPositionValue, position) => {
+            return prevPositionValue + (position.additionalData.positionInUSD || 0)
+          }, 0)
+        }
+
+        return { ...positionsByProvider, positions: updatedPositions, positionInUSD }
       })
 
       this.state[accountAddr][networkId].positionsByProvider = positionsByProviderWithPrices

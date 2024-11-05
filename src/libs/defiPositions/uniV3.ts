@@ -101,7 +101,6 @@ export async function getUniV3Positions(
     providerName: 'Uniswap V3',
     networkId,
     type: 'liquidity-pool',
-    positions,
-    positionInUSD: 0 // @TODO
+    positions
   }
 }

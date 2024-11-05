@@ -38,7 +38,7 @@ export interface PositionsByProvider {
   networkId: Network['id']
   type: 'lending' | 'liquidity-pool'
   positions: Position[]
-  positionInUSD: number
+  positionInUSD?: number
 }
 
 export interface Position {
