@@ -105,8 +105,6 @@ export class ActivityController extends EventEmitter {
 
   #accountsOps: InternalAccountsOps = {}
 
-  #hiddenActivityBanners: string[] = []
-
   accountsOps: AccountsOps | undefined
 
   #signedMessages: InternalSignedMessages = {}
@@ -159,15 +157,13 @@ export class ActivityController extends EventEmitter {
 
   async #load(): Promise<void> {
     await this.#accounts.initialLoadPromise
-    const [accountsOps, signedMessages, hiddenBanners] = await Promise.all([
+    const [accountsOps, signedMessages] = await Promise.all([
       this.#storage.get('accountsOps', {}),
-      this.#storage.get('signedMessages', {}),
-      this.#storage.get('hiddenActivityBanners', [])
+      this.#storage.get('signedMessages', {})
     ])
 
     this.#accountsOps = accountsOps
     this.#signedMessages = signedMessages
-    this.#hiddenActivityBanners = hiddenBanners
 
     this.init()
     this.emitUpdate()
@@ -510,11 +506,30 @@ export class ActivityController extends EventEmitter {
     this.emitUpdate()
   }
 
-  hideBanner({ addr, network, timestamp }: { addr: string; network: string; timestamp: number }) {
-    this.#hiddenActivityBanners.push(`${addr}-${network}-${timestamp}`)
+  async hideBanner({
+    addr,
+    network,
+    timestamp
+  }: {
+    addr: string
+    network: string
+    timestamp: number
+  }) {
+    await this.#initialLoadPromise
 
-    /* eslint-disable @typescript-eslint/no-floating-promises */
-    this.#storage.set('hiddenActivityBanners', this.#hiddenActivityBanners)
+    // shouldn't happen
+    if (!this.#accountsOps[addr]) return
+    if (!this.#accountsOps[addr][network]) return
+
+    // find the op we want to update
+    const op = this.#accountsOps[addr][network].find((accOp) => accOp.timestamp === timestamp)
+    if (!op) return
+
+    // update by reference
+    if (!op.flags) op.flags = {}
+    op.flags.hideActivityBanner = true
+
+    await this.#storage.set('accountsOps', this.#accountsOps)
 
     this.emitUpdate()
   }
@@ -586,12 +601,7 @@ export class ActivityController extends EventEmitter {
     return (
       this.broadcastedButNotConfirmed
         // do not show a banner for forcefully hidden banners
-        .filter(
-          (op) =>
-            !this.#hiddenActivityBanners.includes(
-              `${op.accountAddr}-${op.networkId}-${op.timestamp}`
-            )
-        )
+        .filter((op) => !(op.flags && op.flags.hideActivityBanner))
         .map((accountOp) => {
           const network = this.#networks.networks.find((x) => x.id === accountOp.networkId)!
 
