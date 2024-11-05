@@ -127,12 +127,47 @@ async function refetchBlock(
   return lastBlock
 }
 
+async function getFeeData(
+  provider: Provider,
+  lastBlock: Block
+): Promise<{ gasPrice: GasRecommendation[]; blockGasLimit: bigint }> {
+  const feeData = await provider.getFeeData()
+
+  const maxFeePerGas = feeData.maxFeePerGas
+  const maxPriorityFeePerGas = feeData.maxPriorityFeePerGas
+  if (maxFeePerGas && maxPriorityFeePerGas && maxFeePerGas > 0n && maxPriorityFeePerGas > 0n) {
+    const gasPrice = speeds.map(({ name, baseFeeAddBps }) => {
+      const baseFee = maxFeePerGas - maxPriorityFeePerGas
+      return {
+        name,
+        baseFeePerGas: baseFee + (baseFee * baseFeeAddBps) / 10000n,
+        maxPriorityFeePerGas: maxPriorityFeePerGas + (maxPriorityFeePerGas * baseFeeAddBps) / 10000n
+      }
+    })
+    return {
+      blockGasLimit: lastBlock.gasLimit,
+      gasPrice
+    }
+  }
+
+  const minGasPrice = feeData.gasPrice ?? 0n
+  const gasPrice = speeds.map(({ name, baseFeeAddBps }) => ({
+    name,
+    gasPrice: minGasPrice + (minGasPrice * baseFeeAddBps) / 10000n
+  }))
+  return {
+    blockGasLimit: lastBlock.gasLimit,
+    gasPrice
+  }
+}
+
 export async function getGasPriceRecommendations(
   provider: Provider,
   network: Network,
   blockTag: string | number = -1
 ): Promise<{ gasPrice: GasRecommendation[]; blockGasLimit: bigint }> {
   const lastBlock = await refetchBlock(provider, blockTag)
+
   // https://github.com/ethers-io/ethers.js/issues/3683#issuecomment-1436554995
   const txns = lastBlock.prefetchedTransactions
 
@@ -192,6 +227,7 @@ export async function getGasPriceRecommendations(
         maxPriorityFeePerGas
       })
     })
+    if (fee[0].baseFeePerGas === 0n) return getFeeData(provider, lastBlock)
     return { gasPrice: fee, blockGasLimit: lastBlock.gasLimit }
   }
   const prices = filterOutliers(txns.map((x) => x.gasPrice!).filter((x) => x > 0))
@@ -199,6 +235,7 @@ export async function getGasPriceRecommendations(
     name,
     gasPrice: average(nthGroup(prices, i, speeds.length))
   }))
+  if (fee[0].gasPrice === 0n) return getFeeData(provider, lastBlock)
   return { gasPrice: fee, blockGasLimit: lastBlock.gasLimit }
 }
 
