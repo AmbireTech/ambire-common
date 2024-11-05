@@ -22,7 +22,7 @@ describe('1559 Network gas price tests', () => {
     const fast: any = gasPrice[2]
     expect(fast.gasPrice).toBe(110n)
     const ape: any = gasPrice[3]
-    expect(ape.gasPrice).toBe(120n)
+    expect(ape.gasPrice).toBe(115n)
   })
   test('should return the lowest maxPriorityFeePerGas for a block with less than 4 txns', async () => {
     const params = {
