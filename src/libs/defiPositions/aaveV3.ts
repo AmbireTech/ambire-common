@@ -84,7 +84,7 @@ export async function getAAVEPositions(
     return {
       address: asset.address,
       symbol: asset.symbol,
-      decimals: asset.decimals,
+      decimals: Number(asset.decimals),
       amount: asset.balance || asset.borrowAssetBalance || asset.stableBorrowAssetBalance,
       type: asset.balance > 0 ? AssetType.Collateral : AssetType.Borrow,
       additionalData: {

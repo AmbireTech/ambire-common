@@ -1,4 +1,5 @@
 import { Network } from '../../interfaces/network'
+import { Price } from '../portfolio'
 
 export enum AssetType {
   Liquidity,
@@ -10,7 +11,8 @@ export interface PositionAsset {
   address: string
   symbol: string
   decimals: number
-  amount: number
+  amount: bigint
+  priceIn: Price[]
   type: AssetType
   additionalData: any | undefined
 }
