@@ -1,6 +1,6 @@
-import { AbiCoder, Contract, ethers, JsonRpcProvider } from 'ethers'
+import { JsonRpcProvider } from 'ethers'
 
-import { describe, expect, jest, test } from '@jest/globals'
+import { describe, expect, test } from '@jest/globals'
 
 import { networks } from '../../consts/networks'
 import { getAAVEPositions } from './aaveV3'

@@ -1,3 +1,5 @@
+import { Network } from '../../interfaces/network'
+
 export enum AssetType {
   Liquidity,
   Collateral,
@@ -17,7 +19,7 @@ export interface Position {
   providerName: string
   positionType: string
   assets: PositionAsset[]
-  network: string
+  networkId: Network['id']
   additionalData: {
     positionId: string
     [key: string]: any

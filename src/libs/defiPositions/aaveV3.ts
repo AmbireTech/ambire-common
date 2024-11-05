@@ -3,7 +3,7 @@ import { v4 as uuidv4 } from 'uuid'
 
 import DeFiPositionsDeploylessCode from '../../../contracts/compiled/DeFiAAVEPosition.json'
 import { Network } from '../../interfaces/network'
-import { Deployless, fromDescriptor } from '../deployless/deployless'
+import { fromDescriptor } from '../deployless/deployless'
 import { AAVE_V3 } from './defiAddresses'
 import { AssetType, Position } from './types'
 
@@ -64,7 +64,7 @@ export async function getAAVEPositions(
         collateralInUSD: 0,
         availableBorrowInUSD: Number(accountData.availableBorrowsBase) / 1e8
       },
-      network: network.name,
+      networkId: network.id,
       assets: []
     }
   ]

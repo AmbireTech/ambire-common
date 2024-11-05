@@ -77,7 +77,7 @@ export async function getUniV3Positions(
           liquidity: pos.positionInfo.liquidity,
           positionId: pos.positionId.toString()
         },
-        network: network.name,
+        networkId: network.id,
         assets: [
           {
             address: pos.positionInfo.token0,
