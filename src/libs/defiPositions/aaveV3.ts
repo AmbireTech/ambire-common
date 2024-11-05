@@ -90,7 +90,7 @@ export async function getAAVEPositions(
         assetsResult.push({
           address: asset.address,
           symbol: asset.symbol,
-          decimals: asset.decimals,
+          decimals: Number(asset.decimals),
           amount: asset.balance,
           priceIn: [{ baseCurrency: 'usd', price }],
           type: AssetType.Collateral,
@@ -104,7 +104,7 @@ export async function getAAVEPositions(
         assetsResult.push({
           address: asset.address,
           symbol: asset.symbol,
-          decimals: asset.decimals,
+          decimals: Number(asset.decimals),
           amount: asset.stableBorrowAssetBalanc,
           priceIn: [{ baseCurrency: 'usd', price }],
           type: AssetType.Borrow,
@@ -118,7 +118,7 @@ export async function getAAVEPositions(
         assetsResult.push({
           address: asset.address,
           symbol: asset.symbol,
-          decimals: asset.decimals,
+          decimals: Number(asset.decimals),
           amount: asset.borrowAssetBalance,
           priceIn: [{ baseCurrency: 'usd', price }],
           type: AssetType.Borrow,
