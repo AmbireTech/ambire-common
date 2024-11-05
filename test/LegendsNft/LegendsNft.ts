@@ -78,6 +78,8 @@ describe('Legends nft', () => {
     await expect(legendsNftContract.ownerOf(BigInt(signer2.address))).to.be.revertedWith(
       'ERC721: invalid token ID'
     )
+    await legendsNftContract.mint(2)
+    expect(await legendsNftContract.ownerOf(BigInt(signer.address))).eq(signer.address)
   })
   it('opensea update', async () => {
     const supportsInterface721 = await legendsNftContract.supportsInterface(hexlify('0x80ac58cd'))
