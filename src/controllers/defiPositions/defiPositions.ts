@@ -91,15 +91,15 @@ export class DefiPositionsController extends EventEmitter {
     const mergedPositionsByNetwork = Object.values(
       this.positions.reduce(
         (
-          acc: { [key: string]: { network: Position['network']; assets: Position['assets'] } },
-          { network, assets }
+          acc: { [key: string]: { networkId: Position['networkId']; assets: Position['assets'] } },
+          { networkId, assets }
         ) => {
-          if (!acc[network]) acc[network] = { network, assets: [] }
+          if (!acc[networkId]) acc[networkId] = { networkId, assets: [] }
 
-          const existingAddresses = new Set(acc[network].assets.map((asset) => asset.address))
+          const existingAddresses = new Set(acc[networkId].assets.map((asset) => asset.address))
           assets.forEach((asset) => {
             if (!existingAddresses.has(asset.address)) {
-              acc[network].assets.push(asset)
+              acc[networkId].assets.push(asset)
               existingAddresses.add(asset.address) // Mark this address as added
             }
           })
@@ -112,10 +112,10 @@ export class DefiPositionsController extends EventEmitter {
 
     const dedup = (x: any[]) => x.filter((y, i) => x.indexOf(y) === i)
     const cenaUrls = mergedPositionsByNetwork.map((pos) => ({
-      networkId: pos.network.toLowerCase(),
-      url: `https://cena.ambire.com/api/v3/simple/token_price/${pos.network.toLowerCase()}?contract_addresses=${dedup(
-        pos.assets.map((a) => a.address)
-      ).join('%2C')}&vs_currencies=usd`
+      networkId: pos.networkId,
+      url: `https://cena.ambire.com/api/v3/simple/token_price/${
+        pos.networkId
+      }?contract_addresses=${dedup(pos.assets.map((a) => a.address)).join('%2C')}&vs_currencies=usd`
     }))
 
     await Promise.all(
@@ -130,7 +130,7 @@ export class DefiPositionsController extends EventEmitter {
           if (body.hasOwnProperty('error')) throw body
 
           this.positions = this.positions.map((pos) => {
-            if (pos.network.toLowerCase() !== networkId) return pos
+            if (pos.networkId !== networkId) return pos
             return {
               ...pos,
               assets: pos.assets.map((a) => ({
