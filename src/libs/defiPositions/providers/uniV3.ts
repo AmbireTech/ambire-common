@@ -97,8 +97,6 @@ export async function getUniV3Positions(
 
   if (positions.length === 0) return null
 
-  throw new Error('Not implemented')
-
   return {
     providerName: 'Uniswap V3',
     networkId,
