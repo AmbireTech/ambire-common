@@ -574,7 +574,6 @@ export class SwapAndBridgeController extends EventEmitter {
           isSmartAccount: isSmartAccount(selectedAccount),
           sort: this.routePriority
         })
-
         if (
           this.#getIsFormValidToFetchQuote() &&
           quoteResult &&
@@ -585,19 +584,21 @@ export class SwapAndBridgeController extends EventEmitter {
         ) {
           let routeToSelect
           let routeToSelectSteps
-          let alreadySelectedRoute = null
 
-          const isBridging = quoteResult.routes.some((r) =>
-            r.userTxs.some((rTxn) => getIsBridgeTxn(rTxn.userTxType))
-          )
-          const shouldPersistSelectedRoute = isBridging && this.quote
-          if (shouldPersistSelectedRoute) {
-            alreadySelectedRoute = quoteResult.routes.find(
-              // because we have only routes with unique bridges
-              (r) => r.usedBridgeNames[0] === this.quote?.selectedRoute?.usedBridgeNames[0]
-            )
-          }
+          const alreadySelectedRoute = quoteResult.routes.find((nextRoute) => {
+            if (!this.quote) return false
 
+            // Because we have only routes with unique bridges (bridging case)
+            const selectedRouteUsedBridge = this.quote.selectedRoute.usedBridgeNames?.[0]
+            if (selectedRouteUsedBridge)
+              return nextRoute.usedBridgeNames?.[0] === selectedRouteUsedBridge
+
+            // Assuming to have routes with unique DEXes ONLY (swapping case)
+            const selectedRouteUsedDex = this.quote.selectedRoute.usedDexName
+            if (selectedRouteUsedDex) return nextRoute.usedDexName === selectedRouteUsedDex
+
+            return false // should never happen, but just in case of bad data
+          })
           if (alreadySelectedRoute) {
             routeToSelect = alreadySelectedRoute
             routeToSelectSteps = getQuoteRouteSteps(alreadySelectedRoute.userTxs)

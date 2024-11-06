@@ -39,7 +39,7 @@ export const aaveWethGatewayV2 = (): { [key: string]: Function } => {
     [iface.getFunction('borrowETH')?.selector!]: (accountOp: AccountOp, call: IrCall) => {
       const [, /* lendingPool */ amount] = iface.parseTransaction(call)?.args || []
       return [
-        getAction('Borrow '),
+        getAction('Borrow'),
         getToken(ZeroAddress, amount),
         getLabel('from Aave lending pool')
       ]
