@@ -137,7 +137,11 @@ export async function getGasPriceRecommendations(
 ): Promise<{ gasPrice: GasRecommendation[]; blockGasLimit: bigint }> {
   const [lastBlock, ethGasPrice] = await Promise.all([
     refetchBlock(provider, blockTag),
-    (provider as JsonRpcProvider).send('eth_gasPrice', []).catch(() => '0x00')
+    (provider as JsonRpcProvider).send('eth_gasPrice', []).catch((e) => {
+      console.log('eth_gasPrice failed because of the following reason:')
+      console.log(e)
+      return '0x'
+    })
   ])
   // https://github.com/ethers-io/ethers.js/issues/3683#issuecomment-1436554995
   const txns = lastBlock.prefetchedTransactions
@@ -204,7 +208,7 @@ export async function getGasPriceRecommendations(
 
   // use th fetched price as a min if not 0 as it could be actually lower
   // than the hardcoded MIN.
-  const minOrFetchedGasPrice = BigInt(ethGasPrice) !== 0n ? BigInt(ethGasPrice) : MIN_GAS_PRICE
+  const minOrFetchedGasPrice = ethGasPrice !== '0x' ? BigInt(ethGasPrice) : MIN_GAS_PRICE
 
   const fee = speeds.map(({ name }, i) => {
     const avgGasPrice = average(nthGroup(prices, i, speeds.length))
