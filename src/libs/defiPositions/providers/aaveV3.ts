@@ -6,7 +6,7 @@ import { Network } from '../../../interfaces/network'
 import { fromDescriptor } from '../../deployless/deployless'
 import { AAVE_V3 } from '../defiAddresses'
 import { getAssetValue } from '../helpers'
-import { AssetType, PositionAsset, PositionsByProvider } from '../types'
+import { AssetType, Position, PositionAsset, PositionsByProvider } from '../types'
 
 const AAVE_NO_HEALTH_FACTOR_MAGIC_NUMBER =
   115792089237316195423570985008687907853269984665640564039457584007913129639935n
@@ -70,7 +70,7 @@ export async function getAAVEPositions(
       availableBorrowInUSD: Number(accountData.availableBorrowsBase) / 1e8
     },
     assets: []
-  }
+  } as Position
 
   position.assets = userAssets
     .map((asset: any) => {

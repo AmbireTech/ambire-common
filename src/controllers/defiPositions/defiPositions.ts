@@ -228,9 +228,7 @@ export class DefiPositionsController extends EventEmitter {
           return {
             ...position,
             assets: updatedAssets,
-            additionalData: {
-              positionInUSD
-            }
+            additionalData: { ...position.additionalData, positionInUSD }
           }
         })
 
