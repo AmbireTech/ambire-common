@@ -186,7 +186,8 @@ const buildSwapAndBridgeUserRequests = async (
         userTx.approvalData.allowanceTarget
       )
       // check if an approval already exists
-      if (BigInt(allowance) === MaxUint256) shouldApprove = false
+      if (BigInt(allowance) >= BigInt(userTx.approvalData.minimumApprovalAmount))
+        shouldApprove = false
     } catch (error) {
       console.error(error)
     }
