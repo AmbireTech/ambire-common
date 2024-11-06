@@ -585,21 +585,22 @@ export class SwapAndBridgeController extends EventEmitter {
         ) {
           let routeToSelect
           let routeToSelectSteps
+          let alreadySelectedRoute = null
 
-          let selectedRouteInQuoteRes = null
-          const isBridgeTxn = quoteResult.routes.some((r) =>
+          const isBridging = quoteResult.routes.some((r) =>
             r.userTxs.some((rTxn) => getIsBridgeTxn(rTxn.txType as 'dex-swap' | 'fund-movr'))
           )
-          if (isBridgeTxn && this.quote) {
-            selectedRouteInQuoteRes = quoteResult.routes.find(
+          const shouldPersistSelectedRoute = isBridging && this.quote
+          if (shouldPersistSelectedRoute) {
+            alreadySelectedRoute = quoteResult.routes.find(
               // because we have only routes with unique bridges
               (r) => r.usedBridgeNames[0] === this.quote?.selectedRoute?.usedBridgeNames[0]
             )
           }
 
-          if (selectedRouteInQuoteRes) {
-            routeToSelect = selectedRouteInQuoteRes
-            routeToSelectSteps = getQuoteRouteSteps(selectedRouteInQuoteRes.userTxs)
+          if (alreadySelectedRoute) {
+            routeToSelect = alreadySelectedRoute
+            routeToSelectSteps = getQuoteRouteSteps(alreadySelectedRoute.userTxs)
           } else {
             const bestRoute =
               this.routePriority === 'output'
