@@ -191,23 +191,21 @@ const buildSwapAndBridgeUserRequests = async (
       console.error(error)
     }
 
-    const revokeApproval = await buildRevokeApprovalIfNeeded(userTx, account, provider)
-    if (revokeApproval) {
-      shouldApprove = true
-      requests.push({
-        id: `${userTx.activeRouteId}-revoke-approval`,
-        action: { kind: 'calls' as const, calls: [revokeApproval] },
-        meta: {
-          isSignAction: true,
-          networkId,
-          accountAddr: account.addr,
-          activeRouteId: userTx.activeRouteId,
-          isApproval: true
-        }
-      } as SignUserRequest)
-    }
-
     if (shouldApprove) {
+      const revokeApproval = await buildRevokeApprovalIfNeeded(userTx, account, provider)
+      if (revokeApproval) {
+        requests.push({
+          id: `${userTx.activeRouteId}-revoke-approval`,
+          action: { kind: 'calls' as const, calls: [revokeApproval] },
+          meta: {
+            isSignAction: true,
+            networkId,
+            accountAddr: account.addr,
+            activeRouteId: userTx.activeRouteId,
+            isApproval: true
+          }
+        } as SignUserRequest)
+      }
       requests.push({
         id: `${userTx.activeRouteId}-approval`,
         action: {
