@@ -11,6 +11,9 @@ import { getActivatorCall, shouldIncludeActivatorCall } from '../userOperation/u
 const DEFAULT_BASE_FEE_MAX_CHANGE_DENOMINATOR = 8n
 const DEFAULT_ELASTICITY_MULTIPLIER = 2n
 
+// a 1 gwei min for gas price, non1559 networks
+export const MIN_GAS_PRICE = 1000000000n
+
 // multipliers from the old: https://github.com/AmbireTech/relayer/blob/wallet-v2/src/utils/gasOracle.js#L64-L76
 // 2x, 2x*0.4, 2x*0.2 - all of them divided by 8 so 0.25, 0.1, 0.05 - those seem usable; with a slight tweak for the ape
 const speeds = [
@@ -127,40 +130,6 @@ async function refetchBlock(
   return lastBlock
 }
 
-async function getFeeData(
-  provider: Provider,
-  lastBlock: Block
-): Promise<{ gasPrice: GasRecommendation[]; blockGasLimit: bigint }> {
-  const feeData = await provider.getFeeData()
-
-  const maxFeePerGas = feeData.maxFeePerGas
-  const maxPriorityFeePerGas = feeData.maxPriorityFeePerGas
-  if (maxFeePerGas && maxPriorityFeePerGas && maxFeePerGas > 0n && maxPriorityFeePerGas > 0n) {
-    const gasPrice = speeds.map(({ name, baseFeeAddBps }) => {
-      const baseFee = maxFeePerGas - maxPriorityFeePerGas
-      return {
-        name,
-        baseFeePerGas: baseFee + (baseFee * baseFeeAddBps) / 10000n,
-        maxPriorityFeePerGas: maxPriorityFeePerGas + (maxPriorityFeePerGas * baseFeeAddBps) / 10000n
-      }
-    })
-    return {
-      blockGasLimit: lastBlock.gasLimit,
-      gasPrice
-    }
-  }
-
-  const minGasPrice = feeData.gasPrice ?? 0n
-  const gasPrice = speeds.map(({ name, baseFeeAddBps }) => ({
-    name,
-    gasPrice: minGasPrice + (minGasPrice * baseFeeAddBps) / 10000n
-  }))
-  return {
-    blockGasLimit: lastBlock.gasLimit,
-    gasPrice
-  }
-}
-
 export async function getGasPriceRecommendations(
   provider: Provider,
   network: Network,
@@ -226,15 +195,16 @@ export async function getGasPriceRecommendations(
         maxPriorityFeePerGas
       })
     })
-    if (fee[0].baseFeePerGas === 0n) return getFeeData(provider, lastBlock)
     return { gasPrice: fee, blockGasLimit: lastBlock.gasLimit }
   }
   const prices = filterOutliers(txns.map((x) => x.gasPrice!).filter((x) => x > 0))
-  const fee = speeds.map(({ name }, i) => ({
-    name,
-    gasPrice: average(nthGroup(prices, i, speeds.length))
-  }))
-  if (fee[0].gasPrice === 0n) return getFeeData(provider, lastBlock)
+  const fee = speeds.map(({ name }, i) => {
+    const avgGasPrice = average(nthGroup(prices, i, speeds.length))
+    return {
+      name,
+      gasPrice: avgGasPrice >= MIN_GAS_PRICE ? avgGasPrice : MIN_GAS_PRICE
+    }
+  })
   return { gasPrice: fee, blockGasLimit: lastBlock.gasLimit }
 }
 

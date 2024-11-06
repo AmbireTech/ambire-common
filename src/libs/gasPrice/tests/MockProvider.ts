@@ -1,7 +1,6 @@
 import {
   Block,
   BlockTag,
-  FeeData,
   FetchRequest,
   JsonRpcApiProviderOptions,
   JsonRpcProvider,
@@ -52,10 +51,5 @@ export default class MockProvider extends JsonRpcProvider {
       transactions: this.blockParams.transactions ?? []
     }
     return new Block(params, this)
-  }
-
-  // eslint-disable-next-line class-methods-use-this
-  async getFeeData(): Promise<FeeData> {
-    return new FeeData(100n)
   }
 }
