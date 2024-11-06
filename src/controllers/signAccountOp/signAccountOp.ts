@@ -1252,7 +1252,7 @@ export class SignAccountOpController extends EventEmitter {
         // query the application state from memory to understand if the user
         // hasn't actually rejected the request while waiting for the
         // paymaster to respond
-        if (!this.#isSignRequestStillActive(this.accountOp)) return
+        if (!this.#isSignRequestStillActive()) return
 
         if (userOperation.requestType === 'standard') {
           const typedData = getTypedData(

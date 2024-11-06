@@ -494,8 +494,8 @@ export class MainController extends EventEmitter {
       () => {
         this.estimateSignAccountOp()
       },
-      (op: AccountOp) => {
-        return this.isSignRequestStillActive(op)
+      () => {
+        return this.isSignRequestStillActive
       }
     )
 
@@ -1352,20 +1352,6 @@ export class MainController extends EventEmitter {
     }
 
     this.emitUpdate()
-  }
-
-  // a method in the main controller to understand whether
-  // signAccountOp is still initialized
-  isSignRequestStillActive(op: AccountOp): boolean {
-    const accountOpIndex = this.actions.actionsQueue.findIndex(
-      (a) => a.type === 'accountOp' && a.id === `${op.accountAddr}-${op.networkId}`
-    )
-    const accountOpAction = this.actions.actionsQueue[accountOpIndex] as AccountOpAction | undefined
-    return (
-      !!this.signAccountOp &&
-      !!accountOpAction &&
-      this.signAccountOp.fromActionId === accountOpAction.id
-    )
   }
 
   // @TODO allow this to remove multiple OR figure out a way to debounce re-estimations
@@ -2309,12 +2295,19 @@ export class MainController extends EventEmitter {
     return Promise.reject(new EmittableError({ level: 'major', message, error }))
   }
 
+  get isSignRequestStillActive(): boolean {
+    if (!this.signAccountOp) return false
+
+    return !!this.actions.actionsQueue.find((a) => a.id === this.signAccountOp!.fromActionId)
+  }
+
   // includes the getters in the stringified instance
   toJSON() {
     return {
       ...this,
       ...super.toJSON(),
-      banners: this.banners
+      banners: this.banners,
+      isSignRequestStillActive: this.isSignRequestStillActive
     }
   }
 }
