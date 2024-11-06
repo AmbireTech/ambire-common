@@ -75,7 +75,7 @@ export const SocketModule: HumanizerCallModule = (accountOp: AccountOp, irCalls:
             getAction('Bridge'),
             getToken(eToNative(fromToken), amount),
             getLabel('to'),
-            getTokenWithChain(eToNative(toToken), outputAmount, dstChain),
+            getTokenWithChain(eToNative(toToken), outputAmount),
             getLabel('on'),
             getChain(dstChain),
             getDeadline(quoteAndDeadlineTimeStamps[1]),
