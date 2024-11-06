@@ -588,12 +588,12 @@ export class SwapAndBridgeController extends EventEmitter {
           const alreadySelectedRoute = quoteResult.routes.find((nextRoute) => {
             if (!this.quote) return false
 
-            // Because we have only routes with unique bridges (bridging case)
+            // Because we only have routes with unique bridges (bridging case)
             const selectedRouteUsedBridge = this.quote.selectedRoute.usedBridgeNames?.[0]
             if (selectedRouteUsedBridge)
               return nextRoute.usedBridgeNames?.[0] === selectedRouteUsedBridge
 
-            // Assuming to have routes with unique DEXes ONLY (swapping case)
+            // Assuming to only have routes with unique DEXes (swapping case)
             const selectedRouteUsedDex = this.quote.selectedRoute.usedDexName
             if (selectedRouteUsedDex) return nextRoute.usedDexName === selectedRouteUsedDex
 
