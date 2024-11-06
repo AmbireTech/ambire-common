@@ -472,7 +472,7 @@ export class SwapAndBridgeController extends EventEmitter {
       this.emitError({
         error,
         level: 'major',
-        message: 'Unable to retrieve the token list.'
+        message: `Unable to retrieve the list of supported receive tokens. Please reload the tab to try again.`
       })
     }
     this.updateToTokenListStatus = 'INITIAL'
@@ -618,7 +618,7 @@ export class SwapAndBridgeController extends EventEmitter {
         this.emitError({
           error,
           level: 'major',
-          message: 'Failed to fetch routes for this pair.'
+          message: 'Failed to fetch a route for the selected tokens. Please try again.'
         })
       }
     }

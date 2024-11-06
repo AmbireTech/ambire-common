@@ -141,6 +141,7 @@ const networks: Network[] = [
     platformId: 'base',
     nativeAssetId: 'ethereum',
     hasSingleton: true,
+    isOptimistic: true,
     features: [],
     feeOptions: {
       is1559: true,

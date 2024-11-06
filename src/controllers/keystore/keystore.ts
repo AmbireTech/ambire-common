@@ -22,7 +22,8 @@ import {
 import scrypt from 'scrypt-js'
 
 import EmittableError from '../../classes/EmittableError'
-import { HD_PATH_TEMPLATE_TYPE } from '../../consts/derivation'
+import { DERIVATION_OPTIONS, HD_PATH_TEMPLATE_TYPE } from '../../consts/derivation'
+import { Banner } from '../../interfaces/banner'
 import {
   ExternalKey,
   InternalKey,
@@ -56,6 +57,7 @@ const STATUS_WRAPPED_METHODS = {
   unlockWithSecret: 'INITIAL',
   addSecret: 'INITIAL',
   addSeed: 'INITIAL',
+  moveTempSeedToKeystoreSeeds: 'INITIAL',
   deleteSavedSeed: 'INITIAL',
   removeSecret: 'INITIAL',
   addKeys: 'INITIAL',
@@ -103,6 +105,12 @@ export class KeystoreController extends EventEmitter {
   #storage: Storage
 
   #keystoreSeeds: KeystoreSeed[] = []
+
+  // when importing a seed, save it temporary here before deciding
+  // whether to place it in #keystoreSeeds or delete it
+  //
+  // this should be done only if there isn't a saved seed already
+  #tempSeed: KeystoreSeed | null = null
 
   #keystoreSigners: Partial<{ [key in Key['type']]: KeystoreSignerType }>
 
@@ -194,6 +202,7 @@ export class KeystoreController extends EventEmitter {
 
   lock() {
     this.#mainKey = null
+    if (this.#tempSeed) this.deleteTempSeed(false)
     this.emitUpdate()
   }
 
@@ -407,7 +416,7 @@ export class KeystoreController extends EventEmitter {
     })
   }
 
-  async #addSeed({ seed, hdPathTemplate }: KeystoreSeed) {
+  async #getEncryptedSeed(seed: KeystoreSeed['seed']): Promise<string> {
     await this.#initialLoadPromise
 
     if (this.#mainKey === null)
@@ -429,7 +438,7 @@ export class KeystoreController extends EventEmitter {
     // this fist seed phrase will become the saved seed phrase of the wallet
     if (this.#keystoreSeeds.length) {
       throw new EmittableError({
-        message: 'You can have only one saved seed phrase for that wallet',
+        message: 'You can have only one saved seed in the extension',
         level: 'major',
         error: new Error(
           'keystore: seed phase already added. Storing multiple seed phrases not supported yet'
@@ -439,9 +448,76 @@ export class KeystoreController extends EventEmitter {
 
     // Set up the cipher
     const counter = new aes.Counter(this.#mainKey!.iv) // TS compiler fails to detect we check for null above
-    const aesCtr = new aes.ModeOfOperation.ctr(this.#mainKey!.key, counter) // TS compiler fails to detect we check for null above
+    const aesCtr = new aes.ModeOfOperation.ctr(this.#mainKey!.key, counter) // TS compiler fails to detect we check for null above\
+    return hexlify(aesCtr.encrypt(new TextEncoder().encode(seed)))
+  }
+
+  async addSeedToTemp({ seed, hdPathTemplate }: KeystoreSeed) {
+    const validHdPath = DERIVATION_OPTIONS.some((o) => o.value === hdPathTemplate)
+    if (!validHdPath)
+      throw new EmittableError({
+        message:
+          'Incorrect derivation path when trying to update the temp seed. Please contact support',
+        level: 'major',
+        error: new Error('keystore: hd path to temp seed incorrect')
+      })
+
+    this.#tempSeed = {
+      seed: await this.#getEncryptedSeed(seed),
+      hdPathTemplate
+    }
+
+    this.emitUpdate()
+  }
+
+  deleteTempSeed(shouldUpdate = true) {
+    this.#tempSeed = null
+    if (shouldUpdate) this.emitUpdate()
+  }
+
+  async #moveTempSeedToKeystoreSeeds() {
+    if (this.#mainKey === null)
+      throw new EmittableError({
+        message: KEYSTORE_UNEXPECTED_ERROR_MESSAGE,
+        level: 'major',
+        error: new Error('keystore: needs to be unlocked')
+      })
+
+    // Currently we support only one seed phrase to be added to the keystore
+    // this fist seed phrase will become the saved seed phrase of the wallet
+    if (this.#keystoreSeeds.length) {
+      throw new EmittableError({
+        message: 'You can have only one saved seed in the extension',
+        level: 'major',
+        error: new Error(
+          'keystore: seed phase already added. Storing multiple seed phrases not supported yet'
+        )
+      })
+    }
+
+    if (!this.#tempSeed) {
+      throw new EmittableError({
+        message:
+          'Imported seed no longer exists in the extension. If you want to save it, please re-import it',
+        level: 'major',
+        error: new Error('keystore: imported seed deleted although a request to save it was made')
+      })
+    }
+
+    this.#keystoreSeeds.push(this.#tempSeed)
+    await this.#storage.set('keystoreSeeds', this.#keystoreSeeds)
+    this.#tempSeed = null
+    this.emitUpdate()
+  }
+
+  async moveTempSeedToKeystoreSeeds() {
+    await this.#initialLoadPromise
+    await this.withStatus('moveTempSeedToKeystoreSeeds', () => this.#moveTempSeedToKeystoreSeeds())
+  }
+
+  async #addSeed({ seed, hdPathTemplate }: KeystoreSeed) {
     this.#keystoreSeeds.push({
-      seed: hexlify(aesCtr.encrypt(new TextEncoder().encode(seed))),
+      seed: await this.#getEncryptedSeed(seed),
       hdPathTemplate
     })
     await this.#storage.set('keystoreSeeds', this.#keystoreSeeds)
@@ -451,6 +527,22 @@ export class KeystoreController extends EventEmitter {
 
   async addSeed(keystoreSeed: KeystoreSeed) {
     await this.withStatus('addSeed', () => this.#addSeed(keystoreSeed))
+  }
+
+  async changeTempSeedHdPathTemplateIfNeeded(nextHdPathTemplate?: HD_PATH_TEMPLATE_TYPE) {
+    if (!nextHdPathTemplate) return // should never happen
+
+    await this.#initialLoadPromise
+
+    if (!this.isUnlocked) throw new Error('keystore: not unlocked')
+    if (!this.#tempSeed) throw new Error('keystore: no temp seed at the moment')
+
+    const isTheSameHdPathTemplate = this.#tempSeed.hdPathTemplate === nextHdPathTemplate
+    if (isTheSameHdPathTemplate) return
+
+    this.#tempSeed.hdPathTemplate = nextHdPathTemplate
+
+    this.emitUpdate()
   }
 
   async changeSavedSeedHdPathTemplateIfNeeded(nextHdPathTemplate?: HD_PATH_TEMPLATE_TYPE) {
@@ -833,6 +925,30 @@ export class KeystoreController extends EventEmitter {
     return !!this.#keystoreSeeds.length
   }
 
+  get hasKeystoreTempSeed() {
+    return !!this.#tempSeed
+  }
+
+  get banners(): Banner[] {
+    if (!this.#tempSeed) return []
+
+    return [
+      {
+        id: 'tempSeed',
+        type: 'warning',
+        category: 'temp-seed-not-confirmed',
+        title: 'You have an unsaved imported seed',
+        text: '',
+        actions: [
+          {
+            label: 'Check',
+            actionName: 'confirm-temp-seed'
+          }
+        ]
+      }
+    ]
+  }
+
   toJSON() {
     return {
       ...this,
@@ -840,7 +956,9 @@ export class KeystoreController extends EventEmitter {
       isUnlocked: this.isUnlocked, // includes the getter in the stringified instance
       keys: this.keys,
       hasPasswordSecret: this.hasPasswordSecret,
-      hasKeystoreSavedSeed: this.hasKeystoreSavedSeed
+      hasKeystoreSavedSeed: this.hasKeystoreSavedSeed,
+      hasKeystoreTempSeed: this.hasKeystoreTempSeed,
+      banners: this.banners
     }
   }
 }

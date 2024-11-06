@@ -361,6 +361,8 @@ export class MainController extends EventEmitter {
           // on the latest `hdPathTemplate` chosen in the AccountAdder.
           if (this.accountAdder.isInitializedWithSavedSeed)
             this.keystore.changeSavedSeedHdPathTemplateIfNeeded(this.accountAdder.hdPathTemplate)
+          if (this.keystore.hasKeystoreTempSeed)
+            this.keystore.changeTempSeedHdPathTemplateIfNeeded(this.accountAdder.hdPathTemplate)
         },
         true
       )
