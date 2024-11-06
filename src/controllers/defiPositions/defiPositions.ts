@@ -20,6 +20,8 @@ export class DefiPositionsController extends EventEmitter {
   // Holds the initial load promise, so that one can wait until it completes
   initialLoadPromise: Promise<void>
 
+  #minUpdateInterval: number = 60 * 1000 // 1 minute
+
   constructor({
     accounts,
     providers,
@@ -48,7 +50,10 @@ export class DefiPositionsController extends EventEmitter {
   #initInitialAccountStateIfNeeded(accountAddr: string) {
     if (!this.state[accountAddr]) {
       this.state[accountAddr] = this.#networks.networks.reduce(
-        (acc, n) => ({ ...acc, [n.id]: { isLoading: true, positionsByProvider: [] } }),
+        (acc, n) => ({
+          ...acc,
+          [n.id]: { isLoading: true, positionsByProvider: [] }
+        }),
         this.state[accountAddr]
       )
 
@@ -72,6 +77,17 @@ export class DefiPositionsController extends EventEmitter {
     })
   }
 
+  #getCanSkipUpdate(accountAddr: string, networkId: string) {
+    const networkState = this.state[accountAddr][networkId]
+
+    if (networkState.isLoading) return false
+    if (networkState.criticalError) return false
+    if (networkState.updatedAt && Date.now() - networkState.updatedAt < this.#minUpdateInterval)
+      return true
+
+    return false
+  }
+
   async updatePositions(networkId?: NetworkId) {
     const selectedAccountAddr = this.#accounts.selectedAccount
     if (!selectedAccountAddr) {
@@ -86,6 +102,13 @@ export class DefiPositionsController extends EventEmitter {
       : this.#networks.networks
 
     networksToUpdate.map(async (n) => {
+      if (this.#getCanSkipUpdate(selectedAccountAddr, n.id)) {
+        // Emit an update so that the current account data getter is updated
+        this.emitUpdate()
+        return
+      }
+      const networkState = this.state[selectedAccountAddr][n.id]
+
       try {
         const [aavePositions, uniV3Positions] = [
           await getAAVEPositions(
@@ -122,15 +145,16 @@ export class DefiPositionsController extends EventEmitter {
         ]
 
         this.state[selectedAccountAddr][n.id] = {
-          ...this.state[selectedAccountAddr][n.id],
+          ...networkState,
           isLoading: false,
           positionsByProvider: [aavePositions, uniV3Positions].filter(
             Boolean
-          ) as PositionsByProvider[]
+          ) as PositionsByProvider[],
+          updatedAt: Date.now()
         }
         await this.#setAssetPrices(selectedAccountAddr, n.id)
       } catch (e: any) {
-        const prevPositionsByProvider = this.state[selectedAccountAddr][n.id].positionsByProvider
+        const prevPositionsByProvider = networkState.positionsByProvider
         this.state[selectedAccountAddr][n.id] = {
           isLoading: false,
           positionsByProvider: prevPositionsByProvider || [],

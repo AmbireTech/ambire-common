@@ -392,7 +392,9 @@ export const getNetworksWithDeFiPositionsErrorBanners = ({
         providerErrorBanners.push({
           id: `${networkId}-defi-positions-error`,
           type: 'error',
-          title: `Failed to retrieve DeFi positions for ${providerNamesWithErrors.join(', ')}`,
+          title: `Failed to retrieve DeFi positions for ${providerNamesWithErrors.join(', ')} on ${
+            network.name
+          }`,
           text: 'Affected features: DeFi positions. Reload the account or try again later.',
           actions: []
         })
@@ -406,7 +408,7 @@ export const getNetworksWithDeFiPositionsErrorBanners = ({
     banners.push({
       id: 'defi-positions-critical-error',
       type: 'error',
-      title: `Failed to retrieve DeFi positions for ${networkNamesWithCriticalError.join(', ')}`,
+      title: `Failed to retrieve DeFi positions on ${networkNamesWithCriticalError.join(', ')}`,
       text: 'Affected features: DeFi positions. Reload the account or try again later.',
       actions: []
     })
