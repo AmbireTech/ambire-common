@@ -588,7 +588,7 @@ export class SwapAndBridgeController extends EventEmitter {
           let alreadySelectedRoute = null
 
           const isBridging = quoteResult.routes.some((r) =>
-            r.userTxs.some((rTxn) => getIsBridgeTxn(rTxn.txType as 'dex-swap' | 'fund-movr'))
+            r.userTxs.some((rTxn) => getIsBridgeTxn(rTxn.userTxType))
           )
           const shouldPersistSelectedRoute = isBridging && this.quote
           if (shouldPersistSelectedRoute) {
