@@ -12,7 +12,11 @@ import { isSmartAccount } from '../../libs/account/account'
 import { getSwapAndBridgeBanners } from '../../libs/banners/banners'
 import { TokenResult } from '../../libs/portfolio'
 import { getTokenAmount } from '../../libs/portfolio/helpers'
-import { getQuoteRouteSteps, sortTokenListResponse } from '../../libs/swapAndBridge/swapAndBridge'
+import {
+  getIsBridgeTxn,
+  getQuoteRouteSteps,
+  sortTokenListResponse
+} from '../../libs/swapAndBridge/swapAndBridge'
 import { getSanitizedAmount } from '../../libs/transfer/amount'
 import { SocketAPI } from '../../services/socket/api'
 import { validateSendTransferAmount } from '../../services/validations/validate'
@@ -472,7 +476,8 @@ export class SwapAndBridgeController extends EventEmitter {
       this.emitError({
         error,
         level: 'major',
-        message: `Unable to retrieve the list of supported receive tokens. Please reload the tab to try again.`
+        message:
+          'Unable to retrieve the list of supported receive tokens. Please reload the tab to try again.'
       })
     }
     this.updateToTokenListStatus = 'INITIAL'
@@ -581,12 +586,16 @@ export class SwapAndBridgeController extends EventEmitter {
           let routeToSelect
           let routeToSelectSteps
 
-          const selectedRouteInQuoteRes = this.quote
-            ? quoteResult.routes.find(
-                (r: SocketAPIRoute) =>
-                  r.usedBridgeNames[0] === this.quote!.selectedRoute.usedBridgeNames[0] // because we have only routes with unique bridges
-              )
-            : null
+          let selectedRouteInQuoteRes = null
+          const isBridgeTxn = quoteResult.routes.some((r) =>
+            r.userTxs.some((rTxn) => getIsBridgeTxn(rTxn.txType as 'dex-swap' | 'fund-movr'))
+          )
+          if (isBridgeTxn && this.quote) {
+            selectedRouteInQuoteRes = quoteResult.routes.find(
+              // because we have only routes with unique bridges
+              (r) => r.usedBridgeNames[0] === this.quote?.selectedRoute?.usedBridgeNames[0]
+            )
+          }
 
           if (selectedRouteInQuoteRes) {
             routeToSelect = selectedRouteInQuoteRes
