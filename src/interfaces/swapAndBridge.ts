@@ -23,7 +23,8 @@ export interface SocketAPIRoute {
   isOnlySwapRoute: boolean
   fromAmount: string
   toAmount: string
-  usedBridgeNames: string[]
+  usedBridgeNames?: string[]
+  usedDexName?: string
   totalUserTx: number
   totalGasFeesInUsd: number
   recipient: string

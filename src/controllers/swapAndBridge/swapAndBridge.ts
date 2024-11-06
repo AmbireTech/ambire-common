@@ -569,7 +569,6 @@ export class SwapAndBridgeController extends EventEmitter {
           isSmartAccount: isSmartAccount(selectedAccount),
           sort: this.routePriority
         })
-
         if (
           this.#getIsFormValidToFetchQuote() &&
           quoteResult &&
@@ -582,12 +581,17 @@ export class SwapAndBridgeController extends EventEmitter {
           let routeToSelectSteps
 
           const selectedRouteInQuoteRes = this.quote
-            ? quoteResult.routes.find(
-                (r: SocketAPIRoute) =>
-                  r.usedBridgeNames[0] === this.quote!.selectedRoute.usedBridgeNames[0] // because we have only routes with unique bridges
-              )
-            : null
+            ? quoteResult.routes.find((r: SocketAPIRoute) => {
+                if (this.quote!.selectedRoute?.usedBridgeNames) {
+                  return r?.usedBridgeNames?.[0] === this.quote!.selectedRoute.usedBridgeNames[0] // because we have only routes with unique bridges
+                }
+                if (this.quote!.selectedRoute?.usedDexName) {
+                  return r?.usedDexName === this.quote!.selectedRoute.usedDexName
+                }
 
+                return false
+              })
+            : null
           if (selectedRouteInQuoteRes) {
             routeToSelect = selectedRouteInQuoteRes
             routeToSelectSteps = getQuoteRouteSteps(selectedRouteInQuoteRes.userTxs)
