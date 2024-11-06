@@ -1,8 +1,8 @@
 import { NetworkId } from '../../interfaces/network'
 import { getNetworksWithDeFiPositionsErrorBanners } from '../../libs/banners/banners'
+import { getAssetValue, sortByValue } from '../../libs/defiPositions/helpers'
 import { getAAVEPositions, getUniV3Positions } from '../../libs/defiPositions/providers'
 import { DeFiPositionsState, PositionsByProvider } from '../../libs/defiPositions/types'
-import { safeTokenAmountAndNumberMultiplication } from '../../utils/numbers/formatters'
 import { AccountsController } from '../accounts/accounts'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { NetworksController } from '../networks/networks'
@@ -214,19 +214,13 @@ export class DefiPositionsController extends EventEmitter {
               price: price as number
             }))
 
-            const priceInUSD = priceIn.find((p) => p.baseCurrency === 'usd')?.price
-            if (!priceInUSD) return asset
+            const value = getAssetValue(asset.amount, asset.decimals, priceIn)
 
-            const assetValue = safeTokenAmountAndNumberMultiplication(
-              asset.amount,
-              asset.decimals,
-              priceInUSD
-            )
-
-            positionInUSD += Number(assetValue)
+            positionInUSD += value
 
             return {
               ...asset,
+              value,
               priceIn
             }
           })
@@ -273,9 +267,27 @@ export class DefiPositionsController extends EventEmitter {
   get selectedAccountPositions() {
     if (!this.#accounts.selectedAccount) return null
 
-    return Object.values(this.state[this.#accounts.selectedAccount] || {}).flatMap(
-      (n) => n.positionsByProvider
+    const positionsByProvider = Object.values(
+      this.state[this.#accounts.selectedAccount] || {}
+    ).flatMap((n) => n.positionsByProvider)
+
+    const positionsByProviderWithSortedAssets = positionsByProvider.map((provider) => {
+      const positions = provider.positions
+        .map((position) => {
+          const assets = position.assets.sort((a, b) => sortByValue(a.value, b.value))
+
+          return { ...position, assets }
+        })
+        .sort((a, b) => sortByValue(a.additionalData.positionInUSD, b.additionalData.positionInUSD))
+
+      return { ...provider, positions }
+    })
+
+    const sortedPositionsByProvider = positionsByProviderWithSortedAssets.sort((a, b) =>
+      sortByValue(a.positionInUSD, b.positionInUSD)
     )
+
+    return sortedPositionsByProvider
   }
 
   get isSelectedAccountLoading() {

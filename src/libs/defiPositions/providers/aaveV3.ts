@@ -5,6 +5,7 @@ import DeFiPositionsDeploylessCode from '../../../../contracts/compiled/DeFiAAVE
 import { Network } from '../../../interfaces/network'
 import { fromDescriptor } from '../../deployless/deployless'
 import { AAVE_V3 } from '../defiAddresses'
+import { getAssetValue } from '../helpers'
 import { AssetType, PositionAsset, PositionsByProvider } from '../types'
 
 const AAVE_NO_HEALTH_FACTOR_MAGIC_NUMBER =
@@ -86,13 +87,16 @@ export async function getAAVEPositions(
 
       const assetsResult = []
 
+      const priceIn = [{ baseCurrency: 'usd', price }]
+
       if (asset.balance > 0) {
         assetsResult.push({
           address: asset.address,
           symbol: asset.symbol,
           decimals: Number(asset.decimals),
           amount: asset.balance,
-          priceIn: [{ baseCurrency: 'usd', price }],
+          priceIn,
+          value: getAssetValue(asset.balance, Number(asset.decimals), priceIn),
           type: AssetType.Collateral,
           additionalData: {
             APY: Number(asset.currentLiquidityRate) / 10 ** 25
@@ -106,7 +110,8 @@ export async function getAAVEPositions(
           symbol: asset.symbol,
           decimals: Number(asset.decimals),
           amount: asset.stableBorrowAssetBalanc,
-          priceIn: [{ baseCurrency: 'usd', price }],
+          priceIn,
+          value: getAssetValue(asset.stableBorrowAssetBalanc, Number(asset.decimals), priceIn),
           type: AssetType.Borrow,
           additionalData: {
             APY: Number(asset.currentStableBorrowRate) / 10 ** 25
@@ -120,7 +125,8 @@ export async function getAAVEPositions(
           symbol: asset.symbol,
           decimals: Number(asset.decimals),
           amount: asset.borrowAssetBalance,
-          priceIn: [{ baseCurrency: 'usd', price }],
+          priceIn,
+          value: getAssetValue(asset.borrowAssetBalance, Number(asset.decimals), priceIn),
           type: AssetType.Borrow,
           additionalData: {
             APY: Number(asset.currentVariableBorrowRate) / 10 ** 25

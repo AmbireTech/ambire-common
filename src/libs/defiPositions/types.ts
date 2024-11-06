@@ -13,6 +13,7 @@ export interface PositionAsset {
   decimals: number
   amount: bigint
   priceIn: Price[]
+  value?: number
   type: AssetType
   additionalData?: {
     [key: string]: any
