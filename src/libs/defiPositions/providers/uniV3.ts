@@ -1,11 +1,11 @@
 import { JsonRpcProvider, Provider } from 'ethers'
 
-import DeFiPositionsDeploylessCode from '../../../contracts/compiled/DeFiUniswapV3Positions.json'
-import { Network } from '../../interfaces/network'
-import { fromDescriptor } from '../deployless/deployless'
-import { UNISWAP_V3 } from './defiAddresses'
-import { AssetType, Position, PositionsByProvider } from './types'
-import { uniV3DataToPortfolioPosition } from './univ3Math'
+import DeFiPositionsDeploylessCode from '../../../../contracts/compiled/DeFiUniswapV3Positions.json'
+import { Network } from '../../../interfaces/network'
+import { fromDescriptor } from '../../deployless/deployless'
+import { UNISWAP_V3 } from '../defiAddresses'
+import { AssetType, Position, PositionsByProvider } from '../types'
+import { uniV3DataToPortfolioPosition } from './helpers/univ3Math'
 
 export async function getUniV3Positions(
   userAddr: string,

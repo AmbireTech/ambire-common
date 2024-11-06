@@ -1,11 +1,11 @@
 import { JsonRpcProvider, Provider } from 'ethers'
 import { v4 as uuidv4 } from 'uuid'
 
-import DeFiPositionsDeploylessCode from '../../../contracts/compiled/DeFiAAVEPosition.json'
-import { Network } from '../../interfaces/network'
-import { fromDescriptor } from '../deployless/deployless'
-import { AAVE_V3 } from './defiAddresses'
-import { AssetType, PositionAsset, PositionsByProvider } from './types'
+import DeFiPositionsDeploylessCode from '../../../../contracts/compiled/DeFiAAVEPosition.json'
+import { Network } from '../../../interfaces/network'
+import { fromDescriptor } from '../../deployless/deployless'
+import { AAVE_V3 } from '../defiAddresses'
+import { AssetType, PositionAsset, PositionsByProvider } from '../types'
 
 const AAVE_NO_HEALTH_FACTOR_MAGIC_NUMBER =
   115792089237316195423570985008687907853269984665640564039457584007913129639935n

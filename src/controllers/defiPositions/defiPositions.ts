@@ -1,7 +1,6 @@
 import { NetworkId } from '../../interfaces/network'
-import { getAAVEPositions } from '../../libs/defiPositions/aaveV3'
+import { getAAVEPositions, getUniV3Positions } from '../../libs/defiPositions/providers'
 import { DeFiPositionsState, PositionsByProvider } from '../../libs/defiPositions/types'
-import { getUniV3Positions } from '../../libs/defiPositions/uniV3'
 import { safeTokenAmountAndNumberMultiplication } from '../../utils/numbers/formatters'
 import { AccountsController } from '../accounts/accounts'
 import EventEmitter from '../eventEmitter/eventEmitter'
