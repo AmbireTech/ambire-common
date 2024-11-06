@@ -12,7 +12,7 @@ import { DeploylessMode, fromDescriptor } from './deployless'
 // on the given network
 export async function getSASupport(
   provider: JsonRpcProvider
-): Promise<{ addressMatches: boolean; supportsStateOverride: boolean }> {
+): Promise<{ addressMatches: boolean }> {
   const smartAccount = await getSmartAccount(
     [
       {
@@ -31,7 +31,6 @@ export async function getSASupport(
     mode: DeploylessMode.StateOverride
   }
   const deployless = fromDescriptor(provider, AmbireFactory, true)
-  let supportsStateOverride = true
   const result = await deployless
     .call(
       'deployAndExecute',
@@ -50,12 +49,10 @@ export async function getSASupport(
 
       // if there's an error, return the zero address indicating that
       // our smart accounts will most likely not work on this chain
-      supportsStateOverride = false
       return [ZeroAddress]
     })
 
   return {
-    addressMatches: result[0] === smartAccount.addr,
-    supportsStateOverride
+    addressMatches: result[0] === smartAccount.addr
   }
 }

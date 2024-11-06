@@ -14,6 +14,7 @@ import { RPCProviders } from '../../interfaces/provider'
 import { Bundler } from '../../services/bundlers/bundler'
 import { getRpcProvider } from '../../services/provider'
 import { getSASupport } from '../deployless/simulateDeployCall'
+import { doesItSupportStateOverride } from '../deployless/supportsStateOverride'
 
 // bnb, fantom, metis
 const relayerAdditionalNetworks = [56n, 250n, 1088n]
@@ -84,12 +85,14 @@ export async function getNetworkInfo(
           retryRequest(() => provider.getCode(SINGLETON)),
           retryRequest(() => provider.getCode(AMBIRE_ACCOUNT_FACTORY)),
           retryRequest(() => getSASupport(provider)),
+          retryRequest(() => doesItSupportStateOverride(provider)),
           Bundler.isNetworkSupported(fetch, chainId).catch(() => false)
           // retryRequest(() => provider.getCode(ERC_4337_ENTRYPOINT)),
         ]).catch((e: Error) =>
           raiseFlagged(e, ['0x', '0x', { addressMatches: false, supportsStateOverride: false }])
         )
-        const [singletonCode, factoryCode, saSupport, is4337enabled] = responses
+        const [singletonCode, factoryCode, saSupport, supportsStateOverride, is4337enabled] =
+          responses
         const areContractsDeployed = factoryCode !== '0x'
         // const has4337 = entryPointCode !== '0x' && hasBundler
         const predefinedNetwork = predefinedNetworks.find((net) => net.chainId === chainId)
@@ -98,7 +101,7 @@ export async function getNetworkInfo(
         // - or we can't do the simulation with this RPC but we have the factory
         // deployed on the network
         const supportsAmbire =
-          saSupport.addressMatches || (!saSupport.supportsStateOverride && areContractsDeployed)
+          saSupport.addressMatches || (!supportsStateOverride && areContractsDeployed)
         networkInfo = {
           ...networkInfo,
           hasSingleton: singletonCode !== '0x',
@@ -107,7 +110,7 @@ export async function getNetworkInfo(
           rpcNoStateOverride:
             predefinedNetwork && predefinedNetwork.rpcNoStateOverride === true
               ? true
-              : !saSupport.supportsStateOverride,
+              : !supportsStateOverride,
           erc4337: {
             enabled: predefinedNetwork ? predefinedNetwork.erc4337.enabled : is4337enabled,
             hasPaymaster: predefinedNetwork ? predefinedNetwork.erc4337.hasPaymaster : false

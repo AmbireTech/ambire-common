@@ -19,7 +19,7 @@ const abiCoder = new AbiCoder()
 
 // this is the state override we use for the EOA when
 // estimating through Estimation.sol
-function getEOAEstimationStateOverride(accountAddr: string) {
+export function getEOAEstimationStateOverride(accountAddr: string) {
   return {
     [accountAddr]: {
       code: AmbireAccount.binRuntime,
