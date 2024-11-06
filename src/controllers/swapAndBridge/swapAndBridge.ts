@@ -415,7 +415,9 @@ export class SwapAndBridgeController extends EventEmitter {
     this.portfolioTokenList = nextPortfolioTokenList
 
     const fromSelectedTokenInNextPortfolio = nextPortfolioTokenList.find(
-      (t) => t.address === this.fromSelectedToken?.address
+      (t) =>
+        t.address === this.fromSelectedToken?.address &&
+        t.networkId === this.fromSelectedToken?.networkId
     )
     const shouldUpdateFromSelectedToken =
       !this.fromSelectedToken || // initial (default) state
