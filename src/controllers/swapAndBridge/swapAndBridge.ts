@@ -411,11 +411,23 @@ export class SwapAndBridgeController extends EventEmitter {
     if (shouldEmit) this.emitUpdate()
   }
 
-  updatePortfolioTokenList(portfolioTokenList: TokenResult[]) {
-    this.portfolioTokenList = portfolioTokenList
+  updatePortfolioTokenList(nextPortfolioTokenList: TokenResult[]) {
+    this.portfolioTokenList = nextPortfolioTokenList
 
-    if (!this.fromSelectedToken) {
-      this.updateForm({ fromSelectedToken: this.portfolioTokenList[0] || null })
+    const fromSelectedTokenInNextPortfolio = nextPortfolioTokenList.find(
+      (t) => t.address === this.fromSelectedToken?.address
+    )
+    const shouldUpdateFromSelectedToken =
+      !this.fromSelectedToken || // initial (default) state
+      // May happen if selected account gets changed or the token gets send away in the meantime
+      !fromSelectedTokenInNextPortfolio ||
+      // May happen if user receives or sends the token in the meantime
+      fromSelectedTokenInNextPortfolio.amount !== this.fromSelectedToken?.amount
+
+    if (shouldUpdateFromSelectedToken) {
+      this.updateForm({
+        fromSelectedToken: fromSelectedTokenInNextPortfolio || this.portfolioTokenList[0] || null
+      })
     } else {
       this.emitUpdate()
     }
