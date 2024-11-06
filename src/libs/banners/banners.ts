@@ -7,6 +7,7 @@ import { Action, Banner } from '../../interfaces/banner'
 import { Network, NetworkId } from '../../interfaces/network'
 import { RPCProviders } from '../../interfaces/provider'
 import { ActiveRoute } from '../../interfaces/swapAndBridge'
+import { AccountState } from '../defiPositions/types'
 import { getNetworksWithFailedRPC } from '../networks/networks'
 import { PORTFOLIO_LIB_ERROR_NAMES } from '../portfolio/portfolio'
 import { getQuoteRouteSteps } from '../swapAndBridge/swapAndBridge'
@@ -226,7 +227,7 @@ export const getNetworksWithFailedRPCBanners = ({
       id: 'custom-rpcs-down',
       type: 'error',
       title: `Failed to retrieve network data for ${n.name}. You can try selecting another RPC URL`,
-      text: 'Affected features: visible assets, sign message/transaction, ENS/UD domain resolving, add account.',
+      text: 'Affected features: visible assets, DeFi positions, sign message/transaction, ENS/UD domain resolving, add account.',
       actions: [
         {
           label: 'Select',
@@ -247,7 +248,7 @@ export const getNetworksWithFailedRPCBanners = ({
     title: `Failed to retrieve network data for ${networksToGroupInSingleBanner
       .map((n) => n.name)
       .join(', ')} (RPC malfunction)`,
-    text: 'Affected features: visible tokens, sign message/transaction, ENS/UD domain resolving, add account. Please try again later or contact support.',
+    text: 'Affected features: visible assets, DeFi positions, sign message/transaction, ENS/UD domain resolving, add account. Please try again later or contact support.',
     actions: []
   })
 
@@ -265,6 +266,11 @@ export const getNetworksWithPortfolioErrorBanners = ({
 }): Banner[] => {
   const banners: Banner[] = []
 
+  // Why are we iterating over the whole state?
+  // What if an account has a critical error, the user
+  // changes the account, and the new account has no errors?
+  // Isn't it more efficient to iterate over the current account state?
+  // @TODO: Consider refactoring this
   const portfolioLoading = Object.keys(portfolioLatest).some((accId: AccountId) => {
     const accPortfolio = portfolioLatest[accId]
 
@@ -341,6 +347,70 @@ export const getNetworksWithPortfolioErrorBanners = ({
       })
     }
   })
+
+  return banners
+}
+
+export const getNetworksWithDeFiPositionsErrorBanners = ({
+  networks,
+  currentAccountState,
+  providers
+}: {
+  networks: Network[]
+  currentAccountState: AccountState
+  providers: RPCProviders
+}) => {
+  const isLoading = Object.keys(currentAccountState).some((networkId) => {
+    const networkState = currentAccountState[networkId]
+    return networkState.isLoading
+  })
+
+  if (isLoading) return []
+
+  const networkNamesWithCriticalError: string[] = []
+  const providerErrorBanners: Banner[] = []
+
+  Object.keys(currentAccountState).forEach((networkId) => {
+    const networkState = currentAccountState[networkId]
+    const network = networks.find((n) => n.id === networkId)
+    const rpcProvider = providers[networkId]
+
+    if (
+      !network ||
+      !networkState ||
+      // Don't display an error banner if the RPC isn't working because an RPC error banner is already displayed.
+      (typeof rpcProvider.isWorking === 'boolean' && !rpcProvider.isWorking)
+    )
+      return
+
+    if (networkState.criticalError) {
+      networkNamesWithCriticalError.push(network.name)
+    } else {
+      const providerNamesWithErrors = networkState.providerErrors?.map((e) => e.providerName) || []
+
+      if (providerNamesWithErrors.length) {
+        providerErrorBanners.push({
+          id: `${networkId}-defi-positions-error`,
+          type: 'error',
+          title: `Failed to retrieve DeFi positions for ${providerNamesWithErrors.join(', ')}`,
+          text: 'Affected features: DeFi positions. Reload the account or try again later.',
+          actions: []
+        })
+      }
+    }
+  })
+
+  const banners = providerErrorBanners
+
+  if (networkNamesWithCriticalError.length) {
+    banners.push({
+      id: 'defi-positions-critical-error',
+      type: 'error',
+      title: `Failed to retrieve DeFi positions for ${networkNamesWithCriticalError.join(', ')}`,
+      text: 'Affected features: DeFi positions. Reload the account or try again later.',
+      actions: []
+    })
+  }
 
   return banners
 }

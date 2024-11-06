@@ -27,10 +27,16 @@ export interface AccountState {
   [networkId: string]: NetworkState
 }
 
+export interface ProviderError {
+  providerName: string
+  error: string
+}
+
 export interface NetworkState {
   positionsByProvider: PositionsByProvider[]
   isLoading: boolean
-  error?: string | null
+  criticalError?: string | null
+  providerErrors?: ProviderError[]
 }
 
 export interface PositionsByProvider {

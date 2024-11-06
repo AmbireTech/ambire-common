@@ -1,4 +1,5 @@
 import { NetworkId } from '../../interfaces/network'
+import { getNetworksWithDeFiPositionsErrorBanners } from '../../libs/banners/banners'
 import { getAAVEPositions, getUniV3Positions } from '../../libs/defiPositions/providers'
 import { DeFiPositionsState, PositionsByProvider } from '../../libs/defiPositions/types'
 import { safeTokenAmountAndNumberMultiplication } from '../../utils/numbers/formatters'
@@ -55,6 +56,22 @@ export class DefiPositionsController extends EventEmitter {
     }
   }
 
+  #setProviderError(
+    accountAddr: string,
+    networkId: string,
+    providerName: string,
+    errorMessage: string
+  ) {
+    if (!this.state[accountAddr][networkId].providerErrors) {
+      this.state[accountAddr][networkId].providerErrors = []
+    }
+
+    this.state[accountAddr][networkId].providerErrors!.push({
+      providerName,
+      error: errorMessage
+    })
+  }
+
   async updatePositions(networkId?: NetworkId) {
     const selectedAccountAddr = this.#accounts.selectedAccount
     if (!selectedAccountAddr) {
@@ -68,8 +85,8 @@ export class DefiPositionsController extends EventEmitter {
       ? this.#networks.networks.filter((n) => n.id === networkId)
       : this.#networks.networks
 
-    try {
-      networksToUpdate.map(async (n) => {
+    networksToUpdate.map(async (n) => {
+      try {
         const [aavePositions, uniV3Positions] = [
           await getAAVEPositions(
             this.#accounts.selectedAccount!,
@@ -77,6 +94,13 @@ export class DefiPositionsController extends EventEmitter {
             n
           ).catch((e) => {
             console.error('getAAVEPositions error:', e)
+            this.#setProviderError(
+              selectedAccountAddr,
+              n.id,
+              'AAVE v3',
+              e?.message || 'Unknown error'
+            )
+
             return null
           }),
           await getUniV3Positions(
@@ -85,25 +109,38 @@ export class DefiPositionsController extends EventEmitter {
             n
           ).catch((e) => {
             console.error('getUniV3Positions error:', e)
+
+            this.#setProviderError(
+              selectedAccountAddr,
+              n.id,
+              'Uniswap V3',
+              e?.message || 'Unknown error'
+            )
+
             return null
           })
         ]
 
-        if (!this.state[selectedAccountAddr]) this.state[selectedAccountAddr] = {}
-
         this.state[selectedAccountAddr][n.id] = {
+          ...this.state[selectedAccountAddr][n.id],
           isLoading: false,
           positionsByProvider: [aavePositions, uniV3Positions].filter(
             Boolean
           ) as PositionsByProvider[]
         }
         await this.#setAssetPrices(selectedAccountAddr, n.id)
+      } catch (e: any) {
+        const prevPositionsByProvider = this.state[selectedAccountAddr][n.id].positionsByProvider
+        this.state[selectedAccountAddr][n.id] = {
+          isLoading: false,
+          positionsByProvider: prevPositionsByProvider || [],
+          criticalError: e?.message || 'Unknown error'
+        }
+        console.error(`updatePositions error on ${n.id}`, e)
+      } finally {
         this.emitUpdate()
-      })
-    } catch (error) {
-      console.error('updatePositions error:', error)
-      // TODO: set a proper error
-    }
+      }
+    })
   }
 
   async #setAssetPrices(accountAddr: string, networkId: string) {
@@ -196,6 +233,18 @@ export class DefiPositionsController extends EventEmitter {
     }
   }
 
+  get banners() {
+    if (!this.#accounts.selectedAccount) return []
+
+    const errorBanners = getNetworksWithDeFiPositionsErrorBanners({
+      networks: this.#networks.networks,
+      currentAccountState: this.state[this.#accounts.selectedAccount],
+      providers: this.#providers.providers
+    })
+
+    return errorBanners
+  }
+
   get selectedAccountPositions() {
     if (!this.#accounts.selectedAccount) return null
 
@@ -215,7 +264,8 @@ export class DefiPositionsController extends EventEmitter {
       ...this,
       ...super.toJSON(),
       selectedAccountPositions: this.selectedAccountPositions,
-      isSelectedAccountLoading: this.isSelectedAccountLoading
+      isSelectedAccountLoading: this.isSelectedAccountLoading,
+      banners: this.banners
     }
   }
 }
