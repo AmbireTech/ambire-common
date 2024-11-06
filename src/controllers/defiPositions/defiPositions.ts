@@ -82,6 +82,7 @@ export class DefiPositionsController extends EventEmitter {
 
     if (networkState.isLoading) return false
     if (networkState.criticalError) return false
+    if (networkState.providerErrors?.length) return false
     if (networkState.updatedAt && Date.now() - networkState.updatedAt < this.#minUpdateInterval)
       return true
 
