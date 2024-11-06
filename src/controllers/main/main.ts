@@ -853,7 +853,8 @@ export class MainController extends EventEmitter {
       // as the PortfolioController already exposes flags that are highly sufficient for the UX.
       // Additionally, if we trigger the portfolio update twice (i.e., running a long-living interval + force update from the Dashboard),
       // there won't be any error thrown, as all portfolio updates are queued and they don't use the `withStatus` helper.
-      this.updateSelectedAccountPortfolio(true)
+      this.updateSelectedAccountPortfolio(true),
+      this.defiPositions.updatePositions()
     ])
   }
 
