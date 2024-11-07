@@ -12,7 +12,11 @@ import { isSmartAccount } from '../../libs/account/account'
 import { getSwapAndBridgeBanners } from '../../libs/banners/banners'
 import { TokenResult } from '../../libs/portfolio'
 import { getTokenAmount } from '../../libs/portfolio/helpers'
-import { getQuoteRouteSteps, sortTokenListResponse } from '../../libs/swapAndBridge/swapAndBridge'
+import {
+  getIsBridgeTxn,
+  getQuoteRouteSteps,
+  sortTokenListResponse
+} from '../../libs/swapAndBridge/swapAndBridge'
 import { getSanitizedAmount } from '../../libs/transfer/amount'
 import { SocketAPI } from '../../services/socket/api'
 import { validateSendTransferAmount } from '../../services/validations/validate'
@@ -486,7 +490,8 @@ export class SwapAndBridgeController extends EventEmitter {
       this.emitError({
         error,
         level: 'major',
-        message: `Unable to retrieve the list of supported receive tokens. Please reload the tab to try again.`
+        message:
+          'Unable to retrieve the list of supported receive tokens. Please reload the tab to try again.'
       })
     }
     this.updateToTokenListStatus = 'INITIAL'
@@ -594,21 +599,23 @@ export class SwapAndBridgeController extends EventEmitter {
           let routeToSelect
           let routeToSelectSteps
 
-          const selectedRouteInQuoteRes = this.quote
-            ? quoteResult.routes.find((r: SocketAPIRoute) => {
-                if (this.quote!.selectedRoute?.usedBridgeNames) {
-                  return r?.usedBridgeNames?.[0] === this.quote!.selectedRoute.usedBridgeNames[0] // because we have only routes with unique bridges
-                }
-                if (this.quote!.selectedRoute?.usedDexName) {
-                  return r?.usedDexName === this.quote!.selectedRoute.usedDexName
-                }
+          const alreadySelectedRoute = quoteResult.routes.find((nextRoute) => {
+            if (!this.quote) return false
 
-                return false
-              })
-            : null
-          if (selectedRouteInQuoteRes) {
-            routeToSelect = selectedRouteInQuoteRes
-            routeToSelectSteps = getQuoteRouteSteps(selectedRouteInQuoteRes.userTxs)
+            // Because we only have routes with unique bridges (bridging case)
+            const selectedRouteUsedBridge = this.quote.selectedRoute.usedBridgeNames?.[0]
+            if (selectedRouteUsedBridge)
+              return nextRoute.usedBridgeNames?.[0] === selectedRouteUsedBridge
+
+            // Assuming to only have routes with unique DEXes (swapping case)
+            const selectedRouteUsedDex = this.quote.selectedRoute.usedDexName
+            if (selectedRouteUsedDex) return nextRoute.usedDexName === selectedRouteUsedDex
+
+            return false // should never happen, but just in case of bad data
+          })
+          if (alreadySelectedRoute) {
+            routeToSelect = alreadySelectedRoute
+            routeToSelectSteps = getQuoteRouteSteps(alreadySelectedRoute.userTxs)
           } else {
             const bestRoute =
               this.routePriority === 'output'
