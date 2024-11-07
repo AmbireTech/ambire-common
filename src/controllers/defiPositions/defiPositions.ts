@@ -182,8 +182,6 @@ export class DefiPositionsController extends EventEmitter {
   }
 
   async #setAssetPrices(accountAddr: string, networkId: string) {
-    if (Math.random() > 0.5) throw new Error('Random error')
-
     const dedup = (x: any[]) => x.filter((y, i) => x.indexOf(y) === i)
 
     const networkState = this.state[accountAddr][networkId]
