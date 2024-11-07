@@ -78,7 +78,8 @@ describe('DefiPositionsController', () => {
   })
   it('should update positions correctly', async () => {
     const controller = await prepareTest()
-    await controller.initialLoadPromise
+
+    await controller.updatePositions()
 
     expect(controller.state[ACCOUNT.addr].polygon.positionsByProvider.length).toBeGreaterThan(0)
   })
@@ -98,7 +99,7 @@ describe('DefiPositionsController', () => {
         })
     )
     const controller = await prepareTest()
-    await controller.initialLoadPromise
+    await controller.updatePositions()
 
     expect(controller.state[ACCOUNT.addr].ethereum.providerErrors).toEqual([
       { providerName: 'AAVE v3', error: 'AAVE error' },
@@ -110,7 +111,7 @@ describe('DefiPositionsController', () => {
 
   it('should set asset prices correctly', async () => {
     const controller = await prepareTest()
-    await controller.initialLoadPromise
+    await controller.updatePositions()
 
     const positions = controller.state[ACCOUNT.addr].polygon.positionsByProvider
     expect(positions.length).toBeGreaterThan(0)
@@ -134,7 +135,7 @@ describe('DefiPositionsController', () => {
     )
 
     const controller = await prepareTest()
-    await controller.initialLoadPromise
+    await controller.updatePositions()
 
     const positions = controller.state[ACCOUNT.addr].polygon.positionsByProvider
     expect(positions.length).toBeGreaterThan(0)

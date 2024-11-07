@@ -21,9 +21,6 @@ export class DefiPositionsController extends EventEmitter {
 
   state: DeFiPositionsState = {}
 
-  // Holds the initial load promise, so that one can wait until it completes
-  initialLoadPromise: Promise<void>
-
   #minUpdateInterval: number = 60 * 1000 // 1 minute
 
   constructor({
@@ -40,15 +37,6 @@ export class DefiPositionsController extends EventEmitter {
     this.#accounts = accounts
     this.#providers = providers
     this.#networks = networks
-    this.initialLoadPromise = this.#load()
-  }
-
-  async #load() {
-    await this.#accounts.initialLoadPromise
-    await this.#networks.initialLoadPromise
-    await this.#providers.initialLoadPromise
-
-    await this.updatePositions()
   }
 
   #initInitialAccountStateIfNeeded(accountAddr: string) {
