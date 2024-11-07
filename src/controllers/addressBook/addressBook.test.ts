@@ -78,6 +78,7 @@ describe('AddressBookController', () => {
     providersCtrl,
     networksCtrl,
     () => {},
+    () => {},
     () => {}
   )
   const addressBookController = new AddressBookController(storage, accountsCtrl)

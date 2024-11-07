@@ -1,3 +1,4 @@
+import { SelectedAccountController } from 'controllers/selectedAccount/selectedAccount'
 import { formatUnits, getAddress, parseUnits } from 'ethers'
 
 import { Storage } from '../../interfaces/storage'
@@ -18,7 +19,6 @@ import { SocketAPI } from '../../services/socket/api'
 import { validateSendTransferAmount } from '../../services/validations/validate'
 import { convertTokenPriceToBigInt } from '../../utils/numbers/formatters'
 import wait from '../../utils/wait'
-import { AccountsController } from '../accounts/accounts'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { NetworksController } from '../networks/networks'
 
@@ -46,7 +46,7 @@ export enum SwapAndBridgeFormStatus {
  *  - Manages token active routes
  */
 export class SwapAndBridgeController extends EventEmitter {
-  #accounts: AccountsController
+  #selectedAccount: SelectedAccountController
 
   #networks: NetworksController
 
@@ -113,18 +113,18 @@ export class SwapAndBridgeController extends EventEmitter {
   #initialLoadPromise: Promise<void>
 
   constructor({
-    accounts,
+    selectedAccount,
     networks,
     socketAPI,
     storage
   }: {
-    accounts: AccountsController
+    selectedAccount: SelectedAccountController
     networks: NetworksController
     socketAPI: SocketAPI
     storage: Storage
   }) {
     super()
-    this.#accounts = accounts
+    this.#selectedAccount = selectedAccount
     this.#networks = networks
     this.#socketAPI = socketAPI
     this.#storage = storage
@@ -135,7 +135,7 @@ export class SwapAndBridgeController extends EventEmitter {
 
   async #load() {
     await this.#networks.initialLoadPromise
-    await this.#accounts.initialLoadPromise
+    await this.#selectedAccount.initialLoadPromise
 
     this.activeRoutes = await this.#storage.get('swapAndBridgeActiveRoutes', [])
 
@@ -472,7 +472,8 @@ export class SwapAndBridgeController extends EventEmitter {
       this.emitError({
         error,
         level: 'major',
-        message: `Unable to retrieve the list of supported receive tokens. Please reload the tab to try again.`
+        message:
+          'Unable to retrieve the list of supported receive tokens. Please reload the tab to try again.'
       })
     }
     this.updateToTokenListStatus = 'INITIAL'
@@ -524,9 +525,7 @@ export class SwapAndBridgeController extends EventEmitter {
     this.#updateQuoteThrottle.time = now
 
     const updateQuoteFunction = async () => {
-      const selectedAccount = this.#accounts.accounts.find(
-        (a) => a.addr === this.#accounts.selectedAccount
-      )
+      if (!this.#selectedAccount.account) return
 
       const sanitizedFromAmount = getSanitizedAmount(
         this.fromAmount,
@@ -565,8 +564,8 @@ export class SwapAndBridgeController extends EventEmitter {
           toChainId: this.toChainId!,
           toTokenAddress: this.toSelectedToken!.address,
           fromAmount: bigintFromAmount,
-          userAddress: this.#accounts.selectedAccount!,
-          isSmartAccount: isSmartAccount(selectedAccount),
+          userAddress: this.#selectedAccount.account.addr,
+          isSmartAccount: isSmartAccount(this.#selectedAccount.account),
           sort: this.routePriority
         })
         if (
@@ -779,14 +778,16 @@ export class SwapAndBridgeController extends EventEmitter {
       this.fromAmount &&
       this.fromSelectedToken &&
       this.toSelectedToken &&
-      this.#accounts.selectedAccount &&
       this.validateFromAmount.success
     )
   }
 
   get banners() {
+    if (!this.#selectedAccount.account) return
+
     const activeRoutesForSelectedAccount = this.activeRoutes.filter(
-      (r) => getAddress(r.route.sender || r.route.userAddress) === this.#accounts.selectedAccount
+      (r) =>
+        getAddress(r.route.sender || r.route.userAddress) === this.#selectedAccount.account!.addr
     )
     return getSwapAndBridgeBanners(activeRoutesForSelectedAccount)
   }
