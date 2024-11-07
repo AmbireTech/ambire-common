@@ -69,6 +69,7 @@ export enum SigningStatus {
    */
   UpdatesPaused = 'updates-paused',
   InProgress = 'in-progress',
+  WaitingForPaymaster = 'waiting-for-paymaster-response',
   Done = 'done'
 }
 
@@ -98,7 +99,8 @@ type SpeedCalc = {
 const noStateUpdateStatuses = [
   SigningStatus.InProgress,
   SigningStatus.Done,
-  SigningStatus.UpdatesPaused
+  SigningStatus.UpdatesPaused,
+  SigningStatus.WaitingForPaymaster
 ]
 
 export class SignAccountOpController extends EventEmitter {
@@ -148,6 +150,8 @@ export class SignAccountOpController extends EventEmitter {
 
   #reEstimate: Function
 
+  #isSignRequestStillActive: Function
+
   rbfAccountOps: { [key: string]: SubmittedAccountOp | null }
 
   signedAccountOp: AccountOp | null
@@ -166,7 +170,8 @@ export class SignAccountOpController extends EventEmitter {
     fromActionId: AccountOpAction['id'],
     accountOp: AccountOp,
     callRelayer: Function,
-    reEstimate: Function
+    reEstimate: Function,
+    isSignRequestStillActive: Function
   ) {
     super()
 
@@ -180,6 +185,7 @@ export class SignAccountOpController extends EventEmitter {
     this.accountOp = structuredClone(accountOp)
     this.#callRelayer = callRelayer
     this.#reEstimate = reEstimate
+    this.#isSignRequestStillActive = isSignRequestStillActive
 
     this.gasUsedTooHigh = false
     this.gasUsedTooHighAgreed = false
@@ -503,7 +509,9 @@ export class SignAccountOpController extends EventEmitter {
     }
 
     // no status updates on these two
-    const isInTheMiddleOfSigning = this.status?.type === SigningStatus.InProgress
+    const isInTheMiddleOfSigning =
+      this.status?.type === SigningStatus.InProgress ||
+      this.status?.type === SigningStatus.WaitingForPaymaster
     const isDone = this.status?.type === SigningStatus.Done
     if (isInTheMiddleOfSigning || isDone) return
 
@@ -1078,6 +1086,12 @@ export class SignAccountOpController extends EventEmitter {
       return this.#emitSigningErrorAndResetToReadyToSign(message)
     }
 
+    if (this.accountOp.gasFeePayment.isERC4337 && shouldUsePaymaster(this.#network)) {
+      this.status = { type: SigningStatus.WaitingForPaymaster }
+    } else {
+      this.status = { type: SigningStatus.InProgress }
+    }
+
     // we update the FE with the changed status (in progress) only after the checks
     // above confirm everything is okay to prevent two different state updates
     this.emitUpdate()
@@ -1194,18 +1208,25 @@ export class SignAccountOpController extends EventEmitter {
 
         if (usesPaymaster) {
           try {
-            const response = await this.#callRelayer(
-              `/v2/paymaster/${this.accountOp.networkId}/sign`,
-              'POST',
-              {
+            // request the paymaster with a timeout window
+            const response = await Promise.race([
+              this.#callRelayer(`/v2/paymaster/${this.accountOp.networkId}/sign`, 'POST', {
                 // send without the requestType prop
                 userOperation: (({ requestType, activatorCall, ...o }) => o)(userOperation),
                 paymaster: AMBIRE_PAYMASTER,
                 bytecode: this.account.creation!.bytecode,
                 salt: this.account.creation!.salt,
                 key: this.account.associatedKeys[0]
-              }
-            )
+              }),
+              new Promise((_resolve, reject) => {
+                setTimeout(() => reject(new Error('Ambire relayer error')), 8000)
+              })
+            ])
+
+            // go back to in progress after paymaster has been confirmed
+            this.status = { type: SigningStatus.InProgress }
+            this.emitUpdate()
+
             userOperation.paymasterData = response.data.paymasterData
             if (usesOneTimeNonce) {
               userOperation.nonce = getOneTimeNonce(userOperation)
@@ -1214,7 +1235,7 @@ export class SignAccountOpController extends EventEmitter {
             let message = e.message
             if (e.message.includes('Failed to fetch') || e.message.includes('Ambire relayer')) {
               message =
-                'Currently, the paymaster seems to be down. Please try again a few moments later or broadcast with an EOA'
+                'Currently, the paymaster seems to be down. Please try again a few moments later or broadcast with a Basic Account'
             }
             this.emitError({
               level: 'major',
@@ -1227,6 +1248,11 @@ export class SignAccountOpController extends EventEmitter {
             return Promise.reject(this.status)
           }
         }
+
+        // query the application state from memory to understand if the user
+        // hasn't actually rejected the request while waiting for the
+        // paymaster to respond
+        if (!this.#isSignRequestStillActive()) return
 
         if (userOperation.requestType === 'standard') {
           const typedData = getTypedData(

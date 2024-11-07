@@ -443,6 +443,7 @@ const init = async (
     1,
     op,
     callRelayer,
+    () => {},
     () => {}
   )
 
