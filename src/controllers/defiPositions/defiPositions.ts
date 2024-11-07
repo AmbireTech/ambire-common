@@ -2,7 +2,11 @@ import { NetworkId } from '../../interfaces/network'
 import { getNetworksWithDeFiPositionsErrorBanners } from '../../libs/banners/banners'
 import { getAssetValue, sortByValue } from '../../libs/defiPositions/helpers'
 import { getAAVEPositions, getUniV3Positions } from '../../libs/defiPositions/providers'
-import { DeFiPositionsState, PositionsByProvider } from '../../libs/defiPositions/types'
+import {
+  DeFiPositionsError,
+  DeFiPositionsState,
+  PositionsByProvider
+} from '../../libs/defiPositions/types'
 import { AccountsController } from '../accounts/accounts'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { NetworksController } from '../networks/networks'
@@ -81,7 +85,7 @@ export class DefiPositionsController extends EventEmitter {
     const networkState = this.state[accountAddr][networkId]
 
     if (networkState.isLoading) return false
-    if (networkState.criticalError) return false
+    if (networkState.error) return false
     if (networkState.providerErrors?.length) return false
     if (networkState.updatedAt && Date.now() - networkState.updatedAt < this.#minUpdateInterval)
       return true
@@ -102,78 +106,84 @@ export class DefiPositionsController extends EventEmitter {
       ? this.#networks.networks.filter((n) => n.id === networkId)
       : this.#networks.networks
 
-    networksToUpdate.map(async (n) => {
-      if (this.#getCanSkipUpdate(selectedAccountAddr, n.id)) {
-        // Emit an update so that the current account data getter is updated
-        this.emitUpdate()
-        return
-      }
-      const networkState = this.state[selectedAccountAddr][n.id]
+    await Promise.all(
+      networksToUpdate.map(async (n) => {
+        if (this.#getCanSkipUpdate(selectedAccountAddr, n.id)) {
+          // Emit an update so that the current account data getter is updated
+          this.emitUpdate()
+          return
+        }
+        const networkState = this.state[selectedAccountAddr][n.id]
 
-      // Reset provider errors before updating
-      if (networkState.providerErrors?.length) {
+        // Reset provider errors before updating
         networkState.providerErrors = []
-      }
+        networkState.error = undefined
 
-      try {
-        const [aavePositions, uniV3Positions] = [
-          await getAAVEPositions(
-            this.#accounts.selectedAccount!,
-            this.#providers.providers[n.id],
-            n
-          ).catch((e) => {
-            console.error('getAAVEPositions error:', e)
-            this.#setProviderError(
-              selectedAccountAddr,
-              n.id,
-              'AAVE v3',
-              e?.message || 'Unknown error'
-            )
+        try {
+          const [aavePositions, uniV3Positions] = await Promise.all([
+            getAAVEPositions(
+              this.#accounts.selectedAccount!,
+              this.#providers.providers[n.id],
+              n
+            ).catch((e: any) => {
+              console.error('getAAVEPositions error:', e)
+              this.#setProviderError(
+                selectedAccountAddr,
+                n.id,
+                'AAVE v3',
+                e?.message || 'Unknown error'
+              )
 
-            return null
-          }),
-          await getUniV3Positions(
-            this.#accounts.selectedAccount!,
-            this.#providers.providers[n.id],
-            n
-          ).catch((e) => {
-            console.error('getUniV3Positions error:', e)
+              return null
+            }),
+            getUniV3Positions(
+              this.#accounts.selectedAccount!,
+              this.#providers.providers[n.id],
+              n
+            ).catch((e: any) => {
+              console.error('getUniV3Positions error:', e)
 
-            this.#setProviderError(
-              selectedAccountAddr,
-              n.id,
-              'Uniswap V3',
-              e?.message || 'Unknown error'
-            )
+              this.#setProviderError(
+                selectedAccountAddr,
+                n.id,
+                'Uniswap V3',
+                e?.message || 'Unknown error'
+              )
 
-            return null
+              return null
+            })
+          ])
+
+          this.state[selectedAccountAddr][n.id] = {
+            ...networkState,
+            isLoading: false,
+            positionsByProvider: [aavePositions, uniV3Positions].filter(
+              Boolean
+            ) as PositionsByProvider[],
+            updatedAt: Date.now()
+          }
+          await this.#setAssetPrices(selectedAccountAddr, n.id).catch((e) => {
+            console.error('#setAssetPrices error:', e)
+            this.state[selectedAccountAddr][n.id].error = DeFiPositionsError.AssetPriceError
           })
-        ]
-
-        this.state[selectedAccountAddr][n.id] = {
-          ...networkState,
-          isLoading: false,
-          positionsByProvider: [aavePositions, uniV3Positions].filter(
-            Boolean
-          ) as PositionsByProvider[],
-          updatedAt: Date.now()
+        } catch (e: any) {
+          const prevPositionsByProvider = networkState.positionsByProvider
+          this.state[selectedAccountAddr][n.id] = {
+            isLoading: false,
+            positionsByProvider: prevPositionsByProvider || [],
+            error: DeFiPositionsError.CriticalError
+          }
+          console.error(`updatePositions error on ${n.id}`, e)
+        } finally {
+          this.emitUpdate()
         }
-        await this.#setAssetPrices(selectedAccountAddr, n.id)
-      } catch (e: any) {
-        const prevPositionsByProvider = networkState.positionsByProvider
-        this.state[selectedAccountAddr][n.id] = {
-          isLoading: false,
-          positionsByProvider: prevPositionsByProvider || [],
-          criticalError: e?.message || 'Unknown error'
-        }
-        console.error(`updatePositions error on ${n.id}`, e)
-      } finally {
-        this.emitUpdate()
-      }
-    })
+      })
+    )
   }
 
   async #setAssetPrices(accountAddr: string, networkId: string) {
+    if (Math.random() > 0.5) throw new Error('Random error')
+
     const dedup = (x: any[]) => x.filter((y, i) => x.indexOf(y) === i)
 
     const networkState = this.state[accountAddr][networkId]

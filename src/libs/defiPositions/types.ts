@@ -7,6 +7,11 @@ export enum AssetType {
   Borrow
 }
 
+export enum DeFiPositionsError {
+  AssetPriceError = 'AssetPriceError',
+  CriticalError = 'CriticalError'
+}
+
 export interface PositionAsset {
   address: string
   symbol: string
@@ -37,7 +42,7 @@ export interface NetworkState {
   positionsByProvider: PositionsByProvider[]
   isLoading: boolean
   updatedAt?: number
-  criticalError?: string | null
+  error?: string | null
   providerErrors?: ProviderError[]
 }
 

@@ -1,5 +1,8 @@
-import { AccountOpAction, Action as ActionFromActionsQueue } from 'controllers/actions/actions'
-
+// eslint-disable-next-line import/no-cycle
+import {
+  AccountOpAction,
+  Action as ActionFromActionsQueue
+} from '../../controllers/actions/actions'
 // eslint-disable-next-line import/no-cycle
 import { PortfolioController } from '../../controllers/portfolio/portfolio'
 import { Account, AccountId } from '../../interfaces/account'
@@ -7,7 +10,7 @@ import { Action, Banner } from '../../interfaces/banner'
 import { Network, NetworkId } from '../../interfaces/network'
 import { RPCProviders } from '../../interfaces/provider'
 import { ActiveRoute } from '../../interfaces/swapAndBridge'
-import { AccountState } from '../defiPositions/types'
+import { AccountState, DeFiPositionsError } from '../defiPositions/types'
 import { getNetworksWithFailedRPC } from '../networks/networks'
 import { PORTFOLIO_LIB_ERROR_NAMES } from '../portfolio/portfolio'
 import { getIsBridgeTxn, getQuoteRouteSteps } from '../swapAndBridge/swapAndBridge'
@@ -382,7 +385,8 @@ export const getNetworksWithDeFiPositionsErrorBanners = ({
 
   if (isLoading) return []
 
-  const networkNamesWithCriticalError: string[] = []
+  const networkNamesWithUnknownCriticalError: string[] = []
+  const networkNamesWithAssetPriceCriticalError: string[] = []
   const providersWithErrors: {
     [providerName: string]: string[]
   } = {}
@@ -400,9 +404,12 @@ export const getNetworksWithDeFiPositionsErrorBanners = ({
     )
       return
 
-    if (networkState.criticalError) {
-      networkNamesWithCriticalError.push(network.name)
-      return
+    if (networkState.error) {
+      if (networkState.error === DeFiPositionsError.AssetPriceError) {
+        networkNamesWithAssetPriceCriticalError.push(network.name)
+      } else if (networkState.error === DeFiPositionsError.CriticalError) {
+        networkNamesWithUnknownCriticalError.push(network.name)
+      }
     }
 
     const providerNamesWithErrors = networkState.providerErrors?.map((e) => e.providerName) || []
@@ -432,11 +439,24 @@ export const getNetworksWithDeFiPositionsErrorBanners = ({
 
   const banners = providerErrorBanners
 
-  if (networkNamesWithCriticalError.length) {
+  if (networkNamesWithUnknownCriticalError.length) {
     banners.push({
       id: 'defi-positions-critical-error',
       type: 'error',
-      title: `Failed to retrieve DeFi positions on ${networkNamesWithCriticalError.join(', ')}`,
+      title: `Failed to retrieve DeFi positions on ${networkNamesWithUnknownCriticalError.join(
+        ', '
+      )}`,
+      text: 'Reload the account or try again later.',
+      actions: []
+    })
+  }
+  if (networkNamesWithAssetPriceCriticalError.length) {
+    banners.push({
+      id: 'defi-positions-asset-price-error',
+      type: 'warning',
+      title: `Failed to retrieve asset prices for DeFi positions on ${networkNamesWithAssetPriceCriticalError.join(
+        ', '
+      )}`,
       text: 'Reload the account or try again later.',
       actions: []
     })
