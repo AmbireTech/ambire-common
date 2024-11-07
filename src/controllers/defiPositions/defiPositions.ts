@@ -110,6 +110,11 @@ export class DefiPositionsController extends EventEmitter {
       }
       const networkState = this.state[selectedAccountAddr][n.id]
 
+      // Reset provider errors before updating
+      if (networkState.providerErrors?.length) {
+        networkState.providerErrors = []
+      }
+
       try {
         const [aavePositions, uniV3Positions] = [
           await getAAVEPositions(
