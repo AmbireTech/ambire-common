@@ -262,6 +262,7 @@ export class MainController extends EventEmitter {
       velcroUrl
     )
     this.defiPositions = new DefiPositionsController({
+      fetch: this.fetch,
       accounts: this.accounts,
       networks: this.networks,
       providers: this.providers

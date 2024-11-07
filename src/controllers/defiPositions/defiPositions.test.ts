@@ -66,6 +66,7 @@ const prepareTest = async () => {
   await providersCtrl.initialLoadPromise
 
   return new DefiPositionsController({
+    fetch: global.fetch as any,
     accounts: accountsCtrl,
     providers: providersCtrl,
     networks: networksCtrl

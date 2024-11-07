@@ -1,3 +1,4 @@
+import { Fetch } from '../../interfaces/fetch'
 import { NetworkId } from '../../interfaces/network'
 import { getNetworksWithDeFiPositionsErrorBanners } from '../../libs/banners/banners'
 import { getAssetValue, sortByValue } from '../../libs/defiPositions/helpers'
@@ -19,21 +20,26 @@ export class DefiPositionsController extends EventEmitter {
 
   #networks: NetworksController
 
-  state: DeFiPositionsState = {}
+  #fetch: Fetch
 
   #minUpdateInterval: number = 60 * 1000 // 1 minute
 
+  state: DeFiPositionsState = {}
+
   constructor({
+    fetch,
     accounts,
     providers,
     networks
   }: {
+    fetch: Fetch
     accounts: AccountsController
     providers: ProvidersController
     networks: NetworksController
   }) {
     super()
 
+    this.#fetch = fetch
     this.#accounts = accounts
     this.#providers = providers
     this.#networks = networks
@@ -186,7 +192,7 @@ export class DefiPositionsController extends EventEmitter {
     }?contract_addresses=${dedup(addresses).join('%2C')}&vs_currencies=usd`
 
     try {
-      const resp = await fetch(cenaUrl)
+      const resp = await this.#fetch(cenaUrl)
       const body = await resp.json()
       if (resp.status !== 200) throw body
       // eslint-disable-next-line no-prototype-builtins
