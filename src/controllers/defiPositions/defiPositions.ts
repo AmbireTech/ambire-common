@@ -83,10 +83,7 @@ export class DefiPositionsController extends EventEmitter {
 
   async updatePositions(networkId?: NetworkId) {
     const selectedAccountAddr = this.#accounts.selectedAccount
-    if (!selectedAccountAddr) {
-      console.error('updatePositions: no selected account')
-      return
-    }
+    if (!selectedAccountAddr) return
 
     this.#initInitialAccountStateIfNeeded(selectedAccountAddr)
 
