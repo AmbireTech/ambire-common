@@ -383,7 +383,9 @@ export const getNetworksWithDeFiPositionsErrorBanners = ({
   if (isLoading) return []
 
   const networkNamesWithCriticalError: string[] = []
-  const providerErrorBanners: Banner[] = []
+  const providersWithErrors: {
+    [providerName: string]: string[]
+  } = {}
 
   Object.keys(currentAccountState).forEach((networkId) => {
     const networkState = currentAccountState[networkId]
@@ -400,22 +402,33 @@ export const getNetworksWithDeFiPositionsErrorBanners = ({
 
     if (networkState.criticalError) {
       networkNamesWithCriticalError.push(network.name)
-    } else {
-      const providerNamesWithErrors = networkState.providerErrors?.map((e) => e.providerName) || []
+      return
+    }
 
-      if (providerNamesWithErrors.length) {
-        providerErrorBanners.push({
-          id: `${networkId}-defi-positions-error`,
-          type: 'error',
-          title: `Failed to retrieve DeFi positions for ${providerNamesWithErrors.join(', ')} on ${
-            network.name
-          }`,
-          text: 'Affected features: DeFi positions. Reload the account or try again later.',
-          actions: []
-        })
-      }
+    const providerNamesWithErrors = networkState.providerErrors?.map((e) => e.providerName) || []
+
+    if (providerNamesWithErrors.length) {
+      providerNamesWithErrors.forEach((providerName) => {
+        if (!providersWithErrors[providerName]) providersWithErrors[providerName] = []
+
+        providersWithErrors[providerName].push(network.name)
+      })
     }
   })
+
+  const providerErrorBanners: Banner[] = Object.entries(providersWithErrors).map(
+    ([providerName, networkNames]) => {
+      return {
+        id: `${providerName}-defi-positions-error`,
+        type: 'error',
+        title: `Failed to retrieve DeFi positions for ${providerName} on ${networkNames.join(
+          ', '
+        )}`,
+        text: 'Reload the account or try again later.',
+        actions: []
+      }
+    }
+  )
 
   const banners = providerErrorBanners
 
@@ -424,7 +437,7 @@ export const getNetworksWithDeFiPositionsErrorBanners = ({
       id: 'defi-positions-critical-error',
       type: 'error',
       title: `Failed to retrieve DeFi positions on ${networkNamesWithCriticalError.join(', ')}`,
-      text: 'Affected features: DeFi positions. Reload the account or try again later.',
+      text: 'Reload the account or try again later.',
       actions: []
     })
   }
