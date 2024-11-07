@@ -493,6 +493,9 @@ export class MainController extends EventEmitter {
       this.callRelayer,
       () => {
         this.estimateSignAccountOp()
+      },
+      () => {
+        return this.isSignRequestStillActive
       }
     )
 
@@ -1112,6 +1115,9 @@ export class MainController extends EventEmitter {
         if (activeRouteId) {
           this.removeUserRequest(activeRouteId, { shouldRemoveSwapAndBridgeRoute: false })
           if (!isSmartAccount(account)) {
+            this.removeUserRequest(`${activeRouteId}-revoke-approval`, {
+              shouldRemoveSwapAndBridgeRoute: false
+            })
             this.removeUserRequest(`${activeRouteId}-approval`, {
               shouldRemoveSwapAndBridgeRoute: false
             })
@@ -1132,10 +1138,11 @@ export class MainController extends EventEmitter {
           (n) => Number(n.chainId) === transaction!.chainId
         )!
 
-        const swapAndBridgeUserRequests = buildSwapAndBridgeUserRequests(
+        const swapAndBridgeUserRequests = await buildSwapAndBridgeUserRequests(
           transaction,
           network.id,
-          account
+          account,
+          this.providers.providers[network.id]
         )
 
         for (let i = 0; i < swapAndBridgeUserRequests.length; i++) {
@@ -2269,7 +2276,7 @@ export class MainController extends EventEmitter {
         (isRelayer && message.includes('Failed to fetch'))
       ) {
         message =
-          'Currently, the Ambire relayer seems to be down. Please try again a few moments later or broadcast with an EOA'
+          'Currently, the Ambire relayer seems to be down. Please try again a few moments later or broadcast with a Basic Account'
       } else {
         // Trip the error message, errors coming from the RPC can be huuuuuge
         message = message.length > 300 ? `${message.substring(0, 300)}...` : message
@@ -2288,12 +2295,19 @@ export class MainController extends EventEmitter {
     return Promise.reject(new EmittableError({ level: 'major', message, error }))
   }
 
+  get isSignRequestStillActive(): boolean {
+    if (!this.signAccountOp) return false
+
+    return !!this.actions.actionsQueue.find((a) => a.id === this.signAccountOp!.fromActionId)
+  }
+
   // includes the getters in the stringified instance
   toJSON() {
     return {
       ...this,
       ...super.toJSON(),
-      banners: this.banners
+      banners: this.banners,
+      isSignRequestStillActive: this.isSignRequestStillActive
     }
   }
 }
