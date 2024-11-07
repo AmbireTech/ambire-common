@@ -11,6 +11,8 @@ import { NetworksController } from '../networks/networks'
 import { ProvidersController } from '../providers/providers'
 import { DefiPositionsController } from './defiPositions'
 
+global.fetch = fetch as any
+
 const ACCOUNT = {
   addr: '0xC2E6dFcc2C6722866aD65F211D5757e1D2879337',
   initialPrivileges: [],
