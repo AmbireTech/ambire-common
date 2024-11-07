@@ -506,6 +506,34 @@ export class ActivityController extends EventEmitter {
     this.emitUpdate()
   }
 
+  async hideBanner({
+    addr,
+    network,
+    timestamp
+  }: {
+    addr: string
+    network: string
+    timestamp: number
+  }) {
+    await this.#initialLoadPromise
+
+    // shouldn't happen
+    if (!this.#accountsOps[addr]) return
+    if (!this.#accountsOps[addr][network]) return
+
+    // find the op we want to update
+    const op = this.#accountsOps[addr][network].find((accOp) => accOp.timestamp === timestamp)
+    if (!op) return
+
+    // update by reference
+    if (!op.flags) op.flags = {}
+    op.flags.hideActivityBanner = true
+
+    await this.#storage.set('accountsOps', this.#accountsOps)
+
+    this.emitUpdate()
+  }
+
   #throwNotInitialized() {
     this.emitError({
       level: 'major',
@@ -570,32 +598,47 @@ export class ActivityController extends EventEmitter {
 
   get banners(): Banner[] {
     if (!this.#networks.isInitialized) return []
-    return this.broadcastedButNotConfirmed.map((accountOp) => {
-      const network = this.#networks.networks.find((x) => x.id === accountOp.networkId)!
+    return (
+      this.broadcastedButNotConfirmed
+        // do not show a banner for forcefully hidden banners
+        .filter((op) => !(op.flags && op.flags.hideActivityBanner))
+        .map((accountOp) => {
+          const network = this.#networks.networks.find((x) => x.id === accountOp.networkId)!
 
-      const isCustomNetwork = !predefinedNetworks.find((net) => net.id === network.id)
-      const isUserOp = isIdentifiedByUserOpHash(accountOp.identifiedBy)
-      const isNotConfirmed = accountOp.status === AccountOpStatus.BroadcastedButNotConfirmed
-      const url =
-        isUserOp && isNotConfirmed && !isCustomNetwork
-          ? `https://jiffyscan.xyz/userOpHash/${accountOp.identifiedBy.identifier}`
-          : `${network.explorerUrl}/tx/${accountOp.txnId}`
+          const isCustomNetwork = !predefinedNetworks.find((net) => net.id === network.id)
+          const isUserOp = isIdentifiedByUserOpHash(accountOp.identifiedBy)
+          const isNotConfirmed = accountOp.status === AccountOpStatus.BroadcastedButNotConfirmed
+          const url =
+            isUserOp && isNotConfirmed && !isCustomNetwork
+              ? `https://jiffyscan.xyz/userOpHash/${accountOp.identifiedBy.identifier}`
+              : `${network.explorerUrl}/tx/${accountOp.txnId}`
 
-      return {
-        id: accountOp.txnId,
-        type: 'success',
-        category: 'pending-to-be-confirmed-acc-op',
-        title: 'Transaction successfully signed and sent!\nCheck it out on the block explorer!',
-        text: '',
-        actions: [
-          {
-            label: 'Check',
-            actionName: 'open-external-url',
-            meta: { url }
-          }
-        ]
-      } as Banner
-    })
+          return {
+            id: accountOp.txnId,
+            type: 'success',
+            category: 'pending-to-be-confirmed-acc-op',
+            title: 'Transaction successfully signed and sent!\nCheck it out on the block explorer!',
+            text: '',
+            actions: [
+              {
+                label: 'Close',
+                actionName: 'hide-activity-banner',
+                meta: {
+                  addr: accountOp.accountAddr,
+                  network: accountOp.networkId,
+                  timestamp: accountOp.timestamp,
+                  isHideStyle: true
+                }
+              },
+              {
+                label: 'Check',
+                actionName: 'open-external-url',
+                meta: { url }
+              }
+            ]
+          } as Banner
+        })
+    )
   }
 
   /**
