@@ -12,6 +12,7 @@ import { getRpcProvider } from '../../services/provider'
 import { AccountsController } from '../accounts/accounts'
 import { NetworksController } from '../networks/networks'
 import { ProvidersController } from '../providers/providers'
+import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 import { ActivityController, SignedMessage } from './activity'
 
 const INIT_PARAMS = {
@@ -110,6 +111,7 @@ const callRelayer = relayerCall.bind({ url: '', fetch })
 
 let providersCtrl: ProvidersController
 let accountsCtrl: AccountsController
+let selectedAccountCtrl: SelectedAccountController
 let networksCtrl: NetworksController
 
 const storage = produceMemoryStore()
@@ -120,6 +122,7 @@ const prepareTest = async () => {
     fetch,
     callRelayer,
     accountsCtrl,
+    selectedAccountCtrl,
     providersCtrl,
     networksCtrl,
     () => Promise.resolve()
@@ -157,10 +160,13 @@ describe('Activity Controller ', () => {
       providersCtrl,
       networksCtrl,
       () => {},
+      () => {},
       () => {}
     )
-    await accountsCtrl.initialLoadPromise
-    accountsCtrl.selectedAccount = '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
+    selectedAccountCtrl = new SelectedAccountController({ storage, accounts: accountsCtrl })
+
+    await selectedAccountCtrl.initialLoadPromise
+    await selectedAccountCtrl.setAccount(ACCOUNTS[1])
   })
 
   // Clear activity storage after each test
@@ -462,13 +468,14 @@ describe('Activity Controller ', () => {
     })
 
     test('`Unknown but past nonce` status is set correctly', async () => {
-      await accountsCtrl.selectAccount('0xa07D75aacEFd11b425AF7181958F0F85c312f143')
+      await selectedAccountCtrl.setAccount(ACCOUNTS[0])
       await accountsCtrl.updateAccountState('0xa07D75aacEFd11b425AF7181958F0F85c312f143')
       const controller = new ActivityController(
         storage,
         fetch,
         callRelayer,
         accountsCtrl,
+        selectedAccountCtrl,
         providersCtrl,
         networksCtrl,
         () => Promise.resolve()
