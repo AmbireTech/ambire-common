@@ -162,6 +162,7 @@ export class ActivityController extends EventEmitter {
 
   async #load(): Promise<void> {
     await this.#accounts.initialLoadPromise
+    await this.#selectedAccount.initialLoadPromise
     const [accountsOps, signedMessages] = await Promise.all([
       this.#storage.get('accountsOps', {}),
       this.#storage.get('signedMessages', {})

@@ -300,7 +300,7 @@ export class MainController extends EventEmitter {
     )
     this.#socketAPI = new SocketAPI({ apiKey: socketApiKey, fetch: this.fetch })
     this.swapAndBridge = new SwapAndBridgeController({
-      accounts: this.accounts,
+      selectedAccount: this.selectedAccount,
       networks: this.networks,
       socketAPI: this.#socketAPI,
       storage: this.#storage

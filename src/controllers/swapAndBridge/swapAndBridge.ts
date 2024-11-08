@@ -783,7 +783,7 @@ export class SwapAndBridgeController extends EventEmitter {
   }
 
   get banners() {
-    if (!this.#selectedAccount.account) return
+    if (!this.#selectedAccount.account) return []
 
     const activeRoutesForSelectedAccount = this.activeRoutes.filter(
       (r) =>
