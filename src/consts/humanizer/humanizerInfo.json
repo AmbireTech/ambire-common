@@ -1311,7 +1311,7 @@
         "signature": "function unwrapWETH9(uint256 amountMinimum, address recipient) payable"
       }
     },
-    "UniswapUniversalRouter": {
+    "Uniswap Router": {
       "0xa3281672": {
         "selector": "0xa3281672",
         "type": "error",
@@ -15728,6 +15728,7 @@
     "0x006b6e89ee1531cfe5b6d32da0d80cc30506a339": {
       "address": "0x006b6e89ee1531cfe5b6d32da0d80cc30506a339",
       "name": "Uniswap",
+      "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/uni.svg",
       "isSC": {}
     },
     "0x01621c6180d8adfad5b0c8f69d7d4abf49c7868f": {
@@ -15738,6 +15739,7 @@
     "0x03c341408d0edf502e702b9b24ec305819357c56": {
       "address": "0x03c341408d0edf502e702b9b24ec305819357c56",
       "name": "Uniswap",
+      "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/uni.svg",
       "isSC": {}
     },
     "0x044b75f554b886a065b9567891e45c79542d7357": {
@@ -15758,6 +15760,7 @@
     "0x069c97dba948175d10af4b2414969e0b88d44669": {
       "address": "0x069c97dba948175d10af4b2414969e0b88d44669",
       "name": "Uniswap",
+      "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/uni.svg",
       "isSC": {}
     },
     "0x06af07097c9eeb7fd685c692751d5c66db49c215": {
@@ -15778,6 +15781,7 @@
     "0x077d52b047735976dfda76fef74d4d988ac25196": {
       "address": "0x077d52b047735976dfda76fef74d4d988ac25196",
       "name": "Uniswap",
+      "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/uni.svg",
       "isSC": {}
     },
     "0x0836222f2b2b24a3f36f98668ed8f0b38d1a872f": {
@@ -15798,21 +15802,25 @@
     "0x09f448c70c99124024cd9e8dcae6c2f51c0896db": {
       "address": "0x09f448c70c99124024cd9e8dcae6c2f51c0896db",
       "name": "Uniswap",
+      "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/uni.svg",
       "isSC": {}
     },
     "0x09cabec1ead1c0ba254b09efb3ee13841712be14": {
       "address": "0x09cabec1ead1c0ba254b09efb3ee13841712be14",
       "name": "Uniswap",
+      "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/uni.svg",
       "isSC": {}
     },
     "0x0f88a6cbeb3bd153c0584c7136fbcc86c2dd657f": {
       "address": "0x0f88a6cbeb3bd153c0584c7136fbcc86c2dd657f",
       "name": "Uniswap",
+      "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/uni.svg",
       "isSC": {}
     },
     "0x0e6a53b13688018a3df8c69f99afb19a3068d04f": {
       "address": "0x0e6a53b13688018a3df8c69f99afb19a3068d04f",
       "name": "Uniswap",
+      "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/uni.svg",
       "isSC": {}
     },
     "0x0a1730279b86a00c7214abc624f19261f8fd9a88": {
@@ -15937,6 +15945,7 @@
     "0x1c6c712b1f4a7c263b1dbd8f97fb447c945d3b9a": {
       "address": "0x1c6c712b1f4a7c263b1dbd8f97fb447c945d3b9a",
       "name": "Uniswap",
+      "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/uni.svg",
       "isSC": {}
     },
     "0x1c70d0a86475cc707b48aa79f112857e7957274f": {
@@ -15957,6 +15966,7 @@
     "0x1aec8f11a7e78dc22477e91ed924fab46e3a88fd": {
       "address": "0x1aec8f11a7e78dc22477e91ed924fab46e3a88fd",
       "name": "Uniswap",
+      "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/uni.svg",
       "isSC": {}
     },
     "0x1c0f17436740bfb92c1070ee86322de890837c6a": {
@@ -16002,6 +16012,7 @@
     "0x26cc0eab6cb650b0db4d0d0da8cb5bf69f4ad692": {
       "address": "0x26cc0eab6cb650b0db4d0d0da8cb5bf69f4ad692",
       "name": "Uniswap",
+      "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/uni.svg",
       "isSC": {}
     },
     "0x28bc58e600ef718b9e97d294098abecb8c96b687": {
@@ -16012,6 +16023,7 @@
     "0x28d9353611c5a0d5a026a648c05e5d6523e41cbf": {
       "address": "0x28d9353611c5a0d5a026a648c05e5d6523e41cbf",
       "name": "Uniswap",
+      "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/uni.svg",
       "isSC": {}
     },
     "0x28de5c5f56b6216441ee114e832808d5b9d4a775": {
@@ -16032,11 +16044,13 @@
     "0x2bf5a5ba29e60682fc56b2fcf9ce07bef4f6196f": {
       "address": "0x2bf5a5ba29e60682fc56b2fcf9ce07bef4f6196f",
       "name": "Uniswap",
+      "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/uni.svg",
       "isSC": {}
     },
     "0x2c4bd064b998838076fa341a83d007fc2fa50957": {
       "address": "0x2c4bd064b998838076fa341a83d007fc2fa50957",
       "name": "Uniswap",
+      "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/uni.svg",
       "isSC": {}
     },
     "0x2cd04bb68786834f199ce12074da7b8832129fe1": {
@@ -16047,6 +16061,7 @@
     "0x2e642b8d59b45a1d8c5aef716a84ff44ea665914": {
       "address": "0x2e642b8d59b45a1d8c5aef716a84ff44ea665914",
       "name": "Uniswap",
+      "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/uni.svg",
       "isSC": {}
     },
     "0x2a0c0dbecc7e4d658f48e01e3fa353f44050c208": {
@@ -16057,11 +16072,13 @@
     "0x2a1530c4c41db0b0b2bb646cb5eb1a67b7158667": {
       "address": "0x2a1530c4c41db0b0b2bb646cb5eb1a67b7158667",
       "name": "Uniswap",
+      "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/uni.svg",
       "isSC": {}
     },
     "0x2afc64cd5e64a32a363ea84b8cad1ce5239a1a3d": {
       "address": "0x2afc64cd5e64a32a363ea84b8cad1ce5239a1a3d",
       "name": "Uniswap",
+      "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/uni.svg",
       "isSC": {}
     },
     "0x2e60cf74d81ac34eb21eeff58db4d385920ef419": {
@@ -16072,6 +16089,7 @@
     "0x317625234562b1526ea2fac4030ea499c5291de4": {
       "address": "0x317625234562b1526ea2fac4030ea499c5291de4",
       "name": "Aave",
+      "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/AAVE.svg",
       "isSC": {}
     },
     "0x2f08119c6f07c006695e079aafc638b8789faf18": {
@@ -16102,11 +16120,13 @@
     "0x394e524b47a3ab3d3327f7ff6629dc378c1494a3": {
       "address": "0x394e524b47a3ab3d3327f7ff6629dc378c1494a3",
       "name": "Uniswap",
+      "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/uni.svg",
       "isSC": {}
     },
     "0x3958b4ec427f8fa24eb60f42821760e88d485f7f": {
       "address": "0x3958b4ec427f8fa24eb60f42821760e88d485f7f",
       "name": "Uniswap",
+      "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/uni.svg",
       "isSC": {}
     },
     "0x39aa39c021dfbae8fac545936693ac917d5e7563": {
@@ -16147,6 +16167,7 @@
     "0x3dfd23a6c5e8bbcfc9581d2e864a68feb6a076d3": {
       "address": "0x3dfd23a6c5e8bbcfc9581d2e864a68feb6a076d3",
       "name": "Aave",
+      "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/AAVE.svg",
       "isSC": {}
     },
     "0x401f6c983ea34274ec46f84d70b31c151321188b": {
@@ -16167,11 +16188,13 @@
     "0x417cb32bc991fbbdcae230c7c4771cc0d69daa6b": {
       "address": "0x417cb32bc991fbbdcae230c7c4771cc0d69daa6b",
       "name": "Uniswap",
+      "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/uni.svg",
       "isSC": {}
     },
     "0x43892992b0b102459e895b88601bb2c76736942c": {
       "address": "0x43892992b0b102459e895b88601bb2c76736942c",
       "name": "Uniswap",
+      "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/uni.svg",
       "isSC": {}
     },
     "0x4572f2554421bd64bef1c22c8a81840e8d496bea": {
@@ -16182,6 +16205,7 @@
     "0x45a2fdfed7f7a2c791fb1bdf6075b83fad821dde": {
       "address": "0x45a2fdfed7f7a2c791fb1bdf6075b83fad821dde",
       "name": "Uniswap",
+      "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/uni.svg",
       "isSC": {}
     },
     "0x45f783cce6b7ff23b2ab2d70e416cdb7d6055f51": {
@@ -16202,16 +16226,19 @@
     "0x48b04d2a05b6b604d8d5223fd1984f191ded51af": {
       "address": "0x48b04d2a05b6b604d8d5223fd1984f191ded51af",
       "name": "Uniswap",
+      "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/uni.svg",
       "isSC": {}
     },
     "0x49c4f9bc14884f6210f28342ced592a633801a8b": {
       "address": "0x49c4f9bc14884f6210f28342ced592a633801a8b",
       "name": "Uniswap",
+      "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/uni.svg",
       "isSC": {}
     },
     "0x4b17685b330307c751b47f33890c8398df4fe407": {
       "address": "0x4b17685b330307c751b47f33890c8398df4fe407",
       "name": "Uniswap",
+      "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/uni.svg",
       "isSC": {}
     },
     "0x4d9079bb4165aeb4084c526a32695dcfd2f77381": {
@@ -16232,11 +16259,13 @@
     "0x4f0d6e2179938828cff93da40a8ba1df7519ca8c": {
       "address": "0x4f0d6e2179938828cff93da40a8ba1df7519ca8c",
       "name": "Uniswap",
+      "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/uni.svg",
       "isSC": {}
     },
     "0x4f30e682d0541eac91748bd38a648d759261b8f3": {
       "address": "0x4f30e682d0541eac91748bd38a648d759261b8f3",
       "name": "Uniswap",
+      "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/uni.svg",
       "isSC": {}
     },
     "0x4aa42145aa6ebf72e164c9bbc74fbd3788045016": {
@@ -16247,16 +16276,19 @@
     "0x4d2f5cfba55ae412221182d8475bc85799a5644b": {
       "address": "0x4d2f5cfba55ae412221182d8475bc85799a5644b",
       "name": "Uniswap",
+      "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/uni.svg",
       "isSC": {}
     },
     "0x4e395304655f0796bc3bc63709db72173b9ddf98": {
       "address": "0x4e395304655f0796bc3bc63709db72173b9ddf98",
       "name": "Uniswap",
+      "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/uni.svg",
       "isSC": {}
     },
     "0x5048b9d01097498fd72f3f14bc9bc74a5aac8fa7": {
       "address": "0x5048b9d01097498fd72f3f14bc9bc74a5aac8fa7",
       "name": "Uniswap",
+      "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/uni.svg",
       "isSC": {}
     },
     "0x4fee7b061c97c9c496b01dbce9cdb10c02f0a0be": {
@@ -16267,6 +16299,7 @@
     "0x505c02b4aa1286375fbdf0c390ac0fe9209dcb05": {
       "address": "0x505c02b4aa1286375fbdf0c390ac0fe9209dcb05",
       "name": "Uniswap",
+      "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/uni.svg",
       "isSC": {}
     },
     "0x50cb61afa3f023d17276dcfb35abf85c710d1cff": {
@@ -16332,15 +16365,18 @@
     "0x60a87cc7fca7e53867facb79da73181b1bb4238b": {
       "address": "0x60a87cc7fca7e53867facb79da73181b1bb4238b",
       "name": "Uniswap",
+      "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/uni.svg",
       "isSC": {}
     },
     "0x634e27269a029edb2b70b5ef43273f5eed9ebcc2": {
       "address": "0x634e27269a029edb2b70b5ef43273f5eed9ebcc2",
       "name": "Uniswap",
+      "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/uni.svg",
       "isSC": {}
     },
     "0x68b3465833fb72a70ecdf485e0e4c7bd8665fc45": {
       "name": "Uniswap",
+      "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/uni.svg",
       "address": "0x68b3465833fb72a70ecdf485e0e4c7bd8665fc45",
       "isSC": {}
     },
@@ -16362,11 +16398,13 @@
     "0x6b4540f5ee32ddd5616c792f713435e6ee4f24ab": {
       "address": "0x6b4540f5ee32ddd5616c792f713435e6ee4f24ab",
       "name": "Uniswap",
+      "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/uni.svg",
       "isSC": {}
     },
     "0x6bfa119a191576ba26bc5e711432aca0cfda04de": {
       "address": "0x6bfa119a191576ba26bc5e711432aca0cfda04de",
       "name": "Uniswap",
+      "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/uni.svg",
       "isSC": {}
     },
     "0x6eb211caf6d304a76efe37d9abdfaddc2d4363d1": {
@@ -16377,11 +16415,13 @@
     "0x700520b1e2ccc5bf5fa89a5f7b8fd9beba3f04b0": {
       "address": "0x700520b1e2ccc5bf5fa89a5f7b8fd9beba3f04b0",
       "name": "Uniswap",
+      "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/uni.svg",
       "isSC": {}
     },
     "0x701564aa6e26816147d4fa211a0779f1b774bb9b": {
       "address": "0x701564aa6e26816147d4fa211a0779f1b774bb9b",
       "name": "Uniswap",
+      "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/uni.svg",
       "isSC": {}
     },
     "0x73555a153d301d95a3f90919e645d301f1f9e219": {
@@ -16402,11 +16442,13 @@
     "0x755160062e3e09d34af0a00ff8cab8500e81e0d7": {
       "address": "0x755160062e3e09d34af0a00ff8cab8500e81e0d7",
       "name": "Uniswap",
+      "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/uni.svg",
       "isSC": {}
     },
     "0x755899f0540c3548b99e68c59adb0f15d2695188": {
       "address": "0x755899f0540c3548b99e68c59adb0f15d2695188",
       "name": "Uniswap",
+      "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/uni.svg",
       "isSC": {}
     },
     "0x794e6e91555438afc3ccf1c5076a74f42133d08d": {
@@ -16417,10 +16459,12 @@
     "0x7d03cecb36820b4666f45e1b4ca2538724db271c": {
       "address": "0x7d03cecb36820b4666f45e1b4ca2538724db271c",
       "name": "Uniswap",
+      "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/uni.svg",
       "isSC": {}
     },
     "0x7a250d5630b4cf539739df2c5dacb4c659f2488d": {
       "name": "Uniswap",
+      "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/uni.svg",
       "address": "0x7a250d5630b4cf539739df2c5dacb4c659f2488d",
       "isSC": {}
     },
@@ -16436,6 +16480,7 @@
     },
     "0x7d2768de32b0b80b7a3454c06bdac94a69ddc7a9": {
       "name": "Aave",
+      "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/AAVE.svg",
       "address": "0x7d2768de32b0b80b7a3454c06bdac94a69ddc7a9",
       "isSC": {}
     },
@@ -16447,11 +16492,13 @@
     "0x7dc095a5cf7d6208cc680fa9866f80a53911041a": {
       "address": "0x7dc095a5cf7d6208cc680fa9866f80a53911041a",
       "name": "Uniswap",
+      "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/uni.svg",
       "isSC": {}
     },
     "0x7ea7134ed6c41d9e35dae7e7e1ff0fcc406224ca": {
       "address": "0x7ea7134ed6c41d9e35dae7e7e1ff0fcc406224ca",
       "name": "Uniswap",
+      "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/uni.svg",
       "isSC": {}
     },
     "0x80c5e6908368cb9db503ba968d7ec5a565bfb389": {
@@ -16462,6 +16509,7 @@
     "0x80f0f3e1482bab7fb6ed70185476f2fcdb596fa9": {
       "address": "0x80f0f3e1482bab7fb6ed70185476f2fcdb596fa9",
       "name": "Uniswap",
+      "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/uni.svg",
       "isSC": {}
     },
     "0x818e6fecd516ecc3849daf6845e3ec868087b755": {
@@ -16497,6 +16545,7 @@
     "0x87d80dbd37e551f58680b4217b23af6a752da83f": {
       "address": "0x87d80dbd37e551f58680b4217b23af6a752da83f",
       "name": "Uniswap",
+      "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/uni.svg",
       "isSC": {}
     },
     "0x881d40237659c251811cec9c364ef91dc08d300c": {
@@ -16512,6 +16561,7 @@
     "0x884715e2dce8757c9ee19739c366b2c7c65f05b1": {
       "address": "0x884715e2dce8757c9ee19739c366b2c7c65f05b1",
       "name": "Uniswap",
+      "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/uni.svg",
       "isSC": {}
     },
     "0x88ad09518695c6c3712ac10a214be5109a655671": {
@@ -16522,6 +16572,7 @@
     "0x88df13889e20efa93ff9a0c08f101f431bd9ddd7": {
       "address": "0x88df13889e20efa93ff9a0c08f101f431bd9ddd7",
       "name": "Uniswap",
+      "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/uni.svg",
       "isSC": {}
     },
     "0x8b3d70d628ebd30d4a2ea82db95ba2e906c71633": {
@@ -16532,11 +16583,13 @@
     "0x8a8d7ad4b89d91983cd069c58c4aa9f2f4166298": {
       "address": "0x8a8d7ad4b89d91983cd069c58c4aa9f2f4166298",
       "name": "Uniswap",
+      "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/uni.svg",
       "isSC": {}
     },
     "0x8c871606331caff597ef08f59d6fd6b97d70ba7b": {
       "address": "0x8c871606331caff597ef08f59d6fd6b97d70ba7b",
       "name": "Uniswap",
+      "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/uni.svg",
       "isSC": {}
     },
     "0x8d12a197cb00d4747a1fe03395095ce2a5cc6819": {
@@ -16547,6 +16600,7 @@
     "0x8de0d002dc83478f479dc31f76cb0a8aa7ccea17": {
       "address": "0x8de0d002dc83478f479dc31f76cb0a8aa7ccea17",
       "name": "Uniswap",
+      "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/uni.svg",
       "isSC": {}
     },
     "0x8e8bd01b5a9eb272cc3892a2e40e64a716aa2a40": {
@@ -16577,6 +16631,7 @@
     "0x95e4649f5209dd292caf1f087b8f1db3be24927f": {
       "address": "0x95e4649f5209dd292caf1f087b8f1db3be24927f",
       "name": "Uniswap",
+      "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/uni.svg",
       "isSC": {}
     },
     "0x95e6f48254609a6ee006f7d493c8e5fb97094cef": {
@@ -16587,6 +16642,7 @@
     "0x97dec872013f6b5fb443861090ad931542878126": {
       "address": "0x97dec872013f6b5fb443861090ad931542878126",
       "name": "Uniswap",
+      "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/uni.svg",
       "isSC": {}
     },
     "0x9ad122c22b14202b4490edaf288fdb3c7cb3ff5e": {
@@ -16622,6 +16678,7 @@
     "0xa2881a90bf33f03e7a3f803765cd2ed5c8928dfb": {
       "address": "0xa2881a90bf33f03e7a3f803765cd2ed5c8928dfb",
       "name": "Uniswap",
+      "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/uni.svg",
       "isSC": {}
     },
     "0xa42f6cada809bcf417deefbdd69c5c5a909249c0": {
@@ -16647,11 +16704,13 @@
     "0xa825cae02b310e9901b4776806ce25db520c8642": {
       "address": "0xa825cae02b310e9901b4776806ce25db520c8642",
       "name": "Uniswap",
+      "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/uni.svg",
       "isSC": {}
     },
     "0xa931f4eb165ac307fd7431b5ec6eadde53e14b0c": {
       "address": "0xa931f4eb165ac307fd7431b5ec6eadde53e14b0c",
       "name": "Uniswap",
+      "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/uni.svg",
       "isSC": {}
     },
     "0xacd43e627e64355f1861cec6d3a6688b31a6f952": {
@@ -16687,6 +16746,7 @@
     "0xb944d13b2f4047fc7bd3f7013bcf01b115fb260d": {
       "address": "0xb944d13b2f4047fc7bd3f7013bcf01b115fb260d",
       "name": "Uniswap",
+      "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/uni.svg",
       "isSC": {}
     },
     "0xba12222222228d8ba445958a75a0704d566bf2c8": {
@@ -16707,6 +16767,7 @@
     "0xbcdf538581f7167ec8228ec2c9b1cfc2f74788c7": {
       "address": "0xbcdf538581f7167ec8228ec2c9b1cfc2f74788c7",
       "name": "Uniswap",
+      "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/uni.svg",
       "isSC": {}
     },
     "0xbcd7254a1d759efa08ec7c3291b2e85c5dcc12ce": {
@@ -16732,11 +16793,13 @@
     "0xc040d51b07aea5d94a89bc21e8078b77366fc6c7": {
       "address": "0xc040d51b07aea5d94a89bc21e8078b77366fc6c7",
       "name": "Uniswap",
+      "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/uni.svg",
       "isSC": {}
     },
     "0xc0c59cde851bfcbdddd3377ec10ea54a18efb937": {
       "address": "0xc0c59cde851bfcbdddd3377ec10ea54a18efb937",
       "name": "Uniswap",
+      "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/uni.svg",
       "isSC": {}
     },
     "0xc11b1268c1a384e55c48c2391d8d480264a3a7f4": {
@@ -16757,6 +16820,7 @@
     "0xc3c028721f854bc75967cbe432fb0e221908baa1": {
       "address": "0xc3c028721f854bc75967cbe432fb0e221908baa1",
       "name": "Uniswap",
+      "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/uni.svg",
       "isSC": {}
     },
     "0xc52569b5a349a7055e9192dbdd271f1bd8133277": {
@@ -16767,6 +16831,7 @@
     "0xc6581ce3a005e2801c1e0903281bbd318ec5b5c2": {
       "address": "0xc6581ce3a005e2801c1e0903281bbd318ec5b5c2",
       "name": "Uniswap",
+      "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/uni.svg",
       "isSC": {}
     },
     "0xc79764398a159ea8e61af98d7da6f2c8cae4c3a9": {
@@ -16787,11 +16852,13 @@
     "0xd01590bf566d070d4ce04743705e835f81ff77ca": {
       "address": "0xd01590bf566d070d4ce04743705e835f81ff77ca",
       "name": "Uniswap",
+      "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/uni.svg",
       "isSC": {}
     },
     "0xd1f3e9b413f5c9fd56f044699c64ff710e7e5a9a": {
       "address": "0xd1f3e9b413f5c9fd56f044699c64ff710e7e5a9a",
       "name": "Uniswap",
+      "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/uni.svg",
       "isSC": {}
     },
     "0xd37bbe5744d730a1d98d8dc97c42f0ca46ad7146": {
@@ -16807,6 +16874,7 @@
     "0xd55c1ca9f5992a2e5e379dce49abf24294abe055": {
       "address": "0xd55c1ca9f5992a2e5e379dce49abf24294abe055",
       "name": "Uniswap",
+      "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/uni.svg",
       "isSC": {}
     },
     "0xd691f27f38b395864ea86cfc7253969b409c362d": {
@@ -16817,11 +16885,13 @@
     "0xd883264737ed969d2696ee4b4caf529c2fc2a141": {
       "address": "0xd883264737ed969d2696ee4b4caf529c2fc2a141",
       "name": "Uniswap",
+      "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/uni.svg",
       "isSC": {}
     },
     "0xd91ff16ef92568fc27f466c3c5613e43313ab1dc": {
       "address": "0xd91ff16ef92568fc27f466c3c5613e43313ab1dc",
       "name": "Uniswap",
+      "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/uni.svg",
       "isSC": {}
     },
     "0xdef1c0ded9bec7f1a1670819833240f027b25eff": {
@@ -16837,6 +16907,7 @@
     "0xe499657190d515119077af5d64f44b6f850baea5": {
       "address": "0xe499657190d515119077af5d64f44b6f850baea5",
       "name": "Uniswap",
+      "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/uni.svg",
       "isSC": {}
     },
     "0xe4c9194962532feb467dce8b3d42419641c6ed2e": {
@@ -16846,6 +16917,7 @@
     },
     "0xe592427a0aece92de3edee1f18e0157c05861564": {
       "name": "Uniswap",
+      "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/uni.svg",
       "address": "0xe592427a0aece92de3edee1f18e0157c05861564",
       "isSC": {}
     },
@@ -16862,26 +16934,31 @@
     "0xed9d5aa6124a3310b80a2468c67763627653887d": {
       "address": "0xed9d5aa6124a3310b80a2468c67763627653887d",
       "name": "Uniswap",
+      "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/uni.svg",
       "isSC": {}
     },
     "0xef1c6e67703c7bd7107eed8303fbe6ec2554bf6b": {
       "address": "0xef1c6e67703c7bd7107eed8303fbe6ec2554bf6b",
       "name": "Uniswap",
+      "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/uni.svg",
       "isSC": {}
     },
     "0xf173214c720f58e03e194085b1db28b50acdeead": {
       "address": "0xf173214c720f58e03e194085b1db28b50acdeead",
       "name": "Uniswap",
+      "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/uni.svg",
       "isSC": {}
     },
     "0xf506828b166de88ca2edb2a98d960abba0d2402a": {
       "address": "0xf506828b166de88ca2edb2a98d960abba0d2402a",
       "name": "Uniswap",
+      "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/uni.svg",
       "isSC": {}
     },
     "0xf53bbfbff01c50f2d42d542b09637dca97935ff7": {
       "address": "0xf53bbfbff01c50f2d42d542b09637dca97935ff7",
       "name": "Uniswap",
+      "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/uni.svg",
       "isSC": {}
     },
     "0xf5dce57282a584d2746faf1593d3121fcac444dc": {
@@ -16897,6 +16974,7 @@
     "0xf5bb20e73c59e0f643ae4bcd89d761ebdec83b73": {
       "address": "0xf5bb20e73c59e0f643ae4bcd89d761ebdec83b73",
       "name": "Uniswap",
+      "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/uni.svg",
       "isSC": {}
     },
     "0xf60dd140cff0706bae9cd734ac3ae76ad9ebc32a": {
@@ -16947,6 +17025,7 @@
     "0xf996d7d9bacb9217ca64bbce1b1cd72e0e886be6": {
       "address": "0xf996d7d9bacb9217ca64bbce1b1cd72e0e886be6",
       "name": "Uniswap",
+      "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/uni.svg",
       "isSC": {}
     },
     "0xa1787206d5b1be0f432c4c4f96dc4d1257a1dd14": {
@@ -16972,6 +17051,7 @@
     "0xae76c84c9262cdb9abc0c2c8888e62db8e22a0bf": {
       "address": "0xae76c84c9262cdb9abc0c2c8888e62db8e22a0bf",
       "name": "Uniswap",
+      "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/uni.svg",
       "isSC": {}
     },
     "0xaeaac358560e11f52454d997aaff2c5731b6f8a6": {
@@ -17017,11 +17097,13 @@
     "0xb5e96c3ad1ccc79e7ab13433471baf785bb4977e": {
       "address": "0xb5e96c3ad1ccc79e7ab13433471baf785bb4977e",
       "name": "Uniswap",
+      "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/uni.svg",
       "isSC": {}
     },
     "0xb6cfbf322db47d39331e306005dc7e5e6549942b": {
       "address": "0xb6cfbf322db47d39331e306005dc7e5e6549942b",
       "name": "Uniswap",
+      "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/uni.svg",
       "isSC": {}
     },
     "0xb70bc06d2c9bf03b3373799606dc7d39346c06b3": {
@@ -17032,6 +17114,7 @@
     "0xb7520a5f8c832c573d6bd0df955fc5c9b72400f7": {
       "address": "0xb7520a5f8c832c573d6bd0df955fc5c9b72400f7",
       "name": "Uniswap",
+      "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/uni.svg",
       "isSC": {}
     },
     "0xb7896fce748396ecfc240f5a0d3cc92ca42d7d84": {
@@ -17042,6 +17125,7 @@
     "0xb92de8b30584392af27726d5ce04ef3c4e5c9924": {
       "address": "0xb92de8b30584392af27726d5ce04ef3c4e5c9924",
       "name": "Uniswap",
+      "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/uni.svg",
       "isSC": {}
     },
     "0xb9812e2fa995ec53b5b6df34d21f9304762c5497": {
@@ -17052,11 +17136,13 @@
     "0xb99a23b1a4585fc56d0ec3b76528c27cad427473": {
       "address": "0xb99a23b1a4585fc56d0ec3b76528c27cad427473",
       "name": "Uniswap",
+      "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/uni.svg",
       "isSC": {}
     },
     "0xbcc4371cc40592794bf5b727c17cf7de37ac180a": {
       "address": "0xbcc4371cc40592794bf5b727c17cf7de37ac180a",
       "name": "Aave",
+      "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/AAVE.svg",
       "isSC": {}
     },
     "0xbd6a40bb904aea5a49c59050b5395f7484a4203d": {
@@ -17072,6 +17158,7 @@
     "0xc4a1c45d5546029fd57128483ae65b56124bfa6a": {
       "address": "0xc4a1c45d5546029fd57128483ae65b56124bfa6a",
       "name": "Uniswap",
+      "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/uni.svg",
       "isSC": {}
     },
     "0xc73e0383f3aff3215e6f04b0331d58cecf0ab849": {
@@ -17082,6 +17169,7 @@
     "0xc7eb739e2651484daa1717433de1736a6529cfcc": {
       "address": "0xc7eb739e2651484daa1717433de1736a6529cfcc",
       "name": "Uniswap",
+      "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/uni.svg",
       "isSC": {}
     },
     "0xcee284f754e854890e311e3280b767f80797180d": {
@@ -17092,6 +17180,7 @@
     "0xd4777e164c6c683e10593e08760b803d58529a8e": {
       "address": "0xd4777e164c6c683e10593e08760b803d58529a8e",
       "name": "Uniswap",
+      "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/uni.svg",
       "isSC": {}
     },
     "0xd6ad7a6750a7593e092a9b218d66c0a814a3436e": {
@@ -17112,6 +17201,7 @@
     "0xdf02ffeafdb79e564ae9fdac6545c5f4c2178400": {
       "address": "0xdf02ffeafdb79e564ae9fdac6545c5f4c2178400",
       "name": "Uniswap",
+      "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/uni.svg",
       "isSC": {}
     },
     "0xdf869fad6db91f437b59f1edefab319493d4c4ce": {
@@ -17132,16 +17222,19 @@
     "0xe28ffac44b0c430aa3e62a9bc211f7d825d6c1f9": {
       "address": "0xe28ffac44b0c430aa3e62a9bc211f7d825d6c1f9",
       "name": "Uniswap",
+      "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/uni.svg",
       "isSC": {}
     },
     "0xe8e45431b93215566ba923a7e611b7342ea954df": {
       "address": "0xe8e45431b93215566ba923a7e611b7342ea954df",
       "name": "Uniswap",
+      "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/uni.svg",
       "isSC": {}
     },
     "0xe9078a97eef2bb502a9f792169f9c03626649248": {
       "address": "0xe9078a97eef2bb502a9f792169f9c03626649248",
       "name": "Uniswap",
+      "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/uni.svg",
       "isSC": {}
     },
     "0xeb66acc3d011056b00ea521f8203580c2e5d3991": {
@@ -17152,6 +17245,7 @@
     "0xe9cf7887b93150d4f2da7dfc6d502b216438f244": {
       "address": "0xe9cf7887b93150d4f2da7dfc6d502b216438f244",
       "name": "Uniswap",
+      "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/uni.svg",
       "isSC": {}
     },
     "0xefc70a1b18c432bdc64b596838b4d138f6bc6cad": {
@@ -17172,6 +17266,7 @@
     "0xf79cb3bea83bd502737586a6e8b133c378fd1ff2": {
       "address": "0xf79cb3bea83bd502737586a6e8b133c378fd1ff2",
       "name": "Uniswap",
+      "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/uni.svg",
       "isSC": {}
     },
     "0xff33b21bc54aee753891a15e72b7a152a5a782dc": {
@@ -17200,32 +17295,38 @@
       "isSC": {}
     },
     "0x3fc91a3afd70395cd496c647d5a6cc9d4b2b7fad": {
-      "name": "UniswapUniversalRouter",
+      "name": "Uniswap Router",
+      "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/uni.svg",
       "address": "0x3fc91a3afd70395cd496c647d5a6cc9d4b2b7fad",
       "isSC": {}
     },
     "0x643770e279d5d0733f21d6dc03a8efbabf3255b4": {
-      "name": "UniswapUniversalRouter",
+      "name": "Uniswap Router",
+      "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/uni.svg",
       "address": "0x643770e279d5d0733f21d6dc03a8efbabf3255b4",
       "isSC": {}
     },
     "0xec8b0f7ffe3ae75d7ffab09429e3675bb63503e4": {
-      "name": "UniswapUniversalRouter",
+      "name": "Uniswap Router",
+      "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/uni.svg",
       "address": "0xec8b0f7ffe3ae75d7ffab09429e3675bb63503e4",
       "isSC": {}
     },
     "0x5302086a3a25d473aabbd0356eff8dd811a4d89b": {
-      "name": "UniswapUniversalRouter",
+      "name": "Uniswap Router",
+      "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/uni.svg",
       "address": "0x5302086a3a25d473aabbd0356eff8dd811a4d89b",
       "isSC": {}
     },
     "0x198ef79f1f515f02dfe9e3115ed9fc07183f02fc": {
-      "name": "UniswapUniversalRouter",
+      "name": "Uniswap Router",
+      "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/uni.svg",
       "address": "0x198ef79f1f515f02dfe9e3115ed9fc07183f02fc",
       "isSC": {}
     },
     "0x82635af6146972cd6601161c4472ffe97237d292": {
-      "name": "UniswapUniversalRouter",
+      "name": "Uniswap Router",
+      "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/uni.svg",
       "address": "0x82635af6146972cd6601161c4472ffe97237d292",
       "isSC": {}
     },
@@ -17285,31 +17386,37 @@
     },
     "0x8dff5e27ea6b7ac08ebfdf9eb090f32ee9a30fcf": {
       "name": "Aave",
+      "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/AAVE.svg",
       "address": "0x8dff5e27ea6b7ac08ebfdf9eb090f32ee9a30fcf",
       "isSC": {}
     },
     "0xeffc18fc3b7eb8e676dac549e0c693ad50d1ce31": {
       "name": "Aave",
+      "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/AAVE.svg",
       "address": "0xeffc18fc3b7eb8e676dac549e0c693ad50d1ce31",
       "isSC": {}
     },
     "0xcc9a0b7c43dc2a5f023bb9b738e45b0ef6b06e04": {
       "name": "Aave",
+      "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/AAVE.svg",
       "address": "0xcc9a0b7c43dc2a5f023bb9b738e45b0ef6b06e04",
       "isSC": {}
     },
     "0xd322a49006fc828f9b5b37ab215f99b4e5cab19c": {
       "name": "Aave",
+      "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/AAVE.svg",
       "address": "0xd322a49006fc828f9b5b37ab215f99b4e5cab19c",
       "isSC": {}
     },
     "0xbeadf48d62acc944a06eeae0a9054a90e5a7dc97": {
       "name": "Aave",
+      "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/AAVE.svg",
       "address": "0xbeadf48d62acc944a06eeae0a9054a90e5a7dc97",
       "isSC": {}
     },
     "0x1e4b7a6b903680eab0c5dabcb8fd429cd2a9598c": {
       "name": "Aave",
+      "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/AAVE.svg",
       "address": "0x1e4b7a6b903680eab0c5dabcb8fd429cd2a9598c",
       "isSC": {}
     },
@@ -17319,17 +17426,20 @@
       "isSC": {}
     },
     "0x794a61358d6845594f94dc1db02a252b5b4814ad": {
-      "name": "Aave",
+      "name": "Aave pool",
+      "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/AAVE.svg",
       "address": "0x794a61358d6845594f94dc1db02a252b5b4814ad",
       "isSC": {}
     },
     "0x76d3030728e52deb8848d5613abade88441cbc59": {
       "name": "Aave",
+      "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/AAVE.svg",
       "address": "0x76d3030728e52deb8848d5613abade88441cbc59",
       "isSC": {}
     },
     "0x90df02551bb792286e8d4f13e0e357b4bf1d6a57": {
       "name": "Aave",
+      "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/AAVE.svg",
       "address": "0x90df02551bb792286e8d4f13e0e357b4bf1d6a57",
       "isSC": {}
     },
@@ -19038,6 +19148,7 @@
     },
     "0x1f9840a85d5af5bf1d1762f925bdaddc4201f984": {
       "name": "Uniswap",
+      "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/uni.svg",
       "address": "0x1f9840a85d5af5bf1d1762f925bdaddc4201f984",
       "token": {
         "decimals": 18,
@@ -19892,6 +20003,7 @@
     },
     "0x7fc66500c84a76ad7e9c93437bfc5ac33e2ddae9": {
       "name": "Aave",
+      "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/AAVE.svg",
       "address": "0x7fc66500c84a76ad7e9c93437bfc5ac33e2ddae9",
       "token": {
         "decimals": 18,
@@ -87557,6 +87669,24 @@
       },
       "isSC": {},
       "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/BAG.svg"
+    },
+
+    "0xcb1355ff08ab38bbce60111f1bb2b784be25d7e8": {
+      "name": "Uniswap Router",
+      "address": "0xcb1355ff08ab38bbce60111f1bb2b784be25d7e8",
+      "isSC": {},
+      "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/uni.svg"
+    },
+
+    "0xcf3045a03f83adfbcba1f19cb2cf4e19075f8668": {
+      "name": "Aave Wrapped Token gateway",
+      "address": "0xcf3045a03f83adfbcba1f19cb2cf4e19075f8668",
+      "token": {
+        "decimals": 18,
+        "symbol": "AAVE"
+      },
+      "isSC": {},
+      "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/AAVE.svg"
     }
   }
 }
