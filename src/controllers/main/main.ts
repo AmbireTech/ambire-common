@@ -348,6 +348,7 @@ export class MainController extends EventEmitter {
     await this.networks.initialLoadPromise
     await this.providers.initialLoadPromise
     await this.accounts.initialLoadPromise
+    await this.selectedAccount.initialLoadPromise
 
     // TODO: We agreed to always fetch the latest and pending states.
     // To achieve this, we need to refactor how we use forceUpdate to obtain pending state updates.
