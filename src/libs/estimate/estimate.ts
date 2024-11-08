@@ -58,7 +58,13 @@ export async function estimate4337(
   feeTokens: TokenResult[],
   blockTag: string | number,
   nativeToCheck: string[]
+  lastSuccessfulNonce: number | null = null,
 ): Promise<EstimateResult> {
+  // Check if the current nonce is the same as the last successful nonce
+  if (lastSuccessfulNonce !== null && op.nonce === BigInt(lastSuccessfulNonce)) {
+    return estimationErrorFormatted(new Error('Nonce has not moved since last successful transaction. Please try again later.'))
+  }
+
   const deploylessEstimator = fromDescriptor(provider, Estimation, !network.rpcNoStateOverride)
   // if no paymaster, user can only pay in native
   const filteredFeeTokens = !shouldUsePaymaster(network)
@@ -408,7 +414,7 @@ export async function estimate(
     gasUsed,
     // if Estimation.sol estimate is a success, it means the nonce has incremented
     // so we subtract 1 from it. If it's an error, we return the old one
-    currentAccountNonce: accountOp.success ? Number(nonce - 1n) : Number(nonce),
+     lastSuccessfulNonce: accountOp.success ? Number(nonce - 1n) : lastSuccessfulNonce,
     feePaymentOptions: [...feeTokenOptions, ...nativeTokenOptions],
     error: getInnerCallFailure(accountOp) || getNonceDiscrepancyFailure(op, nonce)
   }
