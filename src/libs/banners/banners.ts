@@ -1,12 +1,16 @@
-import { AccountOpAction, Action as ActionFromActionsQueue } from 'controllers/actions/actions'
-
+// eslint-disable-next-line import/no-cycle
+import {
+  AccountOpAction,
+  Action as ActionFromActionsQueue
+} from '../../controllers/actions/actions'
 // eslint-disable-next-line import/no-cycle
 import { PortfolioController } from '../../controllers/portfolio/portfolio'
 import { Account, AccountId } from '../../interfaces/account'
 import { Action, Banner } from '../../interfaces/banner'
 import { Network, NetworkId } from '../../interfaces/network'
 import { RPCProviders } from '../../interfaces/provider'
-import { ActiveRoute, SocketAPIUserTx } from '../../interfaces/swapAndBridge'
+import { ActiveRoute } from '../../interfaces/swapAndBridge'
+import { AccountState, DeFiPositionsError } from '../defiPositions/types'
 import { getNetworksWithFailedRPC } from '../networks/networks'
 import { PORTFOLIO_LIB_ERROR_NAMES } from '../portfolio/portfolio'
 import { getIsBridgeTxn, getQuoteRouteSteps } from '../swapAndBridge/swapAndBridge'
@@ -25,6 +29,7 @@ const getDescription = (route: ActiveRoute, isBridgeTxn: boolean) => {
   const steps = getQuoteRouteSteps(route.route.userTxs)
 
   const actionText = `${
+    // eslint-disable-next-line no-nested-ternary
     route.routeStatus === 'completed'
       ? isBridgeTxn
         ? 'Bridged'
@@ -240,7 +245,7 @@ export const getNetworksWithFailedRPCBanners = ({
       id: 'custom-rpcs-down',
       type: 'error',
       title: `Failed to retrieve network data for ${n.name}. You can try selecting another RPC URL`,
-      text: 'Affected features: visible assets, sign message/transaction, ENS/UD domain resolving, add account.',
+      text: 'Affected features: visible assets, DeFi positions, sign message/transaction, ENS/UD domain resolving, add account.',
       actions: [
         {
           label: 'Select',
@@ -261,7 +266,7 @@ export const getNetworksWithFailedRPCBanners = ({
     title: `Failed to retrieve network data for ${networksToGroupInSingleBanner
       .map((n) => n.name)
       .join(', ')} (RPC malfunction)`,
-    text: 'Affected features: visible tokens, sign message/transaction, ENS/UD domain resolving, add account. Please try again later or contact support.',
+    text: 'Affected features: visible assets, DeFi positions, sign message/transaction, ENS/UD domain resolving, add account. Please try again later or contact support.',
     actions: []
   })
 
@@ -279,6 +284,11 @@ export const getNetworksWithPortfolioErrorBanners = ({
 }): Banner[] => {
   const banners: Banner[] = []
 
+  // Why are we iterating over the whole state?
+  // What if an account has a critical error, the user
+  // changes the account, and the new account has no errors?
+  // Isn't it more efficient to iterate over the current account state?
+  // @TODO: Consider refactoring this
   const portfolioLoading = Object.keys(portfolioLatest).some((accId: AccountId) => {
     const accPortfolio = portfolioLatest[accId]
 
@@ -355,6 +365,102 @@ export const getNetworksWithPortfolioErrorBanners = ({
       })
     }
   })
+
+  return banners
+}
+
+export const getNetworksWithDeFiPositionsErrorBanners = ({
+  networks,
+  currentAccountState,
+  providers
+}: {
+  networks: Network[]
+  currentAccountState: AccountState
+  providers: RPCProviders
+}) => {
+  const isLoading = Object.keys(currentAccountState).some((networkId) => {
+    const networkState = currentAccountState[networkId]
+    return networkState.isLoading
+  })
+
+  if (isLoading) return []
+
+  const networkNamesWithUnknownCriticalError: string[] = []
+  const networkNamesWithAssetPriceCriticalError: string[] = []
+  const providersWithErrors: {
+    [providerName: string]: string[]
+  } = {}
+
+  Object.keys(currentAccountState).forEach((networkId) => {
+    const networkState = currentAccountState[networkId]
+    const network = networks.find((n) => n.id === networkId)
+    const rpcProvider = providers[networkId]
+
+    if (
+      !network ||
+      !networkState ||
+      // Don't display an error banner if the RPC isn't working because an RPC error banner is already displayed.
+      (typeof rpcProvider.isWorking === 'boolean' && !rpcProvider.isWorking)
+    )
+      return
+
+    if (networkState.error) {
+      if (networkState.error === DeFiPositionsError.AssetPriceError) {
+        networkNamesWithAssetPriceCriticalError.push(network.name)
+      } else if (networkState.error === DeFiPositionsError.CriticalError) {
+        networkNamesWithUnknownCriticalError.push(network.name)
+      }
+    }
+
+    const providerNamesWithErrors = networkState.providerErrors?.map((e) => e.providerName) || []
+
+    if (providerNamesWithErrors.length) {
+      providerNamesWithErrors.forEach((providerName) => {
+        if (!providersWithErrors[providerName]) providersWithErrors[providerName] = []
+
+        providersWithErrors[providerName].push(network.name)
+      })
+    }
+  })
+
+  const providerErrorBanners: Banner[] = Object.entries(providersWithErrors).map(
+    ([providerName, networkNames]) => {
+      return {
+        id: `${providerName}-defi-positions-error`,
+        type: 'error',
+        title: `Failed to retrieve DeFi positions for ${providerName} on ${networkNames.join(
+          ', '
+        )}`,
+        text: 'Reload the account or try again later.',
+        actions: []
+      }
+    }
+  )
+
+  const banners = providerErrorBanners
+
+  if (networkNamesWithUnknownCriticalError.length) {
+    banners.push({
+      id: 'defi-positions-critical-error',
+      type: 'error',
+      title: `Failed to retrieve DeFi positions on ${networkNamesWithUnknownCriticalError.join(
+        ', '
+      )}`,
+      text: 'Reload the account or try again later.',
+      actions: []
+    })
+  }
+  if (networkNamesWithAssetPriceCriticalError.length) {
+    banners.push({
+      id: 'defi-positions-asset-price-error',
+      type: 'warning',
+      title: `Failed to retrieve asset prices for DeFi positions on ${networkNamesWithAssetPriceCriticalError.join(
+        ', '
+      )}`,
+      text: 'Reload the account or try again later.',
+      actions: []
+    })
+  }
 
   return banners
 }

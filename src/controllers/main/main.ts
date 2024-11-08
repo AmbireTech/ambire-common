@@ -83,6 +83,7 @@ import { AccountOpAction, ActionsController, SignMessageAction } from '../action
 import { ActivityController } from '../activity/activity'
 import { AddressBookController } from '../addressBook/addressBook'
 import { DappsController } from '../dapps/dapps'
+import { DefiPositionsController } from '../defiPositions/defiPositions'
 import { DomainsController } from '../domains/domains'
 import { EmailVaultController } from '../emailVault/emailVault'
 import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter'
@@ -139,6 +140,8 @@ export class MainController extends EventEmitter {
   accountAdder: AccountAdderController
 
   portfolio: PortfolioController
+
+  defiPositions: DefiPositionsController
 
   dapps: DappsController
 
@@ -224,6 +227,7 @@ export class MainController extends EventEmitter {
         this.providers.setProvider(network)
         await this.accounts.updateAccountStates('latest', [network.id])
         await this.updateSelectedAccountPortfolio(true)
+        await this.defiPositions.updatePositions(network.id)
       },
       (networkId: NetworkId) => {
         this.providers.removeProvider(networkId)
@@ -239,6 +243,7 @@ export class MainController extends EventEmitter {
         // TODO: We agreed to always fetch the latest and pending states.
         // To achieve this, we need to refactor how we use forceUpdate to obtain pending state updates.
         await this.updateSelectedAccountPortfolio(true)
+        await this.defiPositions.updatePositions()
         // forceEmitUpdate to update the getters in the FE state of the ctrl
         await this.forceEmitUpdate()
         await this.actions.forceEmitUpdate()
@@ -256,7 +261,12 @@ export class MainController extends EventEmitter {
       relayerUrl,
       velcroUrl
     )
-    this.#initialLoadPromise = this.#load()
+    this.defiPositions = new DefiPositionsController({
+      fetch: this.fetch,
+      accounts: this.accounts,
+      networks: this.networks,
+      providers: this.providers
+    })
     this.emailVault = new EmailVaultController(this.#storage, this.fetch, relayerUrl, this.keystore)
     this.accountAdder = new AccountAdderController({
       accounts: this.accounts,
@@ -310,6 +320,7 @@ export class MainController extends EventEmitter {
       }
     )
     this.domains = new DomainsController(this.providers.providers, this.fetch)
+    this.#initialLoadPromise = this.#load()
   }
 
   async #load(): Promise<void> {
@@ -325,7 +336,7 @@ export class MainController extends EventEmitter {
     // TODO: We agreed to always fetch the latest and pending states.
     // To achieve this, we need to refactor how we use forceUpdate to obtain pending state updates.
     this.updateSelectedAccountPortfolio(true)
-
+    this.defiPositions.updatePositions()
     /**
      * Listener that gets triggered as a finalization step of adding new
      * accounts via the AccountAdder controller flow.
@@ -847,7 +858,8 @@ export class MainController extends EventEmitter {
       // as the PortfolioController already exposes flags that are highly sufficient for the UX.
       // Additionally, if we trigger the portfolio update twice (i.e., running a long-living interval + force update from the Dashboard),
       // there won't be any error thrown, as all portfolio updates are queued and they don't use the `withStatus` helper.
-      this.updateSelectedAccountPortfolio(true)
+      this.updateSelectedAccountPortfolio(true),
+      this.defiPositions.updatePositions()
     ])
   }
 
@@ -1481,6 +1493,7 @@ export class MainController extends EventEmitter {
   async removeNetwork(id: NetworkId) {
     await this.networks.removeNetwork(id)
     await this.updateSelectedAccountPortfolio(true)
+    await this.defiPositions.updatePositions()
   }
 
   async resolveAccountOpAction(data: any, actionId: AccountOpAction['id']) {
