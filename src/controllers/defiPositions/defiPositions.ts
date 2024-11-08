@@ -6,6 +6,7 @@ import { DeFiPositionsState, PositionsByProvider } from '../../libs/defiPosition
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { NetworksController } from '../networks/networks'
 import { ProvidersController } from '../providers/providers'
+// eslint-disable-next-line import/no-cycle
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 
 export class DefiPositionsController extends EventEmitter {
