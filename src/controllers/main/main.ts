@@ -1829,7 +1829,9 @@ export class MainController extends EventEmitter {
           isSmartAccount(account) &&
           !network.erc4337.enabled &&
           lastTxn &&
-          localAccountOp.nonce === lastTxn.nonce
+          localAccountOp.nonce === lastTxn.nonce &&
+          lastTxn.success &&
+          lastTxn.status === AccountOpStatus.Success
 
         if (hasNonceDiscrepancy || SAHasOldNonceOnARelayerNetwork) {
           this.accounts
