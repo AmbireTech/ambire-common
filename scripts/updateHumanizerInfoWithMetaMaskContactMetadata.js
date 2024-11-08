@@ -13,7 +13,7 @@ const humanizerInfoPath = path.join(
 )
 
 // fixed for specific release
-const githubSourceBaseUrl = 'https://raw.githubusercontent.com/MetaMask/contract-metadata/v2.5.0'
+const githubSourceBaseUrl = 'https://raw.githubusercontent.com/MetaMask/contract-metadata/master'
 
 // Updates Ambire's Humanizer (info) JSON with the Ethereum contract addresses metadata (decimals, symbol, name, logo) pulled from the @metamask/gstacontract-metadata repo.
 fetch(`${githubSourceBaseUrl}/contract-map.json`)
