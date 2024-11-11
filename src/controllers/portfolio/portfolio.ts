@@ -161,27 +161,8 @@ export class PortfolioController extends EventEmitter {
     await this.#storage.set('tokenPreferences', tokenPreferences)
   }
 
-  async #updateNetworksWithAssets(
-    accounts: Account[],
-    accountId: AccountId,
-    accountState: AccountState
-  ) {
+  async #updateNetworksWithAssets(accountId: AccountId, accountState: AccountState) {
     const storageStateByAccount = await this.#storage.get('networksWithAssetsByAccount', {})
-
-    // On the first run
-    if (Object.keys(this.#networksWithAssetsByAccounts).length === 0) {
-      // Remove old accounts from storage
-      const storageAccounts = Object.keys(storageStateByAccount)
-      const currentAccounts = accounts.map(({ addr }) => addr)
-      const accountsToRemove = storageAccounts.filter((x) => !currentAccounts.includes(x))
-
-      for (const account of accountsToRemove) {
-        delete storageStateByAccount[account]
-      }
-
-      // Set the initial state
-      this.#networksWithAssetsByAccounts = storageStateByAccount
-    }
 
     this.#networksWithAssetsByAccounts[accountId] = getAccountNetworksWithAssets(
       accountId,
@@ -701,7 +682,7 @@ export class PortfolioController extends EventEmitter {
       })
     )
 
-    await this.#updateNetworksWithAssets(this.#accounts.accounts, accountId, accountState)
+    await this.#updateNetworksWithAssets(accountId, accountState)
     this.emitUpdate()
   }
 

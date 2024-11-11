@@ -9,6 +9,7 @@ import { getRpcProvider } from '../../services/provider'
 import { AccountsController } from '../accounts/accounts'
 import { NetworksController } from '../networks/networks'
 import { ProvidersController } from '../providers/providers'
+import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 import { DefiPositionsController } from './defiPositions'
 
 global.fetch = fetch as any
@@ -61,13 +62,20 @@ const prepareTest = async () => {
     () => {},
     () => {}
   )
-  await accountsCtrl.selectAccount(ACCOUNT.addr)
+
+  const selectedAccountCtrl = new SelectedAccountController({
+    storage,
+    accounts: accountsCtrl
+  })
+  await selectedAccountCtrl.initialLoadPromise
   await networksCtrl.initialLoadPromise
   await providersCtrl.initialLoadPromise
 
+  await selectedAccountCtrl.setAccount(ACCOUNT)
+
   return new DefiPositionsController({
     fetch: global.fetch as any,
-    accounts: accountsCtrl,
+    selectedAccount: selectedAccountCtrl,
     providers: providersCtrl,
     networks: networksCtrl
   })

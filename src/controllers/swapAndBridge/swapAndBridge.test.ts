@@ -10,6 +10,7 @@ import { getRpcProvider } from '../../services/provider'
 import { AccountsController } from '../accounts/accounts'
 import { NetworksController } from '../networks/networks'
 import { ProvidersController } from '../providers/providers'
+import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 import { SocketAPIMock } from './socketApiMock'
 import { SwapAndBridgeController } from './swapAndBridge'
 
@@ -42,6 +43,7 @@ const accountsCtrl = new AccountsController(
   () => {},
   () => {}
 )
+const selectedAccountCtrl = new SelectedAccountController({ storage, accounts: accountsCtrl })
 
 const socketAPIMock = new SocketAPIMock({ fetch, apiKey: '' })
 
@@ -66,9 +68,10 @@ const accounts = [
 describe('SwapAndBridge Controller', () => {
   test('should initialize', async () => {
     await storage.set('accounts', accounts)
-    accountsCtrl.selectedAccount = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+    await selectedAccountCtrl.initialLoadPromise
+    await selectedAccountCtrl.setAccount(accounts[0])
     swapAndBridgeController = new SwapAndBridgeController({
-      accounts: accountsCtrl,
+      selectedAccount: selectedAccountCtrl,
       networks: networksCtrl,
       storage,
       socketAPI: socketAPIMock as any

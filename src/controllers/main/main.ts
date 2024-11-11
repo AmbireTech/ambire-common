@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-floating-promises */
 import { ethErrors } from 'eth-rpc-errors'
 /* eslint-disable @typescript-eslint/brace-style */
 import { getAddress, getBigInt, Interface, isAddress } from 'ethers'
@@ -32,7 +31,7 @@ import { NotificationManager } from '../../interfaces/notification'
 import { Storage } from '../../interfaces/storage'
 import { Calls, DappUserRequest, SignUserRequest, UserRequest } from '../../interfaces/userRequest'
 import { WindowManager } from '../../interfaces/window'
-import { isSmartAccount } from '../../libs/account/account'
+import { getDefaultSelectedAccount, isSmartAccount } from '../../libs/account/account'
 import { AccountOp, AccountOpStatus, getSignableCalls } from '../../libs/accountOp/accountOp'
 import {
   AccountOpIdentifiedBy,
@@ -92,6 +91,8 @@ import { KeystoreController } from '../keystore/keystore'
 import { NetworksController } from '../networks/networks'
 import { PortfolioController } from '../portfolio/portfolio'
 import { ProvidersController } from '../providers/providers'
+/* eslint-disable @typescript-eslint/no-floating-promises */
+import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 /* eslint-disable no-underscore-dangle */
 import { SignAccountOpController, SigningStatus } from '../signAccountOp/signAccountOp'
 import { SignMessageController } from '../signMessage/signMessage'
@@ -106,7 +107,8 @@ const STATUS_WRAPPED_METHODS = {
   handleAccountAdderInitLattice: 'INITIAL',
   importSmartAccountFromDefaultSeed: 'INITIAL',
   buildSwapAndBridgeUserRequest: 'INITIAL',
-  importSmartAccountFromSavedSeed: 'INITIAL'
+  importSmartAccountFromSavedSeed: 'INITIAL',
+  selectAccount: 'INITIAL'
 } as const
 
 export class MainController extends EventEmitter {
@@ -168,6 +170,8 @@ export class MainController extends EventEmitter {
   domains: DomainsController
 
   accounts: AccountsController
+
+  selectedAccount: SelectedAccountController
 
   userRequests: UserRequest[] = []
 
@@ -238,20 +242,23 @@ export class MainController extends EventEmitter {
       this.#storage,
       this.providers,
       this.networks,
-      async (toAccountAddr: string) => {
-        this.activity.init()
-        // TODO: We agreed to always fetch the latest and pending states.
-        // To achieve this, we need to refactor how we use forceUpdate to obtain pending state updates.
-        await this.updateSelectedAccountPortfolio(true)
-        await this.defiPositions.updatePositions()
-        // forceEmitUpdate to update the getters in the FE state of the ctrl
-        await this.forceEmitUpdate()
-        await this.actions.forceEmitUpdate()
-        await this.addressBook.forceEmitUpdate()
-        this.dapps.broadcastDappSessionEvent('accountsChanged', [toAccountAddr])
+      async (accounts) => {
+        const defaultSelectedAccount = getDefaultSelectedAccount(accounts)
+        if (defaultSelectedAccount) {
+          await this.#selectAccount(defaultSelectedAccount.addr)
+          // Don't wait for account state because:
+          // 1. The extension works perfectly fine without it
+          // 2. Some RPCs may be slow and we don't want to block the UI
+          // eslint-disable-next-line @typescript-eslint/no-floating-promises
+          this.accounts.updateAccountState(defaultSelectedAccount.addr)
+        }
       },
       this.providers.updateProviderIsWorking.bind(this.providers)
     )
+    this.selectedAccount = new SelectedAccountController({
+      storage: this.#storage,
+      accounts: this.accounts
+    })
     this.portfolio = new PortfolioController(
       this.#storage,
       this.fetch,
@@ -263,9 +270,13 @@ export class MainController extends EventEmitter {
     )
     this.defiPositions = new DefiPositionsController({
       fetch: this.fetch,
-      accounts: this.accounts,
+      selectedAccount: this.selectedAccount,
       networks: this.networks,
       providers: this.providers
+    })
+    this.selectedAccount.initControllers({
+      portfolio: this.portfolio,
+      defiPositions: this.defiPositions
     })
     this.emailVault = new EmailVaultController(this.#storage, this.fetch, relayerUrl, this.keystore)
     this.accountAdder = new AccountAdderController({
@@ -276,7 +287,7 @@ export class MainController extends EventEmitter {
       relayerUrl,
       fetch: this.fetch
     })
-    this.addressBook = new AddressBookController(this.#storage, this.accounts)
+    this.addressBook = new AddressBookController(this.#storage, this.accounts, this.selectedAccount)
     this.signMessage = new SignMessageController(
       this.keystore,
       this.providers,
@@ -286,14 +297,14 @@ export class MainController extends EventEmitter {
     )
     this.#socketAPI = new SocketAPI({ apiKey: socketApiKey, fetch: this.fetch })
     this.swapAndBridge = new SwapAndBridgeController({
-      accounts: this.accounts,
+      selectedAccount: this.selectedAccount,
       networks: this.networks,
       socketAPI: this.#socketAPI,
       storage: this.#storage
     })
     this.dapps = new DappsController(this.#storage)
     this.actions = new ActionsController({
-      accounts: this.accounts,
+      selectedAccount: this.selectedAccount,
       windowManager,
       notificationManager,
       onActionWindowClose: () => {
@@ -313,6 +324,7 @@ export class MainController extends EventEmitter {
       this.fetch,
       this.callRelayer,
       this.accounts,
+      this.selectedAccount,
       this.providers,
       this.networks,
       async (network: Network) => {
@@ -333,6 +345,8 @@ export class MainController extends EventEmitter {
     await this.networks.initialLoadPromise
     await this.providers.initialLoadPromise
     await this.accounts.initialLoadPromise
+    await this.selectedAccount.initialLoadPromise
+
     // TODO: We agreed to always fetch the latest and pending states.
     // To achieve this, we need to refactor how we use forceUpdate to obtain pending state updates.
     this.updateSelectedAccountPortfolio(true)
@@ -381,6 +395,40 @@ export class MainController extends EventEmitter {
     this.accountAdder.onUpdate(onAccountAdderSuccess)
 
     this.isReady = true
+    this.emitUpdate()
+  }
+
+  async selectAccount(toAccountAddr: string) {
+    await this.withStatus('selectAccount', async () => this.#selectAccount(toAccountAddr), true)
+  }
+
+  async #selectAccount(toAccountAddr: string | null) {
+    await this.#initialLoadPromise
+    if (!toAccountAddr) {
+      await this.selectedAccount.setAccount(null)
+
+      this.emitUpdate()
+      return
+    }
+
+    const accountToSelect = this.accounts.accounts.find((acc) => acc.addr === toAccountAddr)
+    if (!accountToSelect) {
+      console.error(`Account with address ${toAccountAddr} does not exist`)
+      return
+    }
+    this.selectedAccount.setAccount(accountToSelect)
+    this.activity.init()
+    // TODO: We agreed to always fetch the latest and pending states.
+    // To achieve this, we need to refactor how we use forceUpdate to obtain pending state updates.
+    await this.updateSelectedAccountPortfolio(true)
+    await this.defiPositions.updatePositions()
+    // forceEmitUpdate to update the getters in the FE state of the ctrl
+    await this.forceEmitUpdate()
+    await this.actions.forceEmitUpdate()
+    await this.addressBook.forceEmitUpdate()
+    this.dapps.broadcastDappSessionEvent('accountsChanged', [toAccountAddr])
+    await this.accounts.updateAccountState(toAccountAddr)
+
     this.emitUpdate()
   }
 
@@ -795,6 +843,10 @@ export class MainController extends EventEmitter {
         this.actions.removeAccountData(address)
         this.signMessage.removeAccountData(address)
 
+        if (this.selectedAccount.account?.addr === address) {
+          await this.#selectAccount(this.accounts.accounts[0]?.addr)
+        }
+
         if (this.signAccountOp?.account.addr === address) {
           this.destroySignAccOp()
         }
@@ -840,7 +892,7 @@ export class MainController extends EventEmitter {
   }
 
   async reloadSelectedAccount() {
-    if (!this.accounts.selectedAccount) return
+    if (!this.selectedAccount.account) return
 
     const isUpdatingAccount = this.accounts.statuses.updateAccountState !== 'INITIAL'
 
@@ -851,8 +903,8 @@ export class MainController extends EventEmitter {
       // So, we perform this safety check to prevent the error.
       // However, even if we don't trigger an update here, it's not a big problem,
       // as the account state will be updated anyway, and its update will be very recent.
-      !isUpdatingAccount
-        ? this.accounts.updateAccountState(this.accounts.selectedAccount, 'pending')
+      !isUpdatingAccount && this.selectedAccount.account?.addr
+        ? this.accounts.updateAccountState(this.selectedAccount.account.addr, 'pending')
         : Promise.resolve(),
       // `updateSelectedAccountPortfolio` doesn't rely on `withStatus` validation internally,
       // as the PortfolioController already exposes flags that are highly sufficient for the UX.
@@ -866,15 +918,14 @@ export class MainController extends EventEmitter {
   // eslint-disable-next-line default-param-last
   async updateSelectedAccountPortfolio(forceUpdate: boolean = true, network?: Network) {
     await this.#initialLoadPromise
-    if (!this.accounts.selectedAccount) return
+    if (!this.selectedAccount.account) return
 
-    const account = this.accounts.accounts.find((a) => a.addr === this.accounts.selectedAccount)
     const signAccountOpNetworkId = this.signAccountOp?.accountOp.networkId
     const networkData =
       network || this.networks.networks.find((n) => n.id === signAccountOpNetworkId)
 
     const accountOpsToBeSimulatedByNetwork = getAccountOpsForSimulation(
-      account!,
+      this.selectedAccount.account,
       this.actions.visibleActionsQueue,
       networkData,
       this.signAccountOp?.accountOp
@@ -882,7 +933,7 @@ export class MainController extends EventEmitter {
 
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.portfolio.updateSelectedAccount(
-      this.accounts.selectedAccount,
+      this.selectedAccount.account.addr,
       network,
       accountOpsToBeSimulatedByNetwork,
       { forceUpdate }
@@ -904,18 +955,13 @@ export class MainController extends EventEmitter {
     const dapp = this.dapps.getDapp(request.origin)
 
     if (kind === 'calls') {
-      if (!this.accounts.selectedAccount) throw ethErrors.rpc.internal()
+      if (!this.selectedAccount.account) throw ethErrors.rpc.internal()
 
       const isWalletSendCalls = !!request.params[0].calls
       const calls: Calls['calls'] = isWalletSendCalls
         ? request.params[0].calls
         : [request.params[0]]
       const accountAddr = getAddress(request.params[0].from)
-      const account = this.accounts.accounts.find((a) => a.addr === accountAddr)
-
-      if (!account) {
-        throw ethErrors.provider.unauthorized('Transaction failed - unknown account address')
-      }
 
       const network = this.networks.networks.find(
         (n) => Number(n.chainId) === Number(dapp?.chainId)
@@ -937,7 +983,7 @@ export class MainController extends EventEmitter {
         meta: { isSignAction: true, accountAddr, networkId: network.id },
         dappPromise
       } as SignUserRequest
-      if (!account.creation) {
+      if (!this.selectedAccount.account.creation) {
         const otherUserRequestFromSameDapp = this.userRequests.find(
           (r) => r.dappPromise?.session?.origin === dappPromise?.session?.origin
         )
@@ -947,7 +993,7 @@ export class MainController extends EventEmitter {
         }
       }
     } else if (kind === 'message') {
-      if (!this.accounts.selectedAccount) throw ethErrors.rpc.internal()
+      if (!this.selectedAccount.account) throw ethErrors.rpc.internal()
 
       const msg = request.params
       if (!msg) {
@@ -956,7 +1002,7 @@ export class MainController extends EventEmitter {
       const msgAddress = getAddress(msg?.[1])
       // TODO: if address is in this.accounts in theory the user should be able to sign
       // e.g. if an acc from the wallet is used as a signer of another wallet
-      if (msgAddress !== this.accounts.selectedAccount) {
+      if (msgAddress !== this.selectedAccount.account.addr) {
         dappPromise.reject(
           ethErrors.provider.userRejectedRequest(
             // if updating, check https://github.com/AmbireTech/ambire-wallet/pull/1627
@@ -989,7 +1035,7 @@ export class MainController extends EventEmitter {
         dappPromise
       } as SignUserRequest
     } else if (kind === 'typedMessage') {
-      if (!this.accounts.selectedAccount) throw ethErrors.rpc.internal()
+      if (!this.selectedAccount.account) throw ethErrors.rpc.internal()
 
       const msg = request.params
       if (!msg) {
@@ -998,7 +1044,7 @@ export class MainController extends EventEmitter {
       const msgAddress = getAddress(msg?.[0])
       // TODO: if address is in this.accounts in theory the user should be able to sign
       // e.g. if an acc from the wallet is used as a signer of another wallet
-      if (msgAddress !== this.accounts.selectedAccount) {
+      if (msgAddress !== this.selectedAccount.account.addr) {
         dappPromise.reject(
           ethErrors.provider.userRejectedRequest(
             // if updating, check https://github.com/AmbireTech/ambire-wallet/pull/1627
@@ -1085,12 +1131,10 @@ export class MainController extends EventEmitter {
     executionType: 'queue' | 'open' = 'open'
   ) {
     await this.#initialLoadPromise
-    if (!this.accounts.selectedAccount) return
-
-    const account = this.accounts.accounts.find((a) => a.addr === this.accounts.selectedAccount)!
+    if (!this.selectedAccount.account) return
 
     const userRequest = buildTransferUserRequest({
-      selectedAccount: this.accounts.selectedAccount,
+      selectedAccount: this.selectedAccount.account.addr,
       amount,
       selectedToken,
       recipientAddress
@@ -1107,26 +1151,23 @@ export class MainController extends EventEmitter {
       return
     }
 
-    await this.addUserRequest(userRequest, !account.creation, executionType)
+    await this.addUserRequest(userRequest, !this.selectedAccount.account.creation, executionType)
   }
 
   async buildSwapAndBridgeUserRequest(activeRouteId?: number) {
     await this.withStatus(
       'buildSwapAndBridgeUserRequest',
       async () => {
+        if (!this.selectedAccount.account) return
         let transaction: SocketAPISendTransactionRequest | null = null
 
         if (this.swapAndBridge.formStatus === SwapAndBridgeFormStatus.ReadyToSubmit) {
           transaction = await this.swapAndBridge.getRouteStartUserTx()
         }
 
-        const account = this.accounts.accounts.find(
-          (a) => a.addr === this.accounts.selectedAccount
-        )!
-
         if (activeRouteId) {
           this.removeUserRequest(activeRouteId, { shouldRemoveSwapAndBridgeRoute: false })
-          if (!isSmartAccount(account)) {
+          if (!isSmartAccount(this.selectedAccount.account)) {
             this.removeUserRequest(`${activeRouteId}-revoke-approval`, {
               shouldRemoveSwapAndBridgeRoute: false
             })
@@ -1137,7 +1178,7 @@ export class MainController extends EventEmitter {
           transaction = await this.#socketAPI.getNextRouteUserTx(activeRouteId)
         }
 
-        if (!this.accounts.selectedAccount || !transaction) {
+        if (!this.selectedAccount.account || !transaction) {
           this.emitError({
             level: 'major',
             message: 'Unexpected error while building swap & bridge request',
@@ -1153,13 +1194,17 @@ export class MainController extends EventEmitter {
         const swapAndBridgeUserRequests = await buildSwapAndBridgeUserRequests(
           transaction,
           network.id,
-          account,
+          this.selectedAccount.account,
           this.providers.providers[network.id]
         )
 
         for (let i = 0; i < swapAndBridgeUserRequests.length; i++) {
           if (i === 0) {
-            this.addUserRequest(swapAndBridgeUserRequests[i], !account.creation, 'open')
+            this.addUserRequest(
+              swapAndBridgeUserRequests[i],
+              !this.selectedAccount.account.creation,
+              'open'
+            )
           } else {
             // eslint-disable-next-line no-await-in-loop
             await this.addUserRequest(swapAndBridgeUserRequests[i], false, 'queue')
@@ -2241,14 +2286,14 @@ export class MainController extends EventEmitter {
   // will not trigger emitUpdate in the MainController, therefore the banners will
   // remain the same until a subsequent update in the MainController.
   get banners(): Banner[] {
-    if (!this.accounts.selectedAccount || !this.networks.isInitialized) return []
+    if (!this.selectedAccount.account || !this.networks.isInitialized) return []
 
     const accountOpBanners = getAccountOpBanners({
       accountOpActionsByNetwork: getAccountOpActionsByNetwork(
-        this.accounts.selectedAccount,
+        this.selectedAccount.account.addr,
         this.actions.actionsQueue
       ),
-      selectedAccount: this.accounts.selectedAccount,
+      selectedAccount: this.selectedAccount.account.addr,
       accounts: this.accounts.accounts,
       networks: this.networks.networks
     })

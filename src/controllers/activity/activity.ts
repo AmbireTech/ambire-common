@@ -18,6 +18,7 @@ import { AccountsController } from '../accounts/accounts'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { NetworksController } from '../networks/networks'
 import { ProvidersController } from '../providers/providers'
+import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 
 export interface Pagination {
   fromPage: number
@@ -103,6 +104,8 @@ export class ActivityController extends EventEmitter {
 
   #accounts: AccountsController
 
+  #selectedAccount: SelectedAccountController
+
   #accountsOps: InternalAccountsOps = {}
 
   accountsOps: AccountsOps | undefined
@@ -140,6 +143,7 @@ export class ActivityController extends EventEmitter {
     fetch: Fetch,
     callRelayer: Function,
     accounts: AccountsController,
+    selectedAccount: SelectedAccountController,
     providers: ProvidersController,
     networks: NetworksController,
     onContractsDeployed: (network: Network) => Promise<void>
@@ -149,6 +153,7 @@ export class ActivityController extends EventEmitter {
     this.#fetch = fetch
     this.#callRelayer = callRelayer
     this.#accounts = accounts
+    this.#selectedAccount = selectedAccount
     this.#providers = providers
     this.#networks = networks
     this.#onContractsDeployed = onContractsDeployed
@@ -157,6 +162,7 @@ export class ActivityController extends EventEmitter {
 
   async #load(): Promise<void> {
     await this.#accounts.initialLoadPromise
+    await this.#selectedAccount.initialLoadPromise
     const [accountsOps, signedMessages] = await Promise.all([
       this.#storage.get('accountsOps', {}),
       this.#storage.get('signedMessages', {})
@@ -290,7 +296,7 @@ export class ActivityController extends EventEmitter {
 
     // Here we don't rely on `this.isInitialized` flag, as it checks for both `this.filters.account` and `this.filters.network` existence.
     // Banners are network agnostic, and that's the reason we check for `this.filters.account` only and having this.#accountsOps loaded.
-    if (!this.#accounts.selectedAccount || !this.#accountsOps[this.#accounts.selectedAccount])
+    if (!this.#selectedAccount.account || !this.#accountsOps[this.#selectedAccount.account.addr])
       return { shouldEmitUpdate: false, shouldUpdatePortfolio: false }
 
     // This flag tracks the changes to AccountsOps statuses
@@ -300,12 +306,12 @@ export class ActivityController extends EventEmitter {
     let shouldUpdatePortfolio = false
 
     await Promise.all(
-      Object.keys(this.#accountsOps[this.#accounts.selectedAccount]).map(async (networkId) => {
+      Object.keys(this.#accountsOps[this.#selectedAccount.account.addr]).map(async (networkId) => {
         const network = this.#networks.networks.find((x) => x.id === networkId)
         if (!network) return
         const provider = this.#providers.providers[network.id]
 
-        const selectedAccount = this.#accounts.selectedAccount
+        const selectedAccount = this.#selectedAccount.account?.addr
 
         if (!selectedAccount) return
 
@@ -546,10 +552,10 @@ export class ActivityController extends EventEmitter {
   get broadcastedButNotConfirmed(): SubmittedAccountOp[] {
     // Here we don't rely on `this.isInitialized` flag, as it checks for both `this.filters.account` and `this.filters.network` existence.
     // Banners are network agnostic, and that's the reason we check for `this.filters.account` only and having this.#accountsOps loaded.
-    if (!this.#accounts.selectedAccount || !this.#accountsOps[this.#accounts.selectedAccount])
+    if (!this.#selectedAccount.account || !this.#accountsOps[this.#selectedAccount.account.addr])
       return []
 
-    return Object.values(this.#accountsOps[this.#accounts.selectedAccount])
+    return Object.values(this.#accountsOps[this.#selectedAccount.account.addr])
       .flat()
       .filter((accountOp) => accountOp.status === AccountOpStatus.BroadcastedButNotConfirmed)
   }
@@ -565,10 +571,10 @@ export class ActivityController extends EventEmitter {
   get lastKnownNonce(): NetworkNonces {
     // Here we don't rely on `this.isInitialized` flag, as it checks for both `this.filters.account` and `this.filters.network` existence.
     // Banners are network agnostic, and that's the reason we check for `this.filters.account` only and having this.#accountsOps loaded.
-    if (!this.#accounts.selectedAccount || !this.#accountsOps[this.#accounts.selectedAccount])
+    if (!this.#selectedAccount.account || !this.#accountsOps[this.#selectedAccount.account.addr])
       return {}
 
-    return Object.values(this.#accountsOps[this.#accounts.selectedAccount])
+    return Object.values(this.#accountsOps[this.#selectedAccount.account.addr])
       .flat()
       .reduce(
         (acc, accountOp) => {
@@ -684,13 +690,13 @@ export class ActivityController extends EventEmitter {
 
   getLastTxn(networkId: Network['id']): SubmittedAccountOp | null {
     if (
-      !this.#accounts.selectedAccount ||
-      !this.#accountsOps[this.#accounts.selectedAccount] ||
-      !this.#accountsOps[this.#accounts.selectedAccount][networkId]
+      !this.#selectedAccount.account ||
+      !this.#accountsOps[this.#selectedAccount.account.addr] ||
+      !this.#accountsOps[this.#selectedAccount.account.addr][networkId]
     )
       return null
 
-    return this.#accountsOps[this.#accounts.selectedAccount][networkId][0]
+    return this.#accountsOps[this.#selectedAccount.account.addr][networkId][0]
   }
 
   toJSON() {

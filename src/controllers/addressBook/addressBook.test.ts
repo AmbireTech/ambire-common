@@ -11,6 +11,7 @@ import { getRpcProvider } from '../../services/provider'
 import { AccountsController } from '../accounts/accounts'
 import { NetworksController } from '../networks/networks'
 import { ProvidersController } from '../providers/providers'
+import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 import { AddressBookController } from './addressBook'
 
 const storage: Storage = produceMemoryStore()
@@ -80,7 +81,12 @@ describe('AddressBookController', () => {
     () => {},
     () => {}
   )
-  const addressBookController = new AddressBookController(storage, accountsCtrl)
+  const selectedAccountCtrl = new SelectedAccountController({ storage, accounts: accountsCtrl })
+  const addressBookController = new AddressBookController(
+    storage,
+    accountsCtrl,
+    selectedAccountCtrl
+  )
 
   const getContactFromName = (name: string) => {
     return addressBookController.contacts.find((contact) => contact.name === name)
@@ -90,7 +96,8 @@ describe('AddressBookController', () => {
   ;(addressBookController as any).emitError = mockEmitError
 
   it('wallet accounts are in contacts', async () => {
-    await accountsCtrl.selectAccount('0x598cD170E9b90e9c7E57e18B47D589ceC119744c')
+    await selectedAccountCtrl.initialLoadPromise
+    await selectedAccountCtrl.setAccount(MOCK_ACCOUNTS[0])
     expect(getContactFromName('Account 1')?.isWalletAccount).toBeTruthy()
     expect(getContactFromName('Account 1')?.address).toEqual(
       '0x66fE93c51726e6FD51668B0B0434ffcedD604d08'

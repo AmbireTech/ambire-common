@@ -1,5 +1,6 @@
 import { Fetch } from '../../interfaces/fetch'
 import { NetworkId } from '../../interfaces/network'
+// eslint-disable-next-line import/no-cycle
 import { getNetworksWithDeFiPositionsErrorBanners } from '../../libs/banners/banners'
 import { getAssetValue, sortByValue } from '../../libs/defiPositions/helpers'
 import { getAAVEPositions, getUniV3Positions } from '../../libs/defiPositions/providers'
@@ -8,13 +9,14 @@ import {
   DeFiPositionsState,
   PositionsByProvider
 } from '../../libs/defiPositions/types'
-import { AccountsController } from '../accounts/accounts'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { NetworksController } from '../networks/networks'
 import { ProvidersController } from '../providers/providers'
+// eslint-disable-next-line import/no-cycle
+import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 
 export class DefiPositionsController extends EventEmitter {
-  #accounts: AccountsController
+  #selectedAccount: SelectedAccountController
 
   #providers: ProvidersController
 
@@ -28,19 +30,19 @@ export class DefiPositionsController extends EventEmitter {
 
   constructor({
     fetch,
-    accounts,
+    selectedAccount,
     providers,
     networks
   }: {
     fetch: Fetch
-    accounts: AccountsController
+    selectedAccount: SelectedAccountController
     providers: ProvidersController
     networks: NetworksController
   }) {
     super()
 
     this.#fetch = fetch
-    this.#accounts = accounts
+    this.#selectedAccount = selectedAccount
     this.#providers = providers
     this.#networks = networks
   }
@@ -88,9 +90,9 @@ export class DefiPositionsController extends EventEmitter {
   }
 
   async updatePositions(networkId?: NetworkId) {
-    const selectedAccountAddr = this.#accounts.selectedAccount
-    if (!selectedAccountAddr) return
+    if (!this.#selectedAccount.account) return
 
+    const selectedAccountAddr = this.#selectedAccount.account.addr
     this.#initInitialAccountStateIfNeeded(selectedAccountAddr)
 
     const networksToUpdate = networkId
@@ -112,37 +114,33 @@ export class DefiPositionsController extends EventEmitter {
 
         try {
           const [aavePositions, uniV3Positions] = await Promise.all([
-            getAAVEPositions(
-              this.#accounts.selectedAccount!,
-              this.#providers.providers[n.id],
-              n
-            ).catch((e: any) => {
-              console.error('getAAVEPositions error:', e)
-              this.#setProviderError(
-                selectedAccountAddr,
-                n.id,
-                'AAVE v3',
-                e?.message || 'Unknown error'
-              )
+            getAAVEPositions(selectedAccountAddr, this.#providers.providers[n.id], n).catch(
+              (e: any) => {
+                console.error('getAAVEPositions error:', e)
+                this.#setProviderError(
+                  selectedAccountAddr,
+                  n.id,
+                  'AAVE v3',
+                  e?.message || 'Unknown error'
+                )
 
-              return null
-            }),
-            getUniV3Positions(
-              this.#accounts.selectedAccount!,
-              this.#providers.providers[n.id],
-              n
-            ).catch((e: any) => {
-              console.error('getUniV3Positions error:', e)
+                return null
+              }
+            ),
+            getUniV3Positions(selectedAccountAddr, this.#providers.providers[n.id], n).catch(
+              (e: any) => {
+                console.error('getUniV3Positions error:', e)
 
-              this.#setProviderError(
-                selectedAccountAddr,
-                n.id,
-                'Uniswap V3',
-                e?.message || 'Unknown error'
-              )
+                this.#setProviderError(
+                  selectedAccountAddr,
+                  n.id,
+                  'Uniswap V3',
+                  e?.message || 'Unknown error'
+                )
 
-              return null
-            })
+                return null
+              }
+            )
           ])
 
           this.state[selectedAccountAddr][n.id] = {
@@ -255,11 +253,11 @@ export class DefiPositionsController extends EventEmitter {
   }
 
   get banners() {
-    if (!this.#accounts.selectedAccount) return []
+    if (!this.#selectedAccount.account) return []
 
     const errorBanners = getNetworksWithDeFiPositionsErrorBanners({
       networks: this.#networks.networks,
-      currentAccountState: this.state[this.#accounts.selectedAccount],
+      currentAccountState: this.state[this.#selectedAccount.account.addr],
       providers: this.#providers.providers
     })
 
@@ -267,10 +265,10 @@ export class DefiPositionsController extends EventEmitter {
   }
 
   get selectedAccountPositions() {
-    if (!this.#accounts.selectedAccount) return null
+    if (!this.#selectedAccount.account) return null
 
     const positionsByProvider = Object.values(
-      this.state[this.#accounts.selectedAccount] || {}
+      this.state[this.#selectedAccount.account.addr] || {}
     ).flatMap((n) => n.positionsByProvider)
 
     const positionsByProviderWithSortedAssets = positionsByProvider.map((provider) => {
@@ -293,9 +291,11 @@ export class DefiPositionsController extends EventEmitter {
   }
 
   get isSelectedAccountLoading() {
-    if (!this.#accounts.selectedAccount) return false
+    if (!this.#selectedAccount.account) return false
 
-    return Object.values(this.state[this.#accounts.selectedAccount] || {}).some((n) => n.isLoading)
+    return Object.values(this.state[this.#selectedAccount.account.addr] || {}).some(
+      (n) => n.isLoading
+    )
   }
 
   toJSON() {

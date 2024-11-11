@@ -9,8 +9,8 @@ import { AccountOp } from '../../libs/accountOp/accountOp'
 import { messageOnNewAction } from '../../libs/actions/actions'
 import { getDappActionRequestsBanners } from '../../libs/banners/banners'
 import { ENTRY_POINT_AUTHORIZATION_REQUEST_ID } from '../../libs/userOperation/userOperation'
-import { AccountsController } from '../accounts/accounts'
 import EventEmitter from '../eventEmitter/eventEmitter'
+import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 
 export type AccountOpAction = {
   id: SignUserRequest['id']
@@ -50,7 +50,7 @@ export type Action = AccountOpAction | SignMessageAction | BenzinAction | DappRe
  * All pending/unresolved actions can be accessed later from the banners on the Dashboard screen.
  */
 export class ActionsController extends EventEmitter {
-  #accounts: AccountsController
+  #selectedAccount: SelectedAccountController
 
   #windowManager: WindowManager
 
@@ -82,13 +82,13 @@ export class ActionsController extends EventEmitter {
   get visibleActionsQueue(): Action[] {
     return this.actionsQueue.filter((a) => {
       if (a.type === 'accountOp') {
-        return a.accountOp.accountAddr === this.#accounts.selectedAccount
+        return a.accountOp.accountAddr === this.#selectedAccount.account?.addr
       }
       if (a.type === 'signMessage') {
-        return a.userRequest.meta.accountAddr === this.#accounts.selectedAccount
+        return a.userRequest.meta.accountAddr === this.#selectedAccount.account?.addr
       }
       if (a.type === 'benzin') {
-        return a.userRequest.meta.accountAddr === this.#accounts.selectedAccount
+        return a.userRequest.meta.accountAddr === this.#selectedAccount.account?.addr
       }
 
       return true
@@ -96,19 +96,19 @@ export class ActionsController extends EventEmitter {
   }
 
   constructor({
-    accounts,
+    selectedAccount,
     windowManager,
     notificationManager,
     onActionWindowClose
   }: {
-    accounts: AccountsController
+    selectedAccount: SelectedAccountController
     windowManager: WindowManager
     notificationManager: NotificationManager
     onActionWindowClose: () => void
   }) {
     super()
 
-    this.#accounts = accounts
+    this.#selectedAccount = selectedAccount
     this.#windowManager = windowManager
     this.#notificationManager = notificationManager
     this.#onActionWindowClose = onActionWindowClose
