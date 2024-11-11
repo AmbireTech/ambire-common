@@ -1,11 +1,18 @@
+import { Fetch } from '../../interfaces/fetch'
 import { NetworkId } from '../../interfaces/network'
+// eslint-disable-next-line import/no-cycle
 import { getNetworksWithDeFiPositionsErrorBanners } from '../../libs/banners/banners'
 import { getAssetValue, sortByValue } from '../../libs/defiPositions/helpers'
 import { getAAVEPositions, getUniV3Positions } from '../../libs/defiPositions/providers'
-import { DeFiPositionsState, PositionsByProvider } from '../../libs/defiPositions/types'
+import {
+  DeFiPositionsError,
+  DeFiPositionsState,
+  PositionsByProvider
+} from '../../libs/defiPositions/types'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { NetworksController } from '../networks/networks'
 import { ProvidersController } from '../providers/providers'
+// eslint-disable-next-line import/no-cycle
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 
 export class DefiPositionsController extends EventEmitter {
@@ -15,36 +22,29 @@ export class DefiPositionsController extends EventEmitter {
 
   #networks: NetworksController
 
-  state: DeFiPositionsState = {}
-
-  // Holds the initial load promise, so that one can wait until it completes
-  initialLoadPromise: Promise<void>
+  #fetch: Fetch
 
   #minUpdateInterval: number = 60 * 1000 // 1 minute
 
+  state: DeFiPositionsState = {}
+
   constructor({
+    fetch,
     selectedAccount,
     providers,
     networks
   }: {
+    fetch: Fetch
     selectedAccount: SelectedAccountController
     providers: ProvidersController
     networks: NetworksController
   }) {
     super()
 
+    this.#fetch = fetch
     this.#selectedAccount = selectedAccount
     this.#providers = providers
     this.#networks = networks
-    this.initialLoadPromise = this.#load()
-  }
-
-  async #load() {
-    await this.#selectedAccount.initialLoadPromise
-    await this.#networks.initialLoadPromise
-    await this.#providers.initialLoadPromise
-
-    await this.updatePositions()
   }
 
   #initInitialAccountStateIfNeeded(accountAddr: string) {
@@ -81,7 +81,7 @@ export class DefiPositionsController extends EventEmitter {
     const networkState = this.state[accountAddr][networkId]
 
     if (networkState.isLoading) return false
-    if (networkState.criticalError) return false
+    if (networkState.error) return false
     if (networkState.providerErrors?.length) return false
     if (networkState.updatedAt && Date.now() - networkState.updatedAt < this.#minUpdateInterval)
       return true
@@ -90,72 +90,84 @@ export class DefiPositionsController extends EventEmitter {
   }
 
   async updatePositions(networkId?: NetworkId) {
-    const selectedAccount = this.#selectedAccount.account
+    if (!this.#selectedAccount.account) return
 
-    if (!selectedAccount) {
-      console.error('updatePositions: no selected account')
-      return
-    }
-
-    const { addr } = selectedAccount
-
-    this.#initInitialAccountStateIfNeeded(addr)
+    const selectedAccountAddr = this.#selectedAccount.account.addr
+    this.#initInitialAccountStateIfNeeded(selectedAccountAddr)
 
     const networksToUpdate = networkId
       ? this.#networks.networks.filter((n) => n.id === networkId)
       : this.#networks.networks
 
-    networksToUpdate.map(async (n) => {
-      if (this.#getCanSkipUpdate(addr, n.id)) {
-        // Emit an update so that the current account data getter is updated
-        this.emitUpdate()
-        return
-      }
-      const networkState = this.state[addr][n.id]
+    await Promise.all(
+      networksToUpdate.map(async (n) => {
+        if (this.#getCanSkipUpdate(selectedAccountAddr, n.id)) {
+          // Emit an update so that the current account data getter is updated
+          this.emitUpdate()
+          return
+        }
+        const networkState = this.state[selectedAccountAddr][n.id]
 
-      // Reset provider errors before updating
-      if (networkState.providerErrors?.length) {
+        // Reset provider errors before updating
         networkState.providerErrors = []
-      }
+        networkState.error = undefined
 
-      try {
-        const [aavePositions, uniV3Positions] = [
-          await getAAVEPositions(addr, this.#providers.providers[n.id], n).catch((e) => {
-            console.error('getAAVEPositions error:', e)
-            this.#setProviderError(addr, n.id, 'AAVE v3', e?.message || 'Unknown error')
+        try {
+          const [aavePositions, uniV3Positions] = await Promise.all([
+            getAAVEPositions(selectedAccountAddr, this.#providers.providers[n.id], n).catch(
+              (e: any) => {
+                console.error('getAAVEPositions error:', e)
+                this.#setProviderError(
+                  selectedAccountAddr,
+                  n.id,
+                  'AAVE v3',
+                  e?.message || 'Unknown error'
+                )
 
-            return null
-          }),
-          await getUniV3Positions(addr, this.#providers.providers[n.id], n).catch((e) => {
-            console.error('getUniV3Positions error:', e)
+                return null
+              }
+            ),
+            getUniV3Positions(selectedAccountAddr, this.#providers.providers[n.id], n).catch(
+              (e: any) => {
+                console.error('getUniV3Positions error:', e)
 
-            this.#setProviderError(addr, n.id, 'Uniswap V3', e?.message || 'Unknown error')
+                this.#setProviderError(
+                  selectedAccountAddr,
+                  n.id,
+                  'Uniswap V3',
+                  e?.message || 'Unknown error'
+                )
 
-            return null
+                return null
+              }
+            )
+          ])
+
+          this.state[selectedAccountAddr][n.id] = {
+            ...networkState,
+            isLoading: false,
+            positionsByProvider: [aavePositions, uniV3Positions].filter(
+              Boolean
+            ) as PositionsByProvider[],
+            updatedAt: Date.now()
+          }
+          await this.#setAssetPrices(selectedAccountAddr, n.id).catch((e) => {
+            console.error('#setAssetPrices error:', e)
+            this.state[selectedAccountAddr][n.id].error = DeFiPositionsError.AssetPriceError
           })
-        ]
-
-        this.state[addr][n.id] = {
-          ...networkState,
-          isLoading: false,
-          positionsByProvider: [aavePositions, uniV3Positions].filter(
-            Boolean
-          ) as PositionsByProvider[],
-          updatedAt: Date.now()
+        } catch (e: any) {
+          const prevPositionsByProvider = networkState.positionsByProvider
+          this.state[selectedAccountAddr][n.id] = {
+            isLoading: false,
+            positionsByProvider: prevPositionsByProvider || [],
+            error: DeFiPositionsError.CriticalError
+          }
+          console.error(`updatePositions error on ${n.id}`, e)
+        } finally {
+          this.emitUpdate()
         }
-        await this.#setAssetPrices(addr, n.id)
-      } catch (e: any) {
-        const prevPositionsByProvider = networkState.positionsByProvider
-        this.state[addr][n.id] = {
-          isLoading: false,
-          positionsByProvider: prevPositionsByProvider || [],
-          criticalError: e?.message || 'Unknown error'
-        }
-        console.error(`updatePositions error on ${n.id}`, e)
-      } finally {
-        this.emitUpdate()
-      }
-    })
+      })
+    )
   }
 
   async #setAssetPrices(accountAddr: string, networkId: string) {
@@ -178,7 +190,7 @@ export class DefiPositionsController extends EventEmitter {
     }?contract_addresses=${dedup(addresses).join('%2C')}&vs_currencies=usd`
 
     try {
-      const resp = await fetch(cenaUrl)
+      const resp = await this.#fetch(cenaUrl)
       const body = await resp.json()
       if (resp.status !== 200) throw body
       // eslint-disable-next-line no-prototype-builtins

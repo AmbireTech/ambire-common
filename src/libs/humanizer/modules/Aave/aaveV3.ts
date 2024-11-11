@@ -67,6 +67,8 @@ export const aaveV3Pool = (): { [key: string]: Function } => {
       return [
         getAction('Supply'),
         getToken(asset, amount),
+        getLabel('to'),
+        getAddressVisualization(call.to),
         ...(onBehalfOf !== accountOp.accountAddr
           ? [getLabel('on behalf of'), getAddressVisualization(onBehalfOf)]
           : []),

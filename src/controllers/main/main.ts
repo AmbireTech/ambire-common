@@ -273,9 +273,10 @@ export class MainController extends EventEmitter {
       velcroUrl
     )
     this.defiPositions = new DefiPositionsController({
+      fetch: this.fetch,
+      selectedAccount: this.selectedAccount,
       networks: this.networks,
-      providers: this.providers,
-      selectedAccount: this.selectedAccount
+      providers: this.providers
     })
     this.selectedAccount.initControllers({
       portfolio: this.portfolio,
@@ -353,6 +354,7 @@ export class MainController extends EventEmitter {
     // TODO: We agreed to always fetch the latest and pending states.
     // To achieve this, we need to refactor how we use forceUpdate to obtain pending state updates.
     this.updateSelectedAccountPortfolio(true)
+    this.defiPositions.updatePositions()
     /**
      * Listener that gets triggered as a finalization step of adding new
      * accounts via the AccountAdder controller flow.
@@ -1572,6 +1574,23 @@ export class MainController extends EventEmitter {
 
     this.actions.removeAction(actionId)
 
+    const accountOpUserRequests = this.userRequests.filter((r) =>
+      accountOp.calls.some((c) => c.fromUserRequestId === r.id)
+    )
+    const swapAndBridgeUserRequests = accountOpUserRequests.filter(
+      (r) => r.meta.activeRouteId && !r.meta.isApproval
+    )
+
+    // Update route status immediately, so that the UI quickly reflects the change
+    await Promise.all(
+      swapAndBridgeUserRequests.map(async (r) => {
+        await this.swapAndBridge.updateActiveRoute(r.meta.activeRouteId, {
+          routeStatus: 'in-progress'
+        })
+      })
+    )
+
+    // Note: this may take a while!
     const txnId = await pollTxnId(
       data.submittedAccountOp.identifiedBy,
       network,
@@ -1579,19 +1598,11 @@ export class MainController extends EventEmitter {
       this.callRelayer
     )
 
-    const accountOpUserRequests = this.userRequests.filter((r) =>
-      accountOp.calls.some((c) => c.fromUserRequestId === r.id)
-    )
-
-    const swapAndBridgeUserRequests = accountOpUserRequests.filter(
-      (r) => r.meta.activeRouteId && !r.meta.isApproval
-    )
-
+    // Follow up update with the just polled txnId (that potentially came slower)
     await Promise.all(
       swapAndBridgeUserRequests.map(async (r) => {
         await this.swapAndBridge.updateActiveRoute(r.meta.activeRouteId, {
-          userTxHash: txnId,
-          routeStatus: 'in-progress'
+          userTxHash: txnId
         })
       })
     )
@@ -1876,7 +1887,9 @@ export class MainController extends EventEmitter {
           isSmartAccount(account) &&
           !network.erc4337.enabled &&
           lastTxn &&
-          localAccountOp.nonce === lastTxn.nonce
+          localAccountOp.nonce === lastTxn.nonce &&
+          lastTxn.success &&
+          lastTxn.status === AccountOpStatus.Success
 
         if (hasNonceDiscrepancy || SAHasOldNonceOnARelayerNetwork) {
           this.accounts
