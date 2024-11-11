@@ -1,15 +1,20 @@
-import { getAddress, Interface, JsonRpcProvider, toQuantity, ZeroAddress } from 'ethers'
+import { getAddress, Interface, JsonRpcProvider, toBeHex, toQuantity, ZeroAddress } from 'ethers'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json'
 import BalanceGetter from '../../../contracts/compiled/BalanceGetter.json'
 import NFTGetter from '../../../contracts/compiled/NFTGetter.json'
+// import NFTGetter from '../../../contracts/compiled/NFTGetter.json'
 import { DEPLOYLESS_SIMULATION_FROM } from '../../consts/deploy'
 import { Account, AccountOnchainState } from '../../interfaces/account'
-import { getSpoof } from '../account/account'
-import { AccountOp, getSignableCalls } from '../accountOp/accountOp'
+import { getAccountDeployParams, getSpoof, isSmartAccount } from '../account/account'
+import { AccountOp, callToTuple, getSignableCalls } from '../accountOp/accountOp'
 import { DeploylessMode, fromDescriptor } from '../deployless/deployless'
 import { GasRecommendation } from '../gasPrice/gasPrice'
+import { EOA_SIMULATION_NONCE } from '../portfolio/getOnchainBalances'
+// @TODO this is not ok import (GetOptions from ../portfolio/interfaces)
+import { GetOptions } from '../portfolio/interfaces'
+import { privSlot } from '../proxyDeploy/deploy'
 
 const NFT_COLLECTION_LIMIT = 100
 // if using EOA, use the first and only call of the account op
@@ -45,6 +50,36 @@ function getFunctionParams(account: Account, op: AccountOp, accountState: Accoun
   }
 }
 
+// copied frfom getOnchainBalances
+// @TODO: figure out how to not import from other libs
+function getDeploylessOpts(
+  accountAddr: string,
+  supportsStateOverride: boolean,
+  opts: Partial<GetOptions>
+) {
+  return {
+    blockTag: opts.blockTag,
+    from: DEPLOYLESS_SIMULATION_FROM,
+    mode:
+      supportsStateOverride && opts.isEOA ? DeploylessMode.StateOverride : DeploylessMode.Detect,
+    stateToOverride:
+      supportsStateOverride && opts.isEOA
+        ? {
+            [accountAddr]: {
+              code: AmbireAccount.binRuntime,
+              stateDiff: {
+                // if we use 0x00...01 we get a geth bug: "invalid argument 2: hex number with leading zero digits\" - on some RPC providers
+                [`0x${privSlot(0, 'address', accountAddr, 'bytes32')}`]:
+                  '0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
+                // any number with leading zeros is not supported on some RPCs
+                [toBeHex(1, 32)]: EOA_SIMULATION_NONCE
+              }
+            }
+          }
+        : null
+  }
+}
+
 export async function debugTraceCall(
   account: Account,
   op: AccountOp,
@@ -55,6 +90,21 @@ export async function debugTraceCall(
   supportsStateOverride: boolean,
   overrideData?: any
 ): Promise<{ tokens: string[]; nfts: [string, bigint[]][] }> {
+  const opts = {
+    blockTag: 'latest',
+    from: DEPLOYLESS_SIMULATION_FROM,
+    mode: DeploylessMode.ProxyContract
+  }
+  const deploylessOpts = getDeploylessOpts(op.accountAddr, supportsStateOverride, opts)
+  const [factory, factoryCalldata] = getAccountDeployParams(account)
+  // const { accountOps, account } = opts.simulation
+  const accountOps = [op]
+  const simulationOps = accountOps.map(({ nonce, calls }, idx) => ({
+    // EOA starts from a fake, specified nonce
+    nonce: isSmartAccount(account) ? nonce : BigInt(EOA_SIMULATION_NONCE) + BigInt(idx),
+    calls: calls.map(callToTuple)
+  }))
+
   const fast = gasPrices.find((gas: any) => gas.name === 'fast')
   if (!fast) return { tokens: [], nfts: [] }
 
@@ -132,28 +182,35 @@ export async function debugTraceCall(
 
   // we set the 3rd param to "true" as we don't need state override
   const deploylessTokens = fromDescriptor(provider, BalanceGetter, true)
-  const deploylessNfts = fromDescriptor(provider, NFTGetter, true)
+  const deploylessNfts = fromDescriptor(provider, NFTGetter, supportsStateOverride)
 
-  const opts = {
-    blockTag: 'latest',
-    from: DEPLOYLESS_SIMULATION_FROM,
-    mode: DeploylessMode.ProxyContract
-  }
-  const [[tokensWithErr], [nftsWithErr]] = await Promise.all([
-    deploylessTokens.call('getBalances', [op.accountAddr, foundTokens], opts),
-    deploylessNfts.call(
-      'getAllNFTs',
-      [
-        op.accountAddr,
-        foundNftTransfers.map((i) => i[0]),
-        foundNftTransfers.map((i) => i[1]),
-        NFT_COLLECTION_LIMIT
-      ],
-      opts
-    )
-  ])
+  // const deploylessNfts = fromDescriptor(provider, NFTGetter, true)
+
+  const getNftsPromise = deploylessNfts.call(
+    'simulateAndGetAllNFTs',
+    [
+      op.accountAddr,
+      account.associatedKeys,
+      foundNftTransfers.map(([address]) => address),
+      // @TODO figure out limit with NFT_COLLECTION_LIMIT
+      foundNftTransfers.map(([, x]) => x),
+      NFT_COLLECTION_LIMIT,
+      factory,
+      factoryCalldata,
+      simulationOps.map((operation) => Object.values(operation))
+    ],
+    deploylessOpts
+  )
+
+  const [[tokensWithErr], [before, after, simulationErr, , , deltaAddressesMapping]] =
+    await Promise.all([
+      deploylessTokens.call('getBalances', [op.accountAddr, foundTokens], opts),
+      getNftsPromise
+    ])
+
   return {
     tokens: foundTokens.filter((addr, i) => tokensWithErr[i].error === '0x'),
-    nfts: foundNftTransfers.filter((nft, i) => nftsWithErr[i].error === '0x')
+    // @TODO fix
+    nfts: foundNftTransfers // .filter((nft, i) => nftsWithErr[i].error === '0x')
   }
 }
