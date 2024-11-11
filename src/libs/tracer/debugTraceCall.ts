@@ -210,7 +210,6 @@ export async function debugTraceCall(
 
   return {
     tokens: foundTokens.filter((addr, i) => tokensWithErr[i].error === '0x'),
-    // @TODO fix
-    nfts: foundNftTransfers // .filter((nft, i) => nftsWithErr[i].error === '0x')
+    nfts: foundNftTransfers.filter((nft, i) => before[i][0][3] === '0x' || after[i][0][3] === '0x')
   }
 }

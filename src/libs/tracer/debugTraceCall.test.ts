@@ -9,6 +9,7 @@ import { debugTraceCall } from './debugTraceCall'
 
 const NFT_ADDRESS = '0xb7330c592dc5feafda855867b1e172be3a8d4abf'
 
+// @TODO add minting and burning test
 describe('Debug tracecall detection for transactions', () => {
   const provider = new JsonRpcProvider('https://invictus.ambire.com/polygon')
   let account: Account
