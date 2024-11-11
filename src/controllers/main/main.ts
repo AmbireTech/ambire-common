@@ -278,10 +278,6 @@ export class MainController extends EventEmitter {
       networks: this.networks,
       providers: this.providers
     })
-    this.selectedAccount.initControllers({
-      portfolio: this.portfolio,
-      defiPositions: this.defiPositions
-    })
     this.emailVault = new EmailVaultController(this.#storage, this.fetch, relayerUrl, this.keystore)
     this.accountAdder = new AccountAdderController({
       accounts: this.accounts,
@@ -321,6 +317,11 @@ export class MainController extends EventEmitter {
         this.userRequests = this.userRequests.filter((r) => r.action.kind === 'calls')
         this.emitUpdate()
       }
+    })
+    this.selectedAccount.initControllers({
+      portfolio: this.portfolio,
+      defiPositions: this.defiPositions,
+      actions: this.actions
     })
     this.callRelayer = relayerCall.bind({ url: relayerUrl, fetch: this.fetch })
     this.activity = new ActivityController(

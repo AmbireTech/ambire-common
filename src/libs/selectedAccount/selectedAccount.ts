@@ -132,7 +132,7 @@ export function calculateSelectedAccountPortfolio(
   const hasPending =
     state.pending &&
     state.pending[selectedAccount] &&
-    Object.keys(state.pending[selectedAccount]).length
+    Object.keys(state.pending[selectedAccount] || {}).length
   if (!hasLatest && !hasPending) {
     return {
       tokens: accountPortfolio?.tokens || [],
@@ -147,7 +147,7 @@ export function calculateSelectedAccountPortfolio(
   let selectedAccountData = state.latest[selectedAccount]
 
   const pendingAccountStateWithoutCriticalErrors = Object.keys(
-    state.pending[selectedAccount]
+    state.pending[selectedAccount] || {}
   ).reduce((acc, network) => {
     if (
       !selectedAccountData[network]?.result?.blockNumber ||
@@ -212,14 +212,17 @@ export function calculateSelectedAccountPortfolio(
   // which associates each network with its corresponding pending simulation beforeNonce.
   // This nonce information is crucial for determining the PendingToBeSigned or PendingToBeConfirmed Dashboard badges.
   // For more details, see: calculatePendingAmounts.
-  const simulationNonces = Object.keys(state.pending[selectedAccount]).reduce((acc, networkId) => {
-    const beforeNonce = state.pending[selectedAccount!][networkId]?.result?.beforeNonce
-    if (typeof beforeNonce === 'bigint') {
-      acc[networkId] = beforeNonce
-    }
+  const simulationNonces = Object.keys(state.pending[selectedAccount] || {}).reduce(
+    (acc, networkId) => {
+      const beforeNonce = state.pending[selectedAccount!][networkId]?.result?.beforeNonce
+      if (typeof beforeNonce === 'bigint') {
+        acc[networkId] = beforeNonce
+      }
 
-    return acc
-  }, {} as NetworkNonces)
+      return acc
+    },
+    {} as NetworkNonces
+  )
 
   // We need the latest and pending token amounts for the selected account, especially for calculating the Pending badges.
   // You might wonder why we don't retrieve this data directly from the PortfolioController. Here's the reasoning:

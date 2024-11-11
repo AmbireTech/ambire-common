@@ -10,6 +10,8 @@ import {
 // eslint-disable-next-line import/no-cycle
 import { AccountsController } from '../accounts/accounts'
 // eslint-disable-next-line import/no-cycle
+import { Action, ActionsController } from '../actions/actions'
+// eslint-disable-next-line import/no-cycle
 import { DefiPositionsController } from '../defiPositions/defiPositions'
 import EventEmitter from '../eventEmitter/eventEmitter'
 // eslint-disable-next-line import/no-cycle
@@ -24,11 +26,15 @@ export class SelectedAccountController extends EventEmitter {
 
   #defiPositions: DefiPositionsController | null = null
 
+  #actions: ActionsController | null = null
+
   account: Account | null = null
 
   portfolio: SelectedAccountPortfolio | null = null
 
   defiPositions: PositionsByProvider[] = []
+
+  actions: Action[] = []
 
   isReady: boolean = false
 
@@ -59,16 +65,20 @@ export class SelectedAccountController extends EventEmitter {
 
   initControllers({
     portfolio,
-    defiPositions
+    defiPositions,
+    actions
   }: {
     portfolio: PortfolioController
     defiPositions: DefiPositionsController
+    actions: ActionsController
   }) {
     this.#portfolio = portfolio
     this.#defiPositions = defiPositions
+    this.#actions = actions
 
     this.#updateSelectedAccountPortfolio()
     this.#updateSelectedAccountDefiPositions()
+    this.#updateSelectedAccountActions()
 
     this.#portfolio.onUpdate(() => {
       this.#updateSelectedAccountPortfolio()
@@ -77,6 +87,10 @@ export class SelectedAccountController extends EventEmitter {
     this.#defiPositions.onUpdate(() => {
       this.#updateSelectedAccountPortfolio()
       this.#updateSelectedAccountDefiPositions()
+    })
+
+    this.#actions.onUpdate(() => {
+      this.#updateSelectedAccountActions()
     })
   }
 
@@ -106,11 +120,13 @@ export class SelectedAccountController extends EventEmitter {
       this.account
     )
 
+    const hasSignAccountOp = !!this.actions.filter((action) => action.type === 'accountOp')
+
     const newSelectedAccountPortfolio = calculateSelectedAccountPortfolio(
       this.account.addr,
       updatedPortfolioState,
       this.portfolio,
-      false // TODO: !!!!!! hasSelectedAccountOp - get from #actions
+      hasSignAccountOp
     )
 
     if (
@@ -149,6 +165,24 @@ export class SelectedAccountController extends EventEmitter {
     this.defiPositions = sortedPositionsByProvider
 
     this.emitUpdate()
+  }
+
+  #updateSelectedAccountActions() {
+    if (!this.#actions || !this.account) return
+
+    return this.#actions.actionsQueue.filter((a) => {
+      if (a.type === 'accountOp') {
+        return a.accountOp.accountAddr === this.account!.addr
+      }
+      if (a.type === 'signMessage') {
+        return a.userRequest.meta.accountAddr === this.account!.addr
+      }
+      if (a.type === 'benzin') {
+        return a.userRequest.meta.accountAddr === this.account!.addr
+      }
+
+      return true
+    })
   }
 
   toJSON() {

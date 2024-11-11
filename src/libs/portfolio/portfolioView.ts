@@ -1,11 +1,11 @@
 import {
   AccountState,
   CollectionResult as CollectionResultInterface,
+  NetworkNonces,
   NetworkState,
   PortfolioControllerState,
-  TokenResult as TokenResultInterface,
-  NetworkNonces,
-  TokenAmount
+  TokenAmount,
+  TokenResult as TokenResultInterface
 } from './interfaces'
 
 interface AccountPortfolio {
