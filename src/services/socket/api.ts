@@ -141,7 +141,7 @@ export class SocketAPI {
     userAddress: string
     isSmartAccount: boolean
     sort: 'time' | 'output'
-  }) {
+  }): Promise<SocketAPIQuote> {
     const params = new URLSearchParams({
       fromChainId: fromChainId.toString(),
       fromTokenAddress: normalizeOutgoingSocketTokenAddress(fromTokenAddress),

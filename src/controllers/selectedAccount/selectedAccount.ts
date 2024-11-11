@@ -50,9 +50,8 @@ export class SelectedAccountController extends EventEmitter {
     const selectedAccountAddress = await this.#storage.get('selectedAccount', null)
 
     const selectedAccount = this.#accounts.accounts.find((a) => a.addr === selectedAccountAddress)
-    if (!selectedAccount) return
 
-    this.account = selectedAccount
+    this.account = selectedAccount || null
     this.isReady = true
 
     this.emitUpdate()
