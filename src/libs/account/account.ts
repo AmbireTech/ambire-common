@@ -183,7 +183,7 @@ export async function getEmailAccount(
 export const isAmbireV1LinkedAccount = (factoryAddr?: string) =>
   factoryAddr && getAddress(factoryAddr) === '0xBf07a0Df119Ca234634588fbDb5625594E2a5BCA'
 
-export const isSmartAccount = (account: Account | undefined) => !!account && !!account.creation
+export const isSmartAccount = (account?: Account | null) => !!account && !!account.creation
 
 /**
  * Checks if a (basic) EOA account is a derived one,
