@@ -253,10 +253,6 @@ export class MainController extends EventEmitter {
           this.accounts.updateAccountState(defaultSelectedAccount.addr)
         }
       },
-      async (removedAddress: string) => {
-        if (this.selectedAccount.account?.addr === removedAddress)
-          await this.#selectAccount(this.accounts.accounts[0]?.addr)
-      },
       this.providers.updateProviderIsWorking.bind(this.providers)
     )
     this.selectedAccount = new SelectedAccountController({
@@ -847,6 +843,10 @@ export class MainController extends EventEmitter {
         this.activity.removeAccountData(address)
         this.actions.removeAccountData(address)
         this.signMessage.removeAccountData(address)
+
+        if (this.selectedAccount.account?.addr === address) {
+          await this.#selectAccount(this.accounts.accounts[0]?.addr)
+        }
 
         if (this.signAccountOp?.account.addr === address) {
           this.destroySignAccOp()

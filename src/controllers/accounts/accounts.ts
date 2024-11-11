@@ -34,8 +34,6 @@ export class AccountsController extends EventEmitter {
 
   #onAddAccounts: (accounts: Account[]) => void
 
-  #onRemoveAccount: (removedAddress: string) => void
-
   #updateProviderIsWorking: (networkId: NetworkId, isWorking: boolean) => void
 
   // Holds the initial load promise, so that one can wait until it completes
@@ -46,7 +44,6 @@ export class AccountsController extends EventEmitter {
     providers: ProvidersController,
     networks: NetworksController,
     onAddAccounts: (accounts: Account[]) => void,
-    onRemoveAccount: (removedAddress: string) => void,
     updateProviderIsWorking: (networkId: NetworkId, isWorking: boolean) => void
   ) {
     super()
@@ -54,7 +51,6 @@ export class AccountsController extends EventEmitter {
     this.#providers = providers
     this.#networks = networks
     this.#onAddAccounts = onAddAccounts
-    this.#onRemoveAccount = onRemoveAccount
     this.#updateProviderIsWorking = updateProviderIsWorking
 
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
@@ -190,7 +186,6 @@ export class AccountsController extends EventEmitter {
 
   async removeAccountData(address: Account['addr']) {
     this.accounts = this.accounts.filter((acc) => acc.addr !== address)
-    this.#onRemoveAccount(address)
 
     delete this.accountStates[address]
     this.#storage.set('accounts', this.accounts)

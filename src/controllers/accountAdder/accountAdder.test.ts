@@ -111,7 +111,6 @@ describe('AccountAdder', () => {
     providersCtrl,
     networksCtrl,
     () => {},
-    () => {},
     () => {}
   )
   beforeEach(() => {

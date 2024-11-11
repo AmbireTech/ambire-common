@@ -121,7 +121,6 @@ describe('Actions Controller', () => {
       providersCtrl,
       networksCtrl,
       () => {},
-      () => {},
       () => {}
     )
     selectedAccountCtrl = new SelectedAccountController({ storage, accounts: accountsCtrl })
