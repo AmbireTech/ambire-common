@@ -38,6 +38,8 @@ export class SelectedAccountController extends EventEmitter {
 
   isReady: boolean = false
 
+  areControllersInitialized: boolean = false
+
   // Holds the initial load promise, so that one can wait until it completes
   initialLoadPromise: Promise<void>
 
@@ -76,9 +78,9 @@ export class SelectedAccountController extends EventEmitter {
     this.#defiPositions = defiPositions
     this.#actions = actions
 
-    this.#updateSelectedAccountPortfolio()
-    this.#updateSelectedAccountDefiPositions()
-    this.#updateSelectedAccountActions()
+    this.#updateSelectedAccountPortfolio(true)
+    this.#updateSelectedAccountDefiPositions(true)
+    this.#updateSelectedAccountActions(true)
 
     this.#portfolio.onUpdate(() => {
       this.#updateSelectedAccountPortfolio()
@@ -92,6 +94,10 @@ export class SelectedAccountController extends EventEmitter {
     this.#actions.onUpdate(() => {
       this.#updateSelectedAccountActions()
     })
+
+    this.areControllersInitialized = true
+
+    this.emitUpdate()
   }
 
   async setAccount(account: Account | null) {
@@ -106,7 +112,7 @@ export class SelectedAccountController extends EventEmitter {
     this.emitUpdate()
   }
 
-  #updateSelectedAccountPortfolio() {
+  #updateSelectedAccountPortfolio(skipUpdate?: boolean) {
     if (!this.#portfolio || !this.#defiPositions || !this.account) return
 
     const defiPositionsAccountState = this.#defiPositions.state[this.account.addr]
@@ -135,11 +141,13 @@ export class SelectedAccountController extends EventEmitter {
     ) {
       this.portfolio = newSelectedAccountPortfolio
 
-      this.emitUpdate()
+      if (!skipUpdate) {
+        this.emitUpdate()
+      }
     }
   }
 
-  #updateSelectedAccountDefiPositions() {
+  #updateSelectedAccountDefiPositions(skipUpdate?: boolean) {
     if (!this.#defiPositions || !this.account) return
 
     const positionsByProvider = Object.values(
@@ -164,13 +172,15 @@ export class SelectedAccountController extends EventEmitter {
 
     this.defiPositions = sortedPositionsByProvider
 
-    this.emitUpdate()
+    if (!skipUpdate) {
+      this.emitUpdate()
+    }
   }
 
-  #updateSelectedAccountActions() {
+  #updateSelectedAccountActions(skipUpdate?: boolean) {
     if (!this.#actions || !this.account) return
 
-    return this.#actions.actionsQueue.filter((a) => {
+    this.actions = this.#actions.actionsQueue.filter((a) => {
       if (a.type === 'accountOp') {
         return a.accountOp.accountAddr === this.account!.addr
       }
@@ -183,6 +193,10 @@ export class SelectedAccountController extends EventEmitter {
 
       return true
     })
+
+    if (!skipUpdate) {
+      this.emitUpdate()
+    }
   }
 
   toJSON() {

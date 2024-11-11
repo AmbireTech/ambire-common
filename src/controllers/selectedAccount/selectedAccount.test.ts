@@ -1,18 +1,21 @@
+import EventEmitter from 'events'
 import fetch from 'node-fetch'
 
 import { expect } from '@jest/globals'
 
+import { relayerUrl, velcroUrl } from '../../../test/config'
 import { produceMemoryStore } from '../../../test/helpers'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { networks } from '../../consts/networks'
 import { Storage } from '../../interfaces/storage'
 import { getRpcProvider } from '../../services/provider'
 import { AccountsController } from '../accounts/accounts'
+import { ActionsController } from '../actions/actions'
+import { DefiPositionsController } from '../defiPositions/defiPositions'
 import { NetworksController } from '../networks/networks'
+import { PortfolioController } from '../portfolio/portfolio'
 import { ProvidersController } from '../providers/providers'
 import { SelectedAccountController } from './selectedAccount'
-
-let selectedAccountCtrl: SelectedAccountController
 
 const providers = Object.fromEntries(
   networks.map((network) => [network.id, getRpcProvider(network.rpcUrls, network.chainId)])
@@ -43,6 +46,53 @@ const accountsCtrl = new AccountsController(
   () => {}
 )
 
+const selectedAccountCtrl = new SelectedAccountController({ storage, accounts: accountsCtrl })
+
+const portfolioCtrl = new PortfolioController(
+  storage,
+  fetch,
+  providersCtrl,
+  networksCtrl,
+  accountsCtrl,
+  relayerUrl,
+  velcroUrl
+)
+
+const defiPositionsCtrl = new DefiPositionsController({
+  fetch,
+  selectedAccount: selectedAccountCtrl,
+  networks: networksCtrl,
+  providers: providersCtrl
+})
+
+const event = new EventEmitter()
+let windowId = 0
+const windowManager = {
+  event,
+  focus: () => Promise.resolve(),
+  open: () => {
+    windowId++
+    return Promise.resolve(windowId)
+  },
+  remove: () => {
+    event.emit('windowRemoved', windowId)
+    return Promise.resolve()
+  },
+  sendWindowToastMessage: () => {},
+  sendWindowUiMessage: () => {}
+}
+
+const notificationManager = {
+  create: () => Promise.resolve()
+}
+
+const actionsCtrl = new ActionsController({
+  selectedAccount: selectedAccountCtrl,
+  windowManager,
+  notificationManager,
+  onActionWindowClose: () => {}
+})
+
 const accounts = [
   {
     addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
@@ -62,12 +112,13 @@ const accounts = [
 ]
 
 describe('SelectedAccount Controller', () => {
-  test('should initialize', async () => {
+  test('should load', async () => {
     await storage.set('accounts', accounts)
-    selectedAccountCtrl = new SelectedAccountController({ storage, accounts: accountsCtrl })
+    await accountsCtrl.addAccounts(accounts)
     await selectedAccountCtrl.initialLoadPromise
     expect(selectedAccountCtrl).toBeDefined()
     expect(selectedAccountCtrl.isReady).toEqual(true)
+    expect(selectedAccountCtrl.areControllersInitialized).toEqual(false)
   })
   test('should set account', async () => {
     await selectedAccountCtrl.initialLoadPromise
@@ -78,6 +129,28 @@ describe('SelectedAccount Controller', () => {
     expect(selectedAccountCtrl.account?.addr).toEqual(accounts[0].addr)
     const selectedAccountInStorage = await storage.get('selectedAccount', null)
     expect(selectedAccountInStorage).toEqual(accounts[0].addr)
+  })
+  test('should init controllers', async () => {
+    selectedAccountCtrl.initControllers({
+      portfolio: portfolioCtrl,
+      defiPositions: defiPositionsCtrl,
+      actions: actionsCtrl
+    })
+    expect(selectedAccountCtrl.areControllersInitialized).toEqual(true)
+  })
+  test('should update selected account portfolio', (done) => {
+    let emitCounter = 0
+    const unsubscribe = selectedAccountCtrl.onUpdate(async () => {
+      emitCounter++
+      if (emitCounter === 2) {
+        expect(selectedAccountCtrl.portfolio).not.toBeNull()
+        expect(selectedAccountCtrl.portfolio?.totalBalance).toBeDefined()
+        expect(selectedAccountCtrl.portfolio?.tokens?.length).toBeGreaterThan(0)
+        unsubscribe()
+        done()
+      }
+    })
+    portfolioCtrl.updateSelectedAccount('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8')
   })
   test('should toJSON()', () => {
     const json = selectedAccountCtrl.toJSON()
