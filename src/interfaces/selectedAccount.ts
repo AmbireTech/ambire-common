@@ -1,4 +1,5 @@
 import {
+  AccountState,
   CollectionResult as CollectionResultInterface,
   NetworkNonces as NetworkNoncesInterface,
   TokenAmount as TokenAmountInterface,
@@ -12,4 +13,6 @@ export interface SelectedAccountPortfolio {
   isAllReady: boolean
   simulationNonces: NetworkNoncesInterface
   tokenAmounts: TokenAmountInterface[]
+  latestStateByNetworks: AccountState
+  pendingStateByNetworks: AccountState
 }

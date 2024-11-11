@@ -17,6 +17,17 @@ import EventEmitter from '../eventEmitter/eventEmitter'
 // eslint-disable-next-line import/no-cycle
 import { PortfolioController } from '../portfolio/portfolio'
 
+const DEFAULT_SELECTED_ACCOUNT_PORTFOLIO = {
+  tokens: [],
+  collections: [],
+  totalBalance: 0,
+  isAllReady: false,
+  simulationNonces: {},
+  tokenAmounts: [],
+  latestStateByNetworks: {},
+  pendingStateByNetwork: {}
+}
+
 export class SelectedAccountController extends EventEmitter {
   #storage: Storage
 
@@ -30,7 +41,7 @@ export class SelectedAccountController extends EventEmitter {
 
   account: Account | null = null
 
-  portfolio: SelectedAccountPortfolio | null = null
+  portfolio: SelectedAccountPortfolio = DEFAULT_SELECTED_ACCOUNT_PORTFOLIO
 
   defiPositions: PositionsByProvider[] = []
 
@@ -112,16 +123,22 @@ export class SelectedAccountController extends EventEmitter {
     this.emitUpdate()
   }
 
+  async resetPortfolio() {
+    this.portfolio = DEFAULT_SELECTED_ACCOUNT_PORTFOLIO
+
+    this.emitUpdate()
+  }
+
   #updateSelectedAccountPortfolio(skipUpdate?: boolean) {
     if (!this.#portfolio || !this.#defiPositions || !this.account) return
 
     const defiPositionsAccountState = this.#defiPositions.state[this.account.addr]
 
     const updatedPortfolioState = getSelectedAccountPortfolio(
-      {
+      structuredClone({
         latest: this.#portfolio.latest,
         pending: this.#portfolio.pending
-      },
+      }),
       defiPositionsAccountState,
       this.account
     )

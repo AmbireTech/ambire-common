@@ -267,6 +267,8 @@ export function calculateSelectedAccountPortfolio(
     collections: updatedCollections,
     isAllReady: allReady,
     simulationNonces,
-    tokenAmounts
-  }
+    tokenAmounts,
+    latestStateByNetworks: state.latest[selectedAccount] || {},
+    pendingStateByNetworks: state.pending[selectedAccount] || {}
+  } as SelectedAccountPortfolio
 }

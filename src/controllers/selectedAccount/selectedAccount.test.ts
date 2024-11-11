@@ -142,8 +142,7 @@ describe('SelectedAccount Controller', () => {
     const unsubscribe = selectedAccountCtrl.onUpdate(async () => {
       emitCounter++
       if (emitCounter === 2) {
-        expect(selectedAccountCtrl.portfolio).not.toBeNull()
-        expect(selectedAccountCtrl.portfolio?.totalBalance).toBeDefined()
+        expect(selectedAccountCtrl.portfolio?.totalBalance).toBeGreaterThan(0)
         expect(selectedAccountCtrl.portfolio?.tokens?.length).toBeGreaterThan(0)
         unsubscribe()
         done()
