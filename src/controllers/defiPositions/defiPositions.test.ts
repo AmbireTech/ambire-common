@@ -60,7 +60,6 @@ const prepareTest = async () => {
     providersCtrl,
     networksCtrl,
     () => {},
-    () => {},
     () => {}
   )
 
