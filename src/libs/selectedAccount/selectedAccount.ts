@@ -87,22 +87,24 @@ export const getSelectedAccountPortfolio = (
     portfolioState.latest[account.addr],
     defiPositionsAccountState
   )
+
   const portfolioPendingAccountState = updatePortfolioStateWithDefiPositions(
     portfolioState.pending[account.addr],
     defiPositionsAccountState
   )
 
-  if (portfolioLatestAccountState) {
-    // eslint-disable-next-line no-param-reassign
-    portfolioState.latest[account.addr] = portfolioLatestAccountState
+  const updatedPortfolioState = {
+    latest: {
+      ...portfolioState.latest,
+      [account.addr]: portfolioLatestAccountState
+    },
+    pending: {
+      ...portfolioState.pending,
+      [account.addr]: portfolioPendingAccountState
+    }
   }
 
-  if (portfolioPendingAccountState) {
-    // eslint-disable-next-line no-param-reassign
-    portfolioState.latest[account.addr] = portfolioPendingAccountState
-  }
-
-  return portfolioState
+  return updatedPortfolioState
 }
 
 export function calculateSelectedAccountPortfolio(

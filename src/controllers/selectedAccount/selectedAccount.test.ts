@@ -17,6 +17,9 @@ import { PortfolioController } from '../portfolio/portfolio'
 import { ProvidersController } from '../providers/providers'
 import { SelectedAccountController } from './selectedAccount'
 
+// @ts-ignore
+global.structuredClone = structuredClone as any
+
 const providers = Object.fromEntries(
   networks.map((network) => [network.id, getRpcProvider(network.rpcUrls, network.chainId)])
 )
@@ -130,7 +133,7 @@ describe('SelectedAccount Controller', () => {
     expect(selectedAccountInStorage).toEqual(accounts[0].addr)
   })
   test('should init controllers', async () => {
-    selectedAccountCtrl.initControllers({
+    await selectedAccountCtrl.initControllers({
       portfolio: portfolioCtrl,
       defiPositions: defiPositionsCtrl,
       actions: actionsCtrl
@@ -138,12 +141,10 @@ describe('SelectedAccount Controller', () => {
     expect(selectedAccountCtrl.areControllersInitialized).toEqual(true)
   })
   test('should update selected account portfolio', (done) => {
-    let emitCounter = 0
     const unsubscribe = selectedAccountCtrl.onUpdate(async () => {
-      emitCounter++
-      if (emitCounter === 2) {
-        expect(selectedAccountCtrl.portfolio?.totalBalance).toBeGreaterThan(0)
-        expect(selectedAccountCtrl.portfolio?.tokens?.length).toBeGreaterThan(0)
+      if (selectedAccountCtrl.portfolio.isAllReady) {
+        expect(selectedAccountCtrl.portfolio.totalBalance).toBeGreaterThan(0)
+        expect(selectedAccountCtrl.portfolio.tokens.length).toBeGreaterThan(0)
         unsubscribe()
         done()
       }
