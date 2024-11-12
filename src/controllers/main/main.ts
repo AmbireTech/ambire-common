@@ -897,8 +897,6 @@ export class MainController extends EventEmitter {
 
     const isUpdatingAccount = this.accounts.statuses.updateAccountState !== 'INITIAL'
 
-    this.selectedAccount.resetPortfolio()
-
     await Promise.all([
       // When we trigger `reloadSelectedAccount` (for instance, from Dashboard -> Refresh balance icon),
       // it's very likely that the account state is already in the process of being updated.

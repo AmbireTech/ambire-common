@@ -106,7 +106,7 @@ export const getSelectedAccountPortfolio = (
 }
 
 export function calculateSelectedAccountPortfolio(
-  selectedAccount: string | null,
+  selectedAccount: string,
   state: { latest: PortfolioControllerState; pending: PortfolioControllerState },
   accountPortfolio: SelectedAccountPortfolio | null,
   hasSignAccountOp?: boolean
@@ -117,22 +117,9 @@ export function calculateSelectedAccountPortfolio(
   let newTotalBalance: number = 0
   let allReady = true
 
-  if (!selectedAccount) {
-    return {
-      tokens: accountPortfolio?.tokens || [],
-      collections: accountPortfolio?.collections || [],
-      totalBalance: accountPortfolio?.totalBalance || 0,
-      isAllReady: true,
-      simulationNonces: accountPortfolio?.simulationNonces || {},
-      tokenAmounts: accountPortfolio?.tokenAmounts || []
-    }
-  }
-
-  const hasLatest = state.latest && state.latest[selectedAccount]
+  const hasLatest = state.latest?.[selectedAccount]
   const hasPending =
-    state.pending &&
-    state.pending[selectedAccount] &&
-    Object.keys(state.pending[selectedAccount] || {}).length
+    state.pending?.[selectedAccount] && Object.keys(state.pending?.[selectedAccount] || {}).length
   if (!hasLatest && !hasPending) {
     return {
       tokens: accountPortfolio?.tokens || [],
@@ -140,8 +127,10 @@ export function calculateSelectedAccountPortfolio(
       totalBalance: accountPortfolio?.totalBalance || 0,
       isAllReady: false,
       simulationNonces: accountPortfolio?.simulationNonces || {},
-      tokenAmounts: accountPortfolio?.tokenAmounts || []
-    }
+      tokenAmounts: accountPortfolio?.tokenAmounts || [],
+      latestStateByNetworks: state.latest[selectedAccount] || {},
+      pendingStateByNetworks: state.pending[selectedAccount] || {}
+    } as SelectedAccountPortfolio
   }
 
   let selectedAccountData = state.latest[selectedAccount]
@@ -190,7 +179,6 @@ export function calculateSelectedAccountPortfolio(
   Object.keys(selectedAccountData).forEach((network: string) => {
     const networkData = selectedAccountData[network]
     const result = networkData?.result
-
     if (networkData && isNetworkReady(networkData) && result) {
       // In the case we receive BigInt here, convert to number
       const networkTotal = Number(result?.total?.usd) || 0
@@ -205,6 +193,7 @@ export function calculateSelectedAccountPortfolio(
 
     if (!isNetworkReady(networkData)) {
       allReady = false
+      console.log('network not ready', network)
     }
   })
 
@@ -261,6 +250,7 @@ export function calculateSelectedAccountPortfolio(
     return [...acc, ...mergedTokens]
   }, [] as TokenAmount[])
 
+  console.log('allReady', allReady)
   return {
     totalBalance: newTotalBalance,
     tokens: updatedTokens,

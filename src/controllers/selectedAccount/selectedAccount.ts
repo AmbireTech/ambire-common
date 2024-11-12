@@ -7,6 +7,7 @@ import {
   calculateSelectedAccountPortfolio,
   getSelectedAccountPortfolio
 } from '../../libs/selectedAccount/selectedAccount'
+import wait from '../../utils/wait'
 // eslint-disable-next-line import/no-cycle
 import { AccountsController } from '../accounts/accounts'
 // eslint-disable-next-line import/no-cycle
@@ -25,7 +26,7 @@ const DEFAULT_SELECTED_ACCOUNT_PORTFOLIO = {
   simulationNonces: {},
   tokenAmounts: [],
   latestStateByNetworks: {},
-  pendingStateByNetwork: {}
+  pendingStateByNetworks: {}
 }
 
 export class SelectedAccountController extends EventEmitter {
@@ -42,6 +43,16 @@ export class SelectedAccountController extends EventEmitter {
   account: Account | null = null
 
   portfolio: SelectedAccountPortfolio = DEFAULT_SELECTED_ACCOUNT_PORTFOLIO
+
+  portfolioStartedLoadingAtTimestamp: number | null = null
+
+  #updatePortfolioThrottle: {
+    time: number
+    throttled: boolean
+  } = {
+    time: 0,
+    throttled: false
+  }
 
   defiPositions: PositionsByProvider[] = []
 
@@ -93,9 +104,9 @@ export class SelectedAccountController extends EventEmitter {
     this.#updateSelectedAccountDefiPositions(true)
     this.#updateSelectedAccountActions(true)
 
-    this.#portfolio.onUpdate(() => {
-      this.#updateSelectedAccountPortfolio()
-    })
+    this.#portfolio.onUpdate(async () => {
+      await this.#updateSelectedAccountPortfolio()
+    }, 'selectedAccount')
 
     this.#defiPositions.onUpdate(() => {
       this.#updateSelectedAccountPortfolio()
@@ -113,6 +124,7 @@ export class SelectedAccountController extends EventEmitter {
 
   async setAccount(account: Account | null) {
     this.account = account
+    this.portfolio = DEFAULT_SELECTED_ACCOUNT_PORTFOLIO
 
     if (!account) {
       await this.#storage.remove('selectedAccount')
@@ -123,14 +135,22 @@ export class SelectedAccountController extends EventEmitter {
     this.emitUpdate()
   }
 
-  async resetPortfolio() {
-    this.portfolio = DEFAULT_SELECTED_ACCOUNT_PORTFOLIO
-
-    this.emitUpdate()
-  }
-
-  #updateSelectedAccountPortfolio(skipUpdate?: boolean) {
+  async #updateSelectedAccountPortfolio(skipUpdate?: boolean) {
     if (!this.#portfolio || !this.#defiPositions || !this.account) return
+
+    const now = Date.now()
+    const timeSinceLastCall = now - this.#updatePortfolioThrottle.time
+    if (timeSinceLastCall <= 150) {
+      if (!this.#updatePortfolioThrottle.throttled) {
+        this.#updatePortfolioThrottle.throttled = true
+        await wait(150 - timeSinceLastCall)
+        this.#updatePortfolioThrottle.throttled = false
+        await this.#updateSelectedAccountPortfolio()
+      }
+      return
+    }
+
+    this.#updatePortfolioThrottle.time = now
 
     const defiPositionsAccountState = this.#defiPositions.state[this.account.addr]
 
@@ -152,15 +172,25 @@ export class SelectedAccountController extends EventEmitter {
       hasSignAccountOp
     )
 
+    if (this.portfolioStartedLoadingAtTimestamp && newSelectedAccountPortfolio.isAllReady) {
+      this.portfolioStartedLoadingAtTimestamp = null
+    }
+
+    if (!this.portfolioStartedLoadingAtTimestamp && !newSelectedAccountPortfolio.isAllReady) {
+      this.portfolioStartedLoadingAtTimestamp = Date.now()
+    }
+
     if (
       newSelectedAccountPortfolio.isAllReady ||
       (!this.portfolio?.tokens?.length && newSelectedAccountPortfolio.tokens.length)
     ) {
       this.portfolio = newSelectedAccountPortfolio
+    } else {
+      this.portfolio.isAllReady = newSelectedAccountPortfolio.isAllReady
+    }
 
-      if (!skipUpdate) {
-        this.emitUpdate()
-      }
+    if (!skipUpdate) {
+      this.emitUpdate()
     }
   }
 
