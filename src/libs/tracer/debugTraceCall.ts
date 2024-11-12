@@ -1,4 +1,4 @@
-import { getAddress, Interface, JsonRpcProvider, toQuantity, ZeroAddress } from 'ethers'
+import { getAddress, Interface, JsonRpcProvider, toBeHex, toQuantity, ZeroAddress } from 'ethers'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json'
@@ -11,7 +11,9 @@ import { AccountOp, callToTuple, getSignableCalls } from '../accountOp/accountOp
 import { DeploylessMode, fromDescriptor } from '../deployless/deployless'
 import { GasRecommendation } from '../gasPrice/gasPrice'
 import { EOA_SIMULATION_NONCE } from '../portfolio/getOnchainBalances'
-import { stringify } from '../richJson/richJson'
+import { privSlot } from '../proxyDeploy/deploy'
+
+// import { stringify } from '../richJson/richJson'
 
 const NFT_COLLECTION_LIMIT = 100
 // if using EOA, use the first and only call of the account op
@@ -60,13 +62,31 @@ export async function debugTraceCall(
   const opts = {
     blockTag: 'latest',
     from: DEPLOYLESS_SIMULATION_FROM,
-    mode: DeploylessMode.ProxyContract
+    mode: DeploylessMode.ProxyContract,
+    isEOA: !isSmartAccount(account)
   }
   const deploylessOpts = {
-    blockTag: opts.blockTag,
+    blockTag: 'latest',
     from: DEPLOYLESS_SIMULATION_FROM,
-    mode: DeploylessMode.Detect,
-    stateToOverride: null
+    mode:
+      supportsStateOverride && !isSmartAccount(account)
+        ? DeploylessMode.StateOverride
+        : DeploylessMode.Detect,
+    stateToOverride:
+      supportsStateOverride && !isSmartAccount(account)
+        ? {
+            [account.addr]: {
+              code: AmbireAccount.binRuntime,
+              stateDiff: {
+                // if we use 0x00...01 we get a geth bug: "invalid argument 2: hex number with leading zero digits\" - on some RPC providers
+                [`0x${privSlot(0, 'address', account.addr, 'bytes32')}`]:
+                  '0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
+                // any number with leading zeros is not supported on some RPCs
+                [toBeHex(1, 32)]: EOA_SIMULATION_NONCE
+              }
+            }
+          }
+        : null
   }
   const [factory, factoryCalldata] = getAccountDeployParams(account)
   const simulationOps = [
