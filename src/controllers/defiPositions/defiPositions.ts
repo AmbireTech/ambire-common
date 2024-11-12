@@ -2,7 +2,7 @@ import { Fetch } from '../../interfaces/fetch'
 import { NetworkId } from '../../interfaces/network'
 // eslint-disable-next-line import/no-cycle
 import { getNetworksWithDeFiPositionsErrorBanners } from '../../libs/banners/banners'
-import { getAssetValue, sortByValue } from '../../libs/defiPositions/helpers'
+import { getAssetValue } from '../../libs/defiPositions/helpers'
 import { getAAVEPositions, getUniV3Positions } from '../../libs/defiPositions/providers'
 import {
   DeFiPositionsError,
@@ -264,46 +264,10 @@ export class DefiPositionsController extends EventEmitter {
     return errorBanners
   }
 
-  get selectedAccountPositions() {
-    if (!this.#selectedAccount.account) return null
-
-    const positionsByProvider = Object.values(
-      this.state[this.#selectedAccount.account.addr] || {}
-    ).flatMap((n) => n.positionsByProvider)
-
-    const positionsByProviderWithSortedAssets = positionsByProvider.map((provider) => {
-      const positions = provider.positions
-        .map((position) => {
-          const assets = position.assets.sort((a, b) => sortByValue(a.value, b.value))
-
-          return { ...position, assets }
-        })
-        .sort((a, b) => sortByValue(a.additionalData.positionInUSD, b.additionalData.positionInUSD))
-
-      return { ...provider, positions }
-    })
-
-    const sortedPositionsByProvider = positionsByProviderWithSortedAssets.sort((a, b) =>
-      sortByValue(a.positionInUSD, b.positionInUSD)
-    )
-
-    return sortedPositionsByProvider
-  }
-
-  get isSelectedAccountLoading() {
-    if (!this.#selectedAccount.account) return false
-
-    return Object.values(this.state[this.#selectedAccount.account.addr] || {}).some(
-      (n) => n.isLoading
-    )
-  }
-
   toJSON() {
     return {
       ...this,
       ...super.toJSON(),
-      selectedAccountPositions: this.selectedAccountPositions,
-      isSelectedAccountLoading: this.isSelectedAccountLoading,
       banners: this.banners
     }
   }

@@ -194,6 +194,14 @@ export class SelectedAccountController extends EventEmitter {
     }
   }
 
+  get areDefiPositionsLoading() {
+    if (!this.account || !this.#defiPositions) return false
+
+    return Object.values(this.#defiPositions.state[this.account.addr] || {}).some(
+      (n) => n.isLoading
+    )
+  }
+
   #updateSelectedAccountDefiPositions(skipUpdate?: boolean) {
     if (!this.#defiPositions || !this.account) return
 
@@ -249,7 +257,8 @@ export class SelectedAccountController extends EventEmitter {
   toJSON() {
     return {
       ...this,
-      ...super.toJSON()
+      ...super.toJSON(),
+      areDefiPositionsLoading: this.areDefiPositionsLoading
     }
   }
 }
