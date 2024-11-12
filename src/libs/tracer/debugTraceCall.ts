@@ -149,9 +149,7 @@ export async function debugTraceCall(
 
   // we set the 3rd param to "true" as we don't need state override
   const deploylessTokens = fromDescriptor(provider, BalanceGetter, true)
-  const deploylessNfts = fromDescriptor(provider, NFTGetter, supportsStateOverride)
-
-  // const deploylessNfts = fromDescriptor(provider, NFTGetter, true)
+  const deploylessNfts = fromDescriptor(provider, NFTGetter, true)
 
   const getNftsPromise = deploylessNfts.call(
     'simulateAndGetAllNFTs',
@@ -168,13 +166,22 @@ export async function debugTraceCall(
     deploylessOpts
   )
 
-  const [[tokensWithErr], [before, after]] = await Promise.all([
+  const [[tokensWithErr], [before, after, , , , deltaAddressesMapping]] = await Promise.all([
     deploylessTokens.call('getBalances', [op.accountAddr, foundTokens], opts),
     getNftsPromise
   ])
 
   return {
     tokens: foundTokens.filter((addr, i) => tokensWithErr[i].error === '0x'),
-    nfts: foundNftTransfers.filter((nft, i) => before[i][0][3] === '0x' || after[i][0][3] === '0x')
+    nfts: foundNftTransfers.filter((nft, i) => {
+      if (before[i][0][3] === '0x') return true
+      const foundAfterToken = after.find(
+        (t: any, j: number) =>
+          deltaAddressesMapping[j].toLowerCase() === foundNftTransfers[i][0].toLowerCase()
+      )
+      if (!foundAfterToken || !foundAfterToken[0]) return false
+
+      return foundAfterToken[0][3] === '0x'
+    })
   }
 }
