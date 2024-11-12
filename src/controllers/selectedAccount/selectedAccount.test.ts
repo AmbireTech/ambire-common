@@ -2,6 +2,7 @@ import EventEmitter from 'events'
 import fetch from 'node-fetch'
 
 import { expect } from '@jest/globals'
+import structuredClone from '@ungap/structured-clone'
 
 import { relayerUrl, velcroUrl } from '../../../test/config'
 import { produceMemoryStore } from '../../../test/helpers'
