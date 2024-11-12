@@ -13,11 +13,7 @@ import { isSmartAccount } from '../../libs/account/account'
 import { getSwapAndBridgeBanners } from '../../libs/banners/banners'
 import { TokenResult } from '../../libs/portfolio'
 import { getTokenAmount } from '../../libs/portfolio/helpers'
-import {
-  getIsBridgeTxn,
-  getQuoteRouteSteps,
-  sortTokenListResponse
-} from '../../libs/swapAndBridge/swapAndBridge'
+import { getQuoteRouteSteps, sortTokenListResponse } from '../../libs/swapAndBridge/swapAndBridge'
 import { getSanitizedAmount } from '../../libs/transfer/amount'
 import { SocketAPI } from '../../services/socket/api'
 import { validateSendTransferAmount } from '../../services/validations/validate'
@@ -143,6 +139,9 @@ export class SwapAndBridgeController extends EventEmitter {
 
     this.activeRoutes = await this.#storage.get('swapAndBridgeActiveRoutes', [])
 
+    this.#selectedAccount.onUpdate(() => {
+      this.updatePortfolioTokenList(this.#selectedAccount.portfolio.tokens)
+    })
     this.emitUpdate()
   }
 
@@ -261,6 +260,7 @@ export class SwapAndBridgeController extends EventEmitter {
 
     this.sessionIds.push(sessionId)
     await this.#socketAPI.updateHealth()
+    this.updatePortfolioTokenList(this.#selectedAccount.portfolio.tokens)
 
     this.emitUpdate()
   }
@@ -416,9 +416,15 @@ export class SwapAndBridgeController extends EventEmitter {
   }
 
   updatePortfolioTokenList(nextPortfolioTokenList: TokenResult[]) {
-    this.portfolioTokenList = nextPortfolioTokenList
+    const tokens =
+      nextPortfolioTokenList.filter((token) => {
+        const hasAmount = Number(getTokenAmount(token)) > 0
 
-    const fromSelectedTokenInNextPortfolio = nextPortfolioTokenList.find(
+        return hasAmount && !token.flags.onGasTank && !token.flags.rewardsType
+      }) || []
+    this.portfolioTokenList = tokens
+
+    const fromSelectedTokenInNextPortfolio = tokens.find(
       (t) =>
         t.address === this.fromSelectedToken?.address &&
         t.networkId === this.fromSelectedToken?.networkId

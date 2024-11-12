@@ -193,7 +193,6 @@ export function calculateSelectedAccountPortfolio(
 
     if (!isNetworkReady(networkData)) {
       allReady = false
-      console.log('network not ready', network)
     }
   })
 
@@ -250,7 +249,6 @@ export function calculateSelectedAccountPortfolio(
     return [...acc, ...mergedTokens]
   }, [] as TokenAmount[])
 
-  console.log('allReady', allReady)
   return {
     totalBalance: newTotalBalance,
     tokens: updatedTokens,
