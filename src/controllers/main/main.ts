@@ -62,7 +62,10 @@ import {
   adjustEntryPointAuthorization,
   getEntryPointAuthorization
 } from '../../libs/signMessage/signMessage'
-import { buildSwapAndBridgeUserRequests } from '../../libs/swapAndBridge/swapAndBridge'
+import {
+  buildSwapAndBridgeUserRequests,
+  getActiveRoutesForAccount
+} from '../../libs/swapAndBridge/swapAndBridge'
 import { debugTraceCall } from '../../libs/tracer/debugTraceCall'
 import { buildTransferUserRequest } from '../../libs/transfer/userRequest'
 import {
@@ -296,12 +299,6 @@ export class MainController extends EventEmitter {
       this.#externalSignerControllers
     )
     this.#socketAPI = new SocketAPI({ apiKey: socketApiKey, fetch: this.fetch })
-    this.swapAndBridge = new SwapAndBridgeController({
-      selectedAccount: this.selectedAccount,
-      networks: this.networks,
-      socketAPI: this.#socketAPI,
-      storage: this.#storage
-    })
     this.dapps = new DappsController(this.#storage)
     this.actions = new ActionsController({
       selectedAccount: this.selectedAccount,
@@ -317,6 +314,13 @@ export class MainController extends EventEmitter {
         this.userRequests = this.userRequests.filter((r) => r.action.kind === 'calls')
         this.emitUpdate()
       }
+    })
+    this.swapAndBridge = new SwapAndBridgeController({
+      selectedAccount: this.selectedAccount,
+      networks: this.networks,
+      socketAPI: this.#socketAPI,
+      storage: this.#storage,
+      actions: this.actions
     })
     this.callRelayer = relayerCall.bind({ url: relayerUrl, fetch: this.fetch })
     this.activity = new ActivityController(
@@ -425,6 +429,7 @@ export class MainController extends EventEmitter {
     // forceEmitUpdate to update the getters in the FE state of the ctrl
     await this.forceEmitUpdate()
     await this.actions.forceEmitUpdate()
+    await this.swapAndBridge.forceEmitUpdate()
     await this.addressBook.forceEmitUpdate()
     this.dapps.broadcastDappSessionEvent('accountsChanged', [toAccountAddr])
     await this.accounts.updateAccountState(toAccountAddr)
@@ -2288,6 +2293,14 @@ export class MainController extends EventEmitter {
   get banners(): Banner[] {
     if (!this.selectedAccount.account || !this.networks.isInitialized) return []
 
+    const activeSwapAndBridgeRoutesForSelectedAccount = getActiveRoutesForAccount(
+      this.selectedAccount.account.addr,
+      this.swapAndBridge.activeRoutes
+    )
+    const swapAndBridgeRoutesPendingSignature = activeSwapAndBridgeRoutesForSelectedAccount.filter(
+      (r) => r.routeStatus === 'ready'
+    )
+
     const accountOpBanners = getAccountOpBanners({
       accountOpActionsByNetwork: getAccountOpActionsByNetwork(
         this.selectedAccount.account.addr,
@@ -2295,7 +2308,8 @@ export class MainController extends EventEmitter {
       ),
       selectedAccount: this.selectedAccount.account.addr,
       accounts: this.accounts.accounts,
-      networks: this.networks.networks
+      networks: this.networks.networks,
+      swapAndBridgeRoutesPendingSignature
     })
 
     return [...accountOpBanners]

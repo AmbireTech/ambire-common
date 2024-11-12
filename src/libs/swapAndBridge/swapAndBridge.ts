@@ -1,4 +1,4 @@
-import { Contract, Interface, MaxUint256 } from 'ethers'
+import { Contract, getAddress, Interface, MaxUint256 } from 'ethers'
 
 import ERC20 from '../../../contracts/compiled/IERC20.json'
 import { Account } from '../../interfaces/account'
@@ -261,9 +261,16 @@ const buildSwapAndBridgeUserRequests = async (
 export const getIsBridgeTxn = (userTxType: SocketAPIUserTx['userTxType']) =>
   userTxType === 'fund-movr'
 
+const getActiveRoutesForAccount = (accountAddress: string, activeRoutes: ActiveRoute[]) => {
+  return activeRoutes.filter(
+    (r) => getAddress(r.route.sender || r.route.userAddress) === accountAddress
+  )
+}
+
 export {
   getQuoteRouteSteps,
   getActiveRoutesLowestServiceTime,
   getActiveRoutesUpdateInterval,
-  buildSwapAndBridgeUserRequests
+  buildSwapAndBridgeUserRequests,
+  getActiveRoutesForAccount
 }
