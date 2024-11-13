@@ -13,8 +13,6 @@ import { GasRecommendation } from '../gasPrice/gasPrice'
 import { EOA_SIMULATION_NONCE } from '../portfolio/getOnchainBalances'
 import { privSlot } from '../proxyDeploy/deploy'
 
-// import { stringify } from '../richJson/richJson'
-
 const NFT_COLLECTION_LIMIT = 100
 // if using EOA, use the first and only call of the account op
 // if it's SA, make the data execute or deployAndExecute,
