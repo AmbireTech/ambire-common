@@ -2,9 +2,11 @@ export async function estimateWithRetries(
   fetchRequests: Function,
   counter: number = 0
 ): Promise<any> {
+  console.log('estimateWithRetries', counter)
   // stop the execution on 5 fails;
   // the below error message is not shown to the user so we are safe
-  if (counter >= 5)
+  if (counter >= 3)
+    // TODO: return
     return new Error(
       'Estimation failure, retrying in a couple of seconds. If this issue persists, please change your RPC provider or contact Ambire support'
     )
@@ -13,7 +15,7 @@ export async function estimateWithRetries(
   const estimationTimeout = new Promise((resolve) => {
     setTimeout(() => {
       resolve(santinelTimeoutErr)
-    }, 15000)
+    }, 3000) // TODO: return
   })
 
   // try to estimate the request with a given timeout.

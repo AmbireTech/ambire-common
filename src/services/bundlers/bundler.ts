@@ -6,7 +6,7 @@ import { toBeHex } from 'ethers'
 import { ENTRY_POINT_MARKER, ERC_4337_ENTRYPOINT } from '../../consts/deploy'
 import { Fetch } from '../../interfaces/fetch'
 import { Network } from '../../interfaces/network'
-import { mapTxnErrMsg } from '../../libs/estimate/errors'
+import { catchEstimationFailure } from '../../libs/estimate/errors'
 import { BundlerEstimateResult } from '../../libs/estimate/interfaces'
 import { Gas1559Recommendation } from '../../libs/gasPrice/gasPrice'
 import { privSlot } from '../../libs/proxyDeploy/deploy'
@@ -220,11 +220,14 @@ export class Bundler {
 
   // used when catching errors from bundler requests
   static decodeBundlerError(e: any, defaultMsg: string): string {
-    let errMsg = e.error.message ? e.error.message : defaultMsg
-    const hex = errMsg.indexOf('0x') !== -1 ? errMsg.substring(errMsg.indexOf('0x')) : null
-    const decodedHex = hex ? mapTxnErrMsg(hex) : null
-    if (decodedHex) errMsg = errMsg.replace(hex, decodedHex)
-    const finalMsg = mapTxnErrMsg(errMsg)
-    return finalMsg ?? errMsg
+    console.log('bundler error', e)
+    const decodedError = catchEstimationFailure(e)
+    // let errMsg = e.error.message ? e.error.message : defaultMsg
+    // const hex = errMsg.indexOf('0x') !== -1 ? errMsg.substring(errMsg.indexOf('0x')) : null
+    // // TODO: Figure out if this logic is correct
+    // const decodedHex = hex ? catchEstimationFailure(new Error(hex)) : null
+    // if (decodedHex) errMsg = errMsg.replace(hex, decodedHex.message)
+    // const finalMsg = catchEstimationFailure(errMsg)
+    return decodedError.message
   }
 }

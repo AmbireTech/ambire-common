@@ -1232,7 +1232,9 @@ export class SignAccountOpController extends EventEmitter {
               userOperation.nonce = getOneTimeNonce(userOperation)
             }
           } catch (e: any) {
-            let message = e.message
+            let message =
+              'Unable to sign the transaction due to a paymaster error. Please try again a few moments later or broadcast with a Basic Account'
+
             if (e.message.includes('Failed to fetch') || e.message.includes('Ambire relayer')) {
               message =
                 'Currently, the paymaster seems to be down. Please try again a few moments later or broadcast with a Basic Account'
@@ -1282,7 +1284,10 @@ export class SignAccountOpController extends EventEmitter {
       this.emitUpdate()
       return this.signedAccountOp
     } catch (error: any) {
-      return this.#emitSigningErrorAndResetToReadyToSign(error?.message)
+      console.error(error)
+      return this.#emitSigningErrorAndResetToReadyToSign(
+        'Internal error while signing the transaction. Please try again or contact support if the problem persists.'
+      )
     }
   }
 

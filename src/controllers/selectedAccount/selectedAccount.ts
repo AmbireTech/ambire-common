@@ -136,7 +136,6 @@ export class SelectedAccountController extends EventEmitter {
 
   #updateSelectedAccountPortfolio(skipUpdate?: boolean) {
     if (!this.#portfolio || !this.#defiPositions || !this.account) return
-    console.log('in')
     const defiPositionsAccountState = this.#defiPositions.state[this.account.addr]
 
     const portfolioState = structuredClone({

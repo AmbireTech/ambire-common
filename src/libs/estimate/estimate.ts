@@ -17,7 +17,8 @@ import {
   shouldIncludeActivatorCall,
   shouldUsePaymaster
 } from '../userOperation/userOperation'
-import { catchEstimationFailure, estimationErrorFormatted, mapTxnErrMsg } from './errors'
+import { catchEstimationFailure, estimationErrorFormatted } from './errors'
+import { InnerCallFailureError } from './errors/customErrors'
 import { bundlerEstimate } from './estimateBundler'
 import { estimateEOA } from './estimateEOA'
 import { estimateGas } from './estimateGas'
@@ -30,9 +31,8 @@ const abiCoder = new AbiCoder()
 
 function getInnerCallFailure(estimationOp: { success: boolean; err: string }): Error | null {
   if (estimationOp.success) return null
+  const error = catchEstimationFailure(new InnerCallFailureError(estimationOp.err))
 
-  let error = mapTxnErrMsg(estimationOp.err)
-  if (!error) error = 'Transaction reverted: invalid call in the bundle'
   return new Error(error, {
     cause: 'CALLS_FAILURE'
   })
@@ -331,9 +331,11 @@ export async function estimate(
         blockTag
       })
       .catch(catchEstimationFailure),
+    // Promise.reject(new Error('transfer amount exceeds balance')).catch(catchEstimationFailure),
     estimateGas(account, op, provider, accountState, network).catch(() => 0n)
   ]
   const estimations = await estimateWithRetries(initializeRequests)
+  console.log('estimations in estimate', estimations)
   if (estimations instanceof Error) return estimationErrorFormatted(estimations)
 
   const [
