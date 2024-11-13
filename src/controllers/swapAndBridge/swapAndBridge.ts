@@ -149,6 +149,9 @@ export class SwapAndBridgeController extends EventEmitter {
 
     this.activeRoutes = await this.#storage.get('swapAndBridgeActiveRoutes', [])
 
+    this.#selectedAccount.onUpdate(() => {
+      this.updatePortfolioTokenList(this.#selectedAccount.portfolio.tokens)
+    })
     this.emitUpdate()
   }
 
@@ -267,6 +270,7 @@ export class SwapAndBridgeController extends EventEmitter {
 
     this.sessionIds.push(sessionId)
     await this.#socketAPI.updateHealth()
+    this.updatePortfolioTokenList(this.#selectedAccount.portfolio.tokens)
 
     this.emitUpdate()
   }
@@ -422,9 +426,15 @@ export class SwapAndBridgeController extends EventEmitter {
   }
 
   updatePortfolioTokenList(nextPortfolioTokenList: TokenResult[]) {
-    this.portfolioTokenList = nextPortfolioTokenList
+    const tokens =
+      nextPortfolioTokenList.filter((token) => {
+        const hasAmount = Number(getTokenAmount(token)) > 0
 
-    const fromSelectedTokenInNextPortfolio = nextPortfolioTokenList.find(
+        return hasAmount && !token.flags.onGasTank && !token.flags.rewardsType
+      }) || []
+    this.portfolioTokenList = tokens
+
+    const fromSelectedTokenInNextPortfolio = tokens.find(
       (t) =>
         t.address === this.fromSelectedToken?.address &&
         t.networkId === this.fromSelectedToken?.networkId
