@@ -7,7 +7,6 @@ import {
   calculateSelectedAccountPortfolio,
   getSelectedAccountPortfolio
 } from '../../libs/selectedAccount/selectedAccount'
-import wait from '../../utils/wait'
 // eslint-disable-next-line import/no-cycle
 import { AccountsController } from '../accounts/accounts'
 // eslint-disable-next-line import/no-cycle
@@ -46,13 +45,7 @@ export class SelectedAccountController extends EventEmitter {
 
   portfolioStartedLoadingAtTimestamp: number | null = null
 
-  #updatePortfolioThrottle: {
-    time: number
-    throttled: boolean
-  } = {
-    time: 0,
-    throttled: false
-  }
+  #shouldDebounceFlags: { [key: string]: boolean } = {}
 
   defiPositions: PositionsByProvider[] = []
 
@@ -105,12 +98,28 @@ export class SelectedAccountController extends EventEmitter {
     this.#updateSelectedAccountActions(true)
 
     this.#portfolio.onUpdate(async () => {
-      await this.#updateSelectedAccountPortfolio()
+      const res = this.#debounceFunctionCallsOnSameTick('updateSelectedAccountPortfolio')
+
+      if (res === 'CALL') {
+        this.#updateSelectedAccountPortfolio()
+      }
     }, 'selectedAccount')
 
     this.#defiPositions.onUpdate(() => {
-      this.#updateSelectedAccountPortfolio()
-      this.#updateSelectedAccountDefiPositions()
+      const portfolioDebounceRes = this.#debounceFunctionCallsOnSameTick(
+        'updateSelectedAccountPortfolio'
+      )
+      const defiPositionsDebounceRes = this.#debounceFunctionCallsOnSameTick(
+        'updateSelectedAccountDefiPositions'
+      )
+
+      if (defiPositionsDebounceRes === 'CALL') {
+        this.#updateSelectedAccountDefiPositions()
+      }
+
+      if (portfolioDebounceRes === 'CALL') {
+        this.#updateSelectedAccountPortfolio()
+      }
     })
 
     this.#actions.onUpdate(() => {
@@ -135,22 +144,8 @@ export class SelectedAccountController extends EventEmitter {
     this.emitUpdate()
   }
 
-  async #updateSelectedAccountPortfolio(skipUpdate?: boolean) {
+  #updateSelectedAccountPortfolio(skipUpdate?: boolean) {
     if (!this.#portfolio || !this.#defiPositions || !this.account) return
-
-    const now = Date.now()
-    const timeSinceLastCall = now - this.#updatePortfolioThrottle.time
-    if (timeSinceLastCall <= 150) {
-      if (!this.#updatePortfolioThrottle.throttled) {
-        this.#updatePortfolioThrottle.throttled = true
-        await wait(150 - timeSinceLastCall)
-        this.#updatePortfolioThrottle.throttled = false
-        await this.#updateSelectedAccountPortfolio()
-      }
-      return
-    }
-
-    this.#updatePortfolioThrottle.time = now
 
     const defiPositionsAccountState = this.#defiPositions.state[this.account.addr]
 
@@ -252,6 +247,18 @@ export class SelectedAccountController extends EventEmitter {
     if (!skipUpdate) {
       this.emitUpdate()
     }
+  }
+
+  #debounceFunctionCallsOnSameTick(funcName: string): 'DEBOUNCED' | 'CALL' {
+    if (this.#shouldDebounceFlags[funcName]) return 'DEBOUNCED'
+    this.#shouldDebounceFlags[funcName] = true
+
+    // Debounce multiple calls in the same tick and only execute one of them
+    setTimeout(() => {
+      this.#shouldDebounceFlags[funcName] = false
+    }, 0)
+
+    return 'CALL'
   }
 
   toJSON() {
