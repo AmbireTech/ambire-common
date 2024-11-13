@@ -181,6 +181,7 @@ export type ActiveRoute = {
     createdAt: string
     updatedAt: string
     routeStatus: string
+    fromChainId: number
     currentUserTxIndex: number
     transactionData: { txHash: string }[] | null
     userAddress: string

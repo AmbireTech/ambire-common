@@ -1,5 +1,4 @@
-import { SelectedAccountController } from 'controllers/selectedAccount/selectedAccount'
-import { formatUnits, getAddress, parseUnits } from 'ethers'
+import { formatUnits, parseUnits } from 'ethers'
 
 import { Storage } from '../../interfaces/storage'
 import {
@@ -10,11 +9,11 @@ import {
   SocketAPIToken
 } from '../../interfaces/swapAndBridge'
 import { isSmartAccount } from '../../libs/account/account'
-import { getSwapAndBridgeBanners } from '../../libs/banners/banners'
+import { getBridgeBanners } from '../../libs/banners/banners'
 import { TokenResult } from '../../libs/portfolio'
 import { getTokenAmount } from '../../libs/portfolio/helpers'
 import {
-  getIsBridgeTxn,
+  getActiveRoutesForAccount,
   getQuoteRouteSteps,
   sortTokenListResponse
 } from '../../libs/swapAndBridge/swapAndBridge'
@@ -23,8 +22,10 @@ import { SocketAPI } from '../../services/socket/api'
 import { validateSendTransferAmount } from '../../services/validations/validate'
 import { convertTokenPriceToBigInt } from '../../utils/numbers/formatters'
 import wait from '../../utils/wait'
+import { AccountOpAction, ActionsController } from '../actions/actions'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { NetworksController } from '../networks/networks'
+import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 
 const HARD_CODED_CURRENCY = 'usd'
 
@@ -53,6 +54,8 @@ export class SwapAndBridgeController extends EventEmitter {
   #selectedAccount: SelectedAccountController
 
   #networks: NetworksController
+
+  #actions: ActionsController
 
   #storage: Storage
 
@@ -120,18 +123,21 @@ export class SwapAndBridgeController extends EventEmitter {
     selectedAccount,
     networks,
     socketAPI,
-    storage
+    storage,
+    actions
   }: {
     selectedAccount: SelectedAccountController
     networks: NetworksController
     socketAPI: SocketAPI
     storage: Storage
+    actions: ActionsController
   }) {
     super()
     this.#selectedAccount = selectedAccount
     this.#networks = networks
     this.#socketAPI = socketAPI
     this.#storage = storage
+    this.#actions = actions
 
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.#initialLoadPromise = this.#load()
@@ -805,11 +811,17 @@ export class SwapAndBridgeController extends EventEmitter {
   get banners() {
     if (!this.#selectedAccount.account) return []
 
-    const activeRoutesForSelectedAccount = this.activeRoutes.filter(
-      (r) =>
-        getAddress(r.route.sender || r.route.userAddress) === this.#selectedAccount.account!.addr
+    const activeRoutesForSelectedAccount = getActiveRoutesForAccount(
+      this.#selectedAccount.account.addr,
+      this.activeRoutes
     )
-    return getSwapAndBridgeBanners(activeRoutesForSelectedAccount)
+    const accountOpActions = this.#actions.visibleActionsQueue.filter(
+      ({ type }) => type === 'accountOp'
+    ) as AccountOpAction[]
+
+    // Swap banners aren't generated because swaps are completed instantly,
+    // thus the activity banner on broadcast is sufficient
+    return getBridgeBanners(activeRoutesForSelectedAccount, accountOpActions)
   }
 
   toJSON() {
