@@ -26,50 +26,49 @@ export const updatePortfolioStateWithDefiPositions = (
   Object.keys(portfolioAccountState).forEach((networkId) => {
     const networkState = portfolioAccountState[networkId]
 
-    if (networkState?.result) {
-      let tokens = networkState.result.tokens || []
-      let networkBalance = networkState.result.total?.usd || 0
+    if (!networkState?.result) return
 
-      const positions = defiPositionsAccountState[networkId] || {}
+    let tokens = networkState.result.tokens || []
+    let networkBalance = networkState.result.total?.usd || 0
 
-      positions.positionsByProvider?.forEach((posByProv: PositionsByProvider) => {
-        posByProv.positions.forEach((pos) => {
-          pos.assets.forEach((a) => {
-            const tokenInPortfolioIndex = tokens.findIndex((t) => {
-              return getAddress(t.address) === getAddress(a.address) && t.networkId === networkId
-            })
+    const positions = defiPositionsAccountState[networkId] || {}
 
-            if (tokenInPortfolioIndex !== -1) {
-              const tokenInPortfolio = tokens[tokenInPortfolioIndex]
-              const priceUSD = tokenInPortfolio.priceIn.find(
-                ({ baseCurrency }: { baseCurrency: string }) => baseCurrency.toLowerCase() === 'usd'
-              )?.price
-              const tokenBalanceUSD = priceUSD
-                ? Number(
-                    safeTokenAmountAndNumberMultiplication(
-                      BigInt(tokenInPortfolio.amount),
-                      tokenInPortfolio.decimals,
-                      priceUSD
-                    )
-                  )
-                : undefined
-
-              networkBalance -= tokenBalanceUSD || 0 // deduct portfolio token balance
-
-              // eslint-disable-next-line no-param-reassign
-              tokens = tokens.filter((_, index) => index !== tokenInPortfolioIndex)
-            }
+    positions.positionsByProvider?.forEach((posByProv: PositionsByProvider) => {
+      posByProv.positions.forEach((pos) => {
+        pos.assets.forEach((a) => {
+          const tokenInPortfolioIndex = tokens.findIndex((t) => {
+            return getAddress(t.address) === getAddress(a.address) && t.networkId === networkId
           })
 
-          networkBalance += posByProv.positionInUSD || 0
-        })
-      })
+          if (tokenInPortfolioIndex !== -1) {
+            const tokenInPortfolio = tokens[tokenInPortfolioIndex]
+            const priceUSD = tokenInPortfolio.priceIn.find(
+              ({ baseCurrency }: { baseCurrency: string }) => baseCurrency.toLowerCase() === 'usd'
+            )?.price
+            const tokenBalanceUSD = priceUSD
+              ? Number(
+                  safeTokenAmountAndNumberMultiplication(
+                    BigInt(tokenInPortfolio.amount),
+                    tokenInPortfolio.decimals,
+                    priceUSD
+                  )
+                )
+              : undefined
 
-      // eslint-disable-next-line no-param-reassign
-      portfolioAccountState[networkId]!.result!.total.usd = networkBalance
-      // eslint-disable-next-line no-param-reassign
-      portfolioAccountState[networkId]!.result!.tokens = tokens
-    }
+            networkBalance -= tokenBalanceUSD || 0 // deduct portfolio token balance
+
+            tokens = tokens.filter((_, index) => index !== tokenInPortfolioIndex)
+          }
+        })
+
+        networkBalance += posByProv.positionInUSD || 0
+      })
+    })
+
+    // eslint-disable-next-line no-param-reassign
+    portfolioAccountState[networkId]!.result!.total.usd = networkBalance
+    // eslint-disable-next-line no-param-reassign
+    portfolioAccountState[networkId]!.result!.tokens = tokens
   })
 
   return portfolioAccountState
@@ -93,7 +92,7 @@ export const getSelectedAccountPortfolio = (
     defiPositionsAccountState
   )
 
-  const updatedPortfolioState = {
+  return {
     latest: {
       ...portfolioState.latest,
       [account.addr]: portfolioLatestAccountState
@@ -103,8 +102,6 @@ export const getSelectedAccountPortfolio = (
       [account.addr]: portfolioPendingAccountState
     }
   }
-
-  return updatedPortfolioState
 }
 
 export function calculateSelectedAccountPortfolio(

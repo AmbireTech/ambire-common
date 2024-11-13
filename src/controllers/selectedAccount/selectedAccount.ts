@@ -149,11 +149,12 @@ export class SelectedAccountController extends EventEmitter {
 
     const defiPositionsAccountState = this.#defiPositions.state[this.account.addr]
 
+    const portfolioState = structuredClone({
+      latest: this.#portfolio.latest,
+      pending: this.#portfolio.pending
+    })
     const updatedPortfolioState = getSelectedAccountPortfolio(
-      structuredClone({
-        latest: this.#portfolio.latest,
-        pending: this.#portfolio.pending
-      }),
+      portfolioState,
       defiPositionsAccountState,
       this.account
     )
@@ -181,7 +182,7 @@ export class SelectedAccountController extends EventEmitter {
     ) {
       this.portfolio = newSelectedAccountPortfolio
     } else {
-      this.portfolio.isAllReady = newSelectedAccountPortfolio.isAllReady
+      this.portfolio.isAllReady = false
     }
 
     if (!skipUpdate) {
