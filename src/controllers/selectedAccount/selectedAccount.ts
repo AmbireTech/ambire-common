@@ -98,28 +98,18 @@ export class SelectedAccountController extends EventEmitter {
     this.#updateSelectedAccountActions(true)
 
     this.#portfolio.onUpdate(async () => {
-      const res = this.#debounceFunctionCallsOnSameTick('updateSelectedAccountPortfolio')
-
-      if (res === 'CALL') {
+      this.#debounceFunctionCallsOnSameTick('updateSelectedAccountPortfolio', () =>
         this.#updateSelectedAccountPortfolio()
-      }
+      )
     }, 'selectedAccount')
 
     this.#defiPositions.onUpdate(() => {
-      const portfolioDebounceRes = this.#debounceFunctionCallsOnSameTick(
-        'updateSelectedAccountPortfolio'
-      )
-      const defiPositionsDebounceRes = this.#debounceFunctionCallsOnSameTick(
-        'updateSelectedAccountDefiPositions'
-      )
-
-      if (defiPositionsDebounceRes === 'CALL') {
-        this.#updateSelectedAccountDefiPositions()
-      }
-
-      if (portfolioDebounceRes === 'CALL') {
+      this.#debounceFunctionCallsOnSameTick('updateSelectedAccountPortfolio', () =>
         this.#updateSelectedAccountPortfolio()
-      }
+      )
+      this.#debounceFunctionCallsOnSameTick('updateSelectedAccountDefiPositions', () =>
+        this.#updateSelectedAccountDefiPositions()
+      )
     })
 
     this.#actions.onUpdate(() => {
@@ -146,7 +136,7 @@ export class SelectedAccountController extends EventEmitter {
 
   #updateSelectedAccountPortfolio(skipUpdate?: boolean) {
     if (!this.#portfolio || !this.#defiPositions || !this.account) return
-
+    console.log('in')
     const defiPositionsAccountState = this.#defiPositions.state[this.account.addr]
 
     const portfolioState = structuredClone({
@@ -250,16 +240,15 @@ export class SelectedAccountController extends EventEmitter {
     }
   }
 
-  #debounceFunctionCallsOnSameTick(funcName: string): 'DEBOUNCED' | 'CALL' {
-    if (this.#shouldDebounceFlags[funcName]) return 'DEBOUNCED'
+  #debounceFunctionCallsOnSameTick(funcName: string, func: Function) {
+    if (this.#shouldDebounceFlags[funcName]) return
     this.#shouldDebounceFlags[funcName] = true
 
     // Debounce multiple calls in the same tick and only execute one of them
     setTimeout(() => {
       this.#shouldDebounceFlags[funcName] = false
+      func()
     }, 0)
-
-    return 'CALL'
   }
 
   toJSON() {
