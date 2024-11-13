@@ -58,17 +58,21 @@ contract NFTGetter is Simulation {
       uint total;
       for (uint i = 0; i != tokenIds.length; i++) {
         if (total == limit) break;
-        if (collection.ownerOf(tokenIds[i]) == address(account)) {
-          total++;
-        }
+        try collection.ownerOf(tokenIds[i]) returns (address ownerOfCurrentToken) {
+          if (ownerOfCurrentToken == address(account)) {
+            total++;
+          }
+        } catch {}
       }
       meta.nfts = new uint256[](total);
       uint j = 0;
       for (uint i = 0; i != tokenIds.length; i++) {
-        if (collection.ownerOf(tokenIds[i]) == address(account)) {
-          meta.nfts[j] = tokenIds[i];
-          j++;
-        }
+        try collection.ownerOf(tokenIds[i]) returns (address ownerOfCurrentToken) {
+          if (ownerOfCurrentToken == address(account)) {
+            meta.nfts[j] = tokenIds[i];
+            j++;
+          }
+        } catch {}
       }
     }
   }
@@ -100,7 +104,11 @@ contract NFTGetter is Simulation {
 
   // Compare the collections before (collectionsA) and after simulation (collectionsB)
   // and return the delta (with simulation)
-  function getDelta(NFTCollectionMetadata[] memory collectionsA, NFTCollectionMetadata[] memory collectionsB, NFT[] memory collections) public returns (NFTCollectionMetadata[] memory) {
+  function getDelta(
+    NFTCollectionMetadata[] memory collectionsA,
+    NFTCollectionMetadata[] memory collectionsB,
+    NFT[] memory collections
+  ) public returns (NFTCollectionMetadata[] memory) {
     uint deltaSize = 0;
 
     for (uint256 i = 0; i < collectionsA.length; i++) {
@@ -177,8 +185,11 @@ contract NFTGetter is Simulation {
         tokenPerCollectionLimit
       );
 
-
-      (NFTCollectionMetadata[] memory deltaAfter) = getDelta(before.collections, afterSimulation.collections, collections);
+      NFTCollectionMetadata[] memory deltaAfter = getDelta(
+        before.collections,
+        afterSimulation.collections,
+        collections
+      );
       afterSimulation.collections = deltaAfter;
     }
 
