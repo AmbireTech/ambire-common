@@ -107,9 +107,6 @@ export async function getNFTs(
   tokenAddrs: [string, any][],
   limits: LimitsOptions
 ): Promise<[number, CollectionResult][]> {
-  // eslint-disable-next-line no-param-reassign
-  // tokenAddrs[0][1].tokens = ['601787639933205298612064010778665648703173123913', '1']
-
   const deploylessOpts = getDeploylessOpts(accountAddr, network, opts)
   const mapToken = (token: any) => {
     return {
