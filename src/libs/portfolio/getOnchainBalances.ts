@@ -203,7 +203,7 @@ export async function getNFTs(
       {
         ...token,
         name: token.name || simulationToken?.name || '',
-        symbol: token.name || simulationToken?.symbol || '',
+        symbol: token.symbol || simulationToken?.symbol || '',
         // Please refer to getTokens() for more info regarding `amountBeforeSimulation` calc
         simulationAmount: simulationToken ? simulationToken.amount - token.amount : undefined,
         amountPostSimulation: simulationToken ? simulationToken.amount : token.amount,
