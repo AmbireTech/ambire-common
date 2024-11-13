@@ -96,6 +96,8 @@ export class AccountAdderController extends EventEmitter {
 
   linkedAccountsLoading: boolean = false
 
+  networksWithAccountStateError: NetworkId[] = []
+
   #derivedAccounts: DerivedAccount[] = []
 
   #linkedAccounts: { account: AccountWithNetworkMeta; isLinked: boolean }[] = []
@@ -299,6 +301,7 @@ export class AccountAdderController extends EventEmitter {
     this.#derivedAccounts = []
     this.#linkedAccounts = []
     this.readyToAddAccounts = []
+    this.networksWithAccountStateError = []
     this.readyToAddKeys = { internal: [], external: [] }
     this.isInitialized = false
     this.isInitializedWithSavedSeed = false
@@ -476,6 +479,7 @@ export class AccountAdderController extends EventEmitter {
     this.#derivedAccounts = []
     this.#linkedAccounts = []
     this.accountsLoading = true
+    this.networksWithAccountStateError = []
     this.emitUpdate()
     try {
       this.#derivedAccounts = await this.#deriveAccounts()
@@ -785,17 +789,9 @@ export class AccountAdderController extends EventEmitter {
           network,
           accounts.map((acc) => acc.account)
         ).catch(() => {
-          const message = `Failed to determine if accounts are used on ${network.name}.`
-          // Prevents toast spamming
-          if (this.emittedErrors.find((err) => err.message === message)) return
-
-          this.emitError({
-            level: 'major',
-            message,
-            error: new Error(
-              `accountAdder.#getAccountsUsedOnNetworks: failed to determine if accounts are used on ${network.name}`
-            )
-          })
+          console.error('accountAdder: failed to get account state on ', providerKey)
+          if (this.networksWithAccountStateError.includes(providerKey)) return
+          this.networksWithAccountStateError.push(providerKey)
         })
 
         if (!accountState) return

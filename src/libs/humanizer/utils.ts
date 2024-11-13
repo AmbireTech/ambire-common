@@ -89,6 +89,9 @@ export function getDeadline(deadlineSecs: bigint | number): HumanizerVisualizati
     id: randomId()
   }
 }
+export function getLink(url: string, content: string): HumanizerVisualization {
+  return { type: 'link', url, content, id: randomId() }
+}
 
 /**
  * Make a request to coingecko to fetch the latest price of the native token.
