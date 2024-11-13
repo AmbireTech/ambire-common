@@ -15,77 +15,97 @@ import { getNetworksWithFailedRPC } from '../networks/networks'
 import { PORTFOLIO_LIB_ERROR_NAMES } from '../portfolio/portfolio'
 import { getIsBridgeTxn, getQuoteRouteSteps } from '../swapAndBridge/swapAndBridge'
 
-const getTitle = (route: ActiveRoute, isBridgeTxn: boolean) => {
-  if (route.routeStatus === 'completed')
-    return isBridgeTxn ? 'Bridge request completed' : 'Swap request completed'
-
-  if (route.routeStatus === 'in-progress')
-    return isBridgeTxn ? 'Bridge request in progress' : 'Swap request in progress'
-
-  return isBridgeTxn ? 'Bridge request awaiting signature' : 'Swap request awaiting signature'
+const getBridgeBannerTitle = (routeStatus: ActiveRoute['routeStatus']) => {
+  switch (routeStatus) {
+    case 'completed':
+      return 'Bridge request completed'
+    case 'in-progress':
+      return 'Bridge request in progress'
+    default:
+      return 'Bridge request awaiting signature'
+  }
 }
 
-const getDescription = (route: ActiveRoute, isBridgeTxn: boolean) => {
+const getBridgeActionText = (routeStatus: ActiveRoute['routeStatus'], isBridgeTxn: boolean) => {
+  if (isBridgeTxn) {
+    return routeStatus === 'completed' ? 'Bridged' : 'Bridge'
+  }
+
+  return routeStatus === 'completed' ? 'Swapped' : 'Swap'
+}
+
+const getBridgeBannerText = (route: ActiveRoute, isBridgeTxn: boolean) => {
   const steps = getQuoteRouteSteps(route.route.userTxs)
+  const actionText = getBridgeActionText(route.routeStatus, isBridgeTxn)
+  const fromAssetSymbol = steps[0].fromAsset.symbol
+  const toAssetSymbol = steps[steps.length - 1].toAsset.symbol
 
-  const actionText = `${
-    // eslint-disable-next-line no-nested-ternary
-    route.routeStatus === 'completed'
-      ? isBridgeTxn
-        ? 'Bridged'
-        : 'Swapped'
-      : isBridgeTxn
-      ? 'Bridging'
-      : 'Swapping'
-  }`
-
-  const assetsText = `${steps[0].fromAsset.symbol} to ${steps[steps.length - 1].toAsset.symbol}`
+  const assetsText = `${fromAssetSymbol} to ${toAssetSymbol}`
   const stepsIndexText = `(step ${
     route.routeStatus === 'completed' ? route.route.totalUserTx : route.route.currentUserTxIndex + 1
   } of ${route.route.totalUserTx})`
 
-  return `${actionText} ${assetsText}${route.route.totalUserTx > 1 ? ` ${stepsIndexText}` : '.'}`
+  return `${actionText} ${assetsText}${route.route.totalUserTx > 1 ? ` ${stepsIndexText}` : ''}`
 }
 
-export const getSwapAndBridgeBanners = (activeRoutes: ActiveRoute[]): Banner[] => {
-  return activeRoutes.map((r) => {
-    const isBridgeTxn = r.route.userTxs.some((t) => getIsBridgeTxn(t.userTxType))
-    const actions: Action[] = []
+export const getBridgeBanners = (
+  activeRoutes: ActiveRoute[],
+  accountOpActions: AccountOpAction[]
+): Banner[] => {
+  const isBridgeTxn = (route: ActiveRoute) =>
+    route.route.userTxs.some((t) => getIsBridgeTxn(t.userTxType))
+  const isRouteTurnedIntoAccountOp = (route: ActiveRoute) => {
+    return accountOpActions.some((action) => {
+      return action.accountOp.calls.some((call) => call.fromUserRequestId === route.activeRouteId)
+    })
+  }
 
-    if (['in-progress', 'completed'].includes(r.routeStatus)) {
-      actions.push({
-        label: r.routeStatus === 'completed' ? 'Got it' : 'Close',
-        actionName: 'close-swap-and-bridge',
-        meta: { activeRouteId: r.activeRouteId }
-      })
-    }
+  return activeRoutes
+    .filter(isBridgeTxn)
+    .filter((route) => {
+      if (route.routeStatus !== 'ready') return true
 
-    if (r.routeStatus === 'ready') {
-      const isNextTnxForBridging = isBridgeTxn && r.route.currentUserTxIndex >= 1
+      // If the route is ready to be signed, we should display the banner only if it's not turned into an account op
+      // because when it does get turned into an account op, there will be a different banner for that
+      return !isRouteTurnedIntoAccountOp(route)
+    })
+    .map((r) => {
+      const actions: Action[] = []
 
-      actions.push(
-        {
-          label: 'Reject',
-          actionName: 'reject-swap-and-bridge',
+      if (['in-progress', 'completed'].includes(r.routeStatus)) {
+        actions.push({
+          label: r.routeStatus === 'completed' ? 'Got it' : 'Close',
+          actionName: 'close-bridge',
           meta: { activeRouteId: r.activeRouteId }
-        },
-        {
-          label: isNextTnxForBridging ? 'Proceed to Next Step' : 'Open',
-          actionName: 'proceed-swap-and-bridge',
-          meta: { activeRouteId: r.activeRouteId }
-        }
-      )
-    }
+        })
+      }
 
-    return {
-      id: r.activeRouteId,
-      type: r.routeStatus === 'completed' ? 'success' : 'info',
-      category: `swap-and-bridge-${r.routeStatus}`,
-      title: getTitle(r, isBridgeTxn),
-      text: getDescription(r, isBridgeTxn),
-      actions
-    }
-  })
+      if (r.routeStatus === 'ready') {
+        const isNextTnxForBridging = r.route.currentUserTxIndex >= 1
+
+        actions.push(
+          {
+            label: 'Reject',
+            actionName: 'reject-bridge',
+            meta: { activeRouteId: r.activeRouteId }
+          },
+          {
+            label: isNextTnxForBridging ? 'Proceed to Next Step' : 'Open',
+            actionName: 'proceed-bridge',
+            meta: { activeRouteId: r.activeRouteId }
+          }
+        )
+      }
+
+      return {
+        id: `bridge-${r.activeRouteId}`,
+        type: r.routeStatus === 'completed' ? 'success' : 'info',
+        category: `bridge-${r.routeStatus}`,
+        title: getBridgeBannerTitle(r.routeStatus),
+        text: getBridgeBannerText(r, true),
+        actions
+      }
+    })
 }
 
 export const getDappActionRequestsBanners = (actions: ActionFromActionsQueue[]): Banner[] => {
@@ -108,11 +128,40 @@ export const getDappActionRequestsBanners = (actions: ActionFromActionsQueue[]):
   ]
 }
 
+const getAccountOpBannerText = (
+  activeSwapAndBridgeRoutesForSelectedAccount: ActiveRoute[],
+  chainId: bigint,
+  nonSwapAndBridgeTxns: number
+) => {
+  const swapsAndBridges: string[] = []
+  const networkSwapAndBridgeRoutes = activeSwapAndBridgeRoutesForSelectedAccount.filter((route) => {
+    return BigInt(route.route.fromChainId) === chainId
+  })
+
+  if (networkSwapAndBridgeRoutes.length) {
+    networkSwapAndBridgeRoutes.forEach((route) => {
+      const isBridgeTxn = route.route.userTxs.some((t) => getIsBridgeTxn(t.userTxType))
+      const desc = getBridgeBannerText(route, isBridgeTxn)
+
+      swapsAndBridges.push(desc)
+    })
+
+    return `${swapsAndBridges.join(', ')} ${
+      nonSwapAndBridgeTxns
+        ? `and ${nonSwapAndBridgeTxns} other transaction${nonSwapAndBridgeTxns > 1 ? 's' : ''}`
+        : ''
+    }`
+  }
+
+  return ''
+}
+
 export const getAccountOpBanners = ({
   accountOpActionsByNetwork,
   selectedAccount,
   accounts,
-  networks
+  networks,
+  swapAndBridgeRoutesPendingSignature
 }: {
   accountOpActionsByNetwork: {
     [key: string]: AccountOpAction[]
@@ -121,6 +170,7 @@ export const getAccountOpBanners = ({
   selectedAccount: string
   accounts: Account[]
   networks: Network[]
+  swapAndBridgeRoutesPendingSignature: ActiveRoute[]
 }): Banner[] => {
   if (!accountOpActionsByNetwork) return []
   const txnBanners: Banner[] = []
@@ -131,13 +181,27 @@ export const getAccountOpBanners = ({
     Object.entries(accountOpActionsByNetwork).forEach(([netId, actions]) => {
       actions.forEach((action) => {
         const network = networks.filter((n) => n.id === netId)[0]
+        const nonSwapAndBridgeTxns = action.accountOp.calls.reduce((prev, call) => {
+          const isSwapAndBridge = swapAndBridgeRoutesPendingSignature.some(
+            (route) => route.activeRouteId === call.fromUserRequestId
+          )
+
+          if (isSwapAndBridge) return prev
+
+          return prev + 1
+        }, 0)
+        const text = getAccountOpBannerText(
+          swapAndBridgeRoutesPendingSignature,
+          BigInt(network.chainId),
+          nonSwapAndBridgeTxns
+        )
 
         txnBanners.push({
           id: `${selectedAccount}-${netId}`,
           type: 'info',
           category: 'pending-to-be-signed-acc-op',
           title: `Transaction waiting to be signed ${network.name ? `on ${network.name}` : ''}`,
-          text: '', // TODO:
+          text,
           actions: [
             {
               label: 'Reject',
@@ -160,6 +224,25 @@ export const getAccountOpBanners = ({
   } else {
     Object.entries(accountOpActionsByNetwork).forEach(([netId, actions]) => {
       const network = networks.filter((n) => n.id === netId)[0]
+      const nonSwapAndBridgeTxns = actions.reduce((prev, action) => {
+        action.accountOp.calls.forEach((call) => {
+          const isSwapAndBridge = swapAndBridgeRoutesPendingSignature.some(
+            (route) => route.activeRouteId === call.fromUserRequestId
+          )
+
+          if (isSwapAndBridge) return prev
+
+          return prev + 1
+        })
+
+        return prev
+      }, 0)
+
+      const text = getAccountOpBannerText(
+        swapAndBridgeRoutesPendingSignature,
+        BigInt(network.chainId),
+        nonSwapAndBridgeTxns
+      )
 
       txnBanners.push({
         id: `${selectedAccount}-${netId}`,
@@ -167,7 +250,7 @@ export const getAccountOpBanners = ({
         title: `${actions.length} transaction${
           actions.length > 1 ? 's' : ''
         } waiting to be signed ${network.name ? `on ${network.name}` : ''}`,
-        text: '', // TODO:
+        text,
         actions: [
           actions.length <= 1
             ? {
