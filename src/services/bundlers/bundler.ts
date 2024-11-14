@@ -6,7 +6,7 @@ import { toBeHex } from 'ethers'
 import { ENTRY_POINT_MARKER, ERC_4337_ENTRYPOINT } from '../../consts/deploy'
 import { Fetch } from '../../interfaces/fetch'
 import { Network } from '../../interfaces/network'
-import { catchEstimationFailure } from '../../libs/estimate/errors'
+import { humanizeEstimationError } from '../../libs/estimate/errors'
 import { BundlerEstimateResult } from '../../libs/estimate/interfaces'
 import { Gas1559Recommendation } from '../../libs/gasPrice/gasPrice'
 import { privSlot } from '../../libs/proxyDeploy/deploy'
@@ -220,7 +220,7 @@ export class Bundler {
 
   // used when catching errors from bundler requests
   static decodeBundlerError(e: any): string {
-    const decodedError = catchEstimationFailure(e)
+    const decodedError = humanizeEstimationError(e)
 
     return decodedError.message
   }

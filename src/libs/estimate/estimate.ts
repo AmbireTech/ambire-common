@@ -17,7 +17,7 @@ import {
   shouldIncludeActivatorCall,
   shouldUsePaymaster
 } from '../userOperation/userOperation'
-import { catchEstimationFailure, estimationErrorFormatted } from './errors'
+import { estimationErrorFormatted, humanizeEstimationError } from './errors'
 import { InnerCallFailureError } from './errors/customErrors'
 import { bundlerEstimate } from './estimateBundler'
 import { estimateEOA } from './estimateEOA'
@@ -31,7 +31,7 @@ const abiCoder = new AbiCoder()
 
 function getInnerCallFailure(estimationOp: { success: boolean; err: string }): Error | null {
   if (estimationOp.success) return null
-  const error = catchEstimationFailure(new InnerCallFailureError(estimationOp.err))
+  const error = humanizeEstimationError(new InnerCallFailureError(estimationOp.err))
 
   return new Error(error.message, {
     cause: 'CALLS_FAILURE'
@@ -117,7 +117,7 @@ export async function estimate4337(
         from: DEPLOYLESS_SIMULATION_FROM,
         blockTag
       })
-      .catch(catchEstimationFailure),
+      .catch(humanizeEstimationError),
     bundlerEstimate(account, accountStates, op, network, feeTokens),
     estimateGas(account, estimateGasOp, provider, accountState, network).catch(() => 0n)
   ])
@@ -330,7 +330,7 @@ export async function estimate(
         from: blockFrom,
         blockTag
       })
-      .catch(catchEstimationFailure),
+      .catch(humanizeEstimationError),
     estimateGas(account, op, provider, accountState, network).catch(() => 0n)
   ]
   const estimations = await estimateWithRetries(initializeRequests)

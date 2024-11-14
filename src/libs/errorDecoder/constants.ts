@@ -9,16 +9,7 @@ const CONTRACT_ERRORS = [
   /* c or C */ 'ontract is not allowed'
 ]
 
-const LAST_RESORT_ERROR_MESSAGE =
-  'An error occurred during the transaction. Please try again or contact Ambire support for assistance.'
-
 // Signature of TransactionDeadlinePassed
 const EXPIRED_PREFIX = '0x5bf6f916'
 
-export {
-  ERROR_PREFIX,
-  PANIC_ERROR_PREFIX,
-  CONTRACT_ERRORS,
-  LAST_RESORT_ERROR_MESSAGE,
-  EXPIRED_PREFIX
-}
+export { ERROR_PREFIX, PANIC_ERROR_PREFIX, CONTRACT_ERRORS, EXPIRED_PREFIX }

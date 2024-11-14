@@ -1,47 +1,11 @@
 /* this file describes errors during estimation */
+import { decodeError } from '../../errorDecoder'
 import { EstimateResult } from '../interfaces'
-import {
-  BundlerAndPaymasterErrorHandler,
-  InnerCallFailureHandler,
-  PanicErrorHandler,
-  RevertErrorHandler,
-  RpcErrorHandler
-} from './errorHandlers'
-import { getDataFromError, getHumanReadableErrorMessage, isReasonValid } from './helpers'
-import { DecodedError, ErrorType } from './types'
+import { getHumanReadableErrorMessage } from './helpers'
 
-const ERROR_HANDLERS = [
-  PanicErrorHandler,
-  RpcErrorHandler,
-  InnerCallFailureHandler,
-  BundlerAndPaymasterErrorHandler,
-  RevertErrorHandler
-]
-
-export function decodeEstimationError(e: Error): DecodedError {
-  const errorData = getDataFromError(e)
-
-  let decodedError: DecodedError = {
-    type: ErrorType.UnknownError,
-    reason: '',
-    data: errorData
-  }
-
-  ERROR_HANDLERS.forEach((HandlerClass) => {
-    const handler = new HandlerClass()
-    const hasAlreadyBeenHandled =
-      decodedError.type !== ErrorType.UnknownError && isReasonValid(decodedError.reason)
-
-    if (handler.matches(errorData, e) && !hasAlreadyBeenHandled) {
-      decodedError = handler.handle(errorData, e)
-    }
-  })
-
-  return decodedError
-}
-
-export function catchEstimationFailure(e: Error) {
-  const decodedError = decodeEstimationError(e)
+// TODO: Make other handlers. For example for broadcast errors
+export function humanizeEstimationError(e: Error) {
+  const decodedError = decodeError(e)
   const errorMessage = getHumanReadableErrorMessage(decodedError.reason, decodedError.type)
 
   return new Error(errorMessage)

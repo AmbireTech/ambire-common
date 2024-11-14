@@ -11,7 +11,7 @@ import { DeploylessMode, fromDescriptor } from '../deployless/deployless'
 import { TokenResult } from '../portfolio'
 import { EOA_SIMULATION_NONCE } from '../portfolio/getOnchainBalances'
 import { privSlot } from '../proxyDeploy/deploy'
-import { catchEstimationFailure, estimationErrorFormatted } from './errors'
+import { estimationErrorFormatted, humanizeEstimationError } from './errors'
 import { estimateWithRetries } from './estimateWithRetries'
 import { EstimateResult } from './interfaces'
 
@@ -78,7 +78,7 @@ export async function estimateEOA(
         data: call.data,
         nonce
       })
-      .catch(catchEstimationFailure),
+      .catch(humanizeEstimationError),
     !network.rpcNoStateOverride
       ? deploylessEstimator
           .call(
@@ -108,7 +108,7 @@ export async function estimateEOA(
             from: blockFrom,
             blockTag
           })
-          .catch(catchEstimationFailure)
+          .catch(humanizeEstimationError)
   ]
   const result = await estimateWithRetries(initializeRequests)
   const feePaymentOptions = [
