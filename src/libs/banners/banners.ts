@@ -325,7 +325,7 @@ export const getNetworksWithFailedRPCBanners = ({
 
   networksWithMultipleRpcUrls.forEach((n) => {
     banners.push({
-      id: 'custom-rpcs-down',
+      id: `${n.id}-custom-rpcs-down`,
       type: 'error',
       title: `Failed to retrieve network data for ${n.name}. You can try selecting another RPC URL`,
       text: 'Affected features: visible assets, DeFi positions, sign message/transaction, ENS/UD domain resolving, add account.',
