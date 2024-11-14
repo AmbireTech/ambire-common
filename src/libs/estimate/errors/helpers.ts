@@ -45,8 +45,8 @@ function getGenericMessageFromType(errorType: ErrorType, reason: DecodedError['r
       return `Transaction cannot be sent because of an RPC error. Please try again or contact Ambire support for assistance.${reasonString}`
     case ErrorType.PanicError:
       return `Transaction cannot be sent because of a panic error. Please try again or contact Ambire support for assistance.${reasonString}`
-    case ErrorType.PaymasterError:
-      return `Transaction cannot be sent because of a Paymaster error. Please try again or contact Ambire support for assistance.${reasonString}`
+    case ErrorType.BundlerAndPaymasterErrorHandler:
+      return `Transaction cannot be sent because of a Bundler/Paymaster error. Please try again or contact Ambire support for assistance.${reasonString}`
     case ErrorType.UnknownError:
       return `Transaction cannot be sent because of an unknown error. Please try again or contact Ambire support for assistance.${reasonString}`
     case ErrorType.InnerCallFailureError:

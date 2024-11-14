@@ -33,7 +33,7 @@ function getInnerCallFailure(estimationOp: { success: boolean; err: string }): E
   if (estimationOp.success) return null
   const error = catchEstimationFailure(new InnerCallFailureError(estimationOp.err))
 
-  return new Error(error, {
+  return new Error(error.message, {
     cause: 'CALLS_FAILURE'
   })
 }

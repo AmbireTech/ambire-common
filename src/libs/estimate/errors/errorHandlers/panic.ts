@@ -24,6 +24,7 @@ class PanicErrorHandler implements ErrorHandler {
         data
       }
     } catch (e) {
+      console.error('Failed to decode panic error', e)
       return {
         type: ErrorType.PanicError,
         reason: 'Failed to decode panic error',

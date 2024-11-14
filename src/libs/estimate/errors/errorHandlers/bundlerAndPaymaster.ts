@@ -13,7 +13,7 @@ class BundlerAndPaymasterErrorHandler implements ErrorHandler {
     const reason = message.replace(/UserOperation reverted during simulation with reason:\s*/i, '')
 
     return {
-      type: ErrorType.PaymasterError,
+      type: ErrorType.BundlerAndPaymasterErrorHandler,
       reason,
       data
     }

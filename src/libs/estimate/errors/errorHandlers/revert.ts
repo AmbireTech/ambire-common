@@ -22,6 +22,8 @@ class RevertErrorHandler implements ErrorHandler {
         data
       }
     } catch (e) {
+      console.error('Failed to decode revert error', e)
+
       return {
         type: ErrorType.RevertError,
         reason: '',

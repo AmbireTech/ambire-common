@@ -2,8 +2,7 @@ export enum ErrorType {
   RevertError = 'RevertError',
   PanicError = 'PanicError',
   RpcError = 'RpcError',
-  PaymasterError = 'PaymasterError',
-  BundlerError = 'BundlerError',
+  BundlerAndPaymasterErrorHandler = 'BundlerAndPaymasterErrorHandler',
   UnknownError = 'UnknownError',
   InnerCallFailureError = 'InnerCallFailureError'
 }

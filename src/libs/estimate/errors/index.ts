@@ -18,13 +18,14 @@ const ERROR_HANDLERS = [
   RevertErrorHandler
 ]
 
-export function catchEstimationFailure(e: Error) {
+export function decodeEstimationError(e: Error): DecodedError {
+  const errorData = getDataFromError(e)
+
   let decodedError: DecodedError = {
     type: ErrorType.UnknownError,
-    reason: 'Unknown error',
-    data: ''
+    reason: '',
+    data: errorData
   }
-  const errorData = getDataFromError(e)
   console.log('catchEstimationFailure og:', e, { errorData, ...e })
 
   ERROR_HANDLERS.forEach((HandlerClass) => {
@@ -41,6 +42,12 @@ export function catchEstimationFailure(e: Error) {
       decodedError = handler.handle(errorData, e)
     }
   })
+
+  return decodedError
+}
+
+export function catchEstimationFailure(e: Error) {
+  const decodedError = decodeEstimationError(e)
 
   const errorMessage = getHumanReadableErrorMessage(decodedError.reason, decodedError.type)
   console.log('parsed error:', errorMessage)

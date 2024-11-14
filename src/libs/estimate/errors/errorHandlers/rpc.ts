@@ -16,8 +16,11 @@ class RpcErrorHandler implements ErrorHandler {
 
   public handle(data: string, error: Error): DecodedError {
     const rpcError = error as any
-    const reason =
-      rpcError.code ?? rpcError.shortMessage ?? rpcError.message ?? rpcError.info?.error?.message
+    let reason = rpcError.shortMessage || rpcError.message || rpcError.info?.error?.message
+
+    if (typeof rpcError?.code === 'string') {
+      reason = rpcError.code
+    }
 
     return {
       type: ErrorType.RpcError,
