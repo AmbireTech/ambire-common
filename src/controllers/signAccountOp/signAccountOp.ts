@@ -13,22 +13,16 @@ import ERC20 from '../../../contracts/compiled/IERC20.json'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { AMBIRE_PAYMASTER, SINGLETON } from '../../consts/deploy'
 /* eslint-disable no-restricted-syntax */
-import {
-  ERRORS,
-  NON_CRITICAL_ERRORS,
-  RETRY_TO_INIT_ACCOUNT_OP_MSG
-} from '../../consts/signAccountOp/errorHandling'
+import { ERRORS, RETRY_TO_INIT_ACCOUNT_OP_MSG } from '../../consts/signAccountOp/errorHandling'
 import {
   GAS_TANK_TRANSFER_GAS_USED,
   SA_ERC20_TRANSFER_GAS_USED,
   SA_NATIVE_TRANSFER_GAS_USED
 } from '../../consts/signAccountOp/gas'
 import { Account } from '../../interfaces/account'
-import { Fetch } from '../../interfaces/fetch'
 import { ExternalSignerControllers, Key } from '../../interfaces/keystore'
 import { Network } from '../../interfaces/network'
 import { Warning } from '../../interfaces/signAccountOp'
-import { Storage } from '../../interfaces/storage'
 import { isAmbireV1LinkedAccount, isSmartAccount } from '../../libs/account/account'
 import { AccountOp, GasFeePayment, getSignableCalls } from '../../libs/accountOp/accountOp'
 import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
@@ -58,9 +52,9 @@ import { AccountOpAction } from '../actions/actions'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
 import { PortfolioController } from '../portfolio/portfolio'
-import { ProvidersController } from '../providers/providers'
 import {
   getFeeSpeedIdentifier,
+  getFeeTokenPriceUnavailableWarning,
   getSignificantBalanceDecreaseWarning,
   getTokenUsdAmount
 } from './helper'
@@ -75,6 +69,7 @@ export enum SigningStatus {
    */
   UpdatesPaused = 'updates-paused',
   InProgress = 'in-progress',
+  WaitingForPaymaster = 'waiting-for-paymaster-response',
   Done = 'done'
 }
 
@@ -104,7 +99,8 @@ type SpeedCalc = {
 const noStateUpdateStatuses = [
   SigningStatus.InProgress,
   SigningStatus.Done,
-  SigningStatus.UpdatesPaused
+  SigningStatus.UpdatesPaused,
+  SigningStatus.WaitingForPaymaster
 ]
 
 export class SignAccountOpController extends EventEmitter {
@@ -114,17 +110,13 @@ export class SignAccountOpController extends EventEmitter {
 
   #portfolio: PortfolioController
 
-  #providers: ProvidersController
-
   #externalSignerControllers: ExternalSignerControllers
-
-  #storage: Storage
-
-  #fetch: Fetch
 
   account: Account
 
   #network: Network
+
+  #blockGasLimit: bigint | undefined = undefined
 
   fromActionId: AccountOpAction['id']
 
@@ -156,6 +148,10 @@ export class SignAccountOpController extends EventEmitter {
 
   #callRelayer: Function
 
+  #reEstimate: Function
+
+  #isSignRequestStillActive: Function
+
   rbfAccountOps: { [key: string]: SubmittedAccountOp | null }
 
   signedAccountOp: AccountOp | null
@@ -168,30 +164,28 @@ export class SignAccountOpController extends EventEmitter {
     accounts: AccountsController,
     keystore: KeystoreController,
     portfolio: PortfolioController,
-    providers: ProvidersController,
     externalSignerControllers: ExternalSignerControllers,
     account: Account,
     network: Network,
     fromActionId: AccountOpAction['id'],
     accountOp: AccountOp,
-    storage: Storage,
-    fetch: Fetch,
-    callRelayer: Function
+    callRelayer: Function,
+    reEstimate: Function,
+    isSignRequestStillActive: Function
   ) {
     super()
 
     this.#accounts = accounts
     this.#keystore = keystore
     this.#portfolio = portfolio
-    this.#providers = providers
     this.#externalSignerControllers = externalSignerControllers
     this.account = account
     this.#network = network
     this.fromActionId = fromActionId
     this.accountOp = structuredClone(accountOp)
-    this.#storage = storage
-    this.#fetch = fetch
     this.#callRelayer = callRelayer
+    this.#reEstimate = reEstimate
+    this.#isSignRequestStillActive = isSignRequestStillActive
 
     this.gasUsedTooHigh = false
     this.gasUsedTooHighAgreed = false
@@ -224,7 +218,7 @@ export class SignAccountOpController extends EventEmitter {
 
   #setGasFeePayment() {
     if (this.isInitialized && this.paidBy && this.selectedFeeSpeed && this.feeTokenResult) {
-      this.accountOp!.gasFeePayment = this.#getGasFeePayment()
+      this.accountOp.gasFeePayment = this.#getGasFeePayment()
     }
   }
 
@@ -254,6 +248,22 @@ export class SignAccountOpController extends EventEmitter {
     // if there's an estimation error, show it
     if (this.estimation?.error) {
       errors.push(this.estimation.error.message)
+    }
+
+    if (
+      this.estimation?.gasUsed &&
+      this.#blockGasLimit &&
+      this.estimation?.gasUsed > this.#blockGasLimit
+    ) {
+      errors.push('Transaction reverted with estimation too high: above block limit')
+    }
+
+    if (
+      this.#network.predefined &&
+      this.estimation?.gasUsed &&
+      this.estimation?.gasUsed > 500000000n
+    ) {
+      errors.push('Unreasonably high estimation. This transaction will probably fail')
     }
 
     // this error should never happen as availableFeeOptions should always have the native option
@@ -342,20 +352,6 @@ export class SignAccountOpController extends EventEmitter {
       }
     }
 
-    if (this.selectedOption) {
-      const identifier = getFeeSpeedIdentifier(
-        this.selectedOption,
-        this.accountOp.accountAddr,
-        this.rbfAccountOps[this.selectedOption.paidBy]
-      )
-      if (
-        this.hasSpeeds(identifier) &&
-        this.feeSpeeds[identifier].some((speed) => speed.amountUsd === null)
-      ) {
-        errors.push(NON_CRITICAL_ERRORS.feeUsdEstimation)
-      }
-    }
-
     return errors
   }
 
@@ -368,7 +364,7 @@ export class SignAccountOpController extends EventEmitter {
   }
 
   calculateWarnings() {
-    const warnings = []
+    const warnings: Warning[] = []
 
     const significantBalanceDecreaseWarning = getSignificantBalanceDecreaseWarning(
       this.#portfolio.latest,
@@ -377,9 +373,26 @@ export class SignAccountOpController extends EventEmitter {
       this.accountOp.accountAddr
     )
 
+    if (this.selectedOption) {
+      const identifier = getFeeSpeedIdentifier(
+        this.selectedOption,
+        this.accountOp.accountAddr,
+        this.rbfAccountOps[this.selectedOption.paidBy]
+      )
+      const feeTokenHasPrice = this.feeSpeeds[identifier]?.every((speed) => !!speed.amountUsd)
+      const feeTokenPriceUnavailableWarning = getFeeTokenPriceUnavailableWarning(
+        !!this.hasSpeeds(identifier),
+        feeTokenHasPrice
+      )
+
+      if (feeTokenPriceUnavailableWarning) warnings.push(feeTokenPriceUnavailableWarning)
+    }
+
     if (significantBalanceDecreaseWarning) warnings.push(significantBalanceDecreaseWarning)
 
     this.warnings = warnings
+
+    this.emitUpdate()
   }
 
   update({
@@ -390,12 +403,12 @@ export class SignAccountOpController extends EventEmitter {
     speed,
     signingKeyAddr,
     signingKeyType,
-    accountOp,
+    calls,
     gasUsedTooHighAgreed,
     rbfAccountOps,
-    bundlerGasPrices
+    bundlerGasPrices,
+    blockGasLimit
   }: {
-    accountOp?: AccountOp
     gasPrices?: GasRecommendation[]
     estimation?: EstimateResult | null
     feeToken?: TokenResult
@@ -403,9 +416,11 @@ export class SignAccountOpController extends EventEmitter {
     speed?: FeeSpeed
     signingKeyAddr?: Key['addr']
     signingKeyType?: Key['type']
+    calls?: AccountOp['calls']
     gasUsedTooHighAgreed?: boolean
     rbfAccountOps?: { [key: string]: SubmittedAccountOp | null }
     bundlerGasPrices?: BundlerGasPrice
+    blockGasLimit?: bigint
   }) {
     // once the user commits to the things he sees on his screen,
     // we need to be sure nothing changes afterwards.
@@ -418,10 +433,14 @@ export class SignAccountOpController extends EventEmitter {
       return
     }
 
+    if (Array.isArray(calls)) this.accountOp.calls = calls
+
+    if (blockGasLimit) this.#blockGasLimit = blockGasLimit
+
     if (gasPrices) this.gasPrices = gasPrices
 
     if (estimation) {
-      this.gasUsedTooHigh = estimation.gasUsed > 10000000n
+      this.gasUsedTooHigh = !!(this.#blockGasLimit && estimation.gasUsed > this.#blockGasLimit / 4n)
       this.estimation = estimation
       // on each estimation update, set the newest account nonce
       this.accountOp.nonce = BigInt(estimation.currentAccountNonce)
@@ -441,8 +460,8 @@ export class SignAccountOpController extends EventEmitter {
     }
 
     if (signingKeyAddr && signingKeyType && this.isInitialized) {
-      this.accountOp!.signingKeyAddr = signingKeyAddr
-      this.accountOp!.signingKeyType = signingKeyType
+      this.accountOp.signingKeyAddr = signingKeyAddr
+      this.accountOp.signingKeyType = signingKeyType
     }
 
     if (gasUsedTooHighAgreed !== undefined) this.gasUsedTooHighAgreed = gasUsedTooHighAgreed
@@ -471,13 +490,14 @@ export class SignAccountOpController extends EventEmitter {
 
     // calculate the fee speeds if either there are no feeSpeeds
     // or any of properties for update is requested
-    if (!Object.keys(this.feeSpeeds).length || accountOp || gasPrices || estimation) {
+    if (!Object.keys(this.feeSpeeds).length || Array.isArray(calls) || gasPrices || estimation) {
       this.#updateFeeSpeeds()
     }
 
     // Here, we expect to have most of the fields set, so we can safely set GasFeePayment
     this.#setGasFeePayment()
     this.updateStatus()
+    this.calculateWarnings()
   }
 
   updateStatus(forceStatusChange?: SigningStatus, replacementFeeLow = false) {
@@ -489,7 +509,9 @@ export class SignAccountOpController extends EventEmitter {
     }
 
     // no status updates on these two
-    const isInTheMiddleOfSigning = this.status?.type === SigningStatus.InProgress
+    const isInTheMiddleOfSigning =
+      this.status?.type === SigningStatus.InProgress ||
+      this.status?.type === SigningStatus.WaitingForPaymaster
     const isDone = this.status?.type === SigningStatus.Done
     if (isInTheMiddleOfSigning || isDone) return
 
@@ -500,10 +522,7 @@ export class SignAccountOpController extends EventEmitter {
       return
     }
 
-    const criticalErrors = this.errors.filter(
-      (error) => !Object.values(NON_CRITICAL_ERRORS).includes(error)
-    )
-    if (criticalErrors.length) {
+    if (this.errors.length) {
       this.status = { type: SigningStatus.UnableToSign }
       this.emitUpdate()
       return
@@ -681,7 +700,7 @@ export class SignAccountOpController extends EventEmitter {
       this.accountOp,
       this.account,
       this.#network,
-      this.#accounts.accountStates[this.accountOp!.accountAddr][this.accountOp!.networkId]
+      this.#accounts.accountStates[this.accountOp.accountAddr][this.accountOp.networkId]
     )
 
     this.availableFeeOptions.forEach((option) => {
@@ -711,7 +730,9 @@ export class SignAccountOpController extends EventEmitter {
 
         for (const [speed, speedValue] of Object.entries(erc4337GasLimits.gasPrice)) {
           const simulatedGasLimit =
-            BigInt(erc4337GasLimits.callGasLimit) + BigInt(erc4337GasLimits.preVerificationGas)
+            BigInt(erc4337GasLimits.callGasLimit) +
+            BigInt(erc4337GasLimits.preVerificationGas) +
+            BigInt(option.gasUsed ?? 0)
           const gasPrice = BigInt(speedValue.maxFeePerGas)
           let amount = SignAccountOpController.getAmountAfterFeeTokenConvert(
             simulatedGasLimit,
@@ -1002,35 +1023,35 @@ export class SignAccountOpController extends EventEmitter {
     // In case of gas tank token fee payment, we need to include one more call to account op
     const abiCoder = new AbiCoder()
 
-    if (this.accountOp!.gasFeePayment!.isGasTank) {
-      this.accountOp!.feeCall = {
+    if (this.accountOp.gasFeePayment!.isGasTank) {
+      this.accountOp.feeCall = {
         to: FEE_COLLECTOR,
         value: 0n,
         data: abiCoder.encode(
           ['string', 'uint256', 'string'],
-          ['gasTank', this.accountOp!.gasFeePayment!.amount, this.feeTokenResult?.symbol]
+          ['gasTank', this.accountOp.gasFeePayment!.amount, this.feeTokenResult?.symbol]
         )
       }
 
       return
     }
 
-    if (this.accountOp!.gasFeePayment!.inToken === '0x0000000000000000000000000000000000000000') {
+    if (this.accountOp.gasFeePayment!.inToken === '0x0000000000000000000000000000000000000000') {
       // native payment
-      this.accountOp!.feeCall = {
+      this.accountOp.feeCall = {
         to: FEE_COLLECTOR,
-        value: this.accountOp!.gasFeePayment!.amount,
+        value: this.accountOp.gasFeePayment!.amount,
         data: '0x'
       }
     } else {
       // token payment
       const ERC20Interface = new Interface(ERC20.abi)
-      this.accountOp!.feeCall = {
-        to: this.accountOp!.gasFeePayment!.inToken,
+      this.accountOp.feeCall = {
+        to: this.accountOp.gasFeePayment!.inToken,
         value: 0n,
         data: ERC20Interface.encodeFunctionData('transfer', [
           FEE_COLLECTOR,
-          this.accountOp!.gasFeePayment!.amount
+          this.accountOp.gasFeePayment!.amount
         ])
       }
     }
@@ -1051,7 +1072,7 @@ export class SignAccountOpController extends EventEmitter {
       return this.#emitSigningErrorAndResetToReadyToSign(message)
     }
 
-    if (!this.accountOp?.gasFeePayment) {
+    if (!this.accountOp?.gasFeePayment || !this.selectedOption) {
       const message = `Unable to sign the transaction. During the preparation step, required information about paying the gas fee was found missing. ${RETRY_TO_INIT_ACCOUNT_OP_MSG}`
       return this.#emitSigningErrorAndResetToReadyToSign(message)
     }
@@ -1065,6 +1086,12 @@ export class SignAccountOpController extends EventEmitter {
       return this.#emitSigningErrorAndResetToReadyToSign(message)
     }
 
+    if (this.accountOp.gasFeePayment.isERC4337 && shouldUsePaymaster(this.#network)) {
+      this.status = { type: SigningStatus.WaitingForPaymaster }
+    } else {
+      this.status = { type: SigningStatus.InProgress }
+    }
+
     // we update the FE with the changed status (in progress) only after the checks
     // above confirm everything is okay to prevent two different state updates
     this.emitUpdate()
@@ -1073,7 +1100,7 @@ export class SignAccountOpController extends EventEmitter {
 
     if (signer.init) signer.init(this.#externalSignerControllers[this.accountOp.signingKeyType])
     const accountState =
-      this.#accounts.accountStates[this.accountOp!.accountAddr][this.accountOp!.networkId]
+      this.#accounts.accountStates[this.accountOp.accountAddr][this.accountOp.networkId]
 
     // just in-case: before signing begins, we delete the feeCall;
     // if there's a need for it, it will be added later on in the code.
@@ -1142,7 +1169,10 @@ export class SignAccountOpController extends EventEmitter {
           !accountState.isDeployed ? this.accountOp.meta!.entryPointAuthorization : undefined
         )
         userOperation.preVerificationGas = this.estimation!.erc4337GasLimits!.preVerificationGas
-        userOperation.callGasLimit = this.estimation!.erc4337GasLimits!.callGasLimit
+        userOperation.callGasLimit = toBeHex(
+          BigInt(this.estimation!.erc4337GasLimits!.callGasLimit) +
+            (this.selectedOption.gasUsed ?? 0n)
+        )
         userOperation.verificationGasLimit = this.estimation!.erc4337GasLimits!.verificationGasLimit
         userOperation.paymasterVerificationGasLimit =
           this.estimation!.erc4337GasLimits!.paymasterVerificationGasLimit
@@ -1178,33 +1208,51 @@ export class SignAccountOpController extends EventEmitter {
 
         if (usesPaymaster) {
           try {
-            const response = await this.#callRelayer(
-              `/v2/paymaster/${this.accountOp.networkId}/sign`,
-              'POST',
-              {
+            // request the paymaster with a timeout window
+            const response = await Promise.race([
+              this.#callRelayer(`/v2/paymaster/${this.accountOp.networkId}/sign`, 'POST', {
                 // send without the requestType prop
                 userOperation: (({ requestType, activatorCall, ...o }) => o)(userOperation),
                 paymaster: AMBIRE_PAYMASTER,
                 bytecode: this.account.creation!.bytecode,
                 salt: this.account.creation!.salt,
                 key: this.account.associatedKeys[0]
-              }
-            )
+              }),
+              new Promise((_resolve, reject) => {
+                setTimeout(() => reject(new Error('Ambire relayer error')), 8000)
+              })
+            ])
+
+            // go back to in progress after paymaster has been confirmed
+            this.status = { type: SigningStatus.InProgress }
+            this.emitUpdate()
+
             userOperation.paymasterData = response.data.paymasterData
             if (usesOneTimeNonce) {
               userOperation.nonce = getOneTimeNonce(userOperation)
             }
           } catch (e: any) {
+            let message = e.message
+            if (e.message.includes('Failed to fetch') || e.message.includes('Ambire relayer')) {
+              message =
+                'Currently, the paymaster seems to be down. Please try again a few moments later or broadcast with a Basic Account'
+            }
             this.emitError({
               level: 'major',
-              message: e.message,
+              message,
               error: new Error(e.message)
             })
             this.status = { type: SigningStatus.ReadyToSign }
             this.emitUpdate()
+            this.#reEstimate()
             return Promise.reject(this.status)
           }
         }
+
+        // query the application state from memory to understand if the user
+        // hasn't actually rejected the request while waiting for the
+        // paymaster to respond
+        if (!this.#isSignRequestStillActive()) return
 
         if (userOperation.requestType === 'standard') {
           const typedData = getTypedData(

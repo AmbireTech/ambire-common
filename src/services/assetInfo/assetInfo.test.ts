@@ -36,10 +36,12 @@ describe('Asset info service', () => {
       expect(res?.tokenInfo).toBeFalsy()
     })
 
-    assetInfo.resolveAssetInfo(WETH_ADDRESS, networks[0], wethCallback)
-    assetInfo.resolveAssetInfo(USDC_ADDRESS, networks[0], usdcCallback)
-    assetInfo.resolveAssetInfo(UNISWAP_ROUTER, networks[0], uniswapCallback)
-    await assetInfo.resolveAssetInfo(LOBSTER_ADDRESS, networks[0], lobsterCallback)
+    await Promise.all([
+      assetInfo.resolveAssetInfo(WETH_ADDRESS, networks[0], wethCallback),
+      assetInfo.resolveAssetInfo(USDC_ADDRESS, networks[0], usdcCallback),
+      assetInfo.resolveAssetInfo(UNISWAP_ROUTER, networks[0], uniswapCallback),
+      assetInfo.resolveAssetInfo(LOBSTER_ADDRESS, networks[0], lobsterCallback)
+    ])
     expect(wethCallback).toBeCalledTimes(1)
     expect(usdcCallback).toBeCalledTimes(1)
     expect(lobsterCallback).toBeCalledTimes(1)
@@ -49,10 +51,12 @@ describe('Asset info service', () => {
   test('Batches', async () => {
     const interceptedRequests = monitor()
 
-    assetInfo.resolveAssetInfo(WETH_ADDRESS, networks[0], () => {})
-    assetInfo.resolveAssetInfo(USDC_ADDRESS, networks[0], () => {})
-    assetInfo.resolveAssetInfo(UNISWAP_ROUTER, networks[0], () => {})
-    await assetInfo.resolveAssetInfo(LOBSTER_ADDRESS, networks[0], () => {})
+    await Promise.all([
+      assetInfo.resolveAssetInfo(WETH_ADDRESS, networks[0], () => {}),
+      assetInfo.resolveAssetInfo(USDC_ADDRESS, networks[0], () => {}),
+      assetInfo.resolveAssetInfo(UNISWAP_ROUTER, networks[0], () => {}),
+      assetInfo.resolveAssetInfo(LOBSTER_ADDRESS, networks[0], () => {})
+    ])
     const requests = interceptedRequests.filter((i) => i.url === networks[0].rpcUrls[0])
     expect(requests.length).toBe(1)
   })

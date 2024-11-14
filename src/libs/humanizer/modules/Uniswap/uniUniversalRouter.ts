@@ -30,11 +30,14 @@ const extractParams = (inputsDetails: any, input: any) => {
   return params
 }
 
+// this function splits uniswap commands from single hex string to multiple hex strings
 // '0x1234' => ['0x12', '0x34']
 function parseCommands(commands: string): string[] | null {
+  // all commands are 1 byte = 2 hex chars
   if (commands.length % 2) return null
   if (!/^0x[0-9A-Fa-f]+$/.test(commands)) return null
   const res: string[] = []
+  // iterate over pairs of chars
   for (let i = 2; i < commands.length; i += 2) {
     res.push(`0x${commands.slice(i, i + 2)}`)
   }
@@ -62,7 +65,7 @@ export const uniUniversalRouter = (): HumanizerUniMatcher => {
               parsed.push([
                 getAction('Swap'),
                 getToken(path[0], params.amountIn),
-                getLabel('for at least'),
+                getLabel('for'),
                 getToken(path[path.length - 1], params.amountOutMin),
                 getDeadline(deadline)
               ])
@@ -129,7 +132,7 @@ export const uniUniversalRouter = (): HumanizerUniMatcher => {
               parsed.push([
                 getAction('Swap'),
                 getToken(path[0], params.amountIn),
-                getLabel('for at least'),
+                getLabel('for'),
                 getToken(path[path.length - 1], params.amountOutMin),
                 getDeadline(deadline)
               ])

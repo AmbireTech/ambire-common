@@ -117,7 +117,14 @@ function produceMemoryStore(): Storage {
   return {
     get: (key, defaultValue): any => {
       const serialized = storage.get(key)
-      return Promise.resolve(serialized ? parse(serialized) : defaultValue)
+
+      if (!serialized) return defaultValue
+
+      try {
+        return typeof serialized === 'string' ? parse(serialized) : serialized
+      } catch (error) {
+        return typeof serialized === 'string' ? serialized : defaultValue
+      }
     },
     set: (key, value) => {
       storage.set(key, typeof value === 'string' ? value : stringify(value))
@@ -263,7 +270,8 @@ const MOCK_KEYSTORE_KEYS: Key[] = [
       deviceId: 'doesnt-matter',
       deviceModel: 'doesnt-matter',
       hdPathTemplate: "m/44'/60'/0'/0/<account>",
-      index: 2
+      index: 2,
+      createdAt: new Date().getTime()
     }
   },
   {
@@ -271,7 +279,9 @@ const MOCK_KEYSTORE_KEYS: Key[] = [
     addr: '0xd6e371526cdaeE04cd8AF225D42e37Bc14688D9E',
     label: 'Key 2',
     dedicatedToOneSA: false,
-    meta: null,
+    meta: {
+      createdAt: new Date().getTime()
+    },
     isExternallyStored: false
   },
   {
@@ -279,7 +289,9 @@ const MOCK_KEYSTORE_KEYS: Key[] = [
     addr: '0x141A14B5C4dbA2aC7a7943E02eDFE2E7eDfdA28F',
     label: 'Key 3',
     dedicatedToOneSA: false,
-    meta: null,
+    meta: {
+      createdAt: new Date().getTime()
+    },
     isExternallyStored: false
   },
   {
@@ -287,7 +299,9 @@ const MOCK_KEYSTORE_KEYS: Key[] = [
     addr: '0x0000000000000000000000000000000000000001',
     label: 'Key 4',
     dedicatedToOneSA: false,
-    meta: null,
+    meta: {
+      createdAt: new Date().getTime()
+    },
     isExternallyStored: false
   },
   {
@@ -295,7 +309,9 @@ const MOCK_KEYSTORE_KEYS: Key[] = [
     addr: '0xa8eEaC54343F94CfEEB3492e07a7De72bDFD118a',
     label: 'Key 5',
     dedicatedToOneSA: false,
-    meta: null,
+    meta: {
+      createdAt: new Date().getTime()
+    },
     isExternallyStored: false
   },
   {
@@ -303,7 +319,9 @@ const MOCK_KEYSTORE_KEYS: Key[] = [
     addr: addrWithDeploySignature,
     label: 'Key 6',
     dedicatedToOneSA: true,
-    meta: null,
+    meta: {
+      createdAt: new Date().getTime()
+    },
     isExternallyStored: false
   }
 ]

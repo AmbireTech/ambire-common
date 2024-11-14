@@ -1,65 +1,141 @@
+import { getAddress } from 'ethers'
+
+import { Account } from '../../interfaces/account'
+import { SelectedAccountPortfolio } from '../../interfaces/selectedAccount'
+import { safeTokenAmountAndNumberMultiplication } from '../../utils/numbers/formatters'
 import {
-  AccountState,
-  CollectionResult as CollectionResultInterface,
+  AccountState as DefiPositionsAccountState,
+  PositionsByProvider
+} from '../defiPositions/types'
+import {
+  AccountState as PortfolioAccountState,
+  CollectionResult,
+  NetworkNonces,
   NetworkState,
   PortfolioControllerState,
-  TokenResult as TokenResultInterface,
-  NetworkNonces,
-  TokenAmount
-} from './interfaces'
+  TokenAmount,
+  TokenResult
+} from '../portfolio/interfaces'
 
-interface AccountPortfolio {
-  tokens: TokenResultInterface[]
-  collections: CollectionResultInterface[]
-  totalAmount: number
-  isAllReady: boolean
-  simulationNonces: NetworkNonces
-  tokenAmounts: TokenAmount[]
+export const updatePortfolioStateWithDefiPositions = (
+  portfolioAccountState: PortfolioAccountState,
+  defiPositionsAccountState: DefiPositionsAccountState
+) => {
+  if (!portfolioAccountState || !defiPositionsAccountState) return portfolioAccountState
+
+  Object.keys(portfolioAccountState).forEach((networkId) => {
+    const networkState = portfolioAccountState[networkId]
+
+    if (!networkState?.result) return
+
+    let tokens = networkState.result.tokens || []
+    let networkBalance = networkState.result.total?.usd || 0
+
+    const positions = defiPositionsAccountState[networkId] || {}
+
+    positions.positionsByProvider?.forEach((posByProv: PositionsByProvider) => {
+      posByProv.positions.forEach((pos) => {
+        pos.assets.forEach((a) => {
+          const tokenInPortfolioIndex = tokens.findIndex((t) => {
+            return getAddress(t.address) === getAddress(a.address) && t.networkId === networkId
+          })
+
+          if (tokenInPortfolioIndex !== -1) {
+            const tokenInPortfolio = tokens[tokenInPortfolioIndex]
+            const priceUSD = tokenInPortfolio.priceIn.find(
+              ({ baseCurrency }: { baseCurrency: string }) => baseCurrency.toLowerCase() === 'usd'
+            )?.price
+            const tokenBalanceUSD = priceUSD
+              ? Number(
+                  safeTokenAmountAndNumberMultiplication(
+                    BigInt(tokenInPortfolio.amount),
+                    tokenInPortfolio.decimals,
+                    priceUSD
+                  )
+                )
+              : undefined
+
+            networkBalance -= tokenBalanceUSD || 0 // deduct portfolio token balance
+
+            tokens = tokens.filter((_, index) => index !== tokenInPortfolioIndex)
+          }
+        })
+
+        networkBalance += posByProv.positionInUSD || 0
+      })
+    })
+
+    // eslint-disable-next-line no-param-reassign
+    portfolioAccountState[networkId]!.result!.total.usd = networkBalance
+    // eslint-disable-next-line no-param-reassign
+    portfolioAccountState[networkId]!.result!.tokens = tokens
+  })
+
+  return portfolioAccountState
 }
 
-export function calculateAccountPortfolio(
-  selectedAccount: string | null,
-  state: { latest: PortfolioControllerState; pending: PortfolioControllerState },
-  accountPortfolio: AccountPortfolio,
-  hasSignAccountOp: null | boolean
-) {
-  const updatedTokens: TokenResultInterface[] = []
-  const updatedCollections: CollectionResultInterface[] = []
+export const getSelectedAccountPortfolio = (
+  portfolioState: {
+    latest: PortfolioControllerState
+    pending: PortfolioControllerState
+  },
+  defiPositionsAccountState: DefiPositionsAccountState,
+  account: Account
+) => {
+  const portfolioLatestAccountState = updatePortfolioStateWithDefiPositions(
+    portfolioState.latest[account.addr],
+    defiPositionsAccountState
+  )
 
-  let newTotalAmount: number = 0
-  let allReady = true
+  const portfolioPendingAccountState = updatePortfolioStateWithDefiPositions(
+    portfolioState.pending[account.addr],
+    defiPositionsAccountState
+  )
 
-  if (!selectedAccount) {
-    return {
-      tokens: accountPortfolio?.tokens || [],
-      collections: accountPortfolio?.collections || [],
-      totalAmount: accountPortfolio?.totalAmount || 0,
-      isAllReady: true,
-      simulationNonces: accountPortfolio?.simulationNonces || {},
-      tokenAmounts: accountPortfolio?.tokenAmounts || []
+  return {
+    latest: {
+      ...portfolioState.latest,
+      [account.addr]: portfolioLatestAccountState
+    },
+    pending: {
+      ...portfolioState.pending,
+      [account.addr]: portfolioPendingAccountState
     }
   }
+}
 
-  const hasLatest = state.latest && state.latest[selectedAccount]
+export function calculateSelectedAccountPortfolio(
+  selectedAccount: string,
+  state: { latest: PortfolioControllerState; pending: PortfolioControllerState },
+  accountPortfolio: SelectedAccountPortfolio | null,
+  hasSignAccountOp?: boolean
+) {
+  const updatedTokens: TokenResult[] = []
+  const updatedCollections: CollectionResult[] = []
+
+  let newTotalBalance: number = 0
+  let allReady = true
+
+  const hasLatest = state.latest?.[selectedAccount]
   const hasPending =
-    state.pending &&
-    state.pending[selectedAccount] &&
-    Object.keys(state.pending[selectedAccount]).length
+    state.pending?.[selectedAccount] && Object.keys(state.pending?.[selectedAccount] || {}).length
   if (!hasLatest && !hasPending) {
     return {
       tokens: accountPortfolio?.tokens || [],
       collections: accountPortfolio?.collections || [],
-      totalAmount: accountPortfolio?.totalAmount || 0,
+      totalBalance: accountPortfolio?.totalBalance || 0,
       isAllReady: false,
       simulationNonces: accountPortfolio?.simulationNonces || {},
-      tokenAmounts: accountPortfolio?.tokenAmounts || []
-    }
+      tokenAmounts: accountPortfolio?.tokenAmounts || [],
+      latestStateByNetworks: state.latest[selectedAccount] || {},
+      pendingStateByNetworks: state.pending[selectedAccount] || {}
+    } as SelectedAccountPortfolio
   }
 
   let selectedAccountData = state.latest[selectedAccount]
 
   const pendingAccountStateWithoutCriticalErrors = Object.keys(
-    state.pending[selectedAccount]
+    state.pending[selectedAccount] || {}
   ).reduce((acc, network) => {
     if (
       !selectedAccountData[network]?.result?.blockNumber ||
@@ -83,7 +159,7 @@ export function calculateAccountPortfolio(
       acc[network] = state.pending[selectedAccount][network]
     }
     return acc
-  }, {} as AccountState)
+  }, {} as PortfolioAccountState)
 
   if (hasPending && Object.keys(pendingAccountStateWithoutCriticalErrors).length > 0) {
     // Mix latest and pending data. This is required because pending state may only have some networks
@@ -102,11 +178,10 @@ export function calculateAccountPortfolio(
   Object.keys(selectedAccountData).forEach((network: string) => {
     const networkData = selectedAccountData[network]
     const result = networkData?.result
-
     if (networkData && isNetworkReady(networkData) && result) {
       // In the case we receive BigInt here, convert to number
       const networkTotal = Number(result?.total?.usd) || 0
-      newTotalAmount += networkTotal
+      newTotalBalance += networkTotal
 
       const networkTokens = result?.tokens || []
       const networkCollections = result?.collections || []
@@ -124,14 +199,17 @@ export function calculateAccountPortfolio(
   // which associates each network with its corresponding pending simulation beforeNonce.
   // This nonce information is crucial for determining the PendingToBeSigned or PendingToBeConfirmed Dashboard badges.
   // For more details, see: calculatePendingAmounts.
-  const simulationNonces = Object.keys(state.pending[selectedAccount]).reduce((acc, networkId) => {
-    const beforeNonce = state.pending[selectedAccount!][networkId]?.result?.beforeNonce
-    if (typeof beforeNonce === 'bigint') {
-      acc[networkId] = beforeNonce
-    }
+  const simulationNonces = Object.keys(state.pending[selectedAccount] || {}).reduce(
+    (acc, networkId) => {
+      const beforeNonce = state.pending[selectedAccount!][networkId]?.result?.beforeNonce
+      if (typeof beforeNonce === 'bigint') {
+        acc[networkId] = beforeNonce
+      }
 
-    return acc
-  }, {} as NetworkNonces)
+      return acc
+    },
+    {} as NetworkNonces
+  )
 
   // We need the latest and pending token amounts for the selected account, especially for calculating the Pending badges.
   // You might wonder why we don't retrieve this data directly from the PortfolioController. Here's the reasoning:
@@ -171,11 +249,13 @@ export function calculateAccountPortfolio(
   }, [] as TokenAmount[])
 
   return {
-    totalAmount: newTotalAmount,
+    totalBalance: newTotalBalance,
     tokens: updatedTokens,
     collections: updatedCollections,
     isAllReady: allReady,
     simulationNonces,
-    tokenAmounts
-  }
+    tokenAmounts,
+    latestStateByNetworks: state.latest[selectedAccount] || {},
+    pendingStateByNetworks: state.pending[selectedAccount] || {}
+  } as SelectedAccountPortfolio
 }

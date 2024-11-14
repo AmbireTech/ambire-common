@@ -19,6 +19,7 @@ import getAccountNetworksWithAssets from '../../libs/portfolio/getNetworksWithAs
 import {
   getFlags,
   getPinnedGasTankTokens,
+  getTokensReadyToLearn,
   getTotal,
   getUpdatedHints,
   processTokens,
@@ -63,6 +64,8 @@ export class PortfolioController extends EventEmitter {
       [networkId: NetworkId]: Promise<void>
     }
   }
+
+  #toBeLearnedTokens: { [network in NetworkId]: string[] }
 
   tokenPreferences: CustomToken[] = []
 
@@ -129,6 +132,7 @@ export class PortfolioController extends EventEmitter {
     this.#networks = networks
     this.#accounts = accounts
     this.temporaryTokens = {}
+    this.#toBeLearnedTokens = {}
 
     this.#initialLoadPromise = this.#load()
   }
@@ -157,27 +161,8 @@ export class PortfolioController extends EventEmitter {
     await this.#storage.set('tokenPreferences', tokenPreferences)
   }
 
-  async #updateNetworksWithAssets(
-    accounts: Account[],
-    accountId: AccountId,
-    accountState: AccountState
-  ) {
+  async #updateNetworksWithAssets(accountId: AccountId, accountState: AccountState) {
     const storageStateByAccount = await this.#storage.get('networksWithAssetsByAccount', {})
-
-    // On the first run
-    if (Object.keys(this.#networksWithAssetsByAccounts).length === 0) {
-      // Remove old accounts from storage
-      const storageAccounts = Object.keys(storageStateByAccount)
-      const currentAccounts = accounts.map(({ addr }) => addr)
-      const accountsToRemove = storageAccounts.filter((x) => !currentAccounts.includes(x))
-
-      for (const account of accountsToRemove) {
-        delete storageStateByAccount[account]
-      }
-
-      // Set the initial state
-      this.#networksWithAssetsByAccounts = storageStateByAccount
-    }
 
     this.#networksWithAssetsByAccounts[accountId] = getAccountNetworksWithAssets(
       accountId,
@@ -257,7 +242,7 @@ export class PortfolioController extends EventEmitter {
   }
 
   // make the pending results the same as the latest ones
-  async overridePendingResults(accountOp: AccountOp) {
+  overridePendingResults(accountOp: AccountOp) {
     if (
       this.pending[accountOp.accountAddr] &&
       this.pending[accountOp.accountAddr][accountOp.networkId] &&
@@ -596,20 +581,20 @@ export class PortfolioController extends EventEmitter {
           //    Here, we should apply the `areAccountOpsChanged` optimization and update both states only if the AccountOps have changed or have not been simulated yet.
           const forceUpdate = opts?.forceUpdate || areAccountOpsChanged
 
-          // Pass in learnedTokens as additionalHints only on areAccountOpsChanged
           const fallbackHints = (this.#previousHints?.fromExternalAPI &&
             this.#previousHints?.fromExternalAPI[key]) ?? {
             erc20s: [],
             erc721s: {}
           }
-          const additionalHints =
-            (forceUpdate &&
-              Object.keys(
-                (this.#previousHints?.learnedTokens &&
-                  this.#previousHints?.learnedTokens[network.id]) ??
-                  {}
-              )) ||
-            []
+
+          const additionalHints = [
+            ...Object.keys(
+              (this.#previousHints?.learnedTokens &&
+                this.#previousHints?.learnedTokens[network.id]) ??
+                {}
+            ),
+            ...((this.#toBeLearnedTokens && this.#toBeLearnedTokens[network.id]) ?? [])
+          ]
 
           const [isSuccessfulLatestUpdate] = await Promise.all([
             // Latest state update
@@ -656,6 +641,15 @@ export class PortfolioController extends EventEmitter {
             !areAccountOpsChanged &&
             accountState[network.id]?.result?.hintsFromExternalAPI
           ) {
+            const readyToLearnTokens = getTokensReadyToLearn(
+              this.#toBeLearnedTokens[network.id],
+              accountState[network.id]!.result!.tokens
+            )
+
+            if (readyToLearnTokens.length) {
+              await this.learnTokens(readyToLearnTokens, network.id)
+            }
+
             const updatedStoragePreviousHints = getUpdatedHints(
               accountState[network.id]!.result!.hintsFromExternalAPI as ExternalHintsAPIResponse,
               accountState[network.id]!.result!.tokens,
@@ -688,8 +682,35 @@ export class PortfolioController extends EventEmitter {
       })
     )
 
-    await this.#updateNetworksWithAssets(this.#accounts.accounts, accountId, accountState)
+    await this.#updateNetworksWithAssets(accountId, accountState)
     this.emitUpdate()
+  }
+
+  addTokensToBeLearned(tokenAddresses: string[], networkId: NetworkId) {
+    if (!tokenAddresses.length) return false
+    if (!this.#toBeLearnedTokens[networkId]) this.#toBeLearnedTokens[networkId] = []
+
+    let networkToBeLearnedTokens = this.#toBeLearnedTokens[networkId]
+
+    const alreadyLearned = networkToBeLearnedTokens.map((addr) => getAddress(addr))
+
+    const tokensToLearn = tokenAddresses.filter((address) => {
+      let normalizedAddress
+      try {
+        normalizedAddress = getAddress(address)
+      } catch (e) {
+        console.error('Error while normalizing token address', e)
+      }
+
+      return normalizedAddress && !alreadyLearned.includes(normalizedAddress)
+    })
+
+    if (!tokensToLearn.length) return false
+
+    networkToBeLearnedTokens = [...tokensToLearn, ...networkToBeLearnedTokens]
+
+    this.#toBeLearnedTokens[networkId] = networkToBeLearnedTokens
+    return true
   }
 
   // Learn new tokens from humanizer and debug_traceCall
@@ -718,8 +739,11 @@ export class PortfolioController extends EventEmitter {
 
     // Reached limit
     if (LEARNED_TOKENS_NETWORK_LIMIT - Object.keys(networkLearnedTokens).length < 0) {
+      // Convert learned tokens into an array of [address, timestamp] pairs and sort by timestamp in descending order.
+      // This ensures that tokens with the most recent timestamps are prioritized for retention,
+      // and tokens with the oldest timestamps are deleted last when the limit is exceeded.
       const learnedTokensArray = Object.entries(networkLearnedTokens).sort(
-        (a, b) => Number(a[1]) - Number(b[1])
+        (a, b) => Number(b[1]) - Number(a[1])
       )
 
       networkLearnedTokens = Object.fromEntries(

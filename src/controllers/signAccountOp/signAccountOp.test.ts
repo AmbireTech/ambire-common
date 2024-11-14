@@ -2,12 +2,14 @@
 
 import { ethers } from 'ethers'
 import fetch from 'node-fetch'
+import { EventEmitter } from 'stream'
 
 import { describe, expect, jest, test } from '@jest/globals'
 import structuredClone from '@ungap/structured-clone'
 
 import { trezorSlot7v24337Deployed, velcroUrl } from '../../../test/config'
 import { getNativeToCheckFromEOAs, produceMemoryStore } from '../../../test/helpers'
+import { suppressConsoleBeforeEach } from '../../../test/helpers/console'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { networks } from '../../consts/networks'
@@ -35,7 +37,7 @@ const providers = Object.fromEntries(
   networks.map((network) => [network.id, getRpcProvider(network.rpcUrls, network.chainId)])
 )
 
-// // @ts-ignore
+// @ts-ignore
 global.structuredClone = structuredClone as any
 
 const createAccountOp = (
@@ -263,7 +265,7 @@ const nativeFeeToken: TokenResult = {
 
 const nativeFeeTokenPolygon: TokenResult = {
   address: '0x0000000000000000000000000000000000000000',
-  symbol: 'MATIC',
+  symbol: 'POL',
   amount: 1000n,
   networkId: 'polygon',
   decimals: Number(18),
@@ -278,7 +280,7 @@ const nativeFeeTokenPolygon: TokenResult = {
 
 const gasTankToken: TokenResult = {
   address: '0x0000000000000000000000000000000000000000',
-  symbol: 'MATIC',
+  symbol: 'POL',
   amount: 323871237812612123123n,
   networkId: 'polygon',
   decimals: Number(18),
@@ -306,6 +308,15 @@ const usdcFeeToken: TokenResult = {
   }
 }
 
+const windowManager = {
+  focus: () => Promise.resolve(),
+  open: () => Promise.resolve(0),
+  remove: () => Promise.resolve(),
+  event: new EventEmitter(),
+  sendWindowToastMessage: () => {},
+  sendWindowUiMessage: () => {}
+}
+
 const init = async (
   account: Account,
   accountOp: {
@@ -319,7 +330,7 @@ const init = async (
 ) => {
   const storage: Storage = produceMemoryStore()
   await storage.set('accounts', [account])
-  const keystore = new KeystoreController(storage, { internal: KeystoreSigner })
+  const keystore = new KeystoreController(storage, { internal: KeystoreSigner }, windowManager)
   await keystore.addSecret('passphrase', signer.pass, '', false)
   await keystore.unlockWithSecret('passphrase', signer.pass)
 
@@ -330,7 +341,9 @@ const init = async (
       label: 'Key 1',
       privateKey: signer.privKey,
       dedicatedToOneSA: true,
-      meta: null
+      meta: {
+        createdAt: new Date().getTime()
+      }
     }
   ])
 
@@ -372,7 +385,8 @@ const init = async (
   await portfolio.updateSelectedAccount(account.addr, network)
   const provider = getRpcProvider(network.rpcUrls, network.chainId)
 
-  const prices = gasPricesMock || (await gasPricesLib.getGasPriceRecommendations(provider, network))
+  const prices =
+    gasPricesMock || (await gasPricesLib.getGasPriceRecommendations(provider, network)).gasPrice
   const estimation =
     estimationMock ||
     (await estimate(
@@ -423,15 +437,14 @@ const init = async (
     accountsCtrl,
     keystore,
     portfolio,
-    providersCtrl,
     {},
     account,
     networks.find((n) => n.id === op.networkId)!,
     1,
     op,
-    storage,
-    fetch,
-    callRelayer
+    callRelayer,
+    () => {},
+    () => {}
   )
 
   return { controller, prices, estimation }
@@ -716,7 +729,7 @@ describe('SignAccountOp Controller ', () => {
             token: {
               address: '0x0000000000000000000000000000000000000000',
               amount: 1n,
-              symbol: 'matic',
+              symbol: 'POL',
               networkId: 'polygon',
               decimals: 18,
               priceIn: [],
@@ -871,97 +884,101 @@ describe('SignAccountOp Controller ', () => {
     expect(controller.accountOp?.signature.slice(-2)).toEqual('01')
   })
 
-  test('Signing [Relayer]: should return an error if paying with ERC-20 token but no priceIn | nativeRatio available.', async () => {
-    const networkId = 'polygon'
-    const network = networks.find((net) => net.id === networkId)!
-    const feeTokenResult = {
-      address: usdcFeeToken.address,
-      amount: 1n,
-      symbol: 'usdc',
-      networkId: 'polygon',
-      decimals: 6,
-      // we make the priceIn empty for this test
-      priceIn: [],
-      flags: {
-        onGasTank: false,
-        rewardsType: null,
-        canTopUpGasTank: true,
-        isFeeToken: true
-      }
-    }
-    const { controller, estimation, prices } = await init(
-      smartAccount,
-      createAccountOp(smartAccount, network.id),
-      eoaSigner,
-      {
-        gasUsed: 50000n,
-        currentAccountNonce: 0,
-        feePaymentOptions: [
-          {
-            paidBy: smartAccount.addr,
-            availableAmount: 500000000n,
-            gasUsed: 50000n,
-            addedNative: 0n,
-            token: feeTokenResult
-          }
-        ],
-        error: null
-      },
-      [
-        {
-          name: 'slow',
-          baseFeePerGas: 1000000000n,
-          maxPriorityFeePerGas: 1000000000n
-        },
-        {
-          name: 'medium',
-          baseFeePerGas: 2000000000n,
-          maxPriorityFeePerGas: 2000000000n
-        },
-        {
-          name: 'fast',
-          baseFeePerGas: 5000000000n,
-          maxPriorityFeePerGas: 5000000000n
-        },
-        {
-          name: 'ape',
-          baseFeePerGas: 7000000000n,
-          maxPriorityFeePerGas: 7000000000n
+  describe('Negative cases', () => {
+    suppressConsoleBeforeEach()
+
+    test('Signing [Relayer]: should return an error if paying with ERC-20 token but no priceIn | nativeRatio available.', async () => {
+      const networkId = 'polygon'
+      const network = networks.find((net) => net.id === networkId)!
+      const feeTokenResult = {
+        address: usdcFeeToken.address,
+        amount: 1n,
+        symbol: 'usdc',
+        networkId: 'polygon',
+        decimals: 6,
+        // we make the priceIn empty for this test
+        priceIn: [],
+        flags: {
+          onGasTank: false,
+          rewardsType: null,
+          canTopUpGasTank: true,
+          isFeeToken: true
         }
-      ]
-    )
+      }
+      const { controller, estimation, prices } = await init(
+        smartAccount,
+        createAccountOp(smartAccount, network.id),
+        eoaSigner,
+        {
+          gasUsed: 50000n,
+          currentAccountNonce: 0,
+          feePaymentOptions: [
+            {
+              paidBy: smartAccount.addr,
+              availableAmount: 500000000n,
+              gasUsed: 50000n,
+              addedNative: 0n,
+              token: feeTokenResult
+            }
+          ],
+          error: null
+        },
+        [
+          {
+            name: 'slow',
+            baseFeePerGas: 1000000000n,
+            maxPriorityFeePerGas: 1000000000n
+          },
+          {
+            name: 'medium',
+            baseFeePerGas: 2000000000n,
+            maxPriorityFeePerGas: 2000000000n
+          },
+          {
+            name: 'fast',
+            baseFeePerGas: 5000000000n,
+            maxPriorityFeePerGas: 5000000000n
+          },
+          {
+            name: 'ape',
+            baseFeePerGas: 7000000000n,
+            maxPriorityFeePerGas: 7000000000n
+          }
+        ]
+      )
 
-    // We are mocking estimation and prices values, in order to validate the gas prices calculation in the test.
-    // Knowing the exact amount of estimation and gas prices, we can predict GasFeePayment values.
-    jest.spyOn(gasPricesLib, 'getCallDataAdditionalByNetwork').mockReturnValue(25000n)
+      // We are mocking estimation and prices values, in order to validate the gas prices calculation in the test.
+      // Knowing the exact amount of estimation and gas prices, we can predict GasFeePayment values.
+      jest.spyOn(gasPricesLib, 'getCallDataAdditionalByNetwork').mockReturnValue(25000n)
 
-    controller.update({
-      gasPrices: prices,
-      estimation,
-      feeToken: feeTokenResult,
-      paidBy: smartAccount.addr,
-      signingKeyAddr: eoaSigner.keyPublicAddress,
-      signingKeyType: 'internal'
+      controller.update({
+        gasPrices: prices,
+        estimation,
+        feeToken: feeTokenResult,
+        paidBy: smartAccount.addr,
+        signingKeyAddr: eoaSigner.keyPublicAddress,
+        signingKeyType: 'internal'
+      })
+
+      expect(controller.availableFeeOptions.length).toBe(1)
+      const identifier = getFeeSpeedIdentifier(
+        controller.availableFeeOptions[0],
+        smartAccount.addr,
+        null
+      )
+      expect(controller.feeSpeeds[identifier]).not.toBe(undefined)
+      expect(controller.feeSpeeds[identifier].length).toBe(0)
+
+      const errors = controller.errors
+      expect(errors.length).toBe(1)
+      expect(errors[0]).toBe(
+        `Currently, ${controller.availableFeeOptions[0].token.symbol} is unavailable as a fee token as we're experiencing troubles fetching its price. Please select another or contact support`
+      )
+      expect(controller.status?.type).toBe(SigningStatus.UnableToSign)
+      await controller.sign()
+
+      expect(controller.accountOp?.signature).toBe(null)
     })
-
-    expect(controller.availableFeeOptions.length).toBe(1)
-    const identifier = getFeeSpeedIdentifier(
-      controller.availableFeeOptions[0],
-      smartAccount.addr,
-      null
-    )
-    expect(controller.feeSpeeds[identifier]).not.toBe(undefined)
-    expect(controller.feeSpeeds[identifier].length).toBe(0)
-
-    const errors = controller.errors
-    expect(errors.length).toBe(1)
-    expect(errors[0]).toBe(
-      `Currently, ${controller.availableFeeOptions[0].token.symbol} is unavailable as a fee token as we're experiencing troubles fetching its price. Please select another or contact support`
-    )
-    expect(controller.status?.type).toBe(SigningStatus.UnableToSign)
-    await controller.sign()
-
-    expect(controller.accountOp?.signature).toBe(null)
   })
 
   test('Signing [Relayer]: Smart account paying with gas tank.', async () => {
@@ -983,7 +1000,7 @@ describe('SignAccountOp Controller ', () => {
             token: {
               address: '0x0000000000000000000000000000000000000000',
               amount: 1n,
-              symbol: 'matic',
+              symbol: 'POL',
               networkId: 'polygon',
               decimals: 18,
               priceIn: [],
@@ -1111,7 +1128,7 @@ describe('SignAccountOp Controller ', () => {
     expect(controller.accountOp.feeCall!.data).toEqual(
       abiCoder.encode(
         ['string', 'uint256', 'string'],
-        ['gasTank', controller.accountOp!.gasFeePayment!.amount, 'MATIC']
+        ['gasTank', controller.accountOp!.gasFeePayment!.amount, 'POL']
       )
     )
 
@@ -1131,13 +1148,13 @@ describe('SignAccountOp Controller ', () => {
         feePaymentOptions: [
           {
             paidBy: eoaAccount.addr,
-            availableAmount: 1000000000000000000n, // 1 MATIC
+            availableAmount: 1000000000000000000n, // 1 POL
             gasUsed: 0n,
             addedNative: 5000n,
             token: {
               address: '0x0000000000000000000000000000000000000000',
               amount: 1n,
-              symbol: 'matic',
+              symbol: 'POL',
               networkId: 'polygon',
               decimals: 18,
               priceIn: [],
@@ -1151,13 +1168,13 @@ describe('SignAccountOp Controller ', () => {
           },
           {
             paidBy: trezorEoa.addr,
-            availableAmount: 2000000000000000000n, // 1 MATIC
+            availableAmount: 2000000000000000000n, // 1 POL
             gasUsed: 0n,
             addedNative: 5000n,
             token: {
               address: '0x0000000000000000000000000000000000000000',
               amount: 1n,
-              symbol: 'matic',
+              symbol: 'POL',
               networkId: 'polygon',
               decimals: 18,
               priceIn: [],
@@ -1171,13 +1188,13 @@ describe('SignAccountOp Controller ', () => {
           },
           {
             paidBy: otherEoa.addr,
-            availableAmount: 3000000000000000000n, // 1 MATIC
+            availableAmount: 3000000000000000000n, // 1 POL
             gasUsed: 0n,
             addedNative: 5000n,
             token: {
               address: '0x0000000000000000000000000000000000000000',
               amount: 1n,
-              symbol: 'matic',
+              symbol: 'POL',
               networkId: 'polygon',
               decimals: 18,
               priceIn: [],
@@ -1288,86 +1305,90 @@ describe('SignAccountOp Controller ', () => {
     expect(controller.status).toEqual({ type: 'done' })
   })
 
-  test('Signing [SA with EOA payment]: not enough funds to cover the fee', async () => {
-    const network = networks.find((net) => net.id === 'polygon')!
-    const { controller, estimation, prices } = await init(
-      smartAccount,
-      createAccountOp(smartAccount, network.id),
-      eoaSigner,
-      {
-        gasUsed: 10000n,
-        currentAccountNonce: 0,
-        feePaymentOptions: [
-          {
-            paidBy: eoaAccount.addr,
-            availableAmount: 100n, // not enough
-            gasUsed: 0n,
-            addedNative: 5000n,
-            token: {
-              address: '0x0000000000000000000000000000000000000000',
-              amount: 1n,
-              symbol: 'matic',
-              networkId: 'polygon',
-              decimals: 18,
-              priceIn: [],
-              flags: {
-                onGasTank: false,
-                rewardsType: null,
-                canTopUpGasTank: true,
-                isFeeToken: true
+  describe('Negative cases', () => {
+    suppressConsoleBeforeEach()
+
+    test('Signing [SA with EOA payment]: not enough funds to cover the fee', async () => {
+      const network = networks.find((net) => net.id === 'polygon')!
+      const { controller, estimation, prices } = await init(
+        smartAccount,
+        createAccountOp(smartAccount, network.id),
+        eoaSigner,
+        {
+          gasUsed: 10000n,
+          currentAccountNonce: 0,
+          feePaymentOptions: [
+            {
+              paidBy: eoaAccount.addr,
+              availableAmount: 100n, // not enough
+              gasUsed: 0n,
+              addedNative: 5000n,
+              token: {
+                address: '0x0000000000000000000000000000000000000000',
+                amount: 1n,
+                symbol: 'POL',
+                networkId: 'polygon',
+                decimals: 18,
+                priceIn: [],
+                flags: {
+                  onGasTank: false,
+                  rewardsType: null,
+                  canTopUpGasTank: true,
+                  isFeeToken: true
+                }
               }
             }
+          ],
+          error: null
+        },
+        [
+          {
+            name: 'slow',
+            baseFeePerGas: 100n,
+            maxPriorityFeePerGas: 100n
+          },
+          {
+            name: 'medium',
+            baseFeePerGas: 200n,
+            maxPriorityFeePerGas: 200n
+          },
+          {
+            name: 'fast',
+            baseFeePerGas: 300n,
+            maxPriorityFeePerGas: 300n
+          },
+          {
+            name: 'ape',
+            baseFeePerGas: 400n,
+            maxPriorityFeePerGas: 400n
           }
-        ],
-        error: null
-      },
-      [
-        {
-          name: 'slow',
-          baseFeePerGas: 100n,
-          maxPriorityFeePerGas: 100n
-        },
-        {
-          name: 'medium',
-          baseFeePerGas: 200n,
-          maxPriorityFeePerGas: 200n
-        },
-        {
-          name: 'fast',
-          baseFeePerGas: 300n,
-          maxPriorityFeePerGas: 300n
-        },
-        {
-          name: 'ape',
-          baseFeePerGas: 400n,
-          maxPriorityFeePerGas: 400n
-        }
-      ]
-    )
+        ]
+      )
 
-    // We are mocking estimation and prices values, in order to validate the gas prices calculation in the test.
-    // Knowing the exact amount of estimation and gas prices, we can predict GasFeePayment values.
-    jest.spyOn(gasPricesLib, 'getCallDataAdditionalByNetwork').mockReturnValue(5000n)
+      // We are mocking estimation and prices values, in order to validate the gas prices calculation in the test.
+      // Knowing the exact amount of estimation and gas prices, we can predict GasFeePayment values.
+      jest.spyOn(gasPricesLib, 'getCallDataAdditionalByNetwork').mockReturnValue(5000n)
 
-    controller.update({
-      gasPrices: prices,
-      estimation,
-      feeToken: nativeFeeTokenPolygon,
-      paidBy: eoaSigner.keyPublicAddress,
-      signingKeyAddr: eoaSigner.keyPublicAddress,
-      signingKeyType: 'internal'
+      controller.update({
+        gasPrices: prices,
+        estimation,
+        feeToken: nativeFeeTokenPolygon,
+        paidBy: eoaSigner.keyPublicAddress,
+        signingKeyAddr: eoaSigner.keyPublicAddress,
+        signingKeyType: 'internal'
+      })
+
+      const errors = controller.errors
+      expect(errors.length).toBe(1)
+      expect(errors[0]).toBe(
+        "Signing is not possible with the selected account's token as it doesn't have sufficient funds to cover the gas payment fee."
+      )
+
+      expect(controller.status?.type).toBe(SigningStatus.UnableToSign)
+      await controller.sign()
+
+      expect(controller.signedAccountOp?.signature).toBeFalsy()
     })
-
-    const errors = controller.errors
-    expect(errors.length).toBe(1)
-    expect(errors[0]).toBe(
-      "Signing is not possible with the selected account's token as it doesn't have sufficient funds to cover the gas payment fee."
-    )
-
-    expect(controller.status?.type).toBe(SigningStatus.UnableToSign)
-    await controller.sign()
-
-    expect(controller.signedAccountOp?.signature).toBeFalsy()
   })
 
   test('Signing [V1 with EOA payment]: working case', async () => {

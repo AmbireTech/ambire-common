@@ -8,11 +8,8 @@ export const erc20Module: HumanizerTypedMessageModule = (message: Message) => {
   if (
     tm.types.Permit &&
     tm.primaryType === 'Permit' &&
-    tm.message.owner &&
-    tm.message.spender &&
-    tm.message.value &&
-    tm.message.nonce &&
-    tm.message.deadline &&
+    tm.message &&
+    ['owner', 'spender', 'value', 'nonce', 'deadline'].every((i) => i in tm.message) &&
     tm.domain.verifyingContract
   ) {
     return {

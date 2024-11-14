@@ -11,6 +11,9 @@ import { getActivatorCall, shouldIncludeActivatorCall } from '../userOperation/u
 const DEFAULT_BASE_FEE_MAX_CHANGE_DENOMINATOR = 8n
 const DEFAULT_ELASTICITY_MULTIPLIER = 2n
 
+// a 1 gwei min for gas price, non1559 networks
+export const MIN_GAS_PRICE = 1000000000n
+
 // multipliers from the old: https://github.com/AmbireTech/relayer/blob/wallet-v2/src/utils/gasOracle.js#L64-L76
 // 2x, 2x*0.4, 2x*0.2 - all of them divided by 8 so 0.25, 0.1, 0.05 - those seem usable; with a slight tweak for the ape
 const speeds = [
@@ -131,12 +134,16 @@ export async function getGasPriceRecommendations(
   provider: Provider,
   network: Network,
   blockTag: string | number = -1
-): Promise<GasRecommendation[]> {
+): Promise<{ gasPrice: GasRecommendation[]; blockGasLimit: bigint }> {
   const lastBlock = await refetchBlock(provider, blockTag)
   // https://github.com/ethers-io/ethers.js/issues/3683#issuecomment-1436554995
   const txns = lastBlock.prefetchedTransactions
 
-  if (network.feeOptions.is1559 && lastBlock.baseFeePerGas != null) {
+  if (
+    network.feeOptions.is1559 &&
+    lastBlock.baseFeePerGas != null &&
+    lastBlock.baseFeePerGas !== 0n
+  ) {
     // https://eips.ethereum.org/EIPS/eip-1559
     const elasticityMultiplier =
       network.feeOptions.elasticityMultiplier ?? DEFAULT_ELASTICITY_MULTIPLIER
@@ -188,13 +195,17 @@ export async function getGasPriceRecommendations(
         maxPriorityFeePerGas
       })
     })
-    return fee
+    return { gasPrice: fee, blockGasLimit: lastBlock.gasLimit }
   }
   const prices = filterOutliers(txns.map((x) => x.gasPrice!).filter((x) => x > 0))
-  return speeds.map(({ name }, i) => ({
-    name,
-    gasPrice: average(nthGroup(prices, i, speeds.length))
-  }))
+  const fee = speeds.map(({ name }, i) => {
+    const avgGasPrice = average(nthGroup(prices, i, speeds.length))
+    return {
+      name,
+      gasPrice: avgGasPrice >= MIN_GAS_PRICE ? avgGasPrice : MIN_GAS_PRICE
+    }
+  })
+  return { gasPrice: fee, blockGasLimit: lastBlock.gasLimit }
 }
 
 export function getProbableCallData(

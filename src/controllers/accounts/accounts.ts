@@ -1,10 +1,9 @@
 import { getAddress, isAddress } from 'ethers'
 
-import { Account, AccountId, AccountPreferences, AccountStates } from '../../interfaces/account'
+import { Account, AccountPreferences, AccountStates } from '../../interfaces/account'
 import { NetworkId } from '../../interfaces/network'
 import { Storage } from '../../interfaces/storage'
 import {
-  getDefaultSelectedAccount,
   getUniqueAccountsArray,
   migrateAccountPreferencesToAccounts
 } from '../../libs/account/account'
@@ -29,13 +28,11 @@ export class AccountsController extends EventEmitter {
 
   accounts: Account[] = []
 
-  selectedAccount: AccountId | null = null
-
   accountStates: AccountStates = {}
 
   statuses: Statuses<keyof typeof STATUS_WRAPPED_METHODS> = STATUS_WRAPPED_METHODS
 
-  #onSelectAccount: (toAccountAddr: string) => void
+  #onAddAccounts: (accounts: Account[]) => void
 
   #updateProviderIsWorking: (networkId: NetworkId, isWorking: boolean) => void
 
@@ -46,14 +43,14 @@ export class AccountsController extends EventEmitter {
     storage: Storage,
     providers: ProvidersController,
     networks: NetworksController,
-    onSelectAccount: (toAccountAddr: string) => void,
+    onAddAccounts: (accounts: Account[]) => void,
     updateProviderIsWorking: (networkId: NetworkId, isWorking: boolean) => void
   ) {
     super()
     this.#storage = storage
     this.#providers = providers
     this.#networks = networks
-    this.#onSelectAccount = onSelectAccount
+    this.#onAddAccounts = onAddAccounts
     this.#updateProviderIsWorking = updateProviderIsWorking
 
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
@@ -63,9 +60,8 @@ export class AccountsController extends EventEmitter {
   async #load() {
     await this.#networks.initialLoadPromise
     await this.#providers.initialLoadPromise
-    const [accounts, selectedAccount, accountPreferences] = await Promise.all([
+    const [accounts, accountPreferences] = await Promise.all([
       this.#storage.get('accounts', []),
-      this.#storage.get('selectedAccount', null),
       this.#storage.get('accountPreferences', undefined)
     ])
     if (accountPreferences) {
@@ -77,38 +73,18 @@ export class AccountsController extends EventEmitter {
     } else {
       this.accounts = getUniqueAccountsArray(accounts)
     }
-    this.selectedAccount = selectedAccount
+
     // Emit an update before updating account states as the first state update may take some time
     this.emitUpdate()
     // Don't await this. Networks should update one by one
     this.#updateAccountStates(this.accounts)
   }
 
-  async selectAccount(toAccountAddr: string) {
-    await this.withStatus('selectAccount', async () => this.#selectAccount(toAccountAddr), true)
-  }
-
-  async #selectAccount(toAccountAddr: string | null) {
-    await this.initialLoadPromise
-
-    if (!toAccountAddr) {
-      this.selectedAccount = null
-      await this.#storage.remove('selectedAccount')
-      this.emitUpdate()
-      return
-    }
-    // TODO: error handling, trying to switch to account that does not exist
-    if (!this.accounts.find((acc) => acc.addr === toAccountAddr)) return
-    this.selectedAccount = toAccountAddr
-    await this.#storage.set('selectedAccount', toAccountAddr)
-    this.#onSelectAccount(toAccountAddr)
-
-    this.emitUpdate()
-  }
-
   async updateAccountStates(blockTag: string | number = 'latest', networks: NetworkId[] = []) {
-    await this.withStatus('updateAccountStates', async () =>
-      this.#updateAccountStates(this.accounts, blockTag, networks)
+    await this.withStatus(
+      'updateAccountStates',
+      async () => this.#updateAccountStates(this.accounts, blockTag, networks),
+      true
     )
   }
 
@@ -121,8 +97,10 @@ export class AccountsController extends EventEmitter {
 
     if (!accountData) return
 
-    await this.withStatus('updateAccountState', async () =>
-      this.#updateAccountStates([accountData], blockTag, networks)
+    await this.withStatus(
+      'updateAccountState',
+      async () => this.#updateAccountStates([accountData], blockTag, networks),
+      true
     )
   }
 
@@ -201,19 +179,14 @@ export class AccountsController extends EventEmitter {
     this.accounts = getUniqueAccountsArray(nextAccounts)
     await this.#storage.set('accounts', this.accounts)
 
-    const defaultSelectedAccount = getDefaultSelectedAccount(accounts)
-    if (defaultSelectedAccount) {
-      await this.#selectAccount(defaultSelectedAccount.addr)
-    }
-
-    await this.updateAccountStates()
+    this.#onAddAccounts(accounts)
 
     this.emitUpdate()
   }
 
   async removeAccountData(address: Account['addr']) {
     this.accounts = this.accounts.filter((acc) => acc.addr !== address)
-    if (this.selectedAccount === address) await this.#selectAccount(this.accounts[0]?.addr)
+
     delete this.accountStates[address]
     this.#storage.set('accounts', this.accounts)
     this.emitUpdate()

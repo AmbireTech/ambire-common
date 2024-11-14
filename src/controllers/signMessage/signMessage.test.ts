@@ -1,14 +1,13 @@
 import fetch from 'node-fetch'
+import { EventEmitter } from 'stream'
 
-import { beforeAll, describe, expect, jest, test } from '@jest/globals'
+import { describe, expect, jest, test } from '@jest/globals'
 
 import { produceMemoryStore } from '../../../test/helpers'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { networks } from '../../consts/networks'
-import { Account, AccountStates } from '../../interfaces/account'
-import { Network } from '../../interfaces/network'
+import { Account } from '../../interfaces/account'
 import { Message } from '../../interfaces/userRequest'
-import { getAccountState } from '../../libs/accountState/accountState'
 import { getRpcProvider } from '../../services/provider'
 import { AccountsController } from '../accounts/accounts'
 import { KeystoreController } from '../keystore/keystore'
@@ -37,6 +36,15 @@ const account: Account = {
   }
 }
 
+const windowManager = {
+  focus: () => Promise.resolve(),
+  open: () => Promise.resolve(0),
+  remove: () => Promise.resolve(),
+  event: new EventEmitter(),
+  sendWindowToastMessage: () => {},
+  sendWindowUiMessage: () => {}
+}
+
 const messageToSign: Message = {
   fromActionId: 1,
   content: { kind: 'message', message: '0x74657374' },
@@ -55,7 +63,7 @@ describe('SignMessageController', () => {
     await storage.set('accounts', JSON.stringify([account]))
     await storage.set('selectedAccount', JSON.stringify(account.addr))
 
-    keystore = new KeystoreController(storage, { internal: InternalSigner })
+    keystore = new KeystoreController(storage, { internal: InternalSigner }, windowManager)
     let providersCtrl: ProvidersController
     const networksCtrl = new NetworksController(
       storage,
@@ -81,9 +89,7 @@ describe('SignMessageController', () => {
       providersCtrl,
       networksCtrl,
       accountsCtrl,
-      {},
-      storage,
-      fetch
+      {}
     )
   })
 

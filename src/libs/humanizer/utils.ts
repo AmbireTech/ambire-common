@@ -1,12 +1,9 @@
-import dotenv from 'dotenv'
 import { ZeroAddress } from 'ethers'
 
 import { geckoIdMapper } from '../../consts/coingecko'
 import { Fetch } from '../../interfaces/fetch'
 import { Network } from '../../interfaces/network'
 import { HumanizerMeta, HumanizerVisualization, HumanizerWarning, IrCall } from './interfaces'
-
-dotenv.config()
 
 const baseUrlCena = 'https://cena.ambire.com/api/v3'
 
@@ -18,11 +15,14 @@ export function getWarning(
 }
 export const randomId = (): number => Math.floor(Math.random() * Number.MAX_SAFE_INTEGER)
 
-export function getLabel(content: string): HumanizerVisualization {
-  return { type: 'label', content, id: randomId() }
+export function getLabel(content: string, isBold?: boolean): HumanizerVisualization {
+  return { type: 'label', content, id: randomId(), isBold }
 }
 export function getAction(content: string): HumanizerVisualization {
   return { type: 'action', content, id: randomId() }
+}
+export function getImage(content: string): HumanizerVisualization {
+  return { type: 'image', content, id: randomId() }
 }
 export function getAddressVisualization(_address: string): HumanizerVisualization {
   const address = _address.toLowerCase()
@@ -92,6 +92,9 @@ export function getDeadline(deadlineSecs: bigint | number): HumanizerVisualizati
     value: deadline,
     id: randomId()
   }
+}
+export function getLink(url: string, content: string): HumanizerVisualization {
+  return { type: 'link', url, content, id: randomId() }
 }
 
 /**

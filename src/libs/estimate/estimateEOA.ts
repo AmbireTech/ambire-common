@@ -1,5 +1,4 @@
 import { AbiCoder, JsonRpcProvider, Provider, toBeHex, ZeroAddress } from 'ethers'
-import { TokenResult } from 'libs/portfolio'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import Estimation from '../../../contracts/compiled/Estimation.json'
@@ -9,6 +8,7 @@ import { Account, AccountStates } from '../../interfaces/account'
 import { Network } from '../../interfaces/network'
 import { AccountOp } from '../accountOp/accountOp'
 import { DeploylessMode, fromDescriptor } from '../deployless/deployless'
+import { TokenResult } from '../portfolio'
 import { EOA_SIMULATION_NONCE } from '../portfolio/getOnchainBalances'
 import { privSlot } from '../proxyDeploy/deploy'
 import { catchEstimationFailure, estimationErrorFormatted } from './errors'
@@ -98,7 +98,11 @@ export async function estimateEOA(
               stateToOverride: getEOAEstimationStateOverride(account.addr)
             }
           )
-          .catch(catchEstimationFailure)
+          .catch((e) => {
+            console.log('error calling estimateEoa:')
+            console.log(e)
+            return [[0n, [], {}]]
+          })
       : deploylessEstimator
           .call('getL1GasEstimation', [encodedCallData, FEE_COLLECTOR, optimisticOracle], {
             from: blockFrom,
@@ -120,8 +124,12 @@ export async function estimateEOA(
   let gasUsed = 0n
   if (!network.rpcNoStateOverride) {
     const [gasUsedEstimateGas, [[gasUsedEstimationSol, feeTokenOutcomes, l1GasEstimation]]] = result
-    feePaymentOptions[0].availableAmount = feeTokenOutcomes[0][1]
-    feePaymentOptions[0].addedNative = l1GasEstimation.fee
+    if (feeTokenOutcomes.length && feeTokenOutcomes[0].length) {
+      feePaymentOptions[0].availableAmount = feeTokenOutcomes[0][1]
+    }
+    if (l1GasEstimation && l1GasEstimation.fee) {
+      feePaymentOptions[0].addedNative = l1GasEstimation.fee
+    }
 
     // if it's a simple transfer, trust estimateGas as it should be 21K
     // if it's a contract call, trust whichever is higher

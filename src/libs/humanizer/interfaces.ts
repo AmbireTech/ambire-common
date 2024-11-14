@@ -7,12 +7,22 @@ import { Call } from '../accountOp/types'
 // @TODO remove property humanizerMeta
 export type HumanizerVisualization = (
   | {
-      type: 'address' | 'danger' | 'deadline' | 'chain' | 'message'
+      type:
+        | 'address'
+        | 'label'
+        | 'action'
+        | 'danger'
+        | 'deadline'
+        | 'chain'
+        | 'message'
+        | 'image'
+        | 'link'
+        | 'text'
+      url?: string
       address?: string
       content?: string
       value?: bigint
       warning?: boolean
-      // humanizerMeta?: HumanizerMetaAddress
       chainId?: bigint
       messageContent?: Uint8Array | string
     }
@@ -22,8 +32,7 @@ export type HumanizerVisualization = (
       value: bigint
       chainId?: bigint
     }
-  | {type:'text' | 'label' | 'action', content:string }
-) & { isHidden?: boolean; id: number; content?: string }
+) & { isHidden?: boolean; id: number; content?: string; isBold?: boolean }
 export interface IrCall extends Call {
   fullVisualization?: HumanizerVisualization[]
   warnings?: HumanizerWarning[]

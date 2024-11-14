@@ -2,10 +2,8 @@ import { hexlify, isHexString, toUtf8Bytes } from 'ethers'
 
 import EmittableError from '../../classes/EmittableError'
 import { Account } from '../../interfaces/account'
-import { Fetch } from '../../interfaces/fetch'
 import { ExternalSignerControllers, Key } from '../../interfaces/keystore'
 import { Network } from '../../interfaces/network'
-import { Storage } from '../../interfaces/storage'
 import { Message } from '../../interfaces/userRequest'
 import {
   getEIP712Signature,
@@ -33,10 +31,6 @@ export class SignMessageController extends EventEmitter {
   #networks: NetworksController
 
   #externalSignerControllers: ExternalSignerControllers
-
-  #storage: Storage
-
-  #fetch: Fetch
 
   #accounts: AccountsController
 
@@ -67,9 +61,7 @@ export class SignMessageController extends EventEmitter {
     providers: ProvidersController,
     networks: NetworksController,
     accounts: AccountsController,
-    externalSignerControllers: ExternalSignerControllers,
-    storage: Storage,
-    fetch: Fetch
+    externalSignerControllers: ExternalSignerControllers
   ) {
     super()
 
@@ -77,8 +69,6 @@ export class SignMessageController extends EventEmitter {
     this.#providers = providers
     this.#networks = networks
     this.#externalSignerControllers = externalSignerControllers
-    this.#storage = storage
-    this.#fetch = fetch
     this.#accounts = accounts
   }
 
@@ -213,6 +203,14 @@ export class SignMessageController extends EventEmitter {
         )
       }
 
+      // if the account is not deployed, it should be wrapped with EIP-6492
+      // magic bytes
+      signature =
+        account.creation && !accountState.isDeployed
+          ? // https://eips.ethereum.org/EIPS/eip-6492
+            wrapCounterfactualSign(signature, account.creation!)
+          : signature
+
       const personalMsgToValidate =
         typeof this.messageToSign.content.message === 'string'
           ? hexStringToUint8Array(this.messageToSign.content.message)
@@ -224,11 +222,7 @@ export class SignMessageController extends EventEmitter {
         // the signer is always the account even if the actual
         // signature is from a key that has privs to the account
         signer: this.messageToSign?.accountAddr,
-        signature:
-          account.creation && !accountState.isDeployed
-            ? // https://eips.ethereum.org/EIPS/eip-6492
-              wrapCounterfactualSign(signature, account.creation!)
-            : signature,
+        signature,
         // @ts-ignore TODO: Be aware of the type mismatch, could cause troubles
         message: this.messageToSign.content.kind === 'message' ? personalMsgToValidate : undefined,
         typedData:

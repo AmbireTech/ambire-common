@@ -1,5 +1,4 @@
 import { HumanizerMeta } from 'libs/humanizer/interfaces'
-import fetch from 'node-fetch'
 
 import { describe, expect } from '@jest/globals'
 
@@ -7,9 +6,6 @@ import humanizerInfo from '../../../../consts/humanizer/humanizerInfo.json'
 import { ErrorRef } from '../../../../controllers/eventEmitter/eventEmitter'
 import { AccountOp } from '../../../accountOp/accountOp'
 import { fallbackHumanizer } from './fallBackHumanizer'
-
-// eslint-disable-next-line no-console
-const mockEmitError = (e: ErrorRef) => console.log(e)
 
 const accountOp: AccountOp = {
   accountAddr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
@@ -90,8 +86,6 @@ describe('fallbackHumanizer', () => {
     accountOp.calls = [...transactions.generic]
     
     let irCalls = fallbackHumanizer(accountOp, accountOp.calls, humanizerInfo as HumanizerMeta, {
-      fetch,
-      emitError: mockEmitError
     })
     expect(irCalls[1]?.fullVisualization?.[0]).toMatchObject({
       type: 'action',
