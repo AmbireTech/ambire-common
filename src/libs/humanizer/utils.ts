@@ -57,6 +57,10 @@ export function getChain(chainId: bigint): HumanizerVisualization {
   return { type: 'chain', id: randomId(), chainId }
 }
 
+export function getText(text:string): HumanizerVisualization {
+  return { type:'text', content: text,  id: randomId()}
+}
+
 export function getOnBehalfOf(onBehalfOf: string, sender: string): HumanizerVisualization[] {
   return onBehalfOf.toLowerCase() !== sender.toLowerCase()
     ? [getLabel('on behalf of'), getAddressVisualization(onBehalfOf)]
@@ -147,6 +151,7 @@ export function getKnownName(
 ): string | undefined {
   return humanizerMeta?.knownAddresses?.[address.toLowerCase()]?.name
 }
+
 
 export const EMPTY_HUMANIZER_META = { abis: { NO_ABI: {} }, knownAddresses: {} }
 
