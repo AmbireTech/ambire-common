@@ -26,7 +26,6 @@ export function decodeEstimationError(e: Error): DecodedError {
     reason: '',
     data: errorData
   }
-  console.log('catchEstimationFailure og:', e, { errorData, ...e })
 
   ERROR_HANDLERS.forEach((HandlerClass) => {
     const handler = new HandlerClass()
@@ -34,11 +33,6 @@ export function decodeEstimationError(e: Error): DecodedError {
       decodedError.type !== ErrorType.UnknownError && isReasonValid(decodedError.reason)
 
     if (handler.matches(errorData, e) && !hasAlreadyBeenHandled) {
-      console.log({
-        oldDecodedError: decodedError,
-        newDecodedError: handler.handle(errorData, e),
-        handlerName: handler.constructor.name
-      })
       decodedError = handler.handle(errorData, e)
     }
   })
@@ -48,9 +42,7 @@ export function decodeEstimationError(e: Error): DecodedError {
 
 export function catchEstimationFailure(e: Error) {
   const decodedError = decodeEstimationError(e)
-
   const errorMessage = getHumanReadableErrorMessage(decodedError.reason, decodedError.type)
-  console.log('parsed error:', errorMessage)
 
   return new Error(errorMessage)
 }

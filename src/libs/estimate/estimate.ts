@@ -331,11 +331,10 @@ export async function estimate(
         blockTag
       })
       .catch(catchEstimationFailure),
-    // Promise.reject(new Error('transfer amount exceeds balance')).catch(catchEstimationFailure),
     estimateGas(account, op, provider, accountState, network).catch(() => 0n)
   ]
   const estimations = await estimateWithRetries(initializeRequests)
-  console.log('estimations in estimate', estimations)
+
   if (estimations instanceof Error) return estimationErrorFormatted(estimations)
 
   const [
