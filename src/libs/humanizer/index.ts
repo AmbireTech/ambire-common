@@ -53,9 +53,9 @@ export const humanizerCallModules: HumanizerCallModule[] = [
   WALLETModule,
   privilegeHumanizer,
   sushiSwapModule,
-  asciiModule,
   legendsModule,
   singletonFactory,
+  asciiModule,
   fallbackHumanizer,
   postProcessing
 ]
