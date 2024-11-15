@@ -6,6 +6,7 @@ import { HumanizerCallModule, IrCall } from '../../interfaces'
 import {
   eToNative,
   getAction,
+  getAddressVisualization,
   getLabel,
   getRecipientText,
   getToken,
@@ -73,6 +74,24 @@ const OneInchModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]) =
       const token = uintToAddress(tokenArg)
 
       return [getAction('Swap'), getToken(eToNative(token), amount)]
+    },
+    [iface.getFunction(
+      'swap(address executor, tuple(address srcToken, address dstToken, address srcReceiver, address dstReceiver, uint256 amount, uint256 minReturnAmount, uint256 flags) desc, bytes permit, bytes data) payable returns (uint256 returnAmount, uint256 spentAmount)'
+    )?.selector!]: (call: IrCall) => {
+      const {
+        executor,
+        desc: { srcToken, dstToken, srcReceiver, dstReceiver, amount, minReturnAmount, flags },
+        permit,
+        data
+      } = iface.parseTransaction(call)!.args
+
+      return [
+        getAction('Swap'),
+        getToken(srcToken, amount),
+        getLabel('for'),
+        getToken(dstToken, minReturnAmount),
+        ...getRecipientText(accOp.accountAddr, dstReceiver)
+      ]
     }
   }
   const newCalls = calls.map((call) => {

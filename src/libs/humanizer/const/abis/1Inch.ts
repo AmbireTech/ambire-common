@@ -48,5 +48,6 @@ export const OneInch = [
   'function unoswapTo(uint256 to,uint256 token,uint256 amount,uint256 minReturn,uint256 dex) returns (uint256)',
   'function unoswapTo2(uint256,uint256,uint256,uint256,uint256,uint256) returns (uint256)',
   'function unoswapTo3(uint256,uint256,uint256,uint256,uint256,uint256,uint256) returns (uint256)',
-  'function unpause()'
+  'function unpause()',
+  'function swap(address executor, tuple(address srcToken, address dstToken, address srcReceiver, address dstReceiver, uint256 amount, uint256 minReturnAmount, uint256 flags) desc, bytes permit, bytes data) payable returns (uint256 returnAmount, uint256 spentAmount)'
 ]
