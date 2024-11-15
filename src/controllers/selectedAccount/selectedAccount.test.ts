@@ -137,7 +137,9 @@ describe('SelectedAccount Controller', () => {
     await selectedAccountCtrl.initControllers({
       portfolio: portfolioCtrl,
       defiPositions: defiPositionsCtrl,
-      actions: actionsCtrl
+      actions: actionsCtrl,
+      networks: networksCtrl,
+      providers: providersCtrl
     })
     expect(selectedAccountCtrl.areControllersInitialized).toEqual(true)
   })

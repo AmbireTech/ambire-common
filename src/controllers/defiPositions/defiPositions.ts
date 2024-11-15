@@ -1,7 +1,5 @@
 import { Fetch } from '../../interfaces/fetch'
 import { NetworkId } from '../../interfaces/network'
-// eslint-disable-next-line import/no-cycle
-import { getNetworksWithDeFiPositionsErrorBanners } from '../../libs/banners/banners'
 import { getAssetValue } from '../../libs/defiPositions/helpers'
 import { getAAVEPositions, getUniV3Positions } from '../../libs/defiPositions/providers'
 import {
@@ -26,7 +24,7 @@ export class DefiPositionsController extends EventEmitter {
 
   #minUpdateInterval: number = 60 * 1000 // 1 minute
 
-  state: DeFiPositionsState = {}
+  #state: DeFiPositionsState = {}
 
   constructor({
     fetch,
@@ -48,13 +46,13 @@ export class DefiPositionsController extends EventEmitter {
   }
 
   #prepareState(accountAddr: string) {
-    if (!this.state[accountAddr]) {
-      this.state[accountAddr] = this.#networks.networks.reduce(
+    if (!this.#state[accountAddr]) {
+      this.#state[accountAddr] = this.#networks.networks.reduce(
         (acc, n) => ({
           ...acc,
           [n.id]: { isLoading: true, positionsByProvider: [] }
         }),
-        this.state[accountAddr]
+        this.#state[accountAddr]
       )
 
       this.emitUpdate()
@@ -63,8 +61,8 @@ export class DefiPositionsController extends EventEmitter {
 
     // Init state for missing networks
     this.#networks.networks.forEach((n) => {
-      if (!this.state[accountAddr][n.id]) {
-        this.state[accountAddr][n.id] = { isLoading: true, positionsByProvider: [] }
+      if (!this.#state[accountAddr][n.id]) {
+        this.#state[accountAddr][n.id] = { isLoading: true, positionsByProvider: [] }
       }
     })
     this.emitUpdate()
@@ -76,18 +74,18 @@ export class DefiPositionsController extends EventEmitter {
     providerName: string,
     errorMessage: string
   ) {
-    if (!this.state[accountAddr][networkId].providerErrors) {
-      this.state[accountAddr][networkId].providerErrors = []
+    if (!this.#state[accountAddr][networkId].providerErrors) {
+      this.#state[accountAddr][networkId].providerErrors = []
     }
 
-    this.state[accountAddr][networkId].providerErrors!.push({
+    this.#state[accountAddr][networkId].providerErrors!.push({
       providerName,
       error: errorMessage
     })
   }
 
   #getCanSkipUpdate(accountAddr: string, networkId: string) {
-    const networkState = this.state[accountAddr][networkId]
+    const networkState = this.#state[accountAddr][networkId]
 
     if (networkState.isLoading) return false
     if (networkState.error) return false
@@ -115,7 +113,7 @@ export class DefiPositionsController extends EventEmitter {
           this.emitUpdate()
           return
         }
-        const networkState = this.state[selectedAccountAddr][n.id]
+        const networkState = this.#state[selectedAccountAddr][n.id]
 
         // Reset provider errors before updating
         networkState.providerErrors = []
@@ -152,7 +150,7 @@ export class DefiPositionsController extends EventEmitter {
             )
           ])
 
-          this.state[selectedAccountAddr][n.id] = {
+          this.#state[selectedAccountAddr][n.id] = {
             ...networkState,
             isLoading: false,
             positionsByProvider: [aavePositions, uniV3Positions].filter(
@@ -162,11 +160,11 @@ export class DefiPositionsController extends EventEmitter {
           }
           await this.#setAssetPrices(selectedAccountAddr, n.id).catch((e) => {
             console.error('#setAssetPrices error:', e)
-            this.state[selectedAccountAddr][n.id].error = DeFiPositionsError.AssetPriceError
+            this.#state[selectedAccountAddr][n.id].error = DeFiPositionsError.AssetPriceError
           })
         } catch (e: any) {
           const prevPositionsByProvider = networkState.positionsByProvider
-          this.state[selectedAccountAddr][n.id] = {
+          this.#state[selectedAccountAddr][n.id] = {
             isLoading: false,
             positionsByProvider: prevPositionsByProvider || [],
             error: DeFiPositionsError.CriticalError
@@ -182,7 +180,7 @@ export class DefiPositionsController extends EventEmitter {
   async #setAssetPrices(accountAddr: string, networkId: string) {
     const dedup = (x: any[]) => x.filter((y, i) => x.indexOf(y) === i)
 
-    const networkState = this.state[accountAddr][networkId]
+    const networkState = this.#state[accountAddr][networkId]
 
     const addresses: string[] = []
 
@@ -207,7 +205,7 @@ export class DefiPositionsController extends EventEmitter {
       // eslint-disable-next-line no-prototype-builtins
       if (body.hasOwnProperty('error')) throw body
 
-      const positionsByProviderWithPrices = this.state[accountAddr][
+      const positionsByProviderWithPrices = this.#state[accountAddr][
         networkId
       ].positionsByProvider.map((positionsByProvider) => {
         if (positionsByProvider.providerName.toLowerCase().includes('aave'))
@@ -255,36 +253,27 @@ export class DefiPositionsController extends EventEmitter {
         return { ...positionsByProvider, positions: updatedPositions, positionInUSD }
       })
 
-      this.state[accountAddr][networkId].positionsByProvider = positionsByProviderWithPrices
+      this.#state[accountAddr][networkId].positionsByProvider = positionsByProviderWithPrices
     } catch (error) {
       console.error('#setAssetPrices error in defiPositions:', error)
     }
   }
 
   removeNetworkData(networkId: NetworkId) {
-    Object.keys(this.state).forEach((accountId) => {
-      delete this.state[accountId][networkId]
+    Object.keys(this.#state).forEach((accountId) => {
+      delete this.#state[accountId][networkId]
     })
     this.emitUpdate()
   }
 
-  get banners() {
-    if (!this.#selectedAccount.account) return []
-
-    const errorBanners = getNetworksWithDeFiPositionsErrorBanners({
-      networks: this.#networks.networks,
-      currentAccountState: this.state[this.#selectedAccount.account.addr],
-      providers: this.#providers.providers
-    })
-
-    return errorBanners
+  getDefiPositionsState(accountAddr: string) {
+    return this.#state[accountAddr] || {}
   }
 
   toJSON() {
     return {
       ...this,
-      ...super.toJSON(),
-      banners: this.banners
+      ...super.toJSON()
     }
   }
 }

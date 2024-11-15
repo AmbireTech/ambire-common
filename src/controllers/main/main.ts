@@ -314,7 +314,9 @@ export class MainController extends EventEmitter {
     this.selectedAccount.initControllers({
       portfolio: this.portfolio,
       defiPositions: this.defiPositions,
-      actions: this.actions
+      actions: this.actions,
+      networks: this.networks,
+      providers: this.providers
     })
     this.swapAndBridge = new SwapAndBridgeController({
       selectedAccount: this.selectedAccount,
