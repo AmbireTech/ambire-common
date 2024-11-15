@@ -2,11 +2,12 @@
 /* eslint-disable import/no-extraneous-dependencies */
 /* eslint-disable class-methods-use-this */
 import { toBeHex } from 'ethers'
+import { ErrorType } from 'libs/errorDecoder/types'
 
 import { ENTRY_POINT_MARKER, ERC_4337_ENTRYPOINT } from '../../consts/deploy'
 import { Fetch } from '../../interfaces/fetch'
 import { Network } from '../../interfaces/network'
-import { humanizeEstimationError } from '../../libs/estimate/errors'
+import { decodeError } from '../../libs/errorDecoder'
 import { BundlerEstimateResult } from '../../libs/estimate/interfaces'
 import { Gas1559Recommendation } from '../../libs/gasPrice/gasPrice'
 import { privSlot } from '../../libs/proxyDeploy/deploy'
@@ -220,8 +221,16 @@ export class Bundler {
 
   // used when catching errors from bundler requests
   static decodeBundlerError(e: any): string {
-    const decodedError = humanizeEstimationError(e)
+    // TODO: add more specific error messages
+    const FALLBACK_ERROR_MESSAGE =
+      'Bundler broadcast failed. Please try broadcasting by an EOA or contact support.'
+    const decodedError = decodeError(e)
 
-    return decodedError.message
+    switch (decodedError.type) {
+      case ErrorType.RpcError:
+        return 'Transaction cannot be sent because of an RPC error. Please try again or contact Ambire support for assistance.'
+      default:
+        return FALLBACK_ERROR_MESSAGE
+    }
   }
 }
