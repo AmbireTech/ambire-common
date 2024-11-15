@@ -5,7 +5,6 @@ export async function estimateWithRetries(
   // stop the execution on 5 fails;
   // the below error message is not shown to the user so we are safe
   if (counter >= 5)
-    // TODO: return
     return new Error(
       'Estimation failure, retrying in a couple of seconds. If this issue persists, please change your RPC provider or contact Ambire support'
     )
