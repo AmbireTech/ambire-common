@@ -262,26 +262,20 @@ describe('Portfolio Controller ', () => {
   })
 
   describe('Latest tokens', () => {
-    test('Latest tokens are fetched and kept in the controller, while the pending should not be fetched (no AccountOp passed)', (done) => {
+    test('Latest tokens are fetched and kept in the controller', async () => {
       const { controller } = prepareTest()
 
-      controller.onUpdate(() => {
-        const latestState =
-          controller.latest['0xB674F3fd5F43464dB0448a57529eAF37F04cceA5']?.ethereum!
-        const pendingState =
-          controller.pending['0xB674F3fd5F43464dB0448a57529eAF37F04cceA5']?.ethereum
-        if (latestState && latestState.isReady) {
-          expect(latestState.isReady).toEqual(true)
-          expect(latestState.result?.tokens.length).toBeGreaterThan(0)
-          expect(latestState.result?.collections?.length).toBeGreaterThan(0)
-          expect(latestState.result?.hintsFromExternalAPI).toBeTruthy()
-          expect(latestState.result?.total.usd).toBeGreaterThan(1000)
-          expect(pendingState).toBeFalsy()
-          done()
-        }
-      })
+      await controller.updateSelectedAccount(account.addr)
 
-      controller.updateSelectedAccount(account.addr)
+      const latestState = controller.latest['0xB674F3fd5F43464dB0448a57529eAF37F04cceA5']?.ethereum!
+      const pendingState =
+        controller.pending['0xB674F3fd5F43464dB0448a57529eAF37F04cceA5']?.ethereum!
+      expect(latestState.isReady).toEqual(true)
+      expect(latestState.result?.tokens.length).toBeGreaterThan(0)
+      expect(latestState.result?.collections?.length).toBeGreaterThan(0)
+      expect(latestState.result?.hintsFromExternalAPI).toBeTruthy()
+      expect(latestState.result?.total.usd).toBeGreaterThan(1000)
+      expect(pendingState).toBeDefined()
     })
 
     // @TODO redo this test

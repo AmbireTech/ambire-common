@@ -537,20 +537,6 @@ export class PortfolioController extends EventEmitter {
             currentAccountOps && simulatedAccountOps
               ? !isAccountOpsIntentEqual(currentAccountOps, simulatedAccountOps)
               : currentAccountOps !== simulatedAccountOps
-
-          // TODO: The `updateSelectedAccount` function is currently always invoked with `forceUpdate: true` from the application code.
-          // TODO: We decided to implement this improvement once we first address https://github.com/AmbireTech/ambire-app/issues/2335#issue-2345433944
-          // We should rewrite this, and state updates should work in the following manner:
-          // 1. On the Dashboard screen, there is an interval that updates both the latest and pending states.
-          //    Why do we update both states? Even without AccountOps to simulate, fetching the pending state
-          //    is beneficial because if someone sends you a token, you will see it on the Dashboard as a pending token balance.
-          // 2. On the Dashboard, if the user manually triggers a Portfolio update, we should pass `forceUpdate: true` and update both states,
-          //    regardless of any internal portfolio controller limits or caching.
-          // 3. When signing a transaction and we have AccountOps, we have the following two scenarios:
-          //    3.1. The Dashboard interval should continue updating both the latest and pending states,
-          //    and also simulate AccountOps (without further optimizations, such as checking `areAccountOpsChanged` and updating the state only if necessary).
-          //    3.2. The SignAccountOp screen also has a simulation interval that updates both states and simulates the AccountOps.
-          //    Here, we should apply the `areAccountOpsChanged` optimization and update both states only if the AccountOps have changed or have not been simulated yet.
           const forceUpdate = opts?.forceUpdate || areAccountOpsChanged
 
           const fallbackHints = (this.#previousHints?.fromExternalAPI &&
@@ -582,29 +568,25 @@ export class PortfolioController extends EventEmitter {
               },
               forceUpdate
             ),
-            // Pending state update
-            // We are updating the pending state, only if AccountOps are changed or the application logic requests a force update
-            forceUpdate
-              ? this.updatePortfolioState(
-                  accountId,
-                  pendingState,
-                  network,
-                  portfolioLib,
-                  {
-                    blockTag: 'pending',
-                    previousHints: fallbackHints,
-                    ...(currentAccountOps && {
-                      simulation: {
-                        account: selectedAccount,
-                        accountOps: currentAccountOps
-                      }
-                    }),
-                    isEOA: !isSmartAccount(selectedAccount),
-                    additionalHints
-                  },
-                  forceUpdate
-                )
-              : Promise.resolve(false)
+            this.updatePortfolioState(
+              accountId,
+              pendingState,
+              network,
+              portfolioLib,
+              {
+                blockTag: 'pending',
+                previousHints: fallbackHints,
+                ...(currentAccountOps && {
+                  simulation: {
+                    account: selectedAccount,
+                    accountOps: currentAccountOps
+                  }
+                }),
+                isEOA: !isSmartAccount(selectedAccount),
+                additionalHints
+              },
+              forceUpdate
+            )
           ])
 
           // Persist latest state in previousHints in the disk storage for further requests
