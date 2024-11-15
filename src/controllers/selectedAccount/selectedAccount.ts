@@ -13,7 +13,7 @@ import {
 // eslint-disable-next-line import/no-cycle
 import { AccountsController } from '../accounts/accounts'
 // eslint-disable-next-line import/no-cycle
-import { Action, ActionsController } from '../actions/actions'
+import { ActionsController } from '../actions/actions'
 // eslint-disable-next-line import/no-cycle
 import { DefiPositionsController } from '../defiPositions/defiPositions'
 import EventEmitter from '../eventEmitter/eventEmitter'
@@ -59,8 +59,6 @@ export class SelectedAccountController extends EventEmitter {
   defiPositions: PositionsByProvider[] = []
 
   defiPositionsBanners: Banner[] = []
-
-  actions: Action[] = []
 
   isReady: boolean = false
 
@@ -112,7 +110,6 @@ export class SelectedAccountController extends EventEmitter {
 
     this.#updateSelectedAccountPortfolio(true)
     this.#updateSelectedAccountDefiPositions(true)
-    this.#updateSelectedAccountActions(true)
     this.#updateDefiPositionsBanners(true)
 
     this.#portfolio.onUpdate(async () => {
@@ -133,8 +130,11 @@ export class SelectedAccountController extends EventEmitter {
       )
     })
 
-    this.#actions.onUpdate(() => {
-      this.#updateSelectedAccountActions()
+    this.#providers.onUpdate(() => {
+      this.#debounceFunctionCallsOnSameTick('updateDefiPositionsBanners', () =>
+        this.#updateDefiPositionsBanners()
+      )
+      // TODO: add portfolio banners and call updatePortfolioBanners here
     })
 
     this.areControllersInitialized = true
@@ -178,7 +178,9 @@ export class SelectedAccountController extends EventEmitter {
       this.account
     )
 
-    const hasSignAccountOp = !!this.actions.filter((action) => action.type === 'accountOp')
+    const hasSignAccountOp = !!this.#actions?.visibleActionsQueue.filter(
+      (action) => action.type === 'accountOp'
+    )
 
     const newSelectedAccountPortfolio = calculateSelectedAccountPortfolio(
       this.account.addr,
@@ -240,28 +242,6 @@ export class SelectedAccountController extends EventEmitter {
     )
 
     this.defiPositions = sortedPositionsByProvider
-
-    if (!skipUpdate) {
-      this.emitUpdate()
-    }
-  }
-
-  #updateSelectedAccountActions(skipUpdate?: boolean) {
-    if (!this.#actions || !this.account) return
-
-    this.actions = this.#actions.actionsQueue.filter((a) => {
-      if (a.type === 'accountOp') {
-        return a.accountOp.accountAddr === this.account!.addr
-      }
-      if (a.type === 'signMessage') {
-        return a.userRequest.meta.accountAddr === this.account!.addr
-      }
-      if (a.type === 'benzin') {
-        return a.userRequest.meta.accountAddr === this.account!.addr
-      }
-
-      return true
-    })
 
     if (!skipUpdate) {
       this.emitUpdate()
