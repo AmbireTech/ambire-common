@@ -82,7 +82,7 @@ export async function bundlerEstimate(
   userOp.signature = getSigForCalculations()
   const shouldStateOverride = !accountState.isErc4337Enabled && accountState.isDeployed
   const gasData = await Bundler.estimate(userOp, network, shouldStateOverride).catch((e: any) => {
-    return new Error(Bundler.decodeBundlerError(e, 'estimate'))
+    return new Error(Bundler.decodeBundlerError(e))
   })
   if (gasData instanceof Error) {
     const nonFatalErrors: Error[] = []

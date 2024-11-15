@@ -2,12 +2,11 @@
 /* eslint-disable import/no-extraneous-dependencies */
 /* eslint-disable class-methods-use-this */
 import { toBeHex } from 'ethers'
+import { humanizeEstimationError } from 'libs/estimate/errors'
 
 import { ENTRY_POINT_MARKER, ERC_4337_ENTRYPOINT } from '../../consts/deploy'
 import { Fetch } from '../../interfaces/fetch'
 import { Network } from '../../interfaces/network'
-import { decodeError } from '../../libs/errorDecoder'
-import { ErrorType } from '../../libs/errorDecoder/types'
 import { BundlerEstimateResult } from '../../libs/estimate/interfaces'
 import { Gas1559Recommendation } from '../../libs/gasPrice/gasPrice'
 import { privSlot } from '../../libs/proxyDeploy/deploy'
@@ -220,34 +219,11 @@ export class Bundler {
   }
 
   // used when catching errors from bundler requests
-  static decodeBundlerError(e: any, action: 'broadcast' | 'estimate'): string {
-    const decodedError = decodeError(e)
+  static decodeBundlerError(e: any): string {
+    // Perhaps there should be a different humanizer for bundler errors
+    // as the error may originate from broadcast or estimate
+    const { message: errorMessage } = humanizeEstimationError(e)
 
-    if (action === 'broadcast') {
-      // TODO: add more specific error messages
-      const FALLBACK_ERROR_MESSAGE =
-        'Bundler broadcast failed. Please try broadcasting by an EOA or contact support.'
-
-      switch (decodedError.type) {
-        case ErrorType.RpcError:
-          return 'Transaction cannot be sent because of an RPC error. Please try again or contact Ambire support for assistance.'
-        default:
-          return FALLBACK_ERROR_MESSAGE
-      }
-    }
-
-    if (action === 'estimate') {
-      const FALLBACK_ERROR_MESSAGE =
-        'Bundler estimation failed. Please try again or contact support.'
-
-      switch (decodedError.type) {
-        case ErrorType.RpcError:
-          return 'Bundler estimation failed due to an RPC error. Please try again or contact Ambire support for assistance.'
-        default:
-          return FALLBACK_ERROR_MESSAGE
-      }
-    }
-
-    return 'Bundler request failed. Please try again or contact support.'
+    return errorMessage
   }
 }

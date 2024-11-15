@@ -2204,7 +2204,7 @@ export class MainController extends EventEmitter {
         userOperationHash = await bundler.broadcast(userOperation, network!)
       } catch (e: any) {
         return this.#throwBroadcastAccountOp({
-          message: Bundler.decodeBundlerError(e, 'broadcast'),
+          message: Bundler.decodeBundlerError(e),
           network,
           accountState
         })
