@@ -89,7 +89,7 @@ describe('DefiPositionsController', () => {
     const controller = await prepareTest()
 
     await controller.updatePositions()
-    const selectedAccountState = controller.getDefiPostionsState(ACCOUNT.addr)
+    const selectedAccountState = controller.getDefiPositionsState(ACCOUNT.addr)
     expect(selectedAccountState.polygon.positionsByProvider.length).toBeGreaterThan(0)
   })
 
@@ -110,7 +110,7 @@ describe('DefiPositionsController', () => {
     const controller = await prepareTest()
     await controller.updatePositions()
 
-    const selectedAccountState = controller.getDefiPostionsState(ACCOUNT.addr)
+    const selectedAccountState = controller.getDefiPositionsState(ACCOUNT.addr)
     expect(selectedAccountState.ethereum.providerErrors).toEqual([
       { providerName: 'AAVE v3', error: 'AAVE error' },
       { providerName: 'Uniswap V3', error: 'Uniswap error' }
@@ -123,7 +123,7 @@ describe('DefiPositionsController', () => {
     const controller = await prepareTest()
     await controller.updatePositions()
 
-    const selectedAccountState = controller.getDefiPostionsState(ACCOUNT.addr)
+    const selectedAccountState = controller.getDefiPositionsState(ACCOUNT.addr)
 
     const positions = selectedAccountState.polygon.positionsByProvider
     expect(positions.length).toBeGreaterThan(0)
@@ -149,7 +149,7 @@ describe('DefiPositionsController', () => {
     const controller = await prepareTest()
     await controller.updatePositions()
 
-    const selectedAccountState = controller.getDefiPostionsState(ACCOUNT.addr)
+    const selectedAccountState = controller.getDefiPositionsState(ACCOUNT.addr)
     const positions = selectedAccountState.polygon.positionsByProvider
     expect(positions.length).toBeGreaterThan(0)
     positions.forEach((provider) => {

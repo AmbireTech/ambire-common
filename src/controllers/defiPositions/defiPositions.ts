@@ -250,7 +250,7 @@ export class DefiPositionsController extends EventEmitter {
     }
   }
 
-  getDefiPostionsState(accountAddr: string) {
+  getDefiPositionsState(accountAddr: string) {
     return this.#state[accountAddr] || {}
   }
 

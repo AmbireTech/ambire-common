@@ -166,7 +166,7 @@ export class SelectedAccountController extends EventEmitter {
   #updateSelectedAccountPortfolio(skipUpdate?: boolean) {
     if (!this.#portfolio || !this.#defiPositions || !this.account) return
 
-    const defiPositionsAccountState = this.#defiPositions.getDefiPostionsState(this.account.addr)
+    const defiPositionsAccountState = this.#defiPositions.getDefiPositionsState(this.account.addr)
 
     const portfolioState = structuredClone({
       latest: this.#portfolio.latest,
@@ -212,14 +212,14 @@ export class SelectedAccountController extends EventEmitter {
   get areDefiPositionsLoading() {
     if (!this.account || !this.#defiPositions) return false
 
-    const defiPositionsAccountState = this.#defiPositions.getDefiPostionsState(this.account.addr)
+    const defiPositionsAccountState = this.#defiPositions.getDefiPositionsState(this.account.addr)
     return Object.values(defiPositionsAccountState).some((n) => n.isLoading)
   }
 
   #updateSelectedAccountDefiPositions(skipUpdate?: boolean) {
     if (!this.#defiPositions || !this.account) return
 
-    const defiPositionsAccountState = this.#defiPositions.getDefiPostionsState(this.account.addr)
+    const defiPositionsAccountState = this.#defiPositions.getDefiPositionsState(this.account.addr)
 
     const positionsByProvider = Object.values(defiPositionsAccountState).flatMap(
       (n) => n.positionsByProvider
@@ -262,7 +262,7 @@ export class SelectedAccountController extends EventEmitter {
   #updateDefiPositionsBanners(skipUpdate?: boolean) {
     if (!this.account || !this.#networks || !this.#providers || !this.#defiPositions) return
 
-    const defiPositionsAccountState = this.#defiPositions.getDefiPostionsState(this.account.addr)
+    const defiPositionsAccountState = this.#defiPositions.getDefiPositionsState(this.account.addr)
 
     const errorBanners = getNetworksWithDeFiPositionsErrorBanners({
       networks: this.#networks.networks,
