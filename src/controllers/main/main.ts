@@ -95,10 +95,7 @@ import { NetworksController } from '../networks/networks'
 import { PortfolioController } from '../portfolio/portfolio'
 import { ProvidersController } from '../providers/providers'
 /* eslint-disable @typescript-eslint/no-floating-promises */
-import {
-  DEFAULT_SELECTED_ACCOUNT_PORTFOLIO,
-  SelectedAccountController
-} from '../selectedAccount/selectedAccount'
+import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 /* eslint-disable no-underscore-dangle */
 import { SignAccountOpController, SigningStatus } from '../signAccountOp/signAccountOp'
 import { SignMessageController } from '../signMessage/signMessage'
@@ -905,7 +902,7 @@ export class MainController extends EventEmitter {
 
     const isUpdatingAccount = this.accounts.statuses.updateAccountState !== 'INITIAL'
 
-    this.selectedAccount.portfolio = DEFAULT_SELECTED_ACCOUNT_PORTFOLIO
+    this.selectedAccount.resetSelectedAccountPortfolio()
     await Promise.all([
       // When we trigger `reloadSelectedAccount` (for instance, from Dashboard -> Refresh balance icon),
       // it's very likely that the account state is already in the process of being updated.

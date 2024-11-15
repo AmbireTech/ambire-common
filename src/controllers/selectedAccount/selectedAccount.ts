@@ -123,7 +123,7 @@ export class SelectedAccountController extends EventEmitter {
 
   async setAccount(account: Account | null) {
     this.account = account
-    this.portfolio = DEFAULT_SELECTED_ACCOUNT_PORTFOLIO
+    this.resetSelectedAccountPortfolio(true)
 
     if (!account) {
       await this.#storage.remove('selectedAccount')
@@ -132,6 +132,14 @@ export class SelectedAccountController extends EventEmitter {
     }
 
     this.emitUpdate()
+  }
+
+  resetSelectedAccountPortfolio(skipUpdate?: boolean) {
+    this.portfolio = DEFAULT_SELECTED_ACCOUNT_PORTFOLIO
+
+    if (!skipUpdate) {
+      this.emitUpdate()
+    }
   }
 
   #updateSelectedAccountPortfolio(skipUpdate?: boolean) {
