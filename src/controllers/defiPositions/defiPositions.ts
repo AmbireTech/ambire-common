@@ -67,6 +67,7 @@ export class DefiPositionsController extends EventEmitter {
         this.state[accountAddr][n.id] = { isLoading: true, positionsByProvider: [] }
       }
     })
+    this.emitUpdate()
   }
 
   #setProviderError(
