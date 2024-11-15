@@ -505,6 +505,15 @@ export class PortfolioController extends EventEmitter {
     const accountState = this.latest[accountId]
     const pendingState = this.pending[accountId]
 
+    // TODO: Check if we need to update or the data
+    // Similar to the following commented code:
+    // const lastUpdateStartedAt = state.result?.updateStarted
+    // if (
+    //   lastUpdateStartedAt &&
+    //   Date.now() - lastUpdateStartedAt <= this.#minUpdateInterval &&
+    //   !forceUpdate
+    // )
+    //   return false
     if (shouldGetAdditionalPortfolio(selectedAccount)) {
       this.#getAdditionalPortfolio(accountId)
     }
