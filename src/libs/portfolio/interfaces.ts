@@ -23,6 +23,7 @@ export type TokenResult = Omit<CustomToken, 'standard'> & {
     rewardsType: 'wallet-vesting' | 'wallet-rewards' | null
     canTopUpGasTank: boolean
     isFeeToken: boolean
+    isDefiToken?: boolean
   }
 }
 
