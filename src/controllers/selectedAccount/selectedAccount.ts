@@ -166,7 +166,7 @@ export class SelectedAccountController extends EventEmitter {
   #updateSelectedAccountPortfolio(skipUpdate?: boolean) {
     if (!this.#portfolio || !this.#defiPositions || !this.account) return
 
-    const defiPositionsAccountState = this.#defiPositions.state[this.account.addr]
+    const defiPositionsAccountState = this.#defiPositions.getDefiPostionsState(this.account.addr)
 
     const portfolioState = structuredClone({
       latest: this.#portfolio.latest,
@@ -210,17 +210,18 @@ export class SelectedAccountController extends EventEmitter {
   get areDefiPositionsLoading() {
     if (!this.account || !this.#defiPositions) return false
 
-    return Object.values(this.#defiPositions.state[this.account.addr] || {}).some(
-      (n) => n.isLoading
-    )
+    const defiPositionsAccountState = this.#defiPositions.getDefiPostionsState(this.account.addr)
+    return Object.values(defiPositionsAccountState).some((n) => n.isLoading)
   }
 
   #updateSelectedAccountDefiPositions(skipUpdate?: boolean) {
     if (!this.#defiPositions || !this.account) return
 
-    const positionsByProvider = Object.values(
-      this.#defiPositions.state[this.account.addr] || {}
-    ).flatMap((n) => n.positionsByProvider)
+    const defiPositionsAccountState = this.#defiPositions.getDefiPostionsState(this.account.addr)
+
+    const positionsByProvider = Object.values(defiPositionsAccountState).flatMap(
+      (n) => n.positionsByProvider
+    )
 
     const positionsByProviderWithSortedAssets = positionsByProvider.map((provider) => {
       const positions = provider.positions
@@ -281,9 +282,11 @@ export class SelectedAccountController extends EventEmitter {
   #updateDefiPositionsBanners(skipUpdate?: boolean) {
     if (!this.account || !this.#networks || !this.#providers || !this.#defiPositions) return
 
+    const defiPositionsAccountState = this.#defiPositions.getDefiPostionsState(this.account.addr)
+
     const errorBanners = getNetworksWithDeFiPositionsErrorBanners({
       networks: this.#networks.networks,
-      currentAccountState: this.#defiPositions.state[this.account.addr] || {},
+      currentAccountState: defiPositionsAccountState,
       providers: this.#providers.providers
     })
 

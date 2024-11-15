@@ -146,7 +146,7 @@ export class MainController extends EventEmitter {
 
   portfolio: PortfolioController
 
-  #defiPositions: DefiPositionsController
+  defiPositions: DefiPositionsController
 
   dapps: DappsController
 
@@ -234,7 +234,7 @@ export class MainController extends EventEmitter {
         this.providers.setProvider(network)
         await this.accounts.updateAccountStates('latest', [network.id])
         await this.updateSelectedAccountPortfolio(true)
-        await this.#defiPositions.updatePositions(network.id)
+        await this.defiPositions.updatePositions(network.id)
       },
       (networkId: NetworkId) => {
         this.providers.removeProvider(networkId)
@@ -271,7 +271,7 @@ export class MainController extends EventEmitter {
       relayerUrl,
       velcroUrl
     )
-    this.#defiPositions = new DefiPositionsController({
+    this.defiPositions = new DefiPositionsController({
       fetch: this.fetch,
       selectedAccount: this.selectedAccount,
       networks: this.networks,
@@ -313,7 +313,7 @@ export class MainController extends EventEmitter {
     })
     this.selectedAccount.initControllers({
       portfolio: this.portfolio,
-      defiPositions: this.#defiPositions,
+      defiPositions: this.defiPositions,
       actions: this.actions,
       networks: this.networks,
       providers: this.providers
@@ -357,7 +357,7 @@ export class MainController extends EventEmitter {
     // TODO: We agreed to always fetch the latest and pending states.
     // To achieve this, we need to refactor how we use forceUpdate to obtain pending state updates.
     this.updateSelectedAccountPortfolio(true)
-    this.#defiPositions.updatePositions()
+    this.defiPositions.updatePositions()
     /**
      * Listener that gets triggered as a finalization step of adding new
      * accounts via the AccountAdder controller flow.
@@ -428,7 +428,7 @@ export class MainController extends EventEmitter {
     // TODO: We agreed to always fetch the latest and pending states.
     // To achieve this, we need to refactor how we use forceUpdate to obtain pending state updates.
     await this.updateSelectedAccountPortfolio(true)
-    await this.#defiPositions.updatePositions()
+    await this.defiPositions.updatePositions()
     // forceEmitUpdate to update the getters in the FE state of the ctrl
     await this.forceEmitUpdate()
     await this.actions.forceEmitUpdate()
@@ -920,7 +920,7 @@ export class MainController extends EventEmitter {
       // Additionally, if we trigger the portfolio update twice (i.e., running a long-living interval + force update from the Dashboard),
       // there won't be any error thrown, as all portfolio updates are queued and they don't use the `withStatus` helper.
       this.updateSelectedAccountPortfolio(true),
-      this.#defiPositions.updatePositions()
+      this.defiPositions.updatePositions()
     ])
   }
 
@@ -1547,7 +1547,7 @@ export class MainController extends EventEmitter {
   async removeNetwork(id: NetworkId) {
     await this.networks.removeNetwork(id)
     await this.updateSelectedAccountPortfolio(true)
-    await this.#defiPositions.updatePositions()
+    await this.defiPositions.updatePositions()
   }
 
   async resolveAccountOpAction(data: any, actionId: AccountOpAction['id']) {
