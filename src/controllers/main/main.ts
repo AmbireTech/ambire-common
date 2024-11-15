@@ -1544,8 +1544,8 @@ export class MainController extends EventEmitter {
 
   async removeNetwork(id: NetworkId) {
     await this.networks.removeNetwork(id)
-    await this.updateSelectedAccountPortfolio(true)
-    await this.defiPositions.updatePositions()
+    this.portfolio.removeNetworkData(id)
+    this.defiPositions.removeNetworkData(id)
   }
 
   async resolveAccountOpAction(data: any, actionId: AccountOpAction['id']) {

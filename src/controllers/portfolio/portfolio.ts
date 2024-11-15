@@ -184,20 +184,20 @@ export class PortfolioController extends EventEmitter {
     if (error) accountState[network]!.criticalError = error
   }
 
-  #prepareLatestState(selectedAccount: Account) {
-    const state = this.latest
+  #prepareState(selectedAccount: Account, key: 'latest' | 'pending') {
+    const state = this[key]
     const accountId = selectedAccount.addr
 
     if (!state[accountId]) {
       state[accountId] = this.#networks.networks.reduce((acc: AccountState, network) => {
-        acc[network.id] = { isReady: false, isLoading: false, errors: [] }
+        acc[network.id] = { isReady: false, isLoading: true, errors: [] }
 
         return acc
       }, {} as AccountState)
 
       if (shouldGetAdditionalPortfolio(selectedAccount)) {
-        state[accountId].gasTank = { isReady: false, isLoading: false, errors: [] }
-        state[accountId].rewards = { isReady: false, isLoading: false, errors: [] }
+        state[accountId].gasTank = { isReady: false, isLoading: true, errors: [] }
+        state[accountId].rewards = { isReady: false, isLoading: true, errors: [] }
       }
 
       this.emitUpdate()
@@ -205,38 +205,21 @@ export class PortfolioController extends EventEmitter {
     }
 
     const accountState = state[accountId]
-    // Remove networks that are not in the list of networks. For example:
-    // If the user adds a custom network, the portfolio fetches assets for it but the user
-    // removes the network, the portfolio should remove the assets for that network.
-    for (const networkId of Object.keys(accountState)) {
-      if (
-        ![...this.#networks.networks, { id: 'gasTank' }, { id: 'rewards' }].find(
-          (x) => x.id === networkId
-        )
-      )
-        delete accountState[networkId]
-    }
+
+    // Init state for missing networks
+    this.#networks.networks.forEach((network) => {
+      if (!accountState[network.id]) {
+        accountState[network.id] = { isReady: false, isLoading: true, errors: [] }
+      }
+    })
     this.emitUpdate()
   }
 
-  #preparePendingState(selectedAccountId: AccountId) {
-    if (!this.pending[selectedAccountId]) {
-      this.pending[selectedAccountId] = {}
-      this.emitUpdate()
-      return
-    }
-
-    const accountState = this.pending[selectedAccountId]
-    // Remove networks that are not in the list of networks. For example:
-    // If the user adds a custom network, the portfolio fetches assets for it but the user
-    // removes the network, the portfolio should remove the assets for that network.
-    for (const networkId of Object.keys(accountState)) {
-      if (
-        ![...this.#networks.networks, { id: 'gasTank' }, { id: 'rewards' }].find(
-          (x) => x.id === networkId
-        )
-      )
-        delete accountState[networkId]
+  removeNetworkData(networkId: NetworkId) {
+    for (const accountState of [this.latest, this.pending]) {
+      for (const accountId of Object.keys(accountState)) {
+        delete accountState[accountId][networkId]
+      }
     }
     this.emitUpdate()
   }
@@ -437,14 +420,6 @@ export class PortfolioController extends EventEmitter {
       ])
     )
 
-    if (!_accountState[network.id]) {
-      _accountState[network.id] = {
-        isReady: false,
-        isLoading: false,
-        errors: []
-      }
-      this.emitUpdate()
-    }
     const state = _accountState[network.id]!
 
     // When the portfolio was called lastly
@@ -455,9 +430,6 @@ export class PortfolioController extends EventEmitter {
       !forceUpdate
     )
       return false
-
-    state.isLoading = true
-    this.emitUpdate()
 
     const tokenPreferences = this.tokenPreferences
 
@@ -527,8 +499,8 @@ export class PortfolioController extends EventEmitter {
     const selectedAccount = this.#accounts.accounts.find((x) => x.addr === accountId)
     if (!selectedAccount) throw new Error('selected account does not exist')
 
-    this.#prepareLatestState(selectedAccount)
-    this.#preparePendingState(selectedAccount.addr)
+    this.#prepareState(selectedAccount, 'latest')
+    this.#prepareState(selectedAccount, 'pending')
 
     const accountState = this.latest[accountId]
     const pendingState = this.pending[accountId]

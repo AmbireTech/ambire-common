@@ -47,7 +47,7 @@ export class DefiPositionsController extends EventEmitter {
     this.#networks = networks
   }
 
-  #initInitialAccountStateIfNeeded(accountAddr: string) {
+  #prepareState(accountAddr: string) {
     if (!this.state[accountAddr]) {
       this.state[accountAddr] = this.#networks.networks.reduce(
         (acc, n) => ({
@@ -58,7 +58,15 @@ export class DefiPositionsController extends EventEmitter {
       )
 
       this.emitUpdate()
+      return
     }
+
+    // Init state for missing networks
+    this.#networks.networks.forEach((n) => {
+      if (!this.state[accountAddr][n.id]) {
+        this.state[accountAddr][n.id] = { isLoading: true, positionsByProvider: [] }
+      }
+    })
   }
 
   #setProviderError(
@@ -93,7 +101,7 @@ export class DefiPositionsController extends EventEmitter {
     if (!this.#selectedAccount.account) return
 
     const selectedAccountAddr = this.#selectedAccount.account.addr
-    this.#initInitialAccountStateIfNeeded(selectedAccountAddr)
+    this.#prepareState(selectedAccountAddr)
 
     const networksToUpdate = networkId
       ? this.#networks.networks.filter((n) => n.id === networkId)
@@ -250,6 +258,13 @@ export class DefiPositionsController extends EventEmitter {
     } catch (error) {
       console.error('#setAssetPrices error in defiPositions:', error)
     }
+  }
+
+  removeNetworkData(networkId: NetworkId) {
+    Object.keys(this.state).forEach((accountId) => {
+      delete this.state[accountId][networkId]
+    })
+    this.emitUpdate()
   }
 
   get banners() {
