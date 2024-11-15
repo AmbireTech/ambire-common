@@ -16,7 +16,7 @@ import { DefiPositionsController } from '../defiPositions/defiPositions'
 import { NetworksController } from '../networks/networks'
 import { PortfolioController } from '../portfolio/portfolio'
 import { ProvidersController } from '../providers/providers'
-import { SelectedAccountController } from './selectedAccount'
+import { DEFAULT_SELECTED_ACCOUNT_PORTFOLIO, SelectedAccountController } from './selectedAccount'
 
 // @ts-ignore
 global.structuredClone = structuredClone as any
@@ -153,6 +153,10 @@ describe('SelectedAccount Controller', () => {
       }
     })
     portfolioCtrl.updateSelectedAccount('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8')
+  })
+  test('should rest selected account portfolio', () => {
+    selectedAccountCtrl.resetSelectedAccountPortfolio()
+    expect(selectedAccountCtrl.portfolio).toEqual(DEFAULT_SELECTED_ACCOUNT_PORTFOLIO)
   })
   test('should toJSON()', () => {
     const json = selectedAccountCtrl.toJSON()

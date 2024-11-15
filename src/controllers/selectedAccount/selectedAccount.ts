@@ -22,7 +22,7 @@ import { NetworksController } from '../networks/networks'
 import { PortfolioController } from '../portfolio/portfolio'
 import { ProvidersController } from '../providers/providers'
 
-const DEFAULT_SELECTED_ACCOUNT_PORTFOLIO = {
+export const DEFAULT_SELECTED_ACCOUNT_PORTFOLIO = {
   tokens: [],
   collections: [],
   totalBalance: 0,
@@ -144,7 +144,7 @@ export class SelectedAccountController extends EventEmitter {
 
   async setAccount(account: Account | null) {
     this.account = account
-    this.portfolio = DEFAULT_SELECTED_ACCOUNT_PORTFOLIO
+    this.resetSelectedAccountPortfolio(true)
 
     if (!account) {
       await this.#storage.remove('selectedAccount')
@@ -153,6 +153,14 @@ export class SelectedAccountController extends EventEmitter {
     }
 
     this.emitUpdate()
+  }
+
+  resetSelectedAccountPortfolio(skipUpdate?: boolean) {
+    this.portfolio = DEFAULT_SELECTED_ACCOUNT_PORTFOLIO
+
+    if (!skipUpdate) {
+      this.emitUpdate()
+    }
   }
 
   #updateSelectedAccountPortfolio(skipUpdate?: boolean) {
@@ -192,8 +200,6 @@ export class SelectedAccountController extends EventEmitter {
       (!this.portfolio?.tokens?.length && newSelectedAccountPortfolio.tokens.length)
     ) {
       this.portfolio = newSelectedAccountPortfolio
-    } else {
-      this.portfolio.isAllReady = false
     }
 
     if (!skipUpdate) {
