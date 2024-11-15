@@ -1,7 +1,5 @@
 import { Fetch } from '../../interfaces/fetch'
 import { NetworkId } from '../../interfaces/network'
-// eslint-disable-next-line import/no-cycle
-import { getNetworksWithDeFiPositionsErrorBanners } from '../../libs/banners/banners'
 import { getAssetValue } from '../../libs/defiPositions/helpers'
 import { getAAVEPositions, getUniV3Positions } from '../../libs/defiPositions/providers'
 import {
@@ -252,23 +250,10 @@ export class DefiPositionsController extends EventEmitter {
     }
   }
 
-  get banners() {
-    if (!this.#selectedAccount.account) return []
-
-    const errorBanners = getNetworksWithDeFiPositionsErrorBanners({
-      networks: this.#networks.networks,
-      currentAccountState: this.state[this.#selectedAccount.account.addr],
-      providers: this.#providers.providers
-    })
-
-    return errorBanners
-  }
-
   toJSON() {
     return {
       ...this,
-      ...super.toJSON(),
-      banners: this.banners
+      ...super.toJSON()
     }
   }
 }

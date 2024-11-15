@@ -1,6 +1,9 @@
 import { Account } from '../../interfaces/account'
+import { Banner } from '../../interfaces/banner'
 import { SelectedAccountPortfolio } from '../../interfaces/selectedAccount'
 import { Storage } from '../../interfaces/storage'
+// eslint-disable-next-line import/no-cycle
+import { getNetworksWithDeFiPositionsErrorBanners } from '../../libs/banners/banners'
 import { sortByValue } from '../../libs/defiPositions/helpers'
 import { PositionsByProvider } from '../../libs/defiPositions/types'
 import {
@@ -14,8 +17,10 @@ import { Action, ActionsController } from '../actions/actions'
 // eslint-disable-next-line import/no-cycle
 import { DefiPositionsController } from '../defiPositions/defiPositions'
 import EventEmitter from '../eventEmitter/eventEmitter'
+import { NetworksController } from '../networks/networks'
 // eslint-disable-next-line import/no-cycle
 import { PortfolioController } from '../portfolio/portfolio'
+import { ProvidersController } from '../providers/providers'
 
 const DEFAULT_SELECTED_ACCOUNT_PORTFOLIO = {
   tokens: [],
@@ -39,6 +44,10 @@ export class SelectedAccountController extends EventEmitter {
 
   #actions: ActionsController | null = null
 
+  #networks: NetworksController | null = null
+
+  #providers: ProvidersController | null = null
+
   account: Account | null = null
 
   portfolio: SelectedAccountPortfolio = DEFAULT_SELECTED_ACCOUNT_PORTFOLIO
@@ -48,6 +57,8 @@ export class SelectedAccountController extends EventEmitter {
   #shouldDebounceFlags: { [key: string]: boolean } = {}
 
   defiPositions: PositionsByProvider[] = []
+
+  defiPositionsBanners: Banner[] = []
 
   actions: Action[] = []
 
@@ -83,19 +94,26 @@ export class SelectedAccountController extends EventEmitter {
   initControllers({
     portfolio,
     defiPositions,
-    actions
+    actions,
+    networks,
+    providers
   }: {
     portfolio: PortfolioController
     defiPositions: DefiPositionsController
     actions: ActionsController
+    networks: NetworksController
+    providers: ProvidersController
   }) {
     this.#portfolio = portfolio
     this.#defiPositions = defiPositions
     this.#actions = actions
+    this.#networks = networks
+    this.#providers = providers
 
     this.#updateSelectedAccountPortfolio(true)
     this.#updateSelectedAccountDefiPositions(true)
     this.#updateSelectedAccountActions(true)
+    this.#updateDefiPositionsBanners(true)
 
     this.#portfolio.onUpdate(async () => {
       this.#debounceFunctionCallsOnSameTick('updateSelectedAccountPortfolio', () =>
@@ -109,6 +127,9 @@ export class SelectedAccountController extends EventEmitter {
       )
       this.#debounceFunctionCallsOnSameTick('updateSelectedAccountDefiPositions', () =>
         this.#updateSelectedAccountDefiPositions()
+      )
+      this.#debounceFunctionCallsOnSameTick('updateDefiPositionsBanners', () =>
+        this.#updateDefiPositionsBanners()
       )
     })
 
@@ -249,6 +270,22 @@ export class SelectedAccountController extends EventEmitter {
       this.#shouldDebounceFlags[funcName] = false
       func()
     }, 0)
+  }
+
+  #updateDefiPositionsBanners(skipUpdate?: boolean) {
+    if (!this.account || !this.#networks || !this.#providers || !this.#defiPositions) return
+
+    const errorBanners = getNetworksWithDeFiPositionsErrorBanners({
+      networks: this.#networks.networks,
+      currentAccountState: this.#defiPositions.state[this.account.addr],
+      providers: this.#providers.providers
+    })
+
+    this.defiPositionsBanners = errorBanners
+
+    if (!skipUpdate) {
+      this.emitUpdate()
+    }
   }
 
   toJSON() {
