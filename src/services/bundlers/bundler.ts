@@ -248,6 +248,6 @@ export class Bundler {
       }
     }
 
-    return 'Unknown error'
+    return 'Bundler request failed. Please try again or contact support.'
   }
 }
