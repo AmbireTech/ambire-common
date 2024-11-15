@@ -152,7 +152,7 @@ describe('SelectedAccount Controller', () => {
     })
     portfolioCtrl.updateSelectedAccount('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8')
   })
-  test('should rest selected account portfolio', (done) => {
+  test('should rest selected account portfolio', () => {
     selectedAccountCtrl.resetSelectedAccountPortfolio()
     expect(selectedAccountCtrl.portfolio).toEqual(DEFAULT_SELECTED_ACCOUNT_PORTFOLIO)
   })
