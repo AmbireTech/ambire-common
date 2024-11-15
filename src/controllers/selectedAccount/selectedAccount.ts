@@ -17,7 +17,7 @@ import EventEmitter from '../eventEmitter/eventEmitter'
 // eslint-disable-next-line import/no-cycle
 import { PortfolioController } from '../portfolio/portfolio'
 
-const DEFAULT_SELECTED_ACCOUNT_PORTFOLIO = {
+export const DEFAULT_SELECTED_ACCOUNT_PORTFOLIO = {
   tokens: [],
   collections: [],
   totalBalance: 0,
@@ -171,8 +171,6 @@ export class SelectedAccountController extends EventEmitter {
       (!this.portfolio?.tokens?.length && newSelectedAccountPortfolio.tokens.length)
     ) {
       this.portfolio = newSelectedAccountPortfolio
-    } else {
-      this.portfolio.isAllReady = false
     }
 
     if (!skipUpdate) {
