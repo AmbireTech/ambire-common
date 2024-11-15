@@ -24,6 +24,8 @@ function getGenericMessageFromType(errorType: ErrorType, reason: DecodedError['r
       return `Transaction cannot be sent because of an unknown error. Please try again or contact Ambire support for assistance.${reasonString}`
     case ErrorType.InnerCallFailureError:
       return `Transaction cannot be sent because of a failure while validating the transaction. Please try again or contact Ambire support for assistance.${reasonString}`
+    case ErrorType.RevertError:
+      return `Transaction cannot be sent because of a revert error. Please try again or contact Ambire support for assistance.${reasonString}`
     default:
       return LAST_RESORT_ERROR_MESSAGE
   }

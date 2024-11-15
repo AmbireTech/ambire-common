@@ -4,6 +4,8 @@ import { AbiCoder, ErrorFragment } from 'ethers'
 import { ERROR_PREFIX } from '../constants'
 import { DecodedError, ErrorHandler, ErrorType } from '../types'
 
+const PREFIXES_TO_REMOVE = ['ERC20: ']
+
 class RevertErrorHandler implements ErrorHandler {
   public matches(data: string): boolean {
     return data?.startsWith(ERROR_PREFIX)
@@ -16,9 +18,15 @@ class RevertErrorHandler implements ErrorHandler {
       const fragment = ErrorFragment.from('Error(string)')
       const args = abi.decode(fragment.inputs, `0x${encodedReason}`)
       const reason = args[0] as string
+      let formattedReason = reason
+
+      PREFIXES_TO_REMOVE.forEach((prefix) => {
+        formattedReason = formattedReason.replace(prefix, '')
+      })
+
       return {
         type: ErrorType.RevertError,
-        reason,
+        reason: formattedReason,
         data
       }
     } catch (e) {

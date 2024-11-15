@@ -8,6 +8,8 @@ export function humanizeEstimationError(e: Error) {
   const decodedError = decodeError(e)
   const errorMessage = getHumanReadableErrorMessage(decodedError.reason, decodedError.type)
 
+  console.log('humanizeEstimationError', errorMessage)
+
   return new Error(errorMessage)
 }
 

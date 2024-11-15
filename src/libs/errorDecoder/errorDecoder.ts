@@ -5,16 +5,11 @@ import {
   RevertErrorHandler,
   RpcErrorHandler
 } from './handlers'
-import { getDataFromError, isReasonValid } from './helpers'
+import { formatReason, getDataFromError, isReasonValid } from './helpers'
 import { DecodedError, ErrorType } from './types'
 
-const ERROR_HANDLERS = [
-  PanicErrorHandler,
-  RpcErrorHandler,
-  InnerCallFailureHandler,
-  BundlerAndPaymasterErrorHandler,
-  RevertErrorHandler
-]
+const PREPROCESSOR_HANDLERS = [BundlerAndPaymasterErrorHandler, InnerCallFailureHandler]
+const ERROR_HANDLERS = [RpcErrorHandler, PanicErrorHandler, RevertErrorHandler]
 
 export function decodeError(e: Error): DecodedError {
   const errorData = getDataFromError(e)
@@ -25,15 +20,28 @@ export function decodeError(e: Error): DecodedError {
     data: errorData
   }
 
-  ERROR_HANDLERS.forEach((HandlerClass) => {
+  // Run preprocessor handlers first
+  // The idea is that preprocessor handlers can either decode the error
+  // or leave it partially decoded for the other handlers to decode
+  PREPROCESSOR_HANDLERS.forEach((HandlerClass) => {
     const handler = new HandlerClass()
-    const hasAlreadyBeenHandled =
-      decodedError.type !== ErrorType.UnknownError && isReasonValid(decodedError.reason)
-
-    if (handler.matches(errorData, e) && !hasAlreadyBeenHandled) {
+    if (handler.matches(errorData, e)) {
       decodedError = handler.handle(errorData, e)
     }
   })
+
+  // Run error handlers
+  ERROR_HANDLERS.forEach((HandlerClass) => {
+    const handler = new HandlerClass()
+    const isValidReason = isReasonValid(decodedError.reason)
+    const processedData = decodedError.data || errorData
+
+    if (handler.matches(processedData, e) && !isValidReason) {
+      decodedError = handler.handle(processedData, e)
+    }
+  })
+
+  decodedError.reason = formatReason(decodedError.reason || '')
 
   return decodedError
 }

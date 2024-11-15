@@ -10,6 +10,7 @@ import { AccountOp } from '../accountOp/accountOp'
 import { Call } from '../accountOp/types'
 import { getFeeCall } from '../calls/calls'
 import { fromDescriptor } from '../deployless/deployless'
+import { InnerCallFailureError } from '../errorDecoder/customErrors'
 import { getProbableCallData } from '../gasPrice/gasPrice'
 import { TokenResult } from '../portfolio'
 import {
@@ -18,7 +19,6 @@ import {
   shouldUsePaymaster
 } from '../userOperation/userOperation'
 import { estimationErrorFormatted, humanizeEstimationError } from './errors'
-import { InnerCallFailureError } from './errors/customErrors'
 import { bundlerEstimate } from './estimateBundler'
 import { estimateEOA } from './estimateEOA'
 import { estimateGas } from './estimateGas'

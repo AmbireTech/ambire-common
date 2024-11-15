@@ -1,3 +1,7 @@
+import { isHexString, toUtf8String } from 'ethers'
+
+import { ERROR_PREFIX, PANIC_ERROR_PREFIX } from './constants'
+
 const panicErrorCodeToReason = (errorCode: bigint): string | undefined => {
   switch (errorCode) {
     case 0x0n:
@@ -26,7 +30,25 @@ const panicErrorCodeToReason = (errorCode: bigint): string | undefined => {
 }
 
 const isReasonValid = (reason: string | null): boolean => {
-  return !!reason && reason !== '0x' && reason !== 'Unknown error' && reason !== 'UNKNOWN_ERROR'
+  return (
+    !!reason &&
+    reason !== '0x' &&
+    reason !== 'Unknown error' &&
+    reason !== 'UNKNOWN_ERROR' &&
+    !reason.startsWith(ERROR_PREFIX) &&
+    !reason.startsWith(PANIC_ERROR_PREFIX)
+  )
+}
+
+/**
+ * Some reasons are encoded in hex, this function will decode them to a human-readable string
+ * which can then be matched to a specific error message.
+ */
+const formatReason = (reason: string): string => {
+  if (!isHexString(reason)) return reason
+  if (reason.startsWith(ERROR_PREFIX) || reason.startsWith(PANIC_ERROR_PREFIX)) return reason
+
+  return toUtf8String(reason)
 }
 
 function getDataFromError(error: Error): string {
@@ -50,4 +72,4 @@ function getDataFromError(error: Error): string {
   return returnData
 }
 
-export { panicErrorCodeToReason, isReasonValid, getDataFromError }
+export { panicErrorCodeToReason, isReasonValid, getDataFromError, formatReason }

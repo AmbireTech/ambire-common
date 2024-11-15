@@ -9,6 +9,9 @@ import { InnerCallFailureError } from './customErrors'
 import { decodeError } from './errorDecoder'
 import { DecodedError, ErrorType } from './types'
 
+const TEST_MESSAGE_REVERT_DATA =
+  '0x08c379a00000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000000c54657374206d6573736167650000000000000000000000000000000000000000'
+
 const MockBundlerAndPaymasterError = class extends Error {
   public constructor(public shortMessage?: string) {
     super(`UserOperation reverted during simulation with reason: ${shortMessage}`)
@@ -27,64 +30,45 @@ const MockRpcError = class extends Error {
 
 describe('Error decoders work', () => {
   let contract: any
-  let decodedError: DecodedError
 
   beforeEach(async () => {
     const contractFactory = await ethers.getContractFactory('MockContract')
     contract = await contractFactory.deploy()
   })
 
-  describe('PanicErrorHandler', () => {
-    beforeEach(async () => {
-      try {
-        await contract.panicUnderflow()
-      } catch (e: any) {
-        expect(e).toBeDefined()
-        decodedError = decodeError(e)
-      }
-    })
+  it('should handle PanicError correctly', async () => {
+    try {
+      await contract.panicUnderflow()
+    } catch (e: any) {
+      expect(e).toBeDefined()
+      const decodedError = decodeError(e)
 
-    it('should return error type as PanicError', async () => {
       expect(decodedError.type).toEqual(ErrorType.PanicError)
-    })
 
-    it('should return panic error data', async () => {
       const errorData = concat([PANIC_ERROR_PREFIX, zeroPadValue(getBytes('0x11'), 32)])
-
       expect(decodedError.data).toEqual(errorData)
-    })
 
-    it('should capture the panic error', async () => {
       expect(decodedError.reason).toEqual(
         'Arithmetic operation underflowed or overflowed outside of an unchecked block'
       )
-    })
+    }
   })
   describe('RpcErrorHandler', () => {
-    describe('Reverted not due to contract errors', () => {
-      beforeEach(async () => {
-        try {
-          await contract.revertWithReason('Test message', {
-            gasLimit: 100000,
-            gasPrice: '1180820112192848923743894728934'
-          })
-        } catch (e: any) {
-          expect(e).toBeDefined()
-          decodedError = decodeError(e)
-        }
-      })
+    it('should handle errors reverted not due to contract errors', async () => {
+      let decodedError: DecodedError
 
-      it('should return error type as RpcError', async () => {
+      try {
+        await contract.revertWithReason('Test message', {
+          gasLimit: 100000,
+          gasPrice: '1180820112192848923743894728934'
+        })
+      } catch (e: any) {
+        expect(e).toBeDefined()
+        decodedError = decodeError(e)
         expect(decodedError.type).toEqual(ErrorType.RpcError)
-      })
-
-      it('should return the error reason', async () => {
         expect(decodedError.reason).toContain("sender doesn't have enough funds to send tx")
-      })
-
-      it('should return data as null', async () => {
         expect(decodedError.data).toBe('')
-      })
+      }
     })
     describe('Prioritizes error code if string, otherwise fallbacks', () => {
       it('should use error code if string', async () => {
@@ -99,7 +83,7 @@ describe('Error decoders work', () => {
           'insufficient funds for intrinsic transaction cost'
         )
 
-        decodedError = decodeError(mockRpcError)
+        const decodedError = decodeError(mockRpcError)
 
         expect(decodedError.reason).toEqual(mockRpcError.code)
       })
@@ -115,7 +99,7 @@ describe('Error decoders work', () => {
           },
           'insufficient funds for intrinsic transaction cost'
         )
-        decodedError = decodeError(mockRpcError)
+        const decodedError = decodeError(mockRpcError)
 
         expect(decodedError.reason).toEqual(mockRpcError.shortMessage)
       })
@@ -130,103 +114,65 @@ describe('Error decoders work', () => {
           },
           ''
         )
-        decodedError = decodeError(mockRpcError)
+        const decodedError = decodeError(mockRpcError)
 
         expect(decodedError.reason).toEqual(mockRpcError.info?.error.message)
       })
     })
   })
   describe('InnerCallFailureHandler', () => {
-    beforeEach(async () => {
-      try {
-        throw new InnerCallFailureError('transfer amount exceeds balance')
-      } catch (e: any) {
-        expect(e).toBeDefined()
-        decodedError = decodeError(e)
-      }
-    })
+    it('Error is decoded InnerCallFailureHandler it if not panic or revert', async () => {
+      const error = new InnerCallFailureError('transfer amount exceeds balance')
+      const decodedError = decodeError(error)
 
-    it('should return error type as InnerCallFailureError', async () => {
       expect(decodedError.type).toEqual(ErrorType.InnerCallFailureError)
-    })
-
-    it('should return the error reason', async () => {
       expect(decodedError.reason).toBe('transfer amount exceeds balance')
+      expect(decodedError.data).toBe('transfer amount exceeds balance')
     })
+    it("Error doesn't gets overwritten by Panic/Revert if it is panic or revert", async () => {
+      const error = new InnerCallFailureError(TEST_MESSAGE_REVERT_DATA)
+      const decodedError = decodeError(error)
 
-    it('should return data as null', async () => {
-      expect(decodedError.data).toBe('')
-    })
-  })
-  describe('BundlerAndPaymasterErrorHandler', () => {
-    beforeEach(async () => {
-      try {
-        throw new MockBundlerAndPaymasterError('paymaster deposit too low')
-      } catch (e: any) {
-        expect(e).toBeDefined()
-        decodedError = decodeError(e)
-      }
-    })
-
-    it('should return error type as BundlerAndPaymasterErrorHandler', async () => {
-      expect(decodedError.type).toEqual(ErrorType.BundlerAndPaymasterErrorHandler)
-    })
-
-    it('should return the error reason', async () => {
-      expect(decodedError.reason).toBe('paymaster deposit too low')
-    })
-
-    it('should return data as null', async () => {
-      expect(decodedError.data).toBe('')
-    })
-  })
-  describe('RevertErrorHandler (reverted with reason)', () => {
-    beforeEach(async () => {
-      try {
-        await contract.revertWithReason('Test message')
-      } catch (e: any) {
-        expect(e).toBeDefined()
-        decodedError = decodeError(e)
-      }
-    })
-
-    it('should return error type as RevertError', async () => {
       expect(decodedError.type).toEqual(ErrorType.RevertError)
-    })
-
-    it('should return revert error data', async () => {
-      const errorData =
-        '0x08c379a00000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000000c54657374206d6573736167650000000000000000000000000000000000000000'
-
-      expect(decodedError.data).toEqual(errorData)
-    })
-
-    it('should capture the revert', async () => {
-      expect(decodedError.reason).toEqual('Test message')
+      expect(decodedError.reason).toBe('Test message')
+      expect(decodedError.data).toBe(TEST_MESSAGE_REVERT_DATA)
     })
   })
-  describe('When reverted without reason (UnknownError)', () => {
-    beforeEach(async () => {
-      try {
-        await contract.revertWithoutReason()
-      } catch (e: any) {
-        expect(e).toBeDefined()
-        decodedError = decodeError(e)
-      }
-    })
+  it('should handle BundlerAndPaymasterError correctly', async () => {
+    try {
+      throw new MockBundlerAndPaymasterError('paymaster deposit too low')
+    } catch (e: any) {
+      expect(e).toBeDefined()
+      const decodedError = decodeError(e)
 
-    it('should return error type as UnknownError', async () => {
-      expect(decodedError.type).toEqual(ErrorType.UnknownError)
-    })
+      expect(decodedError.type).toEqual(ErrorType.BundlerAndPaymasterErrorHandler)
+      expect(decodedError.reason).toBe('paymaster deposit too low')
+      expect(decodedError.data).toBe('paymaster deposit too low')
+    }
+  })
+  it('should handle RevertError correctly when reverted with reason', async () => {
+    try {
+      await contract.revertWithReason('Test message')
+    } catch (e: any) {
+      expect(e).toBeDefined()
+      const decodedError = decodeError(e)
 
-    it('should return revert error data', async () => {
+      expect(decodedError.type).toEqual(ErrorType.RevertError)
+      expect(decodedError.data).toEqual(TEST_MESSAGE_REVERT_DATA)
+      expect(decodedError.reason).toEqual('Test message')
+    }
+  })
+  it('should handle UnknownError correctly when reverted without reason', async () => {
+    try {
+      await contract.revertWithoutReason()
+    } catch (e: any) {
+      expect(e).toBeDefined()
+      const decodedError = decodeError(e)
       const errorData = '0x'
 
+      expect(decodedError.type).toEqual(ErrorType.UnknownError)
       expect(decodedError.data).toEqual(errorData)
-    })
-
-    it('should capture revert without reason', async () => {
       expect(decodedError.reason).toBe('')
-    })
+    }
   })
 })

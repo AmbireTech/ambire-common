@@ -12,7 +12,7 @@ class InnerCallFailureHandler implements ErrorHandler {
     return {
       type: ErrorType.InnerCallFailureError,
       reason,
-      data
+      data: reason
     }
   }
 }

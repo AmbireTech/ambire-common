@@ -2,8 +2,8 @@
 import { DecodedError, ErrorHandler, ErrorType } from '../types'
 
 class BundlerAndPaymasterErrorHandler implements ErrorHandler {
-  public matches(data: string, error: Error) {
-    const { message } = error
+  public matches(data: string, error: any) {
+    const { message } = error?.error || error || {}
 
     return message.includes('UserOperation reverted during simulation with reason:')
   }
@@ -15,7 +15,7 @@ class BundlerAndPaymasterErrorHandler implements ErrorHandler {
     return {
       type: ErrorType.BundlerAndPaymasterErrorHandler,
       reason,
-      data
+      data: reason
     }
   }
 }

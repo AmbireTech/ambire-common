@@ -99,8 +99,7 @@ export async function estimateEOA(
             }
           )
           .catch((e) => {
-            console.log('error calling estimateEoa:')
-            console.log(e)
+            console.log('error calling estimateEoa:', e)
             return [[0n, [], {}]]
           })
       : deploylessEstimator
