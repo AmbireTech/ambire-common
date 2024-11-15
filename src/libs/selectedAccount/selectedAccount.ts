@@ -57,7 +57,19 @@ export const updatePortfolioStateWithDefiPositions = (
 
             networkBalance -= tokenBalanceUSD || 0 // deduct portfolio token balance
 
-            tokens = tokens.filter((_, index) => index !== tokenInPortfolioIndex)
+            tokens = tokens.map((token, idx) => {
+              if (idx === tokenInPortfolioIndex) {
+                return {
+                  ...token,
+                  flags: {
+                    ...(token.flags || {}),
+                    isDefiToken: true
+                  }
+                } as TokenResult
+              }
+
+              return token
+            })
           }
         })
 
