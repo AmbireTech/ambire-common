@@ -220,17 +220,34 @@ export class Bundler {
   }
 
   // used when catching errors from bundler requests
-  static decodeBundlerError(e: any): string {
-    // TODO: add more specific error messages
-    const FALLBACK_ERROR_MESSAGE =
-      'Bundler broadcast failed. Please try broadcasting by an EOA or contact support.'
-    const decodedError = decodeError(e)
+  static decodeBundlerError(e: any, action: 'broadcast' | 'estimate'): string {
+    if (action === 'broadcast') {
+      // TODO: add more specific error messages
+      const FALLBACK_ERROR_MESSAGE =
+        'Bundler broadcast failed. Please try broadcasting by an EOA or contact support.'
+      const decodedError = decodeError(e)
 
-    switch (decodedError.type) {
-      case ErrorType.RpcError:
-        return 'Transaction cannot be sent because of an RPC error. Please try again or contact Ambire support for assistance.'
-      default:
-        return FALLBACK_ERROR_MESSAGE
+      switch (decodedError.type) {
+        case ErrorType.RpcError:
+          return 'Transaction cannot be sent because of an RPC error. Please try again or contact Ambire support for assistance.'
+        default:
+          return FALLBACK_ERROR_MESSAGE
+      }
     }
+
+    if (action === 'estimate') {
+      const FALLBACK_ERROR_MESSAGE =
+        'Bundler estimation failed. Please try again or contact support.'
+      const decodedError = decodeError(e)
+
+      switch (decodedError.type) {
+        case ErrorType.RpcError:
+          return 'Bundler estimation failed due to an RPC error. Please try again or contact Ambire support for assistance.'
+        default:
+          return FALLBACK_ERROR_MESSAGE
+      }
+    }
+
+    return 'Unknown error'
   }
 }
