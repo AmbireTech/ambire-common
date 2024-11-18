@@ -1,8 +1,9 @@
 export enum ErrorType {
   RevertError = 'RevertError',
   PanicError = 'PanicError',
+  RelayerError = 'RelayerError',
   RpcError = 'RpcError',
-  BundlerAndPaymasterErrorHandler = 'BundlerAndPaymasterErrorHandler',
+  BundlerAndPaymasterError = 'BundlerAndPaymasterError',
   UnknownError = 'UnknownError',
   InnerCallFailureError = 'InnerCallFailureError'
 }

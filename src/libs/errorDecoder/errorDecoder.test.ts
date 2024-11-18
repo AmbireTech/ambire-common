@@ -4,6 +4,7 @@ import { ethers } from 'hardhat'
 
 import { describe, expect } from '@jest/globals'
 
+import { RELAYER_DOWN_MESSAGE } from '../relayerCall/relayerCall'
 import { PANIC_ERROR_PREFIX } from './constants'
 import { InnerCallFailureError } from './customErrors'
 import { decodeError } from './errorDecoder'
@@ -145,7 +146,7 @@ describe('Error decoders work', () => {
       expect(e).toBeDefined()
       const decodedError = decodeError(e)
 
-      expect(decodedError.type).toEqual(ErrorType.BundlerAndPaymasterErrorHandler)
+      expect(decodedError.type).toEqual(ErrorType.BundlerAndPaymasterError)
       expect(decodedError.reason).toBe('paymaster deposit too low')
       expect(decodedError.data).toBe('paymaster deposit too low')
     }
@@ -160,6 +161,18 @@ describe('Error decoders work', () => {
       expect(decodedError.type).toEqual(ErrorType.RevertError)
       expect(decodedError.data).toEqual(TEST_MESSAGE_REVERT_DATA)
       expect(decodedError.reason).toEqual('Test message')
+    }
+  })
+  it('should handle RelayerError correctly', async () => {
+    try {
+      throw new Error(RELAYER_DOWN_MESSAGE)
+    } catch (e: any) {
+      expect(e).toBeDefined()
+      const decodedError = decodeError(e)
+
+      expect(decodedError.type).toEqual(ErrorType.RelayerError)
+      expect(decodedError.reason).toBe(RELAYER_DOWN_MESSAGE)
+      expect(decodedError.data).toBe('')
     }
   })
   it('should handle UnknownError correctly when reverted without reason', async () => {

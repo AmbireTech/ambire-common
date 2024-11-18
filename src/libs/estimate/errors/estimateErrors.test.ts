@@ -3,6 +3,7 @@ import { ethers } from 'hardhat'
 
 import { describe, expect } from '@jest/globals'
 
+import { RELAYER_DOWN_MESSAGE } from '../../relayerCall/relayerCall'
 import { humanizeEstimationError } from './index'
 
 const MockBundlerAndPaymasterError = class extends Error {
@@ -39,16 +40,12 @@ describe('Estimation errors are humanized', () => {
     )
   })
   it('Relayer error', () => {
-    const errorMessages = ['no json in res', 'Relayer error', 'failed to fetch']
+    const error = new Error(RELAYER_DOWN_MESSAGE)
+    const humanizedError = humanizeEstimationError(error)
 
-    errorMessages.forEach((errorMessage) => {
-      const error = new Error(errorMessage)
-      const humanizedError = humanizeEstimationError(error)
-
-      expect(humanizedError.message).toBe(
-        'Transaction cannot be sent because of an unknown error. Please try again or contact Ambire support for assistance.'
-      )
-    })
+    expect(humanizedError.message).toBe(
+      'Transaction cannot be sent because the Ambire relayer is down. Please try again later or contact Ambire support for assistance.'
+    )
   })
   it('Paymaster deposit too low', async () => {
     const error = new MockBundlerAndPaymasterError('paymaster deposit too low')

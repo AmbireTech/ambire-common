@@ -14,11 +14,13 @@ function getGenericMessageFromType(errorType: ErrorType, reason: DecodedError['r
   }
 
   switch (errorType) {
+    case ErrorType.RelayerError:
+      return 'Transaction cannot be sent because the Ambire relayer is down. Please try again later or contact Ambire support for assistance.'
     case ErrorType.RpcError:
       return `Transaction cannot be sent because of an RPC error. Please try again or contact Ambire support for assistance.${reasonString}`
     case ErrorType.PanicError:
       return `Transaction cannot be sent because of a panic error. Please try again or contact Ambire support for assistance.${reasonString}`
-    case ErrorType.BundlerAndPaymasterErrorHandler:
+    case ErrorType.BundlerAndPaymasterError:
       return `Transaction cannot be sent because of a Bundler/Paymaster error. Please try again or contact Ambire support for assistance.${reasonString}`
     case ErrorType.UnknownError:
       return `Transaction cannot be sent because of an unknown error. Please try again or contact Ambire support for assistance.${reasonString}`
