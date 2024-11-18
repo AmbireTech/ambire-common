@@ -51,12 +51,12 @@ const formatReason = (reason: string): string => {
   return toUtf8String(reason)
 }
 
-const getErrorCodeStringFromReason = (reason: string): string => {
+const getErrorCodeStringFromReason = (reason: string, withSpace = true): string => {
   if (!reason || !isReasonValid(reason)) return ''
 
   const truncatedReason = reason.length > 100 ? `${reason.slice(0, 100)}...` : reason
 
-  return `Error code: ${truncatedReason}`
+  return `${withSpace ? ' ' : ''}Error code: ${truncatedReason}`
 }
 
 function getDataFromError(error: Error): string {
