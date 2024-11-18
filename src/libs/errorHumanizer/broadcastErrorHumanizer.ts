@@ -5,7 +5,7 @@ import { humanizeEstimationOrBroadcastError } from './humanizeCommonCases'
 
 const LAST_RESORT_ERROR_MESSAGE =
   'An unknown error occurred while broadcasting the transaction. Please try again or contact Ambire support for assistance.'
-const MESSAGE_PREFIX = 'The transaction cannot be broadcasted'
+const MESSAGE_PREFIX = 'The transaction cannot be broadcast'
 
 function getGenericMessageFromType(errorType: ErrorType, reason: DecodedError['reason']): string {
   const reasonString = getErrorCodeStringFromReason(reason ?? '')
