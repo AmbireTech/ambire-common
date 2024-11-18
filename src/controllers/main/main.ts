@@ -314,7 +314,9 @@ export class MainController extends EventEmitter {
     this.selectedAccount.initControllers({
       portfolio: this.portfolio,
       defiPositions: this.defiPositions,
-      actions: this.actions
+      actions: this.actions,
+      networks: this.networks,
+      providers: this.providers
     })
     this.swapAndBridge = new SwapAndBridgeController({
       selectedAccount: this.selectedAccount,
@@ -902,6 +904,7 @@ export class MainController extends EventEmitter {
 
     const isUpdatingAccount = this.accounts.statuses.updateAccountState !== 'INITIAL'
 
+    this.selectedAccount.resetSelectedAccountPortfolio()
     await Promise.all([
       // When we trigger `reloadSelectedAccount` (for instance, from Dashboard -> Refresh balance icon),
       // it's very likely that the account state is already in the process of being updated.
