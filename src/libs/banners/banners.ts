@@ -1,15 +1,15 @@
-// eslint-disable-next-line import/no-cycle
 import {
   AccountOpAction,
   Action as ActionFromActionsQueue
 } from '../../controllers/actions/actions'
 // eslint-disable-next-line import/no-cycle
-import { PortfolioController } from '../../controllers/portfolio/portfolio'
 import { Account, AccountId } from '../../interfaces/account'
 import { Action, Banner } from '../../interfaces/banner'
 import { Network, NetworkId } from '../../interfaces/network'
 import { RPCProviders } from '../../interfaces/provider'
 import { ActiveRoute } from '../../interfaces/swapAndBridge'
+// eslint-disable-next-line import/no-cycle
+import { PortfolioControllerState } from '../../libs/portfolio/interfaces'
 import { AccountState, DeFiPositionsError } from '../defiPositions/types'
 import { getNetworksWithFailedRPC } from '../networks/networks'
 import { PORTFOLIO_LIB_ERROR_NAMES } from '../portfolio/portfolio'
@@ -362,7 +362,7 @@ export const getNetworksWithPortfolioErrorBanners = ({
   providers
 }: {
   networks: Network[]
-  portfolioLatest: PortfolioController['latest']
+  portfolioLatest: PortfolioControllerState
   providers: RPCProviders
 }): Banner[] => {
   const banners: Banner[] = []
