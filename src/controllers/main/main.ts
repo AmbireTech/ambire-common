@@ -45,7 +45,10 @@ import {
   getAccountOpFromAction
 } from '../../libs/actions/actions'
 import { getAccountOpBanners } from '../../libs/banners/banners'
-import { getHumanReadableBroadcastError } from '../../libs/errorHumanizer'
+import {
+  getHumanReadableBroadcastError,
+  getHumanReadableEstimationError
+} from '../../libs/errorHumanizer'
 import { estimate } from '../../libs/estimate/estimate'
 import { BundlerGasPrice, EstimateResult } from '../../libs/estimate/interfaces'
 import { GasRecommendation, getGasPriceRecommendations } from '../../libs/gasPrice/gasPrice'
@@ -1837,9 +1840,11 @@ export class MainController extends EventEmitter {
             )
           }
         ).catch((e) => {
+          const { message } = getHumanReadableEstimationError(e)
+
           this.emitError({
             level: 'major',
-            message: `Failed to estimate account op for ${localAccountOp.accountAddr} on ${localAccountOp.networkId}`,
+            message,
             error: e
           })
           return null

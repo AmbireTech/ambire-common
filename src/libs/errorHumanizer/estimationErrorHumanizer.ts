@@ -15,17 +15,17 @@ function getGenericMessageFromType(errorType: ErrorType, reason: DecodedError['r
     case ErrorType.RelayerError:
       return `${MESSAGE_PREFIX} the Ambire relayer is down. Please try again later, broadcast with a Basic Account or contact Ambire support for assistance.`
     case ErrorType.RpcError:
-      return `${MESSAGE_PREFIX} of an RPC error. Please try again or contact Ambire support for assistance.${reasonString}`
+      return `${MESSAGE_PREFIX} of an RPC error. Please try again or contact Ambire support for assistance. ${reasonString}`
     case ErrorType.PanicError:
-      return `${MESSAGE_PREFIX} of a panic error. Please try again or contact Ambire support for assistance.${reasonString}`
+      return `${MESSAGE_PREFIX} of a panic error. Please try again or contact Ambire support for assistance. ${reasonString}`
     case ErrorType.BundlerAndPaymasterError:
-      return `${MESSAGE_PREFIX} of a Bundler/Paymaster error. Please try again or contact Ambire support for assistance.${reasonString}`
+      return `${MESSAGE_PREFIX} of a Bundler/Paymaster error. Please try again or contact Ambire support for assistance. ${reasonString}`
     case ErrorType.UnknownError:
-      return `${MESSAGE_PREFIX} of an unknown error. Please try again or contact Ambire support for assistance.${reasonString}`
+      return `${MESSAGE_PREFIX} of an unknown error. Please try again or contact Ambire support for assistance. ${reasonString}`
     case ErrorType.InnerCallFailureError:
-      return `${MESSAGE_PREFIX} of a failure while validating the transaction. Please try again or contact Ambire support for assistance.${reasonString}`
+      return `${MESSAGE_PREFIX} of a failure while validating the transaction. Please try again or contact Ambire support for assistance. ${reasonString}`
     case ErrorType.RevertError:
-      return `${MESSAGE_PREFIX} of a revert error. Please try again or contact Ambire support for assistance.${reasonString}`
+      return `${MESSAGE_PREFIX} of a revert error. Please try again or contact Ambire support for assistance. ${reasonString}`
     default:
       return LAST_RESORT_ERROR_MESSAGE
   }
