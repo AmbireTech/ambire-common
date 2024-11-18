@@ -9,8 +9,12 @@ import RelayerErrorHandler from './handlers/relayer'
 import { formatReason, getDataFromError, isReasonValid } from './helpers'
 import { DecodedError, ErrorType } from './types'
 
-const PREPROCESSOR_HANDLERS = [BundlerAndPaymasterErrorHandler, InnerCallFailureHandler]
-const ERROR_HANDLERS = [RpcErrorHandler, PanicErrorHandler, RelayerErrorHandler, RevertErrorHandler]
+const PREPROCESSOR_HANDLERS = [
+  BundlerAndPaymasterErrorHandler,
+  RelayerErrorHandler,
+  InnerCallFailureHandler
+]
+const ERROR_HANDLERS = [RpcErrorHandler, PanicErrorHandler, RevertErrorHandler]
 
 export function decodeError(e: Error): DecodedError {
   const errorData = getDataFromError(e)
