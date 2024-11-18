@@ -233,7 +233,7 @@ export class MainController extends EventEmitter {
       async (network: Network) => {
         this.providers.setProvider(network)
         await this.accounts.updateAccountStates('latest', [network.id])
-        await this.updateSelectedAccountPortfolio(true)
+        await this.updateSelectedAccountPortfolio()
         await this.defiPositions.updatePositions(network.id)
       },
       (networkId: NetworkId) => {
@@ -354,9 +354,7 @@ export class MainController extends EventEmitter {
     await this.accounts.initialLoadPromise
     await this.selectedAccount.initialLoadPromise
 
-    // TODO: We agreed to always fetch the latest and pending states.
-    // To achieve this, we need to refactor how we use forceUpdate to obtain pending state updates.
-    this.updateSelectedAccountPortfolio(true)
+    this.updateSelectedAccountPortfolio()
     this.defiPositions.updatePositions()
     /**
      * Listener that gets triggered as a finalization step of adding new
@@ -425,9 +423,7 @@ export class MainController extends EventEmitter {
     }
     this.selectedAccount.setAccount(accountToSelect)
     this.activity.init()
-    // TODO: We agreed to always fetch the latest and pending states.
-    // To achieve this, we need to refactor how we use forceUpdate to obtain pending state updates.
-    await this.updateSelectedAccountPortfolio(true)
+    await this.updateSelectedAccountPortfolio()
     await this.defiPositions.updatePositions()
     // forceEmitUpdate to update the getters in the FE state of the ctrl
     await this.forceEmitUpdate()
@@ -925,7 +921,7 @@ export class MainController extends EventEmitter {
   }
 
   // eslint-disable-next-line default-param-last
-  async updateSelectedAccountPortfolio(forceUpdate: boolean = true, network?: Network) {
+  async updateSelectedAccountPortfolio(forceUpdate: boolean = false, network?: Network) {
     await this.#initialLoadPromise
     if (!this.selectedAccount.account) return
 
@@ -1541,13 +1537,13 @@ export class MainController extends EventEmitter {
 
   async addNetwork(network: AddNetworkRequestParams) {
     await this.networks.addNetwork(network)
-    await this.updateSelectedAccountPortfolio(true)
+    await this.updateSelectedAccountPortfolio()
   }
 
   async removeNetwork(id: NetworkId) {
     await this.networks.removeNetwork(id)
-    await this.updateSelectedAccountPortfolio(true)
-    await this.defiPositions.updatePositions()
+    this.portfolio.removeNetworkData(id)
+    this.defiPositions.removeNetworkData(id)
   }
 
   async resolveAccountOpAction(data: any, actionId: AccountOpAction['id']) {
