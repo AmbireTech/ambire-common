@@ -8,10 +8,11 @@ import { Account, AccountStates } from '../../interfaces/account'
 import { Network } from '../../interfaces/network'
 import { AccountOp } from '../accountOp/accountOp'
 import { DeploylessMode, fromDescriptor } from '../deployless/deployless'
+import { getHumanReadableEstimationError } from '../errorHumanizer'
 import { TokenResult } from '../portfolio'
 import { EOA_SIMULATION_NONCE } from '../portfolio/getOnchainBalances'
 import { privSlot } from '../proxyDeploy/deploy'
-import { estimationErrorFormatted, humanizeEstimationError } from './errors'
+import { estimationErrorFormatted } from './errors'
 import { estimateWithRetries } from './estimateWithRetries'
 import { EstimateResult } from './interfaces'
 
@@ -78,7 +79,7 @@ export async function estimateEOA(
         data: call.data,
         nonce
       })
-      .catch(humanizeEstimationError),
+      .catch(getHumanReadableEstimationError),
     !network.rpcNoStateOverride
       ? deploylessEstimator
           .call(
@@ -107,7 +108,7 @@ export async function estimateEOA(
             from: blockFrom,
             blockTag
           })
-          .catch(humanizeEstimationError)
+          .catch(getHumanReadableEstimationError)
   ]
   const result = await estimateWithRetries(initializeRequests)
   const feePaymentOptions = [

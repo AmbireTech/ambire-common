@@ -1,7 +1,6 @@
 import { ethErrors } from 'eth-rpc-errors'
 /* eslint-disable @typescript-eslint/brace-style */
 import { getAddress, getBigInt, Interface, isAddress } from 'ethers'
-import { SocketAPISendTransactionRequest } from 'interfaces/swapAndBridge'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json'
@@ -29,6 +28,7 @@ import {
 import { AddNetworkRequestParams, Network, NetworkId } from '../../interfaces/network'
 import { NotificationManager } from '../../interfaces/notification'
 import { Storage } from '../../interfaces/storage'
+import { SocketAPISendTransactionRequest } from '../../interfaces/swapAndBridge'
 import { Calls, DappUserRequest, SignUserRequest, UserRequest } from '../../interfaces/userRequest'
 import { WindowManager } from '../../interfaces/window'
 import { getDefaultSelectedAccount, isSmartAccount } from '../../libs/account/account'
@@ -45,6 +45,7 @@ import {
   getAccountOpFromAction
 } from '../../libs/actions/actions'
 import { getAccountOpBanners } from '../../libs/banners/banners'
+import { getHumanReadableBroadcastError } from '../../libs/errorHumanizer'
 import { estimate } from '../../libs/estimate/estimate'
 import { BundlerGasPrice, EstimateResult } from '../../libs/estimate/interfaces'
 import { GasRecommendation, getGasPriceRecommendations } from '../../libs/gasPrice/gasPrice'
@@ -2091,12 +2092,12 @@ export class MainController extends EventEmitter {
               identifier: broadcastRes.hash
             }
           }
-        } catch (e: any) {
-          const reason = e?.message || 'unknown'
-
-          throw new Error(
-            `Transaction couldn't be broadcasted on the ${network.name} network. Reason: ${reason}`
-          )
+        } catch (error: any) {
+          return this.#throwBroadcastAccountOp({
+            error,
+            network,
+            accountState
+          })
         }
       } catch (error: any) {
         return this.#throwBroadcastAccountOp({ error, network, accountState })
@@ -2181,12 +2182,8 @@ export class MainController extends EventEmitter {
               identifier: broadcastRes.hash
             }
           }
-        } catch (e: any) {
-          const reason = e?.message || 'unknown'
-
-          throw new Error(
-            `Transaction couldn't be broadcasted on the ${network.name} network. Reason: ${reason}`
-          )
+        } catch (error: any) {
+          return this.#throwBroadcastAccountOp({ error, network, accountState })
         }
       } catch (error: any) {
         return this.#throwBroadcastAccountOp({ error, network, accountState })
@@ -2207,7 +2204,7 @@ export class MainController extends EventEmitter {
         userOperationHash = await bundler.broadcast(userOperation, network!)
       } catch (e: any) {
         return this.#throwBroadcastAccountOp({
-          message: Bundler.decodeBundlerError(e),
+          message: Bundler.decodeBundlerError(e, 'broadcast'),
           network,
           accountState
         })
@@ -2332,6 +2329,7 @@ export class MainController extends EventEmitter {
     let message = _msg || _err?.message || 'Unable to broadcast the transaction.'
 
     if (message) {
+      // @TODO: Consider replacing with getHumanReadableBroadcastError
       if (message.includes('insufficient funds')) {
         if (network)
           message = `You don't have enough ${network.nativeAssetSymbol} to cover the transaction fee`
@@ -2362,8 +2360,9 @@ export class MainController extends EventEmitter {
         message =
           'Currently, the Ambire relayer seems to be down. Please try again a few moments later or broadcast with a Basic Account'
       } else {
-        // Trip the error message, errors coming from the RPC can be huuuuuge
-        message = message.length > 300 ? `${message.substring(0, 300)}...` : message
+        const { message: msg } = getHumanReadableBroadcastError(_err || new Error(message))
+
+        message = msg
       }
     }
 

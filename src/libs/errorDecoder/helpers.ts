@@ -51,6 +51,14 @@ const formatReason = (reason: string): string => {
   return toUtf8String(reason)
 }
 
+const getErrorCodeStringFromReason = (reason: string): string => {
+  if (!reason || !isReasonValid(reason)) return ''
+
+  const truncatedReason = reason.length > 100 ? `${reason.slice(0, 100)}...` : reason
+
+  return `Error code: ${truncatedReason}`
+}
+
 function getDataFromError(error: Error): string {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const errorData = (error as any).data ?? (error as any).error?.data
@@ -72,4 +80,10 @@ function getDataFromError(error: Error): string {
   return returnData
 }
 
-export { panicErrorCodeToReason, isReasonValid, getDataFromError, formatReason }
+export {
+  panicErrorCodeToReason,
+  getErrorCodeStringFromReason,
+  isReasonValid,
+  getDataFromError,
+  formatReason
+}
