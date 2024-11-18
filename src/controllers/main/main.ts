@@ -1248,7 +1248,7 @@ export class MainController extends EventEmitter {
     if (!this.selectedAccount.account) return
 
     const claimableRewardsData =
-      this.selectedAccount.portfolio.latestStateByNetworks.rewards?.result?.claimableRewardsData
+      this.selectedAccount.portfolio.latest.rewards?.result?.claimableRewardsData
 
     if (!claimableRewardsData) return
 
@@ -1264,8 +1264,7 @@ export class MainController extends EventEmitter {
   buildMintVestingUserRequest(token: TokenResult) {
     if (!this.selectedAccount.account) return
 
-    const addrVestingData =
-      this.selectedAccount.portfolio.latestStateByNetworks.rewards?.result?.addrVestingData
+    const addrVestingData = this.selectedAccount.portfolio.latest.rewards?.result?.addrVestingData
 
     if (!addrVestingData) return
     const userRequest: UserRequest = buildMintVestingRequest({
@@ -1809,10 +1808,12 @@ export class MainController extends EventEmitter {
       // NOTE: at some point we should check all the "?" signs below and if
       // an error pops out, we should notify the user about it
       const networkFeeTokens =
-        this.portfolio.latest?.[localAccountOp.accountAddr]?.[localAccountOp.networkId]?.result
-          ?.tokens ?? []
+        this.portfolio.getLatestPortfolioState(localAccountOp.accountAddr)?.[
+          localAccountOp.networkId
+        ]?.result?.tokens ?? []
       const gasTankFeeTokens =
-        this.portfolio.latest?.[localAccountOp.accountAddr]?.gasTank?.result?.tokens ?? []
+        this.portfolio.getLatestPortfolioState(localAccountOp.accountAddr)?.gasTank?.result
+          ?.tokens ?? []
 
       const feeTokens =
         [...networkFeeTokens, ...gasTankFeeTokens].filter((t) => t.flags.isFeeToken) || []

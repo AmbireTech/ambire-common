@@ -48,9 +48,9 @@ import { ProvidersController } from '../providers/providers'
 const LEARNED_TOKENS_NETWORK_LIMIT = 50
 
 export class PortfolioController extends EventEmitter {
-  latest: PortfolioControllerState
+  #latest: PortfolioControllerState
 
-  pending: PortfolioControllerState
+  #pending: PortfolioControllerState
 
   // A queue to prevent race conditions when calling `updateSelectedAccount`.
   // All calls are queued by network and account.
@@ -120,8 +120,8 @@ export class PortfolioController extends EventEmitter {
     velcroUrl: string
   ) {
     super()
-    this.latest = {}
-    this.pending = {}
+    this.#latest = {}
+    this.#pending = {}
     this.#queue = {}
     this.#portfolioLibs = new Map()
     this.#storage = storage
@@ -178,14 +178,14 @@ export class PortfolioController extends EventEmitter {
   // gets additional portfolio state from the relayer that isn't retrieved from the portfolio library
   // that's usually the two additional virtual networks: getTank and rewards
   #setNetworkLoading(accountId: AccountId, network: string, isLoading: boolean, error?: any) {
-    const accountState = this.latest[accountId]
+    const accountState = this.#latest[accountId]
     if (!accountState[network]) accountState[network] = { errors: [], isReady: false, isLoading }
     accountState[network]!.isLoading = isLoading
     if (error) accountState[network]!.criticalError = error
   }
 
   #prepareLatestState(selectedAccount: Account) {
-    const state = this.latest
+    const state = this.#latest
     const accountId = selectedAccount.addr
 
     if (!state[accountId]) {
@@ -220,13 +220,13 @@ export class PortfolioController extends EventEmitter {
   }
 
   #preparePendingState(selectedAccountId: AccountId) {
-    if (!this.pending[selectedAccountId]) {
-      this.pending[selectedAccountId] = {}
+    if (!this.#pending[selectedAccountId]) {
+      this.#pending[selectedAccountId] = {}
       this.emitUpdate()
       return
     }
 
-    const accountState = this.pending[selectedAccountId]
+    const accountState = this.#pending[selectedAccountId]
     // Remove networks that are not in the list of networks. For example:
     // If the user adds a custom network, the portfolio fetches assets for it but the user
     // removes the network, the portfolio should remove the assets for that network.
@@ -244,13 +244,13 @@ export class PortfolioController extends EventEmitter {
   // make the pending results the same as the latest ones
   overridePendingResults(accountOp: AccountOp) {
     if (
-      this.pending[accountOp.accountAddr] &&
-      this.pending[accountOp.accountAddr][accountOp.networkId] &&
-      this.latest[accountOp.accountAddr] &&
-      this.latest[accountOp.accountAddr][accountOp.networkId]
+      this.#pending[accountOp.accountAddr] &&
+      this.#pending[accountOp.accountAddr][accountOp.networkId] &&
+      this.#latest[accountOp.accountAddr] &&
+      this.#latest[accountOp.accountAddr][accountOp.networkId]
     ) {
-      this.pending[accountOp.accountAddr][accountOp.networkId]!.result =
-        this.latest[accountOp.accountAddr][accountOp.networkId]!.result
+      this.#pending[accountOp.accountAddr][accountOp.networkId]!.result =
+        this.#latest[accountOp.accountAddr][accountOp.networkId]!.result
       this.emitUpdate()
     }
   }
@@ -349,7 +349,7 @@ export class PortfolioController extends EventEmitter {
     const hasNonZeroTokens = !!this.#networksWithAssetsByAccounts?.[accountId]?.length
 
     const start = Date.now()
-    const accountState = this.latest[accountId]
+    const accountState = this.#latest[accountId]
 
     this.#setNetworkLoading(accountId, 'gasTank', true)
     this.#setNetworkLoading(accountId, 'rewards', true)
@@ -530,8 +530,8 @@ export class PortfolioController extends EventEmitter {
     this.#prepareLatestState(selectedAccount)
     this.#preparePendingState(selectedAccount.addr)
 
-    const accountState = this.latest[accountId]
-    const pendingState = this.pending[accountId]
+    const accountState = this.#latest[accountId]
+    const pendingState = this.#pending[accountId]
 
     if (shouldGetAdditionalPortfolio(selectedAccount)) {
       this.#getAdditionalPortfolio(accountId)
@@ -782,8 +782,8 @@ export class PortfolioController extends EventEmitter {
   }
 
   removeAccountData(address: Account['addr']) {
-    delete this.latest[address]
-    delete this.pending[address]
+    delete this.#latest[address]
+    delete this.#pending[address]
     delete this.#networksWithAssetsByAccounts[address]
 
     this.#networks.networks.forEach((network) => {
@@ -802,6 +802,14 @@ export class PortfolioController extends EventEmitter {
     this.emitUpdate()
   }
 
+  getLatestPortfolioState(accountAddr: string) {
+    return this.#latest[accountAddr] || {}
+  }
+
+  getPendingPortfolioState(accountAddr: string) {
+    return this.#pending[accountAddr] || {}
+  }
+
   get networksWithAssets() {
     return [...new Set(Object.values(this.#networksWithAssetsByAccounts).flat())]
   }
@@ -816,7 +824,7 @@ export class PortfolioController extends EventEmitter {
     })
     const networksWithPortfolioErrorBanners = getNetworksWithPortfolioErrorBanners({
       networks: this.#networks.networks,
-      portfolioLatest: this.latest,
+      portfolioLatest: this.#latest,
       providers: this.#providers.providers
     })
 

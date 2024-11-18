@@ -13,6 +13,6 @@ export interface SelectedAccountPortfolio {
   isAllReady: boolean
   simulationNonces: NetworkNoncesInterface
   tokenAmounts: TokenAmountInterface[]
-  latestStateByNetworks: AccountState
-  pendingStateByNetworks: AccountState
+  latest: AccountState
+  pending: AccountState
 }
