@@ -1,7 +1,6 @@
 import { ethErrors } from 'eth-rpc-errors'
 /* eslint-disable @typescript-eslint/brace-style */
 import { getAddress, getBigInt, Interface, isAddress } from 'ethers'
-import { SocketAPISendTransactionRequest } from 'interfaces/swapAndBridge'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json'
@@ -29,6 +28,7 @@ import {
 import { AddNetworkRequestParams, Network, NetworkId } from '../../interfaces/network'
 import { NotificationManager } from '../../interfaces/notification'
 import { Storage } from '../../interfaces/storage'
+import { SocketAPISendTransactionRequest } from '../../interfaces/swapAndBridge'
 import { Calls, DappUserRequest, SignUserRequest, UserRequest } from '../../interfaces/userRequest'
 import { WindowManager } from '../../interfaces/window'
 import { getDefaultSelectedAccount, isSmartAccount } from '../../libs/account/account'
@@ -67,7 +67,11 @@ import {
   getActiveRoutesForAccount
 } from '../../libs/swapAndBridge/swapAndBridge'
 import { debugTraceCall } from '../../libs/tracer/debugTraceCall'
-import { buildTransferUserRequest } from '../../libs/transfer/userRequest'
+import {
+  buildClaimWalletRequest,
+  buildMintVestingRequest,
+  buildTransferUserRequest
+} from '../../libs/transfer/userRequest'
 import {
   ENTRY_POINT_AUTHORIZATION_REQUEST_ID,
   isErc4337Broadcast,
@@ -524,12 +528,14 @@ export class MainController extends EventEmitter {
       return null
     }
 
-    const account = this.accounts.accounts?.find((acc) => acc.addr === accountOp.accountAddr)
     const network = this.networks.networks.find((net) => net.id === accountOp.networkId)
 
-    if (!account) {
+    if (
+      !this.selectedAccount.account ||
+      this.selectedAccount.account.addr !== accountOp.accountAddr
+    ) {
       this.signAccOpInitError =
-        'We cannot initiate the signing process as we are unable to locate the specified account.'
+        'Attempting to initialize an accountOp for an account other than the currently selected one.'
       return null
     }
 
@@ -553,7 +559,7 @@ export class MainController extends EventEmitter {
       this.keystore,
       this.portfolio,
       this.#externalSignerControllers,
-      account,
+      this.selectedAccount.account,
       network,
       actionId,
       accountOp,
@@ -1236,6 +1242,39 @@ export class MainController extends EventEmitter {
       },
       true
     )
+  }
+
+  buildClaimWalletUserRequest(token: TokenResult) {
+    if (!this.selectedAccount.account) return
+
+    const claimableRewardsData =
+      this.selectedAccount.portfolio.latestStateByNetworks.rewards?.result?.claimableRewardsData
+
+    if (!claimableRewardsData) return
+
+    const userRequest: UserRequest = buildClaimWalletRequest({
+      selectedAccount: this.selectedAccount.account.addr,
+      selectedToken: token,
+      claimableRewardsData
+    })
+
+    this.addUserRequest(userRequest)
+  }
+
+  buildMintVestingUserRequest(token: TokenResult) {
+    if (!this.selectedAccount.account) return
+
+    const addrVestingData =
+      this.selectedAccount.portfolio.latestStateByNetworks.rewards?.result?.addrVestingData
+
+    if (!addrVestingData) return
+    const userRequest: UserRequest = buildMintVestingRequest({
+      selectedAccount: this.selectedAccount.account.addr,
+      selectedToken: token,
+      addrVestingData
+    })
+
+    this.addUserRequest(userRequest)
   }
 
   resolveUserRequest(data: any, requestId: UserRequest['id']) {
