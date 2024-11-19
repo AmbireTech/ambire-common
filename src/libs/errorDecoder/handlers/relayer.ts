@@ -1,7 +1,6 @@
 /* eslint-disable class-methods-use-this */
-import { isHexString } from 'ethers'
-
 import { RELAYER_DOWN_MESSAGE } from '../../relayerCall/relayerCall'
+import { isReasonValid } from '../helpers'
 import { DecodedError, ErrorHandler, ErrorType } from '../types'
 
 class RelayerErrorHandler implements ErrorHandler {
@@ -27,7 +26,7 @@ class RelayerErrorHandler implements ErrorHandler {
       // RPC error returned as string
       reason = error.message.match(/reason="([^"]*)"/)?.[1] || ''
 
-      if (!reason || isHexString(reason)) {
+      if (!isReasonValid(reason)) {
         finalData = error.message.match(/data="([^"]*)"/)?.[1] || ''
         reason = ''
       }
