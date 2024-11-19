@@ -50,5 +50,9 @@ export function decodeError(e: Error): DecodedError {
 
   decodedError.reason = formatReason(decodedError.reason || '')
 
+  if (!isReasonValid(decodedError.reason)) {
+    console.error('Failed to decode error', e)
+  }
+
   return decodedError
 }
