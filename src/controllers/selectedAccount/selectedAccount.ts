@@ -8,7 +8,7 @@ import { sortByValue } from '../../libs/defiPositions/helpers'
 import { PositionsByProvider } from '../../libs/defiPositions/types'
 import {
   calculateSelectedAccountPortfolio,
-  getSelectedAccountPortfolio
+  updatePortfolioStateWithDefiPositions
 } from '../../libs/selectedAccount/selectedAccount'
 // eslint-disable-next-line import/no-cycle
 import { AccountsController } from '../accounts/accounts'
@@ -29,8 +29,8 @@ export const DEFAULT_SELECTED_ACCOUNT_PORTFOLIO = {
   isAllReady: false,
   simulationNonces: {},
   tokenAmounts: [],
-  latestStateByNetworks: {},
-  pendingStateByNetworks: {}
+  latest: {},
+  pending: {}
 }
 
 export class SelectedAccountController extends EventEmitter {
@@ -168,14 +168,21 @@ export class SelectedAccountController extends EventEmitter {
 
     const defiPositionsAccountState = this.#defiPositions.getDefiPositionsState(this.account.addr)
 
-    const portfolioState = structuredClone({
-      latest: this.#portfolio.latest,
-      pending: this.#portfolio.pending
-    })
-    const updatedPortfolioState = getSelectedAccountPortfolio(
-      portfolioState,
-      defiPositionsAccountState,
-      this.account
+    const latestStateSelectedAccount = structuredClone(
+      this.#portfolio.getLatestPortfolioState(this.account.addr)
+    )
+    const pendingStateSelectedAccount = structuredClone(
+      this.#portfolio.getPendingPortfolioState(this.account.addr)
+    )
+
+    const latestStateSelectedAccountWithDefiPositions = updatePortfolioStateWithDefiPositions(
+      latestStateSelectedAccount,
+      defiPositionsAccountState
+    )
+
+    const pendingStateSelectedAccountWithDefiPositions = updatePortfolioStateWithDefiPositions(
+      pendingStateSelectedAccount,
+      defiPositionsAccountState
     )
 
     const hasSignAccountOp = !!this.#actions?.visibleActionsQueue.filter(
@@ -183,8 +190,8 @@ export class SelectedAccountController extends EventEmitter {
     )
 
     const newSelectedAccountPortfolio = calculateSelectedAccountPortfolio(
-      this.account.addr,
-      updatedPortfolioState,
+      latestStateSelectedAccountWithDefiPositions,
+      pendingStateSelectedAccountWithDefiPositions,
       this.portfolio,
       hasSignAccountOp
     )
