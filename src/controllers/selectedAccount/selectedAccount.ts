@@ -3,7 +3,11 @@ import { Banner } from '../../interfaces/banner'
 import { SelectedAccountPortfolio } from '../../interfaces/selectedAccount'
 import { Storage } from '../../interfaces/storage'
 // eslint-disable-next-line import/no-cycle
-import { getNetworksWithDeFiPositionsErrorBanners } from '../../libs/banners/banners'
+import {
+  getNetworksWithDeFiPositionsErrorBanners,
+  getNetworksWithFailedRPCBanners,
+  getNetworksWithPortfolioErrorBanners
+} from '../../libs/banners/banners'
 import { sortByValue } from '../../libs/defiPositions/helpers'
 import { PositionsByProvider } from '../../libs/defiPositions/types'
 import {
@@ -53,6 +57,8 @@ export class SelectedAccountController extends EventEmitter {
   portfolio: SelectedAccountPortfolio = DEFAULT_SELECTED_ACCOUNT_PORTFOLIO
 
   portfolioStartedLoadingAtTimestamp: number | null = null
+
+  portfolioBanners: Banner[] = []
 
   #shouldDebounceFlags: { [key: string]: boolean } = {}
 
@@ -109,25 +115,26 @@ export class SelectedAccountController extends EventEmitter {
     this.#providers = providers
 
     this.#updateSelectedAccountPortfolio(true)
+    this.#updatePortfolioBanners(true)
     this.#updateSelectedAccountDefiPositions(true)
     this.#updateDefiPositionsBanners(true)
 
     this.#portfolio.onUpdate(async () => {
-      this.#debounceFunctionCallsOnSameTick('updateSelectedAccountPortfolio', () =>
+      this.#debounceFunctionCallsOnSameTick('updateSelectedAccountPortfolio', () => {
         this.#updateSelectedAccountPortfolio()
-      )
+        this.#updatePortfolioBanners()
+      })
     }, 'selectedAccount')
 
     this.#defiPositions.onUpdate(() => {
-      this.#debounceFunctionCallsOnSameTick('updateSelectedAccountPortfolio', () =>
+      this.#debounceFunctionCallsOnSameTick('updateSelectedAccountPortfolio', () => {
         this.#updateSelectedAccountPortfolio()
-      )
-      this.#debounceFunctionCallsOnSameTick('updateSelectedAccountDefiPositions', () =>
+        this.#updatePortfolioBanners()
+      })
+      this.#debounceFunctionCallsOnSameTick('updateSelectedAccountDefiPositions', () => {
         this.#updateSelectedAccountDefiPositions()
-      )
-      this.#debounceFunctionCallsOnSameTick('updateDefiPositionsBanners', () =>
         this.#updateDefiPositionsBanners()
-      )
+      })
     })
 
     this.#providers.onUpdate(() => {
@@ -278,6 +285,28 @@ export class SelectedAccountController extends EventEmitter {
     })
 
     this.defiPositionsBanners = errorBanners
+
+    if (!skipUpdate) {
+      this.emitUpdate()
+    }
+  }
+
+  #updatePortfolioBanners(skipUpdate?: boolean) {
+    if (!this.account || !this.#networks || !this.#providers || !this.#portfolio) return
+
+    const networksWithFailedRPCBanners = getNetworksWithFailedRPCBanners({
+      providers: this.#providers.providers,
+      networks: this.#networks.networks,
+      networksWithAssets: this.#portfolio.getNetworksWithAssets(this.account.addr)
+    })
+
+    const errorBanners = getNetworksWithPortfolioErrorBanners({
+      networks: this.#networks.networks,
+      selectedAccountLatest: this.#portfolio.getLatestPortfolioState(this.account.addr),
+      providers: this.#providers.providers
+    })
+
+    this.portfolioBanners = [...networksWithFailedRPCBanners, ...errorBanners]
 
     if (!skipUpdate) {
       this.emitUpdate()
