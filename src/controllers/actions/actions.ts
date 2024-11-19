@@ -1,10 +1,15 @@
 /* eslint-disable @typescript-eslint/no-floating-promises */
 
 import { Account } from '../../interfaces/account'
+import {
+  AccountOpAction,
+  Action,
+  BenzinAction,
+  DappRequestAction,
+  SignMessageAction
+} from '../../interfaces/actions'
 import { NotificationManager } from '../../interfaces/notification'
-import { DappUserRequest, SignUserRequest, UserRequest } from '../../interfaces/userRequest'
 import { WindowManager } from '../../interfaces/window'
-import { AccountOp } from '../../libs/accountOp/accountOp'
 // eslint-disable-next-line import/no-cycle
 import { messageOnNewAction } from '../../libs/actions/actions'
 import { getDappActionRequestsBanners } from '../../libs/banners/banners'
@@ -12,31 +17,8 @@ import { ENTRY_POINT_AUTHORIZATION_REQUEST_ID } from '../../libs/userOperation/u
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 
-export type AccountOpAction = {
-  id: SignUserRequest['id']
-  type: 'accountOp'
-  accountOp: AccountOp
-}
-
-export type SignMessageAction = {
-  id: SignUserRequest['id']
-  type: 'signMessage'
-  userRequest: SignUserRequest
-}
-
-export type BenzinAction = {
-  id: UserRequest['id']
-  type: 'benzin'
-  userRequest: SignUserRequest
-}
-
-export type DappRequestAction = {
-  id: UserRequest['id']
-  type: 'dappRequest'
-  userRequest: DappUserRequest
-}
-
-export type Action = AccountOpAction | SignMessageAction | BenzinAction | DappRequestAction
+// TODO: Temporarily. Refactor imports across the codebase to ref /interfaces/actions instead.
+export type { Action, AccountOpAction, SignMessageAction, BenzinAction, DappRequestAction }
 
 /**
  * The ActionsController is responsible for storing the converted userRequests

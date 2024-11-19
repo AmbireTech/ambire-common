@@ -1,9 +1,5 @@
-// eslint-disable-next-line import/no-cycle
-import {
-  AccountOpAction,
-  Action as ActionFromActionsQueue
-} from '../../controllers/actions/actions'
 import { Account, AccountId } from '../../interfaces/account'
+import { AccountOpAction, Action as ActionFromActionsQueue } from '../../interfaces/actions'
 import { Action, Banner } from '../../interfaces/banner'
 import { Network, NetworkId } from '../../interfaces/network'
 import { RPCProviders } from '../../interfaces/provider'
