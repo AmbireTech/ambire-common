@@ -6,10 +6,7 @@ import { toBeHex } from 'ethers'
 import { ENTRY_POINT_MARKER, ERC_4337_ENTRYPOINT } from '../../consts/deploy'
 import { Fetch } from '../../interfaces/fetch'
 import { Network } from '../../interfaces/network'
-import {
-  getHumanReadableBroadcastError,
-  getHumanReadableEstimationError
-} from '../../libs/errorHumanizer'
+import { decodeError } from '../../libs/errorDecoder'
 import { BundlerEstimateResult } from '../../libs/estimate/interfaces'
 import { Gas1559Recommendation } from '../../libs/gasPrice/gasPrice'
 import { privSlot } from '../../libs/proxyDeploy/deploy'
@@ -222,18 +219,9 @@ export class Bundler {
   }
 
   // used when catching errors from bundler requests
-  static decodeBundlerError(e: any, action: 'estimate' | 'broadcast'): string {
-    if (action === 'estimate') {
-      const { message: errorMessage } = getHumanReadableEstimationError(e)
+  static decodeBundlerError(e: any): string {
+    const { reason } = decodeError(e)
 
-      return errorMessage
-    }
-    if (action === 'broadcast') {
-      const { message: errorMessage } = getHumanReadableBroadcastError(e)
-
-      return errorMessage
-    }
-
-    return 'An unknown error occurred while interacting with the bundler. Please try again or contact Ambire support for assistance.'
+    return reason || 'Unknown error'
   }
 }
