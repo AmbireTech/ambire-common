@@ -138,10 +138,10 @@ export class SelectedAccountController extends EventEmitter {
     })
 
     this.#providers.onUpdate(() => {
-      this.#debounceFunctionCallsOnSameTick('updateDefiPositionsBanners', () =>
+      this.#debounceFunctionCallsOnSameTick('updateDefiPositionsBanners', () => {
         this.#updateDefiPositionsBanners()
-      )
-      // TODO: add portfolio banners and call updatePortfolioBanners here
+        this.#updatePortfolioBanners()
+      })
     })
 
     this.areControllersInitialized = true
