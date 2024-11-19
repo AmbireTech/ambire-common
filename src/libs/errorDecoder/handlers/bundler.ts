@@ -21,7 +21,7 @@ class BundlerErrorHandler implements ErrorHandler {
     if (userOperationSimulationRegex.test(message) || userOperationValidationRegex.test(message)) {
       const EntryPointErrorCode = /AA[0-9]{1,2}\s?/
       reason = message.replace(userOperationSimulationRegex, '')
-      reason = message.replace(userOperationValidationRegex, '')
+      reason = reason.replace(userOperationValidationRegex, '')
       // Remove error codes like AA1, AA2, etc. and the space after them
       reason = reason.replace(EntryPointErrorCode, '')
     } else if (message.includes('pimlico_getUserOperationGasPrice')) {
