@@ -26,6 +26,8 @@ const humanizeEstimationOrBroadcastError = (
       return `${prefix} of a problem with the RPC on this network. Please try again later, change the RPC or contact support for assistance.`
     case 'transfer amount exceeds balance':
       return `${prefix} the transfer amount exceeds your account balance. Please reduce the transfer amount and try again.`
+    case 'pimlico_getUserOperationGasPrice':
+      return `${prefix} as the selected fee is too low. Please select a higher transaction speed and try again.`
     default:
       return null
   }

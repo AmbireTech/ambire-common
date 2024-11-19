@@ -4,6 +4,7 @@ export enum ErrorType {
   RelayerError = 'RelayerError',
   RpcError = 'RpcError',
   BundlerAndPaymasterError = 'BundlerAndPaymasterError',
+  BundlerGasPriceError = 'BundlerGasPriceError',
   UnknownError = 'UnknownError',
   InnerCallFailureError = 'InnerCallFailureError'
 }

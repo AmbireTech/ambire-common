@@ -5,6 +5,7 @@ import {
   RevertErrorHandler,
   RpcErrorHandler
 } from './handlers'
+import BundlerGasPriceHandler from './handlers/bundlerGasPrice'
 import RelayerErrorHandler from './handlers/relayer'
 import { formatReason, getDataFromError, isReasonValid } from './helpers'
 import { DecodedError, ErrorType } from './types'
@@ -12,7 +13,8 @@ import { DecodedError, ErrorType } from './types'
 const PREPROCESSOR_HANDLERS = [
   BundlerAndPaymasterErrorHandler,
   RelayerErrorHandler,
-  InnerCallFailureHandler
+  InnerCallFailureHandler,
+  BundlerGasPriceHandler
 ]
 const ERROR_HANDLERS = [RpcErrorHandler, PanicErrorHandler, RevertErrorHandler]
 
