@@ -5,7 +5,6 @@ export enum ErrorType {
   PaymasterError = 'PaymasterError',
   BundlerError = 'BundlerError',
   RpcError = 'RpcError',
-  BundlerGasPriceError = 'BundlerGasPriceError',
   UnknownError = 'UnknownError',
   InnerCallFailureError = 'InnerCallFailureError'
 }

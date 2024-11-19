@@ -1,6 +1,9 @@
 import { EXPIRED_PREFIX } from '../errorDecoder/constants'
 import { getErrorCodeStringFromReason } from '../errorDecoder/helpers'
 import { DecodedError, ErrorType } from '../errorDecoder/types'
+import { RELAYER_DOWN_MESSAGE } from '../relayerCall/relayerCall'
+
+const REASON_HIDDEN_FOR = [ErrorType.RelayerError, ErrorType.PaymasterError]
 
 function getGenericMessageFromType(
   errorType: ErrorType,
@@ -8,25 +11,28 @@ function getGenericMessageFromType(
   messagePrefix: string,
   lastResortMessage: string
 ): string {
-  const reasonString = getErrorCodeStringFromReason(reason ?? '')
+  const reasonString = !REASON_HIDDEN_FOR.includes(errorType)
+    ? getErrorCodeStringFromReason(reason ?? '')
+    : ''
+  const messageSuffix = `${reasonString}\nPlease try again or contact Ambire support for assistance.`
 
   switch (errorType) {
     case ErrorType.RelayerError:
-      return `${messagePrefix} the Ambire relayer is down. Please try again later, broadcast with a Basic Account or contact Ambire support for assistance.`
+      return `${messagePrefix} of an Ambire Relayer error.${messageSuffix}`
     case ErrorType.PaymasterError:
-      return `${messagePrefix} of a Paymaster error. Please try again, broadcast with a Basic Account or contact Ambire support for assistance.`
+      return `${messagePrefix} of a Paymaster error.${messageSuffix}`
     case ErrorType.RpcError:
-      return `${messagePrefix} of an RPC error. Please try again or contact Ambire support for assistance.${reasonString}`
+      return `${messagePrefix} of an RPC error.${messageSuffix}`
     case ErrorType.PanicError:
-      return `${messagePrefix} of a panic error. Please try again or contact Ambire support for assistance.${reasonString}`
+      return `${messagePrefix} of a panic error.${messageSuffix}`
     case ErrorType.BundlerError:
-      return `${messagePrefix} of a Bundler error. ${reasonString}\nPlease try again or contact Ambire support for assistance.`
+      return `${messagePrefix} of a Bundler error.${messageSuffix}`
     case ErrorType.UnknownError:
-      return `${messagePrefix} of an unknown error. Please try again or contact Ambire support for assistance.${reasonString}`
+      return `${messagePrefix} of an unknown error.${messageSuffix}`
     case ErrorType.InnerCallFailureError:
-      return `${messagePrefix} of a failure while validating the transaction. Please try again or contact Ambire support for assistance.${reasonString}`
+      return `${messagePrefix} of a failure while validating the transaction.${messageSuffix}`
     case ErrorType.RevertError:
-      return `${messagePrefix} of a revert error. Please try again or contact Ambire support for assistance.${reasonString}`
+      return `${messagePrefix} of a revert error.${messageSuffix}`
     default:
       return lastResortMessage
   }
@@ -58,6 +64,8 @@ const humanizeEstimationOrBroadcastError = (
       return `${prefix} of a problem with the RPC on this network. Please try again later, change the RPC or contact support for assistance.`
     case 'transfer amount exceeds balance':
       return `${prefix} the transfer amount exceeds your account balance. Please reduce the transfer amount and try again.`
+    case RELAYER_DOWN_MESSAGE:
+      return `${prefix} the Ambire relayer is down.\nPlease try again or contact Ambire support for assistance.`
     default:
       return null
   }

@@ -869,7 +869,7 @@ describe('estimate', () => {
 
     expect(response.error).not.toBe(null)
     expect(response.error?.message).toBe(
-      'The transaction cannot be estimated because of a failure while validating the transaction. Please try again or contact Ambire support for assistance.'
+      'The transaction cannot be estimated because of a failure while validating the transaction.\nPlease try again or contact Ambire support for assistance.'
     )
 
     expect(response.erc4337GasLimits).not.toBe(undefined)
@@ -1081,7 +1081,7 @@ describe('estimate', () => {
     )
     expect(response.error).not.toBe(null)
     expect(response.error?.message).toBe(
-      'The transaction cannot be estimated because of a failure while validating the transaction. Please try again or contact Ambire support for assistance.'
+      'The transaction cannot be estimated because of a failure while validating the transaction.\nPlease try again or contact Ambire support for assistance.'
     )
   })
 

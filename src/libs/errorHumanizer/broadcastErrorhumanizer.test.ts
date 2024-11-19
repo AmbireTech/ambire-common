@@ -28,7 +28,7 @@ describe('Broadcast errors are humanized', () => {
     const humanizedError = getHumanReadableBroadcastError(error)
 
     expect(humanizedError.message).toBe(
-      'The transaction cannot be broadcast as the selected fee is too low. Please select a higher transaction speed and try again.'
+      'The transaction cannot be broadcast because the selected fee is too low. Please select a higher transaction speed and try again.'
     )
   })
 })
