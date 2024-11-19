@@ -33,8 +33,8 @@ import {
   ExternalHintsAPIResponse,
   GetOptions,
   PortfolioControllerState,
-  PortfolioLibGetResult,
   PreviousHintsStorage,
+  TemporaryTokens,
   TokenResult
 } from '../../libs/portfolio/interfaces'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
@@ -71,13 +71,7 @@ export class PortfolioController extends EventEmitter {
 
   validTokens: any = { erc20: {}, erc721: {} }
 
-  temporaryTokens: {
-    [networkId: NetworkId]: {
-      isLoading: boolean
-      errors: { error: string; address: string }[]
-      result: { tokens: PortfolioLibGetResult['tokens'] }
-    }
-  } = {}
+  temporaryTokens: TemporaryTokens = {}
 
   #portfolioLibs: Map<string, Portfolio>
 

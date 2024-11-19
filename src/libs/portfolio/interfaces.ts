@@ -162,6 +162,14 @@ export type PinnedTokens = {
   accountId?: AccountId
 }[]
 
+export type TemporaryTokens = {
+  [networkId: NetworkId]: {
+    isLoading: boolean
+    errors: { error: string; address: string }[]
+    result: { tokens: PortfolioLibGetResult['tokens'] }
+  }
+}
+
 export interface GetOptions {
   baseCurrency: string
   blockTag: string | number
