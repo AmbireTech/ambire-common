@@ -45,7 +45,8 @@ export const SocketModule: HumanizerCallModule = (accountOp: AccountOp, irCalls:
     'function transformERC20(address inputToken, address outputToken, uint256 inputTokenAmount, uint256 minOutputTokenAmount, (uint32,bytes)[] transformations)',
     'function swapAndBridge(uint32 swapId, bytes swapData, tuple(uint256 toChainId, uint256 slippage, uint256 relayerFee, uint32 dstChainDomain, address receiverAddress, bytes32 metadata, bytes callData, address delegate) connextBridgeData)',
     'function swapAndBridge(uint32 swapId, bytes calldata swapData, tuple (address receiverAddress,address senderAddress,uint256 value,uint256 srcPoolId,uint256 dstPoolId,uint256 minReceivedAmt,uint256 destinationGasLimit,bool isNativeSwapRequired,uint16 stargateDstChainId,uint32 swapId,bytes swapData,bytes32 metadata,bytes destinationPayload) acrossBridgeData) payable',
-    'function swapAndBridge(uint32 swapId, bytes swapData, (uint32 dstEid, uint256 minAmountLD, address stargatePoolAddress, bytes destinationPayload, bytes destinationExtraOptions, (uint256 nativeFee, uint256 lzTokenFee) messagingFee, bytes32 metadata, uint256 toChainId, address receiver, bytes swapData, uint32 swapId, bool isNativeSwapRequired) stargateBridgeData) payable'
+    'function swapAndBridge(uint32 swapId, bytes swapData, (uint32 dstEid, uint256 minAmountLD, address stargatePoolAddress, bytes destinationPayload, bytes destinationExtraOptions, (uint256 nativeFee, uint256 lzTokenFee) messagingFee, bytes32 metadata, uint256 toChainId, address receiver, bytes swapData, uint32 swapId, bool isNativeSwapRequired) stargateBridgeData) payable',
+    'function swap(address,(address,address,address,address,uint256,uint256,uint256),bytes,bytes)'
   ])
   const matcher = {
     [`${
@@ -212,9 +213,29 @@ export const SocketModule: HumanizerCallModule = (accountOp: AccountOp, irCalls:
         iface.parseTransaction(call)!.args
       let outAmount = 0n
       // @TODO no harcoded sighashes
-      if (swapExtraData.startsWith('0x415565b0'))
+      if (
+        swapExtraData.startsWith(
+          iface.getFunction(
+            'performAction(address fromToken, address toToken, uint256 amount, address receiverAddress, bytes32 metadata, bytes swapExtraData)'
+          )?.selector
+        )
+      ) {
         outAmount = iface.parseTransaction({ data: swapExtraData })!.args[3]
-
+      } else if (
+        swapExtraData.startsWith(
+          iface.getFunction(
+            'swap(address,(address,address,address,address,uint256,uint256,uint256),bytes,bytes)'
+          )?.selector
+        )
+      ) {
+        const [
+          randAddress,
+          [token1, token2, randAddress2, recipient, amount1, amount2],
+          bytes1,
+          bytes2
+        ] = iface.parseTransaction({ data: swapExtraData })!.args
+        outAmount = amount2
+      }
       return {
         ...call,
         fullVisualization: [
