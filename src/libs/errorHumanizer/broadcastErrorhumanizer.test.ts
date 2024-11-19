@@ -13,7 +13,7 @@ const MockRpcError = class extends Error {
 }
 
 describe('Broadcast errors are humanized', () => {
-  it.skip('Paymaster: selected fee too low', async () => {
+  it('Paymaster: selected fee too low', async () => {
     // @TODO: Mock the error properly or adjust the condition in getHumanReadableBroadcastError
     const error = new MockRpcError(
       'pimlico_getUserOperationGasPrice',
@@ -28,7 +28,7 @@ describe('Broadcast errors are humanized', () => {
     const humanizedError = getHumanReadableBroadcastError(error)
 
     expect(humanizedError.message).toBe(
-      'The transaction cannot be broadcast the selected fee is too low. Please select a higher transaction speed and try again.'
+      'The transaction cannot be broadcast as the selected fee is too low. Please select a higher transaction speed and try again.'
     )
   })
 })

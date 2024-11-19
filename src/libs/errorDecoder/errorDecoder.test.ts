@@ -139,17 +139,33 @@ describe('Error decoders work', () => {
       expect(decodedError.data).toBe(TEST_MESSAGE_REVERT_DATA)
     })
   })
-  it('should handle BundlerError correctly', async () => {
-    try {
-      throw new MockBundlerError('paymaster deposit too low')
-    } catch (e: any) {
-      expect(e).toBeDefined()
-      const decodedError = decodeError(e)
+  describe('should handle BundlerError correctly', () => {
+    it('Entry point error', () => {
+      try {
+        throw new MockBundlerError('AA31 paymaster deposit too low')
+      } catch (e: any) {
+        expect(e).toBeDefined()
+        const decodedError = decodeError(e)
 
-      expect(decodedError.type).toEqual(ErrorType.BundlerError)
-      expect(decodedError.reason).toBe('paymaster deposit too low')
-      expect(decodedError.data).toBe('paymaster deposit too low')
-    }
+        expect(decodedError.type).toEqual(ErrorType.BundlerError)
+        expect(decodedError.reason).toBe('paymaster deposit too low')
+        expect(decodedError.data).toBe('paymaster deposit too low')
+      }
+    })
+    it('pimlico_getUserOperationGasPrice', () => {
+      try {
+        throw new Error(
+          "pimlico_getUserOperationGasPrice some information we don't care about 0x2314214"
+        )
+      } catch (e: any) {
+        expect(e).toBeDefined()
+        const decodedError = decodeError(e)
+
+        expect(decodedError.type).toEqual(ErrorType.BundlerError)
+        expect(decodedError.reason).toBe('pimlico_getUserOperationGasPrice')
+        expect(decodedError.data).toBe('pimlico_getUserOperationGasPrice')
+      }
+    })
   })
   it('should handle RevertError correctly when reverted with reason', async () => {
     try {

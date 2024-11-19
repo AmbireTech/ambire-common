@@ -18,6 +18,8 @@ const getHumanReadableErrorMessage = (
   if (commonError) return commonError
 
   switch (reason) {
+    case 'pimlico_getUserOperationGasPrice':
+      return `${MESSAGE_PREFIX} as the selected fee is too low. Please select a higher transaction speed and try again.`
     default:
       return getGenericMessageFromType(errorType, reason, MESSAGE_PREFIX, LAST_RESORT_ERROR_MESSAGE)
   }
