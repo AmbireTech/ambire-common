@@ -4,10 +4,11 @@ import { ethers } from 'hardhat'
 import { describe, expect } from '@jest/globals'
 
 import { decodeError } from '../errorDecoder'
+import { RelayerPaymasterError } from '../errorDecoder/customErrors'
 import { MESSAGE_PREFIX } from './estimationErrorHumanizer'
 import { humanizeEstimationOrBroadcastError } from './humanizeCommonCases'
 
-const MockBundlerAndPaymasterError = class extends Error {
+const MockBundlerError = class extends Error {
   public constructor(public shortMessage?: string) {
     super(`UserOperation reverted during simulation with reason: ${shortMessage}`)
   }
@@ -43,7 +44,7 @@ describe('Estimation/Broadcast common errors are humanized', () => {
     )
   })
   it('Paymaster deposit too low', async () => {
-    const error = new MockBundlerAndPaymasterError('paymaster deposit too low')
+    const error = new MockBundlerError('paymaster deposit too low')
 
     const { reason } = decodeError(error)
     const message = humanizeEstimationOrBroadcastError(reason, MESSAGE_PREFIX)
@@ -75,6 +76,22 @@ describe('Estimation/Broadcast common errors are humanized', () => {
         `${MESSAGE_PREFIX} the transfer amount exceeds your account balance. Please reduce the transfer amount and try again.`
       )
     }
+  })
+  it('user operation max fee per gas must b e larger than 0 during gas estimation', () => {
+    const error = new RelayerPaymasterError({
+      errorState: [
+        {
+          message: 'user operation max fee per gas must be larger than 0 during gas estimation'
+        }
+      ]
+    })
+
+    const { reason } = decodeError(error)
+    const message = humanizeEstimationOrBroadcastError(reason, MESSAGE_PREFIX)
+
+    expect(message).toBe(
+      `${MESSAGE_PREFIX} because the selected fee is too low. Please select a higher transaction speed and try again.`
+    )
   })
   it('Returns null for unhandled error', () => {
     const reason = 'nema pari'

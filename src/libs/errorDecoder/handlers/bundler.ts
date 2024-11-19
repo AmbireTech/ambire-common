@@ -1,7 +1,7 @@
 /* eslint-disable class-methods-use-this */
 import { DecodedError, ErrorHandler, ErrorType } from '../types'
 
-class BundlerAndPaymasterErrorHandler implements ErrorHandler {
+class BundlerErrorHandler implements ErrorHandler {
   public matches(data: string, error: any) {
     const { message } = error?.error || error || {}
 
@@ -13,11 +13,11 @@ class BundlerAndPaymasterErrorHandler implements ErrorHandler {
     const reason = message.replace(/UserOperation reverted during simulation with reason:\s*/i, '')
 
     return {
-      type: ErrorType.BundlerAndPaymasterError,
+      type: ErrorType.BundlerError,
       reason,
       data: reason
     }
   }
 }
 
-export default BundlerAndPaymasterErrorHandler
+export default BundlerErrorHandler

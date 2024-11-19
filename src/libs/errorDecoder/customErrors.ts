@@ -1,3 +1,4 @@
+/* eslint-disable max-classes-per-file */
 import { isHexString } from 'ethers'
 
 class InnerCallFailureError extends Error {
@@ -14,4 +15,13 @@ class InnerCallFailureError extends Error {
   }
 }
 
-export { InnerCallFailureError }
+class RelayerPaymasterError extends Error {
+  constructor(error: any) {
+    const message = error.errorState ? error.errorState[0]?.message : ''
+    super(message)
+    this.name = 'PaymasterError'
+    this.message = message
+  }
+}
+
+export { InnerCallFailureError, RelayerPaymasterError }

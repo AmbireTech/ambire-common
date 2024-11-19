@@ -6,14 +6,14 @@ import { describe, expect } from '@jest/globals'
 
 import { RELAYER_DOWN_MESSAGE } from '../relayerCall/relayerCall'
 import { PANIC_ERROR_PREFIX } from './constants'
-import { InnerCallFailureError } from './customErrors'
+import { InnerCallFailureError, RelayerPaymasterError } from './customErrors'
 import { decodeError } from './errorDecoder'
 import { DecodedError, ErrorType } from './types'
 
 const TEST_MESSAGE_REVERT_DATA =
   '0x08c379a00000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000000c54657374206d6573736167650000000000000000000000000000000000000000'
 
-const MockBundlerAndPaymasterError = class extends Error {
+const MockBundlerError = class extends Error {
   public constructor(public shortMessage?: string) {
     super(`UserOperation reverted during simulation with reason: ${shortMessage}`)
   }
@@ -139,14 +139,14 @@ describe('Error decoders work', () => {
       expect(decodedError.data).toBe(TEST_MESSAGE_REVERT_DATA)
     })
   })
-  it('should handle BundlerAndPaymasterError correctly', async () => {
+  it('should handle BundlerError correctly', async () => {
     try {
-      throw new MockBundlerAndPaymasterError('paymaster deposit too low')
+      throw new MockBundlerError('paymaster deposit too low')
     } catch (e: any) {
       expect(e).toBeDefined()
       const decodedError = decodeError(e)
 
-      expect(decodedError.type).toEqual(ErrorType.BundlerAndPaymasterError)
+      expect(decodedError.type).toEqual(ErrorType.BundlerError)
       expect(decodedError.reason).toBe('paymaster deposit too low')
       expect(decodedError.data).toBe('paymaster deposit too low')
     }
@@ -198,6 +198,22 @@ describe('Error decoders work', () => {
       expect(decodedError.reason).toBe('Test message')
       expect(decodedError.data).toBe(TEST_MESSAGE_REVERT_DATA)
     })
+  })
+  it('Should handle PaymasterError correctly', async () => {
+    const error = new RelayerPaymasterError({
+      errorState: [
+        {
+          message: 'user operation max fee per gas must be larger than 0 during gas estimation'
+        }
+      ]
+    })
+
+    const decodedError = decodeError(error)
+
+    expect(decodedError.type).toEqual(ErrorType.PaymasterError)
+    expect(decodedError.reason).toBe(
+      'user operation max fee per gas must be larger than 0 during gas estimation'
+    )
   })
   it('should handle UnknownError correctly when reverted without reason', async () => {
     try {

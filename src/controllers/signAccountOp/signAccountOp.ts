@@ -26,6 +26,7 @@ import { Warning } from '../../interfaces/signAccountOp'
 import { isAmbireV1LinkedAccount, isSmartAccount } from '../../libs/account/account'
 import { AccountOp, GasFeePayment, getSignableCalls } from '../../libs/accountOp/accountOp'
 import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
+import { getHumanReadableBroadcastError } from '../../libs/errorHumanizer'
 import { BundlerGasPrice, EstimateResult, FeePaymentOption } from '../../libs/estimate/interfaces'
 import {
   Gas1559Recommendation,
@@ -1232,17 +1233,11 @@ export class SignAccountOpController extends EventEmitter {
               userOperation.nonce = getOneTimeNonce(userOperation)
             }
           } catch (e: any) {
-            let message =
-              'Unable to sign the transaction due to a paymaster error. Please try again a few moments later or broadcast with a Basic Account'
-
-            if (e.message.includes('Failed to fetch') || e.message.includes('Ambire relayer')) {
-              message =
-                'Currently, the paymaster seems to be down. Please try again a few moments later or broadcast with a Basic Account'
-            }
+            const { message } = getHumanReadableBroadcastError(e)
             this.emitError({
               level: 'major',
               message,
-              error: new Error(e.message)
+              error: e
             })
             this.status = { type: SigningStatus.ReadyToSign }
             this.emitUpdate()

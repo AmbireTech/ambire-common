@@ -1,13 +1,15 @@
-import BundlerAndPaymasterErrorHandler from './bundlerAndPaymaster'
+import BundlerErrorHandler from './bundler'
 import InnerCallFailureHandler from './innerCallFailure'
 import PanicErrorHandler from './panic'
+import PaymasterErrorHandler from './paymaster'
 import RevertErrorHandler from './revert'
 import RpcErrorHandler from './rpc'
 
 export {
-  BundlerAndPaymasterErrorHandler,
+  BundlerErrorHandler,
   RpcErrorHandler,
   InnerCallFailureHandler,
   PanicErrorHandler,
-  RevertErrorHandler
+  RevertErrorHandler,
+  PaymasterErrorHandler
 }

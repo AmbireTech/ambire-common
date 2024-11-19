@@ -1,7 +1,8 @@
 import {
-  BundlerAndPaymasterErrorHandler,
+  BundlerErrorHandler,
   InnerCallFailureHandler,
   PanicErrorHandler,
+  PaymasterErrorHandler,
   RevertErrorHandler,
   RpcErrorHandler
 } from './handlers'
@@ -11,12 +12,17 @@ import { formatReason, getDataFromError, isReasonValid } from './helpers'
 import { DecodedError, ErrorType } from './types'
 
 const PREPROCESSOR_HANDLERS = [
-  BundlerAndPaymasterErrorHandler,
+  BundlerErrorHandler,
   RelayerErrorHandler,
   InnerCallFailureHandler,
   BundlerGasPriceHandler
 ]
-const ERROR_HANDLERS = [RpcErrorHandler, PanicErrorHandler, RevertErrorHandler]
+const ERROR_HANDLERS = [
+  RpcErrorHandler,
+  PanicErrorHandler,
+  RevertErrorHandler,
+  PaymasterErrorHandler
+]
 
 export function decodeError(e: Error): DecodedError {
   const errorData = getDataFromError(e)
