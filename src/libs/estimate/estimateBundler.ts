@@ -6,6 +6,7 @@ import { Network } from '../../interfaces/network'
 import { Bundler } from '../../services/bundlers/bundler'
 import { AccountOp, getSignableCallsForBundlerEstimate } from '../accountOp/accountOp'
 import { getFeeCall } from '../calls/calls'
+import { getHumanReadableEstimationError } from '../errorHumanizer'
 import { TokenResult } from '../portfolio'
 import {
   getPaymasterDataForEstimate,
@@ -99,7 +100,7 @@ export async function bundlerEstimate(
       },
       error: null
     }
-  } catch (e) {
+  } catch (e: any) {
     const decodedError = Bundler.decodeBundlerError(e)
 
     const nonFatalErrors: Error[] = []
@@ -112,6 +113,8 @@ export async function bundlerEstimate(
       nonFatalErrors.push(new Error('4337 invalid account nonce', { cause: '4337_INVALID_NONCE' }))
     }
 
-    return estimationErrorFormatted(new Error(decodedError), { feePaymentOptions, nonFatalErrors })
+    const humanizedError = getHumanReadableEstimationError(e)
+
+    return estimationErrorFormatted(humanizedError, { feePaymentOptions, nonFatalErrors })
   }
 }
