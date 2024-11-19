@@ -804,15 +804,16 @@ describe('Portfolio Controller ', () => {
     await controller.updateSelectedAccount(account.addr, undefined, undefined, {
       forceUpdate: true
     })
+    const hasItems = (obj: any) => !!Object.keys(obj).length
 
-    expect(controller.getLatestPortfolioState(account.addr)).toBeTruthy()
-    expect(controller.getPendingPortfolioState(account.addr)).toBeTruthy()
+    expect(hasItems(controller.getLatestPortfolioState(account.addr))).toBeTruthy()
+    expect(hasItems(controller.getPendingPortfolioState(account.addr))).toBeTruthy()
     expect(controller.networksWithAssets.length).not.toEqual(0)
 
     controller.removeAccountData(account.addr)
 
-    expect(controller.getLatestPortfolioState(account.addr)).not.toBeTruthy()
-    expect(controller.getPendingPortfolioState(account.addr)).not.toBeTruthy()
+    expect(hasItems(controller.getLatestPortfolioState(account.addr))).not.toBeTruthy()
+    expect(hasItems(controller.getPendingPortfolioState(account.addr))).not.toBeTruthy()
     expect(controller.networksWithAssets.length).toEqual(0)
   })
 })
