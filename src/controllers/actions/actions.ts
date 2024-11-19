@@ -15,6 +15,8 @@ import { messageOnNewAction } from '../../libs/actions/actions'
 import { getDappActionRequestsBanners } from '../../libs/banners/banners'
 import { ENTRY_POINT_AUTHORIZATION_REQUEST_ID } from '../../libs/userOperation/userOperation'
 import EventEmitter from '../eventEmitter/eventEmitter'
+// Kind of inevitable, the AccountsController has SelectedAccountController, which has ActionsController
+// eslint-disable-next-line import/no-cycle
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 
 // TODO: Temporarily. Refactor imports across the codebase to ref /interfaces/actions instead.
