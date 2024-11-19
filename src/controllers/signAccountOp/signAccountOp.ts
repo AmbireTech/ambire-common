@@ -7,7 +7,6 @@ import {
   toBeHex,
   ZeroAddress
 } from 'ethers'
-import { RelayerPaymasterError } from 'libs/errorDecoder/customErrors'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import ERC20 from '../../../contracts/compiled/IERC20.json'
@@ -27,6 +26,7 @@ import { Warning } from '../../interfaces/signAccountOp'
 import { isAmbireV1LinkedAccount, isSmartAccount } from '../../libs/account/account'
 import { AccountOp, GasFeePayment, getSignableCalls } from '../../libs/accountOp/accountOp'
 import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
+import { RelayerPaymasterError } from '../../libs/errorDecoder/customErrors'
 import { getHumanReadableBroadcastError } from '../../libs/errorHumanizer'
 import { BundlerGasPrice, EstimateResult, FeePaymentOption } from '../../libs/estimate/interfaces'
 import {
