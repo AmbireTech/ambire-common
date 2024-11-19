@@ -82,7 +82,6 @@ export type Action =
   | {
       label: 'Details'
       actionName: 'open-swap-and-bridge-tab'
-      meta: { activeRouteId: number }
     }
   | {
       label: 'Hide'

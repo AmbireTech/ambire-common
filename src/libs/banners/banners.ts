@@ -70,8 +70,7 @@ export const getBridgeBanners = (
       if (r.routeStatus === 'in-progress') {
         actions.push({
           label: 'Details',
-          actionName: 'open-swap-and-bridge-tab',
-          meta: { activeRouteId: r.activeRouteId }
+          actionName: 'open-swap-and-bridge-tab'
         })
       }
 
