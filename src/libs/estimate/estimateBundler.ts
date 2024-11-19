@@ -81,34 +81,37 @@ export async function bundlerEstimate(
   ])
   userOp.signature = getSigForCalculations()
   const shouldStateOverride = !accountState.isErc4337Enabled && accountState.isDeployed
-  const gasData = await Bundler.estimate(userOp, network, shouldStateOverride).catch((e: any) => {
-    return new Error(Bundler.decodeBundlerError(e, 'estimate'))
-  })
-  if (gasData instanceof Error) {
+
+  try {
+    const gasData = await Bundler.estimate(userOp, network, shouldStateOverride)
+
+    return {
+      gasUsed: BigInt(gasData.callGasLimit),
+      currentAccountNonce: Number(op.nonce),
+      feePaymentOptions,
+      erc4337GasLimits: {
+        preVerificationGas: gasData.preVerificationGas,
+        verificationGasLimit: gasData.verificationGasLimit,
+        callGasLimit: gasData.callGasLimit,
+        paymasterVerificationGasLimit: gasData.paymasterVerificationGasLimit,
+        paymasterPostOpGasLimit: gasData.paymasterPostOpGasLimit,
+        gasPrice
+      },
+      error: null
+    }
+  } catch (e) {
+    const decodedError = Bundler.decodeBundlerError(e)
+
     const nonFatalErrors: Error[] = []
     // if the bundler estimation fails, add a nonFatalError so we can react to
     // it on the FE. The BE at a later stage decides if this error is actually
     // fatal (at estimate.ts -> estimate4337)
     nonFatalErrors.push(new Error('Bundler estimation failed', { cause: '4337_ESTIMATION' }))
 
-    if (gasData.message.indexOf('AA25 invalid account nonce') !== -1) {
+    if (decodedError.indexOf('invalid account nonce') !== -1) {
       nonFatalErrors.push(new Error('4337 invalid account nonce', { cause: '4337_INVALID_NONCE' }))
     }
-    return estimationErrorFormatted(gasData as Error, { feePaymentOptions, nonFatalErrors })
-  }
 
-  return {
-    gasUsed: BigInt(gasData.callGasLimit),
-    currentAccountNonce: Number(op.nonce),
-    feePaymentOptions,
-    erc4337GasLimits: {
-      preVerificationGas: gasData.preVerificationGas,
-      verificationGasLimit: gasData.verificationGasLimit,
-      callGasLimit: gasData.callGasLimit,
-      paymasterVerificationGasLimit: gasData.paymasterVerificationGasLimit,
-      paymasterPostOpGasLimit: gasData.paymasterPostOpGasLimit,
-      gasPrice
-    },
-    error: null
+    return estimationErrorFormatted(new Error(decodedError), { feePaymentOptions, nonFatalErrors })
   }
 }
