@@ -94,9 +94,10 @@ export function calculateSelectedAccountPortfolio(
   const updatedCollections: CollectionResult[] = []
 
   let newTotalBalance: number = 0
-  let allReady = true
 
-  const hasLatest = latestStateSelectedAccount
+  const hasLatest = latestStateSelectedAccount && Object.keys(latestStateSelectedAccount).length
+  let allReady = !!hasLatest
+
   const hasPending = pendingStateSelectedAccount && Object.keys(pendingStateSelectedAccount).length
   if (!hasLatest && !hasPending) {
     return {
