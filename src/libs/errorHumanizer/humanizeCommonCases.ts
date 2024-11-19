@@ -13,10 +13,10 @@ function getGenericMessageFromType(
   switch (errorType) {
     case ErrorType.RelayerError:
       return `${messagePrefix} the Ambire relayer is down. Please try again later, broadcast with a Basic Account or contact Ambire support for assistance.`
+    case ErrorType.PaymasterError:
+      return `${messagePrefix} of a Paymaster error. Please try again, broadcast with a Basic Account or contact Ambire support for assistance.`
     case ErrorType.RpcError:
       return `${messagePrefix} of an RPC error. Please try again or contact Ambire support for assistance.${reasonString}`
-    case ErrorType.PaymasterError:
-      return `${messagePrefix} of a Paymaster error. Please try again or contact Ambire support for assistance.${reasonString}`
     case ErrorType.PanicError:
       return `${messagePrefix} of a panic error. Please try again or contact Ambire support for assistance.${reasonString}`
     case ErrorType.BundlerError:
@@ -58,10 +58,6 @@ const humanizeEstimationOrBroadcastError = (
       return `${prefix} of a problem with the RPC on this network. Please try again later, change the RPC or contact support for assistance.`
     case 'transfer amount exceeds balance':
       return `${prefix} the transfer amount exceeds your account balance. Please reduce the transfer amount and try again.`
-    case 'user operation max fee per gas must be larger than 0 during gas estimation':
-      return `${prefix} because the selected fee is too low. Please select a higher transaction speed and try again.`
-    case 'pimlico_getUserOperationGasPrice':
-      return `${prefix} as the selected fee is too low. Please select a higher transaction speed and try again.`
     default:
       return null
   }

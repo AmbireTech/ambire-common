@@ -7,6 +7,7 @@ import {
   toBeHex,
   ZeroAddress
 } from 'ethers'
+import { RelayerPaymasterError } from 'libs/errorDecoder/customErrors'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import ERC20 from '../../../contracts/compiled/IERC20.json'
@@ -1233,7 +1234,9 @@ export class SignAccountOpController extends EventEmitter {
               userOperation.nonce = getOneTimeNonce(userOperation)
             }
           } catch (e: any) {
-            const { message } = getHumanReadableBroadcastError(e)
+            const convertedError = new RelayerPaymasterError(e)
+            const { message } = getHumanReadableBroadcastError(convertedError)
+
             this.emitError({
               level: 'major',
               message,
