@@ -75,8 +75,13 @@ export type Action =
       meta: { activeRouteId: number }
     }
   | {
-      label: 'Got it' | 'Close'
+      label: 'Close'
       actionName: 'close-bridge'
+      meta: { activeRouteId: number }
+    }
+  | {
+      label: 'Details'
+      actionName: 'open-swap-and-bridge-tab'
       meta: { activeRouteId: number }
     }
   | {
