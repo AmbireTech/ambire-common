@@ -362,7 +362,8 @@ export async function estimate(
 
   const feeTokenOptions: FeePaymentOption[] = filteredFeeTokens.map(
     (token: TokenResult, key: number) => {
-      const availableAmount = token.flags.onGasTank ? token.amount : feeTokenOutcomes[key].amount
+      // We are using 'availableAmount' here, because it's possible the 'amount' to contains pending top up amount as well
+      const availableAmount = token.flags.onGasTank ? token.availableAmount || token.amount : feeTokenOutcomes[key].amount
       return {
         paidBy: account.addr,
         availableAmount,

@@ -24,6 +24,7 @@ import {
   getUpdatedHints,
   processTokens,
   shouldGetAdditionalPortfolio,
+  shouldShowConfettiLogic,
   validateERC20Token
 } from '../../libs/portfolio/helpers'
 /* eslint-disable no-restricted-syntax */
@@ -110,6 +111,8 @@ export class PortfolioController extends EventEmitter {
   // Holds the initial load promise, so that one can wait until it completes
   #initialLoadPromise: Promise<void>
 
+  #shouldShowConfetti: boolean
+
   constructor(
     storage: Storage,
     fetch: Fetch,
@@ -133,6 +136,7 @@ export class PortfolioController extends EventEmitter {
     this.#accounts = accounts
     this.temporaryTokens = {}
     this.#toBeLearnedTokens = {}
+    this.#shouldShowConfetti = false
 
     this.#initialLoadPromise = this.#load()
   }
@@ -345,6 +349,12 @@ export class PortfolioController extends EventEmitter {
     }
   }
 
+  async setShouldShowConfettiToFalse(accountId: AccountId) {
+    this.#shouldShowConfetti = false
+
+    this.#getAdditionalPortfolio(accountId)
+  }
+
   async #getAdditionalPortfolio(accountId: AccountId) {
     const hasNonZeroTokens = !!this.#networksWithAssetsByAccounts?.[accountId]?.length
 
@@ -354,7 +364,7 @@ export class PortfolioController extends EventEmitter {
     this.#setNetworkLoading(accountId, 'gasTank', true)
     this.#setNetworkLoading(accountId, 'rewards', true)
     this.emitUpdate()
-
+    this.latest
     let res: any
     try {
       res = await this.#callRelayer(`/v2/identity/${accountId}/portfolio-additional`)
@@ -391,10 +401,25 @@ export class PortfolioController extends EventEmitter {
       }
     }
 
+    if (shouldShowConfettiLogic(accountState, res.data.gasTank.balance)) {
+      this.#shouldShowConfetti = true
+    }
+
     const gasTankTokens = res.data.gasTank.balance.map((t: any) => ({
       ...t,
+      amount: BigInt(t.amount),
+      availableAmount: BigInt(t.amount),
+      cashback: BigInt(t.cashback || 0),
+      saved: BigInt(t.saved || 0),
+      shouldPopsUpConfetti: this.#shouldShowConfetti,
       flags: getFlags(res.data, 'gasTank', t.networkId, t.address)
     }))
+
+    console.log('--------------------')
+    console.log('res.data.gasTank.balance', res.data.gasTank.balance)
+    console.log('accountState.gasTank.result.tokens[0]', accountState.gasTank?.result?.tokens[0])
+    console.log('gasTankTokens[0]', gasTankTokens[0])
+    console.log('--------------------')
 
     accountState.gasTank = {
       isReady: true,
@@ -402,15 +427,7 @@ export class PortfolioController extends EventEmitter {
       errors: [],
       result: {
         updateStarted: start,
-        tokens: [
-          ...gasTankTokens,
-          ...getPinnedGasTankTokens(
-            res.data.gasTank.availableGasTankAssets,
-            hasNonZeroTokens,
-            accountId,
-            gasTankTokens
-          )
-        ],
+        tokens: [...gasTankTokens],
         total: getTotal(gasTankTokens)
       }
     }
