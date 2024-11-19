@@ -7,7 +7,7 @@ import {
 
 const LAST_RESORT_ERROR_MESSAGE =
   'An unknown error occurred while broadcasting the transaction. Please try again or contact Ambire support for assistance.'
-const MESSAGE_PREFIX = 'The transaction cannot be broadcast'
+const MESSAGE_PREFIX = 'The transaction cannot be broadcast because'
 
 const getHumanReadableErrorMessage = (
   reason: DecodedError['reason'],

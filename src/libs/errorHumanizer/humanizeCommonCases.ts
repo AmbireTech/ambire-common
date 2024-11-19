@@ -20,7 +20,7 @@ function getGenericMessageFromType(
     case ErrorType.PanicError:
       return `${messagePrefix} of a panic error. Please try again or contact Ambire support for assistance.${reasonString}`
     case ErrorType.BundlerError:
-      return `${messagePrefix} of a Bundler error. Please try again or contact Ambire support for assistance.${reasonString}`
+      return `${messagePrefix} of a Bundler error. ${reasonString}\nPlease try again or contact Ambire support for assistance.`
     case ErrorType.UnknownError:
       return `${messagePrefix} of an unknown error. Please try again or contact Ambire support for assistance.${reasonString}`
     case ErrorType.InnerCallFailureError:
