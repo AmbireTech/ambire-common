@@ -1,10 +1,5 @@
-// eslint-disable-next-line import/no-cycle
-import {
-  AccountOpAction,
-  Action as ActionFromActionsQueue
-} from '../../controllers/actions/actions'
-// eslint-disable-next-line import/no-cycle
 import { Account } from '../../interfaces/account'
+import { AccountOpAction, Action as ActionFromActionsQueue } from '../../interfaces/actions'
 import { Action, Banner } from '../../interfaces/banner'
 import { Network, NetworkId } from '../../interfaces/network'
 import { RPCProviders } from '../../interfaces/provider'
@@ -14,9 +9,7 @@ import {
   DeFiPositionsError
 } from '../defiPositions/types'
 import { getNetworksWithFailedRPC } from '../networks/networks'
-// eslint-disable-next-line import/no-cycle
 import { AccountState as PortfolioAccountState } from '../portfolio/interfaces'
-// eslint-disable-next-line import/no-cycle
 import { PORTFOLIO_LIB_ERROR_NAMES } from '../portfolio/portfolio'
 import { getIsBridgeTxn, getQuoteRouteSteps } from '../swapAndBridge/swapAndBridge'
 
@@ -77,9 +70,16 @@ export const getBridgeBanners = (
     .map((r) => {
       const actions: Action[] = []
 
-      if (['in-progress', 'completed'].includes(r.routeStatus)) {
+      if (r.routeStatus === 'in-progress') {
         actions.push({
-          label: r.routeStatus === 'completed' ? 'Got it' : 'Close',
+          label: 'Details',
+          actionName: 'open-swap-and-bridge-tab'
+        })
+      }
+
+      if (r.routeStatus === 'completed') {
+        actions.push({
+          label: 'Close',
           actionName: 'close-bridge',
           meta: { activeRouteId: r.activeRouteId }
         })
