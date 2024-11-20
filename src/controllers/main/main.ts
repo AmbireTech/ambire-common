@@ -433,11 +433,12 @@ export class MainController extends EventEmitter {
     this.swapAndBridge.onAccountChange()
     await this.addressBook.forceEmitUpdate()
     this.dapps.broadcastDappSessionEvent('accountsChanged', [toAccountAddr])
-    // Purposefully not awaiting as if the user is switching accounts, we don't want to block
-    // the UI for the account state and portfolio to be updated
-    this.updateSelectedAccountPortfolio()
-    this.defiPositions.updatePositions()
-    this.accounts.updateAccountState(toAccountAddr)
+    // Run these in parallel
+    await Promise.allSettled([
+      this.accounts.updateAccountState(toAccountAddr),
+      this.updateSelectedAccountPortfolio(),
+      this.defiPositions.updatePositions()
+    ])
 
     this.emitUpdate()
   }
