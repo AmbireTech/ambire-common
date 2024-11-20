@@ -104,7 +104,7 @@ export async function getAAVEPositions(
           additionalData: {
             APY: Number(asset.currentLiquidityRate) / 10 ** 25
           },
-          aaveAsset: {
+          protocolAsset: {
             address: asset.aaveAddress,
             symbol: asset.aaveSymbol,
             decimals: asset.aaveDecimals
@@ -124,7 +124,7 @@ export async function getAAVEPositions(
           additionalData: {
             APY: Number(asset.currentStableBorrowRate) / 10 ** 25
           },
-          aaveAsset: {
+          protocolAsset: {
             address: asset.aaveAddress,
             symbol: asset.aaveSymbol,
             decimals: asset.aaveDecimals
@@ -144,7 +144,7 @@ export async function getAAVEPositions(
           additionalData: {
             APY: Number(asset.currentVariableBorrowRate) / 10 ** 25
           },
-          aaveAsset: {
+          protocolAsset: {
             address: asset.aaveAddress,
             symbol: asset.aaveSymbol,
             decimals: asset.aaveDecimals

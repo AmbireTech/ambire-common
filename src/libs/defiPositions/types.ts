@@ -23,7 +23,7 @@ export interface PositionAsset {
   additionalData?: {
     [key: string]: any
   },
-  aaveAsset?: {
+  protocolAsset?: {
     address: string,
     symbol: string,
     decimals: number
