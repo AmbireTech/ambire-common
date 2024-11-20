@@ -427,18 +427,18 @@ export class MainController extends EventEmitter {
     }
     this.selectedAccount.setAccount(accountToSelect)
     this.activity.init()
+    this.swapAndBridge.onAccountChange()
+    this.dapps.broadcastDappSessionEvent('accountsChanged', [toAccountAddr])
     // forceEmitUpdate to update the getters in the FE state of the ctrl
     await this.forceEmitUpdate()
     await this.actions.forceEmitUpdate()
-    this.swapAndBridge.onAccountChange()
     await this.addressBook.forceEmitUpdate()
-    this.dapps.broadcastDappSessionEvent('accountsChanged', [toAccountAddr])
-    // Run these in parallel
-    await Promise.allSettled([
-      this.accounts.updateAccountState(toAccountAddr),
-      this.updateSelectedAccountPortfolio(),
-      this.defiPositions.updatePositions()
-    ])
+    // Don't await these as they are not critical for the account selection
+    // and if the user decides to quickly change to another account withStatus
+    // will block the UI until these are resolved.
+    this.accounts.updateAccountState(toAccountAddr)
+    this.updateSelectedAccountPortfolio()
+    this.defiPositions.updatePositions()
 
     this.emitUpdate()
   }
