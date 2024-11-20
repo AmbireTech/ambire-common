@@ -171,7 +171,10 @@ export class Portfolio {
     }
 
     // add the fee tokens
-    hints.erc20s = [...hints.erc20s, ...gasTankFeeTokens.map((x) => x.address)]
+    hints.erc20s = [
+      ...hints.erc20s,
+      ...gasTankFeeTokens.filter((x) => x.networkId === this.network.id).map((x) => x.address)
+    ]
 
     // Remove duplicates and always add ZeroAddress
     hints.erc20s = [...new Set(hints.erc20s.map((erc20) => getAddress(erc20)).concat(ZeroAddress))]
