@@ -27,6 +27,7 @@ import {
   AccountState,
   ExternalHintsAPIResponse,
   GetOptions,
+  NetworkState,
   PortfolioControllerState,
   PreviousHintsStorage,
   TemporaryTokens,
@@ -204,6 +205,8 @@ export class PortfolioController extends EventEmitter {
     this.#networks.networks.forEach((network) => {
       if (!accountState[network.id]) {
         accountState[network.id] = { isReady: false, isLoading: true, errors: [] }
+      } else {
+        accountState[network.id]!.isLoading = true
       }
     })
     this.emitUpdate()
@@ -322,9 +325,16 @@ export class PortfolioController extends EventEmitter {
     }
   }
 
-  async #getAdditionalPortfolio(accountId: AccountId) {
-    const hasNonZeroTokens = !!this.#networksWithAssetsByAccounts?.[accountId]?.length
+  async #getAdditionalPortfolio(accountId: AccountId, forceUpdate?: boolean) {
+    const rewardsOrGasTankState =
+      this.#latest[accountId]?.rewards || this.#latest[accountId]?.gasTank
+    const canSkipUpdate = rewardsOrGasTankState
+      ? this.#getCanSkipUpdate(rewardsOrGasTankState, forceUpdate)
+      : false
 
+    if (canSkipUpdate) return
+
+    const hasNonZeroTokens = !!this.#networksWithAssetsByAccounts?.[accountId]?.length
     const start = Date.now()
     const accountState = this.#latest[accountId]
 
@@ -395,6 +405,15 @@ export class PortfolioController extends EventEmitter {
     this.emitUpdate()
   }
 
+  #getCanSkipUpdate(networkState: NetworkState, forceUpdate?: boolean) {
+    if (forceUpdate || !networkState || networkState.criticalError) return false
+    const updateStarted = networkState.result?.updateStarted || 0
+    const isWithinMinUpdateInterval =
+      !!updateStarted && Date.now() - updateStarted < this.#minUpdateInterval
+
+    return isWithinMinUpdateInterval
+  }
+
   // By our convention, we always stick with private (#) instead of protected methods.
   // However, we made a compromise here to allow Jest tests to mock updatePortfolioState.
   protected async updatePortfolioState(
@@ -405,6 +424,12 @@ export class PortfolioController extends EventEmitter {
     portfolioProps: Partial<GetOptions>,
     forceUpdate: boolean
   ): Promise<boolean> {
+    const state = _accountState[network.id]!
+    const canSkipUpdate = this.#getCanSkipUpdate(state, forceUpdate)
+
+    if (canSkipUpdate) return false
+
+    const tokenPreferences = this.tokenPreferences
     const hasNonZeroTokens = !!this.#networksWithAssetsByAccounts?.[accountId]?.length
     if (!portfolioProps.previousHints) portfolioProps.previousHints = { erc20s: [], erc721s: {} }
     portfolioProps.previousHints.erc721s = Object.fromEntries(
@@ -413,19 +438,6 @@ export class PortfolioController extends EventEmitter {
         { isKnown: false, tokens: v.map((i) => i.toString()) }
       ])
     )
-
-    const state = _accountState[network.id]!
-
-    // When the portfolio was called lastly
-    const lastUpdateStartedAt = state.result?.updateStarted
-    if (
-      lastUpdateStartedAt &&
-      Date.now() - lastUpdateStartedAt <= this.#minUpdateInterval &&
-      !forceUpdate
-    )
-      return false
-
-    const tokenPreferences = this.tokenPreferences
 
     try {
       const result = await portfolioLib.get(accountId, {
@@ -499,17 +511,8 @@ export class PortfolioController extends EventEmitter {
     const accountState = this.#latest[accountId]
     const pendingState = this.#pending[accountId]
 
-    // TODO: Check if we need to update or the data
-    // Similar to the following commented code:
-    // const lastUpdateStartedAt = state.result?.updateStarted
-    // if (
-    //   lastUpdateStartedAt &&
-    //   Date.now() - lastUpdateStartedAt <= this.#minUpdateInterval &&
-    //   !forceUpdate
-    // )
-    //   return false
     if (shouldGetAdditionalPortfolio(selectedAccount)) {
-      this.#getAdditionalPortfolio(accountId)
+      this.#getAdditionalPortfolio(accountId, opts?.forceUpdate)
     }
 
     const networks = network ? [network] : this.#networks.networks
