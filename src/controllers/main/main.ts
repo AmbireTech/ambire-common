@@ -427,15 +427,17 @@ export class MainController extends EventEmitter {
     }
     this.selectedAccount.setAccount(accountToSelect)
     this.activity.init()
-    await this.updateSelectedAccountPortfolio()
-    await this.defiPositions.updatePositions()
     // forceEmitUpdate to update the getters in the FE state of the ctrl
     await this.forceEmitUpdate()
     await this.actions.forceEmitUpdate()
-    await this.swapAndBridge.forceEmitUpdate()
+    this.swapAndBridge.onAccountChange()
     await this.addressBook.forceEmitUpdate()
     this.dapps.broadcastDappSessionEvent('accountsChanged', [toAccountAddr])
-    await this.accounts.updateAccountState(toAccountAddr)
+    // Purposefully not awaiting as if the user is switching accounts, we don't want to block
+    // the UI for the account state and portfolio to be updated
+    this.updateSelectedAccountPortfolio()
+    this.defiPositions.updatePositions()
+    this.accounts.updateAccountState(toAccountAddr)
 
     this.emitUpdate()
   }
@@ -942,8 +944,7 @@ export class MainController extends EventEmitter {
       this.signAccountOp?.accountOp
     )
 
-    // eslint-disable-next-line @typescript-eslint/no-floating-promises
-    this.portfolio.updateSelectedAccount(
+    await this.portfolio.updateSelectedAccount(
       this.selectedAccount.account.addr,
       network,
       accountOpsToBeSimulatedByNetwork,
