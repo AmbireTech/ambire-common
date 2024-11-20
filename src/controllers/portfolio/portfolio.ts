@@ -201,9 +201,9 @@ export class PortfolioController extends EventEmitter {
 
     const accountState = state[accountId]
 
-    // Init state for missing networks
     this.#networks.networks.forEach((network) => {
-      if (!accountState[network.id]) {
+      const wasNetworkAddedAfterInitialLoad = !accountState[network.id]
+      if (wasNetworkAddedAfterInitialLoad) {
         accountState[network.id] = { isReady: false, isLoading: true, errors: [] }
       } else {
         accountState[network.id]!.isLoading = true

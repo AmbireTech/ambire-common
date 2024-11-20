@@ -59,10 +59,13 @@ export class DefiPositionsController extends EventEmitter {
       return
     }
 
-    // Init state for missing networks
     this.#networks.networks.forEach((n) => {
-      if (!this.#state[accountAddr][n.id]) {
+      const wasNetworkAddedAfterInitialLoad = !this.#state[accountAddr][n.id]
+
+      if (wasNetworkAddedAfterInitialLoad) {
         this.#state[accountAddr][n.id] = { isLoading: true, positionsByProvider: [] }
+      } else {
+        this.#state[accountAddr][n.id].isLoading = true
       }
     })
     this.emitUpdate()
