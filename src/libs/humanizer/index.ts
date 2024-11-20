@@ -16,6 +16,7 @@ import { legendsMessageModule } from './messageModules/legendsModule'
 import OneInchModule from './modules/1Inch'
 import { aaveHumanizer } from './modules/Aave'
 import AcrossModule from './modules/Across'
+import asciiModule from './modules/AsciiModule'
 import curveModule from './modules/Curve'
 import fallbackHumanizer from './modules/FallbackHumanizer'
 import gasTankModule from './modules/GasTankModule'
@@ -54,6 +55,7 @@ export const humanizerCallModules: HumanizerCallModule[] = [
   sushiSwapModule,
   legendsModule,
   singletonFactory,
+  asciiModule,
   fallbackHumanizer,
   postProcessing
 ]

@@ -7,11 +7,6 @@ import { Network, NetworkId } from '../../interfaces/network'
 import { Storage } from '../../interfaces/storage'
 import { isSmartAccount } from '../../libs/account/account'
 import { AccountOp, isAccountOpsIntentEqual } from '../../libs/accountOp/accountOp'
-// eslint-disable-next-line import/no-cycle
-import {
-  getNetworksWithFailedRPCBanners,
-  getNetworksWithPortfolioErrorBanners
-} from '../../libs/banners/banners'
 import { Portfolio } from '../../libs/portfolio'
 /* eslint-disable @typescript-eslint/no-use-before-define */
 import { CustomToken } from '../../libs/portfolio/customToken'
@@ -33,8 +28,8 @@ import {
   ExternalHintsAPIResponse,
   GetOptions,
   PortfolioControllerState,
-  PortfolioLibGetResult,
   PreviousHintsStorage,
+  TemporaryTokens,
   TokenResult
 } from '../../libs/portfolio/interfaces'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
@@ -48,9 +43,9 @@ import { ProvidersController } from '../providers/providers'
 const LEARNED_TOKENS_NETWORK_LIMIT = 50
 
 export class PortfolioController extends EventEmitter {
-  latest: PortfolioControllerState
+  #latest: PortfolioControllerState
 
-  pending: PortfolioControllerState
+  #pending: PortfolioControllerState
 
   // A queue to prevent race conditions when calling `updateSelectedAccount`.
   // All calls are queued by network and account.
@@ -71,13 +66,7 @@ export class PortfolioController extends EventEmitter {
 
   validTokens: any = { erc20: {}, erc721: {} }
 
-  temporaryTokens: {
-    [networkId: NetworkId]: {
-      isLoading: boolean
-      errors: { error: string; address: string }[]
-      result: { tokens: PortfolioLibGetResult['tokens'] }
-    }
-  } = {}
+  temporaryTokens: TemporaryTokens = {}
 
   #portfolioLibs: Map<string, Portfolio>
 
@@ -120,8 +109,8 @@ export class PortfolioController extends EventEmitter {
     velcroUrl: string
   ) {
     super()
-    this.latest = {}
-    this.pending = {}
+    this.#latest = {}
+    this.#pending = {}
     this.#queue = {}
     this.#portfolioLibs = new Map()
     this.#storage = storage
@@ -178,26 +167,31 @@ export class PortfolioController extends EventEmitter {
   // gets additional portfolio state from the relayer that isn't retrieved from the portfolio library
   // that's usually the two additional virtual networks: getTank and rewards
   #setNetworkLoading(accountId: AccountId, network: string, isLoading: boolean, error?: any) {
-    const accountState = this.latest[accountId]
+    const accountState = this.#latest[accountId]
     if (!accountState[network]) accountState[network] = { errors: [], isReady: false, isLoading }
     accountState[network]!.isLoading = isLoading
     if (error) accountState[network]!.criticalError = error
   }
 
-  #prepareLatestState(selectedAccount: Account) {
-    const state = this.latest
+  #prepareState(selectedAccount: Account, key: 'latest' | 'pending') {
+    const stateMap = {
+      latest: this.#latest,
+      pending: this.#pending
+    }
+    const state = stateMap[key]
+
     const accountId = selectedAccount.addr
 
     if (!state[accountId]) {
       state[accountId] = this.#networks.networks.reduce((acc: AccountState, network) => {
-        acc[network.id] = { isReady: false, isLoading: false, errors: [] }
+        acc[network.id] = { isReady: false, isLoading: true, errors: [] }
 
         return acc
       }, {} as AccountState)
 
       if (shouldGetAdditionalPortfolio(selectedAccount)) {
-        state[accountId].gasTank = { isReady: false, isLoading: false, errors: [] }
-        state[accountId].rewards = { isReady: false, isLoading: false, errors: [] }
+        state[accountId].gasTank = { isReady: false, isLoading: true, errors: [] }
+        state[accountId].rewards = { isReady: false, isLoading: true, errors: [] }
       }
 
       this.emitUpdate()
@@ -205,38 +199,21 @@ export class PortfolioController extends EventEmitter {
     }
 
     const accountState = state[accountId]
-    // Remove networks that are not in the list of networks. For example:
-    // If the user adds a custom network, the portfolio fetches assets for it but the user
-    // removes the network, the portfolio should remove the assets for that network.
-    for (const networkId of Object.keys(accountState)) {
-      if (
-        ![...this.#networks.networks, { id: 'gasTank' }, { id: 'rewards' }].find(
-          (x) => x.id === networkId
-        )
-      )
-        delete accountState[networkId]
-    }
+
+    // Init state for missing networks
+    this.#networks.networks.forEach((network) => {
+      if (!accountState[network.id]) {
+        accountState[network.id] = { isReady: false, isLoading: true, errors: [] }
+      }
+    })
     this.emitUpdate()
   }
 
-  #preparePendingState(selectedAccountId: AccountId) {
-    if (!this.pending[selectedAccountId]) {
-      this.pending[selectedAccountId] = {}
-      this.emitUpdate()
-      return
-    }
-
-    const accountState = this.pending[selectedAccountId]
-    // Remove networks that are not in the list of networks. For example:
-    // If the user adds a custom network, the portfolio fetches assets for it but the user
-    // removes the network, the portfolio should remove the assets for that network.
-    for (const networkId of Object.keys(accountState)) {
-      if (
-        ![...this.#networks.networks, { id: 'gasTank' }, { id: 'rewards' }].find(
-          (x) => x.id === networkId
-        )
-      )
-        delete accountState[networkId]
+  removeNetworkData(networkId: NetworkId) {
+    for (const accountState of [this.#latest, this.#pending]) {
+      for (const accountId of Object.keys(accountState)) {
+        delete accountState[accountId][networkId]
+      }
     }
     this.emitUpdate()
   }
@@ -244,13 +221,13 @@ export class PortfolioController extends EventEmitter {
   // make the pending results the same as the latest ones
   overridePendingResults(accountOp: AccountOp) {
     if (
-      this.pending[accountOp.accountAddr] &&
-      this.pending[accountOp.accountAddr][accountOp.networkId] &&
-      this.latest[accountOp.accountAddr] &&
-      this.latest[accountOp.accountAddr][accountOp.networkId]
+      this.#pending[accountOp.accountAddr] &&
+      this.#pending[accountOp.accountAddr][accountOp.networkId] &&
+      this.#latest[accountOp.accountAddr] &&
+      this.#latest[accountOp.accountAddr][accountOp.networkId]
     ) {
-      this.pending[accountOp.accountAddr][accountOp.networkId]!.result =
-        this.latest[accountOp.accountAddr][accountOp.networkId]!.result
+      this.#pending[accountOp.accountAddr][accountOp.networkId]!.result =
+        this.#latest[accountOp.accountAddr][accountOp.networkId]!.result
       this.emitUpdate()
     }
   }
@@ -349,7 +326,7 @@ export class PortfolioController extends EventEmitter {
     const hasNonZeroTokens = !!this.#networksWithAssetsByAccounts?.[accountId]?.length
 
     const start = Date.now()
-    const accountState = this.latest[accountId]
+    const accountState = this.#latest[accountId]
 
     this.#setNetworkLoading(accountId, 'gasTank', true)
     this.#setNetworkLoading(accountId, 'rewards', true)
@@ -437,14 +414,6 @@ export class PortfolioController extends EventEmitter {
       ])
     )
 
-    if (!_accountState[network.id]) {
-      _accountState[network.id] = {
-        isReady: false,
-        isLoading: false,
-        errors: []
-      }
-      this.emitUpdate()
-    }
     const state = _accountState[network.id]!
 
     // When the portfolio was called lastly
@@ -455,9 +424,6 @@ export class PortfolioController extends EventEmitter {
       !forceUpdate
     )
       return false
-
-    state.isLoading = true
-    this.emitUpdate()
 
     const tokenPreferences = this.tokenPreferences
 
@@ -527,12 +493,21 @@ export class PortfolioController extends EventEmitter {
     const selectedAccount = this.#accounts.accounts.find((x) => x.addr === accountId)
     if (!selectedAccount) throw new Error('selected account does not exist')
 
-    this.#prepareLatestState(selectedAccount)
-    this.#preparePendingState(selectedAccount.addr)
+    this.#prepareState(selectedAccount, 'latest')
+    this.#prepareState(selectedAccount, 'pending')
 
-    const accountState = this.latest[accountId]
-    const pendingState = this.pending[accountId]
+    const accountState = this.#latest[accountId]
+    const pendingState = this.#pending[accountId]
 
+    // TODO: Check if we need to update or the data
+    // Similar to the following commented code:
+    // const lastUpdateStartedAt = state.result?.updateStarted
+    // if (
+    //   lastUpdateStartedAt &&
+    //   Date.now() - lastUpdateStartedAt <= this.#minUpdateInterval &&
+    //   !forceUpdate
+    // )
+    //   return false
     if (shouldGetAdditionalPortfolio(selectedAccount)) {
       this.#getAdditionalPortfolio(accountId)
     }
@@ -565,20 +540,6 @@ export class PortfolioController extends EventEmitter {
             currentAccountOps && simulatedAccountOps
               ? !isAccountOpsIntentEqual(currentAccountOps, simulatedAccountOps)
               : currentAccountOps !== simulatedAccountOps
-
-          // TODO: The `updateSelectedAccount` function is currently always invoked with `forceUpdate: true` from the application code.
-          // TODO: We decided to implement this improvement once we first address https://github.com/AmbireTech/ambire-app/issues/2335#issue-2345433944
-          // We should rewrite this, and state updates should work in the following manner:
-          // 1. On the Dashboard screen, there is an interval that updates both the latest and pending states.
-          //    Why do we update both states? Even without AccountOps to simulate, fetching the pending state
-          //    is beneficial because if someone sends you a token, you will see it on the Dashboard as a pending token balance.
-          // 2. On the Dashboard, if the user manually triggers a Portfolio update, we should pass `forceUpdate: true` and update both states,
-          //    regardless of any internal portfolio controller limits or caching.
-          // 3. When signing a transaction and we have AccountOps, we have the following two scenarios:
-          //    3.1. The Dashboard interval should continue updating both the latest and pending states,
-          //    and also simulate AccountOps (without further optimizations, such as checking `areAccountOpsChanged` and updating the state only if necessary).
-          //    3.2. The SignAccountOp screen also has a simulation interval that updates both states and simulates the AccountOps.
-          //    Here, we should apply the `areAccountOpsChanged` optimization and update both states only if the AccountOps have changed or have not been simulated yet.
           const forceUpdate = opts?.forceUpdate || areAccountOpsChanged
 
           const fallbackHints = (this.#previousHints?.fromExternalAPI &&
@@ -610,29 +571,25 @@ export class PortfolioController extends EventEmitter {
               },
               forceUpdate
             ),
-            // Pending state update
-            // We are updating the pending state, only if AccountOps are changed or the application logic requests a force update
-            forceUpdate
-              ? this.updatePortfolioState(
-                  accountId,
-                  pendingState,
-                  network,
-                  portfolioLib,
-                  {
-                    blockTag: 'pending',
-                    previousHints: fallbackHints,
-                    ...(currentAccountOps && {
-                      simulation: {
-                        account: selectedAccount,
-                        accountOps: currentAccountOps
-                      }
-                    }),
-                    isEOA: !isSmartAccount(selectedAccount),
-                    additionalHints
-                  },
-                  forceUpdate
-                )
-              : Promise.resolve(false)
+            this.updatePortfolioState(
+              accountId,
+              pendingState,
+              network,
+              portfolioLib,
+              {
+                blockTag: 'pending',
+                previousHints: fallbackHints,
+                ...(currentAccountOps && {
+                  simulation: {
+                    account: selectedAccount,
+                    accountOps: currentAccountOps
+                  }
+                }),
+                isEOA: !isSmartAccount(selectedAccount),
+                additionalHints
+              },
+              forceUpdate
+            )
           ])
 
           // Persist latest state in previousHints in the disk storage for further requests
@@ -782,8 +739,8 @@ export class PortfolioController extends EventEmitter {
   }
 
   removeAccountData(address: Account['addr']) {
-    delete this.latest[address]
-    delete this.pending[address]
+    delete this.#latest[address]
+    delete this.#pending[address]
     delete this.#networksWithAssetsByAccounts[address]
 
     this.#networks.networks.forEach((network) => {
@@ -802,33 +759,22 @@ export class PortfolioController extends EventEmitter {
     this.emitUpdate()
   }
 
-  get networksWithAssets() {
-    return [...new Set(Object.values(this.#networksWithAssetsByAccounts).flat())]
+  getLatestPortfolioState(accountAddr: string) {
+    return this.#latest[accountAddr] || {}
   }
 
-  get banners() {
-    if (!this.#networks.isInitialized || !this.#providers.isInitialized) return []
+  getPendingPortfolioState(accountAddr: string) {
+    return this.#pending[accountAddr] || {}
+  }
 
-    const networksWithFailedRPCBanners = getNetworksWithFailedRPCBanners({
-      providers: this.#providers.providers,
-      networks: this.#networks.networks,
-      networksWithAssets: this.networksWithAssets
-    })
-    const networksWithPortfolioErrorBanners = getNetworksWithPortfolioErrorBanners({
-      networks: this.#networks.networks,
-      portfolioLatest: this.latest,
-      providers: this.#providers.providers
-    })
-
-    return [...networksWithFailedRPCBanners, ...networksWithPortfolioErrorBanners]
+  getNetworksWithAssets(accountAddr: string) {
+    return this.#networksWithAssetsByAccounts[accountAddr] || []
   }
 
   toJSON() {
     return {
       ...this,
-      ...super.toJSON(),
-      networksWithAssets: this.networksWithAssets,
-      banners: this.banners
+      ...super.toJSON()
     }
   }
 }

@@ -1,17 +1,15 @@
-// eslint-disable-next-line import/no-cycle
-import {
-  AccountOpAction,
-  Action as ActionFromActionsQueue
-} from '../../controllers/actions/actions'
-// eslint-disable-next-line import/no-cycle
-import { PortfolioController } from '../../controllers/portfolio/portfolio'
-import { Account, AccountId } from '../../interfaces/account'
+import { Account } from '../../interfaces/account'
+import { AccountOpAction, Action as ActionFromActionsQueue } from '../../interfaces/actions'
 import { Action, Banner } from '../../interfaces/banner'
 import { Network, NetworkId } from '../../interfaces/network'
 import { RPCProviders } from '../../interfaces/provider'
 import { ActiveRoute } from '../../interfaces/swapAndBridge'
-import { AccountState, DeFiPositionsError } from '../defiPositions/types'
+import {
+  AccountState as DefiPositionsAccountState,
+  DeFiPositionsError
+} from '../defiPositions/types'
 import { getNetworksWithFailedRPC } from '../networks/networks'
+import { AccountState as PortfolioAccountState } from '../portfolio/interfaces'
 import { PORTFOLIO_LIB_ERROR_NAMES } from '../portfolio/portfolio'
 import { getIsBridgeTxn, getQuoteRouteSteps } from '../swapAndBridge/swapAndBridge'
 
@@ -72,9 +70,16 @@ export const getBridgeBanners = (
     .map((r) => {
       const actions: Action[] = []
 
-      if (['in-progress', 'completed'].includes(r.routeStatus)) {
+      if (r.routeStatus === 'in-progress') {
         actions.push({
-          label: r.routeStatus === 'completed' ? 'Got it' : 'Close',
+          label: 'Details',
+          actionName: 'open-swap-and-bridge-tab'
+        })
+      }
+
+      if (r.routeStatus === 'completed') {
+        actions.push({
+          label: 'Close',
           actionName: 'close-bridge',
           meta: { activeRouteId: r.activeRouteId }
         })
@@ -325,7 +330,7 @@ export const getNetworksWithFailedRPCBanners = ({
 
   networksWithMultipleRpcUrls.forEach((n) => {
     banners.push({
-      id: 'custom-rpcs-down',
+      id: `${n.id}-custom-rpcs-down`,
       type: 'error',
       title: `Failed to retrieve network data for ${n.name}. You can try selecting another RPC URL`,
       text: 'Affected features: visible assets, DeFi positions, sign message/transaction, ENS/UD domain resolving, add account.',
@@ -358,96 +363,81 @@ export const getNetworksWithFailedRPCBanners = ({
 
 export const getNetworksWithPortfolioErrorBanners = ({
   networks,
-  portfolioLatest,
+  selectedAccountLatest,
   providers
 }: {
   networks: Network[]
-  portfolioLatest: PortfolioController['latest']
+  selectedAccountLatest: PortfolioAccountState
   providers: RPCProviders
 }): Banner[] => {
   const banners: Banner[] = []
 
-  // Why are we iterating over the whole state?
-  // What if an account has a critical error, the user
-  // changes the account, and the new account has no errors?
-  // Isn't it more efficient to iterate over the current account state?
-  // @TODO: Consider refactoring this
-  const portfolioLoading = Object.keys(portfolioLatest).some((accId: AccountId) => {
-    const accPortfolio = portfolioLatest[accId]
+  const portfolioLoading = Object.keys(selectedAccountLatest).some((network) => {
+    const portfolioForNetwork = selectedAccountLatest[network]
 
-    return Object.keys(accPortfolio).some((network) => {
-      const portfolioForNetwork = accPortfolio[network]
-
-      return portfolioForNetwork?.isLoading
-    })
+    return portfolioForNetwork?.isLoading
   })
 
   // Otherwise networks are appended to the banner one by one, which looks weird
   if (portfolioLoading) return []
 
-  Object.keys(portfolioLatest).forEach((accId: AccountId) => {
-    const accPortfolio = portfolioLatest[accId]
+  const networkNamesWithCriticalError: string[] = []
+  const networkNamesWithPriceFetchError: string[] = []
 
-    if (!accPortfolio) return
+  if (!Object.keys(selectedAccountLatest).length) return []
 
-    const networkNamesWithCriticalError: string[] = []
-    const networkNamesWithPriceFetchError: string[] = []
+  Object.keys(selectedAccountLatest).forEach((network) => {
+    const portfolioForNetwork = selectedAccountLatest[network]
+    const criticalError = portfolioForNetwork?.criticalError
 
-    Object.keys(accPortfolio).forEach((network) => {
-      const portfolioForNetwork = accPortfolio[network]
-      const criticalError = portfolioForNetwork?.criticalError
+    let networkName: string | null = null
 
-      let networkName: string | null = null
+    if (network === 'gasTank') networkName = 'Gas Tank'
+    else if (network === 'rewards') networkName = 'Rewards'
+    else networkName = networks.find((n) => n.id === network)?.name ?? null
 
-      if (network === 'gasTank') networkName = 'Gas Tank'
-      else if (network === 'rewards') networkName = 'Rewards'
-      else networkName = networks.find((n) => n.id === network)?.name ?? null
+    if (!portfolioForNetwork || !networkName || portfolioForNetwork.isLoading) return
 
-      if (!portfolioForNetwork || !networkName || portfolioForNetwork.isLoading) return
+    // Don't display an error banner if the RPC isn't working because an RPC error banner is already displayed.
+    // In case of additional networks don't check the RPC as there isn't one
+    if (
+      criticalError &&
+      (['gasTank', 'rewards'].includes(network) || providers[network].isWorking)
+    ) {
+      networkNamesWithCriticalError.push(networkName as string)
+      // If there is a critical error, we don't need to check for price fetch error
+      return
+    }
 
-      // Don't display an error banner if the RPC isn't working because an RPC error banner is already displayed.
-      // In case of additional networks don't check the RPC as there isn't one
-      if (
-        criticalError &&
-        (['gasTank', 'rewards'].includes(network) || providers[network].isWorking)
-      ) {
+    portfolioForNetwork?.errors.forEach((err: any) => {
+      if (err?.name === PORTFOLIO_LIB_ERROR_NAMES.PriceFetchError) {
+        networkNamesWithPriceFetchError.push(networkName as string)
+      } else if (err?.name === PORTFOLIO_LIB_ERROR_NAMES.HintsError) {
         networkNamesWithCriticalError.push(networkName as string)
-        // If there is a critical error, we don't need to check for price fetch error
-        return
       }
-
-      portfolioForNetwork?.errors.forEach((err: any) => {
-        if (err?.name === PORTFOLIO_LIB_ERROR_NAMES.PriceFetchError) {
-          networkNamesWithPriceFetchError.push(networkName as string)
-        } else if (err?.name === PORTFOLIO_LIB_ERROR_NAMES.HintsError) {
-          networkNamesWithCriticalError.push(networkName as string)
-        }
-      })
     })
-
-    if (networkNamesWithPriceFetchError.length) {
-      banners.push({
-        accountAddr: accId,
-        id: `${accId}-portfolio-prices-error`,
-        type: 'warning',
-        title: `Failed to retrieve prices for ${networkNamesWithPriceFetchError.join(', ')}`,
-        text: 'Affected features: account balances, asset prices. Reload the account or try again later.',
-        actions: []
-      })
-    }
-    if (networkNamesWithCriticalError.length) {
-      banners.push({
-        accountAddr: accId,
-        id: `${accId}-portfolio-critical-error`,
-        type: 'error',
-        title: `Failed to retrieve the portfolio data for ${networkNamesWithCriticalError.join(
-          ', '
-        )}`,
-        text: 'Affected features: account balances, visible assets. Reload the account or try again later.',
-        actions: []
-      })
-    }
   })
+
+  if (networkNamesWithPriceFetchError.length) {
+    banners.push({
+      id: 'portfolio-prices-error',
+      type: 'warning',
+      title: `Failed to retrieve prices for ${networkNamesWithPriceFetchError.join(', ')}`,
+      text: 'Affected features: account balances, asset prices. Reload the account or try again later.',
+      actions: []
+    })
+  }
+  if (networkNamesWithCriticalError.length) {
+    banners.push({
+      id: 'portfolio-critical-error',
+      type: 'error',
+      title: `Failed to retrieve the portfolio data for ${networkNamesWithCriticalError.join(
+        ', '
+      )}`,
+      text: 'Affected features: account balances, visible assets. Reload the account or try again later.',
+      actions: []
+    })
+  }
 
   return banners
 }
@@ -458,7 +448,7 @@ export const getNetworksWithDeFiPositionsErrorBanners = ({
   providers
 }: {
   networks: Network[]
-  currentAccountState: AccountState
+  currentAccountState: DefiPositionsAccountState
   providers: RPCProviders
 }) => {
   const isLoading = Object.keys(currentAccountState).some((networkId) => {

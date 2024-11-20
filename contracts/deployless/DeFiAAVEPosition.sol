@@ -111,6 +111,9 @@ struct TokenFromBalance {
     uint128 currentLiquidityRate;
     uint128 currentVariableBorrowRate;
     uint128 currentStableBorrowRate;
+    address aaveAddr;
+    string aaveSymbol;
+    uint8 aaveDecimals;
 }
 
 struct AAVEUserBalance {
@@ -254,22 +257,25 @@ contract AAVEPosition {
                 ReserveData memory reserveData = IPOOL(poolAddress).getReserveData(reserves[i]);    
                 uint256 price = IAaveOracle(priceOralceAddr).getAssetPrice(reserves[i]);
                 TokenFromBalance memory aToken;
-                aToken.addr = reserveData.aTokenAddress;
+                aToken.addr = reserves[i];
                 aToken.balance = IATOKEN(reserveData.aTokenAddress).balanceOf(userAddr);
                 aToken.symbol = getTokenSymbol(reserves[i]);
-                aToken.decimals = IATOKEN(reserveData.aTokenAddress).decimals();
+                aToken.decimals = IATOKEN(reserves[i]).decimals();
                 aToken.price = price;
                 aToken.borrowAssetBalance = IATOKEN(reserveData.variableDebtTokenAddress).balanceOf(userAddr);
                 aToken.stableBorrowAssetBalance = IATOKEN(reserveData.stableDebtTokenAddress).balanceOf(userAddr);
                 aToken.currentLiquidityRate = reserveData.currentLiquidityRate;
                 aToken.currentVariableBorrowRate = reserveData.currentVariableBorrowRate;
                 aToken.currentStableBorrowRate = reserveData.currentStableBorrowRate;
+                aToken.aaveAddr = reserveData.aTokenAddress;
+                aToken.aaveSymbol = getTokenSymbol(reserveData.aTokenAddress);
+                aToken.aaveDecimals = IATOKEN(reserveData.aTokenAddress).decimals();
                 userBalance[i] = aToken;
             } else {
                 ReserveDataIronclad memory reserveData = IPOOLIronclad(poolAddress).getReserveData(reserves[i]);    
                 uint256 price = IAaveOracle(priceOralceAddr).getAssetPrice(reserves[i]);
                 TokenFromBalance memory aToken;
-                aToken.addr = reserveData.aTokenAddress;
+                aToken.addr = reserves[i];
                 aToken.balance = IATOKEN(reserveData.aTokenAddress).balanceOf(userAddr);
                 aToken.symbol = getTokenSymbol(reserves[i]);
                 aToken.decimals = IATOKEN(reserveData.aTokenAddress).decimals();
@@ -279,6 +285,9 @@ contract AAVEPosition {
                 aToken.currentLiquidityRate = reserveData.currentLiquidityRate;
                 aToken.currentVariableBorrowRate = reserveData.currentVariableBorrowRate;
                 aToken.currentStableBorrowRate = reserveData.currentStableBorrowRate;
+                aToken.aaveAddr = reserveData.aTokenAddress;
+                aToken.aaveSymbol = getTokenSymbol(reserveData.aTokenAddress);
+                aToken.aaveDecimals = IATOKEN(reserveData.aTokenAddress).decimals();
                 userBalance[i] = aToken;
             }
         }

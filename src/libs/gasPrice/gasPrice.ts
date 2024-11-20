@@ -1,4 +1,4 @@
-import { Block, Interface, Provider } from 'ethers'
+import { Block, Interface, JsonRpcProvider, Provider } from 'ethers'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json'
@@ -135,7 +135,14 @@ export async function getGasPriceRecommendations(
   network: Network,
   blockTag: string | number = -1
 ): Promise<{ gasPrice: GasRecommendation[]; blockGasLimit: bigint }> {
-  const lastBlock = await refetchBlock(provider, blockTag)
+  const [lastBlock, ethGasPrice] = await Promise.all([
+    refetchBlock(provider, blockTag),
+    (provider as JsonRpcProvider).send('eth_gasPrice', []).catch((e) => {
+      console.log('eth_gasPrice failed because of the following reason:')
+      console.log(e)
+      return '0x'
+    })
+  ])
   // https://github.com/ethers-io/ethers.js/issues/3683#issuecomment-1436554995
   const txns = lastBlock.prefetchedTransactions
 
@@ -198,11 +205,16 @@ export async function getGasPriceRecommendations(
     return { gasPrice: fee, blockGasLimit: lastBlock.gasLimit }
   }
   const prices = filterOutliers(txns.map((x) => x.gasPrice!).filter((x) => x > 0))
+
+  // use th fetched price as a min if not 0 as it could be actually lower
+  // than the hardcoded MIN.
+  const minOrFetchedGasPrice = ethGasPrice !== '0x' ? BigInt(ethGasPrice) : MIN_GAS_PRICE
+
   const fee = speeds.map(({ name }, i) => {
     const avgGasPrice = average(nthGroup(prices, i, speeds.length))
     return {
       name,
-      gasPrice: avgGasPrice >= MIN_GAS_PRICE ? avgGasPrice : MIN_GAS_PRICE
+      gasPrice: avgGasPrice >= minOrFetchedGasPrice ? avgGasPrice : minOrFetchedGasPrice
     }
   })
   return { gasPrice: fee, blockGasLimit: lastBlock.gasLimit }
