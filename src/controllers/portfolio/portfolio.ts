@@ -7,11 +7,6 @@ import { Network, NetworkId } from '../../interfaces/network'
 import { Storage } from '../../interfaces/storage'
 import { isSmartAccount } from '../../libs/account/account'
 import { AccountOp, isAccountOpsIntentEqual } from '../../libs/accountOp/accountOp'
-// eslint-disable-next-line import/no-cycle
-import {
-  getNetworksWithFailedRPCBanners,
-  getNetworksWithPortfolioErrorBanners
-} from '../../libs/banners/banners'
 import { Portfolio } from '../../libs/portfolio'
 /* eslint-disable @typescript-eslint/no-use-before-define */
 import { CustomToken } from '../../libs/portfolio/customToken'
@@ -772,33 +767,14 @@ export class PortfolioController extends EventEmitter {
     return this.#pending[accountAddr] || {}
   }
 
-  get networksWithAssets() {
-    return [...new Set(Object.values(this.#networksWithAssetsByAccounts).flat())]
-  }
-
-  get banners() {
-    if (!this.#networks.isInitialized || !this.#providers.isInitialized) return []
-
-    const networksWithFailedRPCBanners = getNetworksWithFailedRPCBanners({
-      providers: this.#providers.providers,
-      networks: this.#networks.networks,
-      networksWithAssets: this.networksWithAssets
-    })
-    const networksWithPortfolioErrorBanners = getNetworksWithPortfolioErrorBanners({
-      networks: this.#networks.networks,
-      portfolioLatest: this.#latest,
-      providers: this.#providers.providers
-    })
-
-    return [...networksWithFailedRPCBanners, ...networksWithPortfolioErrorBanners]
+  getNetworksWithAssets(accountAddr: string) {
+    return this.#networksWithAssetsByAccounts[accountAddr] || []
   }
 
   toJSON() {
     return {
       ...this,
-      ...super.toJSON(),
-      networksWithAssets: this.networksWithAssets,
-      banners: this.banners
+      ...super.toJSON()
     }
   }
 }
