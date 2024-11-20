@@ -43,7 +43,10 @@ export async function getAAVEPositions(
       stableBorrowAssetBalance: asset[6],
       currentLiquidityRate: asset[7],
       currentVariableBorrowRate: asset[8],
-      currentStableBorrowRate: asset[9]
+      currentStableBorrowRate: asset[9],
+      aaveAddress: asset[10],
+      aaveSymbol: asset[11],
+      aaveDecimals: asset[12]
     }))
     .filter((t: any) => t.balance > 0 || t.borrowAssetBalance > 0 || t.stableBorrowAssetBalance > 0)
 
@@ -100,6 +103,11 @@ export async function getAAVEPositions(
           type: AssetType.Collateral,
           additionalData: {
             APY: Number(asset.currentLiquidityRate) / 10 ** 25
+          },
+          aaveAsset: {
+            address: asset.aaveAddress,
+            symbol: asset.aaveSymbol,
+            decimals: asset.aaveDecimals
           }
         } as PositionAsset)
       }
@@ -115,6 +123,11 @@ export async function getAAVEPositions(
           type: AssetType.Borrow,
           additionalData: {
             APY: Number(asset.currentStableBorrowRate) / 10 ** 25
+          },
+          aaveAsset: {
+            address: asset.aaveAddress,
+            symbol: asset.aaveSymbol,
+            decimals: asset.aaveDecimals
           }
         } as PositionAsset)
       }
@@ -130,6 +143,11 @@ export async function getAAVEPositions(
           type: AssetType.Borrow,
           additionalData: {
             APY: Number(asset.currentVariableBorrowRate) / 10 ** 25
+          },
+          aaveAsset: {
+            address: asset.aaveAddress,
+            symbol: asset.aaveSymbol,
+            decimals: asset.aaveDecimals
           }
         } as PositionAsset)
       }

@@ -22,6 +22,11 @@ export interface PositionAsset {
   type: AssetType
   additionalData?: {
     [key: string]: any
+  },
+  aaveAsset?: {
+    address: string,
+    symbol: string,
+    decimals: number
   }
 }
 
