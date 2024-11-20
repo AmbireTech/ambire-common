@@ -168,11 +168,10 @@ export async function getNFTs(
   // simulation was performed if the nonce is changed
   const hasSimulation = afterNonce !== beforeNonce
 
-  const simulationTokens: (CollectionResult & { addr: any; error: string })[] | null = hasSimulation
+  const simulationTokens: (CollectionResult & { addr: any })[] | null = hasSimulation
     ? after[0].map((simulationToken: any, tokenIndex: number) => ({
         ...mapToken(simulationToken),
-        addr: deltaAddressesMapping[tokenIndex],
-        error: simulationToken.error
+        addr: deltaAddressesMapping[tokenIndex]
       }))
     : null
 
@@ -195,15 +194,11 @@ export async function getNFTs(
     simulationToken?.collectibles?.forEach((newCollectible: bigint) => {
       if (!token.collectibles.includes(newCollectible)) receiving.push(newCollectible)
     })
-    const tokenError =
-      beforeToken.error !== '0x' && simulationToken?.error !== '0x' ? beforeToken.error : '0x'
 
     return [
-      tokenError,
+      beforeToken.error,
       {
         ...token,
-        name: token.name || simulationToken?.name || '',
-        symbol: token.symbol || simulationToken?.symbol || '',
         // Please refer to getTokens() for more info regarding `amountBeforeSimulation` calc
         simulationAmount: simulationToken ? simulationToken.amount - token.amount : undefined,
         amountPostSimulation: simulationToken ? simulationToken.amount : token.amount,
