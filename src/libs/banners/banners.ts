@@ -356,6 +356,29 @@ export const getNetworksWithFailedRPCBanners = ({
   return banners
 }
 
+export const getFirstCashbackBanner = ({
+  shouldShowConfetti
+}: {
+  shouldShowConfetti: boolean
+}): Banner[] => {
+  if (!shouldShowConfetti) return []
+  // TODO: fix the content
+  return [
+    {
+      id: 'first-cashback-banner-banner',
+      type: 'info',
+      title: "Cashback",
+      text: "You've received your first cashback",
+      actions: [
+        {
+          label: 'Open',
+          actionName: 'open-confetti-modal'
+        }
+      ]
+    }
+  ]
+}
+
 export const getNetworksWithPortfolioErrorBanners = ({
   networks,
   portfolioLatest,

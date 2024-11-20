@@ -9,6 +9,7 @@ import { isSmartAccount } from '../../libs/account/account'
 import { AccountOp, isAccountOpsIntentEqual } from '../../libs/accountOp/accountOp'
 // eslint-disable-next-line import/no-cycle
 import {
+  getFirstCashbackBanner,
   getNetworksWithFailedRPCBanners,
   getNetworksWithPortfolioErrorBanners
 } from '../../libs/banners/banners'
@@ -111,7 +112,9 @@ export class PortfolioController extends EventEmitter {
   // Holds the initial load promise, so that one can wait until it completes
   #initialLoadPromise: Promise<void>
 
-  #shouldShowConfetti: boolean
+  #shouldShowConfettiModal: boolean
+
+  #shouldShowConfettiBanner: boolean
 
   constructor(
     storage: Storage,
@@ -136,7 +139,8 @@ export class PortfolioController extends EventEmitter {
     this.#accounts = accounts
     this.temporaryTokens = {}
     this.#toBeLearnedTokens = {}
-    this.#shouldShowConfetti = false
+    this.#shouldShowConfettiModal = false
+    this.#shouldShowConfettiBanner = true
 
     this.#initialLoadPromise = this.#load()
   }
@@ -350,7 +354,8 @@ export class PortfolioController extends EventEmitter {
   }
 
   async setShouldShowConfettiToFalse(accountId: AccountId) {
-    this.#shouldShowConfetti = false
+    this.#shouldShowConfettiModal = !this.#shouldShowConfettiModal
+    this.#shouldShowConfettiBanner = false
 
     this.#getAdditionalPortfolio(accountId)
   }
@@ -402,7 +407,7 @@ export class PortfolioController extends EventEmitter {
     }
 
     if (shouldShowConfettiLogic(accountState, res.data.gasTank.balance)) {
-      this.#shouldShowConfetti = true
+      this.#shouldShowConfettiBanner = true
     }
 
     const gasTankTokens = res.data.gasTank.balance.map((t: any) => ({
@@ -411,7 +416,7 @@ export class PortfolioController extends EventEmitter {
       availableAmount: BigInt(t.amount),
       cashback: BigInt(t.cashback || 0),
       saved: BigInt(t.saved || 0),
-      shouldPopsUpConfetti: this.#shouldShowConfetti,
+      shouldPopsUpConfetti: this.#shouldShowConfettiModal,
       flags: getFlags(res.data, 'gasTank', t.networkId, t.address)
     }))
 
@@ -837,7 +842,15 @@ export class PortfolioController extends EventEmitter {
       providers: this.#providers.providers
     })
 
-    return [...networksWithFailedRPCBanners, ...networksWithPortfolioErrorBanners]
+    const firstCashbackBanner = getFirstCashbackBanner({
+      shouldShowConfetti: this.#shouldShowConfettiBanner
+    })
+
+    return [
+      ...networksWithFailedRPCBanners,
+      ...networksWithPortfolioErrorBanners,
+      ...firstCashbackBanner
+    ]
   }
 
   toJSON() {
