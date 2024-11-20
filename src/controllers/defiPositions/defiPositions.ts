@@ -45,32 +45,6 @@ export class DefiPositionsController extends EventEmitter {
     this.#networks = networks
   }
 
-  #prepareState(accountAddr: string) {
-    if (!this.#state[accountAddr]) {
-      this.#state[accountAddr] = this.#networks.networks.reduce(
-        (acc, n) => ({
-          ...acc,
-          [n.id]: { isLoading: true, positionsByProvider: [] }
-        }),
-        this.#state[accountAddr]
-      )
-
-      this.emitUpdate()
-      return
-    }
-
-    this.#networks.networks.forEach((n) => {
-      const wasNetworkAddedAfterInitialLoad = !this.#state[accountAddr][n.id]
-
-      if (wasNetworkAddedAfterInitialLoad) {
-        this.#state[accountAddr][n.id] = { isLoading: true, positionsByProvider: [] }
-      } else {
-        this.#state[accountAddr][n.id].isLoading = true
-      }
-    })
-    this.emitUpdate()
-  }
-
   #setProviderError(
     accountAddr: string,
     networkId: string,
@@ -101,21 +75,34 @@ export class DefiPositionsController extends EventEmitter {
     if (!this.#selectedAccount.account) return
 
     const selectedAccountAddr = this.#selectedAccount.account.addr
-    this.#prepareState(selectedAccountAddr)
-
     const networksToUpdate = networkId
       ? this.#networks.networks.filter((n) => n.id === networkId)
       : this.#networks.networks
 
+    if (!this.#state[selectedAccountAddr]) {
+      this.#state[selectedAccountAddr] = {}
+    }
+
     await Promise.all(
       networksToUpdate.map(async (n) => {
+        if (!this.#state[selectedAccountAddr][n.id]) {
+          this.#state[selectedAccountAddr][n.id] = {
+            isLoading: false,
+            positionsByProvider: [],
+            updatedAt: undefined
+          }
+        }
+
         if (this.#getCanSkipUpdate(selectedAccountAddr, n.id)) {
           // Emit an update so that the current account data getter is updated
           this.emitUpdate()
           return
         }
-        const networkState = this.#state[selectedAccountAddr][n.id]
 
+        this.#state[selectedAccountAddr][n.id].isLoading = true
+        this.emitUpdate()
+
+        const networkState = this.#state[selectedAccountAddr][n.id]
         // Reset provider errors before updating
         networkState.providerErrors = []
         networkState.error = undefined
