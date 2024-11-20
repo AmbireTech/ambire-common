@@ -65,10 +65,10 @@ export class DefiPositionsController extends EventEmitter {
     const networkState = this.#state[accountAddr][networkId]
 
     if (networkState.error || networkState.providerErrors?.length) return false
-    if (networkState.updatedAt && Date.now() - networkState.updatedAt < this.#minUpdateInterval)
-      return true
+    const isWithinMinUpdateInterval =
+      networkState.updatedAt && Date.now() - networkState.updatedAt < this.#minUpdateInterval
 
-    return false
+    return isWithinMinUpdateInterval || networkState.isLoading
   }
 
   async updatePositions(networkId?: NetworkId) {
