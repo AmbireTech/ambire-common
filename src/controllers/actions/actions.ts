@@ -7,9 +7,11 @@ import { WindowManager } from '../../interfaces/window'
 import { AccountOp } from '../../libs/accountOp/accountOp'
 // eslint-disable-next-line import/no-cycle
 import { messageOnNewAction } from '../../libs/actions/actions'
+// eslint-disable-next-line import/no-cycle
 import { getDappActionRequestsBanners } from '../../libs/banners/banners'
 import { ENTRY_POINT_AUTHORIZATION_REQUEST_ID } from '../../libs/userOperation/userOperation'
 import EventEmitter from '../eventEmitter/eventEmitter'
+// eslint-disable-next-line import/no-cycle
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 
 export type AccountOpAction = {

@@ -1110,6 +1110,22 @@ export class MainController extends EventEmitter {
         dappPromise
       } as SignUserRequest
     } else {
+      // we should have only one unlock or dappConnect action at a time
+      if (['unlock', 'dappConnect'].includes(kind)) {
+        const existingAction = this.actions.actionsQueue.find(
+          (a) => a.type === 'dappRequest' && a.userRequest.action.kind === kind
+        )
+
+        if (existingAction) {
+          const req = this.userRequests.find((uReq) => uReq.id === existingAction.id)
+          if (req) this.userRequests.splice(this.userRequests.indexOf(req), 1)
+
+          this.actions.actionsQueue = this.actions.actionsQueue.filter(
+            (a) => a.id !== existingAction.id
+          )
+        }
+      }
+
       userRequest = {
         id: new Date().getTime(),
         session: request.session,
