@@ -1,8 +1,9 @@
 /* eslint-disable class-methods-use-this */
 import { DecodedError, ErrorHandler, ErrorType } from '../types'
+import { USER_REJECTED_TRANSACTION_ERROR_CODE } from './userRejection'
 
 class RpcErrorHandler implements ErrorHandler {
-  public matches(data: string, error: Error) {
+  public matches(data: string, error: any) {
     if (error?.message === 'rpc-timeout') return true
 
     return (
@@ -10,7 +11,8 @@ class RpcErrorHandler implements ErrorHandler {
       !!error.message &&
       !error?.message?.includes('rejected transaction') &&
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (error as any).code !== undefined
+      error?.code !== undefined &&
+      error.code !== USER_REJECTED_TRANSACTION_ERROR_CODE
     )
   }
 

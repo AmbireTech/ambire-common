@@ -6,6 +6,7 @@ export enum ErrorType {
   BundlerError = 'BundlerError',
   RpcError = 'RpcError',
   UnknownError = 'UnknownError',
+  UserRejectionHandler = 'UserRejectionHandler',
   InnerCallFailureError = 'InnerCallFailureError'
 }
 

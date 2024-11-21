@@ -8,6 +8,7 @@ import { RELAYER_DOWN_MESSAGE } from '../relayerCall/relayerCall'
 import { PANIC_ERROR_PREFIX } from './constants'
 import { InnerCallFailureError, RelayerPaymasterError } from './customErrors'
 import { decodeError } from './errorDecoder'
+import { TRANSACTION_REJECTED_REASON } from './handlers/userRejection'
 import { DecodedError, ErrorType } from './types'
 
 const TEST_MESSAGE_REVERT_DATA =
@@ -249,5 +250,21 @@ describe('Error decoders work', () => {
     const decodedError = decodeError(error)
 
     expect(decodedError.reason).toBe('transfer amount exceeds balance')
+  })
+  it('Should handle UserRejectionError correctly', async () => {
+    const error = new MockRpcError(
+      4001,
+      {
+        error: {
+          code: 4001,
+          message: 'User rejected the transaction request.'
+        }
+      },
+      'User rejected the transaction request.'
+    )
+    const decodedError = decodeError(error)
+
+    expect(decodedError.type).toEqual(ErrorType.UserRejectionHandler)
+    expect(decodedError.reason).toBe(TRANSACTION_REJECTED_REASON)
   })
 })

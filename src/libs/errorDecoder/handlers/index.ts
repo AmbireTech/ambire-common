@@ -4,6 +4,7 @@ import PanicErrorHandler from './panic'
 import PaymasterErrorHandler from './paymaster'
 import RevertErrorHandler from './revert'
 import RpcErrorHandler from './rpc'
+import UserRejectionHandler from './userRejection'
 
 export {
   BundlerErrorHandler,
@@ -11,5 +12,6 @@ export {
   InnerCallFailureHandler,
   PanicErrorHandler,
   RevertErrorHandler,
-  PaymasterErrorHandler
+  PaymasterErrorHandler,
+  UserRejectionHandler
 }

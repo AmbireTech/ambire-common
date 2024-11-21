@@ -4,7 +4,8 @@ import {
   PanicErrorHandler,
   PaymasterErrorHandler,
   RevertErrorHandler,
-  RpcErrorHandler
+  RpcErrorHandler,
+  UserRejectionHandler
 } from './handlers'
 import RelayerErrorHandler from './handlers/relayer'
 import { formatReason, getDataFromError, isReasonValid } from './helpers'
@@ -15,7 +16,8 @@ const ERROR_HANDLERS = [
   RpcErrorHandler,
   PanicErrorHandler,
   RevertErrorHandler,
-  PaymasterErrorHandler
+  PaymasterErrorHandler,
+  UserRejectionHandler
 ]
 
 export function decodeError(e: Error): DecodedError {
