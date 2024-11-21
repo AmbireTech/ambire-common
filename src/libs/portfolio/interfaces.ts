@@ -213,3 +213,7 @@ export type FormattedPendingAmounts = Omit<PendingAmounts, 'pendingBalance'> & {
   pendingToBeSignedFormatted?: string
   pendingToBeConfirmedFormatted?: string
 }
+
+export type ShouldShowConfettiBanner = {
+  [key: string]: boolean
+}

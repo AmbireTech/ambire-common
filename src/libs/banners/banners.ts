@@ -1,4 +1,6 @@
 // eslint-disable-next-line import/no-cycle
+import { ShouldShowConfettiBanner } from 'libs/portfolio/interfaces'
+
 import {
   AccountOpAction,
   Action as ActionFromActionsQueue
@@ -356,29 +358,6 @@ export const getNetworksWithFailedRPCBanners = ({
   return banners
 }
 
-export const getFirstCashbackBanner = ({
-  shouldShowConfetti
-}: {
-  shouldShowConfetti: boolean
-}): Banner[] => {
-  if (!shouldShowConfetti) return []
-  // TODO: fix the content
-  return [
-    {
-      id: 'first-cashback-banner-banner',
-      type: 'info',
-      title: "Cashback",
-      text: "You've received your first cashback",
-      actions: [
-        {
-          label: 'Open',
-          actionName: 'open-confetti-modal'
-        }
-      ]
-    }
-  ]
-}
-
 export const getNetworksWithPortfolioErrorBanners = ({
   networks,
   portfolioLatest,
@@ -567,6 +546,37 @@ export const getNetworksWithDeFiPositionsErrorBanners = ({
       actions: []
     })
   }
+
+  return banners
+}
+
+export const getFirstCashbackBanner = ({
+  shouldShowConfetti
+}: {
+  shouldShowConfetti: ShouldShowConfettiBanner
+}): Banner[] => {
+  let banners: Banner[] = []
+
+  Object.keys(shouldShowConfetti).forEach((accountId) => {
+    const shouldShowConfettiBanner = shouldShowConfetti[accountId]
+
+    if (shouldShowConfettiBanner) {
+      // TODO: Fix the texts
+      banners.push({
+        accountAddr: accountId,
+        id: `${accountId}-first-cashback-banner-banner`,
+        type: 'info',
+        title: 'Cashback',
+        text: "You've received your first cashback",
+        actions: [
+          {
+            label: 'Open',
+            actionName: 'open-confetti-modal'
+          }
+        ]
+      })
+    }
+  })
 
   return banners
 }

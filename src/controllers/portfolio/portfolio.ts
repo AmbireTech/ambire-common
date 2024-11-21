@@ -19,7 +19,6 @@ import { CustomToken } from '../../libs/portfolio/customToken'
 import getAccountNetworksWithAssets from '../../libs/portfolio/getNetworksWithAssets'
 import {
   getFlags,
-  getPinnedGasTankTokens,
   getTokensReadyToLearn,
   getTotal,
   getUpdatedHints,
@@ -37,6 +36,7 @@ import {
   PortfolioControllerState,
   PortfolioLibGetResult,
   PreviousHintsStorage,
+  ShouldShowConfettiBanner,
   TokenResult
 } from '../../libs/portfolio/interfaces'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
@@ -112,9 +112,9 @@ export class PortfolioController extends EventEmitter {
   // Holds the initial load promise, so that one can wait until it completes
   #initialLoadPromise: Promise<void>
 
-  #shouldShowConfettiModal: boolean
+  #shouldShowConfettiModal: boolean = false
 
-  #shouldShowConfettiBanner: boolean
+  #shouldShowConfettiBanner: ShouldShowConfettiBanner = {}
 
   constructor(
     storage: Storage,
@@ -139,8 +139,6 @@ export class PortfolioController extends EventEmitter {
     this.#accounts = accounts
     this.temporaryTokens = {}
     this.#toBeLearnedTokens = {}
-    this.#shouldShowConfettiModal = false
-    this.#shouldShowConfettiBanner = true
 
     this.#initialLoadPromise = this.#load()
   }
@@ -151,6 +149,7 @@ export class PortfolioController extends EventEmitter {
       await this.#accounts.initialLoadPromise
       this.tokenPreferences = await this.#storage.get('tokenPreferences', [])
       this.#previousHints = await this.#storage.get('previousHints', {})
+      this.#shouldShowConfettiBanner = await this.#storage.get('shouldShowConfettiBanner', {})
     } catch (e) {
       this.emitError({
         message:
@@ -355,7 +354,12 @@ export class PortfolioController extends EventEmitter {
 
   async setShouldShowConfettiToFalse(accountId: AccountId) {
     this.#shouldShowConfettiModal = !this.#shouldShowConfettiModal
-    this.#shouldShowConfettiBanner = false
+    this.#shouldShowConfettiBanner = {
+      ...this.#shouldShowConfettiBanner,
+      [accountId]: false
+    }
+
+    await this.#storage.set('shouldShowConfettiBanner', this.#shouldShowConfettiBanner)
 
     this.#getAdditionalPortfolio(accountId)
   }
@@ -407,7 +411,9 @@ export class PortfolioController extends EventEmitter {
     }
 
     if (shouldShowConfettiLogic(accountState, res.data.gasTank.balance)) {
-      this.#shouldShowConfettiBanner = true
+      this.#shouldShowConfettiBanner = { ...this.#shouldShowConfettiBanner, [accountId]: true }
+
+      await this.#storage.set('shouldShowConfettiBanner', this.#shouldShowConfettiBanner)
     }
 
     const gasTankTokens = res.data.gasTank.balance.map((t: any) => ({
@@ -419,12 +425,6 @@ export class PortfolioController extends EventEmitter {
       shouldPopsUpConfetti: this.#shouldShowConfettiModal,
       flags: getFlags(res.data, 'gasTank', t.networkId, t.address)
     }))
-
-    console.log('--------------------')
-    console.log('res.data.gasTank.balance', res.data.gasTank.balance)
-    console.log('accountState.gasTank.result.tokens[0]', accountState.gasTank?.result?.tokens[0])
-    console.log('gasTankTokens[0]', gasTankTokens[0])
-    console.log('--------------------')
 
     accountState.gasTank = {
       isReady: true,
@@ -842,6 +842,7 @@ export class PortfolioController extends EventEmitter {
       providers: this.#providers.providers
     })
 
+    console.log('GET BANNER: ', this.#shouldShowConfettiBanner)
     const firstCashbackBanner = getFirstCashbackBanner({
       shouldShowConfetti: this.#shouldShowConfettiBanner
     })

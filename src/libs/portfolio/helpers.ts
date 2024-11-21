@@ -414,7 +414,10 @@ export const shouldShowConfettiLogic = (accountState: AccountState, resBalance: 
   const previousCashback = accountState.gasTank?.result?.tokens[0]?.cashback
   const currentCashback = resBalance[0]?.cashback
 
-  if (!previousCashback || !currentCashback) return false
-
-  return previousCashback === 0n && currentCashback !== 0n
+  return (
+    typeof previousCashback !== 'undefined' &&
+    typeof currentCashback !== 'undefined' &&
+    previousCashback === 0n &&
+    BigInt(currentCashback) !== 0n
+  )
 }
