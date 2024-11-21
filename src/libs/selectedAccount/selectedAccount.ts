@@ -40,7 +40,7 @@ export const updatePortfolioStateWithDefiPositions = (
 
       posByProv.positions.forEach((pos) => {
         pos.assets
-          .filter((a) => a.type === AssetType.Collateral && a.protocolAsset)
+          .filter((a) => a.type !== AssetType.Liquidity && a.protocolAsset)
           .forEach((a) => {
             const tokenInPortfolioIndex = tokens.findIndex((t) => {
               return (
@@ -68,24 +68,28 @@ export const updatePortfolioStateWithDefiPositions = (
               tokens = tokens.filter((_, index) => index !== tokenInPortfolioIndex)
             }
 
-            const protocolPriceUSD = a.priceIn.find(
-              ({ baseCurrency }: { baseCurrency: string }) => baseCurrency.toLowerCase() === 'usd'
-            )?.price
+            // Add only the balance of the collateral tokens to the network balance
+            if (a.type === AssetType.Collateral) {
+              const protocolPriceUSD = a.priceIn.find(
+                ({ baseCurrency }: { baseCurrency: string }) => baseCurrency.toLowerCase() === 'usd'
+              )?.price
 
-            const protocolTokenBalanceUSD = protocolPriceUSD
-              ? Number(
-                  safeTokenAmountAndNumberMultiplication(
-                    BigInt(a.amount),
-                    Number(a.protocolAsset!.decimals),
-                    protocolPriceUSD
+              const protocolTokenBalanceUSD = protocolPriceUSD
+                ? Number(
+                    safeTokenAmountAndNumberMultiplication(
+                      BigInt(a.amount),
+                      Number(a.protocolAsset!.decimals),
+                      protocolPriceUSD
+                    )
                   )
-                )
-              : undefined
+                : undefined
 
-            networkBalance += protocolTokenBalanceUSD || 0
+              networkBalance += protocolTokenBalanceUSD || 0
+            }
             tokens.push({
               amount: a.amount,
-              priceIn: a.priceIn,
+              // Only list the borrowed asset with no price
+              priceIn: a.type === AssetType.Collateral ? a.priceIn : [],
               decimals: Number(a.protocolAsset!.decimals),
               address: a.protocolAsset!.address,
               symbol: a.protocolAsset!.symbol,
