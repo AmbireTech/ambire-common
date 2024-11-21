@@ -127,6 +127,20 @@ export default [
     icon: 'https://assets.coingecko.com/coins/images/2518/small/weth.png?1628852295'
   },
   {
+    address: '0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84',
+    symbol: 'stETH',
+    networkId: 'ethereum',
+    decimals: 18,
+    icon: 'https://assets.coingecko.com/coins/images/13442/standard/steth_logo.png'
+  },
+  {
+    address: '0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0',
+    symbol: 'wstETH',
+    networkId: 'ethereum',
+    decimals: 18,
+    icon: 'https://assets.coingecko.com/coins/images/18834/standard/wstETH.png'
+  },
+  {
     address: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
     symbol: 'usdc',
     networkId: 'ethereum',
@@ -224,6 +238,13 @@ export default [
     networkId: 'polygon',
     decimals: 18,
     icon: 'https://assets.coingecko.com/coins/images/14073/small/matic.png'
+  },
+  {
+    address: '0x03b54a6e9a984069379fae1a4fc4dbae93b3bccd',
+    symbol: 'wstETH',
+    networkId: 'polygon',
+    decimals: 18,
+    icon: 'https://assets.coingecko.com/coins/images/18834/standard/wstETH.png'
   },
   {
     address: '0x1BFD67037B42Cf73acF2047067bd4F2C47D9BfD6',
@@ -533,6 +554,13 @@ export default [
     icon: 'https://assets.coingecko.com/coins/images/9956/small/4943.png'
   },
   {
+    address: '0x1f32b1c2345538c0c6f582fcb022739c4a194ebb',
+    symbol: 'wstETH',
+    networkId: 'optimism',
+    decimals: 18,
+    icon: 'https://assets.coingecko.com/coins/images/18834/standard/wstETH.png'
+  },
+  {
     address: '0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9',
     symbol: 'usdt',
     networkId: 'arbitrum',
@@ -568,6 +596,13 @@ export default [
     icon: 'https://assets.coingecko.com/coins/images/2518/small/weth.png'
   },
   {
+    address: '0x5979d7b546e38e414f7e9822514be443a4800529',
+    symbol: 'wstETH',
+    networkId: 'arbitrum',
+    decimals: 18,
+    icon: 'https://assets.coingecko.com/coins/images/18834/standard/wstETH.png'
+  },
+  {
     address: '0x382bB369d343125BfB2117af9c149795C6C65C50',
     symbol: 'usdc',
     networkId: 'okc',
@@ -594,6 +629,13 @@ export default [
     networkId: 'base',
     decimals: 6,
     icon: 'https://assets.coingecko.com/coins/images/6319/small/USD_Coin_icon.png'
+  },
+  {
+    address: '0xc1cba3fcea344f92d9239c08c0568f6f2f0ee452',
+    symbol: 'wstETH',
+    networkId: 'base',
+    decimals: 18,
+    icon: 'https://assets.coingecko.com/coins/images/18834/standard/wstETH.png'
   },
   {
     address: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',

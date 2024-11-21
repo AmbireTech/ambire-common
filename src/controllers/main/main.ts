@@ -1806,7 +1806,7 @@ export class MainController extends EventEmitter {
       const networkFeeTokens =
         this.portfolio.getLatestPortfolioState(localAccountOp.accountAddr)?.[
           localAccountOp.networkId
-        ]?.result?.tokens ?? []
+        ]?.result?.feeTokens ?? []
       const gasTankFeeTokens =
         this.portfolio.getLatestPortfolioState(localAccountOp.accountAddr)?.gasTank?.result
           ?.tokens ?? []
