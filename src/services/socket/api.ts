@@ -114,6 +114,12 @@ export class SocketAPI {
         (token: SocketAPIToken) => token.address !== ETH_ON_OPTIMISM_LEGACY_ADDRESS
       )
 
+    // Exception for Ethereum, duplicate ETH tokens are incoming from the API.
+    // One is with the `ZERO_ADDRESS` and one with `NULL_ADDRESS`, both for ETH.
+    // Strip out the one with the `ZERO_ADDRESS` to be consistent with the rest.
+    if (toChainId === 1)
+      result = result.filter((token: SocketAPIToken) => token.address !== ZERO_ADDRESS)
+
     return result.map(normalizeIncomingSocketToken)
   }
 
@@ -135,7 +141,7 @@ export class SocketAPI {
     userAddress: string
     isSmartAccount: boolean
     sort: 'time' | 'output'
-  }) {
+  }): Promise<SocketAPIQuote> {
     const params = new URLSearchParams({
       fromChainId: fromChainId.toString(),
       fromTokenAddress: normalizeOutgoingSocketTokenAddress(fromTokenAddress),

@@ -13,7 +13,7 @@ const INVITEE_V2_ACCOUNT = Wallet.createRandom().address
 const INVITEE_EOA_OR_V1 = Wallet.createRandom().address
 const INVITER_V2 = Wallet.createRandom().address
 const ONCHAIN_TXNS_LEGENDS_ADDRESS = '0x1415926535897932384626433832795028841971'
-const NFT_CONTRACT_ADDRESS = '0x52d067EBB7b06F31AEB645Bd34f92c3Ac13a29ea'
+const NFT_CONTRACT_ADDRESS = '0xF51dF52d0a9BEeB7b6E4B6451e729108a115B863'
 
 describe('Legends', () => {
   it('Linking, both invitation and no invitation', () => {

@@ -45,7 +45,13 @@ export async function relayerCallUncaught(
     }
     return { ...json, success: json.success && isStatusOk, status: res.status }
   } catch (e) {
-    return { success: false, data: text, status: res.status, message: 'no json in res' }
+    return {
+      success: false,
+      data: text,
+      status: res.status,
+      message:
+        'Currently, the Ambire relayer seems to be down. Please try again a few moments later'
+    }
   }
 }
 

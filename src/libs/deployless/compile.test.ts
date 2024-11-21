@@ -1,5 +1,6 @@
-import { compile } from './compile'
 import { describe, expect, test } from '@jest/globals'
+
+import { compile } from './compile'
 
 describe('Compile', () => {
   test('should compile a contract', async () => {

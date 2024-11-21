@@ -399,8 +399,8 @@ const init = async (
       feeTokens
     ))
 
-  if (portfolio.latest?.[account.addr][op.networkId]!.result) {
-    portfolio!.latest[account.addr][op.networkId]!.result!.tokens = [
+  if (portfolio.getLatestPortfolioState(account.addr)[op.networkId]!.result) {
+    portfolio!.getLatestPortfolioState(account.addr)[op.networkId]!.result!.tokens = [
       {
         amount: 1n,
         networkId: op.networkId,
@@ -443,6 +443,7 @@ const init = async (
     1,
     op,
     callRelayer,
+    () => {},
     () => {}
   )
 

@@ -1,12 +1,9 @@
-import dotenv from 'dotenv'
 import { ZeroAddress } from 'ethers'
 
 import { geckoIdMapper } from '../../consts/coingecko'
 import { Fetch } from '../../interfaces/fetch'
 import { Network } from '../../interfaces/network'
 import { HumanizerMeta, HumanizerVisualization, HumanizerWarning, IrCall } from './interfaces'
-
-dotenv.config()
 
 const baseUrlCena = 'https://cena.ambire.com/api/v3'
 
@@ -60,6 +57,10 @@ export function getChain(chainId: bigint): HumanizerVisualization {
   return { type: 'chain', id: randomId(), chainId }
 }
 
+export function getText(text:string): HumanizerVisualization {
+  return { type:'text', content: text,  id: randomId()}
+}
+
 export function getOnBehalfOf(onBehalfOf: string, sender: string): HumanizerVisualization[] {
   return onBehalfOf.toLowerCase() !== sender.toLowerCase()
     ? [getLabel('on behalf of'), getAddressVisualization(onBehalfOf)]
@@ -80,7 +81,7 @@ export function getDeadlineText(deadline: bigint): string {
   if (diff < 0 && diff > -minute * 2n) return 'expired just now'
   if (diff < 0) return 'already expired'
   if (diff < minute) return 'expires in less than a minute'
-  if (diff < 10n * minute) return `expires in ${Math.floor(Number(diff / minute))} minutes`
+  if (diff < 30n * minute) return `expires in ${Math.floor(Number(diff / minute))} minutes`
   return `valid until ${new Date(Number(deadline)).toLocaleString()}`
 }
 
@@ -91,6 +92,9 @@ export function getDeadline(deadlineSecs: bigint | number): HumanizerVisualizati
     value: deadline,
     id: randomId()
   }
+}
+export function getLink(url: string, content: string): HumanizerVisualization {
+  return { type: 'link', url, content, id: randomId() }
 }
 
 /**
@@ -147,6 +151,7 @@ export function getKnownName(
 ): string | undefined {
   return humanizerMeta?.knownAddresses?.[address.toLowerCase()]?.name
 }
+
 
 export const EMPTY_HUMANIZER_META = { abis: { NO_ABI: {} }, knownAddresses: {} }
 

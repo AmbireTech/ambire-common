@@ -1,4 +1,4 @@
-import { formatUnits, getAddress, parseUnits } from 'ethers'
+import { formatUnits, parseUnits } from 'ethers'
 
 import { Storage } from '../../interfaces/storage'
 import {
@@ -9,18 +9,23 @@ import {
   SocketAPIToken
 } from '../../interfaces/swapAndBridge'
 import { isSmartAccount } from '../../libs/account/account'
-import { getSwapAndBridgeBanners } from '../../libs/banners/banners'
+import { getBridgeBanners } from '../../libs/banners/banners'
 import { TokenResult } from '../../libs/portfolio'
 import { getTokenAmount } from '../../libs/portfolio/helpers'
-import { getQuoteRouteSteps, sortTokenListResponse } from '../../libs/swapAndBridge/swapAndBridge'
+import {
+  getActiveRoutesForAccount,
+  getQuoteRouteSteps,
+  sortTokenListResponse
+} from '../../libs/swapAndBridge/swapAndBridge'
 import { getSanitizedAmount } from '../../libs/transfer/amount'
 import { SocketAPI } from '../../services/socket/api'
 import { validateSendTransferAmount } from '../../services/validations/validate'
 import { convertTokenPriceToBigInt } from '../../utils/numbers/formatters'
 import wait from '../../utils/wait'
-import { AccountsController } from '../accounts/accounts'
+import { AccountOpAction, ActionsController } from '../actions/actions'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { NetworksController } from '../networks/networks'
+import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 
 const HARD_CODED_CURRENCY = 'usd'
 
@@ -46,9 +51,11 @@ export enum SwapAndBridgeFormStatus {
  *  - Manages token active routes
  */
 export class SwapAndBridgeController extends EventEmitter {
-  #accounts: AccountsController
+  #selectedAccount: SelectedAccountController
 
   #networks: NetworksController
+
+  #actions: ActionsController
 
   #storage: Storage
 
@@ -105,6 +112,8 @@ export class SwapAndBridgeController extends EventEmitter {
 
   portfolioTokenList: TokenResult[] = []
 
+  isTokenListLoading: boolean = false
+
   toTokenList: SocketAPIToken[] = []
 
   routePriority: 'output' | 'time' = 'output'
@@ -113,21 +122,24 @@ export class SwapAndBridgeController extends EventEmitter {
   #initialLoadPromise: Promise<void>
 
   constructor({
-    accounts,
+    selectedAccount,
     networks,
     socketAPI,
-    storage
+    storage,
+    actions
   }: {
-    accounts: AccountsController
+    selectedAccount: SelectedAccountController
     networks: NetworksController
     socketAPI: SocketAPI
     storage: Storage
+    actions: ActionsController
   }) {
     super()
-    this.#accounts = accounts
+    this.#selectedAccount = selectedAccount
     this.#networks = networks
     this.#socketAPI = socketAPI
     this.#storage = storage
+    this.#actions = actions
 
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.#initialLoadPromise = this.#load()
@@ -135,10 +147,16 @@ export class SwapAndBridgeController extends EventEmitter {
 
   async #load() {
     await this.#networks.initialLoadPromise
-    await this.#accounts.initialLoadPromise
+    await this.#selectedAccount.initialLoadPromise
 
     this.activeRoutes = await this.#storage.get('swapAndBridgeActiveRoutes', [])
 
+    this.#selectedAccount.onUpdate(() => {
+      if (this.#selectedAccount.portfolio.isAllReady) {
+        this.isTokenListLoading = false
+        this.updatePortfolioTokenList(this.#selectedAccount.portfolio.tokens)
+      }
+    })
     this.emitUpdate()
   }
 
@@ -257,6 +275,7 @@ export class SwapAndBridgeController extends EventEmitter {
 
     this.sessionIds.push(sessionId)
     await this.#socketAPI.updateHealth()
+    this.updatePortfolioTokenList(this.#selectedAccount.portfolio.tokens)
 
     this.emitUpdate()
   }
@@ -411,11 +430,31 @@ export class SwapAndBridgeController extends EventEmitter {
     if (shouldEmit) this.emitUpdate()
   }
 
-  updatePortfolioTokenList(portfolioTokenList: TokenResult[]) {
-    this.portfolioTokenList = portfolioTokenList
+  updatePortfolioTokenList(nextPortfolioTokenList: TokenResult[]) {
+    const tokens =
+      nextPortfolioTokenList.filter((token) => {
+        const hasAmount = Number(getTokenAmount(token)) > 0
 
-    if (!this.fromSelectedToken) {
-      this.updateForm({ fromSelectedToken: this.portfolioTokenList[0] || null })
+        return hasAmount && !token.flags.onGasTank && !token.flags.rewardsType
+      }) || []
+    this.portfolioTokenList = tokens
+
+    const fromSelectedTokenInNextPortfolio = tokens.find(
+      (t) =>
+        t.address === this.fromSelectedToken?.address &&
+        t.networkId === this.fromSelectedToken?.networkId
+    )
+    const shouldUpdateFromSelectedToken =
+      !this.fromSelectedToken || // initial (default) state
+      // May happen if selected account gets changed or the token gets send away in the meantime
+      !fromSelectedTokenInNextPortfolio ||
+      // May happen if user receives or sends the token in the meantime
+      fromSelectedTokenInNextPortfolio.amount !== this.fromSelectedToken?.amount
+
+    if (shouldUpdateFromSelectedToken) {
+      this.updateForm({
+        fromSelectedToken: fromSelectedTokenInNextPortfolio || this.portfolioTokenList[0] || null
+      })
     } else {
       this.emitUpdate()
     }
@@ -472,7 +511,8 @@ export class SwapAndBridgeController extends EventEmitter {
       this.emitError({
         error,
         level: 'major',
-        message: 'Unable to retrieve the token list.'
+        message:
+          'Unable to retrieve the list of supported receive tokens. Please reload the tab to try again.'
       })
     }
     this.updateToTokenListStatus = 'INITIAL'
@@ -524,9 +564,7 @@ export class SwapAndBridgeController extends EventEmitter {
     this.#updateQuoteThrottle.time = now
 
     const updateQuoteFunction = async () => {
-      const selectedAccount = this.#accounts.accounts.find(
-        (a) => a.addr === this.#accounts.selectedAccount
-      )
+      if (!this.#selectedAccount.account) return
 
       const sanitizedFromAmount = getSanitizedAmount(
         this.fromAmount,
@@ -565,11 +603,10 @@ export class SwapAndBridgeController extends EventEmitter {
           toChainId: this.toChainId!,
           toTokenAddress: this.toSelectedToken!.address,
           fromAmount: bigintFromAmount,
-          userAddress: this.#accounts.selectedAccount!,
-          isSmartAccount: isSmartAccount(selectedAccount),
+          userAddress: this.#selectedAccount.account.addr,
+          isSmartAccount: isSmartAccount(this.#selectedAccount.account),
           sort: this.routePriority
         })
-
         if (
           this.#getIsFormValidToFetchQuote() &&
           quoteResult &&
@@ -581,16 +618,23 @@ export class SwapAndBridgeController extends EventEmitter {
           let routeToSelect
           let routeToSelectSteps
 
-          const selectedRouteInQuoteRes = this.quote
-            ? quoteResult.routes.find(
-                (r: SocketAPIRoute) =>
-                  r.usedBridgeNames[0] === this.quote!.selectedRoute.usedBridgeNames[0] // because we have only routes with unique bridges
-              )
-            : null
+          const alreadySelectedRoute = quoteResult.routes.find((nextRoute) => {
+            if (!this.quote) return false
 
-          if (selectedRouteInQuoteRes) {
-            routeToSelect = selectedRouteInQuoteRes
-            routeToSelectSteps = getQuoteRouteSteps(selectedRouteInQuoteRes.userTxs)
+            // Because we only have routes with unique bridges (bridging case)
+            const selectedRouteUsedBridge = this.quote.selectedRoute.usedBridgeNames?.[0]
+            if (selectedRouteUsedBridge)
+              return nextRoute.usedBridgeNames?.[0] === selectedRouteUsedBridge
+
+            // Assuming to only have routes with unique DEXes (swapping case)
+            const selectedRouteUsedDex = this.quote.selectedRoute.usedDexName
+            if (selectedRouteUsedDex) return nextRoute.usedDexName === selectedRouteUsedDex
+
+            return false // should never happen, but just in case of bad data
+          })
+          if (alreadySelectedRoute) {
+            routeToSelect = alreadySelectedRoute
+            routeToSelectSteps = getQuoteRouteSteps(alreadySelectedRoute.userTxs)
           } else {
             const bestRoute =
               this.routePriority === 'output'
@@ -614,7 +658,7 @@ export class SwapAndBridgeController extends EventEmitter {
         this.emitError({
           error,
           level: 'major',
-          message: 'Failed to fetch routes for this pair.'
+          message: 'Failed to fetch a route for the selected tokens. Please try again.'
         })
       }
     }
@@ -768,6 +812,13 @@ export class SwapAndBridgeController extends EventEmitter {
     this.emitUpdate()
   }
 
+  onAccountChange() {
+    this.portfolioTokenList = []
+    this.isTokenListLoading = true
+
+    this.emitUpdate()
+  }
+
   #getIsFormValidToFetchQuote() {
     return (
       this.fromChainId &&
@@ -775,16 +826,24 @@ export class SwapAndBridgeController extends EventEmitter {
       this.fromAmount &&
       this.fromSelectedToken &&
       this.toSelectedToken &&
-      this.#accounts.selectedAccount &&
       this.validateFromAmount.success
     )
   }
 
   get banners() {
-    const activeRoutesForSelectedAccount = this.activeRoutes.filter(
-      (r) => getAddress(r.route.sender || r.route.userAddress) === this.#accounts.selectedAccount
+    if (!this.#selectedAccount.account) return []
+
+    const activeRoutesForSelectedAccount = getActiveRoutesForAccount(
+      this.#selectedAccount.account.addr,
+      this.activeRoutes
     )
-    return getSwapAndBridgeBanners(activeRoutesForSelectedAccount)
+    const accountOpActions = this.#actions.visibleActionsQueue.filter(
+      ({ type }) => type === 'accountOp'
+    ) as AccountOpAction[]
+
+    // Swap banners aren't generated because swaps are completed instantly,
+    // thus the activity banner on broadcast is sufficient
+    return getBridgeBanners(activeRoutesForSelectedAccount, accountOpActions)
   }
 
   toJSON() {

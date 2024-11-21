@@ -4,6 +4,7 @@ import { Account } from '../../interfaces/account'
 import { Storage } from '../../interfaces/storage'
 import { AccountsController } from '../accounts/accounts'
 import EventEmitter from '../eventEmitter/eventEmitter'
+import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 
 export type Contact = {
   name: string
@@ -32,11 +33,18 @@ export class AddressBookController extends EventEmitter {
 
   #accounts: AccountsController
 
-  constructor(storage: Storage, accounts: AccountsController) {
+  #selectedAccount: SelectedAccountController
+
+  constructor(
+    storage: Storage,
+    accounts: AccountsController,
+    selectedAccount: SelectedAccountController
+  ) {
     super()
 
     this.#storage = storage
     this.#accounts = accounts
+    this.#selectedAccount = selectedAccount
 
     this.#initialLoadPromise = this.#load()
   }
@@ -51,10 +59,10 @@ export class AddressBookController extends EventEmitter {
   }
 
   get contacts() {
-    if (!this.#accounts.selectedAccount) return []
+    if (!this.#selectedAccount.account) return []
 
     return [...this.#manuallyAddedContacts, ...this.#walletAccountsSourcedContacts].filter(
-      ({ address }) => address !== this.#accounts.selectedAccount
+      ({ address }) => address !== this.#selectedAccount.account!.addr
     )
   }
 

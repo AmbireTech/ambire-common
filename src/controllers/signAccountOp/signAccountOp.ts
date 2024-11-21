@@ -69,6 +69,7 @@ export enum SigningStatus {
    */
   UpdatesPaused = 'updates-paused',
   InProgress = 'in-progress',
+  WaitingForPaymaster = 'waiting-for-paymaster-response',
   Done = 'done'
 }
 
@@ -98,7 +99,8 @@ type SpeedCalc = {
 const noStateUpdateStatuses = [
   SigningStatus.InProgress,
   SigningStatus.Done,
-  SigningStatus.UpdatesPaused
+  SigningStatus.UpdatesPaused,
+  SigningStatus.WaitingForPaymaster
 ]
 
 export class SignAccountOpController extends EventEmitter {
@@ -148,6 +150,8 @@ export class SignAccountOpController extends EventEmitter {
 
   #reEstimate: Function
 
+  #isSignRequestStillActive: Function
+
   rbfAccountOps: { [key: string]: SubmittedAccountOp | null }
 
   signedAccountOp: AccountOp | null
@@ -166,7 +170,8 @@ export class SignAccountOpController extends EventEmitter {
     fromActionId: AccountOpAction['id'],
     accountOp: AccountOp,
     callRelayer: Function,
-    reEstimate: Function
+    reEstimate: Function,
+    isSignRequestStillActive: Function
   ) {
     super()
 
@@ -180,6 +185,7 @@ export class SignAccountOpController extends EventEmitter {
     this.accountOp = structuredClone(accountOp)
     this.#callRelayer = callRelayer
     this.#reEstimate = reEstimate
+    this.#isSignRequestStillActive = isSignRequestStillActive
 
     this.gasUsedTooHigh = false
     this.gasUsedTooHighAgreed = false
@@ -268,8 +274,9 @@ export class SignAccountOpController extends EventEmitter {
     if (!this.accountOp.signingKeyType || !this.accountOp.signingKeyAddr)
       errors.push('Please select a signer to sign the transaction.')
 
-    const currentPortfolioNetwork =
-      this.#portfolio.latest[this.accountOp.accountAddr][this.accountOp.networkId]
+    const currentPortfolioNetwork = this.#portfolio.getLatestPortfolioState(
+      this.accountOp.accountAddr
+    )[this.accountOp.networkId]
     const currentPortfolioNetworkNative = currentPortfolioNetwork?.result?.tokens.find(
       (token) => token.address === '0x0000000000000000000000000000000000000000'
     )
@@ -360,11 +367,13 @@ export class SignAccountOpController extends EventEmitter {
   calculateWarnings() {
     const warnings: Warning[] = []
 
+    const latestState = this.#portfolio.getLatestPortfolioState(this.accountOp.accountAddr)
+    const pendingState = this.#portfolio.getPendingPortfolioState(this.accountOp.accountAddr)
+
     const significantBalanceDecreaseWarning = getSignificantBalanceDecreaseWarning(
-      this.#portfolio.latest,
-      this.#portfolio.pending,
-      this.accountOp.networkId,
-      this.accountOp.accountAddr
+      latestState,
+      pendingState,
+      this.accountOp.networkId
     )
 
     if (this.selectedOption) {
@@ -503,7 +512,9 @@ export class SignAccountOpController extends EventEmitter {
     }
 
     // no status updates on these two
-    const isInTheMiddleOfSigning = this.status?.type === SigningStatus.InProgress
+    const isInTheMiddleOfSigning =
+      this.status?.type === SigningStatus.InProgress ||
+      this.status?.type === SigningStatus.WaitingForPaymaster
     const isDone = this.status?.type === SigningStatus.Done
     if (isInTheMiddleOfSigning || isDone) return
 
@@ -570,11 +581,11 @@ export class SignAccountOpController extends EventEmitter {
    * such as amount, gasLimit, etc., are also represented as BigInt numbers.
    */
   #getNativeToFeeTokenRatio(feeToken: TokenResult): bigint | null {
-    const native = this.#portfolio.latest[this.accountOp.accountAddr][
-      this.accountOp.networkId
-    ]?.result?.tokens.find(
-      (token) => token.address === '0x0000000000000000000000000000000000000000'
-    )
+    const native = this.#portfolio
+      .getLatestPortfolioState(this.accountOp.accountAddr)
+      [this.accountOp.networkId]?.result?.tokens.find(
+        (token) => token.address === '0x0000000000000000000000000000000000000000'
+      )
     if (!native) return null
 
     // In case the fee token is the native token we don't want to depend to priceIn, as it might not be available.
@@ -722,7 +733,9 @@ export class SignAccountOpController extends EventEmitter {
 
         for (const [speed, speedValue] of Object.entries(erc4337GasLimits.gasPrice)) {
           const simulatedGasLimit =
-            BigInt(erc4337GasLimits.callGasLimit) + BigInt(erc4337GasLimits.preVerificationGas)
+            BigInt(erc4337GasLimits.callGasLimit) +
+            BigInt(erc4337GasLimits.preVerificationGas) +
+            BigInt(option.gasUsed ?? 0)
           const gasPrice = BigInt(speedValue.maxFeePerGas)
           let amount = SignAccountOpController.getAmountAfterFeeTokenConvert(
             simulatedGasLimit,
@@ -972,11 +985,11 @@ export class SignAccountOpController extends EventEmitter {
     if (!gasPrice) return null
 
     // get the native token from the portfolio to calculate prices
-    const native = this.#portfolio.latest[this.accountOp.accountAddr][
-      this.accountOp.networkId
-    ]?.result?.tokens.find(
-      (token) => token.address === '0x0000000000000000000000000000000000000000'
-    )
+    const native = this.#portfolio
+      .getLatestPortfolioState(this.accountOp.accountAddr)
+      [this.accountOp.networkId]?.result?.tokens.find(
+        (token) => token.address === '0x0000000000000000000000000000000000000000'
+      )
     if (!native) return null
     const nativePrice = native.priceIn.find((price) => price.baseCurrency === 'usd')?.price
     if (!nativePrice) return null
@@ -1062,7 +1075,7 @@ export class SignAccountOpController extends EventEmitter {
       return this.#emitSigningErrorAndResetToReadyToSign(message)
     }
 
-    if (!this.accountOp?.gasFeePayment) {
+    if (!this.accountOp?.gasFeePayment || !this.selectedOption) {
       const message = `Unable to sign the transaction. During the preparation step, required information about paying the gas fee was found missing. ${RETRY_TO_INIT_ACCOUNT_OP_MSG}`
       return this.#emitSigningErrorAndResetToReadyToSign(message)
     }
@@ -1074,6 +1087,12 @@ export class SignAccountOpController extends EventEmitter {
     if (!signer) {
       const message = `Unable to sign the transaction. During the preparation step, required account key information was found missing. ${RETRY_TO_INIT_ACCOUNT_OP_MSG}`
       return this.#emitSigningErrorAndResetToReadyToSign(message)
+    }
+
+    if (this.accountOp.gasFeePayment.isERC4337 && shouldUsePaymaster(this.#network)) {
+      this.status = { type: SigningStatus.WaitingForPaymaster }
+    } else {
+      this.status = { type: SigningStatus.InProgress }
     }
 
     // we update the FE with the changed status (in progress) only after the checks
@@ -1153,7 +1172,10 @@ export class SignAccountOpController extends EventEmitter {
           !accountState.isDeployed ? this.accountOp.meta!.entryPointAuthorization : undefined
         )
         userOperation.preVerificationGas = this.estimation!.erc4337GasLimits!.preVerificationGas
-        userOperation.callGasLimit = this.estimation!.erc4337GasLimits!.callGasLimit
+        userOperation.callGasLimit = toBeHex(
+          BigInt(this.estimation!.erc4337GasLimits!.callGasLimit) +
+            (this.selectedOption.gasUsed ?? 0n)
+        )
         userOperation.verificationGasLimit = this.estimation!.erc4337GasLimits!.verificationGasLimit
         userOperation.paymasterVerificationGasLimit =
           this.estimation!.erc4337GasLimits!.paymasterVerificationGasLimit
@@ -1189,26 +1211,38 @@ export class SignAccountOpController extends EventEmitter {
 
         if (usesPaymaster) {
           try {
-            const response = await this.#callRelayer(
-              `/v2/paymaster/${this.accountOp.networkId}/sign`,
-              'POST',
-              {
+            // request the paymaster with a timeout window
+            const response = await Promise.race([
+              this.#callRelayer(`/v2/paymaster/${this.accountOp.networkId}/sign`, 'POST', {
                 // send without the requestType prop
                 userOperation: (({ requestType, activatorCall, ...o }) => o)(userOperation),
                 paymaster: AMBIRE_PAYMASTER,
                 bytecode: this.account.creation!.bytecode,
                 salt: this.account.creation!.salt,
                 key: this.account.associatedKeys[0]
-              }
-            )
+              }),
+              new Promise((_resolve, reject) => {
+                setTimeout(() => reject(new Error('Ambire relayer error')), 8000)
+              })
+            ])
+
+            // go back to in progress after paymaster has been confirmed
+            this.status = { type: SigningStatus.InProgress }
+            this.emitUpdate()
+
             userOperation.paymasterData = response.data.paymasterData
             if (usesOneTimeNonce) {
               userOperation.nonce = getOneTimeNonce(userOperation)
             }
           } catch (e: any) {
+            let message = e.message
+            if (e.message.includes('Failed to fetch') || e.message.includes('Ambire relayer')) {
+              message =
+                'Currently, the paymaster seems to be down. Please try again a few moments later or broadcast with a Basic Account'
+            }
             this.emitError({
               level: 'major',
-              message: e.message,
+              message,
               error: new Error(e.message)
             })
             this.status = { type: SigningStatus.ReadyToSign }
@@ -1217,6 +1251,11 @@ export class SignAccountOpController extends EventEmitter {
             return Promise.reject(this.status)
           }
         }
+
+        // query the application state from memory to understand if the user
+        // hasn't actually rejected the request while waiting for the
+        // paymaster to respond
+        if (!this.#isSignRequestStillActive()) return
 
         if (userOperation.requestType === 'standard') {
           const typedData = getTypedData(
