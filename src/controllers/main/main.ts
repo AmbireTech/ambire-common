@@ -45,6 +45,10 @@ import {
   getAccountOpFromAction
 } from '../../libs/actions/actions'
 import { getAccountOpBanners } from '../../libs/banners/banners'
+import {
+  getHumanReadableBroadcastError,
+  getHumanReadableEstimationError
+} from '../../libs/errorHumanizer'
 import { estimate } from '../../libs/estimate/estimate'
 import { BundlerGasPrice, EstimateResult } from '../../libs/estimate/interfaces'
 import { GasRecommendation, getGasPriceRecommendations } from '../../libs/gasPrice/gasPrice'
@@ -1874,9 +1878,11 @@ export class MainController extends EventEmitter {
             )
           }
         ).catch((e) => {
+          const { message } = getHumanReadableEstimationError(e)
+
           this.emitError({
             level: 'major',
-            message: `Failed to estimate account op for ${localAccountOp.accountAddr} on ${localAccountOp.networkId}`,
+            message,
             error: e
           })
           return null
@@ -2129,12 +2135,12 @@ export class MainController extends EventEmitter {
               identifier: broadcastRes.hash
             }
           }
-        } catch (e: any) {
-          const reason = e?.message || 'unknown'
-
-          throw new Error(
-            `Transaction couldn't be broadcasted on the ${network.name} network. Reason: ${reason}`
-          )
+        } catch (error: any) {
+          return this.#throwBroadcastAccountOp({
+            error,
+            network,
+            accountState
+          })
         }
       } catch (error: any) {
         return this.#throwBroadcastAccountOp({ error, network, accountState })
@@ -2219,12 +2225,8 @@ export class MainController extends EventEmitter {
               identifier: broadcastRes.hash
             }
           }
-        } catch (e: any) {
-          const reason = e?.message || 'unknown'
-
-          throw new Error(
-            `Transaction couldn't be broadcasted on the ${network.name} network. Reason: ${reason}`
-          )
+        } catch (error: any) {
+          return this.#throwBroadcastAccountOp({ error, network, accountState })
         }
       } catch (error: any) {
         return this.#throwBroadcastAccountOp({ error, network, accountState })
@@ -2245,10 +2247,7 @@ export class MainController extends EventEmitter {
         userOperationHash = await bundler.broadcast(userOperation, network!)
       } catch (e: any) {
         return this.#throwBroadcastAccountOp({
-          message: Bundler.decodeBundlerError(
-            e,
-            'Bundler broadcast failed. Please try broadcasting by an EOA or contact support.'
-          ),
+          error: e,
           network,
           accountState
         })
@@ -2373,6 +2372,7 @@ export class MainController extends EventEmitter {
     let message = _msg || _err?.message || 'Unable to broadcast the transaction.'
 
     if (message) {
+      // @TODO: Consider replacing with getHumanReadableBroadcastError
       if (message.includes('insufficient funds')) {
         if (network)
           message = `You don't have enough ${network.nativeAssetSymbol} to cover the transaction fee`
@@ -2403,8 +2403,9 @@ export class MainController extends EventEmitter {
         message =
           'Currently, the Ambire relayer seems to be down. Please try again a few moments later or broadcast with a Basic Account'
       } else {
-        // Trip the error message, errors coming from the RPC can be huuuuuge
-        message = message.length > 300 ? `${message.substring(0, 300)}...` : message
+        const { message: msg } = getHumanReadableBroadcastError(_err || new Error(message))
+
+        message = msg
       }
     }
 
