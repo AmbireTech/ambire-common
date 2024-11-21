@@ -34,12 +34,12 @@ export async function getAAVEPositions(
     ),
     deploylessDeFiPositionsGetter.call(
       'getAAVEPosition',
-      [userAddr, poolAddr, 16, 31],
+      [userAddr, poolAddr, 15, 30],
       {}
     ),
     deploylessDeFiPositionsGetter.call(
       'getAAVEPosition',
-      [userAddr, poolAddr, 32, 45],
+      [userAddr, poolAddr, 30, 45],
       {}
     )
   ])
