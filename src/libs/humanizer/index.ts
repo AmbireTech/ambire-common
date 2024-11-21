@@ -18,7 +18,7 @@ import { aaveHumanizer } from './modules/Aave'
 import AcrossModule from './modules/Across'
 import asciiModule from './modules/AsciiModule'
 import curveModule from './modules/Curve'
-import { deploymentModule } from './modules/Deployment'
+// import { deploymentModule } from './modules/Deployment'
 import fallbackHumanizer from './modules/FallbackHumanizer'
 import gasTankModule from './modules/GasTankModule'
 import KyberSwap from './modules/KyberSwap'
@@ -39,7 +39,7 @@ import wrappingModule from './modules/Wrapping'
 // the final humanization is the final triggered module
 export const humanizerCallModules: HumanizerCallModule[] = [
   preProcessHumanizer,
-  deploymentModule,
+  // deploymentModule,
   genericErc721Humanizer,
   genericErc20Humanizer,
   gasTankModule,
