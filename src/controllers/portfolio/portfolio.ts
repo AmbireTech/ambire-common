@@ -27,6 +27,7 @@ import {
   AccountState,
   ExternalHintsAPIResponse,
   GetOptions,
+  NetworkState,
   PortfolioControllerState,
   PreviousHintsStorage,
   TemporaryTokens,
@@ -173,42 +174,6 @@ export class PortfolioController extends EventEmitter {
     if (error) accountState[network]!.criticalError = error
   }
 
-  #prepareState(selectedAccount: Account, key: 'latest' | 'pending') {
-    const stateMap = {
-      latest: this.#latest,
-      pending: this.#pending
-    }
-    const state = stateMap[key]
-
-    const accountId = selectedAccount.addr
-
-    if (!state[accountId]) {
-      state[accountId] = this.#networks.networks.reduce((acc: AccountState, network) => {
-        acc[network.id] = { isReady: false, isLoading: true, errors: [] }
-
-        return acc
-      }, {} as AccountState)
-
-      if (shouldGetAdditionalPortfolio(selectedAccount)) {
-        state[accountId].gasTank = { isReady: false, isLoading: true, errors: [] }
-        state[accountId].rewards = { isReady: false, isLoading: true, errors: [] }
-      }
-
-      this.emitUpdate()
-      return
-    }
-
-    const accountState = state[accountId]
-
-    // Init state for missing networks
-    this.#networks.networks.forEach((network) => {
-      if (!accountState[network.id]) {
-        accountState[network.id] = { isReady: false, isLoading: true, errors: [] }
-      }
-    })
-    this.emitUpdate()
-  }
-
   removeNetworkData(networkId: NetworkId) {
     for (const accountState of [this.#latest, this.#pending]) {
       for (const accountId of Object.keys(accountState)) {
@@ -322,9 +287,16 @@ export class PortfolioController extends EventEmitter {
     }
   }
 
-  async #getAdditionalPortfolio(accountId: AccountId) {
-    const hasNonZeroTokens = !!this.#networksWithAssetsByAccounts?.[accountId]?.length
+  async #getAdditionalPortfolio(accountId: AccountId, forceUpdate?: boolean) {
+    const rewardsOrGasTankState =
+      this.#latest[accountId]?.rewards || this.#latest[accountId]?.gasTank
+    const canSkipUpdate = rewardsOrGasTankState
+      ? this.#getCanSkipUpdate(rewardsOrGasTankState, forceUpdate)
+      : false
 
+    if (canSkipUpdate) return
+
+    const hasNonZeroTokens = !!this.#networksWithAssetsByAccounts?.[accountId]?.length
     const start = Date.now()
     const accountState = this.#latest[accountId]
 
@@ -395,6 +367,15 @@ export class PortfolioController extends EventEmitter {
     this.emitUpdate()
   }
 
+  #getCanSkipUpdate(networkState?: NetworkState, forceUpdate?: boolean) {
+    if (forceUpdate || !networkState || networkState.criticalError) return false
+    const updateStarted = networkState.result?.updateStarted || 0
+    const isWithinMinUpdateInterval =
+      !!updateStarted && Date.now() - updateStarted < this.#minUpdateInterval
+
+    return isWithinMinUpdateInterval || networkState.isLoading
+  }
+
   // By our convention, we always stick with private (#) instead of protected methods.
   // However, we made a compromise here to allow Jest tests to mock updatePortfolioState.
   protected async updatePortfolioState(
@@ -405,6 +386,20 @@ export class PortfolioController extends EventEmitter {
     portfolioProps: Partial<GetOptions>,
     forceUpdate: boolean
   ): Promise<boolean> {
+    if (!_accountState[network.id]) {
+      // isLoading must be false here, otherwise canSkipUpdate will return true
+      // and portfolio will not be updated
+      _accountState[network.id] = { isLoading: false, isReady: false, errors: [] }
+    }
+    const canSkipUpdate = this.#getCanSkipUpdate(_accountState[network.id], forceUpdate)
+
+    if (canSkipUpdate) return false
+
+    this.#setNetworkLoading(accountId, network.id, true)
+    this.emitUpdate()
+
+    const state = _accountState[network.id]!
+    const tokenPreferences = this.tokenPreferences
     const hasNonZeroTokens = !!this.#networksWithAssetsByAccounts?.[accountId]?.length
     if (!portfolioProps.previousHints) portfolioProps.previousHints = { erc20s: [], erc721s: {} }
     portfolioProps.previousHints.erc721s = Object.fromEntries(
@@ -413,19 +408,6 @@ export class PortfolioController extends EventEmitter {
         { isKnown: false, tokens: v.map((i) => i.toString()) }
       ])
     )
-
-    const state = _accountState[network.id]!
-
-    // When the portfolio was called lastly
-    const lastUpdateStartedAt = state.result?.updateStarted
-    if (
-      lastUpdateStartedAt &&
-      Date.now() - lastUpdateStartedAt <= this.#minUpdateInterval &&
-      !forceUpdate
-    )
-      return false
-
-    const tokenPreferences = this.tokenPreferences
 
     try {
       const result = await portfolioLib.get(accountId, {
@@ -492,24 +474,14 @@ export class PortfolioController extends EventEmitter {
     await this.#initialLoadPromise
     const selectedAccount = this.#accounts.accounts.find((x) => x.addr === accountId)
     if (!selectedAccount) throw new Error('selected account does not exist')
-
-    this.#prepareState(selectedAccount, 'latest')
-    this.#prepareState(selectedAccount, 'pending')
+    if (!this.#latest[accountId]) this.#latest[accountId] = {}
+    if (!this.#pending[accountId]) this.#pending[accountId] = {}
 
     const accountState = this.#latest[accountId]
     const pendingState = this.#pending[accountId]
 
-    // TODO: Check if we need to update or the data
-    // Similar to the following commented code:
-    // const lastUpdateStartedAt = state.result?.updateStarted
-    // if (
-    //   lastUpdateStartedAt &&
-    //   Date.now() - lastUpdateStartedAt <= this.#minUpdateInterval &&
-    //   !forceUpdate
-    // )
-    //   return false
     if (shouldGetAdditionalPortfolio(selectedAccount)) {
-      this.#getAdditionalPortfolio(accountId)
+      this.#getAdditionalPortfolio(accountId, opts?.forceUpdate)
     }
 
     const networks = network ? [network] : this.#networks.networks
