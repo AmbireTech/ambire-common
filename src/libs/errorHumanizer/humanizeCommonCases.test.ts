@@ -4,13 +4,9 @@ import { ethers } from 'hardhat'
 import { describe, expect } from '@jest/globals'
 
 import { decodeError } from '../errorDecoder'
-import { ErrorType } from '../errorDecoder/types'
 import { RELAYER_DOWN_MESSAGE } from '../relayerCall/relayerCall'
 import { MESSAGE_PREFIX } from './estimationErrorHumanizer'
-import {
-  getGenericMessageFromType,
-  humanizeEstimationOrBroadcastError
-} from './humanizeCommonCases'
+import { humanizeEstimationOrBroadcastError } from './humanizeCommonCases'
 
 const MockBundlerError = class extends Error {
   public constructor(public shortMessage?: string) {
@@ -94,43 +90,5 @@ describe('Estimation/Broadcast common errors are humanized', () => {
     expect(message).toBe(
       `${MESSAGE_PREFIX} the Ambire relayer is down.\nPlease try again or contact Ambire support for assistance.`
     )
-  })
-})
-describe('Generic error fallbacks work', () => {
-  it('RPC error', () => {
-    const messageWithCode = getGenericMessageFromType(
-      ErrorType.RpcError,
-      'Unsupported method',
-      MESSAGE_PREFIX,
-      ''
-    )
-    const messageWithoutCode = getGenericMessageFromType(
-      ErrorType.RpcError,
-      null,
-      MESSAGE_PREFIX,
-      ''
-    )
-
-    expect(messageWithCode).toBe(
-      `${MESSAGE_PREFIX} of an RPC error. Error code: Unsupported method\nPlease try again or contact Ambire support for assistance.`
-    )
-    expect(messageWithoutCode).toBe(
-      `${MESSAGE_PREFIX} of an RPC error.\nPlease try again or contact Ambire support for assistance.`
-    )
-  })
-  it('Relayer error', () => {
-    const message = getGenericMessageFromType(ErrorType.RelayerError, null, MESSAGE_PREFIX, '')
-
-    expect(message).toBe(
-      `${MESSAGE_PREFIX} of an Ambire Relayer error.\nPlease try again or contact Ambire support for assistance.`
-    )
-  })
-  it('Null error type', () => {
-    const LAST_RESORT_ERROR_MESSAGE =
-      'An unknown error occurred while estimating the transaction. Please try again or contact Ambire support for assistance.'
-    // @ts-ignore
-    const message = getGenericMessageFromType(null, null, MESSAGE_PREFIX, LAST_RESORT_ERROR_MESSAGE)
-
-    expect(message).toBe(LAST_RESORT_ERROR_MESSAGE)
   })
 })

@@ -1,10 +1,8 @@
 import { decodeError } from '../errorDecoder'
 import { CONTRACT_ERRORS } from '../errorDecoder/constants'
 import { DecodedError } from '../errorDecoder/types'
-import {
-  getGenericMessageFromType,
-  humanizeEstimationOrBroadcastError
-} from './humanizeCommonCases'
+import { getGenericMessageFromType } from './helpers'
+import { humanizeEstimationOrBroadcastError } from './humanizeCommonCases'
 
 const LAST_RESORT_ERROR_MESSAGE =
   'An unknown error occurred while estimating the transaction. Please try again or contact Ambire support for assistance.'
