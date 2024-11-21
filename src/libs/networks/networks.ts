@@ -43,9 +43,13 @@ export async function getNetworkInfo(
   fetch: Fetch,
   rpcUrl: string,
   chainId: bigint,
-  callback: (networkInfo: NetworkInfoLoading<NetworkInfo>) => void
+  callback: (networkInfo: NetworkInfoLoading<NetworkInfo>) => void,
+  optionalArgs?: {
+    force4337?: boolean
+  }
 ) {
   let networkInfo: NetworkInfoLoading<NetworkInfo> = {
+    force4337: optionalArgs?.force4337,
     chainId,
     isSAEnabled: 'LOADING',
     hasSingleton: 'LOADING',
@@ -89,10 +93,25 @@ export async function getNetworkInfo(
         ]).catch((e: Error) =>
           raiseFlagged(e, ['0x', '0x', { addressMatches: false, supportsStateOverride: false }])
         )
-        const [singletonCode, factoryCode, saSupport, is4337enabled] = responses
+        const [singletonCode, factoryCode, saSupport, has4337BundlerSupport] = responses
         const areContractsDeployed = factoryCode !== '0x'
         // const has4337 = entryPointCode !== '0x' && hasBundler
         const predefinedNetwork = predefinedNetworks.find((net) => net.chainId === chainId)
+
+        // 4337 network support
+        // if it is supported on the network (has4337BundlerSupport),
+        // we check if the user has specifically enabled it through settings (optionalArgs.force4337)
+        // if he has not, we check if the network is predefinedNetwork and we
+        // have specifically disabled 4337
+        let shouldEnable4337 = has4337BundlerSupport
+        if (has4337BundlerSupport) {
+          if (optionalArgs && optionalArgs.force4337 !== undefined) {
+            shouldEnable4337 = optionalArgs.force4337
+          } else if (predefinedNetwork) {
+            shouldEnable4337 = predefinedNetwork.erc4337.enabled
+          }
+        }
+
         // Ambire support is as follows:
         // - either the addresses match after simulation, that's perfect
         // - or we can't do the simulation with this RPC but we have the factory
@@ -109,7 +128,7 @@ export async function getNetworkInfo(
               ? true
               : !saSupport.supportsStateOverride,
           erc4337: {
-            enabled: predefinedNetwork ? predefinedNetwork.erc4337.enabled : is4337enabled,
+            enabled: shouldEnable4337,
             hasPaymaster: predefinedNetwork ? predefinedNetwork.erc4337.hasPaymaster : false
           }
         }
@@ -198,7 +217,8 @@ export function getFeaturesByNetworkProperties(
     rpcNoStateOverride,
     nativeAssetId,
     chainId,
-    hasSingleton
+    hasSingleton,
+    force4337
   } = networkInfo
 
   const updateFeature = (
@@ -226,7 +246,11 @@ export function getFeaturesByNetworkProperties(
     ]
   }
 
-  if ([isSAEnabled, areContractsDeployed, erc4337, hasSingleton].every((p) => p !== 'LOADING')) {
+  if (
+    [isSAEnabled, areContractsDeployed, erc4337, hasSingleton, force4337].every(
+      (p) => p !== 'LOADING'
+    )
+  ) {
     if (!isSAEnabled) {
       updateFeature('saSupport', {
         level: 'danger',
@@ -238,7 +262,18 @@ export function getFeaturesByNetworkProperties(
     }
 
     const predefinedNetSettings = predefinedNetworks.find((net) => net.chainId === chainId)
-    const erc4337Settings = predefinedNetSettings ? predefinedNetSettings?.erc4337 : erc4337
+
+    // eslint finx
+    const hasOnChainPaymaster = erc4337 !== 'LOADING' ? erc4337.hasPaymaster : false
+    const erc4337Settings = {
+      enabled: false,
+      hasPaymaster: predefinedNetSettings
+        ? predefinedNetSettings.erc4337.hasPaymaster
+        : hasOnChainPaymaster
+    }
+    if (force4337 !== undefined && force4337 !== 'LOADING') erc4337Settings.enabled = force4337
+    else if (predefinedNetSettings) erc4337Settings.enabled = predefinedNetSettings.erc4337.enabled
+
     const title = (erc4337Settings as any)?.enabled
       ? "Ambire's smart wallets via ERC-4337 Account Abstraction"
       : "Ambire's smart wallets"

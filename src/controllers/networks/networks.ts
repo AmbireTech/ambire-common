@@ -86,7 +86,8 @@ export class NetworksController extends EventEmitter {
         nativeAssetId: network.nativeAssetId,
         flagged: network.flagged ?? false,
         chainId: network.chainId,
-        hasSingleton: network.hasSingleton
+        hasSingleton: network.hasSingleton,
+        force4337: network.force4337
       })
       return network
     })
@@ -111,8 +112,11 @@ export class NetworksController extends EventEmitter {
         feeOptions: n.feeOptions,
         hasRelayer: n.hasRelayer,
         erc4337: {
-          enabled: n.erc4337?.enabled,
-          hasPaymaster: n.erc4337?.hasPaymaster
+          enabled:
+            this.#networks[n.id].force4337 !== undefined
+              ? (this.#networks[n.id].force4337 as boolean)
+              : n.erc4337.enabled,
+          hasPaymaster: n.erc4337.hasPaymaster
         },
         nativeAssetId: n.nativeAssetId,
         nativeAssetSymbol: n.nativeAssetSymbol
@@ -129,6 +133,7 @@ export class NetworksController extends EventEmitter {
     networkToAddOrUpdate: {
       chainId: Network['chainId']
       rpcUrl: string
+      force4337?: boolean
     } | null = null
   ) {
     await this.initialLoadPromise
@@ -146,7 +151,8 @@ export class NetworksController extends EventEmitter {
             this.networkToAddOrUpdate = { ...this.networkToAddOrUpdate, info }
             this.emitUpdate()
           }
-        }
+        },
+        networkToAddOrUpdate.force4337 ? { force4337: networkToAddOrUpdate.force4337 } : undefined
       )
     } else {
       this.networkToAddOrUpdate = null

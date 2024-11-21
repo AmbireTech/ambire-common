@@ -10,7 +10,7 @@ const networks: Network[] = [
     rpcNoStateOverride: false,
     chainId: 1n,
     explorerUrl: 'https://etherscan.io',
-    erc4337: { enabled: false, hasPaymaster: false },
+    erc4337: { enabled: false, hasPaymaster: true },
     isSAEnabled: true,
     areContractsDeployed: true,
     hasRelayer: true,
