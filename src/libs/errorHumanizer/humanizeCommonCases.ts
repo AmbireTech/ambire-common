@@ -1,4 +1,5 @@
 import { EXPIRED_PREFIX } from '../errorDecoder/constants'
+import { RPC_HARDCODED_ERRORS } from '../errorDecoder/handlers/rpc'
 import { RELAYER_DOWN_MESSAGE } from '../relayerCall/relayerCall'
 
 const humanizeEstimationOrBroadcastError = (
@@ -23,13 +24,13 @@ const humanizeEstimationOrBroadcastError = (
       return `${prefix} of insufficient funds for the transaction fee. Please add more fee tokens to your account and try again.`
     case 'paymaster deposit too low':
       return `${prefix} the Paymaster has insufficient funds. Please select an alternative fee payment option or contact support for assistance.`
-    case 'rpc-timeout':
+    case RPC_HARDCODED_ERRORS.rpcTimeout:
       return `${prefix} of a problem with the RPC on this network. Please try again later, change the RPC or contact support for assistance.`
     case 'transfer amount exceeds balance':
       return `${prefix} the transfer amount exceeds your account balance. Please reduce the transfer amount and try again.`
-    case 'Low gas limit':
+    case RPC_HARDCODED_ERRORS.lowGasLimit:
       return `${prefix} of a low gas limit. Please try again or contact support for assistance.`
-    case 'Transaction underpriced':
+    case RPC_HARDCODED_ERRORS.transactionUnderpriced:
       return `${prefix} it is underpriced. Please select a higher transaction speed and try again.`
     case RELAYER_DOWN_MESSAGE:
       return `${prefix} the Ambire relayer is down.\nPlease try again or contact Ambire support for assistance.`

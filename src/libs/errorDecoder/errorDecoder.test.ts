@@ -8,6 +8,7 @@ import { RELAYER_DOWN_MESSAGE } from '../relayerCall/relayerCall'
 import { PANIC_ERROR_PREFIX } from './constants'
 import { InnerCallFailureError, RelayerPaymasterError } from './customErrors'
 import { decodeError } from './errorDecoder'
+import { RPC_HARDCODED_ERRORS } from './handlers/rpc'
 import { TRANSACTION_REJECTED_REASON } from './handlers/userRejection'
 import { DecodedError, ErrorType } from './types'
 
@@ -72,7 +73,23 @@ describe('Error decoders work', () => {
         expect(decodedError.data).toBe('')
       }
     })
-    describe('Prioritizes error code if string, otherwise fallbacks', () => {
+    it('Should handle predefined errors', async () => {
+      const error = new MockRpcError(
+        -32000,
+        {
+          error: {
+            code: -32000,
+            message: 'intrinsic gas too low: gas 0, minimum needed 21000'
+          }
+        },
+        'could not coalesce error'
+      )
+      const decodedError = decodeError(error)
+
+      expect(decodedError.type).toEqual(ErrorType.RpcError)
+      expect(decodedError.reason).toBe(RPC_HARDCODED_ERRORS.lowGasLimit)
+    })
+    describe('Prioritizes error code if a valid reason, otherwise fallbacks', () => {
       it('Should use error code if string', async () => {
         const mockRpcError = new MockRpcError(
           'INSUFFICIENT_FUNDS',
