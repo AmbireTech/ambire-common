@@ -266,7 +266,7 @@ export function getFeaturesByNetworkProperties(
     // eslint finx
     const hasOnChainPaymaster = erc4337 !== 'LOADING' ? erc4337.hasPaymaster : false
     const erc4337Settings = {
-      enabled: false,
+      enabled: true,
       hasPaymaster: predefinedNetSettings
         ? predefinedNetSettings.erc4337.hasPaymaster
         : hasOnChainPaymaster

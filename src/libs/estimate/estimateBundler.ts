@@ -76,12 +76,12 @@ export async function bundlerEstimate(
   if (userOp.activatorCall) localOp.activatorCall = userOp.activatorCall
 
   const ambireAccount = new Interface(AmbireAccount.abi)
+  const isEdgeCase = !accountState.isErc4337Enabled && accountState.isDeployed
   userOp.callData = ambireAccount.encodeFunctionData('executeBySender', [
     getSignableCallsForBundlerEstimate(localOp)
   ])
   userOp.signature = getSigForCalculations()
-  const shouldStateOverride = !accountState.isErc4337Enabled && accountState.isDeployed
-  const gasData = await Bundler.estimate(userOp, network, shouldStateOverride).catch((e: any) => {
+  const gasData = await Bundler.estimate(userOp, network, isEdgeCase).catch((e: any) => {
     return new Error(Bundler.decodeBundlerError(e, 'Estimation failed with unknown reason'))
   })
   if (gasData instanceof Error) {

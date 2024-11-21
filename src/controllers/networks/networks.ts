@@ -286,6 +286,7 @@ export class NetworksController extends EventEmitter {
     checkRPC(this.networkToAddOrUpdate)
     this.networkToAddOrUpdate = null
 
+    await this.#load()
     this.emitUpdate()
   }
 

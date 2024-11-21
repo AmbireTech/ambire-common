@@ -207,6 +207,7 @@ export function shouldAskForEntryPointAuthorization(
     account.creation &&
     account.creation.factoryAddr === AMBIRE_ACCOUNT_FACTORY &&
     accountState.isV2 &&
+    !accountState.isDeployed &&
     network.erc4337.enabled &&
     !accountState.isErc4337Enabled
   )
