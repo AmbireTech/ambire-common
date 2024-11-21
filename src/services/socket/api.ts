@@ -1,7 +1,11 @@
 import { getAddress } from 'ethers'
 
 import { Fetch, RequestInitWithCustomHeaders } from '../../interfaces/fetch'
-import { SocketAPIQuote, SocketAPIToken } from '../../interfaces/swapAndBridge'
+import {
+  SocketAPIQuote,
+  SocketAPISendTransactionRequest,
+  SocketAPIToken
+} from '../../interfaces/swapAndBridge'
 import {
   AMBIRE_WALLET_TOKEN_ON_BASE,
   AMBIRE_WALLET_TOKEN_ON_ETHEREUM,
