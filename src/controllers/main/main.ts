@@ -2138,12 +2138,11 @@ export class MainController extends EventEmitter {
         } catch (error: any) {
           return this.#throwBroadcastAccountOp({
             error,
-            network,
             accountState
           })
         }
       } catch (error: any) {
-        return this.#throwBroadcastAccountOp({ error, network, accountState })
+        return this.#throwBroadcastAccountOp({ error, accountState })
       }
     }
     // Smart account but EOA pays the fee
@@ -2226,10 +2225,10 @@ export class MainController extends EventEmitter {
             }
           }
         } catch (error: any) {
-          return this.#throwBroadcastAccountOp({ error, network, accountState })
+          return this.#throwBroadcastAccountOp({ error, accountState })
         }
       } catch (error: any) {
-        return this.#throwBroadcastAccountOp({ error, network, accountState })
+        return this.#throwBroadcastAccountOp({ error, accountState })
       }
     }
     // Smart account, the ERC-4337 way
@@ -2248,7 +2247,6 @@ export class MainController extends EventEmitter {
       } catch (e: any) {
         return this.#throwBroadcastAccountOp({
           error: e,
-          network,
           accountState
         })
       }
@@ -2292,7 +2290,7 @@ export class MainController extends EventEmitter {
           }
         }
       } catch (error: any) {
-        return this.#throwBroadcastAccountOp({ error, network, accountState, isRelayer: true })
+        return this.#throwBroadcastAccountOp({ error, accountState, isRelayer: true })
       }
     }
 
@@ -2359,13 +2357,11 @@ export class MainController extends EventEmitter {
   #throwBroadcastAccountOp({
     message: _msg,
     error: _err,
-    network,
     accountState,
     isRelayer = false
   }: {
     message?: string
     error?: Error
-    network?: Network
     accountState?: AccountOnchainState
     isRelayer?: boolean
   }) {
@@ -2373,11 +2369,7 @@ export class MainController extends EventEmitter {
 
     if (message) {
       // @TODO: Consider replacing with getHumanReadableBroadcastError
-      if (message.includes('insufficient funds')) {
-        if (network)
-          message = `You don't have enough ${network.nativeAssetSymbol} to cover the transaction fee`
-        else message = "You don't have enough native to cover the transaction fee"
-      } else if (message.includes('pimlico_getUserOperationGasPrice')) {
+      if (message.includes('pimlico_getUserOperationGasPrice')) {
         // sometimes the bundler returns an error of low maxFeePerGas
         // in that case, recalculate prices and prompt the user to try again
         message = 'Fee too low. Please select a higher transaction speed and try again'

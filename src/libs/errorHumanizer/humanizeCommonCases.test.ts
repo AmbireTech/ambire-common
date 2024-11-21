@@ -61,7 +61,7 @@ describe('Estimation/Broadcast common errors are humanized', () => {
       const message = humanizeEstimationOrBroadcastError(reason, MESSAGE_PREFIX)
 
       expect(message).toBe(
-        `${MESSAGE_PREFIX} to insufficient funds for the transaction fee. Please add more fee tokens to your account and try again.`
+        `${MESSAGE_PREFIX} of insufficient funds for the transaction fee. Please add more fee tokens to your account and try again.`
       )
     }
   })

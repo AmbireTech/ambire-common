@@ -20,13 +20,17 @@ const humanizeEstimationOrBroadcastError = (
     case 'IMPOSSIBLE_GAS_CONSUMPTION':
     case 'INSUFFICIENT_FUNDS':
     case 'insufficient funds':
-      return `${prefix} to insufficient funds for the transaction fee. Please add more fee tokens to your account and try again.`
+      return `${prefix} of insufficient funds for the transaction fee. Please add more fee tokens to your account and try again.`
     case 'paymaster deposit too low':
       return `${prefix} the Paymaster has insufficient funds. Please select an alternative fee payment option or contact support for assistance.`
     case 'rpc-timeout':
       return `${prefix} of a problem with the RPC on this network. Please try again later, change the RPC or contact support for assistance.`
     case 'transfer amount exceeds balance':
       return `${prefix} the transfer amount exceeds your account balance. Please reduce the transfer amount and try again.`
+    case 'Low gas limit':
+      return `${prefix} of a low gas limit. Please try again or contact support for assistance.`
+    case 'Transaction underpriced':
+      return `${prefix} it is underpriced. Please select a higher transaction speed and try again.`
     case RELAYER_DOWN_MESSAGE:
       return `${prefix} the Ambire relayer is down.\nPlease try again or contact Ambire support for assistance.`
     default:
