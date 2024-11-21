@@ -27,6 +27,9 @@ function getGenericMessageFromType(
       return `${messagePrefix} of an unknown error.${messageSuffix}`
     case ErrorType.InnerCallFailureError:
       return `${messagePrefix} of a failure while validating the transaction.${messageSuffix}`
+    // I don't think we should say anything else for this case
+    case ErrorType.UserRejectionHandler:
+      return 'Transaction rejected.'
     // Panic error may scare the user so let's call it a contract error
     case ErrorType.PanicError:
     case ErrorType.RevertError:
