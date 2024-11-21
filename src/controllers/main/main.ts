@@ -1135,7 +1135,7 @@ export class MainController extends EventEmitter {
     if (userRequest) {
       const isASignOperationRequestedForAnotherAccount =
         userRequest.meta.isSignAction &&
-        userRequest.meta.accountAddr !== this.accounts.selectedAccount
+        userRequest.meta.accountAddr !== this.selectedAccount.account?.addr
 
       if (isASignOperationRequestedForAnotherAccount) {
         const network = this.networks.networks.find(
@@ -1156,7 +1156,7 @@ export class MainController extends EventEmitter {
             },
             session: request.session,
             meta: {
-              accountAddr: this.accounts.selectedAccount,
+              accountAddr: this.selectedAccount.account?.addr,
               switchToAccountAddr: userRequest.meta.accountAddr,
               networkId: network.id,
               isSignAction: false
@@ -1734,7 +1734,7 @@ export class MainController extends EventEmitter {
     if (!switchAccountAction || switchAccountAction.type !== 'switchAccount') return
 
     const { userRequest } = switchAccountAction
-    await this.accounts.selectAccount(userRequest.meta.switchToAccountAddr)
+    await this.#selectAccount(userRequest.meta.switchToAccountAddr)
     this.removeUserRequest(actionId)
     this.emitUpdate()
   }
