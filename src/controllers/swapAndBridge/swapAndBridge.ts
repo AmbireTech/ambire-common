@@ -149,9 +149,11 @@ export class SwapAndBridgeController extends EventEmitter {
 
     this.activeRoutes = await this.#storage.get('swapAndBridgeActiveRoutes', [])
 
-    this.#selectedAccount.onUpdate(() => {
-      this.updatePortfolioTokenList(this.#selectedAccount.portfolio.tokens)
-    })
+    // FIXME: Causes the "to" list to get retrieved upon load (instead of upon `initForm`)
+    // and an E2E test to fail (sa_features › Pay transaction fee with gas tank)
+    // this.#selectedAccount.onUpdate(() => {
+    //   this.updatePortfolioTokenList(this.#selectedAccount.portfolio.tokens)
+    // })
     this.emitUpdate()
   }
 
