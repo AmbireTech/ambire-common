@@ -6,10 +6,12 @@
 
 import { Encrypted } from 'eth-crypto'
 import { ethers, Wallet } from 'ethers'
+import { EventEmitter } from 'stream'
 
 import { describe, expect, test } from '@jest/globals'
 
 import { produceMemoryStore } from '../../../test/helpers'
+import { suppressConsoleBeforeEach } from '../../../test/helpers/console'
 import { BIP44_STANDARD_DERIVATION_TEMPLATE } from '../../consts/derivation'
 import { ExternalKey, Key } from '../../interfaces/keystore'
 import { getPrivateKeyFromSeed } from '../../libs/keyIterator/keyIterator'
@@ -60,6 +62,15 @@ class LedgerSigner {
   }
 }
 
+const windowManager = {
+  focus: () => Promise.resolve(),
+  open: () => Promise.resolve(0),
+  remove: () => Promise.resolve(),
+  event: new EventEmitter(),
+  sendWindowToastMessage: () => {},
+  sendWindowUiMessage: () => {}
+}
+
 let keystore: KeystoreController
 const pass = 'hoiHoi'
 const keystoreSigners = { internal: InternalSigner, ledger: LedgerSigner }
@@ -72,24 +83,27 @@ const keyPublicAddress = new ethers.Wallet(privKey).address
 describe('KeystoreController', () => {
   const storage = produceMemoryStore()
   test('should initialize', () => {
-    keystore = new KeystoreController(storage, keystoreSigners)
+    keystore = new KeystoreController(storage, keystoreSigners, windowManager)
     expect(keystore).toBeDefined()
   })
 
-  test('should not unlock with non-existent secret (when no secrets exist)', (done) => {
-    keystore.unlockWithSecret('password', pass)
+  describe('Negative cases', () => {
+    suppressConsoleBeforeEach()
+    test('should not unlock with non-existent secret (when no secrets exist)', (done) => {
+      keystore.unlockWithSecret('password', pass)
 
-    const unsubscribeUpdate = keystore.onUpdate(async () => {
-      if (keystore.statuses.unlockWithSecret === 'ERROR') {
-        expect(keystore.isUnlocked).toBe(false)
-        unsubscribeUpdate()
-        done()
-      }
+      const unsubscribeUpdate = keystore.onUpdate(async () => {
+        if (keystore.statuses.unlockWithSecret === 'ERROR') {
+          expect(keystore.isUnlocked).toBe(false)
+          unsubscribeUpdate()
+          done()
+        }
+      })
     })
-  })
 
-  test('should throw an error if trying to get uid before adding secrets', () => {
-    expect(keystore.getKeyStoreUid()).rejects.toThrow('keystore: adding secret before get uid')
+    test('should throw an error if trying to get uid before adding secrets', () => {
+      expect(keystore.getKeyStoreUid()).rejects.toThrow('keystore: adding secret before get uid')
+    })
   })
 
   test('should add a secret', (done) => {
@@ -106,24 +120,27 @@ describe('KeystoreController', () => {
     })
   })
 
-  test('should not unlock with non-existent secret (when secrets exist)', (done) => {
-    keystore.unlockWithSecret('playstation', '')
+  describe('Negative cases', () => {
+    suppressConsoleBeforeEach()
+    test('should not unlock with non-existent secret (when secrets exist)', (done) => {
+      keystore.unlockWithSecret('playstation', '')
 
-    const unsubscribeUpdate = keystore.onUpdate(async () => {
-      if (keystore.statuses.unlockWithSecret === 'ERROR') {
-        expect(keystore.isUnlocked).toBe(false)
-        unsubscribeUpdate()
-        done()
+      const unsubscribeUpdate = keystore.onUpdate(async () => {
+        if (keystore.statuses.unlockWithSecret === 'ERROR') {
+          expect(keystore.isUnlocked).toBe(false)
+          unsubscribeUpdate()
+          done()
+        }
+      })
+    })
+
+    test('should not unlock with wrong secret', async () => {
+      try {
+        await keystore.unlockWithSecret('password', `${pass}1`)
+      } catch {
+        expect(keystore.statuses.unlockWithSecret).toBe('ERROR')
       }
     })
-  })
-
-  test('should not unlock with wrong secret', async () => {
-    try {
-      await keystore.unlockWithSecret('password', `${pass}1`)
-    } catch {
-      expect(keystore.statuses.unlockWithSecret).toBe('ERROR')
-    }
   })
 
   test('should unlock with secret', (done) => {
@@ -140,7 +157,18 @@ describe('KeystoreController', () => {
   })
 
   test('should add an internal key', (done) => {
-    keystore.addKeys([{ privateKey: privKey, dedicatedToOneSA: true }])
+    keystore.addKeys([
+      {
+        addr: new Wallet(privKey).address,
+        label: 'Key 1',
+        type: 'internal',
+        privateKey: privKey,
+        dedicatedToOneSA: true,
+        meta: {
+          createdAt: new Date().getTime()
+        }
+      }
+    ])
 
     const unsubscribe = keystore.onUpdate(async () => {
       if (keystore.statuses.addKeys === 'SUCCESS') {
@@ -157,8 +185,26 @@ describe('KeystoreController', () => {
   test('should not add twice internal key that is already added', (done) => {
     // two keys with the same private key
     const keysWithPrivateKeyAlreadyAdded = [
-      { privateKey: privKey, dedicatedToOneSA: false },
-      { privateKey: privKey, dedicatedToOneSA: false }
+      {
+        addr: new Wallet(privKey).address,
+        label: 'Key 1',
+        type: 'internal' as 'internal',
+        privateKey: privKey,
+        dedicatedToOneSA: false,
+        meta: {
+          createdAt: new Date().getTime()
+        }
+      },
+      {
+        addr: new Wallet(privKey).address,
+        label: 'Key 2',
+        type: 'internal' as 'internal',
+        privateKey: privKey,
+        dedicatedToOneSA: false,
+        meta: {
+          createdAt: new Date().getTime()
+        }
+      }
     ]
 
     const anotherPrivateKeyNotAddedYet =
@@ -166,9 +212,27 @@ describe('KeystoreController', () => {
     const anotherPrivateKeyPublicAddress = '0x9188fdd757Df66B4F693D624Ed6A13a15Cf717D7'
     const keysWithPrivateKeyDuplicatedInParams = [
       // test key 3
-      { privateKey: anotherPrivateKeyNotAddedYet, dedicatedToOneSA: false },
+      {
+        addr: new Wallet(anotherPrivateKeyNotAddedYet).address,
+        label: 'Key 2',
+        type: 'internal' as 'internal',
+        privateKey: anotherPrivateKeyNotAddedYet,
+        dedicatedToOneSA: false,
+        meta: {
+          createdAt: new Date().getTime()
+        }
+      },
       // test key 4 with the same private key as key 3
-      { privateKey: anotherPrivateKeyNotAddedYet, dedicatedToOneSA: false }
+      {
+        addr: new Wallet(anotherPrivateKeyNotAddedYet).address,
+        label: 'Key 2',
+        type: 'internal' as 'internal',
+        privateKey: anotherPrivateKeyNotAddedYet,
+        dedicatedToOneSA: false,
+        meta: {
+          createdAt: new Date().getTime()
+        }
+      }
     ]
 
     keystore.addKeys([...keysWithPrivateKeyAlreadyAdded, ...keysWithPrivateKeyDuplicatedInParams])
@@ -196,11 +260,13 @@ describe('KeystoreController', () => {
         addr: publicAddress,
         dedicatedToOneSA: false,
         type: 'trezor',
+        label: 'Trezor Key 1',
         meta: {
           deviceId: '1',
           deviceModel: 'trezor',
           hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
-          index: 1
+          index: 1,
+          createdAt: new Date().getTime()
         }
       }
     ])
@@ -225,11 +291,13 @@ describe('KeystoreController', () => {
         addr: publicAddress,
         type: 'trezor' as 'trezor',
         dedicatedToOneSA: false,
+        label: 'Trezor Key 1',
         meta: {
           deviceId: '1',
           deviceModel: 'trezor',
           hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
-          index: 1
+          index: 1,
+          createdAt: new Date().getTime()
         }
       },
       // test key 2 with the same id (public address) as test key 1'
@@ -237,11 +305,13 @@ describe('KeystoreController', () => {
         addr: publicAddress,
         type: 'trezor' as 'trezor',
         dedicatedToOneSA: false,
+        label: 'Trezor Key 2',
         meta: {
           deviceId: '1',
           deviceModel: 'trezor',
           hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
-          index: 1
+          index: 1,
+          createdAt: new Date().getTime()
         }
       }
     ]
@@ -253,11 +323,13 @@ describe('KeystoreController', () => {
         addr: anotherAddressNotAddedYet,
         type: 'trezor' as 'trezor',
         dedicatedToOneSA: false,
+        label: 'Trezor Key 3',
         meta: {
           deviceId: '1',
           deviceModel: 'trezor',
           hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
-          index: 1
+          index: 1,
+          createdAt: new Date().getTime()
         }
       },
       // test key 4 with the same private key as key 3',
@@ -265,11 +337,13 @@ describe('KeystoreController', () => {
         addr: anotherAddressNotAddedYet,
         type: 'trezor' as 'trezor',
         dedicatedToOneSA: false,
+        label: 'Trezor Key 4',
         meta: {
           deviceId: '1',
           deviceModel: 'trezor',
           hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
-          index: 1
+          index: 1,
+          createdAt: new Date().getTime()
         }
       }
     ]
@@ -299,33 +373,39 @@ describe('KeystoreController', () => {
         addr: keyPublicAddress,
         type: 'trezor' as 'trezor',
         dedicatedToOneSA: false,
+        label: 'Trezor Key 1',
         meta: {
           deviceId: '1',
           deviceModel: 'trezor',
           hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
-          index: 1
+          index: 1,
+          createdAt: new Date().getTime()
         }
       },
       {
         addr: keyPublicAddress,
         type: 'trezor' as 'trezor',
         dedicatedToOneSA: false,
+        label: 'Trezor Key 2',
         meta: {
           deviceId: '1',
           deviceModel: 'trezor',
           hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
-          index: 1
+          index: 1,
+          createdAt: new Date().getTime()
         }
       },
       {
         addr: keyPublicAddress,
         type: 'ledger' as 'ledger',
         dedicatedToOneSA: false,
+        label: 'Trezor Key 3',
         meta: {
           deviceId: '1',
           deviceModel: 'trezor',
           hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
-          index: 1
+          index: 1,
+          createdAt: new Date().getTime()
         }
       }
     ]
@@ -372,43 +452,45 @@ describe('KeystoreController', () => {
     expect(internalSigner.key.addr).toEqual(keyPublicAddress)
   })
 
-  test('should not get a signer', () => {
-    expect(
-      keystore.getSigner('0xc7E32B118989296eaEa88D86Bd9041Feca77Ed36', 'internal')
-    ).rejects.toThrow('keystore: key not found')
-  })
+  describe('Negative cases', () => {
+    suppressConsoleBeforeEach()
 
-  test('should throw not unlocked', (done) => {
-    const unsubscribe = keystore.onUpdate(async () => {
-      expect(keystore.getSigner(keyPublicAddress, 'internal')).rejects.toThrow(
-        'keystore: not unlocked'
-      )
-
-      unsubscribe()
-      done()
+    test('should not get a signer', () => {
+      expect(
+        keystore.getSigner('0xc7E32B118989296eaEa88D86Bd9041Feca77Ed36', 'internal')
+      ).rejects.toThrow('keystore: key not found')
     })
-
-    keystore.lock()
-  })
-
-  test('should export key backup, create wallet and compare public address', (done) => {
-    // changeKeystorePassword changed the password in the tests above so now unlock with the new password
-    keystore.unlockWithSecret('password', `${pass}1`)
-
-    const unsubscribe = keystore.onUpdate(async () => {
-      console.log(keystore.statuses.unlockWithSecret)
-      if (keystore.statuses.unlockWithSecret === 'SUCCESS') {
-        const keyBackup = await keystore.exportKeyWithPasscode(
-          keyPublicAddress,
-          'internal',
-          'goshoPazara'
+    test('should throw not unlocked', (done) => {
+      const unsubscribe = keystore.onUpdate(async () => {
+        expect(keystore.getSigner(keyPublicAddress, 'internal')).rejects.toThrow(
+          'keystore: not unlocked'
         )
-        const wallet = await Wallet.fromEncryptedJson(JSON.parse(keyBackup), 'goshoPazara')
-        expect(wallet.address).toBe(keyPublicAddress)
 
         unsubscribe()
         done()
-      }
+      })
+
+      keystore.lock()
+    })
+
+    test('should export key backup, create wallet and compare public address', (done) => {
+      // changeKeystorePassword changed the password in the tests above so now unlock with the new password
+      keystore.unlockWithSecret('password', `${pass}1`)
+
+      const unsubscribe = keystore.onUpdate(async () => {
+        if (keystore.statuses.unlockWithSecret === 'SUCCESS') {
+          const keyBackup = await keystore.exportKeyWithPasscode(
+            keyPublicAddress,
+            'internal',
+            'goshoPazara'
+          )
+          const wallet = await Wallet.fromEncryptedJson(JSON.parse(keyBackup), 'goshoPazara')
+          expect(wallet.address).toBe(keyPublicAddress)
+
+          unsubscribe()
+          done()
+        }
+      })
     })
   })
 
@@ -448,26 +530,31 @@ describe('KeystoreController', () => {
     expect(keystore.keys.length).toBe(keyLengthBefore - 2)
   })
   test('should add keystore default seed phrase', async () => {
-    expect(!!keystore.hasKeystoreDefaultSeed).toBeFalsy()
+    expect(!!keystore.hasKeystoreSavedSeed).toBeFalsy()
     expect(keystore.isUnlocked).toBeTruthy()
-    await keystore.addSeed(process.env.SEED)
-    expect(!!keystore.hasKeystoreDefaultSeed).toBeTruthy()
+    await keystore.addSeed({
+      seed: process.env.SEED,
+      hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
+    })
+    expect(!!keystore.hasKeystoreSavedSeed).toBeTruthy()
   })
   test('should get default seed phrase', async () => {
-    expect(!!keystore.hasKeystoreDefaultSeed).toBeTruthy()
-    const decryptedDefaultSeedPhrase = await keystore.getDefaultSeed()
-    expect(decryptedDefaultSeedPhrase).toEqual(process.env.SEED)
+    expect(!!keystore.hasKeystoreSavedSeed).toBeTruthy()
+    const decryptedSavedSeedPhrase = await keystore.getSavedSeed()
+    expect(decryptedSavedSeedPhrase.seed).toEqual(process.env.SEED)
+    expect(decryptedSavedSeedPhrase.hdPathTemplate).toEqual(BIP44_STANDARD_DERIVATION_TEMPLATE)
   })
 })
 
 describe('import/export with pub key test', () => {
   const wallet = ethers.Wallet.createRandom()
+  const timestamp = new Date().getTime()
   let keystore2: KeystoreController
   let uid2: string
 
   beforeEach(async () => {
-    keystore = new KeystoreController(produceMemoryStore(), keystoreSigners)
-    keystore2 = new KeystoreController(produceMemoryStore(), keystoreSigners)
+    keystore = new KeystoreController(produceMemoryStore(), keystoreSigners, windowManager)
+    keystore2 = new KeystoreController(produceMemoryStore(), keystoreSigners, windowManager)
 
     await keystore2.addSecret('123', '123', '', false)
     await keystore2.unlockWithSecret('123', '123')
@@ -491,16 +578,15 @@ describe('import/export with pub key test', () => {
     const getImportedKeyOnUpdate = () => {
       // eslint-disable-next-line @typescript-eslint/no-floating-promises
       keystore2.getSigner(wallet.address, 'internal').then((signer) => {
-        expect(signer).toMatchObject({
-          key: {
+        expect(signer.key).toEqual(
+          expect.objectContaining({
             addr: wallet.address,
             isExternallyStored: false,
-            // label,
-            type: 'internal',
-            meta: null
-          },
-          privKey: wallet.privateKey.slice(2)
-        })
+            label: 'Key 1',
+            type: 'internal'
+          })
+        )
+
         done()
       })
     }
@@ -510,6 +596,15 @@ describe('import/export with pub key test', () => {
         unsubscribe2()
       }
     })
-    keystore.addKeys([{ privateKey: wallet.privateKey.slice(2), dedicatedToOneSA: false }])
+    keystore.addKeys([
+      {
+        addr: wallet.address,
+        label: 'Key 1',
+        type: 'internal',
+        privateKey: wallet.privateKey.slice(2),
+        dedicatedToOneSA: false,
+        meta: { createdAt: new Date().getTime() }
+      }
+    ])
   })
 })

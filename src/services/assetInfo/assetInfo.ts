@@ -11,7 +11,7 @@ const scheduledActions: {
 } = {}
 
 export async function executeBatchedFetch(network: Network): Promise<void> {
-  const provider = new JsonRpcProvider(network.rpcUrls[0])
+  const provider = new JsonRpcProvider(network.selectedRpcUrl || network.rpcUrls[0])
   const allAddresses =
     Array.from(new Set(scheduledActions[network.id]?.data.map((i) => i.address))) || []
   const portfolio = new Portfolio(fetch as any, provider, network)
@@ -53,7 +53,10 @@ export async function executeBatchedFetch(network: Network): Promise<void> {
 export async function resolveAssetInfo(
   address: string,
   network: Network,
-  callback: Function
+  callback: (arg: {
+    tokenInfo?: { decimals: number; symbol: string }
+    nftInfo?: { name: string }
+  }) => void
 ): Promise<void> {
   if (!scheduledActions[network.id]?.data?.length) {
     scheduledActions[network.id] = {

@@ -41,5 +41,5 @@ export const WALLETModule: HumanizerCallModule = (_: AccountOp, irCalls: IrCall[
     }
     return call
   })
-  return [newCalls, []]
+  return newCalls
 }

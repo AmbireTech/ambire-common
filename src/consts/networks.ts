@@ -20,12 +20,13 @@ const networks: Network[] = [
     features: [],
     feeOptions: { is1559: true },
     predefined: true,
-    wrappedAddr: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2'
+    wrappedAddr: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
+    disableEstimateGas: true
   },
   {
     id: 'polygon',
     name: 'Polygon',
-    nativeAssetSymbol: 'MATIC',
+    nativeAssetSymbol: 'POL',
     rpcUrls: ['https://invictus.ambire.com/polygon'],
     selectedRpcUrl: 'https://invictus.ambire.com/polygon',
     rpcNoStateOverride: false,
@@ -41,7 +42,8 @@ const networks: Network[] = [
     features: [],
     feeOptions: { is1559: false, feeIncrease: 10n },
     predefined: true,
-    wrappedAddr: '0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270'
+    wrappedAddr: '0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270',
+    oldNativeAssetSymbols: ['MATIC']
   },
   {
     id: 'optimism',
@@ -104,8 +106,7 @@ const networks: Network[] = [
     explorerUrl: 'https://arbiscan.io',
     erc4337: {
       enabled: true,
-      hasPaymaster: true,
-      explorerId: 'arbitrum-one'
+      hasPaymaster: true
     },
     isSAEnabled: true,
     areContractsDeployed: true,
@@ -140,9 +141,11 @@ const networks: Network[] = [
     platformId: 'base',
     nativeAssetId: 'ethereum',
     hasSingleton: true,
+    isOptimistic: true,
     features: [],
     feeOptions: {
-      is1559: true
+      is1559: true,
+      minBaseFeeEqualToLastBlock: true
     },
     predefined: true,
     wrappedAddr: '0x4200000000000000000000000000000000000006'
@@ -195,60 +198,4 @@ const networks: Network[] = [
     predefined: true
   }
 ]
-
-// used for benzin
-const extraNetworks = [
-  {
-    id: 'linea',
-    name: 'Linea',
-    nativeAssetSymbol: 'ETH',
-    rpcUrls: [
-      'https://linea.decubate.com',
-      'https://linea.blockpi.network/v1/rpc/public',
-      'https://1rpc.io/linea',
-      'https://linea.drpc.org',
-      'https://rpc.linea.build'
-    ],
-    selectedRpcUrl: 'https://linea.decubate.com	',
-    chainId: 59144n,
-    explorerUrl: 'https://lineascan.build',
-    platformId: 'linea',
-    nativeAssetId: 'ethereum'
-  },
-  {
-    id: 'blast',
-    name: 'Blast Mainnet',
-    nativeAssetSymbol: 'ETH',
-    rpcUrls: [
-      'https://blast-rpc.publicnode.com',
-      'https://rpc.envelop.is/blast',
-      'https://rpc.blast.io',
-      'https://blast.din.dev/rpc',
-      'https://blastl2-mainnet.public.blastapi.io	'
-    ],
-    selectedRpcUrl: 'https://rpc.blast.io',
-    chainId: 81457n,
-    explorerUrl: 'https://blastexplorer.io',
-    platformId: 'blast',
-    nativeAssetId: 'ethereum'
-  },
-  {
-    id: 'andromeda',
-    name: 'Metis Andromeda Mainnet',
-    nativeAssetSymbol: 'METIS',
-    rpcUrls: [
-      'https://andromeda.metis.io/?owner=1088',
-      'https://metis-mainnet.public.blastapi.io',
-      'https://metis.api.onfinality.io/public',
-      'https://metis-pokt.nodies.app',
-      'https://metis.drpc.org'
-    ],
-    selectedRpcUrl: 'https://andromeda.metis.io/?owner=1088',
-    chainId: 1088n,
-    explorerUrl: 'https://explorer.metis.io',
-    platformId: 'metis-andromeda',
-    nativeAssetId: 'metis-token'
-  }
-]
-
-export { networks, extraNetworks }
+export { networks }

@@ -22,15 +22,30 @@ import {
 import scrypt from 'scrypt-js'
 
 import EmittableError from '../../classes/EmittableError'
+import { DERIVATION_OPTIONS, HD_PATH_TEMPLATE_TYPE } from '../../consts/derivation'
+import { Banner } from '../../interfaces/banner'
 import {
   ExternalKey,
+  InternalKey,
   Key,
+  KeyPreferences,
+  KeystoreSeed,
   KeystoreSignerType,
   MainKey,
   MainKeyEncryptedWithSecret,
+  ReadyToAddKeys,
   StoredKey
 } from '../../interfaces/keystore'
 import { Storage } from '../../interfaces/storage'
+import { WindowManager } from '../../interfaces/window'
+import {
+  getDefaultKeyLabel,
+  getShouldMigrateKeyMetaNullToKeyMetaCreatedAt,
+  getShouldMigrateKeystoreSeedsWithoutHdPath,
+  migrateKeyMetaNullToKeyMetaCreatedAt,
+  migrateKeyPreferencesToKeystoreKeys,
+  migrateKeystoreSeedsWithoutHdPathTemplate
+} from '../../libs/keys/keys'
 import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter'
 
 const scryptDefaults = { N: 131072, r: 8, p: 1, dkLen: 64 }
@@ -42,10 +57,13 @@ const STATUS_WRAPPED_METHODS = {
   unlockWithSecret: 'INITIAL',
   addSecret: 'INITIAL',
   addSeed: 'INITIAL',
+  moveTempSeedToKeystoreSeeds: 'INITIAL',
+  deleteSavedSeed: 'INITIAL',
   removeSecret: 'INITIAL',
   addKeys: 'INITIAL',
   addKeysExternallyStored: 'INITIAL',
-  changeKeystorePassword: 'INITIAL'
+  changeKeystorePassword: 'INITIAL',
+  updateKeyPreferences: 'INITIAL'
 } as const
 
 function getBytesForSecret(secret: string): ArrayLike<number> {
@@ -86,7 +104,13 @@ export class KeystoreController extends EventEmitter {
 
   #storage: Storage
 
-  #keystoreSeeds: string[] = []
+  #keystoreSeeds: KeystoreSeed[] = []
+
+  // when importing a seed, save it temporary here before deciding
+  // whether to place it in #keystoreSeeds or delete it
+  //
+  // this should be done only if there isn't a saved seed already
+  #tempSeed: KeystoreSeed | null = null
 
   #keystoreSigners: Partial<{ [key in Key['type']]: KeystoreSignerType }>
 
@@ -103,24 +127,55 @@ export class KeystoreController extends EventEmitter {
   // Holds the initial load promise, so that one can wait until it completes
   #initialLoadPromise: Promise<void>
 
+  #windowManager: WindowManager
+
   constructor(
     _storage: Storage,
-    _keystoreSigners: Partial<{ [key in Key['type']]: KeystoreSignerType }>
+    _keystoreSigners: Partial<{ [key in Key['type']]: KeystoreSignerType }>,
+    windowManager: WindowManager
   ) {
     super()
     this.#storage = _storage
     this.#keystoreSigners = _keystoreSigners
     this.#mainKey = null
     this.keyStoreUid = null
+    this.#windowManager = windowManager
 
     this.#initialLoadPromise = this.#load()
   }
 
   async #load() {
     try {
-      this.#keystoreSeeds = await this.#storage.get('keystoreSeeds', [])
-      this.#keystoreKeys = await this.#storage.get('keystoreKeys', [])
-      this.keyStoreUid = await this.#storage.get('keyStoreUid', null)
+      const [keystoreSeeds, keyStoreUid, keystoreKeys, keyPreferences] = await Promise.all([
+        this.#storage.get('keystoreSeeds', []),
+        this.#storage.get('keyStoreUid', null),
+        this.#storage.get('keystoreKeys', []),
+        this.#storage.get('keyPreferences', [])
+      ])
+      this.keyStoreUid = keyStoreUid
+
+      if (getShouldMigrateKeystoreSeedsWithoutHdPath(keystoreSeeds)) {
+        // Cast to the old type (string[]) to avoid TS errors
+        const preMigrationKeystoreSeeds = keystoreSeeds as unknown as string[]
+        this.#keystoreSeeds = migrateKeystoreSeedsWithoutHdPathTemplate(preMigrationKeystoreSeeds)
+        await this.#storage.set('keystoreSeeds', this.#keystoreSeeds)
+      } else {
+        this.#keystoreSeeds = keystoreSeeds
+      }
+
+      const shouldMigrateKeyPreferencesToKeystoreKeys = keyPreferences.length > 0
+      if (shouldMigrateKeyPreferencesToKeystoreKeys) {
+        this.#keystoreKeys = migrateKeyPreferencesToKeystoreKeys(keyPreferences, keystoreKeys)
+        await this.#storage.set('keystoreKeys', this.#keystoreKeys)
+        await this.#storage.remove('keyPreferences')
+      } else {
+        this.#keystoreKeys = keystoreKeys
+      }
+
+      if (getShouldMigrateKeyMetaNullToKeyMetaCreatedAt(this.#keystoreKeys)) {
+        this.#keystoreKeys = migrateKeyMetaNullToKeyMetaCreatedAt(this.#keystoreKeys)
+        await this.#storage.set('keystoreKeys', this.#keystoreKeys)
+      }
     } catch (e) {
       this.emitError({
         message:
@@ -147,6 +202,7 @@ export class KeystoreController extends EventEmitter {
 
   lock() {
     this.#mainKey = null
+    if (this.#tempSeed) this.deleteTempSeed(false)
     this.emitUpdate()
   }
 
@@ -212,9 +268,11 @@ export class KeystoreController extends EventEmitter {
     const aesCtr = new aes.ModeOfOperation.ctr(derivedKey, counter)
     const mac = keccak256(concat([macPrefix, aesEncrypted.ciphertext]))
     if (mac !== aesEncrypted.mac) {
-      this.errorMessage = 'Invalid Device Password.'
+      this.errorMessage = 'Incorrect password. Please try again.'
       this.emitUpdate()
-      return
+
+      const error = new Error(this.errorMessage)
+      throw new EmittableError({ level: 'silent', message: this.errorMessage, error })
     }
     this.errorMessage = ''
 
@@ -332,17 +390,25 @@ export class KeystoreController extends EventEmitter {
   }
 
   get keys(): Key[] {
-    return this.#keystoreKeys.map(({ addr, type, dedicatedToOneSA, meta }) => {
+    return this.#keystoreKeys.map(({ addr, type, label, dedicatedToOneSA, meta }) => {
       // Written with this 'internal' type guard (if) on purpose, because this
       // way TypeScript will be able to narrow down the types properly and infer
       // the return type of the map function correctly.
       if (type === 'internal') {
-        return { addr, type, dedicatedToOneSA, meta, isExternallyStored: false }
+        return {
+          addr,
+          type,
+          label,
+          dedicatedToOneSA,
+          meta,
+          isExternallyStored: false
+        }
       }
 
       return {
         addr,
         type,
+        label,
         dedicatedToOneSA,
         meta: meta as ExternalKey['meta'],
         isExternallyStored: true
@@ -350,7 +416,7 @@ export class KeystoreController extends EventEmitter {
     })
   }
 
-  async #addSeed(seed: string) {
+  async #getEncryptedSeed(seed: KeystoreSeed['seed']): Promise<string> {
     await this.#initialLoadPromise
 
     if (this.#mainKey === null)
@@ -369,10 +435,10 @@ export class KeystoreController extends EventEmitter {
     }
 
     // Currently we support only one seed phrase to be added to the keystore
-    // this fist seed phrase will become the default seed phrase of the wallet
+    // this fist seed phrase will become the saved seed phrase of the wallet
     if (this.#keystoreSeeds.length) {
       throw new EmittableError({
-        message: 'You can have only one default seed phrase for that wallet',
+        message: 'You can have only one saved seed in the extension',
         level: 'major',
         error: new Error(
           'keystore: seed phase already added. Storing multiple seed phrases not supported yet'
@@ -382,15 +448,119 @@ export class KeystoreController extends EventEmitter {
 
     // Set up the cipher
     const counter = new aes.Counter(this.#mainKey!.iv) // TS compiler fails to detect we check for null above
-    const aesCtr = new aes.ModeOfOperation.ctr(this.#mainKey!.key, counter) // TS compiler fails to detect we check for null above
-    this.#keystoreSeeds.push(hexlify(aesCtr.encrypt(new TextEncoder().encode(seed))))
+    const aesCtr = new aes.ModeOfOperation.ctr(this.#mainKey!.key, counter) // TS compiler fails to detect we check for null above\
+    return hexlify(aesCtr.encrypt(new TextEncoder().encode(seed)))
+  }
+
+  async addSeedToTemp({ seed, hdPathTemplate }: KeystoreSeed) {
+    const validHdPath = DERIVATION_OPTIONS.some((o) => o.value === hdPathTemplate)
+    if (!validHdPath)
+      throw new EmittableError({
+        message:
+          'Incorrect derivation path when trying to update the temp seed. Please contact support',
+        level: 'major',
+        error: new Error('keystore: hd path to temp seed incorrect')
+      })
+
+    this.#tempSeed = {
+      seed: await this.#getEncryptedSeed(seed),
+      hdPathTemplate
+    }
+
+    this.emitUpdate()
+  }
+
+  deleteTempSeed(shouldUpdate = true) {
+    this.#tempSeed = null
+    if (shouldUpdate) this.emitUpdate()
+  }
+
+  async #moveTempSeedToKeystoreSeeds() {
+    if (this.#mainKey === null)
+      throw new EmittableError({
+        message: KEYSTORE_UNEXPECTED_ERROR_MESSAGE,
+        level: 'major',
+        error: new Error('keystore: needs to be unlocked')
+      })
+
+    // Currently we support only one seed phrase to be added to the keystore
+    // this fist seed phrase will become the saved seed phrase of the wallet
+    if (this.#keystoreSeeds.length) {
+      throw new EmittableError({
+        message: 'You can have only one saved seed in the extension',
+        level: 'major',
+        error: new Error(
+          'keystore: seed phase already added. Storing multiple seed phrases not supported yet'
+        )
+      })
+    }
+
+    if (!this.#tempSeed) {
+      throw new EmittableError({
+        message:
+          'Imported seed no longer exists in the extension. If you want to save it, please re-import it',
+        level: 'major',
+        error: new Error('keystore: imported seed deleted although a request to save it was made')
+      })
+    }
+
+    this.#keystoreSeeds.push(this.#tempSeed)
+    await this.#storage.set('keystoreSeeds', this.#keystoreSeeds)
+    this.#tempSeed = null
+    this.emitUpdate()
+  }
+
+  async moveTempSeedToKeystoreSeeds() {
+    await this.#initialLoadPromise
+    await this.withStatus('moveTempSeedToKeystoreSeeds', () => this.#moveTempSeedToKeystoreSeeds())
+  }
+
+  async #addSeed({ seed, hdPathTemplate }: KeystoreSeed) {
+    this.#keystoreSeeds.push({
+      seed: await this.#getEncryptedSeed(seed),
+      hdPathTemplate
+    })
     await this.#storage.set('keystoreSeeds', this.#keystoreSeeds)
 
     this.emitUpdate()
   }
 
-  async addSeed(seed: string) {
-    await this.withStatus('addSeed', () => this.#addSeed(seed))
+  async addSeed(keystoreSeed: KeystoreSeed) {
+    await this.withStatus('addSeed', () => this.#addSeed(keystoreSeed))
+  }
+
+  async changeTempSeedHdPathTemplateIfNeeded(nextHdPathTemplate?: HD_PATH_TEMPLATE_TYPE) {
+    if (!nextHdPathTemplate) return // should never happen
+
+    await this.#initialLoadPromise
+
+    if (!this.isUnlocked) throw new Error('keystore: not unlocked')
+    if (!this.#tempSeed) throw new Error('keystore: no temp seed at the moment')
+
+    const isTheSameHdPathTemplate = this.#tempSeed.hdPathTemplate === nextHdPathTemplate
+    if (isTheSameHdPathTemplate) return
+
+    this.#tempSeed.hdPathTemplate = nextHdPathTemplate
+
+    this.emitUpdate()
+  }
+
+  async changeSavedSeedHdPathTemplateIfNeeded(nextHdPathTemplate?: HD_PATH_TEMPLATE_TYPE) {
+    if (!nextHdPathTemplate) return // should never happen
+
+    await this.#initialLoadPromise
+
+    if (!this.isUnlocked) throw new Error('keystore: not unlocked')
+    if (!this.#keystoreSeeds.length) throw new Error('keystore: no seed phrase added yet')
+
+    const isTheSameHdPathTemplate = this.#keystoreSeeds[0].hdPathTemplate === nextHdPathTemplate
+    if (isTheSameHdPathTemplate) return
+
+    // As of v4.33.0 we support only one seed phrase (saved seed) to be added to the keystore
+    this.#keystoreSeeds[0].hdPathTemplate = nextHdPathTemplate
+    await this.#storage.set('keystoreSeeds', this.#keystoreSeeds)
+
+    this.emitUpdate()
   }
 
   async #addKeysExternallyStored(keysToAdd: ExternalKey[]) {
@@ -414,9 +584,10 @@ export class KeystoreController extends EventEmitter {
     const keys = this.#keystoreKeys
 
     const newKeys = uniqueKeysToAdd
-      .map(({ addr, type, dedicatedToOneSA, meta }) => ({
+      .map(({ addr, type, label, dedicatedToOneSA, meta }) => ({
         addr,
         type,
+        label,
         dedicatedToOneSA,
         meta,
         privKey: null
@@ -436,7 +607,7 @@ export class KeystoreController extends EventEmitter {
     await this.withStatus('addKeysExternallyStored', () => this.#addKeysExternallyStored(keysToAdd))
   }
 
-  async #addKeys(keysToAdd: { privateKey: string; dedicatedToOneSA: boolean }[]) {
+  async #addKeys(keysToAdd: ReadyToAddKeys['internal']) {
     await this.#initialLoadPromise
     if (!keysToAdd.length) return
     if (this.#mainKey === null)
@@ -461,7 +632,7 @@ export class KeystoreController extends EventEmitter {
     const keys = this.#keystoreKeys
 
     const newKeys: StoredKey[] = uniqueKeysToAdd
-      .map(({ privateKey, dedicatedToOneSA }) => {
+      .map(({ addr, type, label, privateKey, dedicatedToOneSA, meta }) => {
         // eslint-disable-next-line no-param-reassign
         privateKey = privateKey.substring(0, 2) === '0x' ? privateKey.substring(2) : privateKey
 
@@ -469,16 +640,13 @@ export class KeystoreController extends EventEmitter {
         const counter = new aes.Counter(this.#mainKey!.iv) // TS compiler fails to detect we check for null above
         const aesCtr = new aes.ModeOfOperation.ctr(this.#mainKey!.key, counter) // TS compiler fails to detect we check for null above
 
-        // Store the key
-        // Terminology: this private key represents an EOA wallet, which is why ethers calls it Wallet, but we treat it as a key here
-        const wallet = new Wallet(privateKey)
         return {
-          addr: wallet.address,
-          type: 'internal' as 'internal',
+          addr,
+          type,
+          label,
           dedicatedToOneSA,
-          // @TODO: consider an MAC?
-          privKey: hexlify(aesCtr.encrypt(aes.utils.hex.toBytes(privateKey))),
-          meta: null
+          privKey: hexlify(aesCtr.encrypt(aes.utils.hex.toBytes(privateKey))), // TODO: consider a MAC?
+          meta
         }
       })
       // No need to re-add keys that are already added, private key never changes
@@ -492,7 +660,7 @@ export class KeystoreController extends EventEmitter {
     await this.#storage.set('keystoreKeys', nextKeys)
   }
 
-  async addKeys(keysToAdd: { privateKey: string; dedicatedToOneSA: boolean }[]) {
+  async addKeys(keysToAdd: ReadyToAddKeys['internal']) {
     await this.withStatus('addKeys', () => this.#addKeys(keysToAdd))
   }
 
@@ -542,15 +710,17 @@ export class KeystoreController extends EventEmitter {
     return JSON.stringify(keyBackup)
   }
 
-  /*
-    DOCS
-    keyAddress: string - the address of the key you want to export
-    publicKey: string - the public key, with which to asymmetrically encypt it (used for key sync with other device's keystoreId)
-  */
-  async exportKeyWithPublicKeyEncryption(
-    keyAddress: string,
-    publicKey: string
-  ): Promise<Encrypted> {
+  async sendPrivateKeyToUi(keyAddress: string) {
+    const decryptedPrivateKey = await this.#getPrivateKey(keyAddress)
+    this.#windowManager.sendWindowUiMessage({ privateKey: `0x${decryptedPrivateKey}` })
+  }
+
+  async sendSeedToUi() {
+    const decrypted = await this.getSavedSeed()
+    this.#windowManager.sendWindowUiMessage({ seed: decrypted.seed })
+  }
+
+  async #getPrivateKey(keyAddress: string): Promise<string> {
     await this.#initialLoadPromise
     if (this.#mainKey === null) throw new Error('keystore: needs to be unlocked')
     const keys = this.#keystoreKeys
@@ -565,7 +735,21 @@ export class KeystoreController extends EventEmitter {
     const aesCtr = new aes.ModeOfOperation.ctr(this.#mainKey.key, counter)
     // encrypt the pk of keyAddress with publicKey
     const decryptedBytes = aesCtr.decrypt(encryptedBytes)
-    const decryptedPrivateKey = aes.utils.hex.fromBytes(decryptedBytes)
+    return aes.utils.hex.fromBytes(decryptedBytes)
+  }
+
+  /**
+   * Export with public key encrypt
+   *
+   * @param keyAddress string - the address of the key you want to export
+   * @param publicKey string - the public key, with which to asymmetrically encrypt it (used for key sync with other device's keystoreId)
+   * @returns Encrypted
+   */
+  async exportKeyWithPublicKeyEncryption(
+    keyAddress: string,
+    publicKey: string
+  ): Promise<Encrypted> {
+    const decryptedPrivateKey = await this.#getPrivateKey(keyAddress)
     const result = await encryptWithPublicKey(publicKey, decryptedPrivateKey)
 
     return result
@@ -579,7 +763,25 @@ export class KeystoreController extends EventEmitter {
     )
     if (!privateKey) throw new Error('keystore: wrong encryptedSk or private key')
 
-    await this.addKeys([{ privateKey, dedicatedToOneSA }])
+    const keyToAdd: {
+      addr: Key['addr']
+      label: string
+      type: 'internal'
+      privateKey: string
+      dedicatedToOneSA: Key['dedicatedToOneSA']
+      meta: InternalKey['meta']
+    } = {
+      addr: new Wallet(privateKey).address,
+      privateKey,
+      label: getDefaultKeyLabel(this.keys, 0),
+      type: 'internal',
+      dedicatedToOneSA,
+      meta: {
+        createdAt: new Date().getTime()
+      }
+    }
+
+    await this.addKeys([keyToAdd])
   }
 
   async getSigner(keyAddress: Key['addr'], keyType: Key['type']) {
@@ -588,11 +790,12 @@ export class KeystoreController extends EventEmitter {
     const storedKey = keys.find((x: StoredKey) => x.addr === keyAddress && x.type === keyType)
 
     if (!storedKey) throw new Error('keystore: key not found')
-    const { addr, type, dedicatedToOneSA, meta } = storedKey
+    const { addr, type, label, dedicatedToOneSA, meta } = storedKey
 
     const key = {
       addr,
       type,
+      label,
       dedicatedToOneSA,
       meta,
       isExternallyStored: type !== 'internal'
@@ -620,19 +823,21 @@ export class KeystoreController extends EventEmitter {
     return new SignerInitializer(key)
   }
 
-  async getDefaultSeed() {
+  async getSavedSeed() {
     await this.#initialLoadPromise
 
     if (!this.isUnlocked) throw new Error('keystore: not unlocked')
     if (!this.#keystoreSeeds.length) throw new Error('keystore: no seed phrase added yet')
 
-    const encryptedSeedBytes = getBytes(this.#keystoreSeeds[0])
+    const hdPathTemplate = this.#keystoreSeeds[0].hdPathTemplate
+    const encryptedSeedBytes = getBytes(this.#keystoreSeeds[0].seed)
     // @ts-ignore
     const counter = new aes.Counter(this.#mainKey.iv)
     // @ts-ignore
     const aesCtr = new aes.ModeOfOperation.ctr(this.#mainKey.key, counter)
     const decryptedSeedBytes = aesCtr.decrypt(encryptedSeedBytes)
-    return new TextDecoder().decode(decryptedSeedBytes)
+    const decryptedSeed = new TextDecoder().decode(decryptedSeedBytes)
+    return { seed: decryptedSeed, hdPathTemplate }
   }
 
   async #changeKeystorePassword(newSecret: string, oldSecret?: string) {
@@ -674,6 +879,39 @@ export class KeystoreController extends EventEmitter {
     )
   }
 
+  async updateKeyPreferences(
+    keys: { addr: Key['addr']; type: Key['type']; preferences: KeyPreferences }[]
+  ) {
+    await this.withStatus('updateKeyPreferences', async () => this.#updateKeyPreferences(keys))
+  }
+
+  async #updateKeyPreferences(
+    keys: { addr: Key['addr']; type: Key['type']; preferences: KeyPreferences }[]
+  ) {
+    this.#keystoreKeys = this.#keystoreKeys.map((keystoreKey) => {
+      const key = keys.find((k) => k.addr === keystoreKey.addr && k.type === keystoreKey.type)
+
+      if (!key) return keystoreKey
+
+      return { ...keystoreKey, ...key.preferences }
+    })
+    await this.#storage.set('keystoreKeys', this.#keystoreKeys)
+    this.emitUpdate()
+  }
+
+  async deleteSavedSeed() {
+    await this.withStatus('deleteSavedSeed', () => this.#deleteSavedSeed())
+  }
+
+  async #deleteSavedSeed() {
+    await this.#initialLoadPromise
+
+    this.#keystoreSeeds = []
+    await this.#storage.set('keystoreSeeds', this.#keystoreSeeds)
+
+    this.emitUpdate()
+  }
+
   resetErrorState() {
     this.errorMessage = ''
     this.emitUpdate()
@@ -683,8 +921,32 @@ export class KeystoreController extends EventEmitter {
     return this.#keystoreSecrets.some((x) => x.id === 'password')
   }
 
-  get hasKeystoreDefaultSeed() {
+  get hasKeystoreSavedSeed() {
     return !!this.#keystoreSeeds.length
+  }
+
+  get hasKeystoreTempSeed() {
+    return !!this.#tempSeed
+  }
+
+  get banners(): Banner[] {
+    if (!this.#tempSeed) return []
+
+    return [
+      {
+        id: 'tempSeed',
+        type: 'warning',
+        category: 'temp-seed-not-confirmed',
+        title: 'You have an unsaved imported seed',
+        text: '',
+        actions: [
+          {
+            label: 'Check',
+            actionName: 'confirm-temp-seed'
+          }
+        ]
+      }
+    ]
   }
 
   toJSON() {
@@ -694,7 +956,9 @@ export class KeystoreController extends EventEmitter {
       isUnlocked: this.isUnlocked, // includes the getter in the stringified instance
       keys: this.keys,
       hasPasswordSecret: this.hasPasswordSecret,
-      hasKeystoreDefaultSeed: this.hasKeystoreDefaultSeed
+      hasKeystoreSavedSeed: this.hasKeystoreSavedSeed,
+      hasKeystoreTempSeed: this.hasKeystoreTempSeed,
+      banners: this.banners
     }
   }
 }

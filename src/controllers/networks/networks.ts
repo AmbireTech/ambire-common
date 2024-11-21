@@ -106,7 +106,16 @@ export class NetworksController extends EventEmitter {
     predefinedNetworks.forEach((n) => {
       this.#networks[n.id] = {
         ...n, // add the latest structure of the predefined network to include the new props that are not in storage yet
-        ...(this.#networks[n.id] || {}) // override with stored props
+        ...(this.#networks[n.id] || {}), // override with stored props
+        // attributes that should take predefined priority
+        feeOptions: n.feeOptions,
+        hasRelayer: n.hasRelayer,
+        erc4337: {
+          enabled: n.erc4337?.enabled,
+          hasPaymaster: n.erc4337?.hasPaymaster
+        },
+        nativeAssetId: n.nativeAssetId,
+        nativeAssetSymbol: n.nativeAssetSymbol
       }
     })
     // without await to avoid performance impact on load
@@ -208,18 +217,20 @@ export class NetworksController extends EventEmitter {
     this.#networks[networkId] = { ...this.#networks[networkId], ...changedNetwork }
     this.#onAddOrUpdateNetwork(this.#networks[networkId])
     await this.#storage.set('networks', this.#networks)
-    this.emitUpdate()
 
-    // Do not wait the rpc validation in order to complete the execution of updateNetwork
-    // eslint-disable-next-line @typescript-eslint/no-floating-promises
-    ;(async () => {
-      // if the rpcUrls have changed, call the RPC and check whether it supports state overrided. If it doesn't, add a warning
+    const checkRPC = async (
+      networkToAddOrUpdate: {
+        chainId: bigint
+        rpcUrl: string
+        info?: NetworkInfoLoading<NetworkInfo> | undefined
+      } | null
+    ) => {
       if (changedNetwork.selectedRpcUrl) {
         if (
-          this.networkToAddOrUpdate?.info &&
-          Object.values(this.networkToAddOrUpdate.info).every((prop) => prop !== 'LOADING')
+          networkToAddOrUpdate?.info &&
+          Object.values(networkToAddOrUpdate.info).every((prop) => prop !== 'LOADING')
         ) {
-          const info = { ...(this.networkToAddOrUpdate.info as NetworkInfo) }
+          const info = { ...(networkToAddOrUpdate.info as NetworkInfo) }
           const { feeOptions } = info
 
           // eslint-disable-next-line no-param-reassign
@@ -262,7 +273,14 @@ export class NetworksController extends EventEmitter {
           }
         )
       }
-    })()
+    }
+
+    // Do not wait the rpc validation in order to complete the execution of updateNetwork
+    // eslint-disable-next-line @typescript-eslint/no-floating-promises
+    checkRPC(this.networkToAddOrUpdate)
+    this.networkToAddOrUpdate = null
+
+    this.emitUpdate()
   }
 
   async updateNetwork(network: Partial<Network>, networkId: NetworkId) {

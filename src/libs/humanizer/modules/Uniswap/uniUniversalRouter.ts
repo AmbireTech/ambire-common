@@ -14,7 +14,7 @@ import {
 } from '../../utils'
 import { COMMANDS, COMMANDS_DESCRIPTIONS } from './Commands'
 import { HumanizerUniMatcher } from './interfaces'
-import { getUniRecipientText, joinWithAndLabel, parsePath } from './utils'
+import { getUniRecipientText, parsePath, uniReduce } from './utils'
 
 const coder = new AbiCoder()
 
@@ -30,27 +30,21 @@ const extractParams = (inputsDetails: any, input: any) => {
   return params
 }
 
+// this function splits uniswap commands from single hex string to multiple hex strings
 // '0x1234' => ['0x12', '0x34']
-function parseCommands(commands: string, emitError?: Function): string[] | null {
-  try {
-    if (!commands.startsWith('0x') || commands.length % 2 !== 0) return null
-    const hex = commands.slice(2)
-    const hexRegex = /[0-9A-Fa-f]/g
-    if (!hexRegex.test(hex)) return null
-    const res = hex.match(/.{2}/g)?.map((p: string) => `0x${p}`)
-    return res as string[]
-  } catch (e) {
-    emitError &&
-      emitError({
-        level: 'minor',
-        message: 'Unexpected error in parsing uniswap commands',
-        error: e
-      })
-    return null
+function parseCommands(commands: string): string[] | null {
+  // all commands are 1 byte = 2 hex chars
+  if (commands.length % 2) return null
+  if (!/^0x[0-9A-Fa-f]+$/.test(commands)) return null
+  const res: string[] = []
+  // iterate over pairs of chars
+  for (let i = 2; i < commands.length; i += 2) {
+    res.push(`0x${commands.slice(i, i + 2)}`)
   }
+  return res
 }
 
-export const uniUniversalRouter = (options?: any): HumanizerUniMatcher => {
+export const uniUniversalRouter = (): HumanizerUniMatcher => {
   const ifaceUniversalRouter = new Interface(UniswapUniversalRouter)
   return {
     [`${
@@ -59,7 +53,7 @@ export const uniUniversalRouter = (options?: any): HumanizerUniMatcher => {
       )?.selector
     }`]: (accountOp: AccountOp, call: IrCall) => {
       const [commands, inputs, deadline] = ifaceUniversalRouter.parseTransaction(call)?.args || []
-      const parsedCommands = parseCommands(commands, options?.emitError)
+      const parsedCommands = parseCommands(commands)
       const parsed: HumanizerVisualization[][] = []
 
       parsedCommands
@@ -71,7 +65,7 @@ export const uniUniversalRouter = (options?: any): HumanizerUniMatcher => {
               parsed.push([
                 getAction('Swap'),
                 getToken(path[0], params.amountIn),
-                getLabel('for at least'),
+                getLabel('for'),
                 getToken(path[path.length - 1], params.amountOutMin),
                 getDeadline(deadline)
               ])
@@ -81,7 +75,7 @@ export const uniUniversalRouter = (options?: any): HumanizerUniMatcher => {
               const path = parsePath(params.path)
 
               parsed.push([
-                getAction('Swap up  to'),
+                getAction('Swap up to'),
                 getToken(path[path.length - 1], params.amountInMax),
                 getLabel('for'),
                 getToken(path[0], params.amountOut),
@@ -138,7 +132,7 @@ export const uniUniversalRouter = (options?: any): HumanizerUniMatcher => {
               parsed.push([
                 getAction('Swap'),
                 getToken(path[0], params.amountIn),
-                getLabel('for at least'),
+                getLabel('for'),
                 getToken(path[path.length - 1], params.amountOutMin),
                 getDeadline(deadline)
               ])
@@ -148,7 +142,7 @@ export const uniUniversalRouter = (options?: any): HumanizerUniMatcher => {
               const path = params.path
 
               parsed.push([
-                getAction('Swap up  to'),
+                getAction('Swap up to'),
                 getToken(path[0], params.amountInMax),
                 getLabel('for'),
                 getToken(path[path.length - 1], params.amountOut),
@@ -188,7 +182,7 @@ export const uniUniversalRouter = (options?: any): HumanizerUniMatcher => {
           })
         : parsed.push(getUnknownVisualization('Uniswap V3', call))
 
-      return joinWithAndLabel(parsed)
+      return uniReduce(parsed)
     }
   }
 }

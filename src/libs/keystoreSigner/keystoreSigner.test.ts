@@ -14,9 +14,12 @@ const keyPublicAddress = new Wallet(privKey).address
 const key: Key = {
   addr: keyPublicAddress,
   type: 'internal',
+  label: 'Key 1',
   dedicatedToOneSA: true,
   isExternallyStored: false,
-  meta: null
+  meta: {
+    createdAt: new Date().getTime()
+  }
 }
 
 describe('KeystoreSigner', () => {

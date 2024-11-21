@@ -4,11 +4,12 @@ import IERC20 from '../../../contracts/compiled/IERC20.json'
 import gasTankFeeTokens from '../../consts/gasTankFeeTokens'
 import { PINNED_TOKENS } from '../../consts/pinnedTokens'
 import { Account, AccountId } from '../../interfaces/account'
-import { NetworkId } from '../../interfaces/network'
+import { Network, NetworkId } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
 import { isSmartAccount } from '../account/account'
 import { CustomToken } from './customToken'
 import {
+  AccountState,
   AdditionalPortfolioNetworkResult,
   ExternalHintsAPIResponse,
   PortfolioLibGetResult,
@@ -54,7 +55,7 @@ export function getFlags(
       (isRewardsOrGasTank ? t.networkId === tokenNetwork : t.networkId === networkId)
   )
 
-  const canTopUpGasTank = foundFeeToken && !foundFeeToken?.disableGasTankDeposit
+  const canTopUpGasTank = foundFeeToken && !foundFeeToken?.disableGasTankDeposit && !rewardsType
   const isFeeToken =
     address === ZeroAddress ||
     // disable if not in gas tank
@@ -131,6 +132,21 @@ export const getTotal = (t: TokenResult[]) =>
 
     return localCur
   }, {})
+
+export const getAccountPortfolioTotal = (
+  accountPortfolio: AccountState,
+  excludeNetworks: Network['id'][] = []
+) => {
+  if (!accountPortfolio) return 0
+
+  return Object.keys(accountPortfolio).reduce((acc, key) => {
+    if (excludeNetworks.includes(key)) return acc
+
+    const networkData = accountPortfolio[key]
+    const networkTotalAmountUSD = networkData?.result?.total.usd || 0
+    return acc + networkTotalAmountUSD
+  }, 0)
+}
 
 export const getPinnedGasTankTokens = (
   availableGasTankAssets: TokenResult[],
@@ -219,7 +235,7 @@ export function getUpdatedHints(
   if (!previousHints.fromExternalAPI) previousHints.fromExternalAPI = {}
   if (!previousHints.learnedTokens) previousHints.learnedTokens = {}
 
-  const { learnedTokens } = previousHints
+  const { learnedTokens, learnedNfts } = previousHints
   const latestERC20HintsFromExternalAPI = latestHintsFromExternalAPI?.erc20s || []
   const networkLearnedTokens = learnedTokens[networkId] || {}
 
@@ -299,37 +315,47 @@ export function getUpdatedHints(
       }
     }
   }
-
   // Update the external hints for [network:account] with the latest from the external API
   previousHints.fromExternalAPI[key] = latestHintsFromExternalAPI
 
   return {
     fromExternalAPI: previousHints.fromExternalAPI,
-    learnedTokens
+    learnedTokens,
+    learnedNfts
   }
+}
+
+export const getTokensReadyToLearn = (toBeLearnedTokens: string[], resultTokens: TokenResult[]) => {
+  if (!toBeLearnedTokens || !resultTokens || !toBeLearnedTokens.length || !resultTokens.length)
+    return []
+
+  return toBeLearnedTokens.filter((address) =>
+    resultTokens.find((resultToken) => resultToken.address === address && resultToken.amount > 0n)
+  )
 }
 
 export const tokenFilter = (
   token: TokenResult,
   nativeToken: TokenResult,
-  network: { id: NetworkId },
+  network: Network,
   hasNonZeroTokens: boolean,
   additionalHints: string[] | undefined,
   isTokenPreference: boolean
 ): boolean => {
-  // always include tokens added as a preference
-  if (isTokenPreference) return true
-
   // Never add ERC20 tokens that represent the network's native token.
   // For instance, on Polygon, we have this token: `0x0000000000000000000000000000000000001010`.
-  // It mimics the native MATIC token (same symbol, same amount) and is shown twice in the Dashboard.
+  // It mimics the native POL token (same symbol, same amount) and is shown twice in the Dashboard.
   // From a user's perspective, the token is duplicated and counted twice in the balance.
   const isERC20NativeRepresentation =
-    token.symbol === nativeToken?.symbol &&
+    (token.symbol === nativeToken?.symbol ||
+      network.oldNativeAssetSymbols?.includes(token.symbol)) &&
     token.amount === nativeToken.amount &&
     token.address !== ZeroAddress
 
   if (isERC20NativeRepresentation) return false
+
+  // always include tokens added as a preference
+  if (isTokenPreference) return true
 
   // always include > 0 amount and native token
   if (token.amount > 0 || token.address === ZeroAddress) return true
@@ -357,7 +383,7 @@ export const tokenFilter = (
  */
 export const processTokens = (
   tokenResults: TokenResult[],
-  network: { id: NetworkId },
+  network: Network,
   hasNonZeroTokens: boolean,
   additionalHints: string[] | undefined,
   tokenPreferences: CustomToken[]

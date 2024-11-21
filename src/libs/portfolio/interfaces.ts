@@ -23,6 +23,7 @@ export type TokenResult = Omit<CustomToken, 'standard'> & {
     rewardsType: 'wallet-vesting' | 'wallet-rewards' | null
     canTopUpGasTank: boolean
     isFeeToken: boolean
+    isDefiToken?: boolean
   }
 }
 
@@ -78,11 +79,14 @@ export interface PortfolioLibGetResult {
   priceUpdateTime: number
   priceCache: PriceCache
   tokens: TokenResult[]
+  feeTokens: TokenResult[]
   tokenErrors: { error: string; address: string }[]
   collections: CollectionResult[]
   hintsFromExternalAPI: Hints | null
   errors: ExtendedError[]
   blockNumber: number
+  beforeNonce: bigint
+  afterNonce: bigint
 }
 
 interface Total {
@@ -102,11 +106,19 @@ export type ClaimableRewardsData = {
   signedRoot: string
 }
 
+export type AddrVestingData = {
+  addr: string
+  rate: string
+  start: string
+  end: string
+}
+
 // Create the final type with some properties optional
 export type AdditionalPortfolioNetworkResult = Partial<PortfolioLibGetResult> &
   Pick<PortfolioLibGetResult, AdditionalPortfolioProperties> & {
     total: Total
     claimableRewardsData?: ClaimableRewardsData
+    addrVestingData?: AddrVestingData
   }
 
 type PortfolioNetworkResult = Required<AdditionalPortfolioNetworkResult>
@@ -151,6 +163,14 @@ export type PinnedTokens = {
   accountId?: AccountId
 }[]
 
+export type TemporaryTokens = {
+  [networkId: NetworkId]: {
+    isLoading: boolean
+    errors: { error: string; address: string }[]
+    result: { tokens: PortfolioLibGetResult['tokens'] }
+  }
+}
+
 export interface GetOptions {
   baseCurrency: string
   blockTag: string | number
@@ -170,5 +190,32 @@ export interface GetOptions {
 
 export interface PreviousHintsStorage {
   learnedTokens: { [network in NetworkId]: { [tokenAddress: string]: string | null } }
+  learnedNfts: { [network in NetworkId]: { [nftAddress: string]: bigint[] } }
   fromExternalAPI: { [networkAndAccountKey: string]: GetOptions['previousHints'] }
+}
+
+export interface NetworkNonces {
+  [networkId: string]: bigint
+}
+
+export interface TokenAmount {
+  latestAmount: bigint
+  pendingAmount: bigint
+  address: string
+  networkId: string
+}
+
+export type PendingAmounts = {
+  isPending: boolean
+  pendingBalance: bigint
+  pendingToBeSigned?: bigint
+  pendingToBeConfirmed?: bigint
+}
+
+export type FormattedPendingAmounts = Omit<PendingAmounts, 'pendingBalance'> & {
+  pendingBalance: string
+  pendingBalanceFormatted: string
+  pendingBalanceUSDFormatted?: string
+  pendingToBeSignedFormatted?: string
+  pendingToBeConfirmedFormatted?: string
 }

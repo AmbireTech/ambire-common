@@ -1,8 +1,10 @@
-import { expect } from '@jest/globals'
+import { ZeroAddress } from 'ethers'
 
 import humanizerInfo from '../../../../consts/humanizer/humanizerInfo.json'
 import { AccountOp } from '../../../accountOp/accountOp'
-import { HumanizerMeta, HumanizerVisualization, IrCall } from '../../interfaces'
+import { HumanizerMeta, IrCall } from '../../interfaces'
+import { compareHumanizerVisualizations } from '../../testHelpers'
+import { getAction, getAddressVisualization, getLabel, getToken } from '../../utils'
 import { aaveHumanizer } from '.'
 
 const transactions: { [key: string]: Array<IrCall> } = {
@@ -61,43 +63,46 @@ describe('AAVE', () => {
     // humanizerMeta: {}
   }
   test('AAVE', () => {
-    const expectedhumanization = [
+    const expectedHumanization = [
       [
-        { content: 'Deposit' },
-        { type: 'token' },
-        { content: 'to Aave lending pool' },
-        { content: 'on behalf of' },
-        { type: 'address' }
+        getAction('Deposit'),
+        getToken('0xae7ab96520de3a18e5e111b5eaab095312d7fe84', 11720186333766878310n),
+        getLabel('to'),
+        getAddressVisualization('0x7d2768de32b0b80b7a3454c06bdac94a69ddc7a9'),
+        getLabel('on behalf of'),
+        getAddressVisualization('0x7f4cf2e68f968cc050b3783268c474a15b8bdc2e')
       ],
       [
-        { content: 'Withdraw' },
-        { type: 'token' },
-        { content: 'from Aave lending pool' },
-        { content: 'on behalf of' },
-        { type: 'address' }
+        getAction('Withdraw'),
+        getToken(
+          '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48',
+          115792089237316195423570985008687907853269984665640564039457584007913129639935n
+        ),
+        getLabel('to'),
+        getAddressVisualization('0x7d2768de32b0b80b7a3454c06bdac94a69ddc7a9'),
+        getLabel('on behalf of'),
+        getAddressVisualization('0x8bc110db7029197c3621bea8092ab1996d5dd7be')
       ],
       [
-        { content: 'Deposit' },
-        { type: 'token' },
-        { content: 'to Aave lending pool' },
-        { content: 'on behalf of' },
-        { type: 'address' }
+        getAction('Deposit'),
+        getToken(ZeroAddress, 135592697552000000n),
+        getLabel('to'),
+        getAddressVisualization('0xcc9a0b7c43dc2a5f023bb9b738e45b0ef6b06e04'),
+        getLabel('on behalf of'),
+        getAddressVisualization('0x47c353467326e6bd0c01e728e8f7d1a06a849395')
       ],
       [
-        { content: 'Withdraw' },
-        { type: 'token' },
-        { content: 'from Aave lending pool' },
-        { content: 'on behalf of' },
-        { type: 'address' }
+        getAction('Withdraw'),
+        getToken(ZeroAddress, 473401923n),
+        getLabel('to'),
+        getAddressVisualization('0xcc9a0b7c43dc2a5f023bb9b738e45b0ef6b06e04'),
+        getLabel('on behalf of'),
+        getAddressVisualization('0x0df1a69fcdf15fec04e37aa5eca4268927b111e7')
       ]
     ]
     accountOp.calls = [...transactions.aaveLendingPoolV2, ...transactions.aaveWethGatewayV2]
     let irCalls: IrCall[] = accountOp.calls
-    ;[irCalls] = aaveHumanizer(accountOp, irCalls, humanizerInfo as HumanizerMeta)
-    irCalls.forEach((c, i) =>
-      c?.fullVisualization?.forEach((v: HumanizerVisualization, j: number) =>
-        expect(v).toMatchObject(expectedhumanization[i][j])
-      )
-    )
+    irCalls = aaveHumanizer(accountOp, irCalls, humanizerInfo as HumanizerMeta)
+    compareHumanizerVisualizations(irCalls, expectedHumanization)
   })
 })

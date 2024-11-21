@@ -1,4 +1,4 @@
-import { getCreate2Address, JsonRpcProvider, keccak256 } from 'ethers'
+import { getCreate2Address, keccak256 } from 'ethers'
 
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { PROXY_AMBIRE_ACCOUNT } from '../../consts/deploy'
@@ -19,7 +19,6 @@ import { Fetch } from '../../interfaces/fetch'
 import { KeyIterator } from '../../interfaces/keyIterator'
 import { dedicatedToOneSAPriv, ReadyToAddKeys } from '../../interfaces/keystore'
 import { Network, NetworkId } from '../../interfaces/network'
-import { KeyPreferences } from '../../interfaces/settings'
 import {
   getAccountImportStatus,
   getBasicAccount,
@@ -36,6 +35,8 @@ import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { AccountsController } from '../accounts/accounts'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
+import { NetworksController } from '../networks/networks'
+import { ProvidersController } from '../providers/providers'
 
 export const DEFAULT_PAGE = 1
 export const DEFAULT_PAGE_SIZE = 5
@@ -56,11 +57,17 @@ export class AccountAdderController extends EventEmitter {
 
   #keystore: KeystoreController
 
+  #networks: NetworksController
+
+  #providers: ProvidersController
+
   #keyIterator?: KeyIterator | null
 
   hdPathTemplate?: HD_PATH_TEMPLATE_TYPE
 
   isInitialized: boolean = false
+
+  isInitializedWithSavedSeed: boolean = false
 
   shouldSearchForLinkedAccounts = DEFAULT_SHOULD_SEARCH_FOR_LINKED_ACCOUNTS
 
@@ -81,10 +88,6 @@ export class AccountAdderController extends EventEmitter {
   // user's keystore by the Main Controller
   readyToAddKeys: ReadyToAddKeys = { internal: [], external: [] }
 
-  // The key preferences for the `readyToAddKeys`, that are ready to be added to
-  // the user's settings by the Main Controller
-  readyToAddKeyPreferences: KeyPreferences = []
-
   // Identity for the smart accounts must be created on the Relayer, this
   // represents the status of the operation, needed managing UI state
   addAccountsStatus: 'LOADING' | 'SUCCESS' | 'INITIAL' = 'INITIAL'
@@ -92,6 +95,8 @@ export class AccountAdderController extends EventEmitter {
   accountsLoading: boolean = false
 
   linkedAccountsLoading: boolean = false
+
+  networksWithAccountStateError: NetworkId[] = []
 
   #derivedAccounts: DerivedAccount[] = []
 
@@ -105,17 +110,23 @@ export class AccountAdderController extends EventEmitter {
   constructor({
     accounts,
     keystore,
+    networks,
+    providers,
     relayerUrl,
     fetch
   }: {
     accounts: AccountsController
     keystore: KeystoreController
+    networks: NetworksController
+    providers: ProvidersController
     relayerUrl: string
     fetch: Fetch
   }) {
     super()
     this.#accounts = accounts
     this.#keystore = keystore
+    this.#networks = networks
+    this.#providers = providers
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
   }
 
@@ -221,7 +232,25 @@ export class AccountAdderController extends EventEmitter {
     }))
   }
 
-  init({
+  async #isKeyIteratorInitializedWithTheSavedSeed() {
+    if (this.#keyIterator?.subType !== 'seed') return false
+
+    if (!this.#keystore.hasKeystoreSavedSeed) return false
+
+    const savedSeed = await this.#keystore.getSavedSeed()
+    if (!savedSeed) return false
+
+    return !!this.#keyIterator?.isSeedMatching?.(savedSeed.seed)
+  }
+
+  async #getInitialHdPathTemplate(defaultHdPathTemplate: HD_PATH_TEMPLATE_TYPE) {
+    if (!this.isInitializedWithSavedSeed) return defaultHdPathTemplate
+
+    const savedSeed = await this.#keystore.getSavedSeed()
+    return savedSeed.hdPathTemplate || defaultHdPathTemplate
+  }
+
+  async init({
     keyIterator,
     page,
     pageSize,
@@ -235,13 +264,14 @@ export class AccountAdderController extends EventEmitter {
     hdPathTemplate: HD_PATH_TEMPLATE_TYPE
     shouldSearchForLinkedAccounts?: boolean
     shouldGetAccountsUsedOnNetworks?: boolean
-  }): void {
+  }) {
     this.#keyIterator = keyIterator
     if (!this.#keyIterator) return this.#throwMissingKeyIterator()
 
     this.page = page || DEFAULT_PAGE
     this.pageSize = pageSize || DEFAULT_PAGE_SIZE
-    this.hdPathTemplate = hdPathTemplate
+    this.isInitializedWithSavedSeed = await this.#isKeyIteratorInitializedWithTheSavedSeed()
+    this.hdPathTemplate = await this.#getInitialHdPathTemplate(hdPathTemplate)
     this.isInitialized = true
     this.#alreadyImportedAccountsOnControllerInit = this.#accounts.accounts
     this.shouldSearchForLinkedAccounts = shouldSearchForLinkedAccounts
@@ -271,28 +301,23 @@ export class AccountAdderController extends EventEmitter {
     this.#derivedAccounts = []
     this.#linkedAccounts = []
     this.readyToAddAccounts = []
+    this.networksWithAccountStateError = []
     this.readyToAddKeys = { internal: [], external: [] }
-    this.readyToAddKeyPreferences = []
     this.isInitialized = false
+    this.isInitializedWithSavedSeed = false
 
     this.emitUpdate()
   }
 
-  // TODO: Not implemented yet
-  setHDPathTemplate({
-    path,
-    networks,
-    providers
-  }: {
-    path: HD_PATH_TEMPLATE_TYPE
-    networks: Network[]
-    providers: { [key: string]: JsonRpcProvider }
-  }): void {
-    this.hdPathTemplate = path
-    this.page = DEFAULT_PAGE
-    this.emitUpdate()
-    // get the first page with the new hdPathTemplate (derivation)
-    this.setPage({ page: DEFAULT_PAGE, networks, providers })
+  async setHDPathTemplate({ hdPathTemplate }: { hdPathTemplate: HD_PATH_TEMPLATE_TYPE }) {
+    this.hdPathTemplate = hdPathTemplate
+
+    // Reset the currently selected accounts, because for the keys of these
+    // accounts, as of v4.32.0, we don't store their hd path. When import
+    // completes, only the latest hd path of the controller is stored.
+    this.selectedAccounts = []
+
+    await this.setPage({ page: DEFAULT_PAGE }) // takes the user back on the first page
   }
 
   #getAccountKeys(account: Account, accountsOnPageWithThisAcc: AccountOnPage[]) {
@@ -397,7 +422,7 @@ export class AccountAdderController extends EventEmitter {
     this.emitUpdate()
   }
 
-  async deselectAccount(account: Account) {
+  deselectAccount(account: Account) {
     if (!this.isInitialized) return this.#throwNotInitialized()
     if (!this.#keyIterator) return this.#throwMissingKeyIterator()
 
@@ -430,18 +455,14 @@ export class AccountAdderController extends EventEmitter {
       return []
     }
 
-    return this.#keyIterator?.retrieveInternalKeys(this.selectedAccounts, this.hdPathTemplate)
+    return this.#keyIterator?.retrieveInternalKeys(
+      this.selectedAccounts,
+      this.hdPathTemplate,
+      this.#keystore.keys
+    )
   }
 
-  async setPage({
-    page = this.page,
-    networks,
-    providers
-  }: {
-    page: number
-    networks: Network[]
-    providers: { [key: string]: JsonRpcProvider }
-  }): Promise<void> {
+  async setPage({ page = this.page }: { page: number }): Promise<void> {
     if (!this.isInitialized) return this.#throwNotInitialized()
     if (!this.#keyIterator) return this.#throwMissingKeyIterator()
 
@@ -458,9 +479,10 @@ export class AccountAdderController extends EventEmitter {
     this.#derivedAccounts = []
     this.#linkedAccounts = []
     this.accountsLoading = true
+    this.networksWithAccountStateError = []
     this.emitUpdate()
     try {
-      this.#derivedAccounts = await this.#deriveAccounts({ networks, providers })
+      this.#derivedAccounts = await this.#deriveAccounts()
 
       if (this.#keyIterator?.type === 'internal' && this.#keyIterator?.subType === 'private-key') {
         const accountsOnPageWithoutTheLinked = this.accountsOnPage.filter((acc) => !acc.isLinked)
@@ -477,7 +499,7 @@ export class AccountAdderController extends EventEmitter {
       }
     } catch (e: any) {
       this.emitError({
-        message: 'Retrieving accounts was canceled or failed.',
+        message: e?.message,
         error: e?.message || 'accountAdder: failed to derive accounts',
         level: 'major'
       })
@@ -485,7 +507,7 @@ export class AccountAdderController extends EventEmitter {
     this.accountsLoading = false
     this.emitUpdate()
 
-    this.#findAndSetLinkedAccounts({
+    await this.#findAndSetLinkedAccounts({
       accounts: this.#derivedAccounts
         .filter(
           (acc) =>
@@ -499,9 +521,7 @@ export class AccountAdderController extends EventEmitter {
             // not at all for linking.
             !isDerivedForSmartAccountKeyOnly(acc.index)
         )
-        .map((acc) => acc.account),
-      networks,
-      providers
+        .map((acc) => acc.account)
     })
   }
 
@@ -514,8 +534,7 @@ export class AccountAdderController extends EventEmitter {
    */
   async addAccounts(
     accounts: SelectedAccountForImport[] = [],
-    readyToAddKeys: ReadyToAddKeys = { internal: [], external: [] },
-    readyToAddKeyPreferences: KeyPreferences = []
+    readyToAddKeys: ReadyToAddKeys = { internal: [], external: [] }
   ) {
     if (!this.isInitialized) return this.#throwNotInitialized()
     if (!this.#keyIterator) return this.#throwMissingKeyIterator()
@@ -546,7 +565,6 @@ export class AccountAdderController extends EventEmitter {
         addr: account.addr,
         ...(account.email ? { email: account.email } : {}),
         associatedKeys: account.initialPrivileges,
-
         creation: {
           factoryAddr: account.creation!.factoryAddr,
           salt: account.creation!.salt,
@@ -607,7 +625,6 @@ export class AccountAdderController extends EventEmitter {
       })
     ]
     this.readyToAddKeys = readyToAddKeys
-    this.readyToAddKeyPreferences = readyToAddKeyPreferences
     this.addAccountsStatus = 'SUCCESS'
     await this.forceEmitUpdate()
 
@@ -648,13 +665,7 @@ export class AccountAdderController extends EventEmitter {
     this.emitUpdate()
   }
 
-  async #deriveAccounts({
-    networks,
-    providers
-  }: {
-    networks: Network[]
-    providers: { [key: string]: JsonRpcProvider }
-  }): Promise<DerivedAccount[]> {
+  async #deriveAccounts(): Promise<DerivedAccount[]> {
     // Should never happen, because before the #deriveAccounts method gets
     // called - there is a check if the #keyIterator exists.
     if (!this.#keyIterator) {
@@ -667,20 +678,28 @@ export class AccountAdderController extends EventEmitter {
     const startIdx = (this.page - 1) * this.pageSize
     const endIdx = (this.page - 1) * this.pageSize + (this.pageSize - 1)
 
+    const indicesToRetrieve = [
+      { from: startIdx, to: endIdx } // Indices for the basic (EOA) accounts
+    ]
+    // Since v4.31.0, do not retrieve smart accounts for the private key
+    // type. That's because we can't use the common derivation offset
+    // (SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET), and deriving smart
+    // accounts out of the private key (with another approach - salt and
+    // extra entropy) was creating confusion.
+    const shouldRetrieveSmartAccountIndices = this.#keyIterator.type !== 'private-key'
+    if (shouldRetrieveSmartAccountIndices) {
+      // Indices for the smart accounts.
+      indicesToRetrieve.push({
+        from: startIdx + SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET,
+        to: endIdx + SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET
+      })
+    }
     // Combine the requests for all accounts in one call to the keyIterator.
     // That's optimization primarily focused on hardware wallets, to reduce the
     // number of calls to the hardware device. This is important, especially
     // for Trezor, because it fires a confirmation popup for each call.
     const combinedBasicAndSmartAccKeys = await this.#keyIterator.retrieve(
-      [
-        // Indices for the basic (EOA) accounts
-        { from: startIdx, to: endIdx },
-        // Indices for the smart accounts
-        {
-          from: startIdx + SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET,
-          to: endIdx + SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET
-        }
-      ],
+      indicesToRetrieve,
       this.hdPathTemplate
     )
 
@@ -698,13 +717,16 @@ export class AccountAdderController extends EventEmitter {
       const slot = startIdx + (index + 1)
 
       // The derived EOA (basic) account which is the key for the smart account
-      const account = getBasicAccount(smartAccKey)
+      const account = getBasicAccount(smartAccKey, this.#accounts.accounts)
       const indexWithOffset = slot - 1 + SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET
       accounts.push({ account, isLinked: false, slot, index: indexWithOffset })
 
       // Derive the Ambire (smart) account
       smartAccountsPromises.push(
-        getSmartAccount([{ addr: smartAccKey, hash: dedicatedToOneSAPriv }])
+        getSmartAccount(
+          [{ addr: smartAccKey, hash: dedicatedToOneSAPriv }],
+          this.#accounts.accounts
+        )
           .then((smartAccount) => {
             return { account: smartAccount, isLinked: false, slot, index: slot - 1 }
           })
@@ -730,15 +752,11 @@ export class AccountAdderController extends EventEmitter {
       const slot = startIdx + (index + 1)
 
       // The EOA (basic) account on this slot
-      const account = getBasicAccount(basicAccKey)
+      const account = getBasicAccount(basicAccKey, this.#accounts.accounts)
       accounts.push({ account, isLinked: false, slot, index: slot - 1 })
     }
 
-    const accountsWithNetworks = await this.#getAccountsUsedOnNetworks({
-      accounts,
-      networks,
-      providers
-    })
+    const accountsWithNetworks = await this.#getAccountsUsedOnNetworks({ accounts })
 
     return accountsWithNetworks
   }
@@ -746,13 +764,9 @@ export class AccountAdderController extends EventEmitter {
   // inner func
   // eslint-disable-next-line class-methods-use-this
   async #getAccountsUsedOnNetworks({
-    accounts,
-    networks,
-    providers
+    accounts
   }: {
     accounts: DerivedAccountWithoutNetworkMeta[]
-    networks: Network[]
-    providers: { [key: string]: JsonRpcProvider }
   }): Promise<DerivedAccount[]> {
     if (!this.shouldGetAccountsUsedOnNetworks) {
       return accounts.map((a) => ({ ...a, account: { ...a.account, usedOnNetworks: [] } }))
@@ -763,29 +777,21 @@ export class AccountAdderController extends EventEmitter {
     )
 
     const networkLookup: { [key: NetworkId]: Network } = {}
-    networks.forEach((network) => {
+    this.#networks.networks.forEach((network) => {
       networkLookup[network.id] = network
     })
 
-    const promises = Object.keys(providers).map(async (providerKey: NetworkId) => {
+    const promises = Object.keys(this.#providers.providers).map(async (providerKey: NetworkId) => {
       const network = networkLookup[providerKey]
       if (network) {
         const accountState = await getAccountState(
-          providers[providerKey],
+          this.#providers.providers[providerKey],
           network,
           accounts.map((acc) => acc.account)
         ).catch(() => {
-          const message = `Failed to determine if accounts are used on ${network.name}.`
-          // Prevents toast spamming
-          if (this.emittedErrors.find((err) => err.message === message)) return
-
-          this.emitError({
-            level: 'major',
-            message,
-            error: new Error(
-              `accountAdder.#getAccountsUsedOnNetworks: failed to determine if accounts are used on ${network.name}`
-            )
-          })
+          console.error('accountAdder: failed to get account state on ', providerKey)
+          if (this.networksWithAccountStateError.includes(providerKey)) return
+          this.networksWithAccountStateError.push(providerKey)
         })
 
         if (!accountState) return
@@ -823,23 +829,19 @@ export class AccountAdderController extends EventEmitter {
     const sortedAccountsWithNetworksArray = finalAccountsWithNetworksArray.sort((a, b) => {
       const networkIdsA = a.account.usedOnNetworks.map((network) => network.id)
       const networkIdsB = b.account.usedOnNetworks.map((network) => network.id)
-      const networkIndexA = networks.findIndex((network) => networkIdsA.includes(network.id))
-      const networkIndexB = networks.findIndex((network) => networkIdsB.includes(network.id))
+      const networkIndexA = this.#networks.networks.findIndex((network) =>
+        networkIdsA.includes(network.id)
+      )
+      const networkIndexB = this.#networks.networks.findIndex((network) =>
+        networkIdsB.includes(network.id)
+      )
       return networkIndexA - networkIndexB
     })
 
     return sortedAccountsWithNetworksArray
   }
 
-  async #findAndSetLinkedAccounts({
-    accounts,
-    networks,
-    providers
-  }: {
-    accounts: Account[]
-    networks: Network[]
-    providers: { [key: string]: JsonRpcProvider }
-  }) {
+  async #findAndSetLinkedAccounts({ accounts }: { accounts: Account[] }) {
     if (!this.shouldSearchForLinkedAccounts) return
 
     if (accounts.length === 0) return
@@ -883,6 +885,8 @@ export class AccountAdderController extends EventEmitter {
 
         return []
       }
+
+      const existingAccount = this.#accounts.accounts.find((acc) => acc.addr === addr)
       return [
         {
           account: {
@@ -899,8 +903,8 @@ export class AccountAdderController extends EventEmitter {
               salt
             },
             preferences: {
-              label: DEFAULT_ACCOUNT_LABEL,
-              pfp: addr
+              label: existingAccount?.preferences.label || DEFAULT_ACCOUNT_LABEL,
+              pfp: existingAccount?.preferences?.pfp || addr
             }
           },
           isLinked: true
@@ -909,9 +913,7 @@ export class AccountAdderController extends EventEmitter {
     })
 
     const linkedAccountsWithNetworks = await this.#getAccountsUsedOnNetworks({
-      accounts: linkedAccounts as any,
-      networks,
-      providers
+      accounts: linkedAccounts as any
     })
 
     this.#linkedAccounts = linkedAccountsWithNetworks

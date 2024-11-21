@@ -13,7 +13,7 @@ import {
   getToken,
   getTokenWithChain
 } from '../../utils'
-import AcrossModule from '.'
+import AcrossModule from './'
 
 const transactions = [
   // bridge via depositV3
@@ -85,7 +85,7 @@ describe('Across', () => {
         ...getRecipientText(ZeroAddress, '0xd819A17345efA4f014F289b999d6f79215cff974')
       ]
     ]
-    const [calls] = AcrossModule(accountOp, transactions, humanizerInfo as HumanizerMeta)
-    compareHumanizerVisualizations(calls, expectedVisualization)
+    const irCalls = AcrossModule(accountOp, transactions, humanizerInfo as HumanizerMeta)
+    compareHumanizerVisualizations(irCalls, expectedVisualization)
   })
 })

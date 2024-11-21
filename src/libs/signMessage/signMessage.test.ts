@@ -1,4 +1,5 @@
-import { Contract, hashMessage, toUtf8Bytes, TypedDataEncoder } from 'ethers'
+import { Contract, hashMessage, toUtf8Bytes, TypedDataEncoder, Wallet } from 'ethers'
+import { EventEmitter } from 'stream'
 
 import { beforeAll, describe, expect, test } from '@jest/globals'
 
@@ -99,16 +100,43 @@ const getAccountsInfo = async (accounts: Account[]): Promise<AccountStates> => {
   return Object.fromEntries(states)
 }
 
+const windowManager = {
+  focus: () => Promise.resolve(),
+  open: () => Promise.resolve(0),
+  remove: () => Promise.resolve(),
+  event: new EventEmitter(),
+  sendWindowToastMessage: () => {},
+  sendWindowUiMessage: () => {}
+}
+
 let keystore: KeystoreController
 describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
   beforeAll(async () => {
     const storage: Storage = produceMemoryStore()
-    keystore = new KeystoreController(storage, { internal: KeystoreSigner })
+    keystore = new KeystoreController(storage, { internal: KeystoreSigner }, windowManager)
     await keystore.addSecret('passphrase', eoaSigner.pass, '', false)
     await keystore.unlockWithSecret('passphrase', eoaSigner.pass)
     await keystore.addKeys([
-      { privateKey: eoaSigner.privKey, dedicatedToOneSA: true },
-      { privateKey: v1siger.privKey, dedicatedToOneSA: false }
+      {
+        addr: new Wallet(eoaSigner.privKey).address,
+        privateKey: eoaSigner.privKey,
+        type: 'internal' as 'internal',
+        label: 'Key 1',
+        dedicatedToOneSA: true,
+        meta: {
+          createdAt: new Date().getTime()
+        }
+      },
+      {
+        addr: new Wallet(v1siger.privKey).address,
+        type: 'internal' as 'internal',
+        label: 'Key 2',
+        privateKey: v1siger.privKey,
+        dedicatedToOneSA: false,
+        meta: {
+          createdAt: new Date().getTime()
+        }
+      }
     ])
   })
   test('Signing [EOA]: plain text', async () => {
@@ -407,10 +435,21 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
 describe('Sign Message, Keystore with key dedicatedToOneSA: false', () => {
   beforeAll(async () => {
     const storage: Storage = produceMemoryStore()
-    keystore = new KeystoreController(storage, { internal: KeystoreSigner })
+    keystore = new KeystoreController(storage, { internal: KeystoreSigner }, windowManager)
     await keystore.addSecret('passphrase', eoaSigner.pass, '', false)
     await keystore.unlockWithSecret('passphrase', eoaSigner.pass)
-    await keystore.addKeys([{ privateKey: eoaSigner.privKey, dedicatedToOneSA: false }])
+    await keystore.addKeys([
+      {
+        addr: new Wallet(eoaSigner.privKey).address,
+        privateKey: eoaSigner.privKey,
+        type: 'internal' as 'internal',
+        label: 'Key 1',
+        dedicatedToOneSA: false,
+        meta: {
+          createdAt: new Date().getTime()
+        }
+      }
+    ])
   })
   test('Signing [Not dedicated to one SA]: plain text', async () => {
     const accountStates = await getAccountsInfo([smartAccount])

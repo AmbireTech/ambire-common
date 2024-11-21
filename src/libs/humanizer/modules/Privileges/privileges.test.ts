@@ -83,7 +83,7 @@ describe('privileges', () => {
     ]
     accountOp.calls = [...transactions.privileges]
     let irCalls: IrCall[] = accountOp.calls
-    ;[irCalls] = privilegeHumanizer(accountOp, irCalls, humanizerInfo as HumanizerMeta)
+    irCalls = privilegeHumanizer(accountOp, irCalls, humanizerInfo as HumanizerMeta)
 
     expect(irCalls.length).toBe(expectedHumanization.length)
     expectedHumanization.forEach(

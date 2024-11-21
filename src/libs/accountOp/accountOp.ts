@@ -2,7 +2,7 @@ import { AbiCoder, getBytes, Interface, keccak256, toBeHex } from 'ethers'
 
 import { SINGLETON } from '../../consts/deploy'
 import { AccountId } from '../../interfaces/account'
-import { HumanizerFragment } from '../../interfaces/humanizer'
+// eslint-disable-next-line import/no-cycle
 import { Key } from '../../interfaces/keystore'
 import { NetworkId } from '../../interfaces/network'
 import { stringify } from '../richJson/richJson'
@@ -20,6 +20,8 @@ export interface GasFeePayment {
   isGasTank: boolean
   paidBy: string
   inToken: string
+  // optional, because older versions of the extension did not have this stored locally
+  feeTokenNetworkId?: NetworkId
   amount: bigint
   simulatedGasLimit: bigint
   gasPrice: bigint
@@ -68,9 +70,6 @@ export interface AccountOp {
   // however, in practice we only use this for recovery atm and we never have a case with more than one
   // Supporting this can done relatively easily via executeMany() for v2 accounts, and with multiple UserOps via 4337 (again v2 accs)
   accountOpToExecuteBefore: AccountOp | null
-  // this is the humanizer meta info that is supposed to be frozen in time
-  // expressed as HumanizerFragments that can be integrated in the passed humanizer meta object
-  humanizerMetaFragments?: HumanizerFragment[]
   txnId?: string
   status?: AccountOpStatus
   // in the case of ERC-4337, we need an UserOperation structure for the AccountOp
@@ -160,6 +159,16 @@ export function isAccountOpsIntentEqual(
 export function getSignableCalls(op: AccountOp): [string, string, string][] {
   const callsToSign = op.calls.map(toSingletonCall).map(callToTuple)
   if (op.activatorCall) callsToSign.push(callToTuple(op.activatorCall))
+  if (op.feeCall) callsToSign.push(callToTuple(op.feeCall))
+  return callsToSign
+}
+
+export function getSignableCallsForBundlerEstimate(op: AccountOp): [string, string, string][] {
+  const callsToSign = getSignableCalls(op)
+  // add the fee call one more time when doing a bundler estimate
+  // this is because the feeCall during estimation is fake (approve instead
+  // of transfer, incorrect amount) and more ofteh than not, this causes
+  // a lower estimation than the real one, causing bad UX in the process
   if (op.feeCall) callsToSign.push(callToTuple(op.feeCall))
   return callsToSign
 }

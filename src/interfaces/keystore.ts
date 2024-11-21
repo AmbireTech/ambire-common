@@ -19,12 +19,11 @@ import { TypedMessage } from './userRequest'
  */
 export interface ExternalSignerController {
   type: string
-  hdPathTemplate: HD_PATH_TEMPLATE_TYPE
   deviceModel: string
   deviceId: string
   isUnlocked: (path?: string, expectedKeyOnThisPath?: string) => boolean
   unlock: (
-    path?: ReturnType<typeof getHdPathFromTemplate>,
+    path: ReturnType<typeof getHdPathFromTemplate>,
     expectedKeyOnThisPath?: string,
     shouldOpenLatticeConnectorInTab?: boolean // Lattice specific
   ) => Promise<'ALREADY_UNLOCKED' | 'JUST_UNLOCKED'>
@@ -34,6 +33,7 @@ export interface ExternalSignerController {
   cleanUp: () => void // Trezor and Ledger specific
   isInitiated?: boolean // Trezor specific
   initialLoadPromise?: Promise<void> // Trezor specific
+  retrieveAddresses: (paths: string[]) => Promise<string[]> // Ledger specific
   // TODO: Refine the rest of the props
   isWebHID?: boolean // Ledger specific
   transport?: any // Ledger specific
@@ -100,23 +100,30 @@ export const dedicatedToOneSAPriv =
 export type InternalKey = {
   addr: Account['addr']
   type: 'internal'
+  label: string
   dedicatedToOneSA: boolean
-  meta: null
+  meta: {
+    createdAt: number | null
+  }
 }
 
 export type ExternalKey = {
   addr: Account['addr']
   type: 'trezor' | 'ledger' | 'lattice' | string
+  label: string
   dedicatedToOneSA: boolean
   meta: {
     deviceId: string
     deviceModel: string
     hdPathTemplate: HD_PATH_TEMPLATE_TYPE
     index: number
+    createdAt: number | null
   }
 }
 
 export type StoredKey = (InternalKey & { privKey: string }) | (ExternalKey & { privKey: null })
+
+export type KeystoreSeed = { seed: string; hdPathTemplate: HD_PATH_TEMPLATE_TYPE }
 
 export type KeystoreSignerType = {
   new (key: Key, privateKey?: string): KeystoreSigner
@@ -128,11 +135,23 @@ export type KeystoreSignerType = {
  * (for the accounts that were just imported by the AccountAdder Controller).
  */
 export type ReadyToAddKeys = {
-  internal: { privateKey: string; dedicatedToOneSA: Key['dedicatedToOneSA'] }[]
+  internal: {
+    addr: Key['addr']
+    label: string
+    type: 'internal'
+    privateKey: string
+    dedicatedToOneSA: Key['dedicatedToOneSA']
+    meta: InternalKey['meta']
+  }[]
   external: {
     addr: Key['addr']
+    label: string
     type: Key['type']
     dedicatedToOneSA: Key['dedicatedToOneSA']
     meta: ExternalKey['meta']
   }[]
+}
+
+export type KeyPreferences = {
+  label: string
 }

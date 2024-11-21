@@ -1,15 +1,16 @@
 /* eslint-disable new-cap */
-import { HDNodeWallet, keccak256, Mnemonic, Wallet } from 'ethers'
+import { HDNodeWallet, Mnemonic, Wallet } from 'ethers'
 
 import {
   HD_PATH_TEMPLATE_TYPE,
-  PRIVATE_KEY_DERIVATION_SALT,
   SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET
 } from '../../consts/derivation'
 import { SelectedAccountForImport } from '../../interfaces/account'
 import { KeyIterator as KeyIteratorInterface } from '../../interfaces/keyIterator'
+import { Key } from '../../interfaces/keystore'
 import { getHdPathFromTemplate } from '../../utils/hdPath'
 import { isDerivedForSmartAccountKeyOnly } from '../account/account'
+import { getDefaultKeyLabel, getExistingKeyLabel } from '../keys/keys'
 
 export function isValidPrivateKey(value: string): boolean {
   try {
@@ -34,21 +35,6 @@ export const getPrivateKeyFromSeed = (
   }
 
   throw new Error('Getting the private key from the seed phrase failed.')
-}
-
-/**
- * Derives a (second) private key based on a derivation algorithm that uses
- * the combo of (the first) private key as an entropy and a salt (constant)
- */
-export function derivePrivateKeyFromAnotherPrivateKey(privateKey: string) {
-  // Convert the plain text private key to a buffer
-  const privateKeyBuffer = Buffer.from(privateKey, 'utf8')
-  const saltBuffer = Buffer.from(PRIVATE_KEY_DERIVATION_SALT, 'utf8')
-  const buffer = Buffer.concat([privateKeyBuffer, saltBuffer])
-
-  // Hash the buffer, and convert to a hex string
-  // that ultimately represents a derived (second) private key
-  return keccak256(buffer)
 }
 
 /**
@@ -92,13 +78,11 @@ export class KeyIterator implements KeyIteratorInterface {
         throw new Error('keyIterator: invalid or missing arguments')
 
       if (this.#privateKey) {
-        // Private keys for accounts used as smart account keys should be derived
         const shouldDerive = from >= SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET
-        const finalPrivateKey = shouldDerive
-          ? derivePrivateKeyFromAnotherPrivateKey(this.#privateKey)
-          : this.#privateKey
-
-        keys.push(new Wallet(finalPrivateKey).address)
+        // Before v4.31.0, private keys for accounts used as smart account keys
+        // were derived. That's no longer the case. Importing private keys
+        // does not generate smart accounts anymore.
+        if (!shouldDerive) keys.push(new Wallet(this.#privateKey).address)
       }
 
       if (this.#seedPhrase) {
@@ -119,7 +103,8 @@ export class KeyIterator implements KeyIteratorInterface {
 
   retrieveInternalKeys(
     selectedAccountsForImport: SelectedAccountForImport[],
-    hdPathTemplate: HD_PATH_TEMPLATE_TYPE
+    hdPathTemplate: HD_PATH_TEMPLATE_TYPE,
+    keystoreKeys: Key[]
   ) {
     return selectedAccountsForImport.flatMap((acc) => {
       // Should never happen
@@ -128,7 +113,7 @@ export class KeyIterator implements KeyIteratorInterface {
         return []
       }
 
-      return acc.accountKeys.flatMap(({ index }: { index: number }) => {
+      return acc.accountKeys.flatMap(({ index }: { index: number }, i) => {
         // In case it is a seed, the private keys have to be extracted
         if (this.subType === 'seed') {
           if (!this.#seedPhrase) {
@@ -137,10 +122,22 @@ export class KeyIterator implements KeyIteratorInterface {
             return []
           }
 
+          const privateKey = getPrivateKeyFromSeed(this.#seedPhrase, index, hdPathTemplate)
           return [
             {
-              privateKey: getPrivateKeyFromSeed(this.#seedPhrase, index, hdPathTemplate),
-              dedicatedToOneSA: isDerivedForSmartAccountKeyOnly(index)
+              addr: new Wallet(privateKey).address,
+              type: 'internal' as 'internal',
+              label:
+                getExistingKeyLabel(keystoreKeys, acc.account.addr, this.type) ||
+                getDefaultKeyLabel(
+                  keystoreKeys.filter((key) => acc.account.associatedKeys.includes(key.addr)),
+                  i
+                ),
+              privateKey,
+              dedicatedToOneSA: isDerivedForSmartAccountKeyOnly(index),
+              meta: {
+                createdAt: new Date().getTime()
+              }
             }
           ]
         }
@@ -152,19 +149,46 @@ export class KeyIterator implements KeyIteratorInterface {
           return []
         }
 
-        // Private keys for accounts used as smart account keys should be derived
+        // Before v4.31.0, private keys for accounts used as smart account keys
+        // were derived. That's no longer the case. Importing private keys
+        // does not generate smart accounts anymore.
         const isPrivateKeyThatShouldBeDerived =
-          !!this.#privateKey &&
-          isValidPrivateKey(this.#privateKey) &&
-          index >= SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET
+          isValidPrivateKey(this.#privateKey) && index >= SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET
+        if (isPrivateKeyThatShouldBeDerived) {
+          // Should never happen
+          console.error(
+            'keyIterator: since v4.31.0, private keys should not be derived and importing them does not retrieve a smart account'
+          )
+          return []
+        }
 
-        const privateKey = isPrivateKeyThatShouldBeDerived
-          ? derivePrivateKeyFromAnotherPrivateKey(this.#privateKey)
-          : this.#privateKey
-        const dedicatedToOneSA = isPrivateKeyThatShouldBeDerived
-
-        return [{ privateKey, dedicatedToOneSA }]
+        return [
+          {
+            addr: new Wallet(this.#privateKey).address,
+            type: 'internal' as 'internal',
+            label:
+              getExistingKeyLabel(keystoreKeys, acc.account.addr, this.type) ||
+              getDefaultKeyLabel(
+                keystoreKeys.filter((key) => acc.account.associatedKeys.includes(key.addr)),
+                0
+              ),
+            privateKey: this.#privateKey,
+            dedicatedToOneSA: false,
+            meta: {
+              createdAt: new Date().getTime()
+            }
+          }
+        ]
       })
     })
+  }
+
+  isSeedMatching(seedPhraseToCompareWith: string) {
+    if (!this.#seedPhrase) return false
+
+    return (
+      Mnemonic.fromPhrase(this.#seedPhrase).phrase ===
+      Mnemonic.fromPhrase(seedPhraseToCompareWith).phrase
+    )
   }
 }

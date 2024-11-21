@@ -1,15 +1,15 @@
-import erc20Abi from 'adex-protocol-eth/abi/ERC20.json'
 import { Interface, parseUnits } from 'ethers'
 
+import IERC20 from '../../../contracts/compiled/IERC20.json'
 import WALLETSupplyControllerABI from '../../../contracts/compiled/WALLETSupplyController.json'
 import WETH from '../../../contracts/compiled/WETH.json'
 import { FEE_COLLECTOR, SUPPLY_CONTROLLER_ADDR, WALLET_STAKING_ADDR } from '../../consts/addresses'
 import { networks } from '../../consts/networks'
 import { Calls, SignUserRequest } from '../../interfaces/userRequest'
-import { ClaimableRewardsData, TokenResult } from '../portfolio'
+import { AddrVestingData, ClaimableRewardsData, TokenResult } from '../portfolio'
 import { getSanitizedAmount } from './amount'
 
-const ERC20 = new Interface(erc20Abi)
+const ERC20 = new Interface(IERC20.abi)
 const supplyControllerInterface = new Interface(WALLETSupplyControllerABI)
 
 interface BuildUserRequestParams {
@@ -17,6 +17,40 @@ interface BuildUserRequestParams {
   selectedToken: TokenResult
   selectedAccount: string
   recipientAddress: string
+}
+
+function buildMintVestingRequest({
+  selectedAccount,
+  selectedToken,
+  addrVestingData
+}: {
+  selectedAccount: string
+  selectedToken: TokenResult
+  addrVestingData: AddrVestingData
+}): SignUserRequest {
+  const txn = {
+    kind: 'calls' as Calls['kind'],
+    calls: [
+      {
+        to: SUPPLY_CONTROLLER_ADDR,
+        value: BigInt(0),
+        data: supplyControllerInterface.encodeFunctionData('mintVesting', [
+          addrVestingData?.addr,
+          addrVestingData?.end,
+          addrVestingData?.rate
+        ])
+      }
+    ]
+  }
+  return {
+    id: new Date().getTime(),
+    action: txn,
+    meta: {
+      isSignAction: true,
+      networkId: selectedToken.networkId,
+      accountAddr: selectedAccount
+    }
+  }
 }
 
 function buildClaimWalletRequest({
@@ -27,7 +61,7 @@ function buildClaimWalletRequest({
   selectedAccount: string
   selectedToken: TokenResult
   claimableRewardsData: ClaimableRewardsData
-}): SignUserRequest | null {
+}): SignUserRequest {
   const txn = {
     kind: 'calls' as Calls['kind'],
     calls: [
@@ -148,4 +182,4 @@ function buildTransferUserRequest({
   }
 }
 
-export { buildTransferUserRequest, buildClaimWalletRequest }
+export { buildTransferUserRequest, buildClaimWalletRequest, buildMintVestingRequest }

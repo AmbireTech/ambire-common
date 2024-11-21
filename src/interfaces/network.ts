@@ -3,7 +3,6 @@ export type NetworkId = string
 export interface Erc4337settings {
   enabled: boolean
   hasPaymaster: boolean
-  explorerId?: string // what is the network id according to the explorer
 }
 
 interface FeeOptions {
@@ -12,6 +11,9 @@ interface FeeOptions {
   elasticityMultiplier?: bigint
   baseFeeMaxChangeDenominator?: bigint
   feeIncrease?: bigint // should we increase the relayer fee in %
+  // transactions on Base get stuck on slow as we lower the baseFee a lot
+  // so we make the minBaseFee the same as the last block one
+  minBaseFeeEqualToLastBlock?: boolean
 }
 
 export interface NetworkInfo {
@@ -68,6 +70,9 @@ export interface Network {
   flagged?: boolean
   predefined: boolean
   wrappedAddr?: string
+  blockGasLimit?: bigint
+  oldNativeAssetSymbols?: string[]
+  disableEstimateGas?: boolean
 }
 
 export interface AddNetworkRequestParams {
@@ -78,4 +83,34 @@ export interface AddNetworkRequestParams {
   nativeAssetSymbol: Network['nativeAssetSymbol']
   explorerUrl: Network['explorerUrl']
   iconUrls: Network['iconUrls']
+}
+
+export interface ChainlistNetwork {
+  name: string
+  chain: string
+  icon: string
+  rpc: string[]
+  features: {
+    name: string
+  }[]
+  faucets: string[]
+  nativeCurrency: {
+    name: string
+    symbol: string
+    decimals: number
+  }
+  infoURL: string
+  shortName: string
+  chainId: number
+  networkId: number
+  slip44: number
+  ens: {
+    registry: string
+  }
+  explorers: {
+    name: string
+    url: string
+    standard: string
+    icon?: string
+  }[]
 }

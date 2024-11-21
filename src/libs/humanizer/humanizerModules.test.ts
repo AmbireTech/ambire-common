@@ -1,17 +1,11 @@
-import fetch from 'node-fetch'
-
 import { describe, test } from '@jest/globals'
 
 import { FEE_COLLECTOR } from '../../consts/addresses'
-import _humanizerInfo from '../../consts/humanizer/humanizerInfo.json'
 import { networks } from '../../consts/networks'
-import { ErrorRef } from '../../controllers/eventEmitter/eventEmitter'
 import { AccountOp } from '../accountOp/accountOp'
-import { humanizeCalls } from './humanizerFuncs'
-import { humanizerCallModules as humanizerModules } from './index'
-import { HumanizerMeta, IrCall } from './interfaces'
+import { humanizeAccountOp } from './index'
+import { IrCall } from './interfaces'
 
-const humanizerInfo = _humanizerInfo as HumanizerMeta
 const accountOp: AccountOp = {
   accountAddr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
   networkId: 'ethereum',
@@ -312,16 +306,13 @@ const transactions: { [key: string]: Array<IrCall> } = {
   ]
 }
 
-let emitedErrors: ErrorRef[] = []
-const moockEmitError = (e: ErrorRef) => emitedErrors.push(e)
-const standartOptions = { fetch, emitError: moockEmitError, network: networks[0] }
+const standartOptions = { network: networks[0] }
 describe('module tests', () => {
   beforeEach(async () => {
     accountOp.calls = []
-    emitedErrors = []
   })
 
-  // TODO: look into improper texification for  unrecognized tokens
+  // TODO: we need this for detecting collisions
   test.skip('visualization to text', async () => {
     const expectedTexification = [
       'Swap 50844.919041919270406243 XLRT for at least 0.137930462904193673 ETH already expired',
@@ -370,46 +361,5 @@ describe('module tests', () => {
       .map((key: string) => transactions[key])
       .flat()
     accountOp.calls = allCalls
-    const [irCalls, asyncOps] = humanizeCalls(
-      accountOp,
-      humanizerModules,
-      humanizerInfo,
-      standartOptions
-    )
-    // irCalls.forEach((c: IrCall, i) => {
-    //   console.log(c.fullVisualization, i)
-    // })
-    // let [parsedCalls, newAsyncOps] = parseCalls(
-    //   accountOp,
-    //   irCalls,
-    //   [humanizerMetaParsing],
-    //   humanizerInfo,
-    //   standartOptions
-    // )
-    // irCalls = parsedCalls
-    // asyncOps.push(...newAsyncOps)
-    // const frags: HumanizerFragment[] = (await Promise.all(asyncOps.map((i) => i()))).filter(
-    //   (x) => x
-    // ) as HumanizerFragment[]
-    // // @TODO use new combination function
-    // const newHumanizerMeta = integrateFragments(humanizerInfo as HumanizerMeta, frags)
-    // ;[irCalls, asyncOps] = humanizeCalls(
-    //   accountOp,
-    //   humanizerModules,
-    //   newHumanizerMeta,
-    //   standartOptions
-    // )
-    // ;[parsedCalls, newAsyncOps] = parseCalls(
-    //   accountOp,
-    //   irCalls,
-    //   [humanizerMetaParsing],
-    //   humanizerInfo,
-    //   standartOptions
-    // )
-    // irCalls = parsedCalls
-    // asyncOps.push(...newAsyncOps)
-    // const res = irCalls.map((call: IrCall) => visualizationToText(call, standartOptions))
-    // expect(expectedTexification.length).toBe(res.length)
-    // expectedTexification.forEach((et: string, i: number) => expect(res[i]).toEqual(et))
   })
 })

@@ -11,9 +11,9 @@ import {
   AccountPreferences,
   ImportStatus
 } from '../../interfaces/account'
+import { KeyIterator } from '../../interfaces/keyIterator'
 import { Key } from '../../interfaces/keystore'
 import { DKIM_VALIDATOR_ADDR, getSignerKey, RECOVERY_DEFAULTS } from '../dkim/recovery'
-import { KeyIterator } from '../keyIterator/keyIterator'
 import { getBytecode } from '../proxyDeploy/bytecode'
 import { PrivLevels } from '../proxyDeploy/deploy'
 import { getAmbireAccountAddress } from '../proxyDeploy/getAmbireAddressTwo'
@@ -55,22 +55,27 @@ export function getAccountDeployParams(account: Account): [string, string] {
   ]
 }
 
-export function getBasicAccount(addr: string): Account {
+export function getBasicAccount(addr: string, existingAccounts: Account[]): Account {
+  const { preferences } = existingAccounts.find((acc) => acc.addr === addr) || {}
   return {
     addr,
     associatedKeys: [addr],
     initialPrivileges: [],
     creation: null,
     preferences: {
-      label: DEFAULT_ACCOUNT_LABEL,
-      pfp: addr
+      label: preferences?.label || DEFAULT_ACCOUNT_LABEL,
+      pfp: preferences?.pfp || addr
     }
   }
 }
 
-export async function getSmartAccount(privileges: PrivLevels[]): Promise<Account> {
+export async function getSmartAccount(
+  privileges: PrivLevels[],
+  existingAccounts: Account[]
+): Promise<Account> {
   const bytecode = await getBytecode(privileges)
   const addr = getAmbireAccountAddress(AMBIRE_ACCOUNT_FACTORY, bytecode)
+  const { preferences } = existingAccounts.find((acc) => acc.addr === addr) || {}
 
   return {
     addr,
@@ -82,8 +87,8 @@ export async function getSmartAccount(privileges: PrivLevels[]): Promise<Account
       salt: toBeHex(0, 32)
     },
     preferences: {
-      label: DEFAULT_ACCOUNT_LABEL,
-      pfp: addr
+      label: preferences?.label || DEFAULT_ACCOUNT_LABEL,
+      pfp: preferences?.pfp || addr
     }
   }
 }
@@ -172,13 +177,13 @@ export async function getEmailAccount(
   )
   const { hash } = getSignerKey(validatorAddr, validatorData)
   const privileges = [{ addr: associatedKey, hash }]
-  return getSmartAccount(privileges)
+  return getSmartAccount(privileges, [])
 }
 
 export const isAmbireV1LinkedAccount = (factoryAddr?: string) =>
-  factoryAddr === '0xBf07a0Df119Ca234634588fbDb5625594E2a5BCA'
+  factoryAddr && getAddress(factoryAddr) === '0xBf07a0Df119Ca234634588fbDb5625594E2a5BCA'
 
-export const isSmartAccount = (account: Account | undefined) => !!account && !!account.creation
+export const isSmartAccount = (account?: Account | null) => !!account && !!account.creation
 
 /**
  * Checks if a (basic) EOA account is a derived one,
@@ -308,4 +313,8 @@ export function migrateAccountPreferencesToAccounts(
       preferences: accountPreferences[a.addr] || { label: DEFAULT_ACCOUNT_LABEL, pfp: a.addr }
     }
   })
+}
+
+export function getUniqueAccountsArray(accounts: Account[]) {
+  return Array.from(new Map(accounts.map((account) => [account.addr, account])).values())
 }

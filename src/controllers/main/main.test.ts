@@ -3,6 +3,7 @@ import EventEmitter from 'events'
 import fetch from 'node-fetch'
 
 import { describe, expect, test } from '@jest/globals'
+import structuredClone from '@ungap/structured-clone'
 
 import { relayerUrl, velcroUrl } from '../../../test/config'
 import { produceMemoryStore } from '../../../test/helpers'
@@ -17,12 +18,19 @@ import { getBytecode } from '../../libs/proxyDeploy/bytecode'
 import { getAmbireAccountAddress } from '../../libs/proxyDeploy/getAmbireAddressTwo'
 import { MainController } from './main'
 
+// @ts-ignore
+global.structuredClone = structuredClone as any
+
+// Public API key, shared by Socket, for testing purposes only
+const socketApiKey = '72a5b4b0-e727-48be-8aa1-5da9d62fe635'
+
 const windowManager = {
   focus: () => Promise.resolve(),
   open: () => Promise.resolve(0),
   remove: () => Promise.resolve(),
   event: new EventEmitter(),
-  sendWindowToastMessage: () => {}
+  sendWindowToastMessage: () => {},
+  sendWindowUiMessage: () => {}
 }
 
 const notificationManager = {
@@ -72,6 +80,7 @@ describe('Main Controller ', () => {
       storage,
       fetch,
       relayerUrl,
+      socketApiKey,
       keystoreSigners: { internal: KeystoreSigner },
       externalSignerControllers: {},
       windowManager,
@@ -202,6 +211,7 @@ describe('Main Controller ', () => {
       storage,
       fetch,
       relayerUrl,
+      socketApiKey,
       windowManager,
       notificationManager,
       keystoreSigners: { internal: KeystoreSigner },
@@ -232,7 +242,7 @@ describe('Main Controller ', () => {
           ]
         ],
         preferences: {
-          label: DEFAULT_ACCOUNT_LABEL,
+          label: 'Account 4', // because there are 3 in the storage before this one
           pfp: addr
         }
       },
@@ -240,15 +250,15 @@ describe('Main Controller ', () => {
       isLinked: false
     }
 
-    const addAccounts = () => {
+    const addAccounts = async () => {
       const keyIterator = new KeyIterator(
         '0x574f261b776b26b1ad75a991173d0e8ca2ca1d481bd7822b2b58b2ef8a969f12'
       )
-      controller.accountAdder.init({
+      await controller.accountAdder.init({
         keyIterator,
         hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
       })
-      controller.accountAdder.addAccounts([accountPendingCreation]).catch(console.error)
+      await controller.accountAdder.addAccounts([accountPendingCreation]).catch(console.error)
     }
 
     let emitCounter = 0
@@ -259,20 +269,24 @@ describe('Main Controller ', () => {
     // check if the controller is ready outside of the onUpdate first and add the accounts.
     if (controller.isReady && emitCounter === 0) {
       emitCounter++
-      addAccounts()
+      await addAccounts()
     }
 
-    const unsubscribe = controller.onUpdate(() => {
-      emitCounter++
-      if (emitCounter === 2 && controller.isReady) addAccounts()
+    return new Promise((resolve) => {
+      const unsubscribe = controller.onUpdate(async () => {
+        emitCounter++
+        if (emitCounter === 2 && controller.isReady) await addAccounts()
 
-      if (controller.statuses.onAccountAdderSuccess === 'SUCCESS') {
-        expect(controller.accounts.accounts).toContainEqual({
-          ...accountPendingCreation.account,
-          newlyCreated: false
-        })
-        unsubscribe()
-      }
+        if (controller.statuses.onAccountAdderSuccess === 'SUCCESS') {
+          expect(controller.accounts.accounts).toContainEqual({
+            ...accountPendingCreation.account,
+            newlyAdded: true,
+            newlyCreated: false
+          })
+          unsubscribe()
+          resolve(null)
+        }
+      })
     })
   })
 
@@ -283,6 +297,7 @@ describe('Main Controller ', () => {
       storage,
       fetch,
       relayerUrl,
+      socketApiKey,
       windowManager,
       notificationManager,
       keystoreSigners: { internal: KeystoreSigner },
@@ -344,23 +359,7 @@ describe('Main Controller ', () => {
     ])
   })
 
-  test('should check if network features get displayed correctly for ethereum', (done) => {
-    let checks = 0
-    controller.networks.onUpdate(() => {
-      if (controller.networks.statuses.updateNetwork === 'SUCCESS' && checks > 3) {
-        const eth = controller.networks.networks.find((net) => net.id === 'ethereum')!
-        expect(eth.areContractsDeployed).toEqual(true)
-        done()
-      }
-      if (checks === 3) {
-        const eth = controller.networks.networks.find((net) => net.id === 'ethereum')!
-        expect(eth.areContractsDeployed).toEqual(false)
-        controller.setContractsDeployedToTrueIfDeployed(eth)
-      }
-
-      checks++
-    })
-
+  test('should check if network features get displayed correctly for ethereum', async () => {
     const eth = controller.networks.networks.find((net) => net.id === 'ethereum')!
     expect(eth?.features.length).toBe(3)
 
@@ -381,6 +380,13 @@ describe('Main Controller ', () => {
     expect(prices!.level).toBe('success')
 
     // set first to false so we could test setContractsDeployedToTrueIfDeployed
-    controller.networks.updateNetwork({ areContractsDeployed: false }, 'ethereum')
+    await controller.networks.updateNetwork({ areContractsDeployed: false }, 'ethereum')
+
+    const eth2 = controller.networks.networks.find((net) => net.id === 'ethereum')!
+    expect(eth2.areContractsDeployed).toEqual(false)
+    await controller.setContractsDeployedToTrueIfDeployed(eth2)
+
+    const eth3 = controller.networks.networks.find((net) => net.id === 'ethereum')!
+    expect(eth3.areContractsDeployed).toEqual(true)
   })
 })

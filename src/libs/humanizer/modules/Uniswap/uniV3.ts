@@ -8,11 +8,12 @@ import {
   getAddressVisualization,
   getDeadline,
   getLabel,
+  getRecipientText,
   getToken,
   getUnknownVisualization
 } from '../../utils'
 import { HumanizerUniMatcher } from './interfaces'
-import { getUniRecipientText, joinWithAndLabel, parsePath } from './utils'
+import { getUniRecipientText, parsePath, uniReduce } from './utils'
 
 const uniV32Mapping = (): HumanizerUniMatcher => {
   const ifaceV32 = new Interface(UniV3Router2)
@@ -31,7 +32,7 @@ const uniV32Mapping = (): HumanizerUniMatcher => {
           return humanizer ? humanizer(accountOp, { ...call, data }) : [getAction('Unknown action')]
         }
       )
-      const res = joinWithAndLabel(parsed)
+      const res = uniReduce(parsed)
       return res.length ? [...res, getDeadline(deadline)] : getUnknownVisualization('Uni V3', call)
     },
     // 0xac9650d8
@@ -43,10 +44,11 @@ const uniV32Mapping = (): HumanizerUniMatcher => {
       const mappingResult = uniV32Mapping()
       const parsed = calls.map((data: string): HumanizerVisualization[] => {
         const sigHash = data.slice(0, 10)
+
         const humanizer = mappingResult[sigHash]
         return humanizer ? humanizer(accountOp, { ...call, data }) : [getAction('Unknown action')]
       })
-      return joinWithAndLabel(parsed)
+      return uniReduce(parsed)
     },
     // 0x1f0464d1
     [ifaceV32.getFunction('multicall(bytes32 prevBlockHash, bytes[])')?.selector!]: (
@@ -63,7 +65,7 @@ const uniV32Mapping = (): HumanizerUniMatcher => {
         }
       )
       return parsed.length
-        ? joinWithAndLabel(parsed)
+        ? uniReduce(parsed)
         : [...getUnknownVisualization('Uni V3', call), getLabel(`after block ${prevBlockHash}`)]
     },
     // NOTE: selfPermit is not supported cause it requires an ecrecover signature
@@ -76,7 +78,7 @@ const uniV32Mapping = (): HumanizerUniMatcher => {
       return [
         getAction('Swap'),
         getToken(params.tokenIn, params.amountIn),
-        getLabel('for at least'),
+        getLabel('for'),
         getToken(params.tokenOut, params.amountOutMinimum),
         ...getUniRecipientText(accountOp.accountAddr, params.recipient)
       ]
@@ -90,7 +92,7 @@ const uniV32Mapping = (): HumanizerUniMatcher => {
       return [
         getAction('Swap'),
         getToken(params.tokenIn, params.amountIn),
-        getLabel('for at least'),
+        getLabel('for'),
         getToken(params.tokenOut, params.amountOutMinimum),
         ...getUniRecipientText(accountOp.accountAddr, params.recipient),
         getDeadline(params.deadline)
@@ -106,7 +108,7 @@ const uniV32Mapping = (): HumanizerUniMatcher => {
       return [
         getAction('Swap'),
         getToken(path[0], params.amountIn),
-        getLabel('for at least'),
+        getLabel('for'),
         getToken(path[path.length - 1], params.amountOutMinimum),
         ...getUniRecipientText(accountOp.accountAddr, params.recipient)
       ]
@@ -184,7 +186,7 @@ const uniV32Mapping = (): HumanizerUniMatcher => {
       return [
         getAction('Swap'),
         getToken(path[0], amountIn),
-        getLabel('for at least'),
+        getLabel('for'),
         getToken(path[path.length - 1], amountOutMin),
         ...getUniRecipientText(accountOp.accountAddr, to)
       ]
@@ -263,6 +265,41 @@ const uniV32Mapping = (): HumanizerUniMatcher => {
         getAddressVisualization(feeRecipient),
         ...getUniRecipientText(accountOp.accountAddr, recipient)
       ]
+    },
+    // 0x88316456
+    [`${
+      ifaceV32.getFunction(
+        'mint((address,address,uint24,int24,int24,uint256,uint256,uint256,uint256,address,uint256))'
+      )?.selector
+    }`]: (accountOp: AccountOp, call: IrCall): HumanizerVisualization[] => {
+      const [
+        [
+          token0,
+          token1,
+          ,
+          ,
+          ,
+          ,
+          ,
+          // fee,
+          // tickLower,
+          // tickUpper,
+          // amount0Desired,
+          // amount1Desired,
+          amount0Min,
+          amount1Min,
+          recipient,
+          deadline
+        ]
+      ] = ifaceV32.parseTransaction(call)?.args || []
+      return [
+        getAction('Add liquidity'),
+        getToken(token0, amount0Min),
+        getToken(token1, amount1Min),
+        getLabel('pair'),
+        ...getRecipientText(accountOp.accountAddr, recipient),
+        getDeadline(deadline)
+      ]
     }
   }
 }
@@ -284,7 +321,7 @@ const uniV3Mapping = (): HumanizerUniMatcher => {
         return humanizer ? humanizer(accountOp, { ...call, data }) : [getAction('Unknown action')]
       })
 
-      return parsed.length ? joinWithAndLabel(parsed) : getUnknownVisualization('Uni V3', call)
+      return parsed.length ? uniReduce(parsed) : getUnknownVisualization('Uni V3', call)
     },
     // -------------------------------------------------------------------------------------------------
     // NOTE: selfPermit is not supported cause it requires an ecrecover signature
@@ -298,7 +335,7 @@ const uniV3Mapping = (): HumanizerUniMatcher => {
       return [
         getAction('Swap'),
         getToken(params.tokenIn, params.amountIn),
-        getLabel('for at least'),
+        getLabel('for'),
         getToken(params.tokenOut, params.amountOutMinimum),
         ...getUniRecipientText(accountOp.accountAddr, params.recipient),
         getDeadline(params.deadline)
@@ -314,7 +351,7 @@ const uniV3Mapping = (): HumanizerUniMatcher => {
       return [
         getAction('Swap'),
         getToken(path[0], params.amountIn),
-        getLabel('for at least'),
+        getLabel('for'),
         getToken(path[path.length - 1], params.amountOutMinimum),
         ...getUniRecipientText(accountOp.accountAddr, params.recipient),
         getDeadline(params.deadline)

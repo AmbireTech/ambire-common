@@ -1,6 +1,6 @@
 import { ethErrors } from 'eth-rpc-errors'
 /* eslint-disable @typescript-eslint/brace-style */
-import { getAddress, getBigInt, Interface, isAddress, TransactionResponse } from 'ethers'
+import { getAddress, getBigInt, Interface, isAddress } from 'ethers'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json'
@@ -28,11 +28,17 @@ import {
 import { AddNetworkRequestParams, Network, NetworkId } from '../../interfaces/network'
 import { NotificationManager } from '../../interfaces/notification'
 import { Storage } from '../../interfaces/storage'
+import { SocketAPISendTransactionRequest } from '../../interfaces/swapAndBridge'
 import { Calls, DappUserRequest, SignUserRequest, UserRequest } from '../../interfaces/userRequest'
 import { WindowManager } from '../../interfaces/window'
-import { isSmartAccount } from '../../libs/account/account'
+import { getDefaultSelectedAccount, isSmartAccount } from '../../libs/account/account'
 import { AccountOp, AccountOpStatus, getSignableCalls } from '../../libs/accountOp/accountOp'
-import { Call as AccountOpCall } from '../../libs/accountOp/types'
+import {
+  AccountOpIdentifiedBy,
+  pollTxnId,
+  SubmittedAccountOp
+} from '../../libs/accountOp/submittedAccountOp'
+import { Call } from '../../libs/accountOp/types'
 import {
   dappRequestMethodToActionKind,
   getAccountOpActionsByNetwork,
@@ -44,7 +50,6 @@ import { BundlerGasPrice, EstimateResult } from '../../libs/estimate/interfaces'
 import { GasRecommendation, getGasPriceRecommendations } from '../../libs/gasPrice/gasPrice'
 import { humanizeAccountOp } from '../../libs/humanizer'
 import { KeyIterator } from '../../libs/keyIterator/keyIterator'
-import { getDefaultKeyLabel } from '../../libs/keys/keys'
 import {
   getAccountOpsForSimulation,
   makeBasicAccountOpAction,
@@ -57,8 +62,16 @@ import {
   adjustEntryPointAuthorization,
   getEntryPointAuthorization
 } from '../../libs/signMessage/signMessage'
+import {
+  buildSwapAndBridgeUserRequests,
+  getActiveRoutesForAccount
+} from '../../libs/swapAndBridge/swapAndBridge'
 import { debugTraceCall } from '../../libs/tracer/debugTraceCall'
-import { buildTransferUserRequest } from '../../libs/transfer/userRequest'
+import {
+  buildClaimWalletRequest,
+  buildMintVestingRequest,
+  buildTransferUserRequest
+} from '../../libs/transfer/userRequest'
 import {
   ENTRY_POINT_AUTHORIZATION_REQUEST_ID,
   isErc4337Broadcast,
@@ -66,15 +79,17 @@ import {
 } from '../../libs/userOperation/userOperation'
 import bundler from '../../services/bundlers'
 import { Bundler } from '../../services/bundlers/bundler'
+import { SocketAPI } from '../../services/socket/api'
 import { getIsViewOnly } from '../../utils/accounts'
 import shortenAddress from '../../utils/shortenAddress'
 import wait from '../../utils/wait'
 import { AccountAdderController } from '../accountAdder/accountAdder'
 import { AccountsController } from '../accounts/accounts'
 import { AccountOpAction, ActionsController, SignMessageAction } from '../actions/actions'
-import { ActivityController, SubmittedAccountOp } from '../activity/activity'
+import { ActivityController } from '../activity/activity'
 import { AddressBookController } from '../addressBook/addressBook'
 import { DappsController } from '../dapps/dapps'
+import { DefiPositionsController } from '../defiPositions/defiPositions'
 import { DomainsController } from '../domains/domains'
 import { EmailVaultController } from '../emailVault/emailVault'
 import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter'
@@ -83,10 +98,12 @@ import { KeystoreController } from '../keystore/keystore'
 import { NetworksController } from '../networks/networks'
 import { PortfolioController } from '../portfolio/portfolio'
 import { ProvidersController } from '../providers/providers'
-import { SettingsController } from '../settings/settings'
+/* eslint-disable @typescript-eslint/no-floating-promises */
+import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 /* eslint-disable no-underscore-dangle */
 import { SignAccountOpController, SigningStatus } from '../signAccountOp/signAccountOp'
 import { SignMessageController } from '../signMessage/signMessage'
+import { SwapAndBridgeController, SwapAndBridgeFormStatus } from '../swapAndBridge/swapAndBridge'
 
 const STATUS_WRAPPED_METHODS = {
   onAccountAdderSuccess: 'INITIAL',
@@ -95,18 +112,21 @@ const STATUS_WRAPPED_METHODS = {
   removeAccount: 'INITIAL',
   handleAccountAdderInitLedger: 'INITIAL',
   handleAccountAdderInitLattice: 'INITIAL',
-  importSmartAccountFromDefaultSeed: 'INITIAL'
+  importSmartAccountFromDefaultSeed: 'INITIAL',
+  buildSwapAndBridgeUserRequest: 'INITIAL',
+  importSmartAccountFromSavedSeed: 'INITIAL',
+  selectAccount: 'INITIAL'
 } as const
 
 export class MainController extends EventEmitter {
   #storage: Storage
 
-  #fetch: Fetch
+  fetch: Fetch
 
   // Holds the initial load promise, so that one can wait until it completes
   #initialLoadPromise: Promise<void>
 
-  #callRelayer: Function
+  callRelayer: Function
 
   isReady: boolean = false
 
@@ -130,6 +150,8 @@ export class MainController extends EventEmitter {
 
   portfolio: PortfolioController
 
+  defiPositions: DefiPositionsController
+
   dapps: DappsController
 
   actions: ActionsController
@@ -138,21 +160,25 @@ export class MainController extends EventEmitter {
   // @TODO emailVaults
   emailVault: EmailVaultController
 
-  signMessage!: SignMessageController
+  signMessage: SignMessageController
+
+  #socketAPI: SocketAPI
+
+  swapAndBridge: SwapAndBridgeController
 
   signAccountOp: SignAccountOpController | null = null
 
   signAccOpInitError: string | null = null
 
-  activity!: ActivityController
-
-  settings: SettingsController
+  activity: ActivityController
 
   addressBook: AddressBookController
 
   domains: DomainsController
 
   accounts: AccountsController
+
+  selectedAccount: SelectedAccountController
 
   userRequests: UserRequest[] = []
 
@@ -180,6 +206,7 @@ export class MainController extends EventEmitter {
     fetch,
     relayerUrl,
     velcroUrl,
+    socketApiKey,
     keystoreSigners,
     externalSignerControllers,
     windowManager,
@@ -189,6 +216,7 @@ export class MainController extends EventEmitter {
     fetch: Fetch
     relayerUrl: string
     velcroUrl: string
+    socketApiKey: string
     keystoreSigners: Partial<{ [key in Key['type']]: KeystoreSignerType }>
     externalSignerControllers: ExternalSignerControllers
     windowManager: WindowManager
@@ -196,20 +224,21 @@ export class MainController extends EventEmitter {
   }) {
     super()
     this.#storage = storage
-    this.#fetch = fetch
+    this.fetch = fetch
     this.#windowManager = windowManager
     this.#notificationManager = notificationManager
 
     this.invite = new InviteController({ relayerUrl, fetch, storage: this.#storage })
-    this.keystore = new KeystoreController(this.#storage, keystoreSigners)
+    this.keystore = new KeystoreController(this.#storage, keystoreSigners, windowManager)
     this.#externalSignerControllers = externalSignerControllers
     this.networks = new NetworksController(
       this.#storage,
-      this.#fetch,
+      this.fetch,
       async (network: Network) => {
         this.providers.setProvider(network)
         await this.accounts.updateAccountStates('latest', [network.id])
-        await this.updateSelectedAccountPortfolio(true)
+        await this.updateSelectedAccountPortfolio()
+        await this.defiPositions.updatePositions(network.id)
       },
       (networkId: NetworkId) => {
         this.providers.removeProvider(networkId)
@@ -220,53 +249,54 @@ export class MainController extends EventEmitter {
       this.#storage,
       this.providers,
       this.networks,
-      async (toAccountAddr: string) => {
-        this.activity.init()
-        await this.updateSelectedAccountPortfolio()
-        // forceEmitUpdate to update the getters in the FE state of the ctrl
-        await this.forceEmitUpdate()
-        await this.actions.forceEmitUpdate()
-        await this.addressBook.forceEmitUpdate()
-        this.dapps.broadcastDappSessionEvent('accountsChanged', [toAccountAddr])
+      async (accounts) => {
+        const defaultSelectedAccount = getDefaultSelectedAccount(accounts)
+        if (defaultSelectedAccount) {
+          await this.#selectAccount(defaultSelectedAccount.addr)
+        }
       },
       this.providers.updateProviderIsWorking.bind(this.providers)
     )
-    this.settings = new SettingsController(this.#storage)
+    this.selectedAccount = new SelectedAccountController({
+      storage: this.#storage,
+      accounts: this.accounts
+    })
     this.portfolio = new PortfolioController(
       this.#storage,
-      this.#fetch,
+      this.fetch,
       this.providers,
       this.networks,
       this.accounts,
       relayerUrl,
       velcroUrl
     )
-    this.#initialLoadPromise = this.#load()
-    this.emailVault = new EmailVaultController(
-      this.#storage,
-      this.#fetch,
-      relayerUrl,
-      this.keystore
-    )
+    this.defiPositions = new DefiPositionsController({
+      fetch: this.fetch,
+      selectedAccount: this.selectedAccount,
+      networks: this.networks,
+      providers: this.providers
+    })
+    this.emailVault = new EmailVaultController(this.#storage, this.fetch, relayerUrl, this.keystore)
     this.accountAdder = new AccountAdderController({
       accounts: this.accounts,
       keystore: this.keystore,
+      networks: this.networks,
+      providers: this.providers,
       relayerUrl,
-      fetch: this.#fetch
+      fetch: this.fetch
     })
-    this.addressBook = new AddressBookController(this.#storage, this.accounts)
+    this.addressBook = new AddressBookController(this.#storage, this.accounts, this.selectedAccount)
     this.signMessage = new SignMessageController(
       this.keystore,
       this.providers,
       this.networks,
       this.accounts,
-      this.#externalSignerControllers,
-      this.#storage,
-      this.#fetch
+      this.#externalSignerControllers
     )
+    this.#socketAPI = new SocketAPI({ apiKey: socketApiKey, fetch: this.fetch })
     this.dapps = new DappsController(this.#storage)
     this.actions = new ActionsController({
-      accounts: this.accounts,
+      selectedAccount: this.selectedAccount,
       windowManager,
       notificationManager,
       onActionWindowClose: () => {
@@ -280,18 +310,35 @@ export class MainController extends EventEmitter {
         this.emitUpdate()
       }
     })
+    this.selectedAccount.initControllers({
+      portfolio: this.portfolio,
+      defiPositions: this.defiPositions,
+      actions: this.actions,
+      networks: this.networks,
+      providers: this.providers
+    })
+    this.swapAndBridge = new SwapAndBridgeController({
+      selectedAccount: this.selectedAccount,
+      networks: this.networks,
+      socketAPI: this.#socketAPI,
+      storage: this.#storage,
+      actions: this.actions
+    })
+    this.callRelayer = relayerCall.bind({ url: relayerUrl, fetch: this.fetch })
     this.activity = new ActivityController(
       this.#storage,
-      this.#fetch,
+      this.fetch,
+      this.callRelayer,
       this.accounts,
+      this.selectedAccount,
       this.providers,
       this.networks,
       async (network: Network) => {
         await this.setContractsDeployedToTrueIfDeployed(network)
       }
     )
-    this.domains = new DomainsController(this.providers.providers, this.#fetch)
-    this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch: this.#fetch })
+    this.domains = new DomainsController(this.providers.providers, this.fetch)
+    this.#initialLoadPromise = this.#load()
   }
 
   async #load(): Promise<void> {
@@ -304,8 +351,10 @@ export class MainController extends EventEmitter {
     await this.networks.initialLoadPromise
     await this.providers.initialLoadPromise
     await this.accounts.initialLoadPromise
-    this.updateSelectedAccountPortfolio()
+    await this.selectedAccount.initialLoadPromise
 
+    this.updateSelectedAccountPortfolio()
+    this.defiPositions.updatePositions()
     /**
      * Listener that gets triggered as a finalization step of adding new
      * accounts via the AccountAdder controller flow.
@@ -331,9 +380,18 @@ export class MainController extends EventEmitter {
           // since firing multiple keystore actions is not possible
           // (the #wrapKeystoreAction listens for the first one to finish and
           // skips the parallel one, if one is requested).
+
           await this.keystore.addKeys(this.accountAdder.readyToAddKeys.internal)
           await this.keystore.addKeysExternallyStored(this.accountAdder.readyToAddKeys.external)
-          await this.settings.addKeyPreferences(this.accountAdder.readyToAddKeyPreferences)
+
+          // Update the saved seed `hdPathTemplate` if accounts were added from
+          // the saved seed, so when user opts in to "Import a new Smart Account
+          // from the saved Seed Phrase" the next account is derived based
+          // on the latest `hdPathTemplate` chosen in the AccountAdder.
+          if (this.accountAdder.isInitializedWithSavedSeed)
+            this.keystore.changeSavedSeedHdPathTemplateIfNeeded(this.accountAdder.hdPathTemplate)
+          if (this.keystore.hasKeystoreTempSeed)
+            this.keystore.changeTempSeedHdPathTemplateIfNeeded(this.accountAdder.hdPathTemplate)
         },
         true
       )
@@ -344,30 +402,65 @@ export class MainController extends EventEmitter {
     this.emitUpdate()
   }
 
-  async importSmartAccountFromDefaultSeed(seed?: string) {
+  async selectAccount(toAccountAddr: string) {
+    await this.withStatus('selectAccount', async () => this.#selectAccount(toAccountAddr), true)
+  }
+
+  async #selectAccount(toAccountAddr: string | null) {
+    await this.#initialLoadPromise
+    if (!toAccountAddr) {
+      await this.selectedAccount.setAccount(null)
+
+      this.emitUpdate()
+      return
+    }
+
+    const accountToSelect = this.accounts.accounts.find((acc) => acc.addr === toAccountAddr)
+    if (!accountToSelect) {
+      console.error(`Account with address ${toAccountAddr} does not exist`)
+      return
+    }
+    this.selectedAccount.setAccount(accountToSelect)
+    this.activity.init()
+    this.swapAndBridge.onAccountChange()
+    this.dapps.broadcastDappSessionEvent('accountsChanged', [toAccountAddr])
+    // forceEmitUpdate to update the getters in the FE state of the ctrl
+    await this.forceEmitUpdate()
+    await this.actions.forceEmitUpdate()
+    await this.addressBook.forceEmitUpdate()
+    // Don't await these as they are not critical for the account selection
+    // and if the user decides to quickly change to another account withStatus
+    // will block the UI until these are resolved.
+    this.accounts.updateAccountState(toAccountAddr)
+    this.updateSelectedAccountPortfolio()
+    this.defiPositions.updatePositions()
+
+    this.emitUpdate()
+  }
+
+  async importSmartAccountFromSavedSeed(seed?: string) {
     await this.withStatus(
-      'importSmartAccountFromDefaultSeed',
+      'importSmartAccountFromSavedSeed',
       async () => {
         if (this.accountAdder.isInitialized) this.accountAdder.reset()
-        if (seed && !this.keystore.hasKeystoreDefaultSeed) {
-          await this.keystore.addSeed(seed)
+        if (seed && !this.keystore.hasKeystoreSavedSeed) {
+          await this.keystore.addSeed({ seed, hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE })
         }
 
-        const defaultSeed = await this.keystore.getDefaultSeed()
-
-        if (!defaultSeed) {
+        const savedSeed = await this.keystore.getSavedSeed()
+        if (!savedSeed) {
           throw new EmittableError({
             message:
-              'Failed to retrieve default seed phrase from keystore. Please try again or contact Ambire support if the issue persists.',
+              'Failed to retrieve saved seed phrase from keystore. Please try again or contact Ambire support if the issue persists.',
             level: 'major',
-            error: new Error('failed to retrieve default seed phrase from keystore')
+            error: new Error('failed to retrieve saved seed phrase from keystore')
           })
         }
 
-        const keyIterator = new KeyIterator(defaultSeed)
-        this.accountAdder.init({
+        const keyIterator = new KeyIterator(savedSeed.seed)
+        await this.accountAdder.init({
           keyIterator,
-          hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
+          hdPathTemplate: savedSeed.hdPathTemplate,
           pageSize: 1,
           shouldGetAccountsUsedOnNetworks: false,
           shouldSearchForLinkedAccounts: false
@@ -380,11 +473,7 @@ export class MainController extends EventEmitter {
         const findNextSmartAccount = async () => {
           do {
             // eslint-disable-next-line no-await-in-loop
-            await this.accountAdder.setPage({
-              page: currentPage,
-              networks: this.networks.networks,
-              providers: this.providers.providers
-            })
+            await this.accountAdder.setPage({ page: currentPage })
 
             nextSmartAccount = this.accountAdder.accountsOnPage.find(
               ({ isLinked, account }) => !isLinked && isSmartAccount(account)
@@ -416,23 +505,10 @@ export class MainController extends EventEmitter {
 
         const readyToAddKeys = this.accountAdder.retrieveInternalKeysOfSelectedAccounts()
 
-        const readyToAddKeyPreferences = this.accountAdder.selectedAccounts.flatMap(
-          ({ account, accountKeys }) =>
-            accountKeys.map(({ addr }, i: number) => ({
-              addr,
-              type: 'internal',
-              label: getDefaultKeyLabel(
-                this.keystore.keys.filter((key) => account.associatedKeys.includes(key.addr)),
-                i
-              )
-            }))
-        )
-
-        await this.accountAdder.addAccounts(
-          this.accountAdder.selectedAccounts,
-          { internal: readyToAddKeys, external: [] },
-          readyToAddKeyPreferences
-        )
+        await this.accountAdder.addAccounts(this.accountAdder.selectedAccounts, {
+          internal: readyToAddKeys,
+          external: []
+        })
       },
       true
     )
@@ -446,12 +522,14 @@ export class MainController extends EventEmitter {
       return null
     }
 
-    const account = this.accounts.accounts?.find((acc) => acc.addr === accountOp.accountAddr)
     const network = this.networks.networks.find((net) => net.id === accountOp.networkId)
 
-    if (!account) {
+    if (
+      !this.selectedAccount.account ||
+      this.selectedAccount.account.addr !== accountOp.accountAddr
+    ) {
       this.signAccOpInitError =
-        'We cannot initiate the signing process as we are unable to locate the specified account.'
+        'Attempting to initialize an accountOp for an account other than the currently selected one.'
       return null
     }
 
@@ -474,15 +552,18 @@ export class MainController extends EventEmitter {
       this.accounts,
       this.keystore,
       this.portfolio,
-      this.providers,
       this.#externalSignerControllers,
-      account,
+      this.selectedAccount.account,
       network,
       actionId,
       accountOp,
-      this.#storage,
-      this.#fetch,
-      this.#callRelayer
+      this.callRelayer,
+      () => {
+        this.estimateSignAccountOp()
+      },
+      () => {
+        return this.isSignRequestStillActive
+      }
     )
 
     this.emitUpdate()
@@ -545,7 +626,7 @@ export class MainController extends EventEmitter {
     const state = this.accounts.accountStates[accountOp.accountAddr][accountOp.networkId]
     const provider = this.providers.providers[network.id]
     const gasPrice = this.gasPrices[network.id]
-    const addresses = await debugTraceCall(
+    const { tokens, nfts } = await debugTraceCall(
       account,
       accountOp,
       provider,
@@ -554,10 +635,10 @@ export class MainController extends EventEmitter {
       gasPrice,
       !network.rpcNoStateOverride
     )
-    const learnedNewTokens = await this.portfolio.learnTokens(addresses, network.id)
-
+    const learnedNewTokens = this.portfolio.addTokensToBeLearned(tokens, network.id)
+    const learnedNewNfts = await this.portfolio.learnNfts(nfts, network.id)
     // update the portfolio only if new tokens were found through tracing
-    if (learnedNewTokens) {
+    if (learnedNewTokens || learnedNewNfts) {
       this.portfolio.updateSelectedAccount(
         accountOp.accountAddr,
         network,
@@ -641,24 +722,18 @@ export class MainController extends EventEmitter {
       // a new session when retrieving keys, in case there already is one.
       if (ledgerCtrl.walletSDK) await ledgerCtrl.cleanUp()
 
-      await ledgerCtrl.unlock()
+      const hdPathTemplate = BIP44_LEDGER_DERIVATION_TEMPLATE
+      await ledgerCtrl.unlock(hdPathTemplate)
 
       if (!ledgerCtrl.walletSDK) {
         const message = 'Could not establish connection with the Ledger device'
         throw new EmittableError({ message, level: 'major', error: new Error(message) })
       }
 
-      const keyIterator = new LedgerKeyIterator({ walletSDK: ledgerCtrl.walletSDK })
-      this.accountAdder.init({
-        keyIterator,
-        hdPathTemplate: BIP44_LEDGER_DERIVATION_TEMPLATE
-      })
+      const keyIterator = new LedgerKeyIterator({ controller: ledgerCtrl })
+      await this.accountAdder.init({ keyIterator, hdPathTemplate })
 
-      return await this.accountAdder.setPage({
-        page: 1,
-        networks: this.networks.networks,
-        providers: this.providers.providers
-      })
+      return await this.accountAdder.setPage({ page: 1 })
     } catch (error: any) {
       const message = error?.message || 'Could not unlock the Ledger device. Please try again.'
       throw new EmittableError({ message, level: 'major', error })
@@ -684,19 +759,16 @@ export class MainController extends EventEmitter {
         throw new EmittableError({ message, level: 'major', error: new Error(message) })
       }
 
-      await latticeCtrl.unlock(undefined, undefined, true)
+      const hdPathTemplate = BIP44_STANDARD_DERIVATION_TEMPLATE
+      await latticeCtrl.unlock(hdPathTemplate, undefined, true)
 
       const { walletSDK } = latticeCtrl
-      this.accountAdder.init({
+      await this.accountAdder.init({
         keyIterator: new LatticeKeyIterator({ walletSDK }),
-        hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
+        hdPathTemplate
       })
 
-      return await this.accountAdder.setPage({
-        page: 1,
-        networks: this.networks.networks,
-        providers: this.providers.providers
-      })
+      return await this.accountAdder.setPage({ page: 1 })
     } catch (error: any) {
       const message = error?.message || 'Could not unlock the Lattice1 device. Please try again.'
       throw new EmittableError({ message, level: 'major', error })
@@ -724,46 +796,6 @@ export class MainController extends EventEmitter {
         this.updateSelectedAccountPortfolio(true)
       }
     }
-  }
-
-  async #updateGasPrice() {
-    await this.#initialLoadPromise
-
-    // if there's no signAccountOp initialized, we don't want to fetch gas
-    const accOp = this.signAccountOp?.accountOp ?? null
-    if (!accOp) return
-
-    const network = this.networks.networks.find((net) => net.id === accOp.networkId)
-    if (!network) return // shouldn't happen
-
-    const is4337 = isErc4337Broadcast(
-      network,
-      this.accounts.accountStates[accOp.accountAddr][accOp.networkId]
-    )
-    const bundlerFetch = async () => {
-      if (!is4337) return null
-      return Bundler.fetchGasPrices(network).catch((e) => {
-        this.emitError({
-          level: 'silent',
-          message: "Failed to fetch the bundler's gas price",
-          error: e
-        })
-      })
-    }
-    const [gasPrice, bundlerGas] = await Promise.all([
-      getGasPriceRecommendations(this.providers.providers[network.id], network).catch((e) => {
-        this.emitError({
-          level: 'major',
-          message: `Unable to get gas price for ${network.id}`,
-          error: new Error(`Failed to fetch gas price: ${e?.message}`)
-        })
-        return null
-      }),
-      bundlerFetch()
-    ])
-
-    if (gasPrice) this.gasPrices[network.id] = gasPrice
-    if (bundlerGas) this.bundlerGasPrices[network.id] = bundlerGas
   }
 
   // call this function after a call to the singleton has been made
@@ -798,13 +830,6 @@ export class MainController extends EventEmitter {
 
     // Remove account keys from the keystore
     solelyAccountKeys.forEach((key) => {
-      this.settings.removeKeyPreferences([{ addr: key.addr, type: key.type }]).catch((e) => {
-        throw new EmittableError({
-          level: 'major',
-          message: 'Failed to remove account key preferences',
-          error: e
-        })
-      })
       this.keystore.removeKey(key.addr, key.type).catch((e) => {
         throw new EmittableError({
           level: 'major',
@@ -825,6 +850,10 @@ export class MainController extends EventEmitter {
         this.activity.removeAccountData(address)
         this.actions.removeAccountData(address)
         this.signMessage.removeAccountData(address)
+
+        if (this.selectedAccount.account?.addr === address) {
+          await this.#selectAccount(this.accounts.accounts[0]?.addr)
+        }
 
         if (this.signAccountOp?.account.addr === address) {
           this.destroySignAccOp()
@@ -856,10 +885,10 @@ export class MainController extends EventEmitter {
       this.signAccOpInitError = `Failed to retrieve account info for ${networkId}, because of one of the following reasons: 1) network doesn't exist, 2) RPC is down for this network`
   }
 
-  #batchCallsFromUserRequests(accountAddr: AccountId, networkId: NetworkId): AccountOpCall[] {
+  #batchCallsFromUserRequests(accountAddr: AccountId, networkId: NetworkId): Call[] {
     // Note: we use reduce instead of filter/map so that the compiler can deduce that we're checking .kind
     return (this.userRequests.filter((r) => r.action.kind === 'calls') as SignUserRequest[]).reduce(
-      (uCalls: AccountOpCall[], req) => {
+      (uCalls: Call[], req) => {
         if (req.meta.networkId === networkId && req.meta.accountAddr === accountAddr) {
           const { calls } = req.action as Calls
           calls.map((call) => uCalls.push({ ...call, fromUserRequestId: req.id }))
@@ -871,10 +900,11 @@ export class MainController extends EventEmitter {
   }
 
   async reloadSelectedAccount() {
-    if (!this.accounts.selectedAccount) return
+    if (!this.selectedAccount.account) return
 
     const isUpdatingAccount = this.accounts.statuses.updateAccountState !== 'INITIAL'
 
+    this.selectedAccount.resetSelectedAccountPortfolio()
     await Promise.all([
       // When we trigger `reloadSelectedAccount` (for instance, from Dashboard -> Refresh balance icon),
       // it's very likely that the account state is already in the process of being updated.
@@ -882,37 +912,36 @@ export class MainController extends EventEmitter {
       // So, we perform this safety check to prevent the error.
       // However, even if we don't trigger an update here, it's not a big problem,
       // as the account state will be updated anyway, and its update will be very recent.
-      !isUpdatingAccount
-        ? this.accounts.updateAccountState(this.accounts.selectedAccount, 'pending')
+      !isUpdatingAccount && this.selectedAccount.account?.addr
+        ? this.accounts.updateAccountState(this.selectedAccount.account.addr, 'pending')
         : Promise.resolve(),
       // `updateSelectedAccountPortfolio` doesn't rely on `withStatus` validation internally,
       // as the PortfolioController already exposes flags that are highly sufficient for the UX.
       // Additionally, if we trigger the portfolio update twice (i.e., running a long-living interval + force update from the Dashboard),
       // there won't be any error thrown, as all portfolio updates are queued and they don't use the `withStatus` helper.
-      this.updateSelectedAccountPortfolio(true)
+      this.updateSelectedAccountPortfolio(true),
+      this.defiPositions.updatePositions()
     ])
   }
 
   // eslint-disable-next-line default-param-last
   async updateSelectedAccountPortfolio(forceUpdate: boolean = false, network?: Network) {
     await this.#initialLoadPromise
-    if (!this.accounts.selectedAccount) return
+    if (!this.selectedAccount.account) return
 
-    const account = this.accounts.accounts.find((a) => a.addr === this.accounts.selectedAccount)
     const signAccountOpNetworkId = this.signAccountOp?.accountOp.networkId
     const networkData =
       network || this.networks.networks.find((n) => n.id === signAccountOpNetworkId)
 
     const accountOpsToBeSimulatedByNetwork = getAccountOpsForSimulation(
-      account!,
+      this.selectedAccount.account,
       this.actions.visibleActionsQueue,
       networkData,
       this.signAccountOp?.accountOp
     )
 
-    // eslint-disable-next-line @typescript-eslint/no-floating-promises
-    this.portfolio.updateSelectedAccount(
-      this.accounts.selectedAccount,
+    await this.portfolio.updateSelectedAccount(
+      this.selectedAccount.account.addr,
       network,
       accountOpsToBeSimulatedByNetwork,
       { forceUpdate }
@@ -934,15 +963,13 @@ export class MainController extends EventEmitter {
     const dapp = this.dapps.getDapp(request.origin)
 
     if (kind === 'calls') {
-      if (!this.accounts.selectedAccount) throw ethErrors.rpc.internal()
+      if (!this.selectedAccount.account) throw ethErrors.rpc.internal()
 
-      const transaction = request.params[0]
-      const accountAddr = getAddress(transaction.from)
-      const account = this.accounts.accounts.find((a) => a.addr === accountAddr)
-
-      if (!account) {
-        throw ethErrors.provider.unauthorized('Transaction failed - unknown account address')
-      }
+      const isWalletSendCalls = !!request.params[0].calls
+      const calls: Calls['calls'] = isWalletSendCalls
+        ? request.params[0].calls
+        : [request.params[0]]
+      const accountAddr = getAddress(request.params[0].from)
 
       const network = this.networks.networks.find(
         (n) => Number(n.chainId) === Number(dapp?.chainId)
@@ -951,23 +978,20 @@ export class MainController extends EventEmitter {
       if (!network) {
         throw ethErrors.provider.chainDisconnected('Transaction failed - unknown network')
       }
-
       userRequest = {
         id: new Date().getTime(),
         action: {
           kind,
-          calls: [
-            {
-              to: transaction.to,
-              value: transaction.value ? getBigInt(transaction.value) : 0n,
-              data: transaction.data || '0x'
-            }
-          ]
+          calls: calls.map((call) => ({
+            to: call.to,
+            data: call.data || '0x',
+            value: call.value ? getBigInt(call.value) : 0n
+          }))
         },
         meta: { isSignAction: true, accountAddr, networkId: network.id },
         dappPromise
       } as SignUserRequest
-      if (!account.creation) {
+      if (!this.selectedAccount.account.creation) {
         const otherUserRequestFromSameDapp = this.userRequests.find(
           (r) => r.dappPromise?.session?.origin === dappPromise?.session?.origin
         )
@@ -977,16 +1001,16 @@ export class MainController extends EventEmitter {
         }
       }
     } else if (kind === 'message') {
-      if (!this.accounts.selectedAccount) throw ethErrors.rpc.internal()
+      if (!this.selectedAccount.account) throw ethErrors.rpc.internal()
 
       const msg = request.params
       if (!msg) {
         throw ethErrors.rpc.invalidRequest('No msg request to sign')
       }
-      const msdAddress = getAddress(msg?.[1])
+      const msgAddress = getAddress(msg?.[1])
       // TODO: if address is in this.accounts in theory the user should be able to sign
       // e.g. if an acc from the wallet is used as a signer of another wallet
-      if (getAddress(msdAddress) !== this.accounts.selectedAccount) {
+      if (msgAddress !== this.selectedAccount.account.addr) {
         dappPromise.reject(
           ethErrors.provider.userRejectedRequest(
             // if updating, check https://github.com/AmbireTech/ambire-wallet/pull/1627
@@ -1013,22 +1037,22 @@ export class MainController extends EventEmitter {
         session: request.session,
         meta: {
           isSignAction: true,
-          accountAddr: msdAddress,
+          accountAddr: msgAddress,
           networkId: network.id
         },
         dappPromise
       } as SignUserRequest
     } else if (kind === 'typedMessage') {
-      if (!this.accounts.selectedAccount) throw ethErrors.rpc.internal()
+      if (!this.selectedAccount.account) throw ethErrors.rpc.internal()
 
       const msg = request.params
       if (!msg) {
         throw ethErrors.rpc.invalidRequest('No msg request to sign')
       }
-      const msdAddress = getAddress(msg?.[0])
+      const msgAddress = getAddress(msg?.[0])
       // TODO: if address is in this.accounts in theory the user should be able to sign
       // e.g. if an acc from the wallet is used as a signer of another wallet
-      if (getAddress(msdAddress) !== this.accounts.selectedAccount) {
+      if (msgAddress !== this.selectedAccount.account.addr) {
         dappPromise.reject(
           ethErrors.provider.userRejectedRequest(
             // if updating, check https://github.com/AmbireTech/ambire-wallet/pull/1627
@@ -1077,7 +1101,7 @@ export class MainController extends EventEmitter {
         session: request.session,
         meta: {
           isSignAction: true,
-          accountAddr: msdAddress,
+          accountAddr: msgAddress,
           networkId: network.id
         },
         dappPromise
@@ -1115,12 +1139,10 @@ export class MainController extends EventEmitter {
     executionType: 'queue' | 'open' = 'open'
   ) {
     await this.#initialLoadPromise
-    if (!this.accounts.selectedAccount) return
-
-    const account = this.accounts.accounts.find((a) => a.addr === this.accounts.selectedAccount)!
+    if (!this.selectedAccount.account) return
 
     const userRequest = buildTransferUserRequest({
-      selectedAccount: this.accounts.selectedAccount,
+      selectedAccount: this.selectedAccount.account.addr,
       amount,
       selectedToken,
       recipientAddress
@@ -1137,7 +1159,114 @@ export class MainController extends EventEmitter {
       return
     }
 
-    await this.addUserRequest(userRequest, !account.creation, executionType)
+    await this.addUserRequest(userRequest, !this.selectedAccount.account.creation, executionType)
+  }
+
+  async buildSwapAndBridgeUserRequest(activeRouteId?: number) {
+    await this.withStatus(
+      'buildSwapAndBridgeUserRequest',
+      async () => {
+        if (!this.selectedAccount.account) return
+        let transaction: SocketAPISendTransactionRequest | null = null
+
+        if (this.swapAndBridge.formStatus === SwapAndBridgeFormStatus.ReadyToSubmit) {
+          transaction = await this.swapAndBridge.getRouteStartUserTx()
+        }
+
+        if (activeRouteId) {
+          this.removeUserRequest(activeRouteId, { shouldRemoveSwapAndBridgeRoute: false })
+          if (!isSmartAccount(this.selectedAccount.account)) {
+            this.removeUserRequest(`${activeRouteId}-revoke-approval`, {
+              shouldRemoveSwapAndBridgeRoute: false
+            })
+            this.removeUserRequest(`${activeRouteId}-approval`, {
+              shouldRemoveSwapAndBridgeRoute: false
+            })
+          }
+          transaction = await this.#socketAPI.getNextRouteUserTx(activeRouteId)
+        }
+
+        if (!this.selectedAccount.account || !transaction) {
+          this.emitError({
+            level: 'major',
+            message: 'Unexpected error while building swap & bridge request',
+            error: new Error('buildSwapAndBridgeUserRequest: bad parameters passed')
+          })
+          return
+        }
+
+        const network = this.networks.networks.find(
+          (n) => Number(n.chainId) === transaction!.chainId
+        )!
+
+        const swapAndBridgeUserRequests = await buildSwapAndBridgeUserRequests(
+          transaction,
+          network.id,
+          this.selectedAccount.account,
+          this.providers.providers[network.id]
+        )
+
+        for (let i = 0; i < swapAndBridgeUserRequests.length; i++) {
+          if (i === 0) {
+            this.addUserRequest(
+              swapAndBridgeUserRequests[i],
+              !this.selectedAccount.account.creation,
+              'open'
+            )
+          } else {
+            // eslint-disable-next-line no-await-in-loop
+            await this.addUserRequest(swapAndBridgeUserRequests[i], false, 'queue')
+          }
+        }
+
+        if (this.swapAndBridge.formStatus === SwapAndBridgeFormStatus.ReadyToSubmit) {
+          await this.swapAndBridge.addActiveRoute({
+            activeRouteId: transaction.activeRouteId,
+            userTxIndex: transaction.userTxIndex
+          })
+        }
+
+        if (activeRouteId) {
+          await this.swapAndBridge.updateActiveRoute(activeRouteId, {
+            userTxIndex: transaction.userTxIndex,
+            userTxHash: null
+          })
+        }
+      },
+      true
+    )
+  }
+
+  buildClaimWalletUserRequest(token: TokenResult) {
+    if (!this.selectedAccount.account) return
+
+    const claimableRewardsData =
+      this.selectedAccount.portfolio.latest.rewards?.result?.claimableRewardsData
+
+    if (!claimableRewardsData) return
+
+    const userRequest: UserRequest = buildClaimWalletRequest({
+      selectedAccount: this.selectedAccount.account.addr,
+      selectedToken: token,
+      claimableRewardsData
+    })
+
+    this.addUserRequest(userRequest)
+  }
+
+  buildMintVestingUserRequest(token: TokenResult) {
+    if (!this.selectedAccount.account) return
+
+    const addrVestingData = this.selectedAccount.portfolio.latest.rewards?.result?.addrVestingData
+
+    if (!addrVestingData) return
+    const userRequest: UserRequest = buildMintVestingRequest({
+      selectedAccount: this.selectedAccount.account.addr,
+      selectedToken: token,
+      addrVestingData
+    })
+
+    this.addUserRequest(userRequest)
   }
 
   resolveUserRequest(data: any, requestId: UserRequest['id']) {
@@ -1160,7 +1289,7 @@ export class MainController extends EventEmitter {
 
   rejectUserRequest(err: string, requestId: UserRequest['id']) {
     const userRequest = this.userRequests.find((r) => r.id === requestId)
-    if (!userRequest) return // TODO: emit error
+    if (!userRequest) return
 
     if (requestId === ENTRY_POINT_AUTHORIZATION_REQUEST_ID) {
       this.userRequests = this.userRequests.filter(
@@ -1173,9 +1302,20 @@ export class MainController extends EventEmitter {
       )
     }
 
+    // if the userRequest that is about to be removed is an approval request
+    // find and remove the associated pending transaction request if there is any
+    // this is valid scenario for a swap & bridge txs with a BA
+    if (userRequest.action.kind === 'calls') {
+      const acc = this.accounts.accounts.find((a) => a.addr === userRequest.meta.accountAddr)!
+
+      if (!isSmartAccount(acc) && userRequest.meta.isApproval) {
+        const txUserRequest = this.userRequests.find((r) => r.id === userRequest.meta.activeRouteId)
+        if (txUserRequest) this.removeUserRequest(txUserRequest.id)
+      }
+    }
+
     userRequest.dappPromise?.reject(ethErrors.provider.userRejectedRequest<any>(err))
     this.removeUserRequest(requestId)
-    this.emitUpdate()
   }
 
   async addUserRequest(
@@ -1211,7 +1351,7 @@ export class MainController extends EventEmitter {
       const account = this.accounts.accounts.find((x) => x.addr === meta.accountAddr)!
       const accountState = this.accounts.accountStates[meta.accountAddr][meta.networkId]
 
-      if (account.creation) {
+      if (isSmartAccount(account)) {
         const network = this.networks.networks.find((n) => n.id === meta.networkId)!
 
         // find me the accountOp for the network if any, it's always 1 for SA
@@ -1222,10 +1362,16 @@ export class MainController extends EventEmitter {
             a.accountOp.networkId === network.id
         ) as AccountOpAction | undefined
 
-        this.activity.setFilters({
+        const activityFilters = {
           account: account.addr,
           network: network.id
-        })
+        }
+        if (!this.activity.isInitialized) {
+          this.activity.init(activityFilters)
+        } else {
+          this.activity.setFilters(activityFilters)
+        }
+
         const entryPointAuthorizationMessageFromHistory = this.activity.signedMessages?.items.find(
           (message) =>
             message.fromActionId === ENTRY_POINT_AUTHORIZATION_REQUEST_ID &&
@@ -1251,9 +1397,15 @@ export class MainController extends EventEmitter {
             entryPointAuthorizationMessageFromHistory?.signature ?? undefined
         })
         this.actions.addOrUpdateAction(accountOpAction, withPriority, executionType)
-        if (this.signAccountOp && this.signAccountOp.fromActionId === accountOpAction.id) {
-          this.signAccountOp.update({ accountOp: accountOpAction.accountOp })
-          this.estimateSignAccountOp()
+        if (this.signAccountOp) {
+          if (this.signAccountOp.fromActionId === accountOpAction.id) {
+            this.signAccountOp.update({ calls: accountOpAction.accountOp.calls })
+            this.estimateSignAccountOp()
+          }
+        } else {
+          // Even without an initialized SignAccountOpController or Screen, we should still update the portfolio and run the simulation.
+          // It's necessary to continue operating with the token `amountPostSimulation` amount.
+          this.updateSelectedAccountPortfolio(true, network)
         }
       } else {
         const accountOpAction = makeBasicAccountOpAction({
@@ -1302,7 +1454,14 @@ export class MainController extends EventEmitter {
   // @TODO allow this to remove multiple OR figure out a way to debounce re-estimations
   // first one sounds more reasonable
   // although the second one can't hurt and can help (or no debounce, just a one-at-a-time queue)
-  removeUserRequest(id: UserRequest['id']) {
+  removeUserRequest(
+    id: UserRequest['id'],
+    options: {
+      shouldRemoveSwapAndBridgeRoute: boolean
+    } = {
+      shouldRemoveSwapAndBridgeRoute: true
+    }
+  ) {
     const req = this.userRequests.find((uReq) => uReq.id === id)
     if (!req) return
 
@@ -1319,7 +1478,7 @@ export class MainController extends EventEmitter {
           `batchCallsFromUserRequests: tried to run for non-existent account ${meta.accountAddr}`
         )
 
-      if (account.creation) {
+      if (isSmartAccount(account)) {
         const accountOpIndex = this.actions.actionsQueue.findIndex(
           (a) => a.type === 'accountOp' && a.id === `${meta.accountAddr}-${meta.networkId}`
         )
@@ -1329,6 +1488,9 @@ export class MainController extends EventEmitter {
         // accountOp has just been rejected
         if (!accountOpAction) {
           this.updateSelectedAccountPortfolio(true, network)
+          if (this.swapAndBridge.activeRoutes.length && options.shouldRemoveSwapAndBridgeRoute) {
+            this.swapAndBridge.removeActiveRoute(id as number)
+          }
           this.emitUpdate()
           return
         }
@@ -1341,16 +1503,25 @@ export class MainController extends EventEmitter {
           this.actions.addOrUpdateAction(accountOpAction)
 
           if (this.signAccountOp && this.signAccountOp.fromActionId === accountOpAction.id) {
-            this.signAccountOp.update({ accountOp: accountOpAction.accountOp, estimation: null })
+            this.signAccountOp.update({ calls: accountOpAction.accountOp.calls, estimation: null })
             this.estimateSignAccountOp()
           }
         } else {
+          if (this.signAccountOp && this.signAccountOp.fromActionId === accountOpAction.id) {
+            this.destroySignAccOp()
+          }
           this.actions.removeAction(`${meta.accountAddr}-${meta.networkId}`)
           this.updateSelectedAccountPortfolio(true, network)
         }
       } else {
+        if (this.signAccountOp && this.signAccountOp.fromActionId === req.id) {
+          this.destroySignAccOp()
+        }
         this.actions.removeAction(id)
         this.updateSelectedAccountPortfolio(true, network)
+      }
+      if (this.swapAndBridge.activeRoutes.length && options.shouldRemoveSwapAndBridgeRoute) {
+        this.swapAndBridge.removeActiveRoute(id as number)
       }
     } else {
       this.actions.removeAction(id)
@@ -1401,12 +1572,13 @@ export class MainController extends EventEmitter {
 
   async addNetwork(network: AddNetworkRequestParams) {
     await this.networks.addNetwork(network)
-    await this.updateSelectedAccountPortfolio(true)
+    await this.updateSelectedAccountPortfolio()
   }
 
   async removeNetwork(id: NetworkId) {
     await this.networks.removeNetwork(id)
-    await this.updateSelectedAccountPortfolio(true)
+    this.portfolio.removeNetworkData(id)
+    this.defiPositions.removeNetworkData(id)
   }
 
   async resolveAccountOpAction(data: any, actionId: AccountOpAction['id']) {
@@ -1414,36 +1586,74 @@ export class MainController extends EventEmitter {
     if (!accountOpAction) return
 
     const { accountOp } = accountOpAction as AccountOpAction
-    const chainId = this.networks.networks.find(
-      (network) => network.id === accountOp.networkId
-    )?.chainId
+    const network = this.networks.networks.find((n) => n.id === accountOp.networkId)
 
-    if (!chainId) return
+    if (!network) return
 
     const meta: SignUserRequest['meta'] = {
       isSignAction: true,
       accountAddr: accountOp.accountAddr,
-      chainId,
+      chainId: network.chainId,
       networkId: '',
       txnId: null,
       userOpHash: null
     }
-    data?.isUserOp ? (meta.userOpHash = data.hash) : (meta.txnId = data.hash)
+    if (data.submittedAccountOp) {
+      // can be undefined, check submittedAccountOp.ts
+      meta.txnId = data.submittedAccountOp.txnId
+
+      meta.identifiedBy = data.submittedAccountOp.identifiedBy
+    }
+
     const benzinUserRequest: SignUserRequest = {
       id: new Date().getTime(),
       action: { kind: 'benzin' },
       meta
     }
     await this.addUserRequest(benzinUserRequest, true)
+
     this.actions.removeAction(actionId)
+
+    const accountOpUserRequests = this.userRequests.filter((r) =>
+      accountOp.calls.some((c) => c.fromUserRequestId === r.id)
+    )
+    const swapAndBridgeUserRequests = accountOpUserRequests.filter(
+      (r) => r.meta.activeRouteId && !r.meta.isApproval
+    )
+
+    // Update route status immediately, so that the UI quickly reflects the change
+    await Promise.all(
+      swapAndBridgeUserRequests.map(async (r) => {
+        await this.swapAndBridge.updateActiveRoute(r.meta.activeRouteId, {
+          routeStatus: 'in-progress'
+        })
+      })
+    )
+
+    // Note: this may take a while!
+    const txnId = await pollTxnId(
+      data.submittedAccountOp.identifiedBy,
+      network,
+      this.fetch,
+      this.callRelayer
+    )
+
+    // Follow up update with the just polled txnId (that potentially came slower)
+    await Promise.all(
+      swapAndBridgeUserRequests.map(async (r) => {
+        await this.swapAndBridge.updateActiveRoute(r.meta.activeRouteId, {
+          userTxHash: txnId
+        })
+      })
+    )
 
     // eslint-disable-next-line no-restricted-syntax
     for (const call of accountOp.calls) {
       const uReq = this.userRequests.find((r) => r.id === call.fromUserRequestId)
       if (uReq) {
-        uReq.dappPromise?.resolve(data)
+        uReq.dappPromise?.resolve({ hash: txnId })
         // eslint-disable-next-line no-await-in-loop
-        this.removeUserRequest(uReq.id)
+        this.removeUserRequest(uReq.id, { shouldRemoveSwapAndBridgeRoute: false })
       }
     }
 
@@ -1458,32 +1668,69 @@ export class MainController extends EventEmitter {
     const accountOpAction = this.actions.actionsQueue.find((a) => a.id === actionId)
     if (!accountOpAction) return
 
-    const { accountOp } = accountOpAction as AccountOpAction
+    const { accountOp, id } = accountOpAction as AccountOpAction
+
+    if (this.signAccountOp && this.signAccountOp.fromActionId === id) {
+      this.destroySignAccOp()
+    }
     this.actions.removeAction(actionId, shouldOpenNextAction)
     // eslint-disable-next-line no-restricted-syntax
     for (const call of accountOp.calls) {
-      const uReq = this.userRequests.find((r) => r.id === call.fromUserRequestId)
-      if (uReq) {
-        uReq.dappPromise?.reject(ethErrors.provider.userRejectedRequest<any>(err))
-        // eslint-disable-next-line no-await-in-loop
-        this.removeUserRequest(uReq.id)
-      }
+      if (call.fromUserRequestId) this.rejectUserRequest(err, call.fromUserRequestId)
     }
-
-    // destroy sign account op if no actions left for account
-    const accountOpsLeftForAcc = (
-      this.actions.actionsQueue.filter((a) => a.type === 'accountOp') as AccountOpAction[]
-    ).filter((action) => action.accountOp.accountAddr === accountOp.accountAddr)
-    if (!accountOpsLeftForAcc.length) this.destroySignAccOp()
 
     this.emitUpdate()
   }
 
+  async #updateGasPrice() {
+    await this.#initialLoadPromise
+
+    // if there's no signAccountOp initialized, we don't want to fetch gas
+    const accOp = this.signAccountOp?.accountOp ?? null
+    if (!accOp) return undefined
+
+    const network = this.networks.networks.find((net) => net.id === accOp.networkId)
+    if (!network) return undefined // shouldn't happen
+
+    const is4337 = isErc4337Broadcast(
+      network,
+      this.accounts.accountStates[accOp.accountAddr][accOp.networkId]
+    )
+    const bundlerFetch = async () => {
+      if (!is4337) return null
+      return Bundler.fetchGasPrices(network).catch((e) => {
+        this.emitError({
+          level: 'silent',
+          message: "Failed to fetch the bundler's gas price",
+          error: e
+        })
+      })
+    }
+    const [gasPriceData, bundlerGas] = await Promise.all([
+      getGasPriceRecommendations(this.providers.providers[network.id], network).catch((e) => {
+        this.emitError({
+          level: 'major',
+          message: `Unable to get gas price for ${network.id}`,
+          error: new Error(`Failed to fetch gas price: ${e?.message}`)
+        })
+        return null
+      }),
+      bundlerFetch()
+    ])
+
+    if (gasPriceData && gasPriceData.gasPrice) this.gasPrices[network.id] = gasPriceData.gasPrice
+    if (bundlerGas) this.bundlerGasPrices[network.id] = bundlerGas
+
+    return {
+      blockGasLimit: gasPriceData?.blockGasLimit
+    }
+  }
+
   async updateSignAccountOpGasPrice() {
     if (!this.signAccountOp) return
-    const networkId = this.signAccountOp.accountOp.networkId
 
-    await this.#updateGasPrice()
+    const accOp = this.signAccountOp.accountOp
+    const gasData = await this.#updateGasPrice()
 
     // there's a chance signAccountOp gets destroyed between the time
     // the first "if (!this.signAccountOp) return" is performed and
@@ -1491,8 +1738,9 @@ export class MainController extends EventEmitter {
     if (!this.signAccountOp) return
 
     this.signAccountOp.update({
-      gasPrices: this.gasPrices[networkId],
-      bundlerGasPrices: this.bundlerGasPrices[networkId]
+      gasPrices: this.gasPrices[accOp.networkId],
+      bundlerGasPrices: this.bundlerGasPrices[accOp.networkId],
+      blockGasLimit: gasData && gasData.blockGasLimit ? gasData.blockGasLimit : undefined
     })
     this.emitUpdate()
   }
@@ -1553,22 +1801,18 @@ export class MainController extends EventEmitter {
       // NOTE: at some point we should check all the "?" signs below and if
       // an error pops out, we should notify the user about it
       const networkFeeTokens =
-        this.portfolio.latest?.[localAccountOp.accountAddr]?.[localAccountOp.networkId]?.result
-          ?.tokens ?? []
+        this.portfolio.getLatestPortfolioState(localAccountOp.accountAddr)?.[
+          localAccountOp.networkId
+        ]?.result?.feeTokens ?? []
       const gasTankFeeTokens =
-        this.portfolio.latest?.[localAccountOp.accountAddr]?.gasTank?.result?.tokens ?? []
+        this.portfolio.getLatestPortfolioState(localAccountOp.accountAddr)?.gasTank?.result
+          ?.tokens ?? []
 
       const feeTokens =
         [...networkFeeTokens, ...gasTankFeeTokens].filter((t) => t.flags.isFeeToken) || []
 
-      // Reverse lookup addresses and save them in memory so they
       // can be read from the UI
-      const humanization = await humanizeAccountOp(
-        this.#storage,
-        localAccountOp,
-        this.#fetch,
-        this.emitError
-      )
+      const humanization = humanizeAccountOp(localAccountOp, {})
       humanization.forEach((call: any) => {
         if (!call.fullVisualization) return
 
@@ -1590,7 +1834,7 @@ export class MainController extends EventEmitter {
         .flat()
         .filter((x: any) => isAddress(x))
 
-      await this.portfolio.learnTokens(additionalHints, network.id)
+      this.portfolio.addTokensToBeLearned(additionalHints, network.id)
 
       const accountOpsToBeSimulatedByNetwork = getAccountOpsForSimulation(
         account!,
@@ -1638,23 +1882,71 @@ export class MainController extends EventEmitter {
       // if the signAccountOp has been deleted, don't continue as the request has already finished
       if (!this.signAccountOp) return
 
-      // if the nonce from the estimation is bigger than the one in localAccountOp,
-      // override the accountState and accountOp with the newly detected nonce
-      // and start a new estimation
-      if (estimation && BigInt(estimation.currentAccountNonce) > (localAccountOp.nonce ?? 0n)) {
-        localAccountOp.nonce = BigInt(estimation.currentAccountNonce)
-        this.signAccountOp.accountOp.nonce = BigInt(estimation.currentAccountNonce)
+      // Basic Account (BA) has two pending actions:
+      // 1. Approval transaction
+      // 2. Actual transaction
+      // If the user tries to sign the second action before the approval, the estimation will fail.
+      // This part improves the error message for a better UX
+      if (estimation && estimation.error) {
+        if (!isSmartAccount(account)) {
+          const userRequest = this.userRequests.find(
+            (r) => r.id === this.signAccountOp?.accountOp.calls[0].fromUserRequestId
+          )
 
-        if (this.accounts.accountStates?.[localAccountOp.accountAddr]?.[localAccountOp.networkId])
-          this.accounts.accountStates[localAccountOp.accountAddr][localAccountOp.networkId].nonce =
-            localAccountOp.nonce
+          if (userRequest && userRequest.meta.activeRouteId && !userRequest.meta.isApproval) {
+            const hasApprovalReq = this.userRequests.find(
+              (r) => r.id === `${userRequest.meta.activeRouteId}-approval`
+            )
 
-        this.estimateSignAccountOp()
+            if (hasApprovalReq) {
+              estimation.error = new Error(
+                'Unable to estimate due to a pending approval. Please sign the approval transaction first to proceed with this transaction.'
+              )
+            }
+          }
+        }
+      }
 
-        // returning here means estimation will not be set => better UX as
-        // the user will not see the error "nonce discrepancy" but instead
-        // just wait for the new estimation
-        return
+      if (estimation) {
+        const currentNonceAhead =
+          BigInt(estimation.currentAccountNonce) > (localAccountOp.nonce ?? 0n)
+
+        // if the nonce from the estimation is bigger than the one in localAccountOp,
+        // override the accountState and accountOp with the newly detected nonce
+        if (currentNonceAhead) {
+          localAccountOp.nonce = BigInt(estimation.currentAccountNonce)
+          this.signAccountOp.accountOp.nonce = BigInt(estimation.currentAccountNonce)
+
+          if (this.accounts.accountStates?.[localAccountOp.accountAddr]?.[localAccountOp.networkId])
+            this.accounts.accountStates[localAccountOp.accountAddr][
+              localAccountOp.networkId
+            ].nonce = localAccountOp.nonce
+        }
+
+        const hasNonceDiscrepancy = estimation.error?.cause === 'NONCE_FAILURE'
+        const lastTxn = this.activity.getLastTxn(localAccountOp.networkId)
+        const SAHasOldNonceOnARelayerNetwork =
+          isSmartAccount(account) &&
+          !network.erc4337.enabled &&
+          lastTxn &&
+          localAccountOp.nonce === lastTxn.nonce &&
+          lastTxn.success &&
+          lastTxn.status === AccountOpStatus.Success
+
+        if (hasNonceDiscrepancy || SAHasOldNonceOnARelayerNetwork) {
+          this.accounts
+            .updateAccountState(localAccountOp.accountAddr, 'pending', [localAccountOp.networkId])
+            .then(() => this.estimateSignAccountOp())
+            .catch((error) =>
+              this.emitError({
+                level: 'major',
+                message:
+                  'Failed to refetch the account state. Please try again to initialize your transaction',
+                error
+              })
+            )
+          return
+        }
       }
 
       if (
@@ -1664,7 +1956,7 @@ export class MainController extends EventEmitter {
         this.accounts.accountStates?.[localAccountOp.accountAddr]?.[localAccountOp.networkId]
       ) {
         this.accounts
-          .updateAccountState(localAccountOp.accountAddr, 'latest', [localAccountOp.networkId])
+          .updateAccountState(localAccountOp.accountAddr, 'pending', [localAccountOp.networkId])
           .then(() => this.estimateSignAccountOp())
           .catch((error) =>
             this.emitError({
@@ -1700,17 +1992,17 @@ export class MainController extends EventEmitter {
             : null
       })
 
+      // if there's an estimation error, override the pending results
+      if (estimation && estimation.error) {
+        this.portfolio.overridePendingResults(localAccountOp)
+      }
       // update the signAccountOp controller once estimation finishes;
       // this eliminates the infinite loading bug if the estimation comes slower
       if (this.signAccountOp && estimation) {
         this.signAccountOp.update({ estimation, rbfAccountOps })
       }
-
-      // if there's an estimation error, override the pending results
-      if (estimation && estimation.error) {
-        this.portfolio.overridePendingResults(localAccountOp)
-      }
     } catch (error: any) {
+      this.signAccountOp?.calculateWarnings()
       this.emitError({
         level: 'silent',
         message: 'Estimation error',
@@ -1771,7 +2063,12 @@ export class MainController extends EventEmitter {
       return this.#throwBroadcastAccountOp({ message })
     }
 
-    let transactionRes: TransactionResponse | { hash: string; nonce: number } | null = null
+    const accountState = this.accounts.accountStates[accountOp.accountAddr][accountOp.networkId]
+    let transactionRes: {
+      txnId?: string
+      nonce: number
+      identifiedBy: AccountOpIdentifiedBy
+    } | null = null
 
     // Basic account (EOA)
     if (!isSmartAccount(account)) {
@@ -1787,7 +2084,7 @@ export class MainController extends EventEmitter {
           const missingKeyAddr = shortenAddress(accountOp.gasFeePayment!.paidBy, 13)
           const accAddr = shortenAddress(accountOp.accountAddr, 13)
           const message = `Key with address ${missingKeyAddr} for account with address ${accAddr} not found. ${contactSupportPrompt}`
-          return await this.#throwBroadcastAccountOp({ message })
+          return await this.#throwBroadcastAccountOp({ message, accountState })
         }
         this.feePayerKey = feePayerKey
         this.emitUpdate()
@@ -1818,7 +2115,15 @@ export class MainController extends EventEmitter {
 
         const signedTxn = await signer.signRawTransaction(rawTxn)
         try {
-          transactionRes = await provider.broadcastTransaction(signedTxn)
+          const broadcastRes = await provider.broadcastTransaction(signedTxn)
+          transactionRes = {
+            txnId: broadcastRes.hash,
+            nonce: broadcastRes.nonce,
+            identifiedBy: {
+              type: 'Transaction',
+              identifier: broadcastRes.hash
+            }
+          }
         } catch (e: any) {
           const reason = e?.message || 'unknown'
 
@@ -1827,7 +2132,7 @@ export class MainController extends EventEmitter {
           )
         }
       } catch (error: any) {
-        return this.#throwBroadcastAccountOp({ error, network })
+        return this.#throwBroadcastAccountOp({ error, network, accountState })
       }
     }
     // Smart account but EOA pays the fee
@@ -1847,13 +2152,12 @@ export class MainController extends EventEmitter {
         const missingKeyAddr = shortenAddress(accountOp.gasFeePayment!.paidBy, 13)
         const accAddr = shortenAddress(accountOp.accountAddr, 13)
         const message = `Key with address ${missingKeyAddr} for account with address ${accAddr} not found.`
-        return this.#throwBroadcastAccountOp({ message })
+        return this.#throwBroadcastAccountOp({ message, accountState })
       }
 
       this.feePayerKey = feePayerKey
       this.emitUpdate()
 
-      const accountState = this.accounts.accountStates[accountOp.accountAddr][accountOp.networkId]
       let data
       let to
       if (accountState.isDeployed) {
@@ -1901,7 +2205,15 @@ export class MainController extends EventEmitter {
 
         const signedTxn = await signer.signRawTransaction(rawTxn)
         try {
-          transactionRes = await provider.broadcastTransaction(signedTxn)
+          const broadcastRes = await provider.broadcastTransaction(signedTxn)
+          transactionRes = {
+            txnId: broadcastRes.hash,
+            nonce: broadcastRes.nonce,
+            identifiedBy: {
+              type: 'Transaction',
+              identifier: broadcastRes.hash
+            }
+          }
         } catch (e: any) {
           const reason = e?.message || 'unknown'
 
@@ -1910,7 +2222,7 @@ export class MainController extends EventEmitter {
           )
         }
       } catch (error: any) {
-        return this.#throwBroadcastAccountOp({ error, network })
+        return this.#throwBroadcastAccountOp({ error, network, accountState })
       }
     }
     // Smart account, the ERC-4337 way
@@ -1919,7 +2231,7 @@ export class MainController extends EventEmitter {
       if (!userOperation) {
         const accAddr = shortenAddress(accountOp.accountAddr, 13)
         const message = `Trying to broadcast an ERC-4337 request but userOperation is not set for the account with address ${accAddr}`
-        return this.#throwBroadcastAccountOp({ message })
+        return this.#throwBroadcastAccountOp({ message, accountState })
       }
 
       // broadcast through bundler's service
@@ -1932,7 +2244,8 @@ export class MainController extends EventEmitter {
             e,
             'Bundler broadcast failed. Please try broadcasting by an EOA or contact support.'
           ),
-          network
+          network,
+          accountState
         })
       }
       if (!userOperationHash) {
@@ -1941,10 +2254,12 @@ export class MainController extends EventEmitter {
         })
       }
 
-      // broadcast the userOperationHash
       transactionRes = {
-        hash: userOperationHash,
-        nonce: Number(userOperation.nonce)
+        nonce: Number(userOperation.nonce),
+        identifiedBy: {
+          type: 'UserOperation',
+          identifier: userOperationHash
+        }
       }
     }
     // Smart account, the Relayer way
@@ -1957,17 +2272,23 @@ export class MainController extends EventEmitter {
           signer: { address: accountOp.signingKeyAddr },
           nonce: Number(accountOp.nonce)
         }
-        const response = await this.#callRelayer(
+        const response = await this.callRelayer(
           `/identity/${accountOp.accountAddr}/${accountOp.networkId}/submit`,
           'POST',
           body
         )
+        if (!response.success) throw new Error(response.message)
+
         transactionRes = {
-          hash: response.txId,
-          nonce: Number(accountOp.nonce)
+          txnId: response.txId,
+          nonce: Number(accountOp.nonce),
+          identifiedBy: {
+            type: 'Relayer',
+            identifier: response.id
+          }
         }
       } catch (error: any) {
-        return this.#throwBroadcastAccountOp({ error, network })
+        return this.#throwBroadcastAccountOp({ error, network, accountState, isRelayer: true })
       }
     }
 
@@ -1979,22 +2300,20 @@ export class MainController extends EventEmitter {
     const submittedAccountOp: SubmittedAccountOp = {
       ...accountOp,
       status: AccountOpStatus.BroadcastedButNotConfirmed,
-      txnId: transactionRes.hash,
+      txnId: transactionRes.txnId,
       nonce: BigInt(transactionRes.nonce),
+      identifiedBy: transactionRes.identifiedBy,
       timestamp: new Date().getTime(),
       isSingletonDeploy: !!accountOp.calls.find(
         (call) => call.to && getAddress(call.to) === SINGLETON
       )
     }
-    if (accountOp.gasFeePayment?.isERC4337) {
-      submittedAccountOp.userOpHash = transactionRes.hash
-    }
     await this.activity.addAccountOp(submittedAccountOp)
     await this.resolveAccountOpAction(
       {
-        hash: transactionRes?.hash || null,
         networkId: network.id,
-        isUserOp: !!accountOp?.asUserOperation
+        isUserOp: !!accountOp?.asUserOperation,
+        submittedAccountOp
       },
       actionId
     )
@@ -2011,16 +2330,25 @@ export class MainController extends EventEmitter {
   // will not trigger emitUpdate in the MainController, therefore the banners will
   // remain the same until a subsequent update in the MainController.
   get banners(): Banner[] {
-    if (!this.accounts.selectedAccount || !this.networks.isInitialized) return []
+    if (!this.selectedAccount.account || !this.networks.isInitialized) return []
+
+    const activeSwapAndBridgeRoutesForSelectedAccount = getActiveRoutesForAccount(
+      this.selectedAccount.account.addr,
+      this.swapAndBridge.activeRoutes
+    )
+    const swapAndBridgeRoutesPendingSignature = activeSwapAndBridgeRoutesForSelectedAccount.filter(
+      (r) => r.routeStatus === 'ready'
+    )
 
     const accountOpBanners = getAccountOpBanners({
       accountOpActionsByNetwork: getAccountOpActionsByNetwork(
-        this.accounts.selectedAccount,
+        this.selectedAccount.account.addr,
         this.actions.actionsQueue
       ),
-      selectedAccount: this.accounts.selectedAccount,
+      selectedAccount: this.selectedAccount.account.addr,
       accounts: this.accounts.accounts,
-      networks: this.networks.networks
+      networks: this.networks.networks,
+      swapAndBridgeRoutesPendingSignature
     })
 
     return [...accountOpBanners]
@@ -2029,11 +2357,15 @@ export class MainController extends EventEmitter {
   #throwBroadcastAccountOp({
     message: _msg,
     error: _err,
-    network
+    network,
+    accountState,
+    isRelayer = false
   }: {
     message?: string
     error?: Error
     network?: Network
+    accountState?: AccountOnchainState
+    isRelayer?: boolean
   }) {
     let message = _msg || _err?.message || 'Unable to broadcast the transaction.'
 
@@ -2047,6 +2379,26 @@ export class MainController extends EventEmitter {
         // in that case, recalculate prices and prompt the user to try again
         message = 'Fee too low. Please select a higher transaction speed and try again'
         this.updateSignAccountOpGasPrice()
+      } else if (
+        message.includes('Transaction underpriced. Please select a higher fee and try again')
+      ) {
+        // this error comes from the relayer when using the paymaster service.
+        // as it could be from lower PVG, we should reestimate as well
+        message = 'Fee too low. Please select a higher transaction speed and try again'
+        this.updateSignAccountOpGasPrice()
+        this.estimateSignAccountOp()
+      } else if (message.includes('INSUFFICIENT_PRIVILEGE')) {
+        message = `Signer key not supported on this network.${
+          !accountState?.isV2
+            ? 'You can add/change signers from the web wallet or contact support.'
+            : 'Please contact support.'
+        }`
+      } else if (
+        message.includes('Ambire relayer') ||
+        (isRelayer && message.includes('Failed to fetch'))
+      ) {
+        message =
+          'Currently, the Ambire relayer seems to be down. Please try again a few moments later or broadcast with a Basic Account'
       } else {
         // Trip the error message, errors coming from the RPC can be huuuuuge
         message = message.length > 300 ? `${message.substring(0, 300)}...` : message
@@ -2057,7 +2409,7 @@ export class MainController extends EventEmitter {
     const replacementFeeLow = error?.message.includes('replacement fee too low')
     // To enable another try for signing in case of broadcast fail
     // broadcast is called in the FE only after successful signing
-    this.signAccountOp?.updateStatusToReadyToSign(replacementFeeLow)
+    this.signAccountOp?.updateStatus(SigningStatus.ReadyToSign, replacementFeeLow)
     if (replacementFeeLow) this.estimateSignAccountOp()
 
     this.feePayerKey = null
@@ -2065,12 +2417,19 @@ export class MainController extends EventEmitter {
     return Promise.reject(new EmittableError({ level: 'major', message, error }))
   }
 
+  get isSignRequestStillActive(): boolean {
+    if (!this.signAccountOp) return false
+
+    return !!this.actions.actionsQueue.find((a) => a.id === this.signAccountOp!.fromActionId)
+  }
+
   // includes the getters in the stringified instance
   toJSON() {
     return {
       ...this,
       ...super.toJSON(),
-      banners: this.banners
+      banners: this.banners,
+      isSignRequestStillActive: this.isSignRequestStillActive
     }
   }
 }

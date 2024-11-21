@@ -2,13 +2,9 @@ import { hexlify, isHexString, toUtf8Bytes } from 'ethers'
 
 import EmittableError from '../../classes/EmittableError'
 import { Account } from '../../interfaces/account'
-import { Fetch } from '../../interfaces/fetch'
 import { ExternalSignerControllers, Key } from '../../interfaces/keystore'
 import { Network } from '../../interfaces/network'
-import { Storage } from '../../interfaces/storage'
 import { Message } from '../../interfaces/userRequest'
-import { messageHumanizer } from '../../libs/humanizer'
-import { IrMessage } from '../../libs/humanizer/interfaces'
 import {
   getEIP712Signature,
   getPlainTextSignature,
@@ -36,10 +32,6 @@ export class SignMessageController extends EventEmitter {
 
   #externalSignerControllers: ExternalSignerControllers
 
-  #storage: Storage
-
-  #fetch: Fetch
-
   #accounts: AccountsController
 
   // this is the signer from keystore.ts
@@ -62,8 +54,6 @@ export class SignMessageController extends EventEmitter {
 
   signingKeyType: Key['type'] | null = null
 
-  humanReadable: IrMessage | null = null
-
   signedMessage: SignedMessage | null = null
 
   constructor(
@@ -71,9 +61,7 @@ export class SignMessageController extends EventEmitter {
     providers: ProvidersController,
     networks: NetworksController,
     accounts: AccountsController,
-    externalSignerControllers: ExternalSignerControllers,
-    storage: Storage,
-    fetch: Fetch
+    externalSignerControllers: ExternalSignerControllers
   ) {
     super()
 
@@ -81,8 +69,6 @@ export class SignMessageController extends EventEmitter {
     this.#providers = providers
     this.#networks = networks
     this.#externalSignerControllers = externalSignerControllers
-    this.#storage = storage
-    this.#fetch = fetch
     this.#accounts = accounts
   }
 
@@ -105,22 +91,6 @@ export class SignMessageController extends EventEmitter {
         this.dapp = dapp
       }
       this.messageToSign = messageToSign
-      const network = this.#networks.networks.find(
-        (n: Network) => n.id === this.messageToSign?.networkId
-      )
-      // eslint-disable-next-line @typescript-eslint/no-floating-promises
-      messageHumanizer(
-        messageToSign,
-        this.#storage,
-        this.#fetch,
-        (humanizedMessage: IrMessage) => {
-          this.humanReadable = humanizedMessage
-          this.emitUpdate()
-        },
-        (err) => this.emitError(err),
-        { network }
-      )
-
       this.isInitialized = true
       this.emitUpdate()
     } else {
@@ -144,7 +114,6 @@ export class SignMessageController extends EventEmitter {
     this.signedMessage = null
     this.signingKeyAddr = null
     this.signingKeyType = null
-    this.humanReadable = null
     this.emitUpdate()
   }
 
@@ -207,6 +176,12 @@ export class SignMessageController extends EventEmitter {
         }
 
         if (this.messageToSign.content.kind === 'typedMessage') {
+          if (account.creation && this.messageToSign.content.primaryType === 'Permit') {
+            throw new Error(
+              'It looks like that this dApp doesn\'t detect Smart Account wallets, and requested incompatible approval type. Please, go back to the dApp and change the approval type to "Transaction", which is supported by Smart Account wallets.'
+            )
+          }
+
           signature = await getEIP712Signature(
             this.messageToSign.content,
             account,
@@ -228,6 +203,14 @@ export class SignMessageController extends EventEmitter {
         )
       }
 
+      // if the account is not deployed, it should be wrapped with EIP-6492
+      // magic bytes
+      signature =
+        account.creation && !accountState.isDeployed
+          ? // https://eips.ethereum.org/EIPS/eip-6492
+            wrapCounterfactualSign(signature, account.creation!)
+          : signature
+
       const personalMsgToValidate =
         typeof this.messageToSign.content.message === 'string'
           ? hexStringToUint8Array(this.messageToSign.content.message)
@@ -239,11 +222,7 @@ export class SignMessageController extends EventEmitter {
         // the signer is always the account even if the actual
         // signature is from a key that has privs to the account
         signer: this.messageToSign?.accountAddr,
-        signature:
-          account.creation && !accountState.isDeployed
-            ? // https://eips.ethereum.org/EIPS/eip-6492
-              wrapCounterfactualSign(signature, account.creation!)
-            : signature,
+        signature,
         // @ts-ignore TODO: Be aware of the type mismatch, could cause troubles
         message: this.messageToSign.content.kind === 'message' ? personalMsgToValidate : undefined,
         typedData:

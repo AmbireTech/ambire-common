@@ -1,12 +1,7 @@
 import { Fetch } from '../../interfaces/fetch'
 
-export async function fetchUserOp(
-  userOpHash: string,
-  fetchFn: Fetch,
-  explorerNetworkId: string | null = null
-) {
-  let url = `https://api.jiffyscan.xyz/v0/getUserOp?hash=${userOpHash}`
-  if (explorerNetworkId) url += `&network=${explorerNetworkId}`
+export async function fetchUserOp(userOpHash: string, fetchFn: Fetch) {
+  const url = `https://api.jiffyscan.xyz/v0/getUserOp?hash=${userOpHash}`
 
   return fetchFn(url, {
     method: 'GET',

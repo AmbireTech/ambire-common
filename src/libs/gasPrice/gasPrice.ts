@@ -1,4 +1,4 @@
-import { Block, Interface, Provider } from 'ethers'
+import { Block, Interface, JsonRpcProvider, Provider } from 'ethers'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json'
@@ -10,6 +10,9 @@ import { getActivatorCall, shouldIncludeActivatorCall } from '../userOperation/u
 // https://eips.ethereum.org/EIPS/eip-1559
 const DEFAULT_BASE_FEE_MAX_CHANGE_DENOMINATOR = 8n
 const DEFAULT_ELASTICITY_MULTIPLIER = 2n
+
+// a 1 gwei min for gas price, non1559 networks
+export const MIN_GAS_PRICE = 1000000000n
 
 // multipliers from the old: https://github.com/AmbireTech/relayer/blob/wallet-v2/src/utils/gasOracle.js#L64-L76
 // 2x, 2x*0.4, 2x*0.2 - all of them divided by 8 so 0.25, 0.1, 0.05 - those seem usable; with a slight tweak for the ape
@@ -69,6 +72,26 @@ function average(data: bigint[]): bigint {
   return data.reduce((a, b) => a + b, 0n) / BigInt(data.length)
 }
 
+function getNetworkMinBaseFee(network: Network, lastBlock: Block): bigint {
+  // if we have a minBaseFee set in our config, use it
+  if (network.feeOptions.minBaseFee) return network.feeOptions.minBaseFee
+
+  // if we don't have a config, we return 0
+  if (network.predefined && !network.feeOptions.minBaseFeeEqualToLastBlock) return 0n
+
+  // if it's a custom network and it has EIP-1559, set the minimum
+  // to the lastBlock's baseFeePerGas. Every chain is free to tweak
+  // its EIP-1559 implementation as it deems fit. Therefore, we have no
+  // guarantee the 12.5% block base fee reduction will actually happen.
+  // if it doesn't and we reduce the baseFee with our calculations,
+  // most often than not the transaction will just get stuck.
+  //
+  // Transaction fees are no longer an issue on L2s.
+  // Having the user spend a fraction of the cent more is way better
+  // than having his txns constantly getting stuck
+  return lastBlock.baseFeePerGas ?? 0n
+}
+
 // if there's an RPC issue, try refetching the block at least
 // 5 times before declaring a failure
 async function refetchBlock(
@@ -111,12 +134,23 @@ export async function getGasPriceRecommendations(
   provider: Provider,
   network: Network,
   blockTag: string | number = -1
-): Promise<GasRecommendation[]> {
-  const lastBlock = await refetchBlock(provider, blockTag)
+): Promise<{ gasPrice: GasRecommendation[]; blockGasLimit: bigint }> {
+  const [lastBlock, ethGasPrice] = await Promise.all([
+    refetchBlock(provider, blockTag),
+    (provider as JsonRpcProvider).send('eth_gasPrice', []).catch((e) => {
+      console.log('eth_gasPrice failed because of the following reason:')
+      console.log(e)
+      return '0x'
+    })
+  ])
   // https://github.com/ethers-io/ethers.js/issues/3683#issuecomment-1436554995
   const txns = lastBlock.prefetchedTransactions
 
-  if (network.feeOptions.is1559 && lastBlock.baseFeePerGas != null) {
+  if (
+    network.feeOptions.is1559 &&
+    lastBlock.baseFeePerGas != null &&
+    lastBlock.baseFeePerGas !== 0n
+  ) {
     // https://eips.ethereum.org/EIPS/eip-1559
     const elasticityMultiplier =
       network.feeOptions.elasticityMultiplier ?? DEFAULT_ELASTICITY_MULTIPLIER
@@ -137,9 +171,8 @@ export async function getGasPriceRecommendations(
     }
 
     // if the estimated fee is below the chain minimum, set it to the min
-    if (network.feeOptions.minBaseFee && expectedBaseFee < network.feeOptions.minBaseFee) {
-      expectedBaseFee = network.feeOptions.minBaseFee
-    }
+    const minBaseFee = getNetworkMinBaseFee(network, lastBlock)
+    if (expectedBaseFee < minBaseFee) expectedBaseFee = minBaseFee
 
     const tips = filterOutliers(txns.map((x) => x.maxPriorityFeePerGas!).filter((x) => x > 0))
     const fee: Gas1559Recommendation[] = []
@@ -147,16 +180,19 @@ export async function getGasPriceRecommendations(
       const baseFee = expectedBaseFee + (expectedBaseFee * baseFeeAddBps) / 10000n
       let maxPriorityFeePerGas = average(nthGroup(tips, i, speeds.length))
 
-      // set a bare minimum of 200n for maxPriorityFeePerGas
-      maxPriorityFeePerGas = maxPriorityFeePerGas >= 200n ? maxPriorityFeePerGas : 200n
+      // set a bare minimum of 100000n for maxPriorityFeePerGas
+      maxPriorityFeePerGas = maxPriorityFeePerGas >= 100000n ? maxPriorityFeePerGas : 100000n
 
       // compare the maxPriorityFeePerGas with the previous speed
       // if it's not at least 12% bigger, then replace the calculated one
       // with at least 12% bigger maxPriorityFeePerGas.
       // This is most impactufull on L2s where txns get stuck for low maxPriorityFeePerGas
+      //
+      // if the speed is ape, make it 50% more
       const prevSpeed = fee.length ? fee[i - 1].maxPriorityFeePerGas : null
       if (prevSpeed) {
-        const min = prevSpeed + prevSpeed / 8n
+        const divider = name === 'ape' ? 2n : 8n
+        const min = prevSpeed + prevSpeed / divider
         if (maxPriorityFeePerGas < min) maxPriorityFeePerGas = min
       }
 
@@ -166,13 +202,22 @@ export async function getGasPriceRecommendations(
         maxPriorityFeePerGas
       })
     })
-    return fee
+    return { gasPrice: fee, blockGasLimit: lastBlock.gasLimit }
   }
   const prices = filterOutliers(txns.map((x) => x.gasPrice!).filter((x) => x > 0))
-  return speeds.map(({ name }, i) => ({
-    name,
-    gasPrice: average(nthGroup(prices, i, speeds.length))
-  }))
+
+  // use th fetched price as a min if not 0 as it could be actually lower
+  // than the hardcoded MIN.
+  const minOrFetchedGasPrice = ethGasPrice !== '0x' ? BigInt(ethGasPrice) : MIN_GAS_PRICE
+
+  const fee = speeds.map(({ name }, i) => {
+    const avgGasPrice = average(nthGroup(prices, i, speeds.length))
+    return {
+      name,
+      gasPrice: avgGasPrice >= minOrFetchedGasPrice ? avgGasPrice : minOrFetchedGasPrice
+    }
+  })
+  return { gasPrice: fee, blockGasLimit: lastBlock.gasLimit }
 }
 
 export function getProbableCallData(

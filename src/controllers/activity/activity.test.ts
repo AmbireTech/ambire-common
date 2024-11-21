@@ -6,11 +6,14 @@ import { produceMemoryStore } from '../../../test/helpers'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { networks } from '../../consts/networks'
 import { RPCProviders } from '../../interfaces/provider'
+import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
+import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { getRpcProvider } from '../../services/provider'
 import { AccountsController } from '../accounts/accounts'
 import { NetworksController } from '../networks/networks'
 import { ProvidersController } from '../providers/providers'
-import { ActivityController, SignedMessage, SubmittedAccountOp } from './activity'
+import { SelectedAccountController } from '../selectedAccount/selectedAccount'
+import { ActivityController, SignedMessage } from './activity'
 
 const INIT_PARAMS = {
   account: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
@@ -74,7 +77,11 @@ const SUBMITTED_ACCOUNT_OP = {
     }
   ],
   txnId: '0x891e12877c24a8292fd73fd741897682f38a7bcd497374a6b68e8add89e1c0fb',
-  status: 'broadcasted-but-not-confirmed'
+  status: 'broadcasted-but-not-confirmed',
+  identifiedBy: {
+    type: 'Transaction',
+    identifier: '0x891e12877c24a8292fd73fd741897682f38a7bcd497374a6b68e8add89e1c0fb'
+  }
 } as SubmittedAccountOp
 
 const SIGNED_MESSAGE: SignedMessage = {
@@ -100,35 +107,22 @@ networks.forEach((network) => {
   providers[network.id].isWorking = true
 })
 
+const callRelayer = relayerCall.bind({ url: '', fetch })
+
+let providersCtrl: ProvidersController
+let accountsCtrl: AccountsController
+let selectedAccountCtrl: SelectedAccountController
+let networksCtrl: NetworksController
+
+const storage = produceMemoryStore()
+
 const prepareTest = async () => {
-  const storage = produceMemoryStore()
-  await storage.set('accounts', ACCOUNTS)
-  let providersCtrl: ProvidersController
-  const networksCtrl = new NetworksController(
-    storage,
-    fetch,
-    (net) => {
-      providersCtrl.setProvider(net)
-    },
-    (id) => {
-      providersCtrl.removeProvider(id)
-    }
-  )
-  providersCtrl = new ProvidersController(networksCtrl)
-  providersCtrl.providers = providers
-  const accountsCtrl = new AccountsController(
-    storage,
-    providersCtrl,
-    networksCtrl,
-    () => {},
-    () => {}
-  )
-  await accountsCtrl.initialLoadPromise
-  accountsCtrl.selectedAccount = '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
   const controller = new ActivityController(
     storage,
     fetch,
+    callRelayer,
     accountsCtrl,
+    selectedAccountCtrl,
     providersCtrl,
     networksCtrl,
     () => Promise.resolve()
@@ -143,9 +137,47 @@ const prepareTest = async () => {
 }
 
 describe('Activity Controller ', () => {
+  // Setup other controllers only once!
+  // Otherwise account states will be fetched in every tests and the RPC may timeout or throw
+  // errors
+  beforeAll(async () => {
+    await storage.set('accounts', ACCOUNTS)
+
+    networksCtrl = new NetworksController(
+      storage,
+      fetch,
+      (net) => {
+        providersCtrl.setProvider(net)
+      },
+      (id) => {
+        providersCtrl.removeProvider(id)
+      }
+    )
+    providersCtrl = new ProvidersController(networksCtrl)
+    providersCtrl.providers = providers
+    accountsCtrl = new AccountsController(
+      storage,
+      providersCtrl,
+      networksCtrl,
+      () => {},
+      () => {}
+    )
+    selectedAccountCtrl = new SelectedAccountController({ storage, accounts: accountsCtrl })
+
+    await selectedAccountCtrl.initialLoadPromise
+    await selectedAccountCtrl.setAccount(ACCOUNTS[1])
+  })
+
+  // Clear activity storage after each test
+  // but keep accounts, providers etc.
+  afterEach(async () => {
+    await storage.remove('accountsOps')
+    await storage.remove('signedMessages')
+  })
+
   describe('AccountsOps', () => {
     test('Retrieved from Controller and persisted in Storage', async () => {
-      const { controller, storage } = await prepareTest()
+      const { controller } = await prepareTest()
 
       await controller.addAccountOp(SUBMITTED_ACCOUNT_OP)
       const controllerAccountsOps = controller.accountsOps
@@ -190,7 +222,11 @@ describe('Activity Controller ', () => {
             }
           ],
           txnId: '0x891e12877c24a8292fd73fd741897682f38a7bcd497374a6b68e8add89e1c0fb',
-          status: 'broadcasted-but-not-confirmed'
+          status: 'broadcasted-but-not-confirmed',
+          identifiedBy: {
+            type: 'Transaction',
+            identifier: '0x891e12877c24a8292fd73fd741897682f38a7bcd497374a6b68e8add89e1c0fb'
+          }
         },
         {
           accountAddr: '0x40b38765696e3d5d8d9d834d8aad4bb6e418e489',
@@ -216,7 +252,11 @@ describe('Activity Controller ', () => {
             }
           ],
           txnId: '0x891e12877c24a8292fd73fd741897682f38a7bcd497374a6b68e8add89e1c0fb',
-          status: 'broadcasted-but-not-confirmed'
+          status: 'broadcasted-but-not-confirmed',
+          identifiedBy: {
+            type: 'Transaction',
+            identifier: '0x891e12877c24a8292fd73fd741897682f38a7bcd497374a6b68e8add89e1c0fb'
+          }
         },
         {
           accountAddr: '0x40b38765696e3d5d8d9d834d8aad4bb6e418e489',
@@ -242,7 +282,11 @@ describe('Activity Controller ', () => {
             }
           ],
           txnId: '0x891e12877c24a8292fd73fd741897682f38a7bcd497374a6b68e8add89e1c0fb',
-          status: 'broadcasted-but-not-confirmed'
+          status: 'broadcasted-but-not-confirmed',
+          identifiedBy: {
+            type: 'Transaction',
+            identifier: '0x891e12877c24a8292fd73fd741897682f38a7bcd497374a6b68e8add89e1c0fb'
+          }
         },
         {
           accountAddr: '0x40b38765696e3d5d8d9d834d8aad4bb6e418e489',
@@ -268,7 +312,11 @@ describe('Activity Controller ', () => {
             }
           ],
           txnId: '0x891e12877c24a8292fd73fd741897682f38a7bcd497374a6b68e8add89e1c0fb',
-          status: 'broadcasted-but-not-confirmed'
+          status: 'broadcasted-but-not-confirmed',
+          identifiedBy: {
+            type: 'Transaction',
+            identifier: '0x891e12877c24a8292fd73fd741897682f38a7bcd497374a6b68e8add89e1c0fb'
+          }
         }
       ] as SubmittedAccountOp[]
 
@@ -313,7 +361,11 @@ describe('Activity Controller ', () => {
               }
             ],
             status: 'broadcasted-but-not-confirmed', // everytime we add a new AccountOp, it gets broadcasted-but-not-confirmed status
-            txnId: '0x891e12877c24a8292fd73fd741897682f38a7bcd497374a6b68e8add89e1c0fb'
+            txnId: '0x891e12877c24a8292fd73fd741897682f38a7bcd497374a6b68e8add89e1c0fb',
+            identifiedBy: {
+              type: 'Transaction',
+              identifier: '0x891e12877c24a8292fd73fd741897682f38a7bcd497374a6b68e8add89e1c0fb'
+            }
           }
         ],
         itemsTotal: 2,
@@ -350,7 +402,11 @@ describe('Activity Controller ', () => {
         ],
         // this txn is already mined and has `success` status
         txnId: '0x891e12877c24a8292fd73fd741897682f38a7bcd497374a6b68e8add89e1c0fb',
-        status: 'broadcasted-but-not-confirmed'
+        status: 'broadcasted-but-not-confirmed',
+        identifiedBy: {
+          type: 'Transaction',
+          identifier: '0x891e12877c24a8292fd73fd741897682f38a7bcd497374a6b68e8add89e1c0fb'
+        }
       } as SubmittedAccountOp
 
       await controller.addAccountOp(accountOp)
@@ -391,7 +447,11 @@ describe('Activity Controller ', () => {
         ],
         // this txn is already mined, but has `fail` status
         txnId: '0x67ec3acc5274a88c50d1e79e9b9d4c2c3d5e0e3ba3cc33b32d65f3fdb3b5a258',
-        status: 'broadcasted-but-not-confirmed'
+        status: 'broadcasted-but-not-confirmed',
+        identifiedBy: {
+          type: 'Transaction',
+          identifier: '0x67ec3acc5274a88c50d1e79e9b9d4c2c3d5e0e3ba3cc33b32d65f3fdb3b5a258'
+        }
       } as SubmittedAccountOp
 
       await controller.addAccountOp(accountOp)
@@ -407,34 +467,14 @@ describe('Activity Controller ', () => {
     })
 
     test('`Unknown but past nonce` status is set correctly', async () => {
-      const storage = produceMemoryStore()
-      await storage.set('accounts', ACCOUNTS)
-      let providersCtrl: ProvidersController
-      const networksCtrl = new NetworksController(
-        storage,
-        fetch,
-        (net) => {
-          providersCtrl.setProvider(net)
-        },
-        (id) => {
-          providersCtrl.removeProvider(id)
-        }
-      )
-      providersCtrl = new ProvidersController(networksCtrl)
-      providersCtrl.providers = providers
-      const accountsCtrl = new AccountsController(
-        storage,
-        providersCtrl,
-        networksCtrl,
-        () => {},
-        () => {}
-      )
-      await accountsCtrl.initialLoadPromise
-      accountsCtrl.selectedAccount = '0xa07D75aacEFd11b425AF7181958F0F85c312f143'
+      await selectedAccountCtrl.setAccount(ACCOUNTS[0])
+      await accountsCtrl.updateAccountState('0xa07D75aacEFd11b425AF7181958F0F85c312f143')
       const controller = new ActivityController(
         storage,
         fetch,
+        callRelayer,
         accountsCtrl,
+        selectedAccountCtrl,
         providersCtrl,
         networksCtrl,
         () => Promise.resolve()
@@ -470,7 +510,11 @@ describe('Activity Controller ', () => {
         ],
         // wrong txn id, so we can simulate nullish getTransactionReceipt()
         txnId: '0x0000000000000000000000000000000000000000000000000000000000000001',
-        status: 'broadcasted-but-not-confirmed'
+        status: 'broadcasted-but-not-confirmed',
+        identifiedBy: {
+          type: 'Transaction',
+          identifier: '0x0000000000000000000000000000000000000000000000000000000000000001'
+        }
       } as SubmittedAccountOp
 
       await controller.addAccountOp(accountOp)
@@ -512,7 +556,11 @@ describe('Activity Controller ', () => {
           }
         ],
         txnId: '0x891e12877c24a8292fd73fd741897682f38a7bcd497374a6b68e8add89e1c0fb',
-        status: 'broadcasted-but-not-confirmed'
+        status: 'broadcasted-but-not-confirmed',
+        identifiedBy: {
+          type: 'Transaction',
+          identifier: '0x891e12877c24a8292fd73fd741897682f38a7bcd497374a6b68e8add89e1c0fb'
+        }
       } as SubmittedAccountOp
 
       const accountsOps = Array.from(Array(1500).keys()).map((key) => ({
@@ -538,7 +586,7 @@ describe('Activity Controller ', () => {
 
   describe('SignedMessages', () => {
     test('Retrieved from Controller and persisted in Storage', async () => {
-      const { controller, storage } = await prepareTest()
+      const { controller } = await prepareTest()
 
       const signedMessage: SignedMessage = {
         fromActionId: 1,
@@ -619,7 +667,7 @@ describe('Activity Controller ', () => {
         await controller.addSignedMessage(sm, '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5')
       }
 
-      await controller.setSignedMessagesPagination({ fromPage: 0, itemsPerPage: 1000 })
+      controller.setSignedMessagesPagination({ fromPage: 0, itemsPerPage: 1000 })
       const controllerSignedMessages = controller.signedMessages
 
       expect(controllerSignedMessages!.itemsTotal).toEqual(1000)

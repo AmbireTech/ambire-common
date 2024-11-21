@@ -1,5 +1,6 @@
 import { expect, jest } from '@jest/globals'
 
+import { suppressConsole } from '../../../test/helpers/console'
 import EventEmitter, { ErrorRef } from './eventEmitter'
 
 describe('EventEmitter', () => {
@@ -49,6 +50,8 @@ describe('EventEmitter', () => {
   })
 
   it('should unsubscribe from error events', () => {
+    const consoleSuppressor = suppressConsole()
+
     const mockErrorCallback = jest.fn()
     const unsubscribe = eventEmitter.onError(mockErrorCallback)
 
@@ -72,5 +75,7 @@ describe('EventEmitter', () => {
     ;(eventEmitter as any).emitError(sampleError)
     // Count should remain 2, indicating the callback was not called again
     expect(mockErrorCallback).toHaveBeenCalledTimes(2)
+
+    consoleSuppressor.restore()
   })
 })

@@ -1,5 +1,6 @@
 /* eslint-disable class-methods-use-this */
 import fetch from 'node-fetch'
+import { EventEmitter } from 'stream'
 
 import { expect } from '@jest/globals'
 
@@ -44,12 +45,22 @@ let storage: Storage
 let keystore: KeystoreController
 let email: string
 const testingOptions = { autoConfirmMagicLink: true }
+
+const windowManager = {
+  focus: () => Promise.resolve(),
+  open: () => Promise.resolve(0),
+  remove: () => Promise.resolve(),
+  event: new EventEmitter(),
+  sendWindowToastMessage: () => {},
+  sendWindowUiMessage: () => {}
+}
+
 describe('happy cases', () => {
   beforeEach(() => {
     email = getRandomEmail()
     ;[storage, keystore] = [
       produceMemoryStore(),
-      new KeystoreController(produceMemoryStore(), keystoreSigners)
+      new KeystoreController(produceMemoryStore(), keystoreSigners, windowManager)
     ]
   })
   test('login first time', async () => {
@@ -115,7 +126,7 @@ describe('happy cases', () => {
   test('full keystore sync', async () => {
     const [storage2, keystore2] = [
       produceMemoryStore(),
-      new KeystoreController(produceMemoryStore(), keystoreSigners)
+      new KeystoreController(produceMemoryStore(), keystoreSigners, windowManager)
     ]
     const keys = [
       {
@@ -133,8 +144,30 @@ describe('happy cases', () => {
     // used to add keystore uid
     await keystore.addSecret('smth', 'secret', '', false)
     await keystore.unlockWithSecret('smth', 'secret')
-    await keystore.addKeys([{ privateKey: keys[0].privateKey, dedicatedToOneSA: false }])
-    await keystore.addKeys([{ privateKey: keys[1].privateKey, dedicatedToOneSA: false }])
+    await keystore.addKeys([
+      {
+        addr: keys[0].address,
+        type: 'internal',
+        label: 'Key 1',
+        privateKey: keys[0].privateKey,
+        dedicatedToOneSA: false,
+        meta: {
+          createdAt: new Date().getTime()
+        }
+      }
+    ])
+    await keystore.addKeys([
+      {
+        addr: keys[1].address,
+        type: 'internal',
+        label: 'Key 2',
+        privateKey: keys[1].privateKey,
+        dedicatedToOneSA: false,
+        meta: {
+          createdAt: new Date().getTime()
+        }
+      }
+    ])
 
     // ev 2
     const ev2 = new EmailVaultController(storage2, fetch, relayerUrl, keystore2, testingOptions)

@@ -13,4 +13,5 @@ export interface WindowManager {
       sticky?: boolean
     }
   ) => void
+  sendWindowUiMessage: (params: {}) => void
 }
