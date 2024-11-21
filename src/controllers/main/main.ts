@@ -253,11 +253,6 @@ export class MainController extends EventEmitter {
         const defaultSelectedAccount = getDefaultSelectedAccount(accounts)
         if (defaultSelectedAccount) {
           await this.#selectAccount(defaultSelectedAccount.addr)
-          // Don't wait for account state because:
-          // 1. The extension works perfectly fine without it
-          // 2. Some RPCs may be slow and we don't want to block the UI
-          // eslint-disable-next-line @typescript-eslint/no-floating-promises
-          this.accounts.updateAccountState(defaultSelectedAccount.addr)
         }
       },
       this.providers.updateProviderIsWorking.bind(this.providers)
@@ -427,15 +422,18 @@ export class MainController extends EventEmitter {
     }
     this.selectedAccount.setAccount(accountToSelect)
     this.activity.init()
-    await this.updateSelectedAccountPortfolio()
-    await this.defiPositions.updatePositions()
+    this.swapAndBridge.onAccountChange()
+    this.dapps.broadcastDappSessionEvent('accountsChanged', [toAccountAddr])
     // forceEmitUpdate to update the getters in the FE state of the ctrl
     await this.forceEmitUpdate()
     await this.actions.forceEmitUpdate()
-    await this.swapAndBridge.forceEmitUpdate()
     await this.addressBook.forceEmitUpdate()
-    this.dapps.broadcastDappSessionEvent('accountsChanged', [toAccountAddr])
-    await this.accounts.updateAccountState(toAccountAddr)
+    // Don't await these as they are not critical for the account selection
+    // and if the user decides to quickly change to another account withStatus
+    // will block the UI until these are resolved.
+    this.accounts.updateAccountState(toAccountAddr)
+    this.updateSelectedAccountPortfolio()
+    this.defiPositions.updatePositions()
 
     this.emitUpdate()
   }
@@ -942,8 +940,7 @@ export class MainController extends EventEmitter {
       this.signAccountOp?.accountOp
     )
 
-    // eslint-disable-next-line @typescript-eslint/no-floating-promises
-    this.portfolio.updateSelectedAccount(
+    await this.portfolio.updateSelectedAccount(
       this.selectedAccount.account.addr,
       network,
       accountOpsToBeSimulatedByNetwork,
@@ -1806,7 +1803,7 @@ export class MainController extends EventEmitter {
       const networkFeeTokens =
         this.portfolio.getLatestPortfolioState(localAccountOp.accountAddr)?.[
           localAccountOp.networkId
-        ]?.result?.tokens ?? []
+        ]?.result?.feeTokens ?? []
       const gasTankFeeTokens =
         this.portfolio.getLatestPortfolioState(localAccountOp.accountAddr)?.gasTank?.result
           ?.tokens ?? []

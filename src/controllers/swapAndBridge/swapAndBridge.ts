@@ -112,6 +112,8 @@ export class SwapAndBridgeController extends EventEmitter {
 
   portfolioTokenList: TokenResult[] = []
 
+  isTokenListLoading: boolean = false
+
   toTokenList: SocketAPIToken[] = []
 
   routePriority: 'output' | 'time' = 'output'
@@ -150,7 +152,10 @@ export class SwapAndBridgeController extends EventEmitter {
     this.activeRoutes = await this.#storage.get('swapAndBridgeActiveRoutes', [])
 
     this.#selectedAccount.onUpdate(() => {
-      this.updatePortfolioTokenList(this.#selectedAccount.portfolio.tokens)
+      if (this.#selectedAccount.portfolio.isAllReady) {
+        this.isTokenListLoading = false
+        this.updatePortfolioTokenList(this.#selectedAccount.portfolio.tokens)
+      }
     })
     this.emitUpdate()
   }
@@ -803,6 +808,13 @@ export class SwapAndBridgeController extends EventEmitter {
 
   removeActiveRoute(activeRouteId: SocketAPISendTransactionRequest['activeRouteId']) {
     this.activeRoutes = this.activeRoutes.filter((r) => r.activeRouteId !== activeRouteId)
+
+    this.emitUpdate()
+  }
+
+  onAccountChange() {
+    this.portfolioTokenList = []
+    this.isTokenListLoading = true
 
     this.emitUpdate()
   }
