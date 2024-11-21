@@ -37,7 +37,7 @@ describe('Error decoders work', () => {
     contract = await contractFactory.deploy()
   })
 
-  it('should handle PanicError correctly', async () => {
+  it('Should handle PanicError correctly', async () => {
     try {
       await contract.panicUnderflow()
     } catch (e: any) {
@@ -55,7 +55,7 @@ describe('Error decoders work', () => {
     }
   })
   describe('RpcErrorHandler', () => {
-    it('should handle errors reverted not due to contract errors', async () => {
+    it('Should handle errors reverted not due to contract errors', async () => {
       let decodedError: DecodedError
 
       try {
@@ -72,7 +72,7 @@ describe('Error decoders work', () => {
       }
     })
     describe('Prioritizes error code if string, otherwise fallbacks', () => {
-      it('should use error code if string', async () => {
+      it('Should use error code if string', async () => {
         const mockRpcError = new MockRpcError(
           'INSUFFICIENT_FUNDS',
           {
@@ -89,7 +89,7 @@ describe('Error decoders work', () => {
         expect(decodedError.reason).toEqual(mockRpcError.code)
       })
 
-      it('should fallback to shortMessage if code is not a string', async () => {
+      it('Should fallback to shortMessage if code is not a string', async () => {
         const mockRpcError = new MockRpcError(
           -32000,
           {
@@ -104,7 +104,7 @@ describe('Error decoders work', () => {
 
         expect(decodedError.reason).toEqual(mockRpcError.shortMessage)
       })
-      it('should fallback to info error message if the code is not a string and there is no short message', async () => {
+      it('Should fallback to info error message if the code is not a string and there is no short message', async () => {
         const mockRpcError = new MockRpcError(
           -32000,
           {
@@ -139,7 +139,7 @@ describe('Error decoders work', () => {
       expect(decodedError.data).toBe(TEST_MESSAGE_REVERT_DATA)
     })
   })
-  describe('should handle BundlerError correctly', () => {
+  describe('Should handle BundlerError correctly', () => {
     it('Entry point error', () => {
       try {
         throw new MockBundlerError('AA31 paymaster deposit too low')
@@ -167,7 +167,7 @@ describe('Error decoders work', () => {
       }
     })
   })
-  it('should handle RevertError correctly when reverted with reason', async () => {
+  it('Should handle RevertError correctly when reverted with reason', async () => {
     try {
       await contract.revertWithReason('Test message')
     } catch (e: any) {
@@ -179,7 +179,7 @@ describe('Error decoders work', () => {
       expect(decodedError.reason).toEqual('Test message')
     }
   })
-  describe('should handle RelayerError correctly', () => {
+  describe('Should handle RelayerError correctly', () => {
     it('Relayer is down', async () => {
       try {
         throw new Error(RELAYER_DOWN_MESSAGE)
@@ -231,7 +231,7 @@ describe('Error decoders work', () => {
       'user operation max fee per gas must be larger than 0 during gas estimation'
     )
   })
-  it('should handle UnknownError correctly when reverted without reason', async () => {
+  it('Should handle UnknownError correctly when reverted without reason', async () => {
     try {
       await contract.revertWithoutReason()
     } catch (e: any) {
@@ -243,5 +243,11 @@ describe('Error decoders work', () => {
       expect(decodedError.data).toEqual(errorData)
       expect(decodedError.reason).toBe('')
     }
+  })
+  it('Should trim leading and trailing whitespaces from the reason', async () => {
+    const error = new InnerCallFailureError('   transfer amount exceeds balance   ')
+    const decodedError = decodeError(error)
+
+    expect(decodedError.reason).toBe('transfer amount exceeds balance')
   })
 })

@@ -45,10 +45,12 @@ const isReasonValid = (reason: string | null): boolean => {
  * which can then be matched to a specific error message.
  */
 const formatReason = (reason: string): string => {
-  if (!isHexString(reason)) return reason
-  if (reason.startsWith(ERROR_PREFIX) || reason.startsWith(PANIC_ERROR_PREFIX)) return reason
+  const trimmedReason = reason.trim()
+  if (!isHexString(trimmedReason)) return trimmedReason
+  if (trimmedReason.startsWith(ERROR_PREFIX) || trimmedReason.startsWith(PANIC_ERROR_PREFIX))
+    return trimmedReason
 
-  return toUtf8String(reason)
+  return toUtf8String(trimmedReason)
 }
 
 const getErrorCodeStringFromReason = (reason: string, withSpace = true): string => {
