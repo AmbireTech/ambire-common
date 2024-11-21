@@ -283,6 +283,9 @@ export class ActionsController extends EventEmitter {
       if (a.type === 'benzin') {
         return a.userRequest.meta.accountAddr !== address
       }
+      if (a.type === 'switchAccount') {
+        return a.userRequest.meta.switchToAccountAddr !== address
+      }
 
       return true
     })

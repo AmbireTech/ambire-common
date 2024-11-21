@@ -1145,6 +1145,7 @@ export class MainController extends EventEmitter {
         if (!network) {
           throw ethErrors.provider.chainDisconnected('Transaction failed - unknown network')
         }
+        const userRequestId = userRequest.id
 
         await this.addUserRequest(userRequest, false)
         await this.addUserRequest(
@@ -1164,7 +1165,9 @@ export class MainController extends EventEmitter {
             dappPromise: {
               session: request.session,
               resolve: () => {},
-              reject: () => {}
+              reject: () => {
+                this.rejectUserRequest('Switch account request rejected', userRequestId)
+              }
             }
           },
           true
