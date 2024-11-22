@@ -5,6 +5,7 @@ import { getAddress, getBigInt, Interface, isAddress } from 'ethers'
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json'
 import EmittableError from '../../classes/EmittableError'
+import { ORIGINS_WHITELISTED_TO_ALL_ACCOUNTS } from '../../consts/dappCommunication'
 import { AMBIRE_ACCOUNT_FACTORY, SINGLETON } from '../../consts/deploy'
 import {
   BIP44_LEDGER_DERIVATION_TEMPLATE,
@@ -957,6 +958,21 @@ export class MainController extends EventEmitter {
     )
   }
 
+  #getUserRequestAccountError(dappOrigin: string, fromAccountAddr: string): string | null {
+    if (ORIGINS_WHITELISTED_TO_ALL_ACCOUNTS.includes(dappOrigin)) {
+      const isAddressInAccounts = this.accounts.accounts.some((a) => a.addr === fromAccountAddr)
+
+      if (isAddressInAccounts) return null
+
+      return 'The dApp is trying to sign using an address that is not imported in the extension.'
+    }
+    const isAddressSelected = this.selectedAccount.account?.addr === fromAccountAddr
+
+    if (isAddressSelected) return null
+
+    return 'The dApp is trying to sign using an address that is not selected in the extension.'
+  }
+
   async buildUserRequestFromDAppRequest(
     request: DappProviderRequest,
     dappPromise: {
@@ -983,6 +999,13 @@ export class MainController extends EventEmitter {
       const network = this.networks.networks.find(
         (n) => Number(n.chainId) === Number(dapp?.chainId)
       )
+
+      const accountError = this.#getUserRequestAccountError(dappPromise.session.origin, accountAddr)
+
+      if (accountError) {
+        dappPromise.reject(ethErrors.provider.userRejectedRequest(accountError))
+        return
+      }
 
       if (!network) {
         throw ethErrors.provider.chainDisconnected('Transaction failed - unknown network')
@@ -1017,14 +1040,10 @@ export class MainController extends EventEmitter {
         throw ethErrors.rpc.invalidRequest('No msg request to sign')
       }
       const msgAddress = getAddress(msg?.[1])
+      const accountError = this.#getUserRequestAccountError(dappPromise.session.origin, msgAddress)
 
-      if (!this.accounts.accounts.some((a) => a.addr === msgAddress)) {
-        dappPromise.reject(
-          ethErrors.provider.userRejectedRequest(
-            // if updating, check https://github.com/AmbireTech/ambire-wallet/pull/1627
-            'the dApp is trying to sign using an address that is not imported in the extension.'
-          )
-        )
+      if (accountError) {
+        dappPromise.reject(ethErrors.provider.userRejectedRequest(accountError))
         return
       }
 
@@ -1058,12 +1077,9 @@ export class MainController extends EventEmitter {
         throw ethErrors.rpc.invalidRequest('No msg request to sign')
       }
       const msgAddress = getAddress(msg?.[0])
-      if (!this.accounts.accounts.some((a) => a.addr === msgAddress)) {
-        dappPromise.reject(
-          ethErrors.provider.userRejectedRequest(
-            'the dApp is trying to sign using an address that is not in the extension.'
-          )
-        )
+      const accountError = this.#getUserRequestAccountError(dappPromise.session.origin, msgAddress)
+      if (accountError) {
+        dappPromise.reject(ethErrors.provider.userRejectedRequest(accountError))
         return
       }
 
