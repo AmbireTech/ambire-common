@@ -120,7 +120,8 @@ export const uniReduce = (_calls: HumanizerVisualization[][]): HumanizerVisualiz
         isTake(calls[j]!) &&
         calls[i]![3].address === calls[j]![2].address
       ) {
-        calls[i]![3].value = calls[j]![2].value!
+        calls[i]![3].value =
+          calls[i]![3].value! > calls[j]![2].value! ? calls[i]![3].value : calls[j]![2].value
         calls.splice(j, 1)
       }
     }

@@ -84,7 +84,11 @@ export const uniUniversalRouter = (): HumanizerUniMatcher => {
             } else if (command === COMMANDS.SWEEP) {
               const { inputsDetails } = COMMANDS_DESCRIPTIONS.SWEEP
               const params = extractParams(inputsDetails, inputs[index])
-              if (params.recipient === accountOp.accountAddr)
+              if (
+                ['0x0000000000000000000000000000000000000001', accountOp.accountAddr].includes(
+                  params.recipient
+                )
+              )
                 parsed.push([
                   getAction('Take'),
                   getLabel('at least'),
