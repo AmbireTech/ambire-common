@@ -7,9 +7,9 @@ import {
   SocketAPIToken
 } from '../../interfaces/swapAndBridge'
 import {
-  AMBIRE_FEE_TAKER_ADDRESSES,
+  AMBIRE_WALLET_TOKEN_ON_BASE,
+  AMBIRE_WALLET_TOKEN_ON_ETHEREUM,
   ETH_ON_OPTIMISM_LEGACY_ADDRESS,
-  FEE_PERCENT,
   NULL_ADDRESS,
   ZERO_ADDRESS
 } from './constants'
@@ -93,8 +93,9 @@ export class SocketAPI {
     const params = new URLSearchParams({
       fromChainId: fromChainId.toString(),
       toChainId: toChainId.toString(),
-      // TODO: To be discussed
-      isShortList: 'false'
+      // The long list for some networks is HUGE (e.g. Ethereum has 10,000+ tokens),
+      // which makes serialization and deserialization of this controller computationally expensive.
+      isShortList: 'true'
     })
     const url = `${this.#baseUrl}/token-lists/to-token-list?${params.toString()}`
 
@@ -119,6 +120,11 @@ export class SocketAPI {
     // Strip out the one with the `ZERO_ADDRESS` to be consistent with the rest.
     if (toChainId === 1)
       result = result.filter((token: SocketAPIToken) => token.address !== ZERO_ADDRESS)
+
+    // Since v4.41.0 we request the shortlist from Socket, which does not include
+    // the Ambire $WALLET token. So adding it manually on the supported chains.
+    if (toChainId === 1) result.unshift(AMBIRE_WALLET_TOKEN_ON_ETHEREUM)
+    if (toChainId === 8453) result.unshift(AMBIRE_WALLET_TOKEN_ON_BASE)
 
     return result.map(normalizeIncomingSocketToken)
   }

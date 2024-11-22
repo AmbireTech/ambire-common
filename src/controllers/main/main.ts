@@ -45,6 +45,10 @@ import {
   getAccountOpFromAction
 } from '../../libs/actions/actions'
 import { getAccountOpBanners } from '../../libs/banners/banners'
+import {
+  getHumanReadableBroadcastError,
+  getHumanReadableEstimationError
+} from '../../libs/errorHumanizer'
 import { estimate } from '../../libs/estimate/estimate'
 import { BundlerGasPrice, EstimateResult } from '../../libs/estimate/interfaces'
 import { GasRecommendation, getGasPriceRecommendations } from '../../libs/gasPrice/gasPrice'
@@ -258,11 +262,6 @@ export class MainController extends EventEmitter {
         const defaultSelectedAccount = getDefaultSelectedAccount(accounts)
         if (defaultSelectedAccount) {
           await this.#selectAccount(defaultSelectedAccount.addr)
-          // Don't wait for account state because:
-          // 1. The extension works perfectly fine without it
-          // 2. Some RPCs may be slow and we don't want to block the UI
-          // eslint-disable-next-line @typescript-eslint/no-floating-promises
-          this.accounts.updateAccountState(defaultSelectedAccount.addr)
         }
       },
       this.providers.updateProviderIsWorking.bind(this.providers)
@@ -1929,9 +1928,11 @@ export class MainController extends EventEmitter {
             )
           }
         ).catch((e) => {
+          const { message } = getHumanReadableEstimationError(e)
+
           this.emitError({
             level: 'major',
-            message: `Failed to estimate account op for ${localAccountOp.accountAddr} on ${localAccountOp.networkId}`,
+            message,
             error: e
           })
           return null
@@ -2155,7 +2156,7 @@ export class MainController extends EventEmitter {
         const gasFeePayment = accountOp.gasFeePayment!
         const { to, value, data } = accountOp.calls[0]
         const rawTxn: TxnRequest = {
-          to,
+          to: to ?? undefined,
           value,
           data,
           chainId: network!.chainId,
@@ -2184,15 +2185,14 @@ export class MainController extends EventEmitter {
               identifier: broadcastRes.hash
             }
           }
-        } catch (e: any) {
-          const reason = e?.message || 'unknown'
-
-          throw new Error(
-            `Transaction couldn't be broadcasted on the ${network.name} network. Reason: ${reason}`
-          )
+        } catch (error: any) {
+          return this.#throwBroadcastAccountOp({
+            error,
+            accountState
+          })
         }
       } catch (error: any) {
-        return this.#throwBroadcastAccountOp({ error, network, accountState })
+        return this.#throwBroadcastAccountOp({ error, accountState })
       }
     }
     // Smart account but EOA pays the fee
@@ -2274,15 +2274,11 @@ export class MainController extends EventEmitter {
               identifier: broadcastRes.hash
             }
           }
-        } catch (e: any) {
-          const reason = e?.message || 'unknown'
-
-          throw new Error(
-            `Transaction couldn't be broadcasted on the ${network.name} network. Reason: ${reason}`
-          )
+        } catch (error: any) {
+          return this.#throwBroadcastAccountOp({ error, accountState })
         }
       } catch (error: any) {
-        return this.#throwBroadcastAccountOp({ error, network, accountState })
+        return this.#throwBroadcastAccountOp({ error, accountState })
       }
     }
     // Smart account, the ERC-4337 way
@@ -2300,11 +2296,7 @@ export class MainController extends EventEmitter {
         userOperationHash = await bundler.broadcast(userOperation, network!)
       } catch (e: any) {
         return this.#throwBroadcastAccountOp({
-          message: Bundler.decodeBundlerError(
-            e,
-            'Bundler broadcast failed. Please try broadcasting by an EOA or contact support.'
-          ),
-          network,
+          error: e,
           accountState
         })
       }
@@ -2348,7 +2340,7 @@ export class MainController extends EventEmitter {
           }
         }
       } catch (error: any) {
-        return this.#throwBroadcastAccountOp({ error, network, accountState, isRelayer: true })
+        return this.#throwBroadcastAccountOp({ error, accountState, isRelayer: true })
       }
     }
 
@@ -2364,7 +2356,9 @@ export class MainController extends EventEmitter {
       nonce: BigInt(transactionRes.nonce),
       identifiedBy: transactionRes.identifiedBy,
       timestamp: new Date().getTime(),
-      isSingletonDeploy: !!accountOp.calls.find((call) => getAddress(call.to) === SINGLETON)
+      isSingletonDeploy: !!accountOp.calls.find(
+        (call) => call.to && getAddress(call.to) === SINGLETON
+      )
     }
     await this.activity.addAccountOp(submittedAccountOp)
     await this.resolveAccountOpAction(
@@ -2415,24 +2409,19 @@ export class MainController extends EventEmitter {
   #throwBroadcastAccountOp({
     message: _msg,
     error: _err,
-    network,
     accountState,
     isRelayer = false
   }: {
     message?: string
     error?: Error
-    network?: Network
     accountState?: AccountOnchainState
     isRelayer?: boolean
   }) {
     let message = _msg || _err?.message || 'Unable to broadcast the transaction.'
 
     if (message) {
-      if (message.includes('insufficient funds')) {
-        if (network)
-          message = `You don't have enough ${network.nativeAssetSymbol} to cover the transaction fee`
-        else message = "You don't have enough native to cover the transaction fee"
-      } else if (message.includes('pimlico_getUserOperationGasPrice')) {
+      // @TODO: Consider replacing with getHumanReadableBroadcastError
+      if (message.includes('pimlico_getUserOperationGasPrice')) {
         // sometimes the bundler returns an error of low maxFeePerGas
         // in that case, recalculate prices and prompt the user to try again
         message = 'Fee too low. Please select a higher transaction speed and try again'
@@ -2458,8 +2447,9 @@ export class MainController extends EventEmitter {
         message =
           'Currently, the Ambire relayer seems to be down. Please try again a few moments later or broadcast with a Basic Account'
       } else {
-        // Trip the error message, errors coming from the RPC can be huuuuuge
-        message = message.length > 300 ? `${message.substring(0, 300)}...` : message
+        const { message: msg } = getHumanReadableBroadcastError(_err || new Error(message))
+
+        message = msg
       }
     }
 

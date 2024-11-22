@@ -26,12 +26,14 @@ import { Warning } from '../../interfaces/signAccountOp'
 import { isAmbireV1LinkedAccount, isSmartAccount } from '../../libs/account/account'
 import { AccountOp, GasFeePayment, getSignableCalls } from '../../libs/accountOp/accountOp'
 import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
+import { RelayerPaymasterError } from '../../libs/errorDecoder/customErrors'
+import { getHumanReadableBroadcastError } from '../../libs/errorHumanizer'
 import { BundlerGasPrice, EstimateResult, FeePaymentOption } from '../../libs/estimate/interfaces'
 import {
   Gas1559Recommendation,
   GasPriceRecommendation,
   GasRecommendation,
-  getCallDataAdditionalByNetwork
+  getProbableCallData
 } from '../../libs/gasPrice/gasPrice'
 import { Price, TokenResult } from '../../libs/portfolio'
 import { getExecuteSignature, getTypedData, wrapStandard } from '../../libs/signMessage/signMessage'
@@ -225,6 +227,25 @@ export class SignAccountOpController extends EventEmitter {
   // check if speeds are set for the given identifier
   hasSpeeds(identifier: string) {
     return this.feeSpeeds[identifier] !== undefined && this.feeSpeeds[identifier].length
+  }
+
+  getCallDataAdditionalByNetwork(): bigint {
+    // no additional call data is required for arbitrum as the bytes are already
+    // added in the calculation for the L1 fee
+    if (this.#network.id === 'arbitrum' || !isSmartAccount(this.account)) return 0n
+
+    const estimationCallData = getProbableCallData(
+      this.account,
+      this.accountOp,
+      this.#accounts.accountStates[this.accountOp.accountAddr][this.accountOp.networkId],
+      this.#network
+    )
+    const FIXED_OVERHEAD = 21000n
+    const bytes = Buffer.from(estimationCallData.substring(2))
+    const nonZeroBytes = BigInt(bytes.filter((b) => b).length)
+    const zeroBytes = BigInt(BigInt(bytes.length) - nonZeroBytes)
+    const txDataGas = zeroBytes * 4n + nonZeroBytes * 16n
+    return txDataGas + FIXED_OVERHEAD
   }
 
   get errors(): string[] {
@@ -699,12 +720,6 @@ export class SignAccountOpController extends EventEmitter {
     this.feeSpeeds = {}
 
     const gasUsed = this.estimation!.gasUsed
-    const callDataAdditionalGasCost = getCallDataAdditionalByNetwork(
-      this.accountOp,
-      this.account,
-      this.#network,
-      this.#accounts.accountStates[this.accountOp.accountAddr][this.accountOp.networkId]
-    )
 
     this.availableFeeOptions.forEach((option) => {
       // if a calculation has been made, do not make it again
@@ -803,18 +818,18 @@ export class SignAccountOpController extends EventEmitter {
         if (!isSmartAccount(this.account)) {
           simulatedGasLimit = gasUsed
 
-          if (getAddress(this.accountOp.calls[0].to) === SINGLETON) {
+          if (this.accountOp.calls[0].to && getAddress(this.accountOp.calls[0].to) === SINGLETON) {
             simulatedGasLimit = getGasUsed(simulatedGasLimit)
           }
 
           amount = simulatedGasLimit * gasPrice + option.addedNative
         } else if (option.paidBy !== this.accountOp.accountAddr) {
           // Smart account, but EOA pays the fee
-          simulatedGasLimit = gasUsed + callDataAdditionalGasCost
+          simulatedGasLimit = gasUsed + this.getCallDataAdditionalByNetwork()
           amount = simulatedGasLimit * gasPrice + option.addedNative
         } else {
           // Relayer
-          simulatedGasLimit = gasUsed + callDataAdditionalGasCost + option.gasUsed!
+          simulatedGasLimit = gasUsed + this.getCallDataAdditionalByNetwork() + option.gasUsed!
           amount = SignAccountOpController.getAmountAfterFeeTokenConvert(
             simulatedGasLimit,
             gasPrice,
@@ -1235,15 +1250,13 @@ export class SignAccountOpController extends EventEmitter {
               userOperation.nonce = getOneTimeNonce(userOperation)
             }
           } catch (e: any) {
-            let message = e.message
-            if (e.message.includes('Failed to fetch') || e.message.includes('Ambire relayer')) {
-              message =
-                'Currently, the paymaster seems to be down. Please try again a few moments later or broadcast with a Basic Account'
-            }
+            const convertedError = new RelayerPaymasterError(e)
+            const { message } = getHumanReadableBroadcastError(convertedError)
+
             this.emitError({
               level: 'major',
               message,
-              error: new Error(e.message)
+              error: e
             })
             this.status = { type: SigningStatus.ReadyToSign }
             this.emitUpdate()
@@ -1285,7 +1298,10 @@ export class SignAccountOpController extends EventEmitter {
       this.emitUpdate()
       return this.signedAccountOp
     } catch (error: any) {
-      return this.#emitSigningErrorAndResetToReadyToSign(error?.message)
+      console.error(error)
+      return this.#emitSigningErrorAndResetToReadyToSign(
+        'Internal error while signing the transaction. Please try again or contact support if the problem persists.'
+      )
     }
   }
 

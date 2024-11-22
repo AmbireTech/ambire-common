@@ -540,8 +540,6 @@ describe('estimate', () => {
       (option) => option.token.address === '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48'
     )
 
-    console.log(response.error)
-
     // This is the min gas unit we can spend, but we expect more than that having in mind that multiple computations happens in the Contract
     expect(response.gasUsed).toBeGreaterThan(21000n)
     // As we swap 1 USDC for 1 USDT, we expect the estimate (outcome) balance of USDT to be greater than before the estimate (portfolio value)
@@ -870,7 +868,9 @@ describe('estimate', () => {
     )
 
     expect(response.error).not.toBe(null)
-    expect(response.error?.message).toBe('Transaction reverted: invalid call in the bundle')
+    expect(response.error?.message).toBe(
+      'The transaction cannot be estimated because of a failure while validating the transaction.\nPlease try again or contact Ambire support for assistance.'
+    )
 
     expect(response.erc4337GasLimits).not.toBe(undefined)
     expect(BigInt(response.erc4337GasLimits!.callGasLimit)).toBeGreaterThan(0n)
@@ -929,7 +929,7 @@ describe('estimate', () => {
 
     expect(response.error).not.toBe(null)
     expect(response.error?.message).toBe(
-      'UserOperation reverted during simulation with reason: ERC20: transfer amount exceeds balance'
+      'The transaction cannot be estimated because the transfer amount exceeds your account balance. Please reduce the transfer amount and try again.'
     )
 
     expect(response.erc4337GasLimits).toBe(undefined)
@@ -1080,7 +1080,9 @@ describe('estimate', () => {
       feeTokens
     )
     expect(response.error).not.toBe(null)
-    expect(response.error?.message).toBe('Transaction reverted: invalid call in the bundle')
+    expect(response.error?.message).toBe(
+      'The transaction cannot be estimated because of a failure while validating the transaction.\nPlease try again or contact Ambire support for assistance.'
+    )
   })
 
   it('estimates a polygon request with wrong signer and estimation should fail with insufficient privileges', async () => {
@@ -1109,7 +1111,7 @@ describe('estimate', () => {
     )
     expect(response.error).not.toBe(null)
     expect(response.error?.message).toBe(
-      'Transaction cannot be sent because the account key is not authorized to sign.'
+      'The transaction cannot be estimated because your account key lacks the necessary permissions. Ensure that you have authorization to sign or use an account with sufficient privileges.'
     )
   })
 
@@ -1140,7 +1142,7 @@ describe('estimate', () => {
 
     expect(response.error).not.toBe(null)
     expect(response.error?.message).toBe(
-      'Transaction cannot be sent because the swap has expired. Please return to the dApp interface and try again.'
+      'The transaction cannot be estimated because the swap has expired. Return to the dApp and reinitiate the swap if you wish to proceed.'
     )
   })
 })

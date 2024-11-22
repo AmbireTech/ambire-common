@@ -18,6 +18,7 @@ import { aaveHumanizer } from './modules/Aave'
 import AcrossModule from './modules/Across'
 import asciiModule from './modules/AsciiModule'
 import curveModule from './modules/Curve'
+import { deploymentModule } from './modules/Deployment'
 import fallbackHumanizer from './modules/FallbackHumanizer'
 import gasTankModule from './modules/GasTankModule'
 import KyberSwap from './modules/KyberSwap'
@@ -38,6 +39,7 @@ import wrappingModule from './modules/Wrapping'
 // the final humanization is the final triggered module
 export const humanizerCallModules: HumanizerCallModule[] = [
   preProcessHumanizer,
+  deploymentModule,
   genericErc721Humanizer,
   genericErc20Humanizer,
   gasTankModule,
@@ -79,7 +81,11 @@ const humanizeAccountOp = (_accountOp: AccountOp, options: HumanizerOptions): Ir
 
   let currentCalls: IrCall[] = accountOp.calls
   humanizerCallModules.forEach((hm) => {
-    currentCalls = hm(accountOp, currentCalls, humanizerInfo as HumanizerMeta, humanizerOptions)
+    try {
+      currentCalls = hm(accountOp, currentCalls, humanizerInfo as HumanizerMeta, humanizerOptions)
+    } catch (error) {
+      // No action is needed here; we only set `currentCalls` if the module successfully resolves the calls.
+    }
   })
   return currentCalls
 }
@@ -87,11 +93,15 @@ const humanizeAccountOp = (_accountOp: AccountOp, options: HumanizerOptions): Ir
 const humanizeMessage = (_message: Message): IrMessage => {
   const message = parse(stringify(_message))
 
-  // runs all modules and takes the first non empty array
-  const { fullVisualization, warnings } =
-    humanizerTMModules.map((m) => m(message)).filter((p) => p.fullVisualization?.length)[0] || {}
+  try {
+    // runs all modules and takes the first non empty array
+    const { fullVisualization, warnings } =
+      humanizerTMModules.map((m) => m(message)).filter((p) => p.fullVisualization?.length)[0] || {}
 
-  return { ...message, fullVisualization, warnings }
+    return { ...message, fullVisualization, warnings }
+  } catch (error) {
+    return message
+  }
 }
 
 // As of version v4.34.0 HumanizerMetaV2 in storage is no longer needed. It was
