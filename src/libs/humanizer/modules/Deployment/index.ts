@@ -15,5 +15,5 @@ export const deploymentModule: HumanizerCallModule = (
         }
       : irCall
   )
-  return [newCalls, []]
+  return newCalls
 }
