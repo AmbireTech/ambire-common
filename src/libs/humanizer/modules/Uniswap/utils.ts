@@ -57,8 +57,8 @@ export const uniReduce = (_calls: HumanizerVisualization[][]): HumanizerVisualiz
   const calls = _calls
   const originalCallsLength = calls.length
   for (let i = 0; i < calls.length; i++) {
-    // looks for wraps before the swap
     for (let j = 0; j < calls.length; j++) {
+      // looks for wraps before the swap
       if (
         j < i &&
         calls[i] &&
@@ -70,8 +70,9 @@ export const uniReduce = (_calls: HumanizerVisualization[][]): HumanizerVisualiz
         calls[i]![1].address = ZeroAddress
         calls.splice(j, 1)
       }
-
+      // looks for unwrap after the swap
       if (
+        i < j &&
         calls[i] &&
         calls[j] &&
         isSwap(calls[i]) &&
@@ -82,6 +83,7 @@ export const uniReduce = (_calls: HumanizerVisualization[][]): HumanizerVisualiz
         calls.splice(j, 1)
       }
 
+      // looks for swaps to merge
       if (
         i !== j &&
         calls[i] &&
@@ -96,6 +98,7 @@ export const uniReduce = (_calls: HumanizerVisualization[][]): HumanizerVisualiz
         calls.splice(j, 1)
       }
 
+      // looks for fee payment to subtract
       if (
         i !== j &&
         calls[i] &&
@@ -108,6 +111,7 @@ export const uniReduce = (_calls: HumanizerVisualization[][]): HumanizerVisualiz
         calls.splice(j, 1)
       }
 
+      // looks for take (sweep) action to infer the swap minimum by
       if (
         i !== j &&
         calls[i] &&
