@@ -82,19 +82,21 @@ export const uniUniversalRouter = (): HumanizerUniMatcher => {
                 getDeadline(deadline)
               ])
             } else if (command === COMMANDS.SWEEP) {
-              // this call is can be ignored as it only ensures that the wanted swap
-              // actually results in the output funds being sent to the user
-              // if there is any problem with this call, the simulation should detect it
-              // const { inputsDetails } = COMMANDS_DESCRIPTIONS.SWEEP
-              // const params = extractParams(inputsDetails, inputs[index])
-              // parsed.push({
-              //   ...call,
-              //   fullVisualization: [
-              //     getAction('Take'),
-              //     getLabel('at least'),
-              //     getToken(params.token, params.amountMin)
-              //   ]
-              // })
+              const { inputsDetails } = COMMANDS_DESCRIPTIONS.SWEEP
+              const params = extractParams(inputsDetails, inputs[index])
+              if (params.recipient === accountOp.accountAddr)
+                parsed.push([
+                  getAction('Take'),
+                  getLabel('at least'),
+                  getToken(params.token, params.amountMin)
+                ])
+              else
+                parsed.push([
+                  getAction('Send'),
+                  getToken(params.token, params.amountMin),
+                  getLabel('to'),
+                  getAddressVisualization(params.recipient)
+                ])
             } else if (command === COMMANDS.PAY_PORTION) {
               // @NOTE: this is used for paying fee although its already calculated in the humanized response
               // @NOTE: no need to be displayed but we can add warning id the fee is too high?

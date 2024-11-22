@@ -33,6 +33,13 @@ const isSwap = (call: HumanizerVisualization[] | undefined) =>
   call[1].type === 'token' &&
   call[3].type === 'token'
 
+const isTake = (call: HumanizerVisualization[] | undefined) =>
+  call &&
+  call.length === 3 &&
+  call[0].content?.includes('Take') &&
+  call[1].content === 'at least' &&
+  call[2].type === 'token'
+
 const isWrap = (call: HumanizerVisualization[] | undefined) =>
   call && call.length >= 2 && call[0].content?.includes('Wrap') && call[1].type === 'token'
 
@@ -80,6 +87,28 @@ export const uniReduce = (_calls: HumanizerVisualization[][]): HumanizerVisualiz
       ) {
         calls[i]![1].value = calls[i]![1].value! + calls[j]![1].value!
         calls[i]![3].value = calls[i]![3].value! + calls[j]![3].value!
+        delete calls[j]
+      }
+
+      if (
+        isSend(calls[j]) &&
+        isSwap(calls[i]!) &&
+        calls[i]![3].value! / 400n >= calls[j]![1].value!
+      ) {
+        calls[i]![3].value = calls[i]![3].value! - calls[j]![1].value!
+        delete calls[j]
+      }
+    }
+
+    if (doneFlag) continue
+    for (let j = 0; j < calls.length; j++) {
+      if (
+        i !== j &&
+        isSwap(calls[i]!) &&
+        isTake(calls[j]!) &&
+        calls[i]![3].address === calls[j]![2].address
+      ) {
+        calls[i]![3].value = calls[j]![2].value!
         delete calls[j]
       }
 
