@@ -1,5 +1,6 @@
-import { AbiCoder, getBytes, keccak256 } from 'ethers'
+import { AbiCoder, getBytes, Interface, keccak256, toBeHex } from 'ethers'
 
+import { SINGLETON } from '../../consts/deploy'
 import { AccountId } from '../../interfaces/account'
 // eslint-disable-next-line import/no-cycle
 import { Key } from '../../interfaces/keystore'
@@ -82,6 +83,38 @@ export interface AccountOp {
   }
 }
 
+/**
+ * If we want to deploy a contract, the to field of Call will actually
+ * be empty (undefined). In order to simulate it in a transaction or
+ * perform it using a smart account, we need to transform the call to
+ * a call to the singleton
+ *
+ * @param call
+ * @returns Call
+ */
+export function toSingletonCall(call: Call): Call {
+  if (call.to) return call
+
+  const singletonABI = [
+    {
+      inputs: [
+        { internalType: 'bytes', name: '_initCode', type: 'bytes' },
+        { internalType: 'bytes32', name: '_salt', type: 'bytes32' }
+      ],
+      name: 'deploy',
+      outputs: [{ internalType: 'address payable', name: 'createdContract', type: 'address' }],
+      stateMutability: 'nonpayable',
+      type: 'function'
+    }
+  ]
+  const singletonInterface = new Interface(singletonABI)
+  return {
+    to: SINGLETON,
+    value: call.value,
+    data: singletonInterface.encodeFunctionData('deploy', [call.data, toBeHex(0, 32)])
+  }
+}
+
 export function callToTuple(call: Call): [string, string, string] {
   return [call.to, call.value.toString(), call.data]
 }
@@ -126,7 +159,7 @@ export function isAccountOpsIntentEqual(
 }
 
 export function getSignableCalls(op: AccountOp): [string, string, string][] {
-  const callsToSign = op.calls.map((call: Call) => callToTuple(call))
+  const callsToSign = op.calls.map(toSingletonCall).map(callToTuple)
   if (op.activatorCall) callsToSign.push(callToTuple(op.activatorCall))
   if (op.feeCall) callsToSign.push(callToTuple(op.feeCall))
   return callsToSign
