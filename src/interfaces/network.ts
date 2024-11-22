@@ -3,6 +3,7 @@ export type NetworkId = string
 export interface Erc4337settings {
   enabled: boolean
   hasPaymaster: boolean
+  hasBundlerSupport?: boolean
 }
 
 interface FeeOptions {
@@ -22,7 +23,7 @@ export interface NetworkInfo {
   hasSingleton: boolean
   isOptimistic: boolean
   rpcNoStateOverride: boolean
-  erc4337: { enabled: boolean; hasPaymaster: boolean }
+  erc4337: { enabled: boolean; hasPaymaster: boolean; hasBundlerSupport?: boolean }
   areContractsDeployed: boolean
   feeOptions: { is1559: boolean }
   platformId: string

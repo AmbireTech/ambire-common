@@ -34,21 +34,6 @@ export function getSigForCalculations() {
   return '0x0dc2d37f7b285a2243b2e1e6ba7195c578c72b395c0f76556f8961b0bca97ddc44e2d7a249598f56081a375837d2b82414c3c94940db3c1e64110108021161ca1c01'
 }
 
-export function getPaymasterDataForEstimate(): {
-  paymaster: string
-  paymasterData: string
-  paymasterVerificationGasLimit: string
-  paymasterPostOpGasLimit: string
-} {
-  const abiCoder = new AbiCoder()
-  return {
-    paymaster: AMBIRE_PAYMASTER,
-    paymasterVerificationGasLimit: toBeHex(0),
-    paymasterPostOpGasLimit: toBeHex(0),
-    paymasterData: abiCoder.encode(['uint48', 'uint48', 'bytes'], [0, 0, getSigForCalculations()])
-  }
-}
-
 // get the call to give privileges to the entry point
 export function getActivatorCall(addr: AccountId) {
   const saAbi = new Interface(AmbireAccount.abi)

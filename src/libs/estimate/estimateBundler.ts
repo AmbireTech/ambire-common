@@ -7,13 +7,9 @@ import { Bundler } from '../../services/bundlers/bundler'
 import { AccountOp, getSignableCallsForBundlerEstimate } from '../accountOp/accountOp'
 import { getFeeCall } from '../calls/calls'
 import { getHumanReadableEstimationError } from '../errorHumanizer'
+import { Paymaster } from '../paymaster/paymaster'
 import { TokenResult } from '../portfolio'
-import {
-  getPaymasterDataForEstimate,
-  getSigForCalculations,
-  getUserOperation,
-  shouldUsePaymaster
-} from '../userOperation/userOperation'
+import { getSigForCalculations, getUserOperation } from '../userOperation/userOperation'
 import { estimationErrorFormatted } from './errors'
 import { getFeeTokenForEstimate } from './estimateHelpers'
 import { EstimateResult, FeePaymentOption } from './interfaces'
@@ -39,17 +35,22 @@ export async function bundlerEstimate(
       { feePaymentOptions }
     )
 
-  const usesPaymaster = shouldUsePaymaster(network)
-  if (usesPaymaster) {
-    const feeToken = getFeeTokenForEstimate(feeTokens, network)
-    if (feeToken) localOp.feeCall = getFeeCall(feeToken)
-  }
   const userOp = getUserOperation(
     account,
     accountState,
     localOp,
     !accountState.isDeployed ? op.meta!.entryPointAuthorization : undefined
   )
+  // set the callData
+  if (userOp.activatorCall) localOp.activatorCall = userOp.activatorCall
+
+  const paymaster = new Paymaster()
+  await paymaster.init(op, userOp, network)
+
+  if (paymaster.shouldIncludePayment()) {
+    const feeToken = getFeeTokenForEstimate(feeTokens, network)
+    if (feeToken) localOp.feeCall = getFeeCall(feeToken)
+  }
   const gasPrice = await Bundler.fetchGasPrices(network).catch(
     () => new Error('Could not fetch gas prices, retrying...')
   )
@@ -64,17 +65,13 @@ export async function bundlerEstimate(
     userOp.maxFeePerGas = gasPrice.medium.maxFeePerGas
   }
 
-  // add fake data so simulation works
-  if (usesPaymaster) {
-    const paymasterUnpacked = getPaymasterDataForEstimate()
-    userOp.paymaster = paymasterUnpacked.paymaster
-    userOp.paymasterPostOpGasLimit = paymasterUnpacked.paymasterPostOpGasLimit
-    userOp.paymasterVerificationGasLimit = paymasterUnpacked.paymasterVerificationGasLimit
-    userOp.paymasterData = paymasterUnpacked.paymasterData
+  const paymasterEstimationData = paymaster.getEstimationData()
+  if (paymasterEstimationData) {
+    userOp.paymaster = paymasterEstimationData.paymaster
+    userOp.paymasterPostOpGasLimit = paymasterEstimationData.paymasterPostOpGasLimit
+    userOp.paymasterVerificationGasLimit = paymasterEstimationData.paymasterVerificationGasLimit
+    userOp.paymasterData = paymasterEstimationData.paymasterData
   }
-
-  // set the callData
-  if (userOp.activatorCall) localOp.activatorCall = userOp.activatorCall
 
   const ambireAccount = new Interface(AmbireAccount.abi)
   userOp.callData = ambireAccount.encodeFunctionData('executeBySender', [

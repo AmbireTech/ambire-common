@@ -45,6 +45,7 @@ import {
   getAccountOpFromAction
 } from '../../libs/actions/actions'
 import { getAccountOpBanners } from '../../libs/banners/banners'
+import { getPaymasterService } from '../../libs/erc7677/erc7677'
 import {
   getHumanReadableBroadcastError,
   getHumanReadableEstimationError
@@ -970,10 +971,14 @@ export class MainController extends EventEmitter {
       if (!this.selectedAccount.account) throw ethErrors.rpc.internal()
 
       const isWalletSendCalls = !!request.params[0].calls
+      const accountAddr = getAddress(request.params[0].from)
+
       const calls: Calls['calls'] = isWalletSendCalls
         ? request.params[0].calls
         : [request.params[0]]
-      const accountAddr = getAddress(request.params[0].from)
+      const paymasterService = isWalletSendCalls
+        ? getPaymasterService(accountAddr, request.params[0].capabilities)
+        : null
 
       const network = this.networks.networks.find(
         (n) => Number(n.chainId) === Number(dapp?.chainId)
@@ -992,7 +997,7 @@ export class MainController extends EventEmitter {
             value: call.value ? getBigInt(call.value) : 0n
           }))
         },
-        meta: { isSignAction: true, accountAddr, networkId: network.id },
+        meta: { isSignAction: true, accountAddr, networkId: network.id, paymasterService },
         dappPromise
       } as SignUserRequest
       if (!this.selectedAccount.account.creation) {
