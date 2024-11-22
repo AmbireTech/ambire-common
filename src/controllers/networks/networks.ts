@@ -113,7 +113,7 @@ export class NetworksController extends EventEmitter {
         hasRelayer: n.hasRelayer,
         erc4337: {
           enabled:
-            this.#networks[n.id].force4337 !== undefined
+            this.#networks[n.id] && this.#networks[n.id].force4337 !== undefined
               ? (this.#networks[n.id].force4337 as boolean)
               : n.erc4337.enabled,
           hasPaymaster: n.erc4337.hasPaymaster
