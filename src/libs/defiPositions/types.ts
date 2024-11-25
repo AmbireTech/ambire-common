@@ -22,10 +22,10 @@ export interface PositionAsset {
   type: AssetType
   additionalData?: {
     [key: string]: any
-  },
+  }
   protocolAsset?: {
-    address: string,
-    symbol: string,
+    address: string
+    symbol: string
     decimals: number
   }
 }

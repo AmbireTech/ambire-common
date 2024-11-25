@@ -4,6 +4,7 @@ import { SelectedAccountPortfolio } from '../../interfaces/selectedAccount'
 import { safeTokenAmountAndNumberMultiplication } from '../../utils/numbers/formatters'
 import {
   AccountState as DefiPositionsAccountState,
+  AssetType,
   PositionsByProvider
 } from '../defiPositions/types'
 import {
@@ -32,46 +33,75 @@ export const updatePortfolioStateWithDefiPositions = (
     const positions = defiPositionsAccountState[networkId] || {}
 
     positions.positionsByProvider?.forEach((posByProv: PositionsByProvider) => {
-      posByProv.positions.forEach((pos) => {
-        pos.assets.forEach((a) => {
-          const tokenInPortfolioIndex = tokens.findIndex((t) => {
-            return getAddress(t.address) === getAddress(a.address) && t.networkId === networkId
-          })
-
-          if (tokenInPortfolioIndex !== -1) {
-            const tokenInPortfolio = tokens[tokenInPortfolioIndex]
-            const priceUSD = tokenInPortfolio.priceIn.find(
-              ({ baseCurrency }: { baseCurrency: string }) => baseCurrency.toLowerCase() === 'usd'
-            )?.price
-            const tokenBalanceUSD = priceUSD
-              ? Number(
-                  safeTokenAmountAndNumberMultiplication(
-                    BigInt(tokenInPortfolio.amount),
-                    tokenInPortfolio.decimals,
-                    priceUSD
-                  )
-                )
-              : undefined
-
-            networkBalance -= tokenBalanceUSD || 0 // deduct portfolio token balance
-
-            tokens = tokens.map((token, idx) => {
-              if (idx === tokenInPortfolioIndex) {
-                return {
-                  ...token,
-                  flags: {
-                    ...(token.flags || {}),
-                    isDefiToken: true
-                  }
-                } as TokenResult
-              }
-
-              return token
-            })
-          }
-        })
-
+      if (posByProv.type === 'liquidity-pool') {
         networkBalance += posByProv.positionInUSD || 0
+        return
+      }
+
+      posByProv.positions.forEach((pos) => {
+        pos.assets
+          .filter((a) => a.type !== AssetType.Liquidity && a.protocolAsset)
+          .forEach((a) => {
+            const tokenInPortfolioIndex = tokens.findIndex((t) => {
+              return (
+                getAddress(t.address) === getAddress(a.protocolAsset!.address) &&
+                t.networkId === networkId
+              )
+            })
+
+            if (tokenInPortfolioIndex !== -1) {
+              const tokenInPortfolio = tokens[tokenInPortfolioIndex]
+              const priceUSD = tokenInPortfolio.priceIn.find(
+                ({ baseCurrency }: { baseCurrency: string }) => baseCurrency.toLowerCase() === 'usd'
+              )?.price
+              const tokenBalanceUSD = priceUSD
+                ? Number(
+                    safeTokenAmountAndNumberMultiplication(
+                      BigInt(tokenInPortfolio.amount),
+                      tokenInPortfolio.decimals,
+                      priceUSD
+                    )
+                  )
+                : undefined
+
+              networkBalance -= tokenBalanceUSD || 0 // deduct portfolio token balance
+              tokens = tokens.filter((_, index) => index !== tokenInPortfolioIndex)
+            }
+
+            // Add only the balance of the collateral tokens to the network balance
+            if (a.type === AssetType.Collateral) {
+              const protocolPriceUSD = a.priceIn.find(
+                ({ baseCurrency }: { baseCurrency: string }) => baseCurrency.toLowerCase() === 'usd'
+              )?.price
+
+              const protocolTokenBalanceUSD = protocolPriceUSD
+                ? Number(
+                    safeTokenAmountAndNumberMultiplication(
+                      BigInt(a.amount),
+                      Number(a.protocolAsset!.decimals),
+                      protocolPriceUSD
+                    )
+                  )
+                : undefined
+
+              networkBalance += protocolTokenBalanceUSD || 0
+            }
+            tokens.push({
+              amount: a.amount,
+              // Only list the borrowed asset with no price
+              priceIn: a.type === AssetType.Collateral ? a.priceIn : [],
+              decimals: Number(a.protocolAsset!.decimals),
+              address: a.protocolAsset!.address,
+              symbol: a.protocolAsset!.symbol,
+              networkId,
+              flags: {
+                canTopUpGasTank: false,
+                isFeeToken: false,
+                onGasTank: false,
+                rewardsType: null
+              }
+            })
+          })
       })
     })
 

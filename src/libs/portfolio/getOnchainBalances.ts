@@ -4,7 +4,7 @@ import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import { DEPLOYLESS_SIMULATION_FROM } from '../../consts/deploy'
 import { Network } from '../../interfaces/network'
 import { getAccountDeployParams, isSmartAccount } from '../account/account'
-import { callToTuple } from '../accountOp/accountOp'
+import { callToTuple, toSingletonCall } from '../accountOp/accountOp'
 import { Deployless, DeploylessMode, parseErr } from '../deployless/deployless'
 import { privSlot } from '../proxyDeploy/deploy'
 import { getFlags, overrideSymbol } from './helpers'
@@ -144,7 +144,7 @@ export async function getNFTs(
   const simulationOps = accountOps.map(({ nonce, calls }, idx) => ({
     // EOA starts from a fake, specified nonce
     nonce: isSmartAccount(account) ? nonce : BigInt(EOA_SIMULATION_NONCE) + BigInt(idx),
-    calls: calls.map(callToTuple)
+    calls: calls.map(toSingletonCall).map(callToTuple)
   }))
   const [before, after, simulationErr, , , deltaAddressesMapping] = await deployless.call(
     'simulateAndGetAllNFTs',
@@ -245,7 +245,7 @@ export async function getTokens(
   const simulationOps = accountOps.map(({ nonce, calls }, idx) => ({
     // EOA starts from a fake, specified nonce
     nonce: isSmartAccount(account) ? nonce : BigInt(EOA_SIMULATION_NONCE) + BigInt(idx),
-    calls: calls.map(callToTuple)
+    calls: calls.map(toSingletonCall).map(callToTuple)
   }))
   const [factory, factoryCalldata] = getAccountDeployParams(account)
   const [before, after, simulationErr, , blockNumber, deltaAddressesMapping] =

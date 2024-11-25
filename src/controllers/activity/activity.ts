@@ -1,4 +1,3 @@
-import { networks as predefinedNetworks } from '../../consts/networks'
 /* eslint-disable import/no-extraneous-dependencies */
 import { Account, AccountId } from '../../interfaces/account'
 import { Banner } from '../../interfaces/banner'
@@ -14,6 +13,7 @@ import {
   SubmittedAccountOp
 } from '../../libs/accountOp/submittedAccountOp'
 import { NetworkNonces } from '../../libs/portfolio/interfaces'
+import { getBenzinUrlParams } from '../../utils/benzin'
 import { AccountsController } from '../accounts/accounts'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { NetworksController } from '../networks/networks'
@@ -572,13 +572,11 @@ export class ActivityController extends EventEmitter {
         .map((accountOp) => {
           const network = this.#networks.networks.find((x) => x.id === accountOp.networkId)!
 
-          const isCustomNetwork = !predefinedNetworks.find((net) => net.id === network.id)
-          const isUserOp = isIdentifiedByUserOpHash(accountOp.identifiedBy)
-          const isNotConfirmed = accountOp.status === AccountOpStatus.BroadcastedButNotConfirmed
-          const url =
-            isUserOp && isNotConfirmed && !isCustomNetwork
-              ? `https://jiffyscan.xyz/userOpHash/${accountOp.identifiedBy.identifier}`
-              : `${network.explorerUrl}/tx/${accountOp.txnId}`
+          const url = `https://benzin.ambire.com/${getBenzinUrlParams({
+            chainId: network.chainId,
+            txnId: accountOp.txnId,
+            identifiedBy: accountOp.identifiedBy
+          })}`
 
           return {
             id: accountOp.txnId,

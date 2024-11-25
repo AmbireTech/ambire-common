@@ -6,10 +6,12 @@ import { DEPLOYLESS_SIMULATION_FROM, OPTIMISTIC_ORACLE } from '../../consts/depl
 import { Account, AccountStates } from '../../interfaces/account'
 import { Network } from '../../interfaces/network'
 import { getAccountDeployParams, isSmartAccount } from '../account/account'
-import { AccountOp } from '../accountOp/accountOp'
+import { AccountOp, toSingletonCall } from '../accountOp/accountOp'
 import { Call } from '../accountOp/types'
 import { getFeeCall } from '../calls/calls'
 import { fromDescriptor } from '../deployless/deployless'
+import { InnerCallFailureError } from '../errorDecoder/customErrors'
+import { getHumanReadableEstimationError } from '../errorHumanizer'
 import { getProbableCallData } from '../gasPrice/gasPrice'
 import { TokenResult } from '../portfolio'
 import {
@@ -17,7 +19,7 @@ import {
   shouldIncludeActivatorCall,
   shouldUsePaymaster
 } from '../userOperation/userOperation'
-import { catchEstimationFailure, estimationErrorFormatted, mapTxnErrMsg } from './errors'
+import { estimationErrorFormatted } from './errors'
 import { bundlerEstimate } from './estimateBundler'
 import { estimateEOA } from './estimateEOA'
 import { estimateGas } from './estimateGas'
@@ -30,10 +32,9 @@ const abiCoder = new AbiCoder()
 
 function getInnerCallFailure(estimationOp: { success: boolean; err: string }): Error | null {
   if (estimationOp.success) return null
+  const error = getHumanReadableEstimationError(new InnerCallFailureError(estimationOp.err))
 
-  let error = mapTxnErrMsg(estimationOp.err)
-  if (!error) error = 'Transaction reverted: invalid call in the bundle'
-  return new Error(error, {
+  return new Error(error.message, {
     cause: 'CALLS_FAILURE'
   })
 }
@@ -117,7 +118,7 @@ export async function estimate4337(
         from: DEPLOYLESS_SIMULATION_FROM,
         blockTag
       })
-      .catch(catchEstimationFailure),
+      .catch(getHumanReadableEstimationError),
     bundlerEstimate(account, accountStates, op, network, feeTokens),
     estimateGas(account, estimateGasOp, provider, accountState, network).catch(() => 0n)
   ])
@@ -255,7 +256,7 @@ export async function estimate(
   // if the account is v2 without the entry point signer being a signer
   // and the network is 4337 but doesn't have a paymaster and the account
   // is deployed for some reason, we should include the activator
-  const calls = [...op.calls]
+  const calls = [...op.calls.map(toSingletonCall)]
   const accountState = accountStates[op.accountAddr][op.networkId]
   if (shouldIncludeActivatorCall(network, account, accountState, false)) {
     calls.push(getActivatorCall(op.accountAddr))
@@ -330,10 +331,11 @@ export async function estimate(
         from: blockFrom,
         blockTag
       })
-      .catch(catchEstimationFailure),
+      .catch(getHumanReadableEstimationError),
     estimateGas(account, op, provider, accountState, network).catch(() => 0n)
   ]
   const estimations = await estimateWithRetries(initializeRequests)
+
   if (estimations instanceof Error) return estimationErrorFormatted(estimations)
 
   const [
