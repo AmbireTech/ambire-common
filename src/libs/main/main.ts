@@ -1,5 +1,6 @@
 import { AccountOpAction, Action } from '../../controllers/actions/actions'
 import { Account, AccountId } from '../../interfaces/account'
+import { DappProviderRequest } from '../../interfaces/dapp'
 import { Network, NetworkId } from '../../interfaces/network'
 import { Calls, SignUserRequest, UserRequest } from '../../interfaces/userRequest'
 import generateSpoofSig from '../../utils/generateSpoofSig'
@@ -28,6 +29,46 @@ export const batchCallsFromUserRequests = ({
     },
     []
   )
+}
+
+export const buildSwitchAccountUserRequest = ({
+  nextUserRequest,
+  selectedAccountAddr,
+  networkId,
+  session,
+  rejectUserRequest
+}: {
+  nextUserRequest: UserRequest
+  selectedAccountAddr: string
+  networkId: Network['id']
+  session: DappProviderRequest['session']
+  rejectUserRequest: (reason: string, userRequestId: string | number) => void
+}): UserRequest => {
+  const userRequestId = nextUserRequest.id
+
+  return {
+    id: new Date().getTime(),
+    action: {
+      kind: 'switchAccount',
+      params: {
+        accountAddr: selectedAccountAddr,
+        switchToAccountAddr: nextUserRequest.meta.accountAddr,
+        nextRequestType: nextUserRequest.action.kind,
+        networkId
+      }
+    },
+    session,
+    meta: {
+      isSignAction: false
+    },
+    dappPromise: {
+      session,
+      resolve: () => {},
+      reject: () => {
+        rejectUserRequest('Switch account request rejected', userRequestId)
+      }
+    }
+  }
 }
 
 export const makeSmartAccountOpAction = ({

@@ -56,6 +56,7 @@ import { GasRecommendation, getGasPriceRecommendations } from '../../libs/gasPri
 import { humanizeAccountOp } from '../../libs/humanizer'
 import { KeyIterator } from '../../libs/keyIterator/keyIterator'
 import {
+  buildSwitchAccountUserRequest,
   getAccountOpsForSimulation,
   makeBasicAccountOpAction,
   makeSmartAccountOpAction
@@ -995,13 +996,6 @@ export class MainController extends EventEmitter {
         (n) => Number(n.chainId) === Number(dapp?.chainId)
       )
 
-      const accountError = this.#getUserRequestAccountError(dappPromise.session.origin, accountAddr)
-
-      if (accountError) {
-        dappPromise.reject(ethErrors.provider.userRejectedRequest(accountError))
-        return
-      }
-
       if (!network) {
         throw ethErrors.provider.chainDisconnected('Transaction failed - unknown network')
       }
@@ -1035,12 +1029,6 @@ export class MainController extends EventEmitter {
         throw ethErrors.rpc.invalidRequest('No msg request to sign')
       }
       const msgAddress = getAddress(msg?.[1])
-      const accountError = this.#getUserRequestAccountError(dappPromise.session.origin, msgAddress)
-
-      if (accountError) {
-        dappPromise.reject(ethErrors.provider.userRejectedRequest(accountError))
-        return
-      }
 
       const network = this.networks.networks.find(
         (n) => Number(n.chainId) === Number(dapp?.chainId)
@@ -1072,11 +1060,6 @@ export class MainController extends EventEmitter {
         throw ethErrors.rpc.invalidRequest('No msg request to sign')
       }
       const msgAddress = getAddress(msg?.[0])
-      const accountError = this.#getUserRequestAccountError(dappPromise.session.origin, msgAddress)
-      if (accountError) {
-        dappPromise.reject(ethErrors.provider.userRejectedRequest(accountError))
-        return
-      }
 
       const network = this.networks.networks.find(
         (n) => Number(n.chainId) === Number(dapp?.chainId)
@@ -1142,53 +1125,46 @@ export class MainController extends EventEmitter {
       }
     }
 
-    if (userRequest) {
-      const isASignOperationRequestedForAnotherAccount =
-        userRequest.meta.isSignAction &&
-        userRequest.meta.accountAddr !== this.selectedAccount.account?.addr
+    if (!userRequest) return
 
-      if (isASignOperationRequestedForAnotherAccount) {
-        const network = this.networks.networks.find(
-          (n) => Number(n.chainId) === Number(dapp?.chainId)
-        )
+    const isASignOperationRequestedForAnotherAccount =
+      userRequest.meta.isSignAction &&
+      userRequest.meta.accountAddr !== this.selectedAccount.account?.addr
 
-        if (!network) {
-          throw ethErrors.provider.chainDisconnected('Transaction failed - unknown network')
-        }
-        const userRequestId = userRequest.id
-
-        await this.addUserRequest(userRequest, false)
-        await this.addUserRequest(
-          {
-            id: new Date().getTime(),
-            action: {
-              kind: 'switchAccount',
-              params: {}
-            },
-            session: request.session,
-            meta: {
-              accountAddr: this.selectedAccount.account?.addr,
-              switchToAccountAddr: userRequest.meta.accountAddr,
-              nextRequestType: userRequest.action.kind,
-              networkId: network.id,
-              isSignAction: false
-            },
-            dappPromise: {
-              session: request.session,
-              resolve: () => {},
-              reject: () => {
-                this.rejectUserRequest('Switch account request rejected', userRequestId)
-              }
-            }
-          },
-          true
-        )
-        return
-      }
+    // We can simply add the user request if it's not a sign operation
+    // for another account
+    if (!isASignOperationRequestedForAnotherAccount) {
       await this.addUserRequest(userRequest, withPriority)
-
-      this.emitUpdate()
+      return
     }
+
+    const accountError = this.#getUserRequestAccountError(
+      dappPromise.session.origin,
+      userRequest.meta.accountAddr
+    )
+
+    if (accountError) {
+      dappPromise.reject(ethErrors.provider.userRejectedRequest(accountError))
+      return
+    }
+
+    const network = this.networks.networks.find((n) => Number(n.chainId) === Number(dapp?.chainId))
+
+    if (!network) {
+      throw ethErrors.provider.chainDisconnected('Transaction failed - unknown network')
+    }
+
+    await this.addUserRequest(userRequest, false)
+    await this.addUserRequest(
+      buildSwitchAccountUserRequest({
+        nextUserRequest: userRequest,
+        networkId: network.id,
+        selectedAccountAddr: userRequest.meta.accountAddr,
+        session: dappPromise.session,
+        rejectUserRequest: this.rejectUserRequest.bind(this)
+      }),
+      true
+    )
   }
 
   async buildTransferUserRequest(
