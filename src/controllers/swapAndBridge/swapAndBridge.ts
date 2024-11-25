@@ -184,7 +184,7 @@ export class SwapAndBridgeController extends EventEmitter {
 
     // Multiply the max amount by the token price. The calculation is done in big int to avoid precision loss
     return formatUnits(
-      maxAmount * tokenPriceBigInt,
+      BigInt(maxAmount) * tokenPriceBigInt,
       // Shift the decimal point by the number of decimals in the token price
       this.fromSelectedToken.decimals + tokenPriceDecimals
     )
@@ -308,6 +308,7 @@ export class SwapAndBridgeController extends EventEmitter {
       toSelectedToken,
       routePriority
     } = props
+
     if (fromAmount !== undefined) {
       this.fromAmount = fromAmount
       ;(() => {
@@ -386,7 +387,6 @@ export class SwapAndBridgeController extends EventEmitter {
           this.updateToTokenList(true)
         }
       }
-
       this.fromSelectedToken = fromSelectedToken
       this.fromAmount = ''
       this.fromAmountInFiat = ''
@@ -439,11 +439,15 @@ export class SwapAndBridgeController extends EventEmitter {
       }) || []
     this.portfolioTokenList = tokens
 
-    const fromSelectedTokenInNextPortfolio = tokens.find(
+    // Search in `nextPortfolioTokenList` instead of `tokens` because the user might select
+    // a token with a zero balance from the dashboard to be swapped or bridged`.
+    // If we only search within tokens with a balance, the selected token won't be found.
+    const fromSelectedTokenInNextPortfolio = nextPortfolioTokenList.find(
       (t) =>
         t.address === this.fromSelectedToken?.address &&
         t.networkId === this.fromSelectedToken?.networkId
     )
+
     const shouldUpdateFromSelectedToken =
       !this.fromSelectedToken || // initial (default) state
       // May happen if selected account gets changed or the token gets send away in the meantime
