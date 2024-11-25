@@ -1169,6 +1169,7 @@ export class MainController extends EventEmitter {
             meta: {
               accountAddr: this.selectedAccount.account?.addr,
               switchToAccountAddr: userRequest.meta.accountAddr,
+              nextRequestType: userRequest.action.kind,
               networkId: network.id,
               isSignAction: false
             },
