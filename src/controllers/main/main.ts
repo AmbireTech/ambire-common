@@ -426,7 +426,6 @@ export class MainController extends EventEmitter {
       return
     }
     this.selectedAccount.setAccount(accountToSelect)
-    this.activity.init()
     this.swapAndBridge.onAccountChange()
     this.dapps.broadcastDappSessionEvent('accountsChanged', [toAccountAddr])
     // forceEmitUpdate to update the getters in the FE state of the ctrl
@@ -1367,21 +1366,13 @@ export class MainController extends EventEmitter {
             a.accountOp.networkId === network.id
         ) as AccountOpAction | undefined
 
-        const activityFilters = {
-          account: account.addr,
-          network: network.id
-        }
-        if (!this.activity.isInitialized) {
-          this.activity.init(activityFilters)
-        } else {
-          this.activity.setFilters(activityFilters)
-        }
-
-        const entryPointAuthorizationMessageFromHistory = this.activity.signedMessages?.items.find(
+        const entryPointAuthorizationMessageFromHistory = await this.activity.findMessage(
+          account.addr,
           (message) =>
             message.fromActionId === ENTRY_POINT_AUTHORIZATION_REQUEST_ID &&
             message.networkId === network.id
         )
+
         const hasAuthorized =
           !!currentAccountOpAction?.accountOp?.meta?.entryPointAuthorization ||
           !!entryPointAuthorizationMessageFromHistory
