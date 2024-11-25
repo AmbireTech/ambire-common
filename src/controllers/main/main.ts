@@ -90,12 +90,7 @@ import shortenAddress from '../../utils/shortenAddress'
 import wait from '../../utils/wait'
 import { AccountAdderController } from '../accountAdder/accountAdder'
 import { AccountsController } from '../accounts/accounts'
-import {
-  AccountOpAction,
-  ActionsController,
-  SignMessageAction,
-  SwitchAccountAction
-} from '../actions/actions'
+import { AccountOpAction, ActionsController, SignMessageAction } from '../actions/actions'
 import { ActivityController } from '../activity/activity'
 import { AddressBookController } from '../addressBook/addressBook'
 import { DappsController } from '../dapps/dapps'
@@ -1744,16 +1739,6 @@ export class MainController extends EventEmitter {
       if (call.fromUserRequestId) this.rejectUserRequest(err, call.fromUserRequestId)
     }
 
-    this.emitUpdate()
-  }
-
-  async resolveSwitchAccountAction(actionId: SwitchAccountAction['id']) {
-    const switchAccountAction = this.actions.actionsQueue.find((a) => a.id === actionId)
-    if (!switchAccountAction || switchAccountAction.type !== 'switchAccount') return
-
-    const { userRequest } = switchAccountAction
-    await this.#selectAccount(userRequest.meta.switchToAccountAddr)
-    this.removeUserRequest(actionId)
     this.emitUpdate()
   }
 
