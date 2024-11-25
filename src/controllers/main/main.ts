@@ -84,6 +84,7 @@ import {
 } from '../../libs/userOperation/userOperation'
 import bundler from '../../services/bundlers'
 import { Bundler } from '../../services/bundlers/bundler'
+import { paymasterFactory } from '../../services/paymaster/PaymasterFactory'
 import { SocketAPI } from '../../services/socket/api'
 import { getIsViewOnly } from '../../utils/accounts'
 import shortenAddress from '../../utils/shortenAddress'
@@ -344,6 +345,7 @@ export class MainController extends EventEmitter {
     )
     this.domains = new DomainsController(this.providers.providers, this.fetch)
     this.#initialLoadPromise = this.#load()
+    paymasterFactory.init(relayerUrl, fetch)
   }
 
   async #load(): Promise<void> {
@@ -969,6 +971,12 @@ export class MainController extends EventEmitter {
 
     if (kind === 'calls') {
       if (!this.selectedAccount.account) throw ethErrors.rpc.internal()
+      const network = this.networks.networks.find(
+        (n) => Number(n.chainId) === Number(dapp?.chainId)
+      )
+      if (!network) {
+        throw ethErrors.provider.chainDisconnected('Transaction failed - unknown network')
+      }
 
       const isWalletSendCalls = !!request.params[0].calls
       const accountAddr = getAddress(request.params[0].from)
@@ -977,16 +985,12 @@ export class MainController extends EventEmitter {
         ? request.params[0].calls
         : [request.params[0]]
       const paymasterService = isWalletSendCalls
-        ? getPaymasterService(accountAddr, request.params[0].capabilities)
+        ? getPaymasterService(
+            network.chainId.toString() as `0x${string}`,
+            request.params[0].capabilities
+          )
         : null
 
-      const network = this.networks.networks.find(
-        (n) => Number(n.chainId) === Number(dapp?.chainId)
-      )
-
-      if (!network) {
-        throw ethErrors.provider.chainDisconnected('Transaction failed - unknown network')
-      }
       userRequest = {
         id: new Date().getTime(),
         action: {

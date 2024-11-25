@@ -1,6 +1,7 @@
 import { AbiCoder, toBeHex } from 'ethers'
 
 import { AMBIRE_PAYMASTER } from '../../consts/deploy'
+import { Account } from '../../interfaces/account'
 import { Network } from '../../interfaces/network'
 import { AccountOp } from '../accountOp/accountOp'
 import { getPaymasterStubData } from '../erc7677/erc7677'
@@ -24,9 +25,15 @@ export function getPaymasterDataForEstimate(): PaymasterEstimationData {
 }
 
 export class Paymaster {
+  callRelayer: Function
+
   type: PaymasterType = 'None'
 
   sponsorDataEstimation: PaymasterEstimationData | undefined
+
+  constructor(callRelayer: Function) {
+    this.callRelayer = callRelayer
+  }
 
   async init(op: AccountOp, userOp: UserOperation, network: Network) {
     if (op.meta?.paymasterService) {
@@ -62,5 +69,30 @@ export class Paymaster {
     if (this.type === 'Ambire') return getPaymasterDataForEstimate()
 
     return null
+  }
+
+  isSponsored(): boolean {
+    return this.type === 'ERC7677'
+  }
+
+  isUsable() {
+    return this.type !== 'None'
+  }
+
+  async call(acc: Account, op: AccountOp, userOp: UserOperation) {
+    // request the paymaster with a timeout window
+    const response = await Promise.race([
+      this.callRelayer(`/v2/paymaster/${op.networkId}/sign`, 'POST', {
+        // send without the requestType prop
+        userOperation: (({ requestType, activatorCall, ...o }) => o)(userOp),
+        paymaster: AMBIRE_PAYMASTER,
+        bytecode: acc.creation!.bytecode,
+        salt: acc.creation!.salt,
+        key: acc.associatedKeys[0]
+      }),
+      new Promise((_resolve, reject) => {
+        setTimeout(() => reject(new Error('Ambire relayer error')), 8000)
+      })
+    ])
   }
 }

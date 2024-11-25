@@ -6,7 +6,7 @@ export interface PaymasterService {
 }
 
 export interface PaymasterCapabilities {
-  [walletAddress: string]: PaymasterService
+  [chainId: `0x${string}`]: PaymasterService
 }
 
 export type PaymasterEstimationData = {

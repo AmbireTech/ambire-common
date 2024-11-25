@@ -4,10 +4,11 @@ import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import { Account, AccountStates } from '../../interfaces/account'
 import { Network } from '../../interfaces/network'
 import { Bundler } from '../../services/bundlers/bundler'
+import { paymasterFactory } from '../../services/paymaster/PaymasterFactory'
 import { AccountOp, getSignableCallsForBundlerEstimate } from '../accountOp/accountOp'
 import { getFeeCall } from '../calls/calls'
+import { PaymasterEstimationData } from '../erc7677/types'
 import { getHumanReadableEstimationError } from '../errorHumanizer'
-import { Paymaster } from '../paymaster/paymaster'
 import { TokenResult } from '../portfolio'
 import { getSigForCalculations, getUserOperation } from '../userOperation/userOperation'
 import { estimationErrorFormatted } from './errors'
@@ -44,13 +45,6 @@ export async function bundlerEstimate(
   // set the callData
   if (userOp.activatorCall) localOp.activatorCall = userOp.activatorCall
 
-  const paymaster = new Paymaster()
-  await paymaster.init(op, userOp, network)
-
-  if (paymaster.shouldIncludePayment()) {
-    const feeToken = getFeeTokenForEstimate(feeTokens, network)
-    if (feeToken) localOp.feeCall = getFeeCall(feeToken)
-  }
   const gasPrice = await Bundler.fetchGasPrices(network).catch(
     () => new Error('Could not fetch gas prices, retrying...')
   )
@@ -65,19 +59,26 @@ export async function bundlerEstimate(
     userOp.maxFeePerGas = gasPrice.medium.maxFeePerGas
   }
 
-  const paymasterEstimationData = paymaster.getEstimationData()
-  if (paymasterEstimationData) {
+  const ambireAccount = new Interface(AmbireAccount.abi)
+  userOp.callData = ambireAccount.encodeFunctionData('executeBySender', [
+    getSignableCallsForBundlerEstimate(localOp)
+  ])
+  userOp.signature = getSigForCalculations()
+
+  const paymaster = await paymasterFactory.create(op, userOp, network)
+  if (paymaster.shouldIncludePayment()) {
+    const feeToken = getFeeTokenForEstimate(feeTokens, network)
+    if (feeToken) localOp.feeCall = getFeeCall(feeToken)
+  }
+
+  if (paymaster.isUsable()) {
+    const paymasterEstimationData = paymaster.getEstimationData() as PaymasterEstimationData
     userOp.paymaster = paymasterEstimationData.paymaster
     userOp.paymasterPostOpGasLimit = paymasterEstimationData.paymasterPostOpGasLimit
     userOp.paymasterVerificationGasLimit = paymasterEstimationData.paymasterVerificationGasLimit
     userOp.paymasterData = paymasterEstimationData.paymasterData
   }
 
-  const ambireAccount = new Interface(AmbireAccount.abi)
-  userOp.callData = ambireAccount.encodeFunctionData('executeBySender', [
-    getSignableCallsForBundlerEstimate(localOp)
-  ])
-  userOp.signature = getSigForCalculations()
   const shouldStateOverride = !accountState.isErc4337Enabled && accountState.isDeployed
 
   try {
@@ -93,7 +94,8 @@ export async function bundlerEstimate(
         callGasLimit: gasData.callGasLimit,
         paymasterVerificationGasLimit: gasData.paymasterVerificationGasLimit,
         paymasterPostOpGasLimit: gasData.paymasterPostOpGasLimit,
-        gasPrice
+        gasPrice,
+        paymaster
       },
       error: null
     }

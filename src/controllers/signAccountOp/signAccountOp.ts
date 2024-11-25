@@ -28,7 +28,12 @@ import { AccountOp, GasFeePayment, getSignableCalls } from '../../libs/accountOp
 import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 import { RelayerPaymasterError } from '../../libs/errorDecoder/customErrors'
 import { getHumanReadableBroadcastError } from '../../libs/errorHumanizer'
-import { BundlerGasPrice, EstimateResult, FeePaymentOption } from '../../libs/estimate/interfaces'
+import {
+  BundlerGasPrice,
+  Erc4337GasLimits,
+  EstimateResult,
+  FeePaymentOption
+} from '../../libs/estimate/interfaces'
 import {
   Gas1559Recommendation,
   GasPriceRecommendation,
@@ -162,6 +167,9 @@ export class SignAccountOpController extends EventEmitter {
 
   warnings: Warning[] = []
 
+  // indicates whether the transaction gas is sponsored or not
+  isSponsored: boolean = false
+
   constructor(
     accounts: AccountsController,
     keystore: KeystoreController,
@@ -288,7 +296,8 @@ export class SignAccountOpController extends EventEmitter {
     }
 
     // this error should never happen as availableFeeOptions should always have the native option
-    if (!this.availableFeeOptions.length) errors.push(ERRORS.eoaInsufficientFunds)
+    if (!this.isSponsored && !this.availableFeeOptions.length)
+      errors.push(ERRORS.eoaInsufficientFunds)
 
     // This error should not happen, as in the update method we are always setting a default signer.
     // It may occur, only if there are no available signer.
@@ -301,14 +310,19 @@ export class SignAccountOpController extends EventEmitter {
     const currentPortfolioNetworkNative = currentPortfolioNetwork?.result?.tokens.find(
       (token) => token.address === '0x0000000000000000000000000000000000000000'
     )
-    if (!currentPortfolioNetworkNative)
+    if (!this.isSponsored && !currentPortfolioNetworkNative)
       errors.push(
         'Unable to estimate the transaction fee as fetching the latest price update for the network native token failed. Please try again later.'
       )
 
     // if there's no gasFeePayment calculate but there is: 1) feeTokenResult
     // 2) selectedOption and 3) gasSpeeds for selectedOption => return an error
-    if (!this.accountOp.gasFeePayment && this.feeTokenResult && this.selectedOption) {
+    if (
+      !this.isSponsored &&
+      !this.accountOp.gasFeePayment &&
+      this.feeTokenResult &&
+      this.selectedOption
+    ) {
       const identifier = getFeeSpeedIdentifier(
         this.selectedOption,
         this.accountOp.accountAddr,
@@ -319,6 +333,7 @@ export class SignAccountOpController extends EventEmitter {
     }
 
     if (
+      !this.isSponsored &&
       this.selectedOption &&
       this.accountOp.gasFeePayment &&
       this.selectedOption.availableAmount < this.accountOp.gasFeePayment.amount
@@ -355,7 +370,7 @@ export class SignAccountOpController extends EventEmitter {
       errors.push(this.status.error)
     }
 
-    if (!this.#feeSpeedsLoading && this.selectedOption) {
+    if (!this.isSponsored && !this.#feeSpeedsLoading && this.selectedOption) {
       const identifier = getFeeSpeedIdentifier(
         this.selectedOption,
         this.accountOp.accountAddr,
@@ -409,7 +424,9 @@ export class SignAccountOpController extends EventEmitter {
         feeTokenHasPrice
       )
 
-      if (feeTokenPriceUnavailableWarning) warnings.push(feeTokenPriceUnavailableWarning)
+      // push the warning only if the txn is not sponsored
+      if (!this.isSponsored && feeTokenPriceUnavailableWarning)
+        warnings.push(feeTokenPriceUnavailableWarning)
     }
 
     if (significantBalanceDecreaseWarning) warnings.push(significantBalanceDecreaseWarning)
@@ -510,6 +527,14 @@ export class SignAccountOpController extends EventEmitter {
     // update the bundler gas prices
     if (this.estimation?.erc4337GasLimits && bundlerGasPrices) {
       this.estimation.erc4337GasLimits.gasPrice = bundlerGasPrices
+    }
+
+    if (
+      this.estimation &&
+      this.estimation.erc4337GasLimits &&
+      this.estimation.erc4337GasLimits.paymaster
+    ) {
+      this.isSponsored = this.estimation.erc4337GasLimits.paymaster.isSponsored()
     }
 
     // calculate the fee speeds if either there are no feeSpeeds
@@ -1180,32 +1205,29 @@ export class SignAccountOpController extends EventEmitter {
             `Unable to sign the transaction because entry point privileges were not granted. ${RETRY_TO_INIT_ACCOUNT_OP_MSG}`
           )
 
+        const erc4337Estimation = this.estimation!.erc4337GasLimits as Erc4337GasLimits
+
         const userOperation = getUserOperation(
           this.account,
           accountState,
           this.accountOp,
           !accountState.isDeployed ? this.accountOp.meta!.entryPointAuthorization : undefined
         )
-        userOperation.preVerificationGas = this.estimation!.erc4337GasLimits!.preVerificationGas
+        userOperation.preVerificationGas = erc4337Estimation.preVerificationGas
         userOperation.callGasLimit = toBeHex(
-          BigInt(this.estimation!.erc4337GasLimits!.callGasLimit) +
-            (this.selectedOption.gasUsed ?? 0n)
+          BigInt(erc4337Estimation.callGasLimit) + (this.selectedOption.gasUsed ?? 0n)
         )
-        userOperation.verificationGasLimit = this.estimation!.erc4337GasLimits!.verificationGasLimit
+        userOperation.verificationGasLimit = erc4337Estimation.verificationGasLimit
         userOperation.paymasterVerificationGasLimit =
-          this.estimation!.erc4337GasLimits!.paymasterVerificationGasLimit
-        userOperation.paymasterPostOpGasLimit =
-          this.estimation!.erc4337GasLimits!.paymasterPostOpGasLimit
+          erc4337Estimation.paymasterVerificationGasLimit
+        userOperation.paymasterPostOpGasLimit = erc4337Estimation.paymasterPostOpGasLimit
         userOperation.maxFeePerGas = toBeHex(gasFeePayment.gasPrice)
         userOperation.maxPriorityFeePerGas = toBeHex(gasFeePayment.maxPriorityFeePerGas!)
 
-        const usesOneTimeNonce = shouldUseOneTimeNonce(userOperation)
-        const usesPaymaster = shouldUsePaymaster(this.#network)
-        if (usesPaymaster) {
-          userOperation.paymaster = AMBIRE_PAYMASTER
-          this.#addFeePayment()
-        }
+        const paymaster = erc4337Estimation.paymaster
+        if (paymaster.shouldIncludePayment()) this.#addFeePayment()
 
+        const usesOneTimeNonce = shouldUseOneTimeNonce(userOperation)
         const ambireAccount = new Interface(AmbireAccount.abi)
         if (usesOneTimeNonce) {
           const signature = await getExecuteSignature(
@@ -1217,6 +1239,7 @@ export class SignAccountOpController extends EventEmitter {
           userOperation.callData = ambireAccount.encodeFunctionData('executeMultiple', [
             [[getSignableCalls(this.accountOp), signature]]
           ])
+          userOperation.nonce = getOneTimeNonce(userOperation)
           this.accountOp.signature = signature
         } else {
           userOperation.callData = ambireAccount.encodeFunctionData('executeBySender', [
@@ -1224,8 +1247,10 @@ export class SignAccountOpController extends EventEmitter {
           ])
         }
 
-        if (usesPaymaster) {
+        if (paymaster.isUsable()) {
           try {
+            await paymaster.call()
+
             // request the paymaster with a timeout window
             const response = await Promise.race([
               this.#callRelayer(`/v2/paymaster/${this.accountOp.networkId}/sign`, 'POST', {
@@ -1245,10 +1270,8 @@ export class SignAccountOpController extends EventEmitter {
             this.status = { type: SigningStatus.InProgress }
             this.emitUpdate()
 
+            userOperation.paymaster = response.data.paymaster
             userOperation.paymasterData = response.data.paymasterData
-            if (usesOneTimeNonce) {
-              userOperation.nonce = getOneTimeNonce(userOperation)
-            }
           } catch (e: any) {
             const convertedError = new RelayerPaymasterError(e)
             const { message } = getHumanReadableBroadcastError(convertedError)
