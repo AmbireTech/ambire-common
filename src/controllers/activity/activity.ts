@@ -203,6 +203,10 @@ export class ActivityController extends EventEmitter {
       filteredItems = this.#accountsOps[filters.account]?.[filters.network] || []
     } else {
       filteredItems = Object.values(this.#accountsOps[filters.account] || []).flat()
+      // By default, #accountsOps are grouped by network and sorted in descending order.
+      // However, when the network filter is omitted, #accountsOps from different networks are mixed,
+      // requiring additional sorting to ensure they are also in descending order.
+      filteredItems.sort((a, b) => b.timestamp - a.timestamp)
     }
 
     const result = paginate(filteredItems, pagination.fromPage, pagination.itemsPerPage)
