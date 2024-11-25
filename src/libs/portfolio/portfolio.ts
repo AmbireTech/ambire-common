@@ -322,8 +322,9 @@ export class Portfolio {
       feeTokens: tokensWithPrices.filter((t) =>
         gasTankFeeTokens.find(
           (gasTankT) =>
-            gasTankT.address.toLowerCase() === t.address.toLowerCase() &&
-            gasTankT.networkId.toLowerCase() === t.networkId.toLowerCase()
+            t.address === ZeroAddress ||
+            (gasTankT.address.toLowerCase() === t.address.toLowerCase() &&
+              gasTankT.networkId.toLowerCase() === t.networkId.toLowerCase())
         )
       ),
       beforeNonce,
