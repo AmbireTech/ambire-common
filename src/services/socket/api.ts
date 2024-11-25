@@ -129,6 +129,33 @@ export class SocketAPI {
     return result.map(normalizeIncomingSocketToken)
   }
 
+  async getToken({
+    address,
+    chainId
+  }: {
+    address: string
+    chainId: number
+  }): Promise<SocketAPIToken> {
+    const params = new URLSearchParams({
+      address: address.toString(),
+      chainId: chainId.toString()
+    })
+    const url = `${this.#baseUrl}/supported/token-support?${params.toString()}`
+
+    let response = await this.#fetch(url, { headers: this.#headers })
+    const fallbackError = new Error('Failed to retrieve token information by address.')
+    if (!response.ok) throw fallbackError
+
+    response = await response.json()
+    if (!response.success) throw fallbackError
+    await this.updateHealthIfNeeded()
+
+    // TODO: Could be improved by checking the `response.result.isSupported` and
+    // displaying feedback if not. For now, assume that the token is supported.
+    // If it is actually NOT, API won't return a route for it, which is fine.
+    return normalizeIncomingSocketToken(response.result.token)
+  }
+
   async quote({
     fromChainId,
     fromTokenAddress,

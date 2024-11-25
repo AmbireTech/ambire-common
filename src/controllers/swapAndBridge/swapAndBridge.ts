@@ -519,6 +519,21 @@ export class SwapAndBridgeController extends EventEmitter {
     this.emitUpdate()
   }
 
+  // TODO: wrap with status
+  async addToTokenByAddress(address: string) {
+    if (!this.toChainId) return
+
+    const isAlreadyPresent = this.toTokenList.some((t) => t.address === address)
+    if (isAlreadyPresent) return
+
+    const token = await this.#socketAPI.getToken({ address, chainId: this.toChainId })
+    if (!token) return
+
+    const nextTokenList = [...this.toTokenList, token]
+    this.toTokenList = sortTokenListResponse(nextTokenList, this.portfolioTokenList)
+    this.emitUpdate()
+  }
+
   async switchFromAndToTokens() {
     if (!this.isSwitchFromAndToTokensEnabled) return
     const currentFromSelectedToken = { ...this.fromSelectedToken }
