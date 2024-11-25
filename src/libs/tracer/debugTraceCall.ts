@@ -1,17 +1,17 @@
-import { getAddress, Interface, JsonRpcProvider, toBeHex, toQuantity, ZeroAddress } from 'ethers'
+import { getAddress, Interface, JsonRpcProvider, toQuantity, ZeroAddress } from 'ethers'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json'
 import BalanceGetter from '../../../contracts/compiled/BalanceGetter.json'
 import NFTGetter from '../../../contracts/compiled/NFTGetter.json'
 import { DEPLOYLESS_SIMULATION_FROM } from '../../consts/deploy'
+import { EOA_SIMULATION_NONCE } from '../../consts/deployless'
 import { Account, AccountOnchainState } from '../../interfaces/account'
 import { getAccountDeployParams, getSpoof, isSmartAccount } from '../account/account'
 import { AccountOp, callToTuple, getSignableCalls } from '../accountOp/accountOp'
 import { DeploylessMode, fromDescriptor } from '../deployless/deployless'
 import { GasRecommendation } from '../gasPrice/gasPrice'
-import { EOA_SIMULATION_NONCE } from '../portfolio/getOnchainBalances'
-import { privSlot } from '../proxyDeploy/deploy'
+import { getDeploylessOpts } from '../portfolio/getOnchainBalances'
 
 const NFT_COLLECTION_LIMIT = 100
 // if using EOA, use the first and only call of the account op
@@ -63,29 +63,7 @@ export async function debugTraceCall(
     mode: DeploylessMode.ProxyContract,
     isEOA: !isSmartAccount(account)
   }
-  const deploylessOpts = {
-    blockTag: 'latest',
-    from: DEPLOYLESS_SIMULATION_FROM,
-    mode:
-      supportsStateOverride && !isSmartAccount(account)
-        ? DeploylessMode.StateOverride
-        : DeploylessMode.Detect,
-    stateToOverride:
-      supportsStateOverride && !isSmartAccount(account)
-        ? {
-            [account.addr]: {
-              code: AmbireAccount.binRuntime,
-              stateDiff: {
-                // if we use 0x00...01 we get a geth bug: "invalid argument 2: hex number with leading zero digits\" - on some RPC providers
-                [`0x${privSlot(0, 'address', account.addr, 'bytes32')}`]:
-                  '0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
-                // any number with leading zeros is not supported on some RPCs
-                [toBeHex(1, 32)]: EOA_SIMULATION_NONCE
-              }
-            }
-          }
-        : null
-  }
+  const deploylessOpts = getDeploylessOpts(account.addr, supportsStateOverride, opts)
   const [factory, factoryCalldata] = getAccountDeployParams(account)
   const simulationOps = [
     [isSmartAccount(account) ? op.nonce : BigInt(EOA_SIMULATION_NONCE), op.calls.map(callToTuple)]
