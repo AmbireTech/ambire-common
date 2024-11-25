@@ -843,7 +843,11 @@ export class SwapAndBridgeController extends EventEmitter {
 
     // Swap banners aren't generated because swaps are completed instantly,
     // thus the activity banner on broadcast is sufficient
-    return getBridgeBanners(activeRoutesForSelectedAccount, accountOpActions)
+    return getBridgeBanners(
+      activeRoutesForSelectedAccount,
+      accountOpActions,
+      this.#networks.networks
+    )
   }
 
   toJSON() {
