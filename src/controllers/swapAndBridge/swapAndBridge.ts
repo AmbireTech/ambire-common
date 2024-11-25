@@ -13,6 +13,7 @@ import { getBridgeBanners } from '../../libs/banners/banners'
 import { TokenResult } from '../../libs/portfolio'
 import { getTokenAmount } from '../../libs/portfolio/helpers'
 import {
+  convertPortfolioTokenToSocketAPIToken,
   getActiveRoutesForAccount,
   getQuoteRouteSteps,
   sortTokenListResponse
@@ -490,11 +491,29 @@ export class SwapAndBridgeController extends EventEmitter {
     }
 
     try {
-      const toTokenListResponse = await this.#socketAPI.getToTokenList({
+      const fetchedToTokenList = await this.#socketAPI.getToTokenList({
         fromChainId: this.fromChainId,
         toChainId: this.toChainId
       })
-      this.toTokenList = sortTokenListResponse(toTokenListResponse, this.portfolioTokenList)
+      const toTokenNetwork = this.#networks.networks.find(
+        (n) => Number(n.chainId) === this.toChainId
+      )
+
+      // should never happen
+      if (!toTokenNetwork)
+        throw new Error(
+          'Network configuration mismatch detected. Please try again later or contact support.'
+        )
+
+      const additionalTokensFromPortfolio = this.portfolioTokenList
+        .filter((t) => t.networkId === toTokenNetwork.id)
+        .filter((token) => !fetchedToTokenList.some((t) => t.address === token.address))
+        .map((t) => convertPortfolioTokenToSocketAPIToken(t, Number(toTokenNetwork.chainId)))
+
+      this.toTokenList = sortTokenListResponse(
+        [...fetchedToTokenList, ...additionalTokensFromPortfolio],
+        this.portfolioTokenList
+      )
 
       if (!this.toSelectedToken) {
         if (addressToSelect) {
@@ -508,12 +527,7 @@ export class SwapAndBridgeController extends EventEmitter {
         }
       }
     } catch (error: any) {
-      this.emitError({
-        error,
-        level: 'major',
-        message:
-          'Unable to retrieve the list of supported receive tokens. Please reload the tab to try again.'
-      })
+      this.emitError({ error, level: 'major', message: error?.message })
     }
     this.updateToTokenListStatus = 'INITIAL'
     this.emitUpdate()
