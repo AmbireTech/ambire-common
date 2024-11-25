@@ -46,7 +46,7 @@ const getBridgeBannerText = (route: ActiveRoute, isBridgeTxn: boolean, networks?
       (n) => Number(n.chainId) === steps[steps.length - 1].toAsset.chainId
     )
     if (fromAssetNetwork && toAssetNetwork) {
-      assetsText = `${fromAssetSymbol} on (${fromAssetNetwork.name}) to ${toAssetSymbol} on (${toAssetNetwork.name})`
+      assetsText = `${fromAssetSymbol} (on ${fromAssetNetwork.name}) to ${toAssetSymbol} (on ${toAssetNetwork.name})`
     }
   }
 
