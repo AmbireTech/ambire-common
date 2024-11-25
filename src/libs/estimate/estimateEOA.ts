@@ -6,12 +6,13 @@ import { FEE_COLLECTOR } from '../../consts/addresses'
 import { OPTIMISTIC_ORACLE } from '../../consts/deploy'
 import { Account, AccountStates } from '../../interfaces/account'
 import { Network } from '../../interfaces/network'
-import { AccountOp } from '../accountOp/accountOp'
+import { AccountOp, toSingletonCall } from '../accountOp/accountOp'
 import { DeploylessMode, fromDescriptor } from '../deployless/deployless'
+import { getHumanReadableEstimationError } from '../errorHumanizer'
 import { TokenResult } from '../portfolio'
 import { EOA_SIMULATION_NONCE } from '../portfolio/getOnchainBalances'
 import { privSlot } from '../proxyDeploy/deploy'
-import { catchEstimationFailure, estimationErrorFormatted } from './errors'
+import { estimationErrorFormatted } from './errors'
 import { estimateWithRetries } from './estimateWithRetries'
 import { EstimateResult } from './interfaces'
 
@@ -67,25 +68,25 @@ export async function estimateEOA(
       'uint256', // nonce
       'uint256' // gasLimit
     ],
-    [call.data, call.to, account.addr, 100000000, 2, nonce, 100000]
+    [call.data, call.to ?? ZeroAddress, account.addr, 100000000, 2, nonce, 100000]
   )
   const initializeRequests = () => [
     provider
       .estimateGas({
         from: account.addr,
-        to: call.to,
+        to: call.to ?? undefined,
         value: call.value,
         data: call.data,
         nonce
       })
-      .catch(catchEstimationFailure),
+      .catch(getHumanReadableEstimationError),
     !network.rpcNoStateOverride
       ? deploylessEstimator
           .call(
             'estimateEoa',
             [
               account.addr,
-              [account.addr, EOA_SIMULATION_NONCE, op.calls, '0x'],
+              [account.addr, EOA_SIMULATION_NONCE, op.calls.map(toSingletonCall), '0x'],
               encodedCallData,
               [account.addr],
               FEE_COLLECTOR,
@@ -99,8 +100,7 @@ export async function estimateEOA(
             }
           )
           .catch((e) => {
-            console.log('error calling estimateEoa:')
-            console.log(e)
+            console.log('error calling estimateEoa:', e)
             return [[0n, [], {}]]
           })
       : deploylessEstimator
@@ -108,7 +108,7 @@ export async function estimateEOA(
             from: blockFrom,
             blockTag
           })
-          .catch(catchEstimationFailure)
+          .catch(getHumanReadableEstimationError)
   ]
   const result = await estimateWithRetries(initializeRequests)
   const feePaymentOptions = [

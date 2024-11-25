@@ -79,6 +79,7 @@ export interface PortfolioLibGetResult {
   priceUpdateTime: number
   priceCache: PriceCache
   tokens: TokenResult[]
+  feeTokens: TokenResult[]
   tokenErrors: { error: string; address: string }[]
   collections: CollectionResult[]
   hintsFromExternalAPI: Hints | null

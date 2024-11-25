@@ -13,6 +13,12 @@ struct OutcomeString {
     bytes err;
 }
 
+struct OutcomeUint8 {
+    uint8 number;
+    bool success;
+    bytes err;
+}
+
 struct UserAccountData {
     uint256 totalCollateralBase;
     uint256 totalDebtBase;
@@ -111,9 +117,19 @@ struct TokenFromBalance {
     uint128 currentLiquidityRate;
     uint128 currentVariableBorrowRate;
     uint128 currentStableBorrowRate;
+    
     address aaveAddr;
     string aaveSymbol;
     uint8 aaveDecimals;
+    
+    address aaveSDebtAddr;
+    string aaveSDebtSymbol;
+    uint8 aaveSDebtDecimals;
+    
+    address aaveVDebtAddr;
+    string aaveVDebtSymbol;
+    uint8 aaveVDebtDecimals;
+    
 }
 
 struct AAVEUserBalance {
@@ -180,6 +196,10 @@ contract CALLS {
     function getTokenSymbol(address tokenAddr) external view returns (string memory) {
         return IATOKEN(tokenAddr).symbol();
     }
+
+    function getTokenDecimals(address tokenAddr) external view returns (uint8) {
+        return IATOKEN(tokenAddr).decimals();
+    }
 }
 
 
@@ -224,7 +244,26 @@ contract AAVEPosition {
         }
     }
 
-    function getTokenBalancesFromPool(address userAddr, address poolAddress) external view returns (TokenFromBalance[] memory, bytes memory err) {
+    function getTokenDecimalsTry(address tokenAddr) internal view returns (OutcomeUint8 memory outcome) {
+        try calls.getTokenDecimals(tokenAddr) returns (uint8 result) {
+            outcome.number = result;
+            outcome.success = true;
+        } catch (bytes memory err) {
+            outcome.err = err;
+            outcome.success = false;
+        }
+    }
+
+    function getTokenDecimals(address baseAddr) internal view returns (uint8 outcome) {
+        OutcomeUint8 memory result = getTokenDecimalsTry(baseAddr);
+        if (result.success) {
+            outcome = result.number;
+        } else {
+            outcome = 19;
+        }
+    }
+
+    function getTokenBalancesFromPool(address userAddr, address poolAddress, uint from, uint to) external view returns (TokenFromBalance[] memory, bytes memory err) {
         bool standartAAVE = true;
         bool isError = false;
         address[] memory reserves = IPOOL(poolAddress).getReservesList();
@@ -245,14 +284,26 @@ contract AAVEPosition {
         }
 
         uint reservesLen = reserves.length;
-        TokenFromBalance[] memory userBalance = new TokenFromBalance[](reservesLen);
 
+        if (from > reservesLen) {
+            return (new TokenFromBalance[](0), err);
+        }
+
+        uint actTo = to;
+
+        if (to > reservesLen) {
+            actTo = reservesLen;
+        }
+
+        TokenFromBalance[] memory userBalance = new TokenFromBalance[](actTo - from);
+        
         if (isError) {
             return (userBalance, err);
         }
 
         address priceOralceAddr = IPoolAddressesProvider(provider).getPriceOracle();
-        for (uint256 i = 0; i < reservesLen; i++) {
+        uint pos = 0;
+        for (uint i = from; i < actTo; i++) {
             if (standartAAVE) {
                 ReserveData memory reserveData = IPOOL(poolAddress).getReserveData(reserves[i]);    
                 uint256 price = IAaveOracle(priceOralceAddr).getAssetPrice(reserves[i]);
@@ -267,10 +318,21 @@ contract AAVEPosition {
                 aToken.currentLiquidityRate = reserveData.currentLiquidityRate;
                 aToken.currentVariableBorrowRate = reserveData.currentVariableBorrowRate;
                 aToken.currentStableBorrowRate = reserveData.currentStableBorrowRate;
+                
                 aToken.aaveAddr = reserveData.aTokenAddress;
                 aToken.aaveSymbol = getTokenSymbol(reserveData.aTokenAddress);
-                aToken.aaveDecimals = IATOKEN(reserveData.aTokenAddress).decimals();
-                userBalance[i] = aToken;
+                aToken.aaveDecimals = getTokenDecimals(reserveData.aTokenAddress);
+
+                aToken.aaveSDebtAddr = reserveData.stableDebtTokenAddress;
+                aToken.aaveSDebtSymbol = getTokenSymbol(reserveData.stableDebtTokenAddress);
+                aToken.aaveSDebtDecimals = getTokenDecimals(reserveData.stableDebtTokenAddress);
+
+                aToken.aaveVDebtAddr = reserveData.variableDebtTokenAddress;
+                aToken.aaveVDebtSymbol = getTokenSymbol(reserveData.variableDebtTokenAddress);
+                aToken.aaveVDebtDecimals = getTokenDecimals(reserveData.variableDebtTokenAddress);
+
+                userBalance[pos] = aToken;
+                
             } else {
                 ReserveDataIronclad memory reserveData = IPOOLIronclad(poolAddress).getReserveData(reserves[i]);    
                 uint256 price = IAaveOracle(priceOralceAddr).getAssetPrice(reserves[i]);
@@ -285,11 +347,22 @@ contract AAVEPosition {
                 aToken.currentLiquidityRate = reserveData.currentLiquidityRate;
                 aToken.currentVariableBorrowRate = reserveData.currentVariableBorrowRate;
                 aToken.currentStableBorrowRate = reserveData.currentStableBorrowRate;
+                
                 aToken.aaveAddr = reserveData.aTokenAddress;
                 aToken.aaveSymbol = getTokenSymbol(reserveData.aTokenAddress);
-                aToken.aaveDecimals = IATOKEN(reserveData.aTokenAddress).decimals();
-                userBalance[i] = aToken;
+                aToken.aaveDecimals = getTokenDecimals(reserveData.aTokenAddress);
+
+                aToken.aaveSDebtAddr = reserveData.stableDebtTokenAddress;
+                aToken.aaveSDebtSymbol = getTokenSymbol(reserveData.stableDebtTokenAddress);
+                aToken.aaveSDebtDecimals = getTokenDecimals(reserveData.stableDebtTokenAddress);
+
+                aToken.aaveVDebtAddr = reserveData.variableDebtTokenAddress;
+                aToken.aaveVDebtSymbol = getTokenSymbol(reserveData.variableDebtTokenAddress);
+                aToken.aaveVDebtDecimals = getTokenDecimals(reserveData.variableDebtTokenAddress);
+
+                userBalance[pos] = aToken;
             }
+            pos++;
         }
         return (userBalance, err);
     }
@@ -302,8 +375,8 @@ contract AAVEPosition {
 
 contract DeFiAAVEPosition {
     AAVEPosition positions = new AAVEPosition();
-    function getAAVEPosition(address userAddr, address poolAddr) external view returns (AAVEUserBalance memory result) {
-        (result.userBalance, result.accountDataErr) = positions.getTokenBalancesFromPool(userAddr, poolAddr);
+    function getAAVEPosition(address userAddr, address poolAddr, uint from, uint to) external view returns (AAVEUserBalance memory result) {
+        (result.userBalance, result.accountDataErr) = positions.getTokenBalancesFromPool(userAddr, poolAddr, from, to);
         (result.accountData, result.accountDataErr) = positions.getUserAccountData(userAddr, poolAddr);
         return result;
     }

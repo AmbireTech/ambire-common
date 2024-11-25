@@ -5,6 +5,7 @@ import { getAddress, JsonRpcProvider, Provider, ZeroAddress } from 'ethers'
 
 import BalanceGetter from '../../../contracts/compiled/BalanceGetter.json'
 import NFTGetter from '../../../contracts/compiled/NFTGetter.json'
+import gasTankFeeTokens from '../../consts/gasTankFeeTokens'
 import { PINNED_TOKENS } from '../../consts/pinnedTokens'
 import { Fetch } from '../../interfaces/fetch'
 import { Network } from '../../interfaces/network'
@@ -169,6 +170,12 @@ export class Portfolio {
       ]
     }
 
+    // add the fee tokens
+    hints.erc20s = [
+      ...hints.erc20s,
+      ...gasTankFeeTokens.filter((x) => x.networkId === this.network.id).map((x) => x.address)
+    ]
+
     // Remove duplicates and always add ZeroAddress
     hints.erc20s = [...new Set(hints.erc20s.map((erc20) => getAddress(erc20)).concat(ZeroAddress))]
 
@@ -301,6 +308,7 @@ export class Portfolio {
         }
       })
     )
+
     const priceUpdateDone = Date.now()
     return {
       hintsFromExternalAPI: stripExternalHintsAPIResponse(hintsFromExternalAPI),
@@ -311,6 +319,14 @@ export class Portfolio {
       priceUpdateTime: priceUpdateDone - oracleCallDone,
       priceCache,
       tokens: tokensWithPrices,
+      feeTokens: tokensWithPrices.filter((t) =>
+        gasTankFeeTokens.find(
+          (gasTankT) =>
+            t.address === ZeroAddress ||
+            (gasTankT.address.toLowerCase() === t.address.toLowerCase() &&
+              gasTankT.networkId.toLowerCase() === t.networkId.toLowerCase())
+        )
+      ),
       beforeNonce,
       afterNonce,
       blockNumber,

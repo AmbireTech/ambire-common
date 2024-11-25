@@ -263,22 +263,3 @@ export function getProbableCallData(
 
   return estimationCallData
 }
-
-export function getCallDataAdditionalByNetwork(
-  accountOp: AccountOp,
-  account: Account,
-  network: Network,
-  accountState: AccountOnchainState
-): bigint {
-  // no additional call data is required for arbitrum as the bytes are already
-  // added in the calculation for the L1 fee
-  if (network.id === 'arbitrum') return 0n
-
-  const estimationCallData = getProbableCallData(account, accountOp, accountState, network)
-  const FIXED_OVERHEAD = 21000n
-  const bytes = Buffer.from(estimationCallData.substring(2))
-  const nonZeroBytes = BigInt(bytes.filter((b) => b).length)
-  const zeroBytes = BigInt(BigInt(bytes.length) - nonZeroBytes)
-  const txDataGas = zeroBytes * 4n + nonZeroBytes * 16n
-  return txDataGas + FIXED_OVERHEAD
-}

@@ -122,25 +122,24 @@ export class SelectedAccountController extends EventEmitter {
     this.#portfolio.onUpdate(async () => {
       this.#debounceFunctionCallsOnSameTick('updateSelectedAccountPortfolio', () => {
         this.#updateSelectedAccountPortfolio()
-        this.#updatePortfolioBanners()
       })
     }, 'selectedAccount')
 
     this.#defiPositions.onUpdate(() => {
-      this.#debounceFunctionCallsOnSameTick('updateSelectedAccountPortfolio', () => {
-        this.#updateSelectedAccountPortfolio()
-        this.#updatePortfolioBanners()
-      })
       this.#debounceFunctionCallsOnSameTick('updateSelectedAccountDefiPositions', () => {
         this.#updateSelectedAccountDefiPositions()
-        this.#updateDefiPositionsBanners()
+
+        if (!this.areDefiPositionsLoading) {
+          this.#updateDefiPositionsBanners()
+          this.#updateSelectedAccountPortfolio()
+        }
       })
     })
 
     this.#providers.onUpdate(() => {
       this.#debounceFunctionCallsOnSameTick('updateDefiPositionsBanners', () => {
-        this.#updateDefiPositionsBanners()
         this.#updatePortfolioBanners()
+        this.#updateDefiPositionsBanners()
       })
     })
 
@@ -151,6 +150,8 @@ export class SelectedAccountController extends EventEmitter {
 
   async setAccount(account: Account | null) {
     this.account = account
+    this.portfolioBanners = []
+    this.defiPositionsBanners = []
     this.resetSelectedAccountPortfolio(true)
 
     if (!account) {
@@ -172,7 +173,6 @@ export class SelectedAccountController extends EventEmitter {
 
   #updateSelectedAccountPortfolio(skipUpdate?: boolean) {
     if (!this.#portfolio || !this.#defiPositions || !this.account) return
-
     const defiPositionsAccountState = this.#defiPositions.getDefiPositionsState(this.account.addr)
 
     const latestStateSelectedAccount = structuredClone(
@@ -209,6 +209,10 @@ export class SelectedAccountController extends EventEmitter {
 
     if (!this.portfolioStartedLoadingAtTimestamp && !newSelectedAccountPortfolio.isAllReady) {
       this.portfolioStartedLoadingAtTimestamp = Date.now()
+    }
+
+    if (newSelectedAccountPortfolio.isAllReady) {
+      this.#updatePortfolioBanners(true)
     }
 
     if (
@@ -302,7 +306,7 @@ export class SelectedAccountController extends EventEmitter {
 
     const errorBanners = getNetworksWithPortfolioErrorBanners({
       networks: this.#networks.networks,
-      selectedAccountLatest: this.#portfolio.getLatestPortfolioState(this.account.addr),
+      selectedAccountLatest: this.portfolio.latest,
       providers: this.#providers.providers
     })
 
