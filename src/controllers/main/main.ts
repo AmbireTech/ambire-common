@@ -2101,7 +2101,7 @@ export class MainController extends EventEmitter {
         const gasFeePayment = accountOp.gasFeePayment!
         const { to, value, data } = accountOp.calls[0]
         const rawTxn: TxnRequest = {
-          to,
+          to: to ?? undefined,
           value,
           data,
           chainId: network!.chainId,
@@ -2301,7 +2301,9 @@ export class MainController extends EventEmitter {
       nonce: BigInt(transactionRes.nonce),
       identifiedBy: transactionRes.identifiedBy,
       timestamp: new Date().getTime(),
-      isSingletonDeploy: !!accountOp.calls.find((call) => getAddress(call.to) === SINGLETON)
+      isSingletonDeploy: !!accountOp.calls.find(
+        (call) => call.to && getAddress(call.to) === SINGLETON
+      )
     }
     await this.activity.addAccountOp(submittedAccountOp)
     await this.resolveAccountOpAction(

@@ -6,7 +6,7 @@ import { DEPLOYLESS_SIMULATION_FROM, OPTIMISTIC_ORACLE } from '../../consts/depl
 import { Account, AccountStates } from '../../interfaces/account'
 import { Network } from '../../interfaces/network'
 import { getAccountDeployParams, isSmartAccount } from '../account/account'
-import { AccountOp } from '../accountOp/accountOp'
+import { AccountOp, toSingletonCall } from '../accountOp/accountOp'
 import { Call } from '../accountOp/types'
 import { getFeeCall } from '../calls/calls'
 import { fromDescriptor } from '../deployless/deployless'
@@ -256,7 +256,7 @@ export async function estimate(
   // if the account is v2 without the entry point signer being a signer
   // and the network is 4337 but doesn't have a paymaster and the account
   // is deployed for some reason, we should include the activator
-  const calls = [...op.calls]
+  const calls = [...op.calls.map(toSingletonCall)]
   const accountState = accountStates[op.accountAddr][op.networkId]
   if (shouldIncludeActivatorCall(network, account, accountState, false)) {
     calls.push(getActivatorCall(op.accountAddr))
