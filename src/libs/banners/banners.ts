@@ -148,7 +148,8 @@ export const getDappActionRequestsBanners = (actions: ActionFromActionsQueue[]):
 const getAccountOpBannerText = (
   activeSwapAndBridgeRoutesForSelectedAccount: ActiveRoute[],
   chainId: bigint,
-  nonSwapAndBridgeTxns: number
+  nonSwapAndBridgeTxns: number,
+  networks: Network[]
 ) => {
   const swapsAndBridges: string[] = []
   const networkSwapAndBridgeRoutes = activeSwapAndBridgeRoutesForSelectedAccount.filter((route) => {
@@ -158,7 +159,7 @@ const getAccountOpBannerText = (
   if (networkSwapAndBridgeRoutes.length) {
     networkSwapAndBridgeRoutes.forEach((route) => {
       const isBridgeTxn = route.route.userTxs.some((t) => getIsBridgeTxn(t.userTxType))
-      const desc = getBridgeBannerText(route, isBridgeTxn)
+      const desc = getBridgeBannerText(route, isBridgeTxn, networks)
 
       swapsAndBridges.push(desc)
     })
@@ -210,7 +211,8 @@ export const getAccountOpBanners = ({
         const text = getAccountOpBannerText(
           swapAndBridgeRoutesPendingSignature,
           BigInt(network.chainId),
-          nonSwapAndBridgeTxns
+          nonSwapAndBridgeTxns,
+          networks
         )
 
         txnBanners.push({
@@ -258,7 +260,8 @@ export const getAccountOpBanners = ({
       const text = getAccountOpBannerText(
         swapAndBridgeRoutesPendingSignature,
         BigInt(network.chainId),
-        nonSwapAndBridgeTxns
+        nonSwapAndBridgeTxns,
+        networks
       )
 
       txnBanners.push({
