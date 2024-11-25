@@ -23,7 +23,7 @@ export interface NetworkInfo {
   hasSingleton: boolean
   isOptimistic: boolean
   rpcNoStateOverride: boolean
-  erc4337: { enabled: boolean; hasPaymaster: boolean }
+  erc4337: Erc4337settings
   areContractsDeployed: boolean
   feeOptions: { is1559: boolean }
   platformId: string

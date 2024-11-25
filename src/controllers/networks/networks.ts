@@ -12,6 +12,7 @@ import { Storage } from '../../interfaces/storage'
 import {
   getFeaturesByNetworkProperties,
   getNetworkInfo,
+  is4337Enabled,
   migrateNetworkPreferencesToNetworks
 } from '../../libs/networks/networks'
 import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter'
@@ -112,10 +113,11 @@ export class NetworksController extends EventEmitter {
         feeOptions: n.feeOptions,
         hasRelayer: n.hasRelayer,
         erc4337: {
-          enabled:
-            this.#networks[n.id] && this.#networks[n.id].force4337 !== undefined
-              ? (this.#networks[n.id].force4337 as boolean)
-              : n.erc4337.enabled,
+          enabled: is4337Enabled(
+            this.#networks[n.id].erc4337.enabled,
+            this.#networks[n.id],
+            this.#networks[n.id]?.force4337
+          ),
           hasPaymaster: n.erc4337.hasPaymaster
         },
         nativeAssetId: n.nativeAssetId,
@@ -221,6 +223,16 @@ export class NetworksController extends EventEmitter {
 
     // Update the networks with the incoming new values
     this.#networks[networkId] = { ...this.#networks[networkId], ...changedNetwork }
+
+    // if force4337 is updated, we have to update the enabled flag as well
+    if ('force4337' in changedNetwork) {
+      this.#networks[networkId].erc4337.enabled = is4337Enabled(
+        true,
+        this.#networks[networkId],
+        changedNetwork.force4337
+      )
+    }
+
     this.#onAddOrUpdateNetwork(this.#networks[networkId])
     await this.#storage.set('networks', this.#networks)
 
@@ -286,7 +298,6 @@ export class NetworksController extends EventEmitter {
     checkRPC(this.networkToAddOrUpdate)
     this.networkToAddOrUpdate = null
 
-    await this.#load()
     this.emitUpdate()
   }
 
