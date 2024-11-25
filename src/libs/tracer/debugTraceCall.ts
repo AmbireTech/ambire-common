@@ -189,11 +189,13 @@ export async function debugTraceCall(
     getNftsPromise
   ])
 
+  const beforeNftCollections = before[0]
+  const afterNftCollections = after[0]
   return {
     tokens: foundTokens.filter((addr, i) => tokensWithErr[i].error === '0x'),
     nfts: foundNftTransfers.filter((nft, i) => {
-      if (before[i][0][3] === '0x') return true
-      const foundAfterToken = after.find(
+      if (beforeNftCollections[i][3] === '0x') return true
+      const foundAfterToken = afterNftCollections.find(
         (t: any, j: number) =>
           deltaAddressesMapping[j].toLowerCase() === foundNftTransfers[i][0].toLowerCase()
       )
