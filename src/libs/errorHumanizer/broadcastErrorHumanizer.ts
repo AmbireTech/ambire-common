@@ -1,31 +1,33 @@
+import EmittableError from '../../classes/EmittableError'
 import { decodeError } from '../errorDecoder'
-import { DecodedError } from '../errorDecoder/types'
-import { getGenericMessageFromType } from './helpers'
+import { getHumanReadableErrorMessage } from './helpers'
 import { humanizeEstimationOrBroadcastError } from './humanizeCommonCases'
 
 const LAST_RESORT_ERROR_MESSAGE =
   'An unknown error occurred while broadcasting the transaction. Please try again or contact Ambire support for assistance.'
 const MESSAGE_PREFIX = 'The transaction cannot be broadcast because'
-
-const getHumanReadableErrorMessage = (
-  reason: DecodedError['reason'],
-  errorType: DecodedError['type']
-) => {
-  const commonError = humanizeEstimationOrBroadcastError(reason, MESSAGE_PREFIX)
-
-  if (commonError) return commonError
-
-  switch (reason) {
-    case 'pimlico_getUserOperationGasPrice':
-      return `${MESSAGE_PREFIX} the selected fee is too low. Please select a higher transaction speed and try again.`
-    default:
-      return getGenericMessageFromType(errorType, reason, MESSAGE_PREFIX, LAST_RESORT_ERROR_MESSAGE)
-  }
+const ERRORS: {
+  [key: string]: string
+} = {
+  pimlico_getUserOperationGasPrice:
+    'the selected fee is too low. Please select a higher transaction speed and try again.'
 }
 
 export function getHumanReadableBroadcastError(e: Error) {
+  if (e instanceof EmittableError) {
+    return e
+  }
   const decodedError = decodeError(e)
-  const errorMessage = getHumanReadableErrorMessage(decodedError.reason, decodedError.type)
+  const commonError = humanizeEstimationOrBroadcastError(decodedError.reason, MESSAGE_PREFIX)
+  const errorMessage = getHumanReadableErrorMessage(
+    commonError,
+    ERRORS,
+    MESSAGE_PREFIX,
+    LAST_RESORT_ERROR_MESSAGE,
+    decodedError.reason,
+    e,
+    decodedError.type
+  )
 
   return new Error(errorMessage)
 }

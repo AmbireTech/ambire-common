@@ -39,4 +39,33 @@ function getGenericMessageFromType(
   }
 }
 
-export { getGenericMessageFromType }
+const getHumanReadableErrorMessage = (
+  commonError: any,
+  errors: { [key: string]: string },
+  messagePrefix: string,
+  lastResortMessage: string,
+  reason: DecodedError['reason'],
+  e: any,
+  errorType: DecodedError['type']
+) => {
+  if (commonError) return commonError
+
+  const checkAgainst = reason || e?.error?.message || e?.message
+  let message = null
+
+  if (checkAgainst) {
+    Object.keys(errors).forEach((key) => {
+      if (!checkAgainst.toLowerCase().includes(key.toLowerCase())) return
+
+      message = `${messagePrefix} ${errors[key]}`
+    })
+  }
+
+  if (!message) {
+    return getGenericMessageFromType(errorType, reason, messagePrefix, lastResortMessage)
+  }
+
+  return message
+}
+
+export { getGenericMessageFromType, getHumanReadableErrorMessage }
