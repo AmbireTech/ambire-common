@@ -135,8 +135,6 @@ export class ActivityController extends EventEmitter {
     }
   } = {}
 
-  isInitialized: boolean = false
-
   #providers: ProvidersController
 
   #networks: NetworksController
@@ -313,8 +311,6 @@ export class ActivityController extends EventEmitter {
   }> {
     await this.#initialLoadPromise
 
-    // Here we don't rely on `this.isInitialized` flag, as it checks for both `this.filters.account` and `this.filters.network` existence.
-    // Banners are network agnostic, and that's the reason we check for `this.filters.account` only and having this.#accountsOps loaded.
     if (!this.#selectedAccount.account || !this.#accountsOps[this.#selectedAccount.account.addr])
       return { shouldEmitUpdate: false, shouldUpdatePortfolio: false }
 
@@ -649,11 +645,6 @@ export class ActivityController extends EventEmitter {
 
   async findMessage(account: string, filter: (item: SignedMessage) => boolean) {
     await this.#initialLoadPromise
-
-    if (!this.isInitialized) {
-      this.#throwNotInitialized()
-      return
-    }
 
     return this.#signedMessages[account].find(filter)
   }
