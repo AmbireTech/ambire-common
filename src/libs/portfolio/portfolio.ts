@@ -116,11 +116,17 @@ export class Portfolio {
       // if the network doesn't have a relayer, velcro will not work
       // but we should not record an error if such is the case
       if (this.network.hasRelayer && !disableAutoDiscovery) {
-        hintsFromExternalAPI = await this.batchedVelcroDiscovery({
-          networkId,
-          accountAddr,
-          baseCurrency
-        })
+        hintsFromExternalAPI = await Promise.race([
+          this.batchedVelcroDiscovery({
+            networkId,
+            accountAddr,
+            baseCurrency
+          }),
+          new Promise((_, reject) => {
+            setTimeout(() => reject(new Error('velcro-timeout')), 3000)
+            console.error(`Velcro discovery timed out on ${networkId} for ${accountAddr}`)
+          })
+        ])
         if (hintsFromExternalAPI)
           hints = stripExternalHintsAPIResponse(hintsFromExternalAPI) as Hints
       } else if (!this.network.hasRelayer) {
@@ -271,13 +277,20 @@ export class Portfolio {
         }
 
         try {
-          const priceData = await this.batchedGecko({
-            ...token,
-            network: this.network,
-            baseCurrency,
-            // this is what to look for in the coingecko response object
-            responseIdentifier: geckoResponseIdentifier(token.address, this.network)
-          })
+          const priceData = await Promise.race([
+            this.batchedGecko({
+              ...token,
+              network: this.network,
+              baseCurrency,
+              // this is what to look for in the coingecko response object
+              responseIdentifier: geckoResponseIdentifier(token.address, this.network)
+            }),
+            new Promise((_, reject) => {
+              setTimeout(() => reject(new Error('gecko-timeout')), 3000)
+              console.error(`Gecko call timed out on ${this.network.id} for ${token.address}`)
+            })
+          ])
+
           priceIn = Object.entries(priceData || {}).map(([baseCurr, price]) => ({
             baseCurrency: baseCurr,
             price: price as number
