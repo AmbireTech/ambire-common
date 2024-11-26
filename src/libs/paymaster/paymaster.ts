@@ -4,10 +4,11 @@ import { AMBIRE_PAYMASTER } from '../../consts/deploy'
 import { Account } from '../../interfaces/account'
 import { Network } from '../../interfaces/network'
 import { AccountOp } from '../accountOp/accountOp'
-import { getPaymasterStubData } from '../erc7677/erc7677'
+import { getPaymasterData, getPaymasterStubData } from '../erc7677/erc7677'
 import {
   PaymasterErrorReponse,
   PaymasterEstimationData,
+  PaymasterService,
   PaymasterSuccessReponse
 } from '../erc7677/types'
 import { RelayerPaymasterError } from '../errorDecoder/customErrors'
@@ -37,6 +38,8 @@ export class Paymaster {
 
   sponsorDataEstimation: PaymasterEstimationData | undefined
 
+  paymasterService: PaymasterService | null = null
+
   constructor(callRelayer: Function) {
     this.callRelayer = callRelayer
   }
@@ -44,6 +47,7 @@ export class Paymaster {
   async init(op: AccountOp, userOp: UserOperation, network: Network) {
     if (op.meta?.paymasterService) {
       try {
+        this.paymasterService = op.meta.paymasterService
         this.sponsorDataEstimation = await getPaymasterStubData(
           op.meta.paymasterService,
           userOp,
@@ -123,11 +127,52 @@ export class Paymaster {
     }
   }
 
+  async #erc7677Call(userOp: UserOperation, network: Network) {
+    const sponsorData = this.sponsorDataEstimation as PaymasterEstimationData
+
+    // no need to do an extra call if the dapp has already provided sponsorship
+    if ('isFinal' in sponsorData && sponsorData.isFinal)
+      return {
+        success: true,
+        paymaster: sponsorData.paymaster,
+        paymasterData: sponsorData.paymasterData
+      }
+
+    try {
+      const localUserOp = { ...userOp }
+      localUserOp.paymaster = sponsorData.paymaster
+      localUserOp.paymasterData = sponsorData.paymasterData
+      const response: any = await Promise.race([
+        getPaymasterData(this.paymasterService as PaymasterService, localUserOp, network),
+        new Promise((_resolve, reject) => {
+          setTimeout(() => reject(new Error('Sponsorship error')), 8000)
+        })
+      ])
+      return {
+        success: true,
+        paymaster: response.paymaster,
+        paymasterData: response.paymasterData
+      }
+    } catch (e: any) {
+      const { message } = getHumanReadableBroadcastError(e)
+      return {
+        success: false,
+        message,
+        error: e
+      }
+    }
+  }
+
   async call(
     acc: Account,
     op: AccountOp,
-    userOp: UserOperation
+    userOp: UserOperation,
+    network: Network
   ): Promise<PaymasterSuccessReponse | PaymasterErrorReponse> {
-    return this.#ambireCall(acc, op, userOp)
+    if (this.type === 'Ambire') return this.#ambireCall(acc, op, userOp)
+
+    if (this.type === 'ERC7677') return this.#erc7677Call(userOp, network)
+
+    throw new Error('Paymaster not configured. Please contact support')
   }
 }

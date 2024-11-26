@@ -5,7 +5,12 @@ import { Network } from '../../interfaces/network'
 import { getRpcProvider } from '../../services/provider'
 import { UserOperation } from '../userOperation/types'
 import { getCleanUserOp } from '../userOperation/userOperation'
-import { PaymasterCapabilities, PaymasterEstimationData, PaymasterService } from './types'
+import {
+  PaymasterCapabilities,
+  PaymasterData,
+  PaymasterEstimationData,
+  PaymasterService
+} from './types'
 
 export function getPaymasterService(
   chainId: `0x${string}`,
@@ -24,6 +29,20 @@ export function getPaymasterStubData(
 ): Promise<PaymasterEstimationData> {
   const provider = getRpcProvider([service.url], network.chainId)
   return provider.send('pm_getPaymasterStubData', [
+    getCleanUserOp(userOp)[0],
+    ERC_4337_ENTRYPOINT,
+    toBeHex(network.chainId.toString()),
+    service.context
+  ])
+}
+
+export function getPaymasterData(
+  service: PaymasterService,
+  userOp: UserOperation,
+  network: Network
+): Promise<PaymasterData> {
+  const provider = getRpcProvider([service.url], network.chainId)
+  return provider.send('pm_getPaymasterData', [
     getCleanUserOp(userOp)[0],
     ERC_4337_ENTRYPOINT,
     toBeHex(network.chainId.toString()),

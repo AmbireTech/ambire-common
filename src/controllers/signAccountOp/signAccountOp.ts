@@ -1247,7 +1247,12 @@ export class SignAccountOpController extends EventEmitter {
         }
 
         if (paymaster.isUsable()) {
-          const response = await paymaster.call(this.account, this.accountOp, userOperation)
+          const response = await paymaster.call(
+            this.account,
+            this.accountOp,
+            userOperation,
+            this.#network
+          )
           if (response.success) {
             const paymasterData = response as PaymasterSuccessReponse
             this.status = { type: SigningStatus.InProgress }
