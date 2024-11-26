@@ -69,6 +69,11 @@ export async function bundlerEstimate(
   if (paymaster.shouldIncludePayment()) {
     const feeToken = getFeeTokenForEstimate(feeTokens, network)
     if (feeToken) localOp.feeCall = getFeeCall(feeToken)
+
+    // add the feeToken for estimation
+    userOp.callData = ambireAccount.encodeFunctionData('executeBySender', [
+      getSignableCallsForBundlerEstimate(localOp)
+    ])
   }
 
   if (paymaster.isUsable()) {

@@ -13,7 +13,7 @@ import {
 import { RelayerPaymasterError } from '../errorDecoder/customErrors'
 import { getHumanReadableBroadcastError } from '../errorHumanizer'
 import { UserOperation } from '../userOperation/types'
-import { getSigForCalculations } from '../userOperation/userOperation'
+import { getCleanUserOp, getSigForCalculations } from '../userOperation/userOperation'
 
 type PaymasterType = 'Ambire' | 'ERC7677' | 'None'
 
@@ -92,10 +92,11 @@ export class Paymaster {
   ): Promise<PaymasterSuccessReponse | PaymasterErrorReponse> {
     try {
       // request the paymaster with a timeout window
+      const localUserOp = { ...userOp }
+      localUserOp.paymaster = AMBIRE_PAYMASTER
       const response = await Promise.race([
         this.callRelayer(`/v2/paymaster/${op.networkId}/sign`, 'POST', {
-          // send without the requestType prop
-          userOperation: (({ requestType, activatorCall, ...o }) => o)(userOp),
+          userOperation: getCleanUserOp(localUserOp)[0],
           paymaster: AMBIRE_PAYMASTER,
           bytecode: acc.creation!.bytecode,
           salt: acc.creation!.salt,

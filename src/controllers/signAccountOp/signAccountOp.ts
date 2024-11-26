@@ -1224,12 +1224,7 @@ export class SignAccountOpController extends EventEmitter {
         userOperation.maxPriorityFeePerGas = toBeHex(gasFeePayment.maxPriorityFeePerGas!)
 
         const paymaster = erc4337Estimation.paymaster
-        console.log(paymaster.type)
-        console.log(paymaster.shouldIncludePayment())
-        if (paymaster.shouldIncludePayment()) {
-          console.log('fee added')
-          this.#addFeePayment()
-        }
+        if (paymaster.shouldIncludePayment()) this.#addFeePayment()
 
         const usesOneTimeNonce = shouldUseOneTimeNonce(userOperation)
         const ambireAccount = new Interface(AmbireAccount.abi)
