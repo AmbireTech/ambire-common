@@ -319,14 +319,20 @@ export class Portfolio {
       priceUpdateTime: priceUpdateDone - oracleCallDone,
       priceCache,
       tokens: tokensWithPrices,
-      feeTokens: tokensWithPrices.filter((t) =>
-        gasTankFeeTokens.find(
-          (gasTankT) =>
-            t.address === ZeroAddress ||
-            (gasTankT.address.toLowerCase() === t.address.toLowerCase() &&
-              gasTankT.networkId.toLowerCase() === t.networkId.toLowerCase())
+      feeTokens: tokensWithPrices.filter((t) => {
+        // return the native token
+        if (
+          t.address === ZeroAddress &&
+          t.networkId.toLowerCase() === this.network.id.toLowerCase()
         )
-      ),
+          return true
+
+        return gasTankFeeTokens.find(
+          (gasTankT) =>
+            gasTankT.address.toLowerCase() === t.address.toLowerCase() &&
+            gasTankT.networkId.toLowerCase() === t.networkId.toLowerCase()
+        )
+      }),
       beforeNonce,
       afterNonce,
       blockNumber,
