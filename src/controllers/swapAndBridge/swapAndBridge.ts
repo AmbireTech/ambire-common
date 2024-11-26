@@ -6,7 +6,9 @@ import {
   SocketAPIQuote,
   SocketAPIRoute,
   SocketAPISendTransactionRequest,
-  SocketAPIToken
+  SocketAPIToken,
+  TokenListKey,
+  ToTokenLists
 } from '../../interfaces/swapAndBridge'
 import { isSmartAccount } from '../../libs/account/account'
 import { getBridgeBanners } from '../../libs/banners/banners'
@@ -43,6 +45,8 @@ export enum SwapAndBridgeFormStatus {
 const STATUS_WRAPPED_METHODS = {
   addToTokenByAddress: 'INITIAL'
 } as const
+
+const TO_TOKEN_LIST_CACHE_THRESHOLD = 1000 * 60 * 60 * 4 // 4 hours
 
 /**
  * The Swap and Bridge controller is responsible for managing the state and
@@ -120,7 +124,14 @@ export class SwapAndBridgeController extends EventEmitter {
 
   isTokenListLoading: boolean = false
 
-  toTokenList: SocketAPIToken[] = []
+  /**
+   * Needed to efficiently manage and cache token lists for different chain
+   * combinations (fromChainId and toChainId). By storing the token lists with a
+   * specific key format, we can quickly retrieve and update the token lists
+   * without having to fetch them repeatedly from the API. Moreover, this way
+   * tokens added to a list by address are also cached for sometime.
+   */
+  #toTokenLists: ToTokenLists = {}
 
   routePriority: 'output' | 'time' = 'output'
 
@@ -290,6 +301,24 @@ export class SwapAndBridgeController extends EventEmitter {
     return this.#socketAPI.isHealthy
   }
 
+  get toTokenListKey(): TokenListKey | null {
+    if (this.fromChainId === null || this.toChainId === null) return null
+
+    return `from-${this.fromChainId}-to-${this.toChainId}`
+  }
+
+  get toTokenList(): SocketAPIToken[] {
+    if (!this.toTokenListKey) return []
+
+    return this.#toTokenLists[this.toTokenListKey]?.data || []
+  }
+
+  set toTokenList(newList: SocketAPIToken[]) {
+    if (!this.toTokenListKey) return
+
+    this.#toTokenLists[this.toTokenListKey] = { lastFetched: Date.now(), data: newList }
+  }
+
   unloadScreen(sessionId: string) {
     this.sessionIds = this.sessionIds.filter((id) => id !== sessionId)
     if (!this.sessionIds.length) this.resetForm()
@@ -431,7 +460,6 @@ export class SwapAndBridgeController extends EventEmitter {
     this.toSelectedToken = null
     this.quote = null
     this.portfolioTokenList = []
-    this.toTokenList = []
 
     if (shouldEmit) this.emitUpdate()
   }
@@ -490,17 +518,25 @@ export class SwapAndBridgeController extends EventEmitter {
     if (!this.fromChainId || !this.toChainId) return
 
     if (shouldReset) {
-      this.toTokenList = []
       this.toSelectedToken = null
       this.emitUpdate()
     }
 
     try {
-      const toTokenListResponse = await this.#socketAPI.getToTokenList({
-        fromChainId: this.fromChainId,
-        toChainId: this.toChainId
-      })
-      this.toTokenList = sortTokenListResponse(toTokenListResponse, this.portfolioTokenList)
+      if (this.toTokenListKey === null) throw new Error('Invalid token list key') // should never happen
+
+      const currentToTokenList = this.#toTokenLists[this.toTokenListKey]
+      const shouldFetchTokenList =
+        !currentToTokenList?.data ||
+        now - (currentToTokenList?.lastFetched || 0) >= TO_TOKEN_LIST_CACHE_THRESHOLD
+      if (shouldFetchTokenList) {
+        const toTokenListResponse = await this.#socketAPI.getToTokenList({
+          fromChainId: this.fromChainId,
+          toChainId: this.toChainId
+        })
+
+        this.toTokenList = sortTokenListResponse(toTokenListResponse, this.portfolioTokenList)
+      }
 
       if (!this.toSelectedToken) {
         if (addressToSelect) {
@@ -889,7 +925,8 @@ export class SwapAndBridgeController extends EventEmitter {
       isSwitchFromAndToTokensEnabled: this.isSwitchFromAndToTokensEnabled,
       banners: this.banners,
       isHealthy: this.isHealthy,
-      shouldEnableRoutesSelection: this.shouldEnableRoutesSelection
+      shouldEnableRoutesSelection: this.shouldEnableRoutesSelection,
+      toTokenList: this.toTokenList
     }
   }
 }
