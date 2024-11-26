@@ -1635,13 +1635,13 @@ export class MainController extends EventEmitter {
     )
 
     // Update route status immediately, so that the UI quickly reflects the change
-    await Promise.all(
-      swapAndBridgeUserRequests.map(async (r) => {
-        await this.swapAndBridge.updateActiveRoute(r.meta.activeRouteId, {
-          routeStatus: 'in-progress'
-        })
+    // eslint-disable-next-line no-restricted-syntax
+    for (const r of swapAndBridgeUserRequests) {
+      // eslint-disable-next-line no-await-in-loop
+      await this.swapAndBridge.updateActiveRoute(r.meta.activeRouteId, {
+        routeStatus: 'in-progress'
       })
-    )
+    }
 
     // Note: this may take a while!
     const txnId = await pollTxnId(
@@ -1652,13 +1652,13 @@ export class MainController extends EventEmitter {
     )
 
     // Follow up update with the just polled txnId (that potentially came slower)
-    await Promise.all(
-      swapAndBridgeUserRequests.map(async (r) => {
-        await this.swapAndBridge.updateActiveRoute(r.meta.activeRouteId, {
-          userTxHash: txnId
-        })
+    // eslint-disable-next-line no-restricted-syntax
+    for (const r of swapAndBridgeUserRequests) {
+      // eslint-disable-next-line no-await-in-loop
+      await this.swapAndBridge.updateActiveRoute(r.meta.activeRouteId, {
+        userTxHash: txnId
       })
-    )
+    }
 
     // eslint-disable-next-line no-restricted-syntax
     for (const call of accountOp.calls) {
