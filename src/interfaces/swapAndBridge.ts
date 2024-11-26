@@ -189,3 +189,26 @@ export type ActiveRoute = {
   routeStatus: 'in-progress' | 'ready' | 'completed'
   error?: string
 }
+
+export type SocketAPISupportedChain = {
+  chainId: number
+  name: string
+  isL1: boolean
+  sendingEnabled: boolean
+  icon: string
+  receivingEnabled: boolean
+  refuel: {
+    sendingEnabled: boolean
+    receivingEnabled: boolean
+  }
+  currency: {
+    address: SocketAPIToken['address']
+    icon: SocketAPIToken['icon']
+    name: SocketAPIToken['name']
+    symbol: SocketAPIToken['symbol']
+    decimals: SocketAPIToken['decimals']
+    minNativeCurrencyForGas: string
+  }
+  rpcs: string[]
+  explorers: string[]
+}

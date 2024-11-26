@@ -84,7 +84,7 @@ export class SocketAPI {
     await this.updateHealth()
   }
 
-  async getSupportedChains(): Promise<SocketAPISupportedChain> {
+  async getSupportedChains(): Promise<SocketAPISupportedChain[]> {
     const url = `${this.#baseUrl}/supported/chains`
 
     let response = await this.#fetch(url, { headers: this.#headers })
