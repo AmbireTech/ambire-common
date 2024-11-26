@@ -1,11 +1,13 @@
 import { formatUnits, parseUnits } from 'ethers'
 
+import { Network } from '../../interfaces/network'
 import { Storage } from '../../interfaces/storage'
 import {
   ActiveRoute,
   SocketAPIQuote,
   SocketAPIRoute,
   SocketAPISendTransactionRequest,
+  SocketAPISupportedChain,
   SocketAPIToken
 } from '../../interfaces/swapAndBridge'
 import { isSmartAccount } from '../../libs/account/account'
@@ -39,6 +41,8 @@ export enum SwapAndBridgeFormStatus {
   NoRoutesFound = 'no-routes-found',
   ReadyToSubmit = 'ready-to-submit'
 }
+
+const SUPPORTED_CHAINS_CACHE_THRESHOLD = 1000 * 60 * 60 * 24 // 1 day
 
 /**
  * The Swap and Bridge controller is responsible for managing the state and
@@ -115,6 +119,11 @@ export class SwapAndBridgeController extends EventEmitter {
   isTokenListLoading: boolean = false
 
   toTokenList: SocketAPIToken[] = []
+
+  #supportedChains: { lastFetched: number; data: SocketAPISupportedChain[] } = {
+    lastFetched: 0,
+    data: []
+  }
 
   routePriority: 'output' | 'time' = 'output'
 
@@ -276,12 +285,39 @@ export class SwapAndBridgeController extends EventEmitter {
     this.sessionIds.push(sessionId)
     await this.#socketAPI.updateHealth()
     this.updatePortfolioTokenList(this.#selectedAccount.portfolio.tokens)
+    // eslint-disable-next-line @typescript-eslint/no-floating-promises
+    this.#fetchSupportedChainsIfNeeded()
 
     this.emitUpdate()
   }
 
   get isHealthy() {
     return this.#socketAPI.isHealthy
+  }
+
+  #fetchSupportedChainsIfNeeded = async () => {
+    const shouldNotReFetchSupportedChains =
+      this.#supportedChains?.data &&
+      Date.now() - (this.#supportedChains?.lastFetched || 0) < SUPPORTED_CHAINS_CACHE_THRESHOLD
+    if (shouldNotReFetchSupportedChains) return
+
+    try {
+      const supportedChainsResponse = await this.#socketAPI.getSupportedChains()
+
+      this.#supportedChains = {
+        lastFetched: Date.now(),
+        data: supportedChainsResponse.filter((c) => c.sendingEnabled && c.receivingEnabled)
+      }
+      this.emitUpdate()
+    } catch (error: any) {
+      // Fail silently, as this is not a critical feature, Swap & Bridge is still usable
+      const message = 'Unable to retrieve the list of supported chains.'
+      this.emitError({ error, level: 'silent', message })
+    }
+  }
+
+  get supportedChainIds(): Network['chainId'][] {
+    return this.#supportedChains.data.map((c) => BigInt(c.chainId))
   }
 
   unloadScreen(sessionId: string) {
@@ -863,7 +899,8 @@ export class SwapAndBridgeController extends EventEmitter {
       isSwitchFromAndToTokensEnabled: this.isSwitchFromAndToTokensEnabled,
       banners: this.banners,
       isHealthy: this.isHealthy,
-      shouldEnableRoutesSelection: this.shouldEnableRoutesSelection
+      shouldEnableRoutesSelection: this.shouldEnableRoutesSelection,
+      supportedChainIds: this.supportedChainIds
     }
   }
 }
