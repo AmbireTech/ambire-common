@@ -850,7 +850,7 @@ export class MainController extends EventEmitter {
         // Remove account data from sub-controllers
         await this.accounts.removeAccountData(address)
         this.portfolio.removeAccountData(address)
-        this.activity.removeAccountData(address)
+        await this.activity.removeAccountData(address)
         this.actions.removeAccountData(address)
         this.signMessage.removeAccountData(address)
 

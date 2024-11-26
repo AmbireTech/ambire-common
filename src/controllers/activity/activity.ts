@@ -180,11 +180,10 @@ export class ActivityController extends EventEmitter {
     this.#accountsOps = accountsOps
     this.#signedMessages = signedMessages
 
-    this.isInitialized = true
     this.emitUpdate()
   }
 
-  filterAccountsOps(
+  async filterAccountsOps(
     sessionId: string,
     filters: Filters,
     pagination: Pagination = {
@@ -192,10 +191,7 @@ export class ActivityController extends EventEmitter {
       itemsPerPage: 10
     }
   ) {
-    if (!this.isInitialized) {
-      this.#throwNotInitialized()
-      return
-    }
+    await this.#initialLoadPromise
 
     let filteredItems
 
@@ -227,18 +223,20 @@ export class ActivityController extends EventEmitter {
     delete this.accountsOps[sessionId]
   }
 
-  // Everytime we add a new AccOp, we should run this method in order to keep the filtered and internal accounts ops in sync.
-  private syncFilteredAccountsOps() {
-    Object.keys(this.accountsOps).forEach((sessionId) => {
-      this.filterAccountsOps(
+  // Everytime we add/remove an AccOp, we should run this method in order to keep the filtered and internal accounts ops in sync.
+  private async syncFilteredAccountsOps() {
+    const promises = Object.keys(this.accountsOps).map(async (sessionId) => {
+      await this.filterAccountsOps(
         sessionId,
         this.accountsOps[sessionId].filters,
         this.accountsOps[sessionId].pagination
       )
     })
+
+    await Promise.all(promises)
   }
 
-  filterSignedMessages(
+  async filterSignedMessages(
     sessionId: string,
     filters: Filters,
     pagination: Pagination = {
@@ -246,10 +244,7 @@ export class ActivityController extends EventEmitter {
       itemsPerPage: 10
     }
   ) {
-    if (!this.isInitialized) {
-      this.#throwNotInitialized()
-      return
-    }
+    await this.#initialLoadPromise
 
     const filteredItems = this.#signedMessages[filters.account] || []
 
@@ -271,24 +266,21 @@ export class ActivityController extends EventEmitter {
     delete this.signedMessages[sessionId]
   }
 
-  // Everytime we add a new Message, we should run this method in order to keep the filtered and internal messages in sync.
-  private syncSignedMessages() {
-    Object.keys(this.signedMessages).forEach((sessionId) => {
-      this.filterSignedMessages(
+  // Everytime we add/remove a Message, we should run this method in order to keep the filtered and internal messages in sync.
+  private async syncSignedMessages() {
+    const promises = Object.keys(this.signedMessages).map(async (sessionId) => {
+      await this.filterSignedMessages(
         sessionId,
         this.signedMessages[sessionId].filters,
         this.signedMessages[sessionId].pagination
       )
     })
+
+    await Promise.all(promises)
   }
 
   async addAccountOp(accountOp: SubmittedAccountOp) {
     await this.#initialLoadPromise
-
-    if (!this.isInitialized) {
-      this.#throwNotInitialized()
-      return
-    }
 
     const { accountAddr, networkId } = accountOp
 
@@ -299,7 +291,7 @@ export class ActivityController extends EventEmitter {
     this.#accountsOps[accountAddr][networkId].unshift({ ...accountOp })
     trim(this.#accountsOps[accountAddr][networkId])
 
-    this.syncFilteredAccountsOps()
+    await this.syncFilteredAccountsOps()
 
     await this.#storage.set('accountsOps', this.#accountsOps)
     this.emitUpdate()
@@ -438,7 +430,7 @@ export class ActivityController extends EventEmitter {
 
     if (shouldEmitUpdate) {
       await this.#storage.set('accountsOps', this.#accountsOps)
-      this.syncFilteredAccountsOps()
+      await this.syncFilteredAccountsOps()
       this.emitUpdate()
     }
 
@@ -446,11 +438,6 @@ export class ActivityController extends EventEmitter {
   }
 
   async addSignedMessage(signedMessage: SignedMessage, account: string) {
-    if (!this.isInitialized) {
-      this.#throwNotInitialized()
-      return
-    }
-
     await this.#initialLoadPromise
 
     if (!this.#signedMessages[account]) this.#signedMessages[account] = []
@@ -458,21 +445,23 @@ export class ActivityController extends EventEmitter {
     // newest SignedMessage goes first in the list
     this.#signedMessages[account].unshift(signedMessage)
     trim(this.#signedMessages[account])
-    this.syncSignedMessages()
+    await this.syncSignedMessages()
 
     await this.#storage.set('signedMessages', this.#signedMessages)
     this.emitUpdate()
   }
 
-  removeAccountData(address: Account['addr']) {
+  async removeAccountData(address: Account['addr']) {
+    await this.#initialLoadPromise
+
     delete this.#accountsOps[address]
     delete this.#signedMessages[address]
 
-    this.syncFilteredAccountsOps()
-    this.syncSignedMessages()
+    await this.syncFilteredAccountsOps()
+    await this.syncSignedMessages()
 
-    this.#storage.set('accountsOps', this.#accountsOps)
-    this.#storage.set('signedMessages', this.#signedMessages)
+    await this.#storage.set('accountsOps', this.#accountsOps)
+    await this.#storage.set('signedMessages', this.#signedMessages)
 
     this.emitUpdate()
   }
@@ -515,8 +504,6 @@ export class ActivityController extends EventEmitter {
   }
 
   get broadcastedButNotConfirmed(): SubmittedAccountOp[] {
-    // Here we don't rely on `this.isInitialized` flag, as it checks for both `this.filters.account` and `this.filters.network` existence.
-    // Banners are network agnostic, and that's the reason we check for `this.filters.account` only and having this.#accountsOps loaded.
     if (!this.#selectedAccount.account || !this.#accountsOps[this.#selectedAccount.account.addr])
       return []
 
@@ -534,8 +521,6 @@ export class ActivityController extends EventEmitter {
   // In all other cases, if the portfolio nonce is newer, then the badge is still PendingToBeSigned.
   // More info: calculatePendingAmounts.
   get lastKnownNonce(): NetworkNonces {
-    // Here we don't rely on `this.isInitialized` flag, as it checks for both `this.filters.account` and `this.filters.network` existence.
-    // Banners are network agnostic, and that's the reason we check for `this.filters.account` only and having this.#accountsOps loaded.
     if (!this.#selectedAccount.account || !this.#accountsOps[this.#selectedAccount.account.addr])
       return {}
 
