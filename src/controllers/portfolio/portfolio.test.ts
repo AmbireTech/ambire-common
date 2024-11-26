@@ -478,23 +478,7 @@ describe('Portfolio Controller ', () => {
         expect(token).toBeTruthy()
       })
     })
-    test('Pinned gas tank tokens are set in a smart account with no tokens', async () => {
-      const { controller } = prepareTest()
-
-      await controller.updateSelectedAccount(account3.addr)
-
-      if (controller.latest[account3.addr].gasTank?.isLoading) return
-
-      PINNED_TOKENS.filter((token) => token.onGasTank && token.networkId === 'ethereum').forEach(
-        (pinnedToken) => {
-          const token = controller.latest[account3.addr].gasTank?.result?.tokens.find(
-            (t) => t.address === pinnedToken.address
-          )
-
-          expect(token).toBeTruthy()
-        }
-      )
-    })
+ 
     test('Pinned gas tank tokens are not set in an account with tokens', async () => {
       const { controller } = prepareTest()
 
@@ -507,6 +491,55 @@ describe('Portfolio Controller ', () => {
         expect(token.amount > 0)
       })
     })
+  })
+  // TODO: The gas tank tests are skipped until the changes related to gas tank will be merged in the production relayer
+  describe.skip('Gas tank USDC token', () => {
+    const usdcTokenAddress = '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48'
+    const foundUsdcToken = PINNED_TOKENS.find(
+      (token) => token.address === usdcTokenAddress && token.networkId === 'ethereum'
+    )
+
+    test('USDC gas tank token is set in a smart account with no tokens', async () => {
+      const { controller } = prepareTest()
+
+      expect(foundUsdcToken).toBeTruthy()
+
+      await controller.updateSelectedAccount(account3.addr)
+
+      if (controller.latest[account3.addr].gasTank?.isLoading) return
+
+      const token = controller.latest[account3.addr].gasTank?.result?.tokens.find(
+        (t) => t.address === foundUsdcToken?.address
+      )
+
+      expect(token).toBeTruthy()
+      expect(token?.amount).toEqual(0n)
+      expect(token?.availableAmount).toEqual(0n)
+      expect(token?.cashback).toEqual(0n)
+      expect(token?.saved).toEqual(0n)
+    })
+
+
+    // TODO: add a test account as 'account4' which values of cashback and saved are greater than 0
+    
+    // test('USDC gas tank token is set in a smart account with cashback and saved greater than 0', async () => {
+    //   const { controller } = prepareTest()
+
+    //   expect(foundUsdcToken).toBeTruthy()
+
+    //   await controller.updateSelectedAccount(account4.addr)
+
+    //   if (controller.latest[account4.addr].gasTank?.isLoading) return
+
+    //   const token = controller.latest[account4.addr].gasTank?.result?.tokens.find(
+    //     (t) => t.address === foundUsdcToken?.address
+    //   )
+    //   console.log('token', token)
+    //   expect(token).toBeTruthy()
+
+    //   expect(token?.cashback).toBeGreaterThan(0n)
+    //   expect(token?.saved).toBeGreaterThan(0n)
+    // })
   })
 
   describe('Hints', () => {

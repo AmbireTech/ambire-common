@@ -842,7 +842,6 @@ export class PortfolioController extends EventEmitter {
       providers: this.#providers.providers
     })
 
-    console.log('GET BANNER: ', this.#shouldShowConfettiBanner)
     const firstCashbackBanner = getFirstCashbackBanner({
       shouldShowConfetti: this.#shouldShowConfettiBanner
     })
