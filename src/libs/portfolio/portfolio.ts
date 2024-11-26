@@ -77,19 +77,29 @@ export class Portfolio {
     network: Network,
     velcroUrl?: string
   ) {
-    this.batchedVelcroDiscovery = batcher(fetch, (queue) => {
-      const baseCurrencies = [...new Set(queue.map((x) => x.data.baseCurrency))]
-      return baseCurrencies.map((baseCurrency) => {
-        const queueSegment = queue.filter((x) => x.data.baseCurrency === baseCurrency)
-        const url = `${velcroUrl}/multi-hints?networks=${queueSegment
-          .map((x) => x.data.networkId)
-          .join(',')}&accounts=${queueSegment
-          .map((x) => x.data.accountAddr)
-          .join(',')}&baseCurrency=${baseCurrency}`
-        return { queueSegment, url }
-      })
+    this.batchedVelcroDiscovery = batcher(
+      fetch,
+      (queue) => {
+        const baseCurrencies = [...new Set(queue.map((x) => x.data.baseCurrency))]
+        return baseCurrencies.map((baseCurrency) => {
+          const queueSegment = queue.filter((x) => x.data.baseCurrency === baseCurrency)
+          const url = `${velcroUrl}/multi-hints?networks=${queueSegment
+            .map((x) => x.data.networkId)
+            .join(',')}&accounts=${queueSegment
+            .map((x) => x.data.accountAddr)
+            .join(',')}&baseCurrency=${baseCurrency}`
+          return { queueSegment, url }
+        })
+      },
+      {
+        timeoutAfter: 3000,
+        timeoutErrorMessage: `Velcro discovery timed out on ${network.id}`
+      }
+    )
+    this.batchedGecko = batcher(fetch, geckoRequestBatcher, {
+      timeoutAfter: 3000,
+      timeoutErrorMessage: `Cena request timed out on ${network.id}`
     })
-    this.batchedGecko = batcher(fetch, geckoRequestBatcher)
     this.network = network
     this.deploylessTokens = fromDescriptor(provider, BalanceGetter, !network.rpcNoStateOverride)
     this.deploylessNfts = fromDescriptor(provider, NFTGetter, !network.rpcNoStateOverride)
@@ -116,17 +126,11 @@ export class Portfolio {
       // if the network doesn't have a relayer, velcro will not work
       // but we should not record an error if such is the case
       if (this.network.hasRelayer && !disableAutoDiscovery) {
-        hintsFromExternalAPI = await Promise.race([
-          this.batchedVelcroDiscovery({
-            networkId,
-            accountAddr,
-            baseCurrency
-          }),
-          new Promise((_, reject) => {
-            setTimeout(() => reject(new Error('velcro-timeout')), 3000)
-            console.error(`Velcro discovery timed out on ${networkId} for ${accountAddr}`)
-          })
-        ])
+        hintsFromExternalAPI = await this.batchedVelcroDiscovery({
+          networkId,
+          accountAddr,
+          baseCurrency
+        })
         if (hintsFromExternalAPI)
           hints = stripExternalHintsAPIResponse(hintsFromExternalAPI) as Hints
       } else if (!this.network.hasRelayer) {
@@ -277,19 +281,13 @@ export class Portfolio {
         }
 
         try {
-          const priceData = await Promise.race([
-            this.batchedGecko({
-              ...token,
-              network: this.network,
-              baseCurrency,
-              // this is what to look for in the coingecko response object
-              responseIdentifier: geckoResponseIdentifier(token.address, this.network)
-            }),
-            new Promise((_, reject) => {
-              setTimeout(() => reject(new Error('gecko-timeout')), 3000)
-              console.error(`Gecko call timed out on ${this.network.id} for ${token.address}`)
-            })
-          ])
+          const priceData = await this.batchedGecko({
+            ...token,
+            network: this.network,
+            baseCurrency,
+            // this is what to look for in the coingecko response object
+            responseIdentifier: geckoResponseIdentifier(token.address, this.network)
+          })
 
           priceIn = Object.entries(priceData || {}).map(([baseCurr, price]) => ({
             baseCurrency: baseCurr,
