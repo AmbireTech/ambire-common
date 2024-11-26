@@ -281,7 +281,7 @@ describe('Error decoders work', () => {
     )
     const decodedError = decodeError(error)
 
-    expect(decodedError.type).toEqual(ErrorType.UserRejectionHandler)
+    expect(decodedError.type).toEqual(ErrorType.UserRejectionError)
     expect(decodedError.reason).toBe(TRANSACTION_REJECTED_REASON)
   })
 })

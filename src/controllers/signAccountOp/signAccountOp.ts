@@ -1236,6 +1236,8 @@ export class SignAccountOpController extends EventEmitter {
                 bytecode: this.account.creation!.bytecode,
                 salt: this.account.creation!.salt,
                 key: this.account.associatedKeys[0]
+              }).catch((e: any) => {
+                throw new RelayerPaymasterError(e)
               }),
               new Promise((_resolve, reject) => {
                 setTimeout(
@@ -1261,8 +1263,7 @@ export class SignAccountOpController extends EventEmitter {
               userOperation.nonce = getOneTimeNonce(userOperation)
             }
           } catch (e: any) {
-            const convertedError = new RelayerPaymasterError(e)
-            const { message } = getHumanReadableBroadcastError(convertedError)
+            const { message } = getHumanReadableBroadcastError(e)
 
             this.emitError({
               level: 'major',
@@ -1309,10 +1310,9 @@ export class SignAccountOpController extends EventEmitter {
       this.emitUpdate()
       return this.signedAccountOp
     } catch (error: any) {
-      console.error(error)
-      return this.#emitSigningErrorAndResetToReadyToSign(
-        'Internal error while signing the transaction. Please try again or contact support if the problem persists.'
-      )
+      const { message } = getHumanReadableBroadcastError(error)
+
+      this.#emitSigningErrorAndResetToReadyToSign(message)
     }
   }
 

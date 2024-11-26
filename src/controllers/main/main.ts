@@ -2119,15 +2119,7 @@ export class MainController extends EventEmitter {
           rawTxn.type = 0
         }
 
-        const signedTxn = await signer.signRawTransaction(rawTxn).catch((e) => {
-          // Convert the error to an EmittableError so it gets emitted directly,
-          // without the need to decode it.
-          throw new EmittableError({
-            message: e?.message,
-            error: e,
-            level: 'major'
-          })
-        })
+        const signedTxn = await signer.signRawTransaction(rawTxn)
         const broadcastRes = await provider.broadcastTransaction(signedTxn)
         transactionRes = {
           txnId: broadcastRes.hash,
@@ -2210,15 +2202,7 @@ export class MainController extends EventEmitter {
           rawTxn.type = 0
         }
 
-        const signedTxn = await signer.signRawTransaction(rawTxn).catch((e) => {
-          // Convert the error to an EmittableError so it gets emitted directly,
-          // without the need to decode it.
-          throw new EmittableError({
-            message: e?.message,
-            error: e,
-            level: 'major'
-          })
-        })
+        const signedTxn = await signer.signRawTransaction(rawTxn)
         const broadcastRes = await provider.broadcastTransaction(signedTxn)
         transactionRes = {
           txnId: broadcastRes.hash,
