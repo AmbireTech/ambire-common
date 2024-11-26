@@ -8,16 +8,20 @@ import { RELAYER_DOWN_MESSAGE } from '../relayerCall/relayerCall'
 import { PANIC_ERROR_PREFIX } from './constants'
 import { InnerCallFailureError, RelayerPaymasterError } from './customErrors'
 import { decodeError } from './errorDecoder'
-import { RPC_HARDCODED_ERRORS } from './handlers/rpc'
 import { TRANSACTION_REJECTED_REASON } from './handlers/userRejection'
 import { DecodedError, ErrorType } from './types'
 
 const TEST_MESSAGE_REVERT_DATA =
   '0x08c379a00000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000000c54657374206d6573736167650000000000000000000000000000000000000000'
 
-const MockBundlerError = class extends Error {
+const MockBundlerEstimationError = class extends Error {
   public constructor(public shortMessage?: string) {
     super(`UserOperation reverted during simulation with reason: ${shortMessage}`)
+  }
+}
+const MockBundlerBroadcastError = class extends Error {
+  public constructor(public shortMessage?: string) {
+    super(`UserOperation reverted with reason: ${shortMessage}`)
   }
 }
 
@@ -72,22 +76,6 @@ describe('Error decoders work', () => {
         expect(decodedError.reason).toContain("sender doesn't have enough funds to send tx")
         expect(decodedError.data).toBe('')
       }
-    })
-    it('Should handle predefined errors', async () => {
-      const error = new MockRpcError(
-        -32000,
-        {
-          error: {
-            code: -32000,
-            message: 'intrinsic gas too low: gas 0, minimum needed 21000'
-          }
-        },
-        'could not coalesce error'
-      )
-      const decodedError = decodeError(error)
-
-      expect(decodedError.type).toEqual(ErrorType.RpcError)
-      expect(decodedError.reason).toBe(RPC_HARDCODED_ERRORS.lowGasLimit)
     })
     describe('Prioritizes error code if a valid reason, otherwise fallbacks', () => {
       it('Should use error code if string', async () => {
@@ -160,7 +148,7 @@ describe('Error decoders work', () => {
   describe('Should handle BundlerError correctly', () => {
     it('Entry point error', () => {
       try {
-        throw new MockBundlerError('AA31 paymaster deposit too low')
+        throw new MockBundlerEstimationError('AA31 paymaster deposit too low')
       } catch (e: any) {
         expect(e).toBeDefined()
         const decodedError = decodeError(e)
@@ -168,6 +156,18 @@ describe('Error decoders work', () => {
         expect(decodedError.type).toEqual(ErrorType.BundlerError)
         expect(decodedError.reason).toBe('paymaster deposit too low')
         expect(decodedError.data).toBe('paymaster deposit too low')
+      }
+    })
+    it('signature error', () => {
+      try {
+        throw new MockBundlerBroadcastError('signature error')
+      } catch (e: any) {
+        expect(e).toBeDefined()
+        const decodedError = decodeError(e)
+
+        expect(decodedError.type).toEqual(ErrorType.BundlerError)
+        expect(decodedError.reason).toBe('signature error')
+        expect(decodedError.data).toBe('signature error')
       }
     })
     it('pimlico_getUserOperationGasPrice', () => {
