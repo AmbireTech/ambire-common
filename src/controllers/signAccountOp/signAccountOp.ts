@@ -10,6 +10,7 @@ import {
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import ERC20 from '../../../contracts/compiled/IERC20.json'
+import EmittableError from '../../classes/EmittableError'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { AMBIRE_PAYMASTER, SINGLETON } from '../../consts/deploy'
 /* eslint-disable no-restricted-syntax */
@@ -1237,7 +1238,17 @@ export class SignAccountOpController extends EventEmitter {
                 key: this.account.associatedKeys[0]
               }),
               new Promise((_resolve, reject) => {
-                setTimeout(() => reject(new Error('Ambire relayer error')), 8000)
+                setTimeout(
+                  () =>
+                    reject(
+                      new EmittableError({
+                        message:
+                          'The paymaster took too long to respond. Please try again later or contact support',
+                        level: 'major'
+                      })
+                    ),
+                  8000
+                )
               })
             ])
 
