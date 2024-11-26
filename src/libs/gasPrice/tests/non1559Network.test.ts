@@ -1,5 +1,6 @@
 import { describe, expect, test } from '@jest/globals'
 
+import { suppressConsoleBeforeEach } from '../../../../test/helpers/console'
 import { networks } from '../../../consts/networks'
 import { getGasPriceRecommendations, MIN_GAS_PRICE } from '../gasPrice'
 import MockProvider from './MockProvider'
@@ -7,6 +8,8 @@ import MockProvider from './MockProvider'
 const network = networks.find((net) => net.id === 'ethereum')!
 
 describe('1559 Network gas price tests', () => {
+  // Mock providers throw errors we can ignore
+  suppressConsoleBeforeEach()
   test('should NOT return 0n for gasPrice on an empty block as we have a minimum set', async () => {
     const params = {
       baseFeePerGas: null,
@@ -23,6 +26,7 @@ describe('1559 Network gas price tests', () => {
     expect(fast.gasPrice).toBe(MIN_GAS_PRICE)
     const ape: any = gasPrice[3]
     expect(ape.gasPrice).toBe(MIN_GAS_PRICE)
+    provider.destroy()
   })
   test('should return the lowest maxPriorityFeePerGas for a block with less than 4 txns', async () => {
     const params = {
@@ -44,6 +48,7 @@ describe('1559 Network gas price tests', () => {
     expect(fast.gasPrice).toBe(MIN_GAS_PRICE + 100n)
     const ape: any = gasPrice[3]
     expect(ape.gasPrice).toBe(MIN_GAS_PRICE + 100n)
+    provider.destroy()
   })
   test('should remove outliers from a group of 19, making the group 15, and return an average for each speed at a step of 3 for slow, medium and fast, and an avg of the remaining 6 for ape', async () => {
     const params = {
@@ -81,6 +86,7 @@ describe('1559 Network gas price tests', () => {
     expect(fast.gasPrice).toBe(MIN_GAS_PRICE + 110n)
     const ape: any = gasPrice[3]
     expect(ape.gasPrice).toBe(MIN_GAS_PRICE + 128n)
+    provider.destroy()
   })
   test('should remove 0s from gasPrice but should keep 1s because they are not outliers, and should calculate an average of every group of 4 for slow, medium and fast, and an average of the remaining 5 for ape', async () => {
     const params = {
@@ -121,5 +127,6 @@ describe('1559 Network gas price tests', () => {
     expect(fast.gasPrice).toBe(MIN_GAS_PRICE + 55n)
     const ape: any = gasPrice[3]
     expect(ape.gasPrice).toBe(MIN_GAS_PRICE + 76n)
+    provider.destroy()
   })
 })

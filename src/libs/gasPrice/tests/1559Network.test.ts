@@ -3,6 +3,7 @@ import { ethers } from 'ethers'
 
 import { describe, expect, test } from '@jest/globals'
 
+import { suppressConsoleBeforeEach } from '../../../../test/helpers/console'
 import { networks } from '../../../consts/networks'
 import { getGasPriceRecommendations } from '../gasPrice'
 import MockProvider from './MockProvider'
@@ -10,6 +11,8 @@ import MockProvider from './MockProvider'
 const network = networks.find((net) => net.id === 'ethereum')!
 
 describe('1559 Network gas price tests', () => {
+  // Mock providers throw errors we can ignore
+  suppressConsoleBeforeEach()
   test('should make a prediction for a previous block of 30M gas (max), should increase the baseFeePerGas by 12.5% for slow, and increase gradually by baseFeeAddBps, defined in speeds in gasprice.ts for the remaining speeds', async () => {
     const params = {
       gasUsed: 30000000n
@@ -32,6 +35,7 @@ describe('1559 Network gas price tests', () => {
     expect(fast.baseFeePerGas).toBe(expectations.fast)
     const ape: any = gasPrice[3]
     expect(ape.baseFeePerGas).toBe(expectations.ape)
+    provider.destroy()
   })
   test('should make a prediction for a previous block of 15M gas (the target gas), should not change the baseFeePerGas from the previous block for slow, and increase gradually by baseFeeAddBps, defined in speeds in gasprice.ts for the remaining speeds', async () => {
     const params = {
@@ -55,6 +59,7 @@ describe('1559 Network gas price tests', () => {
     expect(fast.baseFeePerGas).toBe(expectations.fast)
     const ape: any = gasPrice[3]
     expect(ape.baseFeePerGas).toBe(expectations.ape)
+    provider.destroy()
   })
   test('should make a prediction for an empty previous block, should decrease the baseFeePerGas by 12.5% for slow, and increase gradually by baseFeeAddBps, defined in speeds in gasprice.ts for the remaining speeds', async () => {
     const params = {
@@ -78,6 +83,7 @@ describe('1559 Network gas price tests', () => {
     expect(fast.baseFeePerGas).toBe(expectations.fast)
     const ape: any = gasPrice[3]
     expect(ape.baseFeePerGas).toBe(expectations.ape)
+    provider.destroy()
   })
   test('should make a prediction for a previous block of 10M gas, should decrease the baseFeePerGas by 4.16% for slow, and increase gradually by baseFeeAddBps, defined in speeds in gasprice.ts for the remaining speeds', async () => {
     const params = {
@@ -102,6 +108,7 @@ describe('1559 Network gas price tests', () => {
     expect(fast.baseFeePerGas).toBe(expectations.fast)
     const ape: any = gasPrice[3]
     expect(ape.baseFeePerGas).toBe(expectations.ape)
+    provider.destroy()
   })
   test('should make a prediction for a previous block of 18.5M gas, should increase the gas by 2.9% for slow, and increase gradually by baseFeeAddBps, defined in speeds in gasprice.ts for the remaining speeds', async () => {
     const params = {
@@ -134,6 +141,7 @@ describe('1559 Network gas price tests', () => {
     expect(fast.baseFeePerGas).toBe(expectations.fast.gasPrice)
     const ape: any = gasPrice[3]
     expect(ape.baseFeePerGas).toBe(expectations.ape.gasPrice)
+    provider.destroy()
   })
   test('should return the lowest maxPriorityFeePerGas for a block with less than 4 txns', async () => {
     const params = {
@@ -168,6 +176,7 @@ describe('1559 Network gas price tests', () => {
     expect(fast.maxPriorityFeePerGas).toBe(expectations.fast.maxPriorityFeePerGas)
     const ape: any = gasPrice[3]
     expect(ape.maxPriorityFeePerGas).toBe(expectations.ape.maxPriorityFeePerGas)
+    provider.destroy()
   })
   test('makes a maxPriorityFeePerGas prediction with an empty block and returns 200n for slow as that is the minimum but 12% more for each after', async () => {
     const params = {
@@ -184,6 +193,7 @@ describe('1559 Network gas price tests', () => {
     expect(fast.maxPriorityFeePerGas).toBe(126562n)
     const ape: any = gasPrice[3]
     expect(ape.maxPriorityFeePerGas).toBe(189843n)
+    provider.destroy()
   })
   test('should remove an outlier from a group of 17, making the group 16, and calculate average at a step of 4, disregarding none', async () => {
     const params = {
@@ -218,6 +228,7 @@ describe('1559 Network gas price tests', () => {
     expect(fast.maxPriorityFeePerGas).toBe(126688n)
     const ape: any = gasPrice[3]
     expect(ape.maxPriorityFeePerGas).toBe(190032n)
+    provider.destroy()
   })
   test('should remove outliers from a group of 19, making the group 15, and return an average for each speed at a step of 3 for slow, medium and fast, and an avg of the remaining 6 for ape', async () => {
     const params = {
@@ -254,6 +265,7 @@ describe('1559 Network gas price tests', () => {
     expect(fast.maxPriorityFeePerGas).toBe(126815n)
     const ape: any = gasPrice[3]
     expect(ape.maxPriorityFeePerGas).toBe(190222n)
+    provider.destroy()
   })
   test('should remove 0s from maxPriorityFeePerGas but should keep 1s because they are not outliers, and should calculate an average of every group of 4 for slow, medium and fast, and an average of the remaining 5 for ape', async () => {
     const params = {
@@ -293,5 +305,6 @@ describe('1559 Network gas price tests', () => {
     expect(fast.maxPriorityFeePerGas).toBe(126840n)
     const ape: any = gasPrice[3]
     expect(ape.maxPriorityFeePerGas).toBe(190260n)
+    provider.destroy()
   })
 })
