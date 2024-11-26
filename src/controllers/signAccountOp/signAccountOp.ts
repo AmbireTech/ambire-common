@@ -11,7 +11,7 @@ import {
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import ERC20 from '../../../contracts/compiled/IERC20.json'
 import { FEE_COLLECTOR } from '../../consts/addresses'
-import { AMBIRE_PAYMASTER, SINGLETON } from '../../consts/deploy'
+import { SINGLETON } from '../../consts/deploy'
 /* eslint-disable no-restricted-syntax */
 import { ERRORS, RETRY_TO_INIT_ACCOUNT_OP_MSG } from '../../consts/signAccountOp/errorHandling'
 import {
@@ -26,8 +26,7 @@ import { Warning } from '../../interfaces/signAccountOp'
 import { isAmbireV1LinkedAccount, isSmartAccount } from '../../libs/account/account'
 import { AccountOp, GasFeePayment, getSignableCalls } from '../../libs/accountOp/accountOp'
 import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
-import { RelayerPaymasterError } from '../../libs/errorDecoder/customErrors'
-import { getHumanReadableBroadcastError } from '../../libs/errorHumanizer'
+import { PaymasterErrorReponse, PaymasterSuccessReponse } from '../../libs/erc7677/types'
 import {
   BundlerGasPrice,
   Erc4337GasLimits,
@@ -1225,7 +1224,12 @@ export class SignAccountOpController extends EventEmitter {
         userOperation.maxPriorityFeePerGas = toBeHex(gasFeePayment.maxPriorityFeePerGas!)
 
         const paymaster = erc4337Estimation.paymaster
-        if (paymaster.shouldIncludePayment()) this.#addFeePayment()
+        console.log(paymaster.type)
+        console.log(paymaster.shouldIncludePayment())
+        if (paymaster.shouldIncludePayment()) {
+          console.log('fee added')
+          this.#addFeePayment()
+        }
 
         const usesOneTimeNonce = shouldUseOneTimeNonce(userOperation)
         const ambireAccount = new Interface(AmbireAccount.abi)
@@ -1248,43 +1252,25 @@ export class SignAccountOpController extends EventEmitter {
         }
 
         if (paymaster.isUsable()) {
-          try {
-            await paymaster.call()
-
-            // request the paymaster with a timeout window
-            const response = await Promise.race([
-              this.#callRelayer(`/v2/paymaster/${this.accountOp.networkId}/sign`, 'POST', {
-                // send without the requestType prop
-                userOperation: (({ requestType, activatorCall, ...o }) => o)(userOperation),
-                paymaster: AMBIRE_PAYMASTER,
-                bytecode: this.account.creation!.bytecode,
-                salt: this.account.creation!.salt,
-                key: this.account.associatedKeys[0]
-              }),
-              new Promise((_resolve, reject) => {
-                setTimeout(() => reject(new Error('Ambire relayer error')), 8000)
-              })
-            ])
-
-            // go back to in progress after paymaster has been confirmed
+          const response = await paymaster.call(this.account, this.accountOp, userOperation)
+          if (response.success) {
+            const paymasterData = response as PaymasterSuccessReponse
             this.status = { type: SigningStatus.InProgress }
             this.emitUpdate()
 
-            userOperation.paymaster = response.data.paymaster
-            userOperation.paymasterData = response.data.paymasterData
-          } catch (e: any) {
-            const convertedError = new RelayerPaymasterError(e)
-            const { message } = getHumanReadableBroadcastError(convertedError)
-
+            userOperation.paymaster = paymasterData.paymaster
+            userOperation.paymasterData = paymasterData.paymasterData
+          } else {
+            const errorResponse = response as PaymasterErrorReponse
             this.emitError({
               level: 'major',
-              message,
-              error: e
+              message: errorResponse.message,
+              error: errorResponse.error
             })
             this.status = { type: SigningStatus.ReadyToSign }
             this.emitUpdate()
             this.#reEstimate()
-            return Promise.reject(this.status)
+            return await Promise.reject(this.status)
           }
         }
 

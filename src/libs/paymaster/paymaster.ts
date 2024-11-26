@@ -5,7 +5,13 @@ import { Account } from '../../interfaces/account'
 import { Network } from '../../interfaces/network'
 import { AccountOp } from '../accountOp/accountOp'
 import { getPaymasterStubData } from '../erc7677/erc7677'
-import { PaymasterEstimationData } from '../erc7677/types'
+import {
+  PaymasterErrorReponse,
+  PaymasterEstimationData,
+  PaymasterSuccessReponse
+} from '../erc7677/types'
+import { RelayerPaymasterError } from '../errorDecoder/customErrors'
+import { getHumanReadableBroadcastError } from '../errorHumanizer'
 import { UserOperation } from '../userOperation/types'
 import { getSigForCalculations } from '../userOperation/userOperation'
 
@@ -79,20 +85,48 @@ export class Paymaster {
     return this.type !== 'None'
   }
 
-  async call(acc: Account, op: AccountOp, userOp: UserOperation) {
-    // request the paymaster with a timeout window
-    const response = await Promise.race([
-      this.callRelayer(`/v2/paymaster/${op.networkId}/sign`, 'POST', {
-        // send without the requestType prop
-        userOperation: (({ requestType, activatorCall, ...o }) => o)(userOp),
+  async #ambireCall(
+    acc: Account,
+    op: AccountOp,
+    userOp: UserOperation
+  ): Promise<PaymasterSuccessReponse | PaymasterErrorReponse> {
+    try {
+      // request the paymaster with a timeout window
+      const response = await Promise.race([
+        this.callRelayer(`/v2/paymaster/${op.networkId}/sign`, 'POST', {
+          // send without the requestType prop
+          userOperation: (({ requestType, activatorCall, ...o }) => o)(userOp),
+          paymaster: AMBIRE_PAYMASTER,
+          bytecode: acc.creation!.bytecode,
+          salt: acc.creation!.salt,
+          key: acc.associatedKeys[0]
+        }),
+        new Promise((_resolve, reject) => {
+          setTimeout(() => reject(new Error('Ambire relayer error')), 8000)
+        })
+      ])
+
+      return {
+        success: true,
         paymaster: AMBIRE_PAYMASTER,
-        bytecode: acc.creation!.bytecode,
-        salt: acc.creation!.salt,
-        key: acc.associatedKeys[0]
-      }),
-      new Promise((_resolve, reject) => {
-        setTimeout(() => reject(new Error('Ambire relayer error')), 8000)
-      })
-    ])
+        paymasterData: response.data.paymasterData
+      }
+    } catch (e: any) {
+      const convertedError = new RelayerPaymasterError(e)
+      const { message } = getHumanReadableBroadcastError(convertedError)
+      return {
+        success: false,
+        message,
+        error: e
+      }
+    }
+  }
+
+  async call(
+    acc: Account,
+    op: AccountOp,
+    userOp: UserOperation
+  ): Promise<PaymasterSuccessReponse | PaymasterErrorReponse> {
+    return this.#ambireCall(acc, op, userOp)
   }
 }

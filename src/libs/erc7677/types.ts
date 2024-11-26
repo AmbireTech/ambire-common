@@ -18,6 +18,21 @@ export type PaymasterEstimationData = {
   isFinal?: boolean // Indicates that the caller does not need to call pm_getPaymasterData
 }
 
+export interface PaymasterData {
+  paymaster: `0x${string}`
+  paymasterData: `0x${string}`
+}
+
+export interface PaymasterSuccessReponse extends PaymasterData {
+  success: boolean
+}
+
+export interface PaymasterErrorReponse {
+  success: boolean
+  message: string
+  error: Error
+}
+
 export type GetPaymasterDataResult = {
   paymaster?: string
   paymasterData?: string
