@@ -75,6 +75,7 @@ export interface Network {
   oldNativeAssetSymbols?: string[]
   disableEstimateGas?: boolean
   force4337?: boolean
+  allowForce4337?: boolean
 }
 
 export interface AddNetworkRequestParams {

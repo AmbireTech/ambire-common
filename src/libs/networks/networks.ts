@@ -399,3 +399,8 @@ export async function migrateNetworkPreferencesToNetworks(networkPreferences: {
 
   return networksToStore
 }
+
+// is the user allowed to change the network settings to 4337
+export function canForce4337(network?: Network) {
+  return network && network.allowForce4337
+}
