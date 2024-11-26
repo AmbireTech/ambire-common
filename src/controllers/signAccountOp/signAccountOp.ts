@@ -940,7 +940,7 @@ export class SignAccountOpController extends EventEmitter {
       // in that case, we don't do user operations
       isERC4337:
         this.paidBy === this.accountOp.accountAddr &&
-        isErc4337Broadcast(this.#network, accountState),
+        isErc4337Broadcast(this.account, this.#network, accountState),
       isGasTank: this.feeTokenResult.flags.onGasTank,
       inToken: this.feeTokenResult.address,
       feeTokenNetworkId: this.feeTokenResult.networkId,
