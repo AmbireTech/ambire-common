@@ -1,5 +1,6 @@
 import { getErrorCodeStringFromReason } from '../errorDecoder/helpers'
 import { DecodedError, ErrorType } from '../errorDecoder/types'
+import { ErrorHumanizerError } from './types'
 
 const REASON_HIDDEN_FOR = [ErrorType.RelayerError, ErrorType.PaymasterError]
 
@@ -41,7 +42,7 @@ function getGenericMessageFromType(
 
 const getHumanReadableErrorMessage = (
   commonError: any,
-  errors: { [key: string]: string },
+  errors: ErrorHumanizerError[],
   messagePrefix: string,
   lastResortMessage: string,
   reason: DecodedError['reason'],
@@ -54,10 +55,13 @@ const getHumanReadableErrorMessage = (
   let message = null
 
   if (checkAgainst) {
-    Object.keys(errors).forEach((key) => {
-      if (!checkAgainst.toLowerCase().includes(key.toLowerCase())) return
+    errors.forEach((error) => {
+      const isMatching = error.reasons.some((errorReason) =>
+        checkAgainst.toLowerCase().includes(errorReason.toLowerCase())
+      )
+      if (!isMatching) return
 
-      message = `${messagePrefix} ${errors[key]}`
+      message = `${messagePrefix} ${error.message}`
     })
   }
 
