@@ -521,8 +521,8 @@ describe('Portfolio Controller ', () => {
 
 
     // TODO: add a test account as 'account4' which values of cashback and saved are greater than 0
-    
-    // test('USDC gas tank token is set in a smart account with cashback and saved greater than 0', async () => {
+
+    // test('Check if smart account with existing cashback and saved greater than 0', async () => {
     //   const { controller } = prepareTest()
 
     //   expect(foundUsdcToken).toBeTruthy()
