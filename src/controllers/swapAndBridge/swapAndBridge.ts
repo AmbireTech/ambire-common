@@ -1,4 +1,4 @@
-import { formatUnits, parseUnits } from 'ethers'
+import { formatUnits, isAddress, parseUnits } from 'ethers'
 
 import { Storage } from '../../interfaces/storage'
 import {
@@ -527,9 +527,10 @@ export class SwapAndBridgeController extends EventEmitter {
 
   async #addToTokenByAddress(address: string) {
     if (!this.toChainId) return
+    if (!isAddress(address)) return // no need to attempt with invalid addresses
 
-    const isAlreadyPresent = this.toTokenList.some((t) => t.address === address)
-    if (isAlreadyPresent) return
+    const isAlreadyInTheList = this.toTokenList.some((t) => t.address === address)
+    if (isAlreadyInTheList) return
 
     const token = await this.#socketAPI.getToken({ address, chainId: this.toChainId })
     if (!token) return
