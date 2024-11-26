@@ -45,6 +45,10 @@ import {
   getAccountOpFromAction
 } from '../../libs/actions/actions'
 import { getAccountOpBanners } from '../../libs/banners/banners'
+import {
+  getHumanReadableBroadcastError,
+  getHumanReadableEstimationError
+} from '../../libs/errorHumanizer'
 import { estimate } from '../../libs/estimate/estimate'
 import { BundlerGasPrice, EstimateResult } from '../../libs/estimate/interfaces'
 import { GasRecommendation, getGasPriceRecommendations } from '../../libs/gasPrice/gasPrice'
@@ -253,11 +257,6 @@ export class MainController extends EventEmitter {
         const defaultSelectedAccount = getDefaultSelectedAccount(accounts)
         if (defaultSelectedAccount) {
           await this.#selectAccount(defaultSelectedAccount.addr)
-          // Don't wait for account state because:
-          // 1. The extension works perfectly fine without it
-          // 2. Some RPCs may be slow and we don't want to block the UI
-          // eslint-disable-next-line @typescript-eslint/no-floating-promises
-          this.accounts.updateAccountState(defaultSelectedAccount.addr)
         }
       },
       this.providers.updateProviderIsWorking.bind(this.providers)
@@ -427,15 +426,18 @@ export class MainController extends EventEmitter {
     }
     this.selectedAccount.setAccount(accountToSelect)
     this.activity.init()
-    await this.updateSelectedAccountPortfolio()
-    await this.defiPositions.updatePositions()
+    this.swapAndBridge.onAccountChange()
+    this.dapps.broadcastDappSessionEvent('accountsChanged', [toAccountAddr])
     // forceEmitUpdate to update the getters in the FE state of the ctrl
     await this.forceEmitUpdate()
     await this.actions.forceEmitUpdate()
-    await this.swapAndBridge.forceEmitUpdate()
     await this.addressBook.forceEmitUpdate()
-    this.dapps.broadcastDappSessionEvent('accountsChanged', [toAccountAddr])
-    await this.accounts.updateAccountState(toAccountAddr)
+    // Don't await these as they are not critical for the account selection
+    // and if the user decides to quickly change to another account withStatus
+    // will block the UI until these are resolved.
+    this.accounts.updateAccountState(toAccountAddr)
+    this.updateSelectedAccountPortfolio()
+    this.defiPositions.updatePositions()
 
     this.emitUpdate()
   }
@@ -942,8 +944,7 @@ export class MainController extends EventEmitter {
       this.signAccountOp?.accountOp
     )
 
-    // eslint-disable-next-line @typescript-eslint/no-floating-promises
-    this.portfolio.updateSelectedAccount(
+    await this.portfolio.updateSelectedAccount(
       this.selectedAccount.account.addr,
       network,
       accountOpsToBeSimulatedByNetwork,
@@ -1625,13 +1626,13 @@ export class MainController extends EventEmitter {
     )
 
     // Update route status immediately, so that the UI quickly reflects the change
-    await Promise.all(
-      swapAndBridgeUserRequests.map(async (r) => {
-        await this.swapAndBridge.updateActiveRoute(r.meta.activeRouteId, {
-          routeStatus: 'in-progress'
-        })
+    // eslint-disable-next-line no-restricted-syntax
+    for (const r of swapAndBridgeUserRequests) {
+      // eslint-disable-next-line no-await-in-loop
+      await this.swapAndBridge.updateActiveRoute(r.meta.activeRouteId, {
+        routeStatus: 'in-progress'
       })
-    )
+    }
 
     // Note: this may take a while!
     const txnId = await pollTxnId(
@@ -1642,13 +1643,13 @@ export class MainController extends EventEmitter {
     )
 
     // Follow up update with the just polled txnId (that potentially came slower)
-    await Promise.all(
-      swapAndBridgeUserRequests.map(async (r) => {
-        await this.swapAndBridge.updateActiveRoute(r.meta.activeRouteId, {
-          userTxHash: txnId
-        })
+    // eslint-disable-next-line no-restricted-syntax
+    for (const r of swapAndBridgeUserRequests) {
+      // eslint-disable-next-line no-await-in-loop
+      await this.swapAndBridge.updateActiveRoute(r.meta.activeRouteId, {
+        userTxHash: txnId
       })
-    )
+    }
 
     // eslint-disable-next-line no-restricted-syntax
     for (const call of accountOp.calls) {
@@ -1806,7 +1807,7 @@ export class MainController extends EventEmitter {
       const networkFeeTokens =
         this.portfolio.getLatestPortfolioState(localAccountOp.accountAddr)?.[
           localAccountOp.networkId
-        ]?.result?.tokens ?? []
+        ]?.result?.feeTokens ?? []
       const gasTankFeeTokens =
         this.portfolio.getLatestPortfolioState(localAccountOp.accountAddr)?.gasTank?.result
           ?.tokens ?? []
@@ -1872,9 +1873,11 @@ export class MainController extends EventEmitter {
             )
           }
         ).catch((e) => {
+          const { message } = getHumanReadableEstimationError(e)
+
           this.emitError({
             level: 'major',
-            message: `Failed to estimate account op for ${localAccountOp.accountAddr} on ${localAccountOp.networkId}`,
+            message,
             error: e
           })
           return null
@@ -2098,7 +2101,7 @@ export class MainController extends EventEmitter {
         const gasFeePayment = accountOp.gasFeePayment!
         const { to, value, data } = accountOp.calls[0]
         const rawTxn: TxnRequest = {
-          to,
+          to: to ?? undefined,
           value,
           data,
           chainId: network!.chainId,
@@ -2127,15 +2130,14 @@ export class MainController extends EventEmitter {
               identifier: broadcastRes.hash
             }
           }
-        } catch (e: any) {
-          const reason = e?.message || 'unknown'
-
-          throw new Error(
-            `Transaction couldn't be broadcasted on the ${network.name} network. Reason: ${reason}`
-          )
+        } catch (error: any) {
+          return this.#throwBroadcastAccountOp({
+            error,
+            accountState
+          })
         }
       } catch (error: any) {
-        return this.#throwBroadcastAccountOp({ error, network, accountState })
+        return this.#throwBroadcastAccountOp({ error, accountState })
       }
     }
     // Smart account but EOA pays the fee
@@ -2217,15 +2219,11 @@ export class MainController extends EventEmitter {
               identifier: broadcastRes.hash
             }
           }
-        } catch (e: any) {
-          const reason = e?.message || 'unknown'
-
-          throw new Error(
-            `Transaction couldn't be broadcasted on the ${network.name} network. Reason: ${reason}`
-          )
+        } catch (error: any) {
+          return this.#throwBroadcastAccountOp({ error, accountState })
         }
       } catch (error: any) {
-        return this.#throwBroadcastAccountOp({ error, network, accountState })
+        return this.#throwBroadcastAccountOp({ error, accountState })
       }
     }
     // Smart account, the ERC-4337 way
@@ -2243,11 +2241,7 @@ export class MainController extends EventEmitter {
         userOperationHash = await bundler.broadcast(userOperation, network!)
       } catch (e: any) {
         return this.#throwBroadcastAccountOp({
-          message: Bundler.decodeBundlerError(
-            e,
-            'Bundler broadcast failed. Please try broadcasting by an EOA or contact support.'
-          ),
-          network,
+          error: e,
           accountState
         })
       }
@@ -2291,7 +2285,7 @@ export class MainController extends EventEmitter {
           }
         }
       } catch (error: any) {
-        return this.#throwBroadcastAccountOp({ error, network, accountState, isRelayer: true })
+        return this.#throwBroadcastAccountOp({ error, accountState, isRelayer: true })
       }
     }
 
@@ -2307,7 +2301,9 @@ export class MainController extends EventEmitter {
       nonce: BigInt(transactionRes.nonce),
       identifiedBy: transactionRes.identifiedBy,
       timestamp: new Date().getTime(),
-      isSingletonDeploy: !!accountOp.calls.find((call) => getAddress(call.to) === SINGLETON)
+      isSingletonDeploy: !!accountOp.calls.find(
+        (call) => call.to && getAddress(call.to) === SINGLETON
+      )
     }
     await this.activity.addAccountOp(submittedAccountOp)
     await this.resolveAccountOpAction(
@@ -2358,24 +2354,19 @@ export class MainController extends EventEmitter {
   #throwBroadcastAccountOp({
     message: _msg,
     error: _err,
-    network,
     accountState,
     isRelayer = false
   }: {
     message?: string
     error?: Error
-    network?: Network
     accountState?: AccountOnchainState
     isRelayer?: boolean
   }) {
     let message = _msg || _err?.message || 'Unable to broadcast the transaction.'
 
     if (message) {
-      if (message.includes('insufficient funds')) {
-        if (network)
-          message = `You don't have enough ${network.nativeAssetSymbol} to cover the transaction fee`
-        else message = "You don't have enough native to cover the transaction fee"
-      } else if (message.includes('pimlico_getUserOperationGasPrice')) {
+      // @TODO: Consider replacing with getHumanReadableBroadcastError
+      if (message.includes('pimlico_getUserOperationGasPrice')) {
         // sometimes the bundler returns an error of low maxFeePerGas
         // in that case, recalculate prices and prompt the user to try again
         message = 'Fee too low. Please select a higher transaction speed and try again'
@@ -2401,8 +2392,9 @@ export class MainController extends EventEmitter {
         message =
           'Currently, the Ambire relayer seems to be down. Please try again a few moments later or broadcast with a Basic Account'
       } else {
-        // Trip the error message, errors coming from the RPC can be huuuuuge
-        message = message.length > 300 ? `${message.substring(0, 300)}...` : message
+        const { message: msg } = getHumanReadableBroadcastError(_err || new Error(message))
+
+        message = msg
       }
     }
 

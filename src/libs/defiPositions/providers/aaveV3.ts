@@ -20,19 +20,33 @@ export async function getAAVEPositions(
   if (networkId && !AAVE_V3[networkId as keyof typeof AAVE_V3]) return null
 
   const { poolAddr } = AAVE_V3[networkId as keyof typeof AAVE_V3]
+
   const deploylessDeFiPositionsGetter = fromDescriptor(
     provider,
     DeFiPositionsDeploylessCode,
     network.rpcNoStateOverride
   )
-  const [result] = await deploylessDeFiPositionsGetter.call(
-    'getAAVEPosition',
-    [userAddr, poolAddr],
-    {}
-  )
-  const [assets, accountDataRes, assetsErr, accountDataErr] = result
+  const [[result0], [result1], [result2]] = await Promise.all([
+    deploylessDeFiPositionsGetter.call(
+      'getAAVEPosition',
+      [userAddr, poolAddr, 0, 15],
+      {}
+    ),
+    deploylessDeFiPositionsGetter.call(
+      'getAAVEPosition',
+      [userAddr, poolAddr, 15, 30],
+      {}
+    ),
+    deploylessDeFiPositionsGetter.call(
+      'getAAVEPosition',
+      [userAddr, poolAddr, 30, 45],
+      {}
+    )
+  ])
+  
+  const accountDataRes = result0[1]
 
-  const userAssets = assets
+  const userAssets = [...result0[0], ...result1[0], ...result2[0]]
     .map((asset: any) => ({
       address: asset[0],
       symbol: asset[1],
@@ -43,7 +57,19 @@ export async function getAAVEPositions(
       stableBorrowAssetBalance: asset[6],
       currentLiquidityRate: asset[7],
       currentVariableBorrowRate: asset[8],
-      currentStableBorrowRate: asset[9]
+      currentStableBorrowRate: asset[9],
+      
+      aaveAddress: asset[10],
+      aaveSymbol: asset[11],
+      aaveDecimals: asset[12],
+
+      aaveSDebtAddr: asset[13],
+      aaveSDebtSymbol: asset[14],
+      aaveSDebtDecimals: asset[15],
+
+      aaveVDebtAddr: asset[16],
+      aaveVDebtSymbol: asset[17],
+      aaveVDebtDecimals: asset[18]
     }))
     .filter((t: any) => t.balance > 0 || t.borrowAssetBalance > 0 || t.stableBorrowAssetBalance > 0)
 
@@ -100,6 +126,11 @@ export async function getAAVEPositions(
           type: AssetType.Collateral,
           additionalData: {
             APY: Number(asset.currentLiquidityRate) / 10 ** 25
+          },
+          protocolAsset: {
+            address: asset.aaveAddress,
+            symbol: asset.aaveSymbol,
+            decimals: asset.aaveDecimals
           }
         } as PositionAsset)
       }
@@ -115,6 +146,11 @@ export async function getAAVEPositions(
           type: AssetType.Borrow,
           additionalData: {
             APY: Number(asset.currentStableBorrowRate) / 10 ** 25
+          },
+          protocolAsset: {
+            address: asset.aaveSDebtAddr,
+            symbol: asset.aaveSDebtSymbol,
+            decimals: asset.aaveSDebtDecimals
           }
         } as PositionAsset)
       }
@@ -130,6 +166,11 @@ export async function getAAVEPositions(
           type: AssetType.Borrow,
           additionalData: {
             APY: Number(asset.currentVariableBorrowRate) / 10 ** 25
+          },
+          protocolAsset: {
+            address: asset.aaveVDebtAddr,
+            symbol: asset.aaveVDebtSymbol,
+            decimals: asset.aaveVDebtDecimals
           }
         } as PositionAsset)
       }

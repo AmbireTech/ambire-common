@@ -13,6 +13,8 @@ class RelayerError extends Error {
     this.output = output
   }
 }
+export const RELAYER_DOWN_MESSAGE =
+  'Currently, the Ambire relayer seems to be down. Please try again a few moments later'
 
 export async function relayerCallUncaught(
   url: string,
@@ -49,8 +51,7 @@ export async function relayerCallUncaught(
       success: false,
       data: text,
       status: res.status,
-      message:
-        'Currently, the Ambire relayer seems to be down. Please try again a few moments later'
+      message: RELAYER_DOWN_MESSAGE
     }
   }
 }
