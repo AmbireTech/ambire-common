@@ -525,7 +525,6 @@ export class SwapAndBridgeController extends EventEmitter {
     this.emitUpdate()
   }
 
-  // TODO: wrap with status
   async #addToTokenByAddress(address: string) {
     if (!this.toChainId) return
 
