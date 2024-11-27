@@ -645,12 +645,15 @@ export class MainController extends EventEmitter {
     const learnedNewNfts = await this.portfolio.learnNfts(nfts, network.id)
     // update the portfolio only if new tokens were found through tracing
     if (learnedNewTokens || learnedNewNfts) {
-      this.portfolio.updateSelectedAccount(
-        accountOp.accountAddr,
-        network,
-        getAccountOpsForSimulation(account, this.actions.visibleActionsQueue, network, accountOp),
-        { forceUpdate: true }
-      )
+      this.portfolio
+        .updateSelectedAccount(
+          accountOp.accountAddr,
+          network,
+          getAccountOpsForSimulation(account, this.actions.visibleActionsQueue, network, accountOp),
+          { forceUpdate: true }
+        )
+        // fire an update request to refresh the warnings if any
+        .then(() => this.signAccountOp?.update({}))
     }
   }
 
