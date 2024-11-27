@@ -3,8 +3,6 @@ import { DecodedError, ErrorType } from '../errorDecoder/types'
 import { ErrorHumanizerError } from './types'
 
 const REASON_HIDDEN_FOR = [ErrorType.RelayerError, ErrorType.PaymasterError]
-export const PAYMASTER_DOWN_ERROR =
-  'Currently, the paymaster seems to be down and your transaction cannot be broadcast. Please try again in a few moments or pay the fee with a Basic Account if the error persists'
 
 function getGenericMessageFromType(
   errorType: ErrorType,
@@ -21,9 +19,7 @@ function getGenericMessageFromType(
     case ErrorType.RelayerError:
       return `${messagePrefix} of an Ambire Relayer error.${messageSuffix}`
     case ErrorType.PaymasterError:
-      return reasonString === ''
-        ? PAYMASTER_DOWN_ERROR
-        : `${messagePrefix} of a Paymaster error.${messageSuffix}`
+      return `${messagePrefix} of a Paymaster error.${messageSuffix}`
     case ErrorType.RpcError:
       return `${messagePrefix} of an RPC error.${messageSuffix}`
     case ErrorType.BundlerError:
@@ -48,10 +44,8 @@ const getHumanReadableErrorMessage = (
   commonError: any,
   errors: ErrorHumanizerError[],
   messagePrefix: string,
-  lastResortMessage: string,
   reason: DecodedError['reason'],
-  e: any,
-  errorType: DecodedError['type']
+  e: any
 ) => {
   if (commonError) return commonError
 
@@ -67,10 +61,6 @@ const getHumanReadableErrorMessage = (
 
       message = `${messagePrefix} ${error.message}`
     })
-  }
-
-  if (!message) {
-    return getGenericMessageFromType(errorType, reason, messagePrefix, lastResortMessage)
   }
 
   return message

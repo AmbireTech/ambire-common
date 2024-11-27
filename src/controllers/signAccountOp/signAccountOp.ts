@@ -29,7 +29,7 @@ import { AccountOp, GasFeePayment, getSignableCalls } from '../../libs/accountOp
 import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 import { RelayerPaymasterError } from '../../libs/errorDecoder/customErrors'
 import { getHumanReadableBroadcastError } from '../../libs/errorHumanizer'
-import { PAYMASTER_DOWN_ERROR } from '../../libs/errorHumanizer/helpers'
+import { PAYMASTER_DOWN_BROADCAST_ERROR_MESSAGE } from '../../libs/errorHumanizer/broadcastErrorHumanizer'
 import { BundlerGasPrice, EstimateResult, FeePaymentOption } from '../../libs/estimate/interfaces'
 import {
   Gas1559Recommendation,
@@ -1245,7 +1245,7 @@ export class SignAccountOpController extends EventEmitter {
                   () =>
                     reject(
                       new EmittableError({
-                        message: PAYMASTER_DOWN_ERROR,
+                        message: PAYMASTER_DOWN_BROADCAST_ERROR_MESSAGE,
                         level: 'major'
                       })
                     ),
