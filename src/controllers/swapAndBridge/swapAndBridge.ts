@@ -159,10 +159,12 @@ export class SwapAndBridgeController extends EventEmitter {
 
     this.activeRoutes = await this.#storage.get('swapAndBridgeActiveRoutes', [])
 
-    this.#selectedAccount.onUpdate(() => {
+    this.#selectedAccount.onUpdate(async () => {
       if (this.#selectedAccount.portfolio.isAllReady) {
         this.isTokenListLoading = false
         this.updatePortfolioTokenList(this.#selectedAccount.portfolio.tokens)
+        // To token list includes selected account portfolio tokens, it should get an update too
+        await this.updateToTokenList(true)
       }
     })
     this.emitUpdate()
