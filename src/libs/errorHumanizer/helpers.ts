@@ -41,7 +41,7 @@ function getGenericMessageFromType(
 }
 
 const getHumanReadableErrorMessage = (
-  commonError: any,
+  commonError: string | null,
   errors: ErrorHumanizerError[],
   messagePrefix: string,
   reason: DecodedError['reason'],
