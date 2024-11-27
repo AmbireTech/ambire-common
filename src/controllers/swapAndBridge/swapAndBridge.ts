@@ -4,12 +4,12 @@ import EmittableError from '../../classes/EmittableError'
 import { Storage } from '../../interfaces/storage'
 import {
   ActiveRoute,
+  CachedTokenListKey,
+  CachedToTokenLists,
   SocketAPIQuote,
   SocketAPIRoute,
   SocketAPISendTransactionRequest,
-  SocketAPIToken,
-  TokenListKey,
-  ToTokenLists
+  SocketAPIToken
 } from '../../interfaces/swapAndBridge'
 import { isSmartAccount } from '../../libs/account/account'
 import { getBridgeBanners } from '../../libs/banners/banners'
@@ -128,12 +128,13 @@ export class SwapAndBridgeController extends EventEmitter {
 
   /**
    * Needed to efficiently manage and cache token lists for different chain
-   * combinations (fromChainId and toChainId). By storing the token lists with a
-   * specific key format, we can quickly retrieve and update the token lists
-   * without having to fetch them repeatedly from the API. Moreover, this way
-   * tokens added to a list by address are also cached for sometime.
+   * combinations (fromChainId and toChainId) without having to fetch them
+   * repeatedly from the API. Moreover, this way tokens added to a list by
+   * address are also cached for sometime.
    */
-  #toTokenLists: ToTokenLists = {}
+  #cachedToTokenLists: CachedToTokenLists = {}
+
+  toTokenList: SocketAPIToken[] = []
 
   routePriority: 'output' | 'time' = 'output'
 
@@ -305,22 +306,10 @@ export class SwapAndBridgeController extends EventEmitter {
     return this.#socketAPI.isHealthy
   }
 
-  get toTokenListKey(): TokenListKey | null {
+  get #toTokenListKey(): CachedTokenListKey | null {
     if (this.fromChainId === null || this.toChainId === null) return null
 
     return `from-${this.fromChainId}-to-${this.toChainId}`
-  }
-
-  get toTokenList(): SocketAPIToken[] {
-    if (!this.toTokenListKey) return []
-
-    return this.#toTokenLists[this.toTokenListKey]?.data || []
-  }
-
-  set toTokenList(newList: SocketAPIToken[]) {
-    if (!this.toTokenListKey) return
-
-    this.#toTokenLists[this.toTokenListKey] = { lastFetched: Date.now(), data: newList }
   }
 
   unloadScreen(sessionId: string) {
@@ -529,18 +518,22 @@ export class SwapAndBridgeController extends EventEmitter {
     }
 
     try {
-      if (this.toTokenListKey === null) throw new Error('Invalid token list key') // should never happen
+      if (this.#toTokenListKey === null) throw new Error('Invalid token list key') // should never happen
 
-      const toTokenListInCache = this.#toTokenLists[this.toTokenListKey]
+      const toTokenListInCache = this.#cachedToTokenLists[this.#toTokenListKey]
       let upToDateToTokenList: SocketAPIToken[] = toTokenListInCache?.data || []
       const shouldFetchTokenList =
-        !toTokenListInCache?.data ||
+        !upToDateToTokenList.length ||
         now - (toTokenListInCache?.lastFetched || 0) >= TO_TOKEN_LIST_CACHE_THRESHOLD
       if (shouldFetchTokenList) {
         upToDateToTokenList = await this.#socketAPI.getToTokenList({
           fromChainId: this.fromChainId,
           toChainId: this.toChainId
         })
+        this.#cachedToTokenLists[this.#toTokenListKey] = {
+          lastFetched: now,
+          data: upToDateToTokenList
+        }
       }
 
       const toTokenNetwork = this.#networks.networks.find(
@@ -596,6 +589,10 @@ export class SwapAndBridgeController extends EventEmitter {
     } catch (error: any) {
       throw new EmittableError({ error, level: 'minor', message: error?.message })
     }
+
+    if (this.#toTokenListKey)
+      // Cache for sometime the tokens added by address
+      this.#cachedToTokenLists[this.#toTokenListKey]?.data.push(token)
 
     const nextTokenList = [...this.toTokenList, token]
     this.toTokenList = sortTokenListResponse(nextTokenList, this.portfolioTokenList)
@@ -951,8 +948,7 @@ export class SwapAndBridgeController extends EventEmitter {
       isSwitchFromAndToTokensEnabled: this.isSwitchFromAndToTokensEnabled,
       banners: this.banners,
       isHealthy: this.isHealthy,
-      shouldEnableRoutesSelection: this.shouldEnableRoutesSelection,
-      toTokenList: this.toTokenList
+      shouldEnableRoutesSelection: this.shouldEnableRoutesSelection
     }
   }
 }

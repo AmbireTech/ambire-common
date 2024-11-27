@@ -191,5 +191,7 @@ export type ActiveRoute = {
 }
 
 type StringifiedChainId = string
-export type TokenListKey = `from-${StringifiedChainId}-to-${StringifiedChainId}`
-export type ToTokenLists = { [key: TokenListKey]: { lastFetched: number; data: SocketAPIToken[] } }
+export type CachedTokenListKey = `from-${StringifiedChainId}-to-${StringifiedChainId}`
+export type CachedToTokenLists = {
+  [key: CachedTokenListKey]: { lastFetched: number; data: SocketAPIToken[] }
+}
