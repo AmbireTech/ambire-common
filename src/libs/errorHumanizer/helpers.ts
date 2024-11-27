@@ -3,6 +3,8 @@ import { DecodedError, ErrorType } from '../errorDecoder/types'
 import { ErrorHumanizerError } from './types'
 
 const REASON_HIDDEN_FOR = [ErrorType.RelayerError, ErrorType.PaymasterError]
+export const PAYMASTER_DOWN_ERROR =
+  'Currently, the paymaster seems to be down and your transaction cannot be broadcast. Please try again in a few moments or pay the fee with a Basic Account if the error persists'
 
 function getGenericMessageFromType(
   errorType: ErrorType,
@@ -18,8 +20,12 @@ function getGenericMessageFromType(
   switch (errorType) {
     case ErrorType.RelayerError:
       return `${messagePrefix} of an Ambire Relayer error.${messageSuffix}`
+    case ErrorType.HardwareWalletRejectedError:
+      return reason ?? 'Rejected by your hardware wallet device'
     case ErrorType.PaymasterError:
-      return `${messagePrefix} of a Paymaster error.${messageSuffix}`
+      return reasonString === ''
+        ? PAYMASTER_DOWN_ERROR
+        : `${messagePrefix} of a Paymaster error.${messageSuffix}`
     case ErrorType.RpcError:
       return `${messagePrefix} of an RPC error.${messageSuffix}`
     case ErrorType.BundlerError:

@@ -7,6 +7,7 @@ import {
   RpcErrorHandler,
   UserRejectionHandler
 } from './handlers'
+import HardwareWallet from './handlers/HardwareWalletRejected'
 import RelayerErrorHandler from './handlers/relayer'
 import { formatReason, getDataFromError, isReasonValid } from './helpers'
 import { DecodedError, ErrorType } from './types'
@@ -17,7 +18,8 @@ const ERROR_HANDLERS = [
   PanicErrorHandler,
   RevertErrorHandler,
   PaymasterErrorHandler,
-  UserRejectionHandler
+  UserRejectionHandler,
+  HardwareWallet
 ]
 
 export function decodeError(e: Error): DecodedError {

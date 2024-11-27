@@ -16,7 +16,9 @@ export enum ErrorType {
   /** Error due to the user rejecting a transaction */
   UserRejectionError = 'UserRejectionError',
   /** Error due to an inner call failure during estimation */
-  InnerCallFailureError = 'InnerCallFailureError'
+  InnerCallFailureError = 'InnerCallFailureError',
+  /** Error due to a hardware wallet */
+  HardwareWalletRejectedError = 'HardwareWalletRejectedError'
 }
 
 export type DecodedError = {

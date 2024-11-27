@@ -29,6 +29,7 @@ import { AccountOp, GasFeePayment, getSignableCalls } from '../../libs/accountOp
 import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 import { RelayerPaymasterError } from '../../libs/errorDecoder/customErrors'
 import { getHumanReadableBroadcastError } from '../../libs/errorHumanizer'
+import { PAYMASTER_DOWN_ERROR } from '../../libs/errorHumanizer/helpers'
 import { BundlerGasPrice, EstimateResult, FeePaymentOption } from '../../libs/estimate/interfaces'
 import {
   Gas1559Recommendation,
@@ -1244,8 +1245,7 @@ export class SignAccountOpController extends EventEmitter {
                   () =>
                     reject(
                       new EmittableError({
-                        message:
-                          'The paymaster took too long to respond. Please try again later or contact support',
+                        message: PAYMASTER_DOWN_ERROR,
                         level: 'major'
                       })
                     ),
