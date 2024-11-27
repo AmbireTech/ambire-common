@@ -1,5 +1,6 @@
-import { formatUnits, parseUnits } from 'ethers'
+import { formatUnits, isAddress, parseUnits } from 'ethers'
 
+import EmittableError from '../../classes/EmittableError'
 import { Storage } from '../../interfaces/storage'
 import {
   ActiveRoute,
@@ -23,7 +24,7 @@ import { validateSendTransferAmount } from '../../services/validations/validate'
 import { convertTokenPriceToBigInt } from '../../utils/numbers/formatters'
 import wait from '../../utils/wait'
 import { AccountOpAction, ActionsController } from '../actions/actions'
-import EventEmitter from '../eventEmitter/eventEmitter'
+import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter'
 import { NetworksController } from '../networks/networks'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 
@@ -39,6 +40,10 @@ export enum SwapAndBridgeFormStatus {
   NoRoutesFound = 'no-routes-found',
   ReadyToSubmit = 'ready-to-submit'
 }
+
+const STATUS_WRAPPED_METHODS = {
+  addToTokenByAddress: 'INITIAL'
+} as const
 
 /**
  * The Swap and Bridge controller is responsible for managing the state and
@@ -62,6 +67,8 @@ export class SwapAndBridgeController extends EventEmitter {
   #socketAPI: SocketAPI
 
   #activeRoutes: ActiveRoute[] = []
+
+  statuses: Statuses<keyof typeof STATUS_WRAPPED_METHODS> = STATUS_WRAPPED_METHODS
 
   #updateQuoteThrottle: {
     time: number
@@ -518,6 +525,33 @@ export class SwapAndBridgeController extends EventEmitter {
     this.updateToTokenListStatus = 'INITIAL'
     this.emitUpdate()
   }
+
+  async #addToTokenByAddress(address: string) {
+    if (!this.toChainId) return // should never happen
+    if (!isAddress(address)) return // no need to attempt with invalid addresses
+
+    const isAlreadyInTheList = this.toTokenList.some((t) => t.address === address)
+    if (isAlreadyInTheList) return
+
+    let token
+    try {
+      token = await this.#socketAPI.getToken({ address, chainId: this.toChainId })
+
+      if (!token)
+        throw new Error('Token with this address is not supported by our service provider.')
+    } catch (error: any) {
+      throw new EmittableError({ error, level: 'minor', message: error?.message })
+    }
+
+    const nextTokenList = [...this.toTokenList, token]
+    this.toTokenList = sortTokenListResponse(nextTokenList, this.portfolioTokenList)
+
+    this.emitUpdate()
+    return token
+  }
+
+  addToTokenByAddress = async (address: string) =>
+    this.withStatus('addToTokenByAddress', () => this.#addToTokenByAddress(address), true)
 
   async switchFromAndToTokens() {
     if (!this.isSwitchFromAndToTokensEnabled) return
