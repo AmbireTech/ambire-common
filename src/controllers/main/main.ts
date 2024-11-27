@@ -1696,7 +1696,11 @@ export class MainController extends EventEmitter {
     const network = this.networks.networks.find((net) => net.id === accOp.networkId)
     if (!network) return undefined // shouldn't happen
 
+    const account = this.accounts.accounts.find((x) => x.addr === accOp.accountAddr)
+    if (!account) return undefined // shouldn't happen
+
     const is4337 = isErc4337Broadcast(
+      account,
       network,
       this.accounts.accountStates[accOp.accountAddr][accOp.networkId]
     )
@@ -1868,6 +1872,7 @@ export class MainController extends EventEmitter {
           feeTokens,
           {
             is4337Broadcast: isErc4337Broadcast(
+              account,
               network,
               this.accounts.accountStates[localAccountOp.accountAddr][localAccountOp.networkId]
             )
