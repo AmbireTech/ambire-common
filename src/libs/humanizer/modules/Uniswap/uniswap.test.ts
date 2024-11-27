@@ -14,7 +14,7 @@ import {
   getRecipientText,
   getToken
 } from '../../utils'
-import { uniswapHumanizer } from './'
+import { uniswapHumanizer } from '.'
 
 const transactions = {
   firstBatch: [
@@ -256,8 +256,7 @@ describe('uniswap', () => {
       ]
     ]
     expect(irCalls.length).toEqual(expectedVisualization.length)
-    console.log(irCalls.map((i) => i?.fullVisualization?.length))
-    console.log(irCalls[0].fullVisualization)
+
     compareHumanizerVisualizations(irCalls, expectedVisualization as HumanizerVisualization[][])
   })
   test('Liquidity', async () => {
