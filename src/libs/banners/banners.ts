@@ -32,13 +32,24 @@ const getBridgeActionText = (routeStatus: ActiveRoute['routeStatus'], isBridgeTx
   return routeStatus === 'completed' ? 'Swapped' : 'Swap'
 }
 
-const getBridgeBannerText = (route: ActiveRoute, isBridgeTxn: boolean) => {
+const getBridgeBannerText = (route: ActiveRoute, isBridgeTxn: boolean, networks?: Network[]) => {
   const steps = getQuoteRouteSteps(route.route.userTxs)
   const actionText = getBridgeActionText(route.routeStatus, isBridgeTxn)
   const fromAssetSymbol = steps[0].fromAsset.symbol
   const toAssetSymbol = steps[steps.length - 1].toAsset.symbol
 
-  const assetsText = `${fromAssetSymbol} to ${toAssetSymbol}`
+  let assetsText = `${fromAssetSymbol} to ${toAssetSymbol}`
+
+  if (networks) {
+    const fromAssetNetwork = networks.find((n) => Number(n.chainId) === steps[0].fromAsset.chainId)
+    const toAssetNetwork = networks.find(
+      (n) => Number(n.chainId) === steps[steps.length - 1].toAsset.chainId
+    )
+    if (fromAssetNetwork && toAssetNetwork) {
+      assetsText = `${fromAssetSymbol} (on ${fromAssetNetwork.name}) to ${toAssetSymbol} (on ${toAssetNetwork.name})`
+    }
+  }
+
   const stepsIndexText = `(step ${
     route.routeStatus === 'completed' ? route.route.totalUserTx : route.route.currentUserTxIndex + 1
   } of ${route.route.totalUserTx})`
@@ -48,7 +59,8 @@ const getBridgeBannerText = (route: ActiveRoute, isBridgeTxn: boolean) => {
 
 export const getBridgeBanners = (
   activeRoutes: ActiveRoute[],
-  accountOpActions: AccountOpAction[]
+  accountOpActions: AccountOpAction[],
+  networks: Network[]
 ): Banner[] => {
   const isBridgeTxn = (route: ActiveRoute) =>
     route.route.userTxs.some((t) => getIsBridgeTxn(t.userTxType))
@@ -107,7 +119,7 @@ export const getBridgeBanners = (
         type: r.routeStatus === 'completed' ? 'success' : 'info',
         category: `bridge-${r.routeStatus}`,
         title: getBridgeBannerTitle(r.routeStatus),
-        text: getBridgeBannerText(r, true),
+        text: getBridgeBannerText(r, true, networks),
         actions
       }
     })
@@ -136,7 +148,8 @@ export const getDappActionRequestsBanners = (actions: ActionFromActionsQueue[]):
 const getAccountOpBannerText = (
   activeSwapAndBridgeRoutesForSelectedAccount: ActiveRoute[],
   chainId: bigint,
-  nonSwapAndBridgeTxns: number
+  nonSwapAndBridgeTxns: number,
+  networks: Network[]
 ) => {
   const swapsAndBridges: string[] = []
   const networkSwapAndBridgeRoutes = activeSwapAndBridgeRoutesForSelectedAccount.filter((route) => {
@@ -146,7 +159,7 @@ const getAccountOpBannerText = (
   if (networkSwapAndBridgeRoutes.length) {
     networkSwapAndBridgeRoutes.forEach((route) => {
       const isBridgeTxn = route.route.userTxs.some((t) => getIsBridgeTxn(t.userTxType))
-      const desc = getBridgeBannerText(route, isBridgeTxn)
+      const desc = getBridgeBannerText(route, isBridgeTxn, networks)
 
       swapsAndBridges.push(desc)
     })
@@ -198,7 +211,8 @@ export const getAccountOpBanners = ({
         const text = getAccountOpBannerText(
           swapAndBridgeRoutesPendingSignature,
           BigInt(network.chainId),
-          nonSwapAndBridgeTxns
+          nonSwapAndBridgeTxns,
+          networks
         )
 
         txnBanners.push({
@@ -246,7 +260,8 @@ export const getAccountOpBanners = ({
       const text = getAccountOpBannerText(
         swapAndBridgeRoutesPendingSignature,
         BigInt(network.chainId),
-        nonSwapAndBridgeTxns
+        nonSwapAndBridgeTxns,
+        networks
       )
 
       txnBanners.push({
