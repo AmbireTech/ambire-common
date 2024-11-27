@@ -60,7 +60,8 @@ import {
   getFeeSpeedIdentifier,
   getFeeTokenPriceUnavailableWarning,
   getSignificantBalanceDecreaseWarning,
-  getTokenUsdAmount
+  getTokenUsdAmount,
+  isLegendsMintNftOperation
 } from './helper'
 
 export enum SigningStatus {
@@ -1165,7 +1166,10 @@ export class SignAccountOpController extends EventEmitter {
       } else if (this.accountOp.gasFeePayment.paidBy !== this.account.addr) {
         // Smart account, but EOA pays the fee
         // EOA pays for execute() - relayerless
-
+        if (isLegendsMintNftOperation(this.accountOp))
+          return this.#emitSigningErrorAndResetToReadyToSign(
+            'Please pay the transaction fee with the current account to mint your Legends NFT'
+          )
         this.accountOp.signature = await getExecuteSignature(
           this.#network,
           this.accountOp,

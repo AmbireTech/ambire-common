@@ -1,5 +1,7 @@
-import { formatUnits, ZeroAddress } from 'ethers'
+import { formatUnits, getAddress, ZeroAddress } from 'ethers'
+import { AccountOp } from 'libs/accountOp/accountOp'
 
+import { OLD_AND_CURRENT_LEGENDS_NFT_ADDRESSES } from '../../consts/legends'
 import { WARNINGS } from '../../consts/signAccountOp/errorHandling'
 import { Network } from '../../interfaces/network'
 import { Warning } from '../../interfaces/signAccountOp'
@@ -74,9 +76,16 @@ const getFeeTokenPriceUnavailableWarning = (
   return WARNINGS.feeTokenPriceUnavailable
 }
 
+const isLegendsMintNftOperation = (accountOp: AccountOp) => {
+  return accountOp.calls.some((call) =>
+    OLD_AND_CURRENT_LEGENDS_NFT_ADDRESSES.includes(getAddress(call.to))
+  )
+}
+
 export {
   getFeeSpeedIdentifier,
   getTokenUsdAmount,
   getSignificantBalanceDecreaseWarning,
-  getFeeTokenPriceUnavailableWarning
+  getFeeTokenPriceUnavailableWarning,
+  isLegendsMintNftOperation
 }

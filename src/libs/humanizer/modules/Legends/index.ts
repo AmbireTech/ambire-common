@@ -1,16 +1,12 @@
 import { getAddress, Interface, ZeroAddress } from 'ethers'
 
+import { OLD_AND_CURRENT_LEGENDS_NFT_ADDRESSES } from '../../../../consts/legends'
 import { AccountOp } from '../../../accountOp/accountOp'
 import { Legends } from '../../const/abis/Legends'
 import { HumanizerCallModule, IrCall } from '../../interfaces'
 import { getAction, getAddressVisualization, getImage, getLabel } from '../../utils'
 
 const ONCHAIN_TXNS_LEGENDS_ADDRESS = '0x1415926535897932384626433832795028841971'
-const OLD_AND_CURRENT_LEGENDS_NFT_ADDRESSES = [
-  '0x52d067EBB7b06F31AEB645Bd34f92c3Ac13a29ea',
-  '0xcfbAec203431045E9589F70375AC5F529EE55511',
-  '0xF51dF52d0a9BEeB7b6E4B6451e729108a115B863'
-]
 
 const legendsModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]) => {
   const iface = new Interface(Legends)
