@@ -518,9 +518,8 @@ export class SwapAndBridgeController extends EventEmitter {
     }
 
     try {
-      if (this.#toTokenListKey === null) throw new Error('Invalid token list key') // should never happen
-
-      const toTokenListInCache = this.#cachedToTokenLists[this.#toTokenListKey]
+      const toTokenListInCache =
+        this.#toTokenListKey && this.#cachedToTokenLists[this.#toTokenListKey]
       let upToDateToTokenList: SocketAPIToken[] = toTokenListInCache?.data || []
       const shouldFetchTokenList =
         !upToDateToTokenList.length ||
@@ -530,10 +529,11 @@ export class SwapAndBridgeController extends EventEmitter {
           fromChainId: this.fromChainId,
           toChainId: this.toChainId
         })
-        this.#cachedToTokenLists[this.#toTokenListKey] = {
-          lastFetched: now,
-          data: upToDateToTokenList
-        }
+        if (this.#toTokenListKey)
+          this.#cachedToTokenLists[this.#toTokenListKey] = {
+            lastFetched: now,
+            data: upToDateToTokenList
+          }
       }
 
       const toTokenNetwork = this.#networks.networks.find(
