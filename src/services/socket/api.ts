@@ -100,7 +100,9 @@ export class SocketAPI {
     const url = `${this.#baseUrl}/token-lists/to-token-list?${params.toString()}`
 
     let response = await this.#fetch(url, { headers: this.#headers })
-    const fallbackError = new Error('Failed to fetch to token list') // TODO: improve wording
+    const fallbackError = new Error(
+      'Unable to retrieve the list of supported receive tokens. Please reload the tab to try again.'
+    )
     if (!response.ok) throw fallbackError
 
     response = await response.json()

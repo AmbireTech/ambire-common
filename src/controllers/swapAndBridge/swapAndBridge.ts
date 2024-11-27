@@ -1,5 +1,6 @@
 import { formatUnits, isAddress, parseUnits } from 'ethers'
 
+import EmittableError from '../../classes/EmittableError'
 import { Storage } from '../../interfaces/storage'
 import {
   ActiveRoute,
@@ -15,6 +16,7 @@ import { getBridgeBanners } from '../../libs/banners/banners'
 import { TokenResult } from '../../libs/portfolio'
 import { getTokenAmount } from '../../libs/portfolio/helpers'
 import {
+  convertPortfolioTokenToSocketAPIToken,
   getActiveRoutesForAccount,
   getQuoteRouteSteps,
   sortTokenListResponse
@@ -168,10 +170,12 @@ export class SwapAndBridgeController extends EventEmitter {
 
     this.activeRoutes = await this.#storage.get('swapAndBridgeActiveRoutes', [])
 
-    this.#selectedAccount.onUpdate(() => {
+    this.#selectedAccount.onUpdate(async () => {
       if (this.#selectedAccount.portfolio.isAllReady) {
         this.isTokenListLoading = false
         this.updatePortfolioTokenList(this.#selectedAccount.portfolio.tokens)
+        // To token list includes selected account portfolio tokens, it should get an update too
+        await this.updateToTokenList(true)
       }
     })
     this.emitUpdate()
@@ -530,12 +534,31 @@ export class SwapAndBridgeController extends EventEmitter {
         !toTokenListInCache?.data ||
         now - (toTokenListInCache?.lastFetched || 0) >= TO_TOKEN_LIST_CACHE_THRESHOLD
       if (shouldFetchTokenList) {
-        const toTokenListResponse = await this.#socketAPI.getToTokenList({
+        const toTokenNetwork = this.#networks.networks.find(
+          (n) => Number(n.chainId) === this.toChainId
+        )
+        // should never happen
+        if (!toTokenNetwork)
+          throw new Error(
+            'Network configuration mismatch detected. Please try again later or contact support.'
+          )
+
+        const fetchedToTokenList = await this.#socketAPI.getToTokenList({
           fromChainId: this.fromChainId,
           toChainId: this.toChainId
         })
 
-        this.toTokenList = sortTokenListResponse(toTokenListResponse, this.portfolioTokenList)
+        const additionalTokensFromPortfolio = this.portfolioTokenList
+          .filter((t) => t.networkId === toTokenNetwork.id)
+          .filter((token) => !fetchedToTokenList.some((t) => t.address === token.address))
+          .map((t) => convertPortfolioTokenToSocketAPIToken(t, Number(toTokenNetwork.chainId)))
+
+        this.toTokenList = sortTokenListResponse(
+          [...fetchedToTokenList, ...additionalTokensFromPortfolio],
+          this.portfolioTokenList
+        )
+
+        this.toTokenList = sortTokenListResponse(fetchedToTokenList, this.portfolioTokenList)
       }
 
       if (!this.toSelectedToken) {
@@ -550,26 +573,28 @@ export class SwapAndBridgeController extends EventEmitter {
         }
       }
     } catch (error: any) {
-      this.emitError({
-        error,
-        level: 'major',
-        message:
-          'Unable to retrieve the list of supported receive tokens. Please reload the tab to try again.'
-      })
+      this.emitError({ error, level: 'major', message: error?.message })
     }
     this.updateToTokenListStatus = 'INITIAL'
     this.emitUpdate()
   }
 
   async #addToTokenByAddress(address: string) {
-    if (!this.toChainId) return
+    if (!this.toChainId) return // should never happen
     if (!isAddress(address)) return // no need to attempt with invalid addresses
 
     const isAlreadyInTheList = this.toTokenList.some((t) => t.address === address)
     if (isAlreadyInTheList) return
 
-    const token = await this.#socketAPI.getToken({ address, chainId: this.toChainId })
-    if (!token) return
+    let token
+    try {
+      token = await this.#socketAPI.getToken({ address, chainId: this.toChainId })
+
+      if (!token)
+        throw new Error('Token with this address is not supported by our service provider.')
+    } catch (error: any) {
+      throw new EmittableError({ error, level: 'minor', message: error?.message })
+    }
 
     const nextTokenList = [...this.toTokenList, token]
     this.toTokenList = sortTokenListResponse(nextTokenList, this.portfolioTokenList)
