@@ -58,7 +58,7 @@ export interface SignUserRequest {
 export interface DappUserRequest {
   id: string | number
   action: {
-    kind: Exclude<string, 'calls' | 'message' | 'typedMessage' | 'benzin'>
+    kind: Exclude<string, 'calls' | 'message' | 'typedMessage' | 'benzin' | 'switchAccount'>
     params: any
   }
   session: DappProviderRequest['session']

@@ -27,6 +27,7 @@ import { isAmbireV1LinkedAccount, isSmartAccount } from '../../libs/account/acco
 import { AccountOp, GasFeePayment, getSignableCalls } from '../../libs/accountOp/accountOp'
 import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 import { PaymasterErrorReponse, PaymasterSuccessReponse } from '../../libs/erc7677/types'
+import { getHumanReadableBroadcastError } from '../../libs/errorHumanizer'
 import {
   BundlerGasPrice,
   Erc4337GasLimits,
@@ -964,7 +965,7 @@ export class SignAccountOpController extends EventEmitter {
       // in that case, we don't do user operations
       isERC4337:
         this.paidBy === this.accountOp.accountAddr &&
-        isErc4337Broadcast(this.#network, accountState),
+        isErc4337Broadcast(this.account, this.#network, accountState),
       isGasTank: this.feeTokenResult.flags.onGasTank,
       inToken: this.feeTokenResult.address,
       feeTokenNetworkId: this.feeTokenResult.networkId,
@@ -1307,10 +1308,9 @@ export class SignAccountOpController extends EventEmitter {
       this.emitUpdate()
       return this.signedAccountOp
     } catch (error: any) {
-      console.error(error)
-      return this.#emitSigningErrorAndResetToReadyToSign(
-        'Internal error while signing the transaction. Please try again or contact support if the problem persists.'
-      )
+      const { message } = getHumanReadableBroadcastError(error)
+
+      this.#emitSigningErrorAndResetToReadyToSign(message)
     }
   }
 

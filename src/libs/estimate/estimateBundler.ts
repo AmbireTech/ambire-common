@@ -60,6 +60,7 @@ export async function bundlerEstimate(
   }
 
   const ambireAccount = new Interface(AmbireAccount.abi)
+  const isEdgeCase = !accountState.isErc4337Enabled && accountState.isDeployed
   userOp.callData = ambireAccount.encodeFunctionData('executeBySender', [
     getSignableCallsForBundlerEstimate(localOp)
   ])
@@ -84,10 +85,8 @@ export async function bundlerEstimate(
     userOp.paymasterData = paymasterEstimationData.paymasterData
   }
 
-  const shouldStateOverride = !accountState.isErc4337Enabled && accountState.isDeployed
-
   try {
-    const gasData = await Bundler.estimate(userOp, network, shouldStateOverride)
+    const gasData = await Bundler.estimate(userOp, network, isEdgeCase)
 
     return {
       gasUsed: BigInt(gasData.callGasLimit),

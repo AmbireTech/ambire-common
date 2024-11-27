@@ -100,7 +100,9 @@ export class SocketAPI {
     const url = `${this.#baseUrl}/token-lists/to-token-list?${params.toString()}`
 
     let response = await this.#fetch(url, { headers: this.#headers })
-    const fallbackError = new Error('Failed to fetch to token list') // TODO: improve wording
+    const fallbackError = new Error(
+      'Unable to retrieve the list of supported receive tokens. Please reload the tab to try again.'
+    )
     if (!response.ok) throw fallbackError
 
     response = await response.json()
@@ -127,6 +129,32 @@ export class SocketAPI {
     if (toChainId === 8453) result.unshift(AMBIRE_WALLET_TOKEN_ON_BASE)
 
     return result.map(normalizeIncomingSocketToken)
+  }
+
+  async getToken({
+    address,
+    chainId
+  }: {
+    address: string
+    chainId: number
+  }): Promise<SocketAPIToken | null> {
+    const params = new URLSearchParams({
+      address: address.toString(),
+      chainId: chainId.toString()
+    })
+    const url = `${this.#baseUrl}/supported/token-support?${params.toString()}`
+
+    let response = await this.#fetch(url, { headers: this.#headers })
+    const fallbackError = new Error('Failed to retrieve token information by address.')
+    if (!response.ok) throw fallbackError
+
+    response = await response.json()
+    if (!response.success) throw fallbackError
+    await this.updateHealthIfNeeded()
+
+    if (!response.result.isSupported || !response.result.token) return null
+
+    return normalizeIncomingSocketToken(response.result.token)
   }
 
   async quote({

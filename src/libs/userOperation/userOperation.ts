@@ -1,4 +1,4 @@
-import { AbiCoder, concat, hexlify, Interface, keccak256, toBeHex } from 'ethers'
+import { AbiCoder, concat, getAddress, hexlify, Interface, keccak256, toBeHex } from 'ethers'
 import { Network } from 'interfaces/network'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
@@ -147,7 +147,11 @@ export function shouldUsePaymaster(network: Network): boolean {
   return !!network.erc4337.hasPaymaster
 }
 
-export function isErc4337Broadcast(network: Network, accountState: AccountOnchainState): boolean {
+export function isErc4337Broadcast(
+  acc: Account,
+  network: Network,
+  accountState: AccountOnchainState
+): boolean {
   // we can broadcast a 4337 if:
   // - the account is not deployed (we do deployAndExecute in the factoryData)
   // - the entry point is enabled (standard ops)
@@ -155,7 +159,13 @@ export function isErc4337Broadcast(network: Network, accountState: AccountOnchai
   const canWeBroadcast4337 =
     accountState.isErc4337Enabled || shouldUsePaymaster(network) || !accountState.isDeployed
 
-  return network.erc4337.enabled && canWeBroadcast4337 && accountState.isV2
+  return (
+    network.erc4337.enabled &&
+    canWeBroadcast4337 &&
+    accountState.isV2 &&
+    !!acc.creation &&
+    getAddress(acc.creation.factoryAddr) === AMBIRE_ACCOUNT_FACTORY
+  )
 }
 
 // for special cases where we broadcast a 4337 operation with an EOA,
@@ -192,6 +202,7 @@ export function shouldAskForEntryPointAuthorization(
     account.creation &&
     account.creation.factoryAddr === AMBIRE_ACCOUNT_FACTORY &&
     accountState.isV2 &&
+    !accountState.isDeployed &&
     network.erc4337.enabled &&
     !accountState.isErc4337Enabled
   )

@@ -18,12 +18,13 @@ interface FeeOptions {
 }
 
 export interface NetworkInfo {
+  force4337?: boolean
   chainId: bigint
   isSAEnabled: boolean
   hasSingleton: boolean
   isOptimistic: boolean
   rpcNoStateOverride: boolean
-  erc4337: { enabled: boolean; hasPaymaster: boolean; hasBundlerSupport?: boolean }
+  erc4337: Erc4337settings
   areContractsDeployed: boolean
   feeOptions: { is1559: boolean }
   platformId: string
@@ -74,6 +75,8 @@ export interface Network {
   blockGasLimit?: bigint
   oldNativeAssetSymbols?: string[]
   disableEstimateGas?: boolean
+  force4337?: boolean
+  allowForce4337?: boolean
 }
 
 export interface AddNetworkRequestParams {
