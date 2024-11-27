@@ -57,6 +57,10 @@ export function getChain(chainId: bigint): HumanizerVisualization {
   return { type: 'chain', id: randomId(), chainId }
 }
 
+export function getText(text:string): HumanizerVisualization {
+  return { type:'text', content: text,  id: randomId()}
+}
+
 export function getOnBehalfOf(onBehalfOf: string, sender: string): HumanizerVisualization[] {
   return onBehalfOf.toLowerCase() !== sender.toLowerCase()
     ? [getLabel('on behalf of'), getAddressVisualization(onBehalfOf)]
@@ -77,7 +81,7 @@ export function getDeadlineText(deadline: bigint): string {
   if (diff < 0 && diff > -minute * 2n) return 'expired just now'
   if (diff < 0) return 'already expired'
   if (diff < minute) return 'expires in less than a minute'
-  if (diff < 10n * minute) return `expires in ${Math.floor(Number(diff / minute))} minutes`
+  if (diff < 30n * minute) return `expires in ${Math.floor(Number(diff / minute))} minutes`
   return `valid until ${new Date(Number(deadline)).toLocaleString()}`
 }
 
@@ -147,6 +151,7 @@ export function getKnownName(
 ): string | undefined {
   return humanizerMeta?.knownAddresses?.[address.toLowerCase()]?.name
 }
+
 
 export const EMPTY_HUMANIZER_META = { abis: { NO_ABI: {} }, knownAddresses: {} }
 

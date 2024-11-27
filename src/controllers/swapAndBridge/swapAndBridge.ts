@@ -112,6 +112,8 @@ export class SwapAndBridgeController extends EventEmitter {
 
   portfolioTokenList: TokenResult[] = []
 
+  isTokenListLoading: boolean = false
+
   toTokenList: SocketAPIToken[] = []
 
   routePriority: 'output' | 'time' = 'output'
@@ -150,7 +152,10 @@ export class SwapAndBridgeController extends EventEmitter {
     this.activeRoutes = await this.#storage.get('swapAndBridgeActiveRoutes', [])
 
     this.#selectedAccount.onUpdate(() => {
-      this.updatePortfolioTokenList(this.#selectedAccount.portfolio.tokens)
+      if (this.#selectedAccount.portfolio.isAllReady) {
+        this.isTokenListLoading = false
+        this.updatePortfolioTokenList(this.#selectedAccount.portfolio.tokens)
+      }
     })
     this.emitUpdate()
   }
@@ -807,6 +812,13 @@ export class SwapAndBridgeController extends EventEmitter {
     this.emitUpdate()
   }
 
+  onAccountChange() {
+    this.portfolioTokenList = []
+    this.isTokenListLoading = true
+
+    this.emitUpdate()
+  }
+
   #getIsFormValidToFetchQuote() {
     return (
       this.fromChainId &&
@@ -831,7 +843,11 @@ export class SwapAndBridgeController extends EventEmitter {
 
     // Swap banners aren't generated because swaps are completed instantly,
     // thus the activity banner on broadcast is sufficient
-    return getBridgeBanners(activeRoutesForSelectedAccount, accountOpActions)
+    return getBridgeBanners(
+      activeRoutesForSelectedAccount,
+      accountOpActions,
+      this.#networks.networks
+    )
   }
 
   toJSON() {

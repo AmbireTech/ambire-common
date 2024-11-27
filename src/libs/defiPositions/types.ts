@@ -23,6 +23,11 @@ export interface PositionAsset {
   additionalData?: {
     [key: string]: any
   }
+  protocolAsset?: {
+    address: string
+    symbol: string
+    decimals: number
+  }
 }
 
 export interface DeFiPositionsState {

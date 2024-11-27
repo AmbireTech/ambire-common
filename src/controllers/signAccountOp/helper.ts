@@ -7,7 +7,7 @@ import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 import { FeePaymentOption } from '../../libs/estimate/interfaces'
 import { Price, TokenResult } from '../../libs/portfolio'
 import { getAccountPortfolioTotal } from '../../libs/portfolio/helpers'
-import { PortfolioControllerState } from '../../libs/portfolio/interfaces'
+import { AccountState } from '../../libs/portfolio/interfaces'
 
 function getFeeSpeedIdentifier(
   option: FeePaymentOption,
@@ -38,13 +38,12 @@ function getTokenUsdAmount(token: TokenResult, gasAmount: bigint): string {
 }
 
 function getSignificantBalanceDecreaseWarning(
-  latest: PortfolioControllerState,
-  pending: PortfolioControllerState,
-  networkId: Network['id'],
-  accountAddr: string
+  latest: AccountState,
+  pending: AccountState,
+  networkId: Network['id']
 ): Warning | null {
-  const latestNetworkData = latest?.[accountAddr]?.[networkId]
-  const pendingNetworkData = pending?.[accountAddr]?.[networkId]
+  const latestNetworkData = latest?.[networkId]
+  const pendingNetworkData = pending?.[networkId]
   const canDetermineIfBalanceWillDecrease =
     latestNetworkData &&
     !latestNetworkData.isLoading &&
@@ -52,7 +51,7 @@ function getSignificantBalanceDecreaseWarning(
     !pendingNetworkData.isLoading
 
   if (canDetermineIfBalanceWillDecrease) {
-    const latestTotal = getAccountPortfolioTotal(latest[accountAddr], ['rewards', 'gasTank'])
+    const latestTotal = getAccountPortfolioTotal(latest, ['rewards', 'gasTank'])
     const latestOnNetwork = latestNetworkData.result?.total.usd || 0
     const pendingOnNetwork = pendingNetworkData.result?.total.usd || 0
     const willBalanceDecreaseByMoreThan10Percent =

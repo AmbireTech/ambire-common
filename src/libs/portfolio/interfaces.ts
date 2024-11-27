@@ -27,6 +27,7 @@ export type TokenResult = Omit<CustomToken, 'standard'> & {
     rewardsType: 'wallet-vesting' | 'wallet-rewards' | null
     canTopUpGasTank: boolean
     isFeeToken: boolean
+    isDefiToken?: boolean
   }
 }
 
@@ -82,6 +83,7 @@ export interface PortfolioLibGetResult {
   priceUpdateTime: number
   priceCache: PriceCache
   tokens: TokenResult[]
+  feeTokens: TokenResult[]
   tokenErrors: { error: string; address: string }[]
   collections: CollectionResult[]
   hintsFromExternalAPI: Hints | null
@@ -164,6 +166,14 @@ export type PinnedTokens = {
   onGasTank: boolean
   accountId?: AccountId
 }[]
+
+export type TemporaryTokens = {
+  [networkId: NetworkId]: {
+    isLoading: boolean
+    errors: { error: string; address: string }[]
+    result: { tokens: PortfolioLibGetResult['tokens'] }
+  }
+}
 
 export interface GetOptions {
   baseCurrency: string
