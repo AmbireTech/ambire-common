@@ -321,7 +321,7 @@ export class SelectedAccountController extends EventEmitter {
     }
   }
 
-  get oldAccountBanner(): Banner[] {
+  get deprecatedSmartAccountBanner(): Banner[] {
     if (!this.account || !isSmartAccount(this.account)) return []
 
     if (
@@ -343,8 +343,8 @@ export class SelectedAccountController extends EventEmitter {
         accountAddr: this.account.addr,
         type: 'warning',
         category: 'old-account',
-        title: 'Old Ambire Accoount',
-        text: "The account you are using is an old Ambire Account that was intended for testing the extension only. It won't be supported in the future. Please migrate to another by adding a new smart account in the extension",
+        title: 'Old Ambire Account',
+        text: "The account you are using is an old Ambire Account that was intended for testing the extension only. Fee options aren't available on custom networks. It won't be supported in the future. Please migrate to another by creating a new smart account in the extension or contact the team for support",
         actions: []
       }
     ]
@@ -354,7 +354,7 @@ export class SelectedAccountController extends EventEmitter {
     return {
       ...this,
       ...super.toJSON(),
-      oldAccountBanner: this.oldAccountBanner,
+      deprecatedSmartAccountBanner: this.deprecatedSmartAccountBanner,
       areDefiPositionsLoading: this.areDefiPositionsLoading
     }
   }
