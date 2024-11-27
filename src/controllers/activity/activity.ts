@@ -387,7 +387,7 @@ export class ActivityController extends EventEmitter {
                 accOp.gasFeePayment &&
                 accountOp.gasFeePayment &&
                 accOp.gasFeePayment.paidBy === accountOp.gasFeePayment.paidBy &&
-                accOp.nonce === accountOp.nonce
+                accOp.nonce.toString() === accountOp.nonce.toString()
             )
             const confirmedSameNonceTxns = sameNonceTxns.find(
               (accOp) =>
