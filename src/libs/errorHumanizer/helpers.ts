@@ -20,8 +20,6 @@ function getGenericMessageFromType(
   switch (errorType) {
     case ErrorType.RelayerError:
       return `${messagePrefix} of an Ambire Relayer error.${messageSuffix}`
-    case ErrorType.HardwareWalletRejectedError:
-      return reason ?? 'Rejected by your hardware wallet device'
     case ErrorType.PaymasterError:
       return reasonString === ''
         ? PAYMASTER_DOWN_ERROR

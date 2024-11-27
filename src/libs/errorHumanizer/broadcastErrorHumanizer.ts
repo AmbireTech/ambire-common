@@ -1,4 +1,5 @@
 import EmittableError from '../../classes/EmittableError'
+import ExternalSignerError from '../../classes/ExternalSignerError'
 import { decodeError } from '../errorDecoder'
 import { BROADCAST_ERRORS } from './errors'
 import { getHumanReadableErrorMessage } from './helpers'
@@ -9,7 +10,7 @@ const LAST_RESORT_ERROR_MESSAGE =
 const MESSAGE_PREFIX = 'The transaction cannot be broadcast because'
 
 export function getHumanReadableBroadcastError(e: Error) {
-  if (e instanceof EmittableError) {
+  if (e instanceof EmittableError || e instanceof ExternalSignerError) {
     return e
   }
   const decodedError = decodeError(e)
