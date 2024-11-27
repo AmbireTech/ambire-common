@@ -10,8 +10,10 @@ import { UserOperation } from '../../libs/userOperation/types'
 // access to app properties like relayerUrl and Fetch
 // so we init the PaymasterFactory in the main controller and use it
 // throught the app as a singleton
-class PaymasterFactory {
+export class PaymasterFactory {
   callRelayer: Function | undefined = undefined
+
+  failedSponsorshipIds: number[] = []
 
   init(relayerUrl: string, fetch: Fetch) {
     this.callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
@@ -24,6 +26,8 @@ class PaymasterFactory {
     await paymaster.init(op, userOp, network)
     return paymaster
   }
-}
 
-export const paymasterFactory = new PaymasterFactory()
+  recordFailedSponsorship(id: number) {
+    this.failedSponsorshipIds.push(id)
+  }
+}

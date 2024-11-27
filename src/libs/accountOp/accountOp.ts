@@ -27,6 +27,7 @@ export interface GasFeePayment {
   simulatedGasLimit: bigint
   gasPrice: bigint
   maxPriorityFeePerGas?: bigint
+  isSponsored?: boolean
 }
 
 export enum AccountOpStatus {

@@ -3,6 +3,7 @@ export interface PaymasterService {
   context: {
     policyId: string
   }
+  id: number
 }
 
 export interface PaymasterCapabilities {
@@ -31,9 +32,4 @@ export interface PaymasterErrorReponse {
   success: boolean
   message: string
   error: Error
-}
-
-export type GetPaymasterDataResult = {
-  paymaster?: string
-  paymasterData?: string
 }

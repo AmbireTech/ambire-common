@@ -19,7 +19,9 @@ export function getPaymasterService(
   if (!capabilities || !capabilities.paymasterService || !capabilities.paymasterService[chainId])
     return undefined
 
-  return capabilities.paymasterService[chainId]
+  const paymasterService = capabilities.paymasterService[chainId]
+  paymasterService.id = new Date().getTime()
+  return paymasterService
 }
 
 export function getPaymasterStubData(
@@ -42,10 +44,12 @@ export function getPaymasterData(
   network: Network
 ): Promise<PaymasterData> {
   const provider = getRpcProvider([service.url], network.chainId)
-  return provider.send('pm_getPaymasterData', [
+  const data = provider.send('pm_getPaymasterData', [
     getCleanUserOp(userOp)[0],
     ERC_4337_ENTRYPOINT,
     toBeHex(network.chainId.toString()),
     service.context
   ])
+  throw new Error('no, homie')
+  return data
 }

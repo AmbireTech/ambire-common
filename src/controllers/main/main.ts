@@ -86,7 +86,7 @@ import {
 } from '../../libs/userOperation/userOperation'
 import bundler from '../../services/bundlers'
 import { Bundler } from '../../services/bundlers/bundler'
-import { paymasterFactory } from '../../services/paymaster/PaymasterFactory'
+import { paymasterFactory } from '../../services/paymaster'
 import { SocketAPI } from '../../services/socket/api'
 import { getIsViewOnly } from '../../utils/accounts'
 import shortenAddress from '../../utils/shortenAddress'

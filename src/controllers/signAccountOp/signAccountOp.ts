@@ -1261,6 +1261,7 @@ export class SignAccountOpController extends EventEmitter {
 
             userOperation.paymaster = paymasterData.paymaster
             userOperation.paymasterData = paymasterData.paymasterData
+            this.accountOp.gasFeePayment.isSponsored = paymaster.isSponsored()
           } else {
             const errorResponse = response as PaymasterErrorReponse
             this.emitError({
@@ -1271,7 +1272,7 @@ export class SignAccountOpController extends EventEmitter {
             this.status = { type: SigningStatus.ReadyToSign }
             this.emitUpdate()
             this.#reEstimate()
-            return await Promise.reject(this.status)
+            return
           }
         }
 
