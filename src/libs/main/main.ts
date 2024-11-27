@@ -47,7 +47,7 @@ export const buildSwitchAccountUserRequest = ({
   const userRequestId = nextUserRequest.id
 
   return {
-    id: new Date().getTime(),
+    id: Number(nextUserRequest.id) + 222, // Otherwise the ids will be the same
     action: {
       kind: 'switchAccount',
       params: {

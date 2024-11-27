@@ -1154,7 +1154,6 @@ export class MainController extends EventEmitter {
       throw ethErrors.provider.chainDisconnected('Transaction failed - unknown network')
     }
 
-    await this.addUserRequest(userRequest, false)
     await this.addUserRequest(
       buildSwitchAccountUserRequest({
         nextUserRequest: userRequest,
@@ -1163,8 +1162,10 @@ export class MainController extends EventEmitter {
         session: dappPromise.session,
         rejectUserRequest: this.rejectUserRequest.bind(this)
       }),
-      true
+      true,
+      'open'
     )
+    await this.addUserRequest(userRequest, false, 'queue')
   }
 
   async buildTransferUserRequest(
