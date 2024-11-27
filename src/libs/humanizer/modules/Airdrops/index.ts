@@ -1,4 +1,3 @@
-/* eslint-disable no-await-in-loop */
 import { Interface } from 'ethers'
 
 import { AccountOp } from '../../../accountOp/accountOp'
