@@ -555,7 +555,7 @@ export const getNetworksWithDeFiPositionsErrorBanners = ({
   return banners
 }
 
-export const getFirstCashbackBanner = ({
+export const getFirstCashbackBanners = ({
   shouldShowConfetti
 }: {
   shouldShowConfetti: ShouldShowConfettiBanner
