@@ -567,12 +567,11 @@ export const getFirstCashbackBanners = ({
   const shouldShowConfettiBanner = shouldShowConfetti[selectedAccountAddr]
 
   if (shouldShowConfettiBanner) {
-    // TODO: Fix the texts
     banners.push({
       id: `${selectedAccountAddr}-first-cashback-banner-banner`,
       type: 'info',
-      title: 'Cashback',
-      text: "You've received your first cashback",
+      title: "You've got cashback!",
+      text: 'You just received your first cashback from paying gas with smart accounts.',
       actions: [
         {
           label: 'Open',
