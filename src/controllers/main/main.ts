@@ -2159,21 +2159,14 @@ export class MainController extends EventEmitter {
         }
 
         const signedTxn = await signer.signRawTransaction(rawTxn)
-        try {
-          const broadcastRes = await provider.broadcastTransaction(signedTxn)
-          transactionRes = {
-            txnId: broadcastRes.hash,
-            nonce: broadcastRes.nonce,
-            identifiedBy: {
-              type: 'Transaction',
-              identifier: broadcastRes.hash
-            }
+        const broadcastRes = await provider.broadcastTransaction(signedTxn)
+        transactionRes = {
+          txnId: broadcastRes.hash,
+          nonce: broadcastRes.nonce,
+          identifiedBy: {
+            type: 'Transaction',
+            identifier: broadcastRes.hash
           }
-        } catch (error: any) {
-          return this.#throwBroadcastAccountOp({
-            error,
-            accountState
-          })
         }
       } catch (error: any) {
         return this.#throwBroadcastAccountOp({ error, accountState })
@@ -2196,6 +2189,7 @@ export class MainController extends EventEmitter {
         const missingKeyAddr = shortenAddress(accountOp.gasFeePayment!.paidBy, 13)
         const accAddr = shortenAddress(accountOp.accountAddr, 13)
         const message = `Key with address ${missingKeyAddr} for account with address ${accAddr} not found.`
+
         return this.#throwBroadcastAccountOp({ message, accountState })
       }
 
@@ -2248,18 +2242,14 @@ export class MainController extends EventEmitter {
         }
 
         const signedTxn = await signer.signRawTransaction(rawTxn)
-        try {
-          const broadcastRes = await provider.broadcastTransaction(signedTxn)
-          transactionRes = {
-            txnId: broadcastRes.hash,
-            nonce: broadcastRes.nonce,
-            identifiedBy: {
-              type: 'Transaction',
-              identifier: broadcastRes.hash
-            }
+        const broadcastRes = await provider.broadcastTransaction(signedTxn)
+        transactionRes = {
+          txnId: broadcastRes.hash,
+          nonce: broadcastRes.nonce,
+          identifiedBy: {
+            type: 'Transaction',
+            identifier: broadcastRes.hash
           }
-        } catch (error: any) {
-          return this.#throwBroadcastAccountOp({ error, accountState })
         }
       } catch (error: any) {
         return this.#throwBroadcastAccountOp({ error, accountState })
@@ -2391,7 +2381,7 @@ export class MainController extends EventEmitter {
   }
 
   #throwBroadcastAccountOp({
-    message: _msg,
+    message: humanReadableMessage,
     error: _err,
     accountState,
     isRelayer = false
@@ -2401,40 +2391,30 @@ export class MainController extends EventEmitter {
     accountState?: AccountOnchainState
     isRelayer?: boolean
   }) {
-    let message = _msg || _err?.message || 'Unable to broadcast the transaction.'
+    let message = humanReadableMessage || _err?.message
 
     if (message) {
-      // @TODO: Consider replacing with getHumanReadableBroadcastError
       if (message.includes('pimlico_getUserOperationGasPrice')) {
-        // sometimes the bundler returns an error of low maxFeePerGas
-        // in that case, recalculate prices and prompt the user to try again
         message = 'Fee too low. Please select a higher transaction speed and try again'
         this.updateSignAccountOpGasPrice()
-      } else if (
-        message.includes('Transaction underpriced. Please select a higher fee and try again')
-      ) {
-        // this error comes from the relayer when using the paymaster service.
-        // as it could be from lower PVG, we should reestimate as well
-        message = 'Fee too low. Please select a higher transaction speed and try again'
-        this.updateSignAccountOpGasPrice()
-        this.estimateSignAccountOp()
       } else if (message.includes('INSUFFICIENT_PRIVILEGE')) {
         message = `Signer key not supported on this network.${
           !accountState?.isV2
             ? 'You can add/change signers from the web wallet or contact support.'
             : 'Please contact support.'
         }`
-      } else if (
-        message.includes('Ambire relayer') ||
-        (isRelayer && message.includes('Failed to fetch'))
-      ) {
+      } else if (message.includes('Transaction underpriced')) {
+        message = 'Fee too low. Please select е higher transaction speed and try again'
+        this.updateSignAccountOpGasPrice()
+        this.estimateSignAccountOp()
+      } else if (message.includes('Failed to fetch') && isRelayer) {
         message =
           'Currently, the Ambire relayer seems to be down. Please try again a few moments later or broadcast with a Basic Account'
-      } else {
-        const { message: msg } = getHumanReadableBroadcastError(_err || new Error(message))
-
-        message = msg
       }
+    } else if (_err) {
+      message = getHumanReadableBroadcastError(_err).message
+    } else {
+      message = 'Unable to broadcast the transaction. Please try again or contact support.'
     }
 
     const error = _err || new Error(message)
