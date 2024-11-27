@@ -5,6 +5,7 @@ import { Network } from '../../interfaces/network'
 import { Storage } from '../../interfaces/storage'
 import {
   ActiveRoute,
+  CachedSupportedChains,
   CachedTokenListKey,
   CachedToTokenLists,
   SocketAPIQuote,
@@ -139,10 +140,11 @@ export class SwapAndBridgeController extends EventEmitter {
 
   toTokenList: SocketAPIToken[] = []
 
-  #supportedChains: { lastFetched: number; data: SocketAPISupportedChain[] } = {
-    lastFetched: 0,
-    data: []
-  }
+  /**
+   * Similar to the `#cachedToTokenLists`, this helps in avoiding repeated API
+   * calls to fetch the supported chains from our service provider.
+   */
+  #cachedSupportedChains: CachedSupportedChains = { lastFetched: 0, data: [] }
 
   routePriority: 'output' | 'time' = 'output'
 
@@ -318,14 +320,14 @@ export class SwapAndBridgeController extends EventEmitter {
 
   #fetchSupportedChainsIfNeeded = async () => {
     const shouldNotReFetchSupportedChains =
-      this.#supportedChains?.data &&
-      Date.now() - (this.#supportedChains?.lastFetched || 0) < SUPPORTED_CHAINS_CACHE_THRESHOLD
+      this.#cachedSupportedChains.data.length &&
+      Date.now() - this.#cachedSupportedChains.lastFetched < SUPPORTED_CHAINS_CACHE_THRESHOLD
     if (shouldNotReFetchSupportedChains) return
 
     try {
       const supportedChainsResponse = await this.#socketAPI.getSupportedChains()
 
-      this.#supportedChains = {
+      this.#cachedSupportedChains = {
         lastFetched: Date.now(),
         data: supportedChainsResponse.filter((c) => c.sendingEnabled && c.receivingEnabled)
       }
@@ -337,7 +339,7 @@ export class SwapAndBridgeController extends EventEmitter {
   }
 
   get supportedChainIds(): Network['chainId'][] {
-    return this.#supportedChains.data.map((c) => BigInt(c.chainId))
+    return this.#cachedSupportedChains.data.map((c) => BigInt(c.chainId))
   }
 
   get #toTokenListKey(): CachedTokenListKey | null {

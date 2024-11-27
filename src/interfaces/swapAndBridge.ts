@@ -213,6 +213,8 @@ export type SocketAPISupportedChain = {
   explorers: string[]
 }
 
+export type CachedSupportedChains = { lastFetched: number; data: SocketAPISupportedChain[] }
+
 type StringifiedChainId = string
 export type CachedTokenListKey = `from-${StringifiedChainId}-to-${StringifiedChainId}`
 export type CachedToTokenLists = {
