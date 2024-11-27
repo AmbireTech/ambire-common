@@ -464,6 +464,7 @@ export class SwapAndBridgeController extends EventEmitter {
     this.toSelectedToken = null
     this.quote = null
     this.portfolioTokenList = []
+    this.toTokenList = []
 
     if (shouldEmit) this.emitUpdate()
   }
@@ -522,6 +523,7 @@ export class SwapAndBridgeController extends EventEmitter {
     if (!this.fromChainId || !this.toChainId) return
 
     if (shouldReset) {
+      this.toTokenList = []
       this.toSelectedToken = null
       this.emitUpdate()
     }
@@ -530,36 +532,35 @@ export class SwapAndBridgeController extends EventEmitter {
       if (this.toTokenListKey === null) throw new Error('Invalid token list key') // should never happen
 
       const toTokenListInCache = this.#toTokenLists[this.toTokenListKey]
+      let upToDateToTokenList: SocketAPIToken[] = toTokenListInCache?.data || []
       const shouldFetchTokenList =
         !toTokenListInCache?.data ||
         now - (toTokenListInCache?.lastFetched || 0) >= TO_TOKEN_LIST_CACHE_THRESHOLD
       if (shouldFetchTokenList) {
-        const toTokenNetwork = this.#networks.networks.find(
-          (n) => Number(n.chainId) === this.toChainId
-        )
-        // should never happen
-        if (!toTokenNetwork)
-          throw new Error(
-            'Network configuration mismatch detected. Please try again later or contact support.'
-          )
-
-        const fetchedToTokenList = await this.#socketAPI.getToTokenList({
+        upToDateToTokenList = await this.#socketAPI.getToTokenList({
           fromChainId: this.fromChainId,
           toChainId: this.toChainId
         })
+      }
 
-        const additionalTokensFromPortfolio = this.portfolioTokenList
-          .filter((t) => t.networkId === toTokenNetwork.id)
-          .filter((token) => !fetchedToTokenList.some((t) => t.address === token.address))
-          .map((t) => convertPortfolioTokenToSocketAPIToken(t, Number(toTokenNetwork.chainId)))
-
-        this.toTokenList = sortTokenListResponse(
-          [...fetchedToTokenList, ...additionalTokensFromPortfolio],
-          this.portfolioTokenList
+      const toTokenNetwork = this.#networks.networks.find(
+        (n) => Number(n.chainId) === this.toChainId
+      )
+      // should never happen
+      if (!toTokenNetwork)
+        throw new Error(
+          'Network configuration mismatch detected. Please try again later or contact support.'
         )
 
-        this.toTokenList = sortTokenListResponse(fetchedToTokenList, this.portfolioTokenList)
-      }
+      const additionalTokensFromPortfolio = this.portfolioTokenList
+        .filter((t) => t.networkId === toTokenNetwork.id)
+        .filter((token) => !upToDateToTokenList.some((t) => t.address === token.address))
+        .map((t) => convertPortfolioTokenToSocketAPIToken(t, Number(toTokenNetwork.chainId)))
+
+      this.toTokenList = sortTokenListResponse(
+        [...upToDateToTokenList, ...additionalTokensFromPortfolio],
+        this.portfolioTokenList
+      )
 
       if (!this.toSelectedToken) {
         if (addressToSelect) {
