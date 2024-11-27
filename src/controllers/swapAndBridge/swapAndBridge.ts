@@ -4,6 +4,8 @@ import EmittableError from '../../classes/EmittableError'
 import { Storage } from '../../interfaces/storage'
 import {
   ActiveRoute,
+  CachedTokenListKey,
+  CachedToTokenLists,
   SocketAPIQuote,
   SocketAPIRoute,
   SocketAPISendTransactionRequest,
@@ -45,6 +47,8 @@ export enum SwapAndBridgeFormStatus {
 const STATUS_WRAPPED_METHODS = {
   addToTokenByAddress: 'INITIAL'
 } as const
+
+const TO_TOKEN_LIST_CACHE_THRESHOLD = 1000 * 60 * 60 * 4 // 4 hours
 
 /**
  * The Swap and Bridge controller is responsible for managing the state and
@@ -121,6 +125,14 @@ export class SwapAndBridgeController extends EventEmitter {
   portfolioTokenList: TokenResult[] = []
 
   isTokenListLoading: boolean = false
+
+  /**
+   * Needed to efficiently manage and cache token lists for different chain
+   * combinations (fromChainId and toChainId) without having to fetch them
+   * repeatedly from the API. Moreover, this way tokens added to a list by
+   * address are also cached for sometime.
+   */
+  #cachedToTokenLists: CachedToTokenLists = {}
 
   toTokenList: SocketAPIToken[] = []
 
@@ -292,6 +304,12 @@ export class SwapAndBridgeController extends EventEmitter {
 
   get isHealthy() {
     return this.#socketAPI.isHealthy
+  }
+
+  get #toTokenListKey(): CachedTokenListKey | null {
+    if (this.fromChainId === null || this.toChainId === null) return null
+
+    return `from-${this.fromChainId}-to-${this.toChainId}`
   }
 
   unloadScreen(sessionId: string) {
@@ -500,14 +518,27 @@ export class SwapAndBridgeController extends EventEmitter {
     }
 
     try {
-      const fetchedToTokenList = await this.#socketAPI.getToTokenList({
-        fromChainId: this.fromChainId,
-        toChainId: this.toChainId
-      })
+      const toTokenListInCache =
+        this.#toTokenListKey && this.#cachedToTokenLists[this.#toTokenListKey]
+      let upToDateToTokenList: SocketAPIToken[] = toTokenListInCache?.data || []
+      const shouldFetchTokenList =
+        !upToDateToTokenList.length ||
+        now - (toTokenListInCache?.lastFetched || 0) >= TO_TOKEN_LIST_CACHE_THRESHOLD
+      if (shouldFetchTokenList) {
+        upToDateToTokenList = await this.#socketAPI.getToTokenList({
+          fromChainId: this.fromChainId,
+          toChainId: this.toChainId
+        })
+        if (this.#toTokenListKey)
+          this.#cachedToTokenLists[this.#toTokenListKey] = {
+            lastFetched: now,
+            data: upToDateToTokenList
+          }
+      }
+
       const toTokenNetwork = this.#networks.networks.find(
         (n) => Number(n.chainId) === this.toChainId
       )
-
       // should never happen
       if (!toTokenNetwork)
         throw new Error(
@@ -516,11 +547,11 @@ export class SwapAndBridgeController extends EventEmitter {
 
       const additionalTokensFromPortfolio = this.portfolioTokenList
         .filter((t) => t.networkId === toTokenNetwork.id)
-        .filter((token) => !fetchedToTokenList.some((t) => t.address === token.address))
+        .filter((token) => !upToDateToTokenList.some((t) => t.address === token.address))
         .map((t) => convertPortfolioTokenToSocketAPIToken(t, Number(toTokenNetwork.chainId)))
 
       this.toTokenList = sortTokenListResponse(
-        [...fetchedToTokenList, ...additionalTokensFromPortfolio],
+        [...upToDateToTokenList, ...additionalTokensFromPortfolio],
         this.portfolioTokenList
       )
 
@@ -558,6 +589,10 @@ export class SwapAndBridgeController extends EventEmitter {
     } catch (error: any) {
       throw new EmittableError({ error, level: 'minor', message: error?.message })
     }
+
+    if (this.#toTokenListKey)
+      // Cache for sometime the tokens added by address
+      this.#cachedToTokenLists[this.#toTokenListKey]?.data.push(token)
 
     const nextTokenList = [...this.toTokenList, token]
     this.toTokenList = sortTokenListResponse(nextTokenList, this.portfolioTokenList)
