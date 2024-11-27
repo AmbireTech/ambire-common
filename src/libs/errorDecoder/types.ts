@@ -14,7 +14,7 @@ export enum ErrorType {
   /** Error that cannot be decoded */
   UnknownError = 'UnknownError',
   /** Error due to the user rejecting a transaction */
-  UserRejectionHandler = 'UserRejectionHandler',
+  UserRejectionError = 'UserRejectionError',
   /** Error due to an inner call failure during estimation */
   InnerCallFailureError = 'InnerCallFailureError'
 }

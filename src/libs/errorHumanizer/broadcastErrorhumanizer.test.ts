@@ -1,5 +1,6 @@
 import { describe, expect } from '@jest/globals'
 
+import { RelayerPaymasterError } from '../errorDecoder/customErrors'
 import { getHumanReadableBroadcastError } from './index'
 
 const MockRpcError = class extends Error {
@@ -29,6 +30,20 @@ describe('Broadcast errors are humanized', () => {
 
     expect(humanizedError.message).toBe(
       'The transaction cannot be broadcast because the selected fee is too low. Please select a higher transaction speed and try again.'
+    )
+  })
+  it('Transaction underpriced', () => {
+    const error = new RelayerPaymasterError({
+      errorState: [
+        {
+          message: 'Error: Transaction underpriced. Please select a higher fee and try again.'
+        }
+      ]
+    })
+    const humanizedError = getHumanReadableBroadcastError(error)
+
+    expect(humanizedError.message).toBe(
+      'The transaction cannot be broadcast because it is underpriced. Please select a higher transaction speed and try again.'
     )
   })
 })

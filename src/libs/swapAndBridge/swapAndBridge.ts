@@ -36,6 +36,21 @@ export const sortTokenListResponse = (
   )
 }
 
+export const convertPortfolioTokenToSocketAPIToken = (
+  portfolioToken: TokenResult,
+  chainId: number
+): SocketAPIToken => {
+  const { address, decimals, symbol } = portfolioToken
+  // Although name and symbol will be the same, it's better than having "No name" in the UI (valid use-case)
+  const name = symbol
+  // Fine for not having both icon props, because this would fallback to the
+  // icon discovery method used for the portfolio tokens
+  const icon = ''
+  const logoURI = ''
+
+  return { address, chainId, decimals, symbol, name, icon, logoURI }
+}
+
 const getQuoteRouteSteps = (userTxs: SocketAPIUserTx[]) => {
   return userTxs.reduce((stepsAcc: SocketAPIStep[], tx) => {
     if (tx.userTxType === 'fund-movr') {

@@ -165,10 +165,18 @@ export class PortfolioController extends EventEmitter {
     await this.#storage.set('networksWithAssetsByAccount', this.#networksWithAssetsByAccounts)
   }
 
-  // gets additional portfolio state from the relayer that isn't retrieved from the portfolio library
-  // that's usually the two additional virtual networks: getTank and rewards
-  #setNetworkLoading(accountId: AccountId, network: string, isLoading: boolean, error?: any) {
-    const accountState = this.#latest[accountId]
+  #setNetworkLoading(
+    accountId: AccountId,
+    stateKey: 'latest' | 'pending',
+    network: string,
+    isLoading: boolean,
+    error?: any
+  ) {
+    const states = {
+      latest: this.#latest,
+      pending: this.#pending
+    }
+    const accountState = states[stateKey][accountId]
     if (!accountState[network]) accountState[network] = { errors: [], isReady: false, isLoading }
     accountState[network]!.isLoading = isLoading
     if (error) accountState[network]!.criticalError = error
@@ -300,8 +308,8 @@ export class PortfolioController extends EventEmitter {
     const start = Date.now()
     const accountState = this.#latest[accountId]
 
-    this.#setNetworkLoading(accountId, 'gasTank', true)
-    this.#setNetworkLoading(accountId, 'rewards', true)
+    this.#setNetworkLoading(accountId, 'latest', 'gasTank', true)
+    this.#setNetworkLoading(accountId, 'latest', 'rewards', true)
     this.emitUpdate()
 
     let res: any
@@ -309,8 +317,8 @@ export class PortfolioController extends EventEmitter {
       res = await this.#callRelayer(`/v2/identity/${accountId}/portfolio-additional`)
     } catch (e: any) {
       console.error('relayer error for portfolio additional')
-      this.#setNetworkLoading(accountId, 'gasTank', false, e)
-      this.#setNetworkLoading(accountId, 'rewards', false, e)
+      this.#setNetworkLoading(accountId, 'latest', 'gasTank', false, e)
+      this.#setNetworkLoading(accountId, 'latest', 'rewards', false, e)
       this.emitUpdate()
       return
     }
@@ -380,25 +388,31 @@ export class PortfolioController extends EventEmitter {
   // However, we made a compromise here to allow Jest tests to mock updatePortfolioState.
   protected async updatePortfolioState(
     accountId: string,
-    _accountState: AccountState,
     network: Network,
     portfolioLib: Portfolio,
-    portfolioProps: Partial<GetOptions>,
+    _portfolioProps: Partial<GetOptions> & { blockTag: 'latest' | 'pending' },
     forceUpdate: boolean
   ): Promise<boolean> {
-    if (!_accountState[network.id]) {
+    const portfolioProps = { ..._portfolioProps }
+    const blockTag = portfolioProps.blockTag
+    const stateKeys = {
+      latest: this.#latest,
+      pending: this.#pending
+    }
+    const accountState = stateKeys[blockTag][accountId]
+    if (!accountState[network.id]) {
       // isLoading must be false here, otherwise canSkipUpdate will return true
       // and portfolio will not be updated
-      _accountState[network.id] = { isLoading: false, isReady: false, errors: [] }
+      accountState[network.id] = { isLoading: false, isReady: false, errors: [] }
     }
-    const canSkipUpdate = this.#getCanSkipUpdate(_accountState[network.id], forceUpdate)
+    const canSkipUpdate = this.#getCanSkipUpdate(accountState[network.id], forceUpdate)
 
     if (canSkipUpdate) return false
 
-    this.#setNetworkLoading(accountId, network.id, true)
+    this.#setNetworkLoading(accountId, blockTag, network.id, true)
     this.emitUpdate()
 
-    const state = _accountState[network.id]!
+    const state = accountState[network.id]!
     const tokenPreferences = this.tokenPreferences
     const hasNonZeroTokens = !!this.#networksWithAssetsByAccounts?.[accountId]?.length
     if (!portfolioProps.previousHints) portfolioProps.previousHints = { erc20s: [], erc721s: {} }
@@ -428,7 +442,7 @@ export class PortfolioController extends EventEmitter {
         tokenPreferences
       )
 
-      _accountState[network.id] = {
+      accountState[network.id] = {
         isReady: true,
         isLoading: false,
         errors: result.errors,
@@ -533,7 +547,6 @@ export class PortfolioController extends EventEmitter {
             // Latest state update
             this.updatePortfolioState(
               accountId,
-              accountState,
               network,
               portfolioLib,
               {
@@ -545,7 +558,6 @@ export class PortfolioController extends EventEmitter {
             ),
             this.updatePortfolioState(
               accountId,
-              pendingState,
               network,
               portfolioLib,
               {

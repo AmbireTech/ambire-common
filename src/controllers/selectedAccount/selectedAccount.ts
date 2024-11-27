@@ -1,7 +1,11 @@
+import { getAddress } from 'ethers'
+
+import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
 import { Account } from '../../interfaces/account'
 import { Banner } from '../../interfaces/banner'
 import { SelectedAccountPortfolio } from '../../interfaces/selectedAccount'
 import { Storage } from '../../interfaces/storage'
+import { isSmartAccount } from '../../libs/account/account'
 // eslint-disable-next-line import/no-cycle
 import {
   getNetworksWithDeFiPositionsErrorBanners,
@@ -317,10 +321,40 @@ export class SelectedAccountController extends EventEmitter {
     }
   }
 
+  get deprecatedSmartAccountBanner(): Banner[] {
+    if (!this.account || !isSmartAccount(this.account)) return []
+
+    if (
+      !this.#accounts.accountStates[this.account.addr] ||
+      !this.#accounts.accountStates[this.account.addr].ethereum ||
+      !this.#accounts.accountStates[this.account.addr].ethereum.isV2
+    )
+      return []
+
+    if (
+      !this.account.creation ||
+      getAddress(this.account.creation.factoryAddr) === AMBIRE_ACCOUNT_FACTORY
+    )
+      return []
+
+    return [
+      {
+        id: 'old-account',
+        accountAddr: this.account.addr,
+        type: 'warning',
+        category: 'old-account',
+        title: 'Old Ambire Account',
+        text: "The account you are using is an old Ambire Account that was intended for testing the extension only. Fee options aren't available on custom networks. It won't be supported in the future. Please migrate to another by creating a new smart account in the extension or contact the team for support",
+        actions: []
+      }
+    ]
+  }
+
   toJSON() {
     return {
       ...this,
       ...super.toJSON(),
+      deprecatedSmartAccountBanner: this.deprecatedSmartAccountBanner,
       areDefiPositionsLoading: this.areDefiPositionsLoading
     }
   }

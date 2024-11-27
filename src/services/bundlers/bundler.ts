@@ -171,8 +171,10 @@ export class Bundler {
     if (shouldStateOverride) {
       const stateOverride = {
         [userOperation.sender]: {
-          // add privileges to the entry point
-          [`0x${privSlot(0, 'address', ERC_4337_ENTRYPOINT, 'bytes32')}`]: ENTRY_POINT_MARKER
+          stateDiff: {
+            // add privileges to the entry point
+            [`0x${privSlot(0, 'address', ERC_4337_ENTRYPOINT, 'bytes32')}`]: ENTRY_POINT_MARKER
+          }
         }
       }
       return provider.send('eth_estimateUserOperationGas', [
