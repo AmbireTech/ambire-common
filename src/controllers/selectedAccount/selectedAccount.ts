@@ -306,6 +306,7 @@ export class SelectedAccountController extends EventEmitter {
     })
 
     const firstCashbackBanners = getFirstCashbackBanners({
+      selectedAccountAddr: this.account.addr,
       shouldShowConfetti: this.#portfolio.shouldShowConfettiBanner
     })
 

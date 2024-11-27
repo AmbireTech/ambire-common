@@ -301,16 +301,14 @@ export class PortfolioController extends EventEmitter {
     }
   }
 
-  async setShouldShowConfettiToFalse(accountId: AccountId) {
+  async setShouldShowConfetti(accountId: AccountId) {
     this.#shouldShowConfettiModal = !this.#shouldShowConfettiModal
     this.shouldShowConfettiBanner = {
       ...this.shouldShowConfettiBanner,
       [accountId]: false
     }
-
     await this.#storage.set('shouldShowConfettiBanner', this.shouldShowConfettiBanner)
-
-    this.#getAdditionalPortfolio(accountId)
+    await this.#getAdditionalPortfolio(accountId, true)
   }
 
   async #getAdditionalPortfolio(accountId: AccountId, forceUpdate?: boolean) {
@@ -329,7 +327,7 @@ export class PortfolioController extends EventEmitter {
     this.#setNetworkLoading(accountId, 'latest', 'gasTank', true)
     this.#setNetworkLoading(accountId, 'latest', 'rewards', true)
     this.emitUpdate()
-    this.latest
+
     let res: any
     try {
       res = await this.#callRelayer(`/v2/identity/${accountId}/portfolio-additional`)

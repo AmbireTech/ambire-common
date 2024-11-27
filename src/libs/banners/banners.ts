@@ -556,32 +556,31 @@ export const getNetworksWithDeFiPositionsErrorBanners = ({
 }
 
 export const getFirstCashbackBanners = ({
+  selectedAccountAddr,
   shouldShowConfetti
 }: {
+  selectedAccountAddr: string
   shouldShowConfetti: ShouldShowConfettiBanner
 }): Banner[] => {
   let banners: Banner[] = []
 
-  Object.keys(shouldShowConfetti).forEach((accountId) => {
-    const shouldShowConfettiBanner = shouldShowConfetti[accountId]
+  const shouldShowConfettiBanner = shouldShowConfetti[selectedAccountAddr]
 
-    if (shouldShowConfettiBanner) {
-      // TODO: Fix the texts
-      banners.push({
-        accountAddr: accountId,
-        id: `${accountId}-first-cashback-banner-banner`,
-        type: 'info',
-        title: 'Cashback',
-        text: "You've received your first cashback",
-        actions: [
-          {
-            label: 'Open',
-            actionName: 'open-confetti-modal'
-          }
-        ]
-      })
-    }
-  })
+  if (shouldShowConfettiBanner) {
+    // TODO: Fix the texts
+    banners.push({
+      id: `${selectedAccountAddr}-first-cashback-banner-banner`,
+      type: 'info',
+      title: 'Cashback',
+      text: "You've received your first cashback",
+      actions: [
+        {
+          label: 'Open',
+          actionName: 'open-confetti-modal'
+        }
+      ]
+    })
+  }
 
   return banners
 }
