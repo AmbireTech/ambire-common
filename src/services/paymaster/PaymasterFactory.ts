@@ -4,6 +4,7 @@ import { AccountOp } from '../../libs/accountOp/accountOp'
 import { Paymaster } from '../../libs/paymaster/paymaster'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { UserOperation } from '../../libs/userOperation/types'
+import { failedSponsorships } from './FailedSponsorships'
 
 // a factory for creating paymaster objects
 // this is needed as we'd like to create paymasters at will with easy
@@ -13,8 +14,6 @@ import { UserOperation } from '../../libs/userOperation/types'
 export class PaymasterFactory {
   callRelayer: Function | undefined = undefined
 
-  failedSponsorshipIds: number[] = []
-
   init(relayerUrl: string, fetch: Fetch) {
     this.callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
   }
@@ -22,12 +21,16 @@ export class PaymasterFactory {
   async create(op: AccountOp, userOp: UserOperation, network: Network): Promise<Paymaster> {
     if (this.callRelayer === undefined) throw new Error('call init first')
 
-    const paymaster = new Paymaster(this.callRelayer)
-    await paymaster.init(op, userOp, network)
-    return paymaster
-  }
+    // check whether the sponsorship has failed and if it has,
+    // mark it like so in the meta for the paymaster to know
+    const localOp = { ...op }
+    const paymasterServiceId = op.meta?.paymasterService?.id
+    if (paymasterServiceId && failedSponsorships.has(paymasterServiceId)) {
+      if (localOp.meta && localOp.meta.paymasterService) localOp.meta.paymasterService.failed = true
+    }
 
-  recordFailedSponsorship(id: number) {
-    this.failedSponsorshipIds.push(id)
+    const paymaster = new Paymaster(this.callRelayer)
+    await paymaster.init(localOp, userOp, network)
+    return paymaster
   }
 }

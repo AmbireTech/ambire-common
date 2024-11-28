@@ -3,6 +3,7 @@ import { AbiCoder, toBeHex } from 'ethers'
 import { AMBIRE_PAYMASTER } from '../../consts/deploy'
 import { Account } from '../../interfaces/account'
 import { Network } from '../../interfaces/network'
+import { failedSponsorships } from '../../services/paymaster/FailedSponsorships'
 import { AccountOp } from '../accountOp/accountOp'
 import { getPaymasterData, getPaymasterStubData } from '../erc7677/erc7677'
 import {
@@ -45,7 +46,7 @@ export class Paymaster {
   }
 
   async init(op: AccountOp, userOp: UserOperation, network: Network) {
-    if (op.meta?.paymasterService) {
+    if (op.meta?.paymasterService && !op.meta?.paymasterService.failed) {
       try {
         this.paymasterService = op.meta.paymasterService
         this.sponsorDataEstimation = await getPaymasterStubData(
@@ -127,7 +128,7 @@ export class Paymaster {
     }
   }
 
-  async #erc7677Call(userOp: UserOperation, network: Network) {
+  async #erc7677Call(op: AccountOp, userOp: UserOperation, network: Network) {
     const sponsorData = this.sponsorDataEstimation as PaymasterEstimationData
 
     // no need to do an extra call if the dapp has already provided sponsorship
@@ -154,6 +155,7 @@ export class Paymaster {
         paymasterData: response.paymasterData
       }
     } catch (e: any) {
+      if (op.meta && op.meta.paymasterService) failedSponsorships.add(op.meta.paymasterService.id)
       const { message } = getHumanReadableBroadcastError(e)
       return {
         success: false,
@@ -171,7 +173,7 @@ export class Paymaster {
   ): Promise<PaymasterSuccessReponse | PaymasterErrorReponse> {
     if (this.type === 'Ambire') return this.#ambireCall(acc, op, userOp)
 
-    if (this.type === 'ERC7677') return this.#erc7677Call(userOp, network)
+    if (this.type === 'ERC7677') return this.#erc7677Call(op, userOp, network)
 
     throw new Error('Paymaster not configured. Please contact support')
   }

@@ -4,6 +4,7 @@ export interface PaymasterService {
     policyId: string
   }
   id: number
+  failed?: boolean
 }
 
 export interface PaymasterCapabilities {
