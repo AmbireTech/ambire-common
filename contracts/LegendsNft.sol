@@ -12,9 +12,10 @@ contract LegendsNFT is IERC721Metadata, ERC721Enumerable, Ownable {
   event BatchMetadataUpdate(uint256 _fromTokenId, uint256 _toTokenId);
   event MetadataUpdate(uint256 _tokenId);
   event PickedCharacter(uint indexed heroType);
+
   bool allowTransfers = false;
   string baseURI;
-
+  mapping (address=>uint256) pickedCharacters;
   constructor() ERC721('Ambire Legends', 'AML') Ownable() {}
 
   function supportsInterface(
@@ -27,6 +28,7 @@ contract LegendsNFT is IERC721Metadata, ERC721Enumerable, Ownable {
     // single mint allowed
     // using address for front-end simplification
     _mint(msg.sender, uint256(uint160(msg.sender)));
+    pickedCharacters[msg.sender] = heroType;
     emit PickedCharacter(heroType);
     // this line triggers opensea metadata updaate
     emit BatchMetadataUpdate(0, type(uint256).max);
@@ -35,7 +37,6 @@ contract LegendsNFT is IERC721Metadata, ERC721Enumerable, Ownable {
   function tokenURI(
     uint256 tokenId
   ) public view override(ERC721, IERC721Metadata) returns (string memory) {
-    _requireMinted(tokenId);
     return string(abi.encodePacked(baseURI, address(uint160(tokenId)).toHexString()));
   }
 
@@ -58,6 +59,7 @@ contract LegendsNFT is IERC721Metadata, ERC721Enumerable, Ownable {
       _msgSender() == _ownerOf(tokenId) || _msgSender() == owner(),
       'You cannot burn this NFT.'
     );
+    pickedCharacters[msg.sender] = 0;
     _burn(tokenId);
   }
 
