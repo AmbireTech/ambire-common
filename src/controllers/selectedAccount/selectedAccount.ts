@@ -160,6 +160,7 @@ export class SelectedAccountController extends EventEmitter {
     this.portfolioBanners = []
     this.defiPositionsBanners = []
     this.resetSelectedAccountPortfolio(true)
+    this.dashboardNetworkFilter = null
 
     if (!account) {
       await this.#storage.remove('selectedAccount')
