@@ -256,6 +256,7 @@ describe('uniswap', () => {
       ]
     ]
     expect(irCalls.length).toEqual(expectedVisualization.length)
+
     compareHumanizerVisualizations(irCalls, expectedVisualization as HumanizerVisualization[][])
   })
   test('Liquidity', async () => {
