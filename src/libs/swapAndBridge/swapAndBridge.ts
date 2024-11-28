@@ -285,7 +285,8 @@ export const getIsNetworkSupported = (
   supportedChainIds: Network['chainId'][],
   network?: Network
 ) => {
-  // Assume supported if missing (and receive no results) than the alternatives (blocking the UI)
+  // Assume supported if missing (and receive no results when attempting to use
+  // a not-supported network) than the alternative - blocking the UI.
   if (!supportedChainIds.length || !network) return true
 
   return supportedChainIds.includes(network.chainId)
