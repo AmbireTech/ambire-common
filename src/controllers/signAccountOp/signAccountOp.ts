@@ -10,6 +10,7 @@ import {
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import ERC20 from '../../../contracts/compiled/IERC20.json'
+import EmittableError from '../../classes/EmittableError'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { AMBIRE_PAYMASTER, SINGLETON } from '../../consts/deploy'
 /* eslint-disable no-restricted-syntax */
@@ -26,12 +27,15 @@ import { Warning } from '../../interfaces/signAccountOp'
 import { isAmbireV1LinkedAccount, isSmartAccount } from '../../libs/account/account'
 import { AccountOp, GasFeePayment, getSignableCalls } from '../../libs/accountOp/accountOp'
 import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
+import { RelayerPaymasterError } from '../../libs/errorDecoder/customErrors'
+import { getHumanReadableBroadcastError } from '../../libs/errorHumanizer'
+import { PAYMASTER_DOWN_BROADCAST_ERROR_MESSAGE } from '../../libs/errorHumanizer/broadcastErrorHumanizer'
 import { BundlerGasPrice, EstimateResult, FeePaymentOption } from '../../libs/estimate/interfaces'
 import {
   Gas1559Recommendation,
   GasPriceRecommendation,
   GasRecommendation,
-  getCallDataAdditionalByNetwork
+  getProbableCallData
 } from '../../libs/gasPrice/gasPrice'
 import { Price, TokenResult } from '../../libs/portfolio'
 import { getExecuteSignature, getTypedData, wrapStandard } from '../../libs/signMessage/signMessage'
@@ -227,6 +231,25 @@ export class SignAccountOpController extends EventEmitter {
     return this.feeSpeeds[identifier] !== undefined && this.feeSpeeds[identifier].length
   }
 
+  getCallDataAdditionalByNetwork(): bigint {
+    // no additional call data is required for arbitrum as the bytes are already
+    // added in the calculation for the L1 fee
+    if (this.#network.id === 'arbitrum' || !isSmartAccount(this.account)) return 0n
+
+    const estimationCallData = getProbableCallData(
+      this.account,
+      this.accountOp,
+      this.#accounts.accountStates[this.accountOp.accountAddr][this.accountOp.networkId],
+      this.#network
+    )
+    const FIXED_OVERHEAD = 21000n
+    const bytes = Buffer.from(estimationCallData.substring(2))
+    const nonZeroBytes = BigInt(bytes.filter((b) => b).length)
+    const zeroBytes = BigInt(BigInt(bytes.length) - nonZeroBytes)
+    const txDataGas = zeroBytes * 4n + nonZeroBytes * 16n
+    return txDataGas + FIXED_OVERHEAD
+  }
+
   get errors(): string[] {
     const errors: string[] = []
 
@@ -274,8 +297,9 @@ export class SignAccountOpController extends EventEmitter {
     if (!this.accountOp.signingKeyType || !this.accountOp.signingKeyAddr)
       errors.push('Please select a signer to sign the transaction.')
 
-    const currentPortfolioNetwork =
-      this.#portfolio.latest[this.accountOp.accountAddr][this.accountOp.networkId]
+    const currentPortfolioNetwork = this.#portfolio.getLatestPortfolioState(
+      this.accountOp.accountAddr
+    )[this.accountOp.networkId]
     const currentPortfolioNetworkNative = currentPortfolioNetwork?.result?.tokens.find(
       (token) => token.address === '0x0000000000000000000000000000000000000000'
     )
@@ -366,11 +390,13 @@ export class SignAccountOpController extends EventEmitter {
   calculateWarnings() {
     const warnings: Warning[] = []
 
+    const latestState = this.#portfolio.getLatestPortfolioState(this.accountOp.accountAddr)
+    const pendingState = this.#portfolio.getPendingPortfolioState(this.accountOp.accountAddr)
+
     const significantBalanceDecreaseWarning = getSignificantBalanceDecreaseWarning(
-      this.#portfolio.latest,
-      this.#portfolio.pending,
-      this.accountOp.networkId,
-      this.accountOp.accountAddr
+      latestState,
+      pendingState,
+      this.accountOp.networkId
     )
 
     if (this.selectedOption) {
@@ -578,11 +604,11 @@ export class SignAccountOpController extends EventEmitter {
    * such as amount, gasLimit, etc., are also represented as BigInt numbers.
    */
   #getNativeToFeeTokenRatio(feeToken: TokenResult): bigint | null {
-    const native = this.#portfolio.latest[this.accountOp.accountAddr][
-      this.accountOp.networkId
-    ]?.result?.tokens.find(
-      (token) => token.address === '0x0000000000000000000000000000000000000000'
-    )
+    const native = this.#portfolio
+      .getLatestPortfolioState(this.accountOp.accountAddr)
+      [this.accountOp.networkId]?.result?.tokens.find(
+        (token) => token.address === '0x0000000000000000000000000000000000000000'
+      )
     if (!native) return null
 
     // In case the fee token is the native token we don't want to depend to priceIn, as it might not be available.
@@ -696,12 +722,6 @@ export class SignAccountOpController extends EventEmitter {
     this.feeSpeeds = {}
 
     const gasUsed = this.estimation!.gasUsed
-    const callDataAdditionalGasCost = getCallDataAdditionalByNetwork(
-      this.accountOp,
-      this.account,
-      this.#network,
-      this.#accounts.accountStates[this.accountOp.accountAddr][this.accountOp.networkId]
-    )
 
     this.availableFeeOptions.forEach((option) => {
       // if a calculation has been made, do not make it again
@@ -800,18 +820,18 @@ export class SignAccountOpController extends EventEmitter {
         if (!isSmartAccount(this.account)) {
           simulatedGasLimit = gasUsed
 
-          if (getAddress(this.accountOp.calls[0].to) === SINGLETON) {
+          if (this.accountOp.calls[0].to && getAddress(this.accountOp.calls[0].to) === SINGLETON) {
             simulatedGasLimit = getGasUsed(simulatedGasLimit)
           }
 
           amount = simulatedGasLimit * gasPrice + option.addedNative
         } else if (option.paidBy !== this.accountOp.accountAddr) {
           // Smart account, but EOA pays the fee
-          simulatedGasLimit = gasUsed + callDataAdditionalGasCost
+          simulatedGasLimit = gasUsed + this.getCallDataAdditionalByNetwork()
           amount = simulatedGasLimit * gasPrice + option.addedNative
         } else {
           // Relayer
-          simulatedGasLimit = gasUsed + callDataAdditionalGasCost + option.gasUsed!
+          simulatedGasLimit = gasUsed + this.getCallDataAdditionalByNetwork() + option.gasUsed!
           amount = SignAccountOpController.getAmountAfterFeeTokenConvert(
             simulatedGasLimit,
             gasPrice,
@@ -922,7 +942,7 @@ export class SignAccountOpController extends EventEmitter {
       // in that case, we don't do user operations
       isERC4337:
         this.paidBy === this.accountOp.accountAddr &&
-        isErc4337Broadcast(this.#network, accountState),
+        isErc4337Broadcast(this.account, this.#network, accountState),
       isGasTank: this.feeTokenResult.flags.onGasTank,
       inToken: this.feeTokenResult.address,
       feeTokenNetworkId: this.feeTokenResult.networkId,
@@ -982,11 +1002,11 @@ export class SignAccountOpController extends EventEmitter {
     if (!gasPrice) return null
 
     // get the native token from the portfolio to calculate prices
-    const native = this.#portfolio.latest[this.accountOp.accountAddr][
-      this.accountOp.networkId
-    ]?.result?.tokens.find(
-      (token) => token.address === '0x0000000000000000000000000000000000000000'
-    )
+    const native = this.#portfolio
+      .getLatestPortfolioState(this.accountOp.accountAddr)
+      [this.accountOp.networkId]?.result?.tokens.find(
+        (token) => token.address === '0x0000000000000000000000000000000000000000'
+      )
     if (!native) return null
     const nativePrice = native.priceIn.find((price) => price.baseCurrency === 'usd')?.price
     if (!nativePrice) return null
@@ -1217,9 +1237,20 @@ export class SignAccountOpController extends EventEmitter {
                 bytecode: this.account.creation!.bytecode,
                 salt: this.account.creation!.salt,
                 key: this.account.associatedKeys[0]
+              }).catch((e: any) => {
+                throw new RelayerPaymasterError(e)
               }),
               new Promise((_resolve, reject) => {
-                setTimeout(() => reject(new Error('Ambire relayer error')), 8000)
+                setTimeout(
+                  () =>
+                    reject(
+                      new EmittableError({
+                        message: PAYMASTER_DOWN_BROADCAST_ERROR_MESSAGE,
+                        level: 'major'
+                      })
+                    ),
+                  8000
+                )
               })
             ])
 
@@ -1232,15 +1263,12 @@ export class SignAccountOpController extends EventEmitter {
               userOperation.nonce = getOneTimeNonce(userOperation)
             }
           } catch (e: any) {
-            let message = e.message
-            if (e.message.includes('Failed to fetch') || e.message.includes('Ambire relayer')) {
-              message =
-                'Currently, the paymaster seems to be down. Please try again a few moments later or broadcast with a Basic Account'
-            }
+            const { message } = getHumanReadableBroadcastError(e)
+
             this.emitError({
               level: 'major',
               message,
-              error: new Error(e.message)
+              error: e
             })
             this.status = { type: SigningStatus.ReadyToSign }
             this.emitUpdate()
@@ -1282,7 +1310,9 @@ export class SignAccountOpController extends EventEmitter {
       this.emitUpdate()
       return this.signedAccountOp
     } catch (error: any) {
-      return this.#emitSigningErrorAndResetToReadyToSign(error?.message)
+      const { message } = getHumanReadableBroadcastError(error)
+
+      this.#emitSigningErrorAndResetToReadyToSign(message)
     }
   }
 

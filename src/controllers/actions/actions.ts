@@ -1,42 +1,34 @@
 /* eslint-disable @typescript-eslint/no-floating-promises */
 
 import { Account } from '../../interfaces/account'
+import {
+  AccountOpAction,
+  Action,
+  BenzinAction,
+  DappRequestAction,
+  SignMessageAction,
+  SwitchAccountAction
+} from '../../interfaces/actions'
 import { NotificationManager } from '../../interfaces/notification'
-import { DappUserRequest, SignUserRequest, UserRequest } from '../../interfaces/userRequest'
 import { WindowManager } from '../../interfaces/window'
-import { AccountOp } from '../../libs/accountOp/accountOp'
 // eslint-disable-next-line import/no-cycle
 import { messageOnNewAction } from '../../libs/actions/actions'
 import { getDappActionRequestsBanners } from '../../libs/banners/banners'
 import { ENTRY_POINT_AUTHORIZATION_REQUEST_ID } from '../../libs/userOperation/userOperation'
 import EventEmitter from '../eventEmitter/eventEmitter'
+// Kind of inevitable, the AccountsController has SelectedAccountController, which has ActionsController
+// eslint-disable-next-line import/no-cycle
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 
-export type AccountOpAction = {
-  id: SignUserRequest['id']
-  type: 'accountOp'
-  accountOp: AccountOp
+// TODO: Temporarily. Refactor imports across the codebase to ref /interfaces/actions instead.
+export type {
+  SwitchAccountAction,
+  Action,
+  AccountOpAction,
+  SignMessageAction,
+  BenzinAction,
+  DappRequestAction
 }
-
-export type SignMessageAction = {
-  id: SignUserRequest['id']
-  type: 'signMessage'
-  userRequest: SignUserRequest
-}
-
-export type BenzinAction = {
-  id: UserRequest['id']
-  type: 'benzin'
-  userRequest: SignUserRequest
-}
-
-export type DappRequestAction = {
-  id: UserRequest['id']
-  type: 'dappRequest'
-  userRequest: DappUserRequest
-}
-
-export type Action = AccountOpAction | SignMessageAction | BenzinAction | DappRequestAction
 
 /**
  * The ActionsController is responsible for storing the converted userRequests
@@ -89,6 +81,9 @@ export class ActionsController extends EventEmitter {
       }
       if (a.type === 'benzin') {
         return a.userRequest.meta.accountAddr === this.#selectedAccount.account?.addr
+      }
+      if (a.type === 'switchAccount') {
+        return a.userRequest.meta.switchToAccountAddr !== this.#selectedAccount.account?.addr
       }
 
       return true
@@ -143,6 +138,9 @@ export class ActionsController extends EventEmitter {
   ) {
     // remove the benzin action if a new actions is added
     this.actionsQueue = this.actionsQueue.filter((a) => a.type !== 'benzin')
+    if (this.currentAction && this.currentAction.type === 'benzin') {
+      this.currentAction = null
+    }
 
     const actionIndex = this.actionsQueue.findIndex((a) => a.id === newAction.id)
     if (actionIndex !== -1) {
@@ -286,6 +284,9 @@ export class ActionsController extends EventEmitter {
       }
       if (a.type === 'benzin') {
         return a.userRequest.meta.accountAddr !== address
+      }
+      if (a.type === 'switchAccount') {
+        return a.userRequest.meta.switchToAccountAddr !== address
       }
 
       return true

@@ -6,7 +6,7 @@ import { toBeHex } from 'ethers'
 import { ENTRY_POINT_MARKER, ERC_4337_ENTRYPOINT } from '../../consts/deploy'
 import { Fetch } from '../../interfaces/fetch'
 import { Network } from '../../interfaces/network'
-import { mapTxnErrMsg } from '../../libs/estimate/errors'
+import { decodeError } from '../../libs/errorDecoder'
 import { BundlerEstimateResult } from '../../libs/estimate/interfaces'
 import { Gas1559Recommendation } from '../../libs/gasPrice/gasPrice'
 import { privSlot } from '../../libs/proxyDeploy/deploy'
@@ -171,8 +171,10 @@ export class Bundler {
     if (shouldStateOverride) {
       const stateOverride = {
         [userOperation.sender]: {
-          // add privileges to the entry point
-          [`0x${privSlot(0, 'address', ERC_4337_ENTRYPOINT, 'bytes32')}`]: ENTRY_POINT_MARKER
+          stateDiff: {
+            // add privileges to the entry point
+            [`0x${privSlot(0, 'address', ERC_4337_ENTRYPOINT, 'bytes32')}`]: ENTRY_POINT_MARKER
+          }
         }
       }
       return provider.send('eth_estimateUserOperationGas', [
@@ -219,12 +221,9 @@ export class Bundler {
   }
 
   // used when catching errors from bundler requests
-  static decodeBundlerError(e: any, defaultMsg: string): string {
-    let errMsg = e.error.message ? e.error.message : defaultMsg
-    const hex = errMsg.indexOf('0x') !== -1 ? errMsg.substring(errMsg.indexOf('0x')) : null
-    const decodedHex = hex ? mapTxnErrMsg(hex) : null
-    if (decodedHex) errMsg = errMsg.replace(hex, decodedHex)
-    const finalMsg = mapTxnErrMsg(errMsg)
-    return finalMsg ?? errMsg
+  static decodeBundlerError(e: any): string {
+    const { reason } = decodeError(e)
+
+    return reason || 'Unknown error'
   }
 }

@@ -10,6 +10,7 @@ export type BannerCategory =
   | 'bridge-ready'
   | 'bridge-completed'
   | 'temp-seed-not-confirmed'
+  | 'old-account'
 
 export interface Banner {
   id: number | string
@@ -75,9 +76,13 @@ export type Action =
       meta: { activeRouteId: number }
     }
   | {
-      label: 'Got it' | 'Close'
+      label: 'Close'
       actionName: 'close-bridge'
       meta: { activeRouteId: number }
+    }
+  | {
+      label: 'Details'
+      actionName: 'open-swap-and-bridge-tab'
     }
   | {
       label: 'Hide'

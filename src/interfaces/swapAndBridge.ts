@@ -189,3 +189,9 @@ export type ActiveRoute = {
   routeStatus: 'in-progress' | 'ready' | 'completed'
   error?: string
 }
+
+type StringifiedChainId = string
+export type CachedTokenListKey = `from-${StringifiedChainId}-to-${StringifiedChainId}`
+export type CachedToTokenLists = {
+  [key: CachedTokenListKey]: { lastFetched: number; data: SocketAPIToken[] }
+}
