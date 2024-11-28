@@ -345,7 +345,7 @@ export class MainController extends EventEmitter {
         await this.setContractsDeployedToTrueIfDeployed(network)
       }
     )
-    this.domains = new DomainsController(this.providers.providers, this.fetch)
+    this.domains = new DomainsController(this.providers.providers)
     this.#initialLoadPromise = this.#load()
     paymasterFactory.init(relayerUrl, fetch)
   }
@@ -364,6 +364,7 @@ export class MainController extends EventEmitter {
 
     this.updateSelectedAccountPortfolio()
     this.defiPositions.updatePositions()
+    this.domains.batchReverseLookup(this.accounts.accounts.map((a) => a.addr))
     /**
      * Listener that gets triggered as a finalization step of adding new
      * accounts via the AccountAdder controller flow.
