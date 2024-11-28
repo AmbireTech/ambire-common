@@ -2395,30 +2395,31 @@ export class MainController extends EventEmitter {
     accountState?: AccountOnchainState
     isRelayer?: boolean
   }) {
-    let message = humanReadableMessage || _err?.message
+    const originalMessage = _err?.message
+    let message = humanReadableMessage
 
-    if (message) {
-      if (message.includes('pimlico_getUserOperationGasPrice')) {
+    if (originalMessage) {
+      if (originalMessage.includes('pimlico_getUserOperationGasPrice')) {
         message = 'Fee too low. Please select a higher transaction speed and try again'
         this.updateSignAccountOpGasPrice()
-      } else if (message.includes('INSUFFICIENT_PRIVILEGE')) {
+      } else if (originalMessage.includes('INSUFFICIENT_PRIVILEGE')) {
         message = `Signer key not supported on this network.${
           !accountState?.isV2
             ? 'You can add/change signers from the web wallet or contact support.'
             : 'Please contact support.'
         }`
-      } else if (message.includes('Transaction underpriced')) {
+      } else if (originalMessage.includes('Transaction underpriced')) {
         message = 'Fee too low. Please select е higher transaction speed and try again'
         this.updateSignAccountOpGasPrice()
         this.estimateSignAccountOp()
-      } else if (message.includes('Failed to fetch') && isRelayer) {
+      } else if (originalMessage.includes('Failed to fetch') && isRelayer) {
         message =
           'Currently, the Ambire relayer seems to be down. Please try again a few moments later or broadcast with a Basic Account'
       }
-    } else if (_err) {
-      message = getHumanReadableBroadcastError(_err).message
-    } else {
-      message = 'Unable to broadcast the transaction. Please try again or contact support.'
+    }
+
+    if (!message) {
+      message = getHumanReadableBroadcastError(_err || new Error('')).message
     }
 
     const error = _err || new Error(message)
