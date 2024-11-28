@@ -516,11 +516,11 @@ describe('Portfolio Controller ', () => {
 
       await controller.updateSelectedAccount(account3.addr)
 
-      if (controller.latest[account3.addr].gasTank?.isLoading) return
+      if (controller.getLatestPortfolioState(account3.addr).gasTank?.isLoading) return
 
-      const token = controller.latest[account3.addr].gasTank?.result?.tokens.find(
-        (t) => t.address === foundUsdcToken?.address
-      )
+      const token = controller
+        .getLatestPortfolioState(account3.addr)
+        .gasTank?.result?.tokens.find((t) => t.address === foundUsdcToken?.address)
 
       expect(token).toBeTruthy()
       expect(token?.amount).toEqual(0n)
@@ -528,7 +528,6 @@ describe('Portfolio Controller ', () => {
       expect(token?.cashback).toEqual(0n)
       expect(token?.saved).toEqual(0n)
     })
-
 
     // TODO: add a test account as 'account4' which values of cashback and saved are greater than 0
 
