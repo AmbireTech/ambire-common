@@ -3,6 +3,7 @@ import { getAddress } from 'ethers'
 import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
 import { Account } from '../../interfaces/account'
 import { Banner } from '../../interfaces/banner'
+import { NetworkId } from '../../interfaces/network'
 import { SelectedAccountPortfolio } from '../../interfaces/selectedAccount'
 import { Storage } from '../../interfaces/storage'
 import { isSmartAccount } from '../../libs/account/account'
@@ -63,6 +64,8 @@ export class SelectedAccountController extends EventEmitter {
   portfolioStartedLoadingAtTimestamp: number | null = null
 
   portfolioBanners: Banner[] = []
+
+  dashboardNetworkFilter: NetworkId | null = null
 
   #shouldDebounceFlags: { [key: string]: boolean } = {}
 
@@ -157,6 +160,7 @@ export class SelectedAccountController extends EventEmitter {
     this.portfolioBanners = []
     this.defiPositionsBanners = []
     this.resetSelectedAccountPortfolio(true)
+    this.dashboardNetworkFilter = null
 
     if (!account) {
       await this.#storage.remove('selectedAccount')
@@ -348,6 +352,11 @@ export class SelectedAccountController extends EventEmitter {
         actions: []
       }
     ]
+  }
+
+  setDashboardNetworkFilter(networkFilter: NetworkId | null) {
+    this.dashboardNetworkFilter = networkFilter
+    this.emitUpdate()
   }
 
   toJSON() {
