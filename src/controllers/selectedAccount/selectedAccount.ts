@@ -149,6 +149,12 @@ export class SelectedAccountController extends EventEmitter {
   }
 
   async setAccount(account: Account | null) {
+    if (account && account.addr === this.account?.addr) {
+      this.account = account
+      this.emitUpdate()
+      return
+    }
+
     this.account = account
     this.portfolioBanners = []
     this.defiPositionsBanners = []
