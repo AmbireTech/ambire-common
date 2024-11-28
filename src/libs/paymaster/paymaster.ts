@@ -12,7 +12,7 @@ import {
   PaymasterService,
   PaymasterSuccessReponse
 } from '../erc7677/types'
-import { RelayerPaymasterError } from '../errorDecoder/customErrors'
+import { RelayerPaymasterError, SponsorshipPaymasterError } from '../errorDecoder/customErrors'
 import { getHumanReadableBroadcastError } from '../errorHumanizer'
 import { UserOperation } from '../userOperation/types'
 import { getCleanUserOp, getSigForCalculations } from '../userOperation/userOperation'
@@ -156,7 +156,8 @@ export class Paymaster {
       }
     } catch (e: any) {
       if (op.meta && op.meta.paymasterService) failedSponsorships.add(op.meta.paymasterService.id)
-      const { message } = getHumanReadableBroadcastError(e)
+      const convertedError = new SponsorshipPaymasterError()
+      const { message } = getHumanReadableBroadcastError(convertedError)
       return {
         success: false,
         message,

@@ -24,4 +24,13 @@ class RelayerPaymasterError extends Error {
   }
 }
 
-export { InnerCallFailureError, RelayerPaymasterError }
+class SponsorshipPaymasterError extends Error {
+  constructor() {
+    const message = 'Sponsorship failed.'
+    super(message)
+    this.name = 'PaymasterSponsorshipError'
+    this.message = message
+  }
+}
+
+export { InnerCallFailureError, RelayerPaymasterError, SponsorshipPaymasterError }
