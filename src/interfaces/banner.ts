@@ -10,6 +10,7 @@ export type BannerCategory =
   | 'bridge-ready'
   | 'bridge-completed'
   | 'temp-seed-not-confirmed'
+  | 'old-account'
 
 export interface Banner {
   id: number | string

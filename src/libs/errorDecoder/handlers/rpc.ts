@@ -4,8 +4,6 @@ import { DecodedError, ErrorHandler, ErrorType } from '../types'
 import { USER_REJECTED_TRANSACTION_ERROR_CODE } from './userRejection'
 
 export const RPC_HARDCODED_ERRORS = {
-  lowGasLimit: 'Low gas limit',
-  transactionUnderpriced: 'Transaction underpriced',
   rpcTimeout: 'rpc-timeout'
 }
 
@@ -31,12 +29,6 @@ class RpcErrorHandler implements ErrorHandler {
 
     if (typeof rpcError?.code === 'string' && isReasonValid(rpcError.code)) {
       reason = rpcError.code
-    }
-
-    if (error?.message.includes('gas too low')) {
-      reason = RPC_HARDCODED_ERRORS.lowGasLimit
-    } else if (error?.message.includes('transaction underpriced')) {
-      reason = RPC_HARDCODED_ERRORS.transactionUnderpriced
     }
 
     return {
