@@ -38,18 +38,16 @@ export function getPaymasterStubData(
   ])
 }
 
-export function getPaymasterData(
+export async function getPaymasterData(
   service: PaymasterService,
   userOp: UserOperation,
   network: Network
 ): Promise<PaymasterData> {
   const provider = getRpcProvider([service.url], network.chainId)
-  const data = provider.send('pm_getPaymasterData', [
+  return provider.send('pm_getPaymasterData', [
     getCleanUserOp(userOp)[0],
     ERC_4337_ENTRYPOINT,
     toBeHex(network.chainId.toString()),
     service.context
   ])
-  throw new Error('no, homie')
-  return data
 }
