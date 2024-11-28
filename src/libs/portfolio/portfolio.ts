@@ -77,19 +77,29 @@ export class Portfolio {
     network: Network,
     velcroUrl?: string
   ) {
-    this.batchedVelcroDiscovery = batcher(fetch, (queue) => {
-      const baseCurrencies = [...new Set(queue.map((x) => x.data.baseCurrency))]
-      return baseCurrencies.map((baseCurrency) => {
-        const queueSegment = queue.filter((x) => x.data.baseCurrency === baseCurrency)
-        const url = `${velcroUrl}/multi-hints?networks=${queueSegment
-          .map((x) => x.data.networkId)
-          .join(',')}&accounts=${queueSegment
-          .map((x) => x.data.accountAddr)
-          .join(',')}&baseCurrency=${baseCurrency}`
-        return { queueSegment, url }
-      })
+    this.batchedVelcroDiscovery = batcher(
+      fetch,
+      (queue) => {
+        const baseCurrencies = [...new Set(queue.map((x) => x.data.baseCurrency))]
+        return baseCurrencies.map((baseCurrency) => {
+          const queueSegment = queue.filter((x) => x.data.baseCurrency === baseCurrency)
+          const url = `${velcroUrl}/multi-hints?networks=${queueSegment
+            .map((x) => x.data.networkId)
+            .join(',')}&accounts=${queueSegment
+            .map((x) => x.data.accountAddr)
+            .join(',')}&baseCurrency=${baseCurrency}`
+          return { queueSegment, url }
+        })
+      },
+      {
+        timeoutAfter: 3000,
+        timeoutErrorMessage: `Velcro discovery timed out on ${network.id}`
+      }
+    )
+    this.batchedGecko = batcher(fetch, geckoRequestBatcher, {
+      timeoutAfter: 3000,
+      timeoutErrorMessage: `Cena request timed out on ${network.id}`
     })
-    this.batchedGecko = batcher(fetch, geckoRequestBatcher)
     this.network = network
     this.deploylessTokens = fromDescriptor(provider, BalanceGetter, !network.rpcNoStateOverride)
     this.deploylessNfts = fromDescriptor(provider, NFTGetter, !network.rpcNoStateOverride)
@@ -278,6 +288,7 @@ export class Portfolio {
             // this is what to look for in the coingecko response object
             responseIdentifier: geckoResponseIdentifier(token.address, this.network)
           })
+
           priceIn = Object.entries(priceData || {}).map(([baseCurr, price]) => ({
             baseCurrency: baseCurr,
             price: price as number
