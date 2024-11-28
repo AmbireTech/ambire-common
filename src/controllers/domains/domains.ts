@@ -1,6 +1,5 @@
-import { getAddress } from 'ethers'
+import { getAddress, isAddress } from 'ethers'
 
-import { Fetch } from '../../interfaces/fetch'
 import { RPCProviders } from '../../interfaces/provider'
 import { reverseLookupEns } from '../../services/ensDomains'
 // import { reverseLookupUD } from '../../services/unstoppableDomains'
@@ -30,16 +29,20 @@ const PERSIST_DOMAIN_FOR_IN_MS = 15 * 60 * 1000
 export class DomainsController extends EventEmitter {
   #providers: RPCProviders = {}
 
-  #fetch: Fetch
-
   domains: Domains = {}
 
   loadingAddresses: string[] = []
 
-  constructor(providers: RPCProviders, fetch: Fetch) {
+  constructor(providers: RPCProviders) {
     super()
     this.#providers = providers
-    this.#fetch = fetch
+  }
+
+  async batchReverseLookup(addresses: string[]) {
+    const filteredAddresses = addresses.filter((address) => isAddress(address))
+    await Promise.all(filteredAddresses.map((address) => this.reverseLookup(address, false)))
+
+    this.emitUpdate()
   }
 
   /**
@@ -68,7 +71,7 @@ export class DomainsController extends EventEmitter {
   /**
    * Resolves the ENS and UD names for an address if such exist.
    */
-  async reverseLookup(address: string) {
+  async reverseLookup(address: string, emitUpdate = true) {
     if (!('ethereum' in this.#providers)) {
       this.emitError({
         error: new Error('domains.reverseLookup: Ethereum provider is not available'),
@@ -120,6 +123,6 @@ export class DomainsController extends EventEmitter {
       (loadingAddress) => loadingAddress !== checksummedAddress
     )
 
-    this.emitUpdate()
+    if (emitUpdate) this.emitUpdate()
   }
 }

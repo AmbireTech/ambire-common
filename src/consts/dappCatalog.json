@@ -150,7 +150,7 @@
     "description": "Curve is automated market-maker optimized for stablecoins, working as an exchange on one side, and allowing liquidity providers to earn fees and lending interest on the other side."
   },
   {
-    "url": "https://app.balancer.fi",
+    "url": "https://balancer.fi/pools",
     "name": "Balancer",
     "icon": "https://static.debank.com/image/dapp/logo_url/3b6e53ac36d5ffc0ab56a1336bc00c33/3b6e53ac36d5ffc0ab56a1336bc00c33.png",
     "description": "A UI that supports core Balancer protocol functionality. Explore & create pools, manage liquidity, swap tokens, get veBAL and claim incentives."
