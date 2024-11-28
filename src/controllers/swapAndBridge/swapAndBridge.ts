@@ -308,6 +308,7 @@ export class SwapAndBridgeController extends EventEmitter {
     this.sessionIds.push(sessionId)
     await this.#socketAPI.updateHealth()
     this.updatePortfolioTokenList(this.#selectedAccount.portfolio.tokens)
+    // Do not await on purpose as it's not critical for the controller state to be ready
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.#fetchSupportedChainsIfNeeded()
 
