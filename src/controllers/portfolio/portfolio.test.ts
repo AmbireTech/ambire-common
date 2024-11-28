@@ -488,7 +488,7 @@ describe('Portfolio Controller ', () => {
         expect(token).toBeTruthy()
       })
     })
- 
+
     test('Pinned gas tank tokens are not set in an account with tokens', async () => {
       const { controller } = prepareTest()
 
@@ -538,9 +538,9 @@ describe('Portfolio Controller ', () => {
 
     //   await controller.updateSelectedAccount(account4.addr)
 
-    //   if (controller.latest[account4.addr].gasTank?.isLoading) return
+    //   if (controller.getLatestPortfolioState(account4.addr).gasTank?.isLoading) return
 
-    //   const token = controller.latest[account4.addr].gasTank?.result?.tokens.find(
+    //   const token = controller.getLatestPortfolioState(account4.addr).gasTank?.result?.tokens.find(
     //     (t) => t.address === foundUsdcToken?.address
     //   )
     //   console.log('token', token)
