@@ -5,18 +5,20 @@ import '@openzeppelin/contracts/token/ERC721/extensions/ERC721Enumerable.sol';
 import '@openzeppelin/contracts/token/ERC721/extensions/IERC721Metadata.sol';
 import '@openzeppelin/contracts/access/Ownable.sol';
 import '@openzeppelin/contracts/utils/Strings.sol';
+import '@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol';
 
 using Strings for address;
 
-contract LegendsNFT is IERC721Metadata, ERC721Enumerable, Ownable {
+contract LegendsNFTImplementation is Ownable, IERC721Metadata, ERC721Enumerable, Initializable {
   event BatchMetadataUpdate(uint256 _fromTokenId, uint256 _toTokenId);
   event MetadataUpdate(uint256 _tokenId);
   event PickedCharacter(uint indexed heroType);
 
   bool allowTransfers = false;
   string baseURI;
-  mapping (address=>uint256) pickedCharacters;
-  constructor() ERC721('Ambire Legends', 'AML') Ownable() {}
+  mapping(address => uint256) public pickedCharacters;
+
+  constructor() ERC721('', '') Ownable() {}
 
   function supportsInterface(
     bytes4 interfaceId
@@ -30,8 +32,12 @@ contract LegendsNFT is IERC721Metadata, ERC721Enumerable, Ownable {
     _mint(msg.sender, uint256(uint160(msg.sender)));
     pickedCharacters[msg.sender] = heroType;
     emit PickedCharacter(heroType);
-    // this line triggers opensea metadata updaate
-    emit BatchMetadataUpdate(0, type(uint256).max);
+  }
+
+  function updateMetadata(uint[] memory ids) public {
+    for (uint i = 0; i < ids.length; i++) {
+      if (pickedCharacters[address(uint160(ids[i]))] != 0) emit MetadataUpdate(ids[i]);
+    }
   }
 
   function tokenURI(
@@ -42,11 +48,6 @@ contract LegendsNFT is IERC721Metadata, ERC721Enumerable, Ownable {
 
   function setBaseUri(string calldata _baseURI) public onlyOwner {
     baseURI = _baseURI;
-  }
-
-  // this is used only for
-  function updateOpenSeaInfo(uint from, uint to) public {
-    emit BatchMetadataUpdate(from, to);
   }
 
   function setAllowTransfer(bool value) public onlyOwner {
