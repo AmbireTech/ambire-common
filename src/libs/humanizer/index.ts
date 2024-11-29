@@ -86,6 +86,7 @@ const humanizeAccountOp = (_accountOp: AccountOp, options: HumanizerOptions): Ir
     try {
       currentCalls = hm(accountOp, currentCalls, humanizerInfo as HumanizerMeta, humanizerOptions)
     } catch (error) {
+      console.error(error)
       // No action is needed here; we only set `currentCalls` if the module successfully resolves the calls.
     }
   })
@@ -102,6 +103,7 @@ const humanizeMessage = (_message: Message): IrMessage => {
 
     return { ...message, fullVisualization, warnings }
   } catch (error) {
+    console.error(error)
     return message
   }
 }
