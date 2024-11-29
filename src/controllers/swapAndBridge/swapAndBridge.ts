@@ -278,6 +278,8 @@ export class SwapAndBridgeController extends EventEmitter {
   async initForm(sessionId: string) {
     await this.#initialLoadPromise
 
+    if (this.sessionIds.includes(sessionId)) return
+
     // reset only if there are no other instances opened/active
     if (!this.sessionIds.length) {
       this.resetForm() // clear prev session form state
