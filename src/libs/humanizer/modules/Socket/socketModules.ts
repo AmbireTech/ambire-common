@@ -344,7 +344,7 @@ export const SocketModule: HumanizerCallModule = (accountOp: AccountOp, irCalls:
           getAction('Bridge'),
           getToken(eToNative(token), amount),
           getLabel('to'),
-          getTokenWithChain(eToNative(token), amount, chainId),
+          getToken(eToNative(token), amount),
           getLabel('on'),
           getChain(chainId),
           ...getRecipientText(accountOp.accountAddr, recipient)
