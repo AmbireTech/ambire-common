@@ -212,7 +212,6 @@ export const SocketModule: HumanizerCallModule = (accountOp: AccountOp, irCalls:
       const { fromToken, toToken, amount, receiverAddress, swapExtraData, metadata } =
         iface.parseTransaction(call)!.args
       let outAmount = 0n
-      // @TODO no harcoded sighashes
       if (
         swapExtraData.startsWith(
           iface.getFunction(
@@ -235,6 +234,14 @@ export const SocketModule: HumanizerCallModule = (accountOp: AccountOp, irCalls:
           bytes2
         ] = iface.parseTransaction({ data: swapExtraData })!.args
         outAmount = amount2
+      } else if (
+        swapExtraData.startsWith(
+          iface.getFunction('transformERC20(address,address,uint256,uint256,(uint32,bytes)[])')!
+            .selector
+        )
+      ) {
+        const params = iface.parseTransaction({ data: swapExtraData })!.args
+        outAmount = params[3]
       }
       return {
         ...call,
