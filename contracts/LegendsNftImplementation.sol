@@ -5,11 +5,10 @@ import '@openzeppelin/contracts/token/ERC721/extensions/ERC721Enumerable.sol';
 import '@openzeppelin/contracts/token/ERC721/extensions/IERC721Metadata.sol';
 import '@openzeppelin/contracts/access/Ownable.sol';
 import '@openzeppelin/contracts/utils/Strings.sol';
-import '@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol';
 
 using Strings for address;
 
-contract LegendsNFTImplementation is Ownable, IERC721Metadata, ERC721Enumerable, Initializable {
+contract LegendsNFTImplementation is Ownable, IERC721Metadata, ERC721Enumerable {
   event BatchMetadataUpdate(uint256 _fromTokenId, uint256 _toTokenId);
   event MetadataUpdate(uint256 _tokenId);
   event PickedCharacter(uint indexed heroType);

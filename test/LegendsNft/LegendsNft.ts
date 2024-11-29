@@ -15,7 +15,7 @@ describe('Legends nft', () => {
     ;[signer, signer2, signer3] = await ethers.getSigners()
     const LegendsNftContract = await ethers.getContractFactory('LegendsNFTImplementation')
     legendsNftContract = await LegendsNftContract.deploy()
-    const LegendsProxy = await ethers.getContractFactory('LegendsNft')
+    const LegendsProxy = await ethers.getContractFactory('LegendsNFT')
     proxyAsProxy = await LegendsProxy.deploy(legendsNftContract.target, 'Ambire Legends', 'AML')
     proxyAsImplementation = LegendsNftContract.attach(proxyAsProxy.target)
 
