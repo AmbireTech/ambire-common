@@ -27,7 +27,8 @@ const config: HardhatUserConfig = {
   },
   networks: {
     base: {
-      url: 'https://mainnet.base.org'
+      url: 'https://mainnet.base.org',
+      accounts: [process.env.PRIVATE_KEY]
     }
   },
   etherscan: {

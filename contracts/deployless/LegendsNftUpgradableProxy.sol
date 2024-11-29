@@ -3,17 +3,17 @@ import '@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol';
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.19;
 
-contract LegendsNft is ERC1967Proxy {
+contract LegendsNFT is ERC1967Proxy {
   // follows exactly the storage slots of the LegendsNft Contract
   address implementationOwner;
   string _name;
   string _symbol;
 
   constructor(
-    address implementation,
+    address implAddress,
     string memory name,
     string memory symbol
-  ) ERC1967Proxy(implementation, '') {
+  ) ERC1967Proxy(implAddress, '') {
     _name = name;
     _symbol = symbol;
     implementationOwner = msg.sender;
@@ -33,8 +33,8 @@ contract LegendsNft is ERC1967Proxy {
     _changeAdmin(newAdmin);
   }
 
-  function setImplementation(address implementation) public {
+  function setImplementation(address implAddress) public {
     require(msg.sender == _getAdmin(), 'Not authorized');
-    _upgradeTo(implementation);
+    _upgradeTo(implAddress);
   }
 }
