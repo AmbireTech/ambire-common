@@ -2,6 +2,7 @@ import { Contract, getAddress, Interface, MaxUint256 } from 'ethers'
 
 import ERC20 from '../../../contracts/compiled/IERC20.json'
 import { Account } from '../../interfaces/account'
+import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
 import {
   ActiveRoute,
@@ -275,6 +276,21 @@ const buildSwapAndBridgeUserRequests = async (
 
 export const getIsBridgeTxn = (userTxType: SocketAPIUserTx['userTxType']) =>
   userTxType === 'fund-movr'
+
+/**
+ * Checks if a network is supported by our Swap & Bridge service provider. As of v4.43.0
+ * there are 16 networks supported, so user could have (many) custom networks that are not.
+ */
+export const getIsNetworkSupported = (
+  supportedChainIds: Network['chainId'][],
+  network?: Network
+) => {
+  // Assume supported if missing (and receive no results when attempting to use
+  // a not-supported network) than the alternative - blocking the UI.
+  if (!supportedChainIds.length || !network) return true
+
+  return supportedChainIds.includes(network.chainId)
+}
 
 const getActiveRoutesForAccount = (accountAddress: string, activeRoutes: ActiveRoute[]) => {
   return activeRoutes.filter(
