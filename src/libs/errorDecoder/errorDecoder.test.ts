@@ -14,18 +14,18 @@ import { DecodedError, ErrorType } from './types'
 const TEST_MESSAGE_REVERT_DATA =
   '0x08c379a00000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000000c54657374206d6573736167650000000000000000000000000000000000000000'
 
-const MockBundlerEstimationError = class extends Error {
+export const MockBundlerEstimationError = class extends Error {
   public constructor(public shortMessage?: string) {
     super(`UserOperation reverted during simulation with reason: ${shortMessage}`)
   }
 }
-const MockBundlerBroadcastError = class extends Error {
+export const MockBundlerBroadcastError = class extends Error {
   public constructor(public shortMessage?: string) {
     super(`UserOperation reverted with reason: ${shortMessage}`)
   }
 }
 
-const MockRpcError = class extends Error {
+export const MockRpcError = class extends Error {
   public constructor(
     public code?: string | number,
     public info?: { error: { code: number; message: string } },
