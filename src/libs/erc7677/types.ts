@@ -11,12 +11,17 @@ export interface PaymasterCapabilities {
   [chainId: `0x${string}`]: PaymasterService
 }
 
+export interface Sponsor {
+  name: string
+  icon?: string
+}
+
 export type PaymasterEstimationData = {
   paymaster: `0x${string}`
   paymasterData: `0x${string}`
   paymasterVerificationGasLimit?: `0x${string}`
   paymasterPostOpGasLimit?: `0x${string}`
-  sponsor?: { name: string; icon?: string }
+  sponsor?: Sponsor
   isFinal?: boolean // Indicates that the caller does not need to call pm_getPaymasterData
 }
 

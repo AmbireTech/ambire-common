@@ -26,7 +26,7 @@ import { Warning } from '../../interfaces/signAccountOp'
 import { isAmbireV1LinkedAccount, isSmartAccount } from '../../libs/account/account'
 import { AccountOp, GasFeePayment, getSignableCalls } from '../../libs/accountOp/accountOp'
 import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
-import { PaymasterErrorReponse, PaymasterSuccessReponse } from '../../libs/erc7677/types'
+import { PaymasterErrorReponse, PaymasterSuccessReponse, Sponsor } from '../../libs/erc7677/types'
 import { getHumanReadableBroadcastError } from '../../libs/errorHumanizer'
 import {
   BundlerGasPrice,
@@ -169,6 +169,9 @@ export class SignAccountOpController extends EventEmitter {
 
   // indicates whether the transaction gas is sponsored or not
   isSponsored: boolean = false
+
+  // the sponsor data to be displayed, if any
+  sponsor: Sponsor | undefined = undefined
 
   constructor(
     accounts: AccountsController,
@@ -535,6 +538,7 @@ export class SignAccountOpController extends EventEmitter {
       this.estimation.erc4337GasLimits.paymaster
     ) {
       this.isSponsored = this.estimation.erc4337GasLimits.paymaster.isSponsored()
+      this.sponsor = this.estimation.erc4337GasLimits.paymaster.getEstimationData()?.sponsor
     }
 
     // calculate the fee speeds if either there are no feeSpeeds
