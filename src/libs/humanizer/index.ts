@@ -24,6 +24,7 @@ import fallbackHumanizer from './modules/FallbackHumanizer'
 import gasTankModule from './modules/GasTankModule'
 import KyberSwap from './modules/KyberSwap'
 import legendsModule from './modules/Legends'
+import { LidoModule } from './modules/Lido'
 import { postProcessing } from './modules/PostProcessing/postProcessModule'
 import preProcessHumanizer from './modules/PreProcess'
 import privilegeHumanizer from './modules/Privileges'
@@ -43,6 +44,7 @@ export const humanizerCallModules: HumanizerCallModule[] = [
   deploymentModule,
   genericErc721Humanizer,
   genericErc20Humanizer,
+  LidoModule,
   gasTankModule,
   airdropsModule,
   uniswapHumanizer,
