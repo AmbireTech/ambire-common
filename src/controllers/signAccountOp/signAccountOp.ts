@@ -990,16 +990,25 @@ export class SignAccountOpController extends EventEmitter {
   }
 
   get availableFeeOptions(): EstimateResult['feePaymentOptions'] {
-    if (!this.isInitialized) return []
+    if (!this.estimation) return []
+
+    // if the txn is sponsored, return the native option only
+    // even if it's balance is 0
+    if (this.isSponsored) {
+      const native = this.estimation.feePaymentOptions.find(
+        (feeOption) => feeOption.token.address === ZeroAddress
+      )
+      return native ? [native] : []
+    }
 
     // FeeOptions having amount
-    const withAmounts = this.estimation!.feePaymentOptions.filter(
+    const withAmounts = this.estimation.feePaymentOptions.filter(
       (feeOption) => feeOption.availableAmount
     )
     if (withAmounts.length) return withAmounts
 
     // if there are no fee options with amounts, return the native option
-    const native = this.estimation!.feePaymentOptions.find(
+    const native = this.estimation.feePaymentOptions.find(
       (feeOption) => feeOption.token.address === ZeroAddress
     )
     return native ? [native] : []
