@@ -1,4 +1,4 @@
-import { CustomResponse, Fetch } from '../../interfaces/fetch'
+import { Fetch } from '../../interfaces/fetch'
 import { Network } from '../../interfaces/network'
 import { Bundler } from '../../services/bundlers/bundler'
 import { fetchUserOp } from '../../services/explorers/jiffyscan'
@@ -72,7 +72,7 @@ export async function fetchTxnId(
 
   if (isIdentifiedByUserOpHash(identifiedBy)) {
     const userOpHash = identifiedBy.identifier
-    const [response, bundlerResult]: [CustomResponse | null, any] = await Promise.all([
+    const [response, bundlerResult]: [any, any] = await Promise.all([
       fetchUserOp(userOpHash, fetchFn),
       Bundler.getStatusAndTxnId(userOpHash, network)
     ])
