@@ -1,7 +1,4 @@
 export const WrappedStETH = [
-  'constructor(address _stETH)',
-  'event Approval(address indexed owner, address indexed spender, uint256 value)',
-  'event Transfer(address indexed from, address indexed to, uint256 value)',
   'function DOMAIN_SEPARATOR() view returns (bytes32)',
   'function allowance(address owner, address spender) view returns (uint256)',
   'function approve(address spender, uint256 amount) returns (bool)',
@@ -22,6 +19,5 @@ export const WrappedStETH = [
   'function transfer(address recipient, uint256 amount) returns (bool)',
   'function transferFrom(address sender, address recipient, uint256 amount) returns (bool)',
   'function unwrap(uint256 _wstETHAmount) returns (uint256)',
-  'function wrap(uint256 _stETHAmount) returns (uint256)',
-  'receive() external payable'
+  'function wrap(uint256 _stETHAmount) returns (uint256)'
 ]
