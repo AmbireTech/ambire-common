@@ -3,7 +3,7 @@ import { Interface } from 'ethers'
 import { AccountOp } from '../../../accountOp/accountOp'
 import { AaveLendingPoolV2 } from '../../const/abis'
 import { IrCall } from '../../interfaces'
-import { getAction, getLabel, getOnBehalfOf, getToken } from '../../utils'
+import { getAction, getAddressVisualization, getLabel, getOnBehalfOf, getToken } from '../../utils'
 
 export const aaveLendingPoolV2 = (): { [key: string]: Function } => {
   const iface = new Interface(AaveLendingPoolV2)
@@ -13,7 +13,8 @@ export const aaveLendingPoolV2 = (): { [key: string]: Function } => {
       return [
         getAction('Deposit'),
         getToken(asset, amount),
-        getLabel('to Aave lending pool'),
+        getLabel('to'),
+        getAddressVisualization(call.to),
         ...getOnBehalfOf(onBehalf, accountOp.accountAddr)
       ]
     },
@@ -22,7 +23,8 @@ export const aaveLendingPoolV2 = (): { [key: string]: Function } => {
       return [
         getAction('Withdraw'),
         getToken(asset, amount),
-        getLabel('from Aave lending pool'),
+        getLabel('to'),
+        getAddressVisualization(call.to),
         ...getOnBehalfOf(onBehalf, accountOp.accountAddr)
       ]
     },
@@ -31,13 +33,19 @@ export const aaveLendingPoolV2 = (): { [key: string]: Function } => {
       return [
         getAction('Repay'),
         getToken(asset, amount),
-        getLabel('to Aave lending pool'),
+        getLabel('to'),
+        getAddressVisualization(call.to),
         ...getOnBehalfOf(onBehalf, accountOp.accountAddr)
       ]
     },
     [iface.getFunction('borrow')?.selector!]: (accountOp: AccountOp, call: IrCall) => {
       const [asset, amount] = iface.parseTransaction(call)?.args || []
-      return [getAction('Borrow'), getToken(asset, amount), getLabel('from Aave lending pool')]
+      return [
+        getAction('Borrow'),
+        getToken(asset, amount),
+        getLabel('to'),
+        getAddressVisualization(call.to)
+      ]
     }
   }
   return matcher

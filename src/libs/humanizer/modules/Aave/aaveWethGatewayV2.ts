@@ -3,7 +3,7 @@ import { Interface, ZeroAddress } from 'ethers'
 import { AccountOp } from '../../../accountOp/accountOp'
 import { AaveWethGatewayV2 } from '../../const/abis'
 import { IrCall } from '../../interfaces'
-import { getAction, getLabel, getOnBehalfOf, getToken } from '../../utils'
+import { getAction, getAddressVisualization, getLabel, getOnBehalfOf, getToken } from '../../utils'
 
 export const aaveWethGatewayV2 = (): { [key: string]: Function } => {
   const iface = new Interface(AaveWethGatewayV2)
@@ -13,7 +13,8 @@ export const aaveWethGatewayV2 = (): { [key: string]: Function } => {
       return [
         getAction('Deposit'),
         getToken(ZeroAddress, call.value),
-        getLabel('to Aave lending pool'),
+        getLabel('to'),
+        getAddressVisualization(call.to),
         ...getOnBehalfOf(onBehalfOf, accountOp.accountAddr)
       ]
     },
@@ -22,7 +23,8 @@ export const aaveWethGatewayV2 = (): { [key: string]: Function } => {
       return [
         getAction('Withdraw'),
         getToken(ZeroAddress, amount),
-        getLabel('from Aave lending pool'),
+        getLabel('to'),
+        getAddressVisualization(call.to),
         ...getOnBehalfOf(to, accountOp.accountAddr)
       ]
     },
@@ -32,16 +34,18 @@ export const aaveWethGatewayV2 = (): { [key: string]: Function } => {
       return [
         getAction('Repay'),
         getToken(ZeroAddress, call.value),
-        getLabel('to Aave lending pool'),
+        getLabel('to'),
+        getAddressVisualization(call.to),
         getOnBehalfOf(onBehalfOf, accountOp.accountAddr)
       ]
     },
     [iface.getFunction('borrowETH')?.selector!]: (accountOp: AccountOp, call: IrCall) => {
       const [, /* lendingPool */ amount] = iface.parseTransaction(call)?.args || []
       return [
-        getAction('Borrow '),
+        getAction('Borrow'),
         getToken(ZeroAddress, amount),
-        getLabel('from Aave lending pool')
+        getLabel('to'),
+        getAddressVisualization(call.to)
       ]
     }
   }

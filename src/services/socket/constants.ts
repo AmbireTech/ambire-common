@@ -11,6 +11,25 @@ export const ETH_ON_OPTIMISM_LEGACY_ADDRESS = '0xdeaddeaddeaddeaddeaddeaddeaddea
  */
 export const FEE_PERCENT = 0.001
 
+const AMBIRE_WALLET_TOKEN_COMMON_PROPS = {
+  name: 'Ambire Wallet',
+  symbol: 'WALLET',
+  decimals: 18,
+  logoURI: 'https://media.socket.tech/tokens/all/WALLET'
+}
+
+export const AMBIRE_WALLET_TOKEN_ON_ETHEREUM = {
+  chainId: 1,
+  address: '0x88800092fF476844f74dC2FC427974BBee2794Ae',
+  ...AMBIRE_WALLET_TOKEN_COMMON_PROPS
+}
+
+export const AMBIRE_WALLET_TOKEN_ON_BASE = {
+  chainId: 8453,
+  address: '0x0BbbEad62f7647AE8323d2cb243A0DB74B7C2b80',
+  ...AMBIRE_WALLET_TOKEN_COMMON_PROPS
+}
+
 export const AMBIRE_FEE_TAKER_ADDRESSES: { [chainId: number]: string } = {
   324: '0x942f9CE5D9a33a82F88D233AEb3292E680230348',
   1101: '0x942f9CE5D9a33a82F88D233AEb3292E680230348',

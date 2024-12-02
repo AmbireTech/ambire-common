@@ -6,9 +6,11 @@ export type BannerType = 'error' | 'warning' | 'info' | 'info2' | 'success'
 export type BannerCategory =
   | 'pending-to-be-signed-acc-op'
   | 'pending-to-be-confirmed-acc-op'
-  | 'swap-and-bridge-in-progress'
-  | 'swap-and-bridge-ready'
-  | 'swap-and-bridge-completed'
+  | 'bridge-in-progress'
+  | 'bridge-ready'
+  | 'bridge-completed'
+  | 'temp-seed-not-confirmed'
+  | 'old-account'
 
 export interface Banner {
   id: number | string
@@ -65,16 +67,29 @@ export type Action =
     }
   | {
       label: 'Reject'
-      actionName: 'reject-swap-and-bridge'
+      actionName: 'reject-bridge'
       meta: { activeRouteId: number }
     }
   | {
-      label: 'Proceed to Next Step'
-      actionName: 'proceed-swap-and-bridge'
+      label: 'Proceed to Next Step' | 'Open'
+      actionName: 'proceed-bridge'
       meta: { activeRouteId: number }
     }
   | {
-      label: 'Got it'
-      actionName: 'close-swap-and-bridge'
+      label: 'Close'
+      actionName: 'close-bridge'
       meta: { activeRouteId: number }
+    }
+  | {
+      label: 'Details'
+      actionName: 'open-swap-and-bridge-tab'
+    }
+  | {
+      label: 'Hide'
+      actionName: 'hide-activity-banner'
+      meta: { timestamp: number; addr: string; network: string; isHideStyle: boolean }
+    }
+  | {
+      label: 'Check'
+      actionName: 'confirm-temp-seed'
     }

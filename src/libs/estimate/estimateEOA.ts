@@ -6,12 +6,13 @@ import { FEE_COLLECTOR } from '../../consts/addresses'
 import { OPTIMISTIC_ORACLE } from '../../consts/deploy'
 import { Account, AccountStates } from '../../interfaces/account'
 import { Network } from '../../interfaces/network'
-import { AccountOp } from '../accountOp/accountOp'
+import { AccountOp, toSingletonCall } from '../accountOp/accountOp'
 import { DeploylessMode, fromDescriptor } from '../deployless/deployless'
+import { getHumanReadableEstimationError } from '../errorHumanizer'
 import { TokenResult } from '../portfolio'
 import { EOA_SIMULATION_NONCE } from '../portfolio/getOnchainBalances'
 import { privSlot } from '../proxyDeploy/deploy'
-import { catchEstimationFailure, estimationErrorFormatted } from './errors'
+import { estimationErrorFormatted } from './errors'
 import { estimateWithRetries } from './estimateWithRetries'
 import { EstimateResult } from './interfaces'
 
@@ -67,25 +68,25 @@ export async function estimateEOA(
       'uint256', // nonce
       'uint256' // gasLimit
     ],
-    [call.data, call.to, account.addr, 100000000, 2, nonce, 100000]
+    [call.data, call.to ?? ZeroAddress, account.addr, 100000000, 2, nonce, 100000]
   )
   const initializeRequests = () => [
     provider
       .estimateGas({
         from: account.addr,
-        to: call.to,
+        to: call.to ?? undefined,
         value: call.value,
         data: call.data,
         nonce
       })
-      .catch(catchEstimationFailure),
+      .catch(getHumanReadableEstimationError),
     !network.rpcNoStateOverride
       ? deploylessEstimator
           .call(
             'estimateEoa',
             [
               account.addr,
-              [account.addr, EOA_SIMULATION_NONCE, op.calls, '0x'],
+              [account.addr, EOA_SIMULATION_NONCE, op.calls.map(toSingletonCall), '0x'],
               encodedCallData,
               [account.addr],
               FEE_COLLECTOR,
@@ -98,13 +99,16 @@ export async function estimateEOA(
               stateToOverride: getEOAEstimationStateOverride(account.addr)
             }
           )
-          .catch(catchEstimationFailure)
+          .catch((e) => {
+            console.log('error calling estimateEoa:', e)
+            return [[0n, [], {}]]
+          })
       : deploylessEstimator
           .call('getL1GasEstimation', [encodedCallData, FEE_COLLECTOR, optimisticOracle], {
             from: blockFrom,
             blockTag
           })
-          .catch(catchEstimationFailure)
+          .catch(getHumanReadableEstimationError)
   ]
   const result = await estimateWithRetries(initializeRequests)
   const feePaymentOptions = [
@@ -120,8 +124,12 @@ export async function estimateEOA(
   let gasUsed = 0n
   if (!network.rpcNoStateOverride) {
     const [gasUsedEstimateGas, [[gasUsedEstimationSol, feeTokenOutcomes, l1GasEstimation]]] = result
-    feePaymentOptions[0].availableAmount = feeTokenOutcomes[0][1]
-    feePaymentOptions[0].addedNative = l1GasEstimation.fee
+    if (feeTokenOutcomes.length && feeTokenOutcomes[0].length) {
+      feePaymentOptions[0].availableAmount = feeTokenOutcomes[0][1]
+    }
+    if (l1GasEstimation && l1GasEstimation.fee) {
+      feePaymentOptions[0].addedNative = l1GasEstimation.fee
+    }
 
     // if it's a simple transfer, trust estimateGas as it should be 21K
     // if it's a contract call, trust whichever is higher

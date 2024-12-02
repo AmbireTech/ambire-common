@@ -3,7 +3,7 @@ import { Interface, ZeroAddress } from 'ethers'
 
 import { AccountOp } from '../../../accountOp/accountOp'
 import { SocketViaAcross } from '../../const/abis'
-import { HumanizerCallModule, IrCall } from '../../interfaces'
+import { HumanizerCallModule, HumanizerVisualization, IrCall } from '../../interfaces'
 import {
   eToNative,
   getAction,
@@ -43,7 +43,10 @@ export const SocketModule: HumanizerCallModule = (accountOp: AccountOp, irCalls:
     'function bridgeERC20To(uint256,bytes32,address,address,uint256,uint32,uint256)',
     'function bridgeERC20To(uint256 amount, (uint256 toChainId, uint256 slippage, uint256 relayerFee, uint32 dstChainDomain, address token, address receiverAddress, bytes32 metadata, bytes callData, address delegate) connextBridgeData)',
     'function transformERC20(address inputToken, address outputToken, uint256 inputTokenAmount, uint256 minOutputTokenAmount, (uint32,bytes)[] transformations)',
-    'function swapAndBridge(uint32 swapId, bytes swapData, tuple(uint256 toChainId, uint256 slippage, uint256 relayerFee, uint32 dstChainDomain, address receiverAddress, bytes32 metadata, bytes callData, address delegate) connextBridgeData)'
+    'function swapAndBridge(uint32 swapId, bytes swapData, tuple(uint256 toChainId, uint256 slippage, uint256 relayerFee, uint32 dstChainDomain, address receiverAddress, bytes32 metadata, bytes callData, address delegate) connextBridgeData)',
+    'function swapAndBridge(uint32 swapId, bytes calldata swapData, tuple (address receiverAddress,address senderAddress,uint256 value,uint256 srcPoolId,uint256 dstPoolId,uint256 minReceivedAmt,uint256 destinationGasLimit,bool isNativeSwapRequired,uint16 stargateDstChainId,uint32 swapId,bytes swapData,bytes32 metadata,bytes destinationPayload) acrossBridgeData) payable',
+    'function swapAndBridge(uint32 swapId, bytes swapData, (uint32 dstEid, uint256 minAmountLD, address stargatePoolAddress, bytes destinationPayload, bytes destinationExtraOptions, (uint256 nativeFee, uint256 lzTokenFee) messagingFee, bytes32 metadata, uint256 toChainId, address receiver, bytes swapData, uint32 swapId, bool isNativeSwapRequired) stargateBridgeData) payable',
+    'function swap(address,(address,address,address,address,uint256,uint256,uint256),bytes,bytes)'
   ])
   const matcher = {
     [`${
@@ -74,7 +77,7 @@ export const SocketModule: HumanizerCallModule = (accountOp: AccountOp, irCalls:
             getAction('Bridge'),
             getToken(eToNative(fromToken), amount),
             getLabel('to'),
-            getTokenWithChain(eToNative(toToken), outputAmount, dstChain),
+            getTokenWithChain(eToNative(toToken), outputAmount),
             getLabel('on'),
             getChain(dstChain),
             getDeadline(quoteAndDeadlineTimeStamps[1]),
@@ -209,10 +212,37 @@ export const SocketModule: HumanizerCallModule = (accountOp: AccountOp, irCalls:
       const { fromToken, toToken, amount, receiverAddress, swapExtraData, metadata } =
         iface.parseTransaction(call)!.args
       let outAmount = 0n
-      // @TODO no harcoded sighashes
-      if (swapExtraData.startsWith('0x415565b0'))
+      if (
+        swapExtraData.startsWith(
+          iface.getFunction(
+            'performAction(address fromToken, address toToken, uint256 amount, address receiverAddress, bytes32 metadata, bytes swapExtraData)'
+          )?.selector
+        )
+      ) {
         outAmount = iface.parseTransaction({ data: swapExtraData })!.args[3]
-
+      } else if (
+        swapExtraData.startsWith(
+          iface.getFunction(
+            'swap(address,(address,address,address,address,uint256,uint256,uint256),bytes,bytes)'
+          )?.selector
+        )
+      ) {
+        const [
+          randAddress,
+          [token1, token2, randAddress2, recipient, amount1, amount2],
+          bytes1,
+          bytes2
+        ] = iface.parseTransaction({ data: swapExtraData })!.args
+        outAmount = amount2
+      } else if (
+        swapExtraData.startsWith(
+          iface.getFunction('transformERC20(address,address,uint256,uint256,(uint32,bytes)[])')!
+            .selector
+        )
+      ) {
+        const params = iface.parseTransaction({ data: swapExtraData })!.args
+        outAmount = params[3]
+      }
       return {
         ...call,
         fullVisualization: [
@@ -321,7 +351,7 @@ export const SocketModule: HumanizerCallModule = (accountOp: AccountOp, irCalls:
           getAction('Bridge'),
           getToken(eToNative(token), amount),
           getLabel('to'),
-          getTokenWithChain(eToNative(token), amount, chainId),
+          getToken(eToNative(token), amount),
           getLabel('on'),
           getChain(chainId),
           ...getRecipientText(accountOp.accountAddr, recipient)
@@ -514,6 +544,122 @@ export const SocketModule: HumanizerCallModule = (accountOp: AccountOp, irCalls:
           ...(chainId ? [getLabel('on'), getChain(chainId)] : []),
           ...getRecipientText(accountOp.accountAddr, receiverAddress)
         ].filter((x) => x)
+      }
+    },
+    [`${
+      iface.getFunction(
+        'swapAndBridge(uint32 swapId, bytes calldata swapData, tuple (address receiverAddress,address senderAddress,uint256 value,uint256 srcPoolId,uint256 dstPoolId,uint256 minReceivedAmt,uint256 destinationGasLimit,bool isNativeSwapRequired,uint16 stargateDstChainId,uint32 swapId,bytes swapData,bytes32 metadata,bytes destinationPayload) acrossBridgeData)'
+      )?.selector
+    }`]: (call: IrCall): IrCall => {
+      const {
+        swapId,
+        swapData,
+        acrossBridgeData: {
+          receiverAddress,
+          senderAddress,
+          value,
+          srcPoolId,
+          dstPoolId,
+          minReceivedAmt,
+          destinationGasLimit,
+          isNativeSwapRequired,
+          stargateDstChainId,
+          swapId: innerSwapId,
+          swapData: innerSwapData,
+          metadata,
+          destinationPayload
+        }
+      } = iface.parseTransaction(call)!.args
+
+      const dstChain: HumanizerVisualization[] = []
+      const tokensData: HumanizerVisualization[] = []
+      if (STARGATE_CHAIN_IDS[stargateDstChainId])
+        dstChain.push(getLabel('to'), getChain(STARGATE_CHAIN_IDS[stargateDstChainId]))
+      if (
+        swapData.startsWith(
+          iface.getFunction(
+            'performActionWithIn(address fromToken, address toToken, uint256 amount, bytes32 metadata, bytes swapExtraData) payable returns (uint256, address)'
+          )?.selector
+        )
+      ) {
+        const {
+          fromToken,
+          toToken,
+          amount,
+          metadata: newMeta,
+          swapExtraData
+        } = iface.parseTransaction({
+          ...call,
+          data: swapData
+        })!.args
+        tokensData.push(getToken(fromToken, amount), getLabel('to'), getToken(toToken, value))
+      }
+
+      return {
+        ...call,
+        fullVisualization: [
+          getAction('Bridge'),
+          ...tokensData,
+          ...dstChain,
+          ...getRecipientText(senderAddress, receiverAddress)
+        ]
+      }
+    },
+
+    [`${
+      iface.getFunction(
+        'function swapAndBridge(uint32 swapId, bytes swapData, (uint32 dstEid, uint256 minAmountLD, address stargatePoolAddress, bytes destinationPayload, bytes destinationExtraOptions, (uint256 nativeFee, uint256 lzTokenFee) messagingFee, bytes32 metadata, uint256 toChainId, address receiver, bytes swapData, uint32 swapId, bool isNativeSwapRequired) stargateBridgeData) payable'
+      )?.selector
+    }`]: (call: IrCall): IrCall => {
+      const {
+        swapId,
+        swapData,
+        stargateBridgeData: {
+          dstEid,
+          minAmountLD,
+          stargatePoolAddress,
+          destinationPayload,
+          destinationExtraOptions,
+          messagingFee: { nativeFee, lzTokenFee },
+          metadata,
+          toChainId,
+          receiver,
+          swapData: InnerSwapData,
+          swapId: InnerSwapId,
+          isNativeSwapRequired
+        }
+      } = iface.parseTransaction(call)!.args
+      const dstChain: HumanizerVisualization[] = []
+      const tokensData: HumanizerVisualization[] = []
+      if (
+        swapData.startsWith(
+          iface.getFunction(
+            'performActionWithIn(address fromToken, address toToken, uint256 amount, bytes32 metadata, bytes swapExtraData) payable returns (uint256, address)'
+          )?.selector
+        )
+      ) {
+        const {
+          fromToken,
+          toToken,
+          amount,
+          metadata: newMeta,
+          swapExtraData
+        } = iface.parseTransaction({
+          ...call,
+          data: swapData
+        })!.args
+        tokensData.push(getToken(fromToken, amount), getLabel('to'), getToken(toToken, minAmountLD))
+      }
+
+      return {
+        ...call,
+        fullVisualization: [
+          getAction('Bridge'),
+          ...tokensData,
+          getLabel('to'),
+          getChain(toChainId),
+          ...getRecipientText(accountOp.accountAddr, receiver)
+        ]
       }
     }
   }

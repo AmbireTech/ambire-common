@@ -5,6 +5,7 @@ import { getAddress, JsonRpcProvider, Provider, ZeroAddress } from 'ethers'
 
 import BalanceGetter from '../../../contracts/compiled/BalanceGetter.json'
 import NFTGetter from '../../../contracts/compiled/NFTGetter.json'
+import gasTankFeeTokens from '../../consts/gasTankFeeTokens'
 import { PINNED_TOKENS } from '../../consts/pinnedTokens'
 import { Fetch } from '../../interfaces/fetch'
 import { Network } from '../../interfaces/network'
@@ -76,19 +77,29 @@ export class Portfolio {
     network: Network,
     velcroUrl?: string
   ) {
-    this.batchedVelcroDiscovery = batcher(fetch, (queue) => {
-      const baseCurrencies = [...new Set(queue.map((x) => x.data.baseCurrency))]
-      return baseCurrencies.map((baseCurrency) => {
-        const queueSegment = queue.filter((x) => x.data.baseCurrency === baseCurrency)
-        const url = `${velcroUrl}/multi-hints?networks=${queueSegment
-          .map((x) => x.data.networkId)
-          .join(',')}&accounts=${queueSegment
-          .map((x) => x.data.accountAddr)
-          .join(',')}&baseCurrency=${baseCurrency}`
-        return { queueSegment, url }
-      })
+    this.batchedVelcroDiscovery = batcher(
+      fetch,
+      (queue) => {
+        const baseCurrencies = [...new Set(queue.map((x) => x.data.baseCurrency))]
+        return baseCurrencies.map((baseCurrency) => {
+          const queueSegment = queue.filter((x) => x.data.baseCurrency === baseCurrency)
+          const url = `${velcroUrl}/multi-hints?networks=${queueSegment
+            .map((x) => x.data.networkId)
+            .join(',')}&accounts=${queueSegment
+            .map((x) => x.data.accountAddr)
+            .join(',')}&baseCurrency=${baseCurrency}`
+          return { queueSegment, url }
+        })
+      },
+      {
+        timeoutAfter: 3000,
+        timeoutErrorMessage: `Velcro discovery timed out on ${network.id}`
+      }
+    )
+    this.batchedGecko = batcher(fetch, geckoRequestBatcher, {
+      timeoutAfter: 3000,
+      timeoutErrorMessage: `Cena request timed out on ${network.id}`
     })
-    this.batchedGecko = batcher(fetch, geckoRequestBatcher)
     this.network = network
     this.deploylessTokens = fromDescriptor(provider, BalanceGetter, !network.rpcNoStateOverride)
     this.deploylessNfts = fromDescriptor(provider, NFTGetter, !network.rpcNoStateOverride)
@@ -168,6 +179,12 @@ export class Portfolio {
         ...localOpts.tokenPreferences.filter((x) => x.standard === 'ERC20').map((x) => x.address)
       ]
     }
+
+    // add the fee tokens
+    hints.erc20s = [
+      ...hints.erc20s,
+      ...gasTankFeeTokens.filter((x) => x.networkId === this.network.id).map((x) => x.address)
+    ]
 
     // Remove duplicates and always add ZeroAddress
     hints.erc20s = [...new Set(hints.erc20s.map((erc20) => getAddress(erc20)).concat(ZeroAddress))]
@@ -271,6 +288,7 @@ export class Portfolio {
             // this is what to look for in the coingecko response object
             responseIdentifier: geckoResponseIdentifier(token.address, this.network)
           })
+
           priceIn = Object.entries(priceData || {}).map(([baseCurr, price]) => ({
             baseCurrency: baseCurr,
             price: price as number
@@ -301,6 +319,7 @@ export class Portfolio {
         }
       })
     )
+
     const priceUpdateDone = Date.now()
     return {
       hintsFromExternalAPI: stripExternalHintsAPIResponse(hintsFromExternalAPI),
@@ -311,6 +330,20 @@ export class Portfolio {
       priceUpdateTime: priceUpdateDone - oracleCallDone,
       priceCache,
       tokens: tokensWithPrices,
+      feeTokens: tokensWithPrices.filter((t) => {
+        // return the native token
+        if (
+          t.address === ZeroAddress &&
+          t.networkId.toLowerCase() === this.network.id.toLowerCase()
+        )
+          return true
+
+        return gasTankFeeTokens.find(
+          (gasTankT) =>
+            gasTankT.address.toLowerCase() === t.address.toLowerCase() &&
+            gasTankT.networkId.toLowerCase() === t.networkId.toLowerCase()
+        )
+      }),
       beforeNonce,
       afterNonce,
       blockNumber,

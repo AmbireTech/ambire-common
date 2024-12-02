@@ -6,7 +6,7 @@ import { toBeHex } from 'ethers'
 import { ENTRY_POINT_MARKER, ERC_4337_ENTRYPOINT } from '../../consts/deploy'
 import { Fetch } from '../../interfaces/fetch'
 import { Network } from '../../interfaces/network'
-import { mapTxnErrMsg } from '../../libs/estimate/errors'
+import { decodeError } from '../../libs/errorDecoder'
 import { BundlerEstimateResult } from '../../libs/estimate/interfaces'
 import { Gas1559Recommendation } from '../../libs/gasPrice/gasPrice'
 import { privSlot } from '../../libs/proxyDeploy/deploy'
@@ -15,6 +15,11 @@ import { getCleanUserOp } from '../../libs/userOperation/userOperation'
 import { getRpcProvider } from '../provider'
 
 require('dotenv').config()
+
+function addExtra(gasInWei: bigint, percentageIncrease: bigint): string {
+  const percent = 100n / percentageIncrease
+  return toBeHex(gasInWei + gasInWei / percent)
+}
 
 export class Bundler {
   /**
@@ -166,8 +171,10 @@ export class Bundler {
     if (shouldStateOverride) {
       const stateOverride = {
         [userOperation.sender]: {
-          // add privileges to the entry point
-          [`0x${privSlot(0, 'address', ERC_4337_ENTRYPOINT, 'bytes32')}`]: ENTRY_POINT_MARKER
+          stateDiff: {
+            // add privileges to the entry point
+            [`0x${privSlot(0, 'address', ERC_4337_ENTRYPOINT, 'bytes32')}`]: ENTRY_POINT_MARKER
+          }
         }
       }
       return provider.send('eth_estimateUserOperationGas', [
@@ -193,28 +200,30 @@ export class Bundler {
     const provider = getRpcProvider([url], network.chainId)
     const results = await provider.send('pimlico_getUserOperationGasPrice', [])
 
-    const apeMaxFee = BigInt(results.fast.maxFeePerGas) + BigInt(results.fast.maxFeePerGas) / 5n
-    const apePriority =
-      BigInt(results.fast.maxPriorityFeePerGas) + BigInt(results.fast.maxPriorityFeePerGas) / 5n
-
     return {
-      slow: results.slow,
-      medium: results.standard,
-      fast: results.fast,
+      slow: {
+        maxFeePerGas: addExtra(BigInt(results.slow.maxFeePerGas), 5n),
+        maxPriorityFeePerGas: addExtra(BigInt(results.slow.maxPriorityFeePerGas), 5n)
+      },
+      medium: {
+        maxFeePerGas: addExtra(BigInt(results.standard.maxFeePerGas), 7n),
+        maxPriorityFeePerGas: addExtra(BigInt(results.standard.maxPriorityFeePerGas), 7n)
+      },
+      fast: {
+        maxFeePerGas: addExtra(BigInt(results.fast.maxFeePerGas), 10n),
+        maxPriorityFeePerGas: addExtra(BigInt(results.fast.maxPriorityFeePerGas), 10n)
+      },
       ape: {
-        maxFeePerGas: toBeHex(apeMaxFee),
-        maxPriorityFeePerGas: toBeHex(apePriority)
+        maxFeePerGas: addExtra(BigInt(results.fast.maxFeePerGas), 20n),
+        maxPriorityFeePerGas: addExtra(BigInt(results.fast.maxPriorityFeePerGas), 20n)
       }
     }
   }
 
   // used when catching errors from bundler requests
-  static decodeBundlerError(e: any, defaultMsg: string): string {
-    let errMsg = e.error.message ? e.error.message : defaultMsg
-    const hex = errMsg.indexOf('0x') !== -1 ? errMsg.substring(errMsg.indexOf('0x')) : null
-    const decodedHex = hex ? mapTxnErrMsg(hex) : null
-    if (decodedHex) errMsg = errMsg.replace(hex, decodedHex)
-    const finalMsg = mapTxnErrMsg(errMsg)
-    return finalMsg ?? errMsg
+  static decodeBundlerError(e: any): string {
+    const { reason } = decodeError(e)
+
+    return reason || 'Unknown error'
   }
 }

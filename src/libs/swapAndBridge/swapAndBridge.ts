@@ -1,7 +1,9 @@
-import { Interface } from 'ethers'
+import { Contract, getAddress, Interface, MaxUint256 } from 'ethers'
 
 import ERC20 from '../../../contracts/compiled/IERC20.json'
 import { Account } from '../../interfaces/account'
+import { Network } from '../../interfaces/network'
+import { RPCProvider } from '../../interfaces/provider'
 import {
   ActiveRoute,
   SocketAPIBridgeUserTx,
@@ -33,6 +35,21 @@ export const sortTokenListResponse = (
         return 0 // retain the alphabetical order
       })
   )
+}
+
+export const convertPortfolioTokenToSocketAPIToken = (
+  portfolioToken: TokenResult,
+  chainId: number
+): SocketAPIToken => {
+  const { address, decimals, symbol } = portfolioToken
+  // Although name and symbol will be the same, it's better than having "No name" in the UI (valid use-case)
+  const name = symbol
+  // Fine for not having both icon props, because this would fallback to the
+  // icon discovery method used for the portfolio tokens
+  const icon = ''
+  const logoURI = ''
+
+  return { address, chainId, decimals, symbol, name, icon, logoURI }
 }
 
 const getQuoteRouteSteps = (userTxs: SocketAPIUserTx[]) => {
@@ -84,15 +101,58 @@ const getActiveRoutesUpdateInterval = (minServiceTime?: number) => {
   return 15000
 }
 
-const buildSwapAndBridgeUserRequests = (
+const buildRevokeApprovalIfNeeded = async (
+  userTx: SocketAPISendTransactionRequest,
+  account: Account,
+  provider: RPCProvider
+): Promise<Call | undefined> => {
+  if (!userTx.approvalData) return
+  const erc20Contract = new Contract(userTx.approvalData.approvalTokenAddress, ERC20.abi, provider)
+  const requiredAmount = isSmartAccount(account)
+    ? BigInt(userTx.approvalData.minimumApprovalAmount)
+    : MaxUint256
+  const approveCallData = erc20Contract.interface.encodeFunctionData('approve', [
+    userTx.approvalData.allowanceTarget,
+    requiredAmount
+  ])
+
+  let fails = false
+  try {
+    await provider.call({
+      from: account.addr,
+      to: userTx.approvalData.approvalTokenAddress,
+      data: approveCallData
+    })
+  } catch (e) {
+    fails = true
+  }
+
+  if (!fails) return
+
+  return {
+    to: userTx.approvalData.approvalTokenAddress,
+    value: BigInt('0'),
+    data: erc20Contract.interface.encodeFunctionData('approve', [
+      userTx.approvalData.allowanceTarget,
+      BigInt(0)
+    ])
+  }
+}
+
+const buildSwapAndBridgeUserRequests = async (
   userTx: SocketAPISendTransactionRequest,
   networkId: string,
-  account: Account
+  account: Account,
+  provider: RPCProvider
 ) => {
   if (isSmartAccount(account)) {
     const calls: Call[] = []
     if (userTx.approvalData) {
       const erc20Interface = new Interface(ERC20.abi)
+
+      const revokeApproval = await buildRevokeApprovalIfNeeded(userTx, account, provider)
+      if (revokeApproval) calls.push(revokeApproval)
+
       calls.push({
         to: userTx.approvalData.approvalTokenAddress,
         value: BigInt('0'),
@@ -130,30 +190,64 @@ const buildSwapAndBridgeUserRequests = (
   const requests: SignUserRequest[] = []
   if (userTx.approvalData) {
     const erc20Interface = new Interface(ERC20.abi)
-    requests.push({
-      id: `${userTx.activeRouteId}-approval`,
-      action: {
-        kind: 'calls' as const,
-        calls: [
-          {
-            to: userTx.approvalData.approvalTokenAddress,
-            value: BigInt('0'),
-            data: erc20Interface.encodeFunctionData('approve', [
-              userTx.approvalData.allowanceTarget,
-              BigInt(userTx.approvalData.minimumApprovalAmount)
-            ]),
-            fromUserRequestId: `${userTx.activeRouteId}-approval`
-          } as Call
-        ]
-      },
-      meta: {
-        isSignAction: true,
-        networkId,
-        accountAddr: account.addr,
-        activeRouteId: userTx.activeRouteId,
-        isApproval: true
+    let shouldApprove = true
+    try {
+      const erc20Contract = new Contract(
+        userTx.approvalData.approvalTokenAddress,
+        ERC20.abi,
+        provider
+      )
+      const allowance = await erc20Contract.allowance(
+        userTx.approvalData.owner,
+        userTx.approvalData.allowanceTarget
+      )
+      // check if an approval already exists
+      if (BigInt(allowance) >= BigInt(userTx.approvalData.minimumApprovalAmount))
+        shouldApprove = false
+    } catch (error) {
+      console.error(error)
+    }
+
+    if (shouldApprove) {
+      const revokeApproval = await buildRevokeApprovalIfNeeded(userTx, account, provider)
+      if (revokeApproval) {
+        requests.push({
+          id: `${userTx.activeRouteId}-revoke-approval`,
+          action: { kind: 'calls' as const, calls: [revokeApproval] },
+          meta: {
+            isSignAction: true,
+            networkId,
+            accountAddr: account.addr,
+            activeRouteId: userTx.activeRouteId,
+            isApproval: true
+          }
+        } as SignUserRequest)
       }
-    } as SignUserRequest)
+      requests.push({
+        id: `${userTx.activeRouteId}-approval`,
+        action: {
+          kind: 'calls' as const,
+          calls: [
+            {
+              to: userTx.approvalData.approvalTokenAddress,
+              value: BigInt('0'),
+              data: erc20Interface.encodeFunctionData('approve', [
+                userTx.approvalData.allowanceTarget,
+                MaxUint256 // approve the max possible amount for better UX on BA
+              ]),
+              fromUserRequestId: `${userTx.activeRouteId}-approval`
+            } as Call
+          ]
+        },
+        meta: {
+          isSignAction: true,
+          networkId,
+          accountAddr: account.addr,
+          activeRouteId: userTx.activeRouteId,
+          isApproval: true
+        }
+      } as SignUserRequest)
+    }
   }
 
   requests.push({
@@ -180,9 +274,34 @@ const buildSwapAndBridgeUserRequests = (
   return requests
 }
 
+export const getIsBridgeTxn = (userTxType: SocketAPIUserTx['userTxType']) =>
+  userTxType === 'fund-movr'
+
+/**
+ * Checks if a network is supported by our Swap & Bridge service provider. As of v4.43.0
+ * there are 16 networks supported, so user could have (many) custom networks that are not.
+ */
+export const getIsNetworkSupported = (
+  supportedChainIds: Network['chainId'][],
+  network?: Network
+) => {
+  // Assume supported if missing (and receive no results when attempting to use
+  // a not-supported network) than the alternative - blocking the UI.
+  if (!supportedChainIds.length || !network) return true
+
+  return supportedChainIds.includes(network.chainId)
+}
+
+const getActiveRoutesForAccount = (accountAddress: string, activeRoutes: ActiveRoute[]) => {
+  return activeRoutes.filter(
+    (r) => getAddress(r.route.sender || r.route.userAddress) === accountAddress
+  )
+}
+
 export {
   getQuoteRouteSteps,
   getActiveRoutesLowestServiceTime,
   getActiveRoutesUpdateInterval,
-  buildSwapAndBridgeUserRequests
+  buildSwapAndBridgeUserRequests,
+  getActiveRoutesForAccount
 }

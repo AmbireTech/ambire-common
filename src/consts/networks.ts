@@ -10,7 +10,7 @@ const networks: Network[] = [
     rpcNoStateOverride: false,
     chainId: 1n,
     explorerUrl: 'https://etherscan.io',
-    erc4337: { enabled: false, hasPaymaster: false },
+    erc4337: { enabled: false, hasPaymaster: true },
     isSAEnabled: true,
     areContractsDeployed: true,
     hasRelayer: true,
@@ -21,7 +21,8 @@ const networks: Network[] = [
     feeOptions: { is1559: true },
     predefined: true,
     wrappedAddr: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
-    disableEstimateGas: true
+    disableEstimateGas: true,
+    allowForce4337: true
   },
   {
     id: 'polygon',
@@ -43,7 +44,8 @@ const networks: Network[] = [
     feeOptions: { is1559: false, feeIncrease: 10n },
     predefined: true,
     wrappedAddr: '0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270',
-    oldNativeAssetSymbols: ['MATIC']
+    oldNativeAssetSymbols: ['MATIC'],
+    allowForce4337: true
   },
   {
     id: 'optimism',
@@ -141,6 +143,7 @@ const networks: Network[] = [
     platformId: 'base',
     nativeAssetId: 'ethereum',
     hasSingleton: true,
+    isOptimistic: true,
     features: [],
     feeOptions: {
       is1559: true,

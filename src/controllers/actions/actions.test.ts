@@ -12,6 +12,7 @@ import { getRpcProvider } from '../../services/provider'
 import { AccountsController } from '../accounts/accounts'
 import { NetworksController } from '../networks/networks'
 import { ProvidersController } from '../providers/providers'
+import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 import { ActionsController, BenzinAction, DappRequestAction } from './actions'
 
 const REQUEST_1: DappUserRequest = {
@@ -111,6 +112,7 @@ describe('Actions Controller', () => {
   providersCtrl.providers = providers
 
   let accountsCtrl: AccountsController
+  let selectedAccountCtrl: SelectedAccountController
   let actionsCtrl: ActionsController
   test('should init ActionsController', async () => {
     await storage.set('accounts', accounts)
@@ -121,12 +123,15 @@ describe('Actions Controller', () => {
       () => {},
       () => {}
     )
+    selectedAccountCtrl = new SelectedAccountController({ storage, accounts: accountsCtrl })
     await accountsCtrl.initialLoadPromise
     await networksCtrl.initialLoadPromise
     await providersCtrl.initialLoadPromise
-    accountsCtrl.selectedAccount = '0xAa0e9a1E2D2CcF2B867fda047bb5394BEF1883E0'
+    await selectedAccountCtrl.initialLoadPromise
+    await selectedAccountCtrl.setAccount(accounts[0])
+
     actionsCtrl = new ActionsController({
-      accounts: accountsCtrl,
+      selectedAccount: selectedAccountCtrl,
       windowManager,
       notificationManager,
       onActionWindowClose: () => {}
@@ -232,14 +237,14 @@ describe('Actions Controller', () => {
         expect(actionsCtrl.visibleActionsQueue).toHaveLength(2)
         expect(actionsCtrl.actionWindow.id).toEqual(1)
 
-        await accountsCtrl.selectAccount('0xAa0e9a1E2D2CcF2B867fda047bb5394BEF1883E0')
+        await selectedAccountCtrl.setAccount(accounts[0])
         await actionsCtrl.forceEmitUpdate()
         unsubscribe()
         done()
       }
     })
     ;(async () => {
-      await accountsCtrl.selectAccount('0x71c3D24a627f0416db45107353d8d0A5ae0401ae')
+      await selectedAccountCtrl.setAccount(accounts[1])
       actionsCtrl.forceEmitUpdate()
     })()
   })

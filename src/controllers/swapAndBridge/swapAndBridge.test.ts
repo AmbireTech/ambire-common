@@ -1,3 +1,4 @@
+import EventEmitter from 'events'
 import fetch from 'node-fetch'
 
 import { expect } from '@jest/globals'
@@ -8,12 +9,34 @@ import { networks } from '../../consts/networks'
 import { Storage } from '../../interfaces/storage'
 import { getRpcProvider } from '../../services/provider'
 import { AccountsController } from '../accounts/accounts'
+import { ActionsController } from '../actions/actions'
 import { NetworksController } from '../networks/networks'
 import { ProvidersController } from '../providers/providers'
+import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 import { SocketAPIMock } from './socketApiMock'
 import { SwapAndBridgeController } from './swapAndBridge'
 
 let swapAndBridgeController: SwapAndBridgeController
+const event = new EventEmitter()
+let windowId = 0
+const windowManager = {
+  event,
+  focus: () => Promise.resolve(),
+  open: () => {
+    windowId++
+    return Promise.resolve(windowId)
+  },
+  remove: () => {
+    event.emit('windowRemoved', windowId)
+    return Promise.resolve()
+  },
+  sendWindowToastMessage: () => {},
+  sendWindowUiMessage: () => {}
+}
+
+const notificationManager = {
+  create: () => Promise.resolve()
+}
 
 const providers = Object.fromEntries(
   networks.map((network) => [network.id, getRpcProvider(network.rpcUrls, network.chainId)])
@@ -34,7 +57,6 @@ const networksCtrl = new NetworksController(
 
 providersCtrl = new ProvidersController(networksCtrl)
 providersCtrl.providers = providers
-
 const accountsCtrl = new AccountsController(
   storage,
   providersCtrl,
@@ -42,6 +64,14 @@ const accountsCtrl = new AccountsController(
   () => {},
   () => {}
 )
+const selectedAccountCtrl = new SelectedAccountController({ storage, accounts: accountsCtrl })
+
+const actionsCtrl = new ActionsController({
+  selectedAccount: selectedAccountCtrl,
+  windowManager,
+  notificationManager,
+  onActionWindowClose: () => {}
+})
 
 const socketAPIMock = new SocketAPIMock({ fetch, apiKey: '' })
 
@@ -66,12 +96,14 @@ const accounts = [
 describe('SwapAndBridge Controller', () => {
   test('should initialize', async () => {
     await storage.set('accounts', accounts)
-    accountsCtrl.selectedAccount = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+    await selectedAccountCtrl.initialLoadPromise
+    await selectedAccountCtrl.setAccount(accounts[0])
     swapAndBridgeController = new SwapAndBridgeController({
-      accounts: accountsCtrl,
+      selectedAccount: selectedAccountCtrl,
       networks: networksCtrl,
       storage,
-      socketAPI: socketAPIMock as any
+      socketAPI: socketAPIMock as any,
+      actions: actionsCtrl
     })
 
     expect(swapAndBridgeController).toBeDefined()

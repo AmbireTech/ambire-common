@@ -1,4 +1,4 @@
-import { Block, Interface, Provider } from 'ethers'
+import { Block, Interface, JsonRpcProvider, Provider } from 'ethers'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json'
@@ -10,6 +10,9 @@ import { getActivatorCall, shouldIncludeActivatorCall } from '../userOperation/u
 // https://eips.ethereum.org/EIPS/eip-1559
 const DEFAULT_BASE_FEE_MAX_CHANGE_DENOMINATOR = 8n
 const DEFAULT_ELASTICITY_MULTIPLIER = 2n
+
+// a 1 gwei min for gas price, non1559 networks
+export const MIN_GAS_PRICE = 1000000000n
 
 // multipliers from the old: https://github.com/AmbireTech/relayer/blob/wallet-v2/src/utils/gasOracle.js#L64-L76
 // 2x, 2x*0.4, 2x*0.2 - all of them divided by 8 so 0.25, 0.1, 0.05 - those seem usable; with a slight tweak for the ape
@@ -132,7 +135,14 @@ export async function getGasPriceRecommendations(
   network: Network,
   blockTag: string | number = -1
 ): Promise<{ gasPrice: GasRecommendation[]; blockGasLimit: bigint }> {
-  const lastBlock = await refetchBlock(provider, blockTag)
+  const [lastBlock, ethGasPrice] = await Promise.all([
+    refetchBlock(provider, blockTag),
+    (provider as JsonRpcProvider).send('eth_gasPrice', []).catch((e) => {
+      console.log('eth_gasPrice failed because of the following reason:')
+      console.log(e)
+      return '0x'
+    })
+  ])
   // https://github.com/ethers-io/ethers.js/issues/3683#issuecomment-1436554995
   const txns = lastBlock.prefetchedTransactions
 
@@ -195,10 +205,18 @@ export async function getGasPriceRecommendations(
     return { gasPrice: fee, blockGasLimit: lastBlock.gasLimit }
   }
   const prices = filterOutliers(txns.map((x) => x.gasPrice!).filter((x) => x > 0))
-  const fee = speeds.map(({ name }, i) => ({
-    name,
-    gasPrice: average(nthGroup(prices, i, speeds.length))
-  }))
+
+  // use th fetched price as a min if not 0 as it could be actually lower
+  // than the hardcoded MIN.
+  const minOrFetchedGasPrice = ethGasPrice !== '0x' ? BigInt(ethGasPrice) : MIN_GAS_PRICE
+
+  const fee = speeds.map(({ name }, i) => {
+    const avgGasPrice = average(nthGroup(prices, i, speeds.length))
+    return {
+      name,
+      gasPrice: avgGasPrice >= minOrFetchedGasPrice ? avgGasPrice : minOrFetchedGasPrice
+    }
+  })
   return { gasPrice: fee, blockGasLimit: lastBlock.gasLimit }
 }
 
@@ -244,23 +262,4 @@ export function getProbableCallData(
   }
 
   return estimationCallData
-}
-
-export function getCallDataAdditionalByNetwork(
-  accountOp: AccountOp,
-  account: Account,
-  network: Network,
-  accountState: AccountOnchainState
-): bigint {
-  // no additional call data is required for arbitrum as the bytes are already
-  // added in the calculation for the L1 fee
-  if (network.id === 'arbitrum') return 0n
-
-  const estimationCallData = getProbableCallData(account, accountOp, accountState, network)
-  const FIXED_OVERHEAD = 21000n
-  const bytes = Buffer.from(estimationCallData.substring(2))
-  const nonZeroBytes = BigInt(bytes.filter((b) => b).length)
-  const zeroBytes = BigInt(BigInt(bytes.length) - nonZeroBytes)
-  const txDataGas = zeroBytes * 4n + nonZeroBytes * 16n
-  return txDataGas + FIXED_OVERHEAD
 }
