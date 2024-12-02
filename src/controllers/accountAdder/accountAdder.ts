@@ -467,22 +467,34 @@ export class AccountAdderController extends EventEmitter {
     )
   }
 
+  /**
+   * Prevents requesting the next page before the current one is fully loaded.
+   * This avoids race conditions where the user requests the next page before
+   * linked accounts are fully loaded, causing misleadingly failing `#verifyLinkedAccounts` checks.
+   */
+  get isPageLocked() {
+    return this.accountsLoading || this.linkedAccountsLoading
+  }
+
   async setPage({ page = this.page }: { page: number }): Promise<void> {
-    this.pageError = null
     if (!this.isInitialized) return this.#throwNotInitialized()
     if (!this.#keyIterator) return this.#throwMissingKeyIterator()
 
-    if (page <= 0) {
-      this.pageError = `Unexpected page was requested (page ${page}). Please try again or contact support for help.`
-      return
-    }
-
     this.page = page
+    this.pageError = null
     this.#derivedAccounts = []
     this.#linkedAccounts = []
     this.accountsLoading = true
     this.networksWithAccountStateError = []
     this.emitUpdate()
+
+    if (page <= 0) {
+      this.pageError = `Unexpected page was requested (page ${page}). Please try again or contact support for help.`
+      this.page = DEFAULT_PAGE // fallback to the default (initial) page
+      this.emitUpdate()
+      return
+    }
+
     try {
       this.#derivedAccounts = await this.#deriveAccounts()
 
@@ -992,7 +1004,8 @@ export class AccountAdderController extends EventEmitter {
       // includes the getter in the stringified instance
       accountsOnPage: this.accountsOnPage,
       type: this.type,
-      subType: this.subType
+      subType: this.subType,
+      isPageLocked: this.isPageLocked
     }
   }
 }
