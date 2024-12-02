@@ -2,6 +2,7 @@ import { Contract, getAddress, Interface, MaxUint256 } from 'ethers'
 
 import ERC20 from '../../../contracts/compiled/IERC20.json'
 import { Account } from '../../interfaces/account'
+import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
 import {
   ActiveRoute,
@@ -34,6 +35,21 @@ export const sortTokenListResponse = (
         return 0 // retain the alphabetical order
       })
   )
+}
+
+export const convertPortfolioTokenToSocketAPIToken = (
+  portfolioToken: TokenResult,
+  chainId: number
+): SocketAPIToken => {
+  const { address, decimals, symbol } = portfolioToken
+  // Although name and symbol will be the same, it's better than having "No name" in the UI (valid use-case)
+  const name = symbol
+  // Fine for not having both icon props, because this would fallback to the
+  // icon discovery method used for the portfolio tokens
+  const icon = ''
+  const logoURI = ''
+
+  return { address, chainId, decimals, symbol, name, icon, logoURI }
 }
 
 const getQuoteRouteSteps = (userTxs: SocketAPIUserTx[]) => {
@@ -260,6 +276,21 @@ const buildSwapAndBridgeUserRequests = async (
 
 export const getIsBridgeTxn = (userTxType: SocketAPIUserTx['userTxType']) =>
   userTxType === 'fund-movr'
+
+/**
+ * Checks if a network is supported by our Swap & Bridge service provider. As of v4.43.0
+ * there are 16 networks supported, so user could have (many) custom networks that are not.
+ */
+export const getIsNetworkSupported = (
+  supportedChainIds: Network['chainId'][],
+  network?: Network
+) => {
+  // Assume supported if missing (and receive no results when attempting to use
+  // a not-supported network) than the alternative - blocking the UI.
+  if (!supportedChainIds.length || !network) return true
+
+  return supportedChainIds.includes(network.chainId)
+}
 
 const getActiveRoutesForAccount = (accountAddress: string, activeRoutes: ActiveRoute[]) => {
   return activeRoutes.filter(

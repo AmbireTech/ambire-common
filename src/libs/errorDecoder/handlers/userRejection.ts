@@ -15,7 +15,7 @@ class UserRejectionHandler implements ErrorHandler {
 
   public handle(data: string): DecodedError {
     return {
-      type: ErrorType.UserRejectionHandler,
+      type: ErrorType.UserRejectionError,
       reason: TRANSACTION_REJECTED_REASON,
       data
     }
