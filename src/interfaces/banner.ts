@@ -92,3 +92,7 @@ export type Action =
       label: 'Check'
       actionName: 'confirm-temp-seed'
     }
+  | {
+      label: 'Reload'
+      actionName: 'update-extension-version'
+    }
