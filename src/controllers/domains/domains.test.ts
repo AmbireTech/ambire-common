@@ -1,6 +1,3 @@
-// @ts-ignore
-import fetch from 'node-fetch'
-
 import { expect, jest } from '@jest/globals'
 
 import { networks } from '../../consts/networks'
@@ -29,7 +26,7 @@ const UD = {
 const NO_DOMAINS_ADDRESS = '0x1b9B9813C5805A60184091956F8b36E752272a93'
 
 describe('Domains', () => {
-  const domainsController = new DomainsController(providers, fetch)
+  const domainsController = new DomainsController(providers)
 
   it('should reverse lookup (ENS)', async () => {
     await domainsController.reverseLookup(ENS.address)
@@ -83,5 +80,15 @@ describe('Domains', () => {
 
     expect(domainsController.domains[NO_DOMAINS_ADDRESS].ens).toBe(null)
     expect(domainsController.domains[NO_DOMAINS_ADDRESS].ud).toBe(null)
+  })
+  it('should reverse multiple addresses', async () => {
+    domainsController.domains = {}
+
+    expect(Object.keys(domainsController.domains).length).toBe(0)
+
+    await domainsController.batchReverseLookup([ENS.address, ENS2.address])
+
+    expect(domainsController.domains[ENS.address].ens).toBe(ENS.name)
+    expect(domainsController.domains[ENS2.address].ens).toBe(ENS2.name)
   })
 })
