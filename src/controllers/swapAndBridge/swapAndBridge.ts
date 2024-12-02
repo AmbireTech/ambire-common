@@ -454,7 +454,6 @@ export class SwapAndBridgeController extends EventEmitter {
           this.fromChainId = Number(network.chainId)
           // defaults to swap after network change (should keep fromChainId and toChainId in sync after fromChainId update)
           this.toChainId = Number(network.chainId)
-          console.log('2')
           // eslint-disable-next-line @typescript-eslint/no-floating-promises
           this.updateToTokenList(true)
         }
@@ -468,7 +467,6 @@ export class SwapAndBridgeController extends EventEmitter {
     if (toChainId) {
       if (this.toChainId !== Number(toChainId)) {
         this.toChainId = Number(toChainId)
-        console.log('3')
         // eslint-disable-next-line @typescript-eslint/no-floating-promises
         this.updateToTokenList(true)
       }
