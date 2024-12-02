@@ -11,7 +11,6 @@ import {
   SocketAPIQuote,
   SocketAPIRoute,
   SocketAPISendTransactionRequest,
-  SocketAPISupportedChain,
   SocketAPIToken
 } from '../../interfaces/swapAndBridge'
 import { isSmartAccount } from '../../libs/account/account'
@@ -151,6 +150,8 @@ export class SwapAndBridgeController extends EventEmitter {
   // Holds the initial load promise, so that one can wait until it completes
   #initialLoadPromise: Promise<void>
 
+  #shouldDebounceFlags: { [key: string]: boolean } = {}
+
   constructor({
     selectedAccount,
     networks,
@@ -181,13 +182,16 @@ export class SwapAndBridgeController extends EventEmitter {
 
     this.activeRoutes = await this.#storage.get('swapAndBridgeActiveRoutes', [])
 
-    this.#selectedAccount.onUpdate(async () => {
-      if (this.#selectedAccount.portfolio.isAllReady) {
-        this.isTokenListLoading = false
-        this.updatePortfolioTokenList(this.#selectedAccount.portfolio.tokens)
-        // To token list includes selected account portfolio tokens, it should get an update too
-        await this.updateToTokenList(true)
-      }
+    this.#selectedAccount.onUpdate(() => {
+      this.#debounceFunctionCallsOnSameTick('updateFormOnSelectedAccountUpdate', () => {
+        if (this.#selectedAccount.portfolio.isAllReady) {
+          this.isTokenListLoading = false
+          this.updatePortfolioTokenList(this.#selectedAccount.portfolio.tokens)
+          // To token list includes selected account portfolio tokens, it should get an update too
+          // eslint-disable-next-line @typescript-eslint/no-floating-promises
+          this.updateToTokenList(false)
+        }
+      })
     })
     this.emitUpdate()
   }
@@ -976,6 +980,17 @@ export class SwapAndBridgeController extends EventEmitter {
       accountOpActions,
       this.#networks.networks
     )
+  }
+
+  #debounceFunctionCallsOnSameTick(funcName: string, func: Function) {
+    if (this.#shouldDebounceFlags[funcName]) return
+    this.#shouldDebounceFlags[funcName] = true
+
+    // Debounce multiple calls in the same tick and only execute one of them
+    setTimeout(() => {
+      this.#shouldDebounceFlags[funcName] = false
+      func()
+    }, 0)
   }
 
   toJSON() {
