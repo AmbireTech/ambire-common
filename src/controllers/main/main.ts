@@ -5,6 +5,7 @@ import { getAddress, getBigInt, Interface, isAddress } from 'ethers'
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json'
 import EmittableError from '../../classes/EmittableError'
+import { ORIGINS_WHITELISTED_TO_ALL_ACCOUNTS } from '../../consts/dappCommunication'
 import { AMBIRE_ACCOUNT_FACTORY, SINGLETON } from '../../consts/deploy'
 import {
   BIP44_LEDGER_DERIVATION_TEMPLATE,
@@ -55,6 +56,7 @@ import { GasRecommendation, getGasPriceRecommendations } from '../../libs/gasPri
 import { humanizeAccountOp } from '../../libs/humanizer'
 import { KeyIterator } from '../../libs/keyIterator/keyIterator'
 import {
+  buildSwitchAccountUserRequest,
   getAccountOpsForSimulation,
   makeBasicAccountOpAction,
   makeSmartAccountOpAction
@@ -341,7 +343,7 @@ export class MainController extends EventEmitter {
         await this.setContractsDeployedToTrueIfDeployed(network)
       }
     )
-    this.domains = new DomainsController(this.providers.providers, this.fetch)
+    this.domains = new DomainsController(this.providers.providers)
     this.#initialLoadPromise = this.#load()
   }
 
@@ -359,6 +361,7 @@ export class MainController extends EventEmitter {
 
     this.updateSelectedAccountPortfolio()
     this.defiPositions.updatePositions()
+    this.domains.batchReverseLookup(this.accounts.accounts.map((a) => a.addr))
     /**
      * Listener that gets triggered as a finalization step of adding new
      * accounts via the AccountAdder controller flow.
@@ -642,12 +645,15 @@ export class MainController extends EventEmitter {
     const learnedNewNfts = await this.portfolio.learnNfts(nfts, network.id)
     // update the portfolio only if new tokens were found through tracing
     if (learnedNewTokens || learnedNewNfts) {
-      this.portfolio.updateSelectedAccount(
-        accountOp.accountAddr,
-        network,
-        getAccountOpsForSimulation(account, this.actions.visibleActionsQueue, network, accountOp),
-        { forceUpdate: true }
-      )
+      this.portfolio
+        .updateSelectedAccount(
+          accountOp.accountAddr,
+          network,
+          getAccountOpsForSimulation(account, this.actions.visibleActionsQueue, network, accountOp),
+          { forceUpdate: true }
+        )
+        // fire an update request to refresh the warnings if any
+        .then(() => this.signAccountOp?.update({}))
     }
   }
 
@@ -951,6 +957,21 @@ export class MainController extends EventEmitter {
     )
   }
 
+  #getUserRequestAccountError(dappOrigin: string, fromAccountAddr: string): string | null {
+    if (ORIGINS_WHITELISTED_TO_ALL_ACCOUNTS.includes(dappOrigin)) {
+      const isAddressInAccounts = this.accounts.accounts.some((a) => a.addr === fromAccountAddr)
+
+      if (isAddressInAccounts) return null
+
+      return 'The dApp is trying to sign using an address that is not imported in the extension.'
+    }
+    const isAddressSelected = this.selectedAccount.account?.addr === fromAccountAddr
+
+    if (isAddressSelected) return null
+
+    return 'The dApp is trying to sign using an address that is not selected in the extension.'
+  }
+
   async buildUserRequestFromDAppRequest(
     request: DappProviderRequest,
     dappPromise: {
@@ -1011,17 +1032,6 @@ export class MainController extends EventEmitter {
         throw ethErrors.rpc.invalidRequest('No msg request to sign')
       }
       const msgAddress = getAddress(msg?.[1])
-      // TODO: if address is in this.accounts in theory the user should be able to sign
-      // e.g. if an acc from the wallet is used as a signer of another wallet
-      if (msgAddress !== this.selectedAccount.account.addr) {
-        dappPromise.reject(
-          ethErrors.provider.userRejectedRequest(
-            // if updating, check https://github.com/AmbireTech/ambire-wallet/pull/1627
-            'the dApp is trying to sign using an address different from the currently selected account. Try re-connecting.'
-          )
-        )
-        return
-      }
 
       const network = this.networks.networks.find(
         (n) => Number(n.chainId) === Number(dapp?.chainId)
@@ -1053,17 +1063,6 @@ export class MainController extends EventEmitter {
         throw ethErrors.rpc.invalidRequest('No msg request to sign')
       }
       const msgAddress = getAddress(msg?.[0])
-      // TODO: if address is in this.accounts in theory the user should be able to sign
-      // e.g. if an acc from the wallet is used as a signer of another wallet
-      if (msgAddress !== this.selectedAccount.account.addr) {
-        dappPromise.reject(
-          ethErrors.provider.userRejectedRequest(
-            // if updating, check https://github.com/AmbireTech/ambire-wallet/pull/1627
-            'the dApp is trying to sign using an address different from the currently selected account. Try re-connecting.'
-          )
-        )
-        return
-      }
 
       const network = this.networks.networks.find(
         (n) => Number(n.chainId) === Number(dapp?.chainId)
@@ -1129,10 +1128,47 @@ export class MainController extends EventEmitter {
       }
     }
 
-    if (userRequest) {
+    if (!userRequest) return
+
+    const isASignOperationRequestedForAnotherAccount =
+      userRequest.meta.isSignAction &&
+      userRequest.meta.accountAddr !== this.selectedAccount.account?.addr
+
+    // We can simply add the user request if it's not a sign operation
+    // for another account
+    if (!isASignOperationRequestedForAnotherAccount) {
       await this.addUserRequest(userRequest, withPriority)
-      this.emitUpdate()
+      return
     }
+
+    const accountError = this.#getUserRequestAccountError(
+      dappPromise.session.origin,
+      userRequest.meta.accountAddr
+    )
+
+    if (accountError) {
+      dappPromise.reject(ethErrors.provider.userRejectedRequest(accountError))
+      return
+    }
+
+    const network = this.networks.networks.find((n) => Number(n.chainId) === Number(dapp?.chainId))
+
+    if (!network) {
+      throw ethErrors.provider.chainDisconnected('Transaction failed - unknown network')
+    }
+
+    await this.addUserRequest(
+      buildSwitchAccountUserRequest({
+        nextUserRequest: userRequest,
+        networkId: network.id,
+        selectedAccountAddr: userRequest.meta.accountAddr,
+        session: dappPromise.session,
+        rejectUserRequest: this.rejectUserRequest.bind(this)
+      }),
+      true,
+      'open'
+    )
+    await this.addUserRequest(userRequest, false, 'queue')
   }
 
   async buildTransferUserRequest(
@@ -1412,7 +1448,7 @@ export class MainController extends EventEmitter {
         this.actions.addOrUpdateAction(accountOpAction, withPriority, executionType)
       }
     } else {
-      let actionType: 'dappRequest' | 'benzin' | 'signMessage' = 'dappRequest'
+      let actionType: 'dappRequest' | 'benzin' | 'signMessage' | 'switchAccount' = 'dappRequest'
 
       if (req.action.kind === 'typedMessage' || req.action.kind === 'message') {
         actionType = 'signMessage'
@@ -1432,6 +1468,8 @@ export class MainController extends EventEmitter {
         }
       }
       if (req.action.kind === 'benzin') actionType = 'benzin'
+      if (req.action.kind === 'switchAccount') actionType = 'switchAccount'
+
       this.actions.addOrUpdateAction(
         {
           id,
@@ -1687,7 +1725,11 @@ export class MainController extends EventEmitter {
     const network = this.networks.networks.find((net) => net.id === accOp.networkId)
     if (!network) return undefined // shouldn't happen
 
+    const account = this.accounts.accounts.find((x) => x.addr === accOp.accountAddr)
+    if (!account) return undefined // shouldn't happen
+
     const is4337 = isErc4337Broadcast(
+      account,
       network,
       this.accounts.accountStates[accOp.accountAddr][accOp.networkId]
     )
@@ -1859,6 +1901,7 @@ export class MainController extends EventEmitter {
           feeTokens,
           {
             is4337Broadcast: isErc4337Broadcast(
+              account,
               network,
               this.accounts.accountStates[localAccountOp.accountAddr][localAccountOp.networkId]
             )
@@ -2111,21 +2154,14 @@ export class MainController extends EventEmitter {
         }
 
         const signedTxn = await signer.signRawTransaction(rawTxn)
-        try {
-          const broadcastRes = await provider.broadcastTransaction(signedTxn)
-          transactionRes = {
-            txnId: broadcastRes.hash,
-            nonce: broadcastRes.nonce,
-            identifiedBy: {
-              type: 'Transaction',
-              identifier: broadcastRes.hash
-            }
+        const broadcastRes = await provider.broadcastTransaction(signedTxn)
+        transactionRes = {
+          txnId: broadcastRes.hash,
+          nonce: broadcastRes.nonce,
+          identifiedBy: {
+            type: 'Transaction',
+            identifier: broadcastRes.hash
           }
-        } catch (error: any) {
-          return this.#throwBroadcastAccountOp({
-            error,
-            accountState
-          })
         }
       } catch (error: any) {
         return this.#throwBroadcastAccountOp({ error, accountState })
@@ -2148,6 +2184,7 @@ export class MainController extends EventEmitter {
         const missingKeyAddr = shortenAddress(accountOp.gasFeePayment!.paidBy, 13)
         const accAddr = shortenAddress(accountOp.accountAddr, 13)
         const message = `Key with address ${missingKeyAddr} for account with address ${accAddr} not found.`
+
         return this.#throwBroadcastAccountOp({ message, accountState })
       }
 
@@ -2200,18 +2237,14 @@ export class MainController extends EventEmitter {
         }
 
         const signedTxn = await signer.signRawTransaction(rawTxn)
-        try {
-          const broadcastRes = await provider.broadcastTransaction(signedTxn)
-          transactionRes = {
-            txnId: broadcastRes.hash,
-            nonce: broadcastRes.nonce,
-            identifiedBy: {
-              type: 'Transaction',
-              identifier: broadcastRes.hash
-            }
+        const broadcastRes = await provider.broadcastTransaction(signedTxn)
+        transactionRes = {
+          txnId: broadcastRes.hash,
+          nonce: broadcastRes.nonce,
+          identifiedBy: {
+            type: 'Transaction',
+            identifier: broadcastRes.hash
           }
-        } catch (error: any) {
-          return this.#throwBroadcastAccountOp({ error, accountState })
         }
       } catch (error: any) {
         return this.#throwBroadcastAccountOp({ error, accountState })
@@ -2343,7 +2376,7 @@ export class MainController extends EventEmitter {
   }
 
   #throwBroadcastAccountOp({
-    message: _msg,
+    message: humanReadableMessage,
     error: _err,
     accountState,
     isRelayer = false
@@ -2353,40 +2386,30 @@ export class MainController extends EventEmitter {
     accountState?: AccountOnchainState
     isRelayer?: boolean
   }) {
-    let message = _msg || _err?.message || 'Unable to broadcast the transaction.'
+    let message = humanReadableMessage || _err?.message
 
     if (message) {
-      // @TODO: Consider replacing with getHumanReadableBroadcastError
       if (message.includes('pimlico_getUserOperationGasPrice')) {
-        // sometimes the bundler returns an error of low maxFeePerGas
-        // in that case, recalculate prices and prompt the user to try again
         message = 'Fee too low. Please select a higher transaction speed and try again'
         this.updateSignAccountOpGasPrice()
-      } else if (
-        message.includes('Transaction underpriced. Please select a higher fee and try again')
-      ) {
-        // this error comes from the relayer when using the paymaster service.
-        // as it could be from lower PVG, we should reestimate as well
-        message = 'Fee too low. Please select a higher transaction speed and try again'
-        this.updateSignAccountOpGasPrice()
-        this.estimateSignAccountOp()
       } else if (message.includes('INSUFFICIENT_PRIVILEGE')) {
         message = `Signer key not supported on this network.${
           !accountState?.isV2
             ? 'You can add/change signers from the web wallet or contact support.'
             : 'Please contact support.'
         }`
-      } else if (
-        message.includes('Ambire relayer') ||
-        (isRelayer && message.includes('Failed to fetch'))
-      ) {
+      } else if (message.includes('Transaction underpriced')) {
+        message = 'Fee too low. Please select е higher transaction speed and try again'
+        this.updateSignAccountOpGasPrice()
+        this.estimateSignAccountOp()
+      } else if (message.includes('Failed to fetch') && isRelayer) {
         message =
           'Currently, the Ambire relayer seems to be down. Please try again a few moments later or broadcast with a Basic Account'
-      } else {
-        const { message: msg } = getHumanReadableBroadcastError(_err || new Error(message))
-
-        message = msg
       }
+    } else if (_err) {
+      message = getHumanReadableBroadcastError(_err).message
+    } else {
+      message = 'Unable to broadcast the transaction. Please try again or contact support.'
     }
 
     const error = _err || new Error(message)

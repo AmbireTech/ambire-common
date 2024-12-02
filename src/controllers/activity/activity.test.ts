@@ -547,14 +547,46 @@ describe('Activity Controller ', () => {
           identifier: '0x0000000000000000000000000000000000000000000000000000000000000001'
         }
       } as SubmittedAccountOp
+      const accountOpCompleted = {
+        accountAddr: '0xa07D75aacEFd11b425AF7181958F0F85c312f143',
+        signingKeyAddr: '0x5Be214147EA1AE3653f289E17fE7Dc17A73AD175',
+        gasLimit: null,
+        gasFeePayment: {
+          isERC4337: false,
+          isGasTank: false,
+          paidBy: '0xa07D75aacEFd11b425AF7181958F0F85c312f143',
+          inToken: '0x0000000000000000000000000000000000000000',
+          amount: 1n,
+          simulatedGasLimit: 1n,
+          gasPrice: 1n
+        },
+        networkId: 'ethereum',
+        nonce: 225n,
+        signature: '0x0000000000000000000000005be214147ea1ae3653f289e17fe7dc17a73ad17503',
+        calls: [
+          {
+            to: '0x18Ce9CF7156584CDffad05003410C3633EFD1ad0',
+            value: BigInt(0),
+            data: '0x23b872dd000000000000000000000000b674f3fd5f43464db0448a57529eaf37f04ccea500000000000000000000000077777777789a8bbee6c64381e5e89e501fb0e4c80000000000000000000000000000000000000000000000000000000000000089'
+          }
+        ],
+        // wrong txn id, so we can simulate nullish getTransactionReceipt()
+        txnId: '0x0000000000000000000000000000000000000000000000000000000000000001',
+        status: 'success',
+        identifiedBy: {
+          type: 'Transaction',
+          identifier: '0x0000000000000000000000000000000000000000000000000000000000000001'
+        }
+      } as SubmittedAccountOp
 
       await controller.addAccountOp(accountOp)
+      await controller.addAccountOp(accountOpCompleted)
       await controller.updateAccountsOpsStatuses()
       const controllerAccountsOps = controller.accountsOps
 
       expect(controllerAccountsOps[sessionId].result).toEqual({
-        items: [{ ...accountOp, status: 'unknown-but-past-nonce' }], // we expect unknown-but-past-nonce status here
-        itemsTotal: 1,
+        items: [accountOpCompleted, { ...accountOp, status: 'unknown-but-past-nonce' }], // we expect unknown-but-past-nonce status here
+        itemsTotal: 2,
         currentPage: 0,
         maxPages: 1
       })

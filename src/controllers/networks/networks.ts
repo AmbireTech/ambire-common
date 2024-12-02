@@ -12,6 +12,7 @@ import { Storage } from '../../interfaces/storage'
 import {
   getFeaturesByNetworkProperties,
   getNetworkInfo,
+  is4337Enabled,
   migrateNetworkPreferencesToNetworks
 } from '../../libs/networks/networks'
 import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter'
@@ -86,7 +87,8 @@ export class NetworksController extends EventEmitter {
         nativeAssetId: network.nativeAssetId,
         flagged: network.flagged ?? false,
         chainId: network.chainId,
-        hasSingleton: network.hasSingleton
+        hasSingleton: network.hasSingleton,
+        force4337: network.force4337
       })
       return network
     })
@@ -111,8 +113,12 @@ export class NetworksController extends EventEmitter {
         feeOptions: n.feeOptions,
         hasRelayer: n.hasRelayer,
         erc4337: {
-          enabled: n.erc4337?.enabled,
-          hasPaymaster: n.erc4337?.hasPaymaster
+          enabled: is4337Enabled(
+            this.#networks[n.id] ? this.#networks[n.id].erc4337.enabled : n.erc4337.enabled,
+            n,
+            this.#networks[n.id]?.force4337
+          ),
+          hasPaymaster: n.erc4337.hasPaymaster
         },
         nativeAssetId: n.nativeAssetId,
         nativeAssetSymbol: n.nativeAssetSymbol
@@ -129,6 +135,7 @@ export class NetworksController extends EventEmitter {
     networkToAddOrUpdate: {
       chainId: Network['chainId']
       rpcUrl: string
+      force4337?: boolean
     } | null = null
   ) {
     await this.initialLoadPromise
@@ -146,7 +153,8 @@ export class NetworksController extends EventEmitter {
             this.networkToAddOrUpdate = { ...this.networkToAddOrUpdate, info }
             this.emitUpdate()
           }
-        }
+        },
+        networkToAddOrUpdate.force4337 ? { force4337: networkToAddOrUpdate.force4337 } : undefined
       )
     } else {
       this.networkToAddOrUpdate = null
@@ -215,6 +223,16 @@ export class NetworksController extends EventEmitter {
 
     // Update the networks with the incoming new values
     this.#networks[networkId] = { ...this.#networks[networkId], ...changedNetwork }
+
+    // if force4337 is updated, we have to update the enabled flag as well
+    if ('force4337' in changedNetwork) {
+      this.#networks[networkId].erc4337.enabled = is4337Enabled(
+        true,
+        this.#networks[networkId],
+        changedNetwork.force4337
+      )
+    }
+
     this.#onAddOrUpdateNetwork(this.#networks[networkId])
     await this.#storage.set('networks', this.#networks)
 

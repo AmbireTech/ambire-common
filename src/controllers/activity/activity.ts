@@ -7,11 +7,7 @@ import { Storage } from '../../interfaces/storage'
 import { Message } from '../../interfaces/userRequest'
 import { isSmartAccount } from '../../libs/account/account'
 import { AccountOpStatus } from '../../libs/accountOp/accountOp'
-import {
-  fetchTxnId,
-  isIdentifiedByUserOpHash,
-  SubmittedAccountOp
-} from '../../libs/accountOp/submittedAccountOp'
+import { fetchTxnId, SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 import { NetworkNonces } from '../../libs/portfolio/interfaces'
 import { getBenzinUrlParams } from '../../utils/benzin'
 import { AccountsController } from '../accounts/accounts'
@@ -399,22 +395,20 @@ export class ActivityController extends EventEmitter {
               })
             }
 
-            // fixed: we should check the account state of the one paying
-            // the fee as his nonce gets incremented:
-            // - EOA, SA by EOA: the account op holds the EOA nonce
-            // - relayer, 4337: the account op holds the SA nonce
-            const payedByState =
-              this.#accounts.accountStates[accountOp.gasFeePayment!.paidBy] &&
-              this.#accounts.accountStates[accountOp.gasFeePayment!.paidBy][accountOp.networkId]
-                ? this.#accounts.accountStates[accountOp.gasFeePayment!.paidBy][accountOp.networkId]
-                : null
-            const isUserOp = isIdentifiedByUserOpHash(accountOp.identifiedBy)
-
-            if (
-              payedByState &&
-              ((!isUserOp && payedByState.nonce > accountOp.nonce) ||
-                (isUserOp && payedByState.erc4337Nonce > accountOp.nonce))
-            ) {
+            // if there are more than 1 txns with the same nonce and payer,
+            // we can conclude this one is replaced by fee
+            const sameNonceTxns = this.#accountsOps[selectedAccount][networkId].filter(
+              (accOp) =>
+                accOp.gasFeePayment &&
+                accountOp.gasFeePayment &&
+                accOp.gasFeePayment.paidBy === accountOp.gasFeePayment.paidBy &&
+                accOp.nonce.toString() === accountOp.nonce.toString()
+            )
+            const confirmedSameNonceTxns = sameNonceTxns.find(
+              (accOp) =>
+                accOp.status === AccountOpStatus.Success || accOp.status === AccountOpStatus.Failure
+            )
+            if (sameNonceTxns.length > 1 && !!confirmedSameNonceTxns) {
               this.#accountsOps[selectedAccount][networkId][accountOpIndex].status =
                 AccountOpStatus.UnknownButPastNonce
               shouldUpdatePortfolio = true

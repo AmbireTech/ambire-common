@@ -16,6 +16,7 @@ import { legendsMessageModule } from './messageModules/legendsModule'
 import OneInchModule from './modules/1Inch'
 import { aaveHumanizer } from './modules/Aave'
 import AcrossModule from './modules/Across'
+import { airdropsModule } from './modules/Airdrops'
 import asciiModule from './modules/AsciiModule'
 import curveModule from './modules/Curve'
 import { deploymentModule } from './modules/Deployment'
@@ -43,6 +44,7 @@ export const humanizerCallModules: HumanizerCallModule[] = [
   genericErc721Humanizer,
   genericErc20Humanizer,
   gasTankModule,
+  airdropsModule,
   uniswapHumanizer,
   curveModule,
   traderJoeModule,
