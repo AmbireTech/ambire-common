@@ -760,13 +760,13 @@ export class SwapAndBridgeController extends EventEmitter {
                 | SocketAPIBridgeUserTx
                 | undefined
 
-              if (!bridgeTx) return !shouldFilterOut
+              if (!bridgeTx) return false
 
               const bridgeStep = bridgeTx.steps.find((s) => s.type === 'bridge') as
                 | SocketApiBridgeStep
                 | undefined
 
-              if (!bridgeStep) return !shouldFilterOut
+              if (!bridgeStep) return false
 
               const normalizedProtocolFeeToken = normalizeIncomingSocketToken(
                 bridgeStep.protocolFees.asset
