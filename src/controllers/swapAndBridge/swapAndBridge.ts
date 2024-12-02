@@ -8,6 +8,8 @@ import {
   CachedSupportedChains,
   CachedTokenListKey,
   CachedToTokenLists,
+  SocketApiBridgeStep,
+  SocketAPIBridgeUserTx,
   SocketAPIQuote,
   SocketAPIRoute,
   SocketAPISendTransactionRequest,
@@ -25,7 +27,7 @@ import {
   sortTokenListResponse
 } from '../../libs/swapAndBridge/swapAndBridge'
 import { getSanitizedAmount } from '../../libs/transfer/amount'
-import { SocketAPI } from '../../services/socket/api'
+import { normalizeIncomingSocketToken, SocketAPI } from '../../services/socket/api'
 import { validateSendTransferAmount } from '../../services/validations/validate'
 import { convertTokenPriceToBigInt } from '../../utils/numbers/formatters'
 import wait from '../../utils/wait'
@@ -745,8 +747,57 @@ export class SwapAndBridgeController extends EventEmitter {
         ) {
           let routeToSelect
           let routeToSelectSteps
+          let routes = quoteResult.routes || []
 
-          const alreadySelectedRoute = quoteResult.routes.find((nextRoute) => {
+          // Exclude routes that require an additional protocol fee in a specific token
+          // if the user does not have sufficient balance of that token.
+          try {
+            routes = routes.filter((route) => {
+              let shouldFilterOut = false
+              if (!route.userTxs) return !shouldFilterOut
+
+              const bridgeTx = route.userTxs.find((tx) => tx.userTxType === 'fund-movr') as
+                | SocketAPIBridgeUserTx
+                | undefined
+
+              if (!bridgeTx) return !shouldFilterOut
+
+              const bridgeStep = bridgeTx.steps.find((s) => s.type === 'bridge') as
+                | SocketApiBridgeStep
+                | undefined
+
+              if (!bridgeStep) return !shouldFilterOut
+
+              const normalizedProtocolFeeToken = normalizeIncomingSocketToken(
+                bridgeStep.protocolFees.asset
+              )
+              const protocolFeeTokenNetworkId = this.#networks.networks.find(
+                (n) => Number(n.chainId) === normalizedProtocolFeeToken.chainId
+              )?.id!
+              const tokenToPayFeeWith = this.portfolioTokenList.find(
+                (t) =>
+                  t.address === normalizedProtocolFeeToken.address &&
+                  t.networkId === protocolFeeTokenNetworkId &&
+                  Number(getTokenAmount(t) >= Number(bridgeStep.protocolFees.amount))
+              )
+
+              // if the required protocolFee token is not in the users portfolio
+              // filter out that route to prevent errors on the signAccountOp screen due to
+              // failing simulation and estimation because the user doesn't have sufficient balance to pay the fee
+              if (!tokenToPayFeeWith) shouldFilterOut = true
+
+              return !shouldFilterOut
+            })
+          } catch (error) {
+            console.error(error)
+          }
+
+          if (!routes.length) {
+            this.quote = null
+            return
+          }
+
+          const alreadySelectedRoute = routes.find((nextRoute) => {
             if (!this.quote) return false
 
             // Because we only have routes with unique bridges (bridging case)
@@ -760,14 +811,15 @@ export class SwapAndBridgeController extends EventEmitter {
 
             return false // should never happen, but just in case of bad data
           })
+
           if (alreadySelectedRoute) {
             routeToSelect = alreadySelectedRoute
             routeToSelectSteps = getQuoteRouteSteps(alreadySelectedRoute.userTxs)
           } else {
             const bestRoute =
               this.routePriority === 'output'
-                ? quoteResult.routes[0] // API returns highest output first
-                : quoteResult.routes[quoteResult.routes.length - 1] // API returns fastest... last
+                ? routes[0] // API returns highest output first
+                : routes[routes.length - 1] // API returns fastest... last
             routeToSelect = bestRoute
             routeToSelectSteps = getQuoteRouteSteps(bestRoute.userTxs)
           }
@@ -779,7 +831,7 @@ export class SwapAndBridgeController extends EventEmitter {
             toChainId: quoteResult.toChainId,
             selectedRoute: routeToSelect,
             selectedRouteSteps: routeToSelectSteps,
-            routes: quoteResult.routes
+            routes
           }
         }
       } catch (error: any) {
