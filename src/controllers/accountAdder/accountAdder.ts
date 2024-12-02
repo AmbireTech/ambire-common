@@ -1,5 +1,6 @@
 import { getCreate2Address, keccak256 } from 'ethers'
 
+import ExternalSignerError from '../../classes/ExternalSignerError'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { PROXY_AMBIRE_ACCOUNT } from '../../consts/deploy'
 import {
@@ -73,10 +74,14 @@ export class AccountAdderController extends EventEmitter {
 
   shouldGetAccountsUsedOnNetworks = DEFAULT_SHOULD_GET_ACCOUNTS_USED_ON_NETWORKS
 
-  // This is only the index of the current page
+  /* This is only the index of the current page */
   page: number = DEFAULT_PAGE
 
+  /* The number of accounts to be displayed on a single page */
   pageSize: number = DEFAULT_PAGE_SIZE
+
+  /* State to indicate the page requested fails to load (and the reason why) */
+  pageError: null | string = null
 
   selectedAccounts: SelectedAccountForImport[] = []
 
@@ -463,16 +468,13 @@ export class AccountAdderController extends EventEmitter {
   }
 
   async setPage({ page = this.page }: { page: number }): Promise<void> {
+    this.pageError = null
     if (!this.isInitialized) return this.#throwNotInitialized()
     if (!this.#keyIterator) return this.#throwMissingKeyIterator()
 
     if (page <= 0) {
-      return this.emitError({
-        level: 'major',
-        message:
-          'Something went wrong with deriving the accounts. Please reload and try again. If the problem persists, contact support.',
-        error: new Error('accountAdder: page must be a positive number')
-      })
+      this.pageError = `Unexpected page was requested (page ${page}). Please try again or contact support for help.`
+      return
     }
 
     this.page = page
@@ -498,11 +500,8 @@ export class AccountAdderController extends EventEmitter {
         }
       }
     } catch (e: any) {
-      this.emitError({
-        message: e?.message,
-        error: e?.message || 'accountAdder: failed to derive accounts',
-        level: 'major'
-      })
+      const fallbackMessage = `Failed to retrieve accounts on page ${this.page}. Please try again or contact support for assistance. Error details: ${e?.message}.`
+      this.pageError = e instanceof ExternalSignerError ? e.message : fallbackMessage
     }
     this.accountsLoading = false
     this.emitUpdate()
