@@ -1,6 +1,6 @@
 import { ethErrors } from 'eth-rpc-errors'
 /* eslint-disable @typescript-eslint/brace-style */
-import { getAddress, getBigInt, Interface, isAddress } from 'ethers'
+import { getAddress, getBigInt, Interface, isAddress, toBeHex } from 'ethers'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json'
@@ -1006,7 +1006,7 @@ export class MainController extends EventEmitter {
         : [request.params[0]]
       const paymasterService = isWalletSendCalls
         ? getPaymasterService(
-            network.chainId.toString() as `0x${string}`,
+            toBeHex(network.chainId) as `0x${string}`,
             request.params[0].capabilities
           )
         : null
