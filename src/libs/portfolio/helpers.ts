@@ -409,3 +409,15 @@ export const processTokens = (
     return tokens
   }, [] as TokenResult[])
 }
+
+export const shouldShowConfettiLogic = (accountState: AccountState, resBalance: any[]) => {
+  const previousCashback = accountState.gasTank?.result?.tokens[0]?.cashback
+  const currentCashback = resBalance[0]?.cashback
+
+  return (
+    typeof previousCashback !== 'undefined' &&
+    typeof currentCashback !== 'undefined' &&
+    previousCashback === 0n &&
+    BigInt(currentCashback) !== 0n
+  )
+}

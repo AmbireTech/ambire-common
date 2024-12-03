@@ -9,6 +9,7 @@ import { Storage } from '../../interfaces/storage'
 import { isSmartAccount } from '../../libs/account/account'
 // eslint-disable-next-line import/no-cycle
 import {
+  getFirstCashbackBanners,
   getNetworksWithDeFiPositionsErrorBanners,
   getNetworksWithFailedRPCBanners,
   getNetworksWithPortfolioErrorBanners
@@ -329,13 +330,22 @@ export class SelectedAccountController extends EventEmitter {
       networksWithAssets: this.#portfolio.getNetworksWithAssets(this.account.addr)
     })
 
+    const firstCashbackBanners = getFirstCashbackBanners({
+      selectedAccountAddr: this.account.addr,
+      shouldShowConfetti: this.#portfolio.shouldShowConfettiBanner
+    })
+
     const errorBanners = getNetworksWithPortfolioErrorBanners({
       networks: this.#networks.networks,
       selectedAccountLatest: this.portfolio.latest,
       providers: this.#providers.providers
     })
 
-    this.portfolioBanners = [...networksWithFailedRPCBanners, ...errorBanners]
+    this.portfolioBanners = [
+      ...networksWithFailedRPCBanners,
+      ...firstCashbackBanners,
+      ...errorBanners
+    ]
 
     if (!skipUpdate) {
       this.emitUpdate()

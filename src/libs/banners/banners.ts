@@ -1,3 +1,5 @@
+import { ShouldShowConfettiBanner } from 'libs/portfolio/interfaces'
+
 import { Account } from '../../interfaces/account'
 import { AccountOpAction, Action as ActionFromActionsQueue } from '../../interfaces/actions'
 import { Action, Banner } from '../../interfaces/banner'
@@ -547,6 +549,35 @@ export const getNetworksWithDeFiPositionsErrorBanners = ({
       )}`,
       text: 'Reload the account or try again later.',
       actions: []
+    })
+  }
+
+  return banners
+}
+
+export const getFirstCashbackBanners = ({
+  selectedAccountAddr,
+  shouldShowConfetti
+}: {
+  selectedAccountAddr: string
+  shouldShowConfetti: ShouldShowConfettiBanner
+}): Banner[] => {
+  let banners: Banner[] = []
+
+  const shouldShowConfettiBanner = shouldShowConfetti[selectedAccountAddr]
+
+  if (shouldShowConfettiBanner) {
+    banners.push({
+      id: `${selectedAccountAddr}-first-cashback-banner-banner`,
+      type: 'info',
+      title: "You've got cashback!",
+      text: 'You just received your first cashback from paying gas with smart accounts.',
+      actions: [
+        {
+          label: 'Open',
+          actionName: 'open-confetti-modal'
+        }
+      ]
     })
   }
 

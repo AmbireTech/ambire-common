@@ -17,6 +17,10 @@ export type TokenResult = Omit<CustomToken, 'standard'> & {
   amount: bigint
   simulationAmount?: bigint
   amountPostSimulation?: bigint
+  availableAmount?: bigint
+  cashback?: bigint
+  saved?: bigint
+  shouldPopsUpConfetti?: boolean
   priceIn: Price[]
   flags: {
     onGasTank: boolean
@@ -218,4 +222,8 @@ export type FormattedPendingAmounts = Omit<PendingAmounts, 'pendingBalance'> & {
   pendingBalanceUSDFormatted?: string
   pendingToBeSignedFormatted?: string
   pendingToBeConfirmedFormatted?: string
+}
+
+export type ShouldShowConfettiBanner = {
+  [key: string]: boolean
 }

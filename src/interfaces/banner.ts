@@ -93,3 +93,7 @@ export type Action =
       label: 'Check'
       actionName: 'confirm-temp-seed'
     }
+  | {
+      label: 'Open'
+      actionName: 'open-confetti-modal'
+    }
