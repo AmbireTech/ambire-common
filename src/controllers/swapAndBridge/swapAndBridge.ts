@@ -23,6 +23,7 @@ import { getTokenAmount } from '../../libs/portfolio/helpers'
 import {
   convertPortfolioTokenToSocketAPIToken,
   getActiveRoutesForAccount,
+  getIsBridgeTxn,
   getQuoteRouteSteps,
   sortTokenListResponse
 } from '../../libs/swapAndBridge/swapAndBridge'
@@ -756,7 +757,7 @@ export class SwapAndBridgeController extends EventEmitter {
               let shouldFilterOut = false
               if (!route.userTxs) return !shouldFilterOut
 
-              const bridgeTx = route.userTxs.find((tx) => tx.userTxType === 'fund-movr') as
+              const bridgeTx = route.userTxs.find((tx) => getIsBridgeTxn(tx.userTxType)) as
                 | SocketAPIBridgeUserTx
                 | undefined
 
@@ -789,6 +790,8 @@ export class SwapAndBridgeController extends EventEmitter {
               return !shouldFilterOut
             })
           } catch (error) {
+            // if the filtration fails for some reason continue with the original routes
+            // array without interrupting the rest of the logic
             console.error(error)
           }
 
