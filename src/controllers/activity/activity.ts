@@ -640,6 +640,8 @@ export class ActivityController extends EventEmitter {
   async findMessage(account: string, filter: (item: SignedMessage) => boolean) {
     await this.#initialLoadPromise
 
+    if (!this.#signedMessages[account]) return null
+
     return this.#signedMessages[account].find(filter)
   }
 
