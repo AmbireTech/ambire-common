@@ -1021,7 +1021,13 @@ export class MainController extends EventEmitter {
             value: call.value ? getBigInt(call.value) : 0n
           }))
         },
-        meta: { isSignAction: true, accountAddr, networkId: network.id, paymasterService },
+        meta: {
+          isSignAction: true,
+          isWalletSendCalls,
+          accountAddr,
+          networkId: network.id,
+          paymasterService
+        },
         dappPromise
       } as SignUserRequest
       if (!this.selectedAccount.account.creation) {
@@ -1670,6 +1676,23 @@ export class MainController extends EventEmitter {
       await this.swapAndBridge.updateActiveRoute(r.meta.activeRouteId, {
         routeStatus: 'in-progress'
       })
+    }
+
+    // handle wallet_sendCalls before pollTxnId as 1) it's faster
+    // 2) the identifier is different
+    // eslint-disable-next-line no-restricted-syntax
+    for (const call of accountOp.calls) {
+      const walletSendCallsUserReq = this.userRequests.find(
+        (r) => r.id === call.fromUserRequestId && r.meta.isWalletSendCalls
+      )
+      if (walletSendCallsUserReq) {
+        const identifiedBy = data.submittedAccountOp.identifiedBy
+        walletSendCallsUserReq.dappPromise?.resolve({
+          hash: `${identifiedBy.type}:${identifiedBy.identifier}`
+        })
+        // eslint-disable-next-line no-await-in-loop
+        this.removeUserRequest(walletSendCallsUserReq.id, { shouldRemoveSwapAndBridgeRoute: false })
+      }
     }
 
     // Note: this may take a while!
