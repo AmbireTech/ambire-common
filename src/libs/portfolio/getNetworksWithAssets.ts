@@ -23,10 +23,6 @@ const getAccountNetworksWithAssets = (
     // rely on networksWithAssets
     // RPC is down or an error occurred
     if (!result || isRPCDown) {
-      // The account isn't in storage and was added after the RPC stopped working.
-      // We assume the presence of assets, avoiding unnecessary concern during the RPC outage.
-      if (!storageStateByAccount[accountId]) networksWithAssets.push(networkId)
-
       // The account has assets on this network and the RPC is down
       if (
         storageStateByAccount[accountId]?.includes(networkId) &&
