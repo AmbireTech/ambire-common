@@ -1,5 +1,5 @@
 /* eslint-disable class-methods-use-this */
-import { RELAYER_DOWN_MESSAGE } from '../../relayerCall/relayerCall'
+import { RELAYER_DOWN_MESSAGE, RelayerError } from '../../relayerCall/relayerCall'
 import { isReasonValid } from '../helpers'
 import { DecodedError, ErrorHandler, ErrorType } from '../types'
 
@@ -9,10 +9,7 @@ class RelayerErrorHandler implements ErrorHandler {
 
     if (message === RELAYER_DOWN_MESSAGE) return true
 
-    const hasRPCErrorSignatureInMessage =
-      message?.includes('action=') && message?.includes('data=') && message?.includes('code=')
-
-    return hasRPCErrorSignatureInMessage
+    return error instanceof RelayerError
   }
 
   public handle(data: string, error: any): DecodedError {

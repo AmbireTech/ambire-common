@@ -2,17 +2,13 @@ import { getErrorCodeStringFromReason } from '../errorDecoder/helpers'
 import { DecodedError, ErrorType } from '../errorDecoder/types'
 import { ErrorHumanizerError } from './types'
 
-const REASON_HIDDEN_FOR = [ErrorType.RelayerError, ErrorType.PaymasterError]
-
 function getGenericMessageFromType(
   errorType: ErrorType,
   reason: DecodedError['reason'],
   messagePrefix: string,
   lastResortMessage: string
 ): string {
-  const reasonString = !REASON_HIDDEN_FOR.includes(errorType)
-    ? getErrorCodeStringFromReason(reason ?? '')
-    : ''
+  const reasonString = getErrorCodeStringFromReason(reason ?? '')
   const messageSuffix = `${reasonString}\nPlease try again or contact Ambire support for assistance.`
 
   switch (errorType) {

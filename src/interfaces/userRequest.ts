@@ -43,6 +43,7 @@ export interface SignUserRequest {
     isSignAction: true
     accountAddr: AccountId
     networkId: NetworkId
+    isWalletSendCalls?: boolean
     [key: string]: any
   }
   // defined only when SignUserRequest is built from a DappRequest
