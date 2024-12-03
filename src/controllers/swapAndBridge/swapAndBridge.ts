@@ -771,6 +771,8 @@ export class SwapAndBridgeController extends EventEmitter {
 
               if (!bridgeStep) return route
 
+              if (bridgeStep.protocolFees.amount === '0') return route
+
               const normalizedProtocolFeeToken = normalizeIncomingSocketToken(
                 bridgeStep.protocolFees.asset
               )
