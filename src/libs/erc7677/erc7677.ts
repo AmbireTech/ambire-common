@@ -1,4 +1,4 @@
-import { toBeHex } from 'ethers'
+import { toBeHex, toQuantity } from 'ethers'
 
 import { ERC_4337_ENTRYPOINT } from '../../consts/deploy'
 import { Network } from '../../interfaces/network'
@@ -13,13 +13,20 @@ import {
 } from './types'
 
 export function getPaymasterService(
-  chainId: `0x${string}`,
+  chainId: bigint,
   capabilities?: { paymasterService?: PaymasterCapabilities }
 ): PaymasterService | undefined {
-  if (!capabilities || !capabilities.paymasterService || !capabilities.paymasterService[chainId])
-    return undefined
+  if (!capabilities || !capabilities.paymasterService) return undefined
 
-  const paymasterService = capabilities.paymasterService[chainId]
+  // hex may come with a leading zero or not. Prepare for both
+  const chainIdHex = toBeHex(chainId) as `0x${string}`
+  const chainIdQuantity = toQuantity(chainId) as `0x${string}`
+  const paymasterService =
+    chainIdHex in capabilities.paymasterService
+      ? capabilities.paymasterService[chainIdHex]
+      : capabilities.paymasterService[chainIdQuantity]
+  if (!paymasterService) return undefined
+
   paymasterService.id = new Date().getTime()
   return paymasterService
 }
