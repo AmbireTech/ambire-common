@@ -1,17 +1,8 @@
 import { describe, expect } from '@jest/globals'
 
 import { RelayerPaymasterError } from '../errorDecoder/customErrors'
+import { MockRpcError } from '../errorDecoder/errorDecoder.test'
 import { getHumanReadableBroadcastError } from './index'
-
-const MockRpcError = class extends Error {
-  public constructor(
-    public code?: string | number,
-    public info?: { error: { code: number; message: string } },
-    public shortMessage?: string
-  ) {
-    super(info?.error.message || shortMessage)
-  }
-}
 
 describe('Broadcast errors are humanized', () => {
   it('Paymaster: selected fee too low', async () => {

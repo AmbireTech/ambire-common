@@ -510,10 +510,7 @@ export class SwapAndBridgeController extends EventEmitter {
       }) || []
     this.portfolioTokenList = tokens
 
-    // Search in `nextPortfolioTokenList` instead of `tokens` because the user might select
-    // a token with a zero balance from the dashboard to be swapped or bridged`.
-    // If we only search within tokens with a balance, the selected token won't be found.
-    const fromSelectedTokenInNextPortfolio = nextPortfolioTokenList.find(
+    const fromSelectedTokenInNextPortfolio = this.portfolioTokenList.find(
       (t) =>
         t.address === this.fromSelectedToken?.address &&
         t.networkId === this.fromSelectedToken?.networkId
