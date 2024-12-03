@@ -2,7 +2,7 @@
 import { Fetch } from '../../interfaces/fetch'
 import { parse, stringify } from '../richJson/richJson'
 
-class RelayerError extends Error {
+export class RelayerError extends Error {
   public input: any
 
   public output: any
