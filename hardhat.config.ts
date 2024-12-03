@@ -26,7 +26,10 @@ const config: HardhatUserConfig = {
     token: 'ETH'
   },
   networks: {
-    base: { url: 'https://mainnet.base.org' },
+    base: {
+      url: 'https://mainnet.base.org',
+      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
+    },
     optimism: {
       url: 'https://invictus.ambire.com/optimism',
       accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
@@ -53,6 +56,6 @@ const config: HardhatUserConfig = {
       }
     ]
   }
-}
+} as any
 
 export default config
