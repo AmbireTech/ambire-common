@@ -428,7 +428,6 @@ export class MainController extends EventEmitter {
       return
     }
     this.selectedAccount.setAccount(accountToSelect)
-    this.activity.init()
     this.swapAndBridge.onAccountChange()
     this.dapps.broadcastDappSessionEvent('accountsChanged', [toAccountAddr])
     // forceEmitUpdate to update the getters in the FE state of the ctrl
@@ -857,7 +856,7 @@ export class MainController extends EventEmitter {
         // Remove account data from sub-controllers
         await this.accounts.removeAccountData(address)
         this.portfolio.removeAccountData(address)
-        this.activity.removeAccountData(address)
+        await this.activity.removeAccountData(address)
         this.actions.removeAccountData(address)
         this.signMessage.removeAccountData(address)
 
@@ -1013,7 +1012,7 @@ export class MainController extends EventEmitter {
             value: call.value ? getBigInt(call.value) : 0n
           }))
         },
-        meta: { isSignAction: true, accountAddr, networkId: network.id },
+        meta: { isSignAction: true, isWalletSendCalls, accountAddr, networkId: network.id },
         dappPromise
       } as SignUserRequest
       if (!this.selectedAccount.account.creation) {
@@ -1402,21 +1401,13 @@ export class MainController extends EventEmitter {
             a.accountOp.networkId === network.id
         ) as AccountOpAction | undefined
 
-        const activityFilters = {
-          account: account.addr,
-          network: network.id
-        }
-        if (!this.activity.isInitialized) {
-          this.activity.init(activityFilters)
-        } else {
-          this.activity.setFilters(activityFilters)
-        }
-
-        const entryPointAuthorizationMessageFromHistory = this.activity.signedMessages?.items.find(
+        const entryPointAuthorizationMessageFromHistory = await this.activity.findMessage(
+          account.addr,
           (message) =>
             message.fromActionId === ENTRY_POINT_AUTHORIZATION_REQUEST_ID &&
             message.networkId === network.id
         )
+
         const hasAuthorized =
           !!currentAccountOpAction?.accountOp?.meta?.entryPointAuthorization ||
           !!entryPointAuthorizationMessageFromHistory
@@ -1670,6 +1661,23 @@ export class MainController extends EventEmitter {
       await this.swapAndBridge.updateActiveRoute(r.meta.activeRouteId, {
         routeStatus: 'in-progress'
       })
+    }
+
+    // handle wallet_sendCalls before pollTxnId as 1) it's faster
+    // 2) the identifier is different
+    // eslint-disable-next-line no-restricted-syntax
+    for (const call of accountOp.calls) {
+      const walletSendCallsUserReq = this.userRequests.find(
+        (r) => r.id === call.fromUserRequestId && r.meta.isWalletSendCalls
+      )
+      if (walletSendCallsUserReq) {
+        const identifiedBy = data.submittedAccountOp.identifiedBy
+        walletSendCallsUserReq.dappPromise?.resolve({
+          hash: `${identifiedBy.type}:${identifiedBy.identifier}`
+        })
+        // eslint-disable-next-line no-await-in-loop
+        this.removeUserRequest(walletSendCallsUserReq.id, { shouldRemoveSwapAndBridgeRoute: false })
+      }
     }
 
     // Note: this may take a while!
