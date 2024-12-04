@@ -301,8 +301,10 @@ export class SwapAndBridgeController extends EventEmitter {
       this.activeRoutes = this.activeRoutes.filter((r) => r.routeStatus !== 'completed')
       // remove activeRoutes errors from the previous session
       this.activeRoutes.forEach((r) => {
-        // eslint-disable-next-line no-param-reassign
-        delete r.error
+        if (r.routeStatus !== 'failed') {
+          // eslint-disable-next-line no-param-reassign
+          delete r.error
+        }
       })
       // update the activeRoute.route prop for the new session
       this.activeRoutes.forEach((r) => {

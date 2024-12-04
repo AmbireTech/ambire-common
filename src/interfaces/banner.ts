@@ -9,6 +9,7 @@ export type BannerCategory =
   | 'bridge-in-progress'
   | 'bridge-ready'
   | 'bridge-completed'
+  | 'bridge-failed'
   | 'temp-seed-not-confirmed'
   | 'old-account'
 
