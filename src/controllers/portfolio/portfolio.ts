@@ -1,5 +1,4 @@
 import { getAddress, ZeroAddress } from 'ethers'
-import { PORTFOLIO_LIB_ERROR_NAMES } from 'libs/portfolio/portfolio'
 
 import { Account, AccountId } from '../../interfaces/account'
 import { Fetch } from '../../interfaces/fetch'
@@ -34,6 +33,7 @@ import {
   TemporaryTokens,
   TokenResult
 } from '../../libs/portfolio/interfaces'
+import { PORTFOLIO_LIB_ERROR_NAMES } from '../../libs/portfolio/portfolio'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { AccountsController } from '../accounts/accounts'
 import EventEmitter from '../eventEmitter/eventEmitter'
@@ -575,7 +575,11 @@ export class PortfolioController extends EventEmitter {
           ])
 
           // Persist latest state in previousHints in the disk storage for further requests
-          if (isSuccessfulLatestUpdate && !areAccountOpsChanged) {
+          if (
+            isSuccessfulLatestUpdate &&
+            !areAccountOpsChanged &&
+            accountState[network.id]?.result
+          ) {
             const networkResult = accountState[network.id]!.result
             const readyToLearnTokens = getTokensReadyToLearn(
               this.#toBeLearnedTokens[network.id],

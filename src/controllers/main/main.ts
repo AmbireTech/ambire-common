@@ -1877,7 +1877,7 @@ export class MainController extends EventEmitter {
         })
       })
 
-      const additionalHints: GetOptions['additionalHints'] = humanization
+      const additionalHints: GetOptions['additionalErc20Hints'] = humanization
         .map((call: any) =>
           !call.fullVisualization
             ? []
