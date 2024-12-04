@@ -379,12 +379,14 @@ export class SignAccountOpController extends EventEmitter {
     // if the gasFeePayment is gas tank but the user doesn't have funds, disable it
     const hasBalance = Object.keys(currentPortfolio).find((networkName) => {
       if (networkName === 'gasTank' || networkName === 'rewards') return false
-      if (!currentPortfolio[networkName]) return false
-      if (!currentPortfolio[networkName].result) return false
-      if (!currentPortfolio[networkName].result.total) return false
-      if (!currentPortfolio[networkName].result.total.usd) return false
 
-      return currentPortfolio[networkName].result.total.usd > 0
+      const networkPortfolio = currentPortfolio[networkName]
+      if (!networkPortfolio) return false
+      if (!networkPortfolio.result) return false
+      if (!networkPortfolio.result.total) return false
+      if (!networkPortfolio.result.total.usd) return false
+
+      return networkPortfolio.result.total.usd > 0
     })
     if (!hasBalance && this.accountOp.gasFeePayment && this.accountOp.gasFeePayment.isGasTank) {
       errors.push("Gas tank isn't allowed on an empty account. Please add funds to your account")
