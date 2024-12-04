@@ -154,8 +154,12 @@ export async function pollTxnId(
   identifiedBy: AccountOpIdentifiedBy,
   network: Network,
   fetchFn: Fetch,
-  callRelayer: Function
+  callRelayer: Function,
+  failCount = 0
 ): Promise<string | null> {
+  // allow 8 retries and declate fetching the txnId a failure after
+  if (failCount >= 8) return null
+
   const fetchTxnIdResult = await fetchTxnId(identifiedBy, network, fetchFn, callRelayer)
   if (fetchTxnIdResult.status === 'rejected') return null
 
@@ -165,7 +169,8 @@ export async function pollTxnId(
         setTimeout(resolve, 1500)
       })
     await delayPromise()
-    return pollTxnId(identifiedBy, network, fetchFn, callRelayer)
+    const increase = failCount + 1
+    return pollTxnId(identifiedBy, network, fetchFn, callRelayer, increase)
   }
 
   return fetchTxnIdResult.txnId
