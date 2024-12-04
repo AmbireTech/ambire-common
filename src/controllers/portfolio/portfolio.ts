@@ -390,10 +390,9 @@ export class PortfolioController extends EventEmitter {
     accountId: string,
     network: Network,
     portfolioLib: Portfolio,
-    _portfolioProps: Partial<GetOptions> & { blockTag: 'latest' | 'pending' },
+    portfolioProps: Partial<GetOptions> & { blockTag: 'latest' | 'pending' },
     forceUpdate: boolean
   ): Promise<boolean> {
-    const portfolioProps = { ..._portfolioProps }
     const blockTag = portfolioProps.blockTag
     const stateKeys = {
       latest: this.#latest,
