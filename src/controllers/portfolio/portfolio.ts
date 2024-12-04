@@ -1,4 +1,5 @@
 import { getAddress, ZeroAddress } from 'ethers'
+import { PORTFOLIO_LIB_ERROR_NAMES } from 'libs/portfolio/portfolio'
 
 import { Account, AccountId } from '../../interfaces/account'
 import { Fetch } from '../../interfaces/fetch'
@@ -574,32 +575,44 @@ export class PortfolioController extends EventEmitter {
           ])
 
           // Persist latest state in previousHints in the disk storage for further requests
-          if (
-            isSuccessfulLatestUpdate &&
-            !areAccountOpsChanged &&
-            accountState[network.id]?.result?.hintsFromExternalAPI
-          ) {
+          if (isSuccessfulLatestUpdate && !areAccountOpsChanged) {
+            const networkResult = accountState[network.id]!.result
             const readyToLearnTokens = getTokensReadyToLearn(
               this.#toBeLearnedTokens[network.id],
-              accountState[network.id]!.result!.tokens
+              networkResult!.tokens
             )
 
             if (readyToLearnTokens.length) {
               await this.learnTokens(readyToLearnTokens, network.id)
             }
 
-            const updatedStoragePreviousHints = getUpdatedHints(
-              accountState[network.id]!.result!.hintsFromExternalAPI as ExternalHintsAPIResponse,
-              accountState[network.id]!.result!.tokens,
-              accountState[network.id]!.result!.tokenErrors,
-              network.id,
-              this.#previousHints,
-              key,
-              this.tokenPreferences
+            const HINT_ERRORS = [
+              PORTFOLIO_LIB_ERROR_NAMES.NoApiHintsError,
+              PORTFOLIO_LIB_ERROR_NAMES.StaleApiHintsError,
+              PORTFOLIO_LIB_ERROR_NAMES.NonCriticalApiHintsError
+            ]
+
+            const isExternalHintsApiResponseValid = !networkResult!.errors?.some((error) =>
+              HINT_ERRORS.includes(error.name)
             )
 
-            this.#previousHints = updatedStoragePreviousHints
-            await this.#storage.set('previousHints', updatedStoragePreviousHints)
+            if (isExternalHintsApiResponseValid) {
+              const updatedStoragePreviousHints = getUpdatedHints(
+                networkResult!.hintsFromExternalAPI as ExternalHintsAPIResponse,
+                networkResult!.tokens,
+                networkResult!.tokenErrors,
+                network.id,
+                this.#previousHints,
+                key,
+                this.tokenPreferences
+              )
+
+              // Updating hints is only needed when the external API response is valid.
+              // learnTokens and learnNfts update storage separately, so we don't need to update them here
+              // if the external API response is invalid.
+              this.#previousHints = updatedStoragePreviousHints
+              await this.#storage.set('previousHints', updatedStoragePreviousHints)
+            }
           }
 
           // We cache the previously simulated AccountOps
