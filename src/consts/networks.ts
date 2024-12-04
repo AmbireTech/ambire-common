@@ -45,6 +45,7 @@ const networks: Network[] = [
     predefined: true,
     wrappedAddr: '0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270',
     oldNativeAssetSymbols: ['MATIC'],
+    disableEstimateGas: true,
     allowForce4337: true
   },
   {
@@ -71,6 +72,7 @@ const networks: Network[] = [
     },
     isOptimistic: true,
     predefined: true,
+    disableEstimateGas: true,
     wrappedAddr: '0x4200000000000000000000000000000000000006'
   },
   {
@@ -95,6 +97,7 @@ const networks: Network[] = [
       minBaseFee: 25000000000n // 25 gwei
     },
     predefined: true,
+    disableEstimateGas: true,
     wrappedAddr: '0xb31f66aa3c1e785363f0875a1b74e27b85fd66c7'
   },
   {
@@ -152,6 +155,7 @@ const networks: Network[] = [
       minBaseFeeEqualToLastBlock: true
     },
     predefined: true,
+    disableEstimateGas: true,
     wrappedAddr: '0x4200000000000000000000000000000000000006'
   },
   {
@@ -173,6 +177,7 @@ const networks: Network[] = [
     features: [],
     feeOptions: { is1559: false },
     predefined: true,
+    disableEstimateGas: true,
     wrappedAddr: '0x5300000000000000000000000000000000000004'
   },
   {
