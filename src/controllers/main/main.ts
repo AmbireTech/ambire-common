@@ -1712,8 +1712,7 @@ export class MainController extends EventEmitter {
           uReq.dappPromise?.resolve({ hash: txnId })
         } else {
           uReq.dappPromise?.reject(
-            ethErrors.provider.custom({
-              code: 1001,
+            ethErrors.rpc.transactionRejected({
               message: 'Transaction rejected by the bundler'
             })
           )
