@@ -187,7 +187,7 @@ export type ActiveRoute = {
     transactionData: { txHash: string }[] | null
     userAddress: string
   }
-  routeStatus: 'in-progress' | 'ready' | 'completed'
+  routeStatus: 'in-progress' | 'ready' | 'completed' | 'failed'
   error?: string
 }
 

@@ -1688,20 +1688,35 @@ export class MainController extends EventEmitter {
       this.callRelayer
     )
 
-    // Follow up update with the just polled txnId (that potentially came slower)
     // eslint-disable-next-line no-restricted-syntax
     for (const r of swapAndBridgeUserRequests) {
-      // eslint-disable-next-line no-await-in-loop
-      await this.swapAndBridge.updateActiveRoute(r.meta.activeRouteId, {
-        userTxHash: txnId
-      })
+      if (txnId) {
+        // eslint-disable-next-line no-await-in-loop
+        await this.swapAndBridge.updateActiveRoute(r.meta.activeRouteId, {
+          userTxHash: txnId
+        })
+      } else {
+        // eslint-disable-next-line no-await-in-loop
+        await this.swapAndBridge.updateActiveRoute(r.meta.activeRouteId, {
+          routeStatus: 'failed',
+          error: 'Transaction rejected by the bundler'
+        })
+      }
     }
 
     // eslint-disable-next-line no-restricted-syntax
     for (const call of accountOp.calls) {
       const uReq = this.userRequests.find((r) => r.id === call.fromUserRequestId)
       if (uReq) {
-        uReq.dappPromise?.resolve({ hash: txnId })
+        if (txnId) {
+          uReq.dappPromise?.resolve({ hash: txnId })
+        } else {
+          uReq.dappPromise?.reject(
+            ethErrors.rpc.transactionRejected({
+              message: 'Transaction rejected by the bundler'
+            })
+          )
+        }
         // eslint-disable-next-line no-await-in-loop
         this.removeUserRequest(uReq.id, { shouldRemoveSwapAndBridgeRoute: false })
       }

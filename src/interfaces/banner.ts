@@ -9,6 +9,7 @@ export type BannerCategory =
   | 'bridge-in-progress'
   | 'bridge-ready'
   | 'bridge-completed'
+  | 'bridge-failed'
   | 'temp-seed-not-confirmed'
   | 'old-account'
 
@@ -92,4 +93,8 @@ export type Action =
   | {
       label: 'Check'
       actionName: 'confirm-temp-seed'
+    }
+  | {
+      label: 'Reload'
+      actionName: 'update-extension-version'
     }
