@@ -12,8 +12,8 @@ import {
   AccountState,
   AdditionalPortfolioNetworkResult,
   ExternalHintsAPIResponse,
-  PortfolioLibGetResult,
   PreviousHintsStorage,
+  StrippedExternalHintsAPIResponse,
   TokenResult
 } from './interfaces'
 
@@ -202,13 +202,16 @@ export const getPinnedGasTankTokens = (
 }
 
 export const stripExternalHintsAPIResponse = (
-  response: ExternalHintsAPIResponse | null
-): PortfolioLibGetResult['hintsFromExternalAPI'] => {
+  response: StrippedExternalHintsAPIResponse | null
+): StrippedExternalHintsAPIResponse | null => {
   if (!response) return null
 
+  const { erc20s, erc721s, lastUpdate } = response
+
   return {
-    erc20s: response.erc20s,
-    erc721s: response.erc721s
+    erc20s,
+    erc721s,
+    lastUpdate
   }
 }
 
@@ -222,7 +225,7 @@ const getLowercaseAddressArrayForNetwork = (
 
 // Updates the previous hints storage with the latest portfolio get result.
 export function getUpdatedHints(
-  latestHintsFromExternalAPI: ExternalHintsAPIResponse,
+  latestHintsFromExternalAPI: ExternalHintsAPIResponse | null,
   tokens: TokenResult[],
   tokenErrors: AdditionalPortfolioNetworkResult['tokenErrors'],
   networkId: NetworkId,

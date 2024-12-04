@@ -270,7 +270,7 @@ export class PortfolioController extends EventEmitter {
     try {
       const result = await portfolioLib.get(accountId, {
         priceRecency: 60000,
-        additionalHints: [additionalHint, ...temporaryTokensToFetch.map((x) => x.address)],
+        additionalErc20Hints: [additionalHint, ...temporaryTokensToFetch.map((x) => x.address)],
         disableAutoDiscovery: true
       })
       this.temporaryTokens[network.id] = {
@@ -415,13 +415,6 @@ export class PortfolioController extends EventEmitter {
     const state = accountState[network.id]!
     const tokenPreferences = this.tokenPreferences
     const hasNonZeroTokens = !!this.#networksWithAssetsByAccounts?.[accountId]?.length
-    if (!portfolioProps.previousHints) portfolioProps.previousHints = { erc20s: [], erc721s: {} }
-    portfolioProps.previousHints.erc721s = Object.fromEntries(
-      Object.entries(this.#previousHints?.learnedNfts?.[network.id] || {}).map(([k, v]) => [
-        getAddress(k),
-        { isKnown: false, tokens: v.map((i) => i.toString()) }
-      ])
-    )
 
     try {
       const result = await portfolioLib.get(accountId, {
@@ -432,13 +425,13 @@ export class PortfolioController extends EventEmitter {
         ...portfolioProps
       })
 
-      const additionalHints = portfolioProps.additionalHints || []
+      const additionalHintsErc20Hints = portfolioProps.additionalErc20Hints || []
 
       const processedTokens = processTokens(
         result.tokens,
         network,
         hasNonZeroTokens,
-        additionalHints,
+        additionalHintsErc20Hints,
         tokenPreferences
       )
 
@@ -528,13 +521,9 @@ export class PortfolioController extends EventEmitter {
               : currentAccountOps !== simulatedAccountOps
           const forceUpdate = opts?.forceUpdate || areAccountOpsChanged
 
-          const fallbackHints = (this.#previousHints?.fromExternalAPI &&
-            this.#previousHints?.fromExternalAPI[key]) ?? {
-            erc20s: [],
-            erc721s: {}
-          }
+          const previousHintsFromExternalAPI = this.#previousHints?.fromExternalAPI?.[key]
 
-          const additionalHints = [
+          const additionalErc20Hints = [
             ...Object.keys(
               (this.#previousHints?.learnedTokens &&
                 this.#previousHints?.learnedTokens[network.id]) ??
@@ -542,6 +531,17 @@ export class PortfolioController extends EventEmitter {
             ),
             ...((this.#toBeLearnedTokens && this.#toBeLearnedTokens[network.id]) ?? [])
           ]
+          const additionalErc721Hints = Object.fromEntries(
+            Object.entries(this.#previousHints?.learnedNfts?.[network.id] || {}).map(([k, v]) => [
+              getAddress(k),
+              { isKnown: false, tokens: v.map((i) => i.toString()) }
+            ])
+          )
+          const allHints = {
+            previousHintsFromExternalAPI,
+            additionalErc20Hints,
+            additionalErc721Hints
+          }
 
           const [isSuccessfulLatestUpdate] = await Promise.all([
             // Latest state update
@@ -551,8 +551,7 @@ export class PortfolioController extends EventEmitter {
               portfolioLib,
               {
                 blockTag: 'latest',
-                previousHints: fallbackHints,
-                additionalHints
+                ...allHints
               },
               forceUpdate
             ),
@@ -562,7 +561,6 @@ export class PortfolioController extends EventEmitter {
               portfolioLib,
               {
                 blockTag: 'pending',
-                previousHints: fallbackHints,
                 ...(currentAccountOps && {
                   simulation: {
                     account: selectedAccount,
@@ -570,7 +568,7 @@ export class PortfolioController extends EventEmitter {
                   }
                 }),
                 isEOA: !isSmartAccount(selectedAccount),
-                additionalHints
+                ...allHints
               },
               forceUpdate
             )
