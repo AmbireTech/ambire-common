@@ -325,7 +325,6 @@ export function getUpdatedHints(
     }
   }
   // Update the external hints for [network:account] with the latest from the external API
-  // only if the external API response is not null. (was successful)
   previousHints.fromExternalAPI[key] = latestHintsFromExternalAPI
 
   return {
