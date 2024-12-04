@@ -6,13 +6,11 @@ import { Network } from '../../interfaces/network'
 import { Bundler } from '../../services/bundlers/bundler'
 import { paymasterFactory } from '../../services/paymaster'
 import { AccountOp, getSignableCallsForBundlerEstimate } from '../accountOp/accountOp'
-import { getFeeCall } from '../calls/calls'
 import { PaymasterEstimationData } from '../erc7677/types'
 import { getHumanReadableEstimationError } from '../errorHumanizer'
 import { TokenResult } from '../portfolio'
 import { getSigForCalculations, getUserOperation } from '../userOperation/userOperation'
 import { estimationErrorFormatted } from './errors'
-import { getFeeTokenForEstimate } from './estimateHelpers'
 import { EstimateResult, FeePaymentOption } from './interfaces'
 
 export async function bundlerEstimate(
@@ -61,21 +59,13 @@ export async function bundlerEstimate(
 
   const ambireAccount = new Interface(AmbireAccount.abi)
   const isEdgeCase = !accountState.isErc4337Enabled && accountState.isDeployed
-  userOp.callData = ambireAccount.encodeFunctionData('executeBySender', [
-    getSignableCallsForBundlerEstimate(localOp)
-  ])
   userOp.signature = getSigForCalculations()
 
   const paymaster = await paymasterFactory.create(op, userOp, network)
-  if (paymaster.shouldIncludePayment()) {
-    const feeToken = getFeeTokenForEstimate(feeTokens, network)
-    if (feeToken) localOp.feeCall = getFeeCall(feeToken)
-
-    // add the feeToken for estimation
-    userOp.callData = ambireAccount.encodeFunctionData('executeBySender', [
-      getSignableCallsForBundlerEstimate(localOp)
-    ])
-  }
+  localOp.feeCall = paymaster.getFeeCallForEstimation(feeTokens)
+  userOp.callData = ambireAccount.encodeFunctionData('executeBySender', [
+    getSignableCallsForBundlerEstimate(localOp)
+  ])
 
   if (paymaster.isUsable()) {
     const paymasterEstimationData = paymaster.getEstimationData() as PaymasterEstimationData

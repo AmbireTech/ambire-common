@@ -1079,6 +1079,16 @@ export class SignAccountOpController extends EventEmitter {
     // In case of gas tank token fee payment, we need to include one more call to account op
     const abiCoder = new AbiCoder()
 
+    if (this.isSponsored) {
+      this.accountOp.feeCall = {
+        to: FEE_COLLECTOR,
+        value: 0n,
+        data: abiCoder.encode(['string', 'uint256', 'string'], ['gasTank', 0n, 'USDC'])
+      }
+
+      return
+    }
+
     if (this.accountOp.gasFeePayment!.isGasTank) {
       this.accountOp.feeCall = {
         to: FEE_COLLECTOR,

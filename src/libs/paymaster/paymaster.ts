@@ -1,10 +1,13 @@
 import { AbiCoder, toBeHex } from 'ethers'
 
+import { FEE_COLLECTOR } from '../../consts/addresses'
 import { AMBIRE_PAYMASTER } from '../../consts/deploy'
 import { Account } from '../../interfaces/account'
 import { Network } from '../../interfaces/network'
 import { failedSponsorships } from '../../services/paymaster/FailedSponsorships'
 import { AccountOp } from '../accountOp/accountOp'
+import { Call } from '../accountOp/types'
+import { getFeeCall } from '../calls/calls'
 import { getPaymasterData, getPaymasterStubData } from '../erc7677/erc7677'
 import {
   PaymasterErrorReponse,
@@ -14,6 +17,8 @@ import {
 } from '../erc7677/types'
 import { RelayerPaymasterError, SponsorshipPaymasterError } from '../errorDecoder/customErrors'
 import { getHumanReadableBroadcastError } from '../errorHumanizer'
+import { getFeeTokenForEstimate } from '../estimate/estimateHelpers'
+import { TokenResult } from '../portfolio'
 import { UserOperation } from '../userOperation/types'
 import { getCleanUserOp, getSigForCalculations } from '../userOperation/userOperation'
 
@@ -41,11 +46,15 @@ export class Paymaster {
 
   paymasterService: PaymasterService | null = null
 
+  network: Network | null = null
+
   constructor(callRelayer: Function) {
     this.callRelayer = callRelayer
   }
 
   async init(op: AccountOp, userOp: UserOperation, network: Network) {
+    this.network = network
+
     if (op.meta?.paymasterService && !op.meta?.paymasterService.failed) {
       try {
         this.paymasterService = op.meta.paymasterService
@@ -71,7 +80,30 @@ export class Paymaster {
   }
 
   shouldIncludePayment(): boolean {
-    return this.type === 'Ambire'
+    return this.type === 'Ambire' || this.type === 'ERC7677'
+  }
+
+  getFeeCallForEstimation(feeTokens: TokenResult[]): Call | undefined {
+    if (!this.network) throw new Error('network not see, did you call init?')
+
+    if (this.type === 'Ambire') {
+      const feeToken = getFeeTokenForEstimate(feeTokens, this.network)
+      if (!feeToken) return undefined
+
+      return getFeeCall(feeToken)
+    }
+
+    // hardcode USDC gas tank 0 for sponsorships
+    if (this.type === 'ERC7677') {
+      const abiCoder = new AbiCoder()
+      return {
+        to: FEE_COLLECTOR,
+        value: 0n,
+        data: abiCoder.encode(['string', 'uint256', 'string'], ['gasTank', 0n, 'USDC'])
+      }
+    }
+
+    return undefined
   }
 
   getEstimationData(): PaymasterEstimationData | null {
