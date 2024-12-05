@@ -50,8 +50,8 @@ const legendsModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]) =
 
       return [
         getAction('Pick character'),
-        getImage(characterTypes[heroType]?.image),
-        getLabel(characterTypes[heroType]?.type || 'Unknown', true),
+        getImage(characterTypes[heroType]?.image || characterTypes[0].image),
+        getLabel(characterTypes[heroType]?.type || characterTypes[0].type, true),
         getLabel('for Ambire Legends')
       ]
     },
