@@ -56,7 +56,7 @@ const legendsModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]) =
       ]
     },
     [iface.getFunction('spinWheel')?.selector!]: () => {
-      return [getAction('Spin the wheel of fortune')]
+      return [getAction('Unlock the wheel of fortune')]
     },
     [iface.getFunction('linkAndAcceptInvite')?.selector!]: (call: IrCall) => {
       const [inviteeV2Account, inviteeEoaOrV1, inviter] = iface.parseTransaction(call)!.args
