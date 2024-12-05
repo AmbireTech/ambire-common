@@ -125,6 +125,8 @@ export class SwapAndBridgeController extends EventEmitter {
 
   quote: SocketAPIQuote | null = null
 
+  quoteRoutesStatuses: { [key: string]: { status: string } } = {}
+
   portfolioTokenList: TokenResult[] = []
 
   isTokenListLoading: boolean = false
@@ -226,20 +228,20 @@ export class SwapAndBridgeController extends EventEmitter {
     )
   }
 
-  get formStatus() {
-    if (
+  get isFormEmpty() {
+    return (
       !this.fromChainId ||
       !this.toChainId ||
       !this.fromAmount ||
       !this.fromSelectedToken ||
       !this.toSelectedToken
     )
-      return SwapAndBridgeFormStatus.Empty
+  }
 
+  get formStatus() {
+    if (this.isFormEmpty) return SwapAndBridgeFormStatus.Empty
     if (this.validateFromAmount.message) return SwapAndBridgeFormStatus.Invalid
-
     if (this.updateQuoteStatus !== 'INITIAL') return SwapAndBridgeFormStatus.FetchingRoutes
-
     if (!this.quote?.selectedRoute) return SwapAndBridgeFormStatus.NoRoutesFound
 
     return SwapAndBridgeFormStatus.ReadyToSubmit
@@ -247,6 +249,17 @@ export class SwapAndBridgeController extends EventEmitter {
 
   get validateFromAmount() {
     if (!this.fromSelectedToken) return { success: false, message: '' }
+
+    if (
+      !this.isFormEmpty &&
+      !this.quote &&
+      Object.values(this.quoteRoutesStatuses).some((val) => val.status === 'MIN_AMOUNT_NOT_MET')
+    ) {
+      return {
+        success: true,
+        message: 'A route was found for this pair but the minimum token amount was not met.'
+      }
+    }
 
     return validateSendTransferAmount(
       this.fromAmount,
@@ -480,9 +493,11 @@ export class SwapAndBridgeController extends EventEmitter {
 
     if (routePriority) {
       this.routePriority = routePriority
-      if (this.quote) this.quote = null
+      if (this.quote) {
+        this.quote = null
+        this.quoteRoutesStatuses = {}
+      }
     }
-
     this.updateQuote()
 
     this.emitUpdate()
@@ -497,6 +512,7 @@ export class SwapAndBridgeController extends EventEmitter {
     this.toChainId = 1
     this.toSelectedToken = null
     this.quote = null
+    this.quoteRoutesStatuses = {}
     this.portfolioTokenList = []
     this.toTokenList = []
 
@@ -696,7 +712,6 @@ export class SwapAndBridgeController extends EventEmitter {
 
     const updateQuoteFunction = async () => {
       if (!this.#selectedAccount.account) return
-
       const sanitizedFromAmount = getSanitizedAmount(
         this.fromAmount,
         this.fromSelectedToken!.decimals
@@ -721,9 +736,9 @@ export class SwapAndBridgeController extends EventEmitter {
           return
         }
       }
-
-      if (this.quote && !options.skipPreviousQuoteRemoval) {
-        this.quote = null
+      if (!options.skipPreviousQuoteRemoval) {
+        if (this.quote) this.quote = null
+        this.quoteRoutesStatuses = {}
         this.emitUpdate()
       }
 
@@ -738,6 +753,7 @@ export class SwapAndBridgeController extends EventEmitter {
           isSmartAccount: isSmartAccount(this.#selectedAccount.account),
           sort: this.routePriority
         })
+
         if (
           this.#getIsFormValidToFetchQuote() &&
           quoteResult &&
@@ -785,6 +801,7 @@ export class SwapAndBridgeController extends EventEmitter {
             routes: quoteResult.routes
           }
         }
+        this.quoteRoutesStatuses = (quoteResult as any).bridgeRouteErrors || {}
       } catch (error: any) {
         this.emitError({
           error,
@@ -999,6 +1016,7 @@ export class SwapAndBridgeController extends EventEmitter {
       maxFromAmount: this.maxFromAmount,
       maxFromAmountInFiat: this.maxFromAmountInFiat,
       validateFromAmount: this.validateFromAmount,
+      isFormEmpty: this.isFormEmpty,
       formStatus: this.formStatus,
       activeRoutesInProgress: this.activeRoutesInProgress,
       activeRoutes: this.activeRoutes,
