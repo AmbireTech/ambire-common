@@ -943,6 +943,30 @@ export class SwapAndBridgeController extends EventEmitter {
     this.emitUpdate()
   }
 
+  // flip the routeStatus to completed if the route is a swapOnly one or the final bridge txn
+  // is of type dex-swap. If the routeStatus is not forcefully flipped in its completed state
+  // the status will be periodically retrieved from the API while the route is in progress
+  forceCompleteActiveRouteIfNeeded(
+    activeRouteId: SocketAPISendTransactionRequest['activeRouteId']
+  ) {
+    const activeRoute = this.activeRoutes.find((r) => r.activeRouteId === activeRouteId)
+
+    if (!activeRoute) return
+
+    if (activeRoute.route.fromChainId === activeRoute.route.toChainId) {
+      this.updateActiveRoute(activeRouteId, { routeStatus: 'completed' })
+    }
+
+    if (activeRoute.route.currentUserTxIndex + 1 === activeRoute.route.totalUserTx) {
+      const tx = activeRoute.route.userTxs[activeRoute.route.currentUserTxIndex]
+      if (!tx) return
+
+      if (tx.userTxType === 'dex-swap') {
+        this.updateActiveRoute(activeRouteId, { routeStatus: 'completed' })
+      }
+    }
+  }
+
   onAccountChange() {
     this.portfolioTokenList = []
     this.isTokenListLoading = true
