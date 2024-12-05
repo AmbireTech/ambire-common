@@ -17,27 +17,31 @@ const legendsModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]) =
   const characterTypes = [
     {
       type: 'Unknown',
-      image: 'https://staging-relayer.ambire.com/legends/nft-image/avatar/unknown.png'
+      image: 'https://relayer.ambire.com/legends/nft-image/avatar/unknown.png'
     },
     {
       type: 'Slime',
-      image: 'https://staging-relayer.ambire.com/legends/nft-image/avatar/slime-lvl0.png'
+      image: 'https://relayer.ambire.com/legends/nft-image/avatar/slime-lvl0.png'
     },
     {
       type: 'Sorceress',
-      image: 'https://staging-relayer.ambire.com/legends/nft-image/avatar/sorceress-lvl0.png'
+      image: 'https://relayer.ambire.com/legends/nft-image/avatar/sorceress-lvl0.png'
     },
     {
       type: 'Necromancer Vitalik',
-      image: 'https://staging-relayer.ambire.com/legends/nft-image/avatar/necromancer-lvl0.png'
+      image: 'https://relayer.ambire.com/legends/nft-image/avatar/necromancer-lvl0.png'
     },
     {
       type: 'Penguin Paladin',
-      image: 'https://staging-relayer.ambire.com/legends/nft-image/avatar/penguin-lvl0.png'
+      image: 'https://relayer.ambire.com/legends/nft-image/avatar/penguin-lvl0.png'
     },
     {
       type: 'Orc Warrior',
-      image: 'https://staging-relayer.ambire.com/legends/nft-image/avatar/orc-lvl0.png'
+      image: 'https://relayer.ambire.com/legends/nft-image/avatar/orc-lvl0.png'
+    },
+    {
+      type: 'Shapeshifter',
+      image: 'https://relayer.ambire.com/legends/nft-image/avatar/shapeshifter-lvl0.png'
     }
   ]
   const matcher = {
