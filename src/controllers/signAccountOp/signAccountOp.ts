@@ -559,7 +559,14 @@ export class SignAccountOpController extends EventEmitter {
       // we need to reset this.paidBy as it will contain the old sponsorship
       // option that might not exist anymore
       if (this.isSponsored === true && paymasterIsSponsored === false) {
-        this.selectedOption = undefined
+        const native = this.#portfolio
+          .getLatestPortfolioState(this.accountOp.accountAddr)
+          [this.accountOp.networkId]?.result?.tokens.find(
+            (token) => token.address === '0x0000000000000000000000000000000000000000'
+          )
+        if (!native || native.amount === 0n) {
+          this.selectedOption = undefined
+        }
       }
 
       this.isSponsored = paymasterIsSponsored
