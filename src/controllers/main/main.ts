@@ -1687,6 +1687,9 @@ export class MainController extends EventEmitter {
         walletSendCallsUserReq.dappPromise?.resolve({
           hash: `${identifiedBy.type}:${identifiedBy.identifier}`
         })
+
+        this.swapAndBridge.forceCompleteActiveRouteIfNeeded(walletSendCallsUserReq.id as number)
+
         // eslint-disable-next-line no-await-in-loop
         this.removeUserRequest(walletSendCallsUserReq.id, { shouldRemoveSwapAndBridgeRoute: false })
       }
@@ -1729,6 +1732,8 @@ export class MainController extends EventEmitter {
             })
           )
         }
+
+        this.swapAndBridge.forceCompleteActiveRouteIfNeeded(uReq.id as number)
         // eslint-disable-next-line no-await-in-loop
         this.removeUserRequest(uReq.id, { shouldRemoveSwapAndBridgeRoute: false })
       }
