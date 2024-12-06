@@ -180,7 +180,7 @@ describe('SwapAndBridge Controller', () => {
     let emitCounter = 0
     const unsubscribe = swapAndBridgeController.onUpdate(async () => {
       emitCounter++
-      if (emitCounter === 3) {
+      if (emitCounter === 4) {
         expect(swapAndBridgeController.formStatus).toEqual('ready-to-submit')
         expect(swapAndBridgeController.quote).not.toBeNull()
         unsubscribe()
@@ -190,7 +190,7 @@ describe('SwapAndBridge Controller', () => {
         expect(swapAndBridgeController.formStatus).toEqual('fetching-routes')
       }
     })
-    swapAndBridgeController.updateForm({ fromAmount: '0.02' })
+    swapAndBridgeController.updateForm({ fromAmount: '0.8' })
   })
   test('should switch from and to tokens', async () => {
     const prevFromChainId = swapAndBridgeController.fromChainId
@@ -214,7 +214,7 @@ describe('SwapAndBridge Controller', () => {
     let emitCounter = 0
     const unsubscribe = swapAndBridgeController.onUpdate(async () => {
       emitCounter++
-      if (emitCounter === 3) {
+      if (emitCounter === 4) {
         expect(swapAndBridgeController.formStatus).toEqual('ready-to-submit')
         expect(swapAndBridgeController.quote).not.toBeNull()
         unsubscribe()
