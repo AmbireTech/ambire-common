@@ -117,7 +117,7 @@ describe('SwapAndBridge Controller', () => {
     const unsubscribe = swapAndBridgeController.onUpdate(async () => {
       emitCounter++
       if (emitCounter === 3) {
-        expect(swapAndBridgeController.toTokenList).toHaveLength(3)
+        expect(swapAndBridgeController.toTokenList).toHaveLength(4)
         expect(swapAndBridgeController.toSelectedToken).toBeNull()
         unsubscribe()
         done()
@@ -144,6 +144,15 @@ describe('SwapAndBridge Controller', () => {
         networkId: 'base',
         priceIn: [{ baseCurrency: 'usd', price: 64325 }],
         symbol: 'cbBTC'
+      },
+      {
+        address: '0x0000000000000000000000000000000000000000',
+        amount: 11756728636013018n,
+        decimals: 8,
+        flags: { onGasTank: false, rewardsType: null, isFeeToken: true, canTopUpGasTank: true },
+        networkId: 'optimism',
+        priceIn: [{ baseCurrency: 'usd', price: 3660.27 }],
+        symbol: 'ETH'
       }
     ])
     expect(swapAndBridgeController.fromSelectedToken).not.toBeNull()

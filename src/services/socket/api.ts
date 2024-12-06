@@ -21,7 +21,7 @@ const convertZeroAddressToNullAddressIfNeeded = (addr: string) =>
 const convertNullAddressToZeroAddressIfNeeded = (addr: string) =>
   addr === NULL_ADDRESS ? ZERO_ADDRESS : addr
 
-const normalizeIncomingSocketToken = (token: SocketAPIToken) => ({
+export const normalizeIncomingSocketToken = (token: SocketAPIToken) => ({
   ...token,
   address:
     // incoming token addresses from Socket are all lowercased

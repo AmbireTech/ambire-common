@@ -43,6 +43,7 @@ export interface SocketAPIRoute {
   chainGasBalances: object
   minimumGasBalances: object
   extraData: object
+  errorMessage?: string
 }
 
 export interface SocketAPISwapUserTx {
