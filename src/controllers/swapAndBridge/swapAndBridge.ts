@@ -257,7 +257,7 @@ export class SwapAndBridgeController extends EventEmitter {
     ) {
       return {
         success: true,
-        message: 'A route was found for this pair but the minimum token amount was not met.'
+        message: '🔔 A route was found for this pair but the minimum token amount was not met.'
       }
     }
 
