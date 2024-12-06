@@ -12,8 +12,8 @@ import {
   AccountState,
   AdditionalPortfolioNetworkResult,
   ExternalHintsAPIResponse,
-  PortfolioLibGetResult,
   PreviousHintsStorage,
+  StrippedExternalHintsAPIResponse,
   TokenResult
 } from './interfaces'
 
@@ -202,13 +202,16 @@ export const getPinnedGasTankTokens = (
 }
 
 export const stripExternalHintsAPIResponse = (
-  response: ExternalHintsAPIResponse | null
-): PortfolioLibGetResult['hintsFromExternalAPI'] => {
+  response: StrippedExternalHintsAPIResponse | null
+): StrippedExternalHintsAPIResponse | null => {
   if (!response) return null
 
+  const { erc20s, erc721s, lastUpdate } = response
+
   return {
-    erc20s: response.erc20s,
-    erc721s: response.erc721s
+    erc20s,
+    erc721s,
+    lastUpdate
   }
 }
 
@@ -220,9 +223,15 @@ const getLowercaseAddressArrayForNetwork = (
     .filter((item) => !networkId || item.networkId === networkId)
     .map((item) => item.address.toLowerCase())
 
-// Updates the previous hints storage with the latest portfolio get result.
+/**
+ * Tasks:
+ * - updates the external hints for [network:account] with the latest from the external API
+ * - cleans the learned tokens by removing non-ERC20 items
+ * - updates the timestamp of learned tokens
+ * - returns the updated hints
+ */
 export function getUpdatedHints(
-  latestHintsFromExternalAPI: ExternalHintsAPIResponse,
+  latestHintsFromExternalAPI: ExternalHintsAPIResponse | null,
   tokens: TokenResult[],
   tokenErrors: AdditionalPortfolioNetworkResult['tokenErrors'],
   networkId: NetworkId,
