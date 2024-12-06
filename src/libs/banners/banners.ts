@@ -73,8 +73,8 @@ export const getBridgeBanners = (
   return activeRoutes
     .filter(isBridgeTxn)
     .filter((route) => {
+      if (route.routeStatus === 'failed') return false
       if (route.routeStatus !== 'ready') return true
-
       // If the route is ready to be signed, we should display the banner only if it's not turned into an account op
       // because when it does get turned into an account op, there will be a different banner for that
       return !isRouteTurnedIntoAccountOp(route)
