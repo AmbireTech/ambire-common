@@ -1,5 +1,6 @@
 import { getAddress } from 'ethers'
 
+import SwapAndBridgeProviderApiError from '../../classes/SwapAndBridgeProviderApiError'
 import { Fetch, RequestInitWithCustomHeaders } from '../../interfaces/fetch'
 import {
   SocketAPIQuote,
@@ -285,18 +286,34 @@ export class SocketAPI {
       }
     }
 
+    // TODO: Make the error handling logic re-usable across all API calls!
     let response = await this.#fetch(`${this.#baseUrl}/route/start`, {
       // @ts-ignore
       method: 'POST',
       headers: this.#headers,
       body: JSON.stringify(params)
     })
-    if (!response.ok) throw new Error('Failed to start the route')
+    // Socket API returns 500 status code with a message in the body, even
+    // in case of a bad request. Not necessarily an internal server error.
+    const isBadResponse = response.ok
 
-    response = await response.json()
-    if (!response.success) throw new Error('Failed to start the route')
+    try {
+      response = await response.json()
+    } catch {
+      throw new SwapAndBridgeProviderApiError(
+        `Failed to start the route. Reason unknown, status incoming from our service provider: ${response.status}`
+      )
+    }
+
+    if (!isBadResponse || response.success) {
+      const genericErrorComingFromTheAPI = response?.message?.error
+      const specificErrorComingFromTheAPI = response?.message?.details?.error?.message
+      throw new SwapAndBridgeProviderApiError(
+        `Failed to start the route. Reason incoming from our service provider: ${genericErrorComingFromTheAPI}. Details: ${specificErrorComingFromTheAPI}`
+      )
+    }
+
     await this.updateHealthIfNeeded()
-
     return response.result
   }
 
