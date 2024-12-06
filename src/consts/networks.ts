@@ -10,7 +10,7 @@ const networks: Network[] = [
     rpcNoStateOverride: false,
     chainId: 1n,
     explorerUrl: 'https://etherscan.io',
-    erc4337: { enabled: false, hasPaymaster: true },
+    erc4337: { enabled: false, hasPaymaster: true, hasBundlerSupport: true },
     isSAEnabled: true,
     areContractsDeployed: true,
     hasRelayer: true,
@@ -33,7 +33,7 @@ const networks: Network[] = [
     rpcNoStateOverride: false,
     chainId: 137n,
     explorerUrl: 'https://polygonscan.com',
-    erc4337: { enabled: false, hasPaymaster: true },
+    erc4337: { enabled: false, hasPaymaster: true, hasBundlerSupport: true },
     isSAEnabled: true,
     areContractsDeployed: true,
     hasRelayer: true,
@@ -57,7 +57,7 @@ const networks: Network[] = [
     rpcNoStateOverride: false,
     chainId: 10n,
     explorerUrl: 'https://optimistic.etherscan.io',
-    erc4337: { enabled: true, hasPaymaster: true },
+    erc4337: { enabled: true, hasPaymaster: true, hasBundlerSupport: true },
     isSAEnabled: true,
     areContractsDeployed: true,
     hasRelayer: true,
@@ -84,7 +84,7 @@ const networks: Network[] = [
     rpcNoStateOverride: false,
     chainId: 43114n,
     explorerUrl: 'https://snowtrace.io',
-    erc4337: { enabled: true, hasPaymaster: true },
+    erc4337: { enabled: true, hasPaymaster: true, hasBundlerSupport: true },
     isSAEnabled: true,
     areContractsDeployed: true,
     hasRelayer: true,
@@ -111,7 +111,8 @@ const networks: Network[] = [
     explorerUrl: 'https://arbiscan.io',
     erc4337: {
       enabled: true,
-      hasPaymaster: true
+      hasPaymaster: true,
+      hasBundlerSupport: true
     },
     isSAEnabled: true,
     areContractsDeployed: true,
@@ -138,7 +139,8 @@ const networks: Network[] = [
     explorerUrl: 'https://basescan.org',
     erc4337: {
       enabled: true,
-      hasPaymaster: true
+      hasPaymaster: true,
+      hasBundlerSupport: true
     },
     isSAEnabled: true,
     areContractsDeployed: true,
@@ -165,7 +167,7 @@ const networks: Network[] = [
     rpcNoStateOverride: false,
     chainId: 534352n,
     explorerUrl: 'https://scrollscan.com',
-    erc4337: { enabled: false, hasPaymaster: false },
+    erc4337: { enabled: false, hasPaymaster: false, hasBundlerSupport: true },
     isSAEnabled: true,
     areContractsDeployed: true,
     hasRelayer: true,
@@ -189,7 +191,8 @@ const networks: Network[] = [
     explorerUrl: 'https://gnosisscan.io',
     erc4337: {
       enabled: false,
-      hasPaymaster: false
+      hasPaymaster: false,
+      hasBundlerSupport: true
     },
     isSAEnabled: true,
     areContractsDeployed: true,

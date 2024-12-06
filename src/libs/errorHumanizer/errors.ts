@@ -15,6 +15,11 @@ const BROADCAST_OR_ESTIMATION_ERRORS: ErrorHumanizerError[] = [
       'of one of the following reasons: missing approval, insufficient approved amount, the amount exceeds the account balance.'
   },
   {
+    reasons: ['Sponsorship failed.'],
+    message:
+      'the gas sponsorship was refused by the dapp. Please try again by paying for the gas instead'
+  },
+  {
     reasons: [EXPIRED_PREFIX, 'Router: EXPIRED', 'Transaction too old'],
     message:
       'the swap has expired. Return to the dApp and reinitiate the swap if you wish to proceed.'

@@ -18,10 +18,10 @@ import { dedicatedToOneSAPriv } from '../../interfaces/keystore'
 import { Network } from '../../interfaces/network'
 import { getSmartAccount } from '../../libs/account/account'
 import { AccountOp, callToTuple, getSignableCalls } from '../../libs/accountOp/accountOp'
+import { getPaymasterDataForEstimate } from '../../libs/paymaster/paymaster'
 import { getTypedData, wrapStandard } from '../../libs/signMessage/signMessage'
 import {
   getActivatorCall,
-  getPaymasterDataForEstimate,
   getSigForCalculations,
   getUserOperation
 } from '../../libs/userOperation/userOperation'

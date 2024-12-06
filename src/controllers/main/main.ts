@@ -46,6 +46,7 @@ import {
   getAccountOpFromAction
 } from '../../libs/actions/actions'
 import { getAccountOpBanners } from '../../libs/banners/banners'
+import { getPaymasterService } from '../../libs/erc7677/erc7677'
 import {
   getHumanReadableBroadcastError,
   getHumanReadableEstimationError
@@ -85,6 +86,7 @@ import {
 } from '../../libs/userOperation/userOperation'
 import bundler from '../../services/bundlers'
 import { Bundler } from '../../services/bundlers/bundler'
+import { paymasterFactory } from '../../services/paymaster'
 import { SocketAPI } from '../../services/socket/api'
 import { getIsViewOnly } from '../../utils/accounts'
 import shortenAddress from '../../utils/shortenAddress'
@@ -345,6 +347,7 @@ export class MainController extends EventEmitter {
     )
     this.domains = new DomainsController(this.providers.providers)
     this.#initialLoadPromise = this.#load()
+    paymasterFactory.init(relayerUrl, fetch)
   }
 
   async #load(): Promise<void> {
@@ -988,20 +991,23 @@ export class MainController extends EventEmitter {
 
     if (kind === 'calls') {
       if (!this.selectedAccount.account) throw ethErrors.rpc.internal()
-
-      const isWalletSendCalls = !!request.params[0].calls
-      const calls: Calls['calls'] = isWalletSendCalls
-        ? request.params[0].calls
-        : [request.params[0]]
-      const accountAddr = getAddress(request.params[0].from)
-
       const network = this.networks.networks.find(
         (n) => Number(n.chainId) === Number(dapp?.chainId)
       )
-
       if (!network) {
         throw ethErrors.provider.chainDisconnected('Transaction failed - unknown network')
       }
+
+      const isWalletSendCalls = !!request.params[0].calls
+      const accountAddr = getAddress(request.params[0].from)
+
+      const calls: Calls['calls'] = isWalletSendCalls
+        ? request.params[0].calls
+        : [request.params[0]]
+      const paymasterService = isWalletSendCalls
+        ? getPaymasterService(network.chainId, request.params[0].capabilities)
+        : null
+
       userRequest = {
         id: new Date().getTime(),
         action: {
@@ -1012,7 +1018,13 @@ export class MainController extends EventEmitter {
             value: call.value ? getBigInt(call.value) : 0n
           }))
         },
-        meta: { isSignAction: true, isWalletSendCalls, accountAddr, networkId: network.id },
+        meta: {
+          isSignAction: true,
+          isWalletSendCalls,
+          accountAddr,
+          networkId: network.id,
+          paymasterService
+        },
         dappPromise
       } as SignUserRequest
       if (!this.selectedAccount.account.creation) {
