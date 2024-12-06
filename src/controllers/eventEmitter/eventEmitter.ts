@@ -73,9 +73,12 @@ export default class EventEmitter {
   }
 
   protected emitError(error: ErrorRef) {
-    console.error(`Emitted error in: ${this.constructor.name}`, error)
     this.#errors.push(error)
     this.#trimErrorsIfNeeded()
+    console.log(
+      `[Еmitted error in controller ${this.constructor.name}] ${error.message}`,
+      this.#errors
+    )
 
     // eslint-disable-next-line no-restricted-syntax
     for (const i of this.#errorCallbacksWithId) i.cb(error)
