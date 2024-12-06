@@ -58,11 +58,13 @@ export class Paymaster {
     if (op.meta?.paymasterService && !op.meta?.paymasterService.failed) {
       try {
         this.paymasterService = op.meta.paymasterService
-        this.sponsorDataEstimation = await getPaymasterStubData(
-          op.meta.paymasterService,
-          userOp,
-          network
-        )
+        const response = await Promise.race([
+          getPaymasterStubData(op.meta.paymasterService, userOp, network),
+          new Promise((_resolve, reject) => {
+            setTimeout(() => reject(new Error('Sponsorship error, request too slow')), 5000)
+          })
+        ])
+        this.sponsorDataEstimation = response as PaymasterEstimationData
         this.type = 'ERC7677'
         return
       } catch (e) {
