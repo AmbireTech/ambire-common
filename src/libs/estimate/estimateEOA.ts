@@ -1,39 +1,21 @@
-import { AbiCoder, JsonRpcProvider, Provider, toBeHex, ZeroAddress } from 'ethers'
+import { AbiCoder, JsonRpcProvider, Provider, ZeroAddress } from 'ethers'
 
-import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import Estimation from '../../../contracts/compiled/Estimation.json'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { OPTIMISTIC_ORACLE } from '../../consts/deploy'
+import { EOA_SIMULATION_NONCE } from '../../consts/deployless'
 import { Account, AccountStates } from '../../interfaces/account'
 import { Network } from '../../interfaces/network'
+import { getEoaSimulationStateOverride } from '../../utils/simulationStateOverride'
 import { AccountOp, toSingletonCall } from '../accountOp/accountOp'
 import { DeploylessMode, fromDescriptor } from '../deployless/deployless'
 import { getHumanReadableEstimationError } from '../errorHumanizer'
 import { TokenResult } from '../portfolio'
-import { EOA_SIMULATION_NONCE } from '../portfolio/getOnchainBalances'
-import { privSlot } from '../proxyDeploy/deploy'
 import { estimationErrorFormatted } from './errors'
 import { estimateWithRetries } from './estimateWithRetries'
 import { EstimateResult } from './interfaces'
 
 const abiCoder = new AbiCoder()
-
-// this is the state override we use for the EOA when
-// estimating through Estimation.sol
-function getEOAEstimationStateOverride(accountAddr: string) {
-  return {
-    [accountAddr]: {
-      code: AmbireAccount.binRuntime,
-      stateDiff: {
-        // if we use 0x00...01 we get a geth bug: "invalid argument 2: hex number with leading zero digits\" - on some RPC providers
-        [`0x${privSlot(0, 'address', accountAddr, 'bytes32')}`]:
-          '0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
-        // any number with leading zeros is not supported on some RPCs
-        [toBeHex(1, 32)]: EOA_SIMULATION_NONCE
-      }
-    }
-  }
-}
 
 export async function estimateEOA(
   account: Account,
@@ -96,7 +78,7 @@ export async function estimateEOA(
               from: blockFrom,
               blockTag,
               mode: DeploylessMode.StateOverride,
-              stateToOverride: getEOAEstimationStateOverride(account.addr)
+              stateToOverride: getEoaSimulationStateOverride(account.addr)
             }
           )
           .catch((e) => {
