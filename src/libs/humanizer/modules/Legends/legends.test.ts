@@ -6,7 +6,7 @@ import { Legends } from '../../const/abis'
 import { HumanizerVisualization, IrCall } from '../../interfaces'
 import { compareHumanizerVisualizations } from '../../testHelpers'
 import { getAction, getAddressVisualization, getImage, getLabel } from '../../utils'
-import legendsModule from '.'
+import legendsModule from './'
 
 const iface = new Interface(Legends)
 const INVITEE_V2_ACCOUNT = Wallet.createRandom().address
@@ -67,7 +67,7 @@ describe('Legends', () => {
       [
         getAction('Pick character'),
         getImage('https://relayer.ambire.com/legends/nft-image/avatar/slime-lvl0.png'),
-        getLabel('Slime', true),
+        getLabel('The Degenerate', true),
         getLabel('for Ambire Legends')
       ]
     ]
