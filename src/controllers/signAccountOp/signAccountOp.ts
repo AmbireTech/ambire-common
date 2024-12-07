@@ -50,8 +50,7 @@ import {
   getUserOpHash,
   isErc4337Broadcast,
   shouldIncludeActivatorCall,
-  shouldUseOneTimeNonce,
-  shouldUsePaymaster
+  shouldUseOneTimeNonce
 } from '../../libs/userOperation/userOperation'
 /* eslint-disable no-restricted-syntax */
 import { AccountsController } from '../accounts/accounts'
@@ -805,7 +804,7 @@ export class SignAccountOpController extends EventEmitter {
       const erc4337GasLimits = this.estimation?.erc4337GasLimits
       if (erc4337GasLimits) {
         const speeds: SpeedCalc[] = []
-        const usesPaymaster = shouldUsePaymaster(this.#network)
+        const usesPaymaster = !!this.estimation?.erc4337GasLimits?.paymaster.isUsable()
 
         for (const [speed, speedValue] of Object.entries(erc4337GasLimits.gasPrice)) {
           const simulatedGasLimit =
@@ -1184,7 +1183,8 @@ export class SignAccountOpController extends EventEmitter {
       return this.#emitSigningErrorAndResetToReadyToSign(message)
     }
 
-    if (this.accountOp.gasFeePayment.isERC4337 && shouldUsePaymaster(this.#network)) {
+    const isUsingPaymaster = !!this.estimation?.erc4337GasLimits?.paymaster.isUsable()
+    if (this.accountOp.gasFeePayment.isERC4337 && isUsingPaymaster) {
       this.status = { type: SigningStatus.WaitingForPaymaster }
     } else {
       this.status = { type: SigningStatus.InProgress }

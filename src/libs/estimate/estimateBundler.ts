@@ -3,6 +3,7 @@ import { Interface } from 'ethers'
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import { Account, AccountStates } from '../../interfaces/account'
 import { Network } from '../../interfaces/network'
+import { RPCProvider } from '../../interfaces/provider'
 import { Bundler } from '../../services/bundlers/bundler'
 import { paymasterFactory } from '../../services/paymaster'
 import { AccountOp, getSignableCallsForBundlerEstimate } from '../accountOp/accountOp'
@@ -18,7 +19,8 @@ export async function bundlerEstimate(
   accountStates: AccountStates,
   op: AccountOp,
   network: Network,
-  feeTokens: TokenResult[]
+  feeTokens: TokenResult[],
+  provider: RPCProvider
 ): Promise<EstimateResult> {
   // we pass an empty array of feePaymentOptions as they are built
   // in an upper level using the balances from Estimation.sol.
@@ -61,7 +63,7 @@ export async function bundlerEstimate(
   const isEdgeCase = !accountState.isErc4337Enabled && accountState.isDeployed
   userOp.signature = getSigForCalculations()
 
-  const paymaster = await paymasterFactory.create(op, userOp, network)
+  const paymaster = await paymasterFactory.create(op, userOp, network, provider)
   localOp.feeCall = paymaster.getFeeCallForEstimation(feeTokens)
   userOp.callData = ambireAccount.encodeFunctionData('executeBySender', [
     getSignableCallsForBundlerEstimate(localOp)

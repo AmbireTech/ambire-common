@@ -1,9 +1,12 @@
-import { AbiCoder, toBeHex } from 'ethers'
+/* eslint-disable no-console */
+import { AbiCoder, Contract, toBeHex } from 'ethers'
 
+import entryPointAbi from '../../../contracts/compiled/EntryPoint.json'
 import { FEE_COLLECTOR } from '../../consts/addresses'
-import { AMBIRE_PAYMASTER } from '../../consts/deploy'
+import { AMBIRE_PAYMASTER, ERC_4337_ENTRYPOINT } from '../../consts/deploy'
 import { Account } from '../../interfaces/account'
 import { Network } from '../../interfaces/network'
+import { RPCProvider } from '../../interfaces/provider'
 import { failedSponsorships } from '../../services/paymaster/FailedSponsorships'
 import { AccountOp } from '../accountOp/accountOp'
 import { Call } from '../accountOp/types'
@@ -48,12 +51,15 @@ export class Paymaster {
 
   network: Network | null = null
 
+  provider: RPCProvider | null = null
+
   constructor(callRelayer: Function) {
     this.callRelayer = callRelayer
   }
 
-  async init(op: AccountOp, userOp: UserOperation, network: Network) {
+  async init(op: AccountOp, userOp: UserOperation, network: Network, provider: RPCProvider) {
     this.network = network
+    this.provider = provider
 
     if (op.meta?.paymasterService && !op.meta?.paymasterService.failed) {
       try {
@@ -78,6 +84,21 @@ export class Paymaster {
       return
     }
 
+    // for custom networks, check if the paymaster there has balance
+    if (!network.predefined) {
+      console.log('yes, here')
+      const ep = new Contract(ERC_4337_ENTRYPOINT, entryPointAbi, provider)
+      console.log('balance')
+      const paymasterBalance = await ep.balanceOf(AMBIRE_PAYMASTER)
+      console.log('balance is')
+      console.log(paymasterBalance)
+      console.log('end')
+      if (paymasterBalance > 0n) {
+        this.type = 'Ambire'
+        return
+      }
+    }
+
     this.type = 'None'
   }
 
@@ -86,7 +107,7 @@ export class Paymaster {
   }
 
   getFeeCallForEstimation(feeTokens: TokenResult[]): Call | undefined {
-    if (!this.network) throw new Error('network not see, did you call init?')
+    if (!this.network) throw new Error('network not set, did you call init?')
 
     if (this.type === 'Ambire') {
       const feeToken = getFeeTokenForEstimate(feeTokens, this.network)
@@ -129,6 +150,8 @@ export class Paymaster {
     op: AccountOp,
     userOp: UserOperation
   ): Promise<PaymasterSuccessReponse | PaymasterErrorReponse> {
+    if (!this.provider) throw new Error('provider not set, did you call init?')
+
     try {
       // request the paymaster with a timeout window
       const localUserOp = { ...userOp }
@@ -139,7 +162,9 @@ export class Paymaster {
           paymaster: AMBIRE_PAYMASTER,
           bytecode: acc.creation!.bytecode,
           salt: acc.creation!.salt,
-          key: acc.associatedKeys[0]
+          key: acc.associatedKeys[0],
+          // eslint-disable-next-line no-underscore-dangle
+          rpcUrl: this.provider._getConnection().url
         }),
         new Promise((_resolve, reject) => {
           setTimeout(() => reject(new Error('Ambire relayer error')), 8000)

@@ -1,10 +1,11 @@
-import { AbiCoder, JsonRpcProvider, Provider, ZeroAddress } from 'ethers'
+import { AbiCoder, ZeroAddress } from 'ethers'
 
 import Estimation from '../../../contracts/compiled/Estimation.json'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { DEPLOYLESS_SIMULATION_FROM, OPTIMISTIC_ORACLE } from '../../consts/deploy'
 import { Account, AccountStates } from '../../interfaces/account'
 import { Network } from '../../interfaces/network'
+import { RPCProvider } from '../../interfaces/provider'
 import { getAccountDeployParams, isSmartAccount } from '../account/account'
 import { AccountOp, toSingletonCall } from '../accountOp/accountOp'
 import { Call } from '../accountOp/types'
@@ -14,11 +15,7 @@ import { InnerCallFailureError } from '../errorDecoder/customErrors'
 import { getHumanReadableEstimationError } from '../errorHumanizer'
 import { getProbableCallData } from '../gasPrice/gasPrice'
 import { TokenResult } from '../portfolio'
-import {
-  getActivatorCall,
-  shouldIncludeActivatorCall,
-  shouldUsePaymaster
-} from '../userOperation/userOperation'
+import { getActivatorCall, shouldIncludeActivatorCall } from '../userOperation/userOperation'
 import { estimationErrorFormatted } from './errors'
 import { bundlerEstimate } from './estimateBundler'
 import { estimateEOA } from './estimateEOA'
@@ -55,20 +52,16 @@ export async function estimate4337(
   calls: Call[],
   accountStates: AccountStates,
   network: Network,
-  provider: JsonRpcProvider | Provider,
+  provider: RPCProvider,
   feeTokens: TokenResult[],
   blockTag: string | number,
   nativeToCheck: string[]
 ): Promise<EstimateResult> {
   const deploylessEstimator = fromDescriptor(provider, Estimation, !network.rpcNoStateOverride)
-  // if no paymaster, user can only pay in native
-  const filteredFeeTokens = !shouldUsePaymaster(network)
-    ? feeTokens.filter((feeToken) => feeToken.address === ZeroAddress && !feeToken.flags.onGasTank)
-    : feeTokens
 
   // build the feePaymentOptions with the available current amounts. We will
   // change them after simulation passes
-  let feePaymentOptions = filteredFeeTokens.map((token: TokenResult) => {
+  let feePaymentOptions = feeTokens.map((token: TokenResult) => {
     return {
       paidBy: account.addr,
       availableAmount: token.amount,
@@ -99,19 +92,19 @@ export async function estimate4337(
     [account.addr, op.nonce || 1, calls, '0x'],
     getProbableCallData(account, op, accountState, network),
     account.associatedKeys,
-    filteredFeeTokens.map((feeToken) => feeToken.address),
+    feeTokens.map((feeToken) => feeToken.address),
     FEE_COLLECTOR,
     nativeToCheck,
     network.isOptimistic ? OPTIMISTIC_ORACLE : ZeroAddress
   ]
 
-  // add the feeCall to estimateGas. We do it only here as it's handled
-  // in the relayer case but not in 4337 mode
+  // always add a feeCall if available as we're using the paymaster
+  // on predefined chains and on custom networks it is better to
+  // have a slightly bigger estimation (if we don't have a paymaster)
   const estimateGasOp = { ...op }
-  if (shouldUsePaymaster(network)) {
-    const feeToken = getFeeTokenForEstimate(feeTokens, network)
-    if (feeToken) estimateGasOp.feeCall = getFeeCall(feeToken)
-  }
+  const feeToken = getFeeTokenForEstimate(feeTokens, network)
+  if (feeToken) estimateGasOp.feeCall = getFeeCall(feeToken)
+
   const estimations = await Promise.all([
     deploylessEstimator
       .call('estimate', checkInnerCallsArgs, {
@@ -119,7 +112,7 @@ export async function estimate4337(
         blockTag
       })
       .catch(getHumanReadableEstimationError),
-    bundlerEstimate(account, accountStates, op, network, feeTokens),
+    bundlerEstimate(account, accountStates, op, network, feeTokens, provider),
     estimateGas(account, estimateGasOp, provider, accountState, network).catch(() => 0n)
   ])
   const ambireEstimation = estimations[0]
@@ -214,7 +207,7 @@ export async function estimate4337(
 }
 
 export async function estimate(
-  provider: Provider | JsonRpcProvider,
+  provider: RPCProvider,
   network: Network,
   account: Account,
   op: AccountOp,

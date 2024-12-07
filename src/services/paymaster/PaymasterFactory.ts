@@ -1,5 +1,6 @@
 import { Fetch } from '../../interfaces/fetch'
 import { Network } from '../../interfaces/network'
+import { RPCProvider } from '../../interfaces/provider'
 import { AccountOp } from '../../libs/accountOp/accountOp'
 import { Paymaster } from '../../libs/paymaster/paymaster'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
@@ -18,7 +19,12 @@ export class PaymasterFactory {
     this.callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
   }
 
-  async create(op: AccountOp, userOp: UserOperation, network: Network): Promise<Paymaster> {
+  async create(
+    op: AccountOp,
+    userOp: UserOperation,
+    network: Network,
+    provider: RPCProvider
+  ): Promise<Paymaster> {
     if (this.callRelayer === undefined) throw new Error('call init first')
 
     // check whether the sponsorship has failed and if it has,
@@ -30,7 +36,7 @@ export class PaymasterFactory {
     }
 
     const paymaster = new Paymaster(this.callRelayer)
-    await paymaster.init(localOp, userOp, network)
+    await paymaster.init(localOp, userOp, network, provider)
     return paymaster
   }
 }
