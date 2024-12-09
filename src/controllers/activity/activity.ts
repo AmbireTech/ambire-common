@@ -304,17 +304,20 @@ export class ActivityController extends EventEmitter {
   async updateAccountsOpsStatuses(): Promise<{
     shouldEmitUpdate: boolean
     shouldUpdatePortfolio: boolean
+    didAccountOpSucceeded: boolean
   }> {
     await this.#initialLoadPromise
 
     if (!this.#selectedAccount.account || !this.#accountsOps[this.#selectedAccount.account.addr])
-      return { shouldEmitUpdate: false, shouldUpdatePortfolio: false }
+      return { shouldEmitUpdate: false, shouldUpdatePortfolio: false, didAccountOpSucceeded: false }
 
     // This flag tracks the changes to AccountsOps statuses
     // and optimizes the number of the emitted updates and storage/state updates.
     let shouldEmitUpdate = false
 
     let shouldUpdatePortfolio = false
+
+    let didAccountOpSucceeded = false
 
     await Promise.all(
       Object.keys(this.#accountsOps[this.#selectedAccount.account.addr]).map(async (networkId) => {
@@ -372,6 +375,7 @@ export class ActivityController extends EventEmitter {
 
                 if (receipt.status) {
                   shouldUpdatePortfolio = true
+                  didAccountOpSucceeded = true
                 }
 
                 if (accountOp.isSingletonDeploy && receipt.status) {
@@ -424,7 +428,7 @@ export class ActivityController extends EventEmitter {
       this.emitUpdate()
     }
 
-    return { shouldEmitUpdate, shouldUpdatePortfolio }
+    return { shouldEmitUpdate, shouldUpdatePortfolio, didAccountOpSucceeded }
   }
 
   async addSignedMessage(signedMessage: SignedMessage, account: string) {

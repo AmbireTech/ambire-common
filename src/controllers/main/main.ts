@@ -798,7 +798,7 @@ export class MainController extends EventEmitter {
   async updateAccountsOpsStatuses() {
     await this.#initialLoadPromise
 
-    const { shouldEmitUpdate, shouldUpdatePortfolio } =
+    const { shouldEmitUpdate, shouldUpdatePortfolio, didAccountOpSucceeded } =
       await this.activity.updateAccountsOpsStatuses()
 
     if (!shouldEmitUpdate) return
@@ -811,7 +811,7 @@ export class MainController extends EventEmitter {
     // transaction, the transaction may estimate before approval finalizes,
     // resulting misleading error (unaware of the approval). Do not await on
     // purpose, not to block the `resolveAccountOpAction` completion.
-    this.estimateSignAccountOp()
+    if (didAccountOpSucceeded) this.estimateSignAccountOp()
   }
 
   // call this function after a call to the singleton has been made
