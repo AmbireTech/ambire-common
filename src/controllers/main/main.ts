@@ -809,8 +809,7 @@ export class MainController extends EventEmitter {
     // Handles a corner case where a BA account approves, then performs another
     // action. If the user signs the approval and quickly opens the next
     // transaction, the transaction may estimate before approval finalizes,
-    // resulting misleading error (unaware of the approval). Do not await on
-    // purpose, not to block the `resolveAccountOpAction` completion.
+    // resulting misleading error (unaware of the approval). No need to await.
     if (didAccountOpSucceeded) this.estimateSignAccountOp()
   }
 
