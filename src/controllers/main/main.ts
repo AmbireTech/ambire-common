@@ -1666,6 +1666,13 @@ export class MainController extends EventEmitter {
       (r) => r.meta.activeRouteId && !r.meta.isApproval
     )
 
+    // Handles a corner case where a BA account approves, then performs another
+    // action. If the user signs the approval and quickly opens the next
+    // transaction, the transaction may estimate before approval finalizes,
+    // resulting misleading error (unaware of the approval). Do not await on
+    // purpose, not to block the `resolveAccountOpAction` completion.
+    this.estimateSignAccountOp()
+
     // Update route status immediately, so that the UI quickly reflects the change
     // eslint-disable-next-line no-restricted-syntax
     for (const r of swapAndBridgeUserRequests) {
