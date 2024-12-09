@@ -17,18 +17,16 @@ export async function executeBatchedFetch(network: Network): Promise<void> {
   const portfolio = new Portfolio(fetch as any, provider, network)
   const options: Partial<GetOptions> = {
     disableAutoDiscovery: true,
-    previousHints: {
-      erc20s: allAddresses,
-      erc721s: Object.fromEntries(
-        allAddresses.map((i) => [
-          i,
-          {
-            tokens: ['1'],
-            isKnown: false
-          }
-        ])
-      )
-    }
+    additionalErc20Hints: allAddresses,
+    additionalErc721Hints: Object.fromEntries(
+      allAddresses.map((i) => [
+        i,
+        {
+          tokens: ['1'],
+          isKnown: false
+        }
+      ])
+    )
   }
   const portfolioResponse = await portfolio.get(ZeroAddress, options)
   scheduledActions[network.id]?.data.forEach((i) => {
