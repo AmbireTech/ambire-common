@@ -142,26 +142,13 @@ export function getUserOperation(
   return userOp
 }
 
-export function shouldUsePaymaster(network: Network): boolean {
-  // if there's a paymaster on the network, we pay with it. Simple
-  return !!network.erc4337.hasPaymaster
-}
-
 export function isErc4337Broadcast(
   acc: Account,
   network: Network,
   accountState: AccountOnchainState
 ): boolean {
-  // we can broadcast a 4337 if:
-  // - the account is not deployed (we do deployAndExecute in the factoryData)
-  // - the entry point is enabled (standard ops)
-  // - we have a paymaster (through the edge case)
-  const canWeBroadcast4337 =
-    accountState.isErc4337Enabled || shouldUsePaymaster(network) || !accountState.isDeployed
-
   return (
     network.erc4337.enabled &&
-    canWeBroadcast4337 &&
     accountState.isV2 &&
     !!acc.creation &&
     getAddress(acc.creation.factoryAddr) === AMBIRE_ACCOUNT_FACTORY
