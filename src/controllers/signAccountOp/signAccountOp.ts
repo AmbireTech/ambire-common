@@ -552,23 +552,7 @@ export class SignAccountOpController extends EventEmitter {
       this.estimation.erc4337GasLimits &&
       this.estimation.erc4337GasLimits.paymaster
     ) {
-      const paymasterIsSponsored = this.estimation.erc4337GasLimits.paymaster.isSponsored()
-
-      // if isSponsored has been set to true but sponsorship has been declined,
-      // we need to reset this.paidBy as it will contain the old sponsorship
-      // option that might not exist anymore
-      if (this.isSponsored === true && paymasterIsSponsored === false) {
-        const native = this.#portfolio
-          .getLatestPortfolioState(this.accountOp.accountAddr)
-          [this.accountOp.networkId]?.result?.tokens.find(
-            (token) => token.address === '0x0000000000000000000000000000000000000000'
-          )
-        if (!native || native.amount === 0n) {
-          this.selectedOption = undefined
-        }
-      }
-
-      this.isSponsored = paymasterIsSponsored
+      this.isSponsored = this.estimation.erc4337GasLimits.paymaster.isSponsored()
       this.sponsor = this.estimation.erc4337GasLimits.paymaster.getEstimationData()?.sponsor
     }
 

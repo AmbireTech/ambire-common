@@ -28,6 +28,7 @@ import {
 } from '../../interfaces/keystore'
 import { AddNetworkRequestParams, Network, NetworkId } from '../../interfaces/network'
 import { NotificationManager } from '../../interfaces/notification'
+import { RPCProvider } from '../../interfaces/provider'
 import { Storage } from '../../interfaces/storage'
 import { SocketAPISendTransactionRequest } from '../../interfaces/swapAndBridge'
 import { Calls, DappUserRequest, SignUserRequest, UserRequest } from '../../interfaces/userRequest'
@@ -51,6 +52,7 @@ import {
   getHumanReadableBroadcastError,
   getHumanReadableEstimationError
 } from '../../libs/errorHumanizer'
+import { insufficientPaymasterFunds } from '../../libs/errorHumanizer/errors'
 import { estimate } from '../../libs/estimate/estimate'
 import { BundlerGasPrice, EstimateResult } from '../../libs/estimate/interfaces'
 import { GasRecommendation, getGasPriceRecommendations } from '../../libs/gasPrice/gasPrice'
@@ -87,6 +89,7 @@ import {
 import bundler from '../../services/bundlers'
 import { Bundler } from '../../services/bundlers/bundler'
 import { paymasterFactory } from '../../services/paymaster'
+import { failedPaymasters } from '../../services/paymaster/FailedPaymasters'
 import { SocketAPI } from '../../services/socket/api'
 import { getIsViewOnly } from '../../utils/accounts'
 import shortenAddress from '../../utils/shortenAddress'
@@ -2315,7 +2318,9 @@ export class MainController extends EventEmitter {
       } catch (e: any) {
         return this.throwBroadcastAccountOp({
           error: e,
-          accountState
+          accountState,
+          provider,
+          network
         })
       }
       if (!userOperationHash) {
@@ -2430,12 +2435,16 @@ export class MainController extends EventEmitter {
     message: humanReadableMessage,
     error: _err,
     accountState,
-    isRelayer = false
+    isRelayer = false,
+    provider = undefined,
+    network = undefined
   }: {
     message?: string
     error?: Error
     accountState?: AccountOnchainState
     isRelayer?: boolean
+    provider?: RPCProvider
+    network?: Network
   }) {
     const originalMessage = _err?.message
     let message = humanReadableMessage
@@ -2468,6 +2477,14 @@ export class MainController extends EventEmitter {
 
     if (!message) {
       message = getHumanReadableBroadcastError(_err || new Error('')).message
+
+      // if the message states that the paymaster doesn't have sufficient amount,
+      // add it to the failedPaymasters to disable it until a top-up is made
+      if (message.includes(insufficientPaymasterFunds) && provider && network) {
+        failedPaymasters.addInsufficientFunds(provider, network).then(() => {
+          this.estimateSignAccountOp()
+        })
+      }
     }
 
     // To enable another try for signing in case of broadcast fail

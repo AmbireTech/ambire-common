@@ -7,7 +7,7 @@ import { AMBIRE_PAYMASTER, ERC_4337_ENTRYPOINT } from '../../consts/deploy'
 import { Account } from '../../interfaces/account'
 import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
-import { failedSponsorships } from '../../services/paymaster/FailedSponsorships'
+import { failedPaymasters } from '../../services/paymaster/FailedPaymasters'
 import { AccountOp } from '../accountOp/accountOp'
 import { Call } from '../accountOp/types'
 import { getFeeCall } from '../calls/calls'
@@ -86,16 +86,24 @@ export class Paymaster {
 
     // for custom networks, check if the paymaster there has balance
     if (!network.predefined) {
-      console.log('yes, here')
-      const ep = new Contract(ERC_4337_ENTRYPOINT, entryPointAbi, provider)
-      console.log('balance')
-      const paymasterBalance = await ep.balanceOf(AMBIRE_PAYMASTER)
-      console.log('balance is')
-      console.log(paymasterBalance)
-      console.log('end')
-      if (paymasterBalance > 0n) {
-        this.type = 'Ambire'
-        return
+      try {
+        const ep = new Contract(ERC_4337_ENTRYPOINT, entryPointAbi, provider)
+        const paymasterBalance = await ep.balanceOf(AMBIRE_PAYMASTER)
+
+        // if the network paymaster has failed because of insufficient funds,
+        // disable it before getting a top up
+        const seenInsufficientFunds =
+          failedPaymasters.insufficientFundsNetworks[Number(this.network.chainId)]
+        const minBalance = seenInsufficientFunds ? seenInsufficientFunds.lastSeenBalance : 0n
+
+        if (paymasterBalance > minBalance) {
+          this.type = 'Ambire'
+          if (seenInsufficientFunds) failedPaymasters.removeInsufficientFunds(network)
+          return
+        }
+      } catch (e) {
+        console.log('failed to retrieve the balance of the paymaster')
+        console.error(e)
       }
     }
 
@@ -214,7 +222,10 @@ export class Paymaster {
         paymasterData: response.paymasterData
       }
     } catch (e: any) {
-      if (op.meta && op.meta.paymasterService) failedSponsorships.add(op.meta.paymasterService.id)
+      if (op.meta && op.meta.paymasterService) {
+        failedPaymasters.addFailedSponsorship(op.meta.paymasterService.id)
+      }
+
       const convertedError = new SponsorshipPaymasterError()
       const { message } = getHumanReadableBroadcastError(convertedError)
       return {

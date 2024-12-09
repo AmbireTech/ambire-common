@@ -5,7 +5,7 @@ import { AccountOp } from '../../libs/accountOp/accountOp'
 import { Paymaster } from '../../libs/paymaster/paymaster'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { UserOperation } from '../../libs/userOperation/types'
-import { failedSponsorships } from './FailedSponsorships'
+import { failedPaymasters } from './FailedPaymasters'
 
 // a factory for creating paymaster objects
 // this is needed as we'd like to create paymasters at will with easy
@@ -31,7 +31,7 @@ export class PaymasterFactory {
     // mark it like so in the meta for the paymaster to know
     const localOp = { ...op }
     const paymasterServiceId = op.meta?.paymasterService?.id
-    if (paymasterServiceId && failedSponsorships.has(paymasterServiceId)) {
+    if (paymasterServiceId && failedPaymasters.hasFailedSponsorship(paymasterServiceId)) {
       if (localOp.meta && localOp.meta.paymasterService) localOp.meta.paymasterService.failed = true
     }
 

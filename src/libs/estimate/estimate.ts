@@ -170,8 +170,10 @@ export async function estimate4337(
     ambireGas
   )
 
-  bundlerEstimationResult.feePaymentOptions = feePaymentOptions.map(
-    (option: FeePaymentOption, index: number) => {
+  const isPaymasterUsable = !!bundlerEstimationResult.erc4337GasLimits?.paymaster.isUsable()
+  bundlerEstimationResult.feePaymentOptions = feePaymentOptions
+    .filter((option) => isPaymasterUsable || option.token.address === ZeroAddress)
+    .map((option: FeePaymentOption, index: number) => {
       // after simulation: add the left over amount as available
       const localOp = { ...option }
       if (!option.token.flags.onGasTank) {
@@ -181,8 +183,7 @@ export async function estimate4337(
 
       localOp.gasUsed = localOp.token.flags.onGasTank ? 5000n : feeTokenOutcomes[index][0]
       return localOp
-    }
-  )
+    })
 
   // this is for EOAs paying for SA in native
   const nativeToken = feeTokens.find(
