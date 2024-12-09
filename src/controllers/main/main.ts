@@ -801,13 +801,17 @@ export class MainController extends EventEmitter {
     const { shouldEmitUpdate, shouldUpdatePortfolio } =
       await this.activity.updateAccountsOpsStatuses()
 
-    if (shouldEmitUpdate) {
-      this.emitUpdate()
+    if (!shouldEmitUpdate) return
 
-      if (shouldUpdatePortfolio) {
-        this.updateSelectedAccountPortfolio(true)
-      }
-    }
+    this.emitUpdate()
+    if (shouldUpdatePortfolio) this.updateSelectedAccountPortfolio(true)
+
+    // Handles a corner case where a BA account approves, then performs another
+    // action. If the user signs the approval and quickly opens the next
+    // transaction, the transaction may estimate before approval finalizes,
+    // resulting misleading error (unaware of the approval). Do not await on
+    // purpose, not to block the `resolveAccountOpAction` completion.
+    this.estimateSignAccountOp()
   }
 
   // call this function after a call to the singleton has been made
@@ -1665,13 +1669,6 @@ export class MainController extends EventEmitter {
     const swapAndBridgeUserRequests = accountOpUserRequests.filter(
       (r) => r.meta.activeRouteId && !r.meta.isApproval
     )
-
-    // Handles a corner case where a BA account approves, then performs another
-    // action. If the user signs the approval and quickly opens the next
-    // transaction, the transaction may estimate before approval finalizes,
-    // resulting misleading error (unaware of the approval). Do not await on
-    // purpose, not to block the `resolveAccountOpAction` completion.
-    this.estimateSignAccountOp()
 
     // Update route status immediately, so that the UI quickly reflects the change
     // eslint-disable-next-line no-restricted-syntax
