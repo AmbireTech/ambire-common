@@ -687,7 +687,6 @@ export class SwapAndBridgeController extends EventEmitter {
         token.address === this.toSelectedToken!.address &&
         token.networkId === toSelectedTokenNetwork.id
     )!
-    console.log('switch!?!??!??!')
     this.fromAmount = '' // Reset fromAmount as it may no longer be valid for the new fromSelectedToken
     // Reverses the from and to chain ids, since their format is the same
     ;[this.fromChainId, this.toChainId] = [this.toChainId, this.fromChainId]
