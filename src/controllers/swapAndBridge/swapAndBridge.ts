@@ -463,7 +463,9 @@ export class SwapAndBridgeController extends EventEmitter {
     }
 
     if (fromSelectedToken) {
-      if (this.fromSelectedToken?.networkId !== fromSelectedToken?.networkId) {
+      const isFromNetworkChanged =
+        this.fromSelectedToken?.networkId !== fromSelectedToken?.networkId
+      if (isFromNetworkChanged) {
         const network = this.#networks.networks.find((n) => n.id === fromSelectedToken.networkId)
         if (network) {
           this.fromChainId = Number(network.chainId)
@@ -473,10 +475,17 @@ export class SwapAndBridgeController extends EventEmitter {
           this.updateToTokenList(true)
         }
       }
+
+      const shouldResetFromTokenAmount =
+        isFromNetworkChanged || this.fromSelectedToken?.address !== fromSelectedToken.address
+      if (shouldResetFromTokenAmount) {
+        this.fromAmount = ''
+        this.fromAmountInFiat = ''
+        this.fromAmountFieldMode = 'token'
+      }
+
+      // Always update to reflect portfolio amount (or other props) changes
       this.fromSelectedToken = fromSelectedToken
-      this.fromAmount = ''
-      this.fromAmountInFiat = ''
-      this.fromAmountFieldMode = 'token'
     }
 
     if (toChainId) {
@@ -678,6 +687,7 @@ export class SwapAndBridgeController extends EventEmitter {
         token.address === this.toSelectedToken!.address &&
         token.networkId === toSelectedTokenNetwork.id
     )!
+    console.log('switch!?!??!??!')
     this.fromAmount = '' // Reset fromAmount as it may no longer be valid for the new fromSelectedToken
     // Reverses the from and to chain ids, since their format is the same
     ;[this.fromChainId, this.toChainId] = [this.toChainId, this.fromChainId]
