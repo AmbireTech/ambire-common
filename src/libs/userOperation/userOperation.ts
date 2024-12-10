@@ -147,7 +147,16 @@ export function isErc4337Broadcast(
   network: Network,
   accountState: AccountOnchainState
 ): boolean {
+  // a special exception for gnosis which was a hardcoded chain but
+  // now it's not. The bundler doesn't support state override on gnosis
+  // so if the account IS deployed AND does NOT have 4337 privileges,
+  // it won't be able to use the edge case as the bundler will block
+  // the estimation. That's why we will use the relayer in this case
+  const canBroadcast4337 =
+    network.chainId !== 100n || accountState.isErc4337Enabled || !accountState.isDeployed
+
   return (
+    canBroadcast4337 &&
     network.erc4337.enabled &&
     accountState.isV2 &&
     !!acc.creation &&
