@@ -105,6 +105,7 @@ export class NetworksController extends EventEmitter {
       await this.#storage.remove('networkPreferences')
     }
     this.#networks = storedNetworks
+
     predefinedNetworks.forEach((n) => {
       this.#networks[n.id] = {
         ...n, // add the latest structure of the predefined network to include the new props that are not in storage yet
@@ -120,6 +121,17 @@ export class NetworksController extends EventEmitter {
         nativeAssetSymbol: n.nativeAssetSymbol
       }
     })
+
+    // add predefined: false for each deleted network from predefined
+    Object.keys(this.#networks).forEach((networkName) => {
+      const predefinedNetwork = predefinedNetworks.find(
+        (net) => net.chainId === this.#networks[networkName].chainId
+      )
+      if (!predefinedNetwork) {
+        this.#networks[networkName].predefined = false
+      }
+    })
+
     // without await to avoid performance impact on load
     // needed to keep the networks storage up to date with the latest from predefinedNetworks
     this.#storage.set('networks', this.#networks)

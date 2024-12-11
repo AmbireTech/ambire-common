@@ -142,26 +142,22 @@ export function getUserOperation(
   return userOp
 }
 
-export function shouldUsePaymaster(network: Network): boolean {
-  // if there's a paymaster on the network, we pay with it. Simple
-  return !!network.erc4337.hasPaymaster
-}
-
 export function isErc4337Broadcast(
   acc: Account,
   network: Network,
   accountState: AccountOnchainState
 ): boolean {
-  // we can broadcast a 4337 if:
-  // - the account is not deployed (we do deployAndExecute in the factoryData)
-  // - the entry point is enabled (standard ops)
-  // - we have a paymaster (through the edge case)
-  const canWeBroadcast4337 =
-    accountState.isErc4337Enabled || shouldUsePaymaster(network) || !accountState.isDeployed
+  // a special exception for gnosis which was a hardcoded chain but
+  // now it's not. The bundler doesn't support state override on gnosis
+  // so if the account IS deployed AND does NOT have 4337 privileges,
+  // it won't be able to use the edge case as the bundler will block
+  // the estimation. That's why we will use the relayer in this case
+  const canBroadcast4337 =
+    network.chainId !== 100n || accountState.isErc4337Enabled || !accountState.isDeployed
 
   return (
+    canBroadcast4337 &&
     network.erc4337.enabled &&
-    canWeBroadcast4337 &&
     accountState.isV2 &&
     !!acc.creation &&
     getAddress(acc.creation.factoryAddr) === AMBIRE_ACCOUNT_FACTORY
