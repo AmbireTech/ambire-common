@@ -463,7 +463,9 @@ export class SwapAndBridgeController extends EventEmitter {
     }
 
     if (fromSelectedToken) {
-      if (this.fromSelectedToken?.networkId !== fromSelectedToken?.networkId) {
+      const isFromNetworkChanged =
+        this.fromSelectedToken?.networkId !== fromSelectedToken?.networkId
+      if (isFromNetworkChanged) {
         const network = this.#networks.networks.find((n) => n.id === fromSelectedToken.networkId)
         if (network) {
           this.fromChainId = Number(network.chainId)
@@ -473,10 +475,17 @@ export class SwapAndBridgeController extends EventEmitter {
           this.updateToTokenList(true)
         }
       }
+
+      const shouldResetFromTokenAmount =
+        isFromNetworkChanged || this.fromSelectedToken?.address !== fromSelectedToken.address
+      if (shouldResetFromTokenAmount) {
+        this.fromAmount = ''
+        this.fromAmountInFiat = ''
+        this.fromAmountFieldMode = 'token'
+      }
+
+      // Always update to reflect portfolio amount (or other props) changes
       this.fromSelectedToken = fromSelectedToken
-      this.fromAmount = ''
-      this.fromAmountInFiat = ''
-      this.fromAmountFieldMode = 'token'
     }
 
     if (toChainId) {
