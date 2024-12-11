@@ -106,31 +106,29 @@ export class NetworksController extends EventEmitter {
     }
     this.#networks = storedNetworks
 
+    predefinedNetworks.forEach((n) => {
+      this.#networks[n.id] = {
+        ...n, // add the latest structure of the predefined network to include the new props that are not in storage yet
+        ...(this.#networks[n.id] || {}), // override with stored props
+        // attributes that should take predefined priority
+        feeOptions: n.feeOptions,
+        hasRelayer: n.hasRelayer,
+        erc4337: {
+          enabled: is4337Enabled(!!n.erc4337.hasBundlerSupport, n, this.#networks[n.id]?.force4337),
+          hasPaymaster: n.erc4337.hasPaymaster
+        },
+        nativeAssetId: n.nativeAssetId,
+        nativeAssetSymbol: n.nativeAssetSymbol
+      }
+    })
+
+    // add predefined: false for each deleted network from predefined
     Object.keys(this.#networks).forEach((networkName) => {
       const predefinedNetwork = predefinedNetworks.find(
         (net) => net.chainId === this.#networks[networkName].chainId
       )
       if (!predefinedNetwork) {
         this.#networks[networkName].predefined = false
-        return
-      }
-
-      this.#networks[networkName] = {
-        ...predefinedNetwork, // add the latest structure of the predefined network to include the new props that are not in storage yet
-        ...(this.#networks[networkName] || {}), // override with stored props
-        // attributes that should take predefined priority
-        feeOptions: predefinedNetwork.feeOptions,
-        hasRelayer: predefinedNetwork.hasRelayer,
-        erc4337: {
-          enabled: is4337Enabled(
-            !!predefinedNetwork.erc4337.hasBundlerSupport,
-            predefinedNetwork,
-            this.#networks[networkName]?.force4337
-          ),
-          hasPaymaster: predefinedNetwork.erc4337.hasPaymaster
-        },
-        nativeAssetId: predefinedNetwork.nativeAssetId,
-        nativeAssetSymbol: predefinedNetwork.nativeAssetSymbol
       }
     })
 
