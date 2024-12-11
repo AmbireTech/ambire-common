@@ -17,7 +17,7 @@ import { getRpcProvider } from '../../services/provider'
 import { getSASupport } from '../deployless/simulateDeployCall'
 
 // bnb, fantom, metis
-const relayerAdditionalNetworks = [56n, 250n, 1088n]
+export const relayerAdditionalNetworks = [56n, 250n, 1088n]
 
 // 4337 network support
 // if it is supported on the network (hasBundlerSupport),
