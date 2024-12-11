@@ -798,7 +798,7 @@ export class MainController extends EventEmitter {
   async updateAccountsOpsStatuses() {
     await this.#initialLoadPromise
 
-    const { shouldEmitUpdate, shouldUpdatePortfolio } =
+    const { shouldEmitUpdate, shouldUpdatePortfolio, updatedAccountsOps } =
       await this.activity.updateAccountsOpsStatuses()
 
     if (shouldEmitUpdate) {
@@ -808,6 +808,26 @@ export class MainController extends EventEmitter {
         this.updateSelectedAccountPortfolio(true)
       }
     }
+
+    // for each ready txn check if it as approval tx and if there is an active route
+    // waiting for that approval. If so set the routeStatus to ready (for the next step)
+    updatedAccountsOps
+      .filter((op) => op.status === AccountOpStatus.Success)
+      .forEach((op) => {
+        op.calls.forEach((call) => {
+          const activeRouteWaitingApproval = this.swapAndBridge.activeRoutes.find(
+            (r) =>
+              `${r.activeRouteId}-approval` === call.fromUserRequestId &&
+              r.routeStatus === 'waiting-approval-to-resolve'
+          )
+
+          if (activeRouteWaitingApproval) {
+            this.swapAndBridge.updateActiveRoute(activeRouteWaitingApproval.activeRouteId, {
+              routeStatus: 'ready'
+            })
+          }
+        })
+      })
   }
 
   // call this function after a call to the singleton has been made
@@ -1220,12 +1240,18 @@ export class MainController extends EventEmitter {
         if (!this.selectedAccount.account) return
         let transaction: SocketAPISendTransactionRequest | null = null
 
+        const activeRoute = this.swapAndBridge.activeRoutes.find(
+          (r) => r.activeRouteId === activeRouteId
+        )
+
         if (this.swapAndBridge.formStatus === SwapAndBridgeFormStatus.ReadyToSubmit) {
           transaction = await this.swapAndBridge.getRouteStartUserTx()
         }
 
-        if (activeRouteId) {
-          this.removeUserRequest(activeRouteId, { shouldRemoveSwapAndBridgeRoute: false })
+        if (activeRoute) {
+          this.removeUserRequest(activeRoute.activeRouteId, {
+            shouldRemoveSwapAndBridgeRoute: false
+          })
           if (!isSmartAccount(this.selectedAccount.account)) {
             this.removeUserRequest(`${activeRouteId}-revoke-approval`, {
               shouldRemoveSwapAndBridgeRoute: false
@@ -1234,7 +1260,7 @@ export class MainController extends EventEmitter {
               shouldRemoveSwapAndBridgeRoute: false
             })
           }
-          transaction = await this.#socketAPI.getNextRouteUserTx(activeRouteId)
+          transaction = await this.#socketAPI.getNextRouteUserTx(activeRoute.activeRouteId)
         }
 
         if (!this.selectedAccount.account || !transaction) {
@@ -1666,12 +1692,24 @@ export class MainController extends EventEmitter {
       (r) => r.meta.activeRouteId && !r.meta.isApproval
     )
 
+    const swapAndBridgeApprovalUserRequests = accountOpUserRequests.filter(
+      (r) => r.meta.activeRouteId && r.meta.isApproval
+    )
+
     // Update route status immediately, so that the UI quickly reflects the change
     // eslint-disable-next-line no-restricted-syntax
     for (const r of swapAndBridgeUserRequests) {
       // eslint-disable-next-line no-await-in-loop
       await this.swapAndBridge.updateActiveRoute(r.meta.activeRouteId, {
         routeStatus: 'in-progress'
+      })
+    }
+
+    // eslint-disable-next-line no-restricted-syntax
+    for (const r of swapAndBridgeApprovalUserRequests) {
+      // eslint-disable-next-line no-await-in-loop
+      await this.swapAndBridge.updateActiveRoute(r.meta.activeRouteId, {
+        routeStatus: 'waiting-approval-to-resolve'
       })
     }
 
