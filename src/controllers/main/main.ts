@@ -798,16 +798,21 @@ export class MainController extends EventEmitter {
   async updateAccountsOpsStatuses() {
     await this.#initialLoadPromise
 
-    const { shouldEmitUpdate, shouldUpdatePortfolio } =
+    const { shouldEmitUpdate, shouldUpdatePortfolio, didAccountOpSucceeded } =
       await this.activity.updateAccountsOpsStatuses()
 
-    if (shouldEmitUpdate) {
-      this.emitUpdate()
+    if (!shouldEmitUpdate) return
 
-      if (shouldUpdatePortfolio) {
-        this.updateSelectedAccountPortfolio(true)
-      }
-    }
+    this.emitUpdate()
+    if (shouldUpdatePortfolio) this.updateSelectedAccountPortfolio(true)
+
+    // Handles a corner case - after BA signs an approval, the user may open
+    // the next transaction too soon. The new transaction could estimate before
+    // the account op with the approval gets confirmed on-chain, causing
+    // estimation errors (that's expected). But these stuck until the next
+    // scheduled re-estimate (that happens rarely). Forcing a re-estimate here
+    // updates this quicker and the user can proceed with the next transaction.
+    if (didAccountOpSucceeded) this.estimateSignAccountOp()
   }
 
   // call this function after a call to the singleton has been made
