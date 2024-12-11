@@ -2457,7 +2457,8 @@ export class MainController extends EventEmitter {
         isReplacementFeeLow = true
         this.estimateSignAccountOp()
       } else if (originalMessage.includes('pimlico_getUserOperationGasPrice')) {
-        message = 'Fee too low. Please select a higher transaction speed and try again'
+        message =
+          'Transaction fee underpriced. Please select a higher transaction speed and try again'
         this.updateSignAccountOpGasPrice()
       } else if (originalMessage.includes('INSUFFICIENT_PRIVILEGE')) {
         message = `Signer key not supported on this network.${
@@ -2465,8 +2466,9 @@ export class MainController extends EventEmitter {
             ? 'You can add/change signers from the web wallet or contact support.'
             : 'Please contact support.'
         }`
-      } else if (originalMessage.includes('Transaction underpriced')) {
-        message = 'Fee too low. Please select е higher transaction speed and try again'
+      } else if (originalMessage.includes('underpriced')) {
+        message =
+          'Transaction fee underpriced. Please select a higher transaction speed and try again'
         this.updateSignAccountOpGasPrice()
         this.estimateSignAccountOp()
       } else if (originalMessage.includes('Failed to fetch') && isRelayer) {

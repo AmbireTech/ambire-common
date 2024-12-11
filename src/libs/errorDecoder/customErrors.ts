@@ -17,7 +17,13 @@ class InnerCallFailureError extends Error {
 
 class RelayerPaymasterError extends Error {
   constructor(error: any) {
-    const message = error.errorState ? error.errorState[0]?.message : ''
+    let message = ''
+    if (error.errorState && error.errorState[0]) {
+      message = error.errorState[0].message
+    } else if (error.message) {
+      message = error.message
+    }
+
     super(message)
     this.name = 'PaymasterError'
     this.message = message
