@@ -428,7 +428,7 @@ describe('Main Controller ', () => {
         })
       } catch (e: any) {
         expect(e.message).toBe(
-          'Fee too low. Please select a higher transaction speed and try again'
+          'Transaction fee underpriced. Please select a higher transaction speed and try again'
         )
         expect(controllerAnyType.updateSignAccountOpGasPrice).toHaveBeenCalledTimes(1)
         expect(controllerAnyType.estimateSignAccountOp).not.toHaveBeenCalled()
