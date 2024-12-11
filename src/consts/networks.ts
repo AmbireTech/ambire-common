@@ -167,7 +167,7 @@ const networks: Network[] = [
     rpcNoStateOverride: false,
     chainId: 534352n,
     explorerUrl: 'https://scrollscan.com',
-    erc4337: { enabled: false, hasPaymaster: false, hasBundlerSupport: true },
+    erc4337: { enabled: false, hasPaymaster: true, hasBundlerSupport: true },
     isSAEnabled: true,
     areContractsDeployed: true,
     hasRelayer: true,

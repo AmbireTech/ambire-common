@@ -79,23 +79,24 @@ export class Paymaster {
       }
     }
 
-    if (network.erc4337.hasPaymaster) {
+    // has the paymaster dried up
+    const seenInsufficientFunds =
+      failedPaymasters.insufficientFundsNetworks[Number(this.network.chainId)]
+
+    if (network.erc4337.hasPaymaster && !seenInsufficientFunds) {
       this.type = 'Ambire'
       return
     }
 
     // for custom networks, check if the paymaster there has balance
-    if (!network.predefined) {
+    if (!network.predefined || seenInsufficientFunds) {
       try {
         const ep = new Contract(ERC_4337_ENTRYPOINT, entryPointAbi, provider)
         const paymasterBalance = await ep.balanceOf(AMBIRE_PAYMASTER)
 
         // if the network paymaster has failed because of insufficient funds,
         // disable it before getting a top up
-        const seenInsufficientFunds =
-          failedPaymasters.insufficientFundsNetworks[Number(this.network.chainId)]
         const minBalance = seenInsufficientFunds ? seenInsufficientFunds.lastSeenBalance : 0n
-
         if (paymasterBalance > minBalance) {
           this.type = 'Ambire'
           if (seenInsufficientFunds) failedPaymasters.removeInsufficientFunds(network)
