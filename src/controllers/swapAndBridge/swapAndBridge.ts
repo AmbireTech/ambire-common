@@ -1,10 +1,6 @@
 /* eslint-disable no-await-in-loop */
 import { formatUnits, isAddress, parseUnits } from 'ethers'
 
-import { AccountOpStatus } from '@ambire-common/libs/accountOp/accountOp'
-import { SubmittedAccountOp } from '@ambire-common/libs/accountOp/submittedAccountOp'
-import { Call } from '@ambire-common/libs/accountOp/types'
-
 import EmittableError from '../../classes/EmittableError'
 import { Network } from '../../interfaces/network'
 import { Storage } from '../../interfaces/storage'
@@ -19,6 +15,9 @@ import {
   SocketAPIToken
 } from '../../interfaces/swapAndBridge'
 import { isSmartAccount } from '../../libs/account/account'
+import { AccountOpStatus } from '../../libs/accountOp/accountOp'
+import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
+import { Call } from '../../libs/accountOp/types'
 import { getBridgeBanners } from '../../libs/banners/banners'
 import { TokenResult } from '../../libs/portfolio'
 import { getTokenAmount } from '../../libs/portfolio/helpers'
