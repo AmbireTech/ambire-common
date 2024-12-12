@@ -1,5 +1,4 @@
-// eslint-disable-next-line import/no-cycle
-import { AccountOpAction } from '../controllers/actions/actions'
+import { AccountOpAction } from './actions'
 import { Network } from './network'
 
 export type BannerType = 'error' | 'warning' | 'info' | 'info2' | 'success'
