@@ -33,7 +33,6 @@ import {
 import { getSanitizedAmount } from '../../libs/transfer/amount'
 import { normalizeIncomingSocketToken, SocketAPI } from '../../services/socket/api'
 import { validateSendTransferAmount } from '../../services/validations/validate'
-import formatDecimals from '../../utils/formatDecimals/formatDecimals'
 import { convertTokenPriceToBigInt } from '../../utils/numbers/formatters'
 import wait from '../../utils/wait'
 import { AccountOpAction, ActionsController } from '../actions/actions'
@@ -62,6 +61,7 @@ const STATUS_WRAPPED_METHODS = {
 const SUPPORTED_CHAINS_CACHE_THRESHOLD = 1000 * 60 * 60 * 24 // 1 day
 const TO_TOKEN_LIST_CACHE_THRESHOLD = 1000 * 60 * 60 * 4 // 4 hours
 
+const PROTOCOLS_WITH_CONTRACT_FEE_IN_NATIVE = ['stargate', 'arbitrum-bridge', 'zksync-native']
 /**
  * The Swap and Bridge controller is responsible for managing the state and
  * logic related to swapping and bridging tokens across different networks.
@@ -801,8 +801,9 @@ export class SwapAndBridgeController extends EventEmitter {
                 | undefined
 
               if (!bridgeStep) return route
-
               if (bridgeStep.protocolFees.amount === '0') return route
+              if (!PROTOCOLS_WITH_CONTRACT_FEE_IN_NATIVE.includes(bridgeStep.protocol.name))
+                return route
 
               const normalizedProtocolFeeToken = normalizeIncomingSocketToken(
                 bridgeStep.protocolFees.asset
