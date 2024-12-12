@@ -343,6 +343,9 @@ export class ActivityController extends EventEmitter {
               if (aQuaterHasPassed) {
                 this.#accountsOps[selectedAccount][networkId][accountOpIndex].status =
                   AccountOpStatus.BroadcastButStuck
+                updatedAccountsOps.push(
+                  this.#accountsOps[selectedAccount][networkId][accountOpIndex]
+                )
               }
             }
 
@@ -361,7 +364,6 @@ export class ActivityController extends EventEmitter {
             }
             if (fetchTxnIdResult.status === 'not_found') {
               declareStuckIfQuaterPassed(accountOp)
-              updatedAccountsOps.push(this.#accountsOps[selectedAccount][networkId][accountOpIndex])
               return
             }
 
