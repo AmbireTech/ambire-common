@@ -101,7 +101,7 @@ export class Bundler {
     const provider = getRpcProvider([url], network.chainId)
 
     return provider.send('eth_sendUserOperation', [
-      (({ requestType, activatorCall, ...o }) => o)(userOperation),
+      getCleanUserOp(userOperation)[0],
       ERC_4337_ENTRYPOINT
     ])
   }

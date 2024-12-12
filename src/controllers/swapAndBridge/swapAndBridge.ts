@@ -1,3 +1,4 @@
+/* eslint-disable no-await-in-loop */
 import { formatUnits, isAddress, parseUnits } from 'ethers'
 
 import EmittableError from '../../classes/EmittableError'
@@ -16,6 +17,9 @@ import {
   SocketAPIToken
 } from '../../interfaces/swapAndBridge'
 import { isSmartAccount } from '../../libs/account/account'
+import { AccountOpStatus } from '../../libs/accountOp/accountOp'
+import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
+import { Call } from '../../libs/accountOp/types'
 import { getBridgeBanners } from '../../libs/banners/banners'
 import { TokenResult } from '../../libs/portfolio'
 import { getTokenAmount } from '../../libs/portfolio/helpers'
@@ -130,6 +134,8 @@ export class SwapAndBridgeController extends EventEmitter {
 
   quote: SocketAPIQuote | null = null
 
+  quoteRoutesStatuses: { [key: string]: { status: string } } = {}
+
   portfolioTokenList: TokenResult[] = []
 
   isTokenListLoading: boolean = false
@@ -231,20 +237,20 @@ export class SwapAndBridgeController extends EventEmitter {
     )
   }
 
-  get formStatus() {
-    if (
+  get isFormEmpty() {
+    return (
       !this.fromChainId ||
       !this.toChainId ||
       !this.fromAmount ||
       !this.fromSelectedToken ||
       !this.toSelectedToken
     )
-      return SwapAndBridgeFormStatus.Empty
+  }
 
+  get formStatus() {
+    if (this.isFormEmpty) return SwapAndBridgeFormStatus.Empty
     if (this.validateFromAmount.message) return SwapAndBridgeFormStatus.Invalid
-
     if (this.updateQuoteStatus !== 'INITIAL') return SwapAndBridgeFormStatus.FetchingRoutes
-
     if (!this.quote?.selectedRoute) return SwapAndBridgeFormStatus.NoRoutesFound
 
     if (this.quote?.selectedRoute?.errorMessage) return SwapAndBridgeFormStatus.InvalidRouteSelected
@@ -254,6 +260,17 @@ export class SwapAndBridgeController extends EventEmitter {
 
   get validateFromAmount() {
     if (!this.fromSelectedToken) return { success: false, message: '' }
+
+    if (
+      !this.isFormEmpty &&
+      !this.quote &&
+      Object.values(this.quoteRoutesStatuses).some((val) => val.status === 'MIN_AMOUNT_NOT_MET')
+    ) {
+      return {
+        success: true,
+        message: '🔔 A route was found for this pair but the minimum token amount was not met.'
+      }
+    }
 
     return validateSendTransferAmount(
       this.fromAmount,
@@ -316,7 +333,7 @@ export class SwapAndBridgeController extends EventEmitter {
       // update the activeRoute.route prop for the new session
       this.activeRoutes.forEach((r) => {
         // eslint-disable-next-line @typescript-eslint/no-floating-promises
-        this.updateActiveRoute(r.activeRouteId)
+        this.updateActiveRoute(r.activeRouteId, undefined, true)
       })
     }
 
@@ -457,7 +474,9 @@ export class SwapAndBridgeController extends EventEmitter {
     }
 
     if (fromSelectedToken) {
-      if (this.fromSelectedToken?.networkId !== fromSelectedToken?.networkId) {
+      const isFromNetworkChanged =
+        this.fromSelectedToken?.networkId !== fromSelectedToken?.networkId
+      if (isFromNetworkChanged) {
         const network = this.#networks.networks.find((n) => n.id === fromSelectedToken.networkId)
         if (network) {
           this.fromChainId = Number(network.chainId)
@@ -467,10 +486,17 @@ export class SwapAndBridgeController extends EventEmitter {
           this.updateToTokenList(true)
         }
       }
+
+      const shouldResetFromTokenAmount =
+        isFromNetworkChanged || this.fromSelectedToken?.address !== fromSelectedToken.address
+      if (shouldResetFromTokenAmount) {
+        this.fromAmount = ''
+        this.fromAmountInFiat = ''
+        this.fromAmountFieldMode = 'token'
+      }
+
+      // Always update to reflect portfolio amount (or other props) changes
       this.fromSelectedToken = fromSelectedToken
-      this.fromAmount = ''
-      this.fromAmountInFiat = ''
-      this.fromAmountFieldMode = 'token'
     }
 
     if (toChainId) {
@@ -487,9 +513,11 @@ export class SwapAndBridgeController extends EventEmitter {
 
     if (routePriority) {
       this.routePriority = routePriority
-      if (this.quote) this.quote = null
+      if (this.quote) {
+        this.quote = null
+        this.quoteRoutesStatuses = {}
+      }
     }
-
     this.updateQuote()
 
     this.emitUpdate()
@@ -504,6 +532,7 @@ export class SwapAndBridgeController extends EventEmitter {
     this.toChainId = 1
     this.toSelectedToken = null
     this.quote = null
+    this.quoteRoutesStatuses = {}
     this.portfolioTokenList = []
     this.toTokenList = []
 
@@ -703,7 +732,6 @@ export class SwapAndBridgeController extends EventEmitter {
 
     const updateQuoteFunction = async () => {
       if (!this.#selectedAccount.account) return
-
       const sanitizedFromAmount = getSanitizedAmount(
         this.fromAmount,
         this.fromSelectedToken!.decimals
@@ -728,9 +756,9 @@ export class SwapAndBridgeController extends EventEmitter {
           return
         }
       }
-
-      if (this.quote && !options.skipPreviousQuoteRemoval) {
-        this.quote = null
+      if (!options.skipPreviousQuoteRemoval) {
+        if (this.quote) this.quote = null
+        this.quoteRoutesStatuses = {}
         this.emitUpdate()
       }
 
@@ -745,6 +773,7 @@ export class SwapAndBridgeController extends EventEmitter {
           isSmartAccount: isSmartAccount(this.#selectedAccount.account),
           sort: this.routePriority
         })
+
         if (
           this.#getIsFormValidToFetchQuote() &&
           quoteResult &&
@@ -852,6 +881,7 @@ export class SwapAndBridgeController extends EventEmitter {
             routes
           }
         }
+        this.quoteRoutesStatuses = (quoteResult as any).bridgeRouteErrors || {}
       } catch (error: any) {
         this.emitError({
           error,
@@ -917,7 +947,7 @@ export class SwapAndBridgeController extends EventEmitter {
       }
 
       if (errorMessage) {
-        await this.updateActiveRoute(activeRoute.activeRouteId, {
+        this.updateActiveRoute(activeRoute.activeRouteId, {
           error: errorMessage
         })
         return
@@ -925,21 +955,29 @@ export class SwapAndBridgeController extends EventEmitter {
 
       const route = this.activeRoutes.find((r) => r.activeRouteId === activeRoute.activeRouteId)
       if (route?.error) {
-        await this.updateActiveRoute(activeRoute.activeRouteId, {
+        this.updateActiveRoute(activeRoute.activeRouteId, {
           error: undefined
         })
       }
 
       if (status === 'completed') {
-        await this.updateActiveRoute(activeRoute.activeRouteId, {
-          routeStatus: 'completed',
-          error: undefined
-        })
+        this.updateActiveRoute(
+          activeRoute.activeRouteId,
+          {
+            routeStatus: 'completed',
+            error: undefined
+          },
+          true
+        )
       } else if (status === 'ready') {
-        await this.updateActiveRoute(activeRoute.activeRouteId, {
-          routeStatus: 'ready',
-          error: undefined
-        })
+        this.updateActiveRoute(
+          activeRoute.activeRouteId,
+          {
+            routeStatus: 'ready',
+            error: undefined
+          },
+          true
+        )
       }
     }
 
@@ -981,28 +1019,31 @@ export class SwapAndBridgeController extends EventEmitter {
     this.resetForm(true)
   }
 
-  async updateActiveRoute(
+  updateActiveRoute(
     activeRouteId: SocketAPISendTransactionRequest['activeRouteId'],
-    activeRoute?: Partial<ActiveRoute>
+    activeRoute?: Partial<ActiveRoute>,
+    forceUpdateRoute?: boolean
   ) {
-    await this.#initialLoadPromise
     const currentActiveRoutes = [...this.activeRoutes]
     const activeRouteIndex = currentActiveRoutes.findIndex((r) => r.activeRouteId === activeRouteId)
 
     if (activeRouteIndex !== -1) {
-      let route = currentActiveRoutes[activeRouteIndex].route
-      if (activeRoute?.routeStatus) {
-        route = await this.#socketAPI.updateActiveRoute(activeRouteId)
+      if (forceUpdateRoute) {
+        // eslint-disable-next-line @typescript-eslint/no-floating-promises
+        ;(async () => {
+          let route = currentActiveRoutes[activeRouteIndex].route
+          route = await this.#socketAPI.updateActiveRoute(activeRouteId)
+          this.updateActiveRoute(activeRouteId, { route })
+        })()
       }
 
       if (activeRoute) {
         currentActiveRoutes[activeRouteIndex] = {
           ...currentActiveRoutes[activeRouteIndex],
-          ...activeRoute,
-          route
+          ...activeRoute
         }
       } else {
-        currentActiveRoutes[activeRouteIndex] = { ...currentActiveRoutes[activeRouteIndex], route }
+        currentActiveRoutes[activeRouteIndex] = { ...currentActiveRoutes[activeRouteIndex] }
       }
       this.activeRoutes = currentActiveRoutes
 
@@ -1014,6 +1055,124 @@ export class SwapAndBridgeController extends EventEmitter {
     this.activeRoutes = this.activeRoutes.filter((r) => r.activeRouteId !== activeRouteId)
 
     this.emitUpdate()
+  }
+
+  // update active route if needed on SubmittedAccountOp update
+  handleUpdateActiveRouteOnSubmittedAccountOpStatusUpdate(op: SubmittedAccountOp) {
+    op.calls.forEach((call) => {
+      this.#handleActiveRouteBroadcastedTransaction(call.fromUserRequestId, op.status)
+      this.#handleActiveRouteBroadcastedApproval(call.fromUserRequestId, op.status)
+      this.#handleActiveRoutesWithReadyApproval(call.fromUserRequestId, op.status)
+      this.#handleUpdateActiveRoutesUserTxId(call.fromUserRequestId, op.txnId)
+      this.#handleActiveRoutesCompleted(call.fromUserRequestId, op.status)
+    })
+  }
+
+  #handleActiveRouteBroadcastedTransaction(
+    fromUserRequestId: Call['fromUserRequestId'],
+    opStatus: SubmittedAccountOp['status']
+  ) {
+    if (opStatus !== AccountOpStatus.BroadcastedButNotConfirmed) return
+
+    const activeRoute = this.activeRoutes.find((r) => r.activeRouteId === fromUserRequestId)
+    if (!activeRoute) return
+
+    this.updateActiveRoute(activeRoute.activeRouteId, { routeStatus: 'in-progress' })
+  }
+
+  #handleActiveRouteBroadcastedApproval(
+    fromUserRequestId: Call['fromUserRequestId'],
+    opStatus: SubmittedAccountOp['status']
+  ) {
+    if (opStatus !== AccountOpStatus.BroadcastedButNotConfirmed) return
+
+    const activeRoute = this.activeRoutes.find(
+      (r) => `${r.activeRouteId}-approval` === fromUserRequestId
+    )
+    if (!activeRoute) return
+
+    this.updateActiveRoute(activeRoute.activeRouteId, {
+      routeStatus: 'waiting-approval-to-resolve'
+    })
+  }
+
+  #handleActiveRoutesWithReadyApproval(
+    fromUserRequestId: Call['fromUserRequestId'],
+    opStatus: SubmittedAccountOp['status']
+  ) {
+    const activeRouteWaitingApproval = this.activeRoutes.find(
+      (r) =>
+        r.routeStatus === 'waiting-approval-to-resolve' &&
+        `${r.activeRouteId}-approval` === fromUserRequestId
+    )
+
+    if (!activeRouteWaitingApproval) return
+
+    if (opStatus === AccountOpStatus.Success) {
+      this.updateActiveRoute(activeRouteWaitingApproval.activeRouteId, {
+        routeStatus: 'ready'
+      })
+    }
+
+    if (opStatus === AccountOpStatus.Failure || opStatus === AccountOpStatus.Rejected) {
+      const errorMessage =
+        opStatus === AccountOpStatus.Rejected
+          ? 'The approval was rejected but you can try to sign it again'
+          : 'The approval failed but you can try to sign it again'
+      this.updateActiveRoute(activeRouteWaitingApproval.activeRouteId, {
+        routeStatus: 'ready',
+        error: errorMessage
+      })
+    }
+  }
+
+  #handleUpdateActiveRoutesUserTxId(
+    fromUserRequestId: Call['fromUserRequestId'],
+    opTxnId: SubmittedAccountOp['txnId']
+  ) {
+    const activeRoute = this.activeRoutes.find((r) => r.activeRouteId === fromUserRequestId)
+    if (!activeRoute) return
+
+    if (opTxnId && !activeRoute.userTxHash) {
+      this.updateActiveRoute(activeRoute.activeRouteId, { userTxHash: opTxnId })
+    }
+  }
+
+  #handleActiveRoutesCompleted(
+    fromUserRequestId: Call['fromUserRequestId'],
+    opStatus: SubmittedAccountOp['status']
+  ) {
+    const activeRoute = this.activeRoutes.find((r) => r.activeRouteId === fromUserRequestId)
+    if (!activeRoute) return
+
+    let shouldUpdateActiveRouteStatus = false
+    if (activeRoute.route.fromChainId === activeRoute.route.toChainId)
+      shouldUpdateActiveRouteStatus = true
+
+    if (activeRoute.route.currentUserTxIndex + 1 === activeRoute.route.totalUserTx) {
+      const tx = activeRoute.route.userTxs[activeRoute.route.currentUserTxIndex]
+      if (!tx) return
+
+      if (tx.userTxType === 'dex-swap') shouldUpdateActiveRouteStatus = true
+    }
+
+    if (!shouldUpdateActiveRouteStatus) return
+
+    if (opStatus === AccountOpStatus.Success) {
+      this.updateActiveRoute(activeRoute.activeRouteId, { routeStatus: 'completed' })
+    }
+
+    // If the transaction fails, update the status to "ready" to allow the user to sign it again
+    if (opStatus === AccountOpStatus.Failure || opStatus === AccountOpStatus.Rejected) {
+      const errorMessage =
+        opStatus === AccountOpStatus.Rejected
+          ? 'The transaction was rejected but you can try to sign it again'
+          : 'The transaction failed but you can try to sign it again'
+      this.updateActiveRoute(activeRoute.activeRouteId, {
+        routeStatus: 'ready',
+        error: errorMessage
+      })
+    }
   }
 
   onAccountChange() {
@@ -1072,6 +1231,7 @@ export class SwapAndBridgeController extends EventEmitter {
       maxFromAmount: this.maxFromAmount,
       maxFromAmountInFiat: this.maxFromAmountInFiat,
       validateFromAmount: this.validateFromAmount,
+      isFormEmpty: this.isFormEmpty,
       formStatus: this.formStatus,
       activeRoutesInProgress: this.activeRoutesInProgress,
       activeRoutes: this.activeRoutes,

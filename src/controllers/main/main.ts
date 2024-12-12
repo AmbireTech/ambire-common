@@ -46,6 +46,7 @@ import {
   getAccountOpFromAction
 } from '../../libs/actions/actions'
 import { getAccountOpBanners } from '../../libs/banners/banners'
+import { getPaymasterService } from '../../libs/erc7677/erc7677'
 import {
   getHumanReadableBroadcastError,
   getHumanReadableEstimationError
@@ -85,6 +86,7 @@ import {
 } from '../../libs/userOperation/userOperation'
 import bundler from '../../services/bundlers'
 import { Bundler } from '../../services/bundlers/bundler'
+import { paymasterFactory } from '../../services/paymaster'
 import { SocketAPI } from '../../services/socket/api'
 import { getIsViewOnly } from '../../utils/accounts'
 import shortenAddress from '../../utils/shortenAddress'
@@ -345,6 +347,7 @@ export class MainController extends EventEmitter {
     )
     this.domains = new DomainsController(this.providers.providers)
     this.#initialLoadPromise = this.#load()
+    paymasterFactory.init(relayerUrl, fetch)
   }
 
   async #load(): Promise<void> {
@@ -795,7 +798,7 @@ export class MainController extends EventEmitter {
   async updateAccountsOpsStatuses() {
     await this.#initialLoadPromise
 
-    const { shouldEmitUpdate, shouldUpdatePortfolio } =
+    const { shouldEmitUpdate, shouldUpdatePortfolio, updatedAccountsOps } =
       await this.activity.updateAccountsOpsStatuses()
 
     if (shouldEmitUpdate) {
@@ -805,6 +808,10 @@ export class MainController extends EventEmitter {
         this.updateSelectedAccountPortfolio(true)
       }
     }
+
+    updatedAccountsOps.forEach((op) => {
+      this.swapAndBridge.handleUpdateActiveRouteOnSubmittedAccountOpStatusUpdate(op)
+    })
   }
 
   // call this function after a call to the singleton has been made
@@ -988,20 +995,23 @@ export class MainController extends EventEmitter {
 
     if (kind === 'calls') {
       if (!this.selectedAccount.account) throw ethErrors.rpc.internal()
-
-      const isWalletSendCalls = !!request.params[0].calls
-      const calls: Calls['calls'] = isWalletSendCalls
-        ? request.params[0].calls
-        : [request.params[0]]
-      const accountAddr = getAddress(request.params[0].from)
-
       const network = this.networks.networks.find(
         (n) => Number(n.chainId) === Number(dapp?.chainId)
       )
-
       if (!network) {
         throw ethErrors.provider.chainDisconnected('Transaction failed - unknown network')
       }
+
+      const isWalletSendCalls = !!request.params[0].calls
+      const accountAddr = getAddress(request.params[0].from)
+
+      const calls: Calls['calls'] = isWalletSendCalls
+        ? request.params[0].calls
+        : [request.params[0]]
+      const paymasterService = isWalletSendCalls
+        ? getPaymasterService(network.chainId, request.params[0].capabilities)
+        : null
+
       userRequest = {
         id: new Date().getTime(),
         action: {
@@ -1012,7 +1022,13 @@ export class MainController extends EventEmitter {
             value: call.value ? getBigInt(call.value) : 0n
           }))
         },
-        meta: { isSignAction: true, isWalletSendCalls, accountAddr, networkId: network.id },
+        meta: {
+          isSignAction: true,
+          isWalletSendCalls,
+          accountAddr,
+          networkId: network.id,
+          paymasterService
+        },
         dappPromise
       } as SignUserRequest
       if (!this.selectedAccount.account.creation) {
@@ -1208,12 +1224,19 @@ export class MainController extends EventEmitter {
         if (!this.selectedAccount.account) return
         let transaction: SocketAPISendTransactionRequest | null = null
 
+        const activeRoute = this.swapAndBridge.activeRoutes.find(
+          (r) => r.activeRouteId === activeRouteId
+        )
+
         if (this.swapAndBridge.formStatus === SwapAndBridgeFormStatus.ReadyToSubmit) {
           transaction = await this.swapAndBridge.getRouteStartUserTx()
         }
 
-        if (activeRouteId) {
-          this.removeUserRequest(activeRouteId, { shouldRemoveSwapAndBridgeRoute: false })
+        if (activeRoute) {
+          this.removeUserRequest(activeRoute.activeRouteId, {
+            shouldRemoveSwapAndBridgeRoute: false
+          })
+          this.swapAndBridge.updateActiveRoute(activeRoute.activeRouteId, { error: undefined })
           if (!isSmartAccount(this.selectedAccount.account)) {
             this.removeUserRequest(`${activeRouteId}-revoke-approval`, {
               shouldRemoveSwapAndBridgeRoute: false
@@ -1222,7 +1245,7 @@ export class MainController extends EventEmitter {
               shouldRemoveSwapAndBridgeRoute: false
             })
           }
-          transaction = await this.#socketAPI.getNextRouteUserTx(activeRouteId)
+          transaction = await this.#socketAPI.getNextRouteUserTx(activeRoute.activeRouteId)
         }
 
         if (!this.selectedAccount.account || !transaction) {
@@ -1266,10 +1289,14 @@ export class MainController extends EventEmitter {
         }
 
         if (activeRouteId) {
-          await this.swapAndBridge.updateActiveRoute(activeRouteId, {
-            userTxIndex: transaction.userTxIndex,
-            userTxHash: null
-          })
+          this.swapAndBridge.updateActiveRoute(
+            activeRouteId,
+            {
+              userTxIndex: transaction.userTxIndex,
+              userTxHash: null
+            },
+            true
+          )
         }
       },
       true
@@ -1647,22 +1674,6 @@ export class MainController extends EventEmitter {
 
     this.actions.removeAction(actionId)
 
-    const accountOpUserRequests = this.userRequests.filter((r) =>
-      accountOp.calls.some((c) => c.fromUserRequestId === r.id)
-    )
-    const swapAndBridgeUserRequests = accountOpUserRequests.filter(
-      (r) => r.meta.activeRouteId && !r.meta.isApproval
-    )
-
-    // Update route status immediately, so that the UI quickly reflects the change
-    // eslint-disable-next-line no-restricted-syntax
-    for (const r of swapAndBridgeUserRequests) {
-      // eslint-disable-next-line no-await-in-loop
-      await this.swapAndBridge.updateActiveRoute(r.meta.activeRouteId, {
-        routeStatus: 'in-progress'
-      })
-    }
-
     // handle wallet_sendCalls before pollTxnId as 1) it's faster
     // 2) the identifier is different
     // eslint-disable-next-line no-restricted-syntax
@@ -1675,6 +1686,7 @@ export class MainController extends EventEmitter {
         walletSendCallsUserReq.dappPromise?.resolve({
           hash: `${identifiedBy.type}:${identifiedBy.identifier}`
         })
+
         // eslint-disable-next-line no-await-in-loop
         this.removeUserRequest(walletSendCallsUserReq.id, { shouldRemoveSwapAndBridgeRoute: false })
       }
@@ -1689,22 +1701,6 @@ export class MainController extends EventEmitter {
     )
 
     // eslint-disable-next-line no-restricted-syntax
-    for (const r of swapAndBridgeUserRequests) {
-      if (txnId) {
-        // eslint-disable-next-line no-await-in-loop
-        await this.swapAndBridge.updateActiveRoute(r.meta.activeRouteId, {
-          userTxHash: txnId
-        })
-      } else {
-        // eslint-disable-next-line no-await-in-loop
-        await this.swapAndBridge.updateActiveRoute(r.meta.activeRouteId, {
-          routeStatus: 'failed',
-          error: 'Transaction rejected by the bundler'
-        })
-      }
-    }
-
-    // eslint-disable-next-line no-restricted-syntax
     for (const call of accountOp.calls) {
       const uReq = this.userRequests.find((r) => r.id === call.fromUserRequestId)
       if (uReq) {
@@ -1717,6 +1713,7 @@ export class MainController extends EventEmitter {
             })
           )
         }
+
         // eslint-disable-next-line no-await-in-loop
         this.removeUserRequest(uReq.id, { shouldRemoveSwapAndBridgeRoute: false })
       }
@@ -2362,6 +2359,7 @@ export class MainController extends EventEmitter {
       )
     }
     await this.activity.addAccountOp(submittedAccountOp)
+    this.swapAndBridge.handleUpdateActiveRouteOnSubmittedAccountOpStatusUpdate(submittedAccountOp)
     await this.resolveAccountOpAction(
       {
         networkId: network.id,

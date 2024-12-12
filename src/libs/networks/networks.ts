@@ -17,7 +17,7 @@ import { getRpcProvider } from '../../services/provider'
 import { getSASupport } from '../deployless/simulateDeployCall'
 
 // bnb, fantom, metis
-const relayerAdditionalNetworks = [56n, 250n, 1088n]
+export const relayerAdditionalNetworks = [56n, 250n, 1088n]
 
 // 4337 network support
 // if it is supported on the network (hasBundlerSupport),
@@ -117,7 +117,7 @@ export async function getNetworkInfo(
         ]).catch((e: Error) =>
           raiseFlagged(e, ['0x', '0x', { addressMatches: false, supportsStateOverride: false }])
         )
-        const [singletonCode, factoryCode, saSupport, has4337BundlerSupport] = responses
+        const [singletonCode, factoryCode, saSupport, hasBundlerSupport] = responses
         const areContractsDeployed = factoryCode !== '0x'
         // const has4337 = entryPointCode !== '0x' && hasBundler
         const predefinedNetwork = predefinedNetworks.find((net) => net.chainId === chainId)
@@ -138,12 +138,9 @@ export async function getNetworkInfo(
               ? true
               : !saSupport.supportsStateOverride,
           erc4337: {
-            enabled: is4337Enabled(
-              has4337BundlerSupport,
-              predefinedNetwork,
-              optionalArgs?.force4337
-            ),
-            hasPaymaster: predefinedNetwork ? predefinedNetwork.erc4337.hasPaymaster : false
+            enabled: is4337Enabled(hasBundlerSupport, predefinedNetwork, optionalArgs?.force4337),
+            hasPaymaster: predefinedNetwork ? predefinedNetwork.erc4337.hasPaymaster : false,
+            hasBundlerSupport
           }
         }
 
@@ -378,7 +375,11 @@ export async function migrateNetworkPreferencesToNetworks(networkPreferences: {
       isSAEnabled: preference.isSAEnabled ?? false,
       isOptimistic: preference.isOptimistic ?? false,
       rpcNoStateOverride: preference.rpcNoStateOverride ?? true,
-      erc4337: preference.erc4337 ?? { enabled: false, hasPaymaster: false },
+      erc4337: preference.erc4337 ?? {
+        enabled: false,
+        hasPaymaster: false,
+        hasBundlerSupport: false
+      },
       areContractsDeployed: preference.areContractsDeployed ?? false,
       feeOptions: { is1559: (preference as any).is1559 ?? false },
       platformId: preference.platformId ?? '',

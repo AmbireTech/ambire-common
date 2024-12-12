@@ -183,11 +183,12 @@ export type ActiveRoute = {
     updatedAt: string
     routeStatus: string
     fromChainId: number
+    toChainId: number
     currentUserTxIndex: number
     transactionData: { txHash: string }[] | null
     userAddress: string
   }
-  routeStatus: 'in-progress' | 'ready' | 'completed' | 'failed'
+  routeStatus: 'waiting-approval-to-resolve' | 'in-progress' | 'ready' | 'completed' | 'failed'
   error?: string
 }
 

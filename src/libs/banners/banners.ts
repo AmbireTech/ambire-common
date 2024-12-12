@@ -1,5 +1,6 @@
 import { Account } from '../../interfaces/account'
 import { AccountOpAction, Action as ActionFromActionsQueue } from '../../interfaces/actions'
+// eslint-disable-next-line import/no-cycle
 import { Action, Banner } from '../../interfaces/banner'
 import { Network, NetworkId } from '../../interfaces/network'
 import { RPCProviders } from '../../interfaces/provider'
@@ -66,7 +67,12 @@ export const getBridgeBanners = (
     route.route.userTxs.some((t) => getIsBridgeTxn(t.userTxType))
   const isRouteTurnedIntoAccountOp = (route: ActiveRoute) => {
     return accountOpActions.some((action) => {
-      return action.accountOp.calls.some((call) => call.fromUserRequestId === route.activeRouteId)
+      return action.accountOp.calls.some(
+        (call) =>
+          call.fromUserRequestId === route.activeRouteId ||
+          call.fromUserRequestId === `${route.activeRouteId}-revoke-approval` ||
+          call.fromUserRequestId === `${route.activeRouteId}-approval`
+      )
     })
   }
 
@@ -82,7 +88,7 @@ export const getBridgeBanners = (
     .map((r) => {
       const actions: Action[] = []
 
-      if (r.routeStatus === 'in-progress') {
+      if (r.routeStatus === 'in-progress' || r.routeStatus === 'waiting-approval-to-resolve') {
         actions.push({
           label: 'Details',
           actionName: 'open-swap-and-bridge-tab'

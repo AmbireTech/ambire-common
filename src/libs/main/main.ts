@@ -103,6 +103,15 @@ export const makeSmartAccountOpAction = ({
     return accountOpAction
   }
 
+  // TODO: check eligibility for this
+  // like if we have other calls in the batch, it will probably not work
+  // gas sponsorship will work for only the speicified calls
+  // find the user request with a paymaster service
+  const userReqWithPaymasterService = userRequests.find((req) => req.meta.paymasterService)
+  const paymasterService = userReqWithPaymasterService
+    ? userReqWithPaymasterService.meta.paymasterService
+    : undefined
+
   const accountOp: AccountOpAction['accountOp'] = {
     accountAddr: account.addr,
     networkId,
@@ -117,12 +126,12 @@ export const makeSmartAccountOpAction = ({
       accountAddr: account.addr,
       networkId,
       userRequests
-    })
-  }
-
-  if (entryPointAuthorizationSignature) {
-    accountOp.meta = {
-      entryPointAuthorization: adjustEntryPointAuthorization(entryPointAuthorizationSignature)
+    }),
+    meta: {
+      entryPointAuthorization: entryPointAuthorizationSignature
+        ? adjustEntryPointAuthorization(entryPointAuthorizationSignature)
+        : undefined,
+      paymasterService
     }
   }
 

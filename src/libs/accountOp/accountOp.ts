@@ -5,6 +5,7 @@ import { AccountId } from '../../interfaces/account'
 // eslint-disable-next-line import/no-cycle
 import { Key } from '../../interfaces/keystore'
 import { NetworkId } from '../../interfaces/network'
+import { PaymasterService } from '../erc7677/types'
 import { stringify } from '../richJson/richJson'
 import { UserOperation } from '../userOperation/types'
 import { Call } from './types'
@@ -26,6 +27,7 @@ export interface GasFeePayment {
   simulatedGasLimit: bigint
   gasPrice: bigint
   maxPriorityFeePerGas?: bigint
+  isSponsored?: boolean
 }
 
 export enum AccountOpStatus {
@@ -78,6 +80,7 @@ export interface AccountOp {
   meta?: {
     // pass the entry point authorization signature for the deploy 4337 txn
     entryPointAuthorization?: string
+    paymasterService?: PaymasterService
   }
 }
 

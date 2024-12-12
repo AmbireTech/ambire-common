@@ -25,6 +25,26 @@ import {
 const ethereumNetwork = networks.find((net) => net.id === 'ethereum')!
 const polygonNetwork = networks.find((net) => net.id === 'polygon')!
 const contractSuccess = '0x1626ba7e'
+const unsupportedNetwork = {
+  id: 'zircuit mainnet',
+  name: 'Zircuit Mainnet',
+  nativeAssetSymbol: 'ETH',
+  rpcUrls: ['https://zircuit1-mainnet.p2pify.com'],
+  selectedRpcUrl: 'https://zircuit1-mainnet.p2pify.com',
+  rpcNoStateOverride: false,
+  chainId: 48900n,
+  explorerUrl: 'https://explorer.zircuit.com',
+  erc4337: { enabled: false, hasPaymaster: false, hasBundlerSupport: false },
+  isSAEnabled: false,
+  areContractsDeployed: false,
+  hasRelayer: false,
+  platformId: 'zircuit',
+  nativeAssetId: 'weth',
+  hasSingleton: false,
+  features: [],
+  feeOptions: { is1559: true },
+  predefined: false
+}
 
 const eoaSigner = {
   privKey: '0x8ad1e4982a3a2e5ef35db11d498d48ab33cbe91bb258802bc8703c943c5a256a',
@@ -264,6 +284,23 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
         'Signing messages is disallowed for v1 accounts. Please contact support to proceed'
       )
     }
+  })
+
+  test('Signing [V1 SA]: plain text, should throw an error as it disallowed to sign message with contains address in it on unsupported chain', async () => {
+    const accountStates = await getAccountsInfo([v1Account])
+    const signer = await keystore.getSigner(v1siger.keyPublicAddress, 'internal')
+
+    await expect(
+      getPlainTextSignature(
+        `test with address in the message on unsupported chain: ${v1Account.addr}`,
+        unsupportedNetwork,
+        v1Account,
+        accountStates[v1Account.addr][ethereumNetwork.id],
+        signer
+      )
+    ).rejects.toThrow(
+      `Signing messages is disallowed for v1 accounts on ${unsupportedNetwork.name}`
+    )
   })
 
   test('Signing [EOA]: eip-712', async () => {
