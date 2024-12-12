@@ -809,25 +809,9 @@ export class MainController extends EventEmitter {
       }
     }
 
-    // for each ready txn check if it as approval tx and if there is an active route
-    // waiting for that approval. If so set the routeStatus to ready (for the next step)
-    updatedAccountsOps
-      .filter((op) => op.status === AccountOpStatus.Success)
-      .forEach((op) => {
-        op.calls.forEach((call) => {
-          const activeRouteWaitingApproval = this.swapAndBridge.activeRoutes.find(
-            (r) =>
-              `${r.activeRouteId}-approval` === call.fromUserRequestId &&
-              r.routeStatus === 'waiting-approval-to-resolve'
-          )
-
-          if (activeRouteWaitingApproval) {
-            this.swapAndBridge.updateActiveRoute(activeRouteWaitingApproval.activeRouteId, {
-              routeStatus: 'ready'
-            })
-          }
-        })
-      })
+    updatedAccountsOps.forEach((op) => {
+      this.swapAndBridge.handleUpdateActiveRouteOnSubmittedAccountOpStatusUpdate(op)
+    })
   }
 
   // call this function after a call to the singleton has been made
@@ -1252,6 +1236,7 @@ export class MainController extends EventEmitter {
           this.removeUserRequest(activeRoute.activeRouteId, {
             shouldRemoveSwapAndBridgeRoute: false
           })
+          this.swapAndBridge.updateActiveRoute(activeRouteId, { error: undefined })
           if (!isSmartAccount(this.selectedAccount.account)) {
             this.removeUserRequest(`${activeRouteId}-revoke-approval`, {
               shouldRemoveSwapAndBridgeRoute: false
@@ -1304,10 +1289,14 @@ export class MainController extends EventEmitter {
         }
 
         if (activeRouteId) {
-          await this.swapAndBridge.updateActiveRoute(activeRouteId, {
-            userTxIndex: transaction.userTxIndex,
-            userTxHash: null
-          })
+          this.swapAndBridge.updateActiveRoute(
+            activeRouteId,
+            {
+              userTxIndex: transaction.userTxIndex,
+              userTxHash: null
+            },
+            true
+          )
         }
       },
       true
@@ -1685,34 +1674,6 @@ export class MainController extends EventEmitter {
 
     this.actions.removeAction(actionId)
 
-    const accountOpUserRequests = this.userRequests.filter((r) =>
-      accountOp.calls.some((c) => c.fromUserRequestId === r.id)
-    )
-    const swapAndBridgeUserRequests = accountOpUserRequests.filter(
-      (r) => r.meta.activeRouteId && !r.meta.isApproval
-    )
-
-    const swapAndBridgeApprovalUserRequests = accountOpUserRequests.filter(
-      (r) => r.meta.activeRouteId && r.meta.isApproval
-    )
-
-    // Update route status immediately, so that the UI quickly reflects the change
-    // eslint-disable-next-line no-restricted-syntax
-    for (const r of swapAndBridgeUserRequests) {
-      // eslint-disable-next-line no-await-in-loop
-      await this.swapAndBridge.updateActiveRoute(r.meta.activeRouteId, {
-        routeStatus: 'in-progress'
-      })
-    }
-
-    // eslint-disable-next-line no-restricted-syntax
-    for (const r of swapAndBridgeApprovalUserRequests) {
-      // eslint-disable-next-line no-await-in-loop
-      await this.swapAndBridge.updateActiveRoute(r.meta.activeRouteId, {
-        routeStatus: 'waiting-approval-to-resolve'
-      })
-    }
-
     // handle wallet_sendCalls before pollTxnId as 1) it's faster
     // 2) the identifier is different
     // eslint-disable-next-line no-restricted-syntax
@@ -1725,8 +1686,6 @@ export class MainController extends EventEmitter {
         walletSendCallsUserReq.dappPromise?.resolve({
           hash: `${identifiedBy.type}:${identifiedBy.identifier}`
         })
-
-        this.swapAndBridge.forceCompleteActiveRouteIfNeeded(walletSendCallsUserReq.id as number)
 
         // eslint-disable-next-line no-await-in-loop
         this.removeUserRequest(walletSendCallsUserReq.id, { shouldRemoveSwapAndBridgeRoute: false })
@@ -1742,22 +1701,6 @@ export class MainController extends EventEmitter {
     )
 
     // eslint-disable-next-line no-restricted-syntax
-    for (const r of swapAndBridgeUserRequests) {
-      if (txnId) {
-        // eslint-disable-next-line no-await-in-loop
-        await this.swapAndBridge.updateActiveRoute(r.meta.activeRouteId, {
-          userTxHash: txnId
-        })
-      } else {
-        // eslint-disable-next-line no-await-in-loop
-        await this.swapAndBridge.updateActiveRoute(r.meta.activeRouteId, {
-          routeStatus: 'failed',
-          error: 'Transaction rejected by the bundler'
-        })
-      }
-    }
-
-    // eslint-disable-next-line no-restricted-syntax
     for (const call of accountOp.calls) {
       const uReq = this.userRequests.find((r) => r.id === call.fromUserRequestId)
       if (uReq) {
@@ -1771,7 +1714,6 @@ export class MainController extends EventEmitter {
           )
         }
 
-        this.swapAndBridge.forceCompleteActiveRouteIfNeeded(uReq.id as number)
         // eslint-disable-next-line no-await-in-loop
         this.removeUserRequest(uReq.id, { shouldRemoveSwapAndBridgeRoute: false })
       }
@@ -2417,6 +2359,7 @@ export class MainController extends EventEmitter {
       )
     }
     await this.activity.addAccountOp(submittedAccountOp)
+    this.swapAndBridge.handleUpdateActiveRouteOnSubmittedAccountOpStatusUpdate(submittedAccountOp)
     await this.resolveAccountOpAction(
       {
         networkId: network.id,

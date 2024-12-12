@@ -243,11 +243,11 @@ describe('SwapAndBridge Controller', () => {
   })
   test('should update an activeRoute', async () => {
     const activeRouteId = swapAndBridgeController.activeRoutes[0].activeRouteId
-    await swapAndBridgeController.updateActiveRoute(activeRouteId, {
+    swapAndBridgeController.updateActiveRoute(activeRouteId, {
       routeStatus: 'in-progress',
       userTxHash: 'test'
     })
-    await swapAndBridgeController.updateActiveRoute(activeRouteId) // for the coverage
+    swapAndBridgeController.updateActiveRoute(activeRouteId) // for the coverage
     expect(swapAndBridgeController.activeRoutes).toHaveLength(1)
     expect(swapAndBridgeController.activeRoutes[0].routeStatus).toEqual('in-progress')
     expect(swapAndBridgeController.banners).toHaveLength(1)
@@ -256,7 +256,7 @@ describe('SwapAndBridge Controller', () => {
   test('should check for route status', async () => {
     await swapAndBridgeController.checkForNextUserTxForActiveRoutes()
     expect(swapAndBridgeController.activeRoutes[0].routeStatus).toEqual('ready')
-    await swapAndBridgeController.updateActiveRoute(
+    swapAndBridgeController.updateActiveRoute(
       swapAndBridgeController.activeRoutes[0].activeRouteId,
       {
         routeStatus: 'in-progress',
