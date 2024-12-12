@@ -290,21 +290,17 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
     const accountStates = await getAccountsInfo([v1Account])
     const signer = await keystore.getSigner(v1siger.keyPublicAddress, 'internal')
 
-    try {
-      await getPlainTextSignature(
+    await expect(
+      getPlainTextSignature(
         `test with address in the message on unsupported chain: ${v1Account.addr}`,
         unsupportedNetwork,
         v1Account,
         accountStates[v1Account.addr][ethereumNetwork.id],
         signer
       )
-      console.log('No error was thrown for [V1 SA]: plain text, but it should have')
-      expect(true).toEqual(false)
-    } catch (e: any) {
-      expect(e.message).toBe(
-        `Signing messages is disallowed for v1 accounts on ${unsupportedNetwork.name}`
-      )
-    }
+    ).rejects.toThrow(
+      `Signing messages is disallowed for v1 accounts on ${unsupportedNetwork.name}`
+    )
   })
 
   test('Signing [EOA]: eip-712', async () => {
