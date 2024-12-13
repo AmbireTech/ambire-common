@@ -305,10 +305,13 @@ export async function getPlainTextSignature(
       checksummedHexAddrWithout0x.slice(2)
     )
 
-    if (!network.predefined && !relayerAdditionalNetworks.includes(network.chainId)) {
+    if (
+      !network.predefined &&
+      !relayerAdditionalNetworks.find((net) => net.chainId === network.chainId)
+    ) {
       throw new Error(`Signing messages is disallowed for v1 accounts on ${network.name}`)
     }
-    
+
     if (
       isAsciiAddressInMessage ||
       isLowercaseHexAddressInMessage ||

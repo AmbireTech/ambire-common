@@ -64,6 +64,7 @@ import {
   makeBasicAccountOpAction,
   makeSmartAccountOpAction
 } from '../../libs/main/main'
+import { relayerAdditionalNetworks } from '../../libs/networks/networks'
 import { GetOptions, TokenResult } from '../../libs/portfolio/interfaces'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { parse } from '../../libs/richJson/richJson'
@@ -2327,8 +2328,14 @@ export class MainController extends EventEmitter {
           signer: { address: accountOp.signingKeyAddr },
           nonce: Number(accountOp.nonce)
         }
+        const additionalRelayerNetwork = relayerAdditionalNetworks.find(
+          (net) => net.chainId === network.chainId
+        )
+        const relayerNetworkId = additionalRelayerNetwork
+          ? additionalRelayerNetwork.name
+          : accountOp.networkId
         const response = await this.callRelayer(
-          `/identity/${accountOp.accountAddr}/${accountOp.networkId}/submit`,
+          `/identity/${accountOp.accountAddr}/${relayerNetworkId}/submit`,
           'POST',
           body
         )

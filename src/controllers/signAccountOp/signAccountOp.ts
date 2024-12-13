@@ -40,6 +40,7 @@ import {
   GasRecommendation,
   getProbableCallData
 } from '../../libs/gasPrice/gasPrice'
+import { hasRelayerSupport } from '../../libs/networks/networks'
 import { Price, TokenResult } from '../../libs/portfolio'
 import { getExecuteSignature, getTypedData, wrapStandard } from '../../libs/signMessage/signMessage'
 import { getGasUsed } from '../../libs/singleton/singleton'
@@ -264,7 +265,7 @@ export class SignAccountOpController extends EventEmitter {
     if (!this.isInitialized) return errors
 
     const isAmbireV1 = isAmbireV1LinkedAccount(this.account?.creation?.factoryAddr)
-    const isAmbireV1AndNetworkNotSupported = isAmbireV1 && !this.#network?.hasRelayer
+    const isAmbireV1AndNetworkNotSupported = isAmbireV1 && !hasRelayerSupport(this.#network)
 
     // This must be the first error check!
     if (isAmbireV1AndNetworkNotSupported) {
