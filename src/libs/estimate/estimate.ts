@@ -401,9 +401,6 @@ export async function estimate(
     })
   )
 
-  console.log('the fee payment options')
-  console.log([...feeTokenOptions, ...nativeTokenOptions])
-
   return {
     gasUsed,
     // if Estimation.sol estimate is a success, it means the nonce has incremented
