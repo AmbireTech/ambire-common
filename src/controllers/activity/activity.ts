@@ -304,17 +304,19 @@ export class ActivityController extends EventEmitter {
   async updateAccountsOpsStatuses(): Promise<{
     shouldEmitUpdate: boolean
     shouldUpdatePortfolio: boolean
+    updatedAccountsOps: SubmittedAccountOp[]
   }> {
     await this.#initialLoadPromise
 
     if (!this.#selectedAccount.account || !this.#accountsOps[this.#selectedAccount.account.addr])
-      return { shouldEmitUpdate: false, shouldUpdatePortfolio: false }
+      return { shouldEmitUpdate: false, shouldUpdatePortfolio: false, updatedAccountsOps: [] }
 
     // This flag tracks the changes to AccountsOps statuses
     // and optimizes the number of the emitted updates and storage/state updates.
     let shouldEmitUpdate = false
 
     let shouldUpdatePortfolio = false
+    const updatedAccountsOps: SubmittedAccountOp[] = []
 
     await Promise.all(
       Object.keys(this.#accountsOps[this.#selectedAccount.account.addr]).map(async (networkId) => {
@@ -341,6 +343,9 @@ export class ActivityController extends EventEmitter {
               if (aQuaterHasPassed) {
                 this.#accountsOps[selectedAccount][networkId][accountOpIndex].status =
                   AccountOpStatus.BroadcastButStuck
+                updatedAccountsOps.push(
+                  this.#accountsOps[selectedAccount][networkId][accountOpIndex]
+                )
               }
             }
 
@@ -354,6 +359,7 @@ export class ActivityController extends EventEmitter {
             if (fetchTxnIdResult.status === 'rejected') {
               this.#accountsOps[selectedAccount][networkId][accountOpIndex].status =
                 AccountOpStatus.Rejected
+              updatedAccountsOps.push(this.#accountsOps[selectedAccount][networkId][accountOpIndex])
               return
             }
             if (fetchTxnIdResult.status === 'not_found') {
@@ -369,6 +375,9 @@ export class ActivityController extends EventEmitter {
               if (receipt) {
                 this.#accountsOps[selectedAccount][networkId][accountOpIndex].status =
                   receipt.status ? AccountOpStatus.Success : AccountOpStatus.Failure
+                updatedAccountsOps.push(
+                  this.#accountsOps[selectedAccount][networkId][accountOpIndex]
+                )
 
                 if (receipt.status) {
                   shouldUpdatePortfolio = true
@@ -411,6 +420,7 @@ export class ActivityController extends EventEmitter {
             if (sameNonceTxns.length > 1 && !!confirmedSameNonceTxns) {
               this.#accountsOps[selectedAccount][networkId][accountOpIndex].status =
                 AccountOpStatus.UnknownButPastNonce
+              updatedAccountsOps.push(this.#accountsOps[selectedAccount][networkId][accountOpIndex])
               shouldUpdatePortfolio = true
             }
           })
@@ -424,7 +434,7 @@ export class ActivityController extends EventEmitter {
       this.emitUpdate()
     }
 
-    return { shouldEmitUpdate, shouldUpdatePortfolio }
+    return { shouldEmitUpdate, shouldUpdatePortfolio, updatedAccountsOps }
   }
 
   async addSignedMessage(signedMessage: SignedMessage, account: string) {

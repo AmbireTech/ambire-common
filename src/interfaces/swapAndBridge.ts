@@ -43,6 +43,7 @@ export interface SocketAPIRoute {
   chainGasBalances: object
   minimumGasBalances: object
   extraData: object
+  errorMessage?: string
 }
 
 export interface SocketAPISwapUserTx {
@@ -187,7 +188,7 @@ export type ActiveRoute = {
     transactionData: { txHash: string }[] | null
     userAddress: string
   }
-  routeStatus: 'in-progress' | 'ready' | 'completed' | 'failed'
+  routeStatus: 'waiting-approval-to-resolve' | 'in-progress' | 'ready' | 'completed' | 'failed'
   error?: string
 }
 
