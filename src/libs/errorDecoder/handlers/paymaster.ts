@@ -5,7 +5,7 @@ class PaymasterErrorHandler implements ErrorHandler {
   public matches(data: string, error: any) {
     const { name } = error
 
-    return name === 'PaymasterError'
+    return name === 'PaymasterError' || name === 'PaymasterSponsorshipError'
   }
 
   public handle(data: string, error: any): DecodedError {

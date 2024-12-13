@@ -21,27 +21,27 @@ const legendsModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]) =
       image: 'https://relayer.ambire.com/legends/nft-image/avatar/unknown.png'
     },
     {
-      type: 'Slime',
+      type: 'The Degenerate',
       image: 'https://relayer.ambire.com/legends/nft-image/avatar/slime-lvl0.png'
     },
     {
-      type: 'Sorceress',
+      type: 'The Codeweaver',
       image: 'https://relayer.ambire.com/legends/nft-image/avatar/sorceress-lvl0.png'
     },
     {
-      type: 'Necromancer Vitalik',
+      type: 'The Layerbinder',
       image: 'https://relayer.ambire.com/legends/nft-image/avatar/necromancer-lvl0.png'
     },
     {
-      type: 'Penguin Paladin',
+      type: 'The Custodian',
       image: 'https://relayer.ambire.com/legends/nft-image/avatar/penguin-lvl0.png'
     },
     {
-      type: 'Orc Warrior',
+      type: 'The Warrior',
       image: 'https://relayer.ambire.com/legends/nft-image/avatar/orc-lvl0.png'
     },
     {
-      type: 'Shapeshifter',
+      type: 'The Shapeshifter',
       image: 'https://relayer.ambire.com/legends/nft-image/avatar/shapeshifter-lvl0.png'
     }
   ]

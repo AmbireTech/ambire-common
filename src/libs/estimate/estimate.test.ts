@@ -8,7 +8,7 @@ import structuredClone from '@ungap/structured-clone'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import ERC20 from '../../../contracts/compiled/IERC20.json'
-import { velcroUrl } from '../../../test/config'
+import { relayerUrl, velcroUrl } from '../../../test/config'
 import { getNativeToCheckFromEOAs, getNonce } from '../../../test/helpers'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { FEE_COLLECTOR } from '../../consts/addresses'
@@ -17,6 +17,7 @@ import { networks } from '../../consts/networks'
 import { Account, AccountStates } from '../../interfaces/account'
 import { dedicatedToOneSAPriv } from '../../interfaces/keystore'
 import { Network } from '../../interfaces/network'
+import { paymasterFactory } from '../../services/paymaster'
 import { getRpcProvider } from '../../services/provider'
 import { getSmartAccount } from '../account/account'
 import { AccountOp } from '../accountOp/accountOp'
@@ -287,6 +288,8 @@ const trezorSlot6v2NotDeployed: Account = {
     pfp: '0x29e54b17CAe69edaf2D7138053c23436aac1B379'
   }
 }
+
+paymasterFactory.init(relayerUrl, fetch)
 
 describe('estimate', () => {
   it('[EOA]:Ethereum | gasUsage and native balance for a normal transfer', async () => {
