@@ -12,6 +12,7 @@ import { getHumanReadableEstimationError } from '../errorHumanizer'
 import { TokenResult } from '../portfolio'
 import { getSigForCalculations, getUserOperation } from '../userOperation/userOperation'
 import { estimationErrorFormatted } from './errors'
+import { estimateWithRetries } from './estimateWithRetries'
 import { EstimateResult, FeePaymentOption } from './interfaces'
 
 export async function bundlerEstimate(
@@ -81,39 +82,43 @@ export async function bundlerEstimate(
       userOp.paymasterVerificationGasLimit = paymasterEstimationData.paymasterVerificationGasLimit
   }
 
-  try {
-    const gasData = await Bundler.estimate(userOp, network, isEdgeCase)
+  const nonFatalErrors: Error[] = []
+  const initializeRequests = () => [
+    Bundler.estimate(userOp, network, isEdgeCase).catch((e: any) => {
+      const decodedError = Bundler.decodeBundlerError(e)
 
-    return {
-      gasUsed: BigInt(gasData.callGasLimit),
-      currentAccountNonce: Number(op.nonce),
-      feePaymentOptions,
-      erc4337GasLimits: {
-        preVerificationGas: gasData.preVerificationGas,
-        verificationGasLimit: gasData.verificationGasLimit,
-        callGasLimit: gasData.callGasLimit,
-        paymasterVerificationGasLimit: gasData.paymasterVerificationGasLimit,
-        paymasterPostOpGasLimit: gasData.paymasterPostOpGasLimit,
-        gasPrice,
-        paymaster
-      },
-      error: null
-    }
-  } catch (e: any) {
-    const decodedError = Bundler.decodeBundlerError(e)
+      // if the bundler estimation fails, add a nonFatalError so we can react to
+      // it on the FE. The BE at a later stage decides if this error is actually
+      // fatal (at estimate.ts -> estimate4337)
+      nonFatalErrors.push(new Error('Bundler estimation failed', { cause: '4337_ESTIMATION' }))
 
-    const nonFatalErrors: Error[] = []
-    // if the bundler estimation fails, add a nonFatalError so we can react to
-    // it on the FE. The BE at a later stage decides if this error is actually
-    // fatal (at estimate.ts -> estimate4337)
-    nonFatalErrors.push(new Error('Bundler estimation failed', { cause: '4337_ESTIMATION' }))
+      if (decodedError.indexOf('invalid account nonce') !== -1) {
+        nonFatalErrors.push(
+          new Error('4337 invalid account nonce', { cause: '4337_INVALID_NONCE' })
+        )
+      }
 
-    if (decodedError.indexOf('invalid account nonce') !== -1) {
-      nonFatalErrors.push(new Error('4337 invalid account nonce', { cause: '4337_INVALID_NONCE' }))
-    }
+      return getHumanReadableEstimationError(e)
+    })
+  ]
+  const estimations = await estimateWithRetries(initializeRequests)
+  if (estimations instanceof Error)
+    return estimationErrorFormatted(estimations, { feePaymentOptions, nonFatalErrors })
 
-    const humanizedError = getHumanReadableEstimationError(e)
-
-    return estimationErrorFormatted(humanizedError, { feePaymentOptions, nonFatalErrors })
+  const gasData = estimations[0]
+  return {
+    gasUsed: BigInt(gasData.callGasLimit),
+    currentAccountNonce: Number(op.nonce),
+    feePaymentOptions,
+    erc4337GasLimits: {
+      preVerificationGas: gasData.preVerificationGas,
+      verificationGasLimit: gasData.verificationGasLimit,
+      callGasLimit: gasData.callGasLimit,
+      paymasterVerificationGasLimit: gasData.paymasterVerificationGasLimit,
+      paymasterPostOpGasLimit: gasData.paymasterPostOpGasLimit,
+      gasPrice,
+      paymaster
+    },
+    error: null
   }
 }

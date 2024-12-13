@@ -189,16 +189,37 @@ export class Bundler {
     ])
   }
 
-  static async fetchGasPrices(network: Network): Promise<{
+  static async fetchGasPrices(
+    network: Network,
+    counter: number = 0
+  ): Promise<{
     slow: { maxFeePerGas: string; maxPriorityFeePerGas: string }
     medium: { maxFeePerGas: string; maxPriorityFeePerGas: string }
     fast: { maxFeePerGas: string; maxPriorityFeePerGas: string }
     ape: { maxFeePerGas: string; maxPriorityFeePerGas: string }
   }> {
+    if (counter >= 5) throw new Error("Couldn't fetch gas prices")
+
     const url = `https://api.pimlico.io/v2/${network.chainId}/rpc?apikey=${process.env.REACT_APP_PIMLICO_API_KEY}`
     const provider = getRpcProvider([url], network.chainId)
-    const results = await provider.send('pimlico_getUserOperationGasPrice', [])
+    let response
 
+    try {
+      response = await Promise.race([
+        provider.send('pimlico_getUserOperationGasPrice', []),
+        new Promise((_resolve, reject) => {
+          setTimeout(
+            () => reject(new Error('pimlico_getUserOperationGasPrice failed, request too slow')),
+            3500
+          )
+        })
+      ])
+    } catch (e: any) {
+      const increment = counter + 1
+      return this.fetchGasPrices(network, increment)
+    }
+
+    const results = response
     return {
       slow: {
         maxFeePerGas: addExtra(BigInt(results.slow.maxFeePerGas), 5n),
