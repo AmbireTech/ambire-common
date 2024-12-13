@@ -209,7 +209,7 @@ export class MainController extends EventEmitter {
 
   #notificationManager: NotificationManager
 
-  #signAccountOpSigningPromise?: Promise<AccountOp | void>
+  #signAccountOpSigningPromise?: Promise<AccountOp | void | null>
 
   #signAccountOpBroadcastPromise?: Promise<SubmittedAccountOp>
 
