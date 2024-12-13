@@ -209,9 +209,9 @@ export class MainController extends EventEmitter {
 
   #notificationManager: NotificationManager
 
-  #signAccountOpSigningPromise: null | Promise<AccountOp | void> = null
+  #signAccountOpSigningPromise?: Promise<AccountOp | void>
 
-  #signAccountOpBroadcastPromise: null | Promise<SubmittedAccountOp> = null
+  #signAccountOpBroadcastPromise?: Promise<SubmittedAccountOp>
 
   constructor({
     storage,
@@ -1422,8 +1422,8 @@ export class MainController extends EventEmitter {
         )
       }
 
-      await this.#signAccountOpSigningPromise
-      await this.#signAccountOpBroadcastPromise
+      if (this.#signAccountOpSigningPromise) await this.#signAccountOpSigningPromise
+      if (this.#signAccountOpBroadcastPromise) await this.#signAccountOpBroadcastPromise
 
       const account = this.accounts.accounts.find((x) => x.addr === meta.accountAddr)!
       const accountState = this.accounts.accountStates[meta.accountAddr][meta.networkId]
