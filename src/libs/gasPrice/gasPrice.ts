@@ -109,20 +109,18 @@ async function refetchBlock(
 
   let lastBlock = null
   try {
-    lastBlock = await provider.getBlock(blockTag, true)
+    const response = await Promise.race([
+      provider.getBlock(blockTag, true),
+      new Promise((_resolve, reject) => {
+        setTimeout(() => reject(new Error('last block failed to resolve, request too slow')), 3500)
+      })
+    ])
+    lastBlock = response as Block
   } catch (e) {
     lastBlock = null
   }
 
   if (!lastBlock) {
-    // delay the refetch with a bit of time to give the RPC a chance
-    // to get back up
-    const delayPromise = (ms: number) =>
-      new Promise((resolve) => {
-        setTimeout(resolve, ms)
-      })
-    await delayPromise(250)
-
     const localCounter = counter + 1
     lastBlock = await refetchBlock(provider, blockTag, localCounter)
   }
