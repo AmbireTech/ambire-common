@@ -209,9 +209,9 @@ export class MainController extends EventEmitter {
 
   #notificationManager: NotificationManager
 
-  #signAccountOpSigningPromise: Promise<AccountOp | void> | null = null
+  #signAccountOpSigningPromise: null | Promise<AccountOp | void> = null
 
-  #signAccountOpBroadcastPromise: Promise<SubmittedAccountOp> | null = null
+  #signAccountOpBroadcastPromise: null | Promise<SubmittedAccountOp> = null
 
   constructor({
     storage,
