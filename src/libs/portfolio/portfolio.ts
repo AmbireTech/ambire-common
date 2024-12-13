@@ -336,11 +336,7 @@ export class Portfolio {
 
     const priceUpdateDone = Date.now()
     return {
-      hintsFromExternalAPI: stripExternalHintsAPIResponse(
-        // It's really important to fallback to previousHints,
-        // otherwise lastUpdate will be lost
-        hintsFromExternalAPI ?? localOpts.previousHintsFromExternalAPI ?? null
-      ),
+      hintsFromExternalAPI: stripExternalHintsAPIResponse(hintsFromExternalAPI),
       errors,
       updateStarted: start,
       discoveryTime: discoveryDone - start,

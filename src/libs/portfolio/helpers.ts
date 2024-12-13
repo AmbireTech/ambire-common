@@ -231,7 +231,7 @@ const getLowercaseAddressArrayForNetwork = (
  * - returns the updated hints
  */
 export function getUpdatedHints(
-  latestHintsFromExternalAPI: ExternalHintsAPIResponse | null,
+  latestHintsFromExternalAPI: ExternalHintsAPIResponse,
   tokens: TokenResult[],
   tokenErrors: AdditionalPortfolioNetworkResult['tokenErrors'],
   networkId: NetworkId,

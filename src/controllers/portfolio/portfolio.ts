@@ -33,7 +33,6 @@ import {
   TemporaryTokens,
   TokenResult
 } from '../../libs/portfolio/interfaces'
-import { PORTFOLIO_LIB_ERROR_NAMES } from '../../libs/portfolio/portfolio'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { AccountsController } from '../accounts/accounts'
 import EventEmitter from '../eventEmitter/eventEmitter'
@@ -590,17 +589,7 @@ export class PortfolioController extends EventEmitter {
               await this.learnTokens(readyToLearnTokens, network.id)
             }
 
-            const HINT_ERRORS = [
-              PORTFOLIO_LIB_ERROR_NAMES.NoApiHintsError,
-              PORTFOLIO_LIB_ERROR_NAMES.StaleApiHintsError,
-              PORTFOLIO_LIB_ERROR_NAMES.NonCriticalApiHintsError
-            ]
-
-            const isExternalHintsApiResponseValid = !networkResult!.errors?.some((error) =>
-              HINT_ERRORS.includes(error.name)
-            )
-
-            if (isExternalHintsApiResponseValid) {
+            if (networkResult!.hintsFromExternalAPI) {
               const updatedStoragePreviousHints = getUpdatedHints(
                 networkResult!.hintsFromExternalAPI as ExternalHintsAPIResponse,
                 networkResult!.tokens,
