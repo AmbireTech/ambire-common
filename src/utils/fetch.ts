@@ -3,7 +3,7 @@ const fetchWithTimeout = async (
   url: string,
   options: RequestInit,
   timeout: number
-): Promise<void> => {
+): Promise<any> => {
   const timeoutPromise = new Promise((_, reject) => {
     setTimeout(() => {
       reject(new Error('request-timeout'))
