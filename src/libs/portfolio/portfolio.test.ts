@@ -211,10 +211,11 @@ describe('Portfolio', () => {
         '0xba100000625a3754423978a60c9317c58a424e3D',
         '0x4da27a545c0c5B758a6BA100e3a049001de870f5'
       ],
-      erc721s: {}
+      erc721s: {},
+      lastUpdate: Date.now()
     }
     const result = await portfolioInner.get('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8', {
-      previousHints
+      previousHintsFromExternalAPI: previousHints
     })
 
     // Restore node-fetch module
