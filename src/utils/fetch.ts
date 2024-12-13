@@ -3,11 +3,14 @@ const fetchWithTimeout = async (
   url: string,
   options: RequestInit,
   timeout: number
-): Promise<Response> => {
-  return new Promise((resolve, reject) => {
-    fetch(url, options).then(resolve).catch(reject)
-    setTimeout(() => reject(new Error('request-timeout')), timeout)
+): Promise<void> => {
+  const timeoutPromise = new Promise((_, reject) => {
+    setTimeout(() => {
+      reject(new Error('request-timeout'))
+    }, timeout)
   })
+
+  return Promise.race([fetch(url, options), timeoutPromise])
 }
 
 export { fetchWithTimeout }
