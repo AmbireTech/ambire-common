@@ -32,6 +32,7 @@ import {
   TemporaryTokens,
   TokenResult
 } from '../../libs/portfolio/interfaces'
+import { PORTFOLIO_LIB_ERROR_NAMES } from '../../libs/portfolio/portfolio'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { AccountsController } from '../accounts/accounts'
 import EventEmitter from '../eventEmitter/eventEmitter'
@@ -375,7 +376,14 @@ export class PortfolioController extends EventEmitter {
   }
 
   #getCanSkipUpdate(networkState?: NetworkState, forceUpdate?: boolean) {
-    if (forceUpdate || !networkState || networkState.criticalError) return false
+    const hasImportantErrors = networkState?.errors.some(
+      (e) =>
+        Object.keys(PORTFOLIO_LIB_ERROR_NAMES).includes(e.name) &&
+        e.name !== PORTFOLIO_LIB_ERROR_NAMES.PriceFetchError
+    )
+
+    if (forceUpdate || !networkState || networkState.criticalError || hasImportantErrors)
+      return false
     const updateStarted = networkState.result?.updateStarted || 0
     const isWithinMinUpdateInterval =
       !!updateStarted && Date.now() - updateStarted < this.#minUpdateInterval
