@@ -14,6 +14,7 @@ import { fromDescriptor } from '../deployless/deployless'
 import { InnerCallFailureError } from '../errorDecoder/customErrors'
 import { getHumanReadableEstimationError } from '../errorHumanizer'
 import { getProbableCallData } from '../gasPrice/gasPrice'
+import { hasRelayerSupport } from '../networks/networks'
 import { TokenResult } from '../portfolio'
 import { getActivatorCall, shouldIncludeActivatorCall } from '../userOperation/userOperation'
 import { estimationErrorFormatted } from './errors'
@@ -274,7 +275,7 @@ export async function estimate(
   const optimisticOracle = network.isOptimistic ? OPTIMISTIC_ORACLE : ZeroAddress
 
   // if the network doesn't have a relayer, we can't pay in fee tokens
-  const filteredFeeTokens = network.hasRelayer ? feeTokens : []
+  const filteredFeeTokens = hasRelayerSupport(network) ? feeTokens : []
 
   // @L2s
   // craft the probableTxn that's going to be saved on the L1
@@ -399,6 +400,9 @@ export async function estimate(
       }
     })
   )
+
+  console.log('the fee payment options')
+  console.log([...feeTokenOptions, ...nativeTokenOptions])
 
   return {
     gasUsed,

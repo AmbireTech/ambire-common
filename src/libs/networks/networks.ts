@@ -17,7 +17,24 @@ import { getRpcProvider } from '../../services/provider'
 import { getSASupport } from '../deployless/simulateDeployCall'
 
 // bnb, gnosis, fantom, metis
-export const relayerAdditionalNetworks = [56n, 100n, 250n, 1088n]
+export const relayerAdditionalNetworks = [
+  {
+    chainId: 56n,
+    name: 'binance-smart-chain'
+  },
+  {
+    chainId: 100n,
+    name: 'gnosis'
+  },
+  {
+    chainId: 250n,
+    name: 'fantom'
+  },
+  {
+    chainId: 1088n,
+    name: 'andromeda'
+  }
+]
 
 // 4337 network support
 // if it is supported on the network (hasBundlerSupport),
@@ -393,7 +410,7 @@ export async function migrateNetworkPreferencesToNetworks(networkPreferences: {
       ...preference,
       ...networkInfo,
       features: getFeaturesByNetworkProperties(networkInfo),
-      hasRelayer: relayerAdditionalNetworks.includes(preference.chainId!),
+      hasRelayer: !!relayerAdditionalNetworks.find((net) => net.chainId === preference.chainId!),
       predefined: false
     } as Network
   })
@@ -404,4 +421,10 @@ export async function migrateNetworkPreferencesToNetworks(networkPreferences: {
 // is the user allowed to change the network settings to 4337
 export function canForce4337(network?: Network) {
   return network && network.allowForce4337
+}
+
+export function hasRelayerSupport(network: Network) {
+  return (
+    network.hasRelayer || !!relayerAdditionalNetworks.find((net) => net.chainId === network.chainId)
+  )
 }
