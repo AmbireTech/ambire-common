@@ -112,7 +112,7 @@ async function refetchBlock(
     const response = await Promise.race([
       provider.getBlock(blockTag, true),
       new Promise((_resolve, reject) => {
-        setTimeout(() => reject(new Error('last block failed to resolve, request too slow')), 3500)
+        setTimeout(() => reject(new Error('last block failed to resolve, request too slow')), 6000)
       })
     ])
     lastBlock = response as Block

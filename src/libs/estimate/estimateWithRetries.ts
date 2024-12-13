@@ -13,7 +13,7 @@ export async function estimateWithRetries(
   const estimationTimeout = new Promise((resolve) => {
     setTimeout(() => {
       resolve(santinelTimeoutErr)
-    }, 5000)
+    }, 10000)
   })
 
   // try to estimate the request with a given timeout.

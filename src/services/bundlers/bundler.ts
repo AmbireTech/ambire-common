@@ -210,7 +210,7 @@ export class Bundler {
         new Promise((_resolve, reject) => {
           setTimeout(
             () => reject(new Error('pimlico_getUserOperationGasPrice failed, request too slow')),
-            3500
+            6000
           )
         })
       ])
