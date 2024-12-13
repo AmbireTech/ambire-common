@@ -50,8 +50,7 @@ import {
   getUserOpHash,
   isErc4337Broadcast,
   shouldIncludeActivatorCall,
-  shouldUseOneTimeNonce,
-  shouldUsePaymaster
+  shouldUseOneTimeNonce
 } from '../../libs/userOperation/userOperation'
 /* eslint-disable no-restricted-syntax */
 import { AccountsController } from '../accounts/accounts'
@@ -553,23 +552,7 @@ export class SignAccountOpController extends EventEmitter {
       this.estimation.erc4337GasLimits &&
       this.estimation.erc4337GasLimits.paymaster
     ) {
-      const paymasterIsSponsored = this.estimation.erc4337GasLimits.paymaster.isSponsored()
-
-      // if isSponsored has been set to true but sponsorship has been declined,
-      // we need to reset this.paidBy as it will contain the old sponsorship
-      // option that might not exist anymore
-      if (this.isSponsored === true && paymasterIsSponsored === false) {
-        const native = this.#portfolio
-          .getLatestPortfolioState(this.accountOp.accountAddr)
-          [this.accountOp.networkId]?.result?.tokens.find(
-            (token) => token.address === '0x0000000000000000000000000000000000000000'
-          )
-        if (!native || native.amount === 0n) {
-          this.selectedOption = undefined
-        }
-      }
-
-      this.isSponsored = paymasterIsSponsored
+      this.isSponsored = this.estimation.erc4337GasLimits.paymaster.isSponsored()
       this.sponsor = this.estimation.erc4337GasLimits.paymaster.getEstimationData()?.sponsor
     }
 
@@ -805,7 +788,7 @@ export class SignAccountOpController extends EventEmitter {
       const erc4337GasLimits = this.estimation?.erc4337GasLimits
       if (erc4337GasLimits) {
         const speeds: SpeedCalc[] = []
-        const usesPaymaster = shouldUsePaymaster(this.#network)
+        const usesPaymaster = !!this.estimation?.erc4337GasLimits?.paymaster.isUsable()
 
         for (const [speed, speedValue] of Object.entries(erc4337GasLimits.gasPrice)) {
           const simulatedGasLimit =
@@ -1184,7 +1167,8 @@ export class SignAccountOpController extends EventEmitter {
       return this.#emitSigningErrorAndResetToReadyToSign(message)
     }
 
-    if (this.accountOp.gasFeePayment.isERC4337 && shouldUsePaymaster(this.#network)) {
+    const isUsingPaymaster = !!this.estimation?.erc4337GasLimits?.paymaster.isUsable()
+    if (this.accountOp.gasFeePayment.isERC4337 && isUsingPaymaster) {
       this.status = { type: SigningStatus.WaitingForPaymaster }
     } else {
       this.status = { type: SigningStatus.InProgress }

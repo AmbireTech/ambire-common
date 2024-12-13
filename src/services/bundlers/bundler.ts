@@ -169,18 +169,17 @@ export class Bundler {
     const provider = getRpcProvider([url], network.chainId)
 
     if (shouldStateOverride) {
-      const stateOverride = {
-        [userOperation.sender]: {
-          stateDiff: {
-            // add privileges to the entry point
-            [`0x${privSlot(0, 'address', ERC_4337_ENTRYPOINT, 'bytes32')}`]: ENTRY_POINT_MARKER
-          }
-        }
-      }
       return provider.send('eth_estimateUserOperationGas', [
         getCleanUserOp(userOperation)[0],
         ERC_4337_ENTRYPOINT,
-        stateOverride
+        {
+          [userOperation.sender]: {
+            stateDiff: {
+              // add privileges to the entry point
+              [`0x${privSlot(0, 'address', ERC_4337_ENTRYPOINT, 'bytes32')}`]: ENTRY_POINT_MARKER
+            }
+          }
+        }
       ])
     }
 

@@ -167,7 +167,7 @@ const networks: Network[] = [
     rpcNoStateOverride: false,
     chainId: 534352n,
     explorerUrl: 'https://scrollscan.com',
-    erc4337: { enabled: false, hasPaymaster: false, hasBundlerSupport: true },
+    erc4337: { enabled: false, hasPaymaster: true, hasBundlerSupport: true },
     isSAEnabled: true,
     areContractsDeployed: true,
     hasRelayer: true,
@@ -178,34 +178,8 @@ const networks: Network[] = [
     feeOptions: { is1559: false },
     predefined: true,
     disableEstimateGas: true,
-    wrappedAddr: '0x5300000000000000000000000000000000000004'
-  },
-  {
-    id: 'gnosis',
-    name: 'Gnosis',
-    nativeAssetSymbol: 'XDAI',
-    rpcUrls: ['https://invictus.ambire.com/gnosis'],
-    selectedRpcUrl: 'https://invictus.ambire.com/gnosis',
-    rpcNoStateOverride: true,
-    chainId: 100n,
-    explorerUrl: 'https://gnosisscan.io',
-    erc4337: {
-      enabled: false,
-      hasPaymaster: false,
-      hasBundlerSupport: true
-    },
-    isSAEnabled: true,
-    areContractsDeployed: true,
-    hasRelayer: true,
-    platformId: 'xdai',
-    nativeAssetId: 'xdai',
-    hasSingleton: true,
-    features: [],
-    feeOptions: {
-      is1559: true,
-      feeIncrease: 100n
-    },
-    predefined: true
+    wrappedAddr: '0x5300000000000000000000000000000000000004',
+    allowForce4337: true
   }
 ]
 export { networks }

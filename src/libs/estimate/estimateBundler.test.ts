@@ -98,7 +98,14 @@ describe('Bundler estimation tests', () => {
           }
         }
       ]
-      const result = await bundlerEstimate(smartAcc, accountStates, opOptimism, optimism, feeTokens)
+      const result = await bundlerEstimate(
+        smartAcc,
+        accountStates,
+        opOptimism,
+        optimism,
+        feeTokens,
+        providers[optimism.id]
+      )
 
       expect(result).toHaveProperty('erc4337GasLimits')
       expect(BigInt(result.erc4337GasLimits!.callGasLimit)).toBeGreaterThan(0n)
@@ -154,7 +161,8 @@ describe('Bundler estimation tests', () => {
         accountStates,
         opOptimism,
         optimism,
-        feeTokens
+        feeTokens,
+        providers[optimism.id]
       )
 
       expect(result).toHaveProperty('erc4337GasLimits')
