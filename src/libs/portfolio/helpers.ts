@@ -11,7 +11,6 @@ import { CustomToken } from './customToken'
 import {
   AccountState,
   AdditionalPortfolioNetworkResult,
-  ExternalHintsAPIResponse,
   PreviousHintsStorage,
   StrippedExternalHintsAPIResponse,
   TokenResult
@@ -231,7 +230,8 @@ const getLowercaseAddressArrayForNetwork = (
  * - returns the updated hints
  */
 export function getUpdatedHints(
-  latestHintsFromExternalAPI: ExternalHintsAPIResponse,
+  // Can only be null in case of no external api hints
+  latestHintsFromExternalAPI: StrippedExternalHintsAPIResponse | null,
   tokens: TokenResult[],
   tokenErrors: AdditionalPortfolioNetworkResult['tokenErrors'],
   networkId: NetworkId,

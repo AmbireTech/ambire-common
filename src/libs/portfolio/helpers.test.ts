@@ -35,13 +35,9 @@ describe('Portfolio helpers', () => {
 
     const updatedHints = getUpdatedHints(
       {
-        networkId: ethereum.id,
         erc20s: ['0x9702230A8Ea53601f5cD2dc00fDBc13d4dF4A8c7'],
         erc721s: {},
-        prices: {},
-        lastUpdate: Date.now(),
-        hasHints: true,
-        accountAddr: TEST_ACCOUNT_ADDRESS
+        lastUpdate: Date.now()
       },
       tokens,
       [],

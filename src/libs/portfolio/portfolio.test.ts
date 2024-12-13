@@ -208,8 +208,8 @@ describe('Portfolio', () => {
     const previousHints = {
       erc20s: [
         '0x0000000000000000000000000000000000000000',
-        '0xba100000625a3754423978a60c9317c58a424e3D',
-        '0x4da27a545c0c5B758a6BA100e3a049001de870f5'
+        '0x4da27a545c0c5B758a6BA100e3a049001de870f5',
+        '0xba100000625a3754423978a60c9317c58a424e3D'
       ],
       erc721s: {},
       lastUpdate: Date.now()

@@ -25,7 +25,6 @@ import {
 // eslint-disable-next-line import/no-cycle
 import {
   AccountState,
-  ExternalHintsAPIResponse,
   GetOptions,
   NetworkState,
   PortfolioControllerState,
@@ -589,9 +588,13 @@ export class PortfolioController extends EventEmitter {
               await this.learnTokens(readyToLearnTokens, network.id)
             }
 
-            if (networkResult!.hintsFromExternalAPI) {
+            // Either a valid response or there is no external API to fetch hints from
+            const isExternalHintsApiResponseValid =
+              !!networkResult?.hintsFromExternalAPI || !network.hasRelayer
+
+            if (isExternalHintsApiResponseValid) {
               const updatedStoragePreviousHints = getUpdatedHints(
-                networkResult!.hintsFromExternalAPI as ExternalHintsAPIResponse,
+                networkResult!.hintsFromExternalAPI || null,
                 networkResult!.tokens,
                 networkResult!.tokenErrors,
                 network.id,
