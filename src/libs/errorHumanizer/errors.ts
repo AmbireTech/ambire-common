@@ -84,6 +84,10 @@ const ESTIMATION_ERRORS: ErrorHumanizerError[] = [
       'your account key lacks the necessary permissions. Ensure that you have authorization to sign or use an account with sufficient privileges.'
   },
   {
+    reasons: ['0x7b36c479'],
+    message: 'of a Swap failure. Please try performing the same swap again.'
+  },
+  {
     reasons: [
       'caller is a contract',
       'contract not allowed',
@@ -93,7 +97,7 @@ const ESTIMATION_ERRORS: ErrorHumanizerError[] = [
       'ontract is not allowed'
     ],
     message:
-      'because this dApp does not support Smart Account wallets. Please use a Basic Account (EOA) to interact with this dApp.'
+      'this dApp does not support Smart Account wallets. Please use a Basic Account (EOA) to interact with this dApp.'
   }
 ]
 
