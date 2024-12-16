@@ -828,15 +828,16 @@ export class SwapAndBridgeController extends EventEmitter {
                 )
               })
 
-              // TODO: Double-check if this is the correct way
-              // Convert the token amount to big int to compare
-              const fromAmountBigInt = BigInt(Math.round(Number(this.fromAmount) * 10 ** 18))
-              // TODO: Double-check if the math is correct
+              // FIXME: Missing token to pay fee with - should error out instead?
+              if (!tokenToPayFeeWith) return route
+
+              // Convert to BigInt by scaling it to 18 decimal places for accurate comparison
+              const fromAmountBigInt = BigInt(this.fromAmount) * BigInt(10 ** 18)
+              const availableAfterSubtraction = isTokenToPayFeeWithTheSameAsFromToken
+                ? getTokenAmount(tokenToPayFeeWith) - fromAmountBigInt
+                : getTokenAmount(tokenToPayFeeWith)
               const hasEnoughAmountToPayFee =
-                tokenToPayFeeWith &&
-                (isTokenToPayFeeWithTheSameAsFromToken
-                  ? getTokenAmount(tokenToPayFeeWith) - fromAmountBigInt
-                  : getTokenAmount(tokenToPayFeeWith)) >= BigInt(bridgeStep.protocolFees.amount)
+                availableAfterSubtraction >= BigInt(bridgeStep.protocolFees.amount)
 
               if (!hasEnoughAmountToPayFee) {
                 const protocolName = bridgeStep.protocol.displayName
