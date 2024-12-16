@@ -214,6 +214,10 @@ export class MainController extends EventEmitter {
 
   #notificationManager: NotificationManager
 
+  #signAccountOpSigningPromise?: Promise<AccountOp | void | null>
+
+  #signAccountOpBroadcastPromise?: Promise<SubmittedAccountOp>
+
   constructor({
     storage,
     fetch,
@@ -602,7 +606,8 @@ export class MainController extends EventEmitter {
           return Promise.reject(error)
         }
 
-        return this.signAccountOp.sign()
+        this.#signAccountOpSigningPromise = this.signAccountOp.sign()
+        return this.#signAccountOpSigningPromise
       },
       true
     )
@@ -612,7 +617,10 @@ export class MainController extends EventEmitter {
 
     return this.withStatus(
       'broadcastSignedAccountOp',
-      async () => this.#broadcastSignedAccountOp(),
+      async () => {
+        this.#signAccountOpBroadcastPromise = this.#broadcastSignedAccountOp()
+        return this.#signAccountOpBroadcastPromise
+      },
       true
     )
   }
@@ -1420,6 +1428,9 @@ export class MainController extends EventEmitter {
           })
         )
       }
+
+      if (this.#signAccountOpSigningPromise) await this.#signAccountOpSigningPromise
+      if (this.#signAccountOpBroadcastPromise) await this.#signAccountOpBroadcastPromise
 
       const account = this.accounts.accounts.find((x) => x.addr === meta.accountAddr)!
       const accountState = this.accounts.accountStates[meta.accountAddr][meta.networkId]
