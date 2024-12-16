@@ -12,6 +12,7 @@ import { Gas1559Recommendation } from '../../libs/gasPrice/gasPrice'
 import { privSlot } from '../../libs/proxyDeploy/deploy'
 import { UserOperation } from '../../libs/userOperation/types'
 import { getCleanUserOp } from '../../libs/userOperation/userOperation'
+import { estimationErrorEmitter } from '../errorEmitter/emitter'
 import { getRpcProvider } from '../provider'
 
 require('dotenv').config()
@@ -215,6 +216,11 @@ export class Bundler {
         })
       ])
     } catch (e: any) {
+      estimationErrorEmitter.emit({
+        level: 'major',
+        message: 'Estimating gas prices from the bundler timed out. Retrying...',
+        error: new Error('Budler gas prices estimation timeout')
+      })
       const increment = counter + 1
       return this.fetchGasPrices(network, increment)
     }

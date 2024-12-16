@@ -101,7 +101,7 @@ export async function bundlerEstimate(
       return getHumanReadableEstimationError(e)
     })
   ]
-  const estimations = await estimateWithRetries(initializeRequests)
+  const estimations = await estimateWithRetries(initializeRequests, 'estimation-bundler')
   if (estimations instanceof Error)
     return estimationErrorFormatted(estimations, { feePaymentOptions, nonFatalErrors })
 

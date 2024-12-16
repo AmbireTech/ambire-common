@@ -89,6 +89,7 @@ import {
 } from '../../libs/userOperation/userOperation'
 import bundler from '../../services/bundlers'
 import { Bundler } from '../../services/bundlers/bundler'
+import { estimationErrorEmitter } from '../../services/errorEmitter/emitter'
 import { paymasterFactory } from '../../services/paymaster'
 import { failedPaymasters } from '../../services/paymaster/FailedPaymasters'
 import { SocketAPI } from '../../services/socket/api'
@@ -578,6 +579,7 @@ export class MainController extends EventEmitter {
         return this.isSignRequestStillActive
       }
     )
+    estimationErrorEmitter.init(this.signAccountOp)
 
     this.emitUpdate()
 
@@ -621,6 +623,7 @@ export class MainController extends EventEmitter {
     this.feePayerKey = null
     this.signAccountOp = null
     this.signAccOpInitError = null
+    estimationErrorEmitter.deinit()
 
     // NOTE: no need to update the portfolio here as an update is
     // fired upon removeUserRequest

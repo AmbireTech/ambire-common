@@ -110,7 +110,7 @@ export async function estimateEOA(
           })
           .catch(getHumanReadableEstimationError)
   ]
-  const result = await estimateWithRetries(initializeRequests)
+  const result = await estimateWithRetries(initializeRequests, 'estimation-eoa')
   const feePaymentOptions = [
     {
       paidBy: account.addr,
