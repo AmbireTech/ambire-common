@@ -847,6 +847,7 @@ export class SwapAndBridgeController extends EventEmitter {
                   bridgeStep.protocolFees.asset.decimals
                 )
 
+                // Trick to show the error message on the UI, as the API doesn't handle this
                 // eslint-disable-next-line no-param-reassign
                 route.errorMessage = `Insufficient ${insufficientTokenSymbol} on ${insufficientTokenNetwork}. You need ${insufficientAssetAmount} ${insufficientTokenSymbol} on ${insufficientTokenNetwork} to cover the ${protocolName} protocol fee for this route.`
               }
