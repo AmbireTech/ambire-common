@@ -61,7 +61,13 @@ const STATUS_WRAPPED_METHODS = {
 const SUPPORTED_CHAINS_CACHE_THRESHOLD = 1000 * 60 * 60 * 24 // 1 day
 const TO_TOKEN_LIST_CACHE_THRESHOLD = 1000 * 60 * 60 * 4 // 4 hours
 
-const PROTOCOLS_WITH_CONTRACT_FEE_IN_NATIVE = ['stargate', 'arbitrum-bridge', 'zksync-native']
+const PROTOCOLS_WITH_CONTRACT_FEE_IN_NATIVE = [
+  'stargate',
+  'stargate-v2',
+  'arbitrum-bridge',
+  'zksync-native'
+]
+
 /**
  * The Swap and Bridge controller is responsible for managing the state and
  * logic related to swapping and bridging tokens across different networks.
@@ -811,23 +817,36 @@ export class SwapAndBridgeController extends EventEmitter {
               const protocolFeeTokenNetwork = this.#networks.networks.find(
                 (n) => Number(n.chainId) === normalizedProtocolFeeToken.chainId
               )!
-              const tokenToPayFeeWith = this.portfolioTokenList.find(
-                (t) =>
-                  t.address === normalizedProtocolFeeToken.address &&
-                  t.networkId === protocolFeeTokenNetwork.id &&
-                  Number(getTokenAmount(t) >= Number(bridgeStep.protocolFees.amount))
-              )
+              const isTokenToPayFeeWithTheSameAsFromToken =
+                this.fromSelectedToken?.address === normalizedProtocolFeeToken.address &&
+                this.fromChainId === normalizedProtocolFeeToken.chainId
 
-              if (!tokenToPayFeeWith) {
-                // eslint-disable-next-line no-param-reassign
-                route.errorMessage = `You need ${formatUnits(
+              const tokenToPayFeeWith = this.portfolioTokenList.find((t) => {
+                return (
+                  t.address === normalizedProtocolFeeToken.address &&
+                  t.networkId === protocolFeeTokenNetwork.id
+                )
+              })
+
+              // Convert the token amount to big int to compare
+              const fromAmountBigInt = BigInt(Math.round(Number(this.fromAmount) * 10 ** 18))
+              const hasEnoughAmountToPayFee =
+                tokenToPayFeeWith &&
+                (isTokenToPayFeeWithTheSameAsFromToken
+                  ? getTokenAmount(tokenToPayFeeWith) - fromAmountBigInt
+                  : getTokenAmount(tokenToPayFeeWith)) >= BigInt(bridgeStep.protocolFees.amount)
+
+              if (!hasEnoughAmountToPayFee) {
+                const protocolName = bridgeStep.protocol.displayName
+                const insufficientTokenSymbol = bridgeStep.protocolFees.asset.symbol
+                const insufficientTokenNetwork = protocolFeeTokenNetwork.name
+                const insufficientAssetAmount = formatUnits(
                   bridgeStep.protocolFees.amount,
                   bridgeStep.protocolFees.asset.decimals
-                )} ${bridgeStep.protocolFees.asset.symbol} (on ${
-                  protocolFeeTokenNetwork.name
-                }) to cover the required protocol fee by ${
-                  bridgeStep.protocol.displayName
-                } to continue with this route.`
+                )
+
+                // eslint-disable-next-line no-param-reassign
+                route.errorMessage = `Insufficient ${insufficientTokenSymbol} on ${insufficientTokenNetwork}. You need ${insufficientAssetAmount} ${insufficientTokenSymbol} on ${insufficientTokenNetwork} to cover the ${protocolName} protocol fee for this route.`
               }
 
               return route
