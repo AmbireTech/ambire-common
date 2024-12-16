@@ -828,8 +828,10 @@ export class SwapAndBridgeController extends EventEmitter {
                 )
               })
 
+              // TODO: Double-check if this is the correct way
               // Convert the token amount to big int to compare
               const fromAmountBigInt = BigInt(Math.round(Number(this.fromAmount) * 10 ** 18))
+              // TODO: Double-check if the math is correct
               const hasEnoughAmountToPayFee =
                 tokenToPayFeeWith &&
                 (isTokenToPayFeeWithTheSameAsFromToken
