@@ -1168,8 +1168,11 @@ export class SignAccountOpController extends EventEmitter {
       return this.#emitSigningErrorAndResetToReadyToSign(message)
     }
 
+    const accountState =
+      this.#accounts.accountStates[this.accountOp.accountAddr][this.accountOp.networkId]
     const isUsingPaymaster = !!this.estimation?.erc4337GasLimits?.paymaster.isUsable()
-    if (this.accountOp.gasFeePayment.isERC4337 && isUsingPaymaster) {
+    const usesOneTimeNonce = shouldUseOneTimeNonce(accountState)
+    if (this.accountOp.gasFeePayment.isERC4337 && isUsingPaymaster && !usesOneTimeNonce) {
       this.status = { type: SigningStatus.WaitingForPaymaster }
     } else {
       this.status = { type: SigningStatus.InProgress }
@@ -1182,8 +1185,6 @@ export class SignAccountOpController extends EventEmitter {
     const gasFeePayment = this.accountOp.gasFeePayment
 
     if (signer.init) signer.init(this.#externalSignerControllers[this.accountOp.signingKeyType])
-    const accountState =
-      this.#accounts.accountStates[this.accountOp.accountAddr][this.accountOp.networkId]
 
     // just in-case: before signing begins, we delete the feeCall;
     // if there's a need for it, it will be added later on in the code.
@@ -1267,7 +1268,6 @@ export class SignAccountOpController extends EventEmitter {
         const paymaster = erc4337Estimation.paymaster
         if (paymaster.shouldIncludePayment()) this.#addFeePayment()
 
-        const usesOneTimeNonce = shouldUseOneTimeNonce(userOperation)
         const ambireAccount = new Interface(AmbireAccount.abi)
         if (usesOneTimeNonce) {
           const signature = await getExecuteSignature(
@@ -1276,6 +1276,12 @@ export class SignAccountOpController extends EventEmitter {
             accountState,
             signer
           )
+
+          // after signing has completed, we wait for the paymaster response
+          // so we tell the user
+          this.status = { type: SigningStatus.WaitingForPaymaster }
+          this.emitUpdate()
+
           userOperation.callData = ambireAccount.encodeFunctionData('executeMultiple', [
             [[getSignableCalls(this.accountOp), signature]]
           ])
