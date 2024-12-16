@@ -125,6 +125,21 @@ describe('Error decoders work', () => {
 
         expect(decodedError.reason).toEqual(mockRpcError.info?.error.message)
       })
+      it("Short message is not prioritized if it's contents are invalid (could not coalesce error)", async () => {
+        const mockRpcError = new MockRpcError(
+          -32000,
+          {
+            error: {
+              code: -32000,
+              message: 'insufficient funds for gas * price + value: balance 0'
+            }
+          },
+          'could not coalesce error'
+        )
+        const decodedError = decodeError(mockRpcError)
+
+        expect(decodedError.reason).toEqual('insufficient funds for gas * price + value: balance 0')
+      })
     })
   })
   describe('InnerCallFailureHandler', () => {
