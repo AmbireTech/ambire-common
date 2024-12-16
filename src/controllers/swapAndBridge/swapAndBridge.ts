@@ -872,9 +872,9 @@ export class SwapAndBridgeController extends EventEmitter {
       }
     }
 
-    let nextTimeout = 0
+    let nextTimeout = 400 // timeout when there is no pending quote update
     if (this.#updateQuoteTimeout) {
-      nextTimeout = 1000 // ms
+      nextTimeout = 1000 // timeout when there is a pending quote update
       clearTimeout(this.#updateQuoteTimeout)
       this.#updateQuoteTimeout = undefined
     }
