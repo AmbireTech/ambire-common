@@ -89,6 +89,7 @@ import {
 } from '../../libs/userOperation/userOperation'
 import bundler from '../../services/bundlers'
 import { Bundler } from '../../services/bundlers/bundler'
+import { estimationErrorEmitter } from '../../services/errorEmitter/emitter'
 import { paymasterFactory } from '../../services/paymaster'
 import { failedPaymasters } from '../../services/paymaster/FailedPaymasters'
 import { SocketAPI } from '../../services/socket/api'
@@ -582,6 +583,7 @@ export class MainController extends EventEmitter {
         return this.isSignRequestStillActive
       }
     )
+    estimationErrorEmitter.init(this.signAccountOp)
 
     this.emitUpdate()
 
@@ -629,6 +631,7 @@ export class MainController extends EventEmitter {
     this.feePayerKey = null
     this.signAccountOp = null
     this.signAccOpInitError = null
+    estimationErrorEmitter.deinit()
 
     // NOTE: no need to update the portfolio here as an update is
     // fired upon removeUserRequest
@@ -1918,10 +1921,10 @@ export class MainController extends EventEmitter {
       this.portfolio.addTokensToBeLearned(additionalHints, network.id)
 
       const accountOpsToBeSimulatedByNetwork = getAccountOpsForSimulation(
-        account!,
+        account,
         this.actions.visibleActionsQueue,
         network,
-        this.signAccountOp?.accountOp
+        this.signAccountOp.accountOp
       )
 
       const [, estimation] = await Promise.all([
@@ -2067,10 +2070,19 @@ export class MainController extends EventEmitter {
       nativeToCheck.push(localAccountOp.accountAddr)
       nativeToCheck.forEach((accId) => {
         const notConfirmedOp = this.activity.getNotConfirmedOpIfAny(accId, localAccountOp.networkId)
-        const currentNonce = this.accounts.accountStates?.[accId]?.[localAccountOp.networkId].nonce
+
+        // the accountState of the nativeToCheck may no be initialized
+        const currentNonce =
+          this.accounts.accountStates &&
+          this.accounts.accountStates[accId] &&
+          this.accounts.accountStates[accId][localAccountOp.networkId]
+            ? this.accounts.accountStates[accId][localAccountOp.networkId].nonce
+            : null
+
         rbfAccountOps[accId] =
           notConfirmedOp &&
           !notConfirmedOp.gasFeePayment?.isERC4337 &&
+          currentNonce &&
           currentNonce === notConfirmedOp.nonce
             ? notConfirmedOp
             : null

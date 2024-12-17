@@ -72,7 +72,7 @@ export default class EventEmitter {
     for (const cb of this.#callbacks) cb()
   }
 
-  protected emitError(error: ErrorRef) {
+  public emitError(error: ErrorRef) {
     this.#errors.push(error)
     this.#trimErrorsIfNeeded()
     console.log(
