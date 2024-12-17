@@ -32,4 +32,13 @@ describe('Estimation errors are humanized', () => {
       expect(humanizedError.message).toBe(EXPECTED_MESSAGE)
     }
   })
+  it('0x7b36c479 (PartialSwapsNotAllowed)', () => {
+    const EXPECTED_MESSAGE = `${MESSAGE_PREFIX} of a Swap failure. Please try performing the same swap again.`
+
+    const error = new Error('0x7b36c479')
+
+    const humanizedError = getHumanReadableEstimationError(error)
+
+    expect(humanizedError.message).toBe(EXPECTED_MESSAGE)
+  })
 })
