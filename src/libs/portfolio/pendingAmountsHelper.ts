@@ -38,7 +38,20 @@ export const calculatePendingAmounts = (
   activityNonce?: bigint,
   portfolioNonce?: bigint
 ): PendingAmounts | null => {
-  const latestPendingDelta = pendingAmount - latestAmount
+  let latestPendingDelta = pendingAmount - latestAmount
+
+  // Check if the change in latestPendingDelta is significant (>= 10000n or <= -10000n).
+  // This helps to avoid processing insignificant changes in the pending balance.
+  // This is important for handling tokens with pending balances, such as those deposited into AAVE.
+  // With AAVE each block generates a small amount of interest or rewards,
+  // which is constantly displaying on dashboard as pending to be confirmed.
+  // The percentage change helps determine if the change in pending balance is significant enough to consider.
+  const significantChange = latestPendingDelta >= 10000n || latestPendingDelta <= -10000n
+
+  // Ignore changes without significant difference
+  if (!significantChange) {
+    latestPendingDelta = 0n
+  }
 
   // There is no Pending state changes
   if (latestPendingDelta === 0n && !simulationDelta) return null
