@@ -67,6 +67,15 @@ export function getCleanUserOp(userOp: UserOperation) {
  * @returns hex string
  */
 export function getOneTimeNonce(userOperation: UserOperation) {
+  if (
+    !userOperation.paymaster ||
+    !userOperation.paymasterVerificationGasLimit ||
+    !userOperation.paymasterPostOpGasLimit ||
+    !userOperation.paymasterData
+  ) {
+    throw new Error('One time nonce could not be encoded because paymaster data is missing')
+  }
+
   const abiCoder = new AbiCoder()
   return `0x${keccak256(
     abiCoder.encode(
@@ -86,10 +95,10 @@ export function getOneTimeNonce(userOperation: UserOperation) {
           toBeHex(userOperation.maxFeePerGas, 16)
         ]),
         concat([
-          userOperation.paymaster!,
-          toBeHex(userOperation.paymasterVerificationGasLimit!, 16),
-          toBeHex(userOperation.paymasterPostOpGasLimit!, 16),
-          userOperation.paymasterData!
+          userOperation.paymaster,
+          toBeHex(userOperation.paymasterVerificationGasLimit, 16),
+          toBeHex(userOperation.paymasterPostOpGasLimit, 16),
+          userOperation.paymasterData
         ])
       ]
     )

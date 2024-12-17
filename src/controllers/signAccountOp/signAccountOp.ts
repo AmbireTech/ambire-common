@@ -1285,7 +1285,6 @@ export class SignAccountOpController extends EventEmitter {
           userOperation.callData = ambireAccount.encodeFunctionData('executeMultiple', [
             [[getSignableCalls(this.accountOp), signature]]
           ])
-          userOperation.nonce = getOneTimeNonce(userOperation)
           this.accountOp.signature = signature
         } else {
           userOperation.callData = ambireAccount.encodeFunctionData('executeBySender', [
@@ -1307,6 +1306,7 @@ export class SignAccountOpController extends EventEmitter {
 
             userOperation.paymaster = paymasterData.paymaster
             userOperation.paymasterData = paymasterData.paymasterData
+            if (usesOneTimeNonce) userOperation.nonce = getOneTimeNonce(userOperation)
             this.accountOp.gasFeePayment.isSponsored = paymaster.isSponsored()
           } else {
             const errorResponse = response as PaymasterErrorReponse
