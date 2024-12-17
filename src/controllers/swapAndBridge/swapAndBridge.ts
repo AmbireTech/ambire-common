@@ -875,6 +875,14 @@ export class SwapAndBridgeController extends EventEmitter {
       }
     }
 
+    if (!this.#getIsFormValidToFetchQuote()) {
+      if (this.quote) {
+        this.quote = null
+        this.emitUpdate()
+      }
+      return
+    }
+
     let nextTimeout = 400 // timeout when there is no pending quote update
     if (this.#updateQuoteTimeout) {
       nextTimeout = 1000 // timeout when there is a pending quote update
