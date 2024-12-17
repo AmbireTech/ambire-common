@@ -13,7 +13,7 @@ import {
 import { SPOOF_SIGTYPE } from '../../consts/signatures'
 import { Account, AccountId, AccountOnchainState } from '../../interfaces/account'
 import { AccountOp, callToTuple } from '../accountOp/accountOp'
-import { UserOperation } from './types'
+import { UserOperation, UserOpRequestType } from './types'
 
 export function calculateCallDataCost(callData: string): bigint {
   if (callData === '0x') return 0n
@@ -67,6 +67,15 @@ export function getCleanUserOp(userOp: UserOperation) {
  * @returns hex string
  */
 export function getOneTimeNonce(userOperation: UserOperation) {
+  if (
+    !userOperation.paymaster ||
+    !userOperation.paymasterVerificationGasLimit ||
+    !userOperation.paymasterPostOpGasLimit ||
+    !userOperation.paymasterData
+  ) {
+    throw new Error('One time nonce could not be encoded because paymaster data is missing')
+  }
+
   const abiCoder = new AbiCoder()
   return `0x${keccak256(
     abiCoder.encode(
@@ -86,18 +95,22 @@ export function getOneTimeNonce(userOperation: UserOperation) {
           toBeHex(userOperation.maxFeePerGas, 16)
         ]),
         concat([
-          userOperation.paymaster!,
-          toBeHex(userOperation.paymasterVerificationGasLimit!, 16),
-          toBeHex(userOperation.paymasterPostOpGasLimit!, 16),
-          userOperation.paymasterData!
+          userOperation.paymaster,
+          toBeHex(userOperation.paymasterVerificationGasLimit, 16),
+          toBeHex(userOperation.paymasterPostOpGasLimit, 16),
+          userOperation.paymasterData
         ])
       ]
     )
   ).substring(18)}${toBeHex(0, 8).substring(2)}`
 }
 
-export function shouldUseOneTimeNonce(userOp: UserOperation) {
-  return userOp.requestType !== 'standard'
+export function getRequestType(accountState: AccountOnchainState): UserOpRequestType {
+  return accountState.isDeployed && !accountState.isErc4337Enabled ? 'activator' : 'standard'
+}
+
+export function shouldUseOneTimeNonce(accountState: AccountOnchainState): boolean {
+  return getRequestType(accountState) !== 'standard'
 }
 
 export function getUserOperation(
@@ -116,7 +129,7 @@ export function getUserOperation(
     maxFeePerGas: toBeHex(1),
     maxPriorityFeePerGas: toBeHex(1),
     signature: '0x',
-    requestType: 'standard'
+    requestType: getRequestType(accountState)
   }
 
   // if the account is not deployed, prepare the deploy in the initCode
@@ -134,10 +147,9 @@ export function getUserOperation(
     ])
   }
 
-  if (accountState.isDeployed && !accountState.isErc4337Enabled) {
+  // if the request type is activator, add the activator call
+  if (userOp.requestType === 'activator')
     userOp.activatorCall = getActivatorCall(accountOp.accountAddr)
-    userOp.requestType = 'activator'
-  }
 
   return userOp
 }
