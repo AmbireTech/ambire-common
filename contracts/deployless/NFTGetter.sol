@@ -18,6 +18,8 @@ interface NFT {
   function tokenOfOwnerByIndex(address, uint) external view returns (uint);
 
   function ownerOf(uint256 _tokenId) external view returns (address);
+
+  function supportsInterface(bytes4 interfaceId) external view returns (bool);
 }
 
 contract NFTGetter is Simulation {
@@ -32,13 +34,14 @@ contract NFTGetter is Simulation {
     string symbol;
     uint256[] nfts;
     bytes error;
+    bool isEnumerable;
   }
   struct NFTCollectionAtNonce {
     NFTCollectionMetadata[] collections;
     uint nonce;
   }
 
-  bytes4  ERC721_ENUMERABLE_INTERFACE_ID = 0x780e9d63;
+  bytes4 ERC721_ENUMERABLE_INTERFACE_ID = 0x780e9d63;
 
   function getCollectionMeta(
     IAmbireAccount account,
@@ -53,7 +56,7 @@ contract NFTGetter is Simulation {
     if (balance > limit) balance = limit;
     meta.nfts = new uint256[](balance);
     bool isEnumerable = collection.supportsInterface(ERC721_ENUMERABLE_INTERFACE_ID);
-    
+
     if (isEnumerable) {
       for (uint i = 0; i != balance; i++) {
         uint tokenId = collection.tokenOfOwnerByIndex(address(account), i);
@@ -76,6 +79,7 @@ contract NFTGetter is Simulation {
         }
       }
     }
+    meta.isEnumerable = isEnumerable;
     return meta;
   }
 
@@ -106,7 +110,11 @@ contract NFTGetter is Simulation {
 
   // Compare the collections before (collectionsA) and after simulation (collectionsB)
   // and return the delta (with simulation)
-  function getDelta(NFTCollectionMetadata[] memory collectionsA, NFTCollectionMetadata[] memory collectionsB, NFT[] memory collections) public returns (NFTCollectionMetadata[] memory) {
+  function getDelta(
+    NFTCollectionMetadata[] memory collectionsA,
+    NFTCollectionMetadata[] memory collectionsB,
+    NFT[] memory collections
+  ) public returns (NFTCollectionMetadata[] memory) {
     uint deltaSize = 0;
 
     for (uint256 i = 0; i < collectionsA.length; i++) {
@@ -183,8 +191,11 @@ contract NFTGetter is Simulation {
         tokenPerCollectionLimit
       );
 
-
-      (NFTCollectionMetadata[] memory deltaAfter) = getDelta(before.collections, afterSimulation.collections, collections);
+      NFTCollectionMetadata[] memory deltaAfter = getDelta(
+        before.collections,
+        afterSimulation.collections,
+        collections
+      );
       afterSimulation.collections = deltaAfter;
     }
 
