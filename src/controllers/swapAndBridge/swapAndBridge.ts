@@ -1,5 +1,6 @@
 /* eslint-disable no-await-in-loop */
 import { formatUnits, isAddress, parseUnits } from 'ethers'
+import { v4 as uuidv4 } from 'uuid'
 
 import EmittableError from '../../classes/EmittableError'
 import { Network } from '../../interfaces/network'
@@ -87,20 +88,6 @@ export class SwapAndBridgeController extends EventEmitter {
 
   statuses: Statuses<keyof typeof STATUS_WRAPPED_METHODS> = STATUS_WRAPPED_METHODS
 
-  #updateQuoteThrottle: {
-    time: number
-    options: {
-      skipQuoteUpdateOnSameValues?: boolean
-      skipPreviousQuoteRemoval?: boolean
-      skipStatusUpdate?: boolean
-    }
-    throttled: boolean
-  } = {
-    time: 0,
-    options: {},
-    throttled: false
-  }
-
   updateQuoteStatus: 'INITIAL' | 'LOADING' = 'INITIAL'
 
   #updateToTokenListThrottle: {
@@ -113,6 +100,10 @@ export class SwapAndBridgeController extends EventEmitter {
     shouldReset: true,
     throttled: false
   }
+
+  #updateQuoteId?: string
+
+  #updateQuoteTimeout?: ReturnType<typeof setTimeout>
 
   updateToTokenListStatus: 'INITIAL' | 'LOADING' = 'INITIAL'
 
@@ -310,7 +301,12 @@ export class SwapAndBridgeController extends EventEmitter {
   }
 
   get shouldEnableRoutesSelection() {
-    return !!this.quote && !!this.quote.routes && this.quote.routes.length > 1
+    return (
+      !!this.quote &&
+      !!this.quote.routes &&
+      this.quote.routes.length > 1 &&
+      this.updateQuoteStatus !== 'LOADING'
+    )
   }
 
   async initForm(sessionId: string) {
@@ -590,7 +586,6 @@ export class SwapAndBridgeController extends EventEmitter {
     }
     this.updateToTokenListStatus = 'LOADING'
     this.#updateToTokenListThrottle.time = now
-
     if (!this.fromChainId || !this.toChainId) return
 
     if (shouldReset) {
@@ -715,27 +710,18 @@ export class SwapAndBridgeController extends EventEmitter {
       skipStatusUpdate: false
     }
   ) {
-    const now = Date.now()
-    const timeSinceLastCall = now - this.#updateQuoteThrottle.time
-    if (timeSinceLastCall <= 500) {
-      this.#updateQuoteThrottle.options = options
-
-      if (!this.#updateQuoteThrottle.throttled) {
-        this.#updateQuoteThrottle.throttled = true
-        await wait(500 - timeSinceLastCall)
-        this.#updateQuoteThrottle.throttled = false
-        await this.updateQuote(this.#updateQuoteThrottle.options)
-      }
-      return
-    }
-    this.#updateQuoteThrottle.time = now
+    const quoteId = uuidv4()
+    this.#updateQuoteId = quoteId
 
     const updateQuoteFunction = async () => {
       if (!this.#selectedAccount.account) return
+      if (!this.fromAmount) return
+
       const sanitizedFromAmount = getSanitizedAmount(
         this.fromAmount,
         this.fromSelectedToken!.decimals
       )
+
       const bigintFromAmount = parseUnits(sanitizedFromAmount, this.fromSelectedToken!.decimals)
 
       if (this.quote) {
@@ -773,6 +759,8 @@ export class SwapAndBridgeController extends EventEmitter {
           isSmartAccount: isSmartAccount(this.#selectedAccount.account),
           sort: this.routePriority
         })
+
+        if (quoteId !== this.#updateQuoteId) return
 
         if (
           this.#getIsFormValidToFetchQuote() &&
@@ -893,21 +881,36 @@ export class SwapAndBridgeController extends EventEmitter {
     }
 
     if (!this.#getIsFormValidToFetchQuote()) {
-      if (this.quote) {
+      if (this.quote || this.quoteRoutesStatuses) {
         this.quote = null
+        this.quoteRoutesStatuses = {}
         this.emitUpdate()
       }
       return
+    }
+
+    let nextTimeout = 400 // timeout when there is no pending quote update
+    if (this.#updateQuoteTimeout) {
+      nextTimeout = 1000 // timeout when there is a pending quote update
+      clearTimeout(this.#updateQuoteTimeout)
+      this.#updateQuoteTimeout = undefined
     }
 
     if (!options.skipStatusUpdate) {
       this.updateQuoteStatus = 'LOADING'
       this.emitUpdate()
     }
-    await updateQuoteFunction()
-    this.updateQuoteStatus = 'INITIAL'
 
-    this.emitUpdate()
+    this.#updateQuoteTimeout = setTimeout(async () => {
+      await updateQuoteFunction()
+
+      if (quoteId !== this.#updateQuoteId) return
+
+      this.updateQuoteStatus = 'INITIAL'
+      this.emitUpdate()
+      clearTimeout(this.#updateQuoteTimeout)
+      this.#updateQuoteTimeout = undefined
+    }, nextTimeout)
   }
 
   async getRouteStartUserTx() {
