@@ -7,12 +7,12 @@ import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import { velcroUrl } from '../../../test/config'
 import { monitor, stopMonitoring } from '../../../test/helpers/requests'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
+import { EOA_SIMULATION_NONCE } from '../../consts/deployless'
 import { networks } from '../../consts/networks'
 import { Account } from '../../interfaces/account'
 import { AccountOp } from '../accountOp/accountOp'
 import { ERC20 } from '../humanizer/const/abis'
 import { stringify } from '../richJson/richJson'
-import { EOA_SIMULATION_NONCE } from './getOnchainBalances'
 import { Portfolio } from './portfolio'
 
 describe('Portfolio', () => {
