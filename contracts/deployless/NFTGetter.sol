@@ -15,15 +15,11 @@ interface NFT {
 
   function tokenURI(uint256 _tokenId) external view returns (string memory);
 
+  function tokenOfOwnerByIndex(address, uint) external view returns (uint);
+
   function ownerOf(uint256 _tokenId) external view returns (address);
 
   function supportsInterface(bytes4 interfaceId) external view returns (bool);
-
-  function totalSupply() external view returns (uint);
-
-  function tokenOfOwnerByIndex(address, uint256) external view returns (uint);
-
-  function tokenByIndex(uint256) external view returns (uint);
 }
 
 contract NFTGetter is Simulation {
