@@ -45,6 +45,8 @@ contract NFTGetter is Simulation {
     uint nonce;
   }
 
+  bytes4 ERC721_ENUMERABLE_INTERFACE_ID = 0x780e9d63;
+
   function getCollectionMeta(
     IAmbireAccount account,
     NFT collection,
@@ -57,7 +59,7 @@ contract NFTGetter is Simulation {
     uint balance = collection.balanceOf(address(account));
     if (balance > limit) balance = limit;
     meta.nfts = new uint256[](balance);
-    meta.isEnumerable = collection.supportsInterface(0x780e9d63);
+    meta.isEnumerable = collection.supportsInterface(ERC721_ENUMERABLE_INTERFACE_ID);
 
     if (meta.isEnumerable) {
       for (uint i = 0; i != balance; i++) {
