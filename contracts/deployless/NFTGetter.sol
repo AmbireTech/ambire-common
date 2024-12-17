@@ -38,6 +38,8 @@ contract NFTGetter is Simulation {
     uint nonce;
   }
 
+  bytes4  ERC721_ENUMERABLE_INTERFACE_ID = 0x780e9d63;
+
   function getCollectionMeta(
     IAmbireAccount account,
     NFT collection,
@@ -46,10 +48,13 @@ contract NFTGetter is Simulation {
   ) external view returns (NFTCollectionMetadata memory meta) {
     meta.name = collection.name();
     meta.symbol = collection.symbol();
-    if (tokenIds.length == 0) {
-      uint balance = collection.balanceOf(address(account));
-      if (balance > limit) balance = limit;
-      meta.nfts = new uint256[](balance);
+    // start of new
+    uint balance = collection.balanceOf(address(account));
+    if (balance > limit) balance = limit;
+    meta.nfts = new uint256[](balance);
+    bool isEnumerable = collection.supportsInterface(ERC721_ENUMERABLE_INTERFACE_ID);
+    
+    if (isEnumerable) {
       for (uint i = 0; i != balance; i++) {
         uint tokenId = collection.tokenOfOwnerByIndex(address(account), i);
         meta.nfts[i] = tokenId;
@@ -71,6 +76,7 @@ contract NFTGetter is Simulation {
         }
       }
     }
+    return meta;
   }
 
   function getAllNFTs(
