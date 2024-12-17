@@ -301,7 +301,12 @@ export class SwapAndBridgeController extends EventEmitter {
   }
 
   get shouldEnableRoutesSelection() {
-    return !!this.quote && !!this.quote.routes && this.quote.routes.length > 1
+    return (
+      !!this.quote &&
+      !!this.quote.routes &&
+      this.quote.routes.length > 1 &&
+      this.updateQuoteStatus !== 'LOADING'
+    )
   }
 
   async initForm(sessionId: string) {
