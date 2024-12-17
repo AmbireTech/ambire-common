@@ -876,8 +876,9 @@ export class SwapAndBridgeController extends EventEmitter {
     }
 
     if (!this.#getIsFormValidToFetchQuote()) {
-      if (this.quote) {
+      if (this.quote || this.quoteRoutesStatuses) {
         this.quote = null
+        this.quoteRoutesStatuses = {}
         this.emitUpdate()
       }
       return
