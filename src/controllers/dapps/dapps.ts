@@ -66,15 +66,6 @@ export class DappsController extends EventEmitter {
       this.#storage.get('dapps', []),
       this.#storage.get('dappSessions', {})
     ])
-    if (!storedDapps.length) {
-      storedDapps = predefinedDapps.map((dapp) => ({
-        ...dapp,
-        chainId: 1,
-        favorite: false,
-        isConnected: false
-      }))
-      await this.#storage.set('dapps', storedDapps)
-    }
 
     this.#dapps = storedDapps
     Object.keys(dappSessions).forEach((sessionId) => {
