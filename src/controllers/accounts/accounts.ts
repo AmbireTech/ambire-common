@@ -181,6 +181,9 @@ export class AccountsController extends EventEmitter {
 
     this.#onAddAccounts(accounts)
 
+    // update the state of new accounts. Otherwise, the user needs to restart his extension
+    this.#updateAccountStates(accounts)
+
     this.emitUpdate()
   }
 
