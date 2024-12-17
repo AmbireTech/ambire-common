@@ -55,9 +55,9 @@ contract NFTGetter is Simulation {
     uint balance = collection.balanceOf(address(account));
     if (balance > limit) balance = limit;
     meta.nfts = new uint256[](balance);
-    meta.isEnumerable = collection.supportsInterface(ERC721_ENUMERABLE_INTERFACE_ID);
+    bool isEnumerable = collection.supportsInterface(ERC721_ENUMERABLE_INTERFACE_ID);
 
-    if (meta.isEnumerable) {
+    if (isEnumerable) {
       for (uint i = 0; i != balance; i++) {
         uint tokenId = collection.tokenOfOwnerByIndex(address(account), i);
         meta.nfts[i] = tokenId;
@@ -74,12 +74,12 @@ contract NFTGetter is Simulation {
       uint j = 0;
       for (uint i = 0; i != tokenIds.length; i++) {
         if (collection.ownerOf(tokenIds[i]) == address(account)) {
-          meta.nfts[j] = tokenIds[i] + 2;
+          meta.nfts[j] = tokenIds[i];
           j++;
         }
       }
     }
-
+    meta.isEnumerable = isEnumerable;
     return meta;
   }
 
