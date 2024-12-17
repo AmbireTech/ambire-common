@@ -828,14 +828,14 @@ export class SwapAndBridgeController extends EventEmitter {
                 )
               })
 
-              // FIXME: Missing token to pay fee with - should error out instead?
-              if (!tokenToPayFeeWith) return route
-
               // Convert to BigInt by scaling it to 18 decimal places for accurate comparison
               const fromAmountBigInt = BigInt(this.fromAmount) * BigInt(10 ** 18)
+              const tokenToPayFeeWithBitInt = tokenToPayFeeWith
+                ? getTokenAmount(tokenToPayFeeWith)
+                : BigInt(0)
               const availableAfterSubtraction = isTokenToPayFeeWithTheSameAsFromToken
-                ? getTokenAmount(tokenToPayFeeWith) - fromAmountBigInt
-                : getTokenAmount(tokenToPayFeeWith)
+                ? tokenToPayFeeWithBitInt - fromAmountBigInt
+                : tokenToPayFeeWithBitInt
               const hasEnoughAmountToPayFee =
                 availableAfterSubtraction >= BigInt(bridgeStep.protocolFees.amount)
 
