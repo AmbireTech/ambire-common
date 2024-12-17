@@ -145,7 +145,7 @@ export class SwapAndBridgeController extends EventEmitter {
    */
   #cachedToTokenLists: CachedToTokenLists = {}
 
-  toTokenList: SocketAPIToken[] = []
+  #toTokenList: SocketAPIToken[] = []
 
   /**
    * Similar to the `#cachedToTokenLists`, this helps in avoiding repeated API
@@ -536,7 +536,7 @@ export class SwapAndBridgeController extends EventEmitter {
     this.quote = null
     this.quoteRoutesStatuses = {}
     this.portfolioTokenList = []
-    this.toTokenList = []
+    this.#toTokenList = []
 
     if (shouldEmit) this.emitUpdate()
   }
@@ -595,7 +595,7 @@ export class SwapAndBridgeController extends EventEmitter {
     if (!this.fromChainId || !this.toChainId) return
 
     if (shouldReset) {
-      this.toTokenList = []
+      this.#toTokenList = []
       this.toSelectedToken = null
       this.emitUpdate()
     }
@@ -633,14 +633,14 @@ export class SwapAndBridgeController extends EventEmitter {
         .filter((token) => !upToDateToTokenList.some((t) => t.address === token.address))
         .map((t) => convertPortfolioTokenToSocketAPIToken(t, Number(toTokenNetwork.chainId)))
 
-      this.toTokenList = sortTokenListResponse(
+      this.#toTokenList = sortTokenListResponse(
         [...upToDateToTokenList, ...additionalTokensFromPortfolio],
         this.portfolioTokenList
       )
 
       if (!this.toSelectedToken) {
         if (addressToSelect) {
-          const token = this.toTokenList.find((t) => t.address === addressToSelect)
+          const token = this.#toTokenList.find((t) => t.address === addressToSelect)
           if (token) {
             this.updateForm({ toSelectedToken: token })
             this.updateToTokenListStatus = 'INITIAL'
@@ -656,11 +656,21 @@ export class SwapAndBridgeController extends EventEmitter {
     this.emitUpdate()
   }
 
+  get toTokenList(): SocketAPIToken[] {
+    const isSwapping = this.fromChainId === this.toChainId
+    if (isSwapping) {
+      // Swaps between same "from" and "to" tokens are not feasible, filter them out
+      return this.#toTokenList.filter((t) => t.address !== this.fromSelectedToken?.address)
+    }
+
+    return this.#toTokenList
+  }
+
   async #addToTokenByAddress(address: string) {
     if (!this.toChainId) return // should never happen
     if (!isAddress(address)) return // no need to attempt with invalid addresses
 
-    const isAlreadyInTheList = this.toTokenList.some((t) => t.address === address)
+    const isAlreadyInTheList = this.#toTokenList.some((t) => t.address === address)
     if (isAlreadyInTheList) return
 
     let token
@@ -677,8 +687,8 @@ export class SwapAndBridgeController extends EventEmitter {
       // Cache for sometime the tokens added by address
       this.#cachedToTokenLists[this.#toTokenListKey]?.data.push(token)
 
-    const nextTokenList = [...this.toTokenList, token]
-    this.toTokenList = sortTokenListResponse(nextTokenList, this.portfolioTokenList)
+    const nextTokenList = [...this.#toTokenList, token]
+    this.#toTokenList = sortTokenListResponse(nextTokenList, this.portfolioTokenList)
 
     this.emitUpdate()
     return token
@@ -1255,6 +1265,7 @@ export class SwapAndBridgeController extends EventEmitter {
     return {
       ...this,
       ...super.toJSON(),
+      toTokenList: this.toTokenList,
       maxFromAmount: this.maxFromAmount,
       maxFromAmountInFiat: this.maxFromAmountInFiat,
       validateFromAmount: this.validateFromAmount,
