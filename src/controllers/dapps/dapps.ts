@@ -36,7 +36,22 @@ export class DappsController extends EventEmitter {
   }
 
   get dapps(): Dapp[] {
-    return this.#dapps
+    const predefinedDappsParsed = predefinedDapps.map(
+      ({ url, name, icon, description }): Dapp => ({
+        name,
+        description,
+        url,
+        icon,
+        isConnected: false,
+        chainId: 1,
+        favorite: false
+      })
+    )
+
+    return [...this.#dapps, ...predefinedDappsParsed].reduce((acc: Dapp[], curr: Dapp): Dapp[] => {
+      if (!acc.some(({ name }) => name === curr.name)) return [...acc, curr]
+      return acc
+    }, [])
   }
 
   set dapps(updatedDapps: Dapp[]) {
