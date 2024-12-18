@@ -49,7 +49,7 @@ export class DappsController extends EventEmitter {
     )
 
     return [...this.#dapps, ...predefinedDappsParsed].reduce((acc: Dapp[], curr: Dapp): Dapp[] => {
-      if (!acc.some(({ name }) => name === curr.name)) return [...acc, curr]
+      if (!acc.some(({ url }) => url === curr.url)) return [...acc, curr]
       return acc
     }, [])
   }
