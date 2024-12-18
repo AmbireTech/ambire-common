@@ -431,11 +431,22 @@ export const getNetworksWithPortfolioErrorBanners = ({
     }
 
     portfolioForNetwork?.errors.forEach((err: any) => {
+      // If the error is not predefined(shouldn't happen) or it's a specific
+      // non-critical error, we shouldn't display a banner
+      if (
+        !Object.keys(PORTFOLIO_LIB_ERROR_NAMES).includes(err?.name) ||
+        err?.name === PORTFOLIO_LIB_ERROR_NAMES.NonCriticalApiHintsError
+      )
+        return
+
+      // Price errors are not critical, so we should display a warning banner
       if (err?.name === PORTFOLIO_LIB_ERROR_NAMES.PriceFetchError) {
         networkNamesWithPriceFetchError.push(networkName as string)
-      } else if (err?.name === PORTFOLIO_LIB_ERROR_NAMES.HintsError) {
-        networkNamesWithCriticalError.push(networkName as string)
+        return
       }
+
+      // For all other errors, we should display an error banner
+      networkNamesWithCriticalError.push(networkName as string)
     })
   })
 
