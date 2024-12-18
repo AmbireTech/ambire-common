@@ -200,8 +200,20 @@ export class Portfolio {
       ...gasTankFeeTokens.filter((x) => x.networkId === this.network.id).map((x) => x.address)
     ]
 
+    const checksummedErc20Hints = hints.erc20s
+      .map((address) => {
+        try {
+          // getAddress may throw an error. This will break the portfolio
+          // if the error isn't caught
+          return getAddress(address)
+        } catch {
+          return null
+        }
+      })
+      .filter(Boolean) as string[]
+
     // Remove duplicates and always add ZeroAddress
-    hints.erc20s = [...new Set(hints.erc20s.map((erc20) => getAddress(erc20)).concat(ZeroAddress))]
+    hints.erc20s = [...new Set(checksummedErc20Hints.concat(ZeroAddress))]
 
     // This also allows getting prices, this is used for more exotic tokens that cannot be retrieved via Coingecko
     const priceCache: PriceCache = localOpts.priceCache || new Map()
