@@ -1389,14 +1389,27 @@ export class MainController extends EventEmitter {
     if (userRequest.action.kind === 'calls') {
       const acc = this.accounts.accounts.find((a) => a.addr === userRequest.meta.accountAddr)!
 
-      if (!isSmartAccount(acc) && userRequest.meta.isApproval) {
-        const txUserRequest = this.userRequests.find((r) => r.id === userRequest.meta.activeRouteId)
-        if (txUserRequest) this.removeUserRequest(txUserRequest.id)
+      if (!isSmartAccount(acc) && userRequest.meta.isSwapAndBridgeCall) {
+        this.removeUserRequest(userRequest.meta.activeRouteId)
+        this.removeUserRequest(`${userRequest.meta.activeRouteId}-approval`)
+        this.removeUserRequest(`${userRequest.meta.activeRouteId}-revoke-approval`)
       }
     }
 
     userRequest.dappPromise?.reject(ethErrors.provider.userRejectedRequest<any>(err))
     this.removeUserRequest(requestId)
+  }
+
+  removeActiveRoute(activeRouteId: number) {
+    const userRequest = this.userRequests.find((r) =>
+      [activeRouteId, `${activeRouteId}-approval`, `${activeRouteId}-revoke-approval`].includes(
+        r.id
+      )
+    )
+
+    if (!userRequest) return
+
+    this.rejectUserRequest('User rejected the transaction request.', userRequest.id)
   }
 
   async addUserRequest(
@@ -1567,7 +1580,7 @@ export class MainController extends EventEmitter {
         if (!accountOpAction) {
           this.updateSelectedAccountPortfolio(true, network)
           if (this.swapAndBridge.activeRoutes.length && options.shouldRemoveSwapAndBridgeRoute) {
-            this.swapAndBridge.removeActiveRoute(id as number)
+            this.swapAndBridge.removeActiveRoute(meta.activeRouteId)
           }
           this.emitUpdate()
           return
@@ -1599,7 +1612,7 @@ export class MainController extends EventEmitter {
         this.updateSelectedAccountPortfolio(true, network)
       }
       if (this.swapAndBridge.activeRoutes.length && options.shouldRemoveSwapAndBridgeRoute) {
-        this.swapAndBridge.removeActiveRoute(id as number)
+        this.swapAndBridge.removeActiveRoute(meta.activeRouteId)
       }
     } else {
       this.actions.removeAction(id)
@@ -1968,31 +1981,6 @@ export class MainController extends EventEmitter {
       // @race
       // if the signAccountOp has been deleted, don't continue as the request has already finished
       if (!this.signAccountOp) return
-
-      // Basic Account (BA) has two pending actions:
-      // 1. Approval transaction
-      // 2. Actual transaction
-      // If the user tries to sign the second action before the approval, the estimation will fail.
-      // This part improves the error message for a better UX
-      if (estimation && estimation.error) {
-        if (!isSmartAccount(account)) {
-          const userRequest = this.userRequests.find(
-            (r) => r.id === this.signAccountOp?.accountOp.calls[0].fromUserRequestId
-          )
-
-          if (userRequest && userRequest.meta.activeRouteId && !userRequest.meta.isApproval) {
-            const hasApprovalReq = this.userRequests.find(
-              (r) => r.id === `${userRequest.meta.activeRouteId}-approval`
-            )
-
-            if (hasApprovalReq) {
-              estimation.error = new Error(
-                'Unable to estimate due to a pending approval. Please sign the approval transaction first to proceed with this transaction.'
-              )
-            }
-          }
-        }
-      }
 
       if (estimation) {
         const currentNonceAhead =

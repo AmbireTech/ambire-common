@@ -182,7 +182,8 @@ const buildSwapAndBridgeUserRequests = async (
           isSignAction: true,
           networkId,
           accountAddr: account.addr,
-          activeRouteId: userTx.activeRouteId
+          activeRouteId: userTx.activeRouteId,
+          isSwapAndBridgeCall: true
         }
       } as SignUserRequest
     ]
@@ -219,8 +220,8 @@ const buildSwapAndBridgeUserRequests = async (
             isSignAction: true,
             networkId,
             accountAddr: account.addr,
-            activeRouteId: userTx.activeRouteId,
-            isApproval: true
+            isSwapAndBridgeCall: true,
+            activeRouteId: userTx.activeRouteId
           }
         } as SignUserRequest)
       }
@@ -244,8 +245,8 @@ const buildSwapAndBridgeUserRequests = async (
           isSignAction: true,
           networkId,
           accountAddr: account.addr,
-          activeRouteId: userTx.activeRouteId,
-          isApproval: true
+          isSwapAndBridgeCall: true,
+          activeRouteId: userTx.activeRouteId
         }
       } as SignUserRequest)
       // first build only the approval tx and then when confirmed this func will be called a second time
@@ -272,6 +273,7 @@ const buildSwapAndBridgeUserRequests = async (
         isSignAction: true,
         networkId,
         accountAddr: account.addr,
+        isSwapAndBridgeCall: true,
         activeRouteId: userTx.activeRouteId
       }
     } as SignUserRequest)
