@@ -1780,6 +1780,7 @@ export class MainController extends EventEmitter {
     const bundlerFetch = async () => {
       if (!is4337) return null
       const errorCallback = (e: ErrorRef) => {
+        if (!this.signAccountOp) return
         this.emitError(e)
       }
       return Bundler.fetchGasPrices(network, errorCallback).catch((e) => {
@@ -1947,6 +1948,7 @@ export class MainController extends EventEmitter {
           // @TODO - first time calling this, portfolio is still not loaded.
           feeTokens,
           (e: ErrorRef) => {
+            if (!this.signAccountOp) return
             this.emitError(e)
           },
           {
