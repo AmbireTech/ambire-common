@@ -2467,7 +2467,10 @@ export class MainController extends EventEmitter {
           'Replacement fee is insufficient. Fees have been automatically adjusted so please try submitting your transaction again.'
         isReplacementFeeLow = true
         this.estimateSignAccountOp()
-      } else if (originalMessage.includes('pimlico_getUserOperationGasPrice')) {
+      } else if (
+        originalMessage.includes('pimlico_getUserOperationGasPrice') ||
+        originalMessage.includes('preVerificationGas')
+      ) {
         message =
           'Transaction fee underpriced. Please select a higher transaction speed and try again'
         this.updateSignAccountOpGasPrice()
