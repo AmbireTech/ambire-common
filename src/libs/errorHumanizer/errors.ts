@@ -99,7 +99,7 @@ const ESTIMATION_ERRORS: ErrorHumanizerError[] = [
     message: 'this dApp does not support Smart Account wallets. Use a Basic Account (EOA) instead.'
   },
   {
-    reasons: ['token already minted'],
+    reasons: ['ERC721: token already minted'],
     message:
       'the NFT you are trying to mint is already minted. This can also happen if you have batched multiple mint transactions for the same NFT.'
   }
