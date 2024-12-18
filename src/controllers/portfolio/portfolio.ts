@@ -85,6 +85,12 @@ export class PortfolioController extends EventEmitter {
 
   #minUpdateInterval: number = 20000 // 20 seconds
 
+  /**
+   * Hints stored in storage, divided into three categories:
+   * - fromExternalAPI: Hints fetched from an external API, used when the external API response fails.
+   * - learnedTokens: Hints of learned tokens, each with a timestamp indicating the last time the token was seen with a balance and not included in fromExternalAPI hints. This helps prioritize tokens not yet found by Velcro during cleansing.
+   * - learnedNfts: Hints of learned NFTs.
+   */
   #previousHints: PreviousHintsStorage = {
     fromExternalAPI: {},
     learnedTokens: {},
