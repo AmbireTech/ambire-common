@@ -1979,31 +1979,6 @@ export class MainController extends EventEmitter {
       // if the signAccountOp has been deleted, don't continue as the request has already finished
       if (!this.signAccountOp) return
 
-      // Basic Account (BA) has two pending actions:
-      // 1. Approval transaction
-      // 2. Actual transaction
-      // If the user tries to sign the second action before the approval, the estimation will fail.
-      // This part improves the error message for a better UX
-      if (estimation && estimation.error) {
-        if (!isSmartAccount(account)) {
-          const userRequest = this.userRequests.find(
-            (r) => r.id === this.signAccountOp?.accountOp.calls[0].fromUserRequestId
-          )
-
-          if (userRequest && userRequest.meta.activeRouteId && !userRequest.meta.isApproval) {
-            const hasApprovalReq = this.userRequests.find(
-              (r) => r.id === `${userRequest.meta.activeRouteId}-approval`
-            )
-
-            if (hasApprovalReq) {
-              estimation.error = new Error(
-                'Unable to estimate due to a pending approval. Please sign the approval transaction first to proceed with this transaction.'
-              )
-            }
-          }
-        }
-      }
-
       if (estimation) {
         const currentNonceAhead =
           BigInt(estimation.currentAccountNonce) > (localAccountOp.nonce ?? 0n)
