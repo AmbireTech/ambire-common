@@ -1386,14 +1386,27 @@ export class MainController extends EventEmitter {
     if (userRequest.action.kind === 'calls') {
       const acc = this.accounts.accounts.find((a) => a.addr === userRequest.meta.accountAddr)!
 
-      if (!isSmartAccount(acc) && userRequest.meta.isApproval) {
-        const txUserRequest = this.userRequests.find((r) => r.id === userRequest.meta.activeRouteId)
-        if (txUserRequest) this.removeUserRequest(txUserRequest.id)
+      if (!isSmartAccount(acc) && userRequest.meta.isSwapAndBridgeCall) {
+        this.removeUserRequest(userRequest.meta.activeRouteId)
+        this.removeUserRequest(`${userRequest.meta.activeRouteId}-approval`)
+        this.removeUserRequest(`${userRequest.meta.activeRouteId}-revoke-approval`)
       }
     }
 
     userRequest.dappPromise?.reject(ethErrors.provider.userRejectedRequest<any>(err))
     this.removeUserRequest(requestId)
+  }
+
+  removeActiveRoute(activeRouteId: number) {
+    const userRequest = this.userRequests.find((r) =>
+      [activeRouteId, `${activeRouteId}-approval`, `${activeRouteId}-revoke-approval`].includes(
+        r.id
+      )
+    )
+
+    if (!userRequest) return
+
+    this.rejectUserRequest('User rejected the transaction request.', userRequest.id)
   }
 
   async addUserRequest(
@@ -1564,7 +1577,7 @@ export class MainController extends EventEmitter {
         if (!accountOpAction) {
           this.updateSelectedAccountPortfolio(true, network)
           if (this.swapAndBridge.activeRoutes.length && options.shouldRemoveSwapAndBridgeRoute) {
-            this.swapAndBridge.removeActiveRoute(id as number)
+            this.swapAndBridge.removeActiveRoute(meta.activeRouteId)
           }
           this.emitUpdate()
           return
@@ -1596,7 +1609,7 @@ export class MainController extends EventEmitter {
         this.updateSelectedAccountPortfolio(true, network)
       }
       if (this.swapAndBridge.activeRoutes.length && options.shouldRemoveSwapAndBridgeRoute) {
-        this.swapAndBridge.removeActiveRoute(id as number)
+        this.swapAndBridge.removeActiveRoute(meta.activeRouteId)
       }
     } else {
       this.actions.removeAction(id)
