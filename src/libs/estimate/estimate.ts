@@ -56,7 +56,8 @@ export async function estimate4337(
   provider: RPCProvider,
   feeTokens: TokenResult[],
   blockTag: string | number,
-  nativeToCheck: string[]
+  nativeToCheck: string[],
+  errorCallback: Function
 ): Promise<EstimateResult> {
   const deploylessEstimator = fromDescriptor(provider, Estimation, !network.rpcNoStateOverride)
 
@@ -113,10 +114,15 @@ export async function estimate4337(
         blockTag
       })
       .catch(getHumanReadableEstimationError),
-    bundlerEstimate(account, accountStates, op, network, feeTokens, provider),
+    bundlerEstimate(account, accountStates, op, network, feeTokens, provider, errorCallback),
     estimateGas(account, estimateGasOp, provider, accountState, network).catch(() => 0n)
   ]
-  const estimations = await estimateWithRetries(initializeRequests, 'estimation-deployless', 12000)
+  const estimations = await estimateWithRetries(
+    initializeRequests,
+    'estimation-deployless',
+    errorCallback,
+    12000
+  )
 
   const ambireEstimation = estimations[0]
   const bundlerEstimationResult: EstimateResult = estimations[1]
@@ -218,6 +224,7 @@ export async function estimate(
   accountStates: AccountStates,
   nativeToCheck: string[],
   feeTokens: TokenResult[],
+  errorCallback: Function,
   opts?: {
     calculateRefund?: boolean
     is4337Broadcast?: boolean
@@ -235,7 +242,8 @@ export async function estimate(
       provider,
       feeTokens,
       blockFrom,
-      blockTag
+      blockTag,
+      errorCallback
     )
 
   if (!network.isSAEnabled)
@@ -270,7 +278,8 @@ export async function estimate(
       provider,
       feeTokens,
       blockTag,
-      nativeToCheck
+      nativeToCheck,
+      errorCallback
     )
 
   const deploylessEstimator = fromDescriptor(provider, Estimation, !network.rpcNoStateOverride)
@@ -331,7 +340,11 @@ export async function estimate(
       .catch(getHumanReadableEstimationError),
     estimateGas(account, op, provider, accountState, network).catch(() => 0n)
   ]
-  const estimations = await estimateWithRetries(initializeRequests, 'estimation-deployless')
+  const estimations = await estimateWithRetries(
+    initializeRequests,
+    'estimation-deployless',
+    errorCallback
+  )
 
   if (estimations instanceof Error) return estimationErrorFormatted(estimations)
 

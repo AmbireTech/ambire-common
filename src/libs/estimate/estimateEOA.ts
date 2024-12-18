@@ -43,7 +43,8 @@ export async function estimateEOA(
   provider: JsonRpcProvider | Provider,
   feeTokens: TokenResult[],
   blockFrom: string,
-  blockTag: string | number
+  blockTag: string | number,
+  errorCallback: Function
 ): Promise<EstimateResult> {
   if (op.calls.length !== 1)
     return estimationErrorFormatted(
@@ -110,7 +111,7 @@ export async function estimateEOA(
           })
           .catch(getHumanReadableEstimationError)
   ]
-  const result = await estimateWithRetries(initializeRequests, 'estimation-eoa')
+  const result = await estimateWithRetries(initializeRequests, 'estimation-eoa', errorCallback)
   const feePaymentOptions = [
     {
       paidBy: account.addr,

@@ -1,8 +1,7 @@
-import { estimationErrorEmitter } from '../../services/errorEmitter/emitter'
-
 export async function estimateWithRetries(
   fetchRequests: Function,
   timeoutType: string,
+  errorCallback: Function,
   timeoutInMill: number = 10000,
   counter: number = 0
 ): Promise<any> {
@@ -30,7 +29,7 @@ export async function estimateWithRetries(
 
     switch (timeoutType) {
       case 'estimation-deployless':
-        estimationErrorEmitter.emit({
+        errorCallback({
           level: 'major',
           message: 'Estimating gas limits from the RPC timed out. Retrying...',
           error: new Error('Estimation.sol deployless timeout')
@@ -38,14 +37,14 @@ export async function estimateWithRetries(
         break
 
       case 'estimation-bundler':
-        estimationErrorEmitter.emit({
+        errorCallback({
           level: 'major',
           message: 'Estimating gas limits from the bundler timed out. Retrying...',
           error: new Error('Budler gas limit estimation timeout')
         })
         break
       case 'estimation-eoa':
-        estimationErrorEmitter.emit({
+        errorCallback({
           level: 'major',
           message: 'Estimating gas limits for Basic Account from the RPC timed out. Retrying...',
           error: new Error('Budler gas limit estimation timeout')
@@ -56,7 +55,13 @@ export async function estimateWithRetries(
         break
     }
 
-    result = await estimateWithRetries(fetchRequests, timeoutType, timeoutInMill, incremented)
+    result = await estimateWithRetries(
+      fetchRequests,
+      timeoutType,
+      errorCallback,
+      timeoutInMill,
+      incremented
+    )
   } else {
     // if one of the calls returns an error, return it
     const error = Array.isArray(result) ? result.find((res) => res instanceof Error) : null

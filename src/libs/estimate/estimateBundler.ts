@@ -21,7 +21,8 @@ export async function bundlerEstimate(
   op: AccountOp,
   network: Network,
   feeTokens: TokenResult[],
-  provider: RPCProvider
+  provider: RPCProvider,
+  errorCallback: Function
 ): Promise<EstimateResult> {
   // we pass an empty array of feePaymentOptions as they are built
   // in an upper level using the balances from Estimation.sol.
@@ -46,7 +47,7 @@ export async function bundlerEstimate(
   // set the callData
   if (userOp.activatorCall) localOp.activatorCall = userOp.activatorCall
 
-  const gasPrice = await Bundler.fetchGasPrices(network).catch(
+  const gasPrice = await Bundler.fetchGasPrices(network, errorCallback).catch(
     () => new Error('Could not fetch gas prices, retrying...')
   )
   if (gasPrice instanceof Error) return estimationErrorFormatted(gasPrice, { feePaymentOptions })
@@ -101,7 +102,11 @@ export async function bundlerEstimate(
       return getHumanReadableEstimationError(e)
     })
   ]
-  const estimations = await estimateWithRetries(initializeRequests, 'estimation-bundler')
+  const estimations = await estimateWithRetries(
+    initializeRequests,
+    'estimation-bundler',
+    errorCallback
+  )
   if (estimations instanceof Error)
     return estimationErrorFormatted(estimations, { feePaymentOptions, nonFatalErrors })
 
