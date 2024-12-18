@@ -117,7 +117,12 @@ describe('SwapAndBridge Controller', () => {
     const unsubscribe = swapAndBridgeController.onUpdate(async () => {
       emitCounter++
       if (emitCounter === 4) {
-        expect(swapAndBridgeController.toTokenList).toHaveLength(4)
+        expect(swapAndBridgeController.toTokenList).toHaveLength(3)
+        expect(swapAndBridgeController.toTokenList).not.toContainEqual(
+          expect.objectContaining({
+            address: swapAndBridgeController.fromSelectedToken?.address
+          })
+        )
         expect(swapAndBridgeController.toSelectedToken).toBeNull()
         unsubscribe()
         done()

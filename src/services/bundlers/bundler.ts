@@ -12,6 +12,7 @@ import { Gas1559Recommendation } from '../../libs/gasPrice/gasPrice'
 import { privSlot } from '../../libs/proxyDeploy/deploy'
 import { UserOperation } from '../../libs/userOperation/types'
 import { getCleanUserOp } from '../../libs/userOperation/userOperation'
+import { estimationErrorEmitter } from '../errorEmitter/emitter'
 import { getRpcProvider } from '../provider'
 
 require('dotenv').config()
@@ -189,16 +190,42 @@ export class Bundler {
     ])
   }
 
-  static async fetchGasPrices(network: Network): Promise<{
+  static async fetchGasPrices(
+    network: Network,
+    counter: number = 0
+  ): Promise<{
     slow: { maxFeePerGas: string; maxPriorityFeePerGas: string }
     medium: { maxFeePerGas: string; maxPriorityFeePerGas: string }
     fast: { maxFeePerGas: string; maxPriorityFeePerGas: string }
     ape: { maxFeePerGas: string; maxPriorityFeePerGas: string }
   }> {
+    if (counter >= 5) throw new Error("Couldn't fetch gas prices")
+
     const url = `https://api.pimlico.io/v2/${network.chainId}/rpc?apikey=${process.env.REACT_APP_PIMLICO_API_KEY}`
     const provider = getRpcProvider([url], network.chainId)
-    const results = await provider.send('pimlico_getUserOperationGasPrice', [])
+    let response
 
+    try {
+      response = await Promise.race([
+        provider.send('pimlico_getUserOperationGasPrice', []),
+        new Promise((_resolve, reject) => {
+          setTimeout(
+            () => reject(new Error('pimlico_getUserOperationGasPrice failed, request too slow')),
+            6000
+          )
+        })
+      ])
+    } catch (e: any) {
+      estimationErrorEmitter.emit({
+        level: 'major',
+        message: 'Estimating gas prices from the bundler timed out. Retrying...',
+        error: new Error('Budler gas prices estimation timeout')
+      })
+      const increment = counter + 1
+      return this.fetchGasPrices(network, increment)
+    }
+
+    const results = response
     return {
       slow: {
         maxFeePerGas: addExtra(BigInt(results.slow.maxFeePerGas), 5n),

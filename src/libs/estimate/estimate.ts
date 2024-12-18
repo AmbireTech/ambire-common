@@ -106,7 +106,7 @@ export async function estimate4337(
   const feeToken = getFeeTokenForEstimate(feeTokens, network)
   if (feeToken) estimateGasOp.feeCall = getFeeCall(feeToken)
 
-  const estimations = await Promise.all([
+  const initializeRequests = () => [
     deploylessEstimator
       .call('estimate', checkInnerCallsArgs, {
         from: DEPLOYLESS_SIMULATION_FROM,
@@ -115,7 +115,9 @@ export async function estimate4337(
       .catch(getHumanReadableEstimationError),
     bundlerEstimate(account, accountStates, op, network, feeTokens, provider),
     estimateGas(account, estimateGasOp, provider, accountState, network).catch(() => 0n)
-  ])
+  ]
+  const estimations = await estimateWithRetries(initializeRequests, 'estimation-deployless', 12000)
+
   const ambireEstimation = estimations[0]
   const bundlerEstimationResult: EstimateResult = estimations[1]
   if (ambireEstimation instanceof Error) {
@@ -329,7 +331,7 @@ export async function estimate(
       .catch(getHumanReadableEstimationError),
     estimateGas(account, op, provider, accountState, network).catch(() => 0n)
   ]
-  const estimations = await estimateWithRetries(initializeRequests)
+  const estimations = await estimateWithRetries(initializeRequests, 'estimation-deployless')
 
   if (estimations instanceof Error) return estimationErrorFormatted(estimations)
 
