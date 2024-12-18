@@ -89,7 +89,6 @@ import {
 } from '../../libs/userOperation/userOperation'
 import bundler from '../../services/bundlers'
 import { Bundler } from '../../services/bundlers/bundler'
-import { estimationErrorEmitter } from '../../services/errorEmitter/emitter'
 import { paymasterFactory } from '../../services/paymaster'
 import { failedPaymasters } from '../../services/paymaster/FailedPaymasters'
 import { SocketAPI } from '../../services/socket/api'
@@ -105,7 +104,7 @@ import { DappsController } from '../dapps/dapps'
 import { DefiPositionsController } from '../defiPositions/defiPositions'
 import { DomainsController } from '../domains/domains'
 import { EmailVaultController } from '../emailVault/emailVault'
-import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter'
+import EventEmitter, { ErrorRef, Statuses } from '../eventEmitter/eventEmitter'
 import { InviteController } from '../invite/invite'
 import { KeystoreController } from '../keystore/keystore'
 import { NetworksController } from '../networks/networks'
@@ -583,7 +582,6 @@ export class MainController extends EventEmitter {
         return this.isSignRequestStillActive
       }
     )
-    estimationErrorEmitter.init(this.signAccountOp)
 
     this.emitUpdate()
 
@@ -631,7 +629,6 @@ export class MainController extends EventEmitter {
     this.feePayerKey = null
     this.signAccountOp = null
     this.signAccOpInitError = null
-    estimationErrorEmitter.deinit()
 
     // NOTE: no need to update the portfolio here as an update is
     // fired upon removeUserRequest
@@ -1782,7 +1779,10 @@ export class MainController extends EventEmitter {
     )
     const bundlerFetch = async () => {
       if (!is4337) return null
-      return Bundler.fetchGasPrices(network).catch((e) => {
+      const errorCallback = (e: ErrorRef) => {
+        this.emitError(e)
+      }
+      return Bundler.fetchGasPrices(network, errorCallback).catch((e) => {
         this.emitError({
           level: 'silent',
           message: "Failed to fetch the bundler's gas price",
@@ -1946,6 +1946,9 @@ export class MainController extends EventEmitter {
           nativeToCheck,
           // @TODO - first time calling this, portfolio is still not loaded.
           feeTokens,
+          (e: ErrorRef) => {
+            this.emitError(e)
+          },
           {
             is4337Broadcast: isErc4337Broadcast(
               account,

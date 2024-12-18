@@ -41,6 +41,7 @@ const providerArbitrum = getRpcProvider(arbitrum.rpcUrls, arbitrum.chainId)
 // const providerAvalanche = getRpcProvider(avalanche.rpcUrls, avalanche.chainId)
 const providerPolygon = getRpcProvider(polygon.rpcUrls, polygon.chainId)
 const addrWithDeploySignature = '0x52C37FD54BD02E9240e8558e28b11e0Dc22d8e85'
+const errorCallback = () => {}
 
 const smartAccDeployed: Account = {
   addr: '0x8E5F6c1F0b134657A546932C3eC9169E1633a39b',
@@ -336,7 +337,8 @@ describe('estimate', () => {
       op,
       accountStates,
       [],
-      feeTokens
+      feeTokens,
+      errorCallback
     )
 
     expect(response.gasUsed).toBe(21000n)
@@ -389,7 +391,8 @@ describe('estimate', () => {
       op,
       accountStates,
       [],
-      feeTokens
+      feeTokens,
+      errorCallback
     )
 
     expect(response.gasUsed).toBe(21000n)
@@ -444,7 +447,8 @@ describe('estimate', () => {
       op,
       accountStates,
       [],
-      feeTokens
+      feeTokens,
+      errorCallback
     )
 
     expect(response.gasUsed).toBeGreaterThan(0n)
@@ -497,7 +501,8 @@ describe('estimate', () => {
       op,
       accountStates,
       [],
-      feeTokens
+      feeTokens,
+      errorCallback
     )
 
     expect(response.gasUsed).toBe(0n)
@@ -534,7 +539,8 @@ describe('estimate', () => {
       op,
       accountStates,
       getNativeToCheckFromEOAs(nativeToCheck, v1Acc),
-      feeTokens
+      feeTokens,
+      errorCallback
     )
     const usdtOutcome = response.feePaymentOptions!.find(
       (option) => option.token.address === '0xdAC17F958D2ee523a2206206994597C13D831ec7'
@@ -598,7 +604,8 @@ describe('estimate', () => {
       op,
       accountStates,
       getNativeToCheckFromEOAs(nativeToCheck, v1Acc),
-      feeTokens
+      feeTokens,
+      errorCallback
     )
 
     const viewOnlyAccOption = response.feePaymentOptions.find(
@@ -630,7 +637,8 @@ describe('estimate', () => {
       op,
       accountStates,
       getNativeToCheckFromEOAs(nativeToCheck, viewOnlyAcc),
-      feeTokens
+      feeTokens,
+      errorCallback
     )
 
     // make sure we display the view only account payment option
@@ -686,7 +694,8 @@ describe('estimate', () => {
       op,
       accountStates,
       getNativeToCheckFromEOAs(nativeToCheck, v1Acc),
-      feeTokens
+      feeTokens,
+      errorCallback
     )
     const responseWithExecuteBefore = await estimate(
       provider,
@@ -696,6 +705,7 @@ describe('estimate', () => {
       accountStates,
       getNativeToCheckFromEOAs(nativeToCheck, v1Acc),
       feeTokens,
+      errorCallback,
       { calculateRefund: true }
     )
 
@@ -748,7 +758,8 @@ describe('estimate', () => {
       opOptimism,
       accountStates,
       getNativeToCheckFromEOAs(nativeToCheck, accountOptimism),
-      feeTokens
+      feeTokens,
+      errorCallback
     )
 
     response.feePaymentOptions.forEach((feeToken) => {
@@ -778,7 +789,8 @@ describe('estimate', () => {
       opArbitrum,
       accountStates,
       getNativeToCheckFromEOAs(nativeToCheck, smartAccountv2eip712),
-      feeTokens
+      feeTokens,
+      errorCallback
     )
 
     response.feePaymentOptions.map((option) => expect(option.addedNative).toBe(0n))
@@ -817,6 +829,7 @@ describe('estimate', () => {
       accountStates,
       getNativeToCheckFromEOAs(nativeToCheck, smartAcc),
       feeTokens,
+      errorCallback,
       { is4337Broadcast: true }
     )
 
@@ -867,6 +880,7 @@ describe('estimate', () => {
       accountStates,
       getNativeToCheckFromEOAs(nativeToCheck, smartAcc),
       feeTokens,
+      errorCallback,
       { is4337Broadcast: true }
     )
 
@@ -927,6 +941,7 @@ describe('estimate', () => {
       accountStates,
       getNativeToCheckFromEOAs(nativeToCheck, smartAcc),
       feeTokens,
+      errorCallback,
       { is4337Broadcast: true }
     )
 
@@ -966,6 +981,7 @@ describe('estimate', () => {
       accountStates,
       getNativeToCheckFromEOAs(nativeToCheck, smartAccDeployed),
       feeTokens,
+      errorCallback,
       { is4337Broadcast: true }
     )
 
@@ -1008,6 +1024,7 @@ describe('estimate', () => {
       accountStates,
       getNativeToCheckFromEOAs(nativeToCheck, smartAccv2point0Deployed),
       feeTokens,
+      errorCallback,
       { is4337Broadcast: true }
     )
 
@@ -1049,6 +1066,7 @@ describe('estimate', () => {
       accountStates,
       getNativeToCheckFromEOAs(nativeToCheck, trezorSlot6v2NotDeployed),
       feeTokens,
+      errorCallback,
       { is4337Broadcast: false }
     )
 
@@ -1080,7 +1098,8 @@ describe('estimate', () => {
       opPolygonFailBzNoFunds,
       accountStates,
       getNativeToCheckFromEOAs(nativeToCheck, smartAccountv2eip712),
-      feeTokens
+      feeTokens,
+      errorCallback
     )
     expect(response.error).not.toBe(null)
     expect(response.error?.message).toBe(
@@ -1110,7 +1129,8 @@ describe('estimate', () => {
       opPolygonFailBzNoFunds,
       accountStates,
       getNativeToCheckFromEOAs(nativeToCheck, smartAccountv2eip712),
-      feeTokens
+      feeTokens,
+      errorCallback
     )
     expect(response.error).not.toBe(null)
     expect(response.error?.message).toBe(
@@ -1140,7 +1160,8 @@ describe('estimate', () => {
       op,
       accountStates,
       getNativeToCheckFromEOAs(nativeToCheck, v1Acc),
-      feeTokens
+      feeTokens,
+      errorCallback
     )
 
     expect(response.error).not.toBe(null)

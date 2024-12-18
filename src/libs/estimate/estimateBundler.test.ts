@@ -45,6 +45,7 @@ const smartAccDeployed: Account = {
 }
 
 paymasterFactory.init(relayerUrl, fetch)
+const errorCallback = () => {}
 
 describe('Bundler estimation tests', () => {
   describe('Estimation tests: optimism, undeployed', () => {
@@ -104,7 +105,8 @@ describe('Bundler estimation tests', () => {
         opOptimism,
         optimism,
         feeTokens,
-        providers[optimism.id]
+        providers[optimism.id],
+        errorCallback
       )
 
       expect(result).toHaveProperty('erc4337GasLimits')
@@ -162,7 +164,8 @@ describe('Bundler estimation tests', () => {
         opOptimism,
         optimism,
         feeTokens,
-        providers[optimism.id]
+        providers[optimism.id],
+        errorCallback
       )
 
       expect(result).toHaveProperty('erc4337GasLimits')
