@@ -1404,9 +1404,11 @@ export class MainController extends EventEmitter {
       )
     )
 
-    if (!userRequest) return
-
-    this.rejectUserRequest('User rejected the transaction request.', userRequest.id)
+    if (userRequest) {
+      this.rejectUserRequest('User rejected the transaction request.', userRequest.id)
+    } else {
+      this.swapAndBridge.removeActiveRoute(activeRouteId)
+    }
   }
 
   async addUserRequest(
