@@ -176,7 +176,7 @@ export class Portfolio {
     // and also have to introduce an algorithm for self-cleaning outdated/previous NFT tokens.
     // However, we have chosen to keep it as simple as possible and disregard this rare case.
     if (localOpts.additionalErc721Hints) {
-      hints.erc721s = { ...hints.erc721s, ...localOpts.additionalErc721Hints }
+      hints.erc721s = { ...localOpts.additionalErc721Hints, ...hints.erc721s }
     }
 
     if (localOpts.additionalErc20Hints) {
