@@ -1,8 +1,9 @@
-import { JsonRpcProvider, ZeroAddress } from 'ethers'
+import { JsonRpcProvider, Wallet } from 'ethers'
 
 import { Network, NetworkId } from '../../interfaces/network'
 import { GetOptions, Portfolio } from '../../libs/portfolio'
 
+const RANDOM_ADDRESS = '0x0000000000000000000000000000000000000001'
 const scheduledActions: {
   [network in NetworkId]?: {
     promise: Promise<any>
@@ -30,7 +31,8 @@ export async function executeBatchedFetch(network: Network): Promise<void> {
       )
     }
   }
-  const portfolioResponse = await portfolio.get(ZeroAddress, options)
+  const portfolioResponse = await portfolio.get(RANDOM_ADDRESS, options)
+
   scheduledActions[network.id]?.data.forEach((i) => {
     const tokenInfo =
       (i.address,
