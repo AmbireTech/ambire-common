@@ -18,6 +18,8 @@ interface NFT {
   function tokenOfOwnerByIndex(address, uint) external view returns (uint);
 
   function ownerOf(uint256 _tokenId) external view returns (address);
+
+  function supportsInterface(bytes4) external view returns (bool);
 }
 
 contract NFTGetter is Simulation {
@@ -46,10 +48,14 @@ contract NFTGetter is Simulation {
   ) external view returns (NFTCollectionMetadata memory meta) {
     meta.name = collection.name();
     meta.symbol = collection.symbol();
-    if (tokenIds.length == 0) {
-      uint balance = collection.balanceOf(address(account));
-      if (balance > limit) balance = limit;
-      meta.nfts = new uint256[](balance);
+
+    uint balance = collection.balanceOf(address(account));
+    if (balance > limit) balance = limit;
+    meta.nfts = new uint256[](balance);
+
+    bool isEnumerable = collection.supportsInterface(0x780e9d63);
+
+    if (isEnumerable || tokenIds.length == 0) {
       for (uint i = 0; i != balance; i++) {
         uint tokenId = collection.tokenOfOwnerByIndex(address(account), i);
         meta.nfts[i] = tokenId;
@@ -100,7 +106,11 @@ contract NFTGetter is Simulation {
 
   // Compare the collections before (collectionsA) and after simulation (collectionsB)
   // and return the delta (with simulation)
-  function getDelta(NFTCollectionMetadata[] memory collectionsA, NFTCollectionMetadata[] memory collectionsB, NFT[] memory collections) public returns (NFTCollectionMetadata[] memory) {
+  function getDelta(
+    NFTCollectionMetadata[] memory collectionsA,
+    NFTCollectionMetadata[] memory collectionsB,
+    NFT[] memory collections
+  ) public returns (NFTCollectionMetadata[] memory) {
     uint deltaSize = 0;
 
     for (uint256 i = 0; i < collectionsA.length; i++) {
@@ -177,8 +187,11 @@ contract NFTGetter is Simulation {
         tokenPerCollectionLimit
       );
 
-
-      (NFTCollectionMetadata[] memory deltaAfter) = getDelta(before.collections, afterSimulation.collections, collections);
+      NFTCollectionMetadata[] memory deltaAfter = getDelta(
+        before.collections,
+        afterSimulation.collections,
+        collections
+      );
       afterSimulation.collections = deltaAfter;
     }
 
