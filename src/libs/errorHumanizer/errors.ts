@@ -96,8 +96,12 @@ const ESTIMATION_ERRORS: ErrorHumanizerError[] = [
       'contracts allowed',
       'ontract is not allowed'
     ],
+    message: 'this dApp does not support Smart Account wallets. Use a Basic Account (EOA) instead.'
+  },
+  {
+    reasons: ['ERC721: token already minted'],
     message:
-      'this dApp does not support Smart Account wallets. Please use a Basic Account (EOA) to interact with this dApp.'
+      'the NFT you are trying to mint is already minted. This can also happen if you have batched multiple mint transactions for the same NFT.'
   }
 ]
 
