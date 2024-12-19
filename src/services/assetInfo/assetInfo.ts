@@ -1,8 +1,9 @@
-import { JsonRpcProvider, ZeroAddress } from 'ethers'
+import { JsonRpcProvider } from 'ethers'
 
 import { Network, NetworkId } from '../../interfaces/network'
 import { GetOptions, Portfolio } from '../../libs/portfolio'
 
+const RANDOM_ADDRESS = '0x0000000000000000000000000000000000000001'
 const scheduledActions: {
   [network in NetworkId]?: {
     promise: Promise<any>
@@ -17,20 +18,19 @@ export async function executeBatchedFetch(network: Network): Promise<void> {
   const portfolio = new Portfolio(fetch as any, provider, network)
   const options: Partial<GetOptions> = {
     disableAutoDiscovery: true,
-    previousHints: {
-      erc20s: allAddresses,
-      erc721s: Object.fromEntries(
-        allAddresses.map((i) => [
-          i,
-          {
-            tokens: ['1'],
-            isKnown: false
-          }
-        ])
-      )
-    }
+    additionalErc20Hints: allAddresses,
+    additionalErc721Hints: Object.fromEntries(
+      allAddresses.map((i) => [
+        i,
+        {
+          tokens: ['1'],
+          isKnown: false
+        }
+      ])
+    )
   }
-  const portfolioResponse = await portfolio.get(ZeroAddress, options)
+  const portfolioResponse = await portfolio.get(RANDOM_ADDRESS, options)
+
   scheduledActions[network.id]?.data.forEach((i) => {
     const tokenInfo =
       (i.address,

@@ -5,6 +5,7 @@ import { describe, expect } from '@jest/globals'
 
 import { decodeError } from '../errorDecoder'
 import { RELAYER_DOWN_MESSAGE } from '../relayerCall/relayerCall'
+import { insufficientPaymasterFunds } from './errors'
 import { MESSAGE_PREFIX } from './estimationErrorHumanizer'
 import { humanizeEstimationOrBroadcastError } from './humanizeCommonCases'
 
@@ -49,9 +50,7 @@ describe('Estimation/Broadcast common errors are humanized', () => {
     const { reason } = decodeError(error)
     const message = humanizeEstimationOrBroadcastError(reason, MESSAGE_PREFIX)
 
-    expect(message).toBe(
-      `${MESSAGE_PREFIX} the Paymaster has insufficient funds. Please select an alternative fee payment option or contact support for assistance.`
-    )
+    expect(message).toBe(`${MESSAGE_PREFIX} ${insufficientPaymasterFunds}`)
   })
   it('Insufficient funds for gas', async () => {
     try {

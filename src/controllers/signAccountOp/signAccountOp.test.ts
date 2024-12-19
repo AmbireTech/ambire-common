@@ -36,6 +36,7 @@ import { SignAccountOpController, SigningStatus } from './signAccountOp'
 const providers = Object.fromEntries(
   networks.map((network) => [network.id, getRpcProvider(network.rpcUrls, network.chainId)])
 )
+const errorCallback = () => {}
 
 // @ts-ignore
 global.structuredClone = structuredClone as any
@@ -396,7 +397,8 @@ const init = async (
       op,
       accountsCtrl.accountStates,
       getNativeToCheckFromEOAs(nativeToCheck, account),
-      feeTokens
+      feeTokens,
+      errorCallback
     ))
 
   if (portfolio.getLatestPortfolioState(account.addr)[op.networkId]!.result) {

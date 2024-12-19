@@ -25,7 +25,6 @@ import {
 // eslint-disable-next-line import/no-cycle
 import {
   AccountState,
-  ExternalHintsAPIResponse,
   GetOptions,
   NetworkState,
   PortfolioControllerState,
@@ -33,6 +32,7 @@ import {
   TemporaryTokens,
   TokenResult
 } from '../../libs/portfolio/interfaces'
+import { PORTFOLIO_LIB_ERROR_NAMES } from '../../libs/portfolio/portfolio'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { AccountsController } from '../accounts/accounts'
 import EventEmitter from '../eventEmitter/eventEmitter'
@@ -85,6 +85,12 @@ export class PortfolioController extends EventEmitter {
 
   #minUpdateInterval: number = 20000 // 20 seconds
 
+  /**
+   * Hints stored in storage, divided into three categories:
+   * - fromExternalAPI: Hints fetched from an external API, used when the external API response fails.
+   * - learnedTokens: Hints of learned tokens, each with a timestamp indicating the last time the token was seen with a balance and not included in fromExternalAPI hints. This helps prioritize tokens not yet found by Velcro during cleansing.
+   * - learnedNfts: Hints of learned NFTs.
+   */
   #previousHints: PreviousHintsStorage = {
     fromExternalAPI: {},
     learnedTokens: {},
@@ -270,7 +276,7 @@ export class PortfolioController extends EventEmitter {
     try {
       const result = await portfolioLib.get(accountId, {
         priceRecency: 60000,
-        additionalHints: [additionalHint, ...temporaryTokensToFetch.map((x) => x.address)],
+        additionalErc20Hints: [additionalHint, ...temporaryTokensToFetch.map((x) => x.address)],
         disableAutoDiscovery: true
       })
       this.temporaryTokens[network.id] = {
@@ -376,7 +382,14 @@ export class PortfolioController extends EventEmitter {
   }
 
   #getCanSkipUpdate(networkState?: NetworkState, forceUpdate?: boolean) {
-    if (forceUpdate || !networkState || networkState.criticalError) return false
+    const hasImportantErrors = networkState?.errors.some(
+      (e) =>
+        Object.keys(PORTFOLIO_LIB_ERROR_NAMES).includes(e.name) &&
+        e.name !== PORTFOLIO_LIB_ERROR_NAMES.PriceFetchError
+    )
+
+    if (forceUpdate || !networkState || networkState.criticalError || hasImportantErrors)
+      return false
     const updateStarted = networkState.result?.updateStarted || 0
     const isWithinMinUpdateInterval =
       !!updateStarted && Date.now() - updateStarted < this.#minUpdateInterval
@@ -390,10 +403,9 @@ export class PortfolioController extends EventEmitter {
     accountId: string,
     network: Network,
     portfolioLib: Portfolio,
-    _portfolioProps: Partial<GetOptions> & { blockTag: 'latest' | 'pending' },
+    portfolioProps: Partial<GetOptions> & { blockTag: 'latest' | 'pending' },
     forceUpdate: boolean
   ): Promise<boolean> {
-    const portfolioProps = { ..._portfolioProps }
     const blockTag = portfolioProps.blockTag
     const stateKeys = {
       latest: this.#latest,
@@ -415,13 +427,6 @@ export class PortfolioController extends EventEmitter {
     const state = accountState[network.id]!
     const tokenPreferences = this.tokenPreferences
     const hasNonZeroTokens = !!this.#networksWithAssetsByAccounts?.[accountId]?.length
-    if (!portfolioProps.previousHints) portfolioProps.previousHints = { erc20s: [], erc721s: {} }
-    portfolioProps.previousHints.erc721s = Object.fromEntries(
-      Object.entries(this.#previousHints?.learnedNfts?.[network.id] || {}).map(([k, v]) => [
-        getAddress(k),
-        { isKnown: false, tokens: v.map((i) => i.toString()) }
-      ])
-    )
 
     try {
       const result = await portfolioLib.get(accountId, {
@@ -432,13 +437,13 @@ export class PortfolioController extends EventEmitter {
         ...portfolioProps
       })
 
-      const additionalHints = portfolioProps.additionalHints || []
+      const additionalHintsErc20Hints = portfolioProps.additionalErc20Hints || []
 
       const processedTokens = processTokens(
         result.tokens,
         network,
         hasNonZeroTokens,
-        additionalHints,
+        additionalHintsErc20Hints,
         tokenPreferences
       )
 
@@ -528,13 +533,9 @@ export class PortfolioController extends EventEmitter {
               : currentAccountOps !== simulatedAccountOps
           const forceUpdate = opts?.forceUpdate || areAccountOpsChanged
 
-          const fallbackHints = (this.#previousHints?.fromExternalAPI &&
-            this.#previousHints?.fromExternalAPI[key]) ?? {
-            erc20s: [],
-            erc721s: {}
-          }
+          const previousHintsFromExternalAPI = this.#previousHints?.fromExternalAPI?.[key]
 
-          const additionalHints = [
+          const additionalErc20Hints = [
             ...Object.keys(
               (this.#previousHints?.learnedTokens &&
                 this.#previousHints?.learnedTokens[network.id]) ??
@@ -542,6 +543,17 @@ export class PortfolioController extends EventEmitter {
             ),
             ...((this.#toBeLearnedTokens && this.#toBeLearnedTokens[network.id]) ?? [])
           ]
+          const additionalErc721Hints = Object.fromEntries(
+            Object.entries(this.#previousHints?.learnedNfts?.[network.id] || {}).map(([k, v]) => [
+              getAddress(k),
+              { isKnown: false, tokens: v.map((i) => i.toString()) }
+            ])
+          )
+          const allHints = {
+            previousHintsFromExternalAPI,
+            additionalErc20Hints,
+            additionalErc721Hints
+          }
 
           const [isSuccessfulLatestUpdate] = await Promise.all([
             // Latest state update
@@ -551,8 +563,7 @@ export class PortfolioController extends EventEmitter {
               portfolioLib,
               {
                 blockTag: 'latest',
-                previousHints: fallbackHints,
-                additionalHints
+                ...allHints
               },
               forceUpdate
             ),
@@ -562,7 +573,6 @@ export class PortfolioController extends EventEmitter {
               portfolioLib,
               {
                 blockTag: 'pending',
-                previousHints: fallbackHints,
                 ...(currentAccountOps && {
                   simulation: {
                     account: selectedAccount,
@@ -570,7 +580,7 @@ export class PortfolioController extends EventEmitter {
                   }
                 }),
                 isEOA: !isSmartAccount(selectedAccount),
-                additionalHints
+                ...allHints
               },
               forceUpdate
             )
@@ -580,29 +590,39 @@ export class PortfolioController extends EventEmitter {
           if (
             isSuccessfulLatestUpdate &&
             !areAccountOpsChanged &&
-            accountState[network.id]?.result?.hintsFromExternalAPI
+            accountState[network.id]?.result
           ) {
+            const networkResult = accountState[network.id]!.result
             const readyToLearnTokens = getTokensReadyToLearn(
               this.#toBeLearnedTokens[network.id],
-              accountState[network.id]!.result!.tokens
+              networkResult!.tokens
             )
 
             if (readyToLearnTokens.length) {
               await this.learnTokens(readyToLearnTokens, network.id)
             }
 
-            const updatedStoragePreviousHints = getUpdatedHints(
-              accountState[network.id]!.result!.hintsFromExternalAPI as ExternalHintsAPIResponse,
-              accountState[network.id]!.result!.tokens,
-              accountState[network.id]!.result!.tokenErrors,
-              network.id,
-              this.#previousHints,
-              key,
-              this.tokenPreferences
-            )
+            // Either a valid response or there is no external API to fetch hints from
+            const isExternalHintsApiResponseValid =
+              !!networkResult?.hintsFromExternalAPI || !network.hasRelayer
 
-            this.#previousHints = updatedStoragePreviousHints
-            await this.#storage.set('previousHints', updatedStoragePreviousHints)
+            if (isExternalHintsApiResponseValid) {
+              const updatedStoragePreviousHints = getUpdatedHints(
+                networkResult!.hintsFromExternalAPI || null,
+                networkResult!.tokens,
+                networkResult!.tokenErrors,
+                network.id,
+                this.#previousHints,
+                key,
+                this.tokenPreferences
+              )
+
+              // Updating hints is only needed when the external API response is valid.
+              // learnTokens and learnNfts update storage separately, so we don't need to update them here
+              // if the external API response is invalid.
+              this.#previousHints = updatedStoragePreviousHints
+              await this.#storage.set('previousHints', updatedStoragePreviousHints)
+            }
           }
 
           // We cache the previously simulated AccountOps

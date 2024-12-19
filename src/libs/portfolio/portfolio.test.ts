@@ -13,6 +13,7 @@ import { Account } from '../../interfaces/account'
 import { AccountOp } from '../accountOp/accountOp'
 import { ERC20 } from '../humanizer/const/abis'
 import { stringify } from '../richJson/richJson'
+import { StrippedExternalHintsAPIResponse } from './interfaces'
 import { Portfolio } from './portfolio'
 
 describe('Portfolio', () => {
@@ -184,49 +185,6 @@ describe('Portfolio', () => {
     })
     expect(resultTwo.priceUpdateTime).toBeLessThanOrEqual(3)
     expect(resultTwo.tokens.every((x) => x.priceIn.length)).toBe(true)
-  })
-
-  test('portfolio works with previously cached hints, even if Velcro Discovery request fails', async () => {
-    // Here we are mocking multi-hints route only, in order to simulate Velcro Discovery failure
-    jest.mock('node-fetch', () => {
-      return jest.fn((url: any) => {
-        // @ts-ignore
-        const { Response } = jest.requireActual('node-fetch')
-        if (url.includes(`${velcroUrl}/multi-hints`)) {
-          const body = stringify({ message: 'API error' })
-          const headers = { status: 200 }
-
-          return Promise.resolve(new Response(body, headers))
-        }
-
-        // @ts-ignore
-        return jest.requireActual('node-fetch')(url)
-      })
-    })
-
-    const portfolioInner = new Portfolio(fetch, provider, ethereum, velcroUrl)
-    const previousHints = {
-      erc20s: [
-        '0x0000000000000000000000000000000000000000',
-        '0xba100000625a3754423978a60c9317c58a424e3D',
-        '0x4da27a545c0c5B758a6BA100e3a049001de870f5'
-      ],
-      erc721s: {}
-    }
-    const result = await portfolioInner.get('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8', {
-      previousHints
-    })
-
-    // Restore node-fetch module
-    jest.mock('node-fetch', () => {
-      return jest.fn().mockImplementation(jest.requireActual('node-fetch'))
-    })
-
-    expect(
-      result.tokens
-        .map((token) => token.address)
-        .filter((token) => previousHints.erc20s.includes(token))
-    ).toEqual(previousHints.erc20s)
   })
 
   test('simulation works for EOAs', async () => {
@@ -595,5 +553,113 @@ describe('Portfolio', () => {
     console.log = originalLog
     // Destroy the failing provider
     failingProvider.destroy()
+  })
+
+  describe('Hints', () => {
+    describe('With blocked Velcro discovery', () => {
+      // Done in beforeEach instead of a reusable function because
+      // mocks can't be reused as functions
+      beforeEach(() => {
+        // Simulate a Velcro Discovery failure
+        jest.mock('node-fetch', () => {
+          return jest.fn((url: any) => {
+            // @ts-ignore
+            const { Response } = jest.requireActual('node-fetch')
+            if (url.includes(`${velcroUrl}/multi-hints`)) {
+              const body = stringify({ message: 'API error' })
+              const headers = { status: 200 }
+
+              return Promise.resolve(new Response(body, headers))
+            }
+
+            // @ts-ignore
+            return jest.requireActual('node-fetch')(url)
+          })
+        })
+      })
+      afterEach(() => {
+        // Restore the original implementations
+        jest.restoreAllMocks()
+      })
+
+      test('portfolio works with previously cached hints, even if Velcro Discovery request fails', async () => {
+        const portfolioInner = new Portfolio(fetch, provider, ethereum, velcroUrl)
+        const previousHints = {
+          erc20s: [
+            '0x0000000000000000000000000000000000000000',
+            '0x4da27a545c0c5B758a6BA100e3a049001de870f5',
+            '0xba100000625a3754423978a60c9317c58a424e3D'
+          ],
+          erc721s: {},
+          lastUpdate: Date.now()
+        }
+        const result = await portfolioInner.get('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8', {
+          previousHintsFromExternalAPI: previousHints
+        })
+
+        expect(
+          result.tokens
+            .map((token) => token.address)
+            .filter((token) => previousHints.erc20s.includes(token))
+        ).toEqual(previousHints.erc20s)
+      })
+      test('Erc 721 external api hints should be prioritized over additional hints', async () => {
+        const hintsFromExternalAPI: StrippedExternalHintsAPIResponse = {
+          erc20s: [],
+          lastUpdate: Date.now(),
+          erc721s: {
+            '0x026224A2940bFE258D0dbE947919B62fE321F042': {
+              isKnown: false,
+              tokens: ['2647']
+            }
+          }
+        }
+        const additionalErc721Hints = {
+          '0x026224A2940bFE258D0dbE947919B62fE321F042': {
+            isKnown: false,
+            tokens: ['2648'] // Different token id on purpose
+          }
+        }
+
+        const portfolioInner = new Portfolio(fetch, provider, ethereum, velcroUrl)
+
+        const result = await portfolioInner.get('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8', {
+          previousHintsFromExternalAPI: hintsFromExternalAPI,
+          additionalErc721Hints
+        })
+
+        // The correct tokenId was found
+        expect(
+          result.collections.find((c) => c.address === '0x026224A2940bFE258D0dbE947919B62fE321F042')
+            ?.collectibles.length
+        ).toBe(1)
+      })
+    })
+    test('Hints are deduped', async () => {
+      const additionalErc20Hints = [USDT_ADDRESS, USDT_ADDRESS.toLowerCase()]
+      const portfolioInner = new Portfolio(fetch, provider, ethereum, velcroUrl)
+
+      const result = await portfolioInner.get('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8', {
+        additionalErc20Hints
+      })
+
+      const usdtFoundTimes = result.tokens
+        .map((token) => token.address)
+        .filter((address) => address.toLowerCase() === USDT_ADDRESS.toLowerCase()).length
+
+      expect(usdtFoundTimes).toBeLessThan(2)
+    })
+    test("Bad hints don't break the portfolio", async () => {
+      const additionalErc20Hints = [
+        `${USDT_ADDRESS.slice(-1)}4` // Bad hint
+      ]
+      const portfolioInner = new Portfolio(fetch, provider, ethereum, velcroUrl)
+
+      const result = await portfolioInner.get('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8', {
+        additionalErc20Hints
+      })
+
+      expect(result.tokens.length).toBeGreaterThan(0)
+    })
   })
 })

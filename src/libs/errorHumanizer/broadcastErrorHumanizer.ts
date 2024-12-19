@@ -16,6 +16,7 @@ export function getHumanReadableBroadcastError(e: Error) {
   if (e instanceof EmittableError || e instanceof ExternalSignerError) {
     return e
   }
+
   const decodedError = decodeError(e)
   const commonError = humanizeEstimationOrBroadcastError(decodedError.reason, MESSAGE_PREFIX)
   let errorMessage = getHumanReadableErrorMessage(

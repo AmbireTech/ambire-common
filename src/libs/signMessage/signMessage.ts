@@ -29,6 +29,7 @@ import {
   getSignableHash
 } from '../accountOp/accountOp'
 import { fromDescriptor } from '../deployless/deployless'
+import { relayerAdditionalNetworks } from '../networks/networks'
 import { getActivatorCall } from '../userOperation/userOperation'
 
 // EIP6492 signature ends in magicBytes, which ends with a 0x92,
@@ -303,6 +304,13 @@ export async function getPlainTextSignature(
     const isChecksummedHexAddressInMessage = humanReadableMsg.includes(
       checksummedHexAddrWithout0x.slice(2)
     )
+
+    if (
+      !network.predefined &&
+      !relayerAdditionalNetworks.find((net) => net.chainId === network.chainId)
+    ) {
+      throw new Error(`Signing messages is disallowed for v1 accounts on ${network.name}`)
+    }
 
     if (
       isAsciiAddressInMessage ||

@@ -182,12 +182,14 @@ const buildSwapAndBridgeUserRequests = async (
           isSignAction: true,
           networkId,
           accountAddr: account.addr,
-          activeRouteId: userTx.activeRouteId
+          activeRouteId: userTx.activeRouteId,
+          isSwapAndBridgeCall: true
         }
       } as SignUserRequest
     ]
   }
   const requests: SignUserRequest[] = []
+  let shouldBuildSwapOrBridgeTx = true
   if (userTx.approvalData) {
     const erc20Interface = new Interface(ERC20.abi)
     let shouldApprove = true
@@ -218,8 +220,8 @@ const buildSwapAndBridgeUserRequests = async (
             isSignAction: true,
             networkId,
             accountAddr: account.addr,
-            activeRouteId: userTx.activeRouteId,
-            isApproval: true
+            isSwapAndBridgeCall: true,
+            activeRouteId: userTx.activeRouteId
           }
         } as SignUserRequest)
       }
@@ -243,34 +245,39 @@ const buildSwapAndBridgeUserRequests = async (
           isSignAction: true,
           networkId,
           accountAddr: account.addr,
-          activeRouteId: userTx.activeRouteId,
-          isApproval: true
+          isSwapAndBridgeCall: true,
+          activeRouteId: userTx.activeRouteId
         }
       } as SignUserRequest)
+      // first build only the approval tx and then when confirmed this func will be called a second time
+      // and then only the swap or bridge tx will be created
+      shouldBuildSwapOrBridgeTx = false
     }
   }
 
-  requests.push({
-    id: userTx.activeRouteId,
-    action: {
-      kind: 'calls' as const,
-      calls: [
-        {
-          to: userTx.txTarget,
-          value: BigInt(userTx.value),
-          data: userTx.txData,
-          fromUserRequestId: userTx.activeRouteId
-        } as Call
-      ]
-    },
-    meta: {
-      isSignAction: true,
-      networkId,
-      accountAddr: account.addr,
-      activeRouteId: userTx.activeRouteId
-    }
-  } as SignUserRequest)
-
+  if (shouldBuildSwapOrBridgeTx) {
+    requests.push({
+      id: userTx.activeRouteId,
+      action: {
+        kind: 'calls' as const,
+        calls: [
+          {
+            to: userTx.txTarget,
+            value: BigInt(userTx.value),
+            data: userTx.txData,
+            fromUserRequestId: userTx.activeRouteId
+          } as Call
+        ]
+      },
+      meta: {
+        isSignAction: true,
+        networkId,
+        accountAddr: account.addr,
+        isSwapAndBridgeCall: true,
+        activeRouteId: userTx.activeRouteId
+      }
+    } as SignUserRequest)
+  }
   return requests
 }
 

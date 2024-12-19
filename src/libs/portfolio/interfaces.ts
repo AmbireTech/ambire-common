@@ -57,6 +57,7 @@ export interface Hints {
 }
 
 export interface ExternalHintsAPIResponse extends Hints {
+  lastUpdate: number
   networkId: string
   accountAddr: string
   prices: {
@@ -67,6 +68,11 @@ export interface ExternalHintsAPIResponse extends Hints {
   // All other props, are provided by Velcro Discovery request.
   error?: string
 }
+
+export type StrippedExternalHintsAPIResponse = Pick<
+  ExternalHintsAPIResponse,
+  'erc20s' | 'erc721s' | 'lastUpdate'
+>
 
 export interface ExtendedError extends Error {
   simulationErrorMsg?: string
@@ -82,7 +88,7 @@ export interface PortfolioLibGetResult {
   feeTokens: TokenResult[]
   tokenErrors: { error: string; address: string }[]
   collections: CollectionResult[]
-  hintsFromExternalAPI: Hints | null
+  hintsFromExternalAPI: StrippedExternalHintsAPIResponse | null
   errors: ExtendedError[]
   blockNumber: number
   beforeNonce: bigint
@@ -177,21 +183,21 @@ export interface GetOptions {
   simulation?: GetOptionsSimulation
   priceCache?: PriceCache
   priceRecency: number
-  previousHints?: {
-    erc20s: Hints['erc20s']
-    erc721s: Hints['erc721s']
-  }
+  previousHintsFromExternalAPI?: StrippedExternalHintsAPIResponse | null
   isEOA: boolean
   fetchPinned: boolean
   tokenPreferences: CustomToken[]
-  additionalHints?: Hints['erc20s']
+  additionalErc20Hints?: Hints['erc20s']
+  additionalErc721Hints?: Hints['erc721s']
   disableAutoDiscovery?: boolean
 }
 
 export interface PreviousHintsStorage {
   learnedTokens: { [network in NetworkId]: { [tokenAddress: string]: string | null } }
   learnedNfts: { [network in NetworkId]: { [nftAddress: string]: bigint[] } }
-  fromExternalAPI: { [networkAndAccountKey: string]: GetOptions['previousHints'] }
+  fromExternalAPI: {
+    [networkAndAccountKey: string]: GetOptions['previousHintsFromExternalAPI']
+  }
 }
 
 export interface NetworkNonces {

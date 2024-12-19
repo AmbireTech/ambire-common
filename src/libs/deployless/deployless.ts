@@ -61,6 +61,8 @@ export class Deployless {
 
   private provider: JsonRpcProvider | Provider
 
+  private isProviderInvictus: boolean = false
+
   // We need to detect whether the provider supports state override
   private detectionPromise?: Promise<void>
 
@@ -87,6 +89,8 @@ export class Deployless {
     )
     this.contractBytecode = code
     this.provider = provider
+    // eslint-disable-next-line no-underscore-dangle
+    this.isProviderInvictus = (provider as any)._getConnection().url.includes('invictus')
     this.iface = new Interface(abi)
     if (codeAtRuntime !== undefined) {
       assert.ok(codeAtRuntime.startsWith('0x'), 'contract code (runtime) must start with 0x')
@@ -184,7 +188,10 @@ export class Deployless {
     // or the timeout promise will reject after 10 seconds, whichever occurs first.
     const callPromisedWithResolveTimeout = Promise.race([
       callPromise,
-      new Promise((_resolve, reject) => setTimeout(() => reject(new Error('rpc-timeout')), 10000))
+      new Promise((_resolve, reject) => {
+        // Custom providers may take longer to respond, so we set a longer timeout for them.
+        setTimeout(() => reject(new Error('rpc-timeout')), this.isProviderInvictus ? 5000 : 15000)
+      })
     ])
 
     const returnDataRaw = mapResponse(await mapError(callPromisedWithResolveTimeout))

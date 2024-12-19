@@ -19,7 +19,7 @@ export const WALLETModule: HumanizerCallModule = (_: AccountOp, irCalls: IrCall[
   }
   const newCalls = irCalls.map((call: IrCall) => {
     if (
-      stakingAddresses.includes(call.to) &&
+      stakingAddresses.includes(call.to.toLowerCase()) &&
       (!call.fullVisualization || checkIfUnknownAction(call.fullVisualization))
     ) {
       if (matcher.stakingPool[call.data.slice(0, 10)]) {

@@ -7,15 +7,18 @@ import structuredClone from '@ungap/structured-clone'
 
 import { relayerUrl, velcroUrl } from '../../../test/config'
 import { produceMemoryStore } from '../../../test/helpers'
+import { suppressConsoleBeforeEach } from '../../../test/helpers/console'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
 import { BIP44_STANDARD_DERIVATION_TEMPLATE } from '../../consts/derivation'
 import { SelectedAccountForImport } from '../../interfaces/account'
 import { UserRequest } from '../../interfaces/userRequest'
+import { InnerCallFailureError } from '../../libs/errorDecoder/customErrors'
 import { KeyIterator } from '../../libs/keyIterator/keyIterator'
 import { KeystoreSigner } from '../../libs/keystoreSigner/keystoreSigner'
 import { getBytecode } from '../../libs/proxyDeploy/bytecode'
 import { getAmbireAccountAddress } from '../../libs/proxyDeploy/getAmbireAddressTwo'
+import { RelayerError } from '../../libs/relayerCall/relayerCall'
 import { MainController } from './main'
 
 // @ts-ignore
@@ -388,5 +391,116 @@ describe('Main Controller ', () => {
 
     const eth3 = controller.networks.networks.find((net) => net.id === 'ethereum')!
     expect(eth3.areContractsDeployed).toEqual(true)
+  })
+  describe('throwBroadcastAccountOp', () => {
+    suppressConsoleBeforeEach()
+
+    const prepareTest = () => {
+      const controllerAnyType = controller as any
+      controllerAnyType.updateSignAccountOpGasPrice = jest.fn()
+      controllerAnyType.estimateSignAccountOp = jest.fn()
+
+      return {
+        controllerAnyType
+      }
+    }
+
+    it('Should prefer message to error', async () => {
+      const { controllerAnyType } = prepareTest()
+      try {
+        await controllerAnyType.throwBroadcastAccountOp({
+          message: 'message',
+          error: new Error('error')
+        })
+      } catch (e: any) {
+        expect(e.message).toBe('message')
+        expect(controllerAnyType.updateSignAccountOpGasPrice).not.toHaveBeenCalled()
+        expect(controllerAnyType.estimateSignAccountOp).not.toHaveBeenCalled()
+      }
+    })
+    it('pimlico_getUserOperationGasPrice', async () => {
+      const { controllerAnyType } = prepareTest()
+      try {
+        await controllerAnyType.throwBroadcastAccountOp({
+          error: new Error(
+            "pimlico_getUserOperationGasPrice some information we don't care about 0x2314214"
+          )
+        })
+      } catch (e: any) {
+        expect(e.message).toBe(
+          'Transaction fee underpriced. Please select a higher transaction speed and try again'
+        )
+        expect(controllerAnyType.updateSignAccountOpGasPrice).toHaveBeenCalledTimes(1)
+        expect(controllerAnyType.estimateSignAccountOp).not.toHaveBeenCalled()
+      }
+    })
+    it('Error that should be humanized by getHumanReadableBroadcastError', async () => {
+      const { controllerAnyType } = prepareTest()
+      const error = new InnerCallFailureError('   transfer amount exceeds balance   ')
+
+      try {
+        await controllerAnyType.throwBroadcastAccountOp({
+          error
+        })
+      } catch (e: any) {
+        expect(e.message).toBe(
+          'The transaction cannot be broadcast because the transfer amount exceeds your account balance. Please reduce the transfer amount and try again.'
+        )
+        expect(controllerAnyType.updateSignAccountOpGasPrice).not.toHaveBeenCalled()
+        expect(controllerAnyType.estimateSignAccountOp).not.toHaveBeenCalled()
+      }
+    })
+    it('Unknown error that should be humanized by getHumanReadableBroadcastError', async () => {
+      const { controllerAnyType } = prepareTest()
+      const error = new Error("I'm a teapot")
+
+      try {
+        await controllerAnyType.throwBroadcastAccountOp({
+          error
+        })
+      } catch (e: any) {
+        expect(e.message).toBe(
+          'The transaction cannot be broadcast because of an unknown error.\nPlease try again or contact Ambire support for assistance.'
+        )
+        expect(controllerAnyType.updateSignAccountOpGasPrice).not.toHaveBeenCalled()
+        expect(controllerAnyType.estimateSignAccountOp).not.toHaveBeenCalled()
+      }
+    })
+    it('replacement fee too low', async () => {
+      const { controllerAnyType } = prepareTest()
+      const error = new Error('replacement fee too low')
+
+      try {
+        await controllerAnyType.throwBroadcastAccountOp({
+          error
+        })
+      } catch (e: any) {
+        expect(e.message).toBe(
+          'Replacement fee is insufficient. Fees have been automatically adjusted so please try submitting your transaction again.'
+        )
+        expect(controllerAnyType.updateSignAccountOpGasPrice).not.toHaveBeenCalled()
+        expect(controllerAnyType.estimateSignAccountOp).toHaveBeenCalledTimes(1)
+      }
+    })
+    it('Relayer broadcast swap expired', async () => {
+      const { controllerAnyType } = prepareTest()
+
+      const error = new RelayerError(
+        '"Transaction too old" (action="estimateGas", data="0x08c379a0000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000000135472616e73616374696f6e20746f6f206f6c6400000000000000000000000000", reason="Transaction too old", transaction={ "data": "0x6171d1c9000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000004e000000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000040000000000000000000000000000000000000000000000000000000000000032000000000000000000000000068b3465833fb72a70ecdf485e0e4c7bd8665fc450000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000006000000000000000000000000000000000000000000000000000000000000002445ae401dc00000000000000000000000000000000000000000000000000000000673b3e25000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000040000000000000000000000000000000000000000000000000000000000000016000000000000000000000000000000000000000000000000000000000000000e404e45aaf000000000000000000000000c2132d05d31c914a87c6611c10748aeb04b58e8f0000000000000000000000000d500b1d8e8ef31e21c99d1db9a6444d3adf127000000000000000000000000000000000000000000000000000000000000001f40000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000c35000000000000000000000000000000000000000000000000001af5cbb4b149c38000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000004449404b7c00000000000000000000000000000000000000000000000001af5cbb4b149c380000000000000000000000007544127fce3dd39a15b719abb93ca765d91ead6d0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000942f9ce5d9a33a82f88d233aeb3292e6802303480000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000006000000000000000000000000000000000000000000000000000000000000000e000000000000000000000000000000000000000000000000000000000000000600000000000000000000000000000000000000000000000000074f0dfef4cd1f200000000000000000000000000000000000000000000000000000000000000a0000000000000000000000000000000000000000000000000000000000000000767617354616e6b000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000006574d4154494300000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000042b1f9d3975aecfa6e646bef006f2ab88a131775543cb0321360633cef30dcce5b1c78936706c50fdb17469b8d8e546f22d68ab5c7a7d1e73649cd3ca8d9d3a1f81c01000000000000000000000000000000000000000000000000000000000000", "to": "0x7544127fCe3dd39A15b719abB93Ca765D91EAD6d" }, invocation=null, revert={ "args": [ "Transaction too old" ], "name": "Error", "signature": "Error(string)" }, code=CALL_EXCEPTION, version=6.7.1)',
+        {},
+        {}
+      )
+      try {
+        await controllerAnyType.throwBroadcastAccountOp({
+          error
+        })
+      } catch (e: any) {
+        expect(e.message).toBe(
+          'The transaction cannot be broadcast because the swap has expired. Return to the dApp and reinitiate the swap if you wish to proceed.'
+        )
+        expect(controllerAnyType.updateSignAccountOpGasPrice).not.toHaveBeenCalled()
+        expect(controllerAnyType.estimateSignAccountOp).not.toHaveBeenCalled()
+      }
+    })
   })
 })

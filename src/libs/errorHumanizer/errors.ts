@@ -3,6 +3,9 @@ import { RPC_HARDCODED_ERRORS } from '../errorDecoder/handlers/rpc'
 import { RELAYER_DOWN_MESSAGE } from '../relayerCall/relayerCall'
 import { ErrorHumanizerError } from './types'
 
+const insufficientPaymasterFunds =
+  "the Paymaster has insufficient funds. Please report this to the team. We've disabled it, so please try again with the updated fee payment options."
+
 const BROADCAST_OR_ESTIMATION_ERRORS: ErrorHumanizerError[] = [
   {
     reasons: ['80'],
@@ -13,6 +16,11 @@ const BROADCAST_OR_ESTIMATION_ERRORS: ErrorHumanizerError[] = [
     reasons: ['STF'],
     message:
       'of one of the following reasons: missing approval, insufficient approved amount, the amount exceeds the account balance.'
+  },
+  {
+    reasons: ['Sponsorship failed.'],
+    message:
+      'the gas sponsorship was refused by the dapp. Please try again by paying for the gas instead'
   },
   {
     reasons: [EXPIRED_PREFIX, 'Router: EXPIRED', 'Transaction too old'],
@@ -35,8 +43,7 @@ const BROADCAST_OR_ESTIMATION_ERRORS: ErrorHumanizerError[] = [
   },
   {
     reasons: ['paymaster deposit too low'],
-    message:
-      'the Paymaster has insufficient funds. Please select an alternative fee payment option or contact support for assistance.'
+    message: insufficientPaymasterFunds
   },
   {
     reasons: [RPC_HARDCODED_ERRORS.rpcTimeout],
@@ -77,6 +84,10 @@ const ESTIMATION_ERRORS: ErrorHumanizerError[] = [
       'your account key lacks the necessary permissions. Ensure that you have authorization to sign or use an account with sufficient privileges.'
   },
   {
+    reasons: ['0x7b36c479'],
+    message: 'of a Swap failure. Please try performing the same swap again.'
+  },
+  {
     reasons: [
       'caller is a contract',
       'contract not allowed',
@@ -85,9 +96,18 @@ const ESTIMATION_ERRORS: ErrorHumanizerError[] = [
       'contracts allowed',
       'ontract is not allowed'
     ],
+    message: 'this dApp does not support Smart Account wallets. Use a Basic Account (EOA) instead.'
+  },
+  {
+    reasons: ['ERC721: token already minted'],
     message:
-      'because this dApp does not support Smart Account wallets. Please use a Basic Account (EOA) to interact with this dApp.'
+      'the NFT you are trying to mint is already minted. This can also happen if you have batched multiple mint transactions for the same NFT.'
   }
 ]
 
-export { BROADCAST_OR_ESTIMATION_ERRORS, BROADCAST_ERRORS, ESTIMATION_ERRORS }
+export {
+  BROADCAST_OR_ESTIMATION_ERRORS,
+  BROADCAST_ERRORS,
+  ESTIMATION_ERRORS,
+  insufficientPaymasterFunds
+}
