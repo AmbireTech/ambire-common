@@ -52,7 +52,11 @@ const formatReason = (reason: string): string => {
   if (trimmedReason.startsWith(ERROR_PREFIX) || trimmedReason.startsWith(PANIC_ERROR_PREFIX))
     return trimmedReason
 
-  return toUtf8String(trimmedReason)
+  try {
+    return toUtf8String(trimmedReason)
+  } catch {
+    return trimmedReason
+  }
 }
 
 const getErrorCodeStringFromReason = (reason: string, withSpace = true): string => {

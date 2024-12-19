@@ -1,4 +1,6 @@
 export enum ErrorType {
+  /** Reference, Type, Syntax and Range errors (JS/TS) */
+  CodeError = 'CodeError',
   /** Error due to contract reverting, identified by prefix 0x08c379a0 */
   RevertError = 'RevertError',
   /** Error due to contract panic, identified by prefix 0x4e487b71 */
@@ -9,6 +11,8 @@ export enum ErrorType {
   PaymasterError = 'PaymasterError',
   /** Error during bundler estimation or broadcast */
   BundlerError = 'BundlerError',
+  /** Custom contract errors */
+  CustomError = 'CustomError',
   /** Error from an RPC call */
   RpcError = 'RpcError',
   /** Error that cannot be decoded */

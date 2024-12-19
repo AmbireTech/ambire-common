@@ -886,7 +886,7 @@ describe('estimate', () => {
 
     expect(response.error).not.toBe(null)
     expect(response.error?.message).toBe(
-      'The transaction cannot be estimated because of a failure while validating the transaction.\nPlease try again or contact Ambire support for assistance.'
+      'The transaction will fail because of a failure while validating the transaction.\nPlease try again or contact Ambire support for assistance.'
     )
 
     expect(response.erc4337GasLimits).not.toBe(undefined)
@@ -947,7 +947,7 @@ describe('estimate', () => {
 
     expect(response.error).not.toBe(null)
     expect(response.error?.message).toBe(
-      'The transaction cannot be estimated because the transfer amount exceeds your account balance. Please reduce the transfer amount and try again.'
+      'The transaction will fail because the transfer amount exceeds your account balance. Please check your balance or adjust the transfer amount.'
     )
 
     expect(response.erc4337GasLimits).toBe(undefined)
@@ -1103,7 +1103,7 @@ describe('estimate', () => {
     )
     expect(response.error).not.toBe(null)
     expect(response.error?.message).toBe(
-      'The transaction cannot be estimated because of a failure while validating the transaction.\nPlease try again or contact Ambire support for assistance.'
+      'The transaction will fail because of a failure while validating the transaction.\nPlease try again or contact Ambire support for assistance.'
     )
   })
 
@@ -1134,7 +1134,7 @@ describe('estimate', () => {
     )
     expect(response.error).not.toBe(null)
     expect(response.error?.message).toBe(
-      'The transaction cannot be estimated because your account key lacks the necessary permissions. Ensure that you have authorization to sign or use an account with sufficient privileges.'
+      'The transaction will fail because your account key lacks the necessary permissions. Ensure that you have authorization to sign or use an account with sufficient privileges.'
     )
   })
 
@@ -1166,7 +1166,7 @@ describe('estimate', () => {
 
     expect(response.error).not.toBe(null)
     expect(response.error?.message).toBe(
-      'The transaction cannot be estimated because the swap has expired. Return to the dApp and reinitiate the swap if you wish to proceed.'
+      'The transaction will fail because the swap has expired. Return to the dApp and reinitiate the swap if you wish to proceed.'
     )
   })
 })

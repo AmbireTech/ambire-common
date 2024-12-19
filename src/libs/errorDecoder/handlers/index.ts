@@ -1,4 +1,5 @@
 import BundlerErrorHandler from './bundler'
+import CustomErrorHandler from './custom'
 import InnerCallFailureHandler from './innerCallFailure'
 import PanicErrorHandler from './panic'
 import PaymasterErrorHandler from './paymaster'
@@ -13,5 +14,6 @@ export {
   PanicErrorHandler,
   RevertErrorHandler,
   PaymasterErrorHandler,
-  UserRejectionHandler
+  UserRejectionHandler,
+  CustomErrorHandler
 }
