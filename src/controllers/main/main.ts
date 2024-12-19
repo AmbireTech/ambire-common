@@ -355,7 +355,10 @@ export class MainController extends EventEmitter {
     )
     this.domains = new DomainsController(this.providers.providers)
     this.#initialLoadPromise = this.#load()
-    paymasterFactory.init(relayerUrl, fetch)
+    paymasterFactory.init(relayerUrl, fetch, (e: ErrorRef) => {
+      if (!this.signAccountOp) return
+      this.emitError(e)
+    })
   }
 
   async #load(): Promise<void> {
