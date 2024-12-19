@@ -290,7 +290,7 @@ const trezorSlot6v2NotDeployed: Account = {
   }
 }
 
-paymasterFactory.init(relayerUrl, fetch)
+paymasterFactory.init(relayerUrl, fetch, () => {})
 
 describe('estimate', () => {
   it('[EOA]:Ethereum | gasUsage and native balance for a normal transfer', async () => {

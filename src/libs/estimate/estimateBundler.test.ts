@@ -44,7 +44,7 @@ const smartAccDeployed: Account = {
   }
 }
 
-paymasterFactory.init(relayerUrl, fetch)
+paymasterFactory.init(relayerUrl, fetch, () => {})
 const errorCallback = () => {}
 
 describe('Bundler estimation tests', () => {
