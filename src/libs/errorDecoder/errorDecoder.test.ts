@@ -4,6 +4,7 @@ import { ethers } from 'hardhat'
 
 import { describe, expect } from '@jest/globals'
 
+import { suppressConsole } from '../../../test/helpers/console'
 import { RELAYER_DOWN_MESSAGE, RelayerError } from '../relayerCall/relayerCall'
 import { PANIC_ERROR_PREFIX } from './constants'
 import { InnerCallFailureError, RelayerPaymasterError } from './customErrors'
@@ -195,6 +196,25 @@ describe('Error decoders work', () => {
       }
     })
   })
+  describe('CodeError', () => {
+    it('Should handle generic JS exceptions as CodeError', () => {
+      const { restore } = suppressConsole()
+      const errors = [
+        new TypeError('Type error'),
+        new SyntaxError('Syntax error'),
+        new ReferenceError('Reference error'),
+        new RangeError('Range error')
+      ]
+
+      errors.forEach((error) => {
+        const decodedError = decodeError(error)
+        expect(decodedError.type).toEqual(ErrorType.CodeError)
+        expect(decodedError.reason).toBe(error.name)
+      })
+
+      restore()
+    })
+  })
   describe('Should handle BundlerError correctly', () => {
     it('Entry point error', () => {
       try {
@@ -304,6 +324,7 @@ describe('Error decoders work', () => {
     )
   })
   it('Should handle UnknownError correctly when reverted without reason', async () => {
+    const { restore } = suppressConsole()
     try {
       await contract.revertWithoutReason()
     } catch (e: any) {
@@ -315,6 +336,8 @@ describe('Error decoders work', () => {
       expect(decodedError.data).toEqual(errorData)
       expect(decodedError.reason).toBe('')
     }
+
+    restore()
   })
   it('Should trim leading and trailing whitespaces from the reason', async () => {
     const error = new InnerCallFailureError('   transfer amount exceeds balance   ')

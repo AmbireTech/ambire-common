@@ -21,6 +21,7 @@ function getGenericMessageFromType(
       return `${messagePrefix} of a Paymaster Error.${messageSuffix}`
     case ErrorType.BundlerError:
       return `${messagePrefix} it's invalid.${messageSuffixNoSupport}`
+    case ErrorType.CodeError:
     case ErrorType.UnknownError:
       return `${messagePrefix} of an unknown error.${messageSuffix}`
     case ErrorType.InnerCallFailureError:
