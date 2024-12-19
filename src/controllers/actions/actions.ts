@@ -260,6 +260,11 @@ export class ActionsController extends EventEmitter {
     this.#windowManager.focus(this.actionWindow.id)
   }
 
+  closeActionWindow = () => {
+    if (!this.actionWindow.id) return
+    this.#windowManager.remove(this.actionWindow.id)
+  }
+
   setWindowLoaded() {
     if (!this.actionWindow.id) return
     this.actionWindow.loaded = true
