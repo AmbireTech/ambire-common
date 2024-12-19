@@ -20,17 +20,17 @@ describe('Generic error fallbacks work', () => {
     )
 
     expect(messageWithCode).toBe(
-      `${MESSAGE_PREFIX} of an RPC error. Error code: Unsupported method\nPlease try again or contact Ambire support for assistance.`
+      `${MESSAGE_PREFIX} of an unknown error (Origin: Rpc call). Error code: Unsupported method\nPlease try again or contact Ambire support for assistance.`
     )
     expect(messageWithoutCode).toBe(
-      `${MESSAGE_PREFIX} of an RPC error.\nPlease try again or contact Ambire support for assistance.`
+      `${MESSAGE_PREFIX} of an unknown error (Origin: Rpc call).\nPlease try again or contact Ambire support for assistance.`
     )
   })
   it('Relayer error', () => {
     const message = getGenericMessageFromType(ErrorType.RelayerError, null, MESSAGE_PREFIX, '')
 
     expect(message).toBe(
-      `${MESSAGE_PREFIX} of an Ambire Relayer error.\nPlease try again or contact Ambire support for assistance.`
+      `${MESSAGE_PREFIX} of an unknown error (Origin: Relayer call).\nPlease try again or contact Ambire support for assistance.`
     )
   })
   it('Null error type', () => {
