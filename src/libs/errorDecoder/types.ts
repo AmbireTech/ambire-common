@@ -9,6 +9,8 @@ export enum ErrorType {
   PaymasterError = 'PaymasterError',
   /** Error during bundler estimation or broadcast */
   BundlerError = 'BundlerError',
+  /** Custom contract errors */
+  CustomError = 'CustomError',
   /** Error from an RPC call */
   RpcError = 'RpcError',
   /** Error that cannot be decoded */

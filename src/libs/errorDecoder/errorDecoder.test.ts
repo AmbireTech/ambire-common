@@ -35,6 +35,16 @@ export const MockRpcError = class extends Error {
   }
 }
 
+export const MockCustomError = class extends Error {
+  public constructor(
+    public code?: string | number,
+    public data?: string,
+    public shortMessage?: string
+  ) {
+    super(shortMessage || data)
+  }
+}
+
 describe('Error decoders work', () => {
   let contract: any
 
@@ -158,6 +168,31 @@ describe('Error decoders work', () => {
       expect(decodedError.type).toEqual(ErrorType.RevertError)
       expect(decodedError.reason).toBe('Test message')
       expect(decodedError.data).toBe(TEST_MESSAGE_REVERT_DATA)
+    })
+  })
+  describe('CustomErrorHandler', () => {
+    it('SwapFailed(0x81ceff30)', () => {
+      const error = new MockCustomError(
+        'CALL_EXCEPTION',
+        '0x81ceff30',
+        'Error: execution reverted (unknown custom error) '
+      )
+      const decodedError = decodeError(error)
+
+      expect(decodedError.type).toEqual(ErrorType.CustomError)
+      expect(decodedError.reason).toBe('0x81ceff30')
+      expect(decodedError.data).toBe('0x81ceff30')
+    })
+    it('Mock contract custom error', async () => {
+      try {
+        await contract.revertWithCustomErrorNoParam()
+      } catch (e: any) {
+        const decodedError = decodeError(e)
+
+        expect(decodedError.type).toEqual(ErrorType.CustomError)
+        expect(decodedError.reason).toBe('0xec7240f7')
+        expect(decodedError.data).toBe('0xec7240f7')
+      }
     })
   })
   describe('Should handle BundlerError correctly', () => {

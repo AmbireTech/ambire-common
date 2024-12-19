@@ -1,5 +1,6 @@
 import {
   BundlerErrorHandler,
+  CustomErrorHandler,
   InnerCallFailureHandler,
   PanicErrorHandler,
   PaymasterErrorHandler,
@@ -14,6 +15,7 @@ import { DecodedError, ErrorType } from './types'
 const PREPROCESSOR_HANDLERS = [BundlerErrorHandler, RelayerErrorHandler, InnerCallFailureHandler]
 const ERROR_HANDLERS = [
   RpcErrorHandler,
+  CustomErrorHandler,
   PanicErrorHandler,
   RevertErrorHandler,
   PaymasterErrorHandler,
