@@ -261,7 +261,7 @@ export async function getTokens(
       ],
       deploylessOpts
     )
-  console.log(before[0])
+
   const beforeNonce = before[1]
   const afterNonce = after[1]
   handleSimulationError(simulationErr, beforeNonce, afterNonce, simulationOps)

@@ -1,4 +1,4 @@
-import { JsonRpcProvider, Wallet } from 'ethers'
+import { JsonRpcProvider } from 'ethers'
 
 import { Network, NetworkId } from '../../interfaces/network'
 import { GetOptions, Portfolio } from '../../libs/portfolio'
