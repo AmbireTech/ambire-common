@@ -43,15 +43,8 @@ const BROADCAST_OR_ESTIMATION_ERRORS: ErrorHumanizerError[] = [
     message:
       'the transfer amount exceeds your account balance. Please check your balance or adjust the transfer amount.'
   },
-
   {
-    reasons: ['transfer amount exceeds balance'],
-    message:
-      'the transfer amount exceeds your account balance. Please check your balance or adjust the transfer amount.'
-  },
-
-  {
-    reasons: ['insufficient balance for transfer'],
+    reasons: ['ERC721: insufficient balance for transfer'],
     message:
       'you do not have enough of the specified NFT in your account. Please check your balance or adjust the transfer amount.'
   },
