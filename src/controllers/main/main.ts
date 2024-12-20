@@ -288,6 +288,7 @@ export class MainController extends EventEmitter {
     )
     this.defiPositions = new DefiPositionsController({
       fetch: this.fetch,
+      storage,
       selectedAccount: this.selectedAccount,
       networks: this.networks,
       providers: this.providers

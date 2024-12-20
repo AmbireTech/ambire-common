@@ -1,8 +1,12 @@
+import { AccountId } from '../../interfaces/account'
 import { Fetch } from '../../interfaces/fetch'
 import { NetworkId } from '../../interfaces/network'
+import { Storage } from '../../interfaces/storage'
 import { getAssetValue } from '../../libs/defiPositions/helpers'
 import { getAAVEPositions, getUniV3Positions } from '../../libs/defiPositions/providers'
+import getAccountNetworksWithPositions from '../../libs/defiPositions/providers/helpers/networksWithPositions'
 import {
+  AccountState,
   DeFiPositionsError,
   DeFiPositionsState,
   PositionsByProvider
@@ -22,17 +26,25 @@ export class DefiPositionsController extends EventEmitter {
 
   #fetch: Fetch
 
+  #storage: Storage
+
   #minUpdateInterval: number = 60 * 1000 // 1 minute
 
   #state: DeFiPositionsState = {}
 
+  #networksWithPositionsByAccounts: {
+    [accountId: string]: NetworkId[]
+  } = {}
+
   constructor({
     fetch,
+    storage,
     selectedAccount,
     providers,
     networks
   }: {
     fetch: Fetch
+    storage: Storage
     selectedAccount: SelectedAccountController
     providers: ProvidersController
     networks: NetworksController
@@ -40,6 +52,7 @@ export class DefiPositionsController extends EventEmitter {
     super()
 
     this.#fetch = fetch
+    this.#storage = storage
     this.#selectedAccount = selectedAccount
     this.#providers = providers
     this.#networks = networks
@@ -69,6 +82,23 @@ export class DefiPositionsController extends EventEmitter {
       networkState.updatedAt && Date.now() - networkState.updatedAt < this.#minUpdateInterval
 
     return isWithinMinUpdateInterval || networkState.isLoading
+  }
+
+  async #updateNetworksWithPositions(accountId: AccountId, accountState: AccountState) {
+    const storageStateByAccount = await this.#storage.get('networksWithPositionsByAccounts', {})
+
+    this.#networksWithPositionsByAccounts[accountId] = getAccountNetworksWithPositions(
+      accountId,
+      accountState,
+      storageStateByAccount,
+      this.#providers.providers
+    )
+
+    this.emitUpdate()
+    await this.#storage.set(
+      'networksWithPositionsByAccounts',
+      this.#networksWithPositionsByAccounts
+    )
   }
 
   async updatePositions(networkId?: NetworkId) {
@@ -163,6 +193,8 @@ export class DefiPositionsController extends EventEmitter {
         }
       })
     )
+
+    await this.#updateNetworksWithPositions(selectedAccountAddr, this.#state[selectedAccountAddr])
   }
 
   async #setAssetPrices(accountAddr: string, networkId: string) {
@@ -256,6 +288,18 @@ export class DefiPositionsController extends EventEmitter {
 
   getDefiPositionsState(accountAddr: string) {
     return this.#state[accountAddr] || {}
+  }
+
+  getNetworksWithPositions(accountAddr: string) {
+    return this.#networksWithPositionsByAccounts[accountAddr] || []
+  }
+
+  removeAccountData(accountAddr: string) {
+    delete this.#state[accountAddr]
+    delete this.#networksWithPositionsByAccounts[accountAddr]
+    this.#storage.set('networksWithPositionsByAccounts', this.#networksWithPositionsByAccounts)
+
+    this.emitUpdate()
   }
 
   toJSON() {
