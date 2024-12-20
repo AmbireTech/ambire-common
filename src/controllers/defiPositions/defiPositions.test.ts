@@ -75,6 +75,7 @@ const prepareTest = async () => {
 
   return new DefiPositionsController({
     fetch: global.fetch as any,
+    storage,
     selectedAccount: selectedAccountCtrl,
     providers: providersCtrl,
     networks: networksCtrl

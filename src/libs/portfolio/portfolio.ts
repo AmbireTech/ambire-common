@@ -155,12 +155,14 @@ export class Portfolio {
           name: isLastUpdateTooOld
             ? PORTFOLIO_LIB_ERROR_NAMES.StaleApiHintsError
             : PORTFOLIO_LIB_ERROR_NAMES.NonCriticalApiHintsError,
-          message: errorMesssage
+          message: errorMesssage,
+          level: 'critical'
         })
       } else {
         errors.push({
           name: PORTFOLIO_LIB_ERROR_NAMES.NoApiHintsError,
-          message: errorMesssage
+          message: errorMesssage,
+          level: 'silent'
         })
       }
 
@@ -334,7 +336,8 @@ export class Portfolio {
           ) {
             errors.push({
               name: PORTFOLIO_LIB_ERROR_NAMES.PriceFetchError,
-              message: errorMessage
+              message: errorMessage,
+              level: 'warning'
             })
           }
         }
@@ -347,6 +350,7 @@ export class Portfolio {
     )
 
     const priceUpdateDone = Date.now()
+
     return {
       hintsFromExternalAPI: stripExternalHintsAPIResponse(hintsFromExternalAPI),
       errors,

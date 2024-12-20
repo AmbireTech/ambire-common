@@ -310,7 +310,8 @@ export class SelectedAccountController extends EventEmitter {
     const errorBanners = getNetworksWithDeFiPositionsErrorBanners({
       networks: this.#networks.networks,
       currentAccountState: defiPositionsAccountState,
-      providers: this.#providers.providers
+      providers: this.#providers.providers,
+      networksWithPositions: this.#defiPositions.getNetworksWithPositions(this.account.addr)
     })
 
     this.defiPositionsBanners = errorBanners

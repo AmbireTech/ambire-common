@@ -63,6 +63,7 @@ const portfolioCtrl = new PortfolioController(
 
 const defiPositionsCtrl = new DefiPositionsController({
   fetch,
+  storage,
   selectedAccount: selectedAccountCtrl,
   networks: networksCtrl,
   providers: providersCtrl

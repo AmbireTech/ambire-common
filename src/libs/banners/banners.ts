@@ -410,6 +410,11 @@ export const getNetworksWithPortfolioErrorBanners = ({
   Object.keys(selectedAccountLatest).forEach((network) => {
     const portfolioForNetwork = selectedAccountLatest[network]
     const criticalError = portfolioForNetwork?.criticalError
+    const lastSuccessfulUpdate = portfolioForNetwork?.result?.lastSuccessfulUpdate
+    const beforeTenMinutes = new Date().getTime() - 10 * 60 * 1000
+
+    // Don't display an error banner if the last successful update was less than 10 minutes ago
+    if (lastSuccessfulUpdate && lastSuccessfulUpdate < beforeTenMinutes) return
 
     let networkName: string | null = null
 
@@ -477,11 +482,13 @@ export const getNetworksWithPortfolioErrorBanners = ({
 export const getNetworksWithDeFiPositionsErrorBanners = ({
   networks,
   currentAccountState,
-  providers
+  providers,
+  networksWithPositions
 }: {
   networks: Network[]
   currentAccountState: DefiPositionsAccountState
   providers: RPCProviders
+  networksWithPositions: NetworkId[]
 }) => {
   const isLoading = Object.keys(currentAccountState).some((networkId) => {
     const networkState = currentAccountState[networkId]
@@ -497,13 +504,19 @@ export const getNetworksWithDeFiPositionsErrorBanners = ({
   } = {}
 
   Object.keys(currentAccountState).forEach((networkId) => {
+    // Ignore networks that don't have positions
+    if (!networksWithPositions.includes(networkId)) return
+
     const networkState = currentAccountState[networkId]
     const network = networks.find((n) => n.id === networkId)
     const rpcProvider = providers[networkId]
+    const lastSuccessfulUpdate = networkState.updatedAt
+    const beforeTenMinutes = new Date().getTime() - 10 * 60 * 1000
 
     if (
       !network ||
       !networkState ||
+      (lastSuccessfulUpdate && lastSuccessfulUpdate < beforeTenMinutes) ||
       // Don't display an error banner if the RPC isn't working because an RPC error banner is already displayed.
       (typeof rpcProvider.isWorking === 'boolean' && !rpcProvider.isWorking)
     )

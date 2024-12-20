@@ -288,6 +288,7 @@ export class MainController extends EventEmitter {
     )
     this.defiPositions = new DefiPositionsController({
       fetch: this.fetch,
+      storage,
       selectedAccount: this.selectedAccount,
       networks: this.networks,
       providers: this.providers
@@ -884,6 +885,7 @@ export class MainController extends EventEmitter {
         await this.activity.removeAccountData(address)
         this.actions.removeAccountData(address)
         this.signMessage.removeAccountData(address)
+        this.defiPositions.removeAccountData(address)
 
         if (this.selectedAccount.account?.addr === address) {
           await this.#selectAccount(this.accounts.accounts[0]?.addr)
