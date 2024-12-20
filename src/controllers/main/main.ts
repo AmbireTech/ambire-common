@@ -2510,6 +2510,9 @@ export class MainController extends EventEmitter {
     this.signAccountOp?.updateStatus(SigningStatus.ReadyToSign, isReplacementFeeLow)
     this.feePayerKey = null
 
+    // the promise doesn't resolve and we're stuck...
+    this.#signAccountOpBroadcastPromise = undefined
+
     return Promise.reject(
       new EmittableError({ level: 'major', message, error: _err || new Error(message) })
     )
