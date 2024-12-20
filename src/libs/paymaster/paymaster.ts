@@ -184,8 +184,8 @@ export class Paymaster {
 
       return {
         success: true,
-        paymaster: response.paymaster,
-        paymasterData: response.paymasterData
+        paymaster: this.type === 'Ambire' ? AMBIRE_PAYMASTER : response.paymaster,
+        paymasterData: this.type === 'Ambire' ? response.data.paymasterData : response.paymasterData
       }
     } catch (e: any) {
       if (e.message === 'Ambire relayer error timeout') {

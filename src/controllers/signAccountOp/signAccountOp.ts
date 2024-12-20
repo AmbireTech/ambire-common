@@ -1299,6 +1299,7 @@ export class SignAccountOpController extends EventEmitter {
             userOperation,
             this.#network
           )
+
           if (response.success) {
             const paymasterData = response as PaymasterSuccessReponse
             this.status = { type: SigningStatus.InProgress }
