@@ -434,9 +434,16 @@ export class PortfolioController extends EventEmitter {
         ...portfolioProps
       })
 
-      const hasErrorsCriticalToResponse = result.errors.some((e) => e.level === 'critical')
+      const hasCriticalError = result.errors.some((e) => e.level === 'critical')
       const additionalHintsErc20Hints = portfolioProps.additionalErc20Hints || []
-      const prevSuccessfulUpdateTime = accountState[network.id]?.result?.lastSuccessfulUpdate || 0
+      let lastSuccessfulUpdate = accountState[network.id]?.result?.lastSuccessfulUpdate || 0
+
+      // Delete the last known successful update on force update. This is done
+      // to ensure that if the next update fails, the last successful update is not used.
+      // Because a force update is usually done when the user is expecting a change in the portfolio.
+      if (forceUpdate) {
+        lastSuccessfulUpdate = 0
+      }
 
       const processedTokens = processTokens(
         result.tokens,
@@ -452,7 +459,7 @@ export class PortfolioController extends EventEmitter {
         errors: result.errors,
         result: {
           ...result,
-          lastSuccessfulUpdate: hasErrorsCriticalToResponse ? Date.now() : prevSuccessfulUpdateTime,
+          lastSuccessfulUpdate: hasCriticalError ? Date.now() : lastSuccessfulUpdate,
           tokens: processedTokens,
           total: getTotal(processedTokens)
         }
