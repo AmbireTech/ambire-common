@@ -5,7 +5,8 @@ import { ESTIMATION_ERRORS } from './errors'
 import { getGenericMessageFromType, getHumanReadableErrorMessage } from './helpers'
 import { humanizeEstimationOrBroadcastError } from './humanizeCommonCases'
 
-export const MESSAGE_PREFIX = 'The transaction cannot be estimated because'
+export const MESSAGE_PREFIX = 'The transaction will fail because'
+
 const LAST_RESORT_ERROR_MESSAGE =
   'An unknown error occurred while estimating the transaction. Please try again or contact Ambire support for assistance.'
 
