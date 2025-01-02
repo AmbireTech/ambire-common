@@ -17,6 +17,10 @@ export const embeddedAmbireOperationHumanizer: HumanizerCallModule = (
       const { to, value, data } = iface.decodeFunctionData('tryCatch', call.data)
       return [{ to, value, data }]
     },
+    [iface.getFunction('tryCatchLimit')!.selector]: (call: IrCall) => {
+      const { to, value, data } = iface.decodeFunctionData('tryCatchLimit', call.data)
+      return [{ to, value, data }]
+    },
     [iface.getFunction('executeBySelfSingle')!.selector]: (call: IrCall) => {
       const {
         call: { to, value, data }

@@ -34,7 +34,17 @@ describe('Legends', () => {
         data: iface.encodeFunctionData('tryCatch', [
           USDC_ADDRESS,
           0n,
-          iface.encodeFunctionData('transfer', [ZeroAddress, 1])
+          iface.encodeFunctionData('transfer', [ZeroAddress, 0])
+        ])
+      },
+      {
+        to: accountAddr,
+        value: 0n,
+        data: iface.encodeFunctionData('tryCatchLimit', [
+          USDC_ADDRESS,
+          0n,
+          iface.encodeFunctionData('transfer', [ZeroAddress, 1]),
+          1n
         ])
       },
       {
@@ -59,12 +69,12 @@ describe('Legends', () => {
       wrappedTransactions,
       {} as HumanizerMeta
     )
-    expect(irCalls.length).toBe(4)
+    expect(irCalls.length).toBe(5)
     irCalls.forEach((call: IrCall, i: number) => {
       expect(call.to).toBe(USDC_ADDRESS)
       expect(call.value).toBe(0n)
       // i+1 is just arbitrary value at the end
-      expect(call.data).toBe(iface.encodeFunctionData('transfer', [ZeroAddress, i + 1]))
+      expect(call.data).toBe(iface.encodeFunctionData('transfer', [ZeroAddress, i]))
     })
   })
 })
