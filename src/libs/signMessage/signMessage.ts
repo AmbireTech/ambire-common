@@ -272,11 +272,26 @@ export async function verifyMessage({
       delete typesWithoutEIP712Domain.EIP712Domain
     }
 
-    finalDigest = TypedDataEncoder.hash(
-      typedData.domain,
-      typesWithoutEIP712Domain,
-      typedData.message
-    )
+    // the final digest for AmbireReadableOperation is the execute hash
+    // as it's wrapped in mode.standard and onchain gets transformed to
+    // an AmbireOperation
+    if ('AmbireReadableOperation' in typedData.types) {
+      const ambireReadableOperation = typedData.message as AmbireReadableOperation
+      finalDigest = hexlify(
+        getSignableHash(
+          ambireReadableOperation.addr,
+          ambireReadableOperation.chainId,
+          ambireReadableOperation.nonce,
+          ambireReadableOperation.calls.map(callToTuple)
+        )
+      )
+    } else {
+      finalDigest = TypedDataEncoder.hash(
+        typedData.domain,
+        typesWithoutEIP712Domain,
+        typedData.message
+      )
+    }
   }
 
   if (!finalDigest)

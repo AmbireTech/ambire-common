@@ -22,7 +22,8 @@ import {
   getEIP712Signature,
   getPlainTextSignature,
   getTypedData,
-  verifyMessage
+  verifyMessage,
+  wrapWallet
 } from './signMessage'
 
 const ethereumNetwork = networks.find((net) => net.id === 'ethereum')!
@@ -517,7 +518,72 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
     const contract = new Contract(v1Account.addr, AmbireAccount.abi, provider)
     const isValidSig = await contract.isValidSignature(hash, eip712Sig)
     expect(isValidSig).toBe(contractSuccess)
+
+    // verify message should pass
+    const res = await verifyMessage({
+      network: polygonNetwork,
+      provider,
+      signer: v1Account.addr,
+      signature: eip712Sig,
+      typedData
+    })
+    expect(res).toBe(true)
   })
+  test('Signing [V1 SA, V2 Signer]: signing a normal EIP-712 request', async () => {
+    const accountStates = await getAccountsInfo([smartAccount])
+    const v2AccountState = accountStates[smartAccount.addr][polygonNetwork.id]
+    const signer = await keystore.getSigner(eoaSigner.keyPublicAddress, 'internal')
+
+    const typedData = getTypedData(polygonNetwork.chainId, v2SmartAccAddr, hashMessage('test'))
+    const eip712Sig = await getEIP712Signature(
+      typedData,
+      smartAccount,
+      v2AccountState,
+      signer,
+      polygonNetwork
+    )
+    expect(eip712Sig.slice(-2)).toEqual('00')
+
+    const provider = getRpcProvider(polygonNetwork.rpcUrls, polygonNetwork.chainId)
+    const wrappedSig = wrapWallet(eip712Sig, smartAccount.addr)
+
+    // verify message should pass
+    const res = await verifyMessage({
+      network: polygonNetwork,
+      provider,
+      signer: v1Account.addr,
+      signature: wrappedSig,
+      typedData
+    })
+    expect(res).toBe(true)
+  })
+  test('Signing [V1 SA, V2 Signer]: plain text', async () => {
+    const accountStates = await getAccountsInfo([smartAccount])
+    const v2AccountState = accountStates[smartAccount.addr][polygonNetwork.id]
+    const signer = await keystore.getSigner(eoaSigner.keyPublicAddress, 'internal')
+
+    const signatureForPlainText = await getPlainTextSignature(
+      'test',
+      polygonNetwork,
+      smartAccount,
+      v2AccountState,
+      signer
+    )
+    expect(signatureForPlainText.slice(-2)).toEqual('00')
+
+    const provider = getRpcProvider(polygonNetwork.rpcUrls, polygonNetwork.chainId)
+    const wrappedSig = wrapWallet(signatureForPlainText, smartAccount.addr)
+
+    const res = await verifyMessage({
+      network: polygonNetwork,
+      provider,
+      signer: v1Account.addr,
+      signature: wrappedSig,
+      message: 'test'
+    })
+    expect(res).toBe(true)
+  })
+
   test('Signing [V1 SA, V2 Signer]: a request for an AmbireReadableOperation should revert if the execution address is the same (signing for the current wallet instead of a diff wallet)', async () => {
     const accountStates = await getAccountsInfo([smartAccount])
     const v2AccountState = accountStates[smartAccount.addr][polygonNetwork.id]
