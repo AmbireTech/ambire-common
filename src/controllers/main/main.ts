@@ -1107,9 +1107,7 @@ export class MainController extends EventEmitter {
         msgAddress === this.selectedAccount.account.addr &&
         (typedData.primaryType === 'AmbireOperation' || !!typedData.types.AmbireOperation)
       ) {
-        throw ethErrors.rpc.methodNotSupported(
-          'Forbidden typedData request - signing AmbireOperation is not allowed to prevent fund-draining attacks.'
-        )
+        throw ethErrors.rpc.methodNotSupported('Signing an AmbireOperation is not allowed')
       }
 
       userRequest = {
