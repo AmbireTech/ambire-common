@@ -12,25 +12,25 @@ export const embeddedAmbireOperationHumanizer: HumanizerCallModule = (
   irCalls: IrCall[]
 ) => {
   const iface = new Interface(AmbireAccount)
-  const matcher: { [selector: string]: (call: IrCall) => IrCall[] } = {
-    [iface.getFunction('tryCatch')!.selector]: (call: IrCall) => {
-      const { to, value, data } = iface.decodeFunctionData('tryCatch', call.data)
-      return [{ to, value, data }]
+  const matcher: { [selector: string]: (originalCall: IrCall) => IrCall[] } = {
+    [iface.getFunction('tryCatch')!.selector]: (originalCall: IrCall) => {
+      const { to, value, data } = iface.decodeFunctionData('tryCatch', originalCall.data)
+      return [{ ...originalCall, to, value, data }]
     },
-    [iface.getFunction('tryCatchLimit')!.selector]: (call: IrCall) => {
-      const { to, value, data } = iface.decodeFunctionData('tryCatchLimit', call.data)
-      return [{ to, value, data }]
+    [iface.getFunction('tryCatchLimit')!.selector]: (originalCall: IrCall) => {
+      const { to, value, data } = iface.decodeFunctionData('tryCatchLimit', originalCall.data)
+      return [{ ...originalCall, to, value, data }]
     },
-    [iface.getFunction('executeBySelfSingle')!.selector]: (call: IrCall) => {
+    [iface.getFunction('executeBySelfSingle')!.selector]: (originalCall: IrCall) => {
       const {
         call: { to, value, data }
-      } = iface.decodeFunctionData('executeBySelfSingle', call.data)
-      return [{ to, value, data }]
+      } = iface.decodeFunctionData('executeBySelfSingle', originalCall.data)
+      return [{ ...originalCall, to, value, data }]
     },
-    [iface.getFunction('executeBySelf')!.selector]: (call: IrCall) => {
-      const { calls } = iface.decodeFunctionData('executeBySelf', call.data)
+    [iface.getFunction('executeBySelf')!.selector]: (originalCall: IrCall) => {
+      const { calls } = iface.decodeFunctionData('executeBySelf', originalCall.data)
       // ethers returns Result type, which we do not want to leak in the result
-      return calls.map(({ to, value, data }: Result) => ({ to, value, data }))
+      return calls.map(({ to, value, data }: Result) => ({ ...originalCall, to, value, data }))
     }
   }
   const newCalls: IrCall[] = []
