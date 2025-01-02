@@ -1103,6 +1103,13 @@ export class MainController extends EventEmitter {
         )
       }
 
+      if (
+        msgAddress === this.selectedAccount.account.addr &&
+        (typedData.primaryType === 'AmbireOperation' || !!typedData.types.AmbireOperation)
+      ) {
+        throw ethErrors.rpc.methodNotSupported('Signing an AmbireOperation is not allowed')
+      }
+
       userRequest = {
         id: new Date().getTime(),
         action: {
