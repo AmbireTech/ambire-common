@@ -106,6 +106,22 @@ export class Bundler {
     ])
   }
 
+  /**
+   * Broadcast a userOperation to the specified bundler and get a userOperationHash in return
+   *
+   * @param UserOperation userOperation
+   * @returns userOperationHash
+   */
+  async broadcastBiconomy(userOperation: UserOperation, network: Network): Promise<string> {
+    const url = `https://bundler.biconomy.io/api/v2/${network.chainId}/nJPK7B3ru.dd7f7861-190d-41bd-af80-6877f74b8f44`
+    const provider = getRpcProvider([url], network.chainId)
+
+    return provider.send('eth_sendUserOperation', [
+      getCleanUserOp(userOperation)[0],
+      ERC_4337_ENTRYPOINT
+    ])
+  }
+
   static async getStatusAndTxnId(userOperationHash: string, network: Network) {
     const url = `https://api.pimlico.io/v2/${network.chainId}/rpc?apikey=${process.env.REACT_APP_PIMLICO_API_KEY}`
     const provider = getRpcProvider([url], network.chainId)
