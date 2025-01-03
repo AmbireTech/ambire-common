@@ -40,7 +40,10 @@ export const embeddedAmbireOperationHumanizer: HumanizerCallModule = (
   const newCalls: IrCall[] = []
 
   irCalls.forEach((call) => {
-    if (call.to === accountOp.accountAddr && matcher[call.data.slice(0, 10)]) {
+    if (
+      call.to?.toLowerCase() === accountOp.accountAddr.toLowerCase() &&
+      matcher[call.data.slice(0, 10)]
+    ) {
       newCalls.push(...matcher[call.data.slice(0, 10)](call))
       return
     }
