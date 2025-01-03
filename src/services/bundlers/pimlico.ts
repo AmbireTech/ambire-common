@@ -2,7 +2,7 @@
 import { Network } from 'interfaces/network'
 
 import { Bundler } from './bundler'
-import { GasSpeeds } from './types'
+import { GasSpeeds, UserOpStatus } from './types'
 
 export class Pimlico extends Bundler {
   protected getUrl(network: Network): string {
@@ -16,5 +16,10 @@ export class Pimlico extends Bundler {
     prices.ape = prices.fast
     delete prices.standard
     return prices
+  }
+
+  public async getStatus(network: Network, userOpHash: string): Promise<UserOpStatus> {
+    const provider = this.getProvider(network)
+    return provider.send('pimlico_getUserOperationStatus', [userOpHash])
   }
 }

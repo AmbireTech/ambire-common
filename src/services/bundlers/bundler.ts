@@ -14,7 +14,7 @@ import { privSlot } from '../../libs/proxyDeploy/deploy'
 import { UserOperation } from '../../libs/userOperation/types'
 import { getCleanUserOp } from '../../libs/userOperation/userOperation'
 import { getRpcProvider } from '../provider'
-import { GasSpeeds } from './types'
+import { GasSpeeds, UserOpStatus } from './types'
 
 require('dotenv').config()
 
@@ -40,6 +40,11 @@ export abstract class Bundler {
    * Each bundler has their own gas prices. Define and fetch them
    */
   protected abstract getGasPrice(network: Network): Promise<GasSpeeds>
+
+  /**
+   * Each bundler has it's own handler for giving information back
+   */
+  public abstract getStatus(network: Network, userOpHash: string): Promise<UserOpStatus>
 
   /**
    * Get the bundler RPC
@@ -82,35 +87,6 @@ export abstract class Bundler {
   }
 
   /**
-   * Call getStatusAndTxnId until a result containing transactionHash is returned
-   *
-   * @param userOperationHash
-   * @param network
-   * @returns {transactionHash: string|null}
-   */
-  async pollTxnHash(
-    userOperationHash: string,
-    network: Network
-  ): Promise<{ transactionHash: string; status: string }> {
-    const result = await this.getStatusAndTxnId(userOperationHash, network)
-
-    // if the bundler has rejected the userOp, no meaning in continuing to poll
-    if (result && result.status === 'rejected') {
-      return result
-    }
-
-    if (!result || !result.transactionHash) {
-      const delayPromise = (ms: number) =>
-        new Promise((resolve) => {
-          setTimeout(resolve, ms)
-        })
-      await delayPromise(this.pollWaitTime)
-      return this.pollTxnHash(userOperationHash, network)
-    }
-    return result
-  }
-
-  /**
    * Broadcast a userOperation to the specified bundler and get a userOperationHash in return
    *
    * @param UserOperation userOperation
@@ -122,11 +98,6 @@ export abstract class Bundler {
       getCleanUserOp(userOperation)[0],
       ERC_4337_ENTRYPOINT
     ])
-  }
-
-  async getStatusAndTxnId(userOperationHash: string, network: Network) {
-    const provider = this.getProvider(network)
-    return provider.send('pimlico_getUserOperationStatus', [userOperationHash])
   }
 
   // use this request to check if the bundler supports the network

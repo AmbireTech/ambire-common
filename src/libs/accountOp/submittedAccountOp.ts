@@ -74,7 +74,7 @@ export async function fetchTxnId(
     const userOpHash = identifiedBy.identifier
     const [response, bundlerResult]: [any, any] = await Promise.all([
       fetchUserOp(userOpHash, fetchFn),
-      bundler.getStatusAndTxnId(userOpHash, network)
+      bundler.getStatus(network, userOpHash)
     ])
 
     if (bundlerResult.status === 'rejected')

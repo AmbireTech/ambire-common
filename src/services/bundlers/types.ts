@@ -11,3 +11,8 @@ export interface GasSpeeds {
   fast: Gas
   ape: Gas
 }
+
+export interface UserOpStatus {
+  status: 'rejected' | 'not_found' | 'found'
+  transactionHash?: Hex
+}
