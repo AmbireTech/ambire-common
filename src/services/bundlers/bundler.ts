@@ -9,17 +9,17 @@ import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
 import { decodeError } from '../../libs/errorDecoder'
 import { BundlerEstimateResult } from '../../libs/estimate/interfaces'
-import { Gas1559Recommendation } from '../../libs/gasPrice/gasPrice'
 import { privSlot } from '../../libs/proxyDeploy/deploy'
 import { UserOperation } from '../../libs/userOperation/types'
 import { getCleanUserOp } from '../../libs/userOperation/userOperation'
 import { getRpcProvider } from '../provider'
+import { GasSpeeds } from './types'
 
 require('dotenv').config()
 
-function addExtra(gasInWei: bigint, percentageIncrease: bigint): string {
+function addExtra(gasInWei: bigint, percentageIncrease: bigint): `0x${string}` {
   const percent = 100n / percentageIncrease
-  return toBeHex(gasInWei + gasInWei / percent)
+  return toBeHex(gasInWei + gasInWei / percent) as `0x${string}`
 }
 
 export abstract class Bundler {
@@ -32,10 +32,13 @@ export abstract class Bundler {
 
   /**
    * Define the bundler URL
-   *
-   * @param network
    */
   protected abstract getUrl(network: Network): string
+
+  /**
+   * Each bundler has their own gas prices. Define and fetch them
+   */
+  protected abstract getGasPrice(network: Network): Promise<GasSpeeds>
 
   /**
    * Get the bundler RPC
@@ -125,46 +128,6 @@ export abstract class Bundler {
     return provider.send('pimlico_getUserOperationStatus', [userOperationHash])
   }
 
-  async getUserOpGasPrice(network: Network) {
-    const provider = this.getProvider(network)
-    return provider.send('pimlico_getUserOperationGasPrice', [])
-  }
-
-  async pollGetUserOpGasPrice(network: Network, counter = 0): Promise<Gas1559Recommendation[]> {
-    if (counter >= 5) {
-      throw new Error('unable to fetch bundler gas prices')
-    }
-    const prices = await this.getUserOpGasPrice(network)
-    if (!prices) {
-      const delayPromise = (ms: number) =>
-        new Promise((resolve) => {
-          setTimeout(resolve, ms)
-        })
-      await delayPromise(this.pollWaitTime)
-      return this.pollGetUserOpGasPrice(network, counter + 1)
-    }
-
-    // set in the correct ambire format
-    prices.medium = prices.standard
-    prices.ape = prices.fast
-    delete prices.standard
-
-    // transfrom to bigint
-    const gasPrices = []
-    for (const [key] of Object.entries(prices)) {
-      const baseFeePerGas =
-        BigInt(prices[key].maxFeePerGas) - BigInt(prices[key].maxPriorityFeePerGas)
-      gasPrices.push({
-        name: key,
-        baseFeePerGas,
-        baseFeeToDivide: baseFeePerGas,
-        maxPriorityFeePerGas: BigInt(prices[key].maxPriorityFeePerGas)
-      })
-    }
-
-    return gasPrices
-  }
-
   // use this request to check if the bundler supports the network
   static async isNetworkSupported(fetch: Fetch, chainId: bigint) {
     const url = `https://api.pimlico.io/health?apikey=${process.env.REACT_APP_PIMLICO_API_KEY}&chain-id=${chainId}`
@@ -204,23 +167,17 @@ export abstract class Bundler {
     network: Network,
     errorCallback: Function,
     counter: number = 0
-  ): Promise<{
-    slow: { maxFeePerGas: string; maxPriorityFeePerGas: string }
-    medium: { maxFeePerGas: string; maxPriorityFeePerGas: string }
-    fast: { maxFeePerGas: string; maxPriorityFeePerGas: string }
-    ape: { maxFeePerGas: string; maxPriorityFeePerGas: string }
-  }> {
+  ): Promise<GasSpeeds> {
     if (counter >= 5) throw new Error("Couldn't fetch gas prices")
 
-    const provider = this.getProvider(network)
     let response
 
     try {
       response = await Promise.race([
-        provider.send('pimlico_getUserOperationGasPrice', []),
+        this.getGasPrice(network),
         new Promise((_resolve, reject) => {
           setTimeout(
-            () => reject(new Error('pimlico_getUserOperationGasPrice failed, request too slow')),
+            () => reject(new Error('fetching bundler gas prices failed, request too slow')),
             6000
           )
         })
@@ -235,23 +192,23 @@ export abstract class Bundler {
       return this.fetchGasPrices(network, errorCallback, increment)
     }
 
-    const results = response
+    const results = response as GasSpeeds
     return {
       slow: {
         maxFeePerGas: addExtra(BigInt(results.slow.maxFeePerGas), 5n),
         maxPriorityFeePerGas: addExtra(BigInt(results.slow.maxPriorityFeePerGas), 5n)
       },
       medium: {
-        maxFeePerGas: addExtra(BigInt(results.standard.maxFeePerGas), 7n),
-        maxPriorityFeePerGas: addExtra(BigInt(results.standard.maxPriorityFeePerGas), 7n)
+        maxFeePerGas: addExtra(BigInt(results.medium.maxFeePerGas), 7n),
+        maxPriorityFeePerGas: addExtra(BigInt(results.medium.maxPriorityFeePerGas), 7n)
       },
       fast: {
         maxFeePerGas: addExtra(BigInt(results.fast.maxFeePerGas), 10n),
         maxPriorityFeePerGas: addExtra(BigInt(results.fast.maxPriorityFeePerGas), 10n)
       },
       ape: {
-        maxFeePerGas: addExtra(BigInt(results.fast.maxFeePerGas), 20n),
-        maxPriorityFeePerGas: addExtra(BigInt(results.fast.maxPriorityFeePerGas), 20n)
+        maxFeePerGas: addExtra(BigInt(results.ape.maxFeePerGas), 20n),
+        maxPriorityFeePerGas: addExtra(BigInt(results.ape.maxPriorityFeePerGas), 20n)
       }
     }
   }
