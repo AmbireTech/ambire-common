@@ -3,6 +3,7 @@ import { Interface, Result } from 'ethers'
 import { AccountOp } from '../../../accountOp/accountOp'
 import { AmbireAccount } from '../../const/abis/AmbireAccount'
 import { HumanizerCallModule, IrCall } from '../../interfaces'
+import { getAction, getAddressVisualization, getLabel } from '../../utils'
 
 // the purpose of this module is simply to visualize attempts to hide ambire operations within the current account op
 // such thing can be done if the dapp requests a tryCatch/executeBySelfSingle/executeBySelf function call directed to the current account
@@ -33,11 +34,28 @@ export const embeddedAmbireOperationHumanizer: HumanizerCallModule = (
       return calls.map(({ to, value, data }: Result) => ({ ...originalCall, to, value, data }))
     }
   }
+  const functionSelectorsCallableFromSigner = ['execute', 'executeMultiple', 'executeBySender'].map(
+    (i) => iface.getFunction(i)!.selector
+  )
   const newCalls: IrCall[] = []
+
   irCalls.forEach((call) => {
-    if (call.to === accountOp.accountAddr && matcher[call.data.slice(0, 10)])
+    if (call.to === accountOp.accountAddr && matcher[call.data.slice(0, 10)]) {
       newCalls.push(...matcher[call.data.slice(0, 10)](call))
-    else newCalls.push(call)
+      return
+    }
+    if (functionSelectorsCallableFromSigner.includes(call.data.slice(0, 10))) {
+      newCalls.push({
+        ...call,
+        fullVisualization: [
+          getAction('Execute calls'),
+          getLabel('from'),
+          getAddressVisualization(call.to)
+        ]
+      })
+      return
+    }
+    newCalls.push(call)
   })
   return newCalls
 }
