@@ -7,6 +7,7 @@ import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import { velcroUrl } from '../../../test/config'
 import { monitor, stopMonitoring } from '../../../test/helpers/requests'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
+import { PORTFOLIO_TESTS_V2 } from '../../consts/addresses'
 import { EOA_SIMULATION_NONCE } from '../../consts/deployless'
 import { networks } from '../../consts/networks'
 import { Account } from '../../interfaces/account'
@@ -25,7 +26,12 @@ describe('Portfolio', () => {
 
   async function getNonce(address: string) {
     const accountContract = new Contract(address, AmbireAccount.abi, provider)
-    return accountContract.nonce()
+    try {
+      const res = await accountContract.nonce()
+      return res
+    } catch (e) {
+      return '0x00'
+    }
   }
   async function getSafeSendUSDTTransaction(from: string, to: string, amount: bigint) {
     const usdtContract = new Contract(USDT_ADDRESS, ERC20, provider)
@@ -78,37 +84,38 @@ describe('Portfolio', () => {
 
   test('token simulation', async () => {
     const accountOp: any = {
-      accountAddr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
-      signingKeyAddr: '0xe5a4Dad2Ea987215460379Ab285DF87136E83BEA',
+      accountAddr: PORTFOLIO_TESTS_V2.addr,
+      signingKeyAddr: PORTFOLIO_TESTS_V2.key,
       gasLimit: null,
       gasFeePayment: null,
       networkId: 'ethereum',
-      nonce: await getNonce('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'),
+      nonce: await getNonce(PORTFOLIO_TESTS_V2.addr),
+      // fake sig, doesn't matter
       signature: '0x000000000000000000000000e5a4Dad2Ea987215460379Ab285DF87136E83BEA03',
       calls: [
         await getSafeSendUSDTTransaction(
-          '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+          PORTFOLIO_TESTS_V2.addr,
+          // random addr, doesn't matter
           '0xe5a4dad2ea987215460379ab285df87136e83bea',
           1000000n
         )
       ]
     }
     const account = {
-      addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+      addr: PORTFOLIO_TESTS_V2.addr,
       initialPrivileges: [],
-      associatedKeys: ['0xe5a4Dad2Ea987215460379Ab285DF87136E83BEA'],
+      associatedKeys: [PORTFOLIO_TESTS_V2.key],
       creation: {
-        factoryAddr: '0xBf07a0Df119Ca234634588fbDb5625594E2a5BCA',
-        bytecode:
-          '0x7f00000000000000000000000000000000000000000000000000000000000000017f02c94ba85f2ea274a3869293a0a9bf447d073c83c617963b0be7c862ec2ee44e553d602d80604d3d3981f3363d3d373d3d3d363d732a2b85eb1054d6f0c6c2e37da05ed3e5fea684ef5af43d82803e903d91602b57fd5bf3',
-        salt: '0x2ee01d932ede47b0b2fb1b6af48868de9f86bfc9a5be2f0b42c0111cf261d04c'
+        factoryAddr: PORTFOLIO_TESTS_V2.factory,
+        bytecode: PORTFOLIO_TESTS_V2.bytecode,
+        salt: PORTFOLIO_TESTS_V2.salt
       },
       preferences: {
         label: DEFAULT_ACCOUNT_LABEL,
-        pfp: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+        pfp: PORTFOLIO_TESTS_V2.addr
       }
     } as Account
-    const postSimulation = await portfolio.get('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8', {
+    const postSimulation = await portfolio.get(PORTFOLIO_TESTS_V2.addr, {
       simulation: { accountOps: [accountOp], account }
     })
     const entry = postSimulation.tokens.find((x) => x.symbol === 'USDT')
@@ -437,42 +444,41 @@ describe('Portfolio', () => {
     }
   })
 
-  test('token simulation works with two account ops', async () => {
+  test('token simulation works with multiple calls in an account op', async () => {
     const accountOp: any = {
-      accountAddr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
-      signingKeyAddr: '0xe5a4Dad2Ea987215460379Ab285DF87136E83BEA',
+      accountAddr: PORTFOLIO_TESTS_V2.addr,
+      signingKeyAddr: PORTFOLIO_TESTS_V2.key,
       gasLimit: null,
       gasFeePayment: null,
       networkId: 'ethereum',
-      nonce: await getNonce('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'),
+      nonce: await getNonce(PORTFOLIO_TESTS_V2.addr),
       signature: '0x000000000000000000000000e5a4Dad2Ea987215460379Ab285DF87136E83BEA03',
       calls: [
+        await getSafeSendUSDTTransaction(PORTFOLIO_TESTS_V2.addr, PORTFOLIO_TESTS_V2.key, 1000000n),
         await getSafeSendUSDTTransaction(
-          '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
-          '0xe5a4dad2ea987215460379ab285df87136e83bea',
-          1000000n
+          PORTFOLIO_TESTS_V2.addr,
+          '0x0000000000000000000000000000000000000000',
+          500000n
         )
       ]
     }
     const account = {
-      addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+      addr: PORTFOLIO_TESTS_V2.addr,
       initialPrivileges: [],
-      associatedKeys: ['0xe5a4Dad2Ea987215460379Ab285DF87136E83BEA'],
+      associatedKeys: [PORTFOLIO_TESTS_V2.key],
       creation: {
-        factoryAddr: '0xBf07a0Df119Ca234634588fbDb5625594E2a5BCA',
-        bytecode:
-          '0x7f00000000000000000000000000000000000000000000000000000000000000017f02c94ba85f2ea274a3869293a0a9bf447d073c83c617963b0be7c862ec2ee44e553d602d80604d3d3981f3363d3d373d3d3d363d732a2b85eb1054d6f0c6c2e37da05ed3e5fea684ef5af43d82803e903d91602b57fd5bf3',
-        salt: '0x2ee01d932ede47b0b2fb1b6af48868de9f86bfc9a5be2f0b42c0111cf261d04c'
+        factoryAddr: PORTFOLIO_TESTS_V2.factory,
+        bytecode: PORTFOLIO_TESTS_V2.bytecode,
+        salt: PORTFOLIO_TESTS_V2.salt
       },
       preferences: {
         label: DEFAULT_ACCOUNT_LABEL,
-        pfp: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+        pfp: PORTFOLIO_TESTS_V2.addr
       }
     }
-    const secondAccountOp = { ...accountOp }
-    secondAccountOp.nonce = accountOp.nonce + 1n
-    const postSimulation = await portfolio.get('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8', {
-      simulation: { accountOps: [accountOp, secondAccountOp], account }
+
+    const postSimulation = await portfolio.get(PORTFOLIO_TESTS_V2.addr, {
+      simulation: { accountOps: [accountOp], account }
     })
     const entry = postSimulation.tokens.find((x) => x.symbol === 'USDT')
 
@@ -487,40 +493,35 @@ describe('Portfolio', () => {
 
   test('token simulation fails if there are two account ops but the last one has a higher nonce than expected', async () => {
     const accountOp: any = {
-      accountAddr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
-      signingKeyAddr: '0xe5a4Dad2Ea987215460379Ab285DF87136E83BEA',
+      accountAddr: PORTFOLIO_TESTS_V2.addr,
+      signingKeyAddr: PORTFOLIO_TESTS_V2.key,
       gasLimit: null,
       gasFeePayment: null,
       networkId: 'ethereum',
-      nonce: await getNonce('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'),
+      nonce: await getNonce(PORTFOLIO_TESTS_V2.addr),
       signature: '0x000000000000000000000000e5a4Dad2Ea987215460379Ab285DF87136E83BEA03',
       calls: [
-        await getSafeSendUSDTTransaction(
-          '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
-          '0xe5a4dad2ea987215460379ab285df87136e83bea',
-          1000000n
-        )
+        await getSafeSendUSDTTransaction(PORTFOLIO_TESTS_V2.addr, PORTFOLIO_TESTS_V2.key, 1000000n)
       ]
     }
     const account = {
-      addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+      addr: PORTFOLIO_TESTS_V2.addr,
       initialPrivileges: [],
-      associatedKeys: ['0xe5a4Dad2Ea987215460379Ab285DF87136E83BEA'],
+      associatedKeys: [PORTFOLIO_TESTS_V2.key],
       creation: {
-        factoryAddr: '0xBf07a0Df119Ca234634588fbDb5625594E2a5BCA',
-        bytecode:
-          '0x7f00000000000000000000000000000000000000000000000000000000000000017f02c94ba85f2ea274a3869293a0a9bf447d073c83c617963b0be7c862ec2ee44e553d602d80604d3d3981f3363d3d373d3d3d363d732a2b85eb1054d6f0c6c2e37da05ed3e5fea684ef5af43d82803e903d91602b57fd5bf3',
-        salt: '0x2ee01d932ede47b0b2fb1b6af48868de9f86bfc9a5be2f0b42c0111cf261d04c'
+        factoryAddr: PORTFOLIO_TESTS_V2.factory,
+        bytecode: PORTFOLIO_TESTS_V2.bytecode,
+        salt: PORTFOLIO_TESTS_V2.salt
       },
       preferences: {
         label: DEFAULT_ACCOUNT_LABEL,
-        pfp: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+        pfp: PORTFOLIO_TESTS_V2.addr
       }
     }
     const secondAccountOp = { ...accountOp }
     secondAccountOp.nonce = accountOp.nonce + 2n // wrong, should be +1n
     try {
-      await portfolio.get('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8', {
+      await portfolio.get(PORTFOLIO_TESTS_V2.addr, {
         simulation: { accountOps: [accountOp, secondAccountOp], account }
       })
       // portfolio.get should revert and not come here
