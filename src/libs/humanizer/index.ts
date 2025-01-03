@@ -20,6 +20,7 @@ import { airdropsModule } from './modules/Airdrops'
 import asciiModule from './modules/AsciiModule'
 import curveModule from './modules/Curve'
 import { deploymentModule } from './modules/Deployment'
+import { embeddedAmbireOperationHumanizer } from './modules/embeddedAmbireOperationHumanizer'
 import fallbackHumanizer from './modules/FallbackHumanizer'
 import gasTankModule from './modules/GasTankModule'
 import KyberSwap from './modules/KyberSwap'
@@ -41,6 +42,7 @@ import wrappingModule from './modules/Wrapping'
 // the final humanization is the final triggered module
 export const humanizerCallModules: HumanizerCallModule[] = [
   preProcessHumanizer,
+  embeddedAmbireOperationHumanizer,
   deploymentModule,
   genericErc721Humanizer,
   genericErc20Humanizer,
