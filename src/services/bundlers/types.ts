@@ -1,6 +1,8 @@
+import { Hex } from '../../interfaces/hex'
+
 export interface Gas {
-  maxFeePerGas: `0x${string}`
-  maxPriorityFeePerGas: `0x${string}`
+  maxFeePerGas: Hex
+  maxPriorityFeePerGas: Hex
 }
 
 export interface GasSpeeds {

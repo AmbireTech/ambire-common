@@ -9,9 +9,9 @@ export class Biconomy extends Bundler {
     return `https://bundler.biconomy.io/api/v3/${network.chainId}/nJPK7B3ru.dd7f7861-190d-41bd-af80-6877f74b8f44`
   }
 
-  protected getGasPrice(network: Network): GasSpeeds {
+  protected async getGasPrice(network: Network): Promise<GasSpeeds> {
     const provider = this.getProvider(network)
-    const prices: any = provider.send('biconomy_getGasFeeValues', [])
+    const prices: any = await provider.send('biconomy_getGasFeeValues', [])
 
     // biconomy returns only single values for maxFeePerGas
     return {

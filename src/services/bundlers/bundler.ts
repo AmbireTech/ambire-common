@@ -5,6 +5,7 @@ import { toBeHex } from 'ethers'
 
 import { ENTRY_POINT_MARKER, ERC_4337_ENTRYPOINT } from '../../consts/deploy'
 import { Fetch } from '../../interfaces/fetch'
+import { Hex } from '../../interfaces/hex'
 import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
 import { decodeError } from '../../libs/errorDecoder'
@@ -17,9 +18,9 @@ import { GasSpeeds } from './types'
 
 require('dotenv').config()
 
-function addExtra(gasInWei: bigint, percentageIncrease: bigint): `0x${string}` {
+function addExtra(gasInWei: bigint, percentageIncrease: bigint): Hex {
   const percent = 100n / percentageIncrease
-  return toBeHex(gasInWei + gasInWei / percent) as `0x${string}`
+  return toBeHex(gasInWei + gasInWei / percent) as Hex
 }
 
 export abstract class Bundler {

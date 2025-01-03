@@ -607,7 +607,7 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
       expect(true).toEqual(false)
     } catch (e: any) {
       expect(e.message).toBe(
-        'signature error: trying to sign an AmbireReadableOperation for the samee address. Please contact support'
+        'signature error: trying to sign an AmbireReadableOperation for the same address. Please contact support'
       )
     }
   })
