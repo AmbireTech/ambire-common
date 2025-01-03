@@ -6,6 +6,7 @@ import { toBeHex } from 'ethers'
 import { ENTRY_POINT_MARKER, ERC_4337_ENTRYPOINT } from '../../consts/deploy'
 import { Fetch } from '../../interfaces/fetch'
 import { Network } from '../../interfaces/network'
+import { RPCProvider } from '../../interfaces/provider'
 import { decodeError } from '../../libs/errorDecoder'
 import { BundlerEstimateResult } from '../../libs/estimate/interfaces'
 import { Gas1559Recommendation } from '../../libs/gasPrice/gasPrice'
@@ -21,7 +22,7 @@ function addExtra(gasInWei: bigint, percentageIncrease: bigint): string {
   return toBeHex(gasInWei + gasInWei / percent)
 }
 
-export class Bundler {
+export abstract class Bundler {
   /**
    * The default pollWaitTime. This is used to determine
    * how many milliseconds to wait until before another request to the
@@ -30,14 +31,29 @@ export class Bundler {
   public pollWaitTime = 1500
 
   /**
+   * Define the bundler URL
+   *
+   * @param network
+   */
+  protected abstract getUrl(network: Network): string
+
+  /**
+   * Get the bundler RPC
+   *
+   * @param network
+   */
+  protected getProvider(network: Network): RPCProvider {
+    return getRpcProvider([this.getUrl(network)], network.chainId)
+  }
+
+  /**
    * Get the transaction receipt from the userOperationHash if ready
    *
    * @param userOperationHash
    * @returns Receipt | null
    */
   async getReceipt(userOperationHash: string, network: Network) {
-    const url = `https://api.pimlico.io/v2/${network.chainId}/rpc?apikey=${process.env.REACT_APP_PIMLICO_API_KEY}`
-    const provider = getRpcProvider([url], network.chainId)
+    const provider = this.getProvider(network)
     return provider.send('eth_getUserOperationReceipt', [userOperationHash])
   }
 
@@ -72,7 +88,7 @@ export class Bundler {
     userOperationHash: string,
     network: Network
   ): Promise<{ transactionHash: string; status: string }> {
-    const result = await Bundler.getStatusAndTxnId(userOperationHash, network)
+    const result = await this.getStatusAndTxnId(userOperationHash, network)
 
     // if the bundler has rejected the userOp, no meaning in continuing to poll
     if (result && result.status === 'rejected') {
@@ -97,40 +113,20 @@ export class Bundler {
    * @returns userOperationHash
    */
   async broadcast(userOperation: UserOperation, network: Network): Promise<string> {
-    const url = `https://api.pimlico.io/v2/${network.chainId}/rpc?apikey=${process.env.REACT_APP_PIMLICO_API_KEY}`
-    const provider = getRpcProvider([url], network.chainId)
-
+    const provider = this.getProvider(network)
     return provider.send('eth_sendUserOperation', [
       getCleanUserOp(userOperation)[0],
       ERC_4337_ENTRYPOINT
     ])
   }
 
-  /**
-   * Broadcast a userOperation to the specified bundler and get a userOperationHash in return
-   *
-   * @param UserOperation userOperation
-   * @returns userOperationHash
-   */
-  async broadcastBiconomy(userOperation: UserOperation, network: Network): Promise<string> {
-    const url = `https://bundler.biconomy.io/api/v2/${network.chainId}/nJPK7B3ru.dd7f7861-190d-41bd-af80-6877f74b8f44`
-    const provider = getRpcProvider([url], network.chainId)
-
-    return provider.send('eth_sendUserOperation', [
-      getCleanUserOp(userOperation)[0],
-      ERC_4337_ENTRYPOINT
-    ])
-  }
-
-  static async getStatusAndTxnId(userOperationHash: string, network: Network) {
-    const url = `https://api.pimlico.io/v2/${network.chainId}/rpc?apikey=${process.env.REACT_APP_PIMLICO_API_KEY}`
-    const provider = getRpcProvider([url], network.chainId)
+  async getStatusAndTxnId(userOperationHash: string, network: Network) {
+    const provider = this.getProvider(network)
     return provider.send('pimlico_getUserOperationStatus', [userOperationHash])
   }
 
-  static async getUserOpGasPrice(network: Network) {
-    const url = `https://api.pimlico.io/v2/${network.chainId}/rpc?apikey=${process.env.REACT_APP_PIMLICO_API_KEY}`
-    const provider = getRpcProvider([url], network.chainId)
+  async getUserOpGasPrice(network: Network) {
+    const provider = this.getProvider(network)
     return provider.send('pimlico_getUserOperationGasPrice', [])
   }
 
@@ -138,7 +134,7 @@ export class Bundler {
     if (counter >= 5) {
       throw new Error('unable to fetch bundler gas prices')
     }
-    const prices = await Bundler.getUserOpGasPrice(network)
+    const prices = await this.getUserOpGasPrice(network)
     if (!prices) {
       const delayPromise = (ms: number) =>
         new Promise((resolve) => {
@@ -176,13 +172,12 @@ export class Bundler {
     return result.status === 200
   }
 
-  static async estimate(
+  async estimate(
     userOperation: UserOperation,
     network: Network,
     shouldStateOverride = false
   ): Promise<BundlerEstimateResult> {
-    const url = `https://api.pimlico.io/v2/${network.chainId}/rpc?apikey=${process.env.REACT_APP_PIMLICO_API_KEY}`
-    const provider = getRpcProvider([url], network.chainId)
+    const provider = this.getProvider(network)
 
     if (shouldStateOverride) {
       return provider.send('eth_estimateUserOperationGas', [
@@ -205,7 +200,7 @@ export class Bundler {
     ])
   }
 
-  static async fetchGasPrices(
+  async fetchGasPrices(
     network: Network,
     errorCallback: Function,
     counter: number = 0
@@ -217,8 +212,7 @@ export class Bundler {
   }> {
     if (counter >= 5) throw new Error("Couldn't fetch gas prices")
 
-    const url = `https://api.pimlico.io/v2/${network.chainId}/rpc?apikey=${process.env.REACT_APP_PIMLICO_API_KEY}`
-    const provider = getRpcProvider([url], network.chainId)
+    const provider = this.getProvider(network)
     let response
 
     try {
@@ -263,7 +257,7 @@ export class Bundler {
   }
 
   // used when catching errors from bundler requests
-  static decodeBundlerError(e: any): string {
+  decodeBundlerError(e: any): string {
     const { reason } = decodeError(e)
 
     return reason || 'Unknown error'

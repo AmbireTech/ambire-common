@@ -27,6 +27,7 @@ import {
 } from '../../libs/userOperation/userOperation'
 import { getRpcProvider } from '../provider'
 import { Bundler } from './bundler'
+import bundler from './index'
 
 const to = '0x706431177041C87BEb1C25Fa29b92057Cb3c7089'
 
@@ -268,7 +269,7 @@ describe('Bundler tests', () => {
       userOp.nonce = toBeHex(0)
       userOp.signature = getSigForCalculations()
 
-      const bundlerEstimate = await Bundler.estimate(userOp, optimism)
+      const bundlerEstimate = await bundler.estimate(userOp, optimism)
       expect(bundlerEstimate).toHaveProperty('preVerificationGas')
       expect(bundlerEstimate).toHaveProperty('verificationGasLimit')
       expect(bundlerEstimate).toHaveProperty('callGasLimit')
@@ -327,7 +328,7 @@ describe('Bundler tests', () => {
       ])
 
       try {
-        await Bundler.estimate(userOp, optimism)
+        await bundler.estimate(userOp, optimism)
       } catch (e: any) {
         expect(e.error.message.indexOf('validateUserOp: not from entryPoint')).not.toBe(-1)
       }
@@ -388,7 +389,7 @@ describe('Bundler tests', () => {
       userOp.signature = getSigForCalculations()
 
       try {
-        await Bundler.estimate(userOp, optimism)
+        await bundler.estimate(userOp, optimism)
       } catch (e: any) {
         const buffer = Buffer.from(
           e.error.message.substring(e.error.message.indexOf('0x') + 2),
@@ -436,7 +437,7 @@ describe('Bundler tests', () => {
       userOp.signature = getSigForCalculations()
       userOp.nonce = '0x0'
 
-      const bundlerEstimate = await Bundler.estimate(userOp, baseSepolia, true)
+      const bundlerEstimate = await bundler.estimate(userOp, baseSepolia, true)
       expect(bundlerEstimate).toHaveProperty('preVerificationGas')
       expect(bundlerEstimate).toHaveProperty('verificationGasLimit')
       expect(bundlerEstimate).toHaveProperty('callGasLimit')
@@ -477,7 +478,7 @@ describe('Bundler tests', () => {
       userOp.nonce = '0x0'
 
       try {
-        await Bundler.estimate(userOp, gnosis, true)
+        await bundler.estimate(userOp, gnosis, true)
         expect(true).toBe(false)
       } catch (e: any) {
         expect(e.message.includes('AA23 reverted validateUserOp: not from entryPoint')).not.toBe(-1)
@@ -514,14 +515,14 @@ describe('Bundler tests', () => {
       userOp.paymaster = paymasterAndData.paymaster
       userOp.paymasterData = paymasterAndData.paymasterData
       userOp.signature = getSigForCalculations()
-      const bundlerEstimate = await Bundler.estimate(userOp, optimism)
+      const bundlerEstimate = await bundler.estimate(userOp, optimism)
       expect(bundlerEstimate).toHaveProperty('preVerificationGas')
       expect(bundlerEstimate).toHaveProperty('verificationGasLimit')
       expect(bundlerEstimate).toHaveProperty('callGasLimit')
       expect(bundlerEstimate).toHaveProperty('paymasterVerificationGasLimit')
       expect(bundlerEstimate).toHaveProperty('paymasterPostOpGasLimit')
 
-      const estimateWithStateOverride = await Bundler.estimate(userOp, optimism, true)
+      const estimateWithStateOverride = await bundler.estimate(userOp, optimism, true)
       expect(estimateWithStateOverride).toHaveProperty('preVerificationGas')
       expect(estimateWithStateOverride).toHaveProperty('verificationGasLimit')
       expect(estimateWithStateOverride).toHaveProperty('callGasLimit')
@@ -572,7 +573,7 @@ describe('Bundler tests', () => {
       userOp.signature = getSigForCalculations()
 
       try {
-        await Bundler.estimate(userOp, optimism)
+        await bundler.estimate(userOp, optimism)
       } catch (e: any) {
         const buffer = Buffer.from(
           e.error.message.substring(e.error.message.indexOf('0x') + 2),
@@ -611,7 +612,7 @@ describe('Bundler tests', () => {
       userOp.paymaster = paymasterAndData.paymaster
       userOp.paymasterData = paymasterAndData.paymasterData
 
-      await Bundler.estimate(userOp, optimism).catch((e) => {
+      await bundler.estimate(userOp, optimism).catch((e) => {
         expect(e).toHaveProperty('error')
         expect(e.error).toHaveProperty('message')
         expect(e.error.message.includes('SV_SIGLEN')).toBe(true)
@@ -662,7 +663,7 @@ describe('Bundler tests', () => {
       userOp.nonce = toBeHex(0)
       userOp.signature = getSigForCalculations()
 
-      const bundlerEstimate = await Bundler.estimate(userOp, mantle)
+      const bundlerEstimate = await bundler.estimate(userOp, mantle)
       expect(bundlerEstimate).toHaveProperty('preVerificationGas')
       expect(bundlerEstimate).toHaveProperty('verificationGasLimit')
       expect(bundlerEstimate).toHaveProperty('callGasLimit')
@@ -724,7 +725,7 @@ describe('Bundler tests', () => {
       userOp.signature = getSigForCalculations()
 
       try {
-        await Bundler.estimate(userOp, mantle)
+        await bundler.estimate(userOp, mantle)
       } catch (e: any) {
         const buffer = Buffer.from(
           e.error.message.substring(e.error.message.indexOf('0x') + 2),
@@ -761,14 +762,14 @@ describe('Bundler tests', () => {
         getSignableCalls(opBase)
       ])
       userOp.signature = getSigForCalculations()
-      const bundlerEstimate = await Bundler.estimate(userOp, base)
+      const bundlerEstimate = await bundler.estimate(userOp, base)
       expect(bundlerEstimate).toHaveProperty('preVerificationGas')
       expect(bundlerEstimate).toHaveProperty('verificationGasLimit')
       expect(bundlerEstimate).toHaveProperty('callGasLimit')
       expect(bundlerEstimate).toHaveProperty('paymasterVerificationGasLimit')
       expect(bundlerEstimate).toHaveProperty('paymasterPostOpGasLimit')
 
-      const estimateWithStateOverride = await Bundler.estimate(userOp, base, true)
+      const estimateWithStateOverride = await bundler.estimate(userOp, base, true)
       expect(estimateWithStateOverride).toHaveProperty('preVerificationGas')
       expect(estimateWithStateOverride).toHaveProperty('verificationGasLimit')
       expect(estimateWithStateOverride).toHaveProperty('callGasLimit')

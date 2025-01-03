@@ -88,7 +88,6 @@ import {
   shouldAskForEntryPointAuthorization
 } from '../../libs/userOperation/userOperation'
 import bundler from '../../services/bundlers'
-import { Bundler } from '../../services/bundlers/bundler'
 import { paymasterFactory } from '../../services/paymaster'
 import { failedPaymasters } from '../../services/paymaster/FailedPaymasters'
 import { SocketAPI } from '../../services/socket/api'
@@ -1812,7 +1811,7 @@ export class MainController extends EventEmitter {
         if (!this.signAccountOp) return
         this.emitError(e)
       }
-      return Bundler.fetchGasPrices(network, errorCallback).catch((e) => {
+      return bundler.fetchGasPrices(network, errorCallback).catch((e) => {
         this.emitError({
           level: 'silent',
           message: "Failed to fetch the bundler's gas price",
@@ -2327,7 +2326,7 @@ export class MainController extends EventEmitter {
       // broadcast through bundler's service
       let userOperationHash
       try {
-        userOperationHash = await bundler.broadcast(userOperation, network!)
+        userOperationHash = await bundler.broadcast(userOperation, network)
       } catch (e: any) {
         return this.throwBroadcastAccountOp({
           error: e,

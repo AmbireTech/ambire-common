@@ -4,7 +4,7 @@ import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import { Account, AccountStates } from '../../interfaces/account'
 import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
-import { Bundler } from '../../services/bundlers/bundler'
+import bundler from '../../services/bundlers'
 import { paymasterFactory } from '../../services/paymaster'
 import { AccountOp, getSignableCallsForBundlerEstimate } from '../accountOp/accountOp'
 import { PaymasterEstimationData } from '../erc7677/types'
@@ -47,9 +47,9 @@ export async function bundlerEstimate(
   // set the callData
   if (userOp.activatorCall) localOp.activatorCall = userOp.activatorCall
 
-  const gasPrice = await Bundler.fetchGasPrices(network, errorCallback).catch(
-    () => new Error('Could not fetch gas prices, retrying...')
-  )
+  const gasPrice = await bundler
+    .fetchGasPrices(network, errorCallback)
+    .catch(() => new Error('Could not fetch gas prices, retrying...'))
   if (gasPrice instanceof Error) return estimationErrorFormatted(gasPrice, { feePaymentOptions })
 
   // add the maxFeePerGas and maxPriorityFeePerGas only if the network
@@ -85,8 +85,8 @@ export async function bundlerEstimate(
 
   const nonFatalErrors: Error[] = []
   const initializeRequests = () => [
-    Bundler.estimate(userOp, network, isEdgeCase).catch((e: any) => {
-      const decodedError = Bundler.decodeBundlerError(e)
+    bundler.estimate(userOp, network, isEdgeCase).catch((e: any) => {
+      const decodedError = bundler.decodeBundlerError(e)
 
       // if the bundler estimation fails, add a nonFatalError so we can react to
       // it on the FE. The BE at a later stage decides if this error is actually

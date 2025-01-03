@@ -1,6 +1,6 @@
 import { Fetch } from '../../interfaces/fetch'
 import { Network } from '../../interfaces/network'
-import { Bundler } from '../../services/bundlers/bundler'
+import bundler from '../../services/bundlers'
 import { fetchUserOp } from '../../services/explorers/jiffyscan'
 import { AccountOp } from './accountOp'
 
@@ -74,7 +74,7 @@ export async function fetchTxnId(
     const userOpHash = identifiedBy.identifier
     const [response, bundlerResult]: [any, any] = await Promise.all([
       fetchUserOp(userOpHash, fetchFn),
-      Bundler.getStatusAndTxnId(userOpHash, network)
+      bundler.getStatusAndTxnId(userOpHash, network)
     ])
 
     if (bundlerResult.status === 'rejected')

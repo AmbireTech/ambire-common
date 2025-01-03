@@ -1,4 +1,4 @@
-import { Bundler } from './bundler'
+import { Pimlico } from './pimlico'
 
-const bundler = new Bundler()
+const bundler = new Pimlico()
 export default bundler
