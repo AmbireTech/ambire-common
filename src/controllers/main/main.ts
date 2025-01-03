@@ -54,7 +54,7 @@ import {
 } from '../../libs/errorHumanizer'
 import { insufficientPaymasterFunds } from '../../libs/errorHumanizer/errors'
 import { estimate } from '../../libs/estimate/estimate'
-import { BundlerGasPrice, EstimateResult } from '../../libs/estimate/interfaces'
+import { EstimateResult } from '../../libs/estimate/interfaces'
 import { GasRecommendation, getGasPriceRecommendations } from '../../libs/gasPrice/gasPrice'
 import { humanizeAccountOp } from '../../libs/humanizer'
 import { KeyIterator } from '../../libs/keyIterator/keyIterator'
@@ -88,6 +88,7 @@ import {
   shouldAskForEntryPointAuthorization
 } from '../../libs/userOperation/userOperation'
 import bundler from '../../services/bundlers'
+import { GasSpeeds } from '../../services/bundlers/types'
 import { paymasterFactory } from '../../services/paymaster'
 import { failedPaymasters } from '../../services/paymaster/FailedPaymasters'
 import { SocketAPI } from '../../services/socket/api'
@@ -197,7 +198,7 @@ export class MainController extends EventEmitter {
   gasPrices: { [key: string]: GasRecommendation[] } = {}
 
   // network => BundlerGasPrice
-  bundlerGasPrices: { [key: string]: BundlerGasPrice } = {}
+  bundlerGasPrices: { [key: string]: GasSpeeds } = {}
 
   accountOpsToBeConfirmed: { [key: string]: { [key: string]: AccountOp } } = {}
 

@@ -12,26 +12,10 @@ export class Biconomy extends Bundler {
   protected async getGasPrice(network: Network): Promise<GasSpeeds> {
     const provider = this.getProvider(network)
     const prices: any = await provider.send('biconomy_getGasFeeValues', [])
-
-    // biconomy returns only single values for maxFeePerGas
-    return {
-      slow: {
-        maxFeePerGas: prices.maxFeePerGas,
-        maxPriorityFeePerGas: prices.maxPriorityFeePerGas
-      },
-      medium: {
-        maxFeePerGas: prices.maxFeePerGas,
-        maxPriorityFeePerGas: prices.maxPriorityFeePerGas
-      },
-      fast: {
-        maxFeePerGas: prices.maxFeePerGas,
-        maxPriorityFeePerGas: prices.maxPriorityFeePerGas
-      },
-      ape: {
-        maxFeePerGas: prices.maxFeePerGas,
-        maxPriorityFeePerGas: prices.maxPriorityFeePerGas
-      }
-    }
+    prices.medium = prices.standard
+    prices.ape = prices.fast
+    delete prices.standard
+    return prices
   }
 
   public async getStatus(network: Network, userOpHash: string): Promise<UserOpStatus> {

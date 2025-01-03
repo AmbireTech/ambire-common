@@ -55,59 +55,7 @@ export abstract class Bundler {
     return getRpcProvider([this.getUrl(network)], network.chainId)
   }
 
-  /**
-   * Get the transaction receipt from the userOperationHash if ready
-   *
-   * @param userOperationHash
-   * @returns Receipt | null
-   */
-  async getReceipt(userOperationHash: string, network: Network) {
-    const provider = this.getProvider(network)
-    return provider.send('eth_getUserOperationReceipt', [userOperationHash])
-  }
-
-  /**
-   * Call getReceipt until a result is returned
-   *
-   * @param userOperationHash
-   * @param network
-   * @returns https://docs.alchemy.com/reference/eth-getuseroperationreceipt
-   */
-  async poll(userOperationHash: string, network: Network): Promise<any> {
-    const receipt = await this.getReceipt(userOperationHash, network)
-    if (!receipt) {
-      const delayPromise = (ms: number) =>
-        new Promise((resolve) => {
-          setTimeout(resolve, ms)
-        })
-      await delayPromise(this.pollWaitTime)
-      return this.poll(userOperationHash, network)
-    }
-    return receipt
-  }
-
-  /**
-   * Broadcast a userOperation to the specified bundler and get a userOperationHash in return
-   *
-   * @param UserOperation userOperation
-   * @returns userOperationHash
-   */
-  async broadcast(userOperation: UserOperation, network: Network): Promise<string> {
-    const provider = this.getProvider(network)
-    return provider.send('eth_sendUserOperation', [
-      getCleanUserOp(userOperation)[0],
-      ERC_4337_ENTRYPOINT
-    ])
-  }
-
-  // use this request to check if the bundler supports the network
-  static async isNetworkSupported(fetch: Fetch, chainId: bigint) {
-    const url = `https://api.pimlico.io/health?apikey=${process.env.REACT_APP_PIMLICO_API_KEY}&chain-id=${chainId}`
-    const result = await fetch(url)
-    return result.status === 200
-  }
-
-  async estimate(
+  private async sendEstimateReq(
     userOperation: UserOperation,
     network: Network,
     shouldStateOverride = false
@@ -133,6 +81,53 @@ export abstract class Bundler {
       getCleanUserOp(userOperation)[0],
       ERC_4337_ENTRYPOINT
     ])
+  }
+
+  async estimate(
+    userOperation: UserOperation,
+    network: Network,
+    shouldStateOverride = false
+  ): Promise<BundlerEstimateResult> {
+    const estimatiton = await this.sendEstimateReq(userOperation, network, shouldStateOverride)
+    return {
+      preVerificationGas: toBeHex(estimatiton.preVerificationGas) as Hex,
+      verificationGasLimit: toBeHex(estimatiton.verificationGasLimit) as Hex,
+      callGasLimit: toBeHex(estimatiton.callGasLimit) as Hex,
+      paymasterVerificationGasLimit: toBeHex(estimatiton.paymasterVerificationGasLimit) as Hex,
+      paymasterPostOpGasLimit: toBeHex(estimatiton.paymasterPostOpGasLimit) as Hex
+    }
+  }
+
+  /**
+   * Get the transaction receipt from the userOperationHash if ready
+   *
+   * @param userOperationHash
+   * @returns Receipt | null
+   */
+  async getReceipt(userOperationHash: string, network: Network) {
+    const provider = this.getProvider(network)
+    return provider.send('eth_getUserOperationReceipt', [userOperationHash])
+  }
+
+  /**
+   * Broadcast a userOperation to the specified bundler and get a userOperationHash in return
+   *
+   * @param UserOperation userOperation
+   * @returns userOperationHash
+   */
+  async broadcast(userOperation: UserOperation, network: Network): Promise<string> {
+    const provider = this.getProvider(network)
+    return provider.send('eth_sendUserOperation', [
+      getCleanUserOp(userOperation)[0],
+      ERC_4337_ENTRYPOINT
+    ])
+  }
+
+  // use this request to check if the bundler supports the network
+  static async isNetworkSupported(fetch: Fetch, chainId: bigint) {
+    const url = `https://api.pimlico.io/health?apikey=${process.env.REACT_APP_PIMLICO_API_KEY}&chain-id=${chainId}`
+    const result = await fetch(url)
+    return result.status === 200
   }
 
   async fetchGasPrices(

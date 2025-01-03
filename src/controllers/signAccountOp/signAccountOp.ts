@@ -28,12 +28,7 @@ import { AccountOp, GasFeePayment, getSignableCalls } from '../../libs/accountOp
 import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 import { PaymasterErrorReponse, PaymasterSuccessReponse, Sponsor } from '../../libs/erc7677/types'
 import { getHumanReadableBroadcastError } from '../../libs/errorHumanizer'
-import {
-  BundlerGasPrice,
-  Erc4337GasLimits,
-  EstimateResult,
-  FeePaymentOption
-} from '../../libs/estimate/interfaces'
+import { Erc4337GasLimits, EstimateResult, FeePaymentOption } from '../../libs/estimate/interfaces'
 import {
   Gas1559Recommendation,
   GasPriceRecommendation,
@@ -53,6 +48,7 @@ import {
   shouldIncludeActivatorCall,
   shouldUseOneTimeNonce
 } from '../../libs/userOperation/userOperation'
+import { GasSpeeds } from '../../services/bundlers/types'
 /* eslint-disable no-restricted-syntax */
 import { AccountsController } from '../accounts/accounts'
 import { AccountOpAction } from '../actions/actions'
@@ -131,7 +127,7 @@ export class SignAccountOpController extends EventEmitter {
 
   gasPrices: GasRecommendation[] | null = null
 
-  bundlerGasPrices: BundlerGasPrice | null = null
+  bundlerGasPrices: GasSpeeds | null = null
 
   estimation: EstimateResult | null = null
 
@@ -479,7 +475,7 @@ export class SignAccountOpController extends EventEmitter {
     calls?: AccountOp['calls']
     gasUsedTooHighAgreed?: boolean
     rbfAccountOps?: { [key: string]: SubmittedAccountOp | null }
-    bundlerGasPrices?: BundlerGasPrice
+    bundlerGasPrices?: GasSpeeds
     blockGasLimit?: bigint
   }) {
     // once the user commits to the things he sees on his screen,

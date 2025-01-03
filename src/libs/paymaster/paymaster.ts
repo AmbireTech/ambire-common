@@ -5,6 +5,7 @@ import entryPointAbi from '../../../contracts/compiled/EntryPoint.json'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { AMBIRE_PAYMASTER, ERC_4337_ENTRYPOINT } from '../../consts/deploy'
 import { Account } from '../../interfaces/account'
+import { Hex } from '../../interfaces/hex'
 import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
 import { failedPaymasters } from '../../services/paymaster/FailedPaymasters'
@@ -32,12 +33,12 @@ export function getPaymasterDataForEstimate(): PaymasterEstimationData {
   const abiCoder = new AbiCoder()
   return {
     paymaster: AMBIRE_PAYMASTER,
-    paymasterVerificationGasLimit: toBeHex(0) as `0x${string}`,
-    paymasterPostOpGasLimit: toBeHex(0) as `0x${string}`,
+    paymasterVerificationGasLimit: toBeHex(100000) as Hex,
+    paymasterPostOpGasLimit: toBeHex(0) as Hex,
     paymasterData: abiCoder.encode(
       ['uint48', 'uint48', 'bytes'],
       [0, 0, getSigForCalculations()]
-    ) as `0x${string}`
+    ) as Hex
   }
 }
 
