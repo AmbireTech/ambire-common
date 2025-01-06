@@ -103,11 +103,13 @@ export const makeSmartAccountOpAction = ({
     return accountOpAction
   }
 
-  // TODO: check eligibility for this
-  // like if we have other calls in the batch, it will probably not work
-  // gas sponsorship will work for only the speicified calls
   // find the user request with a paymaster service
-  const userReqWithPaymasterService = userRequests.find((req) => req.meta.paymasterService)
+  const userReqWithPaymasterService = userRequests.find(
+    (req) =>
+      req.meta.accountAddr === account.addr &&
+      req.meta.networkId === networkId &&
+      req.meta.paymasterService
+  )
   const paymasterService = userReqWithPaymasterService
     ? userReqWithPaymasterService.meta.paymasterService
     : undefined

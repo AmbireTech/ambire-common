@@ -64,17 +64,24 @@ contract NFTGetter is Simulation {
       uint total;
       for (uint i = 0; i != tokenIds.length; i++) {
         if (total == limit) break;
-        if (collection.ownerOf(tokenIds[i]) == address(account)) {
-          total++;
-        }
+        // catching the call as we can tolerate errors here because:
+        // - on nft mint the token does not exist before the simulation and ownerOf fails
+        // - on nft burn the token does not exist after the simulation and ownerOf fails
+        try collection.ownerOf(tokenIds[i]) returns (address ownerOfCurrentToken) {
+          if (ownerOfCurrentToken == address(account)) {
+            total++;
+          }
+        } catch {}
       }
       meta.nfts = new uint256[](total);
       uint j = 0;
       for (uint i = 0; i != tokenIds.length; i++) {
-        if (collection.ownerOf(tokenIds[i]) == address(account)) {
-          meta.nfts[j] = tokenIds[i];
-          j++;
-        }
+        try collection.ownerOf(tokenIds[i]) returns (address ownerOfCurrentToken) {
+          if (ownerOfCurrentToken == address(account)) {
+            meta.nfts[j] = tokenIds[i];
+            j++;
+          }
+        } catch {}
       }
     }
   }

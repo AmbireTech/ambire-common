@@ -356,7 +356,10 @@ export class MainController extends EventEmitter {
     )
     this.domains = new DomainsController(this.providers.providers)
     this.#initialLoadPromise = this.#load()
-    paymasterFactory.init(relayerUrl, fetch)
+    paymasterFactory.init(relayerUrl, fetch, (e: ErrorRef) => {
+      if (!this.signAccountOp) return
+      this.emitError(e)
+    })
   }
 
   async #load(): Promise<void> {
@@ -1122,6 +1125,13 @@ export class MainController extends EventEmitter {
         throw ethErrors.rpc.methodNotSupported(
           'Invalid typedData format - only typedData v4 is supported'
         )
+      }
+
+      if (
+        msgAddress === this.selectedAccount.account.addr &&
+        (typedData.primaryType === 'AmbireOperation' || !!typedData.types.AmbireOperation)
+      ) {
+        throw ethErrors.rpc.methodNotSupported('Signing an AmbireOperation is not allowed')
       }
 
       userRequest = {
@@ -2508,6 +2518,9 @@ export class MainController extends EventEmitter {
     // broadcast is called in the FE only after successful signing
     this.signAccountOp?.updateStatus(SigningStatus.ReadyToSign, isReplacementFeeLow)
     this.feePayerKey = null
+
+    // the promise doesn't resolve and we're stuck...
+    this.#signAccountOpBroadcastPromise = undefined
 
     return Promise.reject(
       new EmittableError({ level: 'major', message, error: _err || new Error(message) })
