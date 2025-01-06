@@ -507,7 +507,8 @@ export const getNetworksWithDeFiPositionsErrorBanners = ({
   Object.keys(currentAccountState).forEach((networkId) => {
     const providersWithPositions = networksWithPositions[networkId]
     // Ignore networks that don't have positions
-    if (!providersWithPositions || !providersWithPositions.length) return
+    // but ensure that we have a successful response stored (the network key is present)
+    if (providersWithPositions && !providersWithPositions.length) return
 
     const networkState = currentAccountState[networkId]
     const network = networks.find((n) => n.id === networkId)
