@@ -459,7 +459,7 @@ export class PortfolioController extends EventEmitter {
         errors: result.errors,
         result: {
           ...result,
-          lastSuccessfulUpdate: hasCriticalError ? Date.now() : lastSuccessfulUpdate,
+          lastSuccessfulUpdate: !hasCriticalError ? Date.now() : lastSuccessfulUpdate,
           tokens: processedTokens,
           total: getTotal(processedTokens)
         }

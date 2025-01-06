@@ -17,10 +17,10 @@ const getAccountNetworksWithPositions = (
     if (!providers[networkId]) return
 
     const isRPCDown = !providers[networkId].isWorking
-    const { positionsByProvider, error } = accountState[networkId]
+    const { positionsByProvider, error, providerErrors } = accountState[networkId]
 
     // RPC is down or an error occurred
-    if (error || isRPCDown) {
+    if (error || isRPCDown || providerErrors?.length) {
       if (!storageStateByAccount[accountId]) networksWithPositions.push(networkId)
 
       if (
