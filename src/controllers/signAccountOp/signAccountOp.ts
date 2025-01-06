@@ -396,16 +396,13 @@ export class SignAccountOpController extends EventEmitter {
     let balance = 0
     Object.keys(currentPortfolio).forEach((networkName) => {
       const networkPortfolio = currentPortfolio[networkName]
-      if (!networkPortfolio) return
-      if (!networkPortfolio.result) return
-      if (!networkPortfolio.result.total) return
-      if (!networkPortfolio.result.total.usd) return
+      if (!networkPortfolio?.result?.total?.usd) return
 
       balance += networkPortfolio.result.total.usd
     })
     if (balance < 10 && this.accountOp.gasFeePayment && this.accountOp.gasFeePayment.isGasTank) {
       errors.push(
-        "Gas tank isn't allowed on accounts with < 10$ balance. Please add funds to your account"
+        "Gas tank isn't allowed on accounts with < $10 balance. Please add funds to your account"
       )
     }
 
