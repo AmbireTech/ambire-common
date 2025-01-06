@@ -87,7 +87,7 @@ import {
   isErc4337Broadcast,
   shouldAskForEntryPointAuthorization
 } from '../../libs/userOperation/userOperation'
-import bundler from '../../services/bundlers'
+import { getDefaultBundler } from '../../services/bundlers/getBundler'
 import { GasSpeeds } from '../../services/bundlers/types'
 import { paymasterFactory } from '../../services/paymaster'
 import { failedPaymasters } from '../../services/paymaster/FailedPaymasters'
@@ -1812,6 +1812,7 @@ export class MainController extends EventEmitter {
         if (!this.signAccountOp) return
         this.emitError(e)
       }
+      const bundler = getDefaultBundler(network)
       return bundler.fetchGasPrices(network, errorCallback).catch((e) => {
         this.emitError({
           level: 'silent',
@@ -2327,6 +2328,7 @@ export class MainController extends EventEmitter {
       // broadcast through bundler's service
       let userOperationHash
       try {
+        const bundler = getDefaultBundler(network)
         userOperationHash = await bundler.broadcast(userOperation, network)
       } catch (e: any) {
         return this.throwBroadcastAccountOp({

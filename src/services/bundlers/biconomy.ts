@@ -1,4 +1,5 @@
 /* eslint-disable class-methods-use-this */
+/* eslint-disable no-console */
 import { Network } from 'interfaces/network'
 
 import { Bundler } from './bundler'
@@ -68,7 +69,7 @@ export class Biconomy extends Bundler {
         case 'CONFIRMED':
           userOpStatus = {
             status: 'found',
-            transactionHash: result.receipt.transactionHash
+            transactionHash: result.transactionHash
           }
           break
 

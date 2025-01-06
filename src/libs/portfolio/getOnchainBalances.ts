@@ -1,3 +1,5 @@
+import { hexlify, toBeHex } from 'ethers'
+
 import { DEPLOYLESS_SIMULATION_FROM } from '../../consts/deploy'
 import { EOA_SIMULATION_NONCE } from '../../consts/deployless'
 import { Network } from '../../interfaces/network'

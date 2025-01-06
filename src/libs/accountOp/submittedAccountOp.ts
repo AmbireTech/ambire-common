@@ -1,6 +1,6 @@
 import { Fetch } from '../../interfaces/fetch'
 import { Network } from '../../interfaces/network'
-import bundler from '../../services/bundlers'
+import { getDefaultBundler } from '../../services/bundlers/getBundler'
 import { fetchUserOp } from '../../services/explorers/jiffyscan'
 import { AccountOp } from './accountOp'
 
@@ -72,6 +72,7 @@ export async function fetchTxnId(
 
   if (isIdentifiedByUserOpHash(identifiedBy)) {
     const userOpHash = identifiedBy.identifier
+    const bundler = getDefaultBundler(network)
     const [response, bundlerResult]: [any, any] = await Promise.all([
       fetchUserOp(userOpHash, fetchFn),
       bundler.getStatus(network, userOpHash)

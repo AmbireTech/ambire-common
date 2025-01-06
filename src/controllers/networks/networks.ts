@@ -115,7 +115,8 @@ export class NetworksController extends EventEmitter {
         hasRelayer: n.hasRelayer,
         erc4337: {
           enabled: is4337Enabled(!!n.erc4337.hasBundlerSupport, n, this.#networks[n.id]?.force4337),
-          hasPaymaster: n.erc4337.hasPaymaster
+          hasPaymaster: n.erc4337.hasPaymaster,
+          defaultBundler: n.erc4337.defaultBundler
         },
         nativeAssetId: n.nativeAssetId,
         nativeAssetSymbol: n.nativeAssetSymbol

@@ -4,7 +4,7 @@ import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import { Account, AccountStates } from '../../interfaces/account'
 import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
-import bundler from '../../services/bundlers'
+import { getDefaultBundler } from '../../services/bundlers/getBundler'
 import { paymasterFactory } from '../../services/paymaster'
 import { AccountOp, getSignableCallsForBundlerEstimate } from '../accountOp/accountOp'
 import { PaymasterEstimationData } from '../erc7677/types'
@@ -47,6 +47,7 @@ export async function bundlerEstimate(
   // set the callData
   if (userOp.activatorCall) localOp.activatorCall = userOp.activatorCall
 
+  const bundler = getDefaultBundler(network)
   const gasPrice = await bundler
     .fetchGasPrices(network, errorCallback)
     .catch(() => new Error('Could not fetch gas prices, retrying...'))

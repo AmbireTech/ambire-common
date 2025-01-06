@@ -1,4 +1,5 @@
 import { Network } from '../interfaces/network'
+import { BICONOMY, PIMLICO } from './bundlers'
 
 const networks: Network[] = [
   {
@@ -57,7 +58,13 @@ const networks: Network[] = [
     rpcNoStateOverride: false,
     chainId: 10n,
     explorerUrl: 'https://optimistic.etherscan.io',
-    erc4337: { enabled: true, hasPaymaster: true, hasBundlerSupport: true },
+    erc4337: {
+      enabled: true,
+      hasPaymaster: true,
+      hasBundlerSupport: true,
+      bundlers: [PIMLICO, BICONOMY],
+      defaultBundler: BICONOMY
+    },
     isSAEnabled: true,
     areContractsDeployed: true,
     hasRelayer: true,
@@ -140,7 +147,8 @@ const networks: Network[] = [
     erc4337: {
       enabled: true,
       hasPaymaster: true,
-      hasBundlerSupport: true
+      hasBundlerSupport: true,
+      bundlers: [PIMLICO, BICONOMY]
     },
     isSAEnabled: true,
     areContractsDeployed: true,

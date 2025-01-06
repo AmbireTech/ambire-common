@@ -27,7 +27,7 @@ import {
 } from '../../libs/userOperation/userOperation'
 import { getRpcProvider } from '../provider'
 import { Bundler } from './bundler'
-import bundler from './index'
+import { getDefaultBundler } from './getBundler'
 
 const to = '0x706431177041C87BEb1C25Fa29b92057Cb3c7089'
 
@@ -269,6 +269,7 @@ describe('Bundler tests', () => {
       userOp.nonce = toBeHex(0)
       userOp.signature = getSigForCalculations()
 
+      const bundler = getDefaultBundler(optimism)
       const bundlerEstimate = await bundler.estimate(userOp, optimism)
       expect(bundlerEstimate).toHaveProperty('preVerificationGas')
       expect(bundlerEstimate).toHaveProperty('verificationGasLimit')
@@ -328,6 +329,7 @@ describe('Bundler tests', () => {
       ])
 
       try {
+        const bundler = getDefaultBundler(optimism)
         await bundler.estimate(userOp, optimism)
       } catch (e: any) {
         expect(e.error.message.indexOf('validateUserOp: not from entryPoint')).not.toBe(-1)
@@ -389,6 +391,7 @@ describe('Bundler tests', () => {
       userOp.signature = getSigForCalculations()
 
       try {
+        const bundler = getDefaultBundler(optimism)
         await bundler.estimate(userOp, optimism)
       } catch (e: any) {
         const buffer = Buffer.from(
@@ -437,6 +440,7 @@ describe('Bundler tests', () => {
       userOp.signature = getSigForCalculations()
       userOp.nonce = '0x0'
 
+      const bundler = getDefaultBundler(baseSepolia)
       const bundlerEstimate = await bundler.estimate(userOp, baseSepolia, true)
       expect(bundlerEstimate).toHaveProperty('preVerificationGas')
       expect(bundlerEstimate).toHaveProperty('verificationGasLimit')
@@ -478,6 +482,7 @@ describe('Bundler tests', () => {
       userOp.nonce = '0x0'
 
       try {
+        const bundler = getDefaultBundler(gnosis)
         await bundler.estimate(userOp, gnosis, true)
         expect(true).toBe(false)
       } catch (e: any) {
@@ -515,6 +520,7 @@ describe('Bundler tests', () => {
       userOp.paymaster = paymasterAndData.paymaster
       userOp.paymasterData = paymasterAndData.paymasterData
       userOp.signature = getSigForCalculations()
+      const bundler = getDefaultBundler(optimism)
       const bundlerEstimate = await bundler.estimate(userOp, optimism)
       expect(bundlerEstimate).toHaveProperty('preVerificationGas')
       expect(bundlerEstimate).toHaveProperty('verificationGasLimit')
@@ -573,6 +579,7 @@ describe('Bundler tests', () => {
       userOp.signature = getSigForCalculations()
 
       try {
+        const bundler = getDefaultBundler(optimism)
         await bundler.estimate(userOp, optimism)
       } catch (e: any) {
         const buffer = Buffer.from(
@@ -612,6 +619,7 @@ describe('Bundler tests', () => {
       userOp.paymaster = paymasterAndData.paymaster
       userOp.paymasterData = paymasterAndData.paymasterData
 
+      const bundler = getDefaultBundler(optimism)
       await bundler.estimate(userOp, optimism).catch((e) => {
         expect(e).toHaveProperty('error')
         expect(e.error).toHaveProperty('message')
@@ -663,6 +671,7 @@ describe('Bundler tests', () => {
       userOp.nonce = toBeHex(0)
       userOp.signature = getSigForCalculations()
 
+      const bundler = getDefaultBundler(mantle)
       const bundlerEstimate = await bundler.estimate(userOp, mantle)
       expect(bundlerEstimate).toHaveProperty('preVerificationGas')
       expect(bundlerEstimate).toHaveProperty('verificationGasLimit')
@@ -725,6 +734,7 @@ describe('Bundler tests', () => {
       userOp.signature = getSigForCalculations()
 
       try {
+        const bundler = getDefaultBundler(mantle)
         await bundler.estimate(userOp, mantle)
       } catch (e: any) {
         const buffer = Buffer.from(
@@ -762,6 +772,7 @@ describe('Bundler tests', () => {
         getSignableCalls(opBase)
       ])
       userOp.signature = getSigForCalculations()
+      const bundler = getDefaultBundler(base)
       const bundlerEstimate = await bundler.estimate(userOp, base)
       expect(bundlerEstimate).toHaveProperty('preVerificationGas')
       expect(bundlerEstimate).toHaveProperty('verificationGasLimit')

@@ -4,6 +4,8 @@ export interface Erc4337settings {
   enabled: boolean
   hasPaymaster: boolean
   hasBundlerSupport?: boolean
+  bundlers?: string[]
+  defaultBundler?: string
 }
 
 interface FeeOptions {
