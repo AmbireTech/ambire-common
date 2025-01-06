@@ -10,7 +10,8 @@ import {
   DeFiPositionsError,
   DeFiPositionsState,
   NetworksWithPositionsByAccounts,
-  PositionsByProvider
+  PositionsByProvider,
+  ProviderName
 } from '../../libs/defiPositions/types'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { NetworksController } from '../networks/networks'
@@ -60,7 +61,7 @@ export class DefiPositionsController extends EventEmitter {
   #setProviderError(
     accountAddr: string,
     networkId: string,
-    providerName: string,
+    providerName: ProviderName,
     errorMessage: string
   ) {
     if (!this.#state[accountAddr][networkId].providerErrors) {

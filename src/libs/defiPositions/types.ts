@@ -12,6 +12,8 @@ export enum DeFiPositionsError {
   CriticalError = 'CriticalError'
 }
 
+export type ProviderName = 'AAVE v3' | 'Uniswap V3'
+
 export interface PositionAsset {
   address: string
   symbol: string
@@ -39,7 +41,7 @@ export interface AccountState {
 }
 
 export interface ProviderError {
-  providerName: string
+  providerName: ProviderName
   error: string
 }
 
@@ -52,7 +54,7 @@ export interface NetworkState {
 }
 
 export type NetworksWithPositions = {
-  [networkId: NetworkId]: string[]
+  [networkId: NetworkId]: ProviderName[]
 }
 
 export type NetworksWithPositionsByAccounts = {
@@ -60,7 +62,7 @@ export type NetworksWithPositionsByAccounts = {
 }
 
 export type PositionsByProvider = {
-  providerName: string
+  providerName: ProviderName
   networkId: Network['id']
   type: 'lending' | 'liquidity-pool'
   positions: Position[]
