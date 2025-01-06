@@ -7,7 +7,8 @@ import { RPCProviders } from '../../interfaces/provider'
 import { ActiveRoute } from '../../interfaces/swapAndBridge'
 import {
   AccountState as DefiPositionsAccountState,
-  DeFiPositionsError
+  DeFiPositionsError,
+  NetworksWithPositions
 } from '../defiPositions/types'
 import { getNetworksWithFailedRPC } from '../networks/networks'
 import { AccountState as PortfolioAccountState } from '../portfolio/interfaces'
@@ -488,7 +489,7 @@ export const getNetworksWithDeFiPositionsErrorBanners = ({
   networks: Network[]
   currentAccountState: DefiPositionsAccountState
   providers: RPCProviders
-  networksWithPositions: NetworkId[]
+  networksWithPositions: NetworksWithPositions
 }) => {
   const isLoading = Object.keys(currentAccountState).some((networkId) => {
     const networkState = currentAccountState[networkId]
@@ -505,7 +506,7 @@ export const getNetworksWithDeFiPositionsErrorBanners = ({
 
   Object.keys(currentAccountState).forEach((networkId) => {
     // Ignore networks that don't have positions
-    if (!networksWithPositions.includes(networkId)) return
+    if (!Object.keys(networksWithPositions[networkId]).length) return
 
     const networkState = currentAccountState[networkId]
     const network = networks.find((n) => n.id === networkId)
@@ -530,7 +531,16 @@ export const getNetworksWithDeFiPositionsErrorBanners = ({
       }
     }
 
-    const providerNamesWithErrors = networkState.providerErrors?.map((e) => e.providerName) || []
+    const providerNamesWithErrors =
+      networkState.providerErrors
+        ?.filter(({ providerName }) => {
+          // Display all errors if there hasn't been a successful update
+          // for the network.
+          if (!networksWithPositions[networkId]) return true
+          // Exclude providers without positions
+          return networksWithPositions[networkId].includes(providerName)
+        })
+        .map((e) => e.providerName) || []
 
     if (providerNamesWithErrors.length) {
       providerNamesWithErrors.forEach((providerName) => {

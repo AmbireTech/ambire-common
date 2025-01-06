@@ -9,6 +9,7 @@ import {
   AccountState,
   DeFiPositionsError,
   DeFiPositionsState,
+  NetworksWithPositionsByAccounts,
   PositionsByProvider
 } from '../../libs/defiPositions/types'
 import EventEmitter from '../eventEmitter/eventEmitter'
@@ -32,9 +33,7 @@ export class DefiPositionsController extends EventEmitter {
 
   #state: DeFiPositionsState = {}
 
-  #networksWithPositionsByAccounts: {
-    [accountId: string]: NetworkId[]
-  } = {}
+  #networksWithPositionsByAccounts: NetworksWithPositionsByAccounts = {}
 
   constructor({
     fetch,

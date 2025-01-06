@@ -1,4 +1,4 @@
-import { Network } from '../../interfaces/network'
+import { Network, NetworkId } from '../../interfaces/network'
 import { Price } from '../portfolio'
 
 export enum AssetType {
@@ -51,7 +51,15 @@ export interface NetworkState {
   providerErrors?: ProviderError[]
 }
 
-export interface PositionsByProvider {
+export type NetworksWithPositions = {
+  [networkId: NetworkId]: string[]
+}
+
+export type NetworksWithPositionsByAccounts = {
+  [accountId: string]: NetworksWithPositions
+}
+
+export type PositionsByProvider = {
   providerName: string
   networkId: Network['id']
   type: 'lending' | 'liquidity-pool'

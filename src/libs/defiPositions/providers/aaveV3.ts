@@ -27,23 +27,11 @@ export async function getAAVEPositions(
     network.rpcNoStateOverride
   )
   const [[result0], [result1], [result2]] = await Promise.all([
-    deploylessDeFiPositionsGetter.call(
-      'getAAVEPosition',
-      [userAddr, poolAddr, 0, 15],
-      {}
-    ),
-    deploylessDeFiPositionsGetter.call(
-      'getAAVEPosition',
-      [userAddr, poolAddr, 15, 30],
-      {}
-    ),
-    deploylessDeFiPositionsGetter.call(
-      'getAAVEPosition',
-      [userAddr, poolAddr, 30, 45],
-      {}
-    )
+    deploylessDeFiPositionsGetter.call('getAAVEPosition', [userAddr, poolAddr, 0, 15], {}),
+    deploylessDeFiPositionsGetter.call('getAAVEPosition', [userAddr, poolAddr, 15, 30], {}),
+    deploylessDeFiPositionsGetter.call('getAAVEPosition', [userAddr, poolAddr, 30, 45], {})
   ])
-  
+
   const accountDataRes = result0[1]
 
   const userAssets = [...result0[0], ...result1[0], ...result2[0]]
@@ -58,7 +46,7 @@ export async function getAAVEPositions(
       currentLiquidityRate: asset[7],
       currentVariableBorrowRate: asset[8],
       currentStableBorrowRate: asset[9],
-      
+
       aaveAddress: asset[10],
       aaveSymbol: asset[11],
       aaveDecimals: asset[12],

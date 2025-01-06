@@ -178,20 +178,17 @@ describe('DefiPositionsController', () => {
     await controller.updatePositions()
     const networksWithPositions = controller.getNetworksWithPositions(ACCOUNT.addr)
 
-    expect(networksWithPositions).toContain('polygon')
-    expect(networksWithPositions).not.toContain('ethereum')
+    expect(networksWithPositions.polygon).toContain('AAVE v3')
+    expect(networksWithPositions.polygon).toContain('Uniswap V3')
+    expect(networksWithPositions.ethereum.length).toBe(0)
   })
-  it('should handle network error and empty state for networksWithPositionsByAccounts', async () => {
+  it('should handle provider error and empty state for networksWithPositionsByAccounts', async () => {
+    const consoleSuppressor = suppressConsole()
+
     jest.spyOn(defiProviders, 'getAAVEPositions').mockImplementation(
       () =>
         new Promise((_, reject) => {
           reject(new Error('AAVE error'))
-        })
-    )
-    jest.spyOn(defiProviders, 'getUniV3Positions').mockImplementation(
-      () =>
-        new Promise((_, reject) => {
-          reject(new Error('Uniswap error'))
         })
     )
     const { controller } = await prepareTest()
@@ -204,9 +201,11 @@ describe('DefiPositionsController', () => {
 
     const networksWithPositions = controller.getNetworksWithPositions(ACCOUNT.addr)
 
-    expect(networksWithPositions).toContain('polygon')
-    // It should include ethereum as the controller can't determine if the account has positions on it
-    // so it's better to include it in the list and display an error message
-    expect(networksWithPositions).toContain('ethereum')
+    // Undefined because there is a provider has an error, so we
+    // can't be certain if the account has positions on that network
+    expect(networksWithPositions.polygon).toBeUndefined()
+    expect(networksWithPositions.ethereum).toBeUndefined()
+
+    consoleSuppressor.restore()
   })
 })
