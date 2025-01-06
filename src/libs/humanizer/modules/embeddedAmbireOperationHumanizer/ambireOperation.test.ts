@@ -6,7 +6,7 @@ import { AccountOp } from '../../../accountOp/accountOp'
 import { Call } from '../../../accountOp/types'
 import { AmbireAccount } from '../../const/abis/AmbireAccount'
 import { HumanizerMeta, IrCall } from '../../interfaces'
-import { compareHumanizerVisualizations, compareVisualizations } from '../../testHelpers'
+import { compareVisualizations } from '../../testHelpers'
 import { getAction, getAddressVisualization, getLabel } from '../../utils'
 import { embeddedAmbireOperationHumanizer } from '.'
 
@@ -107,11 +107,11 @@ describe('Hidden ambire operations', () => {
         // i+1 is just arbitrary value at the end
         expect(call.data).toBe(iface.encodeFunctionData('transfer', [ZeroAddress, i]))
       } else {
-        expect(call.fullVisualization?.length).toBe(3)
-        compareHumanizerVisualizations(
-          [call],
-          [[getAction('Execute calls'), getLabel('from'), getAddressVisualization(accountAddr2)]]
-        )
+        compareVisualizations(call.fullVisualization!, [
+          getAction('Execute calls'),
+          getLabel('from'),
+          getAddressVisualization(accountAddr2)
+        ])
       }
     })
   })
