@@ -3,9 +3,10 @@ import { Interface, ZeroAddress } from 'ethers'
 import { describe, it } from '@jest/globals'
 
 import { AccountOp } from '../../../accountOp/accountOp'
+import { Call } from '../../../accountOp/types'
 import { AmbireAccount } from '../../const/abis/AmbireAccount'
 import { HumanizerMeta, IrCall } from '../../interfaces'
-import { compareHumanizerVisualizations } from '../../testHelpers'
+import { compareVisualizations } from '../../testHelpers'
 import { getAction, getAddressVisualization, getLabel } from '../../utils'
 import { embeddedAmbireOperationHumanizer } from '.'
 
@@ -15,9 +16,10 @@ const iface = new Interface([
   ...AmbireAccount,
   'function transfer(address recipient, uint256 amount)'
 ])
-describe('Legends', () => {
-  it('Linking, both invitation and no invitation', () => {
-    const USDC_ADDRESS = '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48'
+const USDC_ADDRESS = '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48'
+
+describe('Hidden ambire operations', () => {
+  it('Ambire transactions', () => {
     const transactionsToWrap = [
       {
         to: USDC_ADDRESS,
@@ -105,12 +107,56 @@ describe('Legends', () => {
         // i+1 is just arbitrary value at the end
         expect(call.data).toBe(iface.encodeFunctionData('transfer', [ZeroAddress, i]))
       } else {
-        expect(call.fullVisualization?.length).toBe(3)
-        compareHumanizerVisualizations(
-          [call],
-          [[getAction('Execute calls'), getLabel('from'), getAddressVisualization(accountAddr2)]]
-        )
+        compareVisualizations(call.fullVisualization!, [
+          getAction('Execute calls'),
+          getLabel('from'),
+          getAddressVisualization(accountAddr2)
+        ])
       }
     })
+  })
+  it('Hidden deeper', () => {
+    const accountOp: AccountOp = {
+      accountAddr,
+      calls: []
+    } as any as AccountOp
+
+    const drainCall = {
+      data: iface.encodeFunctionData('transfer', [ZeroAddress, 100]),
+      to: USDC_ADDRESS,
+      value: 0n
+    }
+
+    const executeCallToAnotherAccount = {
+      data: iface.encodeFunctionData('executeBySender', [
+        [{ data: '0x', value: 0n, to: ZeroAddress }]
+      ]),
+      to: accountAddr2,
+      value: 0n
+    }
+
+    const firstLayerExecuteBySelf = iface.encodeFunctionData('executeBySelf', [
+      [drainCall, executeCallToAnotherAccount]
+    ])
+
+    const secondLayerTryCatch: Call = {
+      data: iface.encodeFunctionData('tryCatch', [accountAddr, 0, firstLayerExecuteBySelf]),
+      to: accountAddr,
+      value: 0n
+    }
+
+    const irCalls = embeddedAmbireOperationHumanizer(
+      accountOp,
+      [secondLayerTryCatch],
+      {} as HumanizerMeta
+    )
+    expect(irCalls.length).toBe(2)
+    expect(irCalls[0]).toMatchObject(drainCall)
+    expect(irCalls[1]).toMatchObject(executeCallToAnotherAccount)
+    compareVisualizations(irCalls[1].fullVisualization!, [
+      getAction('Execute calls'),
+      getLabel('from'),
+      getAddressVisualization(accountAddr2)
+    ])
   })
 })
