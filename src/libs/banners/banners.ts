@@ -15,6 +15,8 @@ import { AccountState as PortfolioAccountState } from '../portfolio/interfaces'
 import { PORTFOLIO_LIB_ERROR_NAMES } from '../portfolio/portfolio'
 import { getIsBridgeTxn, getQuoteRouteSteps } from '../swapAndBridge/swapAndBridge'
 
+const TEN_MINUTES = 10 * 60 * 1000
+
 const getBridgeBannerTitle = (routeStatus: ActiveRoute['routeStatus']) => {
   switch (routeStatus) {
     case 'completed':
@@ -412,7 +414,6 @@ export const getNetworksWithPortfolioErrorBanners = ({
     const portfolioForNetwork = selectedAccountLatest[network]
     const criticalError = portfolioForNetwork?.criticalError
     const lastSuccessfulUpdate = portfolioForNetwork?.result?.lastSuccessfulUpdate
-    const TEN_MINUTES = 10 * 60 * 1000
 
     // Don't display an error banner if the last successful update was less than 10 minutes ago
     if (typeof lastSuccessfulUpdate === 'number' && Date.now() - lastSuccessfulUpdate < TEN_MINUTES)
@@ -514,12 +515,12 @@ export const getNetworksWithDeFiPositionsErrorBanners = ({
     const network = networks.find((n) => n.id === networkId)
     const rpcProvider = providers[networkId]
     const lastSuccessfulUpdate = networkState.updatedAt
-    const beforeTenMinutes = new Date().getTime() - 10 * 60 * 1000
 
     if (
       !network ||
       !networkState ||
-      (lastSuccessfulUpdate && lastSuccessfulUpdate < beforeTenMinutes) ||
+      (typeof lastSuccessfulUpdate === 'number' &&
+        Date.now() - lastSuccessfulUpdate < TEN_MINUTES) ||
       // Don't display an error banner if the RPC isn't working because an RPC error banner is already displayed.
       (typeof rpcProvider.isWorking === 'boolean' && !rpcProvider.isWorking)
     )

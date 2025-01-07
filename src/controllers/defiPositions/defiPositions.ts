@@ -138,6 +138,7 @@ export class DefiPositionsController extends EventEmitter {
         networkState.error = undefined
 
         try {
+          const previousPositions = networkState.positionsByProvider
           const [aavePositions, uniV3Positions] = await Promise.all([
             getAAVEPositions(selectedAccountAddr, this.#providers.providers[n.id], n).catch(
               (e: any) => {
@@ -148,8 +149,10 @@ export class DefiPositionsController extends EventEmitter {
                   'AAVE v3',
                   e?.message || 'Unknown error'
                 )
-
-                return null
+                // We should consider changing the structure of positions in a way
+                // that this isn't needed. This is done so if there is an error,
+                // old data can still be displayed
+                return previousPositions?.find((p) => p.providerName === 'AAVE v3') || null
               }
             ),
             getUniV3Positions(selectedAccountAddr, this.#providers.providers[n.id], n).catch(
@@ -162,11 +165,15 @@ export class DefiPositionsController extends EventEmitter {
                   'Uniswap V3',
                   e?.message || 'Unknown error'
                 )
-
-                return null
+                // We should consider changing the structure of positions in a way
+                // that this isn't needed. This is done so if there is an error,
+                // old data can still be displayed
+                return previousPositions?.find((p) => p.providerName === 'Uniswap V3') || null
               }
             )
           ])
+
+          const hasErrors = !!this.#state[selectedAccountAddr][n.id].providerErrors?.length
 
           this.#state[selectedAccountAddr][n.id] = {
             ...networkState,
@@ -174,7 +181,7 @@ export class DefiPositionsController extends EventEmitter {
             positionsByProvider: [aavePositions, uniV3Positions].filter(
               Boolean
             ) as PositionsByProvider[],
-            updatedAt: Date.now()
+            updatedAt: hasErrors ? networkState.updatedAt : Date.now()
           }
           await this.#setAssetPrices(selectedAccountAddr, n.id).catch((e) => {
             console.error('#setAssetPrices error:', e)
