@@ -27,7 +27,7 @@ import { getFeeTokenForEstimate } from '../estimate/estimateHelpers'
 import { TokenResult } from '../portfolio'
 import { UserOperation } from '../userOperation/types'
 import { getCleanUserOp, getSigForCalculations } from '../userOperation/userOperation'
-import { AbstractPaymaster } from './types'
+import { AbstractPaymaster } from './abstractPaymaster'
 
 type PaymasterType = 'Ambire' | 'ERC7677' | 'None'
 

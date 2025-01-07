@@ -1,6 +1,6 @@
 import { Hex } from '../../interfaces/hex'
 import { GasSpeeds } from '../../services/bundlers/types'
-import { AbstractPaymaster } from '../paymaster/types'
+import { AbstractPaymaster } from '../paymaster/abstractPaymaster'
 import { TokenResult } from '../portfolio'
 
 export interface BundlerEstimateResult {
