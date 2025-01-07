@@ -2,7 +2,7 @@ import { Interface, Result } from 'ethers'
 
 import { AccountOp } from '../../../accountOp/accountOp'
 import { AmbireAccount } from '../../const/abis/AmbireAccount'
-import { HumanizerCallModule, IrCall } from '../../interfaces'
+import { HumanizerCallModule, HumanizerMeta, IrCall } from '../../interfaces'
 import { getAction, getAddressVisualization, getLabel } from '../../utils'
 
 // the purpose of this module is simply to visualize attempts to hide ambire operations within the current account op
@@ -37,6 +37,12 @@ export const embeddedAmbireOperationHumanizer: HumanizerCallModule = (
   const functionSelectorsCallableFromSigner = ['execute', 'executeMultiple', 'executeBySender'].map(
     (i) => iface.getFunction(i)!.selector
   )
+  const functionSelectorsCallableFromSelf = [
+    'tryCatch',
+    'tryCatch',
+    'executeBySelfSingle',
+    'executeBySelf'
+  ].map((i) => iface.getFunction(i)!.selector)
   const newCalls: IrCall[] = []
 
   irCalls.forEach((call) => {
@@ -60,5 +66,18 @@ export const embeddedAmbireOperationHumanizer: HumanizerCallModule = (
     }
     newCalls.push(call)
   })
-  return newCalls
+
+  // if an attacker hides some call deeper inside a method, callable from self
+  const hasParsableCalls = newCalls.some(
+    (call) =>
+      // we could unwrap more
+      functionSelectorsCallableFromSelf.includes(call.data.slice(0, 10)) ||
+      // an unwrapped call could get humanization here
+      (functionSelectorsCallableFromSigner.includes(call.data.slice(0, 10)) &&
+        !call.fullVisualization?.length)
+  )
+
+  return hasParsableCalls
+    ? embeddedAmbireOperationHumanizer(accountOp, newCalls, {} as HumanizerMeta)
+    : newCalls
 }
