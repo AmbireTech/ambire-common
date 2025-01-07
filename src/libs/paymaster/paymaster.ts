@@ -8,6 +8,7 @@ import { Account } from '../../interfaces/account'
 import { Hex } from '../../interfaces/hex'
 import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
+import { getDefaultBundler } from '../../services/bundlers/getBundler'
 import { failedPaymasters } from '../../services/paymaster/FailedPaymasters'
 import { AccountOp } from '../accountOp/accountOp'
 import { Call } from '../accountOp/types'
@@ -26,6 +27,7 @@ import { getFeeTokenForEstimate } from '../estimate/estimateHelpers'
 import { TokenResult } from '../portfolio'
 import { UserOperation } from '../userOperation/types'
 import { getCleanUserOp, getSigForCalculations } from '../userOperation/userOperation'
+import { AbstractPaymaster } from './types'
 
 type PaymasterType = 'Ambire' | 'ERC7677' | 'None'
 
@@ -42,7 +44,7 @@ export function getPaymasterDataForEstimate(): PaymasterEstimationData {
   }
 }
 
-export class Paymaster {
+export class Paymaster extends AbstractPaymaster {
   callRelayer: Function
 
   type: PaymasterType = 'None'
@@ -58,6 +60,7 @@ export class Paymaster {
   errorCallback: Function | undefined = undefined
 
   constructor(callRelayer: Function, errorCallback: Function) {
+    super()
     this.callRelayer = callRelayer
     this.errorCallback = errorCallback
   }
@@ -218,6 +221,7 @@ export class Paymaster {
     userOp: UserOperation
   ): Promise<PaymasterSuccessReponse | PaymasterErrorReponse> {
     if (!this.provider) throw new Error('provider not set, did you call init?')
+    if (!this.network) throw new Error('network not set, did you call init?')
 
     // request the paymaster with a timeout window
     const localUserOp = { ...userOp }
@@ -231,7 +235,7 @@ export class Paymaster {
         key: acc.associatedKeys[0],
         // eslint-disable-next-line no-underscore-dangle
         rpcUrl: this.provider!._getConnection().url,
-        bundler: 'biconomy'
+        bundler: getDefaultBundler(this.network as Network).getName()
       })
     })
   }

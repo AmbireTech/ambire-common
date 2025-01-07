@@ -1,7 +1,8 @@
-/* eslint-disable class-methods-use-this */
 /* eslint-disable no-console */
 import { Network } from 'interfaces/network'
 
+/* eslint-disable class-methods-use-this */
+import { BICONOMY } from '../../consts/bundlers'
 import { Bundler } from './bundler'
 import { GasSpeeds, UserOpStatus } from './types'
 
@@ -79,5 +80,9 @@ export class Biconomy extends Bundler {
     }
 
     return userOpStatus
+  }
+
+  public getName(): string {
+    return BICONOMY
   }
 }

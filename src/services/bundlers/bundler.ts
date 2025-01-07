@@ -47,6 +47,11 @@ export abstract class Bundler {
   public abstract getStatus(network: Network, userOpHash: string): Promise<UserOpStatus>
 
   /**
+   * Each bundler needs to return its own na,e
+   */
+  public abstract getName(): string
+
+  /**
    * Get the bundler RPC
    *
    * @param network

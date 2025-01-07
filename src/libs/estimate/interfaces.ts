@@ -1,6 +1,6 @@
 import { Hex } from '../../interfaces/hex'
 import { GasSpeeds } from '../../services/bundlers/types'
-import { Paymaster } from '../paymaster/paymaster'
+import { AbstractPaymaster } from '../paymaster/types'
 import { TokenResult } from '../portfolio'
 
 export interface BundlerEstimateResult {
@@ -18,7 +18,7 @@ export interface Erc4337GasLimits {
   paymasterVerificationGasLimit: string
   paymasterPostOpGasLimit: string
   gasPrice: GasSpeeds
-  paymaster: Paymaster
+  paymaster: AbstractPaymaster
 }
 
 export interface FeePaymentOption {

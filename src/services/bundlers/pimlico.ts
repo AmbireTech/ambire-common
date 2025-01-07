@@ -1,6 +1,7 @@
 /* eslint-disable class-methods-use-this */
 import { Network } from 'interfaces/network'
 
+import { PIMLICO } from '../../consts/bundlers'
 import { Bundler } from './bundler'
 import { GasSpeeds, UserOpStatus } from './types'
 
@@ -21,5 +22,9 @@ export class Pimlico extends Bundler {
   public async getStatus(network: Network, userOpHash: string): Promise<UserOpStatus> {
     const provider = this.getProvider(network)
     return provider.send('pimlico_getUserOperationStatus', [userOpHash])
+  }
+
+  public getName(): string {
+    return PIMLICO
   }
 }
