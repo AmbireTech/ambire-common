@@ -23,6 +23,9 @@ const getAccountNetworksWithPositions = (
 
     networksWithPositions[networkId] = positionsByProvider.reduce(
       (networksWithPositionsByProviders, provider) => {
+        if (networksWithPositionsByProviders.includes(provider.providerName))
+          return networksWithPositionsByProviders
+
         networksWithPositionsByProviders.push(provider.providerName)
 
         return networksWithPositionsByProviders
