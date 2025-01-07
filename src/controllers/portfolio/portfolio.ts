@@ -438,9 +438,8 @@ export class PortfolioController extends EventEmitter {
       const additionalHintsErc20Hints = portfolioProps.additionalErc20Hints || []
       let lastSuccessfulUpdate = accountState[network.id]?.result?.lastSuccessfulUpdate || 0
 
-      // Delete the last known successful update on force update. This is done
-      // to ensure that if the next update fails, the last successful update is not used.
-      // Because a force update is usually done when the user is expecting a change in the portfolio.
+      // Reset lastSuccessfulUpdate on forceUpdate in case of critical errors as the user
+      // is likely expecting a change in the portfolio.
       if (forceUpdate && hasCriticalError) {
         lastSuccessfulUpdate = 0
       } else if (!hasCriticalError) {
