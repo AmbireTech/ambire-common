@@ -443,6 +443,9 @@ export class PortfolioController extends EventEmitter {
       // Because a force update is usually done when the user is expecting a change in the portfolio.
       if (forceUpdate) {
         lastSuccessfulUpdate = 0
+      } else if (!hasCriticalError) {
+        // Update the last successful update only if there are no critical errors.
+        lastSuccessfulUpdate = Date.now()
       }
 
       const processedTokens = processTokens(
@@ -459,7 +462,7 @@ export class PortfolioController extends EventEmitter {
         errors: result.errors,
         result: {
           ...result,
-          lastSuccessfulUpdate: !hasCriticalError ? Date.now() : lastSuccessfulUpdate,
+          lastSuccessfulUpdate,
           tokens: processedTokens,
           total: getTotal(processedTokens)
         }
