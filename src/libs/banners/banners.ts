@@ -412,10 +412,11 @@ export const getNetworksWithPortfolioErrorBanners = ({
     const portfolioForNetwork = selectedAccountLatest[network]
     const criticalError = portfolioForNetwork?.criticalError
     const lastSuccessfulUpdate = portfolioForNetwork?.result?.lastSuccessfulUpdate
-    const beforeTenMinutes = new Date().getTime() - 10 * 60 * 1000
+    const TEN_MINUTES = 10 * 60 * 1000
 
     // Don't display an error banner if the last successful update was less than 10 minutes ago
-    if (lastSuccessfulUpdate && lastSuccessfulUpdate < beforeTenMinutes) return
+    if (typeof lastSuccessfulUpdate === 'number' && Date.now() - lastSuccessfulUpdate < TEN_MINUTES)
+      return
 
     let networkName: string | null = null
 
@@ -424,7 +425,6 @@ export const getNetworksWithPortfolioErrorBanners = ({
     else networkName = networks.find((n) => n.id === network)?.name ?? null
 
     if (!portfolioForNetwork || !networkName || portfolioForNetwork.isLoading) return
-
     // Don't display an error banner if the RPC isn't working because an RPC error banner is already displayed.
     // In case of additional networks don't check the RPC as there isn't one
     if (
