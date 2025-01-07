@@ -122,7 +122,63 @@ describe('Bundler estimation tests', () => {
   })
 
   describe('Estimation tests: optimism, deployed', () => {
-    test('should estimate an userOp', async () => {
+    test('should estimate a valid userOp', async () => {
+      const opOptimism: AccountOp = {
+        accountAddr: smartAccDeployed.addr,
+        signingKeyAddr: smartAccDeployed.associatedKeys[0],
+        signingKeyType: null,
+        gasLimit: null,
+        gasFeePayment: null,
+        networkId: optimism.id,
+        nonce: 0n,
+        signature: '0x',
+        calls: [{ to, value: 1n, data: '0x' }],
+        accountOpToExecuteBefore: null
+      }
+      const usedNetworks = [optimism]
+      const providers = {
+        [optimism.id]: getRpcProvider(optimism.rpcUrls, optimism.chainId)
+      }
+      const accountStates = await getAccountsInfo(usedNetworks, providers, [smartAccDeployed])
+
+      // if the user cannot pay in the fee token, it will revert
+      const feeTokens = [
+        {
+          address: '0x0000000000000000000000000000000000000000',
+          amount: 100n,
+          symbol: 'ETH',
+          networkId: 'optimism',
+          decimals: 18,
+          priceIn: [],
+          flags: {
+            onGasTank: false,
+            rewardsType: null,
+            canTopUpGasTank: true,
+            isFeeToken: true
+          }
+        }
+      ]
+      const result = await bundlerEstimate(
+        smartAccDeployed,
+        accountStates,
+        opOptimism,
+        optimism,
+        feeTokens,
+        providers[optimism.id],
+        errorCallback
+      )
+
+      expect(result).toHaveProperty('erc4337GasLimits')
+      expect(BigInt(result.erc4337GasLimits!.callGasLimit)).toBeGreaterThan(0n)
+      expect(BigInt(result.erc4337GasLimits!.preVerificationGas)).toBeGreaterThan(0n)
+      expect(BigInt(result.erc4337GasLimits!.verificationGasLimit)).toBeGreaterThan(0n)
+      expect(BigInt(result.erc4337GasLimits!.paymasterPostOpGasLimit)).toBeGreaterThan(0n)
+      expect(BigInt(result.erc4337GasLimits!.paymasterVerificationGasLimit)).toBeGreaterThan(0n)
+
+      // the bundler estimation does not return the fee payment options anymore
+      expect(result.feePaymentOptions.length).toBe(0)
+    })
+    test('should try to estimate an userOp by sending more ETH than the account has and it should fail', async () => {
       const opOptimism: AccountOp = {
         accountAddr: smartAccDeployed.addr,
         signingKeyAddr: smartAccDeployed.associatedKeys[0],
@@ -168,15 +224,14 @@ describe('Bundler estimation tests', () => {
         errorCallback
       )
 
-      expect(result).toHaveProperty('erc4337GasLimits')
-      expect(BigInt(result.erc4337GasLimits!.callGasLimit)).toBeGreaterThan(0n)
-      expect(BigInt(result.erc4337GasLimits!.preVerificationGas)).toBeGreaterThan(0n)
-      expect(BigInt(result.erc4337GasLimits!.verificationGasLimit)).toBeGreaterThan(0n)
-      expect(BigInt(result.erc4337GasLimits!.paymasterPostOpGasLimit)).toBeGreaterThan(0n)
-      expect(BigInt(result.erc4337GasLimits!.paymasterVerificationGasLimit)).toBeGreaterThan(0n)
+      expect(result.error).not.toBe(null)
+      expect(result.error).not.toBe(undefined)
 
-      // the bundler estimation does not return the fee payment options anymore
-      expect(result.feePaymentOptions.length).toBe(0)
+      if (result.error) {
+        expect(result.error.message).toBe(
+          'The transaction will fail because the transfer amount exceeds your account balance. Please check your balance or adjust the transfer amount.'
+        )
+      }
     })
   })
 })

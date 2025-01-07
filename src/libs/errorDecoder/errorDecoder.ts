@@ -8,9 +8,13 @@ import {
   RpcErrorHandler,
   UserRejectionHandler
 } from './handlers'
+import BiconomyEstimationErrorHandler from './handlers/biconomy'
 import RelayerErrorHandler from './handlers/relayer'
 import { formatReason, getDataFromError, isReasonValid } from './helpers'
 import { DecodedError, ErrorType } from './types'
+
+export const BUNDLER = 'bundler'
+const PREPROCESSOR_BUNDLER_HANDLERS = [BiconomyEstimationErrorHandler]
 
 const PREPROCESSOR_HANDLERS = [BundlerErrorHandler, RelayerErrorHandler, InnerCallFailureHandler]
 const ERROR_HANDLERS = [
@@ -22,7 +26,9 @@ const ERROR_HANDLERS = [
   UserRejectionHandler
 ]
 
-export function decodeError(e: Error): DecodedError {
+// additionalHandlers is a list of handlers we want to add only for
+// specific decodeError cases (e.g. bundler estimation)
+export function decodeError(e: Error, additionalHandlers: string[] = []): DecodedError {
   // Otherwise regular JS/TS errors will be handled
   // as RPC errors which is confusing.
   if (
@@ -48,10 +54,19 @@ export function decodeError(e: Error): DecodedError {
     data: errorData
   }
 
+  // configure a list of preprocessorHandlers we want to use.
+  // There are very generic errors like 400 bad request that when they come
+  // from a bundler, mean one thing, from an RPC another, and from the relayer
+  // a third. So we will add additional handlers optionally
+  const preprocessorHandlers = PREPROCESSOR_HANDLERS
+  if (additionalHandlers.includes(BUNDLER)) {
+    preprocessorHandlers.push(...PREPROCESSOR_BUNDLER_HANDLERS)
+  }
+
   // Run preprocessor handlers first
   // The idea is that preprocessor handlers can either decode the error
   // or leave it partially decoded for the other handlers to decode
-  PREPROCESSOR_HANDLERS.forEach((HandlerClass) => {
+  preprocessorHandlers.forEach((HandlerClass) => {
     const handler = new HandlerClass()
     if (handler.matches(errorData, e)) {
       decodedError = handler.handle(errorData, e)

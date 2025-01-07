@@ -9,6 +9,7 @@ import { Hex } from '../../interfaces/hex'
 import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
 import { decodeError } from '../../libs/errorDecoder'
+import { BUNDLER } from '../../libs/errorDecoder/errorDecoder'
 import { BundlerEstimateResult } from '../../libs/estimate/interfaces'
 import { privSlot } from '../../libs/proxyDeploy/deploy'
 import { UserOperation } from '../../libs/userOperation/types'
@@ -186,8 +187,8 @@ export abstract class Bundler {
   }
 
   // used when catching errors from bundler requests
-  decodeBundlerError(e: any): string {
-    const { reason } = decodeError(e)
+  decodeBundlerErrorEstimate(e: any): string {
+    const { reason } = decodeError(e, [BUNDLER])
 
     return reason || 'Unknown error'
   }
