@@ -476,6 +476,11 @@ export class PortfolioController extends EventEmitter {
       })
       state.isLoading = false
       state.criticalError = e
+      if (forceUpdate && state.result) {
+        // Reset lastSuccessfulUpdate on forceUpdate in case of a critical error as the user
+        // is likely expecting a change in the portfolio.
+        state.result.lastSuccessfulUpdate = 0
+      }
       this.emitUpdate()
 
       return false
