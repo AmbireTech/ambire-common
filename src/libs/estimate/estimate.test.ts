@@ -4,7 +4,6 @@ import { AbiCoder, Contract, ethers, Interface, parseEther, ZeroAddress } from '
 import fetch from 'node-fetch'
 
 import { describe, expect } from '@jest/globals'
-import structuredClone from '@ungap/structured-clone'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import ERC20 from '../../../contracts/compiled/IERC20.json'
