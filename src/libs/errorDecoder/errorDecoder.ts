@@ -1,3 +1,4 @@
+import { BundlerError } from './customErrors'
 import {
   BundlerErrorHandler,
   CustomErrorHandler,
@@ -28,7 +29,7 @@ const ERROR_HANDLERS = [
 
 // additionalHandlers is a list of handlers we want to add only for
 // specific decodeError cases (e.g. bundler estimation)
-export function decodeError(e: Error, additionalHandlers: string[] = []): DecodedError {
+export function decodeError(e: Error): DecodedError {
   // Otherwise regular JS/TS errors will be handled
   // as RPC errors which is confusing.
   if (
@@ -56,10 +57,10 @@ export function decodeError(e: Error, additionalHandlers: string[] = []): Decode
 
   // configure a list of preprocessorHandlers we want to use.
   // There are very generic errors like 400 bad request that when they come
-  // from a bundler, mean one thing, from an RPC another, and from the relayer
+  // from a bundler that mean one thing but from an RPC another, and from the relayer
   // a third. So we will add additional handlers optionally
   const preprocessorHandlers = PREPROCESSOR_HANDLERS
-  if (additionalHandlers.includes(BUNDLER)) {
+  if (e instanceof BundlerError) {
     preprocessorHandlers.push(...PREPROCESSOR_BUNDLER_HANDLERS)
   }
 

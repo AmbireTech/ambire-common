@@ -39,4 +39,15 @@ class SponsorshipPaymasterError extends Error {
   }
 }
 
-export { InnerCallFailureError, RelayerPaymasterError, SponsorshipPaymasterError }
+class BundlerError extends Error {
+  bundlerName: string
+
+  constructor(message: string, bundlerName: string) {
+    super(message)
+    this.bundlerName = bundlerName
+    this.name = 'BundlerError'
+    this.message = message
+  }
+}
+
+export { InnerCallFailureError, RelayerPaymasterError, SponsorshipPaymasterError, BundlerError }
