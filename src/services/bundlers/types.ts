@@ -10,6 +10,7 @@ export interface GasSpeeds {
   medium: Gas
   fast: Gas
   ape: Gas
+  bundler: string
 }
 
 export interface UserOpStatus {
