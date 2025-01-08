@@ -178,7 +178,7 @@ describe('Bundler estimation tests', () => {
       // the bundler estimation does not return the fee payment options anymore
       expect(result.feePaymentOptions.length).toBe(0)
     })
-    test('should try to estimate an userOp by sending more ETH than the account has and it should fail', async () => {
+    test('should try to estimate an userOp with Biconomy by sending more ETH than the account has which is not allowed and should trigger reestimate by Pimlico who will allow it to pass', async () => {
       const opOptimism: AccountOp = {
         accountAddr: smartAccDeployed.addr,
         signingKeyAddr: smartAccDeployed.associatedKeys[0],
@@ -224,14 +224,12 @@ describe('Bundler estimation tests', () => {
         errorCallback
       )
 
-      expect(result.error).not.toBe(null)
-      expect(result.error).not.toBe(undefined)
-
-      if (result.error) {
-        expect(result.error.message).toBe(
-          'The transaction will fail because it will revert onchain with reason unknown.'
-        )
-      }
+      expect(result).toHaveProperty('erc4337GasLimits')
+      expect(BigInt(result.erc4337GasLimits!.callGasLimit)).toBeGreaterThan(0n)
+      expect(BigInt(result.erc4337GasLimits!.preVerificationGas)).toBeGreaterThan(0n)
+      expect(BigInt(result.erc4337GasLimits!.verificationGasLimit)).toBeGreaterThan(0n)
+      expect(BigInt(result.erc4337GasLimits!.paymasterPostOpGasLimit)).toBeGreaterThan(0n)
+      expect(BigInt(result.erc4337GasLimits!.paymasterVerificationGasLimit)).toBeGreaterThan(0n)
     })
   })
 })

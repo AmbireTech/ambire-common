@@ -1,3 +1,7 @@
+/* eslint-disable no-await-in-loop */
+/* eslint-disable no-continue */
+/* eslint-disable no-constant-condition */
+
 import { Interface } from 'ethers'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
@@ -5,7 +9,7 @@ import { Account, AccountStates } from '../../interfaces/account'
 import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
 import { Bundler } from '../../services/bundlers/bundler'
-import { getDefaultBundler } from '../../services/bundlers/getBundler'
+import { BundlerSwitcher } from '../../services/bundlers/bundlerSwitcher'
 import { GasSpeeds } from '../../services/bundlers/types'
 import { paymasterFactory } from '../../services/paymaster'
 import { AccountOp, getSignableCallsForBundlerEstimate } from '../accountOp/accountOp'
@@ -33,7 +37,7 @@ async function estimate(
   if (gasPrice instanceof Error) {
     return {
       gasPrice,
-      estimation: undefined,
+      estimation: null,
       nonFatalErrors: []
     }
   }
@@ -134,36 +138,46 @@ export async function bundlerEstimate(
       userOp.paymasterVerificationGasLimit = paymasterEstimationData.paymasterVerificationGasLimit
   }
 
-  const bundler = getDefaultBundler(network)
-  const estimations = await estimate(bundler, network, userOp, isEdgeCase, errorCallback)
-  if (estimations.gasPrice instanceof Error) {
-    return estimationErrorFormatted(estimations.gasPrice, {
-      feePaymentOptions,
-      nonFatalErrors: estimations.nonFatalErrors
-    })
-  }
-  if (estimations.estimation instanceof Error) {
-    return estimationErrorFormatted(estimations.estimation, {
-      feePaymentOptions,
-      nonFatalErrors: estimations.nonFatalErrors
-    })
-  }
+  const switcher = new BundlerSwitcher(network)
 
-  const gasData = estimations.estimation[0]
-  return {
-    gasUsed: BigInt(gasData.callGasLimit),
-    currentAccountNonce: Number(op.nonce),
-    feePaymentOptions,
-    erc4337GasLimits: {
-      preVerificationGas: gasData.preVerificationGas,
-      verificationGasLimit: gasData.verificationGasLimit,
-      callGasLimit: gasData.callGasLimit,
-      paymasterVerificationGasLimit: gasData.paymasterVerificationGasLimit,
-      paymasterPostOpGasLimit: gasData.paymasterPostOpGasLimit,
-      gasPrice: estimations.gasPrice,
-      paymaster,
-      bundler: bundler.getName()
-    },
-    error: null
+  while (true) {
+    // estimate
+    const bundler = switcher.getBundler()
+    const estimations = await estimate(bundler, network, userOp, isEdgeCase, errorCallback)
+
+    // if no errors, return the results and get on with life
+    if (!(estimations.estimation instanceof Error)) {
+      const gasData = estimations.estimation[0]
+      return {
+        gasUsed: BigInt(gasData.callGasLimit),
+        currentAccountNonce: Number(op.nonce),
+        feePaymentOptions,
+        erc4337GasLimits: {
+          preVerificationGas: gasData.preVerificationGas,
+          verificationGasLimit: gasData.verificationGasLimit,
+          callGasLimit: gasData.callGasLimit,
+          paymasterVerificationGasLimit: gasData.paymasterVerificationGasLimit,
+          paymasterPostOpGasLimit: gasData.paymasterPostOpGasLimit,
+          gasPrice: estimations.gasPrice as GasSpeeds,
+          paymaster,
+          bundler: bundler.getName()
+        },
+        error: null
+      }
+    }
+
+    // if there's an error but we can't switch, return the error
+    if (!switcher.canSwitch(estimations.estimation)) {
+      return estimationErrorFormatted(
+        estimations.gasPrice instanceof Error ? estimations.gasPrice : estimations.estimation,
+        {
+          feePaymentOptions,
+          nonFatalErrors: estimations.nonFatalErrors
+        }
+      )
+    }
+
+    // try again
+    switcher.switch()
   }
 }
