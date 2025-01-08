@@ -19,6 +19,7 @@ export interface Erc4337GasLimits {
   paymasterPostOpGasLimit: string
   gasPrice: GasSpeeds
   paymaster: AbstractPaymaster
+  bundler: string
 }
 
 export interface FeePaymentOption {

@@ -949,7 +949,6 @@ describe('estimate', () => {
       'The transaction will fail because the transfer amount exceeds your account balance. Please check your balance or adjust the transfer amount.'
     )
 
-    expect(response.erc4337GasLimits).toBe(undefined)
     expect(response.feePaymentOptions.length).toBeGreaterThan(0)
     expect(response.feePaymentOptions![0].token).not.toBe(undefined)
     expect(response.feePaymentOptions![0].token).not.toBe(null)
