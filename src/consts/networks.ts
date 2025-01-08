@@ -119,7 +119,9 @@ const networks: Network[] = [
     erc4337: {
       enabled: true,
       hasPaymaster: true,
-      hasBundlerSupport: true
+      hasBundlerSupport: true,
+      bundlers: [PIMLICO, BICONOMY],
+      defaultBundler: BICONOMY
     },
     isSAEnabled: true,
     areContractsDeployed: true,
