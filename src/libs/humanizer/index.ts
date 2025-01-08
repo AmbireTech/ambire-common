@@ -21,6 +21,7 @@ import asciiModule from './modules/AsciiModule'
 import curveModule from './modules/Curve'
 import { deploymentModule } from './modules/Deployment'
 import { embeddedAmbireOperationHumanizer } from './modules/embeddedAmbireOperationHumanizer'
+import { ensModule } from './modules/ENS'
 import fallbackHumanizer from './modules/FallbackHumanizer'
 import gasTankModule from './modules/GasTankModule'
 import KyberSwap from './modules/KyberSwap'
@@ -63,6 +64,7 @@ export const humanizerCallModules: HumanizerCallModule[] = [
   sushiSwapModule,
   legendsModule,
   singletonFactory,
+  ensModule,
   asciiModule,
   fallbackHumanizer,
   postProcessing
