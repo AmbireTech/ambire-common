@@ -5,7 +5,6 @@ import fetch from 'node-fetch'
 import { EventEmitter } from 'stream'
 
 import { describe, expect, jest, test } from '@jest/globals'
-import structuredClone from '@ungap/structured-clone'
 
 import { trezorSlot7v24337Deployed, velcroUrl } from '../../../test/config'
 import { getNativeToCheckFromEOAs, produceMemoryStore } from '../../../test/helpers'
@@ -37,9 +36,6 @@ const providers = Object.fromEntries(
   networks.map((network) => [network.id, getRpcProvider(network.rpcUrls, network.chainId)])
 )
 const errorCallback = () => {}
-
-// @ts-ignore
-global.structuredClone = structuredClone as any
 
 const createAccountOp = (
   account: Account,
