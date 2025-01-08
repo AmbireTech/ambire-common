@@ -87,7 +87,7 @@ export async function bundlerEstimate(
 
   const nonFatalErrors: Error[] = []
   const initializeRequests = () => [
-    bundler.estimate(userOp, network, isEdgeCase).catch((e: any) => {
+    bundler.estimate(userOp, network, isEdgeCase).catch((e: Error) => {
       const decodedError = bundler.decodeBundlerErrorEstimate(e)
 
       // if the bundler estimation fails, add a nonFatalError so we can react to
@@ -95,13 +95,13 @@ export async function bundlerEstimate(
       // fatal (at estimate.ts -> estimate4337)
       nonFatalErrors.push(new Error('Bundler estimation failed', { cause: '4337_ESTIMATION' }))
 
-      if (decodedError.indexOf('invalid account nonce') !== -1) {
+      if (decodedError.reason && decodedError.reason.indexOf('invalid account nonce') !== -1) {
         nonFatalErrors.push(
           new Error('4337 invalid account nonce', { cause: '4337_INVALID_NONCE' })
         )
       }
 
-      return getHumanReadableEstimationError(e)
+      return getHumanReadableEstimationError(decodedError)
     })
   ]
 
