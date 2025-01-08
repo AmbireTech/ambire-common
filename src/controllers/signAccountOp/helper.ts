@@ -6,7 +6,7 @@ import { Warning } from '../../interfaces/signAccountOp'
 import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 import { FeePaymentOption } from '../../libs/estimate/interfaces'
 import { Price, TokenResult } from '../../libs/portfolio'
-import { getAccountPortfolioTotal } from '../../libs/portfolio/helpers'
+import { getAccountPortfolioTotal, getTotal } from '../../libs/portfolio/helpers'
 import { AccountState } from '../../libs/portfolio/interfaces'
 
 function getFeeSpeedIdentifier(
@@ -51,9 +51,9 @@ function getSignificantBalanceDecreaseWarning(
     !pendingNetworkData.isLoading
 
   if (canDetermineIfBalanceWillDecrease) {
-    const latestTotal = getAccountPortfolioTotal(latest, ['rewards', 'gasTank'])
-    const latestOnNetwork = latestNetworkData.result?.total.usd || 0
-    const pendingOnNetwork = pendingNetworkData.result?.total.usd || 0
+    const latestTotal = getAccountPortfolioTotal(latest, ['rewards', 'gasTank'], false)
+    const latestOnNetwork = getTotal(latestNetworkData.result?.tokens || []).usd
+    const pendingOnNetwork = getTotal(pendingNetworkData.result?.tokens || []).usd
     const willBalanceDecreaseByMoreThan10Percent =
       latestOnNetwork - pendingOnNetwork > latestTotal * 0.1
 
