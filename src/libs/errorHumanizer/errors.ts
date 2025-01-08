@@ -96,6 +96,11 @@ const BROADCAST_OR_ESTIMATION_ERRORS: ErrorHumanizerError[] = [
     reasons: [EXPIRED_PREFIX, 'Router: EXPIRED', 'Transaction too old'],
     message:
       'the swap has expired. Return to the dApp and reinitiate the swap if you wish to proceed.'
+  },
+  // bundler
+  {
+    reasons: ['user operation validation failed'],
+    message: 'it will revert onchain with reason unknown.'
   }
 ]
 
