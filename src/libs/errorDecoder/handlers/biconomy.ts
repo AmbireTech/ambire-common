@@ -15,7 +15,7 @@ class BiconomyEstimationErrorHandler implements ErrorHandler {
     // TODO: expand with more error cases
     let reason = ''
     if (message.includes('server response 400 Bad Request')) {
-      reason = 'transfer amount exceeds balance'
+      reason = 'user operation validation failed'
     }
 
     return {

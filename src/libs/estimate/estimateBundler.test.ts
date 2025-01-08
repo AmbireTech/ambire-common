@@ -229,7 +229,7 @@ describe('Bundler estimation tests', () => {
 
       if (result.error) {
         expect(result.error.message).toBe(
-          'The transaction will fail because the transfer amount exceeds your account balance. Please check your balance or adjust the transfer amount.'
+          'The transaction will fail because it will revert onchain with reason unknown.'
         )
       }
     })
