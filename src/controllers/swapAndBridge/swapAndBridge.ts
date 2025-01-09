@@ -636,7 +636,7 @@ export class SwapAndBridgeController extends EventEmitter {
 
       this.#toTokenList = sortTokenListResponse(
         [...upToDateToTokenList, ...additionalTokensFromPortfolio],
-        this.portfolioTokenList
+        this.portfolioTokenList.filter((t) => t.networkId === toTokenNetwork.id)
       )
 
       if (!this.toSelectedToken) {
@@ -688,8 +688,18 @@ export class SwapAndBridgeController extends EventEmitter {
       // Cache for sometime the tokens added by address
       this.#cachedToTokenLists[this.#toTokenListKey]?.data.push(token)
 
+    const toTokenNetwork = this.#networks.networks.find((n) => Number(n.chainId) === this.toChainId)
+    // should never happen
+    if (!toTokenNetwork)
+      throw new Error(
+        'Network configuration mismatch detected. Please try again later or contact support.'
+      )
+
     const nextTokenList = [...this.#toTokenList, token]
-    this.#toTokenList = sortTokenListResponse(nextTokenList, this.portfolioTokenList)
+    this.#toTokenList = sortTokenListResponse(
+      nextTokenList,
+      this.portfolioTokenList.filter((t) => t.networkId === toTokenNetwork.id)
+    )
 
     this.emitUpdate()
     return token
