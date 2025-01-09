@@ -37,6 +37,7 @@ import { getDefaultSelectedAccount, isSmartAccount } from '../../libs/account/ac
 import { AccountOp, AccountOpStatus, getSignableCalls } from '../../libs/accountOp/accountOp'
 import {
   AccountOpIdentifiedBy,
+  getDappIdentifier,
   pollTxnId,
   SubmittedAccountOp
 } from '../../libs/accountOp/submittedAccountOp'
@@ -1742,9 +1743,8 @@ export class MainController extends EventEmitter {
         (r) => r.id === call.fromUserRequestId && r.meta.isWalletSendCalls
       )
       if (walletSendCallsUserReq) {
-        const identifiedBy = data.submittedAccountOp.identifiedBy
         walletSendCallsUserReq.dappPromise?.resolve({
-          hash: `${identifiedBy.type}:${identifiedBy.identifier}`
+          hash: getDappIdentifier(data.submittedAccountOp)
         })
 
         // eslint-disable-next-line no-await-in-loop

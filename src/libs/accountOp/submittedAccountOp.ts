@@ -31,6 +31,7 @@ import { AccountOp } from './accountOp'
 export type AccountOpIdentifiedBy = {
   type: 'Transaction' | 'UserOperation' | 'Relayer'
   identifier: string
+  bundler?: string
 }
 
 export interface SubmittedAccountOp extends AccountOp {
@@ -55,6 +56,12 @@ export function isIdentifiedByUserOpHash(identifiedBy: AccountOpIdentifiedBy): b
 
 export function isIdentifiedByRelayer(identifiedBy: AccountOpIdentifiedBy): boolean {
   return identifiedBy.type === 'Relayer'
+}
+
+export function getDappIdentifier(op: SubmittedAccountOp) {
+  let hash = `${op.identifiedBy.type}:${op.identifiedBy.identifier}`
+  if (op.asUserOperation?.bundler) hash = `${hash}:${op.asUserOperation.bundler}`
+  return hash
 }
 
 export async function fetchTxnId(
