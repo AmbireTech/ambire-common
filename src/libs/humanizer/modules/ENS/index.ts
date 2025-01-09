@@ -23,11 +23,14 @@ const iface = new Interface([
 ])
 
 const YEAR_IN_SECONDS = 60n * 60n * 24n * 365n
-export const ensModule: HumanizerCallModule = (
-  accountOp: AccountOp,
-  irCalls: IrCall[]
-  // humanizerMeta: HumanizerMeta
-) => {
+const getDurationText = (duration: bigint): string => {
+  const durationLabel = `${duration / YEAR_IN_SECONDS} year${
+    duration < 2n * YEAR_IN_SECONDS ? '' : 's'
+  }`
+  return durationLabel
+}
+
+export const ensModule: HumanizerCallModule = (accountOp: AccountOp, irCalls: IrCall[]) => {
   // @TODO: set text and others
   return irCalls.map((call) => {
     if (getAddress(call.to) === ENS_CONTROLLER) {
@@ -46,9 +49,7 @@ export const ensModule: HumanizerCallModule = (
 
         if (owner !== accountOp.accountAddr)
           fullVisualization.push(getLabel('to'), getAddressVisualization(owner))
-        const durationLabel = `${duration / YEAR_IN_SECONDS} year${
-          duration === YEAR_IN_SECONDS ? '' : 's'
-        }`
+        const durationLabel = getDurationText(duration)
 
         fullVisualization.push(getLabel('for'), getLabel(durationLabel, true))
 
@@ -57,10 +58,7 @@ export const ensModule: HumanizerCallModule = (
 
       if (call.data.slice(0, 10) === iface.getFunction('renew')!.selector) {
         const { id, duration } = iface.decodeFunctionData('renew', call.data)
-        const durationLabel = `${duration / YEAR_IN_SECONDS} year${
-          duration === YEAR_IN_SECONDS ? '' : 's'
-        }`
-
+        const durationLabel = getDurationText(duration)
         const fullVisualization = [
           getAction('Renew'),
           getLabel(`${id}.eth`),
@@ -143,9 +141,8 @@ export const ensModule: HumanizerCallModule = (
       call.data.startsWith(iface.getFunction('renewAll')!.selector)
     ) {
       const { names, duration } = iface.decodeFunctionData('renewAll', call.data)
-      const durationLabel = `${duration / YEAR_IN_SECONDS} year${
-        duration === YEAR_IN_SECONDS ? '' : 's'
-      }`
+      const durationLabel = getDurationText(duration)
+
       return {
         ...call,
         fullVisualization: [
