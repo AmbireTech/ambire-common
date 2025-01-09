@@ -37,11 +37,7 @@ export class BundlerSwitcher {
 
     // TODO: think of all the appropriate conditions for estimation errors
     // where we can switch the bundler
-    return (
-      !estimationError ||
-      estimationError.message ===
-        'The transaction will fail because it will revert onchain with reason unknown.'
-    )
+    return !estimationError || estimationError.cause === 'biconomy: 400'
   }
 
   switch(): Bundler {

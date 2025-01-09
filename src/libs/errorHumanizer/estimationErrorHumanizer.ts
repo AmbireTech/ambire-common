@@ -36,5 +36,5 @@ export function getHumanReadableEstimationError(e: Error | DecodedError) {
     )
   }
 
-  return new Error(errorMessage)
+  return new Error(errorMessage, { cause: decodedError.reason })
 }
