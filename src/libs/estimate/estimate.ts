@@ -6,6 +6,7 @@ import { DEPLOYLESS_SIMULATION_FROM, OPTIMISTIC_ORACLE } from '../../consts/depl
 import { Account, AccountStates } from '../../interfaces/account'
 import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
+import { BundlerSwitcher } from '../../services/bundlers/bundlerSwitcher'
 import { getAccountDeployParams, isSmartAccount } from '../account/account'
 import { AccountOp, toSingletonCall } from '../accountOp/accountOp'
 import { Call } from '../accountOp/types'
@@ -107,6 +108,7 @@ export async function estimate4337(
   const feeToken = getFeeTokenForEstimate(feeTokens, network)
   if (feeToken) estimateGasOp.feeCall = getFeeCall(feeToken)
 
+  const switcher = new BundlerSwitcher(network)
   const initializeRequests = () => [
     deploylessEstimator
       .call('estimate', checkInnerCallsArgs, {
@@ -114,7 +116,16 @@ export async function estimate4337(
         blockTag
       })
       .catch(getHumanReadableEstimationError),
-    bundlerEstimate(account, accountStates, op, network, feeTokens, provider, errorCallback),
+    bundlerEstimate(
+      account,
+      accountStates,
+      op,
+      network,
+      feeTokens,
+      provider,
+      switcher,
+      errorCallback
+    ),
     estimateGas(account, estimateGasOp, provider, accountState, network).catch(() => 0n)
   ]
   const estimations = await estimateWithRetries(

@@ -150,7 +150,8 @@ const networks: Network[] = [
       enabled: true,
       hasPaymaster: true,
       hasBundlerSupport: true,
-      bundlers: [PIMLICO, BICONOMY]
+      bundlers: [PIMLICO, BICONOMY],
+      defaultBundler: PIMLICO
     },
     isSAEnabled: true,
     areContractsDeployed: true,

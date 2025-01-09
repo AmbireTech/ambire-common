@@ -1,12 +1,12 @@
 /* eslint-disable class-methods-use-this */
-import { BICONOMY } from '../../../consts/bundlers'
+import { PIMLICO } from '../../../consts/bundlers'
 import { DecodedError, ErrorHandler, ErrorType } from '../types'
 
-class BiconomyEstimationErrorHandler implements ErrorHandler {
+class PimlicoEstimationErrorHandler implements ErrorHandler {
   public matches(data: string, error: any) {
     const { bundlerName } = error
 
-    return bundlerName && bundlerName === BICONOMY
+    return bundlerName && bundlerName === PIMLICO
   }
 
   public handle(data: string, error: any): DecodedError {
@@ -14,8 +14,8 @@ class BiconomyEstimationErrorHandler implements ErrorHandler {
 
     // TODO: expand with more error cases
     let reason = ''
-    if (message.includes('server response 400 Bad Request')) {
-      reason = 'biconomy: 400'
+    if (message.includes('Internal error from bundler')) {
+      reason = 'pimlico: 500'
     }
 
     return {
@@ -26,4 +26,4 @@ class BiconomyEstimationErrorHandler implements ErrorHandler {
   }
 }
 
-export default BiconomyEstimationErrorHandler
+export default PimlicoEstimationErrorHandler

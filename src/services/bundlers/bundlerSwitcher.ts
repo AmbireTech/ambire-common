@@ -5,16 +5,16 @@ import { Bundler } from './bundler'
 import { getBundlerByName, getDefaultBundler } from './getBundler'
 
 export class BundlerSwitcher {
-  #bundler: Bundler
-
   #network: Network
 
-  #usedBundlers: string[] = []
+  protected bundler: Bundler
+
+  protected usedBundlers: string[] = []
 
   constructor(network: Network) {
     this.#network = network
-    this.#bundler = getDefaultBundler(network)
-    this.#usedBundlers.push(this.#bundler.getName())
+    this.bundler = getDefaultBundler(network)
+    this.usedBundlers.push(this.bundler.getName())
   }
 
   #hasBundlers() {
@@ -23,24 +23,22 @@ export class BundlerSwitcher {
   }
 
   getBundler(): Bundler {
-    return this.#bundler
+    return this.bundler
   }
 
   canSwitch(estimationError: Error | null): boolean {
     if (!this.#hasBundlers()) return false
 
     const availableBundlers = this.#network.erc4337.bundlers!.filter((bundler) => {
-      return this.#usedBundlers.indexOf(bundler) === -1
+      return this.usedBundlers.indexOf(bundler) === -1
     })
 
     if (availableBundlers.length === 0) return false
 
-    // TODO: think of all the appropriate conditions for estimation errors
-    // where we can switch the bundler
     return (
       !estimationError ||
-      estimationError.message ===
-        'The transaction will fail because it will revert onchain with reason unknown.'
+      estimationError.cause === 'biconomy: 400' ||
+      estimationError.cause === 'pimlico: 500'
     )
   }
 
@@ -50,10 +48,10 @@ export class BundlerSwitcher {
     }
 
     const availableBundlers = this.#network.erc4337.bundlers!.filter((bundler) => {
-      return this.#usedBundlers.indexOf(bundler) === -1
+      return this.usedBundlers.indexOf(bundler) === -1
     })
-    this.#bundler = getBundlerByName(availableBundlers[0])
-    this.#usedBundlers.push(this.#bundler.getName())
-    return this.#bundler
+    this.bundler = getBundlerByName(availableBundlers[0])
+    this.usedBundlers.push(this.bundler.getName())
+    return this.bundler
   }
 }

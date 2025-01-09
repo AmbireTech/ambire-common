@@ -1,7 +1,7 @@
 /* eslint-disable class-methods-use-this */
 import { Network } from 'interfaces/network'
 
-import { PIMLICO } from '../../consts/bundlers'
+import { BUNDLER, PIMLICO } from '../../consts/bundlers'
 import { Bundler } from './bundler'
 import { GasSpeeds, UserOpStatus } from './types'
 
@@ -25,7 +25,7 @@ export class Pimlico extends Bundler {
     return provider.send('pimlico_getUserOperationStatus', [userOpHash])
   }
 
-  public getName(): string {
+  public getName(): BUNDLER {
     return PIMLICO
   }
 }

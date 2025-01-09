@@ -261,10 +261,12 @@ describe('Bundler tests', () => {
       }
       const accountStates = await getAccountsInfo(usedNetworks, providers, [smartAccNew])
       const accountState = accountStates[opArb.accountAddr][opArb.networkId]
+      const bundler = new Biconomy()
       const userOp = getUserOperation(
         smartAccNew,
         accountState,
         opArb,
+        bundler.getName(),
         '0x279e2ba17426b50fff124d445629f57b95f59a0a73613a924a1d205d53b67ae44bd5f1f4ae336e1edf396693c22f1d05793d984f7515c691b54b82178364dc911c01'
       )
       const ambireInterface = new Interface(AmbireAccount.abi)
@@ -278,7 +280,6 @@ describe('Bundler tests', () => {
       userOp.paymasterData = paymasterAndData.paymasterData
       userOp.nonce = toBeHex(0)
       userOp.signature = getSigForCalculations()
-      const bundler = new Biconomy()
       const bundlerEstimate = await bundler.estimate(userOp, arbitrum)
       expect(bundlerEstimate).toHaveProperty('preVerificationGas')
       expect(bundlerEstimate).toHaveProperty('verificationGasLimit')
@@ -306,10 +307,12 @@ describe('Bundler tests', () => {
       }
       const accountStates = await getAccountsInfo(usedNetworks, providers, [smartAccNew])
       const accountState = accountStates[opArb.accountAddr][opArb.networkId]
+      const bundler = new Biconomy()
       const userOp = getUserOperation(
         smartAccNew,
         accountState,
         opArb,
+        bundler.getName(),
         '0x279e2ba17426b50fff124d445629f57b95f59a0a73613a924a1d205d53b67ae44bd5f1f4ae336e1edf396693c22f1d05793d984f7515c691b54b82178364dc911c01'
       )
       const ambireInterface = new Interface(AmbireAccount.abi)
@@ -328,7 +331,6 @@ describe('Bundler tests', () => {
         smartAccNew.creation!.salt
       ])
       try {
-        const bundler = new Biconomy()
         await bundler.estimate(userOp, arbitrum)
       } catch (e: any) {
         expect(e.message.indexOf('server response 400 Bad Request')).not.toBe(-1)
@@ -364,10 +366,12 @@ describe('Bundler tests', () => {
       }
       const accountStates = await getAccountsInfo(usedNetworks, providers, [smartAccNew])
       const accountState = accountStates[opArb.accountAddr][opArb.networkId]
+      const bundler = new Biconomy()
       const userOp = getUserOperation(
         smartAccNew,
         accountState,
         opArb,
+        bundler.getName(),
         '0x279e2ba17426b50fff124d445629f57b95f59a0a73613a924a1d205d53b67ae44bd5f1f4ae336e1edf396693c22f1d05793d984f7515c691b54b82178364dc911c01'
       )
       const ambireInterface = new Interface(AmbireAccount.abi)
@@ -380,7 +384,6 @@ describe('Bundler tests', () => {
       userOp.nonce = toBeHex(0)
       userOp.signature = getSigForCalculations()
       try {
-        const bundler = new Biconomy()
         await bundler.estimate(userOp, arbitrum)
       } catch (e: any) {
         expect(e.message.indexOf('server response 400 Bad Request')).not.toBe(-1)
@@ -414,10 +417,12 @@ describe('Bundler tests', () => {
       }
       const accountStates = await getAccountsInfo(usedNetworks, providers, [smartAcc])
       const accountState = accountStates[opOptimism.accountAddr][opOptimism.networkId]
+      const bundler = new Pimlico() // use pimlico for these tests
       const userOp = getUserOperation(
         smartAcc,
         accountState,
         opOptimism,
+        bundler.getName(),
         '0x05404ea5dfa13ddd921cda3f587af6927cc127ee174b57c9891491bfc1f0d3d005f649f8a1fc9147405f064507bae08816638cfc441c4d0dc4eb6640e16621991b01'
       )
       const ambireInterface = new Interface(AmbireAccount.abi)
@@ -431,7 +436,6 @@ describe('Bundler tests', () => {
       userOp.paymasterData = paymasterAndData.paymasterData
       userOp.nonce = toBeHex(0)
       userOp.signature = getSigForCalculations()
-      const bundler = new Pimlico() // use pimlico for these tests
       try {
         const bundlerEstimate = await bundler.estimate(userOp, optimism)
         expect(bundlerEstimate).toHaveProperty('preVerificationGas')
@@ -470,10 +474,12 @@ describe('Bundler tests', () => {
       }
       const accountStates = await getAccountsInfo(usedNetworks, providers, [smartAcc])
       const accountState = accountStates[opOptimism.accountAddr][opOptimism.networkId]
+      const bundler = new Pimlico()
       const userOp = getUserOperation(
         smartAcc,
         accountState,
         opOptimism,
+        bundler.getName(),
         '0x05404ea5dfa13ddd921cda3f587af6927cc127ee174b57c9891491bfc1f0d3d005f649f8a1fc9147405f064507bae08816638cfc441c4d0dc4eb6640e16621991b01'
       )
       const ambireInterface = new Interface(AmbireAccount.abi)
@@ -492,7 +498,6 @@ describe('Bundler tests', () => {
         smartAcc.creation!.salt
       ])
       try {
-        const bundler = new Pimlico()
         await bundler.estimate(userOp, optimism)
       } catch (e: any) {
         expect(e.error.message.indexOf('validateUserOp: not from entryPoint')).not.toBe(-1)
@@ -535,10 +540,12 @@ describe('Bundler tests', () => {
       }
       const accountStates = await getAccountsInfo(usedNetworks, providers, [smartAcc])
       const accountState = accountStates[opOptimism.accountAddr][opOptimism.networkId]
+      const bundler = new Pimlico()
       const userOp = getUserOperation(
         smartAcc,
         accountState,
         opOptimism,
+        bundler.getName(),
         '0x05404ea5dfa13ddd921cda3f587af6927cc127ee174b57c9891491bfc1f0d3d005f649f8a1fc9147405f064507bae08816638cfc441c4d0dc4eb6640e16621991b01'
       )
       const ambireInterface = new Interface(AmbireAccount.abi)
@@ -551,7 +558,6 @@ describe('Bundler tests', () => {
       userOp.nonce = toBeHex(0)
       userOp.signature = getSigForCalculations()
       try {
-        const bundler = new Pimlico()
         await bundler.estimate(userOp, optimism)
       } catch (e: any) {
         const buffer = Buffer.from(
@@ -584,10 +590,12 @@ describe('Bundler tests', () => {
         smartAccDeployedOnGnosisButNo4337
       ])
       const accountState = accountStates[opBaseSepolia.accountAddr][opBaseSepolia.networkId]
+      const bundler = getDefaultBundler(baseSepolia)
       const userOp = getUserOperation(
         smartAccDeployedOnGnosisButNo4337,
         accountState,
-        opBaseSepolia
+        opBaseSepolia,
+        bundler.getName()
       )
       const ambireInterface = new Interface(AmbireAccount.abi)
       userOp.callData = ambireInterface.encodeFunctionData('executeBySender', [
@@ -598,7 +606,6 @@ describe('Bundler tests', () => {
       userOp.paymasterData = paymasterAndData.paymasterData
       userOp.signature = getSigForCalculations()
       userOp.nonce = '0x0'
-      const bundler = getDefaultBundler(baseSepolia)
       const bundlerEstimate = await bundler.estimate(userOp, baseSepolia, true)
       expect(bundlerEstimate).toHaveProperty('preVerificationGas')
       expect(bundlerEstimate).toHaveProperty('verificationGasLimit')
@@ -627,7 +634,13 @@ describe('Bundler tests', () => {
         smartAccDeployedOnGnosisButNo4337
       ])
       const accountState = accountStates[opGnosis.accountAddr][opGnosis.networkId]
-      const userOp = getUserOperation(smartAccDeployedOnGnosisButNo4337, accountState, opGnosis)
+      const bundler = getDefaultBundler(gnosis)
+      const userOp = getUserOperation(
+        smartAccDeployedOnGnosisButNo4337,
+        accountState,
+        opGnosis,
+        bundler.getName()
+      )
       const ambireInterface = new Interface(AmbireAccount.abi)
       userOp.callData = ambireInterface.encodeFunctionData('executeBySender', [
         getSignableCalls(opGnosis)
@@ -638,7 +651,6 @@ describe('Bundler tests', () => {
       userOp.signature = getSigForCalculations()
       userOp.nonce = '0x0'
       try {
-        const bundler = getDefaultBundler(gnosis)
         await bundler.estimate(userOp, gnosis, true)
         expect(true).toBe(false)
       } catch (e: any) {
@@ -673,10 +685,12 @@ describe('Bundler tests', () => {
       }
       const accountStates = await getAccountsInfo(usedNetworks, providers, [smartAcc])
       const accountState = accountStates[opMantle.accountAddr][opMantle.networkId]
+      const bundler = getDefaultBundler(mantle)
       const userOp = getUserOperation(
         smartAcc,
         accountState,
         opMantle,
+        bundler.getName(),
         '0x38d93f334162dbbbf5115b6a73051426663be3083e698ec89f6db4dc520e8029531bbe508ba2461401fb2f39d9cab723c8b1b5e85cd15841cad6615b7107ae351b01'
       )
       const ambireInterface = new Interface(AmbireAccount.abi)
@@ -685,7 +699,6 @@ describe('Bundler tests', () => {
       ])
       userOp.nonce = toBeHex(0)
       userOp.signature = getSigForCalculations()
-      const bundler = getDefaultBundler(mantle)
       const bundlerEstimate = await bundler.estimate(userOp, mantle)
       expect(bundlerEstimate).toHaveProperty('preVerificationGas')
       expect(bundlerEstimate).toHaveProperty('verificationGasLimit')
@@ -729,10 +742,12 @@ describe('Bundler tests', () => {
       }
       const accountStates = await getAccountsInfo(usedNetworks, providers, [smartAcc])
       const accountState = accountStates[opMantle.accountAddr][opMantle.networkId]
+      const bundler = getDefaultBundler(mantle)
       const userOp = getUserOperation(
         smartAcc,
         accountState,
         opMantle,
+        bundler.getName(),
         '0x38d93f334162dbbbf5115b6a73051426663be3083e698ec89f6db4dc520e8029531bbe508ba2461401fb2f39d9cab723c8b1b5e85cd15841cad6615b7107ae351b01'
       )
       const ambireInterface = new Interface(AmbireAccount.abi)
@@ -745,7 +760,6 @@ describe('Bundler tests', () => {
       userOp.nonce = toBeHex(0)
       userOp.signature = getSigForCalculations()
       try {
-        const bundler = getDefaultBundler(mantle)
         await bundler.estimate(userOp, mantle)
       } catch (e: any) {
         const buffer = Buffer.from(
@@ -784,10 +798,12 @@ describe('Bundler tests', () => {
       }
       const accountStates = await getAccountsInfo(usedNetworks, providers, [smartAcc])
       const accountState = accountStates[opBase.accountAddr][opBase.networkId]
+      const bundler = getDefaultBundler(mantle)
       const userOp = getUserOperation(
         smartAcc,
         accountState,
         opBase,
+        bundler.getName(),
         '0x05404ea5dfa13ddd921cda3f587af6927cc127ee174b57c9891491bfc1f0d3d005f649f8a1fc9147405f064507bae08816638cfc441c4d0dc4eb6640e16621991b01'
       )
       const ambireInterface = new Interface(AmbireAccount.abi)
@@ -806,7 +822,6 @@ describe('Bundler tests', () => {
         smartAcc.creation!.salt
       ])
       try {
-        const bundler = getDefaultBundler(base)
         await bundler.estimate(userOp, base)
       } catch (e: any) {
         expect(e.error.message.indexOf('validateUserOp: not from entryPoint')).not.toBe(-1)
@@ -833,13 +848,13 @@ describe('Bundler tests', () => {
       }
       const accountStates = await getAccountsInfo(usedNetworks, providers, [smartAccDeployed])
       const accountState = accountStates[opBase.accountAddr][opBase.networkId]
-      const userOp = getUserOperation(smartAccDeployed, accountState, opBase)
+      const bundler = getDefaultBundler(base)
+      const userOp = getUserOperation(smartAccDeployed, accountState, opBase, bundler.getName())
       const ambireInterface = new Interface(AmbireAccount.abi)
       userOp.callData = ambireInterface.encodeFunctionData('executeBySender', [
         getSignableCalls(opBase)
       ])
       userOp.signature = getSigForCalculations()
-      const bundler = getDefaultBundler(base)
       const bundlerEstimate = await bundler.estimate(userOp, base)
       expect(bundlerEstimate).toHaveProperty('preVerificationGas')
       expect(bundlerEstimate).toHaveProperty('verificationGasLimit')

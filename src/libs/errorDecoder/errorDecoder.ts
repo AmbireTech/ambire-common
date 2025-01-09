@@ -10,12 +10,16 @@ import {
   UserRejectionHandler
 } from './handlers'
 import BiconomyEstimationErrorHandler from './handlers/biconomy'
+import PimlicoEstimationErrorHandler from './handlers/pimlico'
 import RelayerErrorHandler from './handlers/relayer'
 import { formatReason, getDataFromError, isReasonValid } from './helpers'
 import { DecodedError, ErrorType } from './types'
 
 export const BUNDLER = 'bundler'
-const PREPROCESSOR_BUNDLER_HANDLERS = [BiconomyEstimationErrorHandler]
+const PREPROCESSOR_BUNDLER_HANDLERS = [
+  BiconomyEstimationErrorHandler,
+  PimlicoEstimationErrorHandler
+]
 
 const PREPROCESSOR_HANDLERS = [BundlerErrorHandler, RelayerErrorHandler, InnerCallFailureHandler]
 const ERROR_HANDLERS = [

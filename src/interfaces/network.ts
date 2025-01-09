@@ -1,11 +1,13 @@
+import { BUNDLER } from '../consts/bundlers'
+
 export type NetworkId = string
 
 export interface Erc4337settings {
   enabled: boolean
   hasPaymaster: boolean
   hasBundlerSupport?: boolean
-  bundlers?: string[]
-  defaultBundler?: string
+  bundlers?: BUNDLER[]
+  defaultBundler?: BUNDLER
 }
 
 interface FeeOptions {

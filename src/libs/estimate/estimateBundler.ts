@@ -91,6 +91,7 @@ export async function bundlerEstimate(
   network: Network,
   feeTokens: TokenResult[],
   provider: RPCProvider,
+  switcher: BundlerSwitcher,
   errorCallback: Function
 ): Promise<EstimateResult> {
   // we pass an empty array of feePaymentOptions as they are built
@@ -107,10 +108,12 @@ export async function bundlerEstimate(
       { feePaymentOptions }
     )
 
+  const initialBundler = switcher.getBundler()
   const userOp = getUserOperation(
     account,
     accountState,
     localOp,
+    initialBundler.getName(),
     !accountState.isDeployed ? op.meta!.entryPointAuthorization : undefined
   )
   // set the callData
@@ -137,8 +140,6 @@ export async function bundlerEstimate(
     if (paymasterEstimationData.paymasterVerificationGasLimit)
       userOp.paymasterVerificationGasLimit = paymasterEstimationData.paymasterVerificationGasLimit
   }
-
-  const switcher = new BundlerSwitcher(network)
 
   while (true) {
     // estimate

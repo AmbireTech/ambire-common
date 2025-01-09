@@ -1,8 +1,9 @@
 /* eslint-disable no-restricted-syntax */
-/* eslint-disable import/no-extraneous-dependencies */
 /* eslint-disable class-methods-use-this */
 import { toBeHex } from 'ethers'
 
+/* eslint-disable import/no-extraneous-dependencies */
+import { BUNDLER } from '../../consts/bundlers'
 import { ENTRY_POINT_MARKER, ERC_4337_ENTRYPOINT } from '../../consts/deploy'
 import { Fetch } from '../../interfaces/fetch'
 import { Hex } from '../../interfaces/hex'
@@ -51,7 +52,7 @@ export abstract class Bundler {
   /**
    * Each bundler needs to return its own na,e
    */
-  public abstract getName(): string
+  public abstract getName(): BUNDLER
 
   /**
    * Get the bundler RPC

@@ -3,6 +3,7 @@ import { Network } from 'interfaces/network'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json'
+import { BUNDLER } from '../../consts/bundlers'
 import {
   AMBIRE_ACCOUNT_FACTORY,
   AMBIRE_PAYMASTER,
@@ -117,6 +118,7 @@ export function getUserOperation(
   account: Account,
   accountState: AccountOnchainState,
   accountOp: AccountOp,
+  bundler: BUNDLER,
   entryPointSig?: string
 ): UserOperation {
   const userOp: UserOperation = {
@@ -129,7 +131,8 @@ export function getUserOperation(
     maxFeePerGas: toBeHex(1),
     maxPriorityFeePerGas: toBeHex(1),
     signature: '0x',
-    requestType: getRequestType(accountState)
+    requestType: getRequestType(accountState),
+    bundler
   }
 
   // if the account is not deployed, prepare the deploy in the initCode
