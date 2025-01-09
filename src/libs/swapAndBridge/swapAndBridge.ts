@@ -18,6 +18,24 @@ import { Call } from '../accountOp/types'
 import { TokenResult } from '../portfolio'
 import { getTokenBalanceInUSD } from '../portfolio/helpers'
 
+const sortTokensByPendingAndBalance = (a: TokenResult, b: TokenResult) => {
+  // Pending tokens go on top
+  const isAPending =
+    typeof a.amountPostSimulation === 'bigint' && a.amountPostSimulation !== BigInt(a.amount)
+  const isBPending =
+    typeof b.amountPostSimulation === 'bigint' && b.amountPostSimulation !== BigInt(b.amount)
+
+  if (isAPending && !isBPending) return -1
+  if (!isAPending && isBPending) return 1
+
+  // Otherwise, higher balance comes first
+  const aBalanceUSD = getTokenBalanceInUSD(a)
+  const bBalanceUSD = getTokenBalanceInUSD(b)
+  if (aBalanceUSD !== bBalanceUSD) return bBalanceUSD - aBalanceUSD
+
+  return 0
+}
+
 export const sortTokenListResponse = (
   tokenListResponse: SocketAPIToken[],
   accountPortfolioTokenList: TokenResult[]
@@ -30,23 +48,9 @@ export const sortTokenListResponse = (
     if (aInPortfolio && !bInPortfolio) return -1
     if (!aInPortfolio && bInPortfolio) return 1
 
-    // If both are in the portfolio, sort by highest balance
     if (aInPortfolio && bInPortfolio) {
-      // Pending tokens go on top (exception)
-      const isAPending =
-        typeof aInPortfolio.amountPostSimulation === 'bigint' &&
-        aInPortfolio.amountPostSimulation !== BigInt(aInPortfolio.amount)
-      if (isAPending) return -1
-
-      const isBPending =
-        typeof bInPortfolio.amountPostSimulation === 'bigint' &&
-        bInPortfolio.amountPostSimulation !== BigInt(bInPortfolio.amount)
-      if (isBPending) return 1
-
-      const aBalanceUSD = getTokenBalanceInUSD(aInPortfolio)
-      const bBalanceUSD = getTokenBalanceInUSD(bInPortfolio)
-
-      if (aBalanceUSD !== bBalanceUSD) return bBalanceUSD - aBalanceUSD
+      const comparisonResult = sortTokensByPendingAndBalance(aInPortfolio, bInPortfolio)
+      if (comparisonResult !== 0) return comparisonResult
     }
 
     // Otherwise, just alphabetical
@@ -56,19 +60,8 @@ export const sortTokenListResponse = (
 
 export const sortPortfolioTokenList = (accountPortfolioTokenList: TokenResult[]) => {
   return accountPortfolioTokenList.sort((a, b) => {
-    // Pending tokens go on top (exception)
-    const isAPending =
-      typeof a.amountPostSimulation === 'bigint' && a.amountPostSimulation !== BigInt(a.amount)
-    if (isAPending) return -1
-
-    const isBPending =
-      typeof b.amountPostSimulation === 'bigint' && b.amountPostSimulation !== BigInt(b.amount)
-    if (isBPending) return 1
-
-    const aBalanceUSD = getTokenBalanceInUSD(a)
-    const bBalanceUSD = getTokenBalanceInUSD(b)
-
-    if (aBalanceUSD !== bBalanceUSD) return bBalanceUSD - aBalanceUSD
+    const comparisonResult = sortTokensByPendingAndBalance(a, b)
+    if (comparisonResult !== 0) return comparisonResult
 
     // Otherwise, just alphabetical
     return (a.symbol || '').localeCompare(b.symbol || '')
