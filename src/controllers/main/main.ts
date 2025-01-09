@@ -48,7 +48,6 @@ import {
 } from '../../libs/actions/actions'
 import { getAccountOpBanners } from '../../libs/banners/banners'
 import { getPaymasterService } from '../../libs/erc7677/erc7677'
-import { decodeError } from '../../libs/errorDecoder'
 import {
   getHumanReadableBroadcastError,
   getHumanReadableEstimationError
@@ -698,17 +697,11 @@ export class MainController extends EventEmitter {
           .then(() => this.signAccountOp?.update({}))
       }
     } catch (e: any) {
-      const { reason } = decodeError(e)
-
-      // We are checking this way as different RPC providers might have different error messages
-      if (reason && reason.includes('debug_traceCall') && reason.includes('not supported')) {
-        this.emitError({
-          level: 'major',
-          message:
-            'The selected RPC provider does not support automatic token discovery. Please consider switching to a different RPC provider from Network Settings.',
-          error: e
-        })
-      }
+      this.emitError({
+        level: 'silent',
+        message: 'Error in main.traceCall',
+        error: e
+      })
     }
   }
 
