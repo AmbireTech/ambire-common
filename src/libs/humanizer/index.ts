@@ -10,10 +10,14 @@ import {
   IrCall,
   IrMessage
 } from './interfaces'
-import { erc20Module, erc721Module, permit2Module } from './messageModules'
-import { ensMessageModule } from './messageModules/ensModule'
-import { entryPointModule } from './messageModules/entryPointModule'
-import { legendsMessageModule } from './messageModules/legendsModule'
+import {
+  ensMessageModule,
+  entryPointModule,
+  erc20Module,
+  erc721Module,
+  legendsMessageModule,
+  permit2Module
+} from './messageModules'
 import OneInchModule from './modules/1Inch'
 import { aaveHumanizer } from './modules/Aave'
 import AcrossModule from './modules/Across'
