@@ -48,6 +48,7 @@ import {
 } from '../../libs/actions/actions'
 import { getAccountOpBanners } from '../../libs/banners/banners'
 import { getPaymasterService } from '../../libs/erc7677/erc7677'
+import { decodeError } from '../../libs/errorDecoder'
 import {
   getHumanReadableBroadcastError,
   getHumanReadableEstimationError
@@ -663,32 +664,51 @@ export class MainController extends EventEmitter {
     const network = this.networks.networks.find((net) => net.id === accountOp?.networkId)
     if (!network) return
 
-    const account = this.accounts.accounts.find((acc) => acc.addr === accountOp.accountAddr)!
-    const state = this.accounts.accountStates[accountOp.accountAddr][accountOp.networkId]
-    const provider = this.providers.providers[network.id]
-    const gasPrice = this.gasPrices[network.id]
-    const { tokens, nfts } = await debugTraceCall(
-      account,
-      accountOp,
-      provider,
-      state,
-      estimation.gasUsed,
-      gasPrice,
-      !network.rpcNoStateOverride
-    )
-    const learnedNewTokens = this.portfolio.addTokensToBeLearned(tokens, network.id)
-    const learnedNewNfts = await this.portfolio.learnNfts(nfts, network.id)
-    // update the portfolio only if new tokens were found through tracing
-    if (learnedNewTokens || learnedNewNfts) {
-      this.portfolio
-        .updateSelectedAccount(
-          accountOp.accountAddr,
-          network,
-          getAccountOpsForSimulation(account, this.actions.visibleActionsQueue, network, accountOp),
-          { forceUpdate: true }
-        )
-        // fire an update request to refresh the warnings if any
-        .then(() => this.signAccountOp?.update({}))
+    try {
+      const account = this.accounts.accounts.find((acc) => acc.addr === accountOp.accountAddr)!
+      const state = this.accounts.accountStates[accountOp.accountAddr][accountOp.networkId]
+      const provider = this.providers.providers[network.id]
+      const gasPrice = this.gasPrices[network.id]
+      const { tokens, nfts } = await debugTraceCall(
+        account,
+        accountOp,
+        provider,
+        state,
+        estimation.gasUsed,
+        gasPrice,
+        !network.rpcNoStateOverride
+      )
+      const learnedNewTokens = this.portfolio.addTokensToBeLearned(tokens, network.id)
+      const learnedNewNfts = await this.portfolio.learnNfts(nfts, network.id)
+      // update the portfolio only if new tokens were found through tracing
+      if (learnedNewTokens || learnedNewNfts) {
+        this.portfolio
+          .updateSelectedAccount(
+            accountOp.accountAddr,
+            network,
+            getAccountOpsForSimulation(
+              account,
+              this.actions.visibleActionsQueue,
+              network,
+              accountOp
+            ),
+            { forceUpdate: true }
+          )
+          // fire an update request to refresh the warnings if any
+          .then(() => this.signAccountOp?.update({}))
+      }
+    } catch (e: any) {
+      const { reason } = decodeError(e)
+
+      // We are checking this way as different RPC providers might have different error messages
+      if (reason && reason.includes('debug_traceCall') && reason.includes('not supported')) {
+        this.emitError({
+          level: 'major',
+          message:
+            'The selected RPC provider does not support automatic token discovery. Please consider switching to a different RPC provider from Network Settings.',
+          error: e
+        })
+      }
     }
   }
 
