@@ -7,6 +7,7 @@ import { getAction, getAddressVisualization, getLabel } from '../../utils'
 
 const ENS_CONTROLLER = '0x253553366Da8546fC250F225fe3d25d0C782303b'
 const ENS_RESOLVER = '0x231b0Ee14048e9dCcD1d247744d114a4EB5E8E63'
+const BULK_RENEWAL = '0xa12159e5131b1eEf6B4857EEE3e1954744b5033A'
 
 const iface = new Interface([
   'function register(string name,address owner, uint256 duration, bytes32 secret, address resolver, bytes[] data, bool reverseRecord, uint16 ownerControlledFuses)',
@@ -17,7 +18,8 @@ const iface = new Interface([
   'function setAddr(bytes32 node, uint256 coinType, bytes memory a)',
   'function setContenthash(bytes32,bytes)',
   'function setABI(bytes32,uint256,bytes)',
-  'function renew(string id,uint256 duration)'
+  'function renew(string id,uint256 duration)',
+  'function renewAll(string[] calldata names, uint256 duration)'
 ])
 
 const YEAR_IN_SECONDS = 60n * 60n * 24n * 365n
@@ -134,6 +136,24 @@ export const ensModule: HumanizerCallModule = (
             []
           )
         return { ...call, fullVisualization }
+      }
+    }
+    if (
+      getAddress(call.to) === BULK_RENEWAL &&
+      call.data.startsWith(iface.getFunction('renewAll')!.selector)
+    ) {
+      const { names, duration } = iface.decodeFunctionData('renewAll', call.data)
+      const durationLabel = `${duration / YEAR_IN_SECONDS} year${
+        duration === YEAR_IN_SECONDS ? '' : 's'
+      }`
+      return {
+        ...call,
+        fullVisualization: [
+          getAction('Renew'),
+          ...names.map((name: string) => getLabel(`${name}.eth`, true)),
+          getLabel('for'),
+          getLabel(durationLabel, true)
+        ]
       }
     }
     return call
