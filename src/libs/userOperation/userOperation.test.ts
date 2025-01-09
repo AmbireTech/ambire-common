@@ -62,6 +62,7 @@ describe('User Operation tests', () => {
         smartAccDeployed,
         accountStates[smartAccDeployed.addr][optimism.id],
         opOptimism,
+        'pimlico',
         '0x0001'
       )
       expect(userOp).toHaveProperty('factory')
@@ -91,6 +92,7 @@ describe('User Operation tests', () => {
         smartAccDeployed,
         accountStates[smartAccDeployed.addr][optimism.id],
         opOptimism,
+        'pimlico',
         '0x0001'
       )
       expect(userOp).not.toHaveProperty('factory')
@@ -120,7 +122,8 @@ describe('User Operation tests', () => {
       const userOp = getUserOperation(
         smartAccDeployed,
         accountStates[smartAccDeployed.addr][optimism.id],
-        opOptimism
+        opOptimism,
+        'pimlico'
       )
       expect(userOp).not.toHaveProperty('factory')
       expect(userOp).not.toHaveProperty('factoryData')

@@ -57,7 +57,7 @@ export function getActivatorCall(addr: AccountId) {
  * @returns EntryPoint userOp
  */
 export function getCleanUserOp(userOp: UserOperation) {
-  return [(({ requestType, activatorCall, ...o }) => o)(userOp)]
+  return [(({ requestType, activatorCall, bundler, ...o }) => o)(userOp)]
 }
 
 /**
