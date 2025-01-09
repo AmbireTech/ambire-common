@@ -29,6 +29,7 @@ import {
   getActiveRoutesForAccount,
   getIsBridgeTxn,
   getQuoteRouteSteps,
+  sortPortfolioTokenList,
   sortTokenListResponse
 } from '../../libs/swapAndBridge/swapAndBridge'
 import { getSanitizedAmount } from '../../libs/transfer/amount'
@@ -548,7 +549,7 @@ export class SwapAndBridgeController extends EventEmitter {
 
         return hasAmount && !token.flags.onGasTank && !token.flags.rewardsType
       }) || []
-    this.portfolioTokenList = tokens
+    this.portfolioTokenList = sortPortfolioTokenList(tokens)
 
     const fromSelectedTokenInNextPortfolio = this.portfolioTokenList.find(
       (t) =>

@@ -43,6 +43,18 @@ export const sortTokenListResponse = (
   })
 }
 
+export const sortPortfolioTokenList = (accountPortfolioTokenList: TokenResult[]) => {
+  return accountPortfolioTokenList.sort((a, b) => {
+    const aBalanceUSD = getTokenDetails(a).balanceUSD || 0
+    const bBalanceUSD = getTokenDetails(b).balanceUSD || 0
+
+    if (aBalanceUSD !== bBalanceUSD) return bBalanceUSD - aBalanceUSD
+
+    // Otherwise, just alphabetical
+    return (a.symbol || '').localeCompare(b.symbol || '')
+  })
+}
+
 export const convertPortfolioTokenToSocketAPIToken = (
   portfolioToken: TokenResult,
   chainId: number
