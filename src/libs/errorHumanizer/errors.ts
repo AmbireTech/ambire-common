@@ -101,6 +101,10 @@ const BROADCAST_OR_ESTIMATION_ERRORS: ErrorHumanizerError[] = [
   {
     reasons: ['biconomy: 400'],
     message: 'it will revert onchain with reason unknown.'
+  },
+  {
+    reasons: ['pimlico: 500'],
+    message: 'The bundler seems to be down at the moment. Please try again later'
   }
 ]
 

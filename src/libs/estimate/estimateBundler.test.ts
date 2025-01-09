@@ -1,6 +1,10 @@
 /* eslint-disable @typescript-eslint/no-floating-promises */
+/* eslint-disable max-classes-per-file */
+/* eslint-disable @typescript-eslint/no-unused-vars */
 
 import { parseEther } from 'ethers'
+import { Network } from 'interfaces/network'
+import { UserOperation } from 'libs/userOperation/types'
 import fetch from 'node-fetch'
 
 import { describe, expect, test } from '@jest/globals'
@@ -8,20 +12,25 @@ import { describe, expect, test } from '@jest/globals'
 import { relayerUrl } from '../../../test/config'
 import { getAccountsInfo } from '../../../test/helpers'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
+import { BICONOMY, PIMLICO } from '../../consts/bundlers'
 import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
 import { networks } from '../../consts/networks'
 import { Account } from '../../interfaces/account'
 import { dedicatedToOneSAPriv } from '../../interfaces/keystore'
+import { BundlerSwitcher } from '../../services/bundlers/bundlerSwitcher'
+import { Pimlico } from '../../services/bundlers/pimlico'
 import { paymasterFactory } from '../../services/paymaster'
 import { getRpcProvider } from '../../services/provider'
 import { getSmartAccount } from '../account/account'
 import { AccountOp } from '../accountOp/accountOp'
 import { bundlerEstimate } from './estimateBundler'
+import { BundlerEstimateResult } from './interfaces'
 
 const to = '0x06564FA10c67427a187f90703fD094054f8F0408'
 
 const addrWithDeploySignature = '0x52C37FD54BD02E9240e8558e28b11e0Dc22d8e85'
 const optimism = networks.find((net) => net.id === 'optimism')!
+const base = networks.find((net) => net.id === 'base')!
 
 const smartAccDeployed: Account = {
   addr: '0x8E5F6c1F0b134657A546932C3eC9169E1633a39b',
@@ -99,6 +108,7 @@ describe('Bundler estimation tests', () => {
           }
         }
       ]
+      const switcher = new BundlerSwitcher(optimism)
       const result = await bundlerEstimate(
         smartAcc,
         accountStates,
@@ -106,6 +116,7 @@ describe('Bundler estimation tests', () => {
         optimism,
         feeTokens,
         providers[optimism.id],
+        switcher,
         errorCallback
       )
 
@@ -158,6 +169,7 @@ describe('Bundler estimation tests', () => {
           }
         }
       ]
+      const switcher = new BundlerSwitcher(optimism)
       const result = await bundlerEstimate(
         smartAccDeployed,
         accountStates,
@@ -165,6 +177,7 @@ describe('Bundler estimation tests', () => {
         optimism,
         feeTokens,
         providers[optimism.id],
+        switcher,
         errorCallback
       )
 
@@ -214,6 +227,7 @@ describe('Bundler estimation tests', () => {
           }
         }
       ]
+      const switcher = new BundlerSwitcher(optimism)
       const result = await bundlerEstimate(
         smartAccDeployed,
         accountStates,
@@ -221,6 +235,7 @@ describe('Bundler estimation tests', () => {
         optimism,
         feeTokens,
         providers[optimism.id],
+        switcher,
         errorCallback
       )
 
@@ -231,5 +246,139 @@ describe('Bundler estimation tests', () => {
       expect(BigInt(result.erc4337GasLimits!.paymasterPostOpGasLimit)).toBeGreaterThan(0n)
       expect(BigInt(result.erc4337GasLimits!.paymasterVerificationGasLimit)).toBeGreaterThan(0n)
     })
+  })
+})
+
+describe('Bundler fallback tests', () => {
+  class BrokenPimlico extends Pimlico {
+    // eslint-disable-next-line class-methods-use-this
+    async estimate(
+      userOperation: UserOperation,
+      network: Network,
+      shouldStateOverride = false
+    ): Promise<BundlerEstimateResult> {
+      throw new Error('Internal error from bundler')
+    }
+  }
+  class ExtendedBundlerSwitcher extends BundlerSwitcher {
+    constructor(network: Network, usedBundlers: string[] = []) {
+      super(network)
+      this.bundler = new BrokenPimlico()
+      // push pimlico as used so we could fallback to biconomy
+      usedBundlers.forEach((bun) => this.usedBundlers.push(bun))
+    }
+  }
+
+  test('send a valid userOp on base but make the pimlico bundler return an internal server error - the bunlder switcher should switch to biconomy and proceed without the user noticing', async () => {
+    const opBase: AccountOp = {
+      accountAddr: smartAccDeployed.addr,
+      signingKeyAddr: smartAccDeployed.associatedKeys[0],
+      signingKeyType: null,
+      gasLimit: null,
+      gasFeePayment: null,
+      networkId: base.id,
+      nonce: 0n,
+      signature: '0x',
+      calls: [{ to, value: 1n, data: '0x' }],
+      accountOpToExecuteBefore: null
+    }
+    const usedNetworks = [base]
+    const providers = {
+      [base.id]: getRpcProvider(base.rpcUrls, base.chainId)
+    }
+    const accountStates = await getAccountsInfo(usedNetworks, providers, [smartAccDeployed])
+
+    // if the user cannot pay in the fee token, it will revert
+    const feeTokens = [
+      {
+        address: '0x0000000000000000000000000000000000000000',
+        amount: 100n,
+        symbol: 'ETH',
+        networkId: 'base',
+        decimals: 18,
+        priceIn: [],
+        flags: {
+          onGasTank: false,
+          rewardsType: null,
+          canTopUpGasTank: true,
+          isFeeToken: true
+        }
+      }
+    ]
+    const switcher = new ExtendedBundlerSwitcher(base, [PIMLICO])
+    const result = await bundlerEstimate(
+      smartAccDeployed,
+      accountStates,
+      opBase,
+      base,
+      feeTokens,
+      providers[base.id],
+      switcher,
+      errorCallback
+    )
+
+    expect(result).toHaveProperty('erc4337GasLimits')
+    expect(result.erc4337GasLimits!.bundler).toBe(BICONOMY)
+    expect(BigInt(result.erc4337GasLimits!.callGasLimit)).toBeGreaterThan(0n)
+    expect(BigInt(result.erc4337GasLimits!.preVerificationGas)).toBeGreaterThan(0n)
+    expect(BigInt(result.erc4337GasLimits!.verificationGasLimit)).toBeGreaterThan(0n)
+    expect(BigInt(result.erc4337GasLimits!.paymasterPostOpGasLimit)).toBeGreaterThan(0n)
+    expect(BigInt(result.erc4337GasLimits!.paymasterVerificationGasLimit)).toBeGreaterThan(0n)
+  })
+
+  test('should return the pimlico error if there are no other available bundlers when estimating with Pimlico but Pimlico returning an internal server error', async () => {
+    const opBase: AccountOp = {
+      accountAddr: smartAccDeployed.addr,
+      signingKeyAddr: smartAccDeployed.associatedKeys[0],
+      signingKeyType: null,
+      gasLimit: null,
+      gasFeePayment: null,
+      networkId: base.id,
+      nonce: 0n,
+      signature: '0x',
+      calls: [{ to, value: 1n, data: '0x' }],
+      accountOpToExecuteBefore: null
+    }
+    const usedNetworks = [base]
+    const providers = {
+      [base.id]: getRpcProvider(base.rpcUrls, base.chainId)
+    }
+    const accountStates = await getAccountsInfo(usedNetworks, providers, [smartAccDeployed])
+
+    // if the user cannot pay in the fee token, it will revert
+    const feeTokens = [
+      {
+        address: '0x0000000000000000000000000000000000000000',
+        amount: 100n,
+        symbol: 'ETH',
+        networkId: 'base',
+        decimals: 18,
+        priceIn: [],
+        flags: {
+          onGasTank: false,
+          rewardsType: null,
+          canTopUpGasTank: true,
+          isFeeToken: true
+        }
+      }
+    ]
+    const switcher = new ExtendedBundlerSwitcher(base, [PIMLICO, BICONOMY])
+    const result = await bundlerEstimate(
+      smartAccDeployed,
+      accountStates,
+      opBase,
+      base,
+      feeTokens,
+      providers[base.id],
+      switcher,
+      errorCallback
+    )
+
+    expect(result.error).not.toBe(null)
+    expect(result.error).not.toBe(undefined)
+
+    expect(result.error!.message).toBe(
+      'The bundler seems to be down at the moment. Please try again later'
+    )
   })
 })
