@@ -1,5 +1,6 @@
 import {
   BundlerErrorHandler,
+  CustomErrorHandler,
   InnerCallFailureHandler,
   PanicErrorHandler,
   PaymasterErrorHandler,
@@ -14,6 +15,7 @@ import { DecodedError, ErrorType } from './types'
 const PREPROCESSOR_HANDLERS = [BundlerErrorHandler, RelayerErrorHandler, InnerCallFailureHandler]
 const ERROR_HANDLERS = [
   RpcErrorHandler,
+  CustomErrorHandler,
   PanicErrorHandler,
   RevertErrorHandler,
   PaymasterErrorHandler,
@@ -21,6 +23,23 @@ const ERROR_HANDLERS = [
 ]
 
 export function decodeError(e: Error): DecodedError {
+  // Otherwise regular JS/TS errors will be handled
+  // as RPC errors which is confusing.
+  if (
+    e instanceof TypeError ||
+    e instanceof ReferenceError ||
+    e instanceof SyntaxError ||
+    e instanceof RangeError
+  ) {
+    console.error('Encountered a code error', e)
+
+    return {
+      type: ErrorType.CodeError,
+      reason: e.name,
+      data: null
+    }
+  }
+
   const errorData = getDataFromError(e)
 
   let decodedError: DecodedError = {

@@ -41,7 +41,13 @@ export const LIMITS: Limits = {
 }
 
 export const PORTFOLIO_LIB_ERROR_NAMES = {
-  HintsError: 'HintsError',
+  /** External hints API (Velcro) request failed but fallback is sufficient */
+  NonCriticalApiHintsError: 'NonCriticalApiHintsError',
+  /** External API (Velcro) hints are older than X minutes */
+  StaleApiHintsError: 'StaleApiHintsError',
+  /** No external API (Velcro) hints are available- the request failed without fallback */
+  NoApiHintsError: 'NoApiHintsError',
+  /** One or more cena request has failed */
   PriceFetchError: 'PriceFetchError'
 }
 
@@ -54,7 +60,7 @@ const defaultOptions: GetOptions = {
   baseCurrency: 'usd',
   blockTag: 'latest',
   priceRecency: 0,
-  additionalHints: [],
+  previousHintsFromExternalAPI: null,
   fetchPinned: true,
   tokenPreferences: [],
   isEOA: false
@@ -77,19 +83,29 @@ export class Portfolio {
     network: Network,
     velcroUrl?: string
   ) {
-    this.batchedVelcroDiscovery = batcher(fetch, (queue) => {
-      const baseCurrencies = [...new Set(queue.map((x) => x.data.baseCurrency))]
-      return baseCurrencies.map((baseCurrency) => {
-        const queueSegment = queue.filter((x) => x.data.baseCurrency === baseCurrency)
-        const url = `${velcroUrl}/multi-hints?networks=${queueSegment
-          .map((x) => x.data.networkId)
-          .join(',')}&accounts=${queueSegment
-          .map((x) => x.data.accountAddr)
-          .join(',')}&baseCurrency=${baseCurrency}`
-        return { queueSegment, url }
-      })
+    this.batchedVelcroDiscovery = batcher(
+      fetch,
+      (queue) => {
+        const baseCurrencies = [...new Set(queue.map((x) => x.data.baseCurrency))]
+        return baseCurrencies.map((baseCurrency) => {
+          const queueSegment = queue.filter((x) => x.data.baseCurrency === baseCurrency)
+          const url = `${velcroUrl}/multi-hints?networks=${queueSegment
+            .map((x) => x.data.networkId)
+            .join(',')}&accounts=${queueSegment
+            .map((x) => x.data.accountAddr)
+            .join(',')}&baseCurrency=${baseCurrency}`
+          return { queueSegment, url }
+        })
+      },
+      {
+        timeoutAfter: 3000,
+        timeoutErrorMessage: `Velcro discovery timed out on ${network.id}`
+      }
+    )
+    this.batchedGecko = batcher(fetch, geckoRequestBatcher, {
+      timeoutAfter: 3000,
+      timeoutErrorMessage: `Cena request timed out on ${network.id}`
     })
-    this.batchedGecko = batcher(fetch, geckoRequestBatcher)
     this.network = network
     this.deploylessTokens = fromDescriptor(provider, BalanceGetter, !network.rpcNoStateOverride)
     this.deploylessNfts = fromDescriptor(provider, NFTGetter, !network.rpcNoStateOverride)
@@ -121,42 +137,50 @@ export class Portfolio {
           accountAddr,
           baseCurrency
         })
-        if (hintsFromExternalAPI)
+
+        if (hintsFromExternalAPI) {
+          hintsFromExternalAPI.lastUpdate = Date.now()
           hints = stripExternalHintsAPIResponse(hintsFromExternalAPI) as Hints
-      } else if (!this.network.hasRelayer) {
-        hintsFromExternalAPI = {
-          networkId,
-          accountAddr,
-          hasHints: false,
-          erc20s: [],
-          erc721s: {},
-          prices: {}
         }
       }
     } catch (error: any) {
-      errors.push({
-        name: PORTFOLIO_LIB_ERROR_NAMES.HintsError,
-        message: `Failed to fetch hints from Velcro for networkId (${networkId}): ${error.message}`
-      })
-    }
+      const errorMesssage = `Failed to fetch hints from Velcro for networkId (${networkId}): ${error.message}`
+      if (localOpts.previousHintsFromExternalAPI) {
+        hints = { ...localOpts.previousHintsFromExternalAPI }
+        const TEN_MINUTES = 10 * 60 * 1000
+        const lastUpdate = localOpts.previousHintsFromExternalAPI.lastUpdate
+        const isLastUpdateTooOld = Date.now() - lastUpdate > TEN_MINUTES
 
-    // Enrich hints with the previously found and cached hints, especially in the case the Velcro discovery fails.
-    if (localOpts.previousHints) {
-      hints = {
-        // Unique list of previously discovered and currently discovered erc20s
-        erc20s: [...localOpts.previousHints.erc20s, ...hints.erc20s],
-        // Please note 2 things:
-        // 1. Velcro hints data takes advantage over previous hints because, in most cases, Velcro data is more up-to-date than the previously cached hints.
-        // 2. There is only one use-case where the previous hints data is more recent, and that is when we find an NFT token via a pending simulation.
-        // In order to support it, we have to apply a complex deep merging algorithm (which may become problematic if the Velcro API changes)
-        // and also have to introduce an algorithm for self-cleaning outdated/previous NFT tokens.
-        // However, we have chosen to keep it as simple as possible and disregard this rare case.
-        erc721s: { ...localOpts.previousHints.erc721s, ...hints.erc721s }
+        errors.push({
+          name: isLastUpdateTooOld
+            ? PORTFOLIO_LIB_ERROR_NAMES.StaleApiHintsError
+            : PORTFOLIO_LIB_ERROR_NAMES.NonCriticalApiHintsError,
+          message: errorMesssage
+        })
+      } else {
+        errors.push({
+          name: PORTFOLIO_LIB_ERROR_NAMES.NoApiHintsError,
+          message: errorMesssage
+        })
       }
+
+      // It's important for DX to see this error
+      // eslint-disable-next-line no-console
+      console.error(errorMesssage)
     }
 
-    if (localOpts.additionalHints) {
-      hints.erc20s = [...hints.erc20s, ...localOpts.additionalHints]
+    // Please note 2 things:
+    // 1. Velcro hints data takes advantage over previous hints because, in most cases, Velcro data is more up-to-date than the previously cached hints.
+    // 2. There is only one use-case where the previous hints data is more recent, and that is when we find an NFT token via a pending simulation.
+    // In order to support it, we have to apply a complex deep merging algorithm (which may become problematic if the Velcro API changes)
+    // and also have to introduce an algorithm for self-cleaning outdated/previous NFT tokens.
+    // However, we have chosen to keep it as simple as possible and disregard this rare case.
+    if (localOpts.additionalErc721Hints) {
+      hints.erc721s = { ...localOpts.additionalErc721Hints, ...hints.erc721s }
+    }
+
+    if (localOpts.additionalErc20Hints) {
+      hints.erc20s = [...hints.erc20s, ...localOpts.additionalErc20Hints]
     }
 
     if (localOpts.fetchPinned) {
@@ -176,8 +200,20 @@ export class Portfolio {
       ...gasTankFeeTokens.filter((x) => x.networkId === this.network.id).map((x) => x.address)
     ]
 
+    const checksummedErc20Hints = hints.erc20s
+      .map((address) => {
+        try {
+          // getAddress may throw an error. This will break the portfolio
+          // if the error isn't caught
+          return getAddress(address)
+        } catch {
+          return null
+        }
+      })
+      .filter(Boolean) as string[]
+
     // Remove duplicates and always add ZeroAddress
-    hints.erc20s = [...new Set(hints.erc20s.map((erc20) => getAddress(erc20)).concat(ZeroAddress))]
+    hints.erc20s = [...new Set(checksummedErc20Hints.concat(ZeroAddress))]
 
     // This also allows getting prices, this is used for more exotic tokens that cannot be retrieved via Coingecko
     const priceCache: PriceCache = localOpts.priceCache || new Map()
@@ -278,6 +314,7 @@ export class Portfolio {
             // this is what to look for in the coingecko response object
             responseIdentifier: geckoResponseIdentifier(token.address, this.network)
           })
+
           priceIn = Object.entries(priceData || {}).map(([baseCurr, price]) => ({
             baseCurrency: baseCurr,
             price: price as number
@@ -319,14 +356,20 @@ export class Portfolio {
       priceUpdateTime: priceUpdateDone - oracleCallDone,
       priceCache,
       tokens: tokensWithPrices,
-      feeTokens: tokensWithPrices.filter((t) =>
-        gasTankFeeTokens.find(
-          (gasTankT) =>
-            t.address === ZeroAddress ||
-            (gasTankT.address.toLowerCase() === t.address.toLowerCase() &&
-              gasTankT.networkId.toLowerCase() === t.networkId.toLowerCase())
+      feeTokens: tokensWithPrices.filter((t) => {
+        // return the native token
+        if (
+          t.address === ZeroAddress &&
+          t.networkId.toLowerCase() === this.network.id.toLowerCase()
         )
-      ),
+          return true
+
+        return gasTankFeeTokens.find(
+          (gasTankT) =>
+            gasTankT.address.toLowerCase() === t.address.toLowerCase() &&
+            gasTankT.networkId.toLowerCase() === t.networkId.toLowerCase()
+        )
+      }),
       beforeNonce,
       afterNonce,
       blockNumber,

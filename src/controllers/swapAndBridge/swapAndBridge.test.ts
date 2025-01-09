@@ -116,8 +116,13 @@ describe('SwapAndBridge Controller', () => {
     let emitCounter = 0
     const unsubscribe = swapAndBridgeController.onUpdate(async () => {
       emitCounter++
-      if (emitCounter === 3) {
+      if (emitCounter === 4) {
         expect(swapAndBridgeController.toTokenList).toHaveLength(3)
+        expect(swapAndBridgeController.toTokenList).not.toContainEqual(
+          expect.objectContaining({
+            address: swapAndBridgeController.fromSelectedToken?.address
+          })
+        )
         expect(swapAndBridgeController.toSelectedToken).toBeNull()
         unsubscribe()
         done()
@@ -144,6 +149,15 @@ describe('SwapAndBridge Controller', () => {
         networkId: 'base',
         priceIn: [{ baseCurrency: 'usd', price: 64325 }],
         symbol: 'cbBTC'
+      },
+      {
+        address: '0x0000000000000000000000000000000000000000',
+        amount: 11756728636013018n,
+        decimals: 8,
+        flags: { onGasTank: false, rewardsType: null, isFeeToken: true, canTopUpGasTank: true },
+        networkId: 'optimism',
+        priceIn: [{ baseCurrency: 'usd', price: 3660.27 }],
+        symbol: 'ETH'
       }
     ])
     expect(swapAndBridgeController.fromSelectedToken).not.toBeNull()
@@ -180,7 +194,7 @@ describe('SwapAndBridge Controller', () => {
     let emitCounter = 0
     const unsubscribe = swapAndBridgeController.onUpdate(async () => {
       emitCounter++
-      if (emitCounter === 3) {
+      if (emitCounter === 4) {
         expect(swapAndBridgeController.formStatus).toEqual('ready-to-submit')
         expect(swapAndBridgeController.quote).not.toBeNull()
         unsubscribe()
@@ -190,7 +204,7 @@ describe('SwapAndBridge Controller', () => {
         expect(swapAndBridgeController.formStatus).toEqual('fetching-routes')
       }
     })
-    swapAndBridgeController.updateForm({ fromAmount: '0.02' })
+    swapAndBridgeController.updateForm({ fromAmount: '0.8' })
   })
   test('should switch from and to tokens', async () => {
     const prevFromChainId = swapAndBridgeController.fromChainId
@@ -214,7 +228,7 @@ describe('SwapAndBridge Controller', () => {
     let emitCounter = 0
     const unsubscribe = swapAndBridgeController.onUpdate(async () => {
       emitCounter++
-      if (emitCounter === 3) {
+      if (emitCounter === 4) {
         expect(swapAndBridgeController.formStatus).toEqual('ready-to-submit')
         expect(swapAndBridgeController.quote).not.toBeNull()
         unsubscribe()
@@ -243,11 +257,11 @@ describe('SwapAndBridge Controller', () => {
   })
   test('should update an activeRoute', async () => {
     const activeRouteId = swapAndBridgeController.activeRoutes[0].activeRouteId
-    await swapAndBridgeController.updateActiveRoute(activeRouteId, {
+    swapAndBridgeController.updateActiveRoute(activeRouteId, {
       routeStatus: 'in-progress',
       userTxHash: 'test'
     })
-    await swapAndBridgeController.updateActiveRoute(activeRouteId) // for the coverage
+    swapAndBridgeController.updateActiveRoute(activeRouteId) // for the coverage
     expect(swapAndBridgeController.activeRoutes).toHaveLength(1)
     expect(swapAndBridgeController.activeRoutes[0].routeStatus).toEqual('in-progress')
     expect(swapAndBridgeController.banners).toHaveLength(1)
@@ -256,7 +270,7 @@ describe('SwapAndBridge Controller', () => {
   test('should check for route status', async () => {
     await swapAndBridgeController.checkForNextUserTxForActiveRoutes()
     expect(swapAndBridgeController.activeRoutes[0].routeStatus).toEqual('ready')
-    await swapAndBridgeController.updateActiveRoute(
+    swapAndBridgeController.updateActiveRoute(
       swapAndBridgeController.activeRoutes[0].activeRouteId,
       {
         routeStatus: 'in-progress',

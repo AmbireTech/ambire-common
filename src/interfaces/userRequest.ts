@@ -1,6 +1,7 @@
 import { SignMessageAction } from 'controllers/actions/actions'
 import { TypedDataDomain, TypedDataField } from 'ethers'
 
+import { PaymasterService } from '../libs/erc7677/types'
 import { AccountId } from './account'
 import { DappProviderRequest } from './dapp'
 import { NetworkId } from './network'
@@ -43,6 +44,8 @@ export interface SignUserRequest {
     isSignAction: true
     accountAddr: AccountId
     networkId: NetworkId
+    paymasterService?: PaymasterService
+    isWalletSendCalls?: boolean
     [key: string]: any
   }
   // defined only when SignUserRequest is built from a DappRequest
@@ -56,7 +59,7 @@ export interface SignUserRequest {
 export interface DappUserRequest {
   id: string | number
   action: {
-    kind: Exclude<string, 'calls' | 'message' | 'typedMessage' | 'benzin'>
+    kind: Exclude<string, 'calls' | 'message' | 'typedMessage' | 'benzin' | 'switchAccount'>
     params: any
   }
   session: DappProviderRequest['session']

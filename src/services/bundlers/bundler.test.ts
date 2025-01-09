@@ -18,10 +18,10 @@ import { dedicatedToOneSAPriv } from '../../interfaces/keystore'
 import { Network } from '../../interfaces/network'
 import { getSmartAccount } from '../../libs/account/account'
 import { AccountOp, callToTuple, getSignableCalls } from '../../libs/accountOp/accountOp'
+import { getPaymasterDataForEstimate } from '../../libs/paymaster/paymaster'
 import { getTypedData, wrapStandard } from '../../libs/signMessage/signMessage'
 import {
   getActivatorCall,
-  getPaymasterDataForEstimate,
   getSigForCalculations,
   getUserOperation
 } from '../../libs/userOperation/userOperation'
@@ -32,6 +32,59 @@ const to = '0x706431177041C87BEb1C25Fa29b92057Cb3c7089'
 
 const addrWithDeploySignature = '0x52C37FD54BD02E9240e8558e28b11e0Dc22d8e85'
 const optimism = networks.find((net) => net.id === 'optimism')!
+const gnosis: Network = {
+  id: 'gnosis',
+  name: 'Gnosis',
+  nativeAssetSymbol: 'XDAI',
+  rpcUrls: ['https://invictus.ambire.com/gnosis'],
+  selectedRpcUrl: 'https://invictus.ambire.com/gnosis',
+  rpcNoStateOverride: true,
+  chainId: 100n,
+  explorerUrl: 'https://gnosisscan.io',
+  erc4337: {
+    enabled: false,
+    hasPaymaster: false,
+    hasBundlerSupport: true
+  },
+  isSAEnabled: true,
+  areContractsDeployed: true,
+  hasRelayer: true,
+  platformId: 'xdai',
+  nativeAssetId: 'xdai',
+  hasSingleton: true,
+  features: [],
+  feeOptions: {
+    is1559: true,
+    feeIncrease: 100n
+  },
+  predefined: false
+}
+const baseSepolia: Network = {
+  id: 'baseSepolia',
+  name: 'Base Sepolia',
+  nativeAssetSymbol: 'ETH',
+  rpcUrls: ['https://sepolia.base.org'],
+  selectedRpcUrl: 'https://sepolia.base.org',
+  rpcNoStateOverride: false,
+  chainId: 84532n,
+  explorerUrl: 'https://gnosisscan.io',
+  erc4337: {
+    enabled: true,
+    hasPaymaster: false,
+    hasBundlerSupport: true
+  },
+  isSAEnabled: true,
+  areContractsDeployed: true,
+  hasRelayer: false,
+  platformId: '',
+  nativeAssetId: '',
+  hasSingleton: true,
+  features: [],
+  feeOptions: {
+    is1559: true
+  },
+  predefined: false
+}
 
 const smartAccDeployed: Account = {
   addr: '0x8E5F6c1F0b134657A546932C3eC9169E1633a39b',
@@ -48,6 +101,27 @@ const smartAccDeployed: Account = {
     salt: '0x0000000000000000000000000000000000000000000000000000000000000000'
   },
   associatedKeys: ['0xBd84Cc40a5b5197B5B61919c22A55e1c46d2A3bb'],
+  preferences: {
+    label: DEFAULT_ACCOUNT_LABEL,
+    pfp: '0x8E5F6c1F0b134657A546932C3eC9169E1633a39b'
+  }
+}
+
+const smartAccDeployedOnGnosisButNo4337: Account = {
+  addr: '0xae376B42699fDB0D80e9ceE068A4f75ae6d70d85',
+  initialPrivileges: [
+    [
+      '0xD5Cdb05Df16FB0f84a02ebff3405f80e441d7D57',
+      '0x0000000000000000000000000000000000000000000000000000000000000002'
+    ]
+  ],
+  creation: {
+    factoryAddr: AMBIRE_ACCOUNT_FACTORY,
+    bytecode:
+      '0x7f00000000000000000000000000000000000000000000000000000000000000027fa85abbdf4f476f0727ae1450f282935c0d57708ae82c281b3fa758db2e21c89b553d602d80604d3d3981f3363d3d373d3d3d363d730f2aa7bcda3d9d210df69a394b6965cb2566c8285af43d82803e903d91602b57fd5bf3',
+    salt: '0x0000000000000000000000000000000000000000000000000000000000000000'
+  },
+  associatedKeys: ['0xD5Cdb05Df16FB0f84a02ebff3405f80e441d7D57'],
   preferences: {
     label: DEFAULT_ACCOUNT_LABEL,
     pfp: '0x8E5F6c1F0b134657A546932C3eC9169E1633a39b'
@@ -321,6 +395,92 @@ describe('Bundler tests', () => {
           'hex'
         ).toString()
         expect(buffer.indexOf('transfer amount exceeds balance')).not.toBe(-1)
+      }
+    })
+  })
+
+  describe('Estimation tests: gnosis/baseSepolia, deployed account with no erc-4337', () => {
+    test('should estimate successfully because of state override on base sepolia', async () => {
+      const opBaseSepolia: AccountOp = {
+        accountAddr: smartAccDeployedOnGnosisButNo4337.addr,
+        signingKeyAddr: smartAccDeployedOnGnosisButNo4337.associatedKeys[0],
+        signingKeyType: null,
+        gasLimit: null,
+        gasFeePayment: null,
+        networkId: 'baseSepolia',
+        nonce: 0n,
+        signature: '0x',
+        calls: [{ to, value: 1n, data: '0x' }],
+        accountOpToExecuteBefore: null
+      }
+      const usedNetworks = [baseSepolia]
+      const providers = {
+        [baseSepolia.id]: getRpcProvider(baseSepolia.rpcUrls, baseSepolia.chainId)
+      }
+      const accountStates = await getAccountsInfo(usedNetworks, providers, [
+        smartAccDeployedOnGnosisButNo4337
+      ])
+      const accountState = accountStates[opBaseSepolia.accountAddr][opBaseSepolia.networkId]
+      const userOp = getUserOperation(
+        smartAccDeployedOnGnosisButNo4337,
+        accountState,
+        opBaseSepolia
+      )
+      const ambireInterface = new Interface(AmbireAccount.abi)
+      userOp.callData = ambireInterface.encodeFunctionData('executeBySender', [
+        getSignableCalls(opBaseSepolia)
+      ])
+      const paymasterAndData = getPaymasterDataForEstimate()
+      userOp.paymaster = paymasterAndData.paymaster
+      userOp.paymasterData = paymasterAndData.paymasterData
+      userOp.signature = getSigForCalculations()
+      userOp.nonce = '0x0'
+
+      const bundlerEstimate = await Bundler.estimate(userOp, baseSepolia, true)
+      expect(bundlerEstimate).toHaveProperty('preVerificationGas')
+      expect(bundlerEstimate).toHaveProperty('verificationGasLimit')
+      expect(bundlerEstimate).toHaveProperty('callGasLimit')
+      expect(bundlerEstimate).toHaveProperty('paymasterVerificationGasLimit')
+      expect(bundlerEstimate).toHaveProperty('paymasterPostOpGasLimit')
+    })
+
+    test('should revert on gnosis as it does not support state override', async () => {
+      const opGnosis: AccountOp = {
+        accountAddr: smartAccDeployedOnGnosisButNo4337.addr,
+        signingKeyAddr: smartAccDeployedOnGnosisButNo4337.associatedKeys[0],
+        signingKeyType: null,
+        gasLimit: null,
+        gasFeePayment: null,
+        networkId: 'gnosis',
+        nonce: 0n,
+        signature: '0x',
+        calls: [{ to, value: 1n, data: '0x' }],
+        accountOpToExecuteBefore: null
+      }
+      const usedNetworks = [gnosis]
+      const providers = {
+        [gnosis.id]: getRpcProvider(gnosis.rpcUrls, gnosis.chainId)
+      }
+      const accountStates = await getAccountsInfo(usedNetworks, providers, [
+        smartAccDeployedOnGnosisButNo4337
+      ])
+      const accountState = accountStates[opGnosis.accountAddr][opGnosis.networkId]
+      const userOp = getUserOperation(smartAccDeployedOnGnosisButNo4337, accountState, opGnosis)
+      const ambireInterface = new Interface(AmbireAccount.abi)
+      userOp.callData = ambireInterface.encodeFunctionData('executeBySender', [
+        getSignableCalls(opGnosis)
+      ])
+      const paymasterAndData = getPaymasterDataForEstimate()
+      userOp.paymaster = paymasterAndData.paymaster
+      userOp.paymasterData = paymasterAndData.paymasterData
+      userOp.signature = getSigForCalculations()
+      userOp.nonce = '0x0'
+
+      try {
+        await Bundler.estimate(userOp, gnosis, true)
+        expect(true).toBe(false)
+      } catch (e: any) {
+        expect(e.message.includes('AA23 reverted validateUserOp: not from entryPoint')).not.toBe(-1)
       }
     })
   })

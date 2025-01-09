@@ -1,5 +1,6 @@
 import { AccountOpAction, Action } from '../../controllers/actions/actions'
 import { Account, AccountId } from '../../interfaces/account'
+import { DappProviderRequest } from '../../interfaces/dapp'
 import { Network, NetworkId } from '../../interfaces/network'
 import { Calls, SignUserRequest, UserRequest } from '../../interfaces/userRequest'
 import generateSpoofSig from '../../utils/generateSpoofSig'
@@ -28,6 +29,46 @@ export const batchCallsFromUserRequests = ({
     },
     []
   )
+}
+
+export const buildSwitchAccountUserRequest = ({
+  nextUserRequest,
+  selectedAccountAddr,
+  networkId,
+  session,
+  rejectUserRequest
+}: {
+  nextUserRequest: UserRequest
+  selectedAccountAddr: string
+  networkId: Network['id']
+  session: DappProviderRequest['session']
+  rejectUserRequest: (reason: string, userRequestId: string | number) => void
+}): UserRequest => {
+  const userRequestId = nextUserRequest.id
+
+  return {
+    id: Number(nextUserRequest.id) + 222, // Otherwise the ids will be the same
+    action: {
+      kind: 'switchAccount',
+      params: {
+        accountAddr: selectedAccountAddr,
+        switchToAccountAddr: nextUserRequest.meta.accountAddr,
+        nextRequestType: nextUserRequest.action.kind,
+        networkId
+      }
+    },
+    session,
+    meta: {
+      isSignAction: false
+    },
+    dappPromise: {
+      session,
+      resolve: () => {},
+      reject: () => {
+        rejectUserRequest('Switch account request rejected', userRequestId)
+      }
+    }
+  }
 }
 
 export const makeSmartAccountOpAction = ({
@@ -62,6 +103,17 @@ export const makeSmartAccountOpAction = ({
     return accountOpAction
   }
 
+  // find the user request with a paymaster service
+  const userReqWithPaymasterService = userRequests.find(
+    (req) =>
+      req.meta.accountAddr === account.addr &&
+      req.meta.networkId === networkId &&
+      req.meta.paymasterService
+  )
+  const paymasterService = userReqWithPaymasterService
+    ? userReqWithPaymasterService.meta.paymasterService
+    : undefined
+
   const accountOp: AccountOpAction['accountOp'] = {
     accountAddr: account.addr,
     networkId,
@@ -76,12 +128,12 @@ export const makeSmartAccountOpAction = ({
       accountAddr: account.addr,
       networkId,
       userRequests
-    })
-  }
-
-  if (entryPointAuthorizationSignature) {
-    accountOp.meta = {
-      entryPointAuthorization: adjustEntryPointAuthorization(entryPointAuthorizationSignature)
+    }),
+    meta: {
+      entryPointAuthorization: entryPointAuthorizationSignature
+        ? adjustEntryPointAuthorization(entryPointAuthorizationSignature)
+        : undefined,
+      paymasterService
     }
   }
 

@@ -1,3 +1,4 @@
+import { Paymaster } from '../paymaster/paymaster'
 import { TokenResult } from '../portfolio'
 
 export interface BundlerEstimateResult {
@@ -22,6 +23,7 @@ export interface Erc4337GasLimits {
   paymasterVerificationGasLimit: string
   paymasterPostOpGasLimit: string
   gasPrice: BundlerGasPrice
+  paymaster: Paymaster
 }
 
 export interface FeePaymentOption {

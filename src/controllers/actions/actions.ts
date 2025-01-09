@@ -6,7 +6,8 @@ import {
   Action,
   BenzinAction,
   DappRequestAction,
-  SignMessageAction
+  SignMessageAction,
+  SwitchAccountAction
 } from '../../interfaces/actions'
 import { NotificationManager } from '../../interfaces/notification'
 import { WindowManager } from '../../interfaces/window'
@@ -20,7 +21,14 @@ import EventEmitter from '../eventEmitter/eventEmitter'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 
 // TODO: Temporarily. Refactor imports across the codebase to ref /interfaces/actions instead.
-export type { Action, AccountOpAction, SignMessageAction, BenzinAction, DappRequestAction }
+export type {
+  SwitchAccountAction,
+  Action,
+  AccountOpAction,
+  SignMessageAction,
+  BenzinAction,
+  DappRequestAction
+}
 
 /**
  * The ActionsController is responsible for storing the converted userRequests
@@ -73,6 +81,9 @@ export class ActionsController extends EventEmitter {
       }
       if (a.type === 'benzin') {
         return a.userRequest.meta.accountAddr === this.#selectedAccount.account?.addr
+      }
+      if (a.type === 'switchAccount') {
+        return a.userRequest.meta.switchToAccountAddr !== this.#selectedAccount.account?.addr
       }
 
       return true
@@ -249,6 +260,11 @@ export class ActionsController extends EventEmitter {
     this.#windowManager.focus(this.actionWindow.id)
   }
 
+  closeActionWindow = () => {
+    if (!this.actionWindow.id) return
+    this.#windowManager.remove(this.actionWindow.id)
+  }
+
   setWindowLoaded() {
     if (!this.actionWindow.id) return
     this.actionWindow.loaded = true
@@ -273,6 +289,9 @@ export class ActionsController extends EventEmitter {
       }
       if (a.type === 'benzin') {
         return a.userRequest.meta.accountAddr !== address
+      }
+      if (a.type === 'switchAccount') {
+        return a.userRequest.meta.switchToAccountAddr !== address
       }
 
       return true

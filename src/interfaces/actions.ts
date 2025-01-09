@@ -1,5 +1,17 @@
 import { AccountOp } from '../libs/accountOp/accountOp'
+import { Account } from './account'
 import { DappUserRequest, SignUserRequest, UserRequest } from './userRequest'
+
+export type SwitchAccountAction = {
+  id: UserRequest['id']
+  type: 'switchAccount'
+  userRequest: {
+    meta: {
+      accountAddr: Account['addr']
+      switchToAccountAddr: Account['addr']
+    }
+  }
+}
 
 export type AccountOpAction = {
   id: SignUserRequest['id']
@@ -25,4 +37,9 @@ export type DappRequestAction = {
   userRequest: DappUserRequest
 }
 
-export type Action = AccountOpAction | SignMessageAction | BenzinAction | DappRequestAction
+export type Action =
+  | SwitchAccountAction
+  | AccountOpAction
+  | SignMessageAction
+  | BenzinAction
+  | DappRequestAction

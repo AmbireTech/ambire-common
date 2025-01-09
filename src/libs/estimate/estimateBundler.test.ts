@@ -1,15 +1,18 @@
 /* eslint-disable @typescript-eslint/no-floating-promises */
 
 import { parseEther } from 'ethers'
+import fetch from 'node-fetch'
 
 import { describe, expect, test } from '@jest/globals'
 
+import { relayerUrl } from '../../../test/config'
 import { getAccountsInfo } from '../../../test/helpers'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
 import { networks } from '../../consts/networks'
 import { Account } from '../../interfaces/account'
 import { dedicatedToOneSAPriv } from '../../interfaces/keystore'
+import { paymasterFactory } from '../../services/paymaster'
 import { getRpcProvider } from '../../services/provider'
 import { getSmartAccount } from '../account/account'
 import { AccountOp } from '../accountOp/accountOp'
@@ -40,6 +43,9 @@ const smartAccDeployed: Account = {
     pfp: '0x8E5F6c1F0b134657A546932C3eC9169E1633a39b'
   }
 }
+
+paymasterFactory.init(relayerUrl, fetch, () => {})
+const errorCallback = () => {}
 
 describe('Bundler estimation tests', () => {
   describe('Estimation tests: optimism, undeployed', () => {
@@ -93,7 +99,15 @@ describe('Bundler estimation tests', () => {
           }
         }
       ]
-      const result = await bundlerEstimate(smartAcc, accountStates, opOptimism, optimism, feeTokens)
+      const result = await bundlerEstimate(
+        smartAcc,
+        accountStates,
+        opOptimism,
+        optimism,
+        feeTokens,
+        providers[optimism.id],
+        errorCallback
+      )
 
       expect(result).toHaveProperty('erc4337GasLimits')
       expect(BigInt(result.erc4337GasLimits!.callGasLimit)).toBeGreaterThan(0n)
@@ -149,7 +163,9 @@ describe('Bundler estimation tests', () => {
         accountStates,
         opOptimism,
         optimism,
-        feeTokens
+        feeTokens,
+        providers[optimism.id],
+        errorCallback
       )
 
       expect(result).toHaveProperty('erc4337GasLimits')
