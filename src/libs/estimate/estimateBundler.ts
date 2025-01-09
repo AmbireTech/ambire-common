@@ -108,10 +108,12 @@ export async function bundlerEstimate(
       { feePaymentOptions }
     )
 
+  const initialBundler = switcher.getBundler()
   const userOp = getUserOperation(
     account,
     accountState,
     localOp,
+    initialBundler.getName(),
     !accountState.isDeployed ? op.meta!.entryPointAuthorization : undefined
   )
   // set the callData

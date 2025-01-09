@@ -8,7 +8,6 @@ import { Account } from '../../interfaces/account'
 import { Hex } from '../../interfaces/hex'
 import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
-import { getDefaultBundler } from '../../services/bundlers/getBundler'
 import { failedPaymasters } from '../../services/paymaster/FailedPaymasters'
 import { AccountOp } from '../accountOp/accountOp'
 import { Call } from '../accountOp/types'
@@ -235,7 +234,7 @@ export class Paymaster extends AbstractPaymaster {
         key: acc.associatedKeys[0],
         // eslint-disable-next-line no-underscore-dangle
         rpcUrl: this.provider!._getConnection().url,
-        bundler: getDefaultBundler(this.network as Network).getName()
+        bundler: userOp.bundler
       })
     })
   }

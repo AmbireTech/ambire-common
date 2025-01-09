@@ -1,3 +1,4 @@
+import { BUNDLER } from '../../consts/bundlers'
 import { Hex } from '../../interfaces/hex'
 import { GasSpeeds } from '../../services/bundlers/types'
 import { AbstractPaymaster } from '../paymaster/abstractPaymaster'
@@ -19,7 +20,7 @@ export interface Erc4337GasLimits {
   paymasterPostOpGasLimit: string
   gasPrice: GasSpeeds
   paymaster: AbstractPaymaster
-  bundler: string
+  bundler: BUNDLER
 }
 
 export interface FeePaymentOption {

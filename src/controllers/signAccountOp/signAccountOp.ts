@@ -1246,6 +1246,7 @@ export class SignAccountOpController extends EventEmitter {
           this.account,
           accountState,
           this.accountOp,
+          erc4337Estimation.bundler,
           !accountState.isDeployed ? this.accountOp.meta!.entryPointAuthorization : undefined
         )
         userOperation.preVerificationGas = erc4337Estimation.preVerificationGas
