@@ -11,6 +11,7 @@ import {
   IrMessage
 } from './interfaces'
 import { erc20Module, erc721Module, permit2Module } from './messageModules'
+import { ensMessageModule } from './messageModules/ensModule'
 import { entryPointModule } from './messageModules/entryPointModule'
 import { legendsMessageModule } from './messageModules/legendsModule'
 import OneInchModule from './modules/1Inch'
@@ -77,7 +78,8 @@ const humanizerTMModules = [
   erc721Module,
   permit2Module,
   entryPointModule,
-  legendsMessageModule
+  legendsMessageModule,
+  ensMessageModule
 ]
 
 const humanizeAccountOp = (_accountOp: AccountOp, options: HumanizerOptions): IrCall[] => {
