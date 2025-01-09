@@ -184,8 +184,7 @@ export abstract class Bundler {
       ape: {
         maxFeePerGas: addExtra(BigInt(results.ape.maxFeePerGas), 20n),
         maxPriorityFeePerGas: addExtra(BigInt(results.ape.maxPriorityFeePerGas), 20n)
-      },
-      bundler: this.getName()
+      }
     }
   }
 

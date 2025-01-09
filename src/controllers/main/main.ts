@@ -1,10 +1,12 @@
-import { ethErrors } from 'eth-rpc-errors'
 /* eslint-disable @typescript-eslint/brace-style */
+
+import { ethErrors } from 'eth-rpc-errors'
 import { getAddress, getBigInt, Interface, isAddress } from 'ethers'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json'
 import EmittableError from '../../classes/EmittableError'
+import { BUNDLER } from '../../consts/bundlers'
 import { ORIGINS_WHITELISTED_TO_ALL_ACCOUNTS } from '../../consts/dappCommunication'
 import { AMBIRE_ACCOUNT_FACTORY, SINGLETON } from '../../consts/deploy'
 import {
@@ -199,7 +201,7 @@ export class MainController extends EventEmitter {
   gasPrices: { [key: string]: GasRecommendation[] } = {}
 
   // network => BundlerGasPrice
-  bundlerGasPrices: { [key: string]: GasSpeeds } = {}
+  bundlerGasPrices: { [key: string]: { speeds: GasSpeeds; bundler: BUNDLER } } = {}
 
   accountOpsToBeConfirmed: { [key: string]: { [key: string]: AccountOp } } = {}
 
@@ -1822,13 +1824,13 @@ export class MainController extends EventEmitter {
       network,
       this.accounts.accountStates[accOp.accountAddr][accOp.networkId]
     )
+    const bundler = getSameBundlerAsEstimation(network, this.signAccountOp?.estimation)
     const bundlerFetch = async () => {
       if (!is4337) return null
       const errorCallback = (e: ErrorRef) => {
         if (!this.signAccountOp) return
         this.emitError(e)
       }
-      const bundler = getSameBundlerAsEstimation(network, this.signAccountOp?.estimation)
       return bundler.fetchGasPrices(network, errorCallback).catch((e) => {
         this.emitError({
           level: 'silent',
@@ -1850,7 +1852,8 @@ export class MainController extends EventEmitter {
     ])
 
     if (gasPriceData && gasPriceData.gasPrice) this.gasPrices[network.id] = gasPriceData.gasPrice
-    if (bundlerGas) this.bundlerGasPrices[network.id] = bundlerGas
+    if (bundlerGas)
+      this.bundlerGasPrices[network.id] = { speeds: bundlerGas, bundler: bundler.getName() }
 
     return {
       blockGasLimit: gasPriceData?.blockGasLimit

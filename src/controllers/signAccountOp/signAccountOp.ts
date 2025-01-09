@@ -11,6 +11,7 @@ import {
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import ERC20 from '../../../contracts/compiled/IERC20.json'
 import { FEE_COLLECTOR } from '../../consts/addresses'
+import { BUNDLER } from '../../consts/bundlers'
 import { SINGLETON } from '../../consts/deploy'
 /* eslint-disable no-restricted-syntax */
 import { ERRORS, RETRY_TO_INIT_ACCOUNT_OP_MSG } from '../../consts/signAccountOp/errorHandling'
@@ -473,7 +474,7 @@ export class SignAccountOpController extends EventEmitter {
     calls?: AccountOp['calls']
     gasUsedTooHighAgreed?: boolean
     rbfAccountOps?: { [key: string]: SubmittedAccountOp | null }
-    bundlerGasPrices?: GasSpeeds
+    bundlerGasPrices?: { speeds: GasSpeeds; bundler: BUNDLER }
     blockGasLimit?: bigint
   }) {
     // once the user commits to the things he sees on his screen,
@@ -543,7 +544,7 @@ export class SignAccountOpController extends EventEmitter {
       bundlerGasPrices &&
       bundlerGasPrices.bundler === this.estimation?.erc4337GasLimits.bundler
     ) {
-      this.estimation.erc4337GasLimits.gasPrice = bundlerGasPrices
+      this.estimation.erc4337GasLimits.gasPrice = bundlerGasPrices.speeds
     }
 
     if (

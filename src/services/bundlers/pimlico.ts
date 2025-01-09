@@ -16,7 +16,6 @@ export class Pimlico extends Bundler {
     prices.medium = prices.standard
     prices.ape = prices.fast
     delete prices.standard
-    prices.bundler = this.getName()
     return prices
   }
 

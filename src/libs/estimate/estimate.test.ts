@@ -885,7 +885,7 @@ describe('estimate', () => {
 
     expect(response.error).not.toBe(null)
     expect(response.error?.message).toBe(
-      'The transaction will fail because of a failure while validating the transaction.\nPlease try again or contact Ambire support for assistance.'
+      'The transaction will fail because it will revert onchain with reason unknown.\nPlease try again or contact Ambire support for assistance.'
     )
 
     expect(response.erc4337GasLimits).not.toBe(undefined)
@@ -1101,7 +1101,7 @@ describe('estimate', () => {
     )
     expect(response.error).not.toBe(null)
     expect(response.error?.message).toBe(
-      'The transaction will fail because of a failure while validating the transaction.\nPlease try again or contact Ambire support for assistance.'
+      'The transaction will fail because it will revert onchain with reason unknown.\nPlease try again or contact Ambire support for assistance.'
     )
   })
 
