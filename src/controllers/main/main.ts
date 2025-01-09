@@ -2346,8 +2346,8 @@ export class MainController extends EventEmitter {
 
       // broadcast through bundler's service
       let userOperationHash
+      const bundler = getBundlerByName(userOperation.bundler)
       try {
-        const bundler = getBundlerByName(userOperation.bundler)
         userOperationHash = await bundler.broadcast(userOperation, network)
       } catch (e: any) {
         return this.throwBroadcastAccountOp({
@@ -2367,7 +2367,8 @@ export class MainController extends EventEmitter {
         nonce: Number(userOperation.nonce),
         identifiedBy: {
           type: 'UserOperation',
-          identifier: userOperationHash
+          identifier: userOperationHash,
+          bundler: bundler.getName()
         }
       }
     }

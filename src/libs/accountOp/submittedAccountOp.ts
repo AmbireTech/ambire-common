@@ -1,3 +1,4 @@
+import { BUNDLER } from '../../consts/bundlers'
 import { Fetch } from '../../interfaces/fetch'
 import { Network } from '../../interfaces/network'
 import { getBundlerByName, getDefaultBundler } from '../../services/bundlers/getBundler'
@@ -31,7 +32,7 @@ import { AccountOp } from './accountOp'
 export type AccountOpIdentifiedBy = {
   type: 'Transaction' | 'UserOperation' | 'Relayer'
   identifier: string
-  bundler?: string
+  bundler?: BUNDLER
 }
 
 export interface SubmittedAccountOp extends AccountOp {
@@ -60,7 +61,7 @@ export function isIdentifiedByRelayer(identifiedBy: AccountOpIdentifiedBy): bool
 
 export function getDappIdentifier(op: SubmittedAccountOp) {
   let hash = `${op.identifiedBy.type}:${op.identifiedBy.identifier}`
-  if (op.asUserOperation?.bundler) hash = `${hash}:${op.asUserOperation.bundler}`
+  if (op.identifiedBy?.bundler) hash = `${hash}:${op.identifiedBy.bundler}`
   return hash
 }
 
@@ -80,12 +81,9 @@ export async function fetchTxnId(
   if (isIdentifiedByUserOpHash(identifiedBy)) {
     const userOpHash = identifiedBy.identifier
 
-    // if the op is passed, take the bundler from there
-    // otherwise, default
-    const bundler =
-      op && op.asUserOperation
-        ? getBundlerByName(op.asUserOperation.bundler)
-        : getDefaultBundler(network)
+    const bundler = identifiedBy.bundler
+      ? getBundlerByName(identifiedBy.bundler)
+      : getDefaultBundler(network)
 
     const [response, bundlerResult]: [any, any] = await Promise.all([
       fetchUserOp(userOpHash, fetchFn),
