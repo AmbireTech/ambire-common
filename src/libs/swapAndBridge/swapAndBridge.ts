@@ -16,7 +16,7 @@ import { SignUserRequest } from '../../interfaces/userRequest'
 import { isSmartAccount } from '../account/account'
 import { Call } from '../accountOp/types'
 import { TokenResult } from '../portfolio'
-import { getTokenDetails } from '../portfolio/token'
+import { calculateTokenBalance } from '../portfolio/helpers'
 
 export const sortTokenListResponse = (
   tokenListResponse: SocketAPIToken[],
@@ -32,8 +32,19 @@ export const sortTokenListResponse = (
 
     // If both are in the portfolio, sort by highest balance
     if (aInPortfolio && bInPortfolio) {
-      const aBalanceUSD = getTokenDetails(aInPortfolio).balanceUSD || 0
-      const bBalanceUSD = getTokenDetails(bInPortfolio).balanceUSD || 0
+      // Pending tokens go on top (exception)
+      const isAPending =
+        typeof aInPortfolio.amountPostSimulation === 'bigint' &&
+        aInPortfolio.amountPostSimulation !== BigInt(aInPortfolio.amount)
+      if (isAPending) return -1
+
+      const isBPending =
+        typeof bInPortfolio.amountPostSimulation === 'bigint' &&
+        bInPortfolio.amountPostSimulation !== BigInt(bInPortfolio.amount)
+      if (isBPending) return 1
+
+      const aBalanceUSD = calculateTokenBalance(aInPortfolio)
+      const bBalanceUSD = calculateTokenBalance(bInPortfolio)
 
       if (aBalanceUSD !== bBalanceUSD) return bBalanceUSD - aBalanceUSD
     }
@@ -45,8 +56,17 @@ export const sortTokenListResponse = (
 
 export const sortPortfolioTokenList = (accountPortfolioTokenList: TokenResult[]) => {
   return accountPortfolioTokenList.sort((a, b) => {
-    const aBalanceUSD = getTokenDetails(a).balanceUSD || 0
-    const bBalanceUSD = getTokenDetails(b).balanceUSD || 0
+    // Pending tokens go on top (exception)
+    const isAPending =
+      typeof a.amountPostSimulation === 'bigint' && a.amountPostSimulation !== BigInt(a.amount)
+    if (isAPending) return -1
+
+    const isBPending =
+      typeof b.amountPostSimulation === 'bigint' && b.amountPostSimulation !== BigInt(b.amount)
+    if (isBPending) return 1
+
+    const aBalanceUSD = calculateTokenBalance(a)
+    const bBalanceUSD = calculateTokenBalance(b)
 
     if (aBalanceUSD !== bBalanceUSD) return bBalanceUSD - aBalanceUSD
 

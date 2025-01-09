@@ -1,4 +1,4 @@
-import { Contract, ZeroAddress } from 'ethers'
+import { Contract, formatUnits, ZeroAddress } from 'ethers'
 
 import IERC20 from '../../../contracts/compiled/IERC20.json'
 import gasTankFeeTokens from '../../consts/gasTankFeeTokens'
@@ -115,6 +115,16 @@ export const shouldGetAdditionalPortfolio = (account: Account) => {
 // otherwise, the token.amount
 export const getTokenAmount = (token: TokenResult): bigint => {
   return typeof token.amountPostSimulation === 'bigint' ? token.amountPostSimulation : token.amount
+}
+
+export const calculateTokenBalance = (token: TokenResult) => {
+  const amount = getTokenAmount(token)
+  const { decimals, priceIn } = token
+  const balance = parseFloat(formatUnits(amount, decimals))
+  const price =
+    priceIn.find(({ baseCurrency }: { baseCurrency: string }) => baseCurrency === 'usd')?.price || 0
+
+  return balance * price
 }
 
 export const getTotal = (t: TokenResult[]) =>
