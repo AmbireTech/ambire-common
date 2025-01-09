@@ -21,14 +21,15 @@ const convertZeroAddressToNullAddressIfNeeded = (addr: string) =>
 const convertNullAddressToZeroAddressIfNeeded = (addr: string) =>
   addr === NULL_ADDRESS ? ZERO_ADDRESS : addr
 
+const normalizeIncomingSocketTokenAddress = (address: string) =>
+  // incoming token addresses from Socket are all lowercased
+  getAddress(
+    // native token addresses come as null address instead of the zero address
+    convertNullAddressToZeroAddressIfNeeded(address)
+  )
 export const normalizeIncomingSocketToken = (token: SocketAPIToken) => ({
   ...token,
-  address:
-    // incoming token addresses from Socket are all lowercased
-    getAddress(
-      // native token addresses come as null address instead of the zero address
-      convertNullAddressToZeroAddressIfNeeded(token.address)
-    )
+  address: normalizeIncomingSocketTokenAddress(token.address)
 })
 
 const normalizeOutgoingSocketTokenAddress = (address: string) =>
@@ -335,7 +336,18 @@ export class SocketAPI {
     if (!response.success) throw new Error('Failed to update route')
     await this.updateHealthIfNeeded()
 
-    return response.result
+    return {
+      ...response.result,
+      fromAsset: normalizeIncomingSocketToken(response.result.fromAsset),
+      fromAssetAddress: normalizeIncomingSocketTokenAddress(response.result.fromAssetAddress),
+      toAsset: normalizeIncomingSocketToken(response.result.toAsset),
+      toAssetAddress: normalizeIncomingSocketTokenAddress(response.result.toAssetAddress),
+      userTxs: response.result.userTxs.map((userTx) => ({
+        ...userTx,
+        fromAsset: userTx.fromAsset ? normalizeIncomingSocketToken(userTx.fromAsset) : undefined,
+        toAsset: normalizeIncomingSocketToken(userTx.toAsset)
+      }))
+    }
   }
 
   async getNextRouteUserTx(activeRouteId: SocketAPISendTransactionRequest['activeRouteId']) {
