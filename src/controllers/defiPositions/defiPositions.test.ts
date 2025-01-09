@@ -72,13 +72,18 @@ const prepareTest = async () => {
   await providersCtrl.initialLoadPromise
 
   await selectedAccountCtrl.setAccount(ACCOUNT)
-
-  return new DefiPositionsController({
+  const controller = new DefiPositionsController({
     fetch: global.fetch as any,
+    storage,
     selectedAccount: selectedAccountCtrl,
     providers: providersCtrl,
     networks: networksCtrl
   })
+
+  return {
+    controller,
+    storage
+  }
 }
 
 describe('DefiPositionsController', () => {
@@ -86,10 +91,11 @@ describe('DefiPositionsController', () => {
     jest.restoreAllMocks()
   })
   it('should update positions correctly', async () => {
-    const controller = await prepareTest()
+    const { controller } = await prepareTest()
 
     await controller.updatePositions()
     const selectedAccountState = controller.getDefiPositionsState(ACCOUNT.addr)
+    expect(selectedAccountState.polygon.updatedAt).toBeDefined()
     expect(selectedAccountState.polygon.positionsByProvider.length).toBeGreaterThan(0)
   })
 
@@ -107,7 +113,7 @@ describe('DefiPositionsController', () => {
           reject(new Error('Uniswap error'))
         })
     )
-    const controller = await prepareTest()
+    const { controller } = await prepareTest()
     await controller.updatePositions()
 
     const selectedAccountState = controller.getDefiPositionsState(ACCOUNT.addr)
@@ -120,7 +126,7 @@ describe('DefiPositionsController', () => {
   })
 
   it('should set asset prices correctly', async () => {
-    const controller = await prepareTest()
+    const { controller } = await prepareTest()
     await controller.updatePositions()
 
     const selectedAccountState = controller.getDefiPositionsState(ACCOUNT.addr)
@@ -146,7 +152,7 @@ describe('DefiPositionsController', () => {
       } as any)
     )
 
-    const controller = await prepareTest()
+    const { controller } = await prepareTest()
     await controller.updatePositions()
 
     const selectedAccountState = controller.getDefiPositionsState(ACCOUNT.addr)
@@ -163,6 +169,42 @@ describe('DefiPositionsController', () => {
         })
       })
     })
+
+    consoleSuppressor.restore()
+  })
+  it('should update networksWithPositionsByAccounts properly', async () => {
+    const { controller } = await prepareTest()
+
+    await controller.updatePositions()
+    const networksWithPositions = controller.getNetworksWithPositions(ACCOUNT.addr)
+
+    expect(networksWithPositions.polygon).toContain('AAVE v3')
+    expect(networksWithPositions.polygon).toContain('Uniswap V3')
+    expect(networksWithPositions.ethereum.length).toBe(0)
+  })
+  it('should handle provider error and empty state for networksWithPositionsByAccounts', async () => {
+    const consoleSuppressor = suppressConsole()
+
+    jest.spyOn(defiProviders, 'getAAVEPositions').mockImplementation(
+      () =>
+        new Promise((_, reject) => {
+          reject(new Error('AAVE error'))
+        })
+    )
+    const { controller } = await prepareTest()
+
+    await controller.updatePositions()
+    const accountState = controller.getDefiPositionsState(ACCOUNT.addr)
+
+    expect(accountState.ethereum.providerErrors!.length).toBeGreaterThan(0)
+    expect(accountState.polygon.providerErrors!.length).toBeGreaterThan(0)
+
+    const networksWithPositions = controller.getNetworksWithPositions(ACCOUNT.addr)
+
+    // Undefined because there is a provider has an error, so we
+    // can't be certain if the account has positions on that network
+    expect(networksWithPositions.polygon).toBeUndefined()
+    expect(networksWithPositions.ethereum).toBeUndefined()
 
     consoleSuppressor.restore()
   })
