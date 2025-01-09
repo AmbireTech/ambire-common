@@ -103,6 +103,17 @@ export const makeSmartAccountOpAction = ({
     return accountOpAction
   }
 
+  // find the user request with a paymaster service
+  const userReqWithPaymasterService = userRequests.find(
+    (req) =>
+      req.meta.accountAddr === account.addr &&
+      req.meta.networkId === networkId &&
+      req.meta.paymasterService
+  )
+  const paymasterService = userReqWithPaymasterService
+    ? userReqWithPaymasterService.meta.paymasterService
+    : undefined
+
   const accountOp: AccountOpAction['accountOp'] = {
     accountAddr: account.addr,
     networkId,
@@ -117,12 +128,12 @@ export const makeSmartAccountOpAction = ({
       accountAddr: account.addr,
       networkId,
       userRequests
-    })
-  }
-
-  if (entryPointAuthorizationSignature) {
-    accountOp.meta = {
-      entryPointAuthorization: adjustEntryPointAuthorization(entryPointAuthorizationSignature)
+    }),
+    meta: {
+      entryPointAuthorization: entryPointAuthorizationSignature
+        ? adjustEntryPointAuthorization(entryPointAuthorizationSignature)
+        : undefined,
+      paymasterService
     }
   }
 

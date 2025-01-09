@@ -20,10 +20,12 @@ import { airdropsModule } from './modules/Airdrops'
 import asciiModule from './modules/AsciiModule'
 import curveModule from './modules/Curve'
 import { deploymentModule } from './modules/Deployment'
+import { embeddedAmbireOperationHumanizer } from './modules/embeddedAmbireOperationHumanizer'
 import fallbackHumanizer from './modules/FallbackHumanizer'
 import gasTankModule from './modules/GasTankModule'
 import KyberSwap from './modules/KyberSwap'
 import legendsModule from './modules/Legends'
+import { LidoModule } from './modules/Lido'
 import { postProcessing } from './modules/PostProcessing/postProcessModule'
 import preProcessHumanizer from './modules/PreProcess'
 import privilegeHumanizer from './modules/Privileges'
@@ -40,9 +42,11 @@ import wrappingModule from './modules/Wrapping'
 // the final humanization is the final triggered module
 export const humanizerCallModules: HumanizerCallModule[] = [
   preProcessHumanizer,
+  embeddedAmbireOperationHumanizer,
   deploymentModule,
   genericErc721Humanizer,
   genericErc20Humanizer,
+  LidoModule,
   gasTankModule,
   airdropsModule,
   uniswapHumanizer,
@@ -86,6 +90,7 @@ const humanizeAccountOp = (_accountOp: AccountOp, options: HumanizerOptions): Ir
     try {
       currentCalls = hm(accountOp, currentCalls, humanizerInfo as HumanizerMeta, humanizerOptions)
     } catch (error) {
+      console.error(error)
       // No action is needed here; we only set `currentCalls` if the module successfully resolves the calls.
     }
   })
@@ -102,6 +107,7 @@ const humanizeMessage = (_message: Message): IrMessage => {
 
     return { ...message, fullVisualization, warnings }
   } catch (error) {
+    console.error(error)
     return message
   }
 }

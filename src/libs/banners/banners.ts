@@ -2,6 +2,7 @@ import { ShouldShowConfettiBanner } from 'libs/portfolio/interfaces'
 
 import { Account } from '../../interfaces/account'
 import { AccountOpAction, Action as ActionFromActionsQueue } from '../../interfaces/actions'
+// eslint-disable-next-line import/no-cycle
 import { Action, Banner } from '../../interfaces/banner'
 import { Network, NetworkId } from '../../interfaces/network'
 import { RPCProviders } from '../../interfaces/provider'
@@ -68,15 +69,20 @@ export const getBridgeBanners = (
     route.route.userTxs.some((t) => getIsBridgeTxn(t.userTxType))
   const isRouteTurnedIntoAccountOp = (route: ActiveRoute) => {
     return accountOpActions.some((action) => {
-      return action.accountOp.calls.some((call) => call.fromUserRequestId === route.activeRouteId)
+      return action.accountOp.calls.some(
+        (call) =>
+          call.fromUserRequestId === route.activeRouteId ||
+          call.fromUserRequestId === `${route.activeRouteId}-revoke-approval` ||
+          call.fromUserRequestId === `${route.activeRouteId}-approval`
+      )
     })
   }
 
   return activeRoutes
     .filter(isBridgeTxn)
     .filter((route) => {
+      if (route.routeStatus === 'failed') return false
       if (route.routeStatus !== 'ready') return true
-
       // If the route is ready to be signed, we should display the banner only if it's not turned into an account op
       // because when it does get turned into an account op, there will be a different banner for that
       return !isRouteTurnedIntoAccountOp(route)
@@ -84,7 +90,7 @@ export const getBridgeBanners = (
     .map((r) => {
       const actions: Action[] = []
 
-      if (r.routeStatus === 'in-progress') {
+      if (r.routeStatus === 'in-progress' || r.routeStatus === 'waiting-approval-to-resolve') {
         actions.push({
           label: 'Details',
           actionName: 'open-swap-and-bridge-tab'
@@ -427,11 +433,22 @@ export const getNetworksWithPortfolioErrorBanners = ({
     }
 
     portfolioForNetwork?.errors.forEach((err: any) => {
+      // If the error is not predefined(shouldn't happen) or it's a specific
+      // non-critical error, we shouldn't display a banner
+      if (
+        !Object.keys(PORTFOLIO_LIB_ERROR_NAMES).includes(err?.name) ||
+        err?.name === PORTFOLIO_LIB_ERROR_NAMES.NonCriticalApiHintsError
+      )
+        return
+
+      // Price errors are not critical, so we should display a warning banner
       if (err?.name === PORTFOLIO_LIB_ERROR_NAMES.PriceFetchError) {
         networkNamesWithPriceFetchError.push(networkName as string)
-      } else if (err?.name === PORTFOLIO_LIB_ERROR_NAMES.HintsError) {
-        networkNamesWithCriticalError.push(networkName as string)
+        return
       }
+
+      // For all other errors, we should display an error banner
+      networkNamesWithCriticalError.push(networkName as string)
     })
   })
 

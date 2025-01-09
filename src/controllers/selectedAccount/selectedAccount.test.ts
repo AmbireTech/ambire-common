@@ -18,9 +18,6 @@ import { PortfolioController } from '../portfolio/portfolio'
 import { ProvidersController } from '../providers/providers'
 import { DEFAULT_SELECTED_ACCOUNT_PORTFOLIO, SelectedAccountController } from './selectedAccount'
 
-// @ts-ignore
-global.structuredClone = structuredClone as any
-
 const providers = Object.fromEntries(
   networks.map((network) => [network.id, getRpcProvider(network.rpcUrls, network.chainId)])
 )

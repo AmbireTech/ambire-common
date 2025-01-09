@@ -526,6 +526,14 @@ export default [
     icon: 'https://assets.coingecko.com/coins/images/325/small/Tether-logo.png'
   },
   {
+    address: '0xcB444e90D8198415266c6a2724b7900fb12FC56E',
+    symbol: 'eure',
+    networkId: 'gnosis',
+    disableGasTankDeposit: true,
+    decimals: 18,
+    icon: 'https://assets.coingecko.com/coins/images/23354/standard/eur.png'
+  },
+  {
     address: '0x94b008aA00579c1307B0EF2c499aD98a8ce58e58',
     symbol: 'usdt',
     networkId: 'optimism',

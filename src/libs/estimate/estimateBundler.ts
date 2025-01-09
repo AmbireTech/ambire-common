@@ -3,19 +3,16 @@ import { Interface } from 'ethers'
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import { Account, AccountStates } from '../../interfaces/account'
 import { Network } from '../../interfaces/network'
+import { RPCProvider } from '../../interfaces/provider'
 import { Bundler } from '../../services/bundlers/bundler'
+import { paymasterFactory } from '../../services/paymaster'
 import { AccountOp, getSignableCallsForBundlerEstimate } from '../accountOp/accountOp'
-import { getFeeCall } from '../calls/calls'
+import { PaymasterEstimationData } from '../erc7677/types'
 import { getHumanReadableEstimationError } from '../errorHumanizer'
 import { TokenResult } from '../portfolio'
-import {
-  getPaymasterDataForEstimate,
-  getSigForCalculations,
-  getUserOperation,
-  shouldUsePaymaster
-} from '../userOperation/userOperation'
+import { getSigForCalculations, getUserOperation } from '../userOperation/userOperation'
 import { estimationErrorFormatted } from './errors'
-import { getFeeTokenForEstimate } from './estimateHelpers'
+import { estimateWithRetries } from './estimateWithRetries'
 import { EstimateResult, FeePaymentOption } from './interfaces'
 
 export async function bundlerEstimate(
@@ -23,7 +20,9 @@ export async function bundlerEstimate(
   accountStates: AccountStates,
   op: AccountOp,
   network: Network,
-  feeTokens: TokenResult[]
+  feeTokens: TokenResult[],
+  provider: RPCProvider,
+  errorCallback: Function
 ): Promise<EstimateResult> {
   // we pass an empty array of feePaymentOptions as they are built
   // in an upper level using the balances from Estimation.sol.
@@ -39,18 +38,16 @@ export async function bundlerEstimate(
       { feePaymentOptions }
     )
 
-  const usesPaymaster = shouldUsePaymaster(network)
-  if (usesPaymaster) {
-    const feeToken = getFeeTokenForEstimate(feeTokens, network)
-    if (feeToken) localOp.feeCall = getFeeCall(feeToken)
-  }
   const userOp = getUserOperation(
     account,
     accountState,
     localOp,
     !accountState.isDeployed ? op.meta!.entryPointAuthorization : undefined
   )
-  const gasPrice = await Bundler.fetchGasPrices(network).catch(
+  // set the callData
+  if (userOp.activatorCall) localOp.activatorCall = userOp.activatorCall
+
+  const gasPrice = await Bundler.fetchGasPrices(network, errorCallback).catch(
     () => new Error('Could not fetch gas prices, retrying...')
   )
   if (gasPrice instanceof Error) return estimationErrorFormatted(gasPrice, { feePaymentOptions })
@@ -64,57 +61,69 @@ export async function bundlerEstimate(
     userOp.maxFeePerGas = gasPrice.medium.maxFeePerGas
   }
 
-  // add fake data so simulation works
-  if (usesPaymaster) {
-    const paymasterUnpacked = getPaymasterDataForEstimate()
-    userOp.paymaster = paymasterUnpacked.paymaster
-    userOp.paymasterPostOpGasLimit = paymasterUnpacked.paymasterPostOpGasLimit
-    userOp.paymasterVerificationGasLimit = paymasterUnpacked.paymasterVerificationGasLimit
-    userOp.paymasterData = paymasterUnpacked.paymasterData
-  }
-
-  // set the callData
-  if (userOp.activatorCall) localOp.activatorCall = userOp.activatorCall
-
   const ambireAccount = new Interface(AmbireAccount.abi)
   const isEdgeCase = !accountState.isErc4337Enabled && accountState.isDeployed
+  userOp.signature = getSigForCalculations()
+
+  const paymaster = await paymasterFactory.create(op, userOp, network, provider)
+  localOp.feeCall = paymaster.getFeeCallForEstimation(feeTokens)
   userOp.callData = ambireAccount.encodeFunctionData('executeBySender', [
     getSignableCallsForBundlerEstimate(localOp)
   ])
-  userOp.signature = getSigForCalculations()
 
-  try {
-    const gasData = await Bundler.estimate(userOp, network, isEdgeCase)
+  if (paymaster.isUsable()) {
+    const paymasterEstimationData = paymaster.getEstimationData() as PaymasterEstimationData
+    userOp.paymaster = paymasterEstimationData.paymaster
+    userOp.paymasterData = paymasterEstimationData.paymasterData
 
-    return {
-      gasUsed: BigInt(gasData.callGasLimit),
-      currentAccountNonce: Number(op.nonce),
-      feePaymentOptions,
-      erc4337GasLimits: {
-        preVerificationGas: gasData.preVerificationGas,
-        verificationGasLimit: gasData.verificationGasLimit,
-        callGasLimit: gasData.callGasLimit,
-        paymasterVerificationGasLimit: gasData.paymasterVerificationGasLimit,
-        paymasterPostOpGasLimit: gasData.paymasterPostOpGasLimit,
-        gasPrice
-      },
-      error: null
-    }
-  } catch (e: any) {
-    const decodedError = Bundler.decodeBundlerError(e)
+    if (paymasterEstimationData.paymasterPostOpGasLimit)
+      userOp.paymasterPostOpGasLimit = paymasterEstimationData.paymasterPostOpGasLimit
 
-    const nonFatalErrors: Error[] = []
-    // if the bundler estimation fails, add a nonFatalError so we can react to
-    // it on the FE. The BE at a later stage decides if this error is actually
-    // fatal (at estimate.ts -> estimate4337)
-    nonFatalErrors.push(new Error('Bundler estimation failed', { cause: '4337_ESTIMATION' }))
+    if (paymasterEstimationData.paymasterVerificationGasLimit)
+      userOp.paymasterVerificationGasLimit = paymasterEstimationData.paymasterVerificationGasLimit
+  }
 
-    if (decodedError.indexOf('invalid account nonce') !== -1) {
-      nonFatalErrors.push(new Error('4337 invalid account nonce', { cause: '4337_INVALID_NONCE' }))
-    }
+  const nonFatalErrors: Error[] = []
+  const initializeRequests = () => [
+    Bundler.estimate(userOp, network, isEdgeCase).catch((e: any) => {
+      const decodedError = Bundler.decodeBundlerError(e)
 
-    const humanizedError = getHumanReadableEstimationError(e)
+      // if the bundler estimation fails, add a nonFatalError so we can react to
+      // it on the FE. The BE at a later stage decides if this error is actually
+      // fatal (at estimate.ts -> estimate4337)
+      nonFatalErrors.push(new Error('Bundler estimation failed', { cause: '4337_ESTIMATION' }))
 
-    return estimationErrorFormatted(humanizedError, { feePaymentOptions, nonFatalErrors })
+      if (decodedError.indexOf('invalid account nonce') !== -1) {
+        nonFatalErrors.push(
+          new Error('4337 invalid account nonce', { cause: '4337_INVALID_NONCE' })
+        )
+      }
+
+      return getHumanReadableEstimationError(e)
+    })
+  ]
+  const estimations = await estimateWithRetries(
+    initializeRequests,
+    'estimation-bundler',
+    errorCallback
+  )
+  if (estimations instanceof Error)
+    return estimationErrorFormatted(estimations, { feePaymentOptions, nonFatalErrors })
+
+  const gasData = estimations[0]
+  return {
+    gasUsed: BigInt(gasData.callGasLimit),
+    currentAccountNonce: Number(op.nonce),
+    feePaymentOptions,
+    erc4337GasLimits: {
+      preVerificationGas: gasData.preVerificationGas,
+      verificationGasLimit: gasData.verificationGasLimit,
+      callGasLimit: gasData.callGasLimit,
+      paymasterVerificationGasLimit: gasData.paymasterVerificationGasLimit,
+      paymasterPostOpGasLimit: gasData.paymasterPostOpGasLimit,
+      gasPrice,
+      paymaster
+    },
+    error: null
   }
 }

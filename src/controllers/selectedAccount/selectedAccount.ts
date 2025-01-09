@@ -151,6 +151,12 @@ export class SelectedAccountController extends EventEmitter {
       })
     })
 
+    this.#accounts.onUpdate(() => {
+      this.#debounceFunctionCallsOnSameTick('updateSelectedAccount', () => {
+        this.#updateSelectedAccount()
+      })
+    })
+
     this.areControllersInitialized = true
 
     this.emitUpdate()
@@ -168,6 +174,17 @@ export class SelectedAccountController extends EventEmitter {
     } else {
       await this.#storage.set('selectedAccount', account.addr)
     }
+
+    this.emitUpdate()
+  }
+
+  #updateSelectedAccount() {
+    if (!this.account) return
+
+    const updatedAccount = this.#accounts.accounts.find((a) => a.addr === this.account!.addr)
+    if (!updatedAccount) return
+
+    this.account = updatedAccount
 
     this.emitUpdate()
   }

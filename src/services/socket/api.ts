@@ -4,6 +4,7 @@ import { Fetch, RequestInitWithCustomHeaders } from '../../interfaces/fetch'
 import {
   SocketAPIQuote,
   SocketAPISendTransactionRequest,
+  SocketAPISupportedChain,
   SocketAPIToken
 } from '../../interfaces/swapAndBridge'
 import {
@@ -20,7 +21,7 @@ const convertZeroAddressToNullAddressIfNeeded = (addr: string) =>
 const convertNullAddressToZeroAddressIfNeeded = (addr: string) =>
   addr === NULL_ADDRESS ? ZERO_ADDRESS : addr
 
-const normalizeIncomingSocketToken = (token: SocketAPIToken) => ({
+export const normalizeIncomingSocketToken = (token: SocketAPIToken) => ({
   ...token,
   address:
     // incoming token addresses from Socket are all lowercased
@@ -81,6 +82,22 @@ export class SocketAPI {
     if (this.isHealthy) return
 
     await this.updateHealth()
+  }
+
+  async getSupportedChains(): Promise<SocketAPISupportedChain[]> {
+    const url = `${this.#baseUrl}/supported/chains`
+
+    let response = await this.#fetch(url, { headers: this.#headers })
+    const fallbackError = new Error(
+      'Unable to retrieve the list of supported Swap & Bridge chains from our service provider.'
+    )
+    if (!response.ok) throw fallbackError
+
+    response = await response.json()
+    if (!response.success) throw fallbackError
+    await this.updateHealthIfNeeded()
+
+    return response.result
   }
 
   async getToTokenList({

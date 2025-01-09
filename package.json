@@ -1,5 +1,5 @@
 {
-  "version": "2.32.0",
+  "version": "2.37.0",
   "name": "ambire-common",
   "description": "Common ground for the Ambire apps",
   "scripts": {
@@ -23,10 +23,10 @@
     "uuid": "9.0.0"
   },
   "peerDependencies": {
-    "@types/uuid": "9.0.0",
     "@ambire/signature-validator": "^1.0.3",
     "@ensdomains/eth-ens-namehash": "^2.0.15",
     "@ethersproject/abstract-signer": "^5.7.0",
+    "@types/uuid": "9.0.0",
     "@types/validator": "^13.7.0",
     "@unstoppabledomains/resolution": "^9.2.2",
     "@walletconnect/client": "^1.7.1",
@@ -37,10 +37,9 @@
     "validator": "^13.7.0"
   },
   "devDependencies": {
-    "@jest/globals": "^29.6.1",
-    "@ungap/structured-clone": "^1.2.0",
     "@borislav.itskov/schnorrkel.js": "2.0.85",
     "@ensdomains/dnsprovejs": "^0.4.1",
+    "@jest/globals": "^29.6.1",
     "@nomicfoundation/hardhat-chai-matchers": "^2.0.1",
     "@nomicfoundation/hardhat-ethers": "^3.0.0",
     "@nomicfoundation/hardhat-verify": "^2.0.11",

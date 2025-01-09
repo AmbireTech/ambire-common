@@ -2,6 +2,7 @@ import { Contract, getAddress, Interface, MaxUint256 } from 'ethers'
 
 import ERC20 from '../../../contracts/compiled/IERC20.json'
 import { Account } from '../../interfaces/account'
+import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
 import {
   ActiveRoute,
@@ -181,12 +182,14 @@ const buildSwapAndBridgeUserRequests = async (
           isSignAction: true,
           networkId,
           accountAddr: account.addr,
-          activeRouteId: userTx.activeRouteId
+          activeRouteId: userTx.activeRouteId,
+          isSwapAndBridgeCall: true
         }
       } as SignUserRequest
     ]
   }
   const requests: SignUserRequest[] = []
+  let shouldBuildSwapOrBridgeTx = true
   if (userTx.approvalData) {
     const erc20Interface = new Interface(ERC20.abi)
     let shouldApprove = true
@@ -217,8 +220,8 @@ const buildSwapAndBridgeUserRequests = async (
             isSignAction: true,
             networkId,
             accountAddr: account.addr,
-            activeRouteId: userTx.activeRouteId,
-            isApproval: true
+            isSwapAndBridgeCall: true,
+            activeRouteId: userTx.activeRouteId
           }
         } as SignUserRequest)
       }
@@ -242,39 +245,59 @@ const buildSwapAndBridgeUserRequests = async (
           isSignAction: true,
           networkId,
           accountAddr: account.addr,
-          activeRouteId: userTx.activeRouteId,
-          isApproval: true
+          isSwapAndBridgeCall: true,
+          activeRouteId: userTx.activeRouteId
         }
       } as SignUserRequest)
+      // first build only the approval tx and then when confirmed this func will be called a second time
+      // and then only the swap or bridge tx will be created
+      shouldBuildSwapOrBridgeTx = false
     }
   }
 
-  requests.push({
-    id: userTx.activeRouteId,
-    action: {
-      kind: 'calls' as const,
-      calls: [
-        {
-          to: userTx.txTarget,
-          value: BigInt(userTx.value),
-          data: userTx.txData,
-          fromUserRequestId: userTx.activeRouteId
-        } as Call
-      ]
-    },
-    meta: {
-      isSignAction: true,
-      networkId,
-      accountAddr: account.addr,
-      activeRouteId: userTx.activeRouteId
-    }
-  } as SignUserRequest)
-
+  if (shouldBuildSwapOrBridgeTx) {
+    requests.push({
+      id: userTx.activeRouteId,
+      action: {
+        kind: 'calls' as const,
+        calls: [
+          {
+            to: userTx.txTarget,
+            value: BigInt(userTx.value),
+            data: userTx.txData,
+            fromUserRequestId: userTx.activeRouteId
+          } as Call
+        ]
+      },
+      meta: {
+        isSignAction: true,
+        networkId,
+        accountAddr: account.addr,
+        isSwapAndBridgeCall: true,
+        activeRouteId: userTx.activeRouteId
+      }
+    } as SignUserRequest)
+  }
   return requests
 }
 
 export const getIsBridgeTxn = (userTxType: SocketAPIUserTx['userTxType']) =>
   userTxType === 'fund-movr'
+
+/**
+ * Checks if a network is supported by our Swap & Bridge service provider. As of v4.43.0
+ * there are 16 networks supported, so user could have (many) custom networks that are not.
+ */
+export const getIsNetworkSupported = (
+  supportedChainIds: Network['chainId'][],
+  network?: Network
+) => {
+  // Assume supported if missing (and receive no results when attempting to use
+  // a not-supported network) than the alternative - blocking the UI.
+  if (!supportedChainIds.length || !network) return true
+
+  return supportedChainIds.includes(network.chainId)
+}
 
 const getActiveRoutesForAccount = (accountAddress: string, activeRoutes: ActiveRoute[]) => {
   return activeRoutes.filter(

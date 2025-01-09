@@ -10,7 +10,7 @@ const networks: Network[] = [
     rpcNoStateOverride: false,
     chainId: 1n,
     explorerUrl: 'https://etherscan.io',
-    erc4337: { enabled: false, hasPaymaster: true },
+    erc4337: { enabled: false, hasPaymaster: true, hasBundlerSupport: true },
     isSAEnabled: true,
     areContractsDeployed: true,
     hasRelayer: true,
@@ -33,7 +33,7 @@ const networks: Network[] = [
     rpcNoStateOverride: false,
     chainId: 137n,
     explorerUrl: 'https://polygonscan.com',
-    erc4337: { enabled: false, hasPaymaster: true },
+    erc4337: { enabled: false, hasPaymaster: true, hasBundlerSupport: true },
     isSAEnabled: true,
     areContractsDeployed: true,
     hasRelayer: true,
@@ -45,6 +45,7 @@ const networks: Network[] = [
     predefined: true,
     wrappedAddr: '0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270',
     oldNativeAssetSymbols: ['MATIC'],
+    disableEstimateGas: true,
     allowForce4337: true
   },
   {
@@ -56,7 +57,7 @@ const networks: Network[] = [
     rpcNoStateOverride: false,
     chainId: 10n,
     explorerUrl: 'https://optimistic.etherscan.io',
-    erc4337: { enabled: true, hasPaymaster: true },
+    erc4337: { enabled: true, hasPaymaster: true, hasBundlerSupport: true },
     isSAEnabled: true,
     areContractsDeployed: true,
     hasRelayer: true,
@@ -71,6 +72,7 @@ const networks: Network[] = [
     },
     isOptimistic: true,
     predefined: true,
+    disableEstimateGas: true,
     wrappedAddr: '0x4200000000000000000000000000000000000006'
   },
   {
@@ -82,7 +84,7 @@ const networks: Network[] = [
     rpcNoStateOverride: false,
     chainId: 43114n,
     explorerUrl: 'https://snowtrace.io',
-    erc4337: { enabled: true, hasPaymaster: true },
+    erc4337: { enabled: true, hasPaymaster: true, hasBundlerSupport: true },
     isSAEnabled: true,
     areContractsDeployed: true,
     hasRelayer: true,
@@ -95,6 +97,7 @@ const networks: Network[] = [
       minBaseFee: 25000000000n // 25 gwei
     },
     predefined: true,
+    disableEstimateGas: true,
     wrappedAddr: '0xb31f66aa3c1e785363f0875a1b74e27b85fd66c7'
   },
   {
@@ -108,7 +111,8 @@ const networks: Network[] = [
     explorerUrl: 'https://arbiscan.io',
     erc4337: {
       enabled: true,
-      hasPaymaster: true
+      hasPaymaster: true,
+      hasBundlerSupport: true
     },
     isSAEnabled: true,
     areContractsDeployed: true,
@@ -135,7 +139,8 @@ const networks: Network[] = [
     explorerUrl: 'https://basescan.org',
     erc4337: {
       enabled: true,
-      hasPaymaster: true
+      hasPaymaster: true,
+      hasBundlerSupport: true
     },
     isSAEnabled: true,
     areContractsDeployed: true,
@@ -150,6 +155,7 @@ const networks: Network[] = [
       minBaseFeeEqualToLastBlock: true
     },
     predefined: true,
+    disableEstimateGas: true,
     wrappedAddr: '0x4200000000000000000000000000000000000006'
   },
   {
@@ -161,7 +167,7 @@ const networks: Network[] = [
     rpcNoStateOverride: false,
     chainId: 534352n,
     explorerUrl: 'https://scrollscan.com',
-    erc4337: { enabled: false, hasPaymaster: false },
+    erc4337: { enabled: false, hasPaymaster: true, hasBundlerSupport: true },
     isSAEnabled: true,
     areContractsDeployed: true,
     hasRelayer: true,
@@ -171,33 +177,9 @@ const networks: Network[] = [
     features: [],
     feeOptions: { is1559: false },
     predefined: true,
-    wrappedAddr: '0x5300000000000000000000000000000000000004'
-  },
-  {
-    id: 'gnosis',
-    name: 'Gnosis',
-    nativeAssetSymbol: 'XDAI',
-    rpcUrls: ['https://invictus.ambire.com/gnosis'],
-    selectedRpcUrl: 'https://invictus.ambire.com/gnosis',
-    rpcNoStateOverride: true,
-    chainId: 100n,
-    explorerUrl: 'https://gnosisscan.io',
-    erc4337: {
-      enabled: false,
-      hasPaymaster: false
-    },
-    isSAEnabled: true,
-    areContractsDeployed: true,
-    hasRelayer: true,
-    platformId: 'xdai',
-    nativeAssetId: 'xdai',
-    hasSingleton: true,
-    features: [],
-    feeOptions: {
-      is1559: true,
-      feeIncrease: 100n
-    },
-    predefined: true
+    disableEstimateGas: true,
+    wrappedAddr: '0x5300000000000000000000000000000000000004',
+    allowForce4337: true
   }
 ]
 export { networks }

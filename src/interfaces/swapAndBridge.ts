@@ -43,6 +43,7 @@ export interface SocketAPIRoute {
   chainGasBalances: object
   minimumGasBalances: object
   extraData: object
+  errorMessage?: string
 }
 
 export interface SocketAPISwapUserTx {
@@ -182,13 +183,39 @@ export type ActiveRoute = {
     updatedAt: string
     routeStatus: string
     fromChainId: number
+    toChainId: number
     currentUserTxIndex: number
     transactionData: { txHash: string }[] | null
     userAddress: string
   }
-  routeStatus: 'in-progress' | 'ready' | 'completed'
+  routeStatus: 'waiting-approval-to-resolve' | 'in-progress' | 'ready' | 'completed' | 'failed'
   error?: string
 }
+
+export type SocketAPISupportedChain = {
+  chainId: number
+  name: string
+  isL1: boolean
+  sendingEnabled: boolean
+  icon: string
+  receivingEnabled: boolean
+  refuel: {
+    sendingEnabled: boolean
+    receivingEnabled: boolean
+  }
+  currency: {
+    address: SocketAPIToken['address']
+    icon: SocketAPIToken['icon']
+    name: SocketAPIToken['name']
+    symbol: SocketAPIToken['symbol']
+    decimals: SocketAPIToken['decimals']
+    minNativeCurrencyForGas: string
+  }
+  rpcs: string[]
+  explorers: string[]
+}
+
+export type CachedSupportedChains = { lastFetched: number; data: SocketAPISupportedChain[] }
 
 type StringifiedChainId = string
 export type CachedTokenListKey = `from-${StringifiedChainId}-to-${StringifiedChainId}`

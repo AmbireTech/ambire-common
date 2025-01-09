@@ -1,4 +1,4 @@
-import { isAddress, isHexString, toUtf8Bytes, toUtf8String, ZeroAddress } from 'ethers'
+import { isHexString, toUtf8Bytes, toUtf8String } from 'ethers'
 
 import { Message } from '../../../interfaces/userRequest'
 import { HumanizerTypedMessageModule } from '../interfaces'
@@ -11,16 +11,18 @@ export const legendsMessageModule: HumanizerTypedMessageModule = (message: Messa
   if (isHexString(message.content.message) && message.content.message.length % 2 === 0) {
     messageAsText = toUtf8String(toUtf8Bytes(message.content.message))
   }
+  const messageRegex = /Assign 0x[a-fA-F0-9]{40} to Ambire Legends 0x[a-fA-F0-9]{40}/
+  const addressRegex = /0x[a-fA-F0-9]{40}/g
   if (
-    messageAsText.startsWith('Assign to Ambire Legends') &&
-    messageAsText.length === `Assign to Ambire Legends ${ZeroAddress}`.length &&
-    isAddress(messageAsText.slice('Assign to Ambire Legends '.length))
+    messageAsText.match(messageRegex) &&
+    messageAsText.match(addressRegex)![0] === message.accountAddr
   )
     return {
       fullVisualization: [
-        getAction('Agree to link this account'),
+        getAction('Link'),
+        getAddressVisualization(messageAsText.match(addressRegex)![0]),
         getLabel('to'),
-        getAddressVisualization(messageAsText.slice('Assign to Ambire Legends '.length)),
+        getAddressVisualization(messageAsText.match(addressRegex)![1]),
         getLabel('for Ambire Legends', true)
       ]
     }

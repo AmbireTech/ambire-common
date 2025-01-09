@@ -1,5 +1,8 @@
 export async function estimateWithRetries(
   fetchRequests: Function,
+  timeoutType: string,
+  errorCallback: Function,
+  timeoutInMill: number = 10000,
   counter: number = 0
 ): Promise<any> {
   // stop the execution on 5 fails;
@@ -13,17 +16,52 @@ export async function estimateWithRetries(
   const estimationTimeout = new Promise((resolve) => {
     setTimeout(() => {
       resolve(santinelTimeoutErr)
-    }, 15000)
+    }, timeoutInMill)
   })
 
-  // try to estimate the request with a given timeout.
-  // if the request reaches the timeout, it cancels it and retries
   let result = await Promise.race([Promise.all(fetchRequests()), estimationTimeout])
 
   // retry on a timeout
   if (result === santinelTimeoutErr) {
     const incremented = counter + 1
-    result = await estimateWithRetries(fetchRequests, incremented)
+
+    // display a timeout error only on the first try
+
+    switch (timeoutType) {
+      case 'estimation-deployless':
+        errorCallback({
+          level: 'major',
+          message: 'Estimating gas limits from the RPC timed out. Retrying...',
+          error: new Error('Estimation.sol deployless timeout')
+        })
+        break
+
+      case 'estimation-bundler':
+        errorCallback({
+          level: 'major',
+          message: 'Estimating gas limits from the bundler timed out. Retrying...',
+          error: new Error('Budler gas limit estimation timeout')
+        })
+        break
+      case 'estimation-eoa':
+        errorCallback({
+          level: 'major',
+          message: 'Estimating gas limits for Basic Account from the RPC timed out. Retrying...',
+          error: new Error('Budler gas limit estimation timeout')
+        })
+        break
+
+      default:
+        break
+    }
+
+    result = await estimateWithRetries(
+      fetchRequests,
+      timeoutType,
+      errorCallback,
+      timeoutInMill,
+      incremented
+    )
   } else {
     // if one of the calls returns an error, return it
     const error = Array.isArray(result) ? result.find((res) => res instanceof Error) : null
