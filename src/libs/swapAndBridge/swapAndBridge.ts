@@ -16,7 +16,7 @@ import { SignUserRequest } from '../../interfaces/userRequest'
 import { isSmartAccount } from '../account/account'
 import { Call } from '../accountOp/types'
 import { TokenResult } from '../portfolio'
-import { calculateTokenBalance } from '../portfolio/helpers'
+import { getTokenBalanceInUSD } from '../portfolio/helpers'
 
 export const sortTokenListResponse = (
   tokenListResponse: SocketAPIToken[],
@@ -43,8 +43,8 @@ export const sortTokenListResponse = (
         bInPortfolio.amountPostSimulation !== BigInt(bInPortfolio.amount)
       if (isBPending) return 1
 
-      const aBalanceUSD = calculateTokenBalance(aInPortfolio)
-      const bBalanceUSD = calculateTokenBalance(bInPortfolio)
+      const aBalanceUSD = getTokenBalanceInUSD(aInPortfolio)
+      const bBalanceUSD = getTokenBalanceInUSD(bInPortfolio)
 
       if (aBalanceUSD !== bBalanceUSD) return bBalanceUSD - aBalanceUSD
     }
@@ -65,8 +65,8 @@ export const sortPortfolioTokenList = (accountPortfolioTokenList: TokenResult[])
       typeof b.amountPostSimulation === 'bigint' && b.amountPostSimulation !== BigInt(b.amount)
     if (isBPending) return 1
 
-    const aBalanceUSD = calculateTokenBalance(a)
-    const bBalanceUSD = calculateTokenBalance(b)
+    const aBalanceUSD = getTokenBalanceInUSD(a)
+    const bBalanceUSD = getTokenBalanceInUSD(b)
 
     if (aBalanceUSD !== bBalanceUSD) return bBalanceUSD - aBalanceUSD
 

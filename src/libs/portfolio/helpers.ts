@@ -117,7 +117,7 @@ export const getTokenAmount = (token: TokenResult): bigint => {
   return typeof token.amountPostSimulation === 'bigint' ? token.amountPostSimulation : token.amount
 }
 
-export const calculateTokenBalance = (token: TokenResult) => {
+export const getTokenBalanceInUSD = (token: TokenResult) => {
   const amount = getTokenAmount(token)
   const { decimals, priceIn } = token
   const balance = parseFloat(formatUnits(amount, decimals))
