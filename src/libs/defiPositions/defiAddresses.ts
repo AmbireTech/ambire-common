@@ -14,6 +14,9 @@ export const AAVE_V3 = {
   },
   polygon: {
     poolAddr: '0x794a61358D6845594F94dc1DB02A252b5b4814aD'
+  },
+  scroll: {
+    poolAddr: '0x11fCfe756c05AD438e312a7fd934381537D3cFfe'
   }
 }
 
