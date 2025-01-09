@@ -127,14 +127,6 @@ export const getTokenBalanceInUSD = (token: TokenResult) => {
   return balance * price
 }
 
-export const getTokenValue = (token: TokenResult): number => {
-  if (!token.priceIn || !token.priceIn.length) return 0
-
-  const tokenAmount = Number(formatUnits(getTokenAmount(token), token.decimals))
-
-  return tokenAmount * token.priceIn[0].price
-}
-
 export const getTotal = (t: TokenResult[], excludeHiddenTokens: boolean = true) =>
   t.reduce((cur: { [key: string]: number }, token: TokenResult) => {
     const localCur = cur // Add index signature to the type of localCur
@@ -157,7 +149,7 @@ export const addHiddenTokenValueToTotal = (
   return tokens.reduce((cur: number, token: TokenResult) => {
     if (!token.isHidden) return cur
 
-    return cur + getTokenValue(token)
+    return cur + getTokenBalanceInUSD(token)
   }, totalWithoutHiddenTokens)
 }
 
