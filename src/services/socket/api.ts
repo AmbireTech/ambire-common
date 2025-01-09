@@ -345,7 +345,14 @@ export class SocketAPI {
       userTxs: response.result.userTxs.map((userTx) => ({
         ...userTx,
         fromAsset: userTx.fromAsset ? normalizeIncomingSocketToken(userTx.fromAsset) : undefined,
-        toAsset: normalizeIncomingSocketToken(userTx.toAsset)
+        toAsset: normalizeIncomingSocketToken(userTx.toAsset),
+        steps: userTx.steps
+          ? userTx.steps.map((step) => ({
+              ...step,
+              fromAsset: normalizeIncomingSocketToken(step.fromAsset),
+              toAsset: normalizeIncomingSocketToken(step.toAsset)
+            }))
+          : undefined
       }))
     }
   }
