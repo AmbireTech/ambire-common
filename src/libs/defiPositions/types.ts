@@ -1,4 +1,4 @@
-import { Network } from '../../interfaces/network'
+import { Network, NetworkId } from '../../interfaces/network'
 import { Price } from '../portfolio'
 
 export enum AssetType {
@@ -11,6 +11,8 @@ export enum DeFiPositionsError {
   AssetPriceError = 'AssetPriceError',
   CriticalError = 'CriticalError'
 }
+
+export type ProviderName = 'AAVE v3' | 'Uniswap V3'
 
 export interface PositionAsset {
   address: string
@@ -39,7 +41,7 @@ export interface AccountState {
 }
 
 export interface ProviderError {
-  providerName: string
+  providerName: ProviderName
   error: string
 }
 
@@ -51,8 +53,16 @@ export interface NetworkState {
   providerErrors?: ProviderError[]
 }
 
-export interface PositionsByProvider {
-  providerName: string
+export type NetworksWithPositions = {
+  [networkId: NetworkId]: ProviderName[]
+}
+
+export type NetworksWithPositionsByAccounts = {
+  [accountId: string]: NetworksWithPositions
+}
+
+export type PositionsByProvider = {
+  providerName: ProviderName
   networkId: Network['id']
   type: 'lending' | 'liquidity-pool'
   positions: Position[]

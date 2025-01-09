@@ -82,6 +82,10 @@ export interface ExtendedError extends Error {
   simulationErrorMsg?: string
 }
 
+type ExtendedErrorWithLevel = ExtendedError & {
+  level: 'critical' | 'warning' | 'silent'
+}
+
 export interface PortfolioLibGetResult {
   updateStarted: number
   discoveryTime: number
@@ -93,7 +97,7 @@ export interface PortfolioLibGetResult {
   tokenErrors: { error: string; address: string }[]
   collections: CollectionResult[]
   hintsFromExternalAPI: StrippedExternalHintsAPIResponse | null
-  errors: ExtendedError[]
+  errors: ExtendedErrorWithLevel[]
   blockNumber: number
   beforeNonce: bigint
   afterNonce: bigint
@@ -126,6 +130,7 @@ export type AddrVestingData = {
 // Create the final type with some properties optional
 export type AdditionalPortfolioNetworkResult = Partial<PortfolioLibGetResult> &
   Pick<PortfolioLibGetResult, AdditionalPortfolioProperties> & {
+    lastSuccessfulUpdate: number
     total: Total
     claimableRewardsData?: ClaimableRewardsData
     addrVestingData?: AddrVestingData
@@ -137,7 +142,7 @@ export type NetworkState = {
   isReady: boolean
   isLoading: boolean
   criticalError?: ExtendedError
-  errors: ExtendedError[]
+  errors: ExtendedErrorWithLevel[]
   result?: PortfolioNetworkResult | AdditionalPortfolioNetworkResult
   // We store the previously simulated AccountOps only for the pending state.
   // Prior to triggering a pending state update, we compare the newly passed AccountOp[] (updateSelectedAccount) with the cached version.

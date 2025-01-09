@@ -33,7 +33,6 @@ import {
   TemporaryTokens,
   TokenResult
 } from '../../libs/portfolio/interfaces'
-import { PORTFOLIO_LIB_ERROR_NAMES } from '../../libs/portfolio/portfolio'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { AccountsController } from '../accounts/accounts'
 import EventEmitter from '../eventEmitter/eventEmitter'
@@ -364,6 +363,7 @@ export class PortfolioController extends EventEmitter {
       errors: [],
       result: {
         ...res.data.rewards,
+        lastSuccessfulUpdate: Date.now(),
         updateStarted: start,
         tokens: rewardsTokens,
         total: getTotal(rewardsTokens)
@@ -392,6 +392,7 @@ export class PortfolioController extends EventEmitter {
       errors: [],
       result: {
         updateStarted: start,
+        lastSuccessfulUpdate: Date.now(),
         tokens: [...gasTankTokens],
         total: getTotal(gasTankTokens)
       }
@@ -401,11 +402,7 @@ export class PortfolioController extends EventEmitter {
   }
 
   #getCanSkipUpdate(networkState?: NetworkState, forceUpdate?: boolean) {
-    const hasImportantErrors = networkState?.errors.some(
-      (e) =>
-        Object.keys(PORTFOLIO_LIB_ERROR_NAMES).includes(e.name) &&
-        e.name !== PORTFOLIO_LIB_ERROR_NAMES.PriceFetchError
-    )
+    const hasImportantErrors = networkState?.errors.some((e) => e.level === 'critical')
 
     if (forceUpdate || !networkState || networkState.criticalError || hasImportantErrors)
       return false
@@ -456,7 +453,18 @@ export class PortfolioController extends EventEmitter {
         ...portfolioProps
       })
 
+      const hasCriticalError = result.errors.some((e) => e.level === 'critical')
       const additionalHintsErc20Hints = portfolioProps.additionalErc20Hints || []
+      let lastSuccessfulUpdate = accountState[network.id]?.result?.lastSuccessfulUpdate || 0
+
+      // Reset lastSuccessfulUpdate on forceUpdate in case of critical errors as the user
+      // is likely expecting a change in the portfolio.
+      if (forceUpdate && hasCriticalError) {
+        lastSuccessfulUpdate = 0
+      } else if (!hasCriticalError) {
+        // Update the last successful update only if there are no critical errors.
+        lastSuccessfulUpdate = Date.now()
+      }
 
       const processedTokens = processTokens(
         result.tokens,
@@ -472,6 +480,7 @@ export class PortfolioController extends EventEmitter {
         errors: result.errors,
         result: {
           ...result,
+          lastSuccessfulUpdate,
           tokens: processedTokens,
           total: getTotal(processedTokens)
         }
@@ -486,6 +495,11 @@ export class PortfolioController extends EventEmitter {
       })
       state.isLoading = false
       state.criticalError = e
+      if (forceUpdate && state.result) {
+        // Reset lastSuccessfulUpdate on forceUpdate in case of a critical error as the user
+        // is likely expecting a change in the portfolio.
+        state.result.lastSuccessfulUpdate = 0
+      }
       this.emitUpdate()
 
       return false

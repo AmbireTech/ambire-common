@@ -1,4 +1,4 @@
-import { Contract, ZeroAddress } from 'ethers'
+import { Contract, formatUnits, ZeroAddress } from 'ethers'
 
 import IERC20 from '../../../contracts/compiled/IERC20.json'
 import gasTankFeeTokens from '../../consts/gasTankFeeTokens'
@@ -117,10 +117,18 @@ export const getTokenAmount = (token: TokenResult): bigint => {
   return typeof token.amountPostSimulation === 'bigint' ? token.amountPostSimulation : token.amount
 }
 
-export const getTotal = (t: TokenResult[]) =>
+export const getTokenValue = (token: TokenResult): number => {
+  if (!token.priceIn || !token.priceIn.length) return 0
+
+  const tokenAmount = Number(formatUnits(getTokenAmount(token), token.decimals))
+
+  return tokenAmount * token.priceIn[0].price
+}
+
+export const getTotal = (t: TokenResult[], excludeHiddenTokens: boolean = true) =>
   t.reduce((cur: { [key: string]: number }, token: TokenResult) => {
     const localCur = cur // Add index signature to the type of localCur
-    if (token.isHidden) return localCur
+    if (token.isHidden && excludeHiddenTokens) return localCur
     // eslint-disable-next-line no-restricted-syntax
     for (const x of token.priceIn) {
       const currentAmount = localCur[x.baseCurrency] || 0
@@ -132,9 +140,21 @@ export const getTotal = (t: TokenResult[]) =>
     return localCur
   }, {})
 
+export const addHiddenTokenValueToTotal = (
+  totalWithoutHiddenTokens: number,
+  tokens: TokenResult[]
+) => {
+  return tokens.reduce((cur: number, token: TokenResult) => {
+    if (!token.isHidden) return cur
+
+    return cur + getTokenValue(token)
+  }, totalWithoutHiddenTokens)
+}
+
 export const getAccountPortfolioTotal = (
   accountPortfolio: AccountState,
-  excludeNetworks: Network['id'][] = []
+  excludeNetworks: Network['id'][] = [],
+  excludeHiddenTokens = true
 ) => {
   if (!accountPortfolio) return 0
 
@@ -142,7 +162,13 @@ export const getAccountPortfolioTotal = (
     if (excludeNetworks.includes(key)) return acc
 
     const networkData = accountPortfolio[key]
-    const networkTotalAmountUSD = networkData?.result?.total.usd || 0
+    const tokenList = networkData?.result?.tokens || []
+    let networkTotalAmountUSD = networkData?.result?.total.usd || 0
+
+    if (!excludeHiddenTokens) {
+      networkTotalAmountUSD = addHiddenTokenValueToTotal(networkTotalAmountUSD, tokenList)
+    }
+
     return acc + networkTotalAmountUSD
   }, 0)
 }

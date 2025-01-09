@@ -1,11 +1,17 @@
+import { AccountId } from '../../interfaces/account'
 import { Fetch } from '../../interfaces/fetch'
 import { NetworkId } from '../../interfaces/network'
+import { Storage } from '../../interfaces/storage'
 import { getAssetValue } from '../../libs/defiPositions/helpers'
 import { getAAVEPositions, getUniV3Positions } from '../../libs/defiPositions/providers'
+import getAccountNetworksWithPositions from '../../libs/defiPositions/providers/helpers/networksWithPositions'
 import {
+  AccountState,
   DeFiPositionsError,
   DeFiPositionsState,
-  PositionsByProvider
+  NetworksWithPositionsByAccounts,
+  PositionsByProvider,
+  ProviderName
 } from '../../libs/defiPositions/types'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { NetworksController } from '../networks/networks'
@@ -22,17 +28,23 @@ export class DefiPositionsController extends EventEmitter {
 
   #fetch: Fetch
 
+  #storage: Storage
+
   #minUpdateInterval: number = 60 * 1000 // 1 minute
 
   #state: DeFiPositionsState = {}
 
+  #networksWithPositionsByAccounts: NetworksWithPositionsByAccounts = {}
+
   constructor({
     fetch,
+    storage,
     selectedAccount,
     providers,
     networks
   }: {
     fetch: Fetch
+    storage: Storage
     selectedAccount: SelectedAccountController
     providers: ProvidersController
     networks: NetworksController
@@ -40,6 +52,7 @@ export class DefiPositionsController extends EventEmitter {
     super()
 
     this.#fetch = fetch
+    this.#storage = storage
     this.#selectedAccount = selectedAccount
     this.#providers = providers
     this.#networks = networks
@@ -48,7 +61,7 @@ export class DefiPositionsController extends EventEmitter {
   #setProviderError(
     accountAddr: string,
     networkId: string,
-    providerName: string,
+    providerName: ProviderName,
     errorMessage: string
   ) {
     if (!this.#state[accountAddr][networkId].providerErrors) {
@@ -69,6 +82,23 @@ export class DefiPositionsController extends EventEmitter {
       networkState.updatedAt && Date.now() - networkState.updatedAt < this.#minUpdateInterval
 
     return isWithinMinUpdateInterval || networkState.isLoading
+  }
+
+  async #updateNetworksWithPositions(accountId: AccountId, accountState: AccountState) {
+    const storageStateByAccount = await this.#storage.get('networksWithPositionsByAccounts', {})
+
+    this.#networksWithPositionsByAccounts[accountId] = getAccountNetworksWithPositions(
+      accountId,
+      accountState,
+      storageStateByAccount,
+      this.#providers.providers
+    )
+
+    this.emitUpdate()
+    await this.#storage.set(
+      'networksWithPositionsByAccounts',
+      this.#networksWithPositionsByAccounts
+    )
   }
 
   async updatePositions(networkId?: NetworkId) {
@@ -108,6 +138,7 @@ export class DefiPositionsController extends EventEmitter {
         networkState.error = undefined
 
         try {
+          const previousPositions = networkState.positionsByProvider
           const [aavePositions, uniV3Positions] = await Promise.all([
             getAAVEPositions(selectedAccountAddr, this.#providers.providers[n.id], n).catch(
               (e: any) => {
@@ -118,8 +149,10 @@ export class DefiPositionsController extends EventEmitter {
                   'AAVE v3',
                   e?.message || 'Unknown error'
                 )
-
-                return null
+                // We should consider changing the structure of positions in a way
+                // that this isn't needed. This is done so if there is an error,
+                // old data can still be displayed
+                return previousPositions?.find((p) => p.providerName === 'AAVE v3') || null
               }
             ),
             getUniV3Positions(selectedAccountAddr, this.#providers.providers[n.id], n).catch(
@@ -132,11 +165,15 @@ export class DefiPositionsController extends EventEmitter {
                   'Uniswap V3',
                   e?.message || 'Unknown error'
                 )
-
-                return null
+                // We should consider changing the structure of positions in a way
+                // that this isn't needed. This is done so if there is an error,
+                // old data can still be displayed
+                return previousPositions?.find((p) => p.providerName === 'Uniswap V3') || null
               }
             )
           ])
+
+          const hasErrors = !!this.#state[selectedAccountAddr][n.id].providerErrors?.length
 
           this.#state[selectedAccountAddr][n.id] = {
             ...networkState,
@@ -144,7 +181,7 @@ export class DefiPositionsController extends EventEmitter {
             positionsByProvider: [aavePositions, uniV3Positions].filter(
               Boolean
             ) as PositionsByProvider[],
-            updatedAt: Date.now()
+            updatedAt: hasErrors ? networkState.updatedAt : Date.now()
           }
           await this.#setAssetPrices(selectedAccountAddr, n.id).catch((e) => {
             console.error('#setAssetPrices error:', e)
@@ -163,6 +200,8 @@ export class DefiPositionsController extends EventEmitter {
         }
       })
     )
+
+    await this.#updateNetworksWithPositions(selectedAccountAddr, this.#state[selectedAccountAddr])
   }
 
   async #setAssetPrices(accountAddr: string, networkId: string) {
@@ -256,6 +295,18 @@ export class DefiPositionsController extends EventEmitter {
 
   getDefiPositionsState(accountAddr: string) {
     return this.#state[accountAddr] || {}
+  }
+
+  getNetworksWithPositions(accountAddr: string) {
+    return this.#networksWithPositionsByAccounts[accountAddr] || []
+  }
+
+  removeAccountData(accountAddr: string) {
+    delete this.#state[accountAddr]
+    delete this.#networksWithPositionsByAccounts[accountAddr]
+    this.#storage.set('networksWithPositionsByAccounts', this.#networksWithPositionsByAccounts)
+
+    this.emitUpdate()
   }
 
   toJSON() {
