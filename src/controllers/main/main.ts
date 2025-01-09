@@ -361,6 +361,22 @@ export class MainController extends EventEmitter {
     })
   }
 
+  /**
+   * - Updates the selected account's account state, portfolio and defi positions
+   * - Calls batchReverseLookup for all accounts
+   *
+   * It's not a problem to call it many times consecutively as all methods have internal
+   * caching mechanisms to prevent unnecessary calls.
+   */
+  onLoad(isFirstLoad: boolean = false) {
+    const selectedAccountAddr = this.selectedAccount.account?.addr
+    this.updateSelectedAccountPortfolio()
+    this.defiPositions.updatePositions()
+    this.domains.batchReverseLookup(this.accounts.accounts.map((a) => a.addr))
+    // The first time the app loads, we update the account state elsewhere
+    if (selectedAccountAddr && !isFirstLoad) this.accounts.updateAccountState(selectedAccountAddr)
+  }
+
   async #load(): Promise<void> {
     this.isReady = false
     // #load is called in the constructor which is synchronous
@@ -373,9 +389,7 @@ export class MainController extends EventEmitter {
     await this.accounts.initialLoadPromise
     await this.selectedAccount.initialLoadPromise
 
-    this.updateSelectedAccountPortfolio()
-    this.defiPositions.updatePositions()
-    this.domains.batchReverseLookup(this.accounts.accounts.map((a) => a.addr))
+    this.onLoad(true)
     /**
      * Listener that gets triggered as a finalization step of adding new
      * accounts via the AccountAdder controller flow.
