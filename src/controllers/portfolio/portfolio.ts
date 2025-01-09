@@ -80,7 +80,9 @@ export class PortfolioController extends EventEmitter {
   #velcroUrl: string
 
   #networksWithAssetsByAccounts: {
-    [accountId: string]: NetworkId[]
+    [accountId: string]: {
+      [networkId: string]: boolean
+    }
   } = {}
 
   #minUpdateInterval: number = 20000 // 20 seconds
@@ -426,7 +428,9 @@ export class PortfolioController extends EventEmitter {
 
     const state = accountState[network.id]!
     const tokenPreferences = this.tokenPreferences
-    const hasNonZeroTokens = !!this.#networksWithAssetsByAccounts?.[accountId]?.length
+    const hasNonZeroTokens = !!Object.values(
+      this.#networksWithAssetsByAccounts?.[accountId] || {}
+    ).some(Boolean)
 
     try {
       const result = await portfolioLib.get(accountId, {

@@ -7,11 +7,11 @@ const getAccountNetworksWithAssets = (
   accountId: AccountId,
   accountState: AccountState,
   storageStateByAccount: {
-    [accountId: string]: NetworkId[]
+    [accountId: string]: { [networkId: NetworkId]: boolean }
   },
   providers: RPCProviders
-): NetworkId[] => {
-  let networksWithAssets: NetworkId[] = []
+): { [networkId: string]: boolean } => {
+  const networksWithAssets: { [networkId: NetworkId]: boolean } = {}
 
   Object.keys(accountState).forEach((networkId) => {
     if (!providers[networkId]) return
@@ -24,12 +24,11 @@ const getAccountNetworksWithAssets = (
     // RPC is down or an error occurred
     if (!result || isRPCDown) {
       // The account has assets on this network and the RPC is down
-      if (
-        storageStateByAccount[accountId]?.includes(networkId) &&
-        !networksWithAssets.includes(networkId)
-      )
-        networksWithAssets.push(networkId)
-
+      if (storageStateByAccount[accountId][networkId]) {
+        networksWithAssets[networkId] = true
+      } else {
+        networksWithAssets[networkId] = false
+      }
       return
     }
 
@@ -39,14 +38,10 @@ const getAccountNetworksWithAssets = (
 
     // The account has assets on this network
     if (nonZeroTokens.length || hasCollectibles) {
-      if (networksWithAssets.includes(networkId)) return
-
-      networksWithAssets.push(networkId)
-      return
+      networksWithAssets[networkId] = true
+    } else {
+      networksWithAssets[networkId] = false
     }
-
-    // The account doesn't have assets on this network
-    networksWithAssets = networksWithAssets.filter((id) => id !== networkId)
   })
 
   return networksWithAssets
