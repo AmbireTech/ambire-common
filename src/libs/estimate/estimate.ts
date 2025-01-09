@@ -58,6 +58,7 @@ export async function estimate4337(
   feeTokens: TokenResult[],
   blockTag: string | number,
   nativeToCheck: string[],
+  switcher: BundlerSwitcher,
   errorCallback: Function
 ): Promise<EstimateResult> {
   const deploylessEstimator = fromDescriptor(provider, Estimation, !network.rpcNoStateOverride)
@@ -108,7 +109,6 @@ export async function estimate4337(
   const feeToken = getFeeTokenForEstimate(feeTokens, network)
   if (feeToken) estimateGasOp.feeCall = getFeeCall(feeToken)
 
-  const switcher = new BundlerSwitcher(network)
   const initializeRequests = () => [
     deploylessEstimator
       .call('estimate', checkInnerCallsArgs, {
@@ -236,6 +236,7 @@ export async function estimate(
   nativeToCheck: string[],
   feeTokens: TokenResult[],
   errorCallback: Function,
+  bundlerSwitcher: BundlerSwitcher,
   opts?: {
     calculateRefund?: boolean
     is4337Broadcast?: boolean
@@ -290,6 +291,7 @@ export async function estimate(
       feeTokens,
       blockTag,
       nativeToCheck,
+      bundlerSwitcher,
       errorCallback
     )
 

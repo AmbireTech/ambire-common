@@ -49,6 +49,7 @@ import {
   shouldIncludeActivatorCall,
   shouldUseOneTimeNonce
 } from '../../libs/userOperation/userOperation'
+import { BundlerSwitcher } from '../../services/bundlers/bundlerSwitcher'
 import { GasSpeeds } from '../../services/bundlers/types'
 /* eslint-disable no-restricted-syntax */
 import { AccountsController } from '../accounts/accounts'
@@ -150,8 +151,6 @@ export class SignAccountOpController extends EventEmitter {
 
   gasUsedTooHighAgreed: boolean
 
-  #callRelayer: Function
-
   #reEstimate: Function
 
   #isSignRequestStillActive: Function
@@ -170,6 +169,8 @@ export class SignAccountOpController extends EventEmitter {
   // the sponsor data to be displayed, if any
   sponsor: Sponsor | undefined = undefined
 
+  bundlerSwitcher: BundlerSwitcher
+
   constructor(
     accounts: AccountsController,
     keystore: KeystoreController,
@@ -179,7 +180,6 @@ export class SignAccountOpController extends EventEmitter {
     network: Network,
     fromActionId: AccountOpAction['id'],
     accountOp: AccountOp,
-    callRelayer: Function,
     reEstimate: Function,
     isSignRequestStillActive: Function
   ) {
@@ -193,7 +193,6 @@ export class SignAccountOpController extends EventEmitter {
     this.#network = network
     this.fromActionId = fromActionId
     this.accountOp = structuredClone(accountOp)
-    this.#callRelayer = callRelayer
     this.#reEstimate = reEstimate
     this.#isSignRequestStillActive = isSignRequestStillActive
 
@@ -202,6 +201,7 @@ export class SignAccountOpController extends EventEmitter {
     this.rbfAccountOps = {}
     this.signedAccountOp = null
     this.replacementFeeLow = false
+    this.bundlerSwitcher = new BundlerSwitcher(network)
   }
 
   get isInitialized(): boolean {

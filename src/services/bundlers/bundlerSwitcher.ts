@@ -26,7 +26,7 @@ export class BundlerSwitcher {
     return this.bundler
   }
 
-  canSwitch(estimationError: Error | null): boolean {
+  canSwitch(bundlerError: Error | null): boolean {
     if (!this.#hasBundlers()) return false
 
     const availableBundlers = this.#network.erc4337.bundlers!.filter((bundler) => {
@@ -36,9 +36,9 @@ export class BundlerSwitcher {
     if (availableBundlers.length === 0) return false
 
     return (
-      !estimationError ||
-      estimationError.cause === 'biconomy: 400' ||
-      estimationError.cause === 'pimlico: 500'
+      !bundlerError ||
+      bundlerError.cause === 'biconomy: 400' ||
+      bundlerError.cause === 'pimlico: 500'
     )
   }
 

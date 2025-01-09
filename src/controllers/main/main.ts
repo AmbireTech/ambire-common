@@ -598,7 +598,6 @@ export class MainController extends EventEmitter {
       network,
       actionId,
       accountOp,
-      this.callRelayer,
       () => {
         this.estimateSignAccountOp()
       },
@@ -2000,6 +1999,7 @@ export class MainController extends EventEmitter {
             if (!this.signAccountOp) return
             this.emitError(e)
           },
+          this.signAccountOp.bundlerSwitcher,
           {
             is4337Broadcast: isErc4337Broadcast(
               account,
@@ -2350,11 +2350,27 @@ export class MainController extends EventEmitter {
       try {
         userOperationHash = await bundler.broadcast(userOperation, network)
       } catch (e: any) {
+        let retryMsg
+
+        // TODO: think how to do this more inteligently
+        if (this.signAccountOp) {
+          const decodedError = bundler.decodeBundlerError(e as Error)
+          // TODO: MOVE FROM ESTIMATION TO BROADCAST
+          const humanReadable = getHumanReadableEstimationError(decodedError)
+          const switcher = this.signAccountOp.bundlerSwitcher
+          if (switcher.canSwitch(humanReadable)) {
+            switcher.switch()
+            retryMsg =
+              'The transaction cannot be broadcast as the bundler seems to be down. We switched the bundler so please try again'
+          }
+        }
+
         return this.throwBroadcastAccountOp({
           error: e,
           accountState,
           provider,
-          network
+          network,
+          message: retryMsg
         })
       }
       if (!userOperationHash) {

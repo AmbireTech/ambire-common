@@ -189,7 +189,7 @@ export abstract class Bundler {
   }
 
   // used when catching errors from bundler requests
-  decodeBundlerErrorEstimate(e: Error): DecodedError {
+  decodeBundlerError(e: Error): DecodedError {
     const error = new BundlerError(e.message, this.getName())
     return decodeError(error)
   }

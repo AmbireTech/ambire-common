@@ -55,7 +55,7 @@ async function estimate(
   const nonFatalErrors: Error[] = []
   const initializeRequests = () => [
     bundler.estimate(userOp, network, isEdgeCase).catch((e: Error) => {
-      const decodedError = bundler.decodeBundlerErrorEstimate(e)
+      const decodedError = bundler.decodeBundlerError(e)
 
       // if the bundler estimation fails, add a nonFatalError so we can react to
       // it on the FE. The BE at a later stage decides if this error is actually
