@@ -21,8 +21,8 @@ import { EstimateResult } from '../../libs/estimate/interfaces'
 import * as gasPricesLib from '../../libs/gasPrice/gasPrice'
 import { KeystoreSigner } from '../../libs/keystoreSigner/keystoreSigner'
 import { TokenResult } from '../../libs/portfolio'
-import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { getTypedData } from '../../libs/signMessage/signMessage'
+import { BundlerSwitcher } from '../../services/bundlers/bundlerSwitcher'
 import { getRpcProvider } from '../../services/provider'
 import { AccountsController } from '../accounts/accounts'
 import { KeystoreController } from '../keystore/keystore'
@@ -415,7 +415,8 @@ const init = async (
       accountsCtrl.accountStates,
       getNativeToCheckFromEOAs(nativeToCheck, account),
       feeTokens,
-      errorCallback
+      errorCallback,
+      new BundlerSwitcher(network)
     ))
 
   if (portfolio.getLatestPortfolioState(account.addr)[op.networkId]!.result) {
@@ -450,8 +451,6 @@ const init = async (
       }
     ]
   }
-
-  const callRelayer = relayerCall.bind({ url: '', fetch })
   const controller = new SignAccountOpController(
     accountsCtrl,
     keystore,
@@ -461,7 +460,6 @@ const init = async (
     networks.find((n) => n.id === op.networkId)!,
     1,
     op,
-    callRelayer,
     () => {},
     () => {}
   )
