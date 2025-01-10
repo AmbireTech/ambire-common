@@ -141,6 +141,10 @@ export class PortfolioController extends EventEmitter {
       await this.#accounts.initialLoadPromise
       this.tokenPreferences = await this.#storage.get('tokenPreferences', [])
       this.#previousHints = await this.#storage.get('previousHints', {})
+      this.#networksWithAssetsByAccounts = await this.#storage.get(
+        'networksWithAssetsByAccount',
+        {}
+      )
     } catch (e) {
       this.emitError({
         message:
