@@ -156,6 +156,11 @@ const ESTIMATION_ERRORS: ErrorHumanizerError[] = [
     message:
       'the NFT you are trying to interact with does not exist. Ensure you are using the correct token ID.'
   },
+  {
+    reasons: ['Inner call: 0x'],
+    message:
+      'it reverted onchain. Reason might be insufficient funds in one of the transaction calls.'
+  },
   // Rare contract errors
   {
     reasons: ['AccessControl: account is missing role'],

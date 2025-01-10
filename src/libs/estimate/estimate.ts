@@ -168,7 +168,7 @@ export async function estimate4337(
     ? Number(outcomeNonce - 1n)
     : Number(outcomeNonce)
 
-  if (ambireEstimationError && !bundlerEstimationResult.error) {
+  if (ambireEstimationError) {
     // if there's an ambire estimation error, we do not allow the txn
     // to be executed as it means it will most certainly fail
     bundlerEstimationResult.error = ambireEstimationError
