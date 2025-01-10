@@ -630,7 +630,7 @@ export class MainController extends EventEmitter {
         this.#signAccountOpBroadcastPromise = this.#broadcastSignedAccountOp().finally(() => {
           this.#signAccountOpBroadcastPromise = undefined
         })
-        return this.#broadcastSignedAccountOp()
+        return this.#signAccountOpBroadcastPromise
       },
       true
     )
