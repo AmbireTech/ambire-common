@@ -899,7 +899,7 @@ describe('estimate', () => {
 
     expect(response.error).not.toBe(null)
     expect(response.error?.message).toBe(
-      'The transaction will fail because it will revert onchain with reason unknown.\nPlease try again or contact Ambire support for assistance.'
+      'The transaction will fail because it reverted onchain. Reason might be insufficient funds in one of the transaction calls.'
     )
 
     expect(response.erc4337GasLimits).not.toBe(undefined)
@@ -1120,7 +1120,7 @@ describe('estimate', () => {
     )
     expect(response.error).not.toBe(null)
     expect(response.error?.message).toBe(
-      'The transaction will fail because it will revert onchain with reason unknown.\nPlease try again or contact Ambire support for assistance.'
+      'The transaction will fail because it reverted onchain. Reason might be insufficient funds in one of the transaction calls.'
     )
   })
 
