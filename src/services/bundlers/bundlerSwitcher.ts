@@ -1,24 +1,25 @@
 /* eslint-disable class-methods-use-this */
 
+import { BUNDLER } from '../../consts/bundlers'
 import { Network } from '../../interfaces/network'
 import { Bundler } from './bundler'
 import { getBundlerByName, getDefaultBundler } from './getBundler'
 
 export class BundlerSwitcher {
-  #network: Network
+  protected network: Network
 
   protected bundler: Bundler
 
-  protected usedBundlers: string[] = []
+  protected usedBundlers: BUNDLER[] = []
 
   constructor(network: Network) {
-    this.#network = network
+    this.network = network
     this.bundler = getDefaultBundler(network)
     this.usedBundlers.push(this.bundler.getName())
   }
 
-  #hasBundlers() {
-    const bundlers = this.#network.erc4337.bundlers
+  protected hasBundlers() {
+    const bundlers = this.network.erc4337.bundlers
     return bundlers && bundlers.length > 1
   }
 
@@ -27,9 +28,9 @@ export class BundlerSwitcher {
   }
 
   canSwitch(bundlerError: Error | null): boolean {
-    if (!this.#hasBundlers()) return false
+    if (!this.hasBundlers()) return false
 
-    const availableBundlers = this.#network.erc4337.bundlers!.filter((bundler) => {
+    const availableBundlers = this.network.erc4337.bundlers!.filter((bundler) => {
       return this.usedBundlers.indexOf(bundler) === -1
     })
 
@@ -43,11 +44,11 @@ export class BundlerSwitcher {
   }
 
   switch(): Bundler {
-    if (!this.#hasBundlers()) {
+    if (!this.hasBundlers()) {
       throw new Error('no available bundlers to switch')
     }
 
-    const availableBundlers = this.#network.erc4337.bundlers!.filter((bundler) => {
+    const availableBundlers = this.network.erc4337.bundlers!.filter((bundler) => {
       return this.usedBundlers.indexOf(bundler) === -1
     })
     this.bundler = getBundlerByName(availableBundlers[0])

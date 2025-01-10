@@ -90,7 +90,7 @@ import {
   isErc4337Broadcast,
   shouldAskForEntryPointAuthorization
 } from '../../libs/userOperation/userOperation'
-import { getBundlerByName, getSameBundlerAsEstimation } from '../../services/bundlers/getBundler'
+import { getSameBundlerAsEstimation } from '../../services/bundlers/getBundler'
 import { GasSpeeds } from '../../services/bundlers/types'
 import { paymasterFactory } from '../../services/paymaster'
 import { failedPaymasters } from '../../services/paymaster/FailedPaymasters'
@@ -2153,6 +2153,7 @@ export class MainController extends EventEmitter {
     const accountOp = this.signAccountOp?.accountOp
     const estimation = this.signAccountOp?.estimation
     const actionId = this.signAccountOp?.fromActionId
+    const bundlerSwitcher = this.signAccountOp?.bundlerSwitcher
     const contactSupportPrompt = 'Please try again or contact support if the problem persists.'
 
     if (
@@ -2161,7 +2162,8 @@ export class MainController extends EventEmitter {
       !actionId ||
       !accountOp.signingKeyAddr ||
       !accountOp.signingKeyType ||
-      !accountOp.signature
+      !accountOp.signature ||
+      !bundlerSwitcher
     ) {
       const message = `Missing mandatory transaction details. ${contactSupportPrompt}`
       return this.throwBroadcastAccountOp({ message })
@@ -2346,22 +2348,22 @@ export class MainController extends EventEmitter {
 
       // broadcast through bundler's service
       let userOperationHash
-      const bundler = getBundlerByName(userOperation.bundler)
+      const bundler = bundlerSwitcher.getBundler()
       try {
         userOperationHash = await bundler.broadcast(userOperation, network)
       } catch (e: any) {
         let retryMsg
 
-        // TODO: think how to do this more inteligently
+        // if the signAccountOp is still active (it should be)
+        // try to switch the bundler and ask the user to try again
+        // TODO: explore more error case where we switch the bundler
         if (this.signAccountOp) {
-          const decodedError = bundler.decodeBundlerError(e as Error)
-          // TODO: MOVE FROM ESTIMATION TO BROADCAST
-          const humanReadable = getHumanReadableEstimationError(decodedError)
+          const decodedError = bundler.decodeBundlerError(e)
+          const humanReadable = getHumanReadableBroadcastError(decodedError)
           const switcher = this.signAccountOp.bundlerSwitcher
           if (switcher.canSwitch(humanReadable)) {
             switcher.switch()
-            retryMsg =
-              'The transaction cannot be broadcast as the bundler seems to be down. We switched the bundler so please try again'
+            retryMsg = 'Broadcast failed because bundler was down. Please try again'
           }
         }
 
