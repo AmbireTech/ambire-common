@@ -20,8 +20,8 @@ interface Order {
 const parseOrder = (order: any): Order => {
   const [
     params,
-    n1,
-    n2
+    priceNumerator,
+    priceDenumerator
     // data2, data3
   ] = order
   const [
@@ -46,10 +46,9 @@ const parseOrder = (order: any): Order => {
       ,
       // type
       address,
-      id,
-      // fromAmount
-      // endAmount
-      ,
+      id
+      // ,fromAmount
+      // ,endAmount
     ] = o
     return { address, id }
   })
@@ -64,7 +63,8 @@ const parseOrder = (order: any): Order => {
       // ,endAmount
     ] = o
     if (type === 0n || type === 1n)
-      tokenPayments[token] = (tokenPayments[token] || 0n) + BigInt((fromAmount * n1) / n2)
+      tokenPayments[token] =
+        (tokenPayments[token] || 0n) + BigInt((fromAmount * priceNumerator) / priceDenumerator)
     if (type === 2n || type === 3n)
       payment.push({ address: token as string, amountOrId: BigInt(tokenId) })
   })
