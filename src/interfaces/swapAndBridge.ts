@@ -192,6 +192,19 @@ export type ActiveRoute = {
   error?: string
 }
 
+export type SocketAPIActiveRoutes = ActiveRoute['route'] & {
+  activeRouteId: SocketAPISendTransactionRequest['activeRouteId']
+  userAddress: string
+  totalUserTx: number
+  userTxs: SocketAPIUserTx[]
+  fromAssetAddress: string
+  toAssetAddress: string
+  fromAmount: string
+  toAmount: string
+  fromAsset: SocketAPIToken
+  toAsset: SocketAPIToken
+}
+
 export type SocketAPISupportedChain = {
   chainId: number
   name: string

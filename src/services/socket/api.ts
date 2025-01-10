@@ -2,6 +2,7 @@ import { getAddress } from 'ethers'
 
 import { Fetch, RequestInitWithCustomHeaders } from '../../interfaces/fetch'
 import {
+  SocketAPIActiveRoutes,
   SocketAPIQuote,
   SocketAPISendTransactionRequest,
   SocketAPISupportedChain,
@@ -325,7 +326,9 @@ export class SocketAPI {
     return response
   }
 
-  async updateActiveRoute(activeRouteId: SocketAPISendTransactionRequest['activeRouteId']) {
+  async updateActiveRoute(
+    activeRouteId: SocketAPISendTransactionRequest['activeRouteId']
+  ): Promise<SocketAPIActiveRoutes> {
     const params = new URLSearchParams({ activeRouteId: activeRouteId.toString() })
     const url = `${this.#baseUrl}/route/active-routes?${params.toString()}`
 
@@ -342,17 +345,19 @@ export class SocketAPI {
       fromAssetAddress: normalizeIncomingSocketTokenAddress(response.result.fromAssetAddress),
       toAsset: normalizeIncomingSocketToken(response.result.toAsset),
       toAssetAddress: normalizeIncomingSocketTokenAddress(response.result.toAssetAddress),
-      userTxs: response.result.userTxs.map((userTx) => ({
+      userTxs: (response.result.userTxs as SocketAPIActiveRoutes['userTxs']).map((userTx) => ({
         ...userTx,
-        fromAsset: userTx.fromAsset ? normalizeIncomingSocketToken(userTx.fromAsset) : undefined,
+        fromAsset:
+          'fromAsset' in userTx ? normalizeIncomingSocketToken(userTx.fromAsset) : undefined,
         toAsset: normalizeIncomingSocketToken(userTx.toAsset),
-        steps: userTx.steps
-          ? userTx.steps.map((step) => ({
-              ...step,
-              fromAsset: normalizeIncomingSocketToken(step.fromAsset),
-              toAsset: normalizeIncomingSocketToken(step.toAsset)
-            }))
-          : undefined
+        steps:
+          'steps' in userTx
+            ? userTx.steps.map((step) => ({
+                ...step,
+                fromAsset: normalizeIncomingSocketToken(step.fromAsset),
+                toAsset: normalizeIncomingSocketToken(step.toAsset)
+              }))
+            : undefined
       }))
     }
   }
