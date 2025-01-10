@@ -28,16 +28,22 @@ async function estimate(
   userOp: UserOperation,
   isEdgeCase: boolean,
   errorCallback: Function
-): Promise<{ gasPrice: GasSpeeds | Error; estimation: any; nonFatalErrors: Error[] }> {
-  const gasPrice = await bundler
-    .fetchGasPrices(network, errorCallback)
-    .catch(() => new Error('Could not fetch gas prices, retrying...'))
+): Promise<{
+  gasPrice: GasSpeeds | Error
+  estimation: any
+  nonFatalErrors: Error[]
+}> {
+  const gasPrice = await bundler.fetchGasPrices(network, errorCallback).catch(() => {
+    return new Error('Could not fetch gas prices, retrying...')
+  })
 
   // if the gasPrice fetch fails, we will switch the bundler and try again
   if (gasPrice instanceof Error) {
+    const decodedError = bundler.decodeBundlerError(new Error('internal error'))
     return {
       gasPrice,
-      estimation: null,
+      // if gas prices couldn't be fetched, it means there's an internal error
+      estimation: getHumanReadableEstimationError(decodedError),
       nonFatalErrors: []
     }
   }
@@ -168,13 +174,10 @@ export async function bundlerEstimate(
 
     // if there's an error but we can't switch, return the error
     if (!switcher.canSwitch(estimations.estimation)) {
-      return estimationErrorFormatted(
-        estimations.gasPrice instanceof Error ? estimations.gasPrice : estimations.estimation,
-        {
-          feePaymentOptions,
-          nonFatalErrors: estimations.nonFatalErrors
-        }
-      )
+      return estimationErrorFormatted(estimations.estimation as Error, {
+        feePaymentOptions,
+        nonFatalErrors: estimations.nonFatalErrors
+      })
     }
 
     // try again
