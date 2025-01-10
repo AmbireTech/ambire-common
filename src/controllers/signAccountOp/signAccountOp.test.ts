@@ -1001,6 +1001,7 @@ describe('SignAccountOp Controller ', () => {
   test('Signing [Relayer]: Smart account paying with gas tank.', async () => {
     const networkId = 'polygon'
     const network = networks.find((net) => net.id === networkId)!
+    network.erc4337.enabled = false
     const { controller, estimation, prices } = await init(
       e2esmartAccount,
       createAccountOp(e2esmartAccount, network.id),
