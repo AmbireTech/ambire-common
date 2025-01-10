@@ -35,7 +35,7 @@ const networks: Network[] = [
     chainId: 137n,
     explorerUrl: 'https://polygonscan.com',
     erc4337: {
-      enabled: true,
+      enabled: false,
       hasPaymaster: true,
       hasBundlerSupport: true,
       bundlers: [PIMLICO, BICONOMY],
