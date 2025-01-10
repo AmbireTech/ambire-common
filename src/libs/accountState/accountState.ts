@@ -82,7 +82,8 @@ export async function getAccountState(
       ),
       currentBlock: accResult.currentBlock,
       deployError:
-        accounts[index].associatedKeys.length > 0 && accResult.associatedKeyPrivileges.length === 0
+        accounts[index].associatedKeys.length > 0 && accResult.associatedKeyPrivileges.length === 0,
+      updatedAt: Date.now()
     }
 
     return res

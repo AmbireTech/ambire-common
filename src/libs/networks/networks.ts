@@ -2,6 +2,7 @@
 
 import { AMBIRE_ACCOUNT_FACTORY, OPTIMISTIC_ORACLE, SINGLETON } from '../../consts/deploy'
 import { networks as predefinedNetworks } from '../../consts/networks'
+import { AccountStates } from '../../interfaces/account'
 import { Fetch } from '../../interfaces/fetch'
 import {
   Erc4337settings,
@@ -59,11 +60,25 @@ export function is4337Enabled(
   return hasBundlerSupport
 }
 
-export const getNetworksWithFailedRPC = ({ providers }: { providers: RPCProviders }): string[] => {
-  return Object.keys(providers).filter(
-    (networkId) =>
-      typeof providers[networkId].isWorking === 'boolean' && !providers[networkId].isWorking
-  )
+export const getNetworksWithFailedRPC = ({
+  providers,
+  accountState
+}: {
+  providers: RPCProviders
+  accountState: AccountStates[string]
+}): string[] => {
+  return Object.keys(providers).filter((networkId) => {
+    const isProviderWorking =
+      typeof providers[networkId].isWorking !== 'boolean' || providers[networkId].isWorking
+
+    if (isProviderWorking) return false
+    if (!accountState || !accountState[networkId]) return true
+
+    const FIVE_MINUTES = 1000 * 60 * 5
+    const lastUpdate = accountState[networkId]?.updatedAt || 0
+
+    return Date.now() - lastUpdate > FIVE_MINUTES
+  })
 }
 
 async function retryRequest(init: Function, counter = 0): Promise<any> {

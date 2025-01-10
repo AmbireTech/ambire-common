@@ -59,6 +59,7 @@ import { AccountOpAction } from '../actions/actions'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
 import { PortfolioController } from '../portfolio/portfolio'
+import { ProvidersController } from '../providers/providers'
 import {
   getFeeSpeedIdentifier,
   getFeeTokenPriceUnavailableWarning,
@@ -114,6 +115,8 @@ export class SignAccountOpController extends EventEmitter {
   #accounts: AccountsController
 
   #keystore: KeystoreController
+
+  #providers: ProvidersController
 
   #portfolio: PortfolioController
 
@@ -175,6 +178,7 @@ export class SignAccountOpController extends EventEmitter {
 
   constructor(
     accounts: AccountsController,
+    providers: ProvidersController,
     keystore: KeystoreController,
     portfolio: PortfolioController,
     externalSignerControllers: ExternalSignerControllers,
@@ -189,6 +193,7 @@ export class SignAccountOpController extends EventEmitter {
     super()
 
     this.#accounts = accounts
+    this.#providers = providers
     this.#keystore = keystore
     this.#portfolio = portfolio
     this.#externalSignerControllers = externalSignerControllers

@@ -322,12 +322,20 @@ export class SelectedAccountController extends EventEmitter {
   }
 
   #updatePortfolioBanners(skipUpdate?: boolean) {
-    if (!this.account || !this.#networks || !this.#providers || !this.#portfolio) return
+    if (
+      !this.account ||
+      !this.#networks ||
+      !this.#providers ||
+      !this.#portfolio ||
+      this.#accounts.areAccountStatesLoading
+    )
+      return
 
     const networksWithFailedRPCBanners = getNetworksWithFailedRPCBanners({
       providers: this.#providers.providers,
       networks: this.#networks.networks,
-      networksWithAssets: this.#portfolio.getNetworksWithAssets(this.account.addr)
+      networksWithAssets: this.#portfolio.getNetworksWithAssets(this.account.addr),
+      accountState: this.#accounts.accountStates[this.account.addr]
     })
 
     const errorBanners = getNetworksWithPortfolioErrorBanners({

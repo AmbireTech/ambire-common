@@ -14,7 +14,12 @@ const BROADCAST_OR_ESTIMATION_ERRORS: ErrorHumanizerError[] = [
       'the RPC provider does not support the requested operation. Please check your RPC settings or contact the dApp team.'
   },
   {
-    reasons: [RPC_HARDCODED_ERRORS.rpcTimeout, 'Unable to connect to provider'],
+    reasons: [
+      RPC_HARDCODED_ERRORS.rpcTimeout,
+      'Unable to connect to provider',
+      'SERVER_ERROR',
+      'NETWORK_ERROR'
+    ],
     message:
       'of a problem with the RPC on this network. Please try again later, change the RPC or contact support for assistance.'
   },

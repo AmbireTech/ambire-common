@@ -454,6 +454,7 @@ const init = async (
   const callRelayer = relayerCall.bind({ url: '', fetch })
   const controller = new SignAccountOpController(
     accountsCtrl,
+    providersCtrl,
     keystore,
     portfolio,
     {},

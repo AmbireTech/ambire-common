@@ -588,6 +588,7 @@ export class MainController extends EventEmitter {
 
     this.signAccountOp = new SignAccountOpController(
       this.accounts,
+      this.providers,
       this.keystore,
       this.portfolio,
       this.#externalSignerControllers,
@@ -963,7 +964,12 @@ export class MainController extends EventEmitter {
       // However, even if we don't trigger an update here, it's not a big problem,
       // as the account state will be updated anyway, and its update will be very recent.
       !isUpdatingAccount && this.selectedAccount.account?.addr
-        ? this.accounts.updateAccountState(this.selectedAccount.account.addr, 'pending')
+        ? this.accounts.updateAccountState(
+            this.selectedAccount.account.addr,
+            'pending',
+            undefined,
+            true
+          )
         : Promise.resolve(),
       // `updateSelectedAccountPortfolio` doesn't rely on `withStatus` validation internally,
       // as the PortfolioController already exposes flags that are highly sufficient for the UX.
