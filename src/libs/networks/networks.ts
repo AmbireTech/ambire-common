@@ -74,10 +74,10 @@ export const getNetworksWithFailedRPC = ({
     if (isProviderWorking) return false
     if (!accountState || !accountState[networkId]) return true
 
-    const FIVE_MINUTES = 1000 * 60 * 5
+    const EIGHT_MINUTES = 1000 * 60 * 8
     const lastUpdate = accountState[networkId]?.updatedAt || 0
 
-    return Date.now() - lastUpdate > FIVE_MINUTES
+    return Date.now() - lastUpdate > EIGHT_MINUTES
   })
 }
 
