@@ -160,8 +160,7 @@ export async function bundlerEstimate(
           paymasterVerificationGasLimit: gasData.paymasterVerificationGasLimit,
           paymasterPostOpGasLimit: gasData.paymasterPostOpGasLimit,
           gasPrice: estimations.gasPrice as GasSpeeds,
-          paymaster,
-          bundler: bundler.getName()
+          paymaster
         },
         error: null
       }

@@ -11,10 +11,14 @@ class BiconomyEstimationErrorHandler implements ErrorHandler {
 
   public handle(data: string, error: any): DecodedError {
     const { message } = error?.error || error || {}
+    const lowerCased = message.toLowerCase()
 
     // TODO: expand with more error cases
     let reason = ''
-    if (message.includes('server response 400 Bad Request')) {
+    if (
+      lowerCased.includes('server response 400 Bad Request') ||
+      lowerCased.includes('internal error')
+    ) {
       reason = 'biconomy: 400'
     }
 

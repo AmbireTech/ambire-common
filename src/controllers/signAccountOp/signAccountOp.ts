@@ -542,7 +542,7 @@ export class SignAccountOpController extends EventEmitter {
     if (
       this.estimation?.erc4337GasLimits &&
       bundlerGasPrices &&
-      bundlerGasPrices.bundler === this.estimation?.erc4337GasLimits.bundler
+      bundlerGasPrices.bundler === this.bundlerSwitcher.getBundler().getName()
     ) {
       this.estimation.erc4337GasLimits.gasPrice = bundlerGasPrices.speeds
     }
@@ -1251,7 +1251,7 @@ export class SignAccountOpController extends EventEmitter {
           this.account,
           accountState,
           this.accountOp,
-          erc4337Estimation.bundler,
+          this.bundlerSwitcher.getBundler().getName(),
           !accountState.isDeployed ? this.accountOp.meta!.entryPointAuthorization : undefined
         )
         userOperation.preVerificationGas = erc4337Estimation.preVerificationGas

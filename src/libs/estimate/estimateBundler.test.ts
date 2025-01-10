@@ -318,7 +318,6 @@ describe('Bundler fallback tests', () => {
     )
 
     expect(result).toHaveProperty('erc4337GasLimits')
-    expect(result.erc4337GasLimits!.bundler).toBe(BICONOMY)
     expect(BigInt(result.erc4337GasLimits!.callGasLimit)).toBeGreaterThan(0n)
     expect(BigInt(result.erc4337GasLimits!.preVerificationGas)).toBeGreaterThan(0n)
     expect(BigInt(result.erc4337GasLimits!.verificationGasLimit)).toBeGreaterThan(0n)

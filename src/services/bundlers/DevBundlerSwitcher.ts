@@ -1,6 +1,6 @@
-import { PIMLICO } from '../../consts/bundlers'
+import { BICONOMY } from '../../consts/bundlers'
 import { Network } from '../../interfaces/network'
-import { BrokenPimlicoBroadcast } from './brokenPimlicoBroadcast'
+import { BrokenBiconomyBroadcast } from './brokenBiconomyBroadcast'
 import { BundlerSwitcher } from './bundlerSwitcher'
 
 /**
@@ -11,7 +11,7 @@ import { BundlerSwitcher } from './bundlerSwitcher'
 export class DevBundlerSwitcher extends BundlerSwitcher {
   constructor(network: Network) {
     super(network)
-    this.bundler = new BrokenPimlicoBroadcast()
-    this.usedBundlers.push(PIMLICO)
+    this.bundler = new BrokenBiconomyBroadcast()
+    this.usedBundlers.push(BICONOMY)
   }
 }

@@ -11,10 +11,11 @@ class PimlicoEstimationErrorHandler implements ErrorHandler {
 
   public handle(data: string, error: any): DecodedError {
     const { message } = error?.error || error || {}
+    const lowerCased = message.toLowerCase()
 
     // TODO: expand with more error cases
     let reason = ''
-    if (message.includes('Internal error from bundler')) {
+    if (lowerCased.includes('internal error')) {
       reason = 'pimlico: 500'
     }
 

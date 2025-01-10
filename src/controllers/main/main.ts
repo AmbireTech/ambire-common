@@ -90,7 +90,7 @@ import {
   isErc4337Broadcast,
   shouldAskForEntryPointAuthorization
 } from '../../libs/userOperation/userOperation'
-import { getSameBundlerAsEstimation } from '../../services/bundlers/getBundler'
+import { getDefaultBundler } from '../../services/bundlers/getBundler'
 import { GasSpeeds } from '../../services/bundlers/types'
 import { paymasterFactory } from '../../services/paymaster'
 import { failedPaymasters } from '../../services/paymaster/FailedPaymasters'
@@ -1830,7 +1830,9 @@ export class MainController extends EventEmitter {
       network,
       this.accounts.accountStates[accOp.accountAddr][accOp.networkId]
     )
-    const bundler = getSameBundlerAsEstimation(network, this.signAccountOp?.estimation)
+    const bundler = this.signAccountOp
+      ? this.signAccountOp.bundlerSwitcher.getBundler()
+      : getDefaultBundler(network)
     const bundlerFetch = async () => {
       if (!is4337) return null
       const errorCallback = (e: ErrorRef) => {
@@ -2370,6 +2372,8 @@ export class MainController extends EventEmitter {
           const switcher = this.signAccountOp.bundlerSwitcher
           if (switcher.canSwitch(humanReadable)) {
             switcher.switch()
+            this.estimateSignAccountOp()
+            this.#updateGasPrice()
             retryMsg = 'Broadcast failed because bundler was down. Please try again'
           }
         }
