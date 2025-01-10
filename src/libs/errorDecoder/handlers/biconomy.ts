@@ -15,10 +15,7 @@ class BiconomyEstimationErrorHandler implements ErrorHandler {
 
     // TODO: expand with more error cases
     let reason = ''
-    if (
-      lowerCased.includes('server response 400 Bad Request') ||
-      lowerCased.includes('internal error')
-    ) {
+    if (lowerCased.includes('400 bad request') || lowerCased.includes('internal error')) {
       reason = 'biconomy: 400'
     }
 
