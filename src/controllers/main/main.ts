@@ -625,7 +625,11 @@ export class MainController extends EventEmitter {
           return Promise.reject(error)
         }
 
-        this.#signAccountOpSigningPromise = this.signAccountOp.sign()
+        // Reset the promise in the `finally` block to ensure it doesn't remain unresolved if an error is thrown
+        this.#signAccountOpSigningPromise = this.signAccountOp.sign().finally(() => {
+          this.#signAccountOpSigningPromise = undefined
+        })
+
         return this.#signAccountOpSigningPromise
       },
       true
@@ -637,8 +641,11 @@ export class MainController extends EventEmitter {
     return this.withStatus(
       'broadcastSignedAccountOp',
       async () => {
-        this.#signAccountOpBroadcastPromise = this.#broadcastSignedAccountOp()
-        return this.#signAccountOpBroadcastPromise
+        // Reset the promise in the `finally` block to ensure it doesn't remain unresolved if an error is thrown
+        this.#signAccountOpBroadcastPromise = this.#broadcastSignedAccountOp().finally(() => {
+          this.#signAccountOpBroadcastPromise = undefined
+        })
+        return this.#broadcastSignedAccountOp()
       },
       true
     )
@@ -2532,9 +2539,6 @@ export class MainController extends EventEmitter {
     // broadcast is called in the FE only after successful signing
     this.signAccountOp?.updateStatus(SigningStatus.ReadyToSign, isReplacementFeeLow)
     this.feePayerKey = null
-
-    // the promise doesn't resolve and we're stuck...
-    this.#signAccountOpBroadcastPromise = undefined
 
     return Promise.reject(
       new EmittableError({ level: 'major', message, error: _err || new Error(message) })
