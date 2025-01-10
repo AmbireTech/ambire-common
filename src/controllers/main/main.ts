@@ -371,11 +371,12 @@ export class MainController extends EventEmitter {
    */
   onLoad(isFirstLoad: boolean = false) {
     const selectedAccountAddr = this.selectedAccount.account?.addr
-    this.updateSelectedAccountPortfolio()
-    this.defiPositions.updatePositions()
-    this.domains.batchReverseLookup(this.accounts.accounts.map((a) => a.addr))
+    console.log('On first load, does nothing')
+    // this.updateSelectedAccountPortfolio()
+    // this.defiPositions.updatePositions()
+    // this.domains.batchReverseLookup(this.accounts.accounts.map((a) => a.addr))
     // The first time the app loads, we update the account state elsewhere
-    if (selectedAccountAddr && !isFirstLoad) this.accounts.updateAccountState(selectedAccountAddr)
+    // if (selectedAccountAddr && !isFirstLoad) this.accounts.updateAccountState(selectedAccountAddr)
   }
 
   async #load(): Promise<void> {
@@ -390,6 +391,11 @@ export class MainController extends EventEmitter {
     await this.accounts.initialLoadPromise
     await this.selectedAccount.initialLoadPromise
 
+    console.log('OMFG', this.isReady)
+    // const selectedAccountAddr = this.selectedAccount.account?.addr
+    // if (selectedAccountAddr) this.accounts.updateAccountState(selectedAccountAddr)
+    this.defiPositions.updatePositions()
+    this.updateSelectedAccountPortfolio()
     this.onLoad(true)
     /**
      * Listener that gets triggered as a finalization step of adding new

@@ -58,6 +58,7 @@ export class AccountsController extends EventEmitter {
   }
 
   async #load() {
+    console.log('Loading accounts controller')
     await this.#networks.initialLoadPromise
     await this.#providers.initialLoadPromise
     const [accounts, accountPreferences] = await Promise.all([
