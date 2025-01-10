@@ -7,12 +7,15 @@ import { RPCProviders } from '../../interfaces/provider'
 import { ActiveRoute } from '../../interfaces/swapAndBridge'
 import {
   AccountState as DefiPositionsAccountState,
-  DeFiPositionsError
+  DeFiPositionsError,
+  NetworksWithPositions
 } from '../defiPositions/types'
 import { getNetworksWithFailedRPC } from '../networks/networks'
 import { AccountState as PortfolioAccountState } from '../portfolio/interfaces'
 import { PORTFOLIO_LIB_ERROR_NAMES } from '../portfolio/portfolio'
 import { getIsBridgeTxn, getQuoteRouteSteps } from '../swapAndBridge/swapAndBridge'
+
+const TEN_MINUTES = 10 * 60 * 1000
 
 const getBridgeBannerTitle = (routeStatus: ActiveRoute['routeStatus']) => {
   switch (routeStatus) {
@@ -410,6 +413,11 @@ export const getNetworksWithPortfolioErrorBanners = ({
   Object.keys(selectedAccountLatest).forEach((network) => {
     const portfolioForNetwork = selectedAccountLatest[network]
     const criticalError = portfolioForNetwork?.criticalError
+    const lastSuccessfulUpdate = portfolioForNetwork?.result?.lastSuccessfulUpdate
+
+    // Don't display an error banner if the last successful update was less than 10 minutes ago
+    if (typeof lastSuccessfulUpdate === 'number' && Date.now() - lastSuccessfulUpdate < TEN_MINUTES)
+      return
 
     let networkName: string | null = null
 
@@ -418,7 +426,6 @@ export const getNetworksWithPortfolioErrorBanners = ({
     else networkName = networks.find((n) => n.id === network)?.name ?? null
 
     if (!portfolioForNetwork || !networkName || portfolioForNetwork.isLoading) return
-
     // Don't display an error banner if the RPC isn't working because an RPC error banner is already displayed.
     // In case of additional networks don't check the RPC as there isn't one
     if (
@@ -477,11 +484,13 @@ export const getNetworksWithPortfolioErrorBanners = ({
 export const getNetworksWithDeFiPositionsErrorBanners = ({
   networks,
   currentAccountState,
-  providers
+  providers,
+  networksWithPositions
 }: {
   networks: Network[]
   currentAccountState: DefiPositionsAccountState
   providers: RPCProviders
+  networksWithPositions: NetworksWithPositions
 }) => {
   const isLoading = Object.keys(currentAccountState).some((networkId) => {
     const networkState = currentAccountState[networkId]
@@ -497,13 +506,21 @@ export const getNetworksWithDeFiPositionsErrorBanners = ({
   } = {}
 
   Object.keys(currentAccountState).forEach((networkId) => {
+    const providersWithPositions = networksWithPositions[networkId]
+    // Ignore networks that don't have positions
+    // but ensure that we have a successful response stored (the network key is present)
+    if (providersWithPositions && !providersWithPositions.length) return
+
     const networkState = currentAccountState[networkId]
     const network = networks.find((n) => n.id === networkId)
     const rpcProvider = providers[networkId]
+    const lastSuccessfulUpdate = networkState.updatedAt
 
     if (
       !network ||
       !networkState ||
+      (typeof lastSuccessfulUpdate === 'number' &&
+        Date.now() - lastSuccessfulUpdate < TEN_MINUTES) ||
       // Don't display an error banner if the RPC isn't working because an RPC error banner is already displayed.
       (typeof rpcProvider.isWorking === 'boolean' && !rpcProvider.isWorking)
     )
@@ -517,7 +534,16 @@ export const getNetworksWithDeFiPositionsErrorBanners = ({
       }
     }
 
-    const providerNamesWithErrors = networkState.providerErrors?.map((e) => e.providerName) || []
+    const providerNamesWithErrors =
+      networkState.providerErrors
+        ?.filter(({ providerName }) => {
+          // Display all errors if there hasn't been a successful update
+          // for the network.
+          if (!networksWithPositions[networkId]) return true
+          // Exclude providers without positions
+          return networksWithPositions[networkId].includes(providerName)
+        })
+        .map((e) => e.providerName) || []
 
     if (providerNamesWithErrors.length) {
       providerNamesWithErrors.forEach((providerName) => {

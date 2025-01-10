@@ -162,7 +162,7 @@ describe('SwapAndBridge Controller', () => {
     ])
     expect(swapAndBridgeController.fromSelectedToken).not.toBeNull()
     expect(swapAndBridgeController.fromSelectedToken?.address).toEqual(
-      '0x94b008aA00579c1307B0EF2c499aD98a8ce58e58'
+      '0x0000000000000000000000000000000000000000' // the one with highest balance
     )
     expect(swapAndBridgeController.fromChainId).toEqual(10)
   })
