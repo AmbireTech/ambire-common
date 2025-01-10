@@ -12,7 +12,7 @@ import { describe, expect, test } from '@jest/globals'
 import { relayerUrl } from '../../../test/config'
 import { getAccountsInfo } from '../../../test/helpers'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
-import { BICONOMY, PIMLICO } from '../../consts/bundlers'
+import { BICONOMY, BUNDLER, PIMLICO } from '../../consts/bundlers'
 import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
 import { networks } from '../../consts/networks'
 import { Account } from '../../interfaces/account'
@@ -261,7 +261,7 @@ describe('Bundler fallback tests', () => {
     }
   }
   class ExtendedBundlerSwitcher extends BundlerSwitcher {
-    constructor(network: Network, usedBundlers: string[] = []) {
+    constructor(network: Network, usedBundlers: BUNDLER[] = []) {
       super(network)
       this.bundler = new BrokenPimlico()
       // push pimlico as used so we could fallback to biconomy

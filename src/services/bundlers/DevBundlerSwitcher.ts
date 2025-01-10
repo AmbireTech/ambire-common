@@ -1,6 +1,6 @@
-import { BUNDLER } from '../../consts/bundlers'
+import { PIMLICO } from '../../consts/bundlers'
 import { Network } from '../../interfaces/network'
-import { Bundler } from './bundler'
+import { BrokenPimlicoBroadcast } from './brokenPimlicoBroadcast'
 import { BundlerSwitcher } from './bundlerSwitcher'
 
 /**
@@ -9,9 +9,9 @@ import { BundlerSwitcher } from './bundlerSwitcher'
  * set a broken bundler as the main one to test if fallback is working
  */
 export class DevBundlerSwitcher extends BundlerSwitcher {
-  constructor(network: Network, brokenBundler: Bundler, usedBundlers: BUNDLER[] = []) {
+  constructor(network: Network) {
     super(network)
-    this.bundler = brokenBundler
-    this.usedBundlers.push(...usedBundlers)
+    this.bundler = new BrokenPimlicoBroadcast()
+    this.usedBundlers.push(PIMLICO)
   }
 }
