@@ -24,7 +24,11 @@ const getAccountNetworksWithAssets = (
     // RPC is down or an error occurred
     if (!result || isRPCDown) {
       // The account has assets on this network and the RPC is down
-      if (storageStateByAccount[accountId][networkId]) {
+      if (
+        storageStateByAccount[accountId] &&
+        storageStateByAccount[accountId][networkId] &&
+        storageStateByAccount[accountId][networkId] === true
+      ) {
         networksWithAssets[networkId] = true
       } else {
         networksWithAssets[networkId] = false

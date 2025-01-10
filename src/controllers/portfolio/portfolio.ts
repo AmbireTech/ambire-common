@@ -81,7 +81,7 @@ export class PortfolioController extends EventEmitter {
 
   #networksWithAssetsByAccounts: {
     [accountId: string]: {
-      [networkId: string]: boolean
+      [networkId: NetworkId]: boolean
     }
   } = {}
 
@@ -312,7 +312,9 @@ export class PortfolioController extends EventEmitter {
 
     if (canSkipUpdate) return
 
-    const hasNonZeroTokens = !!this.#networksWithAssetsByAccounts?.[accountId]?.length
+    const hasNonZeroTokens = !!Object.values(
+      this.#networksWithAssetsByAccounts?.[accountId] || {}
+    ).some(Boolean)
     const start = Date.now()
     const accountState = this.#latest[accountId]
 

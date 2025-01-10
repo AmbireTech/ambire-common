@@ -323,14 +323,18 @@ export const getKeySyncBanner = (addr: string, email: string, keys: string[]) =>
 
 export const getNetworksWithFailedRPCBanners = ({
   providers,
-  networks
+  networks,
+  networksWithAssets
 }: {
   providers: RPCProviders
   networks: Network[]
+  networksWithAssets: { NetworkId: boolean }
 }): Banner[] => {
   const banners: Banner[] = []
-  const networkIds = getNetworksWithFailedRPC({ providers })
-
+  const networkIds = getNetworksWithFailedRPC({ providers }).filter(
+    (networkId) =>
+      Object.keys(networksWithAssets).includes(networkId) && networksWithAssets[networkId] === true
+  )
   const networksData = networkIds.map((id) => networks.find((n: Network) => n.id === id)!)
 
   const allFailed = networksData.length === networks.length
