@@ -173,8 +173,27 @@ export async function estimate4337(
     // to be executed as it means it will most certainly fail
     bundlerEstimationResult.error = ambireEstimationError
   } else if (!ambireEstimationError && bundlerEstimationResult.error) {
+    // if there's a bundler error only, it means it's a bundler specific
+    // problem. If we can switch the bundler, re-estimate
+    if (switcher.canSwitch(null)) {
+      switcher.switch()
+      return estimate4337(
+        account,
+        op,
+        calls,
+        accountStates,
+        network,
+        provider,
+        feeTokens,
+        blockTag,
+        nativeToCheck,
+        switcher,
+        errorCallback
+      )
+    }
+
     // if there's a bundler error only, it means we cannot do ERC-4337
-    // but we can do broadcast by EOA
+    // but we have to do broadcast by EOA
     feePaymentOptions = []
     delete bundlerEstimationResult.erc4337GasLimits
     bundlerEstimationResult.error = null
