@@ -331,12 +331,14 @@ export const getNetworksWithFailedRPCBanners = ({
 }: {
   providers: RPCProviders
   networks: Network[]
-  networksWithAssets: { NetworkId: boolean }
+  networksWithAssets: { [networkId: NetworkId]: boolean }
 }): Banner[] => {
   const banners: Banner[] = []
   const networkIds = getNetworksWithFailedRPC({ providers }).filter(
     (networkId) =>
-      Object.keys(networksWithAssets).includes(networkId) && networksWithAssets[networkId] === true
+      (Object.keys(networksWithAssets).includes(networkId) &&
+        networksWithAssets[networkId] === true) ||
+      !Object.keys(networksWithAssets).includes(networkId)
   )
   const networksData = networkIds.map((id) => networks.find((n: Network) => n.id === id)!)
 
