@@ -3,11 +3,24 @@ import { NetworkId } from '../../interfaces/network'
 import { RPCProviders } from '../../interfaces/provider'
 import { AccountState } from './interfaces'
 
+const hasAssetsOnNetwork = (
+  storageState: { [networkId: string]: boolean } | NetworkId[],
+  networkId: NetworkId
+): boolean => {
+  if (typeof storageState === 'object' && !Array.isArray(storageState)) {
+    return !!storageState[networkId]
+  }
+  if (Array.isArray(storageState)) {
+    return storageState.includes(networkId)
+  }
+  return false
+}
+
 const getAccountNetworksWithAssets = (
   accountId: AccountId,
   accountState: AccountState,
   storageStateByAccount: {
-    [accountId: string]: { [networkId: NetworkId]: boolean }
+    [accountId: string]: { [networkId: NetworkId]: boolean } | NetworkId[]
   },
   providers: RPCProviders
 ): { [networkId: string]: boolean } => {
@@ -24,11 +37,7 @@ const getAccountNetworksWithAssets = (
     // RPC is down or an error occurred
     if (!result || isRPCDown) {
       // The account has assets on this network and the RPC is down
-      if (
-        storageStateByAccount[accountId] &&
-        storageStateByAccount[accountId][networkId] &&
-        storageStateByAccount[accountId][networkId] === true
-      ) {
+      if (hasAssetsOnNetwork(storageStateByAccount[accountId], networkId)) {
         networksWithAssets[networkId] = true
       } else {
         networksWithAssets[networkId] = false
