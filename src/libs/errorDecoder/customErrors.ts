@@ -1,5 +1,8 @@
 /* eslint-disable max-classes-per-file */
+
 import { isHexString } from 'ethers'
+
+import { BUNDLER } from '../../consts/bundlers'
 
 class InnerCallFailureError extends Error {
   public data: string = ''
@@ -39,4 +42,15 @@ class SponsorshipPaymasterError extends Error {
   }
 }
 
-export { InnerCallFailureError, RelayerPaymasterError, SponsorshipPaymasterError }
+class BundlerError extends Error {
+  bundlerName: BUNDLER
+
+  constructor(message: string, bundlerName: BUNDLER) {
+    super(message)
+    this.bundlerName = bundlerName
+    this.name = 'BundlerError'
+    this.message = message
+  }
+}
+
+export { InnerCallFailureError, RelayerPaymasterError, SponsorshipPaymasterError, BundlerError }

@@ -6,6 +6,7 @@ import { DEPLOYLESS_SIMULATION_FROM, OPTIMISTIC_ORACLE } from '../../consts/depl
 import { Account, AccountStates } from '../../interfaces/account'
 import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
+import { BundlerSwitcher } from '../../services/bundlers/bundlerSwitcher'
 import { getAccountDeployParams, isSmartAccount } from '../account/account'
 import { AccountOp, toSingletonCall } from '../accountOp/accountOp'
 import { Call } from '../accountOp/types'
@@ -57,6 +58,7 @@ export async function estimate4337(
   feeTokens: TokenResult[],
   blockTag: string | number,
   nativeToCheck: string[],
+  switcher: BundlerSwitcher,
   errorCallback: Function
 ): Promise<EstimateResult> {
   const deploylessEstimator = fromDescriptor(provider, Estimation, !network.rpcNoStateOverride)
@@ -114,7 +116,16 @@ export async function estimate4337(
         blockTag
       })
       .catch(getHumanReadableEstimationError),
-    bundlerEstimate(account, accountStates, op, network, feeTokens, provider, errorCallback),
+    bundlerEstimate(
+      account,
+      accountStates,
+      op,
+      network,
+      feeTokens,
+      provider,
+      switcher,
+      errorCallback
+    ),
     estimateGas(account, estimateGasOp, provider, accountState, network).catch(() => 0n)
   ]
   const estimations = await estimateWithRetries(
@@ -157,13 +168,32 @@ export async function estimate4337(
     ? Number(outcomeNonce - 1n)
     : Number(outcomeNonce)
 
-  if (ambireEstimationError && !bundlerEstimationResult.error) {
+  if (ambireEstimationError) {
     // if there's an ambire estimation error, we do not allow the txn
     // to be executed as it means it will most certainly fail
     bundlerEstimationResult.error = ambireEstimationError
   } else if (!ambireEstimationError && bundlerEstimationResult.error) {
+    // if there's a bundler error only, it means it's a bundler specific
+    // problem. If we can switch the bundler, re-estimate
+    if (switcher.canSwitch(null)) {
+      switcher.switch()
+      return estimate4337(
+        account,
+        op,
+        calls,
+        accountStates,
+        network,
+        provider,
+        feeTokens,
+        blockTag,
+        nativeToCheck,
+        switcher,
+        errorCallback
+      )
+    }
+
     // if there's a bundler error only, it means we cannot do ERC-4337
-    // but we can do broadcast by EOA
+    // but we have to do broadcast by EOA
     feePaymentOptions = []
     delete bundlerEstimationResult.erc4337GasLimits
     bundlerEstimationResult.error = null
@@ -225,6 +255,7 @@ export async function estimate(
   nativeToCheck: string[],
   feeTokens: TokenResult[],
   errorCallback: Function,
+  bundlerSwitcher: BundlerSwitcher,
   opts?: {
     calculateRefund?: boolean
     is4337Broadcast?: boolean
@@ -279,6 +310,7 @@ export async function estimate(
       feeTokens,
       blockTag,
       nativeToCheck,
+      bundlerSwitcher,
       errorCallback
     )
 

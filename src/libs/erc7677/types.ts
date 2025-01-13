@@ -1,3 +1,5 @@
+import { Hex } from '../../interfaces/hex'
+
 export interface PaymasterService {
   url: string
   context: {
@@ -8,7 +10,7 @@ export interface PaymasterService {
 }
 
 export interface PaymasterCapabilities {
-  [chainId: `0x${string}`]: PaymasterService
+  [chainId: Hex]: PaymasterService
 }
 
 export interface Sponsor {
@@ -17,17 +19,17 @@ export interface Sponsor {
 }
 
 export type PaymasterEstimationData = {
-  paymaster: `0x${string}`
-  paymasterData: `0x${string}`
-  paymasterVerificationGasLimit?: `0x${string}`
-  paymasterPostOpGasLimit?: `0x${string}`
+  paymaster: Hex
+  paymasterData: Hex
+  paymasterVerificationGasLimit?: Hex
+  paymasterPostOpGasLimit?: Hex
   sponsor?: Sponsor
   isFinal?: boolean // Indicates that the caller does not need to call pm_getPaymasterData
 }
 
 export interface PaymasterData {
-  paymaster: `0x${string}`
-  paymasterData: `0x${string}`
+  paymaster: Hex
+  paymasterData: Hex
 }
 
 export interface PaymasterSuccessReponse extends PaymasterData {
