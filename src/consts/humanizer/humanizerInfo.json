@@ -17432,7 +17432,7 @@
             "isSC": {}
         },
         "0x5760e34c4003752329bc77790b1de44c2799f8c3": {
-            "name": "Aave pool",
+            "name": "Aave",
             "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/AAVE.svg",
             "address": "0x5760e34c4003752329bc77790b1de44c2799f8c3",
             "isSC": {}
