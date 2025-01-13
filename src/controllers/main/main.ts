@@ -2370,6 +2370,8 @@ export class MainController extends EventEmitter {
           const decodedError = bundler.decodeBundlerError(e)
           const humanReadable = getHumanReadableBroadcastError(decodedError)
           const switcher = this.signAccountOp.bundlerSwitcher
+          this.signAccountOp.updateStatus(SigningStatus.ReadyToSign)
+
           if (switcher.canSwitch(humanReadable)) {
             switcher.switch()
             this.estimateSignAccountOp()
