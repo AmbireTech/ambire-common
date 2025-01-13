@@ -18,6 +18,11 @@ export const LidoModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[
         const fullVisualization = [getAction('Wrap'), getToken(ST_ETH_ADDRESS, amount)]
         return { ...call, fullVisualization }
       }
+      if (call.data.startsWith(wrapIface.getFunction('unwrap(uint256)')!.selector)) {
+        const [amount] = wrapIface.parseTransaction(call)!.args
+        const fullVisualization = [getAction('Unwrap'), getToken(ST_ETH_ADDRESS, amount)]
+        return { ...call, fullVisualization }
+      }
     }
 
     if (isAddress(call.to) && getAddress(call.to) === UNWRAP_CONTRACT_ADDR) {
