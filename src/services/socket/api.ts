@@ -2,6 +2,7 @@ import { getAddress } from 'ethers'
 
 import { Fetch, RequestInitWithCustomHeaders } from '../../interfaces/fetch'
 import {
+  SocketAPIActiveRoutes,
   SocketAPIQuote,
   SocketAPISendTransactionRequest,
   SocketAPISupportedChain,
@@ -21,14 +22,15 @@ const convertZeroAddressToNullAddressIfNeeded = (addr: string) =>
 const convertNullAddressToZeroAddressIfNeeded = (addr: string) =>
   addr === NULL_ADDRESS ? ZERO_ADDRESS : addr
 
+const normalizeIncomingSocketTokenAddress = (address: string) =>
+  // incoming token addresses from Socket are all lowercased
+  getAddress(
+    // native token addresses come as null address instead of the zero address
+    convertNullAddressToZeroAddressIfNeeded(address)
+  )
 export const normalizeIncomingSocketToken = (token: SocketAPIToken) => ({
   ...token,
-  address:
-    // incoming token addresses from Socket are all lowercased
-    getAddress(
-      // native token addresses come as null address instead of the zero address
-      convertNullAddressToZeroAddressIfNeeded(token.address)
-    )
+  address: normalizeIncomingSocketTokenAddress(token.address)
 })
 
 const normalizeOutgoingSocketTokenAddress = (address: string) =>
@@ -324,7 +326,9 @@ export class SocketAPI {
     return response
   }
 
-  async updateActiveRoute(activeRouteId: SocketAPISendTransactionRequest['activeRouteId']) {
+  async updateActiveRoute(
+    activeRouteId: SocketAPISendTransactionRequest['activeRouteId']
+  ): Promise<SocketAPIActiveRoutes> {
     const params = new URLSearchParams({ activeRouteId: activeRouteId.toString() })
     const url = `${this.#baseUrl}/route/active-routes?${params.toString()}`
 
@@ -335,7 +339,27 @@ export class SocketAPI {
     if (!response.success) throw new Error('Failed to update route')
     await this.updateHealthIfNeeded()
 
-    return response.result
+    return {
+      ...response.result,
+      fromAsset: normalizeIncomingSocketToken(response.result.fromAsset),
+      fromAssetAddress: normalizeIncomingSocketTokenAddress(response.result.fromAssetAddress),
+      toAsset: normalizeIncomingSocketToken(response.result.toAsset),
+      toAssetAddress: normalizeIncomingSocketTokenAddress(response.result.toAssetAddress),
+      userTxs: (response.result.userTxs as SocketAPIActiveRoutes['userTxs']).map((userTx) => ({
+        ...userTx,
+        fromAsset:
+          'fromAsset' in userTx ? normalizeIncomingSocketToken(userTx.fromAsset) : undefined,
+        toAsset: normalizeIncomingSocketToken(userTx.toAsset),
+        steps:
+          'steps' in userTx
+            ? userTx.steps.map((step) => ({
+                ...step,
+                fromAsset: normalizeIncomingSocketToken(step.fromAsset),
+                toAsset: normalizeIncomingSocketToken(step.toAsset)
+              }))
+            : undefined
+      }))
+    }
   }
 
   async getNextRouteUserTx(activeRouteId: SocketAPISendTransactionRequest['activeRouteId']) {
