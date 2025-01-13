@@ -5,6 +5,7 @@ import entryPointAbi from '../../../contracts/compiled/EntryPoint.json'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { AMBIRE_PAYMASTER, ERC_4337_ENTRYPOINT } from '../../consts/deploy'
 import { Account } from '../../interfaces/account'
+import { Hex } from '../../interfaces/hex'
 import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
 import { failedPaymasters } from '../../services/paymaster/FailedPaymasters'
@@ -20,10 +21,12 @@ import {
 } from '../erc7677/types'
 import { RelayerPaymasterError, SponsorshipPaymasterError } from '../errorDecoder/customErrors'
 import { getHumanReadableBroadcastError } from '../errorHumanizer'
+import { PAYMASTER_DOWN_BROADCAST_ERROR_MESSAGE } from '../errorHumanizer/broadcastErrorHumanizer'
 import { getFeeTokenForEstimate } from '../estimate/estimateHelpers'
 import { TokenResult } from '../portfolio'
 import { UserOperation } from '../userOperation/types'
 import { getCleanUserOp, getSigForCalculations } from '../userOperation/userOperation'
+import { AbstractPaymaster } from './abstractPaymaster'
 
 type PaymasterType = 'Ambire' | 'ERC7677' | 'None'
 
@@ -31,16 +34,16 @@ export function getPaymasterDataForEstimate(): PaymasterEstimationData {
   const abiCoder = new AbiCoder()
   return {
     paymaster: AMBIRE_PAYMASTER,
-    paymasterVerificationGasLimit: toBeHex(0) as `0x${string}`,
-    paymasterPostOpGasLimit: toBeHex(0) as `0x${string}`,
+    paymasterVerificationGasLimit: toBeHex(100000) as Hex,
+    paymasterPostOpGasLimit: toBeHex(0) as Hex,
     paymasterData: abiCoder.encode(
       ['uint48', 'uint48', 'bytes'],
       [0, 0, getSigForCalculations()]
-    ) as `0x${string}`
+    ) as Hex
   }
 }
 
-export class Paymaster {
+export class Paymaster extends AbstractPaymaster {
   callRelayer: Function
 
   type: PaymasterType = 'None'
@@ -53,8 +56,12 @@ export class Paymaster {
 
   provider: RPCProvider | null = null
 
-  constructor(callRelayer: Function) {
+  errorCallback: Function | undefined = undefined
+
+  constructor(callRelayer: Function, errorCallback: Function) {
+    super()
     this.callRelayer = callRelayer
+    this.errorCallback = errorCallback
   }
 
   async init(op: AccountOp, userOp: UserOperation, network: Network, provider: RPCProvider) {
@@ -154,38 +161,13 @@ export class Paymaster {
     return this.type !== 'None'
   }
 
-  async #ambireCall(
-    acc: Account,
-    op: AccountOp,
-    userOp: UserOperation
+  async #retryPaymasterRequest(
+    apiCall: Function,
+    counter = 0
   ): Promise<PaymasterSuccessReponse | PaymasterErrorReponse> {
-    if (!this.provider) throw new Error('provider not set, did you call init?')
-
-    try {
-      // request the paymaster with a timeout window
-      const localUserOp = { ...userOp }
-      localUserOp.paymaster = AMBIRE_PAYMASTER
-      const response = await Promise.race([
-        this.callRelayer(`/v2/paymaster/${op.networkId}/sign`, 'POST', {
-          userOperation: getCleanUserOp(localUserOp)[0],
-          paymaster: AMBIRE_PAYMASTER,
-          bytecode: acc.creation!.bytecode,
-          salt: acc.creation!.salt,
-          key: acc.associatedKeys[0],
-          // eslint-disable-next-line no-underscore-dangle
-          rpcUrl: this.provider._getConnection().url
-        }),
-        new Promise((_resolve, reject) => {
-          setTimeout(() => reject(new Error('Ambire relayer error')), 8000)
-        })
-      ])
-
-      return {
-        success: true,
-        paymaster: AMBIRE_PAYMASTER,
-        paymasterData: response.data.paymasterData
-      }
-    } catch (e: any) {
+    // retry the request 3 times before declaring it a failure
+    if (counter >= 3) {
+      const e = new Error('Ambire relayer error timeout')
       const convertedError = new RelayerPaymasterError(e)
       const { message } = getHumanReadableBroadcastError(convertedError)
       return {
@@ -194,6 +176,67 @@ export class Paymaster {
         error: e
       }
     }
+
+    try {
+      const response = await Promise.race([
+        apiCall(),
+        new Promise((_resolve, reject) => {
+          setTimeout(() => reject(new Error('Ambire relayer error timeout')), 8000)
+        })
+      ])
+
+      return {
+        success: true,
+        paymaster: this.type === 'Ambire' ? AMBIRE_PAYMASTER : response.paymaster,
+        paymasterData: this.type === 'Ambire' ? response.data.paymasterData : response.paymasterData
+      }
+    } catch (e: any) {
+      if (e.message === 'Ambire relayer error timeout') {
+        if (this.errorCallback) {
+          this.errorCallback({
+            level: 'major',
+            message: 'Paymaster is not responding. Retrying...',
+            error: new Error('Paymaster call timeout')
+          })
+        }
+        const increment = counter + 1
+        return this.#retryPaymasterRequest(apiCall, increment)
+      }
+
+      const convertedError =
+        this.type === 'ERC7677' ? new SponsorshipPaymasterError() : new RelayerPaymasterError(e)
+      const { message } = getHumanReadableBroadcastError(convertedError)
+      return {
+        success: false,
+        message,
+        error: e
+      }
+    }
+  }
+
+  async #ambireCall(
+    acc: Account,
+    op: AccountOp,
+    userOp: UserOperation
+  ): Promise<PaymasterSuccessReponse | PaymasterErrorReponse> {
+    if (!this.provider) throw new Error('provider not set, did you call init?')
+    if (!this.network) throw new Error('network not set, did you call init?')
+
+    // request the paymaster with a timeout window
+    const localUserOp = { ...userOp }
+    localUserOp.paymaster = AMBIRE_PAYMASTER
+    return this.#retryPaymasterRequest(() => {
+      return this.callRelayer(`/v2/paymaster/${op.networkId}/sign`, 'POST', {
+        userOperation: getCleanUserOp(localUserOp)[0],
+        paymaster: AMBIRE_PAYMASTER,
+        bytecode: acc.creation!.bytecode,
+        salt: acc.creation!.salt,
+        key: acc.associatedKeys[0],
+        // eslint-disable-next-line no-underscore-dangle
+        rpcUrl: this.provider!._getConnection().url,
+        bundler: userOp.bundler
+      })
+    })
   }
 
   async #erc7677Call(op: AccountOp, userOp: UserOperation, network: Network) {
@@ -207,34 +250,23 @@ export class Paymaster {
         paymasterData: sponsorData.paymasterData
       }
 
-    try {
-      const localUserOp = { ...userOp }
-      localUserOp.paymaster = sponsorData.paymaster
-      localUserOp.paymasterData = sponsorData.paymasterData
-      const response: any = await Promise.race([
-        getPaymasterData(this.paymasterService as PaymasterService, localUserOp, network),
-        new Promise((_resolve, reject) => {
-          setTimeout(() => reject(new Error('Sponsorship error')), 8000)
-        })
-      ])
-      return {
-        success: true,
-        paymaster: response.paymaster,
-        paymasterData: response.paymasterData
-      }
-    } catch (e: any) {
-      if (op.meta && op.meta.paymasterService) {
-        failedPaymasters.addFailedSponsorship(op.meta.paymasterService.id)
-      }
+    const localUserOp = { ...userOp }
+    localUserOp.paymaster = sponsorData.paymaster
+    localUserOp.paymasterData = sponsorData.paymasterData
+    const response = await this.#retryPaymasterRequest(() => {
+      return getPaymasterData(this.paymasterService as PaymasterService, localUserOp, network)
+    })
 
-      const convertedError = new SponsorshipPaymasterError()
-      const { message } = getHumanReadableBroadcastError(convertedError)
-      return {
-        success: false,
-        message,
-        error: e
-      }
+    if (
+      !response.success &&
+      (response as PaymasterErrorReponse).message !== PAYMASTER_DOWN_BROADCAST_ERROR_MESSAGE &&
+      op.meta &&
+      op.meta.paymasterService
+    ) {
+      failedPaymasters.addFailedSponsorship(op.meta.paymasterService.id)
     }
+
+    return response
   }
 
   async call(

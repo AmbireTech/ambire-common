@@ -11,6 +11,7 @@ import {
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import ERC20 from '../../../contracts/compiled/IERC20.json'
 import { FEE_COLLECTOR } from '../../consts/addresses'
+import { BUNDLER } from '../../consts/bundlers'
 import { SINGLETON } from '../../consts/deploy'
 /* eslint-disable no-restricted-syntax */
 import { ERRORS, RETRY_TO_INIT_ACCOUNT_OP_MSG } from '../../consts/signAccountOp/errorHandling'
@@ -28,12 +29,7 @@ import { AccountOp, GasFeePayment, getSignableCalls } from '../../libs/accountOp
 import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 import { PaymasterErrorReponse, PaymasterSuccessReponse, Sponsor } from '../../libs/erc7677/types'
 import { getHumanReadableBroadcastError } from '../../libs/errorHumanizer'
-import {
-  BundlerGasPrice,
-  Erc4337GasLimits,
-  EstimateResult,
-  FeePaymentOption
-} from '../../libs/estimate/interfaces'
+import { Erc4337GasLimits, EstimateResult, FeePaymentOption } from '../../libs/estimate/interfaces'
 import {
   Gas1559Recommendation,
   GasPriceRecommendation,
@@ -53,6 +49,8 @@ import {
   shouldIncludeActivatorCall,
   shouldUseOneTimeNonce
 } from '../../libs/userOperation/userOperation'
+import { BundlerSwitcher } from '../../services/bundlers/bundlerSwitcher'
+import { GasSpeeds } from '../../services/bundlers/types'
 /* eslint-disable no-restricted-syntax */
 import { AccountsController } from '../accounts/accounts'
 import { AccountOpAction } from '../actions/actions'
@@ -103,7 +101,7 @@ type SpeedCalc = {
 }
 
 // declare the statuses we don't want state updates on
-const noStateUpdateStatuses = [
+export const noStateUpdateStatuses = [
   SigningStatus.InProgress,
   SigningStatus.Done,
   SigningStatus.UpdatesPaused,
@@ -131,7 +129,7 @@ export class SignAccountOpController extends EventEmitter {
 
   gasPrices: GasRecommendation[] | null = null
 
-  bundlerGasPrices: BundlerGasPrice | null = null
+  bundlerGasPrices: GasSpeeds | null = null
 
   estimation: EstimateResult | null = null
 
@@ -153,8 +151,6 @@ export class SignAccountOpController extends EventEmitter {
 
   gasUsedTooHighAgreed: boolean
 
-  #callRelayer: Function
-
   #reEstimate: Function
 
   #isSignRequestStillActive: Function
@@ -173,6 +169,8 @@ export class SignAccountOpController extends EventEmitter {
   // the sponsor data to be displayed, if any
   sponsor: Sponsor | undefined = undefined
 
+  bundlerSwitcher: BundlerSwitcher
+
   constructor(
     accounts: AccountsController,
     keystore: KeystoreController,
@@ -182,7 +180,6 @@ export class SignAccountOpController extends EventEmitter {
     network: Network,
     fromActionId: AccountOpAction['id'],
     accountOp: AccountOp,
-    callRelayer: Function,
     reEstimate: Function,
     isSignRequestStillActive: Function
   ) {
@@ -196,7 +193,6 @@ export class SignAccountOpController extends EventEmitter {
     this.#network = network
     this.fromActionId = fromActionId
     this.accountOp = structuredClone(accountOp)
-    this.#callRelayer = callRelayer
     this.#reEstimate = reEstimate
     this.#isSignRequestStillActive = isSignRequestStillActive
 
@@ -205,6 +201,13 @@ export class SignAccountOpController extends EventEmitter {
     this.rbfAccountOps = {}
     this.signedAccountOp = null
     this.replacementFeeLow = false
+    this.bundlerSwitcher = new BundlerSwitcher(
+      network,
+      () => {
+        return this.status ? this.status.type : null
+      },
+      noStateUpdateStatuses
+    )
   }
 
   get isInitialized(): boolean {
@@ -393,19 +396,17 @@ export class SignAccountOpController extends EventEmitter {
     }
 
     // if the gasFeePayment is gas tank but the user doesn't have funds, disable it
-    const hasBalance = Object.keys(currentPortfolio).find((networkName) => {
-      if (networkName === 'gasTank' || networkName === 'rewards') return false
-
+    let balance = 0
+    Object.keys(currentPortfolio).forEach((networkName) => {
       const networkPortfolio = currentPortfolio[networkName]
-      if (!networkPortfolio) return false
-      if (!networkPortfolio.result) return false
-      if (!networkPortfolio.result.total) return false
-      if (!networkPortfolio.result.total.usd) return false
+      if (!networkPortfolio?.result?.total?.usd) return
 
-      return networkPortfolio.result.total.usd > 0
+      balance += networkPortfolio.result.total.usd
     })
-    if (!hasBalance && this.accountOp.gasFeePayment && this.accountOp.gasFeePayment.isGasTank) {
-      errors.push("Gas tank isn't allowed on an empty account. Please add funds to your account")
+    if (balance < 10 && this.accountOp.gasFeePayment && this.accountOp.gasFeePayment.isGasTank) {
+      errors.push(
+        "Gas tank isn't allowed on accounts with < $10 balance. Please add funds to your account"
+      )
     }
 
     return errors
@@ -479,7 +480,7 @@ export class SignAccountOpController extends EventEmitter {
     calls?: AccountOp['calls']
     gasUsedTooHighAgreed?: boolean
     rbfAccountOps?: { [key: string]: SubmittedAccountOp | null }
-    bundlerGasPrices?: BundlerGasPrice
+    bundlerGasPrices?: { speeds: GasSpeeds; bundler: BUNDLER }
     blockGasLimit?: bigint
   }) {
     // once the user commits to the things he sees on his screen,
@@ -543,9 +544,13 @@ export class SignAccountOpController extends EventEmitter {
       )
     }
 
-    // update the bundler gas prices
-    if (this.estimation?.erc4337GasLimits && bundlerGasPrices) {
-      this.estimation.erc4337GasLimits.gasPrice = bundlerGasPrices
+    // update the bundler gas prices if the bundlers match
+    if (
+      this.estimation?.erc4337GasLimits &&
+      bundlerGasPrices &&
+      bundlerGasPrices.bundler === this.bundlerSwitcher.getBundler().getName()
+    ) {
+      this.estimation.erc4337GasLimits.gasPrice = bundlerGasPrices.speeds
     }
 
     if (
@@ -1088,6 +1093,7 @@ export class SignAccountOpController extends EventEmitter {
   #emitSigningErrorAndResetToReadyToSign(error: string) {
     this.emitError({ level: 'major', message: error, error: new Error(error) })
     this.status = { type: SigningStatus.ReadyToSign }
+
     this.emitUpdate()
   }
 
@@ -1252,6 +1258,7 @@ export class SignAccountOpController extends EventEmitter {
           this.account,
           accountState,
           this.accountOp,
+          this.bundlerSwitcher.getBundler().getName(),
           !accountState.isDeployed ? this.accountOp.meta!.entryPointAuthorization : undefined
         )
         userOperation.preVerificationGas = erc4337Estimation.preVerificationGas
@@ -1299,6 +1306,7 @@ export class SignAccountOpController extends EventEmitter {
             userOperation,
             this.#network
           )
+
           if (response.success) {
             const paymasterData = response as PaymasterSuccessReponse
             this.status = { type: SigningStatus.InProgress }

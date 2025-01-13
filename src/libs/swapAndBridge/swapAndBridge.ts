@@ -16,25 +16,56 @@ import { SignUserRequest } from '../../interfaces/userRequest'
 import { isSmartAccount } from '../account/account'
 import { Call } from '../accountOp/types'
 import { TokenResult } from '../portfolio'
+import { getTokenBalanceInUSD } from '../portfolio/helpers'
+
+const sortTokensByPendingAndBalance = (a: TokenResult, b: TokenResult) => {
+  // Pending tokens go on top
+  const isAPending =
+    typeof a.amountPostSimulation === 'bigint' && a.amountPostSimulation !== BigInt(a.amount)
+  const isBPending =
+    typeof b.amountPostSimulation === 'bigint' && b.amountPostSimulation !== BigInt(b.amount)
+
+  if (isAPending && !isBPending) return -1
+  if (!isAPending && isBPending) return 1
+
+  // Otherwise, higher balance comes first
+  const aBalanceUSD = getTokenBalanceInUSD(a)
+  const bBalanceUSD = getTokenBalanceInUSD(b)
+  if (aBalanceUSD !== bBalanceUSD) return bBalanceUSD - aBalanceUSD
+
+  return 0
+}
 
 export const sortTokenListResponse = (
   tokenListResponse: SocketAPIToken[],
   accountPortfolioTokenList: TokenResult[]
 ) => {
-  return (
-    tokenListResponse
-      // Alphabetically, by project name (not token symbol)
-      .sort((a: SocketAPIToken, b: SocketAPIToken) => a.name?.localeCompare(b?.name))
-      // Sort fist the tokens that exist in the account portfolio
-      .sort((a: SocketAPIToken, b: SocketAPIToken) => {
-        const aInPortfolio = accountPortfolioTokenList.some((t) => t.address === a.address)
-        const bInPortfolio = accountPortfolioTokenList.some((t) => t.address === b.address)
+  return tokenListResponse.sort((a: SocketAPIToken, b: SocketAPIToken) => {
+    const aInPortfolio = accountPortfolioTokenList.find((t) => t.address === a.address)
+    const bInPortfolio = accountPortfolioTokenList.find((t) => t.address === b.address)
 
-        if (aInPortfolio && !bInPortfolio) return -1
-        if (!aInPortfolio && bInPortfolio) return 1
-        return 0 // retain the alphabetical order
-      })
-  )
+    // Tokens in portfolio should come first
+    if (aInPortfolio && !bInPortfolio) return -1
+    if (!aInPortfolio && bInPortfolio) return 1
+
+    if (aInPortfolio && bInPortfolio) {
+      const comparisonResult = sortTokensByPendingAndBalance(aInPortfolio, bInPortfolio)
+      if (comparisonResult !== 0) return comparisonResult
+    }
+
+    // Otherwise, just alphabetical
+    return (a.name || '').localeCompare(b.name || '')
+  })
+}
+
+export const sortPortfolioTokenList = (accountPortfolioTokenList: TokenResult[]) => {
+  return accountPortfolioTokenList.sort((a, b) => {
+    const comparisonResult = sortTokensByPendingAndBalance(a, b)
+    if (comparisonResult !== 0) return comparisonResult
+
+    // Otherwise, just alphabetical
+    return (a.symbol || '').localeCompare(b.symbol || '')
+  })
 }
 
 export const convertPortfolioTokenToSocketAPIToken = (

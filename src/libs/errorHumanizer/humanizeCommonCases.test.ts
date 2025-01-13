@@ -72,7 +72,7 @@ describe('Estimation/Broadcast common errors are humanized', () => {
       const message = humanizeEstimationOrBroadcastError(reason, MESSAGE_PREFIX)
 
       expect(message).toBe(
-        `${MESSAGE_PREFIX} the transfer amount exceeds your account balance. Please reduce the transfer amount and try again.`
+        `${MESSAGE_PREFIX} the transfer amount exceeds your account balance. Please check your balance or adjust the transfer amount.`
       )
     }
   })

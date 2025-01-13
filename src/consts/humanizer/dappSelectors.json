@@ -586,17 +586,17 @@
     },
     "0x66d38203": {
         "type": "function",
-        "signature": "function setup(address token_addr) @175875",
+        "signature": "function setup(address token_addr)",
         "selector": "0x66d38203"
     },
     "0x422f1043": {
         "type": "function",
-        "signature": "function addLiquidity(uint256 min_liquidity, uint256 max_tokens, uint256 deadline) payable returns (uint256 out) @82616",
+        "signature": "function addLiquidity(uint256 min_liquidity, uint256 max_tokens, uint256 deadline) payable returns (uint256 out)",
         "selector": "0x422f1043"
     },
     "0xf88bf15a": {
         "type": "function",
-        "signature": "function removeLiquidity(uint256 amount, uint256 min_eth, uint256 min_tokens, uint256 deadline) returns (uint256 out, uint256 out) @116814",
+        "signature": "function removeLiquidity(uint256 amount, uint256 min_eth, uint256 min_tokens, uint256 deadline) returns (uint256 out, uint256 out)",
         "selector": "0xf88bf15a"
     },
     "0x89402a72": {
@@ -606,112 +606,112 @@
     },
     "0xf39b5b9b": {
         "type": "function",
-        "signature": "function ethToTokenSwapInput(uint256 min_tokens, uint256 deadline) payable returns (uint256 out) @12757",
+        "signature": "function ethToTokenSwapInput(uint256 min_tokens, uint256 deadline) payable returns (uint256 out)",
         "selector": "0xf39b5b9b"
     },
     "0xad65d76d": {
         "type": "function",
-        "signature": "function ethToTokenTransferInput(uint256 min_tokens, uint256 deadline, address recipient) payable returns (uint256 out) @12965",
+        "signature": "function ethToTokenTransferInput(uint256 min_tokens, uint256 deadline, address recipient) payable returns (uint256 out)",
         "selector": "0xad65d76d"
     },
     "0x6b1d4db7": {
         "type": "function",
-        "signature": "function ethToTokenSwapOutput(uint256 tokens_bought, uint256 deadline) payable returns (uint256 out) @50463",
+        "signature": "function ethToTokenSwapOutput(uint256 tokens_bought, uint256 deadline) payable returns (uint256 out)",
         "selector": "0x6b1d4db7"
     },
     "0x0b573638": {
         "type": "function",
-        "signature": "function ethToTokenTransferOutput(uint256 tokens_bought, uint256 deadline, address recipient) payable returns (uint256 out) @50671",
+        "signature": "function ethToTokenTransferOutput(uint256 tokens_bought, uint256 deadline, address recipient) payable returns (uint256 out)",
         "selector": "0x0b573638"
     },
     "0x95e3c50b": {
         "type": "function",
-        "signature": "function tokenToEthSwapInput(uint256 tokens_sold, uint256 min_eth, uint256 deadline) returns (uint256 out) @47503",
+        "signature": "function tokenToEthSwapInput(uint256 tokens_sold, uint256 min_eth, uint256 deadline) returns (uint256 out)",
         "selector": "0x95e3c50b"
     },
     "0x7237e031": {
         "type": "function",
-        "signature": "function tokenToEthTransferInput(uint256 tokens_sold, uint256 min_eth, uint256 deadline, address recipient) returns (uint256 out) @47712",
+        "signature": "function tokenToEthTransferInput(uint256 tokens_sold, uint256 min_eth, uint256 deadline, address recipient) returns (uint256 out)",
         "selector": "0x7237e031"
     },
     "0x013efd8b": {
         "type": "function",
-        "signature": "function tokenToEthSwapOutput(uint256 eth_bought, uint256 max_tokens, uint256 deadline) returns (uint256 out) @50175",
+        "signature": "function tokenToEthSwapOutput(uint256 eth_bought, uint256 max_tokens, uint256 deadline) returns (uint256 out)",
         "selector": "0x013efd8b"
     },
     "0xd4e4841d": {
         "type": "function",
-        "signature": "function tokenToEthTransferOutput(uint256 eth_bought, uint256 max_tokens, uint256 deadline, address recipient) returns (uint256 out) @50384",
+        "signature": "function tokenToEthTransferOutput(uint256 eth_bought, uint256 max_tokens, uint256 deadline, address recipient) returns (uint256 out)",
         "selector": "0xd4e4841d"
     },
     "0xddf7e1a7": {
         "type": "function",
-        "signature": "function tokenToTokenSwapInput(uint256 tokens_sold, uint256 min_tokens_bought, uint256 min_eth_bought, uint256 deadline, address token_addr) returns (uint256 out) @51007",
+        "signature": "function tokenToTokenSwapInput(uint256 tokens_sold, uint256 min_tokens_bought, uint256 min_eth_bought, uint256 deadline, address token_addr) returns (uint256 out)",
         "selector": "0xddf7e1a7"
     },
     "0xf552d91b": {
         "type": "function",
-        "signature": "function tokenToTokenTransferInput(uint256 tokens_sold, uint256 min_tokens_bought, uint256 min_eth_bought, uint256 deadline, address recipient, address token_addr) returns (uint256 out) @51098",
+        "signature": "function tokenToTokenTransferInput(uint256 tokens_sold, uint256 min_tokens_bought, uint256 min_eth_bought, uint256 deadline, address recipient, address token_addr) returns (uint256 out)",
         "selector": "0xf552d91b"
     },
     "0xb040d545": {
         "type": "function",
-        "signature": "function tokenToTokenSwapOutput(uint256 tokens_bought, uint256 max_tokens_sold, uint256 max_eth_sold, uint256 deadline, address token_addr) returns (uint256 out) @54928",
+        "signature": "function tokenToTokenSwapOutput(uint256 tokens_bought, uint256 max_tokens_sold, uint256 max_eth_sold, uint256 deadline, address token_addr) returns (uint256 out)",
         "selector": "0xb040d545"
     },
     "0xf3c0efe9": {
         "type": "function",
-        "signature": "function tokenToTokenTransferOutput(uint256 tokens_bought, uint256 max_tokens_sold, uint256 max_eth_sold, uint256 deadline, address recipient, address token_addr) returns (uint256 out) @55019",
+        "signature": "function tokenToTokenTransferOutput(uint256 tokens_bought, uint256 max_tokens_sold, uint256 max_eth_sold, uint256 deadline, address recipient, address token_addr) returns (uint256 out)",
         "selector": "0xf3c0efe9"
     },
     "0xb1cb43bf": {
         "type": "function",
-        "signature": "function tokenToExchangeSwapInput(uint256 tokens_sold, uint256 min_tokens_bought, uint256 min_eth_bought, uint256 deadline, address exchange_addr) returns (uint256 out) @49342",
+        "signature": "function tokenToExchangeSwapInput(uint256 tokens_sold, uint256 min_tokens_bought, uint256 min_eth_bought, uint256 deadline, address exchange_addr) returns (uint256 out)",
         "selector": "0xb1cb43bf"
     },
     "0xec384a3e": {
         "type": "function",
-        "signature": "function tokenToExchangeTransferInput(uint256 tokens_sold, uint256 min_tokens_bought, uint256 min_eth_bought, uint256 deadline, address recipient, address exchange_addr) returns (uint256 out) @49532",
+        "signature": "function tokenToExchangeTransferInput(uint256 tokens_sold, uint256 min_tokens_bought, uint256 min_eth_bought, uint256 deadline, address recipient, address exchange_addr) returns (uint256 out)",
         "selector": "0xec384a3e"
     },
     "0xea650c7d": {
         "type": "function",
-        "signature": "function tokenToExchangeSwapOutput(uint256 tokens_bought, uint256 max_tokens_sold, uint256 max_eth_sold, uint256 deadline, address exchange_addr) returns (uint256 out) @53233",
+        "signature": "function tokenToExchangeSwapOutput(uint256 tokens_bought, uint256 max_tokens_sold, uint256 max_eth_sold, uint256 deadline, address exchange_addr) returns (uint256 out)",
         "selector": "0xea650c7d"
     },
     "0x981a1327": {
         "type": "function",
-        "signature": "function tokenToExchangeTransferOutput(uint256 tokens_bought, uint256 max_tokens_sold, uint256 max_eth_sold, uint256 deadline, address recipient, address exchange_addr) returns (uint256 out) @53423",
+        "signature": "function tokenToExchangeTransferOutput(uint256 tokens_bought, uint256 max_tokens_sold, uint256 max_eth_sold, uint256 deadline, address recipient, address exchange_addr) returns (uint256 out)",
         "selector": "0x981a1327"
     },
     "0xcd7724c3": {
         "type": "function",
-        "signature": "function getEthToTokenInputPrice(uint256 eth_sold) view returns (uint256 out) @5542",
+        "signature": "function getEthToTokenInputPrice(uint256 eth_sold) view returns (uint256 out)",
         "selector": "0xcd7724c3"
     },
     "0x59e94862": {
         "type": "function",
-        "signature": "function getEthToTokenOutputPrice(uint256 tokens_bought) view returns (uint256 out) @6872",
+        "signature": "function getEthToTokenOutputPrice(uint256 tokens_bought) view returns (uint256 out)",
         "selector": "0x59e94862"
     },
     "0x95b68fe7": {
         "type": "function",
-        "signature": "function getTokenToEthInputPrice(uint256 tokens_sold) view returns (uint256 out) @5637",
+        "signature": "function getTokenToEthInputPrice(uint256 tokens_sold) view returns (uint256 out)",
         "selector": "0x95b68fe7"
     },
     "0x2640f62c": {
         "type": "function",
-        "signature": "function getTokenToEthOutputPrice(uint256 eth_bought) view returns (uint256 out) @6897",
+        "signature": "function getTokenToEthOutputPrice(uint256 eth_bought) view returns (uint256 out)",
         "selector": "0x2640f62c"
     },
     "0x9d76ea58": {
         "type": "function",
-        "signature": "function tokenAddress() view returns (address out) @1413",
+        "signature": "function tokenAddress() view returns (address out)",
         "selector": "0x9d76ea58"
     },
     "0x966dae0e": {
         "type": "function",
-        "signature": "function factoryAddress() view returns (address out) @1443",
+        "signature": "function factoryAddress() view returns (address out)",
         "selector": "0x966dae0e"
     },
     "0xa24a13a6": {
@@ -3751,27 +3751,27 @@
     },
     "0x5e0d443f": {
         "type": "function",
-        "signature": "function get_dy(int128 i, int128 j, uint256 dx) view returns (uint256) @2110507",
+        "signature": "function get_dy(int128 i, int128 j, uint256 dx) view returns (uint256)",
         "selector": "0x5e0d443f"
     },
     "0x07211ef7": {
         "type": "function",
-        "signature": "function get_dy_underlying(int128 i, int128 j, uint256 dx) view returns (uint256 out) @3016494",
+        "signature": "function get_dy_underlying(int128 i, int128 j, uint256 dx) view returns (uint256 out)",
         "selector": "0x07211ef7"
     },
     "0x17f1bdf0": {
         "type": "function",
-        "signature": "function exchange(int128 i, int128 j, uint256 dx, uint256 min_dy, uint256 deadline) @5177344",
+        "signature": "function exchange(int128 i, int128 j, uint256 dx, uint256 min_dy, uint256 deadline)",
         "selector": "0x17f1bdf0"
     },
     "0x882ff7fc": {
         "type": "function",
-        "signature": "function exchange_underlying(int128 i, int128 j, uint256 dx, uint256 min_dy, uint256 deadline) @5194004",
+        "signature": "function exchange_underlying(int128 i, int128 j, uint256 dx, uint256 min_dy, uint256 deadline)",
         "selector": "0x882ff7fc"
     },
     "0x59639fa9": {
         "type": "function",
-        "signature": "function remove_liquidity(uint256 _amount, uint256 deadline, uint256[2] min_amounts) @1220465",
+        "signature": "function remove_liquidity(uint256 _amount, uint256 deadline, uint256[2] min_amounts)",
         "selector": "0x59639fa9"
     },
     "0xe3103273": {
@@ -3781,7 +3781,7 @@
     },
     "0xe1ceefda": {
         "type": "function",
-        "signature": "function commit_new_parameters(int128 amplification, int128 new_fee, int128 new_admin_fee) @146017",
+        "signature": "function commit_new_parameters(int128 amplification, int128 new_fee, int128 new_admin_fee)",
         "selector": "0xe1ceefda"
     },
     "0x2a7dd7cd": {
@@ -3811,7 +3811,7 @@
     },
     "0x30c54085": {
         "type": "function",
-        "signature": "function withdraw_admin_fees() @24046",
+        "signature": "function withdraw_admin_fees()",
         "selector": "0x30c54085"
     },
     "0xe3698853": {
@@ -3826,17 +3826,17 @@
     },
     "0x23746eb8": {
         "type": "function",
-        "signature": "function coins(int128 arg0) view returns (address out) @2190",
+        "signature": "function coins(int128 arg0) view returns (address out)",
         "selector": "0x23746eb8"
     },
     "0xb739953e": {
         "type": "function",
-        "signature": "function underlying_coins(int128 arg0) view returns (address out) @2220",
+        "signature": "function underlying_coins(int128 arg0) view returns (address out)",
         "selector": "0xb739953e"
     },
     "0x065a80d8": {
         "type": "function",
-        "signature": "function balances(int128 arg0) view returns (uint256 out) @2250",
+        "signature": "function balances(int128 arg0) view returns (uint256 out)",
         "selector": "0x065a80d8"
     },
     "0xf446c1d0": {
@@ -3866,12 +3866,12 @@
     },
     "0xb4b577ad": {
         "type": "function",
-        "signature": "function future_A() view returns (uint256) @3168",
+        "signature": "function future_A() view returns (uint256)",
         "selector": "0xb4b577ad"
     },
     "0x58680d0b": {
         "type": "function",
-        "signature": "function future_fee() view returns (uint256 out) @2291",
+        "signature": "function future_fee() view returns (uint256 out)",
         "selector": "0x58680d0b"
     },
     "0xe3824462": {
@@ -4466,22 +4466,22 @@
     },
     "0xcf701ff7": {
         "type": "function",
-        "signature": "function calc_token_amount(uint256[4] amounts, bool deposit) view returns (uint256 out) @6067881",
+        "signature": "function calc_token_amount(uint256[4] amounts, bool deposit) view returns (uint256 out)",
         "selector": "0xcf701ff7"
     },
     "0x029b2f34": {
         "type": "function",
-        "signature": "function add_liquidity(uint256[4] amounts, uint256 min_mint_amount) @9327083",
+        "signature": "function add_liquidity(uint256[4] amounts, uint256 min_mint_amount)",
         "selector": "0x029b2f34"
     },
     "0x67df02ca": {
         "type": "function",
-        "signature": "function get_dx(int128 i, int128 j, uint256 dy) view returns (uint256 out) @3016657",
+        "signature": "function get_dx(int128 i, int128 j, uint256 dy) view returns (uint256 out)",
         "selector": "0x67df02ca"
     },
     "0x0e71d1b9": {
         "type": "function",
-        "signature": "function get_dx_underlying(int128 i, int128 j, uint256 dy) view returns (uint256 out) @3016500",
+        "signature": "function get_dx_underlying(int128 i, int128 j, uint256 dy) view returns (uint256 out)",
         "selector": "0x0e71d1b9"
     },
     "0x3df02124": {
@@ -4491,22 +4491,22 @@
     },
     "0xa6417ed6": {
         "type": "function",
-        "signature": "function exchange_underlying(int128 i, int128 j, uint256 dx, uint256 min_dy) @6125699",
+        "signature": "function exchange_underlying(int128 i, int128 j, uint256 dx, uint256 min_dy)",
         "selector": "0xa6417ed6"
     },
     "0x7d49d875": {
         "type": "function",
-        "signature": "function remove_liquidity(uint256 _amount, uint256[4] min_amounts) @240409",
+        "signature": "function remove_liquidity(uint256 _amount, uint256[4] min_amounts)",
         "selector": "0x7d49d875"
     },
     "0x18a7bd76": {
         "type": "function",
-        "signature": "function remove_liquidity_imbalance(uint256[4] amounts, uint256 max_burn_amount) @9326310",
+        "signature": "function remove_liquidity_imbalance(uint256[4] amounts, uint256 max_burn_amount)",
         "selector": "0x18a7bd76"
     },
     "0xee11f5b6": {
         "type": "function",
-        "signature": "function commit_new_parameters(uint256 amplification, uint256 new_fee, uint256 new_admin_fee) @145897",
+        "signature": "function commit_new_parameters(uint256 amplification, uint256 new_fee, uint256 new_admin_fee)",
         "selector": "0xee11f5b6"
     },
     "0x9a8a0592": {
@@ -4696,22 +4696,22 @@
     },
     "0x3883e119": {
         "type": "function",
-        "signature": "function calc_token_amount(uint256[3] amounts, bool deposit) view returns (uint256 out) @5171741",
+        "signature": "function calc_token_amount(uint256[3] amounts, bool deposit) view returns (uint256 out)",
         "selector": "0x3883e119"
     },
     "0x4515cef3": {
         "type": "function",
-        "signature": "function add_liquidity(uint256[3] amounts, uint256 min_mint_amount) @7905846",
+        "signature": "function add_liquidity(uint256[3] amounts, uint256 min_mint_amount)",
         "selector": "0x4515cef3"
     },
     "0xecb586a5": {
         "type": "function",
-        "signature": "function remove_liquidity(uint256 _amount, uint256[3] min_amounts) @197574",
+        "signature": "function remove_liquidity(uint256 _amount, uint256[3] min_amounts)",
         "selector": "0xecb586a5"
     },
     "0x9fdaea0c": {
         "type": "function",
-        "signature": "function remove_liquidity_imbalance(uint256[3] amounts, uint256 max_burn_amount) @7905313",
+        "signature": "function remove_liquidity_imbalance(uint256[3] amounts, uint256 max_burn_amount)",
         "selector": "0x9fdaea0c"
     },
     "0xad5c4648": {
@@ -6511,7 +6511,7 @@
     },
     "0xa461b3c8": {
         "type": "function",
-        "signature": "function initialize(string _name, string _symbol, address[4] _coins, uint256[4] _rate_multipliers, uint256 _A, uint256 _fee) @401588",
+        "signature": "function initialize(string _name, string _symbol, address[4] _coins, uint256[4] _rate_multipliers, uint256 _A, uint256 _fee)",
         "selector": "0xa461b3c8"
     },
     "0x4903b0d1": {
@@ -6521,17 +6521,17 @@
     },
     "0x14f05979": {
         "type": "function",
-        "signature": "function get_balances() view returns (uint256[2]) @4707",
+        "signature": "function get_balances() view returns (uint256[2])",
         "selector": "0x14f05979"
     },
     "0x76a2f0f0": {
         "type": "function",
-        "signature": "function A_precise() view returns (uint256) @10726",
+        "signature": "function A_precise() view returns (uint256)",
         "selector": "0x76a2f0f0"
     },
     "0xed8e84f3": {
         "type": "function",
-        "signature": "function calc_token_amount(uint256[2] _amounts, bool _is_deposit) view returns (uint256) @1668445",
+        "signature": "function calc_token_amount(uint256[2] _amounts, bool _is_deposit) view returns (uint256)",
         "selector": "0xed8e84f3"
     },
     "0x0c3e4b54": {
@@ -6576,12 +6576,12 @@
     },
     "0x3c157e64": {
         "type": "function",
-        "signature": "function ramp_A(uint256 _future_A, uint256 _future_time) @162101",
+        "signature": "function ramp_A(uint256 _future_A, uint256 _future_time)",
         "selector": "0x3c157e64"
     },
     "0x551a6588": {
         "type": "function",
-        "signature": "function stop_ramp_A() @157565",
+        "signature": "function stop_ramp_A()",
         "selector": "0x551a6588"
     },
     "0xc6610657": {
@@ -6591,22 +6591,22 @@
     },
     "0xe2e7d264": {
         "type": "function",
-        "signature": "function admin_balances(uint256 i) view returns (uint256) @7740",
+        "signature": "function admin_balances(uint256 i) view returns (uint256)",
         "selector": "0xe2e7d264"
     },
     "0x5409491a": {
         "type": "function",
-        "signature": "function initial_A() view returns (uint256) @3138",
+        "signature": "function initial_A() view returns (uint256)",
         "selector": "0x5409491a"
     },
     "0x2081066c": {
         "type": "function",
-        "signature": "function initial_A_time() view returns (uint256) @3198",
+        "signature": "function initial_A_time() view returns (uint256)",
         "selector": "0x2081066c"
     },
     "0x14052288": {
         "type": "function",
-        "signature": "function future_A_time() view returns (uint256) @3228",
+        "signature": "function future_A_time() view returns (uint256)",
         "selector": "0x14052288"
     },
     "0xb1373929": {
@@ -7561,7 +7561,7 @@
     },
     "0x42966c68": {
         "type": "function",
-        "signature": "function burn(uint256 _value) @76623",
+        "signature": "function burn(uint256 _value)",
         "selector": "0x42966c68"
     },
     "0xfc6f7865": {
@@ -8781,17 +8781,17 @@
     },
     "0x1652e9fc": {
         "type": "function",
-        "signature": "function set_minter(address _minter) @36247",
+        "signature": "function set_minter(address _minter)",
         "selector": "0x1652e9fc"
     },
     "0x40c10f19": {
         "type": "function",
-        "signature": "function mint(address _to, uint256 _value) @75733",
+        "signature": "function mint(address _to, uint256 _value)",
         "selector": "0x40c10f19"
     },
     "0x79cc6790": {
         "type": "function",
-        "signature": "function burnFrom(address _to, uint256 _value) @76696",
+        "signature": "function burnFrom(address _to, uint256 _value)",
         "selector": "0x79cc6790"
     }
 }

@@ -1,18 +1,14 @@
-import { toBeHex } from 'ethers'
+import { hexlify, toBeHex } from 'ethers'
 
-import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import { DEPLOYLESS_SIMULATION_FROM } from '../../consts/deploy'
+import { EOA_SIMULATION_NONCE } from '../../consts/deployless'
 import { Network } from '../../interfaces/network'
+import { getEoaSimulationStateOverride } from '../../utils/simulationStateOverride'
 import { getAccountDeployParams, isSmartAccount } from '../account/account'
 import { callToTuple, toSingletonCall } from '../accountOp/accountOp'
 import { Deployless, DeploylessMode, parseErr } from '../deployless/deployless'
-import { privSlot } from '../proxyDeploy/deploy'
 import { getFlags, overrideSymbol } from './helpers'
 import { CollectionResult, GetOptions, LimitsOptions, TokenResult } from './interfaces'
-
-// fake nonce for EOA simulation
-export const EOA_SIMULATION_NONCE =
-  '0x1000000000000000000000000000000000000000000000000000000000000000'
 
 class SimulationError extends Error {
   public simulationErrorMsg: string
@@ -73,29 +69,18 @@ function handleSimulationError(
   }
 }
 
-function getDeploylessOpts(accountAddr: string, network: Network, opts: Partial<GetOptions>) {
+export function getDeploylessOpts(
+  accountAddr: string,
+  supportsStateOverride: boolean,
+  opts: Partial<GetOptions>
+) {
   return {
     blockTag: opts.blockTag,
     from: DEPLOYLESS_SIMULATION_FROM,
     mode:
-      !network.rpcNoStateOverride && opts.isEOA
-        ? DeploylessMode.StateOverride
-        : DeploylessMode.Detect,
+      supportsStateOverride && opts.isEOA ? DeploylessMode.StateOverride : DeploylessMode.Detect,
     stateToOverride:
-      !network.rpcNoStateOverride && opts.isEOA
-        ? {
-            [accountAddr]: {
-              code: AmbireAccount.binRuntime,
-              stateDiff: {
-                // if we use 0x00...01 we get a geth bug: "invalid argument 2: hex number with leading zero digits\" - on some RPC providers
-                [`0x${privSlot(0, 'address', accountAddr, 'bytes32')}`]:
-                  '0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
-                // any number with leading zeros is not supported on some RPCs
-                [toBeHex(1, 32)]: EOA_SIMULATION_NONCE
-              }
-            }
-          }
-        : null
+      supportsStateOverride && opts.isEOA ? getEoaSimulationStateOverride(accountAddr) : null
   }
 }
 
@@ -107,7 +92,7 @@ export async function getNFTs(
   tokenAddrs: [string, any][],
   limits: LimitsOptions
 ): Promise<[number, CollectionResult][]> {
-  const deploylessOpts = getDeploylessOpts(accountAddr, network, opts)
+  const deploylessOpts = getDeploylessOpts(accountAddr, !network.rpcNoStateOverride, opts)
   const mapToken = (token: any) => {
     return {
       name: token.name,
@@ -228,7 +213,7 @@ export async function getTokens(
       flags: getFlags({}, network.id, network.id, address)
     } as TokenResult
   }
-  const deploylessOpts = getDeploylessOpts(accountAddr, network, opts)
+  const deploylessOpts = getDeploylessOpts(accountAddr, !network.rpcNoStateOverride, opts)
   if (!opts.simulation) {
     const [results, blockNumber] = await deployless.call(
       'getBalances',

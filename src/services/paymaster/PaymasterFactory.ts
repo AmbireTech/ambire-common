@@ -2,6 +2,7 @@ import { Fetch } from '../../interfaces/fetch'
 import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
 import { AccountOp } from '../../libs/accountOp/accountOp'
+import { AbstractPaymaster } from '../../libs/paymaster/abstractPaymaster'
 import { Paymaster } from '../../libs/paymaster/paymaster'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { UserOperation } from '../../libs/userOperation/types'
@@ -15,8 +16,11 @@ import { failedPaymasters } from './FailedPaymasters'
 export class PaymasterFactory {
   callRelayer: Function | undefined = undefined
 
-  init(relayerUrl: string, fetch: Fetch) {
+  errorCallback: Function | undefined = undefined
+
+  init(relayerUrl: string, fetch: Fetch, errorCallback: Function) {
     this.callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
+    this.errorCallback = errorCallback
   }
 
   async create(
@@ -24,8 +28,9 @@ export class PaymasterFactory {
     userOp: UserOperation,
     network: Network,
     provider: RPCProvider
-  ): Promise<Paymaster> {
-    if (this.callRelayer === undefined) throw new Error('call init first')
+  ): Promise<AbstractPaymaster> {
+    if (this.callRelayer === undefined || this.errorCallback === undefined)
+      throw new Error('call init first')
 
     // check whether the sponsorship has failed and if it has,
     // mark it like so in the meta for the paymaster to know
@@ -35,7 +40,7 @@ export class PaymasterFactory {
       if (localOp.meta && localOp.meta.paymasterService) localOp.meta.paymasterService.failed = true
     }
 
-    const paymaster = new Paymaster(this.callRelayer)
+    const paymaster = new Paymaster(this.callRelayer, this.errorCallback)
     await paymaster.init(localOp, userOp, network, provider)
     return paymaster
   }

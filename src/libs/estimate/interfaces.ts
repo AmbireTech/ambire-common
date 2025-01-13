@@ -1,19 +1,14 @@
-import { Paymaster } from '../paymaster/paymaster'
+import { Hex } from '../../interfaces/hex'
+import { GasSpeeds } from '../../services/bundlers/types'
+import { AbstractPaymaster } from '../paymaster/abstractPaymaster'
 import { TokenResult } from '../portfolio'
 
 export interface BundlerEstimateResult {
-  preVerificationGas: string
-  verificationGasLimit: string
-  callGasLimit: string
-  paymasterVerificationGasLimit: string
-  paymasterPostOpGasLimit: string
-}
-
-export interface BundlerGasPrice {
-  slow: { maxFeePerGas: string; maxPriorityFeePerGas: string }
-  medium: { maxFeePerGas: string; maxPriorityFeePerGas: string }
-  fast: { maxFeePerGas: string; maxPriorityFeePerGas: string }
-  ape: { maxFeePerGas: string; maxPriorityFeePerGas: string }
+  preVerificationGas: Hex
+  verificationGasLimit: Hex
+  callGasLimit: Hex
+  paymasterVerificationGasLimit: Hex
+  paymasterPostOpGasLimit: Hex
 }
 
 export interface Erc4337GasLimits {
@@ -22,8 +17,8 @@ export interface Erc4337GasLimits {
   callGasLimit: string
   paymasterVerificationGasLimit: string
   paymasterPostOpGasLimit: string
-  gasPrice: BundlerGasPrice
-  paymaster: Paymaster
+  gasPrice: GasSpeeds
+  paymaster: AbstractPaymaster
 }
 
 export interface FeePaymentOption {

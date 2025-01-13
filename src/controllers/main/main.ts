@@ -1,10 +1,12 @@
-import { ethErrors } from 'eth-rpc-errors'
 /* eslint-disable @typescript-eslint/brace-style */
+
+import { ethErrors } from 'eth-rpc-errors'
 import { getAddress, getBigInt, Interface, isAddress } from 'ethers'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json'
 import EmittableError from '../../classes/EmittableError'
+import { BUNDLER } from '../../consts/bundlers'
 import { ORIGINS_WHITELISTED_TO_ALL_ACCOUNTS } from '../../consts/dappCommunication'
 import { AMBIRE_ACCOUNT_FACTORY, SINGLETON } from '../../consts/deploy'
 import {
@@ -37,6 +39,7 @@ import { getDefaultSelectedAccount, isSmartAccount } from '../../libs/account/ac
 import { AccountOp, AccountOpStatus, getSignableCalls } from '../../libs/accountOp/accountOp'
 import {
   AccountOpIdentifiedBy,
+  getDappIdentifier,
   pollTxnId,
   SubmittedAccountOp
 } from '../../libs/accountOp/submittedAccountOp'
@@ -54,7 +57,7 @@ import {
 } from '../../libs/errorHumanizer'
 import { insufficientPaymasterFunds } from '../../libs/errorHumanizer/errors'
 import { estimate } from '../../libs/estimate/estimate'
-import { BundlerGasPrice, EstimateResult } from '../../libs/estimate/interfaces'
+import { EstimateResult } from '../../libs/estimate/interfaces'
 import { GasRecommendation, getGasPriceRecommendations } from '../../libs/gasPrice/gasPrice'
 import { humanizeAccountOp } from '../../libs/humanizer'
 import { KeyIterator } from '../../libs/keyIterator/keyIterator'
@@ -87,8 +90,8 @@ import {
   isErc4337Broadcast,
   shouldAskForEntryPointAuthorization
 } from '../../libs/userOperation/userOperation'
-import bundler from '../../services/bundlers'
-import { Bundler } from '../../services/bundlers/bundler'
+import { getDefaultBundler } from '../../services/bundlers/getBundler'
+import { GasSpeeds } from '../../services/bundlers/types'
 import { paymasterFactory } from '../../services/paymaster'
 import { failedPaymasters } from '../../services/paymaster/FailedPaymasters'
 import { SocketAPI } from '../../services/socket/api'
@@ -198,7 +201,7 @@ export class MainController extends EventEmitter {
   gasPrices: { [key: string]: GasRecommendation[] } = {}
 
   // network => BundlerGasPrice
-  bundlerGasPrices: { [key: string]: BundlerGasPrice } = {}
+  bundlerGasPrices: { [key: string]: { speeds: GasSpeeds; bundler: BUNDLER } } = {}
 
   accountOpsToBeConfirmed: { [key: string]: { [key: string]: AccountOp } } = {}
 
@@ -288,6 +291,7 @@ export class MainController extends EventEmitter {
     )
     this.defiPositions = new DefiPositionsController({
       fetch: this.fetch,
+      storage,
       selectedAccount: this.selectedAccount,
       networks: this.networks,
       providers: this.providers
@@ -355,7 +359,26 @@ export class MainController extends EventEmitter {
     )
     this.domains = new DomainsController(this.providers.providers)
     this.#initialLoadPromise = this.#load()
-    paymasterFactory.init(relayerUrl, fetch)
+    paymasterFactory.init(relayerUrl, fetch, (e: ErrorRef) => {
+      if (!this.signAccountOp) return
+      this.emitError(e)
+    })
+  }
+
+  /**
+   * - Updates the selected account's account state, portfolio and defi positions
+   * - Calls batchReverseLookup for all accounts
+   *
+   * It's not a problem to call it many times consecutively as all methods have internal
+   * caching mechanisms to prevent unnecessary calls.
+   */
+  onLoad(isFirstLoad: boolean = false) {
+    const selectedAccountAddr = this.selectedAccount.account?.addr
+    this.updateSelectedAccountPortfolio()
+    this.defiPositions.updatePositions()
+    this.domains.batchReverseLookup(this.accounts.accounts.map((a) => a.addr))
+    // The first time the app loads, we update the account state elsewhere
+    if (selectedAccountAddr && !isFirstLoad) this.accounts.updateAccountState(selectedAccountAddr)
   }
 
   async #load(): Promise<void> {
@@ -370,9 +393,7 @@ export class MainController extends EventEmitter {
     await this.accounts.initialLoadPromise
     await this.selectedAccount.initialLoadPromise
 
-    this.updateSelectedAccountPortfolio()
-    this.defiPositions.updatePositions()
-    this.domains.batchReverseLookup(this.accounts.accounts.map((a) => a.addr))
+    this.onLoad(true)
     /**
      * Listener that gets triggered as a finalization step of adding new
      * accounts via the AccountAdder controller flow.
@@ -420,6 +441,12 @@ export class MainController extends EventEmitter {
     this.emitUpdate()
   }
 
+  lock() {
+    this.keystore.lock()
+    this.emailVault.cleanMagicAndSessionKeys()
+    this.selectedAccount.setDashboardNetworkFilter(null)
+  }
+
   async selectAccount(toAccountAddr: string) {
     await this.withStatus('selectAccount', async () => this.#selectAccount(toAccountAddr), true)
   }
@@ -438,6 +465,10 @@ export class MainController extends EventEmitter {
       console.error(`Account with address ${toAccountAddr} does not exist`)
       return
     }
+
+    // call closeActionWindow while still on the currently selected account to allow proper
+    // state cleanup of the controllers like actionsCtrl, signAccountOpCtrl, signMessageCtrl...
+    this.actions.closeActionWindow()
     this.selectedAccount.setAccount(accountToSelect)
     this.swapAndBridge.onAccountChange()
     this.dapps.broadcastDappSessionEvent('accountsChanged', [toAccountAddr])
@@ -451,7 +482,6 @@ export class MainController extends EventEmitter {
     this.accounts.updateAccountState(toAccountAddr)
     this.updateSelectedAccountPortfolio()
     this.defiPositions.updatePositions()
-
     this.emitUpdate()
   }
 
@@ -574,7 +604,6 @@ export class MainController extends EventEmitter {
       network,
       actionId,
       accountOp,
-      this.callRelayer,
       () => {
         this.estimateSignAccountOp()
       },
@@ -604,7 +633,11 @@ export class MainController extends EventEmitter {
           return Promise.reject(error)
         }
 
-        this.#signAccountOpSigningPromise = this.signAccountOp.sign()
+        // Reset the promise in the `finally` block to ensure it doesn't remain unresolved if an error is thrown
+        this.#signAccountOpSigningPromise = this.signAccountOp.sign().finally(() => {
+          this.#signAccountOpSigningPromise = undefined
+        })
+
         return this.#signAccountOpSigningPromise
       },
       true
@@ -616,7 +649,10 @@ export class MainController extends EventEmitter {
     return this.withStatus(
       'broadcastSignedAccountOp',
       async () => {
-        this.#signAccountOpBroadcastPromise = this.#broadcastSignedAccountOp()
+        // Reset the promise in the `finally` block to ensure it doesn't remain unresolved if an error is thrown
+        this.#signAccountOpBroadcastPromise = this.#broadcastSignedAccountOp().finally(() => {
+          this.#signAccountOpBroadcastPromise = undefined
+        })
         return this.#signAccountOpBroadcastPromise
       },
       true
@@ -643,32 +679,45 @@ export class MainController extends EventEmitter {
     const network = this.networks.networks.find((net) => net.id === accountOp?.networkId)
     if (!network) return
 
-    const account = this.accounts.accounts.find((acc) => acc.addr === accountOp.accountAddr)!
-    const state = this.accounts.accountStates[accountOp.accountAddr][accountOp.networkId]
-    const provider = this.providers.providers[network.id]
-    const gasPrice = this.gasPrices[network.id]
-    const { tokens, nfts } = await debugTraceCall(
-      account,
-      accountOp,
-      provider,
-      state,
-      estimation.gasUsed,
-      gasPrice,
-      !network.rpcNoStateOverride
-    )
-    const learnedNewTokens = this.portfolio.addTokensToBeLearned(tokens, network.id)
-    const learnedNewNfts = await this.portfolio.learnNfts(nfts, network.id)
-    // update the portfolio only if new tokens were found through tracing
-    if (learnedNewTokens || learnedNewNfts) {
-      this.portfolio
-        .updateSelectedAccount(
-          accountOp.accountAddr,
-          network,
-          getAccountOpsForSimulation(account, this.actions.visibleActionsQueue, network, accountOp),
-          { forceUpdate: true }
-        )
-        // fire an update request to refresh the warnings if any
-        .then(() => this.signAccountOp?.update({}))
+    try {
+      const account = this.accounts.accounts.find((acc) => acc.addr === accountOp.accountAddr)!
+      const state = this.accounts.accountStates[accountOp.accountAddr][accountOp.networkId]
+      const provider = this.providers.providers[network.id]
+      const gasPrice = this.gasPrices[network.id]
+      const { tokens, nfts } = await debugTraceCall(
+        account,
+        accountOp,
+        provider,
+        state,
+        estimation.gasUsed,
+        gasPrice,
+        !network.rpcNoStateOverride
+      )
+      const learnedNewTokens = this.portfolio.addTokensToBeLearned(tokens, network.id)
+      const learnedNewNfts = await this.portfolio.learnNfts(nfts, network.id)
+      // update the portfolio only if new tokens were found through tracing
+      if (learnedNewTokens || learnedNewNfts) {
+        this.portfolio
+          .updateSelectedAccount(
+            accountOp.accountAddr,
+            network,
+            getAccountOpsForSimulation(
+              account,
+              this.actions.visibleActionsQueue,
+              network,
+              accountOp
+            ),
+            { forceUpdate: true }
+          )
+          // fire an update request to refresh the warnings if any
+          .then(() => this.signAccountOp?.update({}))
+      }
+    } catch (e: any) {
+      this.emitError({
+        level: 'silent',
+        message: 'Error in main.traceCall',
+        error: e
+      })
     }
   }
 
@@ -878,6 +927,7 @@ export class MainController extends EventEmitter {
         await this.activity.removeAccountData(address)
         this.actions.removeAccountData(address)
         this.signMessage.removeAccountData(address)
+        this.defiPositions.removeAccountData(address)
 
         if (this.selectedAccount.account?.addr === address) {
           await this.#selectAccount(this.accounts.accounts[0]?.addr)
@@ -1117,6 +1167,13 @@ export class MainController extends EventEmitter {
         throw ethErrors.rpc.methodNotSupported(
           'Invalid typedData format - only typedData v4 is supported'
         )
+      }
+
+      if (
+        msgAddress === this.selectedAccount.account.addr &&
+        (typedData.primaryType === 'AmbireOperation' || !!typedData.types.AmbireOperation)
+      ) {
+        throw ethErrors.rpc.methodNotSupported('Signing an AmbireOperation is not allowed')
       }
 
       userRequest = {
@@ -1718,9 +1775,8 @@ export class MainController extends EventEmitter {
         (r) => r.id === call.fromUserRequestId && r.meta.isWalletSendCalls
       )
       if (walletSendCallsUserReq) {
-        const identifiedBy = data.submittedAccountOp.identifiedBy
         walletSendCallsUserReq.dappPromise?.resolve({
-          hash: `${identifiedBy.type}:${identifiedBy.identifier}`
+          hash: getDappIdentifier(data.submittedAccountOp)
         })
 
         // eslint-disable-next-line no-await-in-loop
@@ -1814,13 +1870,16 @@ export class MainController extends EventEmitter {
       network,
       this.accounts.accountStates[accOp.accountAddr][accOp.networkId]
     )
+    const bundler = this.signAccountOp
+      ? this.signAccountOp.bundlerSwitcher.getBundler()
+      : getDefaultBundler(network)
     const bundlerFetch = async () => {
       if (!is4337) return null
       const errorCallback = (e: ErrorRef) => {
         if (!this.signAccountOp) return
         this.emitError(e)
       }
-      return Bundler.fetchGasPrices(network, errorCallback).catch((e) => {
+      return bundler.fetchGasPrices(network, errorCallback).catch((e) => {
         this.emitError({
           level: 'silent',
           message: "Failed to fetch the bundler's gas price",
@@ -1841,7 +1900,8 @@ export class MainController extends EventEmitter {
     ])
 
     if (gasPriceData && gasPriceData.gasPrice) this.gasPrices[network.id] = gasPriceData.gasPrice
-    if (bundlerGas) this.bundlerGasPrices[network.id] = bundlerGas
+    if (bundlerGas)
+      this.bundlerGasPrices[network.id] = { speeds: bundlerGas, bundler: bundler.getName() }
 
     return {
       blockGasLimit: gasPriceData?.blockGasLimit
@@ -1988,6 +2048,7 @@ export class MainController extends EventEmitter {
             if (!this.signAccountOp) return
             this.emitError(e)
           },
+          this.signAccountOp.bundlerSwitcher,
           {
             is4337Broadcast: isErc4337Broadcast(
               account,
@@ -2141,6 +2202,7 @@ export class MainController extends EventEmitter {
     const accountOp = this.signAccountOp?.accountOp
     const estimation = this.signAccountOp?.estimation
     const actionId = this.signAccountOp?.fromActionId
+    const bundlerSwitcher = this.signAccountOp?.bundlerSwitcher
     const contactSupportPrompt = 'Please try again or contact support if the problem persists.'
 
     if (
@@ -2149,7 +2211,8 @@ export class MainController extends EventEmitter {
       !actionId ||
       !accountOp.signingKeyAddr ||
       !accountOp.signingKeyType ||
-      !accountOp.signature
+      !accountOp.signature ||
+      !bundlerSwitcher
     ) {
       const message = `Missing mandatory transaction details. ${contactSupportPrompt}`
       return this.throwBroadcastAccountOp({ message })
@@ -2334,14 +2397,35 @@ export class MainController extends EventEmitter {
 
       // broadcast through bundler's service
       let userOperationHash
+      const bundler = bundlerSwitcher.getBundler()
       try {
-        userOperationHash = await bundler.broadcast(userOperation, network!)
+        userOperationHash = await bundler.broadcast(userOperation, network)
       } catch (e: any) {
+        let retryMsg
+
+        // if the signAccountOp is still active (it should be)
+        // try to switch the bundler and ask the user to try again
+        // TODO: explore more error case where we switch the bundler
+        if (this.signAccountOp) {
+          const decodedError = bundler.decodeBundlerError(e)
+          const humanReadable = getHumanReadableBroadcastError(decodedError)
+          const switcher = this.signAccountOp.bundlerSwitcher
+          this.signAccountOp.updateStatus(SigningStatus.ReadyToSign)
+
+          if (switcher.canSwitch(humanReadable)) {
+            switcher.switch()
+            this.estimateSignAccountOp()
+            this.#updateGasPrice()
+            retryMsg = 'Broadcast failed because bundler was down. Please try again'
+          }
+        }
+
         return this.throwBroadcastAccountOp({
           error: e,
           accountState,
           provider,
-          network
+          network,
+          message: retryMsg
         })
       }
       if (!userOperationHash) {
@@ -2354,7 +2438,8 @@ export class MainController extends EventEmitter {
         nonce: Number(userOperation.nonce),
         identifiedBy: {
           type: 'UserOperation',
-          identifier: userOperationHash
+          identifier: userOperationHash,
+          bundler: bundler.getName()
         }
       }
     }

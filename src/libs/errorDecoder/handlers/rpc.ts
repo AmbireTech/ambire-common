@@ -31,7 +31,8 @@ class RpcErrorHandler implements ErrorHandler {
       rpcError.code,
       rpcError.shortMessage,
       rpcError.message,
-      rpcError.info?.error?.message
+      rpcError.info?.error?.message,
+      rpcError.error?.message
     ]
 
     const reason = possibleReasons.find((r) => !!r && isReasonValid(r)) || ''

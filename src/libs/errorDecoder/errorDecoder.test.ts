@@ -4,6 +4,7 @@ import { ethers } from 'hardhat'
 
 import { describe, expect } from '@jest/globals'
 
+import { suppressConsole } from '../../../test/helpers/console'
 import { RELAYER_DOWN_MESSAGE, RelayerError } from '../relayerCall/relayerCall'
 import { PANIC_ERROR_PREFIX } from './constants'
 import { InnerCallFailureError, RelayerPaymasterError } from './customErrors'
@@ -32,6 +33,16 @@ export const MockRpcError = class extends Error {
     public shortMessage?: string
   ) {
     super(info?.error.message || shortMessage)
+  }
+}
+
+export const MockCustomError = class extends Error {
+  public constructor(
+    public code?: string | number,
+    public data?: string,
+    public shortMessage?: string
+  ) {
+    super(shortMessage || data)
   }
 }
 
@@ -160,6 +171,50 @@ describe('Error decoders work', () => {
       expect(decodedError.data).toBe(TEST_MESSAGE_REVERT_DATA)
     })
   })
+  describe('CustomErrorHandler', () => {
+    it('SwapFailed(0x81ceff30)', () => {
+      const error = new MockCustomError(
+        'CALL_EXCEPTION',
+        '0x81ceff30',
+        'Error: execution reverted (unknown custom error) '
+      )
+      const decodedError = decodeError(error)
+
+      expect(decodedError.type).toEqual(ErrorType.CustomError)
+      expect(decodedError.reason).toBe('0x81ceff30')
+      expect(decodedError.data).toBe('0x81ceff30')
+    })
+    it('Mock contract custom error', async () => {
+      try {
+        await contract.revertWithCustomErrorNoParam()
+      } catch (e: any) {
+        const decodedError = decodeError(e)
+
+        expect(decodedError.type).toEqual(ErrorType.CustomError)
+        expect(decodedError.reason).toBe('0xec7240f7')
+        expect(decodedError.data).toBe('0xec7240f7')
+      }
+    })
+  })
+  describe('CodeError', () => {
+    it('Should handle generic JS exceptions as CodeError', () => {
+      const { restore } = suppressConsole()
+      const errors = [
+        new TypeError('Type error'),
+        new SyntaxError('Syntax error'),
+        new ReferenceError('Reference error'),
+        new RangeError('Range error')
+      ]
+
+      errors.forEach((error) => {
+        const decodedError = decodeError(error)
+        expect(decodedError.type).toEqual(ErrorType.CodeError)
+        expect(decodedError.reason).toBe(error.name)
+      })
+
+      restore()
+    })
+  })
   describe('Should handle BundlerError correctly', () => {
     it('Entry point error', () => {
       try {
@@ -269,6 +324,7 @@ describe('Error decoders work', () => {
     )
   })
   it('Should handle UnknownError correctly when reverted without reason', async () => {
+    const { restore } = suppressConsole()
     try {
       await contract.revertWithoutReason()
     } catch (e: any) {
@@ -280,6 +336,8 @@ describe('Error decoders work', () => {
       expect(decodedError.data).toEqual(errorData)
       expect(decodedError.reason).toBe('')
     }
+
+    restore()
   })
   it('Should trim leading and trailing whitespaces from the reason', async () => {
     const error = new InnerCallFailureError('   transfer amount exceeds balance   ')

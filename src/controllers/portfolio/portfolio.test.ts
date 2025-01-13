@@ -2,7 +2,6 @@ import { ethers, ZeroAddress } from 'ethers'
 import fetch from 'node-fetch'
 
 import { describe, expect, jest } from '@jest/globals'
-import structuredClone from '@ungap/structured-clone'
 
 import { relayerUrl, velcroUrl } from '../../../test/config'
 import { getNonce, produceMemoryStore } from '../../../test/helpers'
@@ -796,6 +795,40 @@ describe('Portfolio Controller ', () => {
         expect(hiddenToken).toBeTruthy()
       })
     })
+  })
+  test('lastSuccessfulUpdate is updated properly', async () => {
+    const { controller } = prepareTest()
+
+    await controller.updateSelectedAccount(account.addr)
+
+    const lastSuccessfulUpdate = controller.getLatestPortfolioState(account.addr).ethereum?.result
+      ?.lastSuccessfulUpdate
+
+    expect(lastSuccessfulUpdate).toBeTruthy()
+
+    jest
+      // @ts-ignore
+      .spyOn(controller, 'updatePortfolioState')
+      .mockImplementationOnce(() => {
+        throw new Error('Failed to update portfolio')
+      })
+    await controller.updateSelectedAccount(account.addr)
+
+    const newLastSuccessfulUpdate = controller.getLatestPortfolioState(account.addr).ethereum
+      ?.result?.lastSuccessfulUpdate
+
+    // Last successful update should not change if the update fails
+    expect(lastSuccessfulUpdate).toEqual(newLastSuccessfulUpdate)
+
+    await controller.updateSelectedAccount(account.addr, undefined, undefined, {
+      forceUpdate: true
+    })
+
+    const newLastSuccessfulUpdate2 = controller.getLatestPortfolioState(account.addr).ethereum
+      ?.result?.lastSuccessfulUpdate
+
+    // Last successful update should reset on a force update
+    expect(lastSuccessfulUpdate).not.toEqual(newLastSuccessfulUpdate2)
   })
   test('removeAccountData', async () => {
     const { controller } = prepareTest()

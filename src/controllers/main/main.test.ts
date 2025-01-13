@@ -3,7 +3,6 @@ import EventEmitter from 'events'
 import fetch from 'node-fetch'
 
 import { describe, expect, test } from '@jest/globals'
-import structuredClone from '@ungap/structured-clone'
 
 import { relayerUrl, velcroUrl } from '../../../test/config'
 import { produceMemoryStore } from '../../../test/helpers'
@@ -20,9 +19,6 @@ import { getBytecode } from '../../libs/proxyDeploy/bytecode'
 import { getAmbireAccountAddress } from '../../libs/proxyDeploy/getAmbireAddressTwo'
 import { RelayerError } from '../../libs/relayerCall/relayerCall'
 import { MainController } from './main'
-
-// @ts-ignore
-global.structuredClone = structuredClone as any
 
 // Public API key, shared by Socket, for testing purposes only
 const socketApiKey = '72a5b4b0-e727-48be-8aa1-5da9d62fe635'
@@ -444,7 +440,7 @@ describe('Main Controller ', () => {
         })
       } catch (e: any) {
         expect(e.message).toBe(
-          'The transaction cannot be broadcast because the transfer amount exceeds your account balance. Please reduce the transfer amount and try again.'
+          'The transaction cannot be broadcast because the transfer amount exceeds your account balance. Please check your balance or adjust the transfer amount.'
         )
         expect(controllerAnyType.updateSignAccountOpGasPrice).not.toHaveBeenCalled()
         expect(controllerAnyType.estimateSignAccountOp).not.toHaveBeenCalled()
