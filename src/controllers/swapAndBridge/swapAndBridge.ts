@@ -29,6 +29,7 @@ import {
   getActiveRoutesForAccount,
   getIsBridgeTxn,
   getQuoteRouteSteps,
+  sortPortfolioTokenList,
   sortTokenListResponse
 } from '../../libs/swapAndBridge/swapAndBridge'
 import { getSanitizedAmount } from '../../libs/transfer/amount'
@@ -548,7 +549,14 @@ export class SwapAndBridgeController extends EventEmitter {
 
         return hasAmount && !token.flags.onGasTank && !token.flags.rewardsType
       }) || []
-    this.portfolioTokenList = tokens
+    this.portfolioTokenList = sortPortfolioTokenList(
+      // Filtering out hidden tokens here means: 1) They won't be displayed in
+      // the "From" token list (`this.portfolioTokenList`) and 2) They won't be
+      // added to the "Receive" token list as additional tokens from portfolio,
+      // BUT 3) They will appear in the "Receive" if they are present in service
+      // provider's to token list. This is the desired behavior.
+      tokens.filter((t) => !t.isHidden)
+    )
 
     const fromSelectedTokenInNextPortfolio = this.portfolioTokenList.find(
       (t) =>
@@ -635,7 +643,7 @@ export class SwapAndBridgeController extends EventEmitter {
 
       this.#toTokenList = sortTokenListResponse(
         [...upToDateToTokenList, ...additionalTokensFromPortfolio],
-        this.portfolioTokenList
+        this.portfolioTokenList.filter((t) => t.networkId === toTokenNetwork.id)
       )
 
       if (!this.toSelectedToken) {
@@ -687,8 +695,18 @@ export class SwapAndBridgeController extends EventEmitter {
       // Cache for sometime the tokens added by address
       this.#cachedToTokenLists[this.#toTokenListKey]?.data.push(token)
 
+    const toTokenNetwork = this.#networks.networks.find((n) => Number(n.chainId) === this.toChainId)
+    // should never happen
+    if (!toTokenNetwork)
+      throw new Error(
+        'Network configuration mismatch detected. Please try again later or contact support.'
+      )
+
     const nextTokenList = [...this.#toTokenList, token]
-    this.#toTokenList = sortTokenListResponse(nextTokenList, this.portfolioTokenList)
+    this.#toTokenList = sortTokenListResponse(
+      nextTokenList,
+      this.portfolioTokenList.filter((t) => t.networkId === toTokenNetwork.id)
+    )
 
     this.emitUpdate()
     return token
