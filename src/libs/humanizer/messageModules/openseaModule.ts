@@ -24,13 +24,22 @@ export const openseaMessageModule: HumanizerTypedMessageModule = (message: Messa
     if (isHexString(message.content.message) && message.content.message.length % 2 === 0) {
       messageAsText = toUtf8String(message.content.message)
     }
-    const LOGIN_MESSAGE_PREFIX = 'Welcome to OpenSea!'
+    const OPENSEA_LOGIN_MESSAGE_PREFIX = 'Welcome to OpenSea!'
     if (
-      messageAsText.startsWith(LOGIN_MESSAGE_PREFIX) &&
+      messageAsText.includes(OPENSEA_LOGIN_MESSAGE_PREFIX) &&
       messageAsText.toLowerCase().includes(message.accountAddr.toLowerCase())
     ) {
       return {
         fullVisualization: [getAction('Log in'), getLabel('OpenSea', true)]
+      }
+    }
+    const OPENSEA_PRO_LOGIN_MESSAGE_PREFIX = 'Sign in to OpenSea Pro'
+    if (
+      messageAsText.includes(OPENSEA_PRO_LOGIN_MESSAGE_PREFIX) &&
+      messageAsText.toLowerCase().includes(message.accountAddr.toLowerCase())
+    ) {
+      return {
+        fullVisualization: [getAction('Log in'), getLabel('OpenSea Pro', true)]
       }
     }
   }
