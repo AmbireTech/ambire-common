@@ -403,6 +403,10 @@ const init = async (
   await portfolio.updateSelectedAccount(account.addr, network)
   const provider = getRpcProvider(network.rpcUrls, network.chainId)
 
+  const getSignAccountOpStatus = () => {
+    return null
+  }
+  const noStateUpdateStatuses: any[] = []
   const prices =
     gasPricesMock || (await gasPricesLib.getGasPriceRecommendations(provider, network)).gasPrice
   const estimation =
@@ -416,7 +420,7 @@ const init = async (
       getNativeToCheckFromEOAs(nativeToCheck, account),
       feeTokens,
       errorCallback,
-      new BundlerSwitcher(network)
+      new BundlerSwitcher(network, getSignAccountOpStatus, noStateUpdateStatuses)
     ))
 
   if (portfolio.getLatestPortfolioState(account.addr)[op.networkId]!.result) {

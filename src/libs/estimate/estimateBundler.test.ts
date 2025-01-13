@@ -53,6 +53,11 @@ const smartAccDeployed: Account = {
   }
 }
 
+const getSignAccountOpStatus = () => {
+  return null
+}
+const noStateUpdateStatuses: any[] = []
+
 paymasterFactory.init(relayerUrl, fetch, () => {})
 const errorCallback = () => {}
 
@@ -108,7 +113,7 @@ describe('Bundler estimation tests', () => {
           }
         }
       ]
-      const switcher = new BundlerSwitcher(optimism)
+      const switcher = new BundlerSwitcher(optimism, getSignAccountOpStatus, noStateUpdateStatuses)
       const result = await bundlerEstimate(
         smartAcc,
         accountStates,
@@ -169,7 +174,7 @@ describe('Bundler estimation tests', () => {
           }
         }
       ]
-      const switcher = new BundlerSwitcher(optimism)
+      const switcher = new BundlerSwitcher(optimism, getSignAccountOpStatus, noStateUpdateStatuses)
       const result = await bundlerEstimate(
         smartAccDeployed,
         accountStates,
@@ -227,7 +232,7 @@ describe('Bundler estimation tests', () => {
           }
         }
       ]
-      const switcher = new BundlerSwitcher(optimism)
+      const switcher = new BundlerSwitcher(optimism, getSignAccountOpStatus, noStateUpdateStatuses)
       const result = await bundlerEstimate(
         smartAccDeployed,
         accountStates,
@@ -261,8 +266,13 @@ describe('Bundler fallback tests', () => {
     }
   }
   class ExtendedBundlerSwitcher extends BundlerSwitcher {
-    constructor(network: Network, usedBundlers: BUNDLER[] = []) {
-      super(network)
+    constructor(
+      network: Network,
+      getStatus: Function,
+      noUpdateStatuses: any[],
+      usedBundlers: BUNDLER[] = []
+    ) {
+      super(network, getStatus, noUpdateStatuses)
       this.bundler = new BrokenPimlico()
       // push pimlico as used so we could fallback to biconomy
       usedBundlers.forEach((bun) => this.usedBundlers.push(bun))
@@ -305,7 +315,12 @@ describe('Bundler fallback tests', () => {
         }
       }
     ]
-    const switcher = new ExtendedBundlerSwitcher(base, [PIMLICO])
+    const switcher = new ExtendedBundlerSwitcher(
+      base,
+      getSignAccountOpStatus,
+      noStateUpdateStatuses,
+      [PIMLICO]
+    )
     const result = await bundlerEstimate(
       smartAccDeployed,
       accountStates,
@@ -361,7 +376,12 @@ describe('Bundler fallback tests', () => {
         }
       }
     ]
-    const switcher = new ExtendedBundlerSwitcher(base, [PIMLICO, BICONOMY])
+    const switcher = new ExtendedBundlerSwitcher(
+      base,
+      getSignAccountOpStatus,
+      noStateUpdateStatuses,
+      [PIMLICO, BICONOMY]
+    )
     const result = await bundlerEstimate(
       smartAccDeployed,
       accountStates,

@@ -12,10 +12,21 @@ export class BundlerSwitcher {
 
   protected usedBundlers: BUNDLER[] = []
 
-  constructor(network: Network) {
+  // a function to retrieve the current sign account op state
+  protected getSignAccountOpStatus: Function
+
+  // TODO:
+  // no typehints here as importing typehints from signAccountOp causes
+  // a dependancy cicle. Types should be removed from signAccountOp in
+  // a different file before proceeding to fix this
+  protected noStateUpdateStatuses: any[] = []
+
+  constructor(network: Network, getSignAccountOpStatus: Function, noStateUpdateStatuses: any[]) {
     this.network = network
     this.bundler = getDefaultBundler(network)
     this.usedBundlers.push(this.bundler.getName())
+    this.getSignAccountOpStatus = getSignAccountOpStatus
+    this.noStateUpdateStatuses = noStateUpdateStatuses
   }
 
   protected hasBundlers() {
@@ -27,7 +38,14 @@ export class BundlerSwitcher {
     return this.bundler
   }
 
+  userHasCommitted(): boolean {
+    return this.noStateUpdateStatuses.includes(this.getSignAccountOpStatus())
+  }
+
   canSwitch(bundlerError: Error | null): boolean {
+    // don't switch the bundler if the account op is in a state of signing
+    if (this.userHasCommitted()) return false
+
     if (!this.hasBundlers()) return false
 
     const availableBundlers = this.network.erc4337.bundlers!.filter((bundler) => {

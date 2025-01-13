@@ -292,6 +292,11 @@ const trezorSlot6v2NotDeployed: Account = {
 
 paymasterFactory.init(relayerUrl, fetch, () => {})
 
+const getSignAccountOpStatus = () => {
+  return null
+}
+const noStateUpdateStatuses: any[] = []
+
 describe('estimate', () => {
   it('[EOA]:Ethereum | gasUsage and native balance for a normal transfer', async () => {
     const EOAAccount: Account = {
@@ -339,7 +344,7 @@ describe('estimate', () => {
       [],
       feeTokens,
       errorCallback,
-      new BundlerSwitcher(ethereum)
+      new BundlerSwitcher(ethereum, getSignAccountOpStatus, noStateUpdateStatuses)
     )
 
     expect(response.gasUsed).toBe(21000n)
@@ -394,7 +399,7 @@ describe('estimate', () => {
       [],
       feeTokens,
       errorCallback,
-      new BundlerSwitcher(polygon)
+      new BundlerSwitcher(polygon, getSignAccountOpStatus, noStateUpdateStatuses)
     )
 
     expect(response.gasUsed).toBe(21000n)
@@ -451,7 +456,7 @@ describe('estimate', () => {
       [],
       feeTokens,
       errorCallback,
-      new BundlerSwitcher(polygon)
+      new BundlerSwitcher(polygon, getSignAccountOpStatus, noStateUpdateStatuses)
     )
 
     expect(response.gasUsed).toBeGreaterThan(0n)
@@ -506,7 +511,7 @@ describe('estimate', () => {
       [],
       feeTokens,
       errorCallback,
-      new BundlerSwitcher(polygon)
+      new BundlerSwitcher(polygon, getSignAccountOpStatus, noStateUpdateStatuses)
     )
 
     expect(response.gasUsed).toBe(0n)
@@ -545,7 +550,7 @@ describe('estimate', () => {
       getNativeToCheckFromEOAs(nativeToCheck, v1Acc),
       feeTokens,
       errorCallback,
-      new BundlerSwitcher(ethereum)
+      new BundlerSwitcher(ethereum, getSignAccountOpStatus, noStateUpdateStatuses)
     )
     const usdtOutcome = response.feePaymentOptions!.find(
       (option) => option.token.address === '0xdAC17F958D2ee523a2206206994597C13D831ec7'
@@ -611,7 +616,7 @@ describe('estimate', () => {
       getNativeToCheckFromEOAs(nativeToCheck, v1Acc),
       feeTokens,
       errorCallback,
-      new BundlerSwitcher(ethereum)
+      new BundlerSwitcher(ethereum, getSignAccountOpStatus, noStateUpdateStatuses)
     )
 
     const viewOnlyAccOption = response.feePaymentOptions.find(
@@ -645,7 +650,7 @@ describe('estimate', () => {
       getNativeToCheckFromEOAs(nativeToCheck, viewOnlyAcc),
       feeTokens,
       errorCallback,
-      new BundlerSwitcher(ethereum)
+      new BundlerSwitcher(ethereum, getSignAccountOpStatus, noStateUpdateStatuses)
     )
 
     // make sure we display the view only account payment option
@@ -703,7 +708,7 @@ describe('estimate', () => {
       getNativeToCheckFromEOAs(nativeToCheck, v1Acc),
       feeTokens,
       errorCallback,
-      new BundlerSwitcher(ethereum)
+      new BundlerSwitcher(ethereum, getSignAccountOpStatus, noStateUpdateStatuses)
     )
     const responseWithExecuteBefore = await estimate(
       provider,
@@ -714,7 +719,7 @@ describe('estimate', () => {
       getNativeToCheckFromEOAs(nativeToCheck, v1Acc),
       feeTokens,
       errorCallback,
-      new BundlerSwitcher(ethereum),
+      new BundlerSwitcher(ethereum, getSignAccountOpStatus, noStateUpdateStatuses),
       { calculateRefund: true }
     )
 
@@ -769,7 +774,7 @@ describe('estimate', () => {
       getNativeToCheckFromEOAs(nativeToCheck, accountOptimism),
       feeTokens,
       errorCallback,
-      new BundlerSwitcher(optimism)
+      new BundlerSwitcher(optimism, getSignAccountOpStatus, noStateUpdateStatuses)
     )
 
     response.feePaymentOptions.forEach((feeToken) => {
@@ -801,7 +806,7 @@ describe('estimate', () => {
       getNativeToCheckFromEOAs(nativeToCheck, smartAccountv2eip712),
       feeTokens,
       errorCallback,
-      new BundlerSwitcher(arbitrum)
+      new BundlerSwitcher(arbitrum, getSignAccountOpStatus, noStateUpdateStatuses)
     )
 
     response.feePaymentOptions.map((option) => expect(option.addedNative).toBe(0n))
@@ -841,7 +846,7 @@ describe('estimate', () => {
       getNativeToCheckFromEOAs(nativeToCheck, smartAcc),
       feeTokens,
       errorCallback,
-      new BundlerSwitcher(optimism),
+      new BundlerSwitcher(optimism, getSignAccountOpStatus, noStateUpdateStatuses),
       { is4337Broadcast: true }
     )
 
@@ -893,7 +898,7 @@ describe('estimate', () => {
       getNativeToCheckFromEOAs(nativeToCheck, smartAcc),
       feeTokens,
       errorCallback,
-      new BundlerSwitcher(optimism),
+      new BundlerSwitcher(optimism, getSignAccountOpStatus, noStateUpdateStatuses),
       { is4337Broadcast: true }
     )
 
@@ -955,7 +960,7 @@ describe('estimate', () => {
       getNativeToCheckFromEOAs(nativeToCheck, smartAcc),
       feeTokens,
       errorCallback,
-      new BundlerSwitcher(optimism),
+      new BundlerSwitcher(optimism, getSignAccountOpStatus, noStateUpdateStatuses),
       { is4337Broadcast: true }
     )
 
@@ -995,7 +1000,7 @@ describe('estimate', () => {
       getNativeToCheckFromEOAs(nativeToCheck, smartAccDeployed),
       feeTokens,
       errorCallback,
-      new BundlerSwitcher(optimism),
+      new BundlerSwitcher(optimism, getSignAccountOpStatus, noStateUpdateStatuses),
       { is4337Broadcast: true }
     )
 
@@ -1039,7 +1044,7 @@ describe('estimate', () => {
       getNativeToCheckFromEOAs(nativeToCheck, smartAccv2point0Deployed),
       feeTokens,
       errorCallback,
-      new BundlerSwitcher(optimism),
+      new BundlerSwitcher(optimism, getSignAccountOpStatus, noStateUpdateStatuses),
       { is4337Broadcast: true }
     )
 
@@ -1082,7 +1087,7 @@ describe('estimate', () => {
       getNativeToCheckFromEOAs(nativeToCheck, trezorSlot6v2NotDeployed),
       feeTokens,
       errorCallback,
-      new BundlerSwitcher(arbitrum),
+      new BundlerSwitcher(arbitrum, getSignAccountOpStatus, noStateUpdateStatuses),
       { is4337Broadcast: false }
     )
 
@@ -1116,7 +1121,7 @@ describe('estimate', () => {
       getNativeToCheckFromEOAs(nativeToCheck, smartAccountv2eip712),
       feeTokens,
       errorCallback,
-      new BundlerSwitcher(polygon)
+      new BundlerSwitcher(polygon, getSignAccountOpStatus, noStateUpdateStatuses)
     )
     expect(response.error).not.toBe(null)
     expect(response.error?.message).toBe(
@@ -1148,7 +1153,7 @@ describe('estimate', () => {
       getNativeToCheckFromEOAs(nativeToCheck, smartAccountv2eip712),
       feeTokens,
       errorCallback,
-      new BundlerSwitcher(polygon)
+      new BundlerSwitcher(polygon, getSignAccountOpStatus, noStateUpdateStatuses)
     )
     expect(response.error).not.toBe(null)
     expect(response.error?.message).toBe(
@@ -1180,7 +1185,7 @@ describe('estimate', () => {
       getNativeToCheckFromEOAs(nativeToCheck, v1Acc),
       feeTokens,
       errorCallback,
-      new BundlerSwitcher(ethereum)
+      new BundlerSwitcher(ethereum, getSignAccountOpStatus, noStateUpdateStatuses)
     )
 
     expect(response.error).not.toBe(null)

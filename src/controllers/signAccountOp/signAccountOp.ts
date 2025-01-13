@@ -101,7 +101,7 @@ type SpeedCalc = {
 }
 
 // declare the statuses we don't want state updates on
-const noStateUpdateStatuses = [
+export const noStateUpdateStatuses = [
   SigningStatus.InProgress,
   SigningStatus.Done,
   SigningStatus.UpdatesPaused,
@@ -201,7 +201,13 @@ export class SignAccountOpController extends EventEmitter {
     this.rbfAccountOps = {}
     this.signedAccountOp = null
     this.replacementFeeLow = false
-    this.bundlerSwitcher = new BundlerSwitcher(network)
+    this.bundlerSwitcher = new BundlerSwitcher(
+      network,
+      () => {
+        return this.status ? this.status.type : null
+      },
+      noStateUpdateStatuses
+    )
   }
 
   get isInitialized(): boolean {
@@ -1087,6 +1093,7 @@ export class SignAccountOpController extends EventEmitter {
   #emitSigningErrorAndResetToReadyToSign(error: string) {
     this.emitError({ level: 'major', message: error, error: new Error(error) })
     this.status = { type: SigningStatus.ReadyToSign }
+
     this.emitUpdate()
   }
 
