@@ -21,3 +21,10 @@ export const WrappedStETH = [
   'function unwrap(uint256 _wstETHAmount) returns (uint256)',
   'function wrap(uint256 _stETHAmount) returns (uint256)'
 ]
+
+export const unstETH = [
+  'function requestWithdrawals(uint256[] _amounts, address _owner) returns (uint256[] requestIds)',
+  'function claimWithdrawals(uint256[] calldata _requestIds, uint256[] calldata _hints)',
+  'function claimWithdrawalsTo(uint256[] calldata _requestIds, uint256[] calldata _hints, address _recipient)',
+  'function claimWithdrawal(uint256 _requestId)'
+]
