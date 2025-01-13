@@ -25,7 +25,7 @@ function getGenericMessageFromType(
     case ErrorType.UnknownError:
       return `${messagePrefix} of an unknown error.${messageSuffix}`
     case ErrorType.InnerCallFailureError:
-      return `${messagePrefix} of a failure while validating the transaction.${messageSuffix}`
+      return `${messagePrefix} it will revert onchain with reason unknown.${messageSuffix}`
     // I don't think we should say anything else for this case
     case ErrorType.UserRejectionError:
       return 'Transaction rejected.'

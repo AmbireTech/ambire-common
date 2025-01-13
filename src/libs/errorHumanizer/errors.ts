@@ -96,6 +96,15 @@ const BROADCAST_OR_ESTIMATION_ERRORS: ErrorHumanizerError[] = [
     reasons: [EXPIRED_PREFIX, 'Router: EXPIRED', 'Transaction too old'],
     message:
       'the swap has expired. Return to the dApp and reinitiate the swap if you wish to proceed.'
+  },
+  // bundler
+  {
+    reasons: ['biconomy: 400'],
+    message: 'it will revert onchain with reason unknown.'
+  },
+  {
+    reasons: ['pimlico: 500'],
+    message: 'The bundler seems to be down at the moment. Please try again later'
   }
 ]
 
@@ -146,6 +155,11 @@ const ESTIMATION_ERRORS: ErrorHumanizerError[] = [
     reasons: ['ERC721: token does not exist'],
     message:
       'the NFT you are trying to interact with does not exist. Ensure you are using the correct token ID.'
+  },
+  {
+    reasons: ['Inner call: 0x'],
+    message:
+      'it reverted onchain. Reason might be insufficient funds in one of the transaction calls.'
   },
   // Rare contract errors
   {
