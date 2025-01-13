@@ -549,7 +549,14 @@ export class SwapAndBridgeController extends EventEmitter {
 
         return hasAmount && !token.flags.onGasTank && !token.flags.rewardsType
       }) || []
-    this.portfolioTokenList = sortPortfolioTokenList(tokens)
+    this.portfolioTokenList = sortPortfolioTokenList(
+      // Filtering out hidden tokens here means: 1) They won't be displayed in
+      // the "From" token list (`this.portfolioTokenList`) and 2) They won't be
+      // added to the "Receive" token list as additional tokens from portfolio,
+      // BUT 3) They will appear in the "Receive" if they are present in service
+      // provider's to token list. This is the desired behavior.
+      tokens.filter((t) => !t.isHidden)
+    )
 
     const fromSelectedTokenInNextPortfolio = this.portfolioTokenList.find(
       (t) =>
