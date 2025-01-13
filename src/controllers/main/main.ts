@@ -438,6 +438,12 @@ export class MainController extends EventEmitter {
     this.emitUpdate()
   }
 
+  lock() {
+    this.keystore.lock()
+    this.emailVault.cleanMagicAndSessionKeys()
+    this.selectedAccount.setDashboardNetworkFilter(null)
+  }
+
   async selectAccount(toAccountAddr: string) {
     await this.withStatus('selectAccount', async () => this.#selectAccount(toAccountAddr), true)
   }
