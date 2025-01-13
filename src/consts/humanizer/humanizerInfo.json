@@ -17431,10 +17431,10 @@
             "address": "0x794a61358d6845594f94dc1db02a252b5b4814ad",
             "isSC": {}
         },
-        "0x5760E34c4003752329bC77790B1De44C2799F8C3": {
+        "0x5760e34c4003752329bc77790b1de44c2799f8c3": {
             "name": "Aave pool",
             "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/master/images/AAVE.svg",
-            "address": "0x794a61358d6845594f94dc1db02a252b5b4814ad",
+            "address": "0x5760e34c4003752329bc77790b1de44c2799f8c3",
             "isSC": {}
         },
         "0x76d3030728e52deb8848d5613abade88441cbc59": {
