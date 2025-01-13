@@ -48,8 +48,9 @@ export const openseaMessageModule: HumanizerTypedMessageModule = (message: Messa
         if (itemType === '1') return { address: token, amountOrId: BigInt(startAmount) }
         if (itemType === '2') return { address: token, amountOrId: BigInt(identifierOrCriteria) }
         if (itemType === '3') return { address: token, amountOrId: BigInt(identifierOrCriteria) }
+        return null
       }
-      const itemsToList = offer.map(extractItems)
+      const itemsToList = offer.map(extractItems).filter((x: any) => x)
       const itemsToGet = considerations
         .filter(({ recipient }: any) => recipient === message.accountAddr)
         .map(extractItems)
