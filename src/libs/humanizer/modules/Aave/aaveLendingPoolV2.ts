@@ -23,7 +23,7 @@ export const aaveLendingPoolV2 = (): { [key: string]: Function } => {
       return [
         getAction('Withdraw'),
         getToken(asset, amount),
-        getLabel('to'),
+        getLabel('from'),
         getAddressVisualization(call.to),
         ...getOnBehalfOf(onBehalf, accountOp.accountAddr)
       ]
@@ -43,7 +43,7 @@ export const aaveLendingPoolV2 = (): { [key: string]: Function } => {
       return [
         getAction('Borrow'),
         getToken(asset, amount),
-        getLabel('to'),
+        getLabel('from'),
         getAddressVisualization(call.to)
       ]
     }
