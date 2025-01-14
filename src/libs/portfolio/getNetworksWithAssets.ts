@@ -23,7 +23,7 @@ const getAccountNetworksWithAssets = (
     [accountId: string]: { [networkId: NetworkId]: boolean } | NetworkId[]
   },
   providers: RPCProviders
-): { [networkId: string]: boolean } => {
+): { [networkId: NetworkId]: boolean } => {
   const networksWithAssets: { [networkId: NetworkId]: boolean } = {}
 
   Object.keys(accountState).forEach((networkId) => {

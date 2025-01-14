@@ -193,6 +193,20 @@ describe('SelectedAccount Controller', () => {
     it("An RPC banner is displayed when it's not working and the user has assets on it", async () => {
       await portfolioCtrl.updateSelectedAccount(accountAddr)
       providersCtrl.updateProviderIsWorking('ethereum', false)
+      jest
+        .spyOn(portfolioCtrl, 'getNetworksWithAssets')
+        .mockImplementation(() => ({ ethereum: true }))
+      await waitNextControllerUpdate(selectedAccountCtrl)
+
+      expect(
+        selectedAccountCtrl.portfolioBanners.find(({ id }) => id === 'rpcs-down')
+      ).toBeDefined()
+      providersCtrl.updateProviderIsWorking('ethereum', true)
+    })
+    it("An RPC banner is displayed when it's not working and we still don't know if the user has assets on it", async () => {
+      await portfolioCtrl.updateSelectedAccount(accountAddr)
+      providersCtrl.updateProviderIsWorking('ethereum', false)
+      jest.spyOn(portfolioCtrl, 'getNetworksWithAssets').mockImplementation(() => ({}))
       await waitNextControllerUpdate(selectedAccountCtrl)
 
       expect(
@@ -202,7 +216,9 @@ describe('SelectedAccount Controller', () => {
     })
     it("No RPC banner is displayed when an RPC isn't working and the user has no assets on it", async () => {
       await portfolioCtrl.updateSelectedAccount(accountAddr)
-      jest.spyOn(portfolioCtrl, 'getNetworksWithAssets').mockImplementation(() => ['polygon'])
+      jest
+        .spyOn(portfolioCtrl, 'getNetworksWithAssets')
+        .mockImplementation(() => ({ polygon: true, ethereum: false }))
       providersCtrl.updateProviderIsWorking('ethereum', false)
       await waitNextControllerUpdate(selectedAccountCtrl)
 
@@ -212,7 +228,9 @@ describe('SelectedAccount Controller', () => {
       providersCtrl.updateProviderIsWorking('ethereum', true)
     })
     it("A portfolio error banners isn't displayed when there is an RPC error banner", async () => {
-      jest.spyOn(portfolioCtrl, 'getNetworksWithAssets').mockImplementation(() => ['ethereum'])
+      jest
+        .spyOn(portfolioCtrl, 'getNetworksWithAssets')
+        .mockImplementation(() => ({ ethereum: true }))
       selectedAccountCtrl.resetSelectedAccountPortfolio()
       await portfolioCtrl.updateSelectedAccount(accountAddr)
 
