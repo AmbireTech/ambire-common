@@ -98,7 +98,13 @@ const dedupe1155Orders = (orders: Order[]): any[] => {
 const humanizerOrder = ({ items, payment, end }: Order) => {
   return [
     getAction('Buy'),
-    ...items.map(({ address, id }) => getToken(address, id)),
+    ...items
+      .map(({ address, id, fromAmount }) =>
+        fromAmount === 1n
+          ? [getToken(address, id)]
+          : [getLabel(fromAmount.toString(), true), getToken(address, id)]
+      )
+      .flat(),
     getLabel('for up to'),
     ...payment.map(({ address, amountOrId }) => getToken(address, amountOrId)),
     getDeadline(end)
