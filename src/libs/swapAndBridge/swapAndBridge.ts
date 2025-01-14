@@ -10,7 +10,8 @@ import {
   SocketAPISendTransactionRequest,
   SocketAPIStep,
   SocketAPIToken,
-  SocketAPIUserTx
+  SocketAPIUserTx,
+  SwapAndBridgeToToken
 } from '../../interfaces/swapAndBridge'
 import { SignUserRequest } from '../../interfaces/userRequest'
 import { isSmartAccount } from '../account/account'
@@ -37,7 +38,7 @@ const sortTokensByPendingAndBalance = (a: TokenResult, b: TokenResult) => {
 }
 
 export const sortTokenListResponse = (
-  tokenListResponse: SocketAPIToken[],
+  tokenListResponse: SwapAndBridgeToToken[],
   accountPortfolioTokenList: TokenResult[]
 ) => {
   return tokenListResponse.sort((a: SocketAPIToken, b: SocketAPIToken) => {

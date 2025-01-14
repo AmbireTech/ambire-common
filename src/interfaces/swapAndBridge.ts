@@ -8,6 +8,10 @@ export interface SocketAPIToken {
   symbol: string
 }
 
+export interface SwapAndBridgeToToken extends SocketAPIToken {
+  isInAccPortfolio: boolean
+}
+
 export interface SocketAPIQuote {
   fromAsset: SocketAPIToken
   fromChainId: number
