@@ -468,7 +468,9 @@ export class MainController extends EventEmitter {
 
     // call closeActionWindow while still on the currently selected account to allow proper
     // state cleanup of the controllers like actionsCtrl, signAccountOpCtrl, signMessageCtrl...
-    this.actions.closeActionWindow()
+    if (this.actions?.currentAction?.type !== 'switchAccount') {
+      this.actions.closeActionWindow()
+    }
     this.selectedAccount.setAccount(accountToSelect)
     this.swapAndBridge.onAccountChange()
     this.dapps.broadcastDappSessionEvent('accountsChanged', [toAccountAddr])
