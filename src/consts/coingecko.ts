@@ -23,3 +23,21 @@ export function geckoTokenAddressMapper(address: string) {
 
   return address
 }
+
+const COINGECKO_COINS_API_URL = 'https://api.coingecko.com/api/v3/coins/'
+
+export function getGeckoTokenCoinsApiUrl(tokenAddress: string, geckoNetworkId: string) {
+  // Exception because the CoinGecko API doesn't handle these cases correctly.
+  // Alias them to the ETH on Ethereum URL, so a valid URL is returned.
+  const isNativeTokenOnNetworksThatHaveEthAsNative =
+    tokenAddress === ZeroAddress &&
+    ['optimistic-ethereum', 'base', 'arbitrum-one'].includes(geckoNetworkId)
+  if (isNativeTokenOnNetworksThatHaveEthAsNative) return `${COINGECKO_COINS_API_URL}ethereum`
+
+  // CoinGecko does not handle native assets (ETH, MATIC, BNB...) via the /contract endpoint.
+  // Instead, native assets are identified by the `geckoNetworkId` directly.
+  if (tokenAddress === ZeroAddress) return `${COINGECKO_COINS_API_URL}${geckoNetworkId}`
+
+  const geckoTokenAddress = geckoTokenAddressMapper(tokenAddress)
+  return `${COINGECKO_COINS_API_URL}${geckoNetworkId}/contact/${geckoTokenAddress}`
+}
