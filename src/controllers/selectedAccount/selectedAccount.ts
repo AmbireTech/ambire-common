@@ -36,7 +36,7 @@ export const DEFAULT_SELECTED_ACCOUNT_PORTFOLIO = {
   collections: [],
   totalBalance: 0,
   isAllReady: false,
-  simulationNonces: {},
+  networkSimulatedAccountOp: {},
   tokenAmounts: [],
   latest: {},
   pending: {}

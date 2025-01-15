@@ -1607,8 +1607,10 @@ export class MainController extends EventEmitter {
     id: UserRequest['id'],
     options: {
       shouldRemoveSwapAndBridgeRoute: boolean
+      shouldUpdateAccount?: boolean
     } = {
-      shouldRemoveSwapAndBridgeRoute: true
+      shouldRemoveSwapAndBridgeRoute: true,
+      shouldUpdateAccount: true
     }
   ) {
     const req = this.userRequests.find((uReq) => uReq.id === id)
@@ -1634,9 +1636,10 @@ export class MainController extends EventEmitter {
         const accountOpAction = this.actions.actionsQueue[accountOpIndex] as
           | AccountOpAction
           | undefined
-        // accountOp has just been rejected
+        // accountOp has just been rejected or broadcasted
         if (!accountOpAction) {
-          this.updateSelectedAccountPortfolio(true, network)
+          if (options.shouldUpdateAccount) this.updateSelectedAccountPortfolio(true, network)
+
           if (this.swapAndBridge.activeRoutes.length && options.shouldRemoveSwapAndBridgeRoute) {
             this.swapAndBridge.removeActiveRoute(meta.activeRouteId)
           }
@@ -1660,14 +1663,16 @@ export class MainController extends EventEmitter {
             this.destroySignAccOp()
           }
           this.actions.removeAction(`${meta.accountAddr}-${meta.networkId}`)
-          this.updateSelectedAccountPortfolio(true, network)
+
+          if (options.shouldUpdateAccount) this.updateSelectedAccountPortfolio(true, network)
         }
       } else {
         if (this.signAccountOp && this.signAccountOp.fromActionId === req.id) {
           this.destroySignAccOp()
         }
         this.actions.removeAction(id)
-        this.updateSelectedAccountPortfolio(true, network)
+
+        if (options.shouldUpdateAccount) this.updateSelectedAccountPortfolio(true, network)
       }
       if (this.swapAndBridge.activeRoutes.length && options.shouldRemoveSwapAndBridgeRoute) {
         this.swapAndBridge.removeActiveRoute(meta.activeRouteId)
@@ -1777,7 +1782,15 @@ export class MainController extends EventEmitter {
         })
 
         // eslint-disable-next-line no-await-in-loop
-        this.removeUserRequest(walletSendCallsUserReq.id, { shouldRemoveSwapAndBridgeRoute: false })
+        this.removeUserRequest(walletSendCallsUserReq.id, {
+          shouldRemoveSwapAndBridgeRoute: false,
+          // Since `resolveAccountOpAction` is invoked only when we broadcast a transaction,
+          // we don't want to update the account portfolio immediately, as we would lose the simulation.
+          // The simulation is required to calculate the pending badges (see: calculatePendingAmounts()).
+          // Once the transaction is confirmed, delayed, or the user manually refreshes the portfolio,
+          // the account will be updated automatically.
+          shouldUpdateAccount: false
+        })
       }
     }
 
@@ -1804,7 +1817,15 @@ export class MainController extends EventEmitter {
         }
 
         // eslint-disable-next-line no-await-in-loop
-        this.removeUserRequest(uReq.id, { shouldRemoveSwapAndBridgeRoute: false })
+        this.removeUserRequest(uReq.id, {
+          shouldRemoveSwapAndBridgeRoute: false,
+          // Since `resolveAccountOpAction` is invoked only when we broadcast a transaction,
+          // we don't want to update the account portfolio immediately, as we would lose the simulation.
+          // The simulation is required to calculate the pending badges (see: calculatePendingAmounts()).
+          // Once the transaction is confirmed, delayed, or the user manually refreshes the portfolio,
+          // the account will be updated automatically.
+          shouldUpdateAccount: false
+        })
       }
     }
 
@@ -2464,6 +2485,8 @@ export class MainController extends EventEmitter {
       return this.throwBroadcastAccountOp({
         message: 'No transaction response received after being broadcasted.'
       })
+
+    this.portfolio.markSimulationAsBroadcasted(account.addr, network.id)
 
     const submittedAccountOp: SubmittedAccountOp = {
       ...accountOp,

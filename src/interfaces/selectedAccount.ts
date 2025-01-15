@@ -1,7 +1,7 @@
 import {
   AccountState,
   CollectionResult as CollectionResultInterface,
-  NetworkNonces as NetworkNoncesInterface,
+  NetworkSimulatedAccountOp,
   TokenAmount as TokenAmountInterface,
   TokenResult as TokenResultInterface
 } from '../libs/portfolio/interfaces'
@@ -11,7 +11,7 @@ export interface SelectedAccountPortfolio {
   collections: CollectionResultInterface[]
   totalBalance: number
   isAllReady: boolean
-  simulationNonces: NetworkNoncesInterface
+  networkSimulatedAccountOp: NetworkSimulatedAccountOp
   tokenAmounts: TokenAmountInterface[]
   latest: AccountState
   pending: AccountState

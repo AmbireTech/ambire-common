@@ -1,4 +1,4 @@
-import { AbiCoder, concat, getAddress, hexlify, Interface, keccak256, toBeHex } from 'ethers'
+import { AbiCoder, concat, getAddress, hexlify, Interface, keccak256, Log, toBeHex } from 'ethers'
 import { Network } from 'interfaces/network'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
@@ -14,7 +14,7 @@ import {
 import { SPOOF_SIGTYPE } from '../../consts/signatures'
 import { Account, AccountId, AccountOnchainState } from '../../interfaces/account'
 import { AccountOp, callToTuple } from '../accountOp/accountOp'
-import { UserOperation, UserOpRequestType } from './types'
+import { UserOperation, UserOperationEventData, UserOpRequestType } from './types'
 
 export function calculateCallDataCost(callData: string): bigint {
   if (callData === '0x') return 0n
@@ -260,4 +260,38 @@ export function getUserOpHash(userOp: UserOperation, chainId: bigint) {
   return keccak256(
     abiCoder.encode(['bytes32', 'address', 'uint256'], [packedHash, ERC_4337_ENTRYPOINT, chainId])
   )
+}
+
+// try to parse the UserOperationEvent to understand whether
+// the user op is a success or a failure
+export const parseLogs = (
+  logs: readonly Log[],
+  userOpHash: string,
+  userOpsLength?: number // benzina only
+): UserOperationEventData | null => {
+  if (userOpHash === '' && userOpsLength !== 1) return null
+
+  let userOpLog = null
+  logs.forEach((log: Log) => {
+    try {
+      if (
+        log.topics.length === 4 &&
+        (log.topics[1].toLowerCase() === userOpHash.toLowerCase() || userOpsLength === 1)
+      ) {
+        // decode data for UserOperationEvent:
+        // 'event UserOperationEvent(bytes32 indexed userOpHash, address indexed sender, address indexed paymaster, uint256 nonce, bool success, uint256 actualGasCost, uint256 actualGasUsed)'
+        const coder = new AbiCoder()
+        userOpLog = coder.decode(['uint256', 'bool', 'uint256', 'uint256'], log.data)
+      }
+    } catch (e: any) {
+      /* silence is bitcoin */
+    }
+  })
+
+  if (!userOpLog) return null
+
+  return {
+    nonce: userOpLog[0],
+    success: userOpLog[1]
+  }
 }
