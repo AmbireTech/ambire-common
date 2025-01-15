@@ -45,5 +45,5 @@ export function getCoinGeckoTokenApiUrl({
   if (tokenAddr === ZeroAddress) return `${COINGECKO_API_BASE_URL}${geckoNativeCoinId}`
 
   const geckoTokenAddress = geckoTokenAddressMapper(tokenAddr)
-  return `${COINGECKO_API_BASE_URL}${geckoChainId}/contact/${geckoTokenAddress}`
+  return `${COINGECKO_API_BASE_URL}${geckoChainId}/contract/${geckoTokenAddress}`
 }
