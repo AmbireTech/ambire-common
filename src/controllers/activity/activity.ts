@@ -1,4 +1,3 @@
-/* eslint-disable import/no-extraneous-dependencies */
 import { Account, AccountId } from '../../interfaces/account'
 import { Banner } from '../../interfaces/banner'
 import { Fetch } from '../../interfaces/fetch'
@@ -8,6 +7,8 @@ import { Message } from '../../interfaces/userRequest'
 import { isSmartAccount } from '../../libs/account/account'
 import { AccountOpStatus } from '../../libs/accountOp/accountOp'
 import { fetchTxnId, SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
+/* eslint-disable import/no-extraneous-dependencies */
+import { parseLogs } from '../../libs/userOperation/userOperation'
 import { getBenzinUrlParams } from '../../utils/benzin'
 import { AccountsController } from '../accounts/accounts'
 import EventEmitter from '../eventEmitter/eventEmitter'
@@ -372,8 +373,19 @@ export class ActivityController extends EventEmitter {
             try {
               const receipt = await provider.getTransactionReceipt(txnId)
               if (receipt) {
-                this.#accountsOps[selectedAccount][networkId][accountOpIndex].status =
-                  receipt.status ? AccountOpStatus.Success : AccountOpStatus.Failure
+                // if this is an user op, we have to check the logs
+                let isSuccess: boolean | undefined
+                if (accountOp.identifiedBy.type === 'UserOperation') {
+                  const userOpEventLog = parseLogs(receipt.logs, accountOp.identifiedBy.identifier)
+                  if (userOpEventLog) isSuccess = userOpEventLog.success
+                }
+
+                // if it's not an userOp or it is, but isSuccess was not found
+                if (isSuccess === undefined) isSuccess = !!receipt.status
+
+                this.#accountsOps[selectedAccount][networkId][accountOpIndex].status = isSuccess
+                  ? AccountOpStatus.Success
+                  : AccountOpStatus.Failure
                 updatedAccountsOps.push(
                   this.#accountsOps[selectedAccount][networkId][accountOpIndex]
                 )
