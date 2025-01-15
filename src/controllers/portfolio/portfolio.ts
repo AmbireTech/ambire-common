@@ -6,7 +6,7 @@ import { Network, NetworkId } from '../../interfaces/network'
 /* eslint-disable @typescript-eslint/no-shadow */
 import { Storage } from '../../interfaces/storage'
 import { isSmartAccount } from '../../libs/account/account'
-import { AccountOp, isAccountOpsIntentEqual } from '../../libs/accountOp/accountOp'
+import { AccountOp, AccountOpStatus, isAccountOpsIntentEqual } from '../../libs/accountOp/accountOp'
 import { Portfolio } from '../../libs/portfolio'
 /* eslint-disable @typescript-eslint/no-use-before-define */
 import { CustomToken } from '../../libs/portfolio/customToken'
@@ -658,6 +658,16 @@ export class PortfolioController extends EventEmitter {
     )
 
     await this.#updateNetworksWithAssets(accountId, accountState)
+    this.emitUpdate()
+  }
+
+  markSimulationAsBroadcasted(accountId: string, networkId: string) {
+    const simulation = this.#pending[accountId][networkId]?.accountOps?.[0]
+
+    if (!simulation) return
+
+    simulation.status = AccountOpStatus.BroadcastedButNotConfirmed
+
     this.emitUpdate()
   }
 

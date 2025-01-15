@@ -10,10 +10,15 @@ import {
   IrCall,
   IrMessage
 } from './interfaces'
-import { erc20Module, erc721Module, permit2Module } from './messageModules'
-import { ensMessageModule } from './messageModules/ensModule'
-import { entryPointModule } from './messageModules/entryPointModule'
-import { legendsMessageModule } from './messageModules/legendsModule'
+import {
+  ensMessageModule,
+  entryPointModule,
+  erc20Module,
+  erc721Module,
+  legendsMessageModule,
+  openseaMessageModule,
+  permit2Module
+} from './messageModules'
 import OneInchModule from './modules/1Inch'
 import { aaveHumanizer } from './modules/Aave'
 import AcrossModule from './modules/Across'
@@ -28,6 +33,7 @@ import gasTankModule from './modules/GasTankModule'
 import KyberSwap from './modules/KyberSwap'
 import legendsModule from './modules/Legends'
 import { LidoModule } from './modules/Lido'
+import { openSeaModule } from './modules/OpenSea'
 import { postProcessing } from './modules/PostProcessing/postProcessModule'
 import preProcessHumanizer from './modules/PreProcess'
 import privilegeHumanizer from './modules/Privileges'
@@ -66,6 +72,7 @@ export const humanizerCallModules: HumanizerCallModule[] = [
   legendsModule,
   singletonFactory,
   ensModule,
+  openSeaModule,
   asciiModule,
   fallbackHumanizer,
   postProcessing
@@ -79,7 +86,8 @@ const humanizerTMModules = [
   permit2Module,
   entryPointModule,
   legendsMessageModule,
-  ensMessageModule
+  ensMessageModule,
+  openseaMessageModule
 ]
 
 const humanizeAccountOp = (_accountOp: AccountOp, options: HumanizerOptions): IrCall[] => {
