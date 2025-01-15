@@ -27,7 +27,7 @@ export const updatePortfolioStateWithDefiPositions = (
   Object.keys(portfolioAccountState).forEach((networkId) => {
     const networkState = portfolioAccountState[networkId]
 
-    if (!networkState?.result || defiPositionsAccountState[networkId].isLoading) return
+    if (!networkState?.result || defiPositionsAccountState[networkId]?.isLoading) return
 
     let tokens = networkState.result.tokens || []
     let networkBalance = networkState.result.total?.usd || 0
