@@ -233,6 +233,11 @@ export class Portfolio {
       ? LIMITS.deploylessProxyMode
       : LIMITS.deploylessStateOverrideMode
     const collectionsHints = Object.entries(hints.erc721s)
+    console.log(
+      `Hints erc20 passed on network: ${networkId}`,
+      hints.erc20s.length,
+      `and limit: ${limits.erc20}`
+    )
     const [tokensWithErr, collectionsWithErr] = await Promise.all([
       flattenResults(
         paginate(hints.erc20s, limits.erc20).map((page) =>
@@ -246,7 +251,10 @@ export class Portfolio {
       )
     ])
 
-    const [tokensWithErrResult, blockNumber, beforeNonce, afterNonce] = tokensWithErr
+    console.log(`tokensWithErr after flattening on network ${networkId}:`, tokensWithErr)
+
+    const [tokensWithErrResult, { blockNumber, beforeNonce, afterNonce }] = tokensWithErr
+    const [collectionsWithErrResult] = collectionsWithErr
 
     // Re-map/filter into our format
     const getPriceFromCache = (address: string) => {
@@ -263,11 +271,10 @@ export class Portfolio {
     const tokenFilter = ([error, result]: [string, TokenResult]): boolean =>
       error === '0x' && !!result.symbol
 
-    const tokensWithoutPrices = tokensWithErrResult
-      .filter((_tokensWithErrResult: [string, TokenResult]) => tokenFilter(_tokensWithErrResult))
-      .map(([, result]: [any, TokenResult]) => result)
+    const tokensWithoutPrices = tokensWithErrResult.map(([, result]: [any, TokenResult]) => result)
+    console.log(`tokensWithoutPrices on network ${networkId}:`, tokensWithoutPrices)
 
-    const unfilteredCollections = collectionsWithErr.map(([error, x], i) => {
+    const unfilteredCollections = collectionsWithErrResult.map(([error, x], i) => {
       const address = collectionsHints[i][0] as unknown as string
       return [
         error,

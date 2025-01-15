@@ -120,7 +120,7 @@ export async function getNFTs(
       )
     )[0]
 
-    return collections.map((token: any) => [token.error, mapToken(token)])
+    return [collections.map((token: any) => [token.error, mapToken(token)]), {}]
   }
 
   const { accountOps, account } = opts.simulation
@@ -181,14 +181,17 @@ export async function getNFTs(
     })
 
     return [
-      beforeToken.error,
-      {
-        ...token,
-        // Please refer to getTokens() for more info regarding `amountBeforeSimulation` calc
-        simulationAmount: simulationToken ? simulationToken.amount - token.amount : undefined,
-        amountPostSimulation: simulationToken ? simulationToken.amount : token.amount,
-        postSimulation: { receiving, sending }
-      }
+      [
+        beforeToken.error,
+        {
+          ...token,
+          // Please refer to getTokens() for more info regarding `amountBeforeSimulation` calc
+          simulationAmount: simulationToken ? simulationToken.amount - token.amount : undefined,
+          amountPostSimulation: simulationToken ? simulationToken.amount : token.amount,
+          postSimulation: { receiving, sending }
+        }
+      ],
+      {}
     ]
   })
 }
@@ -223,7 +226,9 @@ export async function getTokens(
 
     return [
       results.map((token: any, i: number) => [token.error, mapToken(token, tokenAddrs[i])]),
-      blockNumber
+      {
+        blockNumber
+      }
     ]
   }
   const { accountOps, account } = opts.simulation
@@ -287,8 +292,10 @@ export async function getTokens(
         }
       ]
     }),
-    blockNumber,
-    beforeNonce,
-    afterNonce
+    {
+      blockNumber,
+      beforeNonce,
+      afterNonce
+    }
   ]
 }
