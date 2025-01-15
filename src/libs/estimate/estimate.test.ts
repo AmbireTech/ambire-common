@@ -906,9 +906,7 @@ describe('estimate', () => {
     )
 
     expect(response.error).not.toBe(null)
-    expect(response.error?.message).toBe(
-      'The transaction will fail because it reverted onchain. Reason might be insufficient funds in one of the transaction calls.'
-    )
+    expect(response.error?.message).toBe('Insufficient ETH for transaction calls')
 
     expect(response.erc4337GasLimits).not.toBe(undefined)
     expect(BigInt(response.erc4337GasLimits!.callGasLimit)).toBeGreaterThan(0n)
@@ -1132,7 +1130,7 @@ describe('estimate', () => {
     )
     expect(response.error).not.toBe(null)
     expect(response.error?.message).toBe(
-      'The transaction will fail because it reverted onchain. Reason might be insufficient funds in one of the transaction calls.'
+      'The transaction will fail because it reverted onchain with reason unknown.'
     )
   })
 
