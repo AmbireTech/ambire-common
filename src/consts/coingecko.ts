@@ -28,21 +28,22 @@ export function geckoTokenAddressMapper(address: string) {
 
 /**
  * Constructs the CoinGecko API URL for a given token address and network ID.
- * Handles special cases where the CoinGecko API does not correctly handle
- * certain tokens like native tokens on some networks.
+ * Handles special cases where the CoinGecko API handles differently certain
+ * tokens like the native tokens.
  */
-export function getCoinGeckoTokenApiUrl(tokenAddress: string, geckoNetworkId: string) {
-  // Exception because the CoinGecko API doesn't handle these cases correctly.
-  // Alias them to the ETH on Ethereum URL, so a valid URL is returned.
-  const isNativeTokenOnNetworksThatHaveEthAsNative =
-    tokenAddress === ZeroAddress &&
-    ['optimistic-ethereum', 'base', 'arbitrum-one'].includes(geckoNetworkId)
-  if (isNativeTokenOnNetworksThatHaveEthAsNative) return `${COINGECKO_API_BASE_URL}ethereum`
-
+export function getCoinGeckoTokenApiUrl({
+  tokenAddr,
+  geckoChainId,
+  geckoNativeCoinId
+}: {
+  tokenAddr: string
+  geckoChainId: string
+  geckoNativeCoinId: string
+}) {
   // CoinGecko does not handle native assets (ETH, MATIC, BNB...) via the /contract endpoint.
-  // Instead, native assets are identified by the `geckoNetworkId` directly.
-  if (tokenAddress === ZeroAddress) return `${COINGECKO_API_BASE_URL}${geckoNetworkId}`
+  // Instead, native assets are identified by URL with the `nativeAssetId` directly.
+  if (tokenAddr === ZeroAddress) return `${COINGECKO_API_BASE_URL}${geckoNativeCoinId}`
 
-  const geckoTokenAddress = geckoTokenAddressMapper(tokenAddress)
-  return `${COINGECKO_API_BASE_URL}${geckoNetworkId}/contact/${geckoTokenAddress}`
+  const geckoTokenAddress = geckoTokenAddressMapper(tokenAddr)
+  return `${COINGECKO_API_BASE_URL}${geckoChainId}/contact/${geckoTokenAddress}`
 }
