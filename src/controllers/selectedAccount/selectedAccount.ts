@@ -136,7 +136,7 @@ export class SelectedAccountController extends EventEmitter {
       this.#debounceFunctionCallsOnSameTick('updateSelectedAccountDefiPositions', () => {
         this.#updateSelectedAccountDefiPositions()
 
-        if (!this.areDefiPositionsLoading) {
+        if (!this.areDefiPositionsLoading && this.portfolio.isAllReady) {
           this.#updateDefiPositionsBanners()
           this.#updateSelectedAccountPortfolio()
         }
