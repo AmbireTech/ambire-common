@@ -18,14 +18,16 @@ import {
 
 export const updatePortfolioStateWithDefiPositions = (
   portfolioAccountState: AccountState,
-  defiPositionsAccountState: DefiPositionsAccountState
+  defiPositionsAccountState: DefiPositionsAccountState,
+  areDefiPositionsLoading: boolean
 ) => {
-  if (!portfolioAccountState || !defiPositionsAccountState) return portfolioAccountState
+  if (!portfolioAccountState || !defiPositionsAccountState || areDefiPositionsLoading)
+    return portfolioAccountState
 
   Object.keys(portfolioAccountState).forEach((networkId) => {
     const networkState = portfolioAccountState[networkId]
 
-    if (!networkState?.result) return
+    if (!networkState?.result || defiPositionsAccountState[networkId].isLoading) return
 
     let tokens = networkState.result.tokens || []
     let networkBalance = networkState.result.total?.usd || 0

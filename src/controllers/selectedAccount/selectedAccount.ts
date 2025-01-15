@@ -209,12 +209,14 @@ export class SelectedAccountController extends EventEmitter {
 
     const latestStateSelectedAccountWithDefiPositions = updatePortfolioStateWithDefiPositions(
       latestStateSelectedAccount,
-      defiPositionsAccountState
+      defiPositionsAccountState,
+      this.areDefiPositionsLoading
     )
 
     const pendingStateSelectedAccountWithDefiPositions = updatePortfolioStateWithDefiPositions(
       pendingStateSelectedAccount,
-      defiPositionsAccountState
+      defiPositionsAccountState,
+      this.areDefiPositionsLoading
     )
 
     const hasSignAccountOp = !!this.#actions?.visibleActionsQueue.filter(
