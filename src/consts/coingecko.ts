@@ -4,6 +4,7 @@ import { Network } from '../interfaces/network'
 import { WALLET_STAKING_ADDR, WALLET_TOKEN } from './addresses'
 
 const COINGECKO_API_BASE_URL = 'https://api.coingecko.com/api/v3/coins/'
+const COINGECKO_BASE_URL = 'https://www.coingecko.com/en/coins/'
 
 // @TODO some form of a constants list
 export function geckoIdMapper(address: string, network: Network): string | null {
@@ -47,3 +48,6 @@ export function getCoinGeckoTokenApiUrl({
   const geckoTokenAddress = geckoTokenAddressMapper(tokenAddr)
   return `${COINGECKO_API_BASE_URL}${geckoChainId}/contract/${geckoTokenAddress}`
 }
+
+/** Constructs the CoinGecko URL for a given token slug. */
+export const getCoinGeckoTokenUrl = (slug: string) => `${COINGECKO_BASE_URL}${slug}`
