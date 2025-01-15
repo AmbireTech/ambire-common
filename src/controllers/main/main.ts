@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/brace-style */
 
 import { ethErrors } from 'eth-rpc-errors'
-import { getAddress, getBigInt, Interface, isAddress } from 'ethers'
+import { getAddress, getBigInt, Interface, isAddress, ZeroAddress } from 'ethers'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json'
@@ -1992,6 +1992,14 @@ export class MainController extends EventEmitter {
         this.portfolio.getLatestPortfolioState(localAccountOp.accountAddr)?.gasTank?.result
           ?.tokens ?? []
 
+      // get the current native value the user has for the network or
+      // an undefined if it's not available atms
+      const portfolioNativeValue = this.portfolio
+        .getLatestPortfolioState(localAccountOp.accountAddr)
+        ?.[localAccountOp.networkId]?.result?.tokens.find(
+          (token) => token.address === ZeroAddress
+        )?.amount
+
       const feeTokens =
         [...networkFeeTokens, ...gasTankFeeTokens].filter((t) => t.flags.isFeeToken) || []
 
@@ -2051,6 +2059,7 @@ export class MainController extends EventEmitter {
             this.emitError(e)
           },
           this.signAccountOp.bundlerSwitcher,
+          portfolioNativeValue,
           {
             is4337Broadcast: isErc4337Broadcast(
               account,
