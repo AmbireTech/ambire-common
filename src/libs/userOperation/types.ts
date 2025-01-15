@@ -26,3 +26,8 @@ export interface UserOperation {
   // about this userOp
   bundler: BUNDLER
 }
+
+export interface UserOperationEventData {
+  nonce: Number
+  success: boolean
+}
