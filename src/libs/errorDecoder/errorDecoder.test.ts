@@ -6,8 +6,10 @@ import { describe, expect } from '@jest/globals'
 
 import { suppressConsole } from '../../../test/helpers/console'
 import { networks } from '../../consts/networks'
-import { MESSAGE_PREFIX } from '../errorHumanizer/estimationErrorHumanizer'
-import { humanizeEstimationOrBroadcastError } from '../errorHumanizer/humanizeCommonCases'
+import {
+  getHumanReadableEstimationError,
+  MESSAGE_PREFIX
+} from '../errorHumanizer/estimationErrorHumanizer'
 import { RELAYER_DOWN_MESSAGE, RelayerError } from '../relayerCall/relayerCall'
 import { PANIC_ERROR_PREFIX } from './constants'
 import { InnerCallFailureError, RelayerPaymasterError } from './customErrors'
@@ -371,8 +373,8 @@ describe('Error decoders work', () => {
     const error = new InnerCallFailureError('0x', [{ to: '', value: 10n, data: '0x' }], base, 9n)
     const decodedError = decodeError(error)
     expect(decodedError.reason).toBe(`Insufficient ${base.nativeAssetSymbol} for transaction calls`)
-    const humanized = humanizeEstimationOrBroadcastError(decodedError.reason, MESSAGE_PREFIX)
-    expect(humanized).toBe(`Insufficient ${base.nativeAssetSymbol} for transaction calls`)
+    const humanized = getHumanReadableEstimationError(decodedError)
+    expect(humanized.message).toBe(`Insufficient ${base.nativeAssetSymbol} for transaction calls`)
 
     const sameErrorOnAvax = new InnerCallFailureError(
       '0x',
@@ -384,14 +386,16 @@ describe('Error decoders work', () => {
     expect(decodedsameErrorOnAvax.reason).toBe(
       `Insufficient ${avalanche.nativeAssetSymbol} for transaction calls`
     )
-    const humanizedAvax = humanizeEstimationOrBroadcastError(decodedError.reason, MESSAGE_PREFIX)
-    expect(humanizedAvax).toBe(`Insufficient ${avalanche.nativeAssetSymbol} for transaction calls`)
+    const humanizedAvax = getHumanReadableEstimationError(decodedsameErrorOnAvax)
+    expect(humanizedAvax.message).toBe(
+      `Insufficient ${avalanche.nativeAssetSymbol} for transaction calls`
+    )
   })
   it('Should report transaction reverted with error unknown when error is 0x and the calls value is less or equal to the portfolio amount', async () => {
     const error = new InnerCallFailureError('0x', [{ to: '', value: 10n, data: '0x' }], base, 10n)
     const decodedError = decodeError(error)
     expect(decodedError.reason).toBe('Inner call: 0x')
-    const humanizedAvax = humanizeEstimationOrBroadcastError(decodedError.reason, MESSAGE_PREFIX)
-    expect(humanizedAvax).toBe(`${MESSAGE_PREFIX} it reverted onchain with reason unknown.`)
+    const humanizedAvax = getHumanReadableEstimationError(decodedError)
+    expect(humanizedAvax.message).toBe(`${MESSAGE_PREFIX} it reverted onchain with reason unknown.`)
   })
 })
