@@ -3,6 +3,8 @@ import { ZeroAddress } from 'ethers'
 import { Network } from '../interfaces/network'
 import { WALLET_STAKING_ADDR, WALLET_TOKEN } from './addresses'
 
+const COINGECKO_API_BASE_URL = 'https://api.coingecko.com/api/v3/coins/'
+
 // @TODO some form of a constants list
 export function geckoIdMapper(address: string, network: Network): string | null {
   if (address === ZeroAddress) return network.nativeAssetId
@@ -24,20 +26,23 @@ export function geckoTokenAddressMapper(address: string) {
   return address
 }
 
-const COINGECKO_COINS_API_URL = 'https://api.coingecko.com/api/v3/coins/'
-
-export function getGeckoTokenCoinsApiUrl(tokenAddress: string, geckoNetworkId: string) {
+/**
+ * Constructs the CoinGecko API URL for a given token address and network ID.
+ * Handles special cases where the CoinGecko API does not correctly handle
+ * certain tokens like native tokens on some networks.
+ */
+export function getCoinGeckoTokenApiUrl(tokenAddress: string, geckoNetworkId: string) {
   // Exception because the CoinGecko API doesn't handle these cases correctly.
   // Alias them to the ETH on Ethereum URL, so a valid URL is returned.
   const isNativeTokenOnNetworksThatHaveEthAsNative =
     tokenAddress === ZeroAddress &&
     ['optimistic-ethereum', 'base', 'arbitrum-one'].includes(geckoNetworkId)
-  if (isNativeTokenOnNetworksThatHaveEthAsNative) return `${COINGECKO_COINS_API_URL}ethereum`
+  if (isNativeTokenOnNetworksThatHaveEthAsNative) return `${COINGECKO_API_BASE_URL}ethereum`
 
   // CoinGecko does not handle native assets (ETH, MATIC, BNB...) via the /contract endpoint.
   // Instead, native assets are identified by the `geckoNetworkId` directly.
-  if (tokenAddress === ZeroAddress) return `${COINGECKO_COINS_API_URL}${geckoNetworkId}`
+  if (tokenAddress === ZeroAddress) return `${COINGECKO_API_BASE_URL}${geckoNetworkId}`
 
   const geckoTokenAddress = geckoTokenAddressMapper(tokenAddress)
-  return `${COINGECKO_COINS_API_URL}${geckoNetworkId}/contact/${geckoTokenAddress}`
+  return `${COINGECKO_API_BASE_URL}${geckoNetworkId}/contact/${geckoTokenAddress}`
 }
