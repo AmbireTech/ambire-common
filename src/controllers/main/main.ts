@@ -374,9 +374,12 @@ export class MainController extends EventEmitter {
    */
   onLoad(isFirstLoad: boolean = false) {
     const selectedAccountAddr = this.selectedAccount.account?.addr
-    this.updateSelectedAccountPortfolio()
+    const hasBroadcastedButNotConfirmed = !!this.activity.broadcastedButNotConfirmed.length
     this.defiPositions.updatePositions()
     this.domains.batchReverseLookup(this.accounts.accounts.map((a) => a.addr))
+    if (!hasBroadcastedButNotConfirmed) {
+      this.updateSelectedAccountPortfolio()
+    }
     // The first time the app loads, we update the account state elsewhere
     if (selectedAccountAddr && !isFirstLoad) this.accounts.updateAccountState(selectedAccountAddr)
   }
