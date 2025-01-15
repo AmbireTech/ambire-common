@@ -32,11 +32,13 @@ const panicErrorCodeToReason = (errorCode: bigint): string | undefined => {
 const isReasonValid = (reason: string | null): boolean => {
   return (
     !!reason &&
+    typeof reason === 'string' &&
     reason !== '0x' &&
     reason !== 'Unknown error' &&
     reason !== 'UNKNOWN_ERROR' &&
     !reason.startsWith(ERROR_PREFIX) &&
-    !reason.startsWith(PANIC_ERROR_PREFIX)
+    !reason.startsWith(PANIC_ERROR_PREFIX) &&
+    !reason.toLowerCase().includes('could not coalesce error')
   )
 }
 
@@ -50,7 +52,11 @@ const formatReason = (reason: string): string => {
   if (trimmedReason.startsWith(ERROR_PREFIX) || trimmedReason.startsWith(PANIC_ERROR_PREFIX))
     return trimmedReason
 
-  return toUtf8String(trimmedReason)
+  try {
+    return toUtf8String(trimmedReason)
+  } catch {
+    return trimmedReason
+  }
 }
 
 const getErrorCodeStringFromReason = (reason: string, withSpace = true): string => {

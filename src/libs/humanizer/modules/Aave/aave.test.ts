@@ -78,7 +78,7 @@ describe('AAVE', () => {
           '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48',
           115792089237316195423570985008687907853269984665640564039457584007913129639935n
         ),
-        getLabel('to'),
+        getLabel('from'),
         getAddressVisualization('0x7d2768de32b0b80b7a3454c06bdac94a69ddc7a9'),
         getLabel('on behalf of'),
         getAddressVisualization('0x8bc110db7029197c3621bea8092ab1996d5dd7be')
@@ -94,7 +94,7 @@ describe('AAVE', () => {
       [
         getAction('Withdraw'),
         getToken(ZeroAddress, 473401923n),
-        getLabel('to'),
+        getLabel('from'),
         getAddressVisualization('0xcc9a0b7c43dc2a5f023bb9b738e45b0ef6b06e04'),
         getLabel('on behalf of'),
         getAddressVisualization('0x0df1a69fcdf15fec04e37aa5eca4268927b111e7')

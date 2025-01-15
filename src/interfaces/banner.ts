@@ -1,5 +1,4 @@
-import { AccountOpAction } from 'controllers/actions/actions'
-
+import { AccountOpAction } from './actions'
 import { Network } from './network'
 
 export type BannerType = 'error' | 'warning' | 'info' | 'info2' | 'success'
@@ -7,8 +6,10 @@ export type BannerCategory =
   | 'pending-to-be-signed-acc-op'
   | 'pending-to-be-confirmed-acc-op'
   | 'bridge-in-progress'
+  | 'bridge-waiting-approval-to-resolve'
   | 'bridge-ready'
   | 'bridge-completed'
+  | 'bridge-failed'
   | 'temp-seed-not-confirmed'
   | 'old-account'
 
@@ -92,4 +93,8 @@ export type Action =
   | {
       label: 'Check'
       actionName: 'confirm-temp-seed'
+    }
+  | {
+      label: 'Reload'
+      actionName: 'update-extension-version'
     }

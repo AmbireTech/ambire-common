@@ -6,7 +6,7 @@
     "noEmitOnError": true,
     "noEmitHelpers": true,
     "lib": ["ESNext", "DOM"],
-    "types": ["node", "jest"],
+    "types": ["node", "jest", "mocha"],
     "target": "ESNext",
     "moduleResolution": "node",
     "allowSyntheticDefaultImports": true,

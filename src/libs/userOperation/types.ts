@@ -1,3 +1,4 @@
+import { BUNDLER } from '../../consts/bundlers'
 import { Call } from '../accountOp/types'
 
 export type UserOpRequestType = 'standard' | 'activator' | 'recovery'
@@ -21,4 +22,12 @@ export interface UserOperation {
   // https://github.com/AmbireTech/ambire-app/wiki/Ambire-Flows-(wrap,-sign,-payment,-broadcast)#erc-4337-edge-case
   requestType: UserOpRequestType
   activatorCall?: Call
+  // which bundler is responsible for submitting and fetching info
+  // about this userOp
+  bundler: BUNDLER
+}
+
+export interface UserOperationEventData {
+  nonce: Number
+  success: boolean
 }

@@ -1,17 +1,21 @@
 import { Account } from '../../interfaces/account'
 import { AccountOpAction, Action as ActionFromActionsQueue } from '../../interfaces/actions'
+// eslint-disable-next-line import/no-cycle
 import { Action, Banner } from '../../interfaces/banner'
 import { Network, NetworkId } from '../../interfaces/network'
 import { RPCProviders } from '../../interfaces/provider'
 import { ActiveRoute } from '../../interfaces/swapAndBridge'
 import {
   AccountState as DefiPositionsAccountState,
-  DeFiPositionsError
+  DeFiPositionsError,
+  NetworksWithPositions
 } from '../defiPositions/types'
 import { getNetworksWithFailedRPC } from '../networks/networks'
 import { AccountState as PortfolioAccountState } from '../portfolio/interfaces'
 import { PORTFOLIO_LIB_ERROR_NAMES } from '../portfolio/portfolio'
 import { getIsBridgeTxn, getQuoteRouteSteps } from '../swapAndBridge/swapAndBridge'
+
+const TEN_MINUTES = 10 * 60 * 1000
 
 const getBridgeBannerTitle = (routeStatus: ActiveRoute['routeStatus']) => {
   switch (routeStatus) {
@@ -66,15 +70,20 @@ export const getBridgeBanners = (
     route.route.userTxs.some((t) => getIsBridgeTxn(t.userTxType))
   const isRouteTurnedIntoAccountOp = (route: ActiveRoute) => {
     return accountOpActions.some((action) => {
-      return action.accountOp.calls.some((call) => call.fromUserRequestId === route.activeRouteId)
+      return action.accountOp.calls.some(
+        (call) =>
+          call.fromUserRequestId === route.activeRouteId ||
+          call.fromUserRequestId === `${route.activeRouteId}-revoke-approval` ||
+          call.fromUserRequestId === `${route.activeRouteId}-approval`
+      )
     })
   }
 
   return activeRoutes
     .filter(isBridgeTxn)
     .filter((route) => {
+      if (route.routeStatus === 'failed') return false
       if (route.routeStatus !== 'ready') return true
-
       // If the route is ready to be signed, we should display the banner only if it's not turned into an account op
       // because when it does get turned into an account op, there will be a different banner for that
       return !isRouteTurnedIntoAccountOp(route)
@@ -82,7 +91,7 @@ export const getBridgeBanners = (
     .map((r) => {
       const actions: Action[] = []
 
-      if (r.routeStatus === 'in-progress') {
+      if (r.routeStatus === 'in-progress' || r.routeStatus === 'waiting-approval-to-resolve') {
         actions.push({
           label: 'Details',
           actionName: 'open-swap-and-bridge-tab'
@@ -404,6 +413,11 @@ export const getNetworksWithPortfolioErrorBanners = ({
   Object.keys(selectedAccountLatest).forEach((network) => {
     const portfolioForNetwork = selectedAccountLatest[network]
     const criticalError = portfolioForNetwork?.criticalError
+    const lastSuccessfulUpdate = portfolioForNetwork?.result?.lastSuccessfulUpdate
+
+    // Don't display an error banner if the last successful update was less than 10 minutes ago
+    if (typeof lastSuccessfulUpdate === 'number' && Date.now() - lastSuccessfulUpdate < TEN_MINUTES)
+      return
 
     let networkName: string | null = null
 
@@ -412,7 +426,6 @@ export const getNetworksWithPortfolioErrorBanners = ({
     else networkName = networks.find((n) => n.id === network)?.name ?? null
 
     if (!portfolioForNetwork || !networkName || portfolioForNetwork.isLoading) return
-
     // Don't display an error banner if the RPC isn't working because an RPC error banner is already displayed.
     // In case of additional networks don't check the RPC as there isn't one
     if (
@@ -425,11 +438,22 @@ export const getNetworksWithPortfolioErrorBanners = ({
     }
 
     portfolioForNetwork?.errors.forEach((err: any) => {
+      // If the error is not predefined(shouldn't happen) or it's a specific
+      // non-critical error, we shouldn't display a banner
+      if (
+        !Object.keys(PORTFOLIO_LIB_ERROR_NAMES).includes(err?.name) ||
+        err?.name === PORTFOLIO_LIB_ERROR_NAMES.NonCriticalApiHintsError
+      )
+        return
+
+      // Price errors are not critical, so we should display a warning banner
       if (err?.name === PORTFOLIO_LIB_ERROR_NAMES.PriceFetchError) {
         networkNamesWithPriceFetchError.push(networkName as string)
-      } else if (err?.name === PORTFOLIO_LIB_ERROR_NAMES.HintsError) {
-        networkNamesWithCriticalError.push(networkName as string)
+        return
       }
+
+      // For all other errors, we should display an error banner
+      networkNamesWithCriticalError.push(networkName as string)
     })
   })
 
@@ -460,11 +484,13 @@ export const getNetworksWithPortfolioErrorBanners = ({
 export const getNetworksWithDeFiPositionsErrorBanners = ({
   networks,
   currentAccountState,
-  providers
+  providers,
+  networksWithPositions
 }: {
   networks: Network[]
   currentAccountState: DefiPositionsAccountState
   providers: RPCProviders
+  networksWithPositions: NetworksWithPositions
 }) => {
   const isLoading = Object.keys(currentAccountState).some((networkId) => {
     const networkState = currentAccountState[networkId]
@@ -480,13 +506,21 @@ export const getNetworksWithDeFiPositionsErrorBanners = ({
   } = {}
 
   Object.keys(currentAccountState).forEach((networkId) => {
+    const providersWithPositions = networksWithPositions[networkId]
+    // Ignore networks that don't have positions
+    // but ensure that we have a successful response stored (the network key is present)
+    if (providersWithPositions && !providersWithPositions.length) return
+
     const networkState = currentAccountState[networkId]
     const network = networks.find((n) => n.id === networkId)
     const rpcProvider = providers[networkId]
+    const lastSuccessfulUpdate = networkState.updatedAt
 
     if (
       !network ||
       !networkState ||
+      (typeof lastSuccessfulUpdate === 'number' &&
+        Date.now() - lastSuccessfulUpdate < TEN_MINUTES) ||
       // Don't display an error banner if the RPC isn't working because an RPC error banner is already displayed.
       (typeof rpcProvider.isWorking === 'boolean' && !rpcProvider.isWorking)
     )
@@ -500,7 +534,16 @@ export const getNetworksWithDeFiPositionsErrorBanners = ({
       }
     }
 
-    const providerNamesWithErrors = networkState.providerErrors?.map((e) => e.providerName) || []
+    const providerNamesWithErrors =
+      networkState.providerErrors
+        ?.filter(({ providerName }) => {
+          // Display all errors if there hasn't been a successful update
+          // for the network.
+          if (!networksWithPositions[networkId]) return true
+          // Exclude providers without positions
+          return networksWithPositions[networkId].includes(providerName)
+        })
+        .map((e) => e.providerName) || []
 
     if (providerNamesWithErrors.length) {
       providerNamesWithErrors.forEach((providerName) => {

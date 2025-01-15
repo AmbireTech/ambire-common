@@ -10,9 +10,15 @@ import {
   IrCall,
   IrMessage
 } from './interfaces'
-import { erc20Module, erc721Module, permit2Module } from './messageModules'
-import { entryPointModule } from './messageModules/entryPointModule'
-import { legendsMessageModule } from './messageModules/legendsModule'
+import {
+  ensMessageModule,
+  entryPointModule,
+  erc20Module,
+  erc721Module,
+  legendsMessageModule,
+  openseaMessageModule,
+  permit2Module
+} from './messageModules'
 import OneInchModule from './modules/1Inch'
 import { aaveHumanizer } from './modules/Aave'
 import AcrossModule from './modules/Across'
@@ -20,10 +26,14 @@ import { airdropsModule } from './modules/Airdrops'
 import asciiModule from './modules/AsciiModule'
 import curveModule from './modules/Curve'
 import { deploymentModule } from './modules/Deployment'
+import { embeddedAmbireOperationHumanizer } from './modules/embeddedAmbireOperationHumanizer'
+import { ensModule } from './modules/ENS'
 import fallbackHumanizer from './modules/FallbackHumanizer'
 import gasTankModule from './modules/GasTankModule'
 import KyberSwap from './modules/KyberSwap'
 import legendsModule from './modules/Legends'
+import { LidoModule } from './modules/Lido'
+import { openSeaModule } from './modules/OpenSea'
 import { postProcessing } from './modules/PostProcessing/postProcessModule'
 import preProcessHumanizer from './modules/PreProcess'
 import privilegeHumanizer from './modules/Privileges'
@@ -40,9 +50,11 @@ import wrappingModule from './modules/Wrapping'
 // the final humanization is the final triggered module
 export const humanizerCallModules: HumanizerCallModule[] = [
   preProcessHumanizer,
+  embeddedAmbireOperationHumanizer,
   deploymentModule,
   genericErc721Humanizer,
   genericErc20Humanizer,
+  LidoModule,
   gasTankModule,
   airdropsModule,
   uniswapHumanizer,
@@ -59,6 +71,8 @@ export const humanizerCallModules: HumanizerCallModule[] = [
   sushiSwapModule,
   legendsModule,
   singletonFactory,
+  ensModule,
+  openSeaModule,
   asciiModule,
   fallbackHumanizer,
   postProcessing
@@ -71,7 +85,9 @@ const humanizerTMModules = [
   erc721Module,
   permit2Module,
   entryPointModule,
-  legendsMessageModule
+  legendsMessageModule,
+  ensMessageModule,
+  openseaMessageModule
 ]
 
 const humanizeAccountOp = (_accountOp: AccountOp, options: HumanizerOptions): IrCall[] => {
@@ -86,6 +102,7 @@ const humanizeAccountOp = (_accountOp: AccountOp, options: HumanizerOptions): Ir
     try {
       currentCalls = hm(accountOp, currentCalls, humanizerInfo as HumanizerMeta, humanizerOptions)
     } catch (error) {
+      console.error(error)
       // No action is needed here; we only set `currentCalls` if the module successfully resolves the calls.
     }
   })
@@ -102,6 +119,7 @@ const humanizeMessage = (_message: Message): IrMessage => {
 
     return { ...message, fullVisualization, warnings }
   } catch (error) {
+    console.error(error)
     return message
   }
 }

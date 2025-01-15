@@ -1,4 +1,3 @@
-/* eslint-disable import/no-extraneous-dependencies */
 import { Account, AccountId } from '../../interfaces/account'
 import { Banner } from '../../interfaces/banner'
 import { Fetch } from '../../interfaces/fetch'
@@ -8,7 +7,8 @@ import { Message } from '../../interfaces/userRequest'
 import { isSmartAccount } from '../../libs/account/account'
 import { AccountOpStatus } from '../../libs/accountOp/accountOp'
 import { fetchTxnId, SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
-import { NetworkNonces } from '../../libs/portfolio/interfaces'
+/* eslint-disable import/no-extraneous-dependencies */
+import { parseLogs } from '../../libs/userOperation/userOperation'
 import { getBenzinUrlParams } from '../../utils/benzin'
 import { AccountsController } from '../accounts/accounts'
 import EventEmitter from '../eventEmitter/eventEmitter'
@@ -65,31 +65,40 @@ const trim = <T>(items: T[], maxSize = 1000): void => {
   }
 }
 
+const paginate = (items: any[], fromPage: number, itemsPerPage: number) => {
+  return {
+    items: items.slice(fromPage * itemsPerPage, fromPage * itemsPerPage + itemsPerPage),
+    itemsTotal: items.length,
+    currentPage: fromPage, // zero/index based
+    maxPages: Math.ceil(items.length / itemsPerPage)
+  }
+}
+
 /**
  * Activity Controller
- * is responsible for keeping signed AccountsOps and Messages in the controller memory and browser storage.
+ * Manages signed AccountsOps and Messages in controller memory and browser storage.
  *
- * With its public methods and properties, you can retrieve ActivityController.accountsOps and ActivityController.signedMessages in a paginated structure.
+ * Raw, unfiltered data is stored in private properties `ActivityController.#accountsOps` and
+ * `ActivityController.#signedMessages`.
  *
- * In order to set filters/pagination, we should use the following methods:
- * `setFilters` - the same filters are reused for both AccountsOps and SignedMessages, because in terms of UI, most probably they will have the same value for both types.
- * `setAccountsOpsPagination` - set pagination props for AccountsOps only. We don't reuse the pagination for SignedMessages too, because pagination is tightly coupled to its type.
- * `setSignedMessagesPagination` - set pagination props for SignedMessages.
+ * Public methods and properties are exposed for retrieving data with filtering and pagination.
  *
- * 💡 For performance reasons, we have made the decision to limit the number of items per account + network to a maximum of 1000.
- * To achieve this, we have trimmed out the oldest items, retaining only the most recent ones.
+ * To apply filters or pagination, call `filterAccountsOps()` or `filterSignedMessages()` with the
+ * required parameters. Filtered items are stored in `ActivityController.accountsOps` and
+ * `ActivityController.signedMessages` by session ID.
  *
- * Implementation decisions:
+ * Sessions ensure that each page manages its own filters and pagination independently. For example,
+ * filters in "Settings -> Transactions History" and "Dashboard -> Activity Tab" are isolated per session.
  *
- * 1. Before we start operating with the controller inner state, we rely on private load() function to load the browser storage and to update the inner state.
- * 2. The filtering by account/network is reused for both AccountsOps and SignedMessages. This seems most logical from a UI perspective.
- * 3. Pagination is not reused because the two tabs can have different states.
- * 4. MainController passes all accounts to ActivityController (instead of a single account, i.e. the current one) so that we can know the latest nonce for each account + network. Otherwise (if we don't want to pass all accounts), when selecting an account from the UI in the Transaction History screen, MainController should subscribe and pass only one account. The first option seems to be less cumbersome.
- * 5. Here is how we update AccountsOps statuses:
- *   5.1. Once we add a new AccountOp to ActivityController via addAccountOp, we are setting its status to AccountOpStatus.BroadcastedButNotConfirmed.
- *   5.2. Later, we need to call `updateAccountsOpsStatuses()` from the app.
- *       5.2.1. Then, we firstly rely on getTransactionReceipt for determining the status (success or failure).
- *       5.2.2. If we don't manage to determine its status, we are comparing AccountOp and Account nonce. If Account nonce is greater than AccountOp, then we know that AccountOp has past nonce (AccountOpStatus.UnknownButPastNonce).
+ * After adding or removing an AccountOp or SignedMessage, call `syncFilteredAccountsOps()` or
+ * `syncFilteredSignedMessages()` to synchronize filtered data with the source data.
+ *
+ * The frontend is responsible for clearing filtered items for a session when a component unmounts
+ * by calling `resetAccountsOpsFilters()` or `resetSignedMessagesFilters()`. If not cleared, all
+ * sessions will be automatically removed when the browser is closed or the controller terminates.
+ *
+ * 💡 For performance, items per account and network are limited to 1000.
+ * Older items are trimmed, keeping the most recent ones.
  */
 export class ActivityController extends EventEmitter {
   #storage: Storage
@@ -104,25 +113,23 @@ export class ActivityController extends EventEmitter {
 
   #accountsOps: InternalAccountsOps = {}
 
-  accountsOps: AccountsOps | undefined
+  accountsOps: {
+    [sessionId: string]: {
+      result: AccountsOps
+      filters: Filters
+      pagination: Pagination
+    }
+  } = {}
 
   #signedMessages: InternalSignedMessages = {}
 
-  signedMessages: MessagesToBeSigned | undefined
-
-  accountsOpsPagination: Pagination = {
-    fromPage: 0,
-    itemsPerPage: 10
-  }
-
-  signedMessagesPagination: Pagination = {
-    fromPage: 0,
-    itemsPerPage: 10
-  }
-
-  filters: Filters | null = null
-
-  isInitialized: boolean = false
+  signedMessages: {
+    [sessionId: string]: {
+      result: MessagesToBeSigned
+      filters: Filters
+      pagination: Pagination
+    }
+  } = {}
 
   #providers: ProvidersController
 
@@ -167,94 +174,107 @@ export class ActivityController extends EventEmitter {
     this.#accountsOps = accountsOps
     this.#signedMessages = signedMessages
 
-    this.init()
     this.emitUpdate()
   }
 
-  init(filters?: Filters) {
-    this.isInitialized = true
-
-    if (filters) {
-      this.filters = filters
-
-      this.accountsOps = this.filterAndPaginateAccountOps(
-        this.#accountsOps,
-        this.accountsOpsPagination
-      )
-      this.signedMessages = this.filterAndPaginateSignedMessages(
-        this.#signedMessages,
-        this.signedMessagesPagination
-      )
+  async filterAccountsOps(
+    sessionId: string,
+    filters: Filters,
+    pagination: Pagination = {
+      fromPage: 0,
+      itemsPerPage: 10
     }
-
-    this.emitUpdate()
-  }
-
-  reset() {
-    this.filters = null
-    this.isInitialized = false
-    this.emitUpdate()
-  }
-
-  private filterAndPaginateAccountOps<T>(
-    items: {
-      [key: string]: { [key: string]: T[] } | undefined
-    },
-    pagination: Pagination
   ) {
-    if (!this.isInitialized) {
-      this.#throwNotInitialized()
-      return
+    await this.#initialLoadPromise
+
+    let filteredItems
+
+    if (filters.network) {
+      filteredItems = this.#accountsOps[filters.account]?.[filters.network] || []
+    } else {
+      filteredItems = Object.values(this.#accountsOps[filters.account] || []).flat()
+      // By default, #accountsOps are grouped by network and sorted in descending order.
+      // However, when the network filter is omitted, #accountsOps from different networks are mixed,
+      // requiring additional sorting to ensure they are also in descending order.
+      filteredItems.sort((a, b) => b.timestamp - a.timestamp)
     }
 
-    let filteredItems: T[] = []
+    const result = paginate(filteredItems, pagination.fromPage, pagination.itemsPerPage)
 
-    if (this.filters) {
-      if (this.filters.network) {
-        filteredItems = items?.[this.filters.account]?.[this.filters.network] || []
-      } else {
-        filteredItems = Object.values(items?.[this.filters.account] || []).flat()
-      }
+    this.accountsOps[sessionId] = {
+      result,
+      filters,
+      pagination
     }
 
-    const { fromPage, itemsPerPage } = pagination
-
-    return {
-      items: filteredItems.slice(fromPage * itemsPerPage, fromPage * itemsPerPage + itemsPerPage),
-      itemsTotal: filteredItems.length,
-      currentPage: fromPage, // zero/index based
-      maxPages: Math.ceil(filteredItems.length / itemsPerPage)
-    }
+    this.emitUpdate()
   }
 
-  private filterAndPaginateSignedMessages<T>(
-    items: {
-      [key: string]: T[] | undefined
-    },
-    pagination: Pagination
-  ) {
-    if (!this.isInitialized) {
-      this.#throwNotInitialized()
-      return
-    }
-    const filteredItems = this.filters?.account ? items?.[this.filters.account] || [] : []
-    const { fromPage, itemsPerPage } = pagination
+  // Reset filtered AccountsOps session.
+  // Example: when a FE component is being unmounted, we don't need anymore the filtered accounts ops and we
+  // free the memory calling this method.
+  resetAccountsOpsFilters(sessionId: string) {
+    delete this.accountsOps[sessionId]
+  }
 
-    return {
-      items: filteredItems.slice(fromPage * itemsPerPage, fromPage * itemsPerPage + itemsPerPage),
-      itemsTotal: filteredItems.length,
-      currentPage: fromPage, // zero/index based
-      maxPages: Math.ceil(filteredItems.length / itemsPerPage)
+  // Everytime we add/remove an AccOp, we should run this method in order to keep the filtered and internal accounts ops in sync.
+  private async syncFilteredAccountsOps() {
+    const promises = Object.keys(this.accountsOps).map(async (sessionId) => {
+      await this.filterAccountsOps(
+        sessionId,
+        this.accountsOps[sessionId].filters,
+        this.accountsOps[sessionId].pagination
+      )
+    })
+
+    await Promise.all(promises)
+  }
+
+  async filterSignedMessages(
+    sessionId: string,
+    filters: Filters,
+    pagination: Pagination = {
+      fromPage: 0,
+      itemsPerPage: 10
     }
+  ) {
+    await this.#initialLoadPromise
+
+    const filteredItems = this.#signedMessages[filters.account] || []
+
+    const result = paginate(filteredItems, pagination.fromPage, pagination.itemsPerPage)
+
+    this.signedMessages[sessionId] = {
+      result,
+      filters,
+      pagination
+    }
+
+    this.emitUpdate()
+  }
+
+  // Reset filtered Messages session.
+  // Example: when a FE component is being unmounted, we don't need anymore the filtered messages and we
+  // free the memory calling this method.
+  resetSignedMessagesFilters(sessionId: string) {
+    delete this.signedMessages[sessionId]
+  }
+
+  // Everytime we add/remove a Message, we should run this method in order to keep the filtered and internal messages in sync.
+  private async syncSignedMessages() {
+    const promises = Object.keys(this.signedMessages).map(async (sessionId) => {
+      await this.filterSignedMessages(
+        sessionId,
+        this.signedMessages[sessionId].filters,
+        this.signedMessages[sessionId].pagination
+      )
+    })
+
+    await Promise.all(promises)
   }
 
   async addAccountOp(accountOp: SubmittedAccountOp) {
     await this.#initialLoadPromise
-
-    if (!this.isInitialized) {
-      this.#throwNotInitialized()
-      return
-    }
 
     const { accountAddr, networkId } = accountOp
 
@@ -265,10 +285,7 @@ export class ActivityController extends EventEmitter {
     this.#accountsOps[accountAddr][networkId].unshift({ ...accountOp })
     trim(this.#accountsOps[accountAddr][networkId])
 
-    this.accountsOps = this.filterAndPaginateAccountOps(
-      this.#accountsOps,
-      this.accountsOpsPagination
-    )
+    await this.syncFilteredAccountsOps()
 
     await this.#storage.set('accountsOps', this.#accountsOps)
     this.emitUpdate()
@@ -287,19 +304,19 @@ export class ActivityController extends EventEmitter {
   async updateAccountsOpsStatuses(): Promise<{
     shouldEmitUpdate: boolean
     shouldUpdatePortfolio: boolean
+    updatedAccountsOps: SubmittedAccountOp[]
   }> {
     await this.#initialLoadPromise
 
-    // Here we don't rely on `this.isInitialized` flag, as it checks for both `this.filters.account` and `this.filters.network` existence.
-    // Banners are network agnostic, and that's the reason we check for `this.filters.account` only and having this.#accountsOps loaded.
     if (!this.#selectedAccount.account || !this.#accountsOps[this.#selectedAccount.account.addr])
-      return { shouldEmitUpdate: false, shouldUpdatePortfolio: false }
+      return { shouldEmitUpdate: false, shouldUpdatePortfolio: false, updatedAccountsOps: [] }
 
     // This flag tracks the changes to AccountsOps statuses
     // and optimizes the number of the emitted updates and storage/state updates.
     let shouldEmitUpdate = false
 
     let shouldUpdatePortfolio = false
+    const updatedAccountsOps: SubmittedAccountOp[] = []
 
     await Promise.all(
       Object.keys(this.#accountsOps[this.#selectedAccount.account.addr]).map(async (networkId) => {
@@ -326,6 +343,9 @@ export class ActivityController extends EventEmitter {
               if (aQuaterHasPassed) {
                 this.#accountsOps[selectedAccount][networkId][accountOpIndex].status =
                   AccountOpStatus.BroadcastButStuck
+                updatedAccountsOps.push(
+                  this.#accountsOps[selectedAccount][networkId][accountOpIndex]
+                )
               }
             }
 
@@ -339,6 +359,7 @@ export class ActivityController extends EventEmitter {
             if (fetchTxnIdResult.status === 'rejected') {
               this.#accountsOps[selectedAccount][networkId][accountOpIndex].status =
                 AccountOpStatus.Rejected
+              updatedAccountsOps.push(this.#accountsOps[selectedAccount][networkId][accountOpIndex])
               return
             }
             if (fetchTxnIdResult.status === 'not_found') {
@@ -352,8 +373,22 @@ export class ActivityController extends EventEmitter {
             try {
               const receipt = await provider.getTransactionReceipt(txnId)
               if (receipt) {
-                this.#accountsOps[selectedAccount][networkId][accountOpIndex].status =
-                  receipt.status ? AccountOpStatus.Success : AccountOpStatus.Failure
+                // if this is an user op, we have to check the logs
+                let isSuccess: boolean | undefined
+                if (accountOp.identifiedBy.type === 'UserOperation') {
+                  const userOpEventLog = parseLogs(receipt.logs, accountOp.identifiedBy.identifier)
+                  if (userOpEventLog) isSuccess = userOpEventLog.success
+                }
+
+                // if it's not an userOp or it is, but isSuccess was not found
+                if (isSuccess === undefined) isSuccess = !!receipt.status
+
+                this.#accountsOps[selectedAccount][networkId][accountOpIndex].status = isSuccess
+                  ? AccountOpStatus.Success
+                  : AccountOpStatus.Failure
+                updatedAccountsOps.push(
+                  this.#accountsOps[selectedAccount][networkId][accountOpIndex]
+                )
 
                 if (receipt.status) {
                   shouldUpdatePortfolio = true
@@ -396,6 +431,7 @@ export class ActivityController extends EventEmitter {
             if (sameNonceTxns.length > 1 && !!confirmedSameNonceTxns) {
               this.#accountsOps[selectedAccount][networkId][accountOpIndex].status =
                 AccountOpStatus.UnknownButPastNonce
+              updatedAccountsOps.push(this.#accountsOps[selectedAccount][networkId][accountOpIndex])
               shouldUpdatePortfolio = true
             }
           })
@@ -405,22 +441,14 @@ export class ActivityController extends EventEmitter {
 
     if (shouldEmitUpdate) {
       await this.#storage.set('accountsOps', this.#accountsOps)
-      this.accountsOps = this.filterAndPaginateAccountOps(
-        this.#accountsOps,
-        this.accountsOpsPagination
-      )
+      await this.syncFilteredAccountsOps()
       this.emitUpdate()
     }
 
-    return { shouldEmitUpdate, shouldUpdatePortfolio }
+    return { shouldEmitUpdate, shouldUpdatePortfolio, updatedAccountsOps }
   }
 
   async addSignedMessage(signedMessage: SignedMessage, account: string) {
-    if (!this.isInitialized) {
-      this.#throwNotInitialized()
-      return
-    }
-
     await this.#initialLoadPromise
 
     if (!this.#signedMessages[account]) this.#signedMessages[account] = []
@@ -428,80 +456,23 @@ export class ActivityController extends EventEmitter {
     // newest SignedMessage goes first in the list
     this.#signedMessages[account].unshift(signedMessage)
     trim(this.#signedMessages[account])
-    this.signedMessages = this.filterAndPaginateSignedMessages(
-      this.#signedMessages,
-      this.signedMessagesPagination
-    )
+    await this.syncSignedMessages()
 
     await this.#storage.set('signedMessages', this.#signedMessages)
     this.emitUpdate()
   }
 
-  setFilters(filters: Filters) {
-    if (!this.isInitialized) {
-      this.#throwNotInitialized()
-      return
-    }
+  async removeAccountData(address: Account['addr']) {
+    await this.#initialLoadPromise
 
-    this.filters = filters
-
-    this.accountsOps = this.filterAndPaginateAccountOps(
-      this.#accountsOps,
-      this.accountsOpsPagination
-    )
-    this.signedMessages = this.filterAndPaginateSignedMessages(
-      this.#signedMessages,
-      this.signedMessagesPagination
-    )
-
-    this.emitUpdate()
-  }
-
-  setAccountsOpsPagination(pagination: Pagination): void {
-    if (!this.isInitialized) {
-      this.#throwNotInitialized()
-      return
-    }
-
-    this.accountsOpsPagination = pagination
-
-    this.accountsOps = this.filterAndPaginateAccountOps(
-      this.#accountsOps,
-      this.accountsOpsPagination
-    )
-    this.emitUpdate()
-  }
-
-  setSignedMessagesPagination(pagination: Pagination): void {
-    if (!this.isInitialized) {
-      this.#throwNotInitialized()
-      return
-    }
-
-    this.signedMessagesPagination = pagination
-
-    this.signedMessages = this.filterAndPaginateSignedMessages(
-      this.#signedMessages,
-      this.signedMessagesPagination
-    )
-    this.emitUpdate()
-  }
-
-  removeAccountData(address: Account['addr']) {
     delete this.#accountsOps[address]
     delete this.#signedMessages[address]
 
-    this.accountsOps = this.filterAndPaginateAccountOps(
-      this.#accountsOps,
-      this.accountsOpsPagination
-    )
-    this.signedMessages = this.filterAndPaginateSignedMessages(
-      this.#signedMessages,
-      this.signedMessagesPagination
-    )
+    await this.syncFilteredAccountsOps()
+    await this.syncSignedMessages()
 
-    this.#storage.set('accountsOps', this.#accountsOps)
-    this.#storage.set('signedMessages', this.#signedMessages)
+    await this.#storage.set('accountsOps', this.#accountsOps)
+    await this.#storage.set('signedMessages', this.#signedMessages)
 
     this.emitUpdate()
   }
@@ -544,56 +515,12 @@ export class ActivityController extends EventEmitter {
   }
 
   get broadcastedButNotConfirmed(): SubmittedAccountOp[] {
-    // Here we don't rely on `this.isInitialized` flag, as it checks for both `this.filters.account` and `this.filters.network` existence.
-    // Banners are network agnostic, and that's the reason we check for `this.filters.account` only and having this.#accountsOps loaded.
     if (!this.#selectedAccount.account || !this.#accountsOps[this.#selectedAccount.account.addr])
       return []
 
     return Object.values(this.#accountsOps[this.#selectedAccount.account.addr])
       .flat()
       .filter((accountOp) => accountOp.status === AccountOpStatus.BroadcastedButNotConfirmed)
-  }
-
-  // Here, we retrieve nonces that are either already confirmed and known,
-  // or those that have been broadcasted and are in the process of being confirmed.
-  // We use this information to determine the token's pending badge status (whether it is PendingToBeConfirmed or PendingToBeSigned).
-  // By knowing the latest AccOp nonce, we can compare it with the portfolio's pending simulation nonce.
-  // If the ActivityNonce is the same as the simulation beforeNonce,
-  // we can conclude that the badge is PendingToBeConfirmed.
-  // In all other cases, if the portfolio nonce is newer, then the badge is still PendingToBeSigned.
-  // More info: calculatePendingAmounts.
-  get lastKnownNonce(): NetworkNonces {
-    // Here we don't rely on `this.isInitialized` flag, as it checks for both `this.filters.account` and `this.filters.network` existence.
-    // Banners are network agnostic, and that's the reason we check for `this.filters.account` only and having this.#accountsOps loaded.
-    if (!this.#selectedAccount.account || !this.#accountsOps[this.#selectedAccount.account.addr])
-      return {}
-
-    return Object.values(this.#accountsOps[this.#selectedAccount.account.addr])
-      .flat()
-      .reduce(
-        (acc, accountOp) => {
-          const successStatuses = [
-            AccountOpStatus.BroadcastedButNotConfirmed,
-            AccountOpStatus.Success,
-            AccountOpStatus.UnknownButPastNonce
-          ]
-
-          if (!successStatuses.includes(accountOp.status!)) return acc
-
-          if (!acc[accountOp.networkId]) {
-            acc[accountOp.networkId] = accountOp.nonce
-          } else {
-            acc[accountOp.networkId] =
-              accountOp.nonce > acc[accountOp.networkId]
-                ? accountOp.nonce
-                : acc[accountOp.networkId]
-          }
-
-          return acc
-        },
-
-        {} as NetworkNonces
-      )
   }
 
   get banners(): Banner[] {
@@ -691,12 +618,19 @@ export class ActivityController extends EventEmitter {
     return this.#accountsOps[this.#selectedAccount.account.addr][networkId][0]
   }
 
+  async findMessage(account: string, filter: (item: SignedMessage) => boolean) {
+    await this.#initialLoadPromise
+
+    if (!this.#signedMessages[account]) return null
+
+    return this.#signedMessages[account].find(filter)
+  }
+
   toJSON() {
     return {
       ...this,
       ...super.toJSON(),
       broadcastedButNotConfirmed: this.broadcastedButNotConfirmed, // includes the getter in the stringified instance
-      lastKnownNonce: this.lastKnownNonce,
       banners: this.banners // includes the getter in the stringified instance
     }
   }

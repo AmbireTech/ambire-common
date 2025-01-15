@@ -7,7 +7,7 @@ class InnerCallFailureHandler implements ErrorHandler {
   }
 
   public handle(data: string, error: Error): DecodedError {
-    const reason = error.message
+    const reason = error.message === '0x' ? 'Inner call: 0x' : error.message
 
     return {
       type: ErrorType.InnerCallFailureError,

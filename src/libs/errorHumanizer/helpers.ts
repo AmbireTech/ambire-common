@@ -2,36 +2,35 @@ import { getErrorCodeStringFromReason } from '../errorDecoder/helpers'
 import { DecodedError, ErrorType } from '../errorDecoder/types'
 import { ErrorHumanizerError } from './types'
 
-const REASON_HIDDEN_FOR = [ErrorType.RelayerError, ErrorType.PaymasterError]
-
 function getGenericMessageFromType(
   errorType: ErrorType,
   reason: DecodedError['reason'],
   messagePrefix: string,
   lastResortMessage: string
 ): string {
-  const reasonString = !REASON_HIDDEN_FOR.includes(errorType)
-    ? getErrorCodeStringFromReason(reason ?? '')
-    : ''
-  const messageSuffix = `${reasonString}\nPlease try again or contact Ambire support for assistance.`
+  const reasonString = getErrorCodeStringFromReason(reason ?? '')
+  const messageSuffixNoSupport = `${reasonString}\n`
+  const messageSuffix = `${messageSuffixNoSupport}Please try again or contact Ambire support for assistance.`
+  const origin = errorType?.split('Error')?.[0] || ''
 
   switch (errorType) {
     case ErrorType.RelayerError:
-      return `${messagePrefix} of an Ambire Relayer error.${messageSuffix}`
-    case ErrorType.PaymasterError:
-      return `${messagePrefix} of a Paymaster error.${messageSuffix}`
     case ErrorType.RpcError:
-      return `${messagePrefix} of an RPC error.${messageSuffix}`
+      return `${messagePrefix} of an unknown error (Origin: ${origin} call).${messageSuffix}`
+    case ErrorType.PaymasterError:
+      return `${messagePrefix} of a Paymaster Error.${messageSuffix}`
     case ErrorType.BundlerError:
-      return `${messagePrefix} of a Bundler error.${messageSuffix}`
+      return `${messagePrefix} it's invalid.${messageSuffixNoSupport}`
+    case ErrorType.CodeError:
     case ErrorType.UnknownError:
       return `${messagePrefix} of an unknown error.${messageSuffix}`
     case ErrorType.InnerCallFailureError:
-      return `${messagePrefix} of a failure while validating the transaction.${messageSuffix}`
+      return `${messagePrefix} it will revert onchain with reason unknown.${messageSuffix}`
     // I don't think we should say anything else for this case
     case ErrorType.UserRejectionError:
       return 'Transaction rejected.'
     // Panic error may scare the user so let's call it a contract error
+    case ErrorType.CustomError:
     case ErrorType.PanicError:
     case ErrorType.RevertError:
       return `${messagePrefix} of a contract error.${messageSuffix}`

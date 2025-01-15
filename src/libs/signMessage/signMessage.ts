@@ -18,10 +18,13 @@ import {
 import UniversalSigValidator from '../../../contracts/compiled/UniversalSigValidator.json'
 import { PERMIT_2_ADDRESS, UNISWAP_UNIVERSAL_ROUTERS } from '../../consts/addresses'
 import { Account, AccountCreation, AccountId, AccountOnchainState } from '../../interfaces/account'
+import { Hex } from '../../interfaces/hex'
 import { KeystoreSigner } from '../../interfaces/keystore'
 import { Network } from '../../interfaces/network'
 import { TypedMessage } from '../../interfaces/userRequest'
 import hexStringToUint8Array from '../../utils/hexStringToUint8Array'
+import isSameAddr from '../../utils/isSameAddr'
+import { stripHexPrefix } from '../../utils/stripHexPrefix'
 import {
   AccountOp,
   accountOpSignableHash,
@@ -29,6 +32,7 @@ import {
   getSignableHash
 } from '../accountOp/accountOp'
 import { fromDescriptor } from '../deployless/deployless'
+import { relayerAdditionalNetworks } from '../networks/networks'
 import { getActivatorCall } from '../userOperation/userOperation'
 
 // EIP6492 signature ends in magicBytes, which ends with a 0x92,
@@ -52,6 +56,81 @@ export const wrapUnprotected = (signature: string) => {
  */
 export const wrapStandard = (signature: string) => {
   return `${signature}01`
+}
+
+/**
+ * For v2 accounts acting as signers, we need to append the v2 wallet
+ * addr that's the signer and a 02 mode at the end to indicate it's a wallet:
+ * {sig+mode}{wallet_32bytes}{mode}
+ */
+export const wrapWallet = (signature: string, walletAddr: string) => {
+  const wallet32bytes = `${stripHexPrefix(toBeHex(0, 12))}${stripHexPrefix(walletAddr)}`
+  return `${signature}${wallet32bytes}02`
+}
+
+// allow v1 accounts to have v2 signers
+interface AmbireReadableOperation {
+  addr: Hex
+  chainId: bigint
+  nonce: bigint
+  calls: { to: Hex; value: bigint; data: Hex }[]
+}
+
+export const getAmbireReadableTypedData = (
+  chainId: bigint,
+  verifyingAddr: string,
+  v1Execute: AmbireReadableOperation
+): TypedMessage => {
+  const domain: TypedDataDomain = {
+    name: 'Ambire',
+    version: '1',
+    chainId: chainId.toString(),
+    verifyingContract: verifyingAddr,
+    salt: toBeHex(0, 32)
+  }
+  const types = {
+    EIP712Domain: [
+      {
+        name: 'name',
+        type: 'string'
+      },
+      {
+        name: 'version',
+        type: 'string'
+      },
+      {
+        name: 'chainId',
+        type: 'uint256'
+      },
+      {
+        name: 'verifyingContract',
+        type: 'address'
+      },
+      {
+        name: 'salt',
+        type: 'bytes32'
+      }
+    ],
+    Calls: [
+      { name: 'to', type: 'address' },
+      { name: 'value', type: 'uint256' },
+      { name: 'data', type: 'bytes' }
+    ],
+    AmbireReadableOperation: [
+      { name: 'account', type: 'address' },
+      { name: 'chainId', type: 'uint256' },
+      { name: 'nonce', type: 'uint256' },
+      { name: 'calls', type: 'Calls[]' }
+    ]
+  }
+
+  return {
+    kind: 'typedMessage',
+    domain,
+    types,
+    message: v1Execute,
+    primaryType: 'AmbireOperation'
+  }
 }
 
 /**
@@ -193,11 +272,26 @@ export async function verifyMessage({
       delete typesWithoutEIP712Domain.EIP712Domain
     }
 
-    finalDigest = TypedDataEncoder.hash(
-      typedData.domain,
-      typesWithoutEIP712Domain,
-      typedData.message
-    )
+    // the final digest for AmbireReadableOperation is the execute hash
+    // as it's wrapped in mode.standard and onchain gets transformed to
+    // an AmbireOperation
+    if ('AmbireReadableOperation' in typedData.types) {
+      const ambireReadableOperation = typedData.message as AmbireReadableOperation
+      finalDigest = hexlify(
+        getSignableHash(
+          ambireReadableOperation.addr,
+          ambireReadableOperation.chainId,
+          ambireReadableOperation.nonce,
+          ambireReadableOperation.calls.map(callToTuple)
+        )
+      )
+    } else {
+      finalDigest = TypedDataEncoder.hash(
+        typedData.domain,
+        typesWithoutEIP712Domain,
+        typedData.message
+      )
+    }
   }
 
   if (!finalDigest)
@@ -305,6 +399,13 @@ export async function getPlainTextSignature(
     )
 
     if (
+      !network.predefined &&
+      !relayerAdditionalNetworks.find((net) => net.chainId === network.chainId)
+    ) {
+      throw new Error(`Signing messages is disallowed for v1 accounts on ${network.name}`)
+    }
+
+    if (
       isAsciiAddressInMessage ||
       isLowercaseHexAddressInMessage ||
       isChecksummedHexAddressInMessage
@@ -375,17 +476,37 @@ export async function getEIP712Signature(
     )
   }
 
-  // if it's safe, we proceed
-  const dedicatedToOneSA = signer.key.dedicatedToOneSA
-  if (dedicatedToOneSA) {
-    return wrapUnprotected(await signer.signTypedData(message))
-  }
-
   // we do not allow signers who are not dedicated to one account to sign eip-712
   // messsages in v2 as it could lead to reusing that key from
-  throw new Error(
-    `Signer with address ${signer.key.addr} does not have privileges to execute this operation. Please choose a different signer and try again`
-  )
+  const dedicatedToOneSA = signer.key.dedicatedToOneSA
+  if (!dedicatedToOneSA) {
+    throw new Error(
+      `Signer with address ${signer.key.addr} does not have privileges to execute this operation. Please choose a different signer and try again`
+    )
+  }
+
+  if ('AmbireReadableOperation' in message.types) {
+    const ambireReadableOperation = message.message as AmbireReadableOperation
+    if (isSameAddr(ambireReadableOperation.addr, account.addr)) {
+      throw new Error(
+        'signature error: trying to sign an AmbireReadableOperation for the same address. Please contact support'
+      )
+    }
+
+    const hash = hexlify(
+      getSignableHash(
+        ambireReadableOperation.addr,
+        ambireReadableOperation.chainId,
+        ambireReadableOperation.nonce,
+        ambireReadableOperation.calls.map(callToTuple)
+      )
+    )
+    const ambireOperation = getTypedData(ambireReadableOperation.chainId, account.addr, hash)
+    const signature = wrapStandard(await signer.signTypedData(ambireOperation))
+    return wrapWallet(signature, account.addr)
+  }
+
+  return wrapUnprotected(await signer.signTypedData(message))
 }
 
 // get the typedData for the first ERC-4337 deploy txn

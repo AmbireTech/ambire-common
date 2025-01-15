@@ -1,15 +1,17 @@
-import { getAddress, Interface, JsonRpcProvider, toQuantity, ZeroAddress } from 'ethers'
+import { getAddress, Interface, JsonRpcProvider, toQuantity } from 'ethers'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json'
 import BalanceGetter from '../../../contracts/compiled/BalanceGetter.json'
 import NFTGetter from '../../../contracts/compiled/NFTGetter.json'
 import { DEPLOYLESS_SIMULATION_FROM } from '../../consts/deploy'
+import { EOA_SIMULATION_NONCE } from '../../consts/deployless'
 import { Account, AccountOnchainState } from '../../interfaces/account'
-import { getSpoof } from '../account/account'
-import { AccountOp, getSignableCalls } from '../accountOp/accountOp'
+import { getAccountDeployParams, getSpoof, isSmartAccount } from '../account/account'
+import { AccountOp, callToTuple, getSignableCalls } from '../accountOp/accountOp'
 import { DeploylessMode, fromDescriptor } from '../deployless/deployless'
 import { GasRecommendation } from '../gasPrice/gasPrice'
+import { getDeploylessOpts } from '../portfolio/getOnchainBalances'
 
 const NFT_COLLECTION_LIMIT = 100
 // if using EOA, use the first and only call of the account op
@@ -55,6 +57,17 @@ export async function debugTraceCall(
   supportsStateOverride: boolean,
   overrideData?: any
 ): Promise<{ tokens: string[]; nfts: [string, bigint[]][] }> {
+  const opts = {
+    blockTag: 'latest',
+    from: DEPLOYLESS_SIMULATION_FROM,
+    mode: DeploylessMode.ProxyContract,
+    isEOA: !isSmartAccount(account)
+  }
+  const deploylessOpts = getDeploylessOpts(account.addr, supportsStateOverride, opts)
+  const [factory, factoryCalldata] = getAccountDeployParams(account)
+  const simulationOps = [
+    [isSmartAccount(account) ? op.nonce : BigInt(EOA_SIMULATION_NONCE), op.calls.map(callToTuple)]
+  ]
   const fast = gasPrices.find((gas: any) => gas.name === 'fast')
   if (!fast) return { tokens: [], nfts: [] }
 
@@ -63,19 +76,18 @@ export async function debugTraceCall(
 
   const params = getFunctionParams(account, op, accountState)
   const results: ({ erc: 20; address: string } | { erc: 721; address: string; tokenId: string })[] =
-    await provider
-      .send('debug_traceCall', [
-        {
-          to: params.to,
-          value: toQuantity(params.value.toString()),
-          data: params.data,
-          from: params.from,
-          gasPrice: toQuantity(gasPrice.toString()),
-          gas: toQuantity(gasUsed.toString())
-        },
-        'latest',
-        {
-          tracer: `{
+    await provider.send('debug_traceCall', [
+      {
+        to: params.to,
+        value: toQuantity(params.value.toString()),
+        data: params.data,
+        from: params.from,
+        gasPrice: toQuantity(gasPrice.toString()),
+        gas: toQuantity(gasUsed.toString())
+      },
+      'latest',
+      {
+        tracer: `{
           discovered: [],
           fault: function (log) {},
           step: function (log) {
@@ -99,23 +111,20 @@ export async function debugTraceCall(
           }
         }`,
 
-          enableMemory: false,
-          enableReturnData: true,
-          disableStorage: true,
-          stateOverrides: supportsStateOverride
-            ? {
-                [params.from]: {
-                  balance: '0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff'
-                },
-                ...overrideData
-              }
-            : {}
-        }
-      ])
-      .catch((e) => {
-        console.log(e)
-        return [{ erc: 20, address: ZeroAddress }]
-      })
+        enableMemory: false,
+        enableReturnData: true,
+        disableStorage: true,
+        stateOverrides: supportsStateOverride
+          ? {
+              [params.from]: {
+                balance: '0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff'
+              },
+              ...overrideData
+            }
+          : {}
+      }
+    ])
+
   const foundTokens = [
     ...new Set(results.filter((i) => i?.erc === 20).map((i) => getAddress(i.address)))
   ]
@@ -134,26 +143,39 @@ export async function debugTraceCall(
   const deploylessTokens = fromDescriptor(provider, BalanceGetter, true)
   const deploylessNfts = fromDescriptor(provider, NFTGetter, true)
 
-  const opts = {
-    blockTag: 'latest',
-    from: DEPLOYLESS_SIMULATION_FROM,
-    mode: DeploylessMode.ProxyContract
-  }
-  const [[tokensWithErr], [nftsWithErr]] = await Promise.all([
+  const getNftsPromise = deploylessNfts.call(
+    'simulateAndGetAllNFTs',
+    [
+      op.accountAddr,
+      account.associatedKeys,
+      foundNftTransfers.map(([address]) => address),
+      foundNftTransfers.map(([, x]) => x),
+      NFT_COLLECTION_LIMIT,
+      factory,
+      factoryCalldata,
+      simulationOps
+    ],
+    deploylessOpts
+  )
+
+  const [[tokensWithErr], [before, after, , , , deltaAddressesMapping]] = await Promise.all([
     deploylessTokens.call('getBalances', [op.accountAddr, foundTokens], opts),
-    deploylessNfts.call(
-      'getAllNFTs',
-      [
-        op.accountAddr,
-        foundNftTransfers.map((i) => i[0]),
-        foundNftTransfers.map((i) => i[1]),
-        NFT_COLLECTION_LIMIT
-      ],
-      opts
-    )
+    getNftsPromise
   ])
+
+  const beforeNftCollections = before[0]
+  const afterNftCollections = after[0]
   return {
     tokens: foundTokens.filter((addr, i) => tokensWithErr[i].error === '0x'),
-    nfts: foundNftTransfers.filter((nft, i) => nftsWithErr[i].error === '0x')
+    nfts: foundNftTransfers.filter((nft, i) => {
+      if (beforeNftCollections[i][3] === '0x') return true
+      const foundAfterToken = afterNftCollections.find(
+        (t: any, j: number) =>
+          deltaAddressesMapping[j].toLowerCase() === foundNftTransfers[i][0].toLowerCase()
+      )
+      if (!foundAfterToken || !foundAfterToken[0]) return false
+
+      return foundAfterToken[0][3] === '0x'
+    })
   }
 }

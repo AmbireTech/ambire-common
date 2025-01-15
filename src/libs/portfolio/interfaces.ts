@@ -57,6 +57,7 @@ export interface Hints {
 }
 
 export interface ExternalHintsAPIResponse extends Hints {
+  lastUpdate: number
   networkId: string
   accountAddr: string
   prices: {
@@ -68,8 +69,17 @@ export interface ExternalHintsAPIResponse extends Hints {
   error?: string
 }
 
+export type StrippedExternalHintsAPIResponse = Pick<
+  ExternalHintsAPIResponse,
+  'erc20s' | 'erc721s' | 'lastUpdate'
+>
+
 export interface ExtendedError extends Error {
   simulationErrorMsg?: string
+}
+
+type ExtendedErrorWithLevel = ExtendedError & {
+  level: 'critical' | 'warning' | 'silent'
 }
 
 export interface PortfolioLibGetResult {
@@ -82,8 +92,8 @@ export interface PortfolioLibGetResult {
   feeTokens: TokenResult[]
   tokenErrors: { error: string; address: string }[]
   collections: CollectionResult[]
-  hintsFromExternalAPI: Hints | null
-  errors: ExtendedError[]
+  hintsFromExternalAPI: StrippedExternalHintsAPIResponse | null
+  errors: ExtendedErrorWithLevel[]
   blockNumber: number
   beforeNonce: bigint
   afterNonce: bigint
@@ -116,6 +126,7 @@ export type AddrVestingData = {
 // Create the final type with some properties optional
 export type AdditionalPortfolioNetworkResult = Partial<PortfolioLibGetResult> &
   Pick<PortfolioLibGetResult, AdditionalPortfolioProperties> & {
+    lastSuccessfulUpdate: number
     total: Total
     claimableRewardsData?: ClaimableRewardsData
     addrVestingData?: AddrVestingData
@@ -127,7 +138,7 @@ export type NetworkState = {
   isReady: boolean
   isLoading: boolean
   criticalError?: ExtendedError
-  errors: ExtendedError[]
+  errors: ExtendedErrorWithLevel[]
   result?: PortfolioNetworkResult | AdditionalPortfolioNetworkResult
   // We store the previously simulated AccountOps only for the pending state.
   // Prior to triggering a pending state update, we compare the newly passed AccountOp[] (updateSelectedAccount) with the cached version.
@@ -177,25 +188,25 @@ export interface GetOptions {
   simulation?: GetOptionsSimulation
   priceCache?: PriceCache
   priceRecency: number
-  previousHints?: {
-    erc20s: Hints['erc20s']
-    erc721s: Hints['erc721s']
-  }
+  previousHintsFromExternalAPI?: StrippedExternalHintsAPIResponse | null
   isEOA: boolean
   fetchPinned: boolean
   tokenPreferences: CustomToken[]
-  additionalHints?: Hints['erc20s']
+  additionalErc20Hints?: Hints['erc20s']
+  additionalErc721Hints?: Hints['erc721s']
   disableAutoDiscovery?: boolean
 }
 
 export interface PreviousHintsStorage {
   learnedTokens: { [network in NetworkId]: { [tokenAddress: string]: string | null } }
   learnedNfts: { [network in NetworkId]: { [nftAddress: string]: bigint[] } }
-  fromExternalAPI: { [networkAndAccountKey: string]: GetOptions['previousHints'] }
+  fromExternalAPI: {
+    [networkAndAccountKey: string]: GetOptions['previousHintsFromExternalAPI']
+  }
 }
 
-export interface NetworkNonces {
-  [networkId: string]: bigint
+export interface NetworkSimulatedAccountOp {
+  [networkId: NetworkId]: AccountOp
 }
 
 export interface TokenAmount {

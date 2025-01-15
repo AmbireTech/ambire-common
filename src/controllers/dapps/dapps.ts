@@ -36,7 +36,22 @@ export class DappsController extends EventEmitter {
   }
 
   get dapps(): Dapp[] {
-    return this.#dapps
+    const predefinedDappsParsed = predefinedDapps.map(
+      ({ url, name, icon, description }): Dapp => ({
+        name,
+        description,
+        url,
+        icon,
+        isConnected: false,
+        chainId: 1,
+        favorite: false
+      })
+    )
+
+    return [...this.#dapps, ...predefinedDappsParsed].reduce((acc: Dapp[], curr: Dapp): Dapp[] => {
+      if (!acc.some(({ url }) => url === curr.url)) return [...acc, curr]
+      return acc
+    }, [])
   }
 
   set dapps(updatedDapps: Dapp[]) {
@@ -51,15 +66,6 @@ export class DappsController extends EventEmitter {
       this.#storage.get('dapps', []),
       this.#storage.get('dappSessions', {})
     ])
-    if (!storedDapps.length) {
-      storedDapps = predefinedDapps.map((dapp) => ({
-        ...dapp,
-        chainId: 1,
-        favorite: false,
-        isConnected: false
-      }))
-      await this.#storage.set('dapps', storedDapps)
-    }
 
     this.#dapps = storedDapps
     Object.keys(dappSessions).forEach((sessionId) => {

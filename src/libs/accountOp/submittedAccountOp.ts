@@ -1,6 +1,7 @@
-import { CustomResponse, Fetch } from '../../interfaces/fetch'
+import { BUNDLER } from '../../consts/bundlers'
+import { Fetch } from '../../interfaces/fetch'
 import { Network } from '../../interfaces/network'
-import { Bundler } from '../../services/bundlers/bundler'
+import { getBundlerByName, getDefaultBundler } from '../../services/bundlers/getBundler'
 import { fetchUserOp } from '../../services/explorers/jiffyscan'
 import { AccountOp } from './accountOp'
 
@@ -31,6 +32,7 @@ import { AccountOp } from './accountOp'
 export type AccountOpIdentifiedBy = {
   type: 'Transaction' | 'UserOperation' | 'Relayer'
   identifier: string
+  bundler?: BUNDLER
 }
 
 export interface SubmittedAccountOp extends AccountOp {
@@ -57,6 +59,12 @@ export function isIdentifiedByRelayer(identifiedBy: AccountOpIdentifiedBy): bool
   return identifiedBy.type === 'Relayer'
 }
 
+export function getDappIdentifier(op: SubmittedAccountOp) {
+  let hash = `${op.identifiedBy.type}:${op.identifiedBy.identifier}`
+  if (op.identifiedBy?.bundler) hash = `${hash}:${op.identifiedBy.bundler}`
+  return hash
+}
+
 export async function fetchTxnId(
   identifiedBy: AccountOpIdentifiedBy,
   network: Network,
@@ -72,9 +80,14 @@ export async function fetchTxnId(
 
   if (isIdentifiedByUserOpHash(identifiedBy)) {
     const userOpHash = identifiedBy.identifier
-    const [response, bundlerResult]: [CustomResponse | null, any] = await Promise.all([
+
+    const bundler = identifiedBy.bundler
+      ? getBundlerByName(identifiedBy.bundler)
+      : getDefaultBundler(network)
+
+    const [response, bundlerResult]: [any, any] = await Promise.all([
       fetchUserOp(userOpHash, fetchFn),
-      Bundler.getStatusAndTxnId(userOpHash, network)
+      bundler.getStatus(network, userOpHash)
     ])
 
     if (bundlerResult.status === 'rejected')
@@ -154,8 +167,12 @@ export async function pollTxnId(
   identifiedBy: AccountOpIdentifiedBy,
   network: Network,
   fetchFn: Fetch,
-  callRelayer: Function
+  callRelayer: Function,
+  failCount = 0
 ): Promise<string | null> {
+  // allow 8 retries and declate fetching the txnId a failure after
+  if (failCount >= 8) return null
+
   const fetchTxnIdResult = await fetchTxnId(identifiedBy, network, fetchFn, callRelayer)
   if (fetchTxnIdResult.status === 'rejected') return null
 
@@ -165,7 +182,8 @@ export async function pollTxnId(
         setTimeout(resolve, 1500)
       })
     await delayPromise()
-    return pollTxnId(identifiedBy, network, fetchFn, callRelayer)
+    const increase = failCount + 1
+    return pollTxnId(identifiedBy, network, fetchFn, callRelayer, increase)
   }
 
   return fetchTxnIdResult.txnId

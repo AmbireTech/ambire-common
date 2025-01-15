@@ -4,11 +4,10 @@ import { AbiCoder, Contract, ethers, Interface, parseEther, ZeroAddress } from '
 import fetch from 'node-fetch'
 
 import { describe, expect } from '@jest/globals'
-import structuredClone from '@ungap/structured-clone'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import ERC20 from '../../../contracts/compiled/IERC20.json'
-import { velcroUrl } from '../../../test/config'
+import { relayerUrl, velcroUrl } from '../../../test/config'
 import { getNativeToCheckFromEOAs, getNonce } from '../../../test/helpers'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { FEE_COLLECTOR } from '../../consts/addresses'
@@ -17,6 +16,8 @@ import { networks } from '../../consts/networks'
 import { Account, AccountStates } from '../../interfaces/account'
 import { dedicatedToOneSAPriv } from '../../interfaces/keystore'
 import { Network } from '../../interfaces/network'
+import { BundlerSwitcher } from '../../services/bundlers/bundlerSwitcher'
+import { paymasterFactory } from '../../services/paymaster'
 import { getRpcProvider } from '../../services/provider'
 import { getSmartAccount } from '../account/account'
 import { AccountOp } from '../accountOp/accountOp'
@@ -40,6 +41,7 @@ const providerArbitrum = getRpcProvider(arbitrum.rpcUrls, arbitrum.chainId)
 // const providerAvalanche = getRpcProvider(avalanche.rpcUrls, avalanche.chainId)
 const providerPolygon = getRpcProvider(polygon.rpcUrls, polygon.chainId)
 const addrWithDeploySignature = '0x52C37FD54BD02E9240e8558e28b11e0Dc22d8e85'
+const errorCallback = () => {}
 
 const smartAccDeployed: Account = {
   addr: '0x8E5F6c1F0b134657A546932C3eC9169E1633a39b',
@@ -288,6 +290,13 @@ const trezorSlot6v2NotDeployed: Account = {
   }
 }
 
+paymasterFactory.init(relayerUrl, fetch, () => {})
+
+const getSignAccountOpStatus = () => {
+  return null
+}
+const noStateUpdateStatuses: any[] = []
+
 describe('estimate', () => {
   it('[EOA]:Ethereum | gasUsage and native balance for a normal transfer', async () => {
     const EOAAccount: Account = {
@@ -333,7 +342,9 @@ describe('estimate', () => {
       op,
       accountStates,
       [],
-      feeTokens
+      feeTokens,
+      errorCallback,
+      new BundlerSwitcher(ethereum, getSignAccountOpStatus, noStateUpdateStatuses)
     )
 
     expect(response.gasUsed).toBe(21000n)
@@ -386,7 +397,9 @@ describe('estimate', () => {
       op,
       accountStates,
       [],
-      feeTokens
+      feeTokens,
+      errorCallback,
+      new BundlerSwitcher(polygon, getSignAccountOpStatus, noStateUpdateStatuses)
     )
 
     expect(response.gasUsed).toBe(21000n)
@@ -441,7 +454,9 @@ describe('estimate', () => {
       op,
       accountStates,
       [],
-      feeTokens
+      feeTokens,
+      errorCallback,
+      new BundlerSwitcher(polygon, getSignAccountOpStatus, noStateUpdateStatuses)
     )
 
     expect(response.gasUsed).toBeGreaterThan(0n)
@@ -494,7 +509,9 @@ describe('estimate', () => {
       op,
       accountStates,
       [],
-      feeTokens
+      feeTokens,
+      errorCallback,
+      new BundlerSwitcher(polygon, getSignAccountOpStatus, noStateUpdateStatuses)
     )
 
     expect(response.gasUsed).toBe(0n)
@@ -531,7 +548,9 @@ describe('estimate', () => {
       op,
       accountStates,
       getNativeToCheckFromEOAs(nativeToCheck, v1Acc),
-      feeTokens
+      feeTokens,
+      errorCallback,
+      new BundlerSwitcher(ethereum, getSignAccountOpStatus, noStateUpdateStatuses)
     )
     const usdtOutcome = response.feePaymentOptions!.find(
       (option) => option.token.address === '0xdAC17F958D2ee523a2206206994597C13D831ec7'
@@ -595,7 +614,9 @@ describe('estimate', () => {
       op,
       accountStates,
       getNativeToCheckFromEOAs(nativeToCheck, v1Acc),
-      feeTokens
+      feeTokens,
+      errorCallback,
+      new BundlerSwitcher(ethereum, getSignAccountOpStatus, noStateUpdateStatuses)
     )
 
     const viewOnlyAccOption = response.feePaymentOptions.find(
@@ -627,7 +648,9 @@ describe('estimate', () => {
       op,
       accountStates,
       getNativeToCheckFromEOAs(nativeToCheck, viewOnlyAcc),
-      feeTokens
+      feeTokens,
+      errorCallback,
+      new BundlerSwitcher(ethereum, getSignAccountOpStatus, noStateUpdateStatuses)
     )
 
     // make sure we display the view only account payment option
@@ -683,7 +706,9 @@ describe('estimate', () => {
       op,
       accountStates,
       getNativeToCheckFromEOAs(nativeToCheck, v1Acc),
-      feeTokens
+      feeTokens,
+      errorCallback,
+      new BundlerSwitcher(ethereum, getSignAccountOpStatus, noStateUpdateStatuses)
     )
     const responseWithExecuteBefore = await estimate(
       provider,
@@ -693,6 +718,8 @@ describe('estimate', () => {
       accountStates,
       getNativeToCheckFromEOAs(nativeToCheck, v1Acc),
       feeTokens,
+      errorCallback,
+      new BundlerSwitcher(ethereum, getSignAccountOpStatus, noStateUpdateStatuses),
       { calculateRefund: true }
     )
 
@@ -745,7 +772,9 @@ describe('estimate', () => {
       opOptimism,
       accountStates,
       getNativeToCheckFromEOAs(nativeToCheck, accountOptimism),
-      feeTokens
+      feeTokens,
+      errorCallback,
+      new BundlerSwitcher(optimism, getSignAccountOpStatus, noStateUpdateStatuses)
     )
 
     response.feePaymentOptions.forEach((feeToken) => {
@@ -775,7 +804,9 @@ describe('estimate', () => {
       opArbitrum,
       accountStates,
       getNativeToCheckFromEOAs(nativeToCheck, smartAccountv2eip712),
-      feeTokens
+      feeTokens,
+      errorCallback,
+      new BundlerSwitcher(arbitrum, getSignAccountOpStatus, noStateUpdateStatuses)
     )
 
     response.feePaymentOptions.map((option) => expect(option.addedNative).toBe(0n))
@@ -814,6 +845,8 @@ describe('estimate', () => {
       accountStates,
       getNativeToCheckFromEOAs(nativeToCheck, smartAcc),
       feeTokens,
+      errorCallback,
+      new BundlerSwitcher(optimism, getSignAccountOpStatus, noStateUpdateStatuses),
       { is4337Broadcast: true }
     )
 
@@ -864,12 +897,14 @@ describe('estimate', () => {
       accountStates,
       getNativeToCheckFromEOAs(nativeToCheck, smartAcc),
       feeTokens,
+      errorCallback,
+      new BundlerSwitcher(optimism, getSignAccountOpStatus, noStateUpdateStatuses),
       { is4337Broadcast: true }
     )
 
     expect(response.error).not.toBe(null)
     expect(response.error?.message).toBe(
-      'The transaction cannot be estimated because of a failure while validating the transaction.\nPlease try again or contact Ambire support for assistance.'
+      'The transaction will fail because it reverted onchain. Reason might be insufficient funds in one of the transaction calls.'
     )
 
     expect(response.erc4337GasLimits).not.toBe(undefined)
@@ -924,15 +959,16 @@ describe('estimate', () => {
       accountStates,
       getNativeToCheckFromEOAs(nativeToCheck, smartAcc),
       feeTokens,
+      errorCallback,
+      new BundlerSwitcher(optimism, getSignAccountOpStatus, noStateUpdateStatuses),
       { is4337Broadcast: true }
     )
 
     expect(response.error).not.toBe(null)
     expect(response.error?.message).toBe(
-      'The transaction cannot be estimated because the transfer amount exceeds your account balance. Please reduce the transfer amount and try again.'
+      'The transaction will fail because the transfer amount exceeds your account balance. Please check your balance or adjust the transfer amount.'
     )
 
-    expect(response.erc4337GasLimits).toBe(undefined)
     expect(response.feePaymentOptions.length).toBeGreaterThan(0)
     expect(response.feePaymentOptions![0].token).not.toBe(undefined)
     expect(response.feePaymentOptions![0].token).not.toBe(null)
@@ -963,6 +999,8 @@ describe('estimate', () => {
       accountStates,
       getNativeToCheckFromEOAs(nativeToCheck, smartAccDeployed),
       feeTokens,
+      errorCallback,
+      new BundlerSwitcher(optimism, getSignAccountOpStatus, noStateUpdateStatuses),
       { is4337Broadcast: true }
     )
 
@@ -1005,6 +1043,8 @@ describe('estimate', () => {
       accountStates,
       getNativeToCheckFromEOAs(nativeToCheck, smartAccv2point0Deployed),
       feeTokens,
+      errorCallback,
+      new BundlerSwitcher(optimism, getSignAccountOpStatus, noStateUpdateStatuses),
       { is4337Broadcast: true }
     )
 
@@ -1046,6 +1086,8 @@ describe('estimate', () => {
       accountStates,
       getNativeToCheckFromEOAs(nativeToCheck, trezorSlot6v2NotDeployed),
       feeTokens,
+      errorCallback,
+      new BundlerSwitcher(arbitrum, getSignAccountOpStatus, noStateUpdateStatuses),
       { is4337Broadcast: false }
     )
 
@@ -1077,11 +1119,13 @@ describe('estimate', () => {
       opPolygonFailBzNoFunds,
       accountStates,
       getNativeToCheckFromEOAs(nativeToCheck, smartAccountv2eip712),
-      feeTokens
+      feeTokens,
+      errorCallback,
+      new BundlerSwitcher(polygon, getSignAccountOpStatus, noStateUpdateStatuses)
     )
     expect(response.error).not.toBe(null)
     expect(response.error?.message).toBe(
-      'The transaction cannot be estimated because of a failure while validating the transaction.\nPlease try again or contact Ambire support for assistance.'
+      'The transaction will fail because it reverted onchain. Reason might be insufficient funds in one of the transaction calls.'
     )
   })
 
@@ -1107,11 +1151,13 @@ describe('estimate', () => {
       opPolygonFailBzNoFunds,
       accountStates,
       getNativeToCheckFromEOAs(nativeToCheck, smartAccountv2eip712),
-      feeTokens
+      feeTokens,
+      errorCallback,
+      new BundlerSwitcher(polygon, getSignAccountOpStatus, noStateUpdateStatuses)
     )
     expect(response.error).not.toBe(null)
     expect(response.error?.message).toBe(
-      'The transaction cannot be estimated because your account key lacks the necessary permissions. Ensure that you have authorization to sign or use an account with sufficient privileges.'
+      'The transaction will fail because your account key lacks the necessary permissions. Ensure that you have authorization to sign or use an account with sufficient privileges.'
     )
   })
 
@@ -1137,12 +1183,14 @@ describe('estimate', () => {
       op,
       accountStates,
       getNativeToCheckFromEOAs(nativeToCheck, v1Acc),
-      feeTokens
+      feeTokens,
+      errorCallback,
+      new BundlerSwitcher(ethereum, getSignAccountOpStatus, noStateUpdateStatuses)
     )
 
     expect(response.error).not.toBe(null)
     expect(response.error?.message).toBe(
-      'The transaction cannot be estimated because the swap has expired. Return to the dApp and reinitiate the swap if you wish to proceed.'
+      'The transaction will fail because the swap has expired. Return to the dApp and reinitiate the swap if you wish to proceed.'
     )
   })
 })
