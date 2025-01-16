@@ -38,6 +38,7 @@ import { validateSendTransferAmount } from '../../services/validations/validate'
 import { convertTokenPriceToBigInt } from '../../utils/numbers/formatters'
 import wait from '../../utils/wait'
 import { AccountOpAction, ActionsController } from '../actions/actions'
+import { ActivityController } from '../activity/activity'
 import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter'
 import { NetworksController } from '../networks/networks'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
@@ -86,6 +87,8 @@ export class SwapAndBridgeController extends EventEmitter {
   #networks: NetworksController
 
   #actions: ActionsController
+
+  #activity: ActivityController
 
   #storage: Storage
 
@@ -164,12 +167,14 @@ export class SwapAndBridgeController extends EventEmitter {
   constructor({
     selectedAccount,
     networks,
+    activity,
     socketAPI,
     storage,
     actions
   }: {
     selectedAccount: SelectedAccountController
     networks: NetworksController
+    activity: ActivityController
     socketAPI: SocketAPI
     storage: Storage
     actions: ActionsController
@@ -177,6 +182,7 @@ export class SwapAndBridgeController extends EventEmitter {
     super()
     this.#selectedAccount = selectedAccount
     this.#networks = networks
+    this.#activity = activity
     this.#socketAPI = socketAPI
     this.#storage = storage
     this.#actions = actions
@@ -984,6 +990,14 @@ export class SwapAndBridgeController extends EventEmitter {
     const fetchAndUpdateRoute = async (activeRoute: ActiveRoute) => {
       let status: 'ready' | 'completed' | null = null
       let errorMessage: string | null = null
+      const broadcastedButNotConfirmed = this.#activity.broadcastedButNotConfirmed.find((op) =>
+        op.calls.some((c) => c.fromUserRequestId === activeRoute.activeRouteId)
+      )
+
+      // getRouteStatus only after the transaction has processed
+      if (broadcastedButNotConfirmed) return
+      if (activeRoute.routeStatus === 'completed') return
+
       try {
         const res = await this.#socketAPI.getRouteStatus({
           activeRouteId: activeRoute.activeRouteId,
