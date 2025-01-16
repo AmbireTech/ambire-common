@@ -172,7 +172,7 @@ export async function estimate4337(
       accountOp,
       calls,
       network,
-      feeTokens.find((token) => token.address === ZeroAddress)?.amount
+      feeTokens.find((token) => token.address === ZeroAddress && !token.flags.onGasTank)?.amount
     ) || getNonceDiscrepancyFailure(op, outcomeNonce)
 
   // if Estimation.sol estimate is a success, it means the nonce has incremented
@@ -417,12 +417,8 @@ export async function estimate(
   // So a warning not to assume this is working
   if (opts?.calculateRefund) gasUsed = await refund(account, op, provider, gasUsed)
 
-  let portfolioNativeValue: bigint | undefined
   const feeTokenOptions: FeePaymentOption[] = filteredFeeTokens.map(
     (token: TokenResult, key: number) => {
-      // get the current native balance
-      if (token.address === ZeroAddress) portfolioNativeValue = token.amount
-
       const availableAmount = token.flags.onGasTank ? token.amount : feeTokenOutcomes[key].amount
       return {
         paidBy: account.addr,
@@ -472,7 +468,11 @@ export async function estimate(
     currentAccountNonce: accountOp.success ? Number(nonce - 1n) : Number(nonce),
     feePaymentOptions: [...feeTokenOptions, ...nativeTokenOptions],
     error:
-      getInnerCallFailure(accountOp, calls, network, portfolioNativeValue) ||
-      getNonceDiscrepancyFailure(op, nonce)
+      getInnerCallFailure(
+        accountOp,
+        calls,
+        network,
+        feeTokens.find((token) => token.address === ZeroAddress && !token.flags.onGasTank)?.amount
+      ) || getNonceDiscrepancyFailure(op, nonce)
   }
 }
