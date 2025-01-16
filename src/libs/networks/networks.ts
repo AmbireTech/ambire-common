@@ -316,7 +316,7 @@ export function getFeaturesByNetworkProperties(
       updateFeature('saSupport', {
         title,
         level: 'warning',
-        msg: "This network supports smart contract wallets, but Ambire Wallet's contracts are not yet deployed. You can deploy them by using a Basic account and the Deploy contracts option to unlock the Smart accounts feature. If not, only Basic accounts (EOAs) can be used on this network."
+        msg: "This network supports smart contract wallets, but Ambire Wallet's contracts are not yet deployed. You can deploy them by adding the network and using a Basic account to Deploy contracts in Network settings. If not, only Basic accounts (EOAs) can be used on this network."
       })
     }
   }
