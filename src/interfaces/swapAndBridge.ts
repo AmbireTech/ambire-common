@@ -1,3 +1,5 @@
+import { getAndFormatTokenDetails } from '../libs/portfolio/helpers'
+
 export interface SocketAPIToken {
   address: string
   chainId: number
@@ -10,6 +12,7 @@ export interface SocketAPIToken {
 
 export interface SwapAndBridgeToToken extends SocketAPIToken {
   isInAccPortfolio: boolean
+  formattedTokenDetails: ReturnType<typeof getAndFormatTokenDetails> | null
 }
 
 export interface SocketAPIQuote {

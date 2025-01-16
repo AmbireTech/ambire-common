@@ -24,7 +24,7 @@ import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 import { Call } from '../../libs/accountOp/types'
 import { getBridgeBanners } from '../../libs/banners/banners'
 import { TokenResult } from '../../libs/portfolio'
-import { getTokenAmount } from '../../libs/portfolio/helpers'
+import { getAndFormatTokenDetails, getTokenAmount } from '../../libs/portfolio/helpers'
 import {
   convertPortfolioTokenToSocketAPIToken,
   getActiveRoutesForAccount,
@@ -642,17 +642,23 @@ export class SwapAndBridgeController extends EventEmitter {
         .filter((token) => !upToDateToTokenList.some((t) => t.address === token.address))
         .map((t) => ({
           ...convertPortfolioTokenToSocketAPIToken(t, Number(toTokenNetwork.chainId)),
-          isInAccPortfolio: true
+          isInAccPortfolio: true,
+          formattedTokenDetails: getAndFormatTokenDetails(t)
         }))
 
       this.#toTokenList = sortTokenListResponse(
         [
-          ...upToDateToTokenList.map((t) => ({
-            ...t,
-            isInAccPortfolio: this.portfolioTokenList.some(
+          ...upToDateToTokenList.map((t) => {
+            const tInPortfolio = this.portfolioTokenList.find(
               (pt) => pt.address === t.address && pt.networkId === toTokenNetwork.id
             )
-          })),
+
+            return {
+              ...t,
+              isInAccPortfolio: !!tInPortfolio,
+              formattedTokenDetails: tInPortfolio ? getAndFormatTokenDetails(tInPortfolio) : null
+            }
+          }),
           ...additionalTokensFromPortfolio
         ],
         this.portfolioTokenList.filter((t) => t.networkId === toTokenNetwork.id)
@@ -720,7 +726,8 @@ export class SwapAndBridgeController extends EventEmitter {
         ...token,
         isInAccPortfolio: this.portfolioTokenList.some(
           (t) => t.address === token?.address && t.networkId === toTokenNetwork.id
-        )
+        ),
+        formattedTokenDetails: null
       }
     ]
 
