@@ -62,6 +62,7 @@ export interface KeystoreSigner {
   signRawTransaction: (txnRequest: TxnRequest) => Promise<Transaction['serialized']>
   signTypedData: (typedMessage: TypedMessage) => Promise<string>
   signMessage: (hex: string) => Promise<string>
+  sign7702: (hex: string) => Promise<string>
 }
 
 export type ScryptParams = {

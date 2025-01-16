@@ -63,4 +63,9 @@ export class KeystoreSigner implements KeystoreSignerInterface {
 
     return transactionRes
   }
+
+  // eslint-disable-next-line class-methods-use-this
+  async sign7702(hex: string): Promise<string> {
+    throw new Error('not support', { cause: hex })
+  }
 }

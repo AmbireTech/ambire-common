@@ -1,6 +1,8 @@
 /* eslint-disable no-param-reassign */
 import {
   AbiCoder,
+  concat,
+  encodeRlp,
   getAddress,
   getBytes,
   hashMessage,
@@ -8,6 +10,7 @@ import {
   Interface,
   isHexString,
   JsonRpcProvider,
+  keccak256,
   toBeHex,
   toUtf8Bytes,
   TypedDataDomain,
@@ -17,6 +20,7 @@ import {
 
 import UniversalSigValidator from '../../../contracts/compiled/UniversalSigValidator.json'
 import { PERMIT_2_ADDRESS, UNISWAP_UNIVERSAL_ROUTERS } from '../../consts/addresses'
+import { EIP_7702_AMBIRE_ACCOUNT } from '../../consts/deploy'
 import { Account, AccountCreation, AccountId, AccountOnchainState } from '../../interfaces/account'
 import { Hex } from '../../interfaces/hex'
 import { KeystoreSigner } from '../../interfaces/keystore'
@@ -531,4 +535,14 @@ export function adjustEntryPointAuthorization(signature: string): string {
   // since normally when we sign an EIP-712 request, we wrap it in Unprotected,
   // we adjust the entry point authorization signature so we could execute a txn
   return wrapStandard(entryPointSig.substring(0, entryPointSig.length - 2))
+}
+
+// the hash the user needs to eth_sign in order for his EOA to turn smarter
+export function getEip7702Authorization(chainId: bigint, nonce: bigint) {
+  return keccak256(
+    concat([
+      '0x05', // magic authrorization string
+      encodeRlp([toBeHex(chainId), EIP_7702_AMBIRE_ACCOUNT, toBeHex(nonce)])
+    ])
+  )
 }
