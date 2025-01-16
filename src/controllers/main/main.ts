@@ -1762,6 +1762,7 @@ export class MainController extends EventEmitter {
       meta.txnId = data.submittedAccountOp.txnId
 
       meta.identifiedBy = data.submittedAccountOp.identifiedBy
+      meta.submittedAccountOp = data.submittedAccountOp
     }
 
     const benzinUserRequest: SignUserRequest = {
