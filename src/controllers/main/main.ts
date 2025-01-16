@@ -2059,7 +2059,6 @@ export class MainController extends EventEmitter {
             this.emitError(e)
           },
           this.signAccountOp.bundlerSwitcher,
-          portfolioNativeValue,
           {
             is4337Broadcast: isErc4337Broadcast(
               account,

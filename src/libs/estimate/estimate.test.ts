@@ -720,7 +720,6 @@ describe('estimate', () => {
       feeTokens,
       errorCallback,
       new BundlerSwitcher(ethereum, getSignAccountOpStatus, noStateUpdateStatuses),
-      0n,
       { calculateRefund: true }
     )
 
@@ -848,7 +847,6 @@ describe('estimate', () => {
       feeTokens,
       errorCallback,
       new BundlerSwitcher(optimism, getSignAccountOpStatus, noStateUpdateStatuses),
-      0n,
       { is4337Broadcast: true }
     )
 
@@ -901,7 +899,6 @@ describe('estimate', () => {
       feeTokens,
       errorCallback,
       new BundlerSwitcher(optimism, getSignAccountOpStatus, noStateUpdateStatuses),
-      0n,
       { is4337Broadcast: true }
     )
 
@@ -962,7 +959,6 @@ describe('estimate', () => {
       feeTokens,
       errorCallback,
       new BundlerSwitcher(optimism, getSignAccountOpStatus, noStateUpdateStatuses),
-      0n,
       { is4337Broadcast: true }
     )
 
@@ -1003,7 +999,6 @@ describe('estimate', () => {
       feeTokens,
       errorCallback,
       new BundlerSwitcher(optimism, getSignAccountOpStatus, noStateUpdateStatuses),
-      0n,
       { is4337Broadcast: true }
     )
 
@@ -1048,7 +1043,6 @@ describe('estimate', () => {
       feeTokens,
       errorCallback,
       new BundlerSwitcher(optimism, getSignAccountOpStatus, noStateUpdateStatuses),
-      0n,
       { is4337Broadcast: true }
     )
 
@@ -1092,7 +1086,6 @@ describe('estimate', () => {
       feeTokens,
       errorCallback,
       new BundlerSwitcher(arbitrum, getSignAccountOpStatus, noStateUpdateStatuses),
-      0n,
       { is4337Broadcast: false }
     )
 
