@@ -858,10 +858,10 @@ export class MainController extends EventEmitter {
     )
   }
 
-  async updateAccountsOpsStatuses() {
+  async updateAccountsOpsStatuses(): Promise<{ newestOpTimestamp: number }> {
     await this.#initialLoadPromise
 
-    const { shouldEmitUpdate, shouldUpdatePortfolio, updatedAccountsOps } =
+    const { shouldEmitUpdate, shouldUpdatePortfolio, updatedAccountsOps, newestOpTimestamp } =
       await this.activity.updateAccountsOpsStatuses()
 
     if (shouldEmitUpdate) {
@@ -875,6 +875,8 @@ export class MainController extends EventEmitter {
     updatedAccountsOps.forEach((op) => {
       this.swapAndBridge.handleUpdateActiveRouteOnSubmittedAccountOpStatusUpdate(op)
     })
+
+    return { newestOpTimestamp }
   }
 
   // call this function after a call to the singleton has been made

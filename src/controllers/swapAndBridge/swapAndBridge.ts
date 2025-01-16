@@ -248,7 +248,8 @@ export class SwapAndBridgeController extends EventEmitter {
   get formStatus() {
     if (this.isFormEmpty) return SwapAndBridgeFormStatus.Empty
     if (this.validateFromAmount.message) return SwapAndBridgeFormStatus.Invalid
-    if (this.updateQuoteStatus !== 'INITIAL') return SwapAndBridgeFormStatus.FetchingRoutes
+    if (this.updateQuoteStatus !== 'INITIAL' && !this.quote)
+      return SwapAndBridgeFormStatus.FetchingRoutes
     if (!this.quote?.selectedRoute) return SwapAndBridgeFormStatus.NoRoutesFound
 
     if (this.quote?.selectedRoute?.errorMessage) return SwapAndBridgeFormStatus.InvalidRouteSelected
