@@ -994,7 +994,7 @@ export class SwapAndBridgeController extends EventEmitter {
         op.calls.some((c) => c.fromUserRequestId === activeRoute.activeRouteId)
       )
 
-      // getRouteStatus only after the transaction has processed
+      // call getRouteStatus only after the transaction has processed
       if (broadcastedButNotConfirmed) return
       if (activeRoute.routeStatus === 'completed') return
 
