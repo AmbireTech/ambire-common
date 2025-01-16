@@ -25,7 +25,7 @@ class InnerCallFailureHandler implements ErrorHandler {
 
     // if the error is 0x but we don't have info on the portfolio value
     // because of an RPC failure or something, return error unknown
-    if (isError0x && innerCallError.nativePortfolioValue === undefined) {
+    if (innerCallError.nativePortfolioValue === undefined) {
       const reason = 'Inner call: 0x'
       return {
         type: this.type,
