@@ -73,7 +73,6 @@ function average(data: bigint[]): bigint {
 }
 
 function getNetworkMinBaseFee(network: Network, lastBlock: Block): bigint {
-  return 0n
   // if we have a minBaseFee set in our config, use it
   if (network.feeOptions.minBaseFee) return network.feeOptions.minBaseFee
 
