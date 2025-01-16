@@ -6,15 +6,21 @@ import { PINNED_TOKENS } from '../../consts/pinnedTokens'
 import { Account, AccountId } from '../../interfaces/account'
 import { Network, NetworkId } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
+import formatDecimals from '../../utils/formatDecimals/formatDecimals'
+import { safeTokenAmountAndNumberMultiplication } from '../../utils/numbers/formatters'
 import { isSmartAccount } from '../account/account'
+import { AccountOp } from '../accountOp/accountOp'
 import { CustomToken } from './customToken'
 import {
   AccountState,
   AdditionalPortfolioNetworkResult,
+  FormattedPendingAmounts,
+  PendingAmounts,
   PreviousHintsStorage,
   StrippedExternalHintsAPIResponse,
   TokenResult
 } from './interfaces'
+import { calculatePendingAmounts } from './pendingAmountsHelper'
 
 const usdcEMapping: { [key: string]: string } = {
   avalanche: '0xa7d7079b0fead91f3e65f86e8915cb59c1a4c664',
@@ -125,6 +131,119 @@ export const getTokenBalanceInUSD = (token: TokenResult) => {
     priceIn.find(({ baseCurrency }: { baseCurrency: string }) => baseCurrency === 'usd')?.price || 0
 
   return balance * price
+}
+
+/**
+ * Formats pending token amounts in a better readable format, including converting
+ * the amounts to human-readable strings and calculating their USD value.
+ */
+const formatPendingAmounts = (
+  pendingAmounts: PendingAmounts | null,
+  decimals: number,
+  priceUSD: number
+): FormattedPendingAmounts | null => {
+  if (!pendingAmounts) return null
+
+  const pendingBalance = formatUnits(pendingAmounts.pendingBalance, decimals)
+  const pendingBalanceUSD =
+    priceUSD && pendingAmounts.pendingBalance
+      ? safeTokenAmountAndNumberMultiplication(pendingAmounts.pendingBalance, decimals, priceUSD)
+      : undefined
+  const formattedAmounts: FormattedPendingAmounts = {
+    ...pendingAmounts,
+    pendingBalance,
+    pendingBalanceFormatted: formatDecimals(Number(pendingBalance), 'amount')
+  }
+
+  if (pendingBalanceUSD) {
+    formattedAmounts.pendingBalanceUSDFormatted = formatDecimals(Number(pendingBalanceUSD), 'value')
+  }
+
+  if (pendingAmounts.pendingToBeSigned) {
+    formattedAmounts.pendingToBeSignedFormatted = formatDecimals(
+      parseFloat(formatUnits(pendingAmounts.pendingToBeSigned, decimals)),
+      'amount'
+    )
+  }
+
+  if (pendingAmounts.pendingToBeConfirmed) {
+    formattedAmounts.pendingToBeConfirmedFormatted = formatDecimals(
+      parseFloat(formatUnits(pendingAmounts.pendingToBeConfirmed, decimals)),
+      'amount'
+    )
+  }
+
+  return formattedAmounts
+}
+
+/**
+ * Calculates and formats (for display) token details including balance, price
+ * in USD, pending amounts and other details.
+ */
+export const getAndFormatTokenDetails = (
+  {
+    flags: { rewardsType },
+    networkId,
+    priceIn,
+    amount,
+    decimals,
+    amountPostSimulation,
+    simulationAmount
+  }: TokenResult,
+  networks?: Network[],
+  tokenAmounts?: {
+    latestAmount: bigint
+    pendingAmount: bigint
+    address: string
+    networkId: string
+  },
+  simulatedAccountOp?: AccountOp
+) => {
+  const isRewards = rewardsType === 'wallet-rewards'
+  const isVesting = rewardsType === 'wallet-vesting'
+  const networkData = networks?.find(({ id }) => networkId === id)
+  const amountish = BigInt(amount)
+  const amountishLatest = BigInt(tokenAmounts?.latestAmount || 0n)
+
+  const balance = parseFloat(formatUnits(amountish, decimals))
+  const balanceLatest = parseFloat(formatUnits(amountishLatest, decimals))
+  const priceUSD = priceIn.find(
+    ({ baseCurrency }: { baseCurrency: string }) => baseCurrency.toLowerCase() === 'usd'
+  )?.price
+  const balanceUSD = priceUSD
+    ? Number(safeTokenAmountAndNumberMultiplication(amountish, decimals, priceUSD))
+    : undefined
+
+  const pendingAmountsFormatted = formatPendingAmounts(
+    tokenAmounts?.address
+      ? calculatePendingAmounts(
+          tokenAmounts?.latestAmount,
+          tokenAmounts?.pendingAmount,
+          amountPostSimulation,
+          simulationAmount,
+          simulatedAccountOp
+        )
+      : null,
+    decimals,
+    priceUSD!
+  )
+
+  // 1. This function will be moved to portfolioView.
+  // 2. balance, priceUSD and balanceUSD are numbers while values in pendingAmountsFormatted
+  // are strings. Please decide on the type of the values when refactoring.
+  return {
+    balance,
+    balanceFormatted: formatDecimals(balance, 'amount'),
+    balanceLatestFormatted: formatDecimals(balanceLatest, 'amount'),
+    priceUSD,
+    priceUSDFormatted: formatDecimals(priceUSD, 'price'),
+    balanceUSD,
+    balanceUSDFormatted: formatDecimals(balanceUSD, 'value'),
+    networkData,
+    isRewards,
+    isVesting,
+    ...pendingAmountsFormatted
+  }
 }
 
 export const getTotal = (t: TokenResult[], excludeHiddenTokens: boolean = true) =>
