@@ -337,13 +337,7 @@ export class MainController extends EventEmitter {
       networks: this.networks,
       providers: this.providers
     })
-    this.swapAndBridge = new SwapAndBridgeController({
-      selectedAccount: this.selectedAccount,
-      networks: this.networks,
-      socketAPI: this.#socketAPI,
-      storage: this.#storage,
-      actions: this.actions
-    })
+
     this.callRelayer = relayerCall.bind({ url: relayerUrl, fetch: this.fetch })
     this.activity = new ActivityController(
       this.#storage,
@@ -357,6 +351,14 @@ export class MainController extends EventEmitter {
         await this.setContractsDeployedToTrueIfDeployed(network)
       }
     )
+    this.swapAndBridge = new SwapAndBridgeController({
+      selectedAccount: this.selectedAccount,
+      networks: this.networks,
+      activity: this.activity,
+      socketAPI: this.#socketAPI,
+      storage: this.#storage,
+      actions: this.actions
+    })
     this.domains = new DomainsController(this.providers.providers)
     this.#initialLoadPromise = this.#load()
     paymasterFactory.init(relayerUrl, fetch, (e: ErrorRef) => {
