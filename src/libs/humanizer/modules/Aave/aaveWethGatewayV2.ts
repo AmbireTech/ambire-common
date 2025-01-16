@@ -23,7 +23,7 @@ export const aaveWethGatewayV2 = (): { [key: string]: Function } => {
       return [
         getAction('Withdraw'),
         getToken(ZeroAddress, amount),
-        getLabel('to'),
+        getLabel('from'),
         getAddressVisualization(call.to),
         ...getOnBehalfOf(to, accountOp.accountAddr)
       ]
@@ -44,7 +44,7 @@ export const aaveWethGatewayV2 = (): { [key: string]: Function } => {
       return [
         getAction('Borrow'),
         getToken(ZeroAddress, amount),
-        getLabel('to'),
+        getLabel('from'),
         getAddressVisualization(call.to)
       ]
     }
