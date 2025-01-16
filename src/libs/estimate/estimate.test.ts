@@ -1095,7 +1095,7 @@ describe('estimate', () => {
     expect(response.feePaymentOptions[0].token.address).toBe(ZeroAddress)
   })
 
-  it('estimates a polygon request with insufficient funds for txn and estimation should fail with transaction reverted', async () => {
+  it('estimates a polygon request with insufficient funds for txn and estimation should fail with transaction reverted because of insufficient funds', async () => {
     const opPolygonFailBzNoFunds: AccountOp = {
       accountAddr: smartAccountv2eip712.addr,
       signingKeyAddr: smartAccountv2eip712.associatedKeys[0],
@@ -1122,9 +1122,7 @@ describe('estimate', () => {
       new BundlerSwitcher(polygon, getSignAccountOpStatus, noStateUpdateStatuses)
     )
     expect(response.error).not.toBe(null)
-    expect(response.error?.message).toBe(
-      'The transaction will fail because it reverted onchain with reason unknown.'
-    )
+    expect(response.error?.message).toBe('Insufficient POL for transaction calls')
   })
 
   it('estimates a polygon request with wrong signer and estimation should fail with insufficient privileges', async () => {

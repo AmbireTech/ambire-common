@@ -167,8 +167,6 @@ export async function estimate4337(
       l1GasEstimation
     ]
   ] = estimations[0]
-  console.log(feeTokens.find((token) => token.address === ZeroAddress))
-  console.log(feeTokens.find((token) => token.address === ZeroAddress)?.amount)
   const ambireEstimationError =
     getInnerCallFailure(
       accountOp,
