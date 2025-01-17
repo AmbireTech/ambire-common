@@ -38,11 +38,13 @@ export interface CollectionResult extends TokenResult {
 
 export type PriceCache = Map<string, [number, Price[]]>
 
-interface ERC721Enumerable {
+export type MetaData = { blockNumber?: number; beforeNonce?: bigint; afterNonce?: bigint }
+
+export interface ERC721Enumerable {
   isKnown: boolean
   enumerable: boolean
 }
-interface ERC721Innumerable {
+export interface ERC721Innumerable {
   isKnown: boolean
   tokens: string[]
 }

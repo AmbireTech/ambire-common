@@ -8,7 +8,7 @@ import { getAccountDeployParams, isSmartAccount } from '../account/account'
 import { callToTuple, toSingletonCall } from '../accountOp/accountOp'
 import { Deployless, DeploylessMode, parseErr } from '../deployless/deployless'
 import { getFlags, overrideSymbol } from './helpers'
-import { CollectionResult, GetOptions, LimitsOptions, TokenResult } from './interfaces'
+import { CollectionResult, GetOptions, LimitsOptions, MetaData, TokenResult } from './interfaces'
 
 class SimulationError extends Error {
   public simulationErrorMsg: string
@@ -91,7 +91,7 @@ export async function getNFTs(
   accountAddr: string,
   tokenAddrs: [string, any][],
   limits: LimitsOptions
-): Promise<[number, CollectionResult][]> {
+): Promise<[[string, CollectionResult][], {}][]> {
   const deploylessOpts = getDeploylessOpts(accountAddr, !network.rpcNoStateOverride, opts)
   const mapToken = (token: any) => {
     return {
@@ -202,7 +202,7 @@ export async function getTokens(
   opts: Partial<GetOptions>,
   accountAddr: string,
   tokenAddrs: string[]
-): Promise<[TokenResult, number, bigint, bigint][]> {
+): Promise<[[string, TokenResult][], MetaData][]> {
   const mapToken = (token: any, address: string) => {
     return {
       amount: token.amount,
