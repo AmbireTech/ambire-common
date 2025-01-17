@@ -967,12 +967,17 @@ export class SwapAndBridgeController extends EventEmitter {
       this.#updateQuoteTimeout = undefined
     }
 
-    if (!options.skipStatusUpdate) {
+    if (!options.skipStatusUpdate && !this.quote) {
       this.updateQuoteStatus = 'LOADING'
       this.emitUpdate()
     }
 
     this.#updateQuoteTimeout = setTimeout(async () => {
+      if (!options.skipStatusUpdate && !!this.quote) {
+        this.updateQuoteStatus = 'LOADING'
+        this.emitUpdate()
+      }
+
       await updateQuoteFunction()
 
       if (quoteId !== this.#updateQuoteId) return
