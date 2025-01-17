@@ -116,37 +116,6 @@ export const updatePortfolioStateWithDefiPositions = (
   return portfolioAccountState
 }
 
-/**
- * This is a temporary solution to strip the account state of unnecessary data. Example with Vitalik's account:
- * Vitalik has 2800 collections and around 700 tokens. This data is stored 3 times- in the latest, pending and selected account
- * portfolio state, which adds up to 8400 collections and 2100 tokens. This function removes redundant data until it's needed.
- * In the future we should update the structure of the portfolio, stored in the controller, to avoid this.
- */
-const stripAccountState = (state: AccountState, isPending: boolean = false) => {
-  const strippedState: AccountState = {}
-
-  Object.keys(state).forEach((network) => {
-    const networkData = state[network]
-    const needsSimulation = !!networkData?.accountOps?.length
-
-    if (!networkData || !networkData.result) {
-      strippedState[network] = networkData
-      return
-    }
-
-    networkData.result.hintsFromExternalAPI = null
-
-    if ((isPending && !needsSimulation) || !isPending) {
-      networkData.result.tokens = []
-      networkData.result.collections = []
-    }
-
-    strippedState[network] = networkData
-  })
-
-  return strippedState
-}
-
 export function calculateSelectedAccountPortfolio(
   latestStateSelectedAccount: AccountState,
   pendingStateSelectedAccount: AccountState,
@@ -297,7 +266,7 @@ export function calculateSelectedAccountPortfolio(
     isAllReady: allReady,
     networkSimulatedAccountOp,
     tokenAmounts,
-    latest: stripAccountState(latestStateSelectedAccount),
-    pending: stripAccountState(pendingStateSelectedAccount, true)
+    latest: latestStateSelectedAccount,
+    pending: pendingStateSelectedAccount
   } as SelectedAccountPortfolio
 }
