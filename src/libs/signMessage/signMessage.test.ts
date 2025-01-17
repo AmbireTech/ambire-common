@@ -20,8 +20,10 @@ import { KeystoreSigner } from '../keystoreSigner/keystoreSigner'
 import {
   getAmbireReadableTypedData,
   getEIP712Signature,
+  getEip7702Authorization,
   getPlainTextSignature,
   getTypedData,
+  getVerifyMessageSignature,
   verifyMessage,
   wrapWallet
 } from './signMessage'
@@ -610,6 +612,42 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
         'signature error: trying to sign an AmbireReadableOperation for the same address. Please contact support'
       )
     }
+  })
+  test('Signing [EOA]: authorization', async () => {
+    const accountStates = await getAccountsInfo([eoaAccount])
+    const signer = await keystore.getSigner(eoaSigner.keyPublicAddress, 'internal')
+
+    const authorizationHash = getEip7702Authorization(1n, 0n)
+    const signature = signer.sign7702(authorizationHash)
+    const provider = getRpcProvider(ethereumNetwork.rpcUrls, ethereumNetwork.chainId)
+    const authorizationRes = await verifyMessage({
+      network: ethereumNetwork,
+      provider,
+      signer: eoaSigner.keyPublicAddress,
+      signature: getVerifyMessageSignature(
+        signature,
+        eoaAccount,
+        accountStates[eoaAccount.addr][ethereumNetwork.id]
+      ),
+      authorization: authorizationHash
+    })
+    expect(authorizationRes).toBe(true)
+
+    // increment the nonce to be sure 'v' transform is working
+    const authorizationHash2 = getEip7702Authorization(1n, 1n)
+    const signature2 = signer.sign7702(authorizationHash2)
+    const authorizationRes2 = await verifyMessage({
+      network: ethereumNetwork,
+      provider,
+      signer: eoaSigner.keyPublicAddress,
+      signature: getVerifyMessageSignature(
+        signature2,
+        eoaAccount,
+        accountStates[eoaAccount.addr][ethereumNetwork.id]
+      ),
+      authorization: authorizationHash2
+    })
+    expect(authorizationRes2).toBe(true)
   })
 })
 

@@ -262,6 +262,7 @@ export async function verifyMessage({
 }: (
   | Required<Pick<Props, 'message'>>
   | Required<Pick<Props, 'typedData'>>
+  | Required<Pick<Props, 'authorization'>>
   | Required<Pick<Props, 'finalDigest'>>
 ) &
   Props): Promise<boolean> {
@@ -565,7 +566,9 @@ export function getVerifyMessageSignature(
   }
 
   const sig = signature as EIP7702Signature
-  return concat([sig.r, sig.s, sig.yParity]) as Hex
+  // ethereum v is 27 or 28
+  const v = sig.yParity === '0x00' ? toBeHex(27) : toBeHex(28)
+  return concat([sig.r, sig.s, v]) as Hex
 }
 
 export function getSavedSignature(
