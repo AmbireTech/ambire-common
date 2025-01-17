@@ -1545,7 +1545,7 @@ export class MainController extends EventEmitter {
           userRequests: this.userRequests,
           actionsQueue: this.actions.actionsQueue,
           entryPointAuthorizationSignature:
-            entryPointAuthorizationMessageFromHistory?.signature ?? undefined
+            (entryPointAuthorizationMessageFromHistory?.signature as string) ?? undefined
         })
         this.actions.addOrUpdateAction(accountOpAction, withPriority, executionType)
         if (this.signAccountOp) {

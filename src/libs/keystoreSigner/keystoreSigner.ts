@@ -4,6 +4,7 @@ import { ecdsaSign } from 'secp256k1'
 
 import { Hex } from '../../interfaces/hex'
 import { Key, KeystoreSignerInterface } from '../../interfaces/keystore'
+import { EIP7702Signature } from '../../interfaces/signatures'
 import { TypedMessage } from '../../interfaces/userRequest'
 
 export class KeystoreSigner implements KeystoreSignerInterface {
@@ -74,7 +75,7 @@ export class KeystoreSigner implements KeystoreSignerInterface {
   }
 
   // eslint-disable-next-line class-methods-use-this
-  sign7702(hex: string): { yParity: Hex; r: Hex; s: Hex } {
+  sign7702(hex: string): EIP7702Signature {
     if (!this.#authorizationPrivkey) throw new Error('no key to perform sign')
 
     const data = ecdsaSign(getBytes(hex), getBytes(this.#authorizationPrivkey))

@@ -15,6 +15,7 @@ import { suppressConsoleBeforeEach } from '../../../test/helpers/console'
 import { BIP44_STANDARD_DERIVATION_TEMPLATE } from '../../consts/derivation'
 import { Hex } from '../../interfaces/hex'
 import { ExternalKey, Key } from '../../interfaces/keystore'
+import { EIP7702Signature } from '../../interfaces/signatures'
 import { getPrivateKeyFromSeed } from '../../libs/keyIterator/keyIterator'
 import { stripHexPrefix } from '../../utils/stripHexPrefix'
 import { KeystoreController } from './keystore'
@@ -41,7 +42,7 @@ export class InternalSigner {
     return Promise.resolve('')
   }
 
-  sign7702(hex: string): { yParity: Hex; r: Hex; s: Hex } {
+  sign7702(hex: string): EIP7702Signature {
     return {
       yParity: '0x00',
       r: hexlify(randomBytes(32)) as Hex,
@@ -70,7 +71,7 @@ class LedgerSigner {
     return Promise.resolve('')
   }
 
-  sign7702(hex: string): { yParity: Hex; r: Hex; s: Hex } {
+  sign7702(hex: string): EIP7702Signature {
     return {
       yParity: '0x00',
       r: hexlify(randomBytes(32)) as Hex,

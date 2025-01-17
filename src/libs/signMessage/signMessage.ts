@@ -25,6 +25,7 @@ import { Account, AccountCreation, AccountId, AccountOnchainState } from '../../
 import { Hex } from '../../interfaces/hex'
 import { KeystoreSignerInterface } from '../../interfaces/keystore'
 import { Network } from '../../interfaces/network'
+import { EIP7702Signature } from '../../interfaces/signatures'
 import { TypedMessage } from '../../interfaces/userRequest'
 import hexStringToUint8Array from '../../utils/hexStringToUint8Array'
 import isSameAddr from '../../utils/isSameAddr'
@@ -236,6 +237,7 @@ type Props = {
     types: Record<string, Array<TypedDataField>>
     message: Record<string, any>
   }
+  authorization?: Hex
   finalDigest?: string
 }
 
@@ -255,7 +257,8 @@ export async function verifyMessage({
   signature,
   message,
   typedData,
-  finalDigest
+  finalDigest,
+  authorization
 }: (
   | Required<Pick<Props, 'message'>>
   | Required<Pick<Props, 'typedData'>>
@@ -296,6 +299,8 @@ export async function verifyMessage({
         typedData.message
       )
     }
+  } else if (authorization) {
+    finalDigest = authorization
   }
 
   if (!finalDigest)
@@ -545,4 +550,35 @@ export function getEip7702Authorization(chainId: bigint, nonce: bigint): Hex {
       encodeRlp([toBeHex(chainId), EIP_7702_AMBIRE_ACCOUNT, toBeHex(nonce)])
     ])
   ) as Hex
+}
+
+export function getVerifyMessageSignature(
+  signature: EIP7702Signature | string,
+  account: Account,
+  accountState: AccountOnchainState
+): Hex {
+  if (isHexString(signature)) {
+    return account.creation && !accountState.isDeployed
+      ? // https://eips.ethereum.org/EIPS/eip-6492
+        (wrapCounterfactualSign(signature, account.creation) as Hex)
+      : (signature as Hex)
+  }
+
+  const sig = signature as EIP7702Signature
+  return concat([sig.r, sig.s, sig.yParity]) as Hex
+}
+
+export function getSavedSignature(
+  signature: EIP7702Signature | string,
+  account: Account,
+  accountState: AccountOnchainState
+): EIP7702Signature | Hex {
+  if (isHexString(signature)) {
+    return account.creation && !accountState.isDeployed
+      ? // https://eips.ethereum.org/EIPS/eip-6492
+        (wrapCounterfactualSign(signature, account.creation) as Hex)
+      : (signature as Hex)
+  }
+
+  return signature as EIP7702Signature
 }
