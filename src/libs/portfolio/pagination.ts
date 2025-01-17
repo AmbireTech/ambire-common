@@ -32,11 +32,14 @@ export function flattenResults(
 
     results.forEach((result) => {
       if (Array.isArray(result) && result.length > 0) {
-        const [tokensArray, meta] = result
-        if (Array.isArray(tokensArray)) {
-          allTokens.push(...tokensArray)
+        const [hintsArray, meta] = result
+
+        if (Array.isArray(hintsArray)) {
+          allTokens.push(...hintsArray)
         }
-        metadata = { ...(meta as MetaData) }
+        if (Object.keys(metadata).length === 0) {
+          metadata = { ...(meta as MetaData) }
+        }
       }
     })
 

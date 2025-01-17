@@ -160,28 +160,31 @@ export async function getNFTs(
       }))
     : null
 
-  return before[0].map((beforeToken: any, i: number) => {
-    const simulationToken = simulationTokens
-      ? simulationTokens.find(
-          (token: any) => token.addr.toLowerCase() === tokenAddrs[i][0].toLowerCase()
+  return [
+    before[0].map((beforeToken: any, i: number) => {
+      const simulationToken = simulationTokens
+        ? simulationTokens.find(
+            (token: any) => token.addr.toLowerCase() === tokenAddrs[i][0].toLowerCase()
+          )
+        : null
+
+      const token = mapToken(beforeToken)
+      const receiving: bigint[] = []
+      const sending: bigint[] = []
+
+      token.collectibles.forEach((oldCollectible: bigint) => {
+        // the first check is required because if there are no changes we will always have !undefined from the second check
+        if (
+          simulationToken?.collectibles &&
+          !simulationToken?.collectibles?.includes(oldCollectible)
         )
-      : null
+          sending.push(oldCollectible)
+      })
+      simulationToken?.collectibles?.forEach((newCollectible: bigint) => {
+        if (!token.collectibles.includes(newCollectible)) receiving.push(newCollectible)
+      })
 
-    const token = mapToken(beforeToken)
-    const receiving: bigint[] = []
-    const sending: bigint[] = []
-
-    token.collectibles.forEach((oldCollectible: bigint) => {
-      // the first check is required because if there are no changes we will always have !undefined from the second check
-      if (simulationToken?.collectibles && !simulationToken?.collectibles?.includes(oldCollectible))
-        sending.push(oldCollectible)
-    })
-    simulationToken?.collectibles?.forEach((newCollectible: bigint) => {
-      if (!token.collectibles.includes(newCollectible)) receiving.push(newCollectible)
-    })
-
-    return [
-      [
+      return [
         beforeToken.error,
         {
           ...token,
@@ -190,10 +193,10 @@ export async function getNFTs(
           amountPostSimulation: simulationToken ? simulationToken.amount : token.amount,
           postSimulation: { receiving, sending }
         }
-      ],
-      {}
-    ]
-  })
+      ]
+    }),
+    {}
+  ]
 }
 
 export async function getTokens(
