@@ -1,6 +1,8 @@
 /* eslint-disable new-cap */
-import { getBytes, isHexString, TransactionRequest, Wallet } from 'ethers'
+import { getBytes, hexlify, isHexString, TransactionRequest, Wallet } from 'ethers'
+import { ecdsaSign } from 'secp256k1'
 
+import { Hex } from '../../interfaces/hex'
 import { Key, KeystoreSigner as KeystoreSignerInterface } from '../../interfaces/keystore'
 import { TypedMessage } from '../../interfaces/userRequest'
 
@@ -9,6 +11,9 @@ export class KeystoreSigner implements KeystoreSignerInterface {
 
   #signer: Wallet
 
+  // use this key only for sign7702
+  #authorizationPrivkey?: Hex
+
   constructor(_key: Key, _privKey?: string) {
     if (!_key) throw new Error('keystoreSigner: no key provided in constructor')
     if (!_privKey)
@@ -16,6 +21,10 @@ export class KeystoreSigner implements KeystoreSignerInterface {
 
     this.key = _key
     this.#signer = new Wallet(_privKey)
+
+    if (_privKey) {
+      this.#authorizationPrivkey = isHexString(_privKey) ? _privKey : `0x${_privKey}`
+    }
   }
 
   async signRawTransaction(params: TransactionRequest) {
@@ -65,7 +74,10 @@ export class KeystoreSigner implements KeystoreSignerInterface {
   }
 
   // eslint-disable-next-line class-methods-use-this
-  async sign7702(hex: string): Promise<string> {
-    throw new Error('not support', { cause: hex })
+  async sign7702(hex: string): Promise<Hex> {
+    if (!this.#authorizationPrivkey) throw new Error('no key to perform sign')
+
+    const data = ecdsaSign(getBytes(hex), getBytes(this.#authorizationPrivkey))
+    return hexlify(data.signature) as Hex
   }
 }
