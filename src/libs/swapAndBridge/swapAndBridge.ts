@@ -17,7 +17,7 @@ import { SignUserRequest } from '../../interfaces/userRequest'
 import { isSmartAccount } from '../account/account'
 import { Call } from '../accountOp/types'
 import { TokenResult } from '../portfolio'
-import { getTokenBalanceInUSD } from '../portfolio/helpers'
+import { getTokenAmount, getTokenBalanceInUSD } from '../portfolio/helpers'
 
 const sortTokensByPendingAndBalance = (a: TokenResult, b: TokenResult) => {
   // Pending tokens go on top
@@ -67,6 +67,10 @@ export const sortPortfolioTokenList = (accountPortfolioTokenList: TokenResult[])
     // Otherwise, just alphabetical
     return (a.symbol || '').localeCompare(b.symbol || '')
   })
+}
+
+export const getIsTokenEligibleForSwapAndBridgeToToken = (token: TokenResult) => {
+  return !token.flags.onGasTank && !token.flags.rewardsType && Number(getTokenAmount(token)) > 0
 }
 
 export const convertPortfolioTokenToSocketAPIToken = (
