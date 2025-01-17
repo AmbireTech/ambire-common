@@ -1,5 +1,5 @@
 import { computeAddress, concat, getBytes, hexlify, Wallet } from 'ethers'
-import { ecdsaRecover, ecdsaVerify, privateKeyTweakAdd } from 'secp256k1'
+import { ecdsaRecover } from 'secp256k1'
 
 /* eslint-disable no-new */
 import { describe, expect, test } from '@jest/globals'

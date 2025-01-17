@@ -3,7 +3,7 @@ import { getBytes, hexlify, isHexString, toBeHex, TransactionRequest, Wallet } f
 import { ecdsaSign } from 'secp256k1'
 
 import { Hex } from '../../interfaces/hex'
-import { Key, KeystoreSigner as KeystoreSignerInterface } from '../../interfaces/keystore'
+import { Key, KeystoreSignerInterface } from '../../interfaces/keystore'
 import { TypedMessage } from '../../interfaces/userRequest'
 
 export class KeystoreSigner implements KeystoreSignerInterface {

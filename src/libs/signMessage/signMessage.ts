@@ -23,7 +23,7 @@ import { PERMIT_2_ADDRESS, UNISWAP_UNIVERSAL_ROUTERS } from '../../consts/addres
 import { EIP_7702_AMBIRE_ACCOUNT } from '../../consts/deploy'
 import { Account, AccountCreation, AccountId, AccountOnchainState } from '../../interfaces/account'
 import { Hex } from '../../interfaces/hex'
-import { KeystoreSigner } from '../../interfaces/keystore'
+import { KeystoreSignerInterface } from '../../interfaces/keystore'
 import { Network } from '../../interfaces/network'
 import { TypedMessage } from '../../interfaces/userRequest'
 import hexStringToUint8Array from '../../utils/hexStringToUint8Array'
@@ -346,7 +346,7 @@ export async function getExecuteSignature(
   network: Network,
   accountOp: AccountOp,
   accountState: AccountOnchainState,
-  signer: KeystoreSigner
+  signer: KeystoreSignerInterface
 ) {
   // if we're authorizing calls for a v1 contract, we do a sign message
   // on the hash of the calls
@@ -370,7 +370,7 @@ export async function getPlainTextSignature(
   network: Network,
   account: Account,
   accountState: AccountOnchainState,
-  signer: KeystoreSigner
+  signer: KeystoreSignerInterface
 ): Promise<string> {
   const dedicatedToOneSA = signer.key.dedicatedToOneSA
 
@@ -441,7 +441,7 @@ export async function getEIP712Signature(
   message: TypedMessage,
   account: Account,
   accountState: AccountOnchainState,
-  signer: KeystoreSigner,
+  signer: KeystoreSignerInterface,
   network: Network
 ): Promise<string> {
   if (!message.types.EIP712Domain) {

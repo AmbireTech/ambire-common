@@ -57,7 +57,7 @@ export interface TxnRequest {
   type?: number
 }
 
-export interface KeystoreSigner {
+export interface KeystoreSignerInterface {
   key: Key
   init?: (externalSignerController?: ExternalSignerController) => void
   signRawTransaction: (txnRequest: TxnRequest) => Promise<Transaction['serialized']>
@@ -128,7 +128,7 @@ export type StoredKey = (InternalKey & { privKey: string }) | (ExternalKey & { p
 export type KeystoreSeed = { seed: string; hdPathTemplate: HD_PATH_TEMPLATE_TYPE }
 
 export type KeystoreSignerType = {
-  new (key: Key, privateKey?: string): KeystoreSigner
+  new (key: Key, privateKey?: string): KeystoreSignerInterface
 }
 
 /**
