@@ -10,7 +10,7 @@ import {
   SwitchAccountAction
 } from '../../interfaces/actions'
 import { NotificationManager } from '../../interfaces/notification'
-import { WindowManager } from '../../interfaces/window'
+import { WindowManager, WindowProps } from '../../interfaces/window'
 // eslint-disable-next-line import/no-cycle
 import { messageOnNewAction } from '../../libs/actions/actions'
 import { getDappActionRequestsBanners } from '../../libs/banners/banners'
@@ -49,7 +49,7 @@ export class ActionsController extends EventEmitter {
   #notificationManager: NotificationManager
 
   actionWindow: {
-    id: number | null
+    windowProps: WindowProps
     loaded: boolean
     pendingMessage: {
       message: string
@@ -60,7 +60,7 @@ export class ActionsController extends EventEmitter {
       }
     } | null
   } = {
-    id: null,
+    windowProps: null,
     loaded: false,
     pendingMessage: null
   }
@@ -109,8 +109,8 @@ export class ActionsController extends EventEmitter {
     this.#onActionWindowClose = onActionWindowClose
 
     this.#windowManager.event.on('windowRemoved', async (winId: number) => {
-      if (winId === this.actionWindow.id) {
-        this.actionWindow.id = null
+      if (winId === this.actionWindow.windowProps?.id) {
+        this.actionWindow.windowProps = null
         this.actionWindow.loaded = false
         this.actionWindow.pendingMessage = null
         this.currentAction = null
@@ -191,7 +191,8 @@ export class ActionsController extends EventEmitter {
     this.currentAction = nextAction
 
     if (!this.currentAction) {
-      !!this.actionWindow.id && this.#windowManager.remove(this.actionWindow.id)
+      !!this.actionWindow.windowProps?.id &&
+        this.#windowManager.remove(this.actionWindow.windowProps.id)
     } else {
       this.openActionWindow()
     }
@@ -245,28 +246,29 @@ export class ActionsController extends EventEmitter {
   }
 
   openActionWindow() {
-    if (this.actionWindow.id !== null) {
+    if (this.actionWindow.windowProps !== null) {
       this.focusActionWindow()
     } else {
-      this.#windowManager.open().then((winId) => {
-        this.actionWindow.id = winId!
+      this.#windowManager.open().then((windowProps) => {
+        this.actionWindow.windowProps = windowProps
         this.emitUpdate()
       })
     }
   }
 
   focusActionWindow = () => {
-    if (!this.visibleActionsQueue.length || !this.currentAction || !this.actionWindow.id) return
-    this.#windowManager.focus(this.actionWindow.id)
+    if (!this.visibleActionsQueue.length || !this.currentAction || !this.actionWindow.windowProps)
+      return
+    this.#windowManager.focus(this.actionWindow.windowProps)
   }
 
   closeActionWindow = () => {
-    if (!this.actionWindow.id) return
-    this.#windowManager.remove(this.actionWindow.id)
+    if (!this.actionWindow.windowProps) return
+    this.#windowManager.remove(this.actionWindow.windowProps.id)
   }
 
   setWindowLoaded() {
-    if (!this.actionWindow.id) return
+    if (!this.actionWindow.windowProps) return
     this.actionWindow.loaded = true
 
     if (this.actionWindow.pendingMessage) {
