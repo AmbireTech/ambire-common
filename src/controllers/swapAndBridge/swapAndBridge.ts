@@ -192,6 +192,7 @@ export class SwapAndBridgeController extends EventEmitter {
   }
 
   emitUpdate() {
+    // Override emitUpdate to not emit updates if there are no active sessions
     if (!this.sessionIds.length) return
 
     super.emitUpdate()
@@ -346,20 +347,26 @@ export class SwapAndBridgeController extends EventEmitter {
           delete r.error
         }
       })
-      // update the activeRoute.route prop for the new session
-      this.activeRoutes.forEach((r) => {
-        // eslint-disable-next-line @typescript-eslint/no-floating-promises
-        this.updateActiveRoute(r.activeRouteId, undefined, true)
-      })
+      if (this.activeRoutes.length) {
+        // Otherwise there may be an emitUpdate with [] tokens
+        this.isTokenListLoading = true
+
+        // update the activeRoute.route prop for the new session
+        this.activeRoutes.forEach((r) => {
+          // eslint-disable-next-line @typescript-eslint/no-floating-promises
+          this.updateActiveRoute(r.activeRouteId, undefined, true)
+        })
+      }
     }
 
     this.sessionIds.push(sessionId)
     await this.#socketAPI.updateHealth()
     this.updatePortfolioTokenList(this.#selectedAccount.portfolio.tokens)
+    this.isTokenListLoading = false
     // Do not await on purpose as it's not critical for the controller state to be ready
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.#fetchSupportedChainsIfNeeded()
-    await this.forceEmitUpdate()
+    this.emitUpdate()
   }
 
   get isHealthy() {
@@ -399,8 +406,7 @@ export class SwapAndBridgeController extends EventEmitter {
   unloadScreen(sessionId: string) {
     this.sessionIds = this.sessionIds.filter((id) => id !== sessionId)
     if (!this.sessionIds.length) {
-      this.resetForm()
-      this.forceEmitUpdate()
+      this.resetForm(true)
     }
   }
 
