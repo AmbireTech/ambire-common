@@ -26,6 +26,13 @@ export interface TypedMessage {
   message: Record<string, any>
   primaryType: keyof TypedMessage['types']
 }
+
+export interface Authorization {
+  kind: 'authorization-7702'
+  chainId: bigint
+  nonce: bigint
+}
+
 // @TODO: move this type and it's deps (PlainTextMessage, TypedMessage) to another place,
 // probably interfaces
 export interface Message {

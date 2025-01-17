@@ -190,6 +190,15 @@ export class SignMessageController extends EventEmitter {
             network
           )
         }
+
+        // if (this.messageToSign.content.kind === 'authorization-7702') {
+        //   const hash = getEip7702Authorization(
+        //     this.messageToSign.content.chainId,
+        //     this.messageToSign.content.nonce
+        //   )
+
+        //   signature = this.#signer.sign7702(hash)
+        // }
       } catch (error: any) {
         throw new Error(
           error?.message ||

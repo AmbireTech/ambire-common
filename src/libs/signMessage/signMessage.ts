@@ -538,11 +538,11 @@ export function adjustEntryPointAuthorization(signature: string): string {
 }
 
 // the hash the user needs to eth_sign in order for his EOA to turn smarter
-export function getEip7702Authorization(chainId: bigint, nonce: bigint) {
+export function getEip7702Authorization(chainId: bigint, nonce: bigint): Hex {
   return keccak256(
     concat([
       '0x05', // magic authrorization string
       encodeRlp([toBeHex(chainId), EIP_7702_AMBIRE_ACCOUNT, toBeHex(nonce)])
     ])
-  )
+  ) as Hex
 }
