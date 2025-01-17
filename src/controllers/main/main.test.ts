@@ -10,6 +10,7 @@ import { suppressConsoleBeforeEach } from '../../../test/helpers/console'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
 import { BIP44_STANDARD_DERIVATION_TEMPLATE } from '../../consts/derivation'
+import { networks } from '../../consts/networks'
 import { SelectedAccountForImport } from '../../interfaces/account'
 import { UserRequest } from '../../interfaces/userRequest'
 import { InnerCallFailureError } from '../../libs/errorDecoder/customErrors'
@@ -432,7 +433,11 @@ describe('Main Controller ', () => {
     })
     it('Error that should be humanized by getHumanReadableBroadcastError', async () => {
       const { controllerAnyType } = prepareTest()
-      const error = new InnerCallFailureError('   transfer amount exceeds balance   ')
+      const error = new InnerCallFailureError(
+        '   transfer amount exceeds balance   ',
+        [],
+        networks.find((net) => net.id === 'base')!
+      )
 
       try {
         await controllerAnyType.throwBroadcastAccountOp({
