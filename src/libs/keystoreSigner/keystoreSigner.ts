@@ -1,5 +1,5 @@
 /* eslint-disable new-cap */
-import { getBytes, hexlify, isHexString, TransactionRequest, Wallet } from 'ethers'
+import { getBytes, hexlify, isHexString, toBeHex, TransactionRequest, Wallet } from 'ethers'
 import { ecdsaSign } from 'secp256k1'
 
 import { Hex } from '../../interfaces/hex'
@@ -74,10 +74,15 @@ export class KeystoreSigner implements KeystoreSignerInterface {
   }
 
   // eslint-disable-next-line class-methods-use-this
-  async sign7702(hex: string): Promise<Hex> {
+  sign7702(hex: string): { yParity: Hex; r: Hex; s: Hex } {
     if (!this.#authorizationPrivkey) throw new Error('no key to perform sign')
 
     const data = ecdsaSign(getBytes(hex), getBytes(this.#authorizationPrivkey))
-    return hexlify(data.signature) as Hex
+    const signature = hexlify(data.signature)
+    return {
+      yParity: toBeHex(data.recid, 1) as Hex,
+      r: signature.substring(0, 66) as Hex,
+      s: `0x${signature.substring(66)}`
+    }
   }
 }

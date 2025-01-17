@@ -5,6 +5,7 @@ import { GasFeePayment } from '../libs/accountOp/accountOp'
 import { Call } from '../libs/accountOp/types'
 import { getHdPathFromTemplate } from '../utils/hdPath'
 import { Account } from './account'
+import { Hex } from './hex'
 import { Network } from './network'
 import { TypedMessage } from './userRequest'
 
@@ -62,7 +63,7 @@ export interface KeystoreSigner {
   signRawTransaction: (txnRequest: TxnRequest) => Promise<Transaction['serialized']>
   signTypedData: (typedMessage: TypedMessage) => Promise<string>
   signMessage: (hex: string) => Promise<string>
-  sign7702: (hex: string) => Promise<string>
+  sign7702: (hex: string) => { yParity: Hex; r: Hex; s: Hex }
 }
 
 export type ScryptParams = {
