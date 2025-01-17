@@ -34,10 +34,10 @@ import { ProvidersController } from '../providers/providers'
 export const DEFAULT_SELECTED_ACCOUNT_PORTFOLIO = {
   tokens: [],
   collections: [],
+  tokenAmounts: [],
   totalBalance: 0,
   isAllReady: false,
   networkSimulatedAccountOp: {},
-  tokenAmounts: [],
   latest: {},
   pending: {}
 }
