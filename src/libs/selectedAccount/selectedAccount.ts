@@ -155,7 +155,8 @@ export function calculateSelectedAccountPortfolio(
   accountPortfolio: SelectedAccountPortfolio | null,
   hasSignAccountOp?: boolean
 ) {
-  const updatedCollections: CollectionResult[] = []
+  const collections: CollectionResult[] = []
+  const tokens: SelectedAccountPortfolioTokenResult[] = []
 
   let newTotalBalance: number = 0
 
@@ -182,9 +183,8 @@ export function calculateSelectedAccountPortfolio(
    * - There is no critical error in the pending state.
    * - The pending block number is newer than the latest OR we have a signed acc op (because of simulation).
    */
-  const priorityPendingSelectedAccountPending: AccountState = {}
-  const networkSimulatedAccountOp: NetworkSimulatedAccountOp = {}
-  const tokensWithAllAmounts: SelectedAccountPortfolioTokenResult[] = []
+  const validSelectedAccountPendingState: AccountState = {}
+  const simulatedAccountOps: NetworkSimulatedAccountOp = {}
 
   Object.keys(pendingStateSelectedAccount).forEach((network) => {
     const pendingNetworkData = pendingStateSelectedAccount[network]
@@ -196,13 +196,13 @@ export function calculateSelectedAccountPortfolio(
       pendingNetworkData.result.blockNumber! >= latestNetworkData.result.blockNumber!
 
     if (!pendingNetworkData.criticalError && (isPendingNewer || hasSignAccountOp)) {
-      priorityPendingSelectedAccountPending[network] = pendingNetworkData
+      validSelectedAccountPendingState[network] = pendingNetworkData
     }
 
     const accountOp = pendingNetworkData?.accountOps?.[0]
 
     if (accountOp) {
-      networkSimulatedAccountOp[network] = accountOp
+      simulatedAccountOps[network] = accountOp
     }
 
     const pendingTokens = pendingNetworkData?.result?.tokens
@@ -220,14 +220,14 @@ export function calculateSelectedAccountPortfolio(
         }
       })
 
-      tokensWithAllAmounts.push(...networkTokens)
+      tokens.push(...networkTokens)
     }
   })
 
-  if (hasPending && Object.keys(priorityPendingSelectedAccountPending).length > 0) {
+  if (hasPending && Object.keys(validSelectedAccountPendingState).length > 0) {
     selectedAccountData = {
       ...selectedAccountData,
-      ...priorityPendingSelectedAccountPending
+      ...validSelectedAccountPendingState
     }
   }
 
@@ -239,7 +239,7 @@ export function calculateSelectedAccountPortfolio(
       newTotalBalance += networkTotal
 
       const networkCollections = result?.collections || []
-      updatedCollections.push(...networkCollections)
+      collections.push(...networkCollections)
     }
 
     if (!isNetworkReady(networkData)) {
@@ -249,10 +249,10 @@ export function calculateSelectedAccountPortfolio(
 
   return {
     totalBalance: newTotalBalance,
-    tokens: tokensWithAllAmounts,
-    collections: updatedCollections,
+    tokens,
+    collections,
     isAllReady: allReady,
-    networkSimulatedAccountOp,
+    networkSimulatedAccountOp: simulatedAccountOps,
     latest: stripPortfolioState(latestStateSelectedAccount),
     pending: stripPortfolioState(pendingStateSelectedAccount)
   } as SelectedAccountPortfolio
