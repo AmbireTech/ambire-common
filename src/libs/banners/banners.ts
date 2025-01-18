@@ -1,4 +1,4 @@
-import { Account } from '../../interfaces/account'
+import { Account, AccountStates } from '../../interfaces/account'
 import { AccountOpAction, Action as ActionFromActionsQueue } from '../../interfaces/actions'
 // eslint-disable-next-line import/no-cycle
 import { Action, Banner } from '../../interfaces/banner'
@@ -327,14 +327,16 @@ export const getKeySyncBanner = (addr: string, email: string, keys: string[]) =>
 export const getNetworksWithFailedRPCBanners = ({
   providers,
   networks,
-  networksWithAssets
+  networksWithAssets,
+  accountState
 }: {
   providers: RPCProviders
   networks: Network[]
   networksWithAssets: NetworkId[]
+  accountState: AccountStates[string]
 }): Banner[] => {
   const banners: Banner[] = []
-  const networkIds = getNetworksWithFailedRPC({ providers }).filter((networkId) =>
+  const networkIds = getNetworksWithFailedRPC({ providers, accountState }).filter((networkId) =>
     networksWithAssets.includes(networkId)
   )
 

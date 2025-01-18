@@ -91,7 +91,8 @@ export class AccountsController extends EventEmitter {
   async updateAccountState(
     accountAddr: Account['addr'],
     blockTag: 'pending' | 'latest' = 'latest',
-    networks: NetworkId[] = []
+    networks: NetworkId[] = [],
+    isManualUpdate = false
   ) {
     const accountData = this.accounts.find((account) => account.addr === accountAddr)
 
@@ -99,7 +100,7 @@ export class AccountsController extends EventEmitter {
 
     await this.withStatus(
       'updateAccountState',
-      async () => this.#updateAccountStates([accountData], blockTag, networks),
+      async () => this.#updateAccountStates([accountData], blockTag, networks, isManualUpdate),
       true
     )
   }
@@ -107,7 +108,8 @@ export class AccountsController extends EventEmitter {
   async #updateAccountStates(
     accounts: Account[],
     blockTag: string | number = 'latest',
-    updateOnlyNetworksWithIds: NetworkId[] = []
+    updateOnlyNetworksWithIds: NetworkId[] = [],
+    isManualUpdate = false
   ) {
     // if any, update the account state only for the passed networks; else - all
     const updateOnlyPassedNetworks = updateOnlyNetworksWithIds.length
@@ -138,6 +140,17 @@ export class AccountsController extends EventEmitter {
           })
         } catch (err) {
           console.error(`account state update error for ${network.name}: `, err)
+
+          if (isManualUpdate) {
+            accounts.forEach((account) => {
+              const state = this.accountStates?.[account.addr]?.[network.id]
+
+              if (!state) return
+              // Reset the account state updatedAt timestamp so a banner is displayed
+              state.updatedAt = 0
+            })
+          }
+
           this.#updateProviderIsWorking(network.id, false)
         }
 
@@ -215,5 +228,12 @@ export class AccountsController extends EventEmitter {
 
     await this.#storage.set('accounts', this.accounts)
     this.emitUpdate()
+  }
+
+  get areAccountStatesLoading() {
+    return (
+      this.statuses.updateAccountStates === 'LOADING' ||
+      this.statuses.updateAccountState === 'LOADING'
+    )
   }
 }
