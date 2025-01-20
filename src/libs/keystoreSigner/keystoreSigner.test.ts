@@ -4,6 +4,7 @@ import { ecdsaRecover } from 'secp256k1'
 /* eslint-disable no-new */
 import { describe, expect, test } from '@jest/globals'
 
+import { EIP_7702_AMBIRE_ACCOUNT } from '../../consts/deploy'
 import { BIP44_STANDARD_DERIVATION_TEMPLATE } from '../../consts/derivation'
 import { Key } from '../../interfaces/keystore'
 import { getPrivateKeyFromSeed } from '../keyIterator/keyIterator'
@@ -91,7 +92,7 @@ describe('KeystoreSigner', () => {
 
 describe('Sign eip-7702 authorization', () => {
   it('should sign successfully', async () => {
-    const hash = getEip7702Authorization(1n, 0n)
+    const hash = getEip7702Authorization(1n, EIP_7702_AMBIRE_ACCOUNT, 0n)
     const signer = new KeystoreSigner(key, privKey)
     const signature = signer.sign7702(hash)
 

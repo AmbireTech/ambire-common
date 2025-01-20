@@ -20,7 +20,6 @@ import {
 
 import UniversalSigValidator from '../../../contracts/compiled/UniversalSigValidator.json'
 import { PERMIT_2_ADDRESS, UNISWAP_UNIVERSAL_ROUTERS } from '../../consts/addresses'
-import { EIP_7702_AMBIRE_ACCOUNT } from '../../consts/deploy'
 import { Account, AccountCreation, AccountId, AccountOnchainState } from '../../interfaces/account'
 import { Hex } from '../../interfaces/hex'
 import { KeystoreSignerInterface } from '../../interfaces/keystore'
@@ -544,11 +543,11 @@ export function adjustEntryPointAuthorization(signature: string): string {
 }
 
 // the hash the user needs to eth_sign in order for his EOA to turn smarter
-export function getEip7702Authorization(chainId: bigint, nonce: bigint): Hex {
+export function getEip7702Authorization(chainId: bigint, contractAddr: Hex, nonce: bigint): Hex {
   return keccak256(
     concat([
       '0x05', // magic authrorization string
-      encodeRlp([toBeHex(chainId), EIP_7702_AMBIRE_ACCOUNT, toBeHex(nonce)])
+      encodeRlp([toBeHex(chainId), contractAddr, toBeHex(nonce)])
     ])
   ) as Hex
 }
