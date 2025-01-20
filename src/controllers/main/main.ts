@@ -210,6 +210,8 @@ export class MainController extends EventEmitter {
 
   lastUpdate: Date = new Date()
 
+  isOffline: boolean = false
+
   statuses: Statuses<keyof typeof STATUS_WRAPPED_METHODS> = STATUS_WRAPPED_METHODS
 
   #windowManager: WindowManager
@@ -274,7 +276,8 @@ export class MainController extends EventEmitter {
           await this.#selectAccount(defaultSelectedAccount.addr)
         }
       },
-      this.providers.updateProviderIsWorking.bind(this.providers)
+      this.providers.updateProviderIsWorking.bind(this.providers),
+      this.#updateIsOffline.bind(this)
     )
     this.selectedAccount = new SelectedAccountController({
       storage: this.#storage,
@@ -383,7 +386,8 @@ export class MainController extends EventEmitter {
       this.updateSelectedAccountPortfolio()
     }
     // The first time the app loads, we update the account state elsewhere
-    if (selectedAccountAddr && !isFirstLoad) this.accounts.updateAccountState(selectedAccountAddr)
+    if (selectedAccountAddr && !isFirstLoad && !this.accounts.areAccountStatesLoading)
+      this.accounts.updateAccountState(selectedAccountAddr)
   }
 
   async #load(): Promise<void> {
@@ -471,6 +475,7 @@ export class MainController extends EventEmitter {
       return
     }
 
+    this.isOffline = false
     // call closeActionWindow while still on the currently selected account to allow proper
     // state cleanup of the controllers like actionsCtrl, signAccountOpCtrl, signMessageCtrl...
     if (this.actions?.currentAction?.type !== 'switchAccount') {
@@ -989,8 +994,6 @@ export class MainController extends EventEmitter {
   async reloadSelectedAccount() {
     if (!this.selectedAccount.account) return
 
-    const isUpdatingAccount = this.accounts.statuses.updateAccountState !== 'INITIAL'
-
     this.selectedAccount.resetSelectedAccountPortfolio()
     await Promise.all([
       // When we trigger `reloadSelectedAccount` (for instance, from Dashboard -> Refresh balance icon),
@@ -999,7 +1002,7 @@ export class MainController extends EventEmitter {
       // So, we perform this safety check to prevent the error.
       // However, even if we don't trigger an update here, it's not a big problem,
       // as the account state will be updated anyway, and its update will be very recent.
-      !isUpdatingAccount && this.selectedAccount.account?.addr
+      !this.accounts.areAccountStatesLoading && this.selectedAccount.account?.addr
         ? this.accounts.updateAccountState(this.selectedAccount.account.addr, 'pending')
         : Promise.resolve(),
       // `updateSelectedAccountPortfolio` doesn't rely on `withStatus` validation internally,
@@ -1009,6 +1012,35 @@ export class MainController extends EventEmitter {
       this.updateSelectedAccountPortfolio(true),
       this.defiPositions.updatePositions()
     ])
+  }
+
+  #updateIsOffline() {
+    const oldIsOffline = this.isOffline
+
+    const allPortfolioNetworksHaveErrors = Object.keys(this.selectedAccount.portfolio.latest).every(
+      (networkId) => {
+        const state = this.selectedAccount.portfolio.latest[networkId]
+
+        return !!state?.criticalError
+      }
+    )
+
+    const allNetworkRpcsAreDown = Object.keys(this.providers.providers).every((networkId) => {
+      const provider = this.providers.providers[networkId]
+      const isWorking = provider.isWorking
+
+      return typeof isWorking === 'boolean' && !isWorking
+    })
+
+    // Update isOffline if either all portfolio networks have errors or we've failed to fetch
+    // the account state for every account. This is because either update may fail first.
+    this.isOffline = !!allNetworkRpcsAreDown || !!allPortfolioNetworksHaveErrors
+
+    if (oldIsOffline && !this.isOffline) {
+      this.reloadSelectedAccount()
+    }
+
+    this.emitUpdate()
   }
 
   // eslint-disable-next-line default-param-last
@@ -1033,6 +1065,7 @@ export class MainController extends EventEmitter {
       accountOpsToBeSimulatedByNetwork,
       { forceUpdate }
     )
+    this.#updateIsOffline()
   }
 
   #getUserRequestAccountError(dappOrigin: string, fromAccountAddr: string): string | null {
