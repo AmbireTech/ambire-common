@@ -136,7 +136,7 @@ export class SelectedAccountController extends EventEmitter {
       this.#debounceFunctionCallsOnSameTick('updateSelectedAccountDefiPositions', () => {
         this.#updateSelectedAccountDefiPositions()
 
-        if (!this.areDefiPositionsLoading) {
+        if (!this.areDefiPositionsLoading && this.portfolio.isAllReady) {
           this.#updateDefiPositionsBanners()
           this.#updateSelectedAccountPortfolio()
         }
@@ -209,12 +209,14 @@ export class SelectedAccountController extends EventEmitter {
 
     const latestStateSelectedAccountWithDefiPositions = updatePortfolioStateWithDefiPositions(
       latestStateSelectedAccount,
-      defiPositionsAccountState
+      defiPositionsAccountState,
+      this.areDefiPositionsLoading
     )
 
     const pendingStateSelectedAccountWithDefiPositions = updatePortfolioStateWithDefiPositions(
       pendingStateSelectedAccount,
-      defiPositionsAccountState
+      defiPositionsAccountState,
+      this.areDefiPositionsLoading
     )
 
     const hasSignAccountOp = !!this.#actions?.visibleActionsQueue.filter(
