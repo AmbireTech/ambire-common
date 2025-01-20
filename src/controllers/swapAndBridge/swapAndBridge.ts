@@ -24,7 +24,7 @@ import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 import { Call } from '../../libs/accountOp/types'
 import { getBridgeBanners } from '../../libs/banners/banners'
 import { TokenResult } from '../../libs/portfolio'
-import { getAndFormatTokenDetails, getTokenAmount } from '../../libs/portfolio/helpers'
+import { getTokenAmount } from '../../libs/portfolio/helpers'
 import {
   convertPortfolioTokenToSocketAPIToken,
   getActiveRoutesForAccount,
@@ -640,27 +640,10 @@ export class SwapAndBridgeController extends EventEmitter {
       const additionalTokensFromPortfolio = this.portfolioTokenList
         .filter((t) => t.networkId === toTokenNetwork.id)
         .filter((token) => !upToDateToTokenList.some((t) => t.address === token.address))
-        .map((t) => ({
-          ...convertPortfolioTokenToSocketAPIToken(t, Number(toTokenNetwork.chainId)),
-          isInAccPortfolio: true,
-          formattedTokenDetails: getAndFormatTokenDetails(t)
-        }))
+        .map((t) => convertPortfolioTokenToSocketAPIToken(t, Number(toTokenNetwork.chainId)))
 
       this.#toTokenList = sortTokenListResponse(
-        [
-          ...upToDateToTokenList.map((t) => {
-            const tInPortfolio = this.portfolioTokenList.find(
-              (pt) => pt.address === t.address && pt.networkId === toTokenNetwork.id
-            )
-
-            return {
-              ...t,
-              isInAccPortfolio: !!tInPortfolio,
-              formattedTokenDetails: tInPortfolio ? getAndFormatTokenDetails(tInPortfolio) : null
-            }
-          }),
-          ...additionalTokensFromPortfolio
-        ],
+        [...upToDateToTokenList, ...additionalTokensFromPortfolio],
         this.portfolioTokenList.filter((t) => t.networkId === toTokenNetwork.id)
       )
 
@@ -720,16 +703,7 @@ export class SwapAndBridgeController extends EventEmitter {
         'Network configuration mismatch detected. Please try again later or contact support.'
       )
 
-    const nextTokenList: SwapAndBridgeToToken[] = [
-      ...this.#toTokenList,
-      {
-        ...token,
-        isInAccPortfolio: this.portfolioTokenList.some(
-          (t) => t.address === token?.address && t.networkId === toTokenNetwork.id
-        ),
-        formattedTokenDetails: null
-      }
-    ]
+    const nextTokenList: SwapAndBridgeToToken[] = [...this.#toTokenList, token]
 
     this.#toTokenList = sortTokenListResponse(
       nextTokenList,
