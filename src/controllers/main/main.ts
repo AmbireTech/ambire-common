@@ -1312,15 +1312,18 @@ export class MainController extends EventEmitter {
 
         if (activeRoute) {
           this.removeUserRequest(activeRoute.activeRouteId, {
-            shouldRemoveSwapAndBridgeRoute: false
+            shouldRemoveSwapAndBridgeRoute: false,
+            shouldOpenNextRequest: false
           })
           this.swapAndBridge.updateActiveRoute(activeRoute.activeRouteId, { error: undefined })
           if (!isSmartAccount(this.selectedAccount.account)) {
             this.removeUserRequest(`${activeRouteId}-revoke-approval`, {
-              shouldRemoveSwapAndBridgeRoute: false
+              shouldRemoveSwapAndBridgeRoute: false,
+              shouldOpenNextRequest: false
             })
             this.removeUserRequest(`${activeRouteId}-approval`, {
-              shouldRemoveSwapAndBridgeRoute: false
+              shouldRemoveSwapAndBridgeRoute: false,
+              shouldOpenNextRequest: false
             })
           }
           transaction = await this.#socketAPI.getNextRouteUserTx(activeRoute.activeRouteId)
@@ -1348,11 +1351,7 @@ export class MainController extends EventEmitter {
 
         for (let i = 0; i < swapAndBridgeUserRequests.length; i++) {
           if (i === 0) {
-            this.addUserRequest(
-              swapAndBridgeUserRequests[i],
-              !this.selectedAccount.account.creation,
-              'open'
-            )
+            this.addUserRequest(swapAndBridgeUserRequests[i], false, 'open')
           } else {
             // eslint-disable-next-line no-await-in-loop
             await this.addUserRequest(swapAndBridgeUserRequests[i], false, 'queue')
@@ -1615,9 +1614,11 @@ export class MainController extends EventEmitter {
     options: {
       shouldRemoveSwapAndBridgeRoute: boolean
       shouldUpdateAccount?: boolean
+      shouldOpenNextRequest?: boolean
     } = {
       shouldRemoveSwapAndBridgeRoute: true,
-      shouldUpdateAccount: true
+      shouldUpdateAccount: true,
+      shouldOpenNextRequest: true
     }
   ) {
     const req = this.userRequests.find((uReq) => uReq.id === id)
@@ -1669,7 +1670,10 @@ export class MainController extends EventEmitter {
           if (this.signAccountOp && this.signAccountOp.fromActionId === accountOpAction.id) {
             this.destroySignAccOp()
           }
-          this.actions.removeAction(`${meta.accountAddr}-${meta.networkId}`)
+          this.actions.removeAction(
+            `${meta.accountAddr}-${meta.networkId}`,
+            options.shouldOpenNextRequest
+          )
 
           if (options.shouldUpdateAccount) this.updateSelectedAccountPortfolio(true, network)
         }
@@ -1677,7 +1681,7 @@ export class MainController extends EventEmitter {
         if (this.signAccountOp && this.signAccountOp.fromActionId === req.id) {
           this.destroySignAccOp()
         }
-        this.actions.removeAction(id)
+        this.actions.removeAction(id, options.shouldOpenNextRequest)
 
         if (options.shouldUpdateAccount) this.updateSelectedAccountPortfolio(true, network)
       }
@@ -1685,7 +1689,7 @@ export class MainController extends EventEmitter {
         this.swapAndBridge.removeActiveRoute(meta.activeRouteId)
       }
     } else {
-      this.actions.removeAction(id)
+      this.actions.removeAction(id, options.shouldOpenNextRequest)
     }
     this.emitUpdate()
   }

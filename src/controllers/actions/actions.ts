@@ -149,7 +149,10 @@ export class ActionsController extends EventEmitter {
         this.sendNewActionMessage(newAction, 'update')
         const currentAction = withPriority
           ? this.visibleActionsQueue[0] || null
-          : this.currentAction || this.visibleActionsQueue[0] || null
+          : this.currentAction ||
+            this.visibleActionsQueue.find((a) => a.id === newAction.id) ||
+            this.visibleActionsQueue[0] ||
+            null
         this.#setCurrentAction(currentAction)
       } else {
         this.emitUpdate()
@@ -167,7 +170,10 @@ export class ActionsController extends EventEmitter {
       this.sendNewActionMessage(newAction, withPriority ? 'unshift' : 'push')
       const currentAction = withPriority
         ? this.visibleActionsQueue[0] || null
-        : this.currentAction || this.visibleActionsQueue[0] || null
+        : this.currentAction ||
+          this.visibleActionsQueue.find((a) => a.id === newAction.id) ||
+          this.visibleActionsQueue[0] ||
+          null
       this.#setCurrentAction(currentAction)
     } else {
       this.emitUpdate()
