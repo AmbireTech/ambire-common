@@ -1274,7 +1274,7 @@ export class MainController extends EventEmitter {
         networkId: network.id,
         selectedAccountAddr: userRequest.meta.accountAddr,
         session: dappPromise.session,
-        rejectUserRequest: this.rejectUserRequest.bind(this)
+        dappPromise
       }),
       'last',
       'open-action-window'
