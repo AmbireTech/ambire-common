@@ -69,8 +69,19 @@ export const sortPortfolioTokenList = (accountPortfolioTokenList: TokenResult[])
   })
 }
 
-export const getIsTokenEligibleForSwapAndBridgeToToken = (token: TokenResult) => {
-  return !token.flags.onGasTank && !token.flags.rewardsType && Number(getTokenAmount(token)) > 0
+/**
+ * Determines if a token is eligible for swapping and bridging.
+ * Not all tokens in the portfolio are eligible.
+ */
+export const getIsTokenEligibleForSwapAndBridge = (token: TokenResult) => {
+  return (
+    // The same token can be in the Gas Tank (or as a Reward) and in the portfolio.
+    // Exclude the one in the Gas Tank (swapping Gas Tank tokens is not supported).
+    !token.flags.onGasTank &&
+    // And exclude the rewards ones (swapping rewards is not supported).
+    !token.flags.rewardsType &&
+    Number(getTokenAmount(token)) > 0
+  )
 }
 
 export const convertPortfolioTokenToSocketAPIToken = (
