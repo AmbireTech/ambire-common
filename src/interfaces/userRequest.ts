@@ -34,6 +34,7 @@ export interface Authorization {
   chainId: bigint
   nonce: bigint
   contractAddr: Hex
+  message: Hex
 }
 
 // @TODO: move this type and it's deps (PlainTextMessage, TypedMessage) to another place,

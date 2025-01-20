@@ -11,6 +11,7 @@ import {
   IrMessage
 } from './interfaces'
 import {
+  eip7702AuthorizationModule,
   ensMessageModule,
   entryPointModule,
   erc20Module,
@@ -87,7 +88,8 @@ const humanizerTMModules = [
   entryPointModule,
   legendsMessageModule,
   ensMessageModule,
-  openseaMessageModule
+  openseaMessageModule,
+  eip7702AuthorizationModule
 ]
 
 const humanizeAccountOp = (_accountOp: AccountOp, options: HumanizerOptions): IrCall[] => {

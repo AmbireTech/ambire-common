@@ -1592,6 +1592,7 @@ export class MainController extends EventEmitter {
       }
       if (req.action.kind === 'benzin') actionType = 'benzin'
       if (req.action.kind === 'switchAccount') actionType = 'switchAccount'
+      if (req.action.kind === 'authorization-7702') actionType = 'signMessage'
 
       this.actions.addOrUpdateAction(
         {

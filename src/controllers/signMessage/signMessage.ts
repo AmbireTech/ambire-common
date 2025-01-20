@@ -84,7 +84,7 @@ export class SignMessageController extends EventEmitter {
 
     await this.#accounts.initialLoadPromise
 
-    if (['message', 'typedMessage'].includes(messageToSign.content.kind)) {
+    if (['message', 'typedMessage', 'authorization-7702'].includes(messageToSign.content.kind)) {
       if (dapp) {
         this.dapp = dapp
       }
