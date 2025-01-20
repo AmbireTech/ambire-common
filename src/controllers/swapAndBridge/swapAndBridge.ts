@@ -29,6 +29,7 @@ import {
   convertPortfolioTokenToSocketAPIToken,
   getActiveRoutesForAccount,
   getIsBridgeTxn,
+  getIsTokenEligibleForSwapAndBridge,
   getQuoteRouteSteps,
   sortPortfolioTokenList,
   sortTokenListResponse
@@ -544,12 +545,7 @@ export class SwapAndBridgeController extends EventEmitter {
   }
 
   updatePortfolioTokenList(nextPortfolioTokenList: TokenResult[]) {
-    const tokens =
-      nextPortfolioTokenList.filter((token) => {
-        const hasAmount = Number(getTokenAmount(token)) > 0
-
-        return hasAmount && !token.flags.onGasTank && !token.flags.rewardsType
-      }) || []
+    const tokens = nextPortfolioTokenList.filter(getIsTokenEligibleForSwapAndBridge)
     this.portfolioTokenList = sortPortfolioTokenList(
       // Filtering out hidden tokens here means: 1) They won't be displayed in
       // the "From" token list (`this.portfolioTokenList`) and 2) They won't be
