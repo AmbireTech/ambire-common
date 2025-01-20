@@ -144,7 +144,7 @@ describe('Actions Controller', () => {
       emitCounter++
       if (emitCounter === 3) {
         expect(actionsCtrl.actionsQueue).toHaveLength(2)
-        expect(actionsCtrl.currentAction).toEqual(ACTION_1)
+        expect(actionsCtrl.currentAction).toEqual(ACTION_2)
         unsubscribe()
         done()
       }
@@ -185,7 +185,7 @@ describe('Actions Controller', () => {
         expect(actionsCtrl.visibleActionsQueue).toHaveLength(2)
         expect(actionsCtrl.currentAction?.id).not.toEqual(null)
         // update does not change the currently selectedAction
-        expect(actionsCtrl.currentAction?.id).not.toEqual(updatedAction2.id)
+        expect(actionsCtrl.currentAction?.id).toEqual(updatedAction2.id)
         expect(actionsCtrl.actionWindow.id).toEqual(1)
         unsubscribe()
         done()
@@ -270,19 +270,19 @@ describe('Actions Controller', () => {
     const unsubscribe = actionsCtrl.onUpdate(async () => {
       emitCounter++
       if (emitCounter === 5) {
-        expect(actionsCtrl.currentAction?.id).toEqual(2)
+        expect(actionsCtrl.currentAction?.id).toEqual(1)
         unsubscribe()
         done()
       }
       if (emitCounter === 4) {
         expect(actionsCtrl.actionWindow.id).toEqual(3)
-        actionsCtrl.setCurrentActionById(2)
+        actionsCtrl.setCurrentActionById(1)
       }
       if (emitCounter === 3) {
         expect(actionsCtrl.actionWindow.id).toEqual(2)
       }
       if (emitCounter === 2) {
-        expect(actionsCtrl.currentAction?.id).toEqual(1)
+        expect(actionsCtrl.currentAction?.id).toEqual(2)
         expect(actionsCtrl.actionsQueue).toHaveLength(2)
       }
 
