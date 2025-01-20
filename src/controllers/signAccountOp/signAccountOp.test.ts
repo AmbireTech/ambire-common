@@ -383,6 +383,7 @@ const init = async (
     providersCtrl,
     networksCtrl,
     () => {},
+    () => {},
     () => {}
   )
   await accountsCtrl.initialLoadPromise
