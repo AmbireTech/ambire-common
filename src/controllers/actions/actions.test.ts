@@ -192,7 +192,7 @@ describe('Actions Controller', () => {
       }
     })
 
-    actionsCtrl.addOrUpdateAction(updatedAction2, true)
+    actionsCtrl.addOrUpdateAction(updatedAction2, 'first')
   })
   test('should add an action with priority', (done) => {
     const req3: SignUserRequest = {
@@ -221,7 +221,7 @@ describe('Actions Controller', () => {
       }
     })
 
-    actionsCtrl.addOrUpdateAction(action3, true)
+    actionsCtrl.addOrUpdateAction(action3, 'first')
   })
   test('should have banners', () => {
     // no banner for benzin and one banner for the 2 other actions
