@@ -158,8 +158,7 @@ const ESTIMATION_ERRORS: ErrorHumanizerError[] = [
   },
   {
     reasons: ['Inner call: 0x'],
-    message:
-      'it reverted onchain. Reason might be insufficient funds in one of the transaction calls.'
+    message: 'it reverted onchain with reason unknown.'
   },
   // Rare contract errors
   {
