@@ -30,6 +30,10 @@ export type {
   DappRequestAction
 }
 
+export type ActionPosition = 'first' | 'last'
+
+export type ActionExecutionType = 'queue' | 'queue-but-open-action-window' | 'open-action-window'
+
 /**
  * The ActionsController is responsible for storing the converted userRequests
  * from the MainController into actions. After adding an action an action-window will be opened with the first action form actionsQueue
@@ -133,8 +137,8 @@ export class ActionsController extends EventEmitter {
 
   addOrUpdateAction(
     newAction: Action,
-    withPriority?: boolean,
-    executionType: 'queue' | 'open' = 'open'
+    position: ActionPosition = 'last',
+    executionType: ActionExecutionType = 'open-action-window'
   ) {
     // remove the benzin action if a new actions is added
     this.actionsQueue = this.actionsQueue.filter((a) => a.type !== 'benzin')
@@ -145,11 +149,15 @@ export class ActionsController extends EventEmitter {
     const actionIndex = this.actionsQueue.findIndex((a) => a.id === newAction.id)
     if (actionIndex !== -1) {
       this.actionsQueue[actionIndex] = newAction
-      if (executionType === 'open') {
-        this.sendNewActionMessage(newAction, 'update')
-        const currentAction = withPriority
-          ? this.visibleActionsQueue[0] || null
-          : this.currentAction || this.visibleActionsQueue[0] || null
+      if (executionType !== 'queue') {
+        let currentAction = null
+        if (executionType === 'open-action-window') {
+          this.sendNewActionMessage(newAction, 'updated')
+          currentAction = this.visibleActionsQueue.find((a) => a.id === newAction.id) || null
+        } else if (executionType === 'queue-but-open-action-window') {
+          this.sendNewActionMessage(newAction, 'queued')
+          currentAction = this.currentAction || this.visibleActionsQueue[0] || null
+        }
         this.#setCurrentAction(currentAction)
       } else {
         this.emitUpdate()
@@ -157,17 +165,20 @@ export class ActionsController extends EventEmitter {
       return
     }
 
-    if (withPriority) {
+    if (position === 'first') {
       this.actionsQueue.unshift(newAction)
     } else {
       this.actionsQueue.push(newAction)
     }
 
-    if (executionType === 'open') {
-      this.sendNewActionMessage(newAction, withPriority ? 'unshift' : 'push')
-      const currentAction = withPriority
-        ? this.visibleActionsQueue[0] || null
-        : this.currentAction || this.visibleActionsQueue[0] || null
+    if (executionType !== 'queue') {
+      let currentAction = null
+      if (executionType === 'open-action-window') {
+        currentAction = this.visibleActionsQueue.find((a) => a.id === newAction.id) || null
+      } else if (executionType === 'queue-but-open-action-window') {
+        this.sendNewActionMessage(newAction, 'queued')
+        currentAction = this.currentAction || this.visibleActionsQueue[0] || null
+      }
       this.#setCurrentAction(currentAction)
     } else {
       this.emitUpdate()
@@ -229,17 +240,14 @@ export class ActionsController extends EventEmitter {
     this.#setCurrentAction(action)
   }
 
-  sendNewActionMessage(newAction: Action, type: 'push' | 'unshift' | 'update') {
+  sendNewActionMessage(newAction: Action, type: 'queued' | 'updated') {
     if (this.visibleActionsQueue.length > 1 && newAction.type !== 'benzin') {
       if (this.actionWindow.loaded) {
-        this.#windowManager.sendWindowToastMessage(messageOnNewAction(newAction, type), {
-          type: 'success'
-        })
+        const message = messageOnNewAction(newAction, type)
+        if (message) this.#windowManager.sendWindowToastMessage(message, { type: 'success' })
       } else {
-        this.actionWindow.pendingMessage = {
-          message: messageOnNewAction(newAction, type),
-          options: { type: 'success' }
-        }
+        const message = messageOnNewAction(newAction, type)
+        if (message) this.actionWindow.pendingMessage = { message, options: { type: 'success' } }
       }
     }
   }
