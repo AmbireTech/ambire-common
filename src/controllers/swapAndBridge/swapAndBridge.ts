@@ -221,7 +221,7 @@ export class SwapAndBridgeController extends EventEmitter {
   }
 
   // The token in portfolio is the source of truth for the amount, it updates
-  // updates on every balance (pending or anything) change.
+  // on every balance (pending or anything) change.
   #getFromSelectedTokenInPortfolio = () =>
     this.portfolioTokenList.find(
       (t) =>
