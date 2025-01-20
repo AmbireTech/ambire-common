@@ -10,13 +10,14 @@ import {
   SocketAPISendTransactionRequest,
   SocketAPIStep,
   SocketAPIToken,
-  SocketAPIUserTx
+  SocketAPIUserTx,
+  SwapAndBridgeToToken
 } from '../../interfaces/swapAndBridge'
 import { SignUserRequest } from '../../interfaces/userRequest'
 import { isSmartAccount } from '../account/account'
 import { Call } from '../accountOp/types'
 import { TokenResult } from '../portfolio'
-import { getTokenBalanceInUSD } from '../portfolio/helpers'
+import { getTokenAmount, getTokenBalanceInUSD } from '../portfolio/helpers'
 
 const sortTokensByPendingAndBalance = (a: TokenResult, b: TokenResult) => {
   // Pending tokens go on top
@@ -37,7 +38,7 @@ const sortTokensByPendingAndBalance = (a: TokenResult, b: TokenResult) => {
 }
 
 export const sortTokenListResponse = (
-  tokenListResponse: SocketAPIToken[],
+  tokenListResponse: SwapAndBridgeToToken[],
   accountPortfolioTokenList: TokenResult[]
 ) => {
   return tokenListResponse.sort((a: SocketAPIToken, b: SocketAPIToken) => {
@@ -66,6 +67,21 @@ export const sortPortfolioTokenList = (accountPortfolioTokenList: TokenResult[])
     // Otherwise, just alphabetical
     return (a.symbol || '').localeCompare(b.symbol || '')
   })
+}
+
+/**
+ * Determines if a token is eligible for swapping and bridging.
+ * Not all tokens in the portfolio are eligible.
+ */
+export const getIsTokenEligibleForSwapAndBridge = (token: TokenResult) => {
+  return (
+    // The same token can be in the Gas Tank (or as a Reward) and in the portfolio.
+    // Exclude the one in the Gas Tank (swapping Gas Tank tokens is not supported).
+    !token.flags.onGasTank &&
+    // And exclude the rewards ones (swapping rewards is not supported).
+    !token.flags.rewardsType &&
+    Number(getTokenAmount(token)) > 0
+  )
 }
 
 export const convertPortfolioTokenToSocketAPIToken = (
