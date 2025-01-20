@@ -305,11 +305,17 @@ export class ActivityController extends EventEmitter {
     shouldEmitUpdate: boolean
     shouldUpdatePortfolio: boolean
     updatedAccountsOps: SubmittedAccountOp[]
+    newestOpTimestamp: number
   }> {
     await this.#initialLoadPromise
 
     if (!this.#selectedAccount.account || !this.#accountsOps[this.#selectedAccount.account.addr])
-      return { shouldEmitUpdate: false, shouldUpdatePortfolio: false, updatedAccountsOps: [] }
+      return {
+        shouldEmitUpdate: false,
+        shouldUpdatePortfolio: false,
+        updatedAccountsOps: [],
+        newestOpTimestamp: 0
+      }
 
     // This flag tracks the changes to AccountsOps statuses
     // and optimizes the number of the emitted updates and storage/state updates.
@@ -317,6 +323,10 @@ export class ActivityController extends EventEmitter {
 
     let shouldUpdatePortfolio = false
     const updatedAccountsOps: SubmittedAccountOp[] = []
+
+    // Use this flag to make the auto-refresh slower with the passege of time.
+    // implementation is in background.ts
+    let newestOpTimestamp: number = 0
 
     await Promise.all(
       Object.keys(this.#accountsOps[this.#selectedAccount.account.addr]).map(async (networkId) => {
@@ -335,6 +345,10 @@ export class ActivityController extends EventEmitter {
             if (accountOp.status !== AccountOpStatus.BroadcastedButNotConfirmed) return
 
             shouldEmitUpdate = true
+
+            if (newestOpTimestamp === undefined || newestOpTimestamp < accountOp.timestamp) {
+              newestOpTimestamp = accountOp.timestamp
+            }
 
             const declareStuckIfQuaterPassed = (op: SubmittedAccountOp) => {
               const accountOpDate = new Date(op.timestamp)
@@ -445,7 +459,7 @@ export class ActivityController extends EventEmitter {
       this.emitUpdate()
     }
 
-    return { shouldEmitUpdate, shouldUpdatePortfolio, updatedAccountsOps }
+    return { shouldEmitUpdate, shouldUpdatePortfolio, updatedAccountsOps, newestOpTimestamp }
   }
 
   async addSignedMessage(signedMessage: SignedMessage, account: string) {

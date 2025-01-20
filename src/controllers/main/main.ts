@@ -337,13 +337,7 @@ export class MainController extends EventEmitter {
       networks: this.networks,
       providers: this.providers
     })
-    this.swapAndBridge = new SwapAndBridgeController({
-      selectedAccount: this.selectedAccount,
-      networks: this.networks,
-      socketAPI: this.#socketAPI,
-      storage: this.#storage,
-      actions: this.actions
-    })
+
     this.callRelayer = relayerCall.bind({ url: relayerUrl, fetch: this.fetch })
     this.activity = new ActivityController(
       this.#storage,
@@ -357,6 +351,14 @@ export class MainController extends EventEmitter {
         await this.setContractsDeployedToTrueIfDeployed(network)
       }
     )
+    this.swapAndBridge = new SwapAndBridgeController({
+      selectedAccount: this.selectedAccount,
+      networks: this.networks,
+      activity: this.activity,
+      socketAPI: this.#socketAPI,
+      storage: this.#storage,
+      actions: this.actions
+    })
     this.domains = new DomainsController(this.providers.providers)
     this.#initialLoadPromise = this.#load()
     paymasterFactory.init(relayerUrl, fetch, (e: ErrorRef) => {
@@ -374,9 +376,12 @@ export class MainController extends EventEmitter {
    */
   onLoad(isFirstLoad: boolean = false) {
     const selectedAccountAddr = this.selectedAccount.account?.addr
-    this.updateSelectedAccountPortfolio()
+    const hasBroadcastedButNotConfirmed = !!this.activity.broadcastedButNotConfirmed.length
     this.defiPositions.updatePositions()
     this.domains.batchReverseLookup(this.accounts.accounts.map((a) => a.addr))
+    if (!hasBroadcastedButNotConfirmed) {
+      this.updateSelectedAccountPortfolio()
+    }
     // The first time the app loads, we update the account state elsewhere
     if (selectedAccountAddr && !isFirstLoad) this.accounts.updateAccountState(selectedAccountAddr)
   }
@@ -858,10 +863,10 @@ export class MainController extends EventEmitter {
     )
   }
 
-  async updateAccountsOpsStatuses() {
+  async updateAccountsOpsStatuses(): Promise<{ newestOpTimestamp: number }> {
     await this.#initialLoadPromise
 
-    const { shouldEmitUpdate, shouldUpdatePortfolio, updatedAccountsOps } =
+    const { shouldEmitUpdate, shouldUpdatePortfolio, updatedAccountsOps, newestOpTimestamp } =
       await this.activity.updateAccountsOpsStatuses()
 
     if (shouldEmitUpdate) {
@@ -875,6 +880,8 @@ export class MainController extends EventEmitter {
     updatedAccountsOps.forEach((op) => {
       this.swapAndBridge.handleUpdateActiveRouteOnSubmittedAccountOpStatusUpdate(op)
     })
+
+    return { newestOpTimestamp }
   }
 
   // call this function after a call to the singleton has been made
@@ -1758,6 +1765,7 @@ export class MainController extends EventEmitter {
       meta.txnId = data.submittedAccountOp.txnId
 
       meta.identifiedBy = data.submittedAccountOp.identifiedBy
+      meta.submittedAccountOp = data.submittedAccountOp
     }
 
     const benzinUserRequest: SignUserRequest = {

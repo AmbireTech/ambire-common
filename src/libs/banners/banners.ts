@@ -4,6 +4,7 @@ import { AccountOpAction, Action as ActionFromActionsQueue } from '../../interfa
 import { Action, Banner } from '../../interfaces/banner'
 import { Network, NetworkId } from '../../interfaces/network'
 import { RPCProviders } from '../../interfaces/provider'
+import { SelectedAccountPortfolioState } from '../../interfaces/selectedAccount'
 import { ActiveRoute } from '../../interfaces/swapAndBridge'
 import {
   AccountState as DefiPositionsAccountState,
@@ -11,7 +12,6 @@ import {
   NetworksWithPositions
 } from '../defiPositions/types'
 import { getNetworksWithFailedRPC } from '../networks/networks'
-import { AccountState as PortfolioAccountState } from '../portfolio/interfaces'
 import { PORTFOLIO_LIB_ERROR_NAMES } from '../portfolio/portfolio'
 import { getIsBridgeTxn, getQuoteRouteSteps } from '../swapAndBridge/swapAndBridge'
 
@@ -391,7 +391,7 @@ export const getNetworksWithPortfolioErrorBanners = ({
   providers
 }: {
   networks: Network[]
-  selectedAccountLatest: PortfolioAccountState
+  selectedAccountLatest: SelectedAccountPortfolioState
   providers: RPCProviders
 }): Banner[] => {
   const banners: Banner[] = []

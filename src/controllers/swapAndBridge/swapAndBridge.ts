@@ -38,6 +38,7 @@ import { validateSendTransferAmount } from '../../services/validations/validate'
 import { convertTokenPriceToBigInt } from '../../utils/numbers/formatters'
 import wait from '../../utils/wait'
 import { AccountOpAction, ActionsController } from '../actions/actions'
+import { ActivityController } from '../activity/activity'
 import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter'
 import { NetworksController } from '../networks/networks'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
@@ -86,6 +87,8 @@ export class SwapAndBridgeController extends EventEmitter {
   #networks: NetworksController
 
   #actions: ActionsController
+
+  #activity: ActivityController
 
   #storage: Storage
 
@@ -164,12 +167,14 @@ export class SwapAndBridgeController extends EventEmitter {
   constructor({
     selectedAccount,
     networks,
+    activity,
     socketAPI,
     storage,
     actions
   }: {
     selectedAccount: SelectedAccountController
     networks: NetworksController
+    activity: ActivityController
     socketAPI: SocketAPI
     storage: Storage
     actions: ActionsController
@@ -177,12 +182,20 @@ export class SwapAndBridgeController extends EventEmitter {
     super()
     this.#selectedAccount = selectedAccount
     this.#networks = networks
+    this.#activity = activity
     this.#socketAPI = socketAPI
     this.#storage = storage
     this.#actions = actions
 
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.#initialLoadPromise = this.#load()
+  }
+
+  emitUpdate() {
+    // Override emitUpdate to not emit updates if there are no active sessions
+    if (!this.sessionIds.length) return
+
+    super.emitUpdate()
   }
 
   async #load() {
@@ -248,7 +261,8 @@ export class SwapAndBridgeController extends EventEmitter {
   get formStatus() {
     if (this.isFormEmpty) return SwapAndBridgeFormStatus.Empty
     if (this.validateFromAmount.message) return SwapAndBridgeFormStatus.Invalid
-    if (this.updateQuoteStatus !== 'INITIAL') return SwapAndBridgeFormStatus.FetchingRoutes
+    if (this.updateQuoteStatus !== 'INITIAL' && !this.quote)
+      return SwapAndBridgeFormStatus.FetchingRoutes
     if (!this.quote?.selectedRoute) return SwapAndBridgeFormStatus.NoRoutesFound
 
     if (this.quote?.selectedRoute?.errorMessage) return SwapAndBridgeFormStatus.InvalidRouteSelected
@@ -333,20 +347,25 @@ export class SwapAndBridgeController extends EventEmitter {
           delete r.error
         }
       })
-      // update the activeRoute.route prop for the new session
-      this.activeRoutes.forEach((r) => {
-        // eslint-disable-next-line @typescript-eslint/no-floating-promises
-        this.updateActiveRoute(r.activeRouteId, undefined, true)
-      })
+      if (this.activeRoutes.length) {
+        // Otherwise there may be an emitUpdate with [] tokens
+        this.isTokenListLoading = true
+
+        // update the activeRoute.route prop for the new session
+        this.activeRoutes.forEach((r) => {
+          // eslint-disable-next-line @typescript-eslint/no-floating-promises
+          this.updateActiveRoute(r.activeRouteId, undefined, true)
+        })
+      }
     }
 
     this.sessionIds.push(sessionId)
     await this.#socketAPI.updateHealth()
     this.updatePortfolioTokenList(this.#selectedAccount.portfolio.tokens)
+    this.isTokenListLoading = false
     // Do not await on purpose as it's not critical for the controller state to be ready
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.#fetchSupportedChainsIfNeeded()
-
     this.emitUpdate()
   }
 
@@ -386,8 +405,9 @@ export class SwapAndBridgeController extends EventEmitter {
 
   unloadScreen(sessionId: string) {
     this.sessionIds = this.sessionIds.filter((id) => id !== sessionId)
-    if (!this.sessionIds.length) this.resetForm()
-    this.emitUpdate()
+    if (!this.sessionIds.length) {
+      this.resetForm(true)
+    }
   }
 
   updateForm(props: {
@@ -947,12 +967,17 @@ export class SwapAndBridgeController extends EventEmitter {
       this.#updateQuoteTimeout = undefined
     }
 
-    if (!options.skipStatusUpdate) {
+    if (!options.skipStatusUpdate && !this.quote) {
       this.updateQuoteStatus = 'LOADING'
       this.emitUpdate()
     }
 
     this.#updateQuoteTimeout = setTimeout(async () => {
+      if (!options.skipStatusUpdate && !!this.quote) {
+        this.updateQuoteStatus = 'LOADING'
+        this.emitUpdate()
+      }
+
       await updateQuoteFunction()
 
       if (quoteId !== this.#updateQuoteId) return
@@ -983,6 +1008,14 @@ export class SwapAndBridgeController extends EventEmitter {
     const fetchAndUpdateRoute = async (activeRoute: ActiveRoute) => {
       let status: 'ready' | 'completed' | null = null
       let errorMessage: string | null = null
+      const broadcastedButNotConfirmed = this.#activity.broadcastedButNotConfirmed.find((op) =>
+        op.calls.some((c) => c.fromUserRequestId === activeRoute.activeRouteId)
+      )
+
+      // call getRouteStatus only after the transaction has processed
+      if (broadcastedButNotConfirmed) return
+      if (activeRoute.routeStatus === 'completed') return
+
       try {
         const res = await this.#socketAPI.getRouteStatus({
           activeRouteId: activeRoute.activeRouteId,
