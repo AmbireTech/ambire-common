@@ -31,6 +31,8 @@ export const batchCallsFromUserRequests = ({
   )
 }
 
+export const ACCOUNT_SWITCH_USER_REQUEST = 'ACCOUNT_SWITCH_USER_REQUEST'
+
 export const buildSwitchAccountUserRequest = ({
   nextUserRequest,
   selectedAccountAddr,
@@ -47,7 +49,7 @@ export const buildSwitchAccountUserRequest = ({
   const userRequestId = nextUserRequest.id
 
   return {
-    id: Number(nextUserRequest.id) + 222, // Otherwise the ids will be the same
+    id: ACCOUNT_SWITCH_USER_REQUEST,
     action: {
       kind: 'switchAccount',
       params: {

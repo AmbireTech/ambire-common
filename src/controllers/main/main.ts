@@ -62,6 +62,7 @@ import { GasRecommendation, getGasPriceRecommendations } from '../../libs/gasPri
 import { humanizeAccountOp } from '../../libs/humanizer'
 import { KeyIterator } from '../../libs/keyIterator/keyIterator'
 import {
+  ACCOUNT_SWITCH_USER_REQUEST,
   buildSwitchAccountUserRequest,
   getAccountOpsForSimulation,
   makeBasicAccountOpAction,
@@ -203,6 +204,8 @@ export class MainController extends EventEmitter {
 
   userRequests: UserRequest[] = []
 
+  userRequestWaitingAccountSwitch: UserRequest[] = []
+
   // network => GasRecommendation[]
   gasPrices: { [key: string]: GasRecommendation[] } = {}
 
@@ -333,6 +336,7 @@ export class MainController extends EventEmitter {
           r.dappPromise?.reject(ethErrors.provider.userRejectedRequest())
         )
         this.userRequests = this.userRequests.filter((r) => r.action.kind === 'calls')
+        this.userRequestWaitingAccountSwitch = []
         this.emitUpdate()
       }
     })
@@ -1263,6 +1267,7 @@ export class MainController extends EventEmitter {
       throw ethErrors.provider.chainDisconnected('Transaction failed - unknown network')
     }
 
+    this.userRequestWaitingAccountSwitch.push(userRequest)
     await this.addUserRequest(
       buildSwitchAccountUserRequest({
         nextUserRequest: userRequest,
@@ -1274,7 +1279,6 @@ export class MainController extends EventEmitter {
       'last',
       'open-action-window'
     )
-    await this.addUserRequest(userRequest, 'last', 'queue')
   }
 
   async buildTransferUserRequest(
@@ -1700,6 +1704,22 @@ export class MainController extends EventEmitter {
       if (this.swapAndBridge.activeRoutes.length && options.shouldRemoveSwapAndBridgeRoute) {
         this.swapAndBridge.removeActiveRoute(meta.activeRouteId)
       }
+    } else if (id === ACCOUNT_SWITCH_USER_REQUEST) {
+      const requestsToAdd = this.userRequestWaitingAccountSwitch.filter(
+        (r) => r.meta.accountAddr === this.selectedAccount.account!.addr
+      )
+      this.actions.removeAction(
+        id,
+        this.selectedAccount.account?.addr !== (action as any).params!.switchToAccountAddr
+      )
+      ;(async () => {
+        // eslint-disable-next-line no-restricted-syntax
+        for (const r of requestsToAdd) {
+          this.userRequestWaitingAccountSwitch.splice(this.userRequests.indexOf(r), 1)
+          // eslint-disable-next-line no-await-in-loop
+          await this.addUserRequest(r)
+        }
+      })()
     } else {
       this.actions.removeAction(id, options.shouldOpenNextRequest)
     }
