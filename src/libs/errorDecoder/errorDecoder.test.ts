@@ -5,6 +5,11 @@ import { ethers } from 'hardhat'
 import { describe, expect } from '@jest/globals'
 
 import { suppressConsole } from '../../../test/helpers/console'
+import { networks } from '../../consts/networks'
+import {
+  getHumanReadableEstimationError,
+  MESSAGE_PREFIX
+} from '../errorHumanizer/estimationErrorHumanizer'
 import { RELAYER_DOWN_MESSAGE, RelayerError } from '../relayerCall/relayerCall'
 import { PANIC_ERROR_PREFIX } from './constants'
 import { InnerCallFailureError, RelayerPaymasterError } from './customErrors'
@@ -14,6 +19,9 @@ import { DecodedError, ErrorType } from './types'
 
 const TEST_MESSAGE_REVERT_DATA =
   '0x08c379a00000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000000c54657374206d6573736167650000000000000000000000000000000000000000'
+
+const base = networks.find((net) => net.id === 'base')!
+const avalanche = networks.find((net) => net.id === 'avalanche')!
 
 export const MockBundlerEstimationError = class extends Error {
   public constructor(public shortMessage?: string) {
@@ -155,7 +163,7 @@ describe('Error decoders work', () => {
   })
   describe('InnerCallFailureHandler', () => {
     it('Error is decoded InnerCallFailureHandler it if not panic or revert', async () => {
-      const error = new InnerCallFailureError('transfer amount exceeds balance')
+      const error = new InnerCallFailureError('transfer amount exceeds balance', [], base)
       const decodedError = decodeError(error)
 
       expect(decodedError.type).toEqual(ErrorType.InnerCallFailureError)
@@ -163,7 +171,7 @@ describe('Error decoders work', () => {
       expect(decodedError.data).toBe('transfer amount exceeds balance')
     })
     it("Error doesn't gets overwritten by Panic/Revert if it is panic or revert", async () => {
-      const error = new InnerCallFailureError(TEST_MESSAGE_REVERT_DATA)
+      const error = new InnerCallFailureError(TEST_MESSAGE_REVERT_DATA, [], base)
       const decodedError = decodeError(error)
 
       expect(decodedError.type).toEqual(ErrorType.RevertError)
@@ -340,7 +348,7 @@ describe('Error decoders work', () => {
     restore()
   })
   it('Should trim leading and trailing whitespaces from the reason', async () => {
-    const error = new InnerCallFailureError('   transfer amount exceeds balance   ')
+    const error = new InnerCallFailureError('   transfer amount exceeds balance   ', [], base)
     const decodedError = decodeError(error)
 
     expect(decodedError.reason).toBe('transfer amount exceeds balance')
@@ -360,5 +368,34 @@ describe('Error decoders work', () => {
 
     expect(decodedError.type).toEqual(ErrorType.UserRejectionError)
     expect(decodedError.reason).toBe(TRANSACTION_REJECTED_REASON)
+  })
+  it('Should report insufficient native when inner call error is 0x and the calls value is bigger than the portfolio amount', async () => {
+    const error = new InnerCallFailureError('0x', [{ to: '', value: 10n, data: '0x' }], base, 9n)
+    const decodedError = decodeError(error)
+    expect(decodedError.reason).toBe(`Insufficient ${base.nativeAssetSymbol} for transaction calls`)
+    const humanized = getHumanReadableEstimationError(decodedError)
+    expect(humanized.message).toBe(`Insufficient ${base.nativeAssetSymbol} for transaction calls`)
+
+    const sameErrorOnAvax = new InnerCallFailureError(
+      '0x',
+      [{ to: '', value: 10n, data: '0x' }],
+      avalanche,
+      9n
+    )
+    const decodedsameErrorOnAvax = decodeError(sameErrorOnAvax)
+    expect(decodedsameErrorOnAvax.reason).toBe(
+      `Insufficient ${avalanche.nativeAssetSymbol} for transaction calls`
+    )
+    const humanizedAvax = getHumanReadableEstimationError(decodedsameErrorOnAvax)
+    expect(humanizedAvax.message).toBe(
+      `Insufficient ${avalanche.nativeAssetSymbol} for transaction calls`
+    )
+  })
+  it('Should report transaction reverted with error unknown when error is 0x and the calls value is less or equal to the portfolio amount', async () => {
+    const error = new InnerCallFailureError('0x', [{ to: '', value: 10n, data: '0x' }], base, 10n)
+    const decodedError = decodeError(error)
+    expect(decodedError.reason).toBe('Inner call: 0x')
+    const humanizedAvax = getHumanReadableEstimationError(decodedError)
+    expect(humanizedAvax.message).toBe(`${MESSAGE_PREFIX} it reverted onchain with reason unknown.`)
   })
 })

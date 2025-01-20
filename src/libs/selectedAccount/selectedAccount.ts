@@ -10,7 +10,7 @@ import {
 import {
   AccountState,
   CollectionResult,
-  NetworkNonces,
+  NetworkSimulatedAccountOp,
   NetworkState,
   TokenAmount,
   TokenResult
@@ -18,14 +18,16 @@ import {
 
 export const updatePortfolioStateWithDefiPositions = (
   portfolioAccountState: AccountState,
-  defiPositionsAccountState: DefiPositionsAccountState
+  defiPositionsAccountState: DefiPositionsAccountState,
+  areDefiPositionsLoading: boolean
 ) => {
-  if (!portfolioAccountState || !defiPositionsAccountState) return portfolioAccountState
+  if (!portfolioAccountState || !defiPositionsAccountState || areDefiPositionsLoading)
+    return portfolioAccountState
 
   Object.keys(portfolioAccountState).forEach((networkId) => {
     const networkState = portfolioAccountState[networkId]
 
-    if (!networkState?.result) return
+    if (!networkState?.result || defiPositionsAccountState[networkId]?.isLoading) return
 
     let tokens = networkState.result.tokens || []
     let networkBalance = networkState.result.total?.usd || 0
@@ -135,7 +137,7 @@ export function calculateSelectedAccountPortfolio(
       collections: accountPortfolio?.collections || [],
       totalBalance: accountPortfolio?.totalBalance || 0,
       isAllReady: false,
-      simulationNonces: accountPortfolio?.simulationNonces || {},
+      networkSimulatedAccountOp: accountPortfolio?.networkSimulatedAccountOp || {},
       tokenAmounts: accountPortfolio?.tokenAmounts || [],
       latest: latestStateSelectedAccount,
       pending: pendingStateSelectedAccount
@@ -210,14 +212,17 @@ export function calculateSelectedAccountPortfolio(
   // which associates each network with its corresponding pending simulation beforeNonce.
   // This nonce information is crucial for determining the PendingToBeSigned or PendingToBeConfirmed Dashboard badges.
   // For more details, see: calculatePendingAmounts.
-  const simulationNonces = Object.keys(pendingStateSelectedAccount).reduce((acc, networkId) => {
-    const beforeNonce = pendingStateSelectedAccount[networkId]?.result?.beforeNonce
-    if (typeof beforeNonce === 'bigint') {
-      acc[networkId] = beforeNonce
-    }
+  const networkSimulatedAccountOp = Object.keys(pendingStateSelectedAccount).reduce(
+    (acc, networkId) => {
+      const accountOp = pendingStateSelectedAccount[networkId]?.accountOps?.[0]
+      if (accountOp) {
+        acc[networkId] = accountOp
+      }
 
-    return acc
-  }, {} as NetworkNonces)
+      return acc
+    },
+    {} as NetworkSimulatedAccountOp
+  )
 
   // We need the latest and pending token amounts for the selected account, especially for calculating the Pending badges.
   // You might wonder why we don't retrieve this data directly from the PortfolioController. Here's the reasoning:
@@ -234,21 +239,19 @@ export function calculateSelectedAccountPortfolio(
   //
   // For more details, see: calculatePendingAmounts.
   const tokenAmounts = Object.keys(pendingStateSelectedAccount).reduce((acc, networkId) => {
-    const latestTokens = pendingStateSelectedAccount[networkId]?.result?.tokens
+    const pendingTokens = pendingStateSelectedAccount[networkId]?.result?.tokens
 
-    if (!latestTokens) return acc
+    if (!pendingTokens) return acc
 
-    const mergedTokens = latestTokens.map((latestToken) => {
-      const pendingToken = pendingStateSelectedAccount[networkId]?.result?.tokens.find(
-        (pending) => {
-          return pending.address === latestToken.address
-        }
-      )
+    const mergedTokens = pendingTokens.map((pendingToken) => {
+      const latestToken = latestStateSelectedAccount[networkId]?.result?.tokens.find((latest) => {
+        return latest.address === pendingToken.address
+      })
 
       return {
-        latestAmount: latestToken.amount || 0n,
-        pendingAmount: pendingToken?.amount || 0n,
-        address: latestToken.address,
+        latestAmount: latestToken?.amount || 0n,
+        pendingAmount: pendingToken.amount || 0n,
+        address: pendingToken.address,
         networkId
       }
     })
@@ -261,7 +264,7 @@ export function calculateSelectedAccountPortfolio(
     tokens: updatedTokens,
     collections: updatedCollections,
     isAllReady: allReady,
-    simulationNonces,
+    networkSimulatedAccountOp,
     tokenAmounts,
     latest: latestStateSelectedAccount,
     pending: pendingStateSelectedAccount

@@ -14,7 +14,7 @@ const humanizeEstimationOrBroadcastError = (
     )
     if (!isMatching) return
 
-    message = `${prefix} ${error.message}`
+    message = `${prefix !== '' ? `${prefix} ` : ''}${error.message}`
   })
 
   return message

@@ -7,9 +7,11 @@ import { produceMemoryStore } from '../../../test/helpers'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { networks } from '../../consts/networks'
 import { Storage } from '../../interfaces/storage'
+import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { getRpcProvider } from '../../services/provider'
 import { AccountsController } from '../accounts/accounts'
 import { ActionsController } from '../actions/actions'
+import { ActivityController } from '../activity/activity'
 import { NetworksController } from '../networks/networks'
 import { ProvidersController } from '../providers/providers'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
@@ -73,6 +75,19 @@ const actionsCtrl = new ActionsController({
   onActionWindowClose: () => {}
 })
 
+const callRelayer = relayerCall.bind({ url: '', fetch })
+
+const activityCtrl = new ActivityController(
+  storage,
+  fetch,
+  callRelayer,
+  accountsCtrl,
+  selectedAccountCtrl,
+  providersCtrl,
+  networksCtrl,
+  () => Promise.resolve()
+)
+
 const socketAPIMock = new SocketAPIMock({ fetch, apiKey: '' })
 
 const accounts = [
@@ -101,6 +116,7 @@ describe('SwapAndBridge Controller', () => {
     swapAndBridgeController = new SwapAndBridgeController({
       selectedAccount: selectedAccountCtrl,
       networks: networksCtrl,
+      activity: activityCtrl,
       storage,
       socketAPI: socketAPIMock as any,
       actions: actionsCtrl
@@ -162,7 +178,7 @@ describe('SwapAndBridge Controller', () => {
     ])
     expect(swapAndBridgeController.fromSelectedToken).not.toBeNull()
     expect(swapAndBridgeController.fromSelectedToken?.address).toEqual(
-      '0x94b008aA00579c1307B0EF2c499aD98a8ce58e58'
+      '0x0000000000000000000000000000000000000000' // the one with highest balance
     )
     expect(swapAndBridgeController.fromChainId).toEqual(10)
   })

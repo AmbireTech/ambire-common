@@ -1,4 +1,5 @@
 import { Network } from '../interfaces/network'
+import { BICONOMY, PIMLICO } from './bundlers'
 
 const networks: Network[] = [
   {
@@ -33,7 +34,13 @@ const networks: Network[] = [
     rpcNoStateOverride: false,
     chainId: 137n,
     explorerUrl: 'https://polygonscan.com',
-    erc4337: { enabled: false, hasPaymaster: true, hasBundlerSupport: true },
+    erc4337: {
+      enabled: false,
+      hasPaymaster: true,
+      hasBundlerSupport: true,
+      bundlers: [PIMLICO, BICONOMY],
+      defaultBundler: PIMLICO
+    },
     isSAEnabled: true,
     areContractsDeployed: true,
     hasRelayer: true,
@@ -57,7 +64,13 @@ const networks: Network[] = [
     rpcNoStateOverride: false,
     chainId: 10n,
     explorerUrl: 'https://optimistic.etherscan.io',
-    erc4337: { enabled: true, hasPaymaster: true, hasBundlerSupport: true },
+    erc4337: {
+      enabled: true,
+      hasPaymaster: true,
+      hasBundlerSupport: true,
+      bundlers: [PIMLICO, BICONOMY],
+      defaultBundler: BICONOMY
+    },
     isSAEnabled: true,
     areContractsDeployed: true,
     hasRelayer: true,
@@ -84,7 +97,11 @@ const networks: Network[] = [
     rpcNoStateOverride: false,
     chainId: 43114n,
     explorerUrl: 'https://snowtrace.io',
-    erc4337: { enabled: true, hasPaymaster: true, hasBundlerSupport: true },
+    erc4337: {
+      enabled: true,
+      hasPaymaster: true,
+      hasBundlerSupport: true
+    },
     isSAEnabled: true,
     areContractsDeployed: true,
     hasRelayer: true,
@@ -112,7 +129,9 @@ const networks: Network[] = [
     erc4337: {
       enabled: true,
       hasPaymaster: true,
-      hasBundlerSupport: true
+      hasBundlerSupport: true,
+      bundlers: [PIMLICO, BICONOMY],
+      defaultBundler: PIMLICO
     },
     isSAEnabled: true,
     areContractsDeployed: true,
@@ -140,7 +159,9 @@ const networks: Network[] = [
     erc4337: {
       enabled: true,
       hasPaymaster: true,
-      hasBundlerSupport: true
+      hasBundlerSupport: true,
+      bundlers: [PIMLICO, BICONOMY],
+      defaultBundler: PIMLICO
     },
     isSAEnabled: true,
     areContractsDeployed: true,
@@ -167,7 +188,11 @@ const networks: Network[] = [
     rpcNoStateOverride: false,
     chainId: 534352n,
     explorerUrl: 'https://scrollscan.com',
-    erc4337: { enabled: false, hasPaymaster: true, hasBundlerSupport: true },
+    erc4337: {
+      enabled: false,
+      hasPaymaster: true,
+      hasBundlerSupport: true
+    },
     isSAEnabled: true,
     areContractsDeployed: true,
     hasRelayer: true,

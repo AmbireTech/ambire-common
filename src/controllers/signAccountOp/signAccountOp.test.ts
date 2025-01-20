@@ -21,8 +21,8 @@ import { EstimateResult } from '../../libs/estimate/interfaces'
 import * as gasPricesLib from '../../libs/gasPrice/gasPrice'
 import { KeystoreSigner } from '../../libs/keystoreSigner/keystoreSigner'
 import { TokenResult } from '../../libs/portfolio'
-import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { getTypedData } from '../../libs/signMessage/signMessage'
+import { BundlerSwitcher } from '../../services/bundlers/bundlerSwitcher'
 import { getRpcProvider } from '../../services/provider'
 import { AccountsController } from '../accounts/accounts'
 import { KeystoreController } from '../keystore/keystore'
@@ -403,6 +403,10 @@ const init = async (
   await portfolio.updateSelectedAccount(account.addr, network)
   const provider = getRpcProvider(network.rpcUrls, network.chainId)
 
+  const getSignAccountOpStatus = () => {
+    return null
+  }
+  const noStateUpdateStatuses: any[] = []
   const prices =
     gasPricesMock || (await gasPricesLib.getGasPriceRecommendations(provider, network)).gasPrice
   const estimation =
@@ -415,7 +419,8 @@ const init = async (
       accountsCtrl.accountStates,
       getNativeToCheckFromEOAs(nativeToCheck, account),
       feeTokens,
-      errorCallback
+      errorCallback,
+      new BundlerSwitcher(network, getSignAccountOpStatus, noStateUpdateStatuses)
     ))
 
   if (portfolio.getLatestPortfolioState(account.addr)[op.networkId]!.result) {
@@ -450,8 +455,6 @@ const init = async (
       }
     ]
   }
-
-  const callRelayer = relayerCall.bind({ url: '', fetch })
   const controller = new SignAccountOpController(
     accountsCtrl,
     keystore,
@@ -461,7 +464,6 @@ const init = async (
     networks.find((n) => n.id === op.networkId)!,
     1,
     op,
-    callRelayer,
     () => {},
     () => {}
   )
@@ -1003,6 +1005,7 @@ describe('SignAccountOp Controller ', () => {
   test('Signing [Relayer]: Smart account paying with gas tank.', async () => {
     const networkId = 'polygon'
     const network = networks.find((net) => net.id === networkId)!
+    network.erc4337.enabled = false
     const { controller, estimation, prices } = await init(
       e2esmartAccount,
       createAccountOp(e2esmartAccount, network.id),

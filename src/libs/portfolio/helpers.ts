@@ -117,12 +117,14 @@ export const getTokenAmount = (token: TokenResult): bigint => {
   return typeof token.amountPostSimulation === 'bigint' ? token.amountPostSimulation : token.amount
 }
 
-export const getTokenValue = (token: TokenResult): number => {
-  if (!token.priceIn || !token.priceIn.length) return 0
+export const getTokenBalanceInUSD = (token: TokenResult) => {
+  const amount = getTokenAmount(token)
+  const { decimals, priceIn } = token
+  const balance = parseFloat(formatUnits(amount, decimals))
+  const price =
+    priceIn.find(({ baseCurrency }: { baseCurrency: string }) => baseCurrency === 'usd')?.price || 0
 
-  const tokenAmount = Number(formatUnits(getTokenAmount(token), token.decimals))
-
-  return tokenAmount * token.priceIn[0].price
+  return balance * price
 }
 
 export const getTotal = (t: TokenResult[], excludeHiddenTokens: boolean = true) =>
@@ -147,7 +149,7 @@ export const addHiddenTokenValueToTotal = (
   return tokens.reduce((cur: number, token: TokenResult) => {
     if (!token.isHidden) return cur
 
-    return cur + getTokenValue(token)
+    return cur + getTokenBalanceInUSD(token)
   }, totalWithoutHiddenTokens)
 }
 

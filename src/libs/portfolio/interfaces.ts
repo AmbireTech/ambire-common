@@ -209,8 +209,8 @@ export interface PreviousHintsStorage {
   }
 }
 
-export interface NetworkNonces {
-  [networkId: string]: bigint
+export interface NetworkSimulatedAccountOp {
+  [networkId: NetworkId]: AccountOp
 }
 
 export interface TokenAmount {
