@@ -33,8 +33,7 @@ export interface Authorization {
   kind: 'authorization-7702'
   chainId: bigint
   nonce: bigint
-  // the authorization hash
-  message: Hex
+  contractAddr: Hex
 }
 
 // @TODO: move this type and it's deps (PlainTextMessage, TypedMessage) to another place,
@@ -49,7 +48,7 @@ export interface Message {
 
 export interface SignUserRequest {
   id: string | number
-  action: Calls | PlainTextMessage | TypedMessage | { kind: 'benzin' }
+  action: Calls | PlainTextMessage | TypedMessage | Authorization | { kind: 'benzin' }
   session?: DappProviderRequest['session']
   meta: {
     isSignAction: true

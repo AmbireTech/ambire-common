@@ -318,3 +318,9 @@ export function migrateAccountPreferencesToAccounts(
 export function getUniqueAccountsArray(accounts: Account[]) {
   return Array.from(new Map(accounts.map((account) => [account.addr, account])).values())
 }
+
+// TODO: perhaps include a signature and nonce to check if it already
+// has become smarter
+export function canBecomeSmarter(acc: Account, accKeys: Key[]) {
+  return !acc.creation && accKeys.find((key) => key.type === 'internal')
+}

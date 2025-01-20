@@ -49,7 +49,7 @@ import {
   getAccountOpActionsByNetwork,
   getAccountOpFromAction
 } from '../../libs/actions/actions'
-import { getAccountOpBanners } from '../../libs/banners/banners'
+import { getAccountOpBanners, getBecomeSmarterEOABanner } from '../../libs/banners/banners'
 import { getPaymasterService } from '../../libs/erc7677/erc7677'
 import {
   getHumanReadableBroadcastError,
@@ -2551,7 +2551,15 @@ export class MainController extends EventEmitter {
       swapAndBridgeRoutesPendingSignature
     })
 
-    return [...accountOpBanners]
+    // TODO: talk with the team if this the correct place for the 7702 banners
+    const smarterEoaBanner = getBecomeSmarterEOABanner(
+      this.selectedAccount.account,
+      this.keystore.keys.filter((key) =>
+        this.selectedAccount.account!.associatedKeys.includes(key.addr)
+      )
+    )
+
+    return [...accountOpBanners, ...smarterEoaBanner]
   }
 
   // Technically this is an anti-pattern, but it's the only way to
