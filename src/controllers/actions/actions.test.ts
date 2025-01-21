@@ -56,7 +56,7 @@ describe('Actions Controller', () => {
     focus: () => Promise.resolve(),
     open: () => {
       windowId++
-      return Promise.resolve(windowId)
+      return Promise.resolve({ id: windowId, top: 0, left: 0, width: 100, height: 100 })
     },
     remove: () => {
       event.emit('windowRemoved', windowId)
@@ -144,14 +144,14 @@ describe('Actions Controller', () => {
       emitCounter++
       if (emitCounter === 3) {
         expect(actionsCtrl.actionsQueue).toHaveLength(2)
-        expect(actionsCtrl.currentAction).toEqual(ACTION_1)
+        expect(actionsCtrl.currentAction).toEqual(ACTION_2)
         unsubscribe()
         done()
       }
 
       if (emitCounter === 2) {
         actionsCtrl.addOrUpdateAction(ACTION_2)
-        expect(actionsCtrl.actionWindow.id).toEqual(1)
+        expect(actionsCtrl.actionWindow.windowProps?.id).toEqual(1)
       }
     })
 
@@ -185,14 +185,14 @@ describe('Actions Controller', () => {
         expect(actionsCtrl.visibleActionsQueue).toHaveLength(2)
         expect(actionsCtrl.currentAction?.id).not.toEqual(null)
         // update does not change the currently selectedAction
-        expect(actionsCtrl.currentAction?.id).not.toEqual(updatedAction2.id)
-        expect(actionsCtrl.actionWindow.id).toEqual(1)
+        expect(actionsCtrl.currentAction?.id).toEqual(updatedAction2.id)
+        expect(actionsCtrl.actionWindow.windowProps?.id).toEqual(1)
         unsubscribe()
         done()
       }
     })
 
-    actionsCtrl.addOrUpdateAction(updatedAction2, true)
+    actionsCtrl.addOrUpdateAction(updatedAction2, 'first')
   })
   test('should add an action with priority', (done) => {
     const req3: SignUserRequest = {
@@ -215,13 +215,13 @@ describe('Actions Controller', () => {
         expect(actionsCtrl.actionsQueue).toHaveLength(3)
         expect(actionsCtrl.visibleActionsQueue).toHaveLength(3)
         expect(actionsCtrl.currentAction).toEqual(action3)
-        expect(actionsCtrl.actionWindow.id).toEqual(1)
+        expect(actionsCtrl.actionWindow.windowProps?.id).toEqual(1)
         unsubscribe()
         done()
       }
     })
 
-    actionsCtrl.addOrUpdateAction(action3, true)
+    actionsCtrl.addOrUpdateAction(action3, 'first')
   })
   test('should have banners', () => {
     // no banner for benzin and one banner for the 2 other actions
@@ -235,7 +235,7 @@ describe('Actions Controller', () => {
       if (emitCounter === 1) {
         expect(actionsCtrl.actionsQueue).toHaveLength(3)
         expect(actionsCtrl.visibleActionsQueue).toHaveLength(2)
-        expect(actionsCtrl.actionWindow.id).toEqual(1)
+        expect(actionsCtrl.actionWindow.windowProps?.id).toEqual(1)
 
         await selectedAccountCtrl.setAccount(accounts[0])
         await actionsCtrl.forceEmitUpdate()
@@ -254,7 +254,7 @@ describe('Actions Controller', () => {
       emitCounter++
 
       if (emitCounter === 1) {
-        expect(actionsCtrl.actionWindow.id).toBe(null)
+        expect(actionsCtrl.actionWindow.windowProps).toBe(null)
         expect(actionsCtrl.actionsQueue).toHaveLength(0)
         expect(actionsCtrl.currentAction).toEqual(null)
 
@@ -270,19 +270,19 @@ describe('Actions Controller', () => {
     const unsubscribe = actionsCtrl.onUpdate(async () => {
       emitCounter++
       if (emitCounter === 5) {
-        expect(actionsCtrl.currentAction?.id).toEqual(2)
+        expect(actionsCtrl.currentAction?.id).toEqual(1)
         unsubscribe()
         done()
       }
       if (emitCounter === 4) {
-        expect(actionsCtrl.actionWindow.id).toEqual(3)
-        actionsCtrl.setCurrentActionById(2)
+        expect(actionsCtrl.actionWindow.windowProps?.id).toEqual(3)
+        actionsCtrl.setCurrentActionById(1)
       }
       if (emitCounter === 3) {
-        expect(actionsCtrl.actionWindow.id).toEqual(2)
+        expect(actionsCtrl.actionWindow.windowProps?.id).toEqual(2)
       }
       if (emitCounter === 2) {
-        expect(actionsCtrl.currentAction?.id).toEqual(1)
+        expect(actionsCtrl.currentAction?.id).toEqual(2)
         expect(actionsCtrl.actionsQueue).toHaveLength(2)
       }
 
@@ -301,14 +301,14 @@ describe('Actions Controller', () => {
     const unsubscribe = actionsCtrl.onUpdate(async () => {
       emitCounter++
       if (emitCounter === 2) {
-        expect(actionsCtrl.actionWindow.id).toBe(null)
+        expect(actionsCtrl.actionWindow.windowProps).toBe(null)
         expect(actionsCtrl.actionsQueue).toHaveLength(0)
         expect(actionsCtrl.currentAction).toBe(null)
         unsubscribe()
         done()
       }
       if (emitCounter === 1) {
-        expect(actionsCtrl.actionWindow.id).toEqual(3)
+        expect(actionsCtrl.actionWindow.windowProps?.id).toEqual(3)
         expect(actionsCtrl.actionsQueue).toHaveLength(1)
         expect(actionsCtrl.currentAction?.id).toBe(2)
         actionsCtrl.removeAction(2)
