@@ -15,7 +15,8 @@ import {
   SocketAPIQuote,
   SocketAPIRoute,
   SocketAPISendTransactionRequest,
-  SocketAPIToken
+  SocketAPIToken,
+  SwapAndBridgeToToken
 } from '../../interfaces/swapAndBridge'
 import { isSmartAccount } from '../../libs/account/account'
 import { AccountOpStatus } from '../../libs/accountOp/accountOp'
@@ -28,6 +29,7 @@ import {
   convertPortfolioTokenToSocketAPIToken,
   getActiveRoutesForAccount,
   getIsBridgeTxn,
+  getIsTokenEligibleForSwapAndBridge,
   getQuoteRouteSteps,
   sortPortfolioTokenList,
   sortTokenListResponse
@@ -131,7 +133,7 @@ export class SwapAndBridgeController extends EventEmitter {
 
   toChainId: number | null = 1
 
-  toSelectedToken: SocketAPIToken | null = null
+  toSelectedToken: SwapAndBridgeToToken | null = null
 
   quote: SocketAPIQuote | null = null
 
@@ -149,7 +151,7 @@ export class SwapAndBridgeController extends EventEmitter {
    */
   #cachedToTokenLists: CachedToTokenLists = {}
 
-  #toTokenList: SocketAPIToken[] = []
+  #toTokenList: SwapAndBridgeToToken[] = []
 
   /**
    * Similar to the `#cachedToTokenLists`, this helps in avoiding repeated API
@@ -563,12 +565,7 @@ export class SwapAndBridgeController extends EventEmitter {
   }
 
   updatePortfolioTokenList(nextPortfolioTokenList: TokenResult[]) {
-    const tokens =
-      nextPortfolioTokenList.filter((token) => {
-        const hasAmount = Number(getTokenAmount(token)) > 0
-
-        return hasAmount && !token.flags.onGasTank && !token.flags.rewardsType
-      }) || []
+    const tokens = nextPortfolioTokenList.filter(getIsTokenEligibleForSwapAndBridge)
     this.portfolioTokenList = sortPortfolioTokenList(
       // Filtering out hidden tokens here means: 1) They won't be displayed in
       // the "From" token list (`this.portfolioTokenList`) and 2) They won't be
@@ -684,7 +681,7 @@ export class SwapAndBridgeController extends EventEmitter {
     this.emitUpdate()
   }
 
-  get toTokenList(): SocketAPIToken[] {
+  get toTokenList(): SwapAndBridgeToToken[] {
     const isSwapping = this.fromChainId === this.toChainId
     if (isSwapping) {
       // Swaps between same "from" and "to" tokens are not feasible, filter them out
@@ -701,7 +698,7 @@ export class SwapAndBridgeController extends EventEmitter {
     const isAlreadyInTheList = this.#toTokenList.some((t) => t.address === address)
     if (isAlreadyInTheList) return
 
-    let token
+    let token: SocketAPIToken | null
     try {
       token = await this.#socketAPI.getToken({ address, chainId: this.toChainId })
 
@@ -722,7 +719,8 @@ export class SwapAndBridgeController extends EventEmitter {
         'Network configuration mismatch detected. Please try again later or contact support.'
       )
 
-    const nextTokenList = [...this.#toTokenList, token]
+    const nextTokenList: SwapAndBridgeToToken[] = [...this.#toTokenList, token]
+
     this.#toTokenList = sortTokenListResponse(
       nextTokenList,
       this.portfolioTokenList.filter((t) => t.networkId === toTokenNetwork.id)

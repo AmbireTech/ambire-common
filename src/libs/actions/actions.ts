@@ -64,7 +64,7 @@ export const getAccountOpFromAction = (
   return accountOpAction.accountOp
 }
 
-export const messageOnNewAction = (action: Action, addType: 'push' | 'unshift' | 'update') => {
+export const messageOnNewAction = (action: Action, addType: 'queued' | 'updated') => {
   let requestType = ''
   if (action.type === 'accountOp') requestType = 'Sign Transaction'
   if (action.type === 'signMessage') requestType = 'Sign Message'
@@ -76,12 +76,13 @@ export const messageOnNewAction = (action: Action, addType: 'push' | 'unshift' |
       requestType = 'Get Encryption Public Key'
   }
 
-  if (addType === 'push') {
+  if (addType === 'queued') {
     return `A new${requestType ? ` ${requestType} ` : ' '}request was queued.`
   }
-  if (addType === 'unshift') {
-    return `A new${requestType ? ` ${requestType} ` : ' '}request was added.`
+
+  if (addType === 'updated') {
+    return `${requestType ? ` ${requestType} ` : ' '}request was updated.`
   }
 
-  return `${requestType ? ` ${requestType} ` : ' '}request was updated.`
+  return null
 }
