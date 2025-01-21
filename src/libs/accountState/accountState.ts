@@ -2,8 +2,10 @@ import { Provider } from 'ethers'
 
 import AmbireAccountState from '../../../contracts/compiled/AmbireAccountState.json'
 import { ENTRY_POINT_MARKER, ERC_4337_ENTRYPOINT, MAX_UINT256 } from '../../consts/deploy'
+import { InternalSignedMessages } from '../../controllers/activity/types'
 import { Account, AccountOnchainState } from '../../interfaces/account'
 import { Network } from '../../interfaces/network'
+import { Authorization } from '../../interfaces/userRequest'
 import { getAccountDeployParams, isSmartAccount } from '../account/account'
 import { fromDescriptor } from '../deployless/deployless'
 
@@ -11,6 +13,7 @@ export async function getAccountState(
   provider: Provider,
   network: Network,
   accounts: Account[],
+  authorizations: InternalSignedMessages = {},
   blockTag: string | number = 'latest'
 ): Promise<AccountOnchainState[]> {
   const deploylessAccountState = fromDescriptor(
@@ -63,6 +66,18 @@ export async function getAccountState(
       }
     )
 
+    const account = accounts[index]
+    let isSmarterEoa = false
+    if (accResult.isEOA && authorizations[account.addr]) {
+      isSmarterEoa = !!authorizations[account.addr].find((msg) => {
+        const content = msg.content as Authorization
+        return (
+          (content.chainId === 0n || content.chainId === network.chainId) &&
+          content.nonce === BigInt(eoaNonces[account.addr])
+        )
+      })
+    }
+
     const res = {
       accountAddr: accounts[index].addr,
       nonce: !isSmartAccount(accounts[index]) ? eoaNonces[accounts[index].addr] : accResult.nonce,
@@ -82,7 +97,8 @@ export async function getAccountState(
       ),
       currentBlock: accResult.currentBlock,
       deployError:
-        accounts[index].associatedKeys.length > 0 && accResult.associatedKeyPrivileges.length === 0
+        accounts[index].associatedKeys.length > 0 && accResult.associatedKeyPrivileges.length === 0,
+      isSmarterEoa
     }
 
     return res

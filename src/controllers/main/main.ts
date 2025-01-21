@@ -773,7 +773,11 @@ export class MainController extends EventEmitter {
     }
 
     await this.activity.addSignedMessage(signedMessage, signedMessage.accountAddr)
-    await this.resolveUserRequest({ hash: signedMessage.signature }, signedMessage.fromActionId)
+
+    // no need to await this, the app will update by itself accordingly
+    this.accounts.update({ authorization: signedMessage })
+
+    this.resolveUserRequest({ hash: signedMessage.signature }, signedMessage.fromActionId)
 
     await this.#notificationManager.create({
       title: 'Done!',

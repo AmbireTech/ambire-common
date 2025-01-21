@@ -43,6 +43,7 @@ export interface AccountOnchainState {
   isErc4337Nonce: boolean
   isV2: boolean
   currentBlock: bigint
+  isSmarterEoa: boolean
 }
 
 export type AccountStates = {

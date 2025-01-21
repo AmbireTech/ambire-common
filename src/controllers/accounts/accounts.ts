@@ -8,6 +8,7 @@ import {
   migrateAccountPreferencesToAccounts
 } from '../../libs/account/account'
 import { getAccountState } from '../../libs/accountState/accountState'
+import { InternalSignedMessages, SignedMessage } from '../activity/types'
 import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter'
 import { NetworksController } from '../networks/networks'
 import { ProvidersController } from '../providers/providers'
@@ -39,6 +40,9 @@ export class AccountsController extends EventEmitter {
   // Holds the initial load promise, so that one can wait until it completes
   initialLoadPromise: Promise<void>
 
+  // all SignedMessage type 7702-authorization the user has signed
+  #authorizations: InternalSignedMessages
+
   constructor(
     storage: Storage,
     providers: ProvidersController,
@@ -55,14 +59,16 @@ export class AccountsController extends EventEmitter {
 
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.initialLoadPromise = this.#load()
+    this.#authorizations = {}
   }
 
   async #load() {
     await this.#networks.initialLoadPromise
     await this.#providers.initialLoadPromise
-    const [accounts, accountPreferences] = await Promise.all([
+    const [accounts, accountPreferences, storageSignedMessages] = await Promise.all([
       this.#storage.get('accounts', []),
-      this.#storage.get('accountPreferences', undefined)
+      this.#storage.get('accountPreferences', undefined),
+      this.#storage.get('signedMessages', {})
     ])
     if (accountPreferences) {
       this.accounts = getUniqueAccountsArray(
@@ -74,10 +80,38 @@ export class AccountsController extends EventEmitter {
       this.accounts = getUniqueAccountsArray(accounts)
     }
 
+    // add all the authorizations the user has signed
+    const signedMessages = storageSignedMessages as InternalSignedMessages
+    this.accounts.forEach((acc) => {
+      if (!signedMessages[acc.addr] || signedMessages[acc.addr].length === 0) return
+
+      this.#authorizations[acc.addr] = signedMessages[acc.addr].filter(
+        (msg) => msg.content.kind === 'authorization-7702'
+      )
+    })
+
     // Emit an update before updating account states as the first state update may take some time
     this.emitUpdate()
     // Don't await this. Networks should update one by one
     this.#updateAccountStates(this.accounts)
+  }
+
+  update({ authorization }: { authorization: SignedMessage }) {
+    if (authorization.content.kind !== 'authorization-7702') return
+
+    if (!this.#authorizations[authorization.accountAddr])
+      this.#authorizations[authorization.accountAddr] = []
+    this.#authorizations[authorization.accountAddr].push(authorization)
+
+    // update the account state only for the account that signed the message
+    // and only for the networks the messages has been signed on
+    // unless chainId is 0 (no network selected)
+    // eslint-disable-next-line @typescript-eslint/no-floating-promises
+    this.#updateAccountStates(
+      this.accounts.filter((acc) => acc.addr === authorization.accountAddr),
+      'latest',
+      authorization.content.chainId !== 0n ? [authorization.networkId] : []
+    )
   }
 
   async updateAccountStates(blockTag: string | number = 'latest', networks: NetworkId[] = []) {
@@ -122,6 +156,7 @@ export class AccountsController extends EventEmitter {
             this.#providers.providers[network.id],
             network,
             accounts,
+            this.#authorizations,
             blockTag
           )
 
@@ -191,6 +226,7 @@ export class AccountsController extends EventEmitter {
     this.accounts = this.accounts.filter((acc) => acc.addr !== address)
 
     delete this.accountStates[address]
+    if (this.#authorizations[address]) delete this.#authorizations[address]
     this.#storage.set('accounts', this.accounts)
     this.emitUpdate()
   }

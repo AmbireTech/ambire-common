@@ -13,7 +13,8 @@ import { AccountsController } from '../accounts/accounts'
 import { NetworksController } from '../networks/networks'
 import { ProvidersController } from '../providers/providers'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
-import { ActivityController, SignedMessage } from './activity'
+import { ActivityController } from './activity'
+import { SignedMessage } from './types'
 
 const INIT_PARAMS = {
   account: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
@@ -637,7 +638,10 @@ describe('Activity Controller ', () => {
         await controller.addAccountOp(ao)
       }
 
-      await controller.filterAccountsOps(sessionId, INIT_PARAMS, { fromPage: 0, itemsPerPage: 1000 })
+      await controller.filterAccountsOps(sessionId, INIT_PARAMS, {
+        fromPage: 0,
+        itemsPerPage: 1000
+      })
       const controllerAccountsOps = controller.accountsOps
       expect(controllerAccountsOps[sessionId].result.itemsTotal).toEqual(1000)
       // newest added item will be added to the beginning of the array
@@ -733,7 +737,10 @@ describe('Activity Controller ', () => {
         await controller.addSignedMessage(sm, '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5')
       }
 
-      await controller.filterSignedMessages(sessionId, INIT_PARAMS, { fromPage: 0, itemsPerPage: 1000 })
+      await controller.filterSignedMessages(sessionId, INIT_PARAMS, {
+        fromPage: 0,
+        itemsPerPage: 1000
+      })
       const controllerSignedMessages = controller.signedMessages
 
       expect(controllerSignedMessages[sessionId].result.itemsTotal).toEqual(1000)
