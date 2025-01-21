@@ -23,24 +23,6 @@ describe('stkWallet', () => {
       method: 'hardhat_reset',
       params: [
         {
-          networks: {
-            hardhat: {
-              forking: {
-                url: 'https://invictus.ambire.com/ethereum'
-                // blockNumber: 12345678 // Optional
-              }
-            }
-          }
-        }
-      ]
-    })
-  })
-
-  beforeEach('successfully deploys the ambire account', async () => {
-    await network.provider.request({
-      method: 'hardhat_reset',
-      params: [
-        {
           forking: {
             jsonRpcUrl: 'https://invictus.ambire.com/ethereum',
             blockNumber: 14390000
@@ -48,6 +30,9 @@ describe('stkWallet', () => {
         }
       ]
     })
+  })
+
+  beforeEach('Use fork of mainnet', async () => {
     ;[signer] = await ethers.getSigners()
 
     const slot = solidityPackedKeccak256(['uint256', 'uint256'], [signer.address, 1])
