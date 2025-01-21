@@ -362,7 +362,9 @@ export class SwapAndBridgeController extends EventEmitter {
     }
 
     this.sessionIds.push(sessionId)
-    await this.#socketAPI.updateHealth()
+    // do not await the health status check to prevent UI freeze while fetching
+    // eslint-disable-next-line @typescript-eslint/no-floating-promises
+    this.#socketAPI.updateHealth()
     this.updatePortfolioTokenList(this.#selectedAccount.portfolio.tokens)
     this.isTokenListLoading = false
     // Do not await on purpose as it's not critical for the controller state to be ready
@@ -409,6 +411,10 @@ export class SwapAndBridgeController extends EventEmitter {
     this.sessionIds = this.sessionIds.filter((id) => id !== sessionId)
     if (!this.sessionIds.length) {
       this.resetForm(true)
+      // Reset health to prevent the error state from briefly flashing
+      // before the next health check resolves when the Swap & Bridge
+      // screen is opened after a some time
+      this.#socketAPI.resetHealth()
     }
   }
 
