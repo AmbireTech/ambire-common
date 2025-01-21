@@ -36,7 +36,9 @@ import {
 } from '../../libs/swapAndBridge/swapAndBridge'
 import { getSanitizedAmount } from '../../libs/transfer/amount'
 import { normalizeIncomingSocketToken, SocketAPI } from '../../services/socket/api'
+import { ZERO_ADDRESS } from '../../services/socket/constants'
 import { validateSendTransferAmount } from '../../services/validations/validate'
+import formatDecimals from '../../utils/formatDecimals/formatDecimals'
 import { convertTokenPriceToBigInt } from '../../utils/numbers/formatters'
 import wait from '../../utils/wait'
 import { AccountOpAction, ActionsController } from '../actions/actions'
@@ -848,12 +850,17 @@ export class SwapAndBridgeController extends EventEmitter {
 
               if (!bridgeStep) return route
               if (bridgeStep.protocolFees.amount === '0') return route
-              if (!PROTOCOLS_WITH_CONTRACT_FEE_IN_NATIVE.includes(bridgeStep.protocol.name))
-                return route
 
               const normalizedProtocolFeeToken = normalizeIncomingSocketToken(
                 bridgeStep.protocolFees.asset
               )
+              const doesProtocolRequireExtraContractFeeInNative =
+                PROTOCOLS_WITH_CONTRACT_FEE_IN_NATIVE.includes(bridgeStep.protocol.name) &&
+                // When other tokens than the native ones are being bridged,
+                // Socket API takes the fee directly from the "From" amount.
+                normalizedProtocolFeeToken.address === ZERO_ADDRESS
+              if (!doesProtocolRequireExtraContractFeeInNative) return route
+
               const protocolFeeTokenNetwork = this.#networks.networks.find(
                 (n) => Number(n.chainId) === normalizedProtocolFeeToken.chainId
               )!
@@ -868,16 +875,36 @@ export class SwapAndBridgeController extends EventEmitter {
                 )
               })
 
-              // Convert to BigInt by scaling it to 18 decimal places for accurate comparison
-              const fromAmountBigInt = BigInt(this.fromAmount) * BigInt(10 ** 18)
-              const tokenToPayFeeWithBitInt = tokenToPayFeeWith
-                ? getTokenAmount(tokenToPayFeeWith)
+              const protocolFeeTokenDecimals = bridgeStep.protocolFees.asset.decimals
+              const portfolioTokenToPayFeeWithDecimals = tokenToPayFeeWith
+                ? tokenToPayFeeWith.decimals
+                : protocolFeeTokenDecimals
+              const fromAmountNumber = Number(this.fromAmount)
+              const fromAmountScaledToTokenToPayFeeWithDecimals = BigInt(
+                Math.round(fromAmountNumber * 10 ** portfolioTokenToPayFeeWithDecimals)
+              )
+
+              const tokenToPayFeeWithScaledToPortfolioTokenToPayFeeWithDecimals = tokenToPayFeeWith
+                ? // Scale tokenToPayFeeWith to the same decimals as portfolioTokenToPayFeeWithDecimals
+                  tokenToPayFeeWith.amount *
+                  BigInt(10 ** (protocolFeeTokenDecimals - portfolioTokenToPayFeeWithDecimals))
                 : BigInt(0)
-              const availableAfterSubtraction = isTokenToPayFeeWithTheSameAsFromToken
-                ? tokenToPayFeeWithBitInt - fromAmountBigInt
-                : tokenToPayFeeWithBitInt
+
+              const availableAfterSubtractionScaledToPortfolioTokenToPayFeeWithDecimals =
+                isTokenToPayFeeWithTheSameAsFromToken
+                  ? tokenToPayFeeWithScaledToPortfolioTokenToPayFeeWithDecimals -
+                    fromAmountScaledToTokenToPayFeeWithDecimals
+                  : tokenToPayFeeWithScaledToPortfolioTokenToPayFeeWithDecimals
+
+              const protocolFeesAmountScaledToPortfolioTokenToPayFeeWithDecimals = BigInt(
+                Math.round(
+                  Number(bridgeStep.protocolFees.amount) *
+                    10 ** (portfolioTokenToPayFeeWithDecimals - protocolFeeTokenDecimals)
+                )
+              )
               const hasEnoughAmountToPayFee =
-                availableAfterSubtraction >= BigInt(bridgeStep.protocolFees.amount)
+                availableAfterSubtractionScaledToPortfolioTokenToPayFeeWithDecimals >=
+                protocolFeesAmountScaledToPortfolioTokenToPayFeeWithDecimals
 
               if (!hasEnoughAmountToPayFee) {
                 const protocolName = bridgeStep.protocol.displayName
@@ -887,10 +914,14 @@ export class SwapAndBridgeController extends EventEmitter {
                   bridgeStep.protocolFees.amount,
                   bridgeStep.protocolFees.asset.decimals
                 )
+                const insufficientAssetAmountInUsd = formatDecimals(
+                  bridgeStep.protocolFees.feesInUsd,
+                  'value'
+                )
 
                 // Trick to show the error message on the UI, as the API doesn't handle this
                 // eslint-disable-next-line no-param-reassign
-                route.errorMessage = `Insufficient ${insufficientTokenSymbol} on ${insufficientTokenNetwork}. You need ${insufficientAssetAmount} ${insufficientTokenSymbol} on ${insufficientTokenNetwork} to cover the ${protocolName} protocol fee for this route.`
+                route.errorMessage = `Insufficient ${insufficientTokenSymbol} on ${insufficientTokenNetwork}. You need ${insufficientAssetAmount} ${insufficientTokenSymbol} (${insufficientAssetAmountInUsd}) on ${insufficientTokenNetwork} to cover the ${protocolName} protocol fee for this route.`
               }
 
               return route
