@@ -9,6 +9,14 @@ interface IXWallet {
   function transfer(address to, uint256 amount) external returns (bool);
 
   function transferFrom(address from, address to, uint256 amount) external returns (bool);
+
+  function enter(uint256 amount) external;
+}
+
+interface IWallet {
+  function transferFrom(address from, address to, uint256 amount) external returns (bool);
+
+  function approve(address, uint) external;
 }
 
 contract stkWALLET {
@@ -20,6 +28,7 @@ contract stkWALLET {
 
   // Immutables
   IXWallet xWallet;
+  IWallet wallet;
 
   // Mutable variables
   mapping(address => uint256) public shares;
@@ -75,21 +84,24 @@ contract stkWALLET {
     return allowed[owner][spender];
   }
 
-  constructor(IXWallet token) {
-    xWallet = token;
+  constructor(IWallet _wallet, IXWallet _xWallet) {
+    wallet = _wallet;
+    xWallet = _xWallet;
   }
-
-  // NTE: no need to implement entering/exiting with $WALLET, we can just use wrap/unwrap
 
   // convert xWALLET to stkWALLET
   function wrapAll() external {
     wrap(xWallet.balanceOf(msg.sender));
   }
 
+  function innerMintTo(address to, uint shareAmount) internal {
+    shares[to] += shareAmount;
+    emit Transfer(address(0), to, (shareAmount * xWallet.shareValue()) / 1e18);
+  }
+
   function wrap(uint256 shareAmount) public {
-    shares[msg.sender] += shareAmount;
     require(xWallet.transferFrom(msg.sender, address(this), shareAmount));
-    emit Transfer(address(0), msg.sender, (shareAmount * xWallet.shareValue()) / 1e18);
+    innerMintTo(msg.sender, shareAmount);
   }
 
   // this is used to trigger unstaking
@@ -97,5 +109,17 @@ contract stkWALLET {
     shares[msg.sender] -= shareAmount;
     require(xWallet.transfer(msg.sender, shareAmount));
     emit Transfer(msg.sender, address(0), (shareAmount * xWallet.shareValue()) / 1e18);
+  }
+
+  // convert WALLET to stkWALLET
+  function stakeAndWrap(uint256 amount) external {
+    require(wallet.transferFrom(msg.sender, address(this), amount));
+    uint256 balanceBefore = xWallet.balanceOf(address(this));
+    wallet.approve(address(xWallet), amount);
+    xWallet.enter(amount);
+    uint256 balanceAfter = xWallet.balanceOf(address(this));
+
+    require(balanceAfter > balanceBefore);
+    innerMintTo(msg.sender, balanceAfter - balanceBefore);
   }
 }
