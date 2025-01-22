@@ -211,13 +211,6 @@ export interface NetworkSimulatedAccountOp {
   [networkId: NetworkId]: AccountOp
 }
 
-export interface TokenAmount {
-  latestAmount: bigint
-  pendingAmount: bigint
-  address: string
-  networkId: string
-}
-
 export type PendingAmounts = {
   isPending: boolean
   pendingBalance: bigint

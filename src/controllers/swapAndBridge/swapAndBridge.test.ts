@@ -7,9 +7,11 @@ import { produceMemoryStore } from '../../../test/helpers'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { networks } from '../../consts/networks'
 import { Storage } from '../../interfaces/storage'
+import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { getRpcProvider } from '../../services/provider'
 import { AccountsController } from '../accounts/accounts'
 import { ActionsController } from '../actions/actions'
+import { ActivityController } from '../activity/activity'
 import { NetworksController } from '../networks/networks'
 import { ProvidersController } from '../providers/providers'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
@@ -24,7 +26,7 @@ const windowManager = {
   focus: () => Promise.resolve(),
   open: () => {
     windowId++
-    return Promise.resolve(windowId)
+    return Promise.resolve({ id: windowId, top: 0, left: 0, width: 100, height: 100 })
   },
   remove: () => {
     event.emit('windowRemoved', windowId)
@@ -62,6 +64,7 @@ const accountsCtrl = new AccountsController(
   providersCtrl,
   networksCtrl,
   () => {},
+  () => {},
   () => {}
 )
 const selectedAccountCtrl = new SelectedAccountController({ storage, accounts: accountsCtrl })
@@ -72,6 +75,19 @@ const actionsCtrl = new ActionsController({
   notificationManager,
   onActionWindowClose: () => {}
 })
+
+const callRelayer = relayerCall.bind({ url: '', fetch })
+
+const activityCtrl = new ActivityController(
+  storage,
+  fetch,
+  callRelayer,
+  accountsCtrl,
+  selectedAccountCtrl,
+  providersCtrl,
+  networksCtrl,
+  () => Promise.resolve()
+)
 
 const socketAPIMock = new SocketAPIMock({ fetch, apiKey: '' })
 
@@ -101,6 +117,7 @@ describe('SwapAndBridge Controller', () => {
     swapAndBridgeController = new SwapAndBridgeController({
       selectedAccount: selectedAccountCtrl,
       networks: networksCtrl,
+      activity: activityCtrl,
       storage,
       socketAPI: socketAPIMock as any,
       actions: actionsCtrl

@@ -15,7 +15,8 @@ import {
   SocketAPIQuote,
   SocketAPIRoute,
   SocketAPISendTransactionRequest,
-  SocketAPIToken
+  SocketAPIToken,
+  SwapAndBridgeToToken
 } from '../../interfaces/swapAndBridge'
 import { isSmartAccount } from '../../libs/account/account'
 import { AccountOpStatus } from '../../libs/accountOp/accountOp'
@@ -28,16 +29,20 @@ import {
   convertPortfolioTokenToSocketAPIToken,
   getActiveRoutesForAccount,
   getIsBridgeTxn,
+  getIsTokenEligibleForSwapAndBridge,
   getQuoteRouteSteps,
   sortPortfolioTokenList,
   sortTokenListResponse
 } from '../../libs/swapAndBridge/swapAndBridge'
 import { getSanitizedAmount } from '../../libs/transfer/amount'
 import { normalizeIncomingSocketToken, SocketAPI } from '../../services/socket/api'
+import { ZERO_ADDRESS } from '../../services/socket/constants'
 import { validateSendTransferAmount } from '../../services/validations/validate'
+import formatDecimals from '../../utils/formatDecimals/formatDecimals'
 import { convertTokenPriceToBigInt } from '../../utils/numbers/formatters'
 import wait from '../../utils/wait'
 import { AccountOpAction, ActionsController } from '../actions/actions'
+import { ActivityController } from '../activity/activity'
 import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter'
 import { NetworksController } from '../networks/networks'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
@@ -87,6 +92,8 @@ export class SwapAndBridgeController extends EventEmitter {
 
   #actions: ActionsController
 
+  #activity: ActivityController
+
   #storage: Storage
 
   #socketAPI: SocketAPI
@@ -128,7 +135,7 @@ export class SwapAndBridgeController extends EventEmitter {
 
   toChainId: number | null = 1
 
-  toSelectedToken: SocketAPIToken | null = null
+  toSelectedToken: SwapAndBridgeToToken | null = null
 
   quote: SocketAPIQuote | null = null
 
@@ -146,7 +153,7 @@ export class SwapAndBridgeController extends EventEmitter {
    */
   #cachedToTokenLists: CachedToTokenLists = {}
 
-  #toTokenList: SocketAPIToken[] = []
+  #toTokenList: SwapAndBridgeToToken[] = []
 
   /**
    * Similar to the `#cachedToTokenLists`, this helps in avoiding repeated API
@@ -164,12 +171,14 @@ export class SwapAndBridgeController extends EventEmitter {
   constructor({
     selectedAccount,
     networks,
+    activity,
     socketAPI,
     storage,
     actions
   }: {
     selectedAccount: SelectedAccountController
     networks: NetworksController
+    activity: ActivityController
     socketAPI: SocketAPI
     storage: Storage
     actions: ActionsController
@@ -177,12 +186,20 @@ export class SwapAndBridgeController extends EventEmitter {
     super()
     this.#selectedAccount = selectedAccount
     this.#networks = networks
+    this.#activity = activity
     this.#socketAPI = socketAPI
     this.#storage = storage
     this.#actions = actions
 
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.#initialLoadPromise = this.#load()
+  }
+
+  emitUpdate() {
+    // Override emitUpdate to not emit updates if there are no active sessions
+    if (!this.sessionIds.length) return
+
+    super.emitUpdate()
   }
 
   async #load() {
@@ -205,33 +222,38 @@ export class SwapAndBridgeController extends EventEmitter {
     this.emitUpdate()
   }
 
-  get maxFromAmount(): string {
-    if (
-      !this.fromSelectedToken ||
-      getTokenAmount(this.fromSelectedToken) === 0n ||
-      !this.fromSelectedToken.decimals
+  // The token in portfolio is the source of truth for the amount, it updates
+  // on every balance (pending or anything) change.
+  #getFromSelectedTokenInPortfolio = () =>
+    this.portfolioTokenList.find(
+      (t) =>
+        t.address === this.fromSelectedToken?.address &&
+        t.networkId === this.fromSelectedToken?.networkId &&
+        getIsTokenEligibleForSwapAndBridge(t)
     )
-      return '0'
 
-    return formatUnits(getTokenAmount(this.fromSelectedToken), this.fromSelectedToken.decimals)
+  get maxFromAmount(): string {
+    const tokenRef = this.#getFromSelectedTokenInPortfolio() || this.fromSelectedToken
+    if (!tokenRef || getTokenAmount(tokenRef) === 0n || !tokenRef.decimals) return '0'
+
+    return formatUnits(getTokenAmount(tokenRef), tokenRef.decimals)
   }
 
   get maxFromAmountInFiat(): string {
-    if (!this.fromSelectedToken || getTokenAmount(this.fromSelectedToken) === 0n) return '0'
+    const tokenRef = this.#getFromSelectedTokenInPortfolio() || this.fromSelectedToken
+    if (!tokenRef || getTokenAmount(tokenRef) === 0n) return '0'
 
-    const tokenPrice = this.fromSelectedToken?.priceIn.find(
-      (p) => p.baseCurrency === HARD_CODED_CURRENCY
-    )?.price
+    const tokenPrice = tokenRef?.priceIn.find((p) => p.baseCurrency === HARD_CODED_CURRENCY)?.price
     if (!tokenPrice || !Number(this.maxFromAmount)) return '0'
 
-    const maxAmount = getTokenAmount(this.fromSelectedToken)
+    const maxAmount = getTokenAmount(tokenRef)
     const { tokenPriceBigInt, tokenPriceDecimals } = convertTokenPriceToBigInt(tokenPrice)
 
     // Multiply the max amount by the token price. The calculation is done in big int to avoid precision loss
     return formatUnits(
       BigInt(maxAmount) * tokenPriceBigInt,
       // Shift the decimal point by the number of decimals in the token price
-      this.fromSelectedToken.decimals + tokenPriceDecimals
+      tokenRef.decimals + tokenPriceDecimals
     )
   }
 
@@ -248,7 +270,8 @@ export class SwapAndBridgeController extends EventEmitter {
   get formStatus() {
     if (this.isFormEmpty) return SwapAndBridgeFormStatus.Empty
     if (this.validateFromAmount.message) return SwapAndBridgeFormStatus.Invalid
-    if (this.updateQuoteStatus !== 'INITIAL') return SwapAndBridgeFormStatus.FetchingRoutes
+    if (this.updateQuoteStatus !== 'INITIAL' && !this.quote)
+      return SwapAndBridgeFormStatus.FetchingRoutes
     if (!this.quote?.selectedRoute) return SwapAndBridgeFormStatus.NoRoutesFound
 
     if (this.quote?.selectedRoute?.errorMessage) return SwapAndBridgeFormStatus.InvalidRouteSelected
@@ -333,20 +356,27 @@ export class SwapAndBridgeController extends EventEmitter {
           delete r.error
         }
       })
-      // update the activeRoute.route prop for the new session
-      this.activeRoutes.forEach((r) => {
-        // eslint-disable-next-line @typescript-eslint/no-floating-promises
-        this.updateActiveRoute(r.activeRouteId, undefined, true)
-      })
+      if (this.activeRoutes.length) {
+        // Otherwise there may be an emitUpdate with [] tokens
+        this.isTokenListLoading = true
+
+        // update the activeRoute.route prop for the new session
+        this.activeRoutes.forEach((r) => {
+          // eslint-disable-next-line @typescript-eslint/no-floating-promises
+          this.updateActiveRoute(r.activeRouteId, undefined, true)
+        })
+      }
     }
 
     this.sessionIds.push(sessionId)
-    await this.#socketAPI.updateHealth()
+    // do not await the health status check to prevent UI freeze while fetching
+    // eslint-disable-next-line @typescript-eslint/no-floating-promises
+    this.#socketAPI.updateHealth()
     this.updatePortfolioTokenList(this.#selectedAccount.portfolio.tokens)
+    this.isTokenListLoading = false
     // Do not await on purpose as it's not critical for the controller state to be ready
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.#fetchSupportedChainsIfNeeded()
-
     this.emitUpdate()
   }
 
@@ -386,8 +416,13 @@ export class SwapAndBridgeController extends EventEmitter {
 
   unloadScreen(sessionId: string) {
     this.sessionIds = this.sessionIds.filter((id) => id !== sessionId)
-    if (!this.sessionIds.length) this.resetForm()
-    this.emitUpdate()
+    if (!this.sessionIds.length) {
+      this.resetForm(true)
+      // Reset health to prevent the error state from briefly flashing
+      // before the next health check resolves when the Swap & Bridge
+      // screen is opened after a some time
+      this.#socketAPI.resetHealth()
+    }
   }
 
   updateForm(props: {
@@ -543,12 +578,7 @@ export class SwapAndBridgeController extends EventEmitter {
   }
 
   updatePortfolioTokenList(nextPortfolioTokenList: TokenResult[]) {
-    const tokens =
-      nextPortfolioTokenList.filter((token) => {
-        const hasAmount = Number(getTokenAmount(token)) > 0
-
-        return hasAmount && !token.flags.onGasTank && !token.flags.rewardsType
-      }) || []
+    const tokens = nextPortfolioTokenList.filter(getIsTokenEligibleForSwapAndBridge)
     this.portfolioTokenList = sortPortfolioTokenList(
       // Filtering out hidden tokens here means: 1) They won't be displayed in
       // the "From" token list (`this.portfolioTokenList`) and 2) They won't be
@@ -664,7 +694,7 @@ export class SwapAndBridgeController extends EventEmitter {
     this.emitUpdate()
   }
 
-  get toTokenList(): SocketAPIToken[] {
+  get toTokenList(): SwapAndBridgeToToken[] {
     const isSwapping = this.fromChainId === this.toChainId
     if (isSwapping) {
       // Swaps between same "from" and "to" tokens are not feasible, filter them out
@@ -681,7 +711,7 @@ export class SwapAndBridgeController extends EventEmitter {
     const isAlreadyInTheList = this.#toTokenList.some((t) => t.address === address)
     if (isAlreadyInTheList) return
 
-    let token
+    let token: SocketAPIToken | null
     try {
       token = await this.#socketAPI.getToken({ address, chainId: this.toChainId })
 
@@ -702,7 +732,8 @@ export class SwapAndBridgeController extends EventEmitter {
         'Network configuration mismatch detected. Please try again later or contact support.'
       )
 
-    const nextTokenList = [...this.#toTokenList, token]
+    const nextTokenList: SwapAndBridgeToToken[] = [...this.#toTokenList, token]
+
     this.#toTokenList = sortTokenListResponse(
       nextTokenList,
       this.portfolioTokenList.filter((t) => t.networkId === toTokenNetwork.id)
@@ -824,12 +855,17 @@ export class SwapAndBridgeController extends EventEmitter {
 
               if (!bridgeStep) return route
               if (bridgeStep.protocolFees.amount === '0') return route
-              if (!PROTOCOLS_WITH_CONTRACT_FEE_IN_NATIVE.includes(bridgeStep.protocol.name))
-                return route
 
               const normalizedProtocolFeeToken = normalizeIncomingSocketToken(
                 bridgeStep.protocolFees.asset
               )
+              const doesProtocolRequireExtraContractFeeInNative =
+                PROTOCOLS_WITH_CONTRACT_FEE_IN_NATIVE.includes(bridgeStep.protocol.name) &&
+                // When other tokens than the native ones are being bridged,
+                // Socket API takes the fee directly from the "From" amount.
+                normalizedProtocolFeeToken.address === ZERO_ADDRESS
+              if (!doesProtocolRequireExtraContractFeeInNative) return route
+
               const protocolFeeTokenNetwork = this.#networks.networks.find(
                 (n) => Number(n.chainId) === normalizedProtocolFeeToken.chainId
               )!
@@ -844,16 +880,36 @@ export class SwapAndBridgeController extends EventEmitter {
                 )
               })
 
-              // Convert to BigInt by scaling it to 18 decimal places for accurate comparison
-              const fromAmountBigInt = BigInt(this.fromAmount) * BigInt(10 ** 18)
-              const tokenToPayFeeWithBitInt = tokenToPayFeeWith
-                ? getTokenAmount(tokenToPayFeeWith)
+              const protocolFeeTokenDecimals = bridgeStep.protocolFees.asset.decimals
+              const portfolioTokenToPayFeeWithDecimals = tokenToPayFeeWith
+                ? tokenToPayFeeWith.decimals
+                : protocolFeeTokenDecimals
+              const fromAmountNumber = Number(this.fromAmount)
+              const fromAmountScaledToTokenToPayFeeWithDecimals = BigInt(
+                Math.round(fromAmountNumber * 10 ** portfolioTokenToPayFeeWithDecimals)
+              )
+
+              const tokenToPayFeeWithScaledToPortfolioTokenToPayFeeWithDecimals = tokenToPayFeeWith
+                ? // Scale tokenToPayFeeWith to the same decimals as portfolioTokenToPayFeeWithDecimals
+                  tokenToPayFeeWith.amount *
+                  BigInt(10 ** (protocolFeeTokenDecimals - portfolioTokenToPayFeeWithDecimals))
                 : BigInt(0)
-              const availableAfterSubtraction = isTokenToPayFeeWithTheSameAsFromToken
-                ? tokenToPayFeeWithBitInt - fromAmountBigInt
-                : tokenToPayFeeWithBitInt
+
+              const availableAfterSubtractionScaledToPortfolioTokenToPayFeeWithDecimals =
+                isTokenToPayFeeWithTheSameAsFromToken
+                  ? tokenToPayFeeWithScaledToPortfolioTokenToPayFeeWithDecimals -
+                    fromAmountScaledToTokenToPayFeeWithDecimals
+                  : tokenToPayFeeWithScaledToPortfolioTokenToPayFeeWithDecimals
+
+              const protocolFeesAmountScaledToPortfolioTokenToPayFeeWithDecimals = BigInt(
+                Math.round(
+                  Number(bridgeStep.protocolFees.amount) *
+                    10 ** (portfolioTokenToPayFeeWithDecimals - protocolFeeTokenDecimals)
+                )
+              )
               const hasEnoughAmountToPayFee =
-                availableAfterSubtraction >= BigInt(bridgeStep.protocolFees.amount)
+                availableAfterSubtractionScaledToPortfolioTokenToPayFeeWithDecimals >=
+                protocolFeesAmountScaledToPortfolioTokenToPayFeeWithDecimals
 
               if (!hasEnoughAmountToPayFee) {
                 const protocolName = bridgeStep.protocol.displayName
@@ -863,10 +919,14 @@ export class SwapAndBridgeController extends EventEmitter {
                   bridgeStep.protocolFees.amount,
                   bridgeStep.protocolFees.asset.decimals
                 )
+                const insufficientAssetAmountInUsd = formatDecimals(
+                  bridgeStep.protocolFees.feesInUsd,
+                  'value'
+                )
 
                 // Trick to show the error message on the UI, as the API doesn't handle this
                 // eslint-disable-next-line no-param-reassign
-                route.errorMessage = `Insufficient ${insufficientTokenSymbol} on ${insufficientTokenNetwork}. You need ${insufficientAssetAmount} ${insufficientTokenSymbol} on ${insufficientTokenNetwork} to cover the ${protocolName} protocol fee for this route.`
+                route.errorMessage = `Insufficient ${insufficientTokenSymbol} on ${insufficientTokenNetwork}. You need ${insufficientAssetAmount} ${insufficientTokenSymbol} (${insufficientAssetAmountInUsd}) on ${insufficientTokenNetwork} to cover the ${protocolName} protocol fee for this route.`
               }
 
               return route
@@ -947,12 +1007,17 @@ export class SwapAndBridgeController extends EventEmitter {
       this.#updateQuoteTimeout = undefined
     }
 
-    if (!options.skipStatusUpdate) {
+    if (!options.skipStatusUpdate && !this.quote) {
       this.updateQuoteStatus = 'LOADING'
       this.emitUpdate()
     }
 
     this.#updateQuoteTimeout = setTimeout(async () => {
+      if (!options.skipStatusUpdate && !!this.quote) {
+        this.updateQuoteStatus = 'LOADING'
+        this.emitUpdate()
+      }
+
       await updateQuoteFunction()
 
       if (quoteId !== this.#updateQuoteId) return
@@ -983,6 +1048,14 @@ export class SwapAndBridgeController extends EventEmitter {
     const fetchAndUpdateRoute = async (activeRoute: ActiveRoute) => {
       let status: 'ready' | 'completed' | null = null
       let errorMessage: string | null = null
+      const broadcastedButNotConfirmed = this.#activity.broadcastedButNotConfirmed.find((op) =>
+        op.calls.some((c) => c.fromUserRequestId === activeRoute.activeRouteId)
+      )
+
+      // call getRouteStatus only after the transaction has processed
+      if (broadcastedButNotConfirmed) return
+      if (activeRoute.routeStatus === 'completed') return
+
       try {
         const res = await this.#socketAPI.getRouteStatus({
           activeRouteId: activeRoute.activeRouteId,

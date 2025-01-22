@@ -10,6 +10,7 @@ import { suppressConsoleBeforeEach } from '../../../test/helpers/console'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
 import { BIP44_STANDARD_DERIVATION_TEMPLATE } from '../../consts/derivation'
+import { networks } from '../../consts/networks'
 import { SelectedAccountForImport } from '../../interfaces/account'
 import { UserRequest } from '../../interfaces/userRequest'
 import { InnerCallFailureError } from '../../libs/errorDecoder/customErrors'
@@ -24,10 +25,10 @@ import { MainController } from './main'
 const socketApiKey = '72a5b4b0-e727-48be-8aa1-5da9d62fe635'
 
 const windowManager = {
-  focus: () => Promise.resolve(),
-  open: () => Promise.resolve(0),
-  remove: () => Promise.resolve(),
   event: new EventEmitter(),
+  focus: () => Promise.resolve(),
+  open: () => Promise.resolve({ id: 0, top: 0, left: 0, width: 100, height: 100 }),
+  remove: () => Promise.resolve(),
   sendWindowToastMessage: () => {},
   sendWindowUiMessage: () => {}
 }
@@ -432,7 +433,11 @@ describe('Main Controller ', () => {
     })
     it('Error that should be humanized by getHumanReadableBroadcastError', async () => {
       const { controllerAnyType } = prepareTest()
-      const error = new InnerCallFailureError('   transfer amount exceeds balance   ')
+      const error = new InnerCallFailureError(
+        '   transfer amount exceeds balance   ',
+        [],
+        networks.find((net) => net.id === 'base')!
+      )
 
       try {
         await controllerAnyType.throwBroadcastAccountOp({
