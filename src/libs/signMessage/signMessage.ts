@@ -22,7 +22,6 @@ import { Hex } from '../../interfaces/hex'
 import { KeystoreSigner } from '../../interfaces/keystore'
 import { Network } from '../../interfaces/network'
 import { TypedMessage } from '../../interfaces/userRequest'
-import { decodeError } from '../errorDecoder'
 import hexStringToUint8Array from '../../utils/hexStringToUint8Array'
 import isSameAddr from '../../utils/isSameAddr'
 import { stripHexPrefix } from '../../utils/stripHexPrefix'
@@ -266,6 +265,7 @@ export async function verifyMessage({
     } catch (e: any) {
       throw Error(
         `Preparing the just signed (standard) message for validation failed. Please try again or contact Ambire support if the issue persists. Error details: ${
+          // TODO: Use the `reason` from the decodeError(e) instead, when this case is better handled in there
           e?.message || 'missing'
         }`
       )
@@ -333,9 +333,10 @@ export async function verifyMessage({
     else if (deploylessRes[0] === false) callResult = '0x00'
     else callResult = deploylessRes[0]
   } catch (e: any) {
-    const decodedError = decodeError(e)
     throw new Error(
-      `Validating the just signed message failed. Please try again or contact Ambire support if the issue persists. Error details: UniversalValidator call failed. ${decodedError.reason}`
+      `Validating the just signed message failed. Please try again or contact Ambire support if the issue persists. Error details: UniversalValidator call failed, more details: ${
+        e?.message || 'missing'
+      }`
     )
   }
 
