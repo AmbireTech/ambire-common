@@ -1,5 +1,3 @@
-import { expect } from '@jest/globals'
-
 import { HumanizerVisualization, IrCall } from './interfaces'
 
 export const compareHumanizerVisualizations = (
