@@ -5,8 +5,7 @@ import { ENTRY_POINT_MARKER, ERC_4337_ENTRYPOINT, MAX_UINT256 } from '../../cons
 import { InternalSignedMessages } from '../../controllers/activity/types'
 import { Account, AccountOnchainState } from '../../interfaces/account'
 import { Network } from '../../interfaces/network'
-import { Authorization } from '../../interfaces/userRequest'
-import { getAccountDeployParams, isSmartAccount } from '../account/account'
+import { getAccountDeployParams, hasAuthorized7702, isSmartAccount } from '../account/account'
 import { fromDescriptor } from '../deployless/deployless'
 
 export async function getAccountState(
@@ -67,16 +66,10 @@ export async function getAccountState(
     )
 
     const account = accounts[index]
-    let isSmarterEoa = false
-    if (accResult.isEOA && authorizations[account.addr]) {
-      isSmarterEoa = !!authorizations[account.addr].find((msg) => {
-        const content = msg.content as Authorization
-        return (
-          (content.chainId === 0n || content.chainId === network.chainId) &&
-          content.nonce === BigInt(eoaNonces[account.addr])
-        )
-      })
-    }
+    const isSmarterEoa =
+      accResult.isEOA && authorizations[account.addr]
+        ? hasAuthorized7702(BigInt(eoaNonces[account.addr]), network, authorizations[account.addr])
+        : false
 
     const res = {
       accountAddr: accounts[index].addr,

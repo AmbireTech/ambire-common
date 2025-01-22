@@ -4,6 +4,7 @@ import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
 import { SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET } from '../../consts/derivation'
 import { SPOOF_SIGTYPE } from '../../consts/signatures'
+import { SignedMessage } from '../../controllers/activity/types'
 import {
   Account,
   AccountId,
@@ -13,6 +14,8 @@ import {
 } from '../../interfaces/account'
 import { KeyIterator } from '../../interfaces/keyIterator'
 import { Key } from '../../interfaces/keystore'
+import { Network } from '../../interfaces/network'
+import { Authorization } from '../../interfaces/userRequest'
 import { DKIM_VALIDATOR_ADDR, getSignerKey, RECOVERY_DEFAULTS } from '../dkim/recovery'
 import { getBytecode } from '../proxyDeploy/bytecode'
 import { PrivLevels } from '../proxyDeploy/deploy'
@@ -323,4 +326,17 @@ export function getUniqueAccountsArray(accounts: Account[]) {
 // has become smarter
 export function canBecomeSmarter(acc: Account, accKeys: Key[]) {
   return !acc.creation && accKeys.find((key) => key.type === 'internal')
+}
+
+export function hasAuthorized7702(
+  accNonce: bigint,
+  network: Network,
+  authorizations: SignedMessage[]
+): boolean {
+  return !!authorizations.find((msg) => {
+    const content = msg.content as Authorization
+    return (
+      (content.chainId === 0n || content.chainId === network.chainId) && content.nonce === accNonce
+    )
+  })
 }
