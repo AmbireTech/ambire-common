@@ -24,7 +24,7 @@ describe('stkWallet', () => {
       params: [
         {
           forking: {
-            jsonRpcUrl: 'https://cloudflare-eth.com',
+            jsonRpcUrl: 'https://eth.llamarpc.com',
             blockNumber: 14390000
           }
         }
