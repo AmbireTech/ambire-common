@@ -22,7 +22,7 @@ const traderJoeModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[])
       return [
         getAction('Swap'),
         getToken(ZeroAddress, call.value),
-        getLabel('for'),
+        getLabel('for at least'),
         getToken(tokenOut, amountOutMin),
         ...getRecipientText(accOp.accountAddr, to),
         getDeadline(deadline)
@@ -35,7 +35,7 @@ const traderJoeModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[])
       const { amountOut, path, to, deadline } = iface.parseTransaction(call)!.args
       const tokenOut = path[2][path[2].length - 1]
       return [
-        getAction('Swap'),
+        getAction('Swap up to'),
         getToken(ZeroAddress, call.value),
         getLabel('for'),
         getToken(tokenOut, amountOut),
@@ -52,7 +52,7 @@ const traderJoeModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[])
       return [
         getAction('Swap'),
         getToken(path[2][0], amountIn),
-        getLabel('for'),
+        getLabel('for at least'),
         getToken(ZeroAddress, amountOutMinNATIVE),
         ...getRecipientText(accOp.accountAddr, to),
         getDeadline(deadline)
@@ -65,7 +65,7 @@ const traderJoeModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[])
       const { amountNATIVEOut, amountInMax, path, to, deadline } =
         iface.parseTransaction(call)!.args
       return [
-        getAction('Swap'),
+        getAction('Swap up to'),
         getToken(path[2][0], amountInMax),
         getLabel('for'),
         getToken(ZeroAddress, amountNATIVEOut),
@@ -81,7 +81,7 @@ const traderJoeModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[])
       return [
         getAction('Swap'),
         getToken(path[2][0], amountIn),
-        getLabel('for'),
+        getLabel('for at least'),
         getToken(path[2][path[2].length - 1], amountOutMin),
         ...getRecipientText(accOp.accountAddr, to),
         getDeadline(deadline)
@@ -93,7 +93,7 @@ const traderJoeModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[])
       // eslint-disable-next-line @typescript-eslint/naming-convention
       const { amountOut, amountInMax, path, to, deadline } = iface.parseTransaction(call)!.args
       return [
-        getAction('Swap'),
+        getAction('Swap up to'),
         getToken(path[2][0], amountInMax),
         getLabel('for'),
         getToken(path[2][path[2].length - 1], amountOut),
