@@ -46,7 +46,10 @@ export const SocketModule: HumanizerCallModule = (accountOp: AccountOp, irCalls:
     'function swapAndBridge(uint32 swapId, bytes swapData, tuple(uint256 toChainId, uint256 slippage, uint256 relayerFee, uint32 dstChainDomain, address receiverAddress, bytes32 metadata, bytes callData, address delegate) connextBridgeData)',
     'function swapAndBridge(uint32 swapId, bytes calldata swapData, tuple (address receiverAddress,address senderAddress,uint256 value,uint256 srcPoolId,uint256 dstPoolId,uint256 minReceivedAmt,uint256 destinationGasLimit,bool isNativeSwapRequired,uint16 stargateDstChainId,uint32 swapId,bytes swapData,bytes32 metadata,bytes destinationPayload) acrossBridgeData) payable',
     'function swapAndBridge(uint32 swapId, bytes swapData, (uint32 dstEid, uint256 minAmountLD, address stargatePoolAddress, bytes destinationPayload, bytes destinationExtraOptions, (uint256 nativeFee, uint256 lzTokenFee) messagingFee, bytes32 metadata, uint256 toChainId, address receiver, bytes swapData, uint32 swapId, bool isNativeSwapRequired) stargateBridgeData) payable',
-    'function swap(address,(address,address,address,address,uint256,uint256,uint256),bytes,bytes)'
+    'function swap(address,(address,address,address,address,uint256,uint256,uint256),bytes,bytes)',
+    'function exec(address,address,uint256,address,bytes)',
+    'function execute((address recipient, address buyToken, uint256 minAmountOut) slippage, bytes[] actions, bytes32) payable returns (bool)',
+    'function uniswapV3SwapTo(address,uint256,uint256,uint256[])'
   ])
   const matcher = {
     [`${
@@ -209,7 +212,8 @@ export const SocketModule: HumanizerCallModule = (accountOp: AccountOp, irCalls:
         'performAction(address fromToken, address toToken, uint256 amount, address receiverAddress, bytes32 metadata, bytes swapExtraData)'
       )?.selector
     }`]: (call: IrCall): IrCall => {
-      const { fromToken, toToken, amount, receiverAddress, swapExtraData, metadata } =
+      // eslint-disable-next-line prefer-const
+      let { fromToken, toToken, amount, receiverAddress, swapExtraData, metadata } =
         iface.parseTransaction(call)!.args
       let outAmount = 0n
       if (
@@ -242,6 +246,21 @@ export const SocketModule: HumanizerCallModule = (accountOp: AccountOp, irCalls:
       ) {
         const params = iface.parseTransaction({ data: swapExtraData })!.args
         outAmount = params[3]
+      } else if (swapExtraData.startsWith(iface.getFunction('exec')?.selector)) {
+        const [, , , , extraData] = iface.parseTransaction({
+          data: swapExtraData
+        })!.args
+        if (extraData.startsWith(iface.getFunction('execute')?.selector)) {
+          const [[, , minAmountOut], ,] = iface.parseTransaction({
+            data: extraData
+          })!.args
+          outAmount = minAmountOut
+        }
+      } else if (swapExtraData.startsWith(iface.getFunction('uniswapV3SwapTo')?.selector)) {
+        const [address, amount1, amount2] = iface.parseTransaction({
+          data: swapExtraData
+        })!.args
+        outAmount = amount2
       }
       return {
         ...call,
