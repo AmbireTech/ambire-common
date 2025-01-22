@@ -234,7 +234,8 @@ export class SwapAndBridgeController extends EventEmitter {
 
   get maxFromAmount(): string {
     const tokenRef = this.#getFromSelectedTokenInPortfolio() || this.fromSelectedToken
-    if (!tokenRef || getTokenAmount(tokenRef) === 0n || !tokenRef.decimals) return '0'
+    if (!tokenRef || getTokenAmount(tokenRef) === 0n || typeof tokenRef.decimals !== 'number')
+      return '0'
 
     return formatUnits(getTokenAmount(tokenRef), tokenRef.decimals)
   }
@@ -460,7 +461,10 @@ export class SwapAndBridgeController extends EventEmitter {
           return
         }
 
-        if (this.fromAmountFieldMode === 'fiat' && this.fromSelectedToken?.decimals) {
+        if (
+          this.fromAmountFieldMode === 'fiat' &&
+          typeof this.fromSelectedToken?.decimals === 'number'
+        ) {
           this.fromAmountInFiat = fromAmount
 
           // Get the number of decimals
