@@ -24,7 +24,7 @@ describe('stkWallet', () => {
       params: [
         {
           forking: {
-            jsonRpcUrl: 'https://docs-demo.quiknode.pro/',
+            jsonRpcUrl: `https://mainnet.infura.io/v3/${process.env.INFURA_API_KEY}`,
             blockNumber: 14390000
           }
         }
