@@ -24,7 +24,7 @@ describe('stkWallet', () => {
       params: [
         {
           forking: {
-            jsonRpcUrl: 'https://invictus.ambire.com/ethereum',
+            jsonRpcUrl: 'https://cloudflare-eth.com',
             blockNumber: 14390000
           }
         }
