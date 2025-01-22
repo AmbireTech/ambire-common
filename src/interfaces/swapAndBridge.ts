@@ -144,6 +144,7 @@ export interface SocketApiBridgeStep {
   protocolFees: {
     amount: string
     asset: SocketAPIToken
+    feesInUsd: number
   }
   bridgeSlippage: number
   toAmount: string

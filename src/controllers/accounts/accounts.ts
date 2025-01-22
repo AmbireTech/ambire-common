@@ -37,6 +37,8 @@ export class AccountsController extends EventEmitter {
 
   #updateProviderIsWorking: (networkId: NetworkId, isWorking: boolean) => void
 
+  #onAccountStateUpdate: () => void
+
   // Holds the initial load promise, so that one can wait until it completes
   initialLoadPromise: Promise<void>
 
@@ -48,7 +50,8 @@ export class AccountsController extends EventEmitter {
     providers: ProvidersController,
     networks: NetworksController,
     onAddAccounts: (accounts: Account[]) => void,
-    updateProviderIsWorking: (networkId: NetworkId, isWorking: boolean) => void
+    updateProviderIsWorking: (networkId: NetworkId, isWorking: boolean) => void,
+    onAccountStateUpdate: () => void
   ) {
     super()
     this.#storage = storage
@@ -56,6 +59,7 @@ export class AccountsController extends EventEmitter {
     this.#networks = networks
     this.#onAddAccounts = onAddAccounts
     this.#updateProviderIsWorking = updateProviderIsWorking
+    this.#onAccountStateUpdate = onAccountStateUpdate
 
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.initialLoadPromise = this.#load()
@@ -179,6 +183,8 @@ export class AccountsController extends EventEmitter {
         this.emitUpdate()
       })
     )
+
+    this.#onAccountStateUpdate()
   }
 
   async addAccounts(accounts: Account[] = []) {
@@ -251,5 +257,20 @@ export class AccountsController extends EventEmitter {
 
     await this.#storage.set('accounts', this.accounts)
     this.emitUpdate()
+  }
+
+  get areAccountStatesLoading() {
+    return (
+      this.statuses.updateAccountState === 'LOADING' ||
+      this.statuses.updateAccountStates === 'LOADING'
+    )
+  }
+
+  toJSON() {
+    return {
+      ...this,
+      ...super.toJSON(),
+      areAccountStatesLoading: this.areAccountStatesLoading
+    }
   }
 }
