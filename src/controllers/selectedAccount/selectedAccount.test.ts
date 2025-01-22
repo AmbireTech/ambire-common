@@ -44,6 +44,7 @@ const accountsCtrl = new AccountsController(
   providersCtrl,
   networksCtrl,
   () => {},
+  () => {},
   () => {}
 )
 
