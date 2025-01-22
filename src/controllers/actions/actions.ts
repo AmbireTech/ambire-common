@@ -113,7 +113,10 @@ export class ActionsController extends EventEmitter {
     this.#onActionWindowClose = onActionWindowClose
 
     this.#windowManager.event.on('windowRemoved', async (winId: number) => {
-      if (winId === this.actionWindow.windowProps?.id) {
+      if (
+        winId === this.actionWindow.windowProps?.id ||
+        (!this.visibleActionsQueue.length && this.currentAction && this.actionWindow.windowProps)
+      ) {
         this.actionWindow.windowProps = null
         this.actionWindow.loaded = false
         this.actionWindow.pendingMessage = null
