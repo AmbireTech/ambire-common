@@ -278,7 +278,7 @@ export const SocketModule: HumanizerCallModule = (accountOp: AccountOp, irCalls:
         fullVisualization: [
           getAction('Swap'),
           getToken(eToNative(fromToken), amount),
-          getLabel('for'),
+          getLabel(outAmount ? 'for at least' : 'for'),
           getToken(eToNative(toToken), outAmount),
           ...getRecipientText(accountOp.accountAddr, receiverAddress)
         ]
