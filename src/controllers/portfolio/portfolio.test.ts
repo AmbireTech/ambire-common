@@ -666,7 +666,7 @@ describe('Portfolio Controller ', () => {
 
     test('To be learned token is returned from portfolio and updated with timestamp in learnedTokens', async () => {
       const { storage, controller } = prepareTest()
-      const ethereum = networks.find((network) => network.id === 'ethereum')!
+      const polygon = networks.find((network) => network.id === 'polygon')!
       // In order to test whether toBeLearned token is passed and persisted in learnedTokens correctly we need to:
       // 1. make sure we pass a token we know is with balance to toBeLearned list.
       // 2. retrieve the token from portfolio and check if it is found.
@@ -676,29 +676,29 @@ describe('Portfolio Controller ', () => {
       // This will work on networks without relayer support so we mock one,
       // otherwise the token will be fetched from the relayer and won't be available for learnedTokens,
       // but will be stored in fromExternalAPI.
-      const clonedEthereum = structuredClone(ethereum)
+      const clonedEthereum = structuredClone(polygon)
       clonedEthereum.hasRelayer = false
 
       await controller.addTokensToBeLearned(
-        ['0xADE00C28244d5CE17D72E40330B1c318cD12B7c3'],
-        'ethereum'
+        ['0xc2132D05D31c914a87C6611C10748AEb04B58e8F'],
+        'polygon'
       )
 
-      await controller.updateSelectedAccount(account.addr, clonedEthereum, undefined, {
+      await controller.updateSelectedAccount(account2.addr, clonedEthereum, undefined, {
         forceUpdate: true
       })
 
       const toBeLearnedToken = controller
-        .getLatestPortfolioState(account.addr)
-        .ethereum?.result?.tokens.find(
+        .getLatestPortfolioState(account2.addr)
+        .polygon?.result?.tokens.find(
           (token) =>
-            token.address === '0xADE00C28244d5CE17D72E40330B1c318cD12B7c3' && token.amount > 0n
+            token.address === '0xc2132D05D31c914a87C6611C10748AEb04B58e8F' && token.amount > 0n
         )
       expect(toBeLearnedToken).toBeTruthy()
 
       const previousHintsStorage = await storage.get('previousHints', {})
       const tokenInLearnedTokens =
-        previousHintsStorage.learnedTokens?.ethereum[toBeLearnedToken!.address]
+        previousHintsStorage.learnedTokens?.polygon[toBeLearnedToken!.address]
 
       expect(tokenInLearnedTokens).toBeTruthy()
     })
