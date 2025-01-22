@@ -13,7 +13,7 @@ import './deployless/IAmbireAccount.sol';
  * is a wallet contract, and any ETH sent to it is not lost, but on the other hand not having `payable`
  * makes the Solidity compiler add an extra check for `msg.value`, which in this case is wasted gas
  */
-contract AmbireAccount is IAmbireAccount {
+contract AmbireAccount7702 is IAmbireAccount {
 	// @dev We do not have a constructor. This contract cannot be initialized with any valid `privileges` by itself!
 	// The intended use case is to deploy one base implementation contract, and create a minimal proxy for each user wallet, by
 	// using our own code generation to insert SSTOREs to initialize `privileges` (it was previously called IdentityProxyDeploy.js, now src/libs/proxyDeploy/deploy.ts)
@@ -285,7 +285,7 @@ contract AmbireAccount is IAmbireAccount {
 		if (supported) return true;
 		address payable fallbackHandler = payable(address(uint160(uint256(privileges[FALLBACK_HANDLER_SLOT]))));
 		if (fallbackHandler == address(0)) return false;
-		return AmbireAccount(fallbackHandler).supportsInterface(interfaceID);
+		return IAmbireAccount(fallbackHandler).supportsInterface(interfaceID);
 	}
 
 	//
