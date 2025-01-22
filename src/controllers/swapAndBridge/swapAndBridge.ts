@@ -222,33 +222,38 @@ export class SwapAndBridgeController extends EventEmitter {
     this.emitUpdate()
   }
 
-  get maxFromAmount(): string {
-    if (
-      !this.fromSelectedToken ||
-      getTokenAmount(this.fromSelectedToken) === 0n ||
-      !this.fromSelectedToken.decimals
+  // The token in portfolio is the source of truth for the amount, it updates
+  // on every balance (pending or anything) change.
+  #getFromSelectedTokenInPortfolio = () =>
+    this.portfolioTokenList.find(
+      (t) =>
+        t.address === this.fromSelectedToken?.address &&
+        t.networkId === this.fromSelectedToken?.networkId &&
+        getIsTokenEligibleForSwapAndBridge(t)
     )
-      return '0'
 
-    return formatUnits(getTokenAmount(this.fromSelectedToken), this.fromSelectedToken.decimals)
+  get maxFromAmount(): string {
+    const tokenRef = this.#getFromSelectedTokenInPortfolio() || this.fromSelectedToken
+    if (!tokenRef || getTokenAmount(tokenRef) === 0n || !tokenRef.decimals) return '0'
+
+    return formatUnits(getTokenAmount(tokenRef), tokenRef.decimals)
   }
 
   get maxFromAmountInFiat(): string {
-    if (!this.fromSelectedToken || getTokenAmount(this.fromSelectedToken) === 0n) return '0'
+    const tokenRef = this.#getFromSelectedTokenInPortfolio() || this.fromSelectedToken
+    if (!tokenRef || getTokenAmount(tokenRef) === 0n) return '0'
 
-    const tokenPrice = this.fromSelectedToken?.priceIn.find(
-      (p) => p.baseCurrency === HARD_CODED_CURRENCY
-    )?.price
+    const tokenPrice = tokenRef?.priceIn.find((p) => p.baseCurrency === HARD_CODED_CURRENCY)?.price
     if (!tokenPrice || !Number(this.maxFromAmount)) return '0'
 
-    const maxAmount = getTokenAmount(this.fromSelectedToken)
+    const maxAmount = getTokenAmount(tokenRef)
     const { tokenPriceBigInt, tokenPriceDecimals } = convertTokenPriceToBigInt(tokenPrice)
 
     // Multiply the max amount by the token price. The calculation is done in big int to avoid precision loss
     return formatUnits(
       BigInt(maxAmount) * tokenPriceBigInt,
       // Shift the decimal point by the number of decimals in the token price
-      this.fromSelectedToken.decimals + tokenPriceDecimals
+      tokenRef.decimals + tokenPriceDecimals
     )
   }
 
