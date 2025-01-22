@@ -344,7 +344,8 @@ const init = async (
   },
   signer: any,
   estimationMock?: EstimateResult,
-  gasPricesMock?: gasPricesLib.GasRecommendation[]
+  gasPricesMock?: gasPricesLib.GasRecommendation[],
+  updateWholePortfolio?: boolean
 ) => {
   const storage: Storage = produceMemoryStore()
   await storage.set('accounts', [account])
@@ -400,7 +401,7 @@ const init = async (
   )
   const { op, nativeToCheck, feeTokens } = accountOp
   const network = networksCtrl.networks.find((x) => x.id === op.networkId)!
-  await portfolio.updateSelectedAccount(account.addr, network)
+  await portfolio.updateSelectedAccount(account.addr, updateWholePortfolio ? undefined : network)
   const provider = getRpcProvider(network.rpcUrls, network.chainId)
 
   const getSignAccountOpStatus = () => {
@@ -1016,7 +1017,7 @@ describe('SignAccountOp Controller ', () => {
         feePaymentOptions: [
           {
             paidBy: e2esmartAccount.addr,
-            availableAmount: 5000000000000000000n,
+            availableAmount: 500000000000000000000n,
             gasUsed: 25000n,
             addedNative: 0n,
             token: {
@@ -1098,7 +1099,8 @@ describe('SignAccountOp Controller ', () => {
           baseFeePerGas: 7000000000n,
           maxPriorityFeePerGas: 7000000000n
         }
-      ]
+      ],
+      true
     )
 
     // We are mocking estimation and prices values, in order to validate the gas prices calculation in the test.
