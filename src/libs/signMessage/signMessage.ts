@@ -265,7 +265,6 @@ export async function verifyMessage({
     } catch (e: any) {
       throw Error(
         `Preparing the just signed (standard) message for validation failed. Please try again or contact Ambire support if the issue persists. Error details: ${
-          // TODO: Use the `reason` from the decodeError(e) instead, when this case is better handled in there
           e?.message || 'missing'
         }`
       )
@@ -335,6 +334,7 @@ export async function verifyMessage({
   } catch (e: any) {
     throw new Error(
       `Validating the just signed message failed. Please try again or contact Ambire support if the issue persists. Error details: UniversalValidator call failed, more details: ${
+        // TODO: Use the `reason` from the decodeError(e) instead, when this case is better handled in there
         e?.message || 'missing'
       }`
     )
