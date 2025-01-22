@@ -8,6 +8,10 @@ export interface SocketAPIToken {
   symbol: string
 }
 
+export interface SwapAndBridgeToToken extends SocketAPIToken {
+  // TODO: Strip out the properties that are not needed.
+}
+
 export interface SocketAPIQuote {
   fromAsset: SocketAPIToken
   fromChainId: number
@@ -140,6 +144,7 @@ export interface SocketApiBridgeStep {
   protocolFees: {
     amount: string
     asset: SocketAPIToken
+    feesInUsd: number
   }
   bridgeSlippage: number
   toAmount: string
