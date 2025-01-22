@@ -79,6 +79,7 @@ describe('AddressBookController', () => {
     providersCtrl,
     networksCtrl,
     () => {},
+    () => {},
     () => {}
   )
   const selectedAccountCtrl = new SelectedAccountController({ storage, accounts: accountsCtrl })

@@ -111,6 +111,7 @@ const prepareTest = () => {
     providersCtrl,
     networksCtrl,
     () => {},
+    () => {},
     () => {}
   )
   const controller = new PortfolioController(
