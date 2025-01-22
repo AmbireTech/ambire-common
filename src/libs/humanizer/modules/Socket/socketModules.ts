@@ -49,7 +49,9 @@ export const SocketModule: HumanizerCallModule = (accountOp: AccountOp, irCalls:
     'function swap(address,(address,address,address,address,uint256,uint256,uint256),bytes,bytes)',
     'function exec(address,address,uint256,address,bytes)',
     'function execute((address recipient, address buyToken, uint256 minAmountOut) slippage, bytes[] actions, bytes32) payable returns (bool)',
-    'function uniswapV3SwapTo(address,uint256,uint256,uint256[])'
+    'function uniswapV3SwapTo(address,uint256,uint256,uint256[])',
+    'function BASIC(address,uint256,address,uint256,bytes)',
+    'function UNISWAPV3(address,uint256,bytes,uint256)'
   ])
   const matcher = {
     [`${
@@ -251,9 +253,18 @@ export const SocketModule: HumanizerCallModule = (accountOp: AccountOp, irCalls:
           data: swapExtraData
         })!.args
         if (extraData.startsWith(iface.getFunction('execute')?.selector)) {
-          const [[, , minAmountOut], ,] = iface.parseTransaction({
+          // eslint-disable-next-line prefer-const
+          let [[, , minAmountOut], actions] = iface.parseTransaction({
             data: extraData
           })!.args
+          if (!minAmountOut) {
+            const uniswapData = actions.find((i: any) =>
+              i.startsWith(iface.getFunction('UNISWAPV3')?.selector)
+            )
+            if (uniswapData) {
+              ;[, , , minAmountOut] = iface.parseTransaction({ data: uniswapData })!.args
+            }
+          }
           outAmount = minAmountOut
         }
       } else if (swapExtraData.startsWith(iface.getFunction('uniswapV3SwapTo')?.selector)) {
