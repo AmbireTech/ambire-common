@@ -1,4 +1,4 @@
-import { getAddress, Interface, JsonRpcProvider, toQuantity, ZeroAddress } from 'ethers'
+import { getAddress, Interface, JsonRpcProvider, toQuantity } from 'ethers'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json'
@@ -76,19 +76,18 @@ export async function debugTraceCall(
 
   const params = getFunctionParams(account, op, accountState)
   const results: ({ erc: 20; address: string } | { erc: 721; address: string; tokenId: string })[] =
-    await provider
-      .send('debug_traceCall', [
-        {
-          to: params.to,
-          value: toQuantity(params.value.toString()),
-          data: params.data,
-          from: params.from,
-          gasPrice: toQuantity(gasPrice.toString()),
-          gas: toQuantity(gasUsed.toString())
-        },
-        'latest',
-        {
-          tracer: `{
+    await provider.send('debug_traceCall', [
+      {
+        to: params.to,
+        value: toQuantity(params.value.toString()),
+        data: params.data,
+        from: params.from,
+        gasPrice: toQuantity(gasPrice.toString()),
+        gas: toQuantity(gasUsed.toString())
+      },
+      'latest',
+      {
+        tracer: `{
           discovered: [],
           fault: function (log) {},
           step: function (log) {
@@ -112,23 +111,20 @@ export async function debugTraceCall(
           }
         }`,
 
-          enableMemory: false,
-          enableReturnData: true,
-          disableStorage: true,
-          stateOverrides: supportsStateOverride
-            ? {
-                [params.from]: {
-                  balance: '0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff'
-                },
-                ...overrideData
-              }
-            : {}
-        }
-      ])
-      .catch((e) => {
-        console.error(e)
-        return [{ erc: 20, address: ZeroAddress }]
-      })
+        enableMemory: false,
+        enableReturnData: true,
+        disableStorage: true,
+        stateOverrides: supportsStateOverride
+          ? {
+              [params.from]: {
+                balance: '0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff'
+              },
+              ...overrideData
+            }
+          : {}
+      }
+    ])
+
   const foundTokens = [
     ...new Set(results.filter((i) => i?.erc === 20).map((i) => getAddress(i.address)))
   ]

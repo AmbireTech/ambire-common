@@ -205,15 +205,8 @@ export interface PreviousHintsStorage {
   }
 }
 
-export interface NetworkNonces {
-  [networkId: string]: bigint
-}
-
-export interface TokenAmount {
-  latestAmount: bigint
-  pendingAmount: bigint
-  address: string
-  networkId: string
+export interface NetworkSimulatedAccountOp {
+  [networkId: NetworkId]: AccountOp
 }
 
 export type PendingAmounts = {

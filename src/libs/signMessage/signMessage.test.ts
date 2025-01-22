@@ -127,10 +127,10 @@ const getAccountsInfo = async (accounts: Account[]): Promise<AccountStates> => {
 }
 
 const windowManager = {
-  focus: () => Promise.resolve(),
-  open: () => Promise.resolve(0),
-  remove: () => Promise.resolve(),
   event: new EventEmitter(),
+  focus: () => Promise.resolve(),
+  open: () => Promise.resolve({ id: 0, top: 0, left: 0, width: 100, height: 100 }),
+  remove: () => Promise.resolve(),
   sendWindowToastMessage: () => {},
   sendWindowUiMessage: () => {}
 }
@@ -607,7 +607,7 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
       expect(true).toEqual(false)
     } catch (e: any) {
       expect(e.message).toBe(
-        'signature error: trying to sign an AmbireReadableOperation for the samee address. Please contact support'
+        'signature error: trying to sign an AmbireReadableOperation for the same address. Please contact support'
       )
     }
   })

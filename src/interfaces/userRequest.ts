@@ -46,6 +46,7 @@ export interface SignUserRequest {
     networkId: NetworkId
     paymasterService?: PaymasterService
     isWalletSendCalls?: boolean
+    submittedAccountOp?: any
     [key: string]: any
   }
   // defined only when SignUserRequest is built from a DappRequest

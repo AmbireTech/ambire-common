@@ -1,4 +1,5 @@
 import { PendingAmounts } from './interfaces'
+import { AccountOp, AccountOpStatus } from '../accountOp/accountOp'
 
 /**
  * Function for calculating the pending balance and the delta amounts
@@ -8,9 +9,17 @@ import { PendingAmounts } from './interfaces'
  * calculating the pending delta and determining its state (whether it needs to be signed or confirmed)
  * can be quite challenging.
  *
- * We use this information to display PendingToBeSigned, PendingToBeConfirmed, or both badges on the Dashboard.
+ * We use this function's output to display PendingToBeSigned, PendingToBeConfirmed, or both badges on the Dashboard.
  *
- * Let's review the main scenarios where we encounter delta amounts, followed by a discussion of corner cases.
+ * Here's the main mechanism for handling the pending state and simulation:
+ * 1. Once we have an AccountOp, we perform a simulation against the pending block. The `PendingToBeSigned` badge is shown.
+ * 2. After broadcasting the AccountOp, we update its status to `PendingToBeConfirmed`. The `PendingToBeConfirmed` badge appears.
+ * 3. After broadcasting, we ensure the AccountPortfolio is not updated immediately to avoid losing the simulation and badge.
+ * 4. Even if we try updating with the previous simulation, it won't work as the account nonce will already be incremented.
+ * 5. Once the transaction is confirmed, the AccountPortfolio is updated. The simulation and the `PendingToBeConfirmed` badge clear.
+ * 6. If the user refreshes or the transaction delays, the portfolio updates automatically, clearing the simulation. This is acceptable.
+ *
+ * Let's review the main scenarios where we encounter simulation (simulatedAccountOp), followed by a discussion of corner cases.
  *
  * Main scenarios:
  * 1. If there is an AccOp that has not yet been signed, we return the `pendingToBeSigned` amount.
@@ -35,8 +44,7 @@ export const calculatePendingAmounts = (
   pendingAmount: bigint,
   amountPostSimulation?: bigint,
   simulationDelta?: bigint, // pending delta (this is the amount of the simulation itself)
-  activityNonce?: bigint,
-  portfolioNonce?: bigint
+  simulatedAccountOp?: AccountOp
 ): PendingAmounts | null => {
   const latestPendingDelta = pendingAmount - latestAmount
 
@@ -45,25 +53,28 @@ export const calculatePendingAmounts = (
 
   let pendingBalance
 
+  // If there is a latest/pending block delta, but there is no a simulation,
+  // set the pending token's balance to equal to the pending block amount.
   if (latestPendingDelta && !amountPostSimulation) {
     pendingBalance = pendingAmount
   } else {
+    // Otherwise, if we have a simulation, the pending balance is equal to the simulation amount
     pendingBalance = amountPostSimulation!
   }
 
+  // Okay, we already know that we have a pending state,
+  // but in the following lines, we need to set the pendingToBeSigned and pendingToBeConfirmed states.
   const result: PendingAmounts = {
     isPending: true,
     pendingBalance
   }
 
   if (simulationDelta) {
-    // When an AccOp has not yet been signed and broadcasted, it is not added to the ActivityController.
-    // As a result, the latest known ActivityController nonce will always be lower than the Portfolio's pending simulation nonce.
-    // In this scenario, we know there is a `pendingToBeSigned` amount.
-    // However, once the AccOp is broadcasted and added to the Activity, there is a brief period
-    // where the Activity nonce matches the latest simulation nonce, indicating a `pendingToBeConfirmed` amount.
-    // Once the AccOp is confirmed by the network, the portfolio is updated, the simulation is cleared, and no badges are displayed.
-    const hasPendingToBeConfirmed = activityNonce && activityNonce === portfolioNonce
+    // When we broadcast the AccountOp, we set the status of the simulated AccountOp to `BroadcastedButNotConfirmed`
+    // until the transaction is confirmed or the user forcefully refreshes their portfolio balance and clears the simulation.
+    // When the SimulatedAccountOp has the status `BroadcastedButNotConfirmed`, we know that the pending badge is `pendingToBeConfirmed`.
+    const hasPendingToBeConfirmed =
+      simulatedAccountOp?.status === AccountOpStatus.BroadcastedButNotConfirmed
 
     if (hasPendingToBeConfirmed) {
       // Main scenario #2.

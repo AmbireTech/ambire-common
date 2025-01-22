@@ -489,7 +489,7 @@ export async function getEIP712Signature(
     const ambireReadableOperation = message.message as AmbireReadableOperation
     if (isSameAddr(ambireReadableOperation.addr, account.addr)) {
       throw new Error(
-        'signature error: trying to sign an AmbireReadableOperation for the samee address. Please contact support'
+        'signature error: trying to sign an AmbireReadableOperation for the same address. Please contact support'
       )
     }
 

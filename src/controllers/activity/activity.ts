@@ -1,4 +1,3 @@
-/* eslint-disable import/no-extraneous-dependencies */
 import { Account, AccountId } from '../../interfaces/account'
 import { Banner } from '../../interfaces/banner'
 import { Fetch } from '../../interfaces/fetch'
@@ -8,7 +7,8 @@ import { Message } from '../../interfaces/userRequest'
 import { isSmartAccount } from '../../libs/account/account'
 import { AccountOpStatus } from '../../libs/accountOp/accountOp'
 import { fetchTxnId, SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
-import { NetworkNonces } from '../../libs/portfolio/interfaces'
+/* eslint-disable import/no-extraneous-dependencies */
+import { parseLogs } from '../../libs/userOperation/userOperation'
 import { getBenzinUrlParams } from '../../utils/benzin'
 import { AccountsController } from '../accounts/accounts'
 import EventEmitter from '../eventEmitter/eventEmitter'
@@ -305,11 +305,17 @@ export class ActivityController extends EventEmitter {
     shouldEmitUpdate: boolean
     shouldUpdatePortfolio: boolean
     updatedAccountsOps: SubmittedAccountOp[]
+    newestOpTimestamp: number
   }> {
     await this.#initialLoadPromise
 
     if (!this.#selectedAccount.account || !this.#accountsOps[this.#selectedAccount.account.addr])
-      return { shouldEmitUpdate: false, shouldUpdatePortfolio: false, updatedAccountsOps: [] }
+      return {
+        shouldEmitUpdate: false,
+        shouldUpdatePortfolio: false,
+        updatedAccountsOps: [],
+        newestOpTimestamp: 0
+      }
 
     // This flag tracks the changes to AccountsOps statuses
     // and optimizes the number of the emitted updates and storage/state updates.
@@ -317,6 +323,10 @@ export class ActivityController extends EventEmitter {
 
     let shouldUpdatePortfolio = false
     const updatedAccountsOps: SubmittedAccountOp[] = []
+
+    // Use this flag to make the auto-refresh slower with the passege of time.
+    // implementation is in background.ts
+    let newestOpTimestamp: number = 0
 
     await Promise.all(
       Object.keys(this.#accountsOps[this.#selectedAccount.account.addr]).map(async (networkId) => {
@@ -335,6 +345,10 @@ export class ActivityController extends EventEmitter {
             if (accountOp.status !== AccountOpStatus.BroadcastedButNotConfirmed) return
 
             shouldEmitUpdate = true
+
+            if (newestOpTimestamp === undefined || newestOpTimestamp < accountOp.timestamp) {
+              newestOpTimestamp = accountOp.timestamp
+            }
 
             const declareStuckIfQuaterPassed = (op: SubmittedAccountOp) => {
               const accountOpDate = new Date(op.timestamp)
@@ -373,8 +387,19 @@ export class ActivityController extends EventEmitter {
             try {
               const receipt = await provider.getTransactionReceipt(txnId)
               if (receipt) {
-                this.#accountsOps[selectedAccount][networkId][accountOpIndex].status =
-                  receipt.status ? AccountOpStatus.Success : AccountOpStatus.Failure
+                // if this is an user op, we have to check the logs
+                let isSuccess: boolean | undefined
+                if (accountOp.identifiedBy.type === 'UserOperation') {
+                  const userOpEventLog = parseLogs(receipt.logs, accountOp.identifiedBy.identifier)
+                  if (userOpEventLog) isSuccess = userOpEventLog.success
+                }
+
+                // if it's not an userOp or it is, but isSuccess was not found
+                if (isSuccess === undefined) isSuccess = !!receipt.status
+
+                this.#accountsOps[selectedAccount][networkId][accountOpIndex].status = isSuccess
+                  ? AccountOpStatus.Success
+                  : AccountOpStatus.Failure
                 updatedAccountsOps.push(
                   this.#accountsOps[selectedAccount][networkId][accountOpIndex]
                 )
@@ -434,7 +459,7 @@ export class ActivityController extends EventEmitter {
       this.emitUpdate()
     }
 
-    return { shouldEmitUpdate, shouldUpdatePortfolio, updatedAccountsOps }
+    return { shouldEmitUpdate, shouldUpdatePortfolio, updatedAccountsOps, newestOpTimestamp }
   }
 
   async addSignedMessage(signedMessage: SignedMessage, account: string) {
@@ -510,46 +535,6 @@ export class ActivityController extends EventEmitter {
     return Object.values(this.#accountsOps[this.#selectedAccount.account.addr])
       .flat()
       .filter((accountOp) => accountOp.status === AccountOpStatus.BroadcastedButNotConfirmed)
-  }
-
-  // Here, we retrieve nonces that are either already confirmed and known,
-  // or those that have been broadcasted and are in the process of being confirmed.
-  // We use this information to determine the token's pending badge status (whether it is PendingToBeConfirmed or PendingToBeSigned).
-  // By knowing the latest AccOp nonce, we can compare it with the portfolio's pending simulation nonce.
-  // If the ActivityNonce is the same as the simulation beforeNonce,
-  // we can conclude that the badge is PendingToBeConfirmed.
-  // In all other cases, if the portfolio nonce is newer, then the badge is still PendingToBeSigned.
-  // More info: calculatePendingAmounts.
-  get lastKnownNonce(): NetworkNonces {
-    if (!this.#selectedAccount.account || !this.#accountsOps[this.#selectedAccount.account.addr])
-      return {}
-
-    return Object.values(this.#accountsOps[this.#selectedAccount.account.addr])
-      .flat()
-      .reduce(
-        (acc, accountOp) => {
-          const successStatuses = [
-            AccountOpStatus.BroadcastedButNotConfirmed,
-            AccountOpStatus.Success,
-            AccountOpStatus.UnknownButPastNonce
-          ]
-
-          if (!successStatuses.includes(accountOp.status!)) return acc
-
-          if (!acc[accountOp.networkId]) {
-            acc[accountOp.networkId] = accountOp.nonce
-          } else {
-            acc[accountOp.networkId] =
-              accountOp.nonce > acc[accountOp.networkId]
-                ? accountOp.nonce
-                : acc[accountOp.networkId]
-          }
-
-          return acc
-        },
-
-        {} as NetworkNonces
-      )
   }
 
   get banners(): Banner[] {
@@ -660,7 +645,6 @@ export class ActivityController extends EventEmitter {
       ...this,
       ...super.toJSON(),
       broadcastedButNotConfirmed: this.broadcastedButNotConfirmed, // includes the getter in the stringified instance
-      lastKnownNonce: this.lastKnownNonce,
       banners: this.banners // includes the getter in the stringified instance
     }
   }

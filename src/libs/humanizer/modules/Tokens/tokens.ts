@@ -101,6 +101,29 @@ export const genericErc20Humanizer: HumanizerCallModule = (
             getAddressVisualization(args[0])
           ]
     },
+    [iface.getFunction('increaseAllowance')?.selector!]: (call: IrCall) => {
+      const { spender, addedValue } = iface.decodeFunctionData('increaseAllowance', call.data)
+
+      return [
+        getAction('Increase allowance'),
+        getLabel('of'),
+        getAddressVisualization(spender),
+        getLabel('with'),
+        getToken(call.to, addedValue)
+      ]
+    },
+
+    [iface.getFunction('decreaseAllowance')?.selector!]: (call: IrCall) => {
+      const { spender, subtractedValue } = iface.decodeFunctionData('decreaseAllowance', call.data)
+
+      return [
+        getAction('Decrease allowance'),
+        getLabel('of'),
+        getAddressVisualization(spender),
+        getLabel('with'),
+        getToken(call.to, subtractedValue)
+      ]
+    },
     [iface.getFunction('transfer')?.selector!]: (call: IrCall) => {
       const args = iface.parseTransaction(call)?.args.toArray() || []
       return [

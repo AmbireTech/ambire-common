@@ -23,7 +23,9 @@ const getBenzinUrlParams = ({
 
   return `?chainId=${String(chainId)}${txnId ? `&txnId=${txnId}` : ''}${
     userOpHash ? `&userOpHash=${userOpHash}` : ''
-  }${relayerId ? `&relayerId=${relayerId}` : ''}${isInternal ? '&isInternal' : ''}`
+  }${relayerId ? `&relayerId=${relayerId}` : ''}${
+    identifiedBy?.bundler ? `&bundler=${identifiedBy?.bundler}` : ''
+  }${isInternal ? '&isInternal' : ''}`
 }
 
 export { getBenzinUrlParams }
