@@ -33,6 +33,10 @@ const config: HardhatUserConfig = {
     optimism: {
       url: 'https://invictus.ambire.com/optimism',
       accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
+    },
+    pectra: {
+      url: 'https://rpc.pectra-devnet-5.ethpandaops.io',
+      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
     }
   },
   etherscan: {
