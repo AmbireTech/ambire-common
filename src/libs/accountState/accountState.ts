@@ -66,10 +66,9 @@ export async function getAccountState(
     )
 
     const account = accounts[index]
-    const isSmarterEoa =
-      accResult.isEOA && authorizations[account.addr]
-        ? hasAuthorized7702(BigInt(eoaNonces[account.addr]), network, authorizations[account.addr])
-        : false
+    const isSmarterEoa = accResult.isEOA
+      ? hasAuthorized7702(account, BigInt(eoaNonces[account.addr]), network, authorizations)
+      : false
 
     const res = {
       accountAddr: accounts[index].addr,
