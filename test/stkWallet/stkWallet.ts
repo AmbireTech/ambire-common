@@ -24,7 +24,7 @@ describe('stkWallet', () => {
       params: [
         {
           forking: {
-            jsonRpcUrl: 'https://eth.llamarpc.com',
+            jsonRpcUrl: 'https://docs-demo.quiknode.pro/',
             blockNumber: 14390000
           }
         }
