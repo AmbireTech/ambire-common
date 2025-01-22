@@ -1,5 +1,4 @@
 import { AccountOpAction } from './actions'
-import { Network } from './network'
 
 export type BannerType = 'error' | 'warning' | 'info' | 'info2' | 'success'
 export type BannerCategory =
@@ -60,11 +59,6 @@ export type Action =
       label: 'Switch'
       actionName: 'switch-default-wallet'
       meta: {}
-    }
-  | {
-      label: 'Select'
-      actionName: 'select-rpc-url'
-      meta: { network: Network }
     }
   | {
       label: 'Reject'
