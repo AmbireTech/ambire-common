@@ -269,7 +269,9 @@ export class Portfolio {
     const tokenFilter = ([error, result]: [string, TokenResult]): boolean =>
       error === '0x' && !!result.symbol
 
-    const tokensWithoutPrices = tokensWithErrResult.map(([, result]: [any, TokenResult]) => result)
+    const tokensWithoutPrices = tokensWithErrResult
+      .filter((_tokensWithErrResult: [string, TokenResult]) => tokenFilter(_tokensWithErrResult))
+      .map(([, result]: [any, TokenResult]) => result)
 
     const unfilteredCollections = collectionsWithErrResult.map(([error, x], i) => {
       const address = collectionsHints[i][0] as unknown as string
