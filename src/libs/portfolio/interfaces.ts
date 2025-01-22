@@ -12,6 +12,7 @@ export interface GetOptionsSimulation {
   accountOps: AccountOp[]
   account: Account
 }
+export type TokenError = string | '0x'
 
 export type TokenResult = Omit<CustomToken, 'standard'> & {
   amount: bigint

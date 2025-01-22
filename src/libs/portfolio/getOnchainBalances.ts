@@ -1,5 +1,3 @@
-import { hexlify, toBeHex } from 'ethers'
-
 import { DEPLOYLESS_SIMULATION_FROM } from '../../consts/deploy'
 import { EOA_SIMULATION_NONCE } from '../../consts/deployless'
 import { Network } from '../../interfaces/network'
@@ -8,7 +6,14 @@ import { getAccountDeployParams, isSmartAccount } from '../account/account'
 import { callToTuple, toSingletonCall } from '../accountOp/accountOp'
 import { Deployless, DeploylessMode, parseErr } from '../deployless/deployless'
 import { getFlags, overrideSymbol } from './helpers'
-import { CollectionResult, GetOptions, LimitsOptions, MetaData, TokenResult } from './interfaces'
+import {
+  CollectionResult,
+  GetOptions,
+  LimitsOptions,
+  MetaData,
+  TokenError,
+  TokenResult
+} from './interfaces'
 
 class SimulationError extends Error {
   public simulationErrorMsg: string
@@ -91,7 +96,7 @@ export async function getNFTs(
   accountAddr: string,
   tokenAddrs: [string, any][],
   limits: LimitsOptions
-): Promise<[[string, CollectionResult][], {}][]> {
+): Promise<[[TokenError, CollectionResult][], {}][]> {
   const deploylessOpts = getDeploylessOpts(accountAddr, !network.rpcNoStateOverride, opts)
   const mapToken = (token: any) => {
     return {
@@ -205,7 +210,7 @@ export async function getTokens(
   opts: Partial<GetOptions>,
   accountAddr: string,
   tokenAddrs: string[]
-): Promise<[[string, TokenResult][], MetaData][]> {
+): Promise<[[TokenError, TokenResult][], MetaData][]> {
   const mapToken = (token: any, address: string) => {
     return {
       amount: token.amount,

@@ -23,6 +23,7 @@ import {
   LimitsOptions,
   PortfolioLibGetResult,
   PriceCache,
+  TokenError,
   TokenResult
 } from './interfaces'
 import { flattenResults, paginate } from './pagination'
@@ -266,11 +267,13 @@ export class Portfolio {
       return null
     }
 
-    const tokenFilter = ([error, result]: [string, TokenResult]): boolean =>
+    const tokenFilter = ([error, result]: [TokenError, TokenResult]): boolean =>
       error === '0x' && !!result.symbol
 
     const tokensWithoutPrices = tokensWithErrResult
-      .filter((_tokensWithErrResult: [string, TokenResult]) => tokenFilter(_tokensWithErrResult))
+      .filter((_tokensWithErrResult: [TokenError, TokenResult]) =>
+        tokenFilter(_tokensWithErrResult)
+      )
       .map(([, result]: [any, TokenResult]) => result)
 
     const unfilteredCollections = collectionsWithErrResult.map(([error, x], i) => {

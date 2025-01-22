@@ -3,6 +3,7 @@ import {
   ERC721Enumerable,
   ERC721Innumerable,
   MetaData,
+  TokenError,
   TokenResult
 } from './interfaces'
 
@@ -21,7 +22,7 @@ export function paginate(
 
 export function flattenResults(
   everything: Promise<[[string, TokenResult | CollectionResult][], MetaData][]>[]
-): Promise<[[string, TokenResult | CollectionResult][], MetaData | {}]> {
+): Promise<[[TokenError, TokenResult | CollectionResult][], MetaData | {}]> {
   return Promise.all(everything).then((results) => {
     if (!results || !results.length) {
       return [[], {}]
