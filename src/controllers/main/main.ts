@@ -1038,14 +1038,17 @@ export class MainController extends EventEmitter {
 
   #updateIsOffline() {
     const oldIsOffline = this.isOffline
+    const accountAddr = this.selectedAccount.account?.addr
 
-    const allPortfolioNetworksHaveErrors = Object.keys(this.selectedAccount.portfolio.latest).every(
-      (networkId) => {
-        const state = this.selectedAccount.portfolio.latest[networkId]
+    if (!accountAddr) return
 
-        return !!state?.criticalError
-      }
-    )
+    const latestState = this.portfolio.getLatestPortfolioState(accountAddr)
+
+    const allPortfolioNetworksHaveErrors = Object.keys(latestState).every((networkId) => {
+      const state = latestState[networkId]
+
+      return !!state?.criticalError
+    })
 
     const allNetworkRpcsAreDown = Object.keys(this.providers.providers).every((networkId) => {
       const provider = this.providers.providers[networkId]

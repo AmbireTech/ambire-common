@@ -92,3 +92,7 @@ export type Action =
       label: 'Reload'
       actionName: 'update-extension-version'
     }
+  | {
+      label: 'Retry'
+      actionName: 'reload-selected-account'
+    }
