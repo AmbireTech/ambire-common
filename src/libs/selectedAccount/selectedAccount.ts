@@ -238,6 +238,11 @@ export function calculateSelectedAccountPortfolio(
       const networkTotal = Number(result?.total?.usd) || 0
       newTotalBalance += networkTotal
 
+      if (network === 'gasTank' || network === 'rewards') {
+        const networkTokens = result?.tokens || []
+        tokens.push(...networkTokens)
+      }
+
       const networkCollections = result?.collections || []
       collections.push(...networkCollections)
     }
