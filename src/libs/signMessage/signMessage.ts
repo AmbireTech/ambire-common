@@ -266,7 +266,16 @@ export async function verifyMessage({
 ) &
   Props): Promise<boolean> {
   if (message) {
-    finalDigest = hashMessage(message)
+    try {
+      finalDigest = hashMessage(message)
+      if (!finalDigest) throw Error('Hashing the message returned no (falsy) result.')
+    } catch (e: any) {
+      throw Error(
+        `Preparing the just signed (standard) message for validation failed. Please try again or contact Ambire support if the issue persists. Error details: ${
+          e?.message || 'missing'
+        }`
+      )
+    }
   } else if (typedData) {
     // To resolve the "ambiguous primary types or unused types" error, remove
     // the `EIP712Domain` from `types` object. The domain type is inbuilt in
@@ -279,34 +288,39 @@ export async function verifyMessage({
       delete typesWithoutEIP712Domain.EIP712Domain
     }
 
-    // the final digest for AmbireReadableOperation is the execute hash
-    // as it's wrapped in mode.standard and onchain gets transformed to
-    // an AmbireOperation
-    if ('AmbireReadableOperation' in typedData.types) {
-      const ambireReadableOperation = typedData.message as AmbireReadableOperation
-      finalDigest = hexlify(
-        getSignableHash(
-          ambireReadableOperation.addr,
-          ambireReadableOperation.chainId,
-          ambireReadableOperation.nonce,
-          ambireReadableOperation.calls.map(callToTuple)
+    try {
+      // the final digest for AmbireReadableOperation is the execute hash
+      // as it's wrapped in mode.standard and onchain gets transformed to
+      // an AmbireOperation
+      if ('AmbireReadableOperation' in typedData.types) {
+        const ambireReadableOperation = typedData.message as AmbireReadableOperation
+        finalDigest = hexlify(
+          getSignableHash(
+            ambireReadableOperation.addr,
+            ambireReadableOperation.chainId,
+            ambireReadableOperation.nonce,
+            ambireReadableOperation.calls.map(callToTuple)
+          )
         )
-      )
-    } else {
-      finalDigest = TypedDataEncoder.hash(
-        typedData.domain,
-        typesWithoutEIP712Domain,
-        typedData.message
+      } else {
+        finalDigest = TypedDataEncoder.hash(
+          typedData.domain,
+          typesWithoutEIP712Domain,
+          typedData.message
+        )
+      }
+
+      if (!finalDigest) throw Error('Hashing the typedData returned no (falsy) result.')
+    } catch (e: any) {
+      throw Error(
+        `Preparing the just signed (typed data) message for validation failed. Please try again or contact Ambire support if the issue persists. Error details: ${
+          e?.message || 'missing'
+        }`
       )
     }
   } else if (authorization) {
     finalDigest = authorization
   }
-
-  if (!finalDigest)
-    throw Error(
-      'Something went wrong while validating the message you signed. Please try again or contact Ambire support if the issue persists. Error details: missing one of the required props: message, unPrefixedMessage, typedData or finalDigest'
-    )
 
   // this 'magic' universal validator contract will deploy itself within the eth_call, try to verify the signature using
   // ERC-6492, ERC-1271 and ecrecover, and return the value to us
@@ -326,9 +340,12 @@ export async function verifyMessage({
     if (deploylessRes[0] === true) callResult = '0x01'
     else if (deploylessRes[0] === false) callResult = '0x00'
     else callResult = deploylessRes[0]
-  } catch {
+  } catch (e: any) {
     throw new Error(
-      'Something went wrong while validating the message you signed. If the problem persists, please contact Ambire support. Error details: call to UniversalValidator failed.'
+      `Validating the just signed message failed. Please try again or contact Ambire support if the issue persists. Error details: UniversalValidator call failed, more details: ${
+        // TODO: Use the `reason` from the decodeError(e) instead, when this case is better handled in there
+        e?.message || 'missing'
+      }`
     )
   }
 
