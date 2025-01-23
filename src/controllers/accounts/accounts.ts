@@ -43,7 +43,7 @@ export class AccountsController extends EventEmitter {
   initialLoadPromise: Promise<void>
 
   // all SignedMessage type 7702-authorization the user has signed
-  authorizations: InternalSignedMessages
+  #authorizations: InternalSignedMessages
 
   constructor(
     storage: Storage,
@@ -63,7 +63,7 @@ export class AccountsController extends EventEmitter {
 
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.initialLoadPromise = this.#load()
-    this.authorizations = {}
+    this.#authorizations = {}
   }
 
   async #load() {
@@ -89,7 +89,7 @@ export class AccountsController extends EventEmitter {
     this.accounts.forEach((acc) => {
       if (!signedMessages[acc.addr] || signedMessages[acc.addr].length === 0) return
 
-      this.authorizations[acc.addr] = signedMessages[acc.addr].filter(
+      this.#authorizations[acc.addr] = signedMessages[acc.addr].filter(
         (msg) => msg.content.kind === 'authorization-7702'
       )
     })
@@ -103,9 +103,9 @@ export class AccountsController extends EventEmitter {
   update({ authorization }: { authorization: SignedMessage }) {
     if (authorization.content.kind !== 'authorization-7702') return
 
-    if (!this.authorizations[authorization.accountAddr])
-      this.authorizations[authorization.accountAddr] = []
-    this.authorizations[authorization.accountAddr].push(authorization)
+    if (!this.#authorizations[authorization.accountAddr])
+      this.#authorizations[authorization.accountAddr] = []
+    this.#authorizations[authorization.accountAddr].push(authorization)
 
     // update the account state only for the account that signed the message
     // and only for the networks the messages has been signed on
@@ -160,7 +160,7 @@ export class AccountsController extends EventEmitter {
             this.#providers.providers[network.id],
             network,
             accounts,
-            this.authorizations,
+            this.#authorizations,
             blockTag
           )
 
@@ -232,7 +232,7 @@ export class AccountsController extends EventEmitter {
     this.accounts = this.accounts.filter((acc) => acc.addr !== address)
 
     delete this.accountStates[address]
-    if (this.authorizations[address]) delete this.authorizations[address]
+    if (this.#authorizations[address]) delete this.#authorizations[address]
     this.#storage.set('accounts', this.accounts)
     this.emitUpdate()
   }

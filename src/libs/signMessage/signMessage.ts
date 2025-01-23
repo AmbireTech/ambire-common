@@ -552,6 +552,10 @@ export function getEip7702Authorization(chainId: bigint, contractAddr: Hex, nonc
   ) as Hex
 }
 
+export function get7702SigV(signature: EIP7702Signature): Hex {
+  return signature.yParity === '0x00' ? (toBeHex(27) as Hex) : (toBeHex(28) as Hex)
+}
+
 export function getVerifyMessageSignature(
   signature: EIP7702Signature | string,
   account: Account,
@@ -566,7 +570,7 @@ export function getVerifyMessageSignature(
 
   const sig = signature as EIP7702Signature
   // ethereum v is 27 or 28
-  const v = sig.yParity === '0x00' ? toBeHex(27) : toBeHex(28)
+  const v = get7702SigV(sig)
   return concat([sig.r, sig.s, v]) as Hex
 }
 

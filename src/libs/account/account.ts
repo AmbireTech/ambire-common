@@ -4,7 +4,7 @@ import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
 import { SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET } from '../../consts/derivation'
 import { SPOOF_SIGTYPE } from '../../consts/signatures'
-import { InternalSignedMessages } from '../../controllers/activity/types'
+import { InternalSignedMessages, SignedMessage } from '../../controllers/activity/types'
 import {
   Account,
   AccountId,
@@ -328,15 +328,15 @@ export function canBecomeSmarter(acc: Account, accKeys: Key[]) {
   return !acc.creation && accKeys.find((key) => key.type === 'internal')
 }
 
-export function hasAuthorized7702(
+export function getAuthorization(
   account: Account,
   accNonce: bigint,
   network: Network,
   authorizations: InternalSignedMessages
-): boolean {
-  if (!authorizations[account.addr]) return false
+): SignedMessage | undefined {
+  if (account.creation || !authorizations[account.addr]) return undefined
 
-  return !!authorizations[account.addr].find((msg) => {
+  return authorizations[account.addr].find((msg) => {
     const content = msg.content as Authorization
     return (
       (content.chainId === 0n || content.chainId === network.chainId) && content.nonce === accNonce

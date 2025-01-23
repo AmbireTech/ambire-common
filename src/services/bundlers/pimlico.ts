@@ -1,7 +1,17 @@
 /* eslint-disable class-methods-use-this */
-import { Network } from 'interfaces/network'
+import { toBeHex } from 'ethers'
 
 import { BUNDLER, PIMLICO } from '../../consts/bundlers'
+import { ENTRY_POINT_MARKER, ERC_4337_ENTRYPOINT } from '../../consts/deploy'
+import { Hex } from '../../interfaces/hex'
+import { Network } from '../../interfaces/network'
+import { EIP7702Signature } from '../../interfaces/signatures'
+import { Authorization, Message } from '../../interfaces/userRequest'
+import { BundlerEstimateResult } from '../../libs/estimate/interfaces'
+import { privSlot } from '../../libs/proxyDeploy/deploy'
+import { get7702SigV } from '../../libs/signMessage/signMessage'
+import { UserOperation } from '../../libs/userOperation/types'
+import { getCleanUserOp } from '../../libs/userOperation/userOperation'
 import { Bundler } from './bundler'
 import { GasSpeeds, UserOpStatus } from './types'
 
@@ -26,5 +36,71 @@ export class Pimlico extends Bundler {
 
   public getName(): BUNDLER {
     return PIMLICO
+  }
+
+  private async send7702EstimateReq(
+    userOperation: UserOperation,
+    network: Network,
+    authorizationMsg?: Message,
+    shouldStateOverride = false
+  ): Promise<BundlerEstimateResult> {
+    const provider = this.getProvider(network)
+
+    // parse the authorization into the correct format, nothing else
+    const authorization = authorizationMsg
+      ? {
+          contractAddress: (authorizationMsg.content as Authorization).contractAddr,
+          chainId: toBeHex((authorizationMsg.content as Authorization).chainId),
+          nonce: toBeHex((authorizationMsg.content as Authorization).nonce),
+          r: (authorizationMsg.signature as EIP7702Signature).r,
+          s: (authorizationMsg.signature as EIP7702Signature).s,
+          v: get7702SigV(authorizationMsg.signature as EIP7702Signature),
+          yParity: (authorizationMsg.signature as EIP7702Signature).yParity
+        }
+      : {}
+
+    if (shouldStateOverride) {
+      return provider.send('pimlico_experimental_estimateUserOperationGas7702', [
+        getCleanUserOp(userOperation)[0],
+        ERC_4337_ENTRYPOINT,
+        authorization,
+        {
+          [userOperation.sender]: {
+            stateDiff: {
+              // add privileges to the entry point
+              [`0x${privSlot(0, 'address', ERC_4337_ENTRYPOINT, 'bytes32')}`]: ENTRY_POINT_MARKER
+            }
+          }
+        }
+      ])
+    }
+
+    return provider.send('pimlico_experimental_estimateUserOperationGas7702', [
+      getCleanUserOp(userOperation)[0],
+      ERC_4337_ENTRYPOINT,
+      authorization
+    ])
+  }
+
+  async estimate7702(
+    userOperation: UserOperation,
+    network: Network,
+    authorizationMsg?: Message,
+    shouldStateOverride = false
+  ): Promise<BundlerEstimateResult> {
+    const estimatiton = await this.send7702EstimateReq(
+      userOperation,
+      network,
+      authorizationMsg,
+      shouldStateOverride
+    )
+
+    return {
+      preVerificationGas: toBeHex(estimatiton.preVerificationGas) as Hex,
+      verificationGasLimit: toBeHex(estimatiton.verificationGasLimit) as Hex,
+      callGasLimit: toBeHex(estimatiton.callGasLimit) as Hex,
+      paymasterVerificationGasLimit: toBeHex(estimatiton.paymasterVerificationGasLimit) as Hex,
+      paymasterPostOpGasLimit: toBeHex(estimatiton.paymasterPostOpGasLimit) as Hex
+    }
   }
 }

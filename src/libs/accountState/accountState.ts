@@ -5,7 +5,7 @@ import { ENTRY_POINT_MARKER, ERC_4337_ENTRYPOINT, MAX_UINT256 } from '../../cons
 import { InternalSignedMessages } from '../../controllers/activity/types'
 import { Account, AccountOnchainState } from '../../interfaces/account'
 import { Network } from '../../interfaces/network'
-import { getAccountDeployParams, hasAuthorized7702, isSmartAccount } from '../account/account'
+import { getAccountDeployParams, getAuthorization, isSmartAccount } from '../account/account'
 import { fromDescriptor } from '../deployless/deployless'
 
 export async function getAccountState(
@@ -66,9 +66,17 @@ export async function getAccountState(
     )
 
     const account = accounts[index]
-    const isSmarterEoa = accResult.isEOA
-      ? hasAuthorized7702(account, BigInt(eoaNonces[account.addr]), network, authorizations)
-      : false
+    const authorization = getAuthorization(
+      account,
+      BigInt(eoaNonces[account.addr]),
+      network,
+      authorizations
+    )
+    // TODO<eip7702>
+    // Check if the account has code 0xef0100||address
+    // (starts with 0xef0100 and has an Ambire addr after)
+    // disallow if it's not an Ambire address
+    const isSmarterEoa = !!authorization
 
     const res = {
       accountAddr: accounts[index].addr,
@@ -90,7 +98,8 @@ export async function getAccountState(
       currentBlock: accResult.currentBlock,
       deployError:
         accounts[index].associatedKeys.length > 0 && accResult.associatedKeyPrivileges.length === 0,
-      isSmarterEoa
+      isSmarterEoa,
+      authorization
     }
 
     return res

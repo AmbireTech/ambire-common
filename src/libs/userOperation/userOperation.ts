@@ -13,6 +13,7 @@ import {
 } from '../../consts/deploy'
 import { SPOOF_SIGTYPE } from '../../consts/signatures'
 import { Account, AccountId, AccountOnchainState } from '../../interfaces/account'
+import { has7702 } from '../7702/7702'
 import { AccountOp, callToTuple } from '../accountOp/accountOp'
 import { UserOperation, UserOperationEventData, UserOpRequestType } from './types'
 
@@ -162,6 +163,8 @@ export function isErc4337Broadcast(
   network: Network,
   accountState: AccountOnchainState
 ): boolean {
+  if (accountState.isSmarterEoa) return has7702(network)
+
   // a special exception for gnosis which was a hardcoded chain but
   // now it's not. The bundler doesn't support state override on gnosis
   // so if the account IS deployed AND does NOT have 4337 privileges,
