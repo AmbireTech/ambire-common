@@ -37,6 +37,10 @@ const config: HardhatUserConfig = {
     pectra: {
       url: 'https://rpc.pectra-devnet-5.ethpandaops.io',
       accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
+    },
+    odyssey: {
+      url: 'https://odyssey.ithaca.xyz',
+      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
     }
   },
   etherscan: {
