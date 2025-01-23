@@ -24,7 +24,7 @@ describe('stkWallet', () => {
       params: [
         {
           forking: {
-            jsonRpcUrl: `https://mainnet.infura.io/v3/${process.env.INFURA_API_KEY}`,
+            jsonRpcUrl: 'https://invictus.ambire.com/ethereum-2',
             blockNumber: 14390000
           }
         }
