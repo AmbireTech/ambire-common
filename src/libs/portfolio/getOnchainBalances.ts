@@ -1,5 +1,3 @@
-import { hexlify, toBeHex } from 'ethers'
-
 import { DEPLOYLESS_SIMULATION_FROM } from '../../consts/deploy'
 import { EOA_SIMULATION_NONCE } from '../../consts/deployless'
 import { Network } from '../../interfaces/network'
@@ -8,7 +6,14 @@ import { getAccountDeployParams, isSmartAccount } from '../account/account'
 import { callToTuple, toSingletonCall } from '../accountOp/accountOp'
 import { Deployless, DeploylessMode, parseErr } from '../deployless/deployless'
 import { getFlags, overrideSymbol } from './helpers'
-import { CollectionResult, GetOptions, LimitsOptions, TokenResult } from './interfaces'
+import {
+  CollectionResult,
+  GetOptions,
+  LimitsOptions,
+  MetaData,
+  TokenError,
+  TokenResult
+} from './interfaces'
 
 class SimulationError extends Error {
   public simulationErrorMsg: string
@@ -91,7 +96,7 @@ export async function getNFTs(
   accountAddr: string,
   tokenAddrs: [string, any][],
   limits: LimitsOptions
-): Promise<[number, CollectionResult][]> {
+): Promise<[[TokenError, CollectionResult][], {}][]> {
   const deploylessOpts = getDeploylessOpts(accountAddr, !network.rpcNoStateOverride, opts)
   const mapToken = (token: any) => {
     return {
@@ -120,7 +125,7 @@ export async function getNFTs(
       )
     )[0]
 
-    return collections.map((token: any) => [token.error, mapToken(token)])
+    return [collections.map((token: any) => [token.error, mapToken(token)]), {}]
   }
 
   const { accountOps, account } = opts.simulation
@@ -160,37 +165,43 @@ export async function getNFTs(
       }))
     : null
 
-  return before[0].map((beforeToken: any, i: number) => {
-    const simulationToken = simulationTokens
-      ? simulationTokens.find(
-          (token: any) => token.addr.toLowerCase() === tokenAddrs[i][0].toLowerCase()
+  return [
+    before[0].map((beforeToken: any, i: number) => {
+      const simulationToken = simulationTokens
+        ? simulationTokens.find(
+            (token: any) => token.addr.toLowerCase() === tokenAddrs[i][0].toLowerCase()
+          )
+        : null
+
+      const token = mapToken(beforeToken)
+      const receiving: bigint[] = []
+      const sending: bigint[] = []
+
+      token.collectibles.forEach((oldCollectible: bigint) => {
+        // the first check is required because if there are no changes we will always have !undefined from the second check
+        if (
+          simulationToken?.collectibles &&
+          !simulationToken?.collectibles?.includes(oldCollectible)
         )
-      : null
+          sending.push(oldCollectible)
+      })
+      simulationToken?.collectibles?.forEach((newCollectible: bigint) => {
+        if (!token.collectibles.includes(newCollectible)) receiving.push(newCollectible)
+      })
 
-    const token = mapToken(beforeToken)
-    const receiving: bigint[] = []
-    const sending: bigint[] = []
-
-    token.collectibles.forEach((oldCollectible: bigint) => {
-      // the first check is required because if there are no changes we will always have !undefined from the second check
-      if (simulationToken?.collectibles && !simulationToken?.collectibles?.includes(oldCollectible))
-        sending.push(oldCollectible)
-    })
-    simulationToken?.collectibles?.forEach((newCollectible: bigint) => {
-      if (!token.collectibles.includes(newCollectible)) receiving.push(newCollectible)
-    })
-
-    return [
-      beforeToken.error,
-      {
-        ...token,
-        // Please refer to getTokens() for more info regarding `amountBeforeSimulation` calc
-        simulationAmount: simulationToken ? simulationToken.amount - token.amount : undefined,
-        amountPostSimulation: simulationToken ? simulationToken.amount : token.amount,
-        postSimulation: { receiving, sending }
-      }
-    ]
-  })
+      return [
+        beforeToken.error,
+        {
+          ...token,
+          // Please refer to getTokens() for more info regarding `amountBeforeSimulation` calc
+          simulationAmount: simulationToken ? simulationToken.amount - token.amount : undefined,
+          amountPostSimulation: simulationToken ? simulationToken.amount : token.amount,
+          postSimulation: { receiving, sending }
+        }
+      ]
+    }),
+    {}
+  ]
 }
 
 export async function getTokens(
@@ -199,7 +210,7 @@ export async function getTokens(
   opts: Partial<GetOptions>,
   accountAddr: string,
   tokenAddrs: string[]
-): Promise<[TokenResult, number, bigint, bigint][]> {
+): Promise<[[TokenError, TokenResult][], MetaData][]> {
   const mapToken = (token: any, address: string) => {
     return {
       amount: token.amount,
@@ -223,7 +234,9 @@ export async function getTokens(
 
     return [
       results.map((token: any, i: number) => [token.error, mapToken(token, tokenAddrs[i])]),
-      blockNumber
+      {
+        blockNumber
+      }
     ]
   }
   const { accountOps, account } = opts.simulation
@@ -287,8 +300,10 @@ export async function getTokens(
         }
       ]
     }),
-    blockNumber,
-    beforeNonce,
-    afterNonce
+    {
+      blockNumber,
+      beforeNonce,
+      afterNonce
+    }
   ]
 }
