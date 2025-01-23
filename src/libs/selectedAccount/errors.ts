@@ -88,14 +88,14 @@ export const getNetworksWithFailedRPCErrors = ({
 
 const addPortfolioError = (
   errors: SelectedAccountBalanceError[],
-  networkName: string,
+  networkId: NetworkId,
   newError: keyof typeof PORTFOLIO_LIB_ERROR_NAMES | 'portfolio-critical'
 ) => {
   const newErrors = [...errors]
-  const existingError = newErrors.find((error) => error.networkIds.includes(networkName))
+  const existingError = newErrors.find((error) => error.id === newError)
 
   if (existingError) {
-    existingError.networkIds.push(newError)
+    existingError.networkIds.push(networkId)
   } else {
     let title = ''
     let text = ''
@@ -103,11 +103,11 @@ const addPortfolioError = (
 
     switch (newError) {
       case 'portfolio-critical':
-        title = `Failed to retrieve the portfolio data for ${networkName}`
+        title = 'Failed to retrieve the portfolio data'
         text = 'Account balance and visible assets may be inaccurate.'
         break
       case PORTFOLIO_LIB_ERROR_NAMES.PriceFetchError:
-        title = `Failed to retrieve prices for ${networkName}`
+        title = 'Failed to retrieve prices'
         text = 'Account balance and asset prices may be inaccurate.'
         type = 'warning'
         break
@@ -126,11 +126,11 @@ const addPortfolioError = (
         break
     }
 
-    if (!title) return
+    if (!title) return newErrors
 
     newErrors.push({
       id: newError,
-      networkIds: [networkName],
+      networkIds: [networkId],
       type,
       title,
       text
@@ -149,7 +149,7 @@ export const getNetworksWithPortfolioErrorErrors = ({
   selectedAccountLatest: SelectedAccountPortfolioState
   providers: RPCProviders
 }): SelectedAccountBalanceError[] => {
-  const errors: SelectedAccountBalanceError[] = []
+  let errors: SelectedAccountBalanceError[] = []
 
   const portfolioLoading = Object.keys(selectedAccountLatest).some((network) => {
     const portfolioForNetwork = selectedAccountLatest[network]
@@ -171,30 +171,42 @@ export const getNetworksWithPortfolioErrorErrors = ({
     if (typeof lastSuccessfulUpdate === 'number' && Date.now() - lastSuccessfulUpdate < TEN_MINUTES)
       return
 
-    let networkName: string | null = null
-
-    if (network === 'gasTank') networkName = 'Gas Tank'
-    else if (network === 'rewards') networkName = 'Rewards'
-    else networkName = networks.find((n) => n.id === network)?.name ?? null
-
-    if (!portfolioForNetwork || !networkName || portfolioForNetwork.isLoading) return
+    if (!portfolioForNetwork || !network || portfolioForNetwork.isLoading) return
     // Don't display an error banner if the RPC isn't working because an RPC error banner is already displayed.
     // In case of additional networks don't check the RPC as there isn't one
     if (
       criticalError &&
       (['gasTank', 'rewards'].includes(network) || providers[network].isWorking)
     ) {
-      addPortfolioError(errors, networkName, 'portfolio-critical')
-      // If there is a critical error, we don't need to check for price fetch error
+      errors = addPortfolioError(errors, network, 'portfolio-critical')
       return
     }
 
     portfolioForNetwork?.errors.forEach((err: any) => {
-      addPortfolioError(errors, networkName as string, err.name)
+      errors = addPortfolioError(errors, network, err.name)
     })
   })
 
-  return errors
+  return errors.map(({ title, networkIds, ...rest }) => {
+    const networkNames = networkIds.reduce((acc, id, index) => {
+      let networkName = networks.find((n) => n.id === id)?.name
+      const isLast = index === networkIds.length - 1
+      const isOnly = networkIds.length === 1
+
+      if (id === 'gasTank') networkName = 'Gas Tank'
+      else if (id === 'rewards') networkName = 'Rewards'
+
+      if (!networkName) return acc
+
+      return `${acc}${networkName}${isLast || isOnly ? '' : ', '}`
+    }, '')
+
+    return {
+      ...rest,
+      title: `${title} on ${networkNames}`,
+      networkIds
+    }
+  })
 }
 
 export const getNetworksWithDeFiPositionsErrorErrors = ({

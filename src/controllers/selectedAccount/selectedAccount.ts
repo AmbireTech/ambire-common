@@ -343,8 +343,7 @@ export class SelectedAccountController extends EventEmitter {
       !this.#networks ||
       !this.#providers ||
       !this.#portfolio ||
-      !this.portfolio.isAllReady ||
-      !this.#accounts.areAccountStatesLoading
+      !this.portfolio.isAllReady
     ) {
       this.#portfolioErrors = []
       if (!skipUpdate) {
