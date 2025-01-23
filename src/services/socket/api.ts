@@ -208,14 +208,18 @@ export class SocketAPI {
       toTokenAddress: normalizeOutgoingSocketTokenAddress(toTokenAddress),
       fromAmount: fromAmount.toString(),
       userAddress,
-      feeTakerAddress: AMBIRE_FEE_TAKER_ADDRESSES[fromChainId],
-      feePercent: FEE_PERCENT.toString(),
       isContractCall: isSmartAccount.toString(), // only get quotes with that are compatible with contracts
       sort,
       singleTxOnly: 'false',
       defaultSwapSlippage: '1',
       uniqueRoutesPerBridge: 'true'
     })
+    const feeTakerAddress = AMBIRE_FEE_TAKER_ADDRESSES[fromChainId]
+    const shouldIncludeConvenienceFee = !!feeTakerAddress
+    if (shouldIncludeConvenienceFee) {
+      params.append('feeTakerAddress', feeTakerAddress)
+      params.append('feePercent', FEE_PERCENT.toString())
+    }
     const url = `${this.#baseUrl}/quote?${params.toString()}`
 
     let response = await this.#fetch(url, { headers: this.#headers })
