@@ -9,6 +9,7 @@ import { Fetch } from '../../interfaces/fetch'
 import { Hex } from '../../interfaces/hex'
 import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
+import { Message } from '../../interfaces/userRequest'
 import { decodeError } from '../../libs/errorDecoder'
 import { BundlerError } from '../../libs/errorDecoder/customErrors'
 import { DecodedError } from '../../libs/errorDecoder/types'
@@ -53,6 +54,16 @@ export abstract class Bundler {
    * Each bundler needs to return its own na,e
    */
   public abstract getName(): BUNDLER
+
+  /**
+   * Each bundler implements its own 7702 function for now
+   */
+  public abstract estimate7702(
+    userOperation: UserOperation,
+    network: Network,
+    shouldStateOverride: boolean,
+    authorizationMsg?: Message
+  ): Promise<BundlerEstimateResult>
 
   /**
    * Get the bundler RPC

@@ -85,8 +85,8 @@ export class Pimlico extends Bundler {
   async estimate7702(
     userOperation: UserOperation,
     network: Network,
-    authorizationMsg?: Message,
-    shouldStateOverride = false
+    shouldStateOverride: boolean,
+    authorizationMsg?: Message
   ): Promise<BundlerEstimateResult> {
     const estimatiton = await this.send7702EstimateReq(
       userOperation,

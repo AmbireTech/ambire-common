@@ -136,6 +136,7 @@ export async function estimate4337(
     ),
     estimateGas(account, estimateGasOp, provider, accountState, network).catch(() => 0n)
   ]
+
   const estimations = await estimateWithRetries(
     initializeRequests,
     'estimation-deployless',
@@ -166,7 +167,7 @@ export async function estimate4337(
       ,
       l1GasEstimation
     ]
-  ] = estimations[0]
+  ] = ambireEstimation
   const ambireEstimationError =
     getInnerCallFailure(
       accountOp,
@@ -188,7 +189,7 @@ export async function estimate4337(
   } else if (!ambireEstimationError && bundlerEstimationResult.error) {
     // if there's a bundler error only, it means it's a bundler specific
     // problem. If we can switch the bundler, re-estimate
-    if (switcher.canSwitch(null)) {
+    if (switcher.canSwitch(account, null)) {
       switcher.switch()
       return estimate4337(
         account,
@@ -276,8 +277,10 @@ export async function estimate(
   blockFrom: string = '0x0000000000000000000000000000000000000001',
   blockTag: string | number = 'pending'
 ): Promise<EstimateResult> {
-  // if EOA, delegate
-  if (!isSmartAccount(account))
+  const accountState = accountStates[op.accountAddr][op.networkId]
+
+  // if EOA & not smarter
+  if (!isSmartAccount(account) && !accountState.isSmarterEoa)
     return estimateEOA(
       account,
       op,
@@ -290,11 +293,11 @@ export async function estimate(
       errorCallback
     )
 
-  if (!network.isSAEnabled)
+  if (!network.isSAEnabled && !accountState.isSmarterEoa)
     return estimationErrorFormatted(
       new Error('Smart accounts are not available for this network. Please use a Basic Account')
     )
-  if (!network.areContractsDeployed)
+  if (!network.areContractsDeployed && !accountState.isSmarterEoa)
     return estimationErrorFormatted(
       new Error(
         'The Ambire smart contracts are not deployed on this network, yet. You can deploy them via a Basic Account throught the network settings'
@@ -306,7 +309,6 @@ export async function estimate(
   // and the network is 4337 but doesn't have a paymaster and the account
   // is deployed for some reason, we should include the activator
   const calls = [...op.calls.map(toSingletonCall)]
-  const accountState = accountStates[op.accountAddr][op.networkId]
   if (shouldIncludeActivatorCall(network, account, accountState, false)) {
     calls.push(getActivatorCall(op.accountAddr))
   }

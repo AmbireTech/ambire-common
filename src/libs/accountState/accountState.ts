@@ -68,7 +68,7 @@ export async function getAccountState(
     const account = accounts[index]
     const authorization = getAuthorization(
       account,
-      BigInt(eoaNonces[account.addr]),
+      !account.creation ? BigInt(eoaNonces[account.addr]) : 0n,
       network,
       authorizations
     )
@@ -79,8 +79,8 @@ export async function getAccountState(
     const isSmarterEoa = !!authorization
 
     const res = {
-      accountAddr: accounts[index].addr,
-      nonce: !isSmartAccount(accounts[index]) ? eoaNonces[accounts[index].addr] : accResult.nonce,
+      accountAddr: account.addr,
+      nonce: !isSmartAccount(account) ? eoaNonces[account.addr] : accResult.nonce,
       erc4337Nonce: accResult.erc4337Nonce,
       isDeployed: accResult.isDeployed,
       associatedKeys: Object.fromEntries(associatedKeys),
@@ -97,7 +97,7 @@ export async function getAccountState(
       ),
       currentBlock: accResult.currentBlock,
       deployError:
-        accounts[index].associatedKeys.length > 0 && accResult.associatedKeyPrivileges.length === 0,
+        account.associatedKeys.length > 0 && accResult.associatedKeyPrivileges.length === 0,
       isSmarterEoa,
       authorization
     }

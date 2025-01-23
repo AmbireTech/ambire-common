@@ -2496,7 +2496,7 @@ export class MainController extends EventEmitter {
           const switcher = this.signAccountOp.bundlerSwitcher
           this.signAccountOp.updateStatus(SigningStatus.ReadyToSign)
 
-          if (switcher.canSwitch(humanReadable)) {
+          if (switcher.canSwitch(account, humanReadable)) {
             switcher.switch()
             this.estimateSignAccountOp()
             this.#updateGasPrice()
