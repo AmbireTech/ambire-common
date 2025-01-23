@@ -80,7 +80,7 @@ async function estimate(
   const initializeRequests = () => [
     accountState.isSmarterEoa
       ? bundler
-          .estimate7702(userOp, network, isEdgeCase, accountState.authorization)
+          .estimate7702(userOp, network, accountState.authorization)
           .catch(estimateErrorCallback)
       : bundler.estimate(userOp, network, isEdgeCase).catch(estimateErrorCallback)
   ]
@@ -114,8 +114,14 @@ export async function bundlerEstimate(
 
   const localOp = { ...op }
   const accountState = accountStates[localOp.accountAddr][localOp.networkId]
-  // if there's no entryPointAuthorization, we cannot do the estimation on deploy
-  if (!accountState.isDeployed && (!op.meta || !op.meta.entryPointAuthorization))
+
+  // if the account is not a smarter EOA &
+  // there's no entryPointAuthorization, we cannot do the estimation on deploy
+  if (
+    !accountState.isSmarterEoa &&
+    !accountState.isDeployed &&
+    (!op.meta || !op.meta.entryPointAuthorization)
+  )
     return estimationErrorFormatted(
       new Error('Entry point privileges not granted. Please contact support'),
       { feePaymentOptions }
@@ -127,7 +133,7 @@ export async function bundlerEstimate(
     accountState,
     localOp,
     initialBundler.getName(),
-    !accountState.isDeployed ? op.meta!.entryPointAuthorization : undefined
+    op.meta && op.meta.entryPointAuthorization ? op.meta.entryPointAuthorization : undefined
   )
   // set the callData
   if (userOp.activatorCall) localOp.activatorCall = userOp.activatorCall

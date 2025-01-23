@@ -7,11 +7,12 @@ import { Account, AccountStates } from '../../interfaces/account'
 import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
 import { BundlerSwitcher } from '../../services/bundlers/bundlerSwitcher'
+import { getEoaSimulationStateOverride } from '../../utils/simulationStateOverride'
 import { getAccountDeployParams, isSmartAccount } from '../account/account'
 import { AccountOp, toSingletonCall } from '../accountOp/accountOp'
 import { Call } from '../accountOp/types'
 import { getFeeCall } from '../calls/calls'
-import { fromDescriptor } from '../deployless/deployless'
+import { DeploylessMode, fromDescriptor } from '../deployless/deployless'
 import { InnerCallFailureError } from '../errorDecoder/customErrors'
 import { getHumanReadableEstimationError } from '../errorHumanizer'
 import { getProbableCallData } from '../gasPrice/gasPrice'
@@ -117,11 +118,18 @@ export async function estimate4337(
   const feeToken = getFeeTokenForEstimate(feeTokens, network)
   if (feeToken) estimateGasOp.feeCall = getFeeCall(feeToken)
 
+  // TODO<eip7702>
+  // once we have the code delegation in the accountState, replace !!accountState.authorization
+  const isSmarterEoaWithoutDelegation = accountState.isSmarterEoa && !!accountState.authorization
   const initializeRequests = () => [
     deploylessEstimator
       .call('estimate', checkInnerCallsArgs, {
         from: DEPLOYLESS_SIMULATION_FROM,
-        blockTag
+        blockTag,
+        mode: isSmarterEoaWithoutDelegation ? DeploylessMode.StateOverride : DeploylessMode.Detect,
+        stateToOverride: isSmarterEoaWithoutDelegation
+          ? getEoaSimulationStateOverride(account.addr)
+          : undefined
       })
       .catch(getHumanReadableEstimationError),
     bundlerEstimate(
@@ -153,6 +161,7 @@ export async function estimate4337(
       { feePaymentOptions }
     )
   }
+
   // // if there's a bundler error only, remove the smart account payment options
   // if (bundlerEstimationResult instanceof Error) feePaymentOptions = []
   const [
@@ -168,6 +177,7 @@ export async function estimate4337(
       l1GasEstimation
     ]
   ] = ambireEstimation
+
   const ambireEstimationError =
     getInnerCallFailure(
       accountOp,

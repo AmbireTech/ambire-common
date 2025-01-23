@@ -3,6 +3,7 @@ import { toBeHex } from 'ethers'
 
 import { BUNDLER, PIMLICO } from '../../consts/bundlers'
 import { ENTRY_POINT_MARKER, ERC_4337_ENTRYPOINT } from '../../consts/deploy'
+import { EOA_SIMULATION_NONCE } from '../../consts/deployless'
 import { Hex } from '../../interfaces/hex'
 import { Network } from '../../interfaces/network'
 import { EIP7702Signature } from '../../interfaces/signatures'
@@ -67,6 +68,7 @@ export class Pimlico extends Bundler {
         {
           [userOperation.sender]: {
             stateDiff: {
+              [toBeHex(1, 32)]: EOA_SIMULATION_NONCE,
               // add privileges to the entry point
               [`0x${privSlot(0, 'address', ERC_4337_ENTRYPOINT, 'bytes32')}`]: ENTRY_POINT_MARKER
             }
@@ -85,14 +87,13 @@ export class Pimlico extends Bundler {
   async estimate7702(
     userOperation: UserOperation,
     network: Network,
-    shouldStateOverride: boolean,
     authorizationMsg?: Message
   ): Promise<BundlerEstimateResult> {
     const estimatiton = await this.send7702EstimateReq(
       userOperation,
       network,
       authorizationMsg,
-      shouldStateOverride
+      !!authorizationMsg
     )
 
     return {

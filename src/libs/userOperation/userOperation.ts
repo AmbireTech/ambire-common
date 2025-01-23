@@ -137,7 +137,7 @@ export function getUserOperation(
   }
 
   // if the account is not deployed, prepare the deploy in the initCode
-  if (!accountState.isDeployed) {
+  if (!accountState.isSmarterEoa && !accountState.isDeployed) {
     if (!account.creation) throw new Error('Account creation properties are missing')
     if (!entryPointSig) throw new Error('No entry point authorization signature provided')
 

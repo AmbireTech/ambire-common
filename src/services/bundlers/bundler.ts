@@ -61,7 +61,6 @@ export abstract class Bundler {
   public abstract estimate7702(
     userOperation: UserOperation,
     network: Network,
-    shouldStateOverride: boolean,
     authorizationMsg?: Message
   ): Promise<BundlerEstimateResult>
 

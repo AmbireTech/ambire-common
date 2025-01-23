@@ -92,7 +92,6 @@ export class Biconomy extends Bundler {
   async estimate7702(
     userOperation: UserOperation,
     network: Network,
-    shouldStateOverride: boolean,
     authorizationMsg?: Message
   ): Promise<BundlerEstimateResult> {
     throw new Error('not supported')
