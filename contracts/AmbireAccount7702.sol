@@ -19,8 +19,7 @@ contract AmbireAccount7702 is IAmbireAccount {
 	// using our own code generation to insert SSTOREs to initialize `privileges` (it was previously called IdentityProxyDeploy.js, now src/libs/proxyDeploy/deploy.ts)
 	address private constant FALLBACK_HANDLER_SLOT = address(0x6969);
 
-	// @dev This is how we understand if msg.sender is the entry point
-	bytes32 private constant ENTRY_POINT_MARKER = 0x0000000000000000000000000000000000000000000000000000000000007171;
+	address private constant ENTRY_POINT = address(0x0000000071727De22E5E9d8BAf0edAc6f37da032);
 
 	// Externally validated signatures
 	uint8 private constant SIGMODE_EXTERNALLY_VALIDATED = 255;
@@ -110,7 +109,7 @@ contract AmbireAccount7702 is IAmbireAccount {
 	 * @return  bytes4  is it a success or a failure
 	 */
 	function privilegeLevel(address key) internal virtual view returns (uint256) {
-		if (key == address(this)) return 2;
+		if (key == address(this) || key == ENTRY_POINT) return 2;
 		return uint256(privileges[key]);
 	}
 
@@ -345,7 +344,7 @@ contract AmbireAccount7702 is IAmbireAccount {
 			return SIG_VALIDATION_SUCCESS;
 		}
 
-		require(privileges[msg.sender] == ENTRY_POINT_MARKER, 'validateUserOp: not from entryPoint');
+		require(address(msg.sender) == ENTRY_POINT, 'validateUserOp: not from entryPoint');
 
 		// @estimation
 		// paying should happen even if signature validation fails
