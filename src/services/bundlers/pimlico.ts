@@ -2,14 +2,13 @@
 import { toBeHex } from 'ethers'
 
 import { BUNDLER, PIMLICO } from '../../consts/bundlers'
-import { ENTRY_POINT_MARKER, ERC_4337_ENTRYPOINT } from '../../consts/deploy'
+import { ERC_4337_ENTRYPOINT } from '../../consts/deploy'
 import { EOA_SIMULATION_NONCE } from '../../consts/deployless'
 import { Hex } from '../../interfaces/hex'
 import { Network } from '../../interfaces/network'
 import { EIP7702Signature } from '../../interfaces/signatures'
 import { Authorization, Message } from '../../interfaces/userRequest'
 import { BundlerEstimateResult } from '../../libs/estimate/interfaces'
-import { privSlot } from '../../libs/proxyDeploy/deploy'
 import { get7702SigV } from '../../libs/signMessage/signMessage'
 import { UserOperation } from '../../libs/userOperation/types'
 import { getCleanUserOp } from '../../libs/userOperation/userOperation'
@@ -62,15 +61,12 @@ export class Pimlico extends Bundler {
 
     if (shouldStateOverride) {
       return provider.send('pimlico_experimental_estimateUserOperationGas7702', [
-        getCleanUserOp(userOperation)[0],
+        { ...getCleanUserOp(userOperation)[0], eip7702Auth: authorization },
         ERC_4337_ENTRYPOINT,
-        authorization,
         {
           [userOperation.sender]: {
             stateDiff: {
-              [toBeHex(1, 32)]: EOA_SIMULATION_NONCE,
-              // add privileges to the entry point
-              [`0x${privSlot(0, 'address', ERC_4337_ENTRYPOINT, 'bytes32')}`]: ENTRY_POINT_MARKER
+              [toBeHex(1, 32)]: EOA_SIMULATION_NONCE
             }
           }
         }

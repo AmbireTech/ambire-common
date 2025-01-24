@@ -56,6 +56,7 @@ const gnosis: Network = {
   platformId: 'xdai',
   nativeAssetId: 'xdai',
   hasSingleton: true,
+  has7702: false,
   features: [],
   feeOptions: {
     is1559: true,
@@ -84,6 +85,7 @@ const baseSepolia: Network = {
   nativeAssetId: '',
   hasSingleton: true,
   features: [],
+  has7702: false,
   feeOptions: {
     is1559: true
   },
@@ -148,6 +150,7 @@ const mantle: Network = {
   isSAEnabled: true,
   areContractsDeployed: true,
   hasRelayer: false,
+  has7702: false,
   platformId: 'mantle',
   nativeAssetId: 'mantle',
   hasSingleton: true,
@@ -174,6 +177,7 @@ const base: Network = {
   areContractsDeployed: true,
   hasRelayer: false,
   platformId: 'base',
+  has7702: false,
   nativeAssetId: 'base',
   hasSingleton: true,
   features: [],
