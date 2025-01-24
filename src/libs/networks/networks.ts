@@ -230,7 +230,7 @@ export function getFeaturesByNetworkProperties(
     },
     {
       id: 'prices',
-      title: "Token's prices",
+      title: 'Token prices',
       level: 'loading'
     }
   ]
