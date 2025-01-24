@@ -24,6 +24,7 @@ import {
 /* eslint-disable no-restricted-syntax */
 // eslint-disable-next-line import/no-cycle
 import {
+  AccountAssetsState,
   AccountState,
   GetOptions,
   NetworkState,
@@ -79,9 +80,7 @@ export class PortfolioController extends EventEmitter {
   #velcroUrl: string
 
   #networksWithAssetsByAccounts: {
-    [accountId: string]: {
-      [networkId: NetworkId]: boolean
-    }
+    [accountId: string]: AccountAssetsState
   } = {}
 
   #minUpdateInterval: number = 20000 // 20 seconds
@@ -140,10 +139,11 @@ export class PortfolioController extends EventEmitter {
       await this.#accounts.initialLoadPromise
       this.tokenPreferences = await this.#storage.get('tokenPreferences', [])
       this.#previousHints = await this.#storage.get('previousHints', {})
-      this.#networksWithAssetsByAccounts = await this.#storage.get(
-        'networksWithAssetsByAccount',
-        {}
-      )
+      const networksWithAssets = await this.#storage.get('networksWithAssetsByAccount', {})
+
+      if (!Array.isArray(networksWithAssets)) {
+        this.#networksWithAssetsByAccounts = networksWithAssets
+      }
     } catch (e) {
       this.emitError({
         message:

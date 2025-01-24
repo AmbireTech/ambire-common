@@ -13,6 +13,8 @@ export interface GetOptionsSimulation {
   account: Account
 }
 
+export type AccountAssetsState = { [networkId: NetworkId]: boolean }
+
 export type TokenResult = Omit<CustomToken, 'standard'> & {
   amount: bigint
   simulationAmount?: bigint
