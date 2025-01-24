@@ -17,6 +17,7 @@ import {
   SocketAPIRoute,
   SocketAPISendTransactionRequest,
   SocketAPIToken,
+  SocketRouteStatus,
   SwapAndBridgeToToken
 } from '../../interfaces/swapAndBridge'
 import { isSmartAccount } from '../../libs/account/account'
@@ -1054,8 +1055,7 @@ export class SwapAndBridgeController extends EventEmitter {
   async checkForNextUserTxForActiveRoutes() {
     await this.#initialLoadPromise
     const fetchAndUpdateRoute = async (activeRoute: ActiveRoute) => {
-      let status: 'ready' | 'completed' | null = null
-      let errorMessage: string | null = null
+      let status: SocketRouteStatus = null
       const broadcastedButNotConfirmed = this.#activity.broadcastedButNotConfirmed.find((op) =>
         op.calls.some((c) => c.fromUserRequestId === activeRoute.activeRouteId)
       )
@@ -1065,27 +1065,21 @@ export class SwapAndBridgeController extends EventEmitter {
       if (activeRoute.routeStatus === 'completed') return
 
       try {
-        const res = await this.#socketAPI.getRouteStatus({
+        status = await this.#socketAPI.getRouteStatus({
           activeRouteId: activeRoute.activeRouteId,
           userTxIndex: activeRoute.userTxIndex,
           txHash: activeRoute.userTxHash!
         })
+      } catch (e: any) {
+        // TODO: Map in similar fashion as decodeError()
+        const error =
+          e instanceof SwapAndBridgeProviderApiError
+            ? e.message
+            : `Unable to get the route status. Please check back later to proceed.. Details: <${
+                e?.message || 'no details'
+              }>`
 
-        if (res.statusCode !== 200) {
-          errorMessage =
-            'We have troubles getting the status of this route. Please check back later to proceed.'
-        } else {
-          status = res.result
-        }
-      } catch (error) {
-        errorMessage =
-          'We have troubles getting the status of this route. Please check back later to proceed.'
-      }
-
-      if (errorMessage) {
-        this.updateActiveRoute(activeRoute.activeRouteId, {
-          error: errorMessage
-        })
+        this.updateActiveRoute(activeRoute.activeRouteId, { error })
         return
       }
 

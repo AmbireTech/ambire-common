@@ -7,7 +7,8 @@ import {
   SocketAPIQuote,
   SocketAPISendTransactionRequest,
   SocketAPISupportedChain,
-  SocketAPIToken
+  SocketAPIToken,
+  SocketRouteStatus
 } from '../../interfaces/swapAndBridge'
 import {
   AMBIRE_FEE_TAKER_ADDRESSES,
@@ -93,7 +94,6 @@ export class SocketAPI {
     this.isHealthy = null
   }
 
-  // TODO: Refine types
   async #handleResponse<T>({
     fetchPromise,
     errorPrefix
@@ -125,6 +125,7 @@ export class SocketAPI {
     // Socket API returns 500 status code with a message in the body, even
     // in case of a bad request. Not necessarily an internal server error.
     // TODO: Not sure if !response.success this will click well with the getSupportedChains method.
+    // TODO: Refine types
     if (isBadResponse || !responseBody?.success) {
       // API returns 2 types of errors, a generic one, on the top level:
       const genericErrorMessage = responseBody?.message?.error || 'no message'
@@ -371,11 +372,11 @@ export class SocketAPI {
     })
     const url = `${this.#baseUrl}/route/prepare?${params.toString()}`
 
-    let response = await this.#fetch(url, { headers: this.#headers })
-    if (!response.ok) throw new Error('Failed to update route')
-    await this.updateHealthIfNeeded()
+    const response = await this.#handleResponse<SocketRouteStatus>({
+      fetchPromise: this.#fetch(url, { headers: this.#headers }),
+      errorPrefix: 'Unable to get the route status. Please check back later to proceed.'
+    })
 
-    response = await response.json()
     return response
   }
 

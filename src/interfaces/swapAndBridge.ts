@@ -210,6 +210,8 @@ export type SocketAPIActiveRoutes = ActiveRoute['route'] & {
   toAsset: SocketAPIToken
 }
 
+export type SocketRouteStatus = 'ready' | 'completed' | null
+
 export type SocketAPISupportedChain = {
   chainId: number
   name: string
