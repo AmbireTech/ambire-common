@@ -311,8 +311,7 @@ export class SelectedAccountController extends EventEmitter {
       !this.#networks ||
       !this.#providers ||
       !this.#defiPositions ||
-      this.areDefiPositionsLoading ||
-      !this.#accounts.areAccountStatesLoading
+      this.areDefiPositionsLoading
     ) {
       this.#defiPositionsErrors = []
       if (!skipUpdate) {
