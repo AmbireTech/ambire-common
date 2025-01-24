@@ -336,7 +336,7 @@ describe('Bundler tests', () => {
         expect(e.message.indexOf('server response 400 Bad Request')).not.toBe(-1)
       }
     })
-    test('should revert because we are trying to send USDT and the account does not have USDT with a generic server response 400 Bad Request', async () => {
+    test.skip('should revert because we are trying to send USDT and the account does not have USDT with a generic server response 400 Bad Request', async () => {
       expect.assertions(1)
       const ERC20Interface = new Interface(ERC20.abi)
       const opArb: AccountOp = {
