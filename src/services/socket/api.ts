@@ -142,20 +142,17 @@ export class SocketAPI {
     return responseBody.result
   }
 
+  // TODO: Test.
   async getSupportedChains(): Promise<SocketAPISupportedChain[]> {
     const url = `${this.#baseUrl}/supported/chains`
 
-    let response = await this.#fetch(url, { headers: this.#headers })
-    const fallbackError = new Error(
-      'Unable to retrieve the list of supported Swap & Bridge chains from our service provider.'
-    )
-    if (!response.ok) throw fallbackError
+    const response = await this.#handleResponse<SocketAPISupportedChain[]>({
+      fetchPromise: this.#fetch(url, { headers: this.#headers }),
+      errorPrefix:
+        'Unable to retrieve the list of supported Swap & Bridge chains from our service provider.'
+    })
 
-    response = await response.json()
-    if (!response.success) throw fallbackError
-    await this.updateHealthIfNeeded()
-
-    return response.result
+    return response
   }
 
   // TODO: Test.
