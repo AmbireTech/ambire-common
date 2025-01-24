@@ -289,15 +289,13 @@ export class SocketAPI {
             fromAsset: normalizeIncomingSocketToken(userTx.fromAsset)
           }),
           toAsset: normalizeIncomingSocketToken(userTx.toAsset),
-          // @ts-ignore fromAsset exists on one of the two userTx sub-types
-          steps: userTx.steps
-            ? // @ts-ignore fromAsset exists on one of the two userTx sub-types
-              userTx.steps.map((step) => ({
-                ...step,
-                fromAsset: normalizeIncomingSocketToken(step.fromAsset),
-                toAsset: normalizeIncomingSocketToken(step.toAsset)
-              }))
-            : undefined
+          ...('steps' in userTx && {
+            steps: userTx.steps.map((step) => ({
+              ...step,
+              fromAsset: normalizeIncomingSocketToken(step.fromAsset),
+              toAsset: normalizeIncomingSocketToken(step.toAsset)
+            }))
+          })
         }))
       }))
     }
