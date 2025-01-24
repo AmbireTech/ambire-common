@@ -108,7 +108,7 @@ export class SocketAPI {
     } catch (e: any) {
       const message = e?.message || 'no message'
       const status = e?.status || 'unknown'
-      const error = `${errorPrefix} Upstream error: ${message}, status: ${status}`
+      const error = `${errorPrefix} Upstream error: <${message}>, status: <${status}>`
       throw new SwapAndBridgeProviderApiError(error)
     }
 
@@ -117,7 +117,7 @@ export class SocketAPI {
       responseBody = await response.json()
     } catch (e: any) {
       const message = e?.message || 'no message'
-      const error = `${errorPrefix} Error details: Unexpected non-JSON response from our service provider, message: ${message}`
+      const error = `${errorPrefix} Error details: Unexpected non-JSON response from our service provider, message: $<{message}>`
       throw new SwapAndBridgeProviderApiError(error)
     }
 
@@ -131,7 +131,7 @@ export class SocketAPI {
       // ... and a detailed one, nested in the `details` object:
       const specificErrorMessage = responseBody?.message?.details?.error?.message || 'no details'
       const specificErrorCode = responseBody?.message?.details?.error?.code || 'no code'
-      const error = `${errorPrefix} Our service provider upstream error: ${genericErrorMessage}, details: ${specificErrorMessage}, code: ${specificErrorCode}`
+      const error = `${errorPrefix} Our service provider upstream error: <${genericErrorMessage}>, details: <${specificErrorMessage}>, code: <${specificErrorCode}>`
       throw new SwapAndBridgeProviderApiError(error)
     }
 
