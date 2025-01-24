@@ -6,7 +6,7 @@ import { Message, TypedMessage } from '../../interfaces/userRequest'
 import { ENTRY_POINT_AUTHORIZATION_REQUEST_ID } from '../userOperation/userOperation'
 import { erc20Module, erc721Module, permit2Module } from './messageModules'
 import { entryPointModule } from './messageModules/entryPointModule'
-import { compareVisualizations } from './testHelpers'
+import { compareHumanizerVisualizations, compareVisualizations } from './testHelpers'
 import { getAction, getAddressVisualization, getDeadline, getLabel, getToken } from './utils'
 
 const address1 = '0x6942069420694206942069420694206942069420'
@@ -190,11 +190,12 @@ describe('typed message tests', () => {
 
   test('Entry point module', () => {
     messageTemplate.fromActionId = ENTRY_POINT_AUTHORIZATION_REQUEST_ID
-    const { fullVisualization } = entryPointModule(messageTemplate)
-    expect(fullVisualization?.length).toBe(1)
-    expect(fullVisualization?.[0]).toMatchObject({
-      type: 'action',
-      content: 'Authorize entry point'
-    })
+    const { fullVisualization: received } = entryPointModule(messageTemplate)
+    const expected = [
+      getAction('Authorize entry point'),
+      getLabel('for'),
+      getAddressVisualization(messageTemplate.accountAddr)
+    ]
+    compareVisualizations(expected, received!)
   })
 })
