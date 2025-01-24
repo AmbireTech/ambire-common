@@ -24,7 +24,7 @@ import { Account } from '../../interfaces/account'
 import { ExternalSignerControllers, Key } from '../../interfaces/keystore'
 import { Network } from '../../interfaces/network'
 import { Warning } from '../../interfaces/signAccountOp'
-import { isAmbireV1LinkedAccount, isSmartAccount } from '../../libs/account/account'
+import { isAmbireV1LinkedAccount, isBasicAccount, isSmartAccount } from '../../libs/account/account'
 import { AccountOp, GasFeePayment, getSignableCalls } from '../../libs/accountOp/accountOp'
 import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 import { PaymasterErrorReponse, PaymasterSuccessReponse, Sponsor } from '../../libs/erc7677/types'
@@ -1234,8 +1234,8 @@ export class SignAccountOpController extends EventEmitter {
     }
 
     try {
-      // In case of EOA account
-      if (!isSmartAccount(this.account)) {
+      // In case of EOA account, no 7702
+      if (isBasicAccount(this.account, accountState)) {
         if (this.accountOp.calls.length !== 1) {
           const callCount = this.accountOp.calls.length > 1 ? 'multiple' : 'zero'
           const message = `Unable to sign the transaction because it has ${callCount} calls. ${RETRY_TO_INIT_ACCOUNT_OP_MSG}`
@@ -1259,6 +1259,7 @@ export class SignAccountOpController extends EventEmitter {
       } else if (this.accountOp.gasFeePayment.isERC4337) {
         // if there's no entryPointAuthorization, the txn will fail
         if (
+          !accountState.isSmarterEoa &&
           !accountState.isDeployed &&
           (!this.accountOp.meta || !this.accountOp.meta.entryPointAuthorization)
         )
@@ -1273,7 +1274,9 @@ export class SignAccountOpController extends EventEmitter {
           accountState,
           this.accountOp,
           this.bundlerSwitcher.getBundler().getName(),
-          !accountState.isDeployed ? this.accountOp.meta!.entryPointAuthorization : undefined
+          this.accountOp.meta?.entryPointAuthorization
+            ? this.accountOp.meta.entryPointAuthorization
+            : undefined
         )
         userOperation.preVerificationGas = erc4337Estimation.preVerificationGas
         userOperation.callGasLimit = toBeHex(

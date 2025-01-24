@@ -16,6 +16,20 @@ import { Bundler } from './bundler'
 import { GasSpeeds, UserOpStatus } from './types'
 
 export class Pimlico extends Bundler {
+  private getPimlicoAuthorization(authorizationMsg?: Message) {
+    return authorizationMsg
+      ? {
+          contractAddress: (authorizationMsg.content as Authorization).contractAddr,
+          chainId: toBeHex((authorizationMsg.content as Authorization).chainId),
+          nonce: toBeHex((authorizationMsg.content as Authorization).nonce),
+          r: (authorizationMsg.signature as EIP7702Signature).r,
+          s: (authorizationMsg.signature as EIP7702Signature).s,
+          v: get7702SigV(authorizationMsg.signature as EIP7702Signature),
+          yParity: (authorizationMsg.signature as EIP7702Signature).yParity
+        }
+      : undefined
+  }
+
   protected getUrl(network: Network): string {
     return `https://api.pimlico.io/v2/${network.chainId}/rpc?apikey=${process.env.REACT_APP_PIMLICO_API_KEY}`
   }
@@ -46,22 +60,12 @@ export class Pimlico extends Bundler {
   ): Promise<BundlerEstimateResult> {
     const provider = this.getProvider(network)
 
-    // parse the authorization into the correct format, nothing else
-    const authorization = authorizationMsg
-      ? {
-          contractAddress: (authorizationMsg.content as Authorization).contractAddr,
-          chainId: toBeHex((authorizationMsg.content as Authorization).chainId),
-          nonce: toBeHex((authorizationMsg.content as Authorization).nonce),
-          r: (authorizationMsg.signature as EIP7702Signature).r,
-          s: (authorizationMsg.signature as EIP7702Signature).s,
-          v: get7702SigV(authorizationMsg.signature as EIP7702Signature),
-          yParity: (authorizationMsg.signature as EIP7702Signature).yParity
-        }
-      : {}
-
     if (shouldStateOverride) {
       return provider.send('pimlico_experimental_estimateUserOperationGas7702', [
-        { ...getCleanUserOp(userOperation)[0], eip7702Auth: authorization },
+        {
+          ...getCleanUserOp(userOperation)[0],
+          eip7702Auth: this.getPimlicoAuthorization(authorizationMsg)
+        },
         ERC_4337_ENTRYPOINT,
         {
           [userOperation.sender]: {
@@ -76,7 +80,7 @@ export class Pimlico extends Bundler {
     return provider.send('pimlico_experimental_estimateUserOperationGas7702', [
       getCleanUserOp(userOperation)[0],
       ERC_4337_ENTRYPOINT,
-      authorization
+      this.getPimlicoAuthorization(authorizationMsg)
     ])
   }
 
@@ -99,5 +103,27 @@ export class Pimlico extends Bundler {
       paymasterVerificationGasLimit: toBeHex(estimatiton.paymasterVerificationGasLimit) as Hex,
       paymasterPostOpGasLimit: toBeHex(estimatiton.paymasterPostOpGasLimit) as Hex
     }
+  }
+
+  /**
+   * Broadcast a userOperation for 7702 accounts to the specified bundler
+   * and get a userOperationHash in return
+   *
+   * @param UserOperation userOperation
+   * @returns userOperationHash
+   */
+  async broadcast7702(
+    userOperation: UserOperation,
+    network: Network,
+    authorizationMsg?: Message
+  ): Promise<string> {
+    const provider = this.getProvider(network)
+    return provider.send('pimlico_experimental_sendUserOperation7702', [
+      {
+        ...getCleanUserOp(userOperation)[0],
+        eip7702Auth: this.getPimlicoAuthorization(authorizationMsg)
+      },
+      ERC_4337_ENTRYPOINT
+    ])
   }
 }

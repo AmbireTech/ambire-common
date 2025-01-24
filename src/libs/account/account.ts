@@ -8,6 +8,7 @@ import { InternalSignedMessages, SignedMessage } from '../../controllers/activit
 import {
   Account,
   AccountId,
+  AccountOnchainState,
   AccountOnPage,
   AccountPreferences,
   ImportStatus
@@ -342,4 +343,8 @@ export function getAuthorization(
       (content.chainId === 0n || content.chainId === network.chainId) && content.nonce === accNonce
     )
   })
+}
+
+export function isBasicAccount(account: Account, state: AccountOnchainState): boolean {
+  return !account.creation && !state.isSmarterEoa
 }

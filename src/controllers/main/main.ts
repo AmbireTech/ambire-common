@@ -35,7 +35,11 @@ import { Storage } from '../../interfaces/storage'
 import { SocketAPISendTransactionRequest } from '../../interfaces/swapAndBridge'
 import { Calls, DappUserRequest, SignUserRequest, UserRequest } from '../../interfaces/userRequest'
 import { WindowManager } from '../../interfaces/window'
-import { getDefaultSelectedAccount, isSmartAccount } from '../../libs/account/account'
+import {
+  getDefaultSelectedAccount,
+  isBasicAccount,
+  isSmartAccount
+} from '../../libs/account/account'
 import { AccountOp, AccountOpStatus, getSignableCalls } from '../../libs/accountOp/accountOp'
 import {
   AccountOpIdentifiedBy,
@@ -2331,7 +2335,7 @@ export class MainController extends EventEmitter {
     } | null = null
 
     // Basic account (EOA)
-    if (!isSmartAccount(account)) {
+    if (isBasicAccount(account, accountState)) {
       try {
         const feePayerKeys = this.keystore.keys.filter(
           (key) => key.addr === accountOp.gasFeePayment!.paidBy
@@ -2483,7 +2487,9 @@ export class MainController extends EventEmitter {
       let userOperationHash
       const bundler = bundlerSwitcher.getBundler()
       try {
-        userOperationHash = await bundler.broadcast(userOperation, network)
+        userOperationHash = !accountState.isSmarterEoa
+          ? await bundler.broadcast(userOperation, network)
+          : await bundler.broadcast7702(userOperation, network)
       } catch (e: any) {
         let retryMsg
 

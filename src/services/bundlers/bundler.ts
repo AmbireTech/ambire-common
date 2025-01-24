@@ -65,6 +65,19 @@ export abstract class Bundler {
   ): Promise<BundlerEstimateResult>
 
   /**
+   * Broadcast a userOperation for 7702 accounts to the specified bundler
+   * and get a userOperationHash in return
+   *
+   * @param UserOperation userOperation
+   * @returns userOperationHash
+   */
+  public abstract broadcast7702(
+    userOperation: UserOperation,
+    network: Network,
+    authorizationMsg?: Message
+  ): Promise<string>
+
+  /**
    * Get the bundler RPC
    *
    * @param network

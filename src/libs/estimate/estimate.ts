@@ -254,17 +254,17 @@ export async function estimate4337(
   const nativeToken = feeTokens.find(
     (token) => token.address === ZeroAddress && !token.flags.onGasTank
   )
-  const nativeTokenOptions: FeePaymentOption[] = nativeAssetBalances.map(
-    (balance: bigint, key: number) => ({
-      paidBy: nativeToCheck[key],
-      availableAmount: balance,
-      addedNative: l1GasEstimation.fee,
-      token: {
-        ...nativeToken,
-        amount: balance
-      }
-    })
-  )
+  const nativeTokenOptions: FeePaymentOption[] = !accountState.isSmarterEoa
+    ? nativeAssetBalances.map((balance: bigint, key: number) => ({
+        paidBy: nativeToCheck[key],
+        availableAmount: balance,
+        addedNative: l1GasEstimation.fee,
+        token: {
+          ...nativeToken,
+          amount: balance
+        }
+      }))
+    : []
   bundlerEstimationResult.feePaymentOptions = [
     ...bundlerEstimationResult.feePaymentOptions,
     ...nativeTokenOptions

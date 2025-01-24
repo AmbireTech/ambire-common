@@ -117,11 +117,7 @@ export async function bundlerEstimate(
 
   // if the account is not a smarter EOA &
   // there's no entryPointAuthorization, we cannot do the estimation on deploy
-  if (
-    !accountState.isSmarterEoa &&
-    !accountState.isDeployed &&
-    (!op.meta || !op.meta.entryPointAuthorization)
-  )
+  if (!accountState.isSmarterEoa && !accountState.isDeployed && !op.meta?.entryPointAuthorization)
     return estimationErrorFormatted(
       new Error('Entry point privileges not granted. Please contact support'),
       { feePaymentOptions }
@@ -133,7 +129,7 @@ export async function bundlerEstimate(
     accountState,
     localOp,
     initialBundler.getName(),
-    op.meta && op.meta.entryPointAuthorization ? op.meta.entryPointAuthorization : undefined
+    op.meta?.entryPointAuthorization ? op.meta.entryPointAuthorization : undefined
   )
   // set the callData
   if (userOp.activatorCall) localOp.activatorCall = userOp.activatorCall
