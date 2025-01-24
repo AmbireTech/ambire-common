@@ -23,6 +23,7 @@ import {
   LimitsOptions,
   PortfolioLibGetResult,
   PriceCache,
+  TokenError,
   TokenResult
 } from './interfaces'
 import { flattenResults, paginate } from './pagination'
@@ -246,7 +247,13 @@ export class Portfolio {
       )
     ])
 
-    const [tokensWithErrResult, blockNumber, beforeNonce, afterNonce] = tokensWithErr
+    const [tokensWithErrResult, metaData] = tokensWithErr
+    const { blockNumber, beforeNonce, afterNonce } = metaData as {
+      blockNumber: number
+      beforeNonce: bigint
+      afterNonce: bigint
+    }
+    const [collectionsWithErrResult] = collectionsWithErr
 
     // Re-map/filter into our format
     const getPriceFromCache = (address: string) => {
@@ -260,14 +267,16 @@ export class Portfolio {
       return null
     }
 
-    const tokenFilter = ([error, result]: [string, TokenResult]): boolean =>
+    const tokenFilter = ([error, result]: [TokenError, TokenResult]): boolean =>
       error === '0x' && !!result.symbol
 
     const tokensWithoutPrices = tokensWithErrResult
-      .filter((_tokensWithErrResult: [string, TokenResult]) => tokenFilter(_tokensWithErrResult))
+      .filter((_tokensWithErrResult: [TokenError, TokenResult]) =>
+        tokenFilter(_tokensWithErrResult)
+      )
       .map(([, result]: [any, TokenResult]) => result)
 
-    const unfilteredCollections = collectionsWithErr.map(([error, x], i) => {
+    const unfilteredCollections = collectionsWithErrResult.map(([error, x], i) => {
       const address = collectionsHints[i][0] as unknown as string
       return [
         error,
@@ -287,7 +296,7 @@ export class Portfolio {
 
     // Update prices and set the priceIn for each token by reference,
     // updating the final tokens array as a result
-    const tokensWithPrices = await Promise.all(
+    const tokensWithPrices: TokenResult[] = await Promise.all(
       tokensWithoutPrices.map(async (token: { address: string }) => {
         let priceIn: TokenResult['priceIn'] = []
         const cachedPriceIn = getPriceFromCache(token.address)
@@ -296,14 +305,14 @@ export class Portfolio {
           priceIn = cachedPriceIn
 
           return {
-            ...token,
+            ...(token as TokenResult),
             priceIn
           }
         }
 
         if (!this.network.platformId) {
           return {
-            ...token,
+            ...(token as TokenResult),
             priceIn
           }
         }
@@ -343,7 +352,7 @@ export class Portfolio {
         }
 
         return {
-          ...token,
+          ...(token as TokenResult),
           priceIn
         }
       })
