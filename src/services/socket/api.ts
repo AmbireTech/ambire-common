@@ -158,6 +158,7 @@ export class SocketAPI {
     return response.result
   }
 
+  // TODO: Test.
   async getToTokenList({
     fromChainId,
     toChainId
@@ -174,21 +175,16 @@ export class SocketAPI {
     })
     const url = `${this.#baseUrl}/token-lists/to-token-list?${params.toString()}`
 
-    let response = await this.#fetch(url, { headers: this.#headers })
-    const fallbackError = new Error(
-      'Unable to retrieve the list of supported receive tokens. Please reload the tab to try again.'
-    )
-    if (!response.ok) throw fallbackError
+    let response = await this.#handleResponse<SocketAPIToken[]>({
+      fetchPromise: this.#fetch(url, { headers: this.#headers }),
+      errorPrefix:
+        'Unable to retrieve the list of supported receive tokens. Please reload the tab to try again.'
+    })
 
-    response = await response.json()
-    if (!response.success) throw fallbackError
-    await this.updateHealthIfNeeded()
-
-    let { result } = response
     // Exception for Optimism, strip out the legacy ETH address
     // TODO: Remove when Socket removes the legacy ETH address from their response
     if (toChainId === 10)
-      result = result.filter(
+      response = response.filter(
         (token: SocketAPIToken) => token.address !== ETH_ON_OPTIMISM_LEGACY_ADDRESS
       )
 
@@ -196,14 +192,15 @@ export class SocketAPI {
     // One is with the `ZERO_ADDRESS` and one with `NULL_ADDRESS`, both for ETH.
     // Strip out the one with the `ZERO_ADDRESS` to be consistent with the rest.
     if (toChainId === 1)
-      result = result.filter((token: SocketAPIToken) => token.address !== ZERO_ADDRESS)
+      response = response.filter((token: SocketAPIToken) => token.address !== ZERO_ADDRESS)
 
     // Since v4.41.0 we request the shortlist from Socket, which does not include
     // the Ambire $WALLET token. So adding it manually on the supported chains.
-    if (toChainId === 1) result.unshift(AMBIRE_WALLET_TOKEN_ON_ETHEREUM)
-    if (toChainId === 8453) result.unshift(AMBIRE_WALLET_TOKEN_ON_BASE)
+    // TODO: Refine types
+    if (toChainId === 1) response.unshift(AMBIRE_WALLET_TOKEN_ON_ETHEREUM)
+    if (toChainId === 8453) response.unshift(AMBIRE_WALLET_TOKEN_ON_BASE)
 
-    return result.map(normalizeIncomingSocketToken)
+    return response.map(normalizeIncomingSocketToken)
   }
 
   async getToken({
