@@ -367,7 +367,7 @@ describe('Main Controller ', () => {
     expect(saSupport).not.toBe(null)
     expect(saSupport).not.toBe(undefined)
     expect(saSupport!.level).toBe('success')
-    expect(saSupport!.title).toBe("Ambire's smart wallets")
+    expect(saSupport!.title).toBe('Ambire Smart Accounts')
 
     const simulation = eth?.features.find((feat) => feat.id === 'simulation')
     expect(simulation).not.toBe(null)
