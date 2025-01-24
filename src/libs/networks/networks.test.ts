@@ -23,14 +23,14 @@ describe('Network features', () => {
     const results = getFeaturesByNetworkProperties(networkInfo)
     const saSupport = results.find((sup) => sup.id === 'saSupport')
     expect(saSupport?.msg).toBe(
-      'We were unable to detect smart account support on the network with the provided RPC. Please choose another RPC or try again later.'
+      'We were unable to detect Smart Account support on the network with the provided RPC. Try choosing a different RPC.'
     )
 
     networkInfo.hasSingleton = false
     const results2 = getFeaturesByNetworkProperties(networkInfo)
     const saSupport2 = results2.find((sup) => sup.id === 'saSupport')
     expect(saSupport2?.msg).toBe(
-      "Unfortunately this network doesn't support smart contract wallets. It can be used only with Basic accounts (EOAs)."
+      'Unfortunately, this network doesn’t support Smart Accounts. It can be used only with Basic Accounts (EOAs).'
     )
   })
 })

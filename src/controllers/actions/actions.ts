@@ -10,7 +10,7 @@ import {
   SwitchAccountAction
 } from '../../interfaces/actions'
 import { NotificationManager } from '../../interfaces/notification'
-import { WindowManager } from '../../interfaces/window'
+import { WindowManager, WindowProps } from '../../interfaces/window'
 // eslint-disable-next-line import/no-cycle
 import { messageOnNewAction } from '../../libs/actions/actions'
 import { getDappActionRequestsBanners } from '../../libs/banners/banners'
@@ -29,6 +29,10 @@ export type {
   BenzinAction,
   DappRequestAction
 }
+
+export type ActionPosition = 'first' | 'last'
+
+export type ActionExecutionType = 'queue' | 'queue-but-open-action-window' | 'open-action-window'
 
 /**
  * The ActionsController is responsible for storing the converted userRequests
@@ -49,7 +53,7 @@ export class ActionsController extends EventEmitter {
   #notificationManager: NotificationManager
 
   actionWindow: {
-    id: number | null
+    windowProps: WindowProps
     loaded: boolean
     pendingMessage: {
       message: string
@@ -60,7 +64,7 @@ export class ActionsController extends EventEmitter {
       }
     } | null
   } = {
-    id: null,
+    windowProps: null,
     loaded: false,
     pendingMessage: null
   }
@@ -109,8 +113,11 @@ export class ActionsController extends EventEmitter {
     this.#onActionWindowClose = onActionWindowClose
 
     this.#windowManager.event.on('windowRemoved', async (winId: number) => {
-      if (winId === this.actionWindow.id) {
-        this.actionWindow.id = null
+      if (
+        winId === this.actionWindow.windowProps?.id ||
+        (!this.visibleActionsQueue.length && this.currentAction && this.actionWindow.windowProps)
+      ) {
+        this.actionWindow.windowProps = null
         this.actionWindow.loaded = false
         this.actionWindow.pendingMessage = null
         this.currentAction = null
@@ -133,8 +140,8 @@ export class ActionsController extends EventEmitter {
 
   addOrUpdateAction(
     newAction: Action,
-    withPriority?: boolean,
-    executionType: 'queue' | 'open' = 'open'
+    position: ActionPosition = 'last',
+    executionType: ActionExecutionType = 'open-action-window'
   ) {
     // remove the benzin action if a new actions is added
     this.actionsQueue = this.actionsQueue.filter((a) => a.type !== 'benzin')
@@ -145,11 +152,15 @@ export class ActionsController extends EventEmitter {
     const actionIndex = this.actionsQueue.findIndex((a) => a.id === newAction.id)
     if (actionIndex !== -1) {
       this.actionsQueue[actionIndex] = newAction
-      if (executionType === 'open') {
-        this.sendNewActionMessage(newAction, 'update')
-        const currentAction = withPriority
-          ? this.visibleActionsQueue[0] || null
-          : this.currentAction || this.visibleActionsQueue[0] || null
+      if (executionType !== 'queue') {
+        let currentAction = null
+        if (executionType === 'open-action-window') {
+          this.sendNewActionMessage(newAction, 'updated')
+          currentAction = this.visibleActionsQueue.find((a) => a.id === newAction.id) || null
+        } else if (executionType === 'queue-but-open-action-window') {
+          this.sendNewActionMessage(newAction, 'queued')
+          currentAction = this.currentAction || this.visibleActionsQueue[0] || null
+        }
         this.#setCurrentAction(currentAction)
       } else {
         this.emitUpdate()
@@ -157,17 +168,20 @@ export class ActionsController extends EventEmitter {
       return
     }
 
-    if (withPriority) {
+    if (position === 'first') {
       this.actionsQueue.unshift(newAction)
     } else {
       this.actionsQueue.push(newAction)
     }
 
-    if (executionType === 'open') {
-      this.sendNewActionMessage(newAction, withPriority ? 'unshift' : 'push')
-      const currentAction = withPriority
-        ? this.visibleActionsQueue[0] || null
-        : this.currentAction || this.visibleActionsQueue[0] || null
+    if (executionType !== 'queue') {
+      let currentAction = null
+      if (executionType === 'open-action-window') {
+        currentAction = this.visibleActionsQueue.find((a) => a.id === newAction.id) || null
+      } else if (executionType === 'queue-but-open-action-window') {
+        this.sendNewActionMessage(newAction, 'queued')
+        currentAction = this.currentAction || this.visibleActionsQueue[0] || null
+      }
       this.#setCurrentAction(currentAction)
     } else {
       this.emitUpdate()
@@ -191,7 +205,8 @@ export class ActionsController extends EventEmitter {
     this.currentAction = nextAction
 
     if (!this.currentAction) {
-      !!this.actionWindow.id && this.#windowManager.remove(this.actionWindow.id)
+      !!this.actionWindow.windowProps?.id &&
+        this.#windowManager.remove(this.actionWindow.windowProps.id)
     } else {
       this.openActionWindow()
     }
@@ -229,39 +244,42 @@ export class ActionsController extends EventEmitter {
     this.#setCurrentAction(action)
   }
 
-  sendNewActionMessage(newAction: Action, type: 'push' | 'unshift' | 'update') {
+  sendNewActionMessage(newAction: Action, type: 'queued' | 'updated') {
     if (this.visibleActionsQueue.length > 1 && newAction.type !== 'benzin') {
       if (this.actionWindow.loaded) {
-        this.#windowManager.sendWindowToastMessage(messageOnNewAction(newAction, type), {
-          type: 'success'
-        })
+        const message = messageOnNewAction(newAction, type)
+        if (message) this.#windowManager.sendWindowToastMessage(message, { type: 'success' })
       } else {
-        this.actionWindow.pendingMessage = {
-          message: messageOnNewAction(newAction, type),
-          options: { type: 'success' }
-        }
+        const message = messageOnNewAction(newAction, type)
+        if (message) this.actionWindow.pendingMessage = { message, options: { type: 'success' } }
       }
     }
   }
 
   openActionWindow() {
-    if (this.actionWindow.id !== null) {
+    if (this.actionWindow.windowProps !== null) {
       this.focusActionWindow()
     } else {
-      this.#windowManager.open().then((winId) => {
-        this.actionWindow.id = winId!
+      this.#windowManager.open().then((windowProps) => {
+        this.actionWindow.windowProps = windowProps
         this.emitUpdate()
       })
     }
   }
 
   focusActionWindow = () => {
-    if (!this.visibleActionsQueue.length || !this.currentAction || !this.actionWindow.id) return
-    this.#windowManager.focus(this.actionWindow.id)
+    if (!this.visibleActionsQueue.length || !this.currentAction || !this.actionWindow.windowProps)
+      return
+    this.#windowManager.focus(this.actionWindow.windowProps)
+  }
+
+  closeActionWindow = () => {
+    if (!this.actionWindow.windowProps) return
+    this.#windowManager.remove(this.actionWindow.windowProps.id)
   }
 
   setWindowLoaded() {
-    if (!this.actionWindow.id) return
+    if (!this.actionWindow.windowProps) return
     this.actionWindow.loaded = true
 
     if (this.actionWindow.pendingMessage) {

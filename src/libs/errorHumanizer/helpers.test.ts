@@ -1,5 +1,7 @@
 import { describe, expect } from '@jest/globals'
 
+import { suppressConsole } from '../../../test/helpers/console'
+import { decodeError } from '../errorDecoder'
 import { ErrorType } from '../errorDecoder/types'
 import { MESSAGE_PREFIX } from './estimationErrorHumanizer'
 import { getGenericMessageFromType } from './helpers'
@@ -20,17 +22,17 @@ describe('Generic error fallbacks work', () => {
     )
 
     expect(messageWithCode).toBe(
-      `${MESSAGE_PREFIX} of an RPC error. Error code: Unsupported method\nPlease try again or contact Ambire support for assistance.`
+      `${MESSAGE_PREFIX} of an unknown error (Origin: Rpc call). Error code: Unsupported method\nPlease try again or contact Ambire support for assistance.`
     )
     expect(messageWithoutCode).toBe(
-      `${MESSAGE_PREFIX} of an RPC error.\nPlease try again or contact Ambire support for assistance.`
+      `${MESSAGE_PREFIX} of an unknown error (Origin: Rpc call).\nPlease try again or contact Ambire support for assistance.`
     )
   })
   it('Relayer error', () => {
     const message = getGenericMessageFromType(ErrorType.RelayerError, null, MESSAGE_PREFIX, '')
 
     expect(message).toBe(
-      `${MESSAGE_PREFIX} of an Ambire Relayer error.\nPlease try again or contact Ambire support for assistance.`
+      `${MESSAGE_PREFIX} of an unknown error (Origin: Relayer call).\nPlease try again or contact Ambire support for assistance.`
     )
   })
   it('Null error type', () => {
@@ -40,5 +42,24 @@ describe('Generic error fallbacks work', () => {
     const message = getGenericMessageFromType(null, null, MESSAGE_PREFIX, LAST_RESORT_ERROR_MESSAGE)
 
     expect(message).toBe(LAST_RESORT_ERROR_MESSAGE)
+  })
+  it('Code error', () => {
+    const { restore } = suppressConsole()
+    try {
+      const variable = undefined
+      // @ts-ignore
+      const propertyOfUndefined = variable.property
+
+      return propertyOfUndefined
+    } catch (e: any) {
+      const { reason, type } = decodeError(e)
+      const message = getGenericMessageFromType(type, reason, MESSAGE_PREFIX, '')
+
+      expect(message).toBe(
+        `${MESSAGE_PREFIX} of an unknown error. Error code: TypeError\nPlease try again or contact Ambire support for assistance.`
+      )
+    }
+
+    restore()
   })
 })

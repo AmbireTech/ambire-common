@@ -7,9 +7,11 @@ import { produceMemoryStore } from '../../../test/helpers'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { networks } from '../../consts/networks'
 import { Storage } from '../../interfaces/storage'
+import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { getRpcProvider } from '../../services/provider'
 import { AccountsController } from '../accounts/accounts'
 import { ActionsController } from '../actions/actions'
+import { ActivityController } from '../activity/activity'
 import { NetworksController } from '../networks/networks'
 import { ProvidersController } from '../providers/providers'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
@@ -24,7 +26,7 @@ const windowManager = {
   focus: () => Promise.resolve(),
   open: () => {
     windowId++
-    return Promise.resolve(windowId)
+    return Promise.resolve({ id: windowId, top: 0, left: 0, width: 100, height: 100 })
   },
   remove: () => {
     event.emit('windowRemoved', windowId)
@@ -62,6 +64,7 @@ const accountsCtrl = new AccountsController(
   providersCtrl,
   networksCtrl,
   () => {},
+  () => {},
   () => {}
 )
 const selectedAccountCtrl = new SelectedAccountController({ storage, accounts: accountsCtrl })
@@ -72,6 +75,19 @@ const actionsCtrl = new ActionsController({
   notificationManager,
   onActionWindowClose: () => {}
 })
+
+const callRelayer = relayerCall.bind({ url: '', fetch })
+
+const activityCtrl = new ActivityController(
+  storage,
+  fetch,
+  callRelayer,
+  accountsCtrl,
+  selectedAccountCtrl,
+  providersCtrl,
+  networksCtrl,
+  () => Promise.resolve()
+)
 
 const socketAPIMock = new SocketAPIMock({ fetch, apiKey: '' })
 
@@ -101,6 +117,7 @@ describe('SwapAndBridge Controller', () => {
     swapAndBridgeController = new SwapAndBridgeController({
       selectedAccount: selectedAccountCtrl,
       networks: networksCtrl,
+      activity: activityCtrl,
       storage,
       socketAPI: socketAPIMock as any,
       actions: actionsCtrl
@@ -116,8 +133,13 @@ describe('SwapAndBridge Controller', () => {
     let emitCounter = 0
     const unsubscribe = swapAndBridgeController.onUpdate(async () => {
       emitCounter++
-      if (emitCounter === 3) {
+      if (emitCounter === 4) {
         expect(swapAndBridgeController.toTokenList).toHaveLength(3)
+        expect(swapAndBridgeController.toTokenList).not.toContainEqual(
+          expect.objectContaining({
+            address: swapAndBridgeController.fromSelectedToken?.address
+          })
+        )
         expect(swapAndBridgeController.toSelectedToken).toBeNull()
         unsubscribe()
         done()
@@ -144,11 +166,20 @@ describe('SwapAndBridge Controller', () => {
         networkId: 'base',
         priceIn: [{ baseCurrency: 'usd', price: 64325 }],
         symbol: 'cbBTC'
+      },
+      {
+        address: '0x0000000000000000000000000000000000000000',
+        amount: 11756728636013018n,
+        decimals: 8,
+        flags: { onGasTank: false, rewardsType: null, isFeeToken: true, canTopUpGasTank: true },
+        networkId: 'optimism',
+        priceIn: [{ baseCurrency: 'usd', price: 3660.27 }],
+        symbol: 'ETH'
       }
     ])
     expect(swapAndBridgeController.fromSelectedToken).not.toBeNull()
     expect(swapAndBridgeController.fromSelectedToken?.address).toEqual(
-      '0x94b008aA00579c1307B0EF2c499aD98a8ce58e58'
+      '0x0000000000000000000000000000000000000000' // the one with highest balance
     )
     expect(swapAndBridgeController.fromChainId).toEqual(10)
   })
@@ -243,11 +274,11 @@ describe('SwapAndBridge Controller', () => {
   })
   test('should update an activeRoute', async () => {
     const activeRouteId = swapAndBridgeController.activeRoutes[0].activeRouteId
-    await swapAndBridgeController.updateActiveRoute(activeRouteId, {
+    swapAndBridgeController.updateActiveRoute(activeRouteId, {
       routeStatus: 'in-progress',
       userTxHash: 'test'
     })
-    await swapAndBridgeController.updateActiveRoute(activeRouteId) // for the coverage
+    swapAndBridgeController.updateActiveRoute(activeRouteId) // for the coverage
     expect(swapAndBridgeController.activeRoutes).toHaveLength(1)
     expect(swapAndBridgeController.activeRoutes[0].routeStatus).toEqual('in-progress')
     expect(swapAndBridgeController.banners).toHaveLength(1)
@@ -256,7 +287,7 @@ describe('SwapAndBridge Controller', () => {
   test('should check for route status', async () => {
     await swapAndBridgeController.checkForNextUserTxForActiveRoutes()
     expect(swapAndBridgeController.activeRoutes[0].routeStatus).toEqual('ready')
-    await swapAndBridgeController.updateActiveRoute(
+    swapAndBridgeController.updateActiveRoute(
       swapAndBridgeController.activeRoutes[0].activeRouteId,
       {
         routeStatus: 'in-progress',

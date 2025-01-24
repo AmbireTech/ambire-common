@@ -34,10 +34,10 @@ import { ProvidersController } from '../providers/providers'
 export const DEFAULT_SELECTED_ACCOUNT_PORTFOLIO = {
   tokens: [],
   collections: [],
+  tokenAmounts: [],
   totalBalance: 0,
   isAllReady: false,
-  simulationNonces: {},
-  tokenAmounts: [],
+  networkSimulatedAccountOp: {},
   latest: {},
   pending: {}
 }
@@ -136,7 +136,7 @@ export class SelectedAccountController extends EventEmitter {
       this.#debounceFunctionCallsOnSameTick('updateSelectedAccountDefiPositions', () => {
         this.#updateSelectedAccountDefiPositions()
 
-        if (!this.areDefiPositionsLoading) {
+        if (!this.areDefiPositionsLoading && this.portfolio.isAllReady) {
           this.#updateDefiPositionsBanners()
           this.#updateSelectedAccountPortfolio()
         }
@@ -153,6 +153,8 @@ export class SelectedAccountController extends EventEmitter {
     this.#accounts.onUpdate(() => {
       this.#debounceFunctionCallsOnSameTick('updateSelectedAccount', () => {
         this.#updateSelectedAccount()
+        this.#updatePortfolioBanners()
+        this.#updateDefiPositionsBanners()
       })
     })
 
@@ -209,12 +211,14 @@ export class SelectedAccountController extends EventEmitter {
 
     const latestStateSelectedAccountWithDefiPositions = updatePortfolioStateWithDefiPositions(
       latestStateSelectedAccount,
-      defiPositionsAccountState
+      defiPositionsAccountState,
+      this.areDefiPositionsLoading
     )
 
     const pendingStateSelectedAccountWithDefiPositions = updatePortfolioStateWithDefiPositions(
       pendingStateSelectedAccount,
-      defiPositionsAccountState
+      defiPositionsAccountState,
+      this.areDefiPositionsLoading
     )
 
     const hasSignAccountOp = !!this.#actions?.visibleActionsQueue.filter(
@@ -303,14 +307,25 @@ export class SelectedAccountController extends EventEmitter {
   }
 
   #updateDefiPositionsBanners(skipUpdate?: boolean) {
-    if (!this.account || !this.#networks || !this.#providers || !this.#defiPositions) return
+    if (
+      !this.account ||
+      !this.#networks ||
+      !this.#providers ||
+      !this.#defiPositions ||
+      this.#accounts.areAccountStatesLoading
+    ) {
+      this.defiPositionsBanners = []
+      this.emitUpdate()
+      return
+    }
 
     const defiPositionsAccountState = this.#defiPositions.getDefiPositionsState(this.account.addr)
 
     const errorBanners = getNetworksWithDeFiPositionsErrorBanners({
       networks: this.#networks.networks,
       currentAccountState: defiPositionsAccountState,
-      providers: this.#providers.providers
+      providers: this.#providers.providers,
+      networksWithPositions: this.#defiPositions.getNetworksWithPositions(this.account.addr)
     })
 
     this.defiPositionsBanners = errorBanners
@@ -321,7 +336,17 @@ export class SelectedAccountController extends EventEmitter {
   }
 
   #updatePortfolioBanners(skipUpdate?: boolean) {
-    if (!this.account || !this.#networks || !this.#providers || !this.#portfolio) return
+    if (
+      !this.account ||
+      !this.#networks ||
+      !this.#providers ||
+      !this.#portfolio ||
+      this.#accounts.areAccountStatesLoading
+    ) {
+      this.portfolioBanners = []
+      this.emitUpdate()
+      return
+    }
 
     const networksWithFailedRPCBanners = getNetworksWithFailedRPCBanners({
       providers: this.#providers.providers,

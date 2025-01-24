@@ -22,7 +22,7 @@ const LEARNED_TOKEN_WITH_BALANCE_ADDRESS = '0x335F4e66B9B61CEE5CeaDE4e727FCEC201
 
 const getTokens = async () => {
   const ethAccPortfolio = await ethPortfolio.get(TEST_ACCOUNT_ADDRESS, {
-    additionalHints: [LEARNED_TOKEN_WITH_BALANCE_ADDRESS]
+    additionalErc20Hints: [LEARNED_TOKEN_WITH_BALANCE_ADDRESS]
   })
 
   return ethAccPortfolio.tokens
@@ -35,12 +35,9 @@ describe('Portfolio helpers', () => {
 
     const updatedHints = getUpdatedHints(
       {
-        networkId: ethereum.id,
         erc20s: ['0x9702230A8Ea53601f5cD2dc00fDBc13d4dF4A8c7'],
         erc721s: {},
-        prices: {},
-        hasHints: true,
-        accountAddr: TEST_ACCOUNT_ADDRESS
+        lastUpdate: Date.now()
       },
       tokens,
       [],
@@ -54,6 +51,7 @@ describe('Portfolio helpers', () => {
         learnedNfts: {},
         fromExternalAPI: {
           [key]: {
+            lastUpdate: Date.now(),
             erc20s: [],
             erc721s: {}
           }

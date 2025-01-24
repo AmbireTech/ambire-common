@@ -10,7 +10,7 @@ export const normalizeLedgerMessage = (error?: string): string => {
     // Generic error returned by the Ledger transport (@ledgerhq/hw-transport)
     error.toLowerCase().includes('access denied')
   )
-    return 'Could not connect to your Ledger device. Please make sure it is connected.'
+    return 'Cannot connect to your Ledger device. Please make sure it is connected.'
 
   if (
     error.includes('0x5515') ||
@@ -18,10 +18,13 @@ export const normalizeLedgerMessage = (error?: string): string => {
     error.includes('0x650f') ||
     error.includes('0x6511')
   ) {
-    return 'Could not connect to your Ledger device. Please make sure it is unlocked and running the Ethereum app.'
+    return 'Cannot connect to your Ledger device. Please make sure it is unlocked and running the Ethereum app.'
   }
   if (error.includes('0x6e00') || error.includes('0x6b00')) {
     return 'Your Ledger device requires a firmware and Ethereum App update.'
+  }
+  if (error.includes('0x6d00')) {
+    return "Your Ledger doesn't recognize the command sent. Please update device firmware and Ethereum App and try again."
   }
   if (error.includes('0x6985')) {
     return 'Rejected by your Ledger device.'
@@ -31,7 +34,7 @@ export const normalizeLedgerMessage = (error?: string): string => {
   }
 
   // Indicates a custom timeout error, no need to normalize
-  if (error.includes('Could not connect to your Ledger device for an extended period')) return error
+  if (error.includes('Cannot connect to your Ledger device for an extended period')) return error
 
-  return `Could not connect to your Ledger device. Please close any other apps that may be accessing your Ledger device (including wallet apps on your computer and web apps). Ensure your Ledger is responsive. Unplug and plug it again. Device error: ${error}`
+  return `Cannot connect to your Ledger device. Close all other apps that may be accessing it (including apps on your computer). Ensure device is responsive. Ensure Ledger firmware and Ethereum App are up to date. Device error: ${error}`
 }

@@ -676,6 +676,11 @@ export class AccountAdderController extends EventEmitter {
     this.emitUpdate()
   }
 
+  removeNetworkData(id: Network['id']) {
+    this.networksWithAccountStateError = this.networksWithAccountStateError.filter((x) => x !== id)
+    this.emitUpdate()
+  }
+
   async #deriveAccounts(): Promise<DerivedAccount[]> {
     // Should never happen, because before the #deriveAccounts method gets
     // called - there is a check if the #keyIterator exists.

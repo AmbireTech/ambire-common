@@ -8,6 +8,10 @@ export interface SocketAPIToken {
   symbol: string
 }
 
+export interface SwapAndBridgeToToken extends SocketAPIToken {
+  // TODO: Strip out the properties that are not needed.
+}
+
 export interface SocketAPIQuote {
   fromAsset: SocketAPIToken
   fromChainId: number
@@ -43,6 +47,7 @@ export interface SocketAPIRoute {
   chainGasBalances: object
   minimumGasBalances: object
   extraData: object
+  errorMessage?: string
 }
 
 export interface SocketAPISwapUserTx {
@@ -139,6 +144,7 @@ export interface SocketApiBridgeStep {
   protocolFees: {
     amount: string
     asset: SocketAPIToken
+    feesInUsd: number
   }
   bridgeSlippage: number
   toAmount: string
@@ -187,8 +193,21 @@ export type ActiveRoute = {
     transactionData: { txHash: string }[] | null
     userAddress: string
   }
-  routeStatus: 'in-progress' | 'ready' | 'completed' | 'failed'
+  routeStatus: 'waiting-approval-to-resolve' | 'in-progress' | 'ready' | 'completed' | 'failed'
   error?: string
+}
+
+export type SocketAPIActiveRoutes = ActiveRoute['route'] & {
+  activeRouteId: SocketAPISendTransactionRequest['activeRouteId']
+  userAddress: string
+  totalUserTx: number
+  userTxs: SocketAPIUserTx[]
+  fromAssetAddress: string
+  toAssetAddress: string
+  fromAmount: string
+  toAmount: string
+  fromAsset: SocketAPIToken
+  toAsset: SocketAPIToken
 }
 
 export type SocketAPISupportedChain = {

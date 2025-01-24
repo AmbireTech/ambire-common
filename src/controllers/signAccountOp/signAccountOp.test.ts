@@ -5,7 +5,6 @@ import fetch from 'node-fetch'
 import { EventEmitter } from 'stream'
 
 import { describe, expect, jest, test } from '@jest/globals'
-import structuredClone from '@ungap/structured-clone'
 
 import { trezorSlot7v24337Deployed, velcroUrl } from '../../../test/config'
 import { getNativeToCheckFromEOAs, produceMemoryStore } from '../../../test/helpers'
@@ -22,8 +21,8 @@ import { EstimateResult } from '../../libs/estimate/interfaces'
 import * as gasPricesLib from '../../libs/gasPrice/gasPrice'
 import { KeystoreSigner } from '../../libs/keystoreSigner/keystoreSigner'
 import { TokenResult } from '../../libs/portfolio'
-import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { getTypedData } from '../../libs/signMessage/signMessage'
+import { BundlerSwitcher } from '../../services/bundlers/bundlerSwitcher'
 import { getRpcProvider } from '../../services/provider'
 import { AccountsController } from '../accounts/accounts'
 import { KeystoreController } from '../keystore/keystore'
@@ -36,9 +35,7 @@ import { SignAccountOpController, SigningStatus } from './signAccountOp'
 const providers = Object.fromEntries(
   networks.map((network) => [network.id, getRpcProvider(network.rpcUrls, network.chainId)])
 )
-
-// @ts-ignore
-global.structuredClone = structuredClone as any
+const errorCallback = () => {}
 
 const createAccountOp = (
   account: Account,
@@ -217,6 +214,27 @@ const smartAccount: Account = {
   }
 }
 
+const e2esmartAccount: Account = {
+  addr: '0x4C71d299f23eFC660b3295D1f631724693aE22Ac',
+  associatedKeys: ['0xa18fe725A4a0E25A02411Ab28073E4F35D32d8e2'],
+  creation: {
+    factoryAddr: '0x26cE6745A633030A6faC5e64e41D21fb6246dc2d',
+    bytecode:
+      '0x7f00000000000000000000000000000000000000000000000000000000000000027fca32523c64c36083b1291dd9ad1e268d3731e36174438cb702336b275ccb8295553d602d80604d3d3981f3363d3d373d3d3d363d730f2aa7bcda3d9d210df69a394b6965cb2566c8285af43d82803e903d91602b57fd5bf3',
+    salt: '0x0000000000000000000000000000000000000000000000000000000000000000'
+  },
+  initialPrivileges: [
+    [
+      '0xa18fe725A4a0E25A02411Ab28073E4F35D32d8e2',
+      '0x0000000000000000000000000000000000000000000000000000000000000001'
+    ]
+  ],
+  preferences: {
+    label: DEFAULT_ACCOUNT_LABEL,
+    pfp: '0x4C71d299f23eFC660b3295D1f631724693aE22Ac'
+  }
+}
+
 const v1Account = {
   addr: '0xa07D75aacEFd11b425AF7181958F0F85c312f143',
   associatedKeys: ['0xd6e371526cdaeE04cd8AF225D42e37Bc14688D9E', eoaSigner.keyPublicAddress],
@@ -309,10 +327,10 @@ const usdcFeeToken: TokenResult = {
 }
 
 const windowManager = {
-  focus: () => Promise.resolve(),
-  open: () => Promise.resolve(0),
-  remove: () => Promise.resolve(),
   event: new EventEmitter(),
+  focus: () => Promise.resolve(),
+  open: () => Promise.resolve({ id: 0, top: 0, left: 0, width: 100, height: 100 }),
+  remove: () => Promise.resolve(),
   sendWindowToastMessage: () => {},
   sendWindowUiMessage: () => {}
 }
@@ -326,7 +344,8 @@ const init = async (
   },
   signer: any,
   estimationMock?: EstimateResult,
-  gasPricesMock?: gasPricesLib.GasRecommendation[]
+  gasPricesMock?: gasPricesLib.GasRecommendation[],
+  updateWholePortfolio?: boolean
 ) => {
   const storage: Storage = produceMemoryStore()
   await storage.set('accounts', [account])
@@ -365,6 +384,7 @@ const init = async (
     providersCtrl,
     networksCtrl,
     () => {},
+    () => {},
     () => {}
   )
   await accountsCtrl.initialLoadPromise
@@ -382,9 +402,13 @@ const init = async (
   )
   const { op, nativeToCheck, feeTokens } = accountOp
   const network = networksCtrl.networks.find((x) => x.id === op.networkId)!
-  await portfolio.updateSelectedAccount(account.addr, network)
+  await portfolio.updateSelectedAccount(account.addr, updateWholePortfolio ? undefined : network)
   const provider = getRpcProvider(network.rpcUrls, network.chainId)
 
+  const getSignAccountOpStatus = () => {
+    return null
+  }
+  const noStateUpdateStatuses: any[] = []
   const prices =
     gasPricesMock || (await gasPricesLib.getGasPriceRecommendations(provider, network)).gasPrice
   const estimation =
@@ -396,7 +420,9 @@ const init = async (
       op,
       accountsCtrl.accountStates,
       getNativeToCheckFromEOAs(nativeToCheck, account),
-      feeTokens
+      feeTokens,
+      errorCallback,
+      new BundlerSwitcher(network, getSignAccountOpStatus, noStateUpdateStatuses)
     ))
 
   if (portfolio.getLatestPortfolioState(account.addr)[op.networkId]!.result) {
@@ -431,8 +457,6 @@ const init = async (
       }
     ]
   }
-
-  const callRelayer = relayerCall.bind({ url: '', fetch })
   const controller = new SignAccountOpController(
     accountsCtrl,
     keystore,
@@ -442,7 +466,6 @@ const init = async (
     networks.find((n) => n.id === op.networkId)!,
     1,
     op,
-    callRelayer,
     () => {},
     () => {}
   )
@@ -984,17 +1007,18 @@ describe('SignAccountOp Controller ', () => {
   test('Signing [Relayer]: Smart account paying with gas tank.', async () => {
     const networkId = 'polygon'
     const network = networks.find((net) => net.id === networkId)!
+    network.erc4337.enabled = false
     const { controller, estimation, prices } = await init(
-      smartAccount,
-      createAccountOp(smartAccount, network.id),
+      e2esmartAccount,
+      createAccountOp(e2esmartAccount, network.id),
       eoaSigner,
       {
         gasUsed: 50000n,
         currentAccountNonce: 0,
         feePaymentOptions: [
           {
-            paidBy: smartAccount.addr,
-            availableAmount: 5000000000000000000n,
+            paidBy: e2esmartAccount.addr,
+            availableAmount: 500000000000000000000n,
             gasUsed: 25000n,
             addedNative: 0n,
             token: {
@@ -1013,7 +1037,7 @@ describe('SignAccountOp Controller ', () => {
             }
           },
           {
-            paidBy: smartAccount.addr,
+            paidBy: e2esmartAccount.addr,
             availableAmount: 500000000n,
             gasUsed: 50000n,
             addedNative: 0n,
@@ -1033,7 +1057,7 @@ describe('SignAccountOp Controller ', () => {
             }
           },
           {
-            paidBy: smartAccount.addr,
+            paidBy: e2esmartAccount.addr,
             availableAmount: 500000000n,
             gasUsed: 25000n,
             addedNative: 0n,
@@ -1076,7 +1100,8 @@ describe('SignAccountOp Controller ', () => {
           baseFeePerGas: 7000000000n,
           maxPriorityFeePerGas: 7000000000n
         }
-      ]
+      ],
+      true
     )
 
     // We are mocking estimation and prices values, in order to validate the gas prices calculation in the test.
@@ -1091,7 +1116,7 @@ describe('SignAccountOp Controller ', () => {
     // @ts-ignore
     controller.update({
       feeToken: gasTankToken,
-      paidBy: smartAccount.addr,
+      paidBy: e2esmartAccount.addr,
       signingKeyAddr: eoaSigner.keyPublicAddress,
       signingKeyType: 'internal'
     })

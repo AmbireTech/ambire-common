@@ -3,15 +3,18 @@ import { getAddress } from 'ethers'
 import SwapAndBridgeProviderApiError from '../../classes/SwapAndBridgeProviderApiError'
 import { Fetch, RequestInitWithCustomHeaders } from '../../interfaces/fetch'
 import {
+  SocketAPIActiveRoutes,
   SocketAPIQuote,
   SocketAPISendTransactionRequest,
   SocketAPISupportedChain,
   SocketAPIToken
 } from '../../interfaces/swapAndBridge'
 import {
+  AMBIRE_FEE_TAKER_ADDRESSES,
   AMBIRE_WALLET_TOKEN_ON_BASE,
   AMBIRE_WALLET_TOKEN_ON_ETHEREUM,
   ETH_ON_OPTIMISM_LEGACY_ADDRESS,
+  FEE_PERCENT,
   NULL_ADDRESS,
   ZERO_ADDRESS
 } from './constants'
@@ -22,14 +25,15 @@ const convertZeroAddressToNullAddressIfNeeded = (addr: string) =>
 const convertNullAddressToZeroAddressIfNeeded = (addr: string) =>
   addr === NULL_ADDRESS ? ZERO_ADDRESS : addr
 
-const normalizeIncomingSocketToken = (token: SocketAPIToken) => ({
+const normalizeIncomingSocketTokenAddress = (address: string) =>
+  // incoming token addresses from Socket are all lowercased
+  getAddress(
+    // native token addresses come as null address instead of the zero address
+    convertNullAddressToZeroAddressIfNeeded(address)
+  )
+export const normalizeIncomingSocketToken = (token: SocketAPIToken) => ({
   ...token,
-  address:
-    // incoming token addresses from Socket are all lowercased
-    getAddress(
-      // native token addresses come as null address instead of the zero address
-      convertNullAddressToZeroAddressIfNeeded(token.address)
-    )
+  address: normalizeIncomingSocketTokenAddress(token.address)
 })
 
 const normalizeOutgoingSocketTokenAddress = (address: string) =>
@@ -83,6 +87,10 @@ export class SocketAPI {
     if (this.isHealthy) return
 
     await this.updateHealth()
+  }
+
+  resetHealth() {
+    this.isHealthy = null
   }
 
   async getSupportedChains(): Promise<SocketAPISupportedChain[]> {
@@ -201,15 +209,18 @@ export class SocketAPI {
       toTokenAddress: normalizeOutgoingSocketTokenAddress(toTokenAddress),
       fromAmount: fromAmount.toString(),
       userAddress,
-      // TODO: Enable when needed
-      // feeTakerAddress: AMBIRE_FEE_TAKER_ADDRESSES[fromChainId],
-      // feePercent: FEE_PERCENT.toString(),
       isContractCall: isSmartAccount.toString(), // only get quotes with that are compatible with contracts
       sort,
       singleTxOnly: 'false',
       defaultSwapSlippage: '1',
       uniqueRoutesPerBridge: 'true'
     })
+    const feeTakerAddress = AMBIRE_FEE_TAKER_ADDRESSES[fromChainId]
+    const shouldIncludeConvenienceFee = !!feeTakerAddress
+    if (shouldIncludeConvenienceFee) {
+      params.append('feeTakerAddress', feeTakerAddress)
+      params.append('feePercent', FEE_PERCENT.toString())
+    }
     const url = `${this.#baseUrl}/quote?${params.toString()}`
 
     let response = await this.#fetch(url, { headers: this.#headers })
@@ -341,7 +352,9 @@ export class SocketAPI {
     return response
   }
 
-  async updateActiveRoute(activeRouteId: SocketAPISendTransactionRequest['activeRouteId']) {
+  async updateActiveRoute(
+    activeRouteId: SocketAPISendTransactionRequest['activeRouteId']
+  ): Promise<SocketAPIActiveRoutes> {
     const params = new URLSearchParams({ activeRouteId: activeRouteId.toString() })
     const url = `${this.#baseUrl}/route/active-routes?${params.toString()}`
 
@@ -352,7 +365,27 @@ export class SocketAPI {
     if (!response.success) throw new Error('Failed to update route')
     await this.updateHealthIfNeeded()
 
-    return response.result
+    return {
+      ...response.result,
+      fromAsset: normalizeIncomingSocketToken(response.result.fromAsset),
+      fromAssetAddress: normalizeIncomingSocketTokenAddress(response.result.fromAssetAddress),
+      toAsset: normalizeIncomingSocketToken(response.result.toAsset),
+      toAssetAddress: normalizeIncomingSocketTokenAddress(response.result.toAssetAddress),
+      userTxs: (response.result.userTxs as SocketAPIActiveRoutes['userTxs']).map((userTx) => ({
+        ...userTx,
+        fromAsset:
+          'fromAsset' in userTx ? normalizeIncomingSocketToken(userTx.fromAsset) : undefined,
+        toAsset: normalizeIncomingSocketToken(userTx.toAsset),
+        steps:
+          'steps' in userTx
+            ? userTx.steps.map((step) => ({
+                ...step,
+                fromAsset: normalizeIncomingSocketToken(step.fromAsset),
+                toAsset: normalizeIncomingSocketToken(step.toAsset)
+              }))
+            : undefined
+      }))
+    }
   }
 
   async getNextRouteUserTx(activeRouteId: SocketAPISendTransactionRequest['activeRouteId']) {

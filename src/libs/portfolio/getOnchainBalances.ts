@@ -1,18 +1,19 @@
-import { toBeHex } from 'ethers'
-
-import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import { DEPLOYLESS_SIMULATION_FROM } from '../../consts/deploy'
+import { EOA_SIMULATION_NONCE } from '../../consts/deployless'
 import { Network } from '../../interfaces/network'
+import { getEoaSimulationStateOverride } from '../../utils/simulationStateOverride'
 import { getAccountDeployParams, isSmartAccount } from '../account/account'
 import { callToTuple, toSingletonCall } from '../accountOp/accountOp'
 import { Deployless, DeploylessMode, parseErr } from '../deployless/deployless'
-import { privSlot } from '../proxyDeploy/deploy'
 import { getFlags, overrideSymbol } from './helpers'
-import { CollectionResult, GetOptions, LimitsOptions, TokenResult } from './interfaces'
-
-// fake nonce for EOA simulation
-export const EOA_SIMULATION_NONCE =
-  '0x1000000000000000000000000000000000000000000000000000000000000000'
+import {
+  CollectionResult,
+  GetOptions,
+  LimitsOptions,
+  MetaData,
+  TokenError,
+  TokenResult
+} from './interfaces'
 
 class SimulationError extends Error {
   public simulationErrorMsg: string
@@ -73,29 +74,18 @@ function handleSimulationError(
   }
 }
 
-function getDeploylessOpts(accountAddr: string, network: Network, opts: Partial<GetOptions>) {
+export function getDeploylessOpts(
+  accountAddr: string,
+  supportsStateOverride: boolean,
+  opts: Partial<GetOptions>
+) {
   return {
     blockTag: opts.blockTag,
     from: DEPLOYLESS_SIMULATION_FROM,
     mode:
-      !network.rpcNoStateOverride && opts.isEOA
-        ? DeploylessMode.StateOverride
-        : DeploylessMode.Detect,
+      supportsStateOverride && opts.isEOA ? DeploylessMode.StateOverride : DeploylessMode.Detect,
     stateToOverride:
-      !network.rpcNoStateOverride && opts.isEOA
-        ? {
-            [accountAddr]: {
-              code: AmbireAccount.binRuntime,
-              stateDiff: {
-                // if we use 0x00...01 we get a geth bug: "invalid argument 2: hex number with leading zero digits\" - on some RPC providers
-                [`0x${privSlot(0, 'address', accountAddr, 'bytes32')}`]:
-                  '0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
-                // any number with leading zeros is not supported on some RPCs
-                [toBeHex(1, 32)]: EOA_SIMULATION_NONCE
-              }
-            }
-          }
-        : null
+      supportsStateOverride && opts.isEOA ? getEoaSimulationStateOverride(accountAddr) : null
   }
 }
 
@@ -106,8 +96,8 @@ export async function getNFTs(
   accountAddr: string,
   tokenAddrs: [string, any][],
   limits: LimitsOptions
-): Promise<[number, CollectionResult][]> {
-  const deploylessOpts = getDeploylessOpts(accountAddr, network, opts)
+): Promise<[[TokenError, CollectionResult][], {}][]> {
+  const deploylessOpts = getDeploylessOpts(accountAddr, !network.rpcNoStateOverride, opts)
   const mapToken = (token: any) => {
     return {
       name: token.name,
@@ -135,7 +125,7 @@ export async function getNFTs(
       )
     )[0]
 
-    return collections.map((token: any) => [token.error, mapToken(token)])
+    return [collections.map((token: any) => [token.error, mapToken(token)]), {}]
   }
 
   const { accountOps, account } = opts.simulation
@@ -175,37 +165,43 @@ export async function getNFTs(
       }))
     : null
 
-  return before[0].map((beforeToken: any, i: number) => {
-    const simulationToken = simulationTokens
-      ? simulationTokens.find(
-          (token: any) => token.addr.toLowerCase() === tokenAddrs[i][0].toLowerCase()
+  return [
+    before[0].map((beforeToken: any, i: number) => {
+      const simulationToken = simulationTokens
+        ? simulationTokens.find(
+            (token: any) => token.addr.toLowerCase() === tokenAddrs[i][0].toLowerCase()
+          )
+        : null
+
+      const token = mapToken(beforeToken)
+      const receiving: bigint[] = []
+      const sending: bigint[] = []
+
+      token.collectibles.forEach((oldCollectible: bigint) => {
+        // the first check is required because if there are no changes we will always have !undefined from the second check
+        if (
+          simulationToken?.collectibles &&
+          !simulationToken?.collectibles?.includes(oldCollectible)
         )
-      : null
+          sending.push(oldCollectible)
+      })
+      simulationToken?.collectibles?.forEach((newCollectible: bigint) => {
+        if (!token.collectibles.includes(newCollectible)) receiving.push(newCollectible)
+      })
 
-    const token = mapToken(beforeToken)
-    const receiving: bigint[] = []
-    const sending: bigint[] = []
-
-    token.collectibles.forEach((oldCollectible: bigint) => {
-      // the first check is required because if there are no changes we will always have !undefined from the second check
-      if (simulationToken?.collectibles && !simulationToken?.collectibles?.includes(oldCollectible))
-        sending.push(oldCollectible)
-    })
-    simulationToken?.collectibles?.forEach((newCollectible: bigint) => {
-      if (!token.collectibles.includes(newCollectible)) receiving.push(newCollectible)
-    })
-
-    return [
-      beforeToken.error,
-      {
-        ...token,
-        // Please refer to getTokens() for more info regarding `amountBeforeSimulation` calc
-        simulationAmount: simulationToken ? simulationToken.amount - token.amount : undefined,
-        amountPostSimulation: simulationToken ? simulationToken.amount : token.amount,
-        postSimulation: { receiving, sending }
-      }
-    ]
-  })
+      return [
+        beforeToken.error,
+        {
+          ...token,
+          // Please refer to getTokens() for more info regarding `amountBeforeSimulation` calc
+          simulationAmount: simulationToken ? simulationToken.amount - token.amount : undefined,
+          amountPostSimulation: simulationToken ? simulationToken.amount : token.amount,
+          postSimulation: { receiving, sending }
+        }
+      ]
+    }),
+    {}
+  ]
 }
 
 export async function getTokens(
@@ -214,7 +210,7 @@ export async function getTokens(
   opts: Partial<GetOptions>,
   accountAddr: string,
   tokenAddrs: string[]
-): Promise<[TokenResult, number, bigint, bigint][]> {
+): Promise<[[TokenError, TokenResult][], MetaData][]> {
   const mapToken = (token: any, address: string) => {
     return {
       amount: token.amount,
@@ -228,7 +224,7 @@ export async function getTokens(
       flags: getFlags({}, network.id, network.id, address)
     } as TokenResult
   }
-  const deploylessOpts = getDeploylessOpts(accountAddr, network, opts)
+  const deploylessOpts = getDeploylessOpts(accountAddr, !network.rpcNoStateOverride, opts)
   if (!opts.simulation) {
     const [results, blockNumber] = await deployless.call(
       'getBalances',
@@ -238,7 +234,9 @@ export async function getTokens(
 
     return [
       results.map((token: any, i: number) => [token.error, mapToken(token, tokenAddrs[i])]),
-      blockNumber
+      {
+        blockNumber
+      }
     ]
   }
   const { accountOps, account } = opts.simulation
@@ -302,8 +300,10 @@ export async function getTokens(
         }
       ]
     }),
-    blockNumber,
-    beforeNonce,
-    afterNonce
+    {
+      blockNumber,
+      beforeNonce,
+      afterNonce
+    }
   ]
 }

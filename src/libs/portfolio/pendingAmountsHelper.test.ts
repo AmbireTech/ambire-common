@@ -1,5 +1,6 @@
 import { expect } from '@jest/globals'
 import { calculatePendingAmounts } from './pendingAmountsHelper'
+import { AccountOp, AccountOpStatus } from '../accountOp/accountOp'
 
 describe('Portfolio -> Pending Amounts Helper', () => {
   describe('calculatePendingAmounts', () => {
@@ -7,8 +8,6 @@ describe('Portfolio -> Pending Amounts Helper', () => {
       const latestAmount = 2000000000000000000n
       const pendingAmount = 2000000000000000000n
       const amountPostSimulation = 1000000000000000000n
-      const activityNonce = 1n
-      const portfolioNonce = 2n
 
       const simulationDelta = -1000000000000000000n
 
@@ -17,8 +16,8 @@ describe('Portfolio -> Pending Amounts Helper', () => {
         pendingAmount,
         amountPostSimulation,
         simulationDelta,
-        activityNonce,
-        portfolioNonce
+        // having simulation, but the txn is not broadcasted yet, and that's why the status is not set to BroadcastedButNotConfirmed.
+        {} as AccountOp
       )
 
       expect(result).toEqual({
@@ -33,11 +32,6 @@ describe('Portfolio -> Pending Amounts Helper', () => {
       const pendingAmount = 2000000000000000000n
       const amountPostSimulation = 1000000000000000000n
 
-      // Once the AccOp is broadcasted and added to the Activity, there is a brief period
-      // where the Activity nonce matches the latest simulation nonce, indicating a `pendingToBeConfirmed` amount.
-      const activityNonce = 2n
-      const portfolioNonce = 2n
-
       const simulationDelta = -1000000000000000000n
 
       const result = calculatePendingAmounts(
@@ -45,8 +39,8 @@ describe('Portfolio -> Pending Amounts Helper', () => {
         pendingAmount,
         amountPostSimulation,
         simulationDelta,
-        activityNonce,
-        portfolioNonce
+        // Once we broadcast the txn, we set BroadcastedButNotConfirmed status to the simulated AccountOp
+        { status: AccountOpStatus.BroadcastedButNotConfirmed } as AccountOp
       )
 
       expect(result).toEqual({
@@ -62,18 +56,8 @@ describe('Portfolio -> Pending Amounts Helper', () => {
       const pendingAmount = 2000000000000000000n
 
       const amountPostSimulation = undefined
-      const activityNonce = 2n
-      const portfolioNonce = undefined
-      const simulationDelta = undefined
 
-      const result = calculatePendingAmounts(
-        latestAmount,
-        pendingAmount,
-        amountPostSimulation,
-        simulationDelta,
-        activityNonce,
-        portfolioNonce
-      )
+      const result = calculatePendingAmounts(latestAmount, pendingAmount, amountPostSimulation)
 
       expect(result).toEqual({
         isPending: true,
@@ -88,8 +72,6 @@ describe('Portfolio -> Pending Amounts Helper', () => {
       const pendingAmount = 3000000000000000000n
 
       const amountPostSimulation = 4000000000000000000n
-      const activityNonce = 1n
-      const portfolioNonce = 2n
 
       // AccOp simatulation delta
       const simulationDelta = 1000000000000000000n
@@ -99,8 +81,8 @@ describe('Portfolio -> Pending Amounts Helper', () => {
         pendingAmount,
         amountPostSimulation,
         simulationDelta,
-        activityNonce,
-        portfolioNonce
+        // having simulation, but the txn is not broadcasted yet, and that's why the status is not set to BroadcastedButNotConfirmed.
+        {} as AccountOp
       )
 
       expect(result).toEqual({
@@ -118,10 +100,6 @@ describe('Portfolio -> Pending Amounts Helper', () => {
 
       const amountPostSimulation = 4000000000000000000n
 
-      // Here we know that having the same nonces, it means we have BroadcastedButNotConfirmed AccOp
-      const activityNonce = 2n
-      const portfolioNonce = 2n
-
       // We know the sumulatioh delta
       const simulationDelta = 1000000000000000000n
 
@@ -130,8 +108,8 @@ describe('Portfolio -> Pending Amounts Helper', () => {
         pendingAmount,
         amountPostSimulation,
         simulationDelta,
-        activityNonce,
-        portfolioNonce
+        // Once we broadcast the txn, we set BroadcastedButNotConfirmed status to the simulated AccountOp
+        { status: AccountOpStatus.BroadcastedButNotConfirmed } as AccountOp
       )
 
       expect(result).toEqual({

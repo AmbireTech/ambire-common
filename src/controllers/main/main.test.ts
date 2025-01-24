@@ -3,7 +3,6 @@ import EventEmitter from 'events'
 import fetch from 'node-fetch'
 
 import { describe, expect, test } from '@jest/globals'
-import structuredClone from '@ungap/structured-clone'
 
 import { relayerUrl, velcroUrl } from '../../../test/config'
 import { produceMemoryStore } from '../../../test/helpers'
@@ -11,6 +10,7 @@ import { suppressConsoleBeforeEach } from '../../../test/helpers/console'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
 import { BIP44_STANDARD_DERIVATION_TEMPLATE } from '../../consts/derivation'
+import { networks } from '../../consts/networks'
 import { SelectedAccountForImport } from '../../interfaces/account'
 import { UserRequest } from '../../interfaces/userRequest'
 import { InnerCallFailureError } from '../../libs/errorDecoder/customErrors'
@@ -21,17 +21,14 @@ import { getAmbireAccountAddress } from '../../libs/proxyDeploy/getAmbireAddress
 import { RelayerError } from '../../libs/relayerCall/relayerCall'
 import { MainController } from './main'
 
-// @ts-ignore
-global.structuredClone = structuredClone as any
-
 // Public API key, shared by Socket, for testing purposes only
 const socketApiKey = '72a5b4b0-e727-48be-8aa1-5da9d62fe635'
 
 const windowManager = {
-  focus: () => Promise.resolve(),
-  open: () => Promise.resolve(0),
-  remove: () => Promise.resolve(),
   event: new EventEmitter(),
+  focus: () => Promise.resolve(),
+  open: () => Promise.resolve({ id: 0, top: 0, left: 0, width: 100, height: 100 }),
+  remove: () => Promise.resolve(),
   sendWindowToastMessage: () => {},
   sendWindowUiMessage: () => {}
 }
@@ -370,7 +367,7 @@ describe('Main Controller ', () => {
     expect(saSupport).not.toBe(null)
     expect(saSupport).not.toBe(undefined)
     expect(saSupport!.level).toBe('success')
-    expect(saSupport!.title).toBe("Ambire's smart wallets")
+    expect(saSupport!.title).toBe('Ambire Smart Accounts')
 
     const simulation = eth?.features.find((feat) => feat.id === 'simulation')
     expect(simulation).not.toBe(null)
@@ -428,7 +425,7 @@ describe('Main Controller ', () => {
         })
       } catch (e: any) {
         expect(e.message).toBe(
-          'Fee too low. Please select a higher transaction speed and try again'
+          'Transaction fee underpriced. Please select a higher transaction speed and try again'
         )
         expect(controllerAnyType.updateSignAccountOpGasPrice).toHaveBeenCalledTimes(1)
         expect(controllerAnyType.estimateSignAccountOp).not.toHaveBeenCalled()
@@ -436,7 +433,11 @@ describe('Main Controller ', () => {
     })
     it('Error that should be humanized by getHumanReadableBroadcastError', async () => {
       const { controllerAnyType } = prepareTest()
-      const error = new InnerCallFailureError('   transfer amount exceeds balance   ')
+      const error = new InnerCallFailureError(
+        '   transfer amount exceeds balance   ',
+        [],
+        networks.find((net) => net.id === 'base')!
+      )
 
       try {
         await controllerAnyType.throwBroadcastAccountOp({
@@ -444,7 +445,7 @@ describe('Main Controller ', () => {
         })
       } catch (e: any) {
         expect(e.message).toBe(
-          'The transaction cannot be broadcast because the transfer amount exceeds your account balance. Please reduce the transfer amount and try again.'
+          'The transaction cannot be broadcast because the transfer amount exceeds your account balance. Please check your balance or adjust the transfer amount.'
         )
         expect(controllerAnyType.updateSignAccountOpGasPrice).not.toHaveBeenCalled()
         expect(controllerAnyType.estimateSignAccountOp).not.toHaveBeenCalled()

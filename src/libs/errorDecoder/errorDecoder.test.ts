@@ -4,6 +4,12 @@ import { ethers } from 'hardhat'
 
 import { describe, expect } from '@jest/globals'
 
+import { suppressConsole } from '../../../test/helpers/console'
+import { networks } from '../../consts/networks'
+import {
+  getHumanReadableEstimationError,
+  MESSAGE_PREFIX
+} from '../errorHumanizer/estimationErrorHumanizer'
 import { RELAYER_DOWN_MESSAGE, RelayerError } from '../relayerCall/relayerCall'
 import { PANIC_ERROR_PREFIX } from './constants'
 import { InnerCallFailureError, RelayerPaymasterError } from './customErrors'
@@ -13,6 +19,9 @@ import { DecodedError, ErrorType } from './types'
 
 const TEST_MESSAGE_REVERT_DATA =
   '0x08c379a00000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000000c54657374206d6573736167650000000000000000000000000000000000000000'
+
+const base = networks.find((net) => net.id === 'base')!
+const avalanche = networks.find((net) => net.id === 'avalanche')!
 
 export const MockBundlerEstimationError = class extends Error {
   public constructor(public shortMessage?: string) {
@@ -32,6 +41,16 @@ export const MockRpcError = class extends Error {
     public shortMessage?: string
   ) {
     super(info?.error.message || shortMessage)
+  }
+}
+
+export const MockCustomError = class extends Error {
+  public constructor(
+    public code?: string | number,
+    public data?: string,
+    public shortMessage?: string
+  ) {
+    super(shortMessage || data)
   }
 }
 
@@ -125,11 +144,26 @@ describe('Error decoders work', () => {
 
         expect(decodedError.reason).toEqual(mockRpcError.info?.error.message)
       })
+      it("Short message is not prioritized if it's contents are invalid (could not coalesce error)", async () => {
+        const mockRpcError = new MockRpcError(
+          -32000,
+          {
+            error: {
+              code: -32000,
+              message: 'insufficient funds for gas * price + value: balance 0'
+            }
+          },
+          'could not coalesce error'
+        )
+        const decodedError = decodeError(mockRpcError)
+
+        expect(decodedError.reason).toEqual('insufficient funds for gas * price + value: balance 0')
+      })
     })
   })
   describe('InnerCallFailureHandler', () => {
     it('Error is decoded InnerCallFailureHandler it if not panic or revert', async () => {
-      const error = new InnerCallFailureError('transfer amount exceeds balance')
+      const error = new InnerCallFailureError('transfer amount exceeds balance', [], base)
       const decodedError = decodeError(error)
 
       expect(decodedError.type).toEqual(ErrorType.InnerCallFailureError)
@@ -137,12 +171,56 @@ describe('Error decoders work', () => {
       expect(decodedError.data).toBe('transfer amount exceeds balance')
     })
     it("Error doesn't gets overwritten by Panic/Revert if it is panic or revert", async () => {
-      const error = new InnerCallFailureError(TEST_MESSAGE_REVERT_DATA)
+      const error = new InnerCallFailureError(TEST_MESSAGE_REVERT_DATA, [], base)
       const decodedError = decodeError(error)
 
       expect(decodedError.type).toEqual(ErrorType.RevertError)
       expect(decodedError.reason).toBe('Test message')
       expect(decodedError.data).toBe(TEST_MESSAGE_REVERT_DATA)
+    })
+  })
+  describe('CustomErrorHandler', () => {
+    it('SwapFailed(0x81ceff30)', () => {
+      const error = new MockCustomError(
+        'CALL_EXCEPTION',
+        '0x81ceff30',
+        'Error: execution reverted (unknown custom error) '
+      )
+      const decodedError = decodeError(error)
+
+      expect(decodedError.type).toEqual(ErrorType.CustomError)
+      expect(decodedError.reason).toBe('0x81ceff30')
+      expect(decodedError.data).toBe('0x81ceff30')
+    })
+    it('Mock contract custom error', async () => {
+      try {
+        await contract.revertWithCustomErrorNoParam()
+      } catch (e: any) {
+        const decodedError = decodeError(e)
+
+        expect(decodedError.type).toEqual(ErrorType.CustomError)
+        expect(decodedError.reason).toBe('0xec7240f7')
+        expect(decodedError.data).toBe('0xec7240f7')
+      }
+    })
+  })
+  describe('CodeError', () => {
+    it('Should handle generic JS exceptions as CodeError', () => {
+      const { restore } = suppressConsole()
+      const errors = [
+        new TypeError('Type error'),
+        new SyntaxError('Syntax error'),
+        new ReferenceError('Reference error'),
+        new RangeError('Range error')
+      ]
+
+      errors.forEach((error) => {
+        const decodedError = decodeError(error)
+        expect(decodedError.type).toEqual(ErrorType.CodeError)
+        expect(decodedError.reason).toBe(error.name)
+      })
+
+      restore()
     })
   })
   describe('Should handle BundlerError correctly', () => {
@@ -254,6 +332,7 @@ describe('Error decoders work', () => {
     )
   })
   it('Should handle UnknownError correctly when reverted without reason', async () => {
+    const { restore } = suppressConsole()
     try {
       await contract.revertWithoutReason()
     } catch (e: any) {
@@ -265,9 +344,11 @@ describe('Error decoders work', () => {
       expect(decodedError.data).toEqual(errorData)
       expect(decodedError.reason).toBe('')
     }
+
+    restore()
   })
   it('Should trim leading and trailing whitespaces from the reason', async () => {
-    const error = new InnerCallFailureError('   transfer amount exceeds balance   ')
+    const error = new InnerCallFailureError('   transfer amount exceeds balance   ', [], base)
     const decodedError = decodeError(error)
 
     expect(decodedError.reason).toBe('transfer amount exceeds balance')
@@ -287,5 +368,34 @@ describe('Error decoders work', () => {
 
     expect(decodedError.type).toEqual(ErrorType.UserRejectionError)
     expect(decodedError.reason).toBe(TRANSACTION_REJECTED_REASON)
+  })
+  it('Should report insufficient native when inner call error is 0x and the calls value is bigger than the portfolio amount', async () => {
+    const error = new InnerCallFailureError('0x', [{ to: '', value: 10n, data: '0x' }], base, 9n)
+    const decodedError = decodeError(error)
+    expect(decodedError.reason).toBe(`Insufficient ${base.nativeAssetSymbol} for transaction calls`)
+    const humanized = getHumanReadableEstimationError(decodedError)
+    expect(humanized.message).toBe(`Insufficient ${base.nativeAssetSymbol} for transaction calls`)
+
+    const sameErrorOnAvax = new InnerCallFailureError(
+      '0x',
+      [{ to: '', value: 10n, data: '0x' }],
+      avalanche,
+      9n
+    )
+    const decodedsameErrorOnAvax = decodeError(sameErrorOnAvax)
+    expect(decodedsameErrorOnAvax.reason).toBe(
+      `Insufficient ${avalanche.nativeAssetSymbol} for transaction calls`
+    )
+    const humanizedAvax = getHumanReadableEstimationError(decodedsameErrorOnAvax)
+    expect(humanizedAvax.message).toBe(
+      `Insufficient ${avalanche.nativeAssetSymbol} for transaction calls`
+    )
+  })
+  it('Should report transaction reverted with error unknown when error is 0x and the calls value is less or equal to the portfolio amount', async () => {
+    const error = new InnerCallFailureError('0x', [{ to: '', value: 10n, data: '0x' }], base, 10n)
+    const decodedError = decodeError(error)
+    expect(decodedError.reason).toBe('Inner call: 0x')
+    const humanizedAvax = getHumanReadableEstimationError(decodedError)
+    expect(humanizedAvax.message).toBe(`${MESSAGE_PREFIX} it reverted onchain with reason unknown.`)
   })
 })

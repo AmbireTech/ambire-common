@@ -25,11 +25,17 @@ class RpcErrorHandler implements ErrorHandler {
 
   public handle(data: string, error: Error): DecodedError {
     const rpcError = error as any
-    let reason = rpcError.shortMessage || rpcError.message || rpcError.info?.error?.message
+    // The order is important here, we want to prioritize the most relevant reason
+    // Also, we do it this way as the reason can be in different places depending on the error
+    const possibleReasons = [
+      rpcError.code,
+      rpcError.shortMessage,
+      rpcError.message,
+      rpcError.info?.error?.message,
+      rpcError.error?.message
+    ]
 
-    if (typeof rpcError?.code === 'string' && isReasonValid(rpcError.code)) {
-      reason = rpcError.code
-    }
+    const reason = possibleReasons.find((r) => !!r && isReasonValid(r)) || ''
 
     return {
       type: ErrorType.RpcError,

@@ -1,18 +1,33 @@
 import {
-  AccountState,
   CollectionResult as CollectionResultInterface,
-  NetworkNonces as NetworkNoncesInterface,
-  TokenAmount as TokenAmountInterface,
+  NetworkSimulatedAccountOp,
+  NetworkState,
   TokenResult as TokenResultInterface
 } from '../libs/portfolio/interfaces'
 
+/** A stripped version of the portfolio state that will be used in the UI */
+export type SelectedAccountPortfolioState = {
+  [networkId: string]:
+    | (Omit<NetworkState, 'result'> & {
+        result?: Omit<
+          NonNullable<NetworkState['result']>,
+          'tokens' | 'collections' | 'tokenErrors' | 'hintsFromExternalAPI' | 'priceCache'
+        >
+      })
+    | undefined
+}
+
+export type SelectedAccountPortfolioTokenResult = TokenResultInterface & {
+  latestAmount?: bigint
+  pendingAmount?: bigint
+}
+
 export interface SelectedAccountPortfolio {
-  tokens: TokenResultInterface[]
+  tokens: SelectedAccountPortfolioTokenResult[]
   collections: CollectionResultInterface[]
   totalBalance: number
   isAllReady: boolean
-  simulationNonces: NetworkNoncesInterface
-  tokenAmounts: TokenAmountInterface[]
-  latest: AccountState
-  pending: AccountState
+  networkSimulatedAccountOp: NetworkSimulatedAccountOp
+  latest: SelectedAccountPortfolioState
+  pending: SelectedAccountPortfolioState
 }

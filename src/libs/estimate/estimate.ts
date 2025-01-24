@@ -1,10 +1,12 @@
-import { AbiCoder, JsonRpcProvider, Provider, ZeroAddress } from 'ethers'
+import { AbiCoder, ZeroAddress } from 'ethers'
 
 import Estimation from '../../../contracts/compiled/Estimation.json'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { DEPLOYLESS_SIMULATION_FROM, OPTIMISTIC_ORACLE } from '../../consts/deploy'
 import { Account, AccountStates } from '../../interfaces/account'
 import { Network } from '../../interfaces/network'
+import { RPCProvider } from '../../interfaces/provider'
+import { BundlerSwitcher } from '../../services/bundlers/bundlerSwitcher'
 import { getAccountDeployParams, isSmartAccount } from '../account/account'
 import { AccountOp, toSingletonCall } from '../accountOp/accountOp'
 import { Call } from '../accountOp/types'
@@ -13,12 +15,9 @@ import { fromDescriptor } from '../deployless/deployless'
 import { InnerCallFailureError } from '../errorDecoder/customErrors'
 import { getHumanReadableEstimationError } from '../errorHumanizer'
 import { getProbableCallData } from '../gasPrice/gasPrice'
+import { hasRelayerSupport } from '../networks/networks'
 import { TokenResult } from '../portfolio'
-import {
-  getActivatorCall,
-  shouldIncludeActivatorCall,
-  shouldUsePaymaster
-} from '../userOperation/userOperation'
+import { getActivatorCall, shouldIncludeActivatorCall } from '../userOperation/userOperation'
 import { estimationErrorFormatted } from './errors'
 import { bundlerEstimate } from './estimateBundler'
 import { estimateEOA } from './estimateEOA'
@@ -30,9 +29,17 @@ import { refund } from './refund'
 
 const abiCoder = new AbiCoder()
 
-function getInnerCallFailure(estimationOp: { success: boolean; err: string }): Error | null {
+function getInnerCallFailure(
+  estimationOp: { success: boolean; err: string },
+  calls: Call[],
+  network: Network,
+  portfolioNativeValue?: bigint
+): Error | null {
   if (estimationOp.success) return null
-  const error = getHumanReadableEstimationError(new InnerCallFailureError(estimationOp.err))
+
+  const error = getHumanReadableEstimationError(
+    new InnerCallFailureError(estimationOp.err, calls, network, portfolioNativeValue)
+  )
 
   return new Error(error.message, {
     cause: 'CALLS_FAILURE'
@@ -55,20 +62,18 @@ export async function estimate4337(
   calls: Call[],
   accountStates: AccountStates,
   network: Network,
-  provider: JsonRpcProvider | Provider,
+  provider: RPCProvider,
   feeTokens: TokenResult[],
   blockTag: string | number,
-  nativeToCheck: string[]
+  nativeToCheck: string[],
+  switcher: BundlerSwitcher,
+  errorCallback: Function
 ): Promise<EstimateResult> {
   const deploylessEstimator = fromDescriptor(provider, Estimation, !network.rpcNoStateOverride)
-  // if no paymaster, user can only pay in native
-  const filteredFeeTokens = !shouldUsePaymaster(network)
-    ? feeTokens.filter((feeToken) => feeToken.address === ZeroAddress && !feeToken.flags.onGasTank)
-    : feeTokens
 
   // build the feePaymentOptions with the available current amounts. We will
   // change them after simulation passes
-  let feePaymentOptions = filteredFeeTokens.map((token: TokenResult) => {
+  let feePaymentOptions = feeTokens.map((token: TokenResult) => {
     return {
       paidBy: account.addr,
       availableAmount: token.amount,
@@ -99,29 +104,45 @@ export async function estimate4337(
     [account.addr, op.nonce || 1, calls, '0x'],
     getProbableCallData(account, op, accountState, network),
     account.associatedKeys,
-    filteredFeeTokens.map((feeToken) => feeToken.address),
+    feeTokens.map((feeToken) => feeToken.address),
     FEE_COLLECTOR,
     nativeToCheck,
     network.isOptimistic ? OPTIMISTIC_ORACLE : ZeroAddress
   ]
 
-  // add the feeCall to estimateGas. We do it only here as it's handled
-  // in the relayer case but not in 4337 mode
+  // always add a feeCall if available as we're using the paymaster
+  // on predefined chains and on custom networks it is better to
+  // have a slightly bigger estimation (if we don't have a paymaster)
   const estimateGasOp = { ...op }
-  if (shouldUsePaymaster(network)) {
-    const feeToken = getFeeTokenForEstimate(feeTokens, network)
-    if (feeToken) estimateGasOp.feeCall = getFeeCall(feeToken)
-  }
-  const estimations = await Promise.all([
+  const feeToken = getFeeTokenForEstimate(feeTokens, network)
+  if (feeToken) estimateGasOp.feeCall = getFeeCall(feeToken)
+
+  const initializeRequests = () => [
     deploylessEstimator
       .call('estimate', checkInnerCallsArgs, {
         from: DEPLOYLESS_SIMULATION_FROM,
         blockTag
       })
       .catch(getHumanReadableEstimationError),
-    bundlerEstimate(account, accountStates, op, network, feeTokens),
+    bundlerEstimate(
+      account,
+      accountStates,
+      op,
+      network,
+      feeTokens,
+      provider,
+      switcher,
+      errorCallback
+    ),
     estimateGas(account, estimateGasOp, provider, accountState, network).catch(() => 0n)
-  ])
+  ]
+  const estimations = await estimateWithRetries(
+    initializeRequests,
+    'estimation-deployless',
+    errorCallback,
+    12000
+  )
+
   const ambireEstimation = estimations[0]
   const bundlerEstimationResult: EstimateResult = estimations[1]
   if (ambireEstimation instanceof Error) {
@@ -147,7 +168,12 @@ export async function estimate4337(
     ]
   ] = estimations[0]
   const ambireEstimationError =
-    getInnerCallFailure(accountOp) || getNonceDiscrepancyFailure(op, outcomeNonce)
+    getInnerCallFailure(
+      accountOp,
+      calls,
+      network,
+      feeTokens.find((token) => token.address === ZeroAddress && !token.flags.onGasTank)?.amount
+    ) || getNonceDiscrepancyFailure(op, outcomeNonce)
 
   // if Estimation.sol estimate is a success, it means the nonce has incremented
   // so we subtract 1 from it. If it's an error, we return the old one
@@ -155,13 +181,32 @@ export async function estimate4337(
     ? Number(outcomeNonce - 1n)
     : Number(outcomeNonce)
 
-  if (ambireEstimationError && !bundlerEstimationResult.error) {
+  if (ambireEstimationError) {
     // if there's an ambire estimation error, we do not allow the txn
     // to be executed as it means it will most certainly fail
     bundlerEstimationResult.error = ambireEstimationError
   } else if (!ambireEstimationError && bundlerEstimationResult.error) {
+    // if there's a bundler error only, it means it's a bundler specific
+    // problem. If we can switch the bundler, re-estimate
+    if (switcher.canSwitch(null)) {
+      switcher.switch()
+      return estimate4337(
+        account,
+        op,
+        calls,
+        accountStates,
+        network,
+        provider,
+        feeTokens,
+        blockTag,
+        nativeToCheck,
+        switcher,
+        errorCallback
+      )
+    }
+
     // if there's a bundler error only, it means we cannot do ERC-4337
-    // but we can do broadcast by EOA
+    // but we have to do broadcast by EOA
     feePaymentOptions = []
     delete bundlerEstimationResult.erc4337GasLimits
     bundlerEstimationResult.error = null
@@ -177,8 +222,10 @@ export async function estimate4337(
     ambireGas
   )
 
-  bundlerEstimationResult.feePaymentOptions = feePaymentOptions.map(
-    (option: FeePaymentOption, index: number) => {
+  const isPaymasterUsable = !!bundlerEstimationResult.erc4337GasLimits?.paymaster.isUsable()
+  bundlerEstimationResult.feePaymentOptions = feePaymentOptions
+    .filter((option) => isPaymasterUsable || option.token.address === ZeroAddress)
+    .map((option: FeePaymentOption, index: number) => {
       // after simulation: add the left over amount as available
       const localOp = { ...option }
       if (!option.token.flags.onGasTank) {
@@ -188,8 +235,7 @@ export async function estimate4337(
 
       localOp.gasUsed = localOp.token.flags.onGasTank ? 5000n : feeTokenOutcomes[index][0]
       return localOp
-    }
-  )
+    })
 
   // this is for EOAs paying for SA in native
   const nativeToken = feeTokens.find(
@@ -214,13 +260,15 @@ export async function estimate4337(
 }
 
 export async function estimate(
-  provider: Provider | JsonRpcProvider,
+  provider: RPCProvider,
   network: Network,
   account: Account,
   op: AccountOp,
   accountStates: AccountStates,
   nativeToCheck: string[],
   feeTokens: TokenResult[],
+  errorCallback: Function,
+  bundlerSwitcher: BundlerSwitcher,
   opts?: {
     calculateRefund?: boolean
     is4337Broadcast?: boolean
@@ -238,7 +286,8 @@ export async function estimate(
       provider,
       feeTokens,
       blockFrom,
-      blockTag
+      blockTag,
+      errorCallback
     )
 
   if (!network.isSAEnabled)
@@ -273,14 +322,16 @@ export async function estimate(
       provider,
       feeTokens,
       blockTag,
-      nativeToCheck
+      nativeToCheck,
+      bundlerSwitcher,
+      errorCallback
     )
 
   const deploylessEstimator = fromDescriptor(provider, Estimation, !network.rpcNoStateOverride)
   const optimisticOracle = network.isOptimistic ? OPTIMISTIC_ORACLE : ZeroAddress
 
   // if the network doesn't have a relayer, we can't pay in fee tokens
-  const filteredFeeTokens = network.hasRelayer ? feeTokens : []
+  const filteredFeeTokens = hasRelayerSupport(network) ? feeTokens : []
 
   // @L2s
   // craft the probableTxn that's going to be saved on the L1
@@ -334,7 +385,11 @@ export async function estimate(
       .catch(getHumanReadableEstimationError),
     estimateGas(account, op, provider, accountState, network).catch(() => 0n)
   ]
-  const estimations = await estimateWithRetries(initializeRequests)
+  const estimations = await estimateWithRetries(
+    initializeRequests,
+    'estimation-deployless',
+    errorCallback
+  )
 
   if (estimations instanceof Error) return estimationErrorFormatted(estimations)
 
@@ -412,6 +467,12 @@ export async function estimate(
     // so we subtract 1 from it. If it's an error, we return the old one
     currentAccountNonce: accountOp.success ? Number(nonce - 1n) : Number(nonce),
     feePaymentOptions: [...feeTokenOptions, ...nativeTokenOptions],
-    error: getInnerCallFailure(accountOp) || getNonceDiscrepancyFailure(op, nonce)
+    error:
+      getInnerCallFailure(
+        accountOp,
+        calls,
+        network,
+        feeTokens.find((token) => token.address === ZeroAddress && !token.flags.onGasTank)?.amount
+      ) || getNonceDiscrepancyFailure(op, nonce)
   }
 }

@@ -1,8 +1,9 @@
-import { AbiCoder, concat, getAddress, hexlify, Interface, keccak256, toBeHex } from 'ethers'
+import { AbiCoder, concat, getAddress, hexlify, Interface, keccak256, Log, toBeHex } from 'ethers'
 import { Network } from 'interfaces/network'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json'
+import { BUNDLER } from '../../consts/bundlers'
 import {
   AMBIRE_ACCOUNT_FACTORY,
   AMBIRE_PAYMASTER,
@@ -13,7 +14,7 @@ import {
 import { SPOOF_SIGTYPE } from '../../consts/signatures'
 import { Account, AccountId, AccountOnchainState } from '../../interfaces/account'
 import { AccountOp, callToTuple } from '../accountOp/accountOp'
-import { UserOperation } from './types'
+import { UserOperation, UserOperationEventData, UserOpRequestType } from './types'
 
 export function calculateCallDataCost(callData: string): bigint {
   if (callData === '0x') return 0n
@@ -56,7 +57,7 @@ export function getActivatorCall(addr: AccountId) {
  * @returns EntryPoint userOp
  */
 export function getCleanUserOp(userOp: UserOperation) {
-  return [(({ requestType, activatorCall, ...o }) => o)(userOp)]
+  return [(({ requestType, activatorCall, bundler, ...o }) => o)(userOp)]
 }
 
 /**
@@ -67,6 +68,15 @@ export function getCleanUserOp(userOp: UserOperation) {
  * @returns hex string
  */
 export function getOneTimeNonce(userOperation: UserOperation) {
+  if (
+    !userOperation.paymaster ||
+    !userOperation.paymasterVerificationGasLimit ||
+    !userOperation.paymasterPostOpGasLimit ||
+    !userOperation.paymasterData
+  ) {
+    throw new Error('One time nonce could not be encoded because paymaster data is missing')
+  }
+
   const abiCoder = new AbiCoder()
   return `0x${keccak256(
     abiCoder.encode(
@@ -86,24 +96,29 @@ export function getOneTimeNonce(userOperation: UserOperation) {
           toBeHex(userOperation.maxFeePerGas, 16)
         ]),
         concat([
-          userOperation.paymaster!,
-          toBeHex(userOperation.paymasterVerificationGasLimit!, 16),
-          toBeHex(userOperation.paymasterPostOpGasLimit!, 16),
-          userOperation.paymasterData!
+          userOperation.paymaster,
+          toBeHex(userOperation.paymasterVerificationGasLimit, 16),
+          toBeHex(userOperation.paymasterPostOpGasLimit, 16),
+          userOperation.paymasterData
         ])
       ]
     )
   ).substring(18)}${toBeHex(0, 8).substring(2)}`
 }
 
-export function shouldUseOneTimeNonce(userOp: UserOperation) {
-  return userOp.requestType !== 'standard'
+export function getRequestType(accountState: AccountOnchainState): UserOpRequestType {
+  return accountState.isDeployed && !accountState.isErc4337Enabled ? 'activator' : 'standard'
+}
+
+export function shouldUseOneTimeNonce(accountState: AccountOnchainState): boolean {
+  return getRequestType(accountState) !== 'standard'
 }
 
 export function getUserOperation(
   account: Account,
   accountState: AccountOnchainState,
   accountOp: AccountOp,
+  bundler: BUNDLER,
   entryPointSig?: string
 ): UserOperation {
   const userOp: UserOperation = {
@@ -116,7 +131,8 @@ export function getUserOperation(
     maxFeePerGas: toBeHex(1),
     maxPriorityFeePerGas: toBeHex(1),
     signature: '0x',
-    requestType: 'standard'
+    requestType: getRequestType(accountState),
+    bundler
   }
 
   // if the account is not deployed, prepare the deploy in the initCode
@@ -134,17 +150,11 @@ export function getUserOperation(
     ])
   }
 
-  if (accountState.isDeployed && !accountState.isErc4337Enabled) {
+  // if the request type is activator, add the activator call
+  if (userOp.requestType === 'activator')
     userOp.activatorCall = getActivatorCall(accountOp.accountAddr)
-    userOp.requestType = 'activator'
-  }
 
   return userOp
-}
-
-export function shouldUsePaymaster(network: Network): boolean {
-  // if there's a paymaster on the network, we pay with it. Simple
-  return !!network.erc4337.hasPaymaster
 }
 
 export function isErc4337Broadcast(
@@ -152,16 +162,17 @@ export function isErc4337Broadcast(
   network: Network,
   accountState: AccountOnchainState
 ): boolean {
-  // we can broadcast a 4337 if:
-  // - the account is not deployed (we do deployAndExecute in the factoryData)
-  // - the entry point is enabled (standard ops)
-  // - we have a paymaster (through the edge case)
-  const canWeBroadcast4337 =
-    accountState.isErc4337Enabled || shouldUsePaymaster(network) || !accountState.isDeployed
+  // a special exception for gnosis which was a hardcoded chain but
+  // now it's not. The bundler doesn't support state override on gnosis
+  // so if the account IS deployed AND does NOT have 4337 privileges,
+  // it won't be able to use the edge case as the bundler will block
+  // the estimation. That's why we will use the relayer in this case
+  const canBroadcast4337 =
+    network.chainId !== 100n || accountState.isErc4337Enabled || !accountState.isDeployed
 
   return (
+    canBroadcast4337 &&
     network.erc4337.enabled &&
-    canWeBroadcast4337 &&
     accountState.isV2 &&
     !!acc.creation &&
     getAddress(acc.creation.factoryAddr) === AMBIRE_ACCOUNT_FACTORY
@@ -249,4 +260,38 @@ export function getUserOpHash(userOp: UserOperation, chainId: bigint) {
   return keccak256(
     abiCoder.encode(['bytes32', 'address', 'uint256'], [packedHash, ERC_4337_ENTRYPOINT, chainId])
   )
+}
+
+// try to parse the UserOperationEvent to understand whether
+// the user op is a success or a failure
+export const parseLogs = (
+  logs: readonly Log[],
+  userOpHash: string,
+  userOpsLength?: number // benzina only
+): UserOperationEventData | null => {
+  if (userOpHash === '' && userOpsLength !== 1) return null
+
+  let userOpLog = null
+  logs.forEach((log: Log) => {
+    try {
+      if (
+        log.topics.length === 4 &&
+        (log.topics[1].toLowerCase() === userOpHash.toLowerCase() || userOpsLength === 1)
+      ) {
+        // decode data for UserOperationEvent:
+        // 'event UserOperationEvent(bytes32 indexed userOpHash, address indexed sender, address indexed paymaster, uint256 nonce, bool success, uint256 actualGasCost, uint256 actualGasUsed)'
+        const coder = new AbiCoder()
+        userOpLog = coder.decode(['uint256', 'bool', 'uint256', 'uint256'], log.data)
+      }
+    } catch (e: any) {
+      /* silence is bitcoin */
+    }
+  })
+
+  if (!userOpLog) return null
+
+  return {
+    nonce: userOpLog[0],
+    success: userOpLog[1]
+  }
 }

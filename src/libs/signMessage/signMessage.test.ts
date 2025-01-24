@@ -1,4 +1,4 @@
-import { Contract, hashMessage, toUtf8Bytes, TypedDataEncoder, Wallet } from 'ethers'
+import { Contract, hashMessage, hexlify, toUtf8Bytes, TypedDataEncoder, Wallet } from 'ethers'
 import { EventEmitter } from 'stream'
 
 import { beforeAll, describe, expect, test } from '@jest/globals'
@@ -10,21 +10,45 @@ import { PERMIT_2_ADDRESS } from '../../consts/addresses'
 import { networks } from '../../consts/networks'
 import { KeystoreController } from '../../controllers/keystore/keystore'
 import { Account, AccountStates } from '../../interfaces/account'
+import { Hex } from '../../interfaces/hex'
 import { Network } from '../../interfaces/network'
 import { Storage } from '../../interfaces/storage'
 import { getRpcProvider } from '../../services/provider'
+import { callToTuple, getSignableHash } from '../accountOp/accountOp'
 import { getAccountState } from '../accountState/accountState'
 import { KeystoreSigner } from '../keystoreSigner/keystoreSigner'
 import {
+  getAmbireReadableTypedData,
   getEIP712Signature,
   getPlainTextSignature,
   getTypedData,
-  verifyMessage
+  verifyMessage,
+  wrapWallet
 } from './signMessage'
 
 const ethereumNetwork = networks.find((net) => net.id === 'ethereum')!
 const polygonNetwork = networks.find((net) => net.id === 'polygon')!
 const contractSuccess = '0x1626ba7e'
+const unsupportedNetwork = {
+  id: 'zircuit mainnet',
+  name: 'Zircuit Mainnet',
+  nativeAssetSymbol: 'ETH',
+  rpcUrls: ['https://zircuit1-mainnet.p2pify.com'],
+  selectedRpcUrl: 'https://zircuit1-mainnet.p2pify.com',
+  rpcNoStateOverride: false,
+  chainId: 48900n,
+  explorerUrl: 'https://explorer.zircuit.com',
+  erc4337: { enabled: false, hasPaymaster: false, hasBundlerSupport: false },
+  isSAEnabled: false,
+  areContractsDeployed: false,
+  hasRelayer: false,
+  platformId: 'zircuit',
+  nativeAssetId: 'weth',
+  hasSingleton: false,
+  features: [],
+  feeOptions: { is1559: true },
+  predefined: false
+}
 
 const eoaSigner = {
   privKey: '0x8ad1e4982a3a2e5ef35db11d498d48ab33cbe91bb258802bc8703c943c5a256a',
@@ -47,8 +71,9 @@ const eoaAccount: Account = {
   }
 }
 
+const v2SmartAccAddr = '0x26d6a373397d553595Cd6A7BBaBD86DEbd60a1Cc'
 const smartAccount: Account = {
-  addr: '0x26d6a373397d553595Cd6A7BBaBD86DEbd60a1Cc',
+  addr: v2SmartAccAddr,
   associatedKeys: [eoaSigner.keyPublicAddress],
   creation: {
     factoryAddr: '0xa8202f888b9b2dfa5ceb2204865018133f6f179a',
@@ -59,13 +84,14 @@ const smartAccount: Account = {
   initialPrivileges: [],
   preferences: {
     label: DEFAULT_ACCOUNT_LABEL,
-    pfp: '0x26d6a373397d553595Cd6A7BBaBD86DEbd60a1Cc'
+    pfp: v2SmartAccAddr
   }
 }
 
 const v1Account: Account = {
   addr: '0x254D526978D15C9619288949f9419e918977F9F3',
-  associatedKeys: [v1siger.keyPublicAddress],
+  // v2SmartAccAddr is a signer only on polygon
+  associatedKeys: [v1siger.keyPublicAddress, v2SmartAccAddr],
   creation: {
     factoryAddr: '0xBf07a0Df119Ca234634588fbDb5625594E2a5BCA',
     bytecode:
@@ -101,10 +127,10 @@ const getAccountsInfo = async (accounts: Account[]): Promise<AccountStates> => {
 }
 
 const windowManager = {
-  focus: () => Promise.resolve(),
-  open: () => Promise.resolve(0),
-  remove: () => Promise.resolve(),
   event: new EventEmitter(),
+  focus: () => Promise.resolve(),
+  open: () => Promise.resolve({ id: 0, top: 0, left: 0, width: 100, height: 100 }),
+  remove: () => Promise.resolve(),
   sendWindowToastMessage: () => {},
   sendWindowUiMessage: () => {}
 }
@@ -264,6 +290,23 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
         'Signing messages is disallowed for v1 accounts. Please contact support to proceed'
       )
     }
+  })
+
+  test('Signing [V1 SA]: plain text, should throw an error as it disallowed to sign message with contains address in it on unsupported chain', async () => {
+    const accountStates = await getAccountsInfo([v1Account])
+    const signer = await keystore.getSigner(v1siger.keyPublicAddress, 'internal')
+
+    await expect(
+      getPlainTextSignature(
+        `test with address in the message on unsupported chain: ${v1Account.addr}`,
+        unsupportedNetwork,
+        v1Account,
+        accountStates[v1Account.addr][ethereumNetwork.id],
+        signer
+      )
+    ).rejects.toThrow(
+      `Signing messages is disallowed for v1 accounts on ${unsupportedNetwork.name}`
+    )
   })
 
   test('Signing [EOA]: eip-712', async () => {
@@ -427,6 +470,144 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
     } catch (e: any) {
       expect(e.message).toBe(
         'Signing this eip-712 message is disallowed for v1 accounts as it does not contain the smart account address and therefore deemed unsafe'
+      )
+    }
+  })
+  test('Signing [V1 SA, V2 Signer]: signing an ambire operation', async () => {
+    const accountStates = await getAccountsInfo([smartAccount])
+    const v2AccountState = accountStates[smartAccount.addr][polygonNetwork.id]
+    const signer = await keystore.getSigner(eoaSigner.keyPublicAddress, 'internal')
+
+    const ambireReadableOperation = {
+      addr: v1Account.addr as Hex,
+      nonce: 0n,
+      chainId: 137n,
+      calls: [{ to: v2SmartAccAddr as Hex, value: 0n, data: '0x' as Hex }]
+    }
+    const typedData = getAmbireReadableTypedData(
+      polygonNetwork.chainId,
+      v2SmartAccAddr,
+      ambireReadableOperation
+    )
+    const hash = hexlify(
+      getSignableHash(
+        ambireReadableOperation.addr,
+        ambireReadableOperation.chainId,
+        ambireReadableOperation.nonce,
+        ambireReadableOperation.calls.map(callToTuple)
+      )
+    )
+    const eip712Sig = await getEIP712Signature(
+      typedData,
+      smartAccount,
+      v2AccountState,
+      signer,
+      polygonNetwork
+    )
+
+    expect(eip712Sig.slice(-2)).toEqual('02')
+
+    const provider = getRpcProvider(polygonNetwork.rpcUrls, polygonNetwork.chainId)
+
+    // v2 account
+    const contractV2 = new Contract(v2SmartAccAddr, AmbireAccount.abi, provider)
+    const isValidSigforv2 = await contractV2.isValidSignature(hash, eip712Sig.slice(0, 134))
+    expect(isValidSigforv2).toBe(contractSuccess)
+
+    // v1 account
+    const contract = new Contract(v1Account.addr, AmbireAccount.abi, provider)
+    const isValidSig = await contract.isValidSignature(hash, eip712Sig)
+    expect(isValidSig).toBe(contractSuccess)
+
+    // verify message should pass
+    const res = await verifyMessage({
+      network: polygonNetwork,
+      provider,
+      signer: v1Account.addr,
+      signature: eip712Sig,
+      typedData
+    })
+    expect(res).toBe(true)
+  })
+  test('Signing [V1 SA, V2 Signer]: signing a normal EIP-712 request', async () => {
+    const accountStates = await getAccountsInfo([smartAccount])
+    const v2AccountState = accountStates[smartAccount.addr][polygonNetwork.id]
+    const signer = await keystore.getSigner(eoaSigner.keyPublicAddress, 'internal')
+
+    const typedData = getTypedData(polygonNetwork.chainId, v2SmartAccAddr, hashMessage('test'))
+    const eip712Sig = await getEIP712Signature(
+      typedData,
+      smartAccount,
+      v2AccountState,
+      signer,
+      polygonNetwork
+    )
+    expect(eip712Sig.slice(-2)).toEqual('00')
+
+    const provider = getRpcProvider(polygonNetwork.rpcUrls, polygonNetwork.chainId)
+    const wrappedSig = wrapWallet(eip712Sig, smartAccount.addr)
+
+    // verify message should pass
+    const res = await verifyMessage({
+      network: polygonNetwork,
+      provider,
+      signer: v1Account.addr,
+      signature: wrappedSig,
+      typedData
+    })
+    expect(res).toBe(true)
+  })
+  test('Signing [V1 SA, V2 Signer]: plain text', async () => {
+    const accountStates = await getAccountsInfo([smartAccount])
+    const v2AccountState = accountStates[smartAccount.addr][polygonNetwork.id]
+    const signer = await keystore.getSigner(eoaSigner.keyPublicAddress, 'internal')
+
+    const signatureForPlainText = await getPlainTextSignature(
+      'test',
+      polygonNetwork,
+      smartAccount,
+      v2AccountState,
+      signer
+    )
+    expect(signatureForPlainText.slice(-2)).toEqual('00')
+
+    const provider = getRpcProvider(polygonNetwork.rpcUrls, polygonNetwork.chainId)
+    const wrappedSig = wrapWallet(signatureForPlainText, smartAccount.addr)
+
+    const res = await verifyMessage({
+      network: polygonNetwork,
+      provider,
+      signer: v1Account.addr,
+      signature: wrappedSig,
+      message: 'test'
+    })
+    expect(res).toBe(true)
+  })
+
+  test('Signing [V1 SA, V2 Signer]: a request for an AmbireReadableOperation should revert if the execution address is the same (signing for the current wallet instead of a diff wallet)', async () => {
+    const accountStates = await getAccountsInfo([smartAccount])
+    const v2AccountState = accountStates[smartAccount.addr][polygonNetwork.id]
+    const signer = await keystore.getSigner(eoaSigner.keyPublicAddress, 'internal')
+
+    const ambireReadableOperation = {
+      addr: v2SmartAccAddr as Hex,
+      nonce: 0n,
+      chainId: 137n,
+      calls: [{ to: v1Account.addr as Hex, value: 0n, data: '0x' as Hex }]
+    }
+    const typedData = getAmbireReadableTypedData(
+      polygonNetwork.chainId,
+      v2SmartAccAddr,
+      ambireReadableOperation
+    )
+
+    try {
+      await getEIP712Signature(typedData, smartAccount, v2AccountState, signer, polygonNetwork)
+      console.log('No error was thrown, but it should have')
+      expect(true).toEqual(false)
+    } catch (e: any) {
+      expect(e.message).toBe(
+        'signature error: trying to sign an AmbireReadableOperation for the same address. Please contact support'
       )
     }
   })

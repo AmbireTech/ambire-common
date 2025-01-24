@@ -7,12 +7,14 @@ import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import { velcroUrl } from '../../../test/config'
 import { monitor, stopMonitoring } from '../../../test/helpers/requests'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
+import { PORTFOLIO_TESTS_V2 } from '../../consts/addresses'
+import { EOA_SIMULATION_NONCE } from '../../consts/deployless'
 import { networks } from '../../consts/networks'
 import { Account } from '../../interfaces/account'
 import { AccountOp } from '../accountOp/accountOp'
 import { ERC20 } from '../humanizer/const/abis'
 import { stringify } from '../richJson/richJson'
-import { EOA_SIMULATION_NONCE } from './getOnchainBalances'
+import { StrippedExternalHintsAPIResponse } from './interfaces'
 import { Portfolio } from './portfolio'
 
 describe('Portfolio', () => {
@@ -24,7 +26,12 @@ describe('Portfolio', () => {
 
   async function getNonce(address: string) {
     const accountContract = new Contract(address, AmbireAccount.abi, provider)
-    return accountContract.nonce()
+    try {
+      const res = await accountContract.nonce()
+      return res
+    } catch (e) {
+      return '0x00'
+    }
   }
   async function getSafeSendUSDTTransaction(from: string, to: string, amount: bigint) {
     const usdtContract = new Contract(USDT_ADDRESS, ERC20, provider)
@@ -77,37 +84,38 @@ describe('Portfolio', () => {
 
   test('token simulation', async () => {
     const accountOp: any = {
-      accountAddr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
-      signingKeyAddr: '0xe5a4Dad2Ea987215460379Ab285DF87136E83BEA',
+      accountAddr: PORTFOLIO_TESTS_V2.addr,
+      signingKeyAddr: PORTFOLIO_TESTS_V2.key,
       gasLimit: null,
       gasFeePayment: null,
       networkId: 'ethereum',
-      nonce: await getNonce('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'),
+      nonce: await getNonce(PORTFOLIO_TESTS_V2.addr),
+      // fake sig, doesn't matter
       signature: '0x000000000000000000000000e5a4Dad2Ea987215460379Ab285DF87136E83BEA03',
       calls: [
         await getSafeSendUSDTTransaction(
-          '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+          PORTFOLIO_TESTS_V2.addr,
+          // random addr, doesn't matter
           '0xe5a4dad2ea987215460379ab285df87136e83bea',
           1000000n
         )
       ]
     }
     const account = {
-      addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+      addr: PORTFOLIO_TESTS_V2.addr,
       initialPrivileges: [],
-      associatedKeys: ['0xe5a4Dad2Ea987215460379Ab285DF87136E83BEA'],
+      associatedKeys: [PORTFOLIO_TESTS_V2.key],
       creation: {
-        factoryAddr: '0xBf07a0Df119Ca234634588fbDb5625594E2a5BCA',
-        bytecode:
-          '0x7f00000000000000000000000000000000000000000000000000000000000000017f02c94ba85f2ea274a3869293a0a9bf447d073c83c617963b0be7c862ec2ee44e553d602d80604d3d3981f3363d3d373d3d3d363d732a2b85eb1054d6f0c6c2e37da05ed3e5fea684ef5af43d82803e903d91602b57fd5bf3',
-        salt: '0x2ee01d932ede47b0b2fb1b6af48868de9f86bfc9a5be2f0b42c0111cf261d04c'
+        factoryAddr: PORTFOLIO_TESTS_V2.factory,
+        bytecode: PORTFOLIO_TESTS_V2.bytecode,
+        salt: PORTFOLIO_TESTS_V2.salt
       },
       preferences: {
         label: DEFAULT_ACCOUNT_LABEL,
-        pfp: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+        pfp: PORTFOLIO_TESTS_V2.addr
       }
     } as Account
-    const postSimulation = await portfolio.get('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8', {
+    const postSimulation = await portfolio.get(PORTFOLIO_TESTS_V2.addr, {
       simulation: { accountOps: [accountOp], account }
     })
     const entry = postSimulation.tokens.find((x) => x.symbol === 'USDT')
@@ -184,49 +192,6 @@ describe('Portfolio', () => {
     })
     expect(resultTwo.priceUpdateTime).toBeLessThanOrEqual(3)
     expect(resultTwo.tokens.every((x) => x.priceIn.length)).toBe(true)
-  })
-
-  test('portfolio works with previously cached hints, even if Velcro Discovery request fails', async () => {
-    // Here we are mocking multi-hints route only, in order to simulate Velcro Discovery failure
-    jest.mock('node-fetch', () => {
-      return jest.fn((url: any) => {
-        // @ts-ignore
-        const { Response } = jest.requireActual('node-fetch')
-        if (url.includes(`${velcroUrl}/multi-hints`)) {
-          const body = stringify({ message: 'API error' })
-          const headers = { status: 200 }
-
-          return Promise.resolve(new Response(body, headers))
-        }
-
-        // @ts-ignore
-        return jest.requireActual('node-fetch')(url)
-      })
-    })
-
-    const portfolioInner = new Portfolio(fetch, provider, ethereum, velcroUrl)
-    const previousHints = {
-      erc20s: [
-        '0x0000000000000000000000000000000000000000',
-        '0xba100000625a3754423978a60c9317c58a424e3D',
-        '0x4da27a545c0c5B758a6BA100e3a049001de870f5'
-      ],
-      erc721s: {}
-    }
-    const result = await portfolioInner.get('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8', {
-      previousHints
-    })
-
-    // Restore node-fetch module
-    jest.mock('node-fetch', () => {
-      return jest.fn().mockImplementation(jest.requireActual('node-fetch'))
-    })
-
-    expect(
-      result.tokens
-        .map((token) => token.address)
-        .filter((token) => previousHints.erc20s.includes(token))
-    ).toEqual(previousHints.erc20s)
   })
 
   test('simulation works for EOAs', async () => {
@@ -479,42 +444,41 @@ describe('Portfolio', () => {
     }
   })
 
-  test('token simulation works with two account ops', async () => {
+  test('token simulation works with multiple calls in an account op', async () => {
     const accountOp: any = {
-      accountAddr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
-      signingKeyAddr: '0xe5a4Dad2Ea987215460379Ab285DF87136E83BEA',
+      accountAddr: PORTFOLIO_TESTS_V2.addr,
+      signingKeyAddr: PORTFOLIO_TESTS_V2.key,
       gasLimit: null,
       gasFeePayment: null,
       networkId: 'ethereum',
-      nonce: await getNonce('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'),
+      nonce: await getNonce(PORTFOLIO_TESTS_V2.addr),
       signature: '0x000000000000000000000000e5a4Dad2Ea987215460379Ab285DF87136E83BEA03',
       calls: [
+        await getSafeSendUSDTTransaction(PORTFOLIO_TESTS_V2.addr, PORTFOLIO_TESTS_V2.key, 1000000n),
         await getSafeSendUSDTTransaction(
-          '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
-          '0xe5a4dad2ea987215460379ab285df87136e83bea',
-          1000000n
+          PORTFOLIO_TESTS_V2.addr,
+          '0x0000000000000000000000000000000000000000',
+          500000n
         )
       ]
     }
     const account = {
-      addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+      addr: PORTFOLIO_TESTS_V2.addr,
       initialPrivileges: [],
-      associatedKeys: ['0xe5a4Dad2Ea987215460379Ab285DF87136E83BEA'],
+      associatedKeys: [PORTFOLIO_TESTS_V2.key],
       creation: {
-        factoryAddr: '0xBf07a0Df119Ca234634588fbDb5625594E2a5BCA',
-        bytecode:
-          '0x7f00000000000000000000000000000000000000000000000000000000000000017f02c94ba85f2ea274a3869293a0a9bf447d073c83c617963b0be7c862ec2ee44e553d602d80604d3d3981f3363d3d373d3d3d363d732a2b85eb1054d6f0c6c2e37da05ed3e5fea684ef5af43d82803e903d91602b57fd5bf3',
-        salt: '0x2ee01d932ede47b0b2fb1b6af48868de9f86bfc9a5be2f0b42c0111cf261d04c'
+        factoryAddr: PORTFOLIO_TESTS_V2.factory,
+        bytecode: PORTFOLIO_TESTS_V2.bytecode,
+        salt: PORTFOLIO_TESTS_V2.salt
       },
       preferences: {
         label: DEFAULT_ACCOUNT_LABEL,
-        pfp: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+        pfp: PORTFOLIO_TESTS_V2.addr
       }
     }
-    const secondAccountOp = { ...accountOp }
-    secondAccountOp.nonce = accountOp.nonce + 1n
-    const postSimulation = await portfolio.get('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8', {
-      simulation: { accountOps: [accountOp, secondAccountOp], account }
+
+    const postSimulation = await portfolio.get(PORTFOLIO_TESTS_V2.addr, {
+      simulation: { accountOps: [accountOp], account }
     })
     const entry = postSimulation.tokens.find((x) => x.symbol === 'USDT')
 
@@ -529,40 +493,35 @@ describe('Portfolio', () => {
 
   test('token simulation fails if there are two account ops but the last one has a higher nonce than expected', async () => {
     const accountOp: any = {
-      accountAddr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
-      signingKeyAddr: '0xe5a4Dad2Ea987215460379Ab285DF87136E83BEA',
+      accountAddr: PORTFOLIO_TESTS_V2.addr,
+      signingKeyAddr: PORTFOLIO_TESTS_V2.key,
       gasLimit: null,
       gasFeePayment: null,
       networkId: 'ethereum',
-      nonce: await getNonce('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'),
+      nonce: await getNonce(PORTFOLIO_TESTS_V2.addr),
       signature: '0x000000000000000000000000e5a4Dad2Ea987215460379Ab285DF87136E83BEA03',
       calls: [
-        await getSafeSendUSDTTransaction(
-          '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
-          '0xe5a4dad2ea987215460379ab285df87136e83bea',
-          1000000n
-        )
+        await getSafeSendUSDTTransaction(PORTFOLIO_TESTS_V2.addr, PORTFOLIO_TESTS_V2.key, 1000000n)
       ]
     }
     const account = {
-      addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+      addr: PORTFOLIO_TESTS_V2.addr,
       initialPrivileges: [],
-      associatedKeys: ['0xe5a4Dad2Ea987215460379Ab285DF87136E83BEA'],
+      associatedKeys: [PORTFOLIO_TESTS_V2.key],
       creation: {
-        factoryAddr: '0xBf07a0Df119Ca234634588fbDb5625594E2a5BCA',
-        bytecode:
-          '0x7f00000000000000000000000000000000000000000000000000000000000000017f02c94ba85f2ea274a3869293a0a9bf447d073c83c617963b0be7c862ec2ee44e553d602d80604d3d3981f3363d3d373d3d3d363d732a2b85eb1054d6f0c6c2e37da05ed3e5fea684ef5af43d82803e903d91602b57fd5bf3',
-        salt: '0x2ee01d932ede47b0b2fb1b6af48868de9f86bfc9a5be2f0b42c0111cf261d04c'
+        factoryAddr: PORTFOLIO_TESTS_V2.factory,
+        bytecode: PORTFOLIO_TESTS_V2.bytecode,
+        salt: PORTFOLIO_TESTS_V2.salt
       },
       preferences: {
         label: DEFAULT_ACCOUNT_LABEL,
-        pfp: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+        pfp: PORTFOLIO_TESTS_V2.addr
       }
     }
     const secondAccountOp = { ...accountOp }
     secondAccountOp.nonce = accountOp.nonce + 2n // wrong, should be +1n
     try {
-      await portfolio.get('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8', {
+      await portfolio.get(PORTFOLIO_TESTS_V2.addr, {
         simulation: { accountOps: [accountOp, secondAccountOp], account }
       })
       // portfolio.get should revert and not come here
@@ -595,5 +554,113 @@ describe('Portfolio', () => {
     console.log = originalLog
     // Destroy the failing provider
     failingProvider.destroy()
+  })
+
+  describe('Hints', () => {
+    describe('With blocked Velcro discovery', () => {
+      // Done in beforeEach instead of a reusable function because
+      // mocks can't be reused as functions
+      beforeEach(() => {
+        // Simulate a Velcro Discovery failure
+        jest.mock('node-fetch', () => {
+          return jest.fn((url: any) => {
+            // @ts-ignore
+            const { Response } = jest.requireActual('node-fetch')
+            if (url.includes(`${velcroUrl}/multi-hints`)) {
+              const body = stringify({ message: 'API error' })
+              const headers = { status: 200 }
+
+              return Promise.resolve(new Response(body, headers))
+            }
+
+            // @ts-ignore
+            return jest.requireActual('node-fetch')(url)
+          })
+        })
+      })
+      afterEach(() => {
+        // Restore the original implementations
+        jest.restoreAllMocks()
+      })
+
+      test('portfolio works with previously cached hints, even if Velcro Discovery request fails', async () => {
+        const portfolioInner = new Portfolio(fetch, provider, ethereum, velcroUrl)
+        const previousHints = {
+          erc20s: [
+            '0x0000000000000000000000000000000000000000',
+            '0x4da27a545c0c5B758a6BA100e3a049001de870f5',
+            '0xba100000625a3754423978a60c9317c58a424e3D'
+          ],
+          erc721s: {},
+          lastUpdate: Date.now()
+        }
+        const result = await portfolioInner.get('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8', {
+          previousHintsFromExternalAPI: previousHints
+        })
+
+        expect(
+          result.tokens
+            .map((token) => token.address)
+            .filter((token) => previousHints.erc20s.includes(token))
+        ).toEqual(previousHints.erc20s)
+      })
+      test('Erc 721 external api hints should be prioritized over additional hints', async () => {
+        const hintsFromExternalAPI: StrippedExternalHintsAPIResponse = {
+          erc20s: [],
+          lastUpdate: Date.now(),
+          erc721s: {
+            '0x026224A2940bFE258D0dbE947919B62fE321F042': {
+              isKnown: false,
+              tokens: ['2647']
+            }
+          }
+        }
+        const additionalErc721Hints = {
+          '0x026224A2940bFE258D0dbE947919B62fE321F042': {
+            isKnown: false,
+            tokens: ['2648'] // Different token id on purpose
+          }
+        }
+
+        const portfolioInner = new Portfolio(fetch, provider, ethereum, velcroUrl)
+
+        const result = await portfolioInner.get('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8', {
+          previousHintsFromExternalAPI: hintsFromExternalAPI,
+          additionalErc721Hints
+        })
+
+        // The correct tokenId was found
+        expect(
+          result.collections.find((c) => c.address === '0x026224A2940bFE258D0dbE947919B62fE321F042')
+            ?.collectibles.length
+        ).toBe(1)
+      })
+    })
+    test('Hints are deduped', async () => {
+      const additionalErc20Hints = [USDT_ADDRESS, USDT_ADDRESS.toLowerCase()]
+      const portfolioInner = new Portfolio(fetch, provider, ethereum, velcroUrl)
+
+      const result = await portfolioInner.get('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8', {
+        additionalErc20Hints
+      })
+
+      const usdtFoundTimes = result.tokens
+        .map((token) => token.address)
+        .filter((address) => address.toLowerCase() === USDT_ADDRESS.toLowerCase()).length
+
+      expect(usdtFoundTimes).toBeLessThan(2)
+    })
+    test("Bad hints don't break the portfolio", async () => {
+      const additionalErc20Hints = [
+        `${USDT_ADDRESS.slice(-1)}4` // Bad hint
+      ]
+      const portfolioInner = new Portfolio(fetch, provider, ethereum, velcroUrl)
+
+      const result = await portfolioInner.get('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8', {
+        additionalErc20Hints
+      })
+
+      expect(result.tokens.length).toBeGreaterThan(0)
+    })
   })
 })
