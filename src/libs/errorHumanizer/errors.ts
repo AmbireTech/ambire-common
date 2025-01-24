@@ -70,7 +70,7 @@ const BROADCAST_OR_ESTIMATION_ERRORS: ErrorHumanizerError[] = [
   {
     reasons: [RELAYER_DOWN_MESSAGE],
     message:
-      'the Ambire relayer is down.\nPlease try again or contact Ambire support for assistance.'
+      'the Ambire relayer is temporarily down.\nPlease try again or contact Ambire support for assistance.'
   },
   // dApp interactions
   {
