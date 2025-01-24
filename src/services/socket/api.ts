@@ -1,7 +1,7 @@
 import { getAddress } from 'ethers'
 
 import SwapAndBridgeProviderApiError from '../../classes/SwapAndBridgeProviderApiError'
-import { Fetch, RequestInitWithCustomHeaders } from '../../interfaces/fetch'
+import { CustomResponse, Fetch, RequestInitWithCustomHeaders } from '../../interfaces/fetch'
 import {
   SocketAPIActiveRoutes,
   SocketAPIQuote,
@@ -98,10 +98,10 @@ export class SocketAPI {
     fetchPromise,
     errorPrefix
   }: {
-    fetchPromise: Promise<T>
+    fetchPromise: Promise<CustomResponse>
     errorPrefix: string
-  }): Promise<Response> {
-    let response: Response
+  }): Promise<T> {
+    let response: CustomResponse
 
     try {
       response = await fetchPromise
@@ -272,23 +272,22 @@ export class SocketAPI {
     }
     const url = `${this.#baseUrl}/quote?${params.toString()}`
 
-    let response = await this.#fetch(url, { headers: this.#headers })
-    if (!response.ok) throw new Error('Failed to fetch quote')
-
-    response = await response.json()
-    if (!response.success) throw new Error('Failed to fetch quote')
-    await this.updateHealthIfNeeded()
+    const response = await this.#handleResponse<SocketAPIQuote>({
+      fetchPromise: this.#fetch(url, { headers: this.#headers }),
+      errorPrefix: 'Unable to fetch the quote.'
+    })
 
     return {
-      ...response.result,
-      fromAsset: normalizeIncomingSocketToken(response.result.fromAsset),
-      toAsset: normalizeIncomingSocketToken(response.result.toAsset),
-      routes: response.result.routes.map((route: SocketAPIQuote['selectedRoute']) => ({
+      ...response,
+      fromAsset: normalizeIncomingSocketToken(response.fromAsset),
+      toAsset: normalizeIncomingSocketToken(response.toAsset),
+      routes: response.routes.map((route) => ({
         ...route,
         userTxs: route.userTxs.map((userTx) => ({
           ...userTx,
-          // @ts-ignore fromAsset exists on one of the two userTx sub-types
-          fromAsset: userTx.fromAsset ? normalizeIncomingSocketToken(userTx.fromAsset) : undefined,
+          ...('fromAsset' in userTx && {
+            fromAsset: normalizeIncomingSocketToken(userTx.fromAsset)
+          }),
           toAsset: normalizeIncomingSocketToken(userTx.toAsset),
           // @ts-ignore fromAsset exists on one of the two userTx sub-types
           steps: userTx.steps
