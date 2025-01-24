@@ -386,32 +386,28 @@ export class SocketAPI {
     const params = new URLSearchParams({ activeRouteId: activeRouteId.toString() })
     const url = `${this.#baseUrl}/route/active-routes?${params.toString()}`
 
-    let response = await this.#fetch(url, { headers: this.#headers })
-    if (!response.ok) throw new Error('Failed to update route')
-
-    response = await response.json()
-    if (!response.success) throw new Error('Failed to update route')
-    await this.updateHealthIfNeeded()
+    const response = await this.#handleResponse<SocketAPIActiveRoutes>({
+      fetchPromise: this.#fetch(url, { headers: this.#headers }),
+      errorPrefix: 'Unable to update the active route.'
+    })
 
     return {
-      ...response.result,
-      fromAsset: normalizeIncomingSocketToken(response.result.fromAsset),
-      fromAssetAddress: normalizeIncomingSocketTokenAddress(response.result.fromAssetAddress),
-      toAsset: normalizeIncomingSocketToken(response.result.toAsset),
-      toAssetAddress: normalizeIncomingSocketTokenAddress(response.result.toAssetAddress),
-      userTxs: (response.result.userTxs as SocketAPIActiveRoutes['userTxs']).map((userTx) => ({
+      ...response,
+      fromAsset: normalizeIncomingSocketToken(response.fromAsset),
+      fromAssetAddress: normalizeIncomingSocketTokenAddress(response.fromAssetAddress),
+      toAsset: normalizeIncomingSocketToken(response.toAsset),
+      toAssetAddress: normalizeIncomingSocketTokenAddress(response.toAssetAddress),
+      userTxs: (response.userTxs as SocketAPIActiveRoutes['userTxs']).map((userTx) => ({
         ...userTx,
-        fromAsset:
-          'fromAsset' in userTx ? normalizeIncomingSocketToken(userTx.fromAsset) : undefined,
+        ...('fromAsset' in userTx && { fromAsset: normalizeIncomingSocketToken(userTx.fromAsset) }),
         toAsset: normalizeIncomingSocketToken(userTx.toAsset),
-        steps:
-          'steps' in userTx
-            ? userTx.steps.map((step) => ({
-                ...step,
-                fromAsset: normalizeIncomingSocketToken(step.fromAsset),
-                toAsset: normalizeIncomingSocketToken(step.toAsset)
-              }))
-            : undefined
+        ...('steps' in userTx && {
+          steps: userTx.steps.map((step) => ({
+            ...step,
+            fromAsset: normalizeIncomingSocketToken(step.fromAsset),
+            toAsset: normalizeIncomingSocketToken(step.toAsset)
+          }))
+        })
       }))
     }
   }
