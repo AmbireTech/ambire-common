@@ -124,7 +124,6 @@ export class SocketAPI {
     const isBadResponse = !response.ok
     // Socket API returns 500 status code with a message in the body, even
     // in case of a bad request. Not necessarily an internal server error.
-    // TODO: Not sure if !response.success this will click well with the getSupportedChains method.
     // TODO: Refine types
     if (isBadResponse || !responseBody?.success) {
       // API returns 2 types of errors, a generic one, on the top level:
@@ -220,17 +219,14 @@ export class SocketAPI {
     })
     const url = `${this.#baseUrl}/supported/token-support?${params.toString()}`
 
-    let response = await this.#fetch(url, { headers: this.#headers })
-    const fallbackError = new Error('Failed to retrieve token information by address.')
-    if (!response.ok) throw fallbackError
+    const response = await this.#handleResponse<{ isSupported: boolean; token: SocketAPIToken }>({
+      fetchPromise: this.#fetch(url, { headers: this.#headers }),
+      errorPrefix: 'Unable to retrieve token information by address.'
+    })
 
-    response = await response.json()
-    if (!response.success) throw fallbackError
-    await this.updateHealthIfNeeded()
+    if (!response.isSupported || !response.token) return null
 
-    if (!response.result.isSupported || !response.result.token) return null
-
-    return normalizeIncomingSocketToken(response.result.token)
+    return normalizeIncomingSocketToken(response.token)
   }
 
   async quote({
