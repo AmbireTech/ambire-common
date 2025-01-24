@@ -47,6 +47,7 @@ export const SocketModule: HumanizerCallModule = (accountOp: AccountOp, irCalls:
     'function swapAndBridge(uint32 swapId, bytes calldata swapData, tuple (address receiverAddress,address senderAddress,uint256 value,uint256 srcPoolId,uint256 dstPoolId,uint256 minReceivedAmt,uint256 destinationGasLimit,bool isNativeSwapRequired,uint16 stargateDstChainId,uint32 swapId,bytes swapData,bytes32 metadata,bytes destinationPayload) acrossBridgeData) payable',
     'function swapAndBridge(uint32 swapId, bytes swapData, (uint32 dstEid, uint256 minAmountLD, address stargatePoolAddress, bytes destinationPayload, bytes destinationExtraOptions, (uint256 nativeFee, uint256 lzTokenFee) messagingFee, bytes32 metadata, uint256 toChainId, address receiver, bytes swapData, uint32 swapId, bool isNativeSwapRequired) stargateBridgeData) payable',
     'function swap(address,(address,address,address,address,uint256,uint256,uint256),bytes,bytes)',
+    'function swap(address caller, (address srcToken, address dstToken, address srcReceiver, address dstReceiver, uint256 amount, uint256 minReturnAmount, uint256 guaranteedAmount, uint256 flags, address referrer, bytes permit) desc, (uint256 target, uint256 gasLimit, uint256 value, bytes data)[] calls) payable returns (uint256 returnAmount)',
     'function exec(address,address,uint256,address,bytes)',
     'function execute((address recipient, address buyToken, uint256 minAmountOut) slippage, bytes[] actions, bytes32) payable returns (bool)',
     'function uniswapV3SwapTo(address,uint256,uint256,uint256[])',
@@ -272,6 +273,31 @@ export const SocketModule: HumanizerCallModule = (accountOp: AccountOp, irCalls:
           data: swapExtraData
         })!.args
         outAmount = amount2
+      } else if (
+        swapExtraData.startsWith(
+          iface.getFunction(
+            'function swap(address caller, (address srcToken, address dstToken, address srcReceiver, address dstReceiver, uint256 amount, uint256 minReturnAmount, uint256 guaranteedAmount, uint256 flags, address referrer, bytes permit) desc, (uint256 target, uint256 gasLimit, uint256 value, bytes data)[] calls) payable returns (uint256 returnAmount)'
+          )?.selector
+        )
+      ) {
+        const {
+          // caller,
+          desc: {
+            // srcToken,
+            // dstToken,
+            // srcReceiver,
+            // dstReceiver,
+            // amount: _amount,
+            minReturnAmount
+            // guaranteedAmount,
+            // flags,
+            // referrer,
+            // permit
+          }
+        } = iface.parseTransaction({
+          data: swapExtraData
+        })!.args
+        outAmount = minReturnAmount
       }
       return {
         ...call,
