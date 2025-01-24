@@ -3,6 +3,7 @@ import { AbiCoder, ZeroAddress } from 'ethers'
 import Estimation from '../../../contracts/compiled/Estimation.json'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { DEPLOYLESS_SIMULATION_FROM, OPTIMISTIC_ORACLE } from '../../consts/deploy'
+import { EOA_SIMULATION_NONCE } from '../../consts/deployless'
 import { Account, AccountStates } from '../../interfaces/account'
 import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
@@ -49,8 +50,8 @@ function getInnerCallFailure(
 
 // the outcomeNonce should always be equal to the nonce in accountOp + 1
 // that's an indication of transaction success
-function getNonceDiscrepancyFailure(op: AccountOp, outcomeNonce: number): Error | null {
-  if (op.nonce !== null && op.nonce + 1n === BigInt(outcomeNonce)) return null
+function getNonceDiscrepancyFailure(estimationNonce: bigint, outcomeNonce: number): Error | null {
+  if (estimationNonce + 1n === BigInt(outcomeNonce)) return null
 
   return new Error("Nonce discrepancy, perhaps there's a pending transaction. Retrying...", {
     cause: 'NONCE_FAILURE'
@@ -178,13 +179,14 @@ export async function estimate4337(
     ]
   ] = ambireEstimation
 
+  const estimationNonce = isSmarterEoaWithoutDelegation ? BigInt(EOA_SIMULATION_NONCE) : op.nonce!
   const ambireEstimationError =
     getInnerCallFailure(
       accountOp,
       calls,
       network,
       feeTokens.find((token) => token.address === ZeroAddress && !token.flags.onGasTank)?.amount
-    ) || getNonceDiscrepancyFailure(op, outcomeNonce)
+    ) || getNonceDiscrepancyFailure(estimationNonce, outcomeNonce)
 
   // if Estimation.sol estimate is a success, it means the nonce has incremented
   // so we subtract 1 from it. If it's an error, we return the old one
@@ -485,6 +487,6 @@ export async function estimate(
         calls,
         network,
         feeTokens.find((token) => token.address === ZeroAddress && !token.flags.onGasTank)?.amount
-      ) || getNonceDiscrepancyFailure(op, nonce)
+      ) || getNonceDiscrepancyFailure(op.nonce!, nonce)
   }
 }
