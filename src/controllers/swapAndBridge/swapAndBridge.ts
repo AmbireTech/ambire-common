@@ -3,6 +3,7 @@ import { formatUnits, isAddress, parseUnits } from 'ethers'
 import { v4 as uuidv4 } from 'uuid'
 
 import EmittableError from '../../classes/EmittableError'
+import SwapAndBridgeProviderApiError from '../../classes/SwapAndBridgeProviderApiError'
 import { Network } from '../../interfaces/network'
 import { Storage } from '../../interfaces/storage'
 import {
@@ -987,11 +988,14 @@ export class SwapAndBridgeController extends EventEmitter {
         }
         this.quoteRoutesStatuses = (quoteResult as any).bridgeRouteErrors || {}
       } catch (error: any) {
-        this.emitError({
-          error,
-          level: 'major',
-          message: 'Failed to fetch a route for the selected tokens. Please try again.'
-        })
+        // TODO: Map in similar fashion as decodeError()
+        const message =
+          error instanceof SwapAndBridgeProviderApiError
+            ? error.message
+            : `Failed to fetch a route for the selected tokens. Details: ${
+                error?.message || 'no details'
+              }`
+        this.emitError({ error, level: 'major', message })
       }
     }
 
