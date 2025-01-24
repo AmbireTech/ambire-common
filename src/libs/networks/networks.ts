@@ -303,7 +303,7 @@ export function getFeaturesByNetworkProperties(
     }
 
     const title = (erc4337Settings as any)?.enabled
-      ? "Ambire's smart wallets via ERC-4337 Account Abstraction"
+      ? 'Ambire Smart Accounts via ERC-4337 (Account Abstraction)'
       : "Ambire's smart wallets"
 
     if (isSAEnabled && areContractsDeployed) {
