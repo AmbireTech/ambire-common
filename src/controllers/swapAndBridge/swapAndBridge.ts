@@ -724,6 +724,7 @@ export class SwapAndBridgeController extends EventEmitter {
       if (!token)
         throw new Error('Token with this address is not supported by our service provider.')
     } catch (error: any) {
+      // TODO: Decode?
       throw new EmittableError({ error, level: 'minor', message: error?.message })
     }
 
