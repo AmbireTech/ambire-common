@@ -2,7 +2,7 @@ import { Hex } from '../interfaces/hex'
 
 // for networks that don't have a singleton
 export const PECTRA_7702 = '0x7b829de68DA4B1C7f75b88061CaF530A2b56fF7e'
-export const ODYSSEY_7702 = '0xA09C4AEa4eCE1B292b35462DbcaC9932414c5D74'
+export const ODYSSEY_7702 = '0x7b829de68DA4B1C7f75b88061CaF530A2b56fF7e'
 
 export interface Custom7702Settings {
   [chainId: string]: {
