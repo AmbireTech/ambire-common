@@ -316,7 +316,7 @@ export function getFeaturesByNetworkProperties(
       updateFeature('saSupport', {
         title,
         level: 'warning',
-        msg: "This network supports smart contract wallets, but Ambire Wallet's contracts are not yet deployed. You can deploy them by adding the network and using a Basic account to Deploy contracts in Network settings. If not, only Basic accounts (EOAs) can be used on this network."
+        msg: "This network supports Smart Accounts, but Ambire Wallet's contracts have not yet been deployed. You can deploy them by using a Basic Account and the Deploy contracts option to unlock the Smart Accounts feature. Otherwise, only Basic Accounts (EOAs) can be used on this network."
       })
     }
   }
@@ -333,7 +333,7 @@ export function getFeaturesByNetworkProperties(
       updateFeature('simulation', {
         level: 'warning',
         title: 'Transaction simulation is partially supported',
-        msg: 'Our security feature of predicting the outcome of a transaction before it is broadcasted to the blockchain is not fully functioning. The reasons might be a network or RPC limitations. You can try a different RPC.'
+        msg: 'Transaction simulation, one of our security features that predicts the outcome of a transaction before it is broadcast to the blockchain, is not fully functioning on this chain. The reasons might be network or RPC limitations. Try choosing a different RPC.'
       })
     } else {
       updateFeature('simulation', {
@@ -349,7 +349,7 @@ export function getFeaturesByNetworkProperties(
     updateFeature('prices', {
       level: hasNativeAssetId ? 'success' : 'danger',
       msg: hasNativeAssetId
-        ? 'We are using third-party providers in order to present you with information about current token prices, and it supports most of the popular tokens.'
+        ? 'We pull token price information in real-time using third-party providers.'
         : "Our third-party providers don't support this blockchain network yet and we cannot present you with information of current token prices on this network."
     })
   }
