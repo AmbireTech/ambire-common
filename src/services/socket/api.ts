@@ -117,7 +117,7 @@ export class SocketAPI {
       responseBody = await response.json()
     } catch (e: any) {
       const message = e?.message || 'no message'
-      const error = `${errorPrefix} Error details: Unexpected non-JSON response from our service provider, message: $<{message}>`
+      const error = `${errorPrefix} Error details: Unexpected non-JSON response from our service provider, message: <${message}>`
       throw new SwapAndBridgeProviderApiError(error)
     }
 
