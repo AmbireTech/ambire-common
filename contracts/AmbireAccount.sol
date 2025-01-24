@@ -20,7 +20,7 @@ contract AmbireAccount is IAmbireAccount {
 	address private constant FALLBACK_HANDLER_SLOT = address(0x6969);
 
 	// @dev This is how we understand if msg.sender is the entry point
-	bytes32 protected constant ENTRY_POINT_MARKER = 0x0000000000000000000000000000000000000000000000000000000000007171;
+	bytes32 constant ENTRY_POINT_MARKER = 0x0000000000000000000000000000000000000000000000000000000000007171;
 
 	// Externally validated signatures
 	uint8 private constant SIGMODE_EXTERNALLY_VALIDATED = 255;
@@ -109,8 +109,8 @@ contract AmbireAccount is IAmbireAccount {
 	 * @param   key  the address we want to check the privileges to
 	 * @return  bytes4  is it a success or a failure
 	 */
-	function privilegeLevel(address key) internal virtual view returns (uint256) {
-		return uint256(privileges[key]);
+	function privilegeLevel(address key) internal virtual view returns (bytes32) {
+		return privileges[key];
 	}
 
 	/**
