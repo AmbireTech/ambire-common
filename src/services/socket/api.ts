@@ -93,6 +93,55 @@ export class SocketAPI {
     this.isHealthy = null
   }
 
+  // TODO: Refine types
+  async #handleResponse<T>({
+    fetchPromise,
+    errorPrefix
+  }: {
+    fetchPromise: Promise<T>
+    errorPrefix: string
+  }): Promise<Response> {
+    let response: Response
+
+    try {
+      response = await fetchPromise
+    } catch (e: any) {
+      const message = e?.message || 'no message'
+      const status = e?.status || 'unknown'
+      const error = `${errorPrefix} Upstream error: ${message}, status: ${status}`
+      throw new SwapAndBridgeProviderApiError(error)
+    }
+
+    let responseBody: T
+    try {
+      responseBody = await response.json()
+    } catch (e: any) {
+      const message = e?.message || 'no message'
+      const error = `${errorPrefix} Error details: Unexpected non-JSON response from our service provider, message: ${message}`
+      throw new SwapAndBridgeProviderApiError(error)
+    }
+
+    const isBadResponse = !response.ok
+    // Socket API returns 500 status code with a message in the body, even
+    // in case of a bad request. Not necessarily an internal server error.
+    // TODO: Not sure if !response.success this will click well with the getSupportedChains method.
+    if (isBadResponse || !responseBody?.success) {
+      // API returns 2 types of errors, a generic one, on the top level:
+      const genericErrorMessage = responseBody?.message?.error || 'no message'
+      // ... and a detailed one, nested in the `details` object:
+      const specificErrorMessage = responseBody?.message?.details?.error?.message || 'no details'
+      const specificErrorCode = responseBody?.message?.details?.error?.code || 'no code'
+      const error = `${errorPrefix} Our service provider upstream error: ${genericErrorMessage}, details: ${specificErrorMessage}, code: ${specificErrorCode}`
+      throw new SwapAndBridgeProviderApiError(error)
+    }
+
+    // Do not wait on purpose, to not block or delay the response
+    // eslint-disable-next-line @typescript-eslint/no-floating-promises
+    this.updateHealthIfNeeded()
+
+    return responseBody.result
+  }
+
   async getSupportedChains(): Promise<SocketAPISupportedChain[]> {
     const url = `${this.#baseUrl}/supported/chains`
 
@@ -297,35 +346,16 @@ export class SocketAPI {
       }
     }
 
-    // TODO: Make the error handling logic re-usable across all API calls!
-    let response = await this.#fetch(`${this.#baseUrl}/route/start`, {
-      // @ts-ignore
-      method: 'POST',
-      headers: this.#headers,
-      body: JSON.stringify(params)
+    const response = await this.#handleResponse({
+      fetchPromise: this.#fetch(`${this.#baseUrl}/route/start`, {
+        method: 'POST',
+        headers: this.#headers,
+        body: JSON.stringify(params)
+      }),
+      errorPrefix: 'Unable to start the route.'
     })
-    // Socket API returns 500 status code with a message in the body, even
-    // in case of a bad request. Not necessarily an internal server error.
-    const isBadResponse = response.ok
 
-    try {
-      response = await response.json()
-    } catch {
-      throw new SwapAndBridgeProviderApiError(
-        `Failed to start the route. Reason unknown, status incoming from our service provider: ${response.status}`
-      )
-    }
-
-    if (!isBadResponse || response.success) {
-      const genericErrorComingFromTheAPI = response?.message?.error
-      const specificErrorComingFromTheAPI = response?.message?.details?.error?.message
-      throw new SwapAndBridgeProviderApiError(
-        `Failed to start the route. Reason incoming from our service provider: ${genericErrorComingFromTheAPI}. Details: ${specificErrorComingFromTheAPI}`
-      )
-    }
-
-    await this.updateHealthIfNeeded()
-    return response.result
+    return response
   }
 
   async getRouteStatus({
@@ -392,13 +422,11 @@ export class SocketAPI {
     const params = new URLSearchParams({ activeRouteId: activeRouteId.toString() })
     const url = `${this.#baseUrl}/route/build-next-tx?${params.toString()}`
 
-    let response = await this.#fetch(url, { headers: this.#headers })
-    if (!response.ok) throw new Error('Failed to build next route user tx')
+    const response = await this.#handleResponse({
+      fetchPromise: this.#fetch(url, { headers: this.#headers }),
+      errorPrefix: 'Unable to start the next step.'
+    })
 
-    response = await response.json()
-    if (!response.success) throw new Error('Failed to build next route user tx')
-    await this.updateHealthIfNeeded()
-
-    return response.result
+    return response
   }
 }
