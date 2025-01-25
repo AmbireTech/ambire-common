@@ -149,7 +149,7 @@ export class TransferController extends EventEmitter {
     if (
       !this.selectedToken ||
       getTokenAmount(this.selectedToken) === 0n ||
-      !this.selectedToken.decimals
+      typeof this.selectedToken.decimals !== 'number'
     )
       return '0'
 
@@ -395,7 +395,7 @@ export class TransferController extends EventEmitter {
       return
     }
 
-    if (this.amountFieldMode === 'fiat' && this.selectedToken?.decimals) {
+    if (this.amountFieldMode === 'fiat' && typeof this.selectedToken?.decimals === 'number') {
       this.amountInFiat = fieldValue
 
       // Get the number of decimals

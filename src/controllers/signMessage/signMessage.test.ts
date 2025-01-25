@@ -81,6 +81,7 @@ describe('SignMessageController', () => {
       providersCtrl,
       networksCtrl,
       () => {},
+      () => {},
       () => {}
     )
 

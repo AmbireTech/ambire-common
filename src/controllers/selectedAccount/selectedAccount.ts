@@ -153,6 +153,8 @@ export class SelectedAccountController extends EventEmitter {
     this.#accounts.onUpdate(() => {
       this.#debounceFunctionCallsOnSameTick('updateSelectedAccount', () => {
         this.#updateSelectedAccount()
+        this.#updatePortfolioBanners()
+        this.#updateDefiPositionsBanners()
       })
     })
 
@@ -305,7 +307,17 @@ export class SelectedAccountController extends EventEmitter {
   }
 
   #updateDefiPositionsBanners(skipUpdate?: boolean) {
-    if (!this.account || !this.#networks || !this.#providers || !this.#defiPositions) return
+    if (
+      !this.account ||
+      !this.#networks ||
+      !this.#providers ||
+      !this.#defiPositions ||
+      this.#accounts.areAccountStatesLoading
+    ) {
+      this.defiPositionsBanners = []
+      this.emitUpdate()
+      return
+    }
 
     const defiPositionsAccountState = this.#defiPositions.getDefiPositionsState(this.account.addr)
 
@@ -324,7 +336,17 @@ export class SelectedAccountController extends EventEmitter {
   }
 
   #updatePortfolioBanners(skipUpdate?: boolean) {
-    if (!this.account || !this.#networks || !this.#providers || !this.#portfolio) return
+    if (
+      !this.account ||
+      !this.#networks ||
+      !this.#providers ||
+      !this.#portfolio ||
+      this.#accounts.areAccountStatesLoading
+    ) {
+      this.portfolioBanners = []
+      this.emitUpdate()
+      return
+    }
 
     const networksWithFailedRPCBanners = getNetworksWithFailedRPCBanners({
       providers: this.#providers.providers,

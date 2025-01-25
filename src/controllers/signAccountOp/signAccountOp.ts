@@ -351,10 +351,12 @@ export class SignAccountOpController extends EventEmitter {
         this.rbfAccountOps[this.selectedOption.paidBy]
       )
 
-      this.feeSpeeds[identifier].forEach((speed) => {
-        if (this.selectedOption && this.selectedOption.availableAmount >= speed.amount)
-          speedCoverage.push(speed.type)
-      })
+      if (this.feeSpeeds[identifier]) {
+        this.feeSpeeds[identifier].forEach((speed) => {
+          if (this.selectedOption && this.selectedOption.availableAmount >= speed.amount)
+            speedCoverage.push(speed.type)
+        })
+      }
 
       if (speedCoverage.length === 0) {
         errors.push(
@@ -558,8 +560,20 @@ export class SignAccountOpController extends EventEmitter {
       this.estimation.erc4337GasLimits &&
       this.estimation.erc4337GasLimits.paymaster
     ) {
+      // if it was sponsored but it no longer is (fallback case),
+      // reset the selectedOption option as we use native for the sponsorship
+      // but the user might not actually have any native
+      const isSponsorshipFallback =
+        this.isSponsored && !this.estimation.erc4337GasLimits.paymaster.isSponsored()
+
       this.isSponsored = this.estimation.erc4337GasLimits.paymaster.isSponsored()
       this.sponsor = this.estimation.erc4337GasLimits.paymaster.getEstimationData()?.sponsor
+
+      if (isSponsorshipFallback) {
+        this.selectedOption = this.availableFeeOptions.length
+          ? this.availableFeeOptions[0]
+          : undefined
+      }
     }
 
     // calculate the fee speeds if either there are no feeSpeeds

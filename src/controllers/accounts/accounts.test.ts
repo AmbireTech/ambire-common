@@ -63,6 +63,7 @@ describe('AccountsController', () => {
         providersCtrl,
         networksCtrl,
         () => {},
+        () => {},
         () => {}
       )
       expect(accountsCtrl).toBeDefined()
