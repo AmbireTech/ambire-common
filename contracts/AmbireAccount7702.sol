@@ -19,6 +19,6 @@ contract AmbireAccount7702 is AmbireAccount {
 		// if the entry point is the sender, we return the marker priv
 		if (key == ENTRY_POINT) return ENTRY_POINT_MARKER;
 
-		return privileges[key];
+		return getAmbireStorage().privileges[key];
 	}
 }

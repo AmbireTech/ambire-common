@@ -25,9 +25,7 @@ contract AmbireAccount is IAmbireAccount {
 	// Externally validated signatures
 	uint8 private constant SIGMODE_EXTERNALLY_VALIDATED = 255;
 
-	// Variables
-	mapping(address => bytes32) public privileges;
-	uint256 public nonce;
+	bytes32 constant AMBIRE_STORAGE_POSITION = keccak256("ambire.smart.contracts.storage");
 
 	// Events
 	event LogPrivilegeChanged(address indexed addr, bytes32 priv);
@@ -90,6 +88,21 @@ contract AmbireAccount is IAmbireAccount {
 		}
 	}
 
+    function getAmbireStorage() internal pure returns (AmbireStorage storage ds) {
+        bytes32 position = AMBIRE_STORAGE_POSITION;
+        assembly {
+            ds.slot := position
+        }
+    }
+
+	function nonce() external view returns (uint256) {
+		return getAmbireStorage().nonce;
+	}
+
+	function privileges(address key) external view returns (bytes32) {
+		return getAmbireStorage().privileges[key];
+	}
+
 	/**
 	 * @notice  used to set the privilege of a key (by `addr`)
 	 * @dev     normal signatures will be considered valid if the
@@ -100,7 +113,7 @@ contract AmbireAccount is IAmbireAccount {
 	 */
 	function setAddrPrivilege(address addr, bytes32 priv) external payable {
 		require(msg.sender == address(this), 'ONLY_ACCOUNT_CAN_CALL');
-		privileges[addr] = priv;
+		getAmbireStorage().privileges[addr] = priv;
 		emit LogPrivilegeChanged(addr, priv);
 	}
 
@@ -110,7 +123,7 @@ contract AmbireAccount is IAmbireAccount {
 	 * @return  bytes4  is it a success or a failure
 	 */
 	function privilegeLevel(address key) internal virtual view returns (bytes32) {
-		return privileges[key];
+		return getAmbireStorage().privileges[key];
 	}
 
 	/**
@@ -153,9 +166,9 @@ contract AmbireAccount is IAmbireAccount {
 	function execute(Transaction[] calldata calls, bytes calldata signature) public payable {
 		address signerKey;
 		uint8 sigMode = uint8(signature[signature.length - 1]);
-		uint256 currentNonce = nonce;
+		uint256 currentNonce = getAmbireStorage().nonce;
 		// we increment the nonce here (not using `nonce++` to save some gas)
-		nonce = currentNonce + 1;
+		getAmbireStorage().nonce = currentNonce + 1;
 
 		if (sigMode == SIGMODE_EXTERNALLY_VALIDATED) {
 			bool isValidSig;
