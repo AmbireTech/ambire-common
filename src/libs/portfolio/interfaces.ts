@@ -1,7 +1,6 @@
 import { Account, AccountId } from '../../interfaces/account'
 import { NetworkId } from '../../interfaces/network'
 import { AccountOp } from '../accountOp/accountOp'
-import { CustomToken } from './customToken'
 
 export interface Price {
   baseCurrency: string
@@ -14,7 +13,11 @@ export interface GetOptionsSimulation {
 }
 export type TokenError = string | '0x'
 
-export type TokenResult = Omit<CustomToken, 'standard'> & {
+export type TokenResult = {
+  symbol: string
+  decimals: number
+  address: string
+  networkId: NetworkId
   amount: bigint
   simulationAmount?: bigint
   amountPostSimulation?: bigint
@@ -25,6 +28,7 @@ export type TokenResult = Omit<CustomToken, 'standard'> & {
     canTopUpGasTank: boolean
     isFeeToken: boolean
     isDefiToken?: boolean
+    isHidden?: boolean
   }
 }
 
@@ -194,7 +198,6 @@ export interface GetOptions {
   previousHintsFromExternalAPI?: StrippedExternalHintsAPIResponse | null
   isEOA: boolean
   fetchPinned: boolean
-  tokenPreferences: CustomToken[]
   additionalErc20Hints?: Hints['erc20s']
   additionalErc721Hints?: Hints['erc721s']
   disableAutoDiscovery?: boolean

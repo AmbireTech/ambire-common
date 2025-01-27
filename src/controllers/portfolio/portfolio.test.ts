@@ -791,7 +791,7 @@ describe('Portfolio Controller ', () => {
             (token) =>
               token.address === tokenInPreferences.address &&
               token.networkId === tokenInPreferences.networkId &&
-              token.isHidden
+              token.flags.isHidden
           )
         expect(hiddenToken).toBeTruthy()
       })
