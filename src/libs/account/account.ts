@@ -331,7 +331,8 @@ export function canBecomeSmarter(acc: Account, accKeys: Key[]) {
 
 export function getAuthorization(
   account: Account,
-  accNonce: bigint,
+  // make sure to pass the EOA nonce here, not the SA or entry point
+  eoaNonce: bigint,
   network: Network,
   authorizations: InternalSignedMessages
 ): SignedMessage | undefined {
@@ -340,7 +341,7 @@ export function getAuthorization(
   return authorizations[account.addr].find((msg) => {
     const content = msg.content as Authorization
     return (
-      (content.chainId === 0n || content.chainId === network.chainId) && content.nonce === accNonce
+      (content.chainId === 0n || content.chainId === network.chainId) && content.nonce === eoaNonce
     )
   })
 }

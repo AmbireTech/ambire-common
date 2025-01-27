@@ -119,18 +119,15 @@ export async function estimate4337(
   const feeToken = getFeeTokenForEstimate(feeTokens, network)
   if (feeToken) estimateGasOp.feeCall = getFeeCall(feeToken)
 
-  // TODO<eip7702>
-  // once we have the code delegation in the accountState, replace !!accountState.authorization
-  const isSmarterEoaWithoutDelegation = accountState.isSmarterEoa && !!accountState.authorization
   const initializeRequests = () => [
     deploylessEstimator
       .call('estimate', checkInnerCallsArgs, {
         from: DEPLOYLESS_SIMULATION_FROM,
         blockTag,
-        mode: isSmarterEoaWithoutDelegation ? DeploylessMode.StateOverride : DeploylessMode.Detect,
-        stateToOverride: isSmarterEoaWithoutDelegation
+        mode: accountState.authorization ? DeploylessMode.StateOverride : DeploylessMode.Detect,
+        stateToOverride: accountState.authorization
           ? getEoaSimulationStateOverride(account.addr)
-          : undefined
+          : null
       })
       .catch(getHumanReadableEstimationError),
     bundlerEstimate(
@@ -179,14 +176,14 @@ export async function estimate4337(
     ]
   ] = ambireEstimation
 
-  const estimationNonce = isSmarterEoaWithoutDelegation ? BigInt(EOA_SIMULATION_NONCE) : op.nonce!
+  const opNonce = accountState.authorization ? BigInt(EOA_SIMULATION_NONCE) : op.nonce!
   const ambireEstimationError =
     getInnerCallFailure(
       accountOp,
       calls,
       network,
       feeTokens.find((token) => token.address === ZeroAddress && !token.flags.onGasTank)?.amount
-    ) || getNonceDiscrepancyFailure(estimationNonce, outcomeNonce)
+    ) || getNonceDiscrepancyFailure(opNonce, outcomeNonce)
 
   // if Estimation.sol estimate is a success, it means the nonce has incremented
   // so we subtract 1 from it. If it's an error, we return the old one
@@ -201,6 +198,7 @@ export async function estimate4337(
   } else if (!ambireEstimationError && bundlerEstimationResult.error) {
     // if there's a bundler error only, it means it's a bundler specific
     // problem. If we can switch the bundler, re-estimate
+
     if (switcher.canSwitch(account, null)) {
       switcher.switch()
       return estimate4337(
