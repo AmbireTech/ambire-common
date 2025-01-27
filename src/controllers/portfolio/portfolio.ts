@@ -140,8 +140,12 @@ export class PortfolioController extends EventEmitter {
       this.tokenPreferences = await this.#storage.get('tokenPreferences', [])
       this.#previousHints = await this.#storage.get('previousHints', {})
       const networksWithAssets = await this.#storage.get('networksWithAssetsByAccount', {})
-
-      if (!Array.isArray(networksWithAssets)) {
+      const isOldStructure = Object.keys(networksWithAssets).every(
+        (key) =>
+          Array.isArray(networksWithAssets[key]) &&
+          networksWithAssets[key].every((item) => typeof item === 'string')
+      )
+      if (!isOldStructure) {
         this.#networksWithAssetsByAccounts = networksWithAssets
       }
     } catch (e) {
@@ -163,7 +167,7 @@ export class PortfolioController extends EventEmitter {
   }
 
   async #updateNetworksWithAssets(accountId: AccountId, accountState: AccountState) {
-    const storageStateByAccount = await this.#storage.get('networksWithAssetsByAccount', {})
+    const storageStateByAccount = this.#networksWithAssetsByAccounts
 
     this.#networksWithAssetsByAccounts[accountId] = getAccountNetworksWithAssets(
       accountId,
