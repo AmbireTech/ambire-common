@@ -203,7 +203,8 @@ export class PortfolioController extends EventEmitter {
     selectedAccountAddr?: string
   ) {
     this.customTokens = this.customTokens.filter(
-      (token) => token.address !== customToken.address && token.networkId !== customToken.networkId
+      (token) =>
+        !(token.address === customToken.address && token.networkId === customToken.networkId)
     )
     const existingPreference = this.tokenPreferences.some(
       (pref) => pref.address === customToken.address && pref.networkId === customToken.networkId
@@ -231,7 +232,7 @@ export class PortfolioController extends EventEmitter {
     } else if (existingPreference.isHidden) {
       this.tokenPreferences = this.tokenPreferences.filter(
         ({ address, networkId }) =>
-          address !== tokenPreference.address && networkId !== tokenPreference.networkId
+          !(address === tokenPreference.address && networkId === tokenPreference.networkId)
       )
     } else {
       // Should happen only after migration
