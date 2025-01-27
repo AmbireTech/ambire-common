@@ -6,7 +6,10 @@ import { networks } from '../../consts/networks'
 import { getAAVEPositions, getUniV3Positions } from './providers'
 
 describe('DeFi positions', () => {
-  const userAddrUni = '0xC2E6dFcc2C6722866aD65F211D5757e1D2879337'
+  // If this test ever fails because the accounts remove their positions, you can:
+  // 1. Go to https://debank.com/protocols/matic_uniswap3/holders
+  // 2. Find an account that has the required positions and use it in the test
+  const userAddrUni = '0x3c9aeacf25c81614793e0d5e07d6d23db44402c3'
   const userAddrAave = '0x215f75a12A4934ae57deF7398EaeaFf87365F1Db'
 
   const optimism = networks.find((x) => x.id === 'optimism')
