@@ -2489,7 +2489,7 @@ export class MainController extends EventEmitter {
       try {
         userOperationHash = !accountState.isSmarterEoa
           ? await bundler.broadcast(userOperation, network)
-          : await bundler.broadcast7702(userOperation, network)
+          : await bundler.broadcast7702(userOperation, network, accountState.authorization)
       } catch (e: any) {
         let retryMsg
 
