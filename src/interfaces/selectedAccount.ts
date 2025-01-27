@@ -11,7 +11,7 @@ export type SelectedAccountPortfolioState = {
     | (Omit<NetworkState, 'result'> & {
         result?: Omit<
           NonNullable<NetworkState['result']>,
-          'tokens' | 'collections' | 'tokenErrors' | 'hintsFromExternalAPI' | 'priceCache'
+          'collections' | 'tokenErrors' | 'hintsFromExternalAPI' | 'priceCache'  // TODO: Temp fix.
         >
       })
     | undefined

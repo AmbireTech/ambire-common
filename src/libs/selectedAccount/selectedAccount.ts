@@ -131,11 +131,12 @@ const stripPortfolioState = (portfolioState: AccountState) => {
     }
 
     // A trick to exclude specific keys
-    const { tokens, collections, tokenErrors, priceCache, hintsFromExternalAPI, ...result } =
+    // TODO: temp fix.
+    const { collections, tokenErrors, priceCache, hintsFromExternalAPI, ...result } =
       networkState.result
 
     strippedState[networkId] = {
-      ...networkState,
+      ...networkState, 
       result
     }
   })
