@@ -46,6 +46,7 @@ import wait from '../../utils/wait'
 import { AccountOpAction, ActionsController } from '../actions/actions'
 import { ActivityController } from '../activity/activity'
 import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter'
+import { InviteController } from '../invite/invite'
 import { NetworksController } from '../networks/networks'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 
@@ -95,6 +96,8 @@ export class SwapAndBridgeController extends EventEmitter {
   #actions: ActionsController
 
   #activity: ActivityController
+
+  #invite: InviteController
 
   #storage: Storage
 
@@ -176,7 +179,8 @@ export class SwapAndBridgeController extends EventEmitter {
     activity,
     socketAPI,
     storage,
-    actions
+    actions,
+    invite
   }: {
     selectedAccount: SelectedAccountController
     networks: NetworksController
@@ -184,6 +188,7 @@ export class SwapAndBridgeController extends EventEmitter {
     socketAPI: SocketAPI
     storage: Storage
     actions: ActionsController
+    invite: InviteController
   }) {
     super()
     this.#selectedAccount = selectedAccount
@@ -192,6 +197,7 @@ export class SwapAndBridgeController extends EventEmitter {
     this.#socketAPI = socketAPI
     this.#storage = storage
     this.#actions = actions
+    this.#invite = invite
 
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.#initialLoadPromise = this.#load()
@@ -829,7 +835,8 @@ export class SwapAndBridgeController extends EventEmitter {
           fromAmount: bigintFromAmount,
           userAddress: this.#selectedAccount.account.addr,
           isSmartAccount: isSmartAccount(this.#selectedAccount.account),
-          sort: this.routePriority
+          sort: this.routePriority,
+          isOG: this.#invite.isOG
         })
 
         if (quoteId !== this.#updateQuoteId) return
