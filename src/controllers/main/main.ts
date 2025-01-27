@@ -372,6 +372,7 @@ export class MainController extends EventEmitter {
       selectedAccount: this.selectedAccount,
       networks: this.networks,
       activity: this.activity,
+      invite: this.invite,
       socketAPI: this.#socketAPI,
       storage: this.#storage,
       actions: this.actions

@@ -12,6 +12,7 @@ import { getRpcProvider } from '../../services/provider'
 import { AccountsController } from '../accounts/accounts'
 import { ActionsController } from '../actions/actions'
 import { ActivityController } from '../activity/activity'
+import { InviteController } from '../invite/invite'
 import { NetworksController } from '../networks/networks'
 import { ProvidersController } from '../providers/providers'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
@@ -76,6 +77,12 @@ const actionsCtrl = new ActionsController({
   onActionWindowClose: () => {}
 })
 
+const inviteCtrl = new InviteController({
+  relayerUrl: '',
+  fetch,
+  storage
+})
+
 const callRelayer = relayerCall.bind({ url: '', fetch })
 
 const activityCtrl = new ActivityController(
@@ -120,7 +127,8 @@ describe('SwapAndBridge Controller', () => {
       activity: activityCtrl,
       storage,
       socketAPI: socketAPIMock as any,
-      actions: actionsCtrl
+      actions: actionsCtrl,
+      invite: inviteCtrl
     })
 
     expect(swapAndBridgeController).toBeDefined()
