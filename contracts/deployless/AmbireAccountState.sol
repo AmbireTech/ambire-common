@@ -48,7 +48,7 @@ contract AmbireAccountState {
                 (bool success,) = account.factory.call(account.factoryCalldata);
                 // we leave associateKeys empty and nonce == 0, so that the library can know that the deployment failed
                 // we do not care about the exact error because this is a very rare case
-                if (!success || code.length == 0) {
+                if (!success || address(account.addr).code.length == 0) {
                     accountResult[i].deployErr = bytes(success ? "call worked" : "call failed");
                     continue;
                 }
