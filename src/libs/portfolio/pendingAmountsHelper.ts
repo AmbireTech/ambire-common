@@ -58,7 +58,7 @@ export const calculatePendingAmounts = (
   // With AAVE each block generates a small amount of interest or rewards,
   // which is constantly displaying on dashboard as pending to be confirmed.
   // The percentage change helps determine if the change in pending balance is significant enough to consider.
-  const significantChange = latestPendingDelta >= threshold || latestPendingDelta <= -threshold
+  const significantChange = Math.abs(Number(latestPendingDelta)) >= Number(threshold)
 
   // Ignore changes without significant difference
   if (!significantChange) {
