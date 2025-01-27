@@ -1,5 +1,5 @@
-import { PendingAmounts } from './interfaces'
 import { AccountOp, AccountOpStatus } from '../accountOp/accountOp'
+import { PendingAmounts } from './interfaces'
 
 /**
  * Function for calculating the pending balance and the delta amounts
@@ -48,13 +48,17 @@ export const calculatePendingAmounts = (
 ): PendingAmounts | null => {
   let latestPendingDelta = pendingAmount - latestAmount
 
-  // Check if the change in latestPendingDelta is significant (>= 10000n or <= -10000n).
+  // Dynamically calculate the threshold as 0.0001% of the pendingAmount
+  // Use a minimum threshold of 10000n to avoid a zero threshold
+  const threshold = pendingAmount > 0n ? pendingAmount / 1_000_000n : 10000n
+
+  // Check if the change in latestPendingDelta is significant (>= threshold or <= -threshold).
   // This helps to avoid processing insignificant changes in the pending balance.
   // This is important for handling tokens with pending balances, such as those deposited into AAVE.
   // With AAVE each block generates a small amount of interest or rewards,
   // which is constantly displaying on dashboard as pending to be confirmed.
   // The percentage change helps determine if the change in pending balance is significant enough to consider.
-  const significantChange = latestPendingDelta >= 10000n || latestPendingDelta <= -10000n
+  const significantChange = latestPendingDelta >= threshold || latestPendingDelta <= -threshold
 
   // Ignore changes without significant difference
   if (!significantChange) {
