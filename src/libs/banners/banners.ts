@@ -2,7 +2,7 @@ import { Account } from '../../interfaces/account'
 import { AccountOpAction, Action as ActionFromActionsQueue } from '../../interfaces/actions'
 // eslint-disable-next-line import/no-cycle
 import { Action, Banner } from '../../interfaces/banner'
-import { Network, NetworkId } from '../../interfaces/network'
+import { Network } from '../../interfaces/network'
 import { RPCProviders } from '../../interfaces/provider'
 import { SelectedAccountPortfolioState } from '../../interfaces/selectedAccount'
 import { ActiveRoute } from '../../interfaces/swapAndBridge'
@@ -12,6 +12,7 @@ import {
   NetworksWithPositions
 } from '../defiPositions/types'
 import { getNetworksWithFailedRPC } from '../networks/networks'
+import { AccountAssetsState } from '../portfolio/interfaces'
 import { PORTFOLIO_LIB_ERROR_NAMES } from '../portfolio/portfolio'
 import { getIsBridgeTxn, getQuoteRouteSteps } from '../swapAndBridge/swapAndBridge'
 
@@ -331,7 +332,7 @@ export const getNetworksWithFailedRPCBanners = ({
 }: {
   providers: RPCProviders
   networks: Network[]
-  networksWithAssets: { [networkId: NetworkId]: boolean }
+  networksWithAssets: AccountAssetsState
 }): Banner[] => {
   const banners: Banner[] = []
   const networkIds = getNetworksWithFailedRPC({ providers }).filter(
