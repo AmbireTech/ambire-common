@@ -62,6 +62,7 @@ import { GasRecommendation, getGasPriceRecommendations } from '../../libs/gasPri
 import { humanizeAccountOp } from '../../libs/humanizer'
 import { KeyIterator } from '../../libs/keyIterator/keyIterator'
 import {
+  ACCOUNT_SWITCH_USER_REQUEST,
   buildSwitchAccountUserRequest,
   getAccountOpsForSimulation,
   makeBasicAccountOpAction,
@@ -100,7 +101,13 @@ import shortenAddress from '../../utils/shortenAddress'
 import wait from '../../utils/wait'
 import { AccountAdderController } from '../accountAdder/accountAdder'
 import { AccountsController } from '../accounts/accounts'
-import { AccountOpAction, ActionsController, SignMessageAction } from '../actions/actions'
+import {
+  AccountOpAction,
+  ActionExecutionType,
+  ActionPosition,
+  ActionsController,
+  SignMessageAction
+} from '../actions/actions'
 import { ActivityController } from '../activity/activity'
 import { AddressBookController } from '../addressBook/addressBook'
 import { DappsController } from '../dapps/dapps'
@@ -197,6 +204,8 @@ export class MainController extends EventEmitter {
 
   userRequests: UserRequest[] = []
 
+  userRequestWaitingAccountSwitch: UserRequest[] = []
+
   // network => GasRecommendation[]
   gasPrices: { [key: string]: GasRecommendation[] } = {}
 
@@ -209,6 +218,8 @@ export class MainController extends EventEmitter {
   feePayerKey: Key | null = null
 
   lastUpdate: Date = new Date()
+
+  isOffline: boolean = false
 
   statuses: Statuses<keyof typeof STATUS_WRAPPED_METHODS> = STATUS_WRAPPED_METHODS
 
@@ -274,7 +285,8 @@ export class MainController extends EventEmitter {
           await this.#selectAccount(defaultSelectedAccount.addr)
         }
       },
-      this.providers.updateProviderIsWorking.bind(this.providers)
+      this.providers.updateProviderIsWorking.bind(this.providers),
+      this.#updateIsOffline.bind(this)
     )
     this.selectedAccount = new SelectedAccountController({
       storage: this.#storage,
@@ -327,6 +339,7 @@ export class MainController extends EventEmitter {
           r.dappPromise?.reject(ethErrors.provider.userRejectedRequest())
         )
         this.userRequests = this.userRequests.filter((r) => r.action.kind === 'calls')
+        this.userRequestWaitingAccountSwitch = []
         this.emitUpdate()
       }
     })
@@ -337,13 +350,7 @@ export class MainController extends EventEmitter {
       networks: this.networks,
       providers: this.providers
     })
-    this.swapAndBridge = new SwapAndBridgeController({
-      selectedAccount: this.selectedAccount,
-      networks: this.networks,
-      socketAPI: this.#socketAPI,
-      storage: this.#storage,
-      actions: this.actions
-    })
+
     this.callRelayer = relayerCall.bind({ url: relayerUrl, fetch: this.fetch })
     this.activity = new ActivityController(
       this.#storage,
@@ -357,6 +364,14 @@ export class MainController extends EventEmitter {
         await this.setContractsDeployedToTrueIfDeployed(network)
       }
     )
+    this.swapAndBridge = new SwapAndBridgeController({
+      selectedAccount: this.selectedAccount,
+      networks: this.networks,
+      activity: this.activity,
+      socketAPI: this.#socketAPI,
+      storage: this.#storage,
+      actions: this.actions
+    })
     this.domains = new DomainsController(this.providers.providers)
     this.#initialLoadPromise = this.#load()
     paymasterFactory.init(relayerUrl, fetch, (e: ErrorRef) => {
@@ -374,11 +389,15 @@ export class MainController extends EventEmitter {
    */
   onLoad(isFirstLoad: boolean = false) {
     const selectedAccountAddr = this.selectedAccount.account?.addr
-    this.updateSelectedAccountPortfolio()
+    const hasBroadcastedButNotConfirmed = !!this.activity.broadcastedButNotConfirmed.length
     this.defiPositions.updatePositions()
     this.domains.batchReverseLookup(this.accounts.accounts.map((a) => a.addr))
+    if (!hasBroadcastedButNotConfirmed) {
+      this.updateSelectedAccountPortfolio()
+    }
     // The first time the app loads, we update the account state elsewhere
-    if (selectedAccountAddr && !isFirstLoad) this.accounts.updateAccountState(selectedAccountAddr)
+    if (selectedAccountAddr && !isFirstLoad && !this.accounts.areAccountStatesLoading)
+      this.accounts.updateAccountState(selectedAccountAddr)
   }
 
   async #load(): Promise<void> {
@@ -466,6 +485,7 @@ export class MainController extends EventEmitter {
       return
     }
 
+    this.isOffline = false
     // call closeActionWindow while still on the currently selected account to allow proper
     // state cleanup of the controllers like actionsCtrl, signAccountOpCtrl, signMessageCtrl...
     if (this.actions?.currentAction?.type !== 'switchAccount') {
@@ -764,7 +784,7 @@ export class MainController extends EventEmitter {
         signedMessage.signature as string
       )
 
-      this.actions.addOrUpdateAction(accountOpAction, true)
+      this.actions.addOrUpdateAction(accountOpAction, 'first')
     }
 
     await this.activity.addSignedMessage(signedMessage, signedMessage.accountAddr)
@@ -858,10 +878,10 @@ export class MainController extends EventEmitter {
     )
   }
 
-  async updateAccountsOpsStatuses() {
+  async updateAccountsOpsStatuses(): Promise<{ newestOpTimestamp: number }> {
     await this.#initialLoadPromise
 
-    const { shouldEmitUpdate, shouldUpdatePortfolio, updatedAccountsOps } =
+    const { shouldEmitUpdate, shouldUpdatePortfolio, updatedAccountsOps, newestOpTimestamp } =
       await this.activity.updateAccountsOpsStatuses()
 
     if (shouldEmitUpdate) {
@@ -875,6 +895,8 @@ export class MainController extends EventEmitter {
     updatedAccountsOps.forEach((op) => {
       this.swapAndBridge.handleUpdateActiveRouteOnSubmittedAccountOpStatusUpdate(op)
     })
+
+    return { newestOpTimestamp }
   }
 
   // call this function after a call to the singleton has been made
@@ -982,8 +1004,6 @@ export class MainController extends EventEmitter {
   async reloadSelectedAccount() {
     if (!this.selectedAccount.account) return
 
-    const isUpdatingAccount = this.accounts.statuses.updateAccountState !== 'INITIAL'
-
     this.selectedAccount.resetSelectedAccountPortfolio()
     await Promise.all([
       // When we trigger `reloadSelectedAccount` (for instance, from Dashboard -> Refresh balance icon),
@@ -992,7 +1012,7 @@ export class MainController extends EventEmitter {
       // So, we perform this safety check to prevent the error.
       // However, even if we don't trigger an update here, it's not a big problem,
       // as the account state will be updated anyway, and its update will be very recent.
-      !isUpdatingAccount && this.selectedAccount.account?.addr
+      !this.accounts.areAccountStatesLoading && this.selectedAccount.account?.addr
         ? this.accounts.updateAccountState(this.selectedAccount.account.addr, 'pending')
         : Promise.resolve(),
       // `updateSelectedAccountPortfolio` doesn't rely on `withStatus` validation internally,
@@ -1002,6 +1022,35 @@ export class MainController extends EventEmitter {
       this.updateSelectedAccountPortfolio(true),
       this.defiPositions.updatePositions()
     ])
+  }
+
+  #updateIsOffline() {
+    const oldIsOffline = this.isOffline
+
+    const allPortfolioNetworksHaveErrors = Object.keys(this.selectedAccount.portfolio.latest).every(
+      (networkId) => {
+        const state = this.selectedAccount.portfolio.latest[networkId]
+
+        return !!state?.criticalError
+      }
+    )
+
+    const allNetworkRpcsAreDown = Object.keys(this.providers.providers).every((networkId) => {
+      const provider = this.providers.providers[networkId]
+      const isWorking = provider.isWorking
+
+      return typeof isWorking === 'boolean' && !isWorking
+    })
+
+    // Update isOffline if either all portfolio networks have errors or we've failed to fetch
+    // the account state for every account. This is because either update may fail first.
+    this.isOffline = !!allNetworkRpcsAreDown || !!allPortfolioNetworksHaveErrors
+
+    if (oldIsOffline && !this.isOffline) {
+      this.reloadSelectedAccount()
+    }
+
+    this.emitUpdate()
   }
 
   // eslint-disable-next-line default-param-last
@@ -1026,6 +1075,7 @@ export class MainController extends EventEmitter {
       accountOpsToBeSimulatedByNetwork,
       { forceUpdate }
     )
+    this.#updateIsOffline()
   }
 
   #getUserRequestAccountError(dappOrigin: string, fromAccountAddr: string): string | null {
@@ -1053,7 +1103,7 @@ export class MainController extends EventEmitter {
   ) {
     await this.#initialLoadPromise
     let userRequest = null
-    let withPriority = false
+    let actionPosition: ActionPosition = 'last'
     const kind = dappRequestMethodToActionKind(request.method)
     const dapp = this.dapps.getDapp(request.origin)
 
@@ -1101,7 +1151,7 @@ export class MainController extends EventEmitter {
         )
 
         if (!otherUserRequestFromSameDapp && !!dappPromise?.session?.origin) {
-          withPriority = true
+          actionPosition = 'first'
         }
       }
     } else if (kind === 'message') {
@@ -1211,7 +1261,7 @@ export class MainController extends EventEmitter {
       )
 
       if (!otherUserRequestFromSameDapp && !!dappPromise?.session?.origin) {
-        withPriority = true
+        actionPosition = 'first'
       }
     }
 
@@ -1224,7 +1274,13 @@ export class MainController extends EventEmitter {
     // We can simply add the user request if it's not a sign operation
     // for another account
     if (!isASignOperationRequestedForAnotherAccount) {
-      await this.addUserRequest(userRequest, withPriority)
+      await this.addUserRequest(
+        userRequest,
+        actionPosition,
+        actionPosition === 'first' || isSmartAccount(this.selectedAccount.account)
+          ? 'open-action-window'
+          : 'queue-but-open-action-window'
+      )
       return
     }
 
@@ -1244,25 +1300,25 @@ export class MainController extends EventEmitter {
       throw ethErrors.provider.chainDisconnected('Transaction failed - unknown network')
     }
 
+    this.userRequestWaitingAccountSwitch.push(userRequest)
     await this.addUserRequest(
       buildSwitchAccountUserRequest({
         nextUserRequest: userRequest,
         networkId: network.id,
         selectedAccountAddr: userRequest.meta.accountAddr,
         session: dappPromise.session,
-        rejectUserRequest: this.rejectUserRequest.bind(this)
+        dappPromise
       }),
-      true,
-      'open'
+      'last',
+      'open-action-window'
     )
-    await this.addUserRequest(userRequest, false, 'queue')
   }
 
   async buildTransferUserRequest(
     amount: string,
     recipientAddress: string,
     selectedToken: TokenResult,
-    executionType: 'queue' | 'open' = 'open'
+    actionExecutionType: ActionExecutionType = 'open-action-window'
   ) {
     await this.#initialLoadPromise
     if (!this.selectedAccount.account) return
@@ -1285,7 +1341,7 @@ export class MainController extends EventEmitter {
       return
     }
 
-    await this.addUserRequest(userRequest, !this.selectedAccount.account.creation, executionType)
+    await this.addUserRequest(userRequest, 'last', actionExecutionType)
   }
 
   async buildSwapAndBridgeUserRequest(activeRouteId?: number) {
@@ -1305,15 +1361,18 @@ export class MainController extends EventEmitter {
 
         if (activeRoute) {
           this.removeUserRequest(activeRoute.activeRouteId, {
-            shouldRemoveSwapAndBridgeRoute: false
+            shouldRemoveSwapAndBridgeRoute: false,
+            shouldOpenNextRequest: false
           })
           this.swapAndBridge.updateActiveRoute(activeRoute.activeRouteId, { error: undefined })
           if (!isSmartAccount(this.selectedAccount.account)) {
             this.removeUserRequest(`${activeRouteId}-revoke-approval`, {
-              shouldRemoveSwapAndBridgeRoute: false
+              shouldRemoveSwapAndBridgeRoute: false,
+              shouldOpenNextRequest: false
             })
             this.removeUserRequest(`${activeRouteId}-approval`, {
-              shouldRemoveSwapAndBridgeRoute: false
+              shouldRemoveSwapAndBridgeRoute: false,
+              shouldOpenNextRequest: false
             })
           }
           transaction = await this.#socketAPI.getNextRouteUserTx(activeRoute.activeRouteId)
@@ -1341,14 +1400,10 @@ export class MainController extends EventEmitter {
 
         for (let i = 0; i < swapAndBridgeUserRequests.length; i++) {
           if (i === 0) {
-            this.addUserRequest(
-              swapAndBridgeUserRequests[i],
-              !this.selectedAccount.account.creation,
-              'open'
-            )
+            this.addUserRequest(swapAndBridgeUserRequests[i], 'last', 'open-action-window')
           } else {
             // eslint-disable-next-line no-await-in-loop
-            await this.addUserRequest(swapAndBridgeUserRequests[i], false, 'queue')
+            await this.addUserRequest(swapAndBridgeUserRequests[i], 'last', 'queue')
           }
         }
 
@@ -1472,10 +1527,10 @@ export class MainController extends EventEmitter {
 
   async addUserRequest(
     req: UserRequest,
-    withPriority?: boolean,
-    executionType: 'queue' | 'open' = 'open'
+    actionPosition: ActionPosition = 'last',
+    actionExecutionType: ActionExecutionType = 'open-action-window'
   ) {
-    if (withPriority) {
+    if (actionPosition === 'first') {
       this.userRequests.unshift(req)
     } else {
       this.userRequests.push(req)
@@ -1529,7 +1584,7 @@ export class MainController extends EventEmitter {
           !!entryPointAuthorizationMessageFromHistory
 
         if (shouldAskForEntryPointAuthorization(network, account, accountState, hasAuthorized)) {
-          await this.addEntryPointAuthorization(req, network, accountState, executionType)
+          await this.addEntryPointAuthorization(req, network, accountState, actionExecutionType)
           this.emitUpdate()
           return
         }
@@ -1543,7 +1598,7 @@ export class MainController extends EventEmitter {
           entryPointAuthorizationSignature:
             entryPointAuthorizationMessageFromHistory?.signature ?? undefined
         })
-        this.actions.addOrUpdateAction(accountOpAction, withPriority, executionType)
+        this.actions.addOrUpdateAction(accountOpAction, actionPosition, actionExecutionType)
         if (this.signAccountOp) {
           if (this.signAccountOp.fromActionId === accountOpAction.id) {
             this.signAccountOp.update({ calls: accountOpAction.accountOp.calls })
@@ -1561,7 +1616,7 @@ export class MainController extends EventEmitter {
           nonce: accountState.nonce,
           userRequest: req
         })
-        this.actions.addOrUpdateAction(accountOpAction, withPriority, executionType)
+        this.actions.addOrUpdateAction(accountOpAction, actionPosition, actionExecutionType)
       }
     } else {
       let actionType: 'dappRequest' | 'benzin' | 'signMessage' | 'switchAccount' = 'dappRequest'
@@ -1592,8 +1647,8 @@ export class MainController extends EventEmitter {
           type: actionType,
           userRequest: req as UserRequest as never
         },
-        withPriority,
-        executionType
+        actionPosition,
+        actionExecutionType
       )
     }
 
@@ -1608,9 +1663,11 @@ export class MainController extends EventEmitter {
     options: {
       shouldRemoveSwapAndBridgeRoute: boolean
       shouldUpdateAccount?: boolean
+      shouldOpenNextRequest?: boolean
     } = {
       shouldRemoveSwapAndBridgeRoute: true,
-      shouldUpdateAccount: true
+      shouldUpdateAccount: true,
+      shouldOpenNextRequest: true
     }
   ) {
     const req = this.userRequests.find((uReq) => uReq.id === id)
@@ -1662,7 +1719,10 @@ export class MainController extends EventEmitter {
           if (this.signAccountOp && this.signAccountOp.fromActionId === accountOpAction.id) {
             this.destroySignAccOp()
           }
-          this.actions.removeAction(`${meta.accountAddr}-${meta.networkId}`)
+          this.actions.removeAction(
+            `${meta.accountAddr}-${meta.networkId}`,
+            options.shouldOpenNextRequest
+          )
 
           if (options.shouldUpdateAccount) this.updateSelectedAccountPortfolio(true, network)
         }
@@ -1670,15 +1730,31 @@ export class MainController extends EventEmitter {
         if (this.signAccountOp && this.signAccountOp.fromActionId === req.id) {
           this.destroySignAccOp()
         }
-        this.actions.removeAction(id)
+        this.actions.removeAction(id, options.shouldOpenNextRequest)
 
         if (options.shouldUpdateAccount) this.updateSelectedAccountPortfolio(true, network)
       }
       if (this.swapAndBridge.activeRoutes.length && options.shouldRemoveSwapAndBridgeRoute) {
         this.swapAndBridge.removeActiveRoute(meta.activeRouteId)
       }
+    } else if (id === ACCOUNT_SWITCH_USER_REQUEST) {
+      const requestsToAdd = this.userRequestWaitingAccountSwitch.filter(
+        (r) => r.meta.accountAddr === this.selectedAccount.account!.addr
+      )
+      this.actions.removeAction(
+        id,
+        this.selectedAccount.account?.addr !== (action as any).params!.switchToAccountAddr
+      )
+      ;(async () => {
+        // eslint-disable-next-line no-restricted-syntax
+        for (const r of requestsToAdd) {
+          this.userRequestWaitingAccountSwitch.splice(this.userRequests.indexOf(r), 1)
+          // eslint-disable-next-line no-await-in-loop
+          await this.addUserRequest(r)
+        }
+      })()
     } else {
-      this.actions.removeAction(id)
+      this.actions.removeAction(id, options.shouldOpenNextRequest)
     }
     this.emitUpdate()
   }
@@ -1687,7 +1763,7 @@ export class MainController extends EventEmitter {
     req: UserRequest,
     network: Network,
     accountState: AccountOnchainState,
-    executionType: 'queue' | 'open' = 'open'
+    actionExecutionType: ActionExecutionType = 'open-action-window'
   ) {
     if (
       this.actions.visibleActionsQueue.find(
@@ -1719,8 +1795,8 @@ export class MainController extends EventEmitter {
           ? { reject: req?.dappPromise?.reject, resolve: () => {} }
           : undefined
       } as SignUserRequest,
-      true,
-      executionType
+      'first',
+      actionExecutionType
     )
   }
 
@@ -1758,6 +1834,7 @@ export class MainController extends EventEmitter {
       meta.txnId = data.submittedAccountOp.txnId
 
       meta.identifiedBy = data.submittedAccountOp.identifiedBy
+      meta.submittedAccountOp = data.submittedAccountOp
     }
 
     const benzinUserRequest: SignUserRequest = {
@@ -1765,7 +1842,7 @@ export class MainController extends EventEmitter {
       action: { kind: 'benzin' },
       meta
     }
-    await this.addUserRequest(benzinUserRequest, true)
+    await this.addUserRequest(benzinUserRequest, 'first')
 
     this.actions.removeAction(actionId)
 

@@ -9,9 +9,11 @@ import {
   SocketAPIToken
 } from '../../interfaces/swapAndBridge'
 import {
+  AMBIRE_FEE_TAKER_ADDRESSES,
   AMBIRE_WALLET_TOKEN_ON_BASE,
   AMBIRE_WALLET_TOKEN_ON_ETHEREUM,
   ETH_ON_OPTIMISM_LEGACY_ADDRESS,
+  FEE_PERCENT,
   NULL_ADDRESS,
   ZERO_ADDRESS
 } from './constants'
@@ -84,6 +86,10 @@ export class SocketAPI {
     if (this.isHealthy) return
 
     await this.updateHealth()
+  }
+
+  resetHealth() {
+    this.isHealthy = null
   }
 
   async getSupportedChains(): Promise<SocketAPISupportedChain[]> {
@@ -202,15 +208,18 @@ export class SocketAPI {
       toTokenAddress: normalizeOutgoingSocketTokenAddress(toTokenAddress),
       fromAmount: fromAmount.toString(),
       userAddress,
-      // TODO: Enable when needed
-      // feeTakerAddress: AMBIRE_FEE_TAKER_ADDRESSES[fromChainId],
-      // feePercent: FEE_PERCENT.toString(),
       isContractCall: isSmartAccount.toString(), // only get quotes with that are compatible with contracts
       sort,
       singleTxOnly: 'false',
       defaultSwapSlippage: '1',
       uniqueRoutesPerBridge: 'true'
     })
+    const feeTakerAddress = AMBIRE_FEE_TAKER_ADDRESSES[fromChainId]
+    const shouldIncludeConvenienceFee = !!feeTakerAddress
+    if (shouldIncludeConvenienceFee) {
+      params.append('feeTakerAddress', feeTakerAddress)
+      params.append('feePercent', FEE_PERCENT.toString())
+    }
     const url = `${this.#baseUrl}/quote?${params.toString()}`
 
     let response = await this.#fetch(url, { headers: this.#headers })

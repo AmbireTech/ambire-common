@@ -220,7 +220,7 @@ export function getFeaturesByNetworkProperties(
   const features: NetworkFeature[] = [
     {
       id: 'saSupport',
-      title: "Ambire's smart wallets",
+      title: 'Ambire Smart Accounts',
       level: 'loading'
     },
     {
@@ -230,7 +230,7 @@ export function getFeaturesByNetworkProperties(
     },
     {
       id: 'prices',
-      title: "Token's prices",
+      title: 'Token prices',
       level: 'loading'
     }
   ]
@@ -269,7 +269,7 @@ export function getFeaturesByNetworkProperties(
         id: 'flagged',
         title: 'RPC error',
         level: 'danger',
-        msg: 'We were unable to fetch the network information with the provided RPC. Please choose another RPC or try again later'
+        msg: 'We were unable to fetch the network information with the provided RPC. Try choosing a different RPC.'
       }
     ]
   }
@@ -284,8 +284,8 @@ export function getFeaturesByNetworkProperties(
         level: 'danger',
         title: 'Smart contract wallets are not supported',
         msg: hasSingleton
-          ? 'We were unable to detect smart account support on the network with the provided RPC. Please choose another RPC or try again later.'
-          : "Unfortunately this network doesn't support smart contract wallets. It can be used only with Basic accounts (EOAs)."
+          ? 'We were unable to detect Smart Account support on the network with the provided RPC. Try choosing a different RPC.'
+          : 'Unfortunately, this network doesn’t support Smart Accounts. It can be used only with Basic Accounts (EOAs).'
       })
     }
 
@@ -303,20 +303,20 @@ export function getFeaturesByNetworkProperties(
     }
 
     const title = (erc4337Settings as any)?.enabled
-      ? "Ambire's smart wallets via ERC-4337 Account Abstraction"
-      : "Ambire's smart wallets"
+      ? 'Ambire Smart Accounts via ERC-4337 (Account Abstraction)'
+      : 'Ambire Smart Accounts'
 
     if (isSAEnabled && areContractsDeployed) {
       updateFeature('saSupport', {
         title,
         level: 'success',
-        msg: "This blockchain network support smart accounts and Ambire Wallet's contacts are deployed."
+        msg: "This network supports Smart Accounts, and Ambire Wallet's smart contracts are deployed."
       })
     } else if (isSAEnabled && !areContractsDeployed) {
       updateFeature('saSupport', {
         title,
         level: 'warning',
-        msg: "This network supports smart contract wallets, but Ambire Wallet's contracts are not yet deployed. You can deploy them by using a Basic account and the Deploy contracts option to unlock the Smart accounts feature. If not, only Basic accounts (EOAs) can be used on this network."
+        msg: "This network supports Smart Accounts, but Ambire Wallet's contracts have not yet been deployed. You can deploy them by using a Basic Account and the Deploy contracts option to unlock the Smart Accounts feature. Otherwise, only Basic Accounts (EOAs) can be used on this network."
       })
     }
   }
@@ -327,19 +327,19 @@ export function getFeaturesByNetworkProperties(
       updateFeature('simulation', {
         level: 'success',
         title: 'Transaction simulation is fully supported',
-        msg: 'This feature offers a proactive approach to blockchain security by a process used to predict the outcome of a transaction before it is broadcasted to the blockchain.'
+        msg: 'Transaction simulation helps predict the outcome of a transaction and your future account balance before it’s broadcasted to the blockchain, enhancing security.'
       })
     } else if (!rpcNoStateOverride) {
       updateFeature('simulation', {
         level: 'warning',
         title: 'Transaction simulation is partially supported',
-        msg: 'Our security feature of predicting the outcome of a transaction before it is broadcasted to the blockchain is not fully functioning. The reasons might be a network or RPC limitations. You can try a different RPC.'
+        msg: 'Transaction simulation, one of our security features that predicts the outcome of a transaction before it is broadcast to the blockchain, is not fully functioning on this chain. The reasons might be network or RPC limitations. Try choosing a different RPC.'
       })
     } else {
       updateFeature('simulation', {
         level: 'danger',
         title: 'Transaction simulation is not supported',
-        msg: 'Unfortunately, the feature of predicting the outcome of a transaction before it is broadcasted to the blockchain is not yet available for this network or RPC. You can try a different RPC.'
+        msg: "Transaction simulation helps predict the outcome of a transaction and your future account balance before it’s broadcasted to the blockchain, enhancing security. Unfortunately, this feature isn't available for the current network or RPC. Try choosing a different RPC."
       })
     }
   }
@@ -349,8 +349,8 @@ export function getFeaturesByNetworkProperties(
     updateFeature('prices', {
       level: hasNativeAssetId ? 'success' : 'danger',
       msg: hasNativeAssetId
-        ? 'We are using third-party providers in order to present you with information about current token prices, and it supports most of the popular tokens.'
-        : "Our third-party providers don't support this blockchain network yet and we cannot present you with information of current token prices on this network."
+        ? 'We pull token price information in real-time using third-party providers.'
+        : "Our third-party providers don't support this network yet, so we cannot show token prices."
     })
   }
 

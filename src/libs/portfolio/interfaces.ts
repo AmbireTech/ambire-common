@@ -12,6 +12,7 @@ export interface GetOptionsSimulation {
   accountOps: AccountOp[]
   account: Account
 }
+export type TokenError = string | '0x'
 
 export type TokenResult = Omit<CustomToken, 'standard'> & {
   amount: bigint
@@ -38,11 +39,13 @@ export interface CollectionResult extends TokenResult {
 
 export type PriceCache = Map<string, [number, Price[]]>
 
-interface ERC721Enumerable {
+export type MetaData = { blockNumber?: number; beforeNonce?: bigint; afterNonce?: bigint }
+
+export interface ERC721Enumerable {
   isKnown: boolean
   enumerable: boolean
 }
-interface ERC721Innumerable {
+export interface ERC721Innumerable {
   isKnown: boolean
   tokens: string[]
 }
@@ -207,13 +210,6 @@ export interface PreviousHintsStorage {
 
 export interface NetworkSimulatedAccountOp {
   [networkId: NetworkId]: AccountOp
-}
-
-export interface TokenAmount {
-  latestAmount: bigint
-  pendingAmount: bigint
-  address: string
-  networkId: string
 }
 
 export type PendingAmounts = {

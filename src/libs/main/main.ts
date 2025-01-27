@@ -2,7 +2,7 @@ import { AccountOpAction, Action } from '../../controllers/actions/actions'
 import { Account, AccountId } from '../../interfaces/account'
 import { DappProviderRequest } from '../../interfaces/dapp'
 import { Network, NetworkId } from '../../interfaces/network'
-import { Calls, SignUserRequest, UserRequest } from '../../interfaces/userRequest'
+import { Calls, DappUserRequest, SignUserRequest, UserRequest } from '../../interfaces/userRequest'
 import generateSpoofSig from '../../utils/generateSpoofSig'
 import { isSmartAccount } from '../account/account'
 import { AccountOp } from '../accountOp/accountOp'
@@ -31,23 +31,23 @@ export const batchCallsFromUserRequests = ({
   )
 }
 
+export const ACCOUNT_SWITCH_USER_REQUEST = 'ACCOUNT_SWITCH_USER_REQUEST'
+
 export const buildSwitchAccountUserRequest = ({
   nextUserRequest,
   selectedAccountAddr,
   networkId,
   session,
-  rejectUserRequest
+  dappPromise
 }: {
   nextUserRequest: UserRequest
   selectedAccountAddr: string
   networkId: Network['id']
   session: DappProviderRequest['session']
-  rejectUserRequest: (reason: string, userRequestId: string | number) => void
+  dappPromise: DappUserRequest['dappPromise']
 }): UserRequest => {
-  const userRequestId = nextUserRequest.id
-
   return {
-    id: Number(nextUserRequest.id) + 222, // Otherwise the ids will be the same
+    id: ACCOUNT_SWITCH_USER_REQUEST,
     action: {
       kind: 'switchAccount',
       params: {
@@ -62,11 +62,8 @@ export const buildSwitchAccountUserRequest = ({
       isSignAction: false
     },
     dappPromise: {
-      session,
-      resolve: () => {},
-      reject: () => {
-        rejectUserRequest('Switch account request rejected', userRequestId)
-      }
+      ...dappPromise,
+      resolve: () => {}
     }
   }
 }

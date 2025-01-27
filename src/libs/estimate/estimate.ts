@@ -29,9 +29,17 @@ import { refund } from './refund'
 
 const abiCoder = new AbiCoder()
 
-function getInnerCallFailure(estimationOp: { success: boolean; err: string }): Error | null {
+function getInnerCallFailure(
+  estimationOp: { success: boolean; err: string },
+  calls: Call[],
+  network: Network,
+  portfolioNativeValue?: bigint
+): Error | null {
   if (estimationOp.success) return null
-  const error = getHumanReadableEstimationError(new InnerCallFailureError(estimationOp.err))
+
+  const error = getHumanReadableEstimationError(
+    new InnerCallFailureError(estimationOp.err, calls, network, portfolioNativeValue)
+  )
 
   return new Error(error.message, {
     cause: 'CALLS_FAILURE'
@@ -160,7 +168,12 @@ export async function estimate4337(
     ]
   ] = estimations[0]
   const ambireEstimationError =
-    getInnerCallFailure(accountOp) || getNonceDiscrepancyFailure(op, outcomeNonce)
+    getInnerCallFailure(
+      accountOp,
+      calls,
+      network,
+      feeTokens.find((token) => token.address === ZeroAddress && !token.flags.onGasTank)?.amount
+    ) || getNonceDiscrepancyFailure(op, outcomeNonce)
 
   // if Estimation.sol estimate is a success, it means the nonce has incremented
   // so we subtract 1 from it. If it's an error, we return the old one
@@ -454,6 +467,12 @@ export async function estimate(
     // so we subtract 1 from it. If it's an error, we return the old one
     currentAccountNonce: accountOp.success ? Number(nonce - 1n) : Number(nonce),
     feePaymentOptions: [...feeTokenOptions, ...nativeTokenOptions],
-    error: getInnerCallFailure(accountOp) || getNonceDiscrepancyFailure(op, nonce)
+    error:
+      getInnerCallFailure(
+        accountOp,
+        calls,
+        network,
+        feeTokens.find((token) => token.address === ZeroAddress && !token.flags.onGasTank)?.amount
+      ) || getNonceDiscrepancyFailure(op, nonce)
   }
 }

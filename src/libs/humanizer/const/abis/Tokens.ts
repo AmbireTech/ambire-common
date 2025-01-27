@@ -7,7 +7,9 @@ export const ERC20 = [
   'function balanceOf(address _owner) view returns (uint256 balance)',
   'function symbol() view returns (string)',
   'function transfer(address _to, uint256 _value) returns (bool)',
-  'function allowance(address _owner, address _spender) view returns (uint256)'
+  'function allowance(address _owner, address _spender) view returns (uint256)',
+  'function decreaseAllowance(address spender, uint256 subtractedValue) returns (bool)',
+  'function increaseAllowance(address spender, uint256 addedValue) returns (bool)'
 ]
 
 export const ERC721 = [

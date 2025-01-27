@@ -1,6 +1,10 @@
 import { getAddress } from 'ethers'
 
-import { SelectedAccountPortfolio } from '../../interfaces/selectedAccount'
+import {
+  SelectedAccountPortfolio,
+  SelectedAccountPortfolioState,
+  SelectedAccountPortfolioTokenResult
+} from '../../interfaces/selectedAccount'
 import { safeTokenAmountAndNumberMultiplication } from '../../utils/numbers/formatters'
 import {
   AccountState as DefiPositionsAccountState,
@@ -12,20 +16,21 @@ import {
   CollectionResult,
   NetworkSimulatedAccountOp,
   NetworkState,
-  TokenAmount,
   TokenResult
 } from '../portfolio/interfaces'
 
 export const updatePortfolioStateWithDefiPositions = (
   portfolioAccountState: AccountState,
-  defiPositionsAccountState: DefiPositionsAccountState
+  defiPositionsAccountState: DefiPositionsAccountState,
+  areDefiPositionsLoading: boolean
 ) => {
-  if (!portfolioAccountState || !defiPositionsAccountState) return portfolioAccountState
+  if (!portfolioAccountState || !defiPositionsAccountState || areDefiPositionsLoading)
+    return portfolioAccountState
 
   Object.keys(portfolioAccountState).forEach((networkId) => {
     const networkState = portfolioAccountState[networkId]
 
-    if (!networkState?.result) return
+    if (!networkState?.result || defiPositionsAccountState[networkId]?.isLoading) return
 
     let tokens = networkState.result.tokens || []
     let networkBalance = networkState.result.total?.usd || 0
@@ -114,14 +119,79 @@ export const updatePortfolioStateWithDefiPositions = (
   return portfolioAccountState
 }
 
+const stripPortfolioState = (portfolioState: AccountState) => {
+  const strippedState: SelectedAccountPortfolioState = {}
+
+  Object.keys(portfolioState).forEach((networkId) => {
+    const networkState = portfolioState[networkId]
+    if (!networkState) return
+
+    if (!networkState.result) {
+      strippedState[networkId] = networkState
+      return
+    }
+
+    // A trick to exclude specific keys
+    const { tokens, collections, tokenErrors, priceCache, hintsFromExternalAPI, ...result } =
+      networkState.result
+
+    strippedState[networkId] = {
+      ...networkState,
+      result
+    }
+  })
+
+  return strippedState
+}
+
+const isNetworkReady = (networkData: NetworkState | undefined) => {
+  return (
+    networkData && (networkData.isReady || networkData?.criticalError) && !networkData.isLoading
+  )
+}
+
+const calculateTokenArray = (
+  networkId: string,
+  latestTokens: TokenResult[],
+  pendingTokens: TokenResult[],
+  isPendingValid: boolean
+) => {
+  if (networkId === 'gasTank' || networkId === 'rewards') {
+    return latestTokens
+  }
+  // If the pending state is older or there are no pending tokens
+  // we shouldn't trust it to build the tokens array
+  if (isPendingValid && pendingTokens.length) {
+    return pendingTokens.map((pendingToken) => {
+      const latestToken = latestTokens.find((latest) => {
+        return latest.address === pendingToken.address
+      })
+
+      return {
+        ...pendingToken,
+        latestAmount: latestToken?.amount,
+        pendingAmount: pendingToken.amount
+      }
+    })
+  }
+
+  // Add only latestAmount to the tokens
+  return latestTokens.map((token) => {
+    return {
+      ...token,
+      latestAmount: token.amount
+    }
+  })
+}
+
 export function calculateSelectedAccountPortfolio(
   latestStateSelectedAccount: AccountState,
   pendingStateSelectedAccount: AccountState,
   accountPortfolio: SelectedAccountPortfolio | null,
   hasSignAccountOp?: boolean
 ) {
-  const updatedTokens: TokenResult[] = []
-  const updatedCollections: CollectionResult[] = []
+  const collections: CollectionResult[] = []
+  const tokens: SelectedAccountPortfolioTokenResult[] = []
 
   let newTotalBalance: number = 0
 
@@ -136,7 +206,6 @@ export function calculateSelectedAccountPortfolio(
       totalBalance: accountPortfolio?.totalBalance || 0,
       isAllReady: false,
       networkSimulatedAccountOp: accountPortfolio?.networkSimulatedAccountOp || {},
-      tokenAmounts: accountPortfolio?.tokenAmounts || [],
       latest: latestStateSelectedAccount,
       pending: pendingStateSelectedAccount
     } as SelectedAccountPortfolio
@@ -144,61 +213,63 @@ export function calculateSelectedAccountPortfolio(
 
   let selectedAccountData = latestStateSelectedAccount
 
-  const pendingAccountStateWithoutCriticalErrors = Object.keys(pendingStateSelectedAccount).reduce(
-    (acc, network) => {
-      if (
-        !selectedAccountData[network]?.result?.blockNumber ||
-        !pendingStateSelectedAccount[network]?.result?.blockNumber
-      )
-        return acc
+  /**
+   * Replaces the latest state if the following conditions are true:
+   * - There is no critical error in the pending state.
+   * - The pending block number is newer than the latest OR we have a signed acc op (because of simulation).
+   */
+  const validSelectedAccountPendingState: AccountState = {}
+  const simulatedAccountOps: NetworkSimulatedAccountOp = {}
 
-      // Filter out networks with critical errors.
-      // Additionally, use the pending state if either of the following conditions is true:
-      // - The pending block number is newer than the latest. Keep in mind that we always update both the latest and pending portfolio state,
-      //   regardless of whether we have an acc op for simulation or not. Because of this, if the pending state is newer, we use it in place of the latest state.
-      // - We have a signed acc op, meaning we are performing a simulation and want to visualize pending badges (pending-to-be-confirmed and pending-to-be-signed).
+  Object.keys(pendingStateSelectedAccount).forEach((network) => {
+    const pendingNetworkData = pendingStateSelectedAccount[network]
+    const latestNetworkData = latestStateSelectedAccount[network]
+
+    // Compare the block numbers to determine if the pending state is newer
+    if (latestNetworkData?.result?.blockNumber && pendingNetworkData?.result?.blockNumber) {
       const isPendingNewer =
-        pendingStateSelectedAccount[network]?.result?.blockNumber! >=
-        selectedAccountData[network]?.result?.blockNumber!
+        pendingNetworkData.result.blockNumber! >= latestNetworkData.result.blockNumber!
 
-      if (
-        !pendingStateSelectedAccount[network]?.criticalError &&
-        (isPendingNewer || hasSignAccountOp)
-      ) {
-        acc[network] = pendingStateSelectedAccount[network]
+      if (!pendingNetworkData.criticalError && (isPendingNewer || hasSignAccountOp)) {
+        validSelectedAccountPendingState[network] = pendingNetworkData
       }
-      return acc
-    },
-    {} as AccountState
-  )
+    }
 
-  if (hasPending && Object.keys(pendingAccountStateWithoutCriticalErrors).length > 0) {
-    // Mix latest and pending data. This is required because pending state may only have some networks
+    // Store the simulated account op
+    const accountOp = pendingNetworkData?.accountOps?.[0]
+
+    if (accountOp) {
+      simulatedAccountOps[network] = accountOp
+    }
+  })
+
+  if (hasPending && Object.keys(validSelectedAccountPendingState).length > 0) {
     selectedAccountData = {
       ...selectedAccountData,
-      ...pendingAccountStateWithoutCriticalErrors
+      ...validSelectedAccountPendingState
     }
-  }
-
-  const isNetworkReady = (networkData: NetworkState | undefined) => {
-    return (
-      networkData && (networkData.isReady || networkData?.criticalError) && !networkData.isLoading
-    )
   }
 
   Object.keys(selectedAccountData).forEach((network: string) => {
     const networkData = selectedAccountData[network]
     const result = networkData?.result
     if (networkData && isNetworkReady(networkData) && result) {
-      // In the case we receive BigInt here, convert to number
       const networkTotal = Number(result?.total?.usd) || 0
       newTotalBalance += networkTotal
 
-      const networkTokens = result?.tokens || []
+      const latestTokens = latestStateSelectedAccount[network]?.result?.tokens || []
+      const pendingTokens = pendingStateSelectedAccount[network]?.result?.tokens || []
       const networkCollections = result?.collections || []
 
-      updatedTokens.push(...networkTokens)
-      updatedCollections.push(...networkCollections)
+      const tokensArray = calculateTokenArray(
+        network,
+        latestTokens,
+        pendingTokens,
+        !!validSelectedAccountPendingState[network]
+      )
+
+      tokens.push(...tokensArray)
+      collections.push(...networkCollections)
     }
 
     if (!isNetworkReady(networkData)) {
@@ -206,65 +277,13 @@ export function calculateSelectedAccountPortfolio(
     }
   })
 
-  // For the selected account's pending state, create a SimulationNonces mapping,
-  // which associates each network with its corresponding pending simulation beforeNonce.
-  // This nonce information is crucial for determining the PendingToBeSigned or PendingToBeConfirmed Dashboard badges.
-  // For more details, see: calculatePendingAmounts.
-  const networkSimulatedAccountOp = Object.keys(pendingStateSelectedAccount).reduce(
-    (acc, networkId) => {
-      const accountOp = pendingStateSelectedAccount[networkId]?.accountOps?.[0]
-      if (accountOp) {
-        acc[networkId] = accountOp
-      }
-
-      return acc
-    },
-    {} as NetworkSimulatedAccountOp
-  )
-
-  // We need the latest and pending token amounts for the selected account, especially for calculating the Pending badges.
-  // You might wonder why we don't retrieve this data directly from the PortfolioController. Here's the reasoning:
-  //
-  // 1. We could attach the latest amount to the controller's pending state.
-  //    However, this would mix the latest and pending data within the controller's logic, which we want to avoid.
-  //
-  // 2. Alternatively, we could fetch the latest and pending token amounts at the component level as needed.
-  //    While this seems simpler, there's a catch:
-  //    The PortfolioView is recalculated whenever certain properties change.
-  //    If we don't retrieve the latest and pending amounts within the same React update cycle,
-  //    they might become out of sync with the PortfolioView state.
-  //    Therefore, the safest and cleanest approach is to calculate these amounts during the same cycle as the PortfolioView.
-  //
-  // For more details, see: calculatePendingAmounts.
-  const tokenAmounts = Object.keys(pendingStateSelectedAccount).reduce((acc, networkId) => {
-    const pendingTokens = pendingStateSelectedAccount[networkId]?.result?.tokens
-
-    if (!pendingTokens) return acc
-
-    const mergedTokens = pendingTokens.map((pendingToken) => {
-      const latestToken = latestStateSelectedAccount[networkId]?.result?.tokens.find((latest) => {
-        return latest.address === pendingToken.address
-      })
-
-      return {
-        latestAmount: latestToken?.amount || 0n,
-        pendingAmount: pendingToken.amount || 0n,
-        address: pendingToken.address,
-        networkId
-      }
-    })
-
-    return [...acc, ...mergedTokens]
-  }, [] as TokenAmount[])
-
   return {
     totalBalance: newTotalBalance,
-    tokens: updatedTokens,
-    collections: updatedCollections,
+    tokens,
+    collections,
     isAllReady: allReady,
-    networkSimulatedAccountOp,
-    tokenAmounts,
-    latest: latestStateSelectedAccount,
-    pending: pendingStateSelectedAccount
+    networkSimulatedAccountOp: simulatedAccountOps,
+    latest: stripPortfolioState(latestStateSelectedAccount),
+    pending: stripPortfolioState(pendingStateSelectedAccount)
   } as SelectedAccountPortfolio
 }
