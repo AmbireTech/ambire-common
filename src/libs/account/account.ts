@@ -346,6 +346,8 @@ export function getAuthorization(
   })
 }
 
+// use this in cases where you strictly want to enable/disable an action for
+// basic accounts (excluding smart and smarter)
 export function isBasicAccount(account: Account, state: AccountOnchainState): boolean {
   return !account.creation && !state.isSmarterEoa
 }

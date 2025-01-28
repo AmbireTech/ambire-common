@@ -1154,7 +1154,18 @@ export class MainController extends EventEmitter {
         },
         dappPromise
       } as SignUserRequest
-      if (!this.selectedAccount.account.creation) {
+
+      let accountState = this.accounts.accountStates[accountAddr]
+        ? this.accounts.accountStates[accountAddr][network.id]
+        : undefined
+      // precaution, it shouldn't happen
+      // refetch the account state if it doesn't exist for some reason
+      if (!accountState) {
+        await this.accounts.updateAccountState(accountAddr)
+        accountState = this.accounts.accountStates[accountAddr][network.id]
+      }
+
+      if (isBasicAccount(this.selectedAccount.account, accountState)) {
         const otherUserRequestFromSameDapp = this.userRequests.find(
           (r) => r.dappPromise?.session?.origin === dappPromise?.session?.origin
         )
@@ -1283,10 +1294,14 @@ export class MainController extends EventEmitter {
     // We can simply add the user request if it's not a sign operation
     // for another account
     if (!isASignOperationRequestedForAnotherAccount) {
+      const accState = await this.accounts.getOrFetchAccountOnChainState(
+        userRequest.meta.accountAddr,
+        userRequest.meta.networkId
+      )
       await this.addUserRequest(
         userRequest,
         actionPosition,
-        actionPosition === 'first' || isSmartAccount(this.selectedAccount.account)
+        actionPosition === 'first' || !isBasicAccount(userRequest.meta.accountAddr, accState)
           ? 'open-action-window'
           : 'queue-but-open-action-window'
       )
@@ -1568,9 +1583,12 @@ export class MainController extends EventEmitter {
       if (this.#signAccountOpBroadcastPromise) await this.#signAccountOpBroadcastPromise
 
       const account = this.accounts.accounts.find((x) => x.addr === meta.accountAddr)!
-      const accountState = this.accounts.accountStates[meta.accountAddr][meta.networkId]
+      const accountState = await this.accounts.getOrFetchAccountOnChainState(
+        meta.accountAddr,
+        meta.networkId
+      )
 
-      if (isSmartAccount(account)) {
+      if (!isBasicAccount(account, accountState)) {
         const network = this.networks.networks.find((n) => n.id === meta.networkId)!
 
         // find me the accountOp for the network if any, it's always 1 for SA
@@ -2488,7 +2506,7 @@ export class MainController extends EventEmitter {
       let userOperationHash
       const bundler = bundlerSwitcher.getBundler()
       try {
-        userOperationHash = !accountState.isSmarterEoa
+        userOperationHash = !accountState.authorization
           ? await bundler.broadcast(userOperation, network)
           : await bundler.broadcast7702(userOperation, network, accountState.authorization)
       } catch (e: any) {

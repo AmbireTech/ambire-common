@@ -1,6 +1,11 @@
 import { getAddress, isAddress } from 'ethers'
 
-import { Account, AccountPreferences, AccountStates } from '../../interfaces/account'
+import {
+  Account,
+  AccountOnchainState,
+  AccountPreferences,
+  AccountStates
+} from '../../interfaces/account'
 import { NetworkId } from '../../interfaces/network'
 import { Storage } from '../../interfaces/storage'
 import {
@@ -264,6 +269,23 @@ export class AccountsController extends EventEmitter {
       this.statuses.updateAccountState === 'LOADING' ||
       this.statuses.updateAccountStates === 'LOADING'
     )
+  }
+
+  // Get the account state or in the rare case of it being undefined,
+  // fetch it.
+  // This is a precaution method as we had bugs in the past where we assumed
+  // the account state to be fetched only for it to haven't been.
+  // This ensures production doesn't blow up and it 99.9% of cases it
+  // should not call the promise
+  async getOrFetchAccountOnChainState(
+    addr: string,
+    networkId: string
+  ): Promise<AccountOnchainState> {
+    if (!this.accountStates[addr]) await this.updateAccountState(addr, 'latest', [networkId])
+    if (!this.accountStates[addr][networkId])
+      await this.updateAccountState(addr, 'latest', [networkId])
+
+    return this.accountStates[addr][networkId]
   }
 
   toJSON() {

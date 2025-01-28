@@ -78,7 +78,7 @@ async function estimate(
   const isEdgeCase =
     !accountState.isSmarterEoa && !accountState.isErc4337Enabled && accountState.isDeployed
   const initializeRequests = () => [
-    accountState.isSmarterEoa
+    accountState.authorization
       ? bundler
           .estimate7702(userOp, network, accountState.authorization)
           .catch(estimateErrorCallback)

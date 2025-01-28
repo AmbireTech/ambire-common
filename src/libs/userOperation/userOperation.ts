@@ -195,6 +195,7 @@ export function shouldIncludeActivatorCall(
     account.creation &&
     account.creation.factoryAddr === AMBIRE_ACCOUNT_FACTORY &&
     accountState.isV2 &&
+    !accountState.isSmarterEoa &&
     network.erc4337.enabled &&
     !accountState.isErc4337Enabled &&
     (accountState.isDeployed || !is4337Broadcast)
@@ -217,6 +218,7 @@ export function shouldAskForEntryPointAuthorization(
     account.creation &&
     account.creation.factoryAddr === AMBIRE_ACCOUNT_FACTORY &&
     accountState.isV2 &&
+    !accountState.isSmarterEoa &&
     !accountState.isDeployed &&
     network.erc4337.enabled &&
     !accountState.isErc4337Enabled
