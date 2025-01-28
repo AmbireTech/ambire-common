@@ -676,7 +676,7 @@ export class SwapAndBridgeController extends EventEmitter {
       // should never happen
       if (!toTokenNetwork)
         throw new Error(
-          'Network configuration mismatch detected. Please try again later or contact support.'
+          'Swap & Bridge network configuration mismatch. Please try again or contact Ambire support.'
         )
 
       const additionalTokensFromPortfolio = this.portfolioTokenList
