@@ -7,11 +7,17 @@ interface IXWallet {
 	function transfer(address to, uint256 amount) external returns (bool);
 	function transferFrom(address from, address to, uint256 amount) external returns (bool);
 	function enter(uint256 amount) external;
+	function timeToUnbond() view external returns (uint);
+	function leave(uint shares, bool skipMint) external returns(uint);
+	function withdraw(uint shares, uint unlocksAt, bool skipMint) external;
+	function rageLeave(uint shares, bool skipMint) external;
 }
 
 interface IWallet {
-  function transferFrom(address from, address to, uint256 amount) external returns (bool);
-  function approve(address, uint) external;
+	function transferFrom(address from, address to, uint256 amount) external returns (bool);
+	function approve(address, uint) external;
+	function balanceOf(address owner) external view returns (uint256);
+	function transfer(address to, uint256 amount) external returns (bool);
 }
 
 contract stkWALLET {
@@ -35,6 +41,21 @@ contract stkWALLET {
 	// Custom events
 	event ShareValueUpdate(uint256 shareValue);
 
+	// stkWallet specific methods
+	struct UnbondCommitment {
+		address owner;
+		uint shares;
+		uint unlocksAt;
+	}
+
+	mapping(address => uint256) public locked;
+	mapping(bytes32 => uint256) public commitmentPayout;
+		
+	event LogLeave(address indexed owner, uint amount, uint unlocksAt);
+	event LogWithdraw(address indexed owner, uint shares, uint unlocksAt);
+	event LogRageLeave(address indexed owner, uint amount);
+
+
 	// ERC20 methods
 	// Note: any xWALLET sent to this contract will be burned as there's nothing that can be done with it. Expected behavior.
 	function totalSupply() external view returns (uint256) {
@@ -42,7 +63,7 @@ contract stkWALLET {
 	}
 
 	function balanceOf(address owner) external view returns (uint256 balance) {
-		return (shares[owner] * xWallet.shareValue()) / 1e18;
+		return (shares[owner] * xWallet.shareValue()) / 1e18 + locked[owner];
 	}
 
 	function transfer(address to, uint256 amount) external returns (bool success) {
@@ -116,5 +137,66 @@ contract stkWALLET {
 
 		require(balanceAfter > balanceBefore);
 		innerMintTo(msg.sender, balanceAfter - balanceBefore);
+	}
+
+
+	// here we are requesting stkWALLET amount for humanization reasons
+	function leaveExact(uint256 requestedAmount) public {
+		uint256 shareValue = xWallet.shareValue();
+		require(requestedAmount >= shares[msg.sender] * shareValue, "INSUFFICIENT_FUNDS");
+
+		uint256 actualSharesLeave = requestedAmount / shareValue;
+		shares[msg.sender] -= actualSharesLeave;
+		locked[msg.sender] += actualSharesLeave;
+
+		uint256 unlocksAt = block.timestamp + xWallet.timeToUnbond();
+		bytes32 commitmentId = keccak256(abi.encode(UnbondCommitment({ owner: msg.sender, shares: actualSharesLeave, unlocksAt: unlocksAt })));
+		
+		// @TODO should the skipMint be true
+		xWallet.leave(actualSharesLeave,true);
+		require(commitmentPayout[commitmentId]==0, "COMMITMENT_ALREADY_PRESENT");
+		commitmentPayout[commitmentId] = actualSharesLeave;
+
+		emit LogLeave(msg.sender, requestedAmount, unlocksAt);
+	}
+
+	function leaveAll() public {
+		leaveExact(shares[msg.sender]*xWallet.shareValue());
+	}
+	// we are ok with not knowing the exact WALLET amount in the humanizer
+	// since the simulation with display the exact amount 
+	function withdraw(uint requestedShares, uint unlocksAt) public {
+		require(unlocksAt<= block.timestamp, "UNLOCK_TOO_EARLY");
+		bytes32 commitmentId = keccak256(abi.encode(UnbondCommitment({ owner: msg.sender, shares: requestedShares, unlocksAt: unlocksAt })));
+		// @TODO can we simply check if it is a positive value
+		// @TODO better revert message
+		require(commitmentPayout[commitmentId] > 0, "Requesting too much to withdraw");
+		
+		uint balanceBefore = wallet.balanceOf(address(this));	
+		// @TODO should the skipMint be true
+		xWallet.withdraw(requestedShares, unlocksAt, true);
+		uint balanceAfter = wallet.balanceOf(address(this));
+		wallet.transfer(msg.sender, balanceAfter-balanceBefore);
+
+		commitmentPayout[commitmentId] = 0;
+		locked[msg.sender] -= requestedShares;
+
+		emit LogWithdraw(msg.sender, balanceAfter-balanceBefore, unlocksAt);
+
+	}
+
+
+	function rageLeave(uint requestedShares) public {
+		require(shares[msg.sender]>requestedShares, "INSUFFICIENT_FUNDS");
+		shares[msg.sender]-=requestedShares;
+
+		uint walletBalanceBefore = wallet.balanceOf(address(this));
+		xWallet.rageLeave(requestedShares, true);
+		uint walletBalanceAfter = wallet.balanceOf(address(this));
+		
+		uint amount = walletBalanceAfter-walletBalanceBefore;
+		wallet.transfer(msg.sender, amount);
+
+		emit LogRageLeave(msg.sender, amount);
 	}
 }
