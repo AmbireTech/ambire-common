@@ -1,5 +1,4 @@
 import { AccountOpAction } from './actions'
-import { Network } from './network'
 
 export type BannerType = 'error' | 'warning' | 'info' | 'info2' | 'success'
 export type BannerCategory =
@@ -63,11 +62,6 @@ export type Action =
       meta: {}
     }
   | {
-      label: 'Select'
-      actionName: 'select-rpc-url'
-      meta: { network: Network }
-    }
-  | {
       label: 'Reject'
       actionName: 'reject-bridge'
       meta: { activeRouteId: number }
@@ -102,4 +96,8 @@ export type Action =
   | {
       label: 'Activate'
       actionName: 'activate-7702'
+    }
+  | {
+      label: 'Retry'
+      actionName: 'reload-selected-account'
     }
