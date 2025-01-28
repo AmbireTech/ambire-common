@@ -83,6 +83,8 @@ export class AccountsController extends EventEmitter {
     // Emit an update before updating account states as the first state update may take some time
     this.emitUpdate()
     // Don't await this. Networks should update one by one
+    // NOTE: YOU MUST USE waitForAccountsCtrlFirstLoad IN TESTS
+    // TO ENSURE ACCOUNT STATE IS LOADED
     this.#updateAccountStates(this.accounts)
   }
 
