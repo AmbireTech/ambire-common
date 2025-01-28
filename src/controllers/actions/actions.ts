@@ -54,6 +54,8 @@ export class ActionsController extends EventEmitter {
 
   actionWindow: {
     windowProps: WindowProps
+    openWindowPromise?: Promise<WindowProps>
+    focusWindowPromise?: Promise<void>
     loaded: boolean
     pendingMessage: {
       message: string
@@ -256,24 +258,42 @@ export class ActionsController extends EventEmitter {
     }
   }
 
-  openActionWindow() {
-    if (this.actionWindow.windowProps !== null) {
+  async openActionWindow() {
+    await this.actionWindow.focusWindowPromise
+    await this.actionWindow.openWindowPromise
+    if (this.actionWindow.windowProps) {
       this.focusActionWindow()
     } else {
-      this.#windowManager.open().then((windowProps) => {
-        this.actionWindow.windowProps = windowProps
+      try {
+        this.actionWindow.openWindowPromise = this.#windowManager.open().finally(() => {
+          this.actionWindow.openWindowPromise = undefined
+        })
+        this.actionWindow.windowProps = await this.actionWindow.openWindowPromise
         this.emitUpdate()
-      })
+      } catch (err) {
+        console.error('Error opening action window:', err)
+      }
     }
   }
 
-  focusActionWindow = () => {
+  async focusActionWindow() {
+    await this.actionWindow.focusWindowPromise
+    await this.actionWindow.openWindowPromise
     if (!this.visibleActionsQueue.length || !this.currentAction || !this.actionWindow.windowProps)
       return
-    this.#windowManager.focus(this.actionWindow.windowProps)
+    try {
+      this.actionWindow.focusWindowPromise = this.#windowManager
+        .focus(this.actionWindow.windowProps)
+        .finally(() => {
+          this.actionWindow.focusWindowPromise = undefined
+        })
+      this.emitUpdate()
+    } catch (err) {
+      console.error('Error focusing action window:', err)
+    }
   }
 
-  closeActionWindow = () => {
+  closeActionWindow() {
     if (!this.actionWindow.windowProps) return
     this.#windowManager.remove(this.actionWindow.windowProps.id)
   }
