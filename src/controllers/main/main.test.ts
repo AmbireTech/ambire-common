@@ -497,7 +497,7 @@ describe('Main Controller ', () => {
         })
       } catch (e: any) {
         expect(e.message).toBe(
-          'The transaction cannot be broadcast because the swap has expired. Return to the dApp and reinitiate the swap if you wish to proceed.'
+          'The transaction cannot be broadcast because the swap has expired. Return to the app and reinitiate the swap if you wish to proceed.'
         )
         expect(controllerAnyType.updateSignAccountOpGasPrice).not.toHaveBeenCalled()
         expect(controllerAnyType.estimateSignAccountOp).not.toHaveBeenCalled()
