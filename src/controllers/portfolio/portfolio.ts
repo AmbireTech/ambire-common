@@ -91,8 +91,6 @@ export class PortfolioController extends EventEmitter {
 
   #minUpdateInterval: number = 20000 // 20 seconds
 
-  #preferencesOrCustomTokensUpdatePromise: NodeJS.Timeout | null = null
-
   /**
    * Hints stored in storage, divided into three categories:
    * - fromExternalAPI: Hints fetched from an external API, used when the external API response fails.
@@ -176,30 +174,22 @@ export class PortfolioController extends EventEmitter {
     this.emitUpdate()
   }
 
-  async #onPreferenceOrCustomTokenChange(
-    networkId: NetworkId,
-    selectedAccountAddr?: string,
-    skipPortfolioUpdate?: boolean
-  ) {
+  async #updatePortfolioOnTokenChange(networkId: NetworkId, selectedAccountAddr?: string) {
     // As this function currently only updates the portfolio we can skip it altogether
     // if skipPortfolioUpdate is set to true
-    if (!selectedAccountAddr || skipPortfolioUpdate) return
+    if (!selectedAccountAddr) return
 
     const networkData = this.#networks.networks.find(({ id }) => id === networkId)
-
-    if (this.#preferencesOrCustomTokensUpdatePromise) {
-      clearTimeout(this.#preferencesOrCustomTokensUpdatePromise)
-    }
-
-    this.#preferencesOrCustomTokensUpdatePromise = setTimeout(async () => {
-      await this.updateSelectedAccount(selectedAccountAddr, networkData, undefined, {
-        forceUpdate: true
-      })
-      this.#preferencesOrCustomTokensUpdatePromise = null
-    }, 1000)
+    await this.updateSelectedAccount(selectedAccountAddr, networkData, undefined, {
+      forceUpdate: true
+    })
   }
 
-  async addCustomToken(customToken: CustomToken, selectedAccountAddr?: string) {
+  async addCustomToken(
+    customToken: CustomToken,
+    selectedAccountAddr?: string,
+    shouldUpdatePortfolio?: boolean
+  ) {
     await this.#initialLoadPromise
     const isTokenAlreadyAdded = this.customTokens.some(
       ({ address, networkId }) =>
@@ -210,14 +200,18 @@ export class PortfolioController extends EventEmitter {
     if (isTokenAlreadyAdded) return
 
     this.customTokens.push(customToken)
-    this.emitUpdate()
-    await this.#onPreferenceOrCustomTokenChange(customToken.networkId, selectedAccountAddr)
+
+    if (shouldUpdatePortfolio) {
+      await this.#updatePortfolioOnTokenChange(customToken.networkId, selectedAccountAddr)
+    }
+
     await this.#storage.set('customTokens', this.customTokens)
   }
 
   async removeCustomToken(
     customToken: Omit<CustomToken, 'standard'>,
-    selectedAccountAddr?: string
+    selectedAccountAddr?: string,
+    shouldUpdatePortfolio?: boolean
   ) {
     await this.#initialLoadPromise
     this.customTokens = this.customTokens.filter(
@@ -233,23 +227,21 @@ export class PortfolioController extends EventEmitter {
 
     // Delete custom token preference if it exists
     if (existingPreference) {
-      await this.toggleHideToken(customToken)
+      await this.toggleHideToken(customToken, selectedAccountAddr, shouldUpdatePortfolio)
+      await this.#storage.set('customTokens', this.customTokens)
+    } else {
+      this.emitUpdate()
+      if (shouldUpdatePortfolio) {
+        await this.#updatePortfolioOnTokenChange(customToken.networkId, selectedAccountAddr)
+      }
+      await this.#storage.set('customTokens', this.customTokens)
     }
-    this.emitUpdate()
-    await this.#onPreferenceOrCustomTokenChange(customToken.networkId, selectedAccountAddr)
-    await this.#storage.set('customTokens', this.customTokens)
   }
 
   async toggleHideToken(
     tokenPreference: TokenPreference,
     selectedAccountAddr?: string,
-    {
-      skipPortfolioUpdate
-    }: {
-      skipPortfolioUpdate?: boolean
-    } = {
-      skipPortfolioUpdate: false
-    }
+    shouldUpdatePortfolio?: boolean
   ) {
     await this.#initialLoadPromise
 
@@ -274,11 +266,9 @@ export class PortfolioController extends EventEmitter {
     }
 
     this.emitUpdate()
-    await this.#onPreferenceOrCustomTokenChange(
-      tokenPreference.networkId,
-      selectedAccountAddr,
-      skipPortfolioUpdate
-    )
+    if (shouldUpdatePortfolio) {
+      await this.#updatePortfolioOnTokenChange(tokenPreference.networkId, selectedAccountAddr)
+    }
     await this.#storage.set('tokenPreferences', this.tokenPreferences)
   }
 
