@@ -185,9 +185,11 @@ export class PortfolioController extends EventEmitter {
   }
 
   async addCustomToken(customToken: CustomToken, selectedAccountAddr?: string) {
+    await this.#initialLoadPromise
     const isTokenAlreadyAdded = this.customTokens.some(
       ({ address, networkId }) =>
-        address === customToken.address && networkId === customToken.networkId
+        address.toLowerCase() === customToken.address.toLowerCase() &&
+        networkId === customToken.networkId
     )
 
     if (isTokenAlreadyAdded) return
@@ -202,9 +204,13 @@ export class PortfolioController extends EventEmitter {
     customToken: Omit<CustomToken, 'standard'>,
     selectedAccountAddr?: string
   ) {
+    await this.#initialLoadPromise
     this.customTokens = this.customTokens.filter(
       (token) =>
-        !(token.address === customToken.address && token.networkId === customToken.networkId)
+        !(
+          token.address.toLowerCase() === customToken.address.toLowerCase() &&
+          token.networkId === customToken.networkId
+        )
     )
     const existingPreference = this.tokenPreferences.some(
       (pref) => pref.address === customToken.address && pref.networkId === customToken.networkId
@@ -220,9 +226,12 @@ export class PortfolioController extends EventEmitter {
   }
 
   async toggleHideToken(tokenPreference: TokenPreference, selectedAccountAddr?: string) {
+    await this.#initialLoadPromise
+
     const existingPreference = this.tokenPreferences.find(
       ({ address, networkId }) =>
-        address === tokenPreference.address && networkId === tokenPreference.networkId
+        address.toLowerCase() === tokenPreference.address.toLowerCase() &&
+        networkId === tokenPreference.networkId
     )
 
     // Push the token as hidden

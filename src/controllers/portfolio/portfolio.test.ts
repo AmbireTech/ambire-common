@@ -570,24 +570,17 @@ describe('Portfolio Controller ', () => {
       expect(hasErc20Matic).toBeFalsy()
     })
 
-    test('Portfolio should filter out ERC20 tokens that mimic native tokens when they are added as preferences (custom tokens)', async () => {
+    test('Portfolio should filter out ERC20 tokens that mimic native tokens when they are added as custom tokens', async () => {
       const ERC_20_MATIC_ADDR = '0x0000000000000000000000000000000000001010'
       const { controller } = prepareTest()
 
-      const tokenInPreferences = {
+      const customToken = {
         address: ERC_20_MATIC_ADDR,
         networkId: 'polygon',
-        standard: 'ERC20',
-        name: 'MATIC',
-        symbol: 'MATIC',
-        decimals: 18
-      }
+        standard: 'ERC20'
+      } as const
 
-      await controller.updateTokenPreferences([tokenInPreferences])
-
-      await controller.updateSelectedAccount(account.addr, undefined, undefined, {
-        forceUpdate: true
-      })
+      await controller.addCustomToken(customToken, account.addr)
 
       const hasErc20Matic = controller
         .getLatestPortfolioState(account.addr)
@@ -743,59 +736,121 @@ describe('Portfolio Controller ', () => {
     })
   })
 
-  test('Update Token Preferences', async () => {
+  test('Add and remove custom token', async () => {
     const { controller } = prepareTest()
 
-    const tokenInPreferences = {
+    const customToken = {
       address: '0x95aD61b0a150d79219dCF64E1E6Cc01f0B64C4cE',
       networkId: 'ethereum',
-      standard: 'ERC20',
-      name: 'SHIB',
-      symbol: 'SHIB',
-      decimals: 18
+      standard: 'ERC20'
+    } as const
+
+    await controller.addCustomToken(customToken, account.addr)
+
+    const tokenIsSet = controller.customTokens.find(
+      (token) => token.address === customToken.address && token.networkId === customToken.networkId
+    )
+
+    const getCustomTokenFromPortfolio = () => {
+      return controller
+        .getLatestPortfolioState(account.addr)
+        .ethereum?.result?.tokens.find(
+          (token) =>
+            token.address === customToken.address && token.networkId === customToken.networkId
+        )
     }
 
-    await controller.updateTokenPreferences([tokenInPreferences])
+    expect(tokenIsSet).toEqual(customToken)
+    expect(getCustomTokenFromPortfolio()).toBeTruthy()
 
-    controller.onUpdate(() => {
-      const tokenIsSet = controller.tokenPreferences.find(
-        (token) => token.address === tokenInPreferences.address && token.networkId === 'ethereum'
-      )
+    await controller.removeCustomToken(customToken, account.addr)
 
-      expect(tokenIsSet).toEqual(tokenInPreferences)
-    })
+    const tokenIsRemoved = controller.customTokens.find(
+      (token) => token.address === customToken.address && token.networkId === customToken.networkId
+    )
+    expect(tokenIsRemoved).toBeFalsy()
+    expect(getCustomTokenFromPortfolio()).toBeFalsy()
+  })
+
+  test('Cannot add the same custom token twice', async () => {
+    const { controller } = prepareTest()
+    const customToken = {
+      address: '0x95aD61b0a150d79219dCF64E1E6Cc01f0B64C4cE',
+      networkId: 'ethereum',
+      standard: 'ERC20'
+    } as const
+
+    await controller.addCustomToken(customToken, account.addr)
+
+    const tokenIsSet = controller.customTokens.find(
+      (token) => token.address === customToken.address && token.networkId === customToken.networkId
+    )
+
+    expect(tokenIsSet).toEqual(customToken)
+
+    await controller.addCustomToken(
+      {
+        ...customToken,
+        address: customToken.address.toLowerCase()
+      },
+      account.addr
+    )
+
+    const matchingTokens = controller.customTokens.filter(
+      (token) =>
+        token.address.toLowerCase() === customToken.address.toLowerCase() &&
+        token.networkId === customToken.networkId
+    )
+
+    expect(matchingTokens.length).toBe(1)
   })
 
   test('Update Token Preferences - hide a token and portfolio returns isHidden flag', async () => {
     const { controller } = prepareTest()
 
-    const tokenInPreferences = {
-      address: '0x95aD61b0a150d79219dCF64E1E6Cc01f0B64C4cE',
-      networkId: 'ethereum',
-      standard: 'ERC20',
-      name: 'SHIB',
-      symbol: 'SHIB',
-      decimals: 18,
-      isHidden: true
+    const preference = {
+      address: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
+      networkId: 'ethereum'
     }
 
-    await controller.updateTokenPreferences([tokenInPreferences])
+    await controller.toggleHideToken(preference, account.addr)
 
-    await controller.updateSelectedAccount(account.addr)
+    const hiddenToken = controller
+      .getLatestPortfolioState(account.addr)
+      .ethereum?.result?.tokens.find(
+        (token) =>
+          token.address === preference.address &&
+          token.networkId === preference.networkId &&
+          token.flags.isHidden
+      )
+    expect(hiddenToken).toBeTruthy()
+  })
+  test('Calling toggleHideToken a second time deletes the preference', async () => {
+    const { controller } = prepareTest()
 
-    controller.onUpdate(() => {
-      networks.forEach((network) => {
-        const hiddenToken = controller
-          .getLatestPortfolioState(account.addr)
-          [network.id]?.result?.tokens.find(
-            (token) =>
-              token.address === tokenInPreferences.address &&
-              token.networkId === tokenInPreferences.networkId &&
-              token.flags.isHidden
-          )
-        expect(hiddenToken).toBeTruthy()
-      })
-    })
+    const preference = {
+      address: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
+      networkId: 'ethereum'
+    }
+
+    await controller.toggleHideToken(preference, account.addr)
+
+    const tokenInPreferences = controller.tokenPreferences.find(
+      ({ address, networkId }) =>
+        address === preference.address && networkId === preference.networkId
+    )
+
+    expect(tokenInPreferences).toBeTruthy()
+    expect(tokenInPreferences?.isHidden).toBeTruthy()
+
+    await controller.toggleHideToken(preference, account.addr)
+
+    const tokenInPreferencesAfterDelete = controller.tokenPreferences.find(
+      ({ address, networkId }) =>
+        address === preference.address && networkId === preference.networkId
+    )
+
+    expect(tokenInPreferencesAfterDelete).toBeFalsy()
   })
   test('lastSuccessfulUpdate is updated properly', async () => {
     const { controller } = prepareTest()
