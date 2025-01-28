@@ -36,6 +36,7 @@ import {
   sortPortfolioTokenList,
   sortTokenListResponse
 } from '../../libs/swapAndBridge/swapAndBridge'
+import { getHumanReadableSwapAndBridgeError } from '../../libs/swapAndBridge/swapAndBridgeErrorHumanizer'
 import { getSanitizedAmount } from '../../libs/transfer/amount'
 import { normalizeIncomingSocketToken, SocketAPI } from '../../services/socket/api'
 import { ZERO_ADDRESS } from '../../services/socket/constants'
@@ -700,7 +701,8 @@ export class SwapAndBridgeController extends EventEmitter {
         }
       }
     } catch (error: any) {
-      this.emitError({ error, level: 'major', message: error?.message })
+      const { message } = getHumanReadableSwapAndBridgeError(error)
+      this.emitError({ error, level: 'major', message })
     }
     this.updateToTokenListStatus = 'INITIAL'
     this.emitUpdate()
