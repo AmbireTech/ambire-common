@@ -1,3 +1,9 @@
+export interface SocketAPIResponse<T> {
+  result: T
+  success?: boolean
+  message?: { error?: string; details?: any }
+}
+
 export interface SocketAPIToken {
   address: string
   chainId: number

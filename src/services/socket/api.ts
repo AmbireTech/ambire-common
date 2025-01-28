@@ -6,6 +6,7 @@ import { CustomResponse, Fetch, RequestInitWithCustomHeaders } from '../../inter
 import {
   SocketAPIActiveRoutes,
   SocketAPIQuote,
+  SocketAPIResponse,
   SocketAPISendTransactionRequest,
   SocketAPISupportedChain,
   SocketAPIToken,
@@ -113,7 +114,7 @@ export class SocketAPI {
       throw new SwapAndBridgeProviderApiError(error)
     }
 
-    let responseBody: T
+    let responseBody: SocketAPIResponse<T>
     try {
       responseBody = await response.json()
     } catch (e: any) {
@@ -143,7 +144,6 @@ export class SocketAPI {
     return responseBody.result
   }
 
-  // TODO: Test.
   async getSupportedChains(): Promise<SocketAPISupportedChain[]> {
     const url = `${this.#baseUrl}/supported/chains`
 
@@ -156,7 +156,6 @@ export class SocketAPI {
     return response
   }
 
-  // TODO: Test.
   async getToTokenList({
     fromChainId,
     toChainId
