@@ -91,6 +91,8 @@ export class PortfolioController extends EventEmitter {
 
   #minUpdateInterval: number = 20000 // 20 seconds
 
+  #preferencesOrCustomTokensUpdatePromise: NodeJS.Timeout | null = null
+
   /**
    * Hints stored in storage, divided into three categories:
    * - fromExternalAPI: Hints fetched from an external API, used when the external API response fails.
@@ -174,14 +176,27 @@ export class PortfolioController extends EventEmitter {
     this.emitUpdate()
   }
 
-  async #onPreferenceOrCustomTokenChange(networkId: NetworkId, selectedAccountAddr?: string) {
-    if (!selectedAccountAddr) return
+  async #onPreferenceOrCustomTokenChange(
+    networkId: NetworkId,
+    selectedAccountAddr?: string,
+    skipPortfolioUpdate?: boolean
+  ) {
+    // As this function currently only updates the portfolio we can skip it altogether
+    // if skipPortfolioUpdate is set to true
+    if (!selectedAccountAddr || skipPortfolioUpdate) return
 
     const networkData = this.#networks.networks.find(({ id }) => id === networkId)
 
-    await this.updateSelectedAccount(selectedAccountAddr, networkData, undefined, {
-      forceUpdate: true
-    })
+    if (this.#preferencesOrCustomTokensUpdatePromise) {
+      clearTimeout(this.#preferencesOrCustomTokensUpdatePromise)
+    }
+
+    this.#preferencesOrCustomTokensUpdatePromise = setTimeout(async () => {
+      await this.updateSelectedAccount(selectedAccountAddr, networkData, undefined, {
+        forceUpdate: true
+      })
+      this.#preferencesOrCustomTokensUpdatePromise = null
+    }, 1000)
   }
 
   async addCustomToken(customToken: CustomToken, selectedAccountAddr?: string) {
@@ -225,7 +240,17 @@ export class PortfolioController extends EventEmitter {
     await this.#storage.set('customTokens', this.customTokens)
   }
 
-  async toggleHideToken(tokenPreference: TokenPreference, selectedAccountAddr?: string) {
+  async toggleHideToken(
+    tokenPreference: TokenPreference,
+    selectedAccountAddr?: string,
+    {
+      skipPortfolioUpdate
+    }: {
+      skipPortfolioUpdate?: boolean
+    } = {
+      skipPortfolioUpdate: false
+    }
+  ) {
     await this.#initialLoadPromise
 
     const existingPreference = this.tokenPreferences.find(
@@ -249,7 +274,11 @@ export class PortfolioController extends EventEmitter {
     }
 
     this.emitUpdate()
-    await this.#onPreferenceOrCustomTokenChange(tokenPreference.networkId, selectedAccountAddr)
+    await this.#onPreferenceOrCustomTokenChange(
+      tokenPreference.networkId,
+      selectedAccountAddr,
+      skipPortfolioUpdate
+    )
     await this.#storage.set('tokenPreferences', this.tokenPreferences)
   }
 
