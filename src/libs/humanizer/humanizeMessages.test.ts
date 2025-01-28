@@ -190,11 +190,12 @@ describe('typed message tests', () => {
 
   test('Entry point module', () => {
     messageTemplate.fromActionId = ENTRY_POINT_AUTHORIZATION_REQUEST_ID
-    const { fullVisualization } = entryPointModule(messageTemplate)
-    expect(fullVisualization?.length).toBe(1)
-    expect(fullVisualization?.[0]).toMatchObject({
-      type: 'action',
-      content: 'Authorize entry point'
-    })
+    const { fullVisualization: received } = entryPointModule(messageTemplate)
+    const expected = [
+      getAction('Authorize entry point'),
+      getLabel('for'),
+      getAddressVisualization(messageTemplate.accountAddr)
+    ]
+    compareVisualizations(expected, received!)
   })
 })

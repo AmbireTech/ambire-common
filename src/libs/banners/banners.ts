@@ -131,7 +131,7 @@ export const getDappActionRequestsBanners = (actions: ActionFromActionsQueue[]):
     {
       id: 'dapp-requests-banner',
       type: 'info',
-      title: `You have ${requests.length} pending dApp request${requests.length > 1 ? 's' : ''}`,
+      title: `You have ${requests.length} pending app request${requests.length > 1 ? 's' : ''}`,
       text: '',
       actions: [
         {
