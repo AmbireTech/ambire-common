@@ -126,7 +126,6 @@ export class SocketAPI {
     const isBadResponse = !response.ok
     // Socket API returns 500 status code with a message in the body, even
     // in case of a bad request. Not necessarily an internal server error.
-    // TODO: Refine types
     if (isBadResponse || !responseBody?.success) {
       // API returns 2 types of errors, a generic one, on the top level:
       const genericErrorMessage = responseBody?.message?.error || 'no message'
@@ -193,7 +192,6 @@ export class SocketAPI {
 
     // Since v4.41.0 we request the shortlist from Socket, which does not include
     // the Ambire $WALLET token. So adding it manually on the supported chains.
-    // TODO: Refine types
     if (toChainId === 1) response.unshift(AMBIRE_WALLET_TOKEN_ON_ETHEREUM)
     if (toChainId === 8453) response.unshift(AMBIRE_WALLET_TOKEN_ON_BASE)
 
