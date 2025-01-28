@@ -31,7 +31,7 @@ describe('Estimation/Broadcast common errors are humanized', () => {
       const message = humanizeEstimationOrBroadcastError(reason, MESSAGE_PREFIX)
 
       expect(message).toBe(
-        `${MESSAGE_PREFIX} the swap has expired. Return to the dApp and reinitiate the swap if you wish to proceed.`
+        `${MESSAGE_PREFIX} the swap has expired. Return to the app and reinitiate the swap if you wish to proceed.`
       )
     }
   })

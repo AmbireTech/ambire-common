@@ -9,10 +9,18 @@ export enum INVITE_STATUS {
   VERIFIED = 'VERIFIED'
 }
 
-type Invite = {
+type InviteState = {
   status: INVITE_STATUS
   verifiedAt: null | number // timestamp
   verifiedCode: null | string
+  becameOGAt: null // timestamp
+}
+
+const DEFAULT_STATE = {
+  status: INVITE_STATUS.UNVERIFIED,
+  verifiedAt: null,
+  verifiedCode: null,
+  becameOGAt: null
 }
 
 /**
@@ -26,9 +34,17 @@ export class InviteController extends EventEmitter {
 
   #callRelayer: Function
 
-  inviteStatus: Invite['status'] = INVITE_STATUS.UNVERIFIED
+  #state: InviteState = DEFAULT_STATE
 
-  verifiedCode: Invite['verifiedCode'] = null
+  inviteStatus: InviteState['status'] = INVITE_STATUS.UNVERIFIED
+
+  verifiedCode: InviteState['verifiedCode'] = null
+
+  /**
+   * Whether the user has become an Ambire OG (Original Gangster), a status that
+   * comes with specific privileges (e.g. early access to new or experimental features).
+   */
+  isOG: boolean = false
 
   #initialLoadPromise: Promise<void>
 
@@ -49,14 +65,12 @@ export class InviteController extends EventEmitter {
   }
 
   async #load() {
-    const invite = await this.#storage.get('invite', {
-      status: INVITE_STATUS.UNVERIFIED,
-      verifiedAt: null,
-      verifiedCode: null
-    })
+    const nextState = await this.#storage.get('invite', this.#state)
+    this.#state = { ...DEFAULT_STATE, ...nextState }
 
-    this.inviteStatus = invite.status
-    this.verifiedCode = invite.verifiedCode
+    this.inviteStatus = this.#state.status
+    this.verifiedCode = this.#state.verifiedCode
+    this.isOG = !!this.#state.becameOGAt
     this.emitUpdate()
   }
 
@@ -78,6 +92,7 @@ export class InviteController extends EventEmitter {
 
       const verifiedAt = Date.now()
       await this.#storage.set('invite', {
+        ...this.#state,
         status: INVITE_STATUS.VERIFIED,
         verifiedAt,
         verifiedCode: code
@@ -85,5 +100,24 @@ export class InviteController extends EventEmitter {
     } catch (error: any) {
       this.emitError(error)
     }
+  }
+
+  async becomeOG() {
+    await this.#initialLoadPromise
+
+    const becameOGAt = Date.now()
+    await this.#storage.set('invite', { ...this.#state, becameOGAt })
+
+    this.isOG = true
+    this.emitUpdate()
+  }
+
+  async revokeOG() {
+    await this.#initialLoadPromise
+
+    await this.#storage.set('invite', { ...this.#state, becameOGAt: null })
+
+    this.isOG = false
+    this.emitUpdate()
   }
 }

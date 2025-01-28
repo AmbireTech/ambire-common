@@ -1,5 +1,6 @@
 import { getAddress } from 'ethers'
 
+import { InviteController } from '../../controllers/invite/invite'
 import { Fetch, RequestInitWithCustomHeaders } from '../../interfaces/fetch'
 import {
   SocketAPIActiveRoutes,
@@ -190,7 +191,8 @@ export class SocketAPI {
     fromAmount,
     userAddress,
     isSmartAccount,
-    sort
+    sort,
+    isOG
   }: {
     fromChainId: number
     fromTokenAddress: string
@@ -200,6 +202,7 @@ export class SocketAPI {
     userAddress: string
     isSmartAccount: boolean
     sort: 'time' | 'output'
+    isOG: InviteController['isOG']
   }): Promise<SocketAPIQuote> {
     const params = new URLSearchParams({
       fromChainId: fromChainId.toString(),
@@ -215,7 +218,7 @@ export class SocketAPI {
       uniqueRoutesPerBridge: 'true'
     })
     const feeTakerAddress = AMBIRE_FEE_TAKER_ADDRESSES[fromChainId]
-    const shouldIncludeConvenienceFee = !!feeTakerAddress
+    const shouldIncludeConvenienceFee = !!feeTakerAddress && !isOG
     if (shouldIncludeConvenienceFee) {
       params.append('feeTakerAddress', feeTakerAddress)
       params.append('feePercent', FEE_PERCENT.toString())
