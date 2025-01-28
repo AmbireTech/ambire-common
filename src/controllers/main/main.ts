@@ -1511,6 +1511,78 @@ export class MainController extends EventEmitter {
     this.removeUserRequest(requestId)
   }
 
+  rejectAccountOpCall(indexOfCall: number, numberOfCalls: number) {
+    const currentAccountOp = this.signAccountOp?.accountOp
+    if (!currentAccountOp)
+      return console.error('Unexpected error: rejectAccountOpCall: could not find account op')
+
+    const userAddr = currentAccountOp.accountAddr
+    const networkId = currentAccountOp.networkId
+
+    // this prevent accidental double removal of call with specific index
+    if (currentAccountOp.calls.length !== numberOfCalls)
+      return console.error(
+        `Unexpected error: rejectAccountOpCall: number of calls in current account op ${currentAccountOp.calls.length} does no match ${numberOfCalls}. Possible race condition`
+      )
+
+    if (indexOfCall >= currentAccountOp.calls.length)
+      return console.error(
+        `Unexpected error: rejectAccountOpCall: call with index ${indexOfCall} out of bounds ${currentAccountOp.calls.length}`
+      )
+
+    const requestId = currentAccountOp.calls[indexOfCall].fromUserRequestId
+    // if we should do the splice - find the index within the userRequest
+
+    const userRequest = this.userRequests.find((r) => r.id === requestId)
+    if (!userRequest)
+      return console.error(`Unexpected error: rejectAccountOpCall: failed to find ${{ requestId }}`)
+    if (userRequest.action.kind !== 'calls')
+      return console.error(
+        `Unexpected error: rejectAccountOpCall: user request with id ${requestId} is not of type 'calls'`
+      )
+
+    let indexOfCallWithinTheUserRequest = 0
+    for (let i = 0; i < indexOfCall; i++) {
+      if (currentAccountOp.calls[i].fromUserRequestId === userRequest.id)
+        indexOfCallWithinTheUserRequest++
+    }
+
+    if (indexOfCallWithinTheUserRequest >= (userRequest.action as Calls).calls.length)
+      return console.error(
+        `Unexpected error: rejectAccountOpCall: assumed index of call within userRequest ${indexOfCallWithinTheUserRequest} is out of bounds of userRequest.calls with length ${
+          (userRequest.action as Calls).calls.length
+        }`
+      )
+    ;(userRequest.action as Calls).calls.splice(indexOfCallWithinTheUserRequest, 1)
+
+    if ((userRequest.action as Calls).calls.length === 0) {
+      this.rejectUserRequest('User rejected the transaction request.', userRequest.id)
+      if (
+        this.userRequests.filter(
+          (req) => req.action.kind === 'calls' && req.meta.accountAddr === userAddr
+        ).length === 0
+      ) {
+        this.actions.removeAction(`${userAddr}-${networkId}`)
+        return
+      }
+    }
+
+    const account = this.accounts.accounts.find((a) => a.addr === userAddr)!
+    const accountState = this.accounts.accountStates[userAddr][networkId]
+
+    const accountOpAction = makeSmartAccountOpAction({
+      account,
+      networkId,
+      nonce: accountState.nonce,
+      userRequests: this.userRequests,
+      actionsQueue: this.actions.actionsQueue
+    })
+
+    this.actions.addOrUpdateAction(accountOpAction)
+    this.signAccountOp?.update({ calls: accountOpAction.accountOp.calls })
+    this.estimateSignAccountOp()
+  }
+
   removeActiveRoute(activeRouteId: number) {
     const userRequest = this.userRequests.find((r) =>
       [activeRouteId, `${activeRouteId}-approval`, `${activeRouteId}-revoke-approval`].includes(
