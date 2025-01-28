@@ -32,11 +32,7 @@ import {
   TemporaryTokens,
   TokenResult
 } from '../../libs/portfolio/interfaces'
-import {
-  inferStorageVersion,
-  migrateCustomTokens,
-  migrateHiddenTokens
-} from '../../libs/portfolio/migrations/tokenPreferences'
+import { migrateTokenPreferences } from '../../libs/portfolio/migrations/tokenPreferences'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { AccountsController } from '../accounts/accounts'
 import EventEmitter from '../eventEmitter/eventEmitter'
@@ -143,22 +139,20 @@ export class PortfolioController extends EventEmitter {
     try {
       await this.#networks.initialLoadPromise
       await this.#accounts.initialLoadPromise
-      const tokenPreferences = await this.#storage.get('tokenPreferences', [])
-      const storageVersion = inferStorageVersion(tokenPreferences)
+      const storageTokenPreferences = await this.#storage.get('tokenPreferences', [])
+      const storageCustomTokens = await this.#storage.get('customTokens', [])
 
-      // Migrate legacy token preferences to token preferences
-      // and custom tokens
-      if (storageVersion === 1) {
-        // Migrate legacy token preferences to custom tokens
-        // as we don't know which preference was a custom token
-        // and which was a hidden token
-        this.tokenPreferences = migrateHiddenTokens(tokenPreferences)
-        this.customTokens = migrateCustomTokens(tokenPreferences)
+      const { tokenPreferences, customTokens, shouldUpdateStorage } = migrateTokenPreferences(
+        storageTokenPreferences,
+        storageCustomTokens
+      )
+
+      this.tokenPreferences = tokenPreferences
+      this.customTokens = customTokens
+
+      if (shouldUpdateStorage) {
         await this.#storage.set('tokenPreferences', this.tokenPreferences)
         await this.#storage.set('customTokens', this.customTokens)
-      } else if (storageVersion === 2) {
-        this.tokenPreferences = tokenPreferences
-        this.customTokens = await this.#storage.get('customTokens', [])
       }
 
       this.#previousHints = await this.#storage.get('previousHints', {})
