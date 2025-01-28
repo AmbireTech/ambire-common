@@ -123,7 +123,13 @@ export class ActionsController extends EventEmitter {
         this.currentAction = null
 
         this.actionsQueue = this.actionsQueue.filter((a) => a.type === 'accountOp')
-        if (this.actionsQueue.length) {
+        if (
+          this.actionsQueue.filter(
+            (a) =>
+              // we do not want notification if THE CURRENT USER does not have pending-to-sign accountOps
+              a.type === 'accountOp' && a.accountOp.accountAddr === selectedAccount.account?.addr
+          ).length
+        ) {
           await this.#notificationManager.create({
             title:
               this.actionsQueue.length > 1
