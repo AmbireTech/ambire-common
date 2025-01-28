@@ -266,9 +266,7 @@ export class MainController extends EventEmitter {
       this.fetch,
       async (network: Network) => {
         this.providers.setProvider(network)
-        await this.accounts.updateAccountStates('latest', [network.id])
-        await this.updateSelectedAccountPortfolio()
-        await this.defiPositions.updatePositions(network.id)
+        await this.reloadSelectedAccount({ networkId: network.id })
       },
       (networkId: NetworkId) => {
         this.providers.removeProvider(networkId)
@@ -502,9 +500,7 @@ export class MainController extends EventEmitter {
     // Don't await these as they are not critical for the account selection
     // and if the user decides to quickly change to another account withStatus
     // will block the UI until these are resolved.
-    this.accounts.updateAccountState(toAccountAddr)
-    this.updateSelectedAccountPortfolio()
-    this.defiPositions.updatePositions()
+    this.reloadSelectedAccount({ forceUpdate: false })
     this.emitUpdate()
   }
 
@@ -1002,7 +998,19 @@ export class MainController extends EventEmitter {
     )
   }
 
-  async reloadSelectedAccount() {
+  async reloadSelectedAccount(
+    options: {
+      forceUpdate?: boolean
+      networkId?: NetworkId
+    } = {
+      forceUpdate: true,
+      networkId: undefined
+    }
+  ) {
+    const { forceUpdate, networkId } = options
+    const networkToUpdate = networkId
+      ? this.networks.networks.find((n) => n.id === networkId)
+      : undefined
     if (!this.selectedAccount.account) return
 
     this.selectedAccount.resetSelectedAccountPortfolio()
@@ -1014,27 +1022,34 @@ export class MainController extends EventEmitter {
       // However, even if we don't trigger an update here, it's not a big problem,
       // as the account state will be updated anyway, and its update will be very recent.
       !this.accounts.areAccountStatesLoading && this.selectedAccount.account?.addr
-        ? this.accounts.updateAccountState(this.selectedAccount.account.addr, 'pending')
+        ? this.accounts.updateAccountState(
+            this.selectedAccount.account.addr,
+            'pending',
+            networkId ? [networkId] : undefined
+          )
         : Promise.resolve(),
       // `updateSelectedAccountPortfolio` doesn't rely on `withStatus` validation internally,
       // as the PortfolioController already exposes flags that are highly sufficient for the UX.
       // Additionally, if we trigger the portfolio update twice (i.e., running a long-living interval + force update from the Dashboard),
       // there won't be any error thrown, as all portfolio updates are queued and they don't use the `withStatus` helper.
-      this.updateSelectedAccountPortfolio(true),
-      this.defiPositions.updatePositions()
+      this.updateSelectedAccountPortfolio(forceUpdate, networkToUpdate),
+      this.defiPositions.updatePositions(networkId)
     ])
   }
 
   #updateIsOffline() {
     const oldIsOffline = this.isOffline
+    const accountAddr = this.selectedAccount.account?.addr
 
-    const allPortfolioNetworksHaveErrors = Object.keys(this.selectedAccount.portfolio.latest).every(
-      (networkId) => {
-        const state = this.selectedAccount.portfolio.latest[networkId]
+    if (!accountAddr) return
 
-        return !!state?.criticalError
-      }
-    )
+    const latestState = this.portfolio.getLatestPortfolioState(accountAddr)
+
+    const allPortfolioNetworksHaveErrors = Object.keys(latestState).every((networkId) => {
+      const state = latestState[networkId]
+
+      return !!state?.criticalError
+    })
 
     const allNetworkRpcsAreDown = Object.keys(this.providers.providers).every((networkId) => {
       const provider = this.providers.providers[networkId]
@@ -1047,11 +1062,9 @@ export class MainController extends EventEmitter {
     // the account state for every account. This is because either update may fail first.
     this.isOffline = !!allNetworkRpcsAreDown || !!allPortfolioNetworksHaveErrors
 
-    if (oldIsOffline && !this.isOffline) {
-      this.reloadSelectedAccount()
+    if (oldIsOffline !== this.isOffline) {
+      this.emitUpdate()
     }
-
-    this.emitUpdate()
   }
 
   // eslint-disable-next-line default-param-last

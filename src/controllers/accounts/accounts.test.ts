@@ -54,30 +54,38 @@ describe('AccountsController', () => {
   providersCtrl.providers = providers
 
   let accountsCtrl: AccountsController
-  test('should init AccountsController', (done) => {
-    // eslint-disable-next-line @typescript-eslint/no-floating-promises
-    ;(async () => {
-      await storage.set('accounts', accounts)
-      accountsCtrl = new AccountsController(
-        storage,
-        providersCtrl,
-        networksCtrl,
-        () => {},
-        () => {},
-        () => {}
-      )
-      expect(accountsCtrl).toBeDefined()
-      let emitCounter = 0
-      const unsubscribe = accountsCtrl.onUpdate(() => {
-        emitCounter++
-        if (emitCounter === 1) {
-          expect(accountsCtrl.accounts.length).toBeGreaterThan(0)
-          expect(accountsCtrl.accountStates).not.toBe({})
-          unsubscribe()
-          done()
-        }
+  test('should init AccountsController', async () => {
+    await storage.set('accounts', accounts)
+    accountsCtrl = new AccountsController(
+      storage,
+      providersCtrl,
+      networksCtrl,
+      () => {},
+      () => {},
+      () => {}
+    )
+    expect(accountsCtrl).toBeDefined()
+
+    // The first call of updateAccountStates is not awaited in the code but should be
+    // awaited in the test to ensure that all networks' loading state is false
+    const waitForFirstLoad = () => {
+      return new Promise<void>((resolve) => {
+        let emitCounter = 0
+        const unsubscribe = accountsCtrl.onUpdate(() => {
+          emitCounter++
+          if (emitCounter === 1) {
+            expect(accountsCtrl.accounts.length).toBeGreaterThan(0)
+            expect(accountsCtrl.accountStates).not.toBe({})
+          } else if (emitCounter > 2 && !accountsCtrl.areAccountStatesLoading) {
+            unsubscribe()
+            resolve()
+          }
+        })
       })
-    })()
+    }
+
+    await waitForFirstLoad()
+    expect(accountsCtrl.areAccountStatesLoading).toBe(false)
   })
   test('update account preferences', (done) => {
     const unsubscribe = accountsCtrl.onUpdate(() => {
@@ -105,6 +113,7 @@ describe('AccountsController', () => {
     await accountsCtrl.updateAccountStates()
     expect(accountsCtrl.accounts.length).toBeGreaterThan(0)
     expect(Object.keys(accountsCtrl.accountStates).length).toBeGreaterThan(0)
+    expect(accountsCtrl.areAccountStatesLoading).toBe(false)
 
     await accountsCtrl.removeAccountData('0xAa0e9a1E2D2CcF2B867fda047bb5394BEF1883E0')
 

@@ -9,7 +9,7 @@ export const ETH_ON_OPTIMISM_LEGACY_ADDRESS = '0xdeaddeaddeaddeaddeaddeaddeaddea
  * The % of fee to be cut from the source input token amount.
  * Can be up to three decimal places and cannot be more than 5%.
  */
-export const FEE_PERCENT = 0.5
+export const FEE_PERCENT = 0.25
 
 const AMBIRE_WALLET_TOKEN_COMMON_PROPS = {
   name: 'Ambire Wallet',
