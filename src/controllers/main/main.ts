@@ -1562,6 +1562,53 @@ export class MainController extends EventEmitter {
     }
   }
 
+  // The goal here is add a UserRequest before the main one takes places
+  // if we want to do so. Examplese:
+  // * SA with nonce 0 - enable entry point
+  // * BA - enable EIP-7702
+  async addPreUserRequestIfAny(
+    req: UserRequest,
+    actionExecutionType: ActionExecutionType = 'open-action-window'
+  ): Promise<boolean> {
+    const { action, meta } = req
+    const account = this.accounts.accounts.find((x) => x.addr === meta.accountAddr)!
+    const network = this.networks.networks.find((n) => n.id === meta.networkId)!
+    const accountState = await this.accounts.getOrFetchAccountOnChainState(
+      meta.accountAddr,
+      meta.networkId
+    )
+
+    // smart account nonce 0: check for entry point auth
+    if (isSmartAccount(account) && action.kind === 'calls') {
+      // find me the accountOp for the network if any, it's always 1 for SA
+      const currentAccountOpAction = this.actions.actionsQueue.find(
+        (a) =>
+          a.type === 'accountOp' &&
+          a.accountOp.accountAddr === account.addr &&
+          a.accountOp.networkId === meta.networkId
+      ) as AccountOpAction | undefined
+
+      const entryPointAuthorizationMessageFromHistory = await this.activity.findMessage(
+        account.addr,
+        (message) =>
+          message.fromActionId === ENTRY_POINT_AUTHORIZATION_REQUEST_ID &&
+          message.networkId === meta.networkId
+      )
+
+      const hasAuthorized =
+        !!currentAccountOpAction?.accountOp?.meta?.entryPointAuthorization ||
+        !!entryPointAuthorizationMessageFromHistory
+
+      if (shouldAskForEntryPointAuthorization(network, account, accountState, hasAuthorized)) {
+        await this.addEntryPointAuthorization(req, network, accountState, actionExecutionType)
+        this.emitUpdate()
+        return true
+      }
+    }
+
+    return false
+  }
+
   async addUserRequest(
     req: UserRequest,
     actionPosition: ActionPosition = 'last',
@@ -1572,6 +1619,10 @@ export class MainController extends EventEmitter {
     } else {
       this.userRequests.push(req)
     }
+
+    // if SA nonce 0: might ask entry point auth
+    // if BA: might ask EIP-7702 auth
+    if (await this.addPreUserRequestIfAny(req, actionExecutionType)) return
 
     const { id, action, meta } = req
     if (action.kind === 'calls') {
@@ -1604,30 +1655,15 @@ export class MainController extends EventEmitter {
       if (!isBasicAccount(account, accountState)) {
         const network = this.networks.networks.find((n) => n.id === meta.networkId)!
 
-        // find me the accountOp for the network if any, it's always 1 for SA
-        const currentAccountOpAction = this.actions.actionsQueue.find(
-          (a) =>
-            a.type === 'accountOp' &&
-            a.accountOp.accountAddr === account.addr &&
-            a.accountOp.networkId === network.id
-        ) as AccountOpAction | undefined
-
-        const entryPointAuthorizationMessageFromHistory = await this.activity.findMessage(
-          account.addr,
-          (message) =>
-            message.fromActionId === ENTRY_POINT_AUTHORIZATION_REQUEST_ID &&
-            message.networkId === network.id
-        )
-
-        const hasAuthorized =
-          !!currentAccountOpAction?.accountOp?.meta?.entryPointAuthorization ||
-          !!entryPointAuthorizationMessageFromHistory
-
-        if (shouldAskForEntryPointAuthorization(network, account, accountState, hasAuthorized)) {
-          await this.addEntryPointAuthorization(req, network, accountState, actionExecutionType)
-          this.emitUpdate()
-          return
-        }
+        // search for msg only if it's a SA
+        const entryPointAuthorizationMessageFromHistory = isSmartAccount(account)
+          ? await this.activity.findMessage(
+              account.addr,
+              (message) =>
+                message.fromActionId === ENTRY_POINT_AUTHORIZATION_REQUEST_ID &&
+                message.networkId === network.id
+            )
+          : undefined
 
         const accountOpAction = makeSmartAccountOpAction({
           account,
