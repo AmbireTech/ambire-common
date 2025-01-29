@@ -96,6 +96,10 @@ export class SocketAPI {
     this.isHealthy = null
   }
 
+  /**
+   * Processes Socket API responses and throws custom errors for various
+   * failures, including handling the API's unique response structure.
+   */
   async #handleResponse<T>({
     fetchPromise,
     errorPrefix
@@ -123,10 +127,9 @@ export class SocketAPI {
       throw new SwapAndBridgeProviderApiError(error)
     }
 
-    const isBadResponse = !response.ok
     // Socket API returns 500 status code with a message in the body, even
     // in case of a bad request. Not necessarily an internal server error.
-    if (isBadResponse || !responseBody?.success) {
+    if (!response.ok || !responseBody?.success) {
       // API returns 2 types of errors, a generic one, on the top level:
       const genericErrorMessage = responseBody?.message?.error || 'no message'
       // ... and a detailed one, nested in the `details` object:
@@ -136,6 +139,8 @@ export class SocketAPI {
       throw new SwapAndBridgeProviderApiError(error)
     }
 
+    // Always attempt to update health status (if needed) when a response was
+    // successful, in case the API was previously unhealthy (to recover).
     // Do not wait on purpose, to not block or delay the response
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.updateHealthIfNeeded()
