@@ -1533,31 +1533,27 @@ export class MainController extends EventEmitter {
     const userAddr = currentAccountOp.accountAddr
     const networkId = currentAccountOp.networkId
 
-    const callIndexToRemove = currentAccountOp.calls.findIndex((c) => c.id === callId)
-    if (callIndexToRemove === -1)
-      return console.error('Unexpected error: rejectAccountOpCall: could not find call to delete')
-
-    const requestId = currentAccountOp.calls[callIndexToRemove].fromUserRequestId
+    const requestId = currentAccountOp.calls.find((c) => c.id === callId)?.fromUserRequestId
     if (!requestId)
       return console.error(
-        'Unexpected error: rejectAccountOpCall: the all to delete does not have userRequestId'
+        'Unexpected error: rejectAccountOpCall: the call to delete does not have userRequestId or was not found'
       )
-
-    const userRequest = this.userRequests.find((r) => r.id === requestId)
-
-    if (!userRequest)
+    const userRequestIndex = this.userRequests.findIndex((r) => r.id === requestId)
+    if (!this.userRequests[userRequestIndex])
       return console.error(`Unexpected error: rejectAccountOpCall: failed to find ${{ requestId }}`)
-
-    if (userRequest.action.kind !== 'calls')
+    if (this.userRequests[userRequestIndex].action.kind !== 'calls')
       return console.error(
         `Unexpected error: rejectAccountOpCall: user request with id ${requestId} is not of type 'calls'`
       )
-    ;(userRequest.action as Calls).calls = (userRequest.action as Calls).calls.filter(
-      (c) => c.id !== callId
-    )
+    ;(this.userRequests[userRequestIndex].action as Calls).calls = (
+      this.userRequests[userRequestIndex].action as Calls
+    ).calls.filter((c) => c.id !== callId)
 
-    if ((userRequest.action as Calls).calls.length === 0) {
-      this.rejectUserRequest('User rejected the transaction request.', userRequest.id)
+    if ((this.userRequests[userRequestIndex].action as Calls).calls.length === 0) {
+      this.rejectUserRequest(
+        'User rejected the transaction request.',
+        this.userRequests[userRequestIndex].id
+      )
       if (
         this.userRequests.filter(
           (req) => req.action.kind === 'calls' && req.meta.accountAddr === userAddr
