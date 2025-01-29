@@ -1528,23 +1528,41 @@ export class MainController extends EventEmitter {
   rejectAccountOpCall(callId: string) {
     const currentAccountOp = this.signAccountOp?.accountOp
     if (!currentAccountOp)
-      return console.error('Unexpected error: rejectAccountOpCall: could not find account op')
+      return this.emitError({
+        message: 'Reject call: failed to find proper account operations',
+        level: 'minor',
+        error: new Error('Unexpected error: rejectAccountOpCall: could not find account op')
+      })
 
     const userAddr = currentAccountOp.accountAddr
     const networkId = currentAccountOp.networkId
 
     const requestId = currentAccountOp.calls.find((c) => c.id === callId)?.fromUserRequestId
     if (!requestId)
-      return console.error(
-        'Unexpected error: rejectAccountOpCall: the call to delete does not have userRequestId or was not found'
-      )
+      return this.emitError({
+        message: 'Reject call: the call was not found or was not linked to a user request',
+        level: 'minor',
+        error: new Error(
+          `Unexpected error: rejectAccountOpCall: call with id ${callId} was not found or had not 'fromUserRequest'`
+        )
+      })
     const userRequestIndex = this.userRequests.findIndex((r) => r.id === requestId)
     if (!this.userRequests[userRequestIndex])
-      return console.error(`Unexpected error: rejectAccountOpCall: failed to find ${{ requestId }}`)
+      return this.emitError({
+        message: 'Reject call: failed to find user request',
+        level: 'minor',
+        error: new Error(
+          `Unexpected error: rejectAccountOpCall: failed to find requestId: ${requestId}`
+        )
+      })
     if (this.userRequests[userRequestIndex].action.kind !== 'calls')
-      return console.error(
-        `Unexpected error: rejectAccountOpCall: user request with id ${requestId} is not of type 'calls'`
-      )
+      return this.emitError({
+        message: 'Reject call: failed to find appropriate action to delete',
+        level: 'minor',
+        error: new Error(
+          `Unexpected error: rejectAccountOpCall: user request with id ${requestId} is not of type 'calls'`
+        )
+      })
     ;(this.userRequests[userRequestIndex].action as Calls).calls = (
       this.userRequests[userRequestIndex].action as Calls
     ).calls.filter((c) => c.id !== callId)
