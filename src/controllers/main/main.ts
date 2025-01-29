@@ -1525,77 +1525,46 @@ export class MainController extends EventEmitter {
     this.removeUserRequest(requestId)
   }
 
-  rejectAccountOpCall(callId: string) {
-    const currentAccountOp = this.signAccountOp?.accountOp
-    if (!currentAccountOp)
-      return this.emitError({
-        message: 'Reject call: failed to find proper account operations',
-        level: 'minor',
-        error: new Error('Unexpected error: rejectAccountOpCall: could not find account op')
-      })
+  rejectSignAccountOpCall(callId: string) {
+    if (!this.signAccountOp) return
 
-    const userAddr = currentAccountOp.accountAddr
-    const networkId = currentAccountOp.networkId
+    const { calls, networkId, accountAddr } = this.signAccountOp.accountOp
 
-    const requestId = currentAccountOp.calls.find((c) => c.id === callId)?.fromUserRequestId
-    if (!requestId)
-      return this.emitError({
-        message: 'Reject call: the call was not found or was not linked to a user request',
-        level: 'minor',
-        error: new Error(
-          `Unexpected error: rejectAccountOpCall: call with id ${callId} was not found or had not 'fromUserRequest'`
+    const requestId = calls.find((c) => c.id === callId)?.fromUserRequestId
+    if (requestId) {
+      const userRequestIndex = this.userRequests.findIndex((r) => r.id === requestId)
+      const userRequest = this.userRequests[userRequestIndex] as SignUserRequest
+      if (userRequest.action.kind === 'calls') {
+        ;(userRequest.action as Calls).calls = (userRequest.action as Calls).calls.filter(
+          (c) => c.id !== callId
         )
-      })
-    const userRequestIndex = this.userRequests.findIndex((r) => r.id === requestId)
-    if (!this.userRequests[userRequestIndex])
-      return this.emitError({
-        message: 'Reject call: failed to find user request',
-        level: 'minor',
-        error: new Error(
-          `Unexpected error: rejectAccountOpCall: failed to find requestId: ${requestId}`
-        )
-      })
-    if (this.userRequests[userRequestIndex].action.kind !== 'calls')
-      return this.emitError({
-        message: 'Reject call: failed to find appropriate action to delete',
-        level: 'minor',
-        error: new Error(
-          `Unexpected error: rejectAccountOpCall: user request with id ${requestId} is not of type 'calls'`
-        )
-      })
-    ;(this.userRequests[userRequestIndex].action as Calls).calls = (
-      this.userRequests[userRequestIndex].action as Calls
-    ).calls.filter((c) => c.id !== callId)
 
-    if ((this.userRequests[userRequestIndex].action as Calls).calls.length === 0) {
-      this.rejectUserRequest(
-        'User rejected the transaction request.',
-        this.userRequests[userRequestIndex].id
-      )
-      if (
-        this.userRequests.filter(
-          (req) => req.action.kind === 'calls' && req.meta.accountAddr === userAddr
-        ).length === 0
-      ) {
-        this.actions.removeAction(`${userAddr}-${networkId}`)
-        return
+        if (userRequest.action.calls.length === 0) {
+          // the reject will remove the userRequest which will rebuild the action and update the signAccountOp
+          this.rejectUserRequest('User rejected the transaction request.', userRequest.id)
+        } else {
+          const accountOpAction = makeSmartAccountOpAction({
+            account: this.accounts.accounts.find((a) => a.addr === accountAddr)!,
+            networkId,
+            nonce: this.accounts.accountStates[accountAddr][networkId].nonce,
+            userRequests: this.userRequests,
+            actionsQueue: this.actions.actionsQueue
+          })
+
+          this.actions.addOrUpdateAction(accountOpAction)
+          this.signAccountOp?.update({ calls: accountOpAction.accountOp.calls })
+          this.estimateSignAccountOp()
+        }
       }
+    } else {
+      this.emitError({
+        message: 'Reject call: the call was not found or was not linked to a user request',
+        level: 'major',
+        error: new Error(
+          `Error: rejectAccountOpCall: userRequest for call with id ${callId} was not found`
+        )
+      })
     }
-
-    const account = this.accounts.accounts.find((a) => a.addr === userAddr)!
-    const accountState = this.accounts.accountStates[userAddr][networkId]
-
-    const accountOpAction = makeSmartAccountOpAction({
-      account,
-      networkId,
-      nonce: accountState.nonce,
-      userRequests: this.userRequests,
-      actionsQueue: this.actions.actionsQueue
-    })
-
-    this.actions.addOrUpdateAction(accountOpAction)
-    this.signAccountOp?.update({ calls: accountOpAction.accountOp.calls })
-    this.estimateSignAccountOp()
   }
 
   removeActiveRoute(activeRouteId: number) {
