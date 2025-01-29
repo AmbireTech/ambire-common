@@ -2,6 +2,7 @@ import { BaseContract, getBytes, hexlify, JsonRpcProvider } from 'ethers'
 import { ethers } from 'hardhat'
 import secp256k1 from 'secp256k1'
 
+import { AccountsController } from '../src/controllers/accounts/accounts'
 import { Account, AccountStates } from '../src/interfaces/account'
 import { Key } from '../src/interfaces/keystore'
 import { Network } from '../src/interfaces/network'
@@ -338,6 +339,22 @@ function getNativeToCheckFromEOAs(eoas: Account[], account: Account) {
     : []
 }
 
+const waitForAccountsCtrlFirstLoad = async (accountsCtrl: AccountsController) => {
+  return new Promise<void>((resolve) => {
+    let emitCounter = 0
+    const unsubscribe = accountsCtrl.onUpdate(() => {
+      emitCounter++
+      if (emitCounter === 1) {
+        expect(accountsCtrl.accounts.length).toBeGreaterThan(0)
+        expect(accountsCtrl.accountStates).not.toBe({})
+      } else if (emitCounter > 2 && !accountsCtrl.areAccountStatesLoading) {
+        unsubscribe()
+        resolve()
+      }
+    })
+  })
+}
+
 export {
   sendFunds,
   getPriviledgeTxn,
@@ -352,5 +369,6 @@ export {
   getAccountsInfo,
   getAccountGasLimits,
   getGasFees,
-  getNativeToCheckFromEOAs
+  getNativeToCheckFromEOAs,
+  waitForAccountsCtrlFirstLoad
 }

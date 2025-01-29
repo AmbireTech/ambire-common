@@ -2,7 +2,7 @@ import fetch from 'node-fetch'
 
 import { describe, expect, test } from '@jest/globals'
 
-import { produceMemoryStore } from '../../../test/helpers'
+import { produceMemoryStore, waitForAccountsCtrlFirstLoad } from '../../../test/helpers'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { networks } from '../../consts/networks'
 import { Storage } from '../../interfaces/storage'
@@ -66,25 +66,7 @@ describe('AccountsController', () => {
     )
     expect(accountsCtrl).toBeDefined()
 
-    // The first call of updateAccountStates is not awaited in the code but should be
-    // awaited in the test to ensure that all networks' loading state is false
-    const waitForFirstLoad = () => {
-      return new Promise<void>((resolve) => {
-        let emitCounter = 0
-        const unsubscribe = accountsCtrl.onUpdate(() => {
-          emitCounter++
-          if (emitCounter === 1) {
-            expect(accountsCtrl.accounts.length).toBeGreaterThan(0)
-            expect(accountsCtrl.accountStates).not.toBe({})
-          } else if (emitCounter > 2 && !accountsCtrl.areAccountStatesLoading) {
-            unsubscribe()
-            resolve()
-          }
-        })
-      })
-    }
-
-    await waitForFirstLoad()
+    await waitForAccountsCtrlFirstLoad(accountsCtrl)
     expect(accountsCtrl.areAccountStatesLoading).toBe(false)
   })
   test('update account preferences', (done) => {
