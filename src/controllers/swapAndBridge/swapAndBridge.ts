@@ -3,7 +3,7 @@ import { formatUnits, isAddress, parseUnits } from 'ethers'
 import { v4 as uuidv4 } from 'uuid'
 
 import EmittableError from '../../classes/EmittableError'
-import SwapAndBridgeProviderApiError from '../../classes/SwapAndBridgeProviderApiError'
+import SwapAndBridgeError from '../../classes/SwapAndBridgeError'
 import { Network } from '../../interfaces/network'
 import { Storage } from '../../interfaces/storage'
 import {
@@ -55,6 +55,9 @@ const HARD_CODED_CURRENCY = 'usd'
 
 const CONVERSION_PRECISION = 16
 const CONVERSION_PRECISION_POW = BigInt(10 ** CONVERSION_PRECISION)
+
+const NETWORK_MISMATCH_MESSAGE =
+  'Swap & Bridge network configuration mismatch. Please try again or contact Ambire support.'
 
 export enum SwapAndBridgeFormStatus {
   Empty = 'empty',
@@ -674,10 +677,7 @@ export class SwapAndBridgeController extends EventEmitter {
         (n) => Number(n.chainId) === this.toChainId
       )
       // should never happen
-      if (!toTokenNetwork)
-        throw new Error(
-          'Swap & Bridge network configuration mismatch. Please try again or contact Ambire support.'
-        )
+      if (!toTokenNetwork) throw new SwapAndBridgeError(NETWORK_MISMATCH_MESSAGE)
 
       const additionalTokensFromPortfolio = this.portfolioTokenList
         .filter((t) => t.networkId === toTokenNetwork.id)
@@ -730,10 +730,12 @@ export class SwapAndBridgeController extends EventEmitter {
       token = await this.#socketAPI.getToken({ address, chainId: this.toChainId })
 
       if (!token)
-        throw new Error('Token with this address is not supported by our service provider.')
+        throw new SwapAndBridgeError(
+          'Token with this address is not supported by our service provider.'
+        )
     } catch (error: any) {
-      // TODO: Decode?
-      throw new EmittableError({ error, level: 'minor', message: error?.message })
+      const { message } = getHumanReadableSwapAndBridgeError(error)
+      throw new EmittableError({ error, level: 'minor', message })
     }
 
     if (this.#toTokenListKey)
@@ -742,10 +744,10 @@ export class SwapAndBridgeController extends EventEmitter {
 
     const toTokenNetwork = this.#networks.networks.find((n) => Number(n.chainId) === this.toChainId)
     // should never happen
-    if (!toTokenNetwork)
-      throw new Error(
-        'Network configuration mismatch detected. Please try again later or contact support.'
-      )
+    if (!toTokenNetwork) {
+      const error = new SwapAndBridgeError(NETWORK_MISMATCH_MESSAGE)
+      throw new EmittableError({ error, level: 'minor', message: error?.message })
+    }
 
     const nextTokenList: SwapAndBridgeToToken[] = [...this.#toTokenList, token]
 
@@ -999,13 +1001,7 @@ export class SwapAndBridgeController extends EventEmitter {
         }
         this.quoteRoutesStatuses = (quoteResult as any).bridgeRouteErrors || {}
       } catch (error: any) {
-        // TODO: Map in similar fashion as decodeError()
-        const message =
-          error instanceof SwapAndBridgeProviderApiError
-            ? error.message
-            : `Failed to fetch a route for the selected tokens. Details: ${
-                error?.message || 'no details'
-              }`
+        const { message } = getHumanReadableSwapAndBridgeError(error)
         this.emitError({ error, level: 'major', message })
       }
     }
@@ -1051,15 +1047,20 @@ export class SwapAndBridgeController extends EventEmitter {
   async getRouteStartUserTx() {
     if (this.formStatus !== SwapAndBridgeFormStatus.ReadyToSubmit) return
 
-    const routeResult = await this.#socketAPI.startRoute({
-      fromChainId: this.quote!.fromChainId,
-      fromAssetAddress: this.quote!.fromAsset.address,
-      toChainId: this.quote!.toChainId,
-      toAssetAddress: this.quote!.toAsset.address,
-      route: this.quote!.selectedRoute
-    })
+    try {
+      const routeResult = await this.#socketAPI.startRoute({
+        fromChainId: this.quote!.fromChainId,
+        fromAssetAddress: this.quote!.fromAsset.address,
+        toChainId: this.quote!.toChainId,
+        toAssetAddress: this.quote!.toAsset.address,
+        route: this.quote!.selectedRoute
+      })
 
-    return routeResult
+      return routeResult
+    } catch (error: any) {
+      const { message } = getHumanReadableSwapAndBridgeError(error)
+      throw new EmittableError({ error, level: 'minor', message })
+    }
   }
 
   async checkForNextUserTxForActiveRoutes() {
@@ -1081,15 +1082,8 @@ export class SwapAndBridgeController extends EventEmitter {
           txHash: activeRoute.userTxHash!
         })
       } catch (e: any) {
-        // TODO: Map in similar fashion as decodeError()
-        const error =
-          e instanceof SwapAndBridgeProviderApiError
-            ? e.message
-            : `Unable to get the route status. Please check back later to proceed.. Details: <${
-                e?.message || 'no details'
-              }>`
-
-        this.updateActiveRoute(activeRoute.activeRouteId, { error })
+        const { message } = getHumanReadableSwapAndBridgeError(e)
+        this.updateActiveRoute(activeRoute.activeRouteId, { error: message })
         return
       }
 
@@ -1149,16 +1143,23 @@ export class SwapAndBridgeController extends EventEmitter {
     userTxIndex: SocketAPISendTransactionRequest['userTxIndex']
   }) {
     await this.#initialLoadPromise
-    const route = await this.#socketAPI.updateActiveRoute(activeRoute.activeRouteId)
-    this.activeRoutes.push({
-      ...activeRoute,
-      routeStatus: 'ready',
-      userTxHash: null,
-      route
-    })
-    this.resetForm(true)
+
+    try {
+      const route = await this.#socketAPI.updateActiveRoute(activeRoute.activeRouteId)
+      this.activeRoutes.push({
+        ...activeRoute,
+        routeStatus: 'ready',
+        userTxHash: null,
+        route
+      })
+      this.resetForm(true)
+    } catch (error: any) {
+      const { message } = getHumanReadableSwapAndBridgeError(error)
+      throw new EmittableError({ error, level: 'major', message })
+    }
   }
 
+  // TODO:
   updateActiveRoute(
     activeRouteId: SocketAPISendTransactionRequest['activeRouteId'],
     activeRoute?: Partial<ActiveRoute>,

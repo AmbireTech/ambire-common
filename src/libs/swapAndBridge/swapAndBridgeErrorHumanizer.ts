@@ -1,41 +1,23 @@
 import EmittableError from '../../classes/EmittableError'
+import SwapAndBridgeError from '../../classes/SwapAndBridgeError'
 import SwapAndBridgeProviderApiError from '../../classes/SwapAndBridgeProviderApiError'
-import { decodeError } from '../errorDecoder'
-import { DecodedError } from '../errorDecoder/types'
-import { getGenericMessageFromType, getHumanReadableErrorMessage } from '../errorHumanizer/helpers'
 
-// TODO:
-export const MESSAGE_PREFIX = 'There was a problem because'
-
-// TODO:
-const LAST_RESORT_ERROR_MESSAGE =
-  'An unknown error occurred. Please try again or contact Ambire support for assistance.'
-
-export function getHumanReadableSwapAndBridgeError(e: Error | DecodedError) {
+export function getHumanReadableSwapAndBridgeError(
+  e: EmittableError | SwapAndBridgeProviderApiError | SwapAndBridgeError | Error | any
+) {
   // These errors should be thrown as they are
   // as they are already human-readable
-  if (e instanceof EmittableError || e instanceof SwapAndBridgeProviderApiError) {
+  if (
+    e instanceof EmittableError ||
+    e instanceof SwapAndBridgeProviderApiError ||
+    e instanceof SwapAndBridgeError
+  ) {
     return e
   }
 
-  const decodedError = e instanceof Error ? decodeError(e as Error) : (e as DecodedError)
-  // Do I need ?getHumanReadableErrorMessage
-  let errorMessage = getHumanReadableErrorMessage(
-    e?.message || '', // TODO commonError?,
-    [], // ESTIMATION_ERRORS
-    MESSAGE_PREFIX,
-    decodedError.reason,
-    e
-  )
+  // Last resort (fallback) error handling
+  const message = e?.message || 'no details'
+  const errorMessage = `Unexpected error happened in the Swap & Bridge flow. Try again later or contact Ambire support. Details: <${message}>`
 
-  if (!errorMessage) {
-    errorMessage = getGenericMessageFromType(
-      decodedError.type,
-      decodedError.reason,
-      MESSAGE_PREFIX,
-      LAST_RESORT_ERROR_MESSAGE
-    )
-  }
-
-  return new Error(errorMessage, { cause: decodedError.reason })
+  return new Error(errorMessage)
 }
