@@ -138,6 +138,21 @@ export class ActionsController extends EventEmitter {
         this.emitUpdate()
       }
     })
+
+    this.#windowManager.event.on('windowFocusChange', async (winId: number) => {
+      if (this.actionWindow.windowProps) {
+        if (this.actionWindow.windowProps.id === winId && !this.actionWindow.windowProps.focused) {
+          this.actionWindow.windowProps.focused = true
+          this.emitUpdate()
+        } else if (
+          this.actionWindow.windowProps.id !== winId &&
+          this.actionWindow.windowProps.focused
+        ) {
+          this.actionWindow.windowProps.focused = false
+          this.emitUpdate()
+        }
+      }
+    })
   }
 
   addOrUpdateAction(
