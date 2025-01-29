@@ -33,6 +33,10 @@ export class SocketAPIMock {
     this.isHealthy = await this.getHealth()
   }
 
+  resetHealth() {
+    this.isHealthy = null
+  }
+
   async getToTokenList({
     toChainId
   }: {
