@@ -1063,6 +1063,16 @@ export class SwapAndBridgeController extends EventEmitter {
     }
   }
 
+  async getNextRouteUserTx(activeRouteId: number) {
+    try {
+      const route = await this.#socketAPI.getNextRouteUserTx(activeRouteId)
+      return route
+    } catch (error: any) {
+      const { message } = getHumanReadableSwapAndBridgeError(error)
+      throw new EmittableError({ error, level: 'minor', message })
+    }
+  }
+
   async checkForNextUserTxForActiveRoutes() {
     await this.#initialLoadPromise
     const fetchAndUpdateRoute = async (activeRoute: ActiveRoute) => {
@@ -1159,7 +1169,6 @@ export class SwapAndBridgeController extends EventEmitter {
     }
   }
 
-  // TODO:
   updateActiveRoute(
     activeRouteId: SocketAPISendTransactionRequest['activeRouteId'],
     activeRoute?: Partial<ActiveRoute>,
@@ -1173,6 +1182,7 @@ export class SwapAndBridgeController extends EventEmitter {
         // eslint-disable-next-line @typescript-eslint/no-floating-promises
         ;(async () => {
           let route = currentActiveRoutes[activeRouteIndex].route
+          // TODO: handle error?
           route = await this.#socketAPI.updateActiveRoute(activeRouteId)
           this.updateActiveRoute(activeRouteId, { route })
         })()

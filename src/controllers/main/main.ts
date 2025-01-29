@@ -6,6 +6,7 @@ import { getAddress, getBigInt, Interface, isAddress } from 'ethers'
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json'
 import EmittableError from '../../classes/EmittableError'
+import SwapAndBridgeError from '../../classes/SwapAndBridgeError'
 import { BUNDLER } from '../../consts/bundlers'
 import { ORIGINS_WHITELISTED_TO_ALL_ACCOUNTS } from '../../consts/dappCommunication'
 import { AMBIRE_ACCOUNT_FACTORY, SINGLETON } from '../../consts/deploy'
@@ -1389,22 +1390,24 @@ export class MainController extends EventEmitter {
               shouldOpenNextRequest: false
             })
           }
-          transaction = await this.#socketAPI.getNextRouteUserTx(activeRoute.activeRouteId)
+          transaction = await this.swapAndBridge.getNextRouteUserTx(activeRoute.activeRouteId)
         }
 
         if (!this.selectedAccount.account || !transaction) {
-          this.emitError({
-            level: 'major',
-            message: 'Unexpected error while building swap & bridge request',
-            error: new Error('buildSwapAndBridgeUserRequest: bad parameters passed')
-          })
-          return
+          const errorDetails = `missing ${
+            this.selectedAccount.account ? 'selected account' : 'transaction'
+          } info`
+          const error = new SwapAndBridgeError(
+            `Something went wrong when preparing your request. Please try again later or contact Ambire support. Error details: <${errorDetails}>`
+          )
+          throw new EmittableError({ message: error.message, level: 'major', error })
         }
 
         const network = this.networks.networks.find(
           (n) => Number(n.chainId) === transaction!.chainId
         )!
 
+        // TODO: Error handling with decode error, since interacting with RPC here?
         const swapAndBridgeUserRequests = await buildSwapAndBridgeUserRequests(
           transaction,
           network.id,
@@ -1416,6 +1419,7 @@ export class MainController extends EventEmitter {
           if (i === 0) {
             this.addUserRequest(swapAndBridgeUserRequests[i], 'last', 'open-action-window')
           } else {
+            // TODO: Refine handling?
             // eslint-disable-next-line no-await-in-loop
             await this.addUserRequest(swapAndBridgeUserRequests[i], 'last', 'queue')
           }
