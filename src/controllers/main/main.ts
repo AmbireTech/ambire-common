@@ -1362,7 +1362,7 @@ export class MainController extends EventEmitter {
       'buildSwapAndBridgeUserRequest',
       async () => {
         if (!this.selectedAccount.account) return
-        let transaction: SocketAPISendTransactionRequest | null = null
+        let transaction: SocketAPISendTransactionRequest | null | undefined = null
 
         const activeRoute = this.swapAndBridge.activeRoutes.find(
           (r) => r.activeRouteId === activeRouteId
@@ -1405,7 +1405,8 @@ export class MainController extends EventEmitter {
           (n) => Number(n.chainId) === transaction!.chainId
         )!
 
-        // TODO: Error handling with decode error, since interacting with RPC here?
+        // TODO: Consider refining the error handling in here, because this
+        // swallows errors and doesn't provide any feedback to the user.
         const swapAndBridgeUserRequests = await buildSwapAndBridgeUserRequests(
           transaction,
           network.id,
@@ -1417,7 +1418,6 @@ export class MainController extends EventEmitter {
           if (i === 0) {
             this.addUserRequest(swapAndBridgeUserRequests[i], 'last', 'open-action-window')
           } else {
-            // TODO: Refine handling?
             // eslint-disable-next-line no-await-in-loop
             await this.addUserRequest(swapAndBridgeUserRequests[i], 'last', 'queue')
           }

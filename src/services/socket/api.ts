@@ -334,7 +334,7 @@ export class SocketAPI {
       }
     }
 
-    const response = await this.#handleResponse({
+    const response = await this.#handleResponse<SocketAPISendTransactionRequest>({
       fetchPromise: this.#fetch(`${this.#baseUrl}/route/start`, {
         method: 'POST',
         headers: this.#headers,
@@ -406,7 +406,7 @@ export class SocketAPI {
     const params = new URLSearchParams({ activeRouteId: activeRouteId.toString() })
     const url = `${this.#baseUrl}/route/build-next-tx?${params.toString()}`
 
-    const response = await this.#handleResponse({
+    const response = await this.#handleResponse<SocketAPISendTransactionRequest>({
       fetchPromise: this.#fetch(url, { headers: this.#headers }),
       errorPrefix: 'Unable to start the next step.'
     })
