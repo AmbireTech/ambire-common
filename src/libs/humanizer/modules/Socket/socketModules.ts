@@ -654,6 +654,39 @@ export const SocketModule: HumanizerCallModule = (accountOp: AccountOp, irCalls:
         getChain(toChainId),
         ...getRecipientText(accountOp.accountAddr, receiver)
       ]
+    },
+
+    [`${
+      iface.getFunction(
+        'bridgeERC20To(address receiverAddress, address token, address hopAMM, uint256 amount, uint256 toChainId, (uint256 bonderFee, uint256 amountOutMin, uint256 deadline, uint256 amountOutMinDestination, uint256 deadlineDestination, bytes32 metadata) hopBridgeRequestData)'
+      )?.selector
+    }`]: (call: IrCall) => {
+      const {
+        receiverAddress,
+        token,
+        hopAMM,
+        amount,
+        toChainId,
+        hopBridgeRequestData: {
+          bonderFee,
+          amountOutMin,
+          deadline,
+          amountOutMinDestination,
+          deadlineDestination,
+          metadata
+        }
+      } = iface.parseTransaction(call)!.args
+
+      return [
+        getAction('Bridge'),
+        getToken(token, amount),
+        getLabel('for at least'),
+        getToken(token, amountOutMinDestination),
+        getLabel('to'),
+        getChain(toChainId),
+        ...getRecipientText(accountOp.accountAddr, receiverAddress),
+        getDeadline(deadline)
+      ]
     }
   }
 
