@@ -35,6 +35,13 @@ const STARGATE_CHAIN_IDS: { [key: string]: bigint } = {
 // @TODO consider fees everywhere
 // @TODO add automated tests
 export const SocketModule: HumanizerCallModule = (accountOp: AccountOp, irCalls: IrCall[]) => {
+  const preControllerIface = new Interface([
+    'function executeController((uint32 controllerId, bytes data) socketControllerRequest)',
+    'function takeFeesAndSwap((address feesTakerAddress, address feesToken, uint256 feesAmount, uint32 routeId, bytes swapRequestData) ftsRequest) payable returns (bytes)',
+    'function takeFeesAndBridge((address feesTakerAddress, address feesToken, uint256 feesAmount, uint32 routeId, bytes bridgeRequestData) ftbRequest) payable returns (bytes)',
+    // @TODO
+    'function takeFeeAndSwapAndBridge((address feesTakerAddress, address feesToken, uint256 feesAmount, uint32 swapRouteId, bytes swapData, uint32 bridgeRouteId, bytes bridgeData) fsbRequest)'
+  ])
   const iface = new Interface([
     ...SocketViaAcross,
     // @TODO move to more appropriate place all funcs
@@ -650,19 +657,41 @@ export const SocketModule: HumanizerCallModule = (accountOp: AccountOp, irCalls:
     }
   }
 
-  const newCalls: IrCall[] = irCalls.map((_call: IrCall) => {
-    const call: IrCall = {
-      ..._call,
-      data: `0x${_call.data.slice(10)}`
+  const matcherBeforeController: { [selector: string]: (data: string) => string } = {
+    [preControllerIface.getFunction('takeFeesAndSwap')!.selector]: (data: string) => {
+      const [[feesTakerAddress, feesToken, feesAmount, routeId, swapRequestData]] =
+        preControllerIface.decodeFunctionData('takeFeesAndSwap', data)
+      return swapRequestData
+    },
+    [preControllerIface.getFunction('takeFeesAndBridge')!.selector]: (data: string) => {
+      const [[feesTakerAddress, feesToken, feesAmount, routeId, bridgeRequestData]] =
+        preControllerIface.decodeFunctionData('takeFeesAndBridge', data)
+      return bridgeRequestData
     }
-
-    if (matcher[call.data.slice(0, 10)]) {
-      return {
-        ..._call,
-        fullVisualization: matcher[call.data.slice(0, 10)](call)
+    // @TODO
+    // [preControllerIface.getFunction('takeFeeAndSwapAndBridge')!.selector]: (data: string) => {
+    //   const [
+    //     [feesTakerAddress, feesToken, feesAmount, swapRouteId, swapData, bridgeRouteId, bridgeData]
+    //   ] = preControllerIface.decodeFunctionData('takeFeeAndSwapAndBridge', data)
+    //   return swapData, bridgeData
+    // }
+  }
+  const newCalls: IrCall[] = irCalls.map((call: IrCall) => {
+    let dataToUse = call.data
+    if (call.data.startsWith(preControllerIface.getFunction('executeController')!.selector)) {
+      const [[controllerId, newData]] = preControllerIface.parseTransaction(call)!.args
+      dataToUse = newData
+      if (matcherBeforeController[dataToUse.slice(0, 10)]) {
+        dataToUse = matcherBeforeController[dataToUse.slice(0, 10)](dataToUse)
       }
     }
-    return _call
+    if (matcher[dataToUse.slice(0, 10)]) {
+      return {
+        ...call,
+        fullVisualization: matcher[dataToUse.slice(0, 10)]({ ...call, data: dataToUse })
+      }
+    }
+    return call
   })
   return newCalls
 }
