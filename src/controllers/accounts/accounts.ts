@@ -115,16 +115,6 @@ export class AccountsController extends EventEmitter {
     if (!this.#authorizations[authorization.accountAddr])
       this.#authorizations[authorization.accountAddr] = []
     this.#authorizations[authorization.accountAddr].push(authorization)
-
-    // update the account state only for the account that signed the message
-    // and only for the networks the messages has been signed on
-    // unless chainId is 0 (no network selected)
-    // eslint-disable-next-line @typescript-eslint/no-floating-promises
-    this.#updateAccountStates(
-      this.accounts.filter((acc) => acc.addr === authorization.accountAddr),
-      'latest',
-      authorization.content.chainId !== 0n ? [authorization.networkId] : []
-    )
   }
 
   async updateAccountStates(blockTag: string | number = 'latest', networks: NetworkId[] = []) {
