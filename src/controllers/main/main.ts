@@ -185,8 +185,6 @@ export class MainController extends EventEmitter {
 
   signMessage: SignMessageController
 
-  #socketAPI: SocketAPI
-
   swapAndBridge: SwapAndBridgeController
 
   signAccountOp: SignAccountOpController | null = null
@@ -324,7 +322,7 @@ export class MainController extends EventEmitter {
       this.accounts,
       this.#externalSignerControllers
     )
-    this.#socketAPI = new SocketAPI({ apiKey: socketApiKey, fetch: this.fetch })
+    const socketAPI = new SocketAPI({ apiKey: socketApiKey, fetch: this.fetch })
     this.dapps = new DappsController(this.#storage)
     this.actions = new ActionsController({
       selectedAccount: this.selectedAccount,
@@ -368,7 +366,7 @@ export class MainController extends EventEmitter {
       networks: this.networks,
       activity: this.activity,
       invite: this.invite,
-      socketAPI: this.#socketAPI,
+      socketAPI,
       storage: this.#storage,
       actions: this.actions
     })
