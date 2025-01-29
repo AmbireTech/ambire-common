@@ -1525,7 +1525,7 @@ export class MainController extends EventEmitter {
     this.removeUserRequest(requestId)
   }
 
-  rejectAccountOpCall(indexOfCall: number, numberOfCalls: number) {
+  rejectAccountOpCall(callId: string) {
     const currentAccountOp = this.signAccountOp?.accountOp
     if (!currentAccountOp)
       return console.error('Unexpected error: rejectAccountOpCall: could not find account op')
@@ -1533,41 +1533,28 @@ export class MainController extends EventEmitter {
     const userAddr = currentAccountOp.accountAddr
     const networkId = currentAccountOp.networkId
 
-    // this prevent accidental double removal of call with specific index
-    if (currentAccountOp.calls.length !== numberOfCalls)
-      return console.error(
-        `Unexpected error: rejectAccountOpCall: number of calls in current account op ${currentAccountOp.calls.length} does no match ${numberOfCalls}. Possible race condition`
-      )
+    const callIndexToRemove = currentAccountOp.calls.findIndex((c) => c.id === callId)
+    if (callIndexToRemove === -1)
+      return console.error('Unexpected error: rejectAccountOpCall: could not find call to delete')
 
-    if (indexOfCall >= currentAccountOp.calls.length)
+    const requestId = currentAccountOp.calls[callIndexToRemove].fromUserRequestId
+    if (!requestId)
       return console.error(
-        `Unexpected error: rejectAccountOpCall: call with index ${indexOfCall} out of bounds ${currentAccountOp.calls.length}`
+        'Unexpected error: rejectAccountOpCall: the all to delete does not have userRequestId'
       )
-
-    const requestId = currentAccountOp.calls[indexOfCall].fromUserRequestId
-    // if we should do the splice - find the index within the userRequest
 
     const userRequest = this.userRequests.find((r) => r.id === requestId)
+
     if (!userRequest)
       return console.error(`Unexpected error: rejectAccountOpCall: failed to find ${{ requestId }}`)
+
     if (userRequest.action.kind !== 'calls')
       return console.error(
         `Unexpected error: rejectAccountOpCall: user request with id ${requestId} is not of type 'calls'`
       )
-
-    let indexOfCallWithinTheUserRequest = 0
-    for (let i = 0; i < indexOfCall; i++) {
-      if (currentAccountOp.calls[i].fromUserRequestId === userRequest.id)
-        indexOfCallWithinTheUserRequest++
-    }
-
-    if (indexOfCallWithinTheUserRequest >= (userRequest.action as Calls).calls.length)
-      return console.error(
-        `Unexpected error: rejectAccountOpCall: assumed index of call within userRequest ${indexOfCallWithinTheUserRequest} is out of bounds of userRequest.calls with length ${
-          (userRequest.action as Calls).calls.length
-        }`
-      )
-    ;(userRequest.action as Calls).calls.splice(indexOfCallWithinTheUserRequest, 1)
+    ;(userRequest.action as Calls).calls = (userRequest.action as Calls).calls.filter(
+      (c) => c.id !== callId
+    )
 
     if ((userRequest.action as Calls).calls.length === 0) {
       this.rejectUserRequest('User rejected the transaction request.', userRequest.id)
@@ -1616,6 +1603,11 @@ export class MainController extends EventEmitter {
     actionPosition: ActionPosition = 'last',
     actionExecutionType: ActionExecutionType = 'open-action-window'
   ) {
+    if (req.action.kind === 'calls') {
+      ;(req.action as Calls).calls.forEach((_, i) => {
+        ;(req.action as Calls).calls[i].id = `${req.id}-${i}`
+      })
+    }
     if (actionPosition === 'first') {
       this.userRequests.unshift(req)
     } else {
