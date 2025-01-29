@@ -54,12 +54,12 @@ export const SocketModule: HumanizerCallModule = (accountOp: AccountOp, irCalls:
     'function BASIC(address,uint256,address,uint256,bytes)',
     'function UNISWAPV3(address,uint256,bytes,uint256)'
   ])
-  const matcher = {
+  const matcher: { [sighash: string]: (irCall: IrCall) => HumanizerVisualization[] } = {
     [`${
       iface.getFunction(
         'swapAndBridge(uint32 swapId, bytes swapData, tuple(address[] senderReceiverAddresses,address outputToken,uint256[] outputAmountToChainIdArray,uint32[] quoteAndDeadlineTimeStamps,uint256 bridgeFee,bytes32 metadata) acrossBridgeData)'
       )?.selector
-    }`]: (call: IrCall): IrCall => {
+    }`]: (call: IrCall) => {
       const {
         // swapId,
         swapData,
@@ -77,37 +77,31 @@ export const SocketModule: HumanizerCallModule = (accountOp: AccountOp, irCalls:
         const { fromToken, amount, toToken } = iface.parseTransaction({
           data: swapData
         })!.args
-        return {
-          ...call,
-          fullVisualization: [
-            getAction('Bridge'),
-            getToken(eToNative(fromToken), amount),
-            getLabel('to'),
-            getTokenWithChain(eToNative(toToken), outputAmount),
-            getLabel('on'),
-            getChain(dstChain),
-            getDeadline(quoteAndDeadlineTimeStamps[1]),
-            ...getRecipientText(senderAddress, recipientAddress)
-          ]
-        }
-      }
-      return {
-        ...call,
-        fullVisualization: [
+        return [
           getAction('Bridge'),
-          getLabel('undetected token'),
+          getToken(eToNative(fromToken), amount),
           getLabel('to'),
-          getTokenWithChain(eToNative(outputToken), outputAmount, dstChain),
+          getTokenWithChain(eToNative(toToken), outputAmount),
           getLabel('on'),
           getChain(dstChain),
           getDeadline(quoteAndDeadlineTimeStamps[1]),
           ...getRecipientText(senderAddress, recipientAddress)
         ]
       }
+      return [
+        getAction('Bridge'),
+        getLabel('undetected token'),
+        getLabel('to'),
+        getTokenWithChain(eToNative(outputToken), outputAmount, dstChain),
+        getLabel('on'),
+        getChain(dstChain),
+        getDeadline(quoteAndDeadlineTimeStamps[1]),
+        ...getRecipientText(senderAddress, recipientAddress)
+      ]
     },
     [`${iface.getFunction('swapAndBridge(uint32,address,uint256,bytes32,bytes)')?.selector}`]: (
       call: IrCall
-    ): IrCall => {
+    ) => {
       const [, , chainId, , data] = iface.parseTransaction(call)!.args
       if (data.startsWith(iface.getFunction('performActionWithIn')!.selector)) {
         const { fromToken, toToken, amount, swapExtraData } = iface.parseTransaction({
@@ -120,75 +114,59 @@ export const SocketModule: HumanizerCallModule = (accountOp: AccountOp, irCalls:
             data: swapExtraData
           })!.args
 
-          return {
-            ...call,
-            fullVisualization: [
-              getAction('Bridge'),
-              getToken(fromToken, amount),
-              getLabel('to'),
-              getToken(toToken, minOutputTokenAmount, false, chainId),
-              getLabel('on'),
-              getChain(chainId)
-            ]
-          }
-        }
-        return {
-          ...call,
-          fullVisualization: [
+          return [
             getAction('Bridge'),
             getToken(fromToken, amount),
             getLabel('to'),
-            getToken(toToken, 0n, false, chainId),
+            getToken(toToken, minOutputTokenAmount, false, chainId),
             getLabel('on'),
             getChain(chainId)
           ]
         }
+        return [
+          getAction('Bridge'),
+          getToken(fromToken, amount),
+          getLabel('to'),
+          getToken(toToken, 0n, false, chainId),
+          getLabel('on'),
+          getChain(chainId)
+        ]
       }
-      return {
-        ...call,
-        fullVisualization: [getAction('Bridge'), getLabel('to'), getChain(chainId)]
-      }
+      return [getAction('Bridge'), getLabel('to'), getChain(chainId)]
     },
     [`${
       iface.getFunction(
         'bridgeNativeTo(uint256 amount, (address[] senderReceiverAddresses, address outputToken, uint256[] outputAmountToChainIdArray, uint32[] quoteAndDeadlineTimeStamps, uint256 bridgeFee, bytes32 metadata) acrossBridgeData)'
       )?.selector
-    }`]: (call: IrCall): IrCall => {
-      try {
-        const [
-          amount,
-          [
-            [sender, receiver],
-            outputToken,
-            [outputAmount, chainId],
-            quoteAndDeadlineTimeStamps
-            // @TODO
-            // bridgeFee
-          ]
-        ] = iface.parseTransaction(call)!.args
+    }`]: (call: IrCall) => {
+      const [
+        amount,
+        [
+          [sender, receiver],
+          outputToken,
+          [outputAmount, chainId],
+          quoteAndDeadlineTimeStamps
+          // @TODO
+          // bridgeFee
+        ]
+      ] = iface.parseTransaction(call)!.args
 
-        return {
-          ...call,
-          fullVisualization: [
-            getAction('Bridge'),
-            getToken(ZeroAddress, amount),
-            getLabel('to'),
-            getTokenWithChain(eToNative(outputToken), outputAmount, chainId),
-            getLabel('on'),
-            getChain(chainId),
-            getDeadline(quoteAndDeadlineTimeStamps[1]),
-            ...getRecipientText(sender, receiver)
-          ]
-        }
-      } catch (e) {
-        return { ...call }
-      }
+      return [
+        getAction('Bridge'),
+        getToken(ZeroAddress, amount),
+        getLabel('to'),
+        getTokenWithChain(eToNative(outputToken), outputAmount, chainId),
+        getLabel('on'),
+        getChain(chainId),
+        getDeadline(quoteAndDeadlineTimeStamps[1]),
+        ...getRecipientText(sender, receiver)
+      ]
     },
     [`${
       iface.getFunction(
         'bridgeNativeTo(address senderAddress, address receiverAddress, uint256 amount, (uint256 srcPoolId, uint256 dstPoolId, uint256 destinationGasLimit, uint256 minReceivedAmt, uint256 value, uint16 stargateDstChainId, uint32 swapId, bytes32 metadata, bytes swapData, bytes destinationPayload) stargateBridgeExtraData)'
       )?.selector
-    }`]: (call: IrCall): IrCall => {
+    }`]: (call: IrCall) => {
       const {
         senderAddress,
         receiverAddress,
@@ -196,25 +174,22 @@ export const SocketModule: HumanizerCallModule = (accountOp: AccountOp, irCalls:
         stargateBridgeExtraData: { minReceivedAmt, stargateDstChainId }
       } = iface.parseTransaction(call)!.args
       const chainId = STARGATE_CHAIN_IDS[stargateDstChainId.toString()]
-      return {
-        ...call,
-        fullVisualization: [
-          getAction('Bridge'),
-          getToken(ZeroAddress, amount),
-          getLabel('to'),
-          getTokenWithChain(ZeroAddress, minReceivedAmt),
-          getLabel('on'),
-          getChain(chainId),
-          ...getRecipientText(senderAddress, receiverAddress)
-        ]
-      }
+      return [
+        getAction('Bridge'),
+        getToken(ZeroAddress, amount),
+        getLabel('to'),
+        getTokenWithChain(ZeroAddress, minReceivedAmt),
+        getLabel('on'),
+        getChain(chainId),
+        ...getRecipientText(senderAddress, receiverAddress)
+      ]
     },
 
     [`${
       iface.getFunction(
         'performAction(address fromToken, address toToken, uint256 amount, address receiverAddress, bytes32 metadata, bytes swapExtraData)'
       )?.selector
-    }`]: (call: IrCall): IrCall => {
+    }`]: (call: IrCall) => {
       // eslint-disable-next-line prefer-const
       let { fromToken, toToken, amount, receiverAddress, swapExtraData, metadata } =
         iface.parseTransaction(call)!.args
@@ -299,22 +274,19 @@ export const SocketModule: HumanizerCallModule = (accountOp: AccountOp, irCalls:
         })!.args
         outAmount = minReturnAmount
       }
-      return {
-        ...call,
-        fullVisualization: [
-          getAction('Swap'),
-          getToken(eToNative(fromToken), amount),
-          getLabel(outAmount ? 'for at least' : 'for'),
-          getToken(eToNative(toToken), outAmount),
-          ...getRecipientText(accountOp.accountAddr, receiverAddress)
-        ]
-      }
+      return [
+        getAction('Swap'),
+        getToken(eToNative(fromToken), amount),
+        getLabel(outAmount ? 'for at least' : 'for'),
+        getToken(eToNative(toToken), outAmount),
+        ...getRecipientText(accountOp.accountAddr, receiverAddress)
+      ]
     },
     [`${
       iface.getFunction(
         'bridgeERC20To(uint256 amount, (address[] senderReceiverAddresses, address[] inputOutputTokens, uint256[] outputAmountToChainIdArray, uint32[] quoteAndDeadlineTimeStamps, uint256 bridgeFee, bytes32 metadata) acrossBridgeData)'
       )?.selector
-    }`]: (call: IrCall): IrCall => {
+    }`]: (call: IrCall) => {
       const {
         amount,
         acrossBridgeData: {
@@ -323,24 +295,21 @@ export const SocketModule: HumanizerCallModule = (accountOp: AccountOp, irCalls:
           outputAmountToChainIdArray: [outputAmount, chainId]
         }
       } = iface.parseTransaction(call)!.args
-      return {
-        ...call,
-        fullVisualization: [
-          getAction('Bridge'),
-          getToken(eToNative(inputToken), amount),
-          getLabel('to'),
-          getTokenWithChain(eToNative(outputToken), outputAmount, chainId),
-          getLabel('on'),
-          getChain(chainId),
-          ...getRecipientText(sender, receiver)
-        ]
-      }
+      return [
+        getAction('Bridge'),
+        getToken(eToNative(inputToken), amount),
+        getLabel('to'),
+        getTokenWithChain(eToNative(outputToken), outputAmount, chainId),
+        getLabel('on'),
+        getChain(chainId),
+        ...getRecipientText(sender, receiver)
+      ]
     },
     [`${
       iface.getFunction(
         'bridgeERC20To(uint256 amount, (uint256 toChainId, uint256 slippage, uint256 relayerFee, uint32 dstChainDomain, address token, address receiverAddress, bytes32 metadata, bytes callData, address delegate) connextBridgeData)'
       )?.selector
-    }`]: (call: IrCall): IrCall => {
+    }`]: (call: IrCall) => {
       const {
         amount,
         connextBridgeData: {
@@ -353,22 +322,19 @@ export const SocketModule: HumanizerCallModule = (accountOp: AccountOp, irCalls:
           delegate
         }
       } = iface.parseTransaction(call)!.args
-      return {
-        ...call,
-        fullVisualization: [
-          getAction('Bridge'),
-          getToken(eToNative(token), amount),
-          getLabel('to'),
-          getChain(toChainId),
-          ...getRecipientText(accountOp.accountAddr, receiverAddress)
-        ]
-      }
+      return [
+        getAction('Bridge'),
+        getToken(eToNative(token), amount),
+        getLabel('to'),
+        getChain(toChainId),
+        ...getRecipientText(accountOp.accountAddr, receiverAddress)
+      ]
     },
     [`${
       iface.getFunction(
         'bridgeNativeTo(uint256 amount, bytes32 metadata, address receiverAddress, uint256 toChainId, (address swapAdapter, address tokenOut, uint256 minAmountOut, uint256 deadline, bytes rawParams) originQuery, (address swapAdapter, address tokenOut, uint256 minAmountOut, uint256 deadline, bytes rawParams) destinationQuery)'
       )?.selector
-    }`]: (call: IrCall): IrCall => {
+    }`]: (call: IrCall) => {
       const {
         amount,
         metadata,
@@ -377,103 +343,88 @@ export const SocketModule: HumanizerCallModule = (accountOp: AccountOp, irCalls:
         originQuery: { tokenOut, minAmountOut, deadline },
         destinationQuery // : { swapAdapter, tokenOut, minAmountOut, deadline, rawParams }
       } = iface.parseTransaction(call)!.args
-      return {
-        ...call,
-        fullVisualization: [
-          getAction('Bridge'),
-          getToken(eToNative(tokenOut), amount),
-          getLabel('to'),
-          getTokenWithChain(
-            eToNative(destinationQuery.tokenOut),
-            destinationQuery.minAmountOut,
-            toChainId
-          ),
-          getLabel('on'),
-          getChain(toChainId),
-          getDeadline(deadline),
-          ...getRecipientText(accountOp.accountAddr, receiverAddress)
-        ]
-      }
+      return [
+        getAction('Bridge'),
+        getToken(eToNative(tokenOut), amount),
+        getLabel('to'),
+        getTokenWithChain(
+          eToNative(destinationQuery.tokenOut),
+          destinationQuery.minAmountOut,
+          toChainId
+        ),
+        getLabel('on'),
+        getChain(toChainId),
+        getDeadline(deadline),
+        ...getRecipientText(accountOp.accountAddr, receiverAddress)
+      ]
     },
     [`${
       iface.getFunction('bridgeERC20To(uint256,bytes32,address,address,uint256,uint32,uint256)')
         ?.selector
-    }`]: (call: IrCall): IrCall => {
+    }`]: (call: IrCall) => {
       const [amount, id, recipient, token, chainId, unknown1, fee] =
         iface.parseTransaction(call)!.args
-      return {
-        ...call,
-        fullVisualization: [
-          getAction('Bridge'),
-          getToken(eToNative(token), amount),
-          getLabel('to'),
-          getToken(eToNative(token), amount),
-          getLabel('on'),
-          getChain(chainId),
-          ...getRecipientText(accountOp.accountAddr, recipient)
-        ]
-      }
+      return [
+        getAction('Bridge'),
+        getToken(eToNative(token), amount),
+        getLabel('to'),
+        getToken(eToNative(token), amount),
+        getLabel('on'),
+        getChain(chainId),
+        ...getRecipientText(accountOp.accountAddr, recipient)
+      ]
     },
     [`${
       iface.getFunction(
         'bridgeNativeTo(address receiverAddress, address customBridgeAddress, uint32 l2Gas, uint256 amount, bytes32 metadata, bytes data)'
       )?.selector
-    }`]: (call: IrCall): IrCall => {
+    }`]: (call: IrCall) => {
       const { receiverAddress, customBridgeAddress, l2Gas, amount, metadata, data } =
         iface.parseTransaction(call)!.args
       // @TODO
-      return {
-        ...call,
-        fullVisualization: [
-          getAction('Bridge'),
-          getToken(ZeroAddress, amount),
-          getLabel('via'),
-          getAddressVisualization(customBridgeAddress),
-          ...getRecipientText(accountOp.accountAddr, receiverAddress)
-        ]
-      }
+      return [
+        getAction('Bridge'),
+        getToken(ZeroAddress, amount),
+        getLabel('via'),
+        getAddressVisualization(customBridgeAddress),
+        ...getRecipientText(accountOp.accountAddr, receiverAddress)
+      ]
     },
     [`${
       iface.getFunction(
         'bridgeNativeTo(address receiverAddress, uint32 l2Gas, uint256 amount, uint256 toChainId, bytes32 metadata, bytes32 bridgeHash, bytes data)'
       )?.selector
-    }`]: (call: IrCall): IrCall => {
+    }`]: (call: IrCall) => {
       const { receiverAddress, l2Gas, amount, toChainId, metadata, bridgeHash, data } =
         iface.parseTransaction(call)!.args
-      return {
-        ...call,
-        fullVisualization: [
-          getAction('Bridge'),
-          getToken(ZeroAddress, amount),
-          getLabel('to'),
-          getChain(toChainId),
-          ...getRecipientText(accountOp.accountAddr, receiverAddress)
-        ]
-      }
+      return [
+        getAction('Bridge'),
+        getToken(ZeroAddress, amount),
+        getLabel('to'),
+        getChain(toChainId),
+        ...getRecipientText(accountOp.accountAddr, receiverAddress)
+      ]
     },
     [`${
       iface.getFunction(
         'bridgeNativeTo(address receiverAddress, uint256 gasLimit, uint256 fees, bytes32 metadata, uint256 amount, uint256 toChainId, bytes32 bridgeHash)'
       )?.selector
-    }`]: (call: IrCall): IrCall => {
+    }`]: (call: IrCall) => {
       const { receiverAddress, gasLimit, fees, metadata, amount, toChainId, bridgeHash } =
         iface.parseTransaction(call)!.args
-      return {
-        ...call,
-        fullVisualization: [
-          getAction('Bridge'),
-          getToken(ZeroAddress, amount),
-          getLabel('to'),
-          getChain(toChainId),
-          ...getRecipientText(accountOp.accountAddr, receiverAddress)
-        ]
-      }
+      return [
+        getAction('Bridge'),
+        getToken(ZeroAddress, amount),
+        getLabel('to'),
+        getChain(toChainId),
+        ...getRecipientText(accountOp.accountAddr, receiverAddress)
+      ]
     },
     [`${
       iface.getFunction(
         'bridgeNativeTo(address receiverAddress, address l1bridgeAddr, address relayer, uint256 toChainId, uint256 amount, uint256 amountOutMin, uint256 relayerFee, uint256 deadline, bytes32 metadata) payable'
       )?.selector
-    }`]: (call: IrCall): IrCall => {
+    }`]: (call: IrCall) => {
       const {
         receiverAddress,
         l1bridgeAddr,
@@ -484,40 +435,34 @@ export const SocketModule: HumanizerCallModule = (accountOp: AccountOp, irCalls:
         deadline,
         metadata
       } = iface.parseTransaction(call)!.args
-      return {
-        ...call,
-        fullVisualization: [
-          getAction('Bridge'),
-          getToken(ZeroAddress, amount),
-          getLabel('to'),
-          getToken(ZeroAddress, amountOutMin),
-          getLabel('on'),
-          getChain(toChainId),
-          ...getRecipientText(accountOp.accountAddr, receiverAddress),
-          getDeadline(deadline)
-        ]
-      }
+      return [
+        getAction('Bridge'),
+        getToken(ZeroAddress, amount),
+        getLabel('to'),
+        getToken(ZeroAddress, amountOutMin),
+        getLabel('on'),
+        getChain(toChainId),
+        ...getRecipientText(accountOp.accountAddr, receiverAddress),
+        getDeadline(deadline)
+      ]
     },
     [`${iface.getFunction('bridgeNativeTo(uint256,address,uint256,bytes32)')?.selector}`]: (
       call: IrCall
-    ): IrCall => {
+    ) => {
       const [amount, recipient, chainId, metadata] = iface.parseTransaction(call)!.args
-      return {
-        ...call,
-        fullVisualization: [
-          getAction('Bridge'),
-          getToken(ZeroAddress, amount),
-          getLabel('to'),
-          getChain(chainId),
-          ...getRecipientText(accountOp.accountAddr, recipient)
-        ]
-      }
+      return [
+        getAction('Bridge'),
+        getToken(ZeroAddress, amount),
+        getLabel('to'),
+        getChain(chainId),
+        ...getRecipientText(accountOp.accountAddr, recipient)
+      ]
     },
     [`${
       iface.getFunction(
         'function bridgeNativeTo(address receiverAddress, address hopAMM, uint256 amount, uint256 toChainId, uint256 bonderFee, uint256 amountOutMin, uint256 deadline, uint256 amountOutMinDestination, uint256 deadlineDestination, bytes32 metadata) payable'
       )?.selector
-    }`]: (call: IrCall): IrCall => {
+    }`]: (call: IrCall) => {
       const {
         receiverAddress,
         hopAMM,
@@ -530,25 +475,22 @@ export const SocketModule: HumanizerCallModule = (accountOp: AccountOp, irCalls:
         deadlineDestination,
         metadata
       } = iface.parseTransaction(call)!.args
-      return {
-        ...call,
-        fullVisualization: [
-          getAction('Bridge'),
-          getToken(ZeroAddress, amount),
-          getLabel('to'),
-          getToken(ZeroAddress, amountOutMin),
-          getLabel('on'),
-          getChain(toChainId),
-          ...getRecipientText(accountOp.accountAddr, receiverAddress),
-          getDeadline(deadline)
-        ]
-      }
+      return [
+        getAction('Bridge'),
+        getToken(ZeroAddress, amount),
+        getLabel('to'),
+        getToken(ZeroAddress, amountOutMin),
+        getLabel('on'),
+        getChain(toChainId),
+        ...getRecipientText(accountOp.accountAddr, receiverAddress),
+        getDeadline(deadline)
+      ]
     },
     [`${
       iface.getFunction(
         'swapAndBridge(uint32 swapId, bytes swapData, tuple(uint256 toChainId, uint256 slippage, uint256 relayerFee, uint32 dstChainDomain, address receiverAddress, bytes32 metadata, bytes callData, address delegate) connextBridgeData)'
       )?.selector
-    }`]: (call: IrCall): IrCall => {
+    }`]: (call: IrCall) => {
       const {
         swapData,
         connextBridgeData: {
@@ -572,41 +514,35 @@ export const SocketModule: HumanizerCallModule = (accountOp: AccountOp, irCalls:
         if (swapExtraData.startsWith('0x415565b0'))
           outAmount = iface.parseTransaction({ data: swapExtraData })!.args[3]
 
-        return {
-          ...call,
-          fullVisualization: [
-            getAction('Bridge'),
-            getToken(eToNative(fromToken), amount),
-            getLabel('to'),
-
-            ...(chainId
-              ? [
-                  getTokenWithChain(eToNative(toToken), outAmount, chainId),
-                  getLabel('on'),
-                  getChain(chainId)
-                ]
-              : [getToken(eToNative(toToken), outAmount)]),
-            ...getRecipientText(accountOp.accountAddr, receiverAddress)
-          ].filter((x) => x)
-        }
-      }
-      return {
-        ...call,
-        fullVisualization: [
+        return [
           getAction('Bridge'),
-          getLabel('undetected token'),
+          getToken(eToNative(fromToken), amount),
           getLabel('to'),
-          getLabel('undetected token'),
-          ...(chainId ? [getLabel('on'), getChain(chainId)] : []),
+
+          ...(chainId
+            ? [
+                getTokenWithChain(eToNative(toToken), outAmount, chainId),
+                getLabel('on'),
+                getChain(chainId)
+              ]
+            : [getToken(eToNative(toToken), outAmount)]),
           ...getRecipientText(accountOp.accountAddr, receiverAddress)
         ].filter((x) => x)
       }
+      return [
+        getAction('Bridge'),
+        getLabel('undetected token'),
+        getLabel('to'),
+        getLabel('undetected token'),
+        ...(chainId ? [getLabel('on'), getChain(chainId)] : []),
+        ...getRecipientText(accountOp.accountAddr, receiverAddress)
+      ].filter((x) => x)
     },
     [`${
       iface.getFunction(
         'swapAndBridge(uint32 swapId, bytes calldata swapData, tuple (address receiverAddress,address senderAddress,uint256 value,uint256 srcPoolId,uint256 dstPoolId,uint256 minReceivedAmt,uint256 destinationGasLimit,bool isNativeSwapRequired,uint16 stargateDstChainId,uint32 swapId,bytes swapData,bytes32 metadata,bytes destinationPayload) acrossBridgeData)'
       )?.selector
-    }`]: (call: IrCall): IrCall => {
+    }`]: (call: IrCall) => {
       const {
         swapId,
         swapData,
@@ -651,22 +587,19 @@ export const SocketModule: HumanizerCallModule = (accountOp: AccountOp, irCalls:
         tokensData.push(getToken(fromToken, amount), getLabel('to'), getToken(toToken, value))
       }
 
-      return {
-        ...call,
-        fullVisualization: [
-          getAction('Bridge'),
-          ...tokensData,
-          ...dstChain,
-          ...getRecipientText(senderAddress, receiverAddress)
-        ]
-      }
+      return [
+        getAction('Bridge'),
+        ...tokensData,
+        ...dstChain,
+        ...getRecipientText(senderAddress, receiverAddress)
+      ]
     },
 
     [`${
       iface.getFunction(
         'function swapAndBridge(uint32 swapId, bytes swapData, (uint32 dstEid, uint256 minAmountLD, address stargatePoolAddress, bytes destinationPayload, bytes destinationExtraOptions, (uint256 nativeFee, uint256 lzTokenFee) messagingFee, bytes32 metadata, uint256 toChainId, address receiver, bytes swapData, uint32 swapId, bool isNativeSwapRequired) stargateBridgeData) payable'
       )?.selector
-    }`]: (call: IrCall): IrCall => {
+    }`]: (call: IrCall) => {
       const {
         swapId,
         swapData,
@@ -707,16 +640,13 @@ export const SocketModule: HumanizerCallModule = (accountOp: AccountOp, irCalls:
         tokensData.push(getToken(fromToken, amount), getLabel('to'), getToken(toToken, minAmountLD))
       }
 
-      return {
-        ...call,
-        fullVisualization: [
-          getAction('Bridge'),
-          ...tokensData,
-          getLabel('to'),
-          getChain(toChainId),
-          ...getRecipientText(accountOp.accountAddr, receiver)
-        ]
-      }
+      return [
+        getAction('Bridge'),
+        ...tokensData,
+        getLabel('to'),
+        getChain(toChainId),
+        ...getRecipientText(accountOp.accountAddr, receiver)
+      ]
     }
   }
 
@@ -725,10 +655,11 @@ export const SocketModule: HumanizerCallModule = (accountOp: AccountOp, irCalls:
       ..._call,
       data: `0x${_call.data.slice(10)}`
     }
+
     if (matcher[call.data.slice(0, 10)]) {
       return {
         ..._call,
-        fullVisualization: matcher[call.data.slice(0, 10)](call).fullVisualization
+        fullVisualization: matcher[call.data.slice(0, 10)](call)
       }
     }
     return _call
