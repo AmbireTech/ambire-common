@@ -37,6 +37,7 @@ import { Calls, DappUserRequest, SignUserRequest, UserRequest } from '../../inte
 import { WindowManager } from '../../interfaces/window'
 import { getContractImplementation } from '../../libs/7702/7702'
 import {
+  canBecomeSmarter,
   getDefaultSelectedAccount,
   isBasicAccount,
   isSmartAccount
@@ -1712,7 +1713,17 @@ export class MainController extends EventEmitter {
     }
 
     // basic account: ask for 7702 auth
-    if (isBasicAccount(account, accountState) && network.has7702 && action.kind === 'calls') {
+    if (
+      isBasicAccount(account, accountState) &&
+      canBecomeSmarter(
+        account,
+        this.keystore.keys.filter((key) =>
+          this.selectedAccount.account!.associatedKeys.includes(key.addr)
+        )
+      ) &&
+      network.has7702 &&
+      action.kind === 'calls'
+    ) {
       // check if entry point auth is already visible
       // if it is, focus it and remove old call requests to it
       const hasFocussed = this.#focusPreUserRequestIfAnyAndDeleteOldRequest(
