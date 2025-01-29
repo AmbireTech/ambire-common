@@ -125,7 +125,7 @@ export class ActionsController extends EventEmitter {
         this.currentAction = null
 
         this.actionsQueue = this.actionsQueue.filter((a) => a.type === 'accountOp')
-        if (this.actionsQueue.length) {
+        if (this.visibleActionsQueue.length) {
           await this.#notificationManager.create({
             title:
               this.actionsQueue.length > 1
