@@ -27,7 +27,7 @@ const socketApiKey = '72a5b4b0-e727-48be-8aa1-5da9d62fe635'
 const windowManager = {
   event: new EventEmitter(),
   focus: () => Promise.resolve(),
-  open: () => Promise.resolve({ id: 0, top: 0, left: 0, width: 100, height: 100 }),
+  open: () => Promise.resolve({ id: 0, top: 0, left: 0, width: 100, height: 100, focused: true }),
   remove: () => Promise.resolve(),
   sendWindowToastMessage: () => {},
   sendWindowUiMessage: () => {}
@@ -497,7 +497,7 @@ describe('Main Controller ', () => {
         })
       } catch (e: any) {
         expect(e.message).toBe(
-          'The transaction cannot be broadcast because the swap has expired. Return to the dApp and reinitiate the swap if you wish to proceed.'
+          'The transaction cannot be broadcast because the swap has expired. Return to the app and reinitiate the swap if you wish to proceed.'
         )
         expect(controllerAnyType.updateSignAccountOpGasPrice).not.toHaveBeenCalled()
         expect(controllerAnyType.estimateSignAccountOp).not.toHaveBeenCalled()

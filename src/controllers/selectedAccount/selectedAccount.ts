@@ -151,6 +151,18 @@ export class SelectedAccountController extends EventEmitter {
       })
     })
 
+    this.#networks.onUpdate(() => {
+      this.#debounceFunctionCallsOnSameTick('resetDashboardNetworkFilterIfNeeded', () => {
+        if (!this.dashboardNetworkFilter) return
+        const dashboardFilteredNetwork = this.#networks!.networks.find(
+          (n) => n.id === this.dashboardNetworkFilter
+        )
+
+        // reset the dashboardNetworkFilter if the network is removed
+        if (!dashboardFilteredNetwork) this.setDashboardNetworkFilter(null)
+      })
+    })
+
     this.#accounts.onUpdate(() => {
       this.#debounceFunctionCallsOnSameTick('updateSelectedAccount', () => {
         this.#updateSelectedAccount()
@@ -294,14 +306,22 @@ export class SelectedAccountController extends EventEmitter {
     }
   }
 
-  #debounceFunctionCallsOnSameTick(funcName: string, func: Function) {
+  #debounceFunctionCallsOnSameTick(funcName: string, func: () => void) {
     if (this.#shouldDebounceFlags[funcName]) return
     this.#shouldDebounceFlags[funcName] = true
 
     // Debounce multiple calls in the same tick and only execute one of them
     setTimeout(() => {
       this.#shouldDebounceFlags[funcName] = false
-      func()
+      try {
+        func()
+      } catch (error: any) {
+        this.emitError({
+          level: 'minor',
+          message: `The execution of ${funcName} in SelectedAccountController failed`,
+          error
+        })
+      }
     }, 0)
   }
 
