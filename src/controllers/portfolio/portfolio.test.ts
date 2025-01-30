@@ -580,7 +580,7 @@ describe('Portfolio Controller ', () => {
         standard: 'ERC20'
       } as const
 
-      await controller.addCustomToken(customToken, account.addr)
+      await controller.addCustomToken(customToken, account.addr, true)
 
       const hasErc20Matic = controller
         .getLatestPortfolioState(account.addr)
@@ -745,7 +745,7 @@ describe('Portfolio Controller ', () => {
       standard: 'ERC20'
     } as const
 
-    await controller.addCustomToken(customToken, account.addr)
+    await controller.addCustomToken(customToken, account.addr, true)
 
     const tokenIsSet = controller.customTokens.find(
       (token) => token.address === customToken.address && token.networkId === customToken.networkId
@@ -763,7 +763,7 @@ describe('Portfolio Controller ', () => {
     expect(tokenIsSet).toEqual(customToken)
     expect(getCustomTokenFromPortfolio()).toBeTruthy()
 
-    await controller.removeCustomToken(customToken, account.addr)
+    await controller.removeCustomToken(customToken, account.addr, true)
 
     const tokenIsRemoved = controller.customTokens.find(
       (token) => token.address === customToken.address && token.networkId === customToken.networkId
@@ -813,7 +813,7 @@ describe('Portfolio Controller ', () => {
       networkId: 'ethereum'
     }
 
-    await controller.toggleHideToken(preference, account.addr)
+    await controller.toggleHideToken(preference, account.addr, true)
 
     const hiddenToken = controller
       .getLatestPortfolioState(account.addr)
