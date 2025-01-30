@@ -17,10 +17,6 @@ export type TokenResult = Omit<CustomToken, 'standard'> & {
   amount: bigint
   simulationAmount?: bigint
   amountPostSimulation?: bigint
-  availableAmount?: bigint
-  cashback?: bigint
-  saved?: bigint
-  shouldPopsUpConfetti?: boolean
   priceIn: Price[]
   flags: {
     onGasTank: boolean
@@ -29,6 +25,13 @@ export type TokenResult = Omit<CustomToken, 'standard'> & {
     isFeeToken: boolean
     isDefiToken?: boolean
   }
+}
+
+export type GasTankTankResult = TokenResult & {
+  availableAmount: bigint
+  cashback: bigint
+  saved: bigint
+  shouldPopsUpConfetti: boolean
 }
 
 export interface CollectionResult extends TokenResult {
@@ -138,12 +141,16 @@ export type AdditionalPortfolioNetworkResult = Partial<PortfolioLibGetResult> &
 
 type PortfolioNetworkResult = Required<AdditionalPortfolioNetworkResult>
 
+export type PortfolioGasTankResult = AdditionalPortfolioNetworkResult & {
+  gasTankTokens: GasTankTankResult[]
+}
+
 export type NetworkState = {
   isReady: boolean
   isLoading: boolean
   criticalError?: ExtendedError
   errors: ExtendedErrorWithLevel[]
-  result?: PortfolioNetworkResult | AdditionalPortfolioNetworkResult
+  result?: PortfolioNetworkResult | AdditionalPortfolioNetworkResult | PortfolioGasTankResult
   // We store the previously simulated AccountOps only for the pending state.
   // Prior to triggering a pending state update, we compare the newly passed AccountOp[] (updateSelectedAccount) with the cached version.
   // If there are no differences, the update is canceled unless the `forceUpdate` flag is set.

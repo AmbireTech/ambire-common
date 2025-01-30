@@ -18,13 +18,14 @@ import {
   getUpdatedHints,
   processTokens,
   shouldGetAdditionalPortfolio,
-  shouldShowConfettiLogic,
+  shouldShowConfettiOnFirstCashback,
   validateERC20Token
 } from '../../libs/portfolio/helpers'
 /* eslint-disable no-restricted-syntax */
 // eslint-disable-next-line import/no-cycle
 import {
   AccountState,
+  GasTankTankResult,
   GetOptions,
   NetworkState,
   PortfolioControllerState,
@@ -370,16 +371,16 @@ export class PortfolioController extends EventEmitter {
       }
     }
 
-    if (shouldShowConfettiLogic(accountState, res.data.gasTank.balance)) {
+    if (shouldShowConfettiOnFirstCashback(accountState, res.data.gasTank.balance)) {
       this.shouldShowConfettiBanner = { ...this.shouldShowConfettiBanner, [accountId]: true }
 
       await this.#storage.set('shouldShowConfettiBanner', this.shouldShowConfettiBanner)
     }
 
-    const gasTankTokens = res.data.gasTank.balance.map((t: any) => ({
+    const gasTankTokens: GasTankTankResult[] = res.data.gasTank.balance.map((t: any) => ({
       ...t,
       amount: BigInt(t.amount),
-      availableAmount: BigInt(t.amount),
+      availableAmount: BigInt(t.availableAmount),
       cashback: BigInt(t.cashback || 0),
       saved: BigInt(t.saved || 0),
       shouldPopsUpConfetti: this.#shouldShowConfettiModal,
@@ -393,7 +394,8 @@ export class PortfolioController extends EventEmitter {
       result: {
         updateStarted: start,
         lastSuccessfulUpdate: Date.now(),
-        tokens: [...gasTankTokens],
+        tokens: [],
+        gasTankTokens: [...gasTankTokens],
         total: getTotal(gasTankTokens)
       }
     }

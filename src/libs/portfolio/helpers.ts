@@ -11,6 +11,8 @@ import { CustomToken } from './customToken'
 import {
   AccountState,
   AdditionalPortfolioNetworkResult,
+  NetworkState,
+  PortfolioGasTankResult,
   PreviousHintsStorage,
   StrippedExternalHintsAPIResponse,
   TokenResult
@@ -447,14 +449,28 @@ export const processTokens = (
   }, [] as TokenResult[])
 }
 
-export const shouldShowConfettiLogic = (accountState: AccountState, resBalance: any[]) => {
-  const previousCashback = accountState.gasTank?.result?.tokens[0]?.cashback
-  const currentCashback = resBalance[0]?.cashback
+export const isPortfolioGasTankResult = (
+  result: NetworkState['result']
+): result is PortfolioGasTankResult => {
+  return !!result && 'gasTankTokens' in result && Array.isArray(result.gasTankTokens)
+}
 
+export const shouldShowConfettiOnFirstCashback = (
+  accountState: AccountState,
+  resBalance: any[]
+) => {
+  const gasTankResult = accountState.gasTank?.result
+
+  if (!isPortfolioGasTankResult(gasTankResult)) {
+    return false
+  }
+
+  const previousCashback = gasTankResult.gasTankTokens[0]?.cashback
+  const currentCashback = resBalance[0]?.cashback
   return (
     typeof previousCashback !== 'undefined' &&
     typeof currentCashback !== 'undefined' &&
     previousCashback === 0n &&
-    BigInt(currentCashback) !== 0n
+    BigInt(currentCashback) > 0n
   )
 }
