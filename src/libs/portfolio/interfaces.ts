@@ -27,7 +27,7 @@ export type TokenResult = Omit<CustomToken, 'standard'> & {
   }
 }
 
-export type GasTankTankResult = TokenResult & {
+export type GasTankTokenResult = TokenResult & {
   availableAmount: bigint
   cashback: bigint
   saved: bigint
@@ -142,7 +142,7 @@ export type AdditionalPortfolioNetworkResult = Partial<PortfolioLibGetResult> &
 type PortfolioNetworkResult = Required<AdditionalPortfolioNetworkResult>
 
 export type PortfolioGasTankResult = AdditionalPortfolioNetworkResult & {
-  gasTankTokens: GasTankTankResult[]
+  gasTankTokens: GasTankTokenResult[]
 }
 
 export type NetworkState = {

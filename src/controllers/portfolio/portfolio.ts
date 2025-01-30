@@ -25,7 +25,7 @@ import {
 // eslint-disable-next-line import/no-cycle
 import {
   AccountState,
-  GasTankTankResult,
+  GasTankTokenResult,
   GetOptions,
   NetworkState,
   PortfolioControllerState,
@@ -377,7 +377,7 @@ export class PortfolioController extends EventEmitter {
       await this.#storage.set('shouldShowConfettiBanner', this.shouldShowConfettiBanner)
     }
 
-    const gasTankTokens: GasTankTankResult[] = res.data.gasTank.balance.map((t: any) => ({
+    const gasTankTokens: GasTankTokenResult[] = res.data.gasTank.balance.map((t: any) => ({
       ...t,
       amount: BigInt(t.amount),
       availableAmount: BigInt(t.availableAmount),
