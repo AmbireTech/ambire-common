@@ -1,4 +1,4 @@
-import { UserRequest } from '../../interfaces/userRequest'
+import { Calls, UserRequest } from '../../interfaces/userRequest'
 
 export interface Call {
   to: string
@@ -8,4 +8,5 @@ export interface Call {
   // multiple calls can be associated with the same user request, for example
   // when a batching request is made
   fromUserRequestId?: UserRequest['id']
+  id?: Calls['calls'][number]['id']
 }
