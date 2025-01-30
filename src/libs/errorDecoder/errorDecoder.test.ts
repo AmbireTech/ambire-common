@@ -4,7 +4,7 @@ import { ethers } from 'hardhat'
 
 import { describe, expect } from '@jest/globals'
 
-import { suppressConsole } from '../../../test/helpers/console'
+import { suppressConsole, suppressConsoleBeforeEach } from '../../../test/helpers/console'
 import { networks } from '../../consts/networks'
 import {
   getHumanReadableEstimationError,
@@ -205,8 +205,9 @@ describe('Error decoders work', () => {
     })
   })
   describe('CodeError', () => {
+    suppressConsoleBeforeEach()
+
     it('Should handle generic JS exceptions as CodeError', () => {
-      const { restore } = suppressConsole()
       const errors = [
         new TypeError('Type error'),
         new SyntaxError('Syntax error'),
@@ -219,8 +220,37 @@ describe('Error decoders work', () => {
         expect(decodedError.type).toEqual(ErrorType.CodeError)
         expect(decodedError.reason).toBe(error.name)
       })
+    })
+    it('Accessing a property of an undefined object', () => {
+      try {
+        const obj: any = undefined
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const prop = obj.prop
+      } catch (e: any) {
+        const decodedError = decodeError(e)
 
-      restore()
+        expect(decodedError.type).toEqual(ErrorType.CodeError)
+
+        expect(decodedError.reason).toBe('TypeError')
+      }
+    })
+    it('Network fetch error', () => {
+      const ERRORS_MESSAGES = [
+        'Network request failed',
+        'Failed to fetch',
+        'Failed to load resource'
+      ]
+
+      ERRORS_MESSAGES.forEach((message) => {
+        try {
+          throw new TypeError(message)
+        } catch (e: any) {
+          const decodedError = decodeError(e)
+
+          expect(decodedError.type).toEqual(ErrorType.CodeError)
+          expect(decodedError.reason).toBe('NetworkError')
+        }
+      })
     })
   })
   describe('Should handle BundlerError correctly', () => {

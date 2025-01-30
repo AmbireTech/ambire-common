@@ -10,6 +10,7 @@ import {
   UserRejectionHandler
 } from './handlers'
 import BiconomyEstimationErrorHandler from './handlers/biconomy'
+import CodeErrorHandler from './handlers/codeError'
 import PimlicoEstimationErrorHandler from './handlers/pimlico'
 import RelayerErrorHandler from './handlers/relayer'
 import { formatReason, getDataFromError, isReasonValid } from './helpers'
@@ -22,6 +23,7 @@ const PREPROCESSOR_BUNDLER_HANDLERS = [
 
 const PREPROCESSOR_HANDLERS = [BundlerErrorHandler, RelayerErrorHandler, InnerCallFailureHandler]
 const ERROR_HANDLERS = [
+  CodeErrorHandler,
   RpcErrorHandler,
   CustomErrorHandler,
   PanicErrorHandler,
@@ -33,23 +35,6 @@ const ERROR_HANDLERS = [
 // additionalHandlers is a list of handlers we want to add only for
 // specific decodeError cases (e.g. bundler estimation)
 export function decodeError(e: Error): DecodedError {
-  // Otherwise regular JS/TS errors will be handled
-  // as RPC errors which is confusing.
-  if (
-    e instanceof TypeError ||
-    e instanceof ReferenceError ||
-    e instanceof SyntaxError ||
-    e instanceof RangeError
-  ) {
-    console.error('Encountered a code error', e)
-
-    return {
-      type: ErrorType.CodeError,
-      reason: e.name,
-      data: null
-    }
-  }
-
   const errorData = getDataFromError(e)
 
   let decodedError: DecodedError = {

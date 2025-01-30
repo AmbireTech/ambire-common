@@ -3,6 +3,7 @@ import { ethers } from 'hardhat'
 
 import { describe, expect } from '@jest/globals'
 
+import { suppressConsole } from '../../../test/helpers/console'
 import { decodeError } from '../errorDecoder'
 import { RELAYER_DOWN_MESSAGE } from '../relayerCall/relayerCall'
 import { insufficientPaymasterFunds } from './errors'
@@ -19,6 +20,7 @@ describe('Estimation/Broadcast common errors are humanized', () => {
   let contract: any
 
   beforeEach(async () => {
+    suppressConsole()
     const contractFactory = await ethers.getContractFactory('MockContract')
     contract = await contractFactory.deploy()
   })
@@ -88,6 +90,16 @@ describe('Estimation/Broadcast common errors are humanized', () => {
 
     expect(message).toBe(
       `${MESSAGE_PREFIX} the Ambire relayer is temporarily down.\nPlease try again or contact Ambire support for assistance.`
+    )
+  })
+  it('Network error or fetch error', () => {
+    const error = new TypeError('NetworkError when attempting to fetch resource.')
+
+    const { reason } = decodeError(error)
+    const message = humanizeEstimationOrBroadcastError(reason, MESSAGE_PREFIX)
+
+    expect(message).toBe(
+      `${MESSAGE_PREFIX} there was a network error. Please check your internet connection or try again later.`
     )
   })
 })

@@ -7,6 +7,11 @@ const insufficientPaymasterFunds =
   "the Paymaster has insufficient funds. Please report this to the team. We've disabled it, so please try again with the updated fee payment options."
 
 const BROADCAST_OR_ESTIMATION_ERRORS: ErrorHumanizerError[] = [
+  // Code
+  {
+    reasons: ['NetworkError'],
+    message: 'there was a network error. Please check your internet connection or try again later.'
+  },
   // Rpc
   {
     reasons: ['Method not found'],
