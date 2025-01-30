@@ -319,7 +319,7 @@ export class SelectedAccountController extends EventEmitter {
         this.emitError({
           level: 'minor',
           message: `The execution of ${funcName} in SelectedAccountController failed`,
-          error: new Error(error)
+          error
         })
       }
     }, 0)
