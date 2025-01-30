@@ -1,7 +1,7 @@
-import { hashMessage } from 'ethers'
+import { hashMessage, TypedDataEncoder } from 'ethers'
 import { ethers } from 'hardhat'
 
-import { wrapEIP712, wrapEthSign, wrapTypedData } from '../ambireSign'
+import { getExecute712Data, wrapEIP712, wrapEthSign, wrapTypedData } from '../ambireSign'
 import {
   abiCoder,
   addressFour,
@@ -28,6 +28,32 @@ describe('Basic Ambire Account tests', () => {
       }
     ])
     ambireAccountAddress = addr
+  })
+  it('should successfully perform execute and validate that the nonce has moved', async () => {
+    const [signer] = await ethers.getSigners()
+    const contract: any = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, signer)
+    await sendFunds(ambireAccountAddress, 1)
+    const nonce = await contract.nonce()
+    const txns = [
+      { to: addressTwo, value: ethers.parseEther('0.01'), data: '0x' },
+      { to: addressThree, value: ethers.parseEther('0.01'), data: '0x' }
+    ]
+    const txnsAsArray = txns.map((txn) => Object.values(txn))
+    const executeHash = ethers.keccak256(
+      abiCoder.encode(
+        ['address', 'uint', 'uint', 'tuple(address, uint, bytes)[]'],
+        [ambireAccountAddress, chainId, nonce, txnsAsArray]
+      )
+    )
+    const typedData = getExecute712Data(chainId, nonce, txns, ambireAccountAddress, executeHash)
+    const finalDigest = TypedDataEncoder.hash(typedData.domain, typedData.types, typedData.value)
+    console.log(finalDigest)
+    const s = wrapEIP712(
+      await signer.signTypedData(typedData.domain, typedData.types, typedData.value)
+    )
+    await contract.execute(txnsAsArray, s)
+    const nonceAfterExecute = await contract.nonce()
+    expect(nonceAfterExecute).to.equal(nonce + 1n)
   })
   it('ONLY_ACCOUNT_CAN_CALL on setAddrPrivilege', async () => {
     const [signer] = await ethers.getSigners()
@@ -215,29 +241,6 @@ describe('Basic Ambire Account tests', () => {
     const receipt = await multipleTxn.wait()
     const postBalance = await provider.getBalance(ambireAccountAddress, receipt.blockNumber)
     expect(balance - postBalance).to.equal(ethers.parseEther('0.04'))
-  })
-  it('should successfully perform execute and validate that the nonce has moved', async () => {
-    const [signer] = await ethers.getSigners()
-    const contract: any = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, signer)
-    await sendFunds(ambireAccountAddress, 1)
-    const nonce = await contract.nonce()
-    const txns = [
-      [addressTwo, ethers.parseEther('0.01'), '0x00'],
-      [addressThree, ethers.parseEther('0.01'), '0x00']
-    ]
-    const executeHash = ethers.keccak256(
-      abiCoder.encode(
-        ['address', 'uint', 'uint', 'tuple(address, uint, bytes)[]'],
-        [ambireAccountAddress, chainId, nonce, txns]
-      )
-    )
-    const typedData = wrapTypedData(chainId, ambireAccountAddress, executeHash)
-    const s = wrapEthSign(
-      await signer.signTypedData(typedData.domain, typedData.types, typedData.value)
-    )
-    await contract.execute(txns, s)
-    const nonceAfterExecute = await contract.nonce()
-    expect(nonceAfterExecute).to.equal(nonce + 1n)
   })
   it('should successfully execute a txn using accountOpSignableHash', async () => {
     const [signer] = await ethers.getSigners()
