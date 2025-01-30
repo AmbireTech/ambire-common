@@ -1,11 +1,8 @@
+import { keccak256, toUtf8Bytes } from 'ethers'
 import { ethers } from 'hardhat'
 
-import {
-  getProxyDeployBytecode,
-  getStorageSlotsFromArtifact,
-  PrivLevels
-} from '../src/libs/proxyDeploy/deploy'
-import { AmbireAccount, assertion, buildInfo, deployGasLimit, deploySalt, expect } from './config'
+import { getProxyDeployBytecode, PrivLevels } from '../src/libs/proxyDeploy/deploy'
+import { AmbireAccount, assertion, deployGasLimit, deploySalt, expect } from './config'
 
 // get the expect address after the contract is deployed by the deployer
 function getAmbireAccountAddress(factoryAddress: string, bytecode: string) {
@@ -27,7 +24,7 @@ async function deployAmbireAccountHardhatNetwork(priLevels: PrivLevels[]) {
 
   // get the bytecode and deploy it
   const bytecode = getProxyDeployBytecode(addr, priLevels, {
-    ...getStorageSlotsFromArtifact(buildInfo)
+    privSlot: `${keccak256(toUtf8Bytes('ambire.smart.contracts.storage'))}`
   })
   await factory.deploy(bytecode, deploySalt, { deployGasLimit })
 
@@ -40,8 +37,8 @@ async function deployAmbireAccountHardhatNetwork(priLevels: PrivLevels[]) {
 
   const promises = priLevels.map((priv) => ambireAccount.privileges(priv.addr))
   const result = await Promise.all(promises)
-  result.map((res, index) => {
-    const expected = priLevels[index].hash === true ? ethers.toBeHex(1, 32) : priLevels[index].hash
+  result.forEach((res, index) => {
+    const expected = priLevels[index].hash ? ethers.toBeHex(2, 32) : priLevels[index].hash
     expect(res).to.equal(expected)
   })
   return {

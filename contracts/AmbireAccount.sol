@@ -6,6 +6,7 @@ import './ExternalSigValidator.sol';
 import './libs/erc4337/PackedUserOperation.sol';
 import './libs/erc4337/UserOpHelper.sol';
 import './deployless/IAmbireAccount.sol';
+import './libs/Eip712HashBuilder.sol';
 
 /**
  * @notice  A validator that performs DKIM signature recovery
@@ -171,7 +172,9 @@ contract AmbireAccount is IAmbireAccount {
 			}
 		} else {
 			signerKey = SignatureValidator.recoverAddr(
-				keccak256(abi.encode(address(this), block.chainid, currentNonce, calls)),
+				Eip712HashBuilder.getHash(
+					keccak256(abi.encode(address(this), block.chainid, currentNonce, calls))
+				),
 				signature,
 				true
 			);
@@ -360,7 +363,11 @@ contract AmbireAccount is IAmbireAccount {
 		}
 
 		// this is replay-safe because userOpHash is retrieved like this: keccak256(abi.encode(userOp.hash(), address(this), block.chainid))
-		address signer = SignatureValidator.recoverAddr(userOpHash, op.signature, true);
+		address signer = SignatureValidator.recoverAddr(
+			Eip712HashBuilder.getHash(userOpHash),
+			op.signature,
+			true
+		);
 		if (privileges(signer) == bytes32(0)) return SIG_VALIDATION_FAILED;
 
 		return SIG_VALIDATION_SUCCESS;

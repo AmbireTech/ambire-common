@@ -1,11 +1,7 @@
-import { BaseContract } from 'ethers'
+import { BaseContract, keccak256, toUtf8Bytes } from 'ethers'
 import { ethers } from 'hardhat'
 
-import {
-  getProxyDeployBytecode,
-  getStorageSlotsFromArtifact,
-  PrivLevels
-} from '../../src/libs/proxyDeploy/deploy'
+import { getProxyDeployBytecode, PrivLevels } from '../../src/libs/proxyDeploy/deploy'
 import { wrapEthSign, wrapTypedData } from '../ambireSign'
 import { abiCoder, chainId, expect, provider } from '../config'
 import {
@@ -37,7 +33,7 @@ export async function get4437Bytecode(priLevels: PrivLevels[]): Promise<string> 
 
   // get the bytecode and deploy it
   return getProxyDeployBytecode(await contract.getAddress(), priLevels, {
-    ...getStorageSlotsFromArtifact(null)
+    privSlot: `${keccak256(toUtf8Bytes('ambire.smart.contracts.storage'))}`
   })
 }
 
@@ -67,7 +63,7 @@ describe('ERC-4337 deploys the account via userOp and adds the entry point permi
     const privs = [
       {
         addr: signer.address,
-        hash: '0x0000000000000000000000000000000000000000000000000000000000000001'
+        hash: '0x0000000000000000000000000000000000000000000000000000000000000002'
       }
     ]
     const bytecodeWithArgs = await get4437Bytecode(privs)
