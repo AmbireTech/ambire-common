@@ -179,7 +179,7 @@ export class SocketAPI {
     let response = await this.#handleResponse<SocketAPIToken[]>({
       fetchPromise: this.#fetch(url, { headers: this.#headers }),
       errorPrefix:
-        'Unable to retrieve the list of supported receive tokens. Please reload the tab to try again.'
+        'Unable to retrieve the list of supported receive tokens. Please reload to try again.'
     })
 
     // Exception for Optimism, strip out the legacy ETH address
