@@ -132,14 +132,14 @@ describe('uniswap', () => {
       [
         getAction('Swap'),
         getToken('0x8a3c710e41cd95799c535f22dbae371d7c858651', 50844919041919270406243n),
-        getLabel('for'),
+        getLabel('for at least'),
         getToken('0x0000000000000000000000000000000000000000', 137930462904193673n),
         getDeadline(1692784103n)
       ],
       [
         getAction('Swap'),
         getToken('0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2', 941000000000000000n),
-        getLabel('for'),
+        getLabel('for at least'),
         getToken('0x6e975115250b05c828ecb8ededb091975fc20a5d', 5158707941840645403045n),
         getLabel('and send it to'),
         getAddressVisualization('0xbb6c8c037b9cc3bf1a4c4188d92e5d86bfce76a8'),
@@ -148,7 +148,7 @@ describe('uniswap', () => {
       [
         getAction('Swap'),
         getToken('0xebb82c932759b515b2efc1cfbb6bf2f6dbace404', 422775565331912310692n),
-        getLabel('for'),
+        getLabel('for at least'),
         getToken('0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48', 2454922038n),
         getLabel('and send it to'),
         getAddressVisualization('0xca124b356bf11dc153b886ecb4596b5cb9395c41'),
@@ -166,14 +166,14 @@ describe('uniswap', () => {
       [
         getAction('Swap'),
         getToken('0x0000000000000000000000000000000000000000', 100000000000000n),
-        getLabel('for'),
+        getLabel('for at least'),
         getToken('0x0b2c639c533813f4aa9d7837caf62653d097ff85', 178131n),
         getDeadline(1699015475n)
       ],
       [
         getAction('Swap'),
         getToken('0xff970a61a04b1ca14834a43f5de4533ebddb5cc8', 100000000n),
-        getLabel('for'),
+        getLabel('for at least'),
         getToken('0x2e9a6df78e42a30712c10a9dc4b1c8656f8f2879', 72003605256085551n),
         getLabel('and send it to'),
         getAddressVisualization('0x02a3109c4ce8354ee771feac419b5da04ef15761'),
@@ -191,7 +191,7 @@ describe('uniswap', () => {
         getLabel('and'),
         getAction('Swap'),
         getToken('0x3c499c542cef5e3811e1192ce70d8cc03d5c3359', 10000n),
-        getLabel('for'),
+        getLabel('for at least'),
         getToken('0x0000000000000000000000000000000000000000', 10337979384133110n),
         getDeadline(1708105881n)
       ]
@@ -210,7 +210,7 @@ describe('uniswap', () => {
       [
         getAction('Swap'),
         getToken('0x88800092ff476844f74dc2fc427974bbee2794ae', 1000000000000000000000n),
-        getLabel('for'),
+        getLabel('for at least'),
         getToken('0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48', 8605812n),
         getDeadline(1690449491n)
       ],
@@ -243,7 +243,7 @@ describe('uniswap', () => {
       [
         getAction('Swap'),
         getToken(ZeroAddress, 40000000000000000000n),
-        getLabel('for'),
+        getLabel('for at least'),
         getToken('0x761d38e5ddf6ccf6cf7c55759d5210750b5d60f3', 787087015436983109239662968548n),
         getDeadline(1718719955n)
       ],

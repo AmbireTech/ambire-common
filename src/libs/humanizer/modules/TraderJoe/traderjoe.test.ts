@@ -72,14 +72,14 @@ describe('trader joe', () => {
       [
         getAction('Swap'),
         getToken('0x0000000000000000000000000000000000000000', 830670960717642935n),
-        getLabel('for'),
+        getLabel('for at least'),
         getToken('0xff970a61a04b1ca14834a43f5de4533ebddb5cc8', 2920794003n),
         getLabel('and send it to'),
         getAddressVisualization('0xd8da6bf26964af9d7eed9e03e53415d37aa96045'),
         getDeadline(1718630357n)
       ],
       [
-        getAction('Swap'),
+        getAction('Swap up to'),
         getToken('0x0000000000000000000000000000000000000000', 285542766666547n),
         getLabel('for'),
         getToken('0xff970a61a04b1ca14834a43f5de4533ebddb5cc8', 1000000n),
@@ -90,14 +90,14 @@ describe('trader joe', () => {
       [
         getAction('Swap'),
         getToken('0xb97ef9ef8734c71904d8002f8b6bc66dd9c48a6e', 1n),
-        getLabel('for'),
+        getLabel('for at least'),
         getToken('0x0000000000000000000000000000000000000000', 562697269958n),
         getLabel('and send it to'),
         getAddressVisualization('0x6969174FD72466430a46e18234D0b530c9FD5f49'),
         getDeadline(1718634890n)
       ],
       [
-        getAction('Swap'),
+        getAction('Swap up to'),
         getToken('0xb97ef9ef8734c71904d8002f8b6bc66dd9c48a6e', 28500n),
         getLabel('for'),
         getToken('0x0000000000000000000000000000000000000000', 1000000000000000n),
@@ -108,14 +108,14 @@ describe('trader joe', () => {
       [
         getAction('Swap'),
         getToken('0xb97ef9ef8734c71904d8002f8b6bc66dd9c48a6e', 10000n),
-        getLabel('for'),
+        getLabel('for at least'),
         getToken('0x63a72806098bd3d9520cc43356dd78afe5d386d9', 133684649287973n),
         getLabel('and send it to'),
         getAddressVisualization('0x6969174FD72466430a46e18234D0b530c9FD5f49'),
         getDeadline(1718635635n)
       ],
       [
-        getAction('Swap'),
+        getAction('Swap up to'),
         getToken('0xb97ef9ef8734c71904d8002f8b6bc66dd9c48a6e', 7481n),
         getLabel('for'),
         getToken('0x63a72806098bd3d9520cc43356dd78afe5d386d9', 100000000000000n),

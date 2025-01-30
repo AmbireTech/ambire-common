@@ -33,10 +33,14 @@ const config: HardhatUserConfig = {
     optimism: {
       url: 'https://invictus.ambire.com/optimism',
       accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
+    },
+    ethereum: {
+      url: 'https://invictus.ambire.com/ethereum',
+      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
     }
   },
   etherscan: {
-    apiKey: process.env.API_KEY,
+    apiKey: process.env.ETHERSCAN_API_KEY,
     customChains: [
       {
         network: 'base',
@@ -52,6 +56,14 @@ const config: HardhatUserConfig = {
         urls: {
           apiURL: 'https://api-optimistic.etherscan.io/api',
           browserURL: 'https://optimistic.etherscan.io/'
+        }
+      },
+      {
+        network: 'ethereum',
+        chainId: 10,
+        urls: {
+          apiURL: 'https://api.etherscan.io/api',
+          browserURL: 'https://etherscan.io/'
         }
       }
     ]

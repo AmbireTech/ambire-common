@@ -253,15 +253,15 @@ export function parseErr(data: string): string | null {
     }
   }
   if (data.startsWith(invalidPath)) {
-    return 'Transaction cannot be sent due to invalid swap path provided by the dApp that initiated the request. Please return to the dApp interface and try again.'
+    return 'Transaction cannot be sent due to invalid swap path provided by the app that initiated the request. Please return to the app interface and try again.'
   }
   // uniswap expired error
   if (data === expiredSwap) {
-    return 'Transaction cannot be sent because the swap has expired. Please return to the dApp interface and try again.'
+    return 'Transaction cannot be sent because the swap has expired. Please return to the app interface and try again.'
   }
   // uniswap signature expired error
   if (data.startsWith(expiredSig)) {
-    return 'Transaction cannot be sent because the signature involved in this swap has expired. Please return to the dApp interface and try again.'
+    return 'Transaction cannot be sent because the signature involved in this swap has expired. Please return to the app interface and try again.'
   }
   return null
 }

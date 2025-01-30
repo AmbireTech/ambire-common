@@ -11,7 +11,7 @@ const BROADCAST_OR_ESTIMATION_ERRORS: ErrorHumanizerError[] = [
   {
     reasons: ['Method not found'],
     message:
-      'the RPC provider does not support the requested operation. Please check your RPC settings or contact the dApp team.'
+      'the RPC provider does not support the requested operation. Please check your RPC settings or contact the app team.'
   },
   {
     reasons: [RPC_HARDCODED_ERRORS.rpcTimeout, 'Unable to connect to provider'],
@@ -60,7 +60,7 @@ const BROADCAST_OR_ESTIMATION_ERRORS: ErrorHumanizerError[] = [
   {
     reasons: ['Sponsorship failed.'],
     message:
-      'the gas sponsorship was refused by the dapp. Please try again by paying for the gas instead'
+      'the gas sponsorship was refused by the app. Please try again by paying for the gas instead'
   },
   {
     reasons: ['paymaster deposit too low'],
@@ -70,7 +70,7 @@ const BROADCAST_OR_ESTIMATION_ERRORS: ErrorHumanizerError[] = [
   {
     reasons: [RELAYER_DOWN_MESSAGE],
     message:
-      'the Ambire relayer is down.\nPlease try again or contact Ambire support for assistance.'
+      'the Ambire relayer is temporarily down.\nPlease try again or contact Ambire support for assistance.'
   },
   // dApp interactions
   {
@@ -80,7 +80,7 @@ const BROADCAST_OR_ESTIMATION_ERRORS: ErrorHumanizerError[] = [
   {
     reasons: ['INSUFFICIENT_OUTPUT_AMOUNT'],
     message:
-      'the slippage tolerance was exceeded. Please reduce the slippage tolerance in the dApp and try again.'
+      'the slippage tolerance was exceeded. Please reduce the slippage tolerance in the app and try again.'
   },
   {
     reasons: ['80'],
@@ -95,7 +95,7 @@ const BROADCAST_OR_ESTIMATION_ERRORS: ErrorHumanizerError[] = [
   {
     reasons: [EXPIRED_PREFIX, 'Router: EXPIRED', 'Transaction too old'],
     message:
-      'the swap has expired. Return to the dApp and reinitiate the swap if you wish to proceed.'
+      'the swap has expired. Return to the app and reinitiate the swap if you wish to proceed.'
   },
   // bundler
   {
@@ -139,7 +139,7 @@ const ESTIMATION_ERRORS: ErrorHumanizerError[] = [
       'contracts allowed',
       'ontract is not allowed'
     ],
-    message: 'this dApp does not support Smart Account wallets. Use a Basic Account (EOA) instead.'
+    message: 'this app does not support Smart Account wallets. Use a Basic Account (EOA) instead.'
   },
   // Contract errors
   {

@@ -15,7 +15,8 @@ import {
   AccountState,
   CollectionResult,
   NetworkSimulatedAccountOp,
-  NetworkState
+  NetworkState,
+  TokenResult
 } from '../portfolio/interfaces'
 
 export const updatePortfolioStateWithDefiPositions = (
@@ -149,6 +150,40 @@ const isNetworkReady = (networkData: NetworkState | undefined) => {
   )
 }
 
+const calculateTokenArray = (
+  networkId: string,
+  latestTokens: TokenResult[],
+  pendingTokens: TokenResult[],
+  isPendingValid: boolean
+) => {
+  if (networkId === 'gasTank' || networkId === 'rewards') {
+    return latestTokens
+  }
+  // If the pending state is older or there are no pending tokens
+  // we shouldn't trust it to build the tokens array
+  if (isPendingValid && pendingTokens.length) {
+    return pendingTokens.map((pendingToken) => {
+      const latestToken = latestTokens.find((latest) => {
+        return latest.address === pendingToken.address
+      })
+
+      return {
+        ...pendingToken,
+        latestAmount: latestToken?.amount,
+        pendingAmount: pendingToken.amount
+      }
+    })
+  }
+
+  // Add only latestAmount to the tokens
+  return latestTokens.map((token) => {
+    return {
+      ...token,
+      latestAmount: token.amount
+    }
+  })
+}
+
 export function calculateSelectedAccountPortfolio(
   latestStateSelectedAccount: AccountState,
   pendingStateSelectedAccount: AccountState,
@@ -190,37 +225,21 @@ export function calculateSelectedAccountPortfolio(
     const pendingNetworkData = pendingStateSelectedAccount[network]
     const latestNetworkData = latestStateSelectedAccount[network]
 
-    if (!latestNetworkData?.result?.blockNumber || !pendingNetworkData?.result?.blockNumber) return
+    // Compare the block numbers to determine if the pending state is newer
+    if (latestNetworkData?.result?.blockNumber && pendingNetworkData?.result?.blockNumber) {
+      const isPendingNewer =
+        pendingNetworkData.result.blockNumber! >= latestNetworkData.result.blockNumber!
 
-    const isPendingNewer =
-      pendingNetworkData.result.blockNumber! >= latestNetworkData.result.blockNumber!
-
-    if (!pendingNetworkData.criticalError && (isPendingNewer || hasSignAccountOp)) {
-      validSelectedAccountPendingState[network] = pendingNetworkData
+      if (!pendingNetworkData.criticalError && (isPendingNewer || hasSignAccountOp)) {
+        validSelectedAccountPendingState[network] = pendingNetworkData
+      }
     }
 
+    // Store the simulated account op
     const accountOp = pendingNetworkData?.accountOps?.[0]
 
     if (accountOp) {
       simulatedAccountOps[network] = accountOp
-    }
-
-    const pendingTokens = pendingNetworkData?.result?.tokens
-    if (pendingTokens) {
-      const networkTokens = pendingTokens.map((pendingToken) => {
-        const latestToken = latestNetworkData?.result?.tokens.find((latest) => {
-          return latest.address === pendingToken.address
-        })
-
-        return {
-          // Token .amount is the pending amount if there is a pending amount, otherwise it is the latest amount
-          ...pendingToken,
-          latestAmount: latestToken?.amount,
-          pendingAmount: pendingToken.amount
-        }
-      })
-
-      tokens.push(...networkTokens)
     }
   })
 
@@ -238,7 +257,18 @@ export function calculateSelectedAccountPortfolio(
       const networkTotal = Number(result?.total?.usd) || 0
       newTotalBalance += networkTotal
 
+      const latestTokens = latestStateSelectedAccount[network]?.result?.tokens || []
+      const pendingTokens = pendingStateSelectedAccount[network]?.result?.tokens || []
       const networkCollections = result?.collections || []
+
+      const tokensArray = calculateTokenArray(
+        network,
+        latestTokens,
+        pendingTokens,
+        !!validSelectedAccountPendingState[network]
+      )
+
+      tokens.push(...tokensArray)
       collections.push(...networkCollections)
     }
 

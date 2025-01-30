@@ -3,7 +3,7 @@ import { EventEmitter } from 'stream'
 
 import { describe, expect, jest, test } from '@jest/globals'
 
-import { produceMemoryStore } from '../../../test/helpers'
+import { produceMemoryStore, waitForAccountsCtrlFirstLoad } from '../../../test/helpers'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { networks } from '../../consts/networks'
 import { Account } from '../../interfaces/account'
@@ -39,7 +39,7 @@ const account: Account = {
 const windowManager = {
   event: new EventEmitter(),
   focus: () => Promise.resolve(),
-  open: () => Promise.resolve({ id: 0, top: 0, left: 0, width: 100, height: 100 }),
+  open: () => Promise.resolve({ id: 0, top: 0, left: 0, width: 100, height: 100, focused: true }),
   remove: () => Promise.resolve(),
   sendWindowToastMessage: () => {},
   sendWindowUiMessage: () => {}
@@ -55,17 +55,19 @@ const messageToSign: Message = {
 
 describe('SignMessageController', () => {
   let signMessageController: SignMessageController
-  let keystore: KeystoreController
+  let keystoreCtrl: KeystoreController
   let accountsCtrl: AccountsController
+  let networksCtrl: NetworksController
+  let providersCtrl: ProvidersController
 
-  beforeEach(async () => {
+  beforeAll(async () => {
     const storage = produceMemoryStore()
+
     await storage.set('accounts', JSON.stringify([account]))
     await storage.set('selectedAccount', JSON.stringify(account.addr))
 
-    keystore = new KeystoreController(storage, { internal: InternalSigner }, windowManager)
-    let providersCtrl: ProvidersController
-    const networksCtrl = new NetworksController(
+    keystoreCtrl = new KeystoreController(storage, { internal: InternalSigner }, windowManager)
+    networksCtrl = new NetworksController(
       storage,
       fetch,
       (net) => {
@@ -85,8 +87,12 @@ describe('SignMessageController', () => {
       () => {}
     )
 
+    await waitForAccountsCtrlFirstLoad(accountsCtrl)
+  })
+
+  beforeEach(async () => {
     signMessageController = new SignMessageController(
-      keystore,
+      keystoreCtrl,
       providersCtrl,
       networksCtrl,
       accountsCtrl,
@@ -151,7 +157,7 @@ describe('SignMessageController', () => {
     }
 
     // @ts-ignore spy on the getSigner method and mock its implementation
-    const getSignerSpy = jest.spyOn(keystore, 'getSigner').mockResolvedValue(mockSigner)
+    const getSignerSpy = jest.spyOn(keystoreCtrl, 'getSigner').mockResolvedValue(mockSigner)
 
     await signMessageController.init({ messageToSign })
     signMessageController.setSigningKey(signingKeyAddr, 'internal')
@@ -161,6 +167,11 @@ describe('SignMessageController', () => {
     ])
 
     await signMessageController.sign()
+
+    signMessageController.onUpdate(() => {
+      console.log(signMessageController.statuses)
+    })
+    console.log(signMessageController.signedMessage)
 
     // expect(mockSigner.signMessage).toHaveBeenCalledWith(messageToSign.content.message)
     expect(signMessageController.signedMessage?.signature).toBe(dummySignature)

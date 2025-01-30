@@ -1,5 +1,6 @@
 import { getAddress } from 'ethers'
 
+import { InviteController } from '../../controllers/invite/invite'
 import { Fetch, RequestInitWithCustomHeaders } from '../../interfaces/fetch'
 import {
   SocketAPIActiveRoutes,
@@ -9,9 +10,11 @@ import {
   SocketAPIToken
 } from '../../interfaces/swapAndBridge'
 import {
+  AMBIRE_FEE_TAKER_ADDRESSES,
   AMBIRE_WALLET_TOKEN_ON_BASE,
   AMBIRE_WALLET_TOKEN_ON_ETHEREUM,
   ETH_ON_OPTIMISM_LEGACY_ADDRESS,
+  FEE_PERCENT,
   NULL_ADDRESS,
   ZERO_ADDRESS
 } from './constants'
@@ -188,7 +191,8 @@ export class SocketAPI {
     fromAmount,
     userAddress,
     isSmartAccount,
-    sort
+    sort,
+    isOG
   }: {
     fromChainId: number
     fromTokenAddress: string
@@ -198,6 +202,7 @@ export class SocketAPI {
     userAddress: string
     isSmartAccount: boolean
     sort: 'time' | 'output'
+    isOG: InviteController['isOG']
   }): Promise<SocketAPIQuote> {
     const params = new URLSearchParams({
       fromChainId: fromChainId.toString(),
@@ -206,15 +211,18 @@ export class SocketAPI {
       toTokenAddress: normalizeOutgoingSocketTokenAddress(toTokenAddress),
       fromAmount: fromAmount.toString(),
       userAddress,
-      // TODO: Enable when needed
-      // feeTakerAddress: AMBIRE_FEE_TAKER_ADDRESSES[fromChainId],
-      // feePercent: FEE_PERCENT.toString(),
       isContractCall: isSmartAccount.toString(), // only get quotes with that are compatible with contracts
       sort,
       singleTxOnly: 'false',
       defaultSwapSlippage: '1',
       uniqueRoutesPerBridge: 'true'
     })
+    const feeTakerAddress = AMBIRE_FEE_TAKER_ADDRESSES[fromChainId]
+    const shouldIncludeConvenienceFee = !!feeTakerAddress && !isOG
+    if (shouldIncludeConvenienceFee) {
+      params.append('feeTakerAddress', feeTakerAddress)
+      params.append('feePercent', FEE_PERCENT.toString())
+    }
     const url = `${this.#baseUrl}/quote?${params.toString()}`
 
     let response = await this.#fetch(url, { headers: this.#headers })
