@@ -1182,7 +1182,6 @@ export class SwapAndBridgeController extends EventEmitter {
         // eslint-disable-next-line @typescript-eslint/no-floating-promises
         ;(async () => {
           let route = currentActiveRoutes[activeRouteIndex].route
-          // TODO: handle error?
           route = await this.#socketAPI.updateActiveRoute(activeRouteId)
           this.updateActiveRoute(activeRouteId, { route })
         })()
