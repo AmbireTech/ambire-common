@@ -20,9 +20,7 @@ import { ProvidersController } from '../providers/providers'
 
 const STATUS_WRAPPED_METHODS = {
   selectAccount: 'INITIAL',
-  updateAccountPreferences: 'INITIAL',
-  updateAccountStates: 'INITIAL',
-  updateAccountState: 'INITIAL'
+  updateAccountPreferences: 'INITIAL'
 } as const
 
 export class AccountsController extends EventEmitter {
@@ -35,6 +33,10 @@ export class AccountsController extends EventEmitter {
   accounts: Account[] = []
 
   accountStates: AccountStates = {}
+
+  accountStatesLoadingState: {
+    [networkId: string]: boolean
+  } = {}
 
   statuses: Statuses<keyof typeof STATUS_WRAPPED_METHODS> = STATUS_WRAPPED_METHODS
 
@@ -102,6 +104,8 @@ export class AccountsController extends EventEmitter {
     // Emit an update before updating account states as the first state update may take some time
     this.emitUpdate()
     // Don't await this. Networks should update one by one
+    // NOTE: YOU MUST USE waitForAccountsCtrlFirstLoad IN TESTS
+    // TO ENSURE ACCOUNT STATE IS LOADED
     this.#updateAccountStates(this.accounts)
   }
 
@@ -111,24 +115,10 @@ export class AccountsController extends EventEmitter {
     if (!this.#authorizations[authorization.accountAddr])
       this.#authorizations[authorization.accountAddr] = []
     this.#authorizations[authorization.accountAddr].push(authorization)
-
-    // update the account state only for the account that signed the message
-    // and only for the networks the messages has been signed on
-    // unless chainId is 0 (no network selected)
-    // eslint-disable-next-line @typescript-eslint/no-floating-promises
-    this.#updateAccountStates(
-      this.accounts.filter((acc) => acc.addr === authorization.accountAddr),
-      'latest',
-      authorization.content.chainId !== 0n ? [authorization.networkId] : []
-    )
   }
 
   async updateAccountStates(blockTag: string | number = 'latest', networks: NetworkId[] = []) {
-    await this.withStatus(
-      'updateAccountStates',
-      async () => this.#updateAccountStates(this.accounts, blockTag, networks),
-      true
-    )
+    await this.#updateAccountStates(this.accounts, blockTag, networks)
   }
 
   async updateAccountState(
@@ -140,11 +130,7 @@ export class AccountsController extends EventEmitter {
 
     if (!accountData) return
 
-    await this.withStatus(
-      'updateAccountState',
-      async () => this.#updateAccountStates([accountData], blockTag, networks),
-      true
-    )
+    await this.#updateAccountStates([accountData], blockTag, networks)
   }
 
   async #updateAccountStates(
@@ -154,9 +140,17 @@ export class AccountsController extends EventEmitter {
   ) {
     // if any, update the account state only for the passed networks; else - all
     const updateOnlyPassedNetworks = updateOnlyNetworksWithIds.length
-    const networksToUpdate = updateOnlyPassedNetworks
-      ? this.#networks.networks.filter((network) => updateOnlyNetworksWithIds.includes(network.id))
-      : this.#networks.networks
+    const networksToUpdate = this.#networks.networks.filter((network) => {
+      if (this.accountStatesLoadingState[network.id]) return false
+      if (!updateOnlyPassedNetworks) return true
+
+      return updateOnlyNetworksWithIds.includes(network.id)
+    })
+
+    networksToUpdate.forEach((network) => {
+      this.accountStatesLoadingState[network.id] = true
+    })
+    this.emitUpdate()
 
     await Promise.all(
       networksToUpdate.map(async (network) => {
@@ -183,8 +177,9 @@ export class AccountsController extends EventEmitter {
         } catch (err) {
           console.error(`account state update error for ${network.name}: `, err)
           this.#updateProviderIsWorking(network.id, false)
+        } finally {
+          this.accountStatesLoadingState[network.id] = false
         }
-
         this.emitUpdate()
       })
     )
@@ -265,10 +260,7 @@ export class AccountsController extends EventEmitter {
   }
 
   get areAccountStatesLoading() {
-    return (
-      this.statuses.updateAccountState === 'LOADING' ||
-      this.statuses.updateAccountStates === 'LOADING'
-    )
+    return Object.values(this.accountStatesLoadingState).some((isLoading) => isLoading)
   }
 
   // Get the account state or in the rare case of it being undefined,

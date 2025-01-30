@@ -7,14 +7,15 @@ import { NetworkId } from '../../interfaces/network'
 import { SelectedAccountPortfolio } from '../../interfaces/selectedAccount'
 import { Storage } from '../../interfaces/storage'
 import { isSmartAccount } from '../../libs/account/account'
-// eslint-disable-next-line import/no-cycle
-import {
-  getNetworksWithDeFiPositionsErrorBanners,
-  getNetworksWithFailedRPCBanners,
-  getNetworksWithPortfolioErrorBanners
-} from '../../libs/banners/banners'
 import { sortByValue } from '../../libs/defiPositions/helpers'
 import { PositionsByProvider } from '../../libs/defiPositions/types'
+// eslint-disable-next-line import/no-cycle
+import {
+  getNetworksWithDeFiPositionsErrorErrors,
+  getNetworksWithFailedRPCErrors,
+  getNetworksWithPortfolioErrorErrors,
+  SelectedAccountBalanceError
+} from '../../libs/selectedAccount/errors'
 import {
   calculateSelectedAccountPortfolio,
   updatePortfolioStateWithDefiPositions
@@ -63,15 +64,15 @@ export class SelectedAccountController extends EventEmitter {
 
   portfolioStartedLoadingAtTimestamp: number | null = null
 
-  portfolioBanners: Banner[] = []
-
   dashboardNetworkFilter: NetworkId | null = null
 
   #shouldDebounceFlags: { [key: string]: boolean } = {}
 
   defiPositions: PositionsByProvider[] = []
 
-  defiPositionsBanners: Banner[] = []
+  #portfolioErrors: SelectedAccountBalanceError[] = []
+
+  #defiPositionsErrors: SelectedAccountBalanceError[] = []
 
   isReady: boolean = false
 
@@ -122,9 +123,9 @@ export class SelectedAccountController extends EventEmitter {
     this.#providers = providers
 
     this.#updateSelectedAccountPortfolio(true)
-    this.#updatePortfolioBanners(true)
+    this.#updatePortfolioErrors(true)
     this.#updateSelectedAccountDefiPositions(true)
-    this.#updateDefiPositionsBanners(true)
+    this.#updateDefiPositionsErrors(true)
 
     this.#portfolio.onUpdate(async () => {
       this.#debounceFunctionCallsOnSameTick('updateSelectedAccountPortfolio', () => {
@@ -137,24 +138,24 @@ export class SelectedAccountController extends EventEmitter {
         this.#updateSelectedAccountDefiPositions()
 
         if (!this.areDefiPositionsLoading && this.portfolio.isAllReady) {
-          this.#updateDefiPositionsBanners()
-          this.#updateSelectedAccountPortfolio()
+          this.#updateSelectedAccountPortfolio(true)
+          this.#updateDefiPositionsErrors()
         }
       })
     })
 
     this.#providers.onUpdate(() => {
-      this.#debounceFunctionCallsOnSameTick('updateDefiPositionsBanners', () => {
-        this.#updatePortfolioBanners()
-        this.#updateDefiPositionsBanners()
+      this.#debounceFunctionCallsOnSameTick('updateDefiPositionsErrors', () => {
+        this.#updatePortfolioErrors(true)
+        this.#updateDefiPositionsErrors()
       })
     })
 
     this.#accounts.onUpdate(() => {
       this.#debounceFunctionCallsOnSameTick('updateSelectedAccount', () => {
         this.#updateSelectedAccount()
-        this.#updatePortfolioBanners()
-        this.#updateDefiPositionsBanners()
+        this.#updatePortfolioErrors(true)
+        this.#updateDefiPositionsErrors()
       })
     })
 
@@ -165,8 +166,8 @@ export class SelectedAccountController extends EventEmitter {
 
   async setAccount(account: Account | null) {
     this.account = account
-    this.portfolioBanners = []
-    this.defiPositionsBanners = []
+    this.#portfolioErrors = []
+    this.#defiPositionsErrors = []
     this.resetSelectedAccountPortfolio(true)
     this.dashboardNetworkFilter = null
 
@@ -192,6 +193,7 @@ export class SelectedAccountController extends EventEmitter {
 
   resetSelectedAccountPortfolio(skipUpdate?: boolean) {
     this.portfolio = DEFAULT_SELECTED_ACCOUNT_PORTFOLIO
+    this.#portfolioErrors = []
 
     if (!skipUpdate) {
       this.emitUpdate()
@@ -240,15 +242,12 @@ export class SelectedAccountController extends EventEmitter {
       this.portfolioStartedLoadingAtTimestamp = Date.now()
     }
 
-    if (newSelectedAccountPortfolio.isAllReady) {
-      this.#updatePortfolioBanners(true)
-    }
-
     if (
       newSelectedAccountPortfolio.isAllReady ||
       (!this.portfolio?.tokens?.length && newSelectedAccountPortfolio.tokens.length)
     ) {
       this.portfolio = newSelectedAccountPortfolio
+      this.#updatePortfolioErrors(true)
     }
 
     if (!skipUpdate) {
@@ -306,65 +305,73 @@ export class SelectedAccountController extends EventEmitter {
     }, 0)
   }
 
-  #updateDefiPositionsBanners(skipUpdate?: boolean) {
+  #updateDefiPositionsErrors(skipUpdate?: boolean) {
     if (
       !this.account ||
       !this.#networks ||
       !this.#providers ||
       !this.#defiPositions ||
-      this.#accounts.areAccountStatesLoading
+      this.areDefiPositionsLoading
     ) {
-      this.defiPositionsBanners = []
-      this.emitUpdate()
+      this.#defiPositionsErrors = []
+      if (!skipUpdate) {
+        this.emitUpdate()
+      }
       return
     }
 
     const defiPositionsAccountState = this.#defiPositions.getDefiPositionsState(this.account.addr)
 
-    const errorBanners = getNetworksWithDeFiPositionsErrorBanners({
+    const errorBanners = getNetworksWithDeFiPositionsErrorErrors({
       networks: this.#networks.networks,
       currentAccountState: defiPositionsAccountState,
       providers: this.#providers.providers,
       networksWithPositions: this.#defiPositions.getNetworksWithPositions(this.account.addr)
     })
 
-    this.defiPositionsBanners = errorBanners
+    this.#defiPositionsErrors = errorBanners
 
     if (!skipUpdate) {
       this.emitUpdate()
     }
   }
 
-  #updatePortfolioBanners(skipUpdate?: boolean) {
+  #updatePortfolioErrors(skipUpdate?: boolean) {
     if (
       !this.account ||
       !this.#networks ||
       !this.#providers ||
       !this.#portfolio ||
-      this.#accounts.areAccountStatesLoading
+      !this.portfolio.isAllReady
     ) {
-      this.portfolioBanners = []
-      this.emitUpdate()
+      this.#portfolioErrors = []
+      if (!skipUpdate) {
+        this.emitUpdate()
+      }
       return
     }
 
-    const networksWithFailedRPCBanners = getNetworksWithFailedRPCBanners({
+    const networksWithFailedRPCBanners = getNetworksWithFailedRPCErrors({
       providers: this.#providers.providers,
       networks: this.#networks.networks,
       networksWithAssets: this.#portfolio.getNetworksWithAssets(this.account.addr)
     })
 
-    const errorBanners = getNetworksWithPortfolioErrorBanners({
+    const errorBanners = getNetworksWithPortfolioErrorErrors({
       networks: this.#networks.networks,
       selectedAccountLatest: this.portfolio.latest,
       providers: this.#providers.providers
     })
 
-    this.portfolioBanners = [...networksWithFailedRPCBanners, ...errorBanners]
+    this.#portfolioErrors = [...networksWithFailedRPCBanners, ...errorBanners]
 
     if (!skipUpdate) {
       this.emitUpdate()
     }
+  }
+
+  get balanceAffectingErrors() {
+    return [...this.#portfolioErrors, ...this.#defiPositionsErrors]
   }
 
   get deprecatedSmartAccountBanner(): Banner[] {
@@ -406,7 +413,8 @@ export class SelectedAccountController extends EventEmitter {
       ...this,
       ...super.toJSON(),
       deprecatedSmartAccountBanner: this.deprecatedSmartAccountBanner,
-      areDefiPositionsLoading: this.areDefiPositionsLoading
+      areDefiPositionsLoading: this.areDefiPositionsLoading,
+      balanceAffectingErrors: this.balanceAffectingErrors
     }
   }
 }

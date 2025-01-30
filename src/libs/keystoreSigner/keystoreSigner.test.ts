@@ -8,7 +8,7 @@ import { EIP_7702_AMBIRE_ACCOUNT } from '../../consts/deploy'
 import { BIP44_STANDARD_DERIVATION_TEMPLATE } from '../../consts/derivation'
 import { Key } from '../../interfaces/keystore'
 import { getPrivateKeyFromSeed } from '../keyIterator/keyIterator'
-import { getEip7702Authorization } from '../signMessage/signMessage'
+import { getAuthorizationHash } from '../signMessage/signMessage'
 import { KeystoreSigner } from './keystoreSigner'
 
 const privKey = getPrivateKeyFromSeed(process.env.SEED, 199, BIP44_STANDARD_DERIVATION_TEMPLATE)
@@ -92,7 +92,7 @@ describe('KeystoreSigner', () => {
 
 describe('Sign eip-7702 authorization', () => {
   it('should sign successfully', async () => {
-    const hash = getEip7702Authorization(1n, EIP_7702_AMBIRE_ACCOUNT, 0n)
+    const hash = getAuthorizationHash(1n, EIP_7702_AMBIRE_ACCOUNT, 0n)
     const signer = new KeystoreSigner(key, privKey)
     const signature = signer.sign7702(hash)
 

@@ -89,12 +89,12 @@ contract AmbireAccount is IAmbireAccount {
 		}
 	}
 
-    function getAmbireStorage() internal pure returns (AmbireStorage storage ds) {
-        bytes32 position = AMBIRE_STORAGE_POSITION;
-        assembly {
-            ds.slot := position
-        }
-    }
+	function getAmbireStorage() internal pure returns (AmbireStorage storage ds) {
+		bytes32 position = AMBIRE_STORAGE_POSITION;
+		assembly {
+			ds.slot := position
+		}
+	}
 
 	function nonce() external view returns (uint256) {
 		return getAmbireStorage().nonce;

@@ -20,8 +20,8 @@ import { getAccountState } from '../accountState/accountState'
 import { KeystoreSigner } from '../keystoreSigner/keystoreSigner'
 import {
   getAmbireReadableTypedData,
+  getAuthorizationHash,
   getEIP712Signature,
-  getEip7702Authorization,
   getPlainTextSignature,
   getTypedData,
   getVerifyMessageSignature,
@@ -50,7 +50,8 @@ const unsupportedNetwork = {
   hasSingleton: false,
   features: [],
   feeOptions: { is1559: true },
-  predefined: false
+  predefined: false,
+  has7702: false
 }
 
 const eoaSigner = {
@@ -618,7 +619,7 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
     const accountStates = await getAccountsInfo([eoaAccount])
     const signer = await keystore.getSigner(eoaSigner.keyPublicAddress, 'internal')
 
-    const authorizationHash = getEip7702Authorization(1n, EIP_7702_AMBIRE_ACCOUNT, 0n)
+    const authorizationHash = getAuthorizationHash(1n, EIP_7702_AMBIRE_ACCOUNT, 0n)
     const signature = signer.sign7702(authorizationHash)
     const provider = getRpcProvider(ethereumNetwork.rpcUrls, ethereumNetwork.chainId)
     const authorizationRes = await verifyMessage({
@@ -635,7 +636,7 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
     expect(authorizationRes).toBe(true)
 
     // increment the nonce to be sure 'v' transform is working
-    const authorizationHash2 = getEip7702Authorization(1n, EIP_7702_AMBIRE_ACCOUNT, 1n)
+    const authorizationHash2 = getAuthorizationHash(1n, EIP_7702_AMBIRE_ACCOUNT, 1n)
     const signature2 = signer.sign7702(authorizationHash2)
     const authorizationRes2 = await verifyMessage({
       network: ethereumNetwork,
