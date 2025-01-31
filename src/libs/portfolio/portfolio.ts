@@ -34,10 +34,10 @@ export const LIMITS: Limits = {
   deploylessProxyMode: { erc20: 100, erc721: 30, erc721TokensInput: 20, erc721Tokens: 50 },
   // theoretical capacity is 1666/450
   deploylessStateOverrideMode: {
-    erc20: 500,
-    erc721: 100,
-    erc721TokensInput: 100,
-    erc721Tokens: 100
+    erc20: 350,
+    erc721: 70,
+    erc721TokensInput: 70,
+    erc721Tokens: 70
   }
 }
 

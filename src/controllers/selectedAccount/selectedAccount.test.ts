@@ -75,7 +75,14 @@ const windowManager = {
   focus: () => Promise.resolve(),
   open: () => {
     windowId++
-    return Promise.resolve({ id: windowId, top: 0, left: 0, width: 100, height: 100 })
+    return Promise.resolve({
+      id: windowId,
+      top: 0,
+      left: 0,
+      width: 100,
+      height: 100,
+      focused: true
+    })
   },
   remove: () => {
     event.emit('windowRemoved', windowId)
