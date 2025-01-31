@@ -7,7 +7,7 @@ import { Account, AccountId } from '../../interfaces/account'
 import { Network, NetworkId } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
 import { isSmartAccount } from '../account/account'
-import { CustomToken } from './customToken'
+import { CustomToken, TokenPreference } from './customToken'
 import {
   AccountState,
   AdditionalPortfolioNetworkResult,
@@ -132,7 +132,7 @@ export const getTokenBalanceInUSD = (token: TokenResult) => {
 export const getTotal = (t: TokenResult[], excludeHiddenTokens: boolean = true) =>
   t.reduce((cur: { [key: string]: number }, token: TokenResult) => {
     const localCur = cur // Add index signature to the type of localCur
-    if (token.isHidden && excludeHiddenTokens) return localCur
+    if (token.flags.isHidden && excludeHiddenTokens) return localCur
     // eslint-disable-next-line no-restricted-syntax
     for (const x of token.priceIn) {
       const currentAmount = localCur[x.baseCurrency] || 0
@@ -149,7 +149,7 @@ export const addHiddenTokenValueToTotal = (
   tokens: TokenResult[]
 ) => {
   return tokens.reduce((cur: number, token: TokenResult) => {
-    if (!token.isHidden) return cur
+    if (!token.flags.isHidden) return cur
 
     return cur + getTokenBalanceInUSD(token)
   }, totalWithoutHiddenTokens)
@@ -267,7 +267,7 @@ export function getUpdatedHints(
   networkId: NetworkId,
   storagePreviousHints: PreviousHintsStorage,
   key: string,
-  tokenPreferences: CustomToken[]
+  customTokens: CustomToken[]
 ): PreviousHintsStorage {
   const previousHints = { ...storagePreviousHints }
 
@@ -310,10 +310,7 @@ export function getUpdatedHints(
       PINNED_TOKENS,
       networkId
     )
-    const lowercaseNetworkPreferenceTokenAddresses = getLowercaseAddressArrayForNetwork(
-      tokenPreferences,
-      networkId
-    )
+    const lowercaseCustomTokens = getLowercaseAddressArrayForNetwork(customTokens, networkId)
     const networkTokensWithBalance = tokens.filter((token) => token.amount > 0n)
     const lowercaseNetworkTokenAddressesWithBalance = getLowercaseAddressArrayForNetwork(
       networkTokensWithBalance,
@@ -341,12 +338,12 @@ export function getUpdatedHints(
       }
 
       const isPinned = lowercaseNetworkPinnedTokenAddresses.includes(lowercaseAddress)
-      const isTokenPreference = lowercaseNetworkPreferenceTokenAddresses.includes(lowercaseAddress)
+      const isCustomToken = lowercaseCustomTokens.includes(lowercaseAddress)
       const isTokenInExternalAPIHints =
         lowercaseERC20HintsFromExternalAPI.includes(lowercaseAddress)
       const hasBalance = lowercaseNetworkTokenAddressesWithBalance.includes(lowercaseAddress)
 
-      if (!isTokenInExternalAPIHints && !isPinned && !isTokenPreference && hasBalance) {
+      if (!isTokenInExternalAPIHints && !isPinned && !isCustomToken && hasBalance) {
         // Don't set the timestamp back to null if the account doesn't have balance for the token
         // as learnedTokens aren't account specific and one account can have balance for the token
         // while other don't
@@ -418,14 +415,14 @@ export const tokenFilter = (
 
 /**
  * Filter the TokenResult[] by certain criteria (please refer to `tokenFilter` for more details)
- * and set the token.isHidden flag.
+ * and set the token.flags.isHidden flag.
  */
 export const processTokens = (
   tokenResults: TokenResult[],
   network: Network,
   hasNonZeroTokens: boolean,
   additionalHints: string[] | undefined,
-  tokenPreferences: CustomToken[]
+  tokenPreferences: TokenPreference[]
 ): TokenResult[] => {
   // We need to know the native token in order to execute our filtration logic in tokenFilter.
   // For performance reasons, we define it here once, instead of during every single iteration in the reduce method.
@@ -439,7 +436,7 @@ export const processTokens = (
     })
 
     if (preference) {
-      token.isHidden = preference.isHidden
+      token.flags.isHidden = preference.isHidden
     }
 
     if (tokenFilter(token, nativeToken!, network, hasNonZeroTokens, additionalHints, !!preference))

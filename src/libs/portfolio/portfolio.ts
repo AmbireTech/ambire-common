@@ -34,10 +34,10 @@ export const LIMITS: Limits = {
   deploylessProxyMode: { erc20: 100, erc721: 30, erc721TokensInput: 20, erc721Tokens: 50 },
   // theoretical capacity is 1666/450
   deploylessStateOverrideMode: {
-    erc20: 500,
-    erc721: 100,
-    erc721TokensInput: 100,
-    erc721Tokens: 100
+    erc20: 350,
+    erc721: 70,
+    erc721TokensInput: 70,
+    erc721Tokens: 70
   }
 }
 
@@ -63,7 +63,6 @@ const defaultOptions: GetOptions = {
   priceRecency: 0,
   previousHintsFromExternalAPI: null,
   fetchPinned: true,
-  tokenPreferences: [],
   isEOA: false
 }
 
@@ -188,13 +187,6 @@ export class Portfolio {
 
     if (localOpts.fetchPinned) {
       hints.erc20s = [...hints.erc20s, ...PINNED_TOKENS.map((x) => x.address)]
-    }
-
-    if (localOpts.tokenPreferences) {
-      hints.erc20s = [
-        ...hints.erc20s,
-        ...localOpts.tokenPreferences.filter((x) => x.standard === 'ERC20').map((x) => x.address)
-      ]
     }
 
     // add the fee tokens
