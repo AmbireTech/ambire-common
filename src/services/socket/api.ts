@@ -113,8 +113,8 @@ export class SocketAPI {
       response = await fetchPromise
     } catch (e: any) {
       const message = e?.message || 'no message'
-      const status = e?.status || 'unknown'
-      const error = `${errorPrefix} Upstream error: <${message}>, status: <${status}>`
+      const status = e?.status ? `, status: <${e.status}>` : ''
+      const error = `${errorPrefix} Upstream error: <${message}>${status}`
       throw new SwapAndBridgeProviderApiError(error)
     }
 
