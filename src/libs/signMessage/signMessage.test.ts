@@ -133,7 +133,7 @@ const getAccountsInfo = async (accounts: Account[]): Promise<AccountStates> => {
 const windowManager = {
   event: new EventEmitter(),
   focus: () => Promise.resolve(),
-  open: () => Promise.resolve({ id: 0, top: 0, left: 0, width: 100, height: 100 }),
+  open: () => Promise.resolve({ id: 0, top: 0, left: 0, width: 100, height: 100, focused: true }),
   remove: () => Promise.resolve(),
   sendWindowToastMessage: () => {},
   sendWindowUiMessage: () => {}

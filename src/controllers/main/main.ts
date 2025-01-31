@@ -1599,6 +1599,48 @@ export class MainController extends EventEmitter {
     this.removeUserRequest(requestId)
   }
 
+  rejectSignAccountOpCall(callId: string) {
+    if (!this.signAccountOp) return
+
+    const { calls, networkId, accountAddr } = this.signAccountOp.accountOp
+
+    const requestId = calls.find((c) => c.id === callId)?.fromUserRequestId
+    if (requestId) {
+      const userRequestIndex = this.userRequests.findIndex((r) => r.id === requestId)
+      const userRequest = this.userRequests[userRequestIndex] as SignUserRequest
+      if (userRequest.action.kind === 'calls') {
+        ;(userRequest.action as Calls).calls = (userRequest.action as Calls).calls.filter(
+          (c) => c.id !== callId
+        )
+
+        if (userRequest.action.calls.length === 0) {
+          // the reject will remove the userRequest which will rebuild the action and update the signAccountOp
+          this.rejectUserRequest('User rejected the transaction request.', userRequest.id)
+        } else {
+          const accountOpAction = makeSmartAccountOpAction({
+            account: this.accounts.accounts.find((a) => a.addr === accountAddr)!,
+            networkId,
+            nonce: this.accounts.accountStates[accountAddr][networkId].nonce,
+            userRequests: this.userRequests,
+            actionsQueue: this.actions.actionsQueue
+          })
+
+          this.actions.addOrUpdateAction(accountOpAction)
+          this.signAccountOp?.update({ calls: accountOpAction.accountOp.calls })
+          this.estimateSignAccountOp()
+        }
+      }
+    } else {
+      this.emitError({
+        message: 'Reject call: the call was not found or was not linked to a user request',
+        level: 'major',
+        error: new Error(
+          `Error: rejectAccountOpCall: userRequest for call with id ${callId} was not found`
+        )
+      })
+    }
+  }
+
   removeActiveRoute(activeRouteId: number) {
     const userRequest = this.userRequests.find((r) =>
       [activeRouteId, `${activeRouteId}-approval`, `${activeRouteId}-revoke-approval`].includes(
@@ -1772,6 +1814,11 @@ export class MainController extends EventEmitter {
     actionPosition: ActionPosition = 'last',
     actionExecutionType: ActionExecutionType = 'open-action-window'
   ) {
+    if (req.action.kind === 'calls') {
+      ;(req.action as Calls).calls.forEach((_, i) => {
+        ;(req.action as Calls).calls[i].id = `${req.id}-${i}`
+      })
+    }
     if (actionPosition === 'first') {
       this.userRequests.unshift(req)
     } else {

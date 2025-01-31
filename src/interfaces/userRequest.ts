@@ -14,6 +14,7 @@ export interface Calls {
     to: string
     value: bigint
     data: string
+    id?: string
   }[]
 }
 export interface PlainTextMessage {

@@ -125,7 +125,7 @@ export class ActionsController extends EventEmitter {
         this.currentAction = null
 
         this.actionsQueue = this.actionsQueue.filter((a) => a.type === 'accountOp')
-        if (this.actionsQueue.length) {
+        if (this.visibleActionsQueue.length) {
           await this.#notificationManager.create({
             title:
               this.actionsQueue.length > 1
@@ -136,6 +136,21 @@ export class ActionsController extends EventEmitter {
         }
         this.#onActionWindowClose()
         this.emitUpdate()
+      }
+    })
+
+    this.#windowManager.event.on('windowFocusChange', async (winId: number) => {
+      if (this.actionWindow.windowProps) {
+        if (this.actionWindow.windowProps.id === winId && !this.actionWindow.windowProps.focused) {
+          this.actionWindow.windowProps.focused = true
+          this.emitUpdate()
+        } else if (
+          this.actionWindow.windowProps.id !== winId &&
+          this.actionWindow.windowProps.focused
+        ) {
+          this.actionWindow.windowProps.focused = false
+          this.emitUpdate()
+        }
       }
     })
   }

@@ -176,7 +176,7 @@ export const getNetworksWithPortfolioErrorErrors = ({
     // In case of additional networks don't check the RPC as there isn't one
     if (
       criticalError &&
-      (['gasTank', 'rewards'].includes(network) || providers[network].isWorking)
+      (['gasTank', 'rewards'].includes(network) || providers[network]?.isWorking)
     ) {
       errors = addPortfolioError(errors, network, 'portfolio-critical')
       return
