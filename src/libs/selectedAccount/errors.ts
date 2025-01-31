@@ -89,7 +89,7 @@ export const getNetworksWithFailedRPCErrors = ({
 const addPortfolioError = (
   errors: SelectedAccountBalanceError[],
   networkId: NetworkId,
-  newError: keyof typeof PORTFOLIO_LIB_ERROR_NAMES | 'portfolio-critical'
+  newError: keyof typeof PORTFOLIO_LIB_ERROR_NAMES | 'portfolio-critical' | 'loading-too-long'
 ) => {
   const newErrors = [...errors]
   const existingError = newErrors.find((error) => error.id === newError)
@@ -105,6 +105,11 @@ const addPortfolioError = (
       case 'portfolio-critical':
         title = 'Failed to retrieve the portfolio data'
         text = 'Account balance and visible assets may be inaccurate.'
+        break
+      case 'loading-too-long':
+        title = 'Loading is taking longer than expected'
+        text = 'Account balance and visible assets may be inaccurate.'
+        type = 'warning'
         break
       case PORTFOLIO_LIB_ERROR_NAMES.PriceFetchError:
         title = 'Failed to retrieve prices'
@@ -151,21 +156,17 @@ export const getNetworksWithPortfolioErrorErrors = ({
 }): SelectedAccountBalanceError[] => {
   let errors: SelectedAccountBalanceError[] = []
 
-  const portfolioLoading = Object.keys(selectedAccountLatest).some((network) => {
-    const portfolioForNetwork = selectedAccountLatest[network]
-
-    return portfolioForNetwork?.isLoading
-  })
-
-  // Otherwise networks are appended to the banner one by one, which looks weird
-  if (portfolioLoading) return []
-
   if (!Object.keys(selectedAccountLatest).length) return []
 
   Object.keys(selectedAccountLatest).forEach((network) => {
     const portfolioForNetwork = selectedAccountLatest[network]
     const criticalError = portfolioForNetwork?.criticalError
     const lastSuccessfulUpdate = portfolioForNetwork?.result?.lastSuccessfulUpdate
+
+    if (portfolioForNetwork?.isLoading) {
+      errors = addPortfolioError(errors, network as NetworkId, 'loading-too-long')
+      return
+    }
 
     // Don't display an error banner if the last successful update was less than 10 minutes ago
     if (typeof lastSuccessfulUpdate === 'number' && Date.now() - lastSuccessfulUpdate < TEN_MINUTES)

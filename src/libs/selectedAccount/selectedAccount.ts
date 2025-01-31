@@ -188,8 +188,12 @@ export function calculateSelectedAccountPortfolio(
   latestStateSelectedAccount: AccountState,
   pendingStateSelectedAccount: AccountState,
   accountPortfolio: SelectedAccountPortfolio | null,
+  portfolioStartedLoadingAtTimestamp: number | null,
   hasSignAccountOp?: boolean
 ) {
+  const now = Date.now()
+  const shouldShowPartialResult =
+    portfolioStartedLoadingAtTimestamp && now - portfolioStartedLoadingAtTimestamp > 5000
   const collections: CollectionResult[] = []
   const tokens: SelectedAccountPortfolioTokenResult[] = []
 
@@ -197,6 +201,7 @@ export function calculateSelectedAccountPortfolio(
 
   const hasLatest = latestStateSelectedAccount && Object.keys(latestStateSelectedAccount).length
   let allReady = !!hasLatest
+  let isAllReady = !allReady
 
   const hasPending = pendingStateSelectedAccount && Object.keys(pendingStateSelectedAccount).length
   if (!hasLatest && !hasPending) {
@@ -204,6 +209,7 @@ export function calculateSelectedAccountPortfolio(
       tokens: accountPortfolio?.tokens || [],
       collections: accountPortfolio?.collections || [],
       totalBalance: accountPortfolio?.totalBalance || 0,
+      isReadyToVisualize: false,
       isAllReady: false,
       networkSimulatedAccountOp: accountPortfolio?.networkSimulatedAccountOp || {},
       latest: latestStateSelectedAccount,
@@ -277,11 +283,20 @@ export function calculateSelectedAccountPortfolio(
     }
   })
 
+  if (shouldShowPartialResult && !allReady) {
+    // Allow the user to operate with the tokens that have loaded
+    allReady = true
+    isAllReady = false
+  } else {
+    isAllReady = allReady
+  }
+
   return {
     totalBalance: newTotalBalance,
     tokens,
     collections,
-    isAllReady: allReady,
+    isReadyToVisualize: allReady,
+    isAllReady,
     networkSimulatedAccountOp: simulatedAccountOps,
     latest: stripPortfolioState(latestStateSelectedAccount),
     pending: stripPortfolioState(pendingStateSelectedAccount)

@@ -492,14 +492,17 @@ export class PortfolioController extends EventEmitter {
     this.emitUpdate()
   }
 
-  #getCanSkipUpdate(networkState?: NetworkState, forceUpdate?: boolean) {
+  #getCanSkipUpdate(
+    networkState?: NetworkState,
+    forceUpdate?: boolean,
+    maxDataAgeMs: number = this.#minUpdateInterval
+  ) {
     const hasImportantErrors = networkState?.errors.some((e) => e.level === 'critical')
 
     if (forceUpdate || !networkState || networkState.criticalError || hasImportantErrors)
       return false
     const updateStarted = networkState.result?.updateStarted || 0
-    const isWithinMinUpdateInterval =
-      !!updateStarted && Date.now() - updateStarted < this.#minUpdateInterval
+    const isWithinMinUpdateInterval = !!updateStarted && Date.now() - updateStarted < maxDataAgeMs
 
     return isWithinMinUpdateInterval || networkState.isLoading
   }
@@ -511,7 +514,8 @@ export class PortfolioController extends EventEmitter {
     network: Network,
     portfolioLib: Portfolio,
     portfolioProps: Partial<GetOptions> & { blockTag: 'latest' | 'pending' },
-    forceUpdate: boolean
+    forceUpdate: boolean,
+    maxDataAgeMs?: number
   ): Promise<boolean> {
     const blockTag = portfolioProps.blockTag
     const stateKeys = {
@@ -524,7 +528,11 @@ export class PortfolioController extends EventEmitter {
       // and portfolio will not be updated
       accountState[network.id] = { isLoading: false, isReady: false, errors: [] }
     }
-    const canSkipUpdate = this.#getCanSkipUpdate(accountState[network.id], forceUpdate)
+    const canSkipUpdate = this.#getCanSkipUpdate(
+      accountState[network.id],
+      forceUpdate,
+      maxDataAgeMs
+    )
 
     if (canSkipUpdate) return false
 
@@ -610,7 +618,7 @@ export class PortfolioController extends EventEmitter {
     accountId: AccountId,
     network?: Network,
     accountOps?: { [key: string]: AccountOp[] },
-    opts?: { forceUpdate: boolean }
+    opts?: { forceUpdate?: boolean; maxDataAgeMs?: number }
   ) {
     await this.#initialLoadPromise
     const selectedAccount = this.#accounts.accounts.find((x) => x.addr === accountId)
@@ -691,7 +699,8 @@ export class PortfolioController extends EventEmitter {
                 blockTag: 'latest',
                 ...allHints
               },
-              forceUpdate
+              forceUpdate,
+              opts?.maxDataAgeMs
             ),
             this.updatePortfolioState(
               accountId,
@@ -708,7 +717,8 @@ export class PortfolioController extends EventEmitter {
                 isEOA: !isSmartAccount(selectedAccount),
                 ...allHints
               },
-              forceUpdate
+              forceUpdate,
+              opts?.maxDataAgeMs
             )
           ])
 

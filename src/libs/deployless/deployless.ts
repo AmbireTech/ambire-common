@@ -190,7 +190,7 @@ export class Deployless {
       callPromise,
       new Promise((_resolve, reject) => {
         // Custom providers may take longer to respond, so we set a longer timeout for them.
-        setTimeout(() => reject(new Error('rpc-timeout')), this.isProviderInvictus ? 5000 : 15000)
+        setTimeout(() => reject(new Error('rpc-timeout')), this.isProviderInvictus ? 15000 : 20000)
       })
     ])
 

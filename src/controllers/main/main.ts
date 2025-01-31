@@ -386,16 +386,17 @@ export class MainController extends EventEmitter {
    * It's not a problem to call it many times consecutively as all methods have internal
    * caching mechanisms to prevent unnecessary calls.
    */
-  onLoad(isFirstLoad: boolean = false) {
+  onPopupOpen() {
+    const FIVE_MINUTES = 1000 * 60 * 5
     const selectedAccountAddr = this.selectedAccount.account?.addr
-    const hasBroadcastedButNotConfirmed = !!this.activity.broadcastedButNotConfirmed.length
-    this.defiPositions.updatePositions()
     this.domains.batchReverseLookup(this.accounts.accounts.map((a) => a.addr))
-    if (!hasBroadcastedButNotConfirmed) {
-      this.updateSelectedAccountPortfolio()
+    if (!this.activity.broadcastedButNotConfirmed.length) {
+      this.updateSelectedAccountPortfolio(undefined, undefined, FIVE_MINUTES)
+      // Update defi positions together with the portfolio for simplicity
+      this.defiPositions.updatePositions()
     }
-    // The first time the app loads, we update the account state elsewhere
-    if (selectedAccountAddr && !isFirstLoad && !this.accounts.areAccountStatesLoading)
+
+    if (selectedAccountAddr && !this.accounts.areAccountStatesLoading)
       this.accounts.updateAccountState(selectedAccountAddr)
   }
 
@@ -411,7 +412,9 @@ export class MainController extends EventEmitter {
     await this.accounts.initialLoadPromise
     await this.selectedAccount.initialLoadPromise
 
-    this.onLoad(true)
+    this.updateSelectedAccountPortfolio()
+    this.defiPositions.updatePositions()
+    this.domains.batchReverseLookup(this.accounts.accounts.map((a) => a.addr))
     /**
      * Listener that gets triggered as a finalization step of adding new
      * accounts via the AccountAdder controller flow.
@@ -1067,8 +1070,13 @@ export class MainController extends EventEmitter {
     }
   }
 
-  // eslint-disable-next-line default-param-last
-  async updateSelectedAccountPortfolio(forceUpdate: boolean = false, network?: Network) {
+  // TODO: Refactor this to accept an optional object with options
+  async updateSelectedAccountPortfolio(
+    // eslint-disable-next-line default-param-last
+    forceUpdate: boolean = false,
+    network?: Network,
+    maxDataAgeMs?: number
+  ) {
     await this.#initialLoadPromise
     if (!this.selectedAccount.account) return
 
@@ -1087,7 +1095,7 @@ export class MainController extends EventEmitter {
       this.selectedAccount.account.addr,
       network,
       accountOpsToBeSimulatedByNetwork,
-      { forceUpdate }
+      { forceUpdate, maxDataAgeMs }
     )
     this.#updateIsOffline()
   }

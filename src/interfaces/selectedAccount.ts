@@ -26,6 +26,7 @@ export interface SelectedAccountPortfolio {
   tokens: SelectedAccountPortfolioTokenResult[]
   collections: CollectionResultInterface[]
   totalBalance: number
+  isReadyToVisualize: boolean
   isAllReady: boolean
   networkSimulatedAccountOp: NetworkSimulatedAccountOp
   latest: SelectedAccountPortfolioState
