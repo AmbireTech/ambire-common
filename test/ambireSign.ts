@@ -73,6 +73,55 @@ function wrapCancel(sig: string) {
   return `${sig}${'fe'}`
 }
 
+function getExecute712Data(
+  chainId: bigint,
+  nonce: bigint,
+  txns: [string, string, string][],
+  verifyingAddr: string,
+  executeHash: string
+) {
+  const calls = txns.map(txn => ({
+    to: txn[0],
+    value: txn[1],
+    data: txn[2]
+  }))
+
+  const domain: TypedDataDomain = {
+    name: 'Ambire',
+    version: '1',
+    chainId,
+    verifyingContract: verifyingAddr,
+    salt: ethers.toBeHex(0, 32)
+  }
+  const types = {
+    Transaction: [
+      { name: 'to', type: 'address' },
+      { name: 'value', type: 'uint256' },
+      { name: 'data', type: 'bytes' }
+    ],
+    AmbireExecuteAccountOp: [
+      { name: 'account', type: 'address' },
+      { name: 'chainId', type: 'uint256' },
+      { name: 'nonce', type: 'uint256' },
+      { name: 'calls', type: 'Transaction[]' },
+      { name: 'hash', type: 'bytes32' }
+    ]
+  }
+  const value = {
+    account: verifyingAddr,
+    chainId,
+    nonce,
+    calls,
+    hash: executeHash
+  }
+
+  return {
+    domain,
+    types,
+    value
+  }
+}
+
 function wrapTypedData(chainId: bigint, verifyingAddr: string, executeHash: string) {
   const domain: TypedDataDomain = {
     name: 'Ambire',
@@ -152,5 +201,6 @@ export {
   wrapCancel,
   wrapExternallyValidated,
   wrapTypedData,
-  getRawTypedDataFinalDigest
+  getRawTypedDataFinalDigest,
+  getExecute712Data
 }

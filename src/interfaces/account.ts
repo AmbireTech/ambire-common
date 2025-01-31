@@ -35,7 +35,7 @@ export interface AccountOnchainState {
   // this is a number and not a bigint because of ethers (it uses number for nonces)
   nonce: bigint
   erc4337Nonce: bigint
-  associatedKeysPriviliges: { [key: string]: string }
+  associatedKeys: { [key: string]: string }
   deployError: boolean
   balance: bigint
   isEOA: boolean
@@ -43,6 +43,9 @@ export interface AccountOnchainState {
   isErc4337Nonce: boolean
   isV2: boolean
   currentBlock: bigint
+  isSmarterEoa: boolean
+  // TODO<eip7702>: fix the typehint
+  authorization?: any
 }
 
 export type AccountStates = {

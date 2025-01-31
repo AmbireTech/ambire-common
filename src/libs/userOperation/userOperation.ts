@@ -13,6 +13,7 @@ import {
 } from '../../consts/deploy'
 import { SPOOF_SIGTYPE } from '../../consts/signatures'
 import { Account, AccountId, AccountOnchainState } from '../../interfaces/account'
+import { has7702 } from '../7702/7702'
 import { AccountOp, callToTuple } from '../accountOp/accountOp'
 import { UserOperation, UserOperationEventData, UserOpRequestType } from './types'
 
@@ -107,6 +108,7 @@ export function getOneTimeNonce(userOperation: UserOperation) {
 }
 
 export function getRequestType(accountState: AccountOnchainState): UserOpRequestType {
+  if (accountState.isSmarterEoa) return 'standard'
   return accountState.isDeployed && !accountState.isErc4337Enabled ? 'activator' : 'standard'
 }
 
@@ -136,7 +138,7 @@ export function getUserOperation(
   }
 
   // if the account is not deployed, prepare the deploy in the initCode
-  if (!accountState.isDeployed) {
+  if (!accountState.isSmarterEoa && !accountState.isDeployed) {
     if (!account.creation) throw new Error('Account creation properties are missing')
     if (!entryPointSig) throw new Error('No entry point authorization signature provided')
 
@@ -162,6 +164,8 @@ export function isErc4337Broadcast(
   network: Network,
   accountState: AccountOnchainState
 ): boolean {
+  if (accountState.isSmarterEoa) return has7702(network)
+
   // a special exception for gnosis which was a hardcoded chain but
   // now it's not. The bundler doesn't support state override on gnosis
   // so if the account IS deployed AND does NOT have 4337 privileges,
@@ -191,6 +195,7 @@ export function shouldIncludeActivatorCall(
     account.creation &&
     account.creation.factoryAddr === AMBIRE_ACCOUNT_FACTORY &&
     accountState.isV2 &&
+    !accountState.isSmarterEoa &&
     network.erc4337.enabled &&
     !accountState.isErc4337Enabled &&
     (accountState.isDeployed || !is4337Broadcast)
@@ -213,6 +218,7 @@ export function shouldAskForEntryPointAuthorization(
     account.creation &&
     account.creation.factoryAddr === AMBIRE_ACCOUNT_FACTORY &&
     accountState.isV2 &&
+    !accountState.isSmarterEoa &&
     !accountState.isDeployed &&
     network.erc4337.enabled &&
     !accountState.isErc4337Enabled

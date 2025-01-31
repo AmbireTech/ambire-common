@@ -22,7 +22,7 @@ async function sendFunds(to: string, ether: number) {
   })
 }
 
-function getPriviledgeTxn(ambireAccountAddr: string, privAddress: string, hasPriv: boolean = true) {
+function getPriviledgeTxn(ambireAccountAddr: string, privAddress: string, hasPriv: boolean = true): [string, string, string] {
   const setAddrPrivilegeABI = ['function setAddrPrivilege(address addr, bytes32 priv)']
   const iface = new ethers.Interface(setAddrPrivilegeABI)
   const priv = hasPriv ? 1 : 0
@@ -30,7 +30,7 @@ function getPriviledgeTxn(ambireAccountAddr: string, privAddress: string, hasPri
     privAddress,
     ethers.toBeHex(priv, 32)
   ])
-  return [ambireAccountAddr, 0, calldata]
+  return [ambireAccountAddr, '0', calldata]
 }
 
 function getPriviledgeTxnWithCustomHash(

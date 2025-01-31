@@ -2,8 +2,10 @@ import { Account } from '../../interfaces/account'
 import { AccountOpAction, Action as ActionFromActionsQueue } from '../../interfaces/actions'
 // eslint-disable-next-line import/no-cycle
 import { Action, Banner } from '../../interfaces/banner'
+import { Key } from '../../interfaces/keystore'
 import { Network } from '../../interfaces/network'
 import { ActiveRoute } from '../../interfaces/swapAndBridge'
+import { canBecomeSmarter } from '../account/account'
 import { getIsBridgeTxn, getQuoteRouteSteps } from '../swapAndBridge/swapAndBridge'
 
 const getBridgeBannerTitle = (routeStatus: ActiveRoute['routeStatus']) => {
@@ -137,6 +139,26 @@ export const getDappActionRequestsBanners = (actions: ActionFromActionsQueue[]):
         {
           label: 'Open',
           actionName: 'open-pending-dapp-requests'
+        }
+      ]
+    }
+  ]
+}
+
+export const getBecomeSmarterEOABanner = (acc: Account, accKeys: Key[]): Banner[] => {
+  if (!canBecomeSmarter(acc, accKeys)) return []
+
+  return [
+    {
+      id: 'activate-7702',
+      type: 'info',
+      title: 'Activate 7702',
+      text: 'Become smarter EOA',
+      category: 'activate-7702',
+      actions: [
+        {
+          label: 'Activate',
+          actionName: 'activate-7702'
         }
       ]
     }

@@ -1,6 +1,8 @@
 /* eslint-disable no-param-reassign */
 import {
   AbiCoder,
+  concat,
+  encodeRlp,
   getAddress,
   getBytes,
   hashMessage,
@@ -8,6 +10,7 @@ import {
   Interface,
   isHexString,
   JsonRpcProvider,
+  keccak256,
   toBeHex,
   toUtf8Bytes,
   TypedDataDomain,
@@ -19,8 +22,9 @@ import UniversalSigValidator from '../../../contracts/compiled/UniversalSigValid
 import { PERMIT_2_ADDRESS, UNISWAP_UNIVERSAL_ROUTERS } from '../../consts/addresses'
 import { Account, AccountCreation, AccountId, AccountOnchainState } from '../../interfaces/account'
 import { Hex } from '../../interfaces/hex'
-import { KeystoreSigner } from '../../interfaces/keystore'
+import { KeystoreSignerInterface } from '../../interfaces/keystore'
 import { Network } from '../../interfaces/network'
+import { EIP7702Signature } from '../../interfaces/signatures'
 import { TypedMessage } from '../../interfaces/userRequest'
 import hexStringToUint8Array from '../../utils/hexStringToUint8Array'
 import isSameAddr from '../../utils/isSameAddr'
@@ -232,6 +236,7 @@ type Props = {
     types: Record<string, Array<TypedDataField>>
     message: Record<string, any>
   }
+  authorization?: Hex
   finalDigest?: string
 }
 
@@ -251,10 +256,12 @@ export async function verifyMessage({
   signature,
   message,
   typedData,
-  finalDigest
+  finalDigest,
+  authorization
 }: (
   | Required<Pick<Props, 'message'>>
   | Required<Pick<Props, 'typedData'>>
+  | Required<Pick<Props, 'authorization'>>
   | Required<Pick<Props, 'finalDigest'>>
 ) &
   Props): Promise<boolean> {
@@ -311,6 +318,8 @@ export async function verifyMessage({
         }`
       )
     }
+  } else if (authorization) {
+    finalDigest = authorization
   }
 
   // this 'magic' universal validator contract will deploy itself within the eth_call, try to verify the signature using
@@ -359,7 +368,7 @@ export async function getExecuteSignature(
   network: Network,
   accountOp: AccountOp,
   accountState: AccountOnchainState,
-  signer: KeystoreSigner
+  signer: KeystoreSignerInterface
 ) {
   // if we're authorizing calls for a v1 contract, we do a sign message
   // on the hash of the calls
@@ -383,7 +392,7 @@ export async function getPlainTextSignature(
   network: Network,
   account: Account,
   accountState: AccountOnchainState,
-  signer: KeystoreSigner
+  signer: KeystoreSignerInterface
 ): Promise<string> {
   const dedicatedToOneSA = signer.key.dedicatedToOneSA
 
@@ -454,7 +463,7 @@ export async function getEIP712Signature(
   message: TypedMessage,
   account: Account,
   accountState: AccountOnchainState,
-  signer: KeystoreSigner,
+  signer: KeystoreSignerInterface,
   network: Network
 ): Promise<string> {
   if (!message.types.EIP712Domain) {
@@ -548,4 +557,57 @@ export function adjustEntryPointAuthorization(signature: string): string {
   // since normally when we sign an EIP-712 request, we wrap it in Unprotected,
   // we adjust the entry point authorization signature so we could execute a txn
   return wrapStandard(entryPointSig.substring(0, entryPointSig.length - 2))
+}
+
+// the hash the user needs to eth_sign in order for his EOA to turn smarter
+export function getAuthorizationHash(chainId: bigint, contractAddr: Hex, nonce: bigint): Hex {
+  return keccak256(
+    concat([
+      '0x05', // magic authrorization string
+      encodeRlp([
+        // zeros are empty bytes in rlp encoding
+        chainId !== 0n ? toBeHex(chainId) : '0x',
+        contractAddr,
+        // zeros are empty bytes in rlp encoding
+        nonce !== 0n ? toBeHex(nonce) : '0x'
+      ])
+    ])
+  ) as Hex
+}
+
+export function get7702SigV(signature: EIP7702Signature): Hex {
+  return signature.yParity === '0x00' ? (toBeHex(27) as Hex) : (toBeHex(28) as Hex)
+}
+
+export function getVerifyMessageSignature(
+  signature: EIP7702Signature | string,
+  account: Account,
+  accountState: AccountOnchainState
+): Hex {
+  if (isHexString(signature)) {
+    return account.creation && !accountState.isDeployed
+      ? // https://eips.ethereum.org/EIPS/eip-6492
+        (wrapCounterfactualSign(signature, account.creation) as Hex)
+      : (signature as Hex)
+  }
+
+  const sig = signature as EIP7702Signature
+  // ethereum v is 27 or 28
+  const v = get7702SigV(sig)
+  return concat([sig.r, sig.s, v]) as Hex
+}
+
+export function getSavedSignature(
+  signature: EIP7702Signature | string,
+  account: Account,
+  accountState: AccountOnchainState
+): EIP7702Signature | Hex {
+  if (isHexString(signature)) {
+    return account.creation && !accountState.isDeployed
+      ? // https://eips.ethereum.org/EIPS/eip-6492
+        (wrapCounterfactualSign(signature, account.creation) as Hex)
+      : (signature as Hex)
+  }
+
+  return signature as EIP7702Signature
 }

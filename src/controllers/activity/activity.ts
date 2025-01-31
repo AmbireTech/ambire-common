@@ -3,7 +3,6 @@ import { Banner } from '../../interfaces/banner'
 import { Fetch } from '../../interfaces/fetch'
 import { Network } from '../../interfaces/network'
 import { Storage } from '../../interfaces/storage'
-import { Message } from '../../interfaces/userRequest'
 import { isSmartAccount } from '../../libs/account/account'
 import { AccountOpStatus } from '../../libs/accountOp/accountOp'
 import { fetchTxnId, SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
@@ -15,6 +14,7 @@ import EventEmitter from '../eventEmitter/eventEmitter'
 import { NetworksController } from '../networks/networks'
 import { ProvidersController } from '../providers/providers'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
+import { InternalSignedMessages, SignedMessage } from './types'
 
 export interface Pagination {
   fromPage: number
@@ -28,14 +28,6 @@ interface PaginationResult<T> {
   maxPages: number
 }
 
-export interface SignedMessage extends Message {
-  dapp: {
-    name: string
-    icon: string
-  } | null
-  timestamp: number
-}
-
 interface AccountsOps extends PaginationResult<SubmittedAccountOp> {}
 interface MessagesToBeSigned extends PaginationResult<SignedMessage> {}
 
@@ -47,11 +39,6 @@ export interface Filters {
 interface InternalAccountsOps {
   // account => network => SubmittedAccountOp[]
   [key: string]: { [key: string]: SubmittedAccountOp[] }
-}
-
-interface InternalSignedMessages {
-  // account => Message[]
-  [key: string]: SignedMessage[]
 }
 
 // We are limiting items array to include no more than 1000 records,
