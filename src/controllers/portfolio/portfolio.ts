@@ -13,18 +13,20 @@ import { CustomToken, TokenPreference } from '../../libs/portfolio/customToken'
 import getAccountNetworksWithAssets from '../../libs/portfolio/getNetworksWithAssets'
 import {
   getFlags,
-  getPinnedGasTankTokens,
   getTokensReadyToLearn,
   getTotal,
   getUpdatedHints,
   processTokens,
   shouldGetAdditionalPortfolio,
+  shouldShowConfettiOnFirstCashback,
   validateERC20Token
 } from '../../libs/portfolio/helpers'
 /* eslint-disable no-restricted-syntax */
 // eslint-disable-next-line import/no-cycle
 import {
   AccountState,
+  FirstCashbackConfettiStatusByAccount,
+  GasTankTokenResult,
   GetOptions,
   NetworkState,
   PortfolioControllerState,
@@ -108,6 +110,10 @@ export class PortfolioController extends EventEmitter {
   // Holds the initial load promise, so that one can wait until it completes
   #initialLoadPromise: Promise<void>
 
+  #isFirstCashbackConfettiVisible: boolean = false
+
+  firstCashbackConfettiStatusByAccount: FirstCashbackConfettiStatusByAccount = {}
+
   constructor(
     storage: Storage,
     fetch: Fetch,
@@ -156,6 +162,10 @@ export class PortfolioController extends EventEmitter {
       }
 
       this.#previousHints = await this.#storage.get('previousHints', {})
+      this.firstCashbackConfettiStatusByAccount = await this.#storage.get(
+        'firstCashbackConfettiStatusByAccount',
+        {}
+      )
     } catch (e) {
       this.emitError({
         message:
@@ -410,6 +420,35 @@ export class PortfolioController extends EventEmitter {
     }
   }
 
+  async updateFirstCashbackConfettiStatus({
+    accountId,
+    shouldShow,
+    toggleModal,
+    shouldGetAdditionalPortfolio
+  }: {
+    accountId: AccountId
+    shouldShow: boolean
+    toggleModal: boolean
+    shouldGetAdditionalPortfolio: boolean
+  }) {
+    if (toggleModal) {
+      this.#isFirstCashbackConfettiVisible = !this.#isFirstCashbackConfettiVisible
+    }
+
+    this.firstCashbackConfettiStatusByAccount = {
+      ...this.firstCashbackConfettiStatusByAccount,
+      [accountId]: shouldShow
+    }
+    await this.#storage.set(
+      'firstCashbackConfettiStatusByAccount',
+      this.firstCashbackConfettiStatusByAccount
+    )
+
+    if (shouldGetAdditionalPortfolio) {
+      await this.#getAdditionalPortfolio(accountId, true)
+    }
+  }
+
   async #getAdditionalPortfolio(accountId: AccountId, forceUpdate?: boolean) {
     const rewardsOrGasTankState =
       this.#latest[accountId]?.rewards || this.#latest[accountId]?.gasTank
@@ -464,8 +503,22 @@ export class PortfolioController extends EventEmitter {
       }
     }
 
-    const gasTankTokens = res.data.gasTank.balance.map((t: any) => ({
+    if (shouldShowConfettiOnFirstCashback(accountState, res.data.gasTank.balance)) {
+      await this.updateFirstCashbackConfettiStatus({
+        accountId,
+        shouldShow: true,
+        toggleModal: false,
+        shouldGetAdditionalPortfolio: false
+      })
+    }
+
+    const gasTankTokens: GasTankTokenResult[] = res.data.gasTank.balance.map((t: any) => ({
       ...t,
+      amount: BigInt(t.amount),
+      availableAmount: BigInt(t.availableAmount),
+      cashback: BigInt(t.cashback || 0),
+      saved: BigInt(t.saved || 0),
+      isFirstCashbackConfettiVisible: this.#isFirstCashbackConfettiVisible,
       flags: getFlags(res.data, 'gasTank', t.networkId, t.address)
     }))
 
@@ -476,15 +529,8 @@ export class PortfolioController extends EventEmitter {
       result: {
         updateStarted: start,
         lastSuccessfulUpdate: Date.now(),
-        tokens: [
-          ...gasTankTokens,
-          ...getPinnedGasTankTokens(
-            res.data.gasTank.availableGasTankAssets,
-            hasNonZeroTokens,
-            accountId,
-            gasTankTokens
-          )
-        ],
+        tokens: [],
+        gasTankTokens: [...gasTankTokens],
         total: getTotal(gasTankTokens)
       }
     }

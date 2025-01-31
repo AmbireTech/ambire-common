@@ -89,6 +89,10 @@ export type Action =
       actionName: 'confirm-temp-seed'
     }
   | {
+      label: 'Open'
+      actionName: 'open-first-cashback-confetti-modal'
+    }
+  | {
       label: 'Reload'
       actionName: 'update-extension-version'
     }

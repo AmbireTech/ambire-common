@@ -4,6 +4,7 @@ import { AccountOpAction, Action as ActionFromActionsQueue } from '../../interfa
 import { Action, Banner } from '../../interfaces/banner'
 import { Network } from '../../interfaces/network'
 import { ActiveRoute } from '../../interfaces/swapAndBridge'
+import { FirstCashbackConfettiStatusByAccount } from '../portfolio/interfaces'
 import { getIsBridgeTxn, getQuoteRouteSteps } from '../swapAndBridge/swapAndBridge'
 
 const getBridgeBannerTitle = (routeStatus: ActiveRoute['routeStatus']) => {
@@ -311,4 +312,33 @@ export const getKeySyncBanner = (addr: string, email: string, keys: string[]) =>
     ]
   }
   return banner
+}
+
+export const getFirstCashbackBanners = ({
+  selectedAccountAddr,
+  firstCashbackConfettiStatusByAccount
+}: {
+  selectedAccountAddr: string
+  firstCashbackConfettiStatusByAccount: FirstCashbackConfettiStatusByAccount
+}): Banner[] => {
+  const banners: Banner[] = []
+
+  const shouldShowConfettiBanner = firstCashbackConfettiStatusByAccount[selectedAccountAddr]
+
+  if (shouldShowConfettiBanner) {
+    banners.push({
+      id: `${selectedAccountAddr}-first-cashback-banner-banner`,
+      type: 'info',
+      title: "You've got cashback!",
+      text: 'You just received your first cashback from paying gas with smart accounts.',
+      actions: [
+        {
+          label: 'Open',
+          actionName: 'open-first-cashback-confetti-modal'
+        }
+      ]
+    })
+  }
+
+  return banners
 }

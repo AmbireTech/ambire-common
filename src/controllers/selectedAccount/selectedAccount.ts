@@ -7,6 +7,8 @@ import { NetworkId } from '../../interfaces/network'
 import { SelectedAccountPortfolio } from '../../interfaces/selectedAccount'
 import { Storage } from '../../interfaces/storage'
 import { isSmartAccount } from '../../libs/account/account'
+// eslint-disable-next-line import/no-cycle
+import { getFirstCashbackBanners } from '../../libs/banners/banners'
 import { sortByValue } from '../../libs/defiPositions/helpers'
 import { PositionsByProvider } from '../../libs/defiPositions/types'
 // eslint-disable-next-line import/no-cycle
@@ -423,6 +425,15 @@ export class SelectedAccountController extends EventEmitter {
     ]
   }
 
+  get firstCashbackBanner(): Banner[] {
+    if (!this.account || !isSmartAccount(this.account) || !this.#portfolio) return []
+
+    return getFirstCashbackBanners({
+      selectedAccountAddr: this.account.addr,
+      firstCashbackConfettiStatusByAccount: this.#portfolio.firstCashbackConfettiStatusByAccount
+    })
+  }
+
   setDashboardNetworkFilter(networkFilter: NetworkId | null) {
     this.dashboardNetworkFilter = networkFilter
     this.emitUpdate()
@@ -432,6 +443,7 @@ export class SelectedAccountController extends EventEmitter {
     return {
       ...this,
       ...super.toJSON(),
+      firstCashbackBanner: this.firstCashbackBanner,
       deprecatedSmartAccountBanner: this.deprecatedSmartAccountBanner,
       areDefiPositionsLoading: this.areDefiPositionsLoading,
       balanceAffectingErrors: this.balanceAffectingErrors
