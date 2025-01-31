@@ -76,10 +76,16 @@ function wrapCancel(sig: string) {
 function getExecute712Data(
   chainId: bigint,
   nonce: bigint,
-  calls: { to: string; value: bigint; data: string }[],
+  txns: [string, string, string][],
   verifyingAddr: string,
   executeHash: string
 ) {
+  const calls = txns.map(txn => ({
+    to: txn[0],
+    value: txn[1],
+    data: txn[2]
+  }))
+
   const domain: TypedDataDomain = {
     name: 'Ambire',
     version: '1',
