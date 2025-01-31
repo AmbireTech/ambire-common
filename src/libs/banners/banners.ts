@@ -1,11 +1,10 @@
-import { FirstCashbackConfettiStatusByAccount } from 'libs/portfolio/interfaces'
-
 import { Account } from '../../interfaces/account'
 import { AccountOpAction, Action as ActionFromActionsQueue } from '../../interfaces/actions'
 // eslint-disable-next-line import/no-cycle
 import { Action, Banner } from '../../interfaces/banner'
 import { Network } from '../../interfaces/network'
 import { ActiveRoute } from '../../interfaces/swapAndBridge'
+import { FirstCashbackConfettiStatusByAccount } from '../portfolio/interfaces'
 import { getIsBridgeTxn, getQuoteRouteSteps } from '../swapAndBridge/swapAndBridge'
 
 const getBridgeBannerTitle = (routeStatus: ActiveRoute['routeStatus']) => {
