@@ -15,7 +15,8 @@ const AMBIRE_WALLET_TOKEN_COMMON_PROPS = {
   name: 'Ambire Wallet',
   symbol: 'WALLET',
   decimals: 18,
-  logoURI: 'https://media.socket.tech/tokens/all/WALLET'
+  logoURI: 'https://media.socket.tech/tokens/all/WALLET',
+  icon: '' // will fallback to get the icon from the same place as the portfolio
 }
 
 export const AMBIRE_WALLET_TOKEN_ON_ETHEREUM = {
