@@ -25,12 +25,12 @@ import {
 // eslint-disable-next-line import/no-cycle
 import {
   AccountState,
+  FirstCashbackConfettiStatusByAccount,
   GasTankTokenResult,
   GetOptions,
   NetworkState,
   PortfolioControllerState,
   PreviousHintsStorage,
-  ShouldShowConfettiBanner,
   TemporaryTokens,
   TokenResult
 } from '../../libs/portfolio/interfaces'
@@ -109,7 +109,7 @@ export class PortfolioController extends EventEmitter {
 
   #shouldShowConfettiModal: boolean = false
 
-  shouldShowConfettiBanner: ShouldShowConfettiBanner = {}
+  firstCashbackConfettiStatusByAccount: FirstCashbackConfettiStatusByAccount = {}
 
   constructor(
     storage: Storage,
@@ -144,7 +144,10 @@ export class PortfolioController extends EventEmitter {
       await this.#accounts.initialLoadPromise
       this.tokenPreferences = await this.#storage.get('tokenPreferences', [])
       this.#previousHints = await this.#storage.get('previousHints', {})
-      this.shouldShowConfettiBanner = await this.#storage.get('shouldShowConfettiBanner', {})
+      this.firstCashbackConfettiStatusByAccount = await this.#storage.get(
+        'firstCashbackConfettiStatusByAccount',
+        {}
+      )
     } catch (e) {
       this.emitError({
         message:
@@ -309,11 +312,14 @@ export class PortfolioController extends EventEmitter {
 
   async setShouldShowConfetti(accountId: AccountId) {
     this.#shouldShowConfettiModal = !this.#shouldShowConfettiModal
-    this.shouldShowConfettiBanner = {
-      ...this.shouldShowConfettiBanner,
+    this.firstCashbackConfettiStatusByAccount = {
+      ...this.firstCashbackConfettiStatusByAccount,
       [accountId]: false
     }
-    await this.#storage.set('shouldShowConfettiBanner', this.shouldShowConfettiBanner)
+    await this.#storage.set(
+      'firstCashbackConfettiStatusByAccount',
+      this.firstCashbackConfettiStatusByAccount
+    )
     await this.#getAdditionalPortfolio(accountId, true)
   }
 
@@ -372,9 +378,15 @@ export class PortfolioController extends EventEmitter {
     }
 
     if (shouldShowConfettiOnFirstCashback(accountState, res.data.gasTank.balance)) {
-      this.shouldShowConfettiBanner = { ...this.shouldShowConfettiBanner, [accountId]: true }
+      this.firstCashbackConfettiStatusByAccount = {
+        ...this.firstCashbackConfettiStatusByAccount,
+        [accountId]: true
+      }
 
-      await this.#storage.set('shouldShowConfettiBanner', this.shouldShowConfettiBanner)
+      await this.#storage.set(
+        'firstCashbackConfettiStatusByAccount',
+        this.firstCashbackConfettiStatusByAccount
+      )
     }
 
     const gasTankTokens: GasTankTokenResult[] = res.data.gasTank.balance.map((t: any) => ({

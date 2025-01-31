@@ -238,6 +238,6 @@ export type FormattedPendingAmounts = Omit<PendingAmounts, 'pendingBalance'> & {
   pendingToBeConfirmedFormatted?: string
 }
 
-export type ShouldShowConfettiBanner = {
+export type FirstCashbackConfettiStatusByAccount = {
   [key: string]: boolean
 }

@@ -1,4 +1,4 @@
-import { ShouldShowConfettiBanner } from 'libs/portfolio/interfaces'
+import { FirstCashbackConfettiStatusByAccount } from 'libs/portfolio/interfaces'
 
 import { Account } from '../../interfaces/account'
 import { AccountOpAction, Action as ActionFromActionsQueue } from '../../interfaces/actions'
@@ -317,14 +317,14 @@ export const getKeySyncBanner = (addr: string, email: string, keys: string[]) =>
 
 export const getFirstCashbackBanners = ({
   selectedAccountAddr,
-  shouldShowConfetti
+  firstCashbackConfettiStatusByAccount
 }: {
   selectedAccountAddr: string
-  shouldShowConfetti: ShouldShowConfettiBanner
+  firstCashbackConfettiStatusByAccount: FirstCashbackConfettiStatusByAccount
 }): Banner[] => {
   const banners: Banner[] = []
 
-  const shouldShowConfettiBanner = shouldShowConfetti[selectedAccountAddr]
+  const shouldShowConfettiBanner = firstCashbackConfettiStatusByAccount[selectedAccountAddr]
 
   if (shouldShowConfettiBanner) {
     banners.push({
