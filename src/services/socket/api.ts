@@ -223,6 +223,10 @@ export class SocketAPI {
       params.append('feeTakerAddress', feeTakerAddress)
       params.append('feePercent', FEE_PERCENT.toString())
     }
+    // TODO: Temporarily exclude Mayan bridge when fetching quotes for SA, as
+    // batching is currently not not supported by Mayan (and funds get lost).
+    if (isSmartAccount) params.append('excludeBridges', ['mayan'].join(','))
+
     const url = `${this.#baseUrl}/quote?${params.toString()}`
 
     let response = await this.#fetch(url, { headers: this.#headers })
