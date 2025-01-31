@@ -310,17 +310,33 @@ export class PortfolioController extends EventEmitter {
     }
   }
 
-  async setShouldShowConfetti(accountId: AccountId) {
-    this.#shouldShowConfettiModal = !this.#shouldShowConfettiModal
+  async updateFirstCashbackConfettiStatus({
+    accountId,
+    shouldShow,
+    toggleModal,
+    shouldGetAdditionalPortfolio
+  }: {
+    accountId: AccountId
+    shouldShow: boolean
+    toggleModal: boolean
+    shouldGetAdditionalPortfolio: boolean
+  }) {
+    if (toggleModal) {
+      this.#shouldShowConfettiModal = !this.#shouldShowConfettiModal
+    }
+
     this.firstCashbackConfettiStatusByAccount = {
       ...this.firstCashbackConfettiStatusByAccount,
-      [accountId]: false
+      [accountId]: shouldShow
     }
     await this.#storage.set(
       'firstCashbackConfettiStatusByAccount',
       this.firstCashbackConfettiStatusByAccount
     )
-    await this.#getAdditionalPortfolio(accountId, true)
+
+    if (shouldGetAdditionalPortfolio) {
+      await this.#getAdditionalPortfolio(accountId, true)
+    }
   }
 
   async #getAdditionalPortfolio(accountId: AccountId, forceUpdate?: boolean) {
@@ -378,15 +394,12 @@ export class PortfolioController extends EventEmitter {
     }
 
     if (shouldShowConfettiOnFirstCashback(accountState, res.data.gasTank.balance)) {
-      this.firstCashbackConfettiStatusByAccount = {
-        ...this.firstCashbackConfettiStatusByAccount,
-        [accountId]: true
-      }
-
-      await this.#storage.set(
-        'firstCashbackConfettiStatusByAccount',
-        this.firstCashbackConfettiStatusByAccount
-      )
+      await this.updateFirstCashbackConfettiStatus({
+        accountId,
+        shouldShow: true,
+        toggleModal: false,
+        shouldGetAdditionalPortfolio: false
+      })
     }
 
     const gasTankTokens: GasTankTokenResult[] = res.data.gasTank.balance.map((t: any) => ({
