@@ -2,9 +2,18 @@ import { NetworkId } from '../../interfaces/network'
 
 export interface CustomToken {
   address: string
+  networkId: NetworkId
+  standard: 'ERC20' | 'ERC721'
+}
+
+export interface TokenPreference {
+  address: string
+  networkId: NetworkId
   isHidden?: boolean
-  standard: string
+}
+
+export type LegacyTokenPreference = TokenPreference & {
   symbol: string
   decimals: number
-  networkId: NetworkId
+  standard: 'ERC20' | 'ERC721'
 }

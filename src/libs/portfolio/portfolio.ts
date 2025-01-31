@@ -63,7 +63,6 @@ const defaultOptions: GetOptions = {
   priceRecency: 0,
   previousHintsFromExternalAPI: null,
   fetchPinned: true,
-  tokenPreferences: [],
   isEOA: false
 }
 
@@ -188,13 +187,6 @@ export class Portfolio {
 
     if (localOpts.fetchPinned) {
       hints.erc20s = [...hints.erc20s, ...PINNED_TOKENS.map((x) => x.address)]
-    }
-
-    if (localOpts.tokenPreferences) {
-      hints.erc20s = [
-        ...hints.erc20s,
-        ...localOpts.tokenPreferences.filter((x) => x.standard === 'ERC20').map((x) => x.address)
-      ]
     }
 
     // add the fee tokens
