@@ -38,6 +38,7 @@ export const DEFAULT_SELECTED_ACCOUNT_PORTFOLIO = {
   tokenAmounts: [],
   totalBalance: 0,
   isAllReady: false,
+  isLoading: true,
   networkSimulatedAccountOp: {},
   latest: {},
   pending: {}
@@ -243,6 +244,7 @@ export class SelectedAccountController extends EventEmitter {
       latestStateSelectedAccountWithDefiPositions,
       pendingStateSelectedAccountWithDefiPositions,
       this.portfolio,
+      this.portfolioStartedLoadingAtTimestamp,
       hasSignAccountOp
     )
 

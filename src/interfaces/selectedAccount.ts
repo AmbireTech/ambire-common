@@ -27,6 +27,7 @@ export interface SelectedAccountPortfolio {
   collections: CollectionResultInterface[]
   totalBalance: number
   isAllReady: boolean
+  isLoading: boolean
   networkSimulatedAccountOp: NetworkSimulatedAccountOp
   latest: SelectedAccountPortfolioState
   pending: SelectedAccountPortfolioState
