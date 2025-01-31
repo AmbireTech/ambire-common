@@ -32,7 +32,7 @@ export type GasTankTokenResult = TokenResult & {
   availableAmount: bigint
   cashback: bigint
   saved: bigint
-  shouldPopsUpConfetti: boolean
+  isFirstCashbackConfettiVisible: boolean
 }
 
 export interface CollectionResult extends TokenResult {

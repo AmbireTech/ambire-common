@@ -107,7 +107,7 @@ export class PortfolioController extends EventEmitter {
   // Holds the initial load promise, so that one can wait until it completes
   #initialLoadPromise: Promise<void>
 
-  #shouldShowConfettiModal: boolean = false
+  #isFirstCashbackConfettiVisible: boolean = false
 
   firstCashbackConfettiStatusByAccount: FirstCashbackConfettiStatusByAccount = {}
 
@@ -322,7 +322,7 @@ export class PortfolioController extends EventEmitter {
     shouldGetAdditionalPortfolio: boolean
   }) {
     if (toggleModal) {
-      this.#shouldShowConfettiModal = !this.#shouldShowConfettiModal
+      this.#isFirstCashbackConfettiVisible = !this.#isFirstCashbackConfettiVisible
     }
 
     this.firstCashbackConfettiStatusByAccount = {
@@ -408,7 +408,7 @@ export class PortfolioController extends EventEmitter {
       availableAmount: BigInt(t.availableAmount),
       cashback: BigInt(t.cashback || 0),
       saved: BigInt(t.saved || 0),
-      shouldPopsUpConfetti: this.#shouldShowConfettiModal,
+      isFirstCashbackConfettiVisible: this.#isFirstCashbackConfettiVisible,
       flags: getFlags(res.data, 'gasTank', t.networkId, t.address)
     }))
 
