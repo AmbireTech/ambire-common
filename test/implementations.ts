@@ -38,7 +38,7 @@ async function deployAmbireAccountHardhatNetwork(priLevels: PrivLevels[]) {
   const promises = priLevels.map((priv) => ambireAccount.privileges(priv.addr))
   const result = await Promise.all(promises)
   result.forEach((res, index) => {
-    const expected = priLevels[index].hash ? ethers.toBeHex(2, 32) : priLevels[index].hash
+    const expected = priLevels[index].hash ? priLevels[index].hash : ethers.toBeHex(2, 32)
     expect(res).to.equal(expected)
   })
   return {
@@ -50,4 +50,4 @@ async function deployAmbireAccountHardhatNetwork(priLevels: PrivLevels[]) {
   }
 }
 
-export { getAmbireAccountAddress, deployAmbireAccountHardhatNetwork }
+export { deployAmbireAccountHardhatNetwork, getAmbireAccountAddress }
