@@ -1165,6 +1165,8 @@ export class SwapAndBridgeController extends EventEmitter {
     this.toSelectedToken = null
     this.quote = null
     this.quoteRoutesStatuses = {}
+
+    this.emitUpdate()
   }
 
   updateActiveRoute(
