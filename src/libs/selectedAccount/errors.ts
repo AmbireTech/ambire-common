@@ -18,7 +18,15 @@ export type Action = {
 }
 
 export type SelectedAccountBalanceError = {
-  id: string
+  id:
+    | `custom-rpcs-down-${NetworkId}`
+    | 'rpcs-down'
+    | 'portfolio-critical'
+    | 'loading-too-long'
+    | 'defi-critical'
+    | 'defi-prices'
+    | `${string}-defi-positions-error`
+    | keyof typeof PORTFOLIO_LIB_ERROR_NAMES
   networkIds: NetworkId[]
   type: 'error' | 'warning'
   title: string

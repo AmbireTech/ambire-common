@@ -124,7 +124,7 @@ const accounts = [
 const waitSelectedAccCtrlPortfolioAllReady = () => {
   return new Promise((resolve) => {
     const unsubscribe = selectedAccountCtrl.onUpdate(() => {
-      if (selectedAccountCtrl.portfolio.isReadyToVisualize) {
+      if (selectedAccountCtrl.portfolio.isAllReady) {
         unsubscribe()
         resolve(true)
       }

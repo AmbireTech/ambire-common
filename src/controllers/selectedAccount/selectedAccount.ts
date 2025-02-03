@@ -38,7 +38,7 @@ export const DEFAULT_SELECTED_ACCOUNT_PORTFOLIO = {
   tokenAmounts: [],
   totalBalance: 0,
   isReadyToVisualize: false,
-  isAllReady: true,
+  isAllReady: false,
   networkSimulatedAccountOp: {},
   latest: {},
   pending: {}
@@ -248,14 +248,11 @@ export class SelectedAccountController extends EventEmitter {
       hasSignAccountOp
     )
 
-    if (this.portfolioStartedLoadingAtTimestamp && newSelectedAccountPortfolio.isReadyToVisualize) {
+    if (this.portfolioStartedLoadingAtTimestamp && newSelectedAccountPortfolio.isAllReady) {
       this.portfolioStartedLoadingAtTimestamp = null
     }
 
-    if (
-      !this.portfolioStartedLoadingAtTimestamp &&
-      !newSelectedAccountPortfolio.isReadyToVisualize
-    ) {
+    if (!this.portfolioStartedLoadingAtTimestamp && !newSelectedAccountPortfolio.isAllReady) {
       this.portfolioStartedLoadingAtTimestamp = Date.now()
     }
 
