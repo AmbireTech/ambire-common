@@ -10,7 +10,7 @@ import { networks } from '../../consts/networks'
 import { PINNED_TOKENS } from '../../consts/pinnedTokens'
 import { RPCProviders } from '../../interfaces/provider'
 import { AccountOp } from '../../libs/accountOp/accountOp'
-import { CollectionResult } from '../../libs/portfolio/interfaces'
+import { CollectionResult, PortfolioGasTankResult } from '../../libs/portfolio/interfaces'
 import { getRpcProvider } from '../../services/provider'
 import { AccountsController } from '../accounts/accounts'
 import { NetworksController } from '../networks/networks'
@@ -79,6 +79,27 @@ const account3 = {
   }
 }
 
+const account4 = {
+  addr: '0x3e2D734349654166a2Ad92CaB2437A76a70B650a',
+  initialPrivileges: [
+    [
+      '0xBd84Cc40a5b5197B5B61919c22A55e1c46d2A3bb',
+      '0x0000000000000000000000000000000000000000000000000000000000000002'
+    ]
+  ],
+  associatedKeys: ['0xBd84Cc40a5b5197B5B61919c22A55e1c46d2A3bb'],
+  creation: {
+    factoryAddr: '0x26cE6745A633030A6faC5e64e41D21fb6246dc2d',
+    bytecode:
+      '0x7f00000000000000000000000000000000000000000000000000000000000000027ff33cc417366b7e38d2706a67ab46f85465661c28b864b521441180d15df82251553d602d80604d3d3981f3363d3d373d3d3d363d730f2aa7bcda3d9d210df69a394b6965cb2566c8285af43d82803e903d91602b57fd5bf3',
+    salt: '0x0000000000000000000000000000000000000000000000000000000000000000'
+  },
+  preferences: {
+    label: DEFAULT_ACCOUNT_LABEL,
+    pfp: '0x3e2D734349654166a2Ad92CaB2437A76a70B650a'
+  }
+}
+
 const emptyAccount = {
   addr: EMPTY_ACCOUNT_ADDR,
   initialPrivileges: [],
@@ -92,7 +113,7 @@ const emptyAccount = {
 
 const prepareTest = () => {
   const storage = produceMemoryStore()
-  storage.set('accounts', [account, account2, account3, emptyAccount])
+  storage.set('accounts', [account, account2, account3, account4, emptyAccount])
   let providersCtrl: ProvidersController
   const networksCtrl = new NetworksController(
     storage,
@@ -494,16 +515,21 @@ describe('Portfolio Controller ', () => {
 
       await controller.updateSelectedAccount(account.addr)
 
+      if (controller.getLatestPortfolioState(account.addr).gasTank?.isLoading) return
+
+      const gasTankResult = controller.getLatestPortfolioState(account.addr).gasTank
+        ?.result as PortfolioGasTankResult
+
       controller.getLatestPortfolioState(account.addr).ethereum?.result?.tokens.forEach((token) => {
         expect(token.amount > 0)
       })
-      controller.getLatestPortfolioState(account.addr).gasTank?.result?.tokens.forEach((token) => {
+      gasTankResult.gasTankTokens.forEach((token) => {
         expect(token.amount > 0)
       })
     })
   })
-  // TODO: The gas tank tests are skipped until the changes related to gas tank will be merged in the production relayer
-  describe.skip('Gas tank USDC token', () => {
+
+  describe('Gas Tank with USDC token', () => {
     const usdcTokenAddress = '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48'
     const foundUsdcToken = PINNED_TOKENS.find(
       (token) => token.address === usdcTokenAddress && token.networkId === 'ethereum'
@@ -518,9 +544,10 @@ describe('Portfolio Controller ', () => {
 
       if (controller.getLatestPortfolioState(account3.addr).gasTank?.isLoading) return
 
-      const token = controller
-        .getLatestPortfolioState(account3.addr)
-        .gasTank?.result?.tokens.find((t) => t.address === foundUsdcToken?.address)
+      const gasTankResult = controller.getLatestPortfolioState(account3.addr).gasTank
+        ?.result as PortfolioGasTankResult
+
+      const token = gasTankResult.gasTankTokens.find((t) => t.address === foundUsdcToken?.address)
 
       expect(token).toBeTruthy()
       expect(token?.amount).toEqual(0n)
@@ -529,26 +556,25 @@ describe('Portfolio Controller ', () => {
       expect(token?.saved).toEqual(0n)
     })
 
-    // TODO: add a test account as 'account4' which values of cashback and saved are greater than 0
+    test('Check if smart account with existing cashback and saved greater than 0', async () => {
+      const { controller } = prepareTest()
 
-    // test('Check if smart account with existing cashback and saved greater than 0', async () => {
-    //   const { controller } = prepareTest()
+      expect(foundUsdcToken).toBeTruthy()
 
-    //   expect(foundUsdcToken).toBeTruthy()
+      await controller.updateSelectedAccount(account4.addr)
 
-    //   await controller.updateSelectedAccount(account4.addr)
+      if (controller.getLatestPortfolioState(account4.addr).gasTank?.isLoading) return
 
-    //   if (controller.getLatestPortfolioState(account4.addr).gasTank?.isLoading) return
+      const gasTankResult = controller.getLatestPortfolioState(account4.addr).gasTank
+        ?.result as PortfolioGasTankResult
 
-    //   const token = controller.getLatestPortfolioState(account4.addr).gasTank?.result?.tokens.find(
-    //     (t) => t.address === foundUsdcToken?.address
-    //   )
-    //   console.log('token', token)
-    //   expect(token).toBeTruthy()
+      const token = gasTankResult.gasTankTokens.find((t) => t.address === foundUsdcToken?.address)
 
-    //   expect(token?.cashback).toBeGreaterThan(0n)
-    //   expect(token?.saved).toBeGreaterThan(0n)
-    // })
+      expect(token).toBeTruthy()
+
+      expect(token?.cashback).toBeGreaterThan(0n)
+      expect(token?.saved).toBeGreaterThan(0n)
+    })
   })
 
   describe('Hints- token/nft learning, external api hints and temporary tokens', () => {
