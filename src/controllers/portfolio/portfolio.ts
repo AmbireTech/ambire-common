@@ -514,7 +514,7 @@ export class PortfolioController extends EventEmitter {
 
     const gasTankTokens: GasTankTokenResult[] = res.data.gasTank.balance.map((t: any) => ({
       ...t,
-      amount: BigInt(t.amount),
+      amount: BigInt(t.amount || 0),
       availableAmount: BigInt(t.availableAmount || 0),
       cashback: BigInt(t.cashback || 0),
       saved: BigInt(t.saved || 0),
