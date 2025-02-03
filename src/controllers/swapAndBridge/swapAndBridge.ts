@@ -201,9 +201,13 @@ export class SwapAndBridgeController extends EventEmitter {
     this.#initialLoadPromise = this.#load()
   }
 
-  emitUpdate() {
-    // Override emitUpdate to not emit updates if there are no active sessions
-    if (!this.sessionIds.length) return
+  #emitUpdateIfNeeded() {
+    const shouldSkipUpdate =
+      // No need to emit emit updates if there are no active sessions
+      !this.sessionIds.length &&
+      // but ALSO there are no active routes (otherwise, banners need the updates)
+      !this.activeRoutes.length
+    if (shouldSkipUpdate) return
 
     super.emitUpdate()
   }
@@ -225,7 +229,7 @@ export class SwapAndBridgeController extends EventEmitter {
         }
       })
     })
-    this.emitUpdate()
+    this.#emitUpdateIfNeeded()
   }
 
   // The token in portfolio is the source of truth for the amount, it updates
@@ -384,7 +388,7 @@ export class SwapAndBridgeController extends EventEmitter {
     // Do not await on purpose as it's not critical for the controller state to be ready
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.#fetchSupportedChainsIfNeeded()
-    this.emitUpdate()
+    this.#emitUpdateIfNeeded()
   }
 
   get isHealthy() {
@@ -404,7 +408,7 @@ export class SwapAndBridgeController extends EventEmitter {
         lastFetched: Date.now(),
         data: supportedChainsResponse.filter((c) => c.sendingEnabled && c.receivingEnabled)
       }
-      this.emitUpdate()
+      this.#emitUpdateIfNeeded()
     } catch (error: any) {
       // Fail silently, as this is not a critical feature, Swap & Bridge is still usable
       this.emitError({ error, level: 'silent', message: error?.message })
@@ -568,7 +572,7 @@ export class SwapAndBridgeController extends EventEmitter {
     }
     this.updateQuote()
 
-    this.emitUpdate()
+    this.#emitUpdateIfNeeded()
   }
 
   resetForm(shouldEmit?: boolean) {
@@ -584,7 +588,7 @@ export class SwapAndBridgeController extends EventEmitter {
     this.portfolioTokenList = []
     this.#toTokenList = []
 
-    if (shouldEmit) this.emitUpdate()
+    if (shouldEmit) this.#emitUpdateIfNeeded()
   }
 
   updatePortfolioTokenList(nextPortfolioTokenList: TokenResult[]) {
@@ -616,7 +620,7 @@ export class SwapAndBridgeController extends EventEmitter {
         fromSelectedToken: fromSelectedTokenInNextPortfolio || this.portfolioTokenList[0] || null
       })
     } else {
-      this.emitUpdate()
+      this.#emitUpdateIfNeeded()
     }
   }
 
@@ -645,7 +649,7 @@ export class SwapAndBridgeController extends EventEmitter {
     if (shouldReset) {
       this.#toTokenList = []
       this.toSelectedToken = null
-      this.emitUpdate()
+      this.#emitUpdateIfNeeded()
     }
 
     try {
@@ -692,7 +696,7 @@ export class SwapAndBridgeController extends EventEmitter {
           if (token) {
             this.updateForm({ toSelectedToken: token })
             this.updateToTokenListStatus = 'INITIAL'
-            this.emitUpdate()
+            this.#emitUpdateIfNeeded()
             return
           }
         }
@@ -701,7 +705,7 @@ export class SwapAndBridgeController extends EventEmitter {
       this.emitError({ error, level: 'major', message: error?.message })
     }
     this.updateToTokenListStatus = 'INITIAL'
-    this.emitUpdate()
+    this.#emitUpdateIfNeeded()
   }
 
   get toTokenList(): SwapAndBridgeToToken[] {
@@ -749,7 +753,7 @@ export class SwapAndBridgeController extends EventEmitter {
       this.portfolioTokenList.filter((t) => t.networkId === toTokenNetwork.id)
     )
 
-    this.emitUpdate()
+    this.#emitUpdateIfNeeded()
     return token
   }
 
@@ -820,7 +824,7 @@ export class SwapAndBridgeController extends EventEmitter {
       if (!options.skipPreviousQuoteRemoval) {
         if (this.quote) this.quote = null
         this.quoteRoutesStatuses = {}
-        this.emitUpdate()
+        this.#emitUpdateIfNeeded()
       }
 
       try {
@@ -1006,7 +1010,7 @@ export class SwapAndBridgeController extends EventEmitter {
       if (this.quote || this.quoteRoutesStatuses) {
         this.quote = null
         this.quoteRoutesStatuses = {}
-        this.emitUpdate()
+        this.#emitUpdateIfNeeded()
       }
       return
     }
@@ -1020,13 +1024,13 @@ export class SwapAndBridgeController extends EventEmitter {
 
     if (!options.skipStatusUpdate && !this.quote) {
       this.updateQuoteStatus = 'LOADING'
-      this.emitUpdate()
+      this.#emitUpdateIfNeeded()
     }
 
     this.#updateQuoteTimeout = setTimeout(async () => {
       if (!options.skipStatusUpdate && !!this.quote) {
         this.updateQuoteStatus = 'LOADING'
-        this.emitUpdate()
+        this.#emitUpdateIfNeeded()
       }
 
       await updateQuoteFunction()
@@ -1034,7 +1038,7 @@ export class SwapAndBridgeController extends EventEmitter {
       if (quoteId !== this.#updateQuoteId) return
 
       this.updateQuoteStatus = 'INITIAL'
-      this.emitUpdate()
+      this.#emitUpdateIfNeeded()
       clearTimeout(this.#updateQuoteTimeout)
       this.#updateQuoteTimeout = undefined
     }, nextTimeout)
@@ -1140,7 +1144,7 @@ export class SwapAndBridgeController extends EventEmitter {
     this.quote.selectedRoute = route
     this.quote.selectedRouteSteps = getQuoteRouteSteps(route.userTxs)
 
-    this.emitUpdate()
+    this.#emitUpdateIfNeeded()
   }
 
   async addActiveRoute(activeRoute: {
@@ -1186,13 +1190,14 @@ export class SwapAndBridgeController extends EventEmitter {
       }
       this.activeRoutes = currentActiveRoutes
 
-      this.emitUpdate()
+      this.#emitUpdateIfNeeded()
     }
   }
 
   removeActiveRoute(activeRouteId: SocketAPISendTransactionRequest['activeRouteId']) {
     this.activeRoutes = this.activeRoutes.filter((r) => r.activeRouteId !== activeRouteId)
 
+    // Purposely not using `this.#emitUpdateIfNeeded()` here, as this should always emit to update banners
     this.emitUpdate()
   }
 
@@ -1318,7 +1323,7 @@ export class SwapAndBridgeController extends EventEmitter {
     this.portfolioTokenList = []
     this.isTokenListLoading = true
 
-    this.emitUpdate()
+    this.#emitUpdateIfNeeded()
   }
 
   #getIsFormValidToFetchQuote() {

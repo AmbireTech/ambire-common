@@ -72,6 +72,11 @@ const BROADCAST_OR_ESTIMATION_ERRORS: ErrorHumanizerError[] = [
     message:
       'the Ambire relayer is temporarily down.\nPlease try again or contact Ambire support for assistance.'
   },
+  {
+    reasons: ['user nonce too low'],
+    message:
+      'the user nonce is too low. Is there a pending transaction? Please try broadcasting again.'
+  },
   // dApp interactions
   {
     reasons: ['INSUFFICIENT_INPUT_AMOUNT'],
