@@ -35,7 +35,7 @@ import { Storage } from '../../interfaces/storage'
 import { SocketAPISendTransactionRequest } from '../../interfaces/swapAndBridge'
 import { Calls, DappUserRequest, SignUserRequest, UserRequest } from '../../interfaces/userRequest'
 import { WindowManager } from '../../interfaces/window'
-import { getContractImplementation } from '../../libs/7702/7702'
+import { getContractImplementation, has7702 } from '../../libs/7702/7702'
 import {
   canBecomeSmarter,
   getDefaultSelectedAccount,
@@ -749,6 +749,28 @@ export class MainController extends EventEmitter {
     }
   }
 
+  // show signAccountOp with previously added userRequests kind calls
+  #makeAccountOpFromStackedCalls(networkId: string, accountAddr: string) {
+    // no account op request if there isn't one
+    const callsUserReq = this.userRequests.find(
+      (req) =>
+        req.action.kind === 'calls' &&
+        req.meta.networkId === networkId &&
+        req.meta.accountAddr === accountAddr
+    )
+    if (!callsUserReq) return
+
+    const accountOpAction = makeSmartAccountOpAction({
+      account: this.accounts.accounts.find((acc) => acc.addr === accountAddr)!,
+      networkId,
+      nonce: this.accounts.accountStates[accountAddr][networkId].nonce,
+      userRequests: this.userRequests,
+      actionsQueue: this.actions.actionsQueue
+    })
+
+    this.actions.addOrUpdateAction(accountOpAction, 'first')
+  }
+
   handleSignMessageCallbacks(signedMessage: SignedMessage) {
     if (signedMessage.fromActionId === ENTRY_POINT_AUTHORIZATION_REQUEST_ID) {
       const accountOpAction = makeSmartAccountOpAction({
@@ -782,25 +804,7 @@ export class MainController extends EventEmitter {
           signedMessage.content.chainId === 0n ? [] : [signedMessage.networkId]
         )
         .then(() => {
-          // no account op request if there isn't one
-          const callsUserReq = this.userRequests.find(
-            (req) =>
-              req.action.kind === 'calls' &&
-              req.meta.networkId === signedMessage.networkId &&
-              req.meta.accountAddr === account.addr
-          )
-          if (!callsUserReq) return
-
-          const accountOpAction = makeSmartAccountOpAction({
-            account,
-            networkId: signedMessage.networkId,
-            nonce:
-              this.accounts.accountStates[signedMessage.accountAddr][signedMessage.networkId].nonce,
-            userRequests: this.userRequests,
-            actionsQueue: this.actions.actionsQueue
-          })
-
-          this.actions.addOrUpdateAction(accountOpAction, 'first')
+          this.#makeAccountOpFromStackedCalls(signedMessage.networkId, signedMessage.accountAddr)
         })
     }
   }
@@ -1228,16 +1232,10 @@ export class MainController extends EventEmitter {
         dappPromise
       } as SignUserRequest
 
-      let accountState = this.accounts.accountStates[accountAddr]
-        ? this.accounts.accountStates[accountAddr][network.id]
-        : undefined
-      // precaution, it shouldn't happen
-      // refetch the account state if it doesn't exist for some reason
-      if (!accountState) {
-        await this.accounts.updateAccountState(accountAddr)
-        accountState = this.accounts.accountStates[accountAddr][network.id]
-      }
-
+      const accountState = await this.accounts.getOrFetchAccountOnChainState(
+        accountAddr,
+        network.id
+      )
       if (isBasicAccount(this.selectedAccount.account, accountState)) {
         const otherUserRequestFromSameDapp = this.userRequests.find(
           (r) => r.dappPromise?.session?.origin === dappPromise?.session?.origin
@@ -1576,14 +1574,10 @@ export class MainController extends EventEmitter {
     }
   }
 
-  rejectUserRequest(err: string, requestId: UserRequest['id']) {
-    const userRequest = this.userRequests.find((r) => r.id === requestId)
-    if (!userRequest) return
-
-    if (
-      requestId === ENTRY_POINT_AUTHORIZATION_REQUEST_ID ||
-      userRequest.action.kind === 'authorization-7702'
-    ) {
+  #handlePreReject(userRequest: UserRequest) {
+    // if the entry point signature is rejected, remove all the calls
+    // accumulated until now
+    if (userRequest.id === ENTRY_POINT_AUTHORIZATION_REQUEST_ID) {
       this.userRequests = this.userRequests.filter(
         (r) =>
           !(
@@ -1592,7 +1586,20 @@ export class MainController extends EventEmitter {
             r.meta.networkId === userRequest.meta.networkId
           )
       )
+      return
     }
+
+    // if the user rejects 7702, he will sign as normal EOA the stack calls
+    if (userRequest.action.kind === 'authorization-7702') {
+      this.#makeAccountOpFromStackedCalls(userRequest.meta.networkId, userRequest.meta.accountAddr)
+    }
+  }
+
+  rejectUserRequest(err: string, requestId: UserRequest['id']) {
+    const userRequest = this.userRequests.find((r) => r.id === requestId)
+    if (!userRequest) return
+
+    this.#handlePreReject(userRequest)
 
     // if the userRequest that is about to be removed is an approval request
     // find and remove the associated pending transaction request if there is any
@@ -1699,6 +1706,12 @@ export class MainController extends EventEmitter {
     actionExecutionType: ActionExecutionType = 'open-action-window'
   ): Promise<boolean> {
     const { action, meta } = req
+
+    // allow preUser requests only before txns
+    // otherwise: meta.networkId is not reliable for some userRequests:
+    // benzin is one such type where networkId comes as ""
+    if (action.kind !== 'calls') return false
+
     const account = this.accounts.accounts.find((x) => x.addr === meta.accountAddr)!
     const network = this.networks.networks.find((n) => n.id === meta.networkId)!
     const accountState = await this.accounts.getOrFetchAccountOnChainState(
@@ -1707,7 +1720,7 @@ export class MainController extends EventEmitter {
     )
 
     // smart account nonce 0: check for entry point auth
-    if (isSmartAccount(account) && action.kind === 'calls') {
+    if (isSmartAccount(account)) {
       // find me the accountOp for the network if any, it's always 1 for SA
       const currentAccountOpAction = this.actions.actionsQueue.find(
         (a) =>
@@ -1768,15 +1781,14 @@ export class MainController extends EventEmitter {
 
     // basic account: ask for 7702 auth
     if (
+      has7702(network) &&
       isBasicAccount(account, accountState) &&
       canBecomeSmarter(
         account,
         this.keystore.keys.filter((key) =>
           this.selectedAccount.account!.associatedKeys.includes(key.addr)
         )
-      ) &&
-      network.has7702 &&
-      action.kind === 'calls'
+      )
     ) {
       // check if entry point auth is already visible
       // if it is, focus it and remove old call requests to it
@@ -2571,7 +2583,10 @@ export class MainController extends EventEmitter {
       return this.throwBroadcastAccountOp({ message })
     }
 
-    const accountState = this.accounts.accountStates[accountOp.accountAddr][accountOp.networkId]
+    const accountState = await this.accounts.getOrFetchAccountOnChainState(
+      accountOp.accountAddr,
+      accountOp.networkId
+    )
     let transactionRes: {
       txnId?: string
       nonce: number

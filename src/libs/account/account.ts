@@ -325,8 +325,8 @@ export function getUniqueAccountsArray(accounts: Account[]) {
 
 // TODO: perhaps include a signature and nonce to check if it already
 // has become smarter
-export function canBecomeSmarter(acc: Account, accKeys: Key[]) {
-  return !acc.creation && accKeys.find((key) => key.type === 'internal')
+export function canBecomeSmarter(acc: Account, accKeys: Key[]): boolean {
+  return !acc.creation && !!accKeys.find((key) => key.type === 'internal')
 }
 
 export function getAuthorization(
