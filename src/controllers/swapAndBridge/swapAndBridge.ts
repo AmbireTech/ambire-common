@@ -1167,7 +1167,6 @@ export class SwapAndBridgeController extends EventEmitter {
     this.quoteRoutesStatuses = {}
 
     this.emitUpdate()
-    // this.resetForm(true)
   }
 
   updateActiveRoute(
