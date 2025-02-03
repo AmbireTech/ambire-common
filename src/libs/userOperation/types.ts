@@ -1,7 +1,22 @@
+import { Hex } from '../../interfaces/hex'
 import { BUNDLER } from '../../consts/bundlers'
 import { Call } from '../accountOp/types'
 
 export type UserOpRequestType = 'standard' | 'activator' | 'recovery'
+
+export interface PackedUserOperation {
+  sender: string
+  nonce: bigint
+  initCode: Hex
+  callData: Hex
+  // callGasLimit + verificationGasLimit
+  accountGasLimits: Hex
+  preVerificationGas: bigint
+  // maxFeePerGas + maxPriorityFeePerGas
+  gasFees: Hex
+  paymasterAndData: Hex
+  signature?: Hex
+}
 
 export interface UserOperation {
   sender: string

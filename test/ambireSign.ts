@@ -1,6 +1,7 @@
 import { TypedDataDomain } from 'ethers'
 import { ethers } from 'hardhat'
 
+import { PackedUserOperation } from 'libs/userOperation/types'
 import { abiCoder } from './config'
 
 /**
@@ -80,7 +81,7 @@ function getExecute712Data(
   verifyingAddr: string,
   executeHash: string
 ) {
-  const calls = txns.map(txn => ({
+  const calls = txns.map((txn) => ({
     to: txn[0],
     value: txn[1],
     data: txn[2]
@@ -113,6 +114,67 @@ function getExecute712Data(
     nonce,
     calls,
     hash: executeHash
+  }
+
+  return {
+    domain,
+    types,
+    value
+  }
+}
+
+function getUserOp712Data(
+  chainId: bigint,
+  txns: [string, string, string][],
+  verifyingAddr: string,
+  packedUserOp: PackedUserOperation,
+  userOpHash: string
+) {
+  const calls = txns.map((txn) => ({
+    to: txn[0],
+    value: txn[1],
+    data: txn[2]
+  }))
+
+  const domain: TypedDataDomain = {
+    name: 'Ambire',
+    version: '1',
+    chainId,
+    verifyingContract: verifyingAddr,
+    salt: ethers.toBeHex(0, 32)
+  }
+  const types = {
+    Transaction: [
+      { name: 'to', type: 'address' },
+      { name: 'value', type: 'uint256' },
+      { name: 'data', type: 'bytes' }
+    ],
+    Ambire4337AccountOp: [
+      { name: 'account', type: 'address' },
+      { name: 'chainId', type: 'uint256' },
+      { name: 'nonce', type: 'uint256' },
+      { name: 'initCode', type: 'bytes' },
+      { name: 'callData', type: 'bytes' },
+      { name: 'accountGasLimits', type: 'bytes32' },
+      { name: 'preVerificationGas', type: 'uint256' },
+      { name: 'gasFees', type: 'bytes32' },
+      { name: 'paymasterAndData', type: 'bytes' },
+      { name: 'calls', type: 'Transaction[]' },
+      { name: 'hash', type: 'bytes32' }
+    ]
+  }
+  const value = {
+    account: verifyingAddr,
+    chainId,
+    nonce: packedUserOp.nonce,
+    initCode: packedUserOp.initCode,
+    callData: packedUserOp.callData,
+    accountGasLimits: packedUserOp.accountGasLimits,
+    preVerificationGas: packedUserOp.preVerificationGas,
+    gasFees: packedUserOp.gasFees,
+    paymasterAndData: packedUserOp.paymasterAndData,
+    calls,
+    hash: userOpHash
   }
 
   return {
@@ -193,14 +255,15 @@ function getRawTypedDataFinalDigest(
 }
 
 export {
+  getExecute712Data,
+  getRawTypedDataFinalDigest,
+  getUserOp712Data,
+  wrapCancel,
   wrapEIP712,
   wrapEthSign,
-  wrapSchnorr,
+  wrapExternallyValidated,
   wrapMultiSig,
   wrapRecover,
-  wrapCancel,
-  wrapExternallyValidated,
-  wrapTypedData,
-  getRawTypedDataFinalDigest,
-  getExecute712Data
+  wrapSchnorr,
+  wrapTypedData
 }

@@ -1,5 +1,5 @@
 import { AbiCoder, concat, getAddress, hexlify, Interface, keccak256, Log, toBeHex } from 'ethers'
-import { Network } from 'interfaces/network'
+import { Network } from '../../interfaces/network'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json'
@@ -13,9 +13,15 @@ import {
 } from '../../consts/deploy'
 import { SPOOF_SIGTYPE } from '../../consts/signatures'
 import { Account, AccountId, AccountOnchainState } from '../../interfaces/account'
+import { Hex } from '../../interfaces/hex'
 import { has7702 } from '../7702/7702'
 import { AccountOp, callToTuple } from '../accountOp/accountOp'
-import { UserOperation, UserOperationEventData, UserOpRequestType } from './types'
+import {
+  PackedUserOperation,
+  UserOperation,
+  UserOperationEventData,
+  UserOpRequestType
+} from './types'
 
 export function calculateCallDataCost(callData: string): bigint {
   if (callData === '0x') return 0n
@@ -227,11 +233,8 @@ export function shouldAskForEntryPointAuthorization(
 
 export const ENTRY_POINT_AUTHORIZATION_REQUEST_ID = 'ENTRY_POINT_AUTHORIZATION_REQUEST_ID'
 
-export function getUserOpHash(userOp: UserOperation, chainId: bigint) {
-  const abiCoder = new AbiCoder()
+export function getPackedUserOp(userOp: UserOperation): PackedUserOperation {
   const initCode = userOp.factory ? concat([userOp.factory, userOp.factoryData!]) : '0x'
-  const hashInitCode = keccak256(initCode)
-  const hashCallData = keccak256(userOp.callData)
   const accountGasLimits = concat([
     toBeHex(userOp.verificationGasLimit.toString(), 16),
     toBeHex(userOp.callGasLimit.toString(), 16)
@@ -248,18 +251,33 @@ export function getUserOpHash(userOp: UserOperation, chainId: bigint) {
         userOp.paymasterData!
       ])
     : '0x'
-  const hashPaymasterAndData = keccak256(paymasterAndData)
+
+  return {
+    sender: userOp.sender,
+    nonce: BigInt(userOp.nonce),
+    initCode: initCode as Hex,
+    callData: userOp.callData as Hex,
+    accountGasLimits: accountGasLimits as Hex,
+    preVerificationGas: BigInt(userOp.preVerificationGas),
+    gasFees: gasFees as Hex,
+    paymasterAndData: paymasterAndData as Hex
+  }
+}
+
+export function getUserOpHash(userOp: UserOperation, chainId: bigint) {
+  const abiCoder = new AbiCoder()
+  const packedUserOp = getPackedUserOp(userOp)
   const packed = abiCoder.encode(
     ['address', 'uint256', 'bytes32', 'bytes32', 'bytes32', 'uint256', 'bytes32', 'bytes32'],
     [
-      userOp.sender,
-      userOp.nonce,
-      hashInitCode,
-      hashCallData,
-      accountGasLimits,
-      userOp.preVerificationGas,
-      gasFees,
-      hashPaymasterAndData
+      packedUserOp.sender,
+      packedUserOp.nonce,
+      keccak256(packedUserOp.initCode),
+      keccak256(packedUserOp.callData),
+      packedUserOp.accountGasLimits,
+      packedUserOp.preVerificationGas,
+      keccak256(packedUserOp.gasFees),
+      keccak256(packedUserOp.paymasterAndData)
     ]
   )
   const packedHash = keccak256(packed)

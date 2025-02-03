@@ -87,18 +87,19 @@ library Eip712HashBuilder {
                 bytes(
                   // WARNING
                   // removed entryPoint from here as its in the final hash prop. Such a detail is not as important
-                  'Ambire4337AccountOp(address account,uint256 chainId,uint256 nonce,bytes initCode,bytes callData,tuple(address, uint256, bytes)[] calls,bytes32 accountGasLimits,uint256 preVerificationGas,bytes32 gasFees,bytes paymasterAndData, bytes32 hash)'
+                  'Ambire4337AccountOp(address account,uint256 chainId,uint256 nonce,bytes initCode,bytes callData,bytes32 accountGasLimits,uint256 preVerificationGas,bytes32 gasFees,bytes paymasterAndData,Transaction[] calls,bytes32 hash)Transaction(address to,uint256 value,bytes data)'
                 )
               ),
               address(this),
               block.chainid,
               op.nonce,
-              op.callData,
-              calls,
+              keccak256(op.initCode),
+              keccak256(op.callData),
               op.accountGasLimits,
               op.preVerificationGas,
               op.gasFees,
-              op.paymasterAndData,
+              keccak256(op.paymasterAndData),
+              getCallsEncoding(calls),
               hash
             )
           )
