@@ -72,6 +72,7 @@ import { relayerAdditionalNetworks } from '../../libs/networks/networks'
 import { GetOptions, TokenResult } from '../../libs/portfolio/interfaces'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { parse } from '../../libs/richJson/richJson'
+import { isNetworkReady } from '../../libs/selectedAccount/selectedAccount'
 import {
   adjustEntryPointAuthorization,
   getEntryPointAuthorization
@@ -1043,9 +1044,20 @@ export class MainController extends EventEmitter {
 
     if (!accountAddr) return
 
+    // We have to make calculations based on the state of the portfolio
+    // and not the selected account portfolio the flag isOffline
+    // and the errors of the selected account portfolio should
+    // come in the same tick. Otherwise the UI may flash the wrong error.
     const latestState = this.portfolio.getLatestPortfolioState(accountAddr)
+    const latestStateKeys = Object.keys(latestState)
 
-    const allPortfolioNetworksHaveErrors = Object.keys(latestState).every((networkId) => {
+    const isAllReady = latestStateKeys.every((networkId) => {
+      return isNetworkReady(latestState[networkId])
+    })
+
+    if (!isAllReady) return
+
+    const allPortfolioNetworksHaveErrors = latestStateKeys.every((networkId) => {
       const state = latestState[networkId]
 
       return !!state?.criticalError
