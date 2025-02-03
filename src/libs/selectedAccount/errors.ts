@@ -27,7 +27,7 @@ export type SelectedAccountBalanceError = {
     | 'defi-prices'
     | `${string}-defi-positions-error`
     | keyof typeof PORTFOLIO_LIB_ERROR_NAMES
-  networkIds: NetworkId[]
+  networkNames: string[]
   type: 'error' | 'warning'
   title: string
   text?: string
@@ -65,7 +65,7 @@ export const getNetworksWithFailedRPCErrors = ({
   networksWithMultipleRpcUrls.forEach((n) => {
     errors.push({
       id: `custom-rpcs-down-${n.id}`,
-      networkIds: [n.id],
+      networkNames: [n.name],
       type: 'error',
       title: `Failed to retrieve network data for ${n.name}. You can try selecting another RPC URL`,
       text: 'Affected features: visible assets, DeFi positions, sign message/transaction, ENS/UD domain resolving, add account.',
@@ -83,7 +83,7 @@ export const getNetworksWithFailedRPCErrors = ({
 
   errors.push({
     id: 'rpcs-down',
-    networkIds: networksToGroupInSingleBanner.map((n) => n.id),
+    networkNames: networksToGroupInSingleBanner.map((n) => n.name),
     type: 'error',
     title: `Failed to retrieve network data for ${networksToGroupInSingleBanner
       .map((n) => n.name)
@@ -96,14 +96,14 @@ export const getNetworksWithFailedRPCErrors = ({
 
 const addPortfolioError = (
   errors: SelectedAccountBalanceError[],
-  networkId: NetworkId,
+  networkName: string,
   newError: keyof typeof PORTFOLIO_LIB_ERROR_NAMES | 'portfolio-critical' | 'loading-too-long'
 ) => {
   const newErrors = [...errors]
   const existingError = newErrors.find((error) => error.id === newError)
 
   if (existingError) {
-    existingError.networkIds.push(networkId)
+    existingError.networkNames.push(networkName)
   } else {
     let title = ''
     let text = ''
@@ -143,7 +143,7 @@ const addPortfolioError = (
 
     newErrors.push({
       id: newError,
-      networkIds: [networkId],
+      networkNames: [networkName],
       type,
       title,
       text
@@ -170,9 +170,21 @@ export const getNetworksWithPortfolioErrorErrors = ({
     const portfolioForNetwork = selectedAccountLatest[network]
     const criticalError = portfolioForNetwork?.criticalError
     const lastSuccessfulUpdate = portfolioForNetwork?.result?.lastSuccessfulUpdate
+    let networkName = networks.find((n) => n.id === network)?.name
+
+    if (network === 'gasTank') networkName = 'Gas Tank'
+    else if (network === 'rewards') networkName = 'Rewards'
+
+    if (!networkName) {
+      console.error(
+        'Network name not found for network in getNetworksWithPortfolioErrorErrors',
+        network
+      )
+      return
+    }
 
     if (portfolioForNetwork?.isLoading) {
-      errors = addPortfolioError(errors, network as NetworkId, 'loading-too-long')
+      errors = addPortfolioError(errors, networkName, 'loading-too-long')
       return
     }
 
@@ -187,33 +199,27 @@ export const getNetworksWithPortfolioErrorErrors = ({
       criticalError &&
       (['gasTank', 'rewards'].includes(network) || providers[network]?.isWorking)
     ) {
-      errors = addPortfolioError(errors, network, 'portfolio-critical')
+      errors = addPortfolioError(errors, networkName, 'portfolio-critical')
       return
     }
 
     portfolioForNetwork?.errors.forEach((err: any) => {
-      errors = addPortfolioError(errors, network, err.name)
+      errors = addPortfolioError(errors, networkName as string, err.name)
     })
   })
 
-  return errors.map(({ title, networkIds, ...rest }) => {
-    const networkNames = networkIds.reduce((acc, id, index) => {
-      let networkName = networks.find((n) => n.id === id)?.name
-      const isLast = index === networkIds.length - 1
-      const isOnly = networkIds.length === 1
+  return errors.map(({ title, networkNames, ...rest }) => {
+    const networkNamesString = networkNames.reduce((acc, name, index) => {
+      const isLast = index === networkNames.length - 1
+      const isOnly = networkNames.length === 1
 
-      if (id === 'gasTank') networkName = 'Gas Tank'
-      else if (id === 'rewards') networkName = 'Rewards'
-
-      if (!networkName) return acc
-
-      return `${acc}${networkName}${isLast || isOnly ? '' : ', '}`
+      return `${acc}${name}${isLast || isOnly ? '' : ', '}`
     }, '')
 
     return {
       ...rest,
-      title: `${title} on ${networkNames}`,
-      networkIds
+      title: `${title} on ${networkNamesString}`,
+      networkNames
     }
   })
 }
@@ -296,9 +302,7 @@ export const getNetworksWithDeFiPositionsErrorErrors = ({
       return {
         id: `${providerName}-defi-positions-error`,
         type: 'error',
-        networkIds: networkNames.map(
-          (n) => networks.find((network) => network.name === n)?.id as NetworkId
-        ),
+        networkNames,
         title: `Failed to retrieve DeFi positions for ${providerName} on ${networkNames.join(', ')}`
       }
     }
@@ -313,9 +317,7 @@ export const getNetworksWithDeFiPositionsErrorErrors = ({
       title: `Failed to retrieve DeFi positions on ${networkNamesWithUnknownCriticalError.join(
         ', '
       )}`,
-      networkIds: networkNamesWithUnknownCriticalError.map(
-        (n) => networks.find((network) => network.name === n)?.id as NetworkId
-      )
+      networkNames: networkNamesWithUnknownCriticalError
     })
   }
   if (networkNamesWithAssetPriceCriticalError.length) {
@@ -325,9 +327,7 @@ export const getNetworksWithDeFiPositionsErrorErrors = ({
       title: `Failed to retrieve asset prices for DeFi positions on ${networkNamesWithAssetPriceCriticalError.join(
         ', '
       )}`,
-      networkIds: networkNamesWithAssetPriceCriticalError.map(
-        (n) => networks.find((network) => network.name === n)?.id as NetworkId
-      )
+      networkNames: networkNamesWithAssetPriceCriticalError
     })
   }
 

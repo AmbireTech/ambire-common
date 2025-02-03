@@ -183,6 +183,7 @@ export class SelectedAccountController extends EventEmitter {
     this.#defiPositionsErrors = []
     this.resetSelectedAccountPortfolio(true)
     this.dashboardNetworkFilter = null
+    this.portfolioStartedLoadingAtTimestamp = null
 
     if (!account) {
       await this.#storage.remove('selectedAccount')
