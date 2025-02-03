@@ -133,9 +133,11 @@ export class SocketAPI {
       // API returns 2 types of errors, a generic one, on the top level:
       const genericErrorMessage = responseBody?.message?.error || 'no message'
       // ... and a detailed one, nested in the `details` object:
-      const specificErrorMessage = responseBody?.message?.details?.error?.message || 'no details'
-      const specificErrorCode = responseBody?.message?.details?.error?.code || 'no code'
-      const error = `${errorPrefix} Our service provider upstream error: <${genericErrorMessage}>, details: <${specificErrorMessage}>, code: <${specificErrorCode}>`
+      const specificError = responseBody?.message?.details?.error?.message
+      const specificErrorMessage = specificError ? `, details: <${specificError}>` : ''
+      const specificErrorCode = responseBody?.message?.details?.error?.code
+      const specificErrorCodeMessage = specificErrorCode ? `, code: <${specificErrorCode}>` : ''
+      const error = `${errorPrefix} Our service provider upstream error: <${genericErrorMessage}>${specificErrorMessage}${specificErrorCodeMessage}`
       throw new SwapAndBridgeProviderApiError(error)
     }
 
