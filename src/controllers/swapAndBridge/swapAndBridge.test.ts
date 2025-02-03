@@ -322,10 +322,10 @@ describe('SwapAndBridge Controller', () => {
     expect(swapAndBridgeController.banners).toHaveLength(0)
   })
   test('should switch fromAmountFieldMode', () => {
-    swapAndBridgeController.updateForm({ fromSelectedToken: PORTFOLIO_TOKENS[0] })
+    swapAndBridgeController.updateForm({ fromSelectedToken: PORTFOLIO_TOKENS[0] }) // select USDT for easier calcs
     swapAndBridgeController.updateForm({ fromAmountFieldMode: 'fiat' })
     expect(swapAndBridgeController.fromAmountFieldMode).toEqual('fiat')
-    swapAndBridgeController.updateForm({ fromAmount: '0.99785' })
+    swapAndBridgeController.updateForm({ fromAmount: '0.99785' }) // USDT price in USD
     expect(swapAndBridgeController.fromAmount).toEqual('1.0')
     expect(swapAndBridgeController.validateFromAmount.success).toEqual(true)
   })
