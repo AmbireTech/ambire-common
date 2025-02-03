@@ -79,8 +79,13 @@ export const SocketModule: HumanizerCallModule = (accountOp: AccountOp, irCalls:
           // metadata
         }
       } = iface.parseTransaction(call)!.args
-      // @TODO no harcoded sighashes
-      if (swapData.startsWith('0xee8f0b86')) {
+      if (
+        swapData.startsWith(
+          iface.getFunction(
+            'performActionWithIn(address fromToken, address toToken, uint256 amount, bytes32 metadata, bytes swapExtraData) payable returns (uint256, address)'
+          )?.selector
+        )
+      ) {
         const { fromToken, amount, toToken } = iface.parseTransaction({
           data: swapData
         })!.args
@@ -104,6 +109,44 @@ export const SocketModule: HumanizerCallModule = (accountOp: AccountOp, irCalls:
         getChain(dstChain),
         getDeadline(quoteAndDeadlineTimeStamps[1]),
         ...getRecipientText(senderAddress, recipientAddress)
+      ]
+    },
+    [`${
+      iface.getFunction(
+        'swapAndBridge(uint32 swapId, bytes swapData, (address receiverAddress, uint64 toChainId, uint32 maxSlippage, uint64 nonce, bytes32 metadata) celerBridgeData) payable'
+      )?.selector
+    }`]: (call: IrCall) => {
+      const {
+        swapId,
+        swapData,
+        celerBridgeData: { receiverAddress, toChainId, maxSlippage, nonce, metadata }
+      } = iface.parseTransaction(call)!.args
+      if (
+        swapData.startsWith(
+          iface.getFunction(
+            'performActionWithIn(address fromToken, address toToken, uint256 amount, bytes32 metadata, bytes swapExtraData) payable returns (uint256, address)'
+          )?.selector
+        )
+      ) {
+        const { fromToken, amount, toToken } = iface.parseTransaction({
+          data: swapData
+        })!.args
+        return [
+          getAction('Bridge'),
+          getToken(eToNative(fromToken), amount),
+          getLabel('to'),
+          getTokenWithChain(eToNative(toToken), 0n),
+          getLabel('on'),
+          getChain(toChainId),
+          ...getRecipientText(accountOp.accountAddr, receiverAddress)
+        ]
+      }
+      return [
+        getAction('Bridge'),
+        getLabel('via'),
+        getAddressVisualization(call.to),
+        getLabel('to'),
+        getChain(toChainId)
       ]
     },
     [`${iface.getFunction('swapAndBridge(uint32,address,uint256,bytes32,bytes)')?.selector}`]: (
@@ -606,8 +649,13 @@ export const SocketModule: HumanizerCallModule = (accountOp: AccountOp, irCalls:
           delegate
         }
       } = iface.parseTransaction(call)!.args
-      // @TODO no harcoded sighashes
-      if (swapData.startsWith('0xee8f0b86')) {
+      if (
+        swapData.startsWith(
+          iface.getFunction(
+            'performActionWithIn(address fromToken, address toToken, uint256 amount, bytes32 metadata, bytes swapExtraData) payable returns (uint256, address)'
+          )?.selector
+        )
+      ) {
         const { fromToken, toToken, amount, swapExtraData } = iface.parseTransaction({
           data: swapData
         })!.args
@@ -888,6 +936,8 @@ export const SocketModule: HumanizerCallModule = (accountOp: AccountOp, irCalls:
           preControllerIface.decodeFunctionData('takeFeesAndBridge', dataToUse)
         dataToUse = bridgeRequestData
       }
+    } else {
+      dataToUse = `0x${dataToUse.slice(10)}`
     }
     if (matcher[dataToUse.slice(0, 10)]) {
       return {
