@@ -201,13 +201,6 @@ export class SwapAndBridgeController extends EventEmitter {
     this.#initialLoadPromise = this.#load()
   }
 
-  emitUpdate() {
-    // Override emitUpdate to not emit updates if there are no active sessions
-    if (!this.sessionIds.length) return
-
-    super.emitUpdate()
-  }
-
   async #load() {
     await this.#networks.initialLoadPromise
     await this.#selectedAccount.initialLoadPromise
