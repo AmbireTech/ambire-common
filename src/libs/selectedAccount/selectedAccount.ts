@@ -144,7 +144,7 @@ const stripPortfolioState = (portfolioState: AccountState) => {
   return strippedState
 }
 
-const isNetworkReady = (networkData: NetworkState | undefined) => {
+export const isNetworkReady = (networkData: NetworkState | undefined) => {
   return (
     networkData && (networkData.isReady || networkData?.criticalError) && !networkData.isLoading
   )
