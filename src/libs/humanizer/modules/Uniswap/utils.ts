@@ -71,15 +71,9 @@ export const uniReduce = (_calls: HumanizerVisualization[][]): HumanizerVisualiz
         calls.splice(j, 1)
       }
       // looks for unwrap after the swap
-      if (
-        i < j &&
-        calls[i] &&
-        calls[j] &&
-        isSwap(calls[i]) &&
-        isUnwrap(calls[j]) &&
-        calls[j]![1].value === calls[i]![3].value
-      ) {
+      if (i < j && calls[i] && calls[j] && isSwap(calls[i]) && isUnwrap(calls[j])) {
         calls[i]![3].address = ZeroAddress
+        calls[i]![3].value = calls[j]![1].value
         calls.splice(j, 1)
       }
 
