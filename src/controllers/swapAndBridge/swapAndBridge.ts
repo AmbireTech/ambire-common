@@ -1166,7 +1166,18 @@ export class SwapAndBridgeController extends EventEmitter {
         userTxHash: null,
         route
       })
-      this.resetForm(true)
+
+      // Preserve key form states instead of resetting the whole form to enhance UX and reduce confusion.
+      // After form submission, maintain the state for fromSelectedToken, fromChainId, and toChainId,
+      // while resetting all other state related to the form.
+      this.fromAmount = ''
+      this.fromAmountInFiat = ''
+      this.fromAmountFieldMode = 'token'
+      this.toSelectedToken = null
+      this.quote = null
+      this.quoteRoutesStatuses = {}
+
+      this.emitUpdate()
     } catch (error: any) {
       const { message } = getHumanReadableSwapAndBridgeError(error)
       throw new EmittableError({ error, level: 'major', message })
