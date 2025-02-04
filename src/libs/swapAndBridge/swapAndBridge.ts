@@ -17,7 +17,7 @@ import { SignUserRequest } from '../../interfaces/userRequest'
 import { isSmartAccount } from '../account/account'
 import { Call } from '../accountOp/types'
 import { TokenResult } from '../portfolio'
-import { getTokenAmount, getTokenBalanceInUSD } from '../portfolio/helpers'
+import { getTokenBalanceInUSD } from '../portfolio/helpers'
 
 const sortTokensByPendingAndBalance = (a: TokenResult, b: TokenResult) => {
   // Pending tokens go on top
@@ -74,13 +74,20 @@ export const sortPortfolioTokenList = (accountPortfolioTokenList: TokenResult[])
  * Not all tokens in the portfolio are eligible.
  */
 export const getIsTokenEligibleForSwapAndBridge = (token: TokenResult) => {
+  // Prevent filtering out tokens with amountPostSimulation = 0 if the actual amount is positive.
+  // This ensures the token remains in the list when sending the full amount of it
+  const amount =
+    token.amountPostSimulation === 0n && token.amount > 0n
+      ? token.amount
+      : token.amountPostSimulation ?? token.amount
+  const hasPositiveBalance = Number(amount) > 0
   return (
     // The same token can be in the Gas Tank (or as a Reward) and in the portfolio.
     // Exclude the one in the Gas Tank (swapping Gas Tank tokens is not supported).
     !token.flags.onGasTank &&
     // And exclude the rewards ones (swapping rewards is not supported).
     !token.flags.rewardsType &&
-    Number(getTokenAmount(token)) > 0
+    hasPositiveBalance
   )
 }
 

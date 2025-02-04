@@ -6,6 +6,7 @@ import { getAddress, getBigInt, Interface, isAddress } from 'ethers'
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json'
 import EmittableError from '../../classes/EmittableError'
+import SwapAndBridgeError from '../../classes/SwapAndBridgeError'
 import { BUNDLER } from '../../consts/bundlers'
 import { ORIGINS_WHITELISTED_TO_ALL_ACCOUNTS } from '../../consts/dappCommunication'
 import { AMBIRE_ACCOUNT_FACTORY, SINGLETON } from '../../consts/deploy'
@@ -72,6 +73,7 @@ import { relayerAdditionalNetworks } from '../../libs/networks/networks'
 import { GetOptions, TokenResult } from '../../libs/portfolio/interfaces'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { parse } from '../../libs/richJson/richJson'
+import { isNetworkReady } from '../../libs/selectedAccount/selectedAccount'
 import {
   adjustEntryPointAuthorization,
   getEntryPointAuthorization
@@ -184,8 +186,6 @@ export class MainController extends EventEmitter {
 
   signMessage: SignMessageController
 
-  #socketAPI: SocketAPI
-
   swapAndBridge: SwapAndBridgeController
 
   signAccountOp: SignAccountOpController | null = null
@@ -266,9 +266,7 @@ export class MainController extends EventEmitter {
       this.fetch,
       async (network: Network) => {
         this.providers.setProvider(network)
-        await this.accounts.updateAccountStates('latest', [network.id])
-        await this.updateSelectedAccountPortfolio()
-        await this.defiPositions.updatePositions(network.id)
+        await this.reloadSelectedAccount({ networkId: network.id })
       },
       (networkId: NetworkId) => {
         this.providers.removeProvider(networkId)
@@ -325,7 +323,7 @@ export class MainController extends EventEmitter {
       this.accounts,
       this.#externalSignerControllers
     )
-    this.#socketAPI = new SocketAPI({ apiKey: socketApiKey, fetch: this.fetch })
+    const socketAPI = new SocketAPI({ apiKey: socketApiKey, fetch: this.fetch })
     this.dapps = new DappsController(this.#storage)
     this.actions = new ActionsController({
       selectedAccount: this.selectedAccount,
@@ -368,7 +366,8 @@ export class MainController extends EventEmitter {
       selectedAccount: this.selectedAccount,
       networks: this.networks,
       activity: this.activity,
-      socketAPI: this.#socketAPI,
+      invite: this.invite,
+      socketAPI,
       storage: this.#storage,
       actions: this.actions
     })
@@ -501,9 +500,7 @@ export class MainController extends EventEmitter {
     // Don't await these as they are not critical for the account selection
     // and if the user decides to quickly change to another account withStatus
     // will block the UI until these are resolved.
-    this.accounts.updateAccountState(toAccountAddr)
-    this.updateSelectedAccountPortfolio()
-    this.defiPositions.updatePositions()
+    this.reloadSelectedAccount({ forceUpdate: false })
     this.emitUpdate()
   }
 
@@ -1001,7 +998,19 @@ export class MainController extends EventEmitter {
     )
   }
 
-  async reloadSelectedAccount() {
+  async reloadSelectedAccount(
+    options: {
+      forceUpdate?: boolean
+      networkId?: NetworkId
+    } = {
+      forceUpdate: true,
+      networkId: undefined
+    }
+  ) {
+    const { forceUpdate, networkId } = options
+    const networkToUpdate = networkId
+      ? this.networks.networks.find((n) => n.id === networkId)
+      : undefined
     if (!this.selectedAccount.account) return
 
     this.selectedAccount.resetSelectedAccountPortfolio()
@@ -1013,27 +1022,45 @@ export class MainController extends EventEmitter {
       // However, even if we don't trigger an update here, it's not a big problem,
       // as the account state will be updated anyway, and its update will be very recent.
       !this.accounts.areAccountStatesLoading && this.selectedAccount.account?.addr
-        ? this.accounts.updateAccountState(this.selectedAccount.account.addr, 'pending')
+        ? this.accounts.updateAccountState(
+            this.selectedAccount.account.addr,
+            'pending',
+            networkId ? [networkId] : undefined
+          )
         : Promise.resolve(),
       // `updateSelectedAccountPortfolio` doesn't rely on `withStatus` validation internally,
       // as the PortfolioController already exposes flags that are highly sufficient for the UX.
       // Additionally, if we trigger the portfolio update twice (i.e., running a long-living interval + force update from the Dashboard),
       // there won't be any error thrown, as all portfolio updates are queued and they don't use the `withStatus` helper.
-      this.updateSelectedAccountPortfolio(true),
-      this.defiPositions.updatePositions()
+      this.updateSelectedAccountPortfolio(forceUpdate, networkToUpdate),
+      this.defiPositions.updatePositions(networkId)
     ])
   }
 
   #updateIsOffline() {
     const oldIsOffline = this.isOffline
+    const accountAddr = this.selectedAccount.account?.addr
 
-    const allPortfolioNetworksHaveErrors = Object.keys(this.selectedAccount.portfolio.latest).every(
-      (networkId) => {
-        const state = this.selectedAccount.portfolio.latest[networkId]
+    if (!accountAddr) return
 
-        return !!state?.criticalError
-      }
-    )
+    // We have to make calculations based on the state of the portfolio
+    // and not the selected account portfolio the flag isOffline
+    // and the errors of the selected account portfolio should
+    // come in the same tick. Otherwise the UI may flash the wrong error.
+    const latestState = this.portfolio.getLatestPortfolioState(accountAddr)
+    const latestStateKeys = Object.keys(latestState)
+
+    const isAllReady = latestStateKeys.every((networkId) => {
+      return isNetworkReady(latestState[networkId])
+    })
+
+    if (!isAllReady) return
+
+    const allPortfolioNetworksHaveErrors = latestStateKeys.every((networkId) => {
+      const state = latestState[networkId]
+
+      return !!state?.criticalError
+    })
 
     const allNetworkRpcsAreDown = Object.keys(this.providers.providers).every((networkId) => {
       const provider = this.providers.providers[networkId]
@@ -1046,11 +1073,9 @@ export class MainController extends EventEmitter {
     // the account state for every account. This is because either update may fail first.
     this.isOffline = !!allNetworkRpcsAreDown || !!allPortfolioNetworksHaveErrors
 
-    if (oldIsOffline && !this.isOffline) {
-      this.reloadSelectedAccount()
+    if (oldIsOffline !== this.isOffline) {
+      this.emitUpdate()
     }
-
-    this.emitUpdate()
   }
 
   // eslint-disable-next-line default-param-last
@@ -1349,7 +1374,7 @@ export class MainController extends EventEmitter {
       'buildSwapAndBridgeUserRequest',
       async () => {
         if (!this.selectedAccount.account) return
-        let transaction: SocketAPISendTransactionRequest | null = null
+        let transaction: SocketAPISendTransactionRequest | null | undefined = null
 
         const activeRoute = this.swapAndBridge.activeRoutes.find(
           (r) => r.activeRouteId === activeRouteId
@@ -1375,22 +1400,25 @@ export class MainController extends EventEmitter {
               shouldOpenNextRequest: false
             })
           }
-          transaction = await this.#socketAPI.getNextRouteUserTx(activeRoute.activeRouteId)
+          transaction = await this.swapAndBridge.getNextRouteUserTx(activeRoute.activeRouteId)
         }
 
         if (!this.selectedAccount.account || !transaction) {
-          this.emitError({
-            level: 'major',
-            message: 'Unexpected error while building swap & bridge request',
-            error: new Error('buildSwapAndBridgeUserRequest: bad parameters passed')
-          })
-          return
+          const errorDetails = `missing ${
+            this.selectedAccount.account ? 'selected account' : 'transaction'
+          } info`
+          const error = new SwapAndBridgeError(
+            `Something went wrong when preparing your request. Please try again later or contact Ambire support. Error details: <${errorDetails}>`
+          )
+          throw new EmittableError({ message: error.message, level: 'major', error })
         }
 
         const network = this.networks.networks.find(
           (n) => Number(n.chainId) === transaction!.chainId
         )!
 
+        // TODO: Consider refining the error handling in here, because this
+        // swallows errors and doesn't provide any feedback to the user.
         const swapAndBridgeUserRequests = await buildSwapAndBridgeUserRequests(
           transaction,
           network.id,
@@ -1511,6 +1539,48 @@ export class MainController extends EventEmitter {
     this.removeUserRequest(requestId)
   }
 
+  rejectSignAccountOpCall(callId: string) {
+    if (!this.signAccountOp) return
+
+    const { calls, networkId, accountAddr } = this.signAccountOp.accountOp
+
+    const requestId = calls.find((c) => c.id === callId)?.fromUserRequestId
+    if (requestId) {
+      const userRequestIndex = this.userRequests.findIndex((r) => r.id === requestId)
+      const userRequest = this.userRequests[userRequestIndex] as SignUserRequest
+      if (userRequest.action.kind === 'calls') {
+        ;(userRequest.action as Calls).calls = (userRequest.action as Calls).calls.filter(
+          (c) => c.id !== callId
+        )
+
+        if (userRequest.action.calls.length === 0) {
+          // the reject will remove the userRequest which will rebuild the action and update the signAccountOp
+          this.rejectUserRequest('User rejected the transaction request.', userRequest.id)
+        } else {
+          const accountOpAction = makeSmartAccountOpAction({
+            account: this.accounts.accounts.find((a) => a.addr === accountAddr)!,
+            networkId,
+            nonce: this.accounts.accountStates[accountAddr][networkId].nonce,
+            userRequests: this.userRequests,
+            actionsQueue: this.actions.actionsQueue
+          })
+
+          this.actions.addOrUpdateAction(accountOpAction)
+          this.signAccountOp?.update({ calls: accountOpAction.accountOp.calls })
+          this.estimateSignAccountOp()
+        }
+      }
+    } else {
+      this.emitError({
+        message: 'Reject call: the call was not found or was not linked to a user request',
+        level: 'major',
+        error: new Error(
+          `Error: rejectAccountOpCall: userRequest for call with id ${callId} was not found`
+        )
+      })
+    }
+  }
+
   removeActiveRoute(activeRouteId: number) {
     const userRequest = this.userRequests.find((r) =>
       [activeRouteId, `${activeRouteId}-approval`, `${activeRouteId}-revoke-approval`].includes(
@@ -1530,6 +1600,11 @@ export class MainController extends EventEmitter {
     actionPosition: ActionPosition = 'last',
     actionExecutionType: ActionExecutionType = 'open-action-window'
   ) {
+    if (req.action.kind === 'calls') {
+      ;(req.action as Calls).calls.forEach((_, i) => {
+        ;(req.action as Calls).calls[i].id = `${req.id}-${i}`
+      })
+    }
     if (actionPosition === 'first') {
       this.userRequests.unshift(req)
     } else {

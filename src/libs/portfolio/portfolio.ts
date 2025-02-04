@@ -23,6 +23,7 @@ import {
   LimitsOptions,
   PortfolioLibGetResult,
   PriceCache,
+  TokenError,
   TokenResult
 } from './interfaces'
 import { flattenResults, paginate } from './pagination'
@@ -33,10 +34,10 @@ export const LIMITS: Limits = {
   deploylessProxyMode: { erc20: 100, erc721: 30, erc721TokensInput: 20, erc721Tokens: 50 },
   // theoretical capacity is 1666/450
   deploylessStateOverrideMode: {
-    erc20: 500,
-    erc721: 100,
-    erc721TokensInput: 100,
-    erc721Tokens: 100
+    erc20: 350,
+    erc721: 70,
+    erc721TokensInput: 70,
+    erc721Tokens: 70
   }
 }
 
@@ -62,7 +63,6 @@ const defaultOptions: GetOptions = {
   priceRecency: 0,
   previousHintsFromExternalAPI: null,
   fetchPinned: true,
-  tokenPreferences: [],
   isEOA: false
 }
 
@@ -189,13 +189,6 @@ export class Portfolio {
       hints.erc20s = [...hints.erc20s, ...PINNED_TOKENS.map((x) => x.address)]
     }
 
-    if (localOpts.tokenPreferences) {
-      hints.erc20s = [
-        ...hints.erc20s,
-        ...localOpts.tokenPreferences.filter((x) => x.standard === 'ERC20').map((x) => x.address)
-      ]
-    }
-
     // add the fee tokens
     hints.erc20s = [
       ...hints.erc20s,
@@ -246,7 +239,13 @@ export class Portfolio {
       )
     ])
 
-    const [tokensWithErrResult, blockNumber, beforeNonce, afterNonce] = tokensWithErr
+    const [tokensWithErrResult, metaData] = tokensWithErr
+    const { blockNumber, beforeNonce, afterNonce } = metaData as {
+      blockNumber: number
+      beforeNonce: bigint
+      afterNonce: bigint
+    }
+    const [collectionsWithErrResult] = collectionsWithErr
 
     // Re-map/filter into our format
     const getPriceFromCache = (address: string) => {
@@ -260,14 +259,16 @@ export class Portfolio {
       return null
     }
 
-    const tokenFilter = ([error, result]: [string, TokenResult]): boolean =>
+    const tokenFilter = ([error, result]: [TokenError, TokenResult]): boolean =>
       error === '0x' && !!result.symbol
 
     const tokensWithoutPrices = tokensWithErrResult
-      .filter((_tokensWithErrResult: [string, TokenResult]) => tokenFilter(_tokensWithErrResult))
+      .filter((_tokensWithErrResult: [TokenError, TokenResult]) =>
+        tokenFilter(_tokensWithErrResult)
+      )
       .map(([, result]: [any, TokenResult]) => result)
 
-    const unfilteredCollections = collectionsWithErr.map(([error, x], i) => {
+    const unfilteredCollections = collectionsWithErrResult.map(([error, x], i) => {
       const address = collectionsHints[i][0] as unknown as string
       return [
         error,
@@ -287,7 +288,7 @@ export class Portfolio {
 
     // Update prices and set the priceIn for each token by reference,
     // updating the final tokens array as a result
-    const tokensWithPrices = await Promise.all(
+    const tokensWithPrices: TokenResult[] = await Promise.all(
       tokensWithoutPrices.map(async (token: { address: string }) => {
         let priceIn: TokenResult['priceIn'] = []
         const cachedPriceIn = getPriceFromCache(token.address)
@@ -296,14 +297,14 @@ export class Portfolio {
           priceIn = cachedPriceIn
 
           return {
-            ...token,
+            ...(token as TokenResult),
             priceIn
           }
         }
 
         if (!this.network.platformId) {
           return {
-            ...token,
+            ...(token as TokenResult),
             priceIn
           }
         }
@@ -343,7 +344,7 @@ export class Portfolio {
         }
 
         return {
-          ...token,
+          ...(token as TokenResult),
           priceIn
         }
       })

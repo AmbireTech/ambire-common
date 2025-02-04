@@ -1,17 +1,23 @@
 import { getAddress } from 'ethers'
 
-import { Fetch, RequestInitWithCustomHeaders } from '../../interfaces/fetch'
+import SwapAndBridgeProviderApiError from '../../classes/SwapAndBridgeProviderApiError'
+import { InviteController } from '../../controllers/invite/invite'
+import { CustomResponse, Fetch, RequestInitWithCustomHeaders } from '../../interfaces/fetch'
 import {
   SocketAPIActiveRoutes,
   SocketAPIQuote,
+  SocketAPIResponse,
   SocketAPISendTransactionRequest,
   SocketAPISupportedChain,
-  SocketAPIToken
+  SocketAPIToken,
+  SocketRouteStatus
 } from '../../interfaces/swapAndBridge'
 import {
+  AMBIRE_FEE_TAKER_ADDRESSES,
   AMBIRE_WALLET_TOKEN_ON_BASE,
   AMBIRE_WALLET_TOKEN_ON_ETHEREUM,
   ETH_ON_OPTIMISM_LEGACY_ADDRESS,
+  FEE_PERCENT,
   NULL_ADDRESS,
   ZERO_ADDRESS
 } from './constants'
@@ -90,20 +96,70 @@ export class SocketAPI {
     this.isHealthy = null
   }
 
+  /**
+   * Processes Socket API responses and throws custom errors for various
+   * failures, including handling the API's unique response structure.
+   */
+  async #handleResponse<T>({
+    fetchPromise,
+    errorPrefix
+  }: {
+    fetchPromise: Promise<CustomResponse>
+    errorPrefix: string
+  }): Promise<T> {
+    let response: CustomResponse
+
+    try {
+      response = await fetchPromise
+    } catch (e: any) {
+      const message = e?.message || 'no message'
+      const status = e?.status ? `, status: <${e.status}>` : ''
+      const error = `${errorPrefix} Upstream error: <${message}>${status}`
+      throw new SwapAndBridgeProviderApiError(error)
+    }
+
+    let responseBody: SocketAPIResponse<T>
+    try {
+      responseBody = await response.json()
+    } catch (e: any) {
+      const message = e?.message || 'no message'
+      const error = `${errorPrefix} Error details: Unexpected non-JSON response from our service provider, message: <${message}>`
+      throw new SwapAndBridgeProviderApiError(error)
+    }
+
+    // Socket API returns 500 status code with a message in the body, even
+    // in case of a bad request. Not necessarily an internal server error.
+    if (!response.ok || !responseBody?.success) {
+      // API returns 2 types of errors, a generic one, on the top level:
+      const genericErrorMessage = responseBody?.message?.error || 'no message'
+      // ... and a detailed one, nested in the `details` object:
+      const specificError = responseBody?.message?.details?.error?.message
+      const specificErrorMessage = specificError ? `, details: <${specificError}>` : ''
+      const specificErrorCode = responseBody?.message?.details?.error?.code
+      const specificErrorCodeMessage = specificErrorCode ? `, code: <${specificErrorCode}>` : ''
+      const error = `${errorPrefix} Our service provider upstream error: <${genericErrorMessage}>${specificErrorMessage}${specificErrorCodeMessage}`
+      throw new SwapAndBridgeProviderApiError(error)
+    }
+
+    // Always attempt to update health status (if needed) when a response was
+    // successful, in case the API was previously unhealthy (to recover).
+    // Do not wait on purpose, to not block or delay the response
+    // eslint-disable-next-line @typescript-eslint/no-floating-promises
+    this.updateHealthIfNeeded()
+
+    return responseBody.result
+  }
+
   async getSupportedChains(): Promise<SocketAPISupportedChain[]> {
     const url = `${this.#baseUrl}/supported/chains`
 
-    let response = await this.#fetch(url, { headers: this.#headers })
-    const fallbackError = new Error(
-      'Unable to retrieve the list of supported Swap & Bridge chains from our service provider.'
-    )
-    if (!response.ok) throw fallbackError
+    const response = await this.#handleResponse<SocketAPISupportedChain[]>({
+      fetchPromise: this.#fetch(url, { headers: this.#headers }),
+      errorPrefix:
+        'Unable to retrieve the list of supported Swap & Bridge chains from our service provider.'
+    })
 
-    response = await response.json()
-    if (!response.success) throw fallbackError
-    await this.updateHealthIfNeeded()
-
-    return response.result
+    return response
   }
 
   async getToTokenList({
@@ -122,21 +178,16 @@ export class SocketAPI {
     })
     const url = `${this.#baseUrl}/token-lists/to-token-list?${params.toString()}`
 
-    let response = await this.#fetch(url, { headers: this.#headers })
-    const fallbackError = new Error(
-      'Unable to retrieve the list of supported receive tokens. Please reload the tab to try again.'
-    )
-    if (!response.ok) throw fallbackError
+    let response = await this.#handleResponse<SocketAPIToken[]>({
+      fetchPromise: this.#fetch(url, { headers: this.#headers }),
+      errorPrefix:
+        'Unable to retrieve the list of supported receive tokens. Please reload to try again.'
+    })
 
-    response = await response.json()
-    if (!response.success) throw fallbackError
-    await this.updateHealthIfNeeded()
-
-    let { result } = response
     // Exception for Optimism, strip out the legacy ETH address
     // TODO: Remove when Socket removes the legacy ETH address from their response
     if (toChainId === 10)
-      result = result.filter(
+      response = response.filter(
         (token: SocketAPIToken) => token.address !== ETH_ON_OPTIMISM_LEGACY_ADDRESS
       )
 
@@ -144,14 +195,14 @@ export class SocketAPI {
     // One is with the `ZERO_ADDRESS` and one with `NULL_ADDRESS`, both for ETH.
     // Strip out the one with the `ZERO_ADDRESS` to be consistent with the rest.
     if (toChainId === 1)
-      result = result.filter((token: SocketAPIToken) => token.address !== ZERO_ADDRESS)
+      response = response.filter((token: SocketAPIToken) => token.address !== ZERO_ADDRESS)
 
     // Since v4.41.0 we request the shortlist from Socket, which does not include
     // the Ambire $WALLET token. So adding it manually on the supported chains.
-    if (toChainId === 1) result.unshift(AMBIRE_WALLET_TOKEN_ON_ETHEREUM)
-    if (toChainId === 8453) result.unshift(AMBIRE_WALLET_TOKEN_ON_BASE)
+    if (toChainId === 1) response.unshift(AMBIRE_WALLET_TOKEN_ON_ETHEREUM)
+    if (toChainId === 8453) response.unshift(AMBIRE_WALLET_TOKEN_ON_BASE)
 
-    return result.map(normalizeIncomingSocketToken)
+    return response.map(normalizeIncomingSocketToken)
   }
 
   async getToken({
@@ -167,17 +218,14 @@ export class SocketAPI {
     })
     const url = `${this.#baseUrl}/supported/token-support?${params.toString()}`
 
-    let response = await this.#fetch(url, { headers: this.#headers })
-    const fallbackError = new Error('Failed to retrieve token information by address.')
-    if (!response.ok) throw fallbackError
+    const response = await this.#handleResponse<{ isSupported: boolean; token: SocketAPIToken }>({
+      fetchPromise: this.#fetch(url, { headers: this.#headers }),
+      errorPrefix: 'Unable to retrieve token information by address.'
+    })
 
-    response = await response.json()
-    if (!response.success) throw fallbackError
-    await this.updateHealthIfNeeded()
+    if (!response.isSupported || !response.token) return null
 
-    if (!response.result.isSupported || !response.result.token) return null
-
-    return normalizeIncomingSocketToken(response.result.token)
+    return normalizeIncomingSocketToken(response.token)
   }
 
   async quote({
@@ -188,7 +236,8 @@ export class SocketAPI {
     fromAmount,
     userAddress,
     isSmartAccount,
-    sort
+    sort,
+    isOG
   }: {
     fromChainId: number
     fromTokenAddress: string
@@ -198,6 +247,7 @@ export class SocketAPI {
     userAddress: string
     isSmartAccount: boolean
     sort: 'time' | 'output'
+    isOG: InviteController['isOG']
   }): Promise<SocketAPIQuote> {
     const params = new URLSearchParams({
       fromChainId: fromChainId.toString(),
@@ -206,44 +256,48 @@ export class SocketAPI {
       toTokenAddress: normalizeOutgoingSocketTokenAddress(toTokenAddress),
       fromAmount: fromAmount.toString(),
       userAddress,
-      // TODO: Enable when needed
-      // feeTakerAddress: AMBIRE_FEE_TAKER_ADDRESSES[fromChainId],
-      // feePercent: FEE_PERCENT.toString(),
       isContractCall: isSmartAccount.toString(), // only get quotes with that are compatible with contracts
       sort,
       singleTxOnly: 'false',
       defaultSwapSlippage: '1',
       uniqueRoutesPerBridge: 'true'
     })
+    const feeTakerAddress = AMBIRE_FEE_TAKER_ADDRESSES[fromChainId]
+    const shouldIncludeConvenienceFee = !!feeTakerAddress && !isOG
+    if (shouldIncludeConvenienceFee) {
+      params.append('feeTakerAddress', feeTakerAddress)
+      params.append('feePercent', FEE_PERCENT.toString())
+    }
+    // TODO: Temporarily exclude Mayan bridge when fetching quotes for SA, as
+    // batching is currently not not supported by Mayan (and funds get lost).
+    if (isSmartAccount) params.append('excludeBridges', ['mayan'].join(','))
+
     const url = `${this.#baseUrl}/quote?${params.toString()}`
 
-    let response = await this.#fetch(url, { headers: this.#headers })
-    if (!response.ok) throw new Error('Failed to fetch quote')
-
-    response = await response.json()
-    if (!response.success) throw new Error('Failed to fetch quote')
-    await this.updateHealthIfNeeded()
+    const response = await this.#handleResponse<SocketAPIQuote>({
+      fetchPromise: this.#fetch(url, { headers: this.#headers }),
+      errorPrefix: 'Unable to fetch the quote.'
+    })
 
     return {
-      ...response.result,
-      fromAsset: normalizeIncomingSocketToken(response.result.fromAsset),
-      toAsset: normalizeIncomingSocketToken(response.result.toAsset),
-      routes: response.result.routes.map((route: SocketAPIQuote['selectedRoute']) => ({
+      ...response,
+      fromAsset: normalizeIncomingSocketToken(response.fromAsset),
+      toAsset: normalizeIncomingSocketToken(response.toAsset),
+      routes: response.routes.map((route) => ({
         ...route,
         userTxs: route.userTxs.map((userTx) => ({
           ...userTx,
-          // @ts-ignore fromAsset exists on one of the two userTx sub-types
-          fromAsset: userTx.fromAsset ? normalizeIncomingSocketToken(userTx.fromAsset) : undefined,
+          ...('fromAsset' in userTx && {
+            fromAsset: normalizeIncomingSocketToken(userTx.fromAsset)
+          }),
           toAsset: normalizeIncomingSocketToken(userTx.toAsset),
-          // @ts-ignore fromAsset exists on one of the two userTx sub-types
-          steps: userTx.steps
-            ? // @ts-ignore fromAsset exists on one of the two userTx sub-types
-              userTx.steps.map((step) => ({
-                ...step,
-                fromAsset: normalizeIncomingSocketToken(step.fromAsset),
-                toAsset: normalizeIncomingSocketToken(step.toAsset)
-              }))
-            : undefined
+          ...('steps' in userTx && {
+            steps: userTx.steps.map((step) => ({
+              ...step,
+              fromAsset: normalizeIncomingSocketToken(step.fromAsset),
+              toAsset: normalizeIncomingSocketToken(step.toAsset)
+            }))
+          })
         }))
       }))
     }
@@ -291,19 +345,16 @@ export class SocketAPI {
       }
     }
 
-    let response = await this.#fetch(`${this.#baseUrl}/route/start`, {
-      // @ts-ignore
-      method: 'POST',
-      headers: this.#headers,
-      body: JSON.stringify(params)
+    const response = await this.#handleResponse<SocketAPISendTransactionRequest>({
+      fetchPromise: this.#fetch(`${this.#baseUrl}/route/start`, {
+        method: 'POST',
+        headers: this.#headers,
+        body: JSON.stringify(params)
+      }),
+      errorPrefix: 'Unable to start the route.'
     })
-    if (!response.ok) throw new Error('Failed to start the route')
 
-    response = await response.json()
-    if (!response.success) throw new Error('Failed to start the route')
-    await this.updateHealthIfNeeded()
-
-    return response.result
+    return response
   }
 
   async getRouteStatus({
@@ -322,11 +373,11 @@ export class SocketAPI {
     })
     const url = `${this.#baseUrl}/route/prepare?${params.toString()}`
 
-    let response = await this.#fetch(url, { headers: this.#headers })
-    if (!response.ok) throw new Error('Failed to update route')
-    await this.updateHealthIfNeeded()
+    const response = await this.#handleResponse<SocketRouteStatus>({
+      fetchPromise: this.#fetch(url, { headers: this.#headers }),
+      errorPrefix: 'Unable to get the route status. Please check back later to proceed.'
+    })
 
-    response = await response.json()
     return response
   }
 
@@ -336,32 +387,28 @@ export class SocketAPI {
     const params = new URLSearchParams({ activeRouteId: activeRouteId.toString() })
     const url = `${this.#baseUrl}/route/active-routes?${params.toString()}`
 
-    let response = await this.#fetch(url, { headers: this.#headers })
-    if (!response.ok) throw new Error('Failed to update route')
-
-    response = await response.json()
-    if (!response.success) throw new Error('Failed to update route')
-    await this.updateHealthIfNeeded()
+    const response = await this.#handleResponse<SocketAPIActiveRoutes>({
+      fetchPromise: this.#fetch(url, { headers: this.#headers }),
+      errorPrefix: 'Unable to update the active route.'
+    })
 
     return {
-      ...response.result,
-      fromAsset: normalizeIncomingSocketToken(response.result.fromAsset),
-      fromAssetAddress: normalizeIncomingSocketTokenAddress(response.result.fromAssetAddress),
-      toAsset: normalizeIncomingSocketToken(response.result.toAsset),
-      toAssetAddress: normalizeIncomingSocketTokenAddress(response.result.toAssetAddress),
-      userTxs: (response.result.userTxs as SocketAPIActiveRoutes['userTxs']).map((userTx) => ({
+      ...response,
+      fromAsset: normalizeIncomingSocketToken(response.fromAsset),
+      fromAssetAddress: normalizeIncomingSocketTokenAddress(response.fromAssetAddress),
+      toAsset: normalizeIncomingSocketToken(response.toAsset),
+      toAssetAddress: normalizeIncomingSocketTokenAddress(response.toAssetAddress),
+      userTxs: (response.userTxs as SocketAPIActiveRoutes['userTxs']).map((userTx) => ({
         ...userTx,
-        fromAsset:
-          'fromAsset' in userTx ? normalizeIncomingSocketToken(userTx.fromAsset) : undefined,
+        ...('fromAsset' in userTx && { fromAsset: normalizeIncomingSocketToken(userTx.fromAsset) }),
         toAsset: normalizeIncomingSocketToken(userTx.toAsset),
-        steps:
-          'steps' in userTx
-            ? userTx.steps.map((step) => ({
-                ...step,
-                fromAsset: normalizeIncomingSocketToken(step.fromAsset),
-                toAsset: normalizeIncomingSocketToken(step.toAsset)
-              }))
-            : undefined
+        ...('steps' in userTx && {
+          steps: userTx.steps.map((step) => ({
+            ...step,
+            fromAsset: normalizeIncomingSocketToken(step.fromAsset),
+            toAsset: normalizeIncomingSocketToken(step.toAsset)
+          }))
+        })
       }))
     }
   }
@@ -370,13 +417,11 @@ export class SocketAPI {
     const params = new URLSearchParams({ activeRouteId: activeRouteId.toString() })
     const url = `${this.#baseUrl}/route/build-next-tx?${params.toString()}`
 
-    let response = await this.#fetch(url, { headers: this.#headers })
-    if (!response.ok) throw new Error('Failed to build next route user tx')
+    const response = await this.#handleResponse<SocketAPISendTransactionRequest>({
+      fetchPromise: this.#fetch(url, { headers: this.#headers }),
+      errorPrefix: 'Unable to start the next step.'
+    })
 
-    response = await response.json()
-    if (!response.success) throw new Error('Failed to build next route user tx')
-    await this.updateHealthIfNeeded()
-
-    return response.result
+    return response
   }
 }

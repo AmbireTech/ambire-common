@@ -33,6 +33,10 @@ export class SocketAPIMock {
     this.isHealthy = await this.getHealth()
   }
 
+  resetHealth() {
+    this.isHealthy = null
+  }
+
   async getToTokenList({
     toChainId
   }: {
@@ -495,11 +499,7 @@ export class SocketAPIMock {
     userTxIndex: SocketAPISendTransactionRequest['userTxIndex']
     txHash: string
   }) {
-    return {
-      success: true,
-      result: props.userTxIndex === 1 ? 'completed' : 'ready',
-      statusCode: 200
-    }
+    return props.userTxIndex === 1 ? 'completed' : 'ready'
   }
 
   async updateActiveRoute(activeRouteId: SocketAPISendTransactionRequest['activeRouteId']) {

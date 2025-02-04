@@ -9,7 +9,7 @@ import { isSmartAccount } from '../../libs/account/account'
 import { AccountOp, AccountOpStatus, isAccountOpsIntentEqual } from '../../libs/accountOp/accountOp'
 import { Portfolio } from '../../libs/portfolio'
 /* eslint-disable @typescript-eslint/no-use-before-define */
-import { CustomToken } from '../../libs/portfolio/customToken'
+import { CustomToken, TokenPreference } from '../../libs/portfolio/customToken'
 import getAccountNetworksWithAssets from '../../libs/portfolio/getNetworksWithAssets'
 import {
   getFlags,
@@ -33,6 +33,7 @@ import {
   TemporaryTokens,
   TokenResult
 } from '../../libs/portfolio/interfaces'
+import { migrateTokenPreferences } from '../../libs/portfolio/migrations/tokenPreferences'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { AccountsController } from '../accounts/accounts'
 import EventEmitter from '../eventEmitter/eventEmitter'
@@ -63,7 +64,9 @@ export class PortfolioController extends EventEmitter {
 
   #toBeLearnedTokens: { [network in NetworkId]: string[] }
 
-  tokenPreferences: CustomToken[] = []
+  customTokens: CustomToken[] = []
+
+  tokenPreferences: TokenPreference[] = []
 
   validTokens: any = { erc20: {}, erc721: {} }
 
@@ -137,7 +140,22 @@ export class PortfolioController extends EventEmitter {
     try {
       await this.#networks.initialLoadPromise
       await this.#accounts.initialLoadPromise
-      this.tokenPreferences = await this.#storage.get('tokenPreferences', [])
+      const storageTokenPreferences = await this.#storage.get('tokenPreferences', [])
+      const storageCustomTokens = await this.#storage.get('customTokens', [])
+
+      const { tokenPreferences, customTokens, shouldUpdateStorage } = migrateTokenPreferences(
+        storageTokenPreferences,
+        storageCustomTokens
+      )
+
+      this.tokenPreferences = tokenPreferences
+      this.customTokens = customTokens
+
+      if (shouldUpdateStorage) {
+        await this.#storage.set('tokenPreferences', this.tokenPreferences)
+        await this.#storage.set('customTokens', this.customTokens)
+      }
+
       this.#previousHints = await this.#storage.get('previousHints', {})
       const networksWithAssets = await this.#storage.get('networksWithAssetsByAccount', {})
       const isOldStructure = Object.keys(networksWithAssets).every(
@@ -160,10 +178,102 @@ export class PortfolioController extends EventEmitter {
     this.emitUpdate()
   }
 
-  async updateTokenPreferences(tokenPreferences: CustomToken[]) {
-    this.tokenPreferences = tokenPreferences
+  async #updatePortfolioOnTokenChange(networkId: NetworkId, selectedAccountAddr?: string) {
+    // As this function currently only updates the portfolio we can skip it altogether
+    // if skipPortfolioUpdate is set to true
+    if (!selectedAccountAddr) return
+
+    const networkData = this.#networks.networks.find(({ id }) => id === networkId)
+    await this.updateSelectedAccount(selectedAccountAddr, networkData, undefined, {
+      forceUpdate: true
+    })
+  }
+
+  async addCustomToken(
+    customToken: CustomToken,
+    selectedAccountAddr?: string,
+    shouldUpdatePortfolio?: boolean
+  ) {
+    await this.#initialLoadPromise
+    const isTokenAlreadyAdded = this.customTokens.some(
+      ({ address, networkId }) =>
+        address.toLowerCase() === customToken.address.toLowerCase() &&
+        networkId === customToken.networkId
+    )
+
+    if (isTokenAlreadyAdded) return
+
+    this.customTokens.push(customToken)
+
+    if (shouldUpdatePortfolio) {
+      await this.#updatePortfolioOnTokenChange(customToken.networkId, selectedAccountAddr)
+    }
+
+    await this.#storage.set('customTokens', this.customTokens)
+  }
+
+  async removeCustomToken(
+    customToken: Omit<CustomToken, 'standard'>,
+    selectedAccountAddr?: string,
+    shouldUpdatePortfolio?: boolean
+  ) {
+    await this.#initialLoadPromise
+    this.customTokens = this.customTokens.filter(
+      (token) =>
+        !(
+          token.address.toLowerCase() === customToken.address.toLowerCase() &&
+          token.networkId === customToken.networkId
+        )
+    )
+    const existingPreference = this.tokenPreferences.some(
+      (pref) => pref.address === customToken.address && pref.networkId === customToken.networkId
+    )
+
+    // Delete custom token preference if it exists
+    if (existingPreference) {
+      await this.toggleHideToken(customToken, selectedAccountAddr, shouldUpdatePortfolio)
+      await this.#storage.set('customTokens', this.customTokens)
+    } else {
+      this.emitUpdate()
+      if (shouldUpdatePortfolio) {
+        await this.#updatePortfolioOnTokenChange(customToken.networkId, selectedAccountAddr)
+      }
+      await this.#storage.set('customTokens', this.customTokens)
+    }
+  }
+
+  async toggleHideToken(
+    tokenPreference: TokenPreference,
+    selectedAccountAddr?: string,
+    shouldUpdatePortfolio?: boolean
+  ) {
+    await this.#initialLoadPromise
+
+    const existingPreference = this.tokenPreferences.find(
+      ({ address, networkId }) =>
+        address.toLowerCase() === tokenPreference.address.toLowerCase() &&
+        networkId === tokenPreference.networkId
+    )
+
+    // Push the token as hidden
+    if (!existingPreference) {
+      this.tokenPreferences.push({ ...tokenPreference, isHidden: true })
+      // Remove the token preference if the user decides to show it again
+    } else if (existingPreference.isHidden) {
+      this.tokenPreferences = this.tokenPreferences.filter(
+        ({ address, networkId }) =>
+          !(address === tokenPreference.address && networkId === tokenPreference.networkId)
+      )
+    } else {
+      // Should happen only after migration
+      existingPreference.isHidden = !existingPreference.isHidden
+    }
+
     this.emitUpdate()
-    await this.#storage.set('tokenPreferences', tokenPreferences)
+    if (shouldUpdatePortfolio) {
+      await this.#updatePortfolioOnTokenChange(tokenPreference.networkId, selectedAccountAddr)
+    }
+    await this.#storage.set('tokenPreferences', this.tokenPreferences)
   }
 
   async #updateNetworksWithAssets(accountId: AccountId, accountState: AccountState) {
@@ -434,7 +544,6 @@ export class PortfolioController extends EventEmitter {
     this.emitUpdate()
 
     const state = accountState[network.id]!
-    const tokenPreferences = this.tokenPreferences
     const hasNonZeroTokens = !!Object.values(
       this.#networksWithAssetsByAccounts?.[accountId] || {}
     ).some(Boolean)
@@ -444,7 +553,6 @@ export class PortfolioController extends EventEmitter {
         priceRecency: 60000,
         priceCache: state.result?.priceCache,
         fetchPinned: !hasNonZeroTokens,
-        tokenPreferences,
         ...portfolioProps
       })
 
@@ -466,7 +574,7 @@ export class PortfolioController extends EventEmitter {
         network,
         hasNonZeroTokens,
         additionalHintsErc20Hints,
-        tokenPreferences
+        this.tokenPreferences
       )
 
       accountState[network.id] = {
@@ -569,8 +677,12 @@ export class PortfolioController extends EventEmitter {
                 this.#previousHints?.learnedTokens[network.id]) ??
                 {}
             ),
-            ...((this.#toBeLearnedTokens && this.#toBeLearnedTokens[network.id]) ?? [])
+            ...((this.#toBeLearnedTokens && this.#toBeLearnedTokens[network.id]) ?? []),
+            ...this.customTokens
+              .filter(({ networkId, standard }) => networkId === network.id && standard === 'ERC20')
+              .map(({ address }) => address)
           ]
+          // TODO: Add custom ERC721 tokens to the hints
           const additionalErc721Hints = Object.fromEntries(
             Object.entries(this.#previousHints?.learnedNfts?.[network.id] || {}).map(([k, v]) => [
               getAddress(k),
@@ -642,7 +754,7 @@ export class PortfolioController extends EventEmitter {
                 network.id,
                 this.#previousHints,
                 key,
-                this.tokenPreferences
+                this.customTokens
               )
 
               // Updating hints is only needed when the external API response is valid.
