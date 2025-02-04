@@ -1364,14 +1364,10 @@ export class MainController extends EventEmitter {
     // We can simply add the user request if it's not a sign operation
     // for another account
     if (!isASignOperationRequestedForAnotherAccount) {
-      const accState = await this.accounts.getOrFetchAccountOnChainState(
-        userRequest.meta.accountAddr,
-        userRequest.meta.networkId
-      )
       await this.addUserRequest(
         userRequest,
         actionPosition,
-        actionPosition === 'first' || !isBasicAccount(userRequest.meta.accountAddr, accState)
+        actionPosition === 'first' || isSmartAccount(this.selectedAccount.account)
           ? 'open-action-window'
           : 'queue-but-open-action-window'
       )
