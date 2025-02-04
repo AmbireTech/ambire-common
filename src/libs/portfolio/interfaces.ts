@@ -36,7 +36,7 @@ export type GasTankTokenResult = TokenResult & {
   availableAmount: bigint
   cashback: bigint
   saved: bigint
-  isFirstCashbackConfettiVisible: boolean
+  hasUnseenFirstCashback: boolean
 }
 
 export interface CollectionResult extends TokenResult {
@@ -247,5 +247,5 @@ export type CashbackStatus = {
 }
 
 export type CashbackStatusByAccount = {
-  [key: string]: CashbackStatus
+  [key: AccountId]: CashbackStatus
 }

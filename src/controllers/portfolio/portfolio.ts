@@ -110,8 +110,6 @@ export class PortfolioController extends EventEmitter {
   // Holds the initial load promise, so that one can wait until it completes
   #initialLoadPromise: Promise<void>
 
-  #isFirstCashbackConfettiVisible: boolean = false
-
   cashbackStatusByAccount: CashbackStatusByAccount = {}
 
   constructor(
@@ -420,19 +418,13 @@ export class PortfolioController extends EventEmitter {
   async updateFirstCashbackConfettiStatus({
     accountId,
     shouldShowBanner,
-    toggleModal,
     shouldGetAdditionalPortfolio
   }: {
     accountId: AccountId
     shouldShowBanner: boolean
-    toggleModal: boolean
     shouldGetAdditionalPortfolio: boolean
   }) {
     if (!accountId) throw new Error('AccountId in required to update cashback status')
-
-    if (toggleModal) {
-      this.#isFirstCashbackConfettiVisible = !this.#isFirstCashbackConfettiVisible
-    }
 
     const currentTimestamp = new Date().getTime()
     const currentAccountStatus = this.cashbackStatusByAccount[accountId] || {}
@@ -511,7 +503,7 @@ export class PortfolioController extends EventEmitter {
       await this.updateFirstCashbackConfettiStatus({
         accountId,
         shouldShowBanner: true,
-        toggleModal: false,
+        // toggleModal: false,
         shouldGetAdditionalPortfolio: false
       })
     }
@@ -522,7 +514,9 @@ export class PortfolioController extends EventEmitter {
       availableAmount: BigInt(t.availableAmount || 0),
       cashback: BigInt(t.cashback || 0),
       saved: BigInt(t.saved || 0),
-      isFirstCashbackConfettiVisible: this.#isFirstCashbackConfettiVisible,
+      hasUnseenFirstCashback:
+        this.cashbackStatusByAccount[accountId]?.firstCashbackReceivedAt &&
+        !this.cashbackStatusByAccount[accountId]?.firstCashbackSeenAt,
       flags: getFlags(res.data, 'gasTank', t.networkId, t.address)
     }))
 
