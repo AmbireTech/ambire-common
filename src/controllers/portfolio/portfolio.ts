@@ -24,6 +24,7 @@ import {
 /* eslint-disable no-restricted-syntax */
 // eslint-disable-next-line import/no-cycle
 import {
+  AccountAssetsState,
   AccountState,
   GetOptions,
   NetworkState,
@@ -82,7 +83,7 @@ export class PortfolioController extends EventEmitter {
   #velcroUrl: string
 
   #networksWithAssetsByAccounts: {
-    [accountId: string]: NetworkId[]
+    [accountId: string]: AccountAssetsState
   } = {}
 
   #minUpdateInterval: number = 20000 // 20 seconds
@@ -156,6 +157,15 @@ export class PortfolioController extends EventEmitter {
       }
 
       this.#previousHints = await this.#storage.get('previousHints', {})
+      const networksWithAssets = await this.#storage.get('networksWithAssetsByAccount', {})
+      const isOldStructure = Object.keys(networksWithAssets).every(
+        (key) =>
+          Array.isArray(networksWithAssets[key]) &&
+          networksWithAssets[key].every((item: any) => typeof item === 'string')
+      )
+      if (!isOldStructure) {
+        this.#networksWithAssetsByAccounts = networksWithAssets
+      }
     } catch (e) {
       this.emitError({
         message:
@@ -267,7 +277,7 @@ export class PortfolioController extends EventEmitter {
   }
 
   async #updateNetworksWithAssets(accountId: AccountId, accountState: AccountState) {
-    const storageStateByAccount = await this.#storage.get('networksWithAssetsByAccount', {})
+    const storageStateByAccount = this.#networksWithAssetsByAccounts
 
     this.#networksWithAssetsByAccounts[accountId] = getAccountNetworksWithAssets(
       accountId,
@@ -419,7 +429,9 @@ export class PortfolioController extends EventEmitter {
 
     if (canSkipUpdate) return
 
-    const hasNonZeroTokens = !!this.#networksWithAssetsByAccounts?.[accountId]?.length
+    const hasNonZeroTokens = !!Object.values(
+      this.#networksWithAssetsByAccounts?.[accountId] || {}
+    ).some(Boolean)
     const start = Date.now()
     const accountState = this.#latest[accountId]
 
@@ -532,7 +544,9 @@ export class PortfolioController extends EventEmitter {
     this.emitUpdate()
 
     const state = accountState[network.id]!
-    const hasNonZeroTokens = !!this.#networksWithAssetsByAccounts?.[accountId]?.length
+    const hasNonZeroTokens = !!Object.values(
+      this.#networksWithAssetsByAccounts?.[accountId] || {}
+    ).some(Boolean)
 
     try {
       const result = await portfolioLib.get(accountId, {
