@@ -2,6 +2,7 @@ import assert from 'assert'
 import { AbiCoder, concat, getBytes, Interface, JsonRpcProvider, Provider } from 'ethers'
 
 import DeploylessCompiled from '../../../contracts/compiled/Deployless.json'
+import { TokenError } from '../portfolio/interfaces'
 
 // this is a magic contract that is constructed like `constructor(bytes memory contractBytecode, bytes memory data)` and returns the result from the call
 // compiled from relayer:a7ea373559d8c419577ac05527bd37fbee8856ae/src/velcro-v3/contracts/Deployless.sol with solc 0.8.17
@@ -34,6 +35,19 @@ export enum DeploylessMode {
   Detect,
   ProxyContract,
   StateOverride
+}
+
+export type DeploylessResult = {
+  nfts?: bigint[]
+  name?: string
+  amount: bigint
+  decimals: number
+  symbol: string
+  error: TokenError
+}
+
+export interface SimulationResult extends DeploylessResult {
+  addr: string
 }
 export type CallOptions = {
   mode: DeploylessMode

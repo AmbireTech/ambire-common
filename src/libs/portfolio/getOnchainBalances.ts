@@ -4,7 +4,13 @@ import { Network } from '../../interfaces/network'
 import { getEoaSimulationStateOverride } from '../../utils/simulationStateOverride'
 import { getAccountDeployParams, isSmartAccount } from '../account/account'
 import { callToTuple, toSingletonCall } from '../accountOp/accountOp'
-import { Deployless, DeploylessMode, parseErr } from '../deployless/deployless'
+import {
+  Deployless,
+  DeploylessMode,
+  DeploylessResult,
+  parseErr,
+  SimulationResult
+} from '../deployless/deployless'
 import { getFlags, overrideSymbol } from './helpers'
 import {
   CollectionResult,
@@ -94,18 +100,18 @@ export async function getNFTs(
   deployless: Deployless,
   opts: Partial<GetOptions>,
   accountAddr: string,
-  tokenAddrs: [string, any][],
+  tokenAddrs: [string, { isKnown: boolean; tokens: string[]; enumerable: boolean }][],
   limits: LimitsOptions
 ): Promise<[[TokenError, CollectionResult][], {}][]> {
   const deploylessOpts = getDeploylessOpts(accountAddr, !network.rpcNoStateOverride, opts)
-  const mapToken = (token: any) => {
+  const mapToken = (token: DeploylessResult) => {
     return {
       name: token.name,
       networkId: network.id,
       symbol: token.symbol,
-      amount: BigInt(token.nfts.length),
+      amount: BigInt(token.nfts?.length ?? 0),
       decimals: 1,
-      collectibles: [...token.nfts]
+      collectibles: token.nfts ? [...token.nfts] : []
     } as CollectionResult
   }
 
@@ -125,7 +131,7 @@ export async function getNFTs(
       )
     )[0]
 
-    return [collections.map((token: any) => [token.error, mapToken(token)]), {}]
+    return [collections.map((token: DeploylessResult) => [token.error, mapToken(token)]), {}]
   }
 
   const { accountOps, account } = opts.simulation
@@ -158,18 +164,18 @@ export async function getNFTs(
   // simulation was performed if the nonce is changed
   const hasSimulation = afterNonce !== beforeNonce
 
-  const simulationTokens: (CollectionResult & { addr: any })[] | null = hasSimulation
-    ? after[0].map((simulationToken: any, tokenIndex: number) => ({
+  const simulationTokens: (SimulationResult & { addr: string })[] | null = hasSimulation
+    ? after[0].map((simulationToken: SimulationResult, tokenIndex: number) => ({
         ...mapToken(simulationToken),
         addr: deltaAddressesMapping[tokenIndex]
       }))
     : null
 
   return [
-    before[0].map((beforeToken: any, i: number) => {
+    before[0].map((beforeToken: DeploylessResult, i: number) => {
       const simulationToken = simulationTokens
         ? simulationTokens.find(
-            (token: any) => token.addr.toLowerCase() === tokenAddrs[i][0].toLowerCase()
+            (token: SimulationResult) => token.addr.toLowerCase() === tokenAddrs[i][0].toLowerCase()
           )
         : null
 
@@ -211,7 +217,7 @@ export async function getTokens(
   accountAddr: string,
   tokenAddrs: string[]
 ): Promise<[[TokenError, TokenResult][], MetaData][]> {
-  const mapToken = (token: any, address: string) => {
+  const mapToken = (token: DeploylessResult, address: string) => {
     return {
       amount: token.amount,
       networkId: network.id,
@@ -233,7 +239,10 @@ export async function getTokens(
     )
 
     return [
-      results.map((token: any, i: number) => [token.error, mapToken(token, tokenAddrs[i])]),
+      results.map((token: DeploylessResult, i: number) => [
+        token.error,
+        mapToken(token, tokenAddrs[i])
+      ]),
       {
         blockNumber
       }
@@ -268,16 +277,18 @@ export async function getTokens(
   const hasSimulation = afterNonce !== beforeNonce
 
   const simulationTokens = hasSimulation
-    ? after[0].map((simulationToken: any, tokenIndex: number) => ({
+    ? after[0].map((simulationToken: SimulationResult, tokenIndex: number) => ({
         ...simulationToken,
         amount: simulationToken.amount,
         addr: deltaAddressesMapping[tokenIndex]
       }))
     : null
   return [
-    before[0].map((token: any, i: number) => {
+    before[0].map((token: DeploylessResult, i: number) => {
       const simulation = simulationTokens
-        ? simulationTokens.find((simulationToken: any) => simulationToken.addr === tokenAddrs[i])
+        ? simulationTokens.find(
+            (simulationToken: SimulationResult) => simulationToken.addr === tokenAddrs[i]
+          )
         : null
 
       // Here's the math before `simulationAmount` and `amountPostSimulation`.

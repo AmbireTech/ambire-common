@@ -266,7 +266,7 @@ export class Portfolio {
       .filter((_tokensWithErrResult: [TokenError, TokenResult]) =>
         tokenFilter(_tokensWithErrResult)
       )
-      .map(([, result]: [any, TokenResult]) => result)
+      .map(([, result]) => result)
 
     const unfilteredCollections = collectionsWithErrResult.map(([error, x], i) => {
       const address = collectionsHints[i][0] as unknown as string
