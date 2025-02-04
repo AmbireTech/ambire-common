@@ -171,13 +171,12 @@ contract AmbireAccount is IAmbireAccount {
 				revert('SIGNATURE_VALIDATION_FAIL');
 			}
 		} else {
-			bytes32 finalDigest = Eip712HashBuilder.getExecute712Hash(
+			(signerKey, ) = SignatureValidator.recoverAddrAllowUnprotected(
+				Eip712HashBuilder.getExecute712Hash(
 				currentNonce,
 				calls,
 				keccak256(abi.encode(address(this), block.chainid, currentNonce, calls))
-			);
-			(signerKey, ) = SignatureValidator.recoverAddrAllowUnprotected(
-				finalDigest,
+			),
 				signature,
 				true
 			);
