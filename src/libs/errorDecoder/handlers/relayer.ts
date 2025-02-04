@@ -22,10 +22,12 @@ class RelayerErrorHandler implements ErrorHandler {
     } else {
       // RPC error returned as string
       reason = error.message.match(/reason="([^"]*)"/)?.[1] || ''
+      finalData = error.message.match(/data="([^"]*)"/)?.[1] || ''
 
-      if (!isReasonValid(reason)) {
-        finalData = error.message.match(/data="([^"]*)"/)?.[1] || ''
-        reason = ''
+      // The response isn't a stringified RPC error so the
+      // reason is likely the error message
+      if (!isReasonValid(reason) && !finalData) {
+        reason = error.message
       }
     }
 

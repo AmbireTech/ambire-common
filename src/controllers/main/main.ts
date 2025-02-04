@@ -6,6 +6,7 @@ import { getAddress, getBigInt, Interface, isAddress } from 'ethers'
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json'
 import EmittableError from '../../classes/EmittableError'
+import SwapAndBridgeError from '../../classes/SwapAndBridgeError'
 import { BUNDLER } from '../../consts/bundlers'
 import { ORIGINS_WHITELISTED_TO_ALL_ACCOUNTS } from '../../consts/dappCommunication'
 import { AMBIRE_ACCOUNT_FACTORY, SINGLETON } from '../../consts/deploy'
@@ -73,6 +74,7 @@ import { isPortfolioGasTankResult } from '../../libs/portfolio/helpers'
 import { GetOptions, TokenResult } from '../../libs/portfolio/interfaces'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { parse } from '../../libs/richJson/richJson'
+import { isNetworkReady } from '../../libs/selectedAccount/selectedAccount'
 import {
   adjustEntryPointAuthorization,
   getEntryPointAuthorization
@@ -184,8 +186,6 @@ export class MainController extends EventEmitter {
   emailVault: EmailVaultController
 
   signMessage: SignMessageController
-
-  #socketAPI: SocketAPI
 
   swapAndBridge: SwapAndBridgeController
 
@@ -324,7 +324,7 @@ export class MainController extends EventEmitter {
       this.accounts,
       this.#externalSignerControllers
     )
-    this.#socketAPI = new SocketAPI({ apiKey: socketApiKey, fetch: this.fetch })
+    const socketAPI = new SocketAPI({ apiKey: socketApiKey, fetch: this.fetch })
     this.dapps = new DappsController(this.#storage)
     this.actions = new ActionsController({
       selectedAccount: this.selectedAccount,
@@ -368,7 +368,7 @@ export class MainController extends EventEmitter {
       networks: this.networks,
       activity: this.activity,
       invite: this.invite,
-      socketAPI: this.#socketAPI,
+      socketAPI,
       storage: this.#storage,
       actions: this.actions
     })
@@ -1044,9 +1044,20 @@ export class MainController extends EventEmitter {
 
     if (!accountAddr) return
 
+    // We have to make calculations based on the state of the portfolio
+    // and not the selected account portfolio the flag isOffline
+    // and the errors of the selected account portfolio should
+    // come in the same tick. Otherwise the UI may flash the wrong error.
     const latestState = this.portfolio.getLatestPortfolioState(accountAddr)
+    const latestStateKeys = Object.keys(latestState)
 
-    const allPortfolioNetworksHaveErrors = Object.keys(latestState).every((networkId) => {
+    const isAllReady = latestStateKeys.every((networkId) => {
+      return isNetworkReady(latestState[networkId])
+    })
+
+    if (!isAllReady) return
+
+    const allPortfolioNetworksHaveErrors = latestStateKeys.every((networkId) => {
       const state = latestState[networkId]
 
       return !!state?.criticalError
@@ -1364,7 +1375,7 @@ export class MainController extends EventEmitter {
       'buildSwapAndBridgeUserRequest',
       async () => {
         if (!this.selectedAccount.account) return
-        let transaction: SocketAPISendTransactionRequest | null = null
+        let transaction: SocketAPISendTransactionRequest | null | undefined = null
 
         const activeRoute = this.swapAndBridge.activeRoutes.find(
           (r) => r.activeRouteId === activeRouteId
@@ -1390,22 +1401,25 @@ export class MainController extends EventEmitter {
               shouldOpenNextRequest: false
             })
           }
-          transaction = await this.#socketAPI.getNextRouteUserTx(activeRoute.activeRouteId)
+          transaction = await this.swapAndBridge.getNextRouteUserTx(activeRoute.activeRouteId)
         }
 
         if (!this.selectedAccount.account || !transaction) {
-          this.emitError({
-            level: 'major',
-            message: 'Unexpected error while building swap & bridge request',
-            error: new Error('buildSwapAndBridgeUserRequest: bad parameters passed')
-          })
-          return
+          const errorDetails = `missing ${
+            this.selectedAccount.account ? 'selected account' : 'transaction'
+          } info`
+          const error = new SwapAndBridgeError(
+            `Something went wrong when preparing your request. Please try again later or contact Ambire support. Error details: <${errorDetails}>`
+          )
+          throw new EmittableError({ message: error.message, level: 'major', error })
         }
 
         const network = this.networks.networks.find(
           (n) => Number(n.chainId) === transaction!.chainId
         )!
 
+        // TODO: Consider refining the error handling in here, because this
+        // swallows errors and doesn't provide any feedback to the user.
         const swapAndBridgeUserRequests = await buildSwapAndBridgeUserRequests(
           transaction,
           network.id,

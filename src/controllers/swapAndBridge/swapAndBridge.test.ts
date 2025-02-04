@@ -123,6 +123,36 @@ const accounts = [
   }
 ]
 
+const PORTFOLIO_TOKENS = [
+  {
+    address: '0x94b008aA00579c1307B0EF2c499aD98a8ce58e58',
+    amount: 2110000n,
+    decimals: 6,
+    flags: { onGasTank: false, rewardsType: null, isFeeToken: true, canTopUpGasTank: true },
+    networkId: 'optimism',
+    priceIn: [{ baseCurrency: 'usd', price: 0.99785 }],
+    symbol: 'USDT'
+  },
+  {
+    address: '0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf',
+    amount: 1852n,
+    decimals: 8,
+    flags: { onGasTank: false, rewardsType: null, isFeeToken: false, canTopUpGasTank: false },
+    networkId: 'base',
+    priceIn: [{ baseCurrency: 'usd', price: 64325 }],
+    symbol: 'cbBTC'
+  },
+  {
+    address: '0x0000000000000000000000000000000000000000',
+    amount: 11756728636013018n,
+    decimals: 8,
+    flags: { onGasTank: false, rewardsType: null, isFeeToken: true, canTopUpGasTank: true },
+    networkId: 'optimism',
+    priceIn: [{ baseCurrency: 'usd', price: 3660.27 }],
+    symbol: 'ETH'
+  }
+]
+
 describe('SwapAndBridge Controller', () => {
   test('should initialize', async () => {
     await storage.set('accounts', accounts)
@@ -163,35 +193,7 @@ describe('SwapAndBridge Controller', () => {
 
     expect(swapAndBridgeController.fromChainId).toEqual(1)
     expect(swapAndBridgeController.fromSelectedToken).toEqual(null)
-    swapAndBridgeController.updatePortfolioTokenList([
-      {
-        address: '0x94b008aA00579c1307B0EF2c499aD98a8ce58e58',
-        amount: 2110000n,
-        decimals: 6,
-        flags: { onGasTank: false, rewardsType: null, isFeeToken: true, canTopUpGasTank: true },
-        networkId: 'optimism',
-        priceIn: [{ baseCurrency: 'usd', price: 0.99785 }],
-        symbol: 'USDT'
-      },
-      {
-        address: '0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf',
-        amount: 1852n,
-        decimals: 8,
-        flags: { onGasTank: false, rewardsType: null, isFeeToken: false, canTopUpGasTank: false },
-        networkId: 'base',
-        priceIn: [{ baseCurrency: 'usd', price: 64325 }],
-        symbol: 'cbBTC'
-      },
-      {
-        address: '0x0000000000000000000000000000000000000000',
-        amount: 11756728636013018n,
-        decimals: 8,
-        flags: { onGasTank: false, rewardsType: null, isFeeToken: true, canTopUpGasTank: true },
-        networkId: 'optimism',
-        priceIn: [{ baseCurrency: 'usd', price: 3660.27 }],
-        symbol: 'ETH'
-      }
-    ])
+    swapAndBridgeController.updatePortfolioTokenList(PORTFOLIO_TOKENS)
     expect(swapAndBridgeController.fromSelectedToken).not.toBeNull()
     expect(swapAndBridgeController.fromSelectedToken?.address).toEqual(
       '0x0000000000000000000000000000000000000000' // the one with highest balance
@@ -320,11 +322,12 @@ describe('SwapAndBridge Controller', () => {
     expect(swapAndBridgeController.banners).toHaveLength(0)
   })
   test('should switch fromAmountFieldMode', () => {
+    swapAndBridgeController.updateForm({ fromSelectedToken: PORTFOLIO_TOKENS[0] }) // select USDT for easier calcs
     swapAndBridgeController.updateForm({ fromAmountFieldMode: 'fiat' })
     expect(swapAndBridgeController.fromAmountFieldMode).toEqual('fiat')
-    swapAndBridgeController.updateForm({ fromAmount: '1000000' })
-    expect(swapAndBridgeController.fromAmount).toEqual('1000000')
-    expect(swapAndBridgeController.validateFromAmount.success).toEqual(false)
+    swapAndBridgeController.updateForm({ fromAmount: '0.99785' }) // USDT price in USD
+    expect(swapAndBridgeController.fromAmount).toEqual('1.0')
+    expect(swapAndBridgeController.validateFromAmount.success).toEqual(true)
   })
   test('should unload screen', () => {
     swapAndBridgeController.unloadScreen('1')
