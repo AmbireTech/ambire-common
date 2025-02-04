@@ -40,6 +40,16 @@ import { getActivatorCall } from '../userOperation/userOperation'
 // as 0x92 is not a valid value for v.
 const magicBytes = '6492649264926492649264926492649264926492649264926492649264926492'
 
+export const EIP_1271_NOT_SUPPORTED_BY = [
+  'opensea.io',
+  'paraswap.xyz',
+  'blur.io',
+  'aevo.xyz',
+  'socialscan.io',
+  'tally.xyz',
+  'questn.com'
+]
+
 /**
  * For Unprotected signatures, we need to append 00 at the end
  * for ambire to recognize it

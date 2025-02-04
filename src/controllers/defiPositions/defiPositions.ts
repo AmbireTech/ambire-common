@@ -205,6 +205,13 @@ export class DefiPositionsController extends EventEmitter {
   }
 
   async #setAssetPrices(accountAddr: string, networkId: string) {
+    const platformId = this.#networks.networks.find((n) => n.id === networkId)?.platformId
+
+    // If we can't determine the Gecko platform ID, we shouldn't make a request to price (cena.ambire.com)
+    // since it would return nothing.
+    // This can happen when adding a custom network that doesn't have a CoinGecko platform ID.
+    if (!platformId) throw new Error('Missing `platformId`')
+
     const dedup = (x: any[]) => x.filter((y, i) => x.indexOf(y) === i)
 
     const networkState = this.#state[accountAddr][networkId]
@@ -219,71 +226,67 @@ export class DefiPositionsController extends EventEmitter {
       })
     })
 
-    const cenaUrl = `https://cena.ambire.com/api/v3/simple/token_price/${
-      this.#networks.networks.find((n) => n.id === networkId)?.platformId
-    }?contract_addresses=${dedup(addresses).join('%2C')}&vs_currencies=usd`
+    const cenaUrl = `https://cena.ambire.com/api/v3/simple/token_price/${platformId}?contract_addresses=${dedup(
+      addresses
+    ).join('%2C')}&vs_currencies=usd`
 
-    try {
-      const resp = await this.#fetch(cenaUrl)
-      const body = await resp.json()
-      if (resp.status !== 200) throw body
-      // eslint-disable-next-line no-prototype-builtins
-      if (body.hasOwnProperty('message')) throw body
-      // eslint-disable-next-line no-prototype-builtins
-      if (body.hasOwnProperty('error')) throw body
+    const resp = await this.#fetch(cenaUrl)
+    const body = await resp.json()
+    if (resp.status !== 200) throw body
+    // eslint-disable-next-line no-prototype-builtins
+    if (body.hasOwnProperty('message')) throw body
+    // eslint-disable-next-line no-prototype-builtins
+    if (body.hasOwnProperty('error')) throw body
 
-      const positionsByProviderWithPrices = this.#state[accountAddr][
-        networkId
-      ].positionsByProvider.map((positionsByProvider) => {
-        if (positionsByProvider.providerName.toLowerCase().includes('aave'))
-          return positionsByProvider
+    const positionsByProviderWithPrices = this.#state[accountAddr][
+      networkId
+    ].positionsByProvider.map((positionsByProvider) => {
+      if (positionsByProvider.providerName.toLowerCase().includes('aave'))
+        return positionsByProvider
 
-        const updatedPositions = positionsByProvider.positions.map((position) => {
-          let positionInUSD = position.additionalData.positionInUSD || 0
+      const updatedPositions = positionsByProvider.positions.map((position) => {
+        let positionInUSD = position.additionalData.positionInUSD || 0
 
-          const updatedAssets = position.assets.map((asset) => {
-            const priceData = body[asset.address.toLowerCase()]
-            if (!priceData) return asset
+        const updatedAssets = position.assets.map((asset) => {
+          const priceData = body[asset.address.toLowerCase()]
+          if (!priceData) return asset
 
-            const priceIn = Object.entries(priceData).map(([currency, price]) => ({
-              baseCurrency: currency,
-              price: price as number
-            }))
+          const priceIn = Object.entries(priceData).map(([currency, price]) => ({
+            baseCurrency: currency,
+            price: price as number
+          }))
 
-            const value = getAssetValue(asset.amount, asset.decimals, priceIn)
+          const value = getAssetValue(asset.amount, asset.decimals, priceIn)
 
-            positionInUSD += value
-
-            return {
-              ...asset,
-              value,
-              priceIn
-            }
-          })
+          positionInUSD += value
 
           return {
-            ...position,
-            assets: updatedAssets,
-            additionalData: { ...position.additionalData, positionInUSD }
+            ...asset,
+            value,
+            priceIn
           }
         })
 
-        let positionInUSD = positionsByProvider.positionInUSD
-
-        // Already set in the corresponding lib
-        if (!positionInUSD) {
-          positionInUSD = updatedPositions.reduce((prevPositionValue, position) => {
-            return prevPositionValue + (position.additionalData.positionInUSD || 0)
-          }, 0)
+        return {
+          ...position,
+          assets: updatedAssets,
+          additionalData: { ...position.additionalData, positionInUSD }
         }
-
-        return { ...positionsByProvider, positions: updatedPositions, positionInUSD }
       })
 
-      this.#state[accountAddr][networkId].positionsByProvider = positionsByProviderWithPrices
-    } catch (error) {
-      console.error('#setAssetPrices error in defiPositions:', error)
-    }
+      let positionInUSD = positionsByProvider.positionInUSD
+
+      // Already set in the corresponding lib
+      if (!positionInUSD) {
+        positionInUSD = updatedPositions.reduce((prevPositionValue, position) => {
+          return prevPositionValue + (position.additionalData.positionInUSD || 0)
+        }, 0)
+      }
+
+      return { ...positionsByProvider, positions: updatedPositions, positionInUSD }
+    })
+
+    this.#state[accountAddr][networkId].positionsByProvider = positionsByProviderWithPrices
   }
 
   removeNetworkData(networkId: NetworkId) {

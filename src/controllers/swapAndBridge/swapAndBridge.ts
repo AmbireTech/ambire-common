@@ -3,6 +3,7 @@ import { formatUnits, isAddress, parseUnits } from 'ethers'
 import { v4 as uuidv4 } from 'uuid'
 
 import EmittableError from '../../classes/EmittableError'
+import SwapAndBridgeError from '../../classes/SwapAndBridgeError'
 import { Network } from '../../interfaces/network'
 import { Storage } from '../../interfaces/storage'
 import {
@@ -16,6 +17,7 @@ import {
   SocketAPIRoute,
   SocketAPISendTransactionRequest,
   SocketAPIToken,
+  SocketRouteStatus,
   SwapAndBridgeToToken
 } from '../../interfaces/swapAndBridge'
 import { isSmartAccount } from '../../libs/account/account'
@@ -34,6 +36,7 @@ import {
   sortPortfolioTokenList,
   sortTokenListResponse
 } from '../../libs/swapAndBridge/swapAndBridge'
+import { getHumanReadableSwapAndBridgeError } from '../../libs/swapAndBridge/swapAndBridgeErrorHumanizer'
 import { getSanitizedAmount } from '../../libs/transfer/amount'
 import { normalizeIncomingSocketToken, SocketAPI } from '../../services/socket/api'
 import { ZERO_ADDRESS } from '../../services/socket/constants'
@@ -52,6 +55,9 @@ const HARD_CODED_CURRENCY = 'usd'
 
 const CONVERSION_PRECISION = 16
 const CONVERSION_PRECISION_POW = BigInt(10 ** CONVERSION_PRECISION)
+
+const NETWORK_MISMATCH_MESSAGE =
+  'Swap & Bridge network configuration mismatch. Please try again or contact Ambire support.'
 
 export enum SwapAndBridgeFormStatus {
   Empty = 'empty',
@@ -201,9 +207,13 @@ export class SwapAndBridgeController extends EventEmitter {
     this.#initialLoadPromise = this.#load()
   }
 
-  emitUpdate() {
-    // Override emitUpdate to not emit updates if there are no active sessions
-    if (!this.sessionIds.length) return
+  #emitUpdateIfNeeded() {
+    const shouldSkipUpdate =
+      // No need to emit emit updates if there are no active sessions
+      !this.sessionIds.length &&
+      // but ALSO there are no active routes (otherwise, banners need the updates)
+      !this.activeRoutes.length
+    if (shouldSkipUpdate) return
 
     super.emitUpdate()
   }
@@ -225,7 +235,7 @@ export class SwapAndBridgeController extends EventEmitter {
         }
       })
     })
-    this.emitUpdate()
+    this.#emitUpdateIfNeeded()
   }
 
   // The token in portfolio is the source of truth for the amount, it updates
@@ -384,7 +394,7 @@ export class SwapAndBridgeController extends EventEmitter {
     // Do not await on purpose as it's not critical for the controller state to be ready
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.#fetchSupportedChainsIfNeeded()
-    this.emitUpdate()
+    this.#emitUpdateIfNeeded()
   }
 
   get isHealthy() {
@@ -404,7 +414,7 @@ export class SwapAndBridgeController extends EventEmitter {
         lastFetched: Date.now(),
         data: supportedChainsResponse.filter((c) => c.sendingEnabled && c.receivingEnabled)
       }
-      this.emitUpdate()
+      this.#emitUpdateIfNeeded()
     } catch (error: any) {
       // Fail silently, as this is not a critical feature, Swap & Bridge is still usable
       this.emitError({ error, level: 'silent', message: error?.message })
@@ -568,7 +578,7 @@ export class SwapAndBridgeController extends EventEmitter {
     }
     this.updateQuote()
 
-    this.emitUpdate()
+    this.#emitUpdateIfNeeded()
   }
 
   resetForm(shouldEmit?: boolean) {
@@ -584,7 +594,7 @@ export class SwapAndBridgeController extends EventEmitter {
     this.portfolioTokenList = []
     this.#toTokenList = []
 
-    if (shouldEmit) this.emitUpdate()
+    if (shouldEmit) this.#emitUpdateIfNeeded()
   }
 
   updatePortfolioTokenList(nextPortfolioTokenList: TokenResult[]) {
@@ -616,7 +626,7 @@ export class SwapAndBridgeController extends EventEmitter {
         fromSelectedToken: fromSelectedTokenInNextPortfolio || this.portfolioTokenList[0] || null
       })
     } else {
-      this.emitUpdate()
+      this.#emitUpdateIfNeeded()
     }
   }
 
@@ -645,7 +655,7 @@ export class SwapAndBridgeController extends EventEmitter {
     if (shouldReset) {
       this.#toTokenList = []
       this.toSelectedToken = null
-      this.emitUpdate()
+      this.#emitUpdateIfNeeded()
     }
 
     try {
@@ -671,10 +681,7 @@ export class SwapAndBridgeController extends EventEmitter {
         (n) => Number(n.chainId) === this.toChainId
       )
       // should never happen
-      if (!toTokenNetwork)
-        throw new Error(
-          'Network configuration mismatch detected. Please try again later or contact support.'
-        )
+      if (!toTokenNetwork) throw new SwapAndBridgeError(NETWORK_MISMATCH_MESSAGE)
 
       const additionalTokensFromPortfolio = this.portfolioTokenList
         .filter((t) => t.networkId === toTokenNetwork.id)
@@ -692,16 +699,17 @@ export class SwapAndBridgeController extends EventEmitter {
           if (token) {
             this.updateForm({ toSelectedToken: token })
             this.updateToTokenListStatus = 'INITIAL'
-            this.emitUpdate()
+            this.#emitUpdateIfNeeded()
             return
           }
         }
       }
     } catch (error: any) {
-      this.emitError({ error, level: 'major', message: error?.message })
+      const { message } = getHumanReadableSwapAndBridgeError(error)
+      this.emitError({ error, level: 'major', message })
     }
     this.updateToTokenListStatus = 'INITIAL'
-    this.emitUpdate()
+    this.#emitUpdateIfNeeded()
   }
 
   get toTokenList(): SwapAndBridgeToToken[] {
@@ -726,9 +734,12 @@ export class SwapAndBridgeController extends EventEmitter {
       token = await this.#socketAPI.getToken({ address, chainId: this.toChainId })
 
       if (!token)
-        throw new Error('Token with this address is not supported by our service provider.')
+        throw new SwapAndBridgeError(
+          'Token with this address is not supported by our service provider.'
+        )
     } catch (error: any) {
-      throw new EmittableError({ error, level: 'minor', message: error?.message })
+      const { message } = getHumanReadableSwapAndBridgeError(error)
+      throw new EmittableError({ error, level: 'minor', message })
     }
 
     if (this.#toTokenListKey)
@@ -737,10 +748,10 @@ export class SwapAndBridgeController extends EventEmitter {
 
     const toTokenNetwork = this.#networks.networks.find((n) => Number(n.chainId) === this.toChainId)
     // should never happen
-    if (!toTokenNetwork)
-      throw new Error(
-        'Network configuration mismatch detected. Please try again later or contact support.'
-      )
+    if (!toTokenNetwork) {
+      const error = new SwapAndBridgeError(NETWORK_MISMATCH_MESSAGE)
+      throw new EmittableError({ error, level: 'minor', message: error?.message })
+    }
 
     const nextTokenList: SwapAndBridgeToToken[] = [...this.#toTokenList, token]
 
@@ -749,7 +760,7 @@ export class SwapAndBridgeController extends EventEmitter {
       this.portfolioTokenList.filter((t) => t.networkId === toTokenNetwork.id)
     )
 
-    this.emitUpdate()
+    this.#emitUpdateIfNeeded()
     return token
   }
 
@@ -820,7 +831,7 @@ export class SwapAndBridgeController extends EventEmitter {
       if (!options.skipPreviousQuoteRemoval) {
         if (this.quote) this.quote = null
         this.quoteRoutesStatuses = {}
-        this.emitUpdate()
+        this.#emitUpdateIfNeeded()
       }
 
       try {
@@ -994,11 +1005,8 @@ export class SwapAndBridgeController extends EventEmitter {
         }
         this.quoteRoutesStatuses = (quoteResult as any).bridgeRouteErrors || {}
       } catch (error: any) {
-        this.emitError({
-          error,
-          level: 'major',
-          message: 'Failed to fetch a route for the selected tokens. Please try again.'
-        })
+        const { message } = getHumanReadableSwapAndBridgeError(error)
+        this.emitError({ error, level: 'major', message })
       }
     }
 
@@ -1006,7 +1014,7 @@ export class SwapAndBridgeController extends EventEmitter {
       if (this.quote || this.quoteRoutesStatuses) {
         this.quote = null
         this.quoteRoutesStatuses = {}
-        this.emitUpdate()
+        this.#emitUpdateIfNeeded()
       }
       return
     }
@@ -1020,13 +1028,13 @@ export class SwapAndBridgeController extends EventEmitter {
 
     if (!options.skipStatusUpdate && !this.quote) {
       this.updateQuoteStatus = 'LOADING'
-      this.emitUpdate()
+      this.#emitUpdateIfNeeded()
     }
 
     this.#updateQuoteTimeout = setTimeout(async () => {
       if (!options.skipStatusUpdate && !!this.quote) {
         this.updateQuoteStatus = 'LOADING'
-        this.emitUpdate()
+        this.#emitUpdateIfNeeded()
       }
 
       await updateQuoteFunction()
@@ -1034,7 +1042,7 @@ export class SwapAndBridgeController extends EventEmitter {
       if (quoteId !== this.#updateQuoteId) return
 
       this.updateQuoteStatus = 'INITIAL'
-      this.emitUpdate()
+      this.#emitUpdateIfNeeded()
       clearTimeout(this.#updateQuoteTimeout)
       this.#updateQuoteTimeout = undefined
     }, nextTimeout)
@@ -1043,22 +1051,36 @@ export class SwapAndBridgeController extends EventEmitter {
   async getRouteStartUserTx() {
     if (this.formStatus !== SwapAndBridgeFormStatus.ReadyToSubmit) return
 
-    const routeResult = await this.#socketAPI.startRoute({
-      fromChainId: this.quote!.fromChainId,
-      fromAssetAddress: this.quote!.fromAsset.address,
-      toChainId: this.quote!.toChainId,
-      toAssetAddress: this.quote!.toAsset.address,
-      route: this.quote!.selectedRoute
-    })
+    try {
+      const routeResult = await this.#socketAPI.startRoute({
+        fromChainId: this.quote!.fromChainId,
+        fromAssetAddress: this.quote!.fromAsset.address,
+        toChainId: this.quote!.toChainId,
+        toAssetAddress: this.quote!.toAsset.address,
+        route: this.quote!.selectedRoute
+      })
 
-    return routeResult
+      return routeResult
+    } catch (error: any) {
+      const { message } = getHumanReadableSwapAndBridgeError(error)
+      throw new EmittableError({ error, level: 'minor', message })
+    }
+  }
+
+  async getNextRouteUserTx(activeRouteId: number) {
+    try {
+      const route = await this.#socketAPI.getNextRouteUserTx(activeRouteId)
+      return route
+    } catch (error: any) {
+      const { message } = getHumanReadableSwapAndBridgeError(error)
+      throw new EmittableError({ error, level: 'minor', message })
+    }
   }
 
   async checkForNextUserTxForActiveRoutes() {
     await this.#initialLoadPromise
     const fetchAndUpdateRoute = async (activeRoute: ActiveRoute) => {
-      let status: 'ready' | 'completed' | null = null
-      let errorMessage: string | null = null
+      let status: SocketRouteStatus = null
       const broadcastedButNotConfirmed = this.#activity.broadcastedButNotConfirmed.find((op) =>
         op.calls.some((c) => c.fromUserRequestId === activeRoute.activeRouteId)
       )
@@ -1068,27 +1090,14 @@ export class SwapAndBridgeController extends EventEmitter {
       if (activeRoute.routeStatus === 'completed') return
 
       try {
-        const res = await this.#socketAPI.getRouteStatus({
+        status = await this.#socketAPI.getRouteStatus({
           activeRouteId: activeRoute.activeRouteId,
           userTxIndex: activeRoute.userTxIndex,
           txHash: activeRoute.userTxHash!
         })
-
-        if (res.statusCode !== 200) {
-          errorMessage =
-            'We have troubles getting the status of this route. Please check back later to proceed.'
-        } else {
-          status = res.result
-        }
-      } catch (error) {
-        errorMessage =
-          'We have troubles getting the status of this route. Please check back later to proceed.'
-      }
-
-      if (errorMessage) {
-        this.updateActiveRoute(activeRoute.activeRouteId, {
-          error: errorMessage
-        })
+      } catch (e: any) {
+        const { message } = getHumanReadableSwapAndBridgeError(e)
+        this.updateActiveRoute(activeRoute.activeRouteId, { error: message })
         return
       }
 
@@ -1140,7 +1149,7 @@ export class SwapAndBridgeController extends EventEmitter {
     this.quote.selectedRoute = route
     this.quote.selectedRouteSteps = getQuoteRouteSteps(route.userTxs)
 
-    this.emitUpdate()
+    this.#emitUpdateIfNeeded()
   }
 
   async addActiveRoute(activeRoute: {
@@ -1148,14 +1157,31 @@ export class SwapAndBridgeController extends EventEmitter {
     userTxIndex: SocketAPISendTransactionRequest['userTxIndex']
   }) {
     await this.#initialLoadPromise
-    const route = await this.#socketAPI.updateActiveRoute(activeRoute.activeRouteId)
-    this.activeRoutes.push({
-      ...activeRoute,
-      routeStatus: 'ready',
-      userTxHash: null,
-      route
-    })
-    this.resetForm(true)
+
+    try {
+      const route = await this.#socketAPI.updateActiveRoute(activeRoute.activeRouteId)
+      this.activeRoutes.push({
+        ...activeRoute,
+        routeStatus: 'ready',
+        userTxHash: null,
+        route
+      })
+
+      // Preserve key form states instead of resetting the whole form to enhance UX and reduce confusion.
+      // After form submission, maintain the state for fromSelectedToken, fromChainId, and toChainId,
+      // while resetting all other state related to the form.
+      this.fromAmount = ''
+      this.fromAmountInFiat = ''
+      this.fromAmountFieldMode = 'token'
+      this.toSelectedToken = null
+      this.quote = null
+      this.quoteRoutesStatuses = {}
+
+      this.emitUpdate()
+    } catch (error: any) {
+      const { message } = getHumanReadableSwapAndBridgeError(error)
+      throw new EmittableError({ error, level: 'major', message })
+    }
   }
 
   updateActiveRoute(
@@ -1186,13 +1212,14 @@ export class SwapAndBridgeController extends EventEmitter {
       }
       this.activeRoutes = currentActiveRoutes
 
-      this.emitUpdate()
+      this.#emitUpdateIfNeeded()
     }
   }
 
   removeActiveRoute(activeRouteId: SocketAPISendTransactionRequest['activeRouteId']) {
     this.activeRoutes = this.activeRoutes.filter((r) => r.activeRouteId !== activeRouteId)
 
+    // Purposely not using `this.#emitUpdateIfNeeded()` here, as this should always emit to update banners
     this.emitUpdate()
   }
 
@@ -1318,7 +1345,7 @@ export class SwapAndBridgeController extends EventEmitter {
     this.portfolioTokenList = []
     this.isTokenListLoading = true
 
-    this.emitUpdate()
+    this.#emitUpdateIfNeeded()
   }
 
   #getIsFormValidToFetchQuote() {

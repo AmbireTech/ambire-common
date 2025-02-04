@@ -57,8 +57,7 @@ const legendsModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]) =
       ]
     },
     [iface.getFunction('getDailyReward')?.selector!]: () => [
-      getAction('Collect daily reward'),
-      getLabel('from Ambire Legends', true)
+      getAction('Unlock the treasure chest')
     ],
     [iface.getFunction('spinWheel')?.selector!]: () => {
       return [getAction('Unlock the wheel of fortune')]
