@@ -4,7 +4,7 @@ import { AccountOpAction, Action as ActionFromActionsQueue } from '../../interfa
 import { Action, Banner } from '../../interfaces/banner'
 import { Network } from '../../interfaces/network'
 import { ActiveRoute } from '../../interfaces/swapAndBridge'
-import { FirstCashbackConfettiStatusByAccount } from '../portfolio/interfaces'
+import { CashbackStatusByAccount } from '../portfolio/interfaces'
 import { getIsBridgeTxn, getQuoteRouteSteps } from '../swapAndBridge/swapAndBridge'
 
 const getBridgeBannerTitle = (routeStatus: ActiveRoute['routeStatus']) => {
@@ -316,14 +316,16 @@ export const getKeySyncBanner = (addr: string, email: string, keys: string[]) =>
 
 export const getFirstCashbackBanners = ({
   selectedAccountAddr,
-  firstCashbackConfettiStatusByAccount
+  cashbackStatusByAccount
 }: {
   selectedAccountAddr: string
-  firstCashbackConfettiStatusByAccount: FirstCashbackConfettiStatusByAccount
+  cashbackStatusByAccount: CashbackStatusByAccount
 }): Banner[] => {
   const banners: Banner[] = []
 
-  const shouldShowConfettiBanner = firstCashbackConfettiStatusByAccount[selectedAccountAddr]
+  const shouldShowConfettiBanner =
+    !!cashbackStatusByAccount[selectedAccountAddr]?.firstCashbackReceivedAt &&
+    !cashbackStatusByAccount[selectedAccountAddr]?.firstCashbackSeenAt
 
   if (shouldShowConfettiBanner) {
     banners.push({

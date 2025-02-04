@@ -430,7 +430,7 @@ export class SelectedAccountController extends EventEmitter {
 
     return getFirstCashbackBanners({
       selectedAccountAddr: this.account.addr,
-      firstCashbackConfettiStatusByAccount: this.#portfolio.firstCashbackConfettiStatusByAccount
+      cashbackStatusByAccount: this.#portfolio.cashbackStatusByAccount
     })
   }
 

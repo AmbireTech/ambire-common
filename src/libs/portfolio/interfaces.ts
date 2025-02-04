@@ -241,6 +241,11 @@ export type FormattedPendingAmounts = Omit<PendingAmounts, 'pendingBalance'> & {
   pendingToBeConfirmedFormatted?: string
 }
 
-export type FirstCashbackConfettiStatusByAccount = {
-  [key: string]: boolean
+export type CashbackStatus = {
+  firstCashbackReceivedAt: number | null
+  firstCashbackSeenAt: number | null
+}
+
+export type CashbackStatusByAccount = {
+  [key: string]: CashbackStatus
 }

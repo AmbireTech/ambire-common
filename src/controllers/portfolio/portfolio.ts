@@ -25,7 +25,7 @@ import {
 // eslint-disable-next-line import/no-cycle
 import {
   AccountState,
-  FirstCashbackConfettiStatusByAccount,
+  CashbackStatusByAccount,
   GasTankTokenResult,
   GetOptions,
   NetworkState,
@@ -112,7 +112,7 @@ export class PortfolioController extends EventEmitter {
 
   #isFirstCashbackConfettiVisible: boolean = false
 
-  firstCashbackConfettiStatusByAccount: FirstCashbackConfettiStatusByAccount = {}
+  cashbackStatusByAccount: CashbackStatusByAccount = {}
 
   constructor(
     storage: Storage,
@@ -162,10 +162,7 @@ export class PortfolioController extends EventEmitter {
       }
 
       this.#previousHints = await this.#storage.get('previousHints', {})
-      this.firstCashbackConfettiStatusByAccount = await this.#storage.get(
-        'firstCashbackConfettiStatusByAccount',
-        {}
-      )
+      this.cashbackStatusByAccount = await this.#storage.get('cashbackStatusByAccount', {})
     } catch (e) {
       this.emitError({
         message:
@@ -422,27 +419,34 @@ export class PortfolioController extends EventEmitter {
 
   async updateFirstCashbackConfettiStatus({
     accountId,
-    shouldShow,
+    shouldShowBanner,
     toggleModal,
     shouldGetAdditionalPortfolio
   }: {
     accountId: AccountId
-    shouldShow: boolean
+    shouldShowBanner: boolean
     toggleModal: boolean
     shouldGetAdditionalPortfolio: boolean
   }) {
+    if (!accountId) throw new Error('AccountId in required to update cashback status')
+
     if (toggleModal) {
       this.#isFirstCashbackConfettiVisible = !this.#isFirstCashbackConfettiVisible
     }
 
-    this.firstCashbackConfettiStatusByAccount = {
-      ...this.firstCashbackConfettiStatusByAccount,
-      [accountId]: shouldShow
+    const currentTimestamp = new Date().getTime()
+    const currentAccountStatus = this.cashbackStatusByAccount[accountId] || {}
+
+    this.cashbackStatusByAccount = {
+      ...this.cashbackStatusByAccount,
+      [accountId]: shouldShowBanner
+        ? { firstCashbackReceivedAt: currentTimestamp, firstCashbackSeenAt: null }
+        : {
+            firstCashbackReceivedAt: currentAccountStatus.firstCashbackReceivedAt,
+            firstCashbackSeenAt: currentTimestamp
+          }
     }
-    await this.#storage.set(
-      'firstCashbackConfettiStatusByAccount',
-      this.firstCashbackConfettiStatusByAccount
-    )
+    await this.#storage.set('cashbackStatusByAccount', this.cashbackStatusByAccount)
 
     if (shouldGetAdditionalPortfolio) {
       await this.#getAdditionalPortfolio(accountId, true)
@@ -506,7 +510,7 @@ export class PortfolioController extends EventEmitter {
     if (shouldShowConfettiOnFirstCashback(accountState, res.data.gasTank.balance)) {
       await this.updateFirstCashbackConfettiStatus({
         accountId,
-        shouldShow: true,
+        shouldShowBanner: true,
         toggleModal: false,
         shouldGetAdditionalPortfolio: false
       })
