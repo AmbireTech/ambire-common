@@ -90,7 +90,7 @@ export type Action =
     }
   | {
       label: 'Open'
-      actionName: 'open-first-cashback-confetti-modal'
+      actionName: 'open-first-cashback-modal'
     }
   | {
       label: 'Reload'

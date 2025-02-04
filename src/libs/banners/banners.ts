@@ -336,7 +336,7 @@ export const getFirstCashbackBanners = ({
       actions: [
         {
           label: 'Open',
-          actionName: 'open-first-cashback-confetti-modal'
+          actionName: 'open-first-cashback-modal'
         }
       ]
     })
