@@ -1,0 +1,1 @@
+{"version":3,"file":"signAccountOp.d.ts","sourceRoot":"","sources":["../../../src/interfaces/signAccountOp.ts"],"names":[],"mappings":"AAAA,KAAK,OAAO,GAAG;IACb,EAAE,EAAE,MAAM,CAAA;IACV,KAAK,EAAE,MAAM,CAAA;IACb,IAAI,CAAC,EAAE,MAAM,CAAA;IACb,gBAAgB,EAAE,OAAO,CAAA;IACzB,iBAAiB,EAAE,OAAO,CAAA;CAC3B,CAAA;AAED,YAAY,EAAE,OAAO,EAAE,CAAA"}

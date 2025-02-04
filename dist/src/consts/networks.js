@@ -1,56 +1,209 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.nativeTokens = exports.networks = void 0;
-const deploy_1 = require("./deploy");
+import { BICONOMY, PIMLICO } from './bundlers';
 const networks = [
     {
         id: 'ethereum',
         name: 'Ethereum',
         nativeAssetSymbol: 'ETH',
-        rpcUrl: 'https://rpc.ankr.com/eth',
+        rpcUrls: ['https://invictus.ambire.com/ethereum'],
+        selectedRpcUrl: 'https://invictus.ambire.com/ethereum',
         rpcNoStateOverride: false,
         chainId: 1n,
-        erc4337: null
+        explorerUrl: 'https://etherscan.io',
+        erc4337: { enabled: false, hasPaymaster: true, hasBundlerSupport: true },
+        isSAEnabled: true,
+        areContractsDeployed: true,
+        hasRelayer: true,
+        platformId: 'ethereum',
+        nativeAssetId: 'ethereum',
+        hasSingleton: true,
+        features: [],
+        feeOptions: { is1559: true },
+        predefined: true,
+        wrappedAddr: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
+        disableEstimateGas: true,
+        allowForce4337: true
     },
     {
         id: 'polygon',
         name: 'Polygon',
-        nativeAssetSymbol: 'MATIC',
-        rpcUrl: 'https://rpc.ankr.com/polygon',
+        nativeAssetSymbol: 'POL',
+        rpcUrls: ['https://invictus.ambire.com/polygon'],
+        selectedRpcUrl: 'https://invictus.ambire.com/polygon',
         rpcNoStateOverride: false,
         chainId: 137n,
+        explorerUrl: 'https://polygonscan.com',
         erc4337: {
-            enabled: true,
-            entryPointAddr: deploy_1.ERC_4337_ENTRYPOINT
-        }
+            enabled: false,
+            hasPaymaster: true,
+            hasBundlerSupport: true,
+            bundlers: [PIMLICO, BICONOMY],
+            defaultBundler: PIMLICO
+        },
+        isSAEnabled: true,
+        areContractsDeployed: true,
+        hasRelayer: true,
+        platformId: 'polygon-pos',
+        nativeAssetId: 'matic-network',
+        hasSingleton: true,
+        features: [],
+        feeOptions: { is1559: false, feeIncrease: 10n },
+        predefined: true,
+        wrappedAddr: '0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270',
+        oldNativeAssetSymbols: ['MATIC'],
+        disableEstimateGas: true,
+        allowForce4337: true
     },
     {
         id: 'optimism',
         name: 'Optimism',
         nativeAssetSymbol: 'ETH',
-        rpcUrl: 'https://rpc.ankr.com/optimism',
+        rpcUrls: ['https://invictus.ambire.com/optimism'],
+        selectedRpcUrl: 'https://invictus.ambire.com/optimism',
         rpcNoStateOverride: false,
         chainId: 10n,
+        explorerUrl: 'https://optimistic.etherscan.io',
         erc4337: {
             enabled: true,
-            entryPointAddr: deploy_1.ERC_4337_ENTRYPOINT
-        }
+            hasPaymaster: true,
+            hasBundlerSupport: true,
+            bundlers: [PIMLICO, BICONOMY],
+            defaultBundler: BICONOMY
+        },
+        isSAEnabled: true,
+        areContractsDeployed: true,
+        hasRelayer: true,
+        platformId: 'optimistic-ethereum',
+        nativeAssetId: 'ethereum',
+        hasSingleton: true,
+        features: [],
+        feeOptions: {
+            is1559: true,
+            elasticityMultiplier: 6n,
+            baseFeeMaxChangeDenominator: 50n
+        },
+        isOptimistic: true,
+        predefined: true,
+        disableEstimateGas: true,
+        wrappedAddr: '0x4200000000000000000000000000000000000006'
+    },
+    {
+        id: 'avalanche',
+        name: 'Avalanche',
+        nativeAssetSymbol: 'AVAX',
+        rpcUrls: ['https://invictus.ambire.com/avalanche'],
+        selectedRpcUrl: 'https://invictus.ambire.com/avalanche',
+        rpcNoStateOverride: false,
+        chainId: 43114n,
+        explorerUrl: 'https://snowtrace.io',
+        erc4337: {
+            enabled: true,
+            hasPaymaster: true,
+            hasBundlerSupport: true
+        },
+        isSAEnabled: true,
+        areContractsDeployed: true,
+        hasRelayer: true,
+        platformId: 'avalanche',
+        nativeAssetId: 'avalanche-2',
+        hasSingleton: true,
+        features: [],
+        feeOptions: {
+            is1559: true,
+            minBaseFee: 25000000000n // 25 gwei
+        },
+        predefined: true,
+        disableEstimateGas: true,
+        wrappedAddr: '0xb31f66aa3c1e785363f0875a1b74e27b85fd66c7'
+    },
+    {
+        id: 'arbitrum',
+        name: 'Arbitrum',
+        nativeAssetSymbol: 'ETH',
+        rpcUrls: ['https://invictus.ambire.com/arbitrum'],
+        selectedRpcUrl: 'https://invictus.ambire.com/arbitrum',
+        rpcNoStateOverride: false,
+        chainId: 42161n,
+        explorerUrl: 'https://arbiscan.io',
+        erc4337: {
+            enabled: true,
+            hasPaymaster: true,
+            hasBundlerSupport: true,
+            bundlers: [PIMLICO, BICONOMY],
+            defaultBundler: PIMLICO
+        },
+        isSAEnabled: true,
+        areContractsDeployed: true,
+        hasRelayer: true,
+        platformId: 'arbitrum-one',
+        nativeAssetId: 'ethereum',
+        hasSingleton: true,
+        features: [],
+        feeOptions: {
+            is1559: true,
+            minBaseFee: 100000000n // 1 gwei
+        },
+        predefined: true,
+        wrappedAddr: '0x82af49447d8a07e3bd95bd0d56f35241523fbab1'
+    },
+    {
+        id: 'base',
+        name: 'Base',
+        nativeAssetSymbol: 'ETH',
+        rpcUrls: ['https://invictus.ambire.com/base'],
+        selectedRpcUrl: 'https://invictus.ambire.com/base',
+        rpcNoStateOverride: false,
+        chainId: 8453n,
+        explorerUrl: 'https://basescan.org',
+        erc4337: {
+            enabled: true,
+            hasPaymaster: true,
+            hasBundlerSupport: true,
+            bundlers: [PIMLICO, BICONOMY],
+            defaultBundler: PIMLICO
+        },
+        isSAEnabled: true,
+        areContractsDeployed: true,
+        hasRelayer: true,
+        platformId: 'base',
+        nativeAssetId: 'ethereum',
+        hasSingleton: true,
+        isOptimistic: true,
+        features: [],
+        feeOptions: {
+            is1559: true,
+            minBaseFeeEqualToLastBlock: true
+        },
+        predefined: true,
+        disableEstimateGas: true,
+        wrappedAddr: '0x4200000000000000000000000000000000000006'
+    },
+    {
+        id: 'scroll',
+        name: 'Scroll',
+        nativeAssetSymbol: 'ETH',
+        rpcUrls: ['https://invictus.ambire.com/scroll'],
+        selectedRpcUrl: 'https://invictus.ambire.com/scroll',
+        rpcNoStateOverride: false,
+        chainId: 534352n,
+        explorerUrl: 'https://scrollscan.com',
+        erc4337: {
+            enabled: false,
+            hasPaymaster: true,
+            hasBundlerSupport: true
+        },
+        isSAEnabled: true,
+        areContractsDeployed: true,
+        hasRelayer: true,
+        platformId: 'scroll',
+        nativeAssetId: 'ethereum',
+        hasSingleton: true,
+        features: [],
+        feeOptions: { is1559: false },
+        predefined: true,
+        disableEstimateGas: true,
+        wrappedAddr: '0x5300000000000000000000000000000000000004',
+        allowForce4337: true
     }
-    // This breaks the background service of the extension
-    // {
-    //   id: 'hardhat',
-    //   name: 'hardhat',
-    //   nativeAssetSymbol: 'ETH',
-    //   rpcUrl: '',
-    //   rpcNoStateOverride: true,
-    //   chainId: 31337n
-    // }
 ];
-exports.networks = networks;
-const nativeTokens = {
-    ethereum: ['ETH', 18],
-    polygon: ['MATIC', 18],
-    fanthom: ['FTM', 18]
-};
-exports.nativeTokens = nativeTokens;
+export { networks };
 //# sourceMappingURL=networks.js.map

@@ -1,0 +1,1 @@
+{"version":3,"file":"index.js","sourceRoot":"","sources":["../../../../../../src/libs/humanizer/modules/Socket/index.ts"],"names":[],"mappings":"AAAA,OAAO,EAAE,YAAY,EAAE,MAAM,iBAAiB,CAAA;AAE9C,OAAO,EAAE,YAAY,EAAE,CAAA","sourcesContent":["import { SocketModule } from './socketModules'\n\nexport { SocketModule }\n"]}

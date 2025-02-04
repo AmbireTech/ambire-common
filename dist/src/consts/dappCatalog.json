@@ -1,0 +1,470 @@
+[
+    {
+        "url": "https://legends.ambire.com",
+        "name": "Ambire Legends",
+        "icon": "https://legends.ambire.com/images/logo.png",
+        "description": "Discover the power of Smart Accounts in a gamified way and win a share of the 195M $WALLET reward pool!"
+    },
+    {
+        "url": "https://app.uniswap.org",
+        "name": "Uniswap",
+        "icon": "https://static.debank.com/image/dapp/logo_url/fe004c7bccd24837394c2861a5d4f50c/fe004c7bccd24837394c2861a5d4f50c.png",
+        "description": "Trade crypto and NFTs with confidence"
+    },
+    {
+        "url": "https://yearn.finance",
+        "name": "Yearn Vaults",
+        "icon": "https://cloudflare-ipfs.com/ipfs/Qme9HuPPhgCtgfj1CktvaDKhTesMueGCV2Kui1Sqna3Xs9/logo.svg",
+        "description": "Safe App for interacting with Yearn Vaults"
+    },
+    {
+        "url": "https://galxe.com",
+        "name": "Galxe",
+        "icon": "https://static.debank.com/image/dapp/logo_url/863dd269de50fe4a36cdddec136992a9/863dd269de50fe4a36cdddec136992a9.png",
+        "description": "Galxe is the leading platform for building Web3 community. With over 14 million active users, Galxe has propelled the growth of Optimism, Polygon, Arbitrum, and more than 4000 partners with reward-based loyalty programs."
+    },
+    {
+        "url": "https://opensea.io",
+        "name": "OpenSea",
+        "icon": "https://static.debank.com/image/project/logo_url/opensea/4b23246fac2d4ce53bd8e8079844821c.png",
+        "description": "OpenSea is the world's first and largest web3 marketplace for NFTs and crypto collectibles. Browse, create, buy, sell, and auction NFTs using OpenSea today."
+    },
+    {
+        "url": "https://app.1inch.io",
+        "name": "1inch",
+        "icon": "https://static.debank.com/image/dapp/logo_url/be29635201e4cbfe68ec4e24849cf87d/be29635201e4cbfe68ec4e24849cf87d.png",
+        "description": "DeFi / DEX aggregator with the most liquidity and the best rates on Ethereum, Binance Smart Chain, Optimism, Polygon, 1inch dApp is an entry point to the 1inch Network's tech."
+    },
+    {
+        "url": "https://play.decentraland.org",
+        "name": "Decentraland",
+        "icon": "https://dappcatalog.ambire.com/icons/decentraland.png",
+        "description": "Create, explore and trade in the first-ever virtual world owned by its users."
+    },
+    {
+        "url": "https://loopring.io",
+        "name": "Loopring L2",
+        "icon": "https://loopring.io/favicon.ico",
+        "description": "Ethereum’s First zkRollup Layer 2"
+    },
+    {
+        "url": "https://spooky.fi",
+        "name": "SpookySwap",
+        "icon": "https://spooky.fi/favicon.png",
+        "description": "Farm BOO with Spooky LP Tokens"
+    },
+    {
+        "url": "https://looksrare.org",
+        "name": "LooksRare",
+        "icon": "https://pbs.twimg.com/profile_images/1532326779964489728/PRq7gD2P_400x400.jpg",
+        "description": "Buy & Sell NFTs, Get Rewards"
+    },
+    {
+        "url": "https://blur.io",
+        "name": "blur",
+        "icon": "https://static.debank.com/image/dapp/logo_url/3e852a352d870e42c9cedd1285a4be62/3e852a352d870e42c9cedd1285a4be62.png",
+        "description": "Sweep NFTs across multiple marketplaces, snipe reveals faster than others, and manage your portfolio with advanced analytics. Zero fees."
+    },
+    {
+        "url": "https://snapshot.org",
+        "name": "Snapshot",
+        "icon": "https://static.debank.com/image/dapp/logo_url/3516a46cef64f3fab4b476ccb38c5a6b/3516a46cef64f3fab4b476ccb38c5a6b.png",
+        "description": "Snapshot is an off-chain voting platform that allows DAOs, DeFi protocols, or NFT communities to participate in the decentralized governance easily and without gas fees."
+    },
+    {
+        "url": "https://app.eigenlayer.xyz",
+        "name": "eigenlayer",
+        "icon": "https://static.debank.com/image/dapp/logo_url/b4bc2c5b5a63be4692ab5cb2b5201ae4/b4bc2c5b5a63be4692ab5cb2b5201ae4.png",
+        "description": "Revolutionize Ethereum by restaking ETH across multiple protocols for enhanced security, rewards, and capital efficiency."
+    },
+    {
+        "url": "https://layer3.xyz",
+        "name": "Layer3",
+        "icon": "https://static.debank.com/image/dapp/logo_url/dcde64ae44a5a5a79fe0c2d4f7f97bf8/dcde64ae44a5a5a79fe0c2d4f7f97bf8.png",
+        "description": "The best way to learn, explore, and succeed in web3. Get started with Quests on Layer3 ⚡"
+    },
+    {
+        "url": "https://guild.xyz",
+        "name": "Guild",
+        "icon": "https://static.debank.com/image/dapp/logo_url/4bba27cba12cb7b98918cb6dccc2fb3c/4bba27cba12cb7b98918cb6dccc2fb3c.png",
+        "description": "Automated membership management for the platforms your community already uses."
+    },
+    {
+        "url": "https://swap.defillama.com",
+        "name": "defillama",
+        "icon": "https://static.debank.com/image/project/logo_url/arb_defillama/1be7417e6461f9851dcd2521786d41ba.png",
+        "description": "Open and transparent DeDefiLlama is the largest TVL aggregator for DeFi. Includes sections on yield farming, NFT collections, marketplaces, and more."
+    },
+    {
+        "url": "https://app.aave.com",
+        "name": "Aave",
+        "icon": "https://static.debank.com/image/dapp/logo_url/b8a5ea5ccf34a9a94fde0e8027135492/b8a5ea5ccf34a9a94fde0e8027135492.png",
+        "description": "Aave is an Open Source Protocol to create Non-Custodial Liquidity Markets to earn interest on supplying and borrowing assets with a variable or stable interest rate. The protocol is designed for easy integration into your products and services."
+    },
+    {
+        "url": "https://stargate.finance",
+        "name": "Stargate",
+        "icon": "https://static.debank.com/image/dapp/logo_url/7769b47348430f848c0e784c68222478/7769b47348430f848c0e784c68222478.png",
+        "description": "A fully composable native asset bridge with unified liquidity and instant guaranteed finality built on top of LayerZero"
+    },
+    {
+        "url": "https://app.aevo.xyz",
+        "name": "Aevo",
+        "icon": "https://static.debank.com/image/dapp/logo_url/96650df9365d6b7b1569781a35bb562d/96650df9365d6b7b1569781a35bb562d.png",
+        "description": "Aevo is a decentralized derivatives exchange platform. It enables you to access various financial products like options and perpetual futures through a unified margin account."
+    },
+    {
+        "url": "https://swap.cow.fi",
+        "name": "CoW",
+        "icon": "https://static.debank.com/image/dapp/logo_url/4eae9e02c647daaafa9a7d2050571800/4eae9e02c647daaafa9a7d2050571800.png",
+        "description": "CoW Swap finds the lowest prices from all decentralized exchanges and DEX aggregators & saves you more with p2p trading and protection from MEV"
+    },
+    {
+        "url": "https://app.hyperliquid.xyz",
+        "name": "Hyperliquid",
+        "icon": "https://static.debank.com/image/dapp/logo_url/06166d17b67b2dedc8e9749d79f7ec32/06166d17b67b2dedc8e9749d79f7ec32.png",
+        "description": "Hyperliquid is a decentralized perpetual futures exchange. Hyperliquid runs its own L1 in order to keep the whole orderbook onchain for the best transparency."
+    },
+    {
+        "url": "https://app.optimism.io",
+        "name": "optimism",
+        "icon": "https://static.debank.com/image/dapp/logo_url/af50ef510f32f163ed664f33dc178318/af50ef510f32f163ed664f33dc178318.png",
+        "description": "OP Mainnet is a low-cost and lightning-fast layer 2 blockchain. Scale Ethereum and sustainably fund public goods."
+    },
+    {
+        "url": "https://app.paraswap.io",
+        "name": "ParaSwap",
+        "icon": "https://static.debank.com/image/project/logo_url/matic_paraswap/a9a94be854135149254438560dfa461c.png",
+        "description": "ParaSwap aggregates DeFi liquidity and offers the best market rates."
+    },
+    {
+        "url": "https://velodrome.finance",
+        "name": "Velodrome",
+        "icon": "https://static.debank.com/image/dapp/logo_url/eabfc13510db10c399f6e336b3ac56db/eabfc13510db10c399f6e336b3ac56db.png",
+        "description": "Velodrome Finance is a next-generation AMM that combines the best of Curve, Convex and Uniswap. Velodrome NFTs vote on token emissions and receive incentives and fees generated by the protocol."
+    },
+    {
+        "url": "https://quest.puffer.fi",
+        "name": "puffer",
+        "icon": "https://static.debank.com/image/dapp/logo_url/0b414ccf4b117409fdd3f457cace6d8c/0b414ccf4b117409fdd3f457cace6d8c.png",
+        "description": "Native liquid Ethereum restaking supercharged by EigenLayer."
+    },
+    {
+        "url": "https://curve.fi",
+        "name": "Curve",
+        "icon": "https://static.debank.com/image/dapp/logo_url/9b5695ae1125a207988f850c7003ecff/9b5695ae1125a207988f850c7003ecff.png",
+        "description": "Curve is automated market-maker optimized for stablecoins, working as an exchange on one side, and allowing liquidity providers to earn fees and lending interest on the other side."
+    },
+    {
+        "url": "https://balancer.fi/pools",
+        "name": "Balancer",
+        "icon": "https://static.debank.com/image/dapp/logo_url/3b6e53ac36d5ffc0ab56a1336bc00c33/3b6e53ac36d5ffc0ab56a1336bc00c33.png",
+        "description": "A UI that supports core Balancer protocol functionality. Explore & create pools, manage liquidity, swap tokens, get veBAL and claim incentives."
+    },
+    {
+        "url": "https://www.bungee.exchange",
+        "name": "Bungee",
+        "icon": "https://static.debank.com/image/dapp/logo_url/9143180e143503362b0ca763d926c2d2/9143180e143503362b0ca763d926c2d2.png",
+        "description": "Bungee aggregates all your favourite bridges and gets you the cheapest and fastest routes to jump across chains!"
+    },
+    {
+        "url": "https://app.camelot.exchange",
+        "name": "Camelot",
+        "icon": "https://static.debank.com/image/dapp/logo_url/d118248f4ca987b94eb91788678a3219/d118248f4ca987b94eb91788678a3219.png",
+        "description": "The Arbitrum native DEX. Custom-built liquidity infrastructure to support builders & generate real yield"
+    },
+    {
+        "url": "https://app.gmx.io",
+        "name": "GMX",
+        "icon": "https://static.debank.com/image/dapp/logo_url/692e1be885d26b8a9cd6d46017387a6c/692e1be885d26b8a9cd6d46017387a6c.png",
+        "description": "Trade spot or perpetual BTC, ETH, AVAX and other top cryptocurrencies with up to 50x leverage directly from your wallet on Arbitrum and Avalanche."
+    },
+    {
+        "url": "https://app.gearbox.fi",
+        "name": "Gearbox",
+        "icon": "https://static.debank.com/image/dapp/logo_url/52173d1517e6b0c035a638ebb703246c/52173d1517e6b0c035a638ebb703246c.png",
+        "description": "Leverage farm and stake on Curve, Lido, Balancer, and more. Or simply earn passive APY."
+    },
+    {
+        "url": "https://app.silo.finance",
+        "name": "Silo Finance",
+        "icon": "https://app.silo.finance/silo-icon.png",
+        "description": "Enabling lending and borrowing of any asset"
+    },
+    {
+        "url": "https://app.whales.market",
+        "name": "Whales",
+        "icon": "https://static.debank.com/image/dapp/logo_url/96c9aa1a07bdfa6e35f5ccf8929e0691/96c9aa1a07bdfa6e35f5ccf8929e0691.png",
+        "description": "Listing P2P offers for both pre-TGE token allocations and tokens/NFTs trading, each secured by smart contracts for both parties."
+    },
+    {
+        "url": "https://app.safe.global",
+        "name": "Safe",
+        "icon": "https://static.debank.com/image/dapp/logo_url/e732812b49598e14de87c0ec9ea54efe/e732812b49598e14de87c0ec9ea54efe.png",
+        "description": "Safe (prev. Gnosis Safe) is the most trusted platform to manage digital assets on Ethereum and multiple EVMs. Over $40B secured."
+    },
+    {
+        "url": "https://app.ethena.fi",
+        "name": "Ethena",
+        "icon": "https://static.debank.com/image/dapp/logo_url/47050f6507dd928b3d5acf0aeb19215e/47050f6507dd928b3d5acf0aeb19215e.png",
+        "description": "Enabling the Internet Bond"
+    },
+    {
+        "url": "https://kyberswap.com",
+        "name": "KyberSwap",
+        "icon": "https://static.debank.com/image/dapp/logo_url/0168c8b0aa262c01452d403f2b3cd57f/0168c8b0aa262c01452d403f2b3cd57f.png",
+        "description": "KyberSwap is a multi-chain aggregator and DeFi hub that empowers users with the insights and tools to achieve financial autonomy. All the above while being fast, secure, and easy-to-use."
+    },
+    {
+        "url": "https://app.debridge.finance",
+        "name": "deBridge",
+        "icon": "https://static.debank.com/image/dapp/logo_url/811b17297bb5e7e2def952fcdc8bbf11/811b17297bb5e7e2def952fcdc8bbf11.png",
+        "description": "Interoperability for High Performance dApps"
+    },
+    {
+        "url": "https://jumper.exchange",
+        "name": "Jumper",
+        "icon": "https://static.debank.com/image/dapp/logo_url/f9b26f219f5b87e0377e94a0a6c0d7f4/f9b26f219f5b87e0377e94a0a6c0d7f4.png",
+        "description": "Multi-Chain Bridging & Swapping (powered by LI.FI)"
+    },
+    {
+        "url": "https://app.mav.xyz",
+        "name": "Mav",
+        "icon": "https://static.debank.com/image/dapp/logo_url/8eb7e8a8c0dadda77331572e913a4921/8eb7e8a8c0dadda77331572e913a4921.png",
+        "description": "Maverick App"
+    },
+    {
+        "url": "https://app.ether.fi",
+        "name": "ether",
+        "icon": "https://app.ether.fi/favicon/favicon.ico",
+        "description": "Delegated Staking Protocol"
+    },
+    {
+        "url": "https://portal.dymension.xyz",
+        "name": "Dymension",
+        "icon": "https://static.debank.com/image/dapp/logo_url/c64c6d55b33d41c4f6d40c4d29dc0f6a/c64c6d55b33d41c4f6d40c4d29dc0f6a.png",
+        "description": "Interact with the Dymension Hub, RollApps and IBC."
+    },
+    {
+        "url": "https://magiceden.io",
+        "name": "magiceden",
+        "icon": "https://static.debank.com/image/dapp/logo_url/7653b6b51076b1efc152cdd33f7a5ddf/7653b6b51076b1efc152cdd33f7a5ddf.png",
+        "description": "Magic Eden is the leading community-centric NFT marketplace. Home to the next generation of creators. Discover the best and latest NFT collections today."
+    },
+    {
+        "url": "https://pancakeswap.finance",
+        "name": "PancakeSwap",
+        "icon": "https://static.debank.com/image/dapp/logo_url/47366ac53d8be5b8658815a8b2d8b690/47366ac53d8be5b8658815a8b2d8b690.png",
+        "description": "Trade, earn, and own crypto on the all-in-one multichain DEX"
+    },
+    {
+        "url": "https://revoke.cash",
+        "name": "Revoke",
+        "icon": "https://static.debank.com/image/dapp/logo_url/cdd1046d899f48bdc1793e9a3eb446d5/cdd1046d899f48bdc1793e9a3eb446d5.png",
+        "description": "Take back control of your wallet and stay safe by revoking token approvals and permissions you granted on Ethereum and over 70 other networks."
+    },
+    {
+        "url": "https://minter.merkly.com",
+        "name": "Merkly",
+        "icon": "https://minter.merkly.com/logo.webp",
+        "description": "Merkly \nOmnichain Bridging Made Easy."
+    },
+    {
+        "url": "https://app.pendle.finance",
+        "name": "Pendle",
+        "icon": "https://static.debank.com/image/dapp/logo_url/81297971d7ffd8e2698cefd8de2072dc/81297971d7ffd8e2698cefd8de2072dc.png",
+        "description": "Earn at your convenience."
+    },
+    {
+        "url": "https://www.tally.xyz",
+        "name": "Tally",
+        "icon": "https://static.debank.com/image/dapp/logo_url/aefcb9d0a6fc2285718e21a1cd178aef/aefcb9d0a6fc2285718e21a1cd178aef.png",
+        "description": "Tally is a DAO operations platform. DAOs use Tally to create and pass proposals, enable delegation, and power voting."
+    },
+    {
+        "url": "https://quickswap.exchange",
+        "name": "Quickswap",
+        "icon": "https://static.debank.com/image/dapp/logo_url/6abc91fcb6f458df8f2b18bd9e39c9fa/6abc91fcb6f458df8f2b18bd9e39c9fa.png",
+        "description": "QuickSwap is a next-gen #DEX for #DeFi. Trade at lightning-fast speeds with near-zero gas fees."
+    },
+    {
+        "url": "https://app.questn.com",
+        "name": "QuestN",
+        "icon": "https://static.debank.com/image/dapp/logo_url/967a14e9efb3663bb1c6b552d28be22f/967a14e9efb3663bb1c6b552d28be22f.png",
+        "description": "Marketing, Growth and Analysis For Web3"
+    },
+    {
+        "url": "https://thirdweb.com",
+        "name": "thirdweb",
+        "icon": "https://static.debank.com/image/dapp/logo_url/8b57546aefb7e3cc65c28724007d40b6/8b57546aefb7e3cc65c28724007d40b6.png",
+        "description": "Build web3 apps easily with thirdweb's powerful SDKs, audited smart contracts, and developer tools—for Ethereum & 700+ EVM chains. Try now."
+    },
+    {
+        "url": "https://summer.fi",
+        "name": "summer",
+        "icon": "https://static.debank.com/image/dapp/logo_url/28c8686e626b247e3f2d8ae0007a1075/28c8686e626b247e3f2d8ae0007a1075.png",
+        "description": "Borrow, lend or multiply your favourite crypto assets | ETH, WBTC, DAI, USDC and many more | industry leading DeFi automation on Summer.fi"
+    },
+    {
+        "url": "https://socialscan.io",
+        "name": "SocialScan",
+        "icon": "https://static.debank.com/image/dapp/logo_url/6a660aa49572e41acf81aa774751edc3/6a660aa49572e41acf81aa774751edc3.png",
+        "description": "SocialScan transforms web3 discovery with its AI-powered, community-native platform, providing a comprehensive, real-time view of assets, communities, and members across the web3 ecosystem."
+    },
+    {
+        "url": "https://app.multichain.org",
+        "name": "Multichain",
+        "icon": "https://static.debank.com/image/dapp/logo_url/4e35c280e5744949441157967e1425c4/4e35c280e5744949441157967e1425c4.png",
+        "description": "Unified cross-chain interface, average transaction speed within 100 secs, no-slippage swap"
+    },
+    {
+        "url": "https://matcha.xyz",
+        "name": "Matcha",
+        "icon": "https://assets-global.website-files.com/6364e65656ab107e465325d2/651deefaa0331025effd2ef0_matcha-green-whitebg.png",
+        "description": "Matcha DEX aggregator | Search and trade over +5 million tokens across +100 exchanges on 9 chains. Trade now."
+    },
+    {
+        "url": "https://app.radiant.capital",
+        "name": "Radiant",
+        "icon": "https://static.debank.com/image/dapp/logo_url/4637e046054aad90676b17c5c18f0d39/4637e046054aad90676b17c5c18f0d39.png",
+        "description": "Radiant is the first omnichain money market, where users will be able to deposit any major asset on any major chain and borrow/withdraw a variety of supported assets across multiple chains."
+    },
+    {
+        "url": "https://www.sushi.com",
+        "name": "Sushi",
+        "icon": "https://static.debank.com/image/dapp/logo_url/4e9b06f3c3681488239e16d6feab90f7/4e9b06f3c3681488239e16d6feab90f7.png",
+        "description": "A Decentralised Finance (DeFi) app with features such as swap, cross chain swap, streaming, vesting, and permissionless market making for liquidity providers."
+    },
+    {
+        "url": "https://stake.lido.fi",
+        "name": "Lido",
+        "icon": "https://static.debank.com/image/dapp/logo_url/57af652b82144416b2b9f83b5c60dfd7/57af652b82144416b2b9f83b5c60dfd7.png",
+        "description": "Liquid staking with Lido. Stake Ether with Lido to get daily rewards while keeping full control of your staked tokens. Start receiving rewards in just a few clicks."
+    },
+    {
+        "url": "https://www.mintchain.io",
+        "name": "mintchain",
+        "icon": "https://static.debank.com/image/dapp/logo_url/9d4b3d152c7e53602d43750dabe87bf7/9d4b3d152c7e53602d43750dabe87bf7.png",
+        "description": "Mint is the L2 blockchain for NFTs."
+    },
+    {
+        "url": "https://rarible.com",
+        "name": "Rarible",
+        "icon": "https://static.debank.com/image/dapp/logo_url/17b034dc7990b3a5d5bbc56f625700db/17b034dc7990b3a5d5bbc56f625700db.png",
+        "description": "Discover, sell and buy NFTs on Rarible! Our aggregated NFT marketplace for Ethereum NFTs and Polygon NFTs powers brands, collections and creator marketplaces."
+    },
+    {
+        "url": "https://www.memecoin.org",
+        "name": "Memecoin",
+        "icon": "https://static.debank.com/image/dapp/logo_url/06c31dcd07732146a972cdf938f72d5d/06c31dcd07732146a972cdf938f72d5d.png",
+        "description": "One MEME to rule them all."
+    },
+    {
+        "url": "https://clusters.xyz",
+        "name": "clusters",
+        "icon": "https://static.debank.com/image/dapp/logo_url/c0cdf7c84947e7889f9af0499be01d86/c0cdf7c84947e7889f9af0499be01d86.png",
+        "description": "A single username for all your crypto wallets across different blockchains."
+    },
+    {
+        "url": "https://app.extrafi.io",
+        "name": "extrafi",
+        "icon": "https://static.debank.com/image/dapp/logo_url/7179171ebb0c5d1d7c9121cf4bc4c7ff/7179171ebb0c5d1d7c9121cf4bc4c7ff.png",
+        "description": "Extra Finance is a community-driven lending & leveraged yield farming protocol built on Optimism."
+    },
+    {
+        "url": "https://dashboard.walletguard.app",
+        "name": "walletguard",
+        "icon": "https://static.debank.com/image/dapp/logo_url/cc6e0907dbbb69724dee970113acf352/cc6e0907dbbb69724dee970113acf352.png",
+        "description": "Run your first security scan with Wallet Guard. In one click scan for risks from approvals, hacks, honeypots & more. Join the 50,000+ wallets protected."
+    },
+    {
+        "url": "https://getpass.civic.com",
+        "name": "Civic",
+        "icon": "https://static.debank.com/image/dapp/logo_url/10fa0a3f48ee721a9e7c08c1bab397e3/10fa0a3f48ee721a9e7c08c1bab397e3.png",
+        "description": "A digital ID used on apps to verify your age, location, or identity."
+    },
+    {
+        "url": "https://app.hop.exchange",
+        "name": "Hop",
+        "icon": "https://static.debank.com/image/dapp/logo_url/43db0b55c8fa8df88757309f8b9a1c02/43db0b55c8fa8df88757309f8b9a1c02.png",
+        "description": "A protocol for sending tokens across rollups and their shared layer-1 network in a quick and trustless manner."
+    },
+    {
+        "url": "https://app.angle.money",
+        "name": "Angle",
+        "icon": "https://static.debank.com/image/dapp/logo_url/5e92315bb6edb473c2d3cd1eaf17f74d/5e92315bb6edb473c2d3cd1eaf17f74d.png",
+        "description": "Own, spend, borrow and earn Euros onchain, all in one seamless platform powered by Angle transparent and resilient stablecoin ecosystem."
+    },
+    {
+        "url": "https://hey.xyz",
+        "name": "Hey",
+        "icon": "https://static.debank.com/image/dapp/logo_url/14d57f253b061a1dba520c5886022278/14d57f253b061a1dba520c5886022278.png",
+        "description": "Hey.xyz is a decentralized, and permissionless social media app built with Lens Protocol 🌿"
+    },
+    {
+        "url": "https://pro.opensea.io",
+        "name": "OpenSea",
+        "icon": "https://static.debank.com/image/dapp/logo_url/9e416cf89bdc174e526e4e9279d51aed/9e416cf89bdc174e526e4e9279d51aed.png",
+        "description": "Buy, sell, and sweep from 170+ NFT marketplaces. With the fastest collection updates, most optimized gas fees, and advanced analytics."
+    },
+    {
+        "url": "https://app.frax.finance",
+        "name": "Frax",
+        "icon": "https://static.debank.com/image/dapp/logo_url/b6accfa80a6be1108f934d333ff0aad8/b6accfa80a6be1108f934d333ff0aad8.png",
+        "description": "Frax attempts to be the first stablecoin protocol to implement design principles of both to create a highly scalable, trustless, extremely stable, and ideologically pure on-chain money."
+    },
+    {
+        "url": "https://app.superform.xyz",
+        "name": "Superform",
+        "icon": "https://static.debank.com/image/dapp/logo_url/a5f231f76007f510d713bfb4d148c1d2/a5f231f76007f510d713bfb4d148c1d2.png",
+        "description": "Superform is the Universal Yield Marketplace. Any vault, any chain, any token. One transaction. Permissionlessly list your vaults and access users on all chains."
+    },
+    {
+        "url": "https://bridge.arbitrum.io",
+        "name": "Arbitrum",
+        "icon": "https://static.debank.com/image/dapp/logo_url/ca4ce20e2401c2b31e49bb1953ac28a8/ca4ce20e2401c2b31e49bb1953ac28a8.png",
+        "description": "Built to scale Ethereum, Arbitrum brings you 10x lower costs while inheriting Ethereum’s security model. Arbitrum is a Layer 2 Optimistic Rollup."
+    },
+    {
+        "url": "https://mirror.xyz",
+        "name": "Mirror",
+        "icon": "https://static.debank.com/image/dapp/logo_url/a3769e8843fff90e357acce4a59adc81/a3769e8843fff90e357acce4a59adc81.png",
+        "description": "Built on web3 for web3, Mirror’s robust publishing platform pushes the boundaries of writing online—whether it’s the next big white paper or a weekly community update."
+    },
+    {
+        "url": "https://app.ens.domains",
+        "name": "ENS",
+        "icon": "https://static.debank.com/image/dapp/logo_url/c66d2db72eb42ca13e1437ac2175f5f4/c66d2db72eb42ca13e1437ac2175f5f4.png",
+        "description": "Decentralized naming for wallets, websites, & more."
+    },
+    {
+        "url": "https://baseswap.fi",
+        "name": "BaseSwap",
+        "icon": "https://static.debank.com/image/dapp/logo_url/ac6367301d0f398ffb3cdbdf38c1cb15/ac6367301d0f398ffb3cdbdf38c1cb15.png",
+        "description": "Welcome to BaseSwap - the leading DEX on Base Chain, where advanced blockchain technology meets unparalleled user experience. Trade, stake, and farm with ease. Dive into our world of concentrated liquidity, exclusive single-stake earning, innovative farmi."
+    },
+    {
+        "url": "https://polygon.lido.fi/",
+        "name": "Lido Polygon Staking",
+        "icon": "https://polygon.lido.fi/favicon-194x194.png",
+        "description": "Stake your MATIC and receive stMATIC."
+    },
+    {
+        "url": "https://kwenta.io/market/",
+        "name": "Kwenta",
+        "icon": "https://kwenta.io/images/favicon.svg",
+        "description": "Gain exposure to cryptocurrencies, forex, indices, and commodities on Ethereum with zero slippage."
+    },
+    {
+        "url": "https://mean.finance/",
+        "name": "Mean finance",
+        "icon": "https://mean.finance/favicon.ico",
+        "description": "Mean Finance is the state-of-the-art DCA protocol. It enables you to set up actions like 'Swap 10 USDC for WBTC every day, for 30 days'."
+    },
+    {
+        "url": "https://app.defisaver.com/",
+        "name": "DeFi Saver",
+        "icon": "https://app.defisaver.com//assets/icons/icon-transparent.svg",
+        "description": "The next generation DeFi management dashboard."
+    }
+]

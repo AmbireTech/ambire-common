@@ -1,0 +1,1 @@
+{"version":3,"file":"types.js","sourceRoot":"","sources":["../../../../src/libs/errorHumanizer/types.ts"],"names":[],"mappings":"","sourcesContent":["type ErrorHumanizerError = {\n  reasons: string[]\n  message: string\n}\n\nexport type { ErrorHumanizerError }\n"]}

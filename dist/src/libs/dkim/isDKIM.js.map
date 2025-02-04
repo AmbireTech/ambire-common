@@ -1,0 +1,1 @@
+{"version":3,"file":"isDKIM.js","sourceRoot":"","sources":["../../../../src/libs/dkim/isDKIM.ts"],"names":[],"mappings":"AAAA,MAAM,CAAC,OAAO,UAAU,MAAM,CAAC,GAAQ;IACnC,OAAO,2CAA2C,CAAC,IAAI,CAAC,GAAG,CAAC,CAAA;AAChE,CAAC","sourcesContent":["export default function isDKIM(key: any) {\n    return /^(DKIM-Signature|X-Google-DKIM-Signature)/.test(key)\n}\n"]}

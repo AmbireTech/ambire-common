@@ -1,6 +1,4 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.default = [
+export default [
     {
         address: '0x0000000000000000000000000000000000000000',
         symbol: 'eth',
@@ -10,7 +8,7 @@ exports.default = [
     },
     {
         address: '0x0000000000000000000000000000000000000000',
-        symbol: 'matic',
+        symbol: 'pol',
         networkId: 'polygon',
         decimals: 18,
         icon: 'https://assets.coingecko.com/coins/images/4713/large/matic-token-icon.png'
@@ -75,6 +73,7 @@ exports.default = [
         address: '0x0000000000000000000000000000000000000000',
         symbol: 'xdai',
         networkId: 'gnosis',
+        disableGasTankDeposit: true,
         decimals: 18,
         icon: 'https://assets.coingecko.com/coins/images/11062/large/Identity-Primary-DarkBG.png'
     },
@@ -91,6 +90,13 @@ exports.default = [
         networkId: 'optimism',
         decimals: 18,
         icon: 'https://assets.coingecko.com/coins/images/279/large/ethereum.png'
+    },
+    {
+        address: '0x4200000000000000000000000000000000000006',
+        symbol: 'weth',
+        networkId: 'optimism',
+        decimals: 18,
+        icon: 'https://assets.coingecko.com/coins/images/2518/small/weth.png'
     },
     {
         address: '0x0000000000000000000000000000000000000000',
@@ -119,6 +125,20 @@ exports.default = [
         networkId: 'ethereum',
         decimals: 18,
         icon: 'https://assets.coingecko.com/coins/images/2518/small/weth.png?1628852295'
+    },
+    {
+        address: '0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84',
+        symbol: 'stETH',
+        networkId: 'ethereum',
+        decimals: 18,
+        icon: 'https://assets.coingecko.com/coins/images/13442/standard/steth_logo.png'
+    },
+    {
+        address: '0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0',
+        symbol: 'wstETH',
+        networkId: 'ethereum',
+        decimals: 18,
+        icon: 'https://assets.coingecko.com/coins/images/18834/standard/wstETH.png'
     },
     {
         address: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
@@ -165,6 +185,8 @@ exports.default = [
     {
         address: '0x47Cd7E91C3CBaAF266369fe8518345fc4FC12935',
         disableGasTankDeposit: true,
+        // disable if not in gas tank
+        disableAsFeeToken: true,
         symbol: 'xwallet',
         networkId: 'ethereum',
         decimals: 18,
@@ -216,6 +238,13 @@ exports.default = [
         networkId: 'polygon',
         decimals: 18,
         icon: 'https://assets.coingecko.com/coins/images/14073/small/matic.png'
+    },
+    {
+        address: '0x03b54a6e9a984069379fae1a4fc4dbae93b3bccd',
+        symbol: 'wstETH',
+        networkId: 'polygon',
+        decimals: 18,
+        icon: 'https://assets.coingecko.com/coins/images/18834/standard/wstETH.png'
     },
     {
         address: '0x1BFD67037B42Cf73acF2047067bd4F2C47D9BfD6',
@@ -350,6 +379,13 @@ exports.default = [
         icon: 'https://assets.coingecko.com/coins/images/9956/small/4943.png'
     },
     {
+        address: '0xb31f66aa3c1e785363f0875a1b74e27b85fd66c7',
+        symbol: 'wavax',
+        networkId: 'avalanche',
+        decimals: 18,
+        icon: 'https://assets.coingecko.com/coins/images/15075/small/wrapped-avax.png'
+    },
+    {
         address: '0xd586E7F844cEa2F87f50152665BCbc2C279D8d70',
         symbol: 'dai',
         networkId: 'avalanche',
@@ -477,6 +513,7 @@ exports.default = [
         address: '0xDDAfbb505ad214D7b80b1f830fcCc89B60fb7A83',
         symbol: 'usdc',
         networkId: 'gnosis',
+        disableGasTankDeposit: true,
         decimals: 6,
         icon: 'https://assets.coingecko.com/coins/images/6319/small/USD_Coin_icon.png'
     },
@@ -484,8 +521,17 @@ exports.default = [
         address: '0x4ECaBa5870353805a9F068101A40E0f32ed605C6',
         symbol: 'usdt',
         networkId: 'gnosis',
+        disableGasTankDeposit: true,
         decimals: 6,
         icon: 'https://assets.coingecko.com/coins/images/325/small/Tether-logo.png'
+    },
+    {
+        address: '0xcB444e90D8198415266c6a2724b7900fb12FC56E',
+        symbol: 'eure',
+        networkId: 'gnosis',
+        disableGasTankDeposit: true,
+        decimals: 18,
+        icon: 'https://assets.coingecko.com/coins/images/23354/standard/eur.png'
     },
     {
         address: '0x94b008aA00579c1307B0EF2c499aD98a8ce58e58',
@@ -516,6 +562,13 @@ exports.default = [
         icon: 'https://assets.coingecko.com/coins/images/9956/small/4943.png'
     },
     {
+        address: '0x1f32b1c2345538c0c6f582fcb022739c4a194ebb',
+        symbol: 'wstETH',
+        networkId: 'optimism',
+        decimals: 18,
+        icon: 'https://assets.coingecko.com/coins/images/18834/standard/wstETH.png'
+    },
+    {
         address: '0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9',
         symbol: 'usdt',
         networkId: 'arbitrum',
@@ -542,6 +595,20 @@ exports.default = [
         networkId: 'arbitrum',
         decimals: 18,
         icon: 'https://assets.coingecko.com/coins/images/9956/small/4943.png'
+    },
+    {
+        address: '0x82aF49447D8a07e3bd95BD0d56f35241523fBab1',
+        symbol: 'weth',
+        networkId: 'arbitrum',
+        decimals: 18,
+        icon: 'https://assets.coingecko.com/coins/images/2518/small/weth.png'
+    },
+    {
+        address: '0x5979d7b546e38e414f7e9822514be443a4800529',
+        symbol: 'wstETH',
+        networkId: 'arbitrum',
+        decimals: 18,
+        icon: 'https://assets.coingecko.com/coins/images/18834/standard/wstETH.png'
     },
     {
         address: '0x382bB369d343125BfB2117af9c149795C6C65C50',
@@ -572,11 +639,53 @@ exports.default = [
         icon: 'https://assets.coingecko.com/coins/images/6319/small/USD_Coin_icon.png'
     },
     {
+        address: '0xc1cba3fcea344f92d9239c08c0568f6f2f0ee452',
+        symbol: 'wstETH',
+        networkId: 'base',
+        decimals: 18,
+        icon: 'https://assets.coingecko.com/coins/images/18834/standard/wstETH.png'
+    },
+    {
+        address: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
+        symbol: 'usdc',
+        networkId: 'base',
+        decimals: 6,
+        icon: 'https://assets.coingecko.com/coins/images/6319/small/USD_Coin_icon.png'
+    },
+    {
         address: '0x50c5725949A6F0c72E6C4a641F24049A917DB0Cb',
         symbol: 'dai',
         networkId: 'base',
         decimals: 18,
         icon: 'https://assets.coingecko.com/coins/images/9956/small/4943.png'
+    },
+    {
+        networkId: 'scroll',
+        address: '0x06eFdBFf2a14a7c8E15944D1F4A48F9F95F663A4',
+        symbol: 'USDC',
+        decimals: 6,
+        icon: 'https://assets.coingecko.com/coins/images/6319/small/USD_Coin_icon.png'
+    },
+    {
+        networkId: 'scroll',
+        address: '0xf55BEC9cafDbE8730f096Aa55dad6D22d44099Df',
+        symbol: 'USDT',
+        decimals: 6,
+        icon: 'https://assets.coingecko.com/coins/images/32610/small/usdt_%281%29.png'
+    },
+    {
+        networkId: 'scroll',
+        address: '0x5300000000000000000000000000000000000004',
+        symbol: 'WETH',
+        decimals: 18,
+        icon: 'https://assets.coingecko.com/coins/images/32315/small/weth_%281%29.png?1697365181'
+    },
+    {
+        networkId: 'scroll',
+        address: '0xf610A9dfB7C89644979b4A0f27063E9e7d7Cda32',
+        symbol: 'wstETH',
+        decimals: 18,
+        icon: 'https://coin-images.coingecko.com/coins/images/18834/small/wstETH.png'
     }
 ];
 //# sourceMappingURL=gasTankFeeTokens.js.map

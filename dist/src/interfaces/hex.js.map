@@ -1,0 +1,1 @@
+{"version":3,"file":"hex.js","sourceRoot":"","sources":["../../../src/interfaces/hex.ts"],"names":[],"mappings":"","sourcesContent":["export type Hex = `0x${string}`\n"]}

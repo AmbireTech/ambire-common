@@ -1,0 +1,50 @@
+var AbiType;
+(function (AbiType) {
+    AbiType["Constructor"] = "constructor";
+    AbiType["Event"] = "event";
+    AbiType["Fallback"] = "fallback";
+    AbiType["Function"] = "function";
+    AbiType["Receive"] = "receive";
+})(AbiType || (AbiType = {}));
+var InputType;
+(function (InputType) {
+    InputType["Address"] = "address";
+    InputType["Address14"] = "address[14]";
+    InputType["Address20"] = "address[20]";
+    InputType["Address7"] = "address[7]";
+    InputType["Bool"] = "bool";
+    InputType["Bytes"] = "bytes";
+    InputType["Bytes32"] = "bytes32";
+    InputType["Bytes325"] = "bytes32[5]";
+    InputType["Bytes4"] = "bytes4";
+    InputType["Int24"] = "int24";
+    InputType["Int256"] = "int256";
+    InputType["String"] = "string";
+    InputType["Tuple"] = "tuple";
+    InputType["TypeAddress"] = "address[]";
+    InputType["TypeBytes"] = "bytes[]";
+    InputType["TypeTuple"] = "tuple[]";
+    InputType["TypeUint128"] = "uint128[]";
+    InputType["TypeUint256"] = "uint256[]";
+    InputType["Uint128"] = "uint128";
+    InputType["Uint16"] = "uint16";
+    InputType["Uint160"] = "uint160";
+    InputType["Uint24"] = "uint24";
+    InputType["Uint256"] = "uint256";
+    InputType["Uint25618"] = "uint256[18]";
+    InputType["Uint2569"] = "uint256[9]";
+    InputType["Uint32"] = "uint32";
+    InputType["Uint40"] = "uint40";
+    InputType["Uint8"] = "uint8";
+    InputType["Uint82"] = "uint8[2]";
+    InputType["Uint88"] = "uint8[8]";
+})(InputType || (InputType = {}));
+var StateMutability;
+(function (StateMutability) {
+    StateMutability["Nonpayable"] = "nonpayable";
+    StateMutability["Payable"] = "payable";
+    StateMutability["Pure"] = "pure";
+    StateMutability["View"] = "view";
+})(StateMutability || (StateMutability = {}));
+export {};
+//# sourceMappingURL=types.js.map

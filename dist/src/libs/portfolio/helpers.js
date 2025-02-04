@@ -1,14 +1,8 @@
-"use strict";
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.tokenFilter = exports.getUpdatedHints = exports.getPinnedGasTankTokens = exports.getTotal = exports.getTokenAmount = exports.shouldGetAdditionalPortfolio = exports.validateERC20Token = exports.getFlags = exports.overrideSymbol = void 0;
-const ethers_1 = require("ethers");
-const IERC20_json_1 = __importDefault(require("../../../contracts/compiled/IERC20.json"));
-const gasTankFeeTokens_1 = __importDefault(require("../../consts/gasTankFeeTokens"));
-const pinnedTokens_1 = require("../../consts/pinnedTokens");
-const account_1 = require("../account/account");
+import { Contract, formatUnits, ZeroAddress } from 'ethers';
+import IERC20 from '../../../contracts/compiled/IERC20.json';
+import gasTankFeeTokens from '../../consts/gasTankFeeTokens';
+import { PINNED_TOKENS } from '../../consts/pinnedTokens';
+import { isSmartAccount } from '../account/account';
 const usdcEMapping = {
     avalanche: '0xa7d7079b0fead91f3e65f86e8915cb59c1a4c664',
     moonriver: '0x748134b5f553f2bcbd78c6826de99a70274bdeb3',
@@ -16,15 +10,14 @@ const usdcEMapping = {
     polygon: '0x2791bca1f2de4661ed88a30c99a7a9449aa84174',
     optimism: '0x7f5c764cbc14f9669b88837ca1490cca17c31607'
 };
-function overrideSymbol(address, networkId, symbol) {
+export function overrideSymbol(address, networkId, symbol) {
     // Since deployless lib calls contract and USDC.e is returned as USDC, we need to override the symbol
     if (usdcEMapping[networkId] && usdcEMapping[networkId].toLowerCase() === address.toLowerCase()) {
         return 'USDC.E';
     }
     return symbol;
 }
-exports.overrideSymbol = overrideSymbol;
-function getFlags(networkData, networkId, tokenNetwork, address) {
+export function getFlags(networkData, networkId, tokenNetwork, address) {
     const isRewardsOrGasTank = ['gasTank', 'rewards'].includes(networkId);
     const onGasTank = networkId === 'gasTank';
     let rewardsType = null;
@@ -32,10 +25,13 @@ function getFlags(networkData, networkId, tokenNetwork, address) {
         rewardsType = 'wallet-rewards';
     if (networkData?.walletClaimableBalance?.address.toLowerCase() === address.toLowerCase())
         rewardsType = 'wallet-vesting';
-    const foundFeeToken = gasTankFeeTokens_1.default.find((t) => t.address.toLowerCase() === address.toLowerCase() &&
+    const foundFeeToken = gasTankFeeTokens.find((t) => t.address.toLowerCase() === address.toLowerCase() &&
         (isRewardsOrGasTank ? t.networkId === tokenNetwork : t.networkId === networkId));
-    const canTopUpGasTank = foundFeeToken && !foundFeeToken?.disableGasTankDeposit;
-    const isFeeToken = address === ethers_1.ZeroAddress || !!foundFeeToken;
+    const canTopUpGasTank = foundFeeToken && !foundFeeToken?.disableGasTankDeposit && !rewardsType;
+    const isFeeToken = address === ZeroAddress ||
+        // disable if not in gas tank
+        (foundFeeToken && !foundFeeToken.disableAsFeeToken) ||
+        networkId === 'gasTank';
     return {
         onGasTank,
         rewardsType,
@@ -43,9 +39,8 @@ function getFlags(networkData, networkId, tokenNetwork, address) {
         isFeeToken
     };
 }
-exports.getFlags = getFlags;
-const validateERC20Token = async (token, accountId, provider) => {
-    const erc20 = new ethers_1.Contract(token?.address, IERC20_json_1.default.abi, provider);
+export const validateERC20Token = async (token, accountId, provider) => {
+    const erc20 = new Contract(token?.address, IERC20.abi, provider);
     const type = 'erc20';
     let isValid = true;
     let hasError = false;
@@ -71,31 +66,56 @@ const validateERC20Token = async (token, accountId, provider) => {
     isValid = isValid && !hasError;
     return [isValid, type];
 };
-exports.validateERC20Token = validateERC20Token;
-const shouldGetAdditionalPortfolio = (account) => {
-    return (0, account_1.isSmartAccount)(account);
+export const shouldGetAdditionalPortfolio = (account) => {
+    return isSmartAccount(account);
 };
-exports.shouldGetAdditionalPortfolio = shouldGetAdditionalPortfolio;
 // fetch the amountPostSimulation for the token if set
 // otherwise, the token.amount
-const getTokenAmount = (token) => {
+export const getTokenAmount = (token) => {
     return typeof token.amountPostSimulation === 'bigint' ? token.amountPostSimulation : token.amount;
 };
-exports.getTokenAmount = getTokenAmount;
-const getTotal = (t) => t.reduce((cur, token) => {
+export const getTokenBalanceInUSD = (token) => {
+    const amount = getTokenAmount(token);
+    const { decimals, priceIn } = token;
+    const balance = parseFloat(formatUnits(amount, decimals));
+    const price = priceIn.find(({ baseCurrency }) => baseCurrency === 'usd')?.price || 0;
+    return balance * price;
+};
+export const getTotal = (t, excludeHiddenTokens = true) => t.reduce((cur, token) => {
     const localCur = cur; // Add index signature to the type of localCur
-    if (token.isHidden)
+    if (token.flags.isHidden && excludeHiddenTokens)
         return localCur;
     // eslint-disable-next-line no-restricted-syntax
     for (const x of token.priceIn) {
         const currentAmount = localCur[x.baseCurrency] || 0;
-        const tokenAmount = Number((0, exports.getTokenAmount)(token)) / 10 ** token.decimals;
+        const tokenAmount = Number(getTokenAmount(token)) / 10 ** token.decimals;
         localCur[x.baseCurrency] = currentAmount + tokenAmount * x.price;
     }
     return localCur;
 }, {});
-exports.getTotal = getTotal;
-const getPinnedGasTankTokens = (availableGasTankAssets, hasNonZeroTokens, accountId, gasTankTokens) => {
+export const addHiddenTokenValueToTotal = (totalWithoutHiddenTokens, tokens) => {
+    return tokens.reduce((cur, token) => {
+        if (!token.flags.isHidden)
+            return cur;
+        return cur + getTokenBalanceInUSD(token);
+    }, totalWithoutHiddenTokens);
+};
+export const getAccountPortfolioTotal = (accountPortfolio, excludeNetworks = [], excludeHiddenTokens = true) => {
+    if (!accountPortfolio)
+        return 0;
+    return Object.keys(accountPortfolio).reduce((acc, key) => {
+        if (excludeNetworks.includes(key))
+            return acc;
+        const networkData = accountPortfolio[key];
+        const tokenList = networkData?.result?.tokens || [];
+        let networkTotalAmountUSD = networkData?.result?.total.usd || 0;
+        if (!excludeHiddenTokens) {
+            networkTotalAmountUSD = addHiddenTokenValueToTotal(networkTotalAmountUSD, tokenList);
+        }
+        return acc + networkTotalAmountUSD;
+    }, 0);
+};
+export const getPinnedGasTankTokens = (availableGasTankAssets, hasNonZeroTokens, accountId, gasTankTokens) => {
     if (!availableGasTankAssets)
         return [];
     // Don't set pinnedGasTankTokens if the user has > 1 non-zero tokens
@@ -106,7 +126,7 @@ const getPinnedGasTankTokens = (availableGasTankAssets, hasNonZeroTokens, accoun
         const isAlreadyPinned = !!acc.find((accToken) => accToken.symbol.toLowerCase() === token.symbol.toLowerCase());
         if (isGasTankToken || isAlreadyPinned)
             return acc;
-        const correspondingPinnedToken = pinnedTokens_1.PINNED_TOKENS.find((pinnedToken) => (!('accountId' in pinnedToken) || pinnedToken.accountId === accountId) &&
+        const correspondingPinnedToken = PINNED_TOKENS.find((pinnedToken) => (!('accountId' in pinnedToken) || pinnedToken.accountId === accountId) &&
             pinnedToken.address === token.address &&
             pinnedToken.networkId === token.network);
         if (correspondingPinnedToken && correspondingPinnedToken.onGasTank) {
@@ -133,56 +153,147 @@ const getPinnedGasTankTokens = (availableGasTankAssets, hasNonZeroTokens, accoun
         return acc;
     }, []);
 };
-exports.getPinnedGasTankTokens = getPinnedGasTankTokens;
-// Updates the previous hints storage with the latest portfolio get result.
-function getUpdatedHints(result, networkId, storagePreviousHints, key, tokenPreferences) {
-    const hints = { ...storagePreviousHints };
-    if (!hints.fromExternalAPI)
-        hints.fromExternalAPI = {};
-    if (!hints.learnedTokens)
-        hints.learnedTokens = {};
-    const erc20s = result.tokens.filter((token) => token.amount > 0n).map((token) => token.address);
-    const erc721s = Object.fromEntries(result.collections.map((collection) => [
-        collection.address,
-        result.hints.erc721s[collection.address]
-    ]));
-    const previousHintsFromExternalAPI = (hints.fromExternalAPI && hints.fromExternalAPI[key] && hints.fromExternalAPI[key]?.erc20s) ||
-        [];
-    hints.fromExternalAPI[key] = { erc20s, erc721s };
-    if (Object.keys(previousHintsFromExternalAPI).length > 0) {
+export const stripExternalHintsAPIResponse = (response) => {
+    if (!response)
+        return null;
+    const { erc20s, erc721s, lastUpdate } = response;
+    return {
+        erc20s,
+        erc721s,
+        lastUpdate
+    };
+};
+const getLowercaseAddressArrayForNetwork = (array, networkId) => array
+    .filter((item) => !networkId || item.networkId === networkId)
+    .map((item) => item.address.toLowerCase());
+/**
+ * Tasks:
+ * - updates the external hints for [network:account] with the latest from the external API
+ * - cleans the learned tokens by removing non-ERC20 items
+ * - updates the timestamp of learned tokens
+ * - returns the updated hints
+ */
+export function getUpdatedHints(
+// Can only be null in case of no external api hints
+latestHintsFromExternalAPI, tokens, tokenErrors, networkId, storagePreviousHints, key, customTokens) {
+    const previousHints = { ...storagePreviousHints };
+    if (!previousHints.fromExternalAPI)
+        previousHints.fromExternalAPI = {};
+    if (!previousHints.learnedTokens)
+        previousHints.learnedTokens = {};
+    const { learnedTokens, learnedNfts } = previousHints;
+    const latestERC20HintsFromExternalAPI = latestHintsFromExternalAPI?.erc20s || [];
+    const networkLearnedTokens = learnedTokens[networkId] || {};
+    // The keys in learnedTokens are addresses of tokens
+    const networkLearnedTokenAddresses = Object.keys(networkLearnedTokens);
+    // Self-cleaning mechanism for removing non-ERC20 items from the learned tokens.
+    // There's a possibility that the discovered tokens (from debug_traceCall or mostly Humanizer) include items that are not ERC20 tokens.
+    // For instance, a SmartContract address can be passed as a learned token.
+    // Thanks to BalanceGetter, we know which tokens encounter an error when we try to update the portfolio.
+    // All the errors are collected in `tokenErrors`, and if we cannot retrieve its balance,
+    // the contract returns `bytes('unkn')`, which is equal to `0x756e6b6e`.
+    // Note:
+    // When we extract tokens from `debug_traceCall`, we are already filtering the tokens the same way as here (relying on BalanceGetter).
+    // However, for the Humanizer tokens, we skipped that check because the Humanizer is invoked more frequently on the Sign screen,
+    // and this validation may slow down the performance of the page. Because of this, we perform the check here, where we are calling BalanceGetter anyway.
+    const unknownBalanceError = '0x756e6b6e';
+    const networkLearnedTokenAddressesHavingError = networkLearnedTokenAddresses.filter((tokenAddress) => {
+        const hasError = !!tokenErrors?.find((errorToken) => errorToken.address.toLowerCase() === tokenAddress.toLowerCase() &&
+            errorToken.error === unknownBalanceError);
+        return hasError;
+    });
+    if (networkLearnedTokenAddresses.length) {
+        // Lowercase all addresses outside of the loop for better performance
+        const lowercaseNetworkPinnedTokenAddresses = getLowercaseAddressArrayForNetwork(PINNED_TOKENS, networkId);
+        const lowercaseCustomTokens = getLowercaseAddressArrayForNetwork(customTokens, networkId);
+        const networkTokensWithBalance = tokens.filter((token) => token.amount > 0n);
+        const lowercaseNetworkTokenAddressesWithBalance = getLowercaseAddressArrayForNetwork(networkTokensWithBalance, networkId);
+        const lowercaseERC20HintsFromExternalAPI = latestERC20HintsFromExternalAPI.map((hint) => hint.toLowerCase());
+        // Update the timestamp of learned tokens
+        // and self-clean non-ERC20 items.
         // eslint-disable-next-line no-restricted-syntax
-        for (const address of erc20s) {
-            const isPinned = pinnedTokens_1.PINNED_TOKENS.some((pinned) => pinned.address.toLowerCase() === address.toLowerCase() && pinned.networkId === networkId);
-            const isTokenPreference = tokenPreferences.some((preference) => preference.address.toLowerCase() === address.toLowerCase() &&
-                preference.networkId === networkId);
-            if (!previousHintsFromExternalAPI.includes(address) && !isPinned && !isTokenPreference) {
-                if (!hints.learnedTokens[networkId])
-                    hints.learnedTokens[networkId] = {};
-                hints.learnedTokens[networkId][address] = Date.now().toString();
+        for (const address of networkLearnedTokenAddresses) {
+            const lowercaseAddress = address.toLowerCase();
+            // Delete non-ERC20 items from the learned tokens
+            if (networkLearnedTokenAddressesHavingError.find((errorToken) => errorToken.toLowerCase() === lowercaseAddress)) {
+                delete learnedTokens[networkId][lowercaseAddress];
+                // eslint-disable-next-line no-continue
+                continue;
+            }
+            const isPinned = lowercaseNetworkPinnedTokenAddresses.includes(lowercaseAddress);
+            const isCustomToken = lowercaseCustomTokens.includes(lowercaseAddress);
+            const isTokenInExternalAPIHints = lowercaseERC20HintsFromExternalAPI.includes(lowercaseAddress);
+            const hasBalance = lowercaseNetworkTokenAddressesWithBalance.includes(lowercaseAddress);
+            if (!isTokenInExternalAPIHints && !isPinned && !isCustomToken && hasBalance) {
+                // Don't set the timestamp back to null if the account doesn't have balance for the token
+                // as learnedTokens aren't account specific and one account can have balance for the token
+                // while other don't
+                learnedTokens[networkId][address] = Date.now().toString();
             }
         }
     }
-    return hints;
+    // Update the external hints for [network:account] with the latest from the external API
+    previousHints.fromExternalAPI[key] = latestHintsFromExternalAPI;
+    return {
+        fromExternalAPI: previousHints.fromExternalAPI,
+        learnedTokens,
+        learnedNfts
+    };
 }
-exports.getUpdatedHints = getUpdatedHints;
-const tokenFilter = (token, network, hasNonZeroTokens, additionalHints, tokenPreferences) => {
-    const isTokenPreference = tokenPreferences?.find((tokenPreference) => {
-        return tokenPreference.address === token.address && tokenPreference.networkId === network.id;
-    });
-    if (isTokenPreference) {
-        token.isHidden = isTokenPreference.isHidden;
-    }
-    // always include > 0 amount and native token
-    if (token.amount > 0 || token.address === ethers_1.ZeroAddress)
+export const getTokensReadyToLearn = (toBeLearnedTokens, resultTokens) => {
+    if (!toBeLearnedTokens || !resultTokens || !toBeLearnedTokens.length || !resultTokens.length)
+        return [];
+    return toBeLearnedTokens.filter((address) => resultTokens.find((resultToken) => resultToken.address === address && resultToken.amount > 0n));
+};
+export const tokenFilter = (token, nativeToken, network, hasNonZeroTokens, additionalHints, isTokenPreference) => {
+    // Never add ERC20 tokens that represent the network's native token.
+    // For instance, on Polygon, we have this token: `0x0000000000000000000000000000000000001010`.
+    // It mimics the native POL token (same symbol, same amount) and is shown twice in the Dashboard.
+    // From a user's perspective, the token is duplicated and counted twice in the balance.
+    const isERC20NativeRepresentation = (token.symbol === nativeToken?.symbol ||
+        network.oldNativeAssetSymbols?.includes(token.symbol)) &&
+        token.amount === nativeToken.amount &&
+        token.address !== ZeroAddress;
+    if (isERC20NativeRepresentation)
+        return false;
+    // always include tokens added as a preference
+    if (isTokenPreference)
         return true;
-    const isPinned = !!pinnedTokens_1.PINNED_TOKENS.find((pinnedToken) => {
+    // always include > 0 amount and native token
+    if (token.amount > 0 || token.address === ZeroAddress)
+        return true;
+    const isPinned = !!PINNED_TOKENS.find((pinnedToken) => {
         return pinnedToken.networkId === network.id && pinnedToken.address === token.address;
     });
-    const isInAdditionalHints = additionalHints?.includes(token.address);
+    // make the comparison to lowercase as otherwise, it doesn't work
+    const hintsLowerCase = additionalHints
+        ? additionalHints.map((hint) => hint.toLowerCase())
+        : undefined;
+    const isInAdditionalHints = hintsLowerCase?.includes(token.address.toLowerCase());
     // if the amount is 0
     // return the token if it's pinned and requested
     const pinnedRequested = isPinned && !hasNonZeroTokens;
-    return !!isTokenPreference || isInAdditionalHints || pinnedRequested;
+    return isInAdditionalHints || pinnedRequested;
 };
-exports.tokenFilter = tokenFilter;
+/**
+ * Filter the TokenResult[] by certain criteria (please refer to `tokenFilter` for more details)
+ * and set the token.flags.isHidden flag.
+ */
+export const processTokens = (tokenResults, network, hasNonZeroTokens, additionalHints, tokenPreferences) => {
+    // We need to know the native token in order to execute our filtration logic in tokenFilter.
+    // For performance reasons, we define it here once, instead of during every single iteration in the reduce method.
+    const nativeToken = tokenResults.find((token) => token.address === ZeroAddress);
+    return tokenResults.reduce((tokens, tokenResult) => {
+        const token = { ...tokenResult };
+        const preference = tokenPreferences?.find((tokenPreference) => {
+            return tokenPreference.address === token.address && tokenPreference.networkId === network.id;
+        });
+        if (preference) {
+            token.flags.isHidden = preference.isHidden;
+        }
+        if (tokenFilter(token, nativeToken, network, hasNonZeroTokens, additionalHints, !!preference))
+            tokens.push(token);
+        return tokens;
+    }, []);
+};
 //# sourceMappingURL=helpers.js.map

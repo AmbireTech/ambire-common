@@ -1,12 +1,9 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.PINNED_TOKENS = void 0;
 // Rules:
 // 1. Pinned gas tank tokens with the same address are shared between networks. This means
 // that if ETH is pinned on Ethereum and onGasTank is true, the same token shouldn't be
 // onGasTank on Optimism.
 // 2. Addresses must be checksummed.
-exports.PINNED_TOKENS = [
+export const PINNED_TOKENS = [
     // $ETH
     {
         networkId: 'ethereum',
