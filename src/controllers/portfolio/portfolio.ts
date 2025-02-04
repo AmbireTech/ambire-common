@@ -157,12 +157,11 @@ export class PortfolioController extends EventEmitter {
       }
 
       this.#previousHints = await this.#storage.get('previousHints', {})
-      const networksWithAssets: { [accountId: string]: AccountAssetsState } =
-        await this.#storage.get('networksWithAssetsByAccount', {})
+      const networksWithAssets = await this.#storage.get('networksWithAssetsByAccount', {})
       const isOldStructure = Object.keys(networksWithAssets).every(
         (key) =>
           Array.isArray(networksWithAssets[key]) &&
-          networksWithAssets[key].every((item) => typeof item === 'string')
+          networksWithAssets[key].every((item: any) => typeof item === 'string')
       )
       if (!isOldStructure) {
         this.#networksWithAssetsByAccounts = networksWithAssets
