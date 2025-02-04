@@ -42,7 +42,7 @@ export function getFlags(
   const isRewardsOrGasTank = ['gasTank', 'rewards'].includes(networkId)
   const onGasTank = networkId === 'gasTank'
 
-  let rewardsType = null
+  let rewardsType: 'wallet-vesting' | 'wallet-rewards' | null = null
   if (networkData?.xWalletClaimableBalance?.address.toLowerCase() === address.toLowerCase())
     rewardsType = 'wallet-rewards'
   if (networkData?.walletClaimableBalance?.address.toLowerCase() === address.toLowerCase())
@@ -54,7 +54,8 @@ export function getFlags(
       (isRewardsOrGasTank ? t.networkId === tokenNetwork : t.networkId === networkId)
   )
 
-  const canTopUpGasTank = foundFeeToken && !foundFeeToken?.disableGasTankDeposit && !rewardsType
+  const canTopUpGasTank =
+    (foundFeeToken && !foundFeeToken?.disableGasTankDeposit && !rewardsType) || false
   const isFeeToken =
     address === ZeroAddress ||
     // disable if not in gas tank

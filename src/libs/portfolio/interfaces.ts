@@ -106,6 +106,28 @@ export interface PortfolioLibGetResult {
   afterNonce: bigint
 }
 
+type GasTankOrRewardsToken = Omit<TokenResult, 'simulationAmount' | 'amountPostSimulation'>
+export interface AdditionalPortfolioGetResult {
+  data: {
+    rewards: {
+      supplyControllerAddr: string
+      claimableRewardsData: ClaimableRewardsData
+      walletClaimableBalance: GasTankOrRewardsToken
+      xWalletClaimableBalance: GasTankOrRewardsToken
+    }
+    gasTank: {
+      availableGasTankAssets: (GasTankOrRewardsToken & {
+        icon: string
+      })[]
+      balance: (GasTankOrRewardsToken & {
+        availableAmount: string
+        cashback: string
+        saved: string
+      })[]
+    }
+  }
+}
+
 interface Total {
   [currency: string]: number
 }

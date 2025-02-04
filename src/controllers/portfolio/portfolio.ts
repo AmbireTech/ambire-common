@@ -25,6 +25,7 @@ import {
 // eslint-disable-next-line import/no-cycle
 import {
   AccountState,
+  AdditionalPortfolioGetResult,
   GetOptions,
   NetworkState,
   PortfolioControllerState,
@@ -427,7 +428,7 @@ export class PortfolioController extends EventEmitter {
     this.#setNetworkLoading(accountId, 'latest', 'rewards', true)
     this.emitUpdate()
 
-    let res: any
+    let res: AdditionalPortfolioGetResult
     try {
       res = await this.#callRelayer(`/v2/identity/${accountId}/portfolio-additional`)
     } catch (e: any) {
@@ -445,7 +446,7 @@ export class PortfolioController extends EventEmitter {
       res.data.rewards.walletClaimableBalance || []
     ]
       .flat()
-      .map((t: any) => ({
+      .map((t) => ({
         ...t,
         symbol: t.address === '0x47Cd7E91C3CBaAF266369fe8518345fc4FC12935' ? 'xWALLET' : t.symbol,
         flags: getFlags(res.data.rewards, 'rewards', t.networkId, t.address)
@@ -464,7 +465,7 @@ export class PortfolioController extends EventEmitter {
       }
     }
 
-    const gasTankTokens = res.data.gasTank.balance.map((t: any) => ({
+    const gasTankTokens = res.data.gasTank.balance.map((t) => ({
       ...t,
       flags: getFlags(res.data, 'gasTank', t.networkId, t.address)
     }))
