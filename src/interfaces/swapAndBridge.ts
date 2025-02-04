@@ -1,3 +1,9 @@
+export interface SocketAPIResponse<T> {
+  result: T
+  success?: boolean
+  message?: { error?: string; details?: any }
+}
+
 export interface SocketAPIToken {
   address: string
   chainId: number
@@ -144,6 +150,7 @@ export interface SocketApiBridgeStep {
   protocolFees: {
     amount: string
     asset: SocketAPIToken
+    feesInUsd: number
   }
   bridgeSlippage: number
   toAmount: string
@@ -208,6 +215,8 @@ export type SocketAPIActiveRoutes = ActiveRoute['route'] & {
   fromAsset: SocketAPIToken
   toAsset: SocketAPIToken
 }
+
+export type SocketRouteStatus = 'ready' | 'completed' | null
 
 export type SocketAPISupportedChain = {
   chainId: number

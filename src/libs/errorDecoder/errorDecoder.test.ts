@@ -299,7 +299,9 @@ describe('Error decoders work', () => {
 
       expect(decodedError.type).toEqual(ErrorType.RelayerError)
       expect(decodedError.reason).toBe('Transaction too old')
-      expect(decodedError.data).toBe('')
+      expect(decodedError.data).toBe(
+        '0x08c379a0000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000000135472616e73616374696f6e20746f6f206f6c6400000000000000000000000000'
+      )
     })
     it('Relayer returns a HEX RPC error as message which is then handled by RevertErrorHandler', async () => {
       const error = new RelayerError(

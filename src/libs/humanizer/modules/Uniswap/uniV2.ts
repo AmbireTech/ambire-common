@@ -20,7 +20,7 @@ const uniV2Mapping = (): HumanizerUniMatcher => {
       return [
         getAction('Swap'),
         getToken(path[0], amountIn),
-        getLabel('for'),
+        getLabel('for at least'),
         getToken(outputAsset, amountOutMin),
         ...getUniRecipientText(accountOp.accountAddr, to),
         getDeadline(deadline)
@@ -33,8 +33,7 @@ const uniV2Mapping = (): HumanizerUniMatcher => {
       const [amountOut, amountInMax, path, to, deadline] = iface.parseTransaction(call)?.args || []
       const outputAsset = path[path.length - 1]
       return [
-        getAction('Swap'),
-        getLabel('up to'),
+        getAction('Swap up to'),
         getToken(path[0], amountInMax),
         getLabel('for'),
         getToken(outputAsset, amountOut),
@@ -52,7 +51,7 @@ const uniV2Mapping = (): HumanizerUniMatcher => {
       return [
         getAction('Swap'),
         getToken(ZeroAddress, value),
-        getLabel('for'),
+        getLabel('for for at least'),
         getToken(outputAsset, amountOutMin),
         ...getUniRecipientText(accountOp.accountAddr, to),
         getDeadline(deadline)
@@ -64,8 +63,7 @@ const uniV2Mapping = (): HumanizerUniMatcher => {
     ) => {
       const [amountOut, amountInMax, path, to, deadline] = iface.parseTransaction(call)?.args || []
       return [
-        getAction('Swap'),
-        getLabel('up to'),
+        getAction('Swap up to'),
         getToken(path[0], amountInMax),
         getLabel('for'),
         getToken(ZeroAddress, amountOut),
@@ -81,7 +79,7 @@ const uniV2Mapping = (): HumanizerUniMatcher => {
       return [
         getAction('Swap'),
         getToken(path[0], amountIn),
-        getLabel('for'),
+        getLabel('for at least'),
         getToken(ZeroAddress, amountOutMin),
         ...getUniRecipientText(accountOp.accountAddr, to),
         getDeadline(deadline)
@@ -95,8 +93,7 @@ const uniV2Mapping = (): HumanizerUniMatcher => {
       const [amountOut, path, to, deadline] = args || []
       const outputAsset = path[path.length - 1]
       return [
-        getAction('Swap'),
-        getLabel('up to'),
+        getAction('Swap up to'),
         getToken(ZeroAddress, value),
         getLabel('for'),
         getToken(outputAsset, amountOut),

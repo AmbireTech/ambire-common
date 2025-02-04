@@ -9,13 +9,14 @@ export const ETH_ON_OPTIMISM_LEGACY_ADDRESS = '0xdeaddeaddeaddeaddeaddeaddeaddea
  * The % of fee to be cut from the source input token amount.
  * Can be up to three decimal places and cannot be more than 5%.
  */
-export const FEE_PERCENT = 0.001
+export const FEE_PERCENT = 0.25
 
 const AMBIRE_WALLET_TOKEN_COMMON_PROPS = {
   name: 'Ambire Wallet',
   symbol: 'WALLET',
   decimals: 18,
-  logoURI: 'https://media.socket.tech/tokens/all/WALLET'
+  logoURI: 'https://media.socket.tech/tokens/all/WALLET',
+  icon: '' // will fallback to get the icon from the same place as the portfolio
 }
 
 export const AMBIRE_WALLET_TOKEN_ON_ETHEREUM = {
@@ -40,7 +41,7 @@ export const AMBIRE_FEE_TAKER_ADDRESSES: { [chainId: number]: string } = {
   534352: '0x942f9CE5D9a33a82F88D233AEb3292E680230348',
   1313161554: '0x942f9CE5D9a33a82F88D233AEb3292E680230348',
   81457: '0x942f9CE5D9a33a82F88D233AEb3292E680230348',
-  1: '0xDA1c734b7843f18E9B1A25Bb997A45975315C001',
+  1: '0xDCe4f65Aa650B3FaFEa9892E807C1770d6e9c618',
   10: '0xDA1c734b7843f18E9B1A25Bb997A45975315C001',
   137: '0xDA1c734b7843f18E9B1A25Bb997A45975315C001',
   8453: '0xDA1c734b7843f18E9B1A25Bb997A45975315C001',

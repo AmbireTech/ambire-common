@@ -78,7 +78,7 @@ const uniV32Mapping = (): HumanizerUniMatcher => {
       return [
         getAction('Swap'),
         getToken(params.tokenIn, params.amountIn),
-        getLabel('for'),
+        getLabel('for at least'),
         getToken(params.tokenOut, params.amountOutMinimum),
         ...getUniRecipientText(accountOp.accountAddr, params.recipient)
       ]
@@ -92,7 +92,7 @@ const uniV32Mapping = (): HumanizerUniMatcher => {
       return [
         getAction('Swap'),
         getToken(params.tokenIn, params.amountIn),
-        getLabel('for'),
+        getLabel('for at least'),
         getToken(params.tokenOut, params.amountOutMinimum),
         ...getUniRecipientText(accountOp.accountAddr, params.recipient),
         getDeadline(params.deadline)
@@ -108,7 +108,7 @@ const uniV32Mapping = (): HumanizerUniMatcher => {
       return [
         getAction('Swap'),
         getToken(path[0], params.amountIn),
-        getLabel('for'),
+        getLabel('for at least'),
         getToken(path[path.length - 1], params.amountOutMinimum),
         ...getUniRecipientText(accountOp.accountAddr, params.recipient)
       ]
@@ -186,7 +186,7 @@ const uniV32Mapping = (): HumanizerUniMatcher => {
       return [
         getAction('Swap'),
         getToken(path[0], amountIn),
-        getLabel('for'),
+        getLabel('for at least'),
         getToken(path[path.length - 1], amountOutMin),
         ...getUniRecipientText(accountOp.accountAddr, to)
       ]
@@ -335,7 +335,7 @@ const uniV3Mapping = (): HumanizerUniMatcher => {
       return [
         getAction('Swap'),
         getToken(params.tokenIn, params.amountIn),
-        getLabel('for'),
+        getLabel('for at least'),
         getToken(params.tokenOut, params.amountOutMinimum),
         ...getUniRecipientText(accountOp.accountAddr, params.recipient),
         getDeadline(params.deadline)
@@ -351,7 +351,7 @@ const uniV3Mapping = (): HumanizerUniMatcher => {
       return [
         getAction('Swap'),
         getToken(path[0], params.amountIn),
-        getLabel('for'),
+        getLabel('for at least'),
         getToken(path[path.length - 1], params.amountOutMinimum),
         ...getUniRecipientText(accountOp.accountAddr, params.recipient),
         getDeadline(params.deadline)
