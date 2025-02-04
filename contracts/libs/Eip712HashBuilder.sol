@@ -45,7 +45,7 @@ library Eip712HashBuilder {
 
   function getExecute712Hash(
     uint256 nonce,
-    Transaction[] memory calls,
+    Transaction[] calldata calls,
     bytes32 hash
   ) internal view returns (bytes32) {
     return
@@ -72,10 +72,13 @@ library Eip712HashBuilder {
   }
 
   function getUserOp712Hash(
-    PackedUserOperation memory op,
-    Transaction[] memory calls,
+    PackedUserOperation calldata op,
     bytes32 hash
   ) internal view returns (bytes32) {
+    // decode the calls if any
+    Transaction[] memory calls;
+    if (op.callData.length >= 4) calls = abi.decode(op.callData[4:], (Transaction[]));
+
     return
       keccak256(
         abi.encodePacked(
@@ -87,14 +90,13 @@ library Eip712HashBuilder {
                 bytes(
                   // WARNING
                   // removed entryPoint from here as its in the final hash prop. Such a detail is not as important
-                  'Ambire4337AccountOp(address account,uint256 chainId,uint256 nonce,bytes initCode,bytes callData,bytes32 accountGasLimits,uint256 preVerificationGas,bytes32 gasFees,bytes paymasterAndData,Transaction[] calls,bytes32 hash)Transaction(address to,uint256 value,bytes data)'
+                  'Ambire4337AccountOp(address account,uint256 chainId,uint256 nonce,bytes initCode,bytes32 accountGasLimits,uint256 preVerificationGas,bytes32 gasFees,bytes paymasterAndData,Transaction[] calls,bytes32 hash)Transaction(address to,uint256 value,bytes data)'
                 )
               ),
               address(this),
               block.chainid,
               op.nonce,
               keccak256(op.initCode),
-              keccak256(op.callData),
               op.accountGasLimits,
               op.preVerificationGas,
               op.gasFees,

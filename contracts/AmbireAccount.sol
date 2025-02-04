@@ -364,14 +364,10 @@ contract AmbireAccount is IAmbireAccount {
 			(success);
 		}
 
-		// decode the calls if any
-		Transaction[] memory calls;
-		if (op.callData.length >= 4) calls = abi.decode(op.callData[4:], (Transaction[]));
-
 		// this is replay-safe because userOpHash is retrieved like this: keccak256(abi.encode(userOp.hash(), address(this), block.chainid))
 		(address signer, ) = SignatureValidator.recoverAddrAllowUnprotected(
 			// pass: whole userOp, executeBySender's transactions, the userOpHash
-			Eip712HashBuilder.getUserOp712Hash(op, calls, userOpHash),
+			Eip712HashBuilder.getUserOp712Hash(op, userOpHash),
 			op.signature,
 			true
 		);

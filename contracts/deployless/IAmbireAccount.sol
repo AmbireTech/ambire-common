@@ -5,9 +5,9 @@ import '../libs/Transaction.sol';
 
 interface IAmbireAccount {
 	struct AmbireStorage {
-        mapping(address => bytes32) privileges;
+		mapping(address => bytes32) privileges;
 		uint256 nonce;
-    }
+	}
 
 	struct RecoveryInfo {
 		address[] keys;
