@@ -323,11 +323,11 @@ export const getFirstCashbackBanners = ({
 }): Banner[] => {
   const banners: Banner[] = []
 
-  const shouldShowConfettiBanner =
+  const shouldShowBanner =
     !!cashbackStatusByAccount[selectedAccountAddr]?.firstCashbackReceivedAt &&
     !cashbackStatusByAccount[selectedAccountAddr]?.firstCashbackSeenAt
 
-  if (shouldShowConfettiBanner) {
+  if (shouldShowBanner) {
     banners.push({
       id: `${selectedAccountAddr}-first-cashback-banner-banner`,
       type: 'info',
