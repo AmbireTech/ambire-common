@@ -203,15 +203,20 @@ export function calculateSelectedAccountPortfolio(
   latestStateSelectedAccount: AccountState,
   pendingStateSelectedAccount: AccountState,
   accountPortfolio: SelectedAccountPortfolio | null,
+  portfolioStartedLoadingAtTimestamp: number | null,
   hasSignAccountOp?: boolean
 ) {
+  const now = Date.now()
+  const shouldShowPartialResult =
+    portfolioStartedLoadingAtTimestamp && now - portfolioStartedLoadingAtTimestamp > 5000
   const collections: CollectionResult[] = []
   const tokens: SelectedAccountPortfolioTokenResult[] = []
 
   let newTotalBalance: number = 0
 
   const hasLatest = latestStateSelectedAccount && Object.keys(latestStateSelectedAccount).length
-  let allReady = !!hasLatest
+  let isAllReady = !!hasLatest
+  let isReadyToVisualize = false
 
   const hasPending = pendingStateSelectedAccount && Object.keys(pendingStateSelectedAccount).length
   if (!hasLatest && !hasPending) {
@@ -219,6 +224,7 @@ export function calculateSelectedAccountPortfolio(
       tokens: accountPortfolio?.tokens || [],
       collections: accountPortfolio?.collections || [],
       totalBalance: accountPortfolio?.totalBalance || 0,
+      isReadyToVisualize: false,
       isAllReady: false,
       networkSimulatedAccountOp: accountPortfolio?.networkSimulatedAccountOp || {},
       latest: latestStateSelectedAccount,
@@ -288,15 +294,23 @@ export function calculateSelectedAccountPortfolio(
     }
 
     if (!isNetworkReady(networkData)) {
-      allReady = false
+      isAllReady = false
     }
   })
+
+  const tokensWithAmount = tokens.filter((token) => token.amount)
+
+  if ((shouldShowPartialResult && tokensWithAmount.length && !isAllReady) || isAllReady) {
+    // Allow the user to operate with the tokens that have loaded
+    isReadyToVisualize = true
+  }
 
   return {
     totalBalance: newTotalBalance,
     tokens,
     collections,
-    isAllReady: allReady,
+    isReadyToVisualize,
+    isAllReady,
     networkSimulatedAccountOp: simulatedAccountOps,
     latest: stripPortfolioState(latestStateSelectedAccount),
     pending: stripPortfolioState(pendingStateSelectedAccount)
