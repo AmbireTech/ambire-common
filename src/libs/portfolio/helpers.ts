@@ -452,10 +452,7 @@ export const isPortfolioGasTankResult = (
   return !!result && 'gasTankTokens' in result && Array.isArray(result.gasTankTokens)
 }
 
-export const shouldShowConfettiOnFirstCashback = (
-  accountState: AccountState,
-  resBalance: any[]
-) => {
+export const getIsFirstCashbackReceived = (accountState: AccountState, resBalance: any[]) => {
   const gasTankResult = accountState.gasTank?.result
 
   if (!isPortfolioGasTankResult(gasTankResult)) {

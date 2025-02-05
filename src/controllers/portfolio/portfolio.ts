@@ -13,12 +13,12 @@ import { CustomToken, TokenPreference } from '../../libs/portfolio/customToken'
 import getAccountNetworksWithAssets from '../../libs/portfolio/getNetworksWithAssets'
 import {
   getFlags,
+  getIsFirstCashbackReceived,
   getTokensReadyToLearn,
   getTotal,
   getUpdatedHints,
   processTokens,
   shouldGetAdditionalPortfolio,
-  shouldShowConfettiOnFirstCashback,
   validateERC20Token
 } from '../../libs/portfolio/helpers'
 /* eslint-disable no-restricted-syntax */
@@ -511,7 +511,7 @@ export class PortfolioController extends EventEmitter {
       }
     }
 
-    if (shouldShowConfettiOnFirstCashback(accountState, res.data.gasTank.balance)) {
+    if (getIsFirstCashbackReceived(accountState, res.data.gasTank.balance)) {
       await this.updateCashbackStatusByAccount({
         accountId,
         shouldShowBanner: true,

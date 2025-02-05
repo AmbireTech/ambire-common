@@ -7,7 +7,6 @@ import { NetworkId } from '../../interfaces/network'
 import { SelectedAccountPortfolio } from '../../interfaces/selectedAccount'
 import { Storage } from '../../interfaces/storage'
 import { isSmartAccount } from '../../libs/account/account'
-// eslint-disable-next-line import/no-cycle
 import { getFirstCashbackBanners } from '../../libs/banners/banners'
 import { sortByValue } from '../../libs/defiPositions/helpers'
 import { PositionsByProvider } from '../../libs/defiPositions/types'
