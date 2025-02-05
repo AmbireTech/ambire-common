@@ -185,7 +185,7 @@ const calculateTokenArray = (
       return {
         ...pendingToken,
         latestAmount: latestToken?.amount,
-        pendingAmount: pendingToken.amount
+        pendingAmount: pendingToken.amountPostSimulation
       }
     })
   }
