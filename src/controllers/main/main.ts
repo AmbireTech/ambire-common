@@ -3,6 +3,7 @@
 import { ethErrors } from 'eth-rpc-errors'
 import { getAddress, getBigInt, Interface, isAddress } from 'ethers'
 
+import { Settings } from 'interfaces/settings'
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json'
 import EmittableError from '../../classes/EmittableError'
@@ -239,6 +240,8 @@ export class MainController extends EventEmitter {
 
   #signAccountOpBroadcastPromise?: Promise<SubmittedAccountOp>
 
+  #settings: Settings
+
   constructor({
     storage,
     fetch,
@@ -248,7 +251,8 @@ export class MainController extends EventEmitter {
     keystoreSigners,
     externalSignerControllers,
     windowManager,
-    notificationManager
+    notificationManager,
+    settings
   }: {
     storage: Storage
     fetch: Fetch
@@ -259,6 +263,7 @@ export class MainController extends EventEmitter {
     externalSignerControllers: ExternalSignerControllers
     windowManager: WindowManager
     notificationManager: NotificationManager
+    settings: Settings
   }) {
     super()
     this.#storage = storage
@@ -385,6 +390,7 @@ export class MainController extends EventEmitter {
       if (!this.signAccountOp) return
       this.emitError(e)
     })
+    this.#settings = settings
   }
 
   /**
@@ -1593,9 +1599,17 @@ export class MainController extends EventEmitter {
     }
   }
 
-  rejectUserRequest(err: string, requestId: UserRequest['id']) {
+  rejectUserRequest(
+    err: string,
+    requestId: UserRequest['id'],
+    opts?: { shouldDisable7702Asking?: boolean }
+  ) {
     const userRequest = this.userRequests.find((r) => r.id === requestId)
     if (!userRequest) return
+
+    if (opts && 'shouldDisable7702Asking' in opts) {
+      this.#settings.setShouldDisable7702Popup(opts.shouldDisable7702Asking as boolean)
+    }
 
     this.#handlePreReject(userRequest)
 
@@ -1779,6 +1793,7 @@ export class MainController extends EventEmitter {
 
     // basic account: ask for 7702 auth
     if (
+      !this.#settings.shouldDisable7702Popup() &&
       has7702(network) &&
       isBasicAccount(account, accountState) &&
       canBecomeSmarter(
