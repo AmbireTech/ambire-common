@@ -1,4 +1,7 @@
-import { getIsBridgeTxn, getQuoteRouteSteps } from '../swapAndBridge/swapAndBridge';
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.getKeySyncBanner = exports.getAccountOpBanners = exports.getDappActionRequestsBanners = exports.getBridgeBanners = void 0;
+const swapAndBridge_1 = require("../swapAndBridge/swapAndBridge");
 const getBridgeBannerTitle = (routeStatus) => {
     switch (routeStatus) {
         case 'completed':
@@ -16,7 +19,7 @@ const getBridgeActionText = (routeStatus, isBridgeTxn) => {
     return routeStatus === 'completed' ? 'Swapped' : 'Swap';
 };
 const getBridgeBannerText = (route, isBridgeTxn, networks) => {
-    const steps = getQuoteRouteSteps(route.route.userTxs);
+    const steps = (0, swapAndBridge_1.getQuoteRouteSteps)(route.route.userTxs);
     const actionText = getBridgeActionText(route.routeStatus, isBridgeTxn);
     const fromAssetSymbol = steps[0].fromAsset.symbol;
     const toAssetSymbol = steps[steps.length - 1].toAsset.symbol;
@@ -31,8 +34,8 @@ const getBridgeBannerText = (route, isBridgeTxn, networks) => {
     const stepsIndexText = `(step ${route.routeStatus === 'completed' ? route.route.totalUserTx : route.route.currentUserTxIndex + 1} of ${route.route.totalUserTx})`;
     return `${actionText} ${assetsText}${route.route.totalUserTx > 1 ? ` ${stepsIndexText}` : ''}`;
 };
-export const getBridgeBanners = (activeRoutes, accountOpActions, networks) => {
-    const isBridgeTxn = (route) => route.route.userTxs.some((t) => getIsBridgeTxn(t.userTxType));
+const getBridgeBanners = (activeRoutes, accountOpActions, networks) => {
+    const isBridgeTxn = (route) => route.route.userTxs.some((t) => (0, swapAndBridge_1.getIsBridgeTxn)(t.userTxType));
     const isRouteTurnedIntoAccountOp = (route) => {
         return accountOpActions.some((action) => {
             return action.accountOp.calls.some((call) => call.fromUserRequestId === route.activeRouteId ||
@@ -88,7 +91,8 @@ export const getBridgeBanners = (activeRoutes, accountOpActions, networks) => {
         };
     });
 };
-export const getDappActionRequestsBanners = (actions) => {
+exports.getBridgeBanners = getBridgeBanners;
+const getDappActionRequestsBanners = (actions) => {
     const requests = actions.filter((a) => !['accountOp', 'benzin'].includes(a.type));
     if (!requests.length)
         return [];
@@ -107,6 +111,7 @@ export const getDappActionRequestsBanners = (actions) => {
         }
     ];
 };
+exports.getDappActionRequestsBanners = getDappActionRequestsBanners;
 const getAccountOpBannerText = (activeSwapAndBridgeRoutesForSelectedAccount, chainId, nonSwapAndBridgeTxns, networks) => {
     const swapsAndBridges = [];
     const networkSwapAndBridgeRoutes = activeSwapAndBridgeRoutesForSelectedAccount.filter((route) => {
@@ -114,7 +119,7 @@ const getAccountOpBannerText = (activeSwapAndBridgeRoutesForSelectedAccount, cha
     });
     if (networkSwapAndBridgeRoutes.length) {
         networkSwapAndBridgeRoutes.forEach((route) => {
-            const isBridgeTxn = route.route.userTxs.some((t) => getIsBridgeTxn(t.userTxType));
+            const isBridgeTxn = route.route.userTxs.some((t) => (0, swapAndBridge_1.getIsBridgeTxn)(t.userTxType));
             const desc = getBridgeBannerText(route, isBridgeTxn, networks);
             swapsAndBridges.push(desc);
         });
@@ -124,7 +129,7 @@ const getAccountOpBannerText = (activeSwapAndBridgeRoutesForSelectedAccount, cha
     }
     return '';
 };
-export const getAccountOpBanners = ({ accountOpActionsByNetwork, selectedAccount, accounts, networks, swapAndBridgeRoutesPendingSignature }) => {
+const getAccountOpBanners = ({ accountOpActionsByNetwork, selectedAccount, accounts, networks, swapAndBridgeRoutesPendingSignature }) => {
     if (!accountOpActionsByNetwork)
         return [];
     const txnBanners = [];
@@ -208,7 +213,8 @@ export const getAccountOpBanners = ({ accountOpActionsByNetwork, selectedAccount
     }
     return txnBanners;
 };
-export const getKeySyncBanner = (addr, email, keys) => {
+exports.getAccountOpBanners = getAccountOpBanners;
+const getKeySyncBanner = (addr, email, keys) => {
     const banner = {
         id: `keys-sync:${addr}:${email}`,
         accountAddr: addr,
@@ -225,4 +231,5 @@ export const getKeySyncBanner = (addr, email, keys) => {
     };
     return banner;
 };
+exports.getKeySyncBanner = getKeySyncBanner;
 //# sourceMappingURL=banners.js.map

@@ -1,18 +1,20 @@
-import { Interface, ZeroAddress } from 'ethers';
-import { CurveRouter } from '../../const/abis/Curve';
-import { getAction, getLabel, getToken } from '../../utils';
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const ethers_1 = require("ethers");
+const Curve_1 = require("../../const/abis/Curve");
+const utils_1 = require("../../utils");
 const curveModule = (_, calls) => {
-    const iface = new Interface(CurveRouter);
-    const parseCurveNative = (address) => address.toLowerCase() === '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee' ? ZeroAddress : address;
+    const iface = new ethers_1.Interface(Curve_1.CurveRouter);
+    const parseCurveNative = (address) => address.toLowerCase() === '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee' ? ethers_1.ZeroAddress : address;
     const handleBasicSwap = (curveRoute, amountIn, amountOut) => {
         // eslint-disable-next-line @typescript-eslint/naming-convention
-        const route = curveRoute.filter((a) => a !== ZeroAddress);
+        const route = curveRoute.filter((a) => a !== ethers_1.ZeroAddress);
         const [inToken, outToken] = [route[0], route[route.length - 1]];
         return [
-            getAction('Swap'),
-            getToken(parseCurveNative(inToken), amountIn),
-            getLabel('for'),
-            getToken(parseCurveNative(outToken), amountOut)
+            (0, utils_1.getAction)('Swap'),
+            (0, utils_1.getToken)(parseCurveNative(inToken), amountIn),
+            (0, utils_1.getLabel)('for'),
+            (0, utils_1.getToken)(parseCurveNative(outToken), amountOut)
         ];
     };
     const matcher = {
@@ -29,5 +31,5 @@ const curveModule = (_, calls) => {
     });
     return newCalls;
 };
-export default curveModule;
+exports.default = curveModule;
 //# sourceMappingURL=index.js.map

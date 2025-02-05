@@ -1,16 +1,20 @@
-import { v4 as uuidv4 } from 'uuid';
-import DeFiPositionsDeploylessCode from '../../../../contracts/compiled/DeFiAAVEPosition.json';
-import { fromDescriptor } from '../../deployless/deployless';
-import { AAVE_V3 } from '../defiAddresses';
-import { getAssetValue } from '../helpers';
-import { AssetType } from '../types';
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.getAAVEPositions = void 0;
+const tslib_1 = require("tslib");
+const uuid_1 = require("uuid");
+const DeFiAAVEPosition_json_1 = tslib_1.__importDefault(require("../../../../contracts/compiled/DeFiAAVEPosition.json"));
+const deployless_1 = require("../../deployless/deployless");
+const defiAddresses_1 = require("../defiAddresses");
+const helpers_1 = require("../helpers");
+const types_1 = require("../types");
 const AAVE_NO_HEALTH_FACTOR_MAGIC_NUMBER = 115792089237316195423570985008687907853269984665640564039457584007913129639935n;
-export async function getAAVEPositions(userAddr, provider, network) {
+async function getAAVEPositions(userAddr, provider, network) {
     const networkId = network.id;
-    if (networkId && !AAVE_V3[networkId])
+    if (networkId && !defiAddresses_1.AAVE_V3[networkId])
         return null;
-    const { poolAddr } = AAVE_V3[networkId];
-    const deploylessDeFiPositionsGetter = fromDescriptor(provider, DeFiPositionsDeploylessCode, network.rpcNoStateOverride);
+    const { poolAddr } = defiAddresses_1.AAVE_V3[networkId];
+    const deploylessDeFiPositionsGetter = (0, deployless_1.fromDescriptor)(provider, DeFiAAVEPosition_json_1.default, network.rpcNoStateOverride);
     const [[result0], [result1], [result2]] = await Promise.all([
         deploylessDeFiPositionsGetter.call('getAAVEPosition', [userAddr, poolAddr, 0, 15], {}),
         deploylessDeFiPositionsGetter.call('getAAVEPosition', [userAddr, poolAddr, 15, 30], {}),
@@ -52,7 +56,7 @@ export async function getAAVEPositions(userAddr, provider, network) {
         accountData.healthFactor = null;
     }
     const position = {
-        id: uuidv4(),
+        id: (0, uuid_1.v4)(),
         additionalData: {
             healthRate: accountData.healthFactor ? Number(accountData.healthFactor) / 1e18 : null,
             positionInUSD: 0,
@@ -81,8 +85,8 @@ export async function getAAVEPositions(userAddr, provider, network) {
                 decimals: Number(asset.decimals),
                 amount: asset.balance,
                 priceIn,
-                value: getAssetValue(asset.balance, Number(asset.decimals), priceIn),
-                type: AssetType.Collateral,
+                value: (0, helpers_1.getAssetValue)(asset.balance, Number(asset.decimals), priceIn),
+                type: types_1.AssetType.Collateral,
                 additionalData: {
                     APY: Number(asset.currentLiquidityRate) / 10 ** 25
                 },
@@ -100,8 +104,8 @@ export async function getAAVEPositions(userAddr, provider, network) {
                 decimals: Number(asset.decimals),
                 amount: asset.stableBorrowAssetBalanc,
                 priceIn,
-                value: getAssetValue(asset.stableBorrowAssetBalanc, Number(asset.decimals), priceIn),
-                type: AssetType.Borrow,
+                value: (0, helpers_1.getAssetValue)(asset.stableBorrowAssetBalanc, Number(asset.decimals), priceIn),
+                type: types_1.AssetType.Borrow,
                 additionalData: {
                     APY: Number(asset.currentStableBorrowRate) / 10 ** 25
                 },
@@ -119,8 +123,8 @@ export async function getAAVEPositions(userAddr, provider, network) {
                 decimals: Number(asset.decimals),
                 amount: asset.borrowAssetBalance,
                 priceIn,
-                value: getAssetValue(asset.borrowAssetBalance, Number(asset.decimals), priceIn),
-                type: AssetType.Borrow,
+                value: (0, helpers_1.getAssetValue)(asset.borrowAssetBalance, Number(asset.decimals), priceIn),
+                type: types_1.AssetType.Borrow,
                 additionalData: {
                     APY: Number(asset.currentVariableBorrowRate) / 10 ** 25
                 },
@@ -144,4 +148,5 @@ export async function getAAVEPositions(userAddr, provider, network) {
         positionInUSD: position.additionalData.positionInUSD
     };
 }
+exports.getAAVEPositions = getAAVEPositions;
 //# sourceMappingURL=aaveV3.js.map

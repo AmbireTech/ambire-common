@@ -1,12 +1,16 @@
-import { hexlify, isHexString, toUtf8Bytes } from 'ethers';
-import EmittableError from '../../classes/EmittableError';
-import { getEIP712Signature, getPlainTextSignature, verifyMessage, wrapCounterfactualSign } from '../../libs/signMessage/signMessage';
-import hexStringToUint8Array from '../../utils/hexStringToUint8Array';
-import EventEmitter from '../eventEmitter/eventEmitter';
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.SignMessageController = void 0;
+const tslib_1 = require("tslib");
+const ethers_1 = require("ethers");
+const EmittableError_1 = tslib_1.__importDefault(require("../../classes/EmittableError"));
+const signMessage_1 = require("../../libs/signMessage/signMessage");
+const hexStringToUint8Array_1 = tslib_1.__importDefault(require("../../utils/hexStringToUint8Array"));
+const eventEmitter_1 = tslib_1.__importDefault(require("../eventEmitter/eventEmitter"));
 const STATUS_WRAPPED_METHODS = {
     sign: 'INITIAL'
 };
-export class SignMessageController extends EventEmitter {
+class SignMessageController extends eventEmitter_1.default {
     #keystore;
     #providers;
     #networks;
@@ -100,16 +104,16 @@ export class SignMessageController extends EventEmitter {
             try {
                 if (this.messageToSign.content.kind === 'message') {
                     const message = this.messageToSign.content.message;
-                    this.messageToSign.content.message = isHexString(message)
+                    this.messageToSign.content.message = (0, ethers_1.isHexString)(message)
                         ? message
-                        : hexlify(toUtf8Bytes(message.toString()));
-                    signature = await getPlainTextSignature(this.messageToSign.content.message, network, account, accountState, this.#signer);
+                        : (0, ethers_1.hexlify)((0, ethers_1.toUtf8Bytes)(message.toString()));
+                    signature = await (0, signMessage_1.getPlainTextSignature)(this.messageToSign.content.message, network, account, accountState, this.#signer);
                 }
                 if (this.messageToSign.content.kind === 'typedMessage') {
                     if (account.creation && this.messageToSign.content.primaryType === 'Permit') {
                         throw new Error('It looks like that this app doesn\'t detect Smart Account wallets, and requested incompatible approval type. Please, go back to the app and change the approval type to "Transaction", which is supported by Smart Account wallets.');
                     }
-                    signature = await getEIP712Signature(this.messageToSign.content, account, accountState, this.#signer, network);
+                    signature = await (0, signMessage_1.getEIP712Signature)(this.messageToSign.content, account, accountState, this.#signer, network);
                 }
             }
             catch (error) {
@@ -124,12 +128,12 @@ export class SignMessageController extends EventEmitter {
             signature =
                 account.creation && !accountState.isDeployed
                     ? // https://eips.ethereum.org/EIPS/eip-6492
-                        wrapCounterfactualSign(signature, account.creation)
+                        (0, signMessage_1.wrapCounterfactualSign)(signature, account.creation)
                     : signature;
             const personalMsgToValidate = typeof this.messageToSign.content.message === 'string'
-                ? hexStringToUint8Array(this.messageToSign.content.message)
+                ? (0, hexStringToUint8Array_1.default)(this.messageToSign.content.message)
                 : this.messageToSign.content.message;
-            const isValidSignature = await verifyMessage({
+            const isValidSignature = await (0, signMessage_1.verifyMessage)({
                 network,
                 provider: this.#providers.providers[network?.id || 'ethereum'],
                 // the signer is always the account even if the actual
@@ -163,7 +167,7 @@ export class SignMessageController extends EventEmitter {
         catch (e) {
             const error = e instanceof Error ? e : new Error(`Signing failed. Error details: ${e}`);
             const message = e?.message || 'Something went wrong while signing the message. Please try again.';
-            return Promise.reject(new EmittableError({ level: 'major', message, error }));
+            return Promise.reject(new EmittableError_1.default({ level: 'major', message, error }));
         }
     }
     async sign() {
@@ -177,17 +181,18 @@ export class SignMessageController extends EventEmitter {
     static #throwNotInitialized() {
         const message = 'Looks like there is an error while processing your sign message. Please retry, or contact support if issue persists.';
         const error = new Error('signMessage: controller not initialized');
-        return Promise.reject(new EmittableError({ level: 'major', message, error }));
+        return Promise.reject(new EmittableError_1.default({ level: 'major', message, error }));
     }
     static #throwMissingMessage() {
         const message = 'Looks like there is an error while processing your sign message. Please retry, or contact support if issue persists.';
         const error = new Error('signMessage: missing message to sign');
-        return Promise.reject(new EmittableError({ level: 'major', message, error }));
+        return Promise.reject(new EmittableError_1.default({ level: 'major', message, error }));
     }
     static #throwMissingSigningKey() {
         const message = 'Please select a signing key and try again.';
         const error = new Error('signMessage: missing selected signing key');
-        return Promise.reject(new EmittableError({ level: 'major', message, error }));
+        return Promise.reject(new EmittableError_1.default({ level: 'major', message, error }));
     }
 }
+exports.SignMessageController = SignMessageController;
 //# sourceMappingURL=signMessage.js.map

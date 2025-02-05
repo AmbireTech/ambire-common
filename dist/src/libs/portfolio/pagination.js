@@ -1,4 +1,7 @@
-export function paginate(input, limit) {
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.flattenResults = exports.paginate = void 0;
+function paginate(input, limit) {
     const pages = [];
     let from = 0;
     for (let i = 1; i <= Math.ceil(input.length / limit); i++) {
@@ -7,7 +10,8 @@ export function paginate(input, limit) {
     }
     return pages;
 }
-export function flattenResults(everything) {
+exports.paginate = paginate;
+function flattenResults(everything) {
     return Promise.all(everything).then((results) => {
         if (!results || !results.length) {
             return [[], {}];
@@ -28,4 +32,5 @@ export function flattenResults(everything) {
         return [allTokens, metadata];
     });
 }
+exports.flattenResults = flattenResults;
 //# sourceMappingURL=pagination.js.map

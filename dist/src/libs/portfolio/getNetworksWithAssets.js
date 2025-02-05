@@ -1,3 +1,5 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
 const getAccountNetworksWithAssets = (accountId, accountState, storageStateByAccount, providers) => {
     const networksWithAssets = { ...storageStateByAccount[accountId] };
     Object.keys(accountState).forEach((networkId) => {
@@ -16,5 +18,5 @@ const getAccountNetworksWithAssets = (accountId, accountState, storageStateByAcc
     });
     return networksWithAssets;
 };
-export default getAccountNetworksWithAssets;
+exports.default = getAccountNetworksWithAssets;
 //# sourceMappingURL=getNetworksWithAssets.js.map

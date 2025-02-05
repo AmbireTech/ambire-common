@@ -1,14 +1,18 @@
-import DeFiPositionsDeploylessCode from '../../../../contracts/compiled/DeFiUniswapV3Positions.json';
-import { fromDescriptor } from '../../deployless/deployless';
-import { UNISWAP_V3 } from '../defiAddresses';
-import { AssetType } from '../types';
-import { uniV3DataToPortfolioPosition } from './helpers/univ3Math';
-export async function getUniV3Positions(userAddr, provider, network) {
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.getUniV3Positions = void 0;
+const tslib_1 = require("tslib");
+const DeFiUniswapV3Positions_json_1 = tslib_1.__importDefault(require("../../../../contracts/compiled/DeFiUniswapV3Positions.json"));
+const deployless_1 = require("../../deployless/deployless");
+const defiAddresses_1 = require("../defiAddresses");
+const types_1 = require("../types");
+const univ3Math_1 = require("./helpers/univ3Math");
+async function getUniV3Positions(userAddr, provider, network) {
     const networkId = network.id;
-    if (networkId && !UNISWAP_V3[networkId])
+    if (networkId && !defiAddresses_1.UNISWAP_V3[networkId])
         return null;
-    const { nonfungiblePositionManagerAddr, factoryAddr } = UNISWAP_V3[networkId];
-    const deploylessDeFiPositionsGetter = fromDescriptor(provider, DeFiPositionsDeploylessCode, network.rpcNoStateOverride);
+    const { nonfungiblePositionManagerAddr, factoryAddr } = defiAddresses_1.UNISWAP_V3[networkId];
+    const deploylessDeFiPositionsGetter = (0, deployless_1.fromDescriptor)(provider, DeFiUniswapV3Positions_json_1.default, network.rpcNoStateOverride);
     const [result] = await deploylessDeFiPositionsGetter.call('getUniV3Position', [
         userAddr,
         nonfungiblePositionManagerAddr,
@@ -47,7 +51,7 @@ export async function getUniV3Positions(userAddr, provider, network) {
     }));
     const positions = data
         .map((pos) => {
-        const tokenAmounts = uniV3DataToPortfolioPosition(pos.positionInfo.liquidity, pos.poolSlot0.sqrtPriceX96, pos.positionInfo.tickLower, pos.positionInfo.tickUpper);
+        const tokenAmounts = (0, univ3Math_1.uniV3DataToPortfolioPosition)(pos.positionInfo.liquidity, pos.poolSlot0.sqrtPriceX96, pos.positionInfo.tickLower, pos.positionInfo.tickUpper);
         return {
             id: pos.positionId.toString(),
             additionalData: {
@@ -60,14 +64,14 @@ export async function getUniV3Positions(userAddr, provider, network) {
                     symbol: pos.token0Symbol,
                     decimals: Number(pos.token0Decimals),
                     amount: BigInt(tokenAmounts.amount0),
-                    type: AssetType.Liquidity
+                    type: types_1.AssetType.Liquidity
                 },
                 {
                     address: pos.positionInfo.token1,
                     symbol: pos.token1Symbol,
                     decimals: Number(pos.token1Decimals),
                     amount: BigInt(tokenAmounts.amount1),
-                    type: AssetType.Liquidity
+                    type: types_1.AssetType.Liquidity
                 }
             ]
         };
@@ -82,4 +86,5 @@ export async function getUniV3Positions(userAddr, provider, network) {
         positions
     };
 }
+exports.getUniV3Positions = getUniV3Positions;
 //# sourceMappingURL=uniV3.js.map

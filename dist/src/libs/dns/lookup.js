@@ -1,3 +1,5 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
 const { DNSProver } = require('@ensdomains/dnsprovejs');
 /**
  * The method returns a SignedSet answer if found or throws an exception
@@ -10,7 +12,7 @@ const { DNSProver } = require('@ensdomains/dnsprovejs');
  * @param opt: Options
  * @returns {answer: SignedSet, proofs: [SignedSet,SignedSet,...]}
  */
-export default async function lookup(selector, domain, opt = {}) {
+async function lookup(selector, domain, opt = {}) {
     const provider = opt.apiProvider ?? 'https://cloudflare-dns.com/dns-query';
     const textDomain = `${selector}._domainKey.${domain}`;
     const prover = DNSProver.create(provider);
@@ -24,4 +26,5 @@ export default async function lookup(selector, domain, opt = {}) {
         throw new Error(error.message);
     }
 }
+exports.default = lookup;
 //# sourceMappingURL=lookup.js.map

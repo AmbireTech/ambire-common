@@ -1,15 +1,19 @@
-import { getAddress, ZeroAddress } from 'ethers';
-import { isSmartAccount } from '../../libs/account/account';
-import { AccountOpStatus, isAccountOpsIntentEqual } from '../../libs/accountOp/accountOp';
-import { Portfolio } from '../../libs/portfolio';
-import getAccountNetworksWithAssets from '../../libs/portfolio/getNetworksWithAssets';
-import { getFlags, getPinnedGasTankTokens, getTokensReadyToLearn, getTotal, getUpdatedHints, processTokens, shouldGetAdditionalPortfolio, validateERC20Token } from '../../libs/portfolio/helpers';
-import { migrateTokenPreferences } from '../../libs/portfolio/migrations/tokenPreferences';
-import { relayerCall } from '../../libs/relayerCall/relayerCall';
-import EventEmitter from '../eventEmitter/eventEmitter';
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.PortfolioController = void 0;
+const tslib_1 = require("tslib");
+const ethers_1 = require("ethers");
+const account_1 = require("../../libs/account/account");
+const accountOp_1 = require("../../libs/accountOp/accountOp");
+const portfolio_1 = require("../../libs/portfolio");
+const getNetworksWithAssets_1 = tslib_1.__importDefault(require("../../libs/portfolio/getNetworksWithAssets"));
+const helpers_1 = require("../../libs/portfolio/helpers");
+const tokenPreferences_1 = require("../../libs/portfolio/migrations/tokenPreferences");
+const relayerCall_1 = require("../../libs/relayerCall/relayerCall");
+const eventEmitter_1 = tslib_1.__importDefault(require("../eventEmitter/eventEmitter"));
 /* eslint-disable @typescript-eslint/no-shadow */
 const LEARNED_TOKENS_NETWORK_LIMIT = 50;
-export class PortfolioController extends EventEmitter {
+class PortfolioController extends eventEmitter_1.default {
     #latest;
     #pending;
     // A queue to prevent race conditions when calling `updateSelectedAccount`.
@@ -56,7 +60,7 @@ export class PortfolioController extends EventEmitter {
         this.#portfolioLibs = new Map();
         this.#storage = storage;
         this.#fetch = fetch;
-        this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch });
+        this.#callRelayer = relayerCall_1.relayerCall.bind({ url: relayerUrl, fetch });
         this.#velcroUrl = velcroUrl;
         this.#providers = providers;
         this.#networks = networks;
@@ -71,7 +75,7 @@ export class PortfolioController extends EventEmitter {
             await this.#accounts.initialLoadPromise;
             const storageTokenPreferences = await this.#storage.get('tokenPreferences', []);
             const storageCustomTokens = await this.#storage.get('customTokens', []);
-            const { tokenPreferences, customTokens, shouldUpdateStorage } = migrateTokenPreferences(storageTokenPreferences, storageCustomTokens);
+            const { tokenPreferences, customTokens, shouldUpdateStorage } = (0, tokenPreferences_1.migrateTokenPreferences)(storageTokenPreferences, storageCustomTokens);
             this.tokenPreferences = tokenPreferences;
             this.customTokens = customTokens;
             if (shouldUpdateStorage) {
@@ -159,7 +163,7 @@ export class PortfolioController extends EventEmitter {
     }
     async #updateNetworksWithAssets(accountId, accountState) {
         const storageStateByAccount = this.#networksWithAssetsByAccounts;
-        this.#networksWithAssetsByAccounts[accountId] = getAccountNetworksWithAssets(accountId, accountState, storageStateByAccount, this.#providers.providers);
+        this.#networksWithAssetsByAccounts[accountId] = (0, getNetworksWithAssets_1.default)(accountId, accountState, storageStateByAccount, this.#providers.providers);
         this.emitUpdate();
         await this.#storage.set('networksWithAssetsByAccount', this.#networksWithAssetsByAccounts);
     }
@@ -198,7 +202,7 @@ export class PortfolioController extends EventEmitter {
         await this.#initialLoadPromise;
         if (this.validTokens.erc20[`${token.address}-${token.networkId}`] === true)
             return;
-        const [isValid, standard] = (await validateERC20Token(token, accountId, this.#providers.providers[token.networkId]));
+        const [isValid, standard] = (await (0, helpers_1.validateERC20Token)(token, accountId, this.#providers.providers[token.networkId]));
         this.validTokens[standard] = {
             ...this.validTokens[standard],
             [`${token.address}-${token.networkId}`]: isValid
@@ -215,7 +219,7 @@ export class PortfolioController extends EventEmitter {
             this.#portfolioLibs.get(key)?.network?.selectedRpcUrl !==
                 // eslint-disable-next-line no-underscore-dangle
                 providers[network.id]?._getConnection().url) {
-            this.#portfolioLibs.set(key, new Portfolio(this.#fetch, providers[network.id], network, this.#velcroUrl));
+            this.#portfolioLibs.set(key, new portfolio_1.Portfolio(this.#fetch, providers[network.id], network, this.#velcroUrl));
         }
         return this.#portfolioLibs.get(key);
     }
@@ -295,7 +299,7 @@ export class PortfolioController extends EventEmitter {
             .map((t) => ({
             ...t,
             symbol: t.address === '0x47Cd7E91C3CBaAF266369fe8518345fc4FC12935' ? 'xWALLET' : t.symbol,
-            flags: getFlags(res.data.rewards, 'rewards', t.networkId, t.address)
+            flags: (0, helpers_1.getFlags)(res.data.rewards, 'rewards', t.networkId, t.address)
         }));
         accountState.rewards = {
             isReady: true,
@@ -306,12 +310,12 @@ export class PortfolioController extends EventEmitter {
                 lastSuccessfulUpdate: Date.now(),
                 updateStarted: start,
                 tokens: rewardsTokens,
-                total: getTotal(rewardsTokens)
+                total: (0, helpers_1.getTotal)(rewardsTokens)
             }
         };
         const gasTankTokens = res.data.gasTank.balance.map((t) => ({
             ...t,
-            flags: getFlags(res.data, 'gasTank', t.networkId, t.address)
+            flags: (0, helpers_1.getFlags)(res.data, 'gasTank', t.networkId, t.address)
         }));
         accountState.gasTank = {
             isReady: true,
@@ -322,9 +326,9 @@ export class PortfolioController extends EventEmitter {
                 lastSuccessfulUpdate: Date.now(),
                 tokens: [
                     ...gasTankTokens,
-                    ...getPinnedGasTankTokens(res.data.gasTank.availableGasTankAssets, hasNonZeroTokens, accountId, gasTankTokens)
+                    ...(0, helpers_1.getPinnedGasTankTokens)(res.data.gasTank.availableGasTankAssets, hasNonZeroTokens, accountId, gasTankTokens)
                 ],
-                total: getTotal(gasTankTokens)
+                total: (0, helpers_1.getTotal)(gasTankTokens)
             }
         };
         this.emitUpdate();
@@ -377,7 +381,7 @@ export class PortfolioController extends EventEmitter {
                 // Update the last successful update only if there are no critical errors.
                 lastSuccessfulUpdate = Date.now();
             }
-            const processedTokens = processTokens(result.tokens, network, hasNonZeroTokens, additionalHintsErc20Hints, this.tokenPreferences);
+            const processedTokens = (0, helpers_1.processTokens)(result.tokens, network, hasNonZeroTokens, additionalHintsErc20Hints, this.tokenPreferences);
             accountState[network.id] = {
                 isReady: true,
                 isLoading: false,
@@ -386,7 +390,7 @@ export class PortfolioController extends EventEmitter {
                     ...result,
                     lastSuccessfulUpdate,
                     tokens: processedTokens,
-                    total: getTotal(processedTokens)
+                    total: (0, helpers_1.getTotal)(processedTokens)
                 }
             };
             this.emitUpdate();
@@ -429,7 +433,7 @@ export class PortfolioController extends EventEmitter {
             this.#pending[accountId] = {};
         const accountState = this.#latest[accountId];
         const pendingState = this.#pending[accountId];
-        if (shouldGetAdditionalPortfolio(selectedAccount)) {
+        if ((0, helpers_1.shouldGetAdditionalPortfolio)(selectedAccount)) {
             this.#getAdditionalPortfolio(accountId, opts?.forceUpdate);
         }
         const networks = network ? [network] : this.#networks.networks;
@@ -450,7 +454,7 @@ export class PortfolioController extends EventEmitter {
                 // 1. A change occurs if one variable is undefined and the other one holds an AccountOps object.
                 // 2. No change occurs if both variables are undefined.
                 const areAccountOpsChanged = currentAccountOps && simulatedAccountOps
-                    ? !isAccountOpsIntentEqual(currentAccountOps, simulatedAccountOps)
+                    ? !(0, accountOp_1.isAccountOpsIntentEqual)(currentAccountOps, simulatedAccountOps)
                     : currentAccountOps !== simulatedAccountOps;
                 const forceUpdate = opts?.forceUpdate || areAccountOpsChanged;
                 const previousHintsFromExternalAPI = this.#previousHints?.fromExternalAPI?.[key];
@@ -465,7 +469,7 @@ export class PortfolioController extends EventEmitter {
                 ];
                 // TODO: Add custom ERC721 tokens to the hints
                 const additionalErc721Hints = Object.fromEntries(Object.entries(this.#previousHints?.learnedNfts?.[network.id] || {}).map(([k, v]) => [
-                    getAddress(k),
+                    (0, ethers_1.getAddress)(k),
                     { isKnown: false, tokens: v.map((i) => i.toString()) }
                 ]));
                 const allHints = {
@@ -487,7 +491,7 @@ export class PortfolioController extends EventEmitter {
                                 accountOps: currentAccountOps
                             }
                         }),
-                        isEOA: !isSmartAccount(selectedAccount),
+                        isEOA: !(0, account_1.isSmartAccount)(selectedAccount),
                         ...allHints
                     }, forceUpdate)
                 ]);
@@ -496,14 +500,14 @@ export class PortfolioController extends EventEmitter {
                     !areAccountOpsChanged &&
                     accountState[network.id]?.result) {
                     const networkResult = accountState[network.id].result;
-                    const readyToLearnTokens = getTokensReadyToLearn(this.#toBeLearnedTokens[network.id], networkResult.tokens);
+                    const readyToLearnTokens = (0, helpers_1.getTokensReadyToLearn)(this.#toBeLearnedTokens[network.id], networkResult.tokens);
                     if (readyToLearnTokens.length) {
                         await this.learnTokens(readyToLearnTokens, network.id);
                     }
                     // Either a valid response or there is no external API to fetch hints from
                     const isExternalHintsApiResponseValid = !!networkResult?.hintsFromExternalAPI || !network.hasRelayer;
                     if (isExternalHintsApiResponseValid) {
-                        const updatedStoragePreviousHints = getUpdatedHints(networkResult.hintsFromExternalAPI || null, networkResult.tokens, networkResult.tokenErrors, network.id, this.#previousHints, key, this.customTokens);
+                        const updatedStoragePreviousHints = (0, helpers_1.getUpdatedHints)(networkResult.hintsFromExternalAPI || null, networkResult.tokens, networkResult.tokenErrors, network.id, this.#previousHints, key, this.customTokens);
                         // Updating hints is only needed when the external API response is valid.
                         // learnTokens and learnNfts update storage separately, so we don't need to update them here
                         // if the external API response is invalid.
@@ -532,7 +536,7 @@ export class PortfolioController extends EventEmitter {
         const simulation = this.#pending[accountId][networkId]?.accountOps?.[0];
         if (!simulation)
             return;
-        simulation.status = AccountOpStatus.BroadcastedButNotConfirmed;
+        simulation.status = accountOp_1.AccountOpStatus.BroadcastedButNotConfirmed;
         this.emitUpdate();
     }
     addTokensToBeLearned(tokenAddresses, networkId) {
@@ -541,11 +545,11 @@ export class PortfolioController extends EventEmitter {
         if (!this.#toBeLearnedTokens[networkId])
             this.#toBeLearnedTokens[networkId] = [];
         let networkToBeLearnedTokens = this.#toBeLearnedTokens[networkId];
-        const alreadyLearned = networkToBeLearnedTokens.map((addr) => getAddress(addr));
+        const alreadyLearned = networkToBeLearnedTokens.map((addr) => (0, ethers_1.getAddress)(addr));
         const tokensToLearn = tokenAddresses.filter((address) => {
             let normalizedAddress;
             try {
-                normalizedAddress = getAddress(address);
+                normalizedAddress = (0, ethers_1.getAddress)(address);
             }
             catch (e) {
                 console.error('Error while normalizing token address', e);
@@ -566,11 +570,11 @@ export class PortfolioController extends EventEmitter {
         if (!this.#previousHints.learnedTokens)
             this.#previousHints.learnedTokens = {};
         let networkLearnedTokens = this.#previousHints.learnedTokens[networkId] || {};
-        const alreadyLearned = Object.keys(networkLearnedTokens).map((addr) => getAddress(addr));
+        const alreadyLearned = Object.keys(networkLearnedTokens).map((addr) => (0, ethers_1.getAddress)(addr));
         const tokensToLearn = tokenAddresses.reduce((acc, address) => {
-            if (address === ZeroAddress)
+            if (address === ethers_1.ZeroAddress)
                 return acc;
-            if (alreadyLearned.includes(getAddress(address)))
+            if (alreadyLearned.includes((0, ethers_1.getAddress)(address)))
                 return acc;
             acc[address] = acc[address] || null; // Keep the timestamp of all learned tokens
             return acc;
@@ -604,7 +608,7 @@ export class PortfolioController extends EventEmitter {
         if (newAddrToId.every((i) => alreadyLearnedAddrToId.includes(i)))
             return false;
         nftsData.forEach(([addr, ids]) => {
-            if (addr === ZeroAddress)
+            if (addr === ethers_1.ZeroAddress)
                 return;
             if (!networkLearnedNfts[addr])
                 networkLearnedNfts[addr] = ids;
@@ -648,4 +652,5 @@ export class PortfolioController extends EventEmitter {
         };
     }
 }
+exports.PortfolioController = PortfolioController;
 //# sourceMappingURL=portfolio.js.map

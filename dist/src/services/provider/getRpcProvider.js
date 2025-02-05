@@ -1,4 +1,7 @@
-import { JsonRpcProvider, Network } from 'ethers';
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.getRpcProvider = void 0;
+const ethers_1 = require("ethers");
 const getRpcProvider = (rpcUrls, chainId, selectedRpcUrl, options) => {
     if (!rpcUrls.length) {
         throw new Error('rpcUrls must be a non-empty array');
@@ -10,12 +13,12 @@ const getRpcProvider = (rpcUrls, chainId, selectedRpcUrl, options) => {
             rpcUrl = prefUrl;
     }
     if (chainId) {
-        const staticNetwork = Network.from(Number(chainId));
+        const staticNetwork = ethers_1.Network.from(Number(chainId));
         if (staticNetwork) {
-            return new JsonRpcProvider(rpcUrl, staticNetwork, { staticNetwork, ...options });
+            return new ethers_1.JsonRpcProvider(rpcUrl, staticNetwork, { staticNetwork, ...options });
         }
     }
-    return new JsonRpcProvider(rpcUrl);
+    return new ethers_1.JsonRpcProvider(rpcUrl);
 };
-export { getRpcProvider };
+exports.getRpcProvider = getRpcProvider;
 //# sourceMappingURL=getRpcProvider.js.map

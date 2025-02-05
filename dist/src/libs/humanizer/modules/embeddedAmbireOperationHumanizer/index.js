@@ -1,11 +1,14 @@
-import { Interface } from 'ethers';
-import { AmbireAccount } from '../../const/abis/AmbireAccount';
-import { getAction, getAddressVisualization, getLabel } from '../../utils';
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.embeddedAmbireOperationHumanizer = void 0;
+const ethers_1 = require("ethers");
+const AmbireAccount_1 = require("../../const/abis/AmbireAccount");
+const utils_1 = require("../../utils");
 // the purpose of this module is simply to visualize attempts to hide ambire operations within the current account op
 // such thing can be done if the dapp requests a tryCatch/executeBySelfSingle/executeBySelf function call directed to the current account
 // this call will be executed without needing extra authentication. For more details check out AmbireAccount.sol
-export const embeddedAmbireOperationHumanizer = (accountOp, irCalls) => {
-    const iface = new Interface(AmbireAccount);
+const embeddedAmbireOperationHumanizer = (accountOp, irCalls) => {
+    const iface = new ethers_1.Interface(AmbireAccount_1.AmbireAccount);
     const matcher = {
         [iface.getFunction('tryCatch').selector]: (originalCall) => {
             const { to, value, data } = iface.decodeFunctionData('tryCatch', originalCall.data);
@@ -43,9 +46,9 @@ export const embeddedAmbireOperationHumanizer = (accountOp, irCalls) => {
             newCalls.push({
                 ...call,
                 fullVisualization: [
-                    getAction('Execute calls'),
-                    getLabel('from'),
-                    getAddressVisualization(call.to)
+                    (0, utils_1.getAction)('Execute calls'),
+                    (0, utils_1.getLabel)('from'),
+                    (0, utils_1.getAddressVisualization)(call.to)
                 ]
             });
             return;
@@ -60,7 +63,8 @@ export const embeddedAmbireOperationHumanizer = (accountOp, irCalls) => {
         (functionSelectorsCallableFromSigner.includes(call.data.slice(0, 10)) &&
             !call.fullVisualization?.length));
     return hasParsableCalls
-        ? embeddedAmbireOperationHumanizer(accountOp, newCalls, {})
+        ? (0, exports.embeddedAmbireOperationHumanizer)(accountOp, newCalls, {})
         : newCalls;
 };
+exports.embeddedAmbireOperationHumanizer = embeddedAmbireOperationHumanizer;
 //# sourceMappingURL=index.js.map

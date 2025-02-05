@@ -1,3 +1,4 @@
+"use strict";
 /**
  *
  * richJson lib
@@ -13,7 +14,9 @@
  *
  * Additionally, JSON.serialize and JSON.parse do not properly serialize the Error object, so we extend that functionality here as well.
  */
-export function stringify(obj) {
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.parse = exports.stringify = void 0;
+function stringify(obj) {
     return JSON.stringify(obj, (key, value) => {
         if (typeof value === 'bigint') {
             return { $bigint: value.toString() };
@@ -29,7 +32,8 @@ export function stringify(obj) {
         return value;
     });
 }
-export function parse(json) {
+exports.stringify = stringify;
+function parse(json) {
     return JSON.parse(json, (key, value) => {
         if (value?.$bigint) {
             return BigInt(value.$bigint);
@@ -47,4 +51,5 @@ export function parse(json) {
         return value;
     });
 }
+exports.parse = parse;
 //# sourceMappingURL=richJson.js.map

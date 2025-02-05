@@ -1,11 +1,14 @@
-import { JsonRpcProvider } from 'ethers';
-import { Portfolio } from '../../libs/portfolio';
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.resolveAssetInfo = exports.executeBatchedFetch = void 0;
+const ethers_1 = require("ethers");
+const portfolio_1 = require("../../libs/portfolio");
 const RANDOM_ADDRESS = '0x0000000000000000000000000000000000000001';
 const scheduledActions = {};
-export async function executeBatchedFetch(network) {
-    const provider = new JsonRpcProvider(network.selectedRpcUrl || network.rpcUrls[0]);
+async function executeBatchedFetch(network) {
+    const provider = new ethers_1.JsonRpcProvider(network.selectedRpcUrl || network.rpcUrls[0]);
     const allAddresses = Array.from(new Set(scheduledActions[network.id]?.data.map((i) => i.address))) || [];
-    const portfolio = new Portfolio(fetch, provider, network);
+    const portfolio = new portfolio_1.Portfolio(fetch, provider, network);
     const options = {
         disableAutoDiscovery: true,
         additionalErc20Hints: allAddresses,
@@ -26,10 +29,11 @@ export async function executeBatchedFetch(network) {
         i.callback({ tokenInfo, nftInfo });
     });
 }
+exports.executeBatchedFetch = executeBatchedFetch;
 /**
  * Resolves symbol and decimals for tokens or name for nfts.
  */
-export async function resolveAssetInfo(address, network, callback) {
+async function resolveAssetInfo(address, network, callback) {
     if (!scheduledActions[network.id]?.data?.length) {
         scheduledActions[network.id] = {
             promise: new Promise((resolve, reject) => {
@@ -48,4 +52,5 @@ export async function resolveAssetInfo(address, network, callback) {
     // we are returning a promise so we can await the full execution
     return scheduledActions[network.id]?.promise;
 }
+exports.resolveAssetInfo = resolveAssetInfo;
 //# sourceMappingURL=assetInfo.js.map

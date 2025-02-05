@@ -1,27 +1,31 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.SwapAndBridgeController = exports.SwapAndBridgeFormStatus = void 0;
+const tslib_1 = require("tslib");
 /* eslint-disable no-await-in-loop */
-import { formatUnits, isAddress, parseUnits } from 'ethers';
-import { v4 as uuidv4 } from 'uuid';
-import EmittableError from '../../classes/EmittableError';
-import SwapAndBridgeError from '../../classes/SwapAndBridgeError';
-import { isSmartAccount } from '../../libs/account/account';
-import { AccountOpStatus } from '../../libs/accountOp/accountOp';
-import { getBridgeBanners } from '../../libs/banners/banners';
-import { getTokenAmount } from '../../libs/portfolio/helpers';
-import { convertPortfolioTokenToSocketAPIToken, getActiveRoutesForAccount, getIsBridgeTxn, getIsTokenEligibleForSwapAndBridge, getQuoteRouteSteps, sortPortfolioTokenList, sortTokenListResponse } from '../../libs/swapAndBridge/swapAndBridge';
-import { getHumanReadableSwapAndBridgeError } from '../../libs/swapAndBridge/swapAndBridgeErrorHumanizer';
-import { getSanitizedAmount } from '../../libs/transfer/amount';
-import { normalizeIncomingSocketToken } from '../../services/socket/api';
-import { ZERO_ADDRESS } from '../../services/socket/constants';
-import { validateSendTransferAmount } from '../../services/validations/validate';
-import formatDecimals from '../../utils/formatDecimals/formatDecimals';
-import { convertTokenPriceToBigInt } from '../../utils/numbers/formatters';
-import wait from '../../utils/wait';
-import EventEmitter from '../eventEmitter/eventEmitter';
+const ethers_1 = require("ethers");
+const uuid_1 = require("uuid");
+const EmittableError_1 = tslib_1.__importDefault(require("../../classes/EmittableError"));
+const SwapAndBridgeError_1 = tslib_1.__importDefault(require("../../classes/SwapAndBridgeError"));
+const account_1 = require("../../libs/account/account");
+const accountOp_1 = require("../../libs/accountOp/accountOp");
+const banners_1 = require("../../libs/banners/banners");
+const helpers_1 = require("../../libs/portfolio/helpers");
+const swapAndBridge_1 = require("../../libs/swapAndBridge/swapAndBridge");
+const swapAndBridgeErrorHumanizer_1 = require("../../libs/swapAndBridge/swapAndBridgeErrorHumanizer");
+const amount_1 = require("../../libs/transfer/amount");
+const api_1 = require("../../services/socket/api");
+const constants_1 = require("../../services/socket/constants");
+const validate_1 = require("../../services/validations/validate");
+const formatDecimals_1 = tslib_1.__importDefault(require("../../utils/formatDecimals/formatDecimals"));
+const formatters_1 = require("../../utils/numbers/formatters");
+const wait_1 = tslib_1.__importDefault(require("../../utils/wait"));
+const eventEmitter_1 = tslib_1.__importDefault(require("../eventEmitter/eventEmitter"));
 const HARD_CODED_CURRENCY = 'usd';
 const CONVERSION_PRECISION = 16;
 const CONVERSION_PRECISION_POW = BigInt(10 ** CONVERSION_PRECISION);
 const NETWORK_MISMATCH_MESSAGE = 'Swap & Bridge network configuration mismatch. Please try again or contact Ambire support.';
-export var SwapAndBridgeFormStatus;
+var SwapAndBridgeFormStatus;
 (function (SwapAndBridgeFormStatus) {
     SwapAndBridgeFormStatus["Empty"] = "empty";
     SwapAndBridgeFormStatus["Invalid"] = "invalid";
@@ -29,7 +33,7 @@ export var SwapAndBridgeFormStatus;
     SwapAndBridgeFormStatus["NoRoutesFound"] = "no-routes-found";
     SwapAndBridgeFormStatus["InvalidRouteSelected"] = "invalid-route-selected";
     SwapAndBridgeFormStatus["ReadyToSubmit"] = "ready-to-submit";
-})(SwapAndBridgeFormStatus || (SwapAndBridgeFormStatus = {}));
+})(SwapAndBridgeFormStatus = exports.SwapAndBridgeFormStatus || (exports.SwapAndBridgeFormStatus = {}));
 const STATUS_WRAPPED_METHODS = {
     addToTokenByAddress: 'INITIAL'
 };
@@ -51,7 +55,7 @@ const PROTOCOLS_WITH_CONTRACT_FEE_IN_NATIVE = [
  *  - Fetching and updating quotes for token swaps and bridges.
  *  - Manages token active routes
  */
-export class SwapAndBridgeController extends EventEmitter {
+class SwapAndBridgeController extends eventEmitter_1.default {
     #selectedAccount;
     #networks;
     #actions;
@@ -142,24 +146,24 @@ export class SwapAndBridgeController extends EventEmitter {
     // on every balance (pending or anything) change.
     #getFromSelectedTokenInPortfolio = () => this.portfolioTokenList.find((t) => t.address === this.fromSelectedToken?.address &&
         t.networkId === this.fromSelectedToken?.networkId &&
-        getIsTokenEligibleForSwapAndBridge(t));
+        (0, swapAndBridge_1.getIsTokenEligibleForSwapAndBridge)(t));
     get maxFromAmount() {
         const tokenRef = this.#getFromSelectedTokenInPortfolio() || this.fromSelectedToken;
-        if (!tokenRef || getTokenAmount(tokenRef) === 0n || typeof tokenRef.decimals !== 'number')
+        if (!tokenRef || (0, helpers_1.getTokenAmount)(tokenRef) === 0n || typeof tokenRef.decimals !== 'number')
             return '0';
-        return formatUnits(getTokenAmount(tokenRef), tokenRef.decimals);
+        return (0, ethers_1.formatUnits)((0, helpers_1.getTokenAmount)(tokenRef), tokenRef.decimals);
     }
     get maxFromAmountInFiat() {
         const tokenRef = this.#getFromSelectedTokenInPortfolio() || this.fromSelectedToken;
-        if (!tokenRef || getTokenAmount(tokenRef) === 0n)
+        if (!tokenRef || (0, helpers_1.getTokenAmount)(tokenRef) === 0n)
             return '0';
         const tokenPrice = tokenRef?.priceIn.find((p) => p.baseCurrency === HARD_CODED_CURRENCY)?.price;
         if (!tokenPrice || !Number(this.maxFromAmount))
             return '0';
-        const maxAmount = getTokenAmount(tokenRef);
-        const { tokenPriceBigInt, tokenPriceDecimals } = convertTokenPriceToBigInt(tokenPrice);
+        const maxAmount = (0, helpers_1.getTokenAmount)(tokenRef);
+        const { tokenPriceBigInt, tokenPriceDecimals } = (0, formatters_1.convertTokenPriceToBigInt)(tokenPrice);
         // Multiply the max amount by the token price. The calculation is done in big int to avoid precision loss
-        return formatUnits(BigInt(maxAmount) * tokenPriceBigInt, 
+        return (0, ethers_1.formatUnits)(BigInt(maxAmount) * tokenPriceBigInt, 
         // Shift the decimal point by the number of decimals in the token price
         tokenRef.decimals + tokenPriceDecimals);
     }
@@ -194,7 +198,7 @@ export class SwapAndBridgeController extends EventEmitter {
                 message: '🔔 A route was found for this pair but the minimum token amount was not met.'
             };
         }
-        return validateSendTransferAmount(this.fromAmount, Number(this.maxFromAmount), Number(this.maxFromAmountInFiat), this.fromSelectedToken);
+        return (0, validate_1.validateSendTransferAmount)(this.fromAmount, Number(this.maxFromAmount), Number(this.maxFromAmountInFiat), this.fromSelectedToken);
     }
     get activeRoutesInProgress() {
         return this.activeRoutes.filter((r) => r.routeStatus === 'in-progress' && r.userTxHash);
@@ -317,10 +321,10 @@ export class SwapAndBridgeController extends EventEmitter {
                     this.fromAmountInFiat = fromAmount;
                     // Get the number of decimals
                     const amountInFiatDecimals = fromAmount.split('.')[1]?.length || 0;
-                    const { tokenPriceBigInt, tokenPriceDecimals } = convertTokenPriceToBigInt(tokenPrice);
+                    const { tokenPriceBigInt, tokenPriceDecimals } = (0, formatters_1.convertTokenPriceToBigInt)(tokenPrice);
                     // Convert the numbers to big int
-                    const amountInFiatBigInt = parseUnits(fromAmount, amountInFiatDecimals);
-                    this.fromAmount = formatUnits((amountInFiatBigInt * CONVERSION_PRECISION_POW) / tokenPriceBigInt, 
+                    const amountInFiatBigInt = (0, ethers_1.parseUnits)(fromAmount, amountInFiatDecimals);
+                    this.fromAmount = (0, ethers_1.formatUnits)((amountInFiatBigInt * CONVERSION_PRECISION_POW) / tokenPriceBigInt, 
                     // Shift the decimal point by the number of decimals in the token price
                     amountInFiatDecimals + CONVERSION_PRECISION - tokenPriceDecimals);
                     return;
@@ -329,13 +333,13 @@ export class SwapAndBridgeController extends EventEmitter {
                     this.fromAmount = fromAmount;
                     if (!this.fromSelectedToken)
                         return;
-                    const sanitizedFieldValue = getSanitizedAmount(fromAmount, this.fromSelectedToken.decimals);
+                    const sanitizedFieldValue = (0, amount_1.getSanitizedAmount)(fromAmount, this.fromSelectedToken.decimals);
                     // Convert the field value to big int
-                    const formattedAmount = parseUnits(sanitizedFieldValue, this.fromSelectedToken.decimals);
+                    const formattedAmount = (0, ethers_1.parseUnits)(sanitizedFieldValue, this.fromSelectedToken.decimals);
                     if (!formattedAmount)
                         return;
-                    const { tokenPriceBigInt, tokenPriceDecimals } = convertTokenPriceToBigInt(tokenPrice);
-                    this.fromAmountInFiat = formatUnits(formattedAmount * tokenPriceBigInt, 
+                    const { tokenPriceBigInt, tokenPriceDecimals } = (0, formatters_1.convertTokenPriceToBigInt)(tokenPrice);
+                    this.fromAmountInFiat = (0, ethers_1.formatUnits)(formattedAmount * tokenPriceBigInt, 
                     // Shift the decimal point by the number of decimals in the token price
                     this.fromSelectedToken.decimals + tokenPriceDecimals);
                 }
@@ -404,8 +408,8 @@ export class SwapAndBridgeController extends EventEmitter {
             this.#emitUpdateIfNeeded();
     }
     updatePortfolioTokenList(nextPortfolioTokenList) {
-        const tokens = nextPortfolioTokenList.filter(getIsTokenEligibleForSwapAndBridge);
-        this.portfolioTokenList = sortPortfolioTokenList(
+        const tokens = nextPortfolioTokenList.filter(swapAndBridge_1.getIsTokenEligibleForSwapAndBridge);
+        this.portfolioTokenList = (0, swapAndBridge_1.sortPortfolioTokenList)(
         // Filtering out hidden tokens here means: 1) They won't be displayed in
         // the "From" token list (`this.portfolioTokenList`) and 2) They won't be
         // added to the "Receive" token list as additional tokens from portfolio,
@@ -436,7 +440,7 @@ export class SwapAndBridgeController extends EventEmitter {
             this.#updateToTokenListThrottle.addressToSelect = addressToSelect;
             if (!this.#updateToTokenListThrottle.throttled) {
                 this.#updateToTokenListThrottle.throttled = true;
-                await wait(500 - timeSinceLastCall);
+                await (0, wait_1.default)(500 - timeSinceLastCall);
                 this.#updateToTokenListThrottle.throttled = false;
                 await this.updateToTokenList(this.#updateToTokenListThrottle.shouldReset, this.#updateToTokenListThrottle.addressToSelect);
             }
@@ -470,12 +474,12 @@ export class SwapAndBridgeController extends EventEmitter {
             const toTokenNetwork = this.#networks.networks.find((n) => Number(n.chainId) === this.toChainId);
             // should never happen
             if (!toTokenNetwork)
-                throw new SwapAndBridgeError(NETWORK_MISMATCH_MESSAGE);
+                throw new SwapAndBridgeError_1.default(NETWORK_MISMATCH_MESSAGE);
             const additionalTokensFromPortfolio = this.portfolioTokenList
                 .filter((t) => t.networkId === toTokenNetwork.id)
                 .filter((token) => !upToDateToTokenList.some((t) => t.address === token.address))
-                .map((t) => convertPortfolioTokenToSocketAPIToken(t, Number(toTokenNetwork.chainId)));
-            this.#toTokenList = sortTokenListResponse([...upToDateToTokenList, ...additionalTokensFromPortfolio], this.portfolioTokenList.filter((t) => t.networkId === toTokenNetwork.id));
+                .map((t) => (0, swapAndBridge_1.convertPortfolioTokenToSocketAPIToken)(t, Number(toTokenNetwork.chainId)));
+            this.#toTokenList = (0, swapAndBridge_1.sortTokenListResponse)([...upToDateToTokenList, ...additionalTokensFromPortfolio], this.portfolioTokenList.filter((t) => t.networkId === toTokenNetwork.id));
             if (!this.toSelectedToken) {
                 if (addressToSelect) {
                     const token = this.#toTokenList.find((t) => t.address === addressToSelect);
@@ -489,7 +493,7 @@ export class SwapAndBridgeController extends EventEmitter {
             }
         }
         catch (error) {
-            const { message } = getHumanReadableSwapAndBridgeError(error);
+            const { message } = (0, swapAndBridgeErrorHumanizer_1.getHumanReadableSwapAndBridgeError)(error);
             this.emitError({ error, level: 'major', message });
         }
         this.updateToTokenListStatus = 'INITIAL';
@@ -506,7 +510,7 @@ export class SwapAndBridgeController extends EventEmitter {
     async #addToTokenByAddress(address) {
         if (!this.toChainId)
             return; // should never happen
-        if (!isAddress(address))
+        if (!(0, ethers_1.isAddress)(address))
             return; // no need to attempt with invalid addresses
         const isAlreadyInTheList = this.#toTokenList.some((t) => t.address === address);
         if (isAlreadyInTheList)
@@ -515,11 +519,11 @@ export class SwapAndBridgeController extends EventEmitter {
         try {
             token = await this.#socketAPI.getToken({ address, chainId: this.toChainId });
             if (!token)
-                throw new SwapAndBridgeError('Token with this address is not supported by our service provider.');
+                throw new SwapAndBridgeError_1.default('Token with this address is not supported by our service provider.');
         }
         catch (error) {
-            const { message } = getHumanReadableSwapAndBridgeError(error);
-            throw new EmittableError({ error, level: 'minor', message });
+            const { message } = (0, swapAndBridgeErrorHumanizer_1.getHumanReadableSwapAndBridgeError)(error);
+            throw new EmittableError_1.default({ error, level: 'minor', message });
         }
         if (this.#toTokenListKey)
             // Cache for sometime the tokens added by address
@@ -527,11 +531,11 @@ export class SwapAndBridgeController extends EventEmitter {
         const toTokenNetwork = this.#networks.networks.find((n) => Number(n.chainId) === this.toChainId);
         // should never happen
         if (!toTokenNetwork) {
-            const error = new SwapAndBridgeError(NETWORK_MISMATCH_MESSAGE);
-            throw new EmittableError({ error, level: 'minor', message: error?.message });
+            const error = new SwapAndBridgeError_1.default(NETWORK_MISMATCH_MESSAGE);
+            throw new EmittableError_1.default({ error, level: 'minor', message: error?.message });
         }
         const nextTokenList = [...this.#toTokenList, token];
-        this.#toTokenList = sortTokenListResponse(nextTokenList, this.portfolioTokenList.filter((t) => t.networkId === toTokenNetwork.id));
+        this.#toTokenList = (0, swapAndBridge_1.sortTokenListResponse)(nextTokenList, this.portfolioTokenList.filter((t) => t.networkId === toTokenNetwork.id));
         this.#emitUpdateIfNeeded();
         return token;
     }
@@ -553,15 +557,15 @@ export class SwapAndBridgeController extends EventEmitter {
         skipPreviousQuoteRemoval: false,
         skipStatusUpdate: false
     }) {
-        const quoteId = uuidv4();
+        const quoteId = (0, uuid_1.v4)();
         this.#updateQuoteId = quoteId;
         const updateQuoteFunction = async () => {
             if (!this.#selectedAccount.account)
                 return;
             if (!this.fromAmount)
                 return;
-            const sanitizedFromAmount = getSanitizedAmount(this.fromAmount, this.fromSelectedToken.decimals);
-            const bigintFromAmount = parseUnits(sanitizedFromAmount, this.fromSelectedToken.decimals);
+            const sanitizedFromAmount = (0, amount_1.getSanitizedAmount)(this.fromAmount, this.fromSelectedToken.decimals);
+            const bigintFromAmount = (0, ethers_1.parseUnits)(sanitizedFromAmount, this.fromSelectedToken.decimals);
             if (this.quote) {
                 const isFromAmountSame = this.quote.selectedRoute.fromAmount === bigintFromAmount.toString();
                 const isFromNetworkSame = this.quote.fromChainId === this.fromChainId;
@@ -591,7 +595,7 @@ export class SwapAndBridgeController extends EventEmitter {
                     toTokenAddress: this.toSelectedToken.address,
                     fromAmount: bigintFromAmount,
                     userAddress: this.#selectedAccount.account.addr,
-                    isSmartAccount: isSmartAccount(this.#selectedAccount.account),
+                    isSmartAccount: (0, account_1.isSmartAccount)(this.#selectedAccount.account),
                     sort: this.routePriority,
                     isOG: this.#invite.isOG
                 });
@@ -610,7 +614,7 @@ export class SwapAndBridgeController extends EventEmitter {
                         routes = routes.map((route) => {
                             if (!route.userTxs)
                                 return route;
-                            const bridgeTx = route.userTxs.find((tx) => getIsBridgeTxn(tx.userTxType));
+                            const bridgeTx = route.userTxs.find((tx) => (0, swapAndBridge_1.getIsBridgeTxn)(tx.userTxType));
                             if (!bridgeTx)
                                 return route;
                             const bridgeStep = bridgeTx.steps.find((s) => s.type === 'bridge');
@@ -618,11 +622,11 @@ export class SwapAndBridgeController extends EventEmitter {
                                 return route;
                             if (bridgeStep.protocolFees.amount === '0')
                                 return route;
-                            const normalizedProtocolFeeToken = normalizeIncomingSocketToken(bridgeStep.protocolFees.asset);
+                            const normalizedProtocolFeeToken = (0, api_1.normalizeIncomingSocketToken)(bridgeStep.protocolFees.asset);
                             const doesProtocolRequireExtraContractFeeInNative = PROTOCOLS_WITH_CONTRACT_FEE_IN_NATIVE.includes(bridgeStep.protocol.name) &&
                                 // When other tokens than the native ones are being bridged,
                                 // Socket API takes the fee directly from the "From" amount.
-                                normalizedProtocolFeeToken.address === ZERO_ADDRESS;
+                                normalizedProtocolFeeToken.address === constants_1.ZERO_ADDRESS;
                             if (!doesProtocolRequireExtraContractFeeInNative)
                                 return route;
                             const protocolFeeTokenNetwork = this.#networks.networks.find((n) => Number(n.chainId) === normalizedProtocolFeeToken.chainId);
@@ -655,8 +659,8 @@ export class SwapAndBridgeController extends EventEmitter {
                                 const protocolName = bridgeStep.protocol.displayName;
                                 const insufficientTokenSymbol = bridgeStep.protocolFees.asset.symbol;
                                 const insufficientTokenNetwork = protocolFeeTokenNetwork.name;
-                                const insufficientAssetAmount = formatUnits(bridgeStep.protocolFees.amount, bridgeStep.protocolFees.asset.decimals);
-                                const insufficientAssetAmountInUsd = formatDecimals(bridgeStep.protocolFees.feesInUsd, 'value');
+                                const insufficientAssetAmount = (0, ethers_1.formatUnits)(bridgeStep.protocolFees.amount, bridgeStep.protocolFees.asset.decimals);
+                                const insufficientAssetAmountInUsd = (0, formatDecimals_1.default)(bridgeStep.protocolFees.feesInUsd, 'value');
                                 // Trick to show the error message on the UI, as the API doesn't handle this
                                 // eslint-disable-next-line no-param-reassign
                                 route.errorMessage = `Insufficient ${insufficientTokenSymbol} on ${insufficientTokenNetwork}. You need ${insufficientAssetAmount} ${insufficientTokenSymbol} (${insufficientAssetAmountInUsd}) on ${insufficientTokenNetwork} to cover the ${protocolName} protocol fee for this route.`;
@@ -689,14 +693,14 @@ export class SwapAndBridgeController extends EventEmitter {
                     });
                     if (alreadySelectedRoute) {
                         routeToSelect = alreadySelectedRoute;
-                        routeToSelectSteps = getQuoteRouteSteps(alreadySelectedRoute.userTxs);
+                        routeToSelectSteps = (0, swapAndBridge_1.getQuoteRouteSteps)(alreadySelectedRoute.userTxs);
                     }
                     else {
                         const bestRoute = this.routePriority === 'output'
                             ? routes[0] // API returns highest output first
                             : routes[routes.length - 1]; // API returns fastest... last
                         routeToSelect = bestRoute;
-                        routeToSelectSteps = getQuoteRouteSteps(bestRoute.userTxs);
+                        routeToSelectSteps = (0, swapAndBridge_1.getQuoteRouteSteps)(bestRoute.userTxs);
                     }
                     this.quote = {
                         fromAsset: quoteResult.fromAsset,
@@ -711,7 +715,7 @@ export class SwapAndBridgeController extends EventEmitter {
                 this.quoteRoutesStatuses = quoteResult.bridgeRouteErrors || {};
             }
             catch (error) {
-                const { message } = getHumanReadableSwapAndBridgeError(error);
+                const { message } = (0, swapAndBridgeErrorHumanizer_1.getHumanReadableSwapAndBridgeError)(error);
                 this.emitError({ error, level: 'major', message });
             }
         };
@@ -761,8 +765,8 @@ export class SwapAndBridgeController extends EventEmitter {
             return routeResult;
         }
         catch (error) {
-            const { message } = getHumanReadableSwapAndBridgeError(error);
-            throw new EmittableError({ error, level: 'minor', message });
+            const { message } = (0, swapAndBridgeErrorHumanizer_1.getHumanReadableSwapAndBridgeError)(error);
+            throw new EmittableError_1.default({ error, level: 'minor', message });
         }
     }
     async getNextRouteUserTx(activeRouteId) {
@@ -771,8 +775,8 @@ export class SwapAndBridgeController extends EventEmitter {
             return route;
         }
         catch (error) {
-            const { message } = getHumanReadableSwapAndBridgeError(error);
-            throw new EmittableError({ error, level: 'minor', message });
+            const { message } = (0, swapAndBridgeErrorHumanizer_1.getHumanReadableSwapAndBridgeError)(error);
+            throw new EmittableError_1.default({ error, level: 'minor', message });
         }
     }
     async checkForNextUserTxForActiveRoutes() {
@@ -793,7 +797,7 @@ export class SwapAndBridgeController extends EventEmitter {
                 });
             }
             catch (e) {
-                const { message } = getHumanReadableSwapAndBridgeError(e);
+                const { message } = (0, swapAndBridgeErrorHumanizer_1.getHumanReadableSwapAndBridgeError)(e);
                 this.updateActiveRoute(activeRoute.activeRouteId, { error: message });
                 return;
             }
@@ -829,7 +833,7 @@ export class SwapAndBridgeController extends EventEmitter {
         ].includes(this.formStatus))
             return;
         this.quote.selectedRoute = route;
-        this.quote.selectedRouteSteps = getQuoteRouteSteps(route.userTxs);
+        this.quote.selectedRouteSteps = (0, swapAndBridge_1.getQuoteRouteSteps)(route.userTxs);
         this.#emitUpdateIfNeeded();
     }
     async addActiveRoute(activeRoute) {
@@ -854,8 +858,8 @@ export class SwapAndBridgeController extends EventEmitter {
             this.emitUpdate();
         }
         catch (error) {
-            const { message } = getHumanReadableSwapAndBridgeError(error);
-            throw new EmittableError({ error, level: 'major', message });
+            const { message } = (0, swapAndBridgeErrorHumanizer_1.getHumanReadableSwapAndBridgeError)(error);
+            throw new EmittableError_1.default({ error, level: 'major', message });
         }
     }
     updateActiveRoute(activeRouteId, activeRoute, forceUpdateRoute) {
@@ -900,7 +904,7 @@ export class SwapAndBridgeController extends EventEmitter {
         });
     }
     #handleActiveRouteBroadcastedTransaction(fromUserRequestId, opStatus) {
-        if (opStatus !== AccountOpStatus.BroadcastedButNotConfirmed)
+        if (opStatus !== accountOp_1.AccountOpStatus.BroadcastedButNotConfirmed)
             return;
         const activeRoute = this.activeRoutes.find((r) => r.activeRouteId === fromUserRequestId);
         if (!activeRoute)
@@ -908,7 +912,7 @@ export class SwapAndBridgeController extends EventEmitter {
         this.updateActiveRoute(activeRoute.activeRouteId, { routeStatus: 'in-progress' });
     }
     #handleActiveRouteBroadcastedApproval(fromUserRequestId, opStatus) {
-        if (opStatus !== AccountOpStatus.BroadcastedButNotConfirmed)
+        if (opStatus !== accountOp_1.AccountOpStatus.BroadcastedButNotConfirmed)
             return;
         const activeRoute = this.activeRoutes.find((r) => `${r.activeRouteId}-approval` === fromUserRequestId);
         if (!activeRoute)
@@ -922,13 +926,13 @@ export class SwapAndBridgeController extends EventEmitter {
             `${r.activeRouteId}-approval` === fromUserRequestId);
         if (!activeRouteWaitingApproval)
             return;
-        if (opStatus === AccountOpStatus.Success) {
+        if (opStatus === accountOp_1.AccountOpStatus.Success) {
             this.updateActiveRoute(activeRouteWaitingApproval.activeRouteId, {
                 routeStatus: 'ready'
             });
         }
-        if (opStatus === AccountOpStatus.Failure || opStatus === AccountOpStatus.Rejected) {
-            const errorMessage = opStatus === AccountOpStatus.Rejected
+        if (opStatus === accountOp_1.AccountOpStatus.Failure || opStatus === accountOp_1.AccountOpStatus.Rejected) {
+            const errorMessage = opStatus === accountOp_1.AccountOpStatus.Rejected
                 ? 'The approval was rejected but you can try to sign it again'
                 : 'The approval failed but you can try to sign it again';
             this.updateActiveRoute(activeRouteWaitingApproval.activeRouteId, {
@@ -961,12 +965,12 @@ export class SwapAndBridgeController extends EventEmitter {
         }
         if (!shouldUpdateActiveRouteStatus)
             return;
-        if (opStatus === AccountOpStatus.Success) {
+        if (opStatus === accountOp_1.AccountOpStatus.Success) {
             this.updateActiveRoute(activeRoute.activeRouteId, { routeStatus: 'completed' });
         }
         // If the transaction fails, update the status to "ready" to allow the user to sign it again
-        if (opStatus === AccountOpStatus.Failure || opStatus === AccountOpStatus.Rejected) {
-            const errorMessage = opStatus === AccountOpStatus.Rejected
+        if (opStatus === accountOp_1.AccountOpStatus.Failure || opStatus === accountOp_1.AccountOpStatus.Rejected) {
+            const errorMessage = opStatus === accountOp_1.AccountOpStatus.Rejected
                 ? 'The transaction was rejected but you can try to sign it again'
                 : 'The transaction failed but you can try to sign it again';
             this.updateActiveRoute(activeRoute.activeRouteId, {
@@ -991,11 +995,11 @@ export class SwapAndBridgeController extends EventEmitter {
     get banners() {
         if (!this.#selectedAccount.account)
             return [];
-        const activeRoutesForSelectedAccount = getActiveRoutesForAccount(this.#selectedAccount.account.addr, this.activeRoutes);
+        const activeRoutesForSelectedAccount = (0, swapAndBridge_1.getActiveRoutesForAccount)(this.#selectedAccount.account.addr, this.activeRoutes);
         const accountOpActions = this.#actions.visibleActionsQueue.filter(({ type }) => type === 'accountOp');
         // Swap banners aren't generated because swaps are completed instantly,
         // thus the activity banner on broadcast is sufficient
-        return getBridgeBanners(activeRoutesForSelectedAccount, accountOpActions, this.#networks.networks);
+        return (0, banners_1.getBridgeBanners)(activeRoutesForSelectedAccount, accountOpActions, this.#networks.networks);
     }
     #debounceFunctionCallsOnSameTick(funcName, func) {
         if (this.#shouldDebounceFlags[funcName])
@@ -1027,4 +1031,5 @@ export class SwapAndBridgeController extends EventEmitter {
         };
     }
 }
+exports.SwapAndBridgeController = SwapAndBridgeController;
 //# sourceMappingURL=swapAndBridge.js.map

@@ -1,4 +1,7 @@
-export async function estimateWithRetries(fetchRequests, timeoutType, errorCallback, timeoutInMill = 10000, counter = 0) {
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.estimateWithRetries = void 0;
+async function estimateWithRetries(fetchRequests, timeoutType, errorCallback, timeoutInMill = 10000, counter = 0) {
     // stop the execution on 5 fails;
     // the below error message is not shown to the user so we are safe
     if (counter >= 5)
@@ -50,4 +53,5 @@ export async function estimateWithRetries(fetchRequests, timeoutType, errorCallb
     // success outcome
     return result;
 }
+exports.estimateWithRetries = estimateWithRetries;
 //# sourceMappingURL=estimateWithRetries.js.map

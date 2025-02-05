@@ -1,7 +1,10 @@
-import { getAddress } from 'ethers';
-import { safeTokenAmountAndNumberMultiplication } from '../../utils/numbers/formatters';
-import { AssetType } from '../defiPositions/types';
-export const updatePortfolioStateWithDefiPositions = (portfolioAccountState, defiPositionsAccountState, areDefiPositionsLoading) => {
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.calculateSelectedAccountPortfolio = exports.isNetworkReady = exports.updatePortfolioStateWithDefiPositions = void 0;
+const ethers_1 = require("ethers");
+const formatters_1 = require("../../utils/numbers/formatters");
+const types_1 = require("../defiPositions/types");
+const updatePortfolioStateWithDefiPositions = (portfolioAccountState, defiPositionsAccountState, areDefiPositionsLoading) => {
     if (!portfolioAccountState || !defiPositionsAccountState || areDefiPositionsLoading)
         return portfolioAccountState;
     Object.keys(portfolioAccountState).forEach((networkId) => {
@@ -18,33 +21,33 @@ export const updatePortfolioStateWithDefiPositions = (portfolioAccountState, def
             }
             posByProv.positions.forEach((pos) => {
                 pos.assets
-                    .filter((a) => a.type !== AssetType.Liquidity && a.protocolAsset)
+                    .filter((a) => a.type !== types_1.AssetType.Liquidity && a.protocolAsset)
                     .forEach((a) => {
                     const tokenInPortfolioIndex = tokens.findIndex((t) => {
-                        return (getAddress(t.address) === getAddress(a.protocolAsset.address) &&
+                        return ((0, ethers_1.getAddress)(t.address) === (0, ethers_1.getAddress)(a.protocolAsset.address) &&
                             t.networkId === networkId);
                     });
                     if (tokenInPortfolioIndex !== -1) {
                         const tokenInPortfolio = tokens[tokenInPortfolioIndex];
                         const priceUSD = tokenInPortfolio.priceIn.find(({ baseCurrency }) => baseCurrency.toLowerCase() === 'usd')?.price;
                         const tokenBalanceUSD = priceUSD
-                            ? Number(safeTokenAmountAndNumberMultiplication(BigInt(tokenInPortfolio.amount), tokenInPortfolio.decimals, priceUSD))
+                            ? Number((0, formatters_1.safeTokenAmountAndNumberMultiplication)(BigInt(tokenInPortfolio.amount), tokenInPortfolio.decimals, priceUSD))
                             : undefined;
                         networkBalance -= tokenBalanceUSD || 0; // deduct portfolio token balance
                         tokens = tokens.filter((_, index) => index !== tokenInPortfolioIndex);
                     }
                     // Add only the balance of the collateral tokens to the network balance
-                    if (a.type === AssetType.Collateral) {
+                    if (a.type === types_1.AssetType.Collateral) {
                         const protocolPriceUSD = a.priceIn.find(({ baseCurrency }) => baseCurrency.toLowerCase() === 'usd')?.price;
                         const protocolTokenBalanceUSD = protocolPriceUSD
-                            ? Number(safeTokenAmountAndNumberMultiplication(BigInt(a.amount), Number(a.protocolAsset.decimals), protocolPriceUSD))
+                            ? Number((0, formatters_1.safeTokenAmountAndNumberMultiplication)(BigInt(a.amount), Number(a.protocolAsset.decimals), protocolPriceUSD))
                             : undefined;
                         networkBalance += protocolTokenBalanceUSD || 0;
                     }
                     tokens.push({
                         amount: a.amount,
                         // Only list the borrowed asset with no price
-                        priceIn: a.type === AssetType.Collateral ? a.priceIn : [],
+                        priceIn: a.type === types_1.AssetType.Collateral ? a.priceIn : [],
                         decimals: Number(a.protocolAsset.decimals),
                         address: a.protocolAsset.address,
                         symbol: a.protocolAsset.symbol,
@@ -66,6 +69,7 @@ export const updatePortfolioStateWithDefiPositions = (portfolioAccountState, def
     });
     return portfolioAccountState;
 };
+exports.updatePortfolioStateWithDefiPositions = updatePortfolioStateWithDefiPositions;
 const stripPortfolioState = (portfolioState) => {
     const strippedState = {};
     Object.keys(portfolioState).forEach((networkId) => {
@@ -85,9 +89,10 @@ const stripPortfolioState = (portfolioState) => {
     });
     return strippedState;
 };
-export const isNetworkReady = (networkData) => {
+const isNetworkReady = (networkData) => {
     return (networkData && (networkData.isReady || networkData?.criticalError) && !networkData.isLoading);
 };
+exports.isNetworkReady = isNetworkReady;
 const calculateTokenArray = (networkId, latestTokens, pendingTokens, isPendingValid) => {
     if (networkId === 'gasTank' || networkId === 'rewards') {
         return latestTokens;
@@ -114,7 +119,7 @@ const calculateTokenArray = (networkId, latestTokens, pendingTokens, isPendingVa
         };
     });
 };
-export function calculateSelectedAccountPortfolio(latestStateSelectedAccount, pendingStateSelectedAccount, accountPortfolio, hasSignAccountOp) {
+function calculateSelectedAccountPortfolio(latestStateSelectedAccount, pendingStateSelectedAccount, accountPortfolio, hasSignAccountOp) {
     const collections = [];
     const tokens = [];
     let newTotalBalance = 0;
@@ -165,7 +170,7 @@ export function calculateSelectedAccountPortfolio(latestStateSelectedAccount, pe
     Object.keys(selectedAccountData).forEach((network) => {
         const networkData = selectedAccountData[network];
         const result = networkData?.result;
-        if (networkData && isNetworkReady(networkData) && result) {
+        if (networkData && (0, exports.isNetworkReady)(networkData) && result) {
             const networkTotal = Number(result?.total?.usd) || 0;
             newTotalBalance += networkTotal;
             const latestTokens = latestStateSelectedAccount[network]?.result?.tokens || [];
@@ -175,7 +180,7 @@ export function calculateSelectedAccountPortfolio(latestStateSelectedAccount, pe
             tokens.push(...tokensArray);
             collections.push(...networkCollections);
         }
-        if (!isNetworkReady(networkData)) {
+        if (!(0, exports.isNetworkReady)(networkData)) {
             allReady = false;
         }
     });
@@ -189,4 +194,5 @@ export function calculateSelectedAccountPortfolio(latestStateSelectedAccount, pe
         pending: stripPortfolioState(pendingStateSelectedAccount)
     };
 }
+exports.calculateSelectedAccountPortfolio = calculateSelectedAccountPortfolio;
 //# sourceMappingURL=selectedAccount.js.map

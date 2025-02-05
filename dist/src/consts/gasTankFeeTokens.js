@@ -1,4 +1,6 @@
-export default [
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.default = [
     {
         address: '0x0000000000000000000000000000000000000000',
         symbol: 'eth',

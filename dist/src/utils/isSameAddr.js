@@ -1,6 +1,8 @@
-import { getAddress } from 'ethers';
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const ethers_1 = require("ethers");
 const isSameAddr = (one, two) => {
-    return getAddress(one) === getAddress(two);
+    return (0, ethers_1.getAddress)(one) === (0, ethers_1.getAddress)(two);
 };
-export default isSameAddr;
+exports.default = isSameAddr;
 //# sourceMappingURL=isSameAddr.js.map

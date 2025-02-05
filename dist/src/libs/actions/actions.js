@@ -1,4 +1,7 @@
-export const dappRequestMethodToActionKind = (method) => {
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.messageOnNewAction = exports.getAccountOpFromAction = exports.getAccountOpActionsByNetwork = exports.getAccountOpsByNetwork = exports.dappRequestMethodToActionKind = void 0;
+const dappRequestMethodToActionKind = (method) => {
     if (['call', 'calls', 'eth_sendTransaction', 'wallet_sendCalls'].includes(method))
         return 'calls';
     if ([
@@ -13,7 +16,8 @@ export const dappRequestMethodToActionKind = (method) => {
     // method to camelCase
     return method.replace(/_(.)/g, (m, p1) => p1.toUpperCase());
 };
-export const getAccountOpsByNetwork = (accountAddr, actions) => {
+exports.dappRequestMethodToActionKind = dappRequestMethodToActionKind;
+const getAccountOpsByNetwork = (accountAddr, actions) => {
     const accountOps = actions.filter((a) => a.type === 'accountOp')
         .map((a) => a.accountOp)
         .filter((op) => op.accountAddr === accountAddr);
@@ -27,7 +31,8 @@ export const getAccountOpsByNetwork = (accountAddr, actions) => {
         return acc;
     }, {});
 };
-export const getAccountOpActionsByNetwork = (accountAddr, actions) => {
+exports.getAccountOpsByNetwork = getAccountOpsByNetwork;
+const getAccountOpActionsByNetwork = (accountAddr, actions) => {
     const accountOpActions = actions.filter((a) => a.type === 'accountOp').filter((action) => action.accountOp.accountAddr === accountAddr);
     const actionsByNetwork = accountOpActions.reduce((acc, accountOpAction) => {
         const { networkId } = accountOpAction.accountOp;
@@ -38,13 +43,15 @@ export const getAccountOpActionsByNetwork = (accountAddr, actions) => {
     }, {});
     return actionsByNetwork;
 };
-export const getAccountOpFromAction = (accountOpActionId, actions) => {
+exports.getAccountOpActionsByNetwork = getAccountOpActionsByNetwork;
+const getAccountOpFromAction = (accountOpActionId, actions) => {
     const accountOpAction = actions.find((a) => a.id === accountOpActionId);
     if (!accountOpAction)
         return undefined;
     return accountOpAction.accountOp;
 };
-export const messageOnNewAction = (action, addType) => {
+exports.getAccountOpFromAction = getAccountOpFromAction;
+const messageOnNewAction = (action, addType) => {
     let requestType = '';
     if (action.type === 'accountOp')
         requestType = 'Sign Transaction';
@@ -68,4 +75,5 @@ export const messageOnNewAction = (action, addType) => {
     }
     return null;
 };
+exports.messageOnNewAction = messageOnNewAction;
 //# sourceMappingURL=actions.js.map

@@ -1,6 +1,9 @@
-import { PIMLICO } from '../../consts/bundlers';
-import { Bundler } from './bundler';
-export class Pimlico extends Bundler {
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.Pimlico = void 0;
+const bundlers_1 = require("../../consts/bundlers");
+const bundler_1 = require("./bundler");
+class Pimlico extends bundler_1.Bundler {
     getUrl(network) {
         return `https://api.pimlico.io/v2/${network.chainId}/rpc?apikey=${process.env.REACT_APP_PIMLICO_API_KEY}`;
     }
@@ -17,7 +20,8 @@ export class Pimlico extends Bundler {
         return provider.send('pimlico_getUserOperationStatus', [userOpHash]);
     }
     getName() {
-        return PIMLICO;
+        return bundlers_1.PIMLICO;
     }
 }
+exports.Pimlico = Pimlico;
 //# sourceMappingURL=pimlico.js.map

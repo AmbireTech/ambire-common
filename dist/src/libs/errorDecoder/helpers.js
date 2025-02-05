@@ -1,5 +1,8 @@
-import { isHexString, toUtf8String } from 'ethers';
-import { ERROR_PREFIX, PANIC_ERROR_PREFIX } from './constants';
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.formatReason = exports.getDataFromError = exports.isReasonValid = exports.getErrorCodeStringFromReason = exports.panicErrorCodeToReason = void 0;
+const ethers_1 = require("ethers");
+const constants_1 = require("./constants");
 const panicErrorCodeToReason = (errorCode) => {
     switch (errorCode) {
         case 0x0n:
@@ -26,39 +29,43 @@ const panicErrorCodeToReason = (errorCode) => {
             return undefined;
     }
 };
+exports.panicErrorCodeToReason = panicErrorCodeToReason;
 const isReasonValid = (reason) => {
     return (!!reason &&
         typeof reason === 'string' &&
         reason !== '0x' &&
         reason !== 'Unknown error' &&
         reason !== 'UNKNOWN_ERROR' &&
-        !reason.startsWith(ERROR_PREFIX) &&
-        !reason.startsWith(PANIC_ERROR_PREFIX) &&
+        !reason.startsWith(constants_1.ERROR_PREFIX) &&
+        !reason.startsWith(constants_1.PANIC_ERROR_PREFIX) &&
         !reason.toLowerCase().includes('could not coalesce error'));
 };
+exports.isReasonValid = isReasonValid;
 /**
  * Some reasons are encoded in hex, this function will decode them to a human-readable string
  * which can then be matched to a specific error message.
  */
 const formatReason = (reason) => {
     const trimmedReason = reason.trim();
-    if (!isHexString(trimmedReason))
+    if (!(0, ethers_1.isHexString)(trimmedReason))
         return trimmedReason;
-    if (trimmedReason.startsWith(ERROR_PREFIX) || trimmedReason.startsWith(PANIC_ERROR_PREFIX))
+    if (trimmedReason.startsWith(constants_1.ERROR_PREFIX) || trimmedReason.startsWith(constants_1.PANIC_ERROR_PREFIX))
         return trimmedReason;
     try {
-        return toUtf8String(trimmedReason);
+        return (0, ethers_1.toUtf8String)(trimmedReason);
     }
     catch {
         return trimmedReason;
     }
 };
+exports.formatReason = formatReason;
 const getErrorCodeStringFromReason = (reason, withSpace = true) => {
     if (!reason || !isReasonValid(reason))
         return '';
     const truncatedReason = reason.length > 100 ? `${reason.slice(0, 100)}...` : reason;
     return `${withSpace ? ' ' : ''}Error code: ${truncatedReason}`;
 };
+exports.getErrorCodeStringFromReason = getErrorCodeStringFromReason;
 function getDataFromError(error) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const errorData = error.data ?? error.error?.data;
@@ -74,5 +81,5 @@ function getDataFromError(error) {
     }
     return returnData;
 }
-export { panicErrorCodeToReason, getErrorCodeStringFromReason, isReasonValid, getDataFromError, formatReason };
+exports.getDataFromError = getDataFromError;
 //# sourceMappingURL=helpers.js.map

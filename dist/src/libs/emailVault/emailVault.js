@@ -1,8 +1,11 @@
-import { relayerCall } from '../relayerCall/relayerCall';
-export class EmailVault {
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.EmailVault = void 0;
+const relayerCall_1 = require("../relayerCall/relayerCall");
+class EmailVault {
     callRelayer;
     constructor(fetch, relayerUrl) {
-        this.callRelayer = relayerCall.bind({ url: relayerUrl, fetch });
+        this.callRelayer = relayerCall_1.relayerCall.bind({ url: relayerUrl, fetch });
     }
     async getRecoveryKeyAddress(email, authKey) {
         return (await this.callRelayer(`/email-vault/get-recovery-key/${email}/${authKey}`)).data;
@@ -51,4 +54,5 @@ export class EmailVault {
         return (await this.callRelayer(`/email-vault/email-vault-info/${email}/${authKey}`)).data;
     }
 }
+exports.EmailVault = EmailVault;
 //# sourceMappingURL=emailVault.js.map

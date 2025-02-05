@@ -1,15 +1,19 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.KeystoreController = void 0;
+const tslib_1 = require("tslib");
 /* eslint-disable class-methods-use-this */
 /* eslint-disable new-cap */
 /* eslint-disable @typescript-eslint/no-shadow */
-import aes from 'aes-js';
+const aes_js_1 = tslib_1.__importDefault(require("aes-js"));
 // import { entropyToMnemonic } from 'bip39'
-import { decryptWithPrivateKey, encryptWithPublicKey, publicKeyByPrivateKey } from 'eth-crypto';
-import { concat, getBytes, hexlify, keccak256, Mnemonic, randomBytes, toUtf8Bytes, Wallet } from 'ethers';
-import scrypt from 'scrypt-js';
-import EmittableError from '../../classes/EmittableError';
-import { DERIVATION_OPTIONS } from '../../consts/derivation';
-import { getDefaultKeyLabel, getShouldMigrateKeyMetaNullToKeyMetaCreatedAt, getShouldMigrateKeystoreSeedsWithoutHdPath, migrateKeyMetaNullToKeyMetaCreatedAt, migrateKeyPreferencesToKeystoreKeys, migrateKeystoreSeedsWithoutHdPathTemplate } from '../../libs/keys/keys';
-import EventEmitter from '../eventEmitter/eventEmitter';
+const eth_crypto_1 = require("eth-crypto");
+const ethers_1 = require("ethers");
+const scrypt_js_1 = tslib_1.__importDefault(require("scrypt-js"));
+const EmittableError_1 = tslib_1.__importDefault(require("../../classes/EmittableError"));
+const derivation_1 = require("../../consts/derivation");
+const keys_1 = require("../../libs/keys/keys");
+const eventEmitter_1 = tslib_1.__importDefault(require("../eventEmitter/eventEmitter"));
 const scryptDefaults = { N: 131072, r: 8, p: 1, dkLen: 64 };
 const CIPHER = 'aes-128-ctr';
 const KEYSTORE_UNEXPECTED_ERROR_MESSAGE = 'Keystore unexpected error. If the problem persists, please contact support.';
@@ -27,7 +31,7 @@ const STATUS_WRAPPED_METHODS = {
 };
 function getBytesForSecret(secret) {
     // see https://github.com/ethers-io/ethers.js/blob/v5/packages/json-wallets/src.ts/utils.ts#L19-L24
-    return toUtf8Bytes(secret, 'NFKC');
+    return (0, ethers_1.toUtf8Bytes)(secret, 'NFKC');
 }
 /**
  * The KeystoreController is a class that manages a collection of encrypted keys.
@@ -53,7 +57,7 @@ function getBytesForSecret(secret) {
  *     the web SDKs we "outsource" this to the HW wallet software itself;
  *     this may not be true on mobile
  */
-export class KeystoreController extends EventEmitter {
+class KeystoreController extends eventEmitter_1.default {
     #mainKey;
     // Secrets are strings that are used to encrypt the mainKey.
     // The mainKey could be encrypted with many secrets.
@@ -92,10 +96,10 @@ export class KeystoreController extends EventEmitter {
                 this.#storage.get('keyPreferences', [])
             ]);
             this.keyStoreUid = keyStoreUid;
-            if (getShouldMigrateKeystoreSeedsWithoutHdPath(keystoreSeeds)) {
+            if ((0, keys_1.getShouldMigrateKeystoreSeedsWithoutHdPath)(keystoreSeeds)) {
                 // Cast to the old type (string[]) to avoid TS errors
                 const preMigrationKeystoreSeeds = keystoreSeeds;
-                this.#keystoreSeeds = migrateKeystoreSeedsWithoutHdPathTemplate(preMigrationKeystoreSeeds);
+                this.#keystoreSeeds = (0, keys_1.migrateKeystoreSeedsWithoutHdPathTemplate)(preMigrationKeystoreSeeds);
                 await this.#storage.set('keystoreSeeds', this.#keystoreSeeds);
             }
             else {
@@ -103,15 +107,15 @@ export class KeystoreController extends EventEmitter {
             }
             const shouldMigrateKeyPreferencesToKeystoreKeys = keyPreferences.length > 0;
             if (shouldMigrateKeyPreferencesToKeystoreKeys) {
-                this.#keystoreKeys = migrateKeyPreferencesToKeystoreKeys(keyPreferences, keystoreKeys);
+                this.#keystoreKeys = (0, keys_1.migrateKeyPreferencesToKeystoreKeys)(keyPreferences, keystoreKeys);
                 await this.#storage.set('keystoreKeys', this.#keystoreKeys);
                 await this.#storage.remove('keyPreferences');
             }
             else {
                 this.#keystoreKeys = keystoreKeys;
             }
-            if (getShouldMigrateKeyMetaNullToKeyMetaCreatedAt(this.#keystoreKeys)) {
-                this.#keystoreKeys = migrateKeyMetaNullToKeyMetaCreatedAt(this.#keystoreKeys);
+            if ((0, keys_1.getShouldMigrateKeyMetaNullToKeyMetaCreatedAt)(this.#keystoreKeys)) {
+                this.#keystoreKeys = (0, keys_1.migrateKeyMetaNullToKeyMetaCreatedAt)(this.#keystoreKeys);
                 await this.#storage.set('keystoreKeys', this.#keystoreKeys);
             }
         }
@@ -155,7 +159,7 @@ export class KeystoreController extends EventEmitter {
         await this.#initialLoadPromise;
         // @TODO should we check if already locked? probably not cause this function can  be used in order to verify if a secret is correct
         if (!this.#keystoreSecrets.length) {
-            throw new EmittableError({
+            throw new EmittableError_1.default({
                 message: 'Trying to unlock Ambire, but the lock mechanism was not fully configured yet. Please try again or contact support if the problem persists.',
                 level: 'major',
                 error: new Error('keystore: no secrets yet')
@@ -163,7 +167,7 @@ export class KeystoreController extends EventEmitter {
         }
         const secretEntry = this.#keystoreSecrets.find((x) => x.id === secretId);
         if (!secretEntry) {
-            throw new EmittableError({
+            throw new EmittableError_1.default({
                 message: 'Something went wrong when trying to unlock Ambire. Please try again or contact support if the problem persists.',
                 level: 'major',
                 error: new Error('keystore: secret not found')
@@ -171,28 +175,28 @@ export class KeystoreController extends EventEmitter {
         }
         const { scryptParams, aesEncrypted } = secretEntry;
         if (aesEncrypted.cipherType !== CIPHER) {
-            throw new EmittableError({
+            throw new EmittableError_1.default({
                 message: 'Something went wrong when trying to unlock Ambire. Please try again or contact support if the problem persists.',
                 level: 'major',
                 error: new Error(`keystore: unsupported cipherType ${aesEncrypted.cipherType}`)
             });
         }
         // @TODO: progressCallback?
-        const key = await scrypt.scrypt(getBytesForSecret(secret), getBytes(scryptParams.salt), scryptParams.N, scryptParams.r, scryptParams.p, scryptParams.dkLen, () => { });
-        const iv = getBytes(aesEncrypted.iv);
+        const key = await scrypt_js_1.default.scrypt(getBytesForSecret(secret), (0, ethers_1.getBytes)(scryptParams.salt), scryptParams.N, scryptParams.r, scryptParams.p, scryptParams.dkLen, () => { });
+        const iv = (0, ethers_1.getBytes)(aesEncrypted.iv);
         const derivedKey = key.slice(0, 16);
         const macPrefix = key.slice(16, 32);
-        const counter = new aes.Counter(iv);
-        const aesCtr = new aes.ModeOfOperation.ctr(derivedKey, counter);
-        const mac = keccak256(concat([macPrefix, aesEncrypted.ciphertext]));
+        const counter = new aes_js_1.default.Counter(iv);
+        const aesCtr = new aes_js_1.default.ModeOfOperation.ctr(derivedKey, counter);
+        const mac = (0, ethers_1.keccak256)((0, ethers_1.concat)([macPrefix, aesEncrypted.ciphertext]));
         if (mac !== aesEncrypted.mac) {
             this.errorMessage = 'Incorrect password. Please try again.';
             this.emitUpdate();
             const error = new Error(this.errorMessage);
-            throw new EmittableError({ level: 'silent', message: this.errorMessage, error });
+            throw new EmittableError_1.default({ level: 'silent', message: this.errorMessage, error });
         }
         this.errorMessage = '';
-        const decrypted = aesCtr.decrypt(getBytes(aesEncrypted.ciphertext));
+        const decrypted = aesCtr.decrypt((0, ethers_1.getBytes)(aesEncrypted.ciphertext));
         this.#mainKey = { key: decrypted.slice(0, 16), iv: decrypted.slice(16, 32) };
     }
     async unlockWithSecret(secretId, secret) {
@@ -202,7 +206,7 @@ export class KeystoreController extends EventEmitter {
         await this.#initialLoadPromise;
         // @TODO test
         if (this.#keystoreSecrets.find((x) => x.id === secretId))
-            throw new EmittableError({
+            throw new EmittableError_1.default({
                 message: KEYSTORE_UNEXPECTED_ERROR_MESSAGE,
                 level: 'major',
                 error: new Error(`keystore: trying to add duplicate secret ${secretId}`)
@@ -211,14 +215,14 @@ export class KeystoreController extends EventEmitter {
         // We are not unlocked
         if (!mainKey) {
             if (!this.#keystoreSecrets.length) {
-                const key = getBytes(keccak256(concat([randomBytes(32), toUtf8Bytes(extraEntropy)]))).slice(0, 16);
+                const key = (0, ethers_1.getBytes)((0, ethers_1.keccak256)((0, ethers_1.concat)([(0, ethers_1.randomBytes)(32), (0, ethers_1.toUtf8Bytes)(extraEntropy)]))).slice(0, 16);
                 mainKey = {
                     key,
-                    iv: randomBytes(16)
+                    iv: (0, ethers_1.randomBytes)(16)
                 };
             }
             else
-                throw new EmittableError({
+                throw new EmittableError_1.default({
                     message: KEYSTORE_UNEXPECTED_ERROR_MESSAGE,
                     level: 'major',
                     error: new Error('keystore: must unlock keystore before adding secret')
@@ -227,30 +231,30 @@ export class KeystoreController extends EventEmitter {
                 this.#mainKey = mainKey;
             }
         }
-        const salt = randomBytes(32);
-        const key = await scrypt.scrypt(getBytesForSecret(secret), salt, scryptDefaults.N, scryptDefaults.r, scryptDefaults.p, scryptDefaults.dkLen, () => { });
-        const iv = randomBytes(16);
+        const salt = (0, ethers_1.randomBytes)(32);
+        const key = await scrypt_js_1.default.scrypt(getBytesForSecret(secret), salt, scryptDefaults.N, scryptDefaults.r, scryptDefaults.p, scryptDefaults.dkLen, () => { });
+        const iv = (0, ethers_1.randomBytes)(16);
         const derivedKey = key.slice(0, 16);
         const macPrefix = key.slice(16, 32);
-        const counter = new aes.Counter(iv);
-        const aesCtr = new aes.ModeOfOperation.ctr(derivedKey, counter);
-        const ciphertext = aesCtr.encrypt(getBytes(concat([mainKey.key, mainKey.iv])));
-        const mac = keccak256(concat([macPrefix, ciphertext]));
+        const counter = new aes_js_1.default.Counter(iv);
+        const aesCtr = new aes_js_1.default.ModeOfOperation.ctr(derivedKey, counter);
+        const ciphertext = aesCtr.encrypt((0, ethers_1.getBytes)((0, ethers_1.concat)([mainKey.key, mainKey.iv])));
+        const mac = (0, ethers_1.keccak256)((0, ethers_1.concat)([macPrefix, ciphertext]));
         this.#keystoreSecrets.push({
             id: secretId,
-            scryptParams: { salt: hexlify(salt), ...scryptDefaults },
+            scryptParams: { salt: (0, ethers_1.hexlify)(salt), ...scryptDefaults },
             aesEncrypted: {
                 cipherType: CIPHER,
-                ciphertext: hexlify(ciphertext),
-                iv: hexlify(iv),
-                mac: hexlify(mac)
+                ciphertext: (0, ethers_1.hexlify)(ciphertext),
+                iv: (0, ethers_1.hexlify)(iv),
+                mac: (0, ethers_1.hexlify)(mac)
             }
         });
         // Persist the new secrets
         await this.#storage.set('keystoreSecrets', this.#keystoreSecrets);
         // produce uid if one doesn't exist (should be created when the first secret is added)
         if (!this.keyStoreUid) {
-            const uid = publicKeyByPrivateKey(hexlify(getBytes(concat([mainKey.key, mainKey.iv]))));
+            const uid = (0, eth_crypto_1.publicKeyByPrivateKey)((0, ethers_1.hexlify)((0, ethers_1.getBytes)((0, ethers_1.concat)([mainKey.key, mainKey.iv]))));
             this.keyStoreUid = uid;
             await this.#storage.set('keyStoreUid', uid);
         }
@@ -262,7 +266,7 @@ export class KeystoreController extends EventEmitter {
     async #removeSecret(secretId) {
         await this.#initialLoadPromise;
         if (!this.#keystoreSecrets.find((x) => x.id === secretId))
-            throw new EmittableError({
+            throw new EmittableError_1.default({
                 message: KEYSTORE_UNEXPECTED_ERROR_MESSAGE,
                 level: 'major',
                 error: new Error(`keystore: secret$ ${secretId} not found`)
@@ -301,13 +305,13 @@ export class KeystoreController extends EventEmitter {
     async #getEncryptedSeed(seed) {
         await this.#initialLoadPromise;
         if (this.#mainKey === null)
-            throw new EmittableError({
+            throw new EmittableError_1.default({
                 message: KEYSTORE_UNEXPECTED_ERROR_MESSAGE,
                 level: 'major',
                 error: new Error('keystore: needs to be unlocked')
             });
-        if (!Mnemonic.isValidMnemonic(seed)) {
-            throw new EmittableError({
+        if (!ethers_1.Mnemonic.isValidMnemonic(seed)) {
+            throw new EmittableError_1.default({
                 message: 'You are trying to store an invalid seed phrase.',
                 level: 'major',
                 error: new Error('keystore: trying to add an invalid seed phrase')
@@ -316,21 +320,21 @@ export class KeystoreController extends EventEmitter {
         // Currently we support only one seed phrase to be added to the keystore
         // this fist seed phrase will become the saved seed phrase of the wallet
         if (this.#keystoreSeeds.length) {
-            throw new EmittableError({
+            throw new EmittableError_1.default({
                 message: 'You can have only one saved seed in the extension',
                 level: 'major',
                 error: new Error('keystore: seed phase already added. Storing multiple seed phrases not supported yet')
             });
         }
         // Set up the cipher
-        const counter = new aes.Counter(this.#mainKey.iv); // TS compiler fails to detect we check for null above
-        const aesCtr = new aes.ModeOfOperation.ctr(this.#mainKey.key, counter); // TS compiler fails to detect we check for null above\
-        return hexlify(aesCtr.encrypt(new TextEncoder().encode(seed)));
+        const counter = new aes_js_1.default.Counter(this.#mainKey.iv); // TS compiler fails to detect we check for null above
+        const aesCtr = new aes_js_1.default.ModeOfOperation.ctr(this.#mainKey.key, counter); // TS compiler fails to detect we check for null above\
+        return (0, ethers_1.hexlify)(aesCtr.encrypt(new TextEncoder().encode(seed)));
     }
     async addSeedToTemp({ seed, hdPathTemplate }) {
-        const validHdPath = DERIVATION_OPTIONS.some((o) => o.value === hdPathTemplate);
+        const validHdPath = derivation_1.DERIVATION_OPTIONS.some((o) => o.value === hdPathTemplate);
         if (!validHdPath)
-            throw new EmittableError({
+            throw new EmittableError_1.default({
                 message: 'Incorrect derivation path when trying to update the temp seed. Please contact support',
                 level: 'major',
                 error: new Error('keystore: hd path to temp seed incorrect')
@@ -348,7 +352,7 @@ export class KeystoreController extends EventEmitter {
     }
     async #moveTempSeedToKeystoreSeeds() {
         if (this.#mainKey === null)
-            throw new EmittableError({
+            throw new EmittableError_1.default({
                 message: KEYSTORE_UNEXPECTED_ERROR_MESSAGE,
                 level: 'major',
                 error: new Error('keystore: needs to be unlocked')
@@ -356,14 +360,14 @@ export class KeystoreController extends EventEmitter {
         // Currently we support only one seed phrase to be added to the keystore
         // this fist seed phrase will become the saved seed phrase of the wallet
         if (this.#keystoreSeeds.length) {
-            throw new EmittableError({
+            throw new EmittableError_1.default({
                 message: 'You can have only one saved seed in the extension',
                 level: 'major',
                 error: new Error('keystore: seed phase already added. Storing multiple seed phrases not supported yet')
             });
         }
         if (!this.#tempSeed) {
-            throw new EmittableError({
+            throw new EmittableError_1.default({
                 message: 'Imported seed no longer exists in the extension. If you want to save it, please re-import it',
                 level: 'major',
                 error: new Error('keystore: imported seed deleted although a request to save it was made')
@@ -460,7 +464,7 @@ export class KeystoreController extends EventEmitter {
         if (!keysToAdd.length)
             return;
         if (this.#mainKey === null)
-            throw new EmittableError({
+            throw new EmittableError_1.default({
                 message: KEYSTORE_UNEXPECTED_ERROR_MESSAGE,
                 level: 'major',
                 error: new Error('keystore: needs to be unlocked')
@@ -482,14 +486,14 @@ export class KeystoreController extends EventEmitter {
             // eslint-disable-next-line no-param-reassign
             privateKey = privateKey.substring(0, 2) === '0x' ? privateKey.substring(2) : privateKey;
             // Set up the cipher
-            const counter = new aes.Counter(this.#mainKey.iv); // TS compiler fails to detect we check for null above
-            const aesCtr = new aes.ModeOfOperation.ctr(this.#mainKey.key, counter); // TS compiler fails to detect we check for null above
+            const counter = new aes_js_1.default.Counter(this.#mainKey.iv); // TS compiler fails to detect we check for null above
+            const aesCtr = new aes_js_1.default.ModeOfOperation.ctr(this.#mainKey.key, counter); // TS compiler fails to detect we check for null above
             return {
                 addr,
                 type,
                 label,
                 dedicatedToOneSA,
-                privKey: hexlify(aesCtr.encrypt(aes.utils.hex.toBytes(privateKey))),
+                privKey: (0, ethers_1.hexlify)(aesCtr.encrypt(aes_js_1.default.utils.hex.toBytes(privateKey))),
                 meta
             };
         })
@@ -507,14 +511,14 @@ export class KeystoreController extends EventEmitter {
     async removeKey(addr, type) {
         await this.#initialLoadPromise;
         if (!this.isUnlocked)
-            throw new EmittableError({
+            throw new EmittableError_1.default({
                 message: 'Extension not unlocked. Please try again or contact support if the problem persists.',
                 level: 'major',
                 error: new Error('keystore: not unlocked')
             });
         const keys = this.#keystoreKeys;
         if (!keys.find((x) => x.addr === addr && x.type === type))
-            throw new EmittableError({
+            throw new EmittableError_1.default({
                 message: KEYSTORE_UNEXPECTED_ERROR_MESSAGE,
                 level: 'major',
                 error: new Error(`keystore: trying to remove key that does not exist: address: ${addr}, type: ${type}`)
@@ -535,12 +539,12 @@ export class KeystoreController extends EventEmitter {
             throw new Error('keystore: key not found');
         if (storedKey.type !== 'internal')
             throw new Error('keystore: key does not have privateKey');
-        const encryptedBytes = getBytes(storedKey.privKey);
-        const counter = new aes.Counter(this.#mainKey.iv);
-        const aesCtr = new aes.ModeOfOperation.ctr(this.#mainKey.key, counter);
+        const encryptedBytes = (0, ethers_1.getBytes)(storedKey.privKey);
+        const counter = new aes_js_1.default.Counter(this.#mainKey.iv);
+        const aesCtr = new aes_js_1.default.ModeOfOperation.ctr(this.#mainKey.key, counter);
         const decryptedBytes = aesCtr.decrypt(encryptedBytes);
-        const decryptedPrivateKey = aes.utils.hex.fromBytes(decryptedBytes);
-        const wallet = new Wallet(decryptedPrivateKey);
+        const decryptedPrivateKey = aes_js_1.default.utils.hex.fromBytes(decryptedBytes);
+        const wallet = new ethers_1.Wallet(decryptedPrivateKey);
         const keyBackup = await wallet.encrypt(passphrase);
         return JSON.stringify(keyBackup);
     }
@@ -563,12 +567,12 @@ export class KeystoreController extends EventEmitter {
         if (storedKey.type !== 'internal')
             throw new Error('keystore: key does not have privateKey');
         // decrypt the pk of keyAddress with the keystore's key
-        const encryptedBytes = getBytes(storedKey.privKey);
-        const counter = new aes.Counter(this.#mainKey.iv);
-        const aesCtr = new aes.ModeOfOperation.ctr(this.#mainKey.key, counter);
+        const encryptedBytes = (0, ethers_1.getBytes)(storedKey.privKey);
+        const counter = new aes_js_1.default.Counter(this.#mainKey.iv);
+        const aesCtr = new aes_js_1.default.ModeOfOperation.ctr(this.#mainKey.key, counter);
         // encrypt the pk of keyAddress with publicKey
         const decryptedBytes = aesCtr.decrypt(encryptedBytes);
-        return aes.utils.hex.fromBytes(decryptedBytes);
+        return aes_js_1.default.utils.hex.fromBytes(decryptedBytes);
     }
     /**
      * Export with public key encrypt
@@ -579,19 +583,19 @@ export class KeystoreController extends EventEmitter {
      */
     async exportKeyWithPublicKeyEncryption(keyAddress, publicKey) {
         const decryptedPrivateKey = await this.#getPrivateKey(keyAddress);
-        const result = await encryptWithPublicKey(publicKey, decryptedPrivateKey);
+        const result = await (0, eth_crypto_1.encryptWithPublicKey)(publicKey, decryptedPrivateKey);
         return result;
     }
     async importKeyWithPublicKeyEncryption(encryptedSk, dedicatedToOneSA) {
         if (this.#mainKey === null)
             throw new Error('keystore: needs to be unlocked');
-        const privateKey = await decryptWithPrivateKey(hexlify(getBytes(concat([this.#mainKey.key, this.#mainKey.iv]))), encryptedSk);
+        const privateKey = await (0, eth_crypto_1.decryptWithPrivateKey)((0, ethers_1.hexlify)((0, ethers_1.getBytes)((0, ethers_1.concat)([this.#mainKey.key, this.#mainKey.iv]))), encryptedSk);
         if (!privateKey)
             throw new Error('keystore: wrong encryptedSk or private key');
         const keyToAdd = {
-            addr: new Wallet(privateKey).address,
+            addr: new ethers_1.Wallet(privateKey).address,
             privateKey,
-            label: getDefaultKeyLabel(this.keys, 0),
+            label: (0, keys_1.getDefaultKeyLabel)(this.keys, 0),
             type: 'internal',
             dedicatedToOneSA,
             meta: {
@@ -621,13 +625,13 @@ export class KeystoreController extends EventEmitter {
         if (key.type === 'internal') {
             if (!this.isUnlocked)
                 throw new Error('keystore: not unlocked');
-            const encryptedBytes = getBytes(storedKey.privKey);
+            const encryptedBytes = (0, ethers_1.getBytes)(storedKey.privKey);
             // @ts-ignore
-            const counter = new aes.Counter(this.#mainKey.iv);
+            const counter = new aes_js_1.default.Counter(this.#mainKey.iv);
             // @ts-ignore
-            const aesCtr = new aes.ModeOfOperation.ctr(this.#mainKey.key, counter);
+            const aesCtr = new aes_js_1.default.ModeOfOperation.ctr(this.#mainKey.key, counter);
             const decryptedBytes = aesCtr.decrypt(encryptedBytes);
-            const decryptedPrivateKey = aes.utils.hex.fromBytes(decryptedBytes);
+            const decryptedPrivateKey = aes_js_1.default.utils.hex.fromBytes(decryptedBytes);
             // @ts-ignore TODO: Figure out the correct type definition
             return new SignerInitializer(key, decryptedPrivateKey);
         }
@@ -641,11 +645,11 @@ export class KeystoreController extends EventEmitter {
         if (!this.#keystoreSeeds.length)
             throw new Error('keystore: no seed phrase added yet');
         const hdPathTemplate = this.#keystoreSeeds[0].hdPathTemplate;
-        const encryptedSeedBytes = getBytes(this.#keystoreSeeds[0].seed);
+        const encryptedSeedBytes = (0, ethers_1.getBytes)(this.#keystoreSeeds[0].seed);
         // @ts-ignore
-        const counter = new aes.Counter(this.#mainKey.iv);
+        const counter = new aes_js_1.default.Counter(this.#mainKey.iv);
         // @ts-ignore
-        const aesCtr = new aes.ModeOfOperation.ctr(this.#mainKey.key, counter);
+        const aesCtr = new aes_js_1.default.ModeOfOperation.ctr(this.#mainKey.key, counter);
         const decryptedSeedBytes = aesCtr.decrypt(encryptedSeedBytes);
         const decryptedSeed = new TextDecoder().decode(decryptedSeedBytes);
         return { seed: decryptedSeed, hdPathTemplate };
@@ -672,7 +676,7 @@ export class KeystoreController extends EventEmitter {
         if (oldSecret)
             await this.#unlockWithSecret('password', oldSecret);
         if (!this.isUnlocked)
-            throw new EmittableError({
+            throw new EmittableError_1.default({
                 message: 'App not unlocked. Please try again or contact support if the problem persists.',
                 level: 'major',
                 error: new Error('keystore: not unlocked')
@@ -750,4 +754,5 @@ export class KeystoreController extends EventEmitter {
         };
     }
 }
+exports.KeystoreController = KeystoreController;
 //# sourceMappingURL=keystore.js.map

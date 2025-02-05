@@ -1,11 +1,14 @@
-import { uniUniversalRouter } from './uniUniversalRouter';
-import { uniV2Mapping } from './uniV2';
-import { uniV32Mapping, uniV3Mapping } from './uniV3';
-export const uniswapHumanizer = (accountOp, currentIrCalls) => {
-    const uniV2MappingObj = uniV2Mapping();
-    const uniV3MappingObj = uniV3Mapping();
-    const uniV32MappingObj = uniV32Mapping();
-    const uniUniversalRouterObj = uniUniversalRouter();
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.uniswapHumanizer = void 0;
+const uniUniversalRouter_1 = require("./uniUniversalRouter");
+const uniV2_1 = require("./uniV2");
+const uniV3_1 = require("./uniV3");
+const uniswapHumanizer = (accountOp, currentIrCalls) => {
+    const uniV2MappingObj = (0, uniV2_1.uniV2Mapping)();
+    const uniV3MappingObj = (0, uniV3_1.uniV3Mapping)();
+    const uniV32MappingObj = (0, uniV3_1.uniV32Mapping)();
+    const uniUniversalRouterObj = (0, uniUniversalRouter_1.uniUniversalRouter)();
     const matcher = {
         '0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D': uniV2MappingObj,
         '0xe592427a0aece92de3edee1f18e0157c05861564': uniV3MappingObj,
@@ -49,4 +52,5 @@ export const uniswapHumanizer = (accountOp, currentIrCalls) => {
     });
     return newCalls;
 };
+exports.uniswapHumanizer = uniswapHumanizer;
 //# sourceMappingURL=index.js.map

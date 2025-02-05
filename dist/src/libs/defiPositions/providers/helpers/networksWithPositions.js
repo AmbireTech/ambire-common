@@ -1,3 +1,5 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
 const getAccountNetworksWithPositions = (accountId, accountState, oldNetworksWithPositionsByAccounts, providers) => {
     const networksWithPositions = {
         ...oldNetworksWithPositionsByAccounts[accountId]
@@ -19,5 +21,5 @@ const getAccountNetworksWithPositions = (accountId, accountState, oldNetworksWit
     });
     return networksWithPositions;
 };
-export default getAccountNetworksWithPositions;
+exports.default = getAccountNetworksWithPositions;
 //# sourceMappingURL=networksWithPositions.js.map

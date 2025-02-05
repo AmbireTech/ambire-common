@@ -1,6 +1,9 @@
+"use strict";
 /* eslint-disable class-methods-use-this */
-import { getBundlerByName, getDefaultBundler } from './getBundler';
-export class BundlerSwitcher {
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.BundlerSwitcher = void 0;
+const getBundler_1 = require("./getBundler");
+class BundlerSwitcher {
     network;
     bundler;
     usedBundlers = [];
@@ -13,7 +16,7 @@ export class BundlerSwitcher {
     noStateUpdateStatuses = [];
     constructor(network, getSignAccountOpStatus, noStateUpdateStatuses) {
         this.network = network;
-        this.bundler = getDefaultBundler(network);
+        this.bundler = (0, getBundler_1.getDefaultBundler)(network);
         this.usedBundlers.push(this.bundler.getName());
         this.getSignAccountOpStatus = getSignAccountOpStatus;
         this.noStateUpdateStatuses = noStateUpdateStatuses;
@@ -50,9 +53,10 @@ export class BundlerSwitcher {
         const availableBundlers = this.network.erc4337.bundlers.filter((bundler) => {
             return this.usedBundlers.indexOf(bundler) === -1;
         });
-        this.bundler = getBundlerByName(availableBundlers[0]);
+        this.bundler = (0, getBundler_1.getBundlerByName)(availableBundlers[0]);
         this.usedBundlers.push(this.bundler.getName());
         return this.bundler;
     }
 }
+exports.BundlerSwitcher = BundlerSwitcher;
 //# sourceMappingURL=bundlerSwitcher.js.map

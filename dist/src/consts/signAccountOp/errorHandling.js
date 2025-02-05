@@ -1,6 +1,10 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.RETRY_TO_INIT_ACCOUNT_OP_MSG = exports.WARNINGS = exports.ERRORS = void 0;
 const ERRORS = {
     eoaInsufficientFunds: 'Insufficient funds to cover the fee.'
 };
+exports.ERRORS = ERRORS;
 const WARNINGS = {
     significantBalanceDecrease: {
         id: 'significantBalanceDecrease',
@@ -16,6 +20,7 @@ const WARNINGS = {
         displayBeforeSign: true
     }
 };
+exports.WARNINGS = WARNINGS;
 const RETRY_TO_INIT_ACCOUNT_OP_MSG = 'Please attempt to initiate the transaction again or contact Ambire support.';
-export { ERRORS, WARNINGS, RETRY_TO_INIT_ACCOUNT_OP_MSG };
+exports.RETRY_TO_INIT_ACCOUNT_OP_MSG = RETRY_TO_INIT_ACCOUNT_OP_MSG;
 //# sourceMappingURL=errorHandling.js.map

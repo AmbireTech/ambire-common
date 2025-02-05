@@ -1,7 +1,11 @@
-import { Contract, getAddress, Interface, MaxUint256 } from 'ethers';
-import ERC20 from '../../../contracts/compiled/IERC20.json';
-import { isSmartAccount } from '../account/account';
-import { getTokenBalanceInUSD } from '../portfolio/helpers';
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.getActiveRoutesForAccount = exports.buildSwapAndBridgeUserRequests = exports.getActiveRoutesUpdateInterval = exports.getActiveRoutesLowestServiceTime = exports.getQuoteRouteSteps = exports.getIsNetworkSupported = exports.getIsBridgeTxn = exports.convertPortfolioTokenToSocketAPIToken = exports.getIsTokenEligibleForSwapAndBridge = exports.sortPortfolioTokenList = exports.sortTokenListResponse = void 0;
+const tslib_1 = require("tslib");
+const ethers_1 = require("ethers");
+const IERC20_json_1 = tslib_1.__importDefault(require("../../../contracts/compiled/IERC20.json"));
+const account_1 = require("../account/account");
+const helpers_1 = require("../portfolio/helpers");
 const sortTokensByPendingAndBalance = (a, b) => {
     // Pending tokens go on top
     const isAPending = typeof a.amountPostSimulation === 'bigint' && a.amountPostSimulation !== BigInt(a.amount);
@@ -11,13 +15,13 @@ const sortTokensByPendingAndBalance = (a, b) => {
     if (!isAPending && isBPending)
         return 1;
     // Otherwise, higher balance comes first
-    const aBalanceUSD = getTokenBalanceInUSD(a);
-    const bBalanceUSD = getTokenBalanceInUSD(b);
+    const aBalanceUSD = (0, helpers_1.getTokenBalanceInUSD)(a);
+    const bBalanceUSD = (0, helpers_1.getTokenBalanceInUSD)(b);
     if (aBalanceUSD !== bBalanceUSD)
         return bBalanceUSD - aBalanceUSD;
     return 0;
 };
-export const sortTokenListResponse = (tokenListResponse, accountPortfolioTokenList) => {
+const sortTokenListResponse = (tokenListResponse, accountPortfolioTokenList) => {
     return tokenListResponse.sort((a, b) => {
         const aInPortfolio = accountPortfolioTokenList.find((t) => t.address === a.address);
         const bInPortfolio = accountPortfolioTokenList.find((t) => t.address === b.address);
@@ -35,7 +39,8 @@ export const sortTokenListResponse = (tokenListResponse, accountPortfolioTokenLi
         return (a.name || '').localeCompare(b.name || '');
     });
 };
-export const sortPortfolioTokenList = (accountPortfolioTokenList) => {
+exports.sortTokenListResponse = sortTokenListResponse;
+const sortPortfolioTokenList = (accountPortfolioTokenList) => {
     return accountPortfolioTokenList.sort((a, b) => {
         const comparisonResult = sortTokensByPendingAndBalance(a, b);
         if (comparisonResult !== 0)
@@ -44,11 +49,12 @@ export const sortPortfolioTokenList = (accountPortfolioTokenList) => {
         return (a.symbol || '').localeCompare(b.symbol || '');
     });
 };
+exports.sortPortfolioTokenList = sortPortfolioTokenList;
 /**
  * Determines if a token is eligible for swapping and bridging.
  * Not all tokens in the portfolio are eligible.
  */
-export const getIsTokenEligibleForSwapAndBridge = (token) => {
+const getIsTokenEligibleForSwapAndBridge = (token) => {
     // Prevent filtering out tokens with amountPostSimulation = 0 if the actual amount is positive.
     // This ensures the token remains in the list when sending the full amount of it
     const amount = token.amountPostSimulation === 0n && token.amount > 0n
@@ -63,7 +69,8 @@ export const getIsTokenEligibleForSwapAndBridge = (token) => {
         !token.flags.rewardsType &&
         hasPositiveBalance);
 };
-export const convertPortfolioTokenToSocketAPIToken = (portfolioToken, chainId) => {
+exports.getIsTokenEligibleForSwapAndBridge = getIsTokenEligibleForSwapAndBridge;
+const convertPortfolioTokenToSocketAPIToken = (portfolioToken, chainId) => {
     const { address, decimals, symbol } = portfolioToken;
     // Although name and symbol will be the same, it's better than having "No name" in the UI (valid use-case)
     const name = symbol;
@@ -73,6 +80,7 @@ export const convertPortfolioTokenToSocketAPIToken = (portfolioToken, chainId) =
     const logoURI = '';
     return { address, chainId, decimals, symbol, name, icon, logoURI };
 };
+exports.convertPortfolioTokenToSocketAPIToken = convertPortfolioTokenToSocketAPIToken;
 const getQuoteRouteSteps = (userTxs) => {
     return userTxs.reduce((stepsAcc, tx) => {
         if (tx.userTxType === 'fund-movr') {
@@ -96,6 +104,7 @@ const getQuoteRouteSteps = (userTxs) => {
         return stepsAcc;
     }, []);
 };
+exports.getQuoteRouteSteps = getQuoteRouteSteps;
 const getActiveRoutesLowestServiceTime = (activeRoutes) => {
     const serviceTimes = [];
     activeRoutes.forEach((r) => r.route.userTxs.forEach((tx) => {
@@ -105,6 +114,7 @@ const getActiveRoutesLowestServiceTime = (activeRoutes) => {
     }));
     return serviceTimes.sort((a, b) => a - b)[0];
 };
+exports.getActiveRoutesLowestServiceTime = getActiveRoutesLowestServiceTime;
 const getActiveRoutesUpdateInterval = (minServiceTime) => {
     if (!minServiceTime)
         return 7000;
@@ -118,13 +128,14 @@ const getActiveRoutesUpdateInterval = (minServiceTime) => {
         return 12000;
     return 15000;
 };
+exports.getActiveRoutesUpdateInterval = getActiveRoutesUpdateInterval;
 const buildRevokeApprovalIfNeeded = async (userTx, account, provider) => {
     if (!userTx.approvalData)
         return;
-    const erc20Contract = new Contract(userTx.approvalData.approvalTokenAddress, ERC20.abi, provider);
-    const requiredAmount = isSmartAccount(account)
+    const erc20Contract = new ethers_1.Contract(userTx.approvalData.approvalTokenAddress, IERC20_json_1.default.abi, provider);
+    const requiredAmount = (0, account_1.isSmartAccount)(account)
         ? BigInt(userTx.approvalData.minimumApprovalAmount)
-        : MaxUint256;
+        : ethers_1.MaxUint256;
     const approveCallData = erc20Contract.interface.encodeFunctionData('approve', [
         userTx.approvalData.allowanceTarget,
         requiredAmount
@@ -152,10 +163,10 @@ const buildRevokeApprovalIfNeeded = async (userTx, account, provider) => {
     };
 };
 const buildSwapAndBridgeUserRequests = async (userTx, networkId, account, provider) => {
-    if (isSmartAccount(account)) {
+    if ((0, account_1.isSmartAccount)(account)) {
         const calls = [];
         if (userTx.approvalData) {
-            const erc20Interface = new Interface(ERC20.abi);
+            const erc20Interface = new ethers_1.Interface(IERC20_json_1.default.abi);
             const revokeApproval = await buildRevokeApprovalIfNeeded(userTx, account, provider);
             if (revokeApproval)
                 calls.push(revokeApproval);
@@ -195,10 +206,10 @@ const buildSwapAndBridgeUserRequests = async (userTx, networkId, account, provid
     const requests = [];
     let shouldBuildSwapOrBridgeTx = true;
     if (userTx.approvalData) {
-        const erc20Interface = new Interface(ERC20.abi);
+        const erc20Interface = new ethers_1.Interface(IERC20_json_1.default.abi);
         let shouldApprove = true;
         try {
-            const erc20Contract = new Contract(userTx.approvalData.approvalTokenAddress, ERC20.abi, provider);
+            const erc20Contract = new ethers_1.Contract(userTx.approvalData.approvalTokenAddress, IERC20_json_1.default.abi, provider);
             const allowance = await erc20Contract.allowance(userTx.approvalData.owner, userTx.approvalData.allowanceTarget);
             // check if an approval already exists
             if (BigInt(allowance) >= BigInt(userTx.approvalData.minimumApprovalAmount))
@@ -232,7 +243,7 @@ const buildSwapAndBridgeUserRequests = async (userTx, networkId, account, provid
                             value: BigInt('0'),
                             data: erc20Interface.encodeFunctionData('approve', [
                                 userTx.approvalData.allowanceTarget,
-                                MaxUint256 // approve the max possible amount for better UX on BA
+                                ethers_1.MaxUint256 // approve the max possible amount for better UX on BA
                             ]),
                             fromUserRequestId: `${userTx.activeRouteId}-approval`
                         }
@@ -276,20 +287,23 @@ const buildSwapAndBridgeUserRequests = async (userTx, networkId, account, provid
     }
     return requests;
 };
-export const getIsBridgeTxn = (userTxType) => userTxType === 'fund-movr';
+exports.buildSwapAndBridgeUserRequests = buildSwapAndBridgeUserRequests;
+const getIsBridgeTxn = (userTxType) => userTxType === 'fund-movr';
+exports.getIsBridgeTxn = getIsBridgeTxn;
 /**
  * Checks if a network is supported by our Swap & Bridge service provider. As of v4.43.0
  * there are 16 networks supported, so user could have (many) custom networks that are not.
  */
-export const getIsNetworkSupported = (supportedChainIds, network) => {
+const getIsNetworkSupported = (supportedChainIds, network) => {
     // Assume supported if missing (and receive no results when attempting to use
     // a not-supported network) than the alternative - blocking the UI.
     if (!supportedChainIds.length || !network)
         return true;
     return supportedChainIds.includes(network.chainId);
 };
+exports.getIsNetworkSupported = getIsNetworkSupported;
 const getActiveRoutesForAccount = (accountAddress, activeRoutes) => {
-    return activeRoutes.filter((r) => getAddress(r.route.sender || r.route.userAddress) === accountAddress);
+    return activeRoutes.filter((r) => (0, ethers_1.getAddress)(r.route.sender || r.route.userAddress) === accountAddress);
 };
-export { getQuoteRouteSteps, getActiveRoutesLowestServiceTime, getActiveRoutesUpdateInterval, buildSwapAndBridgeUserRequests, getActiveRoutesForAccount };
+exports.getActiveRoutesForAccount = getActiveRoutesForAccount;
 //# sourceMappingURL=swapAndBridge.js.map

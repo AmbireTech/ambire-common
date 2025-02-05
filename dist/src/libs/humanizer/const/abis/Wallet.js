@@ -1,4 +1,7 @@
-export const StakingPool = [
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.StakingPool = void 0;
+exports.StakingPool = [
     'function ADXToken() view returns (address)',
     'function ADXUSDOracle() view returns (address)',
     'function DOMAIN_SEPARATOR() view returns (bytes32)',

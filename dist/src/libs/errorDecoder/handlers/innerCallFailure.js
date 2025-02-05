@@ -1,6 +1,8 @@
-import { ErrorType } from '../types';
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const types_1 = require("../types");
 class InnerCallFailureHandler {
-    type = ErrorType.InnerCallFailureError;
+    type = types_1.ErrorType.InnerCallFailureError;
     matches(data, error) {
         return error.name === 'InnerCallFailureError';
     }
@@ -41,5 +43,5 @@ class InnerCallFailureHandler {
         };
     }
 }
-export default InnerCallFailureHandler;
+exports.default = InnerCallFailureHandler;
 //# sourceMappingURL=innerCallFailure.js.map

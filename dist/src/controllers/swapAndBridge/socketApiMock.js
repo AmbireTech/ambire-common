@@ -1,5 +1,8 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.SocketAPIMock = void 0;
 /* eslint-disable class-methods-use-this */
-export class SocketAPIMock {
+class SocketAPIMock {
     #fetch;
     #baseUrl = 'https://api.socket.tech/v2';
     #headers;
@@ -850,4 +853,5 @@ export class SocketAPIMock {
         };
     }
 }
+exports.SocketAPIMock = SocketAPIMock;
 //# sourceMappingURL=socketApiMock.js.map

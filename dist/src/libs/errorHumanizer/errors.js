@@ -1,7 +1,11 @@
-import { EXPIRED_PREFIX } from '../errorDecoder/constants';
-import { RPC_HARDCODED_ERRORS } from '../errorDecoder/handlers/rpc';
-import { RELAYER_DOWN_MESSAGE } from '../relayerCall/relayerCall';
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.insufficientPaymasterFunds = exports.ESTIMATION_ERRORS = exports.BROADCAST_ERRORS = exports.BROADCAST_OR_ESTIMATION_ERRORS = void 0;
+const constants_1 = require("../errorDecoder/constants");
+const rpc_1 = require("../errorDecoder/handlers/rpc");
+const relayerCall_1 = require("../relayerCall/relayerCall");
 const insufficientPaymasterFunds = "the Paymaster has insufficient funds. Please report this to the team. We've disabled it, so please try again with the updated fee payment options.";
+exports.insufficientPaymasterFunds = insufficientPaymasterFunds;
 const BROADCAST_OR_ESTIMATION_ERRORS = [
     // Rpc
     {
@@ -9,7 +13,7 @@ const BROADCAST_OR_ESTIMATION_ERRORS = [
         message: 'the RPC provider does not support the requested operation. Please check your RPC settings or contact the app team.'
     },
     {
-        reasons: [RPC_HARDCODED_ERRORS.rpcTimeout, 'Unable to connect to provider'],
+        reasons: [rpc_1.RPC_HARDCODED_ERRORS.rpcTimeout, 'Unable to connect to provider'],
         message: 'of a problem with the RPC on this network. Please try again later, change the RPC or contact support for assistance.'
     },
     {
@@ -56,7 +60,7 @@ const BROADCAST_OR_ESTIMATION_ERRORS = [
     },
     // Relayer
     {
-        reasons: [RELAYER_DOWN_MESSAGE],
+        reasons: [relayerCall_1.RELAYER_DOWN_MESSAGE],
         message: 'the Ambire relayer is temporarily down.\nPlease try again or contact Ambire support for assistance.'
     },
     {
@@ -81,7 +85,7 @@ const BROADCAST_OR_ESTIMATION_ERRORS = [
         message: 'of one of the following reasons: missing approval, insufficient approved amount, the amount exceeds the account balance.'
     },
     {
-        reasons: [EXPIRED_PREFIX, 'Router: EXPIRED', 'Transaction too old'],
+        reasons: [constants_1.EXPIRED_PREFIX, 'Router: EXPIRED', 'Transaction too old'],
         message: 'the swap has expired. Return to the app and reinitiate the swap if you wish to proceed.'
     },
     // bundler
@@ -94,6 +98,7 @@ const BROADCAST_OR_ESTIMATION_ERRORS = [
         message: 'The bundler seems to be down at the moment. Please try again later'
     }
 ];
+exports.BROADCAST_OR_ESTIMATION_ERRORS = BROADCAST_OR_ESTIMATION_ERRORS;
 const BROADCAST_ERRORS = [
     {
         reasons: ['pimlico_getUserOperationGasPrice'],
@@ -108,6 +113,7 @@ const BROADCAST_ERRORS = [
         message: 'the fee set for the transaction is lower than the network’s current base fee. Please try again with a higher fee.'
     }
 ];
+exports.BROADCAST_ERRORS = BROADCAST_ERRORS;
 const ESTIMATION_ERRORS = [
     {
         reasons: ['SPOOF_ERROR', 'INSUFFICIENT_PRIVILEGE'],
@@ -159,5 +165,5 @@ const ESTIMATION_ERRORS = [
         message: 'the smart contract’s initialization failed. This is likely a deployment issue; please check the constructor parameters.'
     }
 ];
-export { BROADCAST_OR_ESTIMATION_ERRORS, BROADCAST_ERRORS, ESTIMATION_ERRORS, insufficientPaymasterFunds };
+exports.ESTIMATION_ERRORS = ESTIMATION_ERRORS;
 //# sourceMappingURL=errors.js.map

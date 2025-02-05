@@ -1,6 +1,9 @@
-import { Interface, MaxUint256 } from 'ethers';
-import { AaveV3Pool } from '../../const/abis';
-import { getAction, getAddressVisualization, getDeadline, getLabel, getOnBehalfOf, getToken } from '../../utils';
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.aaveV3Pool = void 0;
+const ethers_1 = require("ethers");
+const abis_1 = require("../../const/abis");
+const utils_1 = require("../../utils");
 /*
 Fetched via
   let maxValueForUint16 = 65535
@@ -101,52 +104,52 @@ const AAVE_TOKENS_BY_INDEX = {
         '0x2416092f143378750bb29b79ed961ab195cceea5'
     ]
 };
-export const aaveV3Pool = () => {
-    const iface = new Interface(AaveV3Pool);
+const aaveV3Pool = () => {
+    const iface = new ethers_1.Interface(abis_1.AaveV3Pool);
     return {
         [iface.getFunction('supply(address asset, uint256 amount, address onBehalfOf, uint16 referralCode)')?.selector]: (accountOp, call) => {
             // eslint-disable-next-line @typescript-eslint/no-unused-vars
             const { asset, amount, onBehalfOf, referralCode } = iface.parseTransaction(call).args;
             return [
-                getAction('Deposit'),
-                getToken(asset, amount),
-                getLabel('to'),
-                getAddressVisualization(call.to),
-                ...getOnBehalfOf(onBehalfOf, accountOp.accountAddr)
+                (0, utils_1.getAction)('Deposit'),
+                (0, utils_1.getToken)(asset, amount),
+                (0, utils_1.getLabel)('to'),
+                (0, utils_1.getAddressVisualization)(call.to),
+                ...(0, utils_1.getOnBehalfOf)(onBehalfOf, accountOp.accountAddr)
             ];
         },
         [iface.getFunction('flashLoanSimple(address receiverAddress, address asset, uint256 amount, bytes params, uint16 referralCode)')?.selector]: (accountOp, call) => {
             // eslint-disable-next-line @typescript-eslint/no-unused-vars
             const { receiverAddress, asset, amount, params, referralCode } = iface.parseTransaction(call).args;
             return [
-                getAction('Execute Flash Loan'),
-                getToken(asset, amount),
-                getLabel('and call'),
-                getAddressVisualization(receiverAddress)
+                (0, utils_1.getAction)('Execute Flash Loan'),
+                (0, utils_1.getToken)(asset, amount),
+                (0, utils_1.getLabel)('and call'),
+                (0, utils_1.getAddressVisualization)(receiverAddress)
             ];
         },
         [iface.getFunction('repayWithATokens(bytes32 args)')?.selector]: (accountOp, call) => {
             // eslint-disable-next-line @typescript-eslint/no-unused-vars
             const { args } = iface.parseTransaction(call).args;
-            return [getAction('Repay with token A'), getLabel('to'), getAddressVisualization(call.to)];
+            return [(0, utils_1.getAction)('Repay with token A'), (0, utils_1.getLabel)('to'), (0, utils_1.getAddressVisualization)(call.to)];
         },
         [iface.getFunction('repayWithPermit(bytes32 args, bytes32 r, bytes32 s)')?.selector]: (accountOp, call) => {
             // eslint-disable-next-line @typescript-eslint/no-unused-vars
             const { args } = iface.parseTransaction(call).args;
-            return [getAction('Repay with permit'), getLabel('to'), getAddressVisualization(call.to)];
+            return [(0, utils_1.getAction)('Repay with permit'), (0, utils_1.getLabel)('to'), (0, utils_1.getAddressVisualization)(call.to)];
         },
         [iface.getFunction('supplyWithPermit(address asset, uint256 amount, address onBehalfOf, uint16 referralCode, uint256 deadline, uint8 permitV, bytes32 permitR, bytes32 permitS)')?.selector]: (accountOp, call) => {
             // eslint-disable-next-line @typescript-eslint/no-unused-vars
             const { asset, amount, onBehalfOf, referralCode, deadline, permitV, permitR, bytes32 } = iface.parseTransaction(call).args;
             return [
-                getAction('Supply'),
-                getToken(asset, amount),
-                getLabel('to'),
-                getAddressVisualization(call.to),
+                (0, utils_1.getAction)('Supply'),
+                (0, utils_1.getToken)(asset, amount),
+                (0, utils_1.getLabel)('to'),
+                (0, utils_1.getAddressVisualization)(call.to),
                 ...(onBehalfOf !== accountOp.accountAddr
-                    ? [getLabel('on behalf of'), getAddressVisualization(onBehalfOf)]
+                    ? [(0, utils_1.getLabel)('on behalf of'), (0, utils_1.getAddressVisualization)(onBehalfOf)]
                     : []),
-                getDeadline(deadline)
+                (0, utils_1.getDeadline)(deadline)
             ];
         },
         [iface.getFunction('withdraw(bytes32 args)')?.selector]: (accountOp, call) => {
@@ -155,18 +158,19 @@ export const aaveV3Pool = () => {
             const amountAsString = args.slice(30, 62);
             const tokenIndex = Number(`0x${args.slice(62)}`);
             if (!AAVE_TOKENS_BY_INDEX[accountOp.networkId])
-                return [getAction('Withdraw'), getLabel('from'), getAddressVisualization(call.to)];
+                return [(0, utils_1.getAction)('Withdraw'), (0, utils_1.getLabel)('from'), (0, utils_1.getAddressVisualization)(call.to)];
             if (tokenIndex >= AAVE_TOKENS_BY_INDEX[accountOp.networkId].length)
-                return [getAction('Withdraw'), getLabel('from'), getAddressVisualization(call.to)];
+                return [(0, utils_1.getAction)('Withdraw'), (0, utils_1.getLabel)('from'), (0, utils_1.getAddressVisualization)(call.to)];
             // stores amount inn uint128 instead of uint256, but max value is treated as max value
-            const amount = amountAsString === 'f'.repeat(32) ? MaxUint256 : BigInt(`0x${amountAsString}`);
+            const amount = amountAsString === 'f'.repeat(32) ? ethers_1.MaxUint256 : BigInt(`0x${amountAsString}`);
             return [
-                getAction('Withdraw'),
-                getToken(AAVE_TOKENS_BY_INDEX[accountOp.networkId][tokenIndex], amount),
-                getLabel('from'),
-                getAddressVisualization(call.to)
+                (0, utils_1.getAction)('Withdraw'),
+                (0, utils_1.getToken)(AAVE_TOKENS_BY_INDEX[accountOp.networkId][tokenIndex], amount),
+                (0, utils_1.getLabel)('from'),
+                (0, utils_1.getAddressVisualization)(call.to)
             ];
         }
     };
 };
+exports.aaveV3Pool = aaveV3Pool;
 //# sourceMappingURL=aaveV3.js.map

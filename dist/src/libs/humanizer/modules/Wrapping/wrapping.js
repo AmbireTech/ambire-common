@@ -1,8 +1,11 @@
-import { Interface, ZeroAddress } from 'ethers';
-import { WETH } from '../../const/abis';
-import { getUnknownVisualization, getUnwrapping, getWrapping } from '../../utils';
-export const wrappingModule = (_, irCalls, humanizerMeta) => {
-    const iface = new Interface(WETH);
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.wrappingModule = void 0;
+const ethers_1 = require("ethers");
+const abis_1 = require("../../const/abis");
+const utils_1 = require("../../utils");
+const wrappingModule = (_, irCalls, humanizerMeta) => {
+    const iface = new ethers_1.Interface(abis_1.WETH);
     const newCalls = irCalls.map((call) => {
         const knownAddressData = humanizerMeta?.knownAddresses[call.to.toLowerCase()];
         if (knownAddressData?.name === 'Wrapped ETH' ||
@@ -15,7 +18,7 @@ export const wrappingModule = (_, irCalls, humanizerMeta) => {
             if (call.data.slice(0, 10) === iface.getFunction('deposit')?.selector) {
                 return {
                     ...call,
-                    fullVisualization: getWrapping(ZeroAddress, call.value)
+                    fullVisualization: (0, utils_1.getWrapping)(ethers_1.ZeroAddress, call.value)
                 };
             }
             // 0x2e1a7d4d
@@ -23,17 +26,18 @@ export const wrappingModule = (_, irCalls, humanizerMeta) => {
                 const [amount] = iface.parseTransaction(call)?.args || [];
                 return {
                     ...call,
-                    fullVisualization: getUnwrapping(ZeroAddress, amount)
+                    fullVisualization: (0, utils_1.getUnwrapping)(ethers_1.ZeroAddress, amount)
                 };
             }
             if (!call?.fullVisualization)
                 return {
                     ...call,
-                    fullVisualization: getUnknownVisualization('wrapped', call)
+                    fullVisualization: (0, utils_1.getUnknownVisualization)('wrapped', call)
                 };
         }
         return call;
     });
     return newCalls;
 };
+exports.wrappingModule = wrappingModule;
 //# sourceMappingURL=wrapping.js.map

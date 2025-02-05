@@ -1,6 +1,9 @@
-import { Interface } from 'ethers';
-import { StakingPool } from '../../const/abis';
-import { getAction, getAddressVisualization, getLabel, getToken } from '../../utils';
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.StakingPools = void 0;
+const ethers_1 = require("ethers");
+const abis_1 = require("../../const/abis");
+const utils_1 = require("../../utils");
 const STAKING_POOLS = {
     '0x47cd7e91c3cbaaf266369fe8518345fc4fc12935': {
         baseToken: '0x88800092ff476844f74dc2fc427974bbee2794ae',
@@ -17,45 +20,46 @@ const STAKING_POOLS = {
     }
 };
 // const WALLET_TOKEN_ADDR = '0x88800092ff476844f74dc2fc427974bbee2794ae'
-export const StakingPools = () => {
-    const iface = new Interface(StakingPool);
+const StakingPools = () => {
+    const iface = new ethers_1.Interface(abis_1.StakingPool);
     return {
         [iface.getFunction('enter')?.selector]: (call) => {
             const { amount } = iface.parseTransaction(call).args;
             return [
-                getAction('Deposit'),
-                getToken(STAKING_POOLS[call.to.toLowerCase()].baseToken, amount),
-                getLabel('to'),
-                getAddressVisualization(call.to)
+                (0, utils_1.getAction)('Deposit'),
+                (0, utils_1.getToken)(STAKING_POOLS[call.to.toLowerCase()].baseToken, amount),
+                (0, utils_1.getLabel)('to'),
+                (0, utils_1.getAddressVisualization)(call.to)
             ];
         },
         [iface.getFunction('leave')?.selector]: (call) => {
             const { shares } = iface.parseTransaction(call).args;
             return [
-                getAction('Leave'),
-                getLabel('with'),
-                getToken(STAKING_POOLS[call.to.toLowerCase()].baseToken, shares),
-                getAddressVisualization(call.to)
+                (0, utils_1.getAction)('Leave'),
+                (0, utils_1.getLabel)('with'),
+                (0, utils_1.getToken)(STAKING_POOLS[call.to.toLowerCase()].baseToken, shares),
+                (0, utils_1.getAddressVisualization)(call.to)
             ];
         },
         [iface.getFunction('withdraw')?.selector]: (call) => {
             const { shares } = iface.parseTransaction(call).args;
             return [
-                getAction('Withdraw'),
-                getToken(STAKING_POOLS[call.to.toLowerCase()].baseToken, shares),
-                getLabel('from'),
-                getAddressVisualization(call.to)
+                (0, utils_1.getAction)('Withdraw'),
+                (0, utils_1.getToken)(STAKING_POOLS[call.to.toLowerCase()].baseToken, shares),
+                (0, utils_1.getLabel)('from'),
+                (0, utils_1.getAddressVisualization)(call.to)
             ];
         },
         [iface.getFunction('rageLeave')?.selector]: (call) => {
             const { shares } = iface.parseTransaction(call).args;
             return [
-                getAction('Rage leave'),
-                getLabel('with'),
-                getToken(STAKING_POOLS[call.to.toLowerCase()].baseToken, shares),
-                getAddressVisualization(call.to)
+                (0, utils_1.getAction)('Rage leave'),
+                (0, utils_1.getLabel)('with'),
+                (0, utils_1.getToken)(STAKING_POOLS[call.to.toLowerCase()].baseToken, shares),
+                (0, utils_1.getAddressVisualization)(call.to)
             ];
         }
     };
 };
+exports.StakingPools = StakingPools;
 //# sourceMappingURL=stakingPools.js.map

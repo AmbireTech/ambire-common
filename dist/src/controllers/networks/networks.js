@@ -1,7 +1,11 @@
-import EmittableError from '../../classes/EmittableError';
-import { networks as predefinedNetworks } from '../../consts/networks';
-import { getFeaturesByNetworkProperties, getNetworkInfo, is4337Enabled, migrateNetworkPreferencesToNetworks } from '../../libs/networks/networks';
-import EventEmitter from '../eventEmitter/eventEmitter';
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.NetworksController = void 0;
+const tslib_1 = require("tslib");
+const EmittableError_1 = tslib_1.__importDefault(require("../../classes/EmittableError"));
+const networks_1 = require("../../consts/networks");
+const networks_2 = require("../../libs/networks/networks");
+const eventEmitter_1 = tslib_1.__importDefault(require("../eventEmitter/eventEmitter"));
 const STATUS_WRAPPED_METHODS = {
     addNetwork: 'INITIAL',
     updateNetwork: 'INITIAL'
@@ -11,7 +15,7 @@ const STATUS_WRAPPED_METHODS = {
  * that users can add either through a dApp request or manually via the UI. This controller provides functions
  * for adding, updating, and removing networks.
  */
-export class NetworksController extends EventEmitter {
+class NetworksController extends eventEmitter_1.default {
     #storage;
     #fetch;
     #networks = {};
@@ -35,13 +39,13 @@ export class NetworksController extends EventEmitter {
     }
     get networks() {
         if (!this.#networks)
-            return predefinedNetworks;
+            return networks_1.networks;
         const uniqueNetworksByChainId = Object.values(this.#networks)
             .sort((a, b) => +b.predefined - +a.predefined) // first predefined
             .filter((item, index, self) => self.findIndex((i) => i.chainId === item.chainId) === index); // unique by chainId (predefined with priority)
         return uniqueNetworksByChainId.map((network) => {
             // eslint-disable-next-line no-param-reassign
-            network.features = getFeaturesByNetworkProperties({
+            network.features = (0, networks_2.getFeaturesByNetworkProperties)({
                 isSAEnabled: network.isSAEnabled,
                 isOptimistic: network.isOptimistic ?? false,
                 rpcNoStateOverride: network.rpcNoStateOverride,
@@ -63,12 +67,12 @@ export class NetworksController extends EventEmitter {
         let storedNetworks;
         storedNetworks = await this.#storage.get('networks', {});
         if (!Object.keys(storedNetworks).length && storedNetworkPreferences) {
-            storedNetworks = await migrateNetworkPreferencesToNetworks(storedNetworkPreferences);
+            storedNetworks = await (0, networks_2.migrateNetworkPreferencesToNetworks)(storedNetworkPreferences);
             await this.#storage.set('networks', storedNetworks);
             await this.#storage.remove('networkPreferences');
         }
         this.#networks = storedNetworks;
-        predefinedNetworks.forEach((n) => {
+        networks_1.networks.forEach((n) => {
             this.#networks[n.id] = {
                 ...n,
                 ...(this.#networks[n.id] || {}),
@@ -76,7 +80,7 @@ export class NetworksController extends EventEmitter {
                 feeOptions: n.feeOptions,
                 hasRelayer: n.hasRelayer,
                 erc4337: {
-                    enabled: is4337Enabled(!!n.erc4337.hasBundlerSupport, n, this.#networks[n.id]?.force4337),
+                    enabled: (0, networks_2.is4337Enabled)(!!n.erc4337.hasBundlerSupport, n, this.#networks[n.id]?.force4337),
                     hasPaymaster: n.erc4337.hasPaymaster,
                     defaultBundler: n.erc4337.defaultBundler,
                     bundlers: n.erc4337.bundlers
@@ -87,7 +91,7 @@ export class NetworksController extends EventEmitter {
         });
         // add predefined: false for each deleted network from predefined
         Object.keys(this.#networks).forEach((networkName) => {
-            const predefinedNetwork = predefinedNetworks.find((net) => net.chainId === this.#networks[networkName].chainId);
+            const predefinedNetwork = networks_1.networks.find((net) => net.chainId === this.#networks[networkName].chainId);
             if (!predefinedNetwork) {
                 this.#networks[networkName].predefined = false;
             }
@@ -103,7 +107,7 @@ export class NetworksController extends EventEmitter {
             this.networkToAddOrUpdate = networkToAddOrUpdate;
             this.emitUpdate();
             // eslint-disable-next-line @typescript-eslint/no-floating-promises
-            getNetworkInfo(this.#fetch, networkToAddOrUpdate.rpcUrl, networkToAddOrUpdate.chainId, (info) => {
+            (0, networks_2.getNetworkInfo)(this.#fetch, networkToAddOrUpdate.rpcUrl, networkToAddOrUpdate.chainId, (info) => {
                 if (this.networkToAddOrUpdate) {
                     this.networkToAddOrUpdate = { ...this.networkToAddOrUpdate, info };
                     this.emitUpdate();
@@ -126,7 +130,7 @@ export class NetworksController extends EventEmitter {
         const networkId = network.name.toLowerCase();
         // make sure the id and chainId of the network are unique
         if (ids.indexOf(networkId) !== -1 || chainIds.indexOf(BigInt(network.chainId)) !== -1) {
-            throw new EmittableError({
+            throw new EmittableError_1.default({
                 message: 'The network you are trying to add has already been added.',
                 level: 'major',
                 error: new Error('settings: addNetwork chain already added (duplicate id/chainId)')
@@ -141,7 +145,7 @@ export class NetworksController extends EventEmitter {
             ...network,
             ...info,
             feeOptions,
-            features: getFeaturesByNetworkProperties(info),
+            features: (0, networks_2.getFeaturesByNetworkProperties)(info),
             hasRelayer: false,
             predefined: false
         };
@@ -170,7 +174,7 @@ export class NetworksController extends EventEmitter {
         this.#networks[networkId] = { ...this.#networks[networkId], ...changedNetwork };
         // if force4337 is updated, we have to update the enabled flag as well
         if ('force4337' in changedNetwork) {
-            this.#networks[networkId].erc4337.enabled = is4337Enabled(true, this.#networks[networkId], changedNetwork.force4337);
+            this.#networks[networkId].erc4337.enabled = (0, networks_2.is4337Enabled)(true, this.#networks[networkId], changedNetwork.force4337);
         }
         this.#onAddOrUpdateNetwork(this.#networks[networkId]);
         await this.#storage.set('networks', this.#networks);
@@ -192,7 +196,7 @@ export class NetworksController extends EventEmitter {
                     return;
                 }
                 // eslint-disable-next-line @typescript-eslint/no-floating-promises
-                getNetworkInfo(this.#fetch, changedNetwork.selectedRpcUrl, this.#networks[networkId].chainId, async (info) => {
+                (0, networks_2.getNetworkInfo)(this.#fetch, changedNetwork.selectedRpcUrl, this.#networks[networkId].chainId, async (info) => {
                     if (Object.values(info).some((prop) => prop === 'LOADING')) {
                         return;
                     }
@@ -236,4 +240,5 @@ export class NetworksController extends EventEmitter {
         };
     }
 }
+exports.NetworksController = NetworksController;
 //# sourceMappingURL=networks.js.map

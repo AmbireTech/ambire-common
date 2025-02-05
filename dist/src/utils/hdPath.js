@@ -1,8 +1,12 @@
-export const getHdPathFromTemplate = (hdPathTemplate, index) => {
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.getHDPathIndices = exports.getHdPathFromTemplate = void 0;
+const getHdPathFromTemplate = (hdPathTemplate, index) => {
     return hdPathTemplate.replace('<account>', index.toString());
 };
+exports.getHdPathFromTemplate = getHdPathFromTemplate;
 const HARDENED_OFFSET = 0x80000000;
-export const getHDPathIndices = (hdPathTemplate, insertIdx = 0) => {
+const getHDPathIndices = (hdPathTemplate, insertIdx = 0) => {
     const path = hdPathTemplate.split('/').slice(1);
     const indices = [];
     let usedX = false;
@@ -35,4 +39,5 @@ export const getHDPathIndices = (hdPathTemplate, insertIdx = 0) => {
         throw new Error('Only HD paths with up to 5 indices are allowed.');
     return indices;
 };
+exports.getHDPathIndices = getHDPathIndices;
 //# sourceMappingURL=hdPath.js.map

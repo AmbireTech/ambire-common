@@ -1,4 +1,6 @@
-export default class EmittableError extends Error {
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+class EmittableError extends Error {
     level;
     message;
     error;
@@ -15,4 +17,5 @@ export default class EmittableError extends Error {
         }
     }
 }
+exports.default = EmittableError;
 //# sourceMappingURL=EmittableError.js.map

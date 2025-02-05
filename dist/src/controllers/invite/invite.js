@@ -1,11 +1,15 @@
-import { relayerCall } from '../../libs/relayerCall/relayerCall';
-import EventEmitter from '../eventEmitter/eventEmitter';
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.InviteController = exports.INVITE_STATUS = void 0;
+const tslib_1 = require("tslib");
+const relayerCall_1 = require("../../libs/relayerCall/relayerCall");
+const eventEmitter_1 = tslib_1.__importDefault(require("../eventEmitter/eventEmitter"));
 // eslint-disable-next-line @typescript-eslint/naming-convention
-export var INVITE_STATUS;
+var INVITE_STATUS;
 (function (INVITE_STATUS) {
     INVITE_STATUS["UNVERIFIED"] = "UNVERIFIED";
     INVITE_STATUS["VERIFIED"] = "VERIFIED";
-})(INVITE_STATUS || (INVITE_STATUS = {}));
+})(INVITE_STATUS = exports.INVITE_STATUS || (exports.INVITE_STATUS = {}));
 const DEFAULT_STATE = {
     status: INVITE_STATUS.UNVERIFIED,
     verifiedAt: null,
@@ -18,7 +22,7 @@ const DEFAULT_STATE = {
  * code before they can use the Ambire extension. This controller manages the
  * verification of these invite codes and persisting the current invite status.
  */
-export class InviteController extends EventEmitter {
+class InviteController extends eventEmitter_1.default {
     #storage;
     #callRelayer;
     #state = DEFAULT_STATE;
@@ -33,7 +37,7 @@ export class InviteController extends EventEmitter {
     constructor({ relayerUrl, fetch, storage }) {
         super();
         this.#storage = storage;
-        this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch });
+        this.#callRelayer = relayerCall_1.relayerCall.bind({ url: relayerUrl, fetch });
         this.#initialLoadPromise = this.#load();
     }
     async #load() {
@@ -83,4 +87,5 @@ export class InviteController extends EventEmitter {
         this.emitUpdate();
     }
 }
+exports.InviteController = InviteController;
 //# sourceMappingURL=invite.js.map

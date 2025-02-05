@@ -1,7 +1,10 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.ImportStatus = void 0;
 /**
  * Enum for tracking the import status of an account during the import process.
  */
-export var ImportStatus;
+var ImportStatus;
 (function (ImportStatus) {
     ImportStatus["NotImported"] = "not-imported";
     ImportStatus["ImportedWithoutKey"] = "imported-without-key";
@@ -12,5 +15,5 @@ export var ImportStatus;
     ImportStatus["ImportedWithDifferentKeys"] = "imported-with-different-keys"; // different key
     // meaning that could be a key with the same address but different type,
     // or a key with different address altogether.
-})(ImportStatus || (ImportStatus = {}));
+})(ImportStatus = exports.ImportStatus || (exports.ImportStatus = {}));
 //# sourceMappingURL=account.js.map

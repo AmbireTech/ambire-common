@@ -1,7 +1,10 @@
-import { AbiCoder, getBytes, Interface, keccak256, toBeHex } from 'ethers';
-import { SINGLETON } from '../../consts/deploy';
-import { stringify } from '../richJson/richJson';
-export var AccountOpStatus;
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.accountOpSignableHash = exports.getSignableHash = exports.getSignableCallsForBundlerEstimate = exports.getSignableCalls = exports.isAccountOpsIntentEqual = exports.canBroadcast = exports.callToTuple = exports.toSingletonCall = exports.AccountOpStatus = void 0;
+const ethers_1 = require("ethers");
+const deploy_1 = require("../../consts/deploy");
+const richJson_1 = require("../richJson/richJson");
+var AccountOpStatus;
 (function (AccountOpStatus) {
     AccountOpStatus["Pending"] = "pending";
     AccountOpStatus["BroadcastedButNotConfirmed"] = "broadcasted-but-not-confirmed";
@@ -10,7 +13,7 @@ export var AccountOpStatus;
     AccountOpStatus["Rejected"] = "rejected";
     AccountOpStatus["UnknownButPastNonce"] = "unknown-but-past-nonce";
     AccountOpStatus["BroadcastButStuck"] = "broadcast-but-stuck";
-})(AccountOpStatus || (AccountOpStatus = {}));
+})(AccountOpStatus = exports.AccountOpStatus || (exports.AccountOpStatus = {}));
 /**
  * If we want to deploy a contract, the to field of Call will actually
  * be empty (undefined). In order to simulate it in a transaction or
@@ -20,7 +23,7 @@ export var AccountOpStatus;
  * @param call
  * @returns Call
  */
-export function toSingletonCall(call) {
+function toSingletonCall(call) {
     if (call.to)
         return call;
     const singletonABI = [
@@ -35,17 +38,19 @@ export function toSingletonCall(call) {
             type: 'function'
         }
     ];
-    const singletonInterface = new Interface(singletonABI);
+    const singletonInterface = new ethers_1.Interface(singletonABI);
     return {
-        to: SINGLETON,
+        to: deploy_1.SINGLETON,
         value: call.value,
-        data: singletonInterface.encodeFunctionData('deploy', [call.data, toBeHex(0, 32)])
+        data: singletonInterface.encodeFunctionData('deploy', [call.data, (0, ethers_1.toBeHex)(0, 32)])
     };
 }
-export function callToTuple(call) {
+exports.toSingletonCall = toSingletonCall;
+function callToTuple(call) {
     return [call.to, call.value.toString(), call.data];
 }
-export function canBroadcast(op, accountIsEOA) {
+exports.callToTuple = callToTuple;
+function canBroadcast(op, accountIsEOA) {
     if (op.signingKeyAddr === null)
         throw new Error('missing signingKeyAddr');
     if (op.signature === null)
@@ -66,6 +71,7 @@ export function canBroadcast(op, accountIsEOA) {
     }
     return true;
 }
+exports.canBroadcast = canBroadcast;
 /**
  * Compare two AccountOps intents.
  *
@@ -73,7 +79,7 @@ export function canBroadcast(op, accountIsEOA) {
  *
  * Since we are comparing the intents, we exclude any other properties of the AccountOps.
  */
-export function isAccountOpsIntentEqual(accountOps1, accountOps2) {
+function isAccountOpsIntentEqual(accountOps1, accountOps2) {
     const createIntent = (accountOps) => {
         return accountOps.map(({ accountAddr, networkId, calls }) => ({
             accountAddr,
@@ -81,9 +87,10 @@ export function isAccountOpsIntentEqual(accountOps1, accountOps2) {
             calls
         }));
     };
-    return stringify(createIntent(accountOps1)) === stringify(createIntent(accountOps2));
+    return (0, richJson_1.stringify)(createIntent(accountOps1)) === (0, richJson_1.stringify)(createIntent(accountOps2));
 }
-export function getSignableCalls(op) {
+exports.isAccountOpsIntentEqual = isAccountOpsIntentEqual;
+function getSignableCalls(op) {
     const callsToSign = op.calls.map(toSingletonCall).map(callToTuple);
     if (op.activatorCall)
         callsToSign.push(callToTuple(op.activatorCall));
@@ -91,7 +98,8 @@ export function getSignableCalls(op) {
         callsToSign.push(callToTuple(op.feeCall));
     return callsToSign;
 }
-export function getSignableCallsForBundlerEstimate(op) {
+exports.getSignableCalls = getSignableCalls;
+function getSignableCallsForBundlerEstimate(op) {
     const callsToSign = getSignableCalls(op);
     // add the fee call one more time when doing a bundler estimate
     // this is because the feeCall during estimation is fake (approve instead
@@ -101,10 +109,12 @@ export function getSignableCallsForBundlerEstimate(op) {
         callsToSign.push(callToTuple(op.feeCall));
     return callsToSign;
 }
-export function getSignableHash(addr, chainId, nonce, calls) {
-    const abiCoder = new AbiCoder();
-    return getBytes(keccak256(abiCoder.encode(['address', 'uint', 'uint', 'tuple(address, uint, bytes)[]'], [addr, chainId, nonce, calls])));
+exports.getSignableCallsForBundlerEstimate = getSignableCallsForBundlerEstimate;
+function getSignableHash(addr, chainId, nonce, calls) {
+    const abiCoder = new ethers_1.AbiCoder();
+    return (0, ethers_1.getBytes)((0, ethers_1.keccak256)(abiCoder.encode(['address', 'uint', 'uint', 'tuple(address, uint, bytes)[]'], [addr, chainId, nonce, calls])));
 }
+exports.getSignableHash = getSignableHash;
 /**
  * This function returns the hash as a Uint8Array instead of string
  * and the reason for this is the implementation that follows:
@@ -130,7 +140,8 @@ export function getSignableHash(addr, chainId, nonce, calls) {
  * @param op AccountOp
  * @returns Uint8Array
  */
-export function accountOpSignableHash(op, chainId) {
+function accountOpSignableHash(op, chainId) {
     return getSignableHash(op.accountAddr, chainId, op.nonce ?? 0n, getSignableCalls(op));
 }
+exports.accountOpSignableHash = accountOpSignableHash;
 //# sourceMappingURL=accountOp.js.map

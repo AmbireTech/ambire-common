@@ -1,12 +1,15 @@
-export var AssetType;
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.DeFiPositionsError = exports.AssetType = void 0;
+var AssetType;
 (function (AssetType) {
     AssetType[AssetType["Liquidity"] = 0] = "Liquidity";
     AssetType[AssetType["Collateral"] = 1] = "Collateral";
     AssetType[AssetType["Borrow"] = 2] = "Borrow";
-})(AssetType || (AssetType = {}));
-export var DeFiPositionsError;
+})(AssetType = exports.AssetType || (exports.AssetType = {}));
+var DeFiPositionsError;
 (function (DeFiPositionsError) {
     DeFiPositionsError["AssetPriceError"] = "AssetPriceError";
     DeFiPositionsError["CriticalError"] = "CriticalError";
-})(DeFiPositionsError || (DeFiPositionsError = {}));
+})(DeFiPositionsError = exports.DeFiPositionsError || (exports.DeFiPositionsError = {}));
 //# sourceMappingURL=types.js.map

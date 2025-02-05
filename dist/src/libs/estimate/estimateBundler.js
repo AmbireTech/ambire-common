@@ -1,14 +1,18 @@
+"use strict";
 /* eslint-disable no-await-in-loop */
 /* eslint-disable no-continue */
 /* eslint-disable no-constant-condition */
-import { Interface } from 'ethers';
-import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json';
-import { paymasterFactory } from '../../services/paymaster';
-import { getSignableCallsForBundlerEstimate } from '../accountOp/accountOp';
-import { getHumanReadableEstimationError } from '../errorHumanizer';
-import { getSigForCalculations, getUserOperation } from '../userOperation/userOperation';
-import { estimationErrorFormatted } from './errors';
-import { estimateWithRetries } from './estimateWithRetries';
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.bundlerEstimate = void 0;
+const tslib_1 = require("tslib");
+const ethers_1 = require("ethers");
+const AmbireAccount_json_1 = tslib_1.__importDefault(require("../../../contracts/compiled/AmbireAccount.json"));
+const paymaster_1 = require("../../services/paymaster");
+const accountOp_1 = require("../accountOp/accountOp");
+const errorHumanizer_1 = require("../errorHumanizer");
+const userOperation_1 = require("../userOperation/userOperation");
+const errors_1 = require("./errors");
+const estimateWithRetries_1 = require("./estimateWithRetries");
 async function estimate(bundler, network, userOp, isEdgeCase, errorCallback) {
     const gasPrice = await bundler.fetchGasPrices(network, errorCallback).catch(() => {
         return new Error('Could not fetch gas prices, retrying...');
@@ -19,7 +23,7 @@ async function estimate(bundler, network, userOp, isEdgeCase, errorCallback) {
         return {
             gasPrice,
             // if gas prices couldn't be fetched, it means there's an internal error
-            estimation: getHumanReadableEstimationError(decodedError),
+            estimation: (0, errorHumanizer_1.getHumanReadableEstimationError)(decodedError),
             nonFatalErrors: []
         };
     }
@@ -43,17 +47,17 @@ async function estimate(bundler, network, userOp, isEdgeCase, errorCallback) {
             if (decodedError.reason && decodedError.reason.indexOf('invalid account nonce') !== -1) {
                 nonFatalErrors.push(new Error('4337 invalid account nonce', { cause: '4337_INVALID_NONCE' }));
             }
-            return getHumanReadableEstimationError(decodedError);
+            return (0, errorHumanizer_1.getHumanReadableEstimationError)(decodedError);
         })
     ];
-    const estimation = await estimateWithRetries(initializeRequests, 'estimation-bundler', errorCallback);
+    const estimation = await (0, estimateWithRetries_1.estimateWithRetries)(initializeRequests, 'estimation-bundler', errorCallback);
     return {
         gasPrice,
         estimation,
         nonFatalErrors
     };
 }
-export async function bundlerEstimate(account, accountStates, op, network, feeTokens, provider, switcher, errorCallback) {
+async function bundlerEstimate(account, accountStates, op, network, feeTokens, provider, switcher, errorCallback) {
     // we pass an empty array of feePaymentOptions as they are built
     // in an upper level using the balances from Estimation.sol.
     // balances from Estimation.sol reflect the balances after pending txn exec
@@ -62,19 +66,19 @@ export async function bundlerEstimate(account, accountStates, op, network, feeTo
     const accountState = accountStates[localOp.accountAddr][localOp.networkId];
     // if there's no entryPointAuthorization, we cannot do the estimation on deploy
     if (!accountState.isDeployed && (!op.meta || !op.meta.entryPointAuthorization))
-        return estimationErrorFormatted(new Error('Entry point privileges not granted. Please contact support'), { feePaymentOptions });
+        return (0, errors_1.estimationErrorFormatted)(new Error('Entry point privileges not granted. Please contact support'), { feePaymentOptions });
     const initialBundler = switcher.getBundler();
-    const userOp = getUserOperation(account, accountState, localOp, initialBundler.getName(), !accountState.isDeployed ? op.meta.entryPointAuthorization : undefined);
+    const userOp = (0, userOperation_1.getUserOperation)(account, accountState, localOp, initialBundler.getName(), !accountState.isDeployed ? op.meta.entryPointAuthorization : undefined);
     // set the callData
     if (userOp.activatorCall)
         localOp.activatorCall = userOp.activatorCall;
-    const ambireAccount = new Interface(AmbireAccount.abi);
+    const ambireAccount = new ethers_1.Interface(AmbireAccount_json_1.default.abi);
     const isEdgeCase = !accountState.isErc4337Enabled && accountState.isDeployed;
-    userOp.signature = getSigForCalculations();
-    const paymaster = await paymasterFactory.create(op, userOp, network, provider);
+    userOp.signature = (0, userOperation_1.getSigForCalculations)();
+    const paymaster = await paymaster_1.paymasterFactory.create(op, userOp, network, provider);
     localOp.feeCall = paymaster.getFeeCallForEstimation(feeTokens);
     userOp.callData = ambireAccount.encodeFunctionData('executeBySender', [
-        getSignableCallsForBundlerEstimate(localOp)
+        (0, accountOp_1.getSignableCallsForBundlerEstimate)(localOp)
     ]);
     if (paymaster.isUsable()) {
         const paymasterEstimationData = paymaster.getEstimationData();
@@ -110,7 +114,7 @@ export async function bundlerEstimate(account, accountStates, op, network, feeTo
         }
         // if there's an error but we can't switch, return the error
         if (!switcher.canSwitch(estimations.estimation)) {
-            return estimationErrorFormatted(estimations.estimation, {
+            return (0, errors_1.estimationErrorFormatted)(estimations.estimation, {
                 feePaymentOptions,
                 nonFatalErrors: estimations.nonFatalErrors
             });
@@ -119,4 +123,5 @@ export async function bundlerEstimate(account, accountStates, op, network, feeTo
         switcher.switch();
     }
 }
+exports.bundlerEstimate = bundlerEstimate;
 //# sourceMappingURL=estimateBundler.js.map

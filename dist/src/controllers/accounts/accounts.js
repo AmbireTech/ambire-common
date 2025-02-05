@@ -1,12 +1,16 @@
-import { getAddress, isAddress } from 'ethers';
-import { getUniqueAccountsArray, migrateAccountPreferencesToAccounts } from '../../libs/account/account';
-import { getAccountState } from '../../libs/accountState/accountState';
-import EventEmitter from '../eventEmitter/eventEmitter';
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.AccountsController = void 0;
+const tslib_1 = require("tslib");
+const ethers_1 = require("ethers");
+const account_1 = require("../../libs/account/account");
+const accountState_1 = require("../../libs/accountState/accountState");
+const eventEmitter_1 = tslib_1.__importDefault(require("../eventEmitter/eventEmitter"));
 const STATUS_WRAPPED_METHODS = {
     selectAccount: 'INITIAL',
     updateAccountPreferences: 'INITIAL'
 };
-export class AccountsController extends EventEmitter {
+class AccountsController extends eventEmitter_1.default {
     #storage;
     #networks;
     #providers;
@@ -38,12 +42,12 @@ export class AccountsController extends EventEmitter {
             this.#storage.get('accountPreferences', undefined)
         ]);
         if (accountPreferences) {
-            this.accounts = getUniqueAccountsArray(migrateAccountPreferencesToAccounts(accountPreferences, accounts));
+            this.accounts = (0, account_1.getUniqueAccountsArray)((0, account_1.migrateAccountPreferencesToAccounts)(accountPreferences, accounts));
             await this.#storage.set('accounts', this.accounts);
             await this.#storage.remove('accountPreferences');
         }
         else {
-            this.accounts = getUniqueAccountsArray(accounts);
+            this.accounts = (0, account_1.getUniqueAccountsArray)(accounts);
         }
         // Emit an update before updating account states as the first state update may take some time
         this.emitUpdate();
@@ -77,7 +81,7 @@ export class AccountsController extends EventEmitter {
         this.emitUpdate();
         await Promise.all(networksToUpdate.map(async (network) => {
             try {
-                const networkAccountStates = await getAccountState(this.#providers.providers[network.id], network, accounts, blockTag);
+                const networkAccountStates = await (0, accountState_1.getAccountState)(this.#providers.providers[network.id], network, accounts, blockTag);
                 this.#updateProviderIsWorking(network.id, true);
                 networkAccountStates.forEach((accountState) => {
                     const addr = accountState.accountAddr;
@@ -102,7 +106,7 @@ export class AccountsController extends EventEmitter {
         if (!accounts.length)
             return;
         // eslint-disable-next-line no-param-reassign
-        accounts = accounts.map((a) => ({ ...a, addr: getAddress(a.addr) }));
+        accounts = accounts.map((a) => ({ ...a, addr: (0, ethers_1.getAddress)(a.addr) }));
         const alreadyAddedAddressSet = new Set(this.accounts.map((account) => account.addr));
         const newAccountsNotAddedYet = accounts.filter((acc) => !alreadyAddedAddressSet.has(acc.addr));
         const newAccountsAlreadyAdded = accounts.filter((acc) => alreadyAddedAddressSet.has(acc.addr));
@@ -125,7 +129,7 @@ export class AccountsController extends EventEmitter {
             })),
             ...newAccountsNotAddedYet.map((a) => ({ ...a, newlyAdded: true }))
         ];
-        this.accounts = getUniqueAccountsArray(nextAccounts);
+        this.accounts = (0, account_1.getUniqueAccountsArray)(nextAccounts);
         await this.#storage.set('accounts', this.accounts);
         this.#onAddAccounts(accounts);
         // update the state of new accounts. Otherwise, the user needs to restart his extension
@@ -146,8 +150,8 @@ export class AccountsController extends EventEmitter {
             const account = accounts.find((a) => a.addr === acc.addr);
             if (!account)
                 return acc;
-            if (isAddress(account.preferences.pfp)) {
-                account.preferences.pfp = getAddress(account.preferences.pfp);
+            if ((0, ethers_1.isAddress)(account.preferences.pfp)) {
+                account.preferences.pfp = (0, ethers_1.getAddress)(account.preferences.pfp);
             }
             return { ...acc, preferences: account.preferences, newlyAdded: false };
         });
@@ -165,4 +169,5 @@ export class AccountsController extends EventEmitter {
         };
     }
 }
+exports.AccountsController = AccountsController;
 //# sourceMappingURL=accounts.js.map

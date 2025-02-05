@@ -1,7 +1,11 @@
-import { getAddress, isAddress } from 'ethers';
-import { reverseLookupEns } from '../../services/ensDomains';
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.DomainsController = void 0;
+const tslib_1 = require("tslib");
+const ethers_1 = require("ethers");
+const ensDomains_1 = require("../../services/ensDomains");
 // import { reverseLookupUD } from '../../services/unstoppableDomains'
-import EventEmitter from '../eventEmitter/eventEmitter';
+const eventEmitter_1 = tslib_1.__importDefault(require("../eventEmitter/eventEmitter"));
 // 15 minutes
 const PERSIST_DOMAIN_FOR_IN_MS = 15 * 60 * 1000;
 // const EXPECTED_UD_ERROR_MESSAGES = [
@@ -13,7 +17,7 @@ const PERSIST_DOMAIN_FOR_IN_MS = 15 * 60 * 1000;
  * Domains controller- responsible for handling the reverse lookup of addresses to ENS and UD names.
  * Resolved names are saved in `domains` for a short period of time(15 minutes) to avoid unnecessary lookups.
  */
-export class DomainsController extends EventEmitter {
+class DomainsController extends eventEmitter_1.default {
     #providers = {};
     domains = {};
     loadingAddresses = [];
@@ -22,7 +26,7 @@ export class DomainsController extends EventEmitter {
         this.#providers = providers;
     }
     async batchReverseLookup(addresses) {
-        const filteredAddresses = addresses.filter((address) => isAddress(address));
+        const filteredAddresses = addresses.filter((address) => (0, ethers_1.isAddress)(address));
         await Promise.all(filteredAddresses.map((address) => this.reverseLookup(address, false)));
         this.emitUpdate();
     }
@@ -30,7 +34,7 @@ export class DomainsController extends EventEmitter {
      *Saves an already resolved ENS or UD name for an address.
      */
     saveResolvedReverseLookup({ address, name, type }) {
-        const checksummedAddress = getAddress(address);
+        const checksummedAddress = (0, ethers_1.getAddress)(address);
         const { ens: oldEns, ud: oldUd } = this.domains[checksummedAddress] || { ens: null, ud: null };
         this.domains[checksummedAddress] = {
             ens: type === 'ens' ? name : oldEns,
@@ -51,7 +55,7 @@ export class DomainsController extends EventEmitter {
             });
             return;
         }
-        const checksummedAddress = getAddress(address);
+        const checksummedAddress = (0, ethers_1.getAddress)(address);
         const isAlreadyResolved = !!this.domains[checksummedAddress];
         const isExpired = isAlreadyResolved &&
             Date.now() - this.domains[checksummedAddress].savedAt > PERSIST_DOMAIN_FOR_IN_MS;
@@ -61,7 +65,7 @@ export class DomainsController extends EventEmitter {
         this.emitUpdate();
         let ensName = null;
         try {
-            ensName = (await reverseLookupEns(checksummedAddress, this.#providers.ethereum)) || null;
+            ensName = (await (0, ensDomains_1.reverseLookupEns)(checksummedAddress, this.#providers.ethereum)) || null;
         }
         catch (e) {
             console.error('ENS reverse lookup unexpected error', e);
@@ -88,4 +92,5 @@ export class DomainsController extends EventEmitter {
             this.emitUpdate();
     }
 }
+exports.DomainsController = DomainsController;
 //# sourceMappingURL=domains.js.map

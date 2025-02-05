@@ -1,20 +1,24 @@
-import AmbireAccountState from '../../../contracts/compiled/AmbireAccountState.json';
-import { ENTRY_POINT_MARKER, ERC_4337_ENTRYPOINT, MAX_UINT256 } from '../../consts/deploy';
-import { getAccountDeployParams, isSmartAccount } from '../account/account';
-import { fromDescriptor } from '../deployless/deployless';
-export async function getAccountState(provider, network, accounts, blockTag = 'latest') {
-    const deploylessAccountState = fromDescriptor(provider, AmbireAccountState, !network.rpcNoStateOverride);
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.getAccountState = void 0;
+const tslib_1 = require("tslib");
+const AmbireAccountState_json_1 = tslib_1.__importDefault(require("../../../contracts/compiled/AmbireAccountState.json"));
+const deploy_1 = require("../../consts/deploy");
+const account_1 = require("../account/account");
+const deployless_1 = require("../deployless/deployless");
+async function getAccountState(provider, network, accounts, blockTag = 'latest') {
+    const deploylessAccountState = (0, deployless_1.fromDescriptor)(provider, AmbireAccountState_json_1.default, !network.rpcNoStateOverride);
     const args = accounts.map((account) => {
-        const associatedKeys = network?.erc4337?.enabled && !account.associatedKeys.includes(ERC_4337_ENTRYPOINT)
-            ? [...account.associatedKeys, ERC_4337_ENTRYPOINT]
+        const associatedKeys = network?.erc4337?.enabled && !account.associatedKeys.includes(deploy_1.ERC_4337_ENTRYPOINT)
+            ? [...account.associatedKeys, deploy_1.ERC_4337_ENTRYPOINT]
             : account.associatedKeys;
         return [
             account.addr,
             associatedKeys,
             ...(account.creation == null
                 ? ['0x0000000000000000000000000000000000000000', '0x']
-                : getAccountDeployParams(account)),
-            network?.erc4337?.enabled ? ERC_4337_ENTRYPOINT : '0x0000000000000000000000000000000000000000'
+                : (0, account_1.getAccountDeployParams)(account)),
+            network?.erc4337?.enabled ? deploy_1.ERC_4337_ENTRYPOINT : '0x0000000000000000000000000000000000000000'
         ];
     });
     async function getEOAsNonce(eoaAccounts) {
@@ -27,7 +31,7 @@ export async function getAccountState(provider, network, accounts, blockTag = 'l
         deploylessAccountState.call('getAccountsState', [args], {
             blockTag
         }),
-        getEOAsNonce(accounts.filter((account) => !isSmartAccount(account)).map((account) => account.addr))
+        getEOAsNonce(accounts.filter((account) => !(0, account_1.isSmartAccount)(account)).map((account) => account.addr))
     ]);
     const result = accountStateResult.map((accResult, index) => {
         const associatedKeys = accResult.associatedKeyPrivileges.map((privilege, keyIndex) => {
@@ -35,7 +39,7 @@ export async function getAccountState(provider, network, accounts, blockTag = 'l
         });
         const res = {
             accountAddr: accounts[index].addr,
-            nonce: !isSmartAccount(accounts[index]) ? eoaNonces[accounts[index].addr] : accResult.nonce,
+            nonce: !(0, account_1.isSmartAccount)(accounts[index]) ? eoaNonces[accounts[index].addr] : accResult.nonce,
             erc4337Nonce: accResult.erc4337Nonce,
             isDeployed: accResult.isDeployed,
             associatedKeys: Object.fromEntries(associatedKeys),
@@ -43,8 +47,8 @@ export async function getAccountState(provider, network, accounts, blockTag = 'l
             balance: accResult.balance,
             isEOA: accResult.isEOA,
             isErc4337Enabled: !!(network?.erc4337?.enabled &&
-                accResult.erc4337Nonce < MAX_UINT256 &&
-                associatedKeys.find((associatedKey) => associatedKey[0] === ERC_4337_ENTRYPOINT && associatedKey[1] === ENTRY_POINT_MARKER)),
+                accResult.erc4337Nonce < deploy_1.MAX_UINT256 &&
+                associatedKeys.find((associatedKey) => associatedKey[0] === deploy_1.ERC_4337_ENTRYPOINT && associatedKey[1] === deploy_1.ENTRY_POINT_MARKER)),
             currentBlock: accResult.currentBlock,
             deployError: accounts[index].associatedKeys.length > 0 && accResult.associatedKeyPrivileges.length === 0
         };
@@ -52,4 +56,5 @@ export async function getAccountState(provider, network, accounts, blockTag = 'l
     });
     return result;
 }
+exports.getAccountState = getAccountState;
 //# sourceMappingURL=accountState.js.map

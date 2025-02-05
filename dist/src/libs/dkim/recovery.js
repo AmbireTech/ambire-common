@@ -1,7 +1,10 @@
-import { AbiCoder, getAddress, keccak256 } from 'ethers';
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.getSignerKey = exports.frequentlyUsedSelectors = exports.knownSelectors = exports.RECOVERY_DEFAULTS = exports.DKIM_VALIDATOR_ADDR = void 0;
+const ethers_1 = require("ethers");
 // TODO: change to original address once deployed
-export const DKIM_VALIDATOR_ADDR = '0x0000000000000000000000000000000000000000';
-export const RECOVERY_DEFAULTS = {
+exports.DKIM_VALIDATOR_ADDR = '0x0000000000000000000000000000000000000000';
+exports.RECOVERY_DEFAULTS = {
     emailTo: 'recovery@ambire.com',
     acceptUnknownSelectors: true,
     waitUntilAcceptAdded: 138240n,
@@ -10,10 +13,10 @@ export const RECOVERY_DEFAULTS = {
     acceptEmptySecondSig: true,
     onlyOneSigTimelock: 259200n // 3 days
 };
-export const knownSelectors = {
+exports.knownSelectors = {
     'gmail.com': '20230601'
 };
-export const frequentlyUsedSelectors = [
+exports.frequentlyUsedSelectors = [
     'Google',
     'selector1',
     'selector2',
@@ -32,10 +35,11 @@ export const frequentlyUsedSelectors = [
  * @param validatorData BytesLike
  * @returns {Address, bytes32}
  */
-export function getSignerKey(validatorAddr, validatorData) {
-    const abiCoder = new AbiCoder();
-    const hash = keccak256(abiCoder.encode(['address', 'bytes'], [validatorAddr, validatorData]));
-    const signerKey = getAddress(`0x${hash.slice(hash.length - 40, hash.length)}`);
+function getSignerKey(validatorAddr, validatorData) {
+    const abiCoder = new ethers_1.AbiCoder();
+    const hash = (0, ethers_1.keccak256)(abiCoder.encode(['address', 'bytes'], [validatorAddr, validatorData]));
+    const signerKey = (0, ethers_1.getAddress)(`0x${hash.slice(hash.length - 40, hash.length)}`);
     return { signerKey, hash };
 }
+exports.getSignerKey = getSignerKey;
 //# sourceMappingURL=recovery.js.map

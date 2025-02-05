@@ -1,20 +1,24 @@
-import { AbiCoder, ZeroAddress } from 'ethers';
-import Estimation from '../../../contracts/compiled/Estimation.json';
-import { FEE_COLLECTOR } from '../../consts/addresses';
-import { OPTIMISTIC_ORACLE } from '../../consts/deploy';
-import { EOA_SIMULATION_NONCE } from '../../consts/deployless';
-import { getEoaSimulationStateOverride } from '../../utils/simulationStateOverride';
-import { toSingletonCall } from '../accountOp/accountOp';
-import { DeploylessMode, fromDescriptor } from '../deployless/deployless';
-import { getHumanReadableEstimationError } from '../errorHumanizer';
-import { estimationErrorFormatted } from './errors';
-import { estimateWithRetries } from './estimateWithRetries';
-const abiCoder = new AbiCoder();
-export async function estimateEOA(account, op, accountStates, network, provider, feeTokens, blockFrom, blockTag, errorCallback) {
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.estimateEOA = void 0;
+const tslib_1 = require("tslib");
+const ethers_1 = require("ethers");
+const Estimation_json_1 = tslib_1.__importDefault(require("../../../contracts/compiled/Estimation.json"));
+const addresses_1 = require("../../consts/addresses");
+const deploy_1 = require("../../consts/deploy");
+const deployless_1 = require("../../consts/deployless");
+const simulationStateOverride_1 = require("../../utils/simulationStateOverride");
+const accountOp_1 = require("../accountOp/accountOp");
+const deployless_2 = require("../deployless/deployless");
+const errorHumanizer_1 = require("../errorHumanizer");
+const errors_1 = require("./errors");
+const estimateWithRetries_1 = require("./estimateWithRetries");
+const abiCoder = new ethers_1.AbiCoder();
+async function estimateEOA(account, op, accountStates, network, provider, feeTokens, blockFrom, blockTag, errorCallback) {
     if (op.calls.length !== 1)
-        return estimationErrorFormatted(new Error("Trying to make multiple calls with a Basic Account which shouldn't happen. Please try again or contact support."));
-    const deploylessEstimator = fromDescriptor(provider, Estimation, !network.rpcNoStateOverride);
-    const optimisticOracle = network.isOptimistic ? OPTIMISTIC_ORACLE : ZeroAddress;
+        return (0, errors_1.estimationErrorFormatted)(new Error("Trying to make multiple calls with a Basic Account which shouldn't happen. Please try again or contact support."));
+    const deploylessEstimator = (0, deployless_2.fromDescriptor)(provider, Estimation_json_1.default, !network.rpcNoStateOverride);
+    const optimisticOracle = network.isOptimistic ? deploy_1.OPTIMISTIC_ORACLE : ethers_1.ZeroAddress;
     const call = op.calls[0];
     // TODO: try to remove this call
     const nonce = await provider.getTransactionCount(account.addr);
@@ -27,7 +31,7 @@ export async function estimateEOA(account, op, accountStates, network, provider,
         'uint256',
         'uint256',
         'uint256' // gasLimit
-    ], [call.data, call.to ?? ZeroAddress, account.addr, 100000000, 2, nonce, 100000]);
+    ], [call.data, call.to ?? ethers_1.ZeroAddress, account.addr, 100000000, 2, nonce, 100000]);
     const initializeRequests = () => [
         provider
             .estimateGas({
@@ -37,44 +41,44 @@ export async function estimateEOA(account, op, accountStates, network, provider,
             data: call.data,
             nonce
         })
-            .catch(getHumanReadableEstimationError),
+            .catch(errorHumanizer_1.getHumanReadableEstimationError),
         !network.rpcNoStateOverride
             ? deploylessEstimator
                 .call('estimateEoa', [
                 account.addr,
-                [account.addr, EOA_SIMULATION_NONCE, op.calls.map(toSingletonCall), '0x'],
+                [account.addr, deployless_1.EOA_SIMULATION_NONCE, op.calls.map(accountOp_1.toSingletonCall), '0x'],
                 encodedCallData,
                 [account.addr],
-                FEE_COLLECTOR,
+                addresses_1.FEE_COLLECTOR,
                 optimisticOracle
             ], {
                 from: blockFrom,
                 blockTag,
-                mode: DeploylessMode.StateOverride,
-                stateToOverride: getEoaSimulationStateOverride(account.addr)
+                mode: deployless_2.DeploylessMode.StateOverride,
+                stateToOverride: (0, simulationStateOverride_1.getEoaSimulationStateOverride)(account.addr)
             })
                 .catch((e) => {
                 console.log('error calling estimateEoa:', e);
                 return [[0n, [], {}]];
             })
             : deploylessEstimator
-                .call('getL1GasEstimation', [encodedCallData, FEE_COLLECTOR, optimisticOracle], {
+                .call('getL1GasEstimation', [encodedCallData, addresses_1.FEE_COLLECTOR, optimisticOracle], {
                 from: blockFrom,
                 blockTag
             })
-                .catch(getHumanReadableEstimationError)
+                .catch(errorHumanizer_1.getHumanReadableEstimationError)
     ];
-    const result = await estimateWithRetries(initializeRequests, 'estimation-eoa', errorCallback);
+    const result = await (0, estimateWithRetries_1.estimateWithRetries)(initializeRequests, 'estimation-eoa', errorCallback);
     const feePaymentOptions = [
         {
             paidBy: account.addr,
             availableAmount: accountState.balance,
             addedNative: 0n,
-            token: feeTokens.find((token) => token.address === ZeroAddress && !token.flags.onGasTank)
+            token: feeTokens.find((token) => token.address === ethers_1.ZeroAddress && !token.flags.onGasTank)
         }
     ];
     if (result instanceof Error)
-        return estimationErrorFormatted(result, { feePaymentOptions });
+        return (0, errors_1.estimationErrorFormatted)(result, { feePaymentOptions });
     let gasUsed = 0n;
     if (!network.rpcNoStateOverride) {
         const [gasUsedEstimateGas, [[gasUsedEstimationSol, feeTokenOutcomes, l1GasEstimation]]] = result;
@@ -104,4 +108,5 @@ export async function estimateEOA(account, op, accountStates, network, provider,
         error: result instanceof Error ? result : null
     };
 }
+exports.estimateEOA = estimateEOA;
 //# sourceMappingURL=estimateEOA.js.map

@@ -1,7 +1,10 @@
-import { Interface } from 'ethers';
-import { stringify } from '../../../richJson/richJson';
-import { getAction, getAddressVisualization, getDeadline, getLabel, getToken } from '../../utils';
-const iface = new Interface([
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.openSeaModule = void 0;
+const ethers_1 = require("ethers");
+const richJson_1 = require("../../../richJson/richJson");
+const utils_1 = require("../../utils");
+const iface = new ethers_1.Interface([
     'function fulfillBasicOrder_efficient_6GL6yc(tuple(address considerationToken, uint256 considerationIdentifier, uint256 considerationAmount, address offerer, address zone, address offerToken, uint256 offerIdentifier, uint256 offerAmount, uint8 basicOrderType, uint256 startTime, uint256 endTime, bytes32 zoneHash, uint256 salt, bytes32 offererConduitKey, bytes32 fulfillerConduitKey, uint256 totalOriginalAdditionalRecipients, tuple(uint256 amount, address recipient)[] additionalRecipients, bytes signature) args) payable returns (bool fulfilled)',
     'function fulfillBasicOrder(tuple(address considerationToken, uint256 considerationIdentifier, uint256 considerationAmount, address offerer, address zone, address offerToken, uint256 offerIdentifier, uint256 offerAmount, uint8 basicOrderType, uint256 startTime, uint256 endTime, bytes32 zoneHash, uint256 salt, bytes32 offererConduitKey, bytes32 fulfillerConduitKey, uint256 totalOriginalAdditionalRecipients, tuple(uint256 amount, address recipient)[] additionalRecipients, bytes signature) args) payable returns (bool fulfilled)',
     'function fulfillAvailableAdvancedOrders(((address offerer, address zone, (uint8 itemType, address token, uint256 identifierOrCriteria, uint256 startAmount, uint256 endAmount)[] offer, (uint8 itemType, address token, uint256 identifierOrCriteria, uint256 startAmount, uint256 endAmount, address recipient)[] consideration, uint8 orderType, uint256 startTime, uint256 endTime, bytes32 zoneHash, uint256 salt, bytes32 conduitKey, uint256 totalOriginalConsiderationItems) parameters, uint120 numerator, uint120 denominator, bytes signature, bytes extraData)[], (uint256 orderIndex, uint8 side, uint256 index, uint256 identifier, bytes32[] criteriaProof)[], (uint256 orderIndex, uint256 itemIndex)[][], (uint256 orderIndex, uint256 itemIndex)[][], bytes32 fulfillerConduitKey, address recipient, uint256 maximumFulfilled) payable returns (bool[], ((uint8 itemType, address token, uint256 identifier, uint256 amount, address recipient) item, address offerer, bytes32 conduitKey)[])',
@@ -54,7 +57,7 @@ const parseOrder = (order) => {
 const dedupe1155Orders = (orders) => {
     if (orders.length <= 30)
         return orders;
-    const uniqueOrders = [...new Set(orders.map(stringify))];
+    const uniqueOrders = [...new Set(orders.map(richJson_1.stringify))];
     if (uniqueOrders.length > 1)
         return orders;
     if (orders[0].items.length > 1)
@@ -71,18 +74,18 @@ const dedupe1155Orders = (orders) => {
 };
 const humanizerOrder = ({ items, payment, end }) => {
     return [
-        getAction('Buy'),
+        (0, utils_1.getAction)('Buy'),
         ...items
             .map(({ address, id, fromAmount }) => fromAmount === 1n
-            ? [getToken(address, id)]
-            : [getLabel(fromAmount.toString(), true), getToken(address, id)])
+            ? [(0, utils_1.getToken)(address, id)]
+            : [(0, utils_1.getLabel)(fromAmount.toString(), true), (0, utils_1.getToken)(address, id)])
             .flat(),
-        getLabel('for up to'),
-        ...payment.map(({ address, amountOrId }) => getToken(address, amountOrId)),
-        getDeadline(end)
+        (0, utils_1.getLabel)('for up to'),
+        ...payment.map(({ address, amountOrId }) => (0, utils_1.getToken)(address, amountOrId)),
+        (0, utils_1.getDeadline)(end)
     ];
 };
-export const openSeaModule = (accountOp, irCalls) => {
+const openSeaModule = (accountOp, irCalls) => {
     return irCalls.map((call) => {
         if ([
             iface.getFunction('fulfillBasicOrder_efficient_6GL6yc').selector,
@@ -135,11 +138,11 @@ export const openSeaModule = (accountOp, irCalls) => {
             return {
                 ...call,
                 fullVisualization: [
-                    getAction('Buy'),
-                    getToken(data[0].offerToken, data[0].offerIdentifier),
-                    getLabel('for'),
-                    getToken(data[0].considerationToken, data[0].considerationAmount),
-                    getDeadline(data[0].endTime)
+                    (0, utils_1.getAction)('Buy'),
+                    (0, utils_1.getToken)(data[0].offerToken, data[0].offerIdentifier),
+                    (0, utils_1.getLabel)('for'),
+                    (0, utils_1.getToken)(data[0].considerationToken, data[0].considerationAmount),
+                    (0, utils_1.getDeadline)(data[0].endTime)
                 ]
             };
         }
@@ -157,9 +160,9 @@ export const openSeaModule = (accountOp, irCalls) => {
                 return {
                     ...call,
                     fullVisualization: [
-                        getAction('Buy NFTs'),
-                        getLabel('from'),
-                        getAddressVisualization(call.to)
+                        (0, utils_1.getAction)('Buy NFTs'),
+                        (0, utils_1.getLabel)('from'),
+                        (0, utils_1.getAddressVisualization)(call.to)
                     ]
                 };
             const fullVisualization = totalOrders.map(humanizerOrder).flat();
@@ -174,4 +177,5 @@ export const openSeaModule = (accountOp, irCalls) => {
         return call;
     });
 };
+exports.openSeaModule = openSeaModule;
 //# sourceMappingURL=index.js.map

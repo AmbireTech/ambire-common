@@ -1,23 +1,28 @@
-import { toBeHex } from 'ethers';
-import AmbireAccount from '../../contracts/compiled/AmbireAccount.json';
-import { EOA_SIMULATION_NONCE } from '../consts/deployless';
-import { privSlot } from '../libs/proxyDeploy/deploy';
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.getEoaSimulationStateOverride = void 0;
+const tslib_1 = require("tslib");
+const ethers_1 = require("ethers");
+const AmbireAccount_json_1 = tslib_1.__importDefault(require("../../contracts/compiled/AmbireAccount.json"));
+const deployless_1 = require("../consts/deployless");
+const deploy_1 = require("../libs/proxyDeploy/deploy");
 /**
  *
  * @param accountAddr account address
  * @returns the state override object required for transaction simulation and estimation
  */
-export function getEoaSimulationStateOverride(accountAddr) {
+function getEoaSimulationStateOverride(accountAddr) {
     return {
         [accountAddr]: {
-            code: AmbireAccount.binRuntime,
+            code: AmbireAccount_json_1.default.binRuntime,
             stateDiff: {
                 // if we use 0x00...01 we get a geth bug: "invalid argument 2: hex number with leading zero digits\" - on some RPC providers
-                [`0x${privSlot(0, 'address', accountAddr, 'bytes32')}`]: '0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
+                [`0x${(0, deploy_1.privSlot)(0, 'address', accountAddr, 'bytes32')}`]: '0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
                 // any number with leading zeros is not supported on some RPCs
-                [toBeHex(1, 32)]: EOA_SIMULATION_NONCE
+                [(0, ethers_1.toBeHex)(1, 32)]: deployless_1.EOA_SIMULATION_NONCE
             }
         }
     };
 }
+exports.getEoaSimulationStateOverride = getEoaSimulationStateOverride;
 //# sourceMappingURL=simulationStateOverride.js.map

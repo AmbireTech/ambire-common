@@ -1,10 +1,13 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.normalizeLedgerMessage = void 0;
 /**
  * Used to "translate" error codes (inside the messages) returned by the Ledger
  * device into a human-readable messages. Although alongside the raw error codes
  * there is a message incoming from Ledger too, it's not self-explanatory and
  * can be difficult for the end users to understand.
  */
-export const normalizeLedgerMessage = (error) => {
+const normalizeLedgerMessage = (error) => {
     if (!error ||
         // Generic error returned by the Ledger transport (@ledgerhq/hw-transport)
         error.toLowerCase().includes('access denied'))
@@ -32,4 +35,5 @@ export const normalizeLedgerMessage = (error) => {
         return error;
     return `Cannot connect to your Ledger device. Close all other apps that may be accessing it (including apps on your computer). Ensure device is responsive. Ensure Ledger firmware and Ethereum App are up to date. Device error: ${error}`;
 };
+exports.normalizeLedgerMessage = normalizeLedgerMessage;
 //# sourceMappingURL=ledger.js.map

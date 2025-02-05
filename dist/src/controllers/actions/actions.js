@@ -1,9 +1,13 @@
+"use strict";
 /* eslint-disable @typescript-eslint/no-floating-promises */
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.ActionsController = void 0;
+const tslib_1 = require("tslib");
 // eslint-disable-next-line import/no-cycle
-import { messageOnNewAction } from '../../libs/actions/actions';
-import { getDappActionRequestsBanners } from '../../libs/banners/banners';
-import { ENTRY_POINT_AUTHORIZATION_REQUEST_ID } from '../../libs/userOperation/userOperation';
-import EventEmitter from '../eventEmitter/eventEmitter';
+const actions_1 = require("../../libs/actions/actions");
+const banners_1 = require("../../libs/banners/banners");
+const userOperation_1 = require("../../libs/userOperation/userOperation");
+const eventEmitter_1 = tslib_1.__importDefault(require("../eventEmitter/eventEmitter"));
 /**
  * The ActionsController is responsible for storing the converted userRequests
  * from the MainController into actions. After adding an action an action-window will be opened with the first action form actionsQueue
@@ -15,7 +19,7 @@ import EventEmitter from '../eventEmitter/eventEmitter';
  * or until the user forcefully closes the window using the system close icon (X).
  * All pending/unresolved actions can be accessed later from the banners on the Dashboard screen.
  */
-export class ActionsController extends EventEmitter {
+class ActionsController extends eventEmitter_1.default {
     #selectedAccount;
     #windowManager;
     #notificationManager;
@@ -156,7 +160,7 @@ export class ActionsController extends EventEmitter {
     setCurrentActionById(actionId) {
         const action = this.visibleActionsQueue.find((a) => a.id.toString() === actionId.toString());
         if (!action) {
-            const entryPointAction = this.visibleActionsQueue.find((a) => a.id.toString() === ENTRY_POINT_AUTHORIZATION_REQUEST_ID);
+            const entryPointAction = this.visibleActionsQueue.find((a) => a.id.toString() === userOperation_1.ENTRY_POINT_AUTHORIZATION_REQUEST_ID);
             if (entryPointAction)
                 this.#setCurrentAction(entryPointAction);
             return;
@@ -166,7 +170,7 @@ export class ActionsController extends EventEmitter {
     setCurrentActionByIndex(actionIndex) {
         const action = this.visibleActionsQueue[actionIndex];
         if (!action) {
-            const entryPointAction = this.visibleActionsQueue.find((a) => a.id.toString() === ENTRY_POINT_AUTHORIZATION_REQUEST_ID);
+            const entryPointAction = this.visibleActionsQueue.find((a) => a.id.toString() === userOperation_1.ENTRY_POINT_AUTHORIZATION_REQUEST_ID);
             if (entryPointAction)
                 this.#setCurrentAction(entryPointAction);
             return;
@@ -176,12 +180,12 @@ export class ActionsController extends EventEmitter {
     sendNewActionMessage(newAction, type) {
         if (this.visibleActionsQueue.length > 1 && newAction.type !== 'benzin') {
             if (this.actionWindow.loaded) {
-                const message = messageOnNewAction(newAction, type);
+                const message = (0, actions_1.messageOnNewAction)(newAction, type);
                 if (message)
                     this.#windowManager.sendWindowToastMessage(message, { type: 'success' });
             }
             else {
-                const message = messageOnNewAction(newAction, type);
+                const message = (0, actions_1.messageOnNewAction)(newAction, type);
                 if (message)
                     this.actionWindow.pendingMessage = { message, options: { type: 'success' } };
             }
@@ -257,7 +261,7 @@ export class ActionsController extends EventEmitter {
         this.emitUpdate();
     }
     get banners() {
-        return getDappActionRequestsBanners(this.visibleActionsQueue);
+        return (0, banners_1.getDappActionRequestsBanners)(this.visibleActionsQueue);
     }
     toJSON() {
         return {
@@ -268,4 +272,5 @@ export class ActionsController extends EventEmitter {
         };
     }
 }
+exports.ActionsController = ActionsController;
 //# sourceMappingURL=actions.js.map

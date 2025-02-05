@@ -1,3 +1,5 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
 function hexStringToUint8Array(hexString) {
     // Remove '0x' prefix if present
     if (hexString.startsWith('0x')) {
@@ -15,5 +17,5 @@ function hexStringToUint8Array(hexString) {
     }
     return uint8Array;
 }
-export default hexStringToUint8Array;
+exports.default = hexStringToUint8Array;
 //# sourceMappingURL=hexStringToUint8Array.js.map

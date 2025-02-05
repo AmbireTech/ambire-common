@@ -1,3 +1,6 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.migrateTokenPreferences = void 0;
 const inferStorageVersion = (tokenPreferences) => {
     if (tokenPreferences.some(({ symbol, decimals }) => !!symbol || !!decimals)) {
         return 1;
@@ -42,5 +45,5 @@ const migrateTokenPreferences = (tokenPreferences, customTokens) => {
         shouldUpdateStorage: false
     };
 };
-export { migrateTokenPreferences };
+exports.migrateTokenPreferences = migrateTokenPreferences;
 //# sourceMappingURL=tokenPreferences.js.map

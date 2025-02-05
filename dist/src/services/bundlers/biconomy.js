@@ -1,7 +1,10 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.Biconomy = void 0;
 /* eslint-disable class-methods-use-this */
-import { BICONOMY } from '../../consts/bundlers';
-import { Bundler } from './bundler';
-export class Biconomy extends Bundler {
+const bundlers_1 = require("../../consts/bundlers");
+const bundler_1 = require("./bundler");
+class Biconomy extends bundler_1.Bundler {
     getUrl(network) {
         return `https://bundler.biconomy.io/api/v3/${network.chainId}/nJPK7B3ru.dd7f7861-190d-41bd-af80-6877f74b8f44`;
     }
@@ -67,7 +70,8 @@ export class Biconomy extends Bundler {
         return userOpStatus;
     }
     getName() {
-        return BICONOMY;
+        return bundlers_1.BICONOMY;
     }
 }
+exports.Biconomy = Biconomy;
 //# sourceMappingURL=biconomy.js.map

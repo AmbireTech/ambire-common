@@ -1,10 +1,14 @@
-import { isSmartAccount } from '../../libs/account/account';
-import { AccountOpStatus } from '../../libs/accountOp/accountOp';
-import { fetchTxnId } from '../../libs/accountOp/submittedAccountOp';
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.ActivityController = void 0;
+const tslib_1 = require("tslib");
+const account_1 = require("../../libs/account/account");
+const accountOp_1 = require("../../libs/accountOp/accountOp");
+const submittedAccountOp_1 = require("../../libs/accountOp/submittedAccountOp");
 /* eslint-disable import/no-extraneous-dependencies */
-import { parseLogs } from '../../libs/userOperation/userOperation';
-import { getBenzinUrlParams } from '../../utils/benzin';
-import EventEmitter from '../eventEmitter/eventEmitter';
+const userOperation_1 = require("../../libs/userOperation/userOperation");
+const benzin_1 = require("../../utils/benzin");
+const eventEmitter_1 = tslib_1.__importDefault(require("../eventEmitter/eventEmitter"));
 // We are limiting items array to include no more than 1000 records,
 // as we trim out the oldest ones (in the beginning of the items array).
 // We do this to maintain optimal storage and performance.
@@ -49,7 +53,7 @@ const paginate = (items, fromPage, itemsPerPage) => {
  * 💡 For performance, items per account and network are limited to 1000.
  * Older items are trimmed, keeping the most recent ones.
  */
-export class ActivityController extends EventEmitter {
+class ActivityController extends eventEmitter_1.default {
     #storage;
     #fetch;
     #initialLoadPromise;
@@ -62,7 +66,7 @@ export class ActivityController extends EventEmitter {
     #providers;
     #networks;
     #onContractsDeployed;
-    #rbfStatuses = [AccountOpStatus.BroadcastedButNotConfirmed, AccountOpStatus.BroadcastButStuck];
+    #rbfStatuses = [accountOp_1.AccountOpStatus.BroadcastedButNotConfirmed, accountOp_1.AccountOpStatus.BroadcastButStuck];
     #callRelayer;
     constructor(storage, fetch, callRelayer, accounts, selectedAccount, providers, networks, onContractsDeployed) {
         super();
@@ -203,7 +207,7 @@ export class ActivityController extends EventEmitter {
             return Promise.all(this.#accountsOps[selectedAccount][networkId].map(async (accountOp, accountOpIndex) => {
                 // Don't update the current network account ops statuses,
                 // as the statuses are already updated in the previous calls.
-                if (accountOp.status !== AccountOpStatus.BroadcastedButNotConfirmed)
+                if (accountOp.status !== accountOp_1.AccountOpStatus.BroadcastedButNotConfirmed)
                     return;
                 shouldEmitUpdate = true;
                 if (newestOpTimestamp === undefined || newestOpTimestamp < accountOp.timestamp) {
@@ -215,14 +219,14 @@ export class ActivityController extends EventEmitter {
                     const aQuaterHasPassed = accountOpDate < new Date();
                     if (aQuaterHasPassed) {
                         this.#accountsOps[selectedAccount][networkId][accountOpIndex].status =
-                            AccountOpStatus.BroadcastButStuck;
+                            accountOp_1.AccountOpStatus.BroadcastButStuck;
                         updatedAccountsOps.push(this.#accountsOps[selectedAccount][networkId][accountOpIndex]);
                     }
                 };
-                const fetchTxnIdResult = await fetchTxnId(accountOp.identifiedBy, network, this.#fetch, this.#callRelayer, accountOp);
+                const fetchTxnIdResult = await (0, submittedAccountOp_1.fetchTxnId)(accountOp.identifiedBy, network, this.#fetch, this.#callRelayer, accountOp);
                 if (fetchTxnIdResult.status === 'rejected') {
                     this.#accountsOps[selectedAccount][networkId][accountOpIndex].status =
-                        AccountOpStatus.Rejected;
+                        accountOp_1.AccountOpStatus.Rejected;
                     updatedAccountsOps.push(this.#accountsOps[selectedAccount][networkId][accountOpIndex]);
                     return;
                 }
@@ -238,7 +242,7 @@ export class ActivityController extends EventEmitter {
                         // if this is an user op, we have to check the logs
                         let isSuccess;
                         if (accountOp.identifiedBy.type === 'UserOperation') {
-                            const userOpEventLog = parseLogs(receipt.logs, accountOp.identifiedBy.identifier);
+                            const userOpEventLog = (0, userOperation_1.parseLogs)(receipt.logs, accountOp.identifiedBy.identifier);
                             if (userOpEventLog)
                                 isSuccess = userOpEventLog.success;
                         }
@@ -246,8 +250,8 @@ export class ActivityController extends EventEmitter {
                         if (isSuccess === undefined)
                             isSuccess = !!receipt.status;
                         this.#accountsOps[selectedAccount][networkId][accountOpIndex].status = isSuccess
-                            ? AccountOpStatus.Success
-                            : AccountOpStatus.Failure;
+                            ? accountOp_1.AccountOpStatus.Success
+                            : accountOp_1.AccountOpStatus.Failure;
                         updatedAccountsOps.push(this.#accountsOps[selectedAccount][networkId][accountOpIndex]);
                         if (receipt.status) {
                             shouldUpdatePortfolio = true;
@@ -277,10 +281,10 @@ export class ActivityController extends EventEmitter {
                     accountOp.gasFeePayment &&
                     accOp.gasFeePayment.paidBy === accountOp.gasFeePayment.paidBy &&
                     accOp.nonce.toString() === accountOp.nonce.toString());
-                const confirmedSameNonceTxns = sameNonceTxns.find((accOp) => accOp.status === AccountOpStatus.Success || accOp.status === AccountOpStatus.Failure);
+                const confirmedSameNonceTxns = sameNonceTxns.find((accOp) => accOp.status === accountOp_1.AccountOpStatus.Success || accOp.status === accountOp_1.AccountOpStatus.Failure);
                 if (sameNonceTxns.length > 1 && !!confirmedSameNonceTxns) {
                     this.#accountsOps[selectedAccount][networkId][accountOpIndex].status =
-                        AccountOpStatus.UnknownButPastNonce;
+                        accountOp_1.AccountOpStatus.UnknownButPastNonce;
                     updatedAccountsOps.push(this.#accountsOps[selectedAccount][networkId][accountOpIndex]);
                     shouldUpdatePortfolio = true;
                 }
@@ -344,7 +348,7 @@ export class ActivityController extends EventEmitter {
             return [];
         return Object.values(this.#accountsOps[this.#selectedAccount.account.addr])
             .flat()
-            .filter((accountOp) => accountOp.status === AccountOpStatus.BroadcastedButNotConfirmed);
+            .filter((accountOp) => accountOp.status === accountOp_1.AccountOpStatus.BroadcastedButNotConfirmed);
     }
     get banners() {
         if (!this.#networks.isInitialized)
@@ -354,7 +358,7 @@ export class ActivityController extends EventEmitter {
             .filter((op) => !(op.flags && op.flags.hideActivityBanner))
             .map((accountOp) => {
             const network = this.#networks.networks.find((x) => x.id === accountOp.networkId);
-            const url = `https://benzin.ambire.com/${getBenzinUrlParams({
+            const url = `https://benzin.ambire.com/${(0, benzin_1.getBenzinUrlParams)({
                 chainId: network.chainId,
                 txnId: accountOp.txnId,
                 identifiedBy: accountOp.identifiedBy
@@ -398,7 +402,7 @@ export class ActivityController extends EventEmitter {
         // if the broadcasting account is a smart account, it means relayer
         // broadcast => it's in this.#accountsOps[acc.addr][networkId]
         // disregard erc-4337 txns as they shouldn't have an RBF
-        const isSA = isSmartAccount(acc);
+        const isSA = (0, account_1.isSmartAccount)(acc);
         if (isSA) {
             if (!this.#accountsOps[acc.addr] || !this.#accountsOps[acc.addr][networkId])
                 return null;
@@ -408,7 +412,7 @@ export class ActivityController extends EventEmitter {
         }
         // if the account is an EOA, we have to go through all the smart accounts
         // to check whether the EOA has made a broadcast for them
-        const theEOAandSAaccounts = this.#accounts.accounts.filter((oneA) => isSmartAccount(oneA) || oneA.addr === accId);
+        const theEOAandSAaccounts = this.#accounts.accounts.filter((oneA) => (0, account_1.isSmartAccount)(oneA) || oneA.addr === accId);
         const ops = [];
         theEOAandSAaccounts.forEach((oneA) => {
             if (!this.#accountsOps[oneA.addr] || !this.#accountsOps[oneA.addr][networkId])
@@ -443,4 +447,5 @@ export class ActivityController extends EventEmitter {
         };
     }
 }
+exports.ActivityController = ActivityController;
 //# sourceMappingURL=activity.js.map

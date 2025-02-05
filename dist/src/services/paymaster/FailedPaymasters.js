@@ -1,12 +1,16 @@
+"use strict";
 /* eslint-disable no-console */
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.failedPaymasters = exports.FailedPaymasters = void 0;
+const tslib_1 = require("tslib");
 /*
  * a singleton for recording failed paymaster requests
  */
-import { Contract } from 'ethers';
-import entryPointAbi from '../../../contracts/compiled/EntryPoint.json';
-import { AMBIRE_PAYMASTER, ERC_4337_ENTRYPOINT } from '../../consts/deploy';
+const ethers_1 = require("ethers");
+const EntryPoint_json_1 = tslib_1.__importDefault(require("../../../contracts/compiled/EntryPoint.json"));
+const deploy_1 = require("../../consts/deploy");
 // so the app can fallback to a standard Paymaster if a sponsorship fails
-export class FailedPaymasters {
+class FailedPaymasters {
     failedSponsorshipIds = [];
     insufficientFundsNetworks = {};
     addFailedSponsorship(id) {
@@ -18,8 +22,8 @@ export class FailedPaymasters {
     async addInsufficientFunds(provider, network) {
         let paymasterBalance = 0n;
         try {
-            const ep = new Contract(ERC_4337_ENTRYPOINT, entryPointAbi, provider);
-            paymasterBalance = await ep.balanceOf(AMBIRE_PAYMASTER);
+            const ep = new ethers_1.Contract(deploy_1.ERC_4337_ENTRYPOINT, EntryPoint_json_1.default, provider);
+            paymasterBalance = await ep.balanceOf(deploy_1.AMBIRE_PAYMASTER);
         }
         catch (e) {
             console.log('failed to retrieve the balance of the paymaster');
@@ -36,5 +40,6 @@ export class FailedPaymasters {
         delete this.insufficientFundsNetworks[Number(network.chainId)];
     }
 }
-export const failedPaymasters = new FailedPaymasters();
+exports.FailedPaymasters = FailedPaymasters;
+exports.failedPaymasters = new FailedPaymasters();
 //# sourceMappingURL=FailedPaymasters.js.map

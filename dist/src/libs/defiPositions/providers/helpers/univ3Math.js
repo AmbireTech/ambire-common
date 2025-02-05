@@ -1,4 +1,7 @@
-export function uniV3DataToPortfolioPosition(liquidity, sqrtPriceX96, tickLow, tickHigh) {
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.uniV3DataToPortfolioPosition = void 0;
+function uniV3DataToPortfolioPosition(liquidity, sqrtPriceX96, tickLow, tickHigh) {
     const Q96 = 2 ** 96;
     function getTickAtSqrtPrice(sqrtPriceX96) {
         const tick = Math.floor(Math.log((sqrtPriceX96 / Q96) ** 2) / Math.log(1.0001));
@@ -29,4 +32,5 @@ export function uniV3DataToPortfolioPosition(liquidity, sqrtPriceX96, tickLow, t
     }
     return getTokenAmounts(Number(liquidity), Number(sqrtPriceX96), Number(tickLow), Number(tickHigh));
 }
+exports.uniV3DataToPortfolioPosition = uniV3DataToPortfolioPosition;
 //# sourceMappingURL=univ3Math.js.map

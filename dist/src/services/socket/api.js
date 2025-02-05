@@ -1,17 +1,22 @@
-import { getAddress } from 'ethers';
-import SwapAndBridgeProviderApiError from '../../classes/SwapAndBridgeProviderApiError';
-import { AMBIRE_FEE_TAKER_ADDRESSES, AMBIRE_WALLET_TOKEN_ON_BASE, AMBIRE_WALLET_TOKEN_ON_ETHEREUM, ETH_ON_OPTIMISM_LEGACY_ADDRESS, FEE_PERCENT, NULL_ADDRESS, ZERO_ADDRESS } from './constants';
-const convertZeroAddressToNullAddressIfNeeded = (addr) => addr === ZERO_ADDRESS ? NULL_ADDRESS : addr;
-const convertNullAddressToZeroAddressIfNeeded = (addr) => addr === NULL_ADDRESS ? ZERO_ADDRESS : addr;
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.SocketAPI = exports.normalizeIncomingSocketToken = void 0;
+const tslib_1 = require("tslib");
+const ethers_1 = require("ethers");
+const SwapAndBridgeProviderApiError_1 = tslib_1.__importDefault(require("../../classes/SwapAndBridgeProviderApiError"));
+const constants_1 = require("./constants");
+const convertZeroAddressToNullAddressIfNeeded = (addr) => addr === constants_1.ZERO_ADDRESS ? constants_1.NULL_ADDRESS : addr;
+const convertNullAddressToZeroAddressIfNeeded = (addr) => addr === constants_1.NULL_ADDRESS ? constants_1.ZERO_ADDRESS : addr;
 const normalizeIncomingSocketTokenAddress = (address) => 
 // incoming token addresses from Socket are all lowercased
-getAddress(
+(0, ethers_1.getAddress)(
 // native token addresses come as null address instead of the zero address
 convertNullAddressToZeroAddressIfNeeded(address));
-export const normalizeIncomingSocketToken = (token) => ({
+const normalizeIncomingSocketToken = (token) => ({
     ...token,
     address: normalizeIncomingSocketTokenAddress(token.address)
 });
+exports.normalizeIncomingSocketToken = normalizeIncomingSocketToken;
 const normalizeOutgoingSocketTokenAddress = (address) => 
 // Socket expects to receive null address instead of the zero address for native tokens.
 convertZeroAddressToNullAddressIfNeeded(
@@ -21,7 +26,7 @@ const normalizeOutgoingSocketToken = (token) => ({
     ...token,
     address: normalizeOutgoingSocketTokenAddress(token.address)
 });
-export class SocketAPI {
+class SocketAPI {
     #fetch;
     #baseUrl = 'https://api.socket.tech/v2';
     #headers;
@@ -71,7 +76,7 @@ export class SocketAPI {
             const message = e?.message || 'no message';
             const status = e?.status ? `, status: <${e.status}>` : '';
             const error = `${errorPrefix} Upstream error: <${message}>${status}`;
-            throw new SwapAndBridgeProviderApiError(error);
+            throw new SwapAndBridgeProviderApiError_1.default(error);
         }
         let responseBody;
         try {
@@ -80,7 +85,7 @@ export class SocketAPI {
         catch (e) {
             const message = e?.message || 'no message';
             const error = `${errorPrefix} Error details: Unexpected non-JSON response from our service provider, message: <${message}>`;
-            throw new SwapAndBridgeProviderApiError(error);
+            throw new SwapAndBridgeProviderApiError_1.default(error);
         }
         // Socket API returns 500 status code with a message in the body, even
         // in case of a bad request. Not necessarily an internal server error.
@@ -93,7 +98,7 @@ export class SocketAPI {
             const specificErrorCode = responseBody?.message?.details?.error?.code;
             const specificErrorCodeMessage = specificErrorCode ? `, code: <${specificErrorCode}>` : '';
             const error = `${errorPrefix} Our service provider upstream error: <${genericErrorMessage}>${specificErrorMessage}${specificErrorCodeMessage}`;
-            throw new SwapAndBridgeProviderApiError(error);
+            throw new SwapAndBridgeProviderApiError_1.default(error);
         }
         // Always attempt to update health status (if needed) when a response was
         // successful, in case the API was previously unhealthy (to recover).
@@ -126,19 +131,19 @@ export class SocketAPI {
         // Exception for Optimism, strip out the legacy ETH address
         // TODO: Remove when Socket removes the legacy ETH address from their response
         if (toChainId === 10)
-            response = response.filter((token) => token.address !== ETH_ON_OPTIMISM_LEGACY_ADDRESS);
+            response = response.filter((token) => token.address !== constants_1.ETH_ON_OPTIMISM_LEGACY_ADDRESS);
         // Exception for Ethereum, duplicate ETH tokens are incoming from the API.
         // One is with the `ZERO_ADDRESS` and one with `NULL_ADDRESS`, both for ETH.
         // Strip out the one with the `ZERO_ADDRESS` to be consistent with the rest.
         if (toChainId === 1)
-            response = response.filter((token) => token.address !== ZERO_ADDRESS);
+            response = response.filter((token) => token.address !== constants_1.ZERO_ADDRESS);
         // Since v4.41.0 we request the shortlist from Socket, which does not include
         // the Ambire $WALLET token. So adding it manually on the supported chains.
         if (toChainId === 1)
-            response.unshift(AMBIRE_WALLET_TOKEN_ON_ETHEREUM);
+            response.unshift(constants_1.AMBIRE_WALLET_TOKEN_ON_ETHEREUM);
         if (toChainId === 8453)
-            response.unshift(AMBIRE_WALLET_TOKEN_ON_BASE);
-        return response.map(normalizeIncomingSocketToken);
+            response.unshift(constants_1.AMBIRE_WALLET_TOKEN_ON_BASE);
+        return response.map(exports.normalizeIncomingSocketToken);
     }
     async getToken({ address, chainId }) {
         const params = new URLSearchParams({
@@ -152,7 +157,7 @@ export class SocketAPI {
         });
         if (!response.isSupported || !response.token)
             return null;
-        return normalizeIncomingSocketToken(response.token);
+        return (0, exports.normalizeIncomingSocketToken)(response.token);
     }
     async quote({ fromChainId, fromTokenAddress, toChainId, toTokenAddress, fromAmount, userAddress, isSmartAccount, sort, isOG }) {
         const params = new URLSearchParams({
@@ -168,11 +173,11 @@ export class SocketAPI {
             defaultSwapSlippage: '1',
             uniqueRoutesPerBridge: 'true'
         });
-        const feeTakerAddress = AMBIRE_FEE_TAKER_ADDRESSES[fromChainId];
+        const feeTakerAddress = constants_1.AMBIRE_FEE_TAKER_ADDRESSES[fromChainId];
         const shouldIncludeConvenienceFee = !!feeTakerAddress && !isOG;
         if (shouldIncludeConvenienceFee) {
             params.append('feeTakerAddress', feeTakerAddress);
-            params.append('feePercent', FEE_PERCENT.toString());
+            params.append('feePercent', constants_1.FEE_PERCENT.toString());
         }
         // TODO: Temporarily exclude Mayan bridge when fetching quotes for SA, as
         // batching is currently not not supported by Mayan (and funds get lost).
@@ -185,21 +190,21 @@ export class SocketAPI {
         });
         return {
             ...response,
-            fromAsset: normalizeIncomingSocketToken(response.fromAsset),
-            toAsset: normalizeIncomingSocketToken(response.toAsset),
+            fromAsset: (0, exports.normalizeIncomingSocketToken)(response.fromAsset),
+            toAsset: (0, exports.normalizeIncomingSocketToken)(response.toAsset),
             routes: response.routes.map((route) => ({
                 ...route,
                 userTxs: route.userTxs.map((userTx) => ({
                     ...userTx,
                     ...('fromAsset' in userTx && {
-                        fromAsset: normalizeIncomingSocketToken(userTx.fromAsset)
+                        fromAsset: (0, exports.normalizeIncomingSocketToken)(userTx.fromAsset)
                     }),
-                    toAsset: normalizeIncomingSocketToken(userTx.toAsset),
+                    toAsset: (0, exports.normalizeIncomingSocketToken)(userTx.toAsset),
                     ...('steps' in userTx && {
                         steps: userTx.steps.map((step) => ({
                             ...step,
-                            fromAsset: normalizeIncomingSocketToken(step.fromAsset),
-                            toAsset: normalizeIncomingSocketToken(step.toAsset)
+                            fromAsset: (0, exports.normalizeIncomingSocketToken)(step.fromAsset),
+                            toAsset: (0, exports.normalizeIncomingSocketToken)(step.toAsset)
                         }))
                     })
                 }))
@@ -267,19 +272,19 @@ export class SocketAPI {
         });
         return {
             ...response,
-            fromAsset: normalizeIncomingSocketToken(response.fromAsset),
+            fromAsset: (0, exports.normalizeIncomingSocketToken)(response.fromAsset),
             fromAssetAddress: normalizeIncomingSocketTokenAddress(response.fromAssetAddress),
-            toAsset: normalizeIncomingSocketToken(response.toAsset),
+            toAsset: (0, exports.normalizeIncomingSocketToken)(response.toAsset),
             toAssetAddress: normalizeIncomingSocketTokenAddress(response.toAssetAddress),
             userTxs: response.userTxs.map((userTx) => ({
                 ...userTx,
-                ...('fromAsset' in userTx && { fromAsset: normalizeIncomingSocketToken(userTx.fromAsset) }),
-                toAsset: normalizeIncomingSocketToken(userTx.toAsset),
+                ...('fromAsset' in userTx && { fromAsset: (0, exports.normalizeIncomingSocketToken)(userTx.fromAsset) }),
+                toAsset: (0, exports.normalizeIncomingSocketToken)(userTx.toAsset),
                 ...('steps' in userTx && {
                     steps: userTx.steps.map((step) => ({
                         ...step,
-                        fromAsset: normalizeIncomingSocketToken(step.fromAsset),
-                        toAsset: normalizeIncomingSocketToken(step.toAsset)
+                        fromAsset: (0, exports.normalizeIncomingSocketToken)(step.fromAsset),
+                        toAsset: (0, exports.normalizeIncomingSocketToken)(step.toAsset)
                     }))
                 })
             }))
@@ -295,4 +300,5 @@ export class SocketAPI {
         return response;
     }
 }
+exports.SocketAPI = SocketAPI;
 //# sourceMappingURL=api.js.map

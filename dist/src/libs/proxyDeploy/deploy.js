@@ -1,3 +1,6 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.getStorageSlotsFromArtifact = exports.getProxyDeployBytecode = exports.privSlot = void 0;
 const abi = require('ethereumjs-abi');
 const keccak256 = require('js-sha3').keccak256;
 // @TODO: fix the any
@@ -12,10 +15,11 @@ function evmPush(data) {
     return Buffer.concat([opCodeBuf, data]);
 }
 // @TODO: fix the any
-export function privSlot(slotNumber, keyType, key, valueType) {
+function privSlot(slotNumber, keyType, key, valueType) {
     const buf = abi.rawEncode([keyType, valueType], [key, slotNumber]);
     return keccak256(buf);
 }
+exports.privSlot = privSlot;
 // @TODO: fix the any
 function sstoreCode(slotNumber, keyType, key, valueType, valueBuf) {
     // @TODO why are we using valueType for the slotNumber? this has to be a hardcoded uint256 and valueType is pointless
@@ -26,7 +30,7 @@ function sstoreCode(slotNumber, keyType, key, valueType, valueBuf) {
         Buffer.from('55', 'hex')
     ]);
 }
-export function getProxyDeployBytecode(masterContractAddr, privLevels, opts = { privSlot: 0 }) {
+function getProxyDeployBytecode(masterContractAddr, privLevels, opts = { privSlot: 0 }) {
     const slotNumber = opts.privSlot ?? 0;
     if (privLevels.length > 3)
         throw new Error('getProxyDeployBytecode: max 3 privLevels');
@@ -44,7 +48,8 @@ export function getProxyDeployBytecode(masterContractAddr, privLevels, opts = { 
         throw new Error('invalid address');
     return `0x${initialCode.toString('hex')}3d3981f3363d3d373d3d3d363d${evmPush(masterAddrBuf).toString('hex')}5af43d82803e903d91602b57fd5bf3`;
 }
-export function getStorageSlotsFromArtifact(buildInfo) {
+exports.getProxyDeployBytecode = getProxyDeployBytecode;
+function getStorageSlotsFromArtifact(buildInfo) {
     if (!buildInfo)
         return { privSlot: 0 };
     const ambireAccountArtifact = buildInfo.output.sources['contracts/AmbireAccount.sol'];
@@ -55,4 +60,5 @@ export function getStorageSlotsFromArtifact(buildInfo) {
     const slotNumber = storageVariableNodes.findIndex((x) => x.name === 'privileges');
     return { privSlot: slotNumber };
 }
+exports.getStorageSlotsFromArtifact = getStorageSlotsFromArtifact;
 //# sourceMappingURL=deploy.js.map

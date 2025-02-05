@@ -1,5 +1,9 @@
-import fs from 'fs';
-import path from 'path';
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.compile = void 0;
+const tslib_1 = require("tslib");
+const fs_1 = tslib_1.__importDefault(require("fs"));
+const path_1 = tslib_1.__importDefault(require("path"));
 // solc js doesn't support typescript so we hack it
 let _solc = null;
 function getSolc() {
@@ -15,11 +19,11 @@ function getSolc() {
 // options
 //   - fileName - if the name of the file is different than the name
 // of the contract, it should be passed along as we cannot guess it
-export function compile(contractName, options = {}) {
+function compile(contractName, options = {}) {
     const fileName = options.fileName ? options.fileName : `${contractName}.sol`;
     const contractsFolder = options.contractsFolder ? options.contractsFolder : 'contracts';
-    const contractPath = path.resolve(`${__dirname}../../../../`, contractsFolder, fileName);
-    const contractSource = fs.readFileSync(contractPath, { encoding: 'utf8' });
+    const contractPath = path_1.default.resolve(`${__dirname}../../../../`, contractsFolder, fileName);
+    const contractSource = fs_1.default.readFileSync(contractPath, { encoding: 'utf8' });
     const input = {
         language: 'Solidity',
         sources: {
@@ -48,7 +52,7 @@ export function compile(contractName, options = {}) {
             compileFolder = '';
         }
         return {
-            contents: fs.readFileSync(path.resolve(`${__dirname}../../../../`, compileFolder, libPath), {
+            contents: fs_1.default.readFileSync(path_1.default.resolve(`${__dirname}../../../../`, compileFolder, libPath), {
                 encoding: 'utf8'
             })
         };
@@ -67,4 +71,5 @@ export function compile(contractName, options = {}) {
         binRuntime: `0x${output.contracts[contractName][contractName].evm.deployedBytecode.object}` // binRuntime
     };
 }
+exports.compile = compile;
 //# sourceMappingURL=compile.js.map

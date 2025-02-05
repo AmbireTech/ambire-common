@@ -1,16 +1,20 @@
-import { ENTRY_POINT_AUTHORIZATION_REQUEST_ID } from '../../userOperation/userOperation';
-import { getAction, getAddressVisualization, getLabel } from '../utils';
-export const entryPointModule = (message) => {
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.entryPointModule = void 0;
+const userOperation_1 = require("../../userOperation/userOperation");
+const utils_1 = require("../utils");
+const entryPointModule = (message) => {
     if (message.content.kind !== 'typedMessage')
         return { fullVisualization: [] };
-    if (message.fromActionId === ENTRY_POINT_AUTHORIZATION_REQUEST_ID)
+    if (message.fromActionId === userOperation_1.ENTRY_POINT_AUTHORIZATION_REQUEST_ID)
         return {
             fullVisualization: [
-                getAction('Authorize entry point'),
-                getLabel('for'),
-                getAddressVisualization(message.accountAddr)
+                (0, utils_1.getAction)('Authorize entry point'),
+                (0, utils_1.getLabel)('for'),
+                (0, utils_1.getAddressVisualization)(message.accountAddr)
             ]
         };
     return { fullVisualization: [] };
 };
+exports.entryPointModule = entryPointModule;
 //# sourceMappingURL=entryPointModule.js.map

@@ -1,10 +1,13 @@
-import { DeFiPositionsError } from '../defiPositions/types';
-import { getNetworksWithFailedRPC } from '../networks/networks';
-import { PORTFOLIO_LIB_ERROR_NAMES } from '../portfolio/portfolio';
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.getNetworksWithDeFiPositionsErrorErrors = exports.getNetworksWithPortfolioErrorErrors = exports.getNetworksWithFailedRPCErrors = void 0;
+const types_1 = require("../defiPositions/types");
+const networks_1 = require("../networks/networks");
+const portfolio_1 = require("../portfolio/portfolio");
 const TEN_MINUTES = 10 * 60 * 1000;
-export const getNetworksWithFailedRPCErrors = ({ providers, networks, networksWithAssets }) => {
+const getNetworksWithFailedRPCErrors = ({ providers, networks, networksWithAssets }) => {
     const errors = [];
-    const networkIds = getNetworksWithFailedRPC({ providers }).filter((networkId) => (Object.keys(networksWithAssets).includes(networkId) &&
+    const networkIds = (0, networks_1.getNetworksWithFailedRPC)({ providers }).filter((networkId) => (Object.keys(networksWithAssets).includes(networkId) &&
         networksWithAssets[networkId] === true) ||
         !Object.keys(networksWithAssets).includes(networkId));
     const networksData = networkIds.map((id) => networks.find((n) => n.id === id));
@@ -46,6 +49,7 @@ export const getNetworksWithFailedRPCErrors = ({ providers, networks, networksWi
     });
     return errors;
 };
+exports.getNetworksWithFailedRPCErrors = getNetworksWithFailedRPCErrors;
 const addPortfolioError = (errors, networkId, newError) => {
     const newErrors = [...errors];
     const existingError = newErrors.find((error) => error.id === newError);
@@ -61,17 +65,17 @@ const addPortfolioError = (errors, networkId, newError) => {
                 title = 'Failed to retrieve the portfolio data';
                 text = 'Account balance and visible assets may be inaccurate.';
                 break;
-            case PORTFOLIO_LIB_ERROR_NAMES.PriceFetchError:
+            case portfolio_1.PORTFOLIO_LIB_ERROR_NAMES.PriceFetchError:
                 title = 'Failed to retrieve prices';
                 text = 'Account balance and asset prices may be inaccurate.';
                 type = 'warning';
                 break;
-            case PORTFOLIO_LIB_ERROR_NAMES.NoApiHintsError:
+            case portfolio_1.PORTFOLIO_LIB_ERROR_NAMES.NoApiHintsError:
                 title = 'Automatic asset discovery is temporarily unavailable';
                 text =
                     'Your funds are safe, but your portfolio will be inaccurate. You can add assets manually or wait for the issue to be resolved.';
                 break;
-            case PORTFOLIO_LIB_ERROR_NAMES.StaleApiHintsError:
+            case portfolio_1.PORTFOLIO_LIB_ERROR_NAMES.StaleApiHintsError:
                 title = 'Automatic asset discovery is temporarily unavailable';
                 text =
                     'New assets may not be visible in your portfolio. You can add assets manually or wait for the issue to be resolved.';
@@ -92,7 +96,7 @@ const addPortfolioError = (errors, networkId, newError) => {
     }
     return newErrors;
 };
-export const getNetworksWithPortfolioErrorErrors = ({ networks, selectedAccountLatest, providers }) => {
+const getNetworksWithPortfolioErrorErrors = ({ networks, selectedAccountLatest, providers }) => {
     let errors = [];
     const portfolioLoading = Object.keys(selectedAccountLatest).some((network) => {
         const portfolioForNetwork = selectedAccountLatest[network];
@@ -143,7 +147,8 @@ export const getNetworksWithPortfolioErrorErrors = ({ networks, selectedAccountL
         };
     });
 };
-export const getNetworksWithDeFiPositionsErrorErrors = ({ networks, currentAccountState, providers, networksWithPositions }) => {
+exports.getNetworksWithPortfolioErrorErrors = getNetworksWithPortfolioErrorErrors;
+const getNetworksWithDeFiPositionsErrorErrors = ({ networks, currentAccountState, providers, networksWithPositions }) => {
     const isLoading = Object.keys(currentAccountState).some((networkId) => {
         const networkState = currentAccountState[networkId];
         return networkState.isLoading;
@@ -171,10 +176,10 @@ export const getNetworksWithDeFiPositionsErrorErrors = ({ networks, currentAccou
             (typeof rpcProvider.isWorking === 'boolean' && !rpcProvider.isWorking))
             return;
         if (networkState.error) {
-            if (networkState.error === DeFiPositionsError.AssetPriceError) {
+            if (networkState.error === types_1.DeFiPositionsError.AssetPriceError) {
                 networkNamesWithAssetPriceCriticalError.push(network.name);
             }
-            else if (networkState.error === DeFiPositionsError.CriticalError) {
+            else if (networkState.error === types_1.DeFiPositionsError.CriticalError) {
                 networkNamesWithUnknownCriticalError.push(network.name);
             }
         }
@@ -223,4 +228,5 @@ export const getNetworksWithDeFiPositionsErrorErrors = ({ networks, currentAccou
     }
     return errors;
 };
+exports.getNetworksWithDeFiPositionsErrorErrors = getNetworksWithDeFiPositionsErrorErrors;
 //# sourceMappingURL=errors.js.map

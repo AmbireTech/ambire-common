@@ -1,4 +1,7 @@
-import { BICONOMY, PIMLICO } from './bundlers';
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.networks = void 0;
+const bundlers_1 = require("./bundlers");
 const networks = [
     {
         id: 'ethereum',
@@ -36,8 +39,8 @@ const networks = [
             enabled: false,
             hasPaymaster: true,
             hasBundlerSupport: true,
-            bundlers: [PIMLICO, BICONOMY],
-            defaultBundler: PIMLICO
+            bundlers: [bundlers_1.PIMLICO, bundlers_1.BICONOMY],
+            defaultBundler: bundlers_1.PIMLICO
         },
         isSAEnabled: true,
         areContractsDeployed: true,
@@ -66,8 +69,8 @@ const networks = [
             enabled: true,
             hasPaymaster: true,
             hasBundlerSupport: true,
-            bundlers: [PIMLICO, BICONOMY],
-            defaultBundler: BICONOMY
+            bundlers: [bundlers_1.PIMLICO, bundlers_1.BICONOMY],
+            defaultBundler: bundlers_1.BICONOMY
         },
         isSAEnabled: true,
         areContractsDeployed: true,
@@ -128,8 +131,8 @@ const networks = [
             enabled: true,
             hasPaymaster: true,
             hasBundlerSupport: true,
-            bundlers: [PIMLICO, BICONOMY],
-            defaultBundler: PIMLICO
+            bundlers: [bundlers_1.PIMLICO, bundlers_1.BICONOMY],
+            defaultBundler: bundlers_1.PIMLICO
         },
         isSAEnabled: true,
         areContractsDeployed: true,
@@ -158,8 +161,8 @@ const networks = [
             enabled: true,
             hasPaymaster: true,
             hasBundlerSupport: true,
-            bundlers: [PIMLICO, BICONOMY],
-            defaultBundler: PIMLICO
+            bundlers: [bundlers_1.PIMLICO, bundlers_1.BICONOMY],
+            defaultBundler: bundlers_1.PIMLICO
         },
         isSAEnabled: true,
         areContractsDeployed: true,
@@ -205,5 +208,5 @@ const networks = [
         allowForce4337: true
     }
 ];
-export { networks };
+exports.networks = networks;
 //# sourceMappingURL=networks.js.map

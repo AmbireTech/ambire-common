@@ -1,15 +1,19 @@
-import { getCreate2Address, keccak256 } from 'ethers';
-import ExternalSignerError from '../../classes/ExternalSignerError';
-import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account';
-import { PROXY_AMBIRE_ACCOUNT } from '../../consts/deploy';
-import { SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET } from '../../consts/derivation';
-import { dedicatedToOneSAPriv } from '../../interfaces/keystore';
-import { getAccountImportStatus, getBasicAccount, getDefaultAccountPreferences, getEmailAccount, getSmartAccount, isAmbireV1LinkedAccount, isDerivedForSmartAccountKeyOnly, isSmartAccount } from '../../libs/account/account';
-import { getAccountState } from '../../libs/accountState/accountState';
-import { relayerCall } from '../../libs/relayerCall/relayerCall';
-import EventEmitter from '../eventEmitter/eventEmitter';
-export const DEFAULT_PAGE = 1;
-export const DEFAULT_PAGE_SIZE = 5;
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.AccountAdderController = exports.DEFAULT_PAGE_SIZE = exports.DEFAULT_PAGE = void 0;
+const tslib_1 = require("tslib");
+const ethers_1 = require("ethers");
+const ExternalSignerError_1 = tslib_1.__importDefault(require("../../classes/ExternalSignerError"));
+const account_1 = require("../../consts/account");
+const deploy_1 = require("../../consts/deploy");
+const derivation_1 = require("../../consts/derivation");
+const keystore_1 = require("../../interfaces/keystore");
+const account_2 = require("../../libs/account/account");
+const accountState_1 = require("../../libs/accountState/accountState");
+const relayerCall_1 = require("../../libs/relayerCall/relayerCall");
+const eventEmitter_1 = tslib_1.__importDefault(require("../eventEmitter/eventEmitter"));
+exports.DEFAULT_PAGE = 1;
+exports.DEFAULT_PAGE_SIZE = 5;
 const DEFAULT_SHOULD_SEARCH_FOR_LINKED_ACCOUNTS = true;
 const DEFAULT_SHOULD_GET_ACCOUNTS_USED_ON_NETWORKS = true;
 /**
@@ -19,7 +23,7 @@ const DEFAULT_SHOULD_GET_ACCOUNTS_USED_ON_NETWORKS = true;
  * It uses a KeyIterator interface allow iterating all the keys in a specific
  * underlying store such as a hardware device or an object holding a seed.
  */
-export class AccountAdderController extends EventEmitter {
+class AccountAdderController extends eventEmitter_1.default {
     #callRelayer;
     #accounts;
     #keystore;
@@ -32,9 +36,9 @@ export class AccountAdderController extends EventEmitter {
     shouldSearchForLinkedAccounts = DEFAULT_SHOULD_SEARCH_FOR_LINKED_ACCOUNTS;
     shouldGetAccountsUsedOnNetworks = DEFAULT_SHOULD_GET_ACCOUNTS_USED_ON_NETWORKS;
     /* This is only the index of the current page */
-    page = DEFAULT_PAGE;
+    page = exports.DEFAULT_PAGE;
     /* The number of accounts to be displayed on a single page */
-    pageSize = DEFAULT_PAGE_SIZE;
+    pageSize = exports.DEFAULT_PAGE_SIZE;
     /* State to indicate the page requested fails to load (and the reason why) */
     pageError = null;
     selectedAccounts = [];
@@ -62,20 +66,20 @@ export class AccountAdderController extends EventEmitter {
         this.#keystore = keystore;
         this.#networks = networks;
         this.#providers = providers;
-        this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch });
+        this.#callRelayer = relayerCall_1.relayerCall.bind({ url: relayerUrl, fetch });
     }
     get accountsOnPage() {
         const processedAccounts = this.#derivedAccounts
             // The displayed (visible) accounts on page should not include the derived
             // EOA (basic) accounts only used as smart account keys, they should not
             // be visible nor importable (or selectable).
-            .filter((x) => !isDerivedForSmartAccountKeyOnly(x.index))
+            .filter((x) => !(0, account_2.isDerivedForSmartAccountKeyOnly)(x.index))
             .flatMap((derivedAccount) => {
-            const associatedLinkedAccounts = this.#linkedAccounts.filter((linkedAcc) => !isSmartAccount(derivedAccount.account) &&
+            const associatedLinkedAccounts = this.#linkedAccounts.filter((linkedAcc) => !(0, account_2.isSmartAccount)(derivedAccount.account) &&
                 linkedAcc.account.associatedKeys.includes(derivedAccount.account.addr));
-            const correspondingSmartAccount = this.#derivedAccounts.find((acc) => isSmartAccount(acc.account) && acc.slot === derivedAccount.slot);
+            const correspondingSmartAccount = this.#derivedAccounts.find((acc) => (0, account_2.isSmartAccount)(acc.account) && acc.slot === derivedAccount.slot);
             let accountsToReturn = [];
-            if (!isSmartAccount(derivedAccount.account)) {
+            if (!(0, account_2.isSmartAccount)(derivedAccount.account)) {
                 accountsToReturn.push(derivedAccount);
                 const duplicate = associatedLinkedAccounts.find((linkedAcc) => linkedAcc.account.addr === correspondingSmartAccount?.account?.addr);
                 // The derived smart account that matches the relayer's linked account
@@ -118,7 +122,7 @@ export class AccountAdderController extends EventEmitter {
         const mergedAccounts = [...processedAccounts, ...unprocessedLinkedAccounts];
         mergedAccounts.sort((a, b) => {
             const prioritizeAccountType = (item) => {
-                if (!isSmartAccount(item.account))
+                if (!(0, account_2.isSmartAccount)(item.account))
                     return -1;
                 if (item.isLinked)
                     return 1;
@@ -128,7 +132,7 @@ export class AccountAdderController extends EventEmitter {
         });
         return mergedAccounts.map((acc) => ({
             ...acc,
-            importStatus: getAccountImportStatus({
+            importStatus: (0, account_2.getAccountImportStatus)({
                 account: acc.account,
                 alreadyImportedAccounts: this.#alreadyImportedAccountsOnControllerInit,
                 keys: this.#keystore.keys,
@@ -157,8 +161,8 @@ export class AccountAdderController extends EventEmitter {
         this.#keyIterator = keyIterator;
         if (!this.#keyIterator)
             return this.#throwMissingKeyIterator();
-        this.page = page || DEFAULT_PAGE;
-        this.pageSize = pageSize || DEFAULT_PAGE_SIZE;
+        this.page = page || exports.DEFAULT_PAGE;
+        this.pageSize = pageSize || exports.DEFAULT_PAGE_SIZE;
         this.isInitializedWithSavedSeed = await this.#isKeyIteratorInitializedWithTheSavedSeed();
         this.hdPathTemplate = await this.#getInitialHdPathTemplate(hdPathTemplate);
         this.isInitialized = true;
@@ -176,8 +180,8 @@ export class AccountAdderController extends EventEmitter {
     reset() {
         this.#keyIterator = null;
         this.selectedAccounts = [];
-        this.page = DEFAULT_PAGE;
-        this.pageSize = DEFAULT_PAGE_SIZE;
+        this.page = exports.DEFAULT_PAGE;
+        this.pageSize = exports.DEFAULT_PAGE_SIZE;
         this.hdPathTemplate = undefined;
         this.shouldSearchForLinkedAccounts = DEFAULT_SHOULD_SEARCH_FOR_LINKED_ACCOUNTS;
         this.shouldGetAccountsUsedOnNetworks = DEFAULT_SHOULD_GET_ACCOUNTS_USED_ON_NETWORKS;
@@ -197,7 +201,7 @@ export class AccountAdderController extends EventEmitter {
         // accounts, as of v4.32.0, we don't store their hd path. When import
         // completes, only the latest hd path of the controller is stored.
         this.selectedAccounts = [];
-        await this.setPage({ page: DEFAULT_PAGE }); // takes the user back on the first page
+        await this.setPage({ page: exports.DEFAULT_PAGE }); // takes the user back on the first page
     }
     #getAccountKeys(account, accountsOnPageWithThisAcc) {
         // should never happen
@@ -206,20 +210,20 @@ export class AccountAdderController extends EventEmitter {
             return [];
         }
         // Case 1: The account is a Basic account
-        const isBasicAcc = !isSmartAccount(account);
+        const isBasicAcc = !(0, account_2.isSmartAccount)(account);
         // The key of the Basic account is the basic account itself
         if (isBasicAcc)
             return accountsOnPageWithThisAcc;
         // Case 2: The account is a Smart account, but not a linked one
-        const isSmartAccountAndNotLinked = isSmartAccount(account) &&
+        const isSmartAccountAndNotLinked = (0, account_2.isSmartAccount)(account) &&
             accountsOnPageWithThisAcc.length === 1 &&
             accountsOnPageWithThisAcc[0].isLinked === false;
         if (isSmartAccountAndNotLinked) {
             // The key of the smart account is the Basic account on the same slot
             // that is explicitly derived for a smart account key only.
             const basicAccOnThisSlotDerivedForSmartAccKey = this.#derivedAccounts.find((a) => a.slot === accountsOnPageWithThisAcc[0].slot &&
-                !isSmartAccount(a.account) &&
-                isDerivedForSmartAccountKeyOnly(a.index));
+                !(0, account_2.isSmartAccount)(a.account) &&
+                (0, account_2.isDerivedForSmartAccountKeyOnly)(a.index));
             return basicAccOnThisSlotDerivedForSmartAccKey
                 ? [basicAccOnThisSlotDerivedForSmartAccKey]
                 : [];
@@ -230,10 +234,10 @@ export class AccountAdderController extends EventEmitter {
             .map((a) => a.slot)
             .flatMap((slot) => {
             const basicAccOnThisSlot = this.#derivedAccounts.find((a) => a.slot === slot &&
-                !isSmartAccount(a.account) &&
+                !(0, account_2.isSmartAccount)(a.account) &&
                 // The key of the linked account is always the EOA (basic) account
                 // on the same slot that is not explicitly used for smart account keys only.
-                !isDerivedForSmartAccountKeyOnly(a.index));
+                !(0, account_2.isDerivedForSmartAccountKeyOnly)(a.index));
             return basicAccOnThisSlot ? [basicAccOnThisSlot] : [];
         });
         return basicAccOnEverySlotWhereThisAddrIsFound;
@@ -332,7 +336,7 @@ export class AccountAdderController extends EventEmitter {
         this.emitUpdate();
         if (page <= 0) {
             this.pageError = `Unexpected page was requested (page ${page}). Please try again or contact support for help.`;
-            this.page = DEFAULT_PAGE; // fallback to the default (initial) page
+            this.page = exports.DEFAULT_PAGE; // fallback to the default (initial) page
             this.emitUpdate();
             return;
         }
@@ -351,7 +355,7 @@ export class AccountAdderController extends EventEmitter {
         }
         catch (e) {
             const fallbackMessage = `Failed to retrieve accounts on page ${this.page}. Please try again or contact support for assistance. Error details: ${e?.message}.`;
-            this.pageError = e instanceof ExternalSignerError ? e.message : fallbackMessage;
+            this.pageError = e instanceof ExternalSignerError_1.default ? e.message : fallbackMessage;
         }
         this.accountsLoading = false;
         this.emitUpdate();
@@ -361,12 +365,12 @@ export class AccountAdderController extends EventEmitter {
             // Search for linked accounts to the basic (EOA) accounts only.
             // Searching for linked accounts to another Ambire smart accounts
             // is a feature that Ambire is yet to support.
-            !isSmartAccount(acc.account) &&
+            !(0, account_2.isSmartAccount)(acc.account) &&
                 // Skip searching for linked accounts to the derived EOA (basic)
                 // accounts that are used for smart account keys only. They are
                 // solely purposed to manage 1 particular (smart) account,
                 // not at all for linking.
-                !isDerivedForSmartAccountKeyOnly(acc.index))
+                !(0, account_2.isDerivedForSmartAccountKeyOnly)(acc.index))
                 .map((acc) => acc.account)
         });
     }
@@ -394,9 +398,9 @@ export class AccountAdderController extends EventEmitter {
         let newlyCreatedAccounts = [];
         const accountsToAddOnRelayer = accounts
             // Identity only for the smart accounts must be created on the Relayer
-            .filter((x) => isSmartAccount(x.account))
+            .filter((x) => (0, account_2.isSmartAccount)(x.account))
             // Skip creating identity for Ambire v1 smart accounts
-            .filter((x) => !isAmbireV1LinkedAccount(x.account.creation?.factoryAddr));
+            .filter((x) => !(0, account_2.isAmbireV1LinkedAccount)(x.account.creation?.factoryAddr));
         if (accountsToAddOnRelayer.length) {
             const body = accountsToAddOnRelayer.map(({ account }) => ({
                 addr: account.addr,
@@ -405,7 +409,7 @@ export class AccountAdderController extends EventEmitter {
                 creation: {
                     factoryAddr: account.creation.factoryAddr,
                     salt: account.creation.salt,
-                    baseIdentityAddr: PROXY_AMBIRE_ACCOUNT
+                    baseIdentityAddr: deploy_1.PROXY_AMBIRE_ACCOUNT
                 }
             }));
             try {
@@ -441,7 +445,7 @@ export class AccountAdderController extends EventEmitter {
                     // re-importing the same account via different key type(s) would reset them.
                     preferences: alreadyImportedAcc
                         ? alreadyImportedAcc.preferences
-                        : getDefaultAccountPreferences(x.account.addr, this.#accounts.accounts, i),
+                        : (0, account_2.getDefaultAccountPreferences)(x.account.addr, this.#accounts.accounts, i),
                     newlyCreated: newlyCreatedAccounts.includes(x.account.addr)
                 };
             })
@@ -460,7 +464,7 @@ export class AccountAdderController extends EventEmitter {
         if (!this.#keyIterator)
             return this.#throwMissingKeyIterator();
         const keyPublicAddress = (await this.#keyIterator.retrieve([{ from: 0, to: 1 }]))[0];
-        const emailSmartAccount = await getEmailAccount({
+        const emailSmartAccount = await (0, account_2.getEmailAccount)({
             emailFrom: email,
             secondaryKey: recoveryKey.addr
         }, keyPublicAddress);
@@ -502,8 +506,8 @@ export class AccountAdderController extends EventEmitter {
         if (shouldRetrieveSmartAccountIndices) {
             // Indices for the smart accounts.
             indicesToRetrieve.push({
-                from: startIdx + SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET,
-                to: endIdx + SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET
+                from: startIdx + derivation_1.SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET,
+                to: endIdx + derivation_1.SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET
             });
         }
         // Combine the requests for all accounts in one call to the keyIterator.
@@ -520,11 +524,11 @@ export class AccountAdderController extends EventEmitter {
         for (const [index, smartAccKey] of smartAccKeys.entries()) {
             const slot = startIdx + (index + 1);
             // The derived EOA (basic) account which is the key for the smart account
-            const account = getBasicAccount(smartAccKey, this.#accounts.accounts);
-            const indexWithOffset = slot - 1 + SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET;
+            const account = (0, account_2.getBasicAccount)(smartAccKey, this.#accounts.accounts);
+            const indexWithOffset = slot - 1 + derivation_1.SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET;
             accounts.push({ account, isLinked: false, slot, index: indexWithOffset });
             // Derive the Ambire (smart) account
-            smartAccountsPromises.push(getSmartAccount([{ addr: smartAccKey, hash: dedicatedToOneSAPriv }], this.#accounts.accounts)
+            smartAccountsPromises.push((0, account_2.getSmartAccount)([{ addr: smartAccKey, hash: keystore_1.dedicatedToOneSAPriv }], this.#accounts.accounts)
                 .then((smartAccount) => {
                 return { account: smartAccount, isLinked: false, slot, index: slot - 1 };
             })
@@ -543,7 +547,7 @@ export class AccountAdderController extends EventEmitter {
         for (const [index, basicAccKey] of basicAccKeys.entries()) {
             const slot = startIdx + (index + 1);
             // The EOA (basic) account on this slot
-            const account = getBasicAccount(basicAccKey, this.#accounts.accounts);
+            const account = (0, account_2.getBasicAccount)(basicAccKey, this.#accounts.accounts);
             accounts.push({ account, isLinked: false, slot, index: slot - 1 });
         }
         const accountsWithNetworks = await this.#getAccountsUsedOnNetworks({ accounts });
@@ -563,7 +567,7 @@ export class AccountAdderController extends EventEmitter {
         const promises = Object.keys(this.#providers.providers).map(async (providerKey) => {
             const network = networkLookup[providerKey];
             if (network) {
-                const accountState = await getAccountState(this.#providers.providers[providerKey], network, accounts.map((acc) => acc.account)).catch(() => {
+                const accountState = await (0, accountState_1.getAccountState)(this.#providers.providers[providerKey], network, accounts.map((acc) => acc.account)).catch(() => {
                     console.error('accountAdder: failed to get account state on ', providerKey);
                     if (this.networksWithAccountStateError.includes(providerKey))
                         return;
@@ -634,7 +638,7 @@ export class AccountAdderController extends EventEmitter {
             const { factoryAddr, bytecode, salt, associatedKeys } = data.accounts[addr];
             // Checks whether the account.addr matches the addr generated from the
             // factory. Should never happen, but could be a possible attack vector.
-            const isInvalidAddress = getCreate2Address(factoryAddr, salt, keccak256(bytecode)).toLowerCase() !==
+            const isInvalidAddress = (0, ethers_1.getCreate2Address)(factoryAddr, salt, (0, ethers_1.keccak256)(bytecode)).toLowerCase() !==
                 addr.toLowerCase();
             if (isInvalidAddress) {
                 const message = `The address ${addr} can't be verified to be a smart account address.`;
@@ -658,7 +662,7 @@ export class AccountAdderController extends EventEmitter {
                             salt
                         },
                         preferences: {
-                            label: existingAccount?.preferences.label || DEFAULT_ACCOUNT_LABEL,
+                            label: existingAccount?.preferences.label || account_1.DEFAULT_ACCOUNT_LABEL,
                             pfp: existingAccount?.preferences?.pfp || addr
                         }
                     },
@@ -733,5 +737,6 @@ export class AccountAdderController extends EventEmitter {
         };
     }
 }
-export default AccountAdderController;
+exports.AccountAdderController = AccountAdderController;
+exports.default = AccountAdderController;
 //# sourceMappingURL=accountAdder.js.map

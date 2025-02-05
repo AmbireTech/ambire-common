@@ -1,20 +1,24 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.EmailVaultController = exports.EmailVaultState = void 0;
+const tslib_1 = require("tslib");
 /* eslint-disable class-methods-use-this */
 /* eslint-disable no-await-in-loop */
-import crypto from 'crypto';
-import { OperationRequestType, SecretType } from '../../interfaces/emailVault';
-import { getKeySyncBanner } from '../../libs/banners/banners';
-import { EmailVault } from '../../libs/emailVault/emailVault';
-import { requestMagicLink } from '../../libs/magicLink/magicLink';
-import { Polling } from '../../libs/polling/polling';
-import wait from '../../utils/wait';
-import EventEmitter from '../eventEmitter/eventEmitter';
-export var EmailVaultState;
+const crypto_1 = tslib_1.__importDefault(require("crypto"));
+const emailVault_1 = require("../../interfaces/emailVault");
+const banners_1 = require("../../libs/banners/banners");
+const emailVault_2 = require("../../libs/emailVault/emailVault");
+const magicLink_1 = require("../../libs/magicLink/magicLink");
+const polling_1 = require("../../libs/polling/polling");
+const wait_1 = tslib_1.__importDefault(require("../../utils/wait"));
+const eventEmitter_1 = tslib_1.__importDefault(require("../eventEmitter/eventEmitter"));
+var EmailVaultState;
 (function (EmailVaultState) {
     EmailVaultState["Loading"] = "loading";
     EmailVaultState["WaitingEmailConfirmation"] = "WaitingEmailConfirmation";
     EmailVaultState["UploadingSecret"] = "UploadingSecret";
     EmailVaultState["Ready"] = "Ready";
-})(EmailVaultState || (EmailVaultState = {}));
+})(EmailVaultState = exports.EmailVaultState || (exports.EmailVaultState = {}));
 const RECOVERY_SECRET_ID = 'EmailVaultRecoverySecret';
 const EMAIL_VAULT_STORAGE_KEY = 'emailVault';
 const MAGIC_LINK_STORAGE_KEY = 'magicLinkKeys';
@@ -38,7 +42,7 @@ const STATUS_WRAPPED_METHODS = {
  * Extended documentation about the EV and its internal mechanisms
  * https://github.com/AmbireTech/ambire-common/wiki/Email-Vault-Documentation
  */
-export class EmailVaultController extends EventEmitter {
+class EmailVaultController extends eventEmitter_1.default {
     storage;
     initialLoadPromise;
     #isWaitingEmailConfirmation = false;
@@ -62,7 +66,7 @@ export class EmailVaultController extends EventEmitter {
         this.#fetch = fetch;
         this.#relayerUrl = relayerUrl;
         this.storage = storage;
-        this.#emailVault = new EmailVault(fetch, relayerUrl);
+        this.#emailVault = new emailVault_2.EmailVault(fetch, relayerUrl);
         this.#keyStore = keyStore;
         this.initialLoadPromise = this.load();
         this.#autoConfirmMagicLink = options?.autoConfirmMagicLink || false;
@@ -72,7 +76,7 @@ export class EmailVaultController extends EventEmitter {
         // #load is called in the constructor which is synchronous
         // we await (1 ms/next tick) for the constructor to extend the EventEmitter class
         // and then we call it's methods
-        await wait(1);
+        await (0, wait_1.default)(1);
         this.emitUpdate();
         const [emailVaultState, magicLinkKey] = await Promise.all([
             this.storage.get(EMAIL_VAULT_STORAGE_KEY, {
@@ -118,11 +122,11 @@ export class EmailVaultController extends EventEmitter {
         this.#isWaitingEmailConfirmation = true;
         this.#shouldStopConfirmationPolling = false;
         this.emitUpdate();
-        const newKey = await requestMagicLink(email, this.#relayerUrl, this.#fetch, {
+        const newKey = await (0, magicLink_1.requestMagicLink)(email, this.#relayerUrl, this.#fetch, {
             autoConfirm: this.#autoConfirmMagicLink,
             flow
         });
-        const polling = new Polling();
+        const polling = new polling_1.Polling();
         polling.onUpdate(async () => {
             if (polling.state.isError && polling.state.error.output.res.status === 401) {
                 this.#isWaitingEmailConfirmation = true;
@@ -244,7 +248,7 @@ export class EmailVaultController extends EventEmitter {
         }
         if (magicKey?.key) {
             this.#isUploadingSecret = true;
-            const randomBytes = crypto.randomBytes(32);
+            const randomBytes = crypto_1.default.randomBytes(32);
             // toString('base64url') doesn't work for some reason in the browser extension
             const newSecret = base64UrlEncode(randomBytes.toString('base64'));
             await this.#keyStore.addSecret(RECOVERY_SECRET_ID, newSecret, '', false);
@@ -292,7 +296,7 @@ export class EmailVaultController extends EventEmitter {
             });
             return;
         }
-        if (state.email[email].availableSecrets[uid].type !== SecretType.KeyStore) {
+        if (state.email[email].availableSecrets[uid].type !== emailVault_1.SecretType.KeyStore) {
             this.emitError({
                 message: `Resetting the password on this device is not enabled for ${email}.`,
                 level: 'major',
@@ -355,7 +359,7 @@ export class EmailVaultController extends EventEmitter {
             this.#keyStore.getKeyStoreUid()
         ]);
         const operations = keys.map((key) => ({
-            type: OperationRequestType.requestKeySync,
+            type: emailVault_1.OperationRequestType.requestKeySync,
             requester: keyStoreUid,
             key
         }));
@@ -468,7 +472,7 @@ export class EmailVaultController extends EventEmitter {
             return;
         return EVEmails.find((email) => {
             return (this.emailVaultStates.email[email].availableSecrets[keyStoreUid]?.type ===
-                SecretType.KeyStore);
+                emailVault_1.SecretType.KeyStore);
         });
     }
     get hasKeystoreRecovery() {
@@ -506,7 +510,7 @@ export class EmailVaultController extends EventEmitter {
                 const keystoreKeys = this.#keyStore.keys.filter((key) => accInfo.associatedKeys.includes(key.addr));
                 if (keystoreKeys.length)
                     return;
-                banners.push(getKeySyncBanner(accInfo.addr, email, accInfo.associatedKeys));
+                banners.push((0, banners_1.getKeySyncBanner)(accInfo.addr, email, accInfo.associatedKeys));
             });
         });
         return banners;
@@ -523,4 +527,5 @@ export class EmailVaultController extends EventEmitter {
         };
     }
 }
+exports.EmailVaultController = EmailVaultController;
 //# sourceMappingURL=emailVault.js.map

@@ -1,4 +1,7 @@
-export const registeredCoinTypes = {
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.registeredCoinTypes = void 0;
+exports.registeredCoinTypes = {
     0: ['0x80000000', 'BTC', 'Bitcoin'],
     1: ['0x80000001', undefined, 'Testnet'],
     2: ['0x80000002', 'LTC', 'Litecoin'],

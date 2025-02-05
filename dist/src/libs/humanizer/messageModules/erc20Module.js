@@ -1,5 +1,8 @@
-import { getAction, getAddressVisualization, getDeadline, getLabel, getToken } from '../utils';
-export const erc20Module = (message) => {
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.erc20Module = void 0;
+const utils_1 = require("../utils");
+const erc20Module = (message) => {
     if (message.content.kind !== 'typedMessage')
         return { fullVisualization: [] };
     const tm = message.content;
@@ -10,12 +13,12 @@ export const erc20Module = (message) => {
         tm.domain.verifyingContract) {
         return {
             fullVisualization: [
-                getAction('Grant approval'),
-                getLabel('for'),
-                getToken(tm.domain.verifyingContract, tm.message.value),
-                getLabel('to'),
-                getAddressVisualization(tm.message.spender),
-                tm.message.deadline ? getDeadline(tm.message.deadline) : null
+                (0, utils_1.getAction)('Grant approval'),
+                (0, utils_1.getLabel)('for'),
+                (0, utils_1.getToken)(tm.domain.verifyingContract, tm.message.value),
+                (0, utils_1.getLabel)('to'),
+                (0, utils_1.getAddressVisualization)(tm.message.spender),
+                tm.message.deadline ? (0, utils_1.getDeadline)(tm.message.deadline) : null
             ].filter((x) => x)
         };
     }
@@ -27,14 +30,15 @@ export const erc20Module = (message) => {
         tm?.message?.details?.expiration) {
         return {
             fullVisualization: [
-                getAction('Approve'),
-                getAddressVisualization(tm.message.spender),
-                getLabel('to use'),
-                getToken(tm.message.details.token, BigInt(tm.message.details.amount)),
-                getDeadline(tm.message.details.expiration)
+                (0, utils_1.getAction)('Approve'),
+                (0, utils_1.getAddressVisualization)(tm.message.spender),
+                (0, utils_1.getLabel)('to use'),
+                (0, utils_1.getToken)(tm.message.details.token, BigInt(tm.message.details.amount)),
+                (0, utils_1.getDeadline)(tm.message.details.expiration)
             ]
         };
     }
     return { fullVisualization: [] };
 };
+exports.erc20Module = erc20Module;
 //# sourceMappingURL=erc20Module.js.map

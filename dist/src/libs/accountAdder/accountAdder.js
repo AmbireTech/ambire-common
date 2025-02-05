@@ -1,8 +1,11 @@
-import { fetchCaught } from '../../../v1/services/fetch';
-export async function getIdentity(address, fetch, relayerUrl) {
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.getIdentity = void 0;
+const fetch_1 = require("../../../v1/services/fetch");
+async function getIdentity(address, fetch, relayerUrl) {
     // Use `fetchCaught` because the endpoint could return 404 if the account
     // is not found, which should not throw an error
-    const accountIdentityResponse = await fetchCaught(fetch, `${relayerUrl}/v2/identity/${address}`);
+    const accountIdentityResponse = await (0, fetch_1.fetchCaught)(fetch, `${relayerUrl}/v2/identity/${address}`);
     // Trick to determine if there is an error throw. When the request 404s,
     // there is no error message incoming, which is enough to treat it as a
     // no-error, 404 response is expected for EOAs.
@@ -35,4 +38,5 @@ export async function getIdentity(address, fetch, relayerUrl) {
         initialPrivileges
     };
 }
+exports.getIdentity = getIdentity;
 //# sourceMappingURL=accountAdder.js.map

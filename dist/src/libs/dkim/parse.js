@@ -1,4 +1,8 @@
-import isDKIM from "./isDKIM";
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.parse = void 0;
+const tslib_1 = require("tslib");
+const isDKIM_1 = tslib_1.__importDefault(require("./isDKIM"));
 /*
   parse email
   (cross-platform)
@@ -30,9 +34,9 @@ const getDkims = (header) => {
     return header
         .split(/\r\n(?=[^\x20\x09]|$)/g)
         .map((h, i, allHeaders) => {
-        if (isDKIM(h)) {
+        if ((0, isDKIM_1.default)(h)) {
             // remove DKIM headers
-            const headers = allHeaders.filter((v) => !isDKIM(v));
+            const headers = allHeaders.filter((v) => !(0, isDKIM_1.default)(v));
             // add one DKIM header
             headers.unshift(h);
             return {
@@ -44,7 +48,7 @@ const getDkims = (header) => {
     })
         .filter((v) => !!v);
 };
-export function parse(email) {
+function parse(email) {
     const { header, body } = emailToHeaderAndBody(email);
     const dkims = getDkims(header).map((dkim) => {
         // a new field called dara has been introduced to DKIM signature
@@ -72,5 +76,6 @@ export function parse(email) {
         dkims
     };
 }
+exports.parse = parse;
 ;
 //# sourceMappingURL=parse.js.map

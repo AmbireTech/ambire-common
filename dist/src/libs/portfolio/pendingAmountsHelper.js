@@ -1,4 +1,7 @@
-import { AccountOpStatus } from '../accountOp/accountOp';
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.calculatePendingAmounts = void 0;
+const accountOp_1 = require("../accountOp/accountOp");
 /**
  * Function for calculating the pending balance and the delta amounts
  * for pendingToBeSigned and pendingToBeConfirmed states (referred to as token badges) of a token.
@@ -37,7 +40,7 @@ import { AccountOpStatus } from '../accountOp/accountOp';
  *    - This is similar to the previous case, but here the AccOp has been broadcasted.
  *      When there is a delta between the latest and pending block amounts, both deltas are summed, resulting in the `pendingToBeConfirmed` amount.
  */
-export const calculatePendingAmounts = (latestAmount, pendingAmount, amountPostSimulation, simulationDelta, // pending delta (this is the amount of the simulation itself)
+const calculatePendingAmounts = (latestAmount, pendingAmount, amountPostSimulation, simulationDelta, // pending delta (this is the amount of the simulation itself)
 simulatedAccountOp) => {
     let latestPendingDelta = pendingAmount - latestAmount;
     // Dynamically calculate the threshold as 0.0001% of the pendingAmount
@@ -77,7 +80,7 @@ simulatedAccountOp) => {
         // When we broadcast the AccountOp, we set the status of the simulated AccountOp to `BroadcastedButNotConfirmed`
         // until the transaction is confirmed or the user forcefully refreshes their portfolio balance and clears the simulation.
         // When the SimulatedAccountOp has the status `BroadcastedButNotConfirmed`, we know that the pending badge is `pendingToBeConfirmed`.
-        const hasPendingToBeConfirmed = simulatedAccountOp?.status === AccountOpStatus.BroadcastedButNotConfirmed;
+        const hasPendingToBeConfirmed = simulatedAccountOp?.status === accountOp_1.AccountOpStatus.BroadcastedButNotConfirmed;
         if (hasPendingToBeConfirmed) {
             // Main scenario #2.
             result.pendingToBeConfirmed = simulationDelta;
@@ -94,4 +97,5 @@ simulatedAccountOp) => {
     }
     return result;
 };
+exports.calculatePendingAmounts = calculatePendingAmounts;
 //# sourceMappingURL=pendingAmountsHelper.js.map

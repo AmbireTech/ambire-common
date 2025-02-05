@@ -1,4 +1,7 @@
-export const AaveLendingPoolV2 = [
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.AaveV3Pool = exports.AaveWethGatewayV2 = exports.AaveLendingPoolV2 = void 0;
+exports.AaveLendingPoolV2 = [
     'function FLASHLOAN_PREMIUM_TOTAL() view returns (uint256)',
     'function LENDINGPOOL_REVISION() view returns (uint256)',
     'function MAX_NUMBER_RESERVES() view returns (uint256)',
@@ -28,7 +31,7 @@ export const AaveLendingPoolV2 = [
     'function swapBorrowRateMode(address asset, uint256 rateMode)',
     'function withdraw(address asset, uint256 amount, address to) returns (uint256)'
 ];
-export const AaveWethGatewayV2 = [
+exports.AaveWethGatewayV2 = [
     'function authorizeLendingPool(address lendingPool)',
     'function borrowETH(address lendingPool, uint256 amount, uint256 interesRateMode, uint16 referralCode)',
     'function depositETH(address lendingPool, address onBehalfOf, uint16 referralCode) payable',
@@ -41,7 +44,7 @@ export const AaveWethGatewayV2 = [
     'function transferOwnership(address newOwner)',
     'function withdrawETH(address lendingPool, uint256 amount, address to)'
 ];
-export const AaveV3Pool = [
+exports.AaveV3Pool = [
     'function ADDRESSES_PROVIDER() view returns (address)',
     'function BRIDGE_PROTOCOL_FEE() view returns (uint256)',
     'function FLASHLOAN_PREMIUM_TOTAL() view returns (uint128)',

@@ -1,12 +1,16 @@
-import { getAddress } from 'ethers';
-import EventEmitter from '../eventEmitter/eventEmitter';
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.AddressBookController = void 0;
+const tslib_1 = require("tslib");
+const ethers_1 = require("ethers");
+const eventEmitter_1 = tslib_1.__importDefault(require("../eventEmitter/eventEmitter"));
 /**
  * AddressBook controller- responsible for managing contacts in the Address Book. There are two internal types of contacts in the Address Book:
  * 1. Manually added contacts (stored in storage)- can be added, renamed and removed using this controller.
  * 2. Contacts, generated on the fly from the accounts in the wallet (not stored in storage)- can be managed via other controllers and are read-only in this one.
  * Both types of contacts are combined and returned as a single array of contacts.
  */
-export class AddressBookController extends EventEmitter {
+class AddressBookController extends eventEmitter_1.default {
     // Manually added contact (stored in storage)
     #manuallyAddedContacts = [];
     #storage;
@@ -60,7 +64,7 @@ export class AddressBookController extends EventEmitter {
     }
     #getChecksummedAddress(address) {
         try {
-            return getAddress(address);
+            return (0, ethers_1.getAddress)(address);
         }
         catch {
             this.emitError({
@@ -132,4 +136,5 @@ export class AddressBookController extends EventEmitter {
         };
     }
 }
+exports.AddressBookController = AddressBookController;
 //# sourceMappingURL=addressBook.js.map

@@ -1,11 +1,15 @@
-import { formatUnits, isAddress, parseUnits } from 'ethers';
-import { FEE_COLLECTOR } from '../../consts/addresses';
-import { isSmartAccount } from '../../libs/account/account';
-import { getTokenAmount } from '../../libs/portfolio/helpers';
-import { getSanitizedAmount } from '../../libs/transfer/amount';
-import { validateSendTransferAddress, validateSendTransferAmount } from '../../services/validations';
-import { convertTokenPriceToBigInt } from '../../utils/numbers/formatters';
-import EventEmitter from '../eventEmitter/eventEmitter';
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.TransferController = void 0;
+const tslib_1 = require("tslib");
+const ethers_1 = require("ethers");
+const addresses_1 = require("../../consts/addresses");
+const account_1 = require("../../libs/account/account");
+const helpers_1 = require("../../libs/portfolio/helpers");
+const amount_1 = require("../../libs/transfer/amount");
+const validations_1 = require("../../services/validations");
+const formatters_1 = require("../../utils/numbers/formatters");
+const eventEmitter_1 = tslib_1.__importDefault(require("../eventEmitter/eventEmitter"));
 const CONVERSION_PRECISION = 16;
 const CONVERSION_PRECISION_POW = BigInt(10 ** CONVERSION_PRECISION);
 const DEFAULT_ADDRESS_STATE = {
@@ -25,7 +29,7 @@ const DEFAULT_VALIDATION_FORM_MSGS = {
     }
 };
 const HARD_CODED_CURRENCY = 'usd';
-export class TransferController extends EventEmitter {
+class TransferController extends eventEmitter_1.default {
     #storage;
     #networks = [];
     #addressBookContacts = [];
@@ -69,7 +73,7 @@ export class TransferController extends EventEmitter {
     }
     // every time when updating selectedToken update the amount and maxAmount of the form
     set selectedToken(token) {
-        if (!token || Number(getTokenAmount(token)) === 0) {
+        if (!token || Number((0, helpers_1.getTokenAmount)(token)) === 0) {
             this.#selectedToken = null;
             this.amount = '';
             this.amountInFiat = '';
@@ -93,21 +97,21 @@ export class TransferController extends EventEmitter {
     }
     get maxAmount() {
         if (!this.selectedToken ||
-            getTokenAmount(this.selectedToken) === 0n ||
+            (0, helpers_1.getTokenAmount)(this.selectedToken) === 0n ||
             typeof this.selectedToken.decimals !== 'number')
             return '0';
-        return formatUnits(getTokenAmount(this.selectedToken), this.selectedToken.decimals);
+        return (0, ethers_1.formatUnits)((0, helpers_1.getTokenAmount)(this.selectedToken), this.selectedToken.decimals);
     }
     get maxAmountInFiat() {
-        if (!this.selectedToken || getTokenAmount(this.selectedToken) === 0n)
+        if (!this.selectedToken || (0, helpers_1.getTokenAmount)(this.selectedToken) === 0n)
             return '0';
         const tokenPrice = this.selectedToken?.priceIn.find((p) => p.baseCurrency === HARD_CODED_CURRENCY)?.price;
         if (!tokenPrice || !Number(this.maxAmount))
             return '0';
-        const maxAmount = getTokenAmount(this.selectedToken);
-        const { tokenPriceBigInt, tokenPriceDecimals } = convertTokenPriceToBigInt(tokenPrice);
+        const maxAmount = (0, helpers_1.getTokenAmount)(this.selectedToken);
+        const { tokenPriceBigInt, tokenPriceDecimals } = (0, formatters_1.convertTokenPriceToBigInt)(tokenPrice);
         // Multiply the max amount by the token price. The calculation is done in big int to avoid precision loss
-        return formatUnits(maxAmount * tokenPriceBigInt, 
+        return (0, ethers_1.formatUnits)(maxAmount * tokenPriceBigInt, 
         // Shift the decimal point by the number of decimals in the token price
         this.selectedToken.decimals + tokenPriceDecimals);
     }
@@ -129,11 +133,11 @@ export class TransferController extends EventEmitter {
         if (this.#humanizerInfo && this.#selectedAccountData) {
             const isUDAddress = !!this.addressState.udAddress;
             const isEnsAddress = !!this.addressState.ensAddress;
-            validationFormMsgsNew.recipientAddress = validateSendTransferAddress(this.recipientAddress, this.#selectedAccountData.addr, this.isRecipientAddressUnknownAgreed, this.isRecipientAddressUnknown, this.isRecipientHumanizerKnownTokenOrSmartContract, isUDAddress, isEnsAddress, this.addressState.isDomainResolving, this.isSWWarningVisible, this.isSWWarningAgreed);
+            validationFormMsgsNew.recipientAddress = (0, validations_1.validateSendTransferAddress)(this.recipientAddress, this.#selectedAccountData.addr, this.isRecipientAddressUnknownAgreed, this.isRecipientAddressUnknown, this.isRecipientHumanizerKnownTokenOrSmartContract, isUDAddress, isEnsAddress, this.addressState.isDomainResolving, this.isSWWarningVisible, this.isSWWarningAgreed);
         }
         // Validate the amount
         if (this.selectedToken) {
-            validationFormMsgsNew.amount = validateSendTransferAmount(this.amount, Number(this.maxAmount), Number(this.maxAmountInFiat), this.selectedToken);
+            validationFormMsgsNew.amount = (0, validations_1.validateSendTransferAmount)(this.amount, Number(this.maxAmount), Number(this.maxAmountInFiat), this.selectedToken);
         }
         return validationFormMsgsNew;
     }
@@ -143,7 +147,7 @@ export class TransferController extends EventEmitter {
         // if the amount is set, it's enough in topUp mode
         if (this.isTopUp) {
             return (this.selectedToken &&
-                validateSendTransferAmount(this.amount, Number(this.maxAmount), Number(this.maxAmountInFiat), this.selectedToken).success);
+                (0, validations_1.validateSendTransferAmount)(this.amount, Number(this.maxAmount), Number(this.maxAmountInFiat), this.selectedToken).success);
         }
         const areFormFieldsValid = this.validationFormMsgs.amount.success && this.validationFormMsgs.recipientAddress.success;
         const isSWWarningMissingOrAccepted = !this.isSWWarningVisible || this.isSWWarningAgreed;
@@ -215,7 +219,7 @@ export class TransferController extends EventEmitter {
         this.emitUpdate();
     }
     checkIsRecipientAddressUnknown() {
-        if (!isAddress(this.recipientAddress)) {
+        if (!(0, ethers_1.isAddress)(this.recipientAddress)) {
             this.isRecipientAddressUnknown = false;
             this.isRecipientAddressUnknownAgreed = false;
             this.emitUpdate();
@@ -223,13 +227,13 @@ export class TransferController extends EventEmitter {
         }
         const isAddressInAddressBook = this.#addressBookContacts.some(({ address }) => address.toLowerCase() === this.recipientAddress.toLowerCase());
         this.isRecipientAddressUnknown =
-            !isAddressInAddressBook && this.recipientAddress.toLowerCase() !== FEE_COLLECTOR.toLowerCase();
+            !isAddressInAddressBook && this.recipientAddress.toLowerCase() !== addresses_1.FEE_COLLECTOR.toLowerCase();
         this.isRecipientAddressUnknownAgreed = false;
         this.#setSWWarningVisibleIfNeeded();
         this.emitUpdate();
     }
     #onRecipientAddressChange() {
-        if (!isAddress(this.recipientAddress)) {
+        if (!(0, ethers_1.isAddress)(this.recipientAddress)) {
             this.isRecipientAddressUnknown = false;
             this.isRecipientAddressUnknownAgreed = false;
             this.isRecipientHumanizerKnownTokenOrSmartContract = false;
@@ -260,10 +264,10 @@ export class TransferController extends EventEmitter {
             this.amountInFiat = fieldValue;
             // Get the number of decimals
             const amountInFiatDecimals = fieldValue.split('.')[1]?.length || 0;
-            const { tokenPriceBigInt, tokenPriceDecimals } = convertTokenPriceToBigInt(tokenPrice);
+            const { tokenPriceBigInt, tokenPriceDecimals } = (0, formatters_1.convertTokenPriceToBigInt)(tokenPrice);
             // Convert the numbers to big int
-            const amountInFiatBigInt = parseUnits(fieldValue, amountInFiatDecimals);
-            this.amount = formatUnits((amountInFiatBigInt * CONVERSION_PRECISION_POW) / tokenPriceBigInt, 
+            const amountInFiatBigInt = (0, ethers_1.parseUnits)(fieldValue, amountInFiatDecimals);
+            this.amount = (0, ethers_1.formatUnits)((amountInFiatBigInt * CONVERSION_PRECISION_POW) / tokenPriceBigInt, 
             // Shift the decimal point by the number of decimals in the token price
             amountInFiatDecimals + CONVERSION_PRECISION - tokenPriceDecimals);
             return;
@@ -272,13 +276,13 @@ export class TransferController extends EventEmitter {
             this.amount = fieldValue;
             if (!this.selectedToken)
                 return;
-            const sanitizedFieldValue = getSanitizedAmount(fieldValue, this.selectedToken.decimals);
+            const sanitizedFieldValue = (0, amount_1.getSanitizedAmount)(fieldValue, this.selectedToken.decimals);
             // Convert the field value to big int
-            const formattedAmount = parseUnits(sanitizedFieldValue, this.selectedToken.decimals);
+            const formattedAmount = (0, ethers_1.parseUnits)(sanitizedFieldValue, this.selectedToken.decimals);
             if (!formattedAmount)
                 return;
-            const { tokenPriceBigInt, tokenPriceDecimals } = convertTokenPriceToBigInt(tokenPrice);
-            this.amountInFiat = formatUnits(formattedAmount * tokenPriceBigInt, 
+            const { tokenPriceBigInt, tokenPriceDecimals } = (0, formatters_1.convertTokenPriceToBigInt)(tokenPrice);
+            this.amountInFiat = (0, ethers_1.formatUnits)(formattedAmount * tokenPriceBigInt, 
             // Shift the decimal point by the number of decimals in the token price
             this.selectedToken.decimals + tokenPriceDecimals);
         }
@@ -288,7 +292,7 @@ export class TransferController extends EventEmitter {
             return;
         this.isSWWarningVisible =
             this.isRecipientAddressUnknown &&
-                isSmartAccount(this.#selectedAccountData) &&
+                (0, account_1.isSmartAccount)(this.#selectedAccountData) &&
                 !this.isTopUp &&
                 !!this.selectedToken?.address &&
                 Number(this.selectedToken?.address) === 0 &&
@@ -313,4 +317,5 @@ export class TransferController extends EventEmitter {
         };
     }
 }
+exports.TransferController = TransferController;
 //# sourceMappingURL=transfer.js.map

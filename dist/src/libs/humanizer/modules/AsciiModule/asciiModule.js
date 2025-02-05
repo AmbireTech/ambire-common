@@ -1,33 +1,37 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.asciiModule = void 0;
 /* eslint-disable no-await-in-loop */
-import { toUtf8String, ZeroAddress } from 'ethers';
-import { checkIfUnknownAction, getAction, getAddressVisualization, getLabel, getText, getToken } from '../../utils';
-export const asciiModule = (accountOp, currentIrCalls) => {
+const ethers_1 = require("ethers");
+const utils_1 = require("../../utils");
+const asciiModule = (accountOp, currentIrCalls) => {
     const newCalls = currentIrCalls.map((call) => {
         if (call.data === '0x')
             return call;
-        if (call.fullVisualization && !checkIfUnknownAction(call?.fullVisualization))
+        if (call.fullVisualization && !(0, utils_1.checkIfUnknownAction)(call?.fullVisualization))
             return call;
         let messageAsText;
         try {
-            messageAsText = toUtf8String(call.data);
+            messageAsText = (0, ethers_1.toUtf8String)(call.data);
         }
         catch {
             return call;
         }
         const sendNativeHumanization = call.value
-            ? [getLabel('and'), getAction('Send'), getToken(ZeroAddress, call.value)]
+            ? [(0, utils_1.getLabel)('and'), (0, utils_1.getAction)('Send'), (0, utils_1.getToken)(ethers_1.ZeroAddress, call.value)]
             : [];
         return {
             ...call,
             fullVisualization: [
-                getAction('Send this message'),
-                getLabel('to'),
-                getAddressVisualization(call.to),
-                getText(messageAsText),
+                (0, utils_1.getAction)('Send this message'),
+                (0, utils_1.getLabel)('to'),
+                (0, utils_1.getAddressVisualization)(call.to),
+                (0, utils_1.getText)(messageAsText),
                 ...sendNativeHumanization
             ]
         };
     });
     return newCalls;
 };
+exports.asciiModule = asciiModule;
 //# sourceMappingURL=asciiModule.js.map

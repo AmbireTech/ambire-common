@@ -1,11 +1,14 @@
+"use strict";
 /* eslint-disable import/no-extraneous-dependencies */
-import { AMBIRE_ACCOUNT_FACTORY, OPTIMISTIC_ORACLE, SINGLETON } from '../../consts/deploy';
-import { networks as predefinedNetworks } from '../../consts/networks';
-import { Bundler } from '../../services/bundlers/bundler';
-import { getRpcProvider } from '../../services/provider';
-import { getSASupport } from '../deployless/simulateDeployCall';
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.hasRelayerSupport = exports.canForce4337 = exports.migrateNetworkPreferencesToNetworks = exports.getFeatures = exports.getFeaturesByNetworkProperties = exports.getNetworkInfo = exports.getNetworksWithFailedRPC = exports.is4337Enabled = exports.relayerAdditionalNetworks = void 0;
+const deploy_1 = require("../../consts/deploy");
+const networks_1 = require("../../consts/networks");
+const bundler_1 = require("../../services/bundlers/bundler");
+const provider_1 = require("../../services/provider");
+const simulateDeployCall_1 = require("../deployless/simulateDeployCall");
 // bnb, gnosis, fantom, metis
-export const relayerAdditionalNetworks = [
+exports.relayerAdditionalNetworks = [
     {
         chainId: 56n,
         name: 'binance-smart-chain'
@@ -29,7 +32,7 @@ export const relayerAdditionalNetworks = [
 // if he has not, we check if the network is predefinedNetwork and we
 // have specifically disabled 4337
 // finally, we fallback to the bundler support
-export function is4337Enabled(hasBundlerSupport, network, force4337) {
+function is4337Enabled(hasBundlerSupport, network, force4337) {
     if (!hasBundlerSupport)
         return false;
     // the user has chosen to use 4337
@@ -41,9 +44,11 @@ export function is4337Enabled(hasBundlerSupport, network, force4337) {
     // this will be true in this case
     return hasBundlerSupport;
 }
-export const getNetworksWithFailedRPC = ({ providers }) => {
+exports.is4337Enabled = is4337Enabled;
+const getNetworksWithFailedRPC = ({ providers }) => {
     return Object.keys(providers).filter((networkId) => typeof providers[networkId].isWorking === 'boolean' && !providers[networkId].isWorking);
 };
+exports.getNetworksWithFailedRPC = getNetworksWithFailedRPC;
 async function retryRequest(init, counter = 0) {
     if (counter >= 2) {
         throw new Error('flagged');
@@ -55,7 +60,7 @@ async function retryRequest(init, counter = 0) {
     });
     return result;
 }
-export async function getNetworkInfo(fetch, rpcUrl, chainId, callback, optionalArgs) {
+async function getNetworkInfo(fetch, rpcUrl, chainId, callback, optionalArgs) {
     let networkInfo = {
         force4337: optionalArgs?.force4337,
         chainId,
@@ -77,7 +82,7 @@ export async function getNetworkInfo(fetch, rpcUrl, chainId, callback, optionalA
         });
     };
     let flagged = false;
-    const provider = getRpcProvider([rpcUrl], chainId);
+    const provider = (0, provider_1.getRpcProvider)([rpcUrl], chainId);
     const raiseFlagged = (e, returnData) => {
         if (e.message === 'flagged') {
             flagged = true;
@@ -88,16 +93,16 @@ export async function getNetworkInfo(fetch, rpcUrl, chainId, callback, optionalA
         Promise.all([
             (async () => {
                 const responses = await Promise.all([
-                    retryRequest(() => provider.getCode(SINGLETON)),
-                    retryRequest(() => provider.getCode(AMBIRE_ACCOUNT_FACTORY)),
-                    retryRequest(() => getSASupport(provider)),
-                    Bundler.isNetworkSupported(fetch, chainId).catch(() => false)
+                    retryRequest(() => provider.getCode(deploy_1.SINGLETON)),
+                    retryRequest(() => provider.getCode(deploy_1.AMBIRE_ACCOUNT_FACTORY)),
+                    retryRequest(() => (0, simulateDeployCall_1.getSASupport)(provider)),
+                    bundler_1.Bundler.isNetworkSupported(fetch, chainId).catch(() => false)
                     // retryRequest(() => provider.getCode(ERC_4337_ENTRYPOINT)),
                 ]).catch((e) => raiseFlagged(e, ['0x', '0x', { addressMatches: false, supportsStateOverride: false }]));
                 const [singletonCode, factoryCode, saSupport, hasBundlerSupport] = responses;
                 const areContractsDeployed = factoryCode !== '0x';
                 // const has4337 = entryPointCode !== '0x' && hasBundler
-                const predefinedNetwork = predefinedNetworks.find((net) => net.chainId === chainId);
+                const predefinedNetwork = networks_1.networks.find((net) => net.chainId === chainId);
                 // Ambire support is as follows:
                 // - either the addresses match after simulation, that's perfect
                 // - or we can't do the simulation with this RPC but we have the factory
@@ -120,7 +125,7 @@ export async function getNetworkInfo(fetch, rpcUrl, chainId, callback, optionalA
                 callback(networkInfo);
             })(),
             (async () => {
-                const oracleCode = await retryRequest(() => provider.getCode(OPTIMISTIC_ORACLE)).catch((e) => raiseFlagged(e, '0x'));
+                const oracleCode = await retryRequest(() => provider.getCode(deploy_1.OPTIMISTIC_ORACLE)).catch((e) => raiseFlagged(e, '0x'));
                 const isOptimistic = oracleCode !== '0x';
                 networkInfo = { ...networkInfo, isOptimistic };
                 callback(networkInfo);
@@ -155,8 +160,9 @@ export async function getNetworkInfo(fetch, rpcUrl, chainId, callback, optionalA
     callback(networkInfo);
     provider.destroy();
 }
+exports.getNetworkInfo = getNetworkInfo;
 // call this if you have the network props already calculated
-export function getFeaturesByNetworkProperties(networkInfo) {
+function getFeaturesByNetworkProperties(networkInfo) {
     const features = [
         {
             id: 'saSupport',
@@ -203,7 +209,7 @@ export function getFeaturesByNetworkProperties(networkInfo) {
                     : 'Unfortunately, this network doesn’t support Smart Accounts. It can be used only with Basic Accounts (EOAs).'
             });
         }
-        const predefinedNetSettings = predefinedNetworks.find((net) => net.chainId === chainId);
+        const predefinedNetSettings = networks_1.networks.find((net) => net.chainId === chainId);
         const erc4337Settings = {
             enabled: is4337Enabled(erc4337.enabled, predefinedNetSettings, force4337),
             hasPaymaster: predefinedNetSettings
@@ -229,7 +235,7 @@ export function getFeaturesByNetworkProperties(networkInfo) {
         }
     }
     if ([rpcNoStateOverride].every((p) => p !== 'LOADING')) {
-        const isPredefinedNetwork = predefinedNetworks.find((net) => net.chainId === chainId);
+        const isPredefinedNetwork = networks_1.networks.find((net) => net.chainId === chainId);
         if (!rpcNoStateOverride && isPredefinedNetwork) {
             updateFeature('simulation', {
                 level: 'success',
@@ -263,11 +269,13 @@ export function getFeaturesByNetworkProperties(networkInfo) {
     }
     return features;
 }
+exports.getFeaturesByNetworkProperties = getFeaturesByNetworkProperties;
 // call this if you have only the rpcUrls and chainId
 // this method makes an RPC request, calculates the network info and returns the features
-export function getFeatures(networkInfo) {
+function getFeatures(networkInfo) {
     return getFeaturesByNetworkProperties(networkInfo);
 }
+exports.getFeatures = getFeatures;
 // Since v4.24.0, a new Network interface has been introduced,
 // that replaces the old NetworkDescriptor, NetworkPreference, and CustomNetwork.
 // Previously, only NetworkPreferences were stored, with other network properties
@@ -275,11 +283,11 @@ export function getFeatures(networkInfo) {
 // Now, all network properties are pre-calculated and stored in a structured format: { [key: NetworkId]: Network } in the storage.
 // This function migrates the data from the old NetworkPreferences to the new structure
 // to ensure compatibility and prevent breaking the extension after updating to v4.24.0
-export async function migrateNetworkPreferencesToNetworks(networkPreferences) {
-    const predefinedNetworkIds = predefinedNetworks.map((n) => n.id);
+async function migrateNetworkPreferencesToNetworks(networkPreferences) {
+    const predefinedNetworkIds = networks_1.networks.map((n) => n.id);
     const customNetworkIds = Object.keys(networkPreferences).filter((k) => !predefinedNetworkIds.includes(k));
     const networksToStore = {};
-    predefinedNetworks.forEach((n) => {
+    networks_1.networks.forEach((n) => {
         networksToStore[n.id] = n;
     });
     customNetworkIds.forEach((networkId) => {
@@ -307,17 +315,20 @@ export async function migrateNetworkPreferencesToNetworks(networkPreferences) {
             ...preference,
             ...networkInfo,
             features: getFeaturesByNetworkProperties(networkInfo),
-            hasRelayer: !!relayerAdditionalNetworks.find((net) => net.chainId === preference.chainId),
+            hasRelayer: !!exports.relayerAdditionalNetworks.find((net) => net.chainId === preference.chainId),
             predefined: false
         };
     });
     return networksToStore;
 }
+exports.migrateNetworkPreferencesToNetworks = migrateNetworkPreferencesToNetworks;
 // is the user allowed to change the network settings to 4337
-export function canForce4337(network) {
+function canForce4337(network) {
     return network && network.allowForce4337;
 }
-export function hasRelayerSupport(network) {
-    return (network.hasRelayer || !!relayerAdditionalNetworks.find((net) => net.chainId === network.chainId));
+exports.canForce4337 = canForce4337;
+function hasRelayerSupport(network) {
+    return (network.hasRelayer || !!exports.relayerAdditionalNetworks.find((net) => net.chainId === network.chainId));
 }
+exports.hasRelayerSupport = hasRelayerSupport;
 //# sourceMappingURL=networks.js.map

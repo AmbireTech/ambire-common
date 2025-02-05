@@ -1,4 +1,6 @@
-export default function batcher(fetch, requestGenerator, timeoutSettings, batchDebounce = 0) {
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+function batcher(fetch, requestGenerator, timeoutSettings, batchDebounce = 0) {
     let queue = [];
     async function resolveQueue() {
         // Note: intentionally just using the first values in the queue
@@ -60,4 +62,5 @@ export default function batcher(fetch, requestGenerator, timeoutSettings, batchD
         });
     };
 }
+exports.default = batcher;
 //# sourceMappingURL=batcher.js.map

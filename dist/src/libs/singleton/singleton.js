@@ -1,3 +1,6 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.getGasUsed = void 0;
 // Special exception for the singleton deployer:
 // Estimation on various networks depends entirely on the RPC
 // implementation of eth_estimateGas. On ethereum, the RPC tends
@@ -17,11 +20,12 @@
 // The backside to this is that txns to the singleton can overestimate.
 // Overestimation is now so bad, though. If the real gas is lower, the funds
 // will not be taken from the user. Underestimation is worse as txn fails.
-export function getGasUsed(gasUsed) {
+function getGasUsed(gasUsed) {
     if (gasUsed < 4500000n)
         return 4500000n;
     if (gasUsed > 10000000n)
         return gasUsed * 5n;
     return gasUsed;
 }
+exports.getGasUsed = getGasUsed;
 //# sourceMappingURL=singleton.js.map

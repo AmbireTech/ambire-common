@@ -1,11 +1,15 @@
-import { Interface } from 'ethers';
-import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json';
-import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json';
-export async function refund(account, op, provider, gasUsed) {
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.refund = void 0;
+const tslib_1 = require("tslib");
+const ethers_1 = require("ethers");
+const AmbireAccount_json_1 = tslib_1.__importDefault(require("../../../contracts/compiled/AmbireAccount.json"));
+const AmbireFactory_json_1 = tslib_1.__importDefault(require("../../../contracts/compiled/AmbireFactory.json"));
+async function refund(account, op, provider, gasUsed) {
     // WARNING: calculateRefund will 100% NOT work in all cases we have
     // So a warning not to assume this is working
-    const IAmbireAccount = new Interface(AmbireAccount.abi);
-    const IAmbireFactory = new Interface(AmbireFactory.abi);
+    const IAmbireAccount = new ethers_1.Interface(AmbireAccount_json_1.default.abi);
+    const IAmbireFactory = new ethers_1.Interface(AmbireFactory_json_1.default.abi);
     const accountCalldata = op.accountOpToExecuteBefore
         ? IAmbireAccount.encodeFunctionData('executeMultiple', [
             [
@@ -31,4 +35,5 @@ export async function refund(account, op, provider, gasUsed) {
         return estimatedGas;
     return gasUsed;
 }
+exports.refund = refund;
 //# sourceMappingURL=refund.js.map

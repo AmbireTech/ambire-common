@@ -1,4 +1,7 @@
-export const OneInch = [
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.OneInch = void 0;
+exports.OneInch = [
     'function advanceEpoch(uint96,uint256)',
     'function and(uint256,bytes) view returns (bool)',
     'function arbitraryStaticCall(address,bytes) view returns (uint256)',

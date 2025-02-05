@@ -1,9 +1,13 @@
-import EventEmitter from '../../controllers/eventEmitter/eventEmitter';
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.Polling = void 0;
+const tslib_1 = require("tslib");
+const eventEmitter_1 = tslib_1.__importDefault(require("../../controllers/eventEmitter/eventEmitter"));
 const DEFAULT_TIMEOUT = 60000;
 // DOCS
 // the purpouse ofthis class is to make requests until a specific case is satisfied, unallowed error occures or the time runs out
 // used for checking if the magicLink, sent to the email, has been clicked, making the emailAddress confirmed and eligible for email vult
-export class Polling extends EventEmitter {
+class Polling extends eventEmitter_1.default {
     state;
     defaultTimeout = 2000;
     allowableErrors = [401];
@@ -48,4 +52,5 @@ export class Polling extends EventEmitter {
         return promise;
     }
 }
+exports.Polling = Polling;
 //# sourceMappingURL=polling.js.map

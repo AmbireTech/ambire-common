@@ -1,18 +1,21 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.Bundler = void 0;
 /* eslint-disable no-restricted-syntax */
 /* eslint-disable class-methods-use-this */
-import { toBeHex } from 'ethers';
-import { ENTRY_POINT_MARKER, ERC_4337_ENTRYPOINT } from '../../consts/deploy';
-import { decodeError } from '../../libs/errorDecoder';
-import { BundlerError } from '../../libs/errorDecoder/customErrors';
-import { privSlot } from '../../libs/proxyDeploy/deploy';
-import { getCleanUserOp } from '../../libs/userOperation/userOperation';
-import { getRpcProvider } from '../provider';
+const ethers_1 = require("ethers");
+const deploy_1 = require("../../consts/deploy");
+const errorDecoder_1 = require("../../libs/errorDecoder");
+const customErrors_1 = require("../../libs/errorDecoder/customErrors");
+const deploy_2 = require("../../libs/proxyDeploy/deploy");
+const userOperation_1 = require("../../libs/userOperation/userOperation");
+const provider_1 = require("../provider");
 require('dotenv').config();
 function addExtra(gasInWei, percentageIncrease) {
     const percent = 100n / percentageIncrease;
-    return toBeHex(gasInWei + gasInWei / percent);
+    return (0, ethers_1.toBeHex)(gasInWei + gasInWei / percent);
 }
-export class Bundler {
+class Bundler {
     /**
      * The default pollWaitTime. This is used to determine
      * how many milliseconds to wait until before another request to the
@@ -25,37 +28,37 @@ export class Bundler {
      * @param network
      */
     getProvider(network) {
-        return getRpcProvider([this.getUrl(network)], network.chainId);
+        return (0, provider_1.getRpcProvider)([this.getUrl(network)], network.chainId);
     }
     async sendEstimateReq(userOperation, network, shouldStateOverride = false) {
         const provider = this.getProvider(network);
         if (shouldStateOverride) {
             return provider.send('eth_estimateUserOperationGas', [
-                getCleanUserOp(userOperation)[0],
-                ERC_4337_ENTRYPOINT,
+                (0, userOperation_1.getCleanUserOp)(userOperation)[0],
+                deploy_1.ERC_4337_ENTRYPOINT,
                 {
                     [userOperation.sender]: {
                         stateDiff: {
                             // add privileges to the entry point
-                            [`0x${privSlot(0, 'address', ERC_4337_ENTRYPOINT, 'bytes32')}`]: ENTRY_POINT_MARKER
+                            [`0x${(0, deploy_2.privSlot)(0, 'address', deploy_1.ERC_4337_ENTRYPOINT, 'bytes32')}`]: deploy_1.ENTRY_POINT_MARKER
                         }
                     }
                 }
             ]);
         }
         return provider.send('eth_estimateUserOperationGas', [
-            getCleanUserOp(userOperation)[0],
-            ERC_4337_ENTRYPOINT
+            (0, userOperation_1.getCleanUserOp)(userOperation)[0],
+            deploy_1.ERC_4337_ENTRYPOINT
         ]);
     }
     async estimate(userOperation, network, shouldStateOverride = false) {
         const estimatiton = await this.sendEstimateReq(userOperation, network, shouldStateOverride);
         return {
-            preVerificationGas: toBeHex(estimatiton.preVerificationGas),
-            verificationGasLimit: toBeHex(estimatiton.verificationGasLimit),
-            callGasLimit: toBeHex(estimatiton.callGasLimit),
-            paymasterVerificationGasLimit: toBeHex(estimatiton.paymasterVerificationGasLimit),
-            paymasterPostOpGasLimit: toBeHex(estimatiton.paymasterPostOpGasLimit)
+            preVerificationGas: (0, ethers_1.toBeHex)(estimatiton.preVerificationGas),
+            verificationGasLimit: (0, ethers_1.toBeHex)(estimatiton.verificationGasLimit),
+            callGasLimit: (0, ethers_1.toBeHex)(estimatiton.callGasLimit),
+            paymasterVerificationGasLimit: (0, ethers_1.toBeHex)(estimatiton.paymasterVerificationGasLimit),
+            paymasterPostOpGasLimit: (0, ethers_1.toBeHex)(estimatiton.paymasterPostOpGasLimit)
         };
     }
     /**
@@ -77,8 +80,8 @@ export class Bundler {
     async broadcast(userOperation, network) {
         const provider = this.getProvider(network);
         return provider.send('eth_sendUserOperation', [
-            getCleanUserOp(userOperation)[0],
-            ERC_4337_ENTRYPOINT
+            (0, userOperation_1.getCleanUserOp)(userOperation)[0],
+            deploy_1.ERC_4337_ENTRYPOINT
         ]);
     }
     // use this request to check if the bundler supports the network
@@ -134,8 +137,9 @@ export class Bundler {
     }
     // used when catching errors from bundler requests
     decodeBundlerError(e) {
-        const error = new BundlerError(e.message, this.getName());
-        return decodeError(error);
+        const error = new customErrors_1.BundlerError(e.message, this.getName());
+        return (0, errorDecoder_1.decodeError)(error);
     }
 }
+exports.Bundler = Bundler;
 //# sourceMappingURL=bundler.js.map

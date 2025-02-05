@@ -1,1 +1,1 @@
-{"version":3,"file":"account.js","sourceRoot":"","sources":["../../../src/consts/account.ts"],"names":[],"mappings":"AAAA,MAAM,CAAC,MAAM,qBAAqB,GAAG,SAAS,CAAA","sourcesContent":["export const DEFAULT_ACCOUNT_LABEL = 'Account'\n"]}
+{"version":3,"file":"account.js","sourceRoot":"","sources":["../../../src/consts/account.ts"],"names":[],"mappings":";;;AAAa,QAAA,qBAAqB,GAAG,SAAS,CAAA","sourcesContent":["export const DEFAULT_ACCOUNT_LABEL = 'Account'\n"]}

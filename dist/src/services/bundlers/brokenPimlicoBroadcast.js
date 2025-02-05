@@ -1,6 +1,9 @@
+"use strict";
 /* eslint-disable class-methods-use-this */
 /* eslint-disable @typescript-eslint/no-unused-vars */
-import { Pimlico } from './pimlico';
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.BrokenPimlicoBroadcast = void 0;
+const pimlico_1 = require("./pimlico");
 /**
  * DANGER
  * This class is made purely for the intention of using it for tests
@@ -8,9 +11,10 @@ import { Pimlico } from './pimlico';
  * When broadcast fails, estimation should switch to biconomy
  * and continue on
  */
-export class BrokenPimlicoBroadcast extends Pimlico {
+class BrokenPimlicoBroadcast extends pimlico_1.Pimlico {
     broadcast(userOperation, network) {
         throw new Error('Internal error from bundler');
     }
 }
+exports.BrokenPimlicoBroadcast = BrokenPimlicoBroadcast;
 //# sourceMappingURL=brokenPimlicoBroadcast.js.map

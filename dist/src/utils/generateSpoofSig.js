@@ -1,9 +1,11 @@
-import { AbiCoder } from 'ethers';
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const ethers_1 = require("ethers");
 const generateSpoofSig = (signer) => {
     const SPOOF_SIGTYPE = '03';
-    const abiCoder = new AbiCoder();
+    const abiCoder = new ethers_1.AbiCoder();
     const signature = abiCoder.encode(['address'], [signer]) + SPOOF_SIGTYPE;
     return signature;
 };
-export default generateSpoofSig;
+exports.default = generateSpoofSig;
 //# sourceMappingURL=generateSpoofSig.js.map

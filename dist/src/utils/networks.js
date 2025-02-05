@@ -1,6 +1,9 @@
-import { JsonRpcProvider } from 'ethers';
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.convertToAmbireNetworkFormat = exports.checkIsRpcUrlWorking = exports.rollProviderUrlsAndFindWorking = void 0;
+const ethers_1 = require("ethers");
 const checkIsRpcUrlWorking = async (rpcUrl) => {
-    const provider = new JsonRpcProvider(rpcUrl);
+    const provider = new ethers_1.JsonRpcProvider(rpcUrl);
     try {
         await provider.getBlockNumber();
     }
@@ -11,6 +14,7 @@ const checkIsRpcUrlWorking = async (rpcUrl) => {
     provider.destroy();
     return true;
 };
+exports.checkIsRpcUrlWorking = checkIsRpcUrlWorking;
 const rollProviderUrlsAndFindWorking = async (rpcUrls, index) => {
     const isProviderWorking = await checkIsRpcUrlWorking(rpcUrls[index]);
     if (isProviderWorking) {
@@ -22,6 +26,7 @@ const rollProviderUrlsAndFindWorking = async (rpcUrls, index) => {
     }
     return null;
 };
+exports.rollProviderUrlsAndFindWorking = rollProviderUrlsAndFindWorking;
 const convertToAmbireNetworkFormat = async (network) => {
     const freeHttpRpcUrls = network.rpc.filter((rpcUrl) => {
         const isHttpOrHttps = rpcUrl.startsWith('http');
@@ -75,5 +80,5 @@ const convertToAmbireNetworkFormat = async (network) => {
         predefined: false
     };
 };
-export { rollProviderUrlsAndFindWorking, checkIsRpcUrlWorking, convertToAmbireNetworkFormat };
+exports.convertToAmbireNetworkFormat = convertToAmbireNetworkFormat;
 //# sourceMappingURL=networks.js.map

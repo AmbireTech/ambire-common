@@ -1,19 +1,23 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.adjustEntryPointAuthorization = exports.getEntryPointAuthorization = exports.getEIP712Signature = exports.getPlainTextSignature = exports.getExecuteSignature = exports.verifyMessage = exports.mapSignatureV = exports.wrapCounterfactualSign = exports.getTypedData = exports.getAmbireReadableTypedData = exports.wrapWallet = exports.wrapStandard = exports.wrapUnprotected = exports.EIP_1271_NOT_SUPPORTED_BY = void 0;
+const tslib_1 = require("tslib");
 /* eslint-disable no-param-reassign */
-import { AbiCoder, getAddress, getBytes, hashMessage, hexlify, Interface, isHexString, toBeHex, toUtf8Bytes, TypedDataEncoder } from 'ethers';
-import UniversalSigValidator from '../../../contracts/compiled/UniversalSigValidator.json';
-import { PERMIT_2_ADDRESS, UNISWAP_UNIVERSAL_ROUTERS } from '../../consts/addresses';
-import hexStringToUint8Array from '../../utils/hexStringToUint8Array';
-import isSameAddr from '../../utils/isSameAddr';
-import { stripHexPrefix } from '../../utils/stripHexPrefix';
-import { accountOpSignableHash, callToTuple, getSignableHash } from '../accountOp/accountOp';
-import { fromDescriptor } from '../deployless/deployless';
-import { relayerAdditionalNetworks } from '../networks/networks';
-import { getActivatorCall } from '../userOperation/userOperation';
+const ethers_1 = require("ethers");
+const UniversalSigValidator_json_1 = tslib_1.__importDefault(require("../../../contracts/compiled/UniversalSigValidator.json"));
+const addresses_1 = require("../../consts/addresses");
+const hexStringToUint8Array_1 = tslib_1.__importDefault(require("../../utils/hexStringToUint8Array"));
+const isSameAddr_1 = tslib_1.__importDefault(require("../../utils/isSameAddr"));
+const stripHexPrefix_1 = require("../../utils/stripHexPrefix");
+const accountOp_1 = require("../accountOp/accountOp");
+const deployless_1 = require("../deployless/deployless");
+const networks_1 = require("../networks/networks");
+const userOperation_1 = require("../userOperation/userOperation");
 // EIP6492 signature ends in magicBytes, which ends with a 0x92,
 // which makes it is impossible for it to collide with a valid ecrecover signature if packed in the r,s,v format,
 // as 0x92 is not a valid value for v.
 const magicBytes = '6492649264926492649264926492649264926492649264926492649264926492';
-export const EIP_1271_NOT_SUPPORTED_BY = [
+exports.EIP_1271_NOT_SUPPORTED_BY = [
     'opensea.io',
     'paraswap.xyz',
     'blur.io',
@@ -26,34 +30,37 @@ export const EIP_1271_NOT_SUPPORTED_BY = [
  * For Unprotected signatures, we need to append 00 at the end
  * for ambire to recognize it
  */
-export const wrapUnprotected = (signature) => {
+const wrapUnprotected = (signature) => {
     return `${signature}00`;
 };
+exports.wrapUnprotected = wrapUnprotected;
 /**
  * For EIP-712 signatures, we need to append 01 at the end
  * for ambire to recognize it.
  * For v1 contracts, we do ETH sign at the 01 slot, which we'll
  * call standard from now on
  */
-export const wrapStandard = (signature) => {
+const wrapStandard = (signature) => {
     return `${signature}01`;
 };
+exports.wrapStandard = wrapStandard;
 /**
  * For v2 accounts acting as signers, we need to append the v2 wallet
  * addr that's the signer and a 02 mode at the end to indicate it's a wallet:
  * {sig+mode}{wallet_32bytes}{mode}
  */
-export const wrapWallet = (signature, walletAddr) => {
-    const wallet32bytes = `${stripHexPrefix(toBeHex(0, 12))}${stripHexPrefix(walletAddr)}`;
+const wrapWallet = (signature, walletAddr) => {
+    const wallet32bytes = `${(0, stripHexPrefix_1.stripHexPrefix)((0, ethers_1.toBeHex)(0, 12))}${(0, stripHexPrefix_1.stripHexPrefix)(walletAddr)}`;
     return `${signature}${wallet32bytes}02`;
 };
-export const getAmbireReadableTypedData = (chainId, verifyingAddr, v1Execute) => {
+exports.wrapWallet = wrapWallet;
+const getAmbireReadableTypedData = (chainId, verifyingAddr, v1Execute) => {
     const domain = {
         name: 'Ambire',
         version: '1',
         chainId: chainId.toString(),
         verifyingContract: verifyingAddr,
-        salt: toBeHex(0, 32)
+        salt: (0, ethers_1.toBeHex)(0, 32)
     };
     const types = {
         EIP712Domain: [
@@ -98,16 +105,17 @@ export const getAmbireReadableTypedData = (chainId, verifyingAddr, v1Execute) =>
         primaryType: 'AmbireOperation'
     };
 };
+exports.getAmbireReadableTypedData = getAmbireReadableTypedData;
 /**
  * Return the typed data for EIP-712 sign
  */
-export const getTypedData = (chainId, verifyingAddr, msgHash) => {
+const getTypedData = (chainId, verifyingAddr, msgHash) => {
     const domain = {
         name: 'Ambire',
         version: '1',
         chainId: chainId.toString(),
         verifyingContract: verifyingAddr,
-        salt: toBeHex(0, 32)
+        salt: (0, ethers_1.toBeHex)(0, 32)
     };
     const types = {
         EIP712Domain: [
@@ -149,6 +157,7 @@ export const getTypedData = (chainId, verifyingAddr, msgHash) => {
         primaryType: 'AmbireOperation'
     };
 };
+exports.getTypedData = getTypedData;
 /**
  * Produce EIP6492 signature for Predeploy Contracts
  *
@@ -158,20 +167,22 @@ export const getTypedData = (chainId, verifyingAddr, msgHash) => {
  * @param {object} account
  * @returns {string} - EIP6492 signature
  */
-export const wrapCounterfactualSign = (signature, creation) => {
+const wrapCounterfactualSign = (signature, creation) => {
     const ABI = ['function deploy(bytes code, uint256 salt)'];
-    const iface = new Interface(ABI);
+    const iface = new ethers_1.Interface(ABI);
     const factoryCallData = iface.encodeFunctionData('deploy', [creation.bytecode, creation.salt]);
-    const coder = new AbiCoder();
+    const coder = new ethers_1.AbiCoder();
     // EIP6492 signature
     return (coder.encode(['address', 'bytes', 'bytes'], [creation.factoryAddr, factoryCallData, signature]) + magicBytes);
 };
-export function mapSignatureV(sigRaw) {
-    const sig = hexStringToUint8Array(sigRaw);
+exports.wrapCounterfactualSign = wrapCounterfactualSign;
+function mapSignatureV(sigRaw) {
+    const sig = (0, hexStringToUint8Array_1.default)(sigRaw);
     if (sig[64] < 27)
         sig[64] += 27;
-    return hexlify(sig);
+    return (0, ethers_1.hexlify)(sig);
 }
+exports.mapSignatureV = mapSignatureV;
 /**
  * Verifies the signature of a message using the provided signer and signature
  * via a "magic" universal validator contract using the provided provider to
@@ -181,10 +192,10 @@ export function mapSignatureV(sigRaw) {
  *
  * Note: you only need to pass one of: typedData, finalDigest, message
  */
-export async function verifyMessage({ network, provider, signer, signature, message, typedData, finalDigest }) {
+async function verifyMessage({ network, provider, signer, signature, message, typedData, finalDigest }) {
     if (message) {
         try {
-            finalDigest = hashMessage(message);
+            finalDigest = (0, ethers_1.hashMessage)(message);
             if (!finalDigest)
                 throw Error('Hashing the message returned no (falsy) result.');
         }
@@ -209,10 +220,10 @@ export async function verifyMessage({ network, provider, signer, signature, mess
             // an AmbireOperation
             if ('AmbireReadableOperation' in typedData.types) {
                 const ambireReadableOperation = typedData.message;
-                finalDigest = hexlify(getSignableHash(ambireReadableOperation.addr, ambireReadableOperation.chainId, ambireReadableOperation.nonce, ambireReadableOperation.calls.map(callToTuple)));
+                finalDigest = (0, ethers_1.hexlify)((0, accountOp_1.getSignableHash)(ambireReadableOperation.addr, ambireReadableOperation.chainId, ambireReadableOperation.nonce, ambireReadableOperation.calls.map(accountOp_1.callToTuple)));
             }
             else {
-                finalDigest = TypedDataEncoder.hash(typedData.domain, typesWithoutEIP712Domain, typedData.message);
+                finalDigest = ethers_1.TypedDataEncoder.hash(typedData.domain, typesWithoutEIP712Domain, typedData.message);
             }
             if (!finalDigest)
                 throw Error('Hashing the typedData returned no (falsy) result.');
@@ -223,10 +234,10 @@ export async function verifyMessage({ network, provider, signer, signature, mess
     }
     // this 'magic' universal validator contract will deploy itself within the eth_call, try to verify the signature using
     // ERC-6492, ERC-1271 and ecrecover, and return the value to us
-    const coder = new AbiCoder();
+    const coder = new ethers_1.AbiCoder();
     let callResult;
     try {
-        const deploylessVerify = fromDescriptor(provider, UniversalSigValidator, !network.rpcNoStateOverride);
+        const deploylessVerify = (0, deployless_1.fromDescriptor)(provider, UniversalSigValidator_json_1.default, !network.rpcNoStateOverride);
         const deploylessRes = await deploylessVerify.call('isValidSigWithSideEffects', [
             signer,
             finalDigest,
@@ -252,27 +263,29 @@ export async function verifyMessage({ network, provider, signer, signature, mess
         throw new Error(`Ambire failed to validate the signature. Please make sure you are signing with the correct key or device. If the problem persists, please contact Ambire support. Error details:: ${coder.decode(['string'], `0x${callResult.slice(10)}`)[0]}`);
     throw new Error(`Ambire failed to validate the signature. Please make sure you are signing with the correct key or device. If the problem persists, please contact Ambire support. Error details: unexpected result from the UniversalValidator: ${callResult}`);
 }
+exports.verifyMessage = verifyMessage;
 // Authorize the execute calls according to the version of the smart account
-export async function getExecuteSignature(network, accountOp, accountState, signer) {
+async function getExecuteSignature(network, accountOp, accountState, signer) {
     // if we're authorizing calls for a v1 contract, we do a sign message
     // on the hash of the calls
     if (!accountState.isV2) {
-        const message = hexlify(accountOpSignableHash(accountOp, network.chainId));
-        return wrapStandard(await signer.signMessage(message));
+        const message = (0, ethers_1.hexlify)((0, accountOp_1.accountOpSignableHash)(accountOp, network.chainId));
+        return (0, exports.wrapStandard)(await signer.signMessage(message));
     }
     // txns for v2 contracts are always eip-712 so we put the hash of the calls
     // in eip-712 format
-    const typedData = getTypedData(network.chainId, accountState.accountAddr, hexlify(accountOpSignableHash(accountOp, network.chainId)));
-    return wrapStandard(await signer.signTypedData(typedData));
+    const typedData = (0, exports.getTypedData)(network.chainId, accountState.accountAddr, (0, ethers_1.hexlify)((0, accountOp_1.accountOpSignableHash)(accountOp, network.chainId)));
+    return (0, exports.wrapStandard)(await signer.signTypedData(typedData));
 }
-export async function getPlainTextSignature(message, network, account, accountState, signer) {
+exports.getExecuteSignature = getExecuteSignature;
+async function getPlainTextSignature(message, network, account, accountState, signer) {
     const dedicatedToOneSA = signer.key.dedicatedToOneSA;
     let messageHex;
     if (message instanceof Uint8Array) {
-        messageHex = hexlify(message);
+        messageHex = (0, ethers_1.hexlify)(message);
     }
-    else if (!isHexString(message)) {
-        messageHex = hexlify(toUtf8Bytes(message));
+    else if (!(0, ethers_1.isHexString)(message)) {
+        messageHex = (0, ethers_1.hexlify)((0, ethers_1.toUtf8Bytes)(message));
     }
     else {
         messageHex = message;
@@ -282,27 +295,27 @@ export async function getPlainTextSignature(message, network, account, accountSt
         return signature;
     }
     if (!accountState.isV2) {
-        const lowercaseHexAddrWithout0x = hexlify(toUtf8Bytes(account.addr.toLowerCase().slice(2)));
-        const checksummedHexAddrWithout0x = hexlify(toUtf8Bytes(account.addr.slice(2)));
+        const lowercaseHexAddrWithout0x = (0, ethers_1.hexlify)((0, ethers_1.toUtf8Bytes)(account.addr.toLowerCase().slice(2)));
+        const checksummedHexAddrWithout0x = (0, ethers_1.hexlify)((0, ethers_1.toUtf8Bytes)(account.addr.slice(2)));
         const asciiAddrLowerCase = account.addr.toLowerCase();
-        const humanReadableMsg = message instanceof Uint8Array ? hexlify(message) : message;
+        const humanReadableMsg = message instanceof Uint8Array ? (0, ethers_1.hexlify)(message) : message;
         const isAsciiAddressInMessage = humanReadableMsg.toLowerCase().includes(asciiAddrLowerCase);
         const isLowercaseHexAddressInMessage = humanReadableMsg.includes(lowercaseHexAddrWithout0x.slice(2));
         const isChecksummedHexAddressInMessage = humanReadableMsg.includes(checksummedHexAddrWithout0x.slice(2));
         if (!network.predefined &&
-            !relayerAdditionalNetworks.find((net) => net.chainId === network.chainId)) {
+            !networks_1.relayerAdditionalNetworks.find((net) => net.chainId === network.chainId)) {
             throw new Error(`Signing messages is disallowed for v1 accounts on ${network.name}`);
         }
         if (isAsciiAddressInMessage ||
             isLowercaseHexAddressInMessage ||
             isChecksummedHexAddressInMessage) {
-            return wrapUnprotected(await signer.signMessage(messageHex));
+            return (0, exports.wrapUnprotected)(await signer.signMessage(messageHex));
         }
         throw new Error('Signing messages is disallowed for v1 accounts. Please contact support to proceed');
     }
     // if it's safe, we proceed
     if (dedicatedToOneSA) {
-        return wrapUnprotected(await signer.signMessage(messageHex));
+        return (0, exports.wrapUnprotected)(await signer.signMessage(messageHex));
     }
     // in case of only_standard priv key, we transform the data
     // for signing to EIP-712. This is because the key is not labeled safe
@@ -310,10 +323,11 @@ export async function getPlainTextSignature(message, network, account, accountSt
     // This is important as this key could be a metamask one and someone
     // could be phishing him into approving an Ambire Op without him
     // knowing
-    const typedData = getTypedData(network.chainId, account.addr, hashMessage(getBytes(messageHex)));
-    return wrapStandard(await signer.signTypedData(typedData));
+    const typedData = (0, exports.getTypedData)(network.chainId, account.addr, (0, ethers_1.hashMessage)((0, ethers_1.getBytes)(messageHex)));
+    return (0, exports.wrapStandard)(await signer.signTypedData(typedData));
 }
-export async function getEIP712Signature(message, account, accountState, signer, network) {
+exports.getPlainTextSignature = getPlainTextSignature;
+async function getEIP712Signature(message, account, accountState, signer, network) {
     if (!message.types.EIP712Domain) {
         throw new Error('Ambire only supports signing EIP712 typed data messages. Please try again with a valid EIP712 message.');
     }
@@ -329,12 +343,12 @@ export async function getEIP712Signature(message, account, accountState, signer,
         if (asString.indexOf(account.addr.toLowerCase()) !== -1 ||
             (message.domain.name === 'Permit2' &&
                 message.domain.verifyingContract &&
-                getAddress(message.domain.verifyingContract) === PERMIT_2_ADDRESS &&
+                (0, ethers_1.getAddress)(message.domain.verifyingContract) === addresses_1.PERMIT_2_ADDRESS &&
                 message.message &&
                 message.message.spender &&
-                UNISWAP_UNIVERSAL_ROUTERS[Number(network.chainId)] &&
-                UNISWAP_UNIVERSAL_ROUTERS[Number(network.chainId)] === getAddress(message.message.spender))) {
-            return wrapUnprotected(await signer.signTypedData(message));
+                addresses_1.UNISWAP_UNIVERSAL_ROUTERS[Number(network.chainId)] &&
+                addresses_1.UNISWAP_UNIVERSAL_ROUTERS[Number(network.chainId)] === (0, ethers_1.getAddress)(message.message.spender))) {
+            return (0, exports.wrapUnprotected)(await signer.signTypedData(message));
         }
         throw new Error('Signing this eip-712 message is disallowed for v1 accounts as it does not contain the smart account address and therefore deemed unsafe');
     }
@@ -346,31 +360,34 @@ export async function getEIP712Signature(message, account, accountState, signer,
     }
     if ('AmbireReadableOperation' in message.types) {
         const ambireReadableOperation = message.message;
-        if (isSameAddr(ambireReadableOperation.addr, account.addr)) {
+        if ((0, isSameAddr_1.default)(ambireReadableOperation.addr, account.addr)) {
             throw new Error('signature error: trying to sign an AmbireReadableOperation for the same address. Please contact support');
         }
-        const hash = hexlify(getSignableHash(ambireReadableOperation.addr, ambireReadableOperation.chainId, ambireReadableOperation.nonce, ambireReadableOperation.calls.map(callToTuple)));
-        const ambireOperation = getTypedData(ambireReadableOperation.chainId, account.addr, hash);
-        const signature = wrapStandard(await signer.signTypedData(ambireOperation));
-        return wrapWallet(signature, account.addr);
+        const hash = (0, ethers_1.hexlify)((0, accountOp_1.getSignableHash)(ambireReadableOperation.addr, ambireReadableOperation.chainId, ambireReadableOperation.nonce, ambireReadableOperation.calls.map(accountOp_1.callToTuple)));
+        const ambireOperation = (0, exports.getTypedData)(ambireReadableOperation.chainId, account.addr, hash);
+        const signature = (0, exports.wrapStandard)(await signer.signTypedData(ambireOperation));
+        return (0, exports.wrapWallet)(signature, account.addr);
     }
-    return wrapUnprotected(await signer.signTypedData(message));
+    return (0, exports.wrapUnprotected)(await signer.signTypedData(message));
 }
+exports.getEIP712Signature = getEIP712Signature;
 // get the typedData for the first ERC-4337 deploy txn
-export async function getEntryPointAuthorization(addr, chainId, nonce) {
-    const hash = getSignableHash(addr, chainId, nonce, [callToTuple(getActivatorCall(addr))]);
-    return getTypedData(chainId, addr, hexlify(hash));
+async function getEntryPointAuthorization(addr, chainId, nonce) {
+    const hash = (0, accountOp_1.getSignableHash)(addr, chainId, nonce, [(0, accountOp_1.callToTuple)((0, userOperation_1.getActivatorCall)(addr))]);
+    return (0, exports.getTypedData)(chainId, addr, (0, ethers_1.hexlify)(hash));
 }
-export function adjustEntryPointAuthorization(signature) {
+exports.getEntryPointAuthorization = getEntryPointAuthorization;
+function adjustEntryPointAuthorization(signature) {
     let entryPointSig = signature;
     // if thet signature is wrapepd in magicBytes because of eip-6492, unwrap it
     if (signature.endsWith(magicBytes)) {
-        const coder = new AbiCoder();
+        const coder = new ethers_1.AbiCoder();
         const decoded = coder.decode(['address', 'bytes', 'bytes'], signature.substring(0, signature.length - magicBytes.length));
         entryPointSig = decoded[2];
     }
     // since normally when we sign an EIP-712 request, we wrap it in Unprotected,
     // we adjust the entry point authorization signature so we could execute a txn
-    return wrapStandard(entryPointSig.substring(0, entryPointSig.length - 2));
+    return (0, exports.wrapStandard)(entryPointSig.substring(0, entryPointSig.length - 2));
 }
+exports.adjustEntryPointAuthorization = adjustEntryPointAuthorization;
 //# sourceMappingURL=signMessage.js.map

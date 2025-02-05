@@ -1,6 +1,9 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.Session = void 0;
 // Each instance of a Session represents an active connection between a dApp and the wallet.
 // For more details on how to use it, refer to the DappsController.
-export class Session {
+class Session {
     origin = '';
     icon = '';
     name = '';
@@ -37,4 +40,5 @@ export class Session {
         };
     }
 }
+exports.Session = Session;
 //# sourceMappingURL=session.js.map

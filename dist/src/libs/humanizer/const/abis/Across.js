@@ -1,4 +1,7 @@
-export const Across = [
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.Across = void 0;
+exports.Across = [
     'function EMPTY_RELAYER() view returns (address)',
     'function EMPTY_REPAYMENT_CHAIN_ID() view returns (uint256)',
     'function INFINITE_FILL_DEADLINE() view returns (uint32)',

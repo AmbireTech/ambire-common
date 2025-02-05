@@ -1,17 +1,21 @@
+"use strict";
 /* eslint-disable no-restricted-syntax */
 /* eslint-disable guard-for-in */
-import { getAddress, ZeroAddress } from 'ethers';
-import BalanceGetter from '../../../contracts/compiled/BalanceGetter.json';
-import NFTGetter from '../../../contracts/compiled/NFTGetter.json';
-import gasTankFeeTokens from '../../consts/gasTankFeeTokens';
-import { PINNED_TOKENS } from '../../consts/pinnedTokens';
-import { fromDescriptor } from '../deployless/deployless';
-import batcher from './batcher';
-import { geckoRequestBatcher, geckoResponseIdentifier } from './gecko';
-import { getNFTs, getTokens } from './getOnchainBalances';
-import { stripExternalHintsAPIResponse } from './helpers';
-import { flattenResults, paginate } from './pagination';
-export const LIMITS = {
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.Portfolio = exports.getEmptyHints = exports.PORTFOLIO_LIB_ERROR_NAMES = exports.LIMITS = void 0;
+const tslib_1 = require("tslib");
+const ethers_1 = require("ethers");
+const BalanceGetter_json_1 = tslib_1.__importDefault(require("../../../contracts/compiled/BalanceGetter.json"));
+const NFTGetter_json_1 = tslib_1.__importDefault(require("../../../contracts/compiled/NFTGetter.json"));
+const gasTankFeeTokens_1 = tslib_1.__importDefault(require("../../consts/gasTankFeeTokens"));
+const pinnedTokens_1 = require("../../consts/pinnedTokens");
+const deployless_1 = require("../deployless/deployless");
+const batcher_1 = tslib_1.__importDefault(require("./batcher"));
+const gecko_1 = require("./gecko");
+const getOnchainBalances_1 = require("./getOnchainBalances");
+const helpers_1 = require("./helpers");
+const pagination_1 = require("./pagination");
+exports.LIMITS = {
     // we have to be conservative with erc721Tokens because if we pass 30x20 (worst case) tokenIds, that's 30x20 extra words which is 19kb
     // proxy mode input is limited to 24kb
     deploylessProxyMode: { erc20: 100, erc721: 30, erc721TokensInput: 20, erc721Tokens: 50 },
@@ -23,7 +27,7 @@ export const LIMITS = {
         erc721Tokens: 70
     }
 };
-export const PORTFOLIO_LIB_ERROR_NAMES = {
+exports.PORTFOLIO_LIB_ERROR_NAMES = {
     /** External hints API (Velcro) request failed but fallback is sufficient */
     NonCriticalApiHintsError: 'NonCriticalApiHintsError',
     /** External API (Velcro) hints are older than X minutes */
@@ -33,10 +37,11 @@ export const PORTFOLIO_LIB_ERROR_NAMES = {
     /** One or more cena request has failed */
     PriceFetchError: 'PriceFetchError'
 };
-export const getEmptyHints = () => ({
+const getEmptyHints = () => ({
     erc20s: [],
     erc721s: {}
 });
+exports.getEmptyHints = getEmptyHints;
 const defaultOptions = {
     baseCurrency: 'usd',
     blockTag: 'latest',
@@ -45,14 +50,14 @@ const defaultOptions = {
     fetchPinned: true,
     isEOA: false
 };
-export class Portfolio {
+class Portfolio {
     network;
     batchedVelcroDiscovery;
     batchedGecko;
     deploylessTokens;
     deploylessNfts;
     constructor(fetch, provider, network, velcroUrl) {
-        this.batchedVelcroDiscovery = batcher(fetch, (queue) => {
+        this.batchedVelcroDiscovery = (0, batcher_1.default)(fetch, (queue) => {
             const baseCurrencies = [...new Set(queue.map((x) => x.data.baseCurrency))];
             return baseCurrencies.map((baseCurrency) => {
                 const queueSegment = queue.filter((x) => x.data.baseCurrency === baseCurrency);
@@ -67,13 +72,13 @@ export class Portfolio {
             timeoutAfter: 3000,
             timeoutErrorMessage: `Velcro discovery timed out on ${network.id}`
         });
-        this.batchedGecko = batcher(fetch, geckoRequestBatcher, {
+        this.batchedGecko = (0, batcher_1.default)(fetch, gecko_1.geckoRequestBatcher, {
             timeoutAfter: 3000,
             timeoutErrorMessage: `Cena request timed out on ${network.id}`
         });
         this.network = network;
-        this.deploylessTokens = fromDescriptor(provider, BalanceGetter, !network.rpcNoStateOverride);
-        this.deploylessNfts = fromDescriptor(provider, NFTGetter, !network.rpcNoStateOverride);
+        this.deploylessTokens = (0, deployless_1.fromDescriptor)(provider, BalanceGetter_json_1.default, !network.rpcNoStateOverride);
+        this.deploylessNfts = (0, deployless_1.fromDescriptor)(provider, NFTGetter_json_1.default, !network.rpcNoStateOverride);
     }
     async get(accountAddr, opts = {}) {
         const errors = [];
@@ -87,7 +92,7 @@ export class Portfolio {
         const networkId = this.network.id;
         // Make sure portfolio lib still works, even in the case Velcro discovery fails.
         // Because of this, we fall back to Velcro default response.
-        let hints = getEmptyHints();
+        let hints = (0, exports.getEmptyHints)();
         let hintsFromExternalAPI = null;
         try {
             // if the network doesn't have a relayer, velcro will not work
@@ -100,7 +105,7 @@ export class Portfolio {
                 });
                 if (hintsFromExternalAPI) {
                     hintsFromExternalAPI.lastUpdate = Date.now();
-                    hints = stripExternalHintsAPIResponse(hintsFromExternalAPI);
+                    hints = (0, helpers_1.stripExternalHintsAPIResponse)(hintsFromExternalAPI);
                 }
             }
         }
@@ -113,15 +118,15 @@ export class Portfolio {
                 const isLastUpdateTooOld = Date.now() - lastUpdate > TEN_MINUTES;
                 errors.push({
                     name: isLastUpdateTooOld
-                        ? PORTFOLIO_LIB_ERROR_NAMES.StaleApiHintsError
-                        : PORTFOLIO_LIB_ERROR_NAMES.NonCriticalApiHintsError,
+                        ? exports.PORTFOLIO_LIB_ERROR_NAMES.StaleApiHintsError
+                        : exports.PORTFOLIO_LIB_ERROR_NAMES.NonCriticalApiHintsError,
                     message: errorMesssage,
                     level: 'critical'
                 });
             }
             else {
                 errors.push({
-                    name: PORTFOLIO_LIB_ERROR_NAMES.NoApiHintsError,
+                    name: exports.PORTFOLIO_LIB_ERROR_NAMES.NoApiHintsError,
                     message: errorMesssage,
                     level: 'silent'
                 });
@@ -143,19 +148,19 @@ export class Portfolio {
             hints.erc20s = [...hints.erc20s, ...localOpts.additionalErc20Hints];
         }
         if (localOpts.fetchPinned) {
-            hints.erc20s = [...hints.erc20s, ...PINNED_TOKENS.map((x) => x.address)];
+            hints.erc20s = [...hints.erc20s, ...pinnedTokens_1.PINNED_TOKENS.map((x) => x.address)];
         }
         // add the fee tokens
         hints.erc20s = [
             ...hints.erc20s,
-            ...gasTankFeeTokens.filter((x) => x.networkId === this.network.id).map((x) => x.address)
+            ...gasTankFeeTokens_1.default.filter((x) => x.networkId === this.network.id).map((x) => x.address)
         ];
         const checksummedErc20Hints = hints.erc20s
             .map((address) => {
             try {
                 // getAddress may throw an error. This will break the portfolio
                 // if the error isn't caught
-                return getAddress(address);
+                return (0, ethers_1.getAddress)(address);
             }
             catch {
                 return null;
@@ -163,7 +168,7 @@ export class Portfolio {
         })
             .filter(Boolean);
         // Remove duplicates and always add ZeroAddress
-        hints.erc20s = [...new Set(checksummedErc20Hints.concat(ZeroAddress))];
+        hints.erc20s = [...new Set(checksummedErc20Hints.concat(ethers_1.ZeroAddress))];
         // This also allows getting prices, this is used for more exotic tokens that cannot be retrieved via Coingecko
         const priceCache = localOpts.priceCache || new Map();
         for (const addr in hintsFromExternalAPI?.prices || {}) {
@@ -177,12 +182,12 @@ export class Portfolio {
         const discoveryDone = Date.now();
         // .isLimitedAt24kbData should be the same for both instances; @TODO more elegant check?
         const limits = this.deploylessTokens.isLimitedAt24kbData
-            ? LIMITS.deploylessProxyMode
-            : LIMITS.deploylessStateOverrideMode;
+            ? exports.LIMITS.deploylessProxyMode
+            : exports.LIMITS.deploylessStateOverrideMode;
         const collectionsHints = Object.entries(hints.erc721s);
         const [tokensWithErr, collectionsWithErr] = await Promise.all([
-            flattenResults(paginate(hints.erc20s, limits.erc20).map((page) => getTokens(this.network, this.deploylessTokens, localOpts, accountAddr, page))),
-            flattenResults(paginate(collectionsHints, limits.erc721).map((page) => getNFTs(this.network, this.deploylessNfts, localOpts, accountAddr, page, limits)))
+            (0, pagination_1.flattenResults)((0, pagination_1.paginate)(hints.erc20s, limits.erc20).map((page) => (0, getOnchainBalances_1.getTokens)(this.network, this.deploylessTokens, localOpts, accountAddr, page))),
+            (0, pagination_1.flattenResults)((0, pagination_1.paginate)(collectionsHints, limits.erc721).map((page) => (0, getOnchainBalances_1.getNFTs)(this.network, this.deploylessNfts, localOpts, accountAddr, page, limits)))
         ]);
         const [tokensWithErrResult, metaData] = tokensWithErr;
         const { blockNumber, beforeNonce, afterNonce } = metaData;
@@ -243,7 +248,7 @@ export class Portfolio {
                     network: this.network,
                     baseCurrency,
                     // this is what to look for in the coingecko response object
-                    responseIdentifier: geckoResponseIdentifier(token.address, this.network)
+                    responseIdentifier: (0, gecko_1.geckoResponseIdentifier)(token.address, this.network)
                 });
                 priceIn = Object.entries(priceData || {}).map(([baseCurr, price]) => ({
                     baseCurrency: baseCurr,
@@ -257,9 +262,9 @@ export class Portfolio {
                 priceIn = [];
                 // Avoid duplicate errors, because this.bachedGecko is called for each token and if
                 // there is an error it will most likely be the same for all tokens
-                if (!errors.find((x) => x.name === PORTFOLIO_LIB_ERROR_NAMES.PriceFetchError && x.message === errorMessage)) {
+                if (!errors.find((x) => x.name === exports.PORTFOLIO_LIB_ERROR_NAMES.PriceFetchError && x.message === errorMessage)) {
                     errors.push({
-                        name: PORTFOLIO_LIB_ERROR_NAMES.PriceFetchError,
+                        name: exports.PORTFOLIO_LIB_ERROR_NAMES.PriceFetchError,
                         message: errorMessage,
                         level: 'warning'
                     });
@@ -272,7 +277,7 @@ export class Portfolio {
         }));
         const priceUpdateDone = Date.now();
         return {
-            hintsFromExternalAPI: stripExternalHintsAPIResponse(hintsFromExternalAPI),
+            hintsFromExternalAPI: (0, helpers_1.stripExternalHintsAPIResponse)(hintsFromExternalAPI),
             errors,
             updateStarted: start,
             discoveryTime: discoveryDone - start,
@@ -282,10 +287,10 @@ export class Portfolio {
             tokens: tokensWithPrices,
             feeTokens: tokensWithPrices.filter((t) => {
                 // return the native token
-                if (t.address === ZeroAddress &&
+                if (t.address === ethers_1.ZeroAddress &&
                     t.networkId.toLowerCase() === this.network.id.toLowerCase())
                     return true;
-                return gasTankFeeTokens.find((gasTankT) => gasTankT.address.toLowerCase() === t.address.toLowerCase() &&
+                return gasTankFeeTokens_1.default.find((gasTankT) => gasTankT.address.toLowerCase() === t.address.toLowerCase() &&
                     gasTankT.networkId.toLowerCase() === t.networkId.toLowerCase());
             }),
             beforeNonce,
@@ -298,4 +303,5 @@ export class Portfolio {
         };
     }
 }
+exports.Portfolio = Portfolio;
 //# sourceMappingURL=portfolio.js.map

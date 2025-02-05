@@ -1,7 +1,10 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const tslib_1 = require("tslib");
 /* eslint-disable no-restricted-syntax */
-import wait from '../../utils/wait';
+const wait_1 = tslib_1.__importDefault(require("../../utils/wait"));
 const LIMIT_ON_THE_NUMBER_OF_ERRORS = 100;
-export default class EventEmitter {
+class EventEmitter {
     #callbacksWithId = [];
     #callbacks = [];
     #errorCallbacksWithId = [];
@@ -28,7 +31,7 @@ export default class EventEmitter {
      * batching the ones in between.
      */
     async forceEmitUpdate() {
-        await wait(1);
+        await (0, wait_1.default)(1);
         // eslint-disable-next-line no-restricted-syntax
         for (const i of this.#callbacksWithId)
             i.cb(true);
@@ -153,4 +156,5 @@ export default class EventEmitter {
         };
     }
 }
+exports.default = EventEmitter;
 //# sourceMappingURL=eventEmitter.js.map

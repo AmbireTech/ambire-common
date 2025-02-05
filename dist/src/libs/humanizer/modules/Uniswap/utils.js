@@ -1,7 +1,10 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.uniReduce = exports.joinWithAndLabel = exports.getUniRecipientText = exports.parsePath = void 0;
 /* eslint-disable no-continue */
-import { ZeroAddress } from 'ethers';
-import { getLabel, getRecipientText } from '../../utils';
-export function parsePath(pathBytes) {
+const ethers_1 = require("ethers");
+const utils_1 = require("../../utils");
+function parsePath(pathBytes) {
     // some decodePacked fun
     // can we do this with Ethers AbiCoder? probably not
     const path = [];
@@ -11,12 +14,15 @@ export function parsePath(pathBytes) {
     }
     return path;
 }
-export const getUniRecipientText = (accAddr, recAddr) => ['0x0000000000000000000000000000000000000001', ZeroAddress].includes(recAddr)
+exports.parsePath = parsePath;
+const getUniRecipientText = (accAddr, recAddr) => ['0x0000000000000000000000000000000000000001', ethers_1.ZeroAddress].includes(recAddr)
     ? []
-    : getRecipientText(accAddr, recAddr);
-export const joinWithAndLabel = (humanizations) => {
-    return humanizations.reduce((acc, arr) => [...acc, ...arr, getLabel('and')], []).slice(0, -1);
+    : (0, utils_1.getRecipientText)(accAddr, recAddr);
+exports.getUniRecipientText = getUniRecipientText;
+const joinWithAndLabel = (humanizations) => {
+    return humanizations.reduce((acc, arr) => [...acc, ...arr, (0, utils_1.getLabel)('and')], []).slice(0, -1);
 };
+exports.joinWithAndLabel = joinWithAndLabel;
 const isSwap = (call) => call &&
     call.length >= 4 &&
     call[0].content?.includes('Swap') &&
@@ -35,7 +41,7 @@ const isSend = (call) => call &&
     call[1].type === 'token' &&
     call[2]?.content?.includes('to') &&
     call[3].type === 'address';
-export const uniReduce = (_calls) => {
+const uniReduce = (_calls) => {
     const calls = _calls;
     const originalCallsLength = calls.length;
     for (let i = 0; i < calls.length; i++) {
@@ -47,7 +53,7 @@ export const uniReduce = (_calls) => {
                 isSwap(calls[i]) &&
                 isWrap(calls[j]) &&
                 calls[j][1].value === calls[i][1].value) {
-                calls[i][1].address = ZeroAddress;
+                calls[i][1].address = ethers_1.ZeroAddress;
                 calls.splice(j, 1);
             }
             // looks for unwrap after the swap
@@ -57,7 +63,7 @@ export const uniReduce = (_calls) => {
                 isSwap(calls[i]) &&
                 isUnwrap(calls[j]) &&
                 calls[j][1].value === calls[i][3].value) {
-                calls[i][3].address = ZeroAddress;
+                calls[i][3].address = ethers_1.ZeroAddress;
                 calls.splice(j, 1);
             }
             // looks for swaps to merge
@@ -95,6 +101,7 @@ export const uniReduce = (_calls) => {
             }
         }
     }
-    return originalCallsLength === calls.length ? joinWithAndLabel(calls) : uniReduce(calls);
+    return originalCallsLength === calls.length ? (0, exports.joinWithAndLabel)(calls) : (0, exports.uniReduce)(calls);
 };
+exports.uniReduce = uniReduce;
 //# sourceMappingURL=utils.js.map

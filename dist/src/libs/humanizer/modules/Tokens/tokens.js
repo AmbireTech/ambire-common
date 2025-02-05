@@ -1,52 +1,55 @@
-import { Interface, ZeroAddress } from 'ethers';
-import { ERC20, ERC721 } from '../../const/abis';
-import { getAction, getAddressVisualization, getLabel, getToken } from '../../utils';
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.genericErc20Humanizer = exports.genericErc721Humanizer = void 0;
+const ethers_1 = require("ethers");
+const abis_1 = require("../../const/abis");
+const utils_1 = require("../../utils");
 // @TODO merge this with the  erc20 humanizer module as sometimes
 // we see no difference between the two
-export const genericErc721Humanizer = (accountOp, currentIrCalls) => {
-    const iface = new Interface(ERC721);
+const genericErc721Humanizer = (accountOp, currentIrCalls) => {
+    const iface = new ethers_1.Interface(abis_1.ERC721);
     const nftTransferVisualization = (call) => {
         const args = iface.parseTransaction(call)?.args.toArray() || [];
         return args[0] === accountOp.accountAddr
             ? [
-                getAction('Send'),
-                getToken(call.to, args[2]),
-                getLabel('to'),
-                getAddressVisualization(args[1])
+                (0, utils_1.getAction)('Send'),
+                (0, utils_1.getToken)(call.to, args[2]),
+                (0, utils_1.getLabel)('to'),
+                (0, utils_1.getAddressVisualization)(args[1])
             ]
             : [
-                getAction('Transfer'),
-                getToken(call.to, args[2]),
-                getLabel('from'),
-                getAddressVisualization(args[0]),
-                getLabel('to'),
-                getAddressVisualization(args[1])
+                (0, utils_1.getAction)('Transfer'),
+                (0, utils_1.getToken)(call.to, args[2]),
+                (0, utils_1.getLabel)('from'),
+                (0, utils_1.getAddressVisualization)(args[0]),
+                (0, utils_1.getLabel)('to'),
+                (0, utils_1.getAddressVisualization)(args[1])
             ];
     };
     const matcher = {
         [iface.getFunction('approve')?.selector]: (call) => {
             const args = iface.parseTransaction(call)?.args.toArray() || [];
-            return args[0] === ZeroAddress
-                ? [getAction('Revoke approval'), getLabel('for'), getToken(call.to, args[1])]
+            return args[0] === ethers_1.ZeroAddress
+                ? [(0, utils_1.getAction)('Revoke approval'), (0, utils_1.getLabel)('for'), (0, utils_1.getToken)(call.to, args[1])]
                 : [
-                    getAction('Grant approval'),
-                    getLabel('for'),
-                    getToken(call.to, args[1]),
-                    getLabel('to'),
-                    getAddressVisualization(args[0])
+                    (0, utils_1.getAction)('Grant approval'),
+                    (0, utils_1.getLabel)('for'),
+                    (0, utils_1.getToken)(call.to, args[1]),
+                    (0, utils_1.getLabel)('to'),
+                    (0, utils_1.getAddressVisualization)(args[0])
                 ];
         },
         [iface.getFunction('setApprovalForAll')?.selector]: (call) => {
             const args = iface.parseTransaction(call)?.args.toArray() || [];
             return args[1]
                 ? [
-                    getAction('Grant approval'),
-                    getLabel('for all nfts'),
-                    getToken(call.to, args[1]),
-                    getLabel('to'),
-                    getAddressVisualization(args[0])
+                    (0, utils_1.getAction)('Grant approval'),
+                    (0, utils_1.getLabel)('for all nfts'),
+                    (0, utils_1.getToken)(call.to, args[1]),
+                    (0, utils_1.getLabel)('to'),
+                    (0, utils_1.getAddressVisualization)(args[0])
                 ]
-                : [getAction('Revoke approval'), getLabel('for all nfts'), getAddressVisualization(args[0])];
+                : [(0, utils_1.getAction)('Revoke approval'), (0, utils_1.getLabel)('for all nfts'), (0, utils_1.getAddressVisualization)(args[0])];
         },
         // not in tests
         [iface.getFunction('safeTransferFrom', ['address', 'address', 'uint256'])?.selector]: nftTransferVisualization,
@@ -67,80 +70,81 @@ export const genericErc721Humanizer = (accountOp, currentIrCalls) => {
     });
     return newCalls;
 };
-export const genericErc20Humanizer = (accountOp, currentIrCalls) => {
-    const iface = new Interface(ERC20);
+exports.genericErc721Humanizer = genericErc721Humanizer;
+const genericErc20Humanizer = (accountOp, currentIrCalls) => {
+    const iface = new ethers_1.Interface(abis_1.ERC20);
     const matcher = {
         [iface.getFunction('approve')?.selector]: (call) => {
             const args = iface.parseTransaction(call)?.args.toArray() || [];
             return args[1] !== BigInt(0)
                 ? [
-                    getAction('Grant approval'),
-                    getLabel('for'),
-                    getToken(call.to, args[1]),
-                    getLabel('to'),
-                    getAddressVisualization(args[0])
+                    (0, utils_1.getAction)('Grant approval'),
+                    (0, utils_1.getLabel)('for'),
+                    (0, utils_1.getToken)(call.to, args[1]),
+                    (0, utils_1.getLabel)('to'),
+                    (0, utils_1.getAddressVisualization)(args[0])
                 ]
                 : [
-                    getAction('Revoke approval'),
-                    getToken(call.to, args[1]),
-                    getLabel('for'),
-                    getAddressVisualization(args[0])
+                    (0, utils_1.getAction)('Revoke approval'),
+                    (0, utils_1.getToken)(call.to, args[1]),
+                    (0, utils_1.getLabel)('for'),
+                    (0, utils_1.getAddressVisualization)(args[0])
                 ];
         },
         [iface.getFunction('increaseAllowance')?.selector]: (call) => {
             const { spender, addedValue } = iface.decodeFunctionData('increaseAllowance', call.data);
             return [
-                getAction('Increase allowance'),
-                getLabel('of'),
-                getAddressVisualization(spender),
-                getLabel('with'),
-                getToken(call.to, addedValue)
+                (0, utils_1.getAction)('Increase allowance'),
+                (0, utils_1.getLabel)('of'),
+                (0, utils_1.getAddressVisualization)(spender),
+                (0, utils_1.getLabel)('with'),
+                (0, utils_1.getToken)(call.to, addedValue)
             ];
         },
         [iface.getFunction('decreaseAllowance')?.selector]: (call) => {
             const { spender, subtractedValue } = iface.decodeFunctionData('decreaseAllowance', call.data);
             return [
-                getAction('Decrease allowance'),
-                getLabel('of'),
-                getAddressVisualization(spender),
-                getLabel('with'),
-                getToken(call.to, subtractedValue)
+                (0, utils_1.getAction)('Decrease allowance'),
+                (0, utils_1.getLabel)('of'),
+                (0, utils_1.getAddressVisualization)(spender),
+                (0, utils_1.getLabel)('with'),
+                (0, utils_1.getToken)(call.to, subtractedValue)
             ];
         },
         [iface.getFunction('transfer')?.selector]: (call) => {
             const args = iface.parseTransaction(call)?.args.toArray() || [];
             return [
-                getAction('Send'),
-                getToken(call.to, args[1]),
-                getLabel('to'),
-                getAddressVisualization(args[0])
+                (0, utils_1.getAction)('Send'),
+                (0, utils_1.getToken)(call.to, args[1]),
+                (0, utils_1.getLabel)('to'),
+                (0, utils_1.getAddressVisualization)(args[0])
             ];
         },
         [iface.getFunction('transferFrom')?.selector]: (call) => {
             const args = iface.parseTransaction(call)?.args.toArray() || [];
             if (args[0] === accountOp.accountAddr) {
                 return [
-                    getAction('Transfer'),
-                    getToken(call.to, args[2]),
-                    getLabel('to'),
-                    getAddressVisualization(args[1])
+                    (0, utils_1.getAction)('Transfer'),
+                    (0, utils_1.getToken)(call.to, args[2]),
+                    (0, utils_1.getLabel)('to'),
+                    (0, utils_1.getAddressVisualization)(args[1])
                 ];
             }
             if (args[1] === accountOp.accountAddr) {
                 return [
-                    getAction('Take'),
-                    getToken(call.to, args[2]),
-                    getLabel('from'),
-                    getAddressVisualization(args[0])
+                    (0, utils_1.getAction)('Take'),
+                    (0, utils_1.getToken)(call.to, args[2]),
+                    (0, utils_1.getLabel)('from'),
+                    (0, utils_1.getAddressVisualization)(args[0])
                 ];
             }
             return [
-                getAction('Move'),
-                getToken(call.to, args[2]),
-                getLabel('from'),
-                getAddressVisualization(args[0]),
-                getLabel('to'),
-                getAddressVisualization(args[1])
+                (0, utils_1.getAction)('Move'),
+                (0, utils_1.getToken)(call.to, args[2]),
+                (0, utils_1.getLabel)('from'),
+                (0, utils_1.getAddressVisualization)(args[0]),
+                (0, utils_1.getLabel)('to'),
+                (0, utils_1.getAddressVisualization)(args[1])
             ];
         }
     };
@@ -155,4 +159,5 @@ export const genericErc20Humanizer = (accountOp, currentIrCalls) => {
     });
     return newCalls;
 };
+exports.genericErc20Humanizer = genericErc20Humanizer;
 //# sourceMappingURL=tokens.js.map

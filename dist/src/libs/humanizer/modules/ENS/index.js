@@ -1,10 +1,13 @@
-import { getAddress, Interface, isAddress } from 'ethers';
-import { registeredCoinTypes } from '../../const/coinType';
-import { getAction, getAddressVisualization, getLabel } from '../../utils';
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.ensModule = void 0;
+const ethers_1 = require("ethers");
+const coinType_1 = require("../../const/coinType");
+const utils_1 = require("../../utils");
 const ENS_CONTROLLER = '0x253553366Da8546fC250F225fe3d25d0C782303b';
 const ENS_RESOLVER = '0x231b0Ee14048e9dCcD1d247744d114a4EB5E8E63';
 const BULK_RENEWAL = '0xa12159e5131b1eEf6B4857EEE3e1954744b5033A';
-const iface = new Interface([
+const iface = new ethers_1.Interface([
     'function register(string name,address owner, uint256 duration, bytes32 secret, address resolver, bytes[] data, bool reverseRecord, uint16 ownerControlledFuses)',
     'function commit(bytes32)',
     'function setText(bytes32 node,string calldata key,string calldata value)',
@@ -21,10 +24,10 @@ const getDurationText = (duration) => {
     const durationLabel = `${duration / YEAR_IN_SECONDS} year${duration < 2n * YEAR_IN_SECONDS ? '' : 's'}`;
     return durationLabel;
 };
-export const ensModule = (accountOp, irCalls) => {
+const ensModule = (accountOp, irCalls) => {
     // @TODO: set text and others
     return irCalls.map((call) => {
-        if (getAddress(call.to) === ENS_CONTROLLER) {
+        if ((0, ethers_1.getAddress)(call.to) === ENS_CONTROLLER) {
             if (call.data.slice(0, 10) === iface.getFunction('register').selector) {
                 const { name, owner, duration
                 // secret,
@@ -33,28 +36,28 @@ export const ensModule = (accountOp, irCalls) => {
                 // reverseRecord,
                 // ownerControlledFuses
                  } = iface.decodeFunctionData('register', call.data);
-                const fullVisualization = [getAction('Register'), getLabel(`${name}.ens`, true)];
+                const fullVisualization = [(0, utils_1.getAction)('Register'), (0, utils_1.getLabel)(`${name}.ens`, true)];
                 if (owner !== accountOp.accountAddr)
-                    fullVisualization.push(getLabel('to'), getAddressVisualization(owner));
+                    fullVisualization.push((0, utils_1.getLabel)('to'), (0, utils_1.getAddressVisualization)(owner));
                 const durationLabel = getDurationText(duration);
-                fullVisualization.push(getLabel('for'), getLabel(durationLabel, true));
+                fullVisualization.push((0, utils_1.getLabel)('for'), (0, utils_1.getLabel)(durationLabel, true));
                 return { ...call, fullVisualization };
             }
             if (call.data.slice(0, 10) === iface.getFunction('renew').selector) {
                 const { id, duration } = iface.decodeFunctionData('renew', call.data);
                 const durationLabel = getDurationText(duration);
                 const fullVisualization = [
-                    getAction('Renew'),
-                    getLabel(`${id}.eth`),
-                    getLabel('for'),
-                    getLabel(durationLabel, true)
+                    (0, utils_1.getAction)('Renew'),
+                    (0, utils_1.getLabel)(`${id}.eth`),
+                    (0, utils_1.getLabel)('for'),
+                    (0, utils_1.getLabel)(durationLabel, true)
                 ];
                 return { ...call, fullVisualization };
             }
             if (call.data.slice(0, 10) === iface.getFunction('commit').selector) {
                 return {
                     ...call,
-                    fullVisualization: [getAction('Request'), getLabel('to register an ENS record')]
+                    fullVisualization: [(0, utils_1.getAction)('Request'), (0, utils_1.getLabel)('to register an ENS record')]
                 };
             }
         }
@@ -63,66 +66,67 @@ export const ensModule = (accountOp, irCalls) => {
                 const { 
                 // node,
                 key, value } = iface.decodeFunctionData('setText', data);
-                return [getAction('Set'), getLabel(`${key} to`), getLabel(value, true)];
+                return [(0, utils_1.getAction)('Set'), (0, utils_1.getLabel)(`${key} to`), (0, utils_1.getLabel)(value, true)];
             },
             [iface.getFunction('setAddr').selector]: (data) => {
                 const { 
                 // node,
                 coinType, a } = iface.decodeFunctionData('setAddr', data);
-                const ct = registeredCoinTypes[Number(coinType)];
+                const ct = coinType_1.registeredCoinTypes[Number(coinType)];
                 const networkName = (ct && ct[2]) || 'Unknown network';
                 return networkName === 'Ether'
                     ? [
-                        getAction('Transfer ENS'),
-                        getLabel('to'),
-                        isAddress(a) ? getAddressVisualization(a) : getLabel(a, true)
+                        (0, utils_1.getAction)('Transfer ENS'),
+                        (0, utils_1.getLabel)('to'),
+                        (0, ethers_1.isAddress)(a) ? (0, utils_1.getAddressVisualization)(a) : (0, utils_1.getLabel)(a, true)
                     ]
                     : [
-                        getAction('Set'),
-                        getLabel('address'),
-                        isAddress(a) ? getAddressVisualization(a) : getLabel(a, true),
-                        getLabel('on'),
-                        getLabel(networkName, true)
+                        (0, utils_1.getAction)('Set'),
+                        (0, utils_1.getLabel)('address'),
+                        (0, ethers_1.isAddress)(a) ? (0, utils_1.getAddressVisualization)(a) : (0, utils_1.getLabel)(a, true),
+                        (0, utils_1.getLabel)('on'),
+                        (0, utils_1.getLabel)(networkName, true)
                     ];
             },
             [iface.getFunction('setContenthash').selector]: () => {
-                return [getAction('Update'), getLabel('data')];
+                return [(0, utils_1.getAction)('Update'), (0, utils_1.getLabel)('data')];
             },
             [iface.getFunction('setABI').selector]: () => {
-                return [getAction('Set'), getLabel('ABI')];
+                return [(0, utils_1.getAction)('Set'), (0, utils_1.getLabel)('ABI')];
             }
         };
-        if (getAddress(call.to) === ENS_RESOLVER) {
+        if ((0, ethers_1.getAddress)(call.to) === ENS_RESOLVER) {
             if (resolverMatcher[call.data.slice(0, 10)])
                 return { ...call, fullVisualization: resolverMatcher[call.data.slice(0, 10)](call.data) };
             if (call.data.slice(0, 10) === iface.getFunction('multicall').selector) {
                 const { data } = iface.decodeFunctionData('multicall', call.data);
-                const separator = getLabel('and');
+                const separator = (0, utils_1.getLabel)('and');
                 const fullVisualization = data
                     .map((i) => {
                     return resolverMatcher[i.slice(0, 10)]
                         ? resolverMatcher[i.slice(0, 10)](i)
-                        : [getAction('Unknown ENS action')];
+                        : [(0, utils_1.getAction)('Unknown ENS action')];
                 })
                     .reduce((acc, curr, index) => acc.concat(index ? [separator, ...curr] : curr), []);
                 return { ...call, fullVisualization };
             }
         }
-        if (getAddress(call.to) === BULK_RENEWAL &&
+        if ((0, ethers_1.getAddress)(call.to) === BULK_RENEWAL &&
             call.data.startsWith(iface.getFunction('renewAll').selector)) {
             const { names, duration } = iface.decodeFunctionData('renewAll', call.data);
             const durationLabel = getDurationText(duration);
             return {
                 ...call,
                 fullVisualization: [
-                    getAction('Renew'),
-                    ...names.map((name) => getLabel(`${name}.eth`, true)),
-                    getLabel('for'),
-                    getLabel(durationLabel, true)
+                    (0, utils_1.getAction)('Renew'),
+                    ...names.map((name) => (0, utils_1.getLabel)(`${name}.eth`, true)),
+                    (0, utils_1.getLabel)('for'),
+                    (0, utils_1.getLabel)(durationLabel, true)
                 ]
             };
         }
         return call;
     });
 };
+exports.ensModule = ensModule;
 //# sourceMappingURL=index.js.map

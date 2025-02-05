@@ -1,5 +1,8 @@
-import { isHexString, toUtf8String } from 'ethers';
-import { getAction, getLabel, getToken } from '../utils';
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.openseaMessageModule = void 0;
+const ethers_1 = require("ethers");
+const utils_1 = require("../utils");
 const SEAPORT_ADDRESS = [
     '0x0000000000000068F116a894984e2DB1123eB395',
     '0x00000000000000ADc04C56Bf30aC9d3c0aAF14dC',
@@ -8,24 +11,24 @@ const SEAPORT_ADDRESS = [
     '0x00e5F120f500006757E984F1DED400fc00370000',
     '0x0000f00000627D293Ab4Dfb40082001724dB006F'
 ];
-export const openseaMessageModule = (message) => {
+const openseaMessageModule = (message) => {
     if (message.content.kind === 'message' && typeof message.content.message === 'string') {
         let messageAsText = message.content.message;
-        if (isHexString(message.content.message) && message.content.message.length % 2 === 0) {
-            messageAsText = toUtf8String(message.content.message);
+        if ((0, ethers_1.isHexString)(message.content.message) && message.content.message.length % 2 === 0) {
+            messageAsText = (0, ethers_1.toUtf8String)(message.content.message);
         }
         const OPENSEA_LOGIN_MESSAGE_PREFIX = 'Welcome to OpenSea!';
         if (messageAsText.includes(OPENSEA_LOGIN_MESSAGE_PREFIX) &&
             messageAsText.toLowerCase().includes(message.accountAddr.toLowerCase())) {
             return {
-                fullVisualization: [getAction('Log in'), getLabel('OpenSea', true)]
+                fullVisualization: [(0, utils_1.getAction)('Log in'), (0, utils_1.getLabel)('OpenSea', true)]
             };
         }
         const OPENSEA_PRO_LOGIN_MESSAGE_PREFIX = 'Sign in to OpenSea Pro';
         if (messageAsText.includes(OPENSEA_PRO_LOGIN_MESSAGE_PREFIX) &&
             messageAsText.toLowerCase().includes(message.accountAddr.toLowerCase())) {
             return {
-                fullVisualization: [getAction('Log in'), getLabel('OpenSea Pro', true)]
+                fullVisualization: [(0, utils_1.getAction)('Log in'), (0, utils_1.getLabel)('OpenSea Pro', true)]
             };
         }
     }
@@ -53,14 +56,15 @@ export const openseaMessageModule = (message) => {
                 .filter((x) => x);
             return {
                 fullVisualization: [
-                    getAction('Make offer to swap'),
-                    ...itemsToList.map(({ address, amountOrId }) => getToken(address, amountOrId)),
-                    getLabel('for'),
-                    ...itemsToGet.map(({ address, amountOrId }) => getToken(address, amountOrId))
+                    (0, utils_1.getAction)('Make offer to swap'),
+                    ...itemsToList.map(({ address, amountOrId }) => (0, utils_1.getToken)(address, amountOrId)),
+                    (0, utils_1.getLabel)('for'),
+                    ...itemsToGet.map(({ address, amountOrId }) => (0, utils_1.getToken)(address, amountOrId))
                 ]
             };
         }
     }
     return { fullVisualization: [] };
 };
+exports.openseaMessageModule = openseaMessageModule;
 //# sourceMappingURL=openseaModule.js.map

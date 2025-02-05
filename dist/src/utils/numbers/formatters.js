@@ -1,4 +1,7 @@
-import { formatUnits, parseUnits } from 'ethers';
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.safeTokenAmountAndNumberMultiplication = exports.convertTokenPriceToBigInt = void 0;
+const ethers_1 = require("ethers");
 /**
  * Converts floating point token price to big int
  */
@@ -16,14 +19,15 @@ const convertTokenPriceToBigInt = (tokenPrice) => {
     }
     // Regular number handling
     const tokenPriceDecimals = tokenPriceString.split('.')[1]?.length || 0;
-    const tokenPriceBigInt = parseUnits(tokenPriceString, tokenPriceDecimals);
+    const tokenPriceBigInt = (0, ethers_1.parseUnits)(tokenPriceString, tokenPriceDecimals);
     return { tokenPriceBigInt, tokenPriceDecimals };
 };
+exports.convertTokenPriceToBigInt = convertTokenPriceToBigInt;
 const safeTokenAmountAndNumberMultiplication = (amount, decimals, tokenPrice) => {
     const { tokenPriceBigInt, tokenPriceDecimals } = convertTokenPriceToBigInt(tokenPrice);
-    return formatUnits(amount * tokenPriceBigInt, 
+    return (0, ethers_1.formatUnits)(amount * tokenPriceBigInt, 
     // Shift the decimal point by the number of decimals in the token price
     decimals + tokenPriceDecimals);
 };
-export { convertTokenPriceToBigInt, safeTokenAmountAndNumberMultiplication };
+exports.safeTokenAmountAndNumberMultiplication = safeTokenAmountAndNumberMultiplication;
 //# sourceMappingURL=formatters.js.map

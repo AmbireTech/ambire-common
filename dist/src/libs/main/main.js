@@ -1,8 +1,12 @@
-import generateSpoofSig from '../../utils/generateSpoofSig';
-import { isSmartAccount } from '../account/account';
-import { getAccountOpsByNetwork } from '../actions/actions';
-import { adjustEntryPointAuthorization } from '../signMessage/signMessage';
-export const batchCallsFromUserRequests = ({ accountAddr, networkId, userRequests }) => {
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.getAccountOpsForSimulation = exports.makeBasicAccountOpAction = exports.makeSmartAccountOpAction = exports.buildSwitchAccountUserRequest = exports.ACCOUNT_SWITCH_USER_REQUEST = exports.batchCallsFromUserRequests = void 0;
+const tslib_1 = require("tslib");
+const generateSpoofSig_1 = tslib_1.__importDefault(require("../../utils/generateSpoofSig"));
+const account_1 = require("../account/account");
+const actions_1 = require("../actions/actions");
+const signMessage_1 = require("../signMessage/signMessage");
+const batchCallsFromUserRequests = ({ accountAddr, networkId, userRequests }) => {
     return userRequests.filter((r) => r.action.kind === 'calls').reduce((uCalls, req) => {
         if (req.meta.networkId === networkId && req.meta.accountAddr === accountAddr) {
             const { calls } = req.action;
@@ -11,10 +15,11 @@ export const batchCallsFromUserRequests = ({ accountAddr, networkId, userRequest
         return uCalls;
     }, []);
 };
-export const ACCOUNT_SWITCH_USER_REQUEST = 'ACCOUNT_SWITCH_USER_REQUEST';
-export const buildSwitchAccountUserRequest = ({ nextUserRequest, selectedAccountAddr, networkId, session, dappPromise }) => {
+exports.batchCallsFromUserRequests = batchCallsFromUserRequests;
+exports.ACCOUNT_SWITCH_USER_REQUEST = 'ACCOUNT_SWITCH_USER_REQUEST';
+const buildSwitchAccountUserRequest = ({ nextUserRequest, selectedAccountAddr, networkId, session, dappPromise }) => {
     return {
-        id: ACCOUNT_SWITCH_USER_REQUEST,
+        id: exports.ACCOUNT_SWITCH_USER_REQUEST,
         action: {
             kind: 'switchAccount',
             params: {
@@ -34,10 +39,11 @@ export const buildSwitchAccountUserRequest = ({ nextUserRequest, selectedAccount
         }
     };
 };
-export const makeSmartAccountOpAction = ({ account, networkId, nonce, actionsQueue, userRequests, entryPointAuthorizationSignature }) => {
+exports.buildSwitchAccountUserRequest = buildSwitchAccountUserRequest;
+const makeSmartAccountOpAction = ({ account, networkId, nonce, actionsQueue, userRequests, entryPointAuthorizationSignature }) => {
     const accountOpAction = actionsQueue.find((a) => a.type === 'accountOp' && a.id === `${account.addr}-${networkId}`);
     if (accountOpAction) {
-        accountOpAction.accountOp.calls = batchCallsFromUserRequests({
+        accountOpAction.accountOp.calls = (0, exports.batchCallsFromUserRequests)({
             accountAddr: account.addr,
             networkId,
             userRequests
@@ -63,16 +69,16 @@ export const makeSmartAccountOpAction = ({ account, networkId, nonce, actionsQue
         gasLimit: null,
         gasFeePayment: null,
         nonce,
-        signature: account.associatedKeys[0] ? generateSpoofSig(account.associatedKeys[0]) : null,
+        signature: account.associatedKeys[0] ? (0, generateSpoofSig_1.default)(account.associatedKeys[0]) : null,
         accountOpToExecuteBefore: null,
-        calls: batchCallsFromUserRequests({
+        calls: (0, exports.batchCallsFromUserRequests)({
             accountAddr: account.addr,
             networkId,
             userRequests
         }),
         meta: {
             entryPointAuthorization: entryPointAuthorizationSignature
-                ? adjustEntryPointAuthorization(entryPointAuthorizationSignature)
+                ? (0, signMessage_1.adjustEntryPointAuthorization)(entryPointAuthorizationSignature)
                 : undefined,
             paymasterService
         }
@@ -83,7 +89,8 @@ export const makeSmartAccountOpAction = ({ account, networkId, nonce, actionsQue
         accountOp
     };
 };
-export const makeBasicAccountOpAction = ({ account, networkId, nonce, userRequest }) => {
+exports.makeSmartAccountOpAction = makeSmartAccountOpAction;
+const makeBasicAccountOpAction = ({ account, networkId, nonce, userRequest }) => {
     const { calls } = userRequest.action;
     const accountOp = {
         accountAddr: account.addr,
@@ -93,7 +100,7 @@ export const makeBasicAccountOpAction = ({ account, networkId, nonce, userReques
         gasLimit: null,
         gasFeePayment: null,
         nonce,
-        signature: account.associatedKeys[0] ? generateSpoofSig(account.associatedKeys[0]) : null,
+        signature: account.associatedKeys[0] ? (0, generateSpoofSig_1.default)(account.associatedKeys[0]) : null,
         accountOpToExecuteBefore: null,
         calls: calls.map((call) => ({ ...call, fromUserRequestId: userRequest.id }))
     };
@@ -104,15 +111,17 @@ export const makeBasicAccountOpAction = ({ account, networkId, nonce, userReques
         accountOp
     };
 };
-export const getAccountOpsForSimulation = (account, visibleActionsQueue, network, op) => {
-    const isSmart = isSmartAccount(account);
+exports.makeBasicAccountOpAction = makeBasicAccountOpAction;
+const getAccountOpsForSimulation = (account, visibleActionsQueue, network, op) => {
+    const isSmart = (0, account_1.isSmartAccount)(account);
     // if there's an op and the account is either smart or the network supports
     // state override, we pass it along. We do not support simulation for
     // EOAs on networks without state override (but it works for SA)
     if (op && (isSmart || (network && !network.rpcNoStateOverride)))
         return { [op.networkId]: [op] };
     if (isSmart)
-        return getAccountOpsByNetwork(account.addr, visibleActionsQueue) || {};
+        return (0, actions_1.getAccountOpsByNetwork)(account.addr, visibleActionsQueue) || {};
     return {};
 };
+exports.getAccountOpsForSimulation = getAccountOpsForSimulation;
 //# sourceMappingURL=main.js.map

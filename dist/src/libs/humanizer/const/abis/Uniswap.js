@@ -1,4 +1,7 @@
-export const UniswapUniversalRouter = [
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.UniV3Router2 = exports.UniV3Router = exports.UniV2Router = exports.UniswapUniversalRouter = void 0;
+exports.UniswapUniversalRouter = [
     'function collectRewards(bytes looksRareClaim)',
     'function execute(bytes commands, bytes[] inputs) payable',
     'function execute(bytes commands, bytes[] inputs, uint256 deadline) payable',
@@ -8,7 +11,7 @@ export const UniswapUniversalRouter = [
     'function supportsInterface(bytes4 interfaceId) pure returns (bool)',
     'function uniswapV3SwapCallback(int256 amount0Delta, int256 amount1Delta, bytes data)'
 ];
-export const UniV2Router = [
+exports.UniV2Router = [
     'function WETH() view returns (address)',
     'function addLiquidity(address tokenA, address tokenB, uint256 amountADesired, uint256 amountBDesired, uint256 amountAMin, uint256 amountBMin, address to, uint256 deadline) returns (uint256 amountA, uint256 amountB, uint256 liquidity)',
     'function addLiquidityETH(address token, uint256 amountTokenDesired, uint256 amountTokenMin, uint256 amountETHMin, address to, uint256 deadline) payable returns (uint256 amountToken, uint256 amountETH, uint256 liquidity)',
@@ -34,7 +37,7 @@ export const UniV2Router = [
     'function swapTokensForExactETH(uint256 amountOut, uint256 amountInMax, address[] path, address to, uint256 deadline) returns (uint256[] amounts)',
     'function swapTokensForExactTokens(uint256 amountOut, uint256 amountInMax, address[] path, address to, uint256 deadline) returns (uint256[] amounts)'
 ];
-export const UniV3Router = [
+exports.UniV3Router = [
     'function WETH9() view returns (address)',
     'function exactInput((bytes path, address recipient, uint256 deadline, uint256 amountIn, uint256 amountOutMinimum) params) payable returns (uint256 amountOut)',
     'function exactInputSingle((address tokenIn, address tokenOut, uint24 fee, address recipient, uint256 deadline, uint256 amountIn, uint256 amountOutMinimum, uint160 sqrtPriceLimitX96) params) payable returns (uint256 amountOut)',
@@ -53,7 +56,7 @@ export const UniV3Router = [
     'function unwrapWETH9(uint256 amountMinimum, address recipient) payable',
     'function unwrapWETH9WithFee(uint256 amountMinimum, address recipient, uint256 feeBips, address feeRecipient) payable'
 ];
-export const UniV3Router2 = [
+exports.UniV3Router2 = [
     'function WETH9() view returns (address)',
     'function approveMax(address token) payable',
     'function approveMaxMinusOne(address token) payable',

@@ -1,4 +1,7 @@
-export const ERC20 = [
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.WETH = exports.ERC721 = exports.ERC20 = void 0;
+exports.ERC20 = [
     'function name() view returns (string)',
     'function approve(address _spender, uint256 _value) returns (bool)',
     'function totalSupply() view returns (uint256)',
@@ -11,7 +14,7 @@ export const ERC20 = [
     'function decreaseAllowance(address spender, uint256 subtractedValue) returns (bool)',
     'function increaseAllowance(address spender, uint256 addedValue) returns (bool)'
 ];
-export const ERC721 = [
+exports.ERC721 = [
     'function BAYC_PROVENANCE() view returns (string)',
     'function MAX_APES() view returns (uint256)',
     'function REVEAL_TIMESTAMP() view returns (uint256)',
@@ -50,7 +53,7 @@ export const ERC721 = [
     'function transferOwnership(address newOwner)',
     'function withdraw()'
 ];
-export const WETH = [
+exports.WETH = [
     'function name() view returns (string)',
     'function approve(address guy, uint256 wad) returns (bool)',
     'function totalSupply() view returns (uint256)',

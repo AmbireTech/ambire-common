@@ -1,4 +1,7 @@
-export const CurveRouter = [
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.CurveRouter = void 0;
+exports.CurveRouter = [
     'event Exchange(address indexed,address indexed,address[11],uint256[5][5],address[5],uint256,uint256)',
     'fallback()',
     'constructor(address,address,address,address[2])',

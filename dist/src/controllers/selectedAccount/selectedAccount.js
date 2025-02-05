@@ -1,12 +1,16 @@
-import { getAddress } from 'ethers';
-import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy';
-import { isSmartAccount } from '../../libs/account/account';
-import { sortByValue } from '../../libs/defiPositions/helpers';
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.SelectedAccountController = exports.DEFAULT_SELECTED_ACCOUNT_PORTFOLIO = void 0;
+const tslib_1 = require("tslib");
+const ethers_1 = require("ethers");
+const deploy_1 = require("../../consts/deploy");
+const account_1 = require("../../libs/account/account");
+const helpers_1 = require("../../libs/defiPositions/helpers");
 // eslint-disable-next-line import/no-cycle
-import { getNetworksWithDeFiPositionsErrorErrors, getNetworksWithFailedRPCErrors, getNetworksWithPortfolioErrorErrors } from '../../libs/selectedAccount/errors';
-import { calculateSelectedAccountPortfolio, updatePortfolioStateWithDefiPositions } from '../../libs/selectedAccount/selectedAccount';
-import EventEmitter from '../eventEmitter/eventEmitter';
-export const DEFAULT_SELECTED_ACCOUNT_PORTFOLIO = {
+const errors_1 = require("../../libs/selectedAccount/errors");
+const selectedAccount_1 = require("../../libs/selectedAccount/selectedAccount");
+const eventEmitter_1 = tslib_1.__importDefault(require("../eventEmitter/eventEmitter"));
+exports.DEFAULT_SELECTED_ACCOUNT_PORTFOLIO = {
     tokens: [],
     collections: [],
     tokenAmounts: [],
@@ -16,7 +20,7 @@ export const DEFAULT_SELECTED_ACCOUNT_PORTFOLIO = {
     latest: {},
     pending: {}
 };
-export class SelectedAccountController extends EventEmitter {
+class SelectedAccountController extends eventEmitter_1.default {
     #storage;
     #accounts;
     #portfolio = null;
@@ -25,7 +29,7 @@ export class SelectedAccountController extends EventEmitter {
     #networks = null;
     #providers = null;
     account = null;
-    portfolio = DEFAULT_SELECTED_ACCOUNT_PORTFOLIO;
+    portfolio = exports.DEFAULT_SELECTED_ACCOUNT_PORTFOLIO;
     portfolioStartedLoadingAtTimestamp = null;
     dashboardNetworkFilter = null;
     #shouldDebounceFlags = {};
@@ -125,7 +129,7 @@ export class SelectedAccountController extends EventEmitter {
         this.emitUpdate();
     }
     resetSelectedAccountPortfolio(skipUpdate) {
-        this.portfolio = DEFAULT_SELECTED_ACCOUNT_PORTFOLIO;
+        this.portfolio = exports.DEFAULT_SELECTED_ACCOUNT_PORTFOLIO;
         this.#portfolioErrors = [];
         if (!skipUpdate) {
             this.emitUpdate();
@@ -137,10 +141,10 @@ export class SelectedAccountController extends EventEmitter {
         const defiPositionsAccountState = this.#defiPositions.getDefiPositionsState(this.account.addr);
         const latestStateSelectedAccount = structuredClone(this.#portfolio.getLatestPortfolioState(this.account.addr));
         const pendingStateSelectedAccount = structuredClone(this.#portfolio.getPendingPortfolioState(this.account.addr));
-        const latestStateSelectedAccountWithDefiPositions = updatePortfolioStateWithDefiPositions(latestStateSelectedAccount, defiPositionsAccountState, this.areDefiPositionsLoading);
-        const pendingStateSelectedAccountWithDefiPositions = updatePortfolioStateWithDefiPositions(pendingStateSelectedAccount, defiPositionsAccountState, this.areDefiPositionsLoading);
+        const latestStateSelectedAccountWithDefiPositions = (0, selectedAccount_1.updatePortfolioStateWithDefiPositions)(latestStateSelectedAccount, defiPositionsAccountState, this.areDefiPositionsLoading);
+        const pendingStateSelectedAccountWithDefiPositions = (0, selectedAccount_1.updatePortfolioStateWithDefiPositions)(pendingStateSelectedAccount, defiPositionsAccountState, this.areDefiPositionsLoading);
         const hasSignAccountOp = !!this.#actions?.visibleActionsQueue.filter((action) => action.type === 'accountOp');
-        const newSelectedAccountPortfolio = calculateSelectedAccountPortfolio(latestStateSelectedAccountWithDefiPositions, pendingStateSelectedAccountWithDefiPositions, this.portfolio, hasSignAccountOp);
+        const newSelectedAccountPortfolio = (0, selectedAccount_1.calculateSelectedAccountPortfolio)(latestStateSelectedAccountWithDefiPositions, pendingStateSelectedAccountWithDefiPositions, this.portfolio, hasSignAccountOp);
         if (this.portfolioStartedLoadingAtTimestamp && newSelectedAccountPortfolio.isAllReady) {
             this.portfolioStartedLoadingAtTimestamp = null;
         }
@@ -170,13 +174,13 @@ export class SelectedAccountController extends EventEmitter {
         const positionsByProviderWithSortedAssets = positionsByProvider.map((provider) => {
             const positions = provider.positions
                 .map((position) => {
-                const assets = position.assets.sort((a, b) => sortByValue(a.value, b.value));
+                const assets = position.assets.sort((a, b) => (0, helpers_1.sortByValue)(a.value, b.value));
                 return { ...position, assets };
             })
-                .sort((a, b) => sortByValue(a.additionalData.positionInUSD, b.additionalData.positionInUSD));
+                .sort((a, b) => (0, helpers_1.sortByValue)(a.additionalData.positionInUSD, b.additionalData.positionInUSD));
             return { ...provider, positions };
         });
-        const sortedPositionsByProvider = positionsByProviderWithSortedAssets.sort((a, b) => sortByValue(a.positionInUSD, b.positionInUSD));
+        const sortedPositionsByProvider = positionsByProviderWithSortedAssets.sort((a, b) => (0, helpers_1.sortByValue)(a.positionInUSD, b.positionInUSD));
         this.defiPositions = sortedPositionsByProvider;
         if (!skipUpdate) {
             this.emitUpdate();
@@ -214,7 +218,7 @@ export class SelectedAccountController extends EventEmitter {
             return;
         }
         const defiPositionsAccountState = this.#defiPositions.getDefiPositionsState(this.account.addr);
-        const errorBanners = getNetworksWithDeFiPositionsErrorErrors({
+        const errorBanners = (0, errors_1.getNetworksWithDeFiPositionsErrorErrors)({
             networks: this.#networks.networks,
             currentAccountState: defiPositionsAccountState,
             providers: this.#providers.providers,
@@ -237,12 +241,12 @@ export class SelectedAccountController extends EventEmitter {
             }
             return;
         }
-        const networksWithFailedRPCBanners = getNetworksWithFailedRPCErrors({
+        const networksWithFailedRPCBanners = (0, errors_1.getNetworksWithFailedRPCErrors)({
             providers: this.#providers.providers,
             networks: this.#networks.networks,
             networksWithAssets: this.#portfolio.getNetworksWithAssets(this.account.addr)
         });
-        const errorBanners = getNetworksWithPortfolioErrorErrors({
+        const errorBanners = (0, errors_1.getNetworksWithPortfolioErrorErrors)({
             networks: this.#networks.networks,
             selectedAccountLatest: this.portfolio.latest,
             providers: this.#providers.providers
@@ -256,14 +260,14 @@ export class SelectedAccountController extends EventEmitter {
         return [...this.#portfolioErrors, ...this.#defiPositionsErrors];
     }
     get deprecatedSmartAccountBanner() {
-        if (!this.account || !isSmartAccount(this.account))
+        if (!this.account || !(0, account_1.isSmartAccount)(this.account))
             return [];
         if (!this.#accounts.accountStates[this.account.addr] ||
             !this.#accounts.accountStates[this.account.addr].ethereum ||
             !this.#accounts.accountStates[this.account.addr].ethereum.isV2)
             return [];
         if (!this.account.creation ||
-            getAddress(this.account.creation.factoryAddr) === AMBIRE_ACCOUNT_FACTORY)
+            (0, ethers_1.getAddress)(this.account.creation.factoryAddr) === deploy_1.AMBIRE_ACCOUNT_FACTORY)
             return [];
         return [
             {
@@ -291,4 +295,5 @@ export class SelectedAccountController extends EventEmitter {
         };
     }
 }
+exports.SelectedAccountController = SelectedAccountController;
 //# sourceMappingURL=selectedAccount.js.map

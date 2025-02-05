@@ -1,4 +1,7 @@
-export const COMMANDS = {
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.COMMANDS_DESCRIPTIONS = exports.COMMANDS = void 0;
+exports.COMMANDS = {
     FLAG_ALLOW_REVERT: '0x80',
     COMMAND_TYPE_MASK: '0x3f',
     V3_SWAP_EXACT_IN: '0x00',
@@ -33,7 +36,7 @@ export const COMMANDS = {
  * ABI-like structure for each uniswap action
  * https://docs.uniswap.org/contracts/universal-router/technical-reference
  */
-export const COMMANDS_DESCRIPTIONS = {
+exports.COMMANDS_DESCRIPTIONS = {
     V3_SWAP_EXACT_IN: {
         command: '0x00',
         inputsDetails: [

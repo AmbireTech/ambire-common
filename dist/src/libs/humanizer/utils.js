@@ -1,55 +1,70 @@
-import { ZeroAddress } from 'ethers';
-import { geckoIdMapper } from '../../consts/coingecko';
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.eToNative = exports.uintToAddress = exports.EMPTY_HUMANIZER_META = exports.getKnownName = exports.getUnwrapping = exports.getWrapping = exports.getUnknownVisualization = exports.checkIfUnknownAction = exports.getNativePrice = exports.getLink = exports.getDeadline = exports.getDeadlineText = exports.getRecipientText = exports.getOnBehalfOf = exports.getText = exports.getChain = exports.getTokenWithChain = exports.getToken = exports.getAddressVisualization = exports.getImage = exports.getAction = exports.getLabel = exports.randomId = exports.getWarning = void 0;
+const ethers_1 = require("ethers");
+const coingecko_1 = require("../../consts/coingecko");
 const baseUrlCena = 'https://cena.ambire.com/api/v3';
-export function getWarning(content, level = 'caution') {
+function getWarning(content, level = 'caution') {
     return { content, level };
 }
-export const randomId = () => Math.floor(Math.random() * Number.MAX_SAFE_INTEGER);
-export function getLabel(content, isBold) {
-    return { type: 'label', content, id: randomId(), isBold };
+exports.getWarning = getWarning;
+const randomId = () => Math.floor(Math.random() * Number.MAX_SAFE_INTEGER);
+exports.randomId = randomId;
+function getLabel(content, isBold) {
+    return { type: 'label', content, id: (0, exports.randomId)(), isBold };
 }
-export function getAction(content) {
-    return { type: 'action', content, id: randomId() };
+exports.getLabel = getLabel;
+function getAction(content) {
+    return { type: 'action', content, id: (0, exports.randomId)() };
 }
-export function getImage(content) {
-    return { type: 'image', content, id: randomId() };
+exports.getAction = getAction;
+function getImage(content) {
+    return { type: 'image', content, id: (0, exports.randomId)() };
 }
-export function getAddressVisualization(_address) {
+exports.getImage = getImage;
+function getAddressVisualization(_address) {
     const address = _address.toLowerCase();
-    return { type: 'address', address, id: randomId() };
+    return { type: 'address', address, id: (0, exports.randomId)() };
 }
-export function getToken(_address, amount, isHidden, chainId) {
+exports.getAddressVisualization = getAddressVisualization;
+function getToken(_address, amount, isHidden, chainId) {
     const address = _address.toLowerCase();
     return {
         type: 'token',
         address,
         value: BigInt(amount),
-        id: randomId(),
+        id: (0, exports.randomId)(),
         isHidden,
         chainId
     };
 }
-export function getTokenWithChain(address, amount, chainId) {
+exports.getToken = getToken;
+function getTokenWithChain(address, amount, chainId) {
     return getToken(address, amount, undefined, chainId);
 }
-export function getChain(chainId) {
-    return { type: 'chain', id: randomId(), chainId };
+exports.getTokenWithChain = getTokenWithChain;
+function getChain(chainId) {
+    return { type: 'chain', id: (0, exports.randomId)(), chainId };
 }
-export function getText(text) {
-    return { type: 'text', content: text, id: randomId() };
+exports.getChain = getChain;
+function getText(text) {
+    return { type: 'text', content: text, id: (0, exports.randomId)() };
 }
-export function getOnBehalfOf(onBehalfOf, sender) {
+exports.getText = getText;
+function getOnBehalfOf(onBehalfOf, sender) {
     return onBehalfOf.toLowerCase() !== sender.toLowerCase()
         ? [getLabel('on behalf of'), getAddressVisualization(onBehalfOf)]
         : [];
 }
+exports.getOnBehalfOf = getOnBehalfOf;
 // @TODO on some humanization of uniswap there is recipient 0x000...000
-export function getRecipientText(from, recipient) {
+function getRecipientText(from, recipient) {
     return from.toLowerCase() === recipient.toLowerCase()
         ? []
         : [getLabel('and send it to'), getAddressVisualization(recipient)];
 }
-export function getDeadlineText(deadline) {
+exports.getRecipientText = getRecipientText;
+function getDeadlineText(deadline) {
     const minute = 60000n;
     const diff = BigInt(deadline) - BigInt(Date.now());
     if (diff < 0 && diff > -minute * 2n)
@@ -62,24 +77,27 @@ export function getDeadlineText(deadline) {
         return `expires in ${Math.floor(Number(diff / minute))} minutes`;
     return `valid until ${new Date(Number(deadline)).toLocaleString()}`;
 }
-export function getDeadline(deadlineSecs) {
+exports.getDeadlineText = getDeadlineText;
+function getDeadline(deadlineSecs) {
     const deadline = BigInt(deadlineSecs) * 1000n;
     return {
         type: 'deadline',
         value: deadline,
-        id: randomId()
+        id: (0, exports.randomId)()
     };
 }
-export function getLink(url, content) {
-    return { type: 'link', url, content, id: randomId() };
+exports.getDeadline = getDeadline;
+function getLink(url, content) {
+    return { type: 'link', url, content, id: (0, exports.randomId)() };
 }
+exports.getLink = getLink;
 /**
  * Make a request to coingecko to fetch the latest price of the native token.
  * This is used by benzina and hence we cannot wrap the errors in emitError
  */
 // @TODO this shouldn't be here, a more suitable place would be portfolio/gecko
-export async function getNativePrice(network, fetch) {
-    const platformId = geckoIdMapper(ZeroAddress, network);
+async function getNativePrice(network, fetch) {
+    const platformId = (0, coingecko_1.geckoIdMapper)(ethers_1.ZeroAddress, network);
     if (!platformId) {
         throw new Error(`getNativePrice: ${network.name} is not supported`);
     }
@@ -91,30 +109,38 @@ export async function getNativePrice(network, fetch) {
     }
     return response[platformId].usd;
 }
-export function checkIfUnknownAction(v) {
+exports.getNativePrice = getNativePrice;
+function checkIfUnknownAction(v) {
     return !!(v && v[0]?.type === 'action' && v?.[0]?.content?.startsWith('Unknown action'));
 }
-export function getUnknownVisualization(name, call) {
+exports.checkIfUnknownAction = checkIfUnknownAction;
+function getUnknownVisualization(name, call) {
     const unknownVisualization = [
         getAction(`Unknown action (${name})`),
         getLabel('to'),
         getAddressVisualization(call.to)
     ];
     if (call.value)
-        unknownVisualization.push(...[getLabel('and'), getAction('Send'), getToken(ZeroAddress, call.value)]);
+        unknownVisualization.push(...[getLabel('and'), getAction('Send'), getToken(ethers_1.ZeroAddress, call.value)]);
     return unknownVisualization;
 }
-export function getWrapping(address, amount) {
+exports.getUnknownVisualization = getUnknownVisualization;
+function getWrapping(address, amount) {
     return [getAction('Wrap'), getToken(address, amount)];
 }
-export function getUnwrapping(address, amount) {
+exports.getWrapping = getWrapping;
+function getUnwrapping(address, amount) {
     return [getAction('Unwrap'), getToken(address, amount)];
 }
+exports.getUnwrapping = getUnwrapping;
 // @TODO cant this be used in the <Address component>
-export function getKnownName(humanizerMeta, address) {
+function getKnownName(humanizerMeta, address) {
     return humanizerMeta?.knownAddresses?.[address.toLowerCase()]?.name;
 }
-export const EMPTY_HUMANIZER_META = { abis: { NO_ABI: {} }, knownAddresses: {} };
-export const uintToAddress = (uint) => `0x${BigInt(uint).toString(16).slice(-40).padStart(40, '0')}`;
-export const eToNative = (address) => address.slice(2).toLocaleLowerCase() === 'e'.repeat(40) ? ZeroAddress : address;
+exports.getKnownName = getKnownName;
+exports.EMPTY_HUMANIZER_META = { abis: { NO_ABI: {} }, knownAddresses: {} };
+const uintToAddress = (uint) => `0x${BigInt(uint).toString(16).slice(-40).padStart(40, '0')}`;
+exports.uintToAddress = uintToAddress;
+const eToNative = (address) => address.slice(2).toLocaleLowerCase() === 'e'.repeat(40) ? ethers_1.ZeroAddress : address;
+exports.eToNative = eToNative;
 //# sourceMappingURL=utils.js.map

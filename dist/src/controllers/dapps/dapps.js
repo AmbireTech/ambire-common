@@ -1,12 +1,16 @@
-import { Session } from '../../classes/session';
-import predefinedDapps from '../../consts/dappCatalog.json';
-import EventEmitter from '../eventEmitter/eventEmitter';
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.DappsController = void 0;
+const tslib_1 = require("tslib");
+const session_1 = require("../../classes/session");
+const dappCatalog_json_1 = tslib_1.__importDefault(require("../../consts/dappCatalog.json"));
+const eventEmitter_1 = tslib_1.__importDefault(require("../eventEmitter/eventEmitter"));
 // The DappsController is responsible for the following tasks:
 // 1. Managing the dApp catalog
 // 2. Handling active sessions between dApps and the wallet
 // 3. Broadcasting events from the wallet to connected dApps via the Session
 // The possible events include: accountsChanged, chainChanged, disconnect, lock, unlock, and connect.
-export class DappsController extends EventEmitter {
+class DappsController extends eventEmitter_1.default {
     #dapps = [];
     #storage;
     dappSessions = {};
@@ -22,7 +26,7 @@ export class DappsController extends EventEmitter {
         return !!this.dapps;
     }
     get dapps() {
-        const predefinedDappsParsed = predefinedDapps.map(({ url, name, icon, description }) => ({
+        const predefinedDappsParsed = dappCatalog_json_1.default.map(({ url, name, icon, description }) => ({
             name,
             description,
             url,
@@ -50,7 +54,7 @@ export class DappsController extends EventEmitter {
         ]);
         this.#dapps = storedDapps;
         Object.keys(dappSessions).forEach((sessionId) => {
-            const session = new Session(dappSessions[sessionId]);
+            const session = new session_1.Session(dappSessions[sessionId]);
             this.dappSessions[sessionId] = session;
         });
         this.emitUpdate();
@@ -64,7 +68,7 @@ export class DappsController extends EventEmitter {
         this.#storage.set('dappSessions', this.dappSessions);
     }
     #createDappSession = (data) => {
-        const dappSession = new Session(data);
+        const dappSession = new session_1.Session(data);
         this.#dappSessionsSet(dappSession.sessionId, dappSession);
         this.emitUpdate();
         return dappSession;
@@ -141,7 +145,7 @@ export class DappsController extends EventEmitter {
         if (!this.isReady)
             return;
         // do not remove predefined dapps
-        if (predefinedDapps.find((d) => d.url === url))
+        if (dappCatalog_json_1.default.find((d) => d.url === url))
             return;
         this.dapps = this.dapps.filter((d) => d.url !== url);
         this.emitUpdate();
@@ -166,4 +170,5 @@ export class DappsController extends EventEmitter {
         };
     }
 }
+exports.DappsController = DappsController;
 //# sourceMappingURL=dapps.js.map

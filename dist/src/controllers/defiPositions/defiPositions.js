@@ -1,9 +1,13 @@
-import { getAssetValue } from '../../libs/defiPositions/helpers';
-import { getAAVEPositions, getUniV3Positions } from '../../libs/defiPositions/providers';
-import getAccountNetworksWithPositions from '../../libs/defiPositions/providers/helpers/networksWithPositions';
-import { DeFiPositionsError } from '../../libs/defiPositions/types';
-import EventEmitter from '../eventEmitter/eventEmitter';
-export class DefiPositionsController extends EventEmitter {
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.DefiPositionsController = void 0;
+const tslib_1 = require("tslib");
+const helpers_1 = require("../../libs/defiPositions/helpers");
+const providers_1 = require("../../libs/defiPositions/providers");
+const networksWithPositions_1 = tslib_1.__importDefault(require("../../libs/defiPositions/providers/helpers/networksWithPositions"));
+const types_1 = require("../../libs/defiPositions/types");
+const eventEmitter_1 = tslib_1.__importDefault(require("../eventEmitter/eventEmitter"));
+class DefiPositionsController extends eventEmitter_1.default {
     #selectedAccount;
     #providers;
     #networks;
@@ -38,7 +42,7 @@ export class DefiPositionsController extends EventEmitter {
     }
     async #updateNetworksWithPositions(accountId, accountState) {
         const storageStateByAccount = await this.#storage.get('networksWithPositionsByAccounts', {});
-        this.#networksWithPositionsByAccounts[accountId] = getAccountNetworksWithPositions(accountId, accountState, storageStateByAccount, this.#providers.providers);
+        this.#networksWithPositionsByAccounts[accountId] = (0, networksWithPositions_1.default)(accountId, accountState, storageStateByAccount, this.#providers.providers);
         this.emitUpdate();
         await this.#storage.set('networksWithPositionsByAccounts', this.#networksWithPositionsByAccounts);
     }
@@ -74,7 +78,7 @@ export class DefiPositionsController extends EventEmitter {
             try {
                 const previousPositions = networkState.positionsByProvider;
                 const [aavePositions, uniV3Positions] = await Promise.all([
-                    getAAVEPositions(selectedAccountAddr, this.#providers.providers[n.id], n).catch((e) => {
+                    (0, providers_1.getAAVEPositions)(selectedAccountAddr, this.#providers.providers[n.id], n).catch((e) => {
                         console.error('getAAVEPositions error:', e);
                         this.#setProviderError(selectedAccountAddr, n.id, 'AAVE v3', e?.message || 'Unknown error');
                         // We should consider changing the structure of positions in a way
@@ -82,7 +86,7 @@ export class DefiPositionsController extends EventEmitter {
                         // old data can still be displayed
                         return previousPositions?.find((p) => p.providerName === 'AAVE v3') || null;
                     }),
-                    getUniV3Positions(selectedAccountAddr, this.#providers.providers[n.id], n).catch((e) => {
+                    (0, providers_1.getUniV3Positions)(selectedAccountAddr, this.#providers.providers[n.id], n).catch((e) => {
                         console.error('getUniV3Positions error:', e);
                         this.#setProviderError(selectedAccountAddr, n.id, 'Uniswap V3', e?.message || 'Unknown error');
                         // We should consider changing the structure of positions in a way
@@ -100,7 +104,7 @@ export class DefiPositionsController extends EventEmitter {
                 };
                 await this.#setAssetPrices(selectedAccountAddr, n.id).catch((e) => {
                     console.error('#setAssetPrices error:', e);
-                    this.#state[selectedAccountAddr][n.id].error = DeFiPositionsError.AssetPriceError;
+                    this.#state[selectedAccountAddr][n.id].error = types_1.DeFiPositionsError.AssetPriceError;
                 });
             }
             catch (e) {
@@ -108,7 +112,7 @@ export class DefiPositionsController extends EventEmitter {
                 this.#state[selectedAccountAddr][n.id] = {
                     isLoading: false,
                     positionsByProvider: prevPositionsByProvider || [],
-                    error: DeFiPositionsError.CriticalError
+                    error: types_1.DeFiPositionsError.CriticalError
                 };
                 console.error(`updatePositions error on ${n.id}`, e);
             }
@@ -159,7 +163,7 @@ export class DefiPositionsController extends EventEmitter {
                         baseCurrency: currency,
                         price: price
                     }));
-                    const value = getAssetValue(asset.amount, asset.decimals, priceIn);
+                    const value = (0, helpers_1.getAssetValue)(asset.amount, asset.decimals, priceIn);
                     positionInUSD += value;
                     return {
                         ...asset,
@@ -209,4 +213,5 @@ export class DefiPositionsController extends EventEmitter {
         };
     }
 }
+exports.DefiPositionsController = DefiPositionsController;
 //# sourceMappingURL=defiPositions.js.map

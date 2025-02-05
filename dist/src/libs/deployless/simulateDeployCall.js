@@ -1,36 +1,40 @@
-import { ZeroAddress } from 'ethers';
-import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json';
-import { AMBIRE_ACCOUNT_FACTORY, DEPLOYLESS_SIMULATION_FROM } from '../../consts/deploy';
-import { getSmartAccount, getSpoof } from '../account/account';
-import { callToTuple } from '../accountOp/accountOp';
-import { getActivatorCall } from '../userOperation/userOperation';
-import { DeploylessMode, fromDescriptor } from './deployless';
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.getSASupport = void 0;
+const tslib_1 = require("tslib");
+const ethers_1 = require("ethers");
+const AmbireFactory_json_1 = tslib_1.__importDefault(require("../../../contracts/compiled/AmbireFactory.json"));
+const deploy_1 = require("../../consts/deploy");
+const account_1 = require("../account/account");
+const accountOp_1 = require("../accountOp/accountOp");
+const userOperation_1 = require("../userOperation/userOperation");
+const deployless_1 = require("./deployless");
 // simulate a deployless call to the given provider.
 // if the call is successful, it means Ambire smart accounts are supported
 // on the given network
-export async function getSASupport(provider) {
-    const smartAccount = await getSmartAccount([
+async function getSASupport(provider) {
+    const smartAccount = await (0, account_1.getSmartAccount)([
         {
-            addr: DEPLOYLESS_SIMULATION_FROM,
+            addr: deploy_1.DEPLOYLESS_SIMULATION_FROM,
             hash: '0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff'
         }
     ], []);
     const deploylessOptions = {
         blockTag: 'latest',
-        from: DEPLOYLESS_SIMULATION_FROM,
+        from: deploy_1.DEPLOYLESS_SIMULATION_FROM,
         // very important to send to the AMBIRE_ACCOUNT_FACTORY
         // or else the SA address won't match
-        to: AMBIRE_ACCOUNT_FACTORY,
-        mode: DeploylessMode.StateOverride
+        to: deploy_1.AMBIRE_ACCOUNT_FACTORY,
+        mode: deployless_1.DeploylessMode.StateOverride
     };
-    const deployless = fromDescriptor(provider, AmbireFactory, true);
+    const deployless = (0, deployless_1.fromDescriptor)(provider, AmbireFactory_json_1.default, true);
     let supportsStateOverride = true;
     const result = await deployless
         .call('deployAndExecute', [
         smartAccount.creation.bytecode,
         smartAccount.creation.salt,
-        [callToTuple(getActivatorCall(smartAccount.addr))],
-        getSpoof(smartAccount)
+        [(0, accountOp_1.callToTuple)((0, userOperation_1.getActivatorCall)(smartAccount.addr))],
+        (0, account_1.getSpoof)(smartAccount)
     ], deploylessOptions)
         .catch((e) => {
         if (e.message.includes('no response')) {
@@ -39,11 +43,12 @@ export async function getSASupport(provider) {
         // if there's an error, return the zero address indicating that
         // our smart accounts will most likely not work on this chain
         supportsStateOverride = false;
-        return [ZeroAddress];
+        return [ethers_1.ZeroAddress];
     });
     return {
         addressMatches: result[0] === smartAccount.addr,
         supportsStateOverride
     };
 }
+exports.getSASupport = getSASupport;
 //# sourceMappingURL=simulateDeployCall.js.map

@@ -1,4 +1,7 @@
+"use strict";
 /* eslint-disable import/no-extraneous-dependencies */
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.getZapperIcon = exports.getHardcodedIcon = exports.getIconId = void 0;
 const customIcons = {
     '0xb468a1e5596cfbcdf561f21a10490d99b4bb7b68': 'https://upload.wikimedia.org/wikipedia/commons/thumb/5/5a/Jeff_Sessions_with_Elmo_and_Rosita_%28cropped%29.jpg/220px-Jeff_Sessions_with_Elmo_and_Rosita_%28cropped%29.jpg',
     '0x88800092ff476844f74dc2fc427974bbee2794ae': 'https://raw.githubusercontent.com/AmbireTech/ambire-brand/main/logos/ambire_logo_white_bg_250x250.png',
@@ -10,13 +13,16 @@ const customIcons = {
     '0xade00c28244d5ce17d72e40330b1c318cd12b7c3': 'https://raw.githubusercontent.com/AmbireTech/ambire-brand/main/official-logos/Ambire-AdEx/Ambire_AdEx_Symbol_color_white_bg.png' // ADX-TOKEN
 };
 const zapperStorageTokenIcons = 'https://storage.googleapis.com/zapper-fi-assets/tokens';
-export function getIconId(networkId, address) {
+function getIconId(networkId, address) {
     return `${networkId.toLowerCase()}:${address.toLowerCase()}`;
 }
-export function getHardcodedIcon(address) {
+exports.getIconId = getIconId;
+function getHardcodedIcon(address) {
     return customIcons[address.toLowerCase()] || null;
 }
-export function getZapperIcon(networkId, address) {
+exports.getHardcodedIcon = getHardcodedIcon;
+function getZapperIcon(networkId, address) {
     return `${zapperStorageTokenIcons}/${networkId.toLowerCase()}/${address.toLowerCase()}.png`;
 }
+exports.getZapperIcon = getZapperIcon;
 //# sourceMappingURL=icons.js.map

@@ -1,6 +1,9 @@
+"use strict";
 /* eslint-disable class-methods-use-this */
 /* eslint-disable @typescript-eslint/no-unused-vars */
-import { Biconomy } from './biconomy';
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.BrokenBiconomyBroadcast = void 0;
+const biconomy_1 = require("./biconomy");
 /**
  * DANGER
  * This class is made purely for the intention of using it for tests
@@ -8,9 +11,10 @@ import { Biconomy } from './biconomy';
  * When broadcast fails, estimation should switch to pimlico
  * and continue on
  */
-export class BrokenBiconomyBroadcast extends Biconomy {
+class BrokenBiconomyBroadcast extends biconomy_1.Biconomy {
     broadcast(userOperation, network) {
         throw new Error('Internal error from bundler');
     }
 }
+exports.BrokenBiconomyBroadcast = BrokenBiconomyBroadcast;
 //# sourceMappingURL=brokenBiconomyBroadcast.js.map

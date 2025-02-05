@@ -1,4 +1,7 @@
-export const RouteProcessor = [
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.RouteProcessor = void 0;
+exports.RouteProcessor = [
     'function bentoBox() view returns (address)',
     'function owner() view returns (address)',
     'function pause()',

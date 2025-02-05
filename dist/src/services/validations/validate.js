@@ -1,8 +1,13 @@
-import { getAddress, parseUnits } from 'ethers';
-import isEmail from 'validator/es/lib/isEmail';
-import { getTokenAmount } from '../../libs/portfolio/helpers';
-import { getSanitizedAmount } from '../../libs/transfer/amount';
-import { isValidAddress } from '../address';
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.isValidURL = exports.isValidPassword = exports.isValidCode = exports.validateSendNftAddress = exports.validateSendTransferAmount = exports.validateSendTransferAddress = exports.validateAddAuthSignerAddress = exports.isEmail = void 0;
+const tslib_1 = require("tslib");
+const ethers_1 = require("ethers");
+const isEmail_1 = tslib_1.__importDefault(require("validator/es/lib/isEmail"));
+exports.isEmail = isEmail_1.default;
+const helpers_1 = require("../../libs/portfolio/helpers");
+const amount_1 = require("../../libs/transfer/amount");
+const address_1 = require("../address");
 const validateAddress = (address) => {
     if (!(address && address.length)) {
         return {
@@ -10,14 +15,14 @@ const validateAddress = (address) => {
             message: ''
         };
     }
-    if (!(address && isValidAddress(address))) {
+    if (!(address && (0, address_1.isValidAddress)(address))) {
         return {
             success: false,
             message: 'Invalid address.'
         };
     }
     try {
-        getAddress(address);
+        (0, ethers_1.getAddress)(address);
     }
     catch {
         return {
@@ -39,9 +44,10 @@ const validateAddAuthSignerAddress = (address, selectedAcc) => {
     }
     return { success: true, message: '' };
 };
+exports.validateAddAuthSignerAddress = validateAddAuthSignerAddress;
 const validateSendTransferAddress = (address, selectedAcc, addressConfirmed, isRecipientAddressUnknown, isRecipientHumanizerKnownTokenOrSmartContract, isUDAddress, isEnsAddress, isRecipientDomainResolving, isSWWarningVisible, isSWWarningAgreed) => {
     // Basic validation is handled in the AddressInput component and we don't want to overwrite it.
-    if (!isValidAddress(address) || isRecipientDomainResolving) {
+    if (!(0, address_1.isValidAddress)(address) || isRecipientDomainResolving) {
         return {
             success: true,
             message: ''
@@ -87,8 +93,9 @@ const validateSendTransferAddress = (address, selectedAcc, addressConfirmed, isR
     }
     return { success: true, message: '' };
 };
+exports.validateSendTransferAddress = validateSendTransferAddress;
 const validateSendTransferAmount = (amount, maxAmount, maxAmountInFiat, selectedAsset) => {
-    const sanitizedAmount = getSanitizedAmount(amount, selectedAsset.decimals);
+    const sanitizedAmount = (0, amount_1.getSanitizedAmount)(amount, selectedAsset.decimals);
     if (!(sanitizedAmount && sanitizedAmount.length)) {
         return {
             success: false,
@@ -108,8 +115,8 @@ const validateSendTransferAmount = (amount, maxAmount, maxAmountInFiat, selected
                     success: false,
                     message: 'Token amount too low.'
                 };
-            const currentAmount = parseUnits(sanitizedAmount, selectedAsset.decimals);
-            if (currentAmount > getTokenAmount(selectedAsset)) {
+            const currentAmount = (0, ethers_1.parseUnits)(sanitizedAmount, selectedAsset.decimals);
+            if (currentAmount > (0, helpers_1.getTokenAmount)(selectedAsset)) {
                 return {
                     success: false,
                     message: `The amount is greater than the asset's balance: ${Number(maxAmount) || 0} ${selectedAsset?.symbol}${maxAmountInFiat ? `/ ${Number(maxAmountInFiat)} USD.` : ''}`
@@ -126,6 +133,7 @@ const validateSendTransferAmount = (amount, maxAmount, maxAmountInFiat, selected
     }
     return { success: true, message: '' };
 };
+exports.validateSendTransferAmount = validateSendTransferAmount;
 const validateSendNftAddress = (address, selectedAcc, addressConfirmed, isRecipientAddressUnknown, isRecipientHumanizerKnownTokenOrSmartContract, metadata, selectedNetwork, network, isUDAddress, isEnsAddress, isRecipientDomainResolving) => {
     const isValidAddr = validateSendTransferAddress(address, selectedAcc, addressConfirmed, isRecipientAddressUnknown, isRecipientHumanizerKnownTokenOrSmartContract, isUDAddress, isEnsAddress, isRecipientDomainResolving);
     if (!isValidAddr.success)
@@ -146,11 +154,14 @@ const validateSendNftAddress = (address, selectedAcc, addressConfirmed, isRecipi
     }
     return { success: true, message: '' };
 };
+exports.validateSendNftAddress = validateSendNftAddress;
 const isValidCode = (code) => code.length === 6;
+exports.isValidCode = isValidCode;
 const isValidPassword = (password) => password.length >= 8;
+exports.isValidPassword = isValidPassword;
 function isValidURL(url) {
     const urlRegex = /^(?:https?|ftp):\/\/(?:\w+:{0,1}\w*@)?(?:\S+)(?::\d+)?(?:\/|\/(?:[\w#!:.?+=&%@!\-\/]))?$/;
     return urlRegex.test(url);
 }
-export { isEmail, validateAddAuthSignerAddress, validateSendTransferAddress, validateSendTransferAmount, validateSendNftAddress, isValidCode, isValidPassword, isValidURL };
+exports.isValidURL = isValidURL;
 //# sourceMappingURL=validate.js.map
