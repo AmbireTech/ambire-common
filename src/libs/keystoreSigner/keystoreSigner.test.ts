@@ -8,7 +8,12 @@ import { Key } from '../../interfaces/keystore'
 import { getPrivateKeyFromSeed } from '../keyIterator/keyIterator'
 import { KeystoreSigner } from './keystoreSigner'
 
-const privKey = getPrivateKeyFromSeed(process.env.SEED, 199, BIP44_STANDARD_DERIVATION_TEMPLATE)
+const privKey = getPrivateKeyFromSeed(
+  process.env.SEED,
+  null,
+  199,
+  BIP44_STANDARD_DERIVATION_TEMPLATE
+)
 const keyPublicAddress = new Wallet(privKey).address
 
 const key: Key = {

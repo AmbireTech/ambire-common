@@ -76,7 +76,7 @@ const pass = 'hoiHoi'
 const keystoreSigners = { internal: InternalSigner, ledger: LedgerSigner }
 
 const privKey = stripHexPrefix(
-  getPrivateKeyFromSeed(process.env.SEED, 5, BIP44_STANDARD_DERIVATION_TEMPLATE)
+  getPrivateKeyFromSeed(process.env.SEED, null, 5, BIP44_STANDARD_DERIVATION_TEMPLATE)
 )
 const keyPublicAddress = new ethers.Wallet(privKey).address
 

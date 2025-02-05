@@ -22,10 +22,11 @@ export function isValidPrivateKey(value: string): boolean {
 
 export const getPrivateKeyFromSeed = (
   seed: string,
+  seedPassphrase: string | null | undefined,
   keyIndex: number,
   hdPathTemplate: HD_PATH_TEMPLATE_TYPE
 ) => {
-  const mnemonic = Mnemonic.fromPhrase(seed)
+  const mnemonic = Mnemonic.fromPhrase(seed, seedPassphrase)
   const wallet = HDNodeWallet.fromMnemonic(
     mnemonic,
     getHdPathFromTemplate(hdPathTemplate, keyIndex)
@@ -49,7 +50,9 @@ export class KeyIterator implements KeyIteratorInterface {
 
   #seedPhrase: string | null = null
 
-  constructor(_privKeyOrSeed: string) {
+  #seedPassphrase: string | null = null
+
+  constructor(_privKeyOrSeed: string, _seedPassphrase?: string | null) {
     if (!_privKeyOrSeed) throw new Error('keyIterator: no private key or seed phrase provided')
 
     if (isValidPrivateKey(_privKeyOrSeed)) {
@@ -61,6 +64,10 @@ export class KeyIterator implements KeyIteratorInterface {
     if (Mnemonic.isValidMnemonic(_privKeyOrSeed)) {
       this.#seedPhrase = _privKeyOrSeed
       this.subType = 'seed'
+
+      if (_seedPassphrase) {
+        this.#seedPassphrase = _seedPassphrase
+      }
       return
     }
 
@@ -86,7 +93,7 @@ export class KeyIterator implements KeyIteratorInterface {
       }
 
       if (this.#seedPhrase) {
-        const mnemonic = Mnemonic.fromPhrase(this.#seedPhrase)
+        const mnemonic = Mnemonic.fromPhrase(this.#seedPhrase, this.#seedPassphrase)
 
         for (let i = from; i <= to; i++) {
           const wallet = HDNodeWallet.fromMnemonic(
@@ -122,7 +129,12 @@ export class KeyIterator implements KeyIteratorInterface {
             return []
           }
 
-          const privateKey = getPrivateKeyFromSeed(this.#seedPhrase, index, hdPathTemplate)
+          const privateKey = getPrivateKeyFromSeed(
+            this.#seedPhrase,
+            this.#seedPassphrase,
+            index,
+            hdPathTemplate
+          )
           return [
             {
               addr: new Wallet(privateKey).address,

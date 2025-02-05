@@ -7,16 +7,21 @@ import { BIP44_STANDARD_DERIVATION_TEMPLATE } from '../../consts/derivation'
 import { getPrivateKeyFromSeed, KeyIterator } from './keyIterator'
 
 const seedPhrasePublicAddress1 = new Wallet(
-  getPrivateKeyFromSeed(process.env.SEED, 0, BIP44_STANDARD_DERIVATION_TEMPLATE)
+  getPrivateKeyFromSeed(process.env.SEED, null, 0, BIP44_STANDARD_DERIVATION_TEMPLATE)
 ).address
 const seedPhrasePublicAddress2 = new Wallet(
-  getPrivateKeyFromSeed(process.env.SEED, 1, BIP44_STANDARD_DERIVATION_TEMPLATE)
+  getPrivateKeyFromSeed(process.env.SEED, null, 1, BIP44_STANDARD_DERIVATION_TEMPLATE)
 ).address
 const seedPhrasePublicAddress3 = new Wallet(
-  getPrivateKeyFromSeed(process.env.SEED, 2, BIP44_STANDARD_DERIVATION_TEMPLATE)
+  getPrivateKeyFromSeed(process.env.SEED, null, 2, BIP44_STANDARD_DERIVATION_TEMPLATE)
 ).address
 
-const privKey150 = getPrivateKeyFromSeed(process.env.SEED, 149, BIP44_STANDARD_DERIVATION_TEMPLATE)
+const privKey150 = getPrivateKeyFromSeed(
+  process.env.SEED,
+  null,
+  149,
+  BIP44_STANDARD_DERIVATION_TEMPLATE
+)
 const seedPhrasePublicAddress150 = new Wallet(privKey150).address
 
 describe('KeyIterator', () => {
