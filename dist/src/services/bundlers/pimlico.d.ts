@@ -1,4 +1,4 @@
-import { Network } from 'interfaces/network';
+import { Network } from '../../interfaces/network';
 import { BUNDLER } from '../../consts/bundlers';
 import { Bundler } from './bundler';
 import { GasSpeeds, UserOpStatus } from './types';

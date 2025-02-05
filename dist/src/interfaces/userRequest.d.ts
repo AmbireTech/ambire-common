@@ -1,4 +1,4 @@
-import { SignMessageAction } from 'controllers/actions/actions';
+import { SignMessageAction } from '../controllers/actions/actions';
 import { TypedDataDomain, TypedDataField } from 'ethers';
 import { PaymasterService } from '../libs/erc7677/types';
 import { AccountId } from './account';

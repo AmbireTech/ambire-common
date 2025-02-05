@@ -1,5 +1,5 @@
 import { AbiCoder, concat, getAddress, hexlify, Interface, keccak256, Log, toBeHex } from 'ethers'
-import { Network } from 'interfaces/network'
+import { Network } from '../../interfaces/network'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json'

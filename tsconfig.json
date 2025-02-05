@@ -1,7 +1,6 @@
 {
   "$schema": "https://json.schemastore.org/tsconfig",
   "compilerOptions": {
-    "baseUrl": "src/",
     "noEmit": false,
     "noEmitOnError": true,
     "noEmitHelpers": true,

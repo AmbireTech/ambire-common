@@ -1,5 +1,5 @@
 import { Log } from 'ethers';
-import { Network } from 'interfaces/network';
+import { Network } from '../../interfaces/network';
 import { BUNDLER } from '../../consts/bundlers';
 import { Account, AccountId, AccountOnchainState } from '../../interfaces/account';
 import { AccountOp } from '../accountOp/accountOp';
