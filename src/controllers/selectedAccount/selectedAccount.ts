@@ -37,6 +37,7 @@ export const DEFAULT_SELECTED_ACCOUNT_PORTFOLIO = {
   collections: [],
   tokenAmounts: [],
   totalBalance: 0,
+  isReadyToVisualize: false,
   isAllReady: false,
   networkSimulatedAccountOp: {},
   latest: {},
@@ -137,7 +138,7 @@ export class SelectedAccountController extends EventEmitter {
       this.#debounceFunctionCallsOnSameTick('updateSelectedAccountDefiPositions', () => {
         this.#updateSelectedAccountDefiPositions()
 
-        if (!this.areDefiPositionsLoading && this.portfolio.isAllReady) {
+        if (!this.areDefiPositionsLoading && this.portfolio.isReadyToVisualize) {
           this.#updateSelectedAccountPortfolio(true)
           this.#updateDefiPositionsErrors()
         }
@@ -182,6 +183,7 @@ export class SelectedAccountController extends EventEmitter {
     this.#defiPositionsErrors = []
     this.resetSelectedAccountPortfolio(true)
     this.dashboardNetworkFilter = null
+    this.portfolioStartedLoadingAtTimestamp = null
 
     if (!account) {
       await this.#storage.remove('selectedAccount')
@@ -243,6 +245,7 @@ export class SelectedAccountController extends EventEmitter {
       latestStateSelectedAccountWithDefiPositions,
       pendingStateSelectedAccountWithDefiPositions,
       this.portfolio,
+      this.portfolioStartedLoadingAtTimestamp,
       hasSignAccountOp
     )
 
@@ -255,7 +258,7 @@ export class SelectedAccountController extends EventEmitter {
     }
 
     if (
-      newSelectedAccountPortfolio.isAllReady ||
+      newSelectedAccountPortfolio.isReadyToVisualize ||
       (!this.portfolio?.tokens?.length && newSelectedAccountPortfolio.tokens.length)
     ) {
       this.portfolio = newSelectedAccountPortfolio
@@ -362,7 +365,7 @@ export class SelectedAccountController extends EventEmitter {
       !this.#networks ||
       !this.#providers ||
       !this.#portfolio ||
-      !this.portfolio.isAllReady
+      !this.portfolio.isReadyToVisualize
     ) {
       this.#portfolioErrors = []
       if (!skipUpdate) {

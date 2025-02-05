@@ -53,16 +53,21 @@ export const updatePortfolioStateWithDefiPositions = (
                 t.networkId === networkId
               )
             })
+            let amountPostSimulation
+            let simulationAmount
 
             if (tokenInPortfolioIndex !== -1) {
               const tokenInPortfolio = tokens[tokenInPortfolioIndex]
               const priceUSD = tokenInPortfolio.priceIn.find(
                 ({ baseCurrency }: { baseCurrency: string }) => baseCurrency.toLowerCase() === 'usd'
               )?.price
+
+              amountPostSimulation = tokenInPortfolio.amountPostSimulation
+              simulationAmount = tokenInPortfolio.simulationAmount
               const tokenBalanceUSD = priceUSD
                 ? Number(
                     safeTokenAmountAndNumberMultiplication(
-                      BigInt(tokenInPortfolio.amount),
+                      BigInt(amountPostSimulation || tokenInPortfolio.amount),
                       tokenInPortfolio.decimals,
                       priceUSD
                     )
@@ -82,7 +87,7 @@ export const updatePortfolioStateWithDefiPositions = (
               const protocolTokenBalanceUSD = protocolPriceUSD
                 ? Number(
                     safeTokenAmountAndNumberMultiplication(
-                      BigInt(a.amount),
+                      BigInt(amountPostSimulation || a.amount),
                       Number(a.protocolAsset!.decimals),
                       protocolPriceUSD
                     )
@@ -91,8 +96,11 @@ export const updatePortfolioStateWithDefiPositions = (
 
               networkBalance += protocolTokenBalanceUSD || 0
             }
-            tokens.push({
+
+            const positionAsset = {
               amount: a.amount,
+              amountPostSimulation: a.amountPostSimulation,
+              simulationAmount: a.simulationAmount,
               // Only list the borrowed asset with no price
               priceIn: a.type === AssetType.Collateral ? a.priceIn : [],
               decimals: Number(a.protocolAsset!.decimals),
@@ -105,7 +113,14 @@ export const updatePortfolioStateWithDefiPositions = (
                 onGasTank: false,
                 rewardsType: null
               }
-            })
+            }
+
+            if (simulationAmount) {
+              positionAsset.simulationAmount = simulationAmount
+              positionAsset.amountPostSimulation = amountPostSimulation
+            }
+
+            tokens.push(positionAsset)
           })
       })
     })
@@ -188,15 +203,20 @@ export function calculateSelectedAccountPortfolio(
   latestStateSelectedAccount: AccountState,
   pendingStateSelectedAccount: AccountState,
   accountPortfolio: SelectedAccountPortfolio | null,
+  portfolioStartedLoadingAtTimestamp: number | null,
   hasSignAccountOp?: boolean
 ) {
+  const now = Date.now()
+  const shouldShowPartialResult =
+    portfolioStartedLoadingAtTimestamp && now - portfolioStartedLoadingAtTimestamp > 5000
   const collections: CollectionResult[] = []
   const tokens: SelectedAccountPortfolioTokenResult[] = []
 
   let newTotalBalance: number = 0
 
   const hasLatest = latestStateSelectedAccount && Object.keys(latestStateSelectedAccount).length
-  let allReady = !!hasLatest
+  let isAllReady = !!hasLatest
+  let isReadyToVisualize = false
 
   const hasPending = pendingStateSelectedAccount && Object.keys(pendingStateSelectedAccount).length
   if (!hasLatest && !hasPending) {
@@ -204,6 +224,7 @@ export function calculateSelectedAccountPortfolio(
       tokens: accountPortfolio?.tokens || [],
       collections: accountPortfolio?.collections || [],
       totalBalance: accountPortfolio?.totalBalance || 0,
+      isReadyToVisualize: false,
       isAllReady: false,
       networkSimulatedAccountOp: accountPortfolio?.networkSimulatedAccountOp || {},
       latest: latestStateSelectedAccount,
@@ -273,15 +294,23 @@ export function calculateSelectedAccountPortfolio(
     }
 
     if (!isNetworkReady(networkData)) {
-      allReady = false
+      isAllReady = false
     }
   })
+
+  const tokensWithAmount = tokens.filter((token) => token.amount)
+
+  if ((shouldShowPartialResult && tokensWithAmount.length && !isAllReady) || isAllReady) {
+    // Allow the user to operate with the tokens that have loaded
+    isReadyToVisualize = true
+  }
 
   return {
     totalBalance: newTotalBalance,
     tokens,
     collections,
-    isAllReady: allReady,
+    isReadyToVisualize,
+    isAllReady,
     networkSimulatedAccountOp: simulatedAccountOps,
     latest: stripPortfolioState(latestStateSelectedAccount),
     pending: stripPortfolioState(pendingStateSelectedAccount)
