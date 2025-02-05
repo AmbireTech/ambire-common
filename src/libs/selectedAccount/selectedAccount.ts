@@ -53,16 +53,21 @@ export const updatePortfolioStateWithDefiPositions = (
                 t.networkId === networkId
               )
             })
+            let amountPostSimulation
+            let simulationAmount
 
             if (tokenInPortfolioIndex !== -1) {
               const tokenInPortfolio = tokens[tokenInPortfolioIndex]
               const priceUSD = tokenInPortfolio.priceIn.find(
                 ({ baseCurrency }: { baseCurrency: string }) => baseCurrency.toLowerCase() === 'usd'
               )?.price
+
+              amountPostSimulation = tokenInPortfolio.amountPostSimulation
+              simulationAmount = tokenInPortfolio.simulationAmount
               const tokenBalanceUSD = priceUSD
                 ? Number(
                     safeTokenAmountAndNumberMultiplication(
-                      BigInt(tokenInPortfolio.amount),
+                      BigInt(amountPostSimulation || tokenInPortfolio.amount),
                       tokenInPortfolio.decimals,
                       priceUSD
                     )
@@ -82,7 +87,7 @@ export const updatePortfolioStateWithDefiPositions = (
               const protocolTokenBalanceUSD = protocolPriceUSD
                 ? Number(
                     safeTokenAmountAndNumberMultiplication(
-                      BigInt(a.amount),
+                      BigInt(amountPostSimulation || a.amount),
                       Number(a.protocolAsset!.decimals),
                       protocolPriceUSD
                     )
@@ -91,8 +96,11 @@ export const updatePortfolioStateWithDefiPositions = (
 
               networkBalance += protocolTokenBalanceUSD || 0
             }
-            tokens.push({
+
+            const positionAsset = {
               amount: a.amount,
+              amountPostSimulation: a.amountPostSimulation,
+              simulationAmount: a.simulationAmount,
               // Only list the borrowed asset with no price
               priceIn: a.type === AssetType.Collateral ? a.priceIn : [],
               decimals: Number(a.protocolAsset!.decimals),
@@ -105,7 +113,14 @@ export const updatePortfolioStateWithDefiPositions = (
                 onGasTank: false,
                 rewardsType: null
               }
-            })
+            }
+
+            if (simulationAmount) {
+              positionAsset.simulationAmount = simulationAmount
+              positionAsset.amountPostSimulation = amountPostSimulation
+            }
+
+            tokens.push(positionAsset)
           })
       })
     })
