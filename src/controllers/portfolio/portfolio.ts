@@ -425,7 +425,7 @@ export class PortfolioController extends EventEmitter {
     }
   }
 
-  async updateFirstCashbackConfettiStatus({
+  async updateCashbackStatusByAccount({
     accountId,
     shouldShowBanner,
     shouldGetAdditionalPortfolio
@@ -441,12 +441,12 @@ export class PortfolioController extends EventEmitter {
 
     this.cashbackStatusByAccount = {
       ...this.cashbackStatusByAccount,
-      [accountId]: shouldShowBanner
-        ? { firstCashbackReceivedAt: currentTimestamp, firstCashbackSeenAt: null }
-        : {
-            firstCashbackReceivedAt: currentAccountStatus.firstCashbackReceivedAt,
-            firstCashbackSeenAt: currentTimestamp
-          }
+      [accountId]: {
+        firstCashbackReceivedAt: shouldShowBanner
+          ? currentTimestamp
+          : currentAccountStatus.firstCashbackReceivedAt,
+        firstCashbackSeenAt: shouldShowBanner ? null : currentTimestamp
+      }
     }
     await this.#storage.set('cashbackStatusByAccount', this.cashbackStatusByAccount)
 
@@ -512,10 +512,9 @@ export class PortfolioController extends EventEmitter {
     }
 
     if (shouldShowConfettiOnFirstCashback(accountState, res.data.gasTank.balance)) {
-      await this.updateFirstCashbackConfettiStatus({
+      await this.updateCashbackStatusByAccount({
         accountId,
         shouldShowBanner: true,
-        // toggleModal: false,
         shouldGetAdditionalPortfolio: false
       })
     }
