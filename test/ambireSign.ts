@@ -158,6 +158,7 @@ function getUserOp712Data(
       { name: 'preVerificationGas', type: 'uint256' },
       { name: 'gasFees', type: 'bytes32' },
       { name: 'paymasterAndData', type: 'bytes' },
+      { name: 'callData', type: 'bytes' },
       { name: 'calls', type: 'Transaction[]' },
       { name: 'hash', type: 'bytes32' }
     ]
@@ -171,6 +172,7 @@ function getUserOp712Data(
     preVerificationGas: packedUserOp.preVerificationGas,
     gasFees: packedUserOp.gasFees,
     paymasterAndData: packedUserOp.paymasterAndData,
+    callData: packedUserOp.callData,
     calls,
     hash: userOpHash
   }

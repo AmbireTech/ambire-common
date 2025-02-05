@@ -77,7 +77,17 @@ library Eip712HashBuilder {
   ) internal view returns (bytes32) {
     // decode the calls if any
     Transaction[] memory calls;
-    if (op.callData.length >= 4) calls = abi.decode(op.callData[4:], (Transaction[]));
+    if (op.callData.length >= 4) {
+      bytes4 executeSelector = 0x6171d1c9;
+      bytes4 executeBySenderSelector = 0xabc5345e;
+      bytes4 functionSig = bytes4(op.callData[0:4]);
+
+      if (functionSig == executeBySenderSelector) {
+        calls = abi.decode(op.callData[4:], (Transaction[]));
+      } else if (functionSig == executeSelector) {
+        (calls, ) = abi.decode(op.callData[4:], (Transaction[], bytes));
+      }
+    }
 
     return
       keccak256(
@@ -90,7 +100,7 @@ library Eip712HashBuilder {
                 bytes(
                   // WARNING
                   // removed entryPoint from here as its in the final hash prop. Such a detail is not as important
-                  'Ambire4337AccountOp(address account,uint256 chainId,uint256 nonce,bytes initCode,bytes32 accountGasLimits,uint256 preVerificationGas,bytes32 gasFees,bytes paymasterAndData,Transaction[] calls,bytes32 hash)Transaction(address to,uint256 value,bytes data)'
+                  'Ambire4337AccountOp(address account,uint256 chainId,uint256 nonce,bytes initCode,bytes32 accountGasLimits,uint256 preVerificationGas,bytes32 gasFees,bytes paymasterAndData,bytes callData,Transaction[] calls,bytes32 hash)Transaction(address to,uint256 value,bytes data)'
                 )
               ),
               address(this),
@@ -101,6 +111,7 @@ library Eip712HashBuilder {
               op.preVerificationGas,
               op.gasFees,
               keccak256(op.paymasterAndData),
+              keccak256(op.callData),
               getCallsEncoding(calls),
               hash
             )
