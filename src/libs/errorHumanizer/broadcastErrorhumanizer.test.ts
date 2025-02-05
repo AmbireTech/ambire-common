@@ -2,8 +2,10 @@ import { describe, expect } from '@jest/globals'
 
 import { RelayerPaymasterError } from '../errorDecoder/customErrors'
 import { MockRpcError } from '../errorDecoder/errorDecoder.test'
+import { RelayerError } from '../relayerCall/relayerCall'
 import { getHumanReadableBroadcastError } from './index'
 
+const PREFIX = 'The transaction cannot be broadcast because '
 describe('Broadcast errors are humanized', () => {
   it('Paymaster: selected fee too low', async () => {
     // @TODO: Mock the error properly or adjust the condition in getHumanReadableBroadcastError
@@ -20,7 +22,7 @@ describe('Broadcast errors are humanized', () => {
     const humanizedError = getHumanReadableBroadcastError(error)
 
     expect(humanizedError.message).toBe(
-      'The transaction cannot be broadcast because the selected fee is too low. Please select a higher transaction speed and try again.'
+      `${PREFIX}the selected fee is too low. Please select a higher transaction speed and try again.`
     )
   })
   it('Transaction underpriced', () => {
@@ -34,7 +36,25 @@ describe('Broadcast errors are humanized', () => {
     const humanizedError = getHumanReadableBroadcastError(error)
 
     expect(humanizedError.message).toBe(
-      'The transaction cannot be broadcast because it is underpriced. Please select a higher transaction speed and try again.'
+      `${PREFIX}it is underpriced. Please select a higher transaction speed and try again.`
+    )
+  })
+  it('Relayer user nonce too low', () => {
+    const error = new RelayerError('user nonce too low', {}, {})
+
+    const humanizedError = getHumanReadableBroadcastError(error)
+
+    expect(humanizedError.message).toBe(
+      `${PREFIX}the user nonce is too low. Is there a pending transaction? Please try broadcasting again.`
+    )
+  })
+  it('Random relayer error is displayed to the user', () => {
+    const error = new RelayerError('the hamsters have stopped running', {}, {})
+
+    const humanizedError = getHumanReadableBroadcastError(error)
+
+    expect(humanizedError.message).toBe(
+      `${PREFIX}of an unknown error (Origin: Relayer call). Error code: the hamsters have stopped running\nPlease try again or contact Ambire support for assistance.`
     )
   })
 })
