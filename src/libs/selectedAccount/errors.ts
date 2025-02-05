@@ -7,6 +7,7 @@ import {
   NetworksWithPositions
 } from '../defiPositions/types'
 import { getNetworksWithFailedRPC } from '../networks/networks'
+import { AccountAssetsState } from '../portfolio/interfaces'
 import { PORTFOLIO_LIB_ERROR_NAMES } from '../portfolio/portfolio'
 
 const TEN_MINUTES = 10 * 60 * 1000
@@ -33,11 +34,14 @@ export const getNetworksWithFailedRPCErrors = ({
 }: {
   providers: RPCProviders
   networks: Network[]
-  networksWithAssets: NetworkId[]
+  networksWithAssets: AccountAssetsState
 }): SelectedAccountBalanceError[] => {
   const errors: SelectedAccountBalanceError[] = []
-  const networkIds = getNetworksWithFailedRPC({ providers }).filter((networkId) =>
-    networksWithAssets.includes(networkId)
+  const networkIds = getNetworksWithFailedRPC({ providers }).filter(
+    (networkId) =>
+      (Object.keys(networksWithAssets).includes(networkId) &&
+        networksWithAssets[networkId] === true) ||
+      !Object.keys(networksWithAssets).includes(networkId)
   )
 
   const networksData = networkIds.map((id) => networks.find((n: Network) => n.id === id)!)

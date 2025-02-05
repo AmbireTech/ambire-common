@@ -13,6 +13,8 @@ export interface GetOptionsSimulation {
 }
 export type TokenError = string | '0x'
 
+export type AccountAssetsState = { [networkId: NetworkId]: boolean }
+
 export type TokenResult = {
   symbol: string
   decimals: number
