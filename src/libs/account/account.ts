@@ -323,12 +323,6 @@ export function getUniqueAccountsArray(accounts: Account[]) {
   return Array.from(new Map(accounts.map((account) => [account.addr, account])).values())
 }
 
-// TODO: perhaps include a signature and nonce to check if it already
-// has become smarter
-export function canBecomeSmarter(acc: Account, accKeys: Key[]): boolean {
-  return !acc.creation && !!accKeys.find((key) => key.type === 'internal')
-}
-
 export function getAuthorization(
   account: Account,
   // make sure to pass the EOA nonce here, not the SA or entry point
@@ -350,4 +344,18 @@ export function getAuthorization(
 // basic accounts (excluding smart and smarter)
 export function isBasicAccount(account: Account, state: AccountOnchainState): boolean {
   return !account.creation && !state.isSmarterEoa
+}
+
+// can the account as a whole become smarter (disregarding chain and state)
+export function canBecomeSmarter(acc: Account, accKeys: Key[]): boolean {
+  return !isSmartAccount(acc) && !!accKeys.find((key) => key.type === 'internal')
+}
+
+// can the account become smarter on a specific chain
+export function canBecomeSmarterOnChain(
+  acc: Account,
+  state: AccountOnchainState,
+  accKeys: Key[]
+): boolean {
+  return isBasicAccount(acc, state) && !!accKeys.find((key) => key.type === 'internal')
 }

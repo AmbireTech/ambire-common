@@ -39,7 +39,7 @@ import { Calls, DappUserRequest, SignUserRequest, UserRequest } from '../../inte
 import { WindowManager } from '../../interfaces/window'
 import { getContractImplementation, has7702 } from '../../libs/7702/7702'
 import {
-  canBecomeSmarter,
+  canBecomeSmarterOnChain,
   getDefaultSelectedAccount,
   isBasicAccount,
   isSmartAccount
@@ -1795,9 +1795,9 @@ export class MainController extends EventEmitter {
     if (
       !this.#settings.shouldDisable7702Popup() &&
       has7702(network) &&
-      isBasicAccount(account, accountState) &&
-      canBecomeSmarter(
+      canBecomeSmarterOnChain(
         account,
+        accountState,
         this.keystore.keys.filter((key) =>
           this.selectedAccount.account!.associatedKeys.includes(key.addr)
         )

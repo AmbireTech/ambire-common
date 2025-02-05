@@ -94,8 +94,9 @@ export type Action =
       actionName: 'update-extension-version'
     }
   | {
-      label: 'Activate'
+      label: 'Make me smarter'
       actionName: 'activate-7702'
+      meta: { accountAddr: string }
     }
   | {
       label: 'Retry'
