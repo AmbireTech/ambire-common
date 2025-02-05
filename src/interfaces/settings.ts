@@ -1,4 +1,4 @@
 export interface Settings {
-  shouldDisable7702Popup(): boolean
-  setShouldDisable7702Popup(shouldNotAsk: boolean): void
+  shouldDisable7702Popup(accAddr: string): boolean
+  setShouldDisable7702Popup(accAddr: string, shouldDisable: boolean): void
 }

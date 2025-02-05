@@ -1609,7 +1609,10 @@ export class MainController extends EventEmitter {
     if (!userRequest) return
 
     if (opts && 'shouldDisable7702Asking' in opts) {
-      this.#settings.setShouldDisable7702Popup(opts.shouldDisable7702Asking as boolean)
+      this.#settings.setShouldDisable7702Popup(
+        userRequest.meta.accountAddr,
+        opts.shouldDisable7702Asking as boolean
+      )
     }
 
     this.#handlePreReject(userRequest)
@@ -1794,7 +1797,7 @@ export class MainController extends EventEmitter {
 
     // basic account: ask for 7702 auth
     if (
-      !this.#settings.shouldDisable7702Popup() &&
+      !this.#settings.shouldDisable7702Popup(account.addr) &&
       has7702(network) &&
       canBecomeSmarterOnChain(
         account,
@@ -2906,7 +2909,7 @@ export class MainController extends EventEmitter {
 
     // TODO: talk with the team if this the correct place for the 7702 banners
     const smarterEoaBanner =
-      !this.#settings.shouldDisable7702Popup() &&
+      !this.#settings.shouldDisable7702Popup(this.selectedAccount.account.addr) &&
       canBecomeSmarter(
         this.selectedAccount.account,
         this.keystore.keys.filter((key) =>
