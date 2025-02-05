@@ -332,7 +332,7 @@ export const getFirstCashbackBanners = ({
       id: `${selectedAccountAddr}-first-cashback-banner-banner`,
       type: 'info',
       title: "You've got cashback!",
-      text: 'You just received your first cashback from paying gas with smart accounts.',
+      text: 'You just received your first cashback from paying gas with Smart Account.',
       actions: [
         {
           label: 'Open',
