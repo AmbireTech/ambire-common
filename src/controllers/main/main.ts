@@ -39,6 +39,7 @@ import { Calls, DappUserRequest, SignUserRequest, UserRequest } from '../../inte
 import { WindowManager } from '../../interfaces/window'
 import { getContractImplementation, has7702 } from '../../libs/7702/7702'
 import {
+  canBecomeSmarter,
   canBecomeSmarterOnChain,
   getDefaultSelectedAccount,
   isBasicAccount,
@@ -2904,12 +2905,16 @@ export class MainController extends EventEmitter {
     })
 
     // TODO: talk with the team if this the correct place for the 7702 banners
-    const smarterEoaBanner = getBecomeSmarterEOABanner(
-      this.selectedAccount.account,
-      this.keystore.keys.filter((key) =>
-        this.selectedAccount.account!.associatedKeys.includes(key.addr)
+    const smarterEoaBanner =
+      !this.#settings.shouldDisable7702Popup() &&
+      canBecomeSmarter(
+        this.selectedAccount.account,
+        this.keystore.keys.filter((key) =>
+          this.selectedAccount.account!.associatedKeys.includes(key.addr)
+        )
       )
-    )
+        ? getBecomeSmarterEOABanner(this.selectedAccount.account)
+        : []
 
     return [...accountOpBanners, ...smarterEoaBanner]
   }
