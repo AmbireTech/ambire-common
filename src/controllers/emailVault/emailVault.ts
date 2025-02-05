@@ -138,7 +138,7 @@ export class EmailVaultController extends EventEmitter {
         email: {}
       }),
       this.storage.get(MAGIC_LINK_STORAGE_KEY, {}),
-      this.storage.get(SETUP_BANNER_DISMISSED_AT_STORAGE_KEY, 0)
+      this.storage.get(SETUP_BANNER_DISMISSED_AT_STORAGE_KEY, this.#setupBannerDismissedAt)
     ])
 
     this.emailVaultStates = emailVaultState
