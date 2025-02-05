@@ -1,0 +1,1 @@
+{"version":3,"file":"storage.js","sourceRoot":"","sources":["../../../src/interfaces/storage.ts"],"names":[],"mappings":"","sourcesContent":["export interface Storage {\n  get(key: string, defaultValue: any): Promise<any>\n  set(key: string, value: any): Promise<null>\n  remove(key: string): Promise<null>\n}\n"]}

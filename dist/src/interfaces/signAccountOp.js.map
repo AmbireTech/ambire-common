@@ -1,0 +1,1 @@
+{"version":3,"file":"signAccountOp.js","sourceRoot":"","sources":["../../../src/interfaces/signAccountOp.ts"],"names":[],"mappings":"","sourcesContent":["type Warning = {\n  id: string\n  title: string\n  text?: string\n  promptBeforeSign: boolean\n  displayBeforeSign: boolean\n}\n\nexport type { Warning }\n"]}

@@ -1,5 +1,5 @@
 /* eslint-disable class-methods-use-this */
-import { Network } from 'interfaces/network'
+import { Network } from '../../interfaces/network'
 
 import { BUNDLER, PIMLICO } from '../../consts/bundlers'
 import { Bundler } from './bundler'

@@ -1,14 +1,14 @@
 {
   "$schema": "https://json.schemastore.org/tsconfig",
   "compilerOptions": {
-    "baseUrl": "src/",
     "noEmit": false,
     "noEmitOnError": true,
     "noEmitHelpers": true,
     "lib": ["ESNext", "DOM"],
-    "types": ["node", "jest", "mocha"],
+    "types": ["node", "jest", "mocha", "chrome"],
     "target": "ESNext",
-    "moduleResolution": "node",
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
     "allowSyntheticDefaultImports": true,
     "skipLibCheck": true,
     "allowJs": true,
@@ -31,7 +31,9 @@
     "isolatedModules": true,
     "strict": true,
     "strictPropertyInitialization": true,
-    "resolveJsonModule": true
+    "resolveJsonModule": true,
+    "outDir": "dist"
   },
-  "exclude": ["node_modules"]
+  "include": ["src"],
+  "exclude": ["node_modules", "audits", "test", "scripts", "src/**/*.test.ts", "src/**/tests"]
 }

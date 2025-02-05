@@ -1,0 +1,2 @@
+export declare function estimateWithRetries(fetchRequests: Function, timeoutType: string, errorCallback: Function, timeoutInMill?: number, counter?: number): Promise<any>;
+//# sourceMappingURL=estimateWithRetries.d.ts.map
