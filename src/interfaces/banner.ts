@@ -100,3 +100,7 @@ export type Action =
       label: 'Retry'
       actionName: 'reload-selected-account'
     }
+  | {
+      label: 'Dismiss'
+      actionName: 'dismiss-email-vault'
+    }
