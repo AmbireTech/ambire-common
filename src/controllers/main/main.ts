@@ -1001,16 +1001,8 @@ export class MainController extends EventEmitter {
     )
   }
 
-  async reloadSelectedAccount(
-    options: {
-      forceUpdate?: boolean
-      networkId?: NetworkId
-    } = {
-      forceUpdate: true,
-      networkId: undefined
-    }
-  ) {
-    const { forceUpdate, networkId } = options
+  async reloadSelectedAccount(options?: { forceUpdate?: boolean; networkId?: NetworkId }) {
+    const { forceUpdate = true, networkId } = options || {}
     const networkToUpdate = networkId
       ? this.networks.networks.find((n) => n.id === networkId)
       : undefined
