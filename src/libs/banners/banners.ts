@@ -4,6 +4,7 @@ import { AccountOpAction, Action as ActionFromActionsQueue } from '../../interfa
 import { Action, Banner } from '../../interfaces/banner'
 import { Network } from '../../interfaces/network'
 import { ActiveRoute } from '../../interfaces/swapAndBridge'
+import { CashbackStatusByAccount } from '../portfolio/interfaces'
 import { getIsBridgeTxn, getQuoteRouteSteps } from '../swapAndBridge/swapAndBridge'
 
 const getBridgeBannerTitle = (routeStatus: ActiveRoute['routeStatus']) => {
@@ -311,4 +312,35 @@ export const getKeySyncBanner = (addr: string, email: string, keys: string[]) =>
     ]
   }
   return banner
+}
+
+export const getFirstCashbackBanners = ({
+  selectedAccountAddr,
+  cashbackStatusByAccount
+}: {
+  selectedAccountAddr: string
+  cashbackStatusByAccount: CashbackStatusByAccount
+}): Banner[] => {
+  const banners: Banner[] = []
+
+  const shouldShowBanner =
+    !!cashbackStatusByAccount[selectedAccountAddr]?.firstCashbackReceivedAt &&
+    !cashbackStatusByAccount[selectedAccountAddr]?.firstCashbackSeenAt
+
+  if (shouldShowBanner) {
+    banners.push({
+      id: `${selectedAccountAddr}-first-cashback-banner-banner`,
+      type: 'info',
+      title: "You've got cashback!",
+      text: 'You just received your first cashback from paying gas with Smart Account.',
+      actions: [
+        {
+          label: 'Open',
+          actionName: 'open-first-cashback-modal'
+        }
+      ]
+    })
+  }
+
+  return banners
 }

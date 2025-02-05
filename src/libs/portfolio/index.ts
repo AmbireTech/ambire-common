@@ -2,6 +2,7 @@ import {
   AddrVestingData,
   ClaimableRewardsData,
   CollectionResult,
+  GasTankTokenResult,
   GetOptions,
   Price,
   TokenResult
@@ -16,5 +17,6 @@ export type {
   ClaimableRewardsData,
   AddrVestingData,
   CollectionResult,
-  GetOptions
+  GetOptions,
+  GasTankTokenResult
 }

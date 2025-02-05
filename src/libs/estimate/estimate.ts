@@ -16,7 +16,7 @@ import { InnerCallFailureError } from '../errorDecoder/customErrors'
 import { getHumanReadableEstimationError } from '../errorHumanizer'
 import { getProbableCallData } from '../gasPrice/gasPrice'
 import { hasRelayerSupport } from '../networks/networks'
-import { TokenResult } from '../portfolio'
+import { GasTankTokenResult, TokenResult } from '../portfolio'
 import { getActivatorCall, shouldIncludeActivatorCall } from '../userOperation/userOperation'
 import { estimationErrorFormatted } from './errors'
 import { bundlerEstimate } from './estimateBundler'
@@ -418,8 +418,12 @@ export async function estimate(
   if (opts?.calculateRefund) gasUsed = await refund(account, op, provider, gasUsed)
 
   const feeTokenOptions: FeePaymentOption[] = filteredFeeTokens.map(
-    (token: TokenResult, key: number) => {
-      const availableAmount = token.flags.onGasTank ? token.amount : feeTokenOutcomes[key].amount
+    (token: TokenResult | GasTankTokenResult, key: number) => {
+      // We are using 'availableAmount' here, because it's possible the 'amount' to contains pending top up amount as well
+      const availableAmount =
+        token.flags.onGasTank && 'availableAmount' in token
+          ? token.availableAmount || token.amount
+          : feeTokenOutcomes[key].amount
       return {
         paidBy: account.addr,
         availableAmount,
