@@ -1,3 +1,4 @@
+import { QueueElement } from './batcher'
 import {
   CollectionResult,
   ERC721Enumerable,
@@ -8,7 +9,7 @@ import {
 } from './interfaces'
 
 export function paginate(
-  input: string[] | [string, ERC721Enumerable | ERC721Innumerable][],
+  input: string[] | QueueElement[] | [string, ERC721Enumerable | ERC721Innumerable][],
   limit: number
 ): any[][] {
   const pages = []
