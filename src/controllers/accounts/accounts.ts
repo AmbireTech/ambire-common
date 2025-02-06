@@ -280,6 +280,18 @@ export class AccountsController extends EventEmitter {
     return this.accountStates[addr][networkId]
   }
 
+  async updateDisable7702Reminders(
+    accAddr: string,
+    opts: { disable7702Popup?: boolean; disable7702Banner?: boolean }
+  ) {
+    const account = this.accounts.find((acc) => acc.addr === accAddr)
+    if (!account) return
+
+    if (opts.disable7702Popup) account.disable7702Popup = opts.disable7702Popup
+    if (opts.disable7702Banner) account.disable7702Banner = opts.disable7702Banner
+    await this.#storage.set('accounts', this.accounts)
+  }
+
   toJSON() {
     return {
       ...this,

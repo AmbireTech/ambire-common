@@ -106,3 +106,8 @@ export type Action =
       label: 'Dismiss'
       actionName: 'dismiss-email-vault'
     }
+  | {
+      label: 'Dismiss'
+      actionName: 'dismiss-7702-banner'
+      meta: { accountAddr: string }
+    }

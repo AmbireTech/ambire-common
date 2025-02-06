@@ -19,6 +19,8 @@ export interface Account {
   email?: string
   newlyCreated?: boolean
   newlyAdded?: boolean
+  disable7702Popup?: boolean
+  disable7702Banner?: boolean
 }
 
 export interface AccountCreation {

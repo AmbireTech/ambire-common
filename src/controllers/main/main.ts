@@ -3,7 +3,6 @@
 import { ethErrors } from 'eth-rpc-errors'
 import { getAddress, getBigInt, Interface, isAddress } from 'ethers'
 
-import { Settings } from 'interfaces/settings'
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json'
 import EmittableError from '../../classes/EmittableError'
@@ -42,6 +41,7 @@ import {
   canBecomeSmarter,
   canBecomeSmarterOnChain,
   getDefaultSelectedAccount,
+  hasBecomeSmarter,
   isBasicAccount,
   isSmartAccount
 } from '../../libs/account/account'
@@ -241,8 +241,6 @@ export class MainController extends EventEmitter {
 
   #signAccountOpBroadcastPromise?: Promise<SubmittedAccountOp>
 
-  #settings: Settings
-
   constructor({
     storage,
     fetch,
@@ -252,8 +250,7 @@ export class MainController extends EventEmitter {
     keystoreSigners,
     externalSignerControllers,
     windowManager,
-    notificationManager,
-    settings
+    notificationManager
   }: {
     storage: Storage
     fetch: Fetch
@@ -264,7 +261,6 @@ export class MainController extends EventEmitter {
     externalSignerControllers: ExternalSignerControllers
     windowManager: WindowManager
     notificationManager: NotificationManager
-    settings: Settings
   }) {
     super()
     this.#storage = storage
@@ -391,7 +387,6 @@ export class MainController extends EventEmitter {
       if (!this.signAccountOp) return
       this.emitError(e)
     })
-    this.#settings = settings
   }
 
   /**
@@ -1600,6 +1595,14 @@ export class MainController extends EventEmitter {
     }
   }
 
+  async updateDisable7702Reminders(
+    accountAddr: string,
+    opts: { disable7702Popup?: boolean; disable7702Banner?: boolean }
+  ) {
+    await this.accounts.updateDisable7702Reminders(accountAddr, opts)
+    await this.#selectAccount(accountAddr)
+  }
+
   rejectUserRequest(
     err: string,
     requestId: UserRequest['id'],
@@ -1608,11 +1611,11 @@ export class MainController extends EventEmitter {
     const userRequest = this.userRequests.find((r) => r.id === requestId)
     if (!userRequest) return
 
-    if (opts && 'shouldDisable7702Asking' in opts) {
-      this.#settings.setShouldDisable7702Popup(
-        userRequest.meta.accountAddr,
-        opts.shouldDisable7702Asking as boolean
-      )
+    if (opts && 'shouldDisable7702Asking' in opts && opts.shouldDisable7702Asking) {
+      this.accounts.updateDisable7702Reminders(userRequest.meta.accountAddr, {
+        disable7702Banner: true,
+        disable7702Popup: true
+      })
     }
 
     this.#handlePreReject(userRequest)
@@ -1797,7 +1800,7 @@ export class MainController extends EventEmitter {
 
     // basic account: ask for 7702 auth
     if (
-      !this.#settings.shouldDisable7702Popup(account.addr) &&
+      !account.disable7702Popup &&
       has7702(network) &&
       canBecomeSmarterOnChain(
         account,
@@ -2907,9 +2910,9 @@ export class MainController extends EventEmitter {
       swapAndBridgeRoutesPendingSignature
     })
 
-    // TODO: talk with the team if this the correct place for the 7702 banners
     const smarterEoaBanner =
-      !this.#settings.shouldDisable7702Popup(this.selectedAccount.account.addr) &&
+      !this.selectedAccount.account.disable7702Banner &&
+      !hasBecomeSmarter(this.selectedAccount.account, this.accounts.accountStates) &&
       canBecomeSmarter(
         this.selectedAccount.account,
         this.keystore.keys.filter((key) =>

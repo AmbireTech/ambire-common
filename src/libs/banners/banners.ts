@@ -153,6 +153,11 @@ export const getBecomeSmarterEOABanner = (acc: Account): Banner[] => {
       category: 'activate-7702',
       actions: [
         {
+          label: 'Dismiss',
+          actionName: 'dismiss-7702-banner',
+          meta: { accountAddr: acc.addr }
+        },
+        {
           label: 'Make me smart',
           actionName: 'activate-7702',
           meta: { accountAddr: acc.addr }
