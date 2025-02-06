@@ -143,6 +143,30 @@ export const getDappActionRequestsBanners = (actions: ActionFromActionsQueue[]):
   ]
 }
 
+export const getBecomeSmarterEOABanner = (acc: Account): Banner[] => {
+  return [
+    {
+      id: 'activate-7702',
+      type: 'info',
+      title: 'Activate 7702',
+      text: 'Become smarter EOA',
+      category: 'activate-7702',
+      actions: [
+        {
+          label: 'Dismiss',
+          actionName: 'dismiss-7702-banner',
+          meta: { accountAddr: acc.addr }
+        },
+        {
+          label: 'Make me smart',
+          actionName: 'activate-7702',
+          meta: { accountAddr: acc.addr }
+        }
+      ]
+    }
+  ]
+}
+
 const getAccountOpBannerText = (
   activeSwapAndBridgeRoutesForSelectedAccount: ActiveRoute[],
   chainId: bigint,

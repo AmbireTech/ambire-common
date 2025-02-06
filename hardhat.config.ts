@@ -34,6 +34,14 @@ const config: HardhatUserConfig = {
       url: 'https://invictus.ambire.com/optimism',
       accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
     },
+    pectra: {
+      url: 'https://rpc.pectra-devnet-5.ethpandaops.io',
+      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
+    },
+    odyssey: {
+      url: 'https://odyssey.ithaca.xyz',
+      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
+    },
     ethereum: {
       url: 'https://invictus.ambire.com/ethereum',
       accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
@@ -60,7 +68,7 @@ const config: HardhatUserConfig = {
       },
       {
         network: 'ethereum',
-        chainId: 10,
+        chainId: 1,
         urls: {
           apiURL: 'https://api.etherscan.io/api',
           browserURL: 'https://etherscan.io/'
