@@ -420,7 +420,8 @@ export const processTokens = (
   network: Network,
   hasNonZeroTokens: boolean,
   additionalHints: string[] | undefined,
-  tokenPreferences: TokenPreference[]
+  tokenPreferences: TokenPreference[],
+  customTokens: CustomToken[]
 ): TokenResult[] => {
   // We need to know the native token in order to execute our filtration logic in tokenFilter.
   // For performance reasons, we define it here once, instead of during every single iteration in the reduce method.
@@ -428,6 +429,7 @@ export const processTokens = (
 
   return tokenResults.reduce((tokens, tokenResult) => {
     const token = { ...tokenResult }
+    const isGasTankOrRewards = token.flags.onGasTank || token.flags.rewardsType
 
     const preference = tokenPreferences?.find((tokenPreference) => {
       return tokenPreference.address === token.address && tokenPreference.networkId === network.id
@@ -436,6 +438,13 @@ export const processTokens = (
     if (preference) {
       token.flags.isHidden = preference.isHidden
     }
+
+    token.flags.isCustom =
+      !isGasTankOrRewards &&
+      !!customTokens.find(
+        (customToken) =>
+          customToken.address === token.address && customToken.networkId === network.id
+      )
 
     if (tokenFilter(token, nativeToken!, network, hasNonZeroTokens, additionalHints, !!preference))
       tokens.push(token)

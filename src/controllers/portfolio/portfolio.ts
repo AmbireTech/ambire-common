@@ -582,7 +582,8 @@ export class PortfolioController extends EventEmitter {
         network,
         hasNonZeroTokens,
         additionalHintsErc20Hints,
-        this.tokenPreferences
+        this.tokenPreferences,
+        this.customTokens
       )
 
       accountState[network.id] = {
