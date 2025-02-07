@@ -257,7 +257,7 @@ describe('Actions Controller', () => {
 
     actionsCtrl.addOrUpdateAction(SIGN_ACCOUNT_OP_ACTION, 'last', 'queue-but-open-action-window')
   })
-  test('should update the existing accountOp action by removing a call and add it to queue', (done) => {
+  test('should update a queued account op action by removing a call', (done) => {
     let emitCounter = 0
 
     const UPDATED_SIGN_ACCOUNT_OP_ACTION: AccountOpAction = {
@@ -316,7 +316,7 @@ describe('Actions Controller', () => {
     actionsCtrl.addOrUpdateAction(UPDATED_SIGN_ACCOUNT_OP_ACTION, 'last')
   })
   test('should add an action with priority', (done) => {
-    const BINZIN_ACTION: SignUserRequest = {
+    const BЕNZIN_ACTION: SignUserRequest = {
       id: 3,
       action: { kind: 'benzin' },
       meta: {
@@ -327,9 +327,9 @@ describe('Actions Controller', () => {
       }
     }
     const BENZIN_ACTION: BenzinAction = {
-      id: BINZIN_ACTION.id,
+      id: BЕNZIN_ACTION.id,
       type: 'benzin',
-      userRequest: BINZIN_ACTION
+      userRequest: BЕNZIN_ACTION
     }
 
     let emitCounter = 0
@@ -390,7 +390,7 @@ describe('Actions Controller', () => {
 
     event.emit('windowRemoved', windowId)
   })
-  test('select back the fist account', (done) => {
+  test('select back the first account', (done) => {
     let emitCounter = 0
     const unsubscribe = actionsCtrl.onUpdate(async () => {
       emitCounter++
