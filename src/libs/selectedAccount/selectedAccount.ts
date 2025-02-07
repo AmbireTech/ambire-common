@@ -54,6 +54,8 @@ export const updatePortfolioStateWithDefiPositions = (
               )
             })
 
+            if (tokenInPortfolio?.flags.isHidden) return
+
             // Add only the balance of the collateral tokens to the network balance
             if (a.type === AssetType.Collateral) {
               const protocolPriceUSD = a.priceIn.find(
@@ -92,7 +94,7 @@ export const updatePortfolioStateWithDefiPositions = (
               // Get the price from defiPositions
               tokenInPortfolio.priceIn = a.type === AssetType.Collateral ? a.priceIn : []
             } else {
-              const positionAsset = {
+              const positionAsset: TokenResult = {
                 amount: a.amount,
                 // Only list the borrowed asset with no price
                 priceIn: a.type === AssetType.Collateral ? a.priceIn : [],
@@ -104,7 +106,8 @@ export const updatePortfolioStateWithDefiPositions = (
                   canTopUpGasTank: false,
                   isFeeToken: false,
                   onGasTank: false,
-                  rewardsType: null
+                  rewardsType: null,
+                  isDefiToken: true
                   // @BUG: defi positions tokens can't be hidden and can be added as custom
                   // because processTokens is called in the portfolio
                   // Issue: https://github.com/AmbireTech/ambire-app/issues/3971
