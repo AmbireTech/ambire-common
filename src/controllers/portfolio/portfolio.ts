@@ -689,6 +689,11 @@ export class PortfolioController extends EventEmitter {
             ...((this.#toBeLearnedTokens && this.#toBeLearnedTokens[network.id]) ?? []),
             ...this.customTokens
               .filter(({ networkId, standard }) => networkId === network.id && standard === 'ERC20')
+              .map(({ address }) => address),
+            // We have to add the token preferences to ensure that the user can always see all hidden tokens
+            // in settings, regardless of the selected account
+            ...this.tokenPreferences
+              .filter(({ networkId }) => networkId === network.id)
               .map(({ address }) => address)
           ]
           // TODO: Add custom ERC721 tokens to the hints
@@ -765,7 +770,8 @@ export class PortfolioController extends EventEmitter {
                 network.id,
                 this.#previousHints,
                 key,
-                this.customTokens
+                this.customTokens,
+                this.tokenPreferences
               )
 
               // Updating hints is only needed when the external API response is valid.

@@ -265,7 +265,8 @@ export function getUpdatedHints(
   networkId: NetworkId,
   storagePreviousHints: PreviousHintsStorage,
   key: string,
-  customTokens: CustomToken[]
+  customTokens: CustomToken[],
+  tokenPreferences: TokenPreference[]
 ): PreviousHintsStorage {
   const previousHints = { ...storagePreviousHints }
 
@@ -309,6 +310,10 @@ export function getUpdatedHints(
       networkId
     )
     const lowercaseCustomTokens = getLowercaseAddressArrayForNetwork(customTokens, networkId)
+    const lowercaseTokenPreferences = getLowercaseAddressArrayForNetwork(
+      tokenPreferences,
+      networkId
+    )
     const networkTokensWithBalance = tokens.filter((token) => token.amount > 0n)
     const lowercaseNetworkTokenAddressesWithBalance = getLowercaseAddressArrayForNetwork(
       networkTokensWithBalance,
@@ -337,11 +342,18 @@ export function getUpdatedHints(
 
       const isPinned = lowercaseNetworkPinnedTokenAddresses.includes(lowercaseAddress)
       const isCustomToken = lowercaseCustomTokens.includes(lowercaseAddress)
+      const isTokenPreference = lowercaseTokenPreferences.includes(lowercaseAddress)
       const isTokenInExternalAPIHints =
         lowercaseERC20HintsFromExternalAPI.includes(lowercaseAddress)
       const hasBalance = lowercaseNetworkTokenAddressesWithBalance.includes(lowercaseAddress)
 
-      if (!isTokenInExternalAPIHints && !isPinned && !isCustomToken && hasBalance) {
+      if (
+        !isTokenInExternalAPIHints &&
+        !isPinned &&
+        !isCustomToken &&
+        !isTokenPreference &&
+        hasBalance
+      ) {
         // Don't set the timestamp back to null if the account doesn't have balance for the token
         // as learnedTokens aren't account specific and one account can have balance for the token
         // while other don't
