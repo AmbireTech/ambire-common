@@ -212,12 +212,27 @@ describe('Actions Controller', () => {
 
       if (emitCounter === 2) {
         expect(actionsCtrl.actionWindow.windowProps?.id).toEqual(1)
+        expect(actionsCtrl.actionWindow.loaded).toEqual(false)
         unsubscribe()
         done()
       }
     })
 
     actionsCtrl.addOrUpdateAction(DAPP_CONNECT_ACTION, 'last', 'open-action-window')
+  })
+  test('should set window loaded', (done) => {
+    let emitCounter = 0
+    const unsubscribe = actionsCtrl.onUpdate(async () => {
+      emitCounter++
+
+      if (emitCounter === 1) {
+        expect(actionsCtrl.actionWindow.loaded).toEqual(true)
+        unsubscribe()
+        done()
+      }
+    })
+
+    actionsCtrl.setWindowLoaded()
   })
   test('should add an accountOp action to actionsQueue', (done) => {
     let emitCounter = 0
@@ -226,8 +241,11 @@ describe('Actions Controller', () => {
 
       if (emitCounter === 1) {
         expect(actionsCtrl.actionsQueue).toHaveLength(2)
-        expect(actionsCtrl.currentAction).toEqual(SIGN_ACCOUNT_OP_ACTION)
-        expect((actionsCtrl.currentAction as AccountOpAction).accountOp.calls).toHaveLength(2)
+        expect(actionsCtrl.visibleActionsQueue).toHaveLength(2)
+        expect(actionsCtrl.currentAction).not.toEqual(SIGN_ACCOUNT_OP_ACTION) // 'queue-but-open-action-window' should not set SIGN_ACCOUNT_OP_ACTION as currentAction
+        expect(
+          (actionsCtrl.visibleActionsQueue[1] as AccountOpAction).accountOp.calls
+        ).toHaveLength(2)
       }
 
       if (emitCounter === 2) {
@@ -237,9 +255,9 @@ describe('Actions Controller', () => {
       }
     })
 
-    actionsCtrl.addOrUpdateAction(SIGN_ACCOUNT_OP_ACTION, 'last', 'open-action-window')
+    actionsCtrl.addOrUpdateAction(SIGN_ACCOUNT_OP_ACTION, 'last', 'queue-but-open-action-window')
   })
-  test('should update the existing accountOp action by removing a call', (done) => {
+  test('should update the existing accountOp action by removing a call and add it to queue', (done) => {
     let emitCounter = 0
 
     const UPDATED_SIGN_ACCOUNT_OP_ACTION: AccountOpAction = {
@@ -255,15 +273,47 @@ describe('Actions Controller', () => {
       if (emitCounter === 2) {
         expect(actionsCtrl.actionsQueue).toHaveLength(2)
         expect(actionsCtrl.visibleActionsQueue).toHaveLength(2)
-        expect(actionsCtrl.currentAction).toEqual(UPDATED_SIGN_ACCOUNT_OP_ACTION)
+        expect(actionsCtrl.currentAction).not.toEqual(UPDATED_SIGN_ACCOUNT_OP_ACTION)
         expect(actionsCtrl.actionWindow.windowProps?.id).toEqual(1)
-        expect((actionsCtrl.currentAction as AccountOpAction).accountOp.calls).toHaveLength(1)
+        expect(
+          (actionsCtrl.visibleActionsQueue[1] as AccountOpAction).accountOp.calls
+        ).toHaveLength(1)
         unsubscribe()
         done()
       }
     })
 
-    actionsCtrl.addOrUpdateAction(UPDATED_SIGN_ACCOUNT_OP_ACTION, 'first', 'open-action-window')
+    actionsCtrl.addOrUpdateAction(
+      UPDATED_SIGN_ACCOUNT_OP_ACTION,
+      'last',
+      'queue-but-open-action-window'
+    )
+  })
+  test('should update the existing accountOp action by removing a call and open it', (done) => {
+    let emitCounter = 0
+
+    const UPDATED_SIGN_ACCOUNT_OP_ACTION: AccountOpAction = {
+      ...SIGN_ACCOUNT_OP_ACTION,
+      accountOp: {
+        ...SIGN_ACCOUNT_OP_ACTION.accountOp,
+        calls: [...SIGN_ACCOUNT_OP_ACTION.accountOp.calls]
+      }
+    }
+
+    const unsubscribe = actionsCtrl.onUpdate(async () => {
+      emitCounter++
+      if (emitCounter === 2) {
+        expect(actionsCtrl.actionsQueue).toHaveLength(2)
+        expect(actionsCtrl.visibleActionsQueue).toHaveLength(2)
+        expect(actionsCtrl.currentAction).toEqual(UPDATED_SIGN_ACCOUNT_OP_ACTION)
+        expect(actionsCtrl.actionWindow.windowProps?.id).toEqual(1)
+        expect((actionsCtrl.currentAction as AccountOpAction).accountOp.calls).toHaveLength(2)
+        unsubscribe()
+        done()
+      }
+    })
+
+    actionsCtrl.addOrUpdateAction(UPDATED_SIGN_ACCOUNT_OP_ACTION, 'last')
   })
   test('should add an action with priority', (done) => {
     const BINZIN_ACTION: SignUserRequest = {
@@ -302,7 +352,7 @@ describe('Actions Controller', () => {
     // one banner for all pending requests: "You have X pending app request(s)"
     expect(actionsCtrl.banners).toHaveLength(1)
   })
-  test('on selectedAccount change', (done) => {
+  test('actions update on selecting another account', (done) => {
     let emitCounter = 0
     const unsubscribe = actionsCtrl.onUpdate(async () => {
       emitCounter++
@@ -312,8 +362,6 @@ describe('Actions Controller', () => {
         expect(actionsCtrl.visibleActionsQueue).toHaveLength(1) // the BENZIN_ACTION and the SIGN_ACCOUNT_OP_ACTION are for the prev acc
         expect(actionsCtrl.actionWindow.windowProps?.id).toEqual(1)
 
-        await selectedAccountCtrl.setAccount(accounts[0])
-        await actionsCtrl.forceEmitUpdate()
         unsubscribe()
         done()
       }
@@ -324,89 +372,164 @@ describe('Actions Controller', () => {
       await actionsCtrl.forceEmitUpdate()
     })()
   })
-  // test('on window close', (done) => {
-  //   let emitCounter = 0
-  //   const unsubscribe = actionsCtrl.onUpdate(async () => {
-  //     emitCounter++
+  test('on window close', (done) => {
+    let emitCounter = 0
+    const unsubscribe = actionsCtrl.onUpdate(async () => {
+      emitCounter++
 
-  //     if (emitCounter === 1) {
-  //       expect(actionsCtrl.actionWindow.windowProps).toBe(null)
-  //       expect(actionsCtrl.actionsQueue).toHaveLength(0)
-  //       expect(actionsCtrl.currentAction).toEqual(null)
+      if (emitCounter === 1) {
+        expect(actionsCtrl.actionWindow.windowProps).toBe(null)
+        expect(actionsCtrl.actionsQueue).toHaveLength(1) // the remaining accountOp action of the accounts[0]
+        expect(actionsCtrl.visibleActionsQueue).toHaveLength(0) // accounts[1] should have no actions
+        expect(actionsCtrl.currentAction).toEqual(null)
 
-  //       unsubscribe()
-  //       done()
-  //     }
-  //   })
+        unsubscribe()
+        done()
+      }
+    })
 
-  //   event.emit('windowRemoved', windowId)
-  // })
-  // test('should select action by id', (done) => {
-  //   let emitCounter = 0
-  //   const unsubscribe = actionsCtrl.onUpdate(async () => {
-  //     emitCounter++
-  //     if (emitCounter === 5) {
-  //       expect(actionsCtrl.currentAction?.id).toEqual(1)
-  //       unsubscribe()
-  //       done()
-  //     }
-  //     if (emitCounter === 4) {
-  //       expect(actionsCtrl.actionWindow.windowProps?.id).toEqual(3)
-  //       actionsCtrl.setCurrentActionById(1)
-  //     }
-  //     if (emitCounter === 3) {
-  //       expect(actionsCtrl.actionWindow.windowProps?.id).toEqual(2)
-  //     }
-  //     if (emitCounter === 2) {
-  //       expect(actionsCtrl.currentAction?.id).toEqual(2)
-  //       expect(actionsCtrl.actionsQueue).toHaveLength(2)
-  //     }
+    event.emit('windowRemoved', windowId)
+  })
+  test('select back the fist account', (done) => {
+    let emitCounter = 0
+    const unsubscribe = actionsCtrl.onUpdate(async () => {
+      emitCounter++
 
-  //     if (emitCounter === 1) {
-  //       expect(actionsCtrl.currentAction?.id).toEqual(1)
-  //       expect(actionsCtrl.actionsQueue).toHaveLength(1)
-  //     }
-  //   })
+      if (emitCounter === 1) {
+        expect(actionsCtrl.actionsQueue).toHaveLength(1)
+        expect(actionsCtrl.visibleActionsQueue).toHaveLength(1)
+        expect(actionsCtrl.actionWindow.windowProps).toBe(null)
 
-  //   // Add actions to the queue
-  //   actionsCtrl.addOrUpdateAction(ACTION_1)
-  //   actionsCtrl.addOrUpdateAction(ACTION_2)
-  // })
-  // test('should remove actions from actionsQueue', (done) => {
-  //   let emitCounter = 0
-  //   const unsubscribe = actionsCtrl.onUpdate(async () => {
-  //     emitCounter++
-  //     if (emitCounter === 2) {
-  //       expect(actionsCtrl.actionWindow.windowProps).toBe(null)
-  //       expect(actionsCtrl.actionsQueue).toHaveLength(0)
-  //       expect(actionsCtrl.currentAction).toBe(null)
-  //       unsubscribe()
-  //       done()
-  //     }
-  //     if (emitCounter === 1) {
-  //       expect(actionsCtrl.actionWindow.windowProps?.id).toEqual(3)
-  //       expect(actionsCtrl.actionsQueue).toHaveLength(1)
-  //       expect(actionsCtrl.currentAction?.id).toBe(2)
-  //       actionsCtrl.removeAction(2)
-  //     }
-  //   })
+        unsubscribe()
+        done()
+      }
+    })
+    // eslint-disable-next-line @typescript-eslint/no-floating-promises
+    ;(async () => {
+      await selectedAccountCtrl.setAccount(accounts[0])
+      await actionsCtrl.forceEmitUpdate()
+    })()
+  })
+  test('should select action by id', (done) => {
+    let emitCounter = 0
+    const unsubscribe = actionsCtrl.onUpdate(async () => {
+      emitCounter++
 
-  //   actionsCtrl.removeAction(1)
-  // })
-  // test('removeAccountData', async () => {
-  //   // Add actions to the queue
-  //   actionsCtrl.addOrUpdateAction(ACTION_1)
-  //   actionsCtrl.addOrUpdateAction(ACTION_2)
+      if (emitCounter === 4) {
+        expect(actionsCtrl.actionWindow.windowProps?.id).toEqual(2)
+        expect(actionsCtrl.currentAction?.id).toEqual(SIGN_ACCOUNT_OP_ACTION.id)
+        unsubscribe()
+        done()
+      }
+      if (emitCounter === 2) {
+        expect(actionsCtrl.actionWindow.windowProps?.id).toEqual(2)
+        actionsCtrl.setCurrentActionById(SIGN_ACCOUNT_OP_ACTION.id)
+      }
 
-  //   expect(actionsCtrl.actionsQueue.length).toBeGreaterThanOrEqual(2)
+      if (emitCounter === 1) {
+        expect(actionsCtrl.currentAction).toEqual(DAPP_CONNECT_ACTION)
+        expect(actionsCtrl.actionsQueue).toHaveLength(2) // the DAPP_CONNECT_ACTION and the queued SIGN_ACCOUNT_OP_ACTION
+      }
+    })
 
-  //   // Remove account data
-  //   actionsCtrl.removeAccountData('0xAa0e9a1E2D2CcF2B867fda047bb5394BEF1883E0')
+    // Add actions to the queue
+    actionsCtrl.addOrUpdateAction(DAPP_CONNECT_ACTION)
+  })
+  test('should select action by index', (done) => {
+    let emitCounter = 0
+    const unsubscribe = actionsCtrl.onUpdate(async () => {
+      emitCounter++
 
-  //   const globalActions = actionsCtrl.actionsQueue.filter(
-  //     (a) => !['accountOp', 'signMessage', 'benzin'].includes(a?.type)
-  //   )
+      if (emitCounter === 2) {
+        expect(actionsCtrl.currentAction).toEqual(DAPP_CONNECT_ACTION)
+        expect(actionsCtrl.actionsQueue).toHaveLength(2) // the DAPP_CONNECT_ACTION and the queued SIGN_ACCOUNT_OP_ACTION
+        unsubscribe()
+        done()
+      }
+    })
 
-  //   expect(actionsCtrl.actionsQueue).toHaveLength(globalActions.length)
-  // })
+    actionsCtrl.setCurrentActionByIndex(1)
+  })
+  test('should focus out the current action window', (done) => {
+    let emitCounter = 0
+    const unsubscribe = actionsCtrl.onUpdate(async () => {
+      emitCounter++
+
+      if (emitCounter === 1) {
+        expect(actionsCtrl.actionWindow.windowProps).not.toBe(null)
+        expect(actionsCtrl.actionWindow.windowProps?.focused).toEqual(false)
+        unsubscribe()
+        done()
+      }
+    })
+
+    event.emit('windowFocusChange', 'random-window-id')
+  })
+  test('should focus on the minimized action window', (done) => {
+    let emitCounter = 0
+    const unsubscribe = actionsCtrl.onUpdate(async () => {
+      emitCounter++
+
+      if (emitCounter === 1) {
+        expect(actionsCtrl.actionWindow.windowProps).not.toBe(null)
+        expect(actionsCtrl.actionWindow.windowProps?.focused).toEqual(true)
+        unsubscribe()
+        done()
+      }
+    })
+
+    event.emit('windowFocusChange', windowId)
+  })
+  test('should remove actions from actionsQueue', (done) => {
+    let emitCounter = 0
+    const unsubscribe = actionsCtrl.onUpdate(async () => {
+      emitCounter++
+
+      if (emitCounter === 1) {
+        expect(actionsCtrl.actionWindow.windowProps?.id).toEqual(2)
+        expect(actionsCtrl.actionsQueue).toHaveLength(1)
+        expect(actionsCtrl.currentAction?.id).toBe(1)
+        unsubscribe()
+        done()
+      }
+    })
+
+    actionsCtrl.removeAction(SIGN_ACCOUNT_OP_REQUEST.id)
+  })
+  test('should close the action window', (done) => {
+    let emitCounter = 0
+    const unsubscribe = actionsCtrl.onUpdate(async () => {
+      emitCounter++
+
+      if (emitCounter === 1) {
+        expect(actionsCtrl.actionWindow.windowProps).toBe(null)
+        expect(actionsCtrl.actionsQueue).toHaveLength(0)
+        expect(actionsCtrl.currentAction).toBe(null)
+        unsubscribe()
+        done()
+      }
+    })
+
+    actionsCtrl.closeActionWindow()
+  })
+  test('removeAccountData', async () => {
+    // Add actions to the queue
+    actionsCtrl.addOrUpdateAction(DAPP_CONNECT_ACTION, 'last', 'queue')
+    actionsCtrl.addOrUpdateAction(SIGN_ACCOUNT_OP_ACTION, 'last', 'open-action-window')
+
+    expect(actionsCtrl.actionsQueue.length).toBeGreaterThanOrEqual(2)
+
+    // Remove account data
+    actionsCtrl.removeAccountData('0xAa0e9a1E2D2CcF2B867fda047bb5394BEF1883E0')
+
+    const globalActions = actionsCtrl.actionsQueue.filter(
+      (a) => !['accountOp', 'signMessage', 'benzin'].includes(a?.type)
+    )
+
+    expect(actionsCtrl.actionsQueue).toHaveLength(globalActions.length)
+  })
+  test('should toJSON()', () => {
+    const json = actionsCtrl.toJSON()
+    expect(json).toBeDefined()
+  })
 })
