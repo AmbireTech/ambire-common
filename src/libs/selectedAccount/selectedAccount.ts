@@ -107,6 +107,7 @@ export const updatePortfolioStateWithDefiPositions = (
                   rewardsType: null
                   // @BUG: defi positions tokens can't be hidden and can be added as custom
                   // because processTokens is called in the portfolio
+                  // Issue: https://github.com/AmbireTech/ambire-app/issues/3971
                 }
               }
 
