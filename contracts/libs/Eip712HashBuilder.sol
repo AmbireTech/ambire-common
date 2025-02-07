@@ -3,6 +3,7 @@ pragma solidity 0.8.19;
 
 import './erc4337/PackedUserOperation.sol';
 import './Transaction.sol';
+import '../deployless/IAmbireAccount.sol';
 
 library Eip712HashBuilder {
   function getDomainHash() internal view returns (bytes32) {
@@ -78,13 +79,11 @@ library Eip712HashBuilder {
     // decode the calls if any
     Transaction[] memory calls;
     if (op.callData.length >= 4) {
-      bytes4 executeSelector = 0x6171d1c9;
-      bytes4 executeBySenderSelector = 0xabc5345e;
       bytes4 functionSig = bytes4(op.callData[0:4]);
 
-      if (functionSig == executeBySenderSelector) {
+      if (functionSig == IAmbireAccount.executeBySender.selector) {
         calls = abi.decode(op.callData[4:], (Transaction[]));
-      } else if (functionSig == executeSelector) {
+      } else if (functionSig == IAmbireAccount.execute.selector) {
         (calls, ) = abi.decode(op.callData[4:], (Transaction[], bytes));
       }
     }
