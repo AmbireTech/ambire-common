@@ -1,4 +1,4 @@
-export declare function privSlot(slotNumber: any, keyType: any, key: any, valueType: any): any;
+export declare function privSlot(slotNumber: any, keyType: any, key: any, valueType: any): string;
 export interface PrivLevels {
     addr: string;
     hash: string;

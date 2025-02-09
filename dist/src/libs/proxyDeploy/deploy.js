@@ -1,8 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.getStorageSlotsFromArtifact = exports.getProxyDeployBytecode = exports.privSlot = void 0;
-const abi = require('ethereumjs-abi');
-const keccak256 = require('js-sha3').keccak256;
+const ethers_1 = require("ethers");
 // @TODO: fix the any
 function evmPush(data) {
     if (data.length < 1)
@@ -16,8 +15,9 @@ function evmPush(data) {
 }
 // @TODO: fix the any
 function privSlot(slotNumber, keyType, key, valueType) {
-    const buf = abi.rawEncode([keyType, valueType], [key, slotNumber]);
-    return keccak256(buf);
+    const abiCoder = new ethers_1.AbiCoder();
+    const buf = abiCoder.encode([keyType, valueType], [key, slotNumber]);
+    return (0, ethers_1.keccak256)(buf);
 }
 exports.privSlot = privSlot;
 // @TODO: fix the any
