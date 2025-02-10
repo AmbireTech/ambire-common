@@ -18,6 +18,7 @@ import { KeyIterator } from '../../interfaces/keyIterator'
 import { Key } from '../../interfaces/keystore'
 import { Network } from '../../interfaces/network'
 import { Authorization } from '../../interfaces/userRequest'
+import { getContractImplementation } from '../7702/7702'
 import { DKIM_VALIDATOR_ADDR, getSignerKey, RECOVERY_DEFAULTS } from '../dkim/recovery'
 import { getBytecode } from '../proxyDeploy/bytecode'
 import { PrivLevels } from '../proxyDeploy/deploy'
@@ -336,7 +337,9 @@ export function getAuthorization(
   return authorizations[account.addr].find((msg) => {
     const content = msg.content as Authorization
     return (
-      (content.chainId === 0n || content.chainId === network.chainId) && content.nonce === eoaNonce
+      (content.chainId === 0n || content.chainId === network.chainId) &&
+      content.nonce === eoaNonce &&
+      getContractImplementation(content.chainId) === content.contractAddr
     )
   })
 }
