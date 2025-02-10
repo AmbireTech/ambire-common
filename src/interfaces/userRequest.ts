@@ -36,8 +36,6 @@ export interface Authorization {
   nonce: bigint
   contractAddr: Hex
   message: Hex
-  // a list of all the networks that are going to be affected by this
-  affectedNetworks?: string[]
 }
 
 // @TODO: move this type and it's deps (PlainTextMessage, TypedMessage) to another place,

@@ -148,8 +148,8 @@ export const getBecomeSmarterEOABanner = (acc: Account): Banner[] => {
     {
       id: 'activate-7702',
       type: 'info',
-      title: 'Activate 7702',
-      text: 'Become smarter EOA',
+      title: 'Upgrade your account',
+      text: 'Unlock batching, gas tokens & more',
       category: 'activate-7702',
       actions: [
         {
@@ -158,7 +158,7 @@ export const getBecomeSmarterEOABanner = (acc: Account): Banner[] => {
           meta: { accountAddr: acc.addr }
         },
         {
-          label: 'Make me smart',
+          label: 'Upgrade',
           actionName: 'activate-7702',
           meta: { accountAddr: acc.addr }
         }

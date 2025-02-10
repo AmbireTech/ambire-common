@@ -1835,7 +1835,8 @@ export class MainController extends EventEmitter {
           meta: {
             isSignAction: true,
             accountAddr: meta.accountAddr,
-            networkId: meta.networkId
+            networkId: meta.networkId,
+            show7702Info: true
           },
           session: req.session,
           dappPromise: req?.dappPromise

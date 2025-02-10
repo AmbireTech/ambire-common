@@ -120,7 +120,8 @@ export class NetworksController extends EventEmitter {
           bundlers: n.erc4337.bundlers
         },
         nativeAssetId: n.nativeAssetId,
-        nativeAssetSymbol: n.nativeAssetSymbol
+        nativeAssetSymbol: n.nativeAssetSymbol,
+        has7702: n.has7702
       }
     })
 
