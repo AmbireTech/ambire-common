@@ -909,7 +909,7 @@ describe('estimate', () => {
     )
 
     expect(response.error).not.toBe(null)
-    expect(response.error?.message).toBe('Insufficient ETH for transaction calls')
+    expect(response.error?.message).toBe('Insufficient ETH for transaction calls\n')
 
     expect(response.erc4337GasLimits).not.toBe(undefined)
     expect(BigInt(response.erc4337GasLimits!.callGasLimit)).toBeGreaterThan(0n)
@@ -1128,7 +1128,7 @@ describe('estimate', () => {
       new BundlerSwitcher(polygon, getSignAccountOpStatus, noStateUpdateStatuses)
     )
     expect(response.error).not.toBe(null)
-    expect(response.error?.message).toBe('Insufficient POL for transaction calls')
+    expect(response.error?.message).toBe('Insufficient POL for transaction calls\n')
   })
 
   it('estimates a polygon request with wrong signer and estimation should fail with insufficient privileges', async () => {

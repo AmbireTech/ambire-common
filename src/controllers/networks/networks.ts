@@ -205,7 +205,8 @@ export class NetworksController extends EventEmitter {
       feeOptions,
       features: getFeaturesByNetworkProperties(info),
       hasRelayer: false,
-      predefined: false
+      predefined: false,
+      has7702: false
     }
     this.#onAddOrUpdateNetwork(this.#networks[networkId])
     await this.#storage.set('networks', this.#networks)

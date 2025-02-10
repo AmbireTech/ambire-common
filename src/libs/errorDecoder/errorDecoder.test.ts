@@ -376,7 +376,9 @@ describe('Error decoders work', () => {
     const decodedError = decodeError(error)
     expect(decodedError.reason).toBe(`Insufficient ${base.nativeAssetSymbol} for transaction calls`)
     const humanized = getHumanReadableEstimationError(decodedError)
-    expect(humanized.message).toBe(`Insufficient ${base.nativeAssetSymbol} for transaction calls`)
+    expect(humanized.message).toBe(
+      `The transaction will fail because it will revert onchain. Error code: Insufficient ${base.nativeAssetSymbol} for transaction calls\n`
+    )
 
     const sameErrorOnAvax = new InnerCallFailureError(
       '0x',
@@ -390,7 +392,7 @@ describe('Error decoders work', () => {
     )
     const humanizedAvax = getHumanReadableEstimationError(decodedsameErrorOnAvax)
     expect(humanizedAvax.message).toBe(
-      `Insufficient ${avalanche.nativeAssetSymbol} for transaction calls`
+      `The transaction will fail because it will revert onchain. Error code: Insufficient ${avalanche.nativeAssetSymbol} for transaction calls\n`
     )
   })
   it('Should report transaction reverted with error unknown when error is 0x and the calls value is less or equal to the portfolio amount', async () => {
