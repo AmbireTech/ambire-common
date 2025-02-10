@@ -65,7 +65,7 @@ const networks: NetworkType[] = [
   {
     id: NETWORKS.polygon,
     chainId: 137,
-    nativeAssetSymbol: 'MATIC',
+    nativeAssetSymbol: 'POL',
     name: 'Polygon',
     explorerUrl: 'https://polygonscan.com',
     unstoppableDomainsChain: 'MATIC',
@@ -73,7 +73,7 @@ const networks: NetworkType[] = [
     relayerlessOnly: false,
     nativeAsset: {
       address: '0x0000000000000000000000000000000000000000',
-      symbol: 'MATIC',
+      symbol: 'POL',
       coingeckoId: 'matic-network',
       decimals: 18,
       wrappedAddr: '0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270'
