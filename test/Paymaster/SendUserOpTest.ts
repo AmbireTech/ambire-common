@@ -53,13 +53,7 @@ describe('Send User Operation Tests', () => {
       userOpNonce: nonce,
       validUntil: timestamp + 60
     })
-    const typedData = getUserOp712Data(
-      chainId,
-      [],
-      ambireAccountAddress,
-      userOp,
-      await entryPoint.getUserOpHash(userOp)
-    )
+    const typedData = getUserOp712Data(chainId, [], userOp, await entryPoint.getUserOpHash(userOp))
     const signature = wrapEIP712(
       await relayer.signTypedData(typedData.domain, typedData.types, typedData.value)
     ) as Hex
@@ -105,7 +99,6 @@ describe('Send User Operation Tests', () => {
     const typedData = getUserOp712Data(
       chainId,
       txns,
-      ambireAccountAddress,
       userOp,
       await entryPoint.getUserOpHash(userOp)
     )
@@ -124,13 +117,7 @@ describe('Send User Operation Tests', () => {
       userOpNonce: await entryPoint.getNonce(...[ambireAccountAddress, 0]),
       validUntil: timestamp - 60
     })
-    const typedData = getUserOp712Data(
-      chainId,
-      [],
-      ambireAccountAddress,
-      userOp,
-      await entryPoint.getUserOpHash(userOp)
-    )
+    const typedData = getUserOp712Data(chainId, [], userOp, await entryPoint.getUserOpHash(userOp))
     const signature = wrapEIP712(
       await relayer.signTypedData(typedData.domain, typedData.types, typedData.value)
     ) as Hex
