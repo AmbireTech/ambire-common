@@ -4,8 +4,9 @@
 import { constants } from 'ethers'
 import { Interface } from 'ethers/lib/utils'
 
+import accountPresets from '../../constants/accountPresets'
 import { HumanizerInfoType } from '../../hooks/useConstants'
-import { getName, token } from '../humanReadableTransactions'
+import { getName, nativeToken, token } from '../humanReadableTransactions'
 
 const ERC20Mapping = (humanizerInfo: HumanizerInfoType) => {
   const iface = new Interface(humanizerInfo.abis.ERC20)
@@ -95,7 +96,7 @@ const ERC20Mapping = (humanizerInfo: HumanizerInfoType) => {
 
         return [`Fuel Gas Tank with ${nativeToken(network, amount)}`]
       }
-      
+
       if (extended)
         return [
           [
