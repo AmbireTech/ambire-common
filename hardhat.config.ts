@@ -1,8 +1,8 @@
 /* eslint-disable import/no-extraneous-dependencies */
-import '@nomicfoundation/hardhat-ethers'
 import '@nomicfoundation/hardhat-chai-matchers'
-import 'hardhat-gas-reporter'
+import '@nomicfoundation/hardhat-ethers'
 import '@nomiclabs/hardhat-etherscan'
+import 'hardhat-gas-reporter'
 
 import { HardhatUserConfig } from 'hardhat/config'
 
@@ -72,6 +72,14 @@ const config: HardhatUserConfig = {
         urls: {
           apiURL: 'https://api.etherscan.io/api',
           browserURL: 'https://etherscan.io/'
+        }
+      },
+      {
+        network: 'odyssey',
+        chainId: 911867,
+        urls: {
+          apiURL: 'https://explorer-odyssey.t.conduit.xyz/api',
+          browserURL: 'https://explorer-odyssey.t.conduit.xyz:443'
         }
       }
     ]
