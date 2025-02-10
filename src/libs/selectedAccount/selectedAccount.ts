@@ -1,5 +1,3 @@
-import { getAddress } from 'ethers'
-
 import {
   SelectedAccountPortfolio,
   SelectedAccountPortfolioState,
@@ -32,7 +30,7 @@ export const updatePortfolioStateWithDefiPositions = (
 
     if (!networkState?.result || defiPositionsAccountState[networkId]?.isLoading) return
 
-    let tokens = networkState.result.tokens || []
+    const tokens = networkState.result.tokens || []
     let networkBalance = networkState.result.total?.usd || 0
 
     const positions = defiPositionsAccountState[networkId] || {}
@@ -47,36 +45,16 @@ export const updatePortfolioStateWithDefiPositions = (
         pos.assets
           .filter((a) => a.type !== AssetType.Liquidity && a.protocolAsset)
           .forEach((a) => {
-            const tokenInPortfolioIndex = tokens.findIndex((t) => {
+            const tokenInPortfolio = tokens.find((t) => {
               return (
-                getAddress(t.address) === getAddress(a.protocolAsset!.address) &&
-                t.networkId === networkId
+                t.address.toLowerCase() === (a.protocolAsset?.address || '').toLowerCase() &&
+                t.networkId === networkId &&
+                !t.flags.rewardsType &&
+                !t.flags.onGasTank
               )
             })
-            let amountPostSimulation
-            let simulationAmount
 
-            if (tokenInPortfolioIndex !== -1) {
-              const tokenInPortfolio = tokens[tokenInPortfolioIndex]
-              const priceUSD = tokenInPortfolio.priceIn.find(
-                ({ baseCurrency }: { baseCurrency: string }) => baseCurrency.toLowerCase() === 'usd'
-              )?.price
-
-              amountPostSimulation = tokenInPortfolio.amountPostSimulation
-              simulationAmount = tokenInPortfolio.simulationAmount
-              const tokenBalanceUSD = priceUSD
-                ? Number(
-                    safeTokenAmountAndNumberMultiplication(
-                      BigInt(amountPostSimulation || tokenInPortfolio.amount),
-                      tokenInPortfolio.decimals,
-                      priceUSD
-                    )
-                  )
-                : undefined
-
-              networkBalance -= tokenBalanceUSD || 0 // deduct portfolio token balance
-              tokens = tokens.filter((_, index) => index !== tokenInPortfolioIndex)
-            }
+            if (tokenInPortfolio?.flags.isHidden) return
 
             // Add only the balance of the collateral tokens to the network balance
             if (a.type === AssetType.Collateral) {
@@ -87,7 +65,7 @@ export const updatePortfolioStateWithDefiPositions = (
               const protocolTokenBalanceUSD = protocolPriceUSD
                 ? Number(
                     safeTokenAmountAndNumberMultiplication(
-                      BigInt(amountPostSimulation || a.amount),
+                      BigInt(tokenInPortfolio?.amountPostSimulation || a.amount),
                       Number(a.protocolAsset!.decimals),
                       protocolPriceUSD
                     )
@@ -97,30 +75,47 @@ export const updatePortfolioStateWithDefiPositions = (
               networkBalance += protocolTokenBalanceUSD || 0
             }
 
-            const positionAsset = {
-              amount: a.amount,
-              amountPostSimulation: a.amountPostSimulation,
-              simulationAmount: a.simulationAmount,
-              // Only list the borrowed asset with no price
-              priceIn: a.type === AssetType.Collateral ? a.priceIn : [],
-              decimals: Number(a.protocolAsset!.decimals),
-              address: a.protocolAsset!.address,
-              symbol: a.protocolAsset!.symbol,
-              networkId,
-              flags: {
-                canTopUpGasTank: false,
-                isFeeToken: false,
-                onGasTank: false,
-                rewardsType: null
+            if (tokenInPortfolio) {
+              const priceUSD = tokenInPortfolio.priceIn.find(
+                ({ baseCurrency }: { baseCurrency: string }) => baseCurrency.toLowerCase() === 'usd'
+              )?.price
+
+              const tokenBalanceUSD = priceUSD
+                ? Number(
+                    safeTokenAmountAndNumberMultiplication(
+                      BigInt(tokenInPortfolio.amountPostSimulation || tokenInPortfolio.amount),
+                      tokenInPortfolio.decimals,
+                      priceUSD
+                    )
+                  )
+                : undefined
+
+              networkBalance -= tokenBalanceUSD || 0 // deduct portfolio token balance
+              // Get the price from defiPositions
+              tokenInPortfolio.priceIn = a.type === AssetType.Collateral ? a.priceIn : []
+            } else {
+              const positionAsset: TokenResult = {
+                amount: a.amount,
+                // Only list the borrowed asset with no price
+                priceIn: a.type === AssetType.Collateral ? a.priceIn : [],
+                decimals: Number(a.protocolAsset!.decimals),
+                address: a.protocolAsset!.address,
+                symbol: a.protocolAsset!.symbol,
+                networkId,
+                flags: {
+                  canTopUpGasTank: false,
+                  isFeeToken: false,
+                  onGasTank: false,
+                  rewardsType: null,
+                  isDefiToken: true
+                  // @BUG: defi positions tokens can't be hidden and can be added as custom
+                  // because processTokens is called in the portfolio
+                  // Issue: https://github.com/AmbireTech/ambire-app/issues/3971
+                }
               }
-            }
 
-            if (simulationAmount) {
-              positionAsset.simulationAmount = simulationAmount
-              positionAsset.amountPostSimulation = amountPostSimulation
+              tokens.push(positionAsset)
             }
-
-            tokens.push(positionAsset)
           })
       })
     })
@@ -204,6 +199,7 @@ export function calculateSelectedAccountPortfolio(
   pendingStateSelectedAccount: AccountState,
   accountPortfolio: SelectedAccountPortfolio | null,
   portfolioStartedLoadingAtTimestamp: number | null,
+  defiPositionsAccountState: DefiPositionsAccountState,
   hasSignAccountOp?: boolean
 ) {
   const now = Date.now()
@@ -293,7 +289,8 @@ export function calculateSelectedAccountPortfolio(
       collections.push(...networkCollections)
     }
 
-    if (!isNetworkReady(networkData)) {
+    // The total balance and token list are affected by the defi positions
+    if (!isNetworkReady(networkData) || defiPositionsAccountState[network]?.isLoading) {
       isAllReady = false
     }
   })
