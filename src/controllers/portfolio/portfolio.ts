@@ -113,6 +113,8 @@ export class PortfolioController extends EventEmitter {
 
   cashbackStatusByAccount: CashbackStatusByAccount = {}
 
+  #hasUnseenFirstCashback: boolean = false
+
   constructor(
     storage: Storage,
     fetch: Fetch,
@@ -428,13 +430,19 @@ export class PortfolioController extends EventEmitter {
   async updateCashbackStatusByAccount({
     accountId,
     shouldShowBanner,
+    toggleModal,
     shouldGetAdditionalPortfolio
   }: {
     accountId: AccountId
     shouldShowBanner: boolean
+    toggleModal: boolean
     shouldGetAdditionalPortfolio: boolean
   }) {
     if (!accountId) throw new Error('AccountId in required to update cashback status')
+
+    if (toggleModal) {
+      this.#hasUnseenFirstCashback = !this.#hasUnseenFirstCashback
+    }
 
     const currentTimestamp = new Date().getTime()
     const currentAccountStatus = this.cashbackStatusByAccount[accountId] || {}
@@ -515,6 +523,7 @@ export class PortfolioController extends EventEmitter {
       await this.updateCashbackStatusByAccount({
         accountId,
         shouldShowBanner: true,
+        toggleModal: false,
         shouldGetAdditionalPortfolio: false
       })
     }
@@ -525,9 +534,7 @@ export class PortfolioController extends EventEmitter {
       availableAmount: BigInt(t.availableAmount || 0),
       cashback: BigInt(t.cashback || 0),
       saved: BigInt(t.saved || 0),
-      hasUnseenFirstCashback:
-        this.cashbackStatusByAccount[accountId]?.firstCashbackReceivedAt &&
-        !this.cashbackStatusByAccount[accountId]?.firstCashbackSeenAt,
+      hasUnseenFirstCashback: this.#hasUnseenFirstCashback,
       flags: getFlags(res.data, 'gasTank', t.networkId, t.address)
     }))
 
