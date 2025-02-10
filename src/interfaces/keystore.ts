@@ -125,7 +125,11 @@ export type ExternalKey = {
 
 export type StoredKey = (InternalKey & { privKey: string }) | (ExternalKey & { privKey: null })
 
-export type KeystoreSeed = { seed: string; hdPathTemplate: HD_PATH_TEMPLATE_TYPE }
+export type KeystoreSeed = {
+  seed: string
+  seedPassphrase?: string | null
+  hdPathTemplate: HD_PATH_TEMPLATE_TYPE
+}
 
 export type KeystoreSignerType = {
   new (key: Key, privateKey?: string): KeystoreSignerInterface

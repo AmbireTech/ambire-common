@@ -417,7 +417,13 @@ export class KeystoreController extends EventEmitter {
     })
   }
 
-  async #getEncryptedSeed(seed: KeystoreSeed['seed']): Promise<string> {
+  async #getEncryptedSeedPhrase(
+    seed: KeystoreSeed['seed'],
+    seedPassphrase?: KeystoreSeed['seedPassphrase']
+  ): Promise<{
+    seed: string
+    passphrase: string | null
+  }> {
     await this.#initialLoadPromise
 
     if (this.#mainKey === null)
@@ -450,10 +456,15 @@ export class KeystoreController extends EventEmitter {
     // Set up the cipher
     const counter = new aes.Counter(this.#mainKey!.iv) // TS compiler fails to detect we check for null above
     const aesCtr = new aes.ModeOfOperation.ctr(this.#mainKey!.key, counter) // TS compiler fails to detect we check for null above\
-    return hexlify(aesCtr.encrypt(new TextEncoder().encode(seed)))
+    return {
+      seed: hexlify(aesCtr.encrypt(new TextEncoder().encode(seed))),
+      passphrase: seedPassphrase
+        ? hexlify(aesCtr.encrypt(new TextEncoder().encode(seedPassphrase)))
+        : null
+    }
   }
 
-  async addSeedToTemp({ seed, hdPathTemplate }: KeystoreSeed) {
+  async addSeedToTemp({ seed, seedPassphrase, hdPathTemplate }: KeystoreSeed) {
     const validHdPath = DERIVATION_OPTIONS.some((o) => o.value === hdPathTemplate)
     if (!validHdPath)
       throw new EmittableError({
@@ -463,10 +474,12 @@ export class KeystoreController extends EventEmitter {
         error: new Error('keystore: hd path to temp seed incorrect')
       })
 
-    this.#tempSeed = {
-      seed: await this.#getEncryptedSeed(seed),
-      hdPathTemplate
-    }
+    const { seed: seedPhrase, passphrase } = await this.#getEncryptedSeedPhrase(
+      seed,
+      seedPassphrase
+    )
+
+    this.#tempSeed = { seed: seedPhrase, seedPassphrase: passphrase, hdPathTemplate }
 
     this.emitUpdate()
   }
@@ -516,11 +529,13 @@ export class KeystoreController extends EventEmitter {
     await this.withStatus('moveTempSeedToKeystoreSeeds', () => this.#moveTempSeedToKeystoreSeeds())
   }
 
-  async #addSeed({ seed, hdPathTemplate }: KeystoreSeed) {
-    this.#keystoreSeeds.push({
-      seed: await this.#getEncryptedSeed(seed),
-      hdPathTemplate
-    })
+  async #addSeed({ seed, seedPassphrase, hdPathTemplate }: KeystoreSeed) {
+    const { seed: seedPhrase, passphrase } = await this.#getEncryptedSeedPhrase(
+      seed,
+      seedPassphrase
+    )
+
+    this.#keystoreSeeds.push({ seed: seedPhrase, seedPassphrase: passphrase, hdPathTemplate })
     await this.#storage.set('keystoreSeeds', this.#keystoreSeeds)
 
     this.emitUpdate()
@@ -718,7 +733,10 @@ export class KeystoreController extends EventEmitter {
 
   async sendSeedToUi() {
     const decrypted = await this.getSavedSeed()
-    this.#windowManager.sendWindowUiMessage({ seed: decrypted.seed })
+    this.#windowManager.sendWindowUiMessage({
+      seed: decrypted.seed,
+      seedPassphrase: decrypted.seedPassphrase
+    })
   }
 
   async #getPrivateKey(keyAddress: string): Promise<string> {
@@ -838,6 +856,19 @@ export class KeystoreController extends EventEmitter {
     const aesCtr = new aes.ModeOfOperation.ctr(this.#mainKey.key, counter)
     const decryptedSeedBytes = aesCtr.decrypt(encryptedSeedBytes)
     const decryptedSeed = new TextDecoder().decode(decryptedSeedBytes)
+
+    if (this.#keystoreSeeds[0].seedPassphrase) {
+      const encryptedSeedPassphraseBytes = getBytes(this.#keystoreSeeds[0].seedPassphrase)
+      const decryptedSeedPassphraseBytes = aesCtr.decrypt(encryptedSeedPassphraseBytes)
+      const decryptedSeedPassphrase = new TextDecoder().decode(decryptedSeedPassphraseBytes)
+
+      return {
+        seed: decryptedSeed,
+        seedPassphrase: decryptedSeedPassphrase,
+        hdPathTemplate
+      } as KeystoreSeed
+    }
+
     return { seed: decryptedSeed, hdPathTemplate }
   }
 
