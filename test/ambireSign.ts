@@ -126,7 +126,6 @@ function getExecute712Data(
 function getUserOp712Data(
   chainId: bigint,
   txns: [string, string, string][],
-  verifyingAddr: string,
   packedUserOp: PackedUserOperation,
   userOpHash: string
 ) {
@@ -140,7 +139,7 @@ function getUserOp712Data(
     name: 'Ambire',
     version: '1',
     chainId,
-    verifyingContract: verifyingAddr,
+    verifyingContract: packedUserOp.sender,
     salt: ethers.toBeHex(0, 32)
   }
   const types = {
@@ -164,7 +163,7 @@ function getUserOp712Data(
     ]
   }
   const value = {
-    account: verifyingAddr,
+    account: packedUserOp.sender,
     chainId,
     nonce: packedUserOp.nonce,
     initCode: packedUserOp.initCode,

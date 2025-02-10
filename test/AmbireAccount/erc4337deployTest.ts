@@ -110,7 +110,6 @@ describe('ERC-4337 deploys the account via userOp and adds the entry point permi
     const typedDataUserOp = getUserOp712Data(
       chainId,
       [nextTxn],
-      senderAddress,
       userOperation2,
       await entryPoint.getUserOpHash(userOperation2)
     )
@@ -150,7 +149,6 @@ describe('ERC-4337 deploys the account via userOp and adds the entry point permi
     const typedDataUserOp3 = getUserOp712Data(
       chainId,
       [anotherTxn],
-      senderAddress,
       userOperation3,
       await entryPoint.getUserOpHash(userOperation3)
     )
@@ -186,7 +184,6 @@ describe('ERC-4337 deploys the account via userOp and adds the entry point permi
     const typedDataUserOp4 = getUserOp712Data(
       chainId,
       [anotherTxn],
-      senderAddress,
       userOperation4,
       await entryPoint.getUserOpHash(userOperation4)
     )
