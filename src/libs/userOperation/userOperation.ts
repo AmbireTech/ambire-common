@@ -236,18 +236,18 @@ export const ENTRY_POINT_AUTHORIZATION_REQUEST_ID = 'ENTRY_POINT_AUTHORIZATION_R
 export function getPackedUserOp(userOp: UserOperation): PackedUserOperation {
   const initCode = userOp.factory ? concat([userOp.factory, userOp.factoryData!]) : '0x'
   const accountGasLimits = concat([
-    toBeHex(userOp.verificationGasLimit, 16),
-    toBeHex(userOp.callGasLimit, 16)
+    toBeHex(userOp.verificationGasLimit.toString(), 16),
+    toBeHex(userOp.callGasLimit.toString(), 16)
   ])
   const gasFees = concat([
-    toBeHex(userOp.maxPriorityFeePerGas, 16),
-    toBeHex(userOp.maxFeePerGas, 16)
+    toBeHex(userOp.maxPriorityFeePerGas.toString(), 16),
+    toBeHex(userOp.maxFeePerGas.toString(), 16)
   ])
   const paymasterAndData = userOp.paymaster
     ? concat([
         userOp.paymaster,
-        toBeHex(userOp.paymasterVerificationGasLimit!, 16),
-        toBeHex(userOp.paymasterPostOpGasLimit!, 16),
+        toBeHex(userOp.paymasterVerificationGasLimit!.toString(), 16),
+        toBeHex(userOp.paymasterPostOpGasLimit!.toString(), 16),
         userOp.paymasterData!
       ])
     : '0x'
@@ -267,17 +267,20 @@ export function getPackedUserOp(userOp: UserOperation): PackedUserOperation {
 export function getUserOpHash(userOp: UserOperation, chainId: bigint) {
   const abiCoder = new AbiCoder()
   const packedUserOp = getPackedUserOp(userOp)
+  const hashInitCode = keccak256(packedUserOp.initCode)
+  const hashCallData = keccak256(packedUserOp.callData)
+  const hashPaymasterAndData = keccak256(packedUserOp.paymasterAndData)
   const packed = abiCoder.encode(
     ['address', 'uint256', 'bytes32', 'bytes32', 'bytes32', 'uint256', 'bytes32', 'bytes32'],
     [
-      packedUserOp.sender,
-      packedUserOp.nonce,
-      keccak256(packedUserOp.initCode),
-      keccak256(packedUserOp.callData),
+      userOp.sender,
+      userOp.nonce,
+      hashInitCode,
+      hashCallData,
       packedUserOp.accountGasLimits,
-      packedUserOp.preVerificationGas,
-      keccak256(packedUserOp.gasFees),
-      keccak256(packedUserOp.paymasterAndData)
+      userOp.preVerificationGas,
+      packedUserOp.gasFees,
+      hashPaymasterAndData
     ]
   )
   const packedHash = keccak256(packed)
