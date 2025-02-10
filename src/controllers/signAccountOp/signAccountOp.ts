@@ -38,11 +38,18 @@ import {
 } from '../../libs/gasPrice/gasPrice'
 import { hasRelayerSupport } from '../../libs/networks/networks'
 import { Price, TokenResult } from '../../libs/portfolio'
-import { getExecuteSignature, getTypedData, wrapStandard } from '../../libs/signMessage/signMessage'
+import {
+  get7702UserOpTypedData,
+  getExecuteSignature,
+  getTypedData,
+  wrapStandard,
+  wrapUnprotected
+} from '../../libs/signMessage/signMessage'
 import { getGasUsed } from '../../libs/singleton/singleton'
 import {
   getActivatorCall,
   getOneTimeNonce,
+  getPackedUserOp,
   getUserOperation,
   getUserOpHash,
   isErc4337Broadcast,
@@ -1359,6 +1366,17 @@ export class SignAccountOpController extends EventEmitter {
             getUserOpHash(userOperation, this.#network.chainId)
           )
           const signature = wrapStandard(await signer.signTypedData(typedData))
+          userOperation.signature = signature
+          this.accountOp.signature = signature
+        }
+        if (userOperation.requestType === '7702') {
+          const typedData = get7702UserOpTypedData(
+            this.#network.chainId,
+            getSignableCalls(this.accountOp),
+            getPackedUserOp(userOperation),
+            getUserOpHash(userOperation, this.#network.chainId)
+          )
+          const signature = wrapUnprotected(await signer.signTypedData(typedData))
           userOperation.signature = signature
           this.accountOp.signature = signature
         }

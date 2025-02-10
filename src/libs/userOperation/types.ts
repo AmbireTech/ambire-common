@@ -1,8 +1,8 @@
-import { Hex } from '../../interfaces/hex'
 import { BUNDLER } from '../../consts/bundlers'
+import { Hex } from '../../interfaces/hex'
 import { Call } from '../accountOp/types'
 
-export type UserOpRequestType = 'standard' | 'activator' | 'recovery'
+export type UserOpRequestType = 'standard' | 'activator' | 'recovery' | '7702'
 
 export interface PackedUserOperation {
   sender: string

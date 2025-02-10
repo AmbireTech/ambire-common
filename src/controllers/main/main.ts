@@ -2952,13 +2952,6 @@ export class MainController extends EventEmitter {
           'Replacement fee is insufficient. Fees have been automatically adjusted so please try submitting your transaction again.'
         isReplacementFeeLow = true
         this.estimateSignAccountOp()
-      } else if (
-        originalMessage.includes('pimlico_getUserOperationGasPrice') ||
-        originalMessage.includes('preVerificationGas')
-      ) {
-        message =
-          'Transaction fee underpriced. Please select a higher transaction speed and try again'
-        this.updateSignAccountOpGasPrice()
       } else if (originalMessage.includes('INSUFFICIENT_PRIVILEGE')) {
         message = `Signer key not supported on this network.${
           !accountState?.isV2
@@ -2985,6 +2978,9 @@ export class MainController extends EventEmitter {
         failedPaymasters.addInsufficientFunds(provider, network).then(() => {
           this.estimateSignAccountOp()
         })
+      }
+      if (message.includes('the selected fee is too low')) {
+        this.updateSignAccountOpGasPrice()
       }
     }
 
