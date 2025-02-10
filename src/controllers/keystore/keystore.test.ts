@@ -107,7 +107,7 @@ describe('KeystoreController', () => {
   })
 
   test('should add a secret', (done) => {
-    keystore.addSecret('password', pass, null, false)
+    keystore.addSecret('password', pass, '', false)
 
     const unsubscribe = keystore.onUpdate(async () => {
       if (keystore.statuses.addSecret === 'SUCCESS') {
@@ -556,11 +556,11 @@ describe('import/export with pub key test', () => {
     keystore = new KeystoreController(produceMemoryStore(), keystoreSigners, windowManager)
     keystore2 = new KeystoreController(produceMemoryStore(), keystoreSigners, windowManager)
 
-    await keystore2.addSecret('123', '123', null, false)
+    await keystore2.addSecret('123', '123', '', false)
     await keystore2.unlockWithSecret('123', '123')
     uid2 = await keystore2.getKeyStoreUid()
 
-    await keystore.addSecret('a', 'b', null, false)
+    await keystore.addSecret('a', 'b', '', false)
     await keystore.unlockWithSecret('a', 'b')
   })
 

@@ -108,8 +108,6 @@ export class KeystoreController extends EventEmitter {
 
   #keystoreKeys: StoredKey[] = []
 
-  #entropyGenerator = new EntropyGenerator()
-
   keyStoreUid: string | null
 
   isReadyToStoreKeys: boolean = false
@@ -281,7 +279,7 @@ export class KeystoreController extends EventEmitter {
   async #addSecret(
     secretId: string,
     secret: string,
-    extraEntropy: Uint8Array | null = null,
+    extraEntropy: string = '',
     leaveUnlocked: boolean = false
   ) {
     await this.#initialLoadPromise
@@ -295,13 +293,14 @@ export class KeystoreController extends EventEmitter {
       })
 
     let mainKey: MainKey | null = this.#mainKey
+    const entropyGenerator = new EntropyGenerator()
 
     // We are not unlocked
     if (!mainKey) {
       if (!this.#keystoreSecrets.length) {
         mainKey = {
-          key: this.#entropyGenerator.generateRandomBytes(16, extraEntropy),
-          iv: this.#entropyGenerator.generateRandomBytes(16, extraEntropy)
+          key: entropyGenerator.generateRandomBytes(16, extraEntropy),
+          iv: entropyGenerator.generateRandomBytes(16, extraEntropy)
         }
       } else
         throw new EmittableError({
@@ -315,7 +314,7 @@ export class KeystoreController extends EventEmitter {
       }
     }
 
-    const salt = this.#entropyGenerator.generateRandomBytes(32, extraEntropy)
+    const salt = entropyGenerator.generateRandomBytes(32, extraEntropy)
     const key = await scrypt.scrypt(
       getBytesForSecret(secret),
       salt,
@@ -325,7 +324,7 @@ export class KeystoreController extends EventEmitter {
       scryptDefaults.dkLen,
       () => {}
     )
-    const iv = this.#entropyGenerator.generateRandomBytes(16, extraEntropy)
+    const iv = entropyGenerator.generateRandomBytes(16, extraEntropy)
     const derivedKey = key.slice(0, 16)
     const macPrefix = key.slice(16, 32)
     const counter = new aes.Counter(iv)
@@ -356,12 +355,7 @@ export class KeystoreController extends EventEmitter {
     this.isReadyToStoreKeys = true
   }
 
-  async addSecret(
-    secretId: string,
-    secret: string,
-    extraEntropy: Uint8Array | null,
-    leaveUnlocked: boolean
-  ) {
+  async addSecret(secretId: string, secret: string, extraEntropy: string, leaveUnlocked: boolean) {
     await this.withStatus('addSecret', () =>
       this.#addSecret(secretId, secret, extraEntropy, leaveUnlocked)
     )
@@ -897,7 +891,7 @@ export class KeystoreController extends EventEmitter {
       })
 
     await this.#removeSecret('password')
-    await this.#addSecret('password', newSecret, null, true)
+    await this.#addSecret('password', newSecret, '', true)
   }
 
   async changeKeystorePassword(newSecret: string, oldSecret?: string) {

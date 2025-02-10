@@ -4,11 +4,16 @@ import { getBytes, keccak256, randomBytes } from 'ethers'
 export class EntropyGenerator {
   #entropyPool: Uint8Array = new Uint8Array(0)
 
-  generateRandomBytes(length: number, extraEntropy: Uint8Array | null): Uint8Array {
+  generateRandomBytes(length: number, extraEntropy: string): Uint8Array {
+    this.#resetEntropyPool()
     this.#addSystemNoiseEntropy()
     this.#addTimeEntropy()
 
-    if (extraEntropy) this.addEntropy(extraEntropy)
+    if (extraEntropy) {
+      const encoder = new TextEncoder()
+      const uint8Array = encoder.encode(extraEntropy)
+      this.addEntropy(uint8Array)
+    }
 
     if (this.#entropyPool.length === 0) throw new Error('Entropy pool is empty')
 
@@ -27,7 +32,6 @@ export class EntropyGenerator {
     if (!now) return
 
     const timeEntropy = new Uint8Array(new Float64Array([now]).buffer)
-    console.log('addTimeEntropy', timeEntropy)
     this.addEntropy(timeEntropy)
   }
 
@@ -41,5 +45,9 @@ export class EntropyGenerator {
     combined.set(this.#entropyPool)
     combined.set(newEntropy, this.#entropyPool.length)
     this.#entropyPool = combined
+  }
+
+  #resetEntropyPool() {
+    this.#entropyPool = new Uint8Array(0)
   }
 }
