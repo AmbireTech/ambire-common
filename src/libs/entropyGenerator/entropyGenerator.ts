@@ -19,6 +19,7 @@ export class EntropyGenerator {
 
     const hash = getBytes(keccak256(this.#entropyPool))
     const randomBytesGenerated = randomBytes(length)
+    // ensures non-deterministic final output
     for (let i = 0; i < length; i++) {
       randomBytesGenerated[i] ^= hash[i % hash.length]
     }
