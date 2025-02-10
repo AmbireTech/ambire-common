@@ -6,8 +6,8 @@ export class EntropyGenerator {
 
   generateRandomBytes(length: number, extraEntropy: string): Uint8Array {
     this.#resetEntropyPool()
-    this.#addSystemNoiseEntropy()
-    this.#addTimeEntropy()
+    this.#collectSystemNoiseEntropy()
+    this.#collectTimeEntropy()
 
     if (extraEntropy) {
       const encoder = new TextEncoder()
@@ -27,7 +27,7 @@ export class EntropyGenerator {
     return randomBytesGenerated
   }
 
-  #addTimeEntropy(): void {
+  #collectTimeEntropy(): void {
     const now = performance.now()
 
     if (!now) return
@@ -36,7 +36,7 @@ export class EntropyGenerator {
     this.addEntropy(timeEntropy)
   }
 
-  #addSystemNoiseEntropy(): void {
+  #collectSystemNoiseEntropy(): void {
     const systemNoise = randomBytes(16)
     this.addEntropy(systemNoise)
   }
