@@ -118,12 +118,17 @@ export class SocketAPI {
       throw new SwapAndBridgeProviderApiError(error)
     }
 
+    if (response.status === 429) {
+      const error = `Our service provider received too many requests, temporarily preventing your request from being processed. ${errorPrefix}`
+      throw new SwapAndBridgeProviderApiError(error)
+    }
+
     let responseBody: SocketAPIResponse<T>
     try {
       responseBody = await response.json()
     } catch (e: any) {
       const message = e?.message || 'no message'
-      const error = `${errorPrefix} Error details: Unexpected non-JSON response from our service provider, message: <${message}>`
+      const error = `${errorPrefix} Error details: <Unexpected non-JSON response from our service provider>, message: <${message}>`
       throw new SwapAndBridgeProviderApiError(error)
     }
 
