@@ -58,6 +58,7 @@ describe('Portfolio helpers', () => {
         }
       },
       key,
+      [],
       []
     )
 
