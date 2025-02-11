@@ -20,7 +20,7 @@ export function privSlot(slotNumber: any, keyType: any, key: any, valueType: any
 // @TODO: fix the any
 function sstoreCode(slotNumber: any, keyType: any, key: any, valueType: any, valueBuf: any) {
   // @TODO why are we using valueType for the slotNumber? this has to be a hardcoded uint256 and valueType is pointless
-  const slot = privSlot(slotNumber, keyType, key, valueType)
+  const slot = privSlot(slotNumber, keyType, key, valueType).replace(/^0x/, '')
   return Buffer.concat([
     evmPush(typeof valueBuf === 'string' ? Buffer.from(valueBuf.slice(2), 'hex') : valueBuf),
     evmPush(Buffer.from(slot, 'hex')),
