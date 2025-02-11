@@ -39,6 +39,7 @@ export type NetworkType = {
     symbol: string
     coingeckoId: any
     decimals: number
+    wrappedAddr?: string
   }
 }
 
@@ -57,7 +58,8 @@ const networks: NetworkType[] = [
       address: '0x0000000000000000000000000000000000000000',
       symbol: 'ETH',
       coingeckoId: 'ethereum',
-      decimals: 18
+      decimals: 18,
+      wrappedAddr: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2'
     }
   },
   {
@@ -73,7 +75,8 @@ const networks: NetworkType[] = [
       address: '0x0000000000000000000000000000000000000000',
       symbol: 'POL',
       coingeckoId: 'matic-network',
-      decimals: 18
+      decimals: 18,
+      wrappedAddr: '0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270'
     }
   },
   {
@@ -89,7 +92,8 @@ const networks: NetworkType[] = [
       address: '0x0000000000000000000000000000000000000000',
       symbol: 'AVAX',
       coingeckoId: 'avalanche-2',
-      decimals: 18
+      decimals: 18,
+      wrappedAddr: '0xb31f66aa3c1e785363f0875a1b74e27b85fd66c7'
     }
   },
   {
@@ -106,7 +110,8 @@ const networks: NetworkType[] = [
       address: '0x0000000000000000000000000000000000000000',
       symbol: 'BNB',
       coingeckoId: 'binancecoin',
-      decimals: 18
+      decimals: 18,
+      wrappedAddr: '0xbb4cdb9cbd36b01bd1cbaebf2de08d9173bc095c'
     }
   },
   {
@@ -122,7 +127,8 @@ const networks: NetworkType[] = [
       address: '0x0000000000000000000000000000000000000000',
       symbol: 'FTM',
       coingeckoId: 'fantom',
-      decimals: 18
+      decimals: 18,
+      wrappedAddr: '0x21be370d5312f44cb42ce377bc9b8a0cef1a4c83'
     }
   },
   {
@@ -139,7 +145,8 @@ const networks: NetworkType[] = [
       address: '0x0000000000000000000000000000000000000000',
       symbol: 'GLMR',
       coingeckoId: 'moonbeam',
-      decimals: 18
+      decimals: 18,
+      wrappedAddr: '0x5f6c5C2fB289dB2228d159C69621215e354218d7'
     }
   },
   {
@@ -156,7 +163,8 @@ const networks: NetworkType[] = [
       address: '0x0000000000000000000000000000000000000000',
       symbol: 'MOVR',
       coingeckoId: 'moonriver',
-      decimals: 18
+      decimals: 18,
+      wrappedAddr: '0x98878b06940ae243284ca214f92bb71a2b032b8a'
     }
   },
   {
@@ -172,7 +180,8 @@ const networks: NetworkType[] = [
       address: '0x0000000000000000000000000000000000000000',
       symbol: 'AETH',
       coingeckoId: 'ethereum',
-      decimals: 18
+      decimals: 18,
+      wrappedAddr: '0x82af49447d8a07e3bd95bd0d56f35241523fbab1'
     }
   },
   {
@@ -188,7 +197,8 @@ const networks: NetworkType[] = [
       address: '0x0000000000000000000000000000000000000000',
       symbol: 'XDAI',
       coingeckoId: 'xdai',
-      decimals: 18
+      decimals: 18,
+      wrappedAddr: '0xe91D153E0b41518A2Ce8Dd3D7944Fa863463a97d'
     }
   },
   {
@@ -205,7 +215,8 @@ const networks: NetworkType[] = [
       address: '0x0000000000000000000000000000000000000000',
       symbol: 'KCS',
       coingeckoId: 'kucoin-shares',
-      decimals: 18
+      decimals: 18,
+      wrappedAddr: '0x4446fc4eb47f2f6586f9faab68b3498f86c07521'
     }
   },
   {
@@ -221,7 +232,8 @@ const networks: NetworkType[] = [
       address: '0x0000000000000000000000000000000000000000',
       symbol: 'ETH',
       coingeckoId: 'ethereum',
-      decimals: 18
+      decimals: 18,
+      wrappedAddr: '0x4200000000000000000000000000000000000006'
     }
   },
   {
@@ -237,7 +249,8 @@ const networks: NetworkType[] = [
       address: '0x0000000000000000000000000000000000000000',
       symbol: 'ETH',
       coingeckoId: 'ethereum',
-      decimals: 18
+      decimals: 18,
+      wrappedAddr: '0x4200000000000000000000000000000000000006'
     }
   },
   {
@@ -253,7 +266,8 @@ const networks: NetworkType[] = [
       address: '0x0000000000000000000000000000000000000000',
       symbol: 'ETH',
       coingeckoId: 'ethereum',
-      decimals: 18
+      decimals: 18,
+      wrappedAddr: '0x5300000000000000000000000000000000000004'
     }
   },
   {
@@ -269,7 +283,8 @@ const networks: NetworkType[] = [
       address: '0x0000000000000000000000000000000000000000',
       symbol: 'METIS',
       coingeckoId: 'metis-token',
-      decimals: 18
+      decimals: 18,
+      wrappedAddr: '0x75cb093e4d61d2a2e65d8e0bbb01de8d89b53481'
     }
   },
   {
@@ -286,7 +301,8 @@ const networks: NetworkType[] = [
       address: '0x0000000000000000000000000000000000000000',
       symbol: 'OTK',
       coingeckoId: 'oec-token',
-      decimals: 18
+      decimals: 18,
+      wrappedAddr: '0xe538905cf8410324e03a5a23c1c177a474d59b2b'
     }
   },
   {
