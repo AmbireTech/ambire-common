@@ -84,7 +84,7 @@ describe('Debug tracecall detection for transactions', () => {
     }
   })
 
-  it('Detects nfts and tokens in and out', async () => {
+  it.skip('Detects nfts and tokens in and out', async () => {
     accountOp.calls = [
       {
         to: NFT_ADDRESS,

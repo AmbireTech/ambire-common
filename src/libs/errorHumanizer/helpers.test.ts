@@ -62,4 +62,28 @@ describe('Generic error fallbacks work', () => {
 
     restore()
   })
+  it('Innercall failure error with reason', () => {
+    const message = getGenericMessageFromType(
+      ErrorType.InnerCallFailureError,
+      'The contract reverted',
+      MESSAGE_PREFIX,
+      ''
+    )
+
+    expect(message).toBe(
+      `${MESSAGE_PREFIX} it will revert onchain. Error code: The contract reverted\n`
+    )
+  })
+  it('Innercall failure error with no reason', () => {
+    const message = getGenericMessageFromType(
+      ErrorType.InnerCallFailureError,
+      '0x',
+      MESSAGE_PREFIX,
+      ''
+    )
+
+    expect(message).toBe(
+      `${MESSAGE_PREFIX} it will revert onchain with reason unknown.\nPlease try again or contact Ambire support for assistance.`
+    )
+  })
 })

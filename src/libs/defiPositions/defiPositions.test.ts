@@ -9,16 +9,16 @@ describe('DeFi positions', () => {
   // If this test ever fails because the accounts remove their positions, you can:
   // 1. Go to https://debank.com/protocols/matic_uniswap3/holders
   // 2. Find an account that has the required positions and use it in the test
-  const userAddrUni = '0x3c9aeacf25c81614793e0d5e07d6d23db44402c3'
-  const userAddrAave = '0x215f75a12A4934ae57deF7398EaeaFf87365F1Db'
+  const userAddrUni = '0xbd67a10726e6d112295a698ea348f40d27fe5149'
+  const userAddrAave = '0xe40d278afd00e6187db21ff8c96d572359ef03bf'
 
-  const optimism = networks.find((x) => x.id === 'optimism')
-  if (!optimism) throw new Error('unable to find optimism network in consts')
+  const ethereum = networks.find((x) => x.id === 'ethereum')
+  if (!ethereum) throw new Error('unable to find ethereum network in consts')
 
   const polygon = networks.find((x) => x.id === 'polygon')
   if (!polygon) throw new Error('unable to find polygon network in consts')
 
-  const providerOptimism = new JsonRpcProvider('https://invictus.ambire.com/optimism')
+  const providerEthereum = new JsonRpcProvider('https://invictus.ambire.com/ethereum')
   const providerPolygon = new JsonRpcProvider('https://invictus.ambire.com/polygon')
 
   describe('Uni V3', () => {
@@ -28,8 +28,8 @@ describe('DeFi positions', () => {
 
       if (uniV3Positions !== null) {
         const firstPos = uniV3Positions.positions[0]
-        expect(firstPos.additionalData.inRange).toBe(false)
         expect(firstPos.additionalData.liquidity).toBeGreaterThan(0)
+        expect(firstPos.assets.length).toBeGreaterThan(0)
       }
     })
     test('Uni V3 returns multiple positions', async () => {
@@ -39,8 +39,8 @@ describe('DeFi positions', () => {
     })
   })
   describe('AAVE v3', () => {
-    test('Get AAVE positions on Optimism', async () => {
-      const aavePositions = await getAAVEPositions(userAddrAave, providerOptimism, optimism)
+    test('Get AAVE positions on Ethereum', async () => {
+      const aavePositions = await getAAVEPositions(userAddrAave, providerEthereum, ethereum)
 
       expect(aavePositions).not.toBeNull()
       if (aavePositions !== null) {
@@ -49,7 +49,7 @@ describe('DeFi positions', () => {
       }
     })
     test('AAVE returns prices, health rate, additional date and asset value', async () => {
-      const aavePositions = await getAAVEPositions(userAddrAave, providerOptimism, optimism)
+      const aavePositions = await getAAVEPositions(userAddrAave, providerEthereum, ethereum)
       const pos = aavePositions?.positions[0]
 
       if (!pos) throw new Error('no positions found')
