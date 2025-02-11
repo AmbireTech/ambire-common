@@ -100,6 +100,14 @@ type SpeedCalc = {
   maxPriorityFeePerGas?: bigint
 }
 
+export enum TraceCallDiscoveryStatus {
+  NotStarted = 'not-started',
+  InProgress = 'in-progress',
+  SlowPendingResponse = 'slow-pending-response',
+  Done = 'done',
+  Failed = 'failed'
+}
+
 // declare the statuses we don't want state updates on
 export const noStateUpdateStatuses = [
   SigningStatus.InProgress,
@@ -170,6 +178,8 @@ export class SignAccountOpController extends EventEmitter {
   sponsor: Sponsor | undefined = undefined
 
   bundlerSwitcher: BundlerSwitcher
+
+  traceCallDiscoveryStatus: TraceCallDiscoveryStatus = TraceCallDiscoveryStatus.NotStarted
 
   constructor(
     accounts: AccountsController,
@@ -431,7 +441,8 @@ export class SignAccountOpController extends EventEmitter {
     const significantBalanceDecreaseWarning = getSignificantBalanceDecreaseWarning(
       latestState,
       pendingState,
-      this.accountOp.networkId
+      this.accountOp.networkId,
+      this.traceCallDiscoveryStatus
     )
 
     if (this.selectedOption) {

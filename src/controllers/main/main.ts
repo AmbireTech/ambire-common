@@ -125,7 +125,11 @@ import { ProvidersController } from '../providers/providers'
 /* eslint-disable @typescript-eslint/no-floating-promises */
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 /* eslint-disable no-underscore-dangle */
-import { SignAccountOpController, SigningStatus } from '../signAccountOp/signAccountOp'
+import {
+  SignAccountOpController,
+  SigningStatus,
+  TraceCallDiscoveryStatus
+} from '../signAccountOp/signAccountOp'
 import { SignMessageController } from '../signMessage/signMessage'
 import { SwapAndBridgeController, SwapAndBridgeFormStatus } from '../swapAndBridge/swapAndBridge'
 
@@ -701,6 +705,16 @@ export class MainController extends EventEmitter {
     const network = this.networks.networks.find((net) => net.id === accountOp?.networkId)
     if (!network) return
 
+    if (this.signAccountOp)
+      this.signAccountOp.traceCallDiscoveryStatus = TraceCallDiscoveryStatus.InProgress
+
+    const timeoutId = setTimeout(() => {
+      if (this.signAccountOp) {
+        this.signAccountOp.traceCallDiscoveryStatus = TraceCallDiscoveryStatus.SlowPendingResponse
+        this.signAccountOp.calculateWarnings()
+      }
+    }, 2000)
+
     try {
       const account = this.accounts.accounts.find((acc) => acc.addr === accountOp.accountAddr)!
       const state = this.accounts.accountStates[accountOp.accountAddr][accountOp.networkId]
@@ -719,28 +733,29 @@ export class MainController extends EventEmitter {
       const learnedNewNfts = await this.portfolio.learnNfts(nfts, network.id)
       // update the portfolio only if new tokens were found through tracing
       if (learnedNewTokens || learnedNewNfts) {
-        this.portfolio
-          .updateSelectedAccount(
-            accountOp.accountAddr,
-            network,
-            getAccountOpsForSimulation(
-              account,
-              this.actions.visibleActionsQueue,
-              network,
-              accountOp
-            ),
-            { forceUpdate: true }
-          )
-          // fire an update request to refresh the warnings if any
-          .then(() => this.signAccountOp?.update({}))
+        await this.portfolio.updateSelectedAccount(
+          accountOp.accountAddr,
+          network,
+          getAccountOpsForSimulation(account, this.actions.visibleActionsQueue, network, accountOp),
+          { forceUpdate: true }
+        )
       }
+
+      if (this.signAccountOp)
+        this.signAccountOp.traceCallDiscoveryStatus = TraceCallDiscoveryStatus.Done
     } catch (e: any) {
+      if (this.signAccountOp)
+        this.signAccountOp.traceCallDiscoveryStatus = TraceCallDiscoveryStatus.Failed
+
       this.emitError({
         level: 'silent',
         message: 'Error in main.traceCall',
         error: e
       })
     }
+
+    this.signAccountOp?.calculateWarnings()
+    clearTimeout(timeoutId)
   }
 
   async handleSignMessage() {

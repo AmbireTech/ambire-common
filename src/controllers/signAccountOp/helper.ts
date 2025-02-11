@@ -8,6 +8,7 @@ import { FeePaymentOption } from '../../libs/estimate/interfaces'
 import { Price, TokenResult } from '../../libs/portfolio'
 import { getAccountPortfolioTotal, getTotal } from '../../libs/portfolio/helpers'
 import { AccountState } from '../../libs/portfolio/interfaces'
+import { TraceCallDiscoveryStatus } from './signAccountOp'
 
 function getFeeSpeedIdentifier(
   option: FeePaymentOption,
@@ -40,7 +41,8 @@ function getTokenUsdAmount(token: TokenResult, gasAmount: bigint): string {
 function getSignificantBalanceDecreaseWarning(
   latest: AccountState,
   pending: AccountState,
-  networkId: Network['id']
+  networkId: Network['id'],
+  traceCallDiscoveryStatus: TraceCallDiscoveryStatus
 ): Warning | null {
   const latestNetworkData = latest?.[networkId]
   const pendingNetworkData = pending?.[networkId]
@@ -59,7 +61,16 @@ function getSignificantBalanceDecreaseWarning(
 
     if (!willBalanceDecreaseByMoreThan10Percent) return null
 
-    return WARNINGS.significantBalanceDecrease
+    if (traceCallDiscoveryStatus === TraceCallDiscoveryStatus.Done) {
+      return WARNINGS.significantBalanceDecrease
+    }
+
+    if (
+      traceCallDiscoveryStatus === TraceCallDiscoveryStatus.Failed ||
+      traceCallDiscoveryStatus === TraceCallDiscoveryStatus.SlowPendingResponse
+    ) {
+      return WARNINGS.possibleBalanceDecrease
+    }
   }
 
   return null
