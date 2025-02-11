@@ -1,5 +1,4 @@
-const abi = require('ethereumjs-abi')
-const keccak256 = require('js-sha3').keccak256
+import { AbiCoder, keccak256 } from 'ethers'
 
 // @TODO: fix the any
 function evmPush(data: any) {
@@ -13,7 +12,8 @@ function evmPush(data: any) {
 
 // @TODO: fix the any
 export function privSlot(slotNumber: any, keyType: any, key: any, valueType: any) {
-  const buf = abi.rawEncode([keyType, valueType], [key, slotNumber])
+  const abiCoder = new AbiCoder()
+  const buf = abiCoder.encode([keyType, valueType], [key, slotNumber])
   return keccak256(buf)
 }
 
