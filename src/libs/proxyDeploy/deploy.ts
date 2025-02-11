@@ -1,4 +1,4 @@
-import { AbiCoder, keccak256 } from 'ethers'
+import { AbiCoder, keccak256, hexlify, zeroPadValue, isBytesLike, getBytes } from 'ethers'
 
 // @TODO: fix the any
 function evmPush(data: any) {
@@ -12,6 +12,11 @@ function evmPush(data: any) {
 
 // @TODO: fix the any
 export function privSlot(slotNumber: any, keyType: any, key: any, valueType: any) {
+  // fixup for slotNumber when valueType is 'bytes32'
+  slotNumber = valueType === 'bytes32' && !isBytesLike(slotNumber)
+    ? getBytes(zeroPadValue(hexlify(Number(slotNumber).toString(16)), 32))
+    : slotNumber
+
   const abiCoder = new AbiCoder()
   const buf = abiCoder.encode([keyType, valueType], [key, slotNumber])
   return keccak256(buf)
