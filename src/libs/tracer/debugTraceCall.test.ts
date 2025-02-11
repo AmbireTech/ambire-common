@@ -7,11 +7,14 @@ import { AccountOp } from '../accountOp/accountOp'
 import { ERC20, ERC721 } from '../humanizer/const/abis'
 import { debugTraceCall } from './debugTraceCall'
 
-const NFT_ADDRESS = '0xb7330c592dc5feafda855867b1e172be3a8d4abf'
+const NFT_ADDRESS = '0x3Bd57Bf93dE179d2e47e86319F144d7482503C7d'
+const USDT_ADDRESS_OPTIMISM = '0x94b008aA00579c1307B0EF2c499aD98a8ce58e58'
+const USDC_ADDRESS_OPTIMISM = '0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85'
+const ACCOUNT_ADDRESS = '0x46C0C59591EbbD9b7994d10efF172bFB9325E240'
 
 // @TODO add minting and burning test
 describe('Debug tracecall detection for transactions', () => {
-  const provider = new JsonRpcProvider('https://invictus.ambire.com/polygon')
+  const provider = new JsonRpcProvider('https://invictus.ambire.com/optimism')
   let account: Account
   let accountOp: AccountOp
   const nftIface: Interface = new Interface(ERC721)
@@ -19,29 +22,29 @@ describe('Debug tracecall detection for transactions', () => {
   let state: AccountOnchainState
   beforeAll(async () => {
     account = {
-      addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+      addr: ACCOUNT_ADDRESS,
       initialPrivileges: [
         [
-          '0xe5a4Dad2Ea987215460379Ab285DF87136E83BEA',
+          '0x02be1F941b6B777D4c30f110E997704fFc26B379',
           '0x0000000000000000000000000000000000000000000000000000000000000002'
         ]
       ],
-      associatedKeys: ['0xe5a4Dad2Ea987215460379Ab285DF87136E83BEA'],
+      associatedKeys: ['0x02be1F941b6B777D4c30f110E997704fFc26B379'],
       creation: {
         factoryAddr: '0x26cE6745A633030A6faC5e64e41D21fb6246dc2d',
         bytecode:
           '0x7f00000000000000000000000000000000000000000000000000000000000000027fa27fd83f65c3d89187ef0fd4fe62738d42ec134f8b2d8bf78612bd1cad581bb5553d602d80604d3d3981f3363d3d373d3d3d363d730f2aa7bcda3d9d210df69a394b6965cb2566c8285af43d82803e903d91602b57fd5bf3',
         salt: '0x0000000000000000000000000000000000000000000000000000000000000000'
       },
-      preferences: { label: 'TEST SMART', pfp: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8' },
+      preferences: { label: 'TEST SMART', pfp: ACCOUNT_ADDRESS },
       // usedOnNetworks: [],
       newlyCreated: false,
       newlyAdded: false
     }
     accountOp = {
-      accountAddr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
-      networkId: 'polygon',
-      signingKeyAddr: '0xe5a4Dad2Ea987215460379Ab285DF87136E83BEA',
+      accountAddr: ACCOUNT_ADDRESS,
+      networkId: 'optimism',
+      signingKeyAddr: '"0x02be1F941b6B777D4c30f110E997704fFc26B379"',
       signingKeyType: 'internal',
       gasLimit: null,
       gasFeePayment: {
@@ -66,7 +69,7 @@ describe('Debug tracecall detection for transactions', () => {
       ]
     }
     state = {
-      accountAddr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+      accountAddr: ACCOUNT_ADDRESS,
       nonce: 1n,
       erc4337Nonce: 115792089237316195423570985008687907853269984665640564039457584007913129639935n,
       isDeployed: true,
@@ -84,14 +87,14 @@ describe('Debug tracecall detection for transactions', () => {
     }
   })
 
-  it.skip('Detects nfts and tokens in and out', async () => {
+  it('Detects nfts and tokens in and out', async () => {
     accountOp.calls = [
       {
         to: NFT_ADDRESS,
         value: 0n,
         data: nftIface.encodeFunctionData(
           'transferFrom(address from, address to, uint256 tokenId)',
-          [account.addr, '0xC2E6dFcc2C6722866aD65F211D5757e1D2879337', 3n]
+          [account.addr, '0xC2E6dFcc2C6722866aD65F211D5757e1D2879337', 25n]
         )
       },
       {
@@ -99,25 +102,25 @@ describe('Debug tracecall detection for transactions', () => {
         value: 0n,
         data: nftIface.encodeFunctionData(
           'transferFrom(address from, address to, uint256 tokenId)',
-          ['0xC2E6dFcc2C6722866aD65F211D5757e1D2879337', account.addr, 4n]
+          ['0x6969174FD72466430a46e18234D0b530c9FD5f49', account.addr, 0n]
         )
       },
-      // usdt transfer
+      // usdc transfer
       {
-        to: '0xc2132D05D31c914a87C6611C10748AEb04B58e8F',
+        to: USDC_ADDRESS_OPTIMISM,
         value: 0n,
         data: tokenIface.encodeFunctionData('transfer', [
           '0xC2E6dFcc2C6722866aD65F211D5757e1D2879337',
-          1000000
+          2000n
         ])
       },
-      // usdc pull
+      // usdt pull
       {
-        to: '0x3c499c542cef5e3811e1192ce70d8cc03d5c3359',
+        to: USDT_ADDRESS_OPTIMISM,
         value: 0n,
         data: tokenIface.encodeFunctionData(
           'transferFrom(address from, address to, uint256 tokenId)',
-          ['0xd034DDc997283B8179A12fE8d36a7356F01f2Ddd', account.addr, 1]
+          ['0x6969174FD72466430a46e18234D0b530c9FD5f49', account.addr, 100000n]
         )
       }
     ]
@@ -125,15 +128,15 @@ describe('Debug tracecall detection for transactions', () => {
     const approvalStorageSlotUSDC = solidityPackedKeccak256(
       ['uint256', 'uint256'],
       [
-        '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+        ACCOUNT_ADDRESS,
         solidityPackedKeccak256(
           ['uint256', 'uint256'],
-          ['0xd034DDc997283B8179A12fE8d36a7356F01f2Ddd', 10]
+          ['0x6969174FD72466430a46e18234D0b530c9FD5f49', 10000000000]
         )
       ]
     )
     const overrideData = {
-      '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359': {
+      [USDT_ADDRESS_OPTIMISM]: {
         stateDiff: {
           [approvalStorageSlotUSDC]: `0x${MaxUint256.toString(16)}`
         }
@@ -153,11 +156,11 @@ describe('Debug tracecall detection for transactions', () => {
     )
 
     expect(res.nfts.length).toBe(1)
-    expect(res.nfts[0][0]).toBe('0xB7330C592dC5fEaFdA855867B1E172be3a8d4aBf')
-    expect(res.nfts[0][1]).toContain(4n)
-    expect(res.nfts[0][1]).toContain(3n)
+    expect(res.nfts[0][0]).toBe(NFT_ADDRESS)
+    expect(res.nfts[0][1]).toContain(0n)
+    expect(res.nfts[0][1]).toContain(25n)
     expect(res.tokens.length).toBe(2)
-    expect(res.tokens).toContain('0xc2132D05D31c914a87C6611C10748AEb04B58e8F')
-    expect(res.tokens).toContain('0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359')
+    expect(res.tokens).toContain(USDC_ADDRESS_OPTIMISM)
+    expect(res.tokens).toContain(USDT_ADDRESS_OPTIMISM)
   })
 })
