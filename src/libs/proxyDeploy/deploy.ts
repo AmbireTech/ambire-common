@@ -1,4 +1,4 @@
-import { AbiCoder, keccak256, hexlify, zeroPadValue, isBytesLike, getBytes } from 'ethers'
+import { solidityPackedKeccak256 } from 'ethers'
 
 // @TODO: fix the any
 function evmPush(data: any) {
@@ -12,14 +12,7 @@ function evmPush(data: any) {
 
 // @TODO: fix the any
 export function privSlot(slotNumber: any, keyType: any, key: any, valueType: any) {
-  // fixup for slotNumber when valueType is 'bytes32'
-  slotNumber = valueType === 'bytes32' && !isBytesLike(slotNumber)
-    ? getBytes(zeroPadValue(hexlify(Number(slotNumber).toString(16)), 32))
-    : slotNumber
-
-  const abiCoder = new AbiCoder()
-  const buf = abiCoder.encode([keyType, valueType], [key, slotNumber])
-  return keccak256(buf)
+  return solidityPackedKeccak256([keyType, valueType], [key, slotNumber])
 }
 
 // @TODO: fix the any
@@ -46,7 +39,7 @@ export function getProxyDeployBytecode(
   const slotNumber = opts.privSlot ?? 0
   if (privLevels.length > 3) throw new Error('getProxyDeployBytecode: max 3 privLevels')
   const storage = Buffer.concat(
-    privLevels.map(({ addr, hash }) => sstoreCode(slotNumber, 'address', addr, 'bytes32', hash))
+    privLevels.map(({ addr, hash }) => sstoreCode(slotNumber, 'uint256', addr, 'uint256', hash))
   )
   const initial = Buffer.from('3d602d80', 'hex')
   // NOTE: this means we can't support offset>256
