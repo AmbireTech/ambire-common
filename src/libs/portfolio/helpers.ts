@@ -452,19 +452,14 @@ export const isPortfolioGasTankResult = (
   return !!result && 'gasTankTokens' in result && Array.isArray(result.gasTankTokens)
 }
 
-export const getIsFirstCashbackReceived = (accountState: AccountState, resBalance: any[]) => {
-  const gasTankResult = accountState.gasTank?.result
+export const isCurrentCashbackZero = (resBalance: any[]) => {
+  const currentCashback = resBalance?.[0]?.cashback
 
-  if (!isPortfolioGasTankResult(gasTankResult)) {
+  if (currentCashback === undefined) return false
+
+  try {
+    return BigInt(currentCashback) === 0n
+  } catch {
     return false
   }
-
-  const previousCashback = gasTankResult.gasTankTokens[0]?.cashback
-  const currentCashback = resBalance[0]?.cashback
-  return (
-    typeof previousCashback !== 'undefined' &&
-    typeof currentCashback !== 'undefined' &&
-    previousCashback === 0n &&
-    BigInt(currentCashback) > 0n
-  )
 }

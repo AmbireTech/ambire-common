@@ -13,10 +13,10 @@ import { CustomToken, TokenPreference } from '../../libs/portfolio/customToken'
 import getAccountNetworksWithAssets from '../../libs/portfolio/getNetworksWithAssets'
 import {
   getFlags,
-  getIsFirstCashbackReceived,
   getTokensReadyToLearn,
   getTotal,
   getUpdatedHints,
+  isCurrentCashbackZero,
   processTokens,
   shouldGetAdditionalPortfolio,
   validateERC20Token
@@ -431,12 +431,14 @@ export class PortfolioController extends EventEmitter {
     accountId,
     shouldShowBanner,
     toggleModal,
-    shouldGetAdditionalPortfolio
+    shouldGetAdditionalPortfolio,
+    shouldSetCashbackWasZeroAt
   }: {
     accountId: AccountId
     shouldShowBanner: boolean
     toggleModal: boolean
     shouldGetAdditionalPortfolio: boolean
+    shouldSetCashbackWasZeroAt: boolean
   }) {
     if (!accountId) throw new Error('AccountId in required to update cashback status')
 
@@ -453,7 +455,8 @@ export class PortfolioController extends EventEmitter {
         firstCashbackReceivedAt: shouldShowBanner
           ? currentTimestamp
           : currentAccountStatus.firstCashbackReceivedAt,
-        firstCashbackSeenAt: shouldShowBanner ? null : currentTimestamp
+        firstCashbackSeenAt: shouldShowBanner ? null : currentTimestamp,
+        cashbackWasZeroAt: shouldSetCashbackWasZeroAt ? currentTimestamp : null
       }
     }
     await this.#storage.set('cashbackStatusByAccount', this.cashbackStatusByAccount)
@@ -519,12 +522,24 @@ export class PortfolioController extends EventEmitter {
       }
     }
 
-    if (getIsFirstCashbackReceived(accountState, res.data.gasTank.balance)) {
+    const isCashbackZero = isCurrentCashbackZero(res.data.gasTank.balance)
+    const cashbackWasZeroBefore = !!this.cashbackStatusByAccount[accountId]?.cashbackWasZeroAt
+
+    if (isCashbackZero) {
+      await this.updateCashbackStatusByAccount({
+        accountId,
+        shouldShowBanner: false,
+        toggleModal: false,
+        shouldGetAdditionalPortfolio: false,
+        shouldSetCashbackWasZeroAt: true
+      })
+    } else if (!isCashbackZero && cashbackWasZeroBefore) {
       await this.updateCashbackStatusByAccount({
         accountId,
         shouldShowBanner: true,
         toggleModal: false,
-        shouldGetAdditionalPortfolio: false
+        shouldGetAdditionalPortfolio: false,
+        shouldSetCashbackWasZeroAt: false
       })
     }
 

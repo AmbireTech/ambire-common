@@ -246,6 +246,7 @@ export type FormattedPendingAmounts = Omit<PendingAmounts, 'pendingBalance'> & {
 export type CashbackStatus = {
   firstCashbackReceivedAt: number | null
   firstCashbackSeenAt: number | null
+  cashbackWasZeroAt: number | null
 }
 
 export type CashbackStatusByAccount = {
