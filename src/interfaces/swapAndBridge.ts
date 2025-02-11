@@ -200,6 +200,7 @@ export type ActiveRoute = {
     userAddress: string
   }
   routeStatus: 'waiting-approval-to-resolve' | 'in-progress' | 'ready' | 'completed' | 'failed'
+  attemptsToGetTheStatus?: number
   error?: string
 }
 

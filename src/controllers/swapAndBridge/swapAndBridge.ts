@@ -74,6 +74,7 @@ const STATUS_WRAPPED_METHODS = {
 
 const SUPPORTED_CHAINS_CACHE_THRESHOLD = 1000 * 60 * 60 * 24 // 1 day
 const TO_TOKEN_LIST_CACHE_THRESHOLD = 1000 * 60 * 60 * 4 // 4 hours
+const ATTEMPTS_TO_GET_THE_STATUS_THRESHOLD = 60
 
 const PROTOCOLS_WITH_CONTRACT_FEE_IN_NATIVE = [
   'stargate',
@@ -1089,7 +1090,21 @@ export class SwapAndBridgeController extends EventEmitter {
       if (broadcastedButNotConfirmed) return
       if (activeRoute.routeStatus === 'completed') return
 
+      // TODO: Fire the API call to Socket only when the transaction gets confirmed
+      // TODO: If transaction is confirmed, but got reverted, display a proper message + "Please start from beginning" note.
+      let attemptsToGetTheStatus = activeRoute.attemptsToGetTheStatus || 0
+      if (attemptsToGetTheStatus > ATTEMPTS_TO_GET_THE_STATUS_THRESHOLD) {
+        // TODO: Figure out what to do if the status is a bad one (500) or 200 (pending forever)
+        // TODO: Try again option?
+        return this.updateActiveRoute(activeRoute.activeRouteId, {
+          error:
+            'Unable to get the route status after multiple attempts. The transaction may take longer than expected.',
+          attemptsToGetTheStatus
+        })
+      }
+
       try {
+        attemptsToGetTheStatus++
         status = await this.#socketAPI.getRouteStatus({
           activeRouteId: activeRoute.activeRouteId,
           userTxIndex: activeRoute.userTxIndex,
@@ -1097,14 +1112,18 @@ export class SwapAndBridgeController extends EventEmitter {
         })
       } catch (e: any) {
         const { message } = getHumanReadableSwapAndBridgeError(e)
-        this.updateActiveRoute(activeRoute.activeRouteId, { error: message })
+        this.updateActiveRoute(activeRoute.activeRouteId, {
+          error: message,
+          attemptsToGetTheStatus
+        })
         return
       }
 
       const route = this.activeRoutes.find((r) => r.activeRouteId === activeRoute.activeRouteId)
       if (route?.error) {
         this.updateActiveRoute(activeRoute.activeRouteId, {
-          error: undefined
+          error: undefined,
+          attemptsToGetTheStatus
         })
       }
 
@@ -1113,6 +1132,7 @@ export class SwapAndBridgeController extends EventEmitter {
           activeRoute.activeRouteId,
           {
             routeStatus: 'completed',
+            attemptsToGetTheStatus,
             error: undefined
           },
           true
@@ -1122,6 +1142,7 @@ export class SwapAndBridgeController extends EventEmitter {
           activeRoute.activeRouteId,
           {
             routeStatus: 'ready',
+            attemptsToGetTheStatus,
             error: undefined
           },
           true
