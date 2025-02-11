@@ -561,7 +561,7 @@ export class PortfolioController extends EventEmitter {
         updateStarted: start,
         lastSuccessfulUpdate: Date.now(),
         tokens: [],
-        gasTankTokens: [...gasTankTokens],
+        gasTankTokens,
         total: getTotal(gasTankTokens)
       }
     }
