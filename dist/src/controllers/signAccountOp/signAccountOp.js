@@ -237,7 +237,7 @@ class SignAccountOpController extends eventEmitter_1.default {
             balance += networkPortfolio.result.total.usd;
         });
         if (balance < 10 && this.accountOp.gasFeePayment && this.accountOp.gasFeePayment.isGasTank) {
-            errors.push("Gas tank isn't allowed on accounts with < $10 balance. Please add funds to your account");
+            errors.push('Your account must have a minimum overall balance of $10 to pay for gas via the Gas Tank. Please add funds to your account or choose another fee payment option.');
         }
         return errors;
     }

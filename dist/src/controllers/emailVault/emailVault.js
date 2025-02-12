@@ -23,6 +23,7 @@ const RECOVERY_SECRET_ID = 'EmailVaultRecoverySecret';
 const EMAIL_VAULT_STORAGE_KEY = 'emailVault';
 const MAGIC_LINK_STORAGE_KEY = 'magicLinkKeys';
 const SESSION_KEYS_STORAGE_KEY = 'sessionKeys';
+const SETUP_BANNER_DISMISSED_AT_STORAGE_KEY = 'emailVaultSetupBannerDismissedAt';
 function base64UrlEncode(str) {
     return str.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
@@ -36,9 +37,9 @@ const STATUS_WRAPPED_METHODS = {
 /**
  * EmailVaultController
  * @class
- * The purpouse of this controller is to provide easy interface to the EmailVault, keystore and magic link libraries
+ * The purpose of this controller is to provide easy interface to the EmailVault, keystore and magic link libraries
  * The most important thing it achieves is handling magicLink and session keys with polling.
- * Emits the porper states e.g. loading, ready, awaiting email magicLink confirmation etc.
+ * Emits the proper states e.g. loading, ready, awaiting email magicLink confirmation etc.
  * Extended documentation about the EV and its internal mechanisms
  * https://github.com/AmbireTech/ambire-common/wiki/Email-Vault-Documentation
  */
@@ -60,6 +61,7 @@ class EmailVaultController extends eventEmitter_1.default {
     emailVaultStates = {
         email: {}
     };
+    #setupBannerDismissedAt = 0;
     statuses = STATUS_WRAPPED_METHODS;
     constructor(storage, fetch, relayerUrl, keyStore, options) {
         super();
@@ -78,14 +80,16 @@ class EmailVaultController extends eventEmitter_1.default {
         // and then we call it's methods
         await (0, wait_1.default)(1);
         this.emitUpdate();
-        const [emailVaultState, magicLinkKey] = await Promise.all([
+        const [emailVaultState, magicLinkKey, dismissedAt] = await Promise.all([
             this.storage.get(EMAIL_VAULT_STORAGE_KEY, {
                 email: {}
             }),
-            this.storage.get(MAGIC_LINK_STORAGE_KEY, {})
+            this.storage.get(MAGIC_LINK_STORAGE_KEY, {}),
+            this.storage.get(SETUP_BANNER_DISMISSED_AT_STORAGE_KEY, this.#setupBannerDismissedAt)
         ]);
         this.emailVaultStates = emailVaultState;
         this.#magicLinkKeys = this.#parseMagicLinkKeys(magicLinkKey);
+        this.#setupBannerDismissedAt = dismissedAt;
         this.lastUpdate = new Date();
         this.isReady = true;
         this.emitUpdate();
@@ -465,6 +469,12 @@ class EmailVaultController extends eventEmitter_1.default {
         this.#isWaitingEmailConfirmation = false;
         this.emitUpdate();
     }
+    dismissBanner() {
+        this.#setupBannerDismissedAt = Date.now();
+        // eslint-disable-next-line @typescript-eslint/no-floating-promises
+        this.storage.set(SETUP_BANNER_DISMISSED_AT_STORAGE_KEY, this.#setupBannerDismissedAt);
+        this.emitUpdate();
+    }
     get keystoreRecoveryEmail() {
         const keyStoreUid = this.#keyStore.keyStoreUid;
         const EVEmails = Object.keys(this.emailVaultStates.email);
@@ -488,15 +498,22 @@ class EmailVaultController extends eventEmitter_1.default {
     }
     get banners() {
         const banners = [];
+        const now = Date.now();
+        const ONE_WEEK = 1000 * 60 * 60 * 24 * 7;
+        const isDismissed = this.#setupBannerDismissedAt > 0 && now - this.#setupBannerDismissedAt < ONE_WEEK;
         // Show the banner if the keystore is already configured and the `password` secret is already set (for HW and ViewOnly accounts the app can run without keystore)
         // and if the keystore secret backup is not enabled already
-        if (this.#keyStore.hasPasswordSecret && !this.hasKeystoreRecovery) {
+        if (this.#keyStore.hasPasswordSecret && !this.hasKeystoreRecovery && !isDismissed) {
             banners.push({
                 id: 'keystore-secret-backup',
                 type: 'info',
                 title: 'Enable device password reset via email',
                 text: "Email Vault recovers your device password. It is securely stored in Ambire's infrastructure cloud.",
                 actions: [
+                    {
+                        label: 'Dismiss',
+                        actionName: 'dismiss-email-vault'
+                    },
                     {
                         label: 'Enable',
                         actionName: 'backup-keystore-secret'

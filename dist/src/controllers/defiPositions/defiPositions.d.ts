@@ -15,7 +15,10 @@ export declare class DefiPositionsController extends EventEmitter {
         providers: ProvidersController;
         networks: NetworksController;
     });
-    updatePositions(networkId?: NetworkId): Promise<void>;
+    updatePositions(opts?: {
+        networkId?: NetworkId;
+        maxDataAgeMs?: number;
+    }): Promise<void>;
     removeNetworkData(networkId: NetworkId): void;
     getDefiPositionsState(accountAddr: string): AccountState;
     getNetworksWithPositions(accountAddr: string): import("../../libs/defiPositions/types").NetworksWithPositions;

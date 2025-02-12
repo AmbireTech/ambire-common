@@ -16,8 +16,8 @@ function isValidPrivateKey(value) {
     }
 }
 exports.isValidPrivateKey = isValidPrivateKey;
-const getPrivateKeyFromSeed = (seed, keyIndex, hdPathTemplate) => {
-    const mnemonic = ethers_1.Mnemonic.fromPhrase(seed);
+const getPrivateKeyFromSeed = (seed, seedPassphrase, keyIndex, hdPathTemplate) => {
+    const mnemonic = ethers_1.Mnemonic.fromPhrase(seed, seedPassphrase);
     const wallet = ethers_1.HDNodeWallet.fromMnemonic(mnemonic, (0, hdPath_1.getHdPathFromTemplate)(hdPathTemplate, keyIndex));
     if (wallet) {
         return wallet.privateKey;
@@ -33,7 +33,8 @@ class KeyIterator {
     subType;
     #privateKey = null;
     #seedPhrase = null;
-    constructor(_privKeyOrSeed) {
+    #seedPassphrase = null;
+    constructor(_privKeyOrSeed, _seedPassphrase) {
         if (!_privKeyOrSeed)
             throw new Error('keyIterator: no private key or seed phrase provided');
         if (isValidPrivateKey(_privKeyOrSeed)) {
@@ -44,6 +45,9 @@ class KeyIterator {
         if (ethers_1.Mnemonic.isValidMnemonic(_privKeyOrSeed)) {
             this.#seedPhrase = _privKeyOrSeed;
             this.subType = 'seed';
+            if (_seedPassphrase) {
+                this.#seedPassphrase = _seedPassphrase;
+            }
             return;
         }
         throw new Error('keyIterator: invalid argument provided to constructor');
@@ -62,7 +66,7 @@ class KeyIterator {
                     keys.push(new ethers_1.Wallet(this.#privateKey).address);
             }
             if (this.#seedPhrase) {
-                const mnemonic = ethers_1.Mnemonic.fromPhrase(this.#seedPhrase);
+                const mnemonic = ethers_1.Mnemonic.fromPhrase(this.#seedPhrase, this.#seedPassphrase);
                 for (let i = from; i <= to; i++) {
                     const wallet = ethers_1.HDNodeWallet.fromMnemonic(mnemonic, (0, hdPath_1.getHdPathFromTemplate)(hdPathTemplate, i));
                     keys.push(wallet.address);
@@ -86,7 +90,7 @@ class KeyIterator {
                         console.error('keyIterator: no seed phrase provided');
                         return [];
                     }
-                    const privateKey = (0, exports.getPrivateKeyFromSeed)(this.#seedPhrase, index, hdPathTemplate);
+                    const privateKey = (0, exports.getPrivateKeyFromSeed)(this.#seedPhrase, this.#seedPassphrase, index, hdPathTemplate);
                     return [
                         {
                             addr: new ethers_1.Wallet(privateKey).address,

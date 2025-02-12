@@ -190,7 +190,7 @@ const getLowercaseAddressArrayForNetwork = (array, networkId) => array
  */
 function getUpdatedHints(
 // Can only be null in case of no external api hints
-latestHintsFromExternalAPI, tokens, tokenErrors, networkId, storagePreviousHints, key, customTokens) {
+latestHintsFromExternalAPI, tokens, tokenErrors, networkId, storagePreviousHints, key, customTokens, tokenPreferences) {
     const previousHints = { ...storagePreviousHints };
     if (!previousHints.fromExternalAPI)
         previousHints.fromExternalAPI = {};
@@ -221,6 +221,7 @@ latestHintsFromExternalAPI, tokens, tokenErrors, networkId, storagePreviousHints
         // Lowercase all addresses outside of the loop for better performance
         const lowercaseNetworkPinnedTokenAddresses = getLowercaseAddressArrayForNetwork(pinnedTokens_1.PINNED_TOKENS, networkId);
         const lowercaseCustomTokens = getLowercaseAddressArrayForNetwork(customTokens, networkId);
+        const lowercaseTokenPreferences = getLowercaseAddressArrayForNetwork(tokenPreferences, networkId);
         const networkTokensWithBalance = tokens.filter((token) => token.amount > 0n);
         const lowercaseNetworkTokenAddressesWithBalance = getLowercaseAddressArrayForNetwork(networkTokensWithBalance, networkId);
         const lowercaseERC20HintsFromExternalAPI = latestERC20HintsFromExternalAPI.map((hint) => hint.toLowerCase());
@@ -237,9 +238,14 @@ latestHintsFromExternalAPI, tokens, tokenErrors, networkId, storagePreviousHints
             }
             const isPinned = lowercaseNetworkPinnedTokenAddresses.includes(lowercaseAddress);
             const isCustomToken = lowercaseCustomTokens.includes(lowercaseAddress);
+            const isTokenPreference = lowercaseTokenPreferences.includes(lowercaseAddress);
             const isTokenInExternalAPIHints = lowercaseERC20HintsFromExternalAPI.includes(lowercaseAddress);
             const hasBalance = lowercaseNetworkTokenAddressesWithBalance.includes(lowercaseAddress);
-            if (!isTokenInExternalAPIHints && !isPinned && !isCustomToken && hasBalance) {
+            if (!isTokenInExternalAPIHints &&
+                !isPinned &&
+                !isCustomToken &&
+                !isTokenPreference &&
+                hasBalance) {
                 // Don't set the timestamp back to null if the account doesn't have balance for the token
                 // as learnedTokens aren't account specific and one account can have balance for the token
                 // while other don't
@@ -297,18 +303,22 @@ exports.tokenFilter = tokenFilter;
  * Filter the TokenResult[] by certain criteria (please refer to `tokenFilter` for more details)
  * and set the token.flags.isHidden flag.
  */
-const processTokens = (tokenResults, network, hasNonZeroTokens, additionalHints, tokenPreferences) => {
+const processTokens = (tokenResults, network, hasNonZeroTokens, additionalHints, tokenPreferences, customTokens) => {
     // We need to know the native token in order to execute our filtration logic in tokenFilter.
     // For performance reasons, we define it here once, instead of during every single iteration in the reduce method.
     const nativeToken = tokenResults.find((token) => token.address === ethers_1.ZeroAddress);
     return tokenResults.reduce((tokens, tokenResult) => {
         const token = { ...tokenResult };
+        const isGasTankOrRewards = token.flags.onGasTank || token.flags.rewardsType;
         const preference = tokenPreferences?.find((tokenPreference) => {
             return tokenPreference.address === token.address && tokenPreference.networkId === network.id;
         });
         if (preference) {
             token.flags.isHidden = preference.isHidden;
         }
+        token.flags.isCustom =
+            !isGasTankOrRewards &&
+                !!customTokens.find((customToken) => customToken.address === token.address && customToken.networkId === network.id);
         if ((0, exports.tokenFilter)(token, nativeToken, network, hasNonZeroTokens, additionalHints, !!preference))
             tokens.push(token);
         return tokens;

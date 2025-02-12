@@ -3,6 +3,7 @@ import { RPCProviders } from '../../interfaces/provider';
 import { SelectedAccountPortfolioState } from '../../interfaces/selectedAccount';
 import { AccountState as DefiPositionsAccountState, NetworksWithPositions } from '../defiPositions/types';
 import { AccountAssetsState } from '../portfolio/interfaces';
+import { PORTFOLIO_LIB_ERROR_NAMES } from '../portfolio/portfolio';
 export type Action = {
     label: 'Select';
     actionName: 'select-rpc-url';
@@ -11,8 +12,8 @@ export type Action = {
     };
 };
 export type SelectedAccountBalanceError = {
-    id: string;
-    networkIds: NetworkId[];
+    id: `custom-rpcs-down-${NetworkId}` | 'rpcs-down' | 'portfolio-critical' | 'loading-too-long' | 'defi-critical' | 'defi-prices' | `${string}-defi-positions-error` | keyof typeof PORTFOLIO_LIB_ERROR_NAMES;
+    networkNames: string[];
     type: 'error' | 'warning';
     title: string;
     text?: string;

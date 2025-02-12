@@ -1,7 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.calculateSelectedAccountPortfolio = exports.isNetworkReady = exports.updatePortfolioStateWithDefiPositions = void 0;
-const ethers_1 = require("ethers");
 const formatters_1 = require("../../utils/numbers/formatters");
 const types_1 = require("../defiPositions/types");
 const updatePortfolioStateWithDefiPositions = (portfolioAccountState, defiPositionsAccountState, areDefiPositionsLoading) => {
@@ -11,7 +10,7 @@ const updatePortfolioStateWithDefiPositions = (portfolioAccountState, defiPositi
         const networkState = portfolioAccountState[networkId];
         if (!networkState?.result || defiPositionsAccountState[networkId]?.isLoading)
             return;
-        let tokens = networkState.result.tokens || [];
+        const tokens = networkState.result.tokens || [];
         let networkBalance = networkState.result.total?.usd || 0;
         const positions = defiPositionsAccountState[networkId] || {};
         positions.positionsByProvider?.forEach((posByProv) => {
@@ -23,42 +22,53 @@ const updatePortfolioStateWithDefiPositions = (portfolioAccountState, defiPositi
                 pos.assets
                     .filter((a) => a.type !== types_1.AssetType.Liquidity && a.protocolAsset)
                     .forEach((a) => {
-                    const tokenInPortfolioIndex = tokens.findIndex((t) => {
-                        return ((0, ethers_1.getAddress)(t.address) === (0, ethers_1.getAddress)(a.protocolAsset.address) &&
-                            t.networkId === networkId);
+                    const tokenInPortfolio = tokens.find((t) => {
+                        return (t.address.toLowerCase() === (a.protocolAsset?.address || '').toLowerCase() &&
+                            t.networkId === networkId &&
+                            !t.flags.rewardsType &&
+                            !t.flags.onGasTank);
                     });
-                    if (tokenInPortfolioIndex !== -1) {
-                        const tokenInPortfolio = tokens[tokenInPortfolioIndex];
-                        const priceUSD = tokenInPortfolio.priceIn.find(({ baseCurrency }) => baseCurrency.toLowerCase() === 'usd')?.price;
-                        const tokenBalanceUSD = priceUSD
-                            ? Number((0, formatters_1.safeTokenAmountAndNumberMultiplication)(BigInt(tokenInPortfolio.amount), tokenInPortfolio.decimals, priceUSD))
-                            : undefined;
-                        networkBalance -= tokenBalanceUSD || 0; // deduct portfolio token balance
-                        tokens = tokens.filter((_, index) => index !== tokenInPortfolioIndex);
-                    }
+                    if (tokenInPortfolio?.flags.isHidden)
+                        return;
                     // Add only the balance of the collateral tokens to the network balance
                     if (a.type === types_1.AssetType.Collateral) {
                         const protocolPriceUSD = a.priceIn.find(({ baseCurrency }) => baseCurrency.toLowerCase() === 'usd')?.price;
                         const protocolTokenBalanceUSD = protocolPriceUSD
-                            ? Number((0, formatters_1.safeTokenAmountAndNumberMultiplication)(BigInt(a.amount), Number(a.protocolAsset.decimals), protocolPriceUSD))
+                            ? Number((0, formatters_1.safeTokenAmountAndNumberMultiplication)(BigInt(tokenInPortfolio?.amountPostSimulation || a.amount), Number(a.protocolAsset.decimals), protocolPriceUSD))
                             : undefined;
                         networkBalance += protocolTokenBalanceUSD || 0;
                     }
-                    tokens.push({
-                        amount: a.amount,
-                        // Only list the borrowed asset with no price
-                        priceIn: a.type === types_1.AssetType.Collateral ? a.priceIn : [],
-                        decimals: Number(a.protocolAsset.decimals),
-                        address: a.protocolAsset.address,
-                        symbol: a.protocolAsset.symbol,
-                        networkId,
-                        flags: {
-                            canTopUpGasTank: false,
-                            isFeeToken: false,
-                            onGasTank: false,
-                            rewardsType: null
-                        }
-                    });
+                    if (tokenInPortfolio) {
+                        const priceUSD = tokenInPortfolio.priceIn.find(({ baseCurrency }) => baseCurrency.toLowerCase() === 'usd')?.price;
+                        const tokenBalanceUSD = priceUSD
+                            ? Number((0, formatters_1.safeTokenAmountAndNumberMultiplication)(BigInt(tokenInPortfolio.amountPostSimulation || tokenInPortfolio.amount), tokenInPortfolio.decimals, priceUSD))
+                            : undefined;
+                        networkBalance -= tokenBalanceUSD || 0; // deduct portfolio token balance
+                        // Get the price from defiPositions
+                        tokenInPortfolio.priceIn = a.type === types_1.AssetType.Collateral ? a.priceIn : [];
+                    }
+                    else {
+                        const positionAsset = {
+                            amount: a.amount,
+                            // Only list the borrowed asset with no price
+                            priceIn: a.type === types_1.AssetType.Collateral ? a.priceIn : [],
+                            decimals: Number(a.protocolAsset.decimals),
+                            address: a.protocolAsset.address,
+                            symbol: a.protocolAsset.symbol,
+                            networkId,
+                            flags: {
+                                canTopUpGasTank: false,
+                                isFeeToken: false,
+                                onGasTank: false,
+                                rewardsType: null,
+                                isDefiToken: true
+                                // @BUG: defi positions tokens can't be hidden and can be added as custom
+                                // because processTokens is called in the portfolio
+                                // Issue: https://github.com/AmbireTech/ambire-app/issues/3971
+                            }
+                        };
+                        tokens.push(positionAsset);
+                    }
                 });
             });
         });
@@ -119,18 +129,22 @@ const calculateTokenArray = (networkId, latestTokens, pendingTokens, isPendingVa
         };
     });
 };
-function calculateSelectedAccountPortfolio(latestStateSelectedAccount, pendingStateSelectedAccount, accountPortfolio, hasSignAccountOp) {
+function calculateSelectedAccountPortfolio(latestStateSelectedAccount, pendingStateSelectedAccount, accountPortfolio, portfolioStartedLoadingAtTimestamp, defiPositionsAccountState, hasSignAccountOp) {
+    const now = Date.now();
+    const shouldShowPartialResult = portfolioStartedLoadingAtTimestamp && now - portfolioStartedLoadingAtTimestamp > 5000;
     const collections = [];
     const tokens = [];
     let newTotalBalance = 0;
     const hasLatest = latestStateSelectedAccount && Object.keys(latestStateSelectedAccount).length;
-    let allReady = !!hasLatest;
+    let isAllReady = !!hasLatest;
+    let isReadyToVisualize = false;
     const hasPending = pendingStateSelectedAccount && Object.keys(pendingStateSelectedAccount).length;
     if (!hasLatest && !hasPending) {
         return {
             tokens: accountPortfolio?.tokens || [],
             collections: accountPortfolio?.collections || [],
             totalBalance: accountPortfolio?.totalBalance || 0,
+            isReadyToVisualize: false,
             isAllReady: false,
             networkSimulatedAccountOp: accountPortfolio?.networkSimulatedAccountOp || {},
             latest: latestStateSelectedAccount,
@@ -180,15 +194,22 @@ function calculateSelectedAccountPortfolio(latestStateSelectedAccount, pendingSt
             tokens.push(...tokensArray);
             collections.push(...networkCollections);
         }
-        if (!(0, exports.isNetworkReady)(networkData)) {
-            allReady = false;
+        // The total balance and token list are affected by the defi positions
+        if (!(0, exports.isNetworkReady)(networkData) || defiPositionsAccountState[network]?.isLoading) {
+            isAllReady = false;
         }
     });
+    const tokensWithAmount = tokens.filter((token) => token.amount);
+    if ((shouldShowPartialResult && tokensWithAmount.length && !isAllReady) || isAllReady) {
+        // Allow the user to operate with the tokens that have loaded
+        isReadyToVisualize = true;
+    }
     return {
         totalBalance: newTotalBalance,
         tokens,
         collections,
-        isAllReady: allReady,
+        isReadyToVisualize,
+        isAllReady,
         networkSimulatedAccountOp: simulatedAccountOps,
         latest: stripPortfolioState(latestStateSelectedAccount),
         pending: stripPortfolioState(pendingStateSelectedAccount)

@@ -110,7 +110,7 @@ export declare class MainController extends EventEmitter {
      * It's not a problem to call it many times consecutively as all methods have internal
      * caching mechanisms to prevent unnecessary calls.
      */
-    onLoad(isFirstLoad?: boolean): void;
+    onPopupOpen(): void;
     lock(): void;
     selectAccount(toAccountAddr: string): Promise<void>;
     importSmartAccountFromSavedSeed(seed?: string): Promise<void>;
@@ -130,7 +130,7 @@ export declare class MainController extends EventEmitter {
         forceUpdate?: boolean;
         networkId?: NetworkId;
     }): Promise<void>;
-    updateSelectedAccountPortfolio(forceUpdate?: boolean, network?: Network): Promise<void>;
+    updateSelectedAccountPortfolio(forceUpdate?: boolean, network?: Network, maxDataAgeMs?: number): Promise<void>;
     buildUserRequestFromDAppRequest(request: DappProviderRequest, dappPromise: {
         session: {
             name: string;

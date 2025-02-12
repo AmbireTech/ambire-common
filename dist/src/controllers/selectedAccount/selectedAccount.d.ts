@@ -17,6 +17,7 @@ export declare const DEFAULT_SELECTED_ACCOUNT_PORTFOLIO: {
     collections: never[];
     tokenAmounts: never[];
     totalBalance: number;
+    isReadyToVisualize: boolean;
     isAllReady: boolean;
     networkSimulatedAccountOp: {};
     latest: {};

@@ -31,9 +31,9 @@ declare const STATUS_WRAPPED_METHODS: {
 /**
  * EmailVaultController
  * @class
- * The purpouse of this controller is to provide easy interface to the EmailVault, keystore and magic link libraries
+ * The purpose of this controller is to provide easy interface to the EmailVault, keystore and magic link libraries
  * The most important thing it achieves is handling magicLink and session keys with polling.
- * Emits the porper states e.g. loading, ready, awaiting email magicLink confirmation etc.
+ * Emits the proper states e.g. loading, ready, awaiting email magicLink confirmation etc.
  * Extended documentation about the EV and its internal mechanisms
  * https://github.com/AmbireTech/ambire-common/wiki/Email-Vault-Documentation
  */
@@ -66,6 +66,7 @@ export declare class EmailVaultController extends EventEmitter {
     fulfillSyncRequests(email: string, password: string): Promise<void>;
     cleanMagicAndSessionKeys(): Promise<void>;
     cancelEmailConfirmation(): void;
+    dismissBanner(): void;
     get keystoreRecoveryEmail(): string | undefined;
     get hasKeystoreRecovery(): boolean;
     get hasConfirmedRecoveryEmail(): boolean;

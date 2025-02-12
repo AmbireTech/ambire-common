@@ -13,6 +13,12 @@ export interface SelectedAccountPortfolio {
     tokens: SelectedAccountPortfolioTokenResult[];
     collections: CollectionResultInterface[];
     totalBalance: number;
+    /** Either all portfolio networks have loaded or a timeout has been reached and there are tokens.
+     * @example - If the user has 3 networks and 2 of them have loaded, but the third has not and a timeout has been reached
+     * the value of isReadyToVisualize will be true.
+     */
+    isReadyToVisualize: boolean;
+    /** True after all networks have loaded */
     isAllReady: boolean;
     networkSimulatedAccountOp: NetworkSimulatedAccountOp;
     latest: SelectedAccountPortfolioState;

@@ -40,7 +40,7 @@ class Bundler {
                     [userOperation.sender]: {
                         stateDiff: {
                             // add privileges to the entry point
-                            [`0x${(0, deploy_2.privSlot)(0, 'address', deploy_1.ERC_4337_ENTRYPOINT, 'bytes32')}`]: deploy_1.ENTRY_POINT_MARKER
+                            [(0, deploy_2.privSlot)(0, 'uint256', deploy_1.ERC_4337_ENTRYPOINT, 'uint256')]: deploy_1.ENTRY_POINT_MARKER
                         }
                     }
                 }

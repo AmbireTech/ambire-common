@@ -33,11 +33,11 @@ class DefiPositionsController extends eventEmitter_1.default {
             error: errorMessage
         });
     }
-    #getCanSkipUpdate(accountAddr, networkId) {
+    #getCanSkipUpdate(accountAddr, networkId, maxDataAgeMs = this.#minUpdateInterval) {
         const networkState = this.#state[accountAddr][networkId];
         if (networkState.error || networkState.providerErrors?.length)
             return false;
-        const isWithinMinUpdateInterval = networkState.updatedAt && Date.now() - networkState.updatedAt < this.#minUpdateInterval;
+        const isWithinMinUpdateInterval = networkState.updatedAt && Date.now() - networkState.updatedAt < maxDataAgeMs;
         return isWithinMinUpdateInterval || networkState.isLoading;
     }
     async #updateNetworksWithPositions(accountId, accountState) {
@@ -46,7 +46,8 @@ class DefiPositionsController extends eventEmitter_1.default {
         this.emitUpdate();
         await this.#storage.set('networksWithPositionsByAccounts', this.#networksWithPositionsByAccounts);
     }
-    async updatePositions(networkId) {
+    async updatePositions(opts) {
+        const { networkId, maxDataAgeMs } = opts || {};
         if (!this.#selectedAccount.account)
             return;
         const selectedAccountAddr = this.#selectedAccount.account.addr;
@@ -64,7 +65,7 @@ class DefiPositionsController extends eventEmitter_1.default {
                     updatedAt: undefined
                 };
             }
-            if (this.#getCanSkipUpdate(selectedAccountAddr, n.id)) {
+            if (this.#getCanSkipUpdate(selectedAccountAddr, n.id, maxDataAgeMs)) {
                 // Emit an update so that the current account data getter is updated
                 this.emitUpdate();
                 return;

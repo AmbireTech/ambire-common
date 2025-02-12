@@ -131,7 +131,7 @@ class SwapAndBridgeController extends eventEmitter_1.default {
         this.activeRoutes = await this.#storage.get('swapAndBridgeActiveRoutes', []);
         this.#selectedAccount.onUpdate(() => {
             this.#debounceFunctionCallsOnSameTick('updateFormOnSelectedAccountUpdate', () => {
-                if (this.#selectedAccount.portfolio.isAllReady) {
+                if (this.#selectedAccount.portfolio.isReadyToVisualize) {
                     this.isTokenListLoading = false;
                     this.updatePortfolioTokenList(this.#selectedAccount.portfolio.tokens);
                     // To token list includes selected account portfolio tokens, it should get an update too

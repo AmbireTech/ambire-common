@@ -112,6 +112,7 @@ export type StoredKey = (InternalKey & {
 });
 export type KeystoreSeed = {
     seed: string;
+    seedPassphrase?: string | null;
     hdPathTemplate: HD_PATH_TEMPLATE_TYPE;
 };
 export type KeystoreSignerType = {

@@ -14,7 +14,7 @@ export declare const getIsTokenEligibleForSwapAndBridge: (token: TokenResult) =>
 export declare const convertPortfolioTokenToSocketAPIToken: (portfolioToken: TokenResult, chainId: number) => SocketAPIToken;
 declare const getQuoteRouteSteps: (userTxs: SocketAPIUserTx[]) => SocketAPIStep[];
 declare const getActiveRoutesLowestServiceTime: (activeRoutes: ActiveRoute[]) => number;
-declare const getActiveRoutesUpdateInterval: (minServiceTime?: number) => 5000 | 8000 | 15000 | 6000 | 7000 | 12000;
+declare const getActiveRoutesUpdateInterval: (minServiceTime?: number) => 5000 | 8000 | 15000 | 7000 | 6000 | 12000;
 declare const buildSwapAndBridgeUserRequests: (userTx: SocketAPISendTransactionRequest, networkId: string, account: Account, provider: RPCProvider) => Promise<SignUserRequest[]>;
 export declare const getIsBridgeTxn: (userTxType: SocketAPIUserTx['userTxType']) => boolean;
 /**

@@ -219,16 +219,16 @@ class MainController extends eventEmitter_1.default {
      * It's not a problem to call it many times consecutively as all methods have internal
      * caching mechanisms to prevent unnecessary calls.
      */
-    onLoad(isFirstLoad = false) {
+    onPopupOpen() {
+        const FIVE_MINUTES = 1000 * 60 * 5;
         const selectedAccountAddr = this.selectedAccount.account?.addr;
-        const hasBroadcastedButNotConfirmed = !!this.activity.broadcastedButNotConfirmed.length;
-        this.defiPositions.updatePositions();
         this.domains.batchReverseLookup(this.accounts.accounts.map((a) => a.addr));
-        if (!hasBroadcastedButNotConfirmed) {
-            this.updateSelectedAccountPortfolio();
+        if (!this.activity.broadcastedButNotConfirmed.length) {
+            // Update defi positions together with the portfolio for simplicity
+            this.defiPositions.updatePositions({ maxDataAgeMs: FIVE_MINUTES });
+            this.updateSelectedAccountPortfolio(undefined, undefined, FIVE_MINUTES);
         }
-        // The first time the app loads, we update the account state elsewhere
-        if (selectedAccountAddr && !isFirstLoad && !this.accounts.areAccountStatesLoading)
+        if (selectedAccountAddr && !this.accounts.areAccountStatesLoading)
             this.accounts.updateAccountState(selectedAccountAddr);
     }
     async #load() {
@@ -242,7 +242,9 @@ class MainController extends eventEmitter_1.default {
         await this.providers.initialLoadPromise;
         await this.accounts.initialLoadPromise;
         await this.selectedAccount.initialLoadPromise;
-        this.onLoad(true);
+        this.defiPositions.updatePositions();
+        this.updateSelectedAccountPortfolio();
+        this.domains.batchReverseLookup(this.accounts.accounts.map((a) => a.addr));
         /**
          * Listener that gets triggered as a finalization step of adding new
          * accounts via the AccountAdder controller flow.
@@ -680,11 +682,8 @@ class MainController extends eventEmitter_1.default {
             return uCalls;
         }, []);
     }
-    async reloadSelectedAccount(options = {
-        forceUpdate: true,
-        networkId: undefined
-    }) {
-        const { forceUpdate, networkId } = options;
+    async reloadSelectedAccount(options) {
+        const { forceUpdate = true, networkId } = options || {};
         const networkToUpdate = networkId
             ? this.networks.networks.find((n) => n.id === networkId)
             : undefined;
@@ -706,7 +705,7 @@ class MainController extends eventEmitter_1.default {
             // Additionally, if we trigger the portfolio update twice (i.e., running a long-living interval + force update from the Dashboard),
             // there won't be any error thrown, as all portfolio updates are queued and they don't use the `withStatus` helper.
             this.updateSelectedAccountPortfolio(forceUpdate, networkToUpdate),
-            this.defiPositions.updatePositions(networkId)
+            this.defiPositions.updatePositions({ networkId })
         ]);
     }
     #updateIsOffline() {
@@ -741,15 +740,17 @@ class MainController extends eventEmitter_1.default {
             this.emitUpdate();
         }
     }
+    // TODO: Refactor this to accept an optional object with options
+    async updateSelectedAccountPortfolio(
     // eslint-disable-next-line default-param-last
-    async updateSelectedAccountPortfolio(forceUpdate = false, network) {
+    forceUpdate = false, network, maxDataAgeMs) {
         await this.#initialLoadPromise;
         if (!this.selectedAccount.account)
             return;
         const signAccountOpNetworkId = this.signAccountOp?.accountOp.networkId;
         const networkData = network || this.networks.networks.find((n) => n.id === signAccountOpNetworkId);
         const accountOpsToBeSimulatedByNetwork = (0, main_1.getAccountOpsForSimulation)(this.selectedAccount.account, this.actions.visibleActionsQueue, networkData, this.signAccountOp?.accountOp);
-        await this.portfolio.updateSelectedAccount(this.selectedAccount.account.addr, network, accountOpsToBeSimulatedByNetwork, { forceUpdate });
+        await this.portfolio.updateSelectedAccount(this.selectedAccount.account.addr, network, accountOpsToBeSimulatedByNetwork, { forceUpdate, maxDataAgeMs });
         this.#updateIsOffline();
     }
     #getUserRequestAccountError(dappOrigin, fromAccountAddr) {

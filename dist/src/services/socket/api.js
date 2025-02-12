@@ -78,13 +78,17 @@ class SocketAPI {
             const error = `${errorPrefix} Upstream error: <${message}>${status}`;
             throw new SwapAndBridgeProviderApiError_1.default(error);
         }
+        if (response.status === 429) {
+            const error = `Our service provider received too many requests, temporarily preventing your request from being processed. ${errorPrefix}`;
+            throw new SwapAndBridgeProviderApiError_1.default(error);
+        }
         let responseBody;
         try {
             responseBody = await response.json();
         }
         catch (e) {
             const message = e?.message || 'no message';
-            const error = `${errorPrefix} Error details: Unexpected non-JSON response from our service provider, message: <${message}>`;
+            const error = `${errorPrefix} Error details: <Unexpected non-JSON response from our service provider>, message: <${message}>`;
             throw new SwapAndBridgeProviderApiError_1.default(error);
         }
         // Socket API returns 500 status code with a message in the body, even

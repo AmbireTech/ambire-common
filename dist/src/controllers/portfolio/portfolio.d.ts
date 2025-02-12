@@ -30,11 +30,12 @@ export declare class PortfolioController extends EventEmitter {
     getTemporaryTokens(accountId: AccountId, networkId: NetworkId, additionalHint: string): Promise<boolean>;
     protected updatePortfolioState(accountId: string, network: Network, portfolioLib: Portfolio, portfolioProps: Partial<GetOptions> & {
         blockTag: 'latest' | 'pending';
-    }, forceUpdate: boolean): Promise<boolean>;
+    }, forceUpdate: boolean, maxDataAgeMs?: number): Promise<boolean>;
     updateSelectedAccount(accountId: AccountId, network?: Network, accountOps?: {
         [key: string]: AccountOp[];
     }, opts?: {
-        forceUpdate: boolean;
+        forceUpdate?: boolean;
+        maxDataAgeMs?: number;
     }): Promise<void>;
     markSimulationAsBroadcasted(accountId: string, networkId: string): void;
     addTokensToBeLearned(tokenAddresses: string[], networkId: NetworkId): boolean;

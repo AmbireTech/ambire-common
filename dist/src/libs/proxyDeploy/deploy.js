@@ -15,15 +15,13 @@ function evmPush(data) {
 }
 // @TODO: fix the any
 function privSlot(slotNumber, keyType, key, valueType) {
-    const abiCoder = new ethers_1.AbiCoder();
-    const buf = abiCoder.encode([keyType, valueType], [key, slotNumber]);
-    return (0, ethers_1.keccak256)(buf);
+    return (0, ethers_1.solidityPackedKeccak256)([keyType, valueType], [key, slotNumber]);
 }
 exports.privSlot = privSlot;
 // @TODO: fix the any
 function sstoreCode(slotNumber, keyType, key, valueType, valueBuf) {
     // @TODO why are we using valueType for the slotNumber? this has to be a hardcoded uint256 and valueType is pointless
-    const slot = privSlot(slotNumber, keyType, key, valueType);
+    const slot = privSlot(slotNumber, keyType, key, valueType).slice(2);
     return Buffer.concat([
         evmPush(typeof valueBuf === 'string' ? Buffer.from(valueBuf.slice(2), 'hex') : valueBuf),
         evmPush(Buffer.from(slot, 'hex')),
@@ -34,7 +32,7 @@ function getProxyDeployBytecode(masterContractAddr, privLevels, opts = { privSlo
     const slotNumber = opts.privSlot ?? 0;
     if (privLevels.length > 3)
         throw new Error('getProxyDeployBytecode: max 3 privLevels');
-    const storage = Buffer.concat(privLevels.map(({ addr, hash }) => sstoreCode(slotNumber, 'address', addr, 'bytes32', hash)));
+    const storage = Buffer.concat(privLevels.map(({ addr, hash }) => sstoreCode(slotNumber, 'uint256', addr, 'uint256', hash)));
     const initial = Buffer.from('3d602d80', 'hex');
     // NOTE: this means we can't support offset>256
     // @TODO solve this case; this will remove the "max 3 privLevels" restriction

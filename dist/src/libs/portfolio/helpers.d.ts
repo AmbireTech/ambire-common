@@ -31,12 +31,12 @@ export declare const stripExternalHintsAPIResponse: (response: StrippedExternalH
  * - updates the timestamp of learned tokens
  * - returns the updated hints
  */
-export declare function getUpdatedHints(latestHintsFromExternalAPI: StrippedExternalHintsAPIResponse | null, tokens: TokenResult[], tokenErrors: AdditionalPortfolioNetworkResult['tokenErrors'], networkId: NetworkId, storagePreviousHints: PreviousHintsStorage, key: string, customTokens: CustomToken[]): PreviousHintsStorage;
+export declare function getUpdatedHints(latestHintsFromExternalAPI: StrippedExternalHintsAPIResponse | null, tokens: TokenResult[], tokenErrors: AdditionalPortfolioNetworkResult['tokenErrors'], networkId: NetworkId, storagePreviousHints: PreviousHintsStorage, key: string, customTokens: CustomToken[], tokenPreferences: TokenPreference[]): PreviousHintsStorage;
 export declare const getTokensReadyToLearn: (toBeLearnedTokens: string[], resultTokens: TokenResult[]) => string[];
 export declare const tokenFilter: (token: TokenResult, nativeToken: TokenResult, network: Network, hasNonZeroTokens: boolean, additionalHints: string[] | undefined, isTokenPreference: boolean) => boolean;
 /**
  * Filter the TokenResult[] by certain criteria (please refer to `tokenFilter` for more details)
  * and set the token.flags.isHidden flag.
  */
-export declare const processTokens: (tokenResults: TokenResult[], network: Network, hasNonZeroTokens: boolean, additionalHints: string[] | undefined, tokenPreferences: TokenPreference[]) => TokenResult[];
+export declare const processTokens: (tokenResults: TokenResult[], network: Network, hasNonZeroTokens: boolean, additionalHints: string[] | undefined, tokenPreferences: TokenPreference[], customTokens: CustomToken[]) => TokenResult[];
 //# sourceMappingURL=helpers.d.ts.map

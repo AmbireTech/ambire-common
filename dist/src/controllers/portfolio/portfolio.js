@@ -333,17 +333,17 @@ class PortfolioController extends eventEmitter_1.default {
         };
         this.emitUpdate();
     }
-    #getCanSkipUpdate(networkState, forceUpdate) {
+    #getCanSkipUpdate(networkState, forceUpdate, maxDataAgeMs = this.#minUpdateInterval) {
         const hasImportantErrors = networkState?.errors.some((e) => e.level === 'critical');
         if (forceUpdate || !networkState || networkState.criticalError || hasImportantErrors)
             return false;
         const updateStarted = networkState.result?.updateStarted || 0;
-        const isWithinMinUpdateInterval = !!updateStarted && Date.now() - updateStarted < this.#minUpdateInterval;
+        const isWithinMinUpdateInterval = !!updateStarted && Date.now() - updateStarted < maxDataAgeMs;
         return isWithinMinUpdateInterval || networkState.isLoading;
     }
     // By our convention, we always stick with private (#) instead of protected methods.
     // However, we made a compromise here to allow Jest tests to mock updatePortfolioState.
-    async updatePortfolioState(accountId, network, portfolioLib, portfolioProps, forceUpdate) {
+    async updatePortfolioState(accountId, network, portfolioLib, portfolioProps, forceUpdate, maxDataAgeMs) {
         const blockTag = portfolioProps.blockTag;
         const stateKeys = {
             latest: this.#latest,
@@ -355,7 +355,7 @@ class PortfolioController extends eventEmitter_1.default {
             // and portfolio will not be updated
             accountState[network.id] = { isLoading: false, isReady: false, errors: [] };
         }
-        const canSkipUpdate = this.#getCanSkipUpdate(accountState[network.id], forceUpdate);
+        const canSkipUpdate = this.#getCanSkipUpdate(accountState[network.id], forceUpdate, maxDataAgeMs);
         if (canSkipUpdate)
             return false;
         this.#setNetworkLoading(accountId, blockTag, network.id, true);
@@ -381,7 +381,7 @@ class PortfolioController extends eventEmitter_1.default {
                 // Update the last successful update only if there are no critical errors.
                 lastSuccessfulUpdate = Date.now();
             }
-            const processedTokens = (0, helpers_1.processTokens)(result.tokens, network, hasNonZeroTokens, additionalHintsErc20Hints, this.tokenPreferences);
+            const processedTokens = (0, helpers_1.processTokens)(result.tokens, network, hasNonZeroTokens, additionalHintsErc20Hints, this.tokenPreferences, this.customTokens);
             accountState[network.id] = {
                 isReady: true,
                 isLoading: false,
@@ -465,6 +465,11 @@ class PortfolioController extends eventEmitter_1.default {
                     ...((this.#toBeLearnedTokens && this.#toBeLearnedTokens[network.id]) ?? []),
                     ...this.customTokens
                         .filter(({ networkId, standard }) => networkId === network.id && standard === 'ERC20')
+                        .map(({ address }) => address),
+                    // We have to add the token preferences to ensure that the user can always see all hidden tokens
+                    // in settings, regardless of the selected account
+                    ...this.tokenPreferences
+                        .filter(({ networkId }) => networkId === network.id)
                         .map(({ address }) => address)
                 ];
                 // TODO: Add custom ERC721 tokens to the hints
@@ -482,7 +487,7 @@ class PortfolioController extends eventEmitter_1.default {
                     this.updatePortfolioState(accountId, network, portfolioLib, {
                         blockTag: 'latest',
                         ...allHints
-                    }, forceUpdate),
+                    }, forceUpdate, opts?.maxDataAgeMs),
                     this.updatePortfolioState(accountId, network, portfolioLib, {
                         blockTag: 'pending',
                         ...(currentAccountOps && {
@@ -493,7 +498,7 @@ class PortfolioController extends eventEmitter_1.default {
                         }),
                         isEOA: !(0, account_1.isSmartAccount)(selectedAccount),
                         ...allHints
-                    }, forceUpdate)
+                    }, forceUpdate, opts?.maxDataAgeMs)
                 ]);
                 // Persist latest state in previousHints in the disk storage for further requests
                 if (isSuccessfulLatestUpdate &&
@@ -507,7 +512,7 @@ class PortfolioController extends eventEmitter_1.default {
                     // Either a valid response or there is no external API to fetch hints from
                     const isExternalHintsApiResponseValid = !!networkResult?.hintsFromExternalAPI || !network.hasRelayer;
                     if (isExternalHintsApiResponseValid) {
-                        const updatedStoragePreviousHints = (0, helpers_1.getUpdatedHints)(networkResult.hintsFromExternalAPI || null, networkResult.tokens, networkResult.tokenErrors, network.id, this.#previousHints, key, this.customTokens);
+                        const updatedStoragePreviousHints = (0, helpers_1.getUpdatedHints)(networkResult.hintsFromExternalAPI || null, networkResult.tokens, networkResult.tokenErrors, network.id, this.#previousHints, key, this.customTokens, this.tokenPreferences);
                         // Updating hints is only needed when the external API response is valid.
                         // learnTokens and learnNfts update storage separately, so we don't need to update them here
                         // if the external API response is invalid.

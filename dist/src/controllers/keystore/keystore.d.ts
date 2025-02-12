@@ -57,7 +57,7 @@ export declare class KeystoreController extends EventEmitter {
     addSecret(secretId: string, secret: string, extraEntropy: string, leaveUnlocked: boolean): Promise<void>;
     removeSecret(secretId: string): Promise<void>;
     get keys(): Key[];
-    addSeedToTemp({ seed, hdPathTemplate }: KeystoreSeed): Promise<void>;
+    addSeedToTemp({ seed, seedPassphrase, hdPathTemplate }: KeystoreSeed): Promise<void>;
     deleteTempSeed(shouldUpdate?: boolean): void;
     moveTempSeedToKeystoreSeeds(): Promise<void>;
     addSeed(keystoreSeed: KeystoreSeed): Promise<void>;
@@ -79,10 +79,7 @@ export declare class KeystoreController extends EventEmitter {
     exportKeyWithPublicKeyEncryption(keyAddress: string, publicKey: string): Promise<Encrypted>;
     importKeyWithPublicKeyEncryption(encryptedSk: Encrypted, dedicatedToOneSA: boolean): Promise<void>;
     getSigner(keyAddress: Key['addr'], keyType: Key['type']): Promise<import("../../interfaces/keystore").KeystoreSigner>;
-    getSavedSeed(): Promise<{
-        seed: string;
-        hdPathTemplate: HD_PATH_TEMPLATE_TYPE;
-    }>;
+    getSavedSeed(): Promise<KeystoreSeed>;
     changeKeystorePassword(newSecret: string, oldSecret?: string): Promise<void>;
     updateKeyPreferences(keys: {
         addr: Key['addr'];

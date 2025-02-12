@@ -17,7 +17,7 @@ function getEoaSimulationStateOverride(accountAddr) {
             code: AmbireAccount_json_1.default.binRuntime,
             stateDiff: {
                 // if we use 0x00...01 we get a geth bug: "invalid argument 2: hex number with leading zero digits\" - on some RPC providers
-                [`0x${(0, deploy_1.privSlot)(0, 'address', accountAddr, 'bytes32')}`]: '0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
+                [(0, deploy_1.privSlot)(0, 'uint256', accountAddr, 'uint256')]: '0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
                 // any number with leading zeros is not supported on some RPCs
                 [(0, ethers_1.toBeHex)(1, 32)]: deployless_1.EOA_SIMULATION_NONCE
             }

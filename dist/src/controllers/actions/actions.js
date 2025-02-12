@@ -142,12 +142,12 @@ class ActionsController extends eventEmitter_1.default {
         }
     }
     #setCurrentAction(nextAction) {
+        this.currentAction = nextAction;
         if (nextAction && nextAction.id === this.currentAction?.id) {
             this.openActionWindow();
             this.emitUpdate();
             return;
         }
-        this.currentAction = nextAction;
         if (!this.currentAction) {
             !!this.actionWindow.windowProps?.id &&
                 this.#windowManager.remove(this.actionWindow.windowProps.id);

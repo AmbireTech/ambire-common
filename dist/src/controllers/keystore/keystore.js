@@ -302,7 +302,7 @@ class KeystoreController extends eventEmitter_1.default {
             };
         });
     }
-    async #getEncryptedSeed(seed) {
+    async #getEncryptedSeedPhrase(seed, seedPassphrase) {
         await this.#initialLoadPromise;
         if (this.#mainKey === null)
             throw new EmittableError_1.default({
@@ -329,9 +329,14 @@ class KeystoreController extends eventEmitter_1.default {
         // Set up the cipher
         const counter = new aes_js_1.default.Counter(this.#mainKey.iv); // TS compiler fails to detect we check for null above
         const aesCtr = new aes_js_1.default.ModeOfOperation.ctr(this.#mainKey.key, counter); // TS compiler fails to detect we check for null above\
-        return (0, ethers_1.hexlify)(aesCtr.encrypt(new TextEncoder().encode(seed)));
+        return {
+            seed: (0, ethers_1.hexlify)(aesCtr.encrypt(new TextEncoder().encode(seed))),
+            passphrase: seedPassphrase
+                ? (0, ethers_1.hexlify)(aesCtr.encrypt(new TextEncoder().encode(seedPassphrase)))
+                : null
+        };
     }
-    async addSeedToTemp({ seed, hdPathTemplate }) {
+    async addSeedToTemp({ seed, seedPassphrase, hdPathTemplate }) {
         const validHdPath = derivation_1.DERIVATION_OPTIONS.some((o) => o.value === hdPathTemplate);
         if (!validHdPath)
             throw new EmittableError_1.default({
@@ -339,10 +344,8 @@ class KeystoreController extends eventEmitter_1.default {
                 level: 'major',
                 error: new Error('keystore: hd path to temp seed incorrect')
             });
-        this.#tempSeed = {
-            seed: await this.#getEncryptedSeed(seed),
-            hdPathTemplate
-        };
+        const { seed: seedPhrase, passphrase } = await this.#getEncryptedSeedPhrase(seed, seedPassphrase);
+        this.#tempSeed = { seed: seedPhrase, seedPassphrase: passphrase, hdPathTemplate };
         this.emitUpdate();
     }
     deleteTempSeed(shouldUpdate = true) {
@@ -382,11 +385,9 @@ class KeystoreController extends eventEmitter_1.default {
         await this.#initialLoadPromise;
         await this.withStatus('moveTempSeedToKeystoreSeeds', () => this.#moveTempSeedToKeystoreSeeds());
     }
-    async #addSeed({ seed, hdPathTemplate }) {
-        this.#keystoreSeeds.push({
-            seed: await this.#getEncryptedSeed(seed),
-            hdPathTemplate
-        });
+    async #addSeed({ seed, seedPassphrase, hdPathTemplate }) {
+        const { seed: seedPhrase, passphrase } = await this.#getEncryptedSeedPhrase(seed, seedPassphrase);
+        this.#keystoreSeeds.push({ seed: seedPhrase, seedPassphrase: passphrase, hdPathTemplate });
         await this.#storage.set('keystoreSeeds', this.#keystoreSeeds);
         this.emitUpdate();
     }
@@ -554,7 +555,10 @@ class KeystoreController extends eventEmitter_1.default {
     }
     async sendSeedToUi() {
         const decrypted = await this.getSavedSeed();
-        this.#windowManager.sendWindowUiMessage({ seed: decrypted.seed });
+        this.#windowManager.sendWindowUiMessage({
+            seed: decrypted.seed,
+            seedPassphrase: decrypted.seedPassphrase
+        });
     }
     async #getPrivateKey(keyAddress) {
         await this.#initialLoadPromise;
@@ -652,6 +656,16 @@ class KeystoreController extends eventEmitter_1.default {
         const aesCtr = new aes_js_1.default.ModeOfOperation.ctr(this.#mainKey.key, counter);
         const decryptedSeedBytes = aesCtr.decrypt(encryptedSeedBytes);
         const decryptedSeed = new TextDecoder().decode(decryptedSeedBytes);
+        if (this.#keystoreSeeds[0].seedPassphrase) {
+            const encryptedSeedPassphraseBytes = (0, ethers_1.getBytes)(this.#keystoreSeeds[0].seedPassphrase);
+            const decryptedSeedPassphraseBytes = aesCtr.decrypt(encryptedSeedPassphraseBytes);
+            const decryptedSeedPassphrase = new TextDecoder().decode(decryptedSeedPassphraseBytes);
+            return {
+                seed: decryptedSeed,
+                seedPassphrase: decryptedSeedPassphrase,
+                hdPathTemplate
+            };
+        }
         return { seed: decryptedSeed, hdPathTemplate };
     }
     async #changeKeystorePassword(newSecret, oldSecret) {

@@ -3,5 +3,5 @@ import { AccountState as DefiPositionsAccountState } from '../defiPositions/type
 import { AccountState, NetworkState } from '../portfolio/interfaces';
 export declare const updatePortfolioStateWithDefiPositions: (portfolioAccountState: AccountState, defiPositionsAccountState: DefiPositionsAccountState, areDefiPositionsLoading: boolean) => AccountState;
 export declare const isNetworkReady: (networkData: NetworkState | undefined) => boolean | undefined;
-export declare function calculateSelectedAccountPortfolio(latestStateSelectedAccount: AccountState, pendingStateSelectedAccount: AccountState, accountPortfolio: SelectedAccountPortfolio | null, hasSignAccountOp?: boolean): SelectedAccountPortfolio;
+export declare function calculateSelectedAccountPortfolio(latestStateSelectedAccount: AccountState, pendingStateSelectedAccount: AccountState, accountPortfolio: SelectedAccountPortfolio | null, portfolioStartedLoadingAtTimestamp: number | null, defiPositionsAccountState: DefiPositionsAccountState, hasSignAccountOp?: boolean): SelectedAccountPortfolio;
 //# sourceMappingURL=selectedAccount.d.ts.map

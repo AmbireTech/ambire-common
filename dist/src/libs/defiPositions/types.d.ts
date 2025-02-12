@@ -15,6 +15,8 @@ export interface PositionAsset {
     symbol: string;
     decimals: number;
     amount: bigint;
+    simulationAmount?: bigint;
+    amountPostSimulation?: bigint;
     priceIn: Price[];
     value?: number;
     type: AssetType;
