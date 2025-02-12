@@ -392,9 +392,9 @@ export class MainController extends EventEmitter {
     const selectedAccountAddr = this.selectedAccount.account?.addr
     this.domains.batchReverseLookup(this.accounts.accounts.map((a) => a.addr))
     if (!this.activity.broadcastedButNotConfirmed.length) {
-      this.updateSelectedAccountPortfolio(undefined, undefined, FIVE_MINUTES)
       // Update defi positions together with the portfolio for simplicity
-      this.defiPositions.updatePositions()
+      this.defiPositions.updatePositions({ maxDataAgeMs: FIVE_MINUTES })
+      this.updateSelectedAccountPortfolio(undefined, undefined, FIVE_MINUTES)
     }
 
     if (selectedAccountAddr && !this.accounts.areAccountStatesLoading)
@@ -413,8 +413,8 @@ export class MainController extends EventEmitter {
     await this.accounts.initialLoadPromise
     await this.selectedAccount.initialLoadPromise
 
-    this.updateSelectedAccountPortfolio()
     this.defiPositions.updatePositions()
+    this.updateSelectedAccountPortfolio()
     this.domains.batchReverseLookup(this.accounts.accounts.map((a) => a.addr))
     /**
      * Listener that gets triggered as a finalization step of adding new
@@ -1029,7 +1029,7 @@ export class MainController extends EventEmitter {
       // Additionally, if we trigger the portfolio update twice (i.e., running a long-living interval + force update from the Dashboard),
       // there won't be any error thrown, as all portfolio updates are queued and they don't use the `withStatus` helper.
       this.updateSelectedAccountPortfolio(forceUpdate, networkToUpdate),
-      this.defiPositions.updatePositions(networkId)
+      this.defiPositions.updatePositions({ networkId })
     ])
   }
 
