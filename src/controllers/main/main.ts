@@ -738,7 +738,7 @@ export class MainController extends EventEmitter {
       this.emitError({
         level: 'silent',
         message: 'Error in main.traceCall',
-        error: e
+        error: new Error(`Debug trace call error on ${network.id}: ${e.message}`)
       })
     }
   }
