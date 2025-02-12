@@ -9,16 +9,7 @@ import {
   encryptWithPublicKey,
   publicKeyByPrivateKey
 } from 'eth-crypto'
-import {
-  concat,
-  getBytes,
-  hexlify,
-  keccak256,
-  Mnemonic,
-  randomBytes,
-  toUtf8Bytes,
-  Wallet
-} from 'ethers'
+import { concat, getBytes, hexlify, keccak256, Mnemonic, toUtf8Bytes, Wallet } from 'ethers'
 import scrypt from 'scrypt-js'
 
 import EmittableError from '../../classes/EmittableError'
@@ -38,6 +29,7 @@ import {
 } from '../../interfaces/keystore'
 import { Storage } from '../../interfaces/storage'
 import { WindowManager } from '../../interfaces/window'
+import { EntropyGenerator } from '../../libs/entropyGenerator/entropyGenerator'
 import {
   getDefaultKeyLabel,
   getShouldMigrateKeyMetaNullToKeyMetaCreatedAt,
@@ -301,16 +293,14 @@ export class KeystoreController extends EventEmitter {
       })
 
     let mainKey: MainKey | null = this.#mainKey
+    const entropyGenerator = new EntropyGenerator()
+
     // We are not unlocked
     if (!mainKey) {
       if (!this.#keystoreSecrets.length) {
-        const key = getBytes(keccak256(concat([randomBytes(32), toUtf8Bytes(extraEntropy)]))).slice(
-          0,
-          16
-        )
         mainKey = {
-          key,
-          iv: randomBytes(16)
+          key: entropyGenerator.generateRandomBytes(16, extraEntropy),
+          iv: entropyGenerator.generateRandomBytes(16, extraEntropy)
         }
       } else
         throw new EmittableError({
@@ -324,7 +314,7 @@ export class KeystoreController extends EventEmitter {
       }
     }
 
-    const salt = randomBytes(32)
+    const salt = entropyGenerator.generateRandomBytes(32, extraEntropy)
     const key = await scrypt.scrypt(
       getBytesForSecret(secret),
       salt,
@@ -334,7 +324,7 @@ export class KeystoreController extends EventEmitter {
       scryptDefaults.dkLen,
       () => {}
     )
-    const iv = randomBytes(16)
+    const iv = entropyGenerator.generateRandomBytes(16, extraEntropy)
     const derivedKey = key.slice(0, 16)
     const macPrefix = key.slice(16, 32)
     const counter = new aes.Counter(iv)
