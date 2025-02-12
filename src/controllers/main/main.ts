@@ -135,6 +135,7 @@ import { ProvidersController } from '../providers/providers'
 /* eslint-disable @typescript-eslint/no-floating-promises */
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 /* eslint-disable no-underscore-dangle */
+import { FeatureFlagController } from '../featureFlags/featureFlags'
 import { SignAccountOpController, SigningStatus } from '../signAccountOp/signAccountOp'
 import { SignMessageController } from '../signMessage/signMessage'
 import { SwapAndBridgeController, SwapAndBridgeFormStatus } from '../swapAndBridge/swapAndBridge'
@@ -240,6 +241,8 @@ export class MainController extends EventEmitter {
   #signAccountOpSigningPromise?: Promise<AccountOp | void | null>
 
   #signAccountOpBroadcastPromise?: Promise<SubmittedAccountOp>
+
+  featureFlagController: FeatureFlagController
 
   constructor({
     storage,
@@ -385,8 +388,10 @@ export class MainController extends EventEmitter {
     this.#initialLoadPromise = this.#load()
     paymasterFactory.init(relayerUrl, fetch, (e: ErrorRef) => {
       if (!this.signAccountOp) return
+      console.log(4)
       this.emitError(e)
     })
+    this.featureFlagController = new FeatureFlagController()
   }
 
   /**
@@ -661,6 +666,7 @@ export class MainController extends EventEmitter {
           const message =
             'The signing process was not initialized as expected. Please try again later or contact Ambire support if the issue persists.'
           const error = new Error('SignAccountOp is not initialized')
+          console.log(1)
           this.emitError({ level: 'major', message, error })
           return Promise.reject(error)
         }
@@ -1477,6 +1483,7 @@ export class MainController extends EventEmitter {
           const error = new SwapAndBridgeError(
             `Something went wrong when preparing your request. Please try again later or contact Ambire support. Error details: <${errorDetails}>`
           )
+          console.log(5)
           throw new EmittableError({ message: error.message, level: 'major', error })
         }
 
@@ -1800,6 +1807,7 @@ export class MainController extends EventEmitter {
 
     // basic account: ask for 7702 auth
     if (
+      this.featureFlagController.isFeatureEnabled('eip7702') &&
       !account.disable7702Popup &&
       has7702(network) &&
       canBecomeSmarterOnChain(
@@ -2411,6 +2419,7 @@ export class MainController extends EventEmitter {
           feeTokens,
           (e: ErrorRef) => {
             if (!this.signAccountOp) return
+            console.log('2')
             this.emitError(e)
           },
           this.signAccountOp.bundlerSwitcher,
@@ -2424,6 +2433,7 @@ export class MainController extends EventEmitter {
         ).catch((e) => {
           const { message } = getHumanReadableEstimationError(e)
 
+          console.log(3)
           this.emitError({
             level: 'major',
             message,
@@ -2912,6 +2922,7 @@ export class MainController extends EventEmitter {
     })
 
     const smarterEoaBanner =
+      this.featureFlagController.isFeatureEnabled('eip7702') &&
       !this.selectedAccount.account.disable7702Banner &&
       !hasBecomeSmarter(this.selectedAccount.account, this.accounts.accountStates) &&
       canBecomeSmarter(
@@ -2990,6 +3001,7 @@ export class MainController extends EventEmitter {
     this.signAccountOp?.updateStatus(SigningStatus.ReadyToSign, isReplacementFeeLow)
     this.feePayerKey = null
 
+    console.log(6)
     return Promise.reject(
       new EmittableError({ level: 'major', message, error: _err || new Error(message) })
     )
@@ -3001,13 +3013,18 @@ export class MainController extends EventEmitter {
     return !!this.actions.actionsQueue.find((a) => a.id === this.signAccountOp!.fromActionId)
   }
 
+  get features() {
+    return this.featureFlagController.getFeatures()
+  }
+
   // includes the getters in the stringified instance
   toJSON() {
     return {
       ...this,
       ...super.toJSON(),
       banners: this.banners,
-      isSignRequestStillActive: this.isSignRequestStillActive
+      isSignRequestStillActive: this.isSignRequestStillActive,
+      features: this.features
     }
   }
 }
