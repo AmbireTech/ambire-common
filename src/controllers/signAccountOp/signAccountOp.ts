@@ -23,7 +23,7 @@ import {
 import { Account } from '../../interfaces/account'
 import { ExternalSignerControllers, Key } from '../../interfaces/keystore'
 import { Network } from '../../interfaces/network'
-import { Warning } from '../../interfaces/signAccountOp'
+import { Warning, TraceCallDiscoveryStatus } from '../../interfaces/signAccountOp'
 import { isAmbireV1LinkedAccount, isSmartAccount } from '../../libs/account/account'
 import { AccountOp, GasFeePayment, getSignableCalls } from '../../libs/accountOp/accountOp'
 import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
@@ -100,14 +100,6 @@ type SpeedCalc = {
   maxPriorityFeePerGas?: bigint
 }
 
-export enum TraceCallDiscoveryStatus {
-  NotStarted = 'not-started',
-  InProgress = 'in-progress',
-  SlowPendingResponse = 'slow-pending-response',
-  Done = 'done',
-  Failed = 'failed'
-}
-
 // declare the statuses we don't want state updates on
 export const noStateUpdateStatuses = [
   SigningStatus.InProgress,
@@ -179,6 +171,13 @@ export class SignAccountOpController extends EventEmitter {
 
   bundlerSwitcher: BundlerSwitcher
 
+  // We track the status of token discovery logic (main.traceCall)
+  // to ensure the "SignificantBalanceDecrease" banner is displayed correctly.
+  // The latest/pending portfolio balance is essential for calculating balance differences.
+  // However, during a SWAP, the user may receive a new token that isn't yet included (discovered) in the portfolio.
+  // If the discovery process is in-process, and we only rely on portfolio balance change,
+  // the banner may be incorrectly triggered due to the perceived balance drop.
+  // Once discovery completes and updates the portfolio, the banner will be hidden.
   traceCallDiscoveryStatus: TraceCallDiscoveryStatus = TraceCallDiscoveryStatus.NotStarted
 
   constructor(

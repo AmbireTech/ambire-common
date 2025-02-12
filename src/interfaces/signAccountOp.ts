@@ -6,4 +6,12 @@ type Warning = {
   displayBeforeSign: boolean
 }
 
+export enum TraceCallDiscoveryStatus {
+  NotStarted = 'not-started',
+  InProgress = 'in-progress',
+  SlowPendingResponse = 'slow-pending-response',
+  Done = 'done',
+  Failed = 'failed'
+}
+
 export type { Warning }

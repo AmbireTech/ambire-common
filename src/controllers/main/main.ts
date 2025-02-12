@@ -125,11 +125,8 @@ import { ProvidersController } from '../providers/providers'
 /* eslint-disable @typescript-eslint/no-floating-promises */
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 /* eslint-disable no-underscore-dangle */
-import {
-  SignAccountOpController,
-  SigningStatus,
-  TraceCallDiscoveryStatus
-} from '../signAccountOp/signAccountOp'
+import { SignAccountOpController, SigningStatus } from '../signAccountOp/signAccountOp'
+import { TraceCallDiscoveryStatus } from '../../interfaces/signAccountOp'
 import { SignMessageController } from '../signMessage/signMessage'
 import { SwapAndBridgeController, SwapAndBridgeFormStatus } from '../swapAndBridge/swapAndBridge'
 
@@ -234,6 +231,8 @@ export class MainController extends EventEmitter {
   #signAccountOpSigningPromise?: Promise<AccountOp | void | null>
 
   #signAccountOpBroadcastPromise?: Promise<SubmittedAccountOp>
+
+  #traceCallTimeoutId: ReturnType<typeof setTimeout> | null = null
 
   constructor({
     storage,
@@ -587,7 +586,7 @@ export class MainController extends EventEmitter {
     )
   }
 
-  async initSignAccOp(actionId: AccountOpAction['id']): null | void {
+  async initSignAccOp(actionId: AccountOpAction['id']): Promise<null | void> {
     const accountOp = getAccountOpFromAction(actionId, this.actions.actionsQueue)
     if (!accountOp) {
       this.signAccOpInitError =
@@ -706,15 +705,23 @@ export class MainController extends EventEmitter {
     const network = this.networks.networks.find((net) => net.id === accountOp?.networkId)
     if (!network) return
 
+    // `traceCall` should not be invoked too frequently. However, if there is a pending timeout,
+    // it should be cleared to prevent the previous interval from changing the status
+    // to `SlowPendingResponse` for the newer `traceCall` invocation.
+    if (this.#traceCallTimeoutId) clearTimeout(this.#traceCallTimeoutId)
+
     if (this.signAccountOp)
       this.signAccountOp.traceCallDiscoveryStatus = TraceCallDiscoveryStatus.InProgress
 
+    // Flag the discovery logic as `SlowPendingResponse` if the call does not resolve within 2 seconds.
     const timeoutId = setTimeout(() => {
       if (this.signAccountOp) {
         this.signAccountOp.traceCallDiscoveryStatus = TraceCallDiscoveryStatus.SlowPendingResponse
         this.signAccountOp.calculateWarnings()
       }
     }, 2000)
+
+    this.#traceCallTimeoutId = timeoutId
 
     try {
       const account = this.accounts.accounts.find((acc) => acc.addr === accountOp.accountAddr)!
@@ -756,6 +763,7 @@ export class MainController extends EventEmitter {
     }
 
     this.signAccountOp?.calculateWarnings()
+    this.#traceCallTimeoutId = null
     clearTimeout(timeoutId)
   }
 
