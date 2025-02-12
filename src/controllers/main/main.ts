@@ -587,7 +587,7 @@ export class MainController extends EventEmitter {
     )
   }
 
-  initSignAccOp(actionId: AccountOpAction['id']): null | void {
+  async initSignAccOp(actionId: AccountOpAction['id']): null | void {
     const accountOp = getAccountOpFromAction(actionId, this.actions.actionsQueue)
     if (!accountOp) {
       this.signAccOpInitError =
@@ -641,7 +641,8 @@ export class MainController extends EventEmitter {
     this.emitUpdate()
 
     this.updateSignAccountOpGasPrice()
-    this.estimateSignAccountOp()
+    await this.estimateSignAccountOp()
+    if (this.signAccountOp.estimation) this.traceCall(this.signAccountOp.estimation)
   }
 
   async handleSignAndBroadcastAccountOp() {
@@ -1692,7 +1693,8 @@ export class MainController extends EventEmitter {
         if (this.signAccountOp) {
           if (this.signAccountOp.fromActionId === accountOpAction.id) {
             this.signAccountOp.update({ calls: accountOpAction.accountOp.calls })
-            this.estimateSignAccountOp()
+            await this.estimateSignAccountOp()
+            if (this.signAccountOp.estimation) this.traceCall(this.signAccountOp.estimation)
           }
         } else {
           // Even without an initialized SignAccountOpController or Screen, we should still update the portfolio and run the simulation.
