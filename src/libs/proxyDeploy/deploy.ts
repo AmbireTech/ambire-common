@@ -1,4 +1,4 @@
-import { AbiCoder, keccak256 } from 'ethers'
+import { solidityPackedKeccak256 } from 'ethers'
 
 // @TODO: fix the any
 function evmPush(data: any) {
@@ -12,15 +12,13 @@ function evmPush(data: any) {
 
 // @TODO: fix the any
 export function privSlot(slotNumber: any, keyType: any, key: any, valueType: any) {
-  const abiCoder = new AbiCoder()
-  const buf = abiCoder.encode([keyType, valueType], [key, slotNumber])
-  return keccak256(buf)
+  return solidityPackedKeccak256([keyType, valueType], [key, slotNumber])
 }
 
 // @TODO: fix the any
 function sstoreCode(slotNumber: any, keyType: any, key: any, valueType: any, valueBuf: any) {
   // @TODO why are we using valueType for the slotNumber? this has to be a hardcoded uint256 and valueType is pointless
-  const slot = privSlot(slotNumber, keyType, key, valueType)
+  const slot = privSlot(slotNumber, keyType, key, valueType).slice(2)
   return Buffer.concat([
     evmPush(typeof valueBuf === 'string' ? Buffer.from(valueBuf.slice(2), 'hex') : valueBuf),
     evmPush(Buffer.from(slot, 'hex')),
@@ -41,7 +39,7 @@ export function getProxyDeployBytecode(
   const slotNumber = opts.privSlot ?? 0
   if (privLevels.length > 3) throw new Error('getProxyDeployBytecode: max 3 privLevels')
   const storage = Buffer.concat(
-    privLevels.map(({ addr, hash }) => sstoreCode(slotNumber, 'address', addr, 'bytes32', hash))
+    privLevels.map(({ addr, hash }) => sstoreCode(slotNumber, 'uint256', addr, 'uint256', hash))
   )
   const initial = Buffer.from('3d602d80', 'hex')
   // NOTE: this means we can't support offset>256

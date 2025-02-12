@@ -213,13 +213,13 @@ export class ActionsController extends EventEmitter {
   }
 
   #setCurrentAction(nextAction: Action | null) {
+    this.currentAction = nextAction
+
     if (nextAction && nextAction.id === this.currentAction?.id) {
       this.openActionWindow()
       this.emitUpdate()
       return
     }
-
-    this.currentAction = nextAction
 
     if (!this.currentAction) {
       !!this.actionWindow.windowProps?.id &&

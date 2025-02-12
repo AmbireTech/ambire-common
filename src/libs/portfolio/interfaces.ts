@@ -31,6 +31,7 @@ export type TokenResult = {
     isFeeToken: boolean
     isDefiToken?: boolean
     isHidden?: boolean
+    isCustom?: boolean
   }
 }
 

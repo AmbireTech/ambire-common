@@ -74,12 +74,16 @@ export class DefiPositionsController extends EventEmitter {
     })
   }
 
-  #getCanSkipUpdate(accountAddr: string, networkId: string) {
+  #getCanSkipUpdate(
+    accountAddr: string,
+    networkId: string,
+    maxDataAgeMs = this.#minUpdateInterval
+  ) {
     const networkState = this.#state[accountAddr][networkId]
 
     if (networkState.error || networkState.providerErrors?.length) return false
     const isWithinMinUpdateInterval =
-      networkState.updatedAt && Date.now() - networkState.updatedAt < this.#minUpdateInterval
+      networkState.updatedAt && Date.now() - networkState.updatedAt < maxDataAgeMs
 
     return isWithinMinUpdateInterval || networkState.isLoading
   }
@@ -101,7 +105,8 @@ export class DefiPositionsController extends EventEmitter {
     )
   }
 
-  async updatePositions(networkId?: NetworkId) {
+  async updatePositions(opts?: { networkId?: NetworkId; maxDataAgeMs?: number }) {
+    const { networkId, maxDataAgeMs } = opts || {}
     if (!this.#selectedAccount.account) return
 
     const selectedAccountAddr = this.#selectedAccount.account.addr
@@ -123,7 +128,7 @@ export class DefiPositionsController extends EventEmitter {
           }
         }
 
-        if (this.#getCanSkipUpdate(selectedAccountAddr, n.id)) {
+        if (this.#getCanSkipUpdate(selectedAccountAddr, n.id, maxDataAgeMs)) {
           // Emit an update so that the current account data getter is updated
           this.emitUpdate()
           return
