@@ -538,10 +538,14 @@ export class SwapAndBridgeController extends EventEmitter {
         const network = this.#networks.networks.find((n) => n.id === fromSelectedToken.networkId)
         if (network) {
           this.fromChainId = Number(network.chainId)
-          // defaults to swap after network change (should keep fromChainId and toChainId in sync after fromChainId update)
-          this.toChainId = Number(network.chainId)
-          // eslint-disable-next-line @typescript-eslint/no-floating-promises
-          this.updateToTokenList(true)
+          // Don't update the selected token programmatically if the user
+          // has selected it manually
+          if (!this.toSelectedToken) {
+            // defaults to swap after network change (should keep fromChainId and toChainId in sync after fromChainId update)
+            this.toChainId = Number(network.chainId)
+            // eslint-disable-next-line @typescript-eslint/no-floating-promises
+            this.updateToTokenList(true)
+          }
         }
       }
 
