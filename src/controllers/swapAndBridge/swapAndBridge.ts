@@ -1126,15 +1126,12 @@ export class SwapAndBridgeController extends EventEmitter {
       if (broadcastedButNotConfirmed) return
       if (activeRoute.routeStatus === 'completed') return
 
-      // TODO: Fire the API call to Socket only when the transaction gets confirmed
-      // TODO: If transaction is confirmed, but got reverted, display a proper message + "Please start from beginning" note.
       let attemptsToGetTheStatus = activeRoute.attemptsToGetTheStatus || 0
       if (attemptsToGetTheStatus > ATTEMPTS_TO_GET_THE_STATUS_THRESHOLD) {
-        // TODO: Figure out what to do if the status is a bad one (500) or 200 (pending forever)
-        // TODO: Try again option?
+        // TODO: Put in more details about the funds in the error message
         return this.updateActiveRoute(activeRoute.activeRouteId, {
           error:
-            'Unable to get the route status after multiple attempts. The transaction may take longer than expected.',
+            'Unable to get the route status after multiple attempts. The transaction may take longer than expected. The funds might have arrived on the destination chain. Please attempt to check the status manually.',
           attemptsToGetTheStatus
         })
       }
