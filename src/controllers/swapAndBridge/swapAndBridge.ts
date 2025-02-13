@@ -51,6 +51,13 @@ import { InviteController } from '../invite/invite'
 import { NetworksController } from '../networks/networks'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 
+type SwapAndBridgeErrorType = {
+  id: 'to-token-list-fetch-failed' // ...
+  title: string
+  text?: string
+  level: 'error' | 'warning'
+}
+
 const HARD_CODED_CURRENCY = 'usd'
 
 const CONVERSION_PRECISION = 16
@@ -153,6 +160,8 @@ export class SwapAndBridgeController extends EventEmitter {
   portfolioTokenList: TokenResult[] = []
 
   isTokenListLoading: boolean = false
+
+  errors: SwapAndBridgeErrorType[] = []
 
   /**
    * Needed to efficiently manage and cache token lists for different chain
@@ -442,6 +451,21 @@ export class SwapAndBridgeController extends EventEmitter {
     }
   }
 
+  addOrUpdateError(error: SwapAndBridgeErrorType) {
+    const errorIndex = this.errors.findIndex((e) => e.id === error.id)
+    if (errorIndex === -1) {
+      this.errors.push(error)
+    } else {
+      this.errors[errorIndex] = error
+    }
+    this.#emitUpdateIfNeeded()
+  }
+
+  removeError(id: SwapAndBridgeErrorType['id'], shouldEmit?: boolean) {
+    this.errors = this.errors.filter((e) => e.id !== id)
+    if (shouldEmit) this.#emitUpdateIfNeeded()
+  }
+
   updateForm(props: {
     fromAmount?: string
     fromAmountInFiat?: string
@@ -597,6 +621,7 @@ export class SwapAndBridgeController extends EventEmitter {
     this.quoteRoutesStatuses = {}
     this.portfolioTokenList = []
     this.#toTokenList = []
+    this.errors = []
 
     if (shouldEmit) this.#emitUpdateIfNeeded()
   }
@@ -654,6 +679,7 @@ export class SwapAndBridgeController extends EventEmitter {
     }
     this.updateToTokenListStatus = 'LOADING'
     this.#updateToTokenListThrottle.time = now
+    this.removeError('to-token-list-fetch-failed', false)
     if (!this.fromChainId || !this.toChainId) return
 
     if (shouldReset) {
@@ -710,7 +736,13 @@ export class SwapAndBridgeController extends EventEmitter {
       }
     } catch (error: any) {
       const { message } = getHumanReadableSwapAndBridgeError(error)
-      this.emitError({ error, level: 'major', message })
+
+      this.addOrUpdateError({
+        id: 'to-token-list-fetch-failed',
+        title: 'Temporarily unavailable',
+        text: message,
+        level: 'error'
+      })
     }
     this.updateToTokenListStatus = 'INITIAL'
     this.#emitUpdateIfNeeded()
