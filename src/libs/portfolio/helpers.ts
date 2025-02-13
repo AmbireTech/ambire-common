@@ -11,6 +11,8 @@ import { CustomToken, TokenPreference } from './customToken'
 import {
   AccountState,
   AdditionalPortfolioNetworkResult,
+  NetworkState,
+  PortfolioGasTankResult,
   PreviousHintsStorage,
   StrippedExternalHintsAPIResponse,
   TokenResult
@@ -463,4 +465,22 @@ export const processTokens = (
 
     return tokens
   }, [] as TokenResult[])
+}
+
+export const isPortfolioGasTankResult = (
+  result: NetworkState['result']
+): result is PortfolioGasTankResult => {
+  return !!result && 'gasTankTokens' in result && Array.isArray(result.gasTankTokens)
+}
+
+export const isCurrentCashbackZero = (resBalance: any[]) => {
+  const currentCashback = resBalance?.[0]?.cashback
+
+  if (currentCashback === undefined) return false
+
+  try {
+    return BigInt(currentCashback) === 0n
+  } catch {
+    return false
+  }
 }
