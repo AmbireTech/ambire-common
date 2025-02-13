@@ -199,7 +199,13 @@ export type ActiveRoute = {
     transactionData: { txHash: string }[] | null
     userAddress: string
   }
-  routeStatus: 'waiting-approval-to-resolve' | 'in-progress' | 'ready' | 'completed' | 'failed'
+  routeStatus:
+    | 'waiting-approval-to-resolve'
+    | 'in-progress'
+    | 'timed-out'
+    | 'ready'
+    | 'completed'
+    | 'failed'
   attemptsToGetTheStatus?: number
   error?: string
 }

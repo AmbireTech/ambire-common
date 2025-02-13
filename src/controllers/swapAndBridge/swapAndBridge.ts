@@ -81,7 +81,8 @@ const STATUS_WRAPPED_METHODS = {
 
 const SUPPORTED_CHAINS_CACHE_THRESHOLD = 1000 * 60 * 60 * 24 // 1 day
 const TO_TOKEN_LIST_CACHE_THRESHOLD = 1000 * 60 * 60 * 4 // 4 hours
-const ATTEMPTS_TO_GET_THE_STATUS_THRESHOLD = 60
+// TODO: Set to low value for testing, should probably be more
+export const ATTEMPTS_TO_GET_THE_STATUS_THRESHOLD = 3
 
 const PROTOCOLS_WITH_CONTRACT_FEE_IN_NATIVE = [
   'stargate',
@@ -1130,6 +1131,7 @@ export class SwapAndBridgeController extends EventEmitter {
       if (attemptsToGetTheStatus > ATTEMPTS_TO_GET_THE_STATUS_THRESHOLD) {
         // TODO: Put in more details about the funds in the error message
         return this.updateActiveRoute(activeRoute.activeRouteId, {
+          routeStatus: 'timed-out',
           error:
             'Unable to get the route status after multiple attempts. The transaction may take longer than expected. The funds might have arrived on the destination chain. Please attempt to check the status manually.',
           attemptsToGetTheStatus
