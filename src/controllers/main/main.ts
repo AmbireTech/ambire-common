@@ -335,9 +335,9 @@ export class MainController extends EventEmitter {
           (r) => r.action.kind !== 'calls'
         )
         userRequestsToRejectOnWindowClose.forEach((r) =>
-          r.dappPromise?.reject(ethErrors.provider.userRejectedRequest())
+          this.rejectUserRequest(ethErrors.provider.userRejectedRequest().message, r.id)
         )
-        this.userRequests = this.userRequests.filter((r) => r.action.kind === 'calls')
+
         this.userRequestWaitingAccountSwitch = []
         this.emitUpdate()
       }
@@ -772,6 +772,10 @@ export class MainController extends EventEmitter {
     if (!signedMessage) return
 
     if (signedMessage.fromActionId === ENTRY_POINT_AUTHORIZATION_REQUEST_ID) {
+      console.log({
+        userRequests: this.userRequests,
+        actionsQueue: this.actions.actionsQueue
+      })
       const accountOpAction = makeSmartAccountOpAction({
         account: this.accounts.accounts.filter((a) => a.addr === signedMessage.accountAddr)[0],
         networkId: signedMessage.networkId,
