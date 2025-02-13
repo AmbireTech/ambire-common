@@ -127,6 +127,7 @@ import { ProvidersController } from '../providers/providers'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 /* eslint-disable no-underscore-dangle */
 import { SignAccountOpController, SigningStatus } from '../signAccountOp/signAccountOp'
+import { TraceCallDiscoveryStatus } from '../../interfaces/signAccountOp'
 import { SignMessageController } from '../signMessage/signMessage'
 import { SwapAndBridgeController, SwapAndBridgeFormStatus } from '../swapAndBridge/swapAndBridge'
 
@@ -231,6 +232,8 @@ export class MainController extends EventEmitter {
   #signAccountOpSigningPromise?: Promise<AccountOp | void | null>
 
   #signAccountOpBroadcastPromise?: Promise<SubmittedAccountOp>
+
+  #traceCallTimeoutId: ReturnType<typeof setTimeout> | null = null
 
   constructor({
     storage,
@@ -584,7 +587,7 @@ export class MainController extends EventEmitter {
     )
   }
 
-  initSignAccOp(actionId: AccountOpAction['id']): null | void {
+  async initSignAccOp(actionId: AccountOpAction['id']): Promise<null | void> {
     const accountOp = getAccountOpFromAction(actionId, this.actions.actionsQueue)
     if (!accountOp) {
       this.signAccOpInitError =
@@ -638,7 +641,8 @@ export class MainController extends EventEmitter {
     this.emitUpdate()
 
     this.updateSignAccountOpGasPrice()
-    this.estimateSignAccountOp()
+    await this.estimateSignAccountOp()
+    if (this.signAccountOp.estimation) this.traceCall(this.signAccountOp.estimation)
   }
 
   async handleSignAndBroadcastAccountOp() {
@@ -702,6 +706,24 @@ export class MainController extends EventEmitter {
     const network = this.networks.networks.find((net) => net.id === accountOp?.networkId)
     if (!network) return
 
+    // `traceCall` should not be invoked too frequently. However, if there is a pending timeout,
+    // it should be cleared to prevent the previous interval from changing the status
+    // to `SlowPendingResponse` for the newer `traceCall` invocation.
+    if (this.#traceCallTimeoutId) clearTimeout(this.#traceCallTimeoutId)
+
+    if (this.signAccountOp)
+      this.signAccountOp.traceCallDiscoveryStatus = TraceCallDiscoveryStatus.InProgress
+
+    // Flag the discovery logic as `SlowPendingResponse` if the call does not resolve within 2 seconds.
+    const timeoutId = setTimeout(() => {
+      if (this.signAccountOp) {
+        this.signAccountOp.traceCallDiscoveryStatus = TraceCallDiscoveryStatus.SlowPendingResponse
+        this.signAccountOp.calculateWarnings()
+      }
+    }, 2000)
+
+    this.#traceCallTimeoutId = timeoutId
+
     try {
       const account = this.accounts.accounts.find((acc) => acc.addr === accountOp.accountAddr)!
       const state = this.accounts.accountStates[accountOp.accountAddr][accountOp.networkId]
@@ -720,28 +742,30 @@ export class MainController extends EventEmitter {
       const learnedNewNfts = await this.portfolio.learnNfts(nfts, network.id)
       // update the portfolio only if new tokens were found through tracing
       if (learnedNewTokens || learnedNewNfts) {
-        this.portfolio
-          .updateSelectedAccount(
-            accountOp.accountAddr,
-            network,
-            getAccountOpsForSimulation(
-              account,
-              this.actions.visibleActionsQueue,
-              network,
-              accountOp
-            ),
-            { forceUpdate: true }
-          )
-          // fire an update request to refresh the warnings if any
-          .then(() => this.signAccountOp?.update({}))
+        await this.portfolio.updateSelectedAccount(
+          accountOp.accountAddr,
+          network,
+          getAccountOpsForSimulation(account, this.actions.visibleActionsQueue, network, accountOp),
+          { forceUpdate: true }
+        )
       }
+
+      if (this.signAccountOp)
+        this.signAccountOp.traceCallDiscoveryStatus = TraceCallDiscoveryStatus.Done
     } catch (e: any) {
+      if (this.signAccountOp)
+        this.signAccountOp.traceCallDiscoveryStatus = TraceCallDiscoveryStatus.Failed
+
       this.emitError({
         level: 'silent',
         message: 'Error in main.traceCall',
         error: new Error(`Debug trace call error on ${network.id}: ${e.message}`)
       })
     }
+
+    this.signAccountOp?.calculateWarnings()
+    this.#traceCallTimeoutId = null
+    clearTimeout(timeoutId)
   }
 
   async handleSignMessage() {
@@ -1678,7 +1702,8 @@ export class MainController extends EventEmitter {
         if (this.signAccountOp) {
           if (this.signAccountOp.fromActionId === accountOpAction.id) {
             this.signAccountOp.update({ calls: accountOpAction.accountOp.calls })
-            this.estimateSignAccountOp()
+            await this.estimateSignAccountOp()
+            if (this.signAccountOp.estimation) this.traceCall(this.signAccountOp.estimation)
           }
         } else {
           // Even without an initialized SignAccountOpController or Screen, we should still update the portfolio and run the simulation.

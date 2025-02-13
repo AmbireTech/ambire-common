@@ -2,7 +2,7 @@ import { formatUnits, ZeroAddress } from 'ethers'
 
 import { WARNINGS } from '../../consts/signAccountOp/errorHandling'
 import { Network } from '../../interfaces/network'
-import { Warning } from '../../interfaces/signAccountOp'
+import { Warning, TraceCallDiscoveryStatus } from '../../interfaces/signAccountOp'
 import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 import { FeePaymentOption } from '../../libs/estimate/interfaces'
 import { Price, TokenResult } from '../../libs/portfolio'
@@ -40,7 +40,8 @@ function getTokenUsdAmount(token: TokenResult, gasAmount: bigint): string {
 function getSignificantBalanceDecreaseWarning(
   latest: AccountState,
   pending: AccountState,
-  networkId: Network['id']
+  networkId: Network['id'],
+  traceCallDiscoveryStatus: TraceCallDiscoveryStatus
 ): Warning | null {
   const latestNetworkData = latest?.[networkId]
   const pendingNetworkData = pending?.[networkId]
@@ -59,7 +60,22 @@ function getSignificantBalanceDecreaseWarning(
 
     if (!willBalanceDecreaseByMoreThan10Percent) return null
 
-    return WARNINGS.significantBalanceDecrease
+    // We wait for the discovery process (main.traceCall) to complete before showing WARNINGS.significantBalanceDecrease.
+    // This is important because, in the case of a SWAP to a new token, the new token is not yet part of the portfolio,
+    // which could incorrectly trigger a significant balance drop warning.
+    // To prevent this, we ensure the discovery process is completed first.
+    if (traceCallDiscoveryStatus === TraceCallDiscoveryStatus.Done) {
+      return WARNINGS.significantBalanceDecrease
+    }
+
+    // If the discovery process takes too long (more than 2 seconds) or fails,
+    // we still show a warning, but we indicate that our balance decrease assumption may be incorrect.
+    if (
+      traceCallDiscoveryStatus === TraceCallDiscoveryStatus.Failed ||
+      traceCallDiscoveryStatus === TraceCallDiscoveryStatus.SlowPendingResponse
+    ) {
+      return WARNINGS.possibleBalanceDecrease
+    }
   }
 
   return null
