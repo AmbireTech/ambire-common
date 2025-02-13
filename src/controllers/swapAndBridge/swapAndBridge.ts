@@ -1163,27 +1163,13 @@ export class SwapAndBridgeController extends EventEmitter {
         })
       }
 
-      if (status === 'completed') {
-        this.updateActiveRoute(
-          activeRoute.activeRouteId,
-          {
-            routeStatus: 'completed',
-            attemptsToGetTheStatus,
-            error: undefined
-          },
-          true
-        )
-      } else if (status === 'ready') {
-        this.updateActiveRoute(
-          activeRoute.activeRouteId,
-          {
-            routeStatus: 'ready',
-            attemptsToGetTheStatus,
-            error: undefined
-          },
-          true
-        )
+      const activeRoutePropsToUpdate: Partial<ActiveRoute> = { attemptsToGetTheStatus }
+      if (status && ['completed, ready'].includes(status)) {
+        activeRoutePropsToUpdate.routeStatus = status
+        activeRoutePropsToUpdate.error = undefined
       }
+
+      this.updateActiveRoute(activeRoute.activeRouteId, activeRoutePropsToUpdate, true)
     }
 
     await Promise.all(
