@@ -772,10 +772,6 @@ export class MainController extends EventEmitter {
     if (!signedMessage) return
 
     if (signedMessage.fromActionId === ENTRY_POINT_AUTHORIZATION_REQUEST_ID) {
-      console.log({
-        userRequests: this.userRequests,
-        actionsQueue: this.actions.actionsQueue
-      })
       const accountOpAction = makeSmartAccountOpAction({
         account: this.accounts.accounts.filter((a) => a.addr === signedMessage.accountAddr)[0],
         networkId: signedMessage.networkId,
