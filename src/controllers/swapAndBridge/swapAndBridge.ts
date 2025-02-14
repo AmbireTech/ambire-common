@@ -51,6 +51,13 @@ import { InviteController } from '../invite/invite'
 import { NetworksController } from '../networks/networks'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 
+type SwapAndBridgeErrorType = {
+  id: 'to-token-list-fetch-failed' // ...
+  title: string
+  text?: string
+  level: 'error' | 'warning'
+}
+
 const HARD_CODED_CURRENCY = 'usd'
 
 const CONVERSION_PRECISION = 16
@@ -153,6 +160,8 @@ export class SwapAndBridgeController extends EventEmitter {
   portfolioTokenList: TokenResult[] = []
 
   isTokenListLoading: boolean = false
+
+  errors: SwapAndBridgeErrorType[] = []
 
   /**
    * Needed to efficiently manage and cache token lists for different chain
@@ -442,6 +451,21 @@ export class SwapAndBridgeController extends EventEmitter {
     }
   }
 
+  addOrUpdateError(error: SwapAndBridgeErrorType) {
+    const errorIndex = this.errors.findIndex((e) => e.id === error.id)
+    if (errorIndex === -1) {
+      this.errors.push(error)
+    } else {
+      this.errors[errorIndex] = error
+    }
+    this.#emitUpdateIfNeeded()
+  }
+
+  removeError(id: SwapAndBridgeErrorType['id'], shouldEmit?: boolean) {
+    this.errors = this.errors.filter((e) => e.id !== id)
+    if (shouldEmit) this.#emitUpdateIfNeeded()
+  }
+
   updateForm(props: {
     fromAmount?: string
     fromAmountInFiat?: string
@@ -597,6 +621,7 @@ export class SwapAndBridgeController extends EventEmitter {
     this.quoteRoutesStatuses = {}
     this.portfolioTokenList = []
     this.#toTokenList = []
+    this.errors = []
 
     if (shouldEmit) this.#emitUpdateIfNeeded()
   }
@@ -654,6 +679,7 @@ export class SwapAndBridgeController extends EventEmitter {
     }
     this.updateToTokenListStatus = 'LOADING'
     this.#updateToTokenListThrottle.time = now
+    this.removeError('to-token-list-fetch-failed', false)
     if (!this.fromChainId || !this.toChainId) return
 
     if (shouldReset) {
@@ -662,56 +688,67 @@ export class SwapAndBridgeController extends EventEmitter {
       this.#emitUpdateIfNeeded()
     }
 
-    try {
-      const toTokenListInCache =
-        this.#toTokenListKey && this.#cachedToTokenLists[this.#toTokenListKey]
-      let upToDateToTokenList: SocketAPIToken[] = toTokenListInCache?.data || []
-      const shouldFetchTokenList =
-        !upToDateToTokenList.length ||
-        now - (toTokenListInCache?.lastFetched || 0) >= TO_TOKEN_LIST_CACHE_THRESHOLD
-      if (shouldFetchTokenList) {
-        upToDateToTokenList = await this.#socketAPI.getToTokenList({
+    const toTokenListInCache =
+      this.#toTokenListKey && this.#cachedToTokenLists[this.#toTokenListKey]
+    let toTokenList: SocketAPIToken[] = toTokenListInCache?.data || []
+    const shouldFetchTokenList =
+      !toTokenList.length ||
+      now - (toTokenListInCache?.lastFetched || 0) >= TO_TOKEN_LIST_CACHE_THRESHOLD
+    if (shouldFetchTokenList) {
+      try {
+        toTokenList = await this.#socketAPI.getToTokenList({
           fromChainId: this.fromChainId,
           toChainId: this.toChainId
         })
-        if (this.#toTokenListKey)
+        // Cache the latest token list
+        if (this.#toTokenListKey) {
           this.#cachedToTokenLists[this.#toTokenListKey] = {
             lastFetched: now,
-            data: upToDateToTokenList
-          }
-      }
-
-      const toTokenNetwork = this.#networks.networks.find(
-        (n) => Number(n.chainId) === this.toChainId
-      )
-      // should never happen
-      if (!toTokenNetwork) throw new SwapAndBridgeError(NETWORK_MISMATCH_MESSAGE)
-
-      const additionalTokensFromPortfolio = this.portfolioTokenList
-        .filter((t) => t.networkId === toTokenNetwork.id)
-        .filter((token) => !upToDateToTokenList.some((t) => t.address === token.address))
-        .map((t) => convertPortfolioTokenToSocketAPIToken(t, Number(toTokenNetwork.chainId)))
-
-      this.#toTokenList = sortTokenListResponse(
-        [...upToDateToTokenList, ...additionalTokensFromPortfolio],
-        this.portfolioTokenList.filter((t) => t.networkId === toTokenNetwork.id)
-      )
-
-      if (!this.toSelectedToken) {
-        if (addressToSelect) {
-          const token = this.#toTokenList.find((t) => t.address === addressToSelect)
-          if (token) {
-            this.updateForm({ toSelectedToken: token })
-            this.updateToTokenListStatus = 'INITIAL'
-            this.#emitUpdateIfNeeded()
-            return
+            data: toTokenList
           }
         }
+      } catch (error: any) {
+        // Display an error only if there is no cached data
+        if (!toTokenList.length) {
+          toTokenList = SocketAPI.addCustomTokens({ chainId: this.toChainId, tokens: toTokenList })
+          const { message } = getHumanReadableSwapAndBridgeError(error)
+
+          this.addOrUpdateError({
+            id: 'to-token-list-fetch-failed',
+            title: 'Token list on the receiving network is temporarily unavailable.',
+            text: message,
+            level: 'error'
+          })
+        }
       }
-    } catch (error: any) {
-      const { message } = getHumanReadableSwapAndBridgeError(error)
-      this.emitError({ error, level: 'major', message })
     }
+
+    const toTokenNetwork = this.#networks.networks.find((n) => Number(n.chainId) === this.toChainId)
+    // should never happen
+    if (!toTokenNetwork) throw new SwapAndBridgeError(NETWORK_MISMATCH_MESSAGE)
+
+    const additionalTokensFromPortfolio = this.portfolioTokenList
+      .filter((t) => t.networkId === toTokenNetwork.id)
+      .filter((token) => !toTokenList.some((t) => t.address === token.address))
+      .map((t) => convertPortfolioTokenToSocketAPIToken(t, Number(toTokenNetwork.chainId)))
+
+    this.#toTokenList = sortTokenListResponse(
+      [...toTokenList, ...additionalTokensFromPortfolio],
+      this.portfolioTokenList.filter((t) => t.networkId === toTokenNetwork.id)
+    )
+
+    if (!this.toSelectedToken) {
+      if (addressToSelect) {
+        const token = this.#toTokenList.find((t) => t.address === addressToSelect)
+        if (token) {
+          this.updateForm({ toSelectedToken: token })
+          this.updateToTokenListStatus = 'INITIAL'
+          this.#emitUpdateIfNeeded()
+          return
+        }
+      }
+    }
+
     this.updateToTokenListStatus = 'INITIAL'
     this.#emitUpdateIfNeeded()
   }

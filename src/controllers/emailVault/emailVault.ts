@@ -207,7 +207,7 @@ export class EmailVaultController extends EventEmitter {
       }
     })
 
-    const ev: (EmailVaultData & { error?: any; canceled?: boolean }) | null = await polling.exec(
+    const ev: (EmailVaultData & { error?: Error; canceled?: boolean }) | null = await polling.exec(
       this.#emailVault.getEmailVaultInfo.bind(this.#emailVault),
       [email, newKey.key],
       () => {
@@ -234,10 +234,18 @@ export class EmailVaultController extends EventEmitter {
       this.storage.set(MAGIC_LINK_STORAGE_KEY, this.#magicLinkKeys)
       this.#requestSessionKey(email)
     } else {
+      const originalErrorMessage = ev?.error?.message || ''
+      let message = `Unexpected error getting email vault for ${email}`
+
+      if (originalErrorMessage.includes('timeout')) {
+        message = `Your activation key expired for ${email}. You can request a new key by resubmitting the form.`
+        this.cancelEmailConfirmation()
+      }
+
       this.emitError({
-        message: `Unexpected error getting email vault for ${email}`,
+        message,
         level: 'major',
-        error: new Error(`Unexpected error getting email vault for ${email}`)
+        error: new Error(`Error in emailVault.handleMagicLinkKey: ${ev?.error}`)
       })
     }
     this.emitUpdate()
