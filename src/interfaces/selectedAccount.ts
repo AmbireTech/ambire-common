@@ -4,6 +4,7 @@ import {
   NetworkState,
   TokenResult as TokenResultInterface
 } from '../libs/portfolio/interfaces'
+import { AccountId } from './account'
 
 /** A stripped version of the portfolio state that will be used in the UI */
 export type SelectedAccountPortfolioState = {
@@ -36,4 +37,10 @@ export interface SelectedAccountPortfolio {
   networkSimulatedAccountOp: NetworkSimulatedAccountOp
   latest: SelectedAccountPortfolioState
   pending: SelectedAccountPortfolioState
+}
+
+export type CashbackStatus = 'no-cashback' | 'unseen-cashback' | 'cashback-modal' | 'seen-cashback'
+
+export type CashbackStatusByAccount = {
+  [key: AccountId]: CashbackStatus
 }
