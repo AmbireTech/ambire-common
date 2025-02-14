@@ -223,8 +223,7 @@ export class SelectedAccountController extends EventEmitter {
     }
   }
 
-  // TODO: Fix the async operations
-  async #updateSelectedAccountPortfolio(skipUpdate?: boolean) {
+  #updateSelectedAccountPortfolio(skipUpdate?: boolean) {
     if (!this.#portfolio || !this.#defiPositions || !this.account) return
     const defiPositionsAccountState = this.#defiPositions.getDefiPositionsState(this.account.addr)
 
@@ -276,7 +275,7 @@ export class SelectedAccountController extends EventEmitter {
       this.#updatePortfolioErrors(true)
     }
 
-    await this.updateCashbackStatus()
+    this.updateCashbackStatus()
 
     if (!skipUpdate) {
       this.emitUpdate()
