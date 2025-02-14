@@ -1,4 +1,4 @@
-import { Account, AccountId } from '../../interfaces/account'
+import { Account, AccountId, AccountOnchainState } from '../../interfaces/account'
 import { NetworkId } from '../../interfaces/network'
 import { AccountOp } from '../accountOp/accountOp'
 
@@ -10,6 +10,7 @@ export interface Price {
 export interface GetOptionsSimulation {
   accountOps: AccountOp[]
   account: Account
+  state: AccountOnchainState
 }
 export type TokenError = string | '0x'
 
@@ -210,7 +211,6 @@ export interface GetOptions {
   priceCache?: PriceCache
   priceRecency: number
   previousHintsFromExternalAPI?: StrippedExternalHintsAPIResponse | null
-  isEOA: boolean
   fetchPinned: boolean
   additionalErc20Hints?: Hints['erc20s']
   additionalErc721Hints?: Hints['erc721s']

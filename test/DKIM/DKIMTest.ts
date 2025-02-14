@@ -135,10 +135,10 @@ describe('DKIM sigMode Both', () => {
     await expect(account.execute(txns, finalSig)).to.be.revertedWith('calls length must be 1')
 
     txns.pop()
-    txns[0][1] = 1
+    txns[0][1] = '1'
     await expect(account.execute(txns, finalSig)).to.be.revertedWith('call value must be 0')
 
-    txns[0][1] = 0
+    txns[0][1] = '0'
     txns[0][0] = newSigner.address
     await expect(account.execute(txns, finalSig)).to.be.revertedWith(
       'call "to" must be the ambire account addr'

@@ -34,16 +34,16 @@ contract AmbireAccountState {
         for (uint i=0; i!=accounts.length; i++) {
             AccountInput memory account = accounts[i];
             accountResult[i].balance = address(account.addr).balance;
+
             // check for EOA
             if (account.factory == address(0)) {
                 accountResult[i].isEOA = true;
-                continue;
             }
-            // is contract deployed
-            if (address(account.addr).code.length > 0) {
+
+            bytes memory code = address(account.addr).code;
+            if (code.length > 0) {
                 accountResult[i].isDeployed = true;
-            } else {
-                accountResult[i].isDeployed = false;
+            } else if (!accountResult[i].isEOA) {
                 // deploy contract to can check nonce and associatedKeys
                 (bool success,) = account.factory.call(account.factoryCalldata);
                 // we leave associateKeys empty and nonce == 0, so that the library can know that the deployment failed
@@ -53,6 +53,10 @@ contract AmbireAccountState {
                     continue;
                 }
             }
+
+            // do not continue for EOAs
+            if (accountResult[i].isEOA && code.length == 0) continue;
+
             try this.gatherAmbireData(account) returns (uint nonce, bytes32[] memory privileges, bool isV2, uint erc4337Nonce) {
                 accountResult[i].nonce = nonce;
                 accountResult[i].associatedKeyPrivileges = privileges;

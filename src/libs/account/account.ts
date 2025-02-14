@@ -4,15 +4,21 @@ import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
 import { SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET } from '../../consts/derivation'
 import { SPOOF_SIGTYPE } from '../../consts/signatures'
+import { InternalSignedMessages, SignedMessage } from '../../controllers/activity/types'
 import {
   Account,
   AccountId,
+  AccountOnchainState,
   AccountOnPage,
   AccountPreferences,
+  AccountStates,
   ImportStatus
 } from '../../interfaces/account'
 import { KeyIterator } from '../../interfaces/keyIterator'
 import { Key } from '../../interfaces/keystore'
+import { Network } from '../../interfaces/network'
+import { Authorization } from '../../interfaces/userRequest'
+import { getContractImplementation } from '../7702/7702'
 import { DKIM_VALIDATOR_ADDR, getSignerKey, RECOVERY_DEFAULTS } from '../dkim/recovery'
 import { getBytecode } from '../proxyDeploy/bytecode'
 import { PrivLevels } from '../proxyDeploy/deploy'
@@ -317,4 +323,64 @@ export function migrateAccountPreferencesToAccounts(
 
 export function getUniqueAccountsArray(accounts: Account[]) {
   return Array.from(new Map(accounts.map((account) => [account.addr, account])).values())
+}
+
+export function getAuthorization(
+  account: Account,
+  // make sure to pass the EOA nonce here, not the SA or entry point
+  eoaNonce: bigint,
+  network: Network,
+  authorizations: InternalSignedMessages
+): SignedMessage | undefined {
+  if (account.creation || !authorizations[account.addr]) return undefined
+
+  return authorizations[account.addr].find((msg) => {
+    const content = msg.content as Authorization
+    return (
+      (content.chainId === 0n || content.chainId === network.chainId) &&
+      content.nonce === eoaNonce &&
+      getContractImplementation(content.chainId) === content.contractAddr
+    )
+  })
+}
+
+// use this in cases where you strictly want to enable/disable an action for
+// basic accounts (excluding smart and smarter)
+export function isBasicAccount(account: Account, state: AccountOnchainState): boolean {
+  return !account.creation && !state.isSmarterEoa
+}
+
+// can the account as a whole become smarter (disregarding chain and state)
+export function canBecomeSmarter(acc: Account, accKeys: Key[]): boolean {
+  return !isSmartAccount(acc) && !!accKeys.find((key) => key.type === 'internal')
+}
+
+// can the account become smarter on a specific chain
+export function canBecomeSmarterOnChain(
+  acc: Account,
+  state: AccountOnchainState,
+  accKeys: Key[]
+): boolean {
+  return isBasicAccount(acc, state) && !!accKeys.find((key) => key.type === 'internal')
+}
+
+export function hasBecomeSmarter(account: Account, state: AccountStates) {
+  if (!state[account.addr]) return false
+
+  const networks = Object.keys(state[account.addr])
+  for (let i = 0; i < networks.length; i++) {
+    const onChainState = state[account.addr][networks[i]]
+    // eslint-disable-next-line no-continue
+    if (!onChainState) continue
+
+    if (onChainState.isSmarterEoa) return true
+  }
+
+  return false
+}
+
+export function shouldUseStateOverrideForEOA(account: Account, state: AccountOnchainState) {
+  const isSmarterEOAOffchain = state.isSmarterEoa && !!state.authorization
+  const isEOA = isBasicAccount(account, state)
+  return isEOA || isSmarterEOAOffchain
 }

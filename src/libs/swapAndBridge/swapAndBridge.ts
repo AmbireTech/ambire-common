@@ -1,7 +1,7 @@
 import { Contract, getAddress, Interface, MaxUint256 } from 'ethers'
 
 import ERC20 from '../../../contracts/compiled/IERC20.json'
-import { Account } from '../../interfaces/account'
+import { Account, AccountOnchainState } from '../../interfaces/account'
 import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
 import {
@@ -14,7 +14,7 @@ import {
   SwapAndBridgeToToken
 } from '../../interfaces/swapAndBridge'
 import { SignUserRequest } from '../../interfaces/userRequest'
-import { isSmartAccount } from '../account/account'
+import { isBasicAccount } from '../account/account'
 import { Call } from '../accountOp/types'
 import { TokenResult } from '../portfolio'
 import { getTokenBalanceInUSD } from '../portfolio/helpers'
@@ -158,11 +158,12 @@ const getActiveRoutesUpdateInterval = (minServiceTime?: number) => {
 const buildRevokeApprovalIfNeeded = async (
   userTx: SocketAPISendTransactionRequest,
   account: Account,
+  state: AccountOnchainState,
   provider: RPCProvider
 ): Promise<Call | undefined> => {
   if (!userTx.approvalData) return
   const erc20Contract = new Contract(userTx.approvalData.approvalTokenAddress, ERC20.abi, provider)
-  const requiredAmount = isSmartAccount(account)
+  const requiredAmount = !isBasicAccount(account, state)
     ? BigInt(userTx.approvalData.minimumApprovalAmount)
     : MaxUint256
   const approveCallData = erc20Contract.interface.encodeFunctionData('approve', [
@@ -197,14 +198,15 @@ const buildSwapAndBridgeUserRequests = async (
   userTx: SocketAPISendTransactionRequest,
   networkId: string,
   account: Account,
-  provider: RPCProvider
+  provider: RPCProvider,
+  state: AccountOnchainState
 ) => {
-  if (isSmartAccount(account)) {
+  if (!isBasicAccount(account, state)) {
     const calls: Call[] = []
     if (userTx.approvalData) {
       const erc20Interface = new Interface(ERC20.abi)
 
-      const revokeApproval = await buildRevokeApprovalIfNeeded(userTx, account, provider)
+      const revokeApproval = await buildRevokeApprovalIfNeeded(userTx, account, state, provider)
       if (revokeApproval) calls.push(revokeApproval)
 
       calls.push({
@@ -265,7 +267,7 @@ const buildSwapAndBridgeUserRequests = async (
     }
 
     if (shouldApprove) {
-      const revokeApproval = await buildRevokeApprovalIfNeeded(userTx, account, provider)
+      const revokeApproval = await buildRevokeApprovalIfNeeded(userTx, account, state, provider)
       if (revokeApproval) {
         requests.push({
           id: `${userTx.activeRouteId}-revoke-approval`,
@@ -360,9 +362,9 @@ const getActiveRoutesForAccount = (accountAddress: string, activeRoutes: ActiveR
 }
 
 export {
-  getQuoteRouteSteps,
+  buildSwapAndBridgeUserRequests,
+  getActiveRoutesForAccount,
   getActiveRoutesLowestServiceTime,
   getActiveRoutesUpdateInterval,
-  buildSwapAndBridgeUserRequests,
-  getActiveRoutesForAccount
+  getQuoteRouteSteps
 }

@@ -1,11 +1,10 @@
 import { getAddress, ZeroAddress } from 'ethers'
 
-import { Account, AccountId } from '../../interfaces/account'
+import { Account, AccountId, AccountOnchainState } from '../../interfaces/account'
 import { Fetch } from '../../interfaces/fetch'
 import { Network, NetworkId } from '../../interfaces/network'
 /* eslint-disable @typescript-eslint/no-shadow */
 import { Storage } from '../../interfaces/storage'
-import { isSmartAccount } from '../../libs/account/account'
 import { AccountOp, AccountOpStatus, isAccountOpsIntentEqual } from '../../libs/accountOp/accountOp'
 import { Portfolio } from '../../libs/portfolio'
 /* eslint-disable @typescript-eslint/no-use-before-define */
@@ -475,9 +474,6 @@ export class PortfolioController extends EventEmitter {
 
     if (canSkipUpdate) return
 
-    const hasNonZeroTokens = !!Object.values(
-      this.#networksWithAssetsByAccounts?.[accountId] || {}
-    ).some(Boolean)
     const start = Date.now()
     const accountState = this.#latest[accountId]
 
@@ -697,7 +693,10 @@ export class PortfolioController extends EventEmitter {
   async updateSelectedAccount(
     accountId: AccountId,
     network?: Network,
-    accountOps?: { [key: string]: AccountOp[] },
+    simulation?: {
+      accountOps: { [key: string]: AccountOp[] }
+      states: { [networId: NetworkId]: AccountOnchainState }
+    },
     opts?: { forceUpdate?: boolean; maxDataAgeMs?: number }
   ) {
     await this.#initialLoadPromise
@@ -720,9 +719,10 @@ export class PortfolioController extends EventEmitter {
 
         const portfolioLib = this.initializePortfolioLibIfNeeded(accountId, network.id, network)
 
-        const currentAccountOps = accountOps?.[network.id]?.filter(
+        const currentAccountOps = simulation?.accountOps[network.id]?.filter(
           (op) => op.accountAddr === accountId
         )
+        const state = simulation?.states[network.id]
         const simulatedAccountOps = pendingState[network.id]?.accountOps
 
         if (!this.#queue?.[accountId]?.[network.id])
@@ -793,13 +793,14 @@ export class PortfolioController extends EventEmitter {
               portfolioLib,
               {
                 blockTag: 'pending',
-                ...(currentAccountOps && {
-                  simulation: {
-                    account: selectedAccount,
-                    accountOps: currentAccountOps
-                  }
-                }),
-                isEOA: !isSmartAccount(selectedAccount),
+                ...(currentAccountOps &&
+                  state && {
+                    simulation: {
+                      account: selectedAccount,
+                      accountOps: currentAccountOps,
+                      state
+                    }
+                  }),
                 ...allHints
               },
               forceUpdate,

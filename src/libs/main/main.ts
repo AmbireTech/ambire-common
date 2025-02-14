@@ -179,9 +179,11 @@ export const getAccountOpsForSimulation = (
   visibleActionsQueue: Action[],
   network?: Network,
   op?: AccountOp | null
-): {
-  [key: string]: AccountOp[]
-} => {
+):
+  | {
+      [key: string]: AccountOp[]
+    }
+  | undefined => {
   const isSmart = isSmartAccount(account)
 
   // if there's an op and the account is either smart or the network supports
@@ -191,5 +193,5 @@ export const getAccountOpsForSimulation = (
 
   if (isSmart) return getAccountOpsByNetwork(account.addr, visibleActionsQueue) || {}
 
-  return {}
+  return undefined
 }

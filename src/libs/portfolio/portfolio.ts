@@ -62,8 +62,7 @@ const defaultOptions: GetOptions = {
   blockTag: 'latest',
   priceRecency: 0,
   previousHintsFromExternalAPI: null,
-  fetchPinned: true,
-  isEOA: false
+  fetchPinned: true
 }
 
 export class Portfolio {

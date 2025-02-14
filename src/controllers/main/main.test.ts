@@ -425,7 +425,7 @@ describe('Main Controller ', () => {
         })
       } catch (e: any) {
         expect(e.message).toBe(
-          'Transaction fee underpriced. Please select a higher transaction speed and try again'
+          'The transaction cannot be broadcast because the selected fee is too low. Please select a higher transaction speed and try again.'
         )
         expect(controllerAnyType.updateSignAccountOpGasPrice).toHaveBeenCalledTimes(1)
         expect(controllerAnyType.estimateSignAccountOp).not.toHaveBeenCalled()
