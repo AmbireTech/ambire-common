@@ -25,7 +25,6 @@ import {
 import {
   AccountAssetsState,
   AccountState,
-  CashbackStatusByAccount,
   GasTankTokenResult,
   GetOptions,
   NetworkState,
