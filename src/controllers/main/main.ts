@@ -389,7 +389,6 @@ export class MainController extends EventEmitter {
     this.#initialLoadPromise = this.#load()
     paymasterFactory.init(relayerUrl, fetch, (e: ErrorRef) => {
       if (!this.signAccountOp) return
-      console.log(4)
       this.emitError(e)
     })
     this.featureFlagController = new FeatureFlagController()
@@ -667,7 +666,6 @@ export class MainController extends EventEmitter {
           const message =
             'The signing process was not initialized as expected. Please try again later or contact Ambire support if the issue persists.'
           const error = new Error('SignAccountOp is not initialized')
-          console.log(1)
           this.emitError({ level: 'major', message, error })
           return Promise.reject(error)
         }
@@ -734,18 +732,24 @@ export class MainController extends EventEmitter {
       )
       const learnedNewTokens = this.portfolio.addTokensToBeLearned(tokens, network.id)
       const learnedNewNfts = await this.portfolio.learnNfts(nfts, network.id)
+      const accountOpsForSimulation = getAccountOpsForSimulation(
+        account,
+        this.actions.visibleActionsQueue,
+        network,
+        accountOp
+      )
       // update the portfolio only if new tokens were found through tracing
       if (learnedNewTokens || learnedNewNfts) {
         this.portfolio
           .updateSelectedAccount(
             accountOp.accountAddr,
             network,
-            getAccountOpsForSimulation(
-              account,
-              this.actions.visibleActionsQueue,
-              network,
-              accountOp
-            ),
+            accountOpsForSimulation
+              ? {
+                  accountOps: accountOpsForSimulation,
+                  states: await this.accounts.getOrFetchAccountStates(account.addr)
+                }
+              : undefined,
             { forceUpdate: true }
           )
           // fire an update request to refresh the warnings if any
@@ -1166,7 +1170,12 @@ export class MainController extends EventEmitter {
     await this.portfolio.updateSelectedAccount(
       this.selectedAccount.account.addr,
       network,
-      accountOpsToBeSimulatedByNetwork,
+      accountOpsToBeSimulatedByNetwork
+        ? {
+            accountOps: accountOpsToBeSimulatedByNetwork,
+            states: await this.accounts.getOrFetchAccountStates(this.selectedAccount.account.addr)
+          }
+        : undefined,
       { forceUpdate, maxDataAgeMs }
     )
     this.#updateIsOffline()
@@ -1464,17 +1473,32 @@ export class MainController extends EventEmitter {
             shouldOpenNextRequest: false
           })
           this.swapAndBridge.updateActiveRoute(activeRoute.activeRouteId, { error: undefined })
-          if (!isSmartAccount(this.selectedAccount.account)) {
-            this.removeUserRequest(`${activeRouteId}-revoke-approval`, {
-              shouldRemoveSwapAndBridgeRoute: false,
-              shouldOpenNextRequest: false
-            })
-            this.removeUserRequest(`${activeRouteId}-approval`, {
-              shouldRemoveSwapAndBridgeRoute: false,
-              shouldOpenNextRequest: false
-            })
-          }
+
           transaction = await this.swapAndBridge.getNextRouteUserTx(activeRoute.activeRouteId)
+
+          if (transaction) {
+            const network = this.networks.networks.find(
+              (n) => Number(n.chainId) === transaction!.chainId
+            )!
+            if (
+              isBasicAccount(
+                this.selectedAccount.account,
+                await this.accounts.getOrFetchAccountOnChainState(
+                  this.selectedAccount.account.addr,
+                  network.id
+                )
+              )
+            ) {
+              this.removeUserRequest(`${activeRouteId}-revoke-approval`, {
+                shouldRemoveSwapAndBridgeRoute: false,
+                shouldOpenNextRequest: false
+              })
+              this.removeUserRequest(`${activeRouteId}-approval`, {
+                shouldRemoveSwapAndBridgeRoute: false,
+                shouldOpenNextRequest: false
+              })
+            }
+          }
         }
 
         if (!this.selectedAccount.account || !transaction) {
@@ -1484,7 +1508,6 @@ export class MainController extends EventEmitter {
           const error = new SwapAndBridgeError(
             `Something went wrong when preparing your request. Please try again later or contact Ambire support. Error details: <${errorDetails}>`
           )
-          console.log(5)
           throw new EmittableError({ message: error.message, level: 'major', error })
         }
 
@@ -1498,7 +1521,11 @@ export class MainController extends EventEmitter {
           transaction,
           network.id,
           this.selectedAccount.account,
-          this.providers.providers[network.id]
+          this.providers.providers[network.id],
+          await this.accounts.getOrFetchAccountOnChainState(
+            this.selectedAccount.account.addr,
+            network.id
+          )
         )
 
         for (let i = 0; i < swapAndBridgeUserRequests.length; i++) {
@@ -1634,7 +1661,10 @@ export class MainController extends EventEmitter {
     if (userRequest.action.kind === 'calls') {
       const acc = this.accounts.accounts.find((a) => a.addr === userRequest.meta.accountAddr)!
 
-      if (!isSmartAccount(acc) && userRequest.meta.isSwapAndBridgeCall) {
+      if (
+        isBasicAccount(acc, this.accounts.accountStates[acc.addr][userRequest.meta.networkId]) &&
+        userRequest.meta.isSwapAndBridgeCall
+      ) {
         this.removeUserRequest(userRequest.meta.activeRouteId)
         this.removeUserRequest(`${userRequest.meta.activeRouteId}-approval`)
         this.removeUserRequest(`${userRequest.meta.activeRouteId}-revoke-approval`)
@@ -2022,7 +2052,7 @@ export class MainController extends EventEmitter {
           `batchCallsFromUserRequests: tried to run for non-existent account ${meta.accountAddr}`
         )
 
-      if (isSmartAccount(account)) {
+      if (!isBasicAccount(account, this.accounts.accountStates[account.addr][network.id])) {
         const accountOpIndex = this.actions.actionsQueue.findIndex(
           (a) => a.type === 'accountOp' && a.id === `${meta.accountAddr}-${meta.networkId}`
         )
@@ -2411,7 +2441,12 @@ export class MainController extends EventEmitter {
         this.portfolio.updateSelectedAccount(
           localAccountOp.accountAddr,
           network,
-          accountOpsToBeSimulatedByNetwork,
+          accountOpsToBeSimulatedByNetwork
+            ? {
+                accountOps: accountOpsToBeSimulatedByNetwork,
+                states: await this.accounts.getOrFetchAccountStates(localAccountOp.accountAddr)
+              }
+            : undefined,
           { forceUpdate: true }
         ),
         estimate(
@@ -2425,7 +2460,6 @@ export class MainController extends EventEmitter {
           feeTokens,
           (e: ErrorRef) => {
             if (!this.signAccountOp) return
-            console.log('2')
             this.emitError(e)
           },
           this.signAccountOp.bundlerSwitcher,
@@ -2439,7 +2473,6 @@ export class MainController extends EventEmitter {
         ).catch((e) => {
           const { message } = getHumanReadableEstimationError(e)
 
-          console.log(3)
           this.emitError({
             level: 'major',
             message,
@@ -3007,7 +3040,6 @@ export class MainController extends EventEmitter {
     this.signAccountOp?.updateStatus(SigningStatus.ReadyToSign, isReplacementFeeLow)
     this.feePayerKey = null
 
-    console.log(6)
     return Promise.reject(
       new EmittableError({ level: 'major', message, error: _err || new Error(message) })
     )

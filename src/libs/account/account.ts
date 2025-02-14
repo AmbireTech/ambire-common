@@ -378,3 +378,9 @@ export function hasBecomeSmarter(account: Account, state: AccountStates) {
 
   return false
 }
+
+export function shouldUseStateOverrideForEOA(account: Account, state: AccountOnchainState) {
+  const isSmarterEOAOffchain = state.isSmarterEoa && !!state.authorization
+  const isEOA = isBasicAccount(account, state)
+  return isEOA || isSmarterEOAOffchain
+}

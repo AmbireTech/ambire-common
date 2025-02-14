@@ -90,13 +90,11 @@ export async function getAccountState(
     const hasAmbireDelegation =
       eoaCodes[account.addr] === concat(['0xef0100', getContractImplementation(network.chainId)])
     const isSmarterEoa = accResult.isEOA && (!!authorization || hasAmbireDelegation)
+    const isEoaOrOffchainSmart = accResult.isEOA && (!!authorization || !hasAmbireDelegation)
 
     const res = {
       accountAddr: account.addr,
-      nonce:
-        !isSmartAccount(account) && !hasAmbireDelegation
-          ? eoaNonces[account.addr]
-          : accResult.nonce,
+      nonce: isEoaOrOffchainSmart ? eoaNonces[account.addr] : accResult.nonce,
       erc4337Nonce: accResult.erc4337Nonce,
       isDeployed: accResult.isDeployed,
       associatedKeys: Object.fromEntries(associatedKeys),

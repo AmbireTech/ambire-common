@@ -2,7 +2,7 @@ import { DEPLOYLESS_SIMULATION_FROM } from '../../consts/deploy'
 import { EOA_SIMULATION_NONCE } from '../../consts/deployless'
 import { Network } from '../../interfaces/network'
 import { getEoaSimulationStateOverride } from '../../utils/simulationStateOverride'
-import { getAccountDeployParams, isSmartAccount } from '../account/account'
+import { getAccountDeployParams, shouldUseStateOverrideForEOA } from '../account/account'
 import { callToTuple, toSingletonCall } from '../accountOp/accountOp'
 import { Deployless, DeploylessMode, parseErr } from '../deployless/deployless'
 import { getFlags, overrideSymbol } from './helpers'
@@ -79,13 +79,18 @@ export function getDeploylessOpts(
   supportsStateOverride: boolean,
   opts: Partial<GetOptions>
 ) {
+  const hasEOAOverride =
+    opts.simulation && shouldUseStateOverrideForEOA(opts.simulation.account, opts.simulation.state)
+
   return {
     blockTag: opts.blockTag,
     from: DEPLOYLESS_SIMULATION_FROM,
     mode:
-      supportsStateOverride && opts.isEOA ? DeploylessMode.StateOverride : DeploylessMode.Detect,
+      supportsStateOverride && hasEOAOverride
+        ? DeploylessMode.StateOverride
+        : DeploylessMode.Detect,
     stateToOverride:
-      supportsStateOverride && opts.isEOA ? getEoaSimulationStateOverride(accountAddr) : null
+      supportsStateOverride && hasEOAOverride ? getEoaSimulationStateOverride(accountAddr) : null
   }
 }
 
@@ -128,12 +133,14 @@ export async function getNFTs(
     return [collections.map((token: any) => [token.error, mapToken(token)]), {}]
   }
 
-  const { accountOps, account } = opts.simulation
+  const { accountOps, account, state } = opts.simulation
   const [factory, factoryCalldata] = getAccountDeployParams(account)
 
   const simulationOps = accountOps.map(({ nonce, calls }, idx) => ({
     // EOA starts from a fake, specified nonce
-    nonce: isSmartAccount(account) ? nonce : BigInt(EOA_SIMULATION_NONCE) + BigInt(idx),
+    nonce: !shouldUseStateOverrideForEOA(account, state)
+      ? nonce
+      : BigInt(EOA_SIMULATION_NONCE) + BigInt(idx),
     calls: calls.map(toSingletonCall).map(callToTuple)
   }))
   const [before, after, simulationErr, , , deltaAddressesMapping] = await deployless.call(
@@ -239,10 +246,12 @@ export async function getTokens(
       }
     ]
   }
-  const { accountOps, account } = opts.simulation
+  const { accountOps, account, state } = opts.simulation
   const simulationOps = accountOps.map(({ nonce, calls }, idx) => ({
     // EOA starts from a fake, specified nonce
-    nonce: isSmartAccount(account) ? nonce : BigInt(EOA_SIMULATION_NONCE) + BigInt(idx),
+    nonce: !shouldUseStateOverrideForEOA(account, state)
+      ? nonce
+      : BigInt(EOA_SIMULATION_NONCE) + BigInt(idx),
     calls: calls.map(toSingletonCall).map(callToTuple)
   }))
   const [factory, factoryCalldata] = getAccountDeployParams(account)
