@@ -486,6 +486,7 @@ export class SwapAndBridgeController extends EventEmitter {
     } = props
 
     if (fromAmount !== undefined) {
+      const fromAmountFormatted = fromAmount.indexOf('.') === 0 ? `0${fromAmount}` : fromAmount
       this.fromAmount = fromAmount
       ;(() => {
         if (fromAmount === '') {
@@ -512,7 +513,7 @@ export class SwapAndBridgeController extends EventEmitter {
           const { tokenPriceBigInt, tokenPriceDecimals } = convertTokenPriceToBigInt(tokenPrice)
 
           // Convert the numbers to big int
-          const amountInFiatBigInt = parseUnits(fromAmount, amountInFiatDecimals)
+          const amountInFiatBigInt = parseUnits(fromAmountFormatted, amountInFiatDecimals)
 
           this.fromAmount = formatUnits(
             (amountInFiatBigInt * CONVERSION_PRECISION_POW) / tokenPriceBigInt,
@@ -528,7 +529,7 @@ export class SwapAndBridgeController extends EventEmitter {
           if (!this.fromSelectedToken) return
 
           const sanitizedFieldValue = getSanitizedAmount(
-            fromAmount,
+            fromAmountFormatted,
             this.fromSelectedToken.decimals
           )
           // Convert the field value to big int
