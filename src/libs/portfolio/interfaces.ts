@@ -242,16 +242,3 @@ export type FormattedPendingAmounts = Omit<PendingAmounts, 'pendingBalance'> & {
   pendingToBeSignedFormatted?: string
   pendingToBeConfirmedFormatted?: string
 }
-
-// TODO: move it
-export type CashbackStatus = {
-  firstCashbackReceivedAt: number | null
-  firstCashbackSeenAt: number | null
-  cashbackWasZeroAt: number | null
-  seenModalAt: number | null
-}
-
-// TODO: move it
-export type CashbackStatusByAccount = {
-  [key: AccountId]: CashbackStatus
-}

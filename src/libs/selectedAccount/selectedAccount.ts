@@ -313,8 +313,3 @@ export function calculateSelectedAccountPortfolio(
     pending: stripPortfolioState(pendingStateSelectedAccount)
   } as SelectedAccountPortfolio
 }
-
-// TODO: check do we need this
-export const isCurrentCashbackZero = (currentCashback: bigint) => {
-  return currentCashback === 0n
-}

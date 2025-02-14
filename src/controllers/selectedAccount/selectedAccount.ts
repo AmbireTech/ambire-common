@@ -23,7 +23,6 @@ import {
 } from '../../libs/selectedAccount/errors'
 import {
   calculateSelectedAccountPortfolio,
-  isCurrentCashbackZero,
   updatePortfolioStateWithDefiPositions
 } from '../../libs/selectedAccount/selectedAccount'
 // eslint-disable-next-line import/no-cycle
@@ -88,7 +87,6 @@ export class SelectedAccountController extends EventEmitter {
   // Holds the initial load promise, so that one can wait until it completes
   initialLoadPromise: Promise<void>
 
-  // TODO: CashbackStatusByAccount remove it from portfolio interfaces
   cashbackStatusByAccount: CashbackStatusByAccount = {}
 
   constructor({ storage, accounts }: { storage: Storage; accounts: AccountsController }) {
@@ -329,7 +327,7 @@ export class SelectedAccountController extends EventEmitter {
     const accountId = this.account.addr
     const gasTankResult = this.portfolio.latest.gasTank.result as PortfolioGasTankResult
 
-    const isCashbackZero = isCurrentCashbackZero(gasTankResult.gasTankTokens?.[0].cashback)
+    const isCashbackZero = gasTankResult.gasTankTokens?.[0].cashback === 0n
     const cashbackWasZeroBefore = !!this.cashbackStatusByAccount[accountId]?.cashbackWasZeroAt
     const notReceivedFirstCashbackBefore =
       !this.cashbackStatusByAccount[accountId]?.firstCashbackReceivedAt

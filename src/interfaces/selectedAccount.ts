@@ -4,6 +4,7 @@ import {
   NetworkState,
   TokenResult as TokenResultInterface
 } from '../libs/portfolio/interfaces'
+import { AccountId } from './account'
 
 /** A stripped version of the portfolio state that will be used in the UI */
 export type SelectedAccountPortfolioState = {
@@ -43,4 +44,15 @@ export type UpdateCashbackStatusByAccount = {
   shouldSetFirstCashbackReceivedAt?: boolean
   shouldSetFirstCashbackSeenAt?: boolean
   shouldSetSeenModalAt?: boolean
+}
+
+export type CashbackStatus = {
+  firstCashbackReceivedAt: number | null
+  firstCashbackSeenAt: number | null
+  cashbackWasZeroAt: number | null
+  seenModalAt: number | null
+}
+
+export type CashbackStatusByAccount = {
+  [key: AccountId]: CashbackStatus
 }
