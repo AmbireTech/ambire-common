@@ -1,3 +1,4 @@
+import { AccountId } from '../../interfaces/account'
 import { Message } from '../../interfaces/userRequest'
 
 export interface SignedMessage extends Message {
@@ -9,6 +10,5 @@ export interface SignedMessage extends Message {
 }
 
 export interface InternalSignedMessages {
-  // account => Message[]
-  [key: string]: SignedMessage[]
+  [key: AccountId]: SignedMessage[]
 }

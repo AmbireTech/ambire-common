@@ -3,5 +3,5 @@ export interface FeatureFlags {
 }
 
 export const featureFlags: FeatureFlags = {
-  eip7702: false || !!process.env.FEATURE_FLAG_EIP7702
+  eip7702: false || process.env.FEATURE_FLAG_EIP7702 === 'true'
 }
