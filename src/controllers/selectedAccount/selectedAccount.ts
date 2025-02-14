@@ -86,7 +86,7 @@ export class SelectedAccountController extends EventEmitter {
   initialLoadPromise: Promise<void>
 
   // TODO: CashbackStatusByAccount remove it from portfolio interfaces
-  #cashbackStatusByAccount: CashbackStatusByAccount = {}
+  cashbackStatusByAccount: CashbackStatusByAccount = {}
 
   constructor({ storage, accounts }: { storage: Storage; accounts: AccountsController }) {
     super()
@@ -101,7 +101,7 @@ export class SelectedAccountController extends EventEmitter {
   async #load() {
     await this.#accounts.initialLoadPromise
     const selectedAccountAddress = await this.#storage.get('selectedAccount', null)
-    this.#cashbackStatusByAccount = await this.#storage.get('cashbackStatusByAccount', {})
+    this.cashbackStatusByAccount = await this.#storage.get('cashbackStatusByAccount', {})
 
     const selectedAccount = this.#accounts.accounts.find((a) => a.addr === selectedAccountAddress)
 
@@ -296,13 +296,13 @@ export class SelectedAccountController extends EventEmitter {
 
     const accountId = this.account.addr
     const currentTimestamp = Date.now()
-    const currentAccountStatus = this.#cashbackStatusByAccount[accountId] || {}
+    const currentAccountStatus = this.cashbackStatusByAccount[accountId] || {}
 
     const getUpdatedTimestamp = (shouldUpdate?: boolean, current?: number | null) =>
       shouldUpdate ? currentTimestamp : current ?? null
 
-    this.#cashbackStatusByAccount = {
-      ...this.#cashbackStatusByAccount,
+    this.cashbackStatusByAccount = {
+      ...this.cashbackStatusByAccount,
       [accountId]: {
         cashbackWasZeroAt: getUpdatedTimestamp(
           shouldSetCashbackWasZeroAt,
@@ -320,7 +320,7 @@ export class SelectedAccountController extends EventEmitter {
       }
     }
 
-    await this.#storage.set('cashbackStatusByAccount', this.#cashbackStatusByAccount)
+    await this.#storage.set('cashbackStatusByAccount', this.cashbackStatusByAccount)
 
     this.emitUpdate()
   }
@@ -332,9 +332,9 @@ export class SelectedAccountController extends EventEmitter {
     const gasTankResult = this.portfolio.latest.gasTank.result as PortfolioGasTankResult
 
     const isCashbackZero = isCurrentCashbackZero(gasTankResult.gasTankTokens?.[0].cashback)
-    const cashbackWasZeroBefore = !!this.#cashbackStatusByAccount[accountId]?.cashbackWasZeroAt
+    const cashbackWasZeroBefore = !!this.cashbackStatusByAccount[accountId]?.cashbackWasZeroAt
     const notReceivedFirstCashbackBefore =
-      !this.#cashbackStatusByAccount[accountId]?.firstCashbackReceivedAt
+      !this.cashbackStatusByAccount[accountId]?.firstCashbackReceivedAt
 
     if (isCashbackZero) {
       await this.updateCashbackStatusByAccount({
@@ -508,12 +508,12 @@ export class SelectedAccountController extends EventEmitter {
 
     return getFirstCashbackBanners({
       selectedAccountAddr: this.account.addr,
-      cashbackStatusByAccount: this.#cashbackStatusByAccount
+      cashbackStatusByAccount: this.cashbackStatusByAccount
     })
   }
 
   get cashbackStatus(): CashbackStatusByAccount {
-    return this.#cashbackStatusByAccount
+    return this.cashbackStatusByAccount
   }
 
   setDashboardNetworkFilter(networkFilter: NetworkId | null) {
