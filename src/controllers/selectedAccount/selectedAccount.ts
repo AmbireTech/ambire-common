@@ -1,11 +1,12 @@
 import { getAddress } from 'ethers'
-import { CashbackStatusByAccount, PortfolioGasTankResult } from 'libs/portfolio/interfaces'
+import { PortfolioGasTankResult } from 'libs/portfolio/interfaces'
 
 import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
 import { Account } from '../../interfaces/account'
 import { Banner } from '../../interfaces/banner'
 import { NetworkId } from '../../interfaces/network'
 import {
+  CashbackStatusByAccount,
   SelectedAccountPortfolio,
   UpdateCashbackStatusByAccount
 } from '../../interfaces/selectedAccount'
