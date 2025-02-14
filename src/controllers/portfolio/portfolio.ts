@@ -16,7 +16,6 @@ import {
   getTokensReadyToLearn,
   getTotal,
   getUpdatedHints,
-  isCurrentCashbackZero,
   processTokens,
   shouldGetAdditionalPortfolio,
   validateERC20Token
@@ -111,10 +110,6 @@ export class PortfolioController extends EventEmitter {
   // Holds the initial load promise, so that one can wait until it completes
   #initialLoadPromise: Promise<void>
 
-  cashbackStatusByAccount: CashbackStatusByAccount = {}
-
-  #hasUnseenFirstCashback: boolean = false
-
   constructor(
     storage: Storage,
     fetch: Fetch,
@@ -163,7 +158,6 @@ export class PortfolioController extends EventEmitter {
       }
 
       this.#previousHints = await this.#storage.get('previousHints', {})
-      this.cashbackStatusByAccount = await this.#storage.get('cashbackStatusByAccount', {})
       const networksWithAssets = await this.#storage.get('networksWithAssetsByAccount', {})
       const isOldStructure = Object.keys(networksWithAssets).every(
         (key) =>
@@ -427,45 +421,6 @@ export class PortfolioController extends EventEmitter {
     }
   }
 
-  async updateCashbackStatusByAccount({
-    accountId,
-    shouldShowBanner,
-    toggleModal,
-    shouldGetAdditionalPortfolio,
-    shouldSetCashbackWasZeroAt
-  }: {
-    accountId: AccountId
-    shouldShowBanner: boolean
-    toggleModal: boolean
-    shouldGetAdditionalPortfolio: boolean
-    shouldSetCashbackWasZeroAt: boolean
-  }) {
-    if (!accountId) throw new Error('AccountId in required to update cashback status')
-
-    if (toggleModal) {
-      this.#hasUnseenFirstCashback = !this.#hasUnseenFirstCashback
-    }
-
-    const currentTimestamp = new Date().getTime()
-    const currentAccountStatus = this.cashbackStatusByAccount[accountId] || {}
-
-    this.cashbackStatusByAccount = {
-      ...this.cashbackStatusByAccount,
-      [accountId]: {
-        firstCashbackReceivedAt: shouldShowBanner
-          ? currentTimestamp
-          : currentAccountStatus.firstCashbackReceivedAt,
-        firstCashbackSeenAt: shouldShowBanner ? null : currentTimestamp,
-        cashbackWasZeroAt: shouldSetCashbackWasZeroAt ? currentTimestamp : null
-      }
-    }
-    await this.#storage.set('cashbackStatusByAccount', this.cashbackStatusByAccount)
-
-    if (shouldGetAdditionalPortfolio) {
-      await this.#getAdditionalPortfolio(accountId, true)
-    }
-  }
-
   async #getAdditionalPortfolio(accountId: AccountId, forceUpdate?: boolean) {
     const rewardsOrGasTankState =
       this.#latest[accountId]?.rewards || this.#latest[accountId]?.gasTank
@@ -522,34 +477,12 @@ export class PortfolioController extends EventEmitter {
       }
     }
 
-    const isCashbackZero = isCurrentCashbackZero(res.data.gasTank.balance)
-    const cashbackWasZeroBefore = !!this.cashbackStatusByAccount[accountId]?.cashbackWasZeroAt
-
-    if (isCashbackZero) {
-      await this.updateCashbackStatusByAccount({
-        accountId,
-        shouldShowBanner: false,
-        toggleModal: false,
-        shouldGetAdditionalPortfolio: false,
-        shouldSetCashbackWasZeroAt: true
-      })
-    } else if (!isCashbackZero && cashbackWasZeroBefore) {
-      await this.updateCashbackStatusByAccount({
-        accountId,
-        shouldShowBanner: true,
-        toggleModal: false,
-        shouldGetAdditionalPortfolio: false,
-        shouldSetCashbackWasZeroAt: false
-      })
-    }
-
     const gasTankTokens: GasTankTokenResult[] = res.data.gasTank.balance.map((t: any) => ({
       ...t,
       amount: BigInt(t.amount || 0),
       availableAmount: BigInt(t.availableAmount || 0),
       cashback: BigInt(t.cashback || 0),
       saved: BigInt(t.saved || 0),
-      hasUnseenFirstCashback: this.#hasUnseenFirstCashback,
       flags: getFlags(res.data, 'gasTank', t.networkId, t.address)
     }))
 

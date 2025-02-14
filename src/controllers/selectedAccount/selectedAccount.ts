@@ -1,4 +1,5 @@
 import { getAddress } from 'ethers'
+import { CashbackStatusByAccount, PortfolioGasTankResult } from 'libs/portfolio/interfaces'
 
 import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
 import { Account } from '../../interfaces/account'
@@ -19,6 +20,7 @@ import {
 } from '../../libs/selectedAccount/errors'
 import {
   calculateSelectedAccountPortfolio,
+  isCurrentCashbackZero,
   updatePortfolioStateWithDefiPositions
 } from '../../libs/selectedAccount/selectedAccount'
 // eslint-disable-next-line import/no-cycle
@@ -83,6 +85,9 @@ export class SelectedAccountController extends EventEmitter {
   // Holds the initial load promise, so that one can wait until it completes
   initialLoadPromise: Promise<void>
 
+  // TODO: CashbackStatusByAccount remove it from portfolio interfaces
+  #cashbackStatusByAccount: CashbackStatusByAccount = {}
+
   constructor({ storage, accounts }: { storage: Storage; accounts: AccountsController }) {
     super()
 
@@ -96,6 +101,7 @@ export class SelectedAccountController extends EventEmitter {
   async #load() {
     await this.#accounts.initialLoadPromise
     const selectedAccountAddress = await this.#storage.get('selectedAccount', null)
+    this.#cashbackStatusByAccount = await this.#storage.get('cashbackStatusByAccount', {})
 
     const selectedAccount = this.#accounts.accounts.find((a) => a.addr === selectedAccountAddress)
 
@@ -215,7 +221,8 @@ export class SelectedAccountController extends EventEmitter {
     }
   }
 
-  #updateSelectedAccountPortfolio(skipUpdate?: boolean) {
+  // TODO: Fix the async operations
+  async #updateSelectedAccountPortfolio(skipUpdate?: boolean) {
     if (!this.#portfolio || !this.#defiPositions || !this.account) return
     const defiPositionsAccountState = this.#defiPositions.getDefiPositionsState(this.account.addr)
 
@@ -267,8 +274,76 @@ export class SelectedAccountController extends EventEmitter {
       this.#updatePortfolioErrors(true)
     }
 
+    await this.updateCashbackStatus()
+
     if (!skipUpdate) {
       this.emitUpdate()
+    }
+  }
+
+  async updateCashbackStatusByAccount({
+    shouldSetCashbackWasZeroAt,
+    shouldSetFirstCashbackReceivedAt,
+    shouldSetFirstCashbackSeenAt,
+    shouldSetSeenModalAt
+  }: {
+    shouldSetCashbackWasZeroAt?: boolean
+    shouldSetFirstCashbackReceivedAt?: boolean
+    shouldSetFirstCashbackSeenAt?: boolean
+    shouldSetSeenModalAt?: boolean
+  }) {
+    if (!this.account) throw new Error('AccountId is required to update cashback status')
+
+    const accountId = this.account.addr
+    const currentTimestamp = Date.now()
+    const currentAccountStatus = this.#cashbackStatusByAccount[accountId] || {}
+
+    const getUpdatedTimestamp = (shouldUpdate?: boolean, current?: number | null) =>
+      shouldUpdate ? currentTimestamp : current ?? null
+
+    this.#cashbackStatusByAccount = {
+      ...this.#cashbackStatusByAccount,
+      [accountId]: {
+        cashbackWasZeroAt: getUpdatedTimestamp(
+          shouldSetCashbackWasZeroAt,
+          currentAccountStatus.cashbackWasZeroAt
+        ),
+        firstCashbackReceivedAt: getUpdatedTimestamp(
+          shouldSetFirstCashbackReceivedAt,
+          currentAccountStatus.firstCashbackReceivedAt
+        ),
+        firstCashbackSeenAt: getUpdatedTimestamp(
+          shouldSetFirstCashbackSeenAt,
+          currentAccountStatus.firstCashbackSeenAt
+        ),
+        seenModalAt: getUpdatedTimestamp(shouldSetSeenModalAt, currentAccountStatus.seenModalAt)
+      }
+    }
+
+    await this.#storage.set('cashbackStatusByAccount', this.#cashbackStatusByAccount)
+
+    this.emitUpdate()
+  }
+
+  async updateCashbackStatus() {
+    if (!this.#portfolio || !this.account || !this.portfolio.latest.gasTank) return
+
+    const accountId = this.account.addr
+    const gasTankResult = this.portfolio.latest.gasTank.result as PortfolioGasTankResult
+
+    const isCashbackZero = isCurrentCashbackZero(gasTankResult.gasTankTokens?.[0].cashback)
+    const cashbackWasZeroBefore = !!this.#cashbackStatusByAccount[accountId]?.cashbackWasZeroAt
+    const notReceivedFirstCashbackBefore =
+      !this.#cashbackStatusByAccount[accountId]?.firstCashbackReceivedAt
+
+    if (isCashbackZero) {
+      await this.updateCashbackStatusByAccount({
+        shouldSetCashbackWasZeroAt: true
+      })
+    } else if (!isCashbackZero && cashbackWasZeroBefore && notReceivedFirstCashbackBefore) {
+      await this.updateCashbackStatusByAccount({
+        shouldSetFirstCashbackReceivedAt: true
+      })
     }
   }
 
@@ -433,8 +508,12 @@ export class SelectedAccountController extends EventEmitter {
 
     return getFirstCashbackBanners({
       selectedAccountAddr: this.account.addr,
-      cashbackStatusByAccount: this.#portfolio.cashbackStatusByAccount
+      cashbackStatusByAccount: this.#cashbackStatusByAccount
     })
+  }
+
+  get cashbackStatus(): CashbackStatusByAccount {
+    return this.#cashbackStatusByAccount
   }
 
   setDashboardNetworkFilter(networkFilter: NetworkId | null) {
@@ -447,6 +526,7 @@ export class SelectedAccountController extends EventEmitter {
       ...this,
       ...super.toJSON(),
       firstCashbackBanner: this.firstCashbackBanner,
+      cashbackStatusByAccount: this.cashbackStatus,
       deprecatedSmartAccountBanner: this.deprecatedSmartAccountBanner,
       areDefiPositionsLoading: this.areDefiPositionsLoading,
       balanceAffectingErrors: this.balanceAffectingErrors
