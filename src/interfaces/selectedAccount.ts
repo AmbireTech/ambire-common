@@ -37,3 +37,10 @@ export interface SelectedAccountPortfolio {
   latest: SelectedAccountPortfolioState
   pending: SelectedAccountPortfolioState
 }
+
+export type UpdateCashbackStatusByAccount = {
+  shouldSetCashbackWasZeroAt?: boolean
+  shouldSetFirstCashbackReceivedAt?: boolean
+  shouldSetFirstCashbackSeenAt?: boolean
+  shouldSetSeenModalAt?: boolean
+}

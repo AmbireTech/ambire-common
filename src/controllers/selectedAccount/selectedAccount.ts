@@ -5,7 +5,10 @@ import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
 import { Account } from '../../interfaces/account'
 import { Banner } from '../../interfaces/banner'
 import { NetworkId } from '../../interfaces/network'
-import { SelectedAccountPortfolio } from '../../interfaces/selectedAccount'
+import {
+  SelectedAccountPortfolio,
+  UpdateCashbackStatusByAccount
+} from '../../interfaces/selectedAccount'
 import { Storage } from '../../interfaces/storage'
 import { isSmartAccount } from '../../libs/account/account'
 import { getFirstCashbackBanners } from '../../libs/banners/banners'
@@ -286,12 +289,7 @@ export class SelectedAccountController extends EventEmitter {
     shouldSetFirstCashbackReceivedAt,
     shouldSetFirstCashbackSeenAt,
     shouldSetSeenModalAt
-  }: {
-    shouldSetCashbackWasZeroAt?: boolean
-    shouldSetFirstCashbackReceivedAt?: boolean
-    shouldSetFirstCashbackSeenAt?: boolean
-    shouldSetSeenModalAt?: boolean
-  }) {
+  }: UpdateCashbackStatusByAccount) {
     if (!this.account) throw new Error('AccountId is required to update cashback status')
 
     const accountId = this.account.addr
