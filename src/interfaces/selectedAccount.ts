@@ -39,19 +39,7 @@ export interface SelectedAccountPortfolio {
   pending: SelectedAccountPortfolioState
 }
 
-export type UpdateCashbackStatusByAccount = {
-  shouldSetCashbackWasZeroAt?: boolean
-  shouldSetFirstCashbackReceivedAt?: boolean
-  shouldSetFirstCashbackSeenAt?: boolean
-  shouldSetSeenModalAt?: boolean
-}
-
-export type CashbackStatus = {
-  firstCashbackReceivedAt: number | null
-  firstCashbackSeenAt: number | null
-  cashbackWasZeroAt: number | null
-  seenModalAt: number | null
-}
+export type CashbackStatus = 'no-cashback' | 'unseen-cashback' | 'cashback-modal' | 'seen-cashback'
 
 export type CashbackStatusByAccount = {
   [key: AccountId]: CashbackStatus

@@ -323,9 +323,7 @@ export const getFirstCashbackBanners = ({
 }): Banner[] => {
   const banners: Banner[] = []
 
-  const shouldShowBanner =
-    !!cashbackStatusByAccount[selectedAccountAddr]?.firstCashbackReceivedAt &&
-    !cashbackStatusByAccount[selectedAccountAddr]?.firstCashbackSeenAt
+  const shouldShowBanner = cashbackStatusByAccount[selectedAccountAddr] === 'unseen-cashback'
 
   if (shouldShowBanner) {
     banners.push({
