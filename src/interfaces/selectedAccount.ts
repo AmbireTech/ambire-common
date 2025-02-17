@@ -39,6 +39,13 @@ export interface SelectedAccountPortfolio {
   pending: SelectedAccountPortfolioState
 }
 
+// An old CashbackStatus type before the migration
+export type OldCashbackStatus = {
+  firstCashbackReceivedAt: number | null
+  firstCashbackSeenAt: number | null
+  cashbackWasZeroAt: number | null
+}
+
 export type CashbackStatus = 'no-cashback' | 'unseen-cashback' | 'cashback-modal' | 'seen-cashback'
 
 export type CashbackStatusByAccount = {

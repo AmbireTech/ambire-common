@@ -104,12 +104,15 @@ export class SelectedAccountController extends EventEmitter {
   async #load() {
     await this.#accounts.initialLoadPromise
     const selectedAccountAddress = await this.#storage.get('selectedAccount', null)
-    let cashbackStatusByAccount = await this.#storage.get('cashbackStatusByAccount', {})
-    console.log('this.#cashbackStatusByAccount', this.#cashbackStatusByAccount)
+    let cashbackStatusByAccountTemp = await this.#storage.get('cashbackStatusByAccount', {})
 
-    cashbackStatusByAccount = migrateCashbackStatus(cashbackStatusByAccount)
-    this.#cashbackStatusByAccount = cashbackStatusByAccount
-    await this.#storage.set('cashbackStatusByAccount', cashbackStatusByAccount)
+    if (Object.keys(cashbackStatusByAccountTemp).length) {
+      cashbackStatusByAccountTemp = migrateCashbackStatus(cashbackStatusByAccountTemp)
+      this.#cashbackStatusByAccount = cashbackStatusByAccountTemp
+      await this.#storage.set('cashbackStatusByAccount', cashbackStatusByAccountTemp)
+    } else {
+      this.#cashbackStatusByAccount = cashbackStatusByAccountTemp
+    }
 
     const selectedAccount = this.#accounts.accounts.find((a) => a.addr === selectedAccountAddress)
 

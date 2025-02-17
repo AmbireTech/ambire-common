@@ -1,6 +1,8 @@
+import { Account } from '../../interfaces/account'
 import {
   CashbackStatus,
   CashbackStatusByAccount,
+  OldCashbackStatus,
   SelectedAccountPortfolio,
   SelectedAccountPortfolioState,
   SelectedAccountPortfolioTokenResult
@@ -317,21 +319,36 @@ export function calculateSelectedAccountPortfolio(
 }
 
 export const migrateCashbackStatus = (
-  existingStatuses: Record<string, CashbackStatus | null | undefined>
+  existingStatuses: Record<Account['addr'], CashbackStatus | OldCashbackStatus | null | undefined>
 ) => {
   const migratedStatuses: CashbackStatusByAccount = {}
 
   // eslint-disable-next-line no-restricted-syntax
   for (const [accountId, status] of Object.entries(existingStatuses)) {
-    if (
-      status === 'no-cashback' ||
-      status === 'cashback-modal' ||
-      status === 'seen-cashback' ||
-      status === 'unseen-cashback'
-    ) {
-      migratedStatuses[accountId] = status
+    if (typeof status === 'string') {
+      migratedStatuses[accountId] = status as CashbackStatus
+    } else if (typeof status === 'object' && status !== null) {
+      if (
+        status.cashbackWasZeroAt &&
+        status.firstCashbackReceivedAt === null &&
+        status.firstCashbackSeenAt === null
+      ) {
+        migratedStatuses[accountId] = 'no-cashback'
+      } else if (
+        status.cashbackWasZeroAt === null &&
+        status.firstCashbackReceivedAt &&
+        status.firstCashbackSeenAt === null
+      ) {
+        migratedStatuses[accountId] = 'unseen-cashback'
+      } else if (
+        status.cashbackWasZeroAt === null &&
+        status.firstCashbackReceivedAt &&
+        status.firstCashbackSeenAt
+      ) {
+        migratedStatuses[accountId] = 'seen-cashback'
+      }
     } else {
-      migratedStatuses[accountId] = 'no-cashback'
+      migratedStatuses[accountId] = 'seen-cashback'
     }
   }
 
