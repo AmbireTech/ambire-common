@@ -1,5 +1,5 @@
 /* eslint-disable no-bitwise */
-import { getBytes, keccak256, randomBytes } from 'ethers'
+import { getBytes, keccak256, LangEn, Mnemonic, randomBytes } from 'ethers'
 
 export class EntropyGenerator {
   #entropyPool: Uint8Array = new Uint8Array(0)
@@ -25,6 +25,14 @@ export class EntropyGenerator {
     }
 
     return randomBytesGenerated
+  }
+
+  generateRandomMnemonic(wordCount: 12 | 24, extraEntropy: string): Mnemonic {
+    const wordCountToBytesLength = { 12: 16, 24: 32 }
+    const bytesLength = wordCountToBytesLength[wordCount] || 16
+    const entropy = this.generateRandomBytes(bytesLength, extraEntropy)
+    const mnemonic = Mnemonic.fromEntropy(entropy, '', LangEn.wordlist())
+    return mnemonic
   }
 
   #collectTimeEntropy(): void {
