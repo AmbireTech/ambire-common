@@ -85,6 +85,9 @@ const legendsModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]) =
       const [invitee] = iface.parseTransaction(call)!.args
 
       return [getAction('Invite'), getAddressVisualization(invitee), getLabel('to Ambire Legends')]
+    },
+    [iface.getFunction('claimXpFromFeedback')?.selector!]: () => {
+      return [getAction('Claim XP'), getLabel('from'), getLabel('feedback form', true)]
     }
   }
   const newCalls = calls.map((call) => {
