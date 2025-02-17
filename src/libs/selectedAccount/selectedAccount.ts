@@ -346,6 +346,8 @@ export const migrateCashbackStatus = (
         status.firstCashbackSeenAt
       ) {
         migratedStatuses[accountId] = 'seen-cashback'
+      } else {
+        migratedStatuses[accountId] = 'seen-cashback'
       }
     } else {
       migratedStatuses[accountId] = 'seen-cashback'
