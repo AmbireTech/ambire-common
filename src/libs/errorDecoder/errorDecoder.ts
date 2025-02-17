@@ -64,7 +64,7 @@ export function decodeError(e: Error): DecodedError {
   // a third. So we will add additional handlers optionally
   const preprocessorHandlers = PREPROCESSOR_HANDLERS
   if (e instanceof BundlerError) {
-    preprocessorHandlers.push(...PREPROCESSOR_BUNDLER_HANDLERS)
+    preprocessorHandlers.unshift(...PREPROCESSOR_BUNDLER_HANDLERS)
   }
 
   // Run preprocessor handlers first
