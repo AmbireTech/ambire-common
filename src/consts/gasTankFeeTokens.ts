@@ -702,5 +702,12 @@ export default [
     symbol: 'wstETH',
     decimals: 18,
     icon: 'https://coin-images.coingecko.com/coins/images/18834/small/wstETH.png'
+  },
+  {
+    networkId: 'odyssey',
+    address: '0x2B44e7315B20da1A9CBE827489A2FE99545e3ba7',
+    symbol: 'amw',
+    decimals: 18,
+    icon: 'https://assets.coingecko.com/coins/images/23154/standard/wallet.PNG?1696522445'
   }
 ]
