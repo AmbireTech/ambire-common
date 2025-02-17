@@ -173,10 +173,10 @@ contract AmbireAccount is IAmbireAccount {
 		} else {
 			(signerKey, ) = SignatureValidator.recoverAddrAllowUnprotected(
 				Eip712HashBuilder.getExecute712Hash(
-				currentNonce,
-				calls,
-				keccak256(abi.encode(address(this), block.chainid, currentNonce, calls))
-			),
+					currentNonce,
+					calls,
+					keccak256(abi.encode(address(this), block.chainid, currentNonce, calls))
+				),
 				signature,
 				true
 			);
@@ -366,7 +366,6 @@ contract AmbireAccount is IAmbireAccount {
 
 		// this is replay-safe because userOpHash is retrieved like this: keccak256(abi.encode(userOp.hash(), address(this), block.chainid))
 		(address signer, ) = SignatureValidator.recoverAddrAllowUnprotected(
-			// pass: whole userOp, executeBySender's transactions, the userOpHash
 			Eip712HashBuilder.getUserOp712Hash(op, userOpHash),
 			op.signature,
 			true

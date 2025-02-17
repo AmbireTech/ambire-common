@@ -97,8 +97,7 @@ library Eip712HashBuilder {
             abi.encode(
               keccak256(
                 bytes(
-                  // WARNING
-                  // removed entryPoint from here as its in the final hash prop. Such a detail is not as important
+                  // removed entryPoint from here as its in the final hash prop
                   'Ambire4337AccountOp(address account,uint256 chainId,uint256 nonce,bytes initCode,bytes32 accountGasLimits,uint256 preVerificationGas,bytes32 gasFees,bytes paymasterAndData,bytes callData,Transaction[] calls,bytes32 hash)Transaction(address to,uint256 value,bytes data)'
                 )
               ),
