@@ -1406,7 +1406,7 @@ describe('SignAccountOp Controller ', () => {
       const errors = controller.errors
       expect(errors.length).toBe(1)
       expect(errors[0]).toBe(
-        "Signing is not possible with the selected account's token as it doesn't have sufficient funds to cover the gas payment fee."
+        'Insufficient funds to cover the fee. Available fee options: USDC in Gas Tank, POL, WMATIC, WSTETH, WBTC, WETH, DAI, USDT, USDC.E, USDC and others'
       )
 
       expect(controller.status?.type).toBe(SigningStatus.UnableToSign)
