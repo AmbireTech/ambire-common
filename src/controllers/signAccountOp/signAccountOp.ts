@@ -376,13 +376,13 @@ export class SignAccountOpController extends EventEmitter {
           return !speedsThatCanCover?.length
         })
         if (isUnableToCoverWithAllOtherTokens) {
-          let aaveTokensCount = 0
+          let skippedTokensCount = 0
           const gasTokenNames = gasTankFeeTokens
-            .filter(({ networkId, isAave }) => {
+            .filter(({ networkId, hiddenOnError }) => {
               if (networkId !== this.accountOp.networkId) return false
 
-              if (isAave) {
-                aaveTokensCount++
+              if (hiddenOnError) {
+                skippedTokensCount++
                 return false
               }
 
@@ -395,7 +395,7 @@ export class SignAccountOpController extends EventEmitter {
             `${ERRORS.eoaInsufficientFunds}${
               isSA
                 ? ` Available fee options: USDC in Gas Tank, ${gasTokenNames}${
-                    aaveTokensCount ? ' and others' : ''
+                    skippedTokensCount ? ' and others' : ''
                   }`
                 : ''
             }`
