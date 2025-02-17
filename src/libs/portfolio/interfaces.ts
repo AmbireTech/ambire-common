@@ -79,7 +79,7 @@ export interface ExternalHintsAPIResponse extends Hints {
   networkId: string
   accountAddr: string
   prices: {
-    [name: string]: Price
+    [addr: string]: Price
   }
   hasHints: boolean
   // Attached by the application error handling logic.

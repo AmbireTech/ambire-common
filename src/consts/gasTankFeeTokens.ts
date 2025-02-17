@@ -120,6 +120,13 @@ export default [
     icon: 'https://assets.coingecko.com/coins/images/279/large/ethereum.png'
   },
   {
+    address: '0x0000000000000000000000000000000000000000',
+    symbol: 'eth',
+    networkId: 'odyssey',
+    decimals: 18,
+    icon: 'https://assets.coingecko.com/coins/images/279/large/ethereum.png'
+  },
+  {
     address: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
     symbol: 'weth',
     networkId: 'ethereum',

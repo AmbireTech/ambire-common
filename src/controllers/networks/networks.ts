@@ -132,6 +132,9 @@ export class NetworksController extends EventEmitter {
       )
       if (!predefinedNetwork) {
         this.#networks[networkName].predefined = false
+
+        if (this.#networks[networkName].chainId === 911867n)
+          this.#networks[networkName].platformId = 'ethereum'
       }
     })
 
