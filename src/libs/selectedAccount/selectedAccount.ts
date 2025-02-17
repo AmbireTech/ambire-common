@@ -1,4 +1,6 @@
 import {
+  CashbackStatus,
+  CashbackStatusByAccount,
   SelectedAccountPortfolio,
   SelectedAccountPortfolioState,
   SelectedAccountPortfolioTokenResult
@@ -312,4 +314,26 @@ export function calculateSelectedAccountPortfolio(
     latest: stripPortfolioState(latestStateSelectedAccount),
     pending: stripPortfolioState(pendingStateSelectedAccount)
   } as SelectedAccountPortfolio
+}
+
+export const migrateCashbackStatus = (
+  existingStatuses: Record<string, CashbackStatus | null | undefined>
+) => {
+  const migratedStatuses: CashbackStatusByAccount = {}
+
+  // eslint-disable-next-line no-restricted-syntax
+  for (const [accountId, status] of Object.entries(existingStatuses)) {
+    if (
+      status === 'no-cashback' ||
+      status === 'cashback-modal' ||
+      status === 'seen-cashback' ||
+      status === 'unseen-cashback'
+    ) {
+      migratedStatuses[accountId] = status
+    } else {
+      migratedStatuses[accountId] = 'no-cashback'
+    }
+  }
+
+  return migratedStatuses
 }

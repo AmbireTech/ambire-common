@@ -24,6 +24,7 @@ import {
 } from '../../libs/selectedAccount/errors'
 import {
   calculateSelectedAccountPortfolio,
+  migrateCashbackStatus,
   updatePortfolioStateWithDefiPositions
 } from '../../libs/selectedAccount/selectedAccount'
 // eslint-disable-next-line import/no-cycle
@@ -103,7 +104,12 @@ export class SelectedAccountController extends EventEmitter {
   async #load() {
     await this.#accounts.initialLoadPromise
     const selectedAccountAddress = await this.#storage.get('selectedAccount', null)
-    this.#cashbackStatusByAccount = await this.#storage.get('cashbackStatusByAccount', {})
+    let cashbackStatusByAccount = await this.#storage.get('cashbackStatusByAccount', {})
+    console.log('this.#cashbackStatusByAccount', this.#cashbackStatusByAccount)
+
+    cashbackStatusByAccount = migrateCashbackStatus(cashbackStatusByAccount)
+    this.#cashbackStatusByAccount = cashbackStatusByAccount
+    await this.#storage.set('cashbackStatusByAccount', cashbackStatusByAccount)
 
     const selectedAccount = this.#accounts.accounts.find((a) => a.addr === selectedAccountAddress)
 
