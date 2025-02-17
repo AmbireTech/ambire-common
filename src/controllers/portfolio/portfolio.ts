@@ -722,7 +722,7 @@ export class PortfolioController extends EventEmitter {
         const currentAccountOps = simulation?.accountOps[network.id]?.filter(
           (op) => op.accountAddr === accountId
         )
-        const state = simulation?.states[network.id]
+        const state = simulation?.states?.[network.id]
         const simulatedAccountOps = pendingState[network.id]?.accountOps
 
         if (!this.#queue?.[accountId]?.[network.id])

@@ -191,7 +191,7 @@ export const getAccountOpsForSimulation = (
   // EOAs on networks without state override (but it works for SA)
   if (op && (isSmart || (network && !network.rpcNoStateOverride))) return { [op.networkId]: [op] }
 
-  if (isSmart) return getAccountOpsByNetwork(account.addr, visibleActionsQueue) || {}
+  if (isSmart) return getAccountOpsByNetwork(account.addr, visibleActionsQueue) || undefined
 
   return undefined
 }
