@@ -861,7 +861,7 @@ export class KeystoreController extends EventEmitter {
     return { seed: decryptedSeed, hdPathTemplate }
   }
 
-  async #changeKeystorePassword(newSecret: string, oldSecret?: string) {
+  async #changeKeystorePassword(newSecret: string, oldSecret?: string, extraEntropy?: string) {
     await this.#initialLoadPromise
 
     // In the case the user wants to change their device password,
@@ -891,12 +891,12 @@ export class KeystoreController extends EventEmitter {
       })
 
     await this.#removeSecret('password')
-    await this.#addSecret('password', newSecret, '', true)
+    await this.#addSecret('password', newSecret, extraEntropy, true)
   }
 
-  async changeKeystorePassword(newSecret: string, oldSecret?: string) {
+  async changeKeystorePassword(newSecret: string, oldSecret?: string, extraEntropy?: string) {
     await this.withStatus('changeKeystorePassword', () =>
-      this.#changeKeystorePassword(newSecret, oldSecret)
+      this.#changeKeystorePassword(newSecret, oldSecret, extraEntropy)
     )
   }
 
