@@ -43,7 +43,7 @@ const providers = Object.fromEntries(
 const key1to11BasicAccPublicAddresses = Array.from(
   { length: 11 },
   (_, i) =>
-    new Wallet(getPrivateKeyFromSeed(process.env.SEED, i, BIP44_STANDARD_DERIVATION_TEMPLATE))
+    new Wallet(getPrivateKeyFromSeed(process.env.SEED, null, i, BIP44_STANDARD_DERIVATION_TEMPLATE))
       .address
 )
 
@@ -53,6 +53,7 @@ const key1to11BasicAccUsedForSmartAccKeysOnlyPublicAddresses = Array.from(
     new Wallet(
       getPrivateKeyFromSeed(
         process.env.SEED,
+        null,
         i + SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET,
         BIP44_STANDARD_DERIVATION_TEMPLATE
       )
@@ -62,16 +63,19 @@ const key1to11BasicAccUsedForSmartAccKeysOnlyPublicAddresses = Array.from(
 const key1PublicAddress = key1to11BasicAccPublicAddresses[0]
 const key1PrivateKey = getPrivateKeyFromSeed(
   process.env.SEED,
+  null,
   0,
   BIP44_STANDARD_DERIVATION_TEMPLATE
 )
 const key1UsedForSmartAccKeysOnlyPrivateKey = getPrivateKeyFromSeed(
   process.env.SEED,
+  null,
   SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET,
   BIP44_STANDARD_DERIVATION_TEMPLATE
 )
 const key2UsedForSmartAccKeysOnlyPrivateKey = getPrivateKeyFromSeed(
   process.env.SEED,
+  null,
   1 + SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET,
   BIP44_STANDARD_DERIVATION_TEMPLATE
 )
@@ -453,7 +457,7 @@ describe('AccountAdder', () => {
       )
       const key1to5BasicAccPublicAddresses = Array.from(
         { length: pageSize },
-        (_, i) => new Wallet(getPrivateKeyFromSeed(process.env.SEED, i, value)).address
+        (_, i) => new Wallet(getPrivateKeyFromSeed(process.env.SEED, null, i, value)).address
       )
       basicAccountsOnFirstPage.forEach((x) => {
         const address = x.account.addr
@@ -467,7 +471,8 @@ describe('AccountAdder', () => {
       )
       const key6to10BasicAccPublicAddresses = Array.from(
         { length: pageSize },
-        (_, i) => new Wallet(getPrivateKeyFromSeed(process.env.SEED, i + pageSize, value)).address
+        (_, i) =>
+          new Wallet(getPrivateKeyFromSeed(process.env.SEED, null, i + pageSize, value)).address
       )
       basicAccountsOnSecondPage.forEach((x) => {
         const address = x.account.addr

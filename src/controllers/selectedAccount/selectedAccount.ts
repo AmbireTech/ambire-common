@@ -7,6 +7,7 @@ import { NetworkId } from '../../interfaces/network'
 import { SelectedAccountPortfolio } from '../../interfaces/selectedAccount'
 import { Storage } from '../../interfaces/storage'
 import { isSmartAccount } from '../../libs/account/account'
+import { getFirstCashbackBanners } from '../../libs/banners/banners'
 import { sortByValue } from '../../libs/defiPositions/helpers'
 import { PositionsByProvider } from '../../libs/defiPositions/types'
 // eslint-disable-next-line import/no-cycle
@@ -37,6 +38,7 @@ export const DEFAULT_SELECTED_ACCOUNT_PORTFOLIO = {
   collections: [],
   tokenAmounts: [],
   totalBalance: 0,
+  isReadyToVisualize: false,
   isAllReady: false,
   networkSimulatedAccountOp: {},
   latest: {},
@@ -137,7 +139,7 @@ export class SelectedAccountController extends EventEmitter {
       this.#debounceFunctionCallsOnSameTick('updateSelectedAccountDefiPositions', () => {
         this.#updateSelectedAccountDefiPositions()
 
-        if (!this.areDefiPositionsLoading && this.portfolio.isAllReady) {
+        if (!this.areDefiPositionsLoading) {
           this.#updateSelectedAccountPortfolio(true)
           this.#updateDefiPositionsErrors()
         }
@@ -182,6 +184,7 @@ export class SelectedAccountController extends EventEmitter {
     this.#defiPositionsErrors = []
     this.resetSelectedAccountPortfolio(true)
     this.dashboardNetworkFilter = null
+    this.portfolioStartedLoadingAtTimestamp = null
 
     if (!account) {
       await this.#storage.remove('selectedAccount')
@@ -243,6 +246,8 @@ export class SelectedAccountController extends EventEmitter {
       latestStateSelectedAccountWithDefiPositions,
       pendingStateSelectedAccountWithDefiPositions,
       this.portfolio,
+      this.portfolioStartedLoadingAtTimestamp,
+      defiPositionsAccountState,
       hasSignAccountOp
     )
 
@@ -255,7 +260,7 @@ export class SelectedAccountController extends EventEmitter {
     }
 
     if (
-      newSelectedAccountPortfolio.isAllReady ||
+      newSelectedAccountPortfolio.isReadyToVisualize ||
       (!this.portfolio?.tokens?.length && newSelectedAccountPortfolio.tokens.length)
     ) {
       this.portfolio = newSelectedAccountPortfolio
@@ -362,7 +367,7 @@ export class SelectedAccountController extends EventEmitter {
       !this.#networks ||
       !this.#providers ||
       !this.#portfolio ||
-      !this.portfolio.isAllReady
+      !this.portfolio.isReadyToVisualize
     ) {
       this.#portfolioErrors = []
       if (!skipUpdate) {
@@ -423,6 +428,15 @@ export class SelectedAccountController extends EventEmitter {
     ]
   }
 
+  get firstCashbackBanner(): Banner[] {
+    if (!this.account || !isSmartAccount(this.account) || !this.#portfolio) return []
+
+    return getFirstCashbackBanners({
+      selectedAccountAddr: this.account.addr,
+      cashbackStatusByAccount: this.#portfolio.cashbackStatusByAccount
+    })
+  }
+
   setDashboardNetworkFilter(networkFilter: NetworkId | null) {
     this.dashboardNetworkFilter = networkFilter
     this.emitUpdate()
@@ -432,6 +446,7 @@ export class SelectedAccountController extends EventEmitter {
     return {
       ...this,
       ...super.toJSON(),
+      firstCashbackBanner: this.firstCashbackBanner,
       deprecatedSmartAccountBanner: this.deprecatedSmartAccountBanner,
       areDefiPositionsLoading: this.areDefiPositionsLoading,
       balanceAffectingErrors: this.balanceAffectingErrors

@@ -3,17 +3,8 @@ import { AccountOpAction, Action as ActionFromActionsQueue } from '../../interfa
 // eslint-disable-next-line import/no-cycle
 import { Action, Banner } from '../../interfaces/banner'
 import { Network } from '../../interfaces/network'
-import { RPCProviders } from '../../interfaces/provider'
-import { SelectedAccountPortfolioState } from '../../interfaces/selectedAccount'
 import { ActiveRoute } from '../../interfaces/swapAndBridge'
-import {
-  AccountState as DefiPositionsAccountState,
-  DeFiPositionsError,
-  NetworksWithPositions
-} from '../defiPositions/types'
-import { getNetworksWithFailedRPC } from '../networks/networks'
-import { AccountAssetsState } from '../portfolio/interfaces'
-import { PORTFOLIO_LIB_ERROR_NAMES } from '../portfolio/portfolio'
+import { CashbackStatusByAccount } from '../portfolio/interfaces'
 import { getIsBridgeTxn, getQuoteRouteSteps } from '../swapAndBridge/swapAndBridge'
 
 const getBridgeBannerTitle = (routeStatus: ActiveRoute['routeStatus']) => {
@@ -321,4 +312,35 @@ export const getKeySyncBanner = (addr: string, email: string, keys: string[]) =>
     ]
   }
   return banner
+}
+
+export const getFirstCashbackBanners = ({
+  selectedAccountAddr,
+  cashbackStatusByAccount
+}: {
+  selectedAccountAddr: string
+  cashbackStatusByAccount: CashbackStatusByAccount
+}): Banner[] => {
+  const banners: Banner[] = []
+
+  const shouldShowBanner =
+    !!cashbackStatusByAccount[selectedAccountAddr]?.firstCashbackReceivedAt &&
+    !cashbackStatusByAccount[selectedAccountAddr]?.firstCashbackSeenAt
+
+  if (shouldShowBanner) {
+    banners.push({
+      id: `${selectedAccountAddr}-first-cashback-banner-banner`,
+      type: 'info',
+      title: "You've got cashback!",
+      text: 'You just received your first cashback from paying gas with Smart Account.',
+      actions: [
+        {
+          label: 'Open',
+          actionName: 'open-first-cashback-modal'
+        }
+      ]
+    })
+  }
+
+  return banners
 }

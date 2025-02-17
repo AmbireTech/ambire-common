@@ -78,7 +78,7 @@ export abstract class Bundler {
           [userOperation.sender]: {
             stateDiff: {
               // add privileges to the entry point
-              [`0x${privSlot(0, 'address', ERC_4337_ENTRYPOINT, 'bytes32')}`]: ENTRY_POINT_MARKER
+              [privSlot(0, 'uint256', ERC_4337_ENTRYPOINT, 'uint256')]: ENTRY_POINT_MARKER
             }
           }
         }
