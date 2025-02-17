@@ -128,6 +128,7 @@ import { DefiPositionsController } from '../defiPositions/defiPositions'
 import { DomainsController } from '../domains/domains'
 import { EmailVaultController } from '../emailVault/emailVault'
 import EventEmitter, { ErrorRef, Statuses } from '../eventEmitter/eventEmitter'
+import { FeatureFlagsController } from '../featureFlags/featureFlags'
 import { InviteController } from '../invite/invite'
 import { KeystoreController } from '../keystore/keystore'
 import { NetworksController } from '../networks/networks'
@@ -135,8 +136,6 @@ import { PortfolioController } from '../portfolio/portfolio'
 import { ProvidersController } from '../providers/providers'
 /* eslint-disable @typescript-eslint/no-floating-promises */
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
-/* eslint-disable no-underscore-dangle */
-import { FeatureFlagController } from '../featureFlags/featureFlags'
 import { SignAccountOpController, SigningStatus } from '../signAccountOp/signAccountOp'
 import { SignMessageController } from '../signMessage/signMessage'
 import { SwapAndBridgeController, SwapAndBridgeFormStatus } from '../swapAndBridge/swapAndBridge'
@@ -165,6 +164,8 @@ export class MainController extends EventEmitter {
   callRelayer: Function
 
   isReady: boolean = false
+
+  featureFlags: FeatureFlagsController
 
   invite: InviteController
 
@@ -243,8 +244,6 @@ export class MainController extends EventEmitter {
 
   #signAccountOpBroadcastPromise?: Promise<SubmittedAccountOp>
 
-  featureFlagController: FeatureFlagController
-
   constructor({
     storage,
     fetch,
@@ -272,6 +271,7 @@ export class MainController extends EventEmitter {
     this.#windowManager = windowManager
     this.#notificationManager = notificationManager
 
+    this.featureFlags = new FeatureFlagsController()
     this.invite = new InviteController({ relayerUrl, fetch, storage: this.#storage })
     this.keystore = new KeystoreController(this.#storage, keystoreSigners, windowManager)
     this.#externalSignerControllers = externalSignerControllers
@@ -386,12 +386,12 @@ export class MainController extends EventEmitter {
       actions: this.actions
     })
     this.domains = new DomainsController(this.providers.providers)
+
     this.#initialLoadPromise = this.#load()
     paymasterFactory.init(relayerUrl, fetch, (e: ErrorRef) => {
       if (!this.signAccountOp) return
       this.emitError(e)
     })
-    this.featureFlagController = new FeatureFlagController()
   }
 
   /**
@@ -1838,7 +1838,7 @@ export class MainController extends EventEmitter {
 
     // basic account: ask for 7702 auth
     if (
-      this.featureFlagController.isFeatureEnabled('eip7702') &&
+      this.featureFlags.isFeatureEnabled('eip7702') &&
       !account.disable7702Popup &&
       has7702(network) &&
       canBecomeSmarterOnChain(
@@ -2961,7 +2961,7 @@ export class MainController extends EventEmitter {
     })
 
     const smarterEoaBanner =
-      this.featureFlagController.isFeatureEnabled('eip7702') &&
+      this.featureFlags.isFeatureEnabled('eip7702') &&
       !this.selectedAccount.account.disable7702Banner &&
       !hasBecomeSmarter(this.selectedAccount.account, this.accounts.accountStates) &&
       canBecomeSmarter(
@@ -3051,18 +3051,13 @@ export class MainController extends EventEmitter {
     return !!this.actions.actionsQueue.find((a) => a.id === this.signAccountOp!.fromActionId)
   }
 
-  get features() {
-    return this.featureFlagController.getFeatures()
-  }
-
   // includes the getters in the stringified instance
   toJSON() {
     return {
       ...this,
       ...super.toJSON(),
       banners: this.banners,
-      isSignRequestStillActive: this.isSignRequestStillActive,
-      features: this.features
+      isSignRequestStillActive: this.isSignRequestStillActive
     }
   }
 }

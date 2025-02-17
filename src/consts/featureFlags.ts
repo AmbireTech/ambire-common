@@ -1,5 +1,5 @@
 export interface FeatureFlags {
-  [feature: string]: boolean
+  eip7702: boolean
 }
 
 export const featureFlags: FeatureFlags = {
