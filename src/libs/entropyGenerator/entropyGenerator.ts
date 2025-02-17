@@ -6,7 +6,7 @@ export class EntropyGenerator {
 
   generateRandomBytes(length: number, extraEntropy: string): Uint8Array {
     this.#resetEntropyPool()
-    this.#collectSystemNoiseEntropy(length)
+    this.#collectCryptographicEntropy(length)
     this.#collectTimeEntropy()
 
     if (extraEntropy) {
@@ -19,7 +19,7 @@ export class EntropyGenerator {
 
     const hash = getBytes(keccak256(this.#entropyPool))
     const randomBytesGenerated = randomBytes(length)
-    // ensures non-deterministic final output
+    // Introduces additional entropy mixing via XOR
     for (let i = 0; i < length; i++) {
       randomBytesGenerated[i] ^= hash[i % hash.length]
     }
@@ -44,15 +44,12 @@ export class EntropyGenerator {
     this.addEntropy(timeEntropy)
   }
 
-  #collectSystemNoiseEntropy(length: number): void {
+  #collectCryptographicEntropy(length: number): void {
     this.addEntropy(randomBytes(length))
   }
 
   addEntropy(newEntropy: Uint8Array): void {
-    const combined = new Uint8Array(this.#entropyPool.length + newEntropy.length)
-    combined.set(this.#entropyPool)
-    combined.set(newEntropy, this.#entropyPool.length)
-    this.#entropyPool = combined
+    this.#entropyPool = new Uint8Array(Buffer.concat([this.#entropyPool, newEntropy]))
   }
 
   #resetEntropyPool() {
