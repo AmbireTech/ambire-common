@@ -50,9 +50,6 @@ export const SocketModule: HumanizerCallModule = (accountOp: AccountOp, irCalls:
     'function bridgeERC20To(uint256,bytes32,address,address,uint256,uint32,uint256)',
     'function bridgeERC20To(uint256 amount, (uint256 toChainId, uint256 slippage, uint256 relayerFee, uint32 dstChainDomain, address token, address receiverAddress, bytes32 metadata, bytes callData, address delegate) connextBridgeData)',
     'function transformERC20(address inputToken, address outputToken, uint256 inputTokenAmount, uint256 minOutputTokenAmount, (uint32,bytes)[] transformations)',
-    'function swapAndBridge(uint32 swapId, bytes swapData, tuple(uint256 toChainId, uint256 slippage, uint256 relayerFee, uint32 dstChainDomain, address receiverAddress, bytes32 metadata, bytes callData, address delegate) connextBridgeData)',
-    'function swapAndBridge(uint32 swapId, bytes calldata swapData, tuple (address receiverAddress,address senderAddress,uint256 value,uint256 srcPoolId,uint256 dstPoolId,uint256 minReceivedAmt,uint256 destinationGasLimit,bool isNativeSwapRequired,uint16 stargateDstChainId,uint32 swapId,bytes swapData,bytes32 metadata,bytes destinationPayload) acrossBridgeData) payable',
-    'function swapAndBridge(uint32 swapId, bytes swapData, (uint32 dstEid, uint256 minAmountLD, address stargatePoolAddress, bytes destinationPayload, bytes destinationExtraOptions, (uint256 nativeFee, uint256 lzTokenFee) messagingFee, bytes32 metadata, uint256 toChainId, address receiver, bytes swapData, uint32 swapId, bool isNativeSwapRequired) stargateBridgeData) payable',
     'function swap(address,(address,address,address,address,uint256,uint256,uint256),bytes,bytes)',
     'function swap(address caller, (address srcToken, address dstToken, address srcReceiver, address dstReceiver, uint256 amount, uint256 minReturnAmount, uint256 guaranteedAmount, uint256 flags, address referrer, bytes permit) desc, (uint256 target, uint256 gasLimit, uint256 value, bytes data)[] calls) payable returns (uint256 returnAmount)',
     'function exec(address,address,uint256,address,bytes)',
@@ -82,7 +79,7 @@ export const SocketModule: HumanizerCallModule = (accountOp: AccountOp, irCalls:
       if (
         swapData.startsWith(
           iface.getFunction(
-            'performActionWithIn(address fromToken, address toToken, uint256 amount, bytes32 metadata, bytes swapExtraData) payable returns (uint256, address)'
+            'performActionWithIn(address fromToken, address toToken, uint256 amount, bytes32 metadata, bytes swapExtraData)'
           )?.selector
         )
       ) {
@@ -124,7 +121,7 @@ export const SocketModule: HumanizerCallModule = (accountOp: AccountOp, irCalls:
       if (
         swapData.startsWith(
           iface.getFunction(
-            'performActionWithIn(address fromToken, address toToken, uint256 amount, bytes32 metadata, bytes swapExtraData) payable returns (uint256, address)'
+            'performActionWithIn(address fromToken, address toToken, uint256 amount, bytes32 metadata, bytes swapExtraData)'
           )?.selector
         )
       ) {
@@ -300,7 +297,7 @@ export const SocketModule: HumanizerCallModule = (accountOp: AccountOp, irCalls:
       } else if (
         swapExtraData.startsWith(
           iface.getFunction(
-            'function swap(address caller, (address srcToken, address dstToken, address srcReceiver, address dstReceiver, uint256 amount, uint256 minReturnAmount, uint256 guaranteedAmount, uint256 flags, address referrer, bytes permit) desc, (uint256 target, uint256 gasLimit, uint256 value, bytes data)[] calls) payable returns (uint256 returnAmount)'
+            'function swap(address caller, (address srcToken, address dstToken, address srcReceiver, address dstReceiver, uint256 amount, uint256 minReturnAmount, uint256 guaranteedAmount, uint256 flags, address referrer, bytes permit) desc, (uint256 target, uint256 gasLimit, uint256 value, bytes data)[] calls)'
           )?.selector
         )
       ) {
@@ -333,7 +330,7 @@ export const SocketModule: HumanizerCallModule = (accountOp: AccountOp, irCalls:
     },
     [`${
       iface.getFunction(
-        'performActionWithIn(address fromToken, address toToken, uint256 amount, bytes32 metadata, bytes swapExtraData) payable returns (uint256, address)'
+        'performActionWithIn(address fromToken, address toToken, uint256 amount, bytes32 metadata, bytes swapExtraData)'
       )?.selector
     }`]: (call: IrCall) => {
       // eslint-disable-next-line prefer-const
@@ -397,7 +394,7 @@ export const SocketModule: HumanizerCallModule = (accountOp: AccountOp, irCalls:
       } else if (
         swapExtraData.startsWith(
           iface.getFunction(
-            'function swap(address caller, (address srcToken, address dstToken, address srcReceiver, address dstReceiver, uint256 amount, uint256 minReturnAmount, uint256 guaranteedAmount, uint256 flags, address referrer, bytes permit) desc, (uint256 target, uint256 gasLimit, uint256 value, bytes data)[] calls) payable returns (uint256 returnAmount)'
+            'function swap(address caller, (address srcToken, address dstToken, address srcReceiver, address dstReceiver, uint256 amount, uint256 minReturnAmount, uint256 guaranteedAmount, uint256 flags, address referrer, bytes permit) desc, (uint256 target, uint256 gasLimit, uint256 value, bytes data)[] calls)'
           )?.selector
         )
       ) {
@@ -633,6 +630,37 @@ export const SocketModule: HumanizerCallModule = (accountOp: AccountOp, irCalls:
     },
     [`${
       iface.getFunction(
+        'function bridgeNativeTo(uint256 amount, (uint32 dstEid, uint256 minAmountLD, address stargatePoolAddress, bytes destinationPayload, bytes destinationExtraOptions, (uint256 nativeFee, uint256 lzTokenFee) messagingFee, bytes32 metadata, uint256 toChainId, address receiver, bytes swapData, uint32 swapId, bool isNativeSwapRequired) stargateBridgeData) payable'
+      )?.selector
+    }`]: (call: IrCall) => {
+      const {
+        amount,
+        stargateBridgeData: {
+          dstEid,
+          minAmountLD,
+          stargatePoolAddress,
+          destinationPayload,
+          destinationExtraOptions,
+          messagingFee: { nativeFee, lzTokenFee },
+          metadata,
+          toChainId,
+          receiver,
+          swapData,
+          swapId,
+          isNativeSwapRequired
+        }
+      } = iface.parseTransaction(call)!.args
+      return [
+        getAction('Bridge'),
+        getToken(ZeroAddress, amount),
+        getLabel('to'),
+        getChain(toChainId),
+        ...getRecipientText(accountOp.accountAddr, receiver)
+      ]
+    },
+
+    [`${
+      iface.getFunction(
         'swapAndBridge(uint32 swapId, bytes swapData, tuple(uint256 toChainId, uint256 slippage, uint256 relayerFee, uint32 dstChainDomain, address receiverAddress, bytes32 metadata, bytes callData, address delegate) connextBridgeData)'
       )?.selector
     }`]: (call: IrCall) => {
@@ -652,7 +680,7 @@ export const SocketModule: HumanizerCallModule = (accountOp: AccountOp, irCalls:
       if (
         swapData.startsWith(
           iface.getFunction(
-            'performActionWithIn(address fromToken, address toToken, uint256 amount, bytes32 metadata, bytes swapExtraData) payable returns (uint256, address)'
+            'performActionWithIn(address fromToken, address toToken, uint256 amount, bytes32 metadata, bytes swapExtraData)'
           )?.selector
         )
       ) {
@@ -720,7 +748,7 @@ export const SocketModule: HumanizerCallModule = (accountOp: AccountOp, irCalls:
       if (
         swapData.startsWith(
           iface.getFunction(
-            'performActionWithIn(address fromToken, address toToken, uint256 amount, bytes32 metadata, bytes swapExtraData) payable returns (uint256, address)'
+            'performActionWithIn(address fromToken, address toToken, uint256 amount, bytes32 metadata, bytes swapExtraData)'
           )?.selector
         )
       ) {
@@ -773,7 +801,7 @@ export const SocketModule: HumanizerCallModule = (accountOp: AccountOp, irCalls:
       if (
         swapData.startsWith(
           iface.getFunction(
-            'performActionWithIn(address fromToken, address toToken, uint256 amount, bytes32 metadata, bytes swapExtraData) payable returns (uint256, address)'
+            'performActionWithIn(address fromToken, address toToken, uint256 amount, bytes32 metadata, bytes swapExtraData)'
           )?.selector
         )
       ) {
@@ -796,6 +824,130 @@ export const SocketModule: HumanizerCallModule = (accountOp: AccountOp, irCalls:
         getLabel('to'),
         getChain(toChainId),
         ...getRecipientText(accountOp.accountAddr, receiver)
+      ]
+    },
+
+    [`${
+      iface.getFunction(
+        'function swapAndBridge(uint32 swapId, bytes swapData, (address receiverAddress, address hopAMM, uint256 toChainId, uint256 bonderFee, uint256 amountOutMin, uint256 deadline, uint256 amountOutMinDestination, uint256 deadlineDestination, bytes32 metadata) hopData) payable'
+      )?.selector
+    }`]: (call: IrCall) => {
+      const {
+        swapId,
+        swapData,
+        hopData: {
+          receiverAddress,
+          hopAMM,
+          toChainId,
+          bonderFee,
+          amountOutMin,
+          deadline,
+          amountOutMinDestination,
+          deadlineDestination,
+          metadata
+        }
+      } = iface.parseTransaction(call)!.args
+
+      const tokensData = []
+      if (
+        swapData.startsWith(
+          iface.getFunction(
+            'performActionWithIn(address fromToken, address toToken, uint256 amount, bytes32 metadata, bytes swapExtraData)'
+          )?.selector
+        )
+      ) {
+        const { fromToken, amount, toToken, swapExtraData } = iface.parseTransaction({
+          data: swapData
+        })!.args
+        tokensData.push(
+          getToken(fromToken, amount),
+          getLabel('to'),
+          getToken(toToken, amountOutMinDestination)
+        )
+      }
+      return [
+        getAction('Bridge'),
+        ...tokensData,
+        getLabel('to'),
+        getChain(toChainId),
+        ...getRecipientText(accountOp.accountAddr, receiverAddress),
+        getDeadline(deadlineDestination)
+      ]
+    },
+
+    [`${
+      iface.getFunction(
+        'function swapAndBridge(uint32 swapId, bytes swapData, (address receiverAddress, address l1bridgeAddr, address relayer, uint256 toChainId, uint256 amountOutMin, uint256 relayerFee, uint256 deadline, bytes32 metadata) hopData) payable'
+      )?.selector
+    }`]: (call: IrCall) => {
+      const {
+        swapId,
+        swapData,
+        hopData: {
+          receiverAddress,
+          l1bridgeAddr,
+          relayer,
+          toChainId,
+          amountOutMin,
+          relayerFee,
+          deadline,
+          metadata
+        }
+      } = iface.parseTransaction(call)!.args
+      const tokensData = []
+      if (
+        swapData.startsWith(
+          iface.getFunction(
+            'performActionWithIn(address fromToken, address toToken, uint256 amount, bytes32 metadata, bytes swapExtraData)'
+          )?.selector
+        )
+      ) {
+        const { fromToken, amount, toToken, swapExtraData } = iface.parseTransaction({
+          data: swapData
+        })!.args
+        if (
+          swapExtraData.startsWith(
+            iface.getFunction(
+              'function swap(address caller, (address srcToken, address dstToken, address srcReceiver, address dstReceiver, uint256 amount, uint256 minReturnAmount, uint256 guaranteedAmount, uint256 flags, address referrer, bytes permit) desc, (uint256 target, uint256 gasLimit, uint256 value, bytes data)[] calls)'
+            )!.selector
+          )
+        ) {
+          const {
+            caller,
+            desc: {
+              srcToken,
+              dstToken,
+              srcReceiver,
+              dstReceiver,
+              amount: amount2,
+              minReturnAmount,
+              guaranteedAmount,
+              flags,
+              referrer,
+              permit
+            },
+            calls
+          } = iface.parseTransaction({ data: swapExtraData })!.args
+          tokensData.push(
+            getToken(srcToken, amount2),
+            getLabel('to'),
+            getToken(dstToken, minReturnAmount)
+          )
+        } else {
+          tokensData.push(
+            getToken(fromToken, amount),
+            getLabel('to'),
+            getToken(toToken, amountOutMin)
+          )
+        }
+      }
+      return [
+        getAction('Bridge'),
+        ...tokensData,
+        getLabel('to'),
+        getChain(toChainId),
+        ...getRecipientText(accountOp.accountAddr, receiverAddress),
+        getDeadline(deadline)
       ]
     },
 
