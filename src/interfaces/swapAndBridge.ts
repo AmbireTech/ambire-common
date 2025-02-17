@@ -206,7 +206,7 @@ export type ActiveRoute = {
     | 'ready'
     | 'completed'
     | 'failed'
-  attemptsToGetTheStatus?: number
+  lastAttemptedToGetTheStatusAt?: number // timestamp
   error?: string
 }
 
