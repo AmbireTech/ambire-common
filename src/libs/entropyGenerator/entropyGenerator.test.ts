@@ -54,4 +54,29 @@ describe('EntropyGenerator', () => {
     const diffs = results.map((r, i) => (i > 0 ? r.toString() !== results[i - 1].toString() : true))
     expect(diffs.includes(false)).toBe(false)
   })
+  test('should generate a valid mnemonic of 12 words', () => {
+    const mnemonic = generator.generateRandomMnemonic(12, 'extra entropy')
+    expect(mnemonic).toHaveProperty('phrase')
+    expect(mnemonic.phrase.split(' ').length).toBe(12)
+  })
+  test('should generate a valid mnemonic of 24 words', () => {
+    const mnemonic = generator.generateRandomMnemonic(24, 'extra entropy')
+    expect(mnemonic).toHaveProperty('phrase')
+    expect(mnemonic.phrase.split(' ').length).toBe(24)
+  })
+  test('should generate different mnemonics on consecutive calls', () => {
+    const mnemonic1 = generator.generateRandomMnemonic(12, 'extra entropy')
+    const mnemonic2 = generator.generateRandomMnemonic(12, 'extra entropy')
+    expect(mnemonic1.phrase).not.toEqual(mnemonic2.phrase)
+  })
+  test('should use correct entropy length for 12-word mnemonic', () => {
+    jest.spyOn(generator, 'generateRandomBytes')
+    generator.generateRandomMnemonic(12, 'extra entropy')
+    expect(generator.generateRandomBytes).toHaveBeenCalledWith(16, 'extra entropy')
+  })
+  test('should use correct entropy length for 24-word mnemonic', () => {
+    jest.spyOn(generator, 'generateRandomBytes')
+    generator.generateRandomMnemonic(24, 'extra entropy')
+    expect(generator.generateRandomBytes).toHaveBeenCalledWith(32, 'extra entropy')
+  })
 })
