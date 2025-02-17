@@ -82,8 +82,6 @@ const STATUS_WRAPPED_METHODS = {
 
 const SUPPORTED_CHAINS_CACHE_THRESHOLD = 1000 * 60 * 60 * 24 // 1 day
 const TO_TOKEN_LIST_CACHE_THRESHOLD = 1000 * 60 * 60 * 4 // 4 hours
-// TODO: Set to low value for testing, should probably be more
-export const ATTEMPTS_TO_GET_THE_STATUS_THRESHOLD = 3
 
 const PROTOCOLS_WITH_CONTRACT_FEE_IN_NATIVE = [
   'stargate',
