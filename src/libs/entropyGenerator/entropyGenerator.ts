@@ -29,7 +29,7 @@ export class EntropyGenerator {
 
   generateRandomMnemonic(wordCount: 12 | 24, extraEntropy: string): Mnemonic {
     const wordCountToBytesLength = { 12: 16, 24: 32 }
-    const bytesLength = wordCountToBytesLength[wordCount] || 16
+    const bytesLength = wordCountToBytesLength[wordCount] || 16 // defaults to 12-word phrase
     const entropy = this.generateRandomBytes(bytesLength, extraEntropy)
     const mnemonic = Mnemonic.fromEntropy(entropy, '', LangEn.wordlist())
     return mnemonic
