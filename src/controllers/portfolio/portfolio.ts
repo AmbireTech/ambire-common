@@ -13,10 +13,10 @@ import { CustomToken, TokenPreference } from '../../libs/portfolio/customToken'
 import getAccountNetworksWithAssets from '../../libs/portfolio/getNetworksWithAssets'
 import {
   getFlags,
-  getPinnedGasTankTokens,
   getTokensReadyToLearn,
   getTotal,
   getUpdatedHints,
+  isCurrentCashbackZero,
   processTokens,
   shouldGetAdditionalPortfolio,
   validateERC20Token
@@ -26,6 +26,8 @@ import {
 import {
   AccountAssetsState,
   AccountState,
+  CashbackStatusByAccount,
+  GasTankTokenResult,
   GetOptions,
   NetworkState,
   PortfolioControllerState,
@@ -109,6 +111,10 @@ export class PortfolioController extends EventEmitter {
   // Holds the initial load promise, so that one can wait until it completes
   #initialLoadPromise: Promise<void>
 
+  cashbackStatusByAccount: CashbackStatusByAccount = {}
+
+  #hasUnseenFirstCashback: boolean = false
+
   constructor(
     storage: Storage,
     fetch: Fetch,
@@ -157,6 +163,7 @@ export class PortfolioController extends EventEmitter {
       }
 
       this.#previousHints = await this.#storage.get('previousHints', {})
+      this.cashbackStatusByAccount = await this.#storage.get('cashbackStatusByAccount', {})
       const networksWithAssets = await this.#storage.get('networksWithAssetsByAccount', {})
       const isOldStructure = Object.keys(networksWithAssets).every(
         (key) =>
@@ -420,6 +427,45 @@ export class PortfolioController extends EventEmitter {
     }
   }
 
+  async updateCashbackStatusByAccount({
+    accountId,
+    shouldShowBanner,
+    toggleModal,
+    shouldGetAdditionalPortfolio,
+    shouldSetCashbackWasZeroAt
+  }: {
+    accountId: AccountId
+    shouldShowBanner: boolean
+    toggleModal: boolean
+    shouldGetAdditionalPortfolio: boolean
+    shouldSetCashbackWasZeroAt: boolean
+  }) {
+    if (!accountId) throw new Error('AccountId in required to update cashback status')
+
+    if (toggleModal) {
+      this.#hasUnseenFirstCashback = !this.#hasUnseenFirstCashback
+    }
+
+    const currentTimestamp = new Date().getTime()
+    const currentAccountStatus = this.cashbackStatusByAccount[accountId] || {}
+
+    this.cashbackStatusByAccount = {
+      ...this.cashbackStatusByAccount,
+      [accountId]: {
+        firstCashbackReceivedAt: shouldShowBanner
+          ? currentTimestamp
+          : currentAccountStatus.firstCashbackReceivedAt,
+        firstCashbackSeenAt: shouldShowBanner ? null : currentTimestamp,
+        cashbackWasZeroAt: shouldSetCashbackWasZeroAt ? currentTimestamp : null
+      }
+    }
+    await this.#storage.set('cashbackStatusByAccount', this.cashbackStatusByAccount)
+
+    if (shouldGetAdditionalPortfolio) {
+      await this.#getAdditionalPortfolio(accountId, true)
+    }
+  }
+
   async #getAdditionalPortfolio(accountId: AccountId, forceUpdate?: boolean) {
     const rewardsOrGasTankState =
       this.#latest[accountId]?.rewards || this.#latest[accountId]?.gasTank
@@ -476,8 +522,34 @@ export class PortfolioController extends EventEmitter {
       }
     }
 
-    const gasTankTokens = res.data.gasTank.balance.map((t: any) => ({
+    const isCashbackZero = isCurrentCashbackZero(res.data.gasTank.balance)
+    const cashbackWasZeroBefore = !!this.cashbackStatusByAccount[accountId]?.cashbackWasZeroAt
+
+    if (isCashbackZero) {
+      await this.updateCashbackStatusByAccount({
+        accountId,
+        shouldShowBanner: false,
+        toggleModal: false,
+        shouldGetAdditionalPortfolio: false,
+        shouldSetCashbackWasZeroAt: true
+      })
+    } else if (!isCashbackZero && cashbackWasZeroBefore) {
+      await this.updateCashbackStatusByAccount({
+        accountId,
+        shouldShowBanner: true,
+        toggleModal: false,
+        shouldGetAdditionalPortfolio: false,
+        shouldSetCashbackWasZeroAt: false
+      })
+    }
+
+    const gasTankTokens: GasTankTokenResult[] = res.data.gasTank.balance.map((t: any) => ({
       ...t,
+      amount: BigInt(t.amount || 0),
+      availableAmount: BigInt(t.availableAmount || 0),
+      cashback: BigInt(t.cashback || 0),
+      saved: BigInt(t.saved || 0),
+      hasUnseenFirstCashback: this.#hasUnseenFirstCashback,
       flags: getFlags(res.data, 'gasTank', t.networkId, t.address)
     }))
 
@@ -488,15 +560,8 @@ export class PortfolioController extends EventEmitter {
       result: {
         updateStarted: start,
         lastSuccessfulUpdate: Date.now(),
-        tokens: [
-          ...gasTankTokens,
-          ...getPinnedGasTankTokens(
-            res.data.gasTank.availableGasTankAssets,
-            hasNonZeroTokens,
-            accountId,
-            gasTankTokens
-          )
-        ],
+        tokens: [],
+        gasTankTokens,
         total: getTotal(gasTankTokens)
       }
     }
@@ -582,7 +647,8 @@ export class PortfolioController extends EventEmitter {
         network,
         hasNonZeroTokens,
         additionalHintsErc20Hints,
-        this.tokenPreferences
+        this.tokenPreferences,
+        this.customTokens
       )
 
       accountState[network.id] = {
@@ -688,6 +754,11 @@ export class PortfolioController extends EventEmitter {
             ...((this.#toBeLearnedTokens && this.#toBeLearnedTokens[network.id]) ?? []),
             ...this.customTokens
               .filter(({ networkId, standard }) => networkId === network.id && standard === 'ERC20')
+              .map(({ address }) => address),
+            // We have to add the token preferences to ensure that the user can always see all hidden tokens
+            // in settings, regardless of the selected account
+            ...this.tokenPreferences
+              .filter(({ networkId }) => networkId === network.id)
               .map(({ address }) => address)
           ]
           // TODO: Add custom ERC721 tokens to the hints
@@ -764,7 +835,8 @@ export class PortfolioController extends EventEmitter {
                 network.id,
                 this.#previousHints,
                 key,
-                this.customTokens
+                this.customTokens,
+                this.tokenPreferences
               )
 
               // Updating hints is only needed when the external API response is valid.
