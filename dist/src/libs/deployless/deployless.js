@@ -55,8 +55,14 @@ class Deployless {
         assert_1.default.ok(!abi.includes((x) => x.type === 'constructor'), 'contract cannot have a constructor, as it is not supported in state override mode');
         this.contractBytecode = code;
         this.provider = provider;
-        // eslint-disable-next-line no-underscore-dangle
-        this.isProviderInvictus = provider._getConnection().url.includes('invictus');
+        // we wrap this in a try/catch statement as not all RPCs have _getConnection
+        try {
+            // eslint-disable-next-line no-underscore-dangle
+            this.isProviderInvictus = provider._getConnection().url.includes('invictus');
+        }
+        catch (e) {
+            /* */
+        }
         this.iface = new ethers_1.Interface(abi);
         if (codeAtRuntime !== undefined) {
             assert_1.default.ok(codeAtRuntime.startsWith('0x'), 'contract code (runtime) must start with 0x');
