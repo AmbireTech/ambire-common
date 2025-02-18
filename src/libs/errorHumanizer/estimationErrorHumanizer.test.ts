@@ -4,6 +4,7 @@ import { ethers } from 'hardhat'
 import { describe, expect } from '@jest/globals'
 
 import { suppressConsole } from '../../../test/helpers/console'
+import { BundlerError } from '../errorDecoder/customErrors'
 import { MockCustomError } from '../errorDecoder/errorDecoder.test'
 import { MESSAGE_PREFIX } from './estimationErrorHumanizer'
 import { getHumanReadableEstimationError } from './index'
@@ -37,7 +38,10 @@ describe('Estimation errors are humanized', () => {
   it('0x7b36c479 (PartialSwapsNotAllowed)', () => {
     const { restore } = suppressConsole()
     const EXPECTED_MESSAGE = `${MESSAGE_PREFIX} of a Swap failure. Please try performing the same swap again.`
-    const error = new Error('0x7b36c479')
+    const error = new BundlerError(
+      'UserOperation reverted during simulation with reason: 0x7b36c479',
+      'pimlico'
+    )
 
     const humanizedError = getHumanReadableEstimationError(error)
 
