@@ -586,7 +586,7 @@ export class MainController extends EventEmitter {
     )
   }
 
-  async initSignAccOp(actionId: AccountOpAction['id']): Promise<null | void> {
+  initSignAccOp(actionId: AccountOpAction['id']): null | void {
     const accountOp = getAccountOpFromAction(actionId, this.actions.actionsQueue)
     if (!accountOp) {
       this.signAccOpInitError =
@@ -640,8 +640,7 @@ export class MainController extends EventEmitter {
     this.emitUpdate()
 
     this.updateSignAccountOpGasPrice()
-    await this.estimateSignAccountOp()
-    if (this.signAccountOp.estimation) this.traceCall(this.signAccountOp.estimation)
+    this.estimateSignAccountOp({ shouldTraceCall: true })
   }
 
   async handleSignAndBroadcastAccountOp() {
@@ -1701,8 +1700,7 @@ export class MainController extends EventEmitter {
         if (this.signAccountOp) {
           if (this.signAccountOp.fromActionId === accountOpAction.id) {
             this.signAccountOp.update({ calls: accountOpAction.accountOp.calls })
-            await this.estimateSignAccountOp()
-            if (this.signAccountOp.estimation) this.traceCall(this.signAccountOp.estimation)
+            await this.estimateSignAccountOp({ shouldTraceCall: true })
           }
         } else {
           // Even without an initialized SignAccountOpController or Screen, we should still update the portfolio and run the simulation.
@@ -2107,7 +2105,7 @@ export class MainController extends EventEmitter {
   }
 
   // @TODO: protect this from race conditions/simultanous executions
-  async estimateSignAccountOp() {
+  async estimateSignAccountOp({ shouldTraceCall = false }: { shouldTraceCall?: boolean } = {}) {
     try {
       if (!this.signAccountOp) return
 
@@ -2353,6 +2351,7 @@ export class MainController extends EventEmitter {
       // this eliminates the infinite loading bug if the estimation comes slower
       if (this.signAccountOp && estimation) {
         this.signAccountOp.update({ estimation, rbfAccountOps })
+        if (shouldTraceCall) this.traceCall(estimation)
       }
     } catch (error: any) {
       this.signAccountOp?.calculateWarnings()
