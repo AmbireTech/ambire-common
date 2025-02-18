@@ -70,6 +70,7 @@ import {
   makeSmartAccountOpAction
 } from '../../libs/main/main'
 import { relayerAdditionalNetworks } from '../../libs/networks/networks'
+import { isPortfolioGasTankResult } from '../../libs/portfolio/helpers'
 import { GetOptions, TokenResult } from '../../libs/portfolio/interfaces'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { parse } from '../../libs/richJson/richJson'
@@ -126,6 +127,7 @@ import { ProvidersController } from '../providers/providers'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 /* eslint-disable no-underscore-dangle */
 import { SignAccountOpController, SigningStatus } from '../signAccountOp/signAccountOp'
+import { TraceCallDiscoveryStatus } from '../../interfaces/signAccountOp'
 import { SignMessageController } from '../signMessage/signMessage'
 import { SwapAndBridgeController, SwapAndBridgeFormStatus } from '../swapAndBridge/swapAndBridge'
 
@@ -231,6 +233,8 @@ export class MainController extends EventEmitter {
 
   #signAccountOpBroadcastPromise?: Promise<SubmittedAccountOp>
 
+  #traceCallTimeoutId: ReturnType<typeof setTimeout> | null = null
+
   constructor({
     storage,
     fetch,
@@ -334,9 +338,9 @@ export class MainController extends EventEmitter {
           (r) => r.action.kind !== 'calls'
         )
         userRequestsToRejectOnWindowClose.forEach((r) =>
-          r.dappPromise?.reject(ethErrors.provider.userRejectedRequest())
+          this.rejectUserRequest(ethErrors.provider.userRejectedRequest().message, r.id)
         )
-        this.userRequests = this.userRequests.filter((r) => r.action.kind === 'calls')
+
         this.userRequestWaitingAccountSwitch = []
         this.emitUpdate()
       }
@@ -637,7 +641,7 @@ export class MainController extends EventEmitter {
     this.emitUpdate()
 
     this.updateSignAccountOpGasPrice()
-    this.estimateSignAccountOp()
+    this.estimateSignAccountOp({ shouldTraceCall: true })
   }
 
   async handleSignAndBroadcastAccountOp() {
@@ -701,6 +705,30 @@ export class MainController extends EventEmitter {
     const network = this.networks.networks.find((net) => net.id === accountOp?.networkId)
     if (!network) return
 
+    // `traceCall` should not be invoked too frequently. However, if there is a pending timeout,
+    // it should be cleared to prevent the previous interval from changing the status
+    // to `SlowPendingResponse` for the newer `traceCall` invocation.
+    if (this.#traceCallTimeoutId) clearTimeout(this.#traceCallTimeoutId)
+
+    // Here, we also check the status because, in the case of re-estimation,
+    // `traceCallDiscoveryStatus` is already set, and we don’t want to reset it to "InProgress".
+    // This prevents the BalanceDecrease banner from flickering.
+    if (
+      this.signAccountOp &&
+      this.signAccountOp.traceCallDiscoveryStatus === TraceCallDiscoveryStatus.NotStarted
+    )
+      this.signAccountOp.traceCallDiscoveryStatus = TraceCallDiscoveryStatus.InProgress
+
+    // Flag the discovery logic as `SlowPendingResponse` if the call does not resolve within 2 seconds.
+    const timeoutId = setTimeout(() => {
+      if (this.signAccountOp) {
+        this.signAccountOp.traceCallDiscoveryStatus = TraceCallDiscoveryStatus.SlowPendingResponse
+        this.signAccountOp.calculateWarnings()
+      }
+    }, 2000)
+
+    this.#traceCallTimeoutId = timeoutId
+
     try {
       const account = this.accounts.accounts.find((acc) => acc.addr === accountOp.accountAddr)!
       const state = this.accounts.accountStates[accountOp.accountAddr][accountOp.networkId]
@@ -719,28 +747,30 @@ export class MainController extends EventEmitter {
       const learnedNewNfts = await this.portfolio.learnNfts(nfts, network.id)
       // update the portfolio only if new tokens were found through tracing
       if (learnedNewTokens || learnedNewNfts) {
-        this.portfolio
-          .updateSelectedAccount(
-            accountOp.accountAddr,
-            network,
-            getAccountOpsForSimulation(
-              account,
-              this.actions.visibleActionsQueue,
-              network,
-              accountOp
-            ),
-            { forceUpdate: true }
-          )
-          // fire an update request to refresh the warnings if any
-          .then(() => this.signAccountOp?.update({}))
+        await this.portfolio.updateSelectedAccount(
+          accountOp.accountAddr,
+          network,
+          getAccountOpsForSimulation(account, this.actions.visibleActionsQueue, network, accountOp),
+          { forceUpdate: true }
+        )
       }
+
+      if (this.signAccountOp)
+        this.signAccountOp.traceCallDiscoveryStatus = TraceCallDiscoveryStatus.Done
     } catch (e: any) {
+      if (this.signAccountOp)
+        this.signAccountOp.traceCallDiscoveryStatus = TraceCallDiscoveryStatus.Failed
+
       this.emitError({
         level: 'silent',
         message: 'Error in main.traceCall',
-        error: e
+        error: new Error(`Debug trace call error on ${network.id}: ${e.message}`)
       })
     }
+
+    this.signAccountOp?.calculateWarnings()
+    this.#traceCallTimeoutId = null
+    clearTimeout(timeoutId)
   }
 
   async handleSignMessage() {
@@ -1677,7 +1707,7 @@ export class MainController extends EventEmitter {
         if (this.signAccountOp) {
           if (this.signAccountOp.fromActionId === accountOpAction.id) {
             this.signAccountOp.update({ calls: accountOpAction.accountOp.calls })
-            this.estimateSignAccountOp()
+            await this.estimateSignAccountOp({ shouldTraceCall: true })
           }
         } else {
           // Even without an initialized SignAccountOpController or Screen, we should still update the portfolio and run the simulation.
@@ -1885,6 +1915,7 @@ export class MainController extends EventEmitter {
     this.portfolio.removeNetworkData(id)
     this.defiPositions.removeNetworkData(id)
     this.accountAdder.removeNetworkData(id)
+    this.activity.removeNetworkData(id)
   }
 
   async resolveAccountOpAction(data: any, actionId: AccountOpAction['id']) {
@@ -2082,7 +2113,7 @@ export class MainController extends EventEmitter {
   }
 
   // @TODO: protect this from race conditions/simultanous executions
-  async estimateSignAccountOp() {
+  async estimateSignAccountOp({ shouldTraceCall = false }: { shouldTraceCall?: boolean } = {}) {
     try {
       if (!this.signAccountOp) return
 
@@ -2140,9 +2171,13 @@ export class MainController extends EventEmitter {
         this.portfolio.getLatestPortfolioState(localAccountOp.accountAddr)?.[
           localAccountOp.networkId
         ]?.result?.feeTokens ?? []
-      const gasTankFeeTokens =
-        this.portfolio.getLatestPortfolioState(localAccountOp.accountAddr)?.gasTank?.result
-          ?.tokens ?? []
+
+      const gasTankResult = this.portfolio.getLatestPortfolioState(localAccountOp.accountAddr)
+        ?.gasTank?.result
+
+      const gasTankFeeTokens = isPortfolioGasTankResult(gasTankResult)
+        ? gasTankResult.gasTankTokens
+        : []
 
       const feeTokens =
         [...networkFeeTokens, ...gasTankFeeTokens].filter((t) => t.flags.isFeeToken) || []
@@ -2328,6 +2363,7 @@ export class MainController extends EventEmitter {
       // this eliminates the infinite loading bug if the estimation comes slower
       if (this.signAccountOp && estimation) {
         this.signAccountOp.update({ estimation, rbfAccountOps })
+        if (shouldTraceCall) this.traceCall(estimation)
       }
     } catch (error: any) {
       this.signAccountOp?.calculateWarnings()
