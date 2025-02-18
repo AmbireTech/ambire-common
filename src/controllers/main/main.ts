@@ -710,7 +710,13 @@ export class MainController extends EventEmitter {
     // to `SlowPendingResponse` for the newer `traceCall` invocation.
     if (this.#traceCallTimeoutId) clearTimeout(this.#traceCallTimeoutId)
 
-    if (this.signAccountOp)
+    // Here, we also check the status because, in the case of re-estimation,
+    // `traceCallDiscoveryStatus` is already set, and we don’t want to reset it to "InProgress".
+    // This prevents the BalanceDecrease banner from flickering.
+    if (
+      this.signAccountOp &&
+      this.signAccountOp.traceCallDiscoveryStatus === TraceCallDiscoveryStatus.NotStarted
+    )
       this.signAccountOp.traceCallDiscoveryStatus = TraceCallDiscoveryStatus.InProgress
 
     // Flag the discovery logic as `SlowPendingResponse` if the call does not resolve within 2 seconds.
