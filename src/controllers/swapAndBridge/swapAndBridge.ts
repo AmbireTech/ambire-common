@@ -1363,6 +1363,9 @@ export class SwapAndBridgeController extends EventEmitter {
       if (tx.userTxType === 'dex-swap') shouldUpdateActiveRouteStatus = true
     }
 
+    if (opStatus === AccountOpStatus.Failure || opStatus === AccountOpStatus.Rejected)
+      shouldUpdateActiveRouteStatus = true
+
     if (!shouldUpdateActiveRouteStatus) return
 
     if (opStatus === AccountOpStatus.Success) {
