@@ -39,6 +39,7 @@ import { fromDescriptor } from '../deployless/deployless'
 import { relayerAdditionalNetworks } from '../networks/networks'
 import { PackedUserOperation } from '../userOperation/types'
 import { getActivatorCall } from '../userOperation/userOperation'
+import { get7702SigV } from './utils'
 
 // EIP6492 signature ends in magicBytes, which ends with a 0x92,
 // which makes it is impossible for it to collide with a valid ecrecover signature if packed in the r,s,v format,
@@ -649,10 +650,6 @@ export function getAuthorizationHash(chainId: bigint, contractAddr: Hex, nonce: 
       ])
     ])
   ) as Hex
-}
-
-export function get7702SigV(signature: EIP7702Signature): Hex {
-  return signature.yParity === '0x00' ? (toBeHex(27) as Hex) : (toBeHex(28) as Hex)
 }
 
 export function getVerifyMessageSignature(

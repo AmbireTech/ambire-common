@@ -129,7 +129,8 @@ export async function bundlerEstimate(
     accountState,
     localOp,
     initialBundler.getName(),
-    op.meta?.entryPointAuthorization ? op.meta.entryPointAuthorization : undefined
+    op.meta?.entryPointAuthorization,
+    accountState.authorization
   )
   // set the callData
   if (userOp.activatorCall) localOp.activatorCall = userOp.activatorCall

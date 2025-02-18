@@ -1324,9 +1324,8 @@ export class SignAccountOpController extends EventEmitter {
           accountState,
           this.accountOp,
           this.bundlerSwitcher.getBundler().getName(),
-          this.accountOp.meta?.entryPointAuthorization
-            ? this.accountOp.meta.entryPointAuthorization
-            : undefined
+          this.accountOp.meta?.entryPointAuthorization,
+          accountState.authorization
         )
         userOperation.preVerificationGas = erc4337Estimation.preVerificationGas
         userOperation.callGasLimit = toBeHex(

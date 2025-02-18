@@ -2818,7 +2818,7 @@ export class MainController extends EventEmitter {
       try {
         userOperationHash = !accountState.authorization
           ? await bundler.broadcast(userOperation, network)
-          : await bundler.broadcast7702(userOperation, network, accountState.authorization)
+          : await bundler.broadcast7702(userOperation, network)
       } catch (e: any) {
         let retryMsg
 

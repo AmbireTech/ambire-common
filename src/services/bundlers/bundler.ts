@@ -71,11 +71,7 @@ export abstract class Bundler {
    * @param UserOperation userOperation
    * @returns userOperationHash
    */
-  public abstract broadcast7702(
-    userOperation: UserOperation,
-    network: Network,
-    authorizationMsg?: Message
-  ): Promise<string>
+  public abstract broadcast7702(userOperation: UserOperation, network: Network): Promise<string>
 
   /**
    * Get the bundler RPC

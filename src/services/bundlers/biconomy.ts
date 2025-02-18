@@ -97,11 +97,7 @@ export class Biconomy extends Bundler {
     throw new Error('not supported')
   }
 
-  async broadcast7702(
-    userOperation: UserOperation,
-    network: Network,
-    authorizationMsg?: Message
-  ): Promise<string> {
+  async broadcast7702(userOperation: UserOperation, network: Network): Promise<string> {
     throw new Error('not supported')
   }
 }

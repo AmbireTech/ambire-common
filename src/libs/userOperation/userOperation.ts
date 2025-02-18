@@ -1,5 +1,6 @@
 import { AbiCoder, concat, getAddress, hexlify, Interface, keccak256, Log, toBeHex } from 'ethers'
 import { Network } from '../../interfaces/network'
+import { get7702SigV } from '../signMessage/utils'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json'
@@ -14,6 +15,8 @@ import {
 import { SPOOF_SIGTYPE } from '../../consts/signatures'
 import { Account, AccountId, AccountOnchainState } from '../../interfaces/account'
 import { Hex } from '../../interfaces/hex'
+import { EIP7702Signature } from '../../interfaces/signatures'
+import { Authorization, Message } from '../../interfaces/userRequest'
 import { has7702 } from '../7702/7702'
 import { AccountOp, callToTuple } from '../accountOp/accountOp'
 import {
@@ -127,7 +130,8 @@ export function getUserOperation(
   accountState: AccountOnchainState,
   accountOp: AccountOp,
   bundler: BUNDLER,
-  entryPointSig?: string
+  entryPointSig?: string,
+  authorizationMsg?: Message
 ): UserOperation {
   const userOp: UserOperation = {
     sender: accountOp.accountAddr,
@@ -156,6 +160,18 @@ export function getUserOperation(
       [callToTuple(getActivatorCall(accountOp.accountAddr))],
       entryPointSig
     ])
+  }
+
+  if (authorizationMsg) {
+    userOp.eip7702auth = {
+      contractAddress: (authorizationMsg.content as Authorization).contractAddr,
+      chainId: toBeHex((authorizationMsg.content as Authorization).chainId) as Hex,
+      nonce: toBeHex((authorizationMsg.content as Authorization).nonce) as Hex,
+      r: (authorizationMsg.signature as EIP7702Signature).r,
+      s: (authorizationMsg.signature as EIP7702Signature).s,
+      v: get7702SigV(authorizationMsg.signature as EIP7702Signature),
+      yParity: (authorizationMsg.signature as EIP7702Signature).yParity
+    }
   }
 
   // if the request type is activator, add the activator call
