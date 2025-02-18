@@ -1,0 +1,1 @@
+{"version":3,"file":"formatters.d.ts","sourceRoot":"","sources":["../../../../src/utils/numbers/formatters.ts"],"names":[],"mappings":"AAEA;;GAEG;AACH,QAAA,MAAM,yBAAyB,eACjB,MAAM;sBAEA,MAAM;wBACJ,MAAM;CAwB3B,CAAA;AAED,QAAA,MAAM,sCAAsC,WAClC,MAAM,YACJ,MAAM,cACJ,MAAM,WASnB,CAAA;AAED,OAAO,EAAE,yBAAyB,EAAE,sCAAsC,EAAE,CAAA"}

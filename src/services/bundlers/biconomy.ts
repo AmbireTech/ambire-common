@@ -1,5 +1,5 @@
 /* eslint-disable no-console */
-import { Network } from 'interfaces/network'
+import { Network } from '../../interfaces/network'
 
 /* eslint-disable class-methods-use-this */
 import { BICONOMY, BUNDLER } from '../../consts/bundlers'
