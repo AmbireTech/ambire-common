@@ -3,11 +3,9 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.Deployless = exports.DeploylessMode = void 0;
-exports.fromDescriptor = fromDescriptor;
-exports.parseErr = parseErr;
-const assert_1 = __importDefault(require("assert"));
+exports.parseErr = exports.fromDescriptor = exports.Deployless = exports.DeploylessMode = void 0;
 const ethers_1 = require("ethers");
+const assert_1 = __importDefault(require("assert"));
 const Deployless_json_1 = __importDefault(require("../../../contracts/compiled/Deployless.json"));
 // this is a magic contract that is constructed like `constructor(bytes memory contractBytecode, bytes memory data)` and returns the result from the call
 // compiled from relayer:a7ea373559d8c419577ac05527bd37fbee8856ae/src/velcro-v3/contracts/Deployless.sol with solc 0.8.17
@@ -21,14 +19,8 @@ const codeOfContractAbi = ['function codeOf(bytes deployCode) external view'];
 const deployErrorSig = '0xb4f54111';
 // Signature of Error(string)
 const errorSig = '0x08c379a0';
-// LBRouter__InvalidTokenPath
-const invalidPath = '0x4feac00c';
 // Signature of Panic(uint256)
 const panicSig = '0x4e487b71';
-// uniswap swap expired
-const expiredSwap = '0x5bf6f916';
-// uniswap signature expired
-const expiredSig = '0xcd21db4f';
 // any made up addr would work
 const arbitraryAddr = '0x0000000000000000000000000000000000696969';
 const abiCoder = new ethers_1.AbiCoder();
@@ -41,22 +33,17 @@ var DeploylessMode;
 const defaultOptions = {
     mode: DeploylessMode.Detect,
     blockTag: 'latest',
-    from: undefined,
-    to: arbitraryAddr,
-    stateToOverride: null
+    from: undefined
 };
 class Deployless {
     get isLimitedAt24kbData() {
         return !this.stateOverrideSupported;
     }
     constructor(provider, abi, code, codeAtRuntime) {
-        this.isProviderInvictus = false;
         assert_1.default.ok(code.startsWith('0x'), 'contract code must start with 0x');
         assert_1.default.ok(!abi.includes((x) => x.type === 'constructor'), 'contract cannot have a constructor, as it is not supported in state override mode');
         this.contractBytecode = code;
         this.provider = provider;
-        // eslint-disable-next-line no-underscore-dangle
-        this.isProviderInvictus = provider._getConnection().url.includes('invictus');
         this.iface = new ethers_1.Interface(abi);
         if (codeAtRuntime !== undefined) {
             assert_1.default.ok(codeAtRuntime.startsWith('0x'), 'contract code (runtime) must start with 0x');
@@ -66,11 +53,7 @@ class Deployless {
     }
     // this will detect whether the provider supports state override and also retrieve the actual code of the contract we are using
     async detectStateOverride() {
-        const isJsonRpcProvider = this.provider &&
-            typeof this.provider.send === 'function' &&
-            // eslint-disable-next-line no-underscore-dangle
-            typeof this.provider._send === 'function';
-        if (!isJsonRpcProvider) {
+        if (!(this.provider instanceof ethers_1.JsonRpcProvider)) {
             throw new Error('state override mode (or auto-detect) not available unless you use JsonRpcProvider');
         }
         const codeOfIface = new ethers_1.Interface(codeOfContractAbi);
@@ -83,8 +66,7 @@ class Deployless {
             { [arbitraryAddr]: { code: codeOfContractCode } }
         ]));
         // any response bigger than 0x is sufficient to know that state override worked
-        // the response would be just "0x" if state override doesn't work
-        this.stateOverrideSupported = code.startsWith('0x') && code.length > 2;
+        this.stateOverrideSupported = code.length > 2;
         this.contractRuntimeCode = mapResponse(code);
     }
     async call(methodName, args, opts = {}) {
@@ -92,35 +74,26 @@ class Deployless {
         const forceProxy = opts.mode === DeploylessMode.ProxyContract;
         // First, start by detecting which modes are available, unless we're forcing the proxy mode
         // if we use state override, we do need detection to run still so it can populate contractRuntimeCode
-        if (this.stateOverrideSupported &&
-            !this.detectionPromise &&
-            !forceProxy &&
-            this.contractRuntimeCode === undefined) {
+        if (!this.detectionPromise && !forceProxy && this.contractRuntimeCode === undefined) {
             this.detectionPromise = this.detectStateOverride();
         }
         await this.detectionPromise;
-        if (opts.stateToOverride !== null && opts.mode !== DeploylessMode.StateOverride) {
-            throw new Error('state override passed but not requested');
-        }
         if (opts.mode === DeploylessMode.StateOverride && !this.stateOverrideSupported) {
-            throw new Error(`${methodName}: state override requested but not supported`);
+            // @TODO test this case
+            throw new Error('state override requested but not supported');
         }
         const callData = this.iface.encodeFunctionData(methodName, args);
-        const toAddr = opts.to ?? arbitraryAddr;
         const callPromise = !!this.stateOverrideSupported && !forceProxy
             ? this.provider.send('eth_call', [
                 {
-                    to: toAddr,
+                    to: arbitraryAddr,
                     data: callData,
                     from: opts.from,
                     gasPrice: opts?.gasPrice,
                     gas: opts?.gasLimit
                 },
                 opts.blockTag,
-                {
-                    [toAddr]: { code: this.contractRuntimeCode },
-                    ...(opts.stateToOverride || {})
-                }
+                { [arbitraryAddr]: { code: this.contractRuntimeCode } }
             ])
             : this.provider.call({
                 blockTag: opts.blockTag,
@@ -132,17 +105,7 @@ class Deployless {
                     abiCoder.encode(['bytes', 'bytes'], [this.contractBytecode, callData])
                 ]))
             });
-        // The ethers' providers retry failed calls every 1 second, making numerous attempts before finally resolving the promise.
-        // To prevent prolonged retries, we use Promise.race to set a 10-second timeout. This way, the callPromise will either resolve
-        // or the timeout promise will reject after 10 seconds, whichever occurs first.
-        const callPromisedWithResolveTimeout = Promise.race([
-            callPromise,
-            new Promise((_resolve, reject) => {
-                // Custom providers may take longer to respond, so we set a longer timeout for them.
-                setTimeout(() => reject(new Error('rpc-timeout')), this.isProviderInvictus ? 15000 : 20000);
-            })
-        ]);
-        const returnDataRaw = mapResponse(await mapError(callPromisedWithResolveTimeout));
+        const returnDataRaw = mapResponse(await mapError(callPromise));
         return this.iface.decodeFunctionResult(methodName, returnDataRaw);
     }
 }
@@ -150,6 +113,7 @@ exports.Deployless = Deployless;
 function fromDescriptor(provider, desc, supportStateOverride) {
     return new Deployless(provider, desc.abi, desc.bin, supportStateOverride ? desc.binRuntime : undefined);
 }
+exports.fromDescriptor = fromDescriptor;
 async function mapError(callPromise) {
     try {
         return await callPromise;
@@ -179,7 +143,7 @@ function parseErr(data) {
     const dataNoPrefix = data.slice(10);
     if (data.startsWith(panicSig)) {
         // https://docs.soliditylang.org/en/v0.8.11/control-structures.html#panic-via-assert-and-error-via-require
-        const num = parseInt(`0x${dataNoPrefix}`);
+        const num = parseInt('0x' + dataNoPrefix);
         if (num === 0x00)
             return 'generic compiler error';
         if (num === 0x01)
@@ -192,30 +156,21 @@ function parseErr(data) {
     }
     if (data.startsWith(errorSig)) {
         try {
-            return abiCoder.decode(['string'], `0x${dataNoPrefix}`)[0];
+            return abiCoder.decode(['string'], '0x' + dataNoPrefix)[0];
         }
         catch (e) {
             if (e.code === 'BUFFER_OVERRUN' || e.code === 'NUMERIC_FAULT')
                 return dataNoPrefix;
-            return e;
+            else
+                throw e;
         }
-    }
-    if (data.startsWith(invalidPath)) {
-        return 'Transaction cannot be sent due to invalid swap path provided by the app that initiated the request. Please return to the app interface and try again.';
-    }
-    // uniswap expired error
-    if (data === expiredSwap) {
-        return 'Transaction cannot be sent because the swap has expired. Please return to the app interface and try again.';
-    }
-    // uniswap signature expired error
-    if (data.startsWith(expiredSig)) {
-        return 'Transaction cannot be sent because the signature involved in this swap has expired. Please return to the app interface and try again.';
     }
     return null;
 }
+exports.parseErr = parseErr;
 function checkDataSize(data) {
     if ((0, ethers_1.getBytes)(data).length >= 24576)
-        throw new Error('Transaction cannot be sent because the 24kb call data size limit has been reached. Please use StateOverride mode instead.');
+        throw new Error('24kb call data size limit reached, use StateOverride mode');
     return data;
 }
 //# sourceMappingURL=deployless.js.map
