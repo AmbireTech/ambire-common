@@ -121,6 +121,7 @@ import EventEmitter, { ErrorRef, Statuses } from '../eventEmitter/eventEmitter'
 import { InviteController } from '../invite/invite'
 import { KeystoreController } from '../keystore/keystore'
 import { NetworksController } from '../networks/networks'
+import { PhishingController } from '../phishing/phishing'
 import { PortfolioController } from '../portfolio/portfolio'
 import { ProvidersController } from '../providers/providers'
 /* eslint-disable @typescript-eslint/no-floating-promises */
@@ -178,6 +179,8 @@ export class MainController extends EventEmitter {
   defiPositions: DefiPositionsController
 
   dapps: DappsController
+
+  phishing: PhishingController
 
   actions: ActionsController
 
@@ -324,6 +327,10 @@ export class MainController extends EventEmitter {
       this.accounts,
       this.#externalSignerControllers
     )
+    this.phishing = new PhishingController({
+      fetch: this.fetch,
+      windowManager: this.#windowManager
+    })
     const socketAPI = new SocketAPI({ apiKey: socketApiKey, fetch: this.fetch })
     this.dapps = new DappsController(this.#storage)
     this.actions = new ActionsController({
