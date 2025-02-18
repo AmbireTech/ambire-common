@@ -2,7 +2,7 @@ import { Account, AccountId } from '../../interfaces/account';
 import { Network, NetworkId } from '../../interfaces/network';
 import { RPCProvider } from '../../interfaces/provider';
 import { CustomToken, TokenPreference } from './customToken';
-import { AccountState, AdditionalPortfolioNetworkResult, PreviousHintsStorage, StrippedExternalHintsAPIResponse, TokenResult } from './interfaces';
+import { AccountState, AdditionalPortfolioNetworkResult, NetworkState, PortfolioGasTankResult, PreviousHintsStorage, StrippedExternalHintsAPIResponse, TokenResult } from './interfaces';
 export declare function overrideSymbol(address: string, networkId: string, symbol: string): string;
 export declare function getFlags(networkData: any, networkId: NetworkId, tokenNetwork: NetworkId, address: string): {
     onGasTank: boolean;
@@ -39,4 +39,6 @@ export declare const tokenFilter: (token: TokenResult, nativeToken: TokenResult,
  * and set the token.flags.isHidden flag.
  */
 export declare const processTokens: (tokenResults: TokenResult[], network: Network, hasNonZeroTokens: boolean, additionalHints: string[] | undefined, tokenPreferences: TokenPreference[], customTokens: CustomToken[]) => TokenResult[];
+export declare const isPortfolioGasTankResult: (result: NetworkState['result']) => result is PortfolioGasTankResult;
+export declare const isCurrentCashbackZero: (resBalance: any[]) => boolean;
 //# sourceMappingURL=helpers.d.ts.map

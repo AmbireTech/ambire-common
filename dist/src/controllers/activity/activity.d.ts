@@ -84,6 +84,7 @@ export declare class ActivityController extends EventEmitter {
     filterSignedMessages(sessionId: string, filters: Filters, pagination?: Pagination): Promise<void>;
     resetSignedMessagesFilters(sessionId: string): void;
     private syncSignedMessages;
+    removeNetworkData(id: Network['id']): void;
     addAccountOp(accountOp: SubmittedAccountOp): Promise<void>;
     /**
      * Update AccountsOps statuses (inner and public state, and storage)

@@ -49,8 +49,10 @@ export declare class SelectedAccountController extends EventEmitter {
     get areDefiPositionsLoading(): boolean;
     get balanceAffectingErrors(): SelectedAccountBalanceError[];
     get deprecatedSmartAccountBanner(): Banner[];
+    get firstCashbackBanner(): Banner[];
     setDashboardNetworkFilter(networkFilter: NetworkId | null): void;
     toJSON(): this & {
+        firstCashbackBanner: Banner[];
         deprecatedSmartAccountBanner: Banner[];
         areDefiPositionsLoading: boolean;
         balanceAffectingErrors: SelectedAccountBalanceError[];

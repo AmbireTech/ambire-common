@@ -2,7 +2,7 @@ import { BUNDLER } from '../../consts/bundlers';
 import { Account } from '../../interfaces/account';
 import { ExternalSignerControllers, Key } from '../../interfaces/keystore';
 import { Network } from '../../interfaces/network';
-import { Warning } from '../../interfaces/signAccountOp';
+import { Warning, TraceCallDiscoveryStatus } from '../../interfaces/signAccountOp';
 import { AccountOp } from '../../libs/accountOp/accountOp';
 import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp';
 import { Sponsor } from '../../libs/erc7677/types';
@@ -75,6 +75,7 @@ export declare class SignAccountOpController extends EventEmitter {
     isSponsored: boolean;
     sponsor: Sponsor | undefined;
     bundlerSwitcher: BundlerSwitcher;
+    traceCallDiscoveryStatus: TraceCallDiscoveryStatus;
     constructor(accounts: AccountsController, keystore: KeystoreController, portfolio: PortfolioController, externalSignerControllers: ExternalSignerControllers, account: Account, network: Network, fromActionId: AccountOpAction['id'], accountOp: AccountOp, reEstimate: Function, isSignRequestStillActive: Function);
     get isInitialized(): boolean;
     hasSpeeds(identifier: string): number | false;

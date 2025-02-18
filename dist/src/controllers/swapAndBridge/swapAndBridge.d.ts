@@ -10,6 +10,12 @@ import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter';
 import { InviteController } from '../invite/invite';
 import { NetworksController } from '../networks/networks';
 import { SelectedAccountController } from '../selectedAccount/selectedAccount';
+type SwapAndBridgeErrorType = {
+    id: 'to-token-list-fetch-failed';
+    title: string;
+    text?: string;
+    level: 'error' | 'warning';
+};
 export declare enum SwapAndBridgeFormStatus {
     Empty = "empty",
     Invalid = "invalid",
@@ -52,6 +58,7 @@ export declare class SwapAndBridgeController extends EventEmitter {
     };
     portfolioTokenList: TokenResult[];
     isTokenListLoading: boolean;
+    errors: SwapAndBridgeErrorType[];
     routePriority: 'output' | 'time';
     constructor({ selectedAccount, networks, activity, socketAPI, storage, actions, invite }: {
         selectedAccount: SelectedAccountController;
@@ -79,6 +86,8 @@ export declare class SwapAndBridgeController extends EventEmitter {
     get isHealthy(): boolean | null;
     get supportedChainIds(): Network['chainId'][];
     unloadScreen(sessionId: string): void;
+    addOrUpdateError(error: SwapAndBridgeErrorType): void;
+    removeError(id: SwapAndBridgeErrorType['id'], shouldEmit?: boolean): void;
     updateForm(props: {
         fromAmount?: string;
         fromAmountInFiat?: string;

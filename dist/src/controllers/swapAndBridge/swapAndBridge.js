@@ -86,6 +86,7 @@ class SwapAndBridgeController extends eventEmitter_1.default {
     quoteRoutesStatuses = {};
     portfolioTokenList = [];
     isTokenListLoading = false;
+    errors = [];
     /**
      * Needed to efficiently manage and cache token lists for different chain
      * combinations (fromChainId and toChainId) without having to fetch them
@@ -302,9 +303,25 @@ class SwapAndBridgeController extends eventEmitter_1.default {
             this.#socketAPI.resetHealth();
         }
     }
+    addOrUpdateError(error) {
+        const errorIndex = this.errors.findIndex((e) => e.id === error.id);
+        if (errorIndex === -1) {
+            this.errors.push(error);
+        }
+        else {
+            this.errors[errorIndex] = error;
+        }
+        this.#emitUpdateIfNeeded();
+    }
+    removeError(id, shouldEmit) {
+        this.errors = this.errors.filter((e) => e.id !== id);
+        if (shouldEmit)
+            this.#emitUpdateIfNeeded();
+    }
     updateForm(props) {
         const { fromAmount, fromAmountInFiat, fromAmountFieldMode, fromSelectedToken, toChainId, toSelectedToken, routePriority } = props;
         if (fromAmount !== undefined) {
+            const fromAmountFormatted = fromAmount.indexOf('.') === 0 ? `0${fromAmount}` : fromAmount;
             this.fromAmount = fromAmount;
             (() => {
                 if (fromAmount === '') {
@@ -323,7 +340,7 @@ class SwapAndBridgeController extends eventEmitter_1.default {
                     const amountInFiatDecimals = fromAmount.split('.')[1]?.length || 0;
                     const { tokenPriceBigInt, tokenPriceDecimals } = (0, formatters_1.convertTokenPriceToBigInt)(tokenPrice);
                     // Convert the numbers to big int
-                    const amountInFiatBigInt = (0, ethers_1.parseUnits)(fromAmount, amountInFiatDecimals);
+                    const amountInFiatBigInt = (0, ethers_1.parseUnits)(fromAmountFormatted, amountInFiatDecimals);
                     this.fromAmount = (0, ethers_1.formatUnits)((amountInFiatBigInt * CONVERSION_PRECISION_POW) / tokenPriceBigInt, 
                     // Shift the decimal point by the number of decimals in the token price
                     amountInFiatDecimals + CONVERSION_PRECISION - tokenPriceDecimals);
@@ -333,7 +350,7 @@ class SwapAndBridgeController extends eventEmitter_1.default {
                     this.fromAmount = fromAmount;
                     if (!this.fromSelectedToken)
                         return;
-                    const sanitizedFieldValue = (0, amount_1.getSanitizedAmount)(fromAmount, this.fromSelectedToken.decimals);
+                    const sanitizedFieldValue = (0, amount_1.getSanitizedAmount)(fromAmountFormatted, this.fromSelectedToken.decimals);
                     // Convert the field value to big int
                     const formattedAmount = (0, ethers_1.parseUnits)(sanitizedFieldValue, this.fromSelectedToken.decimals);
                     if (!formattedAmount)
@@ -357,10 +374,14 @@ class SwapAndBridgeController extends eventEmitter_1.default {
                 const network = this.#networks.networks.find((n) => n.id === fromSelectedToken.networkId);
                 if (network) {
                     this.fromChainId = Number(network.chainId);
-                    // defaults to swap after network change (should keep fromChainId and toChainId in sync after fromChainId update)
-                    this.toChainId = Number(network.chainId);
-                    // eslint-disable-next-line @typescript-eslint/no-floating-promises
-                    this.updateToTokenList(true);
+                    // Don't update the selected token programmatically if the user
+                    // has selected it manually
+                    if (!this.toSelectedToken) {
+                        // defaults to swap after network change (should keep fromChainId and toChainId in sync after fromChainId update)
+                        this.toChainId = Number(network.chainId);
+                        // eslint-disable-next-line @typescript-eslint/no-floating-promises
+                        this.updateToTokenList(true);
+                    }
                 }
             }
             const shouldResetFromTokenAmount = isFromNetworkChanged || this.fromSelectedToken?.address !== fromSelectedToken.address;
@@ -404,6 +425,7 @@ class SwapAndBridgeController extends eventEmitter_1.default {
         this.quoteRoutesStatuses = {};
         this.portfolioTokenList = [];
         this.#toTokenList = [];
+        this.errors = [];
         if (shouldEmit)
             this.#emitUpdateIfNeeded();
     }
@@ -448,6 +470,7 @@ class SwapAndBridgeController extends eventEmitter_1.default {
         }
         this.updateToTokenListStatus = 'LOADING';
         this.#updateToTokenListThrottle.time = now;
+        this.removeError('to-token-list-fetch-failed', false);
         if (!this.fromChainId || !this.toChainId)
             return;
         if (shouldReset) {
@@ -455,46 +478,57 @@ class SwapAndBridgeController extends eventEmitter_1.default {
             this.toSelectedToken = null;
             this.#emitUpdateIfNeeded();
         }
-        try {
-            const toTokenListInCache = this.#toTokenListKey && this.#cachedToTokenLists[this.#toTokenListKey];
-            let upToDateToTokenList = toTokenListInCache?.data || [];
-            const shouldFetchTokenList = !upToDateToTokenList.length ||
-                now - (toTokenListInCache?.lastFetched || 0) >= TO_TOKEN_LIST_CACHE_THRESHOLD;
-            if (shouldFetchTokenList) {
-                upToDateToTokenList = await this.#socketAPI.getToTokenList({
+        const toTokenListInCache = this.#toTokenListKey && this.#cachedToTokenLists[this.#toTokenListKey];
+        let toTokenList = toTokenListInCache?.data || [];
+        const shouldFetchTokenList = !toTokenList.length ||
+            now - (toTokenListInCache?.lastFetched || 0) >= TO_TOKEN_LIST_CACHE_THRESHOLD;
+        if (shouldFetchTokenList) {
+            try {
+                toTokenList = await this.#socketAPI.getToTokenList({
                     fromChainId: this.fromChainId,
                     toChainId: this.toChainId
                 });
-                if (this.#toTokenListKey)
+                // Cache the latest token list
+                if (this.#toTokenListKey) {
                     this.#cachedToTokenLists[this.#toTokenListKey] = {
                         lastFetched: now,
-                        data: upToDateToTokenList
+                        data: toTokenList
                     };
+                }
             }
-            const toTokenNetwork = this.#networks.networks.find((n) => Number(n.chainId) === this.toChainId);
-            // should never happen
-            if (!toTokenNetwork)
-                throw new SwapAndBridgeError_1.default(NETWORK_MISMATCH_MESSAGE);
-            const additionalTokensFromPortfolio = this.portfolioTokenList
-                .filter((t) => t.networkId === toTokenNetwork.id)
-                .filter((token) => !upToDateToTokenList.some((t) => t.address === token.address))
-                .map((t) => (0, swapAndBridge_1.convertPortfolioTokenToSocketAPIToken)(t, Number(toTokenNetwork.chainId)));
-            this.#toTokenList = (0, swapAndBridge_1.sortTokenListResponse)([...upToDateToTokenList, ...additionalTokensFromPortfolio], this.portfolioTokenList.filter((t) => t.networkId === toTokenNetwork.id));
-            if (!this.toSelectedToken) {
-                if (addressToSelect) {
-                    const token = this.#toTokenList.find((t) => t.address === addressToSelect);
-                    if (token) {
-                        this.updateForm({ toSelectedToken: token });
-                        this.updateToTokenListStatus = 'INITIAL';
-                        this.#emitUpdateIfNeeded();
-                        return;
-                    }
+            catch (error) {
+                // Display an error only if there is no cached data
+                if (!toTokenList.length) {
+                    toTokenList = api_1.SocketAPI.addCustomTokens({ chainId: this.toChainId, tokens: toTokenList });
+                    const { message } = (0, swapAndBridgeErrorHumanizer_1.getHumanReadableSwapAndBridgeError)(error);
+                    this.addOrUpdateError({
+                        id: 'to-token-list-fetch-failed',
+                        title: 'Token list on the receiving network is temporarily unavailable.',
+                        text: message,
+                        level: 'error'
+                    });
                 }
             }
         }
-        catch (error) {
-            const { message } = (0, swapAndBridgeErrorHumanizer_1.getHumanReadableSwapAndBridgeError)(error);
-            this.emitError({ error, level: 'major', message });
+        const toTokenNetwork = this.#networks.networks.find((n) => Number(n.chainId) === this.toChainId);
+        // should never happen
+        if (!toTokenNetwork)
+            throw new SwapAndBridgeError_1.default(NETWORK_MISMATCH_MESSAGE);
+        const additionalTokensFromPortfolio = this.portfolioTokenList
+            .filter((t) => t.networkId === toTokenNetwork.id)
+            .filter((token) => !toTokenList.some((t) => t.address === token.address))
+            .map((t) => (0, swapAndBridge_1.convertPortfolioTokenToSocketAPIToken)(t, Number(toTokenNetwork.chainId)));
+        this.#toTokenList = (0, swapAndBridge_1.sortTokenListResponse)([...toTokenList, ...additionalTokensFromPortfolio], this.portfolioTokenList.filter((t) => t.networkId === toTokenNetwork.id));
+        if (!this.toSelectedToken) {
+            if (addressToSelect) {
+                const token = this.#toTokenList.find((t) => t.address === addressToSelect);
+                if (token) {
+                    this.updateForm({ toSelectedToken: token });
+                    this.updateToTokenListStatus = 'INITIAL';
+                    this.#emitUpdateIfNeeded();
+                    return;
+                }
+            }
         }
         this.updateToTokenListStatus = 'INITIAL';
         this.#emitUpdateIfNeeded();

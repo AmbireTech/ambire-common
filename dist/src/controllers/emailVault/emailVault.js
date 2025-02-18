@@ -165,10 +165,16 @@ class EmailVaultController extends eventEmitter_1.default {
             this.#requestSessionKey(email);
         }
         else {
+            const originalErrorMessage = ev?.error?.message || '';
+            let message = `Unexpected error getting email vault for ${email}`;
+            if (originalErrorMessage.includes('timeout')) {
+                message = `Your activation key expired for ${email}. You can request a new key by resubmitting the form.`;
+                this.cancelEmailConfirmation();
+            }
             this.emitError({
-                message: `Unexpected error getting email vault for ${email}`,
+                message,
                 level: 'major',
-                error: new Error(`Unexpected error getting email vault for ${email}`)
+                error: new Error(`Error in emailVault.handleMagicLinkKey: ${ev?.error}`)
             });
         }
         this.emitUpdate();

@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.processTokens = exports.tokenFilter = exports.getTokensReadyToLearn = exports.getUpdatedHints = exports.stripExternalHintsAPIResponse = exports.getPinnedGasTankTokens = exports.getAccountPortfolioTotal = exports.addHiddenTokenValueToTotal = exports.getTotal = exports.getTokenBalanceInUSD = exports.getTokenAmount = exports.shouldGetAdditionalPortfolio = exports.validateERC20Token = exports.getFlags = exports.overrideSymbol = void 0;
+exports.isCurrentCashbackZero = exports.isPortfolioGasTankResult = exports.processTokens = exports.tokenFilter = exports.getTokensReadyToLearn = exports.getUpdatedHints = exports.stripExternalHintsAPIResponse = exports.getPinnedGasTankTokens = exports.getAccountPortfolioTotal = exports.addHiddenTokenValueToTotal = exports.getTotal = exports.getTokenBalanceInUSD = exports.getTokenAmount = exports.shouldGetAdditionalPortfolio = exports.validateERC20Token = exports.getFlags = exports.overrideSymbol = void 0;
 const tslib_1 = require("tslib");
 const ethers_1 = require("ethers");
 const IERC20_json_1 = tslib_1.__importDefault(require("../../../contracts/compiled/IERC20.json"));
@@ -325,4 +325,20 @@ const processTokens = (tokenResults, network, hasNonZeroTokens, additionalHints,
     }, []);
 };
 exports.processTokens = processTokens;
+const isPortfolioGasTankResult = (result) => {
+    return !!result && 'gasTankTokens' in result && Array.isArray(result.gasTankTokens);
+};
+exports.isPortfolioGasTankResult = isPortfolioGasTankResult;
+const isCurrentCashbackZero = (resBalance) => {
+    const currentCashback = resBalance?.[0]?.cashback;
+    if (currentCashback === undefined)
+        return false;
+    try {
+        return BigInt(currentCashback) === 0n;
+    }
+    catch {
+        return false;
+    }
+};
+exports.isCurrentCashbackZero = isCurrentCashbackZero;
 //# sourceMappingURL=helpers.js.map

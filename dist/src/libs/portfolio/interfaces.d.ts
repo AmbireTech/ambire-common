@@ -32,6 +32,12 @@ export type TokenResult = {
         isCustom?: boolean;
     };
 };
+export type GasTankTokenResult = TokenResult & {
+    availableAmount: bigint;
+    cashback: bigint;
+    saved: bigint;
+    hasUnseenFirstCashback: boolean;
+};
 export interface CollectionResult extends TokenResult {
     name: string;
     collectibles: bigint[];
@@ -124,12 +130,15 @@ export type AdditionalPortfolioNetworkResult = Partial<PortfolioLibGetResult> & 
     addrVestingData?: AddrVestingData;
 };
 type PortfolioNetworkResult = Required<AdditionalPortfolioNetworkResult>;
+export type PortfolioGasTankResult = AdditionalPortfolioNetworkResult & {
+    gasTankTokens: GasTankTokenResult[];
+};
 export type NetworkState = {
     isReady: boolean;
     isLoading: boolean;
     criticalError?: ExtendedError;
     errors: ExtendedErrorWithLevel[];
-    result?: PortfolioNetworkResult | AdditionalPortfolioNetworkResult;
+    result?: PortfolioNetworkResult | AdditionalPortfolioNetworkResult | PortfolioGasTankResult;
     accountOps?: AccountOp[];
 };
 export type AccountState = {
@@ -209,6 +218,14 @@ export type FormattedPendingAmounts = Omit<PendingAmounts, 'pendingBalance'> & {
     pendingBalanceUSDFormatted?: string;
     pendingToBeSignedFormatted?: string;
     pendingToBeConfirmedFormatted?: string;
+};
+export type CashbackStatus = {
+    firstCashbackReceivedAt: number | null;
+    firstCashbackSeenAt: number | null;
+    cashbackWasZeroAt: number | null;
+};
+export type CashbackStatusByAccount = {
+    [key: AccountId]: CashbackStatus;
 };
 export {};
 //# sourceMappingURL=interfaces.d.ts.map

@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.getFeeTokenPriceUnavailableWarning = exports.getSignificantBalanceDecreaseWarning = exports.getTokenUsdAmount = exports.getFeeSpeedIdentifier = void 0;
 const ethers_1 = require("ethers");
 const errorHandling_1 = require("../../consts/signAccountOp/errorHandling");
+const signAccountOp_1 = require("../../interfaces/signAccountOp");
 const helpers_1 = require("../../libs/portfolio/helpers");
 function getFeeSpeedIdentifier(option, accountAddr, rbfAccountOp) {
     // if the token is native and we're paying with EOA, we do not need
@@ -22,7 +23,7 @@ function getTokenUsdAmount(token, gasAmount) {
     return (0, ethers_1.formatUnits)(BigInt(gasAmount) * usdPriceFormatted, 18 + token.decimals);
 }
 exports.getTokenUsdAmount = getTokenUsdAmount;
-function getSignificantBalanceDecreaseWarning(latest, pending, networkId) {
+function getSignificantBalanceDecreaseWarning(latest, pending, networkId, traceCallDiscoveryStatus) {
     const latestNetworkData = latest?.[networkId];
     const pendingNetworkData = pending?.[networkId];
     const canDetermineIfBalanceWillDecrease = latestNetworkData &&
@@ -36,7 +37,19 @@ function getSignificantBalanceDecreaseWarning(latest, pending, networkId) {
         const willBalanceDecreaseByMoreThan10Percent = latestOnNetwork - pendingOnNetwork > latestTotal * 0.1;
         if (!willBalanceDecreaseByMoreThan10Percent)
             return null;
-        return errorHandling_1.WARNINGS.significantBalanceDecrease;
+        // We wait for the discovery process (main.traceCall) to complete before showing WARNINGS.significantBalanceDecrease.
+        // This is important because, in the case of a SWAP to a new token, the new token is not yet part of the portfolio,
+        // which could incorrectly trigger a significant balance drop warning.
+        // To prevent this, we ensure the discovery process is completed first.
+        if (traceCallDiscoveryStatus === signAccountOp_1.TraceCallDiscoveryStatus.Done) {
+            return errorHandling_1.WARNINGS.significantBalanceDecrease;
+        }
+        // If the discovery process takes too long (more than 2 seconds) or fails,
+        // we still show a warning, but we indicate that our balance decrease assumption may be incorrect.
+        if (traceCallDiscoveryStatus === signAccountOp_1.TraceCallDiscoveryStatus.Failed ||
+            traceCallDiscoveryStatus === signAccountOp_1.TraceCallDiscoveryStatus.SlowPendingResponse) {
+            return errorHandling_1.WARNINGS.possibleBalanceDecrease;
+        }
     }
     return null;
 }

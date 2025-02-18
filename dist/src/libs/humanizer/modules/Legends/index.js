@@ -79,6 +79,9 @@ const legendsModule = (accOp, calls) => {
         [iface.getFunction('invite')?.selector]: (call) => {
             const [invitee] = iface.parseTransaction(call).args;
             return [(0, utils_1.getAction)('Invite'), (0, utils_1.getAddressVisualization)(invitee), (0, utils_1.getLabel)('to Ambire Legends')];
+        },
+        [iface.getFunction('claimXpFromFeedback')?.selector]: () => {
+            return [(0, utils_1.getAction)('Claim XP'), (0, utils_1.getLabel)('from'), (0, utils_1.getLabel)('feedback form', true)];
         }
     };
     const newCalls = calls.map((call) => {

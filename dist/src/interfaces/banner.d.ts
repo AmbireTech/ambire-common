@@ -81,6 +81,9 @@ export type Action = {
     label: 'Check';
     actionName: 'confirm-temp-seed';
 } | {
+    label: 'Open';
+    actionName: 'open-first-cashback-modal';
+} | {
     label: 'Reload';
     actionName: 'update-extension-version';
 } | {

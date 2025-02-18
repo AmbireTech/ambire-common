@@ -5,6 +5,7 @@ const tslib_1 = require("tslib");
 const ethers_1 = require("ethers");
 const deploy_1 = require("../../consts/deploy");
 const account_1 = require("../../libs/account/account");
+const banners_1 = require("../../libs/banners/banners");
 const helpers_1 = require("../../libs/defiPositions/helpers");
 // eslint-disable-next-line import/no-cycle
 const errors_1 = require("../../libs/selectedAccount/errors");
@@ -283,6 +284,14 @@ class SelectedAccountController extends eventEmitter_1.default {
             }
         ];
     }
+    get firstCashbackBanner() {
+        if (!this.account || !(0, account_1.isSmartAccount)(this.account) || !this.#portfolio)
+            return [];
+        return (0, banners_1.getFirstCashbackBanners)({
+            selectedAccountAddr: this.account.addr,
+            cashbackStatusByAccount: this.#portfolio.cashbackStatusByAccount
+        });
+    }
     setDashboardNetworkFilter(networkFilter) {
         this.dashboardNetworkFilter = networkFilter;
         this.emitUpdate();
@@ -291,6 +300,7 @@ class SelectedAccountController extends eventEmitter_1.default {
         return {
             ...this,
             ...super.toJSON(),
+            firstCashbackBanner: this.firstCashbackBanner,
             deprecatedSmartAccountBanner: this.deprecatedSmartAccountBanner,
             areDefiPositionsLoading: this.areDefiPositionsLoading,
             balanceAffectingErrors: this.balanceAffectingErrors

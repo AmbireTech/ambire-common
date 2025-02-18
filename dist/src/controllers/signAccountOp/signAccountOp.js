@@ -7,9 +7,11 @@ const AmbireAccount_json_1 = tslib_1.__importDefault(require("../../../contracts
 const IERC20_json_1 = tslib_1.__importDefault(require("../../../contracts/compiled/IERC20.json"));
 const addresses_1 = require("../../consts/addresses");
 const deploy_1 = require("../../consts/deploy");
+const gasTankFeeTokens_1 = tslib_1.__importDefault(require("../../consts/gasTankFeeTokens"));
 /* eslint-disable no-restricted-syntax */
 const errorHandling_1 = require("../../consts/signAccountOp/errorHandling");
 const gas_1 = require("../../consts/signAccountOp/gas");
+const signAccountOp_1 = require("../../interfaces/signAccountOp");
 const account_1 = require("../../libs/account/account");
 const accountOp_1 = require("../../libs/accountOp/accountOp");
 const errorHumanizer_1 = require("../../libs/errorHumanizer");
@@ -81,6 +83,14 @@ class SignAccountOpController extends eventEmitter_1.default {
     // the sponsor data to be displayed, if any
     sponsor = undefined;
     bundlerSwitcher;
+    // We track the status of token discovery logic (main.traceCall)
+    // to ensure the "SignificantBalanceDecrease" banner is displayed correctly.
+    // The latest/pending portfolio balance is essential for calculating balance differences.
+    // However, during a SWAP, the user may receive a new token that isn't yet included (discovered) in the portfolio.
+    // If the discovery process is in-process, and we only rely on portfolio balance change,
+    // the banner may be incorrectly triggered due to the perceived balance drop.
+    // Once discovery completes and updates the portfolio, the banner will be hidden.
+    traceCallDiscoveryStatus = signAccountOp_1.TraceCallDiscoveryStatus.NotStarted;
     constructor(accounts, keystore, portfolio, externalSignerControllers, account, network, fromActionId, accountOp, reEstimate, isSignRequestStillActive) {
         super();
         this.#accounts = accounts;
@@ -203,9 +213,37 @@ class SignAccountOpController extends eventEmitter_1.default {
                 });
             }
             if (speedCoverage.length === 0) {
-                errors.push((0, account_1.isSmartAccount)(this.account)
-                    ? "Signing is not possible with the selected account's token as it doesn't have sufficient funds to cover the gas payment fee."
-                    : errorHandling_1.ERRORS.eoaInsufficientFunds);
+                const isSA = (0, account_1.isSmartAccount)(this.account);
+                const isUnableToCoverWithAllOtherTokens = this.availableFeeOptions.every((option) => {
+                    if (option === this.selectedOption)
+                        return true;
+                    const optionIdentifier = (0, helper_1.getFeeSpeedIdentifier)(option, this.accountOp.accountAddr, this.rbfAccountOps[option.paidBy]);
+                    const speedsThatCanCover = this.feeSpeeds[optionIdentifier]?.filter((speed) => speed.amount <= option.availableAmount);
+                    return !speedsThatCanCover?.length;
+                });
+                if (isUnableToCoverWithAllOtherTokens) {
+                    let skippedTokensCount = 0;
+                    const gasTokenNames = gasTankFeeTokens_1.default
+                        .filter(({ networkId, hiddenOnError }) => {
+                        if (networkId !== this.accountOp.networkId)
+                            return false;
+                        if (hiddenOnError) {
+                            skippedTokensCount++;
+                            return false;
+                        }
+                        return true;
+                    })
+                        .map(({ symbol }) => symbol.toUpperCase())
+                        .join(', ');
+                    errors.push(`${errorHandling_1.ERRORS.eoaInsufficientFunds}${isSA
+                        ? ` Available fee options: USDC in Gas Tank, ${gasTokenNames}${skippedTokensCount ? ' and others' : ''}`
+                        : ''}`);
+                }
+                else {
+                    errors.push(isSA
+                        ? "Signing is not possible with the selected account's token as it doesn't have sufficient funds to cover the gas payment fee."
+                        : errorHandling_1.ERRORS.eoaInsufficientFunds);
+                }
             }
             else {
                 errors.push('The selected speed is not available due to insufficient funds. Please select a slower speed.');
@@ -250,7 +288,7 @@ class SignAccountOpController extends eventEmitter_1.default {
         const warnings = [];
         const latestState = this.#portfolio.getLatestPortfolioState(this.accountOp.accountAddr);
         const pendingState = this.#portfolio.getPendingPortfolioState(this.accountOp.accountAddr);
-        const significantBalanceDecreaseWarning = (0, helper_1.getSignificantBalanceDecreaseWarning)(latestState, pendingState, this.accountOp.networkId);
+        const significantBalanceDecreaseWarning = (0, helper_1.getSignificantBalanceDecreaseWarning)(latestState, pendingState, this.accountOp.networkId, this.traceCallDiscoveryStatus);
         if (this.selectedOption) {
             const identifier = (0, helper_1.getFeeSpeedIdentifier)(this.selectedOption, this.accountOp.accountAddr, this.rbfAccountOps[this.selectedOption.paidBy]);
             const feeTokenHasPrice = this.feeSpeeds[identifier]?.every((speed) => !!speed.amountUsd);

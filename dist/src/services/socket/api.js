@@ -119,6 +119,18 @@ class SocketAPI {
         });
         return response;
     }
+    /**
+     * Since v4.41.0 we request the shortlist from Socket, which does not include
+     * the Ambire $WALLET token. So adding it manually on the supported chains.
+     */
+    static addCustomTokens({ chainId, tokens }) {
+        const newTokens = [...tokens];
+        if (chainId === 1)
+            newTokens.unshift(constants_1.AMBIRE_WALLET_TOKEN_ON_ETHEREUM);
+        if (chainId === 8453)
+            newTokens.unshift(constants_1.AMBIRE_WALLET_TOKEN_ON_BASE);
+        return newTokens;
+    }
     async getToTokenList({ fromChainId, toChainId }) {
         const params = new URLSearchParams({
             fromChainId: fromChainId.toString(),
@@ -141,12 +153,7 @@ class SocketAPI {
         // Strip out the one with the `ZERO_ADDRESS` to be consistent with the rest.
         if (toChainId === 1)
             response = response.filter((token) => token.address !== constants_1.ZERO_ADDRESS);
-        // Since v4.41.0 we request the shortlist from Socket, which does not include
-        // the Ambire $WALLET token. So adding it manually on the supported chains.
-        if (toChainId === 1)
-            response.unshift(constants_1.AMBIRE_WALLET_TOKEN_ON_ETHEREUM);
-        if (toChainId === 8453)
-            response.unshift(constants_1.AMBIRE_WALLET_TOKEN_ON_BASE);
+        response = SocketAPI.addCustomTokens({ chainId: toChainId, tokens: response });
         return response.map(exports.normalizeIncomingSocketToken);
     }
     async getToken({ address, chainId }) {

@@ -22,6 +22,14 @@ export declare class SocketAPI {
     updateHealthIfNeeded(): Promise<void>;
     resetHealth(): void;
     getSupportedChains(): Promise<SocketAPISupportedChain[]>;
+    /**
+     * Since v4.41.0 we request the shortlist from Socket, which does not include
+     * the Ambire $WALLET token. So adding it manually on the supported chains.
+     */
+    static addCustomTokens({ chainId, tokens }: {
+        chainId: number;
+        tokens: SocketAPIToken[];
+    }): SocketAPIToken[];
     getToTokenList({ fromChainId, toChainId }: {
         fromChainId: number;
         toChainId: number;

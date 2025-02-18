@@ -160,7 +160,9 @@ export declare class MainController extends EventEmitter {
     resolveAccountOpAction(data: any, actionId: AccountOpAction['id']): Promise<void>;
     rejectAccountOpAction(err: string, actionId: AccountOpAction['id'], shouldOpenNextAction: boolean): void;
     updateSignAccountOpGasPrice(): Promise<void>;
-    estimateSignAccountOp(): Promise<void>;
+    estimateSignAccountOp({ shouldTraceCall }?: {
+        shouldTraceCall?: boolean;
+    }): Promise<void>;
     get banners(): Banner[];
     protected throwBroadcastAccountOp({ message: humanReadableMessage, error: _err, accountState, isRelayer, provider, network }: {
         message?: string;

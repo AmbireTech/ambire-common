@@ -155,6 +155,15 @@ class ActivityController extends eventEmitter_1.default {
         });
         await Promise.all(promises);
     }
+    removeNetworkData(id) {
+        Object.keys(this.accountsOps).forEach(async (sessionId) => {
+            const state = this.accountsOps[sessionId];
+            const isFilteredByRemovedNetwork = state.filters.network === id;
+            if (isFilteredByRemovedNetwork) {
+                await this.filterAccountsOps(sessionId, { account: state.filters.account }, state.pagination);
+            }
+        });
+    }
     async addAccountOp(accountOp) {
         await this.#initialLoadPromise;
         const { accountAddr, networkId } = accountOp;

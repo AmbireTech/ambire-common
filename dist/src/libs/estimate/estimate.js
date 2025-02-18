@@ -253,7 +253,10 @@ async function estimate(provider, network, account, op, accountStates, nativeToC
     if (opts?.calculateRefund)
         gasUsed = await (0, refund_1.refund)(account, op, provider, gasUsed);
     const feeTokenOptions = filteredFeeTokens.map((token, key) => {
-        const availableAmount = token.flags.onGasTank ? token.amount : feeTokenOutcomes[key].amount;
+        // We are using 'availableAmount' here, because it's possible the 'amount' to contains pending top up amount as well
+        const availableAmount = token.flags.onGasTank && 'availableAmount' in token
+            ? token.availableAmount || token.amount
+            : feeTokenOutcomes[key].amount;
         return {
             paidBy: account.addr,
             availableAmount,

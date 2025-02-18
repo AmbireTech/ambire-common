@@ -5,7 +5,7 @@ import { Storage } from '../../interfaces/storage';
 import { AccountOp } from '../../libs/accountOp/accountOp';
 import { Portfolio } from '../../libs/portfolio';
 import { CustomToken, TokenPreference } from '../../libs/portfolio/customToken';
-import { AccountAssetsState, AccountState, GetOptions, TemporaryTokens, TokenResult } from '../../libs/portfolio/interfaces';
+import { AccountAssetsState, AccountState, CashbackStatusByAccount, GetOptions, TemporaryTokens, TokenResult } from '../../libs/portfolio/interfaces';
 import { AccountsController } from '../accounts/accounts';
 import EventEmitter from '../eventEmitter/eventEmitter';
 import { NetworksController } from '../networks/networks';
@@ -16,6 +16,7 @@ export declare class PortfolioController extends EventEmitter {
     tokenPreferences: TokenPreference[];
     validTokens: any;
     temporaryTokens: TemporaryTokens;
+    cashbackStatusByAccount: CashbackStatusByAccount;
     constructor(storage: Storage, fetch: Fetch, providers: ProvidersController, networks: NetworksController, accounts: AccountsController, relayerUrl: string, velcroUrl: string);
     addCustomToken(customToken: CustomToken, selectedAccountAddr?: string, shouldUpdatePortfolio?: boolean): Promise<void>;
     removeCustomToken(customToken: Omit<CustomToken, 'standard'>, selectedAccountAddr?: string, shouldUpdatePortfolio?: boolean): Promise<void>;
@@ -28,6 +29,13 @@ export declare class PortfolioController extends EventEmitter {
     }, accountId: AccountId): Promise<void>;
     initializePortfolioLibIfNeeded(accountId: AccountId, networkId: NetworkId, network: Network): Portfolio;
     getTemporaryTokens(accountId: AccountId, networkId: NetworkId, additionalHint: string): Promise<boolean>;
+    updateCashbackStatusByAccount({ accountId, shouldShowBanner, toggleModal, shouldGetAdditionalPortfolio, shouldSetCashbackWasZeroAt }: {
+        accountId: AccountId;
+        shouldShowBanner: boolean;
+        toggleModal: boolean;
+        shouldGetAdditionalPortfolio: boolean;
+        shouldSetCashbackWasZeroAt: boolean;
+    }): Promise<void>;
     protected updatePortfolioState(accountId: string, network: Network, portfolioLib: Portfolio, portfolioProps: Partial<GetOptions> & {
         blockTag: 'latest' | 'pending';
     }, forceUpdate: boolean, maxDataAgeMs?: number): Promise<boolean>;

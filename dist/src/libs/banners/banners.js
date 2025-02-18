@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getKeySyncBanner = exports.getAccountOpBanners = exports.getDappActionRequestsBanners = exports.getBridgeBanners = void 0;
+exports.getFirstCashbackBanners = exports.getKeySyncBanner = exports.getAccountOpBanners = exports.getDappActionRequestsBanners = exports.getBridgeBanners = void 0;
 const swapAndBridge_1 = require("../swapAndBridge/swapAndBridge");
 const getBridgeBannerTitle = (routeStatus) => {
     switch (routeStatus) {
@@ -232,4 +232,25 @@ const getKeySyncBanner = (addr, email, keys) => {
     return banner;
 };
 exports.getKeySyncBanner = getKeySyncBanner;
+const getFirstCashbackBanners = ({ selectedAccountAddr, cashbackStatusByAccount }) => {
+    const banners = [];
+    const shouldShowBanner = !!cashbackStatusByAccount[selectedAccountAddr]?.firstCashbackReceivedAt &&
+        !cashbackStatusByAccount[selectedAccountAddr]?.firstCashbackSeenAt;
+    if (shouldShowBanner) {
+        banners.push({
+            id: `${selectedAccountAddr}-first-cashback-banner-banner`,
+            type: 'info',
+            title: "You've got cashback!",
+            text: 'You just received your first cashback from paying gas with Smart Account.',
+            actions: [
+                {
+                    label: 'Open',
+                    actionName: 'open-first-cashback-modal'
+                }
+            ]
+        });
+    }
+    return banners;
+};
+exports.getFirstCashbackBanners = getFirstCashbackBanners;
 //# sourceMappingURL=banners.js.map
