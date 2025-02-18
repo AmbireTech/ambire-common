@@ -338,9 +338,9 @@ export class MainController extends EventEmitter {
           (r) => r.action.kind !== 'calls'
         )
         userRequestsToRejectOnWindowClose.forEach((r) =>
-          r.dappPromise?.reject(ethErrors.provider.userRejectedRequest())
+          this.rejectUserRequest(ethErrors.provider.userRejectedRequest().message, r.id)
         )
-        this.userRequests = this.userRequests.filter((r) => r.action.kind === 'calls')
+
         this.userRequestWaitingAccountSwitch = []
         this.emitUpdate()
       }
