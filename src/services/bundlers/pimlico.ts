@@ -64,7 +64,7 @@ export class Pimlico extends Bundler {
       return provider.send('pimlico_experimental_estimateUserOperationGas7702', [
         {
           ...getCleanUserOp(userOperation)[0],
-          eip7702Auth: this.getPimlicoAuthorization(authorizationMsg)
+          eip7702auth: this.getPimlicoAuthorization(authorizationMsg)
         },
         ERC_4337_ENTRYPOINT,
         {
@@ -80,7 +80,7 @@ export class Pimlico extends Bundler {
     return provider.send('pimlico_experimental_estimateUserOperationGas7702', [
       {
         ...getCleanUserOp(userOperation)[0],
-        eip7702Auth: this.getPimlicoAuthorization(authorizationMsg)
+        eip7702auth: this.getPimlicoAuthorization(authorizationMsg)
       },
       ERC_4337_ENTRYPOINT
     ])
@@ -123,7 +123,7 @@ export class Pimlico extends Bundler {
     return provider.send('pimlico_experimental_sendUserOperation7702', [
       {
         ...getCleanUserOp(userOperation)[0],
-        eip7702Auth: this.getPimlicoAuthorization(authorizationMsg)
+        eip7702auth: this.getPimlicoAuthorization(authorizationMsg)
       },
       ERC_4337_ENTRYPOINT
     ])
