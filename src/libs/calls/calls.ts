@@ -83,7 +83,7 @@ export function decodeFeeCall(
     }
   }
 
-  const [, amount] = ERC20Interface.decodeFunctionData('approve', data)
+  const [, amount] = ERC20Interface.decodeFunctionData('transfer', data)
   return {
     amount,
     address: to,
