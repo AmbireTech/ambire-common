@@ -7,8 +7,6 @@ const humanizeEstimationOrBroadcastError = (
 ): string | null => {
   let message = null
 
-  if (!reason) return message
-
   const checkAgainst = reason || originalError?.error?.message || originalError?.message
 
   BROADCAST_OR_ESTIMATION_ERRORS.forEach((error) => {
