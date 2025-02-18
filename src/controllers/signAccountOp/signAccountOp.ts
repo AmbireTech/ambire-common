@@ -24,7 +24,7 @@ import {
 import { Account } from '../../interfaces/account'
 import { ExternalSignerControllers, Key } from '../../interfaces/keystore'
 import { Network } from '../../interfaces/network'
-import { Warning } from '../../interfaces/signAccountOp'
+import { TraceCallDiscoveryStatus, Warning } from '../../interfaces/signAccountOp'
 import { isAmbireV1LinkedAccount, isBasicAccount, isSmartAccount } from '../../libs/account/account'
 import { AccountOp, GasFeePayment, getSignableCalls } from '../../libs/accountOp/accountOp'
 import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
@@ -178,6 +178,15 @@ export class SignAccountOpController extends EventEmitter {
   sponsor: Sponsor | undefined = undefined
 
   bundlerSwitcher: BundlerSwitcher
+
+  // We track the status of token discovery logic (main.traceCall)
+  // to ensure the "SignificantBalanceDecrease" banner is displayed correctly.
+  // The latest/pending portfolio balance is essential for calculating balance differences.
+  // However, during a SWAP, the user may receive a new token that isn't yet included (discovered) in the portfolio.
+  // If the discovery process is in-process, and we only rely on portfolio balance change,
+  // the banner may be incorrectly triggered due to the perceived balance drop.
+  // Once discovery completes and updates the portfolio, the banner will be hidden.
+  traceCallDiscoveryStatus: TraceCallDiscoveryStatus = TraceCallDiscoveryStatus.NotStarted
 
   constructor(
     accounts: AccountsController,
@@ -481,7 +490,8 @@ export class SignAccountOpController extends EventEmitter {
     const significantBalanceDecreaseWarning = getSignificantBalanceDecreaseWarning(
       latestState,
       pendingState,
-      this.accountOp.networkId
+      this.accountOp.networkId,
+      this.traceCallDiscoveryStatus
     )
 
     if (this.selectedOption) {
