@@ -13,6 +13,7 @@ import ERC20 from '../../../contracts/compiled/IERC20.json'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { BUNDLER } from '../../consts/bundlers'
 import { SINGLETON } from '../../consts/deploy'
+import gasTankFeeTokens from '../../consts/gasTankFeeTokens'
 /* eslint-disable no-restricted-syntax */
 import { ERRORS, RETRY_TO_INIT_ACCOUNT_OP_MSG } from '../../consts/signAccountOp/errorHandling'
 import {
@@ -368,11 +369,53 @@ export class SignAccountOpController extends EventEmitter {
       }
 
       if (speedCoverage.length === 0) {
-        errors.push(
-          isSmartAccount(this.account)
-            ? "Signing is not possible with the selected account's token as it doesn't have sufficient funds to cover the gas payment fee."
-            : ERRORS.eoaInsufficientFunds
-        )
+        const isSA = isSmartAccount(this.account)
+        const isUnableToCoverWithAllOtherTokens = this.availableFeeOptions.every((option) => {
+          if (option === this.selectedOption) return true
+          const optionIdentifier = getFeeSpeedIdentifier(
+            option,
+            this.accountOp.accountAddr,
+            this.rbfAccountOps[option.paidBy]
+          )
+
+          const speedsThatCanCover = this.feeSpeeds[optionIdentifier]?.filter(
+            (speed) => speed.amount <= option.availableAmount
+          )
+
+          return !speedsThatCanCover?.length
+        })
+        if (isUnableToCoverWithAllOtherTokens) {
+          let skippedTokensCount = 0
+          const gasTokenNames = gasTankFeeTokens
+            .filter(({ networkId, hiddenOnError }) => {
+              if (networkId !== this.accountOp.networkId) return false
+
+              if (hiddenOnError) {
+                skippedTokensCount++
+                return false
+              }
+
+              return true
+            })
+            .map(({ symbol }) => symbol.toUpperCase())
+            .join(', ')
+
+          errors.push(
+            `${ERRORS.eoaInsufficientFunds}${
+              isSA
+                ? ` Available fee options: USDC in Gas Tank, ${gasTokenNames}${
+                    skippedTokensCount ? ' and others' : ''
+                  }`
+                : ''
+            }`
+          )
+        } else {
+          errors.push(
+            isSA
+              ? "Signing is not possible with the selected account's token as it doesn't have sufficient funds to cover the gas payment fee."
+              : ERRORS.eoaInsufficientFunds
+          )
+        }
       } else {
         errors.push(
           'The selected speed is not available due to insufficient funds. Please select a slower speed.'

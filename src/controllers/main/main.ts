@@ -70,6 +70,7 @@ import {
   makeSmartAccountOpAction
 } from '../../libs/main/main'
 import { relayerAdditionalNetworks } from '../../libs/networks/networks'
+import { isPortfolioGasTankResult } from '../../libs/portfolio/helpers'
 import { GetOptions, TokenResult } from '../../libs/portfolio/interfaces'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { parse } from '../../libs/richJson/richJson'
@@ -757,7 +758,7 @@ export class MainController extends EventEmitter {
       this.emitError({
         level: 'silent',
         message: 'Error in main.traceCall',
-        error: e
+        error: new Error(`Debug trace call error on ${network.id}: ${e.message}`)
       })
     }
 
@@ -1908,6 +1909,7 @@ export class MainController extends EventEmitter {
     this.portfolio.removeNetworkData(id)
     this.defiPositions.removeNetworkData(id)
     this.accountAdder.removeNetworkData(id)
+    this.activity.removeNetworkData(id)
   }
 
   async resolveAccountOpAction(data: any, actionId: AccountOpAction['id']) {
@@ -2163,9 +2165,13 @@ export class MainController extends EventEmitter {
         this.portfolio.getLatestPortfolioState(localAccountOp.accountAddr)?.[
           localAccountOp.networkId
         ]?.result?.feeTokens ?? []
-      const gasTankFeeTokens =
-        this.portfolio.getLatestPortfolioState(localAccountOp.accountAddr)?.gasTank?.result
-          ?.tokens ?? []
+
+      const gasTankResult = this.portfolio.getLatestPortfolioState(localAccountOp.accountAddr)
+        ?.gasTank?.result
+
+      const gasTankFeeTokens = isPortfolioGasTankResult(gasTankResult)
+        ? gasTankResult.gasTankTokens
+        : []
 
       const feeTokens =
         [...networkFeeTokens, ...gasTankFeeTokens].filter((t) => t.flags.isFeeToken) || []
