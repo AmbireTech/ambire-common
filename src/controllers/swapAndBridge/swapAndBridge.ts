@@ -1354,15 +1354,23 @@ export class SwapAndBridgeController extends EventEmitter {
     if (!activeRoute) return
 
     let shouldUpdateActiveRouteStatus = false
-    if (activeRoute.route.fromChainId === activeRoute.route.toChainId)
-      shouldUpdateActiveRouteStatus = true
 
+    const isSwap = activeRoute.route.fromChainId === activeRoute.route.toChainId
+
+    // force update the active route status if the route is of type 'swap'
+    if (isSwap) shouldUpdateActiveRouteStatus = true
+
+    // force update the active route status if the last tx of a 'bridge' is of type 'swap'
     if (activeRoute.route.currentUserTxIndex + 1 === activeRoute.route.totalUserTx) {
       const tx = activeRoute.route.userTxs[activeRoute.route.currentUserTxIndex]
       if (!tx) return
 
       if (tx.userTxType === 'dex-swap') shouldUpdateActiveRouteStatus = true
     }
+
+    // force update the active route with an error message if the tx fails (for both swap and bridge)
+    if (opStatus === AccountOpStatus.Failure || opStatus === AccountOpStatus.Rejected)
+      shouldUpdateActiveRouteStatus = true
 
     if (!shouldUpdateActiveRouteStatus) return
 
