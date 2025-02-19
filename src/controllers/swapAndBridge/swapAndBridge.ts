@@ -30,6 +30,7 @@ import { getTokenAmount } from '../../libs/portfolio/helpers'
 import {
   convertPortfolioTokenToSocketAPIToken,
   getActiveRoutesForAccount,
+  getActiveRoutesLowestServiceTime,
   getIsBridgeTxn,
   getIsTokenEligibleForSwapAndBridge,
   getQuoteRouteSteps,
@@ -1131,6 +1132,19 @@ export class SwapAndBridgeController extends EventEmitter {
       if (broadcastedButNotConfirmed) return
       if (activeRoute.routeStatus === 'completed') return
 
+      const serviceTimeThresholdInMs = getActiveRoutesLowestServiceTime([activeRoute]) * 3
+      const prevAttemptedToGetTheStatusAt = activeRoute.lastAttemptedToGetTheStatusAt || Date.now()
+      const shouldTimeout = prevAttemptedToGetTheStatusAt > Date.now() + serviceTimeThresholdInMs
+      if (shouldTimeout) {
+        // TODO: Put in more details about the funds in the error message
+        return this.updateActiveRoute(activeRoute.activeRouteId, {
+          routeStatus: 'timed-out',
+          error:
+            'Unable to get the route status after multiple attempts. The transaction may take longer than expected. The funds might have arrived on the destination chain. Please attempt to check the status manually.'
+        })
+      }
+
+      const lastAttemptedToGetTheStatusAt = Date.now()
       try {
         status = await this.#socketAPI.getRouteStatus({
           activeRouteId: activeRoute.activeRouteId,
@@ -1139,36 +1153,28 @@ export class SwapAndBridgeController extends EventEmitter {
         })
       } catch (e: any) {
         const { message } = getHumanReadableSwapAndBridgeError(e)
-        this.updateActiveRoute(activeRoute.activeRouteId, { error: message })
+        this.updateActiveRoute(activeRoute.activeRouteId, {
+          error: message,
+          lastAttemptedToGetTheStatusAt
+        })
         return
       }
 
       const route = this.activeRoutes.find((r) => r.activeRouteId === activeRoute.activeRouteId)
       if (route?.error) {
         this.updateActiveRoute(activeRoute.activeRouteId, {
-          error: undefined
+          error: undefined,
+          lastAttemptedToGetTheStatusAt
         })
       }
 
-      if (status === 'completed') {
-        this.updateActiveRoute(
-          activeRoute.activeRouteId,
-          {
-            routeStatus: 'completed',
-            error: undefined
-          },
-          true
-        )
-      } else if (status === 'ready') {
-        this.updateActiveRoute(
-          activeRoute.activeRouteId,
-          {
-            routeStatus: 'ready',
-            error: undefined
-          },
-          true
-        )
+      const activeRoutePropsToUpdate: Partial<ActiveRoute> = { lastAttemptedToGetTheStatusAt }
+      if (status && ['completed, ready'].includes(status)) {
+        activeRoutePropsToUpdate.routeStatus = status
+        activeRoutePropsToUpdate.error = undefined
       }
+
+      this.updateActiveRoute(activeRoute.activeRouteId, activeRoutePropsToUpdate, true)
     }
 
     await Promise.all(
