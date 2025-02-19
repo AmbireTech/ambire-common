@@ -428,3 +428,43 @@ export function hasRelayerSupport(network: Network) {
     network.hasRelayer || !!relayerAdditionalNetworks.find((net) => net.chainId === network.chainId)
   )
 }
+
+// TODO: The network structure coming from the Relayer needs additional mapping to match the Network interface
+export function mapRelayerNetworkToNetwork(): Network {
+  // {
+  //   id: 'arbitrum', // ambireId
+  //   name: 'Arbitrum', // ✅
+  //   nativeAssetSymbol: 'ETH', // native.symbol
+  //   rpcUrls: ['https://invictus.ambire.com/arbitrum'], // ✅
+  //   selectedRpcUrl: 'https://invictus.ambire.com/arbitrum', // ✅
+  //   rpcNoStateOverride: false, // MISSING
+  //   chainId: 42161n,
+  //   explorerUrl: 'https://arbiscan.io', // blockExplorer
+  //   erc4337: {
+  //     // smartAccounts - erc4337 ✅
+  //     enabled: true,
+  //     hasPaymaster: true,
+  //     hasBundlerSupport: true,
+  //     bundlers: [PIMLICO, BICONOMY], // smartAccounts -> bundlers mapping
+  //     defaultBundler: PIMLICO
+  //   },
+  //   isSAEnabled: true, // MISSING
+  //   areContractsDeployed: true, // MISSING
+  //   hasRelayer: true, // smartAccounts -> hasRelayer
+  //   platformId: 'arbitrum-one', // coingeckoPlatformId
+  //   nativeAssetId: 'ethereum', // native.coingeckoId
+  //   hasSingleton: true, // MISSING
+  //   features: [],
+  //   feeOptions: {
+  //     // ✅
+  //     is1559: true,
+  //     minBaseFee: 100000000n // 1 gwei // DIFFERENT
+  //   },
+  //   predefined: true, // TBD
+  //   wrappedAddr: '0x82af49447d8a07e3bd95bd0d56f35241523fbab1', // native -> wrapped -> address
+  //   // icon
+  //   // native -> icon, decimals, wrapped
+  //   isOptimistic: false, // ✅
+  //   disableEstimateGas: false // ✅
+  // }
+}
