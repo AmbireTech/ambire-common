@@ -305,9 +305,7 @@ export class SelectedAccountController extends EventEmitter {
 
     if (isCashbackZero) {
       await this.changeCashbackStatus('no-cashback')
-    }
-
-    if (!isCashbackZero && cashbackWasZeroBefore && notReceivedFirstCashbackBefore) {
+    } else if (!isCashbackZero && cashbackWasZeroBefore && notReceivedFirstCashbackBefore) {
       await this.changeCashbackStatus('unseen-cashback')
     }
   }
