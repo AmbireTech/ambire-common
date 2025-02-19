@@ -2,15 +2,16 @@ import { BROADCAST_OR_ESTIMATION_ERRORS } from './errors'
 
 const humanizeEstimationOrBroadcastError = (
   reason: string | null,
-  prefix: string
+  prefix: string,
+  originalError: any
 ): string | null => {
   let message = null
 
-  if (!reason) return message
+  const checkAgainst = reason || originalError?.error?.message || originalError?.message
 
   BROADCAST_OR_ESTIMATION_ERRORS.forEach((error) => {
     const isMatching = error.reasons.some((errorReason) =>
-      reason.toLowerCase().includes(errorReason.toLowerCase())
+      checkAgainst.toLowerCase().includes(errorReason.toLowerCase())
     )
     if (!isMatching) return
 

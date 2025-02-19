@@ -25,7 +25,8 @@ export function getHumanReadableBroadcastError(e: Error | DecodedError) {
   const decodedError = e instanceof Error ? decodeError(e as Error) : (e as DecodedError)
   const commonError = humanizeEstimationOrBroadcastError(
     decodedError.reason,
-    getPrefix(decodedError.reason)
+    getPrefix(decodedError.reason),
+    e
   )
   let errorMessage = getHumanReadableErrorMessage(
     commonError,
