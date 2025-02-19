@@ -8,6 +8,9 @@ const COINGECKO_BASE_URL = 'https://www.coingecko.com/en/coins/'
 
 // @TODO some form of a constants list
 export function geckoIdMapper(address: string, network: Network): string | null {
+  // return eth for odyssey
+  if (network.chainId === 911867n && address === ZeroAddress) return 'ethereum'
+
   if (address === ZeroAddress) return network.nativeAssetId
 
   // we currently can't map aave so we're leaving this

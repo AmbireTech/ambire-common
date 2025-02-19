@@ -1,4 +1,4 @@
-import { Interface, JsonRpcProvider, MaxUint256, solidityPackedKeccak256 } from 'ethers'
+import { Interface, JsonRpcProvider, MaxUint256, solidityPackedKeccak256, toBeHex } from 'ethers'
 
 import { beforeAll, expect } from '@jest/globals'
 
@@ -73,11 +73,11 @@ describe('Debug tracecall detection for transactions', () => {
       nonce: 1n,
       erc4337Nonce: 115792089237316195423570985008687907853269984665640564039457584007913129639935n,
       isDeployed: true,
-      associatedKeysPriviliges: {
-        '0x02be1F941b6B777D4c30f110E997704fFc26B379':
-          '0x0000000000000000000000000000000000000000000000000000000000000002'
-      },
       isV2: true,
+      associatedKeys: {
+        '0xe5a4Dad2Ea987215460379Ab285DF87136E83BEA': toBeHex(1, 32)
+      },
+      isSmarterEoa: false,
       balance: 989858878709479465n,
       isEOA: false,
       isErc4337Enabled: false,

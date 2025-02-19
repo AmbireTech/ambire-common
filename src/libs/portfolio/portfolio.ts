@@ -62,8 +62,19 @@ const defaultOptions: GetOptions = {
   blockTag: 'latest',
   priceRecency: 0,
   previousHintsFromExternalAPI: null,
-  fetchPinned: true,
-  isEOA: false
+  fetchPinned: true
+}
+
+const getHardcodedOdysseyPrices = (address: string) => {
+  if (address === '0x2B44e7315B20da1A9CBE827489A2FE99545e3ba7')
+    return [
+      {
+        baseCurrency: 'usd',
+        price: 2
+      }
+    ]
+
+  return null
 }
 
 export class Portfolio {
@@ -291,7 +302,10 @@ export class Portfolio {
     const tokensWithPrices: TokenResult[] = await Promise.all(
       tokensWithoutPrices.map(async (token: { address: string }) => {
         let priceIn: TokenResult['priceIn'] = []
-        const cachedPriceIn = getPriceFromCache(token.address)
+        const cachedPriceIn =
+          this.network.chainId === 911867n
+            ? getHardcodedOdysseyPrices(token.address)
+            : getPriceFromCache(token.address)
 
         if (cachedPriceIn) {
           priceIn = cachedPriceIn

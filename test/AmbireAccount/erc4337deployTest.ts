@@ -1,12 +1,9 @@
-import { BaseContract } from 'ethers'
+import { BaseContract, keccak256, toUtf8Bytes } from 'ethers'
 import { ethers } from 'hardhat'
 
-import {
-  getProxyDeployBytecode,
-  getStorageSlotsFromArtifact,
-  PrivLevels
-} from '../../src/libs/proxyDeploy/deploy'
-import { wrapEthSign, wrapTypedData } from '../ambireSign'
+import { Hex } from '../../src/interfaces/hex'
+import { getProxyDeployBytecode, PrivLevels } from '../../src/libs/proxyDeploy/deploy'
+import { getExecute712Data, getUserOp712Data, wrapEIP712 } from '../ambireSign'
 import { abiCoder, chainId, expect, provider } from '../config'
 import {
   buildUserOp,
@@ -37,7 +34,7 @@ export async function get4437Bytecode(priLevels: PrivLevels[]): Promise<string> 
 
   // get the bytecode and deploy it
   return getProxyDeployBytecode(await contract.getAddress(), priLevels, {
-    ...getStorageSlotsFromArtifact(null)
+    privSlot: `${keccak256(toUtf8Bytes('ambire.smart.contracts.storage'))}`
   })
 }
 
@@ -67,7 +64,7 @@ describe('ERC-4337 deploys the account via userOp and adds the entry point permi
     const privs = [
       {
         addr: signer.address,
-        hash: '0x0000000000000000000000000000000000000000000000000000000000000001'
+        hash: '0x0000000000000000000000000000000000000000000000000000000000000002'
       }
     ]
     const bytecodeWithArgs = await get4437Bytecode(privs)
@@ -83,8 +80,8 @@ describe('ERC-4337 deploys the account via userOp and adds the entry point permi
         [senderAddress, 31337, 0, [txn]]
       )
     )
-    const typedData = wrapTypedData(chainId, senderAddress, executeHash)
-    const s = wrapEthSign(
+    const typedData = getExecute712Data(chainId, 0n, [txn], senderAddress, executeHash)
+    const s = wrapEIP712(
       await signer.signTypedData(typedData.domain, typedData.types, typedData.value)
     )
     const initCode = ethers.hexlify(
@@ -98,31 +95,34 @@ describe('ERC-4337 deploys the account via userOp and adds the entry point permi
       initCode,
       callData
     })
-    userOperation.nonce = getTargetNonce(userOperation)
+    userOperation.nonce = BigInt(getTargetNonce(userOperation))
     await entryPoint.handleOps([userOperation], relayer)
 
     // confirm everything is set by sending an userOp through the entry point
     // with a normal paymaster signature
-    const nextTxn = [senderAddress, 0, '0x68656c6c6f']
+    const nextTxn: [string, string, string] = [senderAddress, '0', '0x68656c6c6f']
     const userOperation2 = await buildUserOp(paymaster, await entryPoint.getAddress(), {
       sender: senderAddress,
-      userOpNonce: ethers.toBeHex(await entryPoint.getNonce(senderAddress, 0), 1),
-      callData: proxy.interface.encodeFunctionData('executeBySender', [[nextTxn]])
+      userOpNonce: await entryPoint.getNonce(senderAddress, 0),
+      callData: proxy.interface.encodeFunctionData('executeBySender', [[nextTxn]]),
+      chainId
     })
-    const typedDataUserOp = wrapTypedData(
+    const typedDataUserOp = getUserOp712Data(
       chainId,
-      senderAddress,
+      [nextTxn],
+      userOperation2,
       await entryPoint.getUserOpHash(userOperation2)
     )
-    const signature = wrapEthSign(
+    const signature = wrapEIP712(
       await signer.signTypedData(
         typedDataUserOp.domain,
         typedDataUserOp.types,
         typedDataUserOp.value
       )
-    )
+    ) as Hex
     userOperation2.signature = signature
     await entryPoint.handleOps([userOperation2], relayer)
+
     // if it doesn't revert, all's good. The paymaster has payed
 
     // send money to senderAddress so it has funds to pay for the transaction
@@ -134,30 +134,31 @@ describe('ERC-4337 deploys the account via userOp and adds the entry point permi
 
     // send a txn with no paymasterAndData. Because the addr has a prefund,
     // it should be able to pass
-    const anotherTxn = [senderAddress, 0, '0x68656c6c6f']
+    const anotherTxn: [string, string, string] = [senderAddress, '0', '0x68656c6c6f']
     const userOperation3 = {
       sender: senderAddress,
-      nonce: ethers.toBeHex(await entryPoint.getNonce(senderAddress, 0), 1),
-      initCode: '0x',
-      callData: proxy.interface.encodeFunctionData('executeBySender', [[anotherTxn]]),
+      nonce: BigInt(await entryPoint.getNonce(senderAddress, 0)),
+      initCode: '0x' as Hex,
+      callData: proxy.interface.encodeFunctionData('executeBySender', [[anotherTxn]]) as Hex,
       accountGasLimits: getAccountGasLimits(500000, 100000),
       preVerificationGas: 500000n,
       gasFees: getGasFees(100000, 100000),
-      paymasterAndData: '0x',
-      signature: '0x'
+      paymasterAndData: '0x' as Hex,
+      signature: '0x' as Hex
     }
-    const typedDataUserOp3 = wrapTypedData(
+    const typedDataUserOp3 = getUserOp712Data(
       chainId,
-      senderAddress,
+      [anotherTxn],
+      userOperation3,
       await entryPoint.getUserOpHash(userOperation3)
     )
-    const sig = wrapEthSign(
+    const sig = wrapEIP712(
       await signer.signTypedData(
         typedDataUserOp3.domain,
         typedDataUserOp3.types,
         typedDataUserOp3.value
       )
-    )
+    ) as Hex
     userOperation3.signature = sig
     await entryPoint.handleOps([userOperation3], relayer)
 
@@ -171,27 +172,28 @@ describe('ERC-4337 deploys the account via userOp and adds the entry point permi
 
     const userOperation4 = {
       sender: senderAddress,
-      nonce: ethers.toBeHex(await entryPoint.getNonce(senderAddress, 0), 1),
-      initCode: '0x',
-      callData: proxy.interface.encodeFunctionData('executeBySender', [[anotherTxn]]),
+      nonce: BigInt(await entryPoint.getNonce(senderAddress, 0)),
+      initCode: '0x' as Hex,
+      callData: proxy.interface.encodeFunctionData('executeBySender', [[anotherTxn]]) as Hex,
       accountGasLimits: getAccountGasLimits(500000, 100000),
       preVerificationGas: 500000n,
       gasFees: getGasFees(100000, 100000),
-      paymasterAndData: '0x',
-      signature: '0x'
+      paymasterAndData: '0x' as Hex,
+      signature: '0x' as Hex
     }
-    const typedDataUserOp4 = wrapTypedData(
+    const typedDataUserOp4 = getUserOp712Data(
       chainId,
-      senderAddress,
+      [anotherTxn],
+      userOperation4,
       await entryPoint.getUserOpHash(userOperation4)
     )
-    const sigLatest = wrapEthSign(
+    const sigLatest = wrapEIP712(
       await signer.signTypedData(
         typedDataUserOp4.domain,
         typedDataUserOp4.types,
         typedDataUserOp4.value
       )
-    )
+    ) as Hex
     userOperation4.signature = sigLatest
     await entryPoint.handleOps([userOperation4], relayer)
 

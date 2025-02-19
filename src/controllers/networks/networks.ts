@@ -120,7 +120,8 @@ export class NetworksController extends EventEmitter {
           bundlers: n.erc4337.bundlers
         },
         nativeAssetId: n.nativeAssetId,
-        nativeAssetSymbol: n.nativeAssetSymbol
+        nativeAssetSymbol: n.nativeAssetSymbol,
+        has7702: n.has7702
       }
     })
 
@@ -131,6 +132,9 @@ export class NetworksController extends EventEmitter {
       )
       if (!predefinedNetwork) {
         this.#networks[networkName].predefined = false
+
+        if (this.#networks[networkName].chainId === 911867n)
+          this.#networks[networkName].platformId = 'ethereum'
       }
     })
 
@@ -205,7 +209,8 @@ export class NetworksController extends EventEmitter {
       feeOptions,
       features: getFeaturesByNetworkProperties(info),
       hasRelayer: false,
-      predefined: false
+      predefined: false,
+      has7702: false
     }
     this.#onAddOrUpdateNetwork(this.#networks[networkId])
     await this.#storage.set('networks', this.#networks)

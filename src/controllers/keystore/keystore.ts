@@ -21,6 +21,7 @@ import {
   Key,
   KeyPreferences,
   KeystoreSeed,
+  KeystoreSignerInterface,
   KeystoreSignerType,
   MainKey,
   MainKeyEncryptedWithSecret,
@@ -792,7 +793,7 @@ export class KeystoreController extends EventEmitter {
     await this.addKeys([keyToAdd])
   }
 
-  async getSigner(keyAddress: Key['addr'], keyType: Key['type']) {
+  async getSigner(keyAddress: Key['addr'], keyType: Key['type']): Promise<KeystoreSignerInterface> {
     await this.#initialLoadPromise
     const keys = this.#keystoreKeys
     const storedKey = keys.find((x: StoredKey) => x.addr === keyAddress && x.type === keyType)

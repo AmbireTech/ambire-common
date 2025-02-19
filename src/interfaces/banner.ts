@@ -11,6 +11,7 @@ export type BannerCategory =
   | 'bridge-failed'
   | 'temp-seed-not-confirmed'
   | 'old-account'
+  | 'activate-7702'
 
 export interface Banner {
   id: number | string
@@ -97,10 +98,20 @@ export type Action =
       actionName: 'update-extension-version'
     }
   | {
+      label: 'Upgrade'
+      actionName: 'activate-7702'
+      meta: { accountAddr: string }
+    }
+  | {
       label: 'Retry'
       actionName: 'reload-selected-account'
     }
   | {
       label: 'Dismiss'
       actionName: 'dismiss-email-vault'
+    }
+  | {
+      label: 'Dismiss'
+      actionName: 'dismiss-7702-banner'
+      meta: { accountAddr: string }
     }

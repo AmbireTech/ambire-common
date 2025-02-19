@@ -226,11 +226,11 @@ export class Paymaster extends AbstractPaymaster {
     const localUserOp = { ...userOp }
     localUserOp.paymaster = AMBIRE_PAYMASTER
     return this.#retryPaymasterRequest(() => {
-      return this.callRelayer(`/v2/paymaster/${op.networkId}/sign`, 'POST', {
+      return this.callRelayer(`/v2/paymaster/${this.network?.chainId}/request`, 'POST', {
         userOperation: getCleanUserOp(localUserOp)[0],
         paymaster: AMBIRE_PAYMASTER,
-        bytecode: acc.creation!.bytecode,
-        salt: acc.creation!.salt,
+        bytecode: acc.creation?.bytecode,
+        salt: acc.creation?.salt,
         key: acc.associatedKeys[0],
         // eslint-disable-next-line no-underscore-dangle
         rpcUrl: this.provider!._getConnection().url,

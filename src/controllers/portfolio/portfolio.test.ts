@@ -8,8 +8,11 @@ import { getNonce, produceMemoryStore } from '../../../test/helpers'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { networks } from '../../consts/networks'
 import { PINNED_TOKENS } from '../../consts/pinnedTokens'
+import { Account, AccountStates } from '../../interfaces/account'
+import { Network } from '../../interfaces/network'
 import { RPCProviders } from '../../interfaces/provider'
 import { AccountOp } from '../../libs/accountOp/accountOp'
+import { getAccountState } from '../../libs/accountState/accountState'
 import { CollectionResult, PortfolioGasTankResult } from '../../libs/portfolio/interfaces'
 import { getRpcProvider } from '../../services/provider'
 import { AccountsController } from '../accounts/accounts'
@@ -25,6 +28,23 @@ networks.forEach((network) => {
   providers[network.id] = getRpcProvider(network.rpcUrls, network.chainId)
   providers[network.id].isWorking = true
 })
+
+const getAccountsInfo = async (accounts: Account[]): Promise<AccountStates> => {
+  const result = await Promise.all(
+    networks.map((network) => getAccountState(providers[network.id], network, accounts))
+  )
+  const states = accounts.map((acc: Account, accIndex: number) => {
+    return [
+      acc.addr,
+      Object.fromEntries(
+        networks.map((network: Network, netIndex: number) => {
+          return [network.id, result[netIndex][accIndex]]
+        })
+      )
+    ]
+  })
+  return Object.fromEntries(states)
+}
 
 const account = {
   addr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
@@ -363,8 +383,12 @@ describe('Portfolio Controller ', () => {
     test('Pending tokens + simulation are fetched and kept in the controller', async () => {
       const { controller } = prepareTest()
       const accountOp = await getAccountOp()
+      const accountStates = await getAccountsInfo([account])
 
-      await controller.updateSelectedAccount(account.addr, undefined, accountOp)
+      await controller.updateSelectedAccount(account.addr, undefined, {
+        accountOps: accountOp,
+        states: accountStates[account.addr]
+      })
 
       controller.onUpdate(() => {
         const pendingState = controller.getPendingPortfolioState(
@@ -435,10 +459,22 @@ describe('Portfolio Controller ', () => {
           done()
         }
       })
-      await controller.updateSelectedAccount(account.addr, undefined, accountOp)
-      await controller.updateSelectedAccount(account.addr, undefined, accountOp, {
-        forceUpdate: true
+      const accountStates = await getAccountsInfo([account])
+      await controller.updateSelectedAccount(account.addr, undefined, {
+        accountOps: accountOp,
+        states: accountStates[account.addr]
       })
+      await controller.updateSelectedAccount(
+        account.addr,
+        undefined,
+        {
+          accountOps: accountOp,
+          states: accountStates[account.addr]
+        },
+        {
+          forceUpdate: true
+        }
+      )
 
       expect(done).toHaveBeenCalled()
     })
@@ -446,15 +482,27 @@ describe('Portfolio Controller ', () => {
     test('Pending tokens are re-fetched if AccountOp is changed (omitted, i.e. undefined)', async () => {
       const { controller } = prepareTest()
       const accountOp = await getAccountOp()
+      const accountStates = await getAccountsInfo([account])
 
-      await controller.updateSelectedAccount(account.addr, undefined, accountOp)
+      await controller.updateSelectedAccount(account.addr, undefined, {
+        accountOps: accountOp,
+        states: accountStates[account.addr]
+      })
       const pendingState1 = controller.getPendingPortfolioState(
         '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
       ).ethereum!
 
-      await controller.updateSelectedAccount(account.addr, undefined, accountOp, {
-        forceUpdate: true
-      })
+      await controller.updateSelectedAccount(
+        account.addr,
+        undefined,
+        {
+          accountOps: accountOp,
+          states: accountStates[account.addr]
+        },
+        {
+          forceUpdate: true
+        }
+      )
       const pendingState2 = controller.getPendingPortfolioState(
         '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
       ).ethereum!
@@ -467,8 +515,12 @@ describe('Portfolio Controller ', () => {
     test('Pending tokens are re-fetched if AccountOp is changed', async () => {
       const { controller } = prepareTest()
       const accountOp = await getAccountOp()
+      const accountStates = await getAccountsInfo([account])
 
-      await controller.updateSelectedAccount(account.addr, undefined, accountOp)
+      await controller.updateSelectedAccount(account.addr, undefined, {
+        accountOps: accountOp,
+        states: accountStates[account.addr]
+      })
       const pendingState1 = controller.getPendingPortfolioState(
         '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
       ).ethereum!
@@ -477,7 +529,10 @@ describe('Portfolio Controller ', () => {
       // Change the address
       accountOp2.ethereum[0].accountAddr = '0xB674F3fd5F43464dB0448a57529eAF37F04cceA4'
 
-      await controller.updateSelectedAccount(account.addr, undefined, accountOp2)
+      await controller.updateSelectedAccount(account.addr, undefined, {
+        accountOps: accountOp2,
+        states: accountStates[account.addr]
+      })
       const pendingState2 = controller.getPendingPortfolioState(
         '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
       ).ethereum!

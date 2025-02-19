@@ -1,8 +1,11 @@
-/* eslint-disable no-console */
-import { Network } from 'interfaces/network'
-
 /* eslint-disable class-methods-use-this */
+/* eslint-disable no-console */
+/* eslint-disable @typescript-eslint/no-unused-vars */
 import { BICONOMY, BUNDLER } from '../../consts/bundlers'
+import { Network } from '../../interfaces/network'
+import { Message } from '../../interfaces/userRequest'
+import { BundlerEstimateResult } from '../../libs/estimate/interfaces'
+import { UserOperation } from '../../libs/userOperation/types'
 import { Bundler } from './bundler'
 import { GasSpeeds, UserOpStatus } from './types'
 
@@ -84,5 +87,17 @@ export class Biconomy extends Bundler {
 
   public getName(): BUNDLER {
     return BICONOMY
+  }
+
+  async estimate7702(
+    userOperation: UserOperation,
+    network: Network,
+    authorizationMsg?: Message
+  ): Promise<BundlerEstimateResult> {
+    throw new Error('not supported')
+  }
+
+  async broadcast7702(userOperation: UserOperation, network: Network): Promise<string> {
+    throw new Error('not supported')
   }
 }

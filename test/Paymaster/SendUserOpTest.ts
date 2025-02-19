@@ -1,7 +1,8 @@
 import { ethers } from 'hardhat'
 
-import { wrapEthSign, wrapTypedData } from '../ambireSign'
-import { chainId, expect, provider } from '../config'
+import { Hex } from '../../src/interfaces/hex'
+import { getExecute712Data, getUserOp712Data, wrapEIP712 } from '../ambireSign'
+import { abiCoder, addressOne, chainId, expect, provider } from '../config'
 import { buildUserOp, getPriviledgeTxnWithCustomHash } from '../helpers'
 import { deployAmbireAccountHardhatNetwork } from '../implementations'
 
@@ -19,7 +20,7 @@ describe('Send User Operation Tests', () => {
     const { ambireAccount: acc } = await deployAmbireAccountHardhatNetwork([
       {
         addr: relayer.address,
-        hash: '0x0000000000000000000000000000000000000000000000000000000000000001'
+        hash: '0x0000000000000000000000000000000000000000000000000000000000000002'
       }
     ])
     ambireAccount = acc
@@ -46,19 +47,64 @@ describe('Send User Operation Tests', () => {
     const [relayer] = await ethers.getSigners()
     const latestBlock = await provider.getBlock('latest')
     const timestamp = latestBlock?.timestamp || 0
+    const nonce = await entryPoint.getNonce(...[ambireAccountAddress, 0])
     const userOp = await buildUserOp(paymaster, await entryPoint.getAddress(), {
       sender: ambireAccountAddress,
-      userOpNonce: await entryPoint.getNonce(...[ambireAccountAddress, 0]),
+      userOpNonce: nonce,
       validUntil: timestamp + 60
     })
-    const typedData = wrapTypedData(
+    const typedData = getUserOp712Data(chainId, [], userOp, await entryPoint.getUserOpHash(userOp))
+    const signature = wrapEIP712(
+      await relayer.signTypedData(typedData.domain, typedData.types, typedData.value)
+    ) as Hex
+    userOp.signature = signature
+    await entryPoint.handleOps([userOp], relayer)
+  })
+  it('should successfully execute an userOp with callData of execute', async () => {
+    const [relayer] = await ethers.getSigners()
+    const latestBlock = await provider.getBlock('latest')
+    const timestamp = latestBlock?.timestamp || 0
+    const nonce = await entryPoint.getNonce(...[ambireAccountAddress, 0])
+
+    const accNonce = await ambireAccount.nonce()
+    const txns: [string, string, string][] = [
+      [addressOne, ethers.parseEther('0.01').toString(), '0x']
+    ]
+    const executeHash = ethers.keccak256(
+      abiCoder.encode(
+        ['address', 'uint', 'uint', 'tuple(address, uint, bytes)[]'],
+        [ambireAccountAddress, chainId, accNonce, txns]
+      )
+    )
+    const typedDataExecute = getExecute712Data(
       chainId,
+      accNonce,
+      txns,
       ambireAccountAddress,
+      executeHash
+    )
+    const executeSignature = wrapEIP712(
+      await relayer.signTypedData(
+        typedDataExecute.domain,
+        typedDataExecute.types,
+        typedDataExecute.value
+      )
+    )
+    const userOp = await buildUserOp(paymaster, await entryPoint.getAddress(), {
+      sender: ambireAccountAddress,
+      userOpNonce: nonce,
+      validUntil: timestamp + 60,
+      callData: ambireAccount.interface.encodeFunctionData('execute', [txns, executeSignature])
+    })
+    const typedData = getUserOp712Data(
+      chainId,
+      txns,
+      userOp,
       await entryPoint.getUserOpHash(userOp)
     )
-    const signature = wrapEthSign(
+    const signature = wrapEIP712(
       await relayer.signTypedData(typedData.domain, typedData.types, typedData.value)
-    )
+    ) as Hex
     userOp.signature = signature
     await entryPoint.handleOps([userOp], relayer)
   })
@@ -71,14 +117,10 @@ describe('Send User Operation Tests', () => {
       userOpNonce: await entryPoint.getNonce(...[ambireAccountAddress, 0]),
       validUntil: timestamp - 60
     })
-    const typedData = wrapTypedData(
-      chainId,
-      ambireAccountAddress,
-      await entryPoint.getUserOpHash(userOp)
-    )
-    const signature = wrapEthSign(
+    const typedData = getUserOp712Data(chainId, [], userOp, await entryPoint.getUserOpHash(userOp))
+    const signature = wrapEIP712(
       await relayer.signTypedData(typedData.domain, typedData.types, typedData.value)
-    )
+    ) as Hex
     userOp.signature = signature
     await expect(entryPoint.handleOps([userOp], relayer))
       .to.be.revertedWithCustomError(entryPoint, 'FailedOp')

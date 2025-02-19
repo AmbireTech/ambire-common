@@ -3,15 +3,17 @@ import { AbiCoder, ZeroAddress } from 'ethers'
 import Estimation from '../../../contracts/compiled/Estimation.json'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { DEPLOYLESS_SIMULATION_FROM, OPTIMISTIC_ORACLE } from '../../consts/deploy'
+import { EOA_SIMULATION_NONCE } from '../../consts/deployless'
 import { Account, AccountStates } from '../../interfaces/account'
 import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
 import { BundlerSwitcher } from '../../services/bundlers/bundlerSwitcher'
+import { getEoaSimulationStateOverride } from '../../utils/simulationStateOverride'
 import { getAccountDeployParams, isSmartAccount } from '../account/account'
 import { AccountOp, toSingletonCall } from '../accountOp/accountOp'
 import { Call } from '../accountOp/types'
 import { getFeeCall } from '../calls/calls'
-import { fromDescriptor } from '../deployless/deployless'
+import { DeploylessMode, fromDescriptor } from '../deployless/deployless'
 import { InnerCallFailureError } from '../errorDecoder/customErrors'
 import { getHumanReadableEstimationError } from '../errorHumanizer'
 import { getProbableCallData } from '../gasPrice/gasPrice'
@@ -48,8 +50,8 @@ function getInnerCallFailure(
 
 // the outcomeNonce should always be equal to the nonce in accountOp + 1
 // that's an indication of transaction success
-function getNonceDiscrepancyFailure(op: AccountOp, outcomeNonce: number): Error | null {
-  if (op.nonce !== null && op.nonce + 1n === BigInt(outcomeNonce)) return null
+function getNonceDiscrepancyFailure(estimationNonce: bigint, outcomeNonce: number): Error | null {
+  if (estimationNonce + 1n === BigInt(outcomeNonce)) return null
 
   return new Error("Nonce discrepancy, perhaps there's a pending transaction. Retrying...", {
     cause: 'NONCE_FAILURE'
@@ -121,7 +123,11 @@ export async function estimate4337(
     deploylessEstimator
       .call('estimate', checkInnerCallsArgs, {
         from: DEPLOYLESS_SIMULATION_FROM,
-        blockTag
+        blockTag,
+        mode: accountState.authorization ? DeploylessMode.StateOverride : DeploylessMode.Detect,
+        stateToOverride: accountState.authorization
+          ? getEoaSimulationStateOverride(account.addr)
+          : null
       })
       .catch(getHumanReadableEstimationError),
     bundlerEstimate(
@@ -136,6 +142,7 @@ export async function estimate4337(
     ),
     estimateGas(account, estimateGasOp, provider, accountState, network).catch(() => 0n)
   ]
+
   const estimations = await estimateWithRetries(
     initializeRequests,
     'estimation-deployless',
@@ -152,6 +159,7 @@ export async function estimate4337(
       { feePaymentOptions }
     )
   }
+
   // // if there's a bundler error only, remove the smart account payment options
   // if (bundlerEstimationResult instanceof Error) feePaymentOptions = []
   const [
@@ -166,14 +174,16 @@ export async function estimate4337(
       ,
       l1GasEstimation
     ]
-  ] = estimations[0]
+  ] = ambireEstimation
+
+  const opNonce = accountState.authorization ? BigInt(EOA_SIMULATION_NONCE) : op.nonce!
   const ambireEstimationError =
     getInnerCallFailure(
       accountOp,
       calls,
       network,
       feeTokens.find((token) => token.address === ZeroAddress && !token.flags.onGasTank)?.amount
-    ) || getNonceDiscrepancyFailure(op, outcomeNonce)
+    ) || getNonceDiscrepancyFailure(opNonce, outcomeNonce)
 
   // if Estimation.sol estimate is a success, it means the nonce has incremented
   // so we subtract 1 from it. If it's an error, we return the old one
@@ -188,7 +198,8 @@ export async function estimate4337(
   } else if (!ambireEstimationError && bundlerEstimationResult.error) {
     // if there's a bundler error only, it means it's a bundler specific
     // problem. If we can switch the bundler, re-estimate
-    if (switcher.canSwitch(null)) {
+
+    if (switcher.canSwitch(account, null)) {
       switcher.switch()
       return estimate4337(
         account,
@@ -241,17 +252,17 @@ export async function estimate4337(
   const nativeToken = feeTokens.find(
     (token) => token.address === ZeroAddress && !token.flags.onGasTank
   )
-  const nativeTokenOptions: FeePaymentOption[] = nativeAssetBalances.map(
-    (balance: bigint, key: number) => ({
-      paidBy: nativeToCheck[key],
-      availableAmount: balance,
-      addedNative: l1GasEstimation.fee,
-      token: {
-        ...nativeToken,
-        amount: balance
-      }
-    })
-  )
+  const nativeTokenOptions: FeePaymentOption[] = !accountState.isSmarterEoa
+    ? nativeAssetBalances.map((balance: bigint, key: number) => ({
+        paidBy: nativeToCheck[key],
+        availableAmount: balance,
+        addedNative: l1GasEstimation.fee,
+        token: {
+          ...nativeToken,
+          amount: balance
+        }
+      }))
+    : []
   bundlerEstimationResult.feePaymentOptions = [
     ...bundlerEstimationResult.feePaymentOptions,
     ...nativeTokenOptions
@@ -276,8 +287,10 @@ export async function estimate(
   blockFrom: string = '0x0000000000000000000000000000000000000001',
   blockTag: string | number = 'pending'
 ): Promise<EstimateResult> {
-  // if EOA, delegate
-  if (!isSmartAccount(account))
+  const accountState = accountStates[op.accountAddr][op.networkId]
+
+  // if EOA & not smarter
+  if (!isSmartAccount(account) && !accountState.isSmarterEoa)
     return estimateEOA(
       account,
       op,
@@ -290,11 +303,11 @@ export async function estimate(
       errorCallback
     )
 
-  if (!network.isSAEnabled)
+  if (!network.isSAEnabled && !accountState.isSmarterEoa)
     return estimationErrorFormatted(
       new Error('Smart accounts are not available for this network. Please use a Basic Account')
     )
-  if (!network.areContractsDeployed)
+  if (!network.areContractsDeployed && !accountState.isSmarterEoa)
     return estimationErrorFormatted(
       new Error(
         'The Ambire smart contracts are not deployed on this network, yet. You can deploy them via a Basic Account throught the network settings'
@@ -306,7 +319,6 @@ export async function estimate(
   // and the network is 4337 but doesn't have a paymaster and the account
   // is deployed for some reason, we should include the activator
   const calls = [...op.calls.map(toSingletonCall)]
-  const accountState = accountStates[op.accountAddr][op.networkId]
   if (shouldIncludeActivatorCall(network, account, accountState, false)) {
     calls.push(getActivatorCall(op.accountAddr))
   }
@@ -477,6 +489,6 @@ export async function estimate(
         calls,
         network,
         feeTokens.find((token) => token.address === ZeroAddress && !token.flags.onGasTank)?.amount
-      ) || getNonceDiscrepancyFailure(op, nonce)
+      ) || getNonceDiscrepancyFailure(op.nonce!, nonce)
   }
 }

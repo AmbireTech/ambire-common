@@ -11,7 +11,7 @@ describe('NFT 721 and 1155 tests original contract tests', () => {
     const { ambireAccountAddress: addr } = await deployAmbireAccountHardhatNetwork([
       {
         addr: signer.address,
-        hash: '0x0000000000000000000000000000000000000000000000000000000000000001'
+        hash: '0x0000000000000000000000000000000000000000000000000000000000000002'
       }
     ])
     ambireAccountAddress = addr

@@ -6,14 +6,15 @@ import { expect } from '@jest/globals'
 
 import { relayerUrl } from '../../../test/config'
 import { produceMemoryStore } from '../../../test/helpers'
-import { Key } from '../../interfaces/keystore'
+import { Key, KeystoreSignerInterface } from '../../interfaces/keystore'
+import { EIP7702Signature } from '../../interfaces/signatures'
 import { Storage } from '../../interfaces/storage'
 import { EmailVault } from '../../libs/emailVault/emailVault'
 import { requestMagicLink } from '../../libs/magicLink/magicLink'
 import { KeystoreController } from '../keystore/keystore'
 import { EmailVaultController, EmailVaultState } from './emailVault'
 
-class InternalSigner {
+class InternalSigner implements KeystoreSignerInterface {
   key
 
   privKey
@@ -33,6 +34,11 @@ class InternalSigner {
 
   signMessage() {
     return Promise.resolve('')
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  sign7702(hex: string): EIP7702Signature {
+    throw new Error('not supported')
   }
 }
 

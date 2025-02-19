@@ -1,11 +1,14 @@
-import { Wallet } from 'ethers'
+import { computeAddress, concat, getBytes, hexlify, Wallet } from 'ethers'
+import { ecdsaRecover } from 'secp256k1'
 
 /* eslint-disable no-new */
 import { describe, expect, test } from '@jest/globals'
 
+import { EIP_7702_AMBIRE_ACCOUNT } from '../../consts/deploy'
 import { BIP44_STANDARD_DERIVATION_TEMPLATE } from '../../consts/derivation'
 import { Key } from '../../interfaces/keystore'
 import { getPrivateKeyFromSeed } from '../keyIterator/keyIterator'
+import { getAuthorizationHash } from '../signMessage/signMessage'
 import { KeystoreSigner } from './keystoreSigner'
 
 const privKey = getPrivateKeyFromSeed(
@@ -89,5 +92,27 @@ describe('KeystoreSigner', () => {
     // message = 'test'
     const res = await signer.signMessage('0x74657374')
     expect(res).toMatch(/^0x/)
+  })
+})
+
+describe('Sign eip-7702 authorization', () => {
+  it('should sign successfully', async () => {
+    const hash = getAuthorizationHash(1n, EIP_7702_AMBIRE_ACCOUNT, 0n)
+    const signer = new KeystoreSigner(key, privKey)
+    const signature = signer.sign7702(hash)
+
+    expect(signature.yParity === '0x00' || signature.yParity === '0x01').toBe(true)
+    expect(signature.r.length).toBe(66)
+    expect(signature.s.length).toBe(66)
+
+    // r,s concatenated
+    const rsSig = getBytes(concat([signature.r, signature.s]))
+
+    // recover the public key
+    const publicKey = ecdsaRecover(rsSig, Number(BigInt(signature.yParity)), getBytes(hash))
+
+    const originalAddr = computeAddress(privKey)
+    const derivedAddr = computeAddress(hexlify(publicKey))
+    expect(derivedAddr).toBe(originalAddr)
   })
 })
