@@ -40,7 +40,12 @@ export class EntropyGenerator {
   }
 
   #collectTimeEntropy(): void {
-    // TODO: add a polyfill for the mobile app
+    // TODO: steps to add support for the mobile app:
+    // 1. install the polyfill: `yarn add react-native-performance`
+    // 2. add it globally in a top-level file:
+    // if (typeof performance === "undefined") {
+    //   global.performance = { now }
+    // }
     const now = performance.now()
 
     if (!now) return
