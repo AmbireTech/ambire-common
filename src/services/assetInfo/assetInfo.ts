@@ -1,7 +1,7 @@
 import { JsonRpcProvider } from 'ethers'
 
 import { Network, NetworkId } from '../../interfaces/network'
-import { GetOptions, Portfolio } from '../../libs/portfolio'
+import { GetOptions, Portfolio, TokenResult } from '../../libs/portfolio'
 
 const RANDOM_ADDRESS = '0x0000000000000000000000000000000000000001'
 const scheduledActions: {
@@ -53,10 +53,7 @@ export async function executeBatchedFetch(network: Network): Promise<void> {
 export async function resolveAssetInfo(
   address: string,
   network: Network,
-  callback: (arg: {
-    tokenInfo?: { decimals: number; symbol: string }
-    nftInfo?: { name: string }
-  }) => void
+  callback: (arg: { tokenInfo?: TokenResult; nftInfo?: { name: string } }) => void
 ): Promise<void> {
   if (!scheduledActions[network.id]?.data?.length) {
     scheduledActions[network.id] = {
