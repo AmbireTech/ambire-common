@@ -3,8 +3,8 @@ import { AccountOpAction, Action as ActionFromActionsQueue } from '../../interfa
 // eslint-disable-next-line import/no-cycle
 import { Action, Banner } from '../../interfaces/banner'
 import { Network } from '../../interfaces/network'
+import { CashbackStatusByAccount } from '../../interfaces/selectedAccount'
 import { ActiveRoute } from '../../interfaces/swapAndBridge'
-import { CashbackStatusByAccount } from '../portfolio/interfaces'
 import { getIsBridgeTxn, getQuoteRouteSteps } from '../swapAndBridge/swapAndBridge'
 
 const getBridgeBannerTitle = (routeStatus: ActiveRoute['routeStatus']) => {
@@ -323,9 +323,7 @@ export const getFirstCashbackBanners = ({
 }): Banner[] => {
   const banners: Banner[] = []
 
-  const shouldShowBanner =
-    !!cashbackStatusByAccount[selectedAccountAddr]?.firstCashbackReceivedAt &&
-    !cashbackStatusByAccount[selectedAccountAddr]?.firstCashbackSeenAt
+  const shouldShowBanner = cashbackStatusByAccount[selectedAccountAddr] === 'unseen-cashback'
 
   if (shouldShowBanner) {
     banners.push({
