@@ -1,6 +1,10 @@
 /* eslint-disable no-bitwise */
 import { getBytes, keccak256, LangEn, Mnemonic, randomBytes } from 'ethers'
 
+// Custom entropy generator that enhances ethers' randomBytes by incorporating:
+// - Time-based entropy for additional randomness.
+// - Optional extra entropy (like mouse position, timestamp...) provided by the user for added security.
+// This helps improve the security of mainKey generation and random seed phrase creation.
 export class EntropyGenerator {
   #entropyPool: Uint8Array = new Uint8Array(0)
 
@@ -36,6 +40,7 @@ export class EntropyGenerator {
   }
 
   #collectTimeEntropy(): void {
+    // TODO: add a polyfill for the mobile app
     const now = performance.now()
 
     if (!now) return
