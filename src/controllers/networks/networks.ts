@@ -104,6 +104,7 @@ export class NetworksController extends EventEmitter {
       await this.#storage.set('networks', storedNetworks)
       await this.#storage.remove('networkPreferences')
     }
+    // TODO: Migrate to a simpler structure that stores only a partial of the network that user did change
     this.#networks = storedNetworks
 
     predefinedNetworks.forEach((n) => {
@@ -139,7 +140,11 @@ export class NetworksController extends EventEmitter {
     this.#storage.set('networks', this.#networks)
 
     this.emitUpdate()
+
+    // TODO: After the initial load completes, fetch latest network config from the Relayer and update networks if needed
   }
+
+  // TODO: Method to fetch network config from the Relayer and update networks if needed
 
   async setNetworkToAddOrUpdate(
     networkToAddOrUpdate: {
