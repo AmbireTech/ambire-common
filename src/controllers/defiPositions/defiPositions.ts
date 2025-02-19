@@ -128,11 +128,7 @@ export class DefiPositionsController extends EventEmitter {
           }
         }
 
-        if (this.#getCanSkipUpdate(selectedAccountAddr, n.id, maxDataAgeMs)) {
-          // Emit an update so that the current account data getter is updated
-          this.emitUpdate()
-          return
-        }
+        if (this.#getCanSkipUpdate(selectedAccountAddr, n.id, maxDataAgeMs)) return
 
         this.#state[selectedAccountAddr][n.id].isLoading = true
         this.emitUpdate()
@@ -189,7 +185,7 @@ export class DefiPositionsController extends EventEmitter {
             updatedAt: hasErrors ? networkState.updatedAt : Date.now()
           }
           await this.#setAssetPrices(selectedAccountAddr, n.id).catch((e) => {
-            console.error('#setAssetPrices error:', e)
+            console.error(`#setAssetPrices error for ${selectedAccountAddr} on ${n.id}:`, e)
             this.#state[selectedAccountAddr][n.id].error = DeFiPositionsError.AssetPriceError
           })
         } catch (e: any) {
@@ -206,6 +202,9 @@ export class DefiPositionsController extends EventEmitter {
       })
     )
 
+    // If this function is ever deleted, we should add an emitUpdate after the Promise.all
+    // to ensure the UI is updated when the user changes the selected account and the positions
+    // are retrieved from cache.
     await this.#updateNetworksWithPositions(selectedAccountAddr, this.#state[selectedAccountAddr])
   }
 
