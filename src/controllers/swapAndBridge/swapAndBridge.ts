@@ -486,6 +486,7 @@ export class SwapAndBridgeController extends EventEmitter {
     } = props
 
     if (fromAmount !== undefined) {
+      const fromAmountFormatted = fromAmount.indexOf('.') === 0 ? `0${fromAmount}` : fromAmount
       this.fromAmount = fromAmount
       ;(() => {
         if (fromAmount === '') {
@@ -512,7 +513,7 @@ export class SwapAndBridgeController extends EventEmitter {
           const { tokenPriceBigInt, tokenPriceDecimals } = convertTokenPriceToBigInt(tokenPrice)
 
           // Convert the numbers to big int
-          const amountInFiatBigInt = parseUnits(fromAmount, amountInFiatDecimals)
+          const amountInFiatBigInt = parseUnits(fromAmountFormatted, amountInFiatDecimals)
 
           this.fromAmount = formatUnits(
             (amountInFiatBigInt * CONVERSION_PRECISION_POW) / tokenPriceBigInt,
@@ -528,7 +529,7 @@ export class SwapAndBridgeController extends EventEmitter {
           if (!this.fromSelectedToken) return
 
           const sanitizedFieldValue = getSanitizedAmount(
-            fromAmount,
+            fromAmountFormatted,
             this.fromSelectedToken.decimals
           )
           // Convert the field value to big int
@@ -1353,15 +1354,23 @@ export class SwapAndBridgeController extends EventEmitter {
     if (!activeRoute) return
 
     let shouldUpdateActiveRouteStatus = false
-    if (activeRoute.route.fromChainId === activeRoute.route.toChainId)
-      shouldUpdateActiveRouteStatus = true
 
+    const isSwap = activeRoute.route.fromChainId === activeRoute.route.toChainId
+
+    // force update the active route status if the route is of type 'swap'
+    if (isSwap) shouldUpdateActiveRouteStatus = true
+
+    // force update the active route status if the last tx of a 'bridge' is of type 'swap'
     if (activeRoute.route.currentUserTxIndex + 1 === activeRoute.route.totalUserTx) {
       const tx = activeRoute.route.userTxs[activeRoute.route.currentUserTxIndex]
       if (!tx) return
 
       if (tx.userTxType === 'dex-swap') shouldUpdateActiveRouteStatus = true
     }
+
+    // force update the active route with an error message if the tx fails (for both swap and bridge)
+    if (opStatus === AccountOpStatus.Failure || opStatus === AccountOpStatus.Rejected)
+      shouldUpdateActiveRouteStatus = true
 
     if (!shouldUpdateActiveRouteStatus) return
 

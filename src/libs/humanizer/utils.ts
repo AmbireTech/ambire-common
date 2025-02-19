@@ -1,11 +1,6 @@
 import { ZeroAddress } from 'ethers'
 
-import { geckoIdMapper } from '../../consts/coingecko'
-import { Fetch } from '../../interfaces/fetch'
-import { Network } from '../../interfaces/network'
 import { HumanizerMeta, HumanizerVisualization, HumanizerWarning, IrCall } from './interfaces'
-
-const baseUrlCena = 'https://cena.ambire.com/api/v3'
 
 export function getWarning(
   content: string,
@@ -95,28 +90,6 @@ export function getDeadline(deadlineSecs: bigint | number): HumanizerVisualizati
 }
 export function getLink(url: string, content: string): HumanizerVisualization {
   return { type: 'link', url, content, id: randomId() }
-}
-
-/**
- * Make a request to coingecko to fetch the latest price of the native token.
- * This is used by benzina and hence we cannot wrap the errors in emitError
- */
-// @TODO this shouldn't be here, a more suitable place would be portfolio/gecko
-export async function getNativePrice(network: Network, fetch: Fetch): Promise<number> {
-  const platformId = geckoIdMapper(ZeroAddress, network)
-  if (!platformId) {
-    throw new Error(`getNativePrice: ${network.name} is not supported`)
-  }
-
-  const queryUrl = `${baseUrlCena}/simple/price?ids=${platformId}&vs_currencies=usd`
-  let response = await fetch(queryUrl)
-  response = await response.json()
-
-  if (!response[platformId] || !response[platformId].usd) {
-    throw new Error(`getNativePrice: could not fetch native token price for ${network.name} `)
-  }
-
-  return response[platformId].usd
 }
 
 export function checkIfUnknownAction(v: HumanizerVisualization[] | undefined): boolean {
