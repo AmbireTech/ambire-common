@@ -39,8 +39,11 @@ export interface SelectedAccountPortfolio {
   pending: SelectedAccountPortfolioState
 }
 
-// An old CashbackStatus type before the migration
-export type OldCashbackStatus = {
+// As of version 4.53.0, cashback status information has been introduced.
+// Previously, each account stored a separate cashback status object with multiple timestamps.
+// Now, cashback statuses are represented as a single normalized value for simplifying.
+// This type represents the old structure before migration.
+export type LegacyCashbackStatus = {
   firstCashbackReceivedAt: number | null
   firstCashbackSeenAt: number | null
   cashbackWasZeroAt: number | null

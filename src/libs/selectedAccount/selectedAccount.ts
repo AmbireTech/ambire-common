@@ -2,7 +2,7 @@ import { Account } from '../../interfaces/account'
 import {
   CashbackStatus,
   CashbackStatusByAccount,
-  OldCashbackStatus,
+  LegacyCashbackStatus,
   SelectedAccountPortfolio,
   SelectedAccountPortfolioState,
   SelectedAccountPortfolioTokenResult
@@ -318,41 +318,47 @@ export function calculateSelectedAccountPortfolio(
   } as SelectedAccountPortfolio
 }
 
-export const migrateCashbackStatus = (
-  existingStatuses: Record<Account['addr'], CashbackStatus | OldCashbackStatus | null | undefined>
-) => {
-  const migratedStatuses: CashbackStatusByAccount = {}
-
-  // eslint-disable-next-line no-restricted-syntax
-  for (const [accountId, status] of Object.entries(existingStatuses)) {
-    if (typeof status === 'string') {
-      migratedStatuses[accountId] = status as CashbackStatus
-    } else if (typeof status === 'object' && status !== null) {
-      if (
-        status.cashbackWasZeroAt &&
-        status.firstCashbackReceivedAt === null &&
-        status.firstCashbackSeenAt === null
-      ) {
-        migratedStatuses[accountId] = 'no-cashback'
-      } else if (
-        status.cashbackWasZeroAt === null &&
-        status.firstCashbackReceivedAt &&
-        status.firstCashbackSeenAt === null
-      ) {
-        migratedStatuses[accountId] = 'unseen-cashback'
-      } else if (
-        status.cashbackWasZeroAt === null &&
-        status.firstCashbackReceivedAt &&
-        status.firstCashbackSeenAt
-      ) {
-        migratedStatuses[accountId] = 'seen-cashback'
-      } else {
-        migratedStatuses[accountId] = 'seen-cashback'
+// As of version 4.53.0, cashback status information has been introduced.
+// Previously, cashback statuses were stored as separate objects per account.
+// Now, they are normalized under a single structure for simplifying.
+// Migration is needed to transform existing data into the new format.
+export const migrateCashbackStatusToNewFormat = (
+  existingStatuses: Record<
+    Account['addr'],
+    CashbackStatus | LegacyCashbackStatus | null | undefined
+  >
+): CashbackStatusByAccount => {
+  return Object.fromEntries(
+    Object.entries(existingStatuses).map(([accountId, status]) => {
+      if (typeof status === 'string') {
+        return [accountId, status as CashbackStatus]
       }
-    } else {
-      migratedStatuses[accountId] = 'seen-cashback'
-    }
-  }
 
-  return migratedStatuses
+      if (typeof status === 'object' && status !== null) {
+        const { cashbackWasZeroAt, firstCashbackReceivedAt, firstCashbackSeenAt } = status
+
+        if (cashbackWasZeroAt && firstCashbackReceivedAt === null && firstCashbackSeenAt === null) {
+          return [accountId, 'no-cashback']
+        }
+
+        if (cashbackWasZeroAt === null && firstCashbackReceivedAt && firstCashbackSeenAt === null) {
+          return [accountId, 'unseen-cashback']
+        }
+
+        if (cashbackWasZeroAt === null && firstCashbackReceivedAt && firstCashbackSeenAt) {
+          return [accountId, 'seen-cashback']
+        }
+      }
+
+      return [accountId, 'seen-cashback']
+    })
+  )
+}
+
+export const needsCashbackStatusMigration = (
+  cashbackStatusByAccount: Record<Account['addr'], CashbackStatus | LegacyCashbackStatus>
+) => {
+  return Object.values(cashbackStatusByAccount).some(
+    (value) => typeof value === 'object' && value !== null && 'cashbackWasZeroAt' in value
+  )
 }

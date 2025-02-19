@@ -11,7 +11,7 @@ import { networks } from '../../consts/networks'
 import { CashbackStatusByAccount } from '../../interfaces/selectedAccount'
 import { Storage } from '../../interfaces/storage'
 import { DeFiPositionsError } from '../../libs/defiPositions/types'
-import { migrateCashbackStatus } from '../../libs/selectedAccount/selectedAccount'
+import { migrateCashbackStatusToNewFormat } from '../../libs/selectedAccount/selectedAccount'
 import { getRpcProvider } from '../../services/provider'
 import { AccountsController } from '../accounts/accounts'
 import { ActionsController } from '../actions/actions'
@@ -205,7 +205,7 @@ describe('SelectedAccount Controller', () => {
       '0xabc': 'unseen-cashback'
     } as CashbackStatusByAccount
 
-    expect(migrateCashbackStatus(existingStatuses)).toEqual(existingStatuses)
+    expect(migrateCashbackStatusToNewFormat(existingStatuses)).toEqual(existingStatuses)
   })
   test('should migrate old statuses with new ones', () => {
     const existingStatuses = {
@@ -232,10 +232,10 @@ describe('SelectedAccount Controller', () => {
       '0x333': 'no-cashback'
     } as CashbackStatusByAccount
 
-    expect(migrateCashbackStatus(existingStatuses)).toEqual(expectedStatuses)
+    expect(migrateCashbackStatusToNewFormat(existingStatuses)).toEqual(expectedStatuses)
   })
   test('should return an empty object if input is empty', () => {
-    expect(migrateCashbackStatus({})).toEqual({})
+    expect(migrateCashbackStatusToNewFormat({})).toEqual({})
   })
 
   describe('Banners', () => {

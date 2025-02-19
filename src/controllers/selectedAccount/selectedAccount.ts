@@ -1,5 +1,4 @@
 import { getAddress } from 'ethers'
-import { PortfolioGasTankResult } from 'libs/portfolio/interfaces'
 
 import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
 import { Account } from '../../interfaces/account'
@@ -15,6 +14,7 @@ import { isSmartAccount } from '../../libs/account/account'
 import { getFirstCashbackBanners } from '../../libs/banners/banners'
 import { sortByValue } from '../../libs/defiPositions/helpers'
 import { PositionsByProvider } from '../../libs/defiPositions/types'
+import { PortfolioGasTankResult } from '../../libs/portfolio/interfaces'
 // eslint-disable-next-line import/no-cycle
 import {
   getNetworksWithDeFiPositionsErrorErrors,
@@ -24,7 +24,8 @@ import {
 } from '../../libs/selectedAccount/errors'
 import {
   calculateSelectedAccountPortfolio,
-  migrateCashbackStatus,
+  migrateCashbackStatusToNewFormat,
+  needsCashbackStatusMigration,
   updatePortfolioStateWithDefiPositions
 } from '../../libs/selectedAccount/selectedAccount'
 // eslint-disable-next-line import/no-cycle
@@ -106,11 +107,8 @@ export class SelectedAccountController extends EventEmitter {
     const selectedAccountAddress = await this.#storage.get('selectedAccount', null)
     let cashbackStatusByAccountTemp = await this.#storage.get('cashbackStatusByAccount', {})
 
-    if (
-      Object.keys(cashbackStatusByAccountTemp).length &&
-      Object.values(cashbackStatusByAccountTemp).some((value) => typeof value === 'object')
-    ) {
-      cashbackStatusByAccountTemp = migrateCashbackStatus(cashbackStatusByAccountTemp)
+    if (needsCashbackStatusMigration(cashbackStatusByAccountTemp)) {
+      cashbackStatusByAccountTemp = migrateCashbackStatusToNewFormat(cashbackStatusByAccountTemp)
       this.#cashbackStatusByAccount = cashbackStatusByAccountTemp
       await this.#storage.set('cashbackStatusByAccount', cashbackStatusByAccountTemp)
     } else {
