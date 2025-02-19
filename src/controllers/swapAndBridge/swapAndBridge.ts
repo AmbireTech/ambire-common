@@ -1358,7 +1358,7 @@ export class SwapAndBridgeController extends EventEmitter {
 
     if (isSwap) shouldUpdateActiveRouteStatus = true
 
-    // check if it is the last tx of a 'bridge' is of type 'swap'
+    // force update active route if the last tx of a 'bridge' is of type 'swap'
     if (activeRoute.route.currentUserTxIndex + 1 === activeRoute.route.totalUserTx) {
       const tx = activeRoute.route.userTxs[activeRoute.route.currentUserTxIndex]
       if (!tx) return
