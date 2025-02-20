@@ -285,14 +285,14 @@ export class SelectedAccountController extends EventEmitter {
       this.#updatePortfolioErrors(true)
     }
 
-    this.updateCashbackStatus()
+    this.updateCashbackStatus(skipUpdate)
 
     if (!skipUpdate) {
       this.emitUpdate()
     }
   }
 
-  async updateCashbackStatus() {
+  async updateCashbackStatus(skipUpdate?: boolean) {
     if (!this.#portfolio || !this.account || !this.portfolio.latest.gasTank) return
 
     const accountId = this.account.addr
@@ -304,13 +304,13 @@ export class SelectedAccountController extends EventEmitter {
       this.#cashbackStatusByAccount[accountId] !== 'unseen-cashback'
 
     if (isCashbackZero) {
-      await this.changeCashbackStatus('no-cashback')
+      await this.changeCashbackStatus('no-cashback', skipUpdate)
     } else if (!isCashbackZero && cashbackWasZeroBefore && notReceivedFirstCashbackBefore) {
-      await this.changeCashbackStatus('unseen-cashback')
+      await this.changeCashbackStatus('unseen-cashback', skipUpdate)
     }
   }
 
-  async changeCashbackStatus(newStatus: CashbackStatus) {
+  async changeCashbackStatus(newStatus: CashbackStatus, skipUpdate?: boolean) {
     if (!this.account) return
 
     const accountId = this.account.addr
@@ -322,7 +322,9 @@ export class SelectedAccountController extends EventEmitter {
 
     await this.#storage.set('cashbackStatusByAccount', this.#cashbackStatusByAccount)
 
-    this.emitUpdate()
+    if (!skipUpdate) {
+      this.emitUpdate()
+    }
   }
 
   get areDefiPositionsLoading() {
