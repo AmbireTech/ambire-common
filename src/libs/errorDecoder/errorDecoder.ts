@@ -15,11 +15,15 @@ import RelayerErrorHandler from './handlers/relayer'
 import { formatReason, getDataFromError, isReasonValid } from './helpers'
 import { DecodedError, ErrorType } from './types'
 
+// The order of these handlers is important!
+// Preprocessor handlers must be ordered by least specific to most specific
+// Why- because error reasons are overwritten by subsequent matching handlers
+// Error handlers must be ordered by most specific to least specific
+// Why- because the first valid reason cannot be overwritten by subsequent handlers
 const PREPROCESSOR_BUNDLER_HANDLERS = [
   BiconomyEstimationErrorHandler,
   PimlicoEstimationErrorHandler
 ]
-
 const PREPROCESSOR_HANDLERS = [BundlerErrorHandler, RelayerErrorHandler, InnerCallFailureHandler]
 const ERROR_HANDLERS = [
   RpcErrorHandler,
@@ -64,7 +68,7 @@ export function decodeError(e: Error): DecodedError {
   // a third. So we will add additional handlers optionally
   const preprocessorHandlers = PREPROCESSOR_HANDLERS
   if (e instanceof BundlerError) {
-    preprocessorHandlers.push(...PREPROCESSOR_BUNDLER_HANDLERS)
+    preprocessorHandlers.unshift(...PREPROCESSOR_BUNDLER_HANDLERS)
   }
 
   // Run preprocessor handlers first
