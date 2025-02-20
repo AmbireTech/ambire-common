@@ -430,7 +430,91 @@ export function hasRelayerSupport(network: Network) {
 }
 
 // TODO: The network structure coming from the Relayer needs additional mapping to match the Network interface
-export function mapRelayerNetworkToNetwork(): Network {
+export type RelayerNetwork = {
+  predefinedConfigVersion: number // TODO: We may not need it
+  ambireId: string
+  coingeckoPlatformId: string
+  name: string
+  icon: string
+  explorerUrl: string
+  rpcUrls: string[]
+  selectedRpcUrl: string
+  native: {
+    symbol: string
+    coingeckoId: string
+    icon: string
+    decimals: number
+    wrapped: {
+      address: string
+      symbol: string
+      coingeckoId: string
+      icon: string
+      decimals: number
+    }
+    oldNativeAssetSymbols?: string[]
+  }
+  isOptimistic: boolean
+  disableEstimateGas: boolean
+  feeOptions: {
+    is1559: boolean
+    elasticityMultiplier?: bigint
+    baseFeeMaxChangeDenominator?: bigint
+    feeIncrease?: bigint
+  }
+  smartAccounts: {
+    hasRelayer: boolean
+    erc4337: {
+      enabled: boolean
+      hasPaymaster: boolean
+      hasBundlerSupport: boolean
+      bundlers: {
+        pimlico: string
+        biconomy: string
+      }
+      defaultBundler: string
+    }
+    allowForce4337: boolean
+  }
+}
+export function mapRelayerNetworkToNetwork(
+  chainId: bigint,
+  relayerNetwork: RelayerNetwork
+): Network {
+  const { name, explorerUrl, selectedRpcUrl, isOptimistic, disableEstimateGas } = relayerNetwork
+  const { ambireId: id, coingeckoPlatformId: platformId } = relayerNetwork
+
+  // TODO: Adapter for the others
+  const nativeAssetSymbol = relayerNetwork.native.symbol
+  const rpcUrls
+  const erc4337
+  const rpcNoStateOverride
+  const feeOptions
+  const isSAEnabled
+  const areContractsDeployed
+  const features
+  const hasRelayer = relayerNetwork.smartAccounts.hasRelayer
+  const nativeAssetId = relayerNetwork.native.coingeckoId
+  const hasSingleton
+  const iconUrls
+  const reestimateOn
+  const flagged
+  const predefined
+  const wrappedAddr = relayerNetwork.native.wrapped.address
+  const blockGasLimit
+  const oldNativeAssetSymbols = relayerNetwork.native.oldNativeAssetSymbols
+  const force4337
+  const allowForce4337 = relayerNetwork.smartAccounts.allowForce4337
+
+  return {
+    name,
+    explorerUrl,
+    selectedRpcUrl,
+    isOptimistic,
+    disableEstimateGas,
+    id,
+    platformId,
+    chainId
+  }
   // {
   //   id: 'arbitrum', // ambireId
   //   name: 'Arbitrum', // ✅
