@@ -141,7 +141,6 @@ export class SelectedAccountController extends EventEmitter {
 
         if (!this.areDefiPositionsLoading) {
           this.#updateSelectedAccountPortfolio(true)
-          this.#updateDefiPositionsErrors()
         }
       })
     })
@@ -305,6 +304,7 @@ export class SelectedAccountController extends EventEmitter {
     )
 
     this.defiPositions = sortedPositionsByProvider
+    this.#updateDefiPositionsErrors(true)
 
     if (!skipUpdate) {
       this.emitUpdate()
