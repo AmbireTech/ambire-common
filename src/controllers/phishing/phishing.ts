@@ -5,9 +5,10 @@ import { WindowManager } from '../../interfaces/window'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
 const METAMASK_BLACKLIST_URL =
-  'https://raw.githubusercontent.com/MetaMask/eth-phishing-detect/master/src/config.json'
+  'https://api.github.com/repos/MetaMask/eth-phishing-detect/contents/src/config.json?ref=master'
+
 const PHANTOM_BLACKLIST_URL =
-  'https://raw.githubusercontent.com/phantom/blocklist/master/blocklist.yaml'
+  'https://api.github.com/repos/phantom/blocklist/contents/blocklist.yaml?ref=master'
 
 export class PhishingController extends EventEmitter {
   #fetch: Fetch
@@ -29,7 +30,9 @@ export class PhishingController extends EventEmitter {
     this.#fetch = fetch
     this.#windowManager = windowManager
 
-    this.#headers = { Accept: 'application/json', 'Content-Type': 'application/json' }
+    this.#headers = {
+      Accept: 'application/vnd.github.v3.+json'
+    }
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.initialLoadPromise = this.#load()
   }
@@ -38,9 +41,13 @@ export class PhishingController extends EventEmitter {
     const results = await Promise.allSettled([
       this.#fetch(METAMASK_BLACKLIST_URL, this.#headers)
         .then((res) => res.json())
+        .then((metadata) => fetch(metadata.download_url))
+        .then((rawRes) => rawRes.json())
         .then((data) => data.blacklist)
         .catch(() => []),
       this.#fetch(PHANTOM_BLACKLIST_URL, this.#headers)
+        .then((res) => res.json())
+        .then((metadata) => fetch(metadata.download_url))
         .then((res) => res.text())
         .then((text) => jsYaml.load(text))
         .then((data: any) => (data && data.length ? data.map((i: { url: string }) => i.url) : []))
@@ -63,6 +70,8 @@ export class PhishingController extends EventEmitter {
 
     try {
       const hostname = new URL(url).hostname
+
+      // blacklisted if it has `ambire` in the hostname but it is not a pre-approved ambire domain
       if (hostname.includes('ambire') && !hostname.includes('ambire.com')) return true
 
       return this.#blacklist.has(hostname)
