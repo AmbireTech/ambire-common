@@ -1,6 +1,6 @@
 import jsYaml from 'js-yaml'
 
-import { Fetch, RequestInitWithCustomHeaders } from '../../interfaces/fetch'
+import { Fetch } from '../../interfaces/fetch'
 import { Storage } from '../../interfaces/storage'
 import { WindowManager } from '../../interfaces/window'
 import EventEmitter from '../eventEmitter/eventEmitter'
@@ -17,8 +17,6 @@ export class PhishingController extends EventEmitter {
   #storage: Storage
 
   #windowManager: WindowManager
-
-  #headers: RequestInitWithCustomHeaders['headers']
 
   #blacklist: Set<string> = new Set() // list of blacklisted URLs
 
@@ -46,9 +44,6 @@ export class PhishingController extends EventEmitter {
     this.#storage = storage
     this.#windowManager = windowManager
 
-    this.#headers = {
-      Accept: 'application/vnd.github.v3.+json'
-    }
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.initialLoadPromise = this.#load()
   }
@@ -75,14 +70,18 @@ export class PhishingController extends EventEmitter {
     } | null
   ) {
     this.updateStatus = 'LOADING'
+
+    const headers = {
+      Accept: 'application/vnd.github.v3.+json'
+    } as any
     const results = await Promise.allSettled([
-      this.#fetch(METAMASK_BLACKLIST_URL, this.#headers)
+      this.#fetch(METAMASK_BLACKLIST_URL, headers)
         .then((res) => res.json())
         .then((metadata) => fetch(metadata.download_url))
         .then((rawRes) => rawRes.json())
         .then((data) => data.blacklist)
         .catch(() => []),
-      this.#fetch(PHANTOM_BLACKLIST_URL, this.#headers)
+      this.#fetch(PHANTOM_BLACKLIST_URL, headers)
         .then((res) => res.json())
         .then((metadata) => fetch(metadata.download_url))
         .then((res) => res.text())
