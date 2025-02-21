@@ -83,6 +83,19 @@ export interface Network {
   allowForce4337?: boolean
 }
 
+export type UserNetworkPreferencesForPredefinedNetworks = Pick<
+  RelayerNetwork,
+  'predefinedConfigVersion'
+> &
+  Partial<Pick<Network, 'rpcUrls' | 'selectedRpcUrl' | 'explorerUrl' | 'iconUrls'>>
+
+export type UserNetworkPreferencesForCustomNetworks = UserNetworkPreferencesForPredefinedNetworks &
+  Partial<Pick<Network, 'chainId' | 'name' | 'nativeAssetSymbol'>>
+
+export type UserNetworkPreferences =
+  | UserNetworkPreferencesForPredefinedNetworks
+  | UserNetworkPreferencesForCustomNetworks
+
 export interface AddNetworkRequestParams {
   name: Network['name']
   rpcUrls: Network['rpcUrls']
