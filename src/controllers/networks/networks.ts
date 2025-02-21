@@ -6,7 +6,10 @@ import {
   Network,
   NetworkId,
   NetworkInfo,
-  NetworkInfoLoading
+  NetworkInfoLoading,
+  UserNetworkPreferences,
+  UserNetworkPreferencesForCustomNetworks,
+  UserNetworkPreferencesForPredefinedNetworks
 } from '../../interfaces/network'
 import { Storage } from '../../interfaces/storage'
 import {
@@ -104,9 +107,31 @@ export class NetworksController extends EventEmitter {
       await this.#storage.set('networks', storedNetworks)
       await this.#storage.remove('networkPreferences')
     }
-    // TODO: Migrate to a simpler structure that stores only a partial of the network that user did change
     this.#networks = storedNetworks
+    // TODO: Migrate the currently stored "networks" to the "network-preferences-v2 structure"
 
+    // TODO: Pull the user network preferences.
+    const userNetworkPreferences: { [key: NetworkId]: UserNetworkPreferences } =
+      await this.#storage.get(
+        'network-preferences-v2', // TODO: Confirm the storage key name.
+        {}
+      )
+
+    // Step 1: Merge the predefined networks with the user network preferences.
+    const nextNetworks: { [key: NetworkId]: Network } = {}
+    predefinedNetworks.forEach((n) => {
+      const hasUserPreferences = !!userNetworkPreferences[n.id]
+
+      nextNetworks[n.id] = {
+        ...n,
+        // Override with user preferences
+        ...(hasUserPreferences ? userNetworkPreferences[n.id] : {})
+      }
+    })
+
+    // Step 2: Merge relayer networks
+
+    // TODO: Remove
     predefinedNetworks.forEach((n) => {
       this.#networks[n.id] = {
         ...n, // add the latest structure of the predefined network to include the new props that are not in storage yet
@@ -125,6 +150,7 @@ export class NetworksController extends EventEmitter {
       }
     })
 
+    // TODO: Remove
     // add predefined: false for each deleted network from predefined
     Object.keys(this.#networks).forEach((networkName) => {
       const predefinedNetwork = predefinedNetworks.find(
