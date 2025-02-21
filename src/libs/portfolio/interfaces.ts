@@ -39,7 +39,6 @@ export type GasTankTokenResult = TokenResult & {
   availableAmount: bigint
   cashback: bigint
   saved: bigint
-  hasUnseenFirstCashback: boolean
 }
 
 export interface CollectionResult extends TokenResult {
@@ -242,14 +241,4 @@ export type FormattedPendingAmounts = Omit<PendingAmounts, 'pendingBalance'> & {
   pendingBalanceUSDFormatted?: string
   pendingToBeSignedFormatted?: string
   pendingToBeConfirmedFormatted?: string
-}
-
-export type CashbackStatus = {
-  firstCashbackReceivedAt: number | null
-  firstCashbackSeenAt: number | null
-  cashbackWasZeroAt: number | null
-}
-
-export type CashbackStatusByAccount = {
-  [key: AccountId]: CashbackStatus
 }
