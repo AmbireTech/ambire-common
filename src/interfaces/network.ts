@@ -56,30 +56,30 @@ export interface Network {
   id: NetworkId
   name: string
   nativeAssetSymbol: string
-  chainId: bigint
+  chainId: NetworkInfo['chainId']
   rpcUrls: string[]
   explorerUrl: string
   selectedRpcUrl: string
-  erc4337: Erc4337settings
-  rpcNoStateOverride: boolean
-  feeOptions: FeeOptions
-  isSAEnabled: boolean
-  areContractsDeployed: boolean
+  erc4337: NetworkInfo['erc4337']
+  rpcNoStateOverride: NetworkInfo['rpcNoStateOverride']
+  feeOptions: NetworkInfo['feeOptions']
+  isSAEnabled: NetworkInfo['isSAEnabled']
+  areContractsDeployed: NetworkInfo['areContractsDeployed']
   features: NetworkFeature[]
   hasRelayer: boolean
-  hasSingleton: boolean
-  platformId: string
-  nativeAssetId: string
+  hasSingleton: NetworkInfo['hasSingleton']
+  platformId: NetworkInfo['platformId']
+  nativeAssetId: NetworkInfo['nativeAssetId']
   iconUrls?: string[]
   reestimateOn?: number
-  isOptimistic?: boolean
-  flagged?: boolean
+  isOptimistic?: NetworkInfo['isOptimistic']
+  flagged?: NetworkInfo['flagged']
   predefined: boolean
   wrappedAddr?: string
   blockGasLimit?: bigint
   oldNativeAssetSymbols?: string[]
   disableEstimateGas?: boolean
-  force4337?: boolean
+  force4337?: NetworkInfo['force4337']
   allowForce4337?: boolean
 }
 
