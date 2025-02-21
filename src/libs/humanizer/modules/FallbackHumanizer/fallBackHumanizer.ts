@@ -77,15 +77,15 @@ export const fallbackHumanizer: HumanizerCallModule = (
         )
       } else {
         visualization.push(
-          getAction('Unknown action'),
-          getLabel('to'),
+          getAction('Interacting'),
+          getLabel('with'),
           getAddressVisualization(call.to)
         )
       }
     }
     if (call.value) {
       if (call.data !== '0x') visualization.push(getLabel('and'))
-      visualization.push(getAction('Send'), getToken(ZeroAddress, call.value))
+      visualization.push(getAction('Sending'), getToken(ZeroAddress, call.value))
       if (call.data === '0x') visualization.push(getLabel('to'), getAddressVisualization(call.to))
     }
 
@@ -93,7 +93,7 @@ export const fallbackHumanizer: HumanizerCallModule = (
       ...call,
       fullVisualization: visualization.length
         ? visualization
-        : [getAction('No data, no value, call to'), getAddressVisualization(call.to)]
+        : [getAction('Empty call to'), getAddressVisualization(call.to)]
     }
   })
 
