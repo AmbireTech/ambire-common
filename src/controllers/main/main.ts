@@ -811,32 +811,44 @@ export class MainController extends EventEmitter {
 
     // if the EOA has become smarter, bundle the actions.
     // if not, initialize a single action
-    // const isSmarterEOA = this.accounts.accountStates[accountAddr][networkId].isSmarterEoa
-    // const accountOpAction = makeSmartAccountOpAction({
-    //   account: this.accounts.accounts.find((acc) => acc.addr === accountAddr)!,
-    //   networkId,
-    //   nonce: this.accounts.accountStates[accountAddr][networkId].nonce,
-    //   userRequests: this.userRequests,
-    //   actionsQueue: this.actions.actionsQueue
-    // })
-    // this.actions.addOrUpdateAction(accountOpAction, 'first')
-    // if (isSmarterEOA) {
+    const isSmarterEOA = this.accounts.accountStates[accountAddr][networkId].isSmarterEoa
+    if (isSmarterEOA) {
+      const accountOpActions = this.actions.actionsQueue.filter(
+        (a) =>
+          a.type === 'accountOp' &&
+          a.accountOp.accountAddr === accountAddr &&
+          a.accountOp.networkId === networkId
+      )
+      accountOpActions.forEach((act) => this.actions.removeAction(act.id))
+      const accountOpAction = makeSmartAccountOpAction({
+        account: this.accounts.accounts.find((acc) => acc.addr === accountAddr)!,
+        networkId,
+        nonce: this.accounts.accountStates[accountAddr][networkId].nonce,
+        userRequests: this.userRequests,
+        actionsQueue: this.actions.actionsQueue
+      })
+      const windowInterval = setInterval(() => {
+        if (this.actions.actionWindow.loaded) return
+        this.actions.addOrUpdateAction(accountOpAction, 'first')
+        clearInterval(windowInterval)
+      }, 200)
+    } else {
+      const windowInterval = setInterval(() => {
+        if (this.actions.actionWindow.loaded) return
 
-    // } else {
-    // }
+        callsUserReqs.forEach((req) => {
+          const accountOpAction = makeBasicAccountOpAction({
+            account: this.accounts.accounts.find((acc) => acc.addr === accountAddr)!,
+            networkId,
+            nonce: this.accounts.accountStates[accountAddr][networkId].nonce,
+            userRequest: req
+          })
+          this.actions.addOrUpdateAction(accountOpAction)
+        })
 
-    const accountOpAction = makeBasicAccountOpAction({
-      account: this.accounts.accounts.find((acc) => acc.addr === accountAddr)!,
-      networkId,
-      nonce: this.accounts.accountStates[accountAddr][networkId].nonce,
-      userRequest: callsUserReqs[0]
-    })
-    const windowInterval = setInterval(() => {
-      if (this.actions.actionWindow.loaded) return
-
-      this.actions.addOrUpdateAction(accountOpAction, 'first')
-      clearInterval(windowInterval)
-    }, 200)
+        clearInterval(windowInterval)
+      }, 200)
+    }
   }
 
   handleSignMessageCallbacks(signedMessage: SignedMessage) {
