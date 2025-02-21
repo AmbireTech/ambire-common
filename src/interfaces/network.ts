@@ -186,4 +186,4 @@ export type RelayerNetwork = {
   }
 }
 
-export type RelayerNetworkConfigResponse = { [key in Network['id']]: RelayerNetwork }
+export type RelayerNetworkConfigResponse = { [chainId: string]: RelayerNetwork }

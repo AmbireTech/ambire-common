@@ -42,7 +42,7 @@ export class NetworksController extends EventEmitter {
 
   #userNetworkPreferences: { [key: NetworkId]: UserNetworkPreferences } = {}
 
-  #relayerNetworks: RelayerNetworkConfigResponse
+  #relayerNetworks: RelayerNetworkConfigResponse = {}
 
   statuses: Statuses<keyof typeof STATUS_WRAPPED_METHODS> = STATUS_WRAPPED_METHODS
 
@@ -265,8 +265,9 @@ export class NetworksController extends EventEmitter {
       // When adding user preferences, store the predefined config version on
       // which the update was set. This ensures that we can track which version
       // of the predefined network configuration the user preferences are based on.
-      predefinedConfigVersion: this.#relayerNetworks[networkId]
-        ? this.#relayerNetworks[networkId].predefinedConfigVersion
+      // TODO: What would happen if this.#relayerNetworks req initially failed?
+      predefinedConfigVersion: this.#relayerNetworks[`${network.chainId}`]
+        ? this.#relayerNetworks[`${network.chainId}`].predefinedConfigVersion
         : // default to 0, indicating there is no predefined configuration v associated with this update
           0,
       // In case of an update, merge newly added RPC urls with the existing ones, not to lose any
