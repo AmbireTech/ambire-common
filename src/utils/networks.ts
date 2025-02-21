@@ -1,6 +1,13 @@
 import { JsonRpcProvider } from 'ethers'
 
-import { ChainlistNetwork, Network } from '../interfaces/network'
+import { BUNDLER } from '../consts/bundlers'
+import {
+  ChainlistNetwork,
+  Erc4337settings,
+  Network,
+  NetworkFeature,
+  RelayerNetwork
+} from '../interfaces/network'
 
 const checkIsRpcUrlWorking = async (rpcUrl: string) => {
   const provider = new JsonRpcProvider(rpcUrl)
@@ -95,6 +102,111 @@ const convertToAmbireNetworkFormat = async (network: ChainlistNetwork): Promise<
     erc4337: { enabled: false, hasPaymaster: false },
     isSAEnabled: false,
     predefined: false
+  }
+}
+
+/**
+ * Maps the configuration of a Relayer network to the Ambire network format.
+ * Needed, because the structures does NOT fully match, some values need to be
+ * transformed or parsed (number to bigint). And finally, because there are
+ * default values that need to be set for the so called "predefined" networks.
+ */
+export const mapRelayerNetworkConfigToAmbireNetwork = (
+  chainId: bigint,
+  relayerNetwork: RelayerNetwork
+): Network => {
+  const { name, explorerUrl, selectedRpcUrl, isOptimistic, disableEstimateGas, rpcUrls, icon } =
+    relayerNetwork
+  const {
+    ambireId: id,
+    coingeckoPlatformId: platformId,
+    native: {
+      symbol: nativeAssetSymbol,
+      coingeckoId: nativeAssetId,
+      wrapped: { address: wrappedAddr },
+      oldNativeAssetSymbols
+    },
+    smartAccounts: { hasRelayer, allowForce4337, erc4337: incomingErc4337 },
+    feeOptions: incomingFeeOptions
+  } = relayerNetwork
+
+  const feeOptions = {
+    is1559: incomingFeeOptions.is1559,
+    minBaseFeeEqualToLastBlock: !!incomingFeeOptions.minBaseFeeEqualToLastBlock,
+    ...(typeof incomingFeeOptions.minBaseFee === 'number' && {
+      minBaseFee: BigInt(incomingFeeOptions.minBaseFee)
+    }),
+    ...(typeof incomingFeeOptions.elasticityMultiplier === 'number' && {
+      elasticityMultiplier: BigInt(incomingFeeOptions.elasticityMultiplier)
+    }),
+    ...(typeof incomingFeeOptions.baseFeeMaxChangeDenominator === 'number' && {
+      baseFeeMaxChangeDenominator: BigInt(incomingFeeOptions.baseFeeMaxChangeDenominator)
+    }),
+    ...(typeof incomingFeeOptions.feeIncrease === 'number' && {
+      feeIncrease: BigInt(incomingFeeOptions.feeIncrease)
+    })
+  }
+
+  const erc4337: Erc4337settings = {
+    enabled: incomingErc4337.enabled,
+    hasPaymaster: incomingErc4337.hasPaymaster,
+    ...(typeof incomingErc4337.hasBundlerSupport === 'boolean' && {
+      hasBundlerSupport: incomingErc4337.hasBundlerSupport
+    }),
+    // TODO: Also store the values (bundler API keys) somewhere. Currently,
+    // they are pulled from the .env file
+    ...(incomingErc4337.bundlers && {
+      bundlers: Object.keys(incomingErc4337.bundlers) as BUNDLER[]
+    }),
+    ...(incomingErc4337.defaultBundler && {
+      defaultBundler: incomingErc4337.defaultBundler
+    })
+  }
+
+  // TODO: Change the Relayer response?
+  const iconUrls = [icon]
+
+  // Always fallback to these values for the "predefined" networks, coming from
+  // the RPC for the custom networks.
+  // TODO: Shouldn't we include these values in the Relayer response?
+  // TODO: Call the RPC to get these values dynamically?
+  const rpcNoStateOverride = false
+  const isSAEnabled = true
+  const areContractsDeployed = true
+  const features: NetworkFeature[] = []
+  const hasSingleton = true
+
+  // Coming from the RPC, only for the custom networks
+  // const reestimateOn
+  // const flagged
+  // const blockGasLimit
+  // const force4337
+
+  return {
+    predefined: true,
+    name,
+    iconUrls,
+    explorerUrl,
+    rpcUrls,
+    selectedRpcUrl,
+    isOptimistic,
+    disableEstimateGas,
+    id,
+    platformId,
+    chainId,
+    nativeAssetSymbol,
+    nativeAssetId,
+    hasRelayer,
+    wrappedAddr,
+    oldNativeAssetSymbols,
+    allowForce4337,
+    feeOptions,
+    erc4337,
+    rpcNoStateOverride,
+    isSAEnabled,
+    areContractsDeployed,
+    features,
+    hasSingleton
   }
 }
 

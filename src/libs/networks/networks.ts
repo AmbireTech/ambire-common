@@ -1,6 +1,5 @@
 /* eslint-disable import/no-extraneous-dependencies */
 
-import { BUNDLER } from '../../consts/bundlers'
 import { AMBIRE_ACCOUNT_FACTORY, OPTIMISTIC_ORACLE, SINGLETON } from '../../consts/deploy'
 import { networks as predefinedNetworks } from '../../consts/networks'
 import { Fetch } from '../../interfaces/fetch'
@@ -10,8 +9,7 @@ import {
   NetworkFeature,
   NetworkId,
   NetworkInfo,
-  NetworkInfoLoading,
-  RelayerNetwork
+  NetworkInfoLoading
 } from '../../interfaces/network'
 import { RPCProviders } from '../../interfaces/provider'
 import { Bundler } from '../../services/bundlers/bundler'
@@ -429,103 +427,4 @@ export function hasRelayerSupport(network: Network) {
   return (
     network.hasRelayer || !!relayerAdditionalNetworks.find((net) => net.chainId === network.chainId)
   )
-}
-
-// TODO: The network structure coming from the Relayer needs additional mapping to match the Network interface
-export function mapRelayerNetworkToNetwork(
-  chainId: bigint,
-  relayerNetwork: RelayerNetwork
-): Network {
-  const { name, explorerUrl, selectedRpcUrl, isOptimistic, disableEstimateGas, rpcUrls, icon } =
-    relayerNetwork
-  const {
-    ambireId: id,
-    coingeckoPlatformId: platformId,
-    native: {
-      symbol: nativeAssetSymbol,
-      coingeckoId: nativeAssetId,
-      wrapped: { address: wrappedAddr },
-      oldNativeAssetSymbols
-    },
-    smartAccounts: { hasRelayer, allowForce4337, erc4337: incomingErc4337 },
-    feeOptions: incomingFeeOptions
-  } = relayerNetwork
-
-  const feeOptions = {
-    is1559: incomingFeeOptions.is1559,
-    minBaseFeeEqualToLastBlock: !!incomingFeeOptions.minBaseFeeEqualToLastBlock,
-    ...(typeof incomingFeeOptions.minBaseFee === 'number' && {
-      minBaseFee: BigInt(incomingFeeOptions.minBaseFee)
-    }),
-    ...(typeof incomingFeeOptions.elasticityMultiplier === 'number' && {
-      elasticityMultiplier: BigInt(incomingFeeOptions.elasticityMultiplier)
-    }),
-    ...(typeof incomingFeeOptions.baseFeeMaxChangeDenominator === 'number' && {
-      baseFeeMaxChangeDenominator: BigInt(incomingFeeOptions.baseFeeMaxChangeDenominator)
-    }),
-    ...(typeof incomingFeeOptions.feeIncrease === 'number' && {
-      feeIncrease: BigInt(incomingFeeOptions.feeIncrease)
-    })
-  }
-
-  const erc4337: Erc4337settings = {
-    enabled: incomingErc4337.enabled,
-    hasPaymaster: incomingErc4337.hasPaymaster,
-    ...(typeof incomingErc4337.hasBundlerSupport === 'boolean' && {
-      hasBundlerSupport: incomingErc4337.hasBundlerSupport
-    }),
-    // TODO: Also store the values (bundler API keys) somewhere. Currently,
-    // they are pulled from the .env file
-    ...(incomingErc4337.bundlers && {
-      bundlers: Object.keys(incomingErc4337.bundlers) as BUNDLER[]
-    }),
-    ...(incomingErc4337.defaultBundler && {
-      defaultBundler: incomingErc4337.defaultBundler
-    })
-  }
-
-  // TODO: Change the Relayer response?
-  const iconUrls = [icon]
-
-  // Always fallback to these values for the "predefined" networks, coming from
-  // the RPC for the custom networks.
-  // TODO: Shouldn't we include these values in the Relayer response?
-  const rpcNoStateOverride = false
-  const isSAEnabled = true
-  const areContractsDeployed = true
-  const features: NetworkFeature[] = []
-  const hasSingleton = true
-
-  // Coming from the RPC, only for the custom networks
-  // const reestimateOn
-  // const flagged
-  // const blockGasLimit
-  // const force4337
-
-  return {
-    predefined: true,
-    name,
-    iconUrls,
-    explorerUrl,
-    rpcUrls,
-    selectedRpcUrl,
-    isOptimistic,
-    disableEstimateGas,
-    id,
-    platformId,
-    chainId,
-    nativeAssetSymbol,
-    nativeAssetId,
-    hasRelayer,
-    wrappedAddr,
-    oldNativeAssetSymbols,
-    allowForce4337,
-    feeOptions,
-    erc4337,
-    rpcNoStateOverride,
-    isSAEnabled,
-    areContractsDeployed,
-    features,
-    hasSingleton
-  }
 }
