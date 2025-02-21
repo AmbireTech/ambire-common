@@ -801,23 +801,42 @@ export class MainController extends EventEmitter {
   // show signAccountOp with previously added userRequests kind calls
   #makeAccountOpFromStackedCalls(networkId: string, accountAddr: string) {
     // no account op request if there isn't one
-    const callsUserReq = this.userRequests.find(
+    const callsUserReqs = this.userRequests.filter(
       (req) =>
         req.action.kind === 'calls' &&
         req.meta.networkId === networkId &&
         req.meta.accountAddr === accountAddr
     )
-    if (!callsUserReq) return
+    if (!callsUserReqs.length) return
 
-    const accountOpAction = makeSmartAccountOpAction({
+    // if the EOA has become smarter, bundle the actions.
+    // if not, initialize a single action
+    // const isSmarterEOA = this.accounts.accountStates[accountAddr][networkId].isSmarterEoa
+    // const accountOpAction = makeSmartAccountOpAction({
+    //   account: this.accounts.accounts.find((acc) => acc.addr === accountAddr)!,
+    //   networkId,
+    //   nonce: this.accounts.accountStates[accountAddr][networkId].nonce,
+    //   userRequests: this.userRequests,
+    //   actionsQueue: this.actions.actionsQueue
+    // })
+    // this.actions.addOrUpdateAction(accountOpAction, 'first')
+    // if (isSmarterEOA) {
+
+    // } else {
+    // }
+
+    const accountOpAction = makeBasicAccountOpAction({
       account: this.accounts.accounts.find((acc) => acc.addr === accountAddr)!,
       networkId,
       nonce: this.accounts.accountStates[accountAddr][networkId].nonce,
-      userRequests: this.userRequests,
-      actionsQueue: this.actions.actionsQueue
+      userRequest: callsUserReqs[0]
     })
+    const windowInterval = setInterval(() => {
+      if (this.actions.actionWindow.loaded) return
 
-    this.actions.addOrUpdateAction(accountOpAction, 'first')
+      this.actions.addOrUpdateAction(accountOpAction, 'first')
+      clearInterval(windowInterval)
+    }, 200)
   }
 
   handleSignMessageCallbacks(signedMessage: SignedMessage) {
@@ -1655,9 +1674,10 @@ export class MainController extends EventEmitter {
             r.meta.networkId === userRequest.meta.networkId
           )
       )
-      return
     }
+  }
 
+  #handlePostReject(userRequest: UserRequest) {
     // if the user rejects 7702, he will sign as normal EOA the stack calls
     if (userRequest.action.kind === 'authorization-7702') {
       this.#makeAccountOpFromStackedCalls(userRequest.meta.networkId, userRequest.meta.accountAddr)
@@ -1707,6 +1727,7 @@ export class MainController extends EventEmitter {
 
     userRequest.dappPromise?.reject(ethErrors.provider.userRejectedRequest<any>(err))
     this.removeUserRequest(requestId)
+    this.#handlePostReject(userRequest)
   }
 
   rejectSignAccountOpCall(callId: string) {
@@ -1897,7 +1918,7 @@ export class MainController extends EventEmitter {
       const contractAddr = getContractImplementation(network.chainId)
       await this.addUserRequest(
         {
-          id: new Date().getTime(),
+          id: 'Authorization7702',
           action: {
             kind: 'authorization-7702',
             chainId: network.chainId,

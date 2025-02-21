@@ -22,12 +22,12 @@ import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 
 // TODO: Temporarily. Refactor imports across the codebase to ref /interfaces/actions instead.
 export type {
-  SwitchAccountAction,
-  Action,
   AccountOpAction,
-  SignMessageAction,
+  Action,
   BenzinAction,
-  DappRequestAction
+  DappRequestAction,
+  SignMessageAction,
+  SwitchAccountAction
 }
 
 export type ActionPosition = 'first' | 'last'
@@ -207,6 +207,7 @@ export class ActionsController extends EventEmitter {
 
   removeAction(actionId: Action['id'], shouldOpenNextAction: boolean = true) {
     this.actionsQueue = this.actionsQueue.filter((a) => a.id !== actionId)
+
     if (shouldOpenNextAction) {
       this.#setCurrentAction(this.visibleActionsQueue[0] || null)
     }
