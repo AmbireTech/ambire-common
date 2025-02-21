@@ -165,12 +165,9 @@ export type RelayerNetwork = {
     erc4337: {
       enabled: boolean
       hasPaymaster: boolean
-      hasBundlerSupport: boolean
-      bundlers: {
-        pimlico: string
-        biconomy: string
-      }
-      defaultBundler: string
+      hasBundlerSupport?: boolean
+      bundlers?: { [bundler in BUNDLER]: string }
+      defaultBundler?: BUNDLER
     }
     allowForce4337: boolean
   }

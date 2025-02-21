@@ -1,5 +1,6 @@
 /* eslint-disable import/no-extraneous-dependencies */
 
+import { BUNDLER } from '../../consts/bundlers'
 import { AMBIRE_ACCOUNT_FACTORY, OPTIMISTIC_ORACLE, SINGLETON } from '../../consts/deploy'
 import { networks as predefinedNetworks } from '../../consts/networks'
 import { Fetch } from '../../interfaces/fetch'
@@ -446,7 +447,7 @@ export function mapRelayerNetworkToNetwork(
       wrapped: { address: wrappedAddr },
       oldNativeAssetSymbols
     },
-    smartAccounts: { hasRelayer, allowForce4337 },
+    smartAccounts: { hasRelayer, allowForce4337, erc4337: incomingErc4337 },
     feeOptions: incomingFeeOptions
   } = relayerNetwork
 
@@ -467,8 +468,23 @@ export function mapRelayerNetworkToNetwork(
     })
   }
 
+  const erc4337: Erc4337settings = {
+    enabled: incomingErc4337.enabled,
+    hasPaymaster: incomingErc4337.hasPaymaster,
+    ...(typeof incomingErc4337.hasBundlerSupport === 'boolean' && {
+      hasBundlerSupport: incomingErc4337.hasBundlerSupport
+    }),
+    // TODO: Also store the values (bundler API keys) somewhere. Currently,
+    // they are pulled from the .env file
+    ...(incomingErc4337.bundlers && {
+      bundlers: Object.keys(incomingErc4337.bundlers) as BUNDLER[]
+    }),
+    ...(incomingErc4337.defaultBundler && {
+      defaultBundler: incomingErc4337.defaultBundler
+    })
+  }
+
   // TODO: Figure out where these are coming from
-  const erc4337
   const rpcNoStateOverride
   const isSAEnabled
   const areContractsDeployed
@@ -497,7 +513,8 @@ export function mapRelayerNetworkToNetwork(
     wrappedAddr,
     oldNativeAssetSymbols,
     allowForce4337,
-    feeOptions
+    feeOptions,
+    erc4337
   }
   // {
   //   id: 'arbitrum', // ambireId
