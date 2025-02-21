@@ -42,6 +42,8 @@ export class NetworksController extends EventEmitter {
 
   #userNetworkPreferences: { [key: NetworkId]: UserNetworkPreferences } = {}
 
+  #relayerNetworks: RelayerNetworkConfigResponse
+
   statuses: Statuses<keyof typeof STATUS_WRAPPED_METHODS> = STATUS_WRAPPED_METHODS
 
   networkToAddOrUpdate: {
@@ -141,11 +143,9 @@ export class NetworksController extends EventEmitter {
     // Step 2: Merge the networks coming from the Relayer
     // TODO: Should this be awaited or not?
     try {
-      const relayerNetworks: RelayerNetworkConfigResponse = await this.#callRelayer(
-        '/v2/networks-config'
-      )
+      this.#relayerNetworks = await this.#callRelayer('/v2/networks-config')
 
-      Object.entries(relayerNetworks).forEach(([chainId, relayerNetwork]) => {
+      Object.entries(this.#relayerNetworks).forEach(([chainId, relayerNetwork]) => {
         const n = mapRelayerNetworkConfigToAmbireNetwork(chainId, relayerNetwork)
         const hasNoUserPreferences = !this.#userNetworkPreferences[n.id]
         const shouldOverrideNetworkPreferences =
@@ -260,8 +260,15 @@ export class NetworksController extends EventEmitter {
     if (!Object.keys(_userNetworkPrefToUpdate).length) return // nothing to update
 
     const network = this.#networks[networkId]
-    const networkPrefToUpdate = {
+    const networkPrefToUpdate: UserNetworkPreferences = {
       ..._userNetworkPrefToUpdate,
+      // When adding user preferences, store the predefined config version on
+      // which the update was set. This ensures that we can track which version
+      // of the predefined network configuration the user preferences are based on.
+      predefinedConfigVersion: this.#relayerNetworks[networkId]
+        ? this.#relayerNetworks[networkId].predefinedConfigVersion
+        : // default to 0, indicating there is no predefined configuration v associated with this update
+          0,
       // In case of an update, merge newly added RPC urls with the existing ones, not to lose any
       ...(_userNetworkPrefToUpdate.rpcUrls && {
         rpcUrls: [...new Set([...network.rpcUrls, ..._userNetworkPrefToUpdate.rpcUrls])]
