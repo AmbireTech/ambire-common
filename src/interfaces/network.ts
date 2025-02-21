@@ -185,3 +185,5 @@ export type RelayerNetwork = {
     allowForce4337: boolean
   }
 }
+
+export type RelayerNetworkConfigResponse = { [key in Network['id']]: RelayerNetwork }

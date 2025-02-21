@@ -112,9 +112,10 @@ const convertToAmbireNetworkFormat = async (network: ChainlistNetwork): Promise<
  * default values that need to be set for the so called "predefined" networks.
  */
 export const mapRelayerNetworkConfigToAmbireNetwork = (
-  chainId: bigint,
+  _chainId: string,
   relayerNetwork: RelayerNetwork
 ): Network => {
+  const chainId = BigInt(_chainId)
   const { name, explorerUrl, selectedRpcUrl, isOptimistic, disableEstimateGas, rpcUrls, icon } =
     relayerNetwork
   const {

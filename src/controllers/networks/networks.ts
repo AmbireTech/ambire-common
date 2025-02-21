@@ -7,9 +7,8 @@ import {
   NetworkId,
   NetworkInfo,
   NetworkInfoLoading,
-  UserNetworkPreferences,
-  UserNetworkPreferencesForCustomNetworks,
-  UserNetworkPreferencesForPredefinedNetworks
+  RelayerNetworkConfigResponse,
+  UserNetworkPreferences
 } from '../../interfaces/network'
 import { Storage } from '../../interfaces/storage'
 import {
@@ -18,6 +17,8 @@ import {
   is4337Enabled,
   migrateNetworkPreferencesToNetworks
 } from '../../libs/networks/networks'
+import { relayerCall } from '../../libs/relayerCall/relayerCall'
+import { mapRelayerNetworkConfigToAmbireNetwork } from '../../utils/networks'
 import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter'
 
 const STATUS_WRAPPED_METHODS = {
@@ -34,6 +35,8 @@ export class NetworksController extends EventEmitter {
   #storage: Storage
 
   #fetch: Fetch
+
+  #callRelayer: Function
 
   #networks: { [key: NetworkId]: Network } = {}
 
@@ -55,12 +58,14 @@ export class NetworksController extends EventEmitter {
   constructor(
     storage: Storage,
     fetch: Fetch,
+    relayerUrl: string,
     onAddOrUpdateNetwork: (network: Network) => void,
     onRemoveNetwork: (id: NetworkId) => void
   ) {
     super()
     this.#storage = storage
     this.#fetch = fetch
+    this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
     this.#onAddOrUpdateNetwork = onAddOrUpdateNetwork
     this.#onRemoveNetwork = onRemoveNetwork
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
@@ -72,11 +77,14 @@ export class NetworksController extends EventEmitter {
   }
 
   get networks(): Network[] {
-    if (!this.#networks) return predefinedNetworks
+    // TODO: This should probably be removed
+    // if (!this.#networks) return predefinedNetworks
 
-    const uniqueNetworksByChainId = Object.values(this.#networks)
-      .sort((a, b) => +b.predefined - +a.predefined) // first predefined
-      .filter((item, index, self) => self.findIndex((i) => i.chainId === item.chainId) === index) // unique by chainId (predefined with priority)
+    const uniqueNetworksByChainId = Object.values(this.#networks).sort(
+      (a, b) => +b.predefined - +a.predefined // predefined first
+    )
+
+    // TODO: Do this once, in the #load method?
     return uniqueNetworksByChainId.map((network) => {
       // eslint-disable-next-line no-param-reassign
       network.features = getFeaturesByNetworkProperties({
@@ -129,45 +137,43 @@ export class NetworksController extends EventEmitter {
       }
     })
 
-    // Step 2: Merge relayer networks
-
-    // TODO: Remove
-    predefinedNetworks.forEach((n) => {
-      this.#networks[n.id] = {
-        ...n, // add the latest structure of the predefined network to include the new props that are not in storage yet
-        ...(this.#networks[n.id] || {}), // override with stored props
-        // attributes that should take predefined priority
-        feeOptions: n.feeOptions,
-        hasRelayer: n.hasRelayer,
-        erc4337: {
-          enabled: is4337Enabled(!!n.erc4337.hasBundlerSupport, n, this.#networks[n.id]?.force4337),
-          hasPaymaster: n.erc4337.hasPaymaster,
-          defaultBundler: n.erc4337.defaultBundler,
-          bundlers: n.erc4337.bundlers
-        },
-        nativeAssetId: n.nativeAssetId,
-        nativeAssetSymbol: n.nativeAssetSymbol
-      }
-    })
-
-    // TODO: Remove
-    // add predefined: false for each deleted network from predefined
-    Object.keys(this.#networks).forEach((networkName) => {
-      const predefinedNetwork = predefinedNetworks.find(
-        (net) => net.chainId === this.#networks[networkName].chainId
+    // Step 2: Merge the networks coming from the Relayer
+    // TODO: Should this be awaited or not?
+    try {
+      const relayerNetworks: RelayerNetworkConfigResponse = await this.#callRelayer(
+        '/v2/networks-config'
       )
-      if (!predefinedNetwork) {
-        this.#networks[networkName].predefined = false
-      }
-    })
 
-    // without await to avoid performance impact on load
-    // needed to keep the networks storage up to date with the latest from predefinedNetworks
-    this.#storage.set('networks', this.#networks)
+      Object.entries(relayerNetworks).forEach(([chainId, relayerNetwork]) => {
+        const n = mapRelayerNetworkConfigToAmbireNetwork(chainId, relayerNetwork)
+        const hasNoUserPreferences = !userNetworkPreferences[n.id]
+        const shouldOverrideNetworkPreferences =
+          !hasNoUserPreferences &&
+          // Mechanism to force an update network preferences if needed
+          relayerNetwork.predefinedConfigVersion >
+            userNetworkPreferences[n.id].predefinedConfigVersion
 
+        if (hasNoUserPreferences || shouldOverrideNetworkPreferences) {
+          nextNetworks[n.id] = { ...nextNetworks[n.id], ...n }
+        } else {
+          // Override the predefined network config, but keep user preferences,
+          // one might not exist in the case of a new network coming from the relayer
+          const predefinedNetwork: Network | {} =
+            predefinedNetworks.find((pN) => pN.id === n.id) || {}
+
+          nextNetworks[n.id] = {
+            ...predefinedNetwork,
+            ...n,
+            ...userNetworkPreferences[n.id]
+          }
+        }
+      })
+    } catch (e: any) {
+      // Fail silently
+    }
+
+    this.#networks = nextNetworks
     this.emitUpdate()
-
-    // TODO: After the initial load completes, fetch latest network config from the Relayer and update networks if needed
   }
 
   // TODO: Method to fetch network config from the Relayer and update networks if needed
