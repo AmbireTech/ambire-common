@@ -1,6 +1,7 @@
 import jsYaml from 'js-yaml'
 
 import { Fetch, RequestInitWithCustomHeaders } from '../../interfaces/fetch'
+import { Storage } from '../../interfaces/storage'
 import { WindowManager } from '../../interfaces/window'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
@@ -13,21 +14,36 @@ const PHANTOM_BLACKLIST_URL =
 export class PhishingController extends EventEmitter {
   #fetch: Fetch
 
+  #storage: Storage
+
   #windowManager: WindowManager
 
   #headers: RequestInitWithCustomHeaders['headers']
 
   #blacklist: Set<string> = new Set() // list of blacklisted URLs
 
+  #latestStorageUpdate: number | null = null
+
   isReady: boolean = false
+
+  updateStatus: 'LOADING' | 'INITIAL' = 'INITIAL'
 
   // Holds the initial load promise, so that one can wait until it completes
   initialLoadPromise: Promise<void>
 
-  constructor({ fetch, windowManager }: { fetch: Fetch; windowManager: WindowManager }) {
+  constructor({
+    fetch,
+    storage,
+    windowManager
+  }: {
+    fetch: Fetch
+    storage: Storage
+    windowManager: WindowManager
+  }) {
     super()
 
     this.#fetch = fetch
+    this.#storage = storage
     this.#windowManager = windowManager
 
     this.#headers = {
@@ -38,6 +54,27 @@ export class PhishingController extends EventEmitter {
   }
 
   async #load() {
+    const storedPhishingDetection = await this.#storage.get('phishingDetection', null)
+    if (storedPhishingDetection) {
+      this.#blacklist = new Set([
+        ...storedPhishingDetection.metamaskBlacklist,
+        ...storedPhishingDetection.phantomBlacklist
+      ])
+    }
+    await this.#update(storedPhishingDetection)
+    this.isReady = true
+
+    this.emitUpdate()
+  }
+
+  async #update(
+    storedPhishingDetection: {
+      timestamp: number
+      metamaskBlacklist: string[]
+      phantomBlacklist: string[]
+    } | null
+  ) {
+    this.updateStatus = 'LOADING'
     const results = await Promise.allSettled([
       this.#fetch(METAMASK_BLACKLIST_URL, this.#headers)
         .then((res) => res.json())
@@ -54,14 +91,41 @@ export class PhishingController extends EventEmitter {
         .catch(() => [])
     ])
 
-    const [metamaskBlacklist, phantomBlacklist] = results.map((result) =>
-      result.status === 'fulfilled' ? result.value : []
+    let [metamaskBlacklist, phantomBlacklist] = results.map((result) =>
+      result.status === 'fulfilled' ? result.value || [] : []
     )
 
-    this.#blacklist = new Set([...metamaskBlacklist, ...phantomBlacklist])
-    this.isReady = true
+    if (metamaskBlacklist && phantomBlacklist) {
+      const timestamp = Date.now()
+      await this.#storage.set('phishingDetection', {
+        timestamp,
+        metamaskBlacklist: metamaskBlacklist || [],
+        phantomBlacklist: phantomBlacklist || []
+      })
+      this.#latestStorageUpdate = timestamp
+    } else if (storedPhishingDetection && !this.#latestStorageUpdate) {
+      this.#latestStorageUpdate = storedPhishingDetection.timestamp
+    }
 
-    this.emitUpdate()
+    if (storedPhishingDetection) {
+      metamaskBlacklist = metamaskBlacklist || storedPhishingDetection.metamaskBlacklist
+      phantomBlacklist = phantomBlacklist || storedPhishingDetection.phantomBlacklist
+    }
+
+    this.#blacklist = new Set([...metamaskBlacklist, ...phantomBlacklist])
+    this.updateStatus = 'INITIAL'
+  }
+
+  async updateIfNeeded() {
+    if (this.updateStatus === 'LOADING') return
+    const sixHoursInMs = 6 * 60 * 60 * 1000
+
+    if (this.#latestStorageUpdate && Date.now() - this.#latestStorageUpdate < sixHoursInMs) return
+    const storedPhishingDetection = await this.#storage.get('phishingDetection', null)
+
+    if (Date.now() - storedPhishingDetection.timestamp >= sixHoursInMs) {
+      await this.#update(storedPhishingDetection)
+    }
   }
 
   async getIsBlacklisted(url: string) {
