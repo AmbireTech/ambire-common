@@ -30,7 +30,7 @@ export interface NetworkInfo {
   rpcNoStateOverride: boolean
   erc4337: Erc4337settings
   areContractsDeployed: boolean
-  feeOptions: { is1559: boolean }
+  feeOptions: FeeOptions
   platformId: string
   nativeAssetId: string
   flagged: boolean
