@@ -9,7 +9,8 @@ import {
   NetworkFeature,
   NetworkId,
   NetworkInfo,
-  NetworkInfoLoading
+  NetworkInfoLoading,
+  RelayerNetwork
 } from '../../interfaces/network'
 import { RPCProviders } from '../../interfaces/provider'
 import { Bundler } from '../../services/bundlers/bundler'
@@ -430,90 +431,73 @@ export function hasRelayerSupport(network: Network) {
 }
 
 // TODO: The network structure coming from the Relayer needs additional mapping to match the Network interface
-export type RelayerNetwork = {
-  predefinedConfigVersion: number // TODO: We may not need it
-  ambireId: string
-  coingeckoPlatformId: string
-  name: string
-  icon: string
-  explorerUrl: string
-  rpcUrls: string[]
-  selectedRpcUrl: string
-  native: {
-    symbol: string
-    coingeckoId: string
-    icon: string
-    decimals: number
-    wrapped: {
-      address: string
-      symbol: string
-      coingeckoId: string
-      icon: string
-      decimals: number
-    }
-    oldNativeAssetSymbols?: string[]
-  }
-  isOptimistic: boolean
-  disableEstimateGas: boolean
-  feeOptions: {
-    is1559: boolean
-    elasticityMultiplier?: bigint
-    baseFeeMaxChangeDenominator?: bigint
-    feeIncrease?: bigint
-  }
-  smartAccounts: {
-    hasRelayer: boolean
-    erc4337: {
-      enabled: boolean
-      hasPaymaster: boolean
-      hasBundlerSupport: boolean
-      bundlers: {
-        pimlico: string
-        biconomy: string
-      }
-      defaultBundler: string
-    }
-    allowForce4337: boolean
-  }
-}
 export function mapRelayerNetworkToNetwork(
   chainId: bigint,
   relayerNetwork: RelayerNetwork
 ): Network {
-  const { name, explorerUrl, selectedRpcUrl, isOptimistic, disableEstimateGas } = relayerNetwork
-  const { ambireId: id, coingeckoPlatformId: platformId } = relayerNetwork
+  const { name, explorerUrl, selectedRpcUrl, isOptimistic, disableEstimateGas, rpcUrls } =
+    relayerNetwork
+  const {
+    ambireId: id,
+    coingeckoPlatformId: platformId,
+    native: {
+      symbol: nativeAssetSymbol,
+      coingeckoId: nativeAssetId,
+      wrapped: { address: wrappedAddr },
+      oldNativeAssetSymbols
+    },
+    smartAccounts: { hasRelayer, allowForce4337 },
+    feeOptions: incomingFeeOptions
+  } = relayerNetwork
 
-  // TODO: Adapter for the others
-  const nativeAssetSymbol = relayerNetwork.native.symbol
-  const rpcUrls
+  const feeOptions = {
+    is1559: incomingFeeOptions.is1559,
+    minBaseFeeEqualToLastBlock: !!incomingFeeOptions.minBaseFeeEqualToLastBlock,
+    ...(typeof incomingFeeOptions.minBaseFee === 'number' && {
+      minBaseFee: BigInt(incomingFeeOptions.minBaseFee)
+    }),
+    ...(typeof incomingFeeOptions.elasticityMultiplier === 'number' && {
+      elasticityMultiplier: BigInt(incomingFeeOptions.elasticityMultiplier)
+    }),
+    ...(typeof incomingFeeOptions.baseFeeMaxChangeDenominator === 'number' && {
+      baseFeeMaxChangeDenominator: BigInt(incomingFeeOptions.baseFeeMaxChangeDenominator)
+    }),
+    ...(typeof incomingFeeOptions.feeIncrease === 'number' && {
+      feeIncrease: BigInt(incomingFeeOptions.feeIncrease)
+    })
+  }
+
+  // TODO: Figure out where these are coming from
   const erc4337
   const rpcNoStateOverride
-  const feeOptions
   const isSAEnabled
   const areContractsDeployed
   const features
-  const hasRelayer = relayerNetwork.smartAccounts.hasRelayer
-  const nativeAssetId = relayerNetwork.native.coingeckoId
   const hasSingleton
   const iconUrls
   const reestimateOn
   const flagged
-  const predefined
-  const wrappedAddr = relayerNetwork.native.wrapped.address
   const blockGasLimit
-  const oldNativeAssetSymbols = relayerNetwork.native.oldNativeAssetSymbols
   const force4337
-  const allowForce4337 = relayerNetwork.smartAccounts.allowForce4337
 
   return {
+    predefined: true,
     name,
     explorerUrl,
+    rpcUrls,
     selectedRpcUrl,
     isOptimistic,
     disableEstimateGas,
     id,
     platformId,
-    chainId
+    chainId,
+    nativeAssetSymbol,
+    nativeAssetId,
+    hasRelayer,
+    wrappedAddr,
+    oldNativeAssetSymbols,
+    allowForce4337,
+    feeOptions
   }
   // {
   //   id: 'arbitrum', // ambireId

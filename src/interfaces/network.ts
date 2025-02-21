@@ -122,3 +122,56 @@ export interface ChainlistNetwork {
     icon?: string
   }[]
 }
+
+export type RelayerNetwork = {
+  /**
+   * Mechanism to merge incoming config with user storage. If versions match -
+   * prioritize user changed values. If incoming config version is higher, override user config.
+   */
+  predefinedConfigVersion: number
+  ambireId: string
+  coingeckoPlatformId: string
+  name: string
+  icon: string
+  explorerUrl: string
+  rpcUrls: string[]
+  selectedRpcUrl: string
+  native: {
+    symbol: string
+    coingeckoId: string
+    icon: string
+    decimals: number
+    wrapped: {
+      address: string
+      symbol: string
+      coingeckoId: string
+      icon: string
+      decimals: number
+    }
+    oldNativeAssetSymbols?: string[]
+  }
+  isOptimistic: boolean
+  disableEstimateGas: boolean
+  feeOptions: {
+    is1559: boolean
+    elasticityMultiplier?: number
+    baseFeeMaxChangeDenominator?: number
+    feeIncrease?: number
+    minBaseFee?: number
+    minBaseFeeEqualToLastBlock?: boolean
+  }
+  smartAccounts: {
+    hasRelayer: boolean
+    erc4337: {
+      enabled: boolean
+      hasPaymaster: boolean
+      hasBundlerSupport: boolean
+      bundlers: {
+        pimlico: string
+        biconomy: string
+      }
+      defaultBundler: string
+    }
+    allowForce4337: boolean
+  }
+}
