@@ -436,7 +436,7 @@ export function mapRelayerNetworkToNetwork(
   chainId: bigint,
   relayerNetwork: RelayerNetwork
 ): Network {
-  const { name, explorerUrl, selectedRpcUrl, isOptimistic, disableEstimateGas, rpcUrls } =
+  const { name, explorerUrl, selectedRpcUrl, isOptimistic, disableEstimateGas, rpcUrls, icon } =
     relayerNetwork
   const {
     ambireId: id,
@@ -484,21 +484,28 @@ export function mapRelayerNetworkToNetwork(
     })
   }
 
-  // TODO: Figure out where these are coming from
-  const rpcNoStateOverride
-  const isSAEnabled
-  const areContractsDeployed
-  const features
-  const hasSingleton
-  const iconUrls
-  const reestimateOn
-  const flagged
-  const blockGasLimit
-  const force4337
+  // TODO: Change the Relayer response?
+  const iconUrls = [icon]
+
+  // Always fallback to these values for the "predefined" networks, coming from
+  // the RPC for the custom networks.
+  // TODO: Shouldn't we include these values in the Relayer response?
+  const rpcNoStateOverride = false
+  const isSAEnabled = true
+  const areContractsDeployed = true
+  const features: NetworkFeature[] = []
+  const hasSingleton = true
+
+  // Coming from the RPC, only for the custom networks
+  // const reestimateOn
+  // const flagged
+  // const blockGasLimit
+  // const force4337
 
   return {
     predefined: true,
     name,
+    iconUrls,
     explorerUrl,
     rpcUrls,
     selectedRpcUrl,
@@ -514,42 +521,11 @@ export function mapRelayerNetworkToNetwork(
     oldNativeAssetSymbols,
     allowForce4337,
     feeOptions,
-    erc4337
+    erc4337,
+    rpcNoStateOverride,
+    isSAEnabled,
+    areContractsDeployed,
+    features,
+    hasSingleton
   }
-  // {
-  //   id: 'arbitrum', // ambireId
-  //   name: 'Arbitrum', // ✅
-  //   nativeAssetSymbol: 'ETH', // native.symbol
-  //   rpcUrls: ['https://invictus.ambire.com/arbitrum'], // ✅
-  //   selectedRpcUrl: 'https://invictus.ambire.com/arbitrum', // ✅
-  //   rpcNoStateOverride: false, // MISSING
-  //   chainId: 42161n,
-  //   explorerUrl: 'https://arbiscan.io', // blockExplorer
-  //   erc4337: {
-  //     // smartAccounts - erc4337 ✅
-  //     enabled: true,
-  //     hasPaymaster: true,
-  //     hasBundlerSupport: true,
-  //     bundlers: [PIMLICO, BICONOMY], // smartAccounts -> bundlers mapping
-  //     defaultBundler: PIMLICO
-  //   },
-  //   isSAEnabled: true, // MISSING
-  //   areContractsDeployed: true, // MISSING
-  //   hasRelayer: true, // smartAccounts -> hasRelayer
-  //   platformId: 'arbitrum-one', // coingeckoPlatformId
-  //   nativeAssetId: 'ethereum', // native.coingeckoId
-  //   hasSingleton: true, // MISSING
-  //   features: [],
-  //   feeOptions: {
-  //     // ✅
-  //     is1559: true,
-  //     minBaseFee: 100000000n // 1 gwei // DIFFERENT
-  //   },
-  //   predefined: true, // TBD
-  //   wrappedAddr: '0x82af49447d8a07e3bd95bd0d56f35241523fbab1', // native -> wrapped -> address
-  //   // icon
-  //   // native -> icon, decimals, wrapped
-  //   isOptimistic: false, // ✅
-  //   disableEstimateGas: false // ✅
-  // }
 }
