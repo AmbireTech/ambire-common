@@ -11,8 +11,8 @@ interface IXWallet {
 }
 
 interface IWallet {
-  function transferFrom(address from, address to, uint256 amount) external returns (bool);
-  function approve(address, uint) external;
+	function transferFrom(address from, address to, uint256 amount) external returns (bool);
+	function approve(address, uint) external;
 }
 
 contract stkWALLET {
