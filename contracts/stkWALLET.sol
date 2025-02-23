@@ -7,6 +7,7 @@ interface IXWallet {
 	function transfer(address to, uint256 amount) external returns (bool);
 	function transferFrom(address from, address to, uint256 amount) external returns (bool);
 	function enter(uint256 amount) external;
+	function governance() external view returns (address);
 }
 
 interface IWallet {
@@ -19,8 +20,8 @@ contract stkWALLET {
 	// Constants
 	string public constant name = "Staked $WALLET";
 	uint8 public constant decimals = 18;
-	string public constant symbol = "stkWALLET";
-
+	string private constant normalSymbol = "stkWALLET";
+	string private constant legacySymbol = "stkWALLETLegacy";
 	// Immutables
 	IXWallet xWallet;
 	IWallet wallet;
@@ -28,6 +29,7 @@ contract stkWALLET {
 	// Mutable variables
 	mapping(address => uint256) public shares;
 	mapping(address => mapping(address => uint256)) private allowed;
+	bool public isDeprecated;
 
 	// ERC20 events
 	event Approval(address indexed owner, address indexed spender, uint256 amount);
@@ -36,6 +38,10 @@ contract stkWALLET {
 	event ShareValueUpdate(uint256 shareValue);
 
 	// ERC20 methods
+	function symbol() external view returns (string memory) {
+		return isDeprecated ? legacySymbol : normalSymbol;
+	}
+
 	// Note: any xWALLET sent to this contract will be burned as there's nothing that can be done with it. Expected behavior.
 	function totalSupply() external view returns (uint256) {
 		return (xWallet.balanceOf(address(this)) * xWallet.shareValue()) / 1e18;
@@ -116,5 +122,11 @@ contract stkWALLET {
 
 		require(balanceAfter > balanceBefore);
 		innerMintTo(msg.sender, balanceAfter - balanceBefore);
+	}
+
+	// set deprecated flag
+	function setDeprecated(bool _isDeprecated) external {
+		require(msg.sender == xWallet.governance(), "NOT_GOVERNANCE");
+		isDeprecated = _isDeprecated;
 	}
 }
