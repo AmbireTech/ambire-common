@@ -107,9 +107,6 @@ export abstract class Bundler {
       ? BigInt(100 / network.erc4337.increasePreVerGas)
       : undefined
 
-    console.log('the division')
-    console.log(division)
-
     // transform
     const preVerificationGas = division
       ? BigInt(estimatiton.preVerificationGas) + BigInt(estimatiton.preVerificationGas) / division
