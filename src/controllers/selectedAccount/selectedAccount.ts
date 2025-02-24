@@ -293,12 +293,12 @@ export class SelectedAccountController extends EventEmitter {
   }
 
   async updateCashbackStatus(skipUpdate?: boolean) {
-    if (!this.#portfolio || !this.account || !this.portfolio.latest.gasTank) return
+    if (!this.#portfolio || !this.account || !this.portfolio.latest.gasTank?.result) return
 
     const accountId = this.account.addr
     const gasTankResult = this.portfolio.latest.gasTank.result as PortfolioGasTankResult
 
-    const isCashbackZero = gasTankResult.gasTankTokens?.[0].cashback === 0n
+    const isCashbackZero = gasTankResult.gasTankTokens?.[0]?.cashback === 0n
     const cashbackWasZeroBefore = this.#cashbackStatusByAccount[accountId] === 'no-cashback'
     const notReceivedFirstCashbackBefore =
       this.#cashbackStatusByAccount[accountId] !== 'unseen-cashback'
