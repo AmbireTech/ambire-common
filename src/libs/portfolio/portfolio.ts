@@ -338,7 +338,7 @@ export class Portfolio {
             errors.push({
               name: PORTFOLIO_LIB_ERROR_NAMES.PriceFetchError,
               message: errorMessage,
-              level: 'warning'
+              level: 'critical'
             })
           }
         }
