@@ -97,8 +97,26 @@ export abstract class Bundler {
     shouldStateOverride = false
   ): Promise<BundlerEstimateResult> {
     const estimatiton = await this.sendEstimateReq(userOperation, network, shouldStateOverride)
+
+    // Whole formula:
+    // final = estimation + estimation * percentage
+    // if percentage = 5% then percentage = 5/100 => 1/20
+    // final = estimation + estimation / 20
+    // here, we calculate the division (20 above)
+    const division = network.erc4337.increasePreVerGas
+      ? BigInt(100 / network.erc4337.increasePreVerGas)
+      : undefined
+
+    console.log('the division')
+    console.log(division)
+
+    // transform
+    const preVerificationGas = division
+      ? BigInt(estimatiton.preVerificationGas) + BigInt(estimatiton.preVerificationGas) / division
+      : BigInt(estimatiton.preVerificationGas)
+
     return {
-      preVerificationGas: toBeHex(estimatiton.preVerificationGas) as Hex,
+      preVerificationGas: toBeHex(preVerificationGas) as Hex,
       verificationGasLimit: toBeHex(estimatiton.verificationGasLimit) as Hex,
       callGasLimit: toBeHex(estimatiton.callGasLimit) as Hex,
       paymasterVerificationGasLimit: toBeHex(estimatiton.paymasterVerificationGasLimit) as Hex,
