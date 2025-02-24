@@ -372,6 +372,11 @@ export function getFeatures(
 // Now, all network properties are pre-calculated and stored in a structured format: { [key: NetworkId]: Network } in the storage.
 // This function migrates the data from the old NetworkPreferences to the new structure
 // to ensure compatibility and prevent breaking the extension after updating to v4.24.0
+export type LegacyNetworkPreferences = { [key in NetworkId]: Partial<Network> }
+export const getShouldMigrateNetworkPreferencesToNetworks = (
+  networksInStorage: { [key in NetworkId]: Network },
+  legacyNetworkPreferencesInStorage: LegacyNetworkPreferences
+) => !Object.keys(networksInStorage).length && Object.keys(legacyNetworkPreferencesInStorage).length
 export async function migrateNetworkPreferencesToNetworks(networkPreferences: {
   [key: NetworkId]: Partial<Network>
 }) {
@@ -417,6 +422,11 @@ export async function migrateNetworkPreferencesToNetworks(networkPreferences: {
 
   return networksToStore
 }
+
+// TODO: Description
+export const getShouldMigrateNetworksInStorageToNetworksV2 = (networksInStorage: {
+  [key in NetworkId]: Network
+}) => !!Object.keys(networksInStorage)
 
 // is the user allowed to change the network settings to 4337
 export function canForce4337(network?: Network) {

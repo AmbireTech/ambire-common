@@ -14,7 +14,10 @@ import { Storage } from '../../interfaces/storage'
 import {
   getFeaturesByNetworkProperties,
   getNetworkInfo,
+  getShouldMigrateNetworkPreferencesToNetworks,
+  getShouldMigrateNetworksInStorageToNetworksV2,
   is4337Enabled,
+  LegacyNetworkPreferences,
   migrateNetworkPreferencesToNetworks
 } from '../../libs/networks/networks'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
@@ -117,17 +120,26 @@ export class NetworksController extends EventEmitter {
   }
 
   async #load() {
-    const storedNetworkPreferences: { [key: NetworkId]: Partial<Network> } | undefined =
-      await this.#storage.get('networkPreferences', undefined)
-    let storedNetworks: { [key: NetworkId]: Network }
-    storedNetworks = await this.#storage.get('networks', {})
-    if (!Object.keys(storedNetworks).length && storedNetworkPreferences) {
-      storedNetworks = await migrateNetworkPreferencesToNetworks(storedNetworkPreferences)
-      await this.#storage.set('networks', storedNetworks)
+    const legacyNetworkPrefInStorage: LegacyNetworkPreferences = await this.#storage.get(
+      'networkPreferences',
+      {}
+    )
+    let networksInStorage: { [key: NetworkId]: Network } = await this.#storage.get('networks', {})
+    if (
+      getShouldMigrateNetworkPreferencesToNetworks(networksInStorage, legacyNetworkPrefInStorage)
+    ) {
+      networksInStorage = await migrateNetworkPreferencesToNetworks(legacyNetworkPrefInStorage)
       await this.#storage.remove('networkPreferences')
     }
-    this.#networks = storedNetworks
-    // TODO: Migrate the currently stored "networks" to the "network-preferences-v2 structure"
+    if (getShouldMigrateNetworksInStorageToNetworksV2(networksInStorage)) {
+      // TODO: Migrate the currently stored "networks" to the v2 structure
+      // The legacy networks in storage contain ALL - predefined and custom networks.
+      // 1. Pull our from the predefined networks the attributes that user could have changed,
+      // reflect the changes in the v2 network user preferences storage
+      // 2. Pull the custom networks from the legacy storage and update the v2 storage.
+      // Clean up when done:
+      // await this.#storage.remove('networks')
+    }
 
     this.#userNetworkPreferences = await this.#storage.get(STORAGE_NETWORKS_USER_PREFERENCES, {})
     this.#customNetworks = await this.#storage.get(STORAGE_NETWORKS_USER_ADDED, {})
