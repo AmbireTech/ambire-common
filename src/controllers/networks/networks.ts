@@ -26,6 +26,10 @@ const STATUS_WRAPPED_METHODS = {
   updateNetwork: 'INITIAL'
 } as const
 
+// TODO: Decide on the naming
+const STORAGE_NETWORKS_USER_PREFERENCES = 'networksUserPreferencesV2'
+const STORAGE_NETWORKS_USER_ADDED = 'networksAddedByTheUserV2'
+
 /**
  * The NetworksController is responsible for managing networks. It handles both predefined networks and those
  * that users can add either through a dApp request or manually via the UI. This controller provides functions
@@ -38,7 +42,11 @@ export class NetworksController extends EventEmitter {
 
   #callRelayer: Function
 
+  // TODO: Rename to `predefinedNetworks`?
   #networks: { [key: NetworkId]: Network } = {}
+
+  /** Custom networks, added manually by the user */
+  #customNetworks: { [key: NetworkId]: Network } = {}
 
   #userNetworkPreferences: { [key: NetworkId]: UserNetworkPreferences } = {}
 
@@ -54,6 +62,7 @@ export class NetworksController extends EventEmitter {
 
   #onRemoveNetwork: (id: NetworkId) => void
 
+  /** Callback that gets called when adding or updating network */
   #onAddOrUpdateNetwork: (network: Network) => void
 
   // Holds the initial load promise, so that one can wait until it completes
@@ -84,29 +93,27 @@ export class NetworksController extends EventEmitter {
     // TODO: This should probably be removed
     // if (!this.#networks) return predefinedNetworks
 
-    const uniqueNetworksByChainId = Object.values(this.#networks).sort(
-      (a, b) => +b.predefined - +a.predefined // predefined first
-    )
-
     // TODO: Do this once, in the #load method?
-    return uniqueNetworksByChainId.map((network) => {
-      // eslint-disable-next-line no-param-reassign
-      network.features = getFeaturesByNetworkProperties({
-        isSAEnabled: network.isSAEnabled,
-        isOptimistic: network.isOptimistic ?? false,
-        rpcNoStateOverride: network.rpcNoStateOverride,
-        erc4337: network.erc4337,
-        areContractsDeployed: network.areContractsDeployed,
-        feeOptions: network.feeOptions,
-        platformId: network.platformId,
-        nativeAssetId: network.nativeAssetId,
-        flagged: network.flagged ?? false,
-        chainId: network.chainId,
-        hasSingleton: network.hasSingleton,
-        force4337: network.force4337
-      })
-      return network
-    })
+    return [...Object.values(this.#networks), ...Object.values(this.#customNetworks)].map(
+      (network) => {
+        // eslint-disable-next-line no-param-reassign
+        network.features = getFeaturesByNetworkProperties({
+          isSAEnabled: network.isSAEnabled,
+          isOptimistic: network.isOptimistic ?? false,
+          rpcNoStateOverride: network.rpcNoStateOverride,
+          erc4337: network.erc4337,
+          areContractsDeployed: network.areContractsDeployed,
+          feeOptions: network.feeOptions,
+          platformId: network.platformId,
+          nativeAssetId: network.nativeAssetId,
+          flagged: network.flagged ?? false,
+          chainId: network.chainId,
+          hasSingleton: network.hasSingleton,
+          force4337: network.force4337
+        })
+        return network
+      }
+    )
   }
 
   async #load() {
@@ -122,11 +129,10 @@ export class NetworksController extends EventEmitter {
     this.#networks = storedNetworks
     // TODO: Migrate the currently stored "networks" to the "network-preferences-v2 structure"
 
-    // TODO: Pull the user network preferences.
-    this.#userNetworkPreferences = await this.#storage.get(
-      'network-preferences-v2', // TODO: Confirm the storage key name.
-      {}
-    )
+    this.#userNetworkPreferences = await this.#storage.get(STORAGE_NETWORKS_USER_PREFERENCES, {})
+    this.#customNetworks = await this.#storage.get(STORAGE_NETWORKS_USER_ADDED, {})
+
+    // TODO: Handle the scenario when a custom network for the user became predefined network
 
     // Step 1: Merge the predefined networks with the user network preferences.
     const nextNetworks: { [key: NetworkId]: Network } = {}
@@ -218,12 +224,12 @@ export class NetworksController extends EventEmitter {
     ) {
       return
     }
-    const chainIds = this.networks.map((net) => net.chainId)
-    const ids = this.networks.map((n) => n.id)
     const networkId = network.name.toLowerCase()
-
-    // make sure the id and chainId of the network are unique
-    if (ids.indexOf(networkId) !== -1 || chainIds.indexOf(BigInt(network.chainId)) !== -1) {
+    const isAlreadyAdded = this.networks.some(
+      // make sure the id and chainId of the network are unique
+      (n) => n.id === networkId || n.chainId === BigInt(network.chainId)
+    )
+    if (isAlreadyAdded) {
       throw new EmittableError({
         message: 'The network you are trying to add has already been added.',
         level: 'major',
@@ -231,12 +237,13 @@ export class NetworksController extends EventEmitter {
       })
     }
 
+    // TODO: Type mismatch, this should be NetworkInfo
     const info = { ...(this.networkToAddOrUpdate.info as NetworkInfo) }
     const { feeOptions } = info
 
     // @ts-ignore
     delete info.feeOptions
-    this.#networks[networkId] = {
+    const nextNetwork: Network = {
       id: networkId,
       ...network,
       ...info,
@@ -245,8 +252,11 @@ export class NetworksController extends EventEmitter {
       hasRelayer: false,
       predefined: false
     }
-    this.#onAddOrUpdateNetwork(this.#networks[networkId])
-    await this.#storage.set('networks', this.#networks)
+
+    this.#customNetworks[networkId] = nextNetwork
+    this.#onAddOrUpdateNetwork(nextNetwork)
+
+    await this.#storage.set(STORAGE_NETWORKS_USER_ADDED, this.#customNetworks)
     this.networkToAddOrUpdate = null
     this.emitUpdate()
   }
