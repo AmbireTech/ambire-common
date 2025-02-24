@@ -131,21 +131,25 @@ export class NetworksController extends EventEmitter {
       networksInStorage = await migrateNetworkPreferencesToNetworks(legacyNetworkPrefInStorage)
       await this.#storage.remove('networkPreferences')
     }
-    if (getShouldMigrateNetworksInStorageToNetworksV2(networksInStorage)) {
-      // TODO: Migrate the currently stored "networks" to the v2 structure
-      // The legacy networks in storage contain ALL - predefined and custom networks.
-      // 1. Pull our from the predefined networks the attributes that user could have changed,
-      // reflect the changes in the v2 network user preferences storage
-      // 2. Pull the custom networks from the legacy storage and update the v2 storage.
-      // Clean up when done:
-      // await this.#storage.remove('networks')
-    }
+    // TODO: Maybe not needed?
+    // if (getShouldMigrateNetworksInStorageToNetworksV2(networksInStorage)) {
+    // TODO: Migrate the currently stored "networks" to the v2 structure
+    // The legacy networks in storage contain ALL - predefined and custom networks.
+    // 1. Pull our from the predefined networks the attributes that user could have changed,
+    // reflect the changes in the v2 network user preferences storage
+    // 2. Pull the custom networks from the legacy storage and update the v2 storage.
+    // Clean up when done:
+    // await this.#storage.remove('networks')
+    // }
 
-    this.#userNetworkPreferences = await this.#storage.get(STORAGE_NETWORKS_USER_PREFERENCES, {})
-    this.#customNetworks = await this.#storage.get(STORAGE_NETWORKS_USER_ADDED, {})
+    // 1. Get latest storage (networksInStorage)
 
-    // TODO: Handle the scenario when a custom network for the user became predefined network
+    // TODO: Not needed?
+    // this.#userNetworkPreferences = await this.#storage.get(STORAGE_NETWORKS_USER_PREFERENCES, {})
+    // this.#customNetworks = await this.#storage.get(STORAGE_NETWORKS_USER_ADDED, {})
+    // TODO: Third storage for the network dynamic info (NetworkInfo), pulled from the RPC, timestamp when last updated
 
+    // TODO: Maybe not needed anymore
     // Step 1: Merge the predefined networks with the user network preferences.
     const nextNetworks: { [key: NetworkId]: Network } = {}
     predefinedNetworks.forEach((n) => {
@@ -157,6 +161,9 @@ export class NetworksController extends EventEmitter {
         ...(hasUserPreferences ? this.#userNetworkPreferences[n.id] : {})
       }
     })
+
+    // TODO: Handle the scenario when a custom network for the user became predefined network
+    // TODO: Migrate the current network id with the id (ambireId) incoming by the Relayer? (portfolio controller)
 
     // Step 2: Merge the networks coming from the Relayer
     // TODO: Should this be awaited or not?
@@ -190,6 +197,8 @@ export class NetworksController extends EventEmitter {
     } catch (e: any) {
       // Fail silently
     }
+
+    // TODO: Check if the NetworkInfo for the custom networks have changed, if it's too old (24h), fetch it again
 
     this.#networks = nextNetworks
     this.emitUpdate()
@@ -236,6 +245,8 @@ export class NetworksController extends EventEmitter {
     ) {
       return
     }
+    // TODO: This is not very correct approach, maybe depend on chain id + something else?
+    // TODO: Double-check how icons for networks are handled
     const networkId = network.name.toLowerCase()
     const isAlreadyAdded = this.networks.some(
       // make sure the id and chainId of the network are unique
