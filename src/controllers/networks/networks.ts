@@ -362,7 +362,7 @@ export class NetworksController extends EventEmitter {
     this.emitUpdate()
   }
 
-  async updateNetwork(network: Partial<Network>, networkId: NetworkId) {
+  async updateNetwork(network: UserNetworkPreferences, networkId: NetworkId) {
     await this.withStatus('updateNetwork', () => this.#updateNetwork(network, networkId))
   }
 
