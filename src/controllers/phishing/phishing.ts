@@ -135,7 +135,9 @@ export class PhishingController extends EventEmitter {
       const hostname = new URL(url).hostname
 
       // blacklisted if it has `ambire` in the hostname but it is not a pre-approved ambire domain
-      if (hostname.includes('ambire') && !hostname.includes('ambire.com')) return true
+      if (/ambire/i.test(hostname) && !/\.?ambire\.com$/.test(hostname)) {
+        return true
+      }
 
       return this.#blacklist.has(hostname)
     } catch (error) {
