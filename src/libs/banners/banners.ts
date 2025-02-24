@@ -69,59 +69,90 @@ export const getBridgeBanners = (
     })
   }
 
-  return activeRoutes
-    .filter(isBridgeTxn)
-    .filter((route) => {
-      if (route.routeStatus === 'failed') return false
-      if (route.routeStatus !== 'ready') return true
-      // If the route is ready to be signed, we should display the banner only if it's not turned into an account op
-      // because when it does get turned into an account op, there will be a different banner for that
-      return !isRouteTurnedIntoAccountOp(route)
-    })
-    .map((r) => {
-      const actions: Action[] = []
+  const filteredRoutes = activeRoutes.filter(isBridgeTxn).filter((route) => {
+    if (route.routeStatus === 'failed') return false
+    if (route.routeStatus !== 'ready') return true
+    return !isRouteTurnedIntoAccountOp(route)
+  })
 
-      if (r.routeStatus === 'in-progress' || r.routeStatus === 'waiting-approval-to-resolve') {
-        actions.push({
+  const inProgressRoutes = filteredRoutes.filter(
+    (r) => r.routeStatus === 'in-progress' || r.routeStatus === 'waiting-approval-to-resolve'
+  )
+
+  const completedRoutes = filteredRoutes.filter((r) => r.routeStatus === 'completed')
+
+  const remainingRoutes = filteredRoutes.filter(
+    (r) => r.routeStatus !== 'in-progress' && r.routeStatus !== 'completed'
+  )
+
+  const banners: Banner[] = []
+
+  // Handle in-progress transactions grouping
+  if (inProgressRoutes.length > 0) {
+    banners.push({
+      id: 'bridge-in-progress',
+      type: 'info',
+      category: 'bridge-in-progress',
+      title: 'Bridge request in progress',
+      text: `You have ${inProgressRoutes.length} bridge request${
+        inProgressRoutes.length > 1 ? 's' : ''
+      } in progress.`,
+      actions: [
+        {
           label: 'Details',
           actionName: 'open-swap-and-bridge-tab'
-        })
-      }
+        }
+      ]
+    })
+  }
 
-      if (r.routeStatus === 'completed') {
-        actions.push({
+  // Handle completed transactions grouping
+  if (completedRoutes.length > 0) {
+    banners.push({
+      id: 'bridge-completed',
+      type: 'success',
+      category: 'bridge-completed',
+      title: 'Bridge request completed',
+      text: `You have ${completedRoutes.length} completed bridge request${
+        completedRoutes.length > 1 ? 's' : ''
+      }.`,
+      actions: [
+        {
           label: 'Close',
           actionName: 'close-bridge',
-          meta: { activeRouteId: r.activeRouteId }
-        })
-      }
-
-      if (r.routeStatus === 'ready') {
-        const isNextTnxForBridging = r.route.currentUserTxIndex >= 1
-
-        actions.push(
-          {
-            label: 'Reject',
-            actionName: 'reject-bridge',
-            meta: { activeRouteId: r.activeRouteId }
-          },
-          {
-            label: isNextTnxForBridging ? 'Proceed to Next Step' : 'Open',
-            actionName: 'proceed-bridge',
-            meta: { activeRouteId: r.activeRouteId }
-          }
-        )
-      }
-
-      return {
-        id: `bridge-${r.activeRouteId}`,
-        type: r.routeStatus === 'completed' ? 'success' : 'info',
-        category: `bridge-${r.routeStatus}`,
-        title: getBridgeBannerTitle(r.routeStatus),
-        text: getBridgeBannerText(r, true, networks),
-        actions
-      }
+          meta: { activeRouteId: completedRoutes[0].activeRouteId }
+        }
+      ]
     })
+  }
+
+  // Add other statuses normally
+  banners.push(
+    ...remainingRoutes.map((r) => ({
+      id: `bridge-${r.activeRouteId}`,
+      type: r.routeStatus === 'completed' ? 'success' : 'info',
+      category: `bridge-${r.routeStatus}`,
+      title: getBridgeBannerTitle(r.routeStatus),
+      text: getBridgeBannerText(r, isBridgeTxn(r), networks),
+      actions:
+        r.routeStatus === 'ready'
+          ? [
+              {
+                label: 'Reject',
+                actionName: 'reject-bridge',
+                meta: { activeRouteId: r.activeRouteId }
+              },
+              {
+                label: r.route.currentUserTxIndex >= 1 ? 'Proceed to Next Step' : 'Open',
+                actionName: 'proceed-bridge',
+                meta: { activeRouteId: r.activeRouteId }
+              }
+            ]
+          : []
+    }))
+  )
+
+  return banners
 }
 
 export const getDappActionRequestsBanners = (actions: ActionFromActionsQueue[]): Banner[] => {
