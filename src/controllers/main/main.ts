@@ -32,6 +32,7 @@ import {
 import { AddNetworkRequestParams, Network, NetworkId } from '../../interfaces/network'
 import { NotificationManager } from '../../interfaces/notification'
 import { RPCProvider } from '../../interfaces/provider'
+import { TraceCallDiscoveryStatus } from '../../interfaces/signAccountOp'
 import { Storage } from '../../interfaces/storage'
 import { SocketAPISendTransactionRequest } from '../../interfaces/swapAndBridge'
 import { Calls, DappUserRequest, SignUserRequest, UserRequest } from '../../interfaces/userRequest'
@@ -127,7 +128,6 @@ import { ProvidersController } from '../providers/providers'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 /* eslint-disable no-underscore-dangle */
 import { SignAccountOpController, SigningStatus } from '../signAccountOp/signAccountOp'
-import { TraceCallDiscoveryStatus } from '../../interfaces/signAccountOp'
 import { SignMessageController } from '../signMessage/signMessage'
 import { SwapAndBridgeController, SwapAndBridgeFormStatus } from '../swapAndBridge/swapAndBridge'
 
@@ -1074,6 +1074,8 @@ export class MainController extends EventEmitter {
     // come in the same tick. Otherwise the UI may flash the wrong error.
     const latestState = this.portfolio.getLatestPortfolioState(accountAddr)
     const latestStateKeys = Object.keys(latestState)
+
+    if (!latestStateKeys.length) return
 
     const isAllReady = latestStateKeys.every((networkId) => {
       return isNetworkReady(latestState[networkId])
