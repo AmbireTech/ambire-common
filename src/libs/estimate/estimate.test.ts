@@ -524,7 +524,8 @@ describe('estimate', () => {
     expect(response.error).not.toBe(null)
   })
 
-  it('[v1] estimates gasUsage, fee and native tokens outcome', async () => {
+  // skipping as v1 funds have moved again
+  it.skip('[v1] estimates gasUsage, fee and native tokens outcome', async () => {
     const op = {
       accountAddr: v1Acc.addr,
       signingKeyAddr: null,
@@ -666,7 +667,8 @@ describe('estimate', () => {
     expect(viewOnlyAccOption).not.toBe(undefined)
   })
 
-  it('[v1] estimates with `accountOpToExecuteBefore`', async () => {
+  // skipping as v1 funds have moved again
+  it.skip('[v1] estimates with `accountOpToExecuteBefore`', async () => {
     const op = {
       accountAddr: v1Acc.addr,
       signingKeyAddr: null,
