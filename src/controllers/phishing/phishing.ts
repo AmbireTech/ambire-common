@@ -6,10 +6,28 @@ import { WindowManager } from '../../interfaces/window'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
 const METAMASK_BLACKLIST_URL =
-  'https://api.github.com/repos/MetaMask/eth-phishing-detect/contents/src/config.json?ref=master'
+  'https://api.github.com/repos/MetaMask/eth-phishing-detect/contents/src/config.json?ref=main'
 
 const PHANTOM_BLACKLIST_URL =
   'https://api.github.com/repos/phantom/blocklist/contents/blocklist.yaml?ref=master'
+
+export const domainToParts = (domain: string) => {
+  try {
+    return domain.split('.').reverse()
+  } catch (e) {
+    throw new Error(JSON.stringify(domain))
+  }
+}
+
+export const matchPartsAgainstList = (source: string[], list: string[]) => {
+  return list.find((domain: string) => {
+    const target = domainToParts(domain)
+    // target domain has more parts than source, fail
+    if (target.length > source.length) return false
+    // source matches target or (is deeper subdomain)
+    return target.every((part, index) => source[index] === part)
+  })
+}
 
 export class PhishingController extends EventEmitter {
   #fetch: Fetch
@@ -18,7 +36,7 @@ export class PhishingController extends EventEmitter {
 
   #windowManager: WindowManager
 
-  #blacklist: Set<string> = new Set() // list of blacklisted URLs
+  #blacklist: string[] = [] // list of blacklisted URLs
 
   #latestStorageUpdate: number | null = null
 
@@ -51,10 +69,12 @@ export class PhishingController extends EventEmitter {
   async #load() {
     const storedPhishingDetection = await this.#storage.get('phishingDetection', null)
     if (storedPhishingDetection) {
-      this.#blacklist = new Set([
-        ...storedPhishingDetection.metamaskBlacklist,
-        ...storedPhishingDetection.phantomBlacklist
-      ])
+      this.#blacklist = Array.from(
+        new Set([
+          ...storedPhishingDetection.metamaskBlacklist,
+          ...storedPhishingDetection.phantomBlacklist
+        ])
+      )
     }
     await this.#update(storedPhishingDetection)
     this.isReady = true
@@ -111,7 +131,7 @@ export class PhishingController extends EventEmitter {
       phantomBlacklist = phantomBlacklist || storedPhishingDetection.phantomBlacklist
     }
 
-    this.#blacklist = new Set([...metamaskBlacklist, ...phantomBlacklist])
+    this.#blacklist = Array.from(new Set([...metamaskBlacklist, ...phantomBlacklist]))
     this.updateStatus = 'INITIAL'
   }
 
@@ -133,13 +153,15 @@ export class PhishingController extends EventEmitter {
 
     try {
       const hostname = new URL(url).hostname
+      const domain = hostname.endsWith('.') ? hostname.slice(0, -1) : hostname
 
       // blacklisted if it has `ambire` in the hostname but it is not a pre-approved ambire domain
-      if (/ambire/i.test(hostname) && !/\.?ambire\.com$/.test(hostname)) {
+      if (/ambire/i.test(domain) && !/\.?ambire\.com$/.test(domain)) {
         return true
       }
 
-      return this.#blacklist.has(hostname)
+      const source = domainToParts(domain)
+      return matchPartsAgainstList(source, this.#blacklist)
     } catch (error) {
       return false
     }
