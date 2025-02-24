@@ -72,7 +72,8 @@ const networks: Network[] = [
       hasPaymaster: true,
       hasBundlerSupport: true,
       bundlers: [PIMLICO, BICONOMY],
-      defaultBundler: BICONOMY
+      defaultBundler: BICONOMY,
+      increasePreVerGas: 5
     },
     isSAEnabled: true,
     areContractsDeployed: true,
@@ -167,7 +168,8 @@ const networks: Network[] = [
       hasPaymaster: true,
       hasBundlerSupport: true,
       bundlers: [PIMLICO, BICONOMY],
-      defaultBundler: PIMLICO
+      defaultBundler: PIMLICO,
+      increasePreVerGas: 5
     },
     isSAEnabled: true,
     areContractsDeployed: true,

@@ -8,6 +8,9 @@ export interface Erc4337settings {
   hasBundlerSupport?: boolean
   bundlers?: BUNDLER[]
   defaultBundler?: BUNDLER
+  // increase the bundler estimation & gas price by a percent so we get
+  // "txn underpriced" errors less often
+  increasePreVerGas?: number
 }
 
 interface FeeOptions {
