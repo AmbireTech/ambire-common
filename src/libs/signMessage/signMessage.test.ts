@@ -309,6 +309,47 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
     )
   })
 
+  test('Signing [V1 SA]: disallowed plain text, but with OG mode', async () => {
+    const signer = await keystore.getSigner(v1siger.keyPublicAddress, 'internal')
+    const accountStates = await getAccountsInfo([v1Account])
+
+    const accountState = accountStates[v1Account.addr][ethereumNetwork.id]
+
+    const plaintextSigNoAddrInMessage = await getPlainTextSignature(
+      'test',
+      ethereumNetwork,
+      v1Account,
+      accountState,
+      signer,
+      true
+    )
+    const plaintextSigUnsupportedChain = await getPlainTextSignature(
+      `test with address in the message on unsupported chain: ${v1Account.addr}`,
+      unsupportedNetwork,
+      v1Account,
+      accountState,
+      signer,
+      true
+    )
+
+    const typedData = getTypedData(
+      ethereumNetwork.chainId,
+      v1siger.keyPublicAddress, // this is the difference
+      hashMessage('test')
+    )
+    const typedSigNoAddrInMessage = await getEIP712Signature(
+      typedData,
+      v1Account,
+      accountState,
+      signer,
+      polygonNetwork,
+      true
+    )
+
+    expect(plaintextSigNoAddrInMessage).toBeTruthy()
+    expect(plaintextSigUnsupportedChain).toBeTruthy()
+    expect(typedSigNoAddrInMessage).toBeTruthy()
+  })
   test('Signing [EOA]: eip-712', async () => {
     const accountStates = await getAccountsInfo([eoaAccount])
     const accountState = accountStates[eoaAccount.addr][ethereumNetwork.id]
