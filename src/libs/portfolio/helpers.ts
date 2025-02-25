@@ -209,6 +209,7 @@ export const getPinnedGasTankTokens = (
       acc.push({
         address: token.address,
         symbol: token.symbol.toUpperCase(),
+        name: token.name,
         amount: 0n,
         networkId: correspondingPinnedToken.networkId,
         decimals: token.decimals,
