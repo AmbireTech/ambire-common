@@ -38,14 +38,20 @@ export class PhishingController extends EventEmitter {
 
   #blacklist: string[] = [] // list of blacklisted URLs
 
-  #latestStorageUpdate: number | null = null
-
-  isReady: boolean = false
+  #lastStorageUpdate: number | null = null
 
   updateStatus: 'LOADING' | 'INITIAL' = 'INITIAL'
 
   // Holds the initial load promise, so that one can wait until it completes
   initialLoadPromise: Promise<void>
+
+  get lastStorageUpdate() {
+    return this.#lastStorageUpdate
+  }
+
+  get blacklistLength() {
+    return this.#blacklist.length
+  }
 
   constructor({
     fetch,
@@ -77,9 +83,6 @@ export class PhishingController extends EventEmitter {
       )
     }
     await this.#update(storedPhishingDetection)
-    this.isReady = true
-
-    this.emitUpdate()
   }
 
   async #update(
@@ -90,6 +93,7 @@ export class PhishingController extends EventEmitter {
     } | null
   ) {
     this.updateStatus = 'LOADING'
+    this.emitUpdate()
 
     const headers = {
       Accept: 'application/vnd.github.v3.+json'
@@ -111,35 +115,40 @@ export class PhishingController extends EventEmitter {
     ])
 
     let [metamaskBlacklist, phantomBlacklist] = results.map((result) =>
-      result.status === 'fulfilled' ? result.value || [] : []
+      result.status === 'fulfilled' ? (result.value as string[]) || [] : []
     )
 
-    if (metamaskBlacklist && phantomBlacklist) {
+    if (metamaskBlacklist.length && phantomBlacklist.length) {
       const timestamp = Date.now()
       await this.#storage.set('phishingDetection', {
         timestamp,
         metamaskBlacklist: metamaskBlacklist || [],
         phantomBlacklist: phantomBlacklist || []
       })
-      this.#latestStorageUpdate = timestamp
-    } else if (storedPhishingDetection && !this.#latestStorageUpdate) {
-      this.#latestStorageUpdate = storedPhishingDetection.timestamp
+      this.#lastStorageUpdate = timestamp
+    } else if (storedPhishingDetection && !this.#lastStorageUpdate) {
+      this.#lastStorageUpdate = storedPhishingDetection.timestamp
     }
 
     if (storedPhishingDetection) {
-      metamaskBlacklist = metamaskBlacklist || storedPhishingDetection.metamaskBlacklist
-      phantomBlacklist = phantomBlacklist || storedPhishingDetection.phantomBlacklist
+      metamaskBlacklist = metamaskBlacklist.length
+        ? metamaskBlacklist
+        : storedPhishingDetection.metamaskBlacklist
+      phantomBlacklist = phantomBlacklist.length
+        ? phantomBlacklist
+        : storedPhishingDetection.phantomBlacklist
     }
 
     this.#blacklist = Array.from(new Set([...metamaskBlacklist, ...phantomBlacklist]))
     this.updateStatus = 'INITIAL'
+    this.emitUpdate()
   }
 
   async updateIfNeeded() {
     if (this.updateStatus === 'LOADING') return
     const sixHoursInMs = 6 * 60 * 60 * 1000
 
-    if (this.#latestStorageUpdate && Date.now() - this.#latestStorageUpdate < sixHoursInMs) return
+    if (this.#lastStorageUpdate && Date.now() - this.#lastStorageUpdate < sixHoursInMs) return
     const storedPhishingDetection = await this.#storage.get('phishingDetection', null)
 
     if (Date.now() - storedPhishingDetection.timestamp >= sixHoursInMs) {
@@ -148,7 +157,6 @@ export class PhishingController extends EventEmitter {
   }
 
   async getIsBlacklisted(url: string) {
-    this.emitUpdate()
     await this.initialLoadPromise
 
     try {
@@ -161,7 +169,7 @@ export class PhishingController extends EventEmitter {
       }
 
       const source = domainToParts(domain)
-      return matchPartsAgainstList(source, this.#blacklist)
+      return !!matchPartsAgainstList(source, this.#blacklist)
     } catch (error) {
       return false
     }
@@ -179,7 +187,9 @@ export class PhishingController extends EventEmitter {
   toJSON() {
     return {
       ...this,
-      ...super.toJSON()
+      ...super.toJSON(),
+      lastStorageUpdate: this.lastStorageUpdate,
+      blacklistLength: this.blacklistLength
     }
   }
 }
