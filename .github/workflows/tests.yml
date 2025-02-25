@@ -30,6 +30,11 @@ jobs:
 
     - name: Install NPM packages ♾️🕳️
       run: npm ci
+
+    - name: Hardhat Compile 🧑‍🔬
+      env:
+        SEED: ${{ secrets.SEED }}
+      run: npx hardhat compile
     
     - name: JEST Tests 🧑‍🔬
       env:
