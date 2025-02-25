@@ -120,37 +120,39 @@ export const getBridgeBanners = (
         {
           label: 'Close',
           actionName: 'close-bridge',
-          meta: { activeRouteId: completedRoutes[0].activeRouteId }
+          meta: { activeRouteIds: completedRoutes.map((r) => r.activeRouteId) }
         }
       ]
     })
   }
 
   // Add other statuses normally
-  banners.push(
-    ...remainingRoutes.map((r) => ({
+  remainingRoutes.forEach((r) => {
+    const actions: Action[] =
+      r.routeStatus === 'ready'
+        ? [
+            {
+              label: 'Reject',
+              actionName: 'reject-bridge',
+              meta: { activeRouteIds: [r.activeRouteId] }
+            },
+            {
+              label: r.route.currentUserTxIndex >= 1 ? 'Proceed to Next Step' : 'Open',
+              actionName: 'proceed-bridge',
+              meta: { activeRouteId: r.activeRouteId }
+            }
+          ]
+        : []
+
+    banners.push({
       id: `bridge-${r.activeRouteId}`,
       type: r.routeStatus === 'completed' ? 'success' : 'info',
       category: `bridge-${r.routeStatus}`,
       title: getBridgeBannerTitle(r.routeStatus),
       text: getBridgeBannerText(r, isBridgeTxn(r), networks),
-      actions:
-        r.routeStatus === 'ready'
-          ? [
-              {
-                label: 'Reject',
-                actionName: 'reject-bridge',
-                meta: { activeRouteId: r.activeRouteId }
-              },
-              {
-                label: r.route.currentUserTxIndex >= 1 ? 'Proceed to Next Step' : 'Open',
-                actionName: 'proceed-bridge',
-                meta: { activeRouteId: r.activeRouteId }
-              }
-            ]
-          : []
-    }))
-  )
+      actions
+    })
+  })
 
   return banners
 }
