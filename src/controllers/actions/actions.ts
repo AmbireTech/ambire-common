@@ -161,7 +161,15 @@ export class ActionsController extends EventEmitter {
     executionType: ActionExecutionType = 'open-action-window'
   ) {
     // remove the benzin action if a new actions is added
-    this.actionsQueue = this.actionsQueue.filter((a) => a.type !== 'benzin')
+    this.actionsQueue = this.actionsQueue.filter((a) => {
+      if (a.type === 'benzin') return false
+
+      if (a.type === 'switchAccount') {
+        return a.userRequest.meta.switchToAccountAddr !== this.#selectedAccount.account?.addr
+      }
+
+      return true
+    })
     if (this.currentAction && this.currentAction.type === 'benzin') {
       this.currentAction = null
     }
