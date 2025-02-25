@@ -32,6 +32,7 @@ import {
 import { AddNetworkRequestParams, Network, NetworkId } from '../../interfaces/network'
 import { NotificationManager } from '../../interfaces/notification'
 import { RPCProvider } from '../../interfaces/provider'
+import { TraceCallDiscoveryStatus } from '../../interfaces/signAccountOp'
 import { Storage } from '../../interfaces/storage'
 import { SocketAPISendTransactionRequest } from '../../interfaces/swapAndBridge'
 import { Calls, DappUserRequest, SignUserRequest, UserRequest } from '../../interfaces/userRequest'
@@ -127,7 +128,6 @@ import { ProvidersController } from '../providers/providers'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 /* eslint-disable no-underscore-dangle */
 import { SignAccountOpController, SigningStatus } from '../signAccountOp/signAccountOp'
-import { TraceCallDiscoveryStatus } from '../../interfaces/signAccountOp'
 import { SignMessageController } from '../signMessage/signMessage'
 import { SwapAndBridgeController, SwapAndBridgeFormStatus } from '../swapAndBridge/swapAndBridge'
 
@@ -794,7 +794,7 @@ export class MainController extends EventEmitter {
       return this.emitError({ level: 'major', message, error })
     }
 
-    await this.signMessage.sign()
+    await this.signMessage.sign(this.invite.isOG)
 
     const signedMessage = this.signMessage.signedMessage
     // Error handling on the prev step will notify the user, it's fine to return here

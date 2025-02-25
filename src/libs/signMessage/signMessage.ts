@@ -393,7 +393,8 @@ export async function getPlainTextSignature(
   network: Network,
   account: Account,
   accountState: AccountOnchainState,
-  signer: KeystoreSigner
+  signer: KeystoreSigner,
+  isOG: boolean
 ): Promise<string> {
   const dedicatedToOneSA = signer.key.dedicatedToOneSA
 
@@ -425,24 +426,25 @@ export async function getPlainTextSignature(
       checksummedHexAddrWithout0x.slice(2)
     )
 
-    if (
-      !network.predefined &&
-      !relayerAdditionalNetworks.find((net) => net.chainId === network.chainId)
-    ) {
-      throw new Error(`Signing messages is disallowed for v1 accounts on ${network.name}`)
+    if (!isOG) {
+      if (
+        !network.predefined &&
+        !relayerAdditionalNetworks.find((net) => net.chainId === network.chainId)
+      ) {
+        throw new Error(`Signing messages is disallowed for v1 accounts on ${network.name}`)
+      }
+
+      if (
+        !isAsciiAddressInMessage &&
+        !isLowercaseHexAddressInMessage &&
+        !isChecksummedHexAddressInMessage
+      )
+        throw new Error(
+          'Signing messages is disallowed for v1 accounts. Please contact support to proceed'
+        )
     }
 
-    if (
-      isAsciiAddressInMessage ||
-      isLowercaseHexAddressInMessage ||
-      isChecksummedHexAddressInMessage
-    ) {
-      return wrapUnprotected(await signer.signMessage(messageHex))
-    }
-
-    throw new Error(
-      'Signing messages is disallowed for v1 accounts. Please contact support to proceed'
-    )
+    return wrapUnprotected(await signer.signMessage(messageHex))
   }
 
   // if it's safe, we proceed
@@ -465,7 +467,8 @@ export async function getEIP712Signature(
   account: Account,
   accountState: AccountOnchainState,
   signer: KeystoreSigner,
-  network: Network
+  network: Network,
+  isOG: boolean
 ): Promise<string> {
   if (!message.types.EIP712Domain) {
     throw new Error(
@@ -486,21 +489,24 @@ export async function getEIP712Signature(
   if (!accountState.isV2) {
     const asString = JSON.stringify(message).toLowerCase()
     if (
-      asString.indexOf(account.addr.toLowerCase()) !== -1 ||
-      (message.domain.name === 'Permit2' &&
+      !isOG &&
+      !asString.includes(account.addr.toLowerCase()) &&
+      !(
+        message.domain.name === 'Permit2' &&
         message.domain.verifyingContract &&
         getAddress(message.domain.verifyingContract) === PERMIT_2_ADDRESS &&
         message.message &&
         message.message.spender &&
         UNISWAP_UNIVERSAL_ROUTERS[Number(network.chainId)] &&
-        UNISWAP_UNIVERSAL_ROUTERS[Number(network.chainId)] === getAddress(message.message.spender))
+        UNISWAP_UNIVERSAL_ROUTERS[Number(network.chainId)] === getAddress(message.message.spender)
+      )
     ) {
-      return wrapUnprotected(await signer.signTypedData(message))
+      throw new Error(
+        'Signing this eip-712 message is disallowed for v1 accounts as it does not contain the smart account address and therefore deemed unsafe'
+      )
     }
 
-    throw new Error(
-      'Signing this eip-712 message is disallowed for v1 accounts as it does not contain the smart account address and therefore deemed unsafe'
-    )
+    return wrapUnprotected(await signer.signTypedData(message))
   }
 
   // we do not allow signers who are not dedicated to one account to sign eip-712
