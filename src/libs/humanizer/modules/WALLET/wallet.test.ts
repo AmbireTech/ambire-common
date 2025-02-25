@@ -3,7 +3,7 @@ import { AccountOp } from '../../../accountOp/accountOp'
 import { HumanizerMeta, IrCall } from '../../interfaces'
 import { compareHumanizerVisualizations } from '../../testHelpers'
 import { getAction, getAddressVisualization, getLabel, getToken } from '../../utils'
-import { WALLETModule } from './'
+import { WALLETModule } from '.'
 
 const transactions = {
   WALLET: [
@@ -60,13 +60,13 @@ describe('wallet', () => {
       [
         getAction('Leave'),
         getLabel('with'),
-        getToken('0x88800092ff476844f74dc2fc427974bbee2794ae', 2527275889852892335882193n),
+        getToken('0x47cd7e91c3cbaaf266369fe8518345fc4fc12935', 2527275889852892335882193n),
         getAddressVisualization('0x47cd7e91c3cbaaf266369fe8518345fc4fc12935')
       ],
       [
         getAction('Rage leave'),
         getLabel('with'),
-        getToken('0x88800092ff476844f74dc2fc427974bbee2794ae', 2019750399052452828721n),
+        getToken('0x47cd7e91c3cbaaf266369fe8518345fc4fc12935', 2019750399052452828721n),
         getAddressVisualization('0x47cd7e91c3cbaaf266369fe8518345fc4fc12935')
       ]
     ]

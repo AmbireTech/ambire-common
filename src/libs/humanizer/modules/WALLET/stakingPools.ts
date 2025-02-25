@@ -58,7 +58,7 @@ export const StakingPools = (): { [key: string]: (c: IrCall) => HumanizerVisuali
       return [
         getAction('Rage leave'),
         getLabel('with'),
-        getToken(STAKING_POOLS[call.to.toLowerCase()].baseToken, shares),
+        getToken(call.to, shares),
         getAddressVisualization(call.to)
       ]
     }
