@@ -394,7 +394,7 @@ export async function getPlainTextSignature(
   account: Account,
   accountState: AccountOnchainState,
   signer: KeystoreSigner,
-  isOG: boolean
+  isOG = false
 ): Promise<string> {
   const dedicatedToOneSA = signer.key.dedicatedToOneSA
 
@@ -468,7 +468,7 @@ export async function getEIP712Signature(
   accountState: AccountOnchainState,
   signer: KeystoreSigner,
   network: Network,
-  isOG: boolean
+  isOG = false
 ): Promise<string> {
   if (!message.types.EIP712Domain) {
     throw new Error(
