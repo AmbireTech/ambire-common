@@ -89,10 +89,18 @@ export type Action =
       actionName: 'confirm-temp-seed'
     }
   | {
+      label: 'Open'
+      actionName: 'open-first-cashback-modal'
+    }
+  | {
       label: 'Reload'
       actionName: 'update-extension-version'
     }
   | {
       label: 'Retry'
       actionName: 'reload-selected-account'
+    }
+  | {
+      label: 'Dismiss'
+      actionName: 'dismiss-email-vault'
     }

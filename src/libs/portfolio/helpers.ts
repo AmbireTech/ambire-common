@@ -11,6 +11,8 @@ import { CustomToken, TokenPreference } from './customToken'
 import {
   AccountState,
   AdditionalPortfolioNetworkResult,
+  NetworkState,
+  PortfolioGasTankResult,
   PreviousHintsStorage,
   StrippedExternalHintsAPIResponse,
   TokenResult
@@ -265,7 +267,8 @@ export function getUpdatedHints(
   networkId: NetworkId,
   storagePreviousHints: PreviousHintsStorage,
   key: string,
-  customTokens: CustomToken[]
+  customTokens: CustomToken[],
+  tokenPreferences: TokenPreference[]
 ): PreviousHintsStorage {
   const previousHints = { ...storagePreviousHints }
 
@@ -309,6 +312,10 @@ export function getUpdatedHints(
       networkId
     )
     const lowercaseCustomTokens = getLowercaseAddressArrayForNetwork(customTokens, networkId)
+    const lowercaseTokenPreferences = getLowercaseAddressArrayForNetwork(
+      tokenPreferences,
+      networkId
+    )
     const networkTokensWithBalance = tokens.filter((token) => token.amount > 0n)
     const lowercaseNetworkTokenAddressesWithBalance = getLowercaseAddressArrayForNetwork(
       networkTokensWithBalance,
@@ -337,11 +344,18 @@ export function getUpdatedHints(
 
       const isPinned = lowercaseNetworkPinnedTokenAddresses.includes(lowercaseAddress)
       const isCustomToken = lowercaseCustomTokens.includes(lowercaseAddress)
+      const isTokenPreference = lowercaseTokenPreferences.includes(lowercaseAddress)
       const isTokenInExternalAPIHints =
         lowercaseERC20HintsFromExternalAPI.includes(lowercaseAddress)
       const hasBalance = lowercaseNetworkTokenAddressesWithBalance.includes(lowercaseAddress)
 
-      if (!isTokenInExternalAPIHints && !isPinned && !isCustomToken && hasBalance) {
+      if (
+        !isTokenInExternalAPIHints &&
+        !isPinned &&
+        !isCustomToken &&
+        !isTokenPreference &&
+        hasBalance
+      ) {
         // Don't set the timestamp back to null if the account doesn't have balance for the token
         // as learnedTokens aren't account specific and one account can have balance for the token
         // while other don't
@@ -420,7 +434,8 @@ export const processTokens = (
   network: Network,
   hasNonZeroTokens: boolean,
   additionalHints: string[] | undefined,
-  tokenPreferences: TokenPreference[]
+  tokenPreferences: TokenPreference[],
+  customTokens: CustomToken[]
 ): TokenResult[] => {
   // We need to know the native token in order to execute our filtration logic in tokenFilter.
   // For performance reasons, we define it here once, instead of during every single iteration in the reduce method.
@@ -428,6 +443,7 @@ export const processTokens = (
 
   return tokenResults.reduce((tokens, tokenResult) => {
     const token = { ...tokenResult }
+    const isGasTankOrRewards = token.flags.onGasTank || token.flags.rewardsType
 
     const preference = tokenPreferences?.find((tokenPreference) => {
       return tokenPreference.address === token.address && tokenPreference.networkId === network.id
@@ -437,9 +453,22 @@ export const processTokens = (
       token.flags.isHidden = preference.isHidden
     }
 
+    token.flags.isCustom =
+      !isGasTankOrRewards &&
+      !!customTokens.find(
+        (customToken) =>
+          customToken.address === token.address && customToken.networkId === network.id
+      )
+
     if (tokenFilter(token, nativeToken!, network, hasNonZeroTokens, additionalHints, !!preference))
       tokens.push(token)
 
     return tokens
   }, [] as TokenResult[])
+}
+
+export const isPortfolioGasTankResult = (
+  result: NetworkState['result']
+): result is PortfolioGasTankResult => {
+  return !!result && 'gasTankTokens' in result && Array.isArray(result.gasTankTokens)
 }

@@ -161,7 +161,15 @@ export class ActionsController extends EventEmitter {
     executionType: ActionExecutionType = 'open-action-window'
   ) {
     // remove the benzin action if a new actions is added
-    this.actionsQueue = this.actionsQueue.filter((a) => a.type !== 'benzin')
+    this.actionsQueue = this.actionsQueue.filter((a) => {
+      if (a.type === 'benzin') return false
+
+      if (a.type === 'switchAccount') {
+        return a.userRequest.meta.switchToAccountAddr !== this.#selectedAccount.account?.addr
+      }
+
+      return true
+    })
     if (this.currentAction && this.currentAction.type === 'benzin') {
       this.currentAction = null
     }
@@ -207,19 +215,22 @@ export class ActionsController extends EventEmitter {
 
   removeAction(actionId: Action['id'], shouldOpenNextAction: boolean = true) {
     this.actionsQueue = this.actionsQueue.filter((a) => a.id !== actionId)
-    if (shouldOpenNextAction) {
-      this.#setCurrentAction(this.visibleActionsQueue[0] || null)
+
+    if (!this.visibleActionsQueue.length) {
+      this.#setCurrentAction(null)
+    } else if (shouldOpenNextAction) {
+      this.#setCurrentAction(this.visibleActionsQueue[0])
     }
   }
 
   #setCurrentAction(nextAction: Action | null) {
+    this.currentAction = nextAction
+
     if (nextAction && nextAction.id === this.currentAction?.id) {
       this.openActionWindow()
       this.emitUpdate()
       return
     }
-
-    this.currentAction = nextAction
 
     if (!this.currentAction) {
       !!this.actionWindow.windowProps?.id &&

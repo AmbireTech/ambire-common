@@ -524,7 +524,8 @@ describe('estimate', () => {
     expect(response.error).not.toBe(null)
   })
 
-  it('[v1] estimates gasUsage, fee and native tokens outcome', async () => {
+  // skipping as v1 funds have moved again
+  it.skip('[v1] estimates gasUsage, fee and native tokens outcome', async () => {
     const op = {
       accountAddr: v1Acc.addr,
       signingKeyAddr: null,
@@ -666,7 +667,8 @@ describe('estimate', () => {
     expect(viewOnlyAccOption).not.toBe(undefined)
   })
 
-  it('[v1] estimates with `accountOpToExecuteBefore`', async () => {
+  // skipping as v1 funds have moved again
+  it.skip('[v1] estimates with `accountOpToExecuteBefore`', async () => {
     const op = {
       accountAddr: v1Acc.addr,
       signingKeyAddr: null,
@@ -909,7 +911,9 @@ describe('estimate', () => {
     )
 
     expect(response.error).not.toBe(null)
-    expect(response.error?.message).toBe('Insufficient ETH for transaction calls')
+    expect(response.error?.message).toBe(
+      'The transaction will fail because it will revert onchain. Error code: Insufficient ETH for transaction calls\n'
+    )
 
     expect(response.erc4337GasLimits).not.toBe(undefined)
     expect(BigInt(response.erc4337GasLimits!.callGasLimit)).toBeGreaterThan(0n)
@@ -1128,7 +1132,9 @@ describe('estimate', () => {
       new BundlerSwitcher(polygon, getSignAccountOpStatus, noStateUpdateStatuses)
     )
     expect(response.error).not.toBe(null)
-    expect(response.error?.message).toBe('Insufficient POL for transaction calls')
+    expect(response.error?.message).toBe(
+      'The transaction will fail because it will revert onchain. Error code: Insufficient POL for transaction calls\n'
+    )
   })
 
   it('estimates a polygon request with wrong signer and estimation should fail with insufficient privileges', async () => {

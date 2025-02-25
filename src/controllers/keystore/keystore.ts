@@ -9,16 +9,7 @@ import {
   encryptWithPublicKey,
   publicKeyByPrivateKey
 } from 'eth-crypto'
-import {
-  concat,
-  getBytes,
-  hexlify,
-  keccak256,
-  Mnemonic,
-  randomBytes,
-  toUtf8Bytes,
-  Wallet
-} from 'ethers'
+import { concat, getBytes, hexlify, keccak256, Mnemonic, toUtf8Bytes, Wallet } from 'ethers'
 import scrypt from 'scrypt-js'
 
 import EmittableError from '../../classes/EmittableError'
@@ -38,6 +29,7 @@ import {
 } from '../../interfaces/keystore'
 import { Storage } from '../../interfaces/storage'
 import { WindowManager } from '../../interfaces/window'
+import { EntropyGenerator } from '../../libs/entropyGenerator/entropyGenerator'
 import {
   getDefaultKeyLabel,
   getShouldMigrateKeyMetaNullToKeyMetaCreatedAt,
@@ -301,16 +293,14 @@ export class KeystoreController extends EventEmitter {
       })
 
     let mainKey: MainKey | null = this.#mainKey
+    const entropyGenerator = new EntropyGenerator()
+
     // We are not unlocked
     if (!mainKey) {
       if (!this.#keystoreSecrets.length) {
-        const key = getBytes(keccak256(concat([randomBytes(32), toUtf8Bytes(extraEntropy)]))).slice(
-          0,
-          16
-        )
         mainKey = {
-          key,
-          iv: randomBytes(16)
+          key: entropyGenerator.generateRandomBytes(16, extraEntropy),
+          iv: entropyGenerator.generateRandomBytes(16, extraEntropy)
         }
       } else
         throw new EmittableError({
@@ -324,7 +314,7 @@ export class KeystoreController extends EventEmitter {
       }
     }
 
-    const salt = randomBytes(32)
+    const salt = entropyGenerator.generateRandomBytes(32, extraEntropy)
     const key = await scrypt.scrypt(
       getBytesForSecret(secret),
       salt,
@@ -334,7 +324,7 @@ export class KeystoreController extends EventEmitter {
       scryptDefaults.dkLen,
       () => {}
     )
-    const iv = randomBytes(16)
+    const iv = entropyGenerator.generateRandomBytes(16, extraEntropy)
     const derivedKey = key.slice(0, 16)
     const macPrefix = key.slice(16, 32)
     const counter = new aes.Counter(iv)
@@ -416,7 +406,13 @@ export class KeystoreController extends EventEmitter {
     })
   }
 
-  async #getEncryptedSeed(seed: KeystoreSeed['seed']): Promise<string> {
+  async #getEncryptedSeedPhrase(
+    seed: KeystoreSeed['seed'],
+    seedPassphrase?: KeystoreSeed['seedPassphrase']
+  ): Promise<{
+    seed: string
+    passphrase: string | null
+  }> {
     await this.#initialLoadPromise
 
     if (this.#mainKey === null)
@@ -449,10 +445,15 @@ export class KeystoreController extends EventEmitter {
     // Set up the cipher
     const counter = new aes.Counter(this.#mainKey!.iv) // TS compiler fails to detect we check for null above
     const aesCtr = new aes.ModeOfOperation.ctr(this.#mainKey!.key, counter) // TS compiler fails to detect we check for null above\
-    return hexlify(aesCtr.encrypt(new TextEncoder().encode(seed)))
+    return {
+      seed: hexlify(aesCtr.encrypt(new TextEncoder().encode(seed))),
+      passphrase: seedPassphrase
+        ? hexlify(aesCtr.encrypt(new TextEncoder().encode(seedPassphrase)))
+        : null
+    }
   }
 
-  async addSeedToTemp({ seed, hdPathTemplate }: KeystoreSeed) {
+  async addSeedToTemp({ seed, seedPassphrase, hdPathTemplate }: KeystoreSeed) {
     const validHdPath = DERIVATION_OPTIONS.some((o) => o.value === hdPathTemplate)
     if (!validHdPath)
       throw new EmittableError({
@@ -462,10 +463,12 @@ export class KeystoreController extends EventEmitter {
         error: new Error('keystore: hd path to temp seed incorrect')
       })
 
-    this.#tempSeed = {
-      seed: await this.#getEncryptedSeed(seed),
-      hdPathTemplate
-    }
+    const { seed: seedPhrase, passphrase } = await this.#getEncryptedSeedPhrase(
+      seed,
+      seedPassphrase
+    )
+
+    this.#tempSeed = { seed: seedPhrase, seedPassphrase: passphrase, hdPathTemplate }
 
     this.emitUpdate()
   }
@@ -515,11 +518,13 @@ export class KeystoreController extends EventEmitter {
     await this.withStatus('moveTempSeedToKeystoreSeeds', () => this.#moveTempSeedToKeystoreSeeds())
   }
 
-  async #addSeed({ seed, hdPathTemplate }: KeystoreSeed) {
-    this.#keystoreSeeds.push({
-      seed: await this.#getEncryptedSeed(seed),
-      hdPathTemplate
-    })
+  async #addSeed({ seed, seedPassphrase, hdPathTemplate }: KeystoreSeed) {
+    const { seed: seedPhrase, passphrase } = await this.#getEncryptedSeedPhrase(
+      seed,
+      seedPassphrase
+    )
+
+    this.#keystoreSeeds.push({ seed: seedPhrase, seedPassphrase: passphrase, hdPathTemplate })
     await this.#storage.set('keystoreSeeds', this.#keystoreSeeds)
 
     this.emitUpdate()
@@ -717,7 +722,10 @@ export class KeystoreController extends EventEmitter {
 
   async sendSeedToUi() {
     const decrypted = await this.getSavedSeed()
-    this.#windowManager.sendWindowUiMessage({ seed: decrypted.seed })
+    this.#windowManager.sendWindowUiMessage({
+      seed: decrypted.seed,
+      seedPassphrase: decrypted.seedPassphrase
+    })
   }
 
   async #getPrivateKey(keyAddress: string): Promise<string> {
@@ -837,10 +845,23 @@ export class KeystoreController extends EventEmitter {
     const aesCtr = new aes.ModeOfOperation.ctr(this.#mainKey.key, counter)
     const decryptedSeedBytes = aesCtr.decrypt(encryptedSeedBytes)
     const decryptedSeed = new TextDecoder().decode(decryptedSeedBytes)
+
+    if (this.#keystoreSeeds[0].seedPassphrase) {
+      const encryptedSeedPassphraseBytes = getBytes(this.#keystoreSeeds[0].seedPassphrase)
+      const decryptedSeedPassphraseBytes = aesCtr.decrypt(encryptedSeedPassphraseBytes)
+      const decryptedSeedPassphrase = new TextDecoder().decode(decryptedSeedPassphraseBytes)
+
+      return {
+        seed: decryptedSeed,
+        seedPassphrase: decryptedSeedPassphrase,
+        hdPathTemplate
+      } as KeystoreSeed
+    }
+
     return { seed: decryptedSeed, hdPathTemplate }
   }
 
-  async #changeKeystorePassword(newSecret: string, oldSecret?: string) {
+  async #changeKeystorePassword(newSecret: string, oldSecret?: string, extraEntropy?: string) {
     await this.#initialLoadPromise
 
     // In the case the user wants to change their device password,
@@ -870,12 +891,12 @@ export class KeystoreController extends EventEmitter {
       })
 
     await this.#removeSecret('password')
-    await this.#addSecret('password', newSecret, '', true)
+    await this.#addSecret('password', newSecret, extraEntropy, true)
   }
 
-  async changeKeystorePassword(newSecret: string, oldSecret?: string) {
+  async changeKeystorePassword(newSecret: string, oldSecret?: string, extraEntropy?: string) {
     await this.withStatus('changeKeystorePassword', () =>
-      this.#changeKeystorePassword(newSecret, oldSecret)
+      this.#changeKeystorePassword(newSecret, oldSecret, extraEntropy)
     )
   }
 

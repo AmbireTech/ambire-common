@@ -32,6 +32,7 @@ import {
 import { AddNetworkRequestParams, Network, NetworkId } from '../../interfaces/network'
 import { NotificationManager } from '../../interfaces/notification'
 import { RPCProvider } from '../../interfaces/provider'
+import { TraceCallDiscoveryStatus } from '../../interfaces/signAccountOp'
 import { Storage } from '../../interfaces/storage'
 import { SocketAPISendTransactionRequest } from '../../interfaces/swapAndBridge'
 import { Calls, DappUserRequest, SignUserRequest, UserRequest } from '../../interfaces/userRequest'
@@ -70,6 +71,7 @@ import {
   makeSmartAccountOpAction
 } from '../../libs/main/main'
 import { relayerAdditionalNetworks } from '../../libs/networks/networks'
+import { isPortfolioGasTankResult } from '../../libs/portfolio/helpers'
 import { GetOptions, TokenResult } from '../../libs/portfolio/interfaces'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { parse } from '../../libs/richJson/richJson'
@@ -231,6 +233,8 @@ export class MainController extends EventEmitter {
 
   #signAccountOpBroadcastPromise?: Promise<SubmittedAccountOp>
 
+  #traceCallTimeoutId: ReturnType<typeof setTimeout> | null = null
+
   constructor({
     storage,
     fetch,
@@ -334,9 +338,9 @@ export class MainController extends EventEmitter {
           (r) => r.action.kind !== 'calls'
         )
         userRequestsToRejectOnWindowClose.forEach((r) =>
-          r.dappPromise?.reject(ethErrors.provider.userRejectedRequest())
+          this.rejectUserRequest(ethErrors.provider.userRejectedRequest().message, r.id)
         )
-        this.userRequests = this.userRequests.filter((r) => r.action.kind === 'calls')
+
         this.userRequestWaitingAccountSwitch = []
         this.emitUpdate()
       }
@@ -386,16 +390,17 @@ export class MainController extends EventEmitter {
    * It's not a problem to call it many times consecutively as all methods have internal
    * caching mechanisms to prevent unnecessary calls.
    */
-  onLoad(isFirstLoad: boolean = false) {
+  onPopupOpen() {
+    const FIVE_MINUTES = 1000 * 60 * 5
     const selectedAccountAddr = this.selectedAccount.account?.addr
-    const hasBroadcastedButNotConfirmed = !!this.activity.broadcastedButNotConfirmed.length
-    this.defiPositions.updatePositions()
     this.domains.batchReverseLookup(this.accounts.accounts.map((a) => a.addr))
-    if (!hasBroadcastedButNotConfirmed) {
-      this.updateSelectedAccountPortfolio()
+    if (!this.activity.broadcastedButNotConfirmed.length) {
+      // Update defi positions together with the portfolio for simplicity
+      this.defiPositions.updatePositions({ maxDataAgeMs: FIVE_MINUTES })
+      this.updateSelectedAccountPortfolio(undefined, undefined, FIVE_MINUTES)
     }
-    // The first time the app loads, we update the account state elsewhere
-    if (selectedAccountAddr && !isFirstLoad && !this.accounts.areAccountStatesLoading)
+
+    if (selectedAccountAddr && !this.accounts.areAccountStatesLoading)
       this.accounts.updateAccountState(selectedAccountAddr)
   }
 
@@ -411,7 +416,9 @@ export class MainController extends EventEmitter {
     await this.accounts.initialLoadPromise
     await this.selectedAccount.initialLoadPromise
 
-    this.onLoad(true)
+    this.defiPositions.updatePositions()
+    this.updateSelectedAccountPortfolio()
+    this.domains.batchReverseLookup(this.accounts.accounts.map((a) => a.addr))
     /**
      * Listener that gets triggered as a finalization step of adding new
      * accounts via the AccountAdder controller flow.
@@ -634,7 +641,7 @@ export class MainController extends EventEmitter {
     this.emitUpdate()
 
     this.updateSignAccountOpGasPrice()
-    this.estimateSignAccountOp()
+    this.estimateSignAccountOp({ shouldTraceCall: true })
   }
 
   async handleSignAndBroadcastAccountOp() {
@@ -698,6 +705,30 @@ export class MainController extends EventEmitter {
     const network = this.networks.networks.find((net) => net.id === accountOp?.networkId)
     if (!network) return
 
+    // `traceCall` should not be invoked too frequently. However, if there is a pending timeout,
+    // it should be cleared to prevent the previous interval from changing the status
+    // to `SlowPendingResponse` for the newer `traceCall` invocation.
+    if (this.#traceCallTimeoutId) clearTimeout(this.#traceCallTimeoutId)
+
+    // Here, we also check the status because, in the case of re-estimation,
+    // `traceCallDiscoveryStatus` is already set, and we don’t want to reset it to "InProgress".
+    // This prevents the BalanceDecrease banner from flickering.
+    if (
+      this.signAccountOp &&
+      this.signAccountOp.traceCallDiscoveryStatus === TraceCallDiscoveryStatus.NotStarted
+    )
+      this.signAccountOp.traceCallDiscoveryStatus = TraceCallDiscoveryStatus.InProgress
+
+    // Flag the discovery logic as `SlowPendingResponse` if the call does not resolve within 2 seconds.
+    const timeoutId = setTimeout(() => {
+      if (this.signAccountOp) {
+        this.signAccountOp.traceCallDiscoveryStatus = TraceCallDiscoveryStatus.SlowPendingResponse
+        this.signAccountOp.calculateWarnings()
+      }
+    }, 2000)
+
+    this.#traceCallTimeoutId = timeoutId
+
     try {
       const account = this.accounts.accounts.find((acc) => acc.addr === accountOp.accountAddr)!
       const state = this.accounts.accountStates[accountOp.accountAddr][accountOp.networkId]
@@ -716,28 +747,30 @@ export class MainController extends EventEmitter {
       const learnedNewNfts = await this.portfolio.learnNfts(nfts, network.id)
       // update the portfolio only if new tokens were found through tracing
       if (learnedNewTokens || learnedNewNfts) {
-        this.portfolio
-          .updateSelectedAccount(
-            accountOp.accountAddr,
-            network,
-            getAccountOpsForSimulation(
-              account,
-              this.actions.visibleActionsQueue,
-              network,
-              accountOp
-            ),
-            { forceUpdate: true }
-          )
-          // fire an update request to refresh the warnings if any
-          .then(() => this.signAccountOp?.update({}))
+        await this.portfolio.updateSelectedAccount(
+          accountOp.accountAddr,
+          network,
+          getAccountOpsForSimulation(account, this.actions.visibleActionsQueue, network, accountOp),
+          { forceUpdate: true }
+        )
       }
+
+      if (this.signAccountOp)
+        this.signAccountOp.traceCallDiscoveryStatus = TraceCallDiscoveryStatus.Done
     } catch (e: any) {
+      if (this.signAccountOp)
+        this.signAccountOp.traceCallDiscoveryStatus = TraceCallDiscoveryStatus.Failed
+
       this.emitError({
         level: 'silent',
         message: 'Error in main.traceCall',
-        error: e
+        error: new Error(`Debug trace call error on ${network.id}: ${e.message}`)
       })
     }
+
+    this.signAccountOp?.calculateWarnings()
+    this.#traceCallTimeoutId = null
+    clearTimeout(timeoutId)
   }
 
   async handleSignMessage() {
@@ -998,16 +1031,8 @@ export class MainController extends EventEmitter {
     )
   }
 
-  async reloadSelectedAccount(
-    options: {
-      forceUpdate?: boolean
-      networkId?: NetworkId
-    } = {
-      forceUpdate: true,
-      networkId: undefined
-    }
-  ) {
-    const { forceUpdate, networkId } = options
+  async reloadSelectedAccount(options?: { forceUpdate?: boolean; networkId?: NetworkId }) {
+    const { forceUpdate = true, networkId } = options || {}
     const networkToUpdate = networkId
       ? this.networks.networks.find((n) => n.id === networkId)
       : undefined
@@ -1033,7 +1058,7 @@ export class MainController extends EventEmitter {
       // Additionally, if we trigger the portfolio update twice (i.e., running a long-living interval + force update from the Dashboard),
       // there won't be any error thrown, as all portfolio updates are queued and they don't use the `withStatus` helper.
       this.updateSelectedAccountPortfolio(forceUpdate, networkToUpdate),
-      this.defiPositions.updatePositions(networkId)
+      this.defiPositions.updatePositions({ networkId })
     ])
   }
 
@@ -1078,8 +1103,13 @@ export class MainController extends EventEmitter {
     }
   }
 
-  // eslint-disable-next-line default-param-last
-  async updateSelectedAccountPortfolio(forceUpdate: boolean = false, network?: Network) {
+  // TODO: Refactor this to accept an optional object with options
+  async updateSelectedAccountPortfolio(
+    // eslint-disable-next-line default-param-last
+    forceUpdate: boolean = false,
+    network?: Network,
+    maxDataAgeMs?: number
+  ) {
     await this.#initialLoadPromise
     if (!this.selectedAccount.account) return
 
@@ -1098,7 +1128,7 @@ export class MainController extends EventEmitter {
       this.selectedAccount.account.addr,
       network,
       accountOpsToBeSimulatedByNetwork,
-      { forceUpdate }
+      { forceUpdate, maxDataAgeMs }
     )
     this.#updateIsOffline()
   }
@@ -1677,7 +1707,7 @@ export class MainController extends EventEmitter {
         if (this.signAccountOp) {
           if (this.signAccountOp.fromActionId === accountOpAction.id) {
             this.signAccountOp.update({ calls: accountOpAction.accountOp.calls })
-            this.estimateSignAccountOp()
+            await this.estimateSignAccountOp({ shouldTraceCall: true })
           }
         } else {
           // Even without an initialized SignAccountOpController or Screen, we should still update the portfolio and run the simulation.
@@ -1813,21 +1843,24 @@ export class MainController extends EventEmitter {
         this.swapAndBridge.removeActiveRoute(meta.activeRouteId)
       }
     } else if (id === ACCOUNT_SWITCH_USER_REQUEST) {
-      const requestsToAdd = this.userRequestWaitingAccountSwitch.filter(
+      const requestsToAddOrRemove = this.userRequestWaitingAccountSwitch.filter(
         (r) => r.meta.accountAddr === this.selectedAccount.account!.addr
       )
-      this.actions.removeAction(
-        id,
-        this.selectedAccount.account?.addr !== (action as any).params!.switchToAccountAddr
-      )
-      ;(async () => {
-        // eslint-disable-next-line no-restricted-syntax
-        for (const r of requestsToAdd) {
-          this.userRequestWaitingAccountSwitch.splice(this.userRequests.indexOf(r), 1)
-          // eslint-disable-next-line no-await-in-loop
-          await this.addUserRequest(r)
-        }
-      })()
+      const isSelectedAccountSwitched =
+        this.selectedAccount.account?.addr === (action as any).params!.switchToAccountAddr
+
+      if (!isSelectedAccountSwitched) {
+        this.actions.removeAction(id)
+      } else {
+        ;(async () => {
+          // eslint-disable-next-line no-restricted-syntax
+          for (const r of requestsToAddOrRemove) {
+            this.userRequestWaitingAccountSwitch.splice(this.userRequests.indexOf(r), 1)
+            // eslint-disable-next-line no-await-in-loop
+            await this.addUserRequest(r)
+          }
+        })()
+      }
     } else {
       this.actions.removeAction(id, options.shouldOpenNextRequest)
     }
@@ -1885,6 +1918,7 @@ export class MainController extends EventEmitter {
     this.portfolio.removeNetworkData(id)
     this.defiPositions.removeNetworkData(id)
     this.accountAdder.removeNetworkData(id)
+    this.activity.removeNetworkData(id)
   }
 
   async resolveAccountOpAction(data: any, actionId: AccountOpAction['id']) {
@@ -2082,7 +2116,7 @@ export class MainController extends EventEmitter {
   }
 
   // @TODO: protect this from race conditions/simultanous executions
-  async estimateSignAccountOp() {
+  async estimateSignAccountOp({ shouldTraceCall = false }: { shouldTraceCall?: boolean } = {}) {
     try {
       if (!this.signAccountOp) return
 
@@ -2140,9 +2174,13 @@ export class MainController extends EventEmitter {
         this.portfolio.getLatestPortfolioState(localAccountOp.accountAddr)?.[
           localAccountOp.networkId
         ]?.result?.feeTokens ?? []
-      const gasTankFeeTokens =
-        this.portfolio.getLatestPortfolioState(localAccountOp.accountAddr)?.gasTank?.result
-          ?.tokens ?? []
+
+      const gasTankResult = this.portfolio.getLatestPortfolioState(localAccountOp.accountAddr)
+        ?.gasTank?.result
+
+      const gasTankFeeTokens = isPortfolioGasTankResult(gasTankResult)
+        ? gasTankResult.gasTankTokens
+        : []
 
       const feeTokens =
         [...networkFeeTokens, ...gasTankFeeTokens].filter((t) => t.flags.isFeeToken) || []
@@ -2328,6 +2366,7 @@ export class MainController extends EventEmitter {
       // this eliminates the infinite loading bug if the estimation comes slower
       if (this.signAccountOp && estimation) {
         this.signAccountOp.update({ estimation, rbfAccountOps })
+        if (shouldTraceCall) this.traceCall(estimation)
       }
     } catch (error: any) {
       this.signAccountOp?.calculateWarnings()

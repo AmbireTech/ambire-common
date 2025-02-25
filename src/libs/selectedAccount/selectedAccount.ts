@@ -1,6 +1,8 @@
-import { getAddress } from 'ethers'
-
+import { Account } from '../../interfaces/account'
 import {
+  CashbackStatus,
+  CashbackStatusByAccount,
+  LegacyCashbackStatus,
   SelectedAccountPortfolio,
   SelectedAccountPortfolioState,
   SelectedAccountPortfolioTokenResult
@@ -32,7 +34,7 @@ export const updatePortfolioStateWithDefiPositions = (
 
     if (!networkState?.result || defiPositionsAccountState[networkId]?.isLoading) return
 
-    let tokens = networkState.result.tokens || []
+    const tokens = networkState.result.tokens || []
     let networkBalance = networkState.result.total?.usd || 0
 
     const positions = defiPositionsAccountState[networkId] || {}
@@ -47,31 +49,16 @@ export const updatePortfolioStateWithDefiPositions = (
         pos.assets
           .filter((a) => a.type !== AssetType.Liquidity && a.protocolAsset)
           .forEach((a) => {
-            const tokenInPortfolioIndex = tokens.findIndex((t) => {
+            const tokenInPortfolio = tokens.find((t) => {
               return (
-                getAddress(t.address) === getAddress(a.protocolAsset!.address) &&
-                t.networkId === networkId
+                t.address.toLowerCase() === (a.protocolAsset?.address || '').toLowerCase() &&
+                t.networkId === networkId &&
+                !t.flags.rewardsType &&
+                !t.flags.onGasTank
               )
             })
 
-            if (tokenInPortfolioIndex !== -1) {
-              const tokenInPortfolio = tokens[tokenInPortfolioIndex]
-              const priceUSD = tokenInPortfolio.priceIn.find(
-                ({ baseCurrency }: { baseCurrency: string }) => baseCurrency.toLowerCase() === 'usd'
-              )?.price
-              const tokenBalanceUSD = priceUSD
-                ? Number(
-                    safeTokenAmountAndNumberMultiplication(
-                      BigInt(tokenInPortfolio.amount),
-                      tokenInPortfolio.decimals,
-                      priceUSD
-                    )
-                  )
-                : undefined
-
-              networkBalance -= tokenBalanceUSD || 0 // deduct portfolio token balance
-              tokens = tokens.filter((_, index) => index !== tokenInPortfolioIndex)
-            }
+            if (tokenInPortfolio?.flags.isHidden) return
 
             // Add only the balance of the collateral tokens to the network balance
             if (a.type === AssetType.Collateral) {
@@ -82,7 +69,7 @@ export const updatePortfolioStateWithDefiPositions = (
               const protocolTokenBalanceUSD = protocolPriceUSD
                 ? Number(
                     safeTokenAmountAndNumberMultiplication(
-                      BigInt(a.amount),
+                      BigInt(tokenInPortfolio?.amountPostSimulation || a.amount),
                       Number(a.protocolAsset!.decimals),
                       protocolPriceUSD
                     )
@@ -91,21 +78,48 @@ export const updatePortfolioStateWithDefiPositions = (
 
               networkBalance += protocolTokenBalanceUSD || 0
             }
-            tokens.push({
-              amount: a.amount,
-              // Only list the borrowed asset with no price
-              priceIn: a.type === AssetType.Collateral ? a.priceIn : [],
-              decimals: Number(a.protocolAsset!.decimals),
-              address: a.protocolAsset!.address,
-              symbol: a.protocolAsset!.symbol,
-              networkId,
-              flags: {
-                canTopUpGasTank: false,
-                isFeeToken: false,
-                onGasTank: false,
-                rewardsType: null
+
+            if (tokenInPortfolio) {
+              const priceUSD = tokenInPortfolio.priceIn.find(
+                ({ baseCurrency }: { baseCurrency: string }) => baseCurrency.toLowerCase() === 'usd'
+              )?.price
+
+              const tokenBalanceUSD = priceUSD
+                ? Number(
+                    safeTokenAmountAndNumberMultiplication(
+                      BigInt(tokenInPortfolio.amountPostSimulation || tokenInPortfolio.amount),
+                      tokenInPortfolio.decimals,
+                      priceUSD
+                    )
+                  )
+                : undefined
+
+              networkBalance -= tokenBalanceUSD || 0 // deduct portfolio token balance
+              // Get the price from defiPositions
+              tokenInPortfolio.priceIn = a.type === AssetType.Collateral ? a.priceIn : []
+            } else {
+              const positionAsset: TokenResult = {
+                amount: a.amount,
+                // Only list the borrowed asset with no price
+                priceIn: a.type === AssetType.Collateral ? a.priceIn : [],
+                decimals: Number(a.protocolAsset!.decimals),
+                address: a.protocolAsset!.address,
+                symbol: a.protocolAsset!.symbol,
+                networkId,
+                flags: {
+                  canTopUpGasTank: false,
+                  isFeeToken: false,
+                  onGasTank: false,
+                  rewardsType: null,
+                  isDefiToken: true
+                  // @BUG: defi positions tokens can't be hidden and can be added as custom
+                  // because processTokens is called in the portfolio
+                  // Issue: https://github.com/AmbireTech/ambire-app/issues/3971
+                }
               }
-            })
+
+              tokens.push(positionAsset)
+            }
           })
       })
     })
@@ -188,15 +202,21 @@ export function calculateSelectedAccountPortfolio(
   latestStateSelectedAccount: AccountState,
   pendingStateSelectedAccount: AccountState,
   accountPortfolio: SelectedAccountPortfolio | null,
+  portfolioStartedLoadingAtTimestamp: number | null,
+  defiPositionsAccountState: DefiPositionsAccountState,
   hasSignAccountOp?: boolean
 ) {
+  const now = Date.now()
+  const shouldShowPartialResult =
+    portfolioStartedLoadingAtTimestamp && now - portfolioStartedLoadingAtTimestamp > 5000
   const collections: CollectionResult[] = []
   const tokens: SelectedAccountPortfolioTokenResult[] = []
 
   let newTotalBalance: number = 0
 
   const hasLatest = latestStateSelectedAccount && Object.keys(latestStateSelectedAccount).length
-  let allReady = !!hasLatest
+  let isAllReady = !!hasLatest
+  let isReadyToVisualize = false
 
   const hasPending = pendingStateSelectedAccount && Object.keys(pendingStateSelectedAccount).length
   if (!hasLatest && !hasPending) {
@@ -204,6 +224,7 @@ export function calculateSelectedAccountPortfolio(
       tokens: accountPortfolio?.tokens || [],
       collections: accountPortfolio?.collections || [],
       totalBalance: accountPortfolio?.totalBalance || 0,
+      isReadyToVisualize: false,
       isAllReady: false,
       networkSimulatedAccountOp: accountPortfolio?.networkSimulatedAccountOp || {},
       latest: latestStateSelectedAccount,
@@ -272,18 +293,72 @@ export function calculateSelectedAccountPortfolio(
       collections.push(...networkCollections)
     }
 
-    if (!isNetworkReady(networkData)) {
-      allReady = false
+    // The total balance and token list are affected by the defi positions
+    if (!isNetworkReady(networkData) || defiPositionsAccountState[network]?.isLoading) {
+      isAllReady = false
     }
   })
+
+  const tokensWithAmount = tokens.filter((token) => token.amount)
+
+  if ((shouldShowPartialResult && tokensWithAmount.length && !isAllReady) || isAllReady) {
+    // Allow the user to operate with the tokens that have loaded
+    isReadyToVisualize = true
+  }
 
   return {
     totalBalance: newTotalBalance,
     tokens,
     collections,
-    isAllReady: allReady,
+    isReadyToVisualize,
+    isAllReady,
     networkSimulatedAccountOp: simulatedAccountOps,
     latest: stripPortfolioState(latestStateSelectedAccount),
     pending: stripPortfolioState(pendingStateSelectedAccount)
   } as SelectedAccountPortfolio
+}
+
+// As of version 4.53.0, cashback status information has been introduced.
+// Previously, cashback statuses were stored as separate objects per account.
+// Now, they are normalized under a single structure for simplifying.
+// Migration is needed to transform existing data into the new format.
+export const migrateCashbackStatusToNewFormat = (
+  existingStatuses: Record<
+    Account['addr'],
+    CashbackStatus | LegacyCashbackStatus | null | undefined
+  >
+): CashbackStatusByAccount => {
+  return Object.fromEntries(
+    Object.entries(existingStatuses).map(([accountId, status]) => {
+      if (typeof status === 'string') {
+        return [accountId, status as CashbackStatus]
+      }
+
+      if (typeof status === 'object' && status !== null) {
+        const { cashbackWasZeroAt, firstCashbackReceivedAt, firstCashbackSeenAt } = status
+
+        if (cashbackWasZeroAt && firstCashbackReceivedAt === null && firstCashbackSeenAt === null) {
+          return [accountId, 'no-cashback']
+        }
+
+        if (cashbackWasZeroAt === null && firstCashbackReceivedAt && firstCashbackSeenAt === null) {
+          return [accountId, 'unseen-cashback']
+        }
+
+        if (cashbackWasZeroAt === null && firstCashbackReceivedAt && firstCashbackSeenAt) {
+          return [accountId, 'seen-cashback']
+        }
+      }
+
+      return [accountId, 'seen-cashback']
+    })
+  )
+}
+
+export const needsCashbackStatusMigration = (
+  cashbackStatusByAccount: Record<Account['addr'], CashbackStatus | LegacyCashbackStatus>
+) => {
+  return Object.values(cashbackStatusByAccount).some(
+    (value) => typeof value === 'object' && value !== null && 'cashbackWasZeroAt' in value
+  )
 }
