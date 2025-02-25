@@ -1851,21 +1851,24 @@ export class MainController extends EventEmitter {
         this.swapAndBridge.removeActiveRoute(meta.activeRouteId)
       }
     } else if (id === ACCOUNT_SWITCH_USER_REQUEST) {
-      const requestsToAdd = this.userRequestWaitingAccountSwitch.filter(
+      const requestsToAddOrRemove = this.userRequestWaitingAccountSwitch.filter(
         (r) => r.meta.accountAddr === this.selectedAccount.account!.addr
       )
-      this.actions.removeAction(
-        id,
-        this.selectedAccount.account?.addr !== (action as any).params!.switchToAccountAddr
-      )
-      ;(async () => {
-        // eslint-disable-next-line no-restricted-syntax
-        for (const r of requestsToAdd) {
-          this.userRequestWaitingAccountSwitch.splice(this.userRequests.indexOf(r), 1)
-          // eslint-disable-next-line no-await-in-loop
-          await this.addUserRequest(r)
-        }
-      })()
+      const isSelectedAccountSwitched =
+        this.selectedAccount.account?.addr === (action as any).params!.switchToAccountAddr
+
+      if (!isSelectedAccountSwitched) {
+        this.actions.removeAction(id)
+      } else {
+        ;(async () => {
+          // eslint-disable-next-line no-restricted-syntax
+          for (const r of requestsToAddOrRemove) {
+            this.userRequestWaitingAccountSwitch.splice(this.userRequests.indexOf(r), 1)
+            // eslint-disable-next-line no-await-in-loop
+            await this.addUserRequest(r)
+          }
+        })()
+      }
     } else {
       this.actions.removeAction(id, options.shouldOpenNextRequest)
     }
