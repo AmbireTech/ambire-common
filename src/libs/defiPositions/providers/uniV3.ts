@@ -32,8 +32,10 @@ export async function getUniV3Positions(
   const data = result.map((asset: any) => ({
     positionId: asset.positionId,
     token0Symbol: asset.token0Symbol,
+    token0Name: asset.token0Name,
     token0Decimals: asset.token0Decimals,
     token1Symbol: asset.token1Symbol,
+    token1Name: asset.token1Name,
     token1Decimals: asset.token1Decimals,
     feeGrowthGlobal0X128: asset.feeGrowthGlobal0X128,
     positionInfo: {
