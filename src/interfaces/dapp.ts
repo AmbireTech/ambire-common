@@ -6,6 +6,7 @@ export interface Dapp {
   isConnected: boolean
   chainId: number
   favorite: boolean
+  blacklisted?: boolean
 }
 
 export interface DappProviderRequest {

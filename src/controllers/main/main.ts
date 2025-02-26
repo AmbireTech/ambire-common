@@ -122,6 +122,7 @@ import EventEmitter, { ErrorRef, Statuses } from '../eventEmitter/eventEmitter'
 import { InviteController } from '../invite/invite'
 import { KeystoreController } from '../keystore/keystore'
 import { NetworksController } from '../networks/networks'
+import { PhishingController } from '../phishing/phishing'
 import { PortfolioController } from '../portfolio/portfolio'
 import { ProvidersController } from '../providers/providers'
 /* eslint-disable @typescript-eslint/no-floating-promises */
@@ -179,6 +180,8 @@ export class MainController extends EventEmitter {
   defiPositions: DefiPositionsController
 
   dapps: DappsController
+
+  phishing: PhishingController
 
   actions: ActionsController
 
@@ -327,6 +330,11 @@ export class MainController extends EventEmitter {
       this.accounts,
       this.#externalSignerControllers
     )
+    this.phishing = new PhishingController({
+      fetch: this.fetch,
+      storage,
+      windowManager: this.#windowManager
+    })
     const socketAPI = new SocketAPI({ apiKey: socketApiKey, fetch: this.fetch })
     this.dapps = new DappsController(this.#storage)
     this.actions = new ActionsController({
@@ -1074,6 +1082,8 @@ export class MainController extends EventEmitter {
     // come in the same tick. Otherwise the UI may flash the wrong error.
     const latestState = this.portfolio.getLatestPortfolioState(accountAddr)
     const latestStateKeys = Object.keys(latestState)
+
+    if (!latestStateKeys.length) return
 
     const isAllReady = latestStateKeys.every((networkId) => {
       return isNetworkReady(latestState[networkId])
@@ -1843,21 +1853,24 @@ export class MainController extends EventEmitter {
         this.swapAndBridge.removeActiveRoute(meta.activeRouteId)
       }
     } else if (id === ACCOUNT_SWITCH_USER_REQUEST) {
-      const requestsToAdd = this.userRequestWaitingAccountSwitch.filter(
+      const requestsToAddOrRemove = this.userRequestWaitingAccountSwitch.filter(
         (r) => r.meta.accountAddr === this.selectedAccount.account!.addr
       )
-      this.actions.removeAction(
-        id,
-        this.selectedAccount.account?.addr !== (action as any).params!.switchToAccountAddr
-      )
-      ;(async () => {
-        // eslint-disable-next-line no-restricted-syntax
-        for (const r of requestsToAdd) {
-          this.userRequestWaitingAccountSwitch.splice(this.userRequests.indexOf(r), 1)
-          // eslint-disable-next-line no-await-in-loop
-          await this.addUserRequest(r)
-        }
-      })()
+      const isSelectedAccountSwitched =
+        this.selectedAccount.account?.addr === (action as any).params!.switchToAccountAddr
+
+      if (!isSelectedAccountSwitched) {
+        this.actions.removeAction(id)
+      } else {
+        ;(async () => {
+          // eslint-disable-next-line no-restricted-syntax
+          for (const r of requestsToAddOrRemove) {
+            this.userRequestWaitingAccountSwitch.splice(this.userRequests.indexOf(r), 1)
+            // eslint-disable-next-line no-await-in-loop
+            await this.addUserRequest(r)
+          }
+        })()
+      }
     } else {
       this.actions.removeAction(id, options.shouldOpenNextRequest)
     }
