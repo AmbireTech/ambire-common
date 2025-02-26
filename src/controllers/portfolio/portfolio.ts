@@ -561,15 +561,15 @@ export class PortfolioController extends EventEmitter {
         ...portfolioProps
       })
 
-      const hasCriticalError = result.errors.some((e) => e.level === 'critical')
+      const hasError = result.errors.some((e) => e.level !== 'silent')
       const additionalHintsErc20Hints = portfolioProps.additionalErc20Hints || []
       let lastSuccessfulUpdate = accountState[network.id]?.result?.lastSuccessfulUpdate || 0
 
       // Reset lastSuccessfulUpdate on forceUpdate in case of critical errors as the user
       // is likely expecting a change in the portfolio.
-      if (forceUpdate && hasCriticalError) {
+      if (forceUpdate && hasError) {
         lastSuccessfulUpdate = 0
-      } else if (!hasCriticalError) {
+      } else if (!hasError) {
         // Update the last successful update only if there are no critical errors.
         lastSuccessfulUpdate = Date.now()
       }
