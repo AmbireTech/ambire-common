@@ -426,22 +426,15 @@ export async function getPlainTextSignature(
       checksummedHexAddrWithout0x.slice(2)
     )
 
-    if (!isOG) {
-      if (
-        !network.predefined &&
-        !relayerAdditionalNetworks.find((net) => net.chainId === network.chainId)
-      ) {
-        throw new Error(`Signing messages is disallowed for v1 accounts on ${network.name}`)
-      }
-
-      if (
-        !isAsciiAddressInMessage &&
-        !isLowercaseHexAddressInMessage &&
-        !isChecksummedHexAddressInMessage
+    if (
+      !isOG &&
+      !isAsciiAddressInMessage &&
+      !isLowercaseHexAddressInMessage &&
+      !isChecksummedHexAddressInMessage
+    ) {
+      throw new Error(
+        'Signing messages is disallowed for v1 accounts. Please contact support to proceed'
       )
-        throw new Error(
-          'Signing messages is disallowed for v1 accounts. Please contact support to proceed'
-        )
     }
 
     return wrapUnprotected(await signer.signMessage(messageHex))
