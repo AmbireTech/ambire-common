@@ -159,15 +159,16 @@ export class SignMessageController extends EventEmitter {
 
       const accountState = this.#accounts.accountStates[account.addr][network.id]
       let signature
+      // It is defined when messageToSign.content.kind === 'message'
+      let hexMessage: string | undefined
+
       try {
         if (this.messageToSign.content.kind === 'message') {
           const message = this.messageToSign.content.message
-          this.messageToSign.content.message = isHexString(message)
-            ? message
-            : hexlify(toUtf8Bytes(message.toString()))
+          hexMessage = isHexString(message) ? message : hexlify(toUtf8Bytes(message))
 
           signature = await getPlainTextSignature(
-            this.messageToSign.content.message,
+            hexMessage,
             network,
             account,
             accountState,
@@ -211,29 +212,23 @@ export class SignMessageController extends EventEmitter {
             wrapCounterfactualSign(signature, account.creation!)
           : signature
 
-      const personalMsgToValidate =
-        typeof this.messageToSign.content.message === 'string'
-          ? hexStringToUint8Array(this.messageToSign.content.message)
-          : this.messageToSign.content.message
-
-      const isValidSignature = await verifyMessage({
+      const verifyMessageParams = {
         network,
         provider: this.#providers.providers[network?.id || 'ethereum'],
-        // the signer is always the account even if the actual
-        // signature is from a key that has privs to the account
         signer: this.messageToSign?.accountAddr,
         signature,
-        // @ts-ignore TODO: Be aware of the type mismatch, could cause troubles
-        message: this.messageToSign.content.kind === 'message' ? personalMsgToValidate : undefined,
-        typedData:
-          this.messageToSign.content.kind === 'typedMessage'
-            ? {
+        ...(this.messageToSign.content.kind === 'message'
+          ? { message: hexStringToUint8Array(hexMessage!) }
+          : {
+              typedData: {
                 domain: this.messageToSign.content.domain,
                 types: this.messageToSign.content.types,
                 message: this.messageToSign.content.message
               }
-            : undefined
-      })
+            })
+      }
+
+      const isValidSignature = await verifyMessage(verifyMessageParams)
 
       if (!isValidSignature) {
         throw new Error(
