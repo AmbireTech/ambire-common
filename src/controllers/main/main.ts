@@ -53,6 +53,8 @@ import {
 } from '../../libs/actions/actions'
 import { getAccountOpBanners } from '../../libs/banners/banners'
 import { getPaymasterService } from '../../libs/erc7677/erc7677'
+import { decodeError } from '../../libs/errorDecoder'
+import { ErrorType } from '../../libs/errorDecoder/types'
 import {
   getHumanReadableBroadcastError,
   getHumanReadableEstimationError
@@ -2087,10 +2089,21 @@ export class MainController extends EventEmitter {
     }
     const [gasPriceData, bundlerGas] = await Promise.all([
       getGasPriceRecommendations(this.providers.providers[network.id], network).catch((e) => {
+        // Don't display additional errors if the estimation hasn't initally loaded
+        // or there is an error
+        if (!this.signAccountOp?.estimation || this.signAccountOp?.estimation?.error) return null
+
+        const { type } = decodeError(e)
+        let message = "We couldn't retrieve the current network fee information."
+
+        if (type === ErrorType.ConnectivityError) {
+          message = 'Network connection issue prevented us from retrieving the current network fee.'
+        }
+
         this.emitError({
           level: 'major',
-          message: `Unable to get gas price for ${network.id}`,
-          error: new Error(`Failed to fetch gas price: ${e?.message}`)
+          message,
+          error: new Error(`Failed to fetch gas price on ${network.id}: ${e?.message}`)
         })
         return null
       }),

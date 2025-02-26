@@ -143,6 +143,8 @@ export async function estimate4337(
     12000
   )
 
+  if (estimations instanceof Error) return estimationErrorFormatted(estimations)
+
   const ambireEstimation = estimations[0]
   const bundlerEstimationResult: EstimateResult = estimations[1]
   if (ambireEstimation instanceof Error) {
