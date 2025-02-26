@@ -1083,6 +1083,8 @@ export class MainController extends EventEmitter {
     const latestState = this.portfolio.getLatestPortfolioState(accountAddr)
     const latestStateKeys = Object.keys(latestState)
 
+    if (!latestStateKeys.length) return
+
     const isAllReady = latestStateKeys.every((networkId) => {
       return isNetworkReady(latestState[networkId])
     })
