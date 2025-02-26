@@ -60,16 +60,15 @@ describe('wallet', () => {
       [
         getAction('Leave'),
         getLabel('with'),
-        getToken('0x47cd7e91c3cbaaf266369fe8518345fc4fc12935', 2527275889852892335882193n),
-        getAddressVisualization('0x47cd7e91c3cbaaf266369fe8518345fc4fc12935')
+        getToken('0x47cd7e91c3cbaaf266369fe8518345fc4fc12935', 2527275889852892335882193n)
       ],
       [
         getAction('Rage leave'),
         getLabel('with'),
-        getToken('0x47cd7e91c3cbaaf266369fe8518345fc4fc12935', 2019750399052452828721n),
-        getAddressVisualization('0x47cd7e91c3cbaaf266369fe8518345fc4fc12935')
+        getToken('0x47cd7e91c3cbaaf266369fe8518345fc4fc12935', 2019750399052452828721n)
       ]
     ]
+
     accountOp.calls = [...transactions.WALLET]
     let irCalls: IrCall[] = accountOp.calls
     irCalls = WALLETModule(accountOp, irCalls, humanizerInfo as HumanizerMeta)
