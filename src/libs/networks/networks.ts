@@ -414,6 +414,7 @@ export async function migrateNetworkPreferencesToNetworks(networkPreferences: {
       id: networkId,
       ...preference,
       ...networkInfo,
+      // TODO: Not sure if we need to add these, as they are [] by default for predefined networks
       features: getFeaturesByNetworkProperties(networkInfo),
       hasRelayer: !!relayerAdditionalNetworks.find((net) => net.chainId === preference.chainId!),
       predefined: false

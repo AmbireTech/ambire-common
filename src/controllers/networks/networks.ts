@@ -183,12 +183,13 @@ export class NetworksController extends EventEmitter {
           (networksInStorage[n.id].predefinedConfigVersion || 0)
 
 
+        // TODO: Do we need to add an isCustom flag to the network, from now on, in order to merge them here
         // TODO: Handle the scenario when a custom network for the user became predefined network
         // IN this scenario the network will come from relayerNetwork with predefinedConfigVersion > 0
         // We need to check its id and name and update the network in the storage
         // Be aware of changing the key of the network, since it is used as an id in portfolio controller
         // but we want to slightly migrate to chainId as the key
-        const isCustomNetworkBecomingPredefined = networksInStorage[n.id]?.hasRelayer === false && relayerNetwork.predefinedConfigVersion > 0;
+        const isCustomNetworkBecomingPredefined = networksInStorage[n.id]?.predefinedConfigVersion === 0 && relayerNetwork.predefinedConfigVersion > 0;
         const isNameOrIdDifferent = networksInStorage[n.id]?.name !== n.name || networksInStorage[n.id]?.id !== n.id;
 
         // // Set the network by chain Id if it comes from the relayer and remove the old one as custom in
@@ -211,12 +212,9 @@ export class NetworksController extends EventEmitter {
           networksInStorage[n.id] = {
             ...predefinedNetwork,
             ...n,
-            // In the case they updated the selectedRpcUrl we leave his selection
-            ...(userUpdatedFields && userUpdatedFields?.selectedRpcUrl ? { selectedRpcUrl: userUpdatedFields?.selectedRpcUrl } : {}),
             // If user has updated their URLs we should merge them
+            // this adds if he has added another selectedRpcUrl
            ...(userUpdatedFields && userUpdatedFields?.rpcUrls ? { rpcUrls: Array.from(new Set([...relayerNetwork.rpcUrls, ...userUpdatedFields.rpcUrls])) } : {}),
-            // Keep blockExplorerUrl if user has updated it
-            ...(userUpdatedFields && userUpdatedFields.explorerUrl ? { explorerUrl: userUpdatedFields.explorerUrl } : {}),
             // TODO: Check if we need to keep the allowForce4337 flag
           }
         }
