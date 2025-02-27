@@ -33,6 +33,7 @@ const unsupportedNetwork = {
   id: 'zircuit mainnet',
   name: 'Zircuit Mainnet',
   nativeAssetSymbol: 'ETH',
+  nativeAssetName: 'Ether',
   rpcUrls: ['https://zircuit1-mainnet.p2pify.com'],
   selectedRpcUrl: 'https://zircuit1-mainnet.p2pify.com',
   rpcNoStateOverride: false,

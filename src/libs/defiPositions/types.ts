@@ -17,6 +17,7 @@ export type ProviderName = 'AAVE v3' | 'Uniswap V3'
 export interface PositionAsset {
   address: string
   symbol: string
+  name: string
   decimals: number
   amount: bigint
   simulationAmount?: bigint
@@ -30,6 +31,7 @@ export interface PositionAsset {
   protocolAsset?: {
     address: string
     symbol: string
+    name: string
     decimals: number
   }
 }
