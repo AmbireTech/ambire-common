@@ -116,11 +116,10 @@ export const mapRelayerNetworkConfigToAmbireNetwork = (
   relayerNetwork: RelayerNetwork
 ): Network => {
   const chainId = BigInt(_chainId)
-  const { name, explorerUrl, selectedRpcUrl, isOptimistic, disableEstimateGas, rpcUrls, icon } =
+  const { name, explorerUrl, selectedRpcUrl, isOptimistic, disableEstimateGas, predefinedConfigVersion, rpcUrls, iconUrls, platformId } =
     relayerNetwork
   const {
     ambireId: id,
-    coingeckoPlatformId: platformId,
     native: {
       symbol: nativeAssetSymbol,
       coingeckoId: nativeAssetId,
@@ -164,13 +163,10 @@ export const mapRelayerNetworkConfigToAmbireNetwork = (
     })
   }
 
-  // TODO: Change the Relayer response?
-  const iconUrls = [icon]
-
   // Always fallback to these values for the "predefined" networks, coming from
   // the RPC for the custom networks.
-  // TODO: Shouldn't we include these values in the Relayer response?
-  // TODO: Call the RPC to get these values dynamically?
+  // TODO: Call the RPC to get these values dynamically
+  // on version update on isSAEnabled = false
   const rpcNoStateOverride = false
   const isSAEnabled = true
   const areContractsDeployed = true
@@ -184,7 +180,7 @@ export const mapRelayerNetworkConfigToAmbireNetwork = (
   // const force4337
 
   return {
-    predefined: true,
+    id,
     name,
     iconUrls,
     explorerUrl,
@@ -192,7 +188,6 @@ export const mapRelayerNetworkConfigToAmbireNetwork = (
     selectedRpcUrl,
     isOptimistic,
     disableEstimateGas,
-    id,
     platformId,
     chainId,
     nativeAssetSymbol,
@@ -205,6 +200,8 @@ export const mapRelayerNetworkConfigToAmbireNetwork = (
     erc4337,
     rpcNoStateOverride,
     isSAEnabled,
+    predefined: true,
+    predefinedConfigVersion,
     areContractsDeployed,
     features,
     hasSingleton

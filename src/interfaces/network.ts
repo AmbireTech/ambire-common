@@ -82,6 +82,8 @@ export interface Network {
   disableEstimateGas?: boolean
   force4337?: NetworkInfo['force4337']
   allowForce4337?: boolean
+  predefinedConfigVersion?: number;
+  lastUpdated?: number;
 }
 
 export type UserNetworkPreferencesForPredefinedNetworks = Pick<
@@ -144,9 +146,9 @@ export type RelayerNetwork = {
    */
   predefinedConfigVersion: number
   ambireId: string
-  coingeckoPlatformId: string
+  platformId: string
   name: string
-  icon: string
+  iconUrls: string[]
   explorerUrl: string
   rpcUrls: string[]
   selectedRpcUrl: string
