@@ -429,9 +429,6 @@ export class PortfolioController extends EventEmitter {
 
     if (canSkipUpdate) return
 
-    const hasNonZeroTokens = !!Object.values(
-      this.#networksWithAssetsByAccounts?.[accountId] || {}
-    ).some(Boolean)
     const start = Date.now()
     const accountState = this.#latest[accountId]
 
@@ -641,13 +638,14 @@ export class PortfolioController extends EventEmitter {
     const accountState = this.#latest[accountId]
     const pendingState = this.#pending[accountId]
 
-    if (shouldGetAdditionalPortfolio(selectedAccount)) {
-      this.#getAdditionalPortfolio(accountId, opts?.forceUpdate)
-    }
+    const updateAdditionalPortfolioIfNeeded = shouldGetAdditionalPortfolio(selectedAccount)
+      ? this.#getAdditionalPortfolio(accountId, opts?.forceUpdate)
+      : Promise.resolve()
 
     const networks = network ? [network] : this.#networks.networks
-    await Promise.all(
-      networks.map(async (network) => {
+    await Promise.all([
+      updateAdditionalPortfolioIfNeeded,
+      ...networks.map(async (network) => {
         const key = `${network.id}:${accountId}`
 
         const portfolioLib = this.initializePortfolioLibIfNeeded(accountId, network.id, network)
@@ -795,7 +793,7 @@ export class PortfolioController extends EventEmitter {
         // Ensure the method waits for the entire queue to resolve
         await this.#queue[accountId][network.id]
       })
-    )
+    ])
 
     await this.#updateNetworksWithAssets(accountId, accountState)
     this.emitUpdate()
