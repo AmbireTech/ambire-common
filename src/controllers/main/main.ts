@@ -1021,8 +1021,25 @@ export class MainController extends EventEmitter {
     if (!this.accounts.accountStates[accountAddr]?.[networkId])
       await this.accounts.updateAccountState(accountAddr, 'pending', [networkId])
     // If this still didn't work, throw error: this prob means that we're calling for a non-existent acc/network
-    if (!this.accounts.accountStates[accountAddr]?.[networkId])
-      this.signAccOpInitError = `Failed to retrieve account info for ${networkId}, because of one of the following reasons: 1) network doesn't exist, 2) RPC is down for this network`
+    if (!this.accounts.accountStates[accountAddr]?.[networkId]) {
+      // TODO: improve message in case of existing signAccountOp
+      const errorMessage = this.signAccountOp
+        ? `We couldn't retrieve your account information for ${networkId}. Please try reloading your account from the Dashboard. If the issue persists, contact support for assistance.`
+        : `We couldn't complete your last action because we couldn't retrieve your account information for ${networkId}. Please try reloading your account from the Dashboard. If the issue persists, contact support for assistance.`
+
+      this.signAccOpInitError = errorMessage
+
+      throw new EmittableError({
+        // If this.signAccountOp is initialized, this.signAccOpInitError will be rendered on Sign screen,
+        // and we just want to emit and log the error silently for debugging.
+        // If it's not initialized, we show a Toast to the user.
+        level: this.signAccountOp ? 'silent' : 'major',
+        message: errorMessage,
+        error: new Error(
+          `Couldn't retrieve account information for ${networkId}, because of one of the following reasons: 1) network doesn't exist, 2) RPC is down for this network.`
+        )
+      })
+    }
   }
 
   #batchCallsFromUserRequests(accountAddr: AccountId, networkId: NetworkId): Call[] {
