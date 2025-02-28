@@ -61,28 +61,18 @@ export class DappsController extends EventEmitter {
   }
 
   async #load() {
-    // eslint-disable-next-line prefer-const
-    let [storedDapps, dappSessions] = await Promise.all([
-      this.#storage.get('dapps', []),
-      this.#storage.get('dappSessions', {})
-    ])
+    const storedDapps = await this.#storage.get('dapps', [])
 
     this.#dapps = storedDapps
-    Object.keys(dappSessions).forEach((sessionId) => {
-      const session = new Session(dappSessions[sessionId])
-      this.dappSessions[sessionId] = session
-    })
     this.emitUpdate()
   }
 
   #dappSessionsSet(sessionId: string, session: Session) {
     this.dappSessions[sessionId] = session
-    this.#storage.set('dappSessions', this.dappSessions)
   }
 
   #dappSessionsDelete(sessionId: string) {
     delete this.dappSessions[sessionId]
-    this.#storage.set('dappSessions', this.dappSessions)
   }
 
   #createDappSession = (data: SessionProp) => {
