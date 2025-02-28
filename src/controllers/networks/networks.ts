@@ -3,6 +3,7 @@ import { networks as predefinedNetworks } from '../../consts/networks'
 import { Fetch } from '../../interfaces/fetch'
 import {
   AddNetworkRequestParams,
+  ChainId,
   Network,
   NetworkId,
   NetworkInfo,
@@ -186,9 +187,7 @@ export class NetworksController extends EventEmitter {
           !hasNoUpdatedFields &&
           hasPredefinedConfigVersionChanged
 
-        console.log('currentNetwork', currentNetwork, 'shouldOverrideNetworkPreferences', shouldOverrideNetworkPreferences)
-
-        // // Set the network by chain Id if it comes from the relayer and remove the old one as custom in
+        // Set the network by chain Id if it comes from the relayer and remove the old one as custom in
         if (isCustomNetworkBecomingPredefined && isNameOrIdDifferent) {
           currentNetwork && delete networksInStorage[networksInStorage[currentNetwork.id].id];
           networksInStorage[chainId] = n;
@@ -258,7 +257,6 @@ export class NetworksController extends EventEmitter {
     // Using the getNetworkInfo() update custom networks with the latest info
 
     const customNetworks = Object.values(networksInStorage).filter((n) => !n.predefined)
-    console.log('customNetworks', customNetworks)
 
     customNetworks.forEach((network) => {
       if (!network.lastUpdated || network.lastUpdated && Date.now() - network.lastUpdated > 24 * 60 * 60 * 1000) {
@@ -269,7 +267,7 @@ export class NetworksController extends EventEmitter {
         network.selectedRpcUrl,
         network.chainId,
         async (info) => {
-        console.log('info', info)
+
         if (Object.values(info).some((prop) => prop === 'LOADING')) {
           return
         }
@@ -337,7 +335,7 @@ export class NetworksController extends EventEmitter {
     const chainIds = this.networks.map((net) => net.chainId)
     const ids = this.networks.map((n) => n.id)
     const networkId = network.name.toLowerCase()
-
+console.log('networkId', networkId, 'network', network)
     // make sure the id and chainId of the network are unique
     if (ids.indexOf(networkId) !== -1 || chainIds.indexOf(BigInt(network.chainId)) !== -1) {
       throw new EmittableError({
@@ -353,7 +351,7 @@ export class NetworksController extends EventEmitter {
 
     // @ts-ignore
     delete info.feeOptions
-    this.#networks[networkId] = {
+    this.#networks[network.chainId.toString()] = {
       id: networkId,
       ...network,
       ...info,
@@ -363,7 +361,7 @@ export class NetworksController extends EventEmitter {
       predefined: false
     }
 
-    this.#onAddOrUpdateNetwork(this.#networks[networkId])
+    this.#onAddOrUpdateNetwork(this.#networks[network.chainId.toString()])
 
     await this.#storage.set('networks', this.#networks)
     this.networkToAddOrUpdate = null
@@ -477,12 +475,12 @@ export class NetworksController extends EventEmitter {
     await this.withStatus('updateNetwork', () => this.#updateNetwork(network, networkId))
   }
 
-  async removeNetwork(id: NetworkId) {
+  async removeNetwork(chainId: ChainId) {
     await this.initialLoadPromise
-    if (!this.#networks[id]) return
-
-    delete this.#networks[id]
-    this.#onRemoveNetwork(id)
+    console.log('removeNetwork',this.#networks)
+    if (!this.#networks[chainId.toString()]) return
+    delete this.#networks[chainId.toString()]
+    this.#onRemoveNetwork(chainId.toString())
     await this.#storage.set('networks', this.#networks)
     this.emitUpdate()
   }
