@@ -249,8 +249,7 @@ export class NetworksController extends EventEmitter {
       if (!predefinedNetworkIds.includes(networkKey) && networksInStorage[networkKey].predefined) {
         networksInStorage[networkKey].predefined = false;
       }
-    });
-
+    })
 
     // Step 3
     // TODO: Check if the NetworkInfo for the custom networks have changed, if it's too old (24h), fetch it again
@@ -285,6 +284,29 @@ export class NetworksController extends EventEmitter {
     }
     })
 
+
+    // TODO: This mapping was updated  recently in v2 with addition 
+    // of two props bundlers and increasePreVerGas.
+    // We need to update the mapping here as well and figure out how to handle the migration
+
+    // predefinedNetworks.forEach((n) => {
+    //   this.#networks[n.id] = {
+    //     ...n, // add the latest structure of the predefined network to include the new props that are not in storage yet
+    //     ...(this.#networks[n.id] || {}), // override with stored props
+    //     // attributes that should take predefined priority
+    //     feeOptions: n.feeOptions,
+    //     hasRelayer: n.hasRelayer,
+    //     erc4337: {
+    //       enabled: is4337Enabled(!!n.erc4337.hasBundlerSupport, n, this.#networks[n.id]?.force4337),
+    //       hasPaymaster: n.erc4337.hasPaymaster,
+    //       defaultBundler: n.erc4337.defaultBundler,
+    //       bundlers: n.erc4337.bundlers,
+    //       increasePreVerGas: n.erc4337.increasePreVerGas ?? 0
+    //     },
+    //     nativeAssetId: n.nativeAssetId,
+    //     nativeAssetSymbol: n.nativeAssetSymbol
+    //   }
+    // });
 
     this.#networks = networksInStorage
     this.emitUpdate()
