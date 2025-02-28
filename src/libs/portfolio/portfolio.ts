@@ -31,10 +31,10 @@ import { flattenResults, paginate } from './pagination'
 export const LIMITS: Limits = {
   // we have to be conservative with erc721Tokens because if we pass 30x20 (worst case) tokenIds, that's 30x20 extra words which is 19kb
   // proxy mode input is limited to 24kb
-  deploylessProxyMode: { erc20: 100, erc721: 30, erc721TokensInput: 20, erc721Tokens: 50 },
+  deploylessProxyMode: { erc20: 66, erc721: 30, erc721TokensInput: 20, erc721Tokens: 50 },
   // theoretical capacity is 1666/450
   deploylessStateOverrideMode: {
-    erc20: 350,
+    erc20: 230,
     erc721: 70,
     erc721TokensInput: 70,
     erc721Tokens: 70
