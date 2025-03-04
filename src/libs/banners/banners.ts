@@ -146,7 +146,7 @@ export const getBridgeBanners = (
 
     banners.push({
       id: `bridge-${r.activeRouteId}`,
-      type: r.routeStatus === 'completed' ? 'success' : 'info',
+      type: 'info',
       category: `bridge-${r.routeStatus}`,
       title: getBridgeBannerTitle(r.routeStatus),
       text: getBridgeBannerText(r, isBridgeTxn(r), networks),
