@@ -1010,12 +1010,17 @@ export class MainController extends EventEmitter {
     })
   }
 
-  async #ensureAccountInfo(accountAddr: AccountId, networkId: NetworkId) {
+  async #ensureAccountInfo(
+    accountAddr: AccountId,
+    networkId: NetworkId
+  ): Promise<{ hasAccountInfo: true } | { hasAccountInfo: false; errorMessage: string }> {
     await this.#initialLoadPromise
     // Initial sanity check: does this account even exist?
     if (!this.accounts.accounts.find((x) => x.addr === accountAddr)) {
-      this.signAccOpInitError = `Account ${accountAddr} does not exist`
-      return
+      return {
+        hasAccountInfo: false,
+        errorMessage: `Account ${accountAddr} does not exist`
+      }
     }
     // If this still didn't work, re-load
     if (!this.accounts.accountStates[accountAddr]?.[networkId])
@@ -1023,7 +1028,15 @@ export class MainController extends EventEmitter {
     // If this still didn't work, throw error: this prob means that we're calling for a non-existent acc/network
     if (!this.accounts.accountStates[accountAddr]?.[networkId]) {
       const networkName = networkId[0].toUpperCase() + networkId.slice(1)
-      this.signAccOpInitError = `We couldn't complete your last action because we couldn't retrieve your account information for ${networkName}. Please try reloading your account from the Dashboard. If the issue persists, contact support for assistance.`
+
+      return {
+        hasAccountInfo: false,
+        errorMessage: `We couldn't complete your last action because we couldn't retrieve your account information for ${networkName}. Please try reloading your account from the Dashboard. If the issue persists, contact support for assistance.`
+      }
+    }
+
+    return {
+      hasAccountInfo: true
     }
   }
 
@@ -1662,18 +1675,23 @@ export class MainController extends EventEmitter {
       // although it could work like this: 1) await the promise, 2) check if exists 3) if not, re-trigger the promise;
       // 4) manage recalc on removeUserRequest too in order to handle EOAs
       // @TODO consider re-using this whole block in removeUserRequest
-      await this.#ensureAccountInfo(meta.accountAddr, meta.networkId)
-      if (this.signAccOpInitError) {
+      const accountInfo = await this.#ensureAccountInfo(meta.accountAddr, meta.networkId)
+      if (!accountInfo.hasAccountInfo) {
+        // Reject request if we couldn't load the account and account state for the request
         req.dappPromise?.reject(
           ethErrors.provider.custom({
             code: 1001,
-            message: this.signAccOpInitError
+            message: accountInfo.errorMessage
           })
         )
 
+        // Remove the request as it's already added
+        this.removeUserRequest(req.id)
+
+        // Show a toast
         throw new EmittableError({
           level: 'major',
-          message: this.signAccOpInitError,
+          message: accountInfo.errorMessage,
           error: new Error(
             `Couldn't retrieve account information for ${meta.networkId}, because of one of the following reasons: 1) network doesn't exist, 2) RPC is down for this network.`
           )
