@@ -802,7 +802,7 @@ export class MainController extends EventEmitter {
       return this.emitError({ level: 'major', message, error })
     }
 
-    await this.signMessage.sign()
+    await this.signMessage.sign(this.invite.isOG)
 
     const signedMessage = this.signMessage.signedMessage
     // Error handling on the prev step will notify the user, it's fine to return here
