@@ -772,7 +772,18 @@ export class SignAccountOpController extends EventEmitter {
     const extraDecimals = BigInt(10 ** 18)
     const feeTokenExtraDecimals = BigInt(10 ** (18 - feeTokenDecimals))
     const pow = extraDecimals * feeTokenExtraDecimals
-    return (amountInWei * nativeRatio) / pow
+    const result = (amountInWei * nativeRatio) / pow
+
+    // Fixes the edge case where the fee in wei is not zero
+    // but the decimals of the token we are converting to
+    // cannot represent the amount in wei. Example: 0.(6zeros)1 USDC
+    // We are returning 1n which is the smallest possible amount
+    // to be represented in USDC
+    if (result === 0n && amountInWei !== 0n) {
+      return 1n
+    }
+
+    return result
   }
 
   /**

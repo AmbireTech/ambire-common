@@ -121,7 +121,7 @@ export class SignMessageController extends EventEmitter {
     this.emitUpdate()
   }
 
-  async #sign() {
+  async #sign(isOG = false) {
     if (!this.isInitialized) {
       return SignMessageController.#throwNotInitialized()
     }
@@ -169,7 +169,8 @@ export class SignMessageController extends EventEmitter {
             network,
             account,
             accountState,
-            this.#signer
+            this.#signer,
+            isOG
           )
         }
 
@@ -185,7 +186,8 @@ export class SignMessageController extends EventEmitter {
             account,
             accountState,
             this.#signer,
-            network
+            network,
+            isOG
           )
         }
 
@@ -259,8 +261,8 @@ export class SignMessageController extends EventEmitter {
     }
   }
 
-  async sign() {
-    await this.withStatus('sign', async () => this.#sign())
+  async sign(isOG = false) {
+    await this.withStatus('sign', async () => this.#sign(isOG))
   }
 
   removeAccountData(address: Account['addr']) {

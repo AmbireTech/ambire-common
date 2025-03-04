@@ -82,6 +82,7 @@ const convertToAmbireNetworkFormat = async (network: ChainlistNetwork): Promise<
     platformId,
     nativeAssetId,
     nativeAssetSymbol: network.nativeCurrency.symbol,
+    nativeAssetName: network.nativeCurrency.name,
     // Not needed for benzin
     hasRelayer: false,
     rpcNoStateOverride: false, // TODO

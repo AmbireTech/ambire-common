@@ -175,17 +175,20 @@ export class DefiPositionsController extends EventEmitter {
           ])
 
           const hasErrors = !!this.#state[selectedAccountAddr][n.id].providerErrors?.length
+          const positionsByProvider = [aavePositions, uniV3Positions].filter(
+            Boolean
+          ) as PositionsByProvider[]
 
           this.#state[selectedAccountAddr][n.id] = {
             ...networkState,
             isLoading: false,
-            positionsByProvider: [aavePositions, uniV3Positions].filter(
-              Boolean
-            ) as PositionsByProvider[],
+            positionsByProvider,
             updatedAt: hasErrors ? networkState.updatedAt : Date.now()
           }
           await this.#setAssetPrices(selectedAccountAddr, n.id).catch((e) => {
             console.error(`#setAssetPrices error for ${selectedAccountAddr} on ${n.id}:`, e)
+            // Don't set an error if the user doesn't have any positions
+            if (!positionsByProvider.length) return
             this.#state[selectedAccountAddr][n.id].error = DeFiPositionsError.AssetPriceError
           })
         } catch (e: any) {

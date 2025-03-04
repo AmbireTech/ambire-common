@@ -59,7 +59,11 @@ export const buildSwitchAccountUserRequest = ({
     },
     session,
     meta: {
-      isSignAction: false
+      isSignAction: false,
+      accountAddr: selectedAccountAddr,
+      switchToAccountAddr: nextUserRequest.meta.accountAddr,
+      nextRequestType: nextUserRequest.action.kind,
+      networkId
     },
     dappPromise: {
       ...dappPromise,
