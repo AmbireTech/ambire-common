@@ -98,7 +98,7 @@ const BROADCAST_OR_ESTIMATION_ERRORS: ErrorHumanizerError[] = [
       'of one of the following reasons: missing approval, insufficient approved amount, the amount exceeds the account balance.'
   },
   {
-    reasons: [EXPIRED_PREFIX, 'Router: EXPIRED', 'Transaction too old'],
+    reasons: [EXPIRED_PREFIX, 'Router: EXPIRED', 'Transaction too old', 'BAL#508', 'SWAP_DEADLINE'],
     message:
       'the swap has expired. Return to the app and reinitiate the swap if you wish to proceed.'
   },
