@@ -1,4 +1,8 @@
+import { Account } from '../../interfaces/account'
 import {
+  CashbackStatus,
+  CashbackStatusByAccount,
+  LegacyCashbackStatus,
   SelectedAccountPortfolio,
   SelectedAccountPortfolioState,
   SelectedAccountPortfolioTokenResult
@@ -101,6 +105,7 @@ export const updatePortfolioStateWithDefiPositions = (
                 decimals: Number(a.protocolAsset!.decimals),
                 address: a.protocolAsset!.address,
                 symbol: a.protocolAsset!.symbol,
+                name: a.protocolAsset!.name,
                 networkId,
                 flags: {
                   canTopUpGasTank: false,
@@ -312,4 +317,49 @@ export function calculateSelectedAccountPortfolio(
     latest: stripPortfolioState(latestStateSelectedAccount),
     pending: stripPortfolioState(pendingStateSelectedAccount)
   } as SelectedAccountPortfolio
+}
+
+// As of version 4.53.0, cashback status information has been introduced.
+// Previously, cashback statuses were stored as separate objects per account.
+// Now, they are normalized under a single structure for simplifying.
+// Migration is needed to transform existing data into the new format.
+export const migrateCashbackStatusToNewFormat = (
+  existingStatuses: Record<
+    Account['addr'],
+    CashbackStatus | LegacyCashbackStatus | null | undefined
+  >
+): CashbackStatusByAccount => {
+  return Object.fromEntries(
+    Object.entries(existingStatuses).map(([accountId, status]) => {
+      if (typeof status === 'string') {
+        return [accountId, status as CashbackStatus]
+      }
+
+      if (typeof status === 'object' && status !== null) {
+        const { cashbackWasZeroAt, firstCashbackReceivedAt, firstCashbackSeenAt } = status
+
+        if (cashbackWasZeroAt && firstCashbackReceivedAt === null && firstCashbackSeenAt === null) {
+          return [accountId, 'no-cashback']
+        }
+
+        if (cashbackWasZeroAt === null && firstCashbackReceivedAt && firstCashbackSeenAt === null) {
+          return [accountId, 'unseen-cashback']
+        }
+
+        if (cashbackWasZeroAt === null && firstCashbackReceivedAt && firstCashbackSeenAt) {
+          return [accountId, 'seen-cashback']
+        }
+      }
+
+      return [accountId, 'seen-cashback']
+    })
+  )
+}
+
+export const needsCashbackStatusMigration = (
+  cashbackStatusByAccount: Record<Account['addr'], CashbackStatus | LegacyCashbackStatus>
+) => {
+  return Object.values(cashbackStatusByAccount).some(
+    (value) => typeof value === 'object' && value !== null && 'cashbackWasZeroAt' in value
+  )
 }

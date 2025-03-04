@@ -209,6 +209,7 @@ export const getPinnedGasTankTokens = (
       acc.push({
         address: token.address,
         symbol: token.symbol.toUpperCase(),
+        name: token.name,
         amount: 0n,
         networkId: correspondingPinnedToken.networkId,
         decimals: token.decimals,
@@ -471,16 +472,4 @@ export const isPortfolioGasTankResult = (
   result: NetworkState['result']
 ): result is PortfolioGasTankResult => {
   return !!result && 'gasTankTokens' in result && Array.isArray(result.gasTankTokens)
-}
-
-export const isCurrentCashbackZero = (resBalance: any[]) => {
-  const currentCashback = resBalance?.[0]?.cashback
-
-  if (currentCashback === undefined) return false
-
-  try {
-    return BigInt(currentCashback) === 0n
-  } catch {
-    return false
-  }
 }

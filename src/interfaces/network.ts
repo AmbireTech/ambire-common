@@ -8,6 +8,9 @@ export interface Erc4337settings {
   hasBundlerSupport?: boolean
   bundlers?: BUNDLER[]
   defaultBundler?: BUNDLER
+  // increase the bundler estimation & gas price by a percent so we get
+  // "txn underpriced" errors less often
+  increasePreVerGas?: number
 }
 
 interface FeeOptions {
@@ -56,6 +59,7 @@ export interface Network {
   id: NetworkId
   name: string
   nativeAssetSymbol: string
+  nativeAssetName: string
   chainId: bigint
   rpcUrls: string[]
   explorerUrl: string
@@ -89,6 +93,7 @@ export interface AddNetworkRequestParams {
   selectedRpcUrl: Network['selectedRpcUrl']
   chainId: Network['chainId']
   nativeAssetSymbol: Network['nativeAssetSymbol']
+  nativeAssetName: Network['nativeAssetName']
   explorerUrl: Network['explorerUrl']
   iconUrls: Network['iconUrls']
 }

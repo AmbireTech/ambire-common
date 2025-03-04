@@ -102,6 +102,10 @@ const BROADCAST_OR_ESTIMATION_ERRORS: ErrorHumanizerError[] = [
     message:
       'the swap has expired. Return to the app and reinitiate the swap if you wish to proceed.'
   },
+  {
+    reasons: ['0x7b36c479', '0x81ceff30'],
+    message: 'of a Swap failure. Please try performing the same swap again.'
+  },
   // bundler
   {
     reasons: ['biconomy: 400'],
@@ -145,11 +149,6 @@ const ESTIMATION_ERRORS: ErrorHumanizerError[] = [
       'ontract is not allowed'
     ],
     message: 'this app does not support Smart Account wallets. Use a Basic Account (EOA) instead.'
-  },
-  // Contract errors
-  {
-    reasons: ['0x7b36c479', '0x81ceff30'],
-    message: 'of a Swap failure. Please try performing the same swap again.'
   },
   {
     reasons: ['ERC721: token already minted'],
