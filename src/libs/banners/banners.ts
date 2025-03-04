@@ -7,17 +7,6 @@ import { CashbackStatusByAccount } from '../../interfaces/selectedAccount'
 import { ActiveRoute } from '../../interfaces/swapAndBridge'
 import { getIsBridgeTxn, getQuoteRouteSteps } from '../swapAndBridge/swapAndBridge'
 
-const getBridgeBannerTitle = (routeStatus: ActiveRoute['routeStatus']) => {
-  switch (routeStatus) {
-    case 'completed':
-      return 'Bridge request completed'
-    case 'in-progress':
-      return 'Bridge request in progress'
-    default:
-      return 'Bridge request awaiting signature'
-  }
-}
-
 const getBridgeActionText = (routeStatus: ActiveRoute['routeStatus'], isBridgeTxn: boolean) => {
   if (isBridgeTxn) {
     return routeStatus === 'completed' ? 'Bridged' : 'Bridge'
@@ -82,7 +71,7 @@ export const getBridgeBanners = (
   const completedRoutes = filteredRoutes.filter((r) => r.routeStatus === 'completed')
 
   const remainingRoutes = filteredRoutes.filter(
-    (r) => r.routeStatus !== 'in-progress' && r.routeStatus !== 'completed'
+    (r) => r.routeStatus !== 'in-progress' && r.routeStatus !== 'completed' && r.routeStatus !== 'waiting-approval-to-resolve'
   )
 
   const banners: Banner[] = []
@@ -148,7 +137,7 @@ export const getBridgeBanners = (
       id: `bridge-${r.activeRouteId}`,
       type: 'info',
       category: `bridge-${r.routeStatus}`,
-      title: getBridgeBannerTitle(r.routeStatus),
+      title: 'Bridge request awaiting signature',
       text: getBridgeBannerText(r, isBridgeTxn(r), networks),
       actions
     })
