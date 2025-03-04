@@ -75,6 +75,7 @@ describe('Networks Controller', () => {
           rpcUrls: [networksController.networkToAddOrUpdate?.rpcUrl],
           selectedRpcUrl: networksController.networkToAddOrUpdate?.rpcUrl,
           nativeAssetSymbol: 'MNT',
+          nativeAssetName: 'Mantle',
           explorerUrl: 'https://explorer.mantle.xyz/',
           ...mantleNetworkInfo,
           feeOptions: mantleNetworkInfo.feeOptions ?? {

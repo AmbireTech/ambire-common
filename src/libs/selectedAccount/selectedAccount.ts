@@ -105,6 +105,7 @@ export const updatePortfolioStateWithDefiPositions = (
                 decimals: Number(a.protocolAsset!.decimals),
                 address: a.protocolAsset!.address,
                 symbol: a.protocolAsset!.symbol,
+                name: a.protocolAsset!.name,
                 networkId,
                 flags: {
                   canTopUpGasTank: false,
