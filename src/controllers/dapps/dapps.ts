@@ -98,6 +98,11 @@ export class DappsController extends EventEmitter {
     this.dappSessions[key].setMessenger(messenger)
   }
 
+  setSessionLastHandledRequestsId = (key: string, id: number) => {
+    if (id > this.dappSessions[key].lastHandledRequestId)
+      this.dappSessions[key].lastHandledRequestId = id
+  }
+
   setSessionProp = (key: string, props: SessionProp) => {
     this.dappSessions[key].setProp(props)
   }
@@ -117,13 +122,14 @@ export class DappsController extends EventEmitter {
         })
       }
     })
-
+    console.log('dappSessions', dappSessions)
     if (origin) {
       dappSessions = dappSessions.filter((dappSession) => dappSession.data.origin === origin)
     }
 
     dappSessions.forEach((dappSession) => {
       try {
+        console.log('broadcast msg', dappSession, data)
         dappSession.data.sendMessage?.(ev, data)
       } catch (e) {
         if (this.dappSessions[dappSession.key]) {

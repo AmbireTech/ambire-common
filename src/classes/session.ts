@@ -18,6 +18,8 @@ export class Session {
 
   tabId: number | null = null
 
+  lastHandledRequestId: number = 0
+
   messenger: Messenger | null = null
 
   sendMessage(event: any, data: any) {
