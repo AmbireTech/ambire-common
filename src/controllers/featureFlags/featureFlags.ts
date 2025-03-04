@@ -8,18 +8,30 @@ import EventEmitter from '../eventEmitter/eventEmitter'
  * toggling, A/B testing, and gradual feature roll-outs.
  */
 export class FeatureFlagsController extends EventEmitter {
-  flags = { ...featureFlags }
+  #flags = { ...featureFlags }
 
   // TODO: Pull the feature flags from external source to be able to change them on the fly
   // constructor() { }
 
   /** Syntactic sugar for checking if a feature flag is enabled */
   isFeatureEnabled(flag: keyof FeatureFlags) {
-    return this.flags[flag]
+    return this.#flags[flag]
   }
 
   setFeatureFlag(flag: keyof typeof featureFlags, value: boolean): void {
-    this.flags[flag] = value
+    this.#flags[flag] = value
     this.emitUpdate()
+  }
+
+  get flags(): FeatureFlags {
+    return this.#flags
+  }
+
+  toJSON() {
+    return {
+      ...this,
+      ...super.toJSON(),
+      flags: this.flags
+    }
   }
 }
