@@ -224,3 +224,5 @@ const networks: Network[] = [
   }
 ]
 export { networks }
+
+export const ODYSSEY_CHAIN_ID = 911867n

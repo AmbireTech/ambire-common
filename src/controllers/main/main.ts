@@ -1933,7 +1933,7 @@ export class MainController extends EventEmitter {
         )
       )
     ) {
-      // check if entry point auth is already visible
+      // check if the 7702 authorization is already visible
       // if it is, focus it and remove old call requests to it
       const hasFocussed = this.#focusPreUserRequestIfAnyAndDeleteOldRequest(
         (a: any) =>

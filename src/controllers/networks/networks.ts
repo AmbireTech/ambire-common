@@ -1,5 +1,5 @@
 import EmittableError from '../../classes/EmittableError'
-import { networks as predefinedNetworks } from '../../consts/networks'
+import { ODYSSEY_CHAIN_ID, networks as predefinedNetworks } from '../../consts/networks'
 import { Fetch } from '../../interfaces/fetch'
 import {
   AddNetworkRequestParams,
@@ -134,7 +134,7 @@ export class NetworksController extends EventEmitter {
       if (!predefinedNetwork) {
         this.#networks[networkName].predefined = false
 
-        if (this.#networks[networkName].chainId === 911867n)
+        if (this.#networks[networkName].chainId === ODYSSEY_CHAIN_ID)
           this.#networks[networkName].platformId = 'ethereum'
       }
     })

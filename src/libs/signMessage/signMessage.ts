@@ -650,17 +650,23 @@ export function getAuthorizationHash(chainId: bigint, contractAddr: Hex, nonce: 
   ) as Hex
 }
 
+function getHexStringSignature(
+  signature: string,
+  account: Account,
+  accountState: AccountOnchainState
+) {
+  return account.creation && !accountState.isDeployed
+    ? // https://eips.ethereum.org/EIPS/eip-6492
+      (wrapCounterfactualSign(signature, account.creation) as Hex)
+    : (signature as Hex)
+}
+
 export function getVerifyMessageSignature(
   signature: EIP7702Signature | string,
   account: Account,
   accountState: AccountOnchainState
 ): Hex {
-  if (isHexString(signature)) {
-    return account.creation && !accountState.isDeployed
-      ? // https://eips.ethereum.org/EIPS/eip-6492
-        (wrapCounterfactualSign(signature, account.creation) as Hex)
-      : (signature as Hex)
-  }
+  if (isHexString(signature)) return getHexStringSignature(signature, account, accountState)
 
   const sig = signature as EIP7702Signature
   // ethereum v is 27 or 28
@@ -668,17 +674,16 @@ export function getVerifyMessageSignature(
   return concat([sig.r, sig.s, v]) as Hex
 }
 
-export function getSavedSignature(
+// get the signature in the format you want returned to the dapp/implementation
+// for example, we return the counterfactual signature
+// to the dapp if the account is not deployed
+// and we return directly an EIP7702Signature if it's that type
+export function getAppFormatted(
   signature: EIP7702Signature | string,
   account: Account,
   accountState: AccountOnchainState
 ): EIP7702Signature | Hex {
-  if (isHexString(signature)) {
-    return account.creation && !accountState.isDeployed
-      ? // https://eips.ethereum.org/EIPS/eip-6492
-        (wrapCounterfactualSign(signature, account.creation) as Hex)
-      : (signature as Hex)
-  }
+  if (isHexString(signature)) return getHexStringSignature(signature, account, accountState)
 
   return signature as EIP7702Signature
 }

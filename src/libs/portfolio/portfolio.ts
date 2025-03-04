@@ -6,6 +6,7 @@ import { getAddress, JsonRpcProvider, Provider, ZeroAddress } from 'ethers'
 import BalanceGetter from '../../../contracts/compiled/BalanceGetter.json'
 import NFTGetter from '../../../contracts/compiled/NFTGetter.json'
 import gasTankFeeTokens from '../../consts/gasTankFeeTokens'
+import { ODYSSEY_CHAIN_ID } from '../../consts/networks'
 import { PINNED_TOKENS } from '../../consts/pinnedTokens'
 import { Fetch } from '../../interfaces/fetch'
 import { Network } from '../../interfaces/network'
@@ -303,7 +304,7 @@ export class Portfolio {
       tokensWithoutPrices.map(async (token: { address: string }) => {
         let priceIn: TokenResult['priceIn'] = []
         const cachedPriceIn =
-          this.network.chainId === 911867n
+          this.network.chainId === ODYSSEY_CHAIN_ID
             ? getHardcodedOdysseyPrices(token.address)
             : getPriceFromCache(token.address)
 

@@ -6,9 +6,9 @@ import { ExternalSignerControllers, Key, KeystoreSignerInterface } from '../../i
 import { Network } from '../../interfaces/network'
 import { Message } from '../../interfaces/userRequest'
 import {
+  getAppFormatted,
   getEIP712Signature,
   getPlainTextSignature,
-  getSavedSignature,
   getVerifyMessageSignature,
   verifyMessage
 } from '../../libs/signMessage/signMessage'
@@ -247,7 +247,7 @@ export class SignMessageController extends EventEmitter {
         networkId: this.messageToSign.networkId,
         content: this.messageToSign.content,
         timestamp: new Date().getTime(),
-        signature: getSavedSignature(signature, account, accountState),
+        signature: getAppFormatted(signature, account, accountState),
         dapp: this.dapp
       }
 
