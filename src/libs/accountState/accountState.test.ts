@@ -195,6 +195,7 @@ describe('AccountState', () => {
       id: 'odyssey',
       chainId: 911867n,
       rpcNoStateOverride: false,
+      nativeAssetName: 'Ether',
       rpcUrls: ['https://odyssey.ithaca.xyz'],
       selectedRpcUrl: 'https://odyssey.ithaca.xyz',
       explorerUrl: 'https://odyssey-explorer.ithaca.xyz',

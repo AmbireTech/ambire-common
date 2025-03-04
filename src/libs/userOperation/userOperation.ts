@@ -163,7 +163,7 @@ export function getUserOperation(
   }
 
   if (authorizationMsg) {
-    userOp.eip7702auth = {
+    userOp.eip7702Auth = {
       contractAddress: (authorizationMsg.content as Authorization).contractAddr,
       chainId: toBeHex((authorizationMsg.content as Authorization).chainId) as Hex,
       nonce: toBeHex((authorizationMsg.content as Authorization).nonce) as Hex,

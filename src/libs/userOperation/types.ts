@@ -40,7 +40,7 @@ export interface UserOperation {
   // which bundler is responsible for submitting and fetching info
   // about this userOp
   bundler: BUNDLER
-  eip7702auth?: {
+  eip7702Auth?: {
     contractAddress: Hex
     chainId: Hex
     nonce: Hex
