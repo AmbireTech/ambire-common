@@ -346,7 +346,7 @@ const waitForAccountsCtrlFirstLoad = async (accountsCtrl: AccountsController) =>
       emitCounter++
       if (emitCounter === 1) {
         expect(accountsCtrl.accounts.length).toBeGreaterThan(0)
-        expect(accountsCtrl.accountStates).not.toBe({})
+        expect(Object.keys(accountsCtrl.accountStates).length).toEqual(0)
       } else if (emitCounter > 2 && !accountsCtrl.areAccountStatesLoading) {
         unsubscribe()
         resolve()
