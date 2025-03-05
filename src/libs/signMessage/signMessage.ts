@@ -32,7 +32,6 @@ import {
   getSignableHash
 } from '../accountOp/accountOp'
 import { fromDescriptor } from '../deployless/deployless'
-import { relayerAdditionalNetworks } from '../networks/networks'
 import { getActivatorCall } from '../userOperation/userOperation'
 
 // EIP6492 signature ends in magicBytes, which ends with a 0x92,

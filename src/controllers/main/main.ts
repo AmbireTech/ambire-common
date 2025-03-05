@@ -328,7 +328,8 @@ export class MainController extends EventEmitter {
       this.providers,
       this.networks,
       this.accounts,
-      this.#externalSignerControllers
+      this.#externalSignerControllers,
+      this.invite
     )
     this.phishing = new PhishingController({
       fetch: this.fetch,
@@ -802,7 +803,7 @@ export class MainController extends EventEmitter {
       return this.emitError({ level: 'major', message, error })
     }
 
-    await this.signMessage.sign(this.invite.isOG)
+    await this.signMessage.sign()
 
     const signedMessage = this.signMessage.signedMessage
     // Error handling on the prev step will notify the user, it's fine to return here

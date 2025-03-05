@@ -1,3 +1,4 @@
+import { InviteController } from 'controllers/invite/invite'
 import { hexlify, isHexString, toUtf8Bytes } from 'ethers'
 
 import EmittableError from '../../classes/EmittableError'
@@ -34,6 +35,8 @@ export class SignMessageController extends EventEmitter {
 
   #accounts: AccountsController
 
+  #invite: InviteController
+
   // this is the signer from keystore.ts
   // we don't have a correct return type at getSigner so
   // I'm leaving it as any
@@ -61,7 +64,8 @@ export class SignMessageController extends EventEmitter {
     providers: ProvidersController,
     networks: NetworksController,
     accounts: AccountsController,
-    externalSignerControllers: ExternalSignerControllers
+    externalSignerControllers: ExternalSignerControllers,
+    invite: InviteController
   ) {
     super()
 
@@ -70,6 +74,7 @@ export class SignMessageController extends EventEmitter {
     this.#networks = networks
     this.#externalSignerControllers = externalSignerControllers
     this.#accounts = accounts
+    this.#invite = invite
   }
 
   async init({
@@ -123,7 +128,7 @@ export class SignMessageController extends EventEmitter {
     this.emitUpdate()
   }
 
-  async #sign(isOG = false) {
+  async #sign() {
     if (!this.isInitialized) {
       return SignMessageController.#throwNotInitialized()
     }
@@ -172,7 +177,7 @@ export class SignMessageController extends EventEmitter {
             account,
             accountState,
             this.#signer,
-            isOG
+            this.#invite.isOG
           )
         }
 
@@ -189,7 +194,7 @@ export class SignMessageController extends EventEmitter {
             accountState,
             this.#signer,
             network,
-            isOG
+            this.#invite.isOG
           )
         }
       } catch (error: any) {
@@ -263,8 +268,8 @@ export class SignMessageController extends EventEmitter {
     }
   }
 
-  async sign(isOG = false) {
-    await this.withStatus('sign', async () => this.#sign(isOG))
+  async sign() {
+    await this.withStatus('sign', async () => this.#sign())
   }
 
   removeAccountData(address: Account['addr']) {
