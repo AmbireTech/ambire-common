@@ -64,7 +64,7 @@ export type Action =
   | {
       label: 'Reject'
       actionName: 'reject-bridge'
-      meta: { activeRouteId: number }
+      meta: { activeRouteIds: number[] }
     }
   | {
       label: 'Proceed to Next Step' | 'Open'
@@ -74,7 +74,7 @@ export type Action =
   | {
       label: 'Close'
       actionName: 'close-bridge'
-      meta: { activeRouteId: number }
+      meta: { activeRouteIds: number[] }
     }
   | {
       label: 'Details'
