@@ -9,15 +9,13 @@ import {
   NetworkInfo,
   NetworkInfoLoading,
   RelayerNetwork,
-  RelayerNetworkConfigResponse,
-  UserNetworkPreferences
+  RelayerNetworkConfigResponse
 } from '../../interfaces/network'
 import { Storage } from '../../interfaces/storage'
 import {
   getFeaturesByNetworkProperties,
   getNetworkInfo,
   getShouldMigrateNetworkPreferencesToNetworks,
-  getShouldMigrateNetworksInStorageToNetworksV2,
   is4337Enabled,
   LegacyNetworkPreferences,
   migrateNetworkPreferencesToNetworks
@@ -497,9 +495,9 @@ console.log('networkId', networkId, 'network', network)
     await this.withStatus('updateNetwork', () => this.#updateNetwork(network, networkId))
   }
 
-  async removeNetwork(chainId: ChainId) {
+  async removeNetwork({ chainId, networkId }: { chainId: ChainId, networkId: NetworkId }) {
     await this.initialLoadPromise
-    console.log('removeNetwork',this.#networks)
+
     if (!this.#networks[chainId.toString()]) return
     delete this.#networks[chainId.toString()]
     this.#onRemoveNetwork(chainId.toString())

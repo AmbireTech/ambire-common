@@ -29,7 +29,7 @@ import {
   KeystoreSignerType,
   TxnRequest
 } from '../../interfaces/keystore'
-import { AddNetworkRequestParams, Network, NetworkId } from '../../interfaces/network'
+import { AddNetworkRequestParams, ChainId, Network, NetworkId } from '../../interfaces/network'
 import { NotificationManager } from '../../interfaces/notification'
 import { RPCProvider } from '../../interfaces/provider'
 import { TraceCallDiscoveryStatus } from '../../interfaces/signAccountOp'
@@ -1924,12 +1924,13 @@ export class MainController extends EventEmitter {
     await this.updateSelectedAccountPortfolio()
   }
 
-  async removeNetwork(chainId: ChainId) {
+  async removeNetwork(chainId: ChainId, networkId: NetworkId) {
     await this.networks.removeNetwork(chainId)
-    this.portfolio.removeNetworkData(id)
-    this.defiPositions.removeNetworkData(id)
-    this.accountAdder.removeNetworkData(id)
-    this.activity.removeNetworkData(id)
+
+    this.portfolio.removeNetworkData(networkId)
+    this.defiPositions.removeNetworkData(networkId)
+    this.accountAdder.removeNetworkData(networkId)
+    this.activity.removeNetworkData(networkId)
   }
 
   async resolveAccountOpAction(data: any, actionId: AccountOpAction['id']) {

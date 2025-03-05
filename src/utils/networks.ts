@@ -123,6 +123,7 @@ export const mapRelayerNetworkConfigToAmbireNetwork = (
     ambireId: id,
     native: {
       symbol: nativeAssetSymbol,
+      name: nativeAssetName,
       coingeckoId: nativeAssetId,
       wrapped: { address: wrappedAddr },
       oldNativeAssetSymbols
@@ -192,6 +193,7 @@ export const mapRelayerNetworkConfigToAmbireNetwork = (
     platformId,
     chainId,
     nativeAssetSymbol,
+    nativeAssetName,
     nativeAssetId,
     hasRelayer,
     wrappedAddr,

@@ -99,9 +99,6 @@ export type UserNetworkPreferencesForPredefinedNetworks = Pick<
 export type UserNetworkPreferencesForCustomNetworks = UserNetworkPreferencesForPredefinedNetworks &
   Partial<Pick<Network, 'chainId' | 'name' | 'nativeAssetSymbol'>>
 
-export type UserNetworkPreferences =
-  | UserNetworkPreferencesForPredefinedNetworks
-  | UserNetworkPreferencesForCustomNetworks
 
 export interface AddNetworkRequestParams {
   name: Network['name']
@@ -159,12 +156,14 @@ export type RelayerNetwork = {
   selectedRpcUrl: string
   native: {
     symbol: string
+    name: string
     coingeckoId: string
     icon: string
     decimals: number
     wrapped: {
       address: string
       symbol: string
+      name: string
       coingeckoId: string
       icon: string
       decimals: number
