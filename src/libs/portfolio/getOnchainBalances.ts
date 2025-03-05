@@ -216,6 +216,10 @@ export async function getTokens(
       amount: token.amount,
       networkId: network.id,
       decimals: Number(token.decimals),
+      name:
+        address === '0x0000000000000000000000000000000000000000'
+          ? network.nativeAssetName
+          : token.name,
       symbol:
         address === '0x0000000000000000000000000000000000000000'
           ? network.nativeAssetSymbol

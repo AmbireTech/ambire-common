@@ -429,9 +429,6 @@ export class PortfolioController extends EventEmitter {
 
     if (canSkipUpdate) return
 
-    const hasNonZeroTokens = !!Object.values(
-      this.#networksWithAssetsByAccounts?.[accountId] || {}
-    ).some(Boolean)
     const start = Date.now()
     const accountState = this.#latest[accountId]
 
@@ -561,15 +558,15 @@ export class PortfolioController extends EventEmitter {
         ...portfolioProps
       })
 
-      const hasCriticalError = result.errors.some((e) => e.level === 'critical')
+      const hasError = result.errors.some((e) => e.level !== 'silent')
       const additionalHintsErc20Hints = portfolioProps.additionalErc20Hints || []
       let lastSuccessfulUpdate = accountState[network.id]?.result?.lastSuccessfulUpdate || 0
 
       // Reset lastSuccessfulUpdate on forceUpdate in case of critical errors as the user
       // is likely expecting a change in the portfolio.
-      if (forceUpdate && hasCriticalError) {
+      if (forceUpdate && hasError) {
         lastSuccessfulUpdate = 0
-      } else if (!hasCriticalError) {
+      } else if (!hasError) {
         // Update the last successful update only if there are no critical errors.
         lastSuccessfulUpdate = Date.now()
       }
@@ -641,13 +638,14 @@ export class PortfolioController extends EventEmitter {
     const accountState = this.#latest[accountId]
     const pendingState = this.#pending[accountId]
 
-    if (shouldGetAdditionalPortfolio(selectedAccount)) {
-      this.#getAdditionalPortfolio(accountId, opts?.forceUpdate)
-    }
+    const updateAdditionalPortfolioIfNeeded = shouldGetAdditionalPortfolio(selectedAccount)
+      ? this.#getAdditionalPortfolio(accountId, opts?.forceUpdate)
+      : Promise.resolve()
 
     const networks = network ? [network] : this.#networks.networks
-    await Promise.all(
-      networks.map(async (network) => {
+    await Promise.all([
+      updateAdditionalPortfolioIfNeeded,
+      ...networks.map(async (network) => {
         const key = `${network.id}:${accountId}`
 
         const portfolioLib = this.initializePortfolioLibIfNeeded(accountId, network.id, network)
@@ -795,7 +793,7 @@ export class PortfolioController extends EventEmitter {
         // Ensure the method waits for the entire queue to resolve
         await this.#queue[accountId][network.id]
       })
-    )
+    ])
 
     await this.#updateNetworksWithAssets(accountId, accountState)
     this.emitUpdate()

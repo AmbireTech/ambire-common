@@ -17,6 +17,7 @@ export type AccountAssetsState = { [networkId: NetworkId]: boolean }
 
 export type TokenResult = {
   symbol: string
+  name: string
   decimals: number
   address: string
   networkId: NetworkId
