@@ -301,20 +301,25 @@ export function mapSignatureV(sigRaw: string) {
   return hexlify(sig)
 }
 
+// Either `message` or `typedData` must be provided - never both.
 type Props = {
-  network?: Network
-  provider?: JsonRpcProvider
-  signer?: string
+  network: Network
+  provider: JsonRpcProvider
+  signer: string
   signature: string | Uint8Array
-  message?: string | Uint8Array
-  typedData?: {
-    domain: TypedDataDomain
-    types: Record<string, Array<TypedDataField>>
-    message: Record<string, any>
-  }
-  authorization?: Hex
-  finalDigest?: string
-}
+} & (
+  | { message: string | Uint8Array; typedData?: never; authorization?: never }
+  | {
+      typedData: {
+        domain: TypedDataDomain
+        types: Record<string, Array<TypedDataField>>
+        message: Record<string, any>
+      }
+      message?: never
+      authorization?: never
+    }
+  | { message?: never; typedData?: never; authorization: Hex }
+)
 
 /**
  * Verifies the signature of a message using the provided signer and signature
@@ -323,7 +328,7 @@ type Props = {
  * `eth_call`, tries to verify the signature using ERC-6492, ERC-1271, and
  * `ecrecover`, and returns the value to the function.
  *
- * Note: you only need to pass one of: typedData, finalDigest, message
+ * Note: you only need to pass one of: `message` or `typedData`
  */
 export async function verifyMessage({
   network,
@@ -331,16 +336,11 @@ export async function verifyMessage({
   signer,
   signature,
   message,
-  typedData,
-  finalDigest,
-  authorization
-}: (
-  | Required<Pick<Props, 'message'>>
-  | Required<Pick<Props, 'typedData'>>
-  | Required<Pick<Props, 'authorization'>>
-  | Required<Pick<Props, 'finalDigest'>>
-) &
-  Props): Promise<boolean> {
+  authorization,
+  typedData
+}: Props): Promise<boolean> {
+  let finalDigest: string
+
   if (message) {
     try {
       finalDigest = hashMessage(message)
@@ -352,7 +352,16 @@ export async function verifyMessage({
         }`
       )
     }
-  } else if (typedData) {
+  } else if (authorization) {
+    finalDigest = authorization
+  } else {
+    // According to the Props definition, either `message` or `typedData` must be provided.
+    // However, TypeScript struggles with this `else` condition, incorrectly treating `typedData` as undefined.
+    // To prevent TypeScript from complaining, we've added this runtime validation.
+    if (!typedData) {
+      throw new Error("Either 'message' or 'typedData' must be provided.")
+    }
+
     // To resolve the "ambiguous primary types or unused types" error, remove
     // the `EIP712Domain` from `types` object. The domain type is inbuilt in
     // the EIP712 standard and hence TypedDataEncoder so you do not need to
@@ -394,8 +403,6 @@ export async function verifyMessage({
         }`
       )
     }
-  } else if (authorization) {
-    finalDigest = authorization
   }
 
   // this 'magic' universal validator contract will deploy itself within the eth_call, try to verify the signature using
@@ -404,9 +411,9 @@ export async function verifyMessage({
   let callResult
   try {
     const deploylessVerify = fromDescriptor(
-      provider!,
+      provider,
       UniversalSigValidator,
-      !network!.rpcNoStateOverride
+      !network.rpcNoStateOverride
     )
     const deploylessRes = await deploylessVerify.call('isValidSigWithSideEffects', [
       signer,

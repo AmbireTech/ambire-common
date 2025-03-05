@@ -357,13 +357,12 @@ function getNativeToCheckFromEOAs(eoas: Account[], account: Account) {
 
 const waitForAccountsCtrlFirstLoad = async (accountsCtrl: AccountsController) => {
   return new Promise<void>((resolve) => {
-    let emitCounter = 0
     const unsubscribe = accountsCtrl.onUpdate(() => {
-      emitCounter++
-      if (emitCounter === 1) {
-        expect(accountsCtrl.accounts.length).toBeGreaterThan(0)
-        expect(accountsCtrl.accountStates).not.toBe({})
-      } else if (emitCounter > 2 && !accountsCtrl.areAccountStatesLoading) {
+      if (
+        accountsCtrl.accounts.length &&
+        Object.keys(accountsCtrl.accountStates).length &&
+        !accountsCtrl.areAccountStatesLoading
+      ) {
         unsubscribe()
         resolve()
       }
