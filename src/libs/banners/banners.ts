@@ -82,7 +82,7 @@ export const getBridgeBanners = (
       id: 'bridge-in-progress',
       type: 'info',
       category: 'bridge-in-progress',
-      title: 'Bridge request in progress',
+      title: `Bridge request${inProgressRoutes.length !== 1 ? 's' : ''} in progress`,
       text: `You have ${inProgressRoutes.length} bridge request${
         inProgressRoutes.length > 1 ? 's' : ''
       } in progress.`,
@@ -101,7 +101,7 @@ export const getBridgeBanners = (
       id: 'bridge-completed',
       type: 'success',
       category: 'bridge-completed',
-      title: 'Bridge request completed',
+      title: `Bridge request${inProgressRoutes.length !== 1 ? 's' : ''} completed`,
       text: `You have ${completedRoutes.length} completed bridge request${
         completedRoutes.length > 1 ? 's' : ''
       }.`,
