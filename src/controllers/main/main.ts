@@ -678,8 +678,8 @@ export class MainController extends EventEmitter {
         if (!this.signAccountOp) {
           const message =
             'The signing process was not initialized as expected. Please try again later or contact Ambire support if the issue persists.'
-          const error = new Error('SignAccountOp is not initialized')
-          this.emitError({ level: 'major', message, error })
+
+          const error = new EmittableError({ level: 'major', message })
           return Promise.reject(error)
         }
 
