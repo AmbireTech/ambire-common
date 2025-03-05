@@ -1027,7 +1027,8 @@ export class MainController extends EventEmitter {
       await this.accounts.updateAccountState(accountAddr, 'pending', [networkId])
     // If this still didn't work, throw error: this prob means that we're calling for a non-existent acc/network
     if (!this.accounts.accountStates[accountAddr]?.[networkId]) {
-      const networkName = networkId[0].toUpperCase() + networkId.slice(1)
+      const network = this.networks.networks.find((n) => n.id === networkId)
+      const networkName = network ? network.name : networkId[0].toUpperCase() + networkId.slice(1)
 
       return {
         hasAccountInfo: false,
