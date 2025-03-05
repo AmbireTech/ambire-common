@@ -6,6 +6,7 @@ import { Call } from '../libs/accountOp/types'
 import { getHdPathFromTemplate } from '../utils/hdPath'
 import { Account } from './account'
 import { Network } from './network'
+import { EIP7702Signature } from './signatures'
 import { TypedMessage } from './userRequest'
 
 /**
@@ -56,12 +57,13 @@ export interface TxnRequest {
   type?: number
 }
 
-export interface KeystoreSigner {
+export interface KeystoreSignerInterface {
   key: Key
   init?: (externalSignerController?: ExternalSignerController) => void
   signRawTransaction: (txnRequest: TxnRequest) => Promise<Transaction['serialized']>
   signTypedData: (typedMessage: TypedMessage) => Promise<string>
   signMessage: (hex: string) => Promise<string>
+  sign7702: (hex: string) => EIP7702Signature
 }
 
 export type ScryptParams = {
@@ -130,7 +132,7 @@ export type KeystoreSeed = {
 }
 
 export type KeystoreSignerType = {
-  new (key: Key, privateKey?: string): KeystoreSigner
+  new (key: Key, privateKey?: string): KeystoreSignerInterface
 }
 
 /**

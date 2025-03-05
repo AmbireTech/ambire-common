@@ -2,18 +2,19 @@ import { hexlify, isHexString, toUtf8Bytes } from 'ethers'
 
 import EmittableError from '../../classes/EmittableError'
 import { Account } from '../../interfaces/account'
-import { ExternalSignerControllers, Key } from '../../interfaces/keystore'
+import { ExternalSignerControllers, Key, KeystoreSignerInterface } from '../../interfaces/keystore'
 import { Network } from '../../interfaces/network'
 import { Message } from '../../interfaces/userRequest'
 import {
+  getAppFormatted,
   getEIP712Signature,
   getPlainTextSignature,
-  verifyMessage,
-  wrapCounterfactualSign
+  getVerifyMessageSignature,
+  verifyMessage
 } from '../../libs/signMessage/signMessage'
 import hexStringToUint8Array from '../../utils/hexStringToUint8Array'
 import { AccountsController } from '../accounts/accounts'
-import { SignedMessage } from '../activity/activity'
+import { SignedMessage } from '../activity/types'
 import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
 import { NetworksController } from '../networks/networks'
@@ -34,10 +35,7 @@ export class SignMessageController extends EventEmitter {
 
   #accounts: AccountsController
 
-  // this is the signer from keystore.ts
-  // we don't have a correct return type at getSigner so
-  // I'm leaving it as any
-  #signer: any
+  #signer: KeystoreSignerInterface | undefined
 
   isInitialized: boolean = false
 
@@ -86,7 +84,7 @@ export class SignMessageController extends EventEmitter {
 
     await this.#accounts.initialLoadPromise
 
-    if (['message', 'typedMessage'].includes(messageToSign.content.kind)) {
+    if (['message', 'typedMessage', 'authorization-7702'].includes(messageToSign.content.kind)) {
       if (dapp) {
         this.dapp = dapp
       }
@@ -193,6 +191,10 @@ export class SignMessageController extends EventEmitter {
             isOG
           )
         }
+
+        if (this.messageToSign.content.kind === 'authorization-7702') {
+          signature = this.#signer.sign7702(this.messageToSign.content.message)
+        }
       } catch (error: any) {
         throw new Error(
           error?.message ||
@@ -206,32 +208,26 @@ export class SignMessageController extends EventEmitter {
         )
       }
 
-      // if the account is not deployed, it should be wrapped with EIP-6492
-      // magic bytes
-      signature =
-        account.creation && !accountState.isDeployed
-          ? // https://eips.ethereum.org/EIPS/eip-6492
-            wrapCounterfactualSign(signature, account.creation!)
-          : signature
-
       const verifyMessageParams = {
         network,
         provider: this.#providers.providers[network?.id || 'ethereum'],
         // the signer is always the account even if the actual
         // signature is from a key that has privs to the account
         signer: this.messageToSign?.accountAddr,
-        signature,
+        signature: getVerifyMessageSignature(signature, account, accountState),
+        // eslint-disable-next-line no-nested-ternary
         ...(this.messageToSign.content.kind === 'message'
           ? { message: hexStringToUint8Array(hexMessage!) }
-          : {
+          : this.messageToSign.content.kind === 'typedMessage'
+          ? {
               typedData: {
                 domain: this.messageToSign.content.domain,
                 types: this.messageToSign.content.types,
                 message: this.messageToSign.content.message
               }
-            })
+            }
+          : { authorization: this.messageToSign.content.message })
       }
-
       const isValidSignature = await verifyMessage(verifyMessageParams)
 
       if (!isValidSignature) {
@@ -246,7 +242,7 @@ export class SignMessageController extends EventEmitter {
         networkId: this.messageToSign.networkId,
         content: this.messageToSign.content,
         timestamp: new Date().getTime(),
-        signature,
+        signature: getAppFormatted(signature, account, accountState),
         dapp: this.dapp
       }
 

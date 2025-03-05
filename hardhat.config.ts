@@ -1,8 +1,8 @@
 /* eslint-disable import/no-extraneous-dependencies */
-import '@nomicfoundation/hardhat-ethers'
 import '@nomicfoundation/hardhat-chai-matchers'
-import 'hardhat-gas-reporter'
+import '@nomicfoundation/hardhat-ethers'
 import '@nomiclabs/hardhat-etherscan'
+import 'hardhat-gas-reporter'
 
 import { HardhatUserConfig } from 'hardhat/config'
 
@@ -34,6 +34,14 @@ const config: HardhatUserConfig = {
       url: 'https://invictus.ambire.com/optimism',
       accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
     },
+    pectra: {
+      url: 'https://rpc.pectra-devnet-5.ethpandaops.io',
+      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
+    },
+    odyssey: {
+      url: 'https://odyssey.ithaca.xyz',
+      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
+    },
     ethereum: {
       url: 'https://invictus.ambire.com/ethereum',
       accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
@@ -60,10 +68,18 @@ const config: HardhatUserConfig = {
       },
       {
         network: 'ethereum',
-        chainId: 10,
+        chainId: 1,
         urls: {
           apiURL: 'https://api.etherscan.io/api',
           browserURL: 'https://etherscan.io/'
+        }
+      },
+      {
+        network: 'odyssey',
+        chainId: 911867,
+        urls: {
+          apiURL: 'https://explorer-odyssey.t.conduit.xyz/api',
+          browserURL: 'https://explorer-odyssey.t.conduit.xyz:443'
         }
       }
     ]

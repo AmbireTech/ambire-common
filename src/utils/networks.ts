@@ -95,8 +95,9 @@ const convertToAmbireNetworkFormat = async (network: ChainlistNetwork): Promise<
     iconUrls: [],
     erc4337: { enabled: false, hasPaymaster: false },
     isSAEnabled: false,
-    predefined: false
+    predefined: false,
+    has7702: false
   }
 }
 
-export { rollProviderUrlsAndFindWorking, checkIsRpcUrlWorking, convertToAmbireNetworkFormat }
+export { checkIsRpcUrlWorking, convertToAmbireNetworkFormat, rollProviderUrlsAndFindWorking }

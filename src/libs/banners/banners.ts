@@ -166,6 +166,30 @@ export const getDappActionRequestsBanners = (actions: ActionFromActionsQueue[]):
   ]
 }
 
+export const getBecomeSmarterEOABanner = (acc: Account): Banner[] => {
+  return [
+    {
+      id: 'activate-7702',
+      type: 'info',
+      title: 'Upgrade your account',
+      text: 'Unlock batching, gas tokens & more',
+      category: 'activate-7702',
+      actions: [
+        {
+          label: 'Dismiss',
+          actionName: 'dismiss-7702-banner',
+          meta: { accountAddr: acc.addr }
+        },
+        {
+          label: 'Upgrade',
+          actionName: 'activate-7702',
+          meta: { accountAddr: acc.addr }
+        }
+      ]
+    }
+  ]
+}
+
 const getAccountOpBannerText = (
   activeSwapAndBridgeRoutesForSelectedAccount: ActiveRoute[],
   chainId: bigint,

@@ -1,5 +1,5 @@
 import EmittableError from '../../classes/EmittableError'
-import { networks as predefinedNetworks } from '../../consts/networks'
+import { ODYSSEY_CHAIN_ID, networks as predefinedNetworks } from '../../consts/networks'
 import { Fetch } from '../../interfaces/fetch'
 import {
   AddNetworkRequestParams,
@@ -121,7 +121,8 @@ export class NetworksController extends EventEmitter {
           increasePreVerGas: n.erc4337.increasePreVerGas ?? 0
         },
         nativeAssetId: n.nativeAssetId,
-        nativeAssetSymbol: n.nativeAssetSymbol
+        nativeAssetSymbol: n.nativeAssetSymbol,
+        has7702: n.has7702
       }
     })
 
@@ -132,6 +133,9 @@ export class NetworksController extends EventEmitter {
       )
       if (!predefinedNetwork) {
         this.#networks[networkName].predefined = false
+
+        if (this.#networks[networkName].chainId === ODYSSEY_CHAIN_ID)
+          this.#networks[networkName].platformId = 'ethereum'
       }
     })
 
@@ -206,7 +210,8 @@ export class NetworksController extends EventEmitter {
       feeOptions,
       features: getFeaturesByNetworkProperties(info),
       hasRelayer: false,
-      predefined: false
+      predefined: false,
+      has7702: false
     }
     this.#onAddOrUpdateNetwork(this.#networks[networkId])
     await this.#storage.set('networks', this.#networks)

@@ -4,6 +4,7 @@ import secp256k1 from 'secp256k1'
 
 import { AccountsController } from '../src/controllers/accounts/accounts'
 import { Account, AccountStates } from '../src/interfaces/account'
+import { Hex } from '../src/interfaces/hex'
 import { Key } from '../src/interfaces/keystore'
 import { Network } from '../src/interfaces/network'
 import { RPCProviders } from '../src/interfaces/provider'
@@ -11,6 +12,7 @@ import { Storage } from '../src/interfaces/storage'
 import { isSmartAccount } from '../src/libs/account/account'
 import { getAccountState } from '../src/libs/accountState/accountState'
 import { parse, stringify } from '../src/libs/richJson/richJson'
+import { PackedUserOperation } from '../src/libs/userOperation/types'
 import { getIsViewOnly } from '../src/utils/accounts'
 import { abiCoder, addressOne, addressTwo, AmbireAccount, pk1 } from './config'
 
@@ -22,7 +24,11 @@ async function sendFunds(to: string, ether: number) {
   })
 }
 
-function getPriviledgeTxn(ambireAccountAddr: string, privAddress: string, hasPriv: boolean = true) {
+function getPriviledgeTxn(
+  ambireAccountAddr: string,
+  privAddress: string,
+  hasPriv: boolean = true
+): [string, string, string] {
   const setAddrPrivilegeABI = ['function setAddrPrivilege(address addr, bytes32 priv)']
   const iface = new ethers.Interface(setAddrPrivilegeABI)
   const priv = hasPriv ? 1 : 0
@@ -30,18 +36,18 @@ function getPriviledgeTxn(ambireAccountAddr: string, privAddress: string, hasPri
     privAddress,
     ethers.toBeHex(priv, 32)
   ])
-  return [ambireAccountAddr, 0, calldata]
+  return [ambireAccountAddr, '0', calldata]
 }
 
 function getPriviledgeTxnWithCustomHash(
   ambireAccountAddr: string,
   privAddress: string,
   privHash: string
-) {
+): [string, string, string] {
   const setAddrPrivilegeABI = ['function setAddrPrivilege(address addr, bytes32 priv)']
   const iface = new ethers.Interface(setAddrPrivilegeABI)
   const calldata = iface.encodeFunctionData('setAddrPrivilege', [privAddress, privHash])
-  return [ambireAccountAddr, 0, calldata]
+  return [ambireAccountAddr, '0', calldata]
 }
 
 const timelock = 1 // a 1 second timelock default
@@ -138,27 +144,37 @@ function produceMemoryStore(): Storage {
   }
 }
 
-function getAccountGasLimits(verificationGasLimit: number, callGasLimit: number) {
-  return ethers.concat([ethers.toBeHex(verificationGasLimit, 16), ethers.toBeHex(callGasLimit, 16)])
+function getAccountGasLimits(verificationGasLimit: number, callGasLimit: number): Hex {
+  return ethers.concat([
+    ethers.toBeHex(verificationGasLimit, 16),
+    ethers.toBeHex(callGasLimit, 16)
+  ]) as Hex
 }
 
-function getGasFees(maxPriorityFeePerGas: number, maxFeePerGas: number) {
-  return ethers.concat([ethers.toBeHex(maxPriorityFeePerGas, 16), ethers.toBeHex(maxFeePerGas, 16)])
+function getGasFees(maxPriorityFeePerGas: number, maxFeePerGas: number): Hex {
+  return ethers.concat([
+    ethers.toBeHex(maxPriorityFeePerGas, 16),
+    ethers.toBeHex(maxFeePerGas, 16)
+  ]) as Hex
 }
 
-async function buildUserOp(paymaster: BaseContract, entryPointAddr: string, options: any = {}) {
+async function buildUserOp(
+  paymaster: BaseContract,
+  entryPointAddr: string,
+  options: any = {}
+): Promise<PackedUserOperation> {
   const [, sender] = await ethers.getSigners()
 
   const userOp = {
     sender: options.sender ?? sender.address,
-    nonce: options.userOpNonce ?? ethers.toBeHex(0, 1),
-    initCode: options.initCode ?? '0x',
-    callData: options.callData ?? '0x',
+    nonce: options.userOpNonce ? BigInt(options.userOpNonce) : 0n,
+    initCode: options.initCode ? (options.initCode as Hex) : ('0x' as Hex),
+    callData: options.callData ? (options.callData as Hex) : '0x',
     accountGasLimits: getAccountGasLimits(400000, options.callGasLimit ?? 500000),
     preVerificationGas: 500000n,
     gasFees: getGasFees(300000, 200000),
-    paymasterAndData: '0x',
-    signature: '0x'
+    paymasterAndData: '0x' as Hex,
+    signature: '0x' as Hex
   }
   const validUntil = options.validUntil ?? 0
   const validAfter = options.validAfter ?? 0
@@ -212,7 +228,7 @@ async function buildUserOp(paymaster: BaseContract, entryPointAddr: string, opti
       paymasterPostOp,
       paymasterData
     ])
-  )
+  ) as Hex
 
   userOp.paymasterAndData = paymasterAndData
   return userOp
@@ -355,19 +371,19 @@ const waitForAccountsCtrlFirstLoad = async (accountsCtrl: AccountsController) =>
 }
 
 export {
-  sendFunds,
-  getPriviledgeTxn,
-  getTimelockData,
-  getNonce,
-  getDKIMValidatorData,
-  getSignerKey,
-  produceMemoryStore,
-  getPriviledgeTxnWithCustomHash,
   buildUserOp,
-  getTargetNonce,
-  getAccountsInfo,
   getAccountGasLimits,
+  getAccountsInfo,
+  getDKIMValidatorData,
   getGasFees,
   getNativeToCheckFromEOAs,
+  getNonce,
+  getPriviledgeTxn,
+  getPriviledgeTxnWithCustomHash,
+  getSignerKey,
+  getTargetNonce,
+  getTimelockData,
+  produceMemoryStore,
+  sendFunds,
   waitForAccountsCtrlFirstLoad
 }

@@ -7,6 +7,7 @@ import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import { produceMemoryStore } from '../../../test/helpers'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { PERMIT_2_ADDRESS } from '../../consts/addresses'
+import { EIP_7702_AMBIRE_ACCOUNT } from '../../consts/deploy'
 import { networks } from '../../consts/networks'
 import { KeystoreController } from '../../controllers/keystore/keystore'
 import { Account, AccountStates } from '../../interfaces/account'
@@ -19,9 +20,11 @@ import { getAccountState } from '../accountState/accountState'
 import { KeystoreSigner } from '../keystoreSigner/keystoreSigner'
 import {
   getAmbireReadableTypedData,
+  getAuthorizationHash,
   getEIP712Signature,
   getPlainTextSignature,
   getTypedData,
+  getVerifyMessageSignature,
   verifyMessage,
   wrapWallet
 } from './signMessage'
@@ -48,7 +51,8 @@ const unsupportedNetwork = {
   hasSingleton: false,
   features: [],
   feeOptions: { is1559: true },
-  predefined: false
+  predefined: false,
+  has7702: false
 }
 
 const eoaSigner = {
@@ -626,6 +630,42 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
         'signature error: trying to sign an AmbireReadableOperation for the same address. Please contact support'
       )
     }
+  })
+  test('Signing [EOA]: authorization', async () => {
+    const accountStates = await getAccountsInfo([eoaAccount])
+    const signer = await keystore.getSigner(eoaSigner.keyPublicAddress, 'internal')
+
+    const authorizationHash = getAuthorizationHash(1n, EIP_7702_AMBIRE_ACCOUNT, 0n)
+    const signature = signer.sign7702(authorizationHash)
+    const provider = getRpcProvider(ethereumNetwork.rpcUrls, ethereumNetwork.chainId)
+    const authorizationRes = await verifyMessage({
+      network: ethereumNetwork,
+      provider,
+      signer: eoaSigner.keyPublicAddress,
+      signature: getVerifyMessageSignature(
+        signature,
+        eoaAccount,
+        accountStates[eoaAccount.addr][ethereumNetwork.id]
+      ),
+      authorization: authorizationHash
+    })
+    expect(authorizationRes).toBe(true)
+
+    // increment the nonce to be sure 'v' transform is working
+    const authorizationHash2 = getAuthorizationHash(1n, EIP_7702_AMBIRE_ACCOUNT, 1n)
+    const signature2 = signer.sign7702(authorizationHash2)
+    const authorizationRes2 = await verifyMessage({
+      network: ethereumNetwork,
+      provider,
+      signer: eoaSigner.keyPublicAddress,
+      signature: getVerifyMessageSignature(
+        signature2,
+        eoaAccount,
+        accountStates[eoaAccount.addr][ethereumNetwork.id]
+      ),
+      authorization: authorizationHash2
+    })
+    expect(authorizationRes2).toBe(true)
   })
 })
 

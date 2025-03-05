@@ -6,6 +6,7 @@ const networks: Network[] = [
     id: 'ethereum',
     name: 'Ethereum',
     nativeAssetSymbol: 'ETH',
+    has7702: false,
     nativeAssetName: 'Ether',
     rpcUrls: ['https://invictus.ambire.com/ethereum'],
     selectedRpcUrl: 'https://invictus.ambire.com/ethereum',
@@ -30,6 +31,7 @@ const networks: Network[] = [
     id: 'polygon',
     name: 'Polygon',
     nativeAssetSymbol: 'POL',
+    has7702: false,
     nativeAssetName: 'Polygon Network Token',
     rpcUrls: ['https://invictus.ambire.com/polygon'],
     selectedRpcUrl: 'https://invictus.ambire.com/polygon',
@@ -61,6 +63,7 @@ const networks: Network[] = [
     id: 'optimism',
     name: 'Optimism',
     nativeAssetSymbol: 'ETH',
+    has7702: false,
     nativeAssetName: 'Ether',
     rpcUrls: ['https://invictus.ambire.com/optimism'],
     selectedRpcUrl: 'https://invictus.ambire.com/optimism',
@@ -96,6 +99,7 @@ const networks: Network[] = [
     id: 'avalanche',
     name: 'Avalanche',
     nativeAssetSymbol: 'AVAX',
+    has7702: false,
     nativeAssetName: 'Avalanche',
     rpcUrls: ['https://invictus.ambire.com/avalanche'],
     selectedRpcUrl: 'https://invictus.ambire.com/avalanche',
@@ -126,6 +130,7 @@ const networks: Network[] = [
     id: 'arbitrum',
     name: 'Arbitrum',
     nativeAssetSymbol: 'ETH',
+    has7702: false,
     nativeAssetName: 'Ether',
     rpcUrls: ['https://invictus.ambire.com/arbitrum'],
     selectedRpcUrl: 'https://invictus.ambire.com/arbitrum',
@@ -157,6 +162,7 @@ const networks: Network[] = [
     id: 'base',
     name: 'Base',
     nativeAssetSymbol: 'ETH',
+    has7702: false,
     nativeAssetName: 'Ether',
     rpcUrls: ['https://invictus.ambire.com/base'],
     selectedRpcUrl: 'https://invictus.ambire.com/base',
@@ -191,6 +197,7 @@ const networks: Network[] = [
     id: 'scroll',
     name: 'Scroll',
     nativeAssetSymbol: 'ETH',
+    has7702: false,
     nativeAssetName: 'Ether',
     rpcUrls: ['https://invictus.ambire.com/scroll'],
     selectedRpcUrl: 'https://invictus.ambire.com/scroll',
@@ -217,3 +224,5 @@ const networks: Network[] = [
   }
 ]
 export { networks }
+
+export const ODYSSEY_CHAIN_ID = 911867n
