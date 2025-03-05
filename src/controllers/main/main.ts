@@ -1781,16 +1781,17 @@ export class MainController extends EventEmitter {
   // although the second one can't hurt and can help (or no debounce, just a one-at-a-time queue)
   removeUserRequest(
     id: UserRequest['id'],
-    options: {
+    options?: {
       shouldRemoveSwapAndBridgeRoute: boolean
       shouldUpdateAccount?: boolean
       shouldOpenNextRequest?: boolean
-    } = {
-      shouldRemoveSwapAndBridgeRoute: true,
-      shouldUpdateAccount: true,
-      shouldOpenNextRequest: true
     }
   ) {
+    const {
+      shouldRemoveSwapAndBridgeRoute = true,
+      shouldUpdateAccount = true,
+      shouldOpenNextRequest = true
+    } = options || {}
     const req = this.userRequests.find((uReq) => uReq.id === id)
     if (!req) return
 
@@ -1816,9 +1817,9 @@ export class MainController extends EventEmitter {
           | undefined
         // accountOp has just been rejected or broadcasted
         if (!accountOpAction) {
-          if (options.shouldUpdateAccount) this.updateSelectedAccountPortfolio(true, network)
+          if (shouldUpdateAccount) this.updateSelectedAccountPortfolio(true, network)
 
-          if (this.swapAndBridge.activeRoutes.length && options.shouldRemoveSwapAndBridgeRoute) {
+          if (this.swapAndBridge.activeRoutes.length && shouldRemoveSwapAndBridgeRoute) {
             this.swapAndBridge.removeActiveRoute(meta.activeRouteId)
           }
           this.emitUpdate()
@@ -1840,22 +1841,19 @@ export class MainController extends EventEmitter {
           if (this.signAccountOp && this.signAccountOp.fromActionId === accountOpAction.id) {
             this.destroySignAccOp()
           }
-          this.actions.removeAction(
-            `${meta.accountAddr}-${meta.networkId}`,
-            options.shouldOpenNextRequest
-          )
+          this.actions.removeAction(`${meta.accountAddr}-${meta.networkId}`, shouldOpenNextRequest)
 
-          if (options.shouldUpdateAccount) this.updateSelectedAccountPortfolio(true, network)
+          if (shouldUpdateAccount) this.updateSelectedAccountPortfolio(true, network)
         }
       } else {
         if (this.signAccountOp && this.signAccountOp.fromActionId === req.id) {
           this.destroySignAccOp()
         }
-        this.actions.removeAction(id, options.shouldOpenNextRequest)
+        this.actions.removeAction(id, shouldOpenNextRequest)
 
-        if (options.shouldUpdateAccount) this.updateSelectedAccountPortfolio(true, network)
+        if (shouldUpdateAccount) this.updateSelectedAccountPortfolio(true, network)
       }
-      if (this.swapAndBridge.activeRoutes.length && options.shouldRemoveSwapAndBridgeRoute) {
+      if (this.swapAndBridge.activeRoutes.length && shouldRemoveSwapAndBridgeRoute) {
         this.swapAndBridge.removeActiveRoute(meta.activeRouteId)
       }
     } else if (id === ACCOUNT_SWITCH_USER_REQUEST) {
@@ -1878,7 +1876,7 @@ export class MainController extends EventEmitter {
         })()
       }
     } else {
-      this.actions.removeAction(id, options.shouldOpenNextRequest)
+      this.actions.removeAction(id, shouldOpenNextRequest)
     }
     this.emitUpdate()
   }
