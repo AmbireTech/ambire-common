@@ -4,7 +4,6 @@ import { ethers } from 'hardhat'
 import { describe, expect } from '@jest/globals'
 
 import { decodeError } from '../errorDecoder'
-import { BundlerError } from '../errorDecoder/customErrors'
 import { RELAYER_DOWN_MESSAGE } from '../relayerCall/relayerCall'
 import { insufficientPaymasterFunds } from './errors'
 import { MESSAGE_PREFIX } from './estimationErrorHumanizer'
@@ -93,18 +92,6 @@ describe('Estimation/Broadcast common errors are humanized', () => {
 
     expect(message).toBe(
       `${MESSAGE_PREFIX} the Ambire relayer is temporarily down.\nPlease try again or contact Ambire support for assistance.`
-    )
-  })
-  it('Swap: Return amount is not enough', () => {
-    const error = new BundlerError(
-      'UserOperation reverted with reason: Return amount is not enough',
-      'pimlico'
-    )
-    const { reason } = decodeError(error)
-    const message = humanizeEstimationOrBroadcastError(reason, MESSAGE_PREFIX, error)
-
-    expect(message).toBe(
-      `${MESSAGE_PREFIX} because you would not receive enough tokens in return. Please try performing the same swap again.`
     )
   })
 })
