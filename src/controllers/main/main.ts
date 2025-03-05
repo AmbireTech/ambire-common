@@ -14,6 +14,7 @@ import {
   BIP44_LEDGER_DERIVATION_TEMPLATE,
   BIP44_STANDARD_DERIVATION_TEMPLATE
 } from '../../consts/derivation'
+import { ODYSSEY_CHAIN_ID } from '../../consts/networks'
 import {
   Account,
   AccountId,
@@ -278,7 +279,6 @@ export class MainController extends EventEmitter {
     this.#windowManager = windowManager
     this.#notificationManager = notificationManager
 
-    this.featureFlags = new FeatureFlagsController()
     this.invite = new InviteController({ relayerUrl, fetch, storage: this.#storage })
     this.keystore = new KeystoreController(this.#storage, keystoreSigners, windowManager)
     this.#externalSignerControllers = externalSignerControllers
@@ -293,6 +293,7 @@ export class MainController extends EventEmitter {
         this.providers.removeProvider(networkId)
       }
     )
+    this.featureFlags = new FeatureFlagsController(this.networks)
     this.providers = new ProvidersController(this.networks)
     this.accounts = new AccountsController(
       this.#storage,
@@ -2214,15 +2215,23 @@ export class MainController extends EventEmitter {
 
   async addNetwork(network: AddNetworkRequestParams) {
     await this.networks.addNetwork(network)
+
+    // enable 7702 if the network added was oddysey
+    if (network.chainId === ODYSSEY_CHAIN_ID) this.featureFlags.setFeatureFlag('eip7702', true)
+
     await this.updateSelectedAccountPortfolio()
   }
 
   async removeNetwork(id: NetworkId) {
+    const chainId = this.networks.networks.find((net) => net.id === id)?.chainId
     await this.networks.removeNetwork(id)
     this.portfolio.removeNetworkData(id)
     this.defiPositions.removeNetworkData(id)
     this.accountAdder.removeNetworkData(id)
     this.activity.removeNetworkData(id)
+
+    // disable 7702 if the network removed was oddysey
+    if (chainId === ODYSSEY_CHAIN_ID) this.featureFlags.setFeatureFlag('eip7702', false)
   }
 
   async resolveAccountOpAction(data: any, actionId: AccountOpAction['id']) {

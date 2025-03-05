@@ -1,5 +1,7 @@
 import { FeatureFlags, featureFlags } from '../../consts/featureFlags'
+import { ODYSSEY_CHAIN_ID } from '../../consts/networks'
 import EventEmitter from '../eventEmitter/eventEmitter'
+import { NetworksController } from '../networks/networks'
 
 /**
  * Responsible for managing (enable/disable) feature flags within the app. The
@@ -10,8 +12,19 @@ import EventEmitter from '../eventEmitter/eventEmitter'
 export class FeatureFlagsController extends EventEmitter {
   #flags = { ...featureFlags }
 
-  // TODO: Pull the feature flags from external source to be able to change them on the fly
-  // constructor() { }
+  #networks: NetworksController
+
+  constructor(networks: NetworksController) {
+    super()
+    this.#networks = networks
+
+    // enable the 7702 feature if the oddysey network is in the networks config
+    // eslint-disable-next-line @typescript-eslint/no-floating-promises
+    this.#networks.initialLoadPromise.then(() => {
+      const oddysey = this.#networks.networks.find((net) => net.chainId === ODYSSEY_CHAIN_ID)
+      if (oddysey) this.setFeatureFlag('eip7702', true)
+    })
+  }
 
   /** Syntactic sugar for checking if a feature flag is enabled */
   isFeatureEnabled(flag: keyof FeatureFlags) {
