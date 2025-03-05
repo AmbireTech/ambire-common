@@ -802,7 +802,7 @@ export class MainController extends EventEmitter {
       return this.emitError({ level: 'major', message, error })
     }
 
-    await this.signMessage.sign()
+    await this.signMessage.sign(this.invite.isOG)
 
     const signedMessage = this.signMessage.signedMessage
     // Error handling on the prev step will notify the user, it's fine to return here
@@ -1098,14 +1098,20 @@ export class MainController extends EventEmitter {
     // come in the same tick. Otherwise the UI may flash the wrong error.
     const latestState = this.portfolio.getLatestPortfolioState(accountAddr)
     const latestStateKeys = Object.keys(latestState)
-
-    if (!latestStateKeys.length) return
-
     const isAllReady = latestStateKeys.every((networkId) => {
       return isNetworkReady(latestState[networkId])
     })
 
-    if (!isAllReady) return
+    // Set isOffline back to false if the portfolio is loading.
+    // This is done to prevent the UI from flashing the offline error
+    if (!latestStateKeys.length || !isAllReady) {
+      // Skip unnecessary updates
+      if (!this.isOffline) return
+
+      this.isOffline = false
+      this.emitUpdate()
+      return
+    }
 
     const allPortfolioNetworksHaveErrors = latestStateKeys.every((networkId) => {
       const state = latestState[networkId]
