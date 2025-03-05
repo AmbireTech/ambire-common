@@ -106,6 +106,11 @@ const BROADCAST_OR_ESTIMATION_ERRORS: ErrorHumanizerError[] = [
     reasons: ['0x7b36c479', '0x81ceff30'],
     message: 'of a Swap failure. Please try performing the same swap again.'
   },
+  {
+    reasons: ['return amount is not enough'],
+    message:
+      'because you would not receive enough tokens in return. Please try performing the same swap again.'
+  },
   // bundler
   {
     reasons: ['biconomy: 400'],
