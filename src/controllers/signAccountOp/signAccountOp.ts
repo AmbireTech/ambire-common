@@ -284,6 +284,21 @@ export class SignAccountOpController extends EventEmitter {
   get errors(): string[] {
     const errors: string[] = []
 
+    const isEstimationLoadingOrFailed = !this.estimation || this.estimation?.error
+
+    if (isEstimationLoadingOrFailed && this.estimationRetryError) {
+      // If there is a successful estimation we should show this as a warning
+      // as the user can use the old estimation to broadcast
+
+      errors.push(
+        `${this.estimationRetryError.message} ${
+          this.estimation?.error
+            ? 'We will continue retrying, but please check your internet connection.'
+            : 'Automatically retrying in a few seconds. Please wait...'
+        }`
+      )
+    }
+
     if (!this.isInitialized) return errors
 
     const isAmbireV1 = isAmbireV1LinkedAccount(this.account?.creation?.factoryAddr)
@@ -296,12 +311,6 @@ export class SignAccountOpController extends EventEmitter {
       )
 
       // Don't show any other errors
-      return errors
-    }
-
-    if (this.estimationRetryError) {
-      errors.push(this.estimationRetryError.message)
-
       return errors
     }
 
@@ -520,6 +529,15 @@ export class SignAccountOpController extends EventEmitter {
     }
 
     if (significantBalanceDecreaseWarning) warnings.push(significantBalanceDecreaseWarning)
+    if (this.estimationRetryError && !!this.estimation && !this.estimation.error) {
+      warnings.push({
+        id: 'estimation-retry',
+        title: this.estimationRetryError.message,
+        text: 'You can try to broadcast this transaction with the last successful estimation or wait for a new one. Retrying...',
+        promptBeforeSign: false,
+        displayBeforeSign: true
+      })
+    }
 
     this.warnings = warnings
 
@@ -577,7 +595,8 @@ export class SignAccountOpController extends EventEmitter {
       this.estimation = estimation
       // on each estimation update, set the newest account nonce
       this.accountOp.nonce = BigInt(estimation.currentAccountNonce)
-      if (!this.estimation.error) this.estimationRetryError = null
+      // Display the estimationRetryError unless the estimation is successful
+      if (!estimation.error) this.estimationRetryError = null
     }
 
     if (estimationRetryError) {

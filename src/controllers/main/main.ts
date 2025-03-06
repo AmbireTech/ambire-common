@@ -2423,11 +2423,17 @@ export class MainController extends EventEmitter {
     const [gasPriceData, bundlerGas] = await Promise.all([
       getGasPriceRecommendations(this.providers.providers[network.id], network).catch((e) => {
         // Don't display additional errors if the estimation hasn't initially loaded
-        // or there is an error
-        if (!this.signAccountOp?.estimation || this.signAccountOp?.estimation?.error) return null
+        // or there is an estimation error
+        if (
+          !this.signAccountOp?.estimation ||
+          this.signAccountOp?.estimation?.error ||
+          this.signAccountOp.estimationRetryError
+        )
+          return null
 
         const { type } = decodeError(e)
-        let message = "We couldn't retrieve the current network fee information."
+        let message =
+          "We couldn't retrieve the latest network fee information. If you experience issues broadcasting please select a higher fee speed."
 
         if (type === ErrorType.ConnectivityError) {
           message = 'Network connection issue prevented us from retrieving the current network fee.'
@@ -2601,7 +2607,7 @@ export class MainController extends EventEmitter {
           (e: ErrorRef) => {
             if (!this.signAccountOp) return
 
-            this.signAccountOp.update({ estimationRetryError: e })
+            this.signAccountOp?.update({ estimationRetryError: e })
           },
           this.signAccountOp.bundlerSwitcher,
           {

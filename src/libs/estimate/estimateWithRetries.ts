@@ -10,7 +10,7 @@ export async function estimateWithRetries(
   // stop the execution on 5 fails;
   if (counter >= 5)
     return new Error(
-      'Estimation failure, retrying in a couple of seconds. If this issue persists, please change your RPC provider or contact Ambire support'
+      'Estimation failure, retrying in a couple of seconds. If this issue persists, please check your internet connection, change your RPC provider or contact Ambire support'
     )
 
   const santinelTimeoutErr = {}
@@ -32,7 +32,7 @@ export async function estimateWithRetries(
       case 'estimation-deployless':
         errorCallback({
           level: 'major',
-          message: 'Estimating gas limits from the RPC timed out. Retrying...',
+          message: 'Estimating gas limits from the RPC timed out.',
           error: new Error('Estimation.sol deployless timeout')
         })
         break
@@ -40,14 +40,14 @@ export async function estimateWithRetries(
       case 'estimation-bundler':
         errorCallback({
           level: 'major',
-          message: 'Estimating gas limits from the bundler timed out. Retrying...',
+          message: 'Estimating gas limits from the bundler timed out.',
           error: new Error('Budler gas limit estimation timeout')
         })
         break
       case 'estimation-eoa':
         errorCallback({
           level: 'major',
-          message: 'Estimating gas limits for Basic Account from the RPC timed out. Retrying...',
+          message: 'Estimating gas limits for Basic Account from the RPC timed out.',
           error: new Error('Budler gas limit estimation timeout')
         })
         break
@@ -73,11 +73,11 @@ export async function estimateWithRetries(
     if (error.cause === 'ConnectivityError') {
       errorCallback({
         level: 'major',
-        message: 'Estimating the transaction failed because of a network error. Retrying...',
+        message: 'Estimating the transaction failed because of a network error.',
         error
       })
 
-      await wait(2000)
+      await wait(5000)
 
       return estimateWithRetries(
         fetchRequests,
