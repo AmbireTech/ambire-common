@@ -34,7 +34,7 @@ export interface PrivLevels {
 export function getProxyDeployBytecode(
   masterContractAddr: string,
   privLevels: PrivLevels[],
-  opts = { privSlot: 0 }
+  opts = { privSlot: '0' }
 ) {
   const slotNumber = opts.privSlot ?? 0
   if (privLevels.length > 3) throw new Error('getProxyDeployBytecode: max 3 privLevels')

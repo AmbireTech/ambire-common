@@ -5,6 +5,7 @@ import entryPointAbi from '../../../contracts/compiled/EntryPoint.json'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { AMBIRE_PAYMASTER, ERC_4337_ENTRYPOINT } from '../../consts/deploy'
 import { Account } from '../../interfaces/account'
+import { Fetch } from '../../interfaces/fetch'
 import { Hex } from '../../interfaces/hex'
 import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
@@ -24,6 +25,7 @@ import { getHumanReadableBroadcastError } from '../errorHumanizer'
 import { PAYMASTER_DOWN_BROADCAST_ERROR_MESSAGE } from '../errorHumanizer/broadcastErrorHumanizer'
 import { getFeeTokenForEstimate } from '../estimate/estimateHelpers'
 import { TokenResult } from '../portfolio'
+import { relayerCall } from '../relayerCall/relayerCall'
 import { UserOperation } from '../userOperation/types'
 import { getCleanUserOp, getSigForCalculations } from '../userOperation/userOperation'
 import { AbstractPaymaster } from './abstractPaymaster'
@@ -58,15 +60,27 @@ export class Paymaster extends AbstractPaymaster {
 
   errorCallback: Function | undefined = undefined
 
-  constructor(callRelayer: Function, errorCallback: Function) {
+  // this is a temporary solution where the live relayer doesn't have
+  // a chain id paymaster route open yet as it's not merged
+  ambirePaymasterUrl: string | undefined
+
+  // this is a temporary solution where the live relayer doesn't have
+  // a chain id paymaster route open yet as it's not merged
+  isStaging: boolean
+
+  constructor(relayerUrl: string, fetch: Fetch, errorCallback: Function) {
     super()
-    this.callRelayer = callRelayer
+    this.callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
     this.errorCallback = errorCallback
+    this.isStaging = relayerUrl.indexOf('staging') !== -1
   }
 
   async init(op: AccountOp, userOp: UserOperation, network: Network, provider: RPCProvider) {
     this.network = network
     this.provider = provider
+    this.ambirePaymasterUrl = this.isStaging
+      ? `/v2/paymaster/${this.network.chainId}/request`
+      : `/v2/paymaster/${this.network.id}/sign`
 
     if (op.meta?.paymasterService && !op.meta?.paymasterService.failed) {
       try {
@@ -226,11 +240,11 @@ export class Paymaster extends AbstractPaymaster {
     const localUserOp = { ...userOp }
     localUserOp.paymaster = AMBIRE_PAYMASTER
     return this.#retryPaymasterRequest(() => {
-      return this.callRelayer(`/v2/paymaster/${op.networkId}/sign`, 'POST', {
+      return this.callRelayer(this.ambirePaymasterUrl, 'POST', {
         userOperation: getCleanUserOp(localUserOp)[0],
         paymaster: AMBIRE_PAYMASTER,
-        bytecode: acc.creation!.bytecode,
-        salt: acc.creation!.salt,
+        bytecode: acc.creation?.bytecode,
+        salt: acc.creation?.salt,
         key: acc.associatedKeys[0],
         // eslint-disable-next-line no-underscore-dangle
         rpcUrl: this.provider!._getConnection().url,

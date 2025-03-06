@@ -42,6 +42,16 @@ export const openseaMessageModule: HumanizerTypedMessageModule = (message: Messa
         fullVisualization: [getAction('Log in'), getLabel('OpenSea Pro', true)]
       }
     }
+    const OPENSEA_TOS = 'OpenSea Terms of Service'
+
+    if (
+      messageAsText.includes(OPENSEA_TOS) &&
+      messageAsText.toLowerCase().includes(message.accountAddr.toLowerCase())
+    ) {
+      return {
+        fullVisualization: [getAction('Accept'), getLabel('OpenSea Terms Terms of Service', true)]
+      }
+    }
   }
   if (message.content.kind === 'typedMessage') {
     if (

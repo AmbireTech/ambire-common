@@ -85,6 +85,7 @@ export interface Network {
   disableEstimateGas?: boolean
   force4337?: boolean
   allowForce4337?: boolean
+  has7702: boolean
 }
 
 export interface AddNetworkRequestParams {

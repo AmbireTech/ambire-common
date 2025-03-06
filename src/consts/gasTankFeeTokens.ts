@@ -120,6 +120,14 @@ export default [
     icon: 'https://assets.coingecko.com/coins/images/279/large/ethereum.png'
   },
   {
+    address: '0x0000000000000000000000000000000000000000',
+    symbol: 'eth',
+    networkId: 'odyssey',
+    decimals: 18,
+    icon: 'https://assets.coingecko.com/coins/images/279/large/ethereum.png',
+    disableGasTankDeposit: true
+  },
+  {
     address: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
     symbol: 'weth',
     networkId: 'ethereum',
@@ -702,5 +710,13 @@ export default [
     symbol: 'wstETH',
     decimals: 18,
     icon: 'https://coin-images.coingecko.com/coins/images/18834/small/wstETH.png'
+  },
+  {
+    networkId: 'odyssey',
+    address: '0x2B44e7315B20da1A9CBE827489A2FE99545e3ba7',
+    symbol: 'amw',
+    decimals: 18,
+    icon: 'https://assets.coingecko.com/coins/images/23154/standard/wallet.PNG?1696522445',
+    disableGasTankDeposit: true
   }
 ]

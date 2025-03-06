@@ -7,7 +7,11 @@ import { EventEmitter } from 'stream'
 import { describe, expect, jest, test } from '@jest/globals'
 
 import { trezorSlot7v24337Deployed, velcroUrl } from '../../../test/config'
-import { getNativeToCheckFromEOAs, produceMemoryStore } from '../../../test/helpers'
+import {
+  getNativeToCheckFromEOAs,
+  produceMemoryStore,
+  waitForAccountsCtrlFirstLoad
+} from '../../../test/helpers'
 import { suppressConsoleBeforeEach } from '../../../test/helpers/console'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { FEE_COLLECTOR } from '../../consts/addresses'
@@ -394,6 +398,7 @@ const init = async (
     () => {}
   )
   await accountsCtrl.initialLoadPromise
+  await waitForAccountsCtrlFirstLoad(accountsCtrl)
   await networksCtrl.initialLoadPromise
   await providersCtrl.initialLoadPromise
 

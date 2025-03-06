@@ -4,7 +4,9 @@ import { TypedDataDomain, TypedDataField } from 'ethers'
 import { PaymasterService } from '../libs/erc7677/types'
 import { AccountId } from './account'
 import { DappProviderRequest } from './dapp'
+import { Hex } from './hex'
 import { NetworkId } from './network'
+import { EIP7702Signature } from './signatures'
 
 export interface Calls {
   kind: 'calls'
@@ -17,7 +19,7 @@ export interface Calls {
 }
 export interface PlainTextMessage {
   kind: 'message'
-  message: string | Uint8Array
+  message: string
 }
 
 export interface TypedMessage {
@@ -27,19 +29,28 @@ export interface TypedMessage {
   message: Record<string, any>
   primaryType: keyof TypedMessage['types']
 }
+
+export interface Authorization {
+  kind: 'authorization-7702'
+  chainId: bigint
+  nonce: bigint
+  contractAddr: Hex
+  message: Hex
+}
+
 // @TODO: move this type and it's deps (PlainTextMessage, TypedMessage) to another place,
 // probably interfaces
 export interface Message {
   fromActionId: SignMessageAction['id']
   accountAddr: AccountId
   networkId: NetworkId
-  content: PlainTextMessage | TypedMessage
-  signature: string | null
+  content: PlainTextMessage | TypedMessage | Authorization
+  signature: EIP7702Signature | string | null
 }
 
 export interface SignUserRequest {
   id: string | number
-  action: Calls | PlainTextMessage | TypedMessage | { kind: 'benzin' }
+  action: Calls | PlainTextMessage | TypedMessage | Authorization | { kind: 'benzin' }
   session?: DappProviderRequest['session']
   meta: {
     isSignAction: true
