@@ -120,28 +120,31 @@ export class DappsController extends EventEmitter {
     this.emitUpdate()
   }
 
-  broadcastDappSessionEvent = async (ev: any, data?: any, origin?: string) => {
-    await this.initialLoadPromise
+  broadcastDappSessionEvent = (ev: any, data?: any, origin?: string) => {
+    // eslint-disable-next-line @typescript-eslint/no-floating-promises
+    ;(async () => {
+      await this.initialLoadPromise
 
-    let dappSessions: { key: string; data: Session }[] = []
-    Object.keys(this.dappSessions).forEach((key) => {
-      if (this.dappSessions[key] && this.hasPermission(this.dappSessions[key].origin)) {
-        dappSessions.push({ key, data: this.dappSessions[key] })
-      }
-    })
-    if (origin) {
-      dappSessions = dappSessions.filter((dappSession) => dappSession.data.origin === origin)
-    }
-
-    dappSessions.forEach((dappSession) => {
-      try {
-        dappSession.data.sendMessage?.(ev, data)
-      } catch (e) {
-        if (this.dappSessions[dappSession.key]) {
-          this.deleteDappSession(dappSession.key)
+      let dappSessions: { key: string; data: Session }[] = []
+      Object.keys(this.dappSessions).forEach((key) => {
+        if (this.dappSessions[key] && this.hasPermission(this.dappSessions[key].origin)) {
+          dappSessions.push({ key, data: this.dappSessions[key] })
         }
+      })
+      if (origin) {
+        dappSessions = dappSessions.filter((dappSession) => dappSession.data.origin === origin)
       }
-    })
+
+      dappSessions.forEach((dappSession) => {
+        try {
+          dappSession.data.sendMessage?.(ev, data)
+        } catch (e) {
+          if (this.dappSessions[dappSession.key]) {
+            this.deleteDappSession(dappSession.key)
+          }
+        }
+      })
+    })()
   }
 
   addDapp(dapp: Dapp) {
