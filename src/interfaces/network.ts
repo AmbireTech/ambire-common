@@ -88,6 +88,9 @@ export interface Network {
   allowForce4337?: boolean
   predefinedConfigVersion?: number;
   lastUpdated?: number;
+  // When we migrate from custom to predefined network from relayer, we need to store the custom network name
+  // for future migration of other storages by this id
+  customNetworkId?: string;
 }
 
 export type UserNetworkPreferencesForPredefinedNetworks = Pick<
@@ -180,7 +183,7 @@ export type RelayerNetwork = {
     minBaseFee?: number
     minBaseFeeEqualToLastBlock?: boolean
   }
-  smartAccounts: {
+  smartAccounts?: {
     hasRelayer: boolean
     erc4337: {
       enabled: boolean

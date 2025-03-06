@@ -128,9 +128,13 @@ export const mapRelayerNetworkConfigToAmbireNetwork = (
       wrapped: { address: wrappedAddr },
       oldNativeAssetSymbols
     },
-    smartAccounts: { hasRelayer, allowForce4337, erc4337: incomingErc4337 },
+    smartAccounts,
     feeOptions: incomingFeeOptions
   } = relayerNetwork
+
+  const hasRelayer = smartAccounts?.hasRelayer ?? false
+  const allowForce4337 = smartAccounts?.allowForce4337 ?? false
+  const incomingErc4337 = smartAccounts?.erc4337 ?? { enabled: false, hasPaymaster: false }
 
   const feeOptions = {
     is1559: incomingFeeOptions.is1559,

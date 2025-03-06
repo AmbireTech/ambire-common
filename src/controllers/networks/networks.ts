@@ -155,13 +155,12 @@ export class NetworksController extends EventEmitter {
     // Step 2: Merge the networks coming from the Relayer
     // TODO: For now we call this on load, but will decide later if we need to call it periodically
     try {
-      // this.#relayerNetworks = await this.#callRelayer('/v2/networks-config')
-
-      this.#relayerNetworks = networksList as RelayerNetwork
+      const res = await this.#callRelayer('/v2/config/networks')
+      this.#relayerNetworks = res.data.extensionConfigNetworks
 
       Object.entries(this.#relayerNetworks).forEach(([chainId, relayerNetwork]) => {
         const n = mapRelayerNetworkConfigToAmbireNetwork(chainId, relayerNetwork)
-        
+
         // IN this scenario the network will come from relayerNetwork with predefinedConfigVersion > 0
         // We need to check its id and name and update the network in the storage
         const isCustomNetworkBecomingPredefined = networksInStorage[n.id] && !networksInStorage[n.id].predefined && networksInStorage[n.id]?.predefinedConfigVersion === 0 && relayerNetwork.predefinedConfigVersion > 0;
@@ -169,31 +168,22 @@ export class NetworksController extends EventEmitter {
 
         const currentNetwork = isNameOrIdDifferent ? Object.values(networksInStorage).find(net => net.chainId === BigInt(chainId)) : networksInStorage[n.id];
 
-        // TODO: Handle the scenario when a predefined network is removed and becomes a custom network for the user
         const userUpdatedFields: Partial<NetworkInfo> | null = this.getUpdatedNetworkDetails(currentNetwork, n.id, relayerNetwork)
         const hasNoUpdatedFields = userUpdatedFields === null
 
         // If the network is custom we assume predefinedConfigVersion = 0
         // NOTE: When it is the first time we update this, the network will be with predefinedNetworkVersion = 0
-        // NOTE: When the network is updated, the predefinedNetworkVersion will be updated to the latest version
-        
-        
+        // NOTE: When the network is updated, the predefinedNetworkVersion will be updated to the latest version        
         // Mechanism to force an update network preferences if needed
         const hasPredefinedConfigVersionChanged = relayerNetwork.predefinedConfigVersion >
         ((currentNetwork?.predefinedConfigVersion || 0))
         const shouldOverrideNetworkPreferences =
-          !hasNoUpdatedFields &&
+          hasNoUpdatedFields &&
           hasPredefinedConfigVersionChanged
 
-        // Set the network by chain Id if it comes from the relayer and remove the old one as custom in
-        if (isCustomNetworkBecomingPredefined && isNameOrIdDifferent) {
-          currentNetwork && delete networksInStorage[networksInStorage[currentNetwork.id].id];
-          networksInStorage[chainId] = n;
-        }
-        
-        if (hasNoUpdatedFields || !shouldOverrideNetworkPreferences) {
+        if (!shouldOverrideNetworkPreferences) {
           // Set the new network with chainId here and remove the old one
-          networksInStorage[chainId] = { ...currentNetwork && networksInStorage[currentNetwork.id], ...n }
+          networksInStorage[chainId] = { ...networksInStorage[chainId] }
           currentNetwork && networksInStorage[currentNetwork.id] && delete networksInStorage[currentNetwork.id]
         } else {
           // Override the predefined network config, but keep user preferences,
@@ -201,10 +191,15 @@ export class NetworksController extends EventEmitter {
           const predefinedNetwork: Network | {} =
             predefinedNetworks.find((pN) => pN.id === n.id) || {}
 
+          // Important: Preserve the original ID if this is a user-added network
+          // Preserve in customNetworkId as well
+          // Will need this for migrating storages later one
+          const originalId = currentNetwork?.id || n.id;
           // Set the new network with chainId here and remove the old one
           networksInStorage[chainId] = {
             ...predefinedNetwork,
             ...n,
+            ...(isCustomNetworkBecomingPredefined && isNameOrIdDifferent ? { id: originalId, customNetworkId: originalId } : {}),
             // If user has updated their URLs we should merge them
             // this adds another selectedRpcUrl as well.
            ...(userUpdatedFields && 'rpcUrls' in userUpdatedFields && Array.isArray(userUpdatedFields.rpcUrls) ? { rpcUrls: Array.from(new Set([...relayerNetwork.rpcUrls, ...userUpdatedFields.rpcUrls])) } : { rpcUrls: relayerNetwork.rpcUrls}),
@@ -355,7 +350,6 @@ export class NetworksController extends EventEmitter {
     const chainIds = this.networks.map((net) => net.chainId)
     const ids = this.networks.map((n) => n.id)
     const networkId = network.name.toLowerCase()
-console.log('networkId', networkId, 'network', network)
     // make sure the id and chainId of the network are unique
     if (ids.indexOf(networkId) !== -1 || chainIds.indexOf(BigInt(network.chainId)) !== -1) {
       throw new EmittableError({
