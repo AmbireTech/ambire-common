@@ -1,4 +1,3 @@
-import { InviteController } from 'controllers/invite/invite'
 import { hexlify, isHexString, toUtf8Bytes } from 'ethers'
 
 import EmittableError from '../../classes/EmittableError'
@@ -17,6 +16,7 @@ import hexStringToUint8Array from '../../utils/hexStringToUint8Array'
 import { AccountsController } from '../accounts/accounts'
 import { SignedMessage } from '../activity/types'
 import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter'
+import { InviteController } from '../invite/invite'
 import { KeystoreController } from '../keystore/keystore'
 import { NetworksController } from '../networks/networks'
 import { ProvidersController } from '../providers/providers'
