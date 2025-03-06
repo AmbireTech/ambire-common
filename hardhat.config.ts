@@ -45,6 +45,10 @@ const config: HardhatUserConfig = {
     ethereum: {
       url: 'https://invictus.ambire.com/ethereum',
       accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
+    },
+    sepolia: {
+      url: 'https://eth-sepolia.public.blastapi.io',
+      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
     }
   },
   etherscan: {
@@ -80,6 +84,14 @@ const config: HardhatUserConfig = {
         urls: {
           apiURL: 'https://explorer-odyssey.t.conduit.xyz/api',
           browserURL: 'https://explorer-odyssey.t.conduit.xyz:443'
+        }
+      },
+      {
+        network: 'sepolia',
+        chainId: 11155111,
+        urls: {
+          apiURL: 'https://api-sepolia.etherscan.io/api',
+          browserURL: 'https://api-sepolia.etherscan.io/'
         }
       }
     ]
