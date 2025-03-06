@@ -61,6 +61,10 @@ export class DappsController extends EventEmitter {
   }
 
   async #load() {
+    // Before extension version 4.55.0, dappSessions were stored in storage.
+    // This logic is no longer needed, so we remove the data from the user's storage.
+    // Keeping this here as a reminder to handle future use of the `dappSessions` key with caution.
+    this.#storage.remove('dappSessions')
     const storedDapps = await this.#storage.get('dapps', [])
 
     this.#dapps = storedDapps
@@ -116,14 +120,13 @@ export class DappsController extends EventEmitter {
     this.emitUpdate()
   }
 
-  broadcastDappSessionEvent = (ev: any, data?: any, origin?: string) => {
+  broadcastDappSessionEvent = async (ev: any, data?: any, origin?: string) => {
+    await this.initialLoadPromise
+
     let dappSessions: { key: string; data: Session }[] = []
     Object.keys(this.dappSessions).forEach((key) => {
       if (this.dappSessions[key] && this.hasPermission(this.dappSessions[key].origin)) {
-        dappSessions.push({
-          key,
-          data: this.dappSessions[key]
-        })
+        dappSessions.push({ key, data: this.dappSessions[key] })
       }
     })
     if (origin) {
@@ -139,7 +142,6 @@ export class DappsController extends EventEmitter {
         }
       }
     })
-    this.emitUpdate()
   }
 
   addDapp(dapp: Dapp) {
