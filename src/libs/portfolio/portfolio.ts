@@ -6,6 +6,7 @@ import { getAddress, JsonRpcProvider, Provider, ZeroAddress } from 'ethers'
 import BalanceGetter from '../../../contracts/compiled/BalanceGetter.json'
 import NFTGetter from '../../../contracts/compiled/NFTGetter.json'
 import gasTankFeeTokens from '../../consts/gasTankFeeTokens'
+import { ODYSSEY_CHAIN_ID } from '../../consts/networks'
 import { PINNED_TOKENS } from '../../consts/pinnedTokens'
 import { Fetch } from '../../interfaces/fetch'
 import { Network } from '../../interfaces/network'
@@ -31,10 +32,10 @@ import { flattenResults, paginate } from './pagination'
 export const LIMITS: Limits = {
   // we have to be conservative with erc721Tokens because if we pass 30x20 (worst case) tokenIds, that's 30x20 extra words which is 19kb
   // proxy mode input is limited to 24kb
-  deploylessProxyMode: { erc20: 100, erc721: 30, erc721TokensInput: 20, erc721Tokens: 50 },
+  deploylessProxyMode: { erc20: 66, erc721: 30, erc721TokensInput: 20, erc721Tokens: 50 },
   // theoretical capacity is 1666/450
   deploylessStateOverrideMode: {
-    erc20: 350,
+    erc20: 230,
     erc721: 70,
     erc721TokensInput: 70,
     erc721Tokens: 70
@@ -62,8 +63,19 @@ const defaultOptions: GetOptions = {
   blockTag: 'latest',
   priceRecency: 0,
   previousHintsFromExternalAPI: null,
-  fetchPinned: true,
-  isEOA: false
+  fetchPinned: true
+}
+
+const getHardcodedOdysseyPrices = (address: string) => {
+  if (address === '0x2B44e7315B20da1A9CBE827489A2FE99545e3ba7')
+    return [
+      {
+        baseCurrency: 'usd',
+        price: 2
+      }
+    ]
+
+  return null
 }
 
 export class Portfolio {
@@ -291,7 +303,10 @@ export class Portfolio {
     const tokensWithPrices: TokenResult[] = await Promise.all(
       tokensWithoutPrices.map(async (token: { address: string }) => {
         let priceIn: TokenResult['priceIn'] = []
-        const cachedPriceIn = getPriceFromCache(token.address)
+        const cachedPriceIn =
+          this.network.chainId === ODYSSEY_CHAIN_ID
+            ? getHardcodedOdysseyPrices(token.address)
+            : getPriceFromCache(token.address)
 
         if (cachedPriceIn) {
           priceIn = cachedPriceIn

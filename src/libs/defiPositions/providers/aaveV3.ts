@@ -38,26 +38,30 @@ export async function getAAVEPositions(
     .map((asset: any) => ({
       address: asset[0],
       symbol: asset[1],
-      balance: asset[2],
-      decimals: asset[3],
-      price: asset[4],
-      borrowAssetBalance: asset[5],
-      stableBorrowAssetBalance: asset[6],
-      currentLiquidityRate: asset[7],
-      currentVariableBorrowRate: asset[8],
-      currentStableBorrowRate: asset[9],
+      name: asset[2],
+      balance: asset[3],
+      decimals: asset[4],
+      price: asset[5],
+      borrowAssetBalance: asset[6],
+      stableBorrowAssetBalance: asset[7],
+      currentLiquidityRate: asset[8],
+      currentVariableBorrowRate: asset[9],
+      currentStableBorrowRate: asset[10],
 
-      aaveAddress: asset[10],
-      aaveSymbol: asset[11],
-      aaveDecimals: asset[12],
+      aaveAddress: asset[11],
+      aaveSymbol: asset[12],
+      aaveName: asset[13],
+      aaveDecimals: asset[14],
 
-      aaveSDebtAddr: asset[13],
-      aaveSDebtSymbol: asset[14],
-      aaveSDebtDecimals: asset[15],
+      aaveSDebtAddr: asset[15],
+      aaveSDebtSymbol: asset[16],
+      aaveSDebtName: asset[17],
+      aaveSDebtDecimals: asset[18],
 
-      aaveVDebtAddr: asset[16],
-      aaveVDebtSymbol: asset[17],
-      aaveVDebtDecimals: asset[18]
+      aaveVDebtAddr: asset[19],
+      aaveVDebtSymbol: asset[20],
+      aaveVDebtName: asset[21],
+      aaveVDebtDecimals: asset[22]
     }))
     .filter((t: any) => t.balance > 0 || t.borrowAssetBalance > 0 || t.stableBorrowAssetBalance > 0)
 
@@ -107,6 +111,7 @@ export async function getAAVEPositions(
         assetsResult.push({
           address: asset.address,
           symbol: asset.symbol,
+          name: asset.name,
           decimals: Number(asset.decimals),
           amount: asset.balance,
           priceIn,
@@ -118,6 +123,7 @@ export async function getAAVEPositions(
           protocolAsset: {
             address: asset.aaveAddress,
             symbol: asset.aaveSymbol,
+            name: asset.aaveName,
             decimals: asset.aaveDecimals
           }
         } as PositionAsset)
@@ -127,6 +133,7 @@ export async function getAAVEPositions(
         assetsResult.push({
           address: asset.address,
           symbol: asset.symbol,
+          name: asset.name,
           decimals: Number(asset.decimals),
           amount: asset.stableBorrowAssetBalanc,
           priceIn,
@@ -138,6 +145,7 @@ export async function getAAVEPositions(
           protocolAsset: {
             address: asset.aaveSDebtAddr,
             symbol: asset.aaveSDebtSymbol,
+            name: asset.aaveSDebtName,
             decimals: asset.aaveSDebtDecimals
           }
         } as PositionAsset)
@@ -147,6 +155,7 @@ export async function getAAVEPositions(
         assetsResult.push({
           address: asset.address,
           symbol: asset.symbol,
+          name: asset.name,
           decimals: Number(asset.decimals),
           amount: asset.borrowAssetBalance,
           priceIn,
@@ -158,6 +167,7 @@ export async function getAAVEPositions(
           protocolAsset: {
             address: asset.aaveVDebtAddr,
             symbol: asset.aaveVDebtSymbol,
+            name: asset.name,
             decimals: asset.aaveVDebtDecimals
           }
         } as PositionAsset)

@@ -2,12 +2,16 @@ import { ZeroAddress } from 'ethers'
 
 import { Network } from '../interfaces/network'
 import { WALLET_STAKING_ADDR, WALLET_TOKEN } from './addresses'
+import { ODYSSEY_CHAIN_ID } from './networks'
 
 const COINGECKO_API_BASE_URL = 'https://api.coingecko.com/api/v3/coins/'
 const COINGECKO_BASE_URL = 'https://www.coingecko.com/en/coins/'
 
 // @TODO some form of a constants list
 export function geckoIdMapper(address: string, network: Network): string | null {
+  // return eth for odyssey
+  if (network.chainId === ODYSSEY_CHAIN_ID && address === ZeroAddress) return 'ethereum'
+
   if (address === ZeroAddress) return network.nativeAssetId
 
   // we currently can't map aave so we're leaving this

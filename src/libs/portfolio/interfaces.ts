@@ -1,4 +1,4 @@
-import { Account, AccountId } from '../../interfaces/account'
+import { Account, AccountId, AccountOnchainState } from '../../interfaces/account'
 import { NetworkId } from '../../interfaces/network'
 import { AccountOp } from '../accountOp/accountOp'
 
@@ -10,6 +10,7 @@ export interface Price {
 export interface GetOptionsSimulation {
   accountOps: AccountOp[]
   account: Account
+  state: AccountOnchainState
 }
 export type TokenError = string | '0x'
 
@@ -17,6 +18,7 @@ export type AccountAssetsState = { [networkId: NetworkId]: boolean }
 
 export type TokenResult = {
   symbol: string
+  name: string
   decimals: number
   address: string
   networkId: NetworkId
@@ -77,7 +79,7 @@ export interface ExternalHintsAPIResponse extends Hints {
   networkId: string
   accountAddr: string
   prices: {
-    [name: string]: Price
+    [addr: string]: Price
   }
   hasHints: boolean
   // Attached by the application error handling logic.
@@ -209,7 +211,6 @@ export interface GetOptions {
   priceCache?: PriceCache
   priceRecency: number
   previousHintsFromExternalAPI?: StrippedExternalHintsAPIResponse | null
-  isEOA: boolean
   fetchPinned: boolean
   additionalErc20Hints?: Hints['erc20s']
   additionalErc721Hints?: Hints['erc721s']

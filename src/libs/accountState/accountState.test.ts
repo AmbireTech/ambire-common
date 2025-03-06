@@ -1,4 +1,4 @@
-import { ethers } from 'ethers'
+import { ethers, toBeHex } from 'ethers'
 
 import { describe, expect, test } from '@jest/globals'
 
@@ -10,6 +10,7 @@ import {
 } from '../../consts/deploy'
 import { networks } from '../../consts/networks'
 import { Account } from '../../interfaces/account'
+import { Network } from '../../interfaces/network'
 import { getRpcProvider } from '../../services/provider'
 import { get4437Bytecode, getBytecode } from '../proxyDeploy/bytecode'
 import { getAmbireAccountAddress } from '../proxyDeploy/getAmbireAddressTwo'
@@ -177,5 +178,58 @@ describe('AccountState', () => {
     const accEOANonZero = state[5]
     expect(accEOANonZero.isEOA).toBe(true)
     expect(accEOANonZero.nonce).toBeGreaterThan(0n)
+  })
+  test('should fetch the account state for a 7702 EOA', async () => {
+    const account7702: Account = {
+      addr: '0xD8293ad21678c6F09Da139b4B62D38e514a03B78',
+      associatedKeys: ['0xD8293ad21678c6F09Da139b4B62D38e514a03B78'],
+      initialPrivileges: [],
+      creation: null,
+      preferences: {
+        label: DEFAULT_ACCOUNT_LABEL,
+        pfp: '0xD8293ad21678c6F09Da139b4B62D38e514a03B78'
+      }
+    }
+
+    const odyssey: Network = {
+      id: 'odyssey',
+      chainId: 911867n,
+      rpcNoStateOverride: false,
+      nativeAssetName: 'Ether',
+      rpcUrls: ['https://odyssey.ithaca.xyz'],
+      selectedRpcUrl: 'https://odyssey.ithaca.xyz',
+      explorerUrl: 'https://odyssey-explorer.ithaca.xyz',
+      erc4337: {
+        enabled: false,
+        hasPaymaster: false
+      },
+      name: 'Odyssey',
+      nativeAssetId: 'eth',
+      nativeAssetSymbol: 'ETH',
+      isSAEnabled: false,
+      feeOptions: { is1559: false },
+      areContractsDeployed: false,
+      hasSingleton: false,
+      hasRelayer: false,
+      predefined: false,
+      features: [],
+      platformId: 'odyssey',
+      has7702: true
+    }
+    const odysseyProvider = getRpcProvider(odyssey.rpcUrls, odyssey.chainId)
+    const state = await getAccountState(odysseyProvider, odyssey, [account7702])
+
+    expect(state.length).toBe(1)
+
+    const eoa7702 = state[0]
+    expect(eoa7702.isEOA).toBeTruthy()
+    expect(eoa7702.isV2).toBeTruthy()
+    expect(eoa7702.isDeployed).toBeTruthy()
+    expect(eoa7702.authorization).toBe(undefined)
+    expect(eoa7702.isSmarterEoa).toBeTruthy()
+    expect(eoa7702.isErc4337Enabled).toBeTruthy()
+    expect(eoa7702.associatedKeys['0xD8293ad21678c6F09Da139b4B62D38e514a03B78']).toBe(
+      toBeHex(2, 32)
+    )
   })
 })

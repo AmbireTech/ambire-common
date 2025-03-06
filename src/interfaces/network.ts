@@ -59,6 +59,7 @@ export interface Network {
   id: NetworkId
   name: string
   nativeAssetSymbol: string
+  nativeAssetName: string
   chainId: bigint
   rpcUrls: string[]
   explorerUrl: string
@@ -84,6 +85,7 @@ export interface Network {
   disableEstimateGas?: boolean
   force4337?: boolean
   allowForce4337?: boolean
+  has7702: boolean
 }
 
 export interface AddNetworkRequestParams {
@@ -92,6 +94,7 @@ export interface AddNetworkRequestParams {
   selectedRpcUrl: Network['selectedRpcUrl']
   chainId: Network['chainId']
   nativeAssetSymbol: Network['nativeAssetSymbol']
+  nativeAssetName: Network['nativeAssetName']
   explorerUrl: Network['explorerUrl']
   iconUrls: Network['iconUrls']
 }
