@@ -1,3 +1,4 @@
+import { eip7702AuthorizationModule } from './eip7702AuthorizationModule'
 import { ensMessageModule } from './ensModule'
 import { entryPointModule } from './entryPointModule'
 import { erc20Module } from './erc20Module'
@@ -13,5 +14,6 @@ export {
   erc721Module,
   legendsMessageModule,
   permit2Module,
-  openseaMessageModule
+  openseaMessageModule,
+  eip7702AuthorizationModule
 }

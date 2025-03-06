@@ -83,9 +83,8 @@ const BROADCAST_OR_ESTIMATION_ERRORS: ErrorHumanizerError[] = [
     message: 'the input token amount is too low. Please increase the token amount and try again.'
   },
   {
-    reasons: ['INSUFFICIENT_OUTPUT_AMOUNT'],
-    message:
-      'the slippage tolerance was exceeded. Please reduce the slippage tolerance in the app and try again.'
+    reasons: ['INSUFFICIENT_OUTPUT_AMOUNT', 'return amount is not enough'],
+    message: 'the slippage tolerance was exceeded.'
   },
   {
     reasons: ['80'],
@@ -98,7 +97,7 @@ const BROADCAST_OR_ESTIMATION_ERRORS: ErrorHumanizerError[] = [
       'of one of the following reasons: missing approval, insufficient approved amount, the amount exceeds the account balance.'
   },
   {
-    reasons: [EXPIRED_PREFIX, 'Router: EXPIRED', 'Transaction too old'],
+    reasons: [EXPIRED_PREFIX, 'Router: EXPIRED', 'Transaction too old', 'BAL#508', 'SWAP_DEADLINE'],
     message:
       'the swap has expired. Return to the app and reinitiate the swap if you wish to proceed.'
   },

@@ -5,7 +5,7 @@
 import { Interface } from 'ethers'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
-import { Account, AccountStates } from '../../interfaces/account'
+import { Account, AccountOnchainState, AccountStates } from '../../interfaces/account'
 import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
 import { Bundler } from '../../services/bundlers/bundler'
@@ -25,8 +25,8 @@ import { EstimateResult, FeePaymentOption } from './interfaces'
 async function estimate(
   bundler: Bundler,
   network: Network,
+  accountState: AccountOnchainState,
   userOp: UserOperation,
-  isEdgeCase: boolean,
   errorCallback: Function
 ): Promise<{
   gasPrice: GasSpeeds | Error
@@ -59,23 +59,30 @@ async function estimate(
   }
 
   const nonFatalErrors: Error[] = []
+  const estimateErrorCallback = (e: Error) => {
+    const decodedError = bundler.decodeBundlerError(e)
+
+    // if the bundler estimation fails, add a nonFatalError so we can react to
+    // it on the FE. The BE at a later stage decides if this error is actually
+    // fatal (at estimate.ts -> estimate4337)
+    nonFatalErrors.push(new Error('Bundler estimation failed', { cause: '4337_ESTIMATION' }))
+
+    if (decodedError.reason && decodedError.reason.indexOf('invalid account nonce') !== -1) {
+      nonFatalErrors.push(new Error('4337 invalid account nonce', { cause: '4337_INVALID_NONCE' }))
+    }
+
+    return getHumanReadableEstimationError(decodedError)
+  }
+  // TODO<eip7702>
+  // isEdgeCase should probably be adjusted for the first broadcast
+  const isEdgeCase =
+    !accountState.isSmarterEoa && !accountState.isErc4337Enabled && accountState.isDeployed
   const initializeRequests = () => [
-    bundler.estimate(userOp, network, isEdgeCase).catch((e: Error) => {
-      const decodedError = bundler.decodeBundlerError(e)
-
-      // if the bundler estimation fails, add a nonFatalError so we can react to
-      // it on the FE. The BE at a later stage decides if this error is actually
-      // fatal (at estimate.ts -> estimate4337)
-      nonFatalErrors.push(new Error('Bundler estimation failed', { cause: '4337_ESTIMATION' }))
-
-      if (decodedError.reason && decodedError.reason.indexOf('invalid account nonce') !== -1) {
-        nonFatalErrors.push(
-          new Error('4337 invalid account nonce', { cause: '4337_INVALID_NONCE' })
-        )
-      }
-
-      return getHumanReadableEstimationError(decodedError)
-    })
+    accountState.authorization
+      ? bundler
+          .estimate7702(userOp, network, accountState.authorization)
+          .catch(estimateErrorCallback)
+      : bundler.estimate(userOp, network, isEdgeCase).catch(estimateErrorCallback)
   ]
 
   const estimation = await estimateWithRetries(
@@ -107,8 +114,10 @@ export async function bundlerEstimate(
 
   const localOp = { ...op }
   const accountState = accountStates[localOp.accountAddr][localOp.networkId]
-  // if there's no entryPointAuthorization, we cannot do the estimation on deploy
-  if (!accountState.isDeployed && (!op.meta || !op.meta.entryPointAuthorization))
+
+  // if the account is not a smarter EOA &
+  // there's no entryPointAuthorization, we cannot do the estimation on deploy
+  if (!accountState.isSmarterEoa && !accountState.isDeployed && !op.meta?.entryPointAuthorization)
     return estimationErrorFormatted(
       new Error('Entry point privileges not granted. Please contact support'),
       { feePaymentOptions }
@@ -120,13 +129,13 @@ export async function bundlerEstimate(
     accountState,
     localOp,
     initialBundler.getName(),
-    !accountState.isDeployed ? op.meta!.entryPointAuthorization : undefined
+    op.meta?.entryPointAuthorization,
+    accountState.authorization
   )
   // set the callData
   if (userOp.activatorCall) localOp.activatorCall = userOp.activatorCall
 
   const ambireAccount = new Interface(AmbireAccount.abi)
-  const isEdgeCase = !accountState.isErc4337Enabled && accountState.isDeployed
   userOp.signature = getSigForCalculations()
 
   const paymaster = await paymasterFactory.create(op, userOp, network, provider)
@@ -150,7 +159,7 @@ export async function bundlerEstimate(
   while (true) {
     // estimate
     const bundler = switcher.getBundler()
-    const estimations = await estimate(bundler, network, userOp, isEdgeCase, errorCallback)
+    const estimations = await estimate(bundler, network, accountState, userOp, errorCallback)
 
     // if no errors, return the results and get on with life
     if (!(estimations.estimation instanceof Error)) {
@@ -173,7 +182,7 @@ export async function bundlerEstimate(
     }
 
     // if there's an error but we can't switch, return the error
-    if (!switcher.canSwitch(estimations.estimation)) {
+    if (!switcher.canSwitch(account, estimations.estimation)) {
       return estimationErrorFormatted(estimations.estimation as Error, {
         feePaymentOptions,
         nonFatalErrors: estimations.nonFatalErrors

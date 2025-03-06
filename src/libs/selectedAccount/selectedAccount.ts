@@ -105,6 +105,7 @@ export const updatePortfolioStateWithDefiPositions = (
                 decimals: Number(a.protocolAsset!.decimals),
                 address: a.protocolAsset!.address,
                 symbol: a.protocolAsset!.symbol,
+                name: a.protocolAsset!.name,
                 networkId,
                 flags: {
                   canTopUpGasTank: false,
@@ -274,7 +275,8 @@ export function calculateSelectedAccountPortfolio(
   Object.keys(selectedAccountData).forEach((network: string) => {
     const networkData = selectedAccountData[network]
     const result = networkData?.result
-    if (networkData && isNetworkReady(networkData) && result) {
+
+    if (networkData && result && (isNetworkReady(networkData) || shouldShowPartialResult)) {
       const networkTotal = Number(result?.total?.usd) || 0
       newTotalBalance += networkTotal
 

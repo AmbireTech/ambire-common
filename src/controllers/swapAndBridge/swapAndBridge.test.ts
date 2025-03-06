@@ -131,7 +131,8 @@ const PORTFOLIO_TOKENS = [
     flags: { onGasTank: false, rewardsType: null, isFeeToken: true, canTopUpGasTank: true },
     networkId: 'optimism',
     priceIn: [{ baseCurrency: 'usd', price: 0.99785 }],
-    symbol: 'USDT'
+    symbol: 'USDT',
+    name: 'Tether'
   },
   {
     address: '0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf',
@@ -140,7 +141,8 @@ const PORTFOLIO_TOKENS = [
     flags: { onGasTank: false, rewardsType: null, isFeeToken: false, canTopUpGasTank: false },
     networkId: 'base',
     priceIn: [{ baseCurrency: 'usd', price: 64325 }],
-    symbol: 'cbBTC'
+    symbol: 'cbBTC',
+    name: 'Coinbase wrapped BTC'
   },
   {
     address: '0x0000000000000000000000000000000000000000',
@@ -149,7 +151,8 @@ const PORTFOLIO_TOKENS = [
     flags: { onGasTank: false, rewardsType: null, isFeeToken: true, canTopUpGasTank: true },
     networkId: 'optimism',
     priceIn: [{ baseCurrency: 'usd', price: 3660.27 }],
-    symbol: 'ETH'
+    symbol: 'ETH',
+    name: 'Ether'
   }
 ]
 

@@ -7,7 +7,11 @@ import { EventEmitter } from 'stream'
 import { describe, expect, jest, test } from '@jest/globals'
 
 import { trezorSlot7v24337Deployed, velcroUrl } from '../../../test/config'
-import { getNativeToCheckFromEOAs, produceMemoryStore } from '../../../test/helpers'
+import {
+  getNativeToCheckFromEOAs,
+  produceMemoryStore,
+  waitForAccountsCtrlFirstLoad
+} from '../../../test/helpers'
 import { suppressConsoleBeforeEach } from '../../../test/helpers/console'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { FEE_COLLECTOR } from '../../consts/addresses'
@@ -73,6 +77,7 @@ const createAccountOp = (
       address: '0x0000000000000000000000000000000000000000',
       amount: 1n,
       symbol: 'ETH',
+      name: 'Ether',
       networkId: 'ethereum',
       decimals: 18,
       priceIn: [],
@@ -123,6 +128,7 @@ const createEOAAccountOp = (account: Account) => {
       address: '0x0000000000000000000000000000000000000000',
       amount: 1n,
       symbol: 'ETH',
+      name: 'Ether',
       networkId: 'ethereum',
       decimals: 18,
       priceIn: [],
@@ -254,6 +260,7 @@ const v1Account = {
 const nativeFeeToken: TokenResult = {
   address: '0x0000000000000000000000000000000000000000',
   symbol: 'ETH',
+  name: 'Ether',
   amount: 1000n,
   networkId: 'ethereum',
   decimals: Number(18),
@@ -284,6 +291,7 @@ const nativeFeeToken: TokenResult = {
 const nativeFeeTokenPolygon: TokenResult = {
   address: '0x0000000000000000000000000000000000000000',
   symbol: 'POL',
+  name: 'Polygon Ecosystem Token',
   amount: 1000n,
   networkId: 'polygon',
   decimals: Number(18),
@@ -299,6 +307,7 @@ const nativeFeeTokenPolygon: TokenResult = {
 const gasTankToken: TokenResult = {
   address: '0x0000000000000000000000000000000000000000',
   symbol: 'POL',
+  name: 'Polygon Ecosystem Token',
   amount: 323871237812612123123n,
   networkId: 'polygon',
   decimals: Number(18),
@@ -317,6 +326,7 @@ const usdcFeeToken: TokenResult = {
   decimals: Number(6),
   priceIn: [{ baseCurrency: 'usd', price: 1.0 }],
   symbol: 'USDC',
+  name: 'USD Coin',
   address: '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359',
   flags: {
     onGasTank: false,
@@ -388,6 +398,7 @@ const init = async (
     () => {}
   )
   await accountsCtrl.initialLoadPromise
+  await waitForAccountsCtrlFirstLoad(accountsCtrl)
   await networksCtrl.initialLoadPromise
   await providersCtrl.initialLoadPromise
 
@@ -432,6 +443,7 @@ const init = async (
         networkId: op.networkId,
         decimals: Number(18),
         symbol: 'ETH',
+        name: 'Ether',
         address: '0x0000000000000000000000000000000000000000',
         flags: {
           onGasTank: false,
@@ -446,6 +458,7 @@ const init = async (
         networkId: op.networkId,
         decimals: Number(6),
         symbol: 'USDC',
+        name: 'USD Coin',
         address: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
         flags: {
           onGasTank: false,
@@ -511,6 +524,7 @@ describe('SignAccountOp Controller ', () => {
               address: '0x0000000000000000000000000000000000000000',
               amount: 1n,
               symbol: 'ETH',
+              name: 'Ether',
               networkId: 'ethereum',
               decimals: 18,
               priceIn: [],
@@ -599,6 +613,7 @@ describe('SignAccountOp Controller ', () => {
               address: '0x0000000000000000000000000000000000000000',
               amount: 1n,
               symbol: 'ETH',
+              name: 'Ether',
               networkId: 'ethereum',
               decimals: 18,
               priceIn: [],
@@ -675,6 +690,7 @@ describe('SignAccountOp Controller ', () => {
               address: '0x0000000000000000000000000000000000000000',
               amount: 1n,
               symbol: 'ETH',
+              name: 'Ether',
               networkId: 'ethereum',
               decimals: 18,
               priceIn: [],
@@ -753,6 +769,7 @@ describe('SignAccountOp Controller ', () => {
               address: '0x0000000000000000000000000000000000000000',
               amount: 1n,
               symbol: 'POL',
+              name: 'Polygon Ecosystem Token',
               networkId: 'polygon',
               decimals: 18,
               priceIn: [],
@@ -773,6 +790,7 @@ describe('SignAccountOp Controller ', () => {
               address: '0xdAC17F958D2ee523a2206206994597C13D831ec7',
               amount: 1n,
               symbol: 'usdt',
+              name: 'USD Token',
               networkId: 'polygon',
               decimals: 6,
               priceIn: [
@@ -798,6 +816,7 @@ describe('SignAccountOp Controller ', () => {
               address: usdcFeeToken.address,
               amount: 1n,
               symbol: 'usdc',
+              name: 'USD Coin',
               networkId: 'polygon',
               decimals: 6,
               priceIn: [
@@ -917,6 +936,7 @@ describe('SignAccountOp Controller ', () => {
         address: usdcFeeToken.address,
         amount: 1n,
         symbol: 'usdc',
+        name: 'USD Coin',
         networkId: 'polygon',
         decimals: 6,
         // we make the priceIn empty for this test
@@ -1025,6 +1045,7 @@ describe('SignAccountOp Controller ', () => {
               address: '0x0000000000000000000000000000000000000000',
               amount: 1n,
               symbol: 'POL',
+              name: 'Polygon Ecosystem Token',
               networkId: 'polygon',
               decimals: 18,
               priceIn: [],
@@ -1045,6 +1066,7 @@ describe('SignAccountOp Controller ', () => {
               address: '0xdAC17F958D2ee523a2206206994597C13D831ec7',
               amount: 1n,
               symbol: 'usdt',
+              name: 'USD Token',
               networkId: 'polygon',
               decimals: 6,
               priceIn: [],
@@ -1065,6 +1087,7 @@ describe('SignAccountOp Controller ', () => {
               address: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
               amount: 1n,
               symbol: 'usdc',
+              name: 'USD Coin',
               networkId: 'polygon',
               decimals: 6,
               priceIn: [],
@@ -1180,6 +1203,7 @@ describe('SignAccountOp Controller ', () => {
               address: '0x0000000000000000000000000000000000000000',
               amount: 1n,
               symbol: 'POL',
+              name: 'Polygon Ecosystem Token',
               networkId: 'polygon',
               decimals: 18,
               priceIn: [],
@@ -1200,6 +1224,7 @@ describe('SignAccountOp Controller ', () => {
               address: '0x0000000000000000000000000000000000000000',
               amount: 1n,
               symbol: 'POL',
+              name: 'Polygon Ecosystem Token',
               networkId: 'polygon',
               decimals: 18,
               priceIn: [],
@@ -1220,6 +1245,7 @@ describe('SignAccountOp Controller ', () => {
               address: '0x0000000000000000000000000000000000000000',
               amount: 1n,
               symbol: 'POL',
+              name: 'Polygon Ecosystem Token',
               networkId: 'polygon',
               decimals: 18,
               priceIn: [],
@@ -1352,6 +1378,7 @@ describe('SignAccountOp Controller ', () => {
                 address: '0x0000000000000000000000000000000000000000',
                 amount: 1n,
                 symbol: 'POL',
+                name: 'Polygon Ecosystem Token',
                 networkId: 'polygon',
                 decimals: 18,
                 priceIn: [],
@@ -1434,6 +1461,7 @@ describe('SignAccountOp Controller ', () => {
               address: '0x0000000000000000000000000000000000000000',
               amount: 1n,
               symbol: 'eth',
+              name: 'Ether',
               networkId: 'ethereum',
               decimals: 18,
               priceIn: [],
