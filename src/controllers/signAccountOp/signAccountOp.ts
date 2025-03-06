@@ -62,7 +62,7 @@ import { GasSpeeds } from '../../services/bundlers/types'
 /* eslint-disable no-restricted-syntax */
 import { AccountsController } from '../accounts/accounts'
 import { AccountOpAction } from '../actions/actions'
-import EventEmitter from '../eventEmitter/eventEmitter'
+import EventEmitter, { ErrorRef } from '../eventEmitter/eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
 import { PortfolioController } from '../portfolio/portfolio'
 import {
@@ -140,6 +140,8 @@ export class SignAccountOpController extends EventEmitter {
   bundlerGasPrices: GasSpeeds | null = null
 
   estimation: EstimateResult | null = null
+
+  estimationRetryError: ErrorRef | null = null
 
   feeSpeeds: {
     [identifier: string]: SpeedCalc[]
@@ -294,6 +296,12 @@ export class SignAccountOpController extends EventEmitter {
       )
 
       // Don't show any other errors
+      return errors
+    }
+
+    if (this.estimationRetryError) {
+      errors.push(this.estimationRetryError.message)
+
       return errors
     }
 
@@ -530,7 +538,8 @@ export class SignAccountOpController extends EventEmitter {
     gasUsedTooHighAgreed,
     rbfAccountOps,
     bundlerGasPrices,
-    blockGasLimit
+    blockGasLimit,
+    estimationRetryError
   }: {
     gasPrices?: GasRecommendation[]
     estimation?: EstimateResult | null
@@ -544,6 +553,7 @@ export class SignAccountOpController extends EventEmitter {
     rbfAccountOps?: { [key: string]: SubmittedAccountOp | null }
     bundlerGasPrices?: { speeds: GasSpeeds; bundler: BUNDLER }
     blockGasLimit?: bigint
+    estimationRetryError?: ErrorRef
   }) {
     // once the user commits to the things he sees on his screen,
     // we need to be sure nothing changes afterwards.
@@ -567,6 +577,11 @@ export class SignAccountOpController extends EventEmitter {
       this.estimation = estimation
       // on each estimation update, set the newest account nonce
       this.accountOp.nonce = BigInt(estimation.currentAccountNonce)
+      if (!this.estimation.error) this.estimationRetryError = null
+    }
+
+    if (estimationRetryError) {
+      this.estimationRetryError = estimationRetryError
     }
 
     // if estimation is undefined, do not clear the estimation.

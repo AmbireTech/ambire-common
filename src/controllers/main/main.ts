@@ -33,6 +33,8 @@ import {
 import { AddNetworkRequestParams, Network, NetworkId } from '../../interfaces/network'
 import { NotificationManager } from '../../interfaces/notification'
 import { RPCProvider } from '../../interfaces/provider'
+/* eslint-disable @typescript-eslint/no-floating-promises */
+import { TraceCallDiscoveryStatus } from '../../interfaces/signAccountOp'
 import { Storage } from '../../interfaces/storage'
 import { SocketAPISendTransactionRequest } from '../../interfaces/swapAndBridge'
 import { Calls, DappUserRequest, SignUserRequest, UserRequest } from '../../interfaces/userRequest'
@@ -138,8 +140,6 @@ import { NetworksController } from '../networks/networks'
 import { PhishingController } from '../phishing/phishing'
 import { PortfolioController } from '../portfolio/portfolio'
 import { ProvidersController } from '../providers/providers'
-/* eslint-disable @typescript-eslint/no-floating-promises */
-import { TraceCallDiscoveryStatus } from '../../interfaces/signAccountOp'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 /* eslint-disable no-underscore-dangle */
 import { SignAccountOpController, SigningStatus } from '../signAccountOp/signAccountOp'
@@ -2384,7 +2384,8 @@ export class MainController extends EventEmitter {
     this.emitUpdate()
   }
 
-  async #updateGasPrice() {
+  async #updateGasPrice(options?: { emitLevelOnFailure?: ErrorRef['level'] }) {
+    const { emitLevelOnFailure = 'silent' } = options ?? {}
     await this.#initialLoadPromise
 
     // if there's no signAccountOp initialized, we don't want to fetch gas
@@ -2421,7 +2422,7 @@ export class MainController extends EventEmitter {
     }
     const [gasPriceData, bundlerGas] = await Promise.all([
       getGasPriceRecommendations(this.providers.providers[network.id], network).catch((e) => {
-        // Don't display additional errors if the estimation hasn't initally loaded
+        // Don't display additional errors if the estimation hasn't initially loaded
         // or there is an error
         if (!this.signAccountOp?.estimation || this.signAccountOp?.estimation?.error) return null
 
@@ -2433,7 +2434,7 @@ export class MainController extends EventEmitter {
         }
 
         this.emitError({
-          level: 'major',
+          level: emitLevelOnFailure,
           message,
           error: new Error(`Failed to fetch gas price on ${network.id}: ${e?.message}`)
         })
@@ -2451,11 +2452,12 @@ export class MainController extends EventEmitter {
     }
   }
 
-  async updateSignAccountOpGasPrice() {
+  async updateSignAccountOpGasPrice(options?: { emitLevelOnFailure?: ErrorRef['level'] }) {
     if (!this.signAccountOp) return
+    const { emitLevelOnFailure } = options ?? {}
 
     const accOp = this.signAccountOp.accountOp
-    const gasData = await this.#updateGasPrice()
+    const gasData = await this.#updateGasPrice({ emitLevelOnFailure })
 
     // there's a chance signAccountOp gets destroyed between the time
     // the first "if (!this.signAccountOp) return" is performed and
@@ -2598,7 +2600,8 @@ export class MainController extends EventEmitter {
           feeTokens,
           (e: ErrorRef) => {
             if (!this.signAccountOp) return
-            this.emitError(e)
+
+            this.signAccountOp.update({ estimationRetryError: e })
           },
           this.signAccountOp.bundlerSwitcher,
           {
