@@ -115,9 +115,10 @@ describe('Bundler estimation tests', () => {
         }
       ]
       const switcher = new BundlerSwitcher(optimism, getSignAccountOpStatus, noStateUpdateStatuses)
+      const accountState = accountStates[smartAcc.addr][optimism.id]
       const result = await bundlerEstimate(
         smartAcc,
-        accountStates,
+        accountState,
         opOptimism,
         optimism,
         feeTokens,
@@ -177,9 +178,10 @@ describe('Bundler estimation tests', () => {
         }
       ]
       const switcher = new BundlerSwitcher(optimism, getSignAccountOpStatus, noStateUpdateStatuses)
+      const accountState = accountStates[smartAccDeployed.addr][optimism.id]
       const result = await bundlerEstimate(
         smartAccDeployed,
-        accountStates,
+        accountState,
         opOptimism,
         optimism,
         feeTokens,
@@ -236,9 +238,10 @@ describe('Bundler estimation tests', () => {
         }
       ]
       const switcher = new BundlerSwitcher(optimism, getSignAccountOpStatus, noStateUpdateStatuses)
+      const accountState = accountStates[smartAccDeployed.addr][optimism.id]
       const result = await bundlerEstimate(
         smartAccDeployed,
-        accountStates,
+        accountState,
         opOptimism,
         optimism,
         feeTokens,
@@ -325,9 +328,10 @@ describe('Bundler fallback tests', () => {
       noStateUpdateStatuses,
       [PIMLICO]
     )
+    const accountState = accountStates[smartAccDeployed.addr][base.id]
     const result = await bundlerEstimate(
       smartAccDeployed,
-      accountStates,
+      accountState,
       opBase,
       base,
       feeTokens,
@@ -387,9 +391,10 @@ describe('Bundler fallback tests', () => {
       noStateUpdateStatuses,
       [PIMLICO, BICONOMY]
     )
+    const accountState = accountStates[smartAccDeployed.addr][base.id]
     const result = await bundlerEstimate(
       smartAccDeployed,
-      accountStates,
+      accountState,
       opBase,
       base,
       feeTokens,

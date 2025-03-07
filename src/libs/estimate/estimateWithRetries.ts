@@ -71,3 +71,34 @@ export async function estimateWithRetries(
   // success outcome
   return result
 }
+
+export async function retryOnTimeout(
+  fetchRequests: Function,
+  timeoutType: string,
+  timeoutInMill: number = 10000,
+  counter: number = 0
+): Promise<any> {
+  // stop the execution on 5 fails;
+  // the below error message is not shown to the user so we are safe
+  if (counter >= 5)
+    return new Error(
+      'Estimation failure, retrying in a couple of seconds. If this issue persists, please change your RPC provider or contact Ambire support'
+    )
+
+  const santinelTimeoutErr = {}
+  const estimationTimeout = new Promise((resolve) => {
+    setTimeout(() => {
+      resolve(santinelTimeoutErr)
+    }, timeoutInMill)
+  })
+
+  let result = await Promise.race([Promise.all(fetchRequests()), estimationTimeout])
+
+  // retry on a timeout
+  if (result === santinelTimeoutErr) {
+    const incremented = counter + 1
+    result = await retryOnTimeout(fetchRequests, timeoutType, timeoutInMill, incremented)
+  }
+
+  return result
+}

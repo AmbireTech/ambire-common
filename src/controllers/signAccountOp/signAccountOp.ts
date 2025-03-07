@@ -957,6 +957,8 @@ export class SignAccountOpController extends EventEmitter {
             simulatedGasLimit = getGasUsed(simulatedGasLimit)
           }
 
+          console.log('the added native')
+          console.log(option.addedNative)
           amount = simulatedGasLimit * gasPrice + option.addedNative
         } else if (option.paidBy !== this.accountOp.accountAddr) {
           // Smart account, but EOA pays the fee

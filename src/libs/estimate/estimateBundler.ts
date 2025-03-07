@@ -5,7 +5,7 @@
 import { Interface } from 'ethers'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
-import { Account, AccountOnchainState, AccountStates } from '../../interfaces/account'
+import { Account, AccountOnchainState } from '../../interfaces/account'
 import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
 import { Bundler } from '../../services/bundlers/bundler'
@@ -99,7 +99,7 @@ async function estimate(
 
 export async function bundlerEstimate(
   account: Account,
-  accountStates: AccountStates,
+  accountState: AccountOnchainState,
   op: AccountOp,
   network: Network,
   feeTokens: TokenResult[],
@@ -111,9 +111,7 @@ export async function bundlerEstimate(
   // in an upper level using the balances from Estimation.sol.
   // balances from Estimation.sol reflect the balances after pending txn exec
   const feePaymentOptions: FeePaymentOption[] = []
-
   const localOp = { ...op }
-  const accountState = accountStates[localOp.accountAddr][localOp.networkId]
 
   // if the account is not a smarter EOA &
   // there's no entryPointAuthorization, we cannot do the estimation on deploy

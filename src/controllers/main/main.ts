@@ -2055,48 +2055,37 @@ export class MainController extends EventEmitter {
         meta.accountAddr,
         meta.networkId
       )
+      const network = this.networks.networks.find((n) => n.id === meta.networkId)!
 
-      if (!isBasicAccount(account, accountState)) {
-        const network = this.networks.networks.find((n) => n.id === meta.networkId)!
+      // search for msg only if it's a SA
+      const entryPointAuthorizationMessageFromHistory = isSmartAccount(account)
+        ? await this.activity.findMessage(
+            account.addr,
+            (message) =>
+              message.fromActionId === ENTRY_POINT_AUTHORIZATION_REQUEST_ID &&
+              message.networkId === network.id
+          )
+        : undefined
 
-        // search for msg only if it's a SA
-        const entryPointAuthorizationMessageFromHistory = isSmartAccount(account)
-          ? await this.activity.findMessage(
-              account.addr,
-              (message) =>
-                message.fromActionId === ENTRY_POINT_AUTHORIZATION_REQUEST_ID &&
-                message.networkId === network.id
-            )
-          : undefined
-
-        const accountOpAction = makeSmartAccountOpAction({
-          account,
-          networkId: meta.networkId,
-          nonce: accountState.nonce,
-          userRequests: this.userRequests,
-          actionsQueue: this.actions.actionsQueue,
-          entryPointAuthorizationSignature:
-            (entryPointAuthorizationMessageFromHistory?.signature as string) ?? undefined
-        })
-        this.actions.addOrUpdateAction(accountOpAction, actionPosition, actionExecutionType)
-        if (this.signAccountOp) {
-          if (this.signAccountOp.fromActionId === accountOpAction.id) {
-            this.signAccountOp.update({ calls: accountOpAction.accountOp.calls })
-            await this.estimateSignAccountOp({ shouldTraceCall: true })
-          }
-        } else {
-          // Even without an initialized SignAccountOpController or Screen, we should still update the portfolio and run the simulation.
-          // It's necessary to continue operating with the token `amountPostSimulation` amount.
-          this.updateSelectedAccountPortfolio(true, network)
+      const accountOpAction = makeSmartAccountOpAction({
+        account,
+        networkId: meta.networkId,
+        nonce: accountState.nonce,
+        userRequests: this.userRequests,
+        actionsQueue: this.actions.actionsQueue,
+        entryPointAuthorizationSignature:
+          (entryPointAuthorizationMessageFromHistory?.signature as string) ?? undefined
+      })
+      this.actions.addOrUpdateAction(accountOpAction, actionPosition, actionExecutionType)
+      if (this.signAccountOp) {
+        if (this.signAccountOp.fromActionId === accountOpAction.id) {
+          this.signAccountOp.update({ calls: accountOpAction.accountOp.calls })
+          await this.estimateSignAccountOp({ shouldTraceCall: true })
         }
       } else {
-        const accountOpAction = makeBasicAccountOpAction({
-          account,
-          networkId: meta.networkId,
-          nonce: accountState.nonce,
-          userRequest: req
-        })
-        this.actions.addOrUpdateAction(accountOpAction, actionPosition, actionExecutionType)
+        // Even without an initialized SignAccountOpController or Screen, we should still update the portfolio and run the simulation.
+        // It's necessary to continue operating with the token `amountPostSimulation` amount.
+        this.updateSelectedAccountPortfolio(true, network)
       }
     } else {
       let actionType: 'dappRequest' | 'benzin' | 'signMessage' | 'switchAccount' = 'dappRequest'

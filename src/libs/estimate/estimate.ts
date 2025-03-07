@@ -4,59 +4,36 @@ import Estimation from '../../../contracts/compiled/Estimation.json'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { DEPLOYLESS_SIMULATION_FROM, OPTIMISTIC_ORACLE } from '../../consts/deploy'
 import { EOA_SIMULATION_NONCE } from '../../consts/deployless'
-import { Account, AccountStates } from '../../interfaces/account'
+import { Account, AccountOnchainState, AccountStates } from '../../interfaces/account'
 import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
 import { BundlerSwitcher } from '../../services/bundlers/bundlerSwitcher'
 import { getEoaSimulationStateOverride } from '../../utils/simulationStateOverride'
-import { getAccountDeployParams, isSmartAccount } from '../account/account'
+import { getAccountDeployParams, isBasicAccount, isSmartAccount } from '../account/account'
 import { AccountOp, toSingletonCall } from '../accountOp/accountOp'
 import { Call } from '../accountOp/types'
 import { getFeeCall } from '../calls/calls'
 import { DeploylessMode, fromDescriptor } from '../deployless/deployless'
-import { InnerCallFailureError } from '../errorDecoder/customErrors'
 import { getHumanReadableEstimationError } from '../errorHumanizer'
 import { getProbableCallData } from '../gasPrice/gasPrice'
 import { hasRelayerSupport } from '../networks/networks'
 import { GasTankTokenResult, TokenResult } from '../portfolio'
 import { getActivatorCall, shouldIncludeActivatorCall } from '../userOperation/userOperation'
+import {
+  ambireEstimateGas,
+  getInnerCallFailure,
+  getNonceDiscrepancyFailure
+} from './ambireEstimation'
 import { estimationErrorFormatted } from './errors'
 import { bundlerEstimate } from './estimateBundler'
 import { estimateEOA } from './estimateEOA'
 import { estimateGas } from './estimateGas'
 import { getFeeTokenForEstimate } from './estimateHelpers'
-import { estimateWithRetries } from './estimateWithRetries'
-import { EstimateResult, FeePaymentOption } from './interfaces'
-import { refund } from './refund'
+import { estimateWithRetries, retryOnTimeout } from './estimateWithRetries'
+import { EstimateResult, FeePaymentOption, FullEstimation } from './interfaces'
+import { providerEstimateGas } from './providerEstimateGas'
 
 const abiCoder = new AbiCoder()
-
-function getInnerCallFailure(
-  estimationOp: { success: boolean; err: string },
-  calls: Call[],
-  network: Network,
-  portfolioNativeValue?: bigint
-): Error | null {
-  if (estimationOp.success) return null
-
-  const error = getHumanReadableEstimationError(
-    new InnerCallFailureError(estimationOp.err, calls, network, portfolioNativeValue)
-  )
-
-  return new Error(error.message, {
-    cause: 'CALLS_FAILURE'
-  })
-}
-
-// the outcomeNonce should always be equal to the nonce in accountOp + 1
-// that's an indication of transaction success
-function getNonceDiscrepancyFailure(estimationNonce: bigint, outcomeNonce: number): Error | null {
-  if (estimationNonce + 1n === BigInt(outcomeNonce)) return null
-
-  return new Error("Nonce discrepancy, perhaps there's a pending transaction. Retrying...", {
-    cause: 'NONCE_FAILURE'
-  })
-}
 
 export async function estimate4337(
   account: Account,
@@ -132,7 +109,7 @@ export async function estimate4337(
       .catch(getHumanReadableEstimationError),
     bundlerEstimate(
       account,
-      accountStates,
+      accountState,
       op,
       network,
       feeTokens,
@@ -281,7 +258,6 @@ export async function estimate(
   errorCallback: Function,
   bundlerSwitcher: BundlerSwitcher,
   opts?: {
-    calculateRefund?: boolean
     is4337Broadcast?: boolean
   },
   blockFrom: string = '0x0000000000000000000000000000000000000001',
@@ -425,10 +401,6 @@ export async function estimate(
   const customlyEstimatedGas = estimations[1]
   if (gasUsed < customlyEstimatedGas) gasUsed = customlyEstimatedGas
 
-  // WARNING: calculateRefund will 100% NOT work in all cases we have
-  // So a warning not to assume this is working
-  if (opts?.calculateRefund) gasUsed = await refund(account, op, provider, gasUsed)
-
   const feeTokenOptions: FeePaymentOption[] = filteredFeeTokens.map(
     (token: TokenResult | GasTankTokenResult, key: number) => {
       // We are using 'availableAmount' here, because it's possible the 'amount' to contains pending top up amount as well
@@ -490,5 +462,85 @@ export async function estimate(
         network,
         feeTokens.find((token) => token.address === ZeroAddress && !token.flags.onGasTank)?.amount
       ) || getNonceDiscrepancyFailure(op.nonce!, nonce)
+  }
+}
+
+// get all possible estimation combinations and leave it to the implementation
+// to decide which one is relevant depending on the case.
+// there are 3 estimations:
+// estimateGas(): the rpc method for retrieving gas
+// estimateBundler(): ask the 4337 bundler for a gas price
+// Estimation.sol: our own implementation
+// each has an use case in diff scenarious:
+// - EOA: if payment is native, use estimateGas(); otherwise estimateBundler()
+// - SA: if ethereum, use Estimation.sol; otherwise estimateBundler()
+export async function getEstimation(
+  account: Account,
+  accountState: AccountOnchainState,
+  op: AccountOp,
+  network: Network,
+  provider: RPCProvider,
+  feeTokens: TokenResult[],
+  nativeToCheck: string[],
+  switcher: BundlerSwitcher,
+  errorCallback: Function
+): Promise<FullEstimation | Error> {
+  const ambireEstimation = ambireEstimateGas(
+    account,
+    accountState,
+    op,
+    network,
+    provider,
+    feeTokens,
+    nativeToCheck
+  )
+  const bundlerEstimation = bundlerEstimate(
+    account,
+    accountState,
+    op,
+    network,
+    feeTokens,
+    provider,
+    switcher,
+    errorCallback
+  )
+  const providerEstimation = providerEstimateGas(
+    account,
+    op,
+    provider,
+    accountState,
+    network,
+    feeTokens
+  )
+
+  const estimations = await retryOnTimeout(
+    () => [ambireEstimation, bundlerEstimation, providerEstimation],
+    'estimation-deployless',
+    12000
+  )
+  // this is only if we hit a timeout 5 consecutive times
+  if (estimations instanceof Error) return estimations
+
+  const ambireGas = estimations[0]
+  const bundlerGas = estimations[1]
+  const providerGas = estimations[2]
+
+  // when to declare failures:
+  // EOA: when providerEstimation fails
+  // Smarter EOAs/SA: when ambireEstimation fails
+  if (isBasicAccount(account, accountState)) {
+    if (providerGas instanceof Error) return providerGas
+  }
+  if (accountState.isSmarterEoa || isSmartAccount(account)) {
+    if (ambireGas instanceof Error) return ambireGas
+  }
+
+  // TODO: if the bundler is the preferred method of estimation, re-estimate
+  // if we can switch it and there's no ambire gas error
+
+  return {
+    provider: providerGas,
+    ambire: ambireGas,
+    bundler: bundlerGas
   }
 }

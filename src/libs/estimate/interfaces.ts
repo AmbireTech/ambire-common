@@ -14,6 +14,7 @@ export interface BundlerEstimateResult {
 export interface Erc4337GasLimits {
   preVerificationGas: string
   verificationGasLimit: string
+  // this is basically gasUsed
   callGasLimit: string
   paymasterVerificationGasLimit: string
   paymasterPostOpGasLimit: string
@@ -38,6 +39,29 @@ export interface EstimateResult {
   feePaymentOptions: FeePaymentOption[]
   erc4337GasLimits?: Erc4337GasLimits
   error: Error | null
+  // put here errors that are not fatal to the signing process
+  // but reactable if known
+  // example: bundler simulation fails because of incorrect 4337 nonce.
+  // The user can still broadcast with EOA but we can also react
+  // to this error by setting the correct nonce and re-estimating
+  nonFatalErrors?: Error[]
+}
+
+export interface ProviderEstimation {
+  gasUsed: bigint
+  feePaymentOptions: FeePaymentOption[]
+}
+
+export interface AmbireEstimation {
+  gasUsed: bigint
+  feePaymentOptions: FeePaymentOption[]
+  currentAccountNonce: number
+}
+
+export interface FullEstimation {
+  provider: ProviderEstimation | Error
+  ambire: AmbireEstimation | Error
+  bundler: Erc4337GasLimits | Error
   // put here errors that are not fatal to the signing process
   // but reactable if known
   // example: bundler simulation fails because of incorrect 4337 nonce.
