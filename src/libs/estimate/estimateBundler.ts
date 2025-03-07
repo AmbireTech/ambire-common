@@ -18,9 +18,8 @@ import { getHumanReadableEstimationError } from '../errorHumanizer'
 import { TokenResult } from '../portfolio'
 import { UserOperation } from '../userOperation/types'
 import { getSigForCalculations, getUserOperation } from '../userOperation/userOperation'
-import { estimationErrorFormatted } from './errors'
 import { estimateWithRetries } from './estimateWithRetries'
-import { EstimateResult, FeePaymentOption } from './interfaces'
+import { Erc4337GasLimits } from './interfaces'
 
 async function estimate(
   bundler: Bundler,
@@ -106,20 +105,17 @@ export async function bundlerEstimate(
   provider: RPCProvider,
   switcher: BundlerSwitcher,
   errorCallback: Function
-): Promise<EstimateResult> {
-  // we pass an empty array of feePaymentOptions as they are built
-  // in an upper level using the balances from Estimation.sol.
-  // balances from Estimation.sol reflect the balances after pending txn exec
-  const feePaymentOptions: FeePaymentOption[] = []
+): Promise<Erc4337GasLimits | Error> {
+  // we're disallowing the bundler estimate for v1 accounts as they don't
+  // have 4337 support
+  if (!accountState.isV2 && !accountState.isEOA) return new Error('disallowed')
+
   const localOp = { ...op }
 
   // if the account is not a smarter EOA &
   // there's no entryPointAuthorization, we cannot do the estimation on deploy
   if (!accountState.isSmarterEoa && !accountState.isDeployed && !op.meta?.entryPointAuthorization)
-    return estimationErrorFormatted(
-      new Error('Entry point privileges not granted. Please contact support'),
-      { feePaymentOptions }
-    )
+    return new Error('Entry point privileges not granted. Please contact support')
 
   const initialBundler = switcher.getBundler()
   const userOp = getUserOperation(
@@ -163,29 +159,18 @@ export async function bundlerEstimate(
     if (!(estimations.estimation instanceof Error)) {
       const gasData = estimations.estimation[0]
       return {
-        gasUsed: BigInt(gasData.callGasLimit),
-        currentAccountNonce: Number(op.nonce),
-        feePaymentOptions,
-        erc4337GasLimits: {
-          preVerificationGas: gasData.preVerificationGas,
-          verificationGasLimit: gasData.verificationGasLimit,
-          callGasLimit: gasData.callGasLimit,
-          paymasterVerificationGasLimit: gasData.paymasterVerificationGasLimit,
-          paymasterPostOpGasLimit: gasData.paymasterPostOpGasLimit,
-          gasPrice: estimations.gasPrice as GasSpeeds,
-          paymaster
-        },
-        error: null
+        preVerificationGas: gasData.preVerificationGas,
+        verificationGasLimit: gasData.verificationGasLimit,
+        callGasLimit: gasData.callGasLimit,
+        paymasterVerificationGasLimit: gasData.paymasterVerificationGasLimit,
+        paymasterPostOpGasLimit: gasData.paymasterPostOpGasLimit,
+        gasPrice: estimations.gasPrice as GasSpeeds,
+        paymaster
       }
     }
 
     // if there's an error but we can't switch, return the error
-    if (!switcher.canSwitch(account, estimations.estimation)) {
-      return estimationErrorFormatted(estimations.estimation as Error, {
-        feePaymentOptions,
-        nonFatalErrors: estimations.nonFatalErrors
-      })
-    }
+    if (!switcher.canSwitch(account, estimations.estimation)) return estimations.estimation
 
     // try again
     switcher.switch()

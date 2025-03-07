@@ -8,6 +8,7 @@ import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
 import { isSmartAccount } from '../account/account'
 import { AccountOp, getSignableCalls } from '../accountOp/accountOp'
+import { getHumanReadableEstimationError } from '../errorHumanizer'
 import { TokenResult } from '../portfolio'
 import { ProviderEstimation } from './interfaces'
 
@@ -82,7 +83,7 @@ export async function providerEstimateGas(
           }
         }
       ])
-      .catch((e) => e)
+      .catch(getHumanReadableEstimationError)
     if (gasUsed instanceof Error) return gasUsed
     return {
       gasUsed: BigInt(gasUsed),
@@ -98,7 +99,7 @@ export async function providerEstimateGas(
       data: properties.data,
       nonce: 0
     })
-    .catch((e) => e)
+    .catch(getHumanReadableEstimationError)
   if (gasUsed instanceof Error) return gasUsed
   return {
     gasUsed: BigInt(gasUsed),

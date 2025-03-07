@@ -1,25 +1,35 @@
 /* eslint no-console: "off" */
 
-import { AbiCoder } from 'ethers'
+import { AbiCoder, Contract, Interface, parseEther, ZeroAddress } from 'ethers'
 import fetch from 'node-fetch'
 
 import { describe, expect } from '@jest/globals'
 
+import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
+import ERC20 from '../../../contracts/compiled/IERC20.json'
 import { relayerUrl, velcroUrl } from '../../../test/config'
+import { getNativeToCheckFromEOAs } from '../../../test/helpers'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
 import { networks } from '../../consts/networks'
 import { Account, AccountStates } from '../../interfaces/account'
+import { dedicatedToOneSAPriv } from '../../interfaces/keystore'
 import { Network } from '../../interfaces/network'
 import { BundlerSwitcher } from '../../services/bundlers/bundlerSwitcher'
 import { paymasterFactory } from '../../services/paymaster'
 import { getRpcProvider } from '../../services/provider'
+import { getSmartAccount } from '../account/account'
 import { Call } from '../accountOp/types'
 import { getAccountState } from '../accountState/accountState'
 import { Portfolio } from '../portfolio/portfolio'
 import { getEstimation } from './estimate'
-import { FullEstimation, ProviderEstimation } from './interfaces'
+import {
+  AmbireEstimation,
+  Erc4337GasLimits,
+  FullEstimation,
+  ProviderEstimation
+} from './interfaces'
 
 const ethereum = networks.find((x) => x.id === 'ethereum')!
 ethereum.areContractsDeployed = true
@@ -53,28 +63,6 @@ const smartAccDeployed: Account = {
     salt: '0x0000000000000000000000000000000000000000000000000000000000000000'
   },
   associatedKeys: ['0xBd84Cc40a5b5197B5B61919c22A55e1c46d2A3bb'],
-  preferences: {
-    label: DEFAULT_ACCOUNT_LABEL,
-    pfp: '0x8E5F6c1F0b134657A546932C3eC9169E1633a39b'
-  }
-}
-
-const smartAccv2point0Deployed: Account = {
-  addr: '0x4E6AB66459bD13b9b30A5CbCF28723C7D08172e5',
-  initialPrivileges: [
-    [
-      '0x3884dD96Da6CDaEAf937301Ff5cC5b0a58478355',
-      '0x0000000000000000000000000000000000000000000000000000000000000002'
-    ]
-  ],
-  associatedKeys: ['0x3884dD96Da6CDaEAf937301Ff5cC5b0a58478355'],
-  // the info below is incorrect as we don't have it
-  creation: {
-    factoryAddr: AMBIRE_ACCOUNT_FACTORY,
-    bytecode:
-      '0x7f00000000000000000000000000000000000000000000000000000000000000027ff33cc417366b7e38d2706a67ab46f85465661c28b864b521441180d15df82251553d602d80604d3d3981f3363d3d373d3d3d363d731cde6a53e9a411eaaf9d11e3e8c653a3e379d5355af43d82803e903d91602b57fd5bf3',
-    salt: '0x0000000000000000000000000000000000000000000000000000000000000000'
-  },
   preferences: {
     label: DEFAULT_ACCOUNT_LABEL,
     pfp: '0x8E5F6c1F0b134657A546932C3eC9169E1633a39b'
@@ -361,778 +349,744 @@ describe('estimate', () => {
     expect(providerGas.feePaymentOptions[0].availableAmount).toBeGreaterThan(0)
     expect(providerGas.feePaymentOptions[0].token).not.toBe(undefined)
     expect(providerGas.feePaymentOptions[0].token).not.toBe(null)
+    expect(providerGas.feePaymentOptions[0].token.address).toBe(ZeroAddress)
+    expect(providerGas.feePaymentOptions[0].token.symbol).toBe('ETH')
   })
 
-  // it('[EOA]:Polygon | sends all his available native and estimation should return a 0 balance available for fee but still a 21K gasUsed as we are doing a normal transfer', async () => {
-  //   const addr = '0xa8eEaC54343F94CfEEB3492e07a7De72bDFD118a'
-  //   const EOAAccount: Account = {
-  //     addr,
-  //     associatedKeys: [addr],
-  //     initialPrivileges: [],
-  //     creation: null,
-  //     preferences: {
-  //       label: DEFAULT_ACCOUNT_LABEL,
-  //       pfp: addr
-  //     }
-  //   }
-
-  //   // send all the native balance the user has in a call
-  //   const nativeBalance = await providerPolygon.getBalance(addr)
-  //   const call = {
-  //     to: '0xf7bB3EEF4ffA13ce037E3E5b6a59340c7e0f3941',
-  //     value: nativeBalance,
-  //     data: '0x'
-  //   }
-
-  //   const op = {
-  //     accountAddr: EOAAccount.addr,
-  //     signingKeyAddr: null,
-  //     signingKeyType: null,
-  //     gasLimit: null,
-  //     gasFeePayment: null,
-  //     networkId: 'polygon',
-  //     nonce: null,
-  //     signature: null,
-  //     calls: [call],
-  //     accountOpToExecuteBefore: null
-  //   }
-
-  //   const accountStates = await getAccountsInfo([EOAAccount])
-  //   const response = await estimate(
-  //     providerPolygon,
-  //     polygon,
-  //     EOAAccount,
-  //     op,
-  //     accountStates,
-  //     [],
-  //     feeTokens,
-  //     errorCallback,
-  //     new BundlerSwitcher(polygon, getSignAccountOpStatus, noStateUpdateStatuses)
-  //   )
-
-  //   expect(response.gasUsed).toBe(21000n)
-  //   expect(response.feePaymentOptions![0].availableAmount).toBe(0n)
-  //   expect(response.error).toBe(null)
-  // })
-
-  // it("[EOA]:Polygon | shouldn't return an error if there is a valid txn but with no native to pay the fee as it is handled in signAccountOp", async () => {
-  //   const addr = '0x952064055eFE9dc8b261510869B032068c8699bB'
-  //   const EOAAccount: Account = {
-  //     addr,
-  //     associatedKeys: [addr],
-  //     initialPrivileges: [],
-  //     creation: null,
-  //     preferences: {
-  //       label: DEFAULT_ACCOUNT_LABEL,
-  //       pfp: addr
-  //     }
-  //   }
-
-  //   // this should be a valid txn
-  //   // sending 0.00001 USDC to 0xf7bB3EEF4ffA13ce037E3E5b6a59340c7e0f3941
-  //   // so addr should posses that amount
-  //   const ERC20Interface = new Interface(ERC20.abi)
-  //   const call = {
-  //     to: '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174',
-  //     value: 0n,
-  //     data: ERC20Interface.encodeFunctionData('transfer', [
-  //       '0xf7bB3EEF4ffA13ce037E3E5b6a59340c7e0f3941',
-  //       1n
-  //     ])
-  //   }
-
-  //   const op = {
-  //     accountAddr: EOAAccount.addr,
-  //     signingKeyAddr: null,
-  //     signingKeyType: null,
-  //     gasLimit: null,
-  //     gasFeePayment: null,
-  //     networkId: 'polygon',
-  //     nonce: null,
-  //     signature: null,
-  //     calls: [call],
-  //     accountOpToExecuteBefore: null
-  //   }
-
-  //   const accountStates = await getAccountsInfo([EOAAccount])
-  //   const response = await estimate(
-  //     providerPolygon,
-  //     polygon,
-  //     EOAAccount,
-  //     op,
-  //     accountStates,
-  //     [],
-  //     feeTokens,
-  //     errorCallback,
-  //     new BundlerSwitcher(polygon, getSignAccountOpStatus, noStateUpdateStatuses)
-  //   )
-
-  //   expect(response.gasUsed).toBeGreaterThan(0n)
-  //   expect(response.feePaymentOptions[0].availableAmount).toBe(0n)
-  //   expect(response.error).toBe(null)
-  // })
-
-  // it('[EOA]:Polygon | should throw an error if there is an invalid txn and gasUsed should be 0', async () => {
-  //   const addr = '0x952064055eFE9dc8b261510869B032068c8699bB'
-  //   const EOAAccount: Account = {
-  //     addr,
-  //     associatedKeys: [addr],
-  //     initialPrivileges: [],
-  //     creation: null,
-  //     preferences: {
-  //       label: DEFAULT_ACCOUNT_LABEL,
-  //       pfp: addr
-  //     }
-  //   }
-
-  //   // this should be an invalid txn
-  //   const ERC20Interface = new Interface(ERC20.abi)
-  //   const call = {
-  //     to: '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174',
-  //     value: 0n,
-  //     data: ERC20Interface.encodeFunctionData('transfer', [
-  //       '0xf7bB3EEF4ffA13ce037E3E5b6a59340c7e0f3941',
-  //       1000000000n // 10K USDC
-  //     ])
-  //   }
-
-  //   const op = {
-  //     accountAddr: EOAAccount.addr,
-  //     signingKeyAddr: null,
-  //     signingKeyType: null,
-  //     gasLimit: null,
-  //     gasFeePayment: null,
-  //     networkId: 'polygon',
-  //     nonce: null,
-  //     signature: null,
-  //     calls: [call],
-  //     accountOpToExecuteBefore: null
-  //   }
-
-  //   const accountStates = await getAccountsInfo([EOAAccount])
-  //   const response = await estimate(
-  //     providerPolygon,
-  //     polygon,
-  //     EOAAccount,
-  //     op,
-  //     accountStates,
-  //     [],
-  //     feeTokens,
-  //     errorCallback,
-  //     new BundlerSwitcher(polygon, getSignAccountOpStatus, noStateUpdateStatuses)
-  //   )
-
-  //   expect(response.gasUsed).toBe(0n)
-  //   expect(response.error).not.toBe(null)
-  // })
-
-  // // skipping as v1 funds have moved again
-  // it.skip('[v1] estimates gasUsage, fee and native tokens outcome', async () => {
-  //   const op = {
-  //     accountAddr: v1Acc.addr,
-  //     signingKeyAddr: null,
-  //     signingKeyType: null,
-  //     gasLimit: null,
-  //     gasFeePayment: null,
-  //     networkId: 'ethereum',
-  //     nonce: 1n,
-  //     signature: spoofSig,
-  //     calls: [{ to, value: BigInt(0), data }],
-  //     accountOpToExecuteBefore: null
-  //   }
-
-  //   const portfolioResponse = await portfolio.get('0xa07D75aacEFd11b425AF7181958F0F85c312f143')
-  //   const usdt = portfolioResponse.tokens.find(
-  //     (token) => token.address === '0xdAC17F958D2ee523a2206206994597C13D831ec7'
-  //   )
-  //   const usdc = portfolioResponse.tokens.find(
-  //     (token) => token.address === '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48'
-  //   )
-
-  //   const accountStates = await getAccountsInfo([v1Acc])
-  //   const response = await estimate(
-  //     provider,
-  //     ethereum,
-  //     v1Acc,
-  //     op,
-  //     accountStates,
-  //     getNativeToCheckFromEOAs(nativeToCheck, v1Acc),
-  //     feeTokens,
-  //     errorCallback,
-  //     new BundlerSwitcher(ethereum, getSignAccountOpStatus, noStateUpdateStatuses)
-  //   )
-  //   const usdtOutcome = response.feePaymentOptions!.find(
-  //     (option) => option.token.address === '0xdAC17F958D2ee523a2206206994597C13D831ec7'
-  //   )
-  //   const usdcOutcome = response.feePaymentOptions!.find(
-  //     (option) => option.token.address === '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48'
-  //   )
-
-  //   // This is the min gas unit we can spend, but we expect more than that having in mind that multiple computations happens in the Contract
-  //   expect(response.gasUsed).toBeGreaterThan(21000n)
-  //   // As we swap 1 USDT for 1 USDC, we expect the estimate (outcome) balance of USDT to be greater than before the estimate (portfolio value)
-  //   expect(usdcOutcome!.availableAmount).toBeGreaterThan(usdc?.amount || 0n)
-  //   expect(usdtOutcome!.availableAmount).toBeLessThan(usdt!.amount)
-  //   expect(response.currentAccountNonce).toBeGreaterThan(1)
-
-  //   expect(usdcOutcome!.token).not.toBe(undefined)
-  //   expect(usdcOutcome!.token).not.toBe(null)
-
-  //   // make sure there's a native fee payment option in the same acc addr
-  //   const noFeePaymentViewOnlyAcc = response.feePaymentOptions.find(
-  //     (opt) => opt.paidBy === v1Acc.addr && opt.token.address === ethers.ZeroAddress
-  //   )
-  //   expect(noFeePaymentViewOnlyAcc).not.toBe(undefined)
-
-  //   // make sure everything but the view only acc exists as a few option
-  //   const feePaymentAddrOne = response.feePaymentOptions.find(
-  //     (opt) => opt.paidBy === nativeToCheck[0].addr && opt.token.address === ethers.ZeroAddress
-  //   )
-  //   expect(feePaymentAddrOne).not.toBe(undefined)
-  //   const feePaymentAddrTwo = response.feePaymentOptions.find(
-  //     (opt) => opt.paidBy === nativeToCheck[1].addr && opt.token.address === ethers.ZeroAddress
-  //   )
-  //   expect(feePaymentAddrTwo).not.toBe(undefined)
-
-  //   // the view only should be undefined
-  //   const viewOnlyAccOption = response.feePaymentOptions.find(
-  //     (opt) => opt.paidBy === viewOnlyAcc.addr && opt.token.address === ethers.ZeroAddress
-  //   )
-  //   expect(viewOnlyAccOption).toBe(undefined)
-  // })
-
-  // it('[v1] estimates correctly by passing multiple view only accounts to estimation and removing the fee options for them as they are not valid', async () => {
-  //   const op = {
-  //     accountAddr: v1Acc.addr,
-  //     signingKeyAddr: null,
-  //     signingKeyType: null,
-  //     gasLimit: null,
-  //     gasFeePayment: null,
-  //     networkId: 'ethereum',
-  //     nonce: 1n,
-  //     signature: spoofSig,
-  //     calls: [{ to, value: BigInt(0), data }],
-  //     accountOpToExecuteBefore: null
-  //   }
-
-  //   const accountStates = await getAccountsInfo([v1Acc])
-  //   const response = await estimate(
-  //     provider,
-  //     ethereum,
-  //     v1Acc,
-  //     op,
-  //     accountStates,
-  //     getNativeToCheckFromEOAs(nativeToCheck, v1Acc),
-  //     feeTokens,
-  //     errorCallback,
-  //     new BundlerSwitcher(ethereum, getSignAccountOpStatus, noStateUpdateStatuses)
-  //   )
-
-  //   const viewOnlyAccOption = response.feePaymentOptions.find(
-  //     (opt) => opt.paidBy === viewOnlyAcc.addr
-  //   )
-  //   // view only accounts shouldn't appear as payment options for other accounts
-  //   expect(viewOnlyAccOption).toBe(undefined)
-  // })
-
-  // it('estimate a view only account op', async () => {
-  //   const op = {
-  //     accountAddr: viewOnlyAcc.addr,
-  //     signingKeyAddr: null,
-  //     signingKeyType: null,
-  //     gasLimit: null,
-  //     gasFeePayment: null,
-  //     networkId: 'ethereum',
-  //     nonce: 1n,
-  //     signature: spoofSig,
-  //     calls: [{ to, value: BigInt(1), data: '0x' }],
-  //     accountOpToExecuteBefore: null
-  //   }
-
-  //   const accountStates = await getAccountsInfo([viewOnlyAcc])
-  //   const response = await estimate(
-  //     provider,
-  //     ethereum,
-  //     viewOnlyAcc,
-  //     op,
-  //     accountStates,
-  //     getNativeToCheckFromEOAs(nativeToCheck, viewOnlyAcc),
-  //     feeTokens,
-  //     errorCallback,
-  //     new BundlerSwitcher(ethereum, getSignAccountOpStatus, noStateUpdateStatuses)
-  //   )
-
-  //   // make sure we display the view only account payment option
-  //   const viewOnlyAccOption = response.feePaymentOptions.find(
-  //     (opt) => opt.paidBy === viewOnlyAcc.addr
-  //   )
-  //   expect(viewOnlyAccOption).not.toBe(undefined)
-  // })
-
-  // it('estimates with `addedNative`', async () => {
-  //   const accountOptimism: Account = {
-  //     addr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
-  //     associatedKeys: ['0x5Be214147EA1AE3653f289E17fE7Dc17A73AD175'],
-  //     initialPrivileges: [
-  //       [
-  //         '0x5Be214147EA1AE3653f289E17fE7Dc17A73AD175',
-  //         '0x0000000000000000000000000000000000000000000000000000000000000001'
-  //       ]
-  //     ],
-  //     creation: {
-  //       factoryAddr: '0xBf07a0Df119Ca234634588fbDb5625594E2a5BCA',
-  //       bytecode:
-  //         '0x7f00000000000000000000000000000000000000000000000000000000000000017fc00d23fd13e6cc01978ac25779646c3ba8aa974211c51a8b0f257a4593a6b7d3553d602d80604d3d3981f3363d3d373d3d3d363d732a2b85eb1054d6f0c6c2e37da05ed3e5fea684ef5af43d82803e903d91602b57fd5bf3',
-  //       salt: '0x0000000000000000000000000000000000000000000000000000000000000001'
-  //     },
-  //     preferences: {
-  //       label: DEFAULT_ACCOUNT_LABEL,
-  //       pfp: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
-  //     }
-  //   }
-
-  //   const dataOptimism = `0x5ae401dc${expire}00000000000000000000000000000000000000000000000000000000000000400000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000000e404e45aaf000000000000000000000000420000000000000000000000000000000000004200000000000000000000000094b008aa00579c1307b0ef2c499ad98a8ce58e580000000000000000000000000000000000000000000000000000000000000bb8000000000000000000000000b674f3fd5f43464db0448a57529eaf37f04ccea50000000000000000000000000000000000000000000000000de0b6b3a7640000000000000000000000000000000000000000000000000000000000000012dde3000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000`
-
-  //   const opOptimism = {
-  //     accountAddr: accountOptimism.addr,
-  //     signingKeyAddr: accountOptimism.associatedKeys[0],
-  //     signingKeyType: null,
-  //     gasLimit: null,
-  //     gasFeePayment: null,
-  //     networkId: 'optimism',
-  //     nonce: 1n,
-  //     signature: spoofSig,
-  //     calls: [{ to, value: BigInt(0), data: dataOptimism }],
-  //     accountOpToExecuteBefore: null
-  //   }
-
-  //   const accountStates = await getAccountsInfo([accountOptimism])
-  //   const response = await estimate(
-  //     providerOptimism,
-  //     optimism,
-  //     accountOptimism,
-  //     opOptimism,
-  //     accountStates,
-  //     getNativeToCheckFromEOAs(nativeToCheck, accountOptimism),
-  //     feeTokens,
-  //     errorCallback,
-  //     new BundlerSwitcher(optimism, getSignAccountOpStatus, noStateUpdateStatuses)
-  //   )
-
-  //   response.feePaymentOptions.forEach((feeToken) => {
-  //     expect(feeToken.addedNative).toBeGreaterThan(0n)
-  //   })
-  // })
-
-  // it('estimates an arbitrum request', async () => {
-  //   const opArbitrum = {
-  //     accountAddr: smartAccountv2eip712.addr,
-  //     signingKeyAddr: smartAccountv2eip712.associatedKeys[0],
-  //     signingKeyType: null,
-  //     gasLimit: null,
-  //     gasFeePayment: null,
-  //     networkId: 'arbitrum',
-  //     nonce: 1n,
-  //     signature: spoofSig,
-  //     calls: [{ to, value: BigInt(100000000000), data: '0x' }],
-  //     accountOpToExecuteBefore: null
-  //   }
-
-  //   const accountStates = await getAccountsInfo([smartAccountv2eip712])
-  //   const response = await estimate(
-  //     providerArbitrum,
-  //     arbitrum,
-  //     smartAccountv2eip712,
-  //     opArbitrum,
-  //     accountStates,
-  //     getNativeToCheckFromEOAs(nativeToCheck, smartAccountv2eip712),
-  //     feeTokens,
-  //     errorCallback,
-  //     new BundlerSwitcher(arbitrum, getSignAccountOpStatus, noStateUpdateStatuses)
-  //   )
-
-  //   response.feePaymentOptions.map((option) => expect(option.addedNative).toBe(0n))
-  // })
-
-  // it('[ERC-4337]:Optimism | not deployed | should work', async () => {
-  //   const privs = [
-  //     {
-  //       addr: addrWithDeploySignature,
-  //       hash: dedicatedToOneSAPriv
-  //     }
-  //   ]
-  //   const smartAcc = await getSmartAccount(privs, [])
-  //   const opOptimism: AccountOp = {
-  //     accountAddr: smartAcc.addr,
-  //     signingKeyAddr: smartAcc.associatedKeys[0],
-  //     signingKeyType: null,
-  //     gasLimit: null,
-  //     gasFeePayment: null,
-  //     networkId: 'optimism',
-  //     nonce: 0n,
-  //     signature: '0x',
-  //     calls: [{ to: FEE_COLLECTOR, value: 1n, data: '0x' }],
-  //     accountOpToExecuteBefore: null,
-  //     meta: {
-  //       entryPointAuthorization:
-  //         '0x05404ea5dfa13ddd921cda3f587af6927cc127ee174b57c9891491bfc1f0d3d005f649f8a1fc9147405f064507bae08816638cfc441c4d0dc4eb6640e16621991b01'
-  //     }
-  //   }
-  //   const accountStates = await getAccountsInfo([smartAcc])
-  //   const response = await estimate(
-  //     providerOptimism,
-  //     optimism,
-  //     smartAcc,
-  //     opOptimism,
-  //     accountStates,
-  //     getNativeToCheckFromEOAs(nativeToCheck, smartAcc),
-  //     feeTokens,
-  //     errorCallback,
-  //     new BundlerSwitcher(optimism, getSignAccountOpStatus, noStateUpdateStatuses),
-  //     { is4337Broadcast: true }
-  //   )
-
-  //   expect(response.error).toBe(null)
-
-  //   expect(response.erc4337GasLimits).not.toBe(undefined)
-  //   expect(BigInt(response.erc4337GasLimits!.callGasLimit)).toBeGreaterThan(0n)
-  //   expect(BigInt(response.erc4337GasLimits!.verificationGasLimit)).toBeGreaterThan(0n)
-  //   expect(BigInt(response.erc4337GasLimits!.preVerificationGas)).toBeGreaterThan(0n)
-  //   expect(BigInt(response.erc4337GasLimits!.paymasterPostOpGasLimit)).toBeGreaterThan(0n)
-  //   expect(BigInt(response.erc4337GasLimits!.paymasterVerificationGasLimit)).toBeGreaterThan(0n)
-
-  //   expect(response.feePaymentOptions.length).toBeGreaterThan(0)
-  //   expect(response.feePaymentOptions![0].token).not.toBe(undefined)
-  //   expect(response.feePaymentOptions![0].token).not.toBe(null)
-  // })
-
-  // it('[ERC-4337]:Optimism | not deployed | should fail with an inner call failure but otherwise estimation should work', async () => {
-  //   const privs = [
-  //     {
-  //       addr: addrWithDeploySignature,
-  //       hash: dedicatedToOneSAPriv
-  //     }
-  //   ]
-  //   const smartAcc = await getSmartAccount(privs, [])
-  //   const opOptimism: AccountOp = {
-  //     accountAddr: smartAcc.addr,
-  //     signingKeyAddr: smartAcc.associatedKeys[0],
-  //     signingKeyType: null,
-  //     gasLimit: null,
-  //     gasFeePayment: null,
-  //     networkId: 'optimism',
-  //     nonce: 0n,
-  //     signature: '0x',
-  //     calls: [{ to: FEE_COLLECTOR, value: parseEther('1'), data: '0x' }],
-  //     accountOpToExecuteBefore: null,
-  //     meta: {
-  //       entryPointAuthorization:
-  //         '0x05404ea5dfa13ddd921cda3f587af6927cc127ee174b57c9891491bfc1f0d3d005f649f8a1fc9147405f064507bae08816638cfc441c4d0dc4eb6640e16621991b01'
-  //     }
-  //   }
-  //   const accountStates = await getAccountsInfo([smartAcc])
-  //   const response = await estimate(
-  //     providerOptimism,
-  //     optimism,
-  //     smartAcc,
-  //     opOptimism,
-  //     accountStates,
-  //     getNativeToCheckFromEOAs(nativeToCheck, smartAcc),
-  //     feeTokens,
-  //     errorCallback,
-  //     new BundlerSwitcher(optimism, getSignAccountOpStatus, noStateUpdateStatuses),
-  //     { is4337Broadcast: true }
-  //   )
-
-  //   expect(response.error).not.toBe(null)
-  //   expect(response.error?.message).toBe(
-  //     'The transaction will fail because it will revert onchain. Error code: Insufficient ETH for transaction calls\n'
-  //   )
-
-  //   expect(response.erc4337GasLimits).not.toBe(undefined)
-  //   expect(BigInt(response.erc4337GasLimits!.callGasLimit)).toBeGreaterThan(0n)
-  //   expect(BigInt(response.erc4337GasLimits!.verificationGasLimit)).toBeGreaterThan(0n)
-  //   expect(BigInt(response.erc4337GasLimits!.preVerificationGas)).toBeGreaterThan(0n)
-  //   expect(BigInt(response.erc4337GasLimits!.paymasterPostOpGasLimit)).toBeGreaterThan(0n)
-  //   expect(BigInt(response.erc4337GasLimits!.paymasterVerificationGasLimit)).toBeGreaterThan(0n)
-
-  //   expect(response.feePaymentOptions.length).toBeGreaterThan(0)
-  //   expect(response.feePaymentOptions![0].token).not.toBe(undefined)
-  //   expect(response.feePaymentOptions![0].token).not.toBe(null)
-  // })
-
-  // it('[ERC-4337]:Optimism | not deployed | should result in an user operation error and therefore erc4337GasLimits should be undefined', async () => {
-  //   const privs = [
-  //     {
-  //       addr: addrWithDeploySignature,
-  //       hash: dedicatedToOneSAPriv
-  //     }
-  //   ]
-  //   const ERC20Interface = new Interface(ERC20.abi)
-  //   const smartAcc = await getSmartAccount(privs, [])
-  //   const opOptimism: AccountOp = {
-  //     accountAddr: smartAcc.addr,
-  //     signingKeyAddr: smartAcc.associatedKeys[0],
-  //     signingKeyType: null,
-  //     gasLimit: null,
-  //     gasFeePayment: null,
-  //     networkId: 'optimism',
-  //     nonce: 0n,
-  //     signature: '0x',
-  //     calls: [
-  //       {
-  //         to: '0x94b008aA00579c1307B0EF2c499aD98a8ce58e58',
-  //         value: 0n,
-  //         data: ERC20Interface.encodeFunctionData('transfer', [FEE_COLLECTOR, 100])
-  //       }
-  //     ],
-  //     accountOpToExecuteBefore: null,
-  //     meta: {
-  //       entryPointAuthorization:
-  //         '0x05404ea5dfa13ddd921cda3f587af6927cc127ee174b57c9891491bfc1f0d3d005f649f8a1fc9147405f064507bae08816638cfc441c4d0dc4eb6640e16621991b01'
-  //     }
-  //   }
-  //   const accountStates = await getAccountsInfo([smartAcc])
-  //   const response = await estimate(
-  //     providerOptimism,
-  //     optimism,
-  //     smartAcc,
-  //     opOptimism,
-  //     accountStates,
-  //     getNativeToCheckFromEOAs(nativeToCheck, smartAcc),
-  //     feeTokens,
-  //     errorCallback,
-  //     new BundlerSwitcher(optimism, getSignAccountOpStatus, noStateUpdateStatuses),
-  //     { is4337Broadcast: true }
-  //   )
-
-  //   expect(response.error).not.toBe(null)
-  //   expect(response.error?.message).toBe(
-  //     'The transaction will fail because the transfer amount exceeds your account balance. Please check your balance or adjust the transfer amount.'
-  //   )
-
-  //   expect(response.feePaymentOptions.length).toBeGreaterThan(0)
-  //   expect(response.feePaymentOptions![0].token).not.toBe(undefined)
-  //   expect(response.feePaymentOptions![0].token).not.toBe(null)
-  // })
-
-  // it('[ERC-4337]:Optimism | deployed account | should work', async () => {
-  //   const ambAcc = new Contract(smartAccDeployed.addr, AmbireAccount.abi, providerOptimism)
-  //   const nonce = await ambAcc.nonce()
-  //   const opOptimism: AccountOp = {
-  //     accountAddr: smartAccDeployed.addr,
-  //     signingKeyAddr: smartAccDeployed.associatedKeys[0],
-  //     signingKeyType: null,
-  //     gasLimit: null,
-  //     gasFeePayment: null,
-  //     networkId: 'optimism',
-  //     nonce,
-  //     signature: '0x',
-  //     calls: [{ to: FEE_COLLECTOR, value: 1n, data: '0x' }],
-  //     accountOpToExecuteBefore: null
-  //   }
-  //   const accountStates = await getAccountsInfo([smartAccDeployed])
-  //   const response = await estimate(
-  //     // it doesn't matter in this case
-  //     providerOptimism,
-  //     optimism,
-  //     smartAccDeployed,
-  //     opOptimism,
-  //     accountStates,
-  //     getNativeToCheckFromEOAs(nativeToCheck, smartAccDeployed),
-  //     feeTokens,
-  //     errorCallback,
-  //     new BundlerSwitcher(optimism, getSignAccountOpStatus, noStateUpdateStatuses),
-  //     { is4337Broadcast: true }
-  //   )
-
-  //   expect(response.error).toBe(null)
-
-  //   expect(response.erc4337GasLimits).not.toBe(undefined)
-  //   expect(BigInt(response.erc4337GasLimits!.callGasLimit)).toBeGreaterThan(0n)
-  //   expect(BigInt(response.erc4337GasLimits!.verificationGasLimit)).toBeGreaterThan(0n)
-  //   expect(BigInt(response.erc4337GasLimits!.preVerificationGas)).toBeGreaterThan(0n)
-  //   expect(BigInt(response.erc4337GasLimits!.paymasterPostOpGasLimit)).toBeGreaterThan(0n)
-  //   expect(BigInt(response.erc4337GasLimits!.paymasterVerificationGasLimit)).toBeGreaterThan(0n)
-
-  //   expect(response.feePaymentOptions.length).toBeGreaterThan(0)
-  //   expect(response.feePaymentOptions![0].token).not.toBe(undefined)
-  //   expect(response.feePaymentOptions![0].token).not.toBe(null)
-  // })
-
-  // it('[ERC-4337]:Optimism | deployed account | v2.0 | should give EOA broadcast options', async () => {
-  //   const ambAcc = new Contract(smartAccv2point0Deployed.addr, AmbireAccount.abi, providerOptimism)
-  //   const nonce = await ambAcc.nonce()
-  //   const opOptimism: AccountOp = {
-  //     accountAddr: smartAccv2point0Deployed.addr,
-  //     signingKeyAddr: smartAccv2point0Deployed.associatedKeys[0],
-  //     signingKeyType: null,
-  //     gasLimit: null,
-  //     gasFeePayment: null,
-  //     networkId: 'optimism',
-  //     nonce,
-  //     signature: '0x',
-  //     calls: [{ to: FEE_COLLECTOR, value: 1n, data: '0x' }],
-  //     accountOpToExecuteBefore: null
-  //   }
-  //   const accountStates = await getAccountsInfo([smartAccv2point0Deployed])
-  //   const response = await estimate(
-  //     // it doesn't matter in this case
-  //     providerOptimism,
-  //     optimism,
-  //     smartAccv2point0Deployed,
-  //     opOptimism,
-  //     accountStates,
-  //     getNativeToCheckFromEOAs(nativeToCheck, smartAccv2point0Deployed),
-  //     feeTokens,
-  //     errorCallback,
-  //     new BundlerSwitcher(optimism, getSignAccountOpStatus, noStateUpdateStatuses),
-  //     { is4337Broadcast: true }
-  //   )
-
-  //   expect(response.error).toBe(null)
-  //   expect(response.erc4337GasLimits).toBe(undefined)
-
-  //   expect(response.feePaymentOptions.length).toBeGreaterThan(0)
-  //   expect(response.feePaymentOptions![0].token).not.toBe(undefined)
-  //   expect(response.feePaymentOptions![0].token).not.toBe(null)
-  //   response.feePaymentOptions.forEach((option) => {
-  //     expect(option.paidBy).not.toBe(smartAccv2point0Deployed.addr)
-  //     expect(option.token.address).toBe(ZeroAddress)
-  //   })
-  // })
-
-  // it('[EOA-for-SA]:Arbitrum | should return native fee payment options even if hasRelayer = false', async () => {
-  //   const clonedArb = structuredClone(arbitrum)
-  //   clonedArb.hasRelayer = false
-  //   clonedArb.erc4337.enabled = false
-
-  //   const opArbitrum: AccountOp = {
-  //     accountAddr: trezorSlot6v2NotDeployed.addr,
-  //     signingKeyAddr: trezorSlot6v2NotDeployed.associatedKeys[0],
-  //     signingKeyType: null,
-  //     gasLimit: null,
-  //     gasFeePayment: null,
-  //     networkId: 'arbitrum',
-  //     nonce: 0n,
-  //     signature: spoofSig,
-  //     calls: [{ to, value: BigInt(100000000000), data: '0x' }],
-  //     accountOpToExecuteBefore: null
-  //   }
-  //   const accountStates = await getAccountsInfo([trezorSlot6v2NotDeployed])
-  //   const response = await estimate(
-  //     providerArbitrum,
-  //     clonedArb,
-  //     trezorSlot6v2NotDeployed,
-  //     opArbitrum,
-  //     accountStates,
-  //     getNativeToCheckFromEOAs(nativeToCheck, trezorSlot6v2NotDeployed),
-  //     feeTokens,
-  //     errorCallback,
-  //     new BundlerSwitcher(arbitrum, getSignAccountOpStatus, noStateUpdateStatuses),
-  //     { is4337Broadcast: false }
-  //   )
-
-  //   expect(response.feePaymentOptions.length).toBeGreaterThan(0)
-  //   expect(response.feePaymentOptions[0].token).not.toBe(null)
-  //   expect(response.feePaymentOptions[0].token).not.toBe(undefined)
-  //   expect(response.feePaymentOptions[0].token.address).toBe(ZeroAddress)
-  // })
-
-  // it('estimates a polygon request with insufficient funds for txn and estimation should fail with transaction reverted because of insufficient funds', async () => {
-  //   const opPolygonFailBzNoFunds: AccountOp = {
-  //     accountAddr: smartAccountv2eip712.addr,
-  //     signingKeyAddr: smartAccountv2eip712.associatedKeys[0],
-  //     signingKeyType: null,
-  //     gasLimit: null,
-  //     gasFeePayment: null,
-  //     networkId: polygon.id,
-  //     nonce: 1n,
-  //     signature: '0x',
-  //     calls: [{ to: trezorSlot6v2NotDeployed.addr, value: ethers.parseEther('10'), data: '0x' }],
-  //     accountOpToExecuteBefore: null
-  //   }
-  //   const accountStates = await getAccountsInfo([smartAccountv2eip712])
-
-  //   const response = await estimate(
-  //     providerPolygon,
-  //     polygon,
-  //     smartAccountv2eip712,
-  //     opPolygonFailBzNoFunds,
-  //     accountStates,
-  //     getNativeToCheckFromEOAs(nativeToCheck, smartAccountv2eip712),
-  //     feeTokens,
-  //     errorCallback,
-  //     new BundlerSwitcher(polygon, getSignAccountOpStatus, noStateUpdateStatuses)
-  //   )
-  //   expect(response.error).not.toBe(null)
-  //   expect(response.error?.message).toBe(
-  //     'The transaction will fail because it will revert onchain. Error code: Insufficient POL for transaction calls\n'
-  //   )
-  // })
-
-  // it('estimates a polygon request with wrong signer and estimation should fail with insufficient privileges', async () => {
-  //   const opPolygonFailBzNoFunds: AccountOp = {
-  //     accountAddr: smartAccountv2eip712.addr,
-  //     signingKeyAddr: trezorSlot6v2NotDeployed.associatedKeys[0],
-  //     signingKeyType: null,
-  //     gasLimit: null,
-  //     gasFeePayment: null,
-  //     networkId: polygon.id,
-  //     nonce: 1n,
-  //     signature: '0x',
-  //     calls: [{ to: trezorSlot6v2NotDeployed.addr, value: 100000n, data: '0x' }],
-  //     accountOpToExecuteBefore: null
-  //   }
-  //   const accountStates = await getAccountsInfo([smartAccountv2eip712])
-
-  //   const response = await estimate(
-  //     providerPolygon,
-  //     polygon,
-  //     { ...smartAccountv2eip712, associatedKeys: [trezorSlot6v2NotDeployed.associatedKeys[0]] },
-  //     opPolygonFailBzNoFunds,
-  //     accountStates,
-  //     getNativeToCheckFromEOAs(nativeToCheck, smartAccountv2eip712),
-  //     feeTokens,
-  //     errorCallback,
-  //     new BundlerSwitcher(polygon, getSignAccountOpStatus, noStateUpdateStatuses)
-  //   )
-  //   expect(response.error).not.toBe(null)
-  //   expect(response.error?.message).toBe(
-  //     'The transaction will fail because your account key lacks the necessary permissions. Ensure that you have authorization to sign or use an account with sufficient privileges.'
-  //   )
-  // })
-
-  // it('[v1] estimates an expired uniswap swap and it should display error properly', async () => {
-  //   const op = {
-  //     accountAddr: v1Acc.addr,
-  //     signingKeyAddr: null,
-  //     signingKeyType: null,
-  //     gasLimit: null,
-  //     gasFeePayment: null,
-  //     networkId: 'ethereum',
-  //     nonce: 1n,
-  //     signature: '0x',
-  //     calls: [{ to, value: BigInt(0), data: expiredData }],
-  //     accountOpToExecuteBefore: null
-  //   }
-
-  //   const accountStates = await getAccountsInfo([v1Acc])
-  //   const response = await estimate(
-  //     provider,
-  //     ethereum,
-  //     v1Acc,
-  //     op,
-  //     accountStates,
-  //     getNativeToCheckFromEOAs(nativeToCheck, v1Acc),
-  //     feeTokens,
-  //     errorCallback,
-  //     new BundlerSwitcher(ethereum, getSignAccountOpStatus, noStateUpdateStatuses)
-  //   )
-
-  //   expect(response.error).not.toBe(null)
-  //   expect(response.error?.message).toBe(
-  //     'The transaction will fail because the swap has expired. Return to the app and reinitiate the swap if you wish to proceed.'
-  //   )
-  // })
+  it('[EOA]:Polygon | sends all his available native and estimation should return a 0 balance available for fee but still a 21K gasUsed as we are doing a normal transfer', async () => {
+    const addr = '0xa8eEaC54343F94CfEEB3492e07a7De72bDFD118a'
+    const EOAAccount: Account = {
+      addr,
+      associatedKeys: [addr],
+      initialPrivileges: [],
+      creation: null,
+      preferences: {
+        label: DEFAULT_ACCOUNT_LABEL,
+        pfp: addr
+      }
+    }
+
+    // send all the native balance the user has in a call
+    const nativeBalance = await providerPolygon.getBalance(addr)
+    const call = {
+      to: '0xf7bB3EEF4ffA13ce037E3E5b6a59340c7e0f3941',
+      value: nativeBalance,
+      data: '0x'
+    }
+
+    const op = {
+      accountAddr: EOAAccount.addr,
+      signingKeyAddr: null,
+      signingKeyType: null,
+      gasLimit: null,
+      gasFeePayment: null,
+      networkId: 'polygon',
+      nonce: null,
+      signature: null,
+      calls: [call],
+      accountOpToExecuteBefore: null
+    }
+
+    const accountStates = await getAccountsInfo([EOAAccount])
+    const accountState = accountStates[EOAAccount.addr][polygon.id]
+    const response = await getEstimation(
+      EOAAccount,
+      accountState,
+      op,
+      polygon,
+      providerPolygon,
+      feeTokens,
+      [],
+      new BundlerSwitcher(polygon, getSignAccountOpStatus, noStateUpdateStatuses),
+      errorCallback
+    )
+
+    expect(response instanceof Error).toBe(false)
+    const res = response as FullEstimation
+    expect(res.provider instanceof Error).toBe(false)
+    const providerGas = res.provider as ProviderEstimation
+    expect(providerGas.gasUsed).toBe(21000n)
+
+    // availableAmount for the providerGas is above 0 as it doesn't have
+    // the subtraction that the ambire estimation has
+    expect(providerGas.feePaymentOptions[0].availableAmount).toBeGreaterThan(0n)
+    expect(providerGas.feePaymentOptions[0].token).not.toBe(undefined)
+    expect(providerGas.feePaymentOptions[0].token).not.toBe(null)
+    expect(providerGas.feePaymentOptions[0].token.address).toBe(ZeroAddress)
+
+    expect(res.ambire instanceof Error).toBe(false)
+    const ambireGas = res.ambire as AmbireEstimation
+    const nativeOption = ambireGas.feePaymentOptions.find(
+      (opt) => opt.token.address === ZeroAddress && !opt.token.flags.onGasTank
+    )
+    expect(nativeOption).not.toBe(undefined)
+    expect(nativeOption).not.toBe(null)
+    expect(nativeOption?.availableAmount).toBe(0n)
+  })
+
+  it("[EOA]:Polygon | shouldn't return an error if there is a valid txn but with no native to pay the fee as it is handled in signAccountOp", async () => {
+    const addr = '0x952064055eFE9dc8b261510869B032068c8699bB'
+    const EOAAccount: Account = {
+      addr,
+      associatedKeys: [addr],
+      initialPrivileges: [],
+      creation: null,
+      preferences: {
+        label: DEFAULT_ACCOUNT_LABEL,
+        pfp: addr
+      }
+    }
+
+    // this should be a valid txn
+    // sending 0.00001 USDC to 0xf7bB3EEF4ffA13ce037E3E5b6a59340c7e0f3941
+    // so addr should posses that amount
+    const ERC20Interface = new Interface(ERC20.abi)
+    const call = {
+      to: '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174',
+      value: 0n,
+      data: ERC20Interface.encodeFunctionData('transfer', [
+        '0xf7bB3EEF4ffA13ce037E3E5b6a59340c7e0f3941',
+        1n
+      ])
+    }
+
+    const op = {
+      accountAddr: EOAAccount.addr,
+      signingKeyAddr: null,
+      signingKeyType: null,
+      gasLimit: null,
+      gasFeePayment: null,
+      networkId: 'polygon',
+      nonce: null,
+      signature: null,
+      calls: [call],
+      accountOpToExecuteBefore: null
+    }
+
+    const accountStates = await getAccountsInfo([EOAAccount])
+    const accountState = accountStates[EOAAccount.addr][polygon.id]
+    const response = await getEstimation(
+      EOAAccount,
+      accountState,
+      op,
+      polygon,
+      providerPolygon,
+      feeTokens,
+      [],
+      new BundlerSwitcher(polygon, getSignAccountOpStatus, noStateUpdateStatuses),
+      errorCallback
+    )
+
+    expect(response instanceof Error).toBe(false)
+    const res = response as FullEstimation
+    expect(res.provider instanceof Error).toBe(false)
+    const providerGas = res.provider as ProviderEstimation
+    expect(providerGas.gasUsed).toBeGreaterThan(21000n)
+  })
+
+  it('[EOA]:Polygon | should throw an error if there is an invalid txn', async () => {
+    const addr = '0x952064055eFE9dc8b261510869B032068c8699bB'
+    const EOAAccount: Account = {
+      addr,
+      associatedKeys: [addr],
+      initialPrivileges: [],
+      creation: null,
+      preferences: {
+        label: DEFAULT_ACCOUNT_LABEL,
+        pfp: addr
+      }
+    }
+
+    // this should be an invalid txn
+    const ERC20Interface = new Interface(ERC20.abi)
+    const call = {
+      to: '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174',
+      value: 0n,
+      data: ERC20Interface.encodeFunctionData('transfer', [
+        '0xf7bB3EEF4ffA13ce037E3E5b6a59340c7e0f3941',
+        1000000000n // 10K USDC
+      ])
+    }
+
+    const op = {
+      accountAddr: EOAAccount.addr,
+      signingKeyAddr: null,
+      signingKeyType: null,
+      gasLimit: null,
+      gasFeePayment: null,
+      networkId: 'polygon',
+      nonce: null,
+      signature: null,
+      calls: [call],
+      accountOpToExecuteBefore: null
+    }
+
+    const accountStates = await getAccountsInfo([EOAAccount])
+    const accountState = accountStates[EOAAccount.addr][polygon.id]
+    const response = await getEstimation(
+      EOAAccount,
+      accountState,
+      op,
+      polygon,
+      providerPolygon,
+      feeTokens,
+      [],
+      new BundlerSwitcher(polygon, getSignAccountOpStatus, noStateUpdateStatuses),
+      errorCallback
+    )
+
+    expect(response instanceof Error).toBe(true)
+    expect(
+      (response as Error).message.indexOf(
+        'The transaction will fail because the transfer amount exceeds your account balance'
+      )
+    ).not.toBe(-1)
+  })
+
+  it('[v1] estimates gasUsage and native tokens outcome', async () => {
+    const eoaAddr = '0x40b38765696e3d5d8d9d834d8aad4bb6e418e489'
+    const v1AccAbi = new Contract(v1Acc.addr, AmbireAccount.abi, provider)
+    const op = {
+      accountAddr: v1Acc.addr,
+      signingKeyAddr: null,
+      signingKeyType: null,
+      gasLimit: null,
+      gasFeePayment: null,
+      networkId: 'ethereum',
+      nonce: await v1AccAbi.nonce(),
+      signature: spoofSig,
+      calls: [{ to: eoaAddr, value: BigInt(1), data: '0x' }],
+      accountOpToExecuteBefore: null
+    }
+
+    const portfolioResponse = await portfolio.get('0xa07D75aacEFd11b425AF7181958F0F85c312f143')
+    const nativeToken = portfolioResponse.tokens.find(
+      (tok) => tok.address === ZeroAddress && tok.networkId === ethereum.id
+    )
+
+    const accountStates = await getAccountsInfo([v1Acc])
+    const accountState = accountStates[v1Acc.addr][ethereum.id]
+    const response = await getEstimation(
+      v1Acc,
+      accountState,
+      op,
+      ethereum,
+      provider,
+      feeTokens,
+      getNativeToCheckFromEOAs(nativeToCheck, v1Acc),
+      new BundlerSwitcher(ethereum, getSignAccountOpStatus, noStateUpdateStatuses),
+      errorCallback
+    )
+
+    expect(response instanceof Error).toBe(false)
+    const res = response as FullEstimation
+    expect(res.ambire instanceof Error).toBe(false)
+    const ambireGas = res.ambire as AmbireEstimation
+    const nativeOutcome = ambireGas.feePaymentOptions.find(
+      (option) => option.token.address === ZeroAddress && !option.token.flags.onGasTank
+    )
+    expect(nativeOutcome).not.toBe(undefined)
+    expect(nativeOutcome).not.toBe(null)
+    expect(nativeOutcome!.gasUsed).toBeGreaterThan(0n)
+    expect(nativeToken!.amount - nativeOutcome!.availableAmount).toBe(1n)
+
+    // This is the min gas unit we can spend, but we expect more than that having in mind that multiple computations happens in the Contract
+    expect(ambireGas.gasUsed).toBeLessThan(21000n)
+    expect(ambireGas.gasUsed + nativeOutcome!.gasUsed!).toBeGreaterThan(21000n)
+
+    // the view only should be undefined
+    const viewOnlyAccOption = ambireGas.feePaymentOptions.find(
+      (opt) => opt.paidBy === viewOnlyAcc.addr && opt.token.address === ethers.ZeroAddress
+    )
+    expect(viewOnlyAccOption).toBe(undefined)
+
+    expect(res.provider instanceof Error).toBe(true)
+    expect(res.bundler instanceof Error).toBe(true)
+    expect((res.provider as Error).message.indexOf('disallowed')).not.toBe(-1)
+    expect((res.bundler as Error).message.indexOf('disallowed')).not.toBe(-1)
+  })
+
+  it('[v1] estimates correctly by passing multiple view only accounts to estimation and removing the fee options for them as they are not valid', async () => {
+    const v1AccAbi = new Contract(v1Acc.addr, AmbireAccount.abi, provider)
+    const op = {
+      accountAddr: v1Acc.addr,
+      signingKeyAddr: null,
+      signingKeyType: null,
+      gasLimit: null,
+      gasFeePayment: null,
+      networkId: 'ethereum',
+      nonce: await v1AccAbi.nonce(),
+      signature: spoofSig,
+      calls: [{ to, value: BigInt(0), data }],
+      accountOpToExecuteBefore: null
+    }
+
+    const accountStates = await getAccountsInfo([v1Acc])
+    const accountState = accountStates[v1Acc.addr][ethereum.id]
+    const response = await getEstimation(
+      v1Acc,
+      accountState,
+      op,
+      ethereum,
+      provider,
+      feeTokens,
+      getNativeToCheckFromEOAs(nativeToCheck, v1Acc),
+      new BundlerSwitcher(ethereum, getSignAccountOpStatus, noStateUpdateStatuses),
+      errorCallback
+    )
+
+    expect(response instanceof Error).toBe(false)
+    const res = response as FullEstimation
+    expect(res.ambire instanceof Error).toBe(false)
+    const ambireGas = res.ambire as AmbireEstimation
+    const viewOnlyAccOption = ambireGas.feePaymentOptions.find(
+      (opt) => opt.paidBy === viewOnlyAcc.addr
+    )
+    // view only accounts shouldn't appear as payment options for other accounts
+    expect(viewOnlyAccOption).toBe(undefined)
+  })
+
+  it('estimate a view only account op', async () => {
+    const eoaAddr = '0x40b38765696e3d5d8d9d834d8aad4bb6e418e489'
+    const op = {
+      accountAddr: viewOnlyAcc.addr,
+      signingKeyAddr: null,
+      signingKeyType: null,
+      gasLimit: null,
+      gasFeePayment: null,
+      networkId: 'ethereum',
+      nonce: 1n,
+      signature: spoofSig,
+      calls: [{ to: eoaAddr, value: BigInt(1), data: '0x' }],
+      accountOpToExecuteBefore: null
+    }
+
+    const accountStates = await getAccountsInfo([viewOnlyAcc])
+    const accountState = accountStates[viewOnlyAcc.addr][ethereum.id]
+    const response = await getEstimation(
+      viewOnlyAcc,
+      accountState,
+      op,
+      ethereum,
+      provider,
+      feeTokens,
+      getNativeToCheckFromEOAs(nativeToCheck, viewOnlyAcc),
+      new BundlerSwitcher(ethereum, getSignAccountOpStatus, noStateUpdateStatuses),
+      errorCallback
+    )
+
+    expect(response instanceof Error).toBe(false)
+    const res = response as FullEstimation
+    expect(res.ambire instanceof Error).toBe(false)
+    const ambireGas = res.ambire as AmbireEstimation
+
+    // make sure we display the view only account payment option
+    const viewOnlyAccOption = ambireGas.feePaymentOptions.find(
+      (opt) => opt.paidBy === viewOnlyAcc.addr
+    )
+    expect(viewOnlyAccOption).not.toBe(undefined)
+  })
+
+  it('estimates with `addedNative`', async () => {
+    const accountOptimismv1: Account = {
+      addr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
+      associatedKeys: ['0x5Be214147EA1AE3653f289E17fE7Dc17A73AD175'],
+      initialPrivileges: [
+        [
+          '0x5Be214147EA1AE3653f289E17fE7Dc17A73AD175',
+          '0x0000000000000000000000000000000000000000000000000000000000000001'
+        ]
+      ],
+      creation: {
+        factoryAddr: '0xBf07a0Df119Ca234634588fbDb5625594E2a5BCA',
+        bytecode:
+          '0x7f00000000000000000000000000000000000000000000000000000000000000017fc00d23fd13e6cc01978ac25779646c3ba8aa974211c51a8b0f257a4593a6b7d3553d602d80604d3d3981f3363d3d373d3d3d363d732a2b85eb1054d6f0c6c2e37da05ed3e5fea684ef5af43d82803e903d91602b57fd5bf3',
+        salt: '0x0000000000000000000000000000000000000000000000000000000000000001'
+      },
+      preferences: {
+        label: DEFAULT_ACCOUNT_LABEL,
+        pfp: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
+      }
+    }
+
+    const v1AccAbi = new Contract(accountOptimismv1.addr, AmbireAccount.abi, providerOptimism)
+    const eoaAddr = '0x40b38765696e3d5d8d9d834d8aad4bb6e418e489'
+    const opOptimism = {
+      accountAddr: accountOptimismv1.addr,
+      signingKeyAddr: accountOptimismv1.associatedKeys[0],
+      signingKeyType: null,
+      gasLimit: null,
+      gasFeePayment: null,
+      networkId: 'optimism',
+      nonce: await v1AccAbi.nonce(),
+      signature: spoofSig,
+      calls: [{ to: eoaAddr, value: BigInt(1), data: '0x' }],
+      accountOpToExecuteBefore: null
+    }
+
+    const accountStates = await getAccountsInfo([accountOptimismv1])
+    const accountState = accountStates[accountOptimismv1.addr][optimism.id]
+    const response = await getEstimation(
+      accountOptimismv1,
+      accountState,
+      opOptimism,
+      optimism,
+      providerOptimism,
+      feeTokens,
+      getNativeToCheckFromEOAs(nativeToCheck, accountOptimismv1),
+      new BundlerSwitcher(optimism, getSignAccountOpStatus, noStateUpdateStatuses),
+      errorCallback
+    )
+
+    expect(response instanceof Error).toBe(false)
+    const res = response as FullEstimation
+    expect(res.ambire instanceof Error).toBe(false)
+    const ambireGas = res.ambire as AmbireEstimation
+    ambireGas.feePaymentOptions.forEach((feeToken) => {
+      expect(feeToken.addedNative).toBeGreaterThan(0n)
+    })
+  })
+
+  it('estimates an arbitrum request', async () => {
+    const eoaAddr = '0x40b38765696e3d5d8d9d834d8aad4bb6e418e489'
+    const usdtAddr = '0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9'
+    const v2AccAbi = new Contract(smartAccountv2eip712.addr, AmbireAccount.abi, providerArbitrum)
+    const ERC20Interface = new Interface(ERC20.abi)
+    const opArbitrum = {
+      accountAddr: smartAccountv2eip712.addr,
+      signingKeyAddr: smartAccountv2eip712.associatedKeys[0],
+      signingKeyType: null,
+      gasLimit: null,
+      gasFeePayment: null,
+      networkId: 'arbitrum',
+      nonce: await v2AccAbi.nonce(),
+      signature: spoofSig,
+      calls: [
+        {
+          to: usdtAddr,
+          value: 0n,
+          data: ERC20Interface.encodeFunctionData('transfer', [eoaAddr, 1])
+        }
+      ],
+      accountOpToExecuteBefore: null
+    }
+
+    const accountStates = await getAccountsInfo([smartAccountv2eip712])
+    const accountState = accountStates[smartAccountv2eip712.addr][arbitrum.id]
+    const response = await getEstimation(
+      smartAccountv2eip712,
+      accountState,
+      opArbitrum,
+      arbitrum,
+      providerArbitrum,
+      feeTokens,
+      getNativeToCheckFromEOAs(nativeToCheck, smartAccountv2eip712),
+      new BundlerSwitcher(arbitrum, getSignAccountOpStatus, noStateUpdateStatuses),
+      errorCallback
+    )
+
+    expect(response instanceof Error).toBe(false)
+    const res = response as FullEstimation
+    expect(res.ambire instanceof Error).toBe(false)
+    const ambireGas = res.ambire as AmbireEstimation
+    ambireGas.feePaymentOptions.forEach((feeToken) => {
+      expect(feeToken.addedNative).toBe(0n)
+    })
+    // this is true because it's an outdate smart account here
+    // and we're testing ambire estimate only
+    expect(res.bundler instanceof Error).toBe(true)
+  })
+
+  it('[ERC-4337]:Optimism | not deployed | should work', async () => {
+    const privs = [
+      {
+        addr: addrWithDeploySignature,
+        hash: dedicatedToOneSAPriv
+      }
+    ]
+    const smartAcc = await getSmartAccount(privs, [])
+    const opOptimism = {
+      accountAddr: smartAcc.addr,
+      signingKeyAddr: smartAcc.associatedKeys[0],
+      signingKeyType: null,
+      gasLimit: null,
+      gasFeePayment: null,
+      networkId: 'optimism',
+      nonce: 0n,
+      signature: '0x',
+      calls: [{ to: FEE_COLLECTOR, value: 1n, data: '0x' }],
+      accountOpToExecuteBefore: null,
+      meta: {
+        entryPointAuthorization:
+          '0x05404ea5dfa13ddd921cda3f587af6927cc127ee174b57c9891491bfc1f0d3d005f649f8a1fc9147405f064507bae08816638cfc441c4d0dc4eb6640e16621991b01'
+      }
+    }
+    const accountStates = await getAccountsInfo([smartAcc])
+    const accountState = accountStates[smartAcc.addr][optimism.id]
+    const response = await getEstimation(
+      smartAcc,
+      accountState,
+      opOptimism,
+      optimism,
+      providerOptimism,
+      feeTokens,
+      getNativeToCheckFromEOAs(nativeToCheck, smartAcc),
+      new BundlerSwitcher(optimism, getSignAccountOpStatus, noStateUpdateStatuses),
+      errorCallback
+    )
+
+    expect(response instanceof Error).toBe(false)
+    const res = response as FullEstimation
+    expect(res.provider instanceof Error).toBe(true)
+    expect(res.ambire instanceof Error).toBe(false)
+    const ambireGas = res.ambire as AmbireEstimation
+    expect(ambireGas.feePaymentOptions.length).toBeGreaterThan(0)
+    expect(res.bundler instanceof Error).toBe(false)
+    const bundlerGas = res.bundler as Erc4337GasLimits
+
+    expect(BigInt(bundlerGas.callGasLimit)).toBeGreaterThan(0n)
+    expect(BigInt(bundlerGas.verificationGasLimit)).toBeGreaterThan(0n)
+    expect(BigInt(bundlerGas.preVerificationGas)).toBeGreaterThan(0n)
+    expect(BigInt(bundlerGas.paymasterPostOpGasLimit)).toBeGreaterThan(0n)
+    expect(BigInt(bundlerGas.paymasterVerificationGasLimit)).toBeGreaterThan(0n)
+  })
+
+  it('[ERC-4337]:Optimism | not deployed | should fail with an inner call failure but otherwise estimation should work', async () => {
+    const privs = [
+      {
+        addr: addrWithDeploySignature,
+        hash: dedicatedToOneSAPriv
+      }
+    ]
+    const smartAcc = await getSmartAccount(privs, [])
+    const opOptimism = {
+      accountAddr: smartAcc.addr,
+      signingKeyAddr: smartAcc.associatedKeys[0],
+      signingKeyType: null,
+      gasLimit: null,
+      gasFeePayment: null,
+      networkId: 'optimism',
+      nonce: 0n,
+      signature: '0x',
+      calls: [{ to: FEE_COLLECTOR, value: parseEther('1'), data: '0x' }],
+      accountOpToExecuteBefore: null,
+      meta: {
+        entryPointAuthorization:
+          '0x05404ea5dfa13ddd921cda3f587af6927cc127ee174b57c9891491bfc1f0d3d005f649f8a1fc9147405f064507bae08816638cfc441c4d0dc4eb6640e16621991b01'
+      }
+    }
+    const accountStates = await getAccountsInfo([smartAcc])
+    const accountState = accountStates[smartAcc.addr][optimism.id]
+    const response = await getEstimation(
+      smartAcc,
+      accountState,
+      opOptimism,
+      optimism,
+      providerOptimism,
+      feeTokens,
+      getNativeToCheckFromEOAs(nativeToCheck, smartAcc),
+      new BundlerSwitcher(optimism, getSignAccountOpStatus, noStateUpdateStatuses),
+      errorCallback
+    )
+
+    expect(response instanceof Error).toBe(true)
+    expect((response as Error).message).toBe(
+      'The transaction will fail because it will revert onchain. Error code: Insufficient ETH for transaction calls\n'
+    )
+  })
+
+  it('[ERC-4337]:Optimism | not deployed | should result in an error as transfer amount of erc-20 token exceed balance', async () => {
+    const privs = [
+      {
+        addr: addrWithDeploySignature,
+        hash: dedicatedToOneSAPriv
+      }
+    ]
+    const ERC20Interface = new Interface(ERC20.abi)
+    const smartAcc = await getSmartAccount(privs, [])
+    const opOptimism = {
+      accountAddr: smartAcc.addr,
+      signingKeyAddr: smartAcc.associatedKeys[0],
+      signingKeyType: null,
+      gasLimit: null,
+      gasFeePayment: null,
+      networkId: 'optimism',
+      nonce: 0n,
+      signature: '0x',
+      calls: [
+        {
+          to: '0x94b008aA00579c1307B0EF2c499aD98a8ce58e58',
+          value: 0n,
+          data: ERC20Interface.encodeFunctionData('transfer', [FEE_COLLECTOR, 100])
+        }
+      ],
+      accountOpToExecuteBefore: null,
+      meta: {
+        entryPointAuthorization:
+          '0x05404ea5dfa13ddd921cda3f587af6927cc127ee174b57c9891491bfc1f0d3d005f649f8a1fc9147405f064507bae08816638cfc441c4d0dc4eb6640e16621991b01'
+      }
+    }
+    const accountStates = await getAccountsInfo([smartAcc])
+    const accountState = accountStates[smartAcc.addr][optimism.id]
+    const response = await getEstimation(
+      smartAcc,
+      accountState,
+      opOptimism,
+      optimism,
+      providerOptimism,
+      feeTokens,
+      getNativeToCheckFromEOAs(nativeToCheck, smartAcc),
+      new BundlerSwitcher(optimism, getSignAccountOpStatus, noStateUpdateStatuses),
+      errorCallback
+    )
+
+    expect(response instanceof Error).toBe(true)
+    expect((response as Error).message).toBe(
+      'The transaction will fail because the transfer amount exceeds your account balance. Please check your balance or adjust the transfer amount.'
+    )
+  })
+
+  it('[ERC-4337]:Optimism | deployed account | should work', async () => {
+    const ambAcc = new Contract(smartAccDeployed.addr, AmbireAccount.abi, providerOptimism)
+    const nonce = await ambAcc.nonce()
+    const opOptimism = {
+      accountAddr: smartAccDeployed.addr,
+      signingKeyAddr: smartAccDeployed.associatedKeys[0],
+      signingKeyType: null,
+      gasLimit: null,
+      gasFeePayment: null,
+      networkId: 'optimism',
+      nonce,
+      signature: '0x',
+      calls: [{ to: FEE_COLLECTOR, value: 1n, data: '0x' }],
+      accountOpToExecuteBefore: null
+    }
+    const accountStates = await getAccountsInfo([smartAccDeployed])
+    const accountState = accountStates[smartAccDeployed.addr][optimism.id]
+    const response = await getEstimation(
+      smartAccDeployed,
+      accountState,
+      opOptimism,
+      optimism,
+      providerOptimism,
+      feeTokens,
+      getNativeToCheckFromEOAs(nativeToCheck, smartAccDeployed),
+      new BundlerSwitcher(optimism, getSignAccountOpStatus, noStateUpdateStatuses),
+      errorCallback
+    )
+
+    expect(response instanceof Error).toBe(false)
+    const res = response as FullEstimation
+    expect(res.provider instanceof Error).toBe(true)
+    expect(res.ambire instanceof Error).toBe(false)
+    const ambireGas = res.ambire as AmbireEstimation
+    expect(ambireGas.feePaymentOptions.length).toBeGreaterThan(0)
+    expect(res.bundler instanceof Error).toBe(false)
+    const bundlerGas = res.bundler as Erc4337GasLimits
+
+    expect(BigInt(bundlerGas.callGasLimit)).toBeGreaterThan(0n)
+    expect(BigInt(bundlerGas.verificationGasLimit)).toBeGreaterThan(0n)
+    expect(BigInt(bundlerGas.preVerificationGas)).toBeGreaterThan(0n)
+    expect(BigInt(bundlerGas.paymasterPostOpGasLimit)).toBeGreaterThan(0n)
+    expect(BigInt(bundlerGas.paymasterVerificationGasLimit)).toBeGreaterThan(0n)
+  })
+
+  it('estimates a polygon request with insufficient funds for txn and estimation should fail with transaction reverted because of insufficient funds', async () => {
+    const opPolygonFailBzNoFunds = {
+      accountAddr: smartAccountv2eip712.addr,
+      signingKeyAddr: smartAccountv2eip712.associatedKeys[0],
+      signingKeyType: null,
+      gasLimit: null,
+      gasFeePayment: null,
+      networkId: polygon.id,
+      nonce: 1n,
+      signature: '0x',
+      calls: [{ to: trezorSlot6v2NotDeployed.addr, value: parseEther('10'), data: '0x' }],
+      accountOpToExecuteBefore: null
+    }
+    const accountStates = await getAccountsInfo([smartAccountv2eip712])
+    const accountState = accountStates[smartAccountv2eip712.addr][polygon.id]
+    const response = await getEstimation(
+      smartAccountv2eip712,
+      accountState,
+      opPolygonFailBzNoFunds,
+      polygon,
+      providerPolygon,
+      feeTokens,
+      getNativeToCheckFromEOAs(nativeToCheck, smartAccountv2eip712),
+      new BundlerSwitcher(polygon, getSignAccountOpStatus, noStateUpdateStatuses),
+      errorCallback
+    )
+    expect(response instanceof Error).toBe(true)
+    expect((response as Error).message).toBe(
+      'The transaction will fail because it will revert onchain. Error code: Insufficient POL for transaction calls\n'
+    )
+  })
+
+  it('estimates a polygon request with wrong signer and estimation should fail with insufficient privileges', async () => {
+    const opPolygonFailBzNoFunds = {
+      accountAddr: smartAccountv2eip712.addr,
+      signingKeyAddr: trezorSlot6v2NotDeployed.associatedKeys[0],
+      signingKeyType: null,
+      gasLimit: null,
+      gasFeePayment: null,
+      networkId: polygon.id,
+      nonce: 1n,
+      signature: '0x',
+      calls: [{ to: trezorSlot6v2NotDeployed.addr, value: 100000n, data: '0x' }],
+      accountOpToExecuteBefore: null
+    }
+    const accountStates = await getAccountsInfo([smartAccountv2eip712])
+    const accountState = accountStates[smartAccountv2eip712.addr][polygon.id]
+
+    const response = await getEstimation(
+      { ...smartAccountv2eip712, associatedKeys: [trezorSlot6v2NotDeployed.associatedKeys[0]] },
+      accountState,
+      opPolygonFailBzNoFunds,
+      polygon,
+      providerPolygon,
+      feeTokens,
+      getNativeToCheckFromEOAs(nativeToCheck, smartAccountv2eip712),
+      new BundlerSwitcher(polygon, getSignAccountOpStatus, noStateUpdateStatuses),
+      errorCallback
+    )
+    expect(response instanceof Error).toBe(true)
+    expect((response as Error).message).toBe(
+      'The transaction will fail because your account key lacks the necessary permissions. Ensure that you have authorization to sign or use an account with sufficient privileges.'
+    )
+  })
+
+  it('[v1] estimates an expired uniswap swap and it should display error properly', async () => {
+    const op = {
+      accountAddr: v1Acc.addr,
+      signingKeyAddr: null,
+      signingKeyType: null,
+      gasLimit: null,
+      gasFeePayment: null,
+      networkId: 'ethereum',
+      nonce: 1n,
+      signature: '0x',
+      calls: [{ to, value: BigInt(0), data: expiredData }],
+      accountOpToExecuteBefore: null
+    }
+
+    const accountStates = await getAccountsInfo([v1Acc])
+    const accountState = accountStates[v1Acc.addr][ethereum.id]
+    const response = await getEstimation(
+      v1Acc,
+      accountState,
+      op,
+      ethereum,
+      provider,
+      feeTokens,
+      getNativeToCheckFromEOAs(nativeToCheck, v1Acc),
+      new BundlerSwitcher(ethereum, getSignAccountOpStatus, noStateUpdateStatuses),
+      errorCallback
+    )
+
+    expect(response instanceof Error).toBe(true)
+    expect((response as Error).message).toBe(
+      'The transaction will fail because the swap has expired. Return to the app and reinitiate the swap if you wish to proceed.'
+    )
+  })
 })

@@ -12,14 +12,15 @@ export interface BundlerEstimateResult {
 }
 
 export interface Erc4337GasLimits {
-  preVerificationGas: string
-  verificationGasLimit: string
   // this is basically gasUsed
   callGasLimit: string
+  preVerificationGas: string
+  verificationGasLimit: string
   paymasterVerificationGasLimit: string
   paymasterPostOpGasLimit: string
   gasPrice: GasSpeeds
   paymaster: AbstractPaymaster
+  nonFatalErrors?: Error[]
 }
 
 export interface FeePaymentOption {
