@@ -319,6 +319,12 @@ export class SignAccountOpController extends EventEmitter {
       errors.push(this.estimation.error.message)
     }
 
+    if (!this.gasPrices || !this.gasPrices.length) {
+      errors.push(
+        'Gas price information is currently unavailable. This may be due to network congestion or connectivity issues. Please try again in a few moments or check your internet connection.'
+      )
+    }
+
     if (
       this.estimation?.gasUsed &&
       this.#blockGasLimit &&

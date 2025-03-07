@@ -2432,8 +2432,13 @@ export class MainController extends EventEmitter {
           return null
 
         const { type } = decodeError(e)
-        let message =
-          "We couldn't retrieve the latest network fee information. If you experience issues broadcasting please select a higher fee speed."
+
+        let message = `We couldn't retrieve the latest network fee information.${
+          // Display this part of the message only if the user can broadcast.
+          this.signAccountOp.readyToSign
+            ? ' If you experience issues broadcasting please select a higher fee speed.'
+            : ''
+        }`
 
         if (type === ErrorType.ConnectivityError) {
           message = 'Network connection issue prevented us from retrieving the current network fee.'
