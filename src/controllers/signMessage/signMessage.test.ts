@@ -3,6 +3,7 @@ import { EventEmitter } from 'stream'
 
 import { describe, expect, jest, test } from '@jest/globals'
 
+import { relayerUrl } from '../../../test/config'
 import { produceMemoryStore, waitForAccountsCtrlFirstLoad } from '../../../test/helpers'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { networks } from '../../consts/networks'
@@ -10,6 +11,7 @@ import { Account } from '../../interfaces/account'
 import { Message } from '../../interfaces/userRequest'
 import { getRpcProvider } from '../../services/provider'
 import { AccountsController } from '../accounts/accounts'
+import { InviteController } from '../invite/invite'
 import { KeystoreController } from '../keystore/keystore'
 import { InternalSigner } from '../keystore/keystore.test'
 import { NetworksController } from '../networks/networks'
@@ -59,6 +61,7 @@ describe('SignMessageController', () => {
   let accountsCtrl: AccountsController
   let networksCtrl: NetworksController
   let providersCtrl: ProvidersController
+  let inviteCtrl: InviteController
 
   beforeAll(async () => {
     const storage = produceMemoryStore()
@@ -86,6 +89,7 @@ describe('SignMessageController', () => {
       () => {},
       () => {}
     )
+    inviteCtrl = new InviteController({ relayerUrl, fetch, storage })
 
     await waitForAccountsCtrlFirstLoad(accountsCtrl)
   })
@@ -96,7 +100,8 @@ describe('SignMessageController', () => {
       providersCtrl,
       networksCtrl,
       accountsCtrl,
-      {}
+      {},
+      inviteCtrl
     )
   })
 

@@ -509,6 +509,7 @@ export async function getPlainTextSignature(
     )
 
     if (
+      // @NOTE: isOG is to allow tem members to sign anything with v1 accounts regardless of safety and security
       !isOG &&
       !isAsciiAddressInMessage &&
       !isLowercaseHexAddressInMessage &&
@@ -564,6 +565,7 @@ export async function getEIP712Signature(
   if (!accountState.isV2) {
     const asString = JSON.stringify(message).toLowerCase()
     if (
+      // @NOTE: isOG is to allow tem members to sign anything with v1 accounts regardless of safety and security
       !isOG &&
       !asString.includes(account.addr.toLowerCase()) &&
       !(

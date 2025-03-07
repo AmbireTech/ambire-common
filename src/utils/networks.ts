@@ -2,6 +2,10 @@ import { JsonRpcProvider } from 'ethers'
 
 import { ChainlistNetwork, Network } from '../interfaces/network'
 
+const hardcodedRpcUrls: { [chainId: string]: string } = {
+  '11155111': 'https://eth-sepolia.public.blastapi.io'
+}
+
 const checkIsRpcUrlWorking = async (rpcUrl: string) => {
   const provider = new JsonRpcProvider(rpcUrl)
 
@@ -46,7 +50,9 @@ const convertToAmbireNetworkFormat = async (network: ChainlistNetwork): Promise<
 
     return !isApiKeyRequired
   })
-  const workingRpcUrl = await rollProviderUrlsAndFindWorking(freeHttpRpcUrls, 0)
+  const workingRpcUrl: string =
+    hardcodedRpcUrls[network.chainId.toString()] ??
+    (await rollProviderUrlsAndFindWorking(freeHttpRpcUrls, 0))
 
   let platformId = null
   let nativeAssetId = null
