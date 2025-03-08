@@ -544,7 +544,7 @@ export async function getEstimation(
   // until we get a good result. If this happens, a flag should be raised
 
   let flags = {}
-  if (!(bundlerGas instanceof Error)) flags = { ...bundlerGas }
+  if (!(bundlerGas instanceof Error)) flags = { ...bundlerGas.flags }
   return {
     provider: providerGas,
     ambire: ambireGas,

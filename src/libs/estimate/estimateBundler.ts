@@ -2,11 +2,11 @@
 /* eslint-disable no-continue */
 /* eslint-disable no-constant-condition */
 
-import { Contract, Interface } from 'ethers'
+import { Contract, Interface, toBeHex } from 'ethers'
 
-import { ERC_4337_ENTRYPOINT } from 'consts/deploy'
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import entryPointAbi from '../../../contracts/compiled/EntryPoint.json'
+import { ERC_4337_ENTRYPOINT } from '../../consts/deploy'
 import { Account, AccountOnchainState } from '../../interfaces/account'
 import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
@@ -152,12 +152,11 @@ export async function bundlerEstimate(
       userOp.paymasterVerificationGasLimit = paymasterEstimationData.paymasterVerificationGasLimit
   }
 
-  const localAccountState = { ...accountState }
   const flags: EstimationFlags = {}
   while (true) {
     // estimate
     const bundler = switcher.getBundler()
-    const estimations = await estimate(bundler, network, localAccountState, userOp, errorCallback)
+    const estimations = await estimate(bundler, network, accountState, userOp, errorCallback)
 
     // if no errors, return the results and get on with life
     if (!(estimations.estimation instanceof Error)) {
@@ -186,7 +185,7 @@ export async function bundlerEstimate(
       while (!accountNonce) {
         accountNonce = await ep.getNonce(account.addr, 0).catch(() => null)
       }
-      localAccountState.erc4337Nonce = accountNonce
+      userOp.nonce = toBeHex(accountNonce)
       flags.hasNonceDiscrepancy = true
       continue
     }

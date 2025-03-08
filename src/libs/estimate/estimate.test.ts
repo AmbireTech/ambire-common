@@ -991,6 +991,59 @@ describe('estimate', () => {
     expect(BigInt(bundlerGas.paymasterVerificationGasLimit)).toBeGreaterThan(0n)
   })
 
+  it('[ERC-4337]:Optimism | deployed account | corrupt the account info with incorrect 4337 nonce | should work regardless', async () => {
+    const ambAcc = new Contract(smartAccDeployed.addr, AmbireAccount.abi, providerOptimism)
+    const nonce = await ambAcc.nonce()
+    const opOptimism = {
+      accountAddr: smartAccDeployed.addr,
+      signingKeyAddr: smartAccDeployed.associatedKeys[0],
+      signingKeyType: null,
+      gasLimit: null,
+      gasFeePayment: null,
+      networkId: 'optimism',
+      nonce,
+      signature: '0x',
+      calls: [{ to: FEE_COLLECTOR, value: 1n, data: '0x' }],
+      accountOpToExecuteBefore: null
+    }
+    const accountStates = await getAccountsInfo([smartAccDeployed])
+    const accountState = accountStates[smartAccDeployed.addr][optimism.id]
+
+    // corrupt the nonce to be lower
+    accountState.erc4337Nonce = 6n
+
+    const response = await getEstimation(
+      smartAccDeployed,
+      accountState,
+      opOptimism,
+      optimism,
+      providerOptimism,
+      feeTokens,
+      getNativeToCheckFromEOAs(nativeToCheck, smartAccDeployed),
+      new BundlerSwitcher(optimism, getSignAccountOpStatus, noStateUpdateStatuses),
+      errorCallback
+    )
+
+    expect(response instanceof Error).toBe(false)
+    const res = response as FullEstimation
+    expect(res.provider instanceof Error).toBe(true)
+    expect(res.ambire instanceof Error).toBe(false)
+    const ambireGas = res.ambire as AmbireEstimation
+    expect(ambireGas.feePaymentOptions.length).toBeGreaterThan(0)
+    expect(res.bundler instanceof Error).toBe(false)
+    const bundlerGas = res.bundler as Erc4337GasLimits
+
+    expect(BigInt(bundlerGas.callGasLimit)).toBeGreaterThan(0n)
+    expect(BigInt(bundlerGas.verificationGasLimit)).toBeGreaterThan(0n)
+    expect(BigInt(bundlerGas.preVerificationGas)).toBeGreaterThan(0n)
+    expect(BigInt(bundlerGas.paymasterPostOpGasLimit)).toBeGreaterThan(0n)
+    expect(BigInt(bundlerGas.paymasterVerificationGasLimit)).toBeGreaterThan(0n)
+
+    // make sure the flag was raised
+    expect(bundlerGas.flags.hasNonceDiscrepancy).toBe(true)
+    expect(res.flags.hasNonceDiscrepancy).toBe(true)
+  })
+
   it('estimates a polygon request with insufficient funds for txn and estimation should fail with transaction reverted because of insufficient funds', async () => {
     const opPolygonFailBzNoFunds = {
       accountAddr: smartAccountv2eip712.addr,
