@@ -66,7 +66,7 @@ import {
   getHumanReadableEstimationError
 } from '../../libs/errorHumanizer'
 import { insufficientPaymasterFunds } from '../../libs/errorHumanizer/errors'
-import { estimate } from '../../libs/estimate/estimate'
+import { getEstimation } from '../../libs/estimate/estimate'
 import { EstimateResult } from '../../libs/estimate/interfaces'
 import { GasRecommendation, getGasPriceRecommendations } from '../../libs/gasPrice/gasPrice'
 import { humanizeAccountOp } from '../../libs/humanizer'
@@ -2564,26 +2564,18 @@ export class MainController extends EventEmitter {
             : undefined,
           { forceUpdate: true }
         ),
-        estimate(
-          this.providers.providers[localAccountOp.networkId],
-          network,
+        getEstimation(
           account,
+          await this.accounts.getOrFetchAccountOnChainState(account.addr, network.id),
           localAccountOp,
-          this.accounts.accountStates,
-          nativeToCheck,
-          // @TODO - first time calling this, portfolio is still not loaded.
+          network,
+          this.providers.providers[localAccountOp.networkId],
           feeTokens,
+          nativeToCheck,
+          this.signAccountOp.bundlerSwitcher,
           (e: ErrorRef) => {
             if (!this.signAccountOp) return
             this.emitError(e)
-          },
-          this.signAccountOp.bundlerSwitcher,
-          {
-            is4337Broadcast: isErc4337Broadcast(
-              account,
-              network,
-              this.accounts.accountStates[localAccountOp.accountAddr][localAccountOp.networkId]
-            )
           }
         ).catch((e) => {
           const { message } = getHumanReadableEstimationError(e)
@@ -2600,6 +2592,8 @@ export class MainController extends EventEmitter {
       // @race
       // if the signAccountOp has been deleted, don't continue as the request has already finished
       if (!this.signAccountOp) return
+
+      //
 
       if (estimation) {
         const currentNonceAhead =
@@ -2643,28 +2637,12 @@ export class MainController extends EventEmitter {
         }
       }
 
-      if (
-        estimation &&
-        estimation.nonFatalErrors &&
-        estimation.nonFatalErrors.find((err) => err.cause === '4337_INVALID_NONCE') &&
-        this.accounts.accountStates?.[localAccountOp.accountAddr]?.[localAccountOp.networkId]
-      ) {
-        this.accounts
-          .updateAccountState(localAccountOp.accountAddr, 'pending', [localAccountOp.networkId])
-          .then(() => this.estimateSignAccountOp())
-          .catch((error) =>
-            this.emitError({
-              level: 'major',
-              message:
-                'Failed to refetch the account state. Please try again to initialize your transaction',
-              error
-            })
-          )
-
-        // returning here means estimation will not be set => better UX as
-        // the user will not see the warning but instead
-        // just wait for the new estimation
-        return
+      // estimation.flags.hasNonceDiscrepancy is a signal from the estimation
+      // that the account state is not the latest and needs to be updated
+      if (estimation && !(estimation instanceof Error) && estimation.flags.hasNonceDiscrepancy) {
+        this.accounts.updateAccountState(localAccountOp.accountAddr, 'pending', [
+          localAccountOp.networkId
+        ])
       }
 
       // check if an RBF should be applied for the incoming transaction
@@ -2696,7 +2674,7 @@ export class MainController extends EventEmitter {
       })
 
       // if there's an estimation error, override the pending results
-      if (estimation && estimation.error) {
+      if (estimation instanceof Error) {
         this.portfolio.overridePendingResults(localAccountOp)
       }
       // update the signAccountOp controller once estimation finishes;

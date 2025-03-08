@@ -2,9 +2,11 @@
 /* eslint-disable no-continue */
 /* eslint-disable no-constant-condition */
 
-import { Interface } from 'ethers'
+import { Contract, Interface } from 'ethers'
 
+import { ERC_4337_ENTRYPOINT } from 'consts/deploy'
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
+import entryPointAbi from '../../../contracts/compiled/EntryPoint.json'
 import { Account, AccountOnchainState } from '../../interfaces/account'
 import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
@@ -19,7 +21,7 @@ import { TokenResult } from '../portfolio'
 import { UserOperation } from '../userOperation/types'
 import { getSigForCalculations, getUserOperation } from '../userOperation/userOperation'
 import { estimateWithRetries } from './estimateWithRetries'
-import { Erc4337GasLimits } from './interfaces'
+import { Erc4337GasLimits, EstimationFlags } from './interfaces'
 
 async function estimate(
   bundler: Bundler,
@@ -150,10 +152,12 @@ export async function bundlerEstimate(
       userOp.paymasterVerificationGasLimit = paymasterEstimationData.paymasterVerificationGasLimit
   }
 
+  const localAccountState = { ...accountState }
+  const flags: EstimationFlags = {}
   while (true) {
     // estimate
     const bundler = switcher.getBundler()
-    const estimations = await estimate(bundler, network, accountState, userOp, errorCallback)
+    const estimations = await estimate(bundler, network, localAccountState, userOp, errorCallback)
 
     // if no errors, return the results and get on with life
     if (!(estimations.estimation instanceof Error)) {
@@ -165,8 +169,26 @@ export async function bundlerEstimate(
         paymasterVerificationGasLimit: gasData.paymasterVerificationGasLimit,
         paymasterPostOpGasLimit: gasData.paymasterPostOpGasLimit,
         gasPrice: estimations.gasPrice as GasSpeeds,
-        paymaster
+        paymaster,
+        flags
       }
+    }
+
+    // try again if the error is 4337_INVALID_NONCE
+    if (
+      estimations.nonFatalErrors.length &&
+      estimations.nonFatalErrors.find((err) => err.cause === '4337_INVALID_NONCE')
+    ) {
+      const ep = new Contract(ERC_4337_ENTRYPOINT, entryPointAbi, provider)
+      let accountNonce = null
+      // infinite loading is fine here as this is how 4337_INVALID_NONCE error
+      // was handled in previous cases and worked pretty well: retry until fix
+      while (!accountNonce) {
+        accountNonce = await ep.getNonce(account.addr, 0).catch(() => null)
+      }
+      localAccountState.erc4337Nonce = accountNonce
+      flags.hasNonceDiscrepancy = true
+      continue
     }
 
     // if there's an error but we can't switch, return the error

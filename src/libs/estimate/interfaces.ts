@@ -11,6 +11,10 @@ export interface BundlerEstimateResult {
   paymasterPostOpGasLimit: Hex
 }
 
+export interface EstimationFlags {
+  hasNonceDiscrepancy?: boolean
+}
+
 export interface Erc4337GasLimits {
   // this is basically gasUsed
   callGasLimit: string
@@ -21,6 +25,7 @@ export interface Erc4337GasLimits {
   gasPrice: GasSpeeds
   paymaster: AbstractPaymaster
   nonFatalErrors?: Error[]
+  flags: EstimationFlags
 }
 
 export interface FeePaymentOption {
@@ -69,4 +74,7 @@ export interface FullEstimation {
   // The user can still broadcast with EOA but we can also react
   // to this error by setting the correct nonce and re-estimating
   nonFatalErrors?: Error[]
+  // flags that signal to the app what needs to be handled if a state
+  // inconsistency issue was found during estimation
+  flags: EstimationFlags
 }

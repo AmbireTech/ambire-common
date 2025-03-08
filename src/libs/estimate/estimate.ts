@@ -536,11 +536,19 @@ export async function getEstimation(
   }
 
   // TODO: if the bundler is the preferred method of estimation, re-estimate
-  // if we can switch it and there's no ambire gas error
+  // we can switch it if there's no ambire gas error
 
+  // TODO: if there's a nonce discrepancy, a few things need to happen:
+  // * raise a flag and tell the account state to update itself
+  // if 4337 discrepancy, fetch the new entry point nonce and re estimate the bundler only
+  // until we get a good result. If this happens, a flag should be raised
+
+  let flags = {}
+  if (!(bundlerGas instanceof Error)) flags = { ...bundlerGas }
   return {
     provider: providerGas,
     ambire: ambireGas,
-    bundler: bundlerGas
+    bundler: bundlerGas,
+    flags
   }
 }
