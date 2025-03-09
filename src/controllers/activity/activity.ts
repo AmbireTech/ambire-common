@@ -623,17 +623,6 @@ export class ActivityController extends EventEmitter {
     return !ops.length ? null : ops.reduce((m, e) => (e.nonce > m.nonce ? e : m))
   }
 
-  getLastTxn(networkId: Network['id']): SubmittedAccountOp | null {
-    if (
-      !this.#selectedAccount.account ||
-      !this.#accountsOps[this.#selectedAccount.account.addr] ||
-      !this.#accountsOps[this.#selectedAccount.account.addr][networkId]
-    )
-      return null
-
-    return this.#accountsOps[this.#selectedAccount.account.addr][networkId][0]
-  }
-
   async findMessage(account: string, filter: (item: SignedMessage) => boolean) {
     await this.#initialLoadPromise
 

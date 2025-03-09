@@ -13,6 +13,7 @@ export interface BundlerEstimateResult {
 
 export interface EstimationFlags {
   hasNonceDiscrepancy?: boolean
+  has4337NonceDiscrepancy?: boolean
 }
 
 export interface Erc4337GasLimits {
@@ -61,7 +62,8 @@ export interface ProviderEstimation {
 export interface AmbireEstimation {
   gasUsed: bigint
   feePaymentOptions: FeePaymentOption[]
-  currentAccountNonce: number
+  ambireAccountNonce: number
+  flags: EstimationFlags
 }
 
 export interface FullEstimation {

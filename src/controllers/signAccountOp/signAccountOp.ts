@@ -1450,6 +1450,8 @@ export class SignAccountOpController extends EventEmitter {
         // Relayer
         this.#addFeePayment()
 
+        // TODO: THINK ABOUT FETCHING THE NONCE FROM THE PENDING STATE AT THIS POINT
+        // DO SMT LIKE: FETCH THE NONCE, IF HIGHER USE IT
         this.accountOp.signature = await getExecuteSignature(
           this.#network,
           this.accountOp,

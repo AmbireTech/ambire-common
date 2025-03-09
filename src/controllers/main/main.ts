@@ -2447,6 +2447,27 @@ export class MainController extends EventEmitter {
     this.emitUpdate()
   }
 
+  async getPortfolioSimulationPromise(op: AccountOp) {
+    const network = this.networks.networks.find((net) => net.id === op.networkId)!
+    const accOpsForSimulation = getAccountOpsForSimulation(
+      this.accounts.accounts.find((acc) => acc.addr === op.accountAddr)!,
+      this.actions.visibleActionsQueue,
+      network,
+      op
+    )
+    return this.portfolio.updateSelectedAccount(
+      op.accountAddr,
+      network,
+      accOpsForSimulation
+        ? {
+            accountOps: accOpsForSimulation,
+            states: await this.accounts.getOrFetchAccountStates(op.accountAddr)
+          }
+        : undefined,
+      { forceUpdate: true }
+    )
+  }
+
   // @TODO: protect this from race conditions/simultanous executions
   async estimateSignAccountOp({ shouldTraceCall = false }: { shouldTraceCall?: boolean } = {}) {
     try {
@@ -2542,28 +2563,11 @@ export class MainController extends EventEmitter {
 
       this.portfolio.addTokensToBeLearned(additionalHints, network.id)
 
-      const accountOpsToBeSimulatedByNetwork = getAccountOpsForSimulation(
-        account,
-        this.actions.visibleActionsQueue,
-        network,
-        this.signAccountOp.accountOp
-      )
-
       const [, estimation] = await Promise.all([
         // NOTE: we are not emitting an update here because the portfolio controller will do that
         // NOTE: the portfolio controller has it's own logic of constructing/caching providers, this is intentional, as
         // it may have different needs
-        this.portfolio.updateSelectedAccount(
-          localAccountOp.accountAddr,
-          network,
-          accountOpsToBeSimulatedByNetwork
-            ? {
-                accountOps: accountOpsToBeSimulatedByNetwork,
-                states: await this.accounts.getOrFetchAccountStates(localAccountOp.accountAddr)
-              }
-            : undefined,
-          { forceUpdate: true }
-        ),
+        this.getPortfolioSimulationPromise(localAccountOp),
         getEstimation(
           account,
           await this.accounts.getOrFetchAccountOnChainState(account.addr, network.id),
@@ -2593,56 +2597,28 @@ export class MainController extends EventEmitter {
       // if the signAccountOp has been deleted, don't continue as the request has already finished
       if (!this.signAccountOp) return
 
-      //
-
-      if (estimation) {
-        const currentNonceAhead =
-          BigInt(estimation.currentAccountNonce) > (localAccountOp.nonce ?? 0n)
-
-        // if the nonce from the estimation is bigger than the one in localAccountOp,
-        // override the accountState and accountOp with the newly detected nonce
-        if (currentNonceAhead) {
-          localAccountOp.nonce = BigInt(estimation.currentAccountNonce)
-          this.signAccountOp.accountOp.nonce = BigInt(estimation.currentAccountNonce)
-
-          if (this.accounts.accountStates?.[localAccountOp.accountAddr]?.[localAccountOp.networkId])
-            this.accounts.accountStates[localAccountOp.accountAddr][
-              localAccountOp.networkId
-            ].nonce = localAccountOp.nonce
-        }
-
-        const hasNonceDiscrepancy = estimation.error?.cause === 'NONCE_FAILURE'
-        const lastTxn = this.activity.getLastTxn(localAccountOp.networkId)
-        const SAHasOldNonceOnARelayerNetwork =
-          isSmartAccount(account) &&
-          !network.erc4337.enabled &&
-          lastTxn &&
-          localAccountOp.nonce === lastTxn.nonce &&
-          lastTxn.success &&
-          lastTxn.status === AccountOpStatus.Success
-
-        if (hasNonceDiscrepancy || SAHasOldNonceOnARelayerNetwork) {
-          this.accounts
-            .updateAccountState(localAccountOp.accountAddr, 'pending', [localAccountOp.networkId])
-            .then(() => this.estimateSignAccountOp())
-            .catch((error) =>
-              this.emitError({
-                level: 'major',
-                message:
-                  'Failed to refetch the account state. Please try again to initialize your transaction',
-                error
-              })
-            )
-          return
-        }
-      }
-
       // estimation.flags.hasNonceDiscrepancy is a signal from the estimation
       // that the account state is not the latest and needs to be updated
-      if (estimation && !(estimation instanceof Error) && estimation.flags.hasNonceDiscrepancy) {
+      if (
+        estimation &&
+        !(estimation instanceof Error) &&
+        (estimation.flags.hasNonceDiscrepancy || estimation.flags.has4337NonceDiscrepancy)
+      ) {
         this.accounts.updateAccountState(localAccountOp.accountAddr, 'pending', [
           localAccountOp.networkId
         ])
+      }
+
+      // estimation.flags.hasNonceDiscrepancy is a signal from the estimation
+      // that we should update the portfolio to get a correct simulation
+      if (
+        estimation &&
+        !(estimation instanceof Error) &&
+        !(estimation.ambire instanceof Error) &&
+        estimation.flags.hasNonceDiscrepancy
+      ) {
+        localAccountOp.nonce = BigInt(estimation.ambire.ambireAccountNonce)
+        await this.getPortfolioSimulationPromise(localAccountOp)
       }
 
       // check if an RBF should be applied for the incoming transaction

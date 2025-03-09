@@ -16,7 +16,7 @@ import { getHumanReadableEstimationError } from '../errorHumanizer'
 import { getProbableCallData } from '../gasPrice/gasPrice'
 import { GasTankTokenResult, TokenResult } from '../portfolio'
 import { getActivatorCall, shouldIncludeActivatorCall } from '../userOperation/userOperation'
-import { AmbireEstimation, FeePaymentOption } from './interfaces'
+import { AmbireEstimation, EstimationFlags, FeePaymentOption } from './interfaces'
 
 export function getInnerCallFailure(
   estimationOp: { success: boolean; err: string },
@@ -108,16 +108,23 @@ export async function ambireEstimateGas(
     ]
   ] = ambireEstimation
 
-  const opNonce = isStillPureEoa ? BigInt(EOA_SIMULATION_NONCE) : op.nonce!
-  const ambireEstimationError =
-    getInnerCallFailure(
-      accountOp,
-      calls,
-      network,
-      feeTokens.find((token) => token.address === ZeroAddress && !token.flags.onGasTank)?.amount
-    ) || getNonceDiscrepancyFailure(opNonce, outcomeNonce)
+  const ambireEstimationError = getInnerCallFailure(
+    accountOp,
+    calls,
+    network,
+    feeTokens.find((token) => token.address === ZeroAddress && !token.flags.onGasTank)?.amount
+  )
 
   if (ambireEstimationError) return ambireEstimationError
+
+  // if there's a nonce discrepancy, it means the portfolio simulation
+  // will fail so we need to update the account state and the portfolio
+  const opNonce = isStillPureEoa ? BigInt(EOA_SIMULATION_NONCE) : op.nonce!
+  const nonceError = getNonceDiscrepancyFailure(opNonce, outcomeNonce)
+  const flags: EstimationFlags = {}
+  if (nonceError) {
+    flags.hasNonceDiscrepancy = true
+  }
 
   const gasUsed = deployment.gasUsed + accountOpToExecuteBefore.gasUsed + accountOp.gasUsed
 
@@ -172,6 +179,7 @@ export async function ambireEstimateGas(
   return {
     gasUsed,
     feePaymentOptions: [...feeTokenOptions, ...nativeTokenOptions],
-    currentAccountNonce: accountOp.success ? Number(outcomeNonce - 1n) : Number(outcomeNonce)
+    ambireAccountNonce: accountOp.success ? Number(outcomeNonce - 1n) : Number(outcomeNonce),
+    flags
   }
 }

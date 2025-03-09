@@ -183,10 +183,10 @@ export async function bundlerEstimate(
       // infinite loading is fine here as this is how 4337_INVALID_NONCE error
       // was handled in previous cases and worked pretty well: retry until fix
       while (!accountNonce) {
-        accountNonce = await ep.getNonce(account.addr, 0).catch(() => null)
+        accountNonce = await ep.getNonce(account.addr, 0, { blockTag: 'pending' }).catch(() => null)
       }
       userOp.nonce = toBeHex(accountNonce)
-      flags.hasNonceDiscrepancy = true
+      flags.has4337NonceDiscrepancy = true
       continue
     }
 
