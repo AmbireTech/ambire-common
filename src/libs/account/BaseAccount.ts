@@ -2,6 +2,7 @@ import { Account, AccountOnchainState } from '../../interfaces/account'
 import { Network } from '../../interfaces/network'
 import { AccountOp } from '../accountOp/accountOp'
 import { FeePaymentOption, FullEstimationSummary } from '../estimate/interfaces'
+import { TokenResult } from '../portfolio'
 
 export abstract class BaseAccount {
   protected account: Account
@@ -21,7 +22,7 @@ export abstract class BaseAccount {
     // all of the options below need to be passed. Each implementation
     // decides on its own which are actually important for it
     options: {
-      feePaymentOption: FeePaymentOption
+      feeToken: TokenResult
       network: Network
       op: AccountOp
       accountState: AccountOnchainState

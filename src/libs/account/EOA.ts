@@ -9,6 +9,7 @@ import {
   FullEstimationSummary,
   ProviderEstimation
 } from '../estimate/interfaces'
+import { TokenResult } from '../portfolio'
 import { BaseAccount } from './BaseAccount'
 
 // this class describes a plain EOA that cannot transition
@@ -32,7 +33,7 @@ export class EOA extends BaseAccount {
   getGasUsed(
     estimation: FullEstimationSummary,
     options: {
-      feePaymentOption: FeePaymentOption
+      feeToken: TokenResult
       network: Network
       op: AccountOp
       accountState: AccountOnchainState

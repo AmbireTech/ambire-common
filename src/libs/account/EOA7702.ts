@@ -5,6 +5,7 @@ import { AccountOnchainState } from '../../interfaces/account'
 import { Network } from '../../interfaces/network'
 import { AccountOp } from '../accountOp/accountOp'
 import { FeePaymentOption, FullEstimationSummary } from '../estimate/interfaces'
+import { TokenResult } from '../portfolio'
 import { BaseAccount } from './BaseAccount'
 
 // this class describes an EOA that CAN transition to 7702
@@ -19,7 +20,7 @@ export class EOA7702 extends BaseAccount {
   getGasUsed(
     estimation: FullEstimationSummary,
     options: {
-      feePaymentOption: FeePaymentOption
+      feeToken: TokenResult
       network: Network
       op: AccountOp
       accountState: AccountOnchainState
@@ -27,8 +28,7 @@ export class EOA7702 extends BaseAccount {
   ): bigint {
     if (estimation.error || !estimation.ambireEstimation) return 0n
 
-    const paymentToken = options.feePaymentOption.token
-    const isNative = paymentToken.address === ZeroAddress && !paymentToken.flags.onGasTank
+    const isNative = options.feeToken.address === ZeroAddress && !options.feeToken.flags.onGasTank
     if (isNative) {
       if (options.accountState.isSmarterEoa) {
         // arbitrum's gasLimit is special as the gasPrice is contained in it as well.

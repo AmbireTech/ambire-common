@@ -30,7 +30,12 @@ import { estimateEOA } from './estimateEOA'
 import { estimateGas } from './estimateGas'
 import { getFeeTokenForEstimate } from './estimateHelpers'
 import { estimateWithRetries, retryOnTimeout } from './estimateWithRetries'
-import { EstimateResult, FeePaymentOption, FullEstimation } from './interfaces'
+import {
+  EstimateResult,
+  FeePaymentOption,
+  FullEstimation,
+  FullEstimationSummary
+} from './interfaces'
 import { providerEstimateGas } from './providerEstimateGas'
 
 const abiCoder = new AbiCoder()
@@ -550,5 +555,17 @@ export async function getEstimation(
     ambire: ambireGas,
     bundler: bundlerGas,
     flags
+  }
+}
+
+export function getEstimationSummary(estimation: FullEstimation | Error): FullEstimationSummary {
+  if (estimation instanceof Error) {
+    return { error: estimation }
+  }
+
+  return {
+    providerEstimation: !(estimation.provider instanceof Error) ? estimation.provider : undefined,
+    ambireEstimation: !(estimation.ambire instanceof Error) ? estimation.ambire : undefined,
+    bundlerEstimation: !(estimation.bundler instanceof Error) ? estimation.bundler : undefined
   }
 }

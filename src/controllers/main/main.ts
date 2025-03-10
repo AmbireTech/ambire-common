@@ -1,8 +1,9 @@
 /* eslint-disable @typescript-eslint/brace-style */
 
 import { ethErrors } from 'eth-rpc-errors'
-import { getAddress, getBigInt, Interface, isAddress } from 'ethers'
+import { getAddress, getBigInt, Interface, isAddress, ZeroAddress } from 'ethers'
 
+import { getBaseAccount } from 'libs/account/getBaseAccount'
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json'
 import EmittableError from '../../classes/EmittableError'
@@ -66,8 +67,7 @@ import {
   getHumanReadableEstimationError
 } from '../../libs/errorHumanizer'
 import { insufficientPaymasterFunds } from '../../libs/errorHumanizer/errors'
-import { getEstimation } from '../../libs/estimate/estimate'
-import { EstimateResult } from '../../libs/estimate/interfaces'
+import { getEstimation, getEstimationSummary } from '../../libs/estimate/estimate'
 import { GasRecommendation, getGasPriceRecommendations } from '../../libs/gasPrice/gasPrice'
 import { humanizeAccountOp } from '../../libs/humanizer'
 import { KeyIterator } from '../../libs/keyIterator/keyIterator'
@@ -723,7 +723,7 @@ export class MainController extends EventEmitter {
     this.emitUpdate()
   }
 
-  async traceCall(estimation: EstimateResult) {
+  async traceCall(gasUsed: bigint) {
     const accountOp = this.signAccountOp?.accountOp
     if (!accountOp) return
 
@@ -764,7 +764,7 @@ export class MainController extends EventEmitter {
         accountOp,
         provider,
         state,
-        estimation.gasUsed,
+        gasUsed,
         gasPrice,
         !network.rpcNoStateOverride
       )
@@ -1946,9 +1946,7 @@ export class MainController extends EventEmitter {
       canBecomeSmarterOnChain(
         account,
         accountState,
-        this.keystore.keys.filter((key) =>
-          this.selectedAccount.account!.associatedKeys.includes(key.addr)
-        )
+        this.keystore.getAccountKeys(this.selectedAccount.account!)
       )
     ) {
       // check if the 7702 authorization is already visible
@@ -2561,6 +2559,10 @@ export class MainController extends EventEmitter {
 
       this.portfolio.addTokensToBeLearned(additionalHints, network.id)
 
+      const accountState = await this.accounts.getOrFetchAccountOnChainState(
+        account.addr,
+        network.id
+      )
       const [, estimation] = await Promise.all([
         // NOTE: we are not emitting an update here because the portfolio controller will do that
         // NOTE: the portfolio controller has it's own logic of constructing/caching providers, this is intentional, as
@@ -2568,7 +2570,7 @@ export class MainController extends EventEmitter {
         this.getPortfolioSimulationPromise(localAccountOp),
         getEstimation(
           account,
-          await this.accounts.getOrFetchAccountOnChainState(account.addr, network.id),
+          accountState,
           localAccountOp,
           network,
           this.providers.providers[localAccountOp.networkId],
@@ -2653,9 +2655,21 @@ export class MainController extends EventEmitter {
       }
       // update the signAccountOp controller once estimation finishes;
       // this eliminates the infinite loading bug if the estimation comes slower
-      if (this.signAccountOp && estimation) {
+      if (this.signAccountOp && estimation && !(estimation instanceof Error)) {
         this.signAccountOp.update({ estimation, rbfAccountOps })
-        if (shouldTraceCall) this.traceCall(estimation)
+        const baseAcc = getBaseAccount(account, accountState, this.keystore.getAccountKeys(account))
+        if (shouldTraceCall)
+          this.traceCall(
+            baseAcc.getGasUsed(getEstimationSummary(estimation), {
+              accountState,
+              // the fee token is always native for the trace call
+              feeToken: feeTokens.find(
+                (tok) => tok.address === ZeroAddress && !tok.flags.onGasTank
+              ) as TokenResult,
+              network,
+              op: localAccountOp
+            })
+          )
       }
     } catch (error: any) {
       this.signAccountOp?.calculateWarnings()

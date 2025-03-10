@@ -12,6 +12,7 @@ import {
 import { concat, getBytes, hexlify, keccak256, Mnemonic, toUtf8Bytes, Wallet } from 'ethers'
 import scrypt from 'scrypt-js'
 
+import { Account } from 'interfaces/account'
 import EmittableError from '../../classes/EmittableError'
 import { DERIVATION_OPTIONS, HD_PATH_TEMPLATE_TYPE } from '../../consts/derivation'
 import { Banner } from '../../interfaces/banner'
@@ -969,6 +970,10 @@ export class KeystoreController extends EventEmitter {
         ]
       }
     ]
+  }
+
+  getAccountKeys(acc: Account): Key[] {
+    return this.keys.filter((key) => acc.associatedKeys.includes(key.addr))
   }
 
   toJSON() {

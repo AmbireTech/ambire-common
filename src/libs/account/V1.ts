@@ -3,6 +3,7 @@ import { AccountOnchainState } from '../../interfaces/account'
 import { Network } from '../../interfaces/network'
 import { AccountOp } from '../accountOp/accountOp'
 import { FeePaymentOption, FullEstimationSummary } from '../estimate/interfaces'
+import { TokenResult } from '../portfolio'
 import { BaseAccount } from './BaseAccount'
 
 // this class describes a plain EOA that cannot transition
@@ -16,7 +17,7 @@ export class V1 extends BaseAccount {
     estimation: FullEstimationSummary,
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     options: {
-      feePaymentOption: FeePaymentOption
+      feeToken: TokenResult
       network: Network
       op: AccountOp
       accountState: AccountOnchainState

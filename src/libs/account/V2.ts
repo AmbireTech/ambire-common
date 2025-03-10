@@ -3,6 +3,7 @@ import { AccountOnchainState } from '../../interfaces/account'
 import { Network } from '../../interfaces/network'
 import { AccountOp } from '../accountOp/accountOp'
 import { FeePaymentOption, FullEstimationSummary } from '../estimate/interfaces'
+import { TokenResult } from '../portfolio'
 import { BaseAccount } from './BaseAccount'
 
 // this class describes a plain EOA that cannot transition
@@ -15,7 +16,7 @@ export class V2 extends BaseAccount {
   getGasUsed(
     estimation: FullEstimationSummary,
     options: {
-      feePaymentOption: FeePaymentOption
+      feeToken: TokenResult
       network: Network
       op: AccountOp
       accountState: AccountOnchainState

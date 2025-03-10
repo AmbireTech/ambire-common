@@ -653,7 +653,7 @@ export class SignAccountOpController extends EventEmitter {
 
     if (this.estimation && this.selectedOption) {
       this.gasUsed = this.baseAccount.getGasUsed(this.estimation, {
-        feePaymentOption: this.selectedOption,
+        feeToken: this.selectedOption.token,
         op: this.accountOp,
         accountState: this.accountState,
         network: this.#network
