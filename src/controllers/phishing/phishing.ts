@@ -11,6 +11,12 @@ const METAMASK_BLACKLIST_URL =
 const PHANTOM_BLACKLIST_URL =
   'https://api.github.com/repos/phantom/blocklist/contents/blocklist.yaml?ref=master'
 
+type StoredPhishingDetection = {
+  timestamp: number
+  metamaskBlacklist: string[]
+  phantomBlacklist: string[]
+} | null
+
 export const domainToParts = (domain: string) => {
   try {
     return domain.split('.').reverse()
@@ -73,7 +79,11 @@ export class PhishingController extends EventEmitter {
   }
 
   async #load() {
-    const storedPhishingDetection = await this.#storage.get('phishingDetection', null)
+    const storedPhishingDetection: StoredPhishingDetection = await this.#storage.get(
+      'phishingDetection',
+      null
+    )
+
     if (storedPhishingDetection) {
       this.#blacklist = Array.from(
         new Set([
@@ -85,13 +95,7 @@ export class PhishingController extends EventEmitter {
     await this.#update(storedPhishingDetection)
   }
 
-  async #update(
-    storedPhishingDetection: {
-      timestamp: number
-      metamaskBlacklist: string[]
-      phantomBlacklist: string[]
-    } | null
-  ) {
+  async #update(storedPhishingDetection: StoredPhishingDetection) {
     this.updateStatus = 'LOADING'
     this.emitUpdate()
 
@@ -149,7 +153,12 @@ export class PhishingController extends EventEmitter {
     const sixHoursInMs = 6 * 60 * 60 * 1000
 
     if (this.#lastStorageUpdate && Date.now() - this.#lastStorageUpdate < sixHoursInMs) return
-    const storedPhishingDetection = await this.#storage.get('phishingDetection', null)
+    const storedPhishingDetection: StoredPhishingDetection = await this.#storage.get(
+      'phishingDetection',
+      null
+    )
+
+    if (!storedPhishingDetection) return
 
     if (Date.now() - storedPhishingDetection.timestamp >= sixHoursInMs) {
       await this.#update(storedPhishingDetection)
