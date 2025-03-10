@@ -647,11 +647,11 @@ export class MainController extends EventEmitter {
     this.signAccOpInitError = null
 
     this.signAccountOp = new SignAccountOpController(
-      this.accounts,
       this.keystore,
       this.portfolio,
       this.#externalSignerControllers,
       this.selectedAccount.account,
+      this.accounts.accountStates[this.selectedAccount.account.addr][network.id],
       network,
       actionId,
       accountOp,

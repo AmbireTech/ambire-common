@@ -797,6 +797,44 @@ describe('estimate', () => {
     expect(res.bundler instanceof Error).toBe(true)
   })
 
+  it('Optimism | deployed account | should put a lower account nonce in account op and ambire etimation should raise a nonce discrepancy flag', async () => {
+    const opOptimism = {
+      accountAddr: smartAccDeployed.addr,
+      signingKeyAddr: smartAccDeployed.associatedKeys[0],
+      signingKeyType: null,
+      gasLimit: null,
+      gasFeePayment: null,
+      networkId: 'optimism',
+      nonce: 6n, // corrupt the nonce
+      signature: '0x',
+      calls: [{ to: FEE_COLLECTOR, value: 1n, data: '0x' }],
+      accountOpToExecuteBefore: null
+    }
+    const accountStates = await getAccountsInfo([smartAccDeployed])
+    const accountState = accountStates[smartAccDeployed.addr][optimism.id]
+    const response = await getEstimation(
+      smartAccDeployed,
+      accountState,
+      opOptimism,
+      optimism,
+      providerOptimism,
+      feeTokens,
+      getNativeToCheckFromEOAs(nativeToCheck, smartAccDeployed),
+      new BundlerSwitcher(optimism, getSignAccountOpStatus, noStateUpdateStatuses),
+      errorCallback
+    )
+
+    expect(response instanceof Error).toBe(false)
+    const res = response as FullEstimation
+    expect(res.provider instanceof Error).toBe(true)
+    expect(res.ambire instanceof Error).toBe(false)
+    expect(res.bundler instanceof Error).toBe(false)
+    const ambireGas = res.ambire as AmbireEstimation
+    expect(ambireGas.feePaymentOptions.length).toBeGreaterThan(0)
+    expect(ambireGas.ambireAccountNonce).toBe(7)
+    expect(ambireGas.flags.hasNonceDiscrepancy).toBe(true)
+  })
+
   it('[ERC-4337]:Optimism | not deployed | should work', async () => {
     const privs = [
       {
@@ -1040,8 +1078,8 @@ describe('estimate', () => {
     expect(BigInt(bundlerGas.paymasterVerificationGasLimit)).toBeGreaterThan(0n)
 
     // make sure the flag was raised
-    expect(bundlerGas.flags.hasNonceDiscrepancy).toBe(true)
-    expect(res.flags.hasNonceDiscrepancy).toBe(true)
+    expect(bundlerGas.flags.has4337NonceDiscrepancy).toBe(true)
+    expect(res.flags.has4337NonceDiscrepancy).toBe(true)
   })
 
   it('estimates a polygon request with insufficient funds for txn and estimation should fail with transaction reverted because of insufficient funds', async () => {
