@@ -154,7 +154,7 @@ export class Portfolio {
       errors.push({
         name: PORTFOLIO_LIB_ERROR_NAMES.ApiHintsError,
         message: errorMesssage,
-        level: 'silent'
+        level: 'critical'
       })
       // It's important for DX to see this error
       // eslint-disable-next-line no-console

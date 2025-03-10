@@ -784,7 +784,6 @@ export class PortfolioController extends EventEmitter {
               networkResult!.tokens
             )
 
-            console.log('readyToLearnTokens', readyToLearnTokens)
             if (readyToLearnTokens.length) {
               await this.learnTokens(readyToLearnTokens, network.id)
             }
