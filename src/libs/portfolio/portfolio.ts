@@ -43,12 +43,8 @@ export const LIMITS: Limits = {
 }
 
 export const PORTFOLIO_LIB_ERROR_NAMES = {
-  /** External hints API (Velcro) request failed but fallback is sufficient */
-  NonCriticalApiHintsError: 'NonCriticalApiHintsError',
-  /** External API (Velcro) hints are older than X minutes */
-  StaleApiHintsError: 'StaleApiHintsError',
-  /** No external API (Velcro) hints are available- the request failed without fallback */
-  NoApiHintsError: 'NoApiHintsError',
+  /** The hints request failed */
+  ApiHintsError: 'ApiHintsError',
   /** One or more cena request has failed */
   PriceFetchError: 'PriceFetchError'
 }
@@ -62,7 +58,6 @@ const defaultOptions: GetOptions = {
   baseCurrency: 'usd',
   blockTag: 'latest',
   priceRecency: 0,
-  previousHintsFromExternalAPI: null,
   fetchPinned: true
 }
 
@@ -151,33 +146,16 @@ export class Portfolio {
         })
 
         if (hintsFromExternalAPI) {
-          hintsFromExternalAPI.lastUpdate = Date.now()
           hints = stripExternalHintsAPIResponse(hintsFromExternalAPI) as Hints
         }
       }
     } catch (error: any) {
       const errorMesssage = `Failed to fetch hints from Velcro for networkId (${networkId}): ${error.message}`
-      if (localOpts.previousHintsFromExternalAPI) {
-        hints = { ...localOpts.previousHintsFromExternalAPI }
-        const TEN_MINUTES = 10 * 60 * 1000
-        const lastUpdate = localOpts.previousHintsFromExternalAPI.lastUpdate
-        const isLastUpdateTooOld = Date.now() - lastUpdate > TEN_MINUTES
-
-        errors.push({
-          name: isLastUpdateTooOld
-            ? PORTFOLIO_LIB_ERROR_NAMES.StaleApiHintsError
-            : PORTFOLIO_LIB_ERROR_NAMES.NonCriticalApiHintsError,
-          message: errorMesssage,
-          level: 'critical'
-        })
-      } else {
-        errors.push({
-          name: PORTFOLIO_LIB_ERROR_NAMES.NoApiHintsError,
-          message: errorMesssage,
-          level: 'silent'
-        })
-      }
-
+      errors.push({
+        name: PORTFOLIO_LIB_ERROR_NAMES.ApiHintsError,
+        message: errorMesssage,
+        level: 'silent'
+      })
       // It's important for DX to see this error
       // eslint-disable-next-line no-console
       console.error(errorMesssage)

@@ -96,7 +96,7 @@ export interface ExtendedError extends Error {
   simulationErrorMsg?: string
 }
 
-type ExtendedErrorWithLevel = ExtendedError & {
+export type ExtendedErrorWithLevel = ExtendedError & {
   level: 'critical' | 'warning' | 'silent'
 }
 
@@ -210,7 +210,6 @@ export interface GetOptions {
   simulation?: GetOptionsSimulation
   priceCache?: PriceCache
   priceRecency: number
-  previousHintsFromExternalAPI?: StrippedExternalHintsAPIResponse | null
   fetchPinned: boolean
   additionalErc20Hints?: Hints['erc20s']
   additionalErc721Hints?: Hints['erc721s']
@@ -221,7 +220,7 @@ export interface PreviousHintsStorage {
   learnedTokens: { [network in NetworkId]: { [tokenAddress: string]: string | null } }
   learnedNfts: { [network in NetworkId]: { [nftAddress: string]: bigint[] } }
   fromExternalAPI: {
-    [networkAndAccountKey: string]: GetOptions['previousHintsFromExternalAPI']
+    [networkAndAccountKey: string]: StrippedExternalHintsAPIResponse | null
   }
 }
 

@@ -1,4 +1,4 @@
-import { Contract, formatUnits, ZeroAddress } from 'ethers'
+import { Contract, formatUnits, getAddress, ZeroAddress } from 'ethers'
 
 import IERC20 from '../../../contracts/compiled/IERC20.json'
 import gasTankFeeTokens from '../../consts/gasTankFeeTokens'
@@ -7,10 +7,13 @@ import { Account, AccountId } from '../../interfaces/account'
 import { Network, NetworkId } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
 import { isSmartAccount } from '../account/account'
+import { PORTFOLIO_HINT_ERRORS } from './constants'
 import { CustomToken, TokenPreference } from './customToken'
 import {
   AccountState,
   AdditionalPortfolioNetworkResult,
+  ExtendedErrorWithLevel,
+  ExternalHintsAPIResponse,
   NetworkState,
   PortfolioGasTankResult,
   PreviousHintsStorage,
@@ -235,13 +238,12 @@ export const stripExternalHintsAPIResponse = (
   response: StrippedExternalHintsAPIResponse | null
 ): StrippedExternalHintsAPIResponse | null => {
   if (!response) return null
-
-  const { erc20s, erc721s, lastUpdate } = response
+  const { erc20s, erc721s } = response
 
   return {
     erc20s,
     erc721s,
-    lastUpdate
+    lastUpdate: Date.now()
   }
 }
 
@@ -472,4 +474,99 @@ export const isPortfolioGasTankResult = (
   result: NetworkState['result']
 ): result is PortfolioGasTankResult => {
   return !!result && 'gasTankTokens' in result && Array.isArray(result.gasTankTokens)
+}
+
+export const getNetworkHints = (
+  accountId: AccountId,
+  networkId: NetworkId,
+  externalApiHints: ExternalHintsAPIResponse[],
+  externalApiFallbackHints: PreviousHintsStorage['fromExternalAPI'],
+  learnedTokens: PreviousHintsStorage['learnedTokens'],
+  learnedNfts: PreviousHintsStorage['learnedNfts'],
+  tokenPreferences: TokenPreference[],
+  customTokens: CustomToken[],
+  toBeLearnedTokens: {
+    [networkId: string]: string[]
+  }
+) => {
+  const networkLearnedTokens = learnedTokens[networkId] || {}
+  const networkLearnedTokenAddresses = Object.keys(networkLearnedTokens)
+  const networkLearnedNfts = learnedNfts[networkId] || {}
+  const networkToBeLearnedTokens = toBeLearnedTokens[networkId] || []
+  const networkApiHints = stripExternalHintsAPIResponse(
+    externalApiHints.find((hints) => hints.networkId === networkId) ?? null
+  )
+
+  const apiHints = networkApiHints ||
+    externalApiFallbackHints[`${networkId}:${accountId}`] || {
+      erc20s: [],
+      erc721s: {},
+      lastUpdate: 0
+    }
+
+  const erc20s = [
+    ...apiHints.erc20s,
+    ...networkLearnedTokenAddresses,
+    ...networkToBeLearnedTokens,
+    ...customTokens
+      .filter(({ networkId: nId, standard }) => nId === networkId && standard === 'ERC20')
+      .map(({ address }) => address),
+    // We have to add the token preferences to ensure that the user can always see all hidden tokens
+    // in settings, regardless of the selected account
+    ...tokenPreferences
+      .filter(({ networkId: nId }) => nId === networkId)
+      .map(({ address }) => address)
+  ]
+
+  // TODO: Add custom ERC721 tokens to the hints
+
+  // Please note 2 things:
+  // 1. Velcro hints data takes advantage over previous hints because, in most cases, Velcro data is more up-to-date than the previously cached hints.
+  // 2. There is only one use-case where the previous hints data is more recent, and that is when we find an NFT token via a pending simulation.
+  // In order to support it, we have to apply a complex deep merging algorithm (which may become problematic if the Velcro API changes)
+  // and also have to introduce an algorithm for self-cleaning outdated/previous NFT tokens.
+  // However, we have chosen to keep it as simple as possible and disregard this rare case.
+  const additionalErc721Hints = {
+    ...Object.fromEntries(
+      Object.entries(networkLearnedNfts).map(([key, value]) => [
+        getAddress(key),
+        { isKnown: false, tokens: value.map((i) => i.toString()) }
+      ])
+    ),
+    ...apiHints.erc721s
+  }
+
+  return {
+    erc20s,
+    erc721s: additionalErc721Hints,
+    lastUpdate: apiHints.lastUpdate
+  }
+}
+
+export const getFormattedHintsError = (
+  error: Error,
+  previousHintsFromExternalAPI: StrippedExternalHintsAPIResponse | null,
+  networkId: NetworkId
+): ExtendedErrorWithLevel => {
+  const errorMesssage = `Failed to fetch hints from Velcro for networkId (${networkId}): ${error.message}`
+
+  if (previousHintsFromExternalAPI) {
+    const TEN_MINUTES = 10 * 60 * 1000
+    const lastUpdate = previousHintsFromExternalAPI.lastUpdate ?? 0
+    const isLastUpdateTooOld = Date.now() - lastUpdate > TEN_MINUTES
+
+    return {
+      name: isLastUpdateTooOld
+        ? PORTFOLIO_HINT_ERRORS.StaleApiHintsError
+        : PORTFOLIO_HINT_ERRORS.NonCriticalApiHintsError,
+      message: errorMesssage,
+      level: 'critical'
+    }
+  }
+
+  return {
+    name: PORTFOLIO_HINT_ERRORS.NoApiHintsError,
+    message: errorMesssage,
+    level: 'silent'
+  }
 }

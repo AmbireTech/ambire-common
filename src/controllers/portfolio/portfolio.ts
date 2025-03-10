@@ -12,11 +12,14 @@ import { CustomToken, TokenPreference } from '../../libs/portfolio/customToken'
 import getAccountNetworksWithAssets from '../../libs/portfolio/getNetworksWithAssets'
 import {
   getFlags,
+  getFormattedHintsError,
+  getNetworkHints,
   getTokensReadyToLearn,
   getTotal,
   getUpdatedHints,
   processTokens,
   shouldGetAdditionalPortfolio,
+  stripExternalHintsAPIResponse,
   validateERC20Token
 } from '../../libs/portfolio/helpers'
 /* eslint-disable no-restricted-syntax */
@@ -24,6 +27,8 @@ import {
 import {
   AccountAssetsState,
   AccountState,
+  ExtendedErrorWithLevel,
+  ExternalHintsAPIResponse,
   GasTankTokenResult,
   GetOptions,
   NetworkState,
@@ -42,6 +47,12 @@ import { ProvidersController } from '../providers/providers'
 /* eslint-disable @typescript-eslint/no-shadow */
 
 const LEARNED_TOKENS_NETWORK_LIMIT = 50
+
+const DEFAULT_PREVIOUS_HINTS = {
+  fromExternalAPI: {},
+  learnedTokens: {},
+  learnedNfts: {}
+}
 
 export class PortfolioController extends EventEmitter {
   #latest: PortfolioControllerState
@@ -93,11 +104,7 @@ export class PortfolioController extends EventEmitter {
    * - learnedTokens: Hints of learned tokens, each with a timestamp indicating the last time the token was seen with a balance and not included in fromExternalAPI hints. This helps prioritize tokens not yet found by Velcro during cleansing.
    * - learnedNfts: Hints of learned NFTs.
    */
-  #previousHints: PreviousHintsStorage = {
-    fromExternalAPI: {},
-    learnedTokens: {},
-    learnedNfts: {}
-  }
+  #previousHints: PreviousHintsStorage = DEFAULT_PREVIOUS_HINTS
 
   #providers: ProvidersController
 
@@ -155,7 +162,7 @@ export class PortfolioController extends EventEmitter {
         await this.#storage.set('customTokens', this.customTokens)
       }
 
-      this.#previousHints = await this.#storage.get('previousHints', {})
+      this.#previousHints = await this.#storage.get('previousHints', DEFAULT_PREVIOUS_HINTS)
       const networksWithAssets = await this.#storage.get('networksWithAssetsByAccount', {})
       const isOldStructure = Object.keys(networksWithAssets).every(
         (key) =>
@@ -520,6 +527,7 @@ export class PortfolioController extends EventEmitter {
     portfolioLib: Portfolio,
     portfolioProps: Partial<GetOptions> & { blockTag: 'latest' | 'pending' },
     forceUpdate: boolean,
+    hintsFromExternalAPIError: Error | null,
     maxDataAgeMs?: number
   ): Promise<boolean> {
     const blockTag = portfolioProps.blockTag
@@ -554,10 +562,22 @@ export class PortfolioController extends EventEmitter {
         priceRecency: 60000,
         priceCache: state.result?.priceCache,
         fetchPinned: !hasNonZeroTokens,
+        disableAutoDiscovery: true,
         ...portfolioProps
       })
+      const errors = [...result.errors]
 
-      const hasError = result.errors.some((e) => e.level !== 'silent')
+      if (hintsFromExternalAPIError) {
+        const hintsError = getFormattedHintsError(
+          hintsFromExternalAPIError,
+          this.#previousHints.fromExternalAPI[`${network.id}:${accountId}`],
+          network.id
+        )
+
+        errors.push(hintsError)
+      }
+
+      const hasError = errors.some((e) => e.level !== 'silent')
       const additionalHintsErc20Hints = portfolioProps.additionalErc20Hints || []
       let lastSuccessfulUpdate = accountState[network.id]?.result?.lastSuccessfulUpdate || 0
 
@@ -582,7 +602,7 @@ export class PortfolioController extends EventEmitter {
       accountState[network.id] = {
         isReady: true,
         isLoading: false,
-        errors: result.errors,
+        errors,
         result: {
           ...result,
           lastSuccessfulUpdate,
@@ -645,6 +665,25 @@ export class PortfolioController extends EventEmitter {
       : Promise.resolve()
 
     const networks = network ? [network] : this.#networks.networks
+
+    let hintsFromExternalAPIByNetworks: ExternalHintsAPIResponse[] = []
+    let hintsFromExternalAPIError: null | ExtendedErrorWithLevel = null
+
+    try {
+      const hintsFromExternalAPIByNetworksData = await this.#fetch(
+        `${this.#velcroUrl}/multi-hints?networks=${this.#networks.networks
+          .map((x) => x.id)
+          .join(',')}&accounts=${this.#networks.networks
+          .map(() => accountId)
+          .join(',')}&baseCurrency=usd`
+      )
+
+      hintsFromExternalAPIByNetworks = await hintsFromExternalAPIByNetworksData.json()
+    } catch (e: any) {
+      console.error('Error while fetching hints from external API', e)
+      hintsFromExternalAPIError = e
+    }
+
     await Promise.all([
       updateAdditionalPortfolioIfNeeded,
       ...networks.map(async (network) => {
@@ -676,35 +715,21 @@ export class PortfolioController extends EventEmitter {
               : currentAccountOps !== simulatedAccountOps
           const forceUpdate = opts?.forceUpdate || areAccountOpsChanged
 
-          const previousHintsFromExternalAPI = this.#previousHints?.fromExternalAPI?.[key]
-
-          const additionalErc20Hints = [
-            ...Object.keys(
-              (this.#previousHints?.learnedTokens &&
-                this.#previousHints?.learnedTokens[network.id]) ??
-                {}
-            ),
-            ...((this.#toBeLearnedTokens && this.#toBeLearnedTokens[network.id]) ?? []),
-            ...this.customTokens
-              .filter(({ networkId, standard }) => networkId === network.id && standard === 'ERC20')
-              .map(({ address }) => address),
-            // We have to add the token preferences to ensure that the user can always see all hidden tokens
-            // in settings, regardless of the selected account
-            ...this.tokenPreferences
-              .filter(({ networkId }) => networkId === network.id)
-              .map(({ address }) => address)
-          ]
-          // TODO: Add custom ERC721 tokens to the hints
-          const additionalErc721Hints = Object.fromEntries(
-            Object.entries(this.#previousHints?.learnedNfts?.[network.id] || {}).map(([k, v]) => [
-              getAddress(k),
-              { isKnown: false, tokens: v.map((i) => i.toString()) }
-            ])
+          const { erc20s, erc721s } = getNetworkHints(
+            accountId,
+            network.id,
+            hintsFromExternalAPIByNetworks,
+            this.#previousHints?.fromExternalAPI || {},
+            this.#previousHints?.learnedTokens || {},
+            this.#previousHints?.learnedNfts || {},
+            this.tokenPreferences,
+            this.customTokens,
+            this.#toBeLearnedTokens
           )
+
           const allHints = {
-            previousHintsFromExternalAPI,
-            additionalErc20Hints,
-            additionalErc721Hints
+            additionalErc20Hints: erc20s,
+            additionalErc721Hints: erc721s
           }
 
           const [isSuccessfulLatestUpdate] = await Promise.all([
@@ -718,6 +743,7 @@ export class PortfolioController extends EventEmitter {
                 ...allHints
               },
               forceUpdate,
+              hintsFromExternalAPIError,
               opts?.maxDataAgeMs
             ),
             this.updatePortfolioState(
@@ -737,6 +763,7 @@ export class PortfolioController extends EventEmitter {
                 ...allHints
               },
               forceUpdate,
+              hintsFromExternalAPIError,
               opts?.maxDataAgeMs
             )
           ])
@@ -757,13 +784,16 @@ export class PortfolioController extends EventEmitter {
               await this.learnTokens(readyToLearnTokens, network.id)
             }
 
+            const externalApiNetworkHints = stripExternalHintsAPIResponse(
+              hintsFromExternalAPIByNetworks.find((x) => x.networkId === network.id) ?? null
+            )
+
             // Either a valid response or there is no external API to fetch hints from
-            const isExternalHintsApiResponseValid =
-              !!networkResult?.hintsFromExternalAPI || !network.hasRelayer
+            const isExternalHintsApiResponseValid = !!externalApiNetworkHints || !network.hasRelayer
 
             if (isExternalHintsApiResponseValid) {
               const updatedStoragePreviousHints = getUpdatedHints(
-                networkResult!.hintsFromExternalAPI || null,
+                externalApiNetworkHints || null,
                 networkResult!.tokens,
                 networkResult!.tokenErrors,
                 network.id,

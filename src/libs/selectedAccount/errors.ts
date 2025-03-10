@@ -7,6 +7,7 @@ import {
   NetworksWithPositions
 } from '../defiPositions/types'
 import { getNetworksWithFailedRPC } from '../networks/networks'
+import { PORTFOLIO_HINT_ERRORS } from '../portfolio/constants'
 import { AccountAssetsState } from '../portfolio/interfaces'
 import { PORTFOLIO_LIB_ERROR_NAMES } from '../portfolio/portfolio'
 
@@ -28,6 +29,7 @@ export type SelectedAccountBalanceError = {
     | 'defi-prices'
     | `${string}-defi-positions-error`
     | keyof typeof PORTFOLIO_LIB_ERROR_NAMES
+    | keyof typeof PORTFOLIO_HINT_ERRORS
   networkNames: string[]
   type: 'error' | 'warning'
   title: string
@@ -128,12 +130,12 @@ const addPortfolioError = (
         text = 'Account balance and asset prices may be inaccurate.'
         type = 'warning'
         break
-      case PORTFOLIO_LIB_ERROR_NAMES.NoApiHintsError:
+      case PORTFOLIO_HINT_ERRORS.NoApiHintsError:
         title = 'Automatic asset discovery is temporarily unavailable'
         text =
           'Your funds are safe, but your portfolio will be inaccurate. You can add assets manually or wait for the issue to be resolved.'
         break
-      case PORTFOLIO_LIB_ERROR_NAMES.StaleApiHintsError:
+      case PORTFOLIO_HINT_ERRORS.StaleApiHintsError:
         title = 'Automatic asset discovery is temporarily unavailable'
         text =
           'New assets may not be visible in your portfolio. You can add assets manually or wait for the issue to be resolved.'
