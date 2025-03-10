@@ -8,13 +8,13 @@ import {
   ZeroAddress
 } from 'ethers'
 
-import { ARBITRUM_CHAIN_ID } from 'consts/networks'
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import ERC20 from '../../../contracts/compiled/IERC20.json'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { BUNDLER } from '../../consts/bundlers'
 import { SINGLETON } from '../../consts/deploy'
 import gasTankFeeTokens from '../../consts/gasTankFeeTokens'
+import { ARBITRUM_CHAIN_ID } from '../../consts/networks'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { BROADCAST_OPTIONS } from '../../libs/broadcast/broadcast'
 import { getEstimationSummary } from '../../libs/estimate/estimate'
@@ -225,7 +225,8 @@ export class SignAccountOpController extends EventEmitter {
     this.baseAccount = getBaseAccount(
       account,
       accountState,
-      keystore.keys.filter((key) => account.associatedKeys.includes(key.addr))
+      keystore.keys.filter((key) => account.associatedKeys.includes(key.addr)),
+      network
     )
     this.accountState = accountState
     this.#network = network
@@ -644,6 +645,7 @@ export class SignAccountOpController extends EventEmitter {
       }
     }
 
+    const initialGasUsed = this.gasUsed
     if (this.estimation && this.selectedOption) {
       this.gasUsed = this.baseAccount.getGasUsed(this.estimation, {
         feeToken: this.selectedOption.token,
@@ -652,10 +654,17 @@ export class SignAccountOpController extends EventEmitter {
         network: this.#network
       })
     }
+    const hasGasUsedChanged = initialGasUsed !== this.gasUsed
 
     // calculate the fee speeds if either there are no feeSpeeds
     // or any of properties for update is requested
-    if (!Object.keys(this.feeSpeeds).length || Array.isArray(calls) || gasPrices || estimation) {
+    if (
+      !Object.keys(this.feeSpeeds).length ||
+      Array.isArray(calls) ||
+      gasPrices ||
+      estimation ||
+      hasGasUsedChanged
+    ) {
       this.#updateFeeSpeeds()
     }
 

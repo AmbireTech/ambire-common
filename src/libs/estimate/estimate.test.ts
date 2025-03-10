@@ -317,7 +317,7 @@ describe('estimate', () => {
 
     const accountStates = await getAccountsInfo([EOAAccount])
     const accountState = accountStates[EOAAccount.addr][ethereum.id]
-    const baseAcc = getBaseAccount(EOAAccount, accountState, [])
+    const baseAcc = getBaseAccount(EOAAccount, accountState, [], ethereum)
     const response = await getEstimation(
       baseAcc,
       accountState,
@@ -379,7 +379,7 @@ describe('estimate', () => {
 
     const accountStates = await getAccountsInfo([EOAAccount])
     const accountState = accountStates[EOAAccount.addr][polygon.id]
-    const baseAcc = getBaseAccount(EOAAccount, accountState, [])
+    const baseAcc = getBaseAccount(EOAAccount, accountState, [], polygon)
     const response = await getEstimation(
       baseAcc,
       accountState,
@@ -456,7 +456,7 @@ describe('estimate', () => {
 
     const accountStates = await getAccountsInfo([EOAAccount])
     const accountState = accountStates[EOAAccount.addr][polygon.id]
-    const baseAcc = getBaseAccount(EOAAccount, accountState, [])
+    const baseAcc = getBaseAccount(EOAAccount, accountState, [], polygon)
     const response = await getEstimation(
       baseAcc,
       accountState,
@@ -515,7 +515,7 @@ describe('estimate', () => {
 
     const accountStates = await getAccountsInfo([EOAAccount])
     const accountState = accountStates[EOAAccount.addr][polygon.id]
-    const baseAcc = getBaseAccount(EOAAccount, accountState, [])
+    const baseAcc = getBaseAccount(EOAAccount, accountState, [], polygon)
     const response = await getEstimation(
       baseAcc,
       accountState,
@@ -559,7 +559,7 @@ describe('estimate', () => {
 
     const accountStates = await getAccountsInfo([v1Acc])
     const accountState = accountStates[v1Acc.addr][ethereum.id]
-    const baseAcc = getBaseAccount(v1Acc, accountState, [])
+    const baseAcc = getBaseAccount(v1Acc, accountState, [], ethereum)
     const response = await getEstimation(
       baseAcc,
       accountState,
@@ -618,7 +618,7 @@ describe('estimate', () => {
 
     const accountStates = await getAccountsInfo([v1Acc])
     const accountState = accountStates[v1Acc.addr][ethereum.id]
-    const baseAcc = getBaseAccount(v1Acc, accountState, [])
+    const baseAcc = getBaseAccount(v1Acc, accountState, [], ethereum)
     const response = await getEstimation(
       baseAcc,
       accountState,
@@ -659,7 +659,7 @@ describe('estimate', () => {
 
     const accountStates = await getAccountsInfo([viewOnlyAcc])
     const accountState = accountStates[viewOnlyAcc.addr][ethereum.id]
-    const baseAcc = getBaseAccount(viewOnlyAcc, accountState, [])
+    const baseAcc = getBaseAccount(viewOnlyAcc, accountState, [], ethereum)
     const response = await getEstimation(
       baseAcc,
       accountState,
@@ -723,7 +723,7 @@ describe('estimate', () => {
 
     const accountStates = await getAccountsInfo([accountOptimismv1])
     const accountState = accountStates[accountOptimismv1.addr][optimism.id]
-    const baseAcc = getBaseAccount(accountOptimismv1, accountState, [])
+    const baseAcc = getBaseAccount(accountOptimismv1, accountState, [], optimism)
     const response = await getEstimation(
       baseAcc,
       accountState,
@@ -771,7 +771,7 @@ describe('estimate', () => {
 
     const accountStates = await getAccountsInfo([smartAccountv2eip712])
     const accountState = accountStates[smartAccountv2eip712.addr][arbitrum.id]
-    const baseAcc = getBaseAccount(smartAccountv2eip712, accountState, [])
+    const baseAcc = getBaseAccount(smartAccountv2eip712, accountState, [], arbitrum)
     const response = await getEstimation(
       baseAcc,
       accountState,
@@ -811,7 +811,7 @@ describe('estimate', () => {
     }
     const accountStates = await getAccountsInfo([smartAccDeployed])
     const accountState = accountStates[smartAccDeployed.addr][optimism.id]
-    const baseAcc = getBaseAccount(smartAccDeployed, accountState, [])
+    const baseAcc = getBaseAccount(smartAccDeployed, accountState, [], optimism)
     const response = await getEstimation(
       baseAcc,
       accountState,
@@ -861,7 +861,7 @@ describe('estimate', () => {
     }
     const accountStates = await getAccountsInfo([smartAcc])
     const accountState = accountStates[smartAcc.addr][optimism.id]
-    const baseAcc = getBaseAccount(smartAcc, accountState, [])
+    const baseAcc = getBaseAccount(smartAcc, accountState, [], optimism)
     const response = await getEstimation(
       baseAcc,
       accountState,
@@ -916,7 +916,7 @@ describe('estimate', () => {
     }
     const accountStates = await getAccountsInfo([smartAcc])
     const accountState = accountStates[smartAcc.addr][optimism.id]
-    const baseAcc = getBaseAccount(smartAcc, accountState, [])
+    const baseAcc = getBaseAccount(smartAcc, accountState, [], optimism)
     const response = await getEstimation(
       baseAcc,
       accountState,
@@ -968,7 +968,7 @@ describe('estimate', () => {
     }
     const accountStates = await getAccountsInfo([smartAcc])
     const accountState = accountStates[smartAcc.addr][optimism.id]
-    const baseAcc = getBaseAccount(smartAcc, accountState, [])
+    const baseAcc = getBaseAccount(smartAcc, accountState, [], optimism)
     const response = await getEstimation(
       baseAcc,
       accountState,
@@ -1004,7 +1004,7 @@ describe('estimate', () => {
     }
     const accountStates = await getAccountsInfo([smartAccDeployed])
     const accountState = accountStates[smartAccDeployed.addr][optimism.id]
-    const baseAcc = getBaseAccount(smartAccDeployed, accountState, [])
+    const baseAcc = getBaseAccount(smartAccDeployed, accountState, [], optimism)
     const response = await getEstimation(
       baseAcc,
       accountState,
@@ -1054,7 +1054,7 @@ describe('estimate', () => {
     // corrupt the nonce to be lower
     accountState.erc4337Nonce = 6n
 
-    const baseAcc = getBaseAccount(smartAccDeployed, accountState, [])
+    const baseAcc = getBaseAccount(smartAccDeployed, accountState, [], optimism)
     const response = await getEstimation(
       baseAcc,
       accountState,
@@ -1102,7 +1102,7 @@ describe('estimate', () => {
     }
     const accountStates = await getAccountsInfo([smartAccountv2eip712])
     const accountState = accountStates[smartAccountv2eip712.addr][polygon.id]
-    const baseAcc = getBaseAccount(smartAccountv2eip712, accountState, [])
+    const baseAcc = getBaseAccount(smartAccountv2eip712, accountState, [], polygon)
     const response = await getEstimation(
       baseAcc,
       accountState,
@@ -1139,7 +1139,8 @@ describe('estimate', () => {
     const baseAcc = getBaseAccount(
       { ...smartAccountv2eip712, associatedKeys: [trezorSlot6v2NotDeployed.associatedKeys[0]] },
       accountState,
-      []
+      [],
+      polygon
     )
     const response = await getEstimation(
       baseAcc,
@@ -1174,7 +1175,7 @@ describe('estimate', () => {
 
     const accountStates = await getAccountsInfo([v1Acc])
     const accountState = accountStates[v1Acc.addr][ethereum.id]
-    const baseAcc = getBaseAccount(v1Acc, accountState, [])
+    const baseAcc = getBaseAccount(v1Acc, accountState, [], ethereum)
     const response = await getEstimation(
       baseAcc,
       accountState,

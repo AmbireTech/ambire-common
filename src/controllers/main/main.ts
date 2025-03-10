@@ -37,7 +37,7 @@ import { Storage } from '../../interfaces/storage'
 import { SocketAPISendTransactionRequest } from '../../interfaces/swapAndBridge'
 import { Calls, DappUserRequest, SignUserRequest, UserRequest } from '../../interfaces/userRequest'
 import { WindowManager } from '../../interfaces/window'
-import { getContractImplementation, has7702 } from '../../libs/7702/7702'
+import { getContractImplementation } from '../../libs/7702/7702'
 import {
   canBecomeSmarter,
   canBecomeSmarterOnChain,
@@ -1942,8 +1942,8 @@ export class MainController extends EventEmitter {
     if (
       this.featureFlags.isFeatureEnabled('eip7702') &&
       !account.disable7702Popup &&
-      has7702(network) &&
       canBecomeSmarterOnChain(
+        network,
         account,
         accountState,
         this.keystore.getAccountKeys(this.selectedAccount.account!)
@@ -2563,13 +2563,19 @@ export class MainController extends EventEmitter {
         account.addr,
         network.id
       )
+      const baseAcc = getBaseAccount(
+        account,
+        accountState,
+        this.keystore.getAccountKeys(account),
+        network
+      )
       const [, estimation] = await Promise.all([
         // NOTE: we are not emitting an update here because the portfolio controller will do that
         // NOTE: the portfolio controller has it's own logic of constructing/caching providers, this is intentional, as
         // it may have different needs
         this.getPortfolioSimulationPromise(localAccountOp),
         getEstimation(
-          getBaseAccount(account, accountState, this.keystore.getAccountKeys(account)),
+          baseAcc,
           accountState,
           localAccountOp,
           network,
@@ -2657,7 +2663,6 @@ export class MainController extends EventEmitter {
       // this eliminates the infinite loading bug if the estimation comes slower
       if (this.signAccountOp && estimation && !(estimation instanceof Error)) {
         this.signAccountOp.update({ estimation, rbfAccountOps })
-        const baseAcc = getBaseAccount(account, accountState, this.keystore.getAccountKeys(account))
         if (shouldTraceCall)
           this.traceCall(
             baseAcc.getGasUsed(getEstimationSummary(estimation), {

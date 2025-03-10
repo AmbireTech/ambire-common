@@ -18,7 +18,7 @@ import { KeyIterator } from '../../interfaces/keyIterator'
 import { Key } from '../../interfaces/keystore'
 import { Network } from '../../interfaces/network'
 import { Authorization } from '../../interfaces/userRequest'
-import { getContractImplementation } from '../7702/7702'
+import { getContractImplementation, has7702 } from '../7702/7702'
 import { DKIM_VALIDATOR_ADDR, getSignerKey, RECOVERY_DEFAULTS } from '../dkim/recovery'
 import { getBytecode } from '../proxyDeploy/bytecode'
 import { PrivLevels } from '../proxyDeploy/deploy'
@@ -357,11 +357,16 @@ export function canBecomeSmarter(acc: Account, accKeys: Key[]): boolean {
 
 // can the account become smarter on a specific chain
 export function canBecomeSmarterOnChain(
+  network: Network,
   acc: Account,
   state: AccountOnchainState,
   accKeys: Key[]
 ): boolean {
-  return isBasicAccount(acc, state) && !!accKeys.find((key) => key.type === 'internal')
+  return (
+    has7702(network) &&
+    isBasicAccount(acc, state) &&
+    !!accKeys.find((key) => key.type === 'internal')
+  )
 }
 
 export function hasBecomeSmarter(account: Account, state: AccountStates) {

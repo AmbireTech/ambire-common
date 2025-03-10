@@ -1,6 +1,6 @@
 /* eslint-disable class-methods-use-this */
 /* eslint-disable @typescript-eslint/no-unused-vars */
-import { ARBITRUM_CHAIN_ID } from 'consts/networks'
+import { ARBITRUM_CHAIN_ID } from '../../consts/networks'
 import { AccountOnchainState } from '../../interfaces/account'
 import { Network } from '../../interfaces/network'
 import { AccountOp } from '../accountOp/accountOp'
