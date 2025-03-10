@@ -16,8 +16,6 @@ import { getRpcProvider } from '../../services/provider'
 import { AccountOp } from '../accountOp/accountOp'
 import { getAccountState } from '../accountState/accountState'
 import { ERC20 } from '../humanizer/const/abis'
-import { stringify } from '../richJson/richJson'
-import { StrippedExternalHintsAPIResponse } from './interfaces'
 import { Portfolio } from './portfolio'
 
 const providers = Object.fromEntries(
@@ -590,85 +588,6 @@ describe('Portfolio', () => {
   })
 
   describe('Hints', () => {
-    describe('With blocked Velcro discovery', () => {
-      // Done in beforeEach instead of a reusable function because
-      // mocks can't be reused as functions
-      beforeEach(() => {
-        // Simulate a Velcro Discovery failure
-        jest.mock('node-fetch', () => {
-          return jest.fn((url: any) => {
-            // @ts-ignore
-            const { Response } = jest.requireActual('node-fetch')
-            if (url.includes(`${velcroUrl}/multi-hints`)) {
-              const body = stringify({ message: 'API error' })
-              const headers = { status: 200 }
-
-              return Promise.resolve(new Response(body, headers))
-            }
-
-            // @ts-ignore
-            return jest.requireActual('node-fetch')(url)
-          })
-        })
-      })
-      afterEach(() => {
-        // Restore the original implementations
-        jest.restoreAllMocks()
-      })
-
-      test('portfolio works with previously cached hints, even if Velcro Discovery request fails', async () => {
-        const portfolioInner = new Portfolio(fetch, provider, ethereum, velcroUrl)
-        const previousHints = {
-          erc20s: [
-            '0x0000000000000000000000000000000000000000',
-            '0x4da27a545c0c5B758a6BA100e3a049001de870f5',
-            '0xba100000625a3754423978a60c9317c58a424e3D'
-          ],
-          erc721s: {},
-          lastUpdate: Date.now()
-        }
-        const result = await portfolioInner.get('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8', {
-          previousHintsFromExternalAPI: previousHints
-        })
-
-        expect(
-          result.tokens
-            .map((token) => token.address)
-            .filter((token) => previousHints.erc20s.includes(token))
-        ).toEqual(previousHints.erc20s)
-      })
-      test('Erc 721 external api hints should be prioritized over additional hints', async () => {
-        const hintsFromExternalAPI: StrippedExternalHintsAPIResponse = {
-          erc20s: [],
-          lastUpdate: Date.now(),
-          erc721s: {
-            '0x026224A2940bFE258D0dbE947919B62fE321F042': {
-              isKnown: false,
-              tokens: ['2647']
-            }
-          }
-        }
-        const additionalErc721Hints = {
-          '0x026224A2940bFE258D0dbE947919B62fE321F042': {
-            isKnown: false,
-            tokens: ['2648'] // Different token id on purpose
-          }
-        }
-
-        const portfolioInner = new Portfolio(fetch, provider, ethereum, velcroUrl)
-
-        const result = await portfolioInner.get('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8', {
-          previousHintsFromExternalAPI: hintsFromExternalAPI,
-          additionalErc721Hints
-        })
-
-        // The correct tokenId was found
-        expect(
-          result.collections.find((c) => c.address === '0x026224A2940bFE258D0dbE947919B62fE321F042')
-            ?.collectibles.length
-        ).toBe(1)
-      })
-    })
     test('Hints are deduped', async () => {
       const additionalErc20Hints = [USDT_ADDRESS, USDT_ADDRESS.toLowerCase()]
       const portfolioInner = new Portfolio(fetch, provider, ethereum, velcroUrl)

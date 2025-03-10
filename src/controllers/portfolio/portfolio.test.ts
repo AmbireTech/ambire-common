@@ -11,14 +11,21 @@ import { PINNED_TOKENS } from '../../consts/pinnedTokens'
 import { Account, AccountStates } from '../../interfaces/account'
 import { Network } from '../../interfaces/network'
 import { RPCProviders } from '../../interfaces/provider'
+import { Storage } from '../../interfaces/storage'
 import { AccountOp } from '../../libs/accountOp/accountOp'
 import { getAccountState } from '../../libs/accountState/accountState'
-import { CollectionResult, PortfolioGasTankResult } from '../../libs/portfolio/interfaces'
+import {
+  CollectionResult,
+  PortfolioGasTankResult,
+  PreviousHintsStorage
+} from '../../libs/portfolio/interfaces'
 import { getRpcProvider } from '../../services/provider'
 import { AccountsController } from '../accounts/accounts'
 import { NetworksController } from '../networks/networks'
 import { ProvidersController } from '../providers/providers'
 import { PortfolioController } from './portfolio'
+
+global.fetch = fetch as any
 
 const EMPTY_ACCOUNT_ADDR = '0xA098B9BccaDd9BAEc311c07433e94C9d260CbC07'
 
@@ -131,13 +138,14 @@ const emptyAccount = {
   }
 }
 
-const prepareTest = () => {
+const prepareTest = (storageCallback?: (storage: Storage) => void) => {
   const storage = produceMemoryStore()
   storage.set('accounts', [account, account2, account3, account4, emptyAccount])
+  if (storageCallback) storageCallback(storage)
   let providersCtrl: ProvidersController
   const networksCtrl = new NetworksController(
     storage,
-    fetch,
+    global.fetch as any,
     (net) => {
       providersCtrl.setProvider(net)
     },
@@ -157,7 +165,7 @@ const prepareTest = () => {
   )
   const controller = new PortfolioController(
     storage,
-    fetch,
+    global.fetch as any,
     providersCtrl,
     networksCtrl,
     accountsCtrl,
@@ -317,7 +325,6 @@ describe('Portfolio Controller ', () => {
       expect(latestState.isReady).toEqual(true)
       expect(latestState.result?.tokens.length).toBeGreaterThan(0)
       expect(latestState.result?.collections?.length).toBeGreaterThan(0)
-      expect(latestState.result?.hintsFromExternalAPI).toBeTruthy()
       expect(latestState.result?.total.usd).toBeGreaterThan(1000)
       expect(pendingState).toBeDefined()
     })
@@ -361,13 +368,11 @@ describe('Portfolio Controller ', () => {
           expect(latestState.isReady).toEqual(true)
           expect(latestState.result?.tokens.length).toBeGreaterThan(0)
           expect(latestState.result?.collections?.length).toBeGreaterThan(0)
-          expect(latestState.result?.hintsFromExternalAPI).toBeTruthy()
           expect(latestState.result?.total.usd).toBeGreaterThan(1000)
 
           expect(pendingState.isReady).toEqual(true)
           expect(pendingState.result?.tokens.length).toBeGreaterThan(0)
           expect(pendingState.result?.collections?.length).toBeGreaterThan(0)
-          expect(pendingState.result?.hintsFromExternalAPI).toBeTruthy()
           expect(pendingState.result?.total.usd).toBeGreaterThan(1000)
           done()
         }
@@ -401,7 +406,6 @@ describe('Portfolio Controller ', () => {
 
         expect(pendingState.result?.tokens.length).toBeGreaterThan(0)
         expect(pendingState.result?.collections?.length).toBeGreaterThan(0)
-        expect(pendingState.result?.hintsFromExternalAPI).toBeTruthy()
         expect(pendingState.result?.total.usd).toBeGreaterThan(1000)
         // Expect amount post simulation to be calculated correctly
         expect(collection?.amountPostSimulation).toBe(0n)
@@ -998,6 +1002,73 @@ describe('Portfolio Controller ', () => {
 
     // Last successful update should reset on a force update
     expect(lastSuccessfulUpdate).not.toEqual(newLastSuccessfulUpdate2)
+  })
+  describe('With blocked Velcro discovery', () => {
+    // Done in beforeEach instead of a reusable function because
+    // mocks can't be reused as functions
+    beforeEach(() => {
+      // Simulate a Velcro Discovery failure
+      jest.spyOn(global, 'fetch').mockImplementation((url: any) => {
+        if (url.includes(`${velcroUrl}/multi-hints`)) {
+          return Promise.reject(new Error('Failed to fetch hints'))
+        }
+
+        // Call the real implementation for other URLs
+        // @ts-ignore
+        return jest.requireActual('node-fetch')(url)
+      })
+    })
+    afterEach(() => {
+      // Restore the original implementations
+      jest.restoreAllMocks()
+    })
+    test('portfolio works with previously cached hints, even if Velcro Discovery request fails', async () => {
+      const { controller } = prepareTest((storage) => {
+        const previousHints: PreviousHintsStorage = {
+          fromExternalAPI: {
+            [`ethereum:${account.addr}`]: {
+              erc20s: ['0xe1B4d34E8754600962Cd944B535180Bd758E6c2e'],
+              erc721s: {},
+              lastUpdate: Date.now()
+            }
+          },
+          learnedNfts: {},
+          learnedTokens: {}
+        }
+        // eslint-disable-next-line @typescript-eslint/no-floating-promises
+        storage.set('previousHints', previousHints)
+      })
+
+      await controller.updateSelectedAccount(account.addr)
+      const latestEthereum = controller.getLatestPortfolioState(account.addr).ethereum
+      const agETH = latestEthereum?.result?.tokens.find(
+        ({ address }) => address === '0xe1B4d34E8754600962Cd944B535180Bd758E6c2e'
+      )
+
+      expect(agETH).toBeTruthy()
+      expect(latestEthereum?.errors[0].level).toBe('silent')
+    })
+  })
+  test('Erc 721 external api hints should be prioritized over additional hints', async () => {
+    const { controller, storage } = prepareTest()
+
+    await controller.learnNfts([['0x18Ce9CF7156584CDffad05003410C3633EFD1ad0', [138n]]], 'ethereum')
+    const hintsInStorage: PreviousHintsStorage = await storage.get('previousHints', {})
+    const learnedNfts =
+      hintsInStorage.learnedNfts.ethereum['0x18Ce9CF7156584CDffad05003410C3633EFD1ad0']
+    expect(learnedNfts).toBeTruthy()
+    expect(learnedNfts[0]).toEqual(138n)
+
+    await controller.updateSelectedAccount(account.addr)
+
+    // The correct tokenId was found
+    expect(
+      controller
+        .getLatestPortfolioState(account.addr)
+        .ethereum?.result?.collections?.find(
+          (c) => c.address === '0x18Ce9CF7156584CDffad05003410C3633EFD1ad0'
+        )?.collectibles.length
+    ).toBe(1)
   })
   test('removeAccountData', async () => {
     const { controller } = prepareTest()

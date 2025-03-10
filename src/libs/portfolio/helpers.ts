@@ -560,13 +560,13 @@ export const getFormattedHintsError = (
         ? PORTFOLIO_HINT_ERRORS.StaleApiHintsError
         : PORTFOLIO_HINT_ERRORS.NonCriticalApiHintsError,
       message: errorMesssage,
-      level: 'critical'
+      level: isLastUpdateTooOld ? 'critical' : 'silent'
     }
   }
 
   return {
     name: PORTFOLIO_HINT_ERRORS.NoApiHintsError,
     message: errorMesssage,
-    level: 'silent'
+    level: 'critical'
   }
 }

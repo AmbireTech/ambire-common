@@ -671,14 +671,22 @@ export class PortfolioController extends EventEmitter {
 
     try {
       const hintsFromExternalAPIByNetworksData = await this.#fetch(
-        `${this.#velcroUrl}/multi-hints?networks=${this.#networks.networks
+        `${this.#velcroUrl}/multi-hints?networks=${networks
+          .filter(({ hasRelayer }) => hasRelayer)
           .map((x) => x.id)
           .join(',')}&accounts=${this.#networks.networks
           .map(() => accountId)
           .join(',')}&baseCurrency=usd`
       )
 
-      hintsFromExternalAPIByNetworks = await hintsFromExternalAPIByNetworksData.json()
+      const result = await hintsFromExternalAPIByNetworksData.json()
+
+      // If the request is for one network the response is an object, otherwise it's an array of objects
+      if (Array.isArray(result)) {
+        hintsFromExternalAPIByNetworks = result
+      } else {
+        hintsFromExternalAPIByNetworks = [result]
+      }
     } catch (e: any) {
       console.error('Error while fetching hints from external API', e)
       hintsFromExternalAPIError = e
@@ -780,6 +788,7 @@ export class PortfolioController extends EventEmitter {
               networkResult!.tokens
             )
 
+            console.log('readyToLearnTokens', readyToLearnTokens)
             if (readyToLearnTokens.length) {
               await this.learnTokens(readyToLearnTokens, network.id)
             }
@@ -790,6 +799,8 @@ export class PortfolioController extends EventEmitter {
 
             // Either a valid response or there is no external API to fetch hints from
             const isExternalHintsApiResponseValid = !!externalApiNetworkHints || !network.hasRelayer
+
+            console.log('isExternalHintsApiResponseValid', isExternalHintsApiResponseValid)
 
             if (isExternalHintsApiResponseValid) {
               const updatedStoragePreviousHints = getUpdatedHints(
