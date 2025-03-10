@@ -798,8 +798,6 @@ export class PortfolioController extends EventEmitter {
             // Either a valid response or there is no external API to fetch hints from
             const isExternalHintsApiResponseValid = !!externalApiNetworkHints || !network.hasRelayer
 
-            console.log('isExternalHintsApiResponseValid', isExternalHintsApiResponseValid)
-
             if (isExternalHintsApiResponseValid) {
               const updatedStoragePreviousHints = getUpdatedHints(
                 externalApiNetworkHints || null,
