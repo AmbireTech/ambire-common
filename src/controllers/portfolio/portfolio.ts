@@ -679,12 +679,10 @@ export class PortfolioController extends EventEmitter {
 
       const result = await hintsFromExternalAPIByNetworksData.json()
 
+      if (!Array.isArray(result)) throw new Error('Invalid response from external API')
+
       // If the request is for one network the response is an object, otherwise it's an array of objects
-      if (Array.isArray(result)) {
-        hintsFromExternalAPIByNetworks = result
-      } else {
-        hintsFromExternalAPIByNetworks = [result]
-      }
+      hintsFromExternalAPIByNetworks = result
     } catch (e: any) {
       console.error('Error while fetching hints from external API', e)
       hintsFromExternalAPIError = e
