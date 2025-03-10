@@ -32,12 +32,10 @@ import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 import { PaymasterErrorReponse, PaymasterSuccessReponse, Sponsor } from '../../libs/erc7677/types'
 import { getHumanReadableBroadcastError } from '../../libs/errorHumanizer'
 import {
-  AmbireEstimation,
   Erc4337GasLimits,
-  EstimateResult,
   FeePaymentOption,
   FullEstimation,
-  ProviderEstimation
+  FullEstimationSummary
 } from '../../libs/estimate/interfaces'
 import {
   Gas1559Recommendation,
@@ -192,12 +190,12 @@ export class SignAccountOpController extends EventEmitter {
   // Once discovery completes and updates the portfolio, the banner will be hidden.
   traceCallDiscoveryStatus: TraceCallDiscoveryStatus = TraceCallDiscoveryStatus.NotStarted
 
-  estimation: {
-    providerEstimation?: ProviderEstimation
-    ambireEstimation?: AmbireEstimation
-    bundlerEstimation?: Erc4337GasLimits
-    error?: Error
-  } | null = null
+  estimation: FullEstimationSummary | null = null
+
+  // the calculated gas used for the transaction estimation
+  // it now depends on a variety of options and hence the need to move it
+  // as its own property
+  gasUsed: bigint = 0n
 
   constructor(
     keystore: KeystoreController,
@@ -316,19 +314,11 @@ export class SignAccountOpController extends EventEmitter {
       errors.push(this.estimation.error.message)
     }
 
-    if (
-      this.estimation?.gasUsed &&
-      this.#blockGasLimit &&
-      this.estimation?.gasUsed > this.#blockGasLimit
-    ) {
+    if (this.#blockGasLimit && this.gasUsed > this.#blockGasLimit) {
       errors.push('Transaction reverted with estimation too high: above block limit')
     }
 
-    if (
-      this.#network.predefined &&
-      this.estimation?.gasUsed &&
-      this.estimation?.gasUsed > 500000000n
-    ) {
+    if (this.#network.predefined && this.gasUsed > 500000000n) {
       errors.push('Unreasonably high estimation. This transaction will probably fail')
     }
 
@@ -661,6 +651,15 @@ export class SignAccountOpController extends EventEmitter {
       }
     }
 
+    if (this.estimation && this.selectedOption) {
+      this.gasUsed = this.baseAccount.getGasUsed(this.estimation, {
+        feePaymentOption: this.selectedOption,
+        op: this.accountOp,
+        accountState: this.accountState,
+        network: this.#network
+      })
+    }
+
     // calculate the fee speeds if either there are no feeSpeeds
     // or any of properties for update is requested
     if (!Object.keys(this.feeSpeeds).length || Array.isArray(calls) || gasPrices || estimation) {
@@ -876,8 +875,6 @@ export class SignAccountOpController extends EventEmitter {
     // reset the fee speeds at the beginning to avoid duplications
     this.feeSpeeds = {}
 
-    const gasUsed = this.estimation!.gasUsed
-
     this.availableFeeOptions.forEach((option) => {
       // if a calculation has been made, do not make it again
       // EOA pays for SA is the most common case for this scenario
@@ -973,7 +970,7 @@ export class SignAccountOpController extends EventEmitter {
 
         // EOA
         if (!isSmartAccount(this.account)) {
-          simulatedGasLimit = gasUsed
+          simulatedGasLimit = this.gasUsed
 
           if (this.accountOp.calls[0].to && getAddress(this.accountOp.calls[0].to) === SINGLETON) {
             simulatedGasLimit = getGasUsed(simulatedGasLimit)
@@ -982,11 +979,11 @@ export class SignAccountOpController extends EventEmitter {
           amount = simulatedGasLimit * gasPrice + option.addedNative
         } else if (option.paidBy !== this.accountOp.accountAddr) {
           // Smart account, but EOA pays the fee
-          simulatedGasLimit = gasUsed + this.getCallDataAdditionalByNetwork()
+          simulatedGasLimit = this.gasUsed + this.getCallDataAdditionalByNetwork()
           amount = simulatedGasLimit * gasPrice + option.addedNative
         } else {
           // Relayer
-          simulatedGasLimit = gasUsed + this.getCallDataAdditionalByNetwork() + option.gasUsed!
+          simulatedGasLimit = this.gasUsed + this.getCallDataAdditionalByNetwork() + option.gasUsed!
           amount = SignAccountOpController.getAmountAfterFeeTokenConvert(
             simulatedGasLimit,
             gasPrice,
@@ -1115,7 +1112,7 @@ export class SignAccountOpController extends EventEmitter {
     return this.accountOp?.gasFeePayment?.paidBy || null
   }
 
-  get availableFeeOptions(): EstimateResult['feePaymentOptions'] {
+  get availableFeeOptions(): FeePaymentOption[] {
     if (!this.estimation) return []
 
     if (this.isSponsored) {

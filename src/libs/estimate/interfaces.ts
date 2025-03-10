@@ -25,8 +25,13 @@ export interface Erc4337GasLimits {
   paymasterPostOpGasLimit: string
   gasPrice: GasSpeeds
   paymaster: AbstractPaymaster
-  nonFatalErrors?: Error[]
   flags: EstimationFlags
+  // put here errors that are not fatal to the signing process
+  // but reactable if known
+  // example: bundler simulation fails because of incorrect 4337 nonce.
+  // The user can still broadcast with EOA but we can also react
+  // to this error by setting the correct nonce and re-estimating
+  nonFatalErrors?: Error[]
 }
 
 export interface FeePaymentOption {
@@ -70,13 +75,14 @@ export interface FullEstimation {
   provider: ProviderEstimation | Error
   ambire: AmbireEstimation | Error
   bundler: Erc4337GasLimits | Error
-  // put here errors that are not fatal to the signing process
-  // but reactable if known
-  // example: bundler simulation fails because of incorrect 4337 nonce.
-  // The user can still broadcast with EOA but we can also react
-  // to this error by setting the correct nonce and re-estimating
-  nonFatalErrors?: Error[]
   // flags that signal to the app what needs to be handled if a state
   // inconsistency issue was found during estimation
   flags: EstimationFlags
+}
+
+export interface FullEstimationSummary {
+  providerEstimation?: ProviderEstimation
+  ambireEstimation?: AmbireEstimation
+  bundlerEstimation?: Erc4337GasLimits
+  error?: Error
 }

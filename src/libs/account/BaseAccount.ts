@@ -1,5 +1,7 @@
-import { Account } from '../../interfaces/account'
-import { FeePaymentOption } from '../estimate/interfaces'
+import { Account, AccountOnchainState } from '../../interfaces/account'
+import { Network } from '../../interfaces/network'
+import { AccountOp } from '../accountOp/accountOp'
+import { FeePaymentOption, FullEstimationSummary } from '../estimate/interfaces'
 
 export abstract class BaseAccount {
   protected account: Account
@@ -13,4 +15,16 @@ export abstract class BaseAccount {
   }
 
   abstract getAvailableFeeOptions(feePaymentOptions: FeePaymentOption[]): FeePaymentOption[]
+
+  abstract getGasUsed(
+    estimation: FullEstimationSummary,
+    // all of the options below need to be passed. Each implementation
+    // decides on its own which are actually important for it
+    options: {
+      feePaymentOption: FeePaymentOption
+      network: Network
+      op: AccountOp
+      accountState: AccountOnchainState
+    }
+  ): bigint
 }
