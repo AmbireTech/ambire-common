@@ -16,6 +16,7 @@ import hexStringToUint8Array from '../../utils/hexStringToUint8Array'
 import { AccountsController } from '../accounts/accounts'
 import { SignedMessage } from '../activity/types'
 import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter'
+import { InviteController } from '../invite/invite'
 import { KeystoreController } from '../keystore/keystore'
 import { NetworksController } from '../networks/networks'
 import { ProvidersController } from '../providers/providers'
@@ -34,6 +35,8 @@ export class SignMessageController extends EventEmitter {
   #externalSignerControllers: ExternalSignerControllers
 
   #accounts: AccountsController
+
+  #invite: InviteController
 
   #signer: KeystoreSignerInterface | undefined
 
@@ -59,7 +62,8 @@ export class SignMessageController extends EventEmitter {
     providers: ProvidersController,
     networks: NetworksController,
     accounts: AccountsController,
-    externalSignerControllers: ExternalSignerControllers
+    externalSignerControllers: ExternalSignerControllers,
+    invite: InviteController
   ) {
     super()
 
@@ -68,6 +72,7 @@ export class SignMessageController extends EventEmitter {
     this.#networks = networks
     this.#externalSignerControllers = externalSignerControllers
     this.#accounts = accounts
+    this.#invite = invite
   }
 
   async init({
@@ -121,7 +126,7 @@ export class SignMessageController extends EventEmitter {
     this.emitUpdate()
   }
 
-  async #sign(isOG = false) {
+  async #sign() {
     if (!this.isInitialized) {
       return SignMessageController.#throwNotInitialized()
     }
@@ -171,7 +176,7 @@ export class SignMessageController extends EventEmitter {
             account,
             accountState,
             this.#signer,
-            isOG
+            this.#invite.isOG
           )
         }
 
@@ -188,7 +193,7 @@ export class SignMessageController extends EventEmitter {
             accountState,
             this.#signer,
             network,
-            isOG
+            this.#invite.isOG
           )
         }
 
@@ -256,8 +261,8 @@ export class SignMessageController extends EventEmitter {
     }
   }
 
-  async sign(isOG = false) {
-    await this.withStatus('sign', async () => this.#sign(isOG))
+  async sign() {
+    await this.withStatus('sign', async () => this.#sign())
   }
 
   removeAccountData(address: Account['addr']) {
