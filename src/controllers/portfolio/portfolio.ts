@@ -670,11 +670,9 @@ export class PortfolioController extends EventEmitter {
     let hintsFromExternalAPIError: null | ExtendedErrorWithLevel = null
 
     try {
+      const networkIds = networks.filter(({ hasRelayer }) => hasRelayer).map((x) => x.id)
       const hintsFromExternalAPIByNetworksData = await this.#fetch(
-        `${this.#velcroUrl}/multi-hints?networks=${networks
-          .filter(({ hasRelayer }) => hasRelayer)
-          .map((x) => x.id)
-          .join(',')}&accounts=${this.#networks.networks
+        `${this.#velcroUrl}/multi-hints?networks=${networkIds.join(',')}&accounts=${networkIds
           .map(() => accountId)
           .join(',')}&baseCurrency=usd`
       )
