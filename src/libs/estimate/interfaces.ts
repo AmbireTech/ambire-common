@@ -37,7 +37,7 @@ export interface Erc4337GasLimits {
 export interface FeePaymentOption {
   availableAmount: bigint
   paidBy: string
-  gasUsed?: bigint
+  gasUsed: bigint
   addedNative: bigint
   token: TokenResult
 }

@@ -19,7 +19,11 @@ export abstract class BaseAccount {
   // and we should display it to the user
   abstract getEstimationCriticalError(estimation: FullEstimation): Error | null
 
-  abstract getAvailableFeeOptions(feePaymentOptions: FeePaymentOption[]): FeePaymentOption[]
+  abstract getAvailableFeeOptions(
+    estimation: FullEstimationSummary,
+    network: Network,
+    feePaymentOptions: FeePaymentOption[]
+  ): FeePaymentOption[]
 
   abstract getGasUsed(
     estimation: FullEstimationSummary,
@@ -32,4 +36,13 @@ export abstract class BaseAccount {
       accountState: AccountOnchainState
     }
   ): bigint
+
+  abstract getBroadcastOption(
+    feeOption: FeePaymentOption,
+    options: {
+      network: Network
+      op: AccountOp
+      accountState: AccountOnchainState
+    }
+  ): string
 }

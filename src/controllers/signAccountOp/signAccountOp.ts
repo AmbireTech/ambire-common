@@ -8,6 +8,7 @@ import {
   ZeroAddress
 } from 'ethers'
 
+import { ARBITRUM_CHAIN_ID } from 'consts/networks'
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import ERC20 from '../../../contracts/compiled/IERC20.json'
 import { FEE_COLLECTOR } from '../../consts/addresses'
@@ -15,6 +16,8 @@ import { BUNDLER } from '../../consts/bundlers'
 import { SINGLETON } from '../../consts/deploy'
 import gasTankFeeTokens from '../../consts/gasTankFeeTokens'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
+import { BROADCAST_OPTIONS } from '../../libs/broadcast/broadcast'
+import { getEstimationSummary } from '../../libs/estimate/estimate'
 /* eslint-disable no-restricted-syntax */
 import { ERRORS, RETRY_TO_INIT_ACCOUNT_OP_MSG } from '../../consts/signAccountOp/errorHandling'
 import {
@@ -197,6 +200,10 @@ export class SignAccountOpController extends EventEmitter {
   // as its own property
   gasUsed: bigint = 0n
 
+  // we move this as an updateable property instead as we'd like to recalculate it
+  // only on estimation updates
+  availableFeeOptions: FeePaymentOption[] = []
+
   constructor(
     keystore: KeystoreController,
     portfolio: PortfolioController,
@@ -275,7 +282,7 @@ export class SignAccountOpController extends EventEmitter {
   getCallDataAdditionalByNetwork(): bigint {
     // no additional call data is required for arbitrum as the bytes are already
     // added in the calculation for the L1 fee
-    if (this.#network.id === 'arbitrum' || !isSmartAccount(this.account)) return 0n
+    if (this.#network.chainId === ARBITRUM_CHAIN_ID || !isSmartAccount(this.account)) return 0n
 
     const estimationCallData = getProbableCallData(
       this.account,
@@ -568,25 +575,11 @@ export class SignAccountOpController extends EventEmitter {
     if (estimation === null) this.estimation = null
 
     if (estimation) {
-      if (estimation instanceof Error) {
-        this.estimation = { error: estimation }
-      } else {
-        this.estimation = {
-          providerEstimation: !(estimation.provider instanceof Error)
-            ? estimation.provider
-            : undefined,
-          ambireEstimation: !(estimation.ambire instanceof Error) ? estimation.ambire : undefined,
-          bundlerEstimation: !(estimation.bundler instanceof Error) ? estimation.bundler : undefined
-        }
-
-        // we care about setting the accountOp nonce only if there's an ambireEstimation
-        // this is because we sign execute() with the accountOp nonce and we need
-        // to make sure it's the correct one
-        // all other nonces (eoa, 4337) are retrieved and synced in a different way
-        if (this.estimation.ambireEstimation) {
-          this.accountOp.nonce = BigInt(this.estimation.ambireEstimation.ambireAccountNonce)
-        }
+      this.estimation = getEstimationSummary(estimation)
+      if (!(estimation instanceof Error) && this.estimation.ambireEstimation) {
+        this.accountOp.nonce = BigInt(this.estimation.ambireEstimation.ambireAccountNonce)
       }
+      this.availableFeeOptions = this.getAvailableFeeOptions()
     }
 
     if (feeToken && paidBy) {
@@ -870,7 +863,9 @@ export class SignAccountOpController extends EventEmitter {
   }
 
   #updateFeeSpeeds() {
-    if (this.#feeSpeedsLoading) return
+    if (!this.estimation || this.estimation instanceof Error || !this.gasPrices) return
+
+    const estimation = this.estimation as FullEstimationSummary
 
     // reset the fee speeds at the beginning to avoid duplications
     this.feeSpeeds = {}
@@ -895,8 +890,17 @@ export class SignAccountOpController extends EventEmitter {
         return
       }
 
-      const erc4337GasLimits = this.estimation?.bundlerEstimation
-      if (erc4337GasLimits) {
+      // each available fee option should declare it's estimation method
+
+      const broadcastOption = this.baseAccount.getBroadcastOption(option, {
+        network: this.#network,
+        op: this.accountOp,
+        accountState: this.accountState
+      })
+      if (broadcastOption === BROADCAST_OPTIONS.byBundler) {
+        const erc4337GasLimits = estimation.bundlerEstimation
+        if (!erc4337GasLimits) return
+
         const speeds: SpeedCalc[] = []
         const usesPaymaster = !!this.estimation?.bundlerEstimation?.paymaster.isUsable()
 
@@ -904,7 +908,7 @@ export class SignAccountOpController extends EventEmitter {
           const simulatedGasLimit =
             BigInt(erc4337GasLimits.callGasLimit) +
             BigInt(erc4337GasLimits.preVerificationGas) +
-            BigInt(option.gasUsed ?? 0)
+            BigInt(option.gasUsed)
           const gasPrice = BigInt(speedValue.maxFeePerGas)
           let amount = SignAccountOpController.getAmountAfterFeeTokenConvert(
             simulatedGasLimit,
@@ -969,7 +973,7 @@ export class SignAccountOpController extends EventEmitter {
               )
 
         // EOA
-        if (!isSmartAccount(this.account)) {
+        if (broadcastOption === BROADCAST_OPTIONS.bySelf) {
           simulatedGasLimit = this.gasUsed
 
           if (this.accountOp.calls[0].to && getAddress(this.accountOp.calls[0].to) === SINGLETON) {
@@ -977,13 +981,17 @@ export class SignAccountOpController extends EventEmitter {
           }
 
           amount = simulatedGasLimit * gasPrice + option.addedNative
-        } else if (option.paidBy !== this.accountOp.accountAddr) {
+        } else if (
+          broadcastOption === BROADCAST_OPTIONS.byOtherEOA ||
+          broadcastOption === BROADCAST_OPTIONS.bySelf7702
+        ) {
           // Smart account, but EOA pays the fee
+          // 7702, and it pays for the fee by itself
           simulatedGasLimit = this.gasUsed + this.getCallDataAdditionalByNetwork()
-          amount = simulatedGasLimit * gasPrice + option.addedNative
+          amount = simulatedGasLimit * gasPrice
         } else {
           // Relayer
-          simulatedGasLimit = this.gasUsed + this.getCallDataAdditionalByNetwork() + option.gasUsed!
+          simulatedGasLimit = this.gasUsed + this.getCallDataAdditionalByNetwork() + option.gasUsed
           amount = SignAccountOpController.getAmountAfterFeeTokenConvert(
             simulatedGasLimit,
             gasPrice,
@@ -1112,8 +1120,8 @@ export class SignAccountOpController extends EventEmitter {
     return this.accountOp?.gasFeePayment?.paidBy || null
   }
 
-  get availableFeeOptions(): FeePaymentOption[] {
-    if (!this.estimation) return []
+  getAvailableFeeOptions(): FeePaymentOption[] {
+    if (!this.estimation || this.estimation instanceof Error) return []
 
     if (this.isSponsored) {
       // if there's no ambireEstimation, it means there's an error
@@ -1127,6 +1135,8 @@ export class SignAccountOpController extends EventEmitter {
     }
 
     return this.baseAccount.getAvailableFeeOptions(
+      this.estimation,
+      this.#network,
       // eslint-disable-next-line no-nested-ternary
       this.estimation.ambireEstimation
         ? this.estimation.ambireEstimation.feePaymentOptions
@@ -1172,9 +1182,7 @@ export class SignAccountOpController extends EventEmitter {
     // 4337 gasUsed is set to 0 in the estimation as we rely
     // on the bundler for the estimation entirely => use hardcode value
     const gasUsedSelectedOption =
-      this.selectedOption.gasUsed && this.selectedOption.gasUsed > 0n
-        ? this.selectedOption.gasUsed
-        : GAS_TANK_TRANSFER_GAS_USED
+      this.selectedOption.gasUsed > 0n ? this.selectedOption.gasUsed : GAS_TANK_TRANSFER_GAS_USED
     const isNativeSelected = this.selectedOption.token.address === ZeroAddress
     const gasUsedNative =
       this.availableFeeOptions.find(
@@ -1364,7 +1372,7 @@ export class SignAccountOpController extends EventEmitter {
         )
         userOperation.preVerificationGas = erc4337Estimation.preVerificationGas
         userOperation.callGasLimit = toBeHex(
-          BigInt(erc4337Estimation.callGasLimit) + (this.selectedOption.gasUsed ?? 0n)
+          BigInt(erc4337Estimation.callGasLimit) + this.selectedOption.gasUsed
         )
         userOperation.verificationGasLimit = erc4337Estimation.verificationGasLimit
         userOperation.paymasterVerificationGasLimit =

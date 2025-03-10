@@ -1,8 +1,10 @@
 /* eslint-disable class-methods-use-this */
+/* eslint-disable @typescript-eslint/no-unused-vars */
 import { ZeroAddress } from 'ethers'
 import { AccountOnchainState } from '../../interfaces/account'
 import { Network } from '../../interfaces/network'
 import { AccountOp } from '../accountOp/accountOp'
+import { BROADCAST_OPTIONS } from '../broadcast/broadcast'
 import {
   AmbireEstimation,
   FeePaymentOption,
@@ -25,7 +27,11 @@ export class EOA extends BaseAccount {
     return null
   }
 
-  getAvailableFeeOptions(feePaymentOptions: FeePaymentOption[]): FeePaymentOption[] {
+  getAvailableFeeOptions(
+    estimation: FullEstimationSummary,
+    network: Network,
+    feePaymentOptions: FeePaymentOption[]
+  ): FeePaymentOption[] {
     const native = feePaymentOptions.find(
       (opt) =>
         opt.paidBy === this.account.addr &&
@@ -58,5 +64,16 @@ export class EOA extends BaseAccount {
     return estimation.providerEstimation.gasUsed > ambireGasUsed
       ? estimation.providerEstimation.gasUsed
       : ambireGasUsed
+  }
+
+  getBroadcastOption(
+    feeOption: FeePaymentOption,
+    options: {
+      network: Network
+      op: AccountOp
+      accountState: AccountOnchainState
+    }
+  ): string {
+    return BROADCAST_OPTIONS.bySelf
   }
 }

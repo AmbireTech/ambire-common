@@ -4,6 +4,7 @@ import { ARBITRUM_CHAIN_ID } from '../../consts/networks'
 import { AccountOnchainState } from '../../interfaces/account'
 import { Network } from '../../interfaces/network'
 import { AccountOp } from '../accountOp/accountOp'
+import { BROADCAST_OPTIONS } from '../broadcast/broadcast'
 import { FeePaymentOption, FullEstimation, FullEstimationSummary } from '../estimate/interfaces'
 import { TokenResult } from '../portfolio'
 import { BaseAccount } from './BaseAccount'
@@ -16,9 +17,23 @@ export class EOA7702 extends BaseAccount {
     return null
   }
 
-  getAvailableFeeOptions(feePaymentOptions: FeePaymentOption[]): FeePaymentOption[] {
+  /*
+   * Available options:
+   * - Native
+   * - Token/Gas tank, if bundler estimation & paymaster
+   */
+  getAvailableFeeOptions(
+    estimation: FullEstimationSummary,
+    network: Network,
+    feePaymentOptions: FeePaymentOption[]
+  ): FeePaymentOption[] {
+    const isNative = (token: TokenResult) => token.address === ZeroAddress && !token.flags.onGasTank
     return feePaymentOptions.filter(
-      (opt) => opt.paidBy === this.account.addr && opt.availableAmount > 0n
+      (opt) =>
+        opt.paidBy === this.account.addr &&
+        opt.availableAmount > 0n &&
+        (isNative(opt.token) ||
+          (estimation.bundlerEstimation && estimation.bundlerEstimation.paymaster))
     )
   }
 
@@ -61,5 +76,27 @@ export class EOA7702 extends BaseAccount {
     // if we're paying in tokens, we're using the bundler
     if (!estimation.bundlerEstimation) return 0n
     return BigInt(estimation.bundlerEstimation.callGasLimit)
+  }
+
+  getBroadcastOption(
+    feeOption: FeePaymentOption,
+    options: {
+      network: Network
+      op: AccountOp
+      accountState: AccountOnchainState
+    }
+  ): string {
+    const feeToken = feeOption.token
+    const isNative = feeToken.address === ZeroAddress && !feeToken.flags.onGasTank
+    if (isNative) {
+      // smarter eoa broadcasts by itself in native
+      if (options.accountState.isSmarterEoa) return BROADCAST_OPTIONS.bySelf7702
+
+      // if it's not smart, yet, and calls are one, it will do EOA mode
+      if (options.op.calls.length === 1) return BROADCAST_OPTIONS.bySelf
+    }
+
+    // txn type 4 OR paying in token
+    return BROADCAST_OPTIONS.byBundler
   }
 }
