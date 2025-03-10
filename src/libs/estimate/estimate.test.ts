@@ -20,6 +20,7 @@ import { BundlerSwitcher } from '../../services/bundlers/bundlerSwitcher'
 import { paymasterFactory } from '../../services/paymaster'
 import { getRpcProvider } from '../../services/provider'
 import { getSmartAccount } from '../account/account'
+import { getBaseAccount } from '../account/getBaseAccount'
 import { Call } from '../accountOp/types'
 import { getAccountState } from '../accountState/accountState'
 import { Portfolio } from '../portfolio/portfolio'
@@ -91,21 +92,9 @@ const v1Acc: Account = {
 }
 const to = '0x68b3465833fb72a70ecdf485e0e4c7bd8665fc45'
 
-const tomorrowHex = Math.floor((Date.now() + 86400000) / 1000).toString(16)
 const yesterdayHex = Math.floor((Date.now() - 86400000) / 1000).toString(16)
 // 64 chars expire hex
 // we set swap deadline always for tomorrow, in order to prevent the test failure with 'TRANSACTION TOO OLD'
-const expire = '0'.repeat(64 - tomorrowHex.length) + tomorrowHex
-
-// USDT -> USDC swap
-// Fee tokens: USDC, USDT
-// Note:
-// If the test account ever runs out of USDC, you can:
-// 1. Open staging.uniswap.org !staging is important
-// 2. Add the test account as view only and connect to uniswap
-// 3. Do a swap with a different pair and copy the calldata from the console
-// 4. Replace the calldata in the test with the new one
-const data = `0x5ae401dc${expire}00000000000000000000000000000000000000000000000000000000000000400000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000000e404e45aaf000000000000000000000000dac17f958d2ee523a2206206994597c13d831ec7000000000000000000000000a0b86991c6218b36c1d19d4a2e9eb0ce3606eb4800000000000000000000000000000000000000000000000000000000000001f4000000000000000000000000a07d75aacefd11b425af7181958f0f85c312f14300000000000000000000000000000000000000000000000000000000000f424000000000000000000000000000000000000000000000000000000000000c3220000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000`
 
 const expired = '0'.repeat(64 - yesterdayHex.length) + yesterdayHex
 const expiredData = `0x5ae401dc${expired}00000000000000000000000000000000000000000000000000000000000000400000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000000e404e45aaf000000000000000000000000a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48000000000000000000000000dac17f958d2ee523a2206206994597c13d831ec700000000000000000000000000000000000000000000000000000000000001f4000000000000000000000000a07d75aacefd11b425af7181958f0f85c312f14300000000000000000000000000000000000000000000000000000000000f424000000000000000000000000000000000000000000000000000000000000c33d9000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000`
@@ -328,8 +317,9 @@ describe('estimate', () => {
 
     const accountStates = await getAccountsInfo([EOAAccount])
     const accountState = accountStates[EOAAccount.addr][ethereum.id]
+    const baseAcc = getBaseAccount(EOAAccount, accountState, [])
     const response = await getEstimation(
-      EOAAccount,
+      baseAcc,
       accountState,
       op,
       ethereum,
@@ -389,8 +379,9 @@ describe('estimate', () => {
 
     const accountStates = await getAccountsInfo([EOAAccount])
     const accountState = accountStates[EOAAccount.addr][polygon.id]
+    const baseAcc = getBaseAccount(EOAAccount, accountState, [])
     const response = await getEstimation(
-      EOAAccount,
+      baseAcc,
       accountState,
       op,
       polygon,
@@ -465,8 +456,9 @@ describe('estimate', () => {
 
     const accountStates = await getAccountsInfo([EOAAccount])
     const accountState = accountStates[EOAAccount.addr][polygon.id]
+    const baseAcc = getBaseAccount(EOAAccount, accountState, [])
     const response = await getEstimation(
-      EOAAccount,
+      baseAcc,
       accountState,
       op,
       polygon,
@@ -523,8 +515,9 @@ describe('estimate', () => {
 
     const accountStates = await getAccountsInfo([EOAAccount])
     const accountState = accountStates[EOAAccount.addr][polygon.id]
+    const baseAcc = getBaseAccount(EOAAccount, accountState, [])
     const response = await getEstimation(
-      EOAAccount,
+      baseAcc,
       accountState,
       op,
       polygon,
@@ -566,8 +559,9 @@ describe('estimate', () => {
 
     const accountStates = await getAccountsInfo([v1Acc])
     const accountState = accountStates[v1Acc.addr][ethereum.id]
+    const baseAcc = getBaseAccount(v1Acc, accountState, [])
     const response = await getEstimation(
-      v1Acc,
+      baseAcc,
       accountState,
       op,
       ethereum,
@@ -608,6 +602,7 @@ describe('estimate', () => {
 
   it('[v1] estimates correctly by passing multiple view only accounts to estimation and removing the fee options for them as they are not valid', async () => {
     const v1AccAbi = new Contract(v1Acc.addr, AmbireAccount.abi, provider)
+    const eoaAddr = '0x40b38765696e3d5d8d9d834d8aad4bb6e418e489'
     const op = {
       accountAddr: v1Acc.addr,
       signingKeyAddr: null,
@@ -617,14 +612,15 @@ describe('estimate', () => {
       networkId: 'ethereum',
       nonce: await v1AccAbi.nonce(),
       signature: spoofSig,
-      calls: [{ to, value: BigInt(0), data }],
+      calls: [{ to: eoaAddr, value: 1n, data: '0x' }],
       accountOpToExecuteBefore: null
     }
 
     const accountStates = await getAccountsInfo([v1Acc])
     const accountState = accountStates[v1Acc.addr][ethereum.id]
+    const baseAcc = getBaseAccount(v1Acc, accountState, [])
     const response = await getEstimation(
-      v1Acc,
+      baseAcc,
       accountState,
       op,
       ethereum,
@@ -663,8 +659,9 @@ describe('estimate', () => {
 
     const accountStates = await getAccountsInfo([viewOnlyAcc])
     const accountState = accountStates[viewOnlyAcc.addr][ethereum.id]
+    const baseAcc = getBaseAccount(viewOnlyAcc, accountState, [])
     const response = await getEstimation(
-      viewOnlyAcc,
+      baseAcc,
       accountState,
       op,
       ethereum,
@@ -726,8 +723,9 @@ describe('estimate', () => {
 
     const accountStates = await getAccountsInfo([accountOptimismv1])
     const accountState = accountStates[accountOptimismv1.addr][optimism.id]
+    const baseAcc = getBaseAccount(accountOptimismv1, accountState, [])
     const response = await getEstimation(
-      accountOptimismv1,
+      baseAcc,
       accountState,
       opOptimism,
       optimism,
@@ -773,8 +771,9 @@ describe('estimate', () => {
 
     const accountStates = await getAccountsInfo([smartAccountv2eip712])
     const accountState = accountStates[smartAccountv2eip712.addr][arbitrum.id]
+    const baseAcc = getBaseAccount(smartAccountv2eip712, accountState, [])
     const response = await getEstimation(
-      smartAccountv2eip712,
+      baseAcc,
       accountState,
       opArbitrum,
       arbitrum,
@@ -812,8 +811,9 @@ describe('estimate', () => {
     }
     const accountStates = await getAccountsInfo([smartAccDeployed])
     const accountState = accountStates[smartAccDeployed.addr][optimism.id]
+    const baseAcc = getBaseAccount(smartAccDeployed, accountState, [])
     const response = await getEstimation(
-      smartAccDeployed,
+      baseAcc,
       accountState,
       opOptimism,
       optimism,
@@ -861,8 +861,9 @@ describe('estimate', () => {
     }
     const accountStates = await getAccountsInfo([smartAcc])
     const accountState = accountStates[smartAcc.addr][optimism.id]
+    const baseAcc = getBaseAccount(smartAcc, accountState, [])
     const response = await getEstimation(
-      smartAcc,
+      baseAcc,
       accountState,
       opOptimism,
       optimism,
@@ -915,8 +916,9 @@ describe('estimate', () => {
     }
     const accountStates = await getAccountsInfo([smartAcc])
     const accountState = accountStates[smartAcc.addr][optimism.id]
+    const baseAcc = getBaseAccount(smartAcc, accountState, [])
     const response = await getEstimation(
-      smartAcc,
+      baseAcc,
       accountState,
       opOptimism,
       optimism,
@@ -966,8 +968,9 @@ describe('estimate', () => {
     }
     const accountStates = await getAccountsInfo([smartAcc])
     const accountState = accountStates[smartAcc.addr][optimism.id]
+    const baseAcc = getBaseAccount(smartAcc, accountState, [])
     const response = await getEstimation(
-      smartAcc,
+      baseAcc,
       accountState,
       opOptimism,
       optimism,
@@ -1001,8 +1004,9 @@ describe('estimate', () => {
     }
     const accountStates = await getAccountsInfo([smartAccDeployed])
     const accountState = accountStates[smartAccDeployed.addr][optimism.id]
+    const baseAcc = getBaseAccount(smartAccDeployed, accountState, [])
     const response = await getEstimation(
-      smartAccDeployed,
+      baseAcc,
       accountState,
       opOptimism,
       optimism,
@@ -1050,8 +1054,9 @@ describe('estimate', () => {
     // corrupt the nonce to be lower
     accountState.erc4337Nonce = 6n
 
+    const baseAcc = getBaseAccount(smartAccDeployed, accountState, [])
     const response = await getEstimation(
-      smartAccDeployed,
+      baseAcc,
       accountState,
       opOptimism,
       optimism,
@@ -1097,8 +1102,9 @@ describe('estimate', () => {
     }
     const accountStates = await getAccountsInfo([smartAccountv2eip712])
     const accountState = accountStates[smartAccountv2eip712.addr][polygon.id]
+    const baseAcc = getBaseAccount(smartAccountv2eip712, accountState, [])
     const response = await getEstimation(
-      smartAccountv2eip712,
+      baseAcc,
       accountState,
       opPolygonFailBzNoFunds,
       polygon,
@@ -1130,8 +1136,13 @@ describe('estimate', () => {
     const accountStates = await getAccountsInfo([smartAccountv2eip712])
     const accountState = accountStates[smartAccountv2eip712.addr][polygon.id]
 
-    const response = await getEstimation(
+    const baseAcc = getBaseAccount(
       { ...smartAccountv2eip712, associatedKeys: [trezorSlot6v2NotDeployed.associatedKeys[0]] },
+      accountState,
+      []
+    )
+    const response = await getEstimation(
+      baseAcc,
       accountState,
       opPolygonFailBzNoFunds,
       polygon,
@@ -1163,8 +1174,9 @@ describe('estimate', () => {
 
     const accountStates = await getAccountsInfo([v1Acc])
     const accountState = accountStates[v1Acc.addr][ethereum.id]
+    const baseAcc = getBaseAccount(v1Acc, accountState, [])
     const response = await getEstimation(
-      v1Acc,
+      baseAcc,
       accountState,
       op,
       ethereum,

@@ -3,7 +3,6 @@
 import { ethErrors } from 'eth-rpc-errors'
 import { getAddress, getBigInt, Interface, isAddress, ZeroAddress } from 'ethers'
 
-import { getBaseAccount } from 'libs/account/getBaseAccount'
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json'
 import EmittableError from '../../classes/EmittableError'
@@ -47,6 +46,7 @@ import {
   isBasicAccount,
   isSmartAccount
 } from '../../libs/account/account'
+import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { AccountOp, AccountOpStatus, getSignableCalls } from '../../libs/accountOp/accountOp'
 import {
   AccountOpIdentifiedBy,
@@ -2569,7 +2569,7 @@ export class MainController extends EventEmitter {
         // it may have different needs
         this.getPortfolioSimulationPromise(localAccountOp),
         getEstimation(
-          account,
+          getBaseAccount(account, accountState, this.keystore.getAccountKeys(account)),
           accountState,
           localAccountOp,
           network,

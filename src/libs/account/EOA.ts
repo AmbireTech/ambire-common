@@ -6,6 +6,7 @@ import { AccountOp } from '../accountOp/accountOp'
 import {
   AmbireEstimation,
   FeePaymentOption,
+  FullEstimation,
   FullEstimationSummary,
   ProviderEstimation
 } from '../estimate/interfaces'
@@ -18,6 +19,11 @@ export class EOA extends BaseAccount {
   providerEstimation?: ProviderEstimation
 
   ambireEstimation?: AmbireEstimation | Error
+
+  getEstimationCriticalError(estimation: FullEstimation): Error | null {
+    if (estimation.provider instanceof Error) return estimation.provider
+    return null
+  }
 
   getAvailableFeeOptions(feePaymentOptions: FeePaymentOption[]): FeePaymentOption[] {
     const native = feePaymentOptions.find(

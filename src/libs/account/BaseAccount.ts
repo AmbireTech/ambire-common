@@ -1,7 +1,7 @@
 import { Account, AccountOnchainState } from '../../interfaces/account'
 import { Network } from '../../interfaces/network'
 import { AccountOp } from '../accountOp/accountOp'
-import { FeePaymentOption, FullEstimationSummary } from '../estimate/interfaces'
+import { FeePaymentOption, FullEstimation, FullEstimationSummary } from '../estimate/interfaces'
 import { TokenResult } from '../portfolio'
 
 export abstract class BaseAccount {
@@ -14,6 +14,10 @@ export abstract class BaseAccount {
   getAccount() {
     return this.account
   }
+
+  // each implementation should declare when an estimation failure is critical
+  // and we should display it to the user
+  abstract getEstimationCriticalError(estimation: FullEstimation): Error | null
 
   abstract getAvailableFeeOptions(feePaymentOptions: FeePaymentOption[]): FeePaymentOption[]
 

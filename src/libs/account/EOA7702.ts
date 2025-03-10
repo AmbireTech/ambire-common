@@ -1,16 +1,21 @@
 /* eslint-disable class-methods-use-this */
-import { ARBITRUM_CHAIN_ID } from 'consts/networks'
 import { ZeroAddress } from 'ethers'
+import { ARBITRUM_CHAIN_ID } from '../../consts/networks'
 import { AccountOnchainState } from '../../interfaces/account'
 import { Network } from '../../interfaces/network'
 import { AccountOp } from '../accountOp/accountOp'
-import { FeePaymentOption, FullEstimationSummary } from '../estimate/interfaces'
+import { FeePaymentOption, FullEstimation, FullEstimationSummary } from '../estimate/interfaces'
 import { TokenResult } from '../portfolio'
 import { BaseAccount } from './BaseAccount'
 
 // this class describes an EOA that CAN transition to 7702
 // even if it is YET to transition to 7702
 export class EOA7702 extends BaseAccount {
+  getEstimationCriticalError(estimation: FullEstimation): Error | null {
+    if (estimation.ambire instanceof Error) return estimation.ambire
+    return null
+  }
+
   getAvailableFeeOptions(feePaymentOptions: FeePaymentOption[]): FeePaymentOption[] {
     return feePaymentOptions.filter(
       (opt) => opt.paidBy === this.account.addr && opt.availableAmount > 0n

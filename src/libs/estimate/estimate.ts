@@ -1,5 +1,6 @@
 import { AbiCoder, ZeroAddress } from 'ethers'
 
+import { BaseAccount } from 'libs/account/BaseAccount'
 import Estimation from '../../../contracts/compiled/Estimation.json'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { DEPLOYLESS_SIMULATION_FROM, OPTIMISTIC_ORACLE } from '../../consts/deploy'
@@ -9,7 +10,7 @@ import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
 import { BundlerSwitcher } from '../../services/bundlers/bundlerSwitcher'
 import { getEoaSimulationStateOverride } from '../../utils/simulationStateOverride'
-import { getAccountDeployParams, isBasicAccount, isSmartAccount } from '../account/account'
+import { getAccountDeployParams, isSmartAccount } from '../account/account'
 import { AccountOp, toSingletonCall } from '../accountOp/accountOp'
 import { Call } from '../accountOp/types'
 import { getFeeCall } from '../calls/calls'
@@ -480,7 +481,7 @@ export async function estimate(
 // - EOA: if payment is native, use estimateGas(); otherwise estimateBundler()
 // - SA: if ethereum, use Estimation.sol; otherwise estimateBundler()
 export async function getEstimation(
-  account: Account,
+  baseAcc: BaseAccount,
   accountState: AccountOnchainState,
   op: AccountOp,
   network: Network,
@@ -491,7 +492,7 @@ export async function getEstimation(
   errorCallback: Function
 ): Promise<FullEstimation | Error> {
   const ambireEstimation = ambireEstimateGas(
-    account,
+    baseAcc.getAccount(),
     accountState,
     op,
     network,
@@ -500,7 +501,7 @@ export async function getEstimation(
     nativeToCheck
   )
   const bundlerEstimation = bundlerEstimate(
-    account,
+    baseAcc.getAccount(),
     accountState,
     op,
     network,
@@ -510,7 +511,7 @@ export async function getEstimation(
     errorCallback
   )
   const providerEstimation = providerEstimateGas(
-    account,
+    baseAcc.getAccount(),
     op,
     provider,
     accountState,
@@ -529,23 +530,18 @@ export async function getEstimation(
   const ambireGas = estimations[0]
   const bundlerGas = estimations[1]
   const providerGas = estimations[2]
+  const fullEstimation: FullEstimation = {
+    provider: providerGas,
+    ambire: ambireGas,
+    bundler: bundlerGas,
+    flags: {}
+  }
 
-  // when to declare failures:
-  // EOA: when providerEstimation fails
-  // Smarter EOAs/SA: when ambireEstimation fails
-  if (isBasicAccount(account, accountState)) {
-    if (providerGas instanceof Error) return providerGas
-  }
-  if (accountState.isSmarterEoa || isSmartAccount(account)) {
-    if (ambireGas instanceof Error) return ambireGas
-  }
+  const criticalError = baseAcc.getEstimationCriticalError(fullEstimation)
+  if (criticalError) return criticalError
 
   // TODO: if the bundler is the preferred method of estimation, re-estimate
   // we can switch it if there's no ambire gas error
-
-  // TODO: if there's a nonce discrepancy, a few things need to happen:
-  // * raise a flag and tell the account state to update itself
-  // const hasNonceDiscrepancy = estimation.error?.cause === 'NONCE_FAILURE'
 
   let flags = {}
   if (!(ambireGas instanceof Error)) flags = { ...ambireGas.flags }

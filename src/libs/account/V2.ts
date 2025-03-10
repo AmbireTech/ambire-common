@@ -2,13 +2,18 @@
 import { AccountOnchainState } from '../../interfaces/account'
 import { Network } from '../../interfaces/network'
 import { AccountOp } from '../accountOp/accountOp'
-import { FeePaymentOption, FullEstimationSummary } from '../estimate/interfaces'
+import { FeePaymentOption, FullEstimation, FullEstimationSummary } from '../estimate/interfaces'
 import { TokenResult } from '../portfolio'
 import { BaseAccount } from './BaseAccount'
 
 // this class describes a plain EOA that cannot transition
 // to 7702 either because the network or the hardware wallet doesnt' support it
 export class V2 extends BaseAccount {
+  getEstimationCriticalError(estimation: FullEstimation): Error | null {
+    if (estimation.ambire instanceof Error) return estimation.ambire
+    return null
+  }
+
   getAvailableFeeOptions(feePaymentOptions: FeePaymentOption[]): FeePaymentOption[] {
     return feePaymentOptions.filter((opt) => opt.availableAmount > 0n)
   }
