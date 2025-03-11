@@ -19,6 +19,9 @@ export const asciiModule: HumanizerCallModule = (
   const newCalls = currentIrCalls.map((call) => {
     if (call.data === '0x') return call
     if (call.fullVisualization && !checkIfUnknownAction(call?.fullVisualization)) return call
+    // assuming that if there are only 4 bytes it is probably just contract method call
+    // and further logic is irrelevant
+    if (call.data.length === '0x12345678'.length) return call
     let messageAsText
     try {
       messageAsText = toUtf8String(call.data)
