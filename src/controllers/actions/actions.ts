@@ -22,12 +22,12 @@ import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 
 // TODO: Temporarily. Refactor imports across the codebase to ref /interfaces/actions instead.
 export type {
-  SwitchAccountAction,
-  Action,
   AccountOpAction,
-  SignMessageAction,
+  Action,
   BenzinAction,
-  DappRequestAction
+  DappRequestAction,
+  SignMessageAction,
+  SwitchAccountAction
 }
 
 export type ActionPosition = 'first' | 'last'

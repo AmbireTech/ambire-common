@@ -9,6 +9,10 @@ import {
   RelayerNetwork
 } from '../interfaces/network'
 
+const hardcodedRpcUrls: { [chainId: string]: string } = {
+  '11155111': 'https://eth-sepolia.public.blastapi.io'
+}
+
 const checkIsRpcUrlWorking = async (rpcUrl: string) => {
   const provider = new JsonRpcProvider(rpcUrl)
 
@@ -53,7 +57,9 @@ const convertToAmbireNetworkFormat = async (network: ChainlistNetwork): Promise<
 
     return !isApiKeyRequired
   })
-  const workingRpcUrl = await rollProviderUrlsAndFindWorking(freeHttpRpcUrls, 0)
+  const workingRpcUrl: string =
+    hardcodedRpcUrls[network.chainId.toString()] ??
+    (await rollProviderUrlsAndFindWorking(freeHttpRpcUrls, 0))
 
   let platformId = null
   let nativeAssetId = null
@@ -102,7 +108,8 @@ const convertToAmbireNetworkFormat = async (network: ChainlistNetwork): Promise<
     iconUrls: [],
     erc4337: { enabled: false, hasPaymaster: false },
     isSAEnabled: false,
-    predefined: false
+    predefined: false,
+    has7702: false
   }
 }
 
@@ -223,7 +230,8 @@ export const mapRelayerNetworkConfigToAmbireNetwork = (
     predefinedConfigVersion,
     areContractsDeployed,
     features,
-    hasSingleton
+    hasSingleton,
+    has7702: false
   }
 }
 

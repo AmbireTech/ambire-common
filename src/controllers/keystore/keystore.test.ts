@@ -5,7 +5,7 @@
 /* eslint-disable max-classes-per-file */
 
 import { Encrypted } from 'eth-crypto'
-import { ethers, Wallet } from 'ethers'
+import { ethers, hexlify, randomBytes, Wallet } from 'ethers'
 import { EventEmitter } from 'stream'
 
 import { describe, expect, test } from '@jest/globals'
@@ -13,7 +13,9 @@ import { describe, expect, test } from '@jest/globals'
 import { produceMemoryStore } from '../../../test/helpers'
 import { suppressConsoleBeforeEach } from '../../../test/helpers/console'
 import { BIP44_STANDARD_DERIVATION_TEMPLATE } from '../../consts/derivation'
+import { Hex } from '../../interfaces/hex'
 import { ExternalKey, Key } from '../../interfaces/keystore'
+import { EIP7702Signature } from '../../interfaces/signatures'
 import { getPrivateKeyFromSeed } from '../../libs/keyIterator/keyIterator'
 import { stripHexPrefix } from '../../utils/stripHexPrefix'
 import { KeystoreController } from './keystore'
@@ -39,6 +41,14 @@ export class InternalSigner {
   signMessage() {
     return Promise.resolve('')
   }
+
+  sign7702(hex: string): EIP7702Signature {
+    return {
+      yParity: '0x00',
+      r: hexlify(randomBytes(32)) as Hex,
+      s: hexlify(randomBytes(32)) as Hex
+    }
+  }
 }
 
 class LedgerSigner {
@@ -59,6 +69,14 @@ class LedgerSigner {
 
   signMessage() {
     return Promise.resolve('')
+  }
+
+  sign7702(hex: string): EIP7702Signature {
+    return {
+      yParity: '0x00',
+      r: hexlify(randomBytes(32)) as Hex,
+      s: hexlify(randomBytes(32)) as Hex
+    }
   }
 }
 

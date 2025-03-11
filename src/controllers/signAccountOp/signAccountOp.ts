@@ -25,7 +25,7 @@ import { Account } from '../../interfaces/account'
 import { ExternalSignerControllers, Key } from '../../interfaces/keystore'
 import { Network } from '../../interfaces/network'
 import { TraceCallDiscoveryStatus, Warning } from '../../interfaces/signAccountOp'
-import { isAmbireV1LinkedAccount, isSmartAccount } from '../../libs/account/account'
+import { isAmbireV1LinkedAccount, isBasicAccount, isSmartAccount } from '../../libs/account/account'
 import { AccountOp, GasFeePayment, getSignableCalls } from '../../libs/accountOp/accountOp'
 import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 import { PaymasterErrorReponse, PaymasterSuccessReponse, Sponsor } from '../../libs/erc7677/types'
@@ -39,11 +39,18 @@ import {
 } from '../../libs/gasPrice/gasPrice'
 import { hasRelayerSupport } from '../../libs/networks/networks'
 import { Price, TokenResult } from '../../libs/portfolio'
-import { getExecuteSignature, getTypedData, wrapStandard } from '../../libs/signMessage/signMessage'
+import {
+  get7702UserOpTypedData,
+  getExecuteSignature,
+  getTypedData,
+  wrapStandard,
+  wrapUnprotected
+} from '../../libs/signMessage/signMessage'
 import { getGasUsed } from '../../libs/singleton/singleton'
 import {
   getActivatorCall,
   getOneTimeNonce,
+  getPackedUserOp,
   getUserOperation,
   getUserOpHash,
   isErc4337Broadcast,
@@ -1298,8 +1305,8 @@ export class SignAccountOpController extends EventEmitter {
     }
 
     try {
-      // In case of EOA account
-      if (!isSmartAccount(this.account)) {
+      // In case of EOA account, no 7702
+      if (isBasicAccount(this.account, accountState)) {
         if (this.accountOp.calls.length !== 1) {
           const callCount = this.accountOp.calls.length > 1 ? 'multiple' : 'zero'
           const message = `Unable to sign the transaction because it has ${callCount} calls. ${RETRY_TO_INIT_ACCOUNT_OP_MSG}`
@@ -1323,6 +1330,7 @@ export class SignAccountOpController extends EventEmitter {
       } else if (this.accountOp.gasFeePayment.isERC4337) {
         // if there's no entryPointAuthorization, the txn will fail
         if (
+          !accountState.isSmarterEoa &&
           !accountState.isDeployed &&
           (!this.accountOp.meta || !this.accountOp.meta.entryPointAuthorization)
         )
@@ -1337,7 +1345,8 @@ export class SignAccountOpController extends EventEmitter {
           accountState,
           this.accountOp,
           this.bundlerSwitcher.getBundler().getName(),
-          !accountState.isDeployed ? this.accountOp.meta!.entryPointAuthorization : undefined
+          this.accountOp.meta?.entryPointAuthorization,
+          accountState.authorization
         )
         userOperation.preVerificationGas = erc4337Estimation.preVerificationGas
         userOperation.callGasLimit = toBeHex(
@@ -1420,6 +1429,17 @@ export class SignAccountOpController extends EventEmitter {
             getUserOpHash(userOperation, this.#network.chainId)
           )
           const signature = wrapStandard(await signer.signTypedData(typedData))
+          userOperation.signature = signature
+          this.accountOp.signature = signature
+        }
+        if (userOperation.requestType === '7702') {
+          const typedData = get7702UserOpTypedData(
+            this.#network.chainId,
+            getSignableCalls(this.accountOp),
+            getPackedUserOp(userOperation),
+            getUserOpHash(userOperation, this.#network.chainId)
+          )
+          const signature = wrapUnprotected(await signer.signTypedData(typedData))
           userOperation.signature = signature
           this.accountOp.signature = signature
         }

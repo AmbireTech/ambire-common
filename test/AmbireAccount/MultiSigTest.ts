@@ -37,7 +37,10 @@ let ambireAccountAddress: string
 describe('Two of two multisignature tests', () => {
   it('successfully deploys the ambire account', async () => {
     const { ambireAccountAddress: addr } = await deployAmbireAccountHardhatNetwork([
-      { addr: getMsAddress(), hash: '0x0000000000000000000000000000000000000000000000000000000000000001' }
+      {
+        addr: getMsAddress(),
+        hash: '0x0000000000000000000000000000000000000000000000000000000000000002'
+      }
     ])
     ambireAccountAddress = addr
   })
@@ -57,6 +60,7 @@ describe('Two of two multisignature tests', () => {
     const abi = new ethers.AbiCoder()
     const signature = abi.encode(['bytes[]'], [[sigOne, sigTwo]])
     const ambireSig = wrapMultiSig(signature)
+
     expect(await contract.isValidSignature(hash, ambireSig)).to.equal(validSig)
   })
   it('fails validation when the order of the passed signatures is not correct', async () => {
@@ -136,7 +140,10 @@ describe('Two of two multisignature tests', () => {
 describe('Three of three multisignature tests', () => {
   before('successfully deploys the ambire account', async () => {
     const { ambireAccountAddress: addr } = await deployAmbireAccountHardhatNetwork([
-      { addr: getMsAddress([addressOne, addressTwo, addressThree]), hash: '0x0000000000000000000000000000000000000000000000000000000000000001' }
+      {
+        addr: getMsAddress([addressOne, addressTwo, addressThree]),
+        hash: '0x0000000000000000000000000000000000000000000000000000000000000002'
+      }
     ])
     ambireAccountAddress = addr
   })

@@ -10,12 +10,35 @@ import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { PORTFOLIO_TESTS_V2 } from '../../consts/addresses'
 import { EOA_SIMULATION_NONCE } from '../../consts/deployless'
 import { networks } from '../../consts/networks'
-import { Account } from '../../interfaces/account'
+import { Account, AccountStates } from '../../interfaces/account'
+import { Network } from '../../interfaces/network'
+import { getRpcProvider } from '../../services/provider'
 import { AccountOp } from '../accountOp/accountOp'
+import { getAccountState } from '../accountState/accountState'
 import { ERC20 } from '../humanizer/const/abis'
 import { stringify } from '../richJson/richJson'
 import { StrippedExternalHintsAPIResponse } from './interfaces'
 import { Portfolio } from './portfolio'
+
+const providers = Object.fromEntries(
+  networks.map((network) => [network.id, getRpcProvider(network.rpcUrls, network.chainId)])
+)
+const getAccountsInfo = async (accounts: Account[]): Promise<AccountStates> => {
+  const result = await Promise.all(
+    networks.map((network) => getAccountState(providers[network.id], network, accounts))
+  )
+  const states = accounts.map((acc: Account, accIndex: number) => {
+    return [
+      acc.addr,
+      Object.fromEntries(
+        networks.map((network: Network, netIndex: number) => {
+          return [network.id, result[netIndex][accIndex]]
+        })
+      )
+    ]
+  })
+  return Object.fromEntries(states)
+}
 
 describe('Portfolio', () => {
   const USDT_ADDRESS = '0xdAC17F958D2ee523a2206206994597C13D831ec7'
@@ -115,8 +138,13 @@ describe('Portfolio', () => {
         pfp: PORTFOLIO_TESTS_V2.addr
       }
     } as Account
+    const accountStates = await getAccountsInfo([account])
     const postSimulation = await portfolio.get(PORTFOLIO_TESTS_V2.addr, {
-      simulation: { accountOps: [accountOp], account }
+      simulation: {
+        accountOps: [accountOp],
+        account,
+        state: accountStates[accountOp.accountAddr].ethereum
+      }
     })
     const entry = postSimulation.tokens.find((x) => x.symbol === 'USDT')
 
@@ -171,8 +199,13 @@ describe('Portfolio', () => {
       }
     }
 
+    const accountStates = await getAccountsInfo([account])
     const postSimulation = await portfolio.get('0xB674F3fd5F43464dB0448a57529eAF37F04cceA5', {
-      simulation: { accountOps: [accountOp], account }
+      simulation: {
+        accountOps: [accountOp],
+        account,
+        state: accountStates[accountOp.accountAddr][accountOp.networkId]
+      }
     })
 
     const collection = postSimulation.collections.find((c) => c.symbol === 'NFT Fiesta')
@@ -222,38 +255,19 @@ describe('Portfolio', () => {
         pfp: acc
       }
     }
+    const accountStates = await getAccountsInfo([account])
     const postSimulation = await portfolio.get(acc, {
-      simulation: { accountOps: [accountOp], account },
-      isEOA: true
+      simulation: {
+        accountOps: [accountOp],
+        account,
+        state: accountStates[accountOp.accountAddr][accountOp.networkId]
+      }
     })
     const entry = postSimulation.tokens.find((x) => x.symbol === 'USDT')
     if (!entry || entry.amountPostSimulation === undefined) {
       throw new Error('Entry not found or `amountPostSimulation` is not calculated')
     }
     expect(entry.amount - entry.amountPostSimulation).toBe(5259434n)
-  })
-
-  test('simulation works with empty account ops', async () => {
-    const acc = '0x7a15866aFfD2149189Aa52EB8B40a8F9166441D9'
-    const account: Account = {
-      addr: acc,
-      associatedKeys: [acc],
-      creation: null,
-      initialPrivileges: [],
-      preferences: {
-        label: DEFAULT_ACCOUNT_LABEL,
-        pfp: acc
-      }
-    }
-    const postSimulation = await portfolio.get(acc, {
-      simulation: { accountOps: [], account },
-      isEOA: true
-    })
-    const entry = postSimulation.tokens.find((x) => x.symbol === 'USDT')
-    if (!entry || entry.amountPostSimulation === undefined) {
-      throw new Error('Entry not found or `amountPostSimulation` is not calculated')
-    }
-    expect(entry.amount - entry.amountPostSimulation).toBe(0n)
   })
 
   test('simulation works for smart accounts imported as EOAs', async () => {
@@ -284,9 +298,13 @@ describe('Portfolio', () => {
         pfp: acc
       }
     }
+    const accountStates = await getAccountsInfo([account])
     const postSimulation = await portfolio.get(acc, {
-      simulation: { accountOps: [accountOp], account },
-      isEOA: true
+      simulation: {
+        accountOps: [accountOp],
+        account,
+        state: accountStates[accountOp.accountAddr][accountOp.networkId]
+      }
     })
     const entry = postSimulation.tokens.find((x) => x.symbol === 'ETH')
     if (!entry || entry.amountPostSimulation === undefined) {
@@ -328,9 +346,14 @@ describe('Portfolio', () => {
         pfp: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
       }
     }
+    const accountStates = await getAccountsInfo([account])
     try {
       await portfolio.get('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8', {
-        simulation: { accountOps: [accountOp], account }
+        simulation: {
+          accountOps: [accountOp],
+          account,
+          state: accountStates[accountOp.accountAddr][accountOp.networkId]
+        }
       })
       // should throw an error and never come here
       expect(true).toBe(false)
@@ -343,7 +366,11 @@ describe('Portfolio', () => {
     accountOp.nonce = 99999999999999999999999999999999999999999n
     try {
       await portfolio.get('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8', {
-        simulation: { accountOps: [accountOp], account }
+        simulation: {
+          accountOps: [accountOp],
+          account,
+          state: accountStates[accountOp.accountAddr][accountOp.networkId]
+        }
       })
       // should throw an error and never come here
       expect(true).toBe(false)
@@ -354,7 +381,7 @@ describe('Portfolio', () => {
     }
   })
 
-  test('simulation should revert with SV_NO_KEYS for an account we do not posses the assoicated key for', async () => {
+  test('simulation should revert with SV_NO_KEYS for an account we do not posses the associated key for', async () => {
     const acc = '0x7a15866aFfD2149189Aa52EB8B40a8F9166441D9'
     const accountOp: any = {
       accountAddr: acc,
@@ -375,13 +402,7 @@ describe('Portfolio', () => {
     const account: Account = {
       addr: acc,
       associatedKeys: [],
-      creation: {
-        // Those parameters are not relevant
-        factoryAddr: '0xBf07a0Df119Ca234634588fbDb5625594E2a5BCA',
-        bytecode:
-          '0x7f00000000000000000000000000000000000000000000000000000000000000017f02c94ba85f2ea274a3869293a0a9bf447d073c83c617963b0be7c862ec2ee44e553d602d80604d3d3981f3363d3d373d3d3d363d732a2b85eb1054d6f0c6c2e37da05ed3e5fea684ef5af43d82803e903d91602b57fd5bf3',
-        salt: '0x2ee01d932ede47b0b2fb1b6af48868de9f86bfc9a5be2f0b42c0111cf261d04c'
-      },
+      creation: null,
       initialPrivileges: [],
       preferences: {
         label: DEFAULT_ACCOUNT_LABEL,
@@ -390,9 +411,13 @@ describe('Portfolio', () => {
     }
 
     try {
+      const accountStates = await getAccountsInfo([account])
       await portfolio.get(acc, {
-        simulation: { accountOps: [accountOp], account },
-        isEOA: true
+        simulation: {
+          accountOps: [accountOp],
+          account,
+          state: accountStates[accountOp.accountAddr][accountOp.networkId]
+        }
       })
     } catch (e: any) {
       expect(e.message).toBe('simulation error: Spoof failed: no keys')
@@ -420,13 +445,7 @@ describe('Portfolio', () => {
     const account: Account = {
       addr: acc,
       associatedKeys: ['0xdAC17F958D2ee523a2206206994597C13D831ec7'],
-      creation: {
-        // Those parameters are not relevant
-        factoryAddr: '0xBf07a0Df119Ca234634588fbDb5625594E2a5BCA',
-        bytecode:
-          '0x7f00000000000000000000000000000000000000000000000000000000000000017f02c94ba85f2ea274a3869293a0a9bf447d073c83c617963b0be7c862ec2ee44e553d602d80604d3d3981f3363d3d373d3d3d363d732a2b85eb1054d6f0c6c2e37da05ed3e5fea684ef5af43d82803e903d91602b57fd5bf3',
-        salt: '0x2ee01d932ede47b0b2fb1b6af48868de9f86bfc9a5be2f0b42c0111cf261d04c'
-      },
+      creation: null,
       initialPrivileges: [],
       preferences: {
         label: DEFAULT_ACCOUNT_LABEL,
@@ -435,9 +454,13 @@ describe('Portfolio', () => {
     }
 
     try {
+      const accountStates = await getAccountsInfo([account])
       await portfolio.get(acc, {
-        simulation: { accountOps: [accountOp], account },
-        isEOA: true
+        simulation: {
+          accountOps: [accountOp],
+          account,
+          state: accountStates[accountOp.accountAddr][accountOp.networkId]
+        }
       })
     } catch (e: any) {
       expect(e.message).toBe('simulation error: Spoof failed: wrong keys')
@@ -477,8 +500,13 @@ describe('Portfolio', () => {
       }
     }
 
+    const accountStates = await getAccountsInfo([account])
     const postSimulation = await portfolio.get(PORTFOLIO_TESTS_V2.addr, {
-      simulation: { accountOps: [accountOp], account }
+      simulation: {
+        accountOps: [accountOp],
+        account,
+        state: accountStates[accountOp.accountAddr][accountOp.networkId]
+      }
     })
     const entry = postSimulation.tokens.find((x) => x.symbol === 'USDT')
 
@@ -521,8 +549,13 @@ describe('Portfolio', () => {
     const secondAccountOp = { ...accountOp }
     secondAccountOp.nonce = accountOp.nonce + 2n // wrong, should be +1n
     try {
+      const accountStates = await getAccountsInfo([account])
       await portfolio.get(PORTFOLIO_TESTS_V2.addr, {
-        simulation: { accountOps: [accountOp, secondAccountOp], account }
+        simulation: {
+          accountOps: [accountOp, secondAccountOp],
+          account,
+          state: accountStates[accountOp.accountAddr][accountOp.networkId]
+        }
       })
       // portfolio.get should revert and not come here
       expect(true).toBe(false)

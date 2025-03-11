@@ -1,6 +1,8 @@
 /* eslint-disable no-param-reassign */
 import {
   AbiCoder,
+  concat,
+  encodeRlp,
   getAddress,
   getBytes,
   hashMessage,
@@ -8,6 +10,7 @@ import {
   Interface,
   isHexString,
   JsonRpcProvider,
+  keccak256,
   toBeHex,
   toUtf8Bytes,
   TypedDataDomain,
@@ -19,8 +22,9 @@ import UniversalSigValidator from '../../../contracts/compiled/UniversalSigValid
 import { PERMIT_2_ADDRESS, UNISWAP_UNIVERSAL_ROUTERS } from '../../consts/addresses'
 import { Account, AccountCreation, AccountId, AccountOnchainState } from '../../interfaces/account'
 import { Hex } from '../../interfaces/hex'
-import { KeystoreSigner } from '../../interfaces/keystore'
+import { KeystoreSignerInterface } from '../../interfaces/keystore'
 import { Network } from '../../interfaces/network'
+import { EIP7702Signature } from '../../interfaces/signatures'
 import { TypedMessage } from '../../interfaces/userRequest'
 import hexStringToUint8Array from '../../utils/hexStringToUint8Array'
 import isSameAddr from '../../utils/isSameAddr'
@@ -32,8 +36,9 @@ import {
   getSignableHash
 } from '../accountOp/accountOp'
 import { fromDescriptor } from '../deployless/deployless'
-import { relayerAdditionalNetworks } from '../networks/networks'
+import { PackedUserOperation } from '../userOperation/types'
 import { getActivatorCall } from '../userOperation/userOperation'
+import { get7702SigV } from './utils'
 
 // EIP6492 signature ends in magicBytes, which ends with a 0x92,
 // which makes it is impossible for it to collide with a valid ecrecover signature if packed in the r,s,v format,
@@ -201,6 +206,71 @@ export const getTypedData = (
 }
 
 /**
+ * Return the typed data for EIP-712 sign
+ */
+export const get7702UserOpTypedData = (
+  chainId: bigint,
+  txns: [string, string, string][],
+  packedUserOp: PackedUserOperation,
+  userOpHash: string
+): TypedMessage => {
+  const calls = txns.map((txn) => ({
+    to: txn[0],
+    value: txn[1],
+    data: txn[2]
+  }))
+
+  const domain: TypedDataDomain = {
+    name: 'Ambire',
+    version: '1',
+    chainId,
+    verifyingContract: packedUserOp.sender,
+    salt: toBeHex(0, 32)
+  }
+  const types = {
+    Transaction: [
+      { name: 'to', type: 'address' },
+      { name: 'value', type: 'uint256' },
+      { name: 'data', type: 'bytes' }
+    ],
+    Ambire4337AccountOp: [
+      { name: 'account', type: 'address' },
+      { name: 'chainId', type: 'uint256' },
+      { name: 'nonce', type: 'uint256' },
+      { name: 'initCode', type: 'bytes' },
+      { name: 'accountGasLimits', type: 'bytes32' },
+      { name: 'preVerificationGas', type: 'uint256' },
+      { name: 'gasFees', type: 'bytes32' },
+      { name: 'paymasterAndData', type: 'bytes' },
+      { name: 'callData', type: 'bytes' },
+      { name: 'calls', type: 'Transaction[]' },
+      { name: 'hash', type: 'bytes32' }
+    ]
+  }
+  const message = {
+    account: packedUserOp.sender,
+    chainId,
+    nonce: packedUserOp.nonce,
+    initCode: packedUserOp.initCode,
+    accountGasLimits: packedUserOp.accountGasLimits,
+    preVerificationGas: packedUserOp.preVerificationGas,
+    gasFees: packedUserOp.gasFees,
+    paymasterAndData: packedUserOp.paymasterAndData,
+    callData: packedUserOp.callData,
+    calls,
+    hash: userOpHash
+  }
+
+  return {
+    kind: 'typedMessage',
+    domain,
+    types,
+    message,
+    primaryType: 'Ambire4337AccountOp'
+  }
+}
+
+/**
  * Produce EIP6492 signature for Predeploy Contracts
  *
  * More info: https://eips.ethereum.org/EIPS/eip-6492
@@ -231,19 +301,25 @@ export function mapSignatureV(sigRaw: string) {
   return hexlify(sig)
 }
 
+// Either `message` or `typedData` must be provided - never both.
 type Props = {
-  network?: Network
-  provider?: JsonRpcProvider
-  signer?: string
+  network: Network
+  provider: JsonRpcProvider
+  signer: string
   signature: string | Uint8Array
-  message?: string | Uint8Array
-  typedData?: {
-    domain: TypedDataDomain
-    types: Record<string, Array<TypedDataField>>
-    message: Record<string, any>
-  }
-  finalDigest?: string
-}
+} & (
+  | { message: string | Uint8Array; typedData?: never; authorization?: never }
+  | {
+      typedData: {
+        domain: TypedDataDomain
+        types: Record<string, Array<TypedDataField>>
+        message: Record<string, any>
+      }
+      message?: never
+      authorization?: never
+    }
+  | { message?: never; typedData?: never; authorization: Hex }
+)
 
 /**
  * Verifies the signature of a message using the provided signer and signature
@@ -252,7 +328,7 @@ type Props = {
  * `eth_call`, tries to verify the signature using ERC-6492, ERC-1271, and
  * `ecrecover`, and returns the value to the function.
  *
- * Note: you only need to pass one of: typedData, finalDigest, message
+ * Note: you only need to pass one of: `message` or `typedData`
  */
 export async function verifyMessage({
   network,
@@ -260,14 +336,11 @@ export async function verifyMessage({
   signer,
   signature,
   message,
-  typedData,
-  finalDigest
-}: (
-  | Required<Pick<Props, 'message'>>
-  | Required<Pick<Props, 'typedData'>>
-  | Required<Pick<Props, 'finalDigest'>>
-) &
-  Props): Promise<boolean> {
+  authorization,
+  typedData
+}: Props): Promise<boolean> {
+  let finalDigest: string
+
   if (message) {
     try {
       finalDigest = hashMessage(message)
@@ -279,7 +352,16 @@ export async function verifyMessage({
         }`
       )
     }
-  } else if (typedData) {
+  } else if (authorization) {
+    finalDigest = authorization
+  } else {
+    // According to the Props definition, either `message` or `typedData` must be provided.
+    // However, TypeScript struggles with this `else` condition, incorrectly treating `typedData` as undefined.
+    // To prevent TypeScript from complaining, we've added this runtime validation.
+    if (!typedData) {
+      throw new Error("Either 'message' or 'typedData' must be provided.")
+    }
+
     // To resolve the "ambiguous primary types or unused types" error, remove
     // the `EIP712Domain` from `types` object. The domain type is inbuilt in
     // the EIP712 standard and hence TypedDataEncoder so you do not need to
@@ -329,9 +411,9 @@ export async function verifyMessage({
   let callResult
   try {
     const deploylessVerify = fromDescriptor(
-      provider!,
+      provider,
       UniversalSigValidator,
-      !network!.rpcNoStateOverride
+      !network.rpcNoStateOverride
     )
     const deploylessRes = await deploylessVerify.call('isValidSigWithSideEffects', [
       signer,
@@ -369,7 +451,7 @@ export async function getExecuteSignature(
   network: Network,
   accountOp: AccountOp,
   accountState: AccountOnchainState,
-  signer: KeystoreSigner
+  signer: KeystoreSignerInterface
 ) {
   // if we're authorizing calls for a v1 contract, we do a sign message
   // on the hash of the calls
@@ -393,7 +475,8 @@ export async function getPlainTextSignature(
   network: Network,
   account: Account,
   accountState: AccountOnchainState,
-  signer: KeystoreSigner
+  signer: KeystoreSignerInterface,
+  isOG = false
 ): Promise<string> {
   const dedicatedToOneSA = signer.key.dedicatedToOneSA
 
@@ -426,23 +509,18 @@ export async function getPlainTextSignature(
     )
 
     if (
-      !network.predefined &&
-      !relayerAdditionalNetworks.find((net) => net.chainId === network.chainId)
+      // @NOTE: isOG is to allow tem members to sign anything with v1 accounts regardless of safety and security
+      !isOG &&
+      !isAsciiAddressInMessage &&
+      !isLowercaseHexAddressInMessage &&
+      !isChecksummedHexAddressInMessage
     ) {
-      throw new Error(`Signing messages is disallowed for v1 accounts on ${network.name}`)
+      throw new Error(
+        'Signing messages is disallowed for v1 accounts. Please contact support to proceed'
+      )
     }
 
-    if (
-      isAsciiAddressInMessage ||
-      isLowercaseHexAddressInMessage ||
-      isChecksummedHexAddressInMessage
-    ) {
-      return wrapUnprotected(await signer.signMessage(messageHex))
-    }
-
-    throw new Error(
-      'Signing messages is disallowed for v1 accounts. Please contact support to proceed'
-    )
+    return wrapUnprotected(await signer.signMessage(messageHex))
   }
 
   // if it's safe, we proceed
@@ -464,8 +542,9 @@ export async function getEIP712Signature(
   message: TypedMessage,
   account: Account,
   accountState: AccountOnchainState,
-  signer: KeystoreSigner,
-  network: Network
+  signer: KeystoreSignerInterface,
+  network: Network,
+  isOG = false
 ): Promise<string> {
   if (!message.types.EIP712Domain) {
     throw new Error(
@@ -486,21 +565,25 @@ export async function getEIP712Signature(
   if (!accountState.isV2) {
     const asString = JSON.stringify(message).toLowerCase()
     if (
-      asString.indexOf(account.addr.toLowerCase()) !== -1 ||
-      (message.domain.name === 'Permit2' &&
+      // @NOTE: isOG is to allow tem members to sign anything with v1 accounts regardless of safety and security
+      !isOG &&
+      !asString.includes(account.addr.toLowerCase()) &&
+      !(
+        message.domain.name === 'Permit2' &&
         message.domain.verifyingContract &&
         getAddress(message.domain.verifyingContract) === PERMIT_2_ADDRESS &&
         message.message &&
         message.message.spender &&
         UNISWAP_UNIVERSAL_ROUTERS[Number(network.chainId)] &&
-        UNISWAP_UNIVERSAL_ROUTERS[Number(network.chainId)] === getAddress(message.message.spender))
+        UNISWAP_UNIVERSAL_ROUTERS[Number(network.chainId)] === getAddress(message.message.spender)
+      )
     ) {
-      return wrapUnprotected(await signer.signTypedData(message))
+      throw new Error(
+        'Signing this eip-712 message is disallowed for v1 accounts as it does not contain the smart account address and therefore deemed unsafe'
+      )
     }
 
-    throw new Error(
-      'Signing this eip-712 message is disallowed for v1 accounts as it does not contain the smart account address and therefore deemed unsafe'
-    )
+    return wrapUnprotected(await signer.signTypedData(message))
   }
 
   // we do not allow signers who are not dedicated to one account to sign eip-712
@@ -558,4 +641,58 @@ export function adjustEntryPointAuthorization(signature: string): string {
   // since normally when we sign an EIP-712 request, we wrap it in Unprotected,
   // we adjust the entry point authorization signature so we could execute a txn
   return wrapStandard(entryPointSig.substring(0, entryPointSig.length - 2))
+}
+
+// the hash the user needs to eth_sign in order for his EOA to turn smarter
+export function getAuthorizationHash(chainId: bigint, contractAddr: Hex, nonce: bigint): Hex {
+  return keccak256(
+    concat([
+      '0x05', // magic authrorization string
+      encodeRlp([
+        // zeros are empty bytes in rlp encoding
+        chainId !== 0n ? toBeHex(chainId) : '0x',
+        contractAddr,
+        // zeros are empty bytes in rlp encoding
+        nonce !== 0n ? toBeHex(nonce) : '0x'
+      ])
+    ])
+  ) as Hex
+}
+
+function getHexStringSignature(
+  signature: string,
+  account: Account,
+  accountState: AccountOnchainState
+) {
+  return account.creation && !accountState.isDeployed
+    ? // https://eips.ethereum.org/EIPS/eip-6492
+      (wrapCounterfactualSign(signature, account.creation) as Hex)
+    : (signature as Hex)
+}
+
+export function getVerifyMessageSignature(
+  signature: EIP7702Signature | string,
+  account: Account,
+  accountState: AccountOnchainState
+): Hex {
+  if (isHexString(signature)) return getHexStringSignature(signature, account, accountState)
+
+  const sig = signature as EIP7702Signature
+  // ethereum v is 27 or 28
+  const v = get7702SigV(sig)
+  return concat([sig.r, sig.s, v]) as Hex
+}
+
+// get the signature in the format you want returned to the dapp/implementation
+// for example, we return the counterfactual signature
+// to the dapp if the account is not deployed
+// and we return directly an EIP7702Signature if it's that type
+export function getAppFormatted(
+  signature: EIP7702Signature | string,
+  account: Account,
+  accountState: AccountOnchainState
+): EIP7702Signature | Hex {
+  if (isHexString(signature)) return getHexStringSignature(signature, account, accountState)
+
+  return signature as EIP7702Signature
 }

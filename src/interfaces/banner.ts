@@ -11,6 +11,7 @@ export type BannerCategory =
   | 'bridge-failed'
   | 'temp-seed-not-confirmed'
   | 'old-account'
+  | 'activate-7702'
 
 export interface Banner {
   id: number | string
@@ -56,14 +57,9 @@ export type Action =
       actionName: 'backup-keystore-secret'
     }
   | {
-      label: 'Switch'
-      actionName: 'switch-default-wallet'
-      meta: {}
-    }
-  | {
       label: 'Reject'
       actionName: 'reject-bridge'
-      meta: { activeRouteId: number }
+      meta: { activeRouteIds: number[] }
     }
   | {
       label: 'Proceed to Next Step' | 'Open'
@@ -73,7 +69,7 @@ export type Action =
   | {
       label: 'Close'
       actionName: 'close-bridge'
-      meta: { activeRouteId: number }
+      meta: { activeRouteIds: number[] }
     }
   | {
       label: 'Details'
@@ -97,10 +93,20 @@ export type Action =
       actionName: 'update-extension-version'
     }
   | {
+      label: 'Upgrade'
+      actionName: 'activate-7702'
+      meta: { accountAddr: string }
+    }
+  | {
       label: 'Retry'
       actionName: 'reload-selected-account'
     }
   | {
       label: 'Dismiss'
       actionName: 'dismiss-email-vault'
+    }
+  | {
+      label: 'Dismiss'
+      actionName: 'dismiss-7702-banner'
+      meta: { accountAddr: string }
     }

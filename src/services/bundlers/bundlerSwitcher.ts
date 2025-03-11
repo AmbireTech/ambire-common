@@ -1,6 +1,7 @@
 /* eslint-disable class-methods-use-this */
 
 import { BUNDLER } from '../../consts/bundlers'
+import { Account } from '../../interfaces/account'
 import { Network } from '../../interfaces/network'
 import { Bundler } from './bundler'
 import { getBundlerByName, getDefaultBundler } from './getBundler'
@@ -42,7 +43,10 @@ export class BundlerSwitcher {
     return this.noStateUpdateStatuses.includes(this.getSignAccountOpStatus())
   }
 
-  canSwitch(bundlerError: Error | null): boolean {
+  canSwitch(acc: Account, bundlerError: Error | null): boolean {
+    // no fallbacks for EOAs
+    if (!acc.creation) return false
+
     // don't switch the bundler if the account op is in a state of signing
     if (this.userHasCommitted()) return false
 

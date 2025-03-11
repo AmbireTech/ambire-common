@@ -91,6 +91,7 @@ export interface Network {
   // When we migrate from custom to predefined network from relayer, we need to store the custom network name
   // for future migration of other storages by this id
   customNetworkId?: string
+  has7702: boolean
 }
 
 export type UserNetworkPreferencesForPredefinedNetworks = Pick<

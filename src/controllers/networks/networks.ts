@@ -1,5 +1,5 @@
 import EmittableError from '../../classes/EmittableError'
-import { networks as predefinedNetworks } from '../../consts/networks'
+import { networks as predefinedNetworks, ODYSSEY_CHAIN_ID } from '../../consts/networks'
 import { Fetch } from '../../interfaces/fetch'
 import {
   AddNetworkRequestParams,
@@ -23,7 +23,6 @@ import {
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { mapRelayerNetworkConfigToAmbireNetwork } from '../../utils/networks'
 import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter'
-import { networksList } from './networksList'
 
 const STATUS_WRAPPED_METHODS = {
   addNetwork: 'INITIAL',
@@ -298,29 +297,38 @@ export class NetworksController extends EventEmitter {
         })
       }
     })
+    predefinedNetworks.forEach((n) => {
+      this.#networks[n.id] = {
+        ...n, // add the latest structure of the predefined network to include the new props that are not in storage yet
+        ...(this.#networks[n.id] || {}), // override with stored props
+        // attributes that should take predefined priority
+        feeOptions: n.feeOptions,
+        hasRelayer: n.hasRelayer,
+        erc4337: {
+          enabled: is4337Enabled(!!n.erc4337.hasBundlerSupport, n, this.#networks[n.id]?.force4337),
+          hasPaymaster: n.erc4337.hasPaymaster,
+          defaultBundler: n.erc4337.defaultBundler,
+          bundlers: n.erc4337.bundlers,
+          increasePreVerGas: n.erc4337.increasePreVerGas ?? 0
+        },
+        nativeAssetId: n.nativeAssetId,
+        nativeAssetSymbol: n.nativeAssetSymbol,
+        has7702: n.has7702
+      }
+    })
 
-    // TODO: This mapping was updated  recently in v2 with addition
-    // of two props bundlers and increasePreVerGas.
-    // We need to update the mapping here as well and figure out how to handle the migration
+    // add predefined: false for each deleted network from predefined
+    Object.keys(this.#networks).forEach((networkName) => {
+      const predefinedNetwork = predefinedNetworks.find(
+        (net) => net.chainId === this.#networks[networkName].chainId
+      )
+      if (!predefinedNetwork) {
+        this.#networks[networkName].predefined = false
 
-    // predefinedNetworks.forEach((n) => {
-    //   this.#networks[n.id] = {
-    //     ...n, // add the latest structure of the predefined network to include the new props that are not in storage yet
-    //     ...(this.#networks[n.id] || {}), // override with stored props
-    //     // attributes that should take predefined priority
-    //     feeOptions: n.feeOptions,
-    //     hasRelayer: n.hasRelayer,
-    //     erc4337: {
-    //       enabled: is4337Enabled(!!n.erc4337.hasBundlerSupport, n, this.#networks[n.id]?.force4337),
-    //       hasPaymaster: n.erc4337.hasPaymaster,
-    //       defaultBundler: n.erc4337.defaultBundler,
-    //       bundlers: n.erc4337.bundlers,
-    //       increasePreVerGas: n.erc4337.increasePreVerGas ?? 0
-    //     },
-    //     nativeAssetId: n.nativeAssetId,
-    //     nativeAssetSymbol: n.nativeAssetSymbol
-    //   }
-    // });
+        if (this.#networks[networkName].chainId === ODYSSEY_CHAIN_ID)
+          this.#networks[networkName].platformId = 'ethereum'
+      }
+    })
 
     this.#networks = Object.values(networksInStorage)
       .sort((a, b) => {
@@ -402,7 +410,8 @@ export class NetworksController extends EventEmitter {
       feeOptions,
       features: getFeaturesByNetworkProperties(info),
       hasRelayer: false,
-      predefined: false
+      predefined: false,
+      has7702: false
     }
 
     this.#onAddOrUpdateNetwork(this.#networks[network.chainId.toString()])
