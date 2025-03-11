@@ -304,6 +304,9 @@ export async function getEstimation(
     flags: {}
   }
 
+  console.log('the full estimation')
+  console.log(fullEstimation)
+
   const criticalError = baseAcc.getEstimationCriticalError(fullEstimation)
   if (criticalError) return criticalError
 

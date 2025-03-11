@@ -1,10 +1,8 @@
 /* eslint-disable @typescript-eslint/brace-style */
 
 import { ethErrors } from 'eth-rpc-errors'
-import { getAddress, getBigInt, Interface, isAddress, ZeroAddress } from 'ethers'
+import { getAddress, getBigInt, isAddress, ZeroAddress } from 'ethers'
 
-import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
-import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json'
 import EmittableError from '../../classes/EmittableError'
 import SwapAndBridgeError from '../../classes/SwapAndBridgeError'
 import { BUNDLER } from '../../consts/bundlers'
@@ -24,12 +22,7 @@ import {
 import { Banner } from '../../interfaces/banner'
 import { DappProviderRequest } from '../../interfaces/dapp'
 import { Fetch } from '../../interfaces/fetch'
-import {
-  ExternalSignerControllers,
-  Key,
-  KeystoreSignerType,
-  TxnRequest
-} from '../../interfaces/keystore'
+import { ExternalSignerControllers, Key, KeystoreSignerType } from '../../interfaces/keystore'
 import { AddNetworkRequestParams, Network, NetworkId } from '../../interfaces/network'
 import { NotificationManager } from '../../interfaces/notification'
 import { RPCProvider } from '../../interfaces/provider'
@@ -59,7 +52,7 @@ import {
   getAccountOpFromAction
 } from '../../libs/actions/actions'
 import { getAccountOpBanners } from '../../libs/banners/banners'
-import { BROADCAST_OPTIONS } from '../../libs/broadcast/broadcast'
+import { BROADCAST_OPTIONS, buildRawTransaction } from '../../libs/broadcast/broadcast'
 import { getPaymasterService } from '../../libs/erc7677/erc7677'
 import { decodeError } from '../../libs/errorDecoder'
 import { ErrorType } from '../../libs/errorDecoder/types'
@@ -2638,7 +2631,8 @@ export class MainController extends EventEmitter {
       !accountOp.signingKeyAddr ||
       !accountOp.signingKeyType ||
       !accountOp.signature ||
-      !bundlerSwitcher
+      !bundlerSwitcher ||
+      !accountOp.gasFeePayment
     ) {
       const message = `Missing mandatory transaction details. ${contactSupportPrompt}`
       return this.throwBroadcastAccountOp({ message })
@@ -2675,21 +2669,22 @@ export class MainController extends EventEmitter {
       identifiedBy: AccountOpIdentifiedBy
     } | null = null
 
-    // Plain EOA
-    if (accountOp.gasFeePayment?.broadcastOption === BROADCAST_OPTIONS.bySelf) {
+    // broadcasting by EOA is quite the same:
+    // 1) build a rawTxn 2) sign 3) broadcast
+    // we have one handle, just a diff rawTxn for each case
+    const rawTxnBroadcast = [
+      BROADCAST_OPTIONS.bySelf,
+      BROADCAST_OPTIONS.bySelf7702,
+      BROADCAST_OPTIONS.byOtherEOA
+    ]
+    if (rawTxnBroadcast.includes(accountOp.gasFeePayment.broadcastOption)) {
       try {
-        const feePayerKeys = this.keystore.keys.filter(
-          (key) => key.addr === accountOp.gasFeePayment!.paidBy
-        )
-        const feePayerKey =
-          // Temporarily prioritize the key with the same type as the signing key.
-          // TODO: Implement a way to choose the key type to broadcast with.
-          feePayerKeys.find((key) => key.type === accountOp.signingKeyType) || feePayerKeys[0]
-        if (!feePayerKey) {
-          const missingKeyAddr = shortenAddress(accountOp.gasFeePayment!.paidBy, 13)
-          const accAddr = shortenAddress(accountOp.accountAddr, 13)
-          const message = `Key with address ${missingKeyAddr} for account with address ${accAddr} not found. ${contactSupportPrompt}`
-          return await this.throwBroadcastAccountOp({ message, accountState })
+        const feePayerKey = this.keystore.getFeePayerKey(accountOp)
+        if (feePayerKey instanceof Error) {
+          return await this.throwBroadcastAccountOp({
+            message: feePayerKey.message,
+            accountState
+          })
         }
         this.feePayerKey = feePayerKey
         this.emitUpdate()
@@ -2697,105 +2692,15 @@ export class MainController extends EventEmitter {
         const signer = await this.keystore.getSigner(feePayerKey.addr, feePayerKey.type)
         if (signer.init) signer.init(this.#externalSignerControllers[feePayerKey.type])
 
-        const gasFeePayment = accountOp.gasFeePayment!
-        const { to, value, data } = accountOp.calls[0]
-        const rawTxn: TxnRequest = {
-          to: to ?? undefined,
-          value,
-          data,
-          chainId: network!.chainId,
-          nonce: await provider.getTransactionCount(accountOp.accountAddr),
-          gasLimit: gasFeePayment.simulatedGasLimit
-        }
-
-        // if it's eip1559, send it as such. If no, go to legacy
-        if (gasFeePayment.maxPriorityFeePerGas !== undefined) {
-          rawTxn.maxFeePerGas = gasFeePayment.gasPrice
-          rawTxn.maxPriorityFeePerGas = gasFeePayment.maxPriorityFeePerGas
-          rawTxn.type = 2
-        } else {
-          rawTxn.gasPrice = gasFeePayment.gasPrice
-          rawTxn.type = 0
-        }
-
-        const signedTxn = await signer.signRawTransaction(rawTxn)
-        const broadcastRes = await provider.broadcastTransaction(signedTxn)
-        transactionRes = {
-          txnId: broadcastRes.hash,
-          nonce: broadcastRes.nonce,
-          identifiedBy: {
-            type: 'Transaction',
-            identifier: broadcastRes.hash
-          }
-        }
-      } catch (error: any) {
-        return this.throwBroadcastAccountOp({ error, accountState })
-      }
-    }
-    // Smart account, EOA pays
-    else if (accountOp.gasFeePayment?.broadcastOption === BROADCAST_OPTIONS.byOtherEOA) {
-      const feePayerKeys = this.keystore.keys.filter(
-        (key) => key.addr === accountOp.gasFeePayment!.paidBy
-      )
-      const feePayerKey =
-        // Temporarily prioritize the key with the same type as the signing key.
-        // TODO: Implement a way to choose the key type to broadcast with.
-        feePayerKeys.find((key) => key.type === accountOp.signingKeyType) || feePayerKeys[0]
-      if (!feePayerKey) {
-        const missingKeyAddr = shortenAddress(accountOp.gasFeePayment!.paidBy, 13)
-        const accAddr = shortenAddress(accountOp.accountAddr, 13)
-        const message = `Key with address ${missingKeyAddr} for account with address ${accAddr} not found.`
-
-        return this.throwBroadcastAccountOp({ message, accountState })
-      }
-
-      this.feePayerKey = feePayerKey
-      this.emitUpdate()
-
-      let data
-      let to
-      if (accountState.isDeployed) {
-        const ambireAccount = new Interface(AmbireAccount.abi)
-        to = accountOp.accountAddr
-        data = ambireAccount.encodeFunctionData('execute', [
-          getSignableCalls(accountOp),
-          accountOp.signature
-        ])
-      } else {
-        const ambireFactory = new Interface(AmbireFactory.abi)
-        to = account.creation!.factoryAddr
-        data = ambireFactory.encodeFunctionData('deployAndExecute', [
-          account.creation!.bytecode,
-          account.creation!.salt,
-          getSignableCalls(accountOp),
-          accountOp.signature
-        ])
-      }
-
-      try {
-        const signer = await this.keystore.getSigner(feePayerKey.addr, feePayerKey.type)
-        if (signer.init) signer.init(this.#externalSignerControllers[feePayerKey.type])
-
-        const rawTxn: TxnRequest = {
-          to,
-          data,
-          // We ultimately do a smart contract call, which means we don't need
-          // to send any `value` from the EOA address. The actual `value` will
-          // get taken from the value encoded in the `data` field.
-          value: BigInt(0),
-          chainId: network.chainId,
-          nonce: await provider.getTransactionCount(accountOp.gasFeePayment!.paidBy),
-          gasLimit: accountOp.gasFeePayment.simulatedGasLimit
-        }
-
-        if (accountOp.gasFeePayment.maxPriorityFeePerGas !== undefined) {
-          rawTxn.maxFeePerGas = accountOp.gasFeePayment.gasPrice
-          rawTxn.maxPriorityFeePerGas = accountOp.gasFeePayment.maxPriorityFeePerGas
-          rawTxn.type = 2
-        } else {
-          rawTxn.gasPrice = accountOp.gasFeePayment.gasPrice
-          rawTxn.type = 0
-        }
+        const nonce = await provider.getTransactionCount(accountOp.accountAddr)
+        const rawTxn = buildRawTransaction(
+          account,
+          accountOp,
+          accountState,
+          network,
+          nonce,
+          BROADCAST_OPTIONS.bySelf
+        )
 
         const signedTxn = await signer.signRawTransaction(rawTxn)
         const broadcastRes = await provider.broadcastTransaction(signedTxn)

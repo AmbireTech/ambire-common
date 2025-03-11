@@ -705,6 +705,8 @@ export class SignAccountOpController extends EventEmitter {
       hasGasUsedChanged
     ) {
       this.#updateFeeSpeeds()
+      console.log('the fee speeds after update')
+      console.log(this.feeSpeeds)
     }
 
     // Here, we expect to have most of the fields set, so we can safely set GasFeePayment
