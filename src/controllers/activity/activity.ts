@@ -202,6 +202,7 @@ export class ActivityController extends EventEmitter {
   // free the memory calling this method.
   resetAccountsOpsFilters(sessionId: string) {
     delete this.accountsOps[sessionId]
+    this.emitUpdate()
   }
 
   // Everytime we add/remove an AccOp, we should run this method in order to keep the filtered and internal accounts ops in sync.
@@ -245,6 +246,7 @@ export class ActivityController extends EventEmitter {
   // free the memory calling this method.
   resetSignedMessagesFilters(sessionId: string) {
     delete this.signedMessages[sessionId]
+    this.emitUpdate()
   }
 
   // Everytime we add/remove a Message, we should run this method in order to keep the filtered and internal messages in sync.
