@@ -69,8 +69,7 @@ import {
   ACCOUNT_SWITCH_USER_REQUEST,
   buildSwitchAccountUserRequest,
   getAccountOpsForSimulation,
-  makeBasicAccountOpAction,
-  makeSmartAccountOpAction
+  makeAccountOpAction
 } from '../../libs/main/main'
 import { relayerAdditionalNetworks } from '../../libs/networks/networks'
 import { isPortfolioGasTankResult } from '../../libs/portfolio/helpers'
@@ -800,62 +799,9 @@ export class MainController extends EventEmitter {
     clearTimeout(timeoutId)
   }
 
-  // show signAccountOp with previously added userRequests kind calls
-  #makeAccountOpFromStackedCalls(networkId: string, accountAddr: string) {
-    // no account op request if there isn't one
-    const callsUserReqs = this.userRequests.filter(
-      (req) =>
-        req.action.kind === 'calls' &&
-        req.meta.networkId === networkId &&
-        req.meta.accountAddr === accountAddr
-    )
-    if (!callsUserReqs.length) return
-
-    // if the EOA has become smarter, bundle the actions.
-    // if not, initialize a single action
-    const isSmarterEOA = this.accounts.accountStates[accountAddr][networkId].isSmarterEoa
-    if (isSmarterEOA) {
-      const accountOpActions = this.actions.actionsQueue.filter(
-        (a) =>
-          a.type === 'accountOp' &&
-          a.accountOp.accountAddr === accountAddr &&
-          a.accountOp.networkId === networkId
-      )
-      accountOpActions.forEach((act) => this.actions.removeAction(act.id))
-      const accountOpAction = makeSmartAccountOpAction({
-        account: this.accounts.accounts.find((acc) => acc.addr === accountAddr)!,
-        networkId,
-        nonce: this.accounts.accountStates[accountAddr][networkId].nonce,
-        userRequests: this.userRequests,
-        actionsQueue: this.actions.actionsQueue
-      })
-      const windowInterval = setInterval(() => {
-        if (this.actions.actionWindow.loaded) return
-        this.actions.addOrUpdateAction(accountOpAction, 'first')
-        clearInterval(windowInterval)
-      }, 200)
-    } else {
-      const windowInterval = setInterval(() => {
-        if (this.actions.actionWindow.loaded) return
-
-        callsUserReqs.forEach((req) => {
-          const accountOpAction = makeBasicAccountOpAction({
-            account: this.accounts.accounts.find((acc) => acc.addr === accountAddr)!,
-            networkId,
-            nonce: this.accounts.accountStates[accountAddr][networkId].nonce,
-            userRequest: req
-          })
-          this.actions.addOrUpdateAction(accountOpAction)
-        })
-
-        clearInterval(windowInterval)
-      }, 200)
-    }
-  }
-
   handleSignMessageCallbacks(signedMessage: SignedMessage) {
     if (signedMessage.fromActionId === ENTRY_POINT_AUTHORIZATION_REQUEST_ID) {
-      const accountOpAction = makeSmartAccountOpAction({
+      const accountOpAction = makeAccountOpAction({
         account: this.accounts.accounts.filter((a) => a.addr === signedMessage.accountAddr)[0],
         networkId: signedMessage.networkId,
         nonce:
@@ -1740,7 +1686,7 @@ export class MainController extends EventEmitter {
           // the reject will remove the userRequest which will rebuild the action and update the signAccountOp
           this.rejectUserRequest('User rejected the transaction request.', userRequest.id)
         } else {
-          const accountOpAction = makeSmartAccountOpAction({
+          const accountOpAction = makeAccountOpAction({
             account: this.accounts.accounts.find((a) => a.addr === accountAddr)!,
             networkId,
             nonce: this.accounts.accountStates[accountAddr][networkId].nonce,
@@ -1958,7 +1904,7 @@ export class MainController extends EventEmitter {
           )
         : undefined
 
-      const accountOpAction = makeSmartAccountOpAction({
+      const accountOpAction = makeAccountOpAction({
         account,
         networkId: meta.networkId,
         nonce: accountState.nonce,

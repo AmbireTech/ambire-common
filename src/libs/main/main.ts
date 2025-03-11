@@ -72,7 +72,7 @@ export const buildSwitchAccountUserRequest = ({
   }
 }
 
-export const makeSmartAccountOpAction = ({
+export const makeAccountOpAction = ({
   account,
   networkId,
   nonce,
@@ -140,39 +140,6 @@ export const makeSmartAccountOpAction = ({
 
   return {
     id: `${account.addr}-${networkId}`, // SA accountOpAction id
-    type: 'accountOp',
-    accountOp
-  }
-}
-
-export const makeBasicAccountOpAction = ({
-  account,
-  networkId,
-  nonce,
-  userRequest
-}: {
-  account: Account
-  networkId: string
-  nonce: bigint | null
-  userRequest: UserRequest
-}): AccountOpAction => {
-  const { calls } = userRequest.action as Calls
-  const accountOp = {
-    accountAddr: account.addr,
-    networkId,
-    signingKeyAddr: null,
-    signingKeyType: null,
-    gasLimit: null,
-    gasFeePayment: null,
-    nonce,
-    signature: account.associatedKeys[0] ? generateSpoofSig(account.associatedKeys[0]) : null,
-    accountOpToExecuteBefore: null, // @TODO from pending recoveries
-    calls: calls.map((call) => ({ ...call, fromUserRequestId: userRequest.id }))
-  }
-
-  return {
-    // BA accountOpAction id same as the userRequest's id because for each call we have an action
-    id: userRequest.id,
     type: 'accountOp',
     accountOp
   }
