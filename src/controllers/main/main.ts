@@ -37,10 +37,8 @@ import { Storage } from '../../interfaces/storage'
 import { SocketAPISendTransactionRequest } from '../../interfaces/swapAndBridge'
 import { Calls, DappUserRequest, SignUserRequest, UserRequest } from '../../interfaces/userRequest'
 import { WindowManager } from '../../interfaces/window'
-import { getContractImplementation } from '../../libs/7702/7702'
 import {
   canBecomeSmarter,
-  canBecomeSmarterOnChain,
   getDefaultSelectedAccount,
   hasBecomeSmarter,
   isBasicAccount,
@@ -61,6 +59,7 @@ import {
   getAccountOpFromAction
 } from '../../libs/actions/actions'
 import { getAccountOpBanners, getBecomeSmarterEOABanner } from '../../libs/banners/banners'
+import { BROADCAST_OPTIONS } from '../../libs/broadcast/broadcast'
 import { getPaymasterService } from '../../libs/erc7677/erc7677'
 import {
   getHumanReadableBroadcastError,
@@ -86,7 +85,6 @@ import { parse } from '../../libs/richJson/richJson'
 import { isNetworkReady } from '../../libs/selectedAccount/selectedAccount'
 import {
   adjustEntryPointAuthorization,
-  getAuthorizationHash,
   getEntryPointAuthorization
 } from '../../libs/signMessage/signMessage'
 import {
@@ -881,22 +879,6 @@ export class MainController extends EventEmitter {
       }
 
       this.actions.addOrUpdateAction(accountOpAction, 'first')
-      return
-    }
-
-    if (signedMessage.content.kind === 'authorization-7702') {
-      const account = this.accounts.accounts.find((a) => a.addr === signedMessage.accountAddr)!
-
-      // fetch the newest account state so EOA = smarter
-      this.accounts
-        .updateAccountState(
-          account.addr,
-          'latest',
-          signedMessage.content.chainId === 0n ? [] : [signedMessage.networkId]
-        )
-        .then(() => {
-          this.#makeAccountOpFromStackedCalls(signedMessage.networkId, signedMessage.accountAddr)
-        })
     }
   }
 
@@ -933,9 +915,6 @@ export class MainController extends EventEmitter {
     this.handleSignMessageCallbacks(signedMessage)
 
     await this.activity.addSignedMessage(signedMessage, signedMessage.accountAddr)
-
-    // no need to await this, the app will update by itself accordingly
-    this.accounts.update({ authorization: signedMessage })
 
     this.resolveUserRequest({ hash: signedMessage.signature }, signedMessage.fromActionId)
 
@@ -1724,35 +1703,9 @@ export class MainController extends EventEmitter {
     }
   }
 
-  #handlePostReject(userRequest: UserRequest) {
-    // if the user rejects 7702, he will sign as normal EOA the stack calls
-    if (userRequest.action.kind === 'authorization-7702') {
-      this.#makeAccountOpFromStackedCalls(userRequest.meta.networkId, userRequest.meta.accountAddr)
-    }
-  }
-
-  async updateDisable7702Reminders(
-    accountAddr: string,
-    opts: { disable7702Popup?: boolean; disable7702Banner?: boolean }
-  ) {
-    await this.accounts.updateDisable7702Reminders(accountAddr, opts)
-    await this.#selectAccount(accountAddr)
-  }
-
-  rejectUserRequest(
-    err: string,
-    requestId: UserRequest['id'],
-    opts?: { shouldDisable7702Asking?: boolean }
-  ) {
+  rejectUserRequest(err: string, requestId: UserRequest['id']) {
     const userRequest = this.userRequests.find((r) => r.id === requestId)
     if (!userRequest) return
-
-    if (opts && 'shouldDisable7702Asking' in opts && opts.shouldDisable7702Asking) {
-      this.accounts.updateDisable7702Reminders(userRequest.meta.accountAddr, {
-        disable7702Banner: true,
-        disable7702Popup: true
-      })
-    }
 
     this.#handlePreReject(userRequest)
 
@@ -1774,7 +1727,6 @@ export class MainController extends EventEmitter {
 
     userRequest.dappPromise?.reject(ethErrors.provider.userRejectedRequest<any>(err))
     this.removeUserRequest(requestId)
-    this.#handlePostReject(userRequest)
   }
 
   rejectSignAccountOpCall(callId: string) {
@@ -1936,58 +1888,6 @@ export class MainController extends EventEmitter {
         this.emitUpdate()
         return true
       }
-    }
-
-    // basic account: ask for 7702 auth
-    if (
-      this.featureFlags.isFeatureEnabled('eip7702') &&
-      !account.disable7702Popup &&
-      canBecomeSmarterOnChain(
-        network,
-        account,
-        accountState,
-        this.keystore.getAccountKeys(this.selectedAccount.account!)
-      )
-    ) {
-      // check if the 7702 authorization is already visible
-      // if it is, focus it and remove old call requests to it
-      const hasFocussed = this.#focusPreUserRequestIfAnyAndDeleteOldRequest(
-        (a: any) =>
-          a.type === 'signMessage' &&
-          a.userRequest.action.kind === 'authorization-7702' &&
-          a.userRequest.meta.networkId === req.meta.networkId,
-        req
-      )
-      if (hasFocussed) return true
-
-      const contractAddr = getContractImplementation(network.chainId)
-      await this.addUserRequest(
-        {
-          id: 'Authorization7702',
-          action: {
-            kind: 'authorization-7702',
-            chainId: network.chainId,
-            nonce: accountState.nonce,
-            contractAddr,
-            message: getAuthorizationHash(network.chainId, contractAddr, accountState.nonce)
-          },
-          meta: {
-            isSignAction: true,
-            accountAddr: meta.accountAddr,
-            networkId: meta.networkId,
-            show7702Info: true
-          },
-          session: req.session,
-          dappPromise: req?.dappPromise
-            ? { reject: req?.dappPromise?.reject, resolve: () => {} }
-            : undefined
-        } as SignUserRequest,
-        'first',
-        actionExecutionType
-      )
-
-      this.emitUpdate()
-      return true
     }
 
     return false
@@ -2750,8 +2650,8 @@ export class MainController extends EventEmitter {
       identifiedBy: AccountOpIdentifiedBy
     } | null = null
 
-    // Basic account (EOA)
-    if (isBasicAccount(account, accountState)) {
+    // Plain EOA
+    if (accountOp.gasFeePayment?.broadcastOption === BROADCAST_OPTIONS.bySelf) {
       try {
         const feePayerKeys = this.keystore.keys.filter(
           (key) => key.addr === accountOp.gasFeePayment!.paidBy
@@ -2807,12 +2707,8 @@ export class MainController extends EventEmitter {
         return this.throwBroadcastAccountOp({ error, accountState })
       }
     }
-    // Smart account but EOA pays the fee
-    else if (
-      account.creation &&
-      accountOp.gasFeePayment &&
-      accountOp.gasFeePayment.paidBy !== account.addr
-    ) {
+    // Smart account, EOA pays
+    else if (accountOp.gasFeePayment?.broadcastOption === BROADCAST_OPTIONS.byOtherEOA) {
       const feePayerKeys = this.keystore.keys.filter(
         (key) => key.addr === accountOp.gasFeePayment!.paidBy
       )
@@ -2842,10 +2738,10 @@ export class MainController extends EventEmitter {
         ])
       } else {
         const ambireFactory = new Interface(AmbireFactory.abi)
-        to = account.creation.factoryAddr
+        to = account.creation!.factoryAddr
         data = ambireFactory.encodeFunctionData('deployAndExecute', [
-          account.creation.bytecode,
-          account.creation.salt,
+          account.creation!.bytecode,
+          account.creation!.salt,
           getSignableCalls(accountOp),
           accountOp.signature
         ])
@@ -2891,7 +2787,7 @@ export class MainController extends EventEmitter {
       }
     }
     // Smart account, the ERC-4337 way
-    else if (accountOp.gasFeePayment && accountOp.gasFeePayment.isERC4337) {
+    else if (accountOp.gasFeePayment?.broadcastOption === BROADCAST_OPTIONS.byBundler) {
       const userOperation = accountOp.asUserOperation
       if (!userOperation) {
         const accAddr = shortenAddress(accountOp.accountAddr, 13)
@@ -2903,9 +2799,11 @@ export class MainController extends EventEmitter {
       let userOperationHash
       const bundler = bundlerSwitcher.getBundler()
       try {
-        userOperationHash = !accountState.authorization
-          ? await bundler.broadcast(userOperation, network)
-          : await bundler.broadcast7702(userOperation, network)
+        // TODO: decide what should be broadcast
+        // userOperationHash = !accountState.authorization
+        //   ? await bundler.broadcast(userOperation, network)
+        //   : await bundler.broadcast7702(userOperation, network)
+        userOperationHash = await bundler.broadcast(userOperation, network)
       } catch (e: any) {
         let retryMsg
 

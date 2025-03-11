@@ -60,12 +60,11 @@ export async function ambireEstimateGas(
 
   // only the activator call is added here as there are cases where it's needed
   const calls = [...op.calls.map(toSingletonCall)]
-  if (shouldIncludeActivatorCall(network, account, accountState, false)) {
+  if (shouldIncludeActivatorCall(network, account, accountState, true)) {
     calls.push(getActivatorCall(op.accountAddr))
   }
 
-  const isStillPureEoa =
-    accountState.isEOA && (!accountState.isSmarterEoa || !!accountState.authorization)
+  const isStillPureEoa = accountState.isEOA && !accountState.isSmarterEoa
   const checkInnerCallsArgs = [
     account.addr,
     ...getAccountDeployParams(account),

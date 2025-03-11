@@ -67,4 +67,16 @@ export class V2 extends BaseAccount {
     if (options.network.erc4337.enabled) return BROADCAST_OPTIONS.byBundler
     return BROADCAST_OPTIONS.byRelayer
   }
+
+  shouldIncludeActivatorCall(
+    network: Network,
+    accountState: AccountOnchainState,
+    broadcastOption: string
+  ) {
+    return (
+      network.erc4337.enabled &&
+      !accountState.isErc4337Enabled &&
+      broadcastOption === BROADCAST_OPTIONS.byOtherEOA
+    )
+  }
 }

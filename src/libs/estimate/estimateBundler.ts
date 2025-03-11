@@ -78,12 +78,17 @@ async function estimate(
   // isEdgeCase should probably be adjusted for the first broadcast
   const isEdgeCase =
     !accountState.isSmarterEoa && !accountState.isErc4337Enabled && accountState.isDeployed
+  // TODO: check if the bundler estimation is not good enough if we don't pass
+  // the eip7702Auth props along
+  // const initializeRequests = () => [
+  //   accountState.authorization
+  //     ? bundler
+  //         .estimate7702(userOp, network, accountState.authorization)
+  //         .catch(estimateErrorCallback)
+  //     : bundler.estimate(userOp, network, isEdgeCase).catch(estimateErrorCallback)
+  // ]
   const initializeRequests = () => [
-    accountState.authorization
-      ? bundler
-          .estimate7702(userOp, network, accountState.authorization)
-          .catch(estimateErrorCallback)
-      : bundler.estimate(userOp, network, isEdgeCase).catch(estimateErrorCallback)
+    bundler.estimate(userOp, network, isEdgeCase).catch(estimateErrorCallback)
   ]
 
   const estimation = await estimateWithRetries(
@@ -120,13 +125,14 @@ export async function bundlerEstimate(
     return new Error('Entry point privileges not granted. Please contact support')
 
   const initialBundler = switcher.getBundler()
+  // TODO: check if the bundler estimation is not good enough if we don't pass
+  // the eip7702Auth props along
   const userOp = getUserOperation(
     account,
     accountState,
     localOp,
     initialBundler.getName(),
-    op.meta?.entryPointAuthorization,
-    accountState.authorization
+    op.meta?.entryPointAuthorization
   )
   // set the callData
   if (userOp.activatorCall) localOp.activatorCall = userOp.activatorCall

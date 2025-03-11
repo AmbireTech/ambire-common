@@ -1,3 +1,5 @@
+/* eslint-disable class-methods-use-this */
+/* eslint-disable @typescript-eslint/no-unused-vars */
 import { Account, AccountOnchainState } from '../../interfaces/account'
 import { Network } from '../../interfaces/network'
 import { AccountOp } from '../accountOp/accountOp'
@@ -45,4 +47,13 @@ export abstract class BaseAccount {
       accountState: AccountOnchainState
     }
   ): string
+
+  // this is specific for v2 accounts, hardcoding a false for all else
+  shouldIncludeActivatorCall(
+    network: Network,
+    accountState: AccountOnchainState,
+    broadcastOption: string
+  ) {
+    return false
+  }
 }

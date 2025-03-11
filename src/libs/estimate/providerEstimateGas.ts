@@ -48,12 +48,7 @@ export async function providerEstimateGas(
   feeTokens: TokenResult[]
 ): Promise<ProviderEstimation | Error> {
   // we don't do estimateGas() for smart accounts
-  // also, there's no way to do estimateGas validly in the case of an off-chain 7702 EOA
-  // as txn_type 4 needs to be broadcast and there's no way to enforce that
-  // on the estimateGas(). So we're returning an error here that should
-  // be disregarded in the implementation as other methods for estimation
-  // should pass
-  if (isSmartAccount(account) || (accountState.isSmarterEoa && accountState.authorization)) {
+  if (isSmartAccount(account)) {
     return new Error('disallowed')
   }
 

@@ -3,18 +3,14 @@ import { AbiCoder, ZeroAddress } from 'ethers'
 import { BaseAccount } from 'libs/account/BaseAccount'
 import Estimation from '../../../contracts/compiled/Estimation.json'
 import { FEE_COLLECTOR } from '../../consts/addresses'
-import { DEPLOYLESS_SIMULATION_FROM, OPTIMISTIC_ORACLE } from '../../consts/deploy'
-import { EOA_SIMULATION_NONCE } from '../../consts/deployless'
+import { OPTIMISTIC_ORACLE } from '../../consts/deploy'
 import { Account, AccountOnchainState, AccountStates } from '../../interfaces/account'
 import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
 import { BundlerSwitcher } from '../../services/bundlers/bundlerSwitcher'
-import { getEoaSimulationStateOverride } from '../../utils/simulationStateOverride'
 import { getAccountDeployParams, isSmartAccount } from '../account/account'
 import { AccountOp, toSingletonCall } from '../accountOp/accountOp'
-import { Call } from '../accountOp/types'
-import { getFeeCall } from '../calls/calls'
-import { DeploylessMode, fromDescriptor } from '../deployless/deployless'
+import { fromDescriptor } from '../deployless/deployless'
 import { getHumanReadableEstimationError } from '../errorHumanizer'
 import { getProbableCallData } from '../gasPrice/gasPrice'
 import { hasRelayerSupport } from '../networks/networks'
@@ -29,7 +25,6 @@ import { estimationErrorFormatted } from './errors'
 import { bundlerEstimate } from './estimateBundler'
 import { estimateEOA } from './estimateEOA'
 import { estimateGas } from './estimateGas'
-import { getFeeTokenForEstimate } from './estimateHelpers'
 import { estimateWithRetries, retryOnTimeout } from './estimateWithRetries'
 import {
   EstimateResult,
@@ -40,218 +35,6 @@ import {
 import { providerEstimateGas } from './providerEstimateGas'
 
 const abiCoder = new AbiCoder()
-
-export async function estimate4337(
-  account: Account,
-  op: AccountOp,
-  calls: Call[],
-  accountStates: AccountStates,
-  network: Network,
-  provider: RPCProvider,
-  feeTokens: TokenResult[],
-  blockTag: string | number,
-  nativeToCheck: string[],
-  switcher: BundlerSwitcher,
-  errorCallback: Function
-): Promise<EstimateResult> {
-  const deploylessEstimator = fromDescriptor(provider, Estimation, !network.rpcNoStateOverride)
-
-  // build the feePaymentOptions with the available current amounts. We will
-  // change them after simulation passes
-  let feePaymentOptions = feeTokens.map((token: TokenResult) => {
-    return {
-      paidBy: account.addr,
-      availableAmount: token.amount,
-      // @relyOnBundler
-      // gasUsed goes to 0
-      // we add a transfer call or a native call when sending the uOp to the
-      // bundler and he estimates that. For different networks this gasUsed
-      // goes to different places (callGasLimit or preVerificationGas) and
-      // its calculated differently. So it's a wild bet to think we could
-      // calculate this on our own for each network.
-      gasUsed: 0n,
-      // addedNative gets calculated by the bundler & added to uOp gasData
-      addedNative: 0n,
-      token
-    }
-  })
-
-  const accountState = accountStates[op.accountAddr][op.networkId]
-  const checkInnerCallsArgs = [
-    account.addr,
-    ...getAccountDeployParams(account),
-    [
-      account.addr,
-      op.accountOpToExecuteBefore?.nonce || 0,
-      op.accountOpToExecuteBefore?.calls || [],
-      op.accountOpToExecuteBefore?.signature || '0x'
-    ],
-    [account.addr, op.nonce || 1, calls, '0x'],
-    getProbableCallData(account, op, accountState, network),
-    account.associatedKeys,
-    feeTokens.map((feeToken) => feeToken.address),
-    FEE_COLLECTOR,
-    nativeToCheck,
-    network.isOptimistic ? OPTIMISTIC_ORACLE : ZeroAddress
-  ]
-
-  // always add a feeCall if available as we're using the paymaster
-  // on predefined chains and on custom networks it is better to
-  // have a slightly bigger estimation (if we don't have a paymaster)
-  const estimateGasOp = { ...op }
-  const feeToken = getFeeTokenForEstimate(feeTokens, network)
-  if (feeToken) estimateGasOp.feeCall = getFeeCall(feeToken)
-
-  const initializeRequests = () => [
-    deploylessEstimator
-      .call('estimate', checkInnerCallsArgs, {
-        from: DEPLOYLESS_SIMULATION_FROM,
-        blockTag,
-        mode: accountState.authorization ? DeploylessMode.StateOverride : DeploylessMode.Detect,
-        stateToOverride: accountState.authorization
-          ? getEoaSimulationStateOverride(account.addr)
-          : null
-      })
-      .catch(getHumanReadableEstimationError),
-    bundlerEstimate(
-      account,
-      accountState,
-      op,
-      network,
-      feeTokens,
-      provider,
-      switcher,
-      errorCallback
-    ),
-    estimateGas(account, estimateGasOp, provider, accountState, network).catch(() => 0n)
-  ]
-
-  const estimations = await estimateWithRetries(
-    initializeRequests,
-    'estimation-deployless',
-    errorCallback,
-    12000
-  )
-
-  const ambireEstimation = estimations[0]
-  const bundlerEstimationResult: EstimateResult = estimations[1]
-  if (ambireEstimation instanceof Error) {
-    return estimationErrorFormatted(
-      // give priority to the bundler error if both estimations end up with an error
-      bundlerEstimationResult.error ?? ambireEstimation,
-      { feePaymentOptions }
-    )
-  }
-
-  // // if there's a bundler error only, remove the smart account payment options
-  // if (bundlerEstimationResult instanceof Error) feePaymentOptions = []
-  const [
-    [
-      deployment,
-      accountOpToExecuteBefore,
-      accountOp,
-      outcomeNonce,
-      feeTokenOutcomes,
-      ,
-      nativeAssetBalances,
-      ,
-      l1GasEstimation
-    ]
-  ] = ambireEstimation
-
-  const opNonce = accountState.authorization ? BigInt(EOA_SIMULATION_NONCE) : op.nonce!
-  const ambireEstimationError =
-    getInnerCallFailure(
-      accountOp,
-      calls,
-      network,
-      feeTokens.find((token) => token.address === ZeroAddress && !token.flags.onGasTank)?.amount
-    ) || getNonceDiscrepancyFailure(opNonce, outcomeNonce)
-
-  // if Estimation.sol estimate is a success, it means the nonce has incremented
-  // so we subtract 1 from it. If it's an error, we return the old one
-  bundlerEstimationResult.currentAccountNonce = accountOp.success
-    ? Number(outcomeNonce - 1n)
-    : Number(outcomeNonce)
-
-  if (ambireEstimationError) {
-    // if there's an ambire estimation error, we do not allow the txn
-    // to be executed as it means it will most certainly fail
-    bundlerEstimationResult.error = ambireEstimationError
-  } else if (!ambireEstimationError && bundlerEstimationResult.error) {
-    // if there's a bundler error only, it means it's a bundler specific
-    // problem. If we can switch the bundler, re-estimate
-
-    if (switcher.canSwitch(account, null)) {
-      switcher.switch()
-      return estimate4337(
-        account,
-        op,
-        calls,
-        accountStates,
-        network,
-        provider,
-        feeTokens,
-        blockTag,
-        nativeToCheck,
-        switcher,
-        errorCallback
-      )
-    }
-
-    // if there's a bundler error only, it means we cannot do ERC-4337
-    // but we have to do broadcast by EOA
-    feePaymentOptions = []
-    delete bundlerEstimationResult.erc4337GasLimits
-    bundlerEstimationResult.error = null
-  }
-
-  // set the gasUsed to the biggest one found from all estimations
-  const bigIntMax = (...args: bigint[]): bigint => args.reduce((m, e) => (e > m ? e : m))
-  const ambireGas = deployment.gasUsed + accountOpToExecuteBefore.gasUsed + accountOp.gasUsed
-  const estimateGasCall = estimations[2]
-  bundlerEstimationResult.gasUsed = bigIntMax(
-    bundlerEstimationResult.gasUsed,
-    estimateGasCall,
-    ambireGas
-  )
-
-  const isPaymasterUsable = !!bundlerEstimationResult.erc4337GasLimits?.paymaster.isUsable()
-  bundlerEstimationResult.feePaymentOptions = feePaymentOptions
-    .filter((option) => isPaymasterUsable || option.token.address === ZeroAddress)
-    .map((option: FeePaymentOption, index: number) => {
-      // after simulation: add the left over amount as available
-      const localOp = { ...option }
-      if (!option.token.flags.onGasTank) {
-        localOp.availableAmount = feeTokenOutcomes[index][1]
-        localOp.token.amount = feeTokenOutcomes[index][1]
-      }
-
-      localOp.gasUsed = localOp.token.flags.onGasTank ? 5000n : feeTokenOutcomes[index][0]
-      return localOp
-    })
-
-  // this is for EOAs paying for SA in native
-  const nativeToken = feeTokens.find(
-    (token) => token.address === ZeroAddress && !token.flags.onGasTank
-  )
-  const nativeTokenOptions: FeePaymentOption[] = !accountState.isSmarterEoa
-    ? nativeAssetBalances.map((balance: bigint, key: number) => ({
-        paidBy: nativeToCheck[key],
-        availableAmount: balance,
-        addedNative: l1GasEstimation.fee,
-        token: {
-          ...nativeToken,
-          amount: balance
-        }
-      }))
-    : []
-  bundlerEstimationResult.feePaymentOptions = [
-    ...bundlerEstimationResult.feePaymentOptions,
-    ...nativeTokenOptions
-  ]
-  return bundlerEstimationResult
-}
 
 export async function estimate(
   provider: RPCProvider,
@@ -304,22 +87,6 @@ export async function estimate(
   if (shouldIncludeActivatorCall(network, account, accountState, false)) {
     calls.push(getActivatorCall(op.accountAddr))
   }
-
-  // if 4337, delegate
-  if (opts && opts.is4337Broadcast)
-    return estimate4337(
-      account,
-      op,
-      calls,
-      accountStates,
-      network,
-      provider,
-      feeTokens,
-      blockTag,
-      nativeToCheck,
-      bundlerSwitcher,
-      errorCallback
-    )
 
   const deploylessEstimator = fromDescriptor(provider, Estimation, !network.rpcNoStateOverride)
   const optimisticOracle = network.isOptimistic ? OPTIMISTIC_ORACLE : ZeroAddress
@@ -536,6 +303,9 @@ export async function getEstimation(
     bundler: bundlerGas,
     flags: {}
   }
+
+  console.log('the full estimate')
+  console.log(fullEstimation)
 
   const criticalError = baseAcc.getEstimationCriticalError(fullEstimation)
   if (criticalError) return criticalError

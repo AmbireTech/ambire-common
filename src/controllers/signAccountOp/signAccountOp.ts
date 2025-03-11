@@ -29,7 +29,7 @@ import { Account, AccountOnchainState } from '../../interfaces/account'
 import { ExternalSignerControllers, Key } from '../../interfaces/keystore'
 import { Network } from '../../interfaces/network'
 import { TraceCallDiscoveryStatus, Warning } from '../../interfaces/signAccountOp'
-import { isAmbireV1LinkedAccount, isBasicAccount, isSmartAccount } from '../../libs/account/account'
+import { isAmbireV1LinkedAccount, isSmartAccount } from '../../libs/account/account'
 import { AccountOp, GasFeePayment, getSignableCalls } from '../../libs/accountOp/accountOp'
 import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 import { PaymasterErrorReponse, PaymasterSuccessReponse, Sponsor } from '../../libs/erc7677/types'
@@ -63,7 +63,6 @@ import {
   getUserOperation,
   getUserOpHash,
   isErc4337Broadcast,
-  shouldIncludeActivatorCall,
   shouldUseOneTimeNonce
 } from '../../libs/userOperation/userOperation'
 import { BundlerSwitcher } from '../../services/bundlers/bundlerSwitcher'
@@ -1117,7 +1116,12 @@ export class SignAccountOpController extends EventEmitter {
       simulatedGasLimit: chosenSpeed.simulatedGasLimit,
       gasPrice: chosenSpeed.gasPrice,
       maxPriorityFeePerGas:
-        'maxPriorityFeePerGas' in chosenSpeed ? chosenSpeed.maxPriorityFeePerGas : undefined
+        'maxPriorityFeePerGas' in chosenSpeed ? chosenSpeed.maxPriorityFeePerGas : undefined,
+      broadcastOption: this.baseAccount.getBroadcastOption(this.selectedOption, {
+        network: this.#network,
+        op: this.accountOp,
+        accountState: this.accountState
+      })
     }
   }
 
@@ -1292,7 +1296,15 @@ export class SignAccountOpController extends EventEmitter {
       return this.#emitSigningErrorAndResetToReadyToSign(message)
     }
 
-    const isUsingPaymaster = !!this.estimation?.bundlerEstimation?.paymaster.isUsable()
+    if (!this.estimation || this.estimation instanceof Error) {
+      const message = `Unable to sign the transaction. During the preparation step, required account key information was found missing. ${RETRY_TO_INIT_ACCOUNT_OP_MSG}`
+      return this.#emitSigningErrorAndResetToReadyToSign(message)
+    }
+
+    const broadcastOption = this.accountOp.gasFeePayment.broadcastOption
+    const isUsingPaymaster =
+      broadcastOption === BROADCAST_OPTIONS.byBundler &&
+      !!this.estimation.bundlerEstimation?.paymaster.isUsable()
     const usesOneTimeNonce = shouldUseOneTimeNonce(this.accountState)
     if (this.accountOp.gasFeePayment.isERC4337 && isUsingPaymaster && !usesOneTimeNonce) {
       this.status = { type: SigningStatus.WaitingForPaymaster }
@@ -1321,26 +1333,19 @@ export class SignAccountOpController extends EventEmitter {
     // delete the activatorCall as a precaution that it won't be added twice
     delete this.accountOp.activatorCall
 
-    // @EntryPoint activation
-    // if we broadcast by an EOA, this is the only way to include
-    // the entry point as a signer
+    // @EntryPoint activation for SA
     if (
-      shouldIncludeActivatorCall(
-        this.#network,
-        this.account,
-        this.accountState,
-        this.accountOp.gasFeePayment.isERC4337
-      )
+      this.baseAccount.shouldIncludeActivatorCall(this.#network, this.accountState, broadcastOption)
     ) {
       this.accountOp.activatorCall = getActivatorCall(this.accountOp.accountAddr)
     }
 
     try {
-      // In case of EOA account, no 7702
-      if (isBasicAccount(this.account, this.accountState)) {
+      if (broadcastOption === BROADCAST_OPTIONS.bySelf) {
+        // plain EOA
         if (this.accountOp.calls.length !== 1) {
           const callCount = this.accountOp.calls.length > 1 ? 'multiple' : 'zero'
-          const message = `Unable to sign the transaction because it has ${callCount} calls. ${RETRY_TO_INIT_ACCOUNT_OP_MSG}`
+          const message = `TODO: Unable to sign the transaction because it has ${callCount} calls. ${RETRY_TO_INIT_ACCOUNT_OP_MSG}`
           return this.#emitSigningErrorAndResetToReadyToSign(message)
         }
 
@@ -1348,28 +1353,19 @@ export class SignAccountOpController extends EventEmitter {
         // that means the signing will happen on broadcast and here
         // checking whether the call is 1 and 1 only is enough
         this.accountOp.signature = '0x'
-      } else if (this.accountOp.gasFeePayment.paidBy !== this.account.addr) {
-        // Smart account, but EOA pays the fee
-        // EOA pays for execute() - relayerless
-
+      } else if (broadcastOption === BROADCAST_OPTIONS.bySelf7702) {
+        // 7702, calling executeBySender(). No SA signatures
+        this.accountOp.signature = '0x'
+      } else if (broadcastOption === BROADCAST_OPTIONS.byOtherEOA) {
+        // SA, EOA pays fee. execute() needs a signature
         this.accountOp.signature = await getExecuteSignature(
           this.#network,
           this.accountOp,
           this.accountState,
           signer
         )
-      } else if (this.accountOp.gasFeePayment.isERC4337) {
-        // if there's no entryPointAuthorization, the txn will fail
-        if (
-          !this.accountState.isSmarterEoa &&
-          !this.accountState.isDeployed &&
-          (!this.accountOp.meta || !this.accountOp.meta.entryPointAuthorization)
-        )
-          return this.#emitSigningErrorAndResetToReadyToSign(
-            `Unable to sign the transaction because entry point privileges were not granted. ${RETRY_TO_INIT_ACCOUNT_OP_MSG}`
-          )
-
-        const erc4337Estimation = this.estimation!.bundlerEstimation as Erc4337GasLimits
+      } else if (broadcastOption === BROADCAST_OPTIONS.byBundler) {
+        const erc4337Estimation = this.estimation.bundlerEstimation as Erc4337GasLimits
 
         const userOperation = getUserOperation(
           this.account,

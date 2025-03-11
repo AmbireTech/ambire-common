@@ -26,6 +26,7 @@ export interface GasFeePayment {
   amount: bigint
   simulatedGasLimit: bigint
   gasPrice: bigint
+  broadcastOption: string
   maxPriorityFeePerGas?: bigint
   isSponsored?: boolean
 }
