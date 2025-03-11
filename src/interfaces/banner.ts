@@ -57,11 +57,6 @@ export type Action =
       actionName: 'backup-keystore-secret'
     }
   | {
-      label: 'Switch'
-      actionName: 'switch-default-wallet'
-      meta: {}
-    }
-  | {
       label: 'Reject'
       actionName: 'reject-bridge'
       meta: { activeRouteIds: number[] }
