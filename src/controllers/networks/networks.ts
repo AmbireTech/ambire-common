@@ -153,7 +153,7 @@ export class NetworksController extends EventEmitter {
     }
 
     // Step 2: Merge the networks coming from the Relayer
-    // TODO: For now we call this on load, but will decide later if we need to call it periodically
+    // For now we call this on load, but will decide later if we need to call it periodically
     try {
       const res = await this.#callRelayer('/v2/config/networks')
       this.#relayerNetworks = res.data.extensionConfigNetworks
@@ -384,7 +384,7 @@ export class NetworksController extends EventEmitter {
     ) {
       return
     }
-    // TODO: Set new network by chainId
+
     const chainIds = this.networks.map((net) => net.chainId)
     const ids = this.networks.map((n) => n.id)
     const networkId = network.name.toLowerCase()
