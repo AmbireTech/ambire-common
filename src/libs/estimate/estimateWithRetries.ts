@@ -1,3 +1,5 @@
+import wait from '../../utils/wait'
+
 export async function estimateWithRetries(
   fetchRequests: Function,
   timeoutType: string,
@@ -6,10 +8,9 @@ export async function estimateWithRetries(
   counter: number = 0
 ): Promise<any> {
   // stop the execution on 5 fails;
-  // the below error message is not shown to the user so we are safe
   if (counter >= 5)
     return new Error(
-      'Estimation failure, retrying in a couple of seconds. If this issue persists, please change your RPC provider or contact Ambire support'
+      'Estimation failure, retrying in a couple of seconds. If this issue persists, please check your internet connection, change your RPC provider or contact Ambire support'
     )
 
   const santinelTimeoutErr = {}
@@ -19,7 +20,7 @@ export async function estimateWithRetries(
     }, timeoutInMill)
   })
 
-  let result = await Promise.race([Promise.all(fetchRequests()), estimationTimeout])
+  const result = await Promise.race([Promise.all(fetchRequests()), estimationTimeout])
 
   // retry on a timeout
   if (result === santinelTimeoutErr) {
@@ -31,7 +32,7 @@ export async function estimateWithRetries(
       case 'estimation-deployless':
         errorCallback({
           level: 'major',
-          message: 'Estimating gas limits from the RPC timed out. Retrying...',
+          message: 'Estimating gas limits from the RPC timed out.',
           error: new Error('Estimation.sol deployless timeout')
         })
         break
@@ -39,14 +40,14 @@ export async function estimateWithRetries(
       case 'estimation-bundler':
         errorCallback({
           level: 'major',
-          message: 'Estimating gas limits from the bundler timed out. Retrying...',
+          message: 'Estimating gas limits from the bundler timed out.',
           error: new Error('Budler gas limit estimation timeout')
         })
         break
       case 'estimation-eoa':
         errorCallback({
           level: 'major',
-          message: 'Estimating gas limits for Basic Account from the RPC timed out. Retrying...',
+          message: 'Estimating gas limits for Basic Account from the RPC timed out.',
           error: new Error('Budler gas limit estimation timeout')
         })
         break
@@ -55,20 +56,41 @@ export async function estimateWithRetries(
         break
     }
 
-    result = await estimateWithRetries(
+    return estimateWithRetries(
       fetchRequests,
       timeoutType,
       errorCallback,
       timeoutInMill,
       incremented
     )
-  } else {
-    // if one of the calls returns an error, return it
-    const error = Array.isArray(result) ? result.find((res) => res instanceof Error) : null
-    if (error) return error
   }
 
-  // success outcome
+  // if one of the calls returns an error and the error is a connectivity error, retry
+  // Otherwise return the error
+  const error = Array.isArray(result) ? result.find((res) => res instanceof Error) : null
+
+  if (error) {
+    if (error.cause === 'ConnectivityError') {
+      errorCallback({
+        level: 'major',
+        message: 'Estimating the transaction failed because of a network error.',
+        error
+      })
+
+      await wait(5000)
+
+      return estimateWithRetries(
+        fetchRequests,
+        timeoutType,
+        errorCallback,
+        timeoutInMill,
+        counter + 1
+      )
+    }
+
+    return error
+  }
+
   return result
 }
 

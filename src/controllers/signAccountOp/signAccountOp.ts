@@ -70,7 +70,7 @@ import { GasSpeeds } from '../../services/bundlers/types'
 /* eslint-disable no-restricted-syntax */
 import { BaseAccount } from '../../libs/account/BaseAccount'
 import { AccountOpAction } from '../actions/actions'
-import EventEmitter from '../eventEmitter/eventEmitter'
+import EventEmitter, { ErrorRef } from '../eventEmitter/eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
 import { PortfolioController } from '../portfolio/portfolio'
 import {
@@ -148,6 +148,8 @@ export class SignAccountOpController extends EventEmitter {
   gasPrices: GasRecommendation[] | null = null
 
   bundlerGasPrices: GasSpeeds | null = null
+
+  estimationRetryError: ErrorRef | null = null
 
   feeSpeeds: {
     [identifier: string]: SpeedCalc[]
@@ -301,6 +303,21 @@ export class SignAccountOpController extends EventEmitter {
   get errors(): string[] {
     const errors: string[] = []
 
+    const isEstimationLoadingOrFailed = !this.estimation || this.estimation?.error
+
+    if (isEstimationLoadingOrFailed && this.estimationRetryError) {
+      // If there is a successful estimation we should show this as a warning
+      // as the user can use the old estimation to broadcast
+
+      errors.push(
+        `${this.estimationRetryError.message} ${
+          this.estimation?.error
+            ? 'We will continue retrying, but please check your internet connection.'
+            : 'Automatically retrying in a few seconds. Please wait...'
+        }`
+      )
+    }
+
     if (!this.isInitialized) return errors
 
     const isAmbireV1 = isAmbireV1LinkedAccount(this.account?.creation?.factoryAddr)
@@ -319,6 +336,12 @@ export class SignAccountOpController extends EventEmitter {
     // if there's an estimation error, show it
     if (this.estimation?.error) {
       errors.push(this.estimation.error.message)
+    }
+
+    if (!this.gasPrices || !this.gasPrices.length) {
+      errors.push(
+        'Gas price information is currently unavailable. This may be due to network congestion or connectivity issues. Please try again in a few moments or check your internet connection.'
+      )
     }
 
     if (this.#blockGasLimit && this.gasUsed > this.#blockGasLimit) {
@@ -523,6 +546,15 @@ export class SignAccountOpController extends EventEmitter {
     }
 
     if (significantBalanceDecreaseWarning) warnings.push(significantBalanceDecreaseWarning)
+    if (this.estimationRetryError && !!this.estimation && !this.estimation.error) {
+      warnings.push({
+        id: 'estimation-retry',
+        title: this.estimationRetryError.message,
+        text: 'You can try to broadcast this transaction with the last successful estimation or wait for a new one. Retrying...',
+        promptBeforeSign: false,
+        displayBeforeSign: true
+      })
+    }
 
     this.warnings = warnings
 
@@ -540,7 +572,8 @@ export class SignAccountOpController extends EventEmitter {
     calls,
     rbfAccountOps,
     bundlerGasPrices,
-    blockGasLimit
+    blockGasLimit,
+    estimationRetryError
   }: {
     gasPrices?: GasRecommendation[]
     estimation?: FullEstimation | Error | null
@@ -553,6 +586,7 @@ export class SignAccountOpController extends EventEmitter {
     rbfAccountOps?: { [key: string]: SubmittedAccountOp | null }
     bundlerGasPrices?: { speeds: GasSpeeds; bundler: BUNDLER }
     blockGasLimit?: bigint
+    estimationRetryError?: ErrorRef
   }) {
     // once the user commits to the things he sees on his screen,
     // we need to be sure nothing changes afterwards.
@@ -571,13 +605,19 @@ export class SignAccountOpController extends EventEmitter {
 
     if (gasPrices) this.gasPrices = gasPrices
 
-    // clean the estimation if explicitly set to null
+    if (estimationRetryError) {
+      this.estimationRetryError = estimationRetryError
+    }
+
     if (estimation === null) this.estimation = null
 
     if (estimation) {
       this.estimation = getEstimationSummary(estimation)
-      if (!(estimation instanceof Error) && this.estimation.ambireEstimation) {
-        this.accountOp.nonce = BigInt(this.estimation.ambireEstimation.ambireAccountNonce)
+      if (!(estimation instanceof Error)) {
+        this.estimationRetryError = null
+        if (this.estimation.ambireEstimation) {
+          this.accountOp.nonce = BigInt(this.estimation.ambireEstimation.ambireAccountNonce)
+        }
       }
       this.availableFeeOptions = this.getAvailableFeeOptions()
     }
@@ -1367,13 +1407,14 @@ export class SignAccountOpController extends EventEmitter {
       } else if (broadcastOption === BROADCAST_OPTIONS.byBundler) {
         const erc4337Estimation = this.estimation.bundlerEstimation as Erc4337GasLimits
 
+        // TODO: add the authorization if any at this point
         const userOperation = getUserOperation(
           this.account,
           this.accountState,
           this.accountOp,
           this.bundlerSwitcher.getBundler().getName(),
-          this.accountOp.meta?.entryPointAuthorization,
-          this.accountState.authorization
+          this.accountOp.meta?.entryPointAuthorization
+          // this.accountState.authorization
         )
         userOperation.preVerificationGas = erc4337Estimation.preVerificationGas
         userOperation.callGasLimit = toBeHex(
