@@ -86,11 +86,11 @@ export interface Network {
   disableEstimateGas?: boolean
   force4337?: NetworkInfo['force4337']
   allowForce4337?: boolean
-  predefinedConfigVersion?: number;
-  lastUpdated?: number;
+  predefinedConfigVersion?: number
+  lastUpdated?: number
   // When we migrate from custom to predefined network from relayer, we need to store the custom network name
   // for future migration of other storages by this id
-  customNetworkId?: string;
+  customNetworkId?: string
 }
 
 export type UserNetworkPreferencesForPredefinedNetworks = Pick<
@@ -101,7 +101,6 @@ export type UserNetworkPreferencesForPredefinedNetworks = Pick<
 
 export type UserNetworkPreferencesForCustomNetworks = UserNetworkPreferencesForPredefinedNetworks &
   Partial<Pick<Network, 'chainId' | 'name' | 'nativeAssetSymbol'>>
-
 
 export interface AddNetworkRequestParams {
   name: Network['name']
@@ -191,6 +190,7 @@ export type RelayerNetwork = {
       hasBundlerSupport?: boolean
       bundlers?: { [bundler in BUNDLER]: string }
       defaultBundler?: BUNDLER
+      increasePreVerGas?: number
     }
     allowForce4337: boolean
   }

@@ -117,8 +117,17 @@ export const mapRelayerNetworkConfigToAmbireNetwork = (
   relayerNetwork: RelayerNetwork
 ): Network => {
   const chainId = BigInt(_chainId)
-  const { name, explorerUrl, selectedRpcUrl, isOptimistic, disableEstimateGas, predefinedConfigVersion, rpcUrls, iconUrls, platformId } =
-    relayerNetwork
+  const {
+    name,
+    explorerUrl,
+    selectedRpcUrl,
+    isOptimistic,
+    disableEstimateGas,
+    predefinedConfigVersion,
+    rpcUrls,
+    iconUrls,
+    platformId
+  } = relayerNetwork
   const {
     ambireId: id,
     native: {
@@ -166,6 +175,9 @@ export const mapRelayerNetworkConfigToAmbireNetwork = (
     }),
     ...(incomingErc4337.defaultBundler && {
       defaultBundler: incomingErc4337.defaultBundler
+    }),
+    ...(incomingErc4337.increasePreVerGas && {
+      increasePreVerGas: incomingErc4337.increasePreVerGas ?? 0
     })
   }
 
@@ -174,8 +186,8 @@ export const mapRelayerNetworkConfigToAmbireNetwork = (
   // TODO: Call the RPC to get these values dynamically
   // on version update on isSAEnabled = false
   const rpcNoStateOverride = false
-  const isSAEnabled = true
-  const areContractsDeployed = true
+  const isSAEnabled = !!smartAccounts
+  const areContractsDeployed = !!smartAccounts
   const features: NetworkFeature[] = []
   const hasSingleton = true
 
