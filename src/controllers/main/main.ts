@@ -2048,49 +2048,39 @@ export class MainController extends EventEmitter {
           `batchCallsFromUserRequests: tried to run for non-existent account ${meta.accountAddr}`
         )
 
-      if (!isBasicAccount(account, this.accounts.accountStates[account.addr][network.id])) {
-        const accountOpIndex = this.actions.actionsQueue.findIndex(
-          (a) => a.type === 'accountOp' && a.id === `${meta.accountAddr}-${meta.networkId}`
-        )
-        const accountOpAction = this.actions.actionsQueue[accountOpIndex] as
-          | AccountOpAction
-          | undefined
-        // accountOp has just been rejected or broadcasted
-        if (!accountOpAction) {
-          if (shouldUpdateAccount) this.updateSelectedAccountPortfolio(true, network)
+      const accountOpIndex = this.actions.actionsQueue.findIndex(
+        (a) => a.type === 'accountOp' && a.id === `${meta.accountAddr}-${meta.networkId}`
+      )
+      const accountOpAction = this.actions.actionsQueue[accountOpIndex] as
+        | AccountOpAction
+        | undefined
+      // accountOp has just been rejected or broadcasted
+      if (!accountOpAction) {
+        if (shouldUpdateAccount) this.updateSelectedAccountPortfolio(true, network)
 
-          if (this.swapAndBridge.activeRoutes.length && shouldRemoveSwapAndBridgeRoute) {
-            this.swapAndBridge.removeActiveRoute(meta.activeRouteId)
-          }
-          this.emitUpdate()
-          return
+        if (this.swapAndBridge.activeRoutes.length && shouldRemoveSwapAndBridgeRoute) {
+          this.swapAndBridge.removeActiveRoute(meta.activeRouteId)
         }
+        this.emitUpdate()
+        return
+      }
 
-        accountOpAction.accountOp.calls = this.#batchCallsFromUserRequests(
-          meta.accountAddr,
-          meta.networkId
-        )
-        if (accountOpAction.accountOp.calls.length) {
-          this.actions.addOrUpdateAction(accountOpAction)
+      accountOpAction.accountOp.calls = this.#batchCallsFromUserRequests(
+        meta.accountAddr,
+        meta.networkId
+      )
+      if (accountOpAction.accountOp.calls.length) {
+        this.actions.addOrUpdateAction(accountOpAction)
 
-          if (this.signAccountOp && this.signAccountOp.fromActionId === accountOpAction.id) {
-            this.signAccountOp.update({ calls: accountOpAction.accountOp.calls, estimation: null })
-            this.estimateSignAccountOp()
-          }
-        } else {
-          if (this.signAccountOp && this.signAccountOp.fromActionId === accountOpAction.id) {
-            this.destroySignAccOp()
-          }
-          this.actions.removeAction(`${meta.accountAddr}-${meta.networkId}`, shouldOpenNextRequest)
-
-          if (shouldUpdateAccount) this.updateSelectedAccountPortfolio(true, network)
+        if (this.signAccountOp && this.signAccountOp.fromActionId === accountOpAction.id) {
+          this.signAccountOp.update({ calls: accountOpAction.accountOp.calls, estimation: null })
+          this.estimateSignAccountOp()
         }
       } else {
-        if (this.signAccountOp && this.signAccountOp.fromActionId === req.id) {
+        if (this.signAccountOp && this.signAccountOp.fromActionId === accountOpAction.id) {
           this.destroySignAccOp()
         }
-        this.actions.removeAction(id, shouldOpenNextRequest)
-
+        this.actions.removeAction(`${meta.accountAddr}-${meta.networkId}`, shouldOpenNextRequest)
         if (shouldUpdateAccount) this.updateSelectedAccountPortfolio(true, network)
       }
       if (this.swapAndBridge.activeRoutes.length && shouldRemoveSwapAndBridgeRoute) {
