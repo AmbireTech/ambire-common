@@ -163,10 +163,17 @@ export async function getGasPriceRecommendations(
     if (lastBlock.gasUsed > gasTarget) {
       const baseFeeDelta = getBaseFeeDelta(lastBlock.gasUsed - gasTarget)
       expectedBaseFee += baseFeeDelta === 0n ? 1n : baseFeeDelta
-    } else if (lastBlock.gasUsed < gasTarget) {
-      const baseFeeDelta = getBaseFeeDelta(gasTarget - lastBlock.gasUsed)
-      expectedBaseFee -= baseFeeDelta
     }
+
+    // <Bobby>: commenting out the decrease as it's really bad UX
+    // if the user chooses slow on Ethereum and the next block doesn't
+    // actually meet the base fee and starts going up from there, the user
+    // will need to do an RBF or wait ~forever for the txn to complete
+    // the below code is good in theory, bad in practise
+    // else if (lastBlock.gasUsed < gasTarget) {
+    //   const baseFeeDelta = getBaseFeeDelta(gasTarget - lastBlock.gasUsed)
+    //   expectedBaseFee -= baseFeeDelta
+    // }
 
     // if the estimated fee is below the chain minimum, set it to the min
     const minBaseFee = getNetworkMinBaseFee(network, lastBlock)
