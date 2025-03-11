@@ -9,8 +9,9 @@ import { humanizeEstimationOrBroadcastError } from './humanizeCommonCases'
 const LAST_RESORT_ERROR_MESSAGE =
   'An unknown error occurred while broadcasting the transaction. Please try again or contact Ambire support for assistance.'
 const MESSAGE_PREFIX = 'The transaction cannot be broadcast because'
+/** The paymaster is down or the user is offline */
 export const PAYMASTER_DOWN_BROADCAST_ERROR_MESSAGE =
-  'Currently, the paymaster seems to be down and your transaction cannot be broadcast. Please try again in a few moments or pay the fee with a Basic Account if the error persists'
+  'Unable to connect to the paymaster. Please try again later or use a Basic Account to pay the fee if the issue persists.'
 
 function getPrefix(reason: string | null): string {
   if (!reason) return MESSAGE_PREFIX
