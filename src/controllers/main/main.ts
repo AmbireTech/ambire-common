@@ -38,9 +38,7 @@ import { SocketAPISendTransactionRequest } from '../../interfaces/swapAndBridge'
 import { Calls, DappUserRequest, SignUserRequest, UserRequest } from '../../interfaces/userRequest'
 import { WindowManager } from '../../interfaces/window'
 import {
-  canBecomeSmarter,
   getDefaultSelectedAccount,
-  hasBecomeSmarter,
   isBasicAccount,
   isSmartAccount
 } from '../../libs/account/account'
@@ -58,7 +56,7 @@ import {
   getAccountOpActionsByNetwork,
   getAccountOpFromAction
 } from '../../libs/actions/actions'
-import { getAccountOpBanners, getBecomeSmarterEOABanner } from '../../libs/banners/banners'
+import { getAccountOpBanners } from '../../libs/banners/banners'
 import { BROADCAST_OPTIONS } from '../../libs/broadcast/broadcast'
 import { getPaymasterService } from '../../libs/erc7677/erc7677'
 import {
@@ -2934,7 +2932,7 @@ export class MainController extends EventEmitter {
       (r) => r.routeStatus === 'ready'
     )
 
-    const accountOpBanners = getAccountOpBanners({
+    return getAccountOpBanners({
       accountOpActionsByNetwork: getAccountOpActionsByNetwork(
         this.selectedAccount.account.addr,
         this.actions.actionsQueue
@@ -2944,21 +2942,6 @@ export class MainController extends EventEmitter {
       networks: this.networks.networks,
       swapAndBridgeRoutesPendingSignature
     })
-
-    const smarterEoaBanner =
-      this.featureFlags.isFeatureEnabled('eip7702') &&
-      !this.selectedAccount.account.disable7702Banner &&
-      !hasBecomeSmarter(this.selectedAccount.account, this.accounts.accountStates) &&
-      canBecomeSmarter(
-        this.selectedAccount.account,
-        this.keystore.keys.filter((key) =>
-          this.selectedAccount.account!.associatedKeys.includes(key.addr)
-        )
-      )
-        ? getBecomeSmarterEOABanner(this.selectedAccount.account)
-        : []
-
-    return [...accountOpBanners, ...smarterEoaBanner]
   }
 
   // Technically this is an anti-pattern, but it's the only way to
