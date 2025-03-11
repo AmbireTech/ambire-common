@@ -89,11 +89,11 @@ export class EOA7702 extends BaseAccount {
     const feeToken = feeOption.token
     const isNative = feeToken.address === ZeroAddress && !feeToken.flags.onGasTank
     if (isNative) {
-      // smarter eoa broadcasts by itself in native
-      if (options.accountState.isSmarterEoa) return BROADCAST_OPTIONS.bySelf7702
-
-      // if it's not smart, yet, and calls are one, it will do EOA mode
+      // if the call is only 1, broadcast normally
       if (options.op.calls.length === 1) return BROADCAST_OPTIONS.bySelf
+
+      // if already smart, executeBySender() on itself
+      if (options.accountState.isSmarterEoa) return BROADCAST_OPTIONS.bySelf7702
     }
 
     // txn type 4 OR paying in token

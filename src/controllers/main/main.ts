@@ -2535,34 +2535,6 @@ export class MainController extends EventEmitter {
         await this.getPortfolioSimulationPromise(localAccountOp)
       }
 
-      // check if an RBF should be applied for the incoming transaction
-      // for SA conditions are: take the last broadcast but not confirmed accOp
-      // and check if the nonce is the same as the current nonce (non 4337 txns)
-      // for EOA: check the last broadcast but not confirmed txn across SA
-      // as the EOA could've broadcast a txn there + it's own history and
-      // compare the highest found nonce
-      const rbfAccountOps: { [key: string]: SubmittedAccountOp | null } = {}
-      nativeToCheck.push(localAccountOp.accountAddr)
-      nativeToCheck.forEach((accId) => {
-        const notConfirmedOp = this.activity.getNotConfirmedOpIfAny(accId, localAccountOp.networkId)
-
-        // the accountState of the nativeToCheck may no be initialized
-        const currentNonce =
-          this.accounts.accountStates &&
-          this.accounts.accountStates[accId] &&
-          this.accounts.accountStates[accId][localAccountOp.networkId]
-            ? this.accounts.accountStates[accId][localAccountOp.networkId].nonce
-            : null
-
-        rbfAccountOps[accId] =
-          notConfirmedOp &&
-          !notConfirmedOp.gasFeePayment?.isERC4337 &&
-          currentNonce &&
-          currentNonce === notConfirmedOp.nonce
-            ? notConfirmedOp
-            : null
-      })
-
       // if there's an estimation error, override the pending results
       if (estimation instanceof Error) {
         this.portfolio.overridePendingResults(localAccountOp)
@@ -2570,7 +2542,7 @@ export class MainController extends EventEmitter {
       // update the signAccountOp controller once estimation finishes;
       // this eliminates the infinite loading bug if the estimation comes slower
       if (this.signAccountOp && estimation && !(estimation instanceof Error)) {
-        this.signAccountOp.update({ estimation, rbfAccountOps })
+        this.signAccountOp.update({ estimation })
         if (shouldTraceCall)
           this.traceCall(
             baseAcc.getGasUsed(getEstimationSummary(estimation), {
@@ -2689,7 +2661,7 @@ export class MainController extends EventEmitter {
           accountState,
           network,
           nonce,
-          BROADCAST_OPTIONS.bySelf
+          accountOp.gasFeePayment.broadcastOption
         )
 
         const signedTxn = await signer.signRawTransaction(rawTxn)

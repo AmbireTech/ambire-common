@@ -613,10 +613,15 @@ export class SignAccountOpController extends EventEmitter {
 
     if (estimation) {
       this.estimation = getEstimationSummary(estimation)
+
       if (!(estimation instanceof Error)) {
         this.estimationRetryError = null
+
         if (this.estimation.ambireEstimation) {
           this.accountOp.nonce = BigInt(this.estimation.ambireEstimation.ambireAccountNonce)
+        }
+        if (this.estimation.bundlerEstimation) {
+          this.bundlerGasPrices = this.estimation.bundlerEstimation.gasPrice
         }
       }
       this.availableFeeOptions = this.getAvailableFeeOptions()
@@ -653,14 +658,12 @@ export class SignAccountOpController extends EventEmitter {
       )
     }
 
-    // update the bundler gas prices if the bundlers match
     if (
       this.estimation &&
-      this.estimation.bundlerEstimation &&
       bundlerGasPrices &&
       bundlerGasPrices.bundler === this.bundlerSwitcher.getBundler().getName()
     ) {
-      this.estimation.bundlerEstimation.gasPrice = bundlerGasPrices.speeds
+      this.bundlerGasPrices = bundlerGasPrices.speeds
     }
 
     if (
@@ -705,8 +708,6 @@ export class SignAccountOpController extends EventEmitter {
       hasGasUsedChanged
     ) {
       this.#updateFeeSpeeds()
-      console.log('the fee speeds after update')
-      console.log(this.feeSpeeds)
     }
 
     // Here, we expect to have most of the fields set, so we can safely set GasFeePayment
@@ -862,52 +863,6 @@ export class SignAccountOpController extends EventEmitter {
     return amount + (amount * this.#network.feeOptions.feeIncrease) / 100n
   }
 
-  /**
-   * If the nonce of the current account op and the last account op are the same,
-   * do an RBF increase or otherwise the user cannot broadcast the txn
-   *
-   * calculatedGas: it should be either the whole gasPrice if the network doesn't
-   * support EIP-1559 OR it should the maxPriorityFeePerGas if the network
-   * supports EIP-1559
-   *
-   * gasPropertyName: pass gasPrice if no EIP-1559; otherwise: maxPriorityFeePerGas
-   */
-  #rbfIncrease(
-    accId: string,
-    calculatedGas: bigint,
-    gasPropertyName: 'gasPrice' | 'maxPriorityFeePerGas',
-    prevSpeed: SpeedCalc | null
-  ): bigint {
-    // ape speed gets 50% increase
-    const divider = prevSpeed && prevSpeed.type === FeeSpeed.Fast ? 2n : 8n
-
-    // when doing an RBF, make sure the min gas for the current speed
-    // is at least 12% bigger than the previous speed
-    const prevSpeedGas = prevSpeed ? prevSpeed[gasPropertyName] : undefined
-    const prevSpeedGasIncreased = prevSpeedGas ? prevSpeedGas + prevSpeedGas / divider : 0n
-    const min = prevSpeedGasIncreased > calculatedGas ? prevSpeedGasIncreased : calculatedGas
-
-    // if there was an error on the signed account op with a
-    // replacement fee too low, we increase by 13% the signed account op
-    // IF the new estimation is not actually higher
-    if (this.replacementFeeLow && this.signedAccountOp && this.signedAccountOp.gasFeePayment) {
-      const prevGas = this.signedAccountOp.gasFeePayment[gasPropertyName] ?? undefined
-      const bumpFees = prevGas ? prevGas + prevGas / divider + prevGas / 100n : 0n
-      return min > bumpFees ? min : bumpFees
-    }
-
-    // if no RBF option for this paidBy option, return the amount
-    const rbfOp = this.rbfAccountOps[accId]
-    if (!rbfOp || !rbfOp.gasFeePayment || !rbfOp.gasFeePayment[gasPropertyName])
-      return calculatedGas
-
-    // increase by a minimum of 13% the last broadcast txn and use that
-    // or use the current gas estimation if it's more
-    const rbfGas = rbfOp.gasFeePayment[gasPropertyName] ?? 0n
-    const lastTxnGasPriceIncreased = rbfGas + rbfGas / divider + rbfGas / 100n
-    return min > lastTxnGasPriceIncreased ? min : lastTxnGasPriceIncreased
-  }
-
   get #feeSpeedsLoading() {
     return !this.isInitialized || !this.gasPrices
   }
@@ -948,16 +903,15 @@ export class SignAccountOpController extends EventEmitter {
         accountState: this.accountState
       })
       if (broadcastOption === BROADCAST_OPTIONS.byBundler) {
-        const erc4337GasLimits = estimation.bundlerEstimation
-        if (!erc4337GasLimits) return
+        if (!estimation.bundlerEstimation || !this.bundlerGasPrices) return
 
         const speeds: SpeedCalc[] = []
         const usesPaymaster = !!this.estimation?.bundlerEstimation?.paymaster.isUsable()
 
-        for (const [speed, speedValue] of Object.entries(erc4337GasLimits.gasPrice)) {
+        for (const [speed, speedValue] of Object.entries(this.bundlerGasPrices as GasSpeeds)) {
           const simulatedGasLimit =
-            BigInt(erc4337GasLimits.callGasLimit) +
-            BigInt(erc4337GasLimits.preVerificationGas) +
+            BigInt(estimation.bundlerEstimation.callGasLimit) +
+            BigInt(estimation.bundlerEstimation.preVerificationGas) +
             BigInt(option.gasUsed)
           const gasPrice = BigInt(speedValue.maxFeePerGas)
           let amount = SignAccountOpController.getAmountAfterFeeTokenConvert(
@@ -985,52 +939,41 @@ export class SignAccountOpController extends EventEmitter {
         return
       }
 
-      ;(this.gasPrices || []).forEach((gasRecommendation, i) => {
+      ;(this.gasPrices || []).forEach((gasRecommendation) => {
         let amount
-        let simulatedGasLimit
-        const prevSpeed =
-          this.feeSpeeds[identifier] && this.feeSpeeds[identifier].length
-            ? this.feeSpeeds[identifier][i - 1]
-            : null
+        let simulatedGasLimit: bigint
 
-        // gasRecommendation can come as GasPriceRecommendation or Gas1559Recommendation
-        // depending whether the network supports EIP-1559 and is it enabled on our side.
-        // To check, we use maxPriorityFeePerGas. If it's set => EIP-1559.
-        // After, we call #rbfIncrease on maxPriorityFeePerGas if set which either returns
-        // the maxPriorityFeePerGas without doing anything (most cases) or if there's a
-        // pending txn in the mempool, it bumps maxPriorityFeePerGas by 12.5% to enable RBF.
-        // Finally, we calculate the gasPrice:
-        // - EIP-1559: baseFeePerGas + maxPriorityFeePerGas
-        // - Normal: gasRecommendation.gasPrice #rbfIncreased (same logic as for maxPriorityFeePerGas RBF)
-        const maxPriorityFeePerGas =
+        // get the calculate fees by our script
+        let maxPriorityFeePerGas =
           'maxPriorityFeePerGas' in gasRecommendation
-            ? this.#rbfIncrease(
-                option.paidBy,
-                gasRecommendation.maxPriorityFeePerGas,
-                'maxPriorityFeePerGas',
-                prevSpeed
-              )
+            ? gasRecommendation.maxPriorityFeePerGas
             : undefined
+        let gasPrice = maxPriorityFeePerGas
+          ? (gasRecommendation as Gas1559Recommendation).baseFeePerGas + maxPriorityFeePerGas
+          : (gasRecommendation as GasPriceRecommendation).gasPrice
 
-        const gasPrice =
-          'maxPriorityFeePerGas' in gasRecommendation
-            ? (gasRecommendation as Gas1559Recommendation).baseFeePerGas + maxPriorityFeePerGas!
-            : this.#rbfIncrease(
-                option.paidBy,
-                (gasRecommendation as GasPriceRecommendation).gasPrice,
-                'gasPrice',
-                prevSpeed
-              )
+        // the bundler does a better job than us for gas price estimations
+        // so we prioritize their estimation over ours if there's any
+        if (this.bundlerGasPrices) {
+          const name = gasRecommendation.name as keyof GasSpeeds
+          maxPriorityFeePerGas = BigInt(this.bundlerGasPrices[name].maxPriorityFeePerGas)
+          gasPrice = BigInt(this.bundlerGasPrices[name].maxFeePerGas)
+        }
 
-        // EOA
-        if (broadcastOption === BROADCAST_OPTIONS.bySelf) {
+        // EOA OR 7702: pays with native by itself
+        if (
+          broadcastOption === BROADCAST_OPTIONS.bySelf ||
+          broadcastOption === BROADCAST_OPTIONS.bySelf7702
+        ) {
           simulatedGasLimit = this.gasUsed
 
-          if (this.accountOp.calls[0].to && getAddress(this.accountOp.calls[0].to) === SINGLETON) {
-            simulatedGasLimit = getGasUsed(simulatedGasLimit)
-          }
+          this.accountOp.calls.forEach((call) => {
+            if (call.to && getAddress(call.to) === SINGLETON) {
+              simulatedGasLimit = getGasUsed(simulatedGasLimit)
+            }
+          })
 
-          amount = simulatedGasLimit * gasPrice + option.addedNative
+          amount = simulatedGasLimit * gasPrice
         } else if (
           broadcastOption === BROADCAST_OPTIONS.byOtherEOA ||
           broadcastOption === BROADCAST_OPTIONS.bySelf7702
