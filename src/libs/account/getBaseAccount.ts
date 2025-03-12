@@ -19,11 +19,13 @@ export function getBaseAccount(
       accountState.isSmarterEoa ||
       canBecomeSmarterOnChain(network, account, accountState, accountKeys)
     ) {
-      return new EOA7702(account)
+      return new EOA7702(account, network, accountState)
     }
 
-    return new EOA(account)
+    return new EOA(account, network, accountState)
   }
 
-  return accountState.isV2 ? new V2(account) : new V1(account)
+  return accountState.isV2
+    ? new V2(account, network, accountState)
+    : new V1(account, network, accountState)
 }

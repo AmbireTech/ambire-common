@@ -1,8 +1,6 @@
 /* eslint-disable class-methods-use-this */
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import { ZeroAddress } from 'ethers'
-import { AccountOnchainState } from '../../interfaces/account'
-import { Network } from '../../interfaces/network'
 import { AccountOp } from '../accountOp/accountOp'
 import { BROADCAST_OPTIONS } from '../broadcast/broadcast'
 import {
@@ -29,7 +27,6 @@ export class EOA extends BaseAccount {
 
   getAvailableFeeOptions(
     estimation: FullEstimationSummary,
-    network: Network,
     feePaymentOptions: FeePaymentOption[]
   ): FeePaymentOption[] {
     const native = feePaymentOptions.find(
@@ -46,9 +43,7 @@ export class EOA extends BaseAccount {
     estimation: FullEstimationSummary,
     options: {
       feeToken: TokenResult
-      network: Network
       op: AccountOp
-      accountState: AccountOnchainState
     }
   ): bigint {
     if (estimation.error || !estimation.providerEstimation || !options.op) return 0n
@@ -69,9 +64,7 @@ export class EOA extends BaseAccount {
   getBroadcastOption(
     feeOption: FeePaymentOption,
     options: {
-      network: Network
       op: AccountOp
-      accountState: AccountOnchainState
     }
   ): string {
     return BROADCAST_OPTIONS.bySelf

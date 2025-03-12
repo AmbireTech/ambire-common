@@ -93,7 +93,6 @@ import {
 } from '../../libs/transfer/userRequest'
 import {
   ENTRY_POINT_AUTHORIZATION_REQUEST_ID,
-  isErc4337Broadcast,
   shouldAskForEntryPointAuthorization
 } from '../../libs/userOperation/userOperation'
 import { getDefaultBundler } from '../../services/bundlers/getBundler'
@@ -2211,27 +2210,23 @@ export class MainController extends EventEmitter {
     const account = this.accounts.accounts.find((x) => x.addr === accOp.accountAddr)
     if (!account) return undefined // shouldn't happen
 
-    const is4337 = isErc4337Broadcast(
-      account,
-      network,
-      this.accounts.accountStates[accOp.accountAddr][accOp.networkId]
-    )
     const bundler = this.signAccountOp
       ? this.signAccountOp.bundlerSwitcher.getBundler()
       : getDefaultBundler(network)
     const bundlerFetch = async () => {
-      if (!is4337) return null
-      const errorCallback = (e: ErrorRef) => {
-        if (!this.signAccountOp) return
-        this.emitError(e)
-      }
-      return bundler.fetchGasPrices(network, errorCallback).catch((e) => {
-        this.emitError({
-          level: 'silent',
-          message: "Failed to fetch the bundler's gas price",
-          error: e
-        })
-      })
+      return (
+        bundler
+          // no error emits here as most of the time estimation/signing
+          // will work even if this fails
+          .fetchGasPrices(network, () => {})
+          .catch((e) => {
+            this.emitError({
+              level: 'silent',
+              message: "Failed to fetch the bundler's gas price",
+              error: e
+            })
+          })
+      )
     }
     const [gasPriceData, bundlerGas] = await Promise.all([
       getGasPriceRecommendations(this.providers.providers[network.id], network).catch((e) => {
@@ -2492,12 +2487,10 @@ export class MainController extends EventEmitter {
         if (shouldTraceCall)
           this.traceCall(
             baseAcc.getGasUsed(getEstimationSummary(estimation), {
-              accountState,
               // the fee token is always native for the trace call
               feeToken: feeTokens.find(
                 (tok) => tok.address === ZeroAddress && !tok.flags.onGasTank
               ) as TokenResult,
-              network,
               op: localAccountOp
             })
           )

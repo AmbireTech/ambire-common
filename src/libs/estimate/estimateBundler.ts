@@ -5,6 +5,7 @@
 import { Contract, Interface, toBeHex } from 'ethers'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
+import AmbireAccount7702 from '../../../contracts/compiled/AmbireAccount7702.json'
 import entryPointAbi from '../../../contracts/compiled/EntryPoint.json'
 import { ERC_4337_ENTRYPOINT } from '../../consts/deploy'
 import { Account, AccountOnchainState } from '../../interfaces/account'
@@ -14,6 +15,7 @@ import { Bundler } from '../../services/bundlers/bundler'
 import { BundlerSwitcher } from '../../services/bundlers/bundlerSwitcher'
 import { GasSpeeds } from '../../services/bundlers/types'
 import { paymasterFactory } from '../../services/paymaster'
+import { has7702 } from '../7702/7702'
 import { AccountOp, getSignableCallsForBundlerEstimate } from '../accountOp/accountOp'
 import { PaymasterEstimationData } from '../erc7677/types'
 import { getHumanReadableEstimationError } from '../errorHumanizer'
@@ -76,8 +78,6 @@ async function estimate(
   }
   // TODO<eip7702>
   // isEdgeCase should probably be adjusted for the first broadcast
-  const isEdgeCase =
-    !accountState.isSmarterEoa && !accountState.isErc4337Enabled && accountState.isDeployed
   // TODO: check if the bundler estimation is not good enough if we don't pass
   // the eip7702Auth props along
   // const initializeRequests = () => [
@@ -87,8 +87,19 @@ async function estimate(
   //         .catch(estimateErrorCallback)
   //     : bundler.estimate(userOp, network, isEdgeCase).catch(estimateErrorCallback)
   // ]
+
+  // TODO: this should probably be moved to BaseAccount
+  const stateOverride =
+    has7702(network) && accountState.isEOA && !accountState.isSmarterEoa
+      ? {
+          [userOp.sender]: {
+            code: AmbireAccount7702.bin
+          }
+        }
+      : undefined
+
   const initializeRequests = () => [
-    bundler.estimate(userOp, network, isEdgeCase).catch(estimateErrorCallback)
+    bundler.estimate(userOp, network, stateOverride).catch(estimateErrorCallback)
   ]
 
   const estimation = await estimateWithRetries(
@@ -118,12 +129,6 @@ export async function bundlerEstimate(
   if (!accountState.isV2 && !accountState.isEOA) return new Error('disallowed')
 
   const localOp = { ...op }
-
-  // if the account is not a smarter EOA &
-  // there's no entryPointAuthorization, we cannot do the estimation on deploy
-  if (!accountState.isSmarterEoa && !accountState.isDeployed && !op.meta?.entryPointAuthorization)
-    return new Error('Entry point privileges not granted. Please contact support')
-
   const initialBundler = switcher.getBundler()
   // TODO: check if the bundler estimation is not good enough if we don't pass
   // the eip7702Auth props along

@@ -1,8 +1,6 @@
 /* eslint-disable class-methods-use-this */
 import { ZeroAddress } from 'ethers'
 import { ARBITRUM_CHAIN_ID } from '../../consts/networks'
-import { AccountOnchainState } from '../../interfaces/account'
-import { Network } from '../../interfaces/network'
 import { AccountOp } from '../accountOp/accountOp'
 import { BROADCAST_OPTIONS } from '../broadcast/broadcast'
 import { FeePaymentOption, FullEstimation, FullEstimationSummary } from '../estimate/interfaces'
@@ -24,7 +22,6 @@ export class EOA7702 extends BaseAccount {
    */
   getAvailableFeeOptions(
     estimation: FullEstimationSummary,
-    network: Network,
     feePaymentOptions: FeePaymentOption[]
   ): FeePaymentOption[] {
     const isNative = (token: TokenResult) => token.address === ZeroAddress && !token.flags.onGasTank
@@ -41,19 +38,17 @@ export class EOA7702 extends BaseAccount {
     estimation: FullEstimationSummary,
     options: {
       feeToken: TokenResult
-      network: Network
       op: AccountOp
-      accountState: AccountOnchainState
     }
   ): bigint {
     if (estimation.error || !estimation.ambireEstimation) return 0n
 
     const isNative = options.feeToken.address === ZeroAddress && !options.feeToken.flags.onGasTank
     if (isNative) {
-      if (options.accountState.isSmarterEoa) {
+      if (this.accountState.isSmarterEoa) {
         // arbitrum's gasLimit is special as the gasPrice is contained in it as well.
         // that's why it's better to trust the provider's estimation instead of ours
-        if (options.network.chainId === ARBITRUM_CHAIN_ID && estimation.providerEstimation)
+        if (this.network.chainId === ARBITRUM_CHAIN_ID && estimation.providerEstimation)
           return estimation.providerEstimation.gasUsed
 
         // trust the ambire estimaton as it's more precise
@@ -81,9 +76,7 @@ export class EOA7702 extends BaseAccount {
   getBroadcastOption(
     feeOption: FeePaymentOption,
     options: {
-      network: Network
       op: AccountOp
-      accountState: AccountOnchainState
     }
   ): string {
     const feeToken = feeOption.token
@@ -93,10 +86,16 @@ export class EOA7702 extends BaseAccount {
       if (options.op.calls.length === 1) return BROADCAST_OPTIONS.bySelf
 
       // if already smart, executeBySender() on itself
-      if (options.accountState.isSmarterEoa) return BROADCAST_OPTIONS.bySelf7702
+      if (this.accountState.isSmarterEoa) return BROADCAST_OPTIONS.bySelf7702
     }
 
     // txn type 4 OR paying in token
     return BROADCAST_OPTIONS.byBundler
+  }
+
+  // if the EOA is not yet smarter and the broadcast option is a bundler,
+  // sign the authorization
+  shouldSignAuthorization(broadcastOption: string): boolean {
+    return !this.accountState.isSmarterEoa && broadcastOption === BROADCAST_OPTIONS.byBundler
   }
 }

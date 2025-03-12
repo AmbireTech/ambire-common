@@ -17,7 +17,6 @@ import { Call } from './types'
 // 3) isGasTank and isERC4337 can both be true
 // 4) whether those values are sane will be checked in an additional function (currently `canBroadcast`); for example, this function is meant to ensure that in case of an EOA, the fee is always paid in native
 export interface GasFeePayment {
-  isERC4337: boolean
   isGasTank: boolean
   paidBy: string
   inToken: string

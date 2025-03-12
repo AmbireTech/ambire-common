@@ -9,8 +9,14 @@ import { TokenResult } from '../portfolio'
 export abstract class BaseAccount {
   protected account: Account
 
-  constructor(account: Account) {
+  protected network: Network
+
+  protected accountState: AccountOnchainState
+
+  constructor(account: Account, network: Network, accountState: AccountOnchainState) {
     this.account = account
+    this.network = network
+    this.accountState = accountState
   }
 
   getAccount() {
@@ -23,7 +29,6 @@ export abstract class BaseAccount {
 
   abstract getAvailableFeeOptions(
     estimation: FullEstimationSummary,
-    network: Network,
     feePaymentOptions: FeePaymentOption[]
   ): FeePaymentOption[]
 
@@ -33,27 +38,24 @@ export abstract class BaseAccount {
     // decides on its own which are actually important for it
     options: {
       feeToken: TokenResult
-      network: Network
       op: AccountOp
-      accountState: AccountOnchainState
     }
   ): bigint
 
   abstract getBroadcastOption(
     feeOption: FeePaymentOption,
     options: {
-      network: Network
       op: AccountOp
-      accountState: AccountOnchainState
     }
   ): string
 
   // this is specific for v2 accounts, hardcoding a false for all else
-  shouldIncludeActivatorCall(
-    network: Network,
-    accountState: AccountOnchainState,
-    broadcastOption: string
-  ) {
+  shouldIncludeActivatorCall(broadcastOption: string) {
+    return false
+  }
+
+  // this is specific for eoa7702 accounts
+  shouldSignAuthorization(broadcastOption: string): boolean {
     return false
   }
 }

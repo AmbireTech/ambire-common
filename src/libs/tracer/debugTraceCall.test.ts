@@ -2,6 +2,7 @@ import { Interface, JsonRpcProvider, MaxUint256, solidityPackedKeccak256, toBeHe
 
 import { beforeAll, expect } from '@jest/globals'
 
+import { BROADCAST_OPTIONS } from 'libs/broadcast/broadcast'
 import { Account, AccountOnchainState } from '../../interfaces/account'
 import { AccountOp } from '../accountOp/accountOp'
 import { ERC20, ERC721 } from '../humanizer/const/abis'
@@ -49,7 +50,7 @@ describe('Debug tracecall detection for transactions', () => {
       gasLimit: null,
       gasFeePayment: {
         paidBy: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
-        isERC4337: false,
+        broadcastOption: BROADCAST_OPTIONS.byRelayer,
         isGasTank: false,
         inToken: '0x0000000000000000000000000000000000000000',
         amount: 5205038755874012n,

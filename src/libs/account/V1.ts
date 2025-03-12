@@ -1,8 +1,6 @@
 /* eslint-disable class-methods-use-this */
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import { ARBITRUM_CHAIN_ID } from '../../consts/networks'
-import { AccountOnchainState } from '../../interfaces/account'
-import { Network } from '../../interfaces/network'
 import { AccountOp } from '../accountOp/accountOp'
 import { BROADCAST_OPTIONS } from '../broadcast/broadcast'
 import { FeePaymentOption, FullEstimation, FullEstimationSummary } from '../estimate/interfaces'
@@ -19,7 +17,6 @@ export class V1 extends BaseAccount {
 
   getAvailableFeeOptions(
     estimation: FullEstimationSummary,
-    network: Network,
     feePaymentOptions: FeePaymentOption[]
   ): FeePaymentOption[] {
     return feePaymentOptions.filter((opt) => opt.availableAmount > 0n)
@@ -29,9 +26,7 @@ export class V1 extends BaseAccount {
     estimation: FullEstimationSummary,
     options: {
       feeToken: TokenResult
-      network: Network
       op: AccountOp
-      accountState: AccountOnchainState
     }
   ): bigint {
     if (estimation.error || !estimation.ambireEstimation) return 0n
@@ -40,7 +35,7 @@ export class V1 extends BaseAccount {
       : 0n
     // use ambireEstimation.gasUsed in all cases except Arbitrum when
     // the provider gas is more than the ambire gas
-    return options.network.chainId === ARBITRUM_CHAIN_ID &&
+    return this.network.chainId === ARBITRUM_CHAIN_ID &&
       providerGasUsed > estimation.ambireEstimation.gasUsed
       ? providerGasUsed
       : estimation.ambireEstimation.gasUsed
@@ -49,9 +44,7 @@ export class V1 extends BaseAccount {
   getBroadcastOption(
     feeOption: FeePaymentOption,
     options: {
-      network: Network
       op: AccountOp
-      accountState: AccountOnchainState
     }
   ): string {
     if (feeOption.paidBy !== this.getAccount().addr) return BROADCAST_OPTIONS.byOtherEOA

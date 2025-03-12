@@ -4,7 +4,7 @@ import { toBeHex } from 'ethers'
 
 /* eslint-disable import/no-extraneous-dependencies */
 import { BUNDLER } from '../../consts/bundlers'
-import { ENTRY_POINT_MARKER, ERC_4337_ENTRYPOINT } from '../../consts/deploy'
+import { ERC_4337_ENTRYPOINT } from '../../consts/deploy'
 import { Fetch } from '../../interfaces/fetch'
 import { Hex } from '../../interfaces/hex'
 import { Network } from '../../interfaces/network'
@@ -14,7 +14,6 @@ import { decodeError } from '../../libs/errorDecoder'
 import { BundlerError } from '../../libs/errorDecoder/customErrors'
 import { DecodedError } from '../../libs/errorDecoder/types'
 import { BundlerEstimateResult } from '../../libs/estimate/interfaces'
-import { privSlot } from '../../libs/proxyDeploy/deploy'
 import { UserOperation } from '../../libs/userOperation/types'
 import { getCleanUserOp } from '../../libs/userOperation/userOperation'
 import { getRpcProvider } from '../provider'
@@ -85,37 +84,27 @@ export abstract class Bundler {
   private async sendEstimateReq(
     userOperation: UserOperation,
     network: Network,
-    shouldStateOverride = false
+    stateOverride?: any
   ): Promise<BundlerEstimateResult> {
     const provider = this.getProvider(network)
-
-    if (shouldStateOverride) {
-      return provider.send('eth_estimateUserOperationGas', [
-        getCleanUserOp(userOperation)[0],
-        ERC_4337_ENTRYPOINT,
-        {
-          [userOperation.sender]: {
-            stateDiff: {
-              // add privileges to the entry point
-              [privSlot(0, 'uint256', ERC_4337_ENTRYPOINT, 'uint256')]: ENTRY_POINT_MARKER
-            }
-          }
-        }
-      ])
-    }
-
-    return provider.send('eth_estimateUserOperationGas', [
-      getCleanUserOp(userOperation)[0],
-      ERC_4337_ENTRYPOINT
-    ])
+    return stateOverride
+      ? provider.send('eth_estimateUserOperationGas', [
+          getCleanUserOp(userOperation)[0],
+          ERC_4337_ENTRYPOINT,
+          stateOverride
+        ])
+      : provider.send('eth_estimateUserOperationGas', [
+          getCleanUserOp(userOperation)[0],
+          ERC_4337_ENTRYPOINT
+        ])
   }
 
   async estimate(
     userOperation: UserOperation,
     network: Network,
-    shouldStateOverride = false
+    stateOverride?: any
   ): Promise<BundlerEstimateResult> {
-    const estimatiton = await this.sendEstimateReq(userOperation, network, shouldStateOverride)
+    const estimatiton = await this.sendEstimateReq(userOperation, network, stateOverride)
 
     // Whole formula:
     // final = estimation + estimation * percentage

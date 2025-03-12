@@ -15,6 +15,7 @@ import { BUNDLER } from '../../consts/bundlers'
 import { SINGLETON } from '../../consts/deploy'
 import gasTankFeeTokens from '../../consts/gasTankFeeTokens'
 import { ARBITRUM_CHAIN_ID } from '../../consts/networks'
+import { getContractImplementation } from '../../libs/7702/7702'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { BROADCAST_OPTIONS } from '../../libs/broadcast/broadcast'
 import { getEstimationSummary } from '../../libs/estimate/estimate'
@@ -49,7 +50,9 @@ import {
 import { hasRelayerSupport } from '../../libs/networks/networks'
 import { Price, TokenResult } from '../../libs/portfolio'
 import {
+  get7702Sig,
   get7702UserOpTypedData,
+  getAuthorizationHash,
   getExecuteSignature,
   getTypedData,
   wrapStandard,
@@ -62,7 +65,6 @@ import {
   getPackedUserOp,
   getUserOperation,
   getUserOpHash,
-  isErc4337Broadcast,
   shouldUseOneTimeNonce
 } from '../../libs/userOperation/userOperation'
 import { BundlerSwitcher } from '../../services/bundlers/bundlerSwitcher'
@@ -691,9 +693,7 @@ export class SignAccountOpController extends EventEmitter {
     if (this.estimation && this.selectedOption) {
       this.gasUsed = this.baseAccount.getGasUsed(this.estimation, {
         feeToken: this.selectedOption.token,
-        op: this.accountOp,
-        accountState: this.accountState,
-        network: this.#network
+        op: this.accountOp
       })
     }
     const hasGasUsedChanged = initialGasUsed !== this.gasUsed
@@ -898,9 +898,7 @@ export class SignAccountOpController extends EventEmitter {
       // each available fee option should declare it's estimation method
 
       const broadcastOption = this.baseAccount.getBroadcastOption(option, {
-        network: this.#network,
-        op: this.accountOp,
-        accountState: this.accountState
+        op: this.accountOp
       })
       if (broadcastOption === BROADCAST_OPTIONS.byBundler) {
         if (!estimation.bundlerEstimation || !this.bundlerGasPrices) return
@@ -1089,11 +1087,6 @@ export class SignAccountOpController extends EventEmitter {
 
     return {
       paidBy: this.paidBy,
-      // we're allowing EOAs to broadcast on 4337 networks as well
-      // in that case, we don't do user operations
-      isERC4337:
-        this.paidBy === this.accountOp.accountAddr &&
-        isErc4337Broadcast(this.account, this.#network, this.accountState),
       isGasTank: this.feeTokenResult.flags.onGasTank,
       inToken: this.feeTokenResult.address,
       feeTokenNetworkId: this.feeTokenResult.networkId,
@@ -1103,9 +1096,7 @@ export class SignAccountOpController extends EventEmitter {
       maxPriorityFeePerGas:
         'maxPriorityFeePerGas' in chosenSpeed ? chosenSpeed.maxPriorityFeePerGas : undefined,
       broadcastOption: this.baseAccount.getBroadcastOption(this.selectedOption, {
-        network: this.#network,
-        op: this.accountOp,
-        accountState: this.accountState
+        op: this.accountOp
       })
     }
   }
@@ -1134,7 +1125,6 @@ export class SignAccountOpController extends EventEmitter {
 
     return this.baseAccount.getAvailableFeeOptions(
       this.estimation,
-      this.#network,
       // eslint-disable-next-line no-nested-ternary
       this.estimation.ambireEstimation
         ? this.estimation.ambireEstimation.feePaymentOptions
@@ -1287,11 +1277,9 @@ export class SignAccountOpController extends EventEmitter {
     }
 
     const broadcastOption = this.accountOp.gasFeePayment.broadcastOption
-    const isUsingPaymaster =
-      broadcastOption === BROADCAST_OPTIONS.byBundler &&
-      !!this.estimation.bundlerEstimation?.paymaster.isUsable()
+    const isUsingPaymaster = !!this.estimation.bundlerEstimation?.paymaster.isUsable()
     const usesOneTimeNonce = shouldUseOneTimeNonce(this.accountState)
-    if (this.accountOp.gasFeePayment.isERC4337 && isUsingPaymaster && !usesOneTimeNonce) {
+    if (broadcastOption === BROADCAST_OPTIONS.byBundler && isUsingPaymaster && !usesOneTimeNonce) {
       this.status = { type: SigningStatus.WaitingForPaymaster }
     } else {
       this.status = { type: SigningStatus.InProgress }
@@ -1319,9 +1307,7 @@ export class SignAccountOpController extends EventEmitter {
     delete this.accountOp.activatorCall
 
     // @EntryPoint activation for SA
-    if (
-      this.baseAccount.shouldIncludeActivatorCall(this.#network, this.accountState, broadcastOption)
-    ) {
+    if (this.baseAccount.shouldIncludeActivatorCall(broadcastOption)) {
       this.accountOp.activatorCall = getActivatorCall(this.accountOp.accountAddr)
     }
 
@@ -1352,14 +1338,23 @@ export class SignAccountOpController extends EventEmitter {
       } else if (broadcastOption === BROADCAST_OPTIONS.byBundler) {
         const erc4337Estimation = this.estimation.bundlerEstimation as Erc4337GasLimits
 
-        // TODO: add the authorization if any at this point
+        // sign the 7702 authorization if needed
+        let authorization
+        if (this.baseAccount.shouldSignAuthorization(BROADCAST_OPTIONS.byBundler)) {
+          const contract = getContractImplementation(this.#network.chainId)
+          const sig = signer.sign7702(
+            getAuthorizationHash(this.#network.chainId, contract, this.accountState.nonce)
+          )
+          authorization = get7702Sig(this.#network.chainId, this.accountState.nonce, contract, sig)
+        }
+
         const userOperation = getUserOperation(
           this.account,
           this.accountState,
           this.accountOp,
           this.bundlerSwitcher.getBundler().getName(),
-          this.accountOp.meta?.entryPointAuthorization
-          // this.accountState.authorization
+          this.accountOp.meta?.entryPointAuthorization,
+          authorization
         )
         userOperation.preVerificationGas = erc4337Estimation.preVerificationGas
         userOperation.callGasLimit = toBeHex(
