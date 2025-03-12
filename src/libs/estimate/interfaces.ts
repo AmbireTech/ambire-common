@@ -91,5 +91,6 @@ export interface FullEstimationSummary {
   providerEstimation?: ProviderEstimation
   ambireEstimation?: AmbireEstimation
   bundlerEstimation?: Erc4337GasLimits
+  perCallEstimation?: PerCallEstimation
   error?: Error
 }
