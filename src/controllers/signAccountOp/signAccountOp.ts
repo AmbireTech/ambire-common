@@ -15,10 +15,12 @@ import { BUNDLER } from '../../consts/bundlers'
 import { SINGLETON } from '../../consts/deploy'
 import gasTankFeeTokens from '../../consts/gasTankFeeTokens'
 import { ARBITRUM_CHAIN_ID } from '../../consts/networks'
+import { RPCProvider } from '../../interfaces/provider'
 import { getContractImplementation } from '../../libs/7702/7702'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { BROADCAST_OPTIONS } from '../../libs/broadcast/broadcast'
 import { getEstimationSummary } from '../../libs/estimate/estimate'
+import { bundlerEstimate } from '../../libs/estimate/estimateBundler'
 /* eslint-disable no-restricted-syntax */
 import { ERRORS, RETRY_TO_INIT_ACCOUNT_OP_MSG } from '../../consts/signAccountOp/errorHandling'
 import {
@@ -207,6 +209,8 @@ export class SignAccountOpController extends EventEmitter {
   // only on estimation updates
   availableFeeOptions: FeePaymentOption[] = []
 
+  provider: RPCProvider
+
   constructor(
     keystore: KeystoreController,
     portfolio: PortfolioController,
@@ -214,6 +218,7 @@ export class SignAccountOpController extends EventEmitter {
     account: Account,
     accountState: AccountOnchainState,
     network: Network,
+    provider: RPCProvider,
     fromActionId: AccountOpAction['id'],
     accountOp: AccountOp,
     reEstimate: Function,
@@ -248,6 +253,7 @@ export class SignAccountOpController extends EventEmitter {
       },
       noStateUpdateStatuses
     )
+    this.provider = provider
   }
 
   get isInitialized(): boolean {
@@ -1336,16 +1342,37 @@ export class SignAccountOpController extends EventEmitter {
           signer
         )
       } else if (broadcastOption === BROADCAST_OPTIONS.byBundler) {
-        const erc4337Estimation = this.estimation.bundlerEstimation as Erc4337GasLimits
+        let erc4337Estimation = this.estimation.bundlerEstimation as Erc4337GasLimits
+
+        const paymaster = erc4337Estimation.paymaster
+        if (paymaster.shouldIncludePayment()) this.#addFeePayment()
 
         // sign the 7702 authorization if needed
-        let authorization
+        let eip7702Auth
         if (this.baseAccount.shouldSignAuthorization(BROADCAST_OPTIONS.byBundler)) {
           const contract = getContractImplementation(this.#network.chainId)
-          const sig = signer.sign7702(
-            getAuthorizationHash(this.#network.chainId, contract, this.accountState.nonce)
+          eip7702Auth = get7702Sig(
+            this.#network.chainId,
+            this.accountState.nonce,
+            contract,
+            signer.sign7702(
+              getAuthorizationHash(this.#network.chainId, contract, this.accountState.nonce)
+            )
           )
-          authorization = get7702Sig(this.#network.chainId, this.accountState.nonce, contract, sig)
+          // we do another estimate here as signing the authorization changes entirely
+          // the needed gas for the userOp to go through
+          const newEstimate = await bundlerEstimate(
+            this.account,
+            this.accountState,
+            this.accountOp,
+            this.#network,
+            [], // empty as .feeCall is included
+            this.provider,
+            this.bundlerSwitcher,
+            () => {},
+            eip7702Auth
+          )
+          if (!(newEstimate instanceof Error)) erc4337Estimation = newEstimate as Erc4337GasLimits
         }
 
         const userOperation = getUserOperation(
@@ -1354,7 +1381,7 @@ export class SignAccountOpController extends EventEmitter {
           this.accountOp,
           this.bundlerSwitcher.getBundler().getName(),
           this.accountOp.meta?.entryPointAuthorization,
-          authorization
+          eip7702Auth
         )
         userOperation.preVerificationGas = erc4337Estimation.preVerificationGas
         userOperation.callGasLimit = toBeHex(
@@ -1366,9 +1393,6 @@ export class SignAccountOpController extends EventEmitter {
         userOperation.paymasterPostOpGasLimit = erc4337Estimation.paymasterPostOpGasLimit
         userOperation.maxFeePerGas = toBeHex(gasFeePayment.gasPrice)
         userOperation.maxPriorityFeePerGas = toBeHex(gasFeePayment.maxPriorityFeePerGas!)
-
-        const paymaster = erc4337Estimation.paymaster
-        if (paymaster.shouldIncludePayment()) this.#addFeePayment()
 
         const ambireAccount = new Interface(AmbireAccount.abi)
         if (usesOneTimeNonce) {

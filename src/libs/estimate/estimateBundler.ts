@@ -4,6 +4,7 @@
 
 import { Contract, Interface, toBeHex } from 'ethers'
 
+import { EIP7702Auth } from 'consts/7702'
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireAccount7702 from '../../../contracts/compiled/AmbireAccount7702.json'
 import entryPointAbi from '../../../contracts/compiled/EntryPoint.json'
@@ -76,21 +77,10 @@ async function estimate(
 
     return getHumanReadableEstimationError(decodedError)
   }
-  // TODO<eip7702>
-  // isEdgeCase should probably be adjusted for the first broadcast
-  // TODO: check if the bundler estimation is not good enough if we don't pass
-  // the eip7702Auth props along
-  // const initializeRequests = () => [
-  //   accountState.authorization
-  //     ? bundler
-  //         .estimate7702(userOp, network, accountState.authorization)
-  //         .catch(estimateErrorCallback)
-  //     : bundler.estimate(userOp, network, isEdgeCase).catch(estimateErrorCallback)
-  // ]
 
   // TODO: this should probably be moved to BaseAccount
   const stateOverride =
-    has7702(network) && accountState.isEOA && !accountState.isSmarterEoa
+    has7702(network) && accountState.isEOA && !accountState.isSmarterEoa && !userOp.eip7702Auth
       ? {
           [userOp.sender]: {
             code: AmbireAccount7702.bin
@@ -122,7 +112,8 @@ export async function bundlerEstimate(
   feeTokens: TokenResult[],
   provider: RPCProvider,
   switcher: BundlerSwitcher,
-  errorCallback: Function
+  errorCallback: Function,
+  eip7702Auth?: EIP7702Auth
 ): Promise<Erc4337GasLimits | Error> {
   // we're disallowing the bundler estimate for v1 accounts as they don't
   // have 4337 support
@@ -130,14 +121,13 @@ export async function bundlerEstimate(
 
   const localOp = { ...op }
   const initialBundler = switcher.getBundler()
-  // TODO: check if the bundler estimation is not good enough if we don't pass
-  // the eip7702Auth props along
   const userOp = getUserOperation(
     account,
     accountState,
     localOp,
     initialBundler.getName(),
-    op.meta?.entryPointAuthorization
+    op.meta?.entryPointAuthorization,
+    eip7702Auth
   )
   // set the callData
   if (userOp.activatorCall) localOp.activatorCall = userOp.activatorCall

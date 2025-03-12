@@ -642,6 +642,7 @@ export class MainController extends EventEmitter {
       this.selectedAccount.account,
       this.accounts.accountStates[this.selectedAccount.account.addr][network.id],
       network,
+      this.providers.providers[network.id],
       actionId,
       accountOp,
       () => {
@@ -2630,10 +2631,6 @@ export class MainController extends EventEmitter {
       let userOperationHash
       const bundler = bundlerSwitcher.getBundler()
       try {
-        // TODO: decide what should be broadcast
-        // userOperationHash = !accountState.authorization
-        //   ? await bundler.broadcast(userOperation, network)
-        //   : await bundler.broadcast7702(userOperation, network)
         userOperationHash = await bundler.broadcast(userOperation, network)
       } catch (e: any) {
         let retryMsg
