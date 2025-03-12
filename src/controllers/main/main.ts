@@ -2291,7 +2291,7 @@ export class MainController extends EventEmitter {
     if (!this.signAccountOp) return
 
     this.signAccountOp.update({
-      gasPrices: this.gasPrices[accOp.networkId],
+      gasPrices: this.gasPrices[accOp.networkId] || null,
       bundlerGasPrices: this.bundlerGasPrices[accOp.networkId],
       blockGasLimit: gasData && gasData.blockGasLimit ? gasData.blockGasLimit : undefined
     })

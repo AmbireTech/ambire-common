@@ -149,7 +149,7 @@ export class SignAccountOpController extends EventEmitter {
 
   accountOp: AccountOp
 
-  gasPrices: GasRecommendation[] | null = null
+  gasPrices?: GasRecommendation[] | null
 
   bundlerGasPrices: GasSpeeds | null = null
 
@@ -346,7 +346,9 @@ export class SignAccountOpController extends EventEmitter {
       errors.push(this.estimation.error.message)
     }
 
-    if (!this.gasPrices || !this.gasPrices.length) {
+    const areGasPricesLoading = typeof this.gasPrices === 'undefined'
+
+    if (!areGasPricesLoading && !this.gasPrices?.length) {
       errors.push(
         'Gas price information is currently unavailable. This may be due to network congestion or connectivity issues. Please try again in a few moments or check your internet connection.'
       )
@@ -583,7 +585,7 @@ export class SignAccountOpController extends EventEmitter {
     blockGasLimit,
     estimationRetryError
   }: {
-    gasPrices?: GasRecommendation[]
+    gasPrices?: GasRecommendation[] | null
     estimation?: FullEstimation | Error | null
     feeToken?: TokenResult
     paidBy?: string
@@ -771,7 +773,7 @@ export class SignAccountOpController extends EventEmitter {
   }
 
   reset() {
-    this.gasPrices = null
+    this.gasPrices = undefined
     this.estimation = null
     this.selectedFeeSpeed = FeeSpeed.Fast
     this.paidBy = null
