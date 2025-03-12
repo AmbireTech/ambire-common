@@ -81,7 +81,6 @@ export interface FullEstimation {
   provider: ProviderEstimation | Error | null
   ambire: AmbireEstimation | Error // Ambire estimation is used always
   bundler: Erc4337GasLimits | Error | null
-  perCall: PerCallEstimation | Error | null
   // flags that signal to the app what needs to be handled if a state
   // inconsistency issue was found during estimation
   flags: EstimationFlags
@@ -91,6 +90,5 @@ export interface FullEstimationSummary {
   providerEstimation?: ProviderEstimation
   ambireEstimation?: AmbireEstimation
   bundlerEstimation?: Erc4337GasLimits
-  perCallEstimation?: PerCallEstimation
   error?: Error
 }

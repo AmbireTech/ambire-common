@@ -70,7 +70,7 @@ export async function providerEstimateGas(
           data: properties.data,
           nonce: '0x0'
         },
-        'latest',
+        'pending',
         {
           [DEPLOYLESS_SIMULATION_FROM]: {
             balance: '0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff'
@@ -91,7 +91,8 @@ export async function providerEstimateGas(
       to: properties.to,
       value: properties.value,
       data: properties.data,
-      nonce: 0
+      nonce: 0,
+      blockTag: 'pending'
     })
     .catch(getHumanReadableEstimationError)
   if (gasUsed instanceof Error) return gasUsed

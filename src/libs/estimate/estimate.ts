@@ -63,12 +63,7 @@ export async function getEstimation(
   const perCallEstimation = estimateEachCallSeparately(baseAcc, op, network, provider)
 
   const estimations = await estimateWithRetries<
-    [
-      FullEstimation['ambire'],
-      FullEstimation['bundler'],
-      FullEstimation['provider'],
-      FullEstimation['perCall']
-    ]
+    [FullEstimation['ambire'], FullEstimation['bundler'], FullEstimation['provider']]
   >(
     () => [ambireEstimation, bundlerEstimation, providerEstimation, perCallEstimation],
     'estimation-deployless',
@@ -81,16 +76,12 @@ export async function getEstimation(
   const ambireGas = estimations[0]
   const bundlerGas = estimations[1]
   const providerGas = estimations[2]
-  const perCallGas = estimations[3]
   const fullEstimation: FullEstimation = {
     provider: providerGas,
     ambire: ambireGas,
     bundler: bundlerGas,
-    perCall: perCallGas,
     flags: {}
   }
-
-  console.log(fullEstimation)
 
   const criticalError = baseAcc.getEstimationCriticalError(fullEstimation)
   if (criticalError) return criticalError
@@ -118,8 +109,6 @@ export function getEstimationSummary(estimation: FullEstimation | Error): FullEs
     ambireEstimation:
       estimation.ambire && !(estimation.ambire instanceof Error) ? estimation.ambire : undefined,
     bundlerEstimation:
-      estimation.bundler && !(estimation.bundler instanceof Error) ? estimation.bundler : undefined,
-    perCallEstimation:
-      estimation.perCall && !(estimation.perCall instanceof Error) ? estimation.perCall : undefined
+      estimation.bundler && !(estimation.bundler instanceof Error) ? estimation.bundler : undefined
   }
 }

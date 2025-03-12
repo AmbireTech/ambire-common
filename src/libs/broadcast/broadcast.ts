@@ -5,7 +5,9 @@ import { Account, AccountOnchainState } from '../../interfaces/account'
 import { Hex } from '../../interfaces/hex'
 import { TxnRequest } from '../../interfaces/keystore'
 import { Network } from '../../interfaces/network'
+import { RPCProvider } from '../../interfaces/provider'
 import { AccountOp, GasFeePayment, getSignableCalls } from '../accountOp/accountOp'
+import { Call } from '../accountOp/types'
 
 export const BROADCAST_OPTIONS = {
   bySelf: 'self', // standard txn
@@ -42,19 +44,43 @@ export function getByOtherEOATxnData(
   }
 }
 
-export function getTxnData(
+export async function getTxnData(
   account: Account,
   op: AccountOp,
   accountState: AccountOnchainState,
-  broadcastOption: string
-): { to: Hex; value: bigint; data: Hex; gasLimit?: bigint } {
+  provider: RPCProvider,
+  broadcastOption: string,
+  nonce: number,
+  call?: Call
+): Promise<{ to: Hex; value: bigint; data: Hex; gasLimit?: bigint }> {
   if (broadcastOption === BROADCAST_OPTIONS.bySelf) {
-    return {
-      to: op.calls[0].to as Hex,
-      value: op.calls[0].value,
-      data: op.calls[0].data as Hex,
-      gasLimit: op.calls[0].gasUsed ?? undefined
+    if (!call) throw new Error('single txn broadcast misconfig')
+
+    // if the accountOp has more than 1 calls, we have to calculate the gas
+    // for each one seperately
+    let gasLimit
+    if (op.calls.length > 1) {
+      gasLimit = await provider
+        .estimateGas({
+          from: account.addr,
+          to: call.to,
+          value: call.value,
+          data: call.data,
+          nonce,
+          blockTag: 'pending'
+        })
+        // TODO: error handling...
+        .catch(() => undefined)
     }
+
+    const singleCallTxn = {
+      to: call.to as Hex,
+      value: call.value,
+      data: call.data as Hex,
+      gasLimit
+    }
+
+    return singleCallTxn
   }
 
   if (broadcastOption === BROADCAST_OPTIONS.byOtherEOA) {
@@ -70,21 +96,32 @@ export function getTxnData(
   }
 }
 
-export function buildRawTransaction(
+export async function buildRawTransaction(
   account: Account,
   op: AccountOp,
   accountState: AccountOnchainState,
+  provider: RPCProvider,
   network: Network,
   nonce: number,
-  broadcastOption: string
-): TxnRequest {
+  broadcastOption: string,
+  call?: Call
+): Promise<TxnRequest> {
   const gasFeePayment = op.gasFeePayment as GasFeePayment
 
+  const txnData = await getTxnData(
+    account,
+    op,
+    accountState,
+    provider,
+    broadcastOption,
+    nonce,
+    call
+  )
   const rawTxn: TxnRequest = {
     chainId: network.chainId,
     nonce,
     gasLimit: gasFeePayment.simulatedGasLimit,
-    ...getTxnData(account, op, accountState, broadcastOption)
+    ...txnData
   }
 
   if (gasFeePayment.maxPriorityFeePerGas !== undefined) {

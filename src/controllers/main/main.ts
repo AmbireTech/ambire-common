@@ -2606,22 +2606,22 @@ export class MainController extends EventEmitter {
         const txnLength = baseAcc.shouldBroadcastCallsSeparately(accountOp)
           ? accountOp.calls.length
           : 1
-        const signedTxns = []
+        const broadcastRes = []
         for (let i = 0; i < txnLength; i++) {
           const currentNonce = i === 0 ? nonce : nonce + 1
-          const rawTxn = buildRawTransaction(
+          const rawTxn = await buildRawTransaction(
             account,
             accountOp,
             accountState,
+            provider,
             network,
             currentNonce,
-            accountOp.gasFeePayment.broadcastOption
+            accountOp.gasFeePayment.broadcastOption,
+            accountOp.calls[i]
           )
-          signedTxns.push(await signer.signRawTransaction(rawTxn))
+          const signedTxn = await signer.signRawTransaction(rawTxn)
+          broadcastRes.push(await provider.broadcastTransaction(signedTxn))
         }
-        const broadcastRes = await Promise.all(
-          signedTxns.map((signedTxn) => provider.broadcastTransaction(signedTxn))
-        )
         transactionRes = {
           nonce,
           identifiedBy: {

@@ -1321,29 +1321,12 @@ export class SignAccountOpController extends EventEmitter {
 
     try {
       // plain EOA
-      if (broadcastOption === BROADCAST_OPTIONS.bySelf) {
-        // if there's only 1 call in the accountOp, set the simulatedGasLimit
-        // as gasUsed
-        if (this.accountOp.calls.length === 1) {
-          this.accountOp.calls[0].gasUsed = gasFeePayment.simulatedGasLimit
-          // if there are more than 1 calls in the batch, check if perCallEstimation
-          // has succeeded and pass that as gas limit upon success.
-          // we're going to sign and broadcast all txns together
-        } else if (this.estimation.perCallEstimation) {
-          const calls = this.accountOp.calls.map((call, i) => {
-            const localCall = { ...call }
-            localCall.gasUsed = this.estimation?.perCallEstimation?.gasUsedPerCall
-              ? this.estimation.perCallEstimation?.gasUsedPerCall[i]
-              : undefined
-            return localCall
-          })
-          this.accountOp.calls = calls
-        }
-
+      if (
+        broadcastOption === BROADCAST_OPTIONS.bySelf ||
+        broadcastOption === BROADCAST_OPTIONS.bySelf7702
+      ) {
         // rawTxn, No SA signatures
-        this.accountOp.signature = '0x'
-      } else if (broadcastOption === BROADCAST_OPTIONS.bySelf7702) {
-        // 7702, calling executeBySender(). No SA signatures
+        // or 7702, calling executeBySender(). No SA signatures
         this.accountOp.signature = '0x'
       } else if (broadcastOption === BROADCAST_OPTIONS.byOtherEOA) {
         // SA, EOA pays fee. execute() needs a signature
