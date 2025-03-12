@@ -154,7 +154,6 @@ export class NetworksController extends EventEmitter {
       const res = await this.#callRelayer('/v2/config/networks')
       this.#relayerNetworks = res.data.extensionConfigNetworks
 
-      console.log('this.#relayerNetworks ', this.#relayerNetworks)
       Object.entries(this.#relayerNetworks).forEach(([chainId, relayerNetwork]) => {
         const n = mapRelayerNetworkConfigToAmbireNetwork(chainId, relayerNetwork)
 
@@ -282,12 +281,12 @@ export class NetworksController extends EventEmitter {
     })
 
     // Ensure predefined networks stay marked correctly and handle special cases (e.g., Odyssey network)
-    const predefinedNetworkIds = new Set<string>(Object.keys(this.#relayerNetworks))
+    const predefinedNetworkIds = Object.keys(this.#relayerNetworks)
     Object.keys(networksInStorage).forEach((networkKey) => {
       const network = networksInStorage[networkKey]
 
       // If a predefined network is removed by the relayer, mark it as custom
-      if (!predefinedNetworkIds.has(network.id) && network.predefined) {
+      if (!predefinedNetworkIds.includes(network.chainId.toString()) && network.predefined) {
         networksInStorage[networkKey] = { ...network, predefined: false }
       }
 
