@@ -713,7 +713,8 @@ export class SignAccountOpController extends EventEmitter {
       Array.isArray(calls) ||
       gasPrices ||
       estimation ||
-      hasGasUsedChanged
+      hasGasUsedChanged ||
+      bundlerGasPrices
     ) {
       this.#updateFeeSpeeds()
     }

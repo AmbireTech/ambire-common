@@ -2627,7 +2627,8 @@ export class MainController extends EventEmitter {
           identifiedBy: {
             type: txnLength > 1 ? 'MultipleTxns' : 'Transaction',
             identifier: broadcastRes.map((res) => res.hash).join('-')
-          }
+          },
+          txnId: txnLength === 1 ? broadcastRes.map((res) => res.hash).join('-') : undefined
         }
       } catch (error: any) {
         return this.throwBroadcastAccountOp({ error, accountState })

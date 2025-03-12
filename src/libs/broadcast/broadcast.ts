@@ -58,7 +58,7 @@ export async function getTxnData(
 
     // if the accountOp has more than 1 calls, we have to calculate the gas
     // for each one seperately
-    let gasLimit
+    let gasLimit: bigint | undefined = (op.gasFeePayment as GasFeePayment).simulatedGasLimit
     if (op.calls.length > 1) {
       gasLimit = await provider
         .estimateGas({
