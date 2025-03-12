@@ -46,10 +46,10 @@ export async function providerEstimateGas(
   accountState: AccountOnchainState,
   network: Network,
   feeTokens: TokenResult[]
-): Promise<ProviderEstimation | Error> {
+): Promise<ProviderEstimation | Error | null> {
   // we don't do estimateGas() for smart accounts
   if (isSmartAccount(account)) {
-    return new Error('disallowed')
+    return null
   }
 
   const feePaymentOptions = [

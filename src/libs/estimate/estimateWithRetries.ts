@@ -1,12 +1,12 @@
 import wait from '../../utils/wait'
 
-export async function estimateWithRetries(
-  fetchRequests: Function,
+export async function estimateWithRetries<T>(
+  fetchRequests: () => Promise<any>[],
   timeoutType: string,
   errorCallback: Function,
   timeoutInMill: number = 10000,
   counter: number = 0
-): Promise<any> {
+): Promise<T | Error> {
   // stop the execution on 5 fails;
   if (counter >= 5)
     return new Error(
@@ -91,36 +91,5 @@ export async function estimateWithRetries(
     return error
   }
 
-  return result
-}
-
-export async function retryOnTimeout(
-  fetchRequests: Function,
-  timeoutType: string,
-  timeoutInMill: number = 10000,
-  counter: number = 0
-): Promise<any> {
-  // stop the execution on 5 fails;
-  // the below error message is not shown to the user so we are safe
-  if (counter >= 5)
-    return new Error(
-      'Estimation failure, retrying in a couple of seconds. If this issue persists, please change your RPC provider or contact Ambire support'
-    )
-
-  const santinelTimeoutErr = {}
-  const estimationTimeout = new Promise((resolve) => {
-    setTimeout(() => {
-      resolve(santinelTimeoutErr)
-    }, timeoutInMill)
-  })
-
-  let result = await Promise.race([Promise.all(fetchRequests()), estimationTimeout])
-
-  // retry on a timeout
-  if (result === santinelTimeoutErr) {
-    const incremented = counter + 1
-    result = await retryOnTimeout(fetchRequests, timeoutType, timeoutInMill, incremented)
-  }
-
-  return result
+  return result as T
 }

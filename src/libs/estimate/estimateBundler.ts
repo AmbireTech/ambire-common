@@ -4,10 +4,10 @@
 
 import { Contract, Interface, toBeHex } from 'ethers'
 
-import { EIP7702Auth } from 'consts/7702'
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireAccount7702 from '../../../contracts/compiled/AmbireAccount7702.json'
 import entryPointAbi from '../../../contracts/compiled/EntryPoint.json'
+import { EIP7702Auth } from '../../consts/7702'
 import { ERC_4337_ENTRYPOINT } from '../../consts/deploy'
 import { AccountOnchainState } from '../../interfaces/account'
 import { Network } from '../../interfaces/network'
@@ -115,8 +115,8 @@ export async function bundlerEstimate(
   switcher: BundlerSwitcher,
   errorCallback: Function,
   eip7702Auth?: EIP7702Auth
-): Promise<Erc4337GasLimits | Error> {
-  if (!baseAcc.supportsBundlerEstimation()) return new Error('disallowed')
+): Promise<Erc4337GasLimits | Error | null> {
+  if (!baseAcc.supportsBundlerEstimation()) return null
 
   const account = baseAcc.getAccount()
   const localOp = { ...op }

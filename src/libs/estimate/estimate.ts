@@ -1,6 +1,6 @@
 import { AbiCoder, ZeroAddress } from 'ethers'
-
 import { BaseAccount } from 'libs/account/BaseAccount'
+
 import Estimation from '../../../contracts/compiled/Estimation.json'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { OPTIMISTIC_ORACLE } from '../../consts/deploy'
@@ -286,9 +286,12 @@ export async function getEstimation(
     feeTokens
   )
 
-  const estimations = await retryOnTimeout(
+  const estimations = await estimateWithRetries<
+    [FullEstimation['ambire'], FullEstimation['bundler'], FullEstimation['provider']]
+  >(
     () => [ambireEstimation, bundlerEstimation, providerEstimation],
     'estimation-deployless',
+    errorCallback,
     12000
   )
   // this is only if we hit a timeout 5 consecutive times
@@ -311,8 +314,8 @@ export async function getEstimation(
   // we can switch it if there's no ambire gas error
 
   let flags = {}
-  if (!(ambireGas instanceof Error)) flags = { ...ambireGas.flags }
-  if (!(bundlerGas instanceof Error)) flags = { ...bundlerGas.flags }
+  if (!(ambireGas instanceof Error) && ambireGas) flags = { ...ambireGas.flags }
+  if (!(bundlerGas instanceof Error) && bundlerGas) flags = { ...bundlerGas.flags }
   return {
     provider: providerGas,
     ambire: ambireGas,
@@ -327,8 +330,13 @@ export function getEstimationSummary(estimation: FullEstimation | Error): FullEs
   }
 
   return {
-    providerEstimation: !(estimation.provider instanceof Error) ? estimation.provider : undefined,
-    ambireEstimation: !(estimation.ambire instanceof Error) ? estimation.ambire : undefined,
-    bundlerEstimation: !(estimation.bundler instanceof Error) ? estimation.bundler : undefined
+    providerEstimation:
+      estimation.provider && !(estimation.provider instanceof Error)
+        ? estimation.provider
+        : undefined,
+    ambireEstimation:
+      estimation.ambire && !(estimation.ambire instanceof Error) ? estimation.ambire : undefined,
+    bundlerEstimation:
+      estimation.bundler && !(estimation.bundler instanceof Error) ? estimation.bundler : undefined
   }
 }

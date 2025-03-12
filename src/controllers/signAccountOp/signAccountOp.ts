@@ -15,12 +15,6 @@ import { BUNDLER } from '../../consts/bundlers'
 import { SINGLETON } from '../../consts/deploy'
 import gasTankFeeTokens from '../../consts/gasTankFeeTokens'
 import { ARBITRUM_CHAIN_ID } from '../../consts/networks'
-import { RPCProvider } from '../../interfaces/provider'
-import { getContractImplementation } from '../../libs/7702/7702'
-import { getBaseAccount } from '../../libs/account/getBaseAccount'
-import { BROADCAST_OPTIONS } from '../../libs/broadcast/broadcast'
-import { getEstimationSummary } from '../../libs/estimate/estimate'
-import { bundlerEstimate } from '../../libs/estimate/estimateBundler'
 /* eslint-disable no-restricted-syntax */
 import { ERRORS, RETRY_TO_INIT_ACCOUNT_OP_MSG } from '../../consts/signAccountOp/errorHandling'
 import {
@@ -31,12 +25,20 @@ import {
 import { Account, AccountOnchainState } from '../../interfaces/account'
 import { ExternalSignerControllers, Key } from '../../interfaces/keystore'
 import { Network } from '../../interfaces/network'
+import { RPCProvider } from '../../interfaces/provider'
 import { TraceCallDiscoveryStatus, Warning } from '../../interfaces/signAccountOp'
+import { getContractImplementation } from '../../libs/7702/7702'
 import { isAmbireV1LinkedAccount, isSmartAccount } from '../../libs/account/account'
+/* eslint-disable no-restricted-syntax */
+import { BaseAccount } from '../../libs/account/BaseAccount'
+import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { AccountOp, GasFeePayment, getSignableCalls } from '../../libs/accountOp/accountOp'
 import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
+import { BROADCAST_OPTIONS } from '../../libs/broadcast/broadcast'
 import { PaymasterErrorReponse, PaymasterSuccessReponse, Sponsor } from '../../libs/erc7677/types'
 import { getHumanReadableBroadcastError } from '../../libs/errorHumanizer'
+import { getEstimationSummary } from '../../libs/estimate/estimate'
+import { bundlerEstimate } from '../../libs/estimate/estimateBundler'
 import {
   Erc4337GasLimits,
   FeePaymentOption,
@@ -71,8 +73,6 @@ import {
 } from '../../libs/userOperation/userOperation'
 import { BundlerSwitcher } from '../../services/bundlers/bundlerSwitcher'
 import { GasSpeeds } from '../../services/bundlers/types'
-/* eslint-disable no-restricted-syntax */
-import { BaseAccount } from '../../libs/account/BaseAccount'
 import { AccountOpAction } from '../actions/actions'
 import EventEmitter, { ErrorRef } from '../eventEmitter/eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
