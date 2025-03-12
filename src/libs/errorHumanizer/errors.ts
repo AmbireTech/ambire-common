@@ -129,10 +129,20 @@ const BROADCAST_ERRORS: ErrorHumanizerError[] = [
     reasons: ['Max fee per gas less than block base fee'],
     message:
       'the fee set for the transaction is lower than the network’s current base fee. Please try again with a higher fee.'
+  },
+  {
+    reasons: ['ConnectivityError'],
+    message:
+      'of a network error. Please check your internet connection and broadcast the transaction again.'
   }
 ]
 
 const ESTIMATION_ERRORS: ErrorHumanizerError[] = [
+  {
+    reasons: ['ConnectivityError'],
+    message:
+      'of a network error. Please check your internet connection or contact support if the issue persists.'
+  },
   {
     reasons: ['SPOOF_ERROR', 'INSUFFICIENT_PRIVILEGE'],
     message:
