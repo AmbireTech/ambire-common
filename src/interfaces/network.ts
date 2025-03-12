@@ -87,21 +87,13 @@ export interface Network {
   force4337?: NetworkInfo['force4337']
   allowForce4337?: boolean
   predefinedConfigVersion?: number
+  // Last time the network details were updated from the rpc for custom and no SA networks
   lastUpdated?: number
   // When we migrate from custom to predefined network from relayer, we need to store the custom network name
   // for future migration of other storages by this id
   customNetworkId?: string
   has7702: boolean
 }
-
-export type UserNetworkPreferencesForPredefinedNetworks = Pick<
-  RelayerNetwork,
-  'predefinedConfigVersion'
-> &
-  Partial<Pick<Network, 'rpcUrls' | 'selectedRpcUrl' | 'explorerUrl' | 'iconUrls'>>
-
-export type UserNetworkPreferencesForCustomNetworks = UserNetworkPreferencesForPredefinedNetworks &
-  Partial<Pick<Network, 'chainId' | 'name' | 'nativeAssetSymbol'>>
 
 export interface AddNetworkRequestParams {
   name: Network['name']
