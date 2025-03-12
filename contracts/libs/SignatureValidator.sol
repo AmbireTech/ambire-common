@@ -62,6 +62,16 @@ library SignatureValidator {
 		}
 		// Ensure we're in bounds for mode; Solidity does this as well but it will just silently blow up rather than showing a decent error
 		if (modeRaw >= uint8(SignatureMode.LastUnused)) {
+			// NOTE: this edge case is crazy powerful; first of all, why it's safe: because if you use a regular ECDSA 65-byte format defined by OpenZeppelin and others,
+			// it will always end in 27 or 28, which are not valid signature modes. So it's not possible to mistake this for any other type of signature, and we'll always end up
+			// hitting `modeRaw >= uint8(SignatureMode.LastUnused)` condition
+			// it's used for two things
+			// 1) EIP-7702 (originally designed for EIP-3074): this one is fairly obvious: we can continue validating EOA sigs as normal if the account is EIP-7702 delegated
+			// This is needed because proper sig libraries should start by calling `isValidSignature` (EIP-1271) if a certain account  has code, 
+			// before trying pure ECDSA (see EIP-6492 Rationale to understand why).
+			// 2) EOA simulations: when we use state override to simulate stuff from an actual EOA (via virtually converting it to AmbireAccount), 
+			// we may be simulating stuff that's dependent on EOA signatures that this user already made (eg swap using permit2). So within this simulation, we need to 
+			// retain the permit2 sig being a valid sig.
 			if (sig.length == 65) modeRaw = uint8(SignatureMode.Unprotected);
 			else revert('SV_SIGMODE');
 		}

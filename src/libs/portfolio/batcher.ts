@@ -1,4 +1,5 @@
 import { Fetch } from '../../interfaces/fetch'
+import { fetchWithTimeout } from '../../utils/fetch'
 
 export interface QueueElement {
   resolve: Function
@@ -37,11 +38,16 @@ export default function batcher(
       // useful also if the API is limited to a certain # and we want to paginate
       requestGenerator(queueCopy).map(async ({ url, queueSegment }) => {
         try {
-          const fetchPromise = fetch(url).then(async (resp) => {
+          const fetchPromise = fetchWithTimeout(
+            fetch,
+            url,
+            {},
+            timeoutSettings?.timeoutAfter || 20000
+          ).then(async (resp) => {
             const body = await resp.json()
             if (resp.status !== 200) throw body
-            if (body.hasOwnProperty('message')) throw body
-            if (body.hasOwnProperty('error')) throw body
+            if (Object.prototype.hasOwnProperty.call(body, 'message')) throw body
+            if (Object.prototype.hasOwnProperty.call(body, 'error')) throw body
             if (Array.isArray(body)) {
               if (body.length !== queueSegment.length)
                 throw new Error('internal error: queue length and response length mismatch')
@@ -53,19 +59,12 @@ export default function batcher(
             } else throw body
           })
 
-          if (timeoutSettings) {
-            const timeoutPromise = new Promise((_, reject) => {
-              setTimeout(() => {
-                reject(new Error('Request timed out'))
-              }, timeoutSettings.timeoutAfter)
-            })
-            await Promise.race([fetchPromise, timeoutPromise])
-          } else {
-            await fetchPromise
-          }
+          await fetchPromise
         } catch (e: any) {
-          if (e.message === 'Request timed out' && timeoutSettings) {
-            console.error(timeoutSettings.timeoutErrorMessage)
+          if (e.message === 'request-timeout' && timeoutSettings) {
+            console.error('Batcher error: ', timeoutSettings.timeoutErrorMessage)
+          } else {
+            console.log('Batcher error:', e)
           }
           queueSegment.forEach(({ reject }) => reject(e))
         }
