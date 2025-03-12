@@ -37,6 +37,7 @@ contract Estimation is FeeTokens, Spoof {
 
   struct EoaEstimationOutcome {
     uint gasUsed;
+    uint[] gasUsedPerCall;
     FeeTokenOutcome[] feeTokenOutcomes;
     L1GasEstimation l1GasEstimation;
   }
@@ -138,12 +139,19 @@ contract Estimation is FeeTokens, Spoof {
     address relayer,
     address oracle
   ) external returns (EoaEstimationOutcome memory eoa) {
-    // simulate the transactions
     SimulationOutcome memory simulation;
-    (simulation, , ) = simulateUnsigned(op, associatedKeys);
     uint256 baseGas = calculateBaseGas(account, makeSpoofSignature(address(account)));
-    // the if statement is more of a precaution as we don't want the contract to revert
-    eoa.gasUsed = baseGas > simulation.gasUsed ? simulation.gasUsed : simulation.gasUsed - baseGas;
+
+    for (uint256 i = 0; i < op.calls.length; i++) {
+      Transaction[] memory callsOneByOne = new Transaction[](1);
+      callsOneByOne[0] = op.calls[i];
+      AccountOp memory oneCallOp = AccountOp(op.account, op.nonce, callsOneByOne, op.signature);
+      (simulation, , ) = simulateUnsigned(oneCallOp, associatedKeys);
+
+      // the if statement is more of a precaution as we don't want the contract to revert
+      eoa.gasUsedPerCall[i] = baseGas > simulation.gasUsed ? simulation.gasUsed : simulation.gasUsed - baseGas;
+      eoa.gasUsed += eoa.gasUsedPerCall[i];
+    }
 
     // record the native balance after the simulation
     FeeTokenOutcome[] memory feeTokenOutcomes = new FeeTokenOutcome[](1);

@@ -99,7 +99,8 @@ export async function estimateEOA(
       paidBy: account.addr,
       availableAmount: accountState.balance,
       addedNative: 0n,
-      token: feeTokens.find((token) => token.address === ZeroAddress && !token.flags.onGasTank)!
+      token: feeTokens.find((token) => token.address === ZeroAddress && !token.flags.onGasTank)!,
+      gasUsed: 21000n
     }
   ]
   if (result instanceof Error) return estimationErrorFormatted(result, { feePaymentOptions })

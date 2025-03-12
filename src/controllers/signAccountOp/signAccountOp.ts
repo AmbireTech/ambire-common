@@ -977,7 +977,7 @@ export class SignAccountOpController extends EventEmitter {
             }
           })
 
-          amount = simulatedGasLimit * gasPrice
+          amount = simulatedGasLimit * gasPrice + option.addedNative
         } else if (
           broadcastOption === BROADCAST_OPTIONS.byOtherEOA ||
           broadcastOption === BROADCAST_OPTIONS.bySelf7702
@@ -1362,7 +1362,7 @@ export class SignAccountOpController extends EventEmitter {
           // we do another estimate here as signing the authorization changes entirely
           // the needed gas for the userOp to go through
           const newEstimate = await bundlerEstimate(
-            this.account,
+            this.baseAccount,
             this.accountState,
             this.accountOp,
             this.#network,
