@@ -514,7 +514,7 @@ export class MainController extends EventEmitter {
     }
     this.selectedAccount.setAccount(accountToSelect)
     this.swapAndBridge.onAccountChange()
-    this.dapps.broadcastDappSessionEvent('accountsChanged', [toAccountAddr])
+    await this.dapps.broadcastDappSessionEvent('accountsChanged', [toAccountAddr])
     // forceEmitUpdate to update the getters in the FE state of the ctrl
     await this.forceEmitUpdate()
     await this.actions.forceEmitUpdate()

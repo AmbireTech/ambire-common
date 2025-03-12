@@ -61,28 +61,22 @@ export class DappsController extends EventEmitter {
   }
 
   async #load() {
-    // eslint-disable-next-line prefer-const
-    let [storedDapps, dappSessions] = await Promise.all([
-      this.#storage.get('dapps', []),
-      this.#storage.get('dappSessions', {})
-    ])
+    // Before extension version 4.55.0, dappSessions were stored in storage.
+    // This logic is no longer needed, so we remove the data from the user's storage.
+    // Keeping this here as a reminder to handle future use of the `dappSessions` key with caution.
+    this.#storage.remove('dappSessions')
+    const storedDapps = await this.#storage.get('dapps', [])
 
     this.#dapps = storedDapps
-    Object.keys(dappSessions).forEach((sessionId) => {
-      const session = new Session(dappSessions[sessionId])
-      this.dappSessions[sessionId] = session
-    })
     this.emitUpdate()
   }
 
   #dappSessionsSet(sessionId: string, session: Session) {
     this.dappSessions[sessionId] = session
-    this.#storage.set('dappSessions', this.dappSessions)
   }
 
   #dappSessionsDelete(sessionId: string) {
     delete this.dappSessions[sessionId]
-    this.#storage.set('dappSessions', this.dappSessions)
   }
 
   #createDappSession = (data: SessionProp) => {
@@ -108,6 +102,15 @@ export class DappsController extends EventEmitter {
     this.dappSessions[key].setMessenger(messenger)
   }
 
+  setSessionLastHandledRequestsId = (key: string, id: number) => {
+    if (id > this.dappSessions[key].lastHandledRequestId)
+      this.dappSessions[key].lastHandledRequestId = id
+  }
+
+  resetSessionLastHandledRequestsId = (key: string) => {
+    this.dappSessions[key].lastHandledRequestId = -1
+  }
+
   setSessionProp = (key: string, props: SessionProp) => {
     this.dappSessions[key].setProp(props)
   }
@@ -117,17 +120,22 @@ export class DappsController extends EventEmitter {
     this.emitUpdate()
   }
 
-  broadcastDappSessionEvent = (ev: any, data?: any, origin?: string) => {
+  broadcastDappSessionEvent = async (
+    ev: any,
+    data?: any,
+    origin?: string,
+    skipPermissionCheck?: boolean
+  ) => {
+    await this.initialLoadPromise
+
     let dappSessions: { key: string; data: Session }[] = []
     Object.keys(this.dappSessions).forEach((key) => {
-      if (this.dappSessions[key] && this.hasPermission(this.dappSessions[key].origin)) {
-        dappSessions.push({
-          key,
-          data: this.dappSessions[key]
-        })
+      const hasPermissionToBroadcast =
+        skipPermissionCheck || this.hasPermission(this.dappSessions[key].origin)
+      if (this.dappSessions[key] && hasPermissionToBroadcast) {
+        dappSessions.push({ key, data: this.dappSessions[key] })
       }
     })
-
     if (origin) {
       dappSessions = dappSessions.filter((dappSession) => dappSession.data.origin === origin)
     }
@@ -141,7 +149,6 @@ export class DappsController extends EventEmitter {
         }
       }
     })
-    this.emitUpdate()
   }
 
   addDapp(dapp: Dapp) {
