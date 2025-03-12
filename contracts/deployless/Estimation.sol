@@ -142,6 +142,7 @@ contract Estimation is FeeTokens, Spoof {
     SimulationOutcome memory simulation;
     uint256 baseGas = calculateBaseGas(account, makeSpoofSignature(address(account)));
 
+    uint[] memory gasUsedPerCall = new uint[](op.calls.length);
     for (uint256 i = 0; i < op.calls.length; i++) {
       Transaction[] memory callsOneByOne = new Transaction[](1);
       callsOneByOne[0] = op.calls[i];
@@ -149,11 +150,13 @@ contract Estimation is FeeTokens, Spoof {
       (simulation, , ) = simulateUnsigned(oneCallOp, associatedKeys);
 
       // the if statement is more of a precaution as we don't want the contract to revert
-      eoa.gasUsedPerCall[i] = baseGas > simulation.gasUsed
+      uint256 gasUsedOnCall = baseGas > simulation.gasUsed
         ? simulation.gasUsed
         : simulation.gasUsed - baseGas;
-      eoa.gasUsed += eoa.gasUsedPerCall[i];
+      gasUsedPerCall[i] = gasUsedOnCall;
+      eoa.gasUsed += gasUsedOnCall;
     }
+    eoa.gasUsedPerCall = gasUsedPerCall;
 
     // record the native balance after the simulation
     FeeTokenOutcome[] memory feeTokenOutcomes = new FeeTokenOutcome[](1);
