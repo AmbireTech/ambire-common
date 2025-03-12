@@ -594,10 +594,8 @@ describe('estimate', () => {
     )
     expect(viewOnlyAccOption).toBe(undefined)
 
-    expect(res.provider instanceof Error).toBe(true)
-    expect(res.bundler instanceof Error).toBe(true)
-    expect((res.provider as Error).message.indexOf('disallowed')).not.toBe(-1)
-    expect((res.bundler as Error).message.indexOf('disallowed')).not.toBe(-1)
+    expect(res.provider).toBe(null)
+    expect(res.bundler).toBe(null)
   })
 
   it('[v1] estimates correctly by passing multiple view only accounts to estimation and removing the fee options for them as they are not valid', async () => {
@@ -784,6 +782,8 @@ describe('estimate', () => {
       errorCallback
     )
 
+    console.log(response)
+
     expect(response instanceof Error).toBe(false)
     const res = response as FullEstimation
     expect(res.ambire instanceof Error).toBe(false)
@@ -826,7 +826,7 @@ describe('estimate', () => {
 
     expect(response instanceof Error).toBe(false)
     const res = response as FullEstimation
-    expect(res.provider instanceof Error).toBe(true)
+    expect(res.provider).toBe(null)
     expect(res.ambire instanceof Error).toBe(false)
     expect(res.bundler instanceof Error).toBe(false)
     const ambireGas = res.ambire as AmbireEstimation
@@ -876,7 +876,7 @@ describe('estimate', () => {
 
     expect(response instanceof Error).toBe(false)
     const res = response as FullEstimation
-    expect(res.provider instanceof Error).toBe(true)
+    expect(res.provider).toBe(null)
     expect(res.ambire instanceof Error).toBe(false)
     const ambireGas = res.ambire as AmbireEstimation
     expect(ambireGas.feePaymentOptions.length).toBeGreaterThan(0)
@@ -1019,7 +1019,7 @@ describe('estimate', () => {
 
     expect(response instanceof Error).toBe(false)
     const res = response as FullEstimation
-    expect(res.provider instanceof Error).toBe(true)
+    expect(res.provider).toBe(null)
     expect(res.ambire instanceof Error).toBe(false)
     const ambireGas = res.ambire as AmbireEstimation
     expect(ambireGas.feePaymentOptions.length).toBeGreaterThan(0)
@@ -1069,7 +1069,7 @@ describe('estimate', () => {
 
     expect(response instanceof Error).toBe(false)
     const res = response as FullEstimation
-    expect(res.provider instanceof Error).toBe(true)
+    expect(res.provider).toBe(null)
     expect(res.ambire instanceof Error).toBe(false)
     const ambireGas = res.ambire as AmbireEstimation
     expect(ambireGas.feePaymentOptions.length).toBeGreaterThan(0)

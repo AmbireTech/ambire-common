@@ -48,9 +48,7 @@ export async function providerEstimateGas(
   feeTokens: TokenResult[]
 ): Promise<ProviderEstimation | Error | null> {
   // we don't do estimateGas() for smart accounts
-  if (isSmartAccount(account)) {
-    return null
-  }
+  if (isSmartAccount(account)) return null
 
   const feePaymentOptions = [
     {

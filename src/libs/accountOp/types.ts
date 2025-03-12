@@ -9,4 +9,5 @@ export interface Call {
   // when a batching request is made
   fromUserRequestId?: UserRequest['id']
   id?: Calls['calls'][number]['id']
+  gasUsed?: bigint
 }

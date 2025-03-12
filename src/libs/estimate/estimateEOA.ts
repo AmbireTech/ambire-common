@@ -107,7 +107,8 @@ export async function estimateEOA(
 
   let gasUsed = 0n
   if (!network.rpcNoStateOverride) {
-    const [gasUsedEstimateGas, [[gasUsedEstimationSol, feeTokenOutcomes, l1GasEstimation]]] = result
+    const [gasUsedEstimateGas, [[gasUsedEstimationSol, feeTokenOutcomes, l1GasEstimation]]] =
+      result as any
     if (feeTokenOutcomes.length && feeTokenOutcomes[0].length) {
       feePaymentOptions[0].availableAmount = feeTokenOutcomes[0][1]
     }
@@ -122,7 +123,7 @@ export async function estimateEOA(
       gasUsed =
         gasUsedEstimateGas > gasUsedEstimationSol ? gasUsedEstimateGas : gasUsedEstimationSol
   } else {
-    const [gasUsedEstimateGas, [l1GasEstimation]] = result
+    const [gasUsedEstimateGas, [l1GasEstimation]] = result as any
     feePaymentOptions[0].addedNative = l1GasEstimation.fee
     gasUsed = gasUsedEstimateGas
   }

@@ -73,4 +73,8 @@ export class EOA extends BaseAccount {
   ): string {
     return BROADCAST_OPTIONS.bySelf
   }
+
+  shouldEstimateCallsSeparately(op: AccountOp): boolean {
+    return op.calls.length > 1
+  }
 }

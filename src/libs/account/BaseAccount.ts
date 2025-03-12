@@ -60,4 +60,9 @@ export abstract class BaseAccount {
   shouldSignAuthorization(broadcastOption: string): boolean {
     return false
   }
+
+  // valid only EOAs in very specific circumstances
+  shouldEstimateCallsSeparately(op: AccountOp): boolean {
+    return false
+  }
 }

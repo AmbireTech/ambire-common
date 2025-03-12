@@ -7,6 +7,7 @@ import { BundlerSwitcher } from '../../services/bundlers/bundlerSwitcher'
 import { AccountOp } from '../accountOp/accountOp'
 import { TokenResult } from '../portfolio'
 import { ambireEstimateGas } from './ambireEstimation'
+import { estimateEachCallSeparately } from './callGasUsedEstimation'
 import { bundlerEstimate } from './estimateBundler'
 import { estimateWithRetries } from './estimateWithRetries'
 import { FullEstimation, FullEstimationSummary } from './interfaces'
@@ -59,11 +60,17 @@ export async function getEstimation(
     network,
     feeTokens
   )
+  const perCallEstimation = estimateEachCallSeparately(baseAcc, op, network, provider)
 
   const estimations = await estimateWithRetries<
-    [FullEstimation['ambire'], FullEstimation['bundler'], FullEstimation['provider']]
+    [
+      FullEstimation['ambire'],
+      FullEstimation['bundler'],
+      FullEstimation['provider'],
+      FullEstimation['perCall']
+    ]
   >(
-    () => [ambireEstimation, bundlerEstimation, providerEstimation],
+    () => [ambireEstimation, bundlerEstimation, providerEstimation, perCallEstimation],
     'estimation-deployless',
     errorCallback,
     12000
@@ -74,10 +81,12 @@ export async function getEstimation(
   const ambireGas = estimations[0]
   const bundlerGas = estimations[1]
   const providerGas = estimations[2]
+  const perCallGas = estimations[3]
   const fullEstimation: FullEstimation = {
     provider: providerGas,
     ambire: ambireGas,
     bundler: bundlerGas,
+    perCall: perCallGas,
     flags: {}
   }
 
@@ -90,12 +99,8 @@ export async function getEstimation(
   let flags = {}
   if (!(ambireGas instanceof Error) && ambireGas) flags = { ...ambireGas.flags }
   if (!(bundlerGas instanceof Error) && bundlerGas) flags = { ...bundlerGas.flags }
-  return {
-    provider: providerGas,
-    ambire: ambireGas,
-    bundler: bundlerGas,
-    flags
-  }
+  fullEstimation.flags = flags
+  return fullEstimation
 }
 
 export function getEstimationSummary(estimation: FullEstimation | Error): FullEstimationSummary {

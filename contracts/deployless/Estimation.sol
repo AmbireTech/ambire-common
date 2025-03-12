@@ -37,9 +37,9 @@ contract Estimation is FeeTokens, Spoof {
 
   struct EoaEstimationOutcome {
     uint gasUsed;
-    uint[] gasUsedPerCall;
     FeeTokenOutcome[] feeTokenOutcomes;
     L1GasEstimation l1GasEstimation;
+    uint[] gasUsedPerCall;
   }
 
   // `estimate` takes the `accountOpToExecuteBefore` parameters separately because it's simulated via `simulateSigned`
@@ -149,7 +149,9 @@ contract Estimation is FeeTokens, Spoof {
       (simulation, , ) = simulateUnsigned(oneCallOp, associatedKeys);
 
       // the if statement is more of a precaution as we don't want the contract to revert
-      eoa.gasUsedPerCall[i] = baseGas > simulation.gasUsed ? simulation.gasUsed : simulation.gasUsed - baseGas;
+      eoa.gasUsedPerCall[i] = baseGas > simulation.gasUsed
+        ? simulation.gasUsed
+        : simulation.gasUsed - baseGas;
       eoa.gasUsed += eoa.gasUsedPerCall[i];
     }
 
