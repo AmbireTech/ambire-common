@@ -71,10 +71,11 @@ export interface AmbireEstimation {
   flags: EstimationFlags
 }
 
+// Null means that the estimation was not done (e.g. it's irrelevant to the account type)
 export interface FullEstimation {
-  provider: ProviderEstimation | Error
-  ambire: AmbireEstimation | Error
-  bundler: Erc4337GasLimits | Error
+  provider: ProviderEstimation | Error | null
+  ambire: AmbireEstimation | Error // Ambire estimation is used always
+  bundler: Erc4337GasLimits | Error | null
   // flags that signal to the app what needs to be handled if a state
   // inconsistency issue was found during estimation
   flags: EstimationFlags
