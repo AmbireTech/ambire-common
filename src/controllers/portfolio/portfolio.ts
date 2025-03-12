@@ -7,6 +7,7 @@ import { Network, NetworkId } from '../../interfaces/network'
 import { Storage } from '../../interfaces/storage'
 import { AccountOp, AccountOpStatus, isAccountOpsIntentEqual } from '../../libs/accountOp/accountOp'
 import { Portfolio } from '../../libs/portfolio'
+import batcher from '../../libs/portfolio/batcher'
 /* eslint-disable @typescript-eslint/no-use-before-define */
 import { CustomToken, TokenPreference } from '../../libs/portfolio/customToken'
 import getAccountNetworksWithAssets from '../../libs/portfolio/getNetworksWithAssets'
@@ -28,12 +29,12 @@ import {
   AccountAssetsState,
   AccountState,
   ExtendedErrorWithLevel,
-  ExternalHintsAPIResponse,
   GasTankTokenResult,
   GetOptions,
   NetworkState,
   PortfolioControllerState,
   PreviousHintsStorage,
+  StrippedExternalHintsAPIResponse,
   TemporaryTokens,
   TokenResult
 } from '../../libs/portfolio/interfaces'
@@ -115,6 +116,8 @@ export class PortfolioController extends EventEmitter {
   // Holds the initial load promise, so that one can wait until it completes
   #initialLoadPromise: Promise<void>
 
+  #batchedVelcroDiscovery: Function
+
   constructor(
     storage: Storage,
     fetch: Fetch,
@@ -138,6 +141,25 @@ export class PortfolioController extends EventEmitter {
     this.#accounts = accounts
     this.temporaryTokens = {}
     this.#toBeLearnedTokens = {}
+    this.#batchedVelcroDiscovery = batcher(
+      fetch,
+      (queue) => {
+        const baseCurrencies = [...new Set(queue.map((x) => x.data.baseCurrency))]
+        return baseCurrencies.map((baseCurrency) => {
+          const queueSegment = queue.filter((x) => x.data.baseCurrency === baseCurrency)
+          const url = `${velcroUrl}/multi-hints?networks=${queueSegment
+            .map((x) => x.data.networkId)
+            .join(',')}&accounts=${queueSegment
+            .map((x) => x.data.accountAddr)
+            .join(',')}&baseCurrency=${baseCurrency}`
+          return { queueSegment, url }
+        })
+      },
+      {
+        timeoutAfter: 3000,
+        timeoutErrorMessage: 'Velcro discovery timed out'
+      }
+    )
 
     this.#initialLoadPromise = this.#load()
   }
@@ -519,6 +541,35 @@ export class PortfolioController extends EventEmitter {
     return isWithinMinUpdateInterval || networkState.isLoading
   }
 
+  async #getHintsFromExternalApi(network: Network, accountId: AccountId) {
+    let hintsFromExternalAPI: StrippedExternalHintsAPIResponse | null = null
+    let hintsFromExternalAPIError: null | ExtendedErrorWithLevel = null
+
+    if (network.hasRelayer) {
+      const fallbackHints =
+        this.#previousHints.fromExternalAPI[`${network.id}:${accountId}`] ?? null
+
+      try {
+        hintsFromExternalAPI = stripExternalHintsAPIResponse(
+          await this.#batchedVelcroDiscovery({
+            networkId: network.id,
+            accountAddr: accountId,
+            baseCurrency: 'usd'
+          })
+        )
+      } catch (e: any) {
+        console.error('Error while fetching hints from external API', network.id, e)
+        hintsFromExternalAPIError = getFormattedHintsError(e, hintsFromExternalAPI, network.id)
+        hintsFromExternalAPI = fallbackHints
+      }
+    }
+
+    return {
+      hintsFromExternalAPI,
+      hintsFromExternalAPIError
+    }
+  }
+
   // By our convention, we always stick with private (#) instead of protected methods.
   // However, we made a compromise here to allow Jest tests to mock updatePortfolioState.
   protected async updatePortfolioState(
@@ -527,7 +578,6 @@ export class PortfolioController extends EventEmitter {
     portfolioLib: Portfolio,
     portfolioProps: Partial<GetOptions> & { blockTag: 'latest' | 'pending' },
     forceUpdate: boolean,
-    hintsFromExternalAPIError: Error | null,
     maxDataAgeMs?: number
   ): Promise<boolean> {
     const blockTag = portfolioProps.blockTag
@@ -558,11 +608,26 @@ export class PortfolioController extends EventEmitter {
     ).some(Boolean)
 
     try {
+      const { hintsFromExternalAPI, hintsFromExternalAPIError } =
+        await this.#getHintsFromExternalApi(network, accountId)
+
+      const { erc20s: additionalErc20Hints, erc721s: additionalErc721Hints } = getNetworkHints(
+        network.id,
+        hintsFromExternalAPI,
+        this.#previousHints.learnedTokens,
+        this.#previousHints.learnedNfts,
+        this.tokenPreferences,
+        this.customTokens,
+        this.#toBeLearnedTokens
+      )
+
       const result = await portfolioLib.get(accountId, {
         priceRecency: 60000,
         priceCache: state.result?.priceCache,
         fetchPinned: !hasNonZeroTokens,
         disableAutoDiscovery: true,
+        additionalErc20Hints,
+        additionalErc721Hints,
         ...portfolioProps
       })
       const errors = [...result.errors]
@@ -605,6 +670,7 @@ export class PortfolioController extends EventEmitter {
         errors,
         result: {
           ...result,
+          hintsFromExternalAPI,
           lastSuccessfulUpdate,
           tokens: processedTokens,
           total: getTotal(processedTokens)
@@ -666,28 +732,6 @@ export class PortfolioController extends EventEmitter {
 
     const networks = network ? [network] : this.#networks.networks
 
-    let hintsFromExternalAPIByNetworks: ExternalHintsAPIResponse[] = []
-    let hintsFromExternalAPIError: null | ExtendedErrorWithLevel = null
-
-    try {
-      const networkIds = networks.filter(({ hasRelayer }) => hasRelayer).map((x) => x.id)
-      const hintsFromExternalAPIByNetworksData = await this.#fetch(
-        `${this.#velcroUrl}/multi-hints?networks=${networkIds.join(',')}&accounts=${networkIds
-          .map(() => accountId)
-          .join(',')}&baseCurrency=usd`
-      )
-
-      const result = await hintsFromExternalAPIByNetworksData.json()
-
-      if (!Array.isArray(result)) throw new Error('Invalid response from external API')
-
-      // If the request is for one network the response is an object, otherwise it's an array of objects
-      hintsFromExternalAPIByNetworks = result
-    } catch (e: any) {
-      console.error('Error while fetching hints from external API', e)
-      hintsFromExternalAPIError = e
-    }
-
     await Promise.all([
       updateAdditionalPortfolioIfNeeded,
       ...networks.map(async (network) => {
@@ -719,23 +763,6 @@ export class PortfolioController extends EventEmitter {
               : currentAccountOps !== simulatedAccountOps
           const forceUpdate = opts?.forceUpdate || areAccountOpsChanged
 
-          const { erc20s, erc721s } = getNetworkHints(
-            accountId,
-            network.id,
-            hintsFromExternalAPIByNetworks,
-            this.#previousHints?.fromExternalAPI || {},
-            this.#previousHints?.learnedTokens || {},
-            this.#previousHints?.learnedNfts || {},
-            this.tokenPreferences,
-            this.customTokens,
-            this.#toBeLearnedTokens
-          )
-
-          const allHints = {
-            additionalErc20Hints: erc20s,
-            additionalErc721Hints: erc721s
-          }
-
           const [isSuccessfulLatestUpdate] = await Promise.all([
             // Latest state update
             this.updatePortfolioState(
@@ -743,11 +770,9 @@ export class PortfolioController extends EventEmitter {
               network,
               portfolioLib,
               {
-                blockTag: 'latest',
-                ...allHints
+                blockTag: 'latest'
               },
               forceUpdate,
-              hintsFromExternalAPIError,
               opts?.maxDataAgeMs
             ),
             this.updatePortfolioState(
@@ -763,11 +788,9 @@ export class PortfolioController extends EventEmitter {
                       accountOps: currentAccountOps,
                       state
                     }
-                  }),
-                ...allHints
+                  })
               },
               forceUpdate,
-              hintsFromExternalAPIError,
               opts?.maxDataAgeMs
             )
           ])
@@ -788,16 +811,14 @@ export class PortfolioController extends EventEmitter {
               await this.learnTokens(readyToLearnTokens, network.id)
             }
 
-            const externalApiNetworkHints = stripExternalHintsAPIResponse(
-              hintsFromExternalAPIByNetworks.find((x) => x.networkId === network.id) ?? null
-            )
+            const externalApiHints = accountState[network.id]?.result?.hintsFromExternalAPI
 
             // Either a valid response or there is no external API to fetch hints from
-            const isExternalHintsApiResponseValid = !!externalApiNetworkHints || !network.hasRelayer
+            const isExternalHintsApiResponseValid = !!externalApiHints || !network.hasRelayer
 
             if (isExternalHintsApiResponseValid) {
               const updatedStoragePreviousHints = getUpdatedHints(
-                externalApiNetworkHints || null,
+                externalApiHints || null,
                 networkResult!.tokens,
                 networkResult!.tokenErrors,
                 network.id,

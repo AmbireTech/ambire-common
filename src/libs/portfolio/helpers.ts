@@ -13,7 +13,6 @@ import {
   AccountState,
   AdditionalPortfolioNetworkResult,
   ExtendedErrorWithLevel,
-  ExternalHintsAPIResponse,
   NetworkState,
   PortfolioGasTankResult,
   PreviousHintsStorage,
@@ -477,10 +476,8 @@ export const isPortfolioGasTankResult = (
 }
 
 export const getNetworkHints = (
-  accountId: AccountId,
   networkId: NetworkId,
-  externalApiHints: ExternalHintsAPIResponse[],
-  externalApiFallbackHints: PreviousHintsStorage['fromExternalAPI'],
+  externalApiHints: StrippedExternalHintsAPIResponse | null,
   learnedTokens: PreviousHintsStorage['learnedTokens'],
   learnedNfts: PreviousHintsStorage['learnedNfts'],
   tokenPreferences: TokenPreference[],
@@ -493,19 +490,9 @@ export const getNetworkHints = (
   const networkLearnedTokenAddresses = Object.keys(networkLearnedTokens)
   const networkLearnedNfts = learnedNfts[networkId] || {}
   const networkToBeLearnedTokens = toBeLearnedTokens[networkId] || []
-  const networkApiHints = stripExternalHintsAPIResponse(
-    externalApiHints.find((hints) => hints.networkId === networkId) ?? null
-  )
-
-  const apiHints = networkApiHints ||
-    externalApiFallbackHints[`${networkId}:${accountId}`] || {
-      erc20s: [],
-      erc721s: {},
-      lastUpdate: 0
-    }
 
   const erc20s = [
-    ...apiHints.erc20s,
+    ...(externalApiHints?.erc20s || []),
     ...networkLearnedTokenAddresses,
     ...networkToBeLearnedTokens,
     ...customTokens
@@ -533,13 +520,13 @@ export const getNetworkHints = (
         { isKnown: false, tokens: value.map((i) => i.toString()) }
       ])
     ),
-    ...apiHints.erc721s
+    ...(externalApiHints?.erc721s || {})
   }
 
   return {
     erc20s,
     erc721s: additionalErc721Hints,
-    lastUpdate: apiHints.lastUpdate
+    lastUpdate: externalApiHints?.lastUpdate
   }
 }
 
