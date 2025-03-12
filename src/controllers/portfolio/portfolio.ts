@@ -614,8 +614,8 @@ export class PortfolioController extends EventEmitter {
       const { erc20s: additionalErc20Hints, erc721s: additionalErc721Hints } = getNetworkHints(
         network.id,
         hintsFromExternalAPI,
-        this.#previousHints.learnedTokens,
-        this.#previousHints.learnedNfts,
+        this.#previousHints.learnedTokens ?? {},
+        this.#previousHints.learnedNfts ?? {},
         this.tokenPreferences,
         this.customTokens,
         this.#toBeLearnedTokens
