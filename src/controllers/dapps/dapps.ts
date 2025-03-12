@@ -120,12 +120,19 @@ export class DappsController extends EventEmitter {
     this.emitUpdate()
   }
 
-  broadcastDappSessionEvent = async (ev: any, data?: any, origin?: string) => {
+  broadcastDappSessionEvent = async (
+    ev: any,
+    data?: any,
+    origin?: string,
+    skipPermissionCheck?: boolean
+  ) => {
     await this.initialLoadPromise
 
     let dappSessions: { key: string; data: Session }[] = []
     Object.keys(this.dappSessions).forEach((key) => {
-      if (this.dappSessions[key] && this.hasPermission(this.dappSessions[key].origin)) {
+      const hasPermissionToBroadcast =
+        skipPermissionCheck || this.hasPermission(this.dappSessions[key].origin)
+      if (this.dappSessions[key] && hasPermissionToBroadcast) {
         dappSessions.push({ key, data: this.dappSessions[key] })
       }
     })
