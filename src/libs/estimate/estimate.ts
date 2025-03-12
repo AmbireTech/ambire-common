@@ -90,6 +90,8 @@ export async function getEstimation(
     flags: {}
   }
 
+  console.log(fullEstimation)
+
   const criticalError = baseAcc.getEstimationCriticalError(fullEstimation)
   if (criticalError) return criticalError
 
@@ -116,6 +118,8 @@ export function getEstimationSummary(estimation: FullEstimation | Error): FullEs
     ambireEstimation:
       estimation.ambire && !(estimation.ambire instanceof Error) ? estimation.ambire : undefined,
     bundlerEstimation:
-      estimation.bundler && !(estimation.bundler instanceof Error) ? estimation.bundler : undefined
+      estimation.bundler && !(estimation.bundler instanceof Error) ? estimation.bundler : undefined,
+    perCallEstimation:
+      estimation.perCall && !(estimation.perCall instanceof Error) ? estimation.perCall : undefined
   }
 }

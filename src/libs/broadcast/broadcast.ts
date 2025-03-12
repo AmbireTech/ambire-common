@@ -47,12 +47,13 @@ export function getTxnData(
   op: AccountOp,
   accountState: AccountOnchainState,
   broadcastOption: string
-): { to: Hex; value: bigint; data: Hex } {
+): { to: Hex; value: bigint; data: Hex; gasLimit?: bigint } {
   if (broadcastOption === BROADCAST_OPTIONS.bySelf) {
     return {
       to: op.calls[0].to as Hex,
       value: op.calls[0].value,
-      data: op.calls[0].data as Hex
+      data: op.calls[0].data as Hex,
+      gasLimit: op.calls[0].gasUsed ?? undefined
     }
   }
 

@@ -30,7 +30,7 @@ import { AccountOp } from './accountOp'
  * database ID record
  */
 export type AccountOpIdentifiedBy = {
-  type: 'Transaction' | 'UserOperation' | 'Relayer'
+  type: 'Transaction' | 'UserOperation' | 'Relayer' | 'MultipleTxns'
   identifier: string
   bundler?: BUNDLER
 }

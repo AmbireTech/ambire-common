@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/brace-style */
+/* eslint-disable no-await-in-loop */
 
 import { ethErrors } from 'eth-rpc-errors'
 import { getAddress, getBigInt, isAddress, ZeroAddress } from 'ethers'
@@ -559,7 +560,6 @@ export class MainController extends EventEmitter {
 
         const findNextSmartAccount = async () => {
           do {
-            // eslint-disable-next-line no-await-in-loop
             await this.accountAdder.setPage({ page: currentPage })
 
             nextSmartAccount = this.accountAdder.accountsOnPage.find(
@@ -1550,7 +1550,6 @@ export class MainController extends EventEmitter {
           if (i === 0) {
             this.addUserRequest(swapAndBridgeUserRequests[i], 'last', 'open-action-window')
           } else {
-            // eslint-disable-next-line no-await-in-loop
             await this.addUserRequest(swapAndBridgeUserRequests[i], 'last', 'queue')
           }
         }
@@ -2046,7 +2045,6 @@ export class MainController extends EventEmitter {
           // eslint-disable-next-line no-restricted-syntax
           for (const r of requestsToAddOrRemove) {
             this.userRequestWaitingAccountSwitch.splice(this.userRequests.indexOf(r), 1)
-            // eslint-disable-next-line no-await-in-loop
             await this.addUserRequest(r)
           }
         })()
@@ -2130,7 +2128,6 @@ export class MainController extends EventEmitter {
           hash: getDappIdentifier(data.submittedAccountOp)
         })
 
-        // eslint-disable-next-line no-await-in-loop
         this.removeUserRequest(walletSendCallsUserReq.id, {
           shouldRemoveSwapAndBridgeRoute: false,
           // Since `resolveAccountOpAction` is invoked only when we broadcast a transaction,
@@ -2165,7 +2162,6 @@ export class MainController extends EventEmitter {
           )
         }
 
-        // eslint-disable-next-line no-await-in-loop
         this.removeUserRequest(uReq.id, {
           shouldRemoveSwapAndBridgeRoute: false,
           // Since `resolveAccountOpAction` is invoked only when we broadcast a transaction,
@@ -2571,6 +2567,12 @@ export class MainController extends EventEmitter {
       accountOp.accountAddr,
       accountOp.networkId
     )
+    const baseAcc = getBaseAccount(
+      account,
+      accountState,
+      this.keystore.getAccountKeys(account),
+      network
+    )
     let transactionRes: {
       txnId?: string
       nonce: number
@@ -2601,23 +2603,30 @@ export class MainController extends EventEmitter {
         if (signer.init) signer.init(this.#externalSignerControllers[feePayerKey.type])
 
         const nonce = await provider.getTransactionCount(accountOp.accountAddr)
-        const rawTxn = buildRawTransaction(
-          account,
-          accountOp,
-          accountState,
-          network,
-          nonce,
-          accountOp.gasFeePayment.broadcastOption
+        const txnLength = baseAcc.shouldBroadcastCallsSeparately(accountOp)
+          ? accountOp.calls.length
+          : 1
+        const signedTxns = []
+        for (let i = 0; i < txnLength; i++) {
+          const currentNonce = i === 0 ? nonce : nonce + 1
+          const rawTxn = buildRawTransaction(
+            account,
+            accountOp,
+            accountState,
+            network,
+            currentNonce,
+            accountOp.gasFeePayment.broadcastOption
+          )
+          signedTxns.push(await signer.signRawTransaction(rawTxn))
+        }
+        const broadcastRes = await Promise.all(
+          signedTxns.map((signedTxn) => provider.broadcastTransaction(signedTxn))
         )
-
-        const signedTxn = await signer.signRawTransaction(rawTxn)
-        const broadcastRes = await provider.broadcastTransaction(signedTxn)
         transactionRes = {
-          txnId: broadcastRes.hash,
-          nonce: broadcastRes.nonce,
+          nonce,
           identifiedBy: {
-            type: 'Transaction',
-            identifier: broadcastRes.hash
+            type: txnLength > 1 ? 'MultipleTxns' : 'Transaction',
+            identifier: broadcastRes.map((res) => res.hash).join('-')
           }
         }
       } catch (error: any) {
@@ -2735,10 +2744,14 @@ export class MainController extends EventEmitter {
         (call) => call.to && getAddress(call.to) === SINGLETON
       )
     }
-    await this.activity.addAccountOp(submittedAccountOp)
-    this.swapAndBridge.handleUpdateActiveRouteOnSubmittedAccountOpStatusUpdate(submittedAccountOp)
+
+    // TODO: implement activity handling
     const isBasicAccountBroadcastingMultiple =
-      isBasicAccount(account, accountState) && accountOp.calls.length > 1
+      submittedAccountOp.identifiedBy.type === 'MultipleTxns'
+    if (!isBasicAccountBroadcastingMultiple) {
+      await this.activity.addAccountOp(submittedAccountOp)
+      this.swapAndBridge.handleUpdateActiveRouteOnSubmittedAccountOpStatusUpdate(submittedAccountOp)
+    }
 
     await this.resolveAccountOpAction(
       {

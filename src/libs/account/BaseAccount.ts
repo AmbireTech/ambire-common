@@ -62,7 +62,7 @@ export abstract class BaseAccount {
   }
 
   // valid only EOAs in very specific circumstances
-  shouldEstimateCallsSeparately(op: AccountOp): boolean {
+  shouldBroadcastCallsSeparately(op: AccountOp): boolean {
     return false
   }
 }
