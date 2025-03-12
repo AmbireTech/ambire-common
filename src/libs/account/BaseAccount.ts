@@ -27,6 +27,8 @@ export abstract class BaseAccount {
   // and we should display it to the user
   abstract getEstimationCriticalError(estimation: FullEstimation): Error | null
 
+  abstract supportsBundlerEstimation(): boolean
+
   abstract getAvailableFeeOptions(
     estimation: FullEstimationSummary,
     feePaymentOptions: FeePaymentOption[]

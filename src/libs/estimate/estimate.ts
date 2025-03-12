@@ -268,7 +268,7 @@ export async function getEstimation(
     nativeToCheck
   )
   const bundlerEstimation = bundlerEstimate(
-    baseAcc.getAccount(),
+    baseAcc,
     accountState,
     op,
     network,

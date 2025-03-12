@@ -15,6 +15,10 @@ export class V1 extends BaseAccount {
     return null
   }
 
+  supportsBundlerEstimation() {
+    return false
+  }
+
   getAvailableFeeOptions(
     estimation: FullEstimationSummary,
     feePaymentOptions: FeePaymentOption[]

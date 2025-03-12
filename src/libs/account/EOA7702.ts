@@ -15,6 +15,10 @@ export class EOA7702 extends BaseAccount {
     return null
   }
 
+  supportsBundlerEstimation() {
+    return true
+  }
+
   /*
    * Available options:
    * - Native

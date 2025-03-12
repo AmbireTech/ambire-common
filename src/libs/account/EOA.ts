@@ -25,6 +25,10 @@ export class EOA extends BaseAccount {
     return null
   }
 
+  supportsBundlerEstimation() {
+    return false
+  }
+
   getAvailableFeeOptions(
     estimation: FullEstimationSummary,
     feePaymentOptions: FeePaymentOption[]

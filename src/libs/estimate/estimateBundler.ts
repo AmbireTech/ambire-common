@@ -9,7 +9,7 @@ import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireAccount7702 from '../../../contracts/compiled/AmbireAccount7702.json'
 import entryPointAbi from '../../../contracts/compiled/EntryPoint.json'
 import { ERC_4337_ENTRYPOINT } from '../../consts/deploy'
-import { Account, AccountOnchainState } from '../../interfaces/account'
+import { AccountOnchainState } from '../../interfaces/account'
 import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
 import { Bundler } from '../../services/bundlers/bundler'
@@ -17,6 +17,7 @@ import { BundlerSwitcher } from '../../services/bundlers/bundlerSwitcher'
 import { GasSpeeds } from '../../services/bundlers/types'
 import { paymasterFactory } from '../../services/paymaster'
 import { has7702 } from '../7702/7702'
+import { BaseAccount } from '../account/BaseAccount'
 import { AccountOp, getSignableCallsForBundlerEstimate } from '../accountOp/accountOp'
 import { PaymasterEstimationData } from '../erc7677/types'
 import { getHumanReadableEstimationError } from '../errorHumanizer'
@@ -105,7 +106,7 @@ async function estimate(
 }
 
 export async function bundlerEstimate(
-  account: Account,
+  baseAcc: BaseAccount,
   accountState: AccountOnchainState,
   op: AccountOp,
   network: Network,
@@ -115,10 +116,9 @@ export async function bundlerEstimate(
   errorCallback: Function,
   eip7702Auth?: EIP7702Auth
 ): Promise<Erc4337GasLimits | Error> {
-  // we're disallowing the bundler estimate for v1 accounts as they don't
-  // have 4337 support
-  if (!accountState.isV2 && !accountState.isEOA) return new Error('disallowed')
+  if (!baseAcc.supportsBundlerEstimation()) return new Error('disallowed')
 
+  const account = baseAcc.getAccount()
   const localOp = { ...op }
   const initialBundler = switcher.getBundler()
   const userOp = getUserOperation(

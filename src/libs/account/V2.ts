@@ -15,6 +15,10 @@ export class V2 extends BaseAccount {
     return null
   }
 
+  supportsBundlerEstimation() {
+    return this.network.erc4337.enabled
+  }
+
   getAvailableFeeOptions(
     estimation: FullEstimationSummary,
     feePaymentOptions: FeePaymentOption[]
