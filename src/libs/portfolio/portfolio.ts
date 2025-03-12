@@ -105,13 +105,18 @@ export class Portfolio {
         })
       },
       {
-        timeoutAfter: 3000,
-        timeoutErrorMessage: `Velcro discovery timed out on ${network.id}`
+        timeoutSettings: {
+          timeoutAfter: 3000,
+          timeoutErrorMessage: `Velcro discovery timed out on ${network.id}`
+        },
+        dedupeByKeys: ['networkId', 'accountAddr']
       }
     )
     this.batchedGecko = batcher(fetch, geckoRequestBatcher, {
-      timeoutAfter: 3000,
-      timeoutErrorMessage: `Cena request timed out on ${network.id}`
+      timeoutSettings: {
+        timeoutAfter: 3000,
+        timeoutErrorMessage: `Cena request timed out on ${network.id}`
+      }
     })
     this.network = network
     this.deploylessTokens = fromDescriptor(provider, BalanceGetter, !network.rpcNoStateOverride)

@@ -147,17 +147,24 @@ export class PortfolioController extends EventEmitter {
         const baseCurrencies = [...new Set(queue.map((x) => x.data.baseCurrency))]
         return baseCurrencies.map((baseCurrency) => {
           const queueSegment = queue.filter((x) => x.data.baseCurrency === baseCurrency)
+          console.log(queueSegment)
+          // Create unique sets of network IDs and account addresses
+
           const url = `${velcroUrl}/multi-hints?networks=${queueSegment
             .map((x) => x.data.networkId)
             .join(',')}&accounts=${queueSegment
             .map((x) => x.data.accountAddr)
             .join(',')}&baseCurrency=${baseCurrency}`
-          return { queueSegment, url }
+
+          return { url, queueSegment }
         })
       },
       {
-        timeoutAfter: 3000,
-        timeoutErrorMessage: 'Velcro discovery timed out'
+        timeoutSettings: {
+          timeoutAfter: 3000,
+          timeoutErrorMessage: 'Velcro discovery timed out'
+        },
+        dedupeByKeys: ['networkId', 'accountAddr']
       }
     )
 
