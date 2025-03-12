@@ -2078,7 +2078,11 @@ export class MainController extends EventEmitter {
     if (chainId === ODYSSEY_CHAIN_ID) this.featureFlags.setFeatureFlag('eip7702', false)
   }
 
-  async resolveAccountOpAction(data: any, actionId: AccountOpAction['id']) {
+  async resolveAccountOpAction(
+    data: any,
+    actionId: AccountOpAction['id'],
+    isBasicAccountBroadcastingMultiple: boolean
+  ) {
     const accountOpAction = this.actions.actionsQueue.find((a) => a.id === actionId)
     if (!accountOpAction) return
 
@@ -2103,12 +2107,14 @@ export class MainController extends EventEmitter {
       meta.submittedAccountOp = data.submittedAccountOp
     }
 
-    const benzinUserRequest: SignUserRequest = {
-      id: new Date().getTime(),
-      action: { kind: 'benzin' },
-      meta
+    if (!isBasicAccountBroadcastingMultiple) {
+      const benzinUserRequest: SignUserRequest = {
+        id: new Date().getTime(),
+        action: { kind: 'benzin' },
+        meta
+      }
+      await this.addUserRequest(benzinUserRequest, 'first')
     }
-    await this.addUserRequest(benzinUserRequest, 'first')
 
     this.actions.removeAction(actionId)
 
@@ -2731,17 +2737,24 @@ export class MainController extends EventEmitter {
     }
     await this.activity.addAccountOp(submittedAccountOp)
     this.swapAndBridge.handleUpdateActiveRouteOnSubmittedAccountOpStatusUpdate(submittedAccountOp)
+    const isBasicAccountBroadcastingMultiple =
+      isBasicAccount(account, accountState) && accountOp.calls.length > 1
+
     await this.resolveAccountOpAction(
       {
         networkId: network.id,
         isUserOp: !!accountOp?.asUserOperation,
         submittedAccountOp
       },
-      actionId
+      actionId,
+      isBasicAccountBroadcastingMultiple
     )
+
     await this.#notificationManager.create({
       title: 'Done!',
-      message: 'The transaction was successfully signed and broadcasted to the network.'
+      message: `The ${
+        isBasicAccountBroadcastingMultiple ? 'transactions were' : 'transaction was'
+      } successfully signed and broadcasted to the network.`
     })
     return Promise.resolve(submittedAccountOp)
   }
