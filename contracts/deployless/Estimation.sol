@@ -140,7 +140,6 @@ contract Estimation is FeeTokens, Spoof {
     address oracle
   ) external returns (EoaEstimationOutcome memory eoa) {
     SimulationOutcome memory simulation;
-    uint256 baseGas = calculateBaseGas(account, makeSpoofSignature(address(account)));
 
     uint[] memory gasUsedPerCall = new uint[](op.calls.length);
     for (uint256 i = 0; i < op.calls.length; i++) {
@@ -149,12 +148,8 @@ contract Estimation is FeeTokens, Spoof {
       AccountOp memory oneCallOp = AccountOp(op.account, op.nonce, callsOneByOne, op.signature);
       (simulation, , ) = simulateUnsigned(oneCallOp, associatedKeys);
 
-      // the if statement is more of a precaution as we don't want the contract to revert
-      uint256 gasUsedOnCall = baseGas > simulation.gasUsed
-        ? simulation.gasUsed
-        : simulation.gasUsed - baseGas;
-      gasUsedPerCall[i] = gasUsedOnCall;
-      eoa.gasUsed += gasUsedOnCall;
+      gasUsedPerCall[i] = simulation.gasUsed;
+      eoa.gasUsed += simulation.gasUsed;
     }
     eoa.gasUsedPerCall = gasUsedPerCall;
 
