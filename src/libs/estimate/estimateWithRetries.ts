@@ -66,7 +66,7 @@ export async function estimateWithRetries<T>(
   }
 
   // if one of the calls returns an error and the error is a connectivity error, retry
-  // Otherwise return all calls
+  // Otherwise return the error
   const error = Array.isArray(result) ? result.find((res) => res instanceof Error) : null
 
   if (error) {

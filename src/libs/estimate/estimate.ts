@@ -329,11 +329,14 @@ export function getEstimationSummary(estimation: FullEstimation | Error): FullEs
     return { error: estimation }
   }
 
-  return Object.entries(estimation).reduce((acc, [key, value]) => {
-    if (!value || value instanceof Error) return acc
-
-    acc[`${key as 'ambire' | 'provider' | 'bundler'}Estimation`] = value
-
-    return acc
-  }, {} as FullEstimationSummary)
+  return {
+    providerEstimation:
+      estimation.provider && !(estimation.provider instanceof Error)
+        ? estimation.provider
+        : undefined,
+    ambireEstimation:
+      estimation.ambire && !(estimation.ambire instanceof Error) ? estimation.ambire : undefined,
+    bundlerEstimation:
+      estimation.bundler && !(estimation.bundler instanceof Error) ? estimation.bundler : undefined
+  }
 }
