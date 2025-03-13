@@ -125,7 +125,7 @@ export class NetworksController extends EventEmitter {
     // 1. Get latest storage (networksInStorage)
     const networksInStorage: { [key: NetworkId]: Network } = await this.#storage.get('networks', {})
 
-    // migrate [key: NetworkId] to [key: chainId]
+    // migrate from the old structure [key: NetworkId] to [key: chainId]
     let finalNetworks: { [key: string]: Network } = Object.fromEntries(
       Object.values(networksInStorage).map((network) => [network.chainId.toString(), network])
     )
@@ -432,7 +432,7 @@ export class NetworksController extends EventEmitter {
     await this.withStatus('updateNetwork', () => this.#updateNetwork(network, networkId))
   }
 
-  async removeNetwork({ chainId }: { chainId: ChainId; networkId: NetworkId }) {
+  async removeNetwork(chainId: ChainId) {
     await this.initialLoadPromise
 
     if (!this.#networks[chainId.toString()]) return
