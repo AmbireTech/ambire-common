@@ -2,12 +2,12 @@
 /* eslint-disable max-classes-per-file */
 /* eslint-disable @typescript-eslint/no-unused-vars */
 
-import { parseEther } from 'ethers'
-import { Network } from 'interfaces/network'
-import { UserOperation } from 'libs/userOperation/types'
-import fetch from 'node-fetch'
-
 import { describe, expect, test } from '@jest/globals'
+import { parseEther } from 'ethers'
+import fetch from 'node-fetch'
+import { dedicatedToOneSAPriv } from '../../interfaces/keystore'
+import { Network } from '../../interfaces/network'
+import { UserOperation } from '../userOperation/types'
 
 import { relayerUrl } from '../../../test/config'
 import { getAccountsInfo } from '../../../test/helpers'
@@ -16,15 +16,15 @@ import { BICONOMY, BUNDLER, PIMLICO } from '../../consts/bundlers'
 import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
 import { networks } from '../../consts/networks'
 import { Account } from '../../interfaces/account'
-import { dedicatedToOneSAPriv } from '../../interfaces/keystore'
 import { BundlerSwitcher } from '../../services/bundlers/bundlerSwitcher'
 import { Pimlico } from '../../services/bundlers/pimlico'
 import { paymasterFactory } from '../../services/paymaster'
 import { getRpcProvider } from '../../services/provider'
 import { getSmartAccount } from '../account/account'
+import { getBaseAccount } from '../account/getBaseAccount'
 import { AccountOp } from '../accountOp/accountOp'
 import { bundlerEstimate } from './estimateBundler'
-import { BundlerEstimateResult } from './interfaces'
+import { BundlerEstimateResult, Erc4337GasLimits } from './interfaces'
 
 const to = '0x06564FA10c67427a187f90703fD094054f8F0408'
 
@@ -116,8 +116,9 @@ describe('Bundler estimation tests', () => {
       ]
       const switcher = new BundlerSwitcher(optimism, getSignAccountOpStatus, noStateUpdateStatuses)
       const accountState = accountStates[smartAcc.addr][optimism.id]
+      const baseAcc = getBaseAccount(smartAcc, accountState, [], optimism)
       const result = await bundlerEstimate(
-        smartAcc,
+        baseAcc,
         accountState,
         opOptimism,
         optimism,
@@ -127,15 +128,13 @@ describe('Bundler estimation tests', () => {
         errorCallback
       )
 
-      expect(result).toHaveProperty('erc4337GasLimits')
-      expect(BigInt(result.erc4337GasLimits!.callGasLimit)).toBeGreaterThan(0n)
-      expect(BigInt(result.erc4337GasLimits!.preVerificationGas)).toBeGreaterThan(0n)
-      expect(BigInt(result.erc4337GasLimits!.verificationGasLimit)).toBeGreaterThan(0n)
-      expect(BigInt(result.erc4337GasLimits!.paymasterPostOpGasLimit)).toBeGreaterThan(0n)
-      expect(BigInt(result.erc4337GasLimits!.paymasterVerificationGasLimit)).toBeGreaterThan(0n)
-
-      // the bundler estimation does not return the fee payment options anymore
-      expect(result.feePaymentOptions.length).toBe(0)
+      expect(result instanceof Error).toBe(false)
+      const bundlerEstimation = result as Erc4337GasLimits
+      expect(BigInt(bundlerEstimation.callGasLimit)).toBeGreaterThan(0n)
+      expect(BigInt(bundlerEstimation.preVerificationGas)).toBeGreaterThan(0n)
+      expect(BigInt(bundlerEstimation.verificationGasLimit)).toBeGreaterThan(0n)
+      expect(BigInt(bundlerEstimation.paymasterPostOpGasLimit)).toBeGreaterThan(0n)
+      expect(BigInt(bundlerEstimation.paymasterVerificationGasLimit)).toBeGreaterThan(0n)
     })
   })
 
@@ -179,8 +178,9 @@ describe('Bundler estimation tests', () => {
       ]
       const switcher = new BundlerSwitcher(optimism, getSignAccountOpStatus, noStateUpdateStatuses)
       const accountState = accountStates[smartAccDeployed.addr][optimism.id]
+      const baseAcc = getBaseAccount(smartAccDeployed, accountState, [], optimism)
       const result = await bundlerEstimate(
-        smartAccDeployed,
+        baseAcc,
         accountState,
         opOptimism,
         optimism,
@@ -190,15 +190,13 @@ describe('Bundler estimation tests', () => {
         errorCallback
       )
 
-      expect(result).toHaveProperty('erc4337GasLimits')
-      expect(BigInt(result.erc4337GasLimits!.callGasLimit)).toBeGreaterThan(0n)
-      expect(BigInt(result.erc4337GasLimits!.preVerificationGas)).toBeGreaterThan(0n)
-      expect(BigInt(result.erc4337GasLimits!.verificationGasLimit)).toBeGreaterThan(0n)
-      expect(BigInt(result.erc4337GasLimits!.paymasterPostOpGasLimit)).toBeGreaterThan(0n)
-      expect(BigInt(result.erc4337GasLimits!.paymasterVerificationGasLimit)).toBeGreaterThan(0n)
-
-      // the bundler estimation does not return the fee payment options anymore
-      expect(result.feePaymentOptions.length).toBe(0)
+      expect(result instanceof Error).toBe(false)
+      const bundlerEstimation = result as Erc4337GasLimits
+      expect(BigInt(bundlerEstimation.callGasLimit)).toBeGreaterThan(0n)
+      expect(BigInt(bundlerEstimation.preVerificationGas)).toBeGreaterThan(0n)
+      expect(BigInt(bundlerEstimation.verificationGasLimit)).toBeGreaterThan(0n)
+      expect(BigInt(bundlerEstimation.paymasterPostOpGasLimit)).toBeGreaterThan(0n)
+      expect(BigInt(bundlerEstimation.paymasterVerificationGasLimit)).toBeGreaterThan(0n)
     })
     test('should try to estimate an userOp with Biconomy by sending more ETH than the account has which is not allowed and should trigger reestimate by Pimlico who will allow it to pass', async () => {
       const opOptimism: AccountOp = {
@@ -239,8 +237,9 @@ describe('Bundler estimation tests', () => {
       ]
       const switcher = new BundlerSwitcher(optimism, getSignAccountOpStatus, noStateUpdateStatuses)
       const accountState = accountStates[smartAccDeployed.addr][optimism.id]
+      const baseAcc = getBaseAccount(smartAccDeployed, accountState, [], optimism)
       const result = await bundlerEstimate(
-        smartAccDeployed,
+        baseAcc,
         accountState,
         opOptimism,
         optimism,
@@ -250,12 +249,13 @@ describe('Bundler estimation tests', () => {
         errorCallback
       )
 
-      expect(result).toHaveProperty('erc4337GasLimits')
-      expect(BigInt(result.erc4337GasLimits!.callGasLimit)).toBeGreaterThan(0n)
-      expect(BigInt(result.erc4337GasLimits!.preVerificationGas)).toBeGreaterThan(0n)
-      expect(BigInt(result.erc4337GasLimits!.verificationGasLimit)).toBeGreaterThan(0n)
-      expect(BigInt(result.erc4337GasLimits!.paymasterPostOpGasLimit)).toBeGreaterThan(0n)
-      expect(BigInt(result.erc4337GasLimits!.paymasterVerificationGasLimit)).toBeGreaterThan(0n)
+      expect(result instanceof Error).toBe(false)
+      const bundlerEstimation = result as Erc4337GasLimits
+      expect(BigInt(bundlerEstimation.callGasLimit)).toBeGreaterThan(0n)
+      expect(BigInt(bundlerEstimation.preVerificationGas)).toBeGreaterThan(0n)
+      expect(BigInt(bundlerEstimation.verificationGasLimit)).toBeGreaterThan(0n)
+      expect(BigInt(bundlerEstimation.paymasterPostOpGasLimit)).toBeGreaterThan(0n)
+      expect(BigInt(bundlerEstimation.paymasterVerificationGasLimit)).toBeGreaterThan(0n)
     })
   })
 })
@@ -329,8 +329,9 @@ describe('Bundler fallback tests', () => {
       [PIMLICO]
     )
     const accountState = accountStates[smartAccDeployed.addr][base.id]
+    const baseAcc = getBaseAccount(smartAccDeployed, accountState, [], base)
     const result = await bundlerEstimate(
-      smartAccDeployed,
+      baseAcc,
       accountState,
       opBase,
       base,
@@ -340,12 +341,13 @@ describe('Bundler fallback tests', () => {
       errorCallback
     )
 
-    expect(result).toHaveProperty('erc4337GasLimits')
-    expect(BigInt(result.erc4337GasLimits!.callGasLimit)).toBeGreaterThan(0n)
-    expect(BigInt(result.erc4337GasLimits!.preVerificationGas)).toBeGreaterThan(0n)
-    expect(BigInt(result.erc4337GasLimits!.verificationGasLimit)).toBeGreaterThan(0n)
-    expect(BigInt(result.erc4337GasLimits!.paymasterPostOpGasLimit)).toBeGreaterThan(0n)
-    expect(BigInt(result.erc4337GasLimits!.paymasterVerificationGasLimit)).toBeGreaterThan(0n)
+    expect(result instanceof Error).toBe(false)
+    const bundlerEstimation = result as Erc4337GasLimits
+    expect(BigInt(bundlerEstimation.callGasLimit)).toBeGreaterThan(0n)
+    expect(BigInt(bundlerEstimation.preVerificationGas)).toBeGreaterThan(0n)
+    expect(BigInt(bundlerEstimation.verificationGasLimit)).toBeGreaterThan(0n)
+    expect(BigInt(bundlerEstimation.paymasterPostOpGasLimit)).toBeGreaterThan(0n)
+    expect(BigInt(bundlerEstimation.paymasterVerificationGasLimit)).toBeGreaterThan(0n)
   })
 
   test('should return the pimlico error if there are no other available bundlers when estimating with Pimlico but Pimlico returning an internal server error', async () => {
@@ -392,8 +394,9 @@ describe('Bundler fallback tests', () => {
       [PIMLICO, BICONOMY]
     )
     const accountState = accountStates[smartAccDeployed.addr][base.id]
+    const baseAcc = getBaseAccount(smartAccDeployed, accountState, [], base)
     const result = await bundlerEstimate(
-      smartAccDeployed,
+      baseAcc,
       accountState,
       opBase,
       base,
@@ -403,10 +406,9 @@ describe('Bundler fallback tests', () => {
       errorCallback
     )
 
-    expect(result.error).not.toBe(null)
-    expect(result.error).not.toBe(undefined)
+    expect(result instanceof Error).toBe(true)
 
-    expect(result.error!.message).toBe(
+    expect((result as Error).message).toBe(
       'The bundler seems to be down at the moment. Please try again later'
     )
   })
