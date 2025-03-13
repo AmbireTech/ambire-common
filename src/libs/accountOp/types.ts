@@ -21,6 +21,5 @@ export interface Call {
   fromUserRequestId?: UserRequest['id']
   id?: Calls['calls'][number]['id']
   txnId?: Hex
-  // todo: this
   status?: AccountOpStatus
 }

@@ -2588,6 +2588,8 @@ export class MainController extends EventEmitter {
       BROADCAST_OPTIONS.bySelf7702,
       BROADCAST_OPTIONS.byOtherEOA
     ]
+
+    const multipleTxnsBroadcastRes = []
     if (rawTxnBroadcast.includes(accountOp.gasFeePayment.broadcastOption)) {
       try {
         const feePayerKey = this.keystore.getFeePayerKey(accountOp)
@@ -2607,7 +2609,6 @@ export class MainController extends EventEmitter {
         const txnLength = baseAcc.shouldBroadcastCallsSeparately(accountOp)
           ? accountOp.calls.length
           : 1
-        const broadcastRes = []
         for (let i = 0; i < txnLength; i++) {
           const currentNonce = i === 0 ? nonce : nonce + 1
           const rawTxn = await buildRawTransaction(
@@ -2621,17 +2622,32 @@ export class MainController extends EventEmitter {
             accountOp.calls[i]
           )
           const signedTxn = await signer.signRawTransaction(rawTxn)
-          broadcastRes.push(await provider.broadcastTransaction(signedTxn))
+          multipleTxnsBroadcastRes.push(await provider.broadcastTransaction(signedTxn))
         }
         transactionRes = {
           nonce,
           identifiedBy: {
             type: txnLength > 1 ? 'MultipleTxns' : 'Transaction',
-            identifier: broadcastRes.map((res) => res.hash).join('-')
+            identifier: multipleTxnsBroadcastRes.map((res) => res.hash).join('-')
           },
-          txnId: txnLength === 1 ? broadcastRes.map((res) => res.hash).join('-') : undefined
+          txnId:
+            txnLength === 1 ? multipleTxnsBroadcastRes.map((res) => res.hash).join('-') : undefined
         }
       } catch (error: any) {
+        // for multiple txn cases
+        // if a batch of 5 txn is sent to Ledger for sign but the user reject
+        // #3, #1 and #2 are already broadcast. Reduce the accountOp's call
+        // to #1 and #2 and create a submittedAccountOp
+        // if (multipleTxnsBroadcastRes.length) {
+        //   transactionRes = {
+        //     nonce,
+        //     identifiedBy: {
+        //       type: 'MultipleTxns',
+        //       identifier: multipleTxnsBroadcastRes.map((res) => res.hash).join('-')
+        //     }
+        //   }
+        // }
+
         return this.throwBroadcastAccountOp({ error, accountState })
       }
     }
@@ -2755,6 +2771,7 @@ export class MainController extends EventEmitter {
       const calls = submittedAccountOp.calls.map((oneCall, i) => {
         const localCall = { ...oneCall }
         localCall.txnId = txnIds[i] as Hex
+        localCall.status = AccountOpStatus.BroadcastedButNotConfirmed
         return localCall
       })
       submittedAccountOp.calls = calls
