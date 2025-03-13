@@ -6,6 +6,7 @@ import { Hex } from '../../interfaces/hex'
 import { TxnRequest } from '../../interfaces/keystore'
 import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
+import wait from '../../utils/wait'
 import { AccountOp, GasFeePayment, getSignableCalls } from '../accountOp/accountOp'
 import { Call } from '../accountOp/types'
 
@@ -69,11 +70,7 @@ async function estimateGas(
   // if there's an error, wait a bit and retry
   // the error is most likely because of an incorrect RPC pending state
   if (gasLimit instanceof Error) {
-    const delayPromise = () =>
-      new Promise((resolve) => {
-        setTimeout(resolve, 1500)
-      })
-    await delayPromise()
+    await wait(1500)
     return estimateGas(provider, from, call, nonce, counter + 1)
   }
 
