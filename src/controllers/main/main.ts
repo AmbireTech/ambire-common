@@ -23,6 +23,7 @@ import {
 import { Banner } from '../../interfaces/banner'
 import { DappProviderRequest } from '../../interfaces/dapp'
 import { Fetch } from '../../interfaces/fetch'
+import { Hex } from '../../interfaces/hex'
 import { ExternalSignerControllers, Key, KeystoreSignerType } from '../../interfaces/keystore'
 import { AddNetworkRequestParams, Network, NetworkId } from '../../interfaces/network'
 import { NotificationManager } from '../../interfaces/notification'
@@ -39,14 +40,14 @@ import {
   isSmartAccount
 } from '../../libs/account/account'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
-import { AccountOp, AccountOpStatus, getSignableCalls } from '../../libs/accountOp/accountOp'
+import { AccountOp, getSignableCalls } from '../../libs/accountOp/accountOp'
 import {
   AccountOpIdentifiedBy,
   getDappIdentifier,
   pollTxnId,
   SubmittedAccountOp
 } from '../../libs/accountOp/submittedAccountOp'
-import { Call } from '../../libs/accountOp/types'
+import { AccountOpStatus, Call } from '../../libs/accountOp/types'
 import {
   dappRequestMethodToActionKind,
   getAccountOpActionsByNetwork,
@@ -2746,13 +2747,21 @@ export class MainController extends EventEmitter {
       )
     }
 
-    // TODO: implement activity handling
-    const isBasicAccountBroadcastingMultiple =
-      submittedAccountOp.identifiedBy.type === 'MultipleTxns'
-    if (!isBasicAccountBroadcastingMultiple) {
-      await this.activity.addAccountOp(submittedAccountOp)
-      this.swapAndBridge.handleUpdateActiveRouteOnSubmittedAccountOpStatusUpdate(submittedAccountOp)
+    // add the txnIds from each transaction to each Call from the accountOp
+    // if identifiedBy is MultipleTxns
+    const isBasicAccountBroadcastingMultiple = transactionRes.identifiedBy.type === 'MultipleTxns'
+    if (isBasicAccountBroadcastingMultiple) {
+      const txnIds = transactionRes.identifiedBy.identifier.split('-')
+      const calls = submittedAccountOp.calls.map((oneCall, i) => {
+        const localCall = { ...oneCall }
+        localCall.txnId = txnIds[i] as Hex
+        return localCall
+      })
+      submittedAccountOp.calls = calls
     }
+
+    await this.activity.addAccountOp(submittedAccountOp)
+    this.swapAndBridge.handleUpdateActiveRouteOnSubmittedAccountOpStatusUpdate(submittedAccountOp)
 
     await this.resolveAccountOpAction(
       {

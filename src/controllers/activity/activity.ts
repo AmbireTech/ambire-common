@@ -4,8 +4,12 @@ import { Fetch } from '../../interfaces/fetch'
 import { Network } from '../../interfaces/network'
 import { Storage } from '../../interfaces/storage'
 import { isSmartAccount } from '../../libs/account/account'
-import { AccountOpStatus } from '../../libs/accountOp/accountOp'
-import { fetchTxnId, SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
+import {
+  fetchTxnId,
+  SubmittedAccountOp,
+  updateOpStatus
+} from '../../libs/accountOp/submittedAccountOp'
+import { AccountOpStatus } from '../../libs/accountOp/types'
 /* eslint-disable import/no-extraneous-dependencies */
 import { parseLogs } from '../../libs/userOperation/userOperation'
 import { getBenzinUrlParams } from '../../utils/benzin'
@@ -359,11 +363,11 @@ export class ActivityController extends EventEmitter {
               accountOpDate.setMinutes(accountOpDate.getMinutes() + 15)
               const aQuaterHasPassed = accountOpDate < new Date()
               if (aQuaterHasPassed) {
-                this.#accountsOps[selectedAccount][networkId][accountOpIndex].status =
+                const updatedOpIfAny = updateOpStatus(
+                  this.#accountsOps[selectedAccount][networkId][accountOpIndex],
                   AccountOpStatus.BroadcastButStuck
-                updatedAccountsOps.push(
-                  this.#accountsOps[selectedAccount][networkId][accountOpIndex]
                 )
+                if (updatedOpIfAny) updatedAccountsOps.push(updatedOpIfAny)
               }
             }
 
@@ -375,9 +379,11 @@ export class ActivityController extends EventEmitter {
               accountOp
             )
             if (fetchTxnIdResult.status === 'rejected') {
-              this.#accountsOps[selectedAccount][networkId][accountOpIndex].status =
+              const updatedOpIfAny = updateOpStatus(
+                this.#accountsOps[selectedAccount][networkId][accountOpIndex],
                 AccountOpStatus.Rejected
-              updatedAccountsOps.push(this.#accountsOps[selectedAccount][networkId][accountOpIndex])
+              )
+              if (updatedOpIfAny) updatedAccountsOps.push(updatedOpIfAny)
               return
             }
             if (fetchTxnIdResult.status === 'not_found') {
@@ -401,12 +407,11 @@ export class ActivityController extends EventEmitter {
                 // if it's not an userOp or it is, but isSuccess was not found
                 if (isSuccess === undefined) isSuccess = !!receipt.status
 
-                this.#accountsOps[selectedAccount][networkId][accountOpIndex].status = isSuccess
-                  ? AccountOpStatus.Success
-                  : AccountOpStatus.Failure
-                updatedAccountsOps.push(
-                  this.#accountsOps[selectedAccount][networkId][accountOpIndex]
+                const updatedOpIfAny = updateOpStatus(
+                  this.#accountsOps[selectedAccount][networkId][accountOpIndex],
+                  isSuccess ? AccountOpStatus.Success : AccountOpStatus.Failure
                 )
+                if (updatedOpIfAny) updatedAccountsOps.push(updatedOpIfAny)
 
                 if (receipt.status) {
                   shouldUpdatePortfolio = true
@@ -447,9 +452,11 @@ export class ActivityController extends EventEmitter {
                 accOp.status === AccountOpStatus.Success || accOp.status === AccountOpStatus.Failure
             )
             if (sameNonceTxns.length > 1 && !!confirmedSameNonceTxns) {
-              this.#accountsOps[selectedAccount][networkId][accountOpIndex].status =
+              const updatedOpIfAny = updateOpStatus(
+                this.#accountsOps[selectedAccount][networkId][accountOpIndex],
                 AccountOpStatus.UnknownButPastNonce
-              updatedAccountsOps.push(this.#accountsOps[selectedAccount][networkId][accountOpIndex])
+              )
+              if (updatedOpIfAny) updatedAccountsOps.push(updatedOpIfAny)
               shouldUpdatePortfolio = true
             }
           })

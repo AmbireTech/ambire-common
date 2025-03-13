@@ -4,6 +4,7 @@ import { Network } from '../../interfaces/network'
 import { getBundlerByName, getDefaultBundler } from '../../services/bundlers/getBundler'
 import { fetchUserOp } from '../../services/explorers/jiffyscan'
 import { AccountOp } from './accountOp'
+import { AccountOpStatus, Call } from './types'
 
 /*
  * AccountOpIdentifiedBy
@@ -59,10 +60,29 @@ export function isIdentifiedByRelayer(identifiedBy: AccountOpIdentifiedBy): bool
   return identifiedBy.type === 'Relayer'
 }
 
+export function isIdentifiedByMultipleTxn(identifiedBy: AccountOpIdentifiedBy): boolean {
+  return identifiedBy.type === 'MultipleTxns'
+}
+
 export function getDappIdentifier(op: SubmittedAccountOp) {
   let hash = `${op.identifiedBy.type}:${op.identifiedBy.identifier}`
   if (op.identifiedBy?.bundler) hash = `${hash}:${op.identifiedBy.bundler}`
   return hash
+}
+
+export function getMultipleBroadcastUnconfirmedCallOrLast(op: AccountOp): {
+  call: Call
+  callIndex: number
+} {
+  // get the first BroadcastedButNotConfirmed call if any
+  for (let i = 0; i < op.calls.length; i++) {
+    const currentCall = op.calls[i]
+    if (currentCall.status === AccountOpStatus.BroadcastedButNotConfirmed)
+      return { call: currentCall, callIndex: i }
+  }
+
+  // if no BroadcastedButNotConfirmed, get the last one
+  return { call: op.calls[op.calls.length - 1], callIndex: op.calls.length - 1 }
 }
 
 export async function fetchTxnId(
@@ -77,6 +97,22 @@ export async function fetchTxnId(
       status: 'success',
       txnId: identifiedBy.identifier
     }
+
+  if (isIdentifiedByMultipleTxn(identifiedBy)) {
+    if (op) {
+      return {
+        status: 'success',
+        txnId: getMultipleBroadcastUnconfirmedCallOrLast(op).call.txnId as string
+      }
+    }
+
+    // always return the last txn id if no account op
+    const txnIds = identifiedBy.identifier.split('-')
+    return {
+      status: 'success',
+      txnId: txnIds[txnIds.length - 1]
+    }
+  }
 
   if (isIdentifiedByUserOpHash(identifiedBy)) {
     const userOpHash = identifiedBy.identifier
@@ -138,6 +174,7 @@ export async function fetchTxnId(
   try {
     response = await callRelayer(`/v2/get-txn-id/${id}`)
   } catch (e) {
+    // eslint-disable-next-line no-console
     console.log(`relayer responded with an error when trying to find the txnId: ${e}`)
     return {
       status: 'not_found',
@@ -187,4 +224,31 @@ export async function pollTxnId(
   }
 
   return fetchTxnIdResult.txnId
+}
+
+export function updateOpStatus(
+  // IMPORTANT: pass a reference to this.#accountsOps[accAddr][networkId][index]
+  // so we could mutate it from inside this method
+  opReference: SubmittedAccountOp,
+  status: AccountOpStatus
+): SubmittedAccountOp | null {
+  if (opReference.identifiedBy.type === 'MultipleTxns') {
+    const callIndex = getMultipleBroadcastUnconfirmedCallOrLast(opReference).callIndex
+    // eslint-disable-next-line no-param-reassign
+    opReference.calls[callIndex].status = status
+
+    if (callIndex === opReference.calls.length - 1) {
+      // eslint-disable-next-line no-param-reassign
+      opReference.status = status
+      return opReference
+    }
+
+    // returning null here means the accountOp as a whole is still not ready
+    // to be updated as there are still pending transaction to be confirmed
+    return null
+  }
+
+  // eslint-disable-next-line no-param-reassign
+  opReference.status = status
+  return opReference
 }
