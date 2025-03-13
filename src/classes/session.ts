@@ -18,6 +18,9 @@ export class Session {
 
   tabId: number | null = null
 
+  // requestIds start from 0 but the default val should not be the fist req
+  lastHandledRequestId: number = -1
+
   messenger: Messenger | null = null
 
   sendMessage(event: any, data: any) {
