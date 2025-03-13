@@ -669,7 +669,6 @@ export class SignAccountOpController extends EventEmitter {
     }
 
     if (
-      this.estimation &&
       bundlerGasPrices &&
       bundlerGasPrices.bundler === this.bundlerSwitcher.getBundler().getName()
     ) {

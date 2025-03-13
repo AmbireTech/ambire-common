@@ -44,6 +44,42 @@ export function getByOtherEOATxnData(
   }
 }
 
+// estimate the gas for the call
+async function estimateGas(
+  provider: RPCProvider,
+  from: string,
+  call: Call,
+  nonce: number,
+  counter: number = 0
+) {
+  // this should happen only in the case of internet issues
+  if (counter > 10) throw new Error('Failed estimating gas from broadcast')
+
+  const gasLimit = await provider
+    .estimateGas({
+      from,
+      to: call.to,
+      value: call.value,
+      data: call.data,
+      nonce,
+      blockTag: 'pending'
+    })
+    .catch((e) => e)
+
+  // if there's an error, wait a bit and retry
+  // the error is most likely because of an incorrect RPC pending state
+  if (gasLimit instanceof Error) {
+    const delayPromise = () =>
+      new Promise((resolve) => {
+        setTimeout(resolve, 1500)
+      })
+    await delayPromise()
+    return estimateGas(provider, from, call, nonce, counter + 1)
+  }
+
+  return gasLimit
+}
+
 export async function getTxnData(
   account: Account,
   op: AccountOp,
@@ -60,17 +96,7 @@ export async function getTxnData(
     // for each one seperately
     let gasLimit: bigint | undefined = (op.gasFeePayment as GasFeePayment).simulatedGasLimit
     if (op.calls.length > 1) {
-      gasLimit = await provider
-        .estimateGas({
-          from: account.addr,
-          to: call.to,
-          value: call.value,
-          data: call.data,
-          nonce,
-          blockTag: 'pending'
-        })
-        // TODO: error handling...
-        .catch(() => undefined)
+      gasLimit = await estimateGas(provider, account.addr, call, nonce)
     }
 
     const singleCallTxn = {
