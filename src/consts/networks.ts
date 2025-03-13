@@ -231,7 +231,7 @@ const networks: Network[] = [
     chainId: 56n,
     explorerUrl: 'https://bscscan.com/',
     erc4337: {
-      enabled: true,
+      enabled: false,
       hasPaymaster: true,
       hasBundlerSupport: true,
       bundlers: [PIMLICO, BICONOMY],
