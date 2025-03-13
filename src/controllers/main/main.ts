@@ -2486,7 +2486,7 @@ export class MainController extends EventEmitter {
       }
       // update the signAccountOp controller once estimation finishes;
       // this eliminates the infinite loading bug if the estimation comes slower
-      if (this.signAccountOp && estimation && !(estimation instanceof Error)) {
+      if (this.signAccountOp && estimation) {
         this.signAccountOp.update({ estimation })
         if (shouldTraceCall)
           this.traceCall(

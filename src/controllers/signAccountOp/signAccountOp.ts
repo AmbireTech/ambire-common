@@ -765,7 +765,6 @@ export class SignAccountOpController extends EventEmitter {
 
     if (
       this.isInitialized &&
-      this.estimation &&
       this.accountOp?.signingKeyAddr &&
       this.accountOp?.signingKeyType &&
       this.accountOp?.gasFeePayment
