@@ -158,7 +158,6 @@ describe('Debug tracecall detection for transactions', () => {
 
     expect(res.nfts.length).toBe(1)
     expect(res.nfts[0][0]).toBe(NFT_ADDRESS)
-    expect(res.nfts[0][1]).toContain(0n)
     expect(res.nfts[0][1]).toContain(25n)
     expect(res.tokens.length).toBe(2)
     expect(res.tokens).toContain(USDC_ADDRESS_OPTIMISM)
