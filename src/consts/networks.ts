@@ -218,6 +218,36 @@ const networks: Network[] = [
     predefined: true,
     disableEstimateGas: true,
     wrappedAddr: '0x5300000000000000000000000000000000000004'
+  },
+  {
+    id: 'binance-smart-chain',
+    name: 'Binance Smart Chain',
+    nativeAssetSymbol: 'BNB',
+    has7702: false,
+    nativeAssetName: 'Binance Coin',
+    rpcUrls: ['https://invictus.ambire.com/binance-smart-chain'],
+    selectedRpcUrl: 'https://invictus.ambire.com/binance-smart-chain',
+    rpcNoStateOverride: false,
+    chainId: 56n,
+    explorerUrl: 'https://bscscan.com/',
+    erc4337: {
+      enabled: true,
+      hasPaymaster: true,
+      hasBundlerSupport: true,
+      bundlers: [PIMLICO, BICONOMY],
+      defaultBundler: PIMLICO
+    },
+    isSAEnabled: true,
+    areContractsDeployed: true,
+    hasRelayer: true,
+    platformId: 'binance-smart-chain',
+    nativeAssetId: 'binancecoin',
+    hasSingleton: true,
+    features: [],
+    feeOptions: { is1559: true },
+    predefined: true,
+    disableEstimateGas: true,
+    wrappedAddr: '0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c'
   }
 ]
 export { networks }
