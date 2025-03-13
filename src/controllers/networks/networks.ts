@@ -55,6 +55,8 @@ export class NetworksController extends EventEmitter {
   // Holds the initial load promise, so that one can wait until it completes
   initialLoadPromise: Promise<void>
 
+  #networksStorageUpdatePromise: Promise<null> = Promise.resolve(null)
+
   constructor(
     storage: Storage,
     fetch: Fetch,
@@ -221,10 +223,14 @@ export class NetworksController extends EventEmitter {
     )
     this.emitUpdate()
 
-    await this.#storage.set('networks', this.#networks)
+    await this.#updateNetworksInStorage()
 
     // update networks features asynchronously
     Object.values(finalNetworks).forEach((network) => {
+      if (network.isSAEnabled) return
+
+      if (network.lastUpdated && Date.now() - network.lastUpdated <= 24 * 60 * 60 * 1000) return
+
       // eslint-disable-next-line @typescript-eslint/no-floating-promises
       getNetworkInfo(this.#fetch, network.selectedRpcUrl, network.chainId, async (info) => {
         if (Object.values(info).some((prop) => prop === 'LOADING')) {
@@ -232,7 +238,14 @@ export class NetworksController extends EventEmitter {
         }
 
         const chianId = network.chainId.toString()
-        this.#networks[chianId] = { ...this.#networks[chianId], ...(info as NetworkInfo) }
+        this.#networks[chianId] = {
+          ...this.#networks[chianId],
+          ...(info as NetworkInfo),
+          lastUpdated: Date.now()
+        }
+
+        await this.#updateNetworksInStorage()
+
         this.emitUpdate()
       })
     })
@@ -308,7 +321,7 @@ export class NetworksController extends EventEmitter {
 
     this.#onAddOrUpdateNetwork(this.#networks[network.chainId.toString()])
 
-    await this.#storage.set('networks', this.#networks)
+    await this.#updateNetworksInStorage()
     this.networkToAddOrUpdate = null
     this.emitUpdate()
   }
@@ -373,7 +386,7 @@ export class NetworksController extends EventEmitter {
             ...feeOptions
           }
 
-          await this.#storage.set('networks', this.#networks)
+          await this.#updateNetworksInStorage()
 
           this.emitUpdate()
           return
@@ -399,7 +412,7 @@ export class NetworksController extends EventEmitter {
               ...feeOptions
             }
 
-            await this.#storage.set('networks', this.#networks)
+            await this.#updateNetworksInStorage()
 
             this.emitUpdate()
           }
@@ -419,14 +432,23 @@ export class NetworksController extends EventEmitter {
     await this.withStatus('updateNetwork', () => this.#updateNetwork(network, networkId))
   }
 
-  async removeNetwork({ chainId, networkId }: { chainId: ChainId; networkId: NetworkId }) {
+  async removeNetwork({ chainId }: { chainId: ChainId; networkId: NetworkId }) {
     await this.initialLoadPromise
 
     if (!this.#networks[chainId.toString()]) return
     delete this.#networks[chainId.toString()]
     this.#onRemoveNetwork(chainId.toString())
-    await this.#storage.set('networks', this.#networks)
+    await this.#updateNetworksInStorage()
     this.emitUpdate()
+  }
+
+  async #updateNetworksInStorage() {
+    // ensures sequential execution
+    this.#networksStorageUpdatePromise = this.#networksStorageUpdatePromise
+      .then(() => this.#storage.set('networks', this.#networks))
+      .catch(() => this.#storage.set('networks', this.#networks))
+
+    await this.#networksStorageUpdatePromise
   }
 
   toJSON() {
