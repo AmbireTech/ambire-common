@@ -107,7 +107,9 @@ export async function getTxnData(
   }
 
   if (broadcastOption === BROADCAST_OPTIONS.byOtherEOA) {
-    return getByOtherEOATxnData(account, op, accountState)
+    const otherEOACall = getByOtherEOATxnData(account, op, accountState)
+    const gasLimit = await estimateGas(provider, account.addr, otherEOACall, nonce)
+    return { ...otherEOACall, gasLimit }
   }
 
   // 7702 executeBySender
