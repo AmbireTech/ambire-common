@@ -52,7 +52,7 @@ async function estimateGas(
   call: Call,
   nonce: number,
   counter: number = 0
-) {
+): Promise<bigint> {
   // this should happen only in the case of internet issues
   if (counter > 10) throw new Error('Failed estimating gas from broadcast')
 

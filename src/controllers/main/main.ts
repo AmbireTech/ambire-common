@@ -2591,7 +2591,10 @@ export class MainController extends EventEmitter {
 
     if (rawTxnBroadcast.includes(accountOp.gasFeePayment.broadcastOption)) {
       const multipleTxnsBroadcastRes = []
-      const nonce = await provider.getTransactionCount(accountOp.accountAddr).catch((e) => e)
+      const senderAddr = BROADCAST_OPTIONS.byOtherEOA
+        ? accountOp.gasFeePayment.paidBy
+        : accountOp.accountAddr
+      const nonce = await provider.getTransactionCount(senderAddr).catch((e) => e)
 
       // @precaution
       if (nonce instanceof Error) {

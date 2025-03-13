@@ -239,7 +239,7 @@ const getAccountsInfo = async (accounts: Account[]): Promise<AccountStates> => {
   return Object.fromEntries(states)
 }
 
-const smartAccountv2eip712: Account = {
+const deprycatedV2: Account = {
   addr: '0x4AA524DDa82630cE769e5C9d7ec7a45B94a41bc6',
   associatedKeys: ['0x141A14B5C4dbA2aC7a7943E02eDFE2E7eDfdA28F'],
   creation: {
@@ -743,14 +743,15 @@ describe('estimate', () => {
     })
   })
 
-  it('estimates an arbitrum request', async () => {
+  // skipping this one as we don't handle the deprycated account anymore
+  it.skip('estimates an arbitrum request with the deprycated ambire v2 account', async () => {
     const eoaAddr = '0x40b38765696e3d5d8d9d834d8aad4bb6e418e489'
     const usdtAddr = '0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9'
-    const v2AccAbi = new Contract(smartAccountv2eip712.addr, AmbireAccount.abi, providerArbitrum)
+    const v2AccAbi = new Contract(deprycatedV2.addr, AmbireAccount.abi, providerArbitrum)
     const ERC20Interface = new Interface(ERC20.abi)
     const opArbitrum = {
-      accountAddr: smartAccountv2eip712.addr,
-      signingKeyAddr: smartAccountv2eip712.associatedKeys[0],
+      accountAddr: deprycatedV2.addr,
+      signingKeyAddr: deprycatedV2.associatedKeys[0],
       signingKeyType: null,
       gasLimit: null,
       gasFeePayment: null,
@@ -767,9 +768,9 @@ describe('estimate', () => {
       accountOpToExecuteBefore: null
     }
 
-    const accountStates = await getAccountsInfo([smartAccountv2eip712])
-    const accountState = accountStates[smartAccountv2eip712.addr][arbitrum.id]
-    const baseAcc = getBaseAccount(smartAccountv2eip712, accountState, [], arbitrum)
+    const accountStates = await getAccountsInfo([deprycatedV2])
+    const accountState = accountStates[deprycatedV2.addr][arbitrum.id]
+    const baseAcc = getBaseAccount(deprycatedV2, accountState, [], arbitrum)
     const response = await getEstimation(
       baseAcc,
       accountState,
@@ -777,7 +778,7 @@ describe('estimate', () => {
       arbitrum,
       providerArbitrum,
       feeTokens,
-      getNativeToCheckFromEOAs(nativeToCheck, smartAccountv2eip712),
+      getNativeToCheckFromEOAs(nativeToCheck, deprycatedV2),
       new BundlerSwitcher(arbitrum, getSignAccountOpStatus, noStateUpdateStatuses),
       errorCallback
     )
@@ -1089,8 +1090,8 @@ describe('estimate', () => {
 
   it('estimates a polygon request with insufficient funds for txn and estimation should fail with transaction reverted because of insufficient funds', async () => {
     const opPolygonFailBzNoFunds = {
-      accountAddr: smartAccountv2eip712.addr,
-      signingKeyAddr: smartAccountv2eip712.associatedKeys[0],
+      accountAddr: deprycatedV2.addr,
+      signingKeyAddr: deprycatedV2.associatedKeys[0],
       signingKeyType: null,
       gasLimit: null,
       gasFeePayment: null,
@@ -1100,9 +1101,9 @@ describe('estimate', () => {
       calls: [{ to: trezorSlot6v2NotDeployed.addr, value: parseEther('10'), data: '0x' }],
       accountOpToExecuteBefore: null
     }
-    const accountStates = await getAccountsInfo([smartAccountv2eip712])
-    const accountState = accountStates[smartAccountv2eip712.addr][polygon.id]
-    const baseAcc = getBaseAccount(smartAccountv2eip712, accountState, [], polygon)
+    const accountStates = await getAccountsInfo([deprycatedV2])
+    const accountState = accountStates[deprycatedV2.addr][polygon.id]
+    const baseAcc = getBaseAccount(deprycatedV2, accountState, [], polygon)
     const response = await getEstimation(
       baseAcc,
       accountState,
@@ -1110,7 +1111,7 @@ describe('estimate', () => {
       polygon,
       providerPolygon,
       feeTokens,
-      getNativeToCheckFromEOAs(nativeToCheck, smartAccountv2eip712),
+      getNativeToCheckFromEOAs(nativeToCheck, deprycatedV2),
       new BundlerSwitcher(polygon, getSignAccountOpStatus, noStateUpdateStatuses),
       errorCallback
     )
@@ -1122,7 +1123,7 @@ describe('estimate', () => {
 
   it('estimates a polygon request with wrong signer and estimation should fail with insufficient privileges', async () => {
     const opPolygonFailBzNoFunds = {
-      accountAddr: smartAccountv2eip712.addr,
+      accountAddr: deprycatedV2.addr,
       signingKeyAddr: trezorSlot6v2NotDeployed.associatedKeys[0],
       signingKeyType: null,
       gasLimit: null,
@@ -1133,11 +1134,11 @@ describe('estimate', () => {
       calls: [{ to: trezorSlot6v2NotDeployed.addr, value: 100000n, data: '0x' }],
       accountOpToExecuteBefore: null
     }
-    const accountStates = await getAccountsInfo([smartAccountv2eip712])
-    const accountState = accountStates[smartAccountv2eip712.addr][polygon.id]
+    const accountStates = await getAccountsInfo([deprycatedV2])
+    const accountState = accountStates[deprycatedV2.addr][polygon.id]
 
     const baseAcc = getBaseAccount(
-      { ...smartAccountv2eip712, associatedKeys: [trezorSlot6v2NotDeployed.associatedKeys[0]] },
+      { ...deprycatedV2, associatedKeys: [trezorSlot6v2NotDeployed.associatedKeys[0]] },
       accountState,
       [],
       polygon
@@ -1149,7 +1150,7 @@ describe('estimate', () => {
       polygon,
       providerPolygon,
       feeTokens,
-      getNativeToCheckFromEOAs(nativeToCheck, smartAccountv2eip712),
+      getNativeToCheckFromEOAs(nativeToCheck, deprycatedV2),
       new BundlerSwitcher(polygon, getSignAccountOpStatus, noStateUpdateStatuses),
       errorCallback
     )

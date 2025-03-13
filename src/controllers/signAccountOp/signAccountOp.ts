@@ -986,8 +986,12 @@ export class SignAccountOpController extends EventEmitter {
         ) {
           // Smart account, but EOA pays the fee
           // 7702, and it pays for the fee by itself
-          simulatedGasLimit = this.gasUsed + this.getCallDataAdditionalByNetwork()
-          amount = simulatedGasLimit * gasPrice
+          const additionalCallData =
+            broadcastOption === BROADCAST_OPTIONS.byOtherEOA
+              ? this.getCallDataAdditionalByNetwork()
+              : 0n
+          simulatedGasLimit = this.gasUsed + additionalCallData
+          amount = simulatedGasLimit * gasPrice + option.addedNative
         } else {
           // Relayer
           simulatedGasLimit = this.gasUsed + this.getCallDataAdditionalByNetwork() + option.gasUsed
