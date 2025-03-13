@@ -273,7 +273,7 @@ export class SocketAPI {
       userAddress,
       isContractCall: isSmartAccount.toString(), // only get quotes with that are compatible with contracts
       sort,
-      singleTxOnly: 'false',
+      singleTxOnly: 'true',
       defaultSwapSlippage: '1',
       uniqueRoutesPerBridge: 'true'
     })
