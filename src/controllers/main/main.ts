@@ -2621,6 +2621,7 @@ export class MainController extends EventEmitter {
         const txnLength = baseAcc.shouldBroadcastCallsSeparately(accountOp)
           ? accountOp.calls.length
           : 1
+        if (txnLength > 1) this.signAccountOp?.update({ signedTransactionsCount: 0 })
         for (let i = 0; i < txnLength; i++) {
           const currentNonce = i === 0 ? nonce : nonce + 1
           const rawTxn = await buildRawTransaction(
@@ -2635,6 +2636,7 @@ export class MainController extends EventEmitter {
           )
           const signedTxn = await signer.signRawTransaction(rawTxn)
           multipleTxnsBroadcastRes.push(await provider.broadcastTransaction(signedTxn))
+          if (txnLength > 1) this.signAccountOp?.update({ signedTransactionsCount: i + 1 })
         }
         transactionRes = {
           nonce,
@@ -2659,8 +2661,10 @@ export class MainController extends EventEmitter {
             }
           }
         } else {
-          return this.throwBroadcastAccountOp({ error, accountState })
+          return await this.throwBroadcastAccountOp({ error, accountState })
         }
+      } finally {
+        this.signAccountOp?.update({ signedTransactionsCount: null })
       }
     }
     // Smart account, the ERC-4337 way

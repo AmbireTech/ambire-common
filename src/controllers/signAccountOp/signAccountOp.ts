@@ -189,6 +189,8 @@ export class SignAccountOpController extends EventEmitter {
 
   bundlerSwitcher: BundlerSwitcher
 
+  signedTransactionsCount: number | null = null
+
   // We track the status of token discovery logic (main.traceCall)
   // to ensure the "SignificantBalanceDecrease" banner is displayed correctly.
   // The latest/pending portfolio balance is essential for calculating balance differences.
@@ -583,7 +585,8 @@ export class SignAccountOpController extends EventEmitter {
     rbfAccountOps,
     bundlerGasPrices,
     blockGasLimit,
-    estimationRetryError
+    estimationRetryError,
+    signedTransactionsCount
   }: {
     gasPrices?: GasRecommendation[] | null
     estimation?: FullEstimation | Error | null
@@ -597,7 +600,15 @@ export class SignAccountOpController extends EventEmitter {
     bundlerGasPrices?: { speeds: GasSpeeds; bundler: BUNDLER }
     blockGasLimit?: bigint
     estimationRetryError?: ErrorRef
+    signedTransactionsCount?: number | null
   }) {
+    // This must be at the top, otherwise it won't be updated because
+    // most updates are frozen during the signing process
+    if (typeof signedTransactionsCount !== 'undefined') {
+      this.signedTransactionsCount = signedTransactionsCount
+      this.emitUpdate()
+    }
+
     // once the user commits to the things he sees on his screen,
     // we need to be sure nothing changes afterwards.
     // For example, signing can be slow if it's done by a hardware wallet.
@@ -779,6 +790,7 @@ export class SignAccountOpController extends EventEmitter {
     this.paidBy = null
     this.feeTokenResult = null
     this.status = null
+    this.signedTransactionsCount = null
     this.emitUpdate()
   }
 
