@@ -2,6 +2,7 @@ import { BUNDLER } from '../consts/bundlers'
 
 export type NetworkId = string
 export type ChainId = bigint
+
 export interface Erc4337settings {
   enabled: boolean
   hasPaymaster: boolean
