@@ -2589,8 +2589,18 @@ export class MainController extends EventEmitter {
       BROADCAST_OPTIONS.byOtherEOA
     ]
 
-    const multipleTxnsBroadcastRes = []
     if (rawTxnBroadcast.includes(accountOp.gasFeePayment.broadcastOption)) {
+      const multipleTxnsBroadcastRes = []
+      const nonce = await provider.getTransactionCount(accountOp.accountAddr).catch((e) => e)
+
+      // @precaution
+      if (nonce instanceof Error) {
+        return this.throwBroadcastAccountOp({
+          message: 'RPC error. Please try again',
+          accountState
+        })
+      }
+
       try {
         const feePayerKey = this.keystore.getFeePayerKey(accountOp)
         if (feePayerKey instanceof Error) {
@@ -2605,7 +2615,6 @@ export class MainController extends EventEmitter {
         const signer = await this.keystore.getSigner(feePayerKey.addr, feePayerKey.type)
         if (signer.init) signer.init(this.#externalSignerControllers[feePayerKey.type])
 
-        const nonce = await provider.getTransactionCount(accountOp.accountAddr)
         const txnLength = baseAcc.shouldBroadcastCallsSeparately(accountOp)
           ? accountOp.calls.length
           : 1
@@ -2638,17 +2647,17 @@ export class MainController extends EventEmitter {
         // if a batch of 5 txn is sent to Ledger for sign but the user reject
         // #3, #1 and #2 are already broadcast. Reduce the accountOp's call
         // to #1 and #2 and create a submittedAccountOp
-        // if (multipleTxnsBroadcastRes.length) {
-        //   transactionRes = {
-        //     nonce,
-        //     identifiedBy: {
-        //       type: 'MultipleTxns',
-        //       identifier: multipleTxnsBroadcastRes.map((res) => res.hash).join('-')
-        //     }
-        //   }
-        // }
-
-        return this.throwBroadcastAccountOp({ error, accountState })
+        if (multipleTxnsBroadcastRes.length) {
+          transactionRes = {
+            nonce,
+            identifiedBy: {
+              type: 'MultipleTxns',
+              identifier: multipleTxnsBroadcastRes.map((res) => res.hash).join('-')
+            }
+          }
+        } else {
+          return this.throwBroadcastAccountOp({ error, accountState })
+        }
       }
     }
     // Smart account, the ERC-4337 way
@@ -2768,12 +2777,18 @@ export class MainController extends EventEmitter {
     const isBasicAccountBroadcastingMultiple = transactionRes.identifiedBy.type === 'MultipleTxns'
     if (isBasicAccountBroadcastingMultiple) {
       const txnIds = transactionRes.identifiedBy.identifier.split('-')
-      const calls = submittedAccountOp.calls.map((oneCall, i) => {
-        const localCall = { ...oneCall }
-        localCall.txnId = txnIds[i] as Hex
-        localCall.status = AccountOpStatus.BroadcastedButNotConfirmed
-        return localCall
-      })
+      const calls = submittedAccountOp.calls
+        .map((oneCall, i) => {
+          const localCall = { ...oneCall }
+
+          // we're cutting off calls the user didn't sign / weren't broadcast
+          if (!(i in txnIds)) return null
+
+          localCall.txnId = txnIds[i] as Hex
+          localCall.status = AccountOpStatus.BroadcastedButNotConfirmed
+          return localCall
+        })
+        .filter((aCall) => aCall !== null)
       submittedAccountOp.calls = calls
     }
 
@@ -2791,10 +2806,16 @@ export class MainController extends EventEmitter {
     )
 
     await this.#notificationManager.create({
-      title: 'Done!',
-      message: `The ${
-        isBasicAccountBroadcastingMultiple ? 'transactions were' : 'transaction was'
-      } successfully signed and broadcasted to the network.`
+      title:
+        // different count can happen only on isBasicAccountBroadcastingMultiple
+        submittedAccountOp.calls.length === accountOp.calls.length
+          ? 'Done!'
+          : 'Partially submitted',
+      message: `${
+        isBasicAccountBroadcastingMultiple
+          ? `${submittedAccountOp.calls.length}/${accountOp.calls.length} transactions were`
+          : 'The transaction was'
+      } successfully signed and broadcast to the network.`
     })
     return Promise.resolve(submittedAccountOp)
   }
