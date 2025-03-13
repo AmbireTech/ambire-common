@@ -3,12 +3,12 @@ import fetch from 'node-fetch'
 
 import { describe, expect, test } from '@jest/globals'
 
-import { BROADCAST_OPTIONS } from 'libs/broadcast/broadcast'
 import { produceMemoryStore } from '../../../test/helpers'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { networks } from '../../consts/networks'
 import { Storage } from '../../interfaces/storage'
 import { Calls, DappUserRequest, SignUserRequest } from '../../interfaces/userRequest'
+import { BROADCAST_OPTIONS } from '../../libs/broadcast/broadcast'
 import { getRpcProvider } from '../../services/provider'
 import { AccountsController } from '../accounts/accounts'
 import { NetworksController } from '../networks/networks'
