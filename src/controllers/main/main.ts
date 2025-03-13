@@ -2795,7 +2795,7 @@ export class MainController extends EventEmitter {
           localCall.status = AccountOpStatus.BroadcastedButNotConfirmed
           return localCall
         })
-        .filter((aCall) => aCall !== null)
+        .filter((aCall) => aCall !== null) as Call[]
       submittedAccountOp.calls = calls
     }
 

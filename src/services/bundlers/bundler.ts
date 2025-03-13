@@ -65,7 +65,11 @@ export abstract class Bundler {
   private async sendEstimateReq(
     userOperation: UserOperation,
     network: Network,
-    stateOverride?: any
+    stateOverride?: {
+      [accAddr: string]: {
+        code: string
+      }
+    }
   ): Promise<BundlerEstimateResult> {
     const provider = this.getProvider(network)
     return stateOverride

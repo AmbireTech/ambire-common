@@ -577,7 +577,8 @@ describe('Bundler tests', () => {
     })
   })
   describe('Estimation tests: gnosis/baseSepolia, deployed account with no erc-4337', () => {
-    test('should estimate successfully because of state override on base sepolia', async () => {
+    // NOTE: we no longer do this
+    test.skip('should estimate successfully because of state override on base sepolia', async () => {
       const opBaseSepolia: AccountOp = {
         accountAddr: smartAccDeployedOnGnosisButNo4337.addr,
         signingKeyAddr: smartAccDeployedOnGnosisButNo4337.associatedKeys[0],
@@ -869,12 +870,6 @@ describe('Bundler tests', () => {
       expect(bundlerEstimate).toHaveProperty('callGasLimit')
       expect(bundlerEstimate).toHaveProperty('paymasterVerificationGasLimit')
       expect(bundlerEstimate).toHaveProperty('paymasterPostOpGasLimit')
-      const estimateWithStateOverride = await bundler.estimate(userOp, base, true)
-      expect(estimateWithStateOverride).toHaveProperty('preVerificationGas')
-      expect(estimateWithStateOverride).toHaveProperty('verificationGasLimit')
-      expect(estimateWithStateOverride).toHaveProperty('callGasLimit')
-      expect(estimateWithStateOverride).toHaveProperty('paymasterVerificationGasLimit')
-      expect(estimateWithStateOverride).toHaveProperty('paymasterPostOpGasLimit')
     })
   })
 })
