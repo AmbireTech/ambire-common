@@ -14,7 +14,10 @@ import { Storage } from '../../interfaces/storage'
 import {
   getFeaturesByNetworkProperties,
   getNetworkInfo,
-  is4337Enabled
+  getShouldMigrateNetworkPreferencesToNetworks,
+  is4337Enabled,
+  LegacyNetworkPreferences,
+  migrateNetworkPreferencesToNetworks
 } from '../../libs/networks/networks'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { mapRelayerNetworkConfigToAmbireNetwork } from '../../utils/networks'
@@ -108,28 +111,37 @@ export class NetworksController extends EventEmitter {
    * Loads and synchronizes network configurations from storage and the relayer.
    *
    * This method performs the following steps:
-   * 1. Retrieves legacy network preferences and current network configurations from storage.
-   * 2. Migrates legacy network preferences to the new format if necessary.
-   * 3. Initializes predefined networks if no networks are found in storage.
-   * 4. Fetches the latest network configurations from the relayer and merges them with the stored networks.
-   * 5. Detects and handles changes in network configurations, including custom networks becoming predefined.
-   * 6. Updates network information for custom networks if it is outdated.
-   * 7. Handles scenarios where predefined networks are removed and become custom networks.
-   * 8. Sorts and stores the final network configurations back to storage.
-   * 9. Emits an update event to notify other parts of the application about the changes.
+   * 1. Retrieves the legacy network preferences and the latest network configurations from storage.
+   * 2. Migrates legacy network preferences to the new network structure if needed.
+   * 3. Converts the network structure from [key: NetworkId] to [key: chainId].
+   * 4. If no networks are found in storage, sets predefined networks and emits an update.
+   * 5. Merges the networks from the Relayer with the stored networks.
+   * 6. Ensures predefined networks are marked correctly and handles special cases (e.g., Odyssey network).
+   * 7. Sorts networks with predefined ones first, followed by custom networks, ordered by chainId.
+   * 8. Updates the networks in storage.
+   * 9. Asynchronously updates network features if needed.
    *
    * This method ensures that the application has the most up-to-date network configurations,
    * handles migration of legacy data, and maintains consistency between stored and relayer-provided networks.
    */
   async #load() {
-    // 1. Get latest storage (networksInStorage)
-    const networksInStorage: { [key: NetworkId]: Network } = await this.#storage.get('networks', {})
+    const legacyNetworkPrefInStorage: LegacyNetworkPreferences = await this.#storage.get(
+      'networkPreferences',
+      {}
+    )
+    // Step 1. Get latest storage (networksInStorage)
+    let networksInStorage: { [key: NetworkId]: Network } = await this.#storage.get('networks', {})
+    if (
+      getShouldMigrateNetworkPreferencesToNetworks(networksInStorage, legacyNetworkPrefInStorage)
+    ) {
+      networksInStorage = await migrateNetworkPreferencesToNetworks(legacyNetworkPrefInStorage)
+      await this.#storage.remove('networkPreferences')
+    }
 
     // migrate from the old structure [key: NetworkId] to [key: chainId]
     let finalNetworks: { [key: string]: Network } = Object.fromEntries(
       Object.values(networksInStorage).map((network) => [network.chainId.toString(), network])
     )
-
     // If networksInStorage is empty, set predefinedNetworks and emit update
     if (!Object.keys(networksInStorage).length) {
       finalNetworks = predefinedNetworks.reduce((acc, network) => {
@@ -140,13 +152,16 @@ export class NetworksController extends EventEmitter {
       this.emitUpdate()
     }
 
+    finalNetworks = Object.fromEntries(
+      Object.values(networksInStorage).map((network) => [network.chainId.toString(), network])
+    )
+
     // Step 2: Merge the networks coming from the Relayer
     // For now we call this on load, but will decide later if we need to call it periodically
     let relayerNetworks: RelayerNetworkConfigResponse = {}
     try {
       const res = await this.#callRelayer('/v2/config/networks')
       relayerNetworks = res.data.extensionConfigNetworks
-
       Object.entries(relayerNetworks).forEach(([_chainId, network]) => {
         const chainId = BigInt(_chainId)
         const relayerNetwork = mapRelayerNetworkConfigToAmbireNetwork(chainId, network)
@@ -162,13 +177,11 @@ export class NetworksController extends EventEmitter {
           return
         }
 
+        // If the network is custom we assume predefinedConfigVersion = 0
         if (storedNetwork.predefinedConfigVersion === undefined) {
           storedNetwork.predefinedConfigVersion = 0
         }
 
-        // If the network is custom we assume predefinedConfigVersion = 0
-        // NOTE: When it is the first time we update this, the network will be with predefinedNetworkVersion = 0
-        // NOTE: When the network is updated, the predefinedNetworkVersion will be updated to the latest version
         // Mechanism to force an update network preferences if needed
         const shouldOverrideStoredNetwork =
           relayerNetwork.predefinedConfigVersion > 0 &&
@@ -237,9 +250,9 @@ export class NetworksController extends EventEmitter {
           return
         }
 
-        const chianId = network.chainId.toString()
-        this.#networks[chianId] = {
-          ...this.#networks[chianId],
+        const chainId = network.chainId.toString()
+        this.#networks[chainId] = {
+          ...this.#networks[chainId],
           ...(info as NetworkInfo),
           lastUpdated: Date.now()
         }
