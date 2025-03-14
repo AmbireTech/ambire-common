@@ -1,6 +1,6 @@
 import { getAddress } from 'ethers'
 
-import { ExtendedChain, TokensResponse } from '@lifi/types'
+import { ExtendedChain, LiFiStep, TokensResponse } from '@lifi/types'
 
 import SwapAndBridgeProviderApiError from '../../classes/SwapAndBridgeProviderApiError'
 import { InviteController } from '../../controllers/invite/invite'
@@ -268,55 +268,61 @@ export class LiFiAPI {
     sort: 'time' | 'output'
     isOG: InviteController['isOG']
   }): Promise<SocketAPIQuote> {
-    const params = new URLSearchParams({
+    const body = JSON.stringify({
       fromChainId: fromChainId.toString(),
-      fromTokenAddress: normalizeOutgoingSocketTokenAddress(fromTokenAddress),
-      toChainId: toChainId.toString(),
-      toTokenAddress: normalizeOutgoingSocketTokenAddress(toTokenAddress),
       fromAmount: fromAmount.toString(),
-      userAddress,
-      isContractCall: isSmartAccount.toString(), // only get quotes with that are compatible with contracts
-      sort,
-      singleTxOnly: 'false',
-      defaultSwapSlippage: '1',
-      uniqueRoutesPerBridge: 'true'
+      fromTokenAddress,
+      toChainId: toChainId.toString(),
+      toTokenAddress,
+      fromAddress: userAddress,
+      toAddress: userAddress,
+      options: {
+        slippage: '1',
+        order: sort === 'time' ? 'FASTEST' : 'CHEAPEST',
+        allowDestinationCall: 'false'
+      }
     })
-    const feeTakerAddress = AMBIRE_FEE_TAKER_ADDRESSES[fromChainId]
-    const shouldIncludeConvenienceFee = !!feeTakerAddress && !isOG
-    if (shouldIncludeConvenienceFee) {
-      params.append('feeTakerAddress', feeTakerAddress)
-      params.append('feePercent', FEE_PERCENT.toString())
-    }
-    // TODO: Temporarily exclude Mayan bridge when fetching quotes for SA, as
-    // batching is currently not not supported by Mayan (and funds get lost).
-    if (isSmartAccount) params.append('excludeBridges', ['mayan'].join(','))
 
-    const url = `${this.#baseUrl}/quote?${params.toString()}`
+    // TODO: Wire-up convenience fee
+    // const feeTakerAddress = AMBIRE_FEE_TAKER_ADDRESSES[fromChainId]
+    // const shouldIncludeConvenienceFee = !!feeTakerAddress && !isOG
+    // if (shouldIncludeConvenienceFee) {
+    //   params.append('feeTakerAddress', feeTakerAddress)
+    //   params.append('feePercent', FEE_PERCENT.toString())
+    // }
 
-    const response = await this.#handleResponse<SocketAPIQuote>({
-      fetchPromise: this.#fetch(url, { headers: this.#headers }),
+    const url = `${this.#baseUrl}/advanced/routes`
+
+    const response = await this.#handleResponse<LiFiStep>({
+      fetchPromise: this.#fetch(url, { headers: this.#headers, method: 'POST', body }),
       errorPrefix: 'Unable to fetch the quote.'
     })
 
     return {
       ...response,
-      fromAsset: normalizeIncomingSocketToken(response.fromAsset),
-      toAsset: normalizeIncomingSocketToken(response.toAsset),
+      fromAsset: response.routes[0].fromToken,
+      fromChainId: response.routes[0].fromChainId,
+      toAsset: response.routes[0].toToken,
+      toChainId: response.routes[0].toChainId,
+      selectedRoute: response.routes[0],
+      selectedRouteSteps: response.routes[0].steps,
+      // TODO: Monkey-patched the response temporarily
       routes: response.routes.map((route) => ({
         ...route,
-        userTxs: route.userTxs.map((userTx) => ({
-          ...userTx,
-          ...('fromAsset' in userTx && {
-            fromAsset: normalizeIncomingSocketToken(userTx.fromAsset)
-          }),
-          toAsset: normalizeIncomingSocketToken(userTx.toAsset),
-          ...('steps' in userTx && {
-            steps: userTx.steps.map((step) => ({
-              ...step,
-              fromAsset: normalizeIncomingSocketToken(step.fromAsset),
-              toAsset: normalizeIncomingSocketToken(step.toAsset)
-            }))
-          })
+        fromAsset: route.fromToken,
+        toAsset: {
+          ...route.toToken,
+          toAmount: route.toAmount
+        },
+        steps: route.steps.map((step) => ({
+          ...step,
+          ...step.action,
+          fromAsset: route.fromToken,
+          toAsset: {
+            ...route.toToken,
+            toAmount: route.toAmount
+          },
+          toAmount: route.toAmount
         }))
       }))
     }
