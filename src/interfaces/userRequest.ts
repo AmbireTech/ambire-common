@@ -59,6 +59,7 @@ export interface SignUserRequest {
     paymasterService?: PaymasterService
     isWalletSendCalls?: boolean
     submittedAccountOp?: any
+    activeRouteId?: string
     [key: string]: any
   }
   // defined only when SignUserRequest is built from a DappRequest

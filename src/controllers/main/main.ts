@@ -2623,7 +2623,7 @@ export class MainController extends EventEmitter {
           : 1
         if (txnLength > 1) this.signAccountOp?.update({ signedTransactionsCount: 0 })
         for (let i = 0; i < txnLength; i++) {
-          const currentNonce = i === 0 ? nonce : nonce + 1
+          const currentNonce = i === 0 ? nonce : nonce + i
           const rawTxn = await buildRawTransaction(
             account,
             accountOp,
@@ -2648,6 +2648,7 @@ export class MainController extends EventEmitter {
             txnLength === 1 ? multipleTxnsBroadcastRes.map((res) => res.hash).join('-') : undefined
         }
       } catch (error: any) {
+        console.error('Error broadcasting', error)
         // for multiple txn cases
         // if a batch of 5 txn is sent to Ledger for sign but the user reject
         // #3, #1 and #2 are already broadcast. Reduce the accountOp's call
@@ -2797,10 +2798,32 @@ export class MainController extends EventEmitter {
         })
         .filter((aCall) => aCall !== null) as Call[]
       submittedAccountOp.calls = calls
+
+      // Handle the calls that weren't signed
+      const rejectedCalls = accountOp.calls.filter((call) =>
+        submittedAccountOp.calls.every((c) => c.id !== call.id)
+      )
+      const rejectedSwapActiveRouteIds = rejectedCalls.map((call) => {
+        const userRequest = this.userRequests.find((r) => r.id === call.fromUserRequestId)
+
+        return userRequest?.meta.activeRouteId
+      })
+
+      rejectedSwapActiveRouteIds.forEach((routeId) => {
+        this.removeActiveRoute(routeId)
+      })
+
+      if (rejectedCalls.length) {
+        // remove the user requests that were rejected
+        rejectedCalls.forEach((call) => {
+          if (!call.fromUserRequestId) return
+          this.rejectUserRequest('Transaction rejected by the bundler', call.fromUserRequestId)
+        })
+      }
     }
 
-    await this.activity.addAccountOp(submittedAccountOp)
     this.swapAndBridge.handleUpdateActiveRouteOnSubmittedAccountOpStatusUpdate(submittedAccountOp)
+    await this.activity.addAccountOp(submittedAccountOp)
 
     await this.resolveAccountOpAction(
       {
