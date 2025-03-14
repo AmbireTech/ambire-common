@@ -2623,7 +2623,7 @@ export class MainController extends EventEmitter {
           : 1
         if (txnLength > 1) this.signAccountOp?.update({ signedTransactionsCount: 0 })
         for (let i = 0; i < txnLength; i++) {
-          const currentNonce = i === 0 ? nonce : nonce + i
+          const currentNonce = nonce + i
           const rawTxn = await buildRawTransaction(
             account,
             accountOp,
