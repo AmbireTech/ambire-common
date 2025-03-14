@@ -2078,7 +2078,7 @@ export class MainController extends EventEmitter {
   }
 
   async resolveAccountOpAction(
-    data: any,
+    submittedAccountOp: SubmittedAccountOp,
     actionId: AccountOpAction['id'],
     isBasicAccountBroadcastingMultiple: boolean
   ) {
@@ -2090,6 +2090,7 @@ export class MainController extends EventEmitter {
 
     if (!network) return
 
+    const calls: Call[] = submittedAccountOp.calls
     const meta: SignUserRequest['meta'] = {
       isSignAction: true,
       accountAddr: accountOp.accountAddr,
@@ -2098,12 +2099,12 @@ export class MainController extends EventEmitter {
       txnId: null,
       userOpHash: null
     }
-    if (data.submittedAccountOp) {
-      // can be undefined, check submittedAccountOp.ts
-      meta.txnId = data.submittedAccountOp.txnId
 
-      meta.identifiedBy = data.submittedAccountOp.identifiedBy
-      meta.submittedAccountOp = data.submittedAccountOp
+    if (submittedAccountOp) {
+      // can be undefined, check submittedAccountOp.ts
+      meta.txnId = submittedAccountOp.txnId
+      meta.identifiedBy = submittedAccountOp.identifiedBy
+      meta.submittedAccountOp = submittedAccountOp
     }
 
     if (!isBasicAccountBroadcastingMultiple) {
@@ -2120,13 +2121,13 @@ export class MainController extends EventEmitter {
     // handle wallet_sendCalls before pollTxnId as 1) it's faster
     // 2) the identifier is different
     // eslint-disable-next-line no-restricted-syntax
-    for (const call of accountOp.calls) {
+    for (const call of calls) {
       const walletSendCallsUserReq = this.userRequests.find(
         (r) => r.id === call.fromUserRequestId && r.meta.isWalletSendCalls
       )
       if (walletSendCallsUserReq) {
         walletSendCallsUserReq.dappPromise?.resolve({
-          hash: getDappIdentifier(data.submittedAccountOp)
+          hash: getDappIdentifier(submittedAccountOp)
         })
 
         this.removeUserRequest(walletSendCallsUserReq.id, {
@@ -2143,18 +2144,20 @@ export class MainController extends EventEmitter {
 
     // Note: this may take a while!
     const txnId = await pollTxnId(
-      data.submittedAccountOp.identifiedBy,
+      submittedAccountOp.identifiedBy,
       network,
       this.fetch,
       this.callRelayer
     )
 
     // eslint-disable-next-line no-restricted-syntax
-    for (const call of accountOp.calls) {
+    for (const call of calls) {
       const uReq = this.userRequests.find((r) => r.id === call.fromUserRequestId)
       if (uReq) {
         if (txnId) {
-          uReq.dappPromise?.resolve({ hash: txnId })
+          // If the call has a txnId, resolve the promise with it.
+          // This could happen when an EOA account is broadcasting multiple transactions.
+          uReq.dappPromise?.resolve({ hash: call.txnId || txnId })
         } else {
           uReq.dappPromise?.reject(
             ethErrors.rpc.transactionRejected({
@@ -2826,11 +2829,7 @@ export class MainController extends EventEmitter {
     await this.activity.addAccountOp(submittedAccountOp)
 
     await this.resolveAccountOpAction(
-      {
-        networkId: network.id,
-        isUserOp: !!accountOp?.asUserOperation,
-        submittedAccountOp
-      },
+      submittedAccountOp,
       actionId,
       isBasicAccountBroadcastingMultiple
     )
