@@ -2,6 +2,7 @@ import { AccountOpAction, Action } from '../../controllers/actions/actions'
 import { Account, AccountId } from '../../interfaces/account'
 import { DappProviderRequest } from '../../interfaces/dapp'
 import { Network, NetworkId } from '../../interfaces/network'
+import { Storage } from '../../interfaces/storage'
 import { Calls, DappUserRequest, SignUserRequest, UserRequest } from '../../interfaces/userRequest'
 import generateSpoofSig from '../../utils/generateSpoofSig'
 import { isSmartAccount } from '../account/account'
@@ -199,3 +200,27 @@ export const getAccountOpsForSimulation = (
 
   return undefined
 }
+
+async function migrateStateFromLegacyNetworkIdToChainId(storage: Storage) {
+  const [
+    storageVersion,
+    storedNetworks,
+    storedTokenPreferences,
+    storedNetworksWithAssetsByAccount,
+    storedNetworksWithPositionsByAccounts,
+    storedPreviousHints
+  ] = await Promise.all([
+    storage.get('storageVersion', undefined),
+    storage.get('networks', {}),
+    storage.get('tokenPreferences', []),
+    storage.get('networksWithAssetsByAccount', {}),
+    storage.get('networksWithPositionsByAccounts', {}),
+    storage.get('previousHints', {})
+  ])
+
+  // if (storageVersion && Number(storageVersion) >= )
+
+  Object.values(storedNetworks).forEach((network: Network) => {})
+}
+
+export async function storageMigrations(storage: Storage) {}

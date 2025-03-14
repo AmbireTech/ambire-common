@@ -28,18 +28,11 @@ import {
   ReadyToAddKeys,
   StoredKey
 } from '../../interfaces/keystore'
-import { Storage } from '../../interfaces/storage'
 import { WindowManager } from '../../interfaces/window'
 import { EntropyGenerator } from '../../libs/entropyGenerator/entropyGenerator'
-import {
-  getDefaultKeyLabel,
-  getShouldMigrateKeyMetaNullToKeyMetaCreatedAt,
-  getShouldMigrateKeystoreSeedsWithoutHdPath,
-  migrateKeyMetaNullToKeyMetaCreatedAt,
-  migrateKeyPreferencesToKeystoreKeys,
-  migrateKeystoreSeedsWithoutHdPathTemplate
-} from '../../libs/keys/keys'
+import { getDefaultKeyLabel } from '../../libs/keys/keys'
 import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter'
+import { StorageController } from '../storage/storage'
 
 const scryptDefaults = { N: 131072, r: 8, p: 1, dkLen: 64 }
 const CIPHER = 'aes-128-ctr'
@@ -95,7 +88,7 @@ export class KeystoreController extends EventEmitter {
   // The mainKey could be encrypted with many secrets.
   #keystoreSecrets: MainKeyEncryptedWithSecret[] = []
 
-  #storage: Storage
+  #storage: StorageController
 
   #keystoreSeeds: KeystoreSeed[] = []
 
@@ -123,7 +116,7 @@ export class KeystoreController extends EventEmitter {
   #windowManager: WindowManager
 
   constructor(
-    _storage: Storage,
+    _storage: StorageController,
     _keystoreSigners: Partial<{ [key in Key['type']]: KeystoreSignerType }>,
     windowManager: WindowManager
   ) {
@@ -139,36 +132,14 @@ export class KeystoreController extends EventEmitter {
 
   async #load() {
     try {
-      const [keystoreSeeds, keyStoreUid, keystoreKeys, keyPreferences] = await Promise.all([
+      const [keystoreSeeds, keyStoreUid, keystoreKeys] = await Promise.all([
         this.#storage.get('keystoreSeeds', []),
         this.#storage.get('keyStoreUid', null),
-        this.#storage.get('keystoreKeys', []),
-        this.#storage.get('keyPreferences', [])
+        this.#storage.get('keystoreKeys', [])
       ])
       this.keyStoreUid = keyStoreUid
-
-      if (getShouldMigrateKeystoreSeedsWithoutHdPath(keystoreSeeds)) {
-        // Cast to the old type (string[]) to avoid TS errors
-        const preMigrationKeystoreSeeds = keystoreSeeds as unknown as string[]
-        this.#keystoreSeeds = migrateKeystoreSeedsWithoutHdPathTemplate(preMigrationKeystoreSeeds)
-        await this.#storage.set('keystoreSeeds', this.#keystoreSeeds)
-      } else {
-        this.#keystoreSeeds = keystoreSeeds
-      }
-
-      const shouldMigrateKeyPreferencesToKeystoreKeys = keyPreferences.length > 0
-      if (shouldMigrateKeyPreferencesToKeystoreKeys) {
-        this.#keystoreKeys = migrateKeyPreferencesToKeystoreKeys(keyPreferences, keystoreKeys)
-        await this.#storage.set('keystoreKeys', this.#keystoreKeys)
-        await this.#storage.remove('keyPreferences')
-      } else {
-        this.#keystoreKeys = keystoreKeys
-      }
-
-      if (getShouldMigrateKeyMetaNullToKeyMetaCreatedAt(this.#keystoreKeys)) {
-        this.#keystoreKeys = migrateKeyMetaNullToKeyMetaCreatedAt(this.#keystoreKeys)
-        await this.#storage.set('keystoreKeys', this.#keystoreKeys)
-      }
+      this.#keystoreSeeds = keystoreSeeds
+      this.#keystoreKeys = keystoreKeys
     } catch (e) {
       this.emitError({
         message:

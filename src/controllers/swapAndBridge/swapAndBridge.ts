@@ -1,11 +1,9 @@
-/* eslint-disable no-await-in-loop */
 import { formatUnits, isAddress, parseUnits } from 'ethers'
 import { v4 as uuidv4 } from 'uuid'
 
 import EmittableError from '../../classes/EmittableError'
 import SwapAndBridgeError from '../../classes/SwapAndBridgeError'
 import { Network } from '../../interfaces/network'
-import { Storage } from '../../interfaces/storage'
 import {
   ActiveRoute,
   CachedSupportedChains,
@@ -50,6 +48,8 @@ import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter'
 import { InviteController } from '../invite/invite'
 import { NetworksController } from '../networks/networks'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
+/* eslint-disable no-await-in-loop */
+import { StorageController } from '../storage/storage'
 
 type SwapAndBridgeErrorType = {
   id: 'to-token-list-fetch-failed' // ...
@@ -110,7 +110,7 @@ export class SwapAndBridgeController extends EventEmitter {
 
   #invite: InviteController
 
-  #storage: Storage
+  #storage: StorageController
 
   #socketAPI: SocketAPI
 
@@ -199,7 +199,7 @@ export class SwapAndBridgeController extends EventEmitter {
     networks: NetworksController
     activity: ActivityController
     socketAPI: SocketAPI
-    storage: Storage
+    storage: StorageController
     actions: ActionsController
     invite: InviteController
   }) {

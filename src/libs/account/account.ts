@@ -7,7 +7,6 @@ import { SPOOF_SIGTYPE } from '../../consts/signatures'
 import { InternalSignedMessages, SignedMessage } from '../../controllers/activity/types'
 import {
   Account,
-  AccountId,
   AccountOnchainState,
   AccountOnPage,
   AccountPreferences,
@@ -301,24 +300,6 @@ export const getDefaultAccountPreferences = (
     label: `Account ${number}`,
     pfp: getAddress(accountAddr) // default pfp - a jazz icon generated from the addr
   }
-}
-
-// As of version 4.25.0, a new Account interface has been introduced,
-// merging the previously separate Account and AccountPreferences interfaces.
-// This change requires a migration due to the introduction of a new controller, AccountsController,
-// which now manages both accounts and their preferences.
-export function migrateAccountPreferencesToAccounts(
-  accountPreferences: {
-    [key: AccountId]: AccountPreferences
-  },
-  accounts: Account[]
-) {
-  return accounts.map((a) => {
-    return {
-      ...a,
-      preferences: accountPreferences[a.addr] || { label: DEFAULT_ACCOUNT_LABEL, pfp: a.addr }
-    }
-  })
 }
 
 export function getUniqueAccountsArray(accounts: Account[]) {

@@ -12,6 +12,7 @@ import {
   NetworkInfoLoading
 } from '../../interfaces/network'
 import { RPCProviders } from '../../interfaces/provider'
+import { Storage } from '../../interfaces/storage'
 import { Bundler } from '../../services/bundlers/bundler'
 import { getRpcProvider } from '../../services/provider'
 import { getSASupport } from '../deployless/simulateDeployCall'
@@ -365,6 +366,7 @@ export function getFeatures(
   return getFeaturesByNetworkProperties(networkInfo)
 }
 
+<<<<<<< Updated upstream
 // Since v4.24.0, a new Network interface has been introduced,
 // that replaces the old NetworkDescriptor, NetworkPreference, and CustomNetwork.
 // Previously, only NetworkPreferences were stored, with other network properties
@@ -418,6 +420,8 @@ export async function migrateNetworkPreferencesToNetworks(networkPreferences: {
   return networksToStore
 }
 
+=======
+>>>>>>> Stashed changes
 // is the user allowed to change the network settings to 4337
 export function canForce4337(network?: Network) {
   return network && network.allowForce4337

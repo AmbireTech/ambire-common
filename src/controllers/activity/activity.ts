@@ -2,7 +2,6 @@ import { Account, AccountId } from '../../interfaces/account'
 import { Banner } from '../../interfaces/banner'
 import { Fetch } from '../../interfaces/fetch'
 import { Network } from '../../interfaces/network'
-import { Storage } from '../../interfaces/storage'
 import { isSmartAccount } from '../../libs/account/account'
 import { AccountOpStatus } from '../../libs/accountOp/accountOp'
 import { fetchTxnId, SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
@@ -14,6 +13,7 @@ import EventEmitter from '../eventEmitter/eventEmitter'
 import { NetworksController } from '../networks/networks'
 import { ProvidersController } from '../providers/providers'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
+import { StorageController } from '../storage/storage'
 import { InternalSignedMessages, SignedMessage } from './types'
 
 export interface Pagination {
@@ -88,7 +88,7 @@ const paginate = (items: any[], fromPage: number, itemsPerPage: number) => {
  * Older items are trimmed, keeping the most recent ones.
  */
 export class ActivityController extends EventEmitter {
-  #storage: Storage
+  #storage: StorageController
 
   #fetch: Fetch
 
@@ -129,7 +129,7 @@ export class ActivityController extends EventEmitter {
   #callRelayer: Function
 
   constructor(
-    storage: Storage,
+    storage: StorageController,
     fetch: Fetch,
     callRelayer: Function,
     accounts: AccountsController,

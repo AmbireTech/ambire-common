@@ -9,7 +9,6 @@ import {
   CashbackStatusByAccount,
   SelectedAccountPortfolio
 } from '../../interfaces/selectedAccount'
-import { Storage } from '../../interfaces/storage'
 import { isSmartAccount } from '../../libs/account/account'
 import { getFirstCashbackBanners } from '../../libs/banners/banners'
 import { sortByValue } from '../../libs/defiPositions/helpers'
@@ -24,8 +23,6 @@ import {
 } from '../../libs/selectedAccount/errors'
 import {
   calculateSelectedAccountPortfolio,
-  migrateCashbackStatusToNewFormat,
-  needsCashbackStatusMigration,
   updatePortfolioStateWithDefiPositions
 } from '../../libs/selectedAccount/selectedAccount'
 // eslint-disable-next-line import/no-cycle
@@ -39,6 +36,7 @@ import { NetworksController } from '../networks/networks'
 // eslint-disable-next-line import/no-cycle
 import { PortfolioController } from '../portfolio/portfolio'
 import { ProvidersController } from '../providers/providers'
+import { StorageController } from '../storage/storage'
 
 export const DEFAULT_SELECTED_ACCOUNT_PORTFOLIO = {
   tokens: [],
@@ -53,7 +51,7 @@ export const DEFAULT_SELECTED_ACCOUNT_PORTFOLIO = {
 }
 
 export class SelectedAccountController extends EventEmitter {
-  #storage: Storage
+  #storage: StorageController
 
   #accounts: AccountsController
 
@@ -92,7 +90,7 @@ export class SelectedAccountController extends EventEmitter {
 
   #cashbackStatusByAccount: CashbackStatusByAccount = {}
 
-  constructor({ storage, accounts }: { storage: Storage; accounts: AccountsController }) {
+  constructor({ storage, accounts }: { storage: StorageController; accounts: AccountsController }) {
     super()
 
     this.#storage = storage
@@ -105,19 +103,8 @@ export class SelectedAccountController extends EventEmitter {
   async #load() {
     await this.#accounts.initialLoadPromise
     const selectedAccountAddress = await this.#storage.get('selectedAccount', null)
-    let cashbackStatusByAccountTemp = await this.#storage.get('cashbackStatusByAccount', {})
-
-    if (needsCashbackStatusMigration(cashbackStatusByAccountTemp)) {
-      cashbackStatusByAccountTemp = migrateCashbackStatusToNewFormat(cashbackStatusByAccountTemp)
-      this.#cashbackStatusByAccount = cashbackStatusByAccountTemp
-      await this.#storage.set('cashbackStatusByAccount', cashbackStatusByAccountTemp)
-    } else {
-      this.#cashbackStatusByAccount = cashbackStatusByAccountTemp
-    }
-
-    const selectedAccount = this.#accounts.accounts.find((a) => a.addr === selectedAccountAddress)
-
-    this.account = selectedAccount || null
+    this.#cashbackStatusByAccount = await this.#storage.get('cashbackStatusByAccount', {})
+    this.account = this.#accounts.accounts.find((a) => a.addr === selectedAccountAddress) || null
     this.isReady = true
 
     this.emitUpdate()
