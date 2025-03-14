@@ -84,7 +84,7 @@ async function estimate(
     has7702(network) && accountState.isEOA && !accountState.isSmarterEoa && !userOp.eip7702Auth
       ? {
           [userOp.sender]: {
-            code: AmbireAccount7702.bin
+            code: AmbireAccount7702.binRuntime
           }
         }
       : undefined

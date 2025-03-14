@@ -87,7 +87,11 @@ export abstract class Bundler {
   async estimate(
     userOperation: UserOperation,
     network: Network,
-    stateOverride?: any
+    stateOverride?: {
+      [accAddr: string]: {
+        code: string
+      }
+    }
   ): Promise<BundlerEstimateResult> {
     const estimatiton = await this.sendEstimateReq(userOperation, network, stateOverride)
 
