@@ -120,10 +120,9 @@ const convertToAmbireNetworkFormat = async (network: ChainlistNetwork): Promise<
  * default values that need to be set for the so called "predefined" networks.
  */
 export const mapRelayerNetworkConfigToAmbireNetwork = (
-  _chainId: string,
+  chainId: bigint,
   relayerNetwork: RelayerNetwork
-): Network => {
-  const chainId = BigInt(_chainId)
+): Network & { predefinedConfigVersion: number } => {
   const {
     name,
     explorerUrl,
