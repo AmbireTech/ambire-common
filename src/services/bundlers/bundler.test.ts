@@ -615,7 +615,7 @@ describe('Bundler tests', () => {
       userOp.paymasterData = paymasterAndData.paymasterData
       userOp.signature = getSigForCalculations()
       userOp.nonce = '0x0'
-      const bundlerEstimate = await bundler.estimate(userOp, baseSepolia, true)
+      const bundlerEstimate = await bundler.estimate(userOp, baseSepolia)
       expect(bundlerEstimate).toHaveProperty('preVerificationGas')
       expect(bundlerEstimate).toHaveProperty('verificationGasLimit')
       expect(bundlerEstimate).toHaveProperty('callGasLimit')
@@ -660,7 +660,7 @@ describe('Bundler tests', () => {
       userOp.signature = getSigForCalculations()
       userOp.nonce = '0x0'
       try {
-        await bundler.estimate(userOp, gnosis, true)
+        await bundler.estimate(userOp, gnosis)
         expect(true).toBe(false)
       } catch (e: any) {
         expect(e.message.includes('AA23 reverted validateUserOp: not from entryPoint')).not.toBe(-1)

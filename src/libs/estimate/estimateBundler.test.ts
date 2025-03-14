@@ -263,11 +263,7 @@ describe('Bundler estimation tests', () => {
 describe('Bundler fallback tests', () => {
   class BrokenPimlico extends Pimlico {
     // eslint-disable-next-line class-methods-use-this
-    async estimate(
-      userOperation: UserOperation,
-      network: Network,
-      shouldStateOverride = false
-    ): Promise<BundlerEstimateResult> {
+    async estimate(userOperation: UserOperation, network: Network): Promise<BundlerEstimateResult> {
       throw new Error('Internal error from bundler')
     }
   }
