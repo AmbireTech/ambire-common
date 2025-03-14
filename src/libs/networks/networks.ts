@@ -385,10 +385,10 @@ export async function migrateNetworkPreferencesToNetworks(networkPreferences: {
     (k) => !predefinedNetworkIds.includes(k)
   )
 
-  const networksToStore: { [key: NetworkId]: Network } = {}
+  const networksToStore: { [key: string]: Network } = {}
 
   predefinedNetworks.forEach((n) => {
-    networksToStore[n.id] = n
+    networksToStore[n.chainId.toString()] = n
   })
   customNetworkIds.forEach((networkId: NetworkId) => {
     const preference = networkPreferences[networkId]
@@ -410,7 +410,7 @@ export async function migrateNetworkPreferencesToNetworks(networkPreferences: {
       hasSingleton: preference.hasSingleton ?? false
     }
     delete (preference as any).is1559
-    networksToStore[networkId] = {
+    networksToStore[preference.chainId!.toString()] = {
       id: networkId,
       ...preference,
       ...networkInfo,
