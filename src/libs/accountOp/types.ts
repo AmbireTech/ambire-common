@@ -22,4 +22,8 @@ export interface Call {
   id?: Calls['calls'][number]['id']
   txnId?: Hex
   status?: AccountOpStatus
+  fee?: {
+    inToken: string
+    amount: bigint
+  }
 }

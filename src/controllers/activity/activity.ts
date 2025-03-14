@@ -409,7 +409,8 @@ export class ActivityController extends EventEmitter {
 
                 const updatedOpIfAny = updateOpStatus(
                   this.#accountsOps[selectedAccount][networkId][accountOpIndex],
-                  isSuccess ? AccountOpStatus.Success : AccountOpStatus.Failure
+                  isSuccess ? AccountOpStatus.Success : AccountOpStatus.Failure,
+                  receipt
                 )
                 if (updatedOpIfAny) updatedAccountsOps.push(updatedOpIfAny)
 

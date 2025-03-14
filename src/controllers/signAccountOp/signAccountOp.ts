@@ -502,20 +502,6 @@ export class SignAccountOpController extends EventEmitter {
       }
     }
 
-    // if the gasFeePayment is gas tank but the user doesn't have funds, disable it
-    let balance = 0
-    Object.keys(currentPortfolio).forEach((networkName) => {
-      const networkPortfolio = currentPortfolio[networkName]
-      if (!networkPortfolio?.result?.total?.usd) return
-
-      balance += networkPortfolio.result.total.usd
-    })
-    if (balance < 10 && this.accountOp.gasFeePayment && this.accountOp.gasFeePayment.isGasTank) {
-      errors.push(
-        'Your account must have a minimum overall balance of $10 to pay for gas via the Gas Tank. Please add funds to your account or choose another fee payment option.'
-      )
-    }
-
     return errors
   }
 
