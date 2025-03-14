@@ -1,3 +1,4 @@
+import { TransactionReceipt, ZeroAddress } from 'ethers'
 import { BUNDLER } from '../../consts/bundlers'
 import { Fetch } from '../../interfaces/fetch'
 import { Network } from '../../interfaces/network'
@@ -230,12 +231,22 @@ export function updateOpStatus(
   // IMPORTANT: pass a reference to this.#accountsOps[accAddr][networkId][index]
   // so we could mutate it from inside this method
   opReference: SubmittedAccountOp,
-  status: AccountOpStatus
+  status: AccountOpStatus,
+  receipt?: TransactionReceipt
 ): SubmittedAccountOp | null {
   if (opReference.identifiedBy.type === 'MultipleTxns') {
     const callIndex = getMultipleBroadcastUnconfirmedCallOrLast(opReference).callIndex
     // eslint-disable-next-line no-param-reassign
     opReference.calls[callIndex].status = status
+
+    // if there's a receipt, add the fee
+    if (receipt) {
+      // eslint-disable-next-line no-param-reassign
+      opReference.calls[callIndex].fee = {
+        inToken: ZeroAddress,
+        amount: receipt.fee
+      }
+    }
 
     if (callIndex === opReference.calls.length - 1) {
       // eslint-disable-next-line no-param-reassign
