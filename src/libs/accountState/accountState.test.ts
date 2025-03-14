@@ -225,7 +225,6 @@ describe('AccountState', () => {
     expect(eoa7702.isEOA).toBeTruthy()
     expect(eoa7702.isV2).toBeTruthy()
     expect(eoa7702.isDeployed).toBeTruthy()
-    expect(eoa7702.authorization).toBe(undefined)
     expect(eoa7702.isSmarterEoa).toBeTruthy()
     expect(eoa7702.isErc4337Enabled).toBeTruthy()
     expect(eoa7702.associatedKeys['0xD8293ad21678c6F09Da139b4B62D38e514a03B78']).toBe(

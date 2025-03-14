@@ -14,6 +14,7 @@ import { FEE_COLLECTOR } from '../../consts/addresses'
 import { BUNDLER } from '../../consts/bundlers'
 import { SINGLETON } from '../../consts/deploy'
 import gasTankFeeTokens from '../../consts/gasTankFeeTokens'
+import { ARBITRUM_CHAIN_ID } from '../../consts/networks'
 /* eslint-disable no-restricted-syntax */
 import { ERRORS, RETRY_TO_INIT_ACCOUNT_OP_MSG } from '../../consts/signAccountOp/errorHandling'
 import {
@@ -21,16 +22,29 @@ import {
   SA_ERC20_TRANSFER_GAS_USED,
   SA_NATIVE_TRANSFER_GAS_USED
 } from '../../consts/signAccountOp/gas'
-import { Account } from '../../interfaces/account'
+import { Account, AccountOnchainState } from '../../interfaces/account'
 import { ExternalSignerControllers, Key } from '../../interfaces/keystore'
 import { Network } from '../../interfaces/network'
+import { RPCProvider } from '../../interfaces/provider'
 import { TraceCallDiscoveryStatus, Warning } from '../../interfaces/signAccountOp'
-import { isAmbireV1LinkedAccount, isBasicAccount, isSmartAccount } from '../../libs/account/account'
+import { getContractImplementation } from '../../libs/7702/7702'
+import { isAmbireV1LinkedAccount, isSmartAccount } from '../../libs/account/account'
+/* eslint-disable no-restricted-syntax */
+import { BaseAccount } from '../../libs/account/BaseAccount'
+import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { AccountOp, GasFeePayment, getSignableCalls } from '../../libs/accountOp/accountOp'
 import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
+import { BROADCAST_OPTIONS } from '../../libs/broadcast/broadcast'
 import { PaymasterErrorReponse, PaymasterSuccessReponse, Sponsor } from '../../libs/erc7677/types'
 import { getHumanReadableBroadcastError } from '../../libs/errorHumanizer'
-import { Erc4337GasLimits, EstimateResult, FeePaymentOption } from '../../libs/estimate/interfaces'
+import { getEstimationSummary } from '../../libs/estimate/estimate'
+import { bundlerEstimate } from '../../libs/estimate/estimateBundler'
+import {
+  Erc4337GasLimits,
+  FeePaymentOption,
+  FullEstimation,
+  FullEstimationSummary
+} from '../../libs/estimate/interfaces'
 import {
   Gas1559Recommendation,
   GasPriceRecommendation,
@@ -40,7 +54,9 @@ import {
 import { hasRelayerSupport } from '../../libs/networks/networks'
 import { Price, TokenResult } from '../../libs/portfolio'
 import {
+  get7702Sig,
   get7702UserOpTypedData,
+  getAuthorizationHash,
   getExecuteSignature,
   getTypedData,
   wrapStandard,
@@ -53,14 +69,10 @@ import {
   getPackedUserOp,
   getUserOperation,
   getUserOpHash,
-  isErc4337Broadcast,
-  shouldIncludeActivatorCall,
   shouldUseOneTimeNonce
 } from '../../libs/userOperation/userOperation'
 import { BundlerSwitcher } from '../../services/bundlers/bundlerSwitcher'
 import { GasSpeeds } from '../../services/bundlers/types'
-/* eslint-disable no-restricted-syntax */
-import { AccountsController } from '../accounts/accounts'
 import { AccountOpAction } from '../actions/actions'
 import EventEmitter, { ErrorRef } from '../eventEmitter/eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
@@ -117,8 +129,6 @@ export const noStateUpdateStatuses = [
 ]
 
 export class SignAccountOpController extends EventEmitter {
-  #accounts: AccountsController
-
   #keystore: KeystoreController
 
   #portfolio: PortfolioController
@@ -126,6 +136,10 @@ export class SignAccountOpController extends EventEmitter {
   #externalSignerControllers: ExternalSignerControllers
 
   account: Account
+
+  baseAccount: BaseAccount
+
+  accountState: AccountOnchainState
 
   #network: Network
 
@@ -135,11 +149,9 @@ export class SignAccountOpController extends EventEmitter {
 
   accountOp: AccountOp
 
-  gasPrices: GasRecommendation[] | null = null
+  gasPrices?: GasRecommendation[] | null
 
   bundlerGasPrices: GasSpeeds | null = null
-
-  estimation: EstimateResult | null = null
 
   estimationRetryError: ErrorRef | null = null
 
@@ -156,10 +168,6 @@ export class SignAccountOpController extends EventEmitter {
   selectedOption: FeePaymentOption | undefined = undefined
 
   status: Status | null = null
-
-  gasUsedTooHigh: boolean
-
-  gasUsedTooHighAgreed: boolean
 
   #reEstimate: Function
 
@@ -181,6 +189,8 @@ export class SignAccountOpController extends EventEmitter {
 
   bundlerSwitcher: BundlerSwitcher
 
+  signedTransactionsCount: number | null = null
+
   // We track the status of token discovery logic (main.traceCall)
   // to ensure the "SignificantBalanceDecrease" banner is displayed correctly.
   // The latest/pending portfolio balance is essential for calculating balance differences.
@@ -190,13 +200,27 @@ export class SignAccountOpController extends EventEmitter {
   // Once discovery completes and updates the portfolio, the banner will be hidden.
   traceCallDiscoveryStatus: TraceCallDiscoveryStatus = TraceCallDiscoveryStatus.NotStarted
 
+  estimation: FullEstimationSummary | null = null
+
+  // the calculated gas used for the transaction estimation
+  // it now depends on a variety of options and hence the need to move it
+  // as its own property
+  gasUsed: bigint = 0n
+
+  // we move this as an updateable property instead as we'd like to recalculate it
+  // only on estimation updates
+  availableFeeOptions: FeePaymentOption[] = []
+
+  provider: RPCProvider
+
   constructor(
-    accounts: AccountsController,
     keystore: KeystoreController,
     portfolio: PortfolioController,
     externalSignerControllers: ExternalSignerControllers,
     account: Account,
+    accountState: AccountOnchainState,
     network: Network,
+    provider: RPCProvider,
     fromActionId: AccountOpAction['id'],
     accountOp: AccountOp,
     reEstimate: Function,
@@ -204,19 +228,23 @@ export class SignAccountOpController extends EventEmitter {
   ) {
     super()
 
-    this.#accounts = accounts
     this.#keystore = keystore
     this.#portfolio = portfolio
     this.#externalSignerControllers = externalSignerControllers
     this.account = account
+    this.baseAccount = getBaseAccount(
+      account,
+      accountState,
+      keystore.keys.filter((key) => account.associatedKeys.includes(key.addr)),
+      network
+    )
+    this.accountState = accountState
     this.#network = network
     this.fromActionId = fromActionId
     this.accountOp = structuredClone(accountOp)
     this.#reEstimate = reEstimate
     this.#isSignRequestStillActive = isSignRequestStillActive
 
-    this.gasUsedTooHigh = false
-    this.gasUsedTooHighAgreed = false
     this.rbfAccountOps = {}
     this.signedAccountOp = null
     this.replacementFeeLow = false
@@ -227,6 +255,7 @@ export class SignAccountOpController extends EventEmitter {
       },
       noStateUpdateStatuses
     )
+    this.provider = provider
   }
 
   get isInitialized(): boolean {
@@ -265,12 +294,12 @@ export class SignAccountOpController extends EventEmitter {
   getCallDataAdditionalByNetwork(): bigint {
     // no additional call data is required for arbitrum as the bytes are already
     // added in the calculation for the L1 fee
-    if (this.#network.id === 'arbitrum' || !isSmartAccount(this.account)) return 0n
+    if (this.#network.chainId === ARBITRUM_CHAIN_ID || !isSmartAccount(this.account)) return 0n
 
     const estimationCallData = getProbableCallData(
       this.account,
       this.accountOp,
-      this.#accounts.accountStates[this.accountOp.accountAddr][this.accountOp.networkId],
+      this.accountState,
       this.#network
     )
     const FIXED_OVERHEAD = 21000n
@@ -319,25 +348,19 @@ export class SignAccountOpController extends EventEmitter {
       errors.push(this.estimation.error.message)
     }
 
-    if (!this.gasPrices || !this.gasPrices.length) {
+    const areGasPricesLoading = typeof this.gasPrices === 'undefined'
+
+    if (!areGasPricesLoading && !this.gasPrices?.length) {
       errors.push(
         'Gas price information is currently unavailable. This may be due to network congestion or connectivity issues. Please try again in a few moments or check your internet connection.'
       )
     }
 
-    if (
-      this.estimation?.gasUsed &&
-      this.#blockGasLimit &&
-      this.estimation?.gasUsed > this.#blockGasLimit
-    ) {
+    if (this.#blockGasLimit && this.gasUsed > this.#blockGasLimit) {
       errors.push('Transaction reverted with estimation too high: above block limit')
     }
 
-    if (
-      this.#network.predefined &&
-      this.estimation?.gasUsed &&
-      this.estimation?.gasUsed > 500000000n
-    ) {
+    if (this.#network.predefined && this.gasUsed > 500000000n) {
       errors.push('Unreasonably high estimation. This transaction will probably fail')
     }
 
@@ -479,20 +502,6 @@ export class SignAccountOpController extends EventEmitter {
       }
     }
 
-    // if the gasFeePayment is gas tank but the user doesn't have funds, disable it
-    let balance = 0
-    Object.keys(currentPortfolio).forEach((networkName) => {
-      const networkPortfolio = currentPortfolio[networkName]
-      if (!networkPortfolio?.result?.total?.usd) return
-
-      balance += networkPortfolio.result.total.usd
-    })
-    if (balance < 10 && this.accountOp.gasFeePayment && this.accountOp.gasFeePayment.isGasTank) {
-      errors.push(
-        'Your account must have a minimum overall balance of $10 to pay for gas via the Gas Tank. Please add funds to your account or choose another fee payment option.'
-      )
-    }
-
     return errors
   }
 
@@ -559,133 +568,166 @@ export class SignAccountOpController extends EventEmitter {
     signingKeyAddr,
     signingKeyType,
     calls,
-    gasUsedTooHighAgreed,
     rbfAccountOps,
     bundlerGasPrices,
     blockGasLimit,
-    estimationRetryError
+    estimationRetryError,
+    signedTransactionsCount
   }: {
-    gasPrices?: GasRecommendation[]
-    estimation?: EstimateResult | null
+    gasPrices?: GasRecommendation[] | null
+    estimation?: FullEstimation | Error | null
     feeToken?: TokenResult
     paidBy?: string
     speed?: FeeSpeed
     signingKeyAddr?: Key['addr']
     signingKeyType?: Key['type']
     calls?: AccountOp['calls']
-    gasUsedTooHighAgreed?: boolean
     rbfAccountOps?: { [key: string]: SubmittedAccountOp | null }
     bundlerGasPrices?: { speeds: GasSpeeds; bundler: BUNDLER }
     blockGasLimit?: bigint
     estimationRetryError?: ErrorRef
+    signedTransactionsCount?: number | null
   }) {
-    // once the user commits to the things he sees on his screen,
-    // we need to be sure nothing changes afterwards.
-    // For example, signing can be slow if it's done by a hardware wallet.
-    // The estimation gets refreshed on the other hand each 12 seconds (6 on optimism)
-    // If we allow the estimation to affect the controller state during sign,
-    // there could be discrepancy between what the user has agreed upon and what
-    // we broadcast in the end
-    if (this.status?.type && noStateUpdateStatuses.indexOf(this.status?.type) !== -1) {
-      return
-    }
-
-    if (Array.isArray(calls)) this.accountOp.calls = calls
-
-    if (blockGasLimit) this.#blockGasLimit = blockGasLimit
-
-    if (gasPrices) this.gasPrices = gasPrices
-
-    if (estimation) {
-      this.gasUsedTooHigh = !!(this.#blockGasLimit && estimation.gasUsed > this.#blockGasLimit / 4n)
-      this.estimation = estimation
-      // on each estimation update, set the newest account nonce
-      this.accountOp.nonce = BigInt(estimation.currentAccountNonce)
-      // Display the estimationRetryError unless the estimation is successful
-      if (!estimation.error) this.estimationRetryError = null
-    }
-
-    if (estimationRetryError) {
-      this.estimationRetryError = estimationRetryError
-    }
-
-    // if estimation is undefined, do not clear the estimation.
-    // We do this only if strictly specified as null
-    if (estimation === null) this.estimation = null
-
-    if (feeToken && paidBy) {
-      this.paidBy = paidBy
-      this.feeTokenResult = feeToken
-    }
-
-    if (speed && this.isInitialized) {
-      this.selectedFeeSpeed = speed
-    }
-
-    if (signingKeyAddr && signingKeyType && this.isInitialized) {
-      this.accountOp.signingKeyAddr = signingKeyAddr
-      this.accountOp.signingKeyType = signingKeyType
-    }
-
-    if (gasUsedTooHighAgreed !== undefined) this.gasUsedTooHighAgreed = gasUsedTooHighAgreed
-
-    // set the rbf is != undefined
-    if (rbfAccountOps) this.rbfAccountOps = rbfAccountOps
-
-    // Set defaults, if some of the optional params are omitted
-    this.#setDefaults()
-
-    if (this.estimation && this.paidBy && this.feeTokenResult) {
-      this.selectedOption = this.availableFeeOptions.find(
-        (option) =>
-          option.paidBy === this.paidBy &&
-          option.token.address === this.feeTokenResult!.address &&
-          option.token.symbol.toLocaleLowerCase() ===
-            this.feeTokenResult!.symbol.toLocaleLowerCase() &&
-          option.token.flags.onGasTank === this.feeTokenResult!.flags.onGasTank
-      )
-    }
-
-    // update the bundler gas prices if the bundlers match
-    if (
-      this.estimation?.erc4337GasLimits &&
-      bundlerGasPrices &&
-      bundlerGasPrices.bundler === this.bundlerSwitcher.getBundler().getName()
-    ) {
-      this.estimation.erc4337GasLimits.gasPrice = bundlerGasPrices.speeds
-    }
-
-    if (
-      this.estimation &&
-      this.estimation.erc4337GasLimits &&
-      this.estimation.erc4337GasLimits.paymaster
-    ) {
-      // if it was sponsored but it no longer is (fallback case),
-      // reset the selectedOption option as we use native for the sponsorship
-      // but the user might not actually have any native
-      const isSponsorshipFallback =
-        this.isSponsored && !this.estimation.erc4337GasLimits.paymaster.isSponsored()
-
-      this.isSponsored = this.estimation.erc4337GasLimits.paymaster.isSponsored()
-      this.sponsor = this.estimation.erc4337GasLimits.paymaster.getEstimationData()?.sponsor
-
-      if (isSponsorshipFallback) {
-        this.selectedOption = this.availableFeeOptions.length
-          ? this.availableFeeOptions[0]
-          : undefined
+    try {
+      // This must be at the top, otherwise it won't be updated because
+      // most updates are frozen during the signing process
+      if (typeof signedTransactionsCount !== 'undefined') {
+        this.signedTransactionsCount = signedTransactionsCount
+        // If we add other exclusions we should figure out a way to emitUpdate only once
+        this.emitUpdate()
       }
-    }
 
-    // calculate the fee speeds if either there are no feeSpeeds
-    // or any of properties for update is requested
-    if (!Object.keys(this.feeSpeeds).length || Array.isArray(calls) || gasPrices || estimation) {
-      this.#updateFeeSpeeds()
-    }
+      // once the user commits to the things he sees on his screen,
+      // we need to be sure nothing changes afterwards.
+      // For example, signing can be slow if it's done by a hardware wallet.
+      // The estimation gets refreshed on the other hand each 12 seconds (6 on optimism)
+      // If we allow the estimation to affect the controller state during sign,
+      // there could be discrepancy between what the user has agreed upon and what
+      // we broadcast in the end
+      if (this.status?.type && noStateUpdateStatuses.indexOf(this.status?.type) !== -1) {
+        return
+      }
 
-    // Here, we expect to have most of the fields set, so we can safely set GasFeePayment
-    this.#setGasFeePayment()
-    this.updateStatus()
-    this.calculateWarnings()
+      if (Array.isArray(calls)) this.accountOp.calls = calls
+
+      if (blockGasLimit) this.#blockGasLimit = blockGasLimit
+
+      if (gasPrices) this.gasPrices = gasPrices
+
+      if (estimationRetryError) {
+        this.estimationRetryError = estimationRetryError
+      }
+
+      if (estimation === null) this.estimation = null
+
+      if (estimation) {
+        this.estimation = getEstimationSummary(estimation)
+
+        if (!(estimation instanceof Error)) {
+          this.estimationRetryError = null
+
+          if (this.estimation.ambireEstimation) {
+            this.accountOp.nonce = BigInt(this.estimation.ambireEstimation.ambireAccountNonce)
+          }
+          if (this.estimation.bundlerEstimation) {
+            this.bundlerGasPrices = this.estimation.bundlerEstimation.gasPrice
+          }
+        }
+        this.availableFeeOptions = this.getAvailableFeeOptions()
+      }
+
+      if (feeToken && paidBy) {
+        this.paidBy = paidBy
+        this.feeTokenResult = feeToken
+      }
+
+      if (speed && this.isInitialized) {
+        this.selectedFeeSpeed = speed
+      }
+
+      if (signingKeyAddr && signingKeyType && this.isInitialized) {
+        this.accountOp.signingKeyAddr = signingKeyAddr
+        this.accountOp.signingKeyType = signingKeyType
+      }
+
+      // set the rbf is != undefined
+      if (rbfAccountOps) this.rbfAccountOps = rbfAccountOps
+
+      // Set defaults, if some of the optional params are omitted
+      this.#setDefaults()
+
+      if (this.estimation && this.paidBy && this.feeTokenResult) {
+        this.selectedOption = this.availableFeeOptions.find(
+          (option) =>
+            option.paidBy === this.paidBy &&
+            option.token.address === this.feeTokenResult!.address &&
+            option.token.symbol.toLocaleLowerCase() ===
+              this.feeTokenResult!.symbol.toLocaleLowerCase() &&
+            option.token.flags.onGasTank === this.feeTokenResult!.flags.onGasTank
+        )
+      }
+
+      if (
+        bundlerGasPrices &&
+        bundlerGasPrices.bundler === this.bundlerSwitcher.getBundler().getName()
+      ) {
+        this.bundlerGasPrices = bundlerGasPrices.speeds
+      }
+
+      if (
+        this.estimation &&
+        this.estimation.bundlerEstimation &&
+        this.estimation.bundlerEstimation.paymaster
+      ) {
+        // if it was sponsored but it no longer is (fallback case),
+        // reset the selectedOption option as we use native for the sponsorship
+        // but the user might not actually have any native
+        const isSponsorshipFallback =
+          this.isSponsored && !this.estimation.bundlerEstimation.paymaster.isSponsored()
+
+        this.isSponsored = this.estimation.bundlerEstimation.paymaster.isSponsored()
+        this.sponsor = this.estimation.bundlerEstimation.paymaster.getEstimationData()?.sponsor
+
+        if (isSponsorshipFallback) {
+          this.selectedOption = this.availableFeeOptions.length
+            ? this.availableFeeOptions[0]
+            : undefined
+        }
+      }
+
+      const initialGasUsed = this.gasUsed
+      if (this.estimation && this.selectedOption) {
+        this.gasUsed = this.baseAccount.getGasUsed(this.estimation, {
+          feeToken: this.selectedOption.token,
+          op: this.accountOp
+        })
+      }
+      const hasGasUsedChanged = initialGasUsed !== this.gasUsed
+
+      // calculate the fee speeds if either there are no feeSpeeds
+      // or any of properties for update is requested
+      if (
+        !Object.keys(this.feeSpeeds).length ||
+        Array.isArray(calls) ||
+        gasPrices ||
+        estimation ||
+        hasGasUsedChanged ||
+        bundlerGasPrices
+      ) {
+        this.#updateFeeSpeeds()
+      }
+
+      // Here, we expect to have most of the fields set, so we can safely set GasFeePayment
+      this.#setGasFeePayment()
+      this.updateStatus()
+      this.calculateWarnings()
+    } catch (e: any) {
+      this.emitError({
+        message: 'Error updating the SignAccountOpController',
+        error: e,
+        level: 'silent'
+      })
+    }
   }
 
   updateStatus(forceStatusChange?: SigningStatus, replacementFeeLow = false) {
@@ -718,13 +760,9 @@ export class SignAccountOpController extends EventEmitter {
 
     if (
       this.isInitialized &&
-      this.estimation &&
       this.accountOp?.signingKeyAddr &&
       this.accountOp?.signingKeyType &&
-      this.accountOp?.gasFeePayment &&
-      // if the gas used is too high, do not allow the user to sign
-      // until he explicitly agrees to the risks
-      (!this.gasUsedTooHigh || this.gasUsedTooHighAgreed)
+      this.accountOp?.gasFeePayment
     ) {
       this.status = { type: SigningStatus.ReadyToSign }
 
@@ -740,12 +778,13 @@ export class SignAccountOpController extends EventEmitter {
   }
 
   reset() {
-    this.gasPrices = null
+    this.gasPrices = undefined
     this.estimation = null
     this.selectedFeeSpeed = FeeSpeed.Fast
     this.paidBy = null
     this.feeTokenResult = null
     this.status = null
+    this.signedTransactionsCount = null
     this.emitUpdate()
   }
 
@@ -838,63 +877,17 @@ export class SignAccountOpController extends EventEmitter {
     return amount + (amount * this.#network.feeOptions.feeIncrease) / 100n
   }
 
-  /**
-   * If the nonce of the current account op and the last account op are the same,
-   * do an RBF increase or otherwise the user cannot broadcast the txn
-   *
-   * calculatedGas: it should be either the whole gasPrice if the network doesn't
-   * support EIP-1559 OR it should the maxPriorityFeePerGas if the network
-   * supports EIP-1559
-   *
-   * gasPropertyName: pass gasPrice if no EIP-1559; otherwise: maxPriorityFeePerGas
-   */
-  #rbfIncrease(
-    accId: string,
-    calculatedGas: bigint,
-    gasPropertyName: 'gasPrice' | 'maxPriorityFeePerGas',
-    prevSpeed: SpeedCalc | null
-  ): bigint {
-    // ape speed gets 50% increase
-    const divider = prevSpeed && prevSpeed.type === FeeSpeed.Fast ? 2n : 8n
-
-    // when doing an RBF, make sure the min gas for the current speed
-    // is at least 12% bigger than the previous speed
-    const prevSpeedGas = prevSpeed ? prevSpeed[gasPropertyName] : undefined
-    const prevSpeedGasIncreased = prevSpeedGas ? prevSpeedGas + prevSpeedGas / divider : 0n
-    const min = prevSpeedGasIncreased > calculatedGas ? prevSpeedGasIncreased : calculatedGas
-
-    // if there was an error on the signed account op with a
-    // replacement fee too low, we increase by 13% the signed account op
-    // IF the new estimation is not actually higher
-    if (this.replacementFeeLow && this.signedAccountOp && this.signedAccountOp.gasFeePayment) {
-      const prevGas = this.signedAccountOp.gasFeePayment[gasPropertyName] ?? undefined
-      const bumpFees = prevGas ? prevGas + prevGas / divider + prevGas / 100n : 0n
-      return min > bumpFees ? min : bumpFees
-    }
-
-    // if no RBF option for this paidBy option, return the amount
-    const rbfOp = this.rbfAccountOps[accId]
-    if (!rbfOp || !rbfOp.gasFeePayment || !rbfOp.gasFeePayment[gasPropertyName])
-      return calculatedGas
-
-    // increase by a minimum of 13% the last broadcast txn and use that
-    // or use the current gas estimation if it's more
-    const rbfGas = rbfOp.gasFeePayment[gasPropertyName] ?? 0n
-    const lastTxnGasPriceIncreased = rbfGas + rbfGas / divider + rbfGas / 100n
-    return min > lastTxnGasPriceIncreased ? min : lastTxnGasPriceIncreased
-  }
-
   get #feeSpeedsLoading() {
     return !this.isInitialized || !this.gasPrices
   }
 
   #updateFeeSpeeds() {
-    if (this.#feeSpeedsLoading) return
+    if (!this.estimation || this.estimation instanceof Error || !this.gasPrices) return
+
+    const estimation = this.estimation as FullEstimationSummary
 
     // reset the fee speeds at the beginning to avoid duplications
     this.feeSpeeds = {}
-
-    const gasUsed = this.estimation!.gasUsed
 
     this.availableFeeOptions.forEach((option) => {
       // if a calculation has been made, do not make it again
@@ -916,16 +909,22 @@ export class SignAccountOpController extends EventEmitter {
         return
       }
 
-      const erc4337GasLimits = this.estimation?.erc4337GasLimits
-      if (erc4337GasLimits) {
-        const speeds: SpeedCalc[] = []
-        const usesPaymaster = !!this.estimation?.erc4337GasLimits?.paymaster.isUsable()
+      // each available fee option should declare it's estimation method
 
-        for (const [speed, speedValue] of Object.entries(erc4337GasLimits.gasPrice)) {
+      const broadcastOption = this.baseAccount.getBroadcastOption(option, {
+        op: this.accountOp
+      })
+      if (broadcastOption === BROADCAST_OPTIONS.byBundler) {
+        if (!estimation.bundlerEstimation || !this.bundlerGasPrices) return
+
+        const speeds: SpeedCalc[] = []
+        const usesPaymaster = !!this.estimation?.bundlerEstimation?.paymaster.isUsable()
+
+        for (const [speed, speedValue] of Object.entries(this.bundlerGasPrices as GasSpeeds)) {
           const simulatedGasLimit =
-            BigInt(erc4337GasLimits.callGasLimit) +
-            BigInt(erc4337GasLimits.preVerificationGas) +
-            BigInt(option.gasUsed ?? 0)
+            BigInt(estimation.bundlerEstimation.callGasLimit) +
+            BigInt(estimation.bundlerEstimation.preVerificationGas) +
+            BigInt(option.gasUsed)
           const gasPrice = BigInt(speedValue.maxFeePerGas)
           let amount = SignAccountOpController.getAmountAfterFeeTokenConvert(
             simulatedGasLimit,
@@ -952,59 +951,56 @@ export class SignAccountOpController extends EventEmitter {
         return
       }
 
-      ;(this.gasPrices || []).forEach((gasRecommendation, i) => {
+      ;(this.gasPrices || []).forEach((gasRecommendation) => {
         let amount
-        let simulatedGasLimit
-        const prevSpeed =
-          this.feeSpeeds[identifier] && this.feeSpeeds[identifier].length
-            ? this.feeSpeeds[identifier][i - 1]
-            : null
+        let simulatedGasLimit: bigint
 
-        // gasRecommendation can come as GasPriceRecommendation or Gas1559Recommendation
-        // depending whether the network supports EIP-1559 and is it enabled on our side.
-        // To check, we use maxPriorityFeePerGas. If it's set => EIP-1559.
-        // After, we call #rbfIncrease on maxPriorityFeePerGas if set which either returns
-        // the maxPriorityFeePerGas without doing anything (most cases) or if there's a
-        // pending txn in the mempool, it bumps maxPriorityFeePerGas by 12.5% to enable RBF.
-        // Finally, we calculate the gasPrice:
-        // - EIP-1559: baseFeePerGas + maxPriorityFeePerGas
-        // - Normal: gasRecommendation.gasPrice #rbfIncreased (same logic as for maxPriorityFeePerGas RBF)
-        const maxPriorityFeePerGas =
+        // get the calculate fees by our script
+        let maxPriorityFeePerGas =
           'maxPriorityFeePerGas' in gasRecommendation
-            ? this.#rbfIncrease(
-                option.paidBy,
-                gasRecommendation.maxPriorityFeePerGas,
-                'maxPriorityFeePerGas',
-                prevSpeed
-              )
+            ? gasRecommendation.maxPriorityFeePerGas
             : undefined
+        let gasPrice = maxPriorityFeePerGas
+          ? (gasRecommendation as Gas1559Recommendation).baseFeePerGas + maxPriorityFeePerGas
+          : (gasRecommendation as GasPriceRecommendation).gasPrice
 
-        const gasPrice =
-          'maxPriorityFeePerGas' in gasRecommendation
-            ? (gasRecommendation as Gas1559Recommendation).baseFeePerGas + maxPriorityFeePerGas!
-            : this.#rbfIncrease(
-                option.paidBy,
-                (gasRecommendation as GasPriceRecommendation).gasPrice,
-                'gasPrice',
-                prevSpeed
-              )
+        // the bundler does a better job than us for gas price estimations
+        // so we prioritize their estimation over ours if there's any
+        if (this.bundlerGasPrices) {
+          const name = gasRecommendation.name as keyof GasSpeeds
+          maxPriorityFeePerGas = BigInt(this.bundlerGasPrices[name].maxPriorityFeePerGas)
+          gasPrice = BigInt(this.bundlerGasPrices[name].maxFeePerGas)
+        }
 
-        // EOA
-        if (!isSmartAccount(this.account)) {
-          simulatedGasLimit = gasUsed
+        // EOA OR 7702: pays with native by itself
+        if (
+          broadcastOption === BROADCAST_OPTIONS.bySelf ||
+          broadcastOption === BROADCAST_OPTIONS.bySelf7702
+        ) {
+          simulatedGasLimit = this.gasUsed
 
-          if (this.accountOp.calls[0].to && getAddress(this.accountOp.calls[0].to) === SINGLETON) {
-            simulatedGasLimit = getGasUsed(simulatedGasLimit)
-          }
+          this.accountOp.calls.forEach((call) => {
+            if (call.to && getAddress(call.to) === SINGLETON) {
+              simulatedGasLimit = getGasUsed(simulatedGasLimit)
+            }
+          })
 
           amount = simulatedGasLimit * gasPrice + option.addedNative
-        } else if (option.paidBy !== this.accountOp.accountAddr) {
+        } else if (
+          broadcastOption === BROADCAST_OPTIONS.byOtherEOA ||
+          broadcastOption === BROADCAST_OPTIONS.bySelf7702
+        ) {
           // Smart account, but EOA pays the fee
-          simulatedGasLimit = gasUsed + this.getCallDataAdditionalByNetwork()
+          // 7702, and it pays for the fee by itself
+          const additionalCallData =
+            broadcastOption === BROADCAST_OPTIONS.byOtherEOA
+              ? this.getCallDataAdditionalByNetwork()
+              : 0n
+          simulatedGasLimit = this.gasUsed + additionalCallData
           amount = simulatedGasLimit * gasPrice + option.addedNative
         } else {
           // Relayer
-          simulatedGasLimit = gasUsed + this.getCallDataAdditionalByNetwork() + option.gasUsed!
+          simulatedGasLimit = this.gasUsed + this.getCallDataAdditionalByNetwork() + option.gasUsed
           amount = SignAccountOpController.getAmountAfterFeeTokenConvert(
             simulatedGasLimit,
             gasPrice,
@@ -1107,15 +1103,8 @@ export class SignAccountOpController extends EventEmitter {
       return null
     }
 
-    const accountState =
-      this.#accounts.accountStates[this.accountOp.accountAddr][this.accountOp.networkId]
     return {
       paidBy: this.paidBy,
-      // we're allowing EOAs to broadcast on 4337 networks as well
-      // in that case, we don't do user operations
-      isERC4337:
-        this.paidBy === this.accountOp.accountAddr &&
-        isErc4337Broadcast(this.account, this.#network, accountState),
       isGasTank: this.feeTokenResult.flags.onGasTank,
       inToken: this.feeTokenResult.address,
       feeTokenNetworkId: this.feeTokenResult.networkId,
@@ -1123,7 +1112,10 @@ export class SignAccountOpController extends EventEmitter {
       simulatedGasLimit: chosenSpeed.simulatedGasLimit,
       gasPrice: chosenSpeed.gasPrice,
       maxPriorityFeePerGas:
-        'maxPriorityFeePerGas' in chosenSpeed ? chosenSpeed.maxPriorityFeePerGas : undefined
+        'maxPriorityFeePerGas' in chosenSpeed ? chosenSpeed.maxPriorityFeePerGas : undefined,
+      broadcastOption: this.baseAccount.getBroadcastOption(this.selectedOption, {
+        op: this.accountOp
+      })
     }
   }
 
@@ -1135,29 +1127,29 @@ export class SignAccountOpController extends EventEmitter {
     return this.accountOp?.gasFeePayment?.paidBy || null
   }
 
-  get availableFeeOptions(): EstimateResult['feePaymentOptions'] {
-    if (!this.estimation) return []
+  getAvailableFeeOptions(): FeePaymentOption[] {
+    if (!this.estimation || this.estimation instanceof Error || this.estimation.error) return []
 
-    // if the txn is sponsored, return the native option only
-    // even if it's balance is 0
     if (this.isSponsored) {
-      const native = this.estimation.feePaymentOptions.find(
+      // if there's no ambireEstimation, it means there's an error
+      if (!this.estimation.ambireEstimation) return []
+
+      // if the txn is sponsored, return the native option only
+      const native = this.estimation.ambireEstimation.feePaymentOptions.find(
         (feeOption) => feeOption.token.address === ZeroAddress
       )
       return native ? [native] : []
     }
 
-    // FeeOptions having amount
-    const withAmounts = this.estimation.feePaymentOptions.filter(
-      (feeOption) => feeOption.availableAmount
+    return this.baseAccount.getAvailableFeeOptions(
+      this.estimation,
+      // eslint-disable-next-line no-nested-ternary
+      this.estimation.ambireEstimation
+        ? this.estimation.ambireEstimation.feePaymentOptions
+        : this.estimation.providerEstimation
+        ? this.estimation.providerEstimation.feePaymentOptions
+        : []
     )
-    if (withAmounts.length) return withAmounts
-
-    // if there are no fee options with amounts, return the native option
-    const native = this.estimation.feePaymentOptions.find(
-      (feeOption) => feeOption.token.address === ZeroAddress
-    )
-    return native ? [native] : []
   }
 
   get accountKeyStoreKeys(): Key[] {
@@ -1196,9 +1188,7 @@ export class SignAccountOpController extends EventEmitter {
     // 4337 gasUsed is set to 0 in the estimation as we rely
     // on the bundler for the estimation entirely => use hardcode value
     const gasUsedSelectedOption =
-      this.selectedOption.gasUsed && this.selectedOption.gasUsed > 0n
-        ? this.selectedOption.gasUsed
-        : GAS_TANK_TRANSFER_GAS_USED
+      this.selectedOption.gasUsed > 0n ? this.selectedOption.gasUsed : GAS_TANK_TRANSFER_GAS_USED
     const isNativeSelected = this.selectedOption.token.address === ZeroAddress
     const gasUsedNative =
       this.availableFeeOptions.find(
@@ -1299,11 +1289,15 @@ export class SignAccountOpController extends EventEmitter {
       return this.#emitSigningErrorAndResetToReadyToSign(message)
     }
 
-    const accountState =
-      this.#accounts.accountStates[this.accountOp.accountAddr][this.accountOp.networkId]
-    const isUsingPaymaster = !!this.estimation?.erc4337GasLimits?.paymaster.isUsable()
-    const usesOneTimeNonce = shouldUseOneTimeNonce(accountState)
-    if (this.accountOp.gasFeePayment.isERC4337 && isUsingPaymaster && !usesOneTimeNonce) {
+    if (!this.estimation || this.estimation instanceof Error) {
+      const message = `Unable to sign the transaction. During the preparation step, required account key information was found missing. ${RETRY_TO_INIT_ACCOUNT_OP_MSG}`
+      return this.#emitSigningErrorAndResetToReadyToSign(message)
+    }
+
+    const broadcastOption = this.accountOp.gasFeePayment.broadcastOption
+    const isUsingPaymaster = !!this.estimation.bundlerEstimation?.paymaster.isUsable()
+    const usesOneTimeNonce = shouldUseOneTimeNonce(this.accountState)
+    if (broadcastOption === BROADCAST_OPTIONS.byBundler && isUsingPaymaster && !usesOneTimeNonce) {
       this.status = { type: SigningStatus.WaitingForPaymaster }
     } else {
       this.status = { type: SigningStatus.InProgress }
@@ -1330,67 +1324,73 @@ export class SignAccountOpController extends EventEmitter {
     // delete the activatorCall as a precaution that it won't be added twice
     delete this.accountOp.activatorCall
 
-    // @EntryPoint activation
-    // if we broadcast by an EOA, this is the only way to include
-    // the entry point as a signer
-    if (
-      shouldIncludeActivatorCall(
-        this.#network,
-        this.account,
-        accountState,
-        this.accountOp.gasFeePayment.isERC4337
-      )
-    ) {
+    // @EntryPoint activation for SA
+    if (this.baseAccount.shouldIncludeActivatorCall(broadcastOption)) {
       this.accountOp.activatorCall = getActivatorCall(this.accountOp.accountAddr)
     }
 
     try {
-      // In case of EOA account, no 7702
-      if (isBasicAccount(this.account, accountState)) {
-        if (this.accountOp.calls.length !== 1) {
-          const callCount = this.accountOp.calls.length > 1 ? 'multiple' : 'zero'
-          const message = `Unable to sign the transaction because it has ${callCount} calls. ${RETRY_TO_INIT_ACCOUNT_OP_MSG}`
-          return this.#emitSigningErrorAndResetToReadyToSign(message)
-        }
-
-        // In legacy mode, we sign the transaction directly.
-        // that means the signing will happen on broadcast and here
-        // checking whether the call is 1 and 1 only is enough
+      // plain EOA
+      if (
+        broadcastOption === BROADCAST_OPTIONS.bySelf ||
+        broadcastOption === BROADCAST_OPTIONS.bySelf7702
+      ) {
+        // rawTxn, No SA signatures
+        // or 7702, calling executeBySender(). No SA signatures
         this.accountOp.signature = '0x'
-      } else if (this.accountOp.gasFeePayment.paidBy !== this.account.addr) {
-        // Smart account, but EOA pays the fee
-        // EOA pays for execute() - relayerless
-
+      } else if (broadcastOption === BROADCAST_OPTIONS.byOtherEOA) {
+        // SA, EOA pays fee. execute() needs a signature
         this.accountOp.signature = await getExecuteSignature(
           this.#network,
           this.accountOp,
-          accountState,
+          this.accountState,
           signer
         )
-      } else if (this.accountOp.gasFeePayment.isERC4337) {
-        // if there's no entryPointAuthorization, the txn will fail
-        if (
-          !accountState.isSmarterEoa &&
-          !accountState.isDeployed &&
-          (!this.accountOp.meta || !this.accountOp.meta.entryPointAuthorization)
-        )
-          return this.#emitSigningErrorAndResetToReadyToSign(
-            `Unable to sign the transaction because entry point privileges were not granted. ${RETRY_TO_INIT_ACCOUNT_OP_MSG}`
-          )
+      } else if (broadcastOption === BROADCAST_OPTIONS.byBundler) {
+        let erc4337Estimation = this.estimation.bundlerEstimation as Erc4337GasLimits
 
-        const erc4337Estimation = this.estimation!.erc4337GasLimits as Erc4337GasLimits
+        const paymaster = erc4337Estimation.paymaster
+        if (paymaster.shouldIncludePayment()) this.#addFeePayment()
+
+        // sign the 7702 authorization if needed
+        let eip7702Auth
+        if (this.baseAccount.shouldSignAuthorization(BROADCAST_OPTIONS.byBundler)) {
+          const contract = getContractImplementation(this.#network.chainId)
+          eip7702Auth = get7702Sig(
+            this.#network.chainId,
+            this.accountState.nonce,
+            contract,
+            signer.sign7702(
+              getAuthorizationHash(this.#network.chainId, contract, this.accountState.nonce)
+            )
+          )
+          // we do another estimate here as signing the authorization changes entirely
+          // the needed gas for the userOp to go through
+          const newEstimate = await bundlerEstimate(
+            this.baseAccount,
+            this.accountState,
+            this.accountOp,
+            this.#network,
+            [], // empty as .feeCall is included
+            this.provider,
+            this.bundlerSwitcher,
+            () => {},
+            eip7702Auth
+          )
+          if (!(newEstimate instanceof Error)) erc4337Estimation = newEstimate as Erc4337GasLimits
+        }
 
         const userOperation = getUserOperation(
           this.account,
-          accountState,
+          this.accountState,
           this.accountOp,
           this.bundlerSwitcher.getBundler().getName(),
           this.accountOp.meta?.entryPointAuthorization,
-          accountState.authorization
+          eip7702Auth
         )
         userOperation.preVerificationGas = erc4337Estimation.preVerificationGas
         userOperation.callGasLimit = toBeHex(
-          BigInt(erc4337Estimation.callGasLimit) + (this.selectedOption.gasUsed ?? 0n)
+          BigInt(erc4337Estimation.callGasLimit) + this.selectedOption.gasUsed
         )
         userOperation.verificationGasLimit = erc4337Estimation.verificationGasLimit
         userOperation.paymasterVerificationGasLimit =
@@ -1399,15 +1399,12 @@ export class SignAccountOpController extends EventEmitter {
         userOperation.maxFeePerGas = toBeHex(gasFeePayment.gasPrice)
         userOperation.maxPriorityFeePerGas = toBeHex(gasFeePayment.maxPriorityFeePerGas!)
 
-        const paymaster = erc4337Estimation.paymaster
-        if (paymaster.shouldIncludePayment()) this.#addFeePayment()
-
         const ambireAccount = new Interface(AmbireAccount.abi)
         if (usesOneTimeNonce) {
           const signature = await getExecuteSignature(
             this.#network,
             this.accountOp,
-            accountState,
+            this.accountState,
             signer
           )
 
@@ -1488,10 +1485,12 @@ export class SignAccountOpController extends EventEmitter {
         // Relayer
         this.#addFeePayment()
 
+        // TODO: THINK ABOUT FETCHING THE NONCE FROM THE PENDING STATE AT THIS POINT
+        // DO SMT LIKE: FETCH THE NONCE, IF HIGHER USE IT
         this.accountOp.signature = await getExecuteSignature(
           this.#network,
           this.accountOp,
-          accountState,
+          this.accountState,
           signer
         )
       }

@@ -46,8 +46,6 @@ export interface AccountOnchainState {
   isV2: boolean
   currentBlock: bigint
   isSmarterEoa: boolean
-  // TODO<eip7702>: fix the typehint
-  authorization?: any
 }
 
 export type AccountStates = {

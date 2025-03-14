@@ -19,6 +19,7 @@ import {
 } from 'ethers'
 
 import UniversalSigValidator from '../../../contracts/compiled/UniversalSigValidator.json'
+import { EIP7702Auth } from '../../consts/7702'
 import { PERMIT_2_ADDRESS, UNISWAP_UNIVERSAL_ROUTERS } from '../../consts/addresses'
 import { Account, AccountCreation, AccountId, AccountOnchainState } from '../../interfaces/account'
 import { Hex } from '../../interfaces/hex'
@@ -668,6 +669,23 @@ function getHexStringSignature(
     ? // https://eips.ethereum.org/EIPS/eip-6492
       (wrapCounterfactualSign(signature, account.creation) as Hex)
     : (signature as Hex)
+}
+
+export function get7702Sig(
+  chainId: bigint,
+  nonce: bigint,
+  implementation: Hex,
+  signature: EIP7702Signature
+): EIP7702Auth {
+  return {
+    contractAddress: implementation,
+    chainId: toBeHex(chainId) as Hex,
+    nonce: toBeHex(nonce) as Hex,
+    r: signature.r,
+    s: signature.s,
+    v: get7702SigV(signature),
+    yParity: signature.yParity
+  }
 }
 
 export function getVerifyMessageSignature(

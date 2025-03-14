@@ -1,12 +1,12 @@
 import wait from '../../utils/wait'
 
-export async function estimateWithRetries(
-  fetchRequests: Function,
+export async function estimateWithRetries<T>(
+  fetchRequests: () => Promise<any>[],
   timeoutType: string,
   errorCallback: Function,
   timeoutInMill: number = 10000,
   counter: number = 0
-): Promise<any> {
+): Promise<T | Error> {
   // stop the execution on 5 fails;
   if (counter >= 5)
     return new Error(
@@ -91,5 +91,5 @@ export async function estimateWithRetries(
     return error
   }
 
-  return result
+  return result as T
 }

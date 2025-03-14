@@ -2,18 +2,16 @@ import { concat, Provider } from 'ethers'
 
 import AmbireAccountState from '../../../contracts/compiled/AmbireAccountState.json'
 import { ENTRY_POINT_MARKER, ERC_4337_ENTRYPOINT, MAX_UINT256 } from '../../consts/deploy'
-import { InternalSignedMessages } from '../../controllers/activity/types'
 import { Account, AccountOnchainState } from '../../interfaces/account'
 import { Network } from '../../interfaces/network'
 import { getContractImplementation } from '../7702/7702'
-import { getAccountDeployParams, getAuthorization, isSmartAccount } from '../account/account'
+import { getAccountDeployParams, isSmartAccount } from '../account/account'
 import { fromDescriptor } from '../deployless/deployless'
 
 export async function getAccountState(
   provider: Provider,
   network: Network,
   accounts: Account[],
-  authorizations: InternalSignedMessages = {},
   blockTag: string | number = 'latest'
 ): Promise<AccountOnchainState[]> {
   const deploylessAccountState = fromDescriptor(
@@ -77,24 +75,17 @@ export async function getAccountState(
     )
 
     const account = accounts[index]
-    const authorization = getAuthorization(
-      account,
-      !account.creation ? BigInt(eoaNonces[account.addr]) : 0n,
-      network,
-      authorizations
-    )
 
     // an EOA is smarter if it either:
     // - has an active authorization
     // - has an active AMBIRE delegation
     const hasAmbireDelegation =
       eoaCodes[account.addr] === concat(['0xef0100', getContractImplementation(network.chainId)])
-    const isSmarterEoa = accResult.isEOA && (!!authorization || hasAmbireDelegation)
-    const isEoaOrOffchainSmart = accResult.isEOA && (!!authorization || !hasAmbireDelegation)
+    const isSmarterEoa = accResult.isEOA && hasAmbireDelegation
 
-    const res = {
+    return {
       accountAddr: account.addr,
-      nonce: isEoaOrOffchainSmart ? eoaNonces[account.addr] : accResult.nonce,
+      nonce: !isSmartAccount(account) && !isSmarterEoa ? eoaNonces[account.addr] : accResult.nonce,
       erc4337Nonce: accResult.erc4337Nonce,
       isDeployed: accResult.isDeployed,
       associatedKeys: Object.fromEntries(associatedKeys),
@@ -114,11 +105,8 @@ export async function getAccountState(
       currentBlock: accResult.currentBlock,
       deployError:
         account.associatedKeys.length > 0 && accResult.associatedKeyPrivileges.length === 0,
-      isSmarterEoa,
-      authorization
+      isSmarterEoa
     }
-
-    return res
   })
 
   return result
