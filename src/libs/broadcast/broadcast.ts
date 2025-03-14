@@ -1,6 +1,7 @@
 import { Interface } from 'ethers'
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json'
+import ERC20 from '../../../contracts/compiled/IERC20.json'
 import { Account, AccountOnchainState } from '../../interfaces/account'
 import { Hex } from '../../interfaces/hex'
 import { TxnRequest } from '../../interfaces/keystore'
@@ -9,6 +10,8 @@ import { RPCProvider } from '../../interfaces/provider'
 import wait from '../../utils/wait'
 import { AccountOp, GasFeePayment, getSignableCalls } from '../accountOp/accountOp'
 import { Call } from '../accountOp/types'
+
+const erc20interface = new Interface(ERC20.abi)
 
 export const BROADCAST_OPTIONS = {
   bySelf: 'self', // standard txn
@@ -56,7 +59,7 @@ async function estimateGas(
   // this should happen only in the case of internet issues
   if (counter > 10) throw new Error('Failed estimating gas from broadcast')
 
-  const gasLimit = await provider
+  const callEstimateGas = provider
     .estimateGas({
       from,
       to: call.to,
@@ -66,10 +69,30 @@ async function estimateGas(
       blockTag: 'pending'
     })
     .catch((e) => e)
+  const callGetNonce = provider.getTransactionCount(from).catch(() => null)
+  const [gasLimit, foundNonce] = await Promise.all([callEstimateGas, callGetNonce])
+
+  // imagine a batch with two swaps, 4 txns total. Both swaps have the same from token
+  // and from token amount. So #1 & #3 is an approval. #2 spends the approval.
+  // when it's time to estimate #3, if the RPC doesn't know about #2, it will return
+  // a lower gas for the transaction as the old state hasn't spent the approval =>
+  // no storage writing. This results in an out of gas error on the #3 txn broadacst.
+  // To fix this, we ensure there's no nonce discrepancy upon broadcast, meaning
+  // the RPC knows about the previous txn that spends the approval, hence returning
+  // the correct gasLimit for the call
+  let hasNonceDiscrepancyOnApproval = nonce !== foundNonce
+  if (hasNonceDiscrepancyOnApproval) {
+    try {
+      hasNonceDiscrepancyOnApproval =
+        call.data !== '0x' && !!erc20interface.decodeFunctionData('approve', call.data)
+    } catch (e) {
+      hasNonceDiscrepancyOnApproval = false
+    }
+  }
 
   // if there's an error, wait a bit and retry
   // the error is most likely because of an incorrect RPC pending state
-  if (gasLimit instanceof Error) {
+  if (gasLimit instanceof Error || hasNonceDiscrepancyOnApproval) {
     await wait(1500)
     return estimateGas(provider, from, call, nonce, counter + 1)
   }
