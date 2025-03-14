@@ -11,8 +11,7 @@ import {
 import {
   getFeaturesByNetworkProperties,
   getNetworkInfo,
-  is4337Enabled,
-  migrateNetworkPreferencesToNetworks
+  is4337Enabled
 } from '../../libs/networks/networks'
 import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter'
 import { StorageController } from '../storage/storage'
@@ -95,16 +94,7 @@ export class NetworksController extends EventEmitter {
   }
 
   async #load() {
-    const storedNetworkPreferences: { [key: NetworkId]: Partial<Network> } | undefined =
-      await this.#storage.get('networkPreferences', undefined)
-    let storedNetworks: { [key: NetworkId]: Network }
-    storedNetworks = await this.#storage.get('networks', {})
-    if (!Object.keys(storedNetworks).length && storedNetworkPreferences) {
-      storedNetworks = await migrateNetworkPreferencesToNetworks(storedNetworkPreferences)
-      await this.#storage.set('networks', storedNetworks)
-      await this.#storage.remove('networkPreferences')
-    }
-    this.#networks = storedNetworks
+    this.#networks = await this.#storage.get('networks', {})
 
     predefinedNetworks.forEach((n) => {
       this.#networks[n.id] = {

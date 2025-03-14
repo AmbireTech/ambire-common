@@ -2,7 +2,7 @@ import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { BIP44_STANDARD_DERIVATION_TEMPLATE } from '../../consts/derivation'
 import { Account, AccountId, AccountPreferences } from '../../interfaces/account'
 import { Key, KeystoreSeed, StoredKey } from '../../interfaces/keystore'
-import { Network } from '../../interfaces/network'
+import { Network, NetworkId } from '../../interfaces/network'
 import { CashbackStatus, LegacyCashbackStatus } from '../../interfaces/selectedAccount'
 import { Storage } from '../../interfaces/storage'
 import { getUniqueAccountsArray } from '../../libs/account/account'
@@ -16,16 +16,19 @@ import {
   AccountAssetsState as PortfolioAccountAssetsState,
   PreviousHintsStorage
 } from '../../libs/portfolio/interfaces'
+import { parse } from '../../libs/richJson/richJson'
 import {
   getShouldMigrateKeystoreSeedsWithoutHdPath,
   migrateCustomTokens,
-  migrateHiddenTokens
+  migrateHiddenTokens,
+  migrateNetworkPreferencesToNetworks
 } from '../../libs/storage/storage'
 
 type StorageType = {
   migrations: string[]
   networks: Network[]
   accounts: Account[]
+  networkPreferences?: { [key: NetworkId]: Partial<Network> }
   accountPreferences?: { [key: AccountId]: AccountPreferences }
   networksWithAssetsByAccount: { [accountId: string]: PortfolioAccountAssetsState }
   networksWithPositionsByAccounts: NetworksWithPositionsByAccounts
@@ -48,6 +51,7 @@ export class StorageController {
     migrations: [],
     networks: [],
     accounts: [],
+    networkPreferences: undefined,
     accountPreferences: undefined,
     networksWithAssetsByAccount: {},
     networksWithPositionsByAccounts: {},
@@ -72,15 +76,11 @@ export class StorageController {
   }
 
   async #load() {
-    const storage = await this.#storageAPI.get(null, {})
-    if (!Object.keys(storage).length) return
-
-    Object.keys(storage).forEach((key) => {
-      this.#storage[key as keyof StorageType] = storage[key]
-    })
+    await this.#initStorage()
 
     try {
       // IMPORTANT: should be ordered by versions
+      await this.#migrateNetworkPreferencesToNetworks() // As of version 4.24.0
       await this.#migrateAccountPreferencesToAccounts() // As of version 4.25.0
       await this.#migrateKeystoreSeedsWithoutHdPathTemplate() // As of version v4.33.0
       await this.#migrateKeyPreferencesToKeystoreKeys() // As of version v4.33.0
@@ -91,11 +91,21 @@ export class StorageController {
     } catch (error) {
       console.error('Storage migration error: ', error)
     }
+  }
 
-    const storageAfterMigrations = await this.#storageAPI.get(null, {})
-    Object.keys(storageAfterMigrations).forEach((key) => {
-      this.#storage[key as keyof StorageType] = storage[key]
-    })
+  // As of version 4.24.0, a new Network interface has been introduced,
+  // that replaces the old NetworkDescriptor, NetworkPreference, and CustomNetwork.
+  // Previously, only NetworkPreferences were stored, with other network properties
+  // being calculated in a getter each time the networks were needed.
+  // Now, all network properties are pre-calculated and stored in a structured format: { [key: NetworkId]: Network } in the storage.
+  // This function migrates the data from the old NetworkPreferences to the new structure
+  // to ensure compatibility and prevent breaking the extension after updating to v4.24.0
+  async #migrateNetworkPreferencesToNetworks() {
+    if (!Object.keys(this.#storage.networks).length && this.#storage.networkPreferences) {
+      const networks = await migrateNetworkPreferencesToNetworks(this.#storage.networkPreferences)
+      await this.#storageAPI.set('networks', networks)
+      await this.#storageAPI.remove('networkPreferences')
+    }
   }
 
   // As of version 4.25.0, a new Account interface has been introduced,
@@ -238,6 +248,23 @@ export class StorageController {
     }
   }
 
+  async #initStorage() {
+    const storage = await this.#storageAPI.get(null, {})
+
+    if (!Object.keys(storage).length) return
+
+    Object.keys(storage).forEach((key) => {
+      try {
+        this.#storage[key as keyof StorageType] =
+          typeof storage[key] === 'string' ? parse(storage[key]) : storage[key]
+      } catch (error) {
+        if (typeof storage[key] === 'string') {
+          this.#storage[key as keyof StorageType] = storage[key]
+        }
+      }
+    })
+  }
+
   async get(key: string | null, defaultValue?: any) {
     await this.#initialLoadPromise
 
@@ -251,6 +278,7 @@ export class StorageController {
     this.#updateQueue = this.#updateQueue.then(async () => {
       try {
         await this.#storageAPI.set(key, value)
+        ;(this.#storage as any)[key] = value
       } catch (err) {
         console.error(`Failed to set storage key "${key}":`, err)
       }
@@ -263,6 +291,7 @@ export class StorageController {
     this.#updateQueue = this.#updateQueue.then(async () => {
       try {
         await this.#storageAPI.remove(key)
+        ;(this.#storage as any)[key] = undefined
       } catch (err) {
         console.error(`Failed to remove storage key "${key}":`, err)
       }

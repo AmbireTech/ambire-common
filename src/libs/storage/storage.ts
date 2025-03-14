@@ -1,6 +1,9 @@
+import { networks as predefinedNetworks } from '../../consts/networks'
 import { Account } from '../../interfaces/account'
 import { KeystoreSeed, StoredKey } from '../../interfaces/keystore'
+import { Network, NetworkId } from '../../interfaces/network'
 import { CashbackStatus, LegacyCashbackStatus } from '../../interfaces/selectedAccount'
+import { getFeaturesByNetworkProperties, relayerAdditionalNetworks } from '../networks/networks'
 import { LegacyTokenPreference } from '../portfolio/customToken'
 
 export const getShouldMigrateKeystoreSeedsWithoutHdPath = (
@@ -43,4 +46,50 @@ export const migrateCustomTokens = (tokenPreferences: LegacyTokenPreference[]) =
       standard,
       networkId
     }))
+}
+
+export async function migrateNetworkPreferencesToNetworks(networkPreferences: {
+  [key: NetworkId]: Partial<Network>
+}) {
+  const predefinedNetworkIds = predefinedNetworks.map((n) => n.id)
+  const customNetworkIds = Object.keys(networkPreferences).filter(
+    (k) => !predefinedNetworkIds.includes(k)
+  )
+
+  const networksToStore: { [key: NetworkId]: Network } = {}
+
+  predefinedNetworks.forEach((n) => {
+    networksToStore[n.id] = n
+  })
+  customNetworkIds.forEach((networkId: NetworkId) => {
+    const preference = networkPreferences[networkId]
+    const networkInfo = {
+      chainId: preference.chainId!,
+      isSAEnabled: preference.isSAEnabled ?? false,
+      isOptimistic: preference.isOptimistic ?? false,
+      rpcNoStateOverride: preference.rpcNoStateOverride ?? true,
+      erc4337: preference.erc4337 ?? {
+        enabled: false,
+        hasPaymaster: false,
+        hasBundlerSupport: false
+      },
+      areContractsDeployed: preference.areContractsDeployed ?? false,
+      feeOptions: { is1559: (preference as any).is1559 ?? false },
+      platformId: preference.platformId ?? '',
+      nativeAssetId: preference.nativeAssetId ?? '',
+      flagged: preference.flagged ?? false,
+      hasSingleton: preference.hasSingleton ?? false
+    }
+    delete (preference as any).is1559
+    networksToStore[networkId] = {
+      id: networkId,
+      ...preference,
+      ...networkInfo,
+      features: getFeaturesByNetworkProperties(networkInfo),
+      hasRelayer: !!relayerAdditionalNetworks.find((net) => net.chainId === preference.chainId!),
+      predefined: false
+    } as Network
+  })
+
+  return networksToStore
 }
