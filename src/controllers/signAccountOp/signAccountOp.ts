@@ -588,137 +588,146 @@ export class SignAccountOpController extends EventEmitter {
     estimationRetryError?: ErrorRef
     signedTransactionsCount?: number | null
   }) {
-    // This must be at the top, otherwise it won't be updated because
-    // most updates are frozen during the signing process
-    if (typeof signedTransactionsCount !== 'undefined') {
-      this.signedTransactionsCount = signedTransactionsCount
-      this.emitUpdate()
-    }
+    try {
+      // This must be at the top, otherwise it won't be updated because
+      // most updates are frozen during the signing process
+      if (typeof signedTransactionsCount !== 'undefined') {
+        this.signedTransactionsCount = signedTransactionsCount
+        // If we add other exclusions we should figure out a way to emitUpdate only once
+        this.emitUpdate()
+      }
 
-    // once the user commits to the things he sees on his screen,
-    // we need to be sure nothing changes afterwards.
-    // For example, signing can be slow if it's done by a hardware wallet.
-    // The estimation gets refreshed on the other hand each 12 seconds (6 on optimism)
-    // If we allow the estimation to affect the controller state during sign,
-    // there could be discrepancy between what the user has agreed upon and what
-    // we broadcast in the end
-    if (this.status?.type && noStateUpdateStatuses.indexOf(this.status?.type) !== -1) {
-      return
-    }
+      // once the user commits to the things he sees on his screen,
+      // we need to be sure nothing changes afterwards.
+      // For example, signing can be slow if it's done by a hardware wallet.
+      // The estimation gets refreshed on the other hand each 12 seconds (6 on optimism)
+      // If we allow the estimation to affect the controller state during sign,
+      // there could be discrepancy between what the user has agreed upon and what
+      // we broadcast in the end
+      if (this.status?.type && noStateUpdateStatuses.indexOf(this.status?.type) !== -1) {
+        return
+      }
 
-    if (Array.isArray(calls)) this.accountOp.calls = calls
+      if (Array.isArray(calls)) this.accountOp.calls = calls
 
-    if (blockGasLimit) this.#blockGasLimit = blockGasLimit
+      if (blockGasLimit) this.#blockGasLimit = blockGasLimit
 
-    if (gasPrices) this.gasPrices = gasPrices
+      if (gasPrices) this.gasPrices = gasPrices
 
-    if (estimationRetryError) {
-      this.estimationRetryError = estimationRetryError
-    }
+      if (estimationRetryError) {
+        this.estimationRetryError = estimationRetryError
+      }
 
-    if (estimation === null) this.estimation = null
+      if (estimation === null) this.estimation = null
 
-    if (estimation) {
-      this.estimation = getEstimationSummary(estimation)
+      if (estimation) {
+        this.estimation = getEstimationSummary(estimation)
 
-      if (!(estimation instanceof Error)) {
-        this.estimationRetryError = null
+        if (!(estimation instanceof Error)) {
+          this.estimationRetryError = null
 
-        if (this.estimation.ambireEstimation) {
-          this.accountOp.nonce = BigInt(this.estimation.ambireEstimation.ambireAccountNonce)
+          if (this.estimation.ambireEstimation) {
+            this.accountOp.nonce = BigInt(this.estimation.ambireEstimation.ambireAccountNonce)
+          }
+          if (this.estimation.bundlerEstimation) {
+            this.bundlerGasPrices = this.estimation.bundlerEstimation.gasPrice
+          }
         }
-        if (this.estimation.bundlerEstimation) {
-          this.bundlerGasPrices = this.estimation.bundlerEstimation.gasPrice
+        this.availableFeeOptions = this.getAvailableFeeOptions()
+      }
+
+      if (feeToken && paidBy) {
+        this.paidBy = paidBy
+        this.feeTokenResult = feeToken
+      }
+
+      if (speed && this.isInitialized) {
+        this.selectedFeeSpeed = speed
+      }
+
+      if (signingKeyAddr && signingKeyType && this.isInitialized) {
+        this.accountOp.signingKeyAddr = signingKeyAddr
+        this.accountOp.signingKeyType = signingKeyType
+      }
+
+      // set the rbf is != undefined
+      if (rbfAccountOps) this.rbfAccountOps = rbfAccountOps
+
+      // Set defaults, if some of the optional params are omitted
+      this.#setDefaults()
+
+      if (this.estimation && this.paidBy && this.feeTokenResult) {
+        this.selectedOption = this.availableFeeOptions.find(
+          (option) =>
+            option.paidBy === this.paidBy &&
+            option.token.address === this.feeTokenResult!.address &&
+            option.token.symbol.toLocaleLowerCase() ===
+              this.feeTokenResult!.symbol.toLocaleLowerCase() &&
+            option.token.flags.onGasTank === this.feeTokenResult!.flags.onGasTank
+        )
+      }
+
+      if (
+        bundlerGasPrices &&
+        bundlerGasPrices.bundler === this.bundlerSwitcher.getBundler().getName()
+      ) {
+        this.bundlerGasPrices = bundlerGasPrices.speeds
+      }
+
+      if (
+        this.estimation &&
+        this.estimation.bundlerEstimation &&
+        this.estimation.bundlerEstimation.paymaster
+      ) {
+        // if it was sponsored but it no longer is (fallback case),
+        // reset the selectedOption option as we use native for the sponsorship
+        // but the user might not actually have any native
+        const isSponsorshipFallback =
+          this.isSponsored && !this.estimation.bundlerEstimation.paymaster.isSponsored()
+
+        this.isSponsored = this.estimation.bundlerEstimation.paymaster.isSponsored()
+        this.sponsor = this.estimation.bundlerEstimation.paymaster.getEstimationData()?.sponsor
+
+        if (isSponsorshipFallback) {
+          this.selectedOption = this.availableFeeOptions.length
+            ? this.availableFeeOptions[0]
+            : undefined
         }
       }
-      this.availableFeeOptions = this.getAvailableFeeOptions()
-    }
 
-    if (feeToken && paidBy) {
-      this.paidBy = paidBy
-      this.feeTokenResult = feeToken
-    }
-
-    if (speed && this.isInitialized) {
-      this.selectedFeeSpeed = speed
-    }
-
-    if (signingKeyAddr && signingKeyType && this.isInitialized) {
-      this.accountOp.signingKeyAddr = signingKeyAddr
-      this.accountOp.signingKeyType = signingKeyType
-    }
-
-    // set the rbf is != undefined
-    if (rbfAccountOps) this.rbfAccountOps = rbfAccountOps
-
-    // Set defaults, if some of the optional params are omitted
-    this.#setDefaults()
-
-    if (this.estimation && this.paidBy && this.feeTokenResult) {
-      this.selectedOption = this.availableFeeOptions.find(
-        (option) =>
-          option.paidBy === this.paidBy &&
-          option.token.address === this.feeTokenResult!.address &&
-          option.token.symbol.toLocaleLowerCase() ===
-            this.feeTokenResult!.symbol.toLocaleLowerCase() &&
-          option.token.flags.onGasTank === this.feeTokenResult!.flags.onGasTank
-      )
-    }
-
-    if (
-      bundlerGasPrices &&
-      bundlerGasPrices.bundler === this.bundlerSwitcher.getBundler().getName()
-    ) {
-      this.bundlerGasPrices = bundlerGasPrices.speeds
-    }
-
-    if (
-      this.estimation &&
-      this.estimation.bundlerEstimation &&
-      this.estimation.bundlerEstimation.paymaster
-    ) {
-      // if it was sponsored but it no longer is (fallback case),
-      // reset the selectedOption option as we use native for the sponsorship
-      // but the user might not actually have any native
-      const isSponsorshipFallback =
-        this.isSponsored && !this.estimation.bundlerEstimation.paymaster.isSponsored()
-
-      this.isSponsored = this.estimation.bundlerEstimation.paymaster.isSponsored()
-      this.sponsor = this.estimation.bundlerEstimation.paymaster.getEstimationData()?.sponsor
-
-      if (isSponsorshipFallback) {
-        this.selectedOption = this.availableFeeOptions.length
-          ? this.availableFeeOptions[0]
-          : undefined
+      const initialGasUsed = this.gasUsed
+      if (this.estimation && this.selectedOption) {
+        this.gasUsed = this.baseAccount.getGasUsed(this.estimation, {
+          feeToken: this.selectedOption.token,
+          op: this.accountOp
+        })
       }
-    }
+      const hasGasUsedChanged = initialGasUsed !== this.gasUsed
 
-    const initialGasUsed = this.gasUsed
-    if (this.estimation && this.selectedOption) {
-      this.gasUsed = this.baseAccount.getGasUsed(this.estimation, {
-        feeToken: this.selectedOption.token,
-        op: this.accountOp
+      // calculate the fee speeds if either there are no feeSpeeds
+      // or any of properties for update is requested
+      if (
+        !Object.keys(this.feeSpeeds).length ||
+        Array.isArray(calls) ||
+        gasPrices ||
+        estimation ||
+        hasGasUsedChanged ||
+        bundlerGasPrices
+      ) {
+        this.#updateFeeSpeeds()
+      }
+
+      // Here, we expect to have most of the fields set, so we can safely set GasFeePayment
+      this.#setGasFeePayment()
+      this.updateStatus()
+      this.calculateWarnings()
+    } catch (e: any) {
+      this.emitError({
+        message: 'Error updating the SignAccountOpController',
+        error: e,
+        level: 'silent'
       })
     }
-    const hasGasUsedChanged = initialGasUsed !== this.gasUsed
-
-    // calculate the fee speeds if either there are no feeSpeeds
-    // or any of properties for update is requested
-    if (
-      !Object.keys(this.feeSpeeds).length ||
-      Array.isArray(calls) ||
-      gasPrices ||
-      estimation ||
-      hasGasUsedChanged ||
-      bundlerGasPrices
-    ) {
-      this.#updateFeeSpeeds()
-    }
-
-    // Here, we expect to have most of the fields set, so we can safely set GasFeePayment
-    this.#setGasFeePayment()
-    this.updateStatus()
-    this.calculateWarnings()
   }
 
   updateStatus(forceStatusChange?: SigningStatus, replacementFeeLow = false) {
@@ -1119,7 +1128,7 @@ export class SignAccountOpController extends EventEmitter {
   }
 
   getAvailableFeeOptions(): FeePaymentOption[] {
-    if (!this.estimation || this.estimation instanceof Error) return []
+    if (!this.estimation || this.estimation instanceof Error || this.estimation.error) return []
 
     if (this.isSponsored) {
       // if there's no ambireEstimation, it means there's an error
