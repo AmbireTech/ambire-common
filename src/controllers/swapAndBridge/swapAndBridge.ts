@@ -38,6 +38,7 @@ import {
 } from '../../libs/swapAndBridge/swapAndBridge'
 import { getHumanReadableSwapAndBridgeError } from '../../libs/swapAndBridge/swapAndBridgeErrorHumanizer'
 import { getSanitizedAmount } from '../../libs/transfer/amount'
+import { LiFiAPI } from '../../services/lifi/api'
 import { normalizeIncomingSocketToken, SocketAPI } from '../../services/socket/api'
 import { ZERO_ADDRESS } from '../../services/socket/constants'
 import { validateSendTransferAmount } from '../../services/validations/validate'
@@ -112,7 +113,7 @@ export class SwapAndBridgeController extends EventEmitter {
 
   #storage: Storage
 
-  #socketAPI: SocketAPI
+  #serviceProviderAPI: SocketAPI | LiFiAPI
 
   #activeRoutes: ActiveRoute[] = []
 
@@ -190,7 +191,7 @@ export class SwapAndBridgeController extends EventEmitter {
     selectedAccount,
     networks,
     activity,
-    socketAPI,
+    serviceProviderAPI,
     storage,
     actions,
     invite
@@ -198,7 +199,7 @@ export class SwapAndBridgeController extends EventEmitter {
     selectedAccount: SelectedAccountController
     networks: NetworksController
     activity: ActivityController
-    socketAPI: SocketAPI
+    serviceProviderAPI: SocketAPI | LiFiAPI
     storage: Storage
     actions: ActionsController
     invite: InviteController
@@ -207,7 +208,7 @@ export class SwapAndBridgeController extends EventEmitter {
     this.#selectedAccount = selectedAccount
     this.#networks = networks
     this.#activity = activity
-    this.#socketAPI = socketAPI
+    this.#serviceProviderAPI = serviceProviderAPI
     this.#storage = storage
     this.#actions = actions
     this.#invite = invite
@@ -397,7 +398,7 @@ export class SwapAndBridgeController extends EventEmitter {
     this.sessionIds.push(sessionId)
     // do not await the health status check to prevent UI freeze while fetching
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
-    this.#socketAPI.updateHealth()
+    this.#serviceProviderAPI.updateHealth()
     this.updatePortfolioTokenList(this.#selectedAccount.portfolio.tokens)
     this.isTokenListLoading = false
     // Do not await on purpose as it's not critical for the controller state to be ready
@@ -407,7 +408,7 @@ export class SwapAndBridgeController extends EventEmitter {
   }
 
   get isHealthy() {
-    return this.#socketAPI.isHealthy
+    return this.#serviceProviderAPI.isHealthy
   }
 
   #fetchSupportedChainsIfNeeded = async () => {
@@ -417,12 +418,9 @@ export class SwapAndBridgeController extends EventEmitter {
     if (shouldNotReFetchSupportedChains) return
 
     try {
-      const supportedChainsResponse = await this.#socketAPI.getSupportedChains()
+      const supportedChains = await this.#serviceProviderAPI.getSupportedChains()
 
-      this.#cachedSupportedChains = {
-        lastFetched: Date.now(),
-        data: supportedChainsResponse.filter((c) => c.sendingEnabled && c.receivingEnabled)
-      }
+      this.#cachedSupportedChains = { lastFetched: Date.now(), data: supportedChains }
       this.#emitUpdateIfNeeded()
     } catch (error: any) {
       // Fail silently, as this is not a critical feature, Swap & Bridge is still usable
@@ -447,7 +445,7 @@ export class SwapAndBridgeController extends EventEmitter {
       // Reset health to prevent the error state from briefly flashing
       // before the next health check resolves when the Swap & Bridge
       // screen is opened after a some time
-      this.#socketAPI.resetHealth()
+      this.#serviceProviderAPI.resetHealth()
     }
   }
 
@@ -697,7 +695,7 @@ export class SwapAndBridgeController extends EventEmitter {
       now - (toTokenListInCache?.lastFetched || 0) >= TO_TOKEN_LIST_CACHE_THRESHOLD
     if (shouldFetchTokenList) {
       try {
-        toTokenList = await this.#socketAPI.getToTokenList({
+        toTokenList = await this.#serviceProviderAPI.getToTokenList({
           fromChainId: this.fromChainId,
           toChainId: this.toChainId
         })
@@ -773,7 +771,7 @@ export class SwapAndBridgeController extends EventEmitter {
 
     let token: SocketAPIToken | null
     try {
-      token = await this.#socketAPI.getToken({ address, chainId: this.toChainId })
+      token = await this.#serviceProviderAPI.getToken({ address, chainId: this.toChainId })
 
       if (!token)
         throw new SwapAndBridgeError(
@@ -877,7 +875,7 @@ export class SwapAndBridgeController extends EventEmitter {
       }
 
       try {
-        const quoteResult = await this.#socketAPI.quote({
+        const quoteResult = await this.#serviceProviderAPI.quote({
           fromChainId: this.fromChainId!,
           fromTokenAddress: this.fromSelectedToken!.address,
           toChainId: this.toChainId!,
@@ -1094,7 +1092,7 @@ export class SwapAndBridgeController extends EventEmitter {
     if (this.formStatus !== SwapAndBridgeFormStatus.ReadyToSubmit) return
 
     try {
-      const routeResult = await this.#socketAPI.startRoute({
+      const routeResult = await this.#serviceProviderAPI.startRoute({
         fromChainId: this.quote!.fromChainId,
         fromAssetAddress: this.quote!.fromAsset.address,
         toChainId: this.quote!.toChainId,
@@ -1111,7 +1109,7 @@ export class SwapAndBridgeController extends EventEmitter {
 
   async getNextRouteUserTx(activeRouteId: number) {
     try {
-      const route = await this.#socketAPI.getNextRouteUserTx(activeRouteId)
+      const route = await this.#serviceProviderAPI.getNextRouteUserTx(activeRouteId)
       return route
     } catch (error: any) {
       const { message } = getHumanReadableSwapAndBridgeError(error)
@@ -1132,7 +1130,7 @@ export class SwapAndBridgeController extends EventEmitter {
       if (activeRoute.routeStatus === 'completed') return
 
       try {
-        status = await this.#socketAPI.getRouteStatus({
+        status = await this.#serviceProviderAPI.getRouteStatus({
           activeRouteId: activeRoute.activeRouteId,
           userTxIndex: activeRoute.userTxIndex,
           txHash: activeRoute.userTxHash!
@@ -1201,7 +1199,7 @@ export class SwapAndBridgeController extends EventEmitter {
     await this.#initialLoadPromise
 
     try {
-      const route = await this.#socketAPI.updateActiveRoute(activeRoute.activeRouteId)
+      const route = await this.#serviceProviderAPI.updateActiveRoute(activeRoute.activeRouteId)
       this.activeRoutes.push({
         ...activeRoute,
         routeStatus: 'ready',
@@ -1239,7 +1237,7 @@ export class SwapAndBridgeController extends EventEmitter {
         // eslint-disable-next-line @typescript-eslint/no-floating-promises
         ;(async () => {
           let route = currentActiveRoutes[activeRouteIndex].route
-          route = await this.#socketAPI.updateActiveRoute(activeRouteId)
+          route = await this.#serviceProviderAPI.updateActiveRoute(activeRouteId)
           this.updateActiveRoute(activeRouteId, { route })
         })()
       }

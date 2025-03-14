@@ -110,6 +110,7 @@ import {
 } from '../../libs/userOperation/userOperation'
 import { getDefaultBundler } from '../../services/bundlers/getBundler'
 import { GasSpeeds } from '../../services/bundlers/types'
+import { LiFiAPI } from '../../services/lifi/api'
 import { paymasterFactory } from '../../services/paymaster'
 import { failedPaymasters } from '../../services/paymaster/FailedPaymasters'
 import { SocketAPI } from '../../services/socket/api'
@@ -354,6 +355,7 @@ export class MainController extends EventEmitter {
       windowManager: this.#windowManager
     })
     const socketAPI = new SocketAPI({ apiKey: socketApiKey, fetch: this.fetch })
+    const lifiAPI = new LiFiAPI({ apiKey: '', fetch: this.fetch })
     this.dapps = new DappsController(this.#storage)
     this.actions = new ActionsController({
       selectedAccount: this.selectedAccount,
@@ -397,7 +399,7 @@ export class MainController extends EventEmitter {
       networks: this.networks,
       activity: this.activity,
       invite: this.invite,
-      socketAPI,
+      serviceProviderAPI: lifiAPI,
       storage: this.#storage,
       actions: this.actions
     })

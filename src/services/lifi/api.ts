@@ -1,5 +1,7 @@
 import { getAddress } from 'ethers'
 
+import { ExtendedChain, TokensResponse } from '@lifi/types'
+
 import SwapAndBridgeProviderApiError from '../../classes/SwapAndBridgeProviderApiError'
 import { InviteController } from '../../controllers/invite/invite'
 import { CustomResponse, Fetch, RequestInitWithCustomHeaders } from '../../interfaces/fetch'
@@ -20,7 +22,7 @@ import {
   FEE_PERCENT,
   NULL_ADDRESS,
   ZERO_ADDRESS
-} from './constants'
+} from '../socket/constants'
 
 const convertZeroAddressToNullAddressIfNeeded = (addr: string) =>
   addr === ZERO_ADDRESS ? NULL_ADDRESS : addr
@@ -136,9 +138,7 @@ export class LiFiAPI {
       throw new SwapAndBridgeProviderApiError(error)
     }
 
-    // Socket API returns 500 status code with a message in the body, even
-    // in case of a bad request. Not necessarily an internal server error.
-    if (!response.ok || !responseBody?.success) {
+    if (!response.ok) {
       // API returns 2 types of errors, a generic one, on the top level:
       const genericErrorMessage = responseBody?.message?.error || 'no message'
       // ... and a detailed one, nested in the `details` object:
@@ -154,21 +154,21 @@ export class LiFiAPI {
     // successful, in case the API was previously unhealthy (to recover).
     // Do not wait on purpose, to not block or delay the response
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
-    this.updateHealthIfNeeded()
+    // this.updateHealthIfNeeded()
 
-    return responseBody.result
+    return responseBody
   }
 
-  async getSupportedChains(): Promise<SocketAPISupportedChain[]> {
-    const url = `${this.#baseUrl}/supported/chains`
+  async getSupportedChains(): Promise<ExtendedChain[]> {
+    const url = `${this.#baseUrl}/chains?chainTypes=EVM`
 
-    const response = await this.#handleResponse<SocketAPISupportedChain[]>({
+    const response = await this.#handleResponse<{ chains: ExtendedChain[] }>({
       fetchPromise: this.#fetch(url, { headers: this.#headers }),
       errorPrefix:
         'Unable to retrieve the list of supported Swap & Bridge chains from our service provider.'
     })
 
-    return response
+    return response.chains.map((c) => ({ ...c, chainId: c.id }))
   }
 
   /**
@@ -191,16 +191,14 @@ export class LiFiAPI {
     fromChainId: number
     toChainId: number
   }): Promise<SocketAPIToken[]> {
+    // TODO: Figure out a way to pull only a shortlist
     const params = new URLSearchParams({
-      fromChainId: fromChainId.toString(),
-      toChainId: toChainId.toString(),
-      // The long list for some networks is HUGE (e.g. Ethereum has 10,000+ tokens),
-      // which makes serialization and deserialization of this controller computationally expensive.
-      isShortList: 'true'
+      chains: toChainId.toString(),
+      chainTypes: 'EVM'
     })
-    const url = `${this.#baseUrl}/token-lists/to-token-list?${params.toString()}`
+    const url = `${this.#baseUrl}/tokens?${params.toString()}`
 
-    let response = await this.#handleResponse<SocketAPIToken[]>({
+    const response = await this.#handleResponse<TokensResponse>({
       fetchPromise: this.#fetch(url, { headers: this.#headers }),
       errorPrefix:
         'Unable to retrieve the list of supported receive tokens. Please reload to try again.'
@@ -208,20 +206,22 @@ export class LiFiAPI {
 
     // Exception for Optimism, strip out the legacy ETH address
     // TODO: Remove when Socket removes the legacy ETH address from their response
-    if (toChainId === 10)
-      response = response.filter(
-        (token: SocketAPIToken) => token.address !== ETH_ON_OPTIMISM_LEGACY_ADDRESS
-      )
+    // if (toChainId === 10)
+    //   response = response.filter(
+    //     (token: SocketAPIToken) => token.address !== ETH_ON_OPTIMISM_LEGACY_ADDRESS
+    //   )
 
     // Exception for Ethereum, duplicate ETH tokens are incoming from the API.
     // One is with the `ZERO_ADDRESS` and one with `NULL_ADDRESS`, both for ETH.
     // Strip out the one with the `ZERO_ADDRESS` to be consistent with the rest.
-    if (toChainId === 1)
-      response = response.filter((token: SocketAPIToken) => token.address !== ZERO_ADDRESS)
+    // if (toChainId === 1)
+    //   response = response.filter((token: SocketAPIToken) => token.address !== ZERO_ADDRESS)
 
-    response = SocketAPI.addCustomTokens({ chainId: toChainId, tokens: response })
+    // TODO: Add custom tokens
+    // response = SocketAPI.addCustomTokens({ chainId: toChainId, tokens: response })
 
-    return response.map(normalizeIncomingSocketToken)
+    // TODO: Refine types
+    return response.tokens[toChainId].map((t) => ({ ...t, icon: t.logoURI, symbol: t.coinKey }))
   }
 
   async getToken({

@@ -164,7 +164,7 @@ export class SocketAPI {
         'Unable to retrieve the list of supported Swap & Bridge chains from our service provider.'
     })
 
-    return response
+    return response.filter((c) => c.sendingEnabled && c.receivingEnabled)
   }
 
   /**
