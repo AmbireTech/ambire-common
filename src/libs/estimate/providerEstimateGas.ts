@@ -68,7 +68,7 @@ export async function providerEstimateGas(
           to: properties.to,
           value: properties.value,
           data: properties.data,
-          nonce: '0x0'
+          nonce: toBeHex(accountState.eoaNonce as bigint)
         },
         'pending',
         {
@@ -91,7 +91,7 @@ export async function providerEstimateGas(
       to: properties.to,
       value: properties.value,
       data: properties.data,
-      nonce: 0,
+      nonce: Number(accountState.eoaNonce),
       blockTag: 'pending'
     })
     .catch(getHumanReadableEstimationError)

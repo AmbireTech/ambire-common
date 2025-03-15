@@ -85,6 +85,7 @@ export async function getAccountState(
 
     return {
       accountAddr: account.addr,
+      eoaNonce: accResult.isEOA ? eoaNonces[account.addr] : null,
       nonce: !isSmartAccount(account) && !isSmarterEoa ? eoaNonces[account.addr] : accResult.nonce,
       erc4337Nonce: accResult.erc4337Nonce,
       isDeployed: accResult.isDeployed,
