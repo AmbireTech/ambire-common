@@ -261,8 +261,13 @@ export function getFeaturesByNetworkProperties(
     ]
   }
 
+  const predefinedNetSettings = predefinedNetworks.find((net) => net.chainId === chainId)
+
   if ([isSAEnabled, areContractsDeployed, erc4337, hasSingleton].every((p) => p !== 'LOADING')) {
-    if (!isSAEnabled) {
+    const isCustomNetworkWithout4337 =
+      !predefinedNetSettings && !(erc4337 as Erc4337settings).enabled
+
+    if (!isSAEnabled || isCustomNetworkWithout4337) {
       updateFeature('saSupport', {
         level: 'danger',
         title: 'Smart contract wallets are not supported',
@@ -271,8 +276,6 @@ export function getFeaturesByNetworkProperties(
           : 'Unfortunately, this network doesn’t support Smart Accounts. It can be used only with Basic Accounts (EOAs).'
       })
     }
-
-    const predefinedNetSettings = predefinedNetworks.find((net) => net.chainId === chainId)
 
     const erc4337Settings = {
       enabled: is4337Enabled((erc4337 as Erc4337settings).enabled, predefinedNetSettings),
@@ -285,13 +288,13 @@ export function getFeaturesByNetworkProperties(
       ? 'Ambire Smart Accounts via ERC-4337 (Account Abstraction)'
       : 'Ambire Smart Accounts'
 
-    if (isSAEnabled && areContractsDeployed) {
+    if (!isCustomNetworkWithout4337 && isSAEnabled && areContractsDeployed) {
       updateFeature('saSupport', {
         title,
         level: 'success',
         msg: "This network supports Smart Accounts, and Ambire Wallet's smart contracts are deployed."
       })
-    } else if (isSAEnabled && !areContractsDeployed) {
+    } else if (!isCustomNetworkWithout4337 && isSAEnabled && !areContractsDeployed) {
       updateFeature('saSupport', {
         title,
         level: 'warning',
