@@ -27,7 +27,7 @@ export class V2 extends BaseAccount {
     const hasPaymaster =
       this.network.erc4337.enabled &&
       estimation.bundlerEstimation &&
-      estimation.bundlerEstimation.paymaster
+      estimation.bundlerEstimation.paymaster.isUsable()
 
     // on a 4437 network where the account is not deployed,
     // we force the user to pay by ERC-4337 to enable the entry point

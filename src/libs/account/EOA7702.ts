@@ -34,7 +34,7 @@ export class EOA7702 extends BaseAccount {
         opt.paidBy === this.account.addr &&
         opt.availableAmount > 0n &&
         (isNative(opt.token) ||
-          (estimation.bundlerEstimation && estimation.bundlerEstimation.paymaster))
+          (estimation.bundlerEstimation && estimation.bundlerEstimation.paymaster.isUsable()))
     )
   }
 
