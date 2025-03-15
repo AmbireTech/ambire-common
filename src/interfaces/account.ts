@@ -34,7 +34,7 @@ export interface AccountCreation {
 export interface AccountOnchainState {
   accountAddr: string
   isDeployed: boolean
-  // this is a number and not a bigint because of ethers (it uses number for nonces)
+  eoaNonce: bigint | null
   nonce: bigint
   erc4337Nonce: bigint
   associatedKeys: { [key: string]: string }
