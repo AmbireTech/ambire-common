@@ -72,6 +72,7 @@ describe('Debug tracecall detection for transactions', () => {
     state = {
       accountAddr: ACCOUNT_ADDRESS,
       nonce: 1n,
+      eoaNonce: 1n,
       erc4337Nonce: 115792089237316195423570985008687907853269984665640564039457584007913129639935n,
       isDeployed: true,
       isV2: true,
