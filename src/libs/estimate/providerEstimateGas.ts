@@ -1,4 +1,4 @@
-import { Interface, toBeHex, ZeroAddress } from 'ethers'
+import { Interface, toBeHex, toQuantity, ZeroAddress } from 'ethers'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import { DEPLOYLESS_SIMULATION_FROM } from '../../consts/deploy'
@@ -60,40 +60,27 @@ export async function providerEstimateGas(
     }
   ]
   const properties = getEstimateGasProps(op, account, accountState)
-  if (properties.useStateOverride && !network.rpcNoStateOverride) {
-    const gasUsed = await provider
-      .send('eth_estimateGas', [
-        {
-          from: properties.from,
-          to: properties.to,
-          value: properties.value,
-          data: properties.data,
-          nonce: toBeHex(accountState.eoaNonce as bigint)
-        },
-        'pending',
-        {
-          [DEPLOYLESS_SIMULATION_FROM]: {
-            balance: '0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff'
-          }
-        }
-      ])
-      .catch(getHumanReadableEstimationError)
-    if (gasUsed instanceof Error) return gasUsed
-    return {
-      gasUsed: BigInt(gasUsed),
-      feePaymentOptions
+
+  const txnParams = {
+    from: properties.from,
+    to: properties.to,
+    value: toQuantity(properties.value),
+    data: properties.data,
+    nonce: toQuantity(accountState.eoaNonce as bigint)
+  }
+  const blockTag = 'pending'
+  const stateOverride = {
+    [DEPLOYLESS_SIMULATION_FROM]: {
+      balance: '0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff'
     }
   }
+  const params =
+    properties.useStateOverride && !network.rpcNoStateOverride
+      ? [txnParams, blockTag, stateOverride]
+      : [txnParams, blockTag]
 
   const gasUsed = await provider
-    .estimateGas({
-      from: properties.from,
-      to: properties.to,
-      value: properties.value,
-      data: properties.data,
-      nonce: Number(accountState.eoaNonce),
-      blockTag: 'pending'
-    })
+    .send('eth_estimateGas', params)
     .catch(getHumanReadableEstimationError)
   if (gasUsed instanceof Error) return gasUsed
   return {
