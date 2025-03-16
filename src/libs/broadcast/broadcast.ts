@@ -1,4 +1,4 @@
-import { Interface } from 'ethers'
+import { Interface, toQuantity } from 'ethers'
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json'
 import ERC20 from '../../../contracts/compiled/IERC20.json'
@@ -60,14 +60,16 @@ async function estimateGas(
   if (counter > 10) throw new Error('Failed estimating gas from broadcast')
 
   const callEstimateGas = provider
-    .estimateGas({
-      from,
-      to: call.to,
-      value: call.value,
-      data: call.data,
-      nonce,
-      blockTag: 'pending'
-    })
+    .send('eth_estimateGas', [
+      {
+        from,
+        to: call.to,
+        value: toQuantity(call.value),
+        data: call.data,
+        nonce: toQuantity(nonce)
+      },
+      'pending'
+    ])
     .catch((e) => e)
   const callGetNonce = provider.getTransactionCount(from).catch(() => null)
   const [gasLimit, foundNonce] = await Promise.all([callEstimateGas, callGetNonce])
