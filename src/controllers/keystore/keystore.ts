@@ -12,6 +12,7 @@ import {
 import { concat, getBytes, hexlify, keccak256, Mnemonic, toUtf8Bytes, Wallet } from 'ethers'
 import scrypt from 'scrypt-js'
 
+import { Account } from 'interfaces/account'
 import EmittableError from '../../classes/EmittableError'
 import { DERIVATION_OPTIONS, HD_PATH_TEMPLATE_TYPE } from '../../consts/derivation'
 import { Banner } from '../../interfaces/banner'
@@ -30,6 +31,7 @@ import {
 } from '../../interfaces/keystore'
 import { Storage } from '../../interfaces/storage'
 import { WindowManager } from '../../interfaces/window'
+import { AccountOp } from '../../libs/accountOp/accountOp'
 import { EntropyGenerator } from '../../libs/entropyGenerator/entropyGenerator'
 import {
   getDefaultKeyLabel,
@@ -39,6 +41,7 @@ import {
   migrateKeyPreferencesToKeystoreKeys,
   migrateKeystoreSeedsWithoutHdPathTemplate
 } from '../../libs/keys/keys'
+import shortenAddress from '../../utils/shortenAddress'
 import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter'
 
 const scryptDefaults = { N: 131072, r: 8, p: 1, dkLen: 64 }
@@ -969,6 +972,28 @@ export class KeystoreController extends EventEmitter {
         ]
       }
     ]
+  }
+
+  getAccountKeys(acc: Account): Key[] {
+    return this.keys.filter((key) => acc.associatedKeys.includes(key.addr))
+  }
+
+  getFeePayerKey(op: AccountOp): Key | Error {
+    const feePayerKeys = this.keys.filter((key) => key.addr === op.gasFeePayment!.paidBy)
+    const feePayerKey =
+      // Temporarily prioritize the key with the same type as the signing key.
+      // TODO: Implement a way to choose the key type to broadcast with.
+      feePayerKeys.find((key) => key.type === op.signingKeyType) || feePayerKeys[0]
+
+    if (!feePayerKey) {
+      const missingKeyAddr = shortenAddress(op.gasFeePayment!.paidBy, 13)
+      const accAddr = shortenAddress(op.accountAddr, 13)
+      return new Error(
+        `Key with address ${missingKeyAddr} for account with address ${accAddr} not found. 'Please try again or contact support if the problem persists.'`
+      )
+    }
+
+    return feePayerKey
   }
 
   toJSON() {

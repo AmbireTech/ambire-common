@@ -1,4 +1,5 @@
-import { AccountOp, AccountOpStatus } from '../accountOp/accountOp'
+import { AccountOp } from '../accountOp/accountOp'
+import { AccountOpStatus } from '../accountOp/types'
 import { PendingAmounts } from './interfaces'
 
 /**

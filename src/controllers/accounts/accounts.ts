@@ -13,7 +13,6 @@ import {
   migrateAccountPreferencesToAccounts
 } from '../../libs/account/account'
 import { getAccountState } from '../../libs/accountState/accountState'
-import { InternalSignedMessages, SignedMessage } from '../activity/types'
 import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter'
 import { NetworksController } from '../networks/networks'
 import { ProvidersController } from '../providers/providers'
@@ -49,9 +48,6 @@ export class AccountsController extends EventEmitter {
   // Holds the initial load promise, so that one can wait until it completes
   initialLoadPromise: Promise<void>
 
-  // all SignedMessage type 7702-authorization the user has signed
-  #authorizations: InternalSignedMessages
-
   constructor(
     storage: Storage,
     providers: ProvidersController,
@@ -70,16 +66,14 @@ export class AccountsController extends EventEmitter {
 
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.initialLoadPromise = this.#load()
-    this.#authorizations = {}
   }
 
   async #load() {
     await this.#networks.initialLoadPromise
     await this.#providers.initialLoadPromise
-    const [accounts, accountPreferences, storageSignedMessages] = await Promise.all([
+    const [accounts, accountPreferences] = await Promise.all([
       this.#storage.get('accounts', []),
-      this.#storage.get('accountPreferences', undefined),
-      this.#storage.get('signedMessages', {})
+      this.#storage.get('accountPreferences', undefined)
     ])
     if (accountPreferences) {
       this.accounts = getUniqueAccountsArray(
@@ -91,30 +85,12 @@ export class AccountsController extends EventEmitter {
       this.accounts = getUniqueAccountsArray(accounts)
     }
 
-    // add all the authorizations the user has signed
-    const signedMessages = storageSignedMessages as InternalSignedMessages
-    this.accounts.forEach((acc) => {
-      if (!signedMessages[acc.addr] || signedMessages[acc.addr].length === 0) return
-
-      this.#authorizations[acc.addr] = signedMessages[acc.addr].filter(
-        (msg) => msg.content.kind === 'authorization-7702'
-      )
-    })
-
     // Emit an update before updating account states as the first state update may take some time
     this.emitUpdate()
     // Don't await this. Networks should update one by one
     // NOTE: YOU MUST USE waitForAccountsCtrlFirstLoad IN TESTS
     // TO ENSURE ACCOUNT STATE IS LOADED
     this.#updateAccountStates(this.accounts)
-  }
-
-  update({ authorization }: { authorization: SignedMessage }) {
-    if (authorization.content.kind !== 'authorization-7702') return
-
-    if (!this.#authorizations[authorization.accountAddr])
-      this.#authorizations[authorization.accountAddr] = []
-    this.#authorizations[authorization.accountAddr].push(authorization)
   }
 
   async updateAccountStates(blockTag: string | number = 'latest', networks: NetworkId[] = []) {
@@ -159,7 +135,6 @@ export class AccountsController extends EventEmitter {
             this.#providers.providers[network.id],
             network,
             accounts,
-            this.#authorizations,
             blockTag
           )
 
@@ -232,7 +207,7 @@ export class AccountsController extends EventEmitter {
     this.accounts = this.accounts.filter((acc) => acc.addr !== address)
 
     delete this.accountStates[address]
-    if (this.#authorizations[address]) delete this.#authorizations[address]
+
     this.#storage.set('accounts', this.accounts)
     this.emitUpdate()
   }
@@ -290,18 +265,6 @@ export class AccountsController extends EventEmitter {
       await this.updateAccountState(addr, 'latest', [networkId])
 
     return this.accountStates[addr][networkId]
-  }
-
-  async updateDisable7702Reminders(
-    accAddr: string,
-    opts: { disable7702Popup?: boolean; disable7702Banner?: boolean }
-  ) {
-    const account = this.accounts.find((acc) => acc.addr === accAddr)
-    if (!account) return
-
-    if (opts.disable7702Popup) account.disable7702Popup = opts.disable7702Popup
-    if (opts.disable7702Banner) account.disable7702Banner = opts.disable7702Banner
-    await this.#storage.set('accounts', this.accounts)
   }
 
   toJSON() {

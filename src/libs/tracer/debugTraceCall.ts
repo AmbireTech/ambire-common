@@ -116,6 +116,7 @@ export async function debugTraceCall(
         disableStorage: true,
         stateOverrides: supportsStateOverride
           ? {
+              // TODO: if it's an EOA, add the EOA state override data
               [params.from]: {
                 balance: '0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff'
               },
