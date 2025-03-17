@@ -16,7 +16,6 @@ import {
   AccountAssetsState as PortfolioAccountAssetsState,
   PreviousHintsStorage
 } from '../../libs/portfolio/interfaces'
-import { parse } from '../../libs/richJson/richJson'
 import {
   getShouldMigrateKeystoreSeedsWithoutHdPath,
   migrateCustomTokens,
@@ -76,7 +75,9 @@ export class StorageController {
   }
 
   async #load() {
-    await this.#initStorage()
+    const storage = await this.#storageAPI.get(undefined, {})
+
+    if (!Object.keys(storage).length) return
 
     try {
       // IMPORTANT: should be ordered by versions
@@ -248,30 +249,21 @@ export class StorageController {
     }
   }
 
-  async #initStorage() {
-    const storage = await this.#storageAPI.get(null, {})
+  async get(): Promise<StorageType>
 
-    if (!Object.keys(storage).length) return
+  async get<K extends keyof StorageType>(
+    key: K,
+    defaultValue?: StorageType[K]
+  ): Promise<StorageType[K]>
+  async get<K extends string>(key: K, defaultValue?: any): Promise<any>
 
-    Object.keys(storage).forEach((key) => {
-      try {
-        this.#storage[key as keyof StorageType] =
-          typeof storage[key] === 'string' ? parse(storage[key]) : storage[key]
-      } catch (error) {
-        if (typeof storage[key] === 'string') {
-          this.#storage[key as keyof StorageType] = storage[key]
-        }
-      }
-    })
-  }
-
-  async get(key: string | null, defaultValue?: any) {
+  async get(key?: keyof StorageType | string | null, defaultValue?: any): Promise<any> {
     await this.#initialLoadPromise
     await this.#updateQueue
 
-    if (key === null) return this.#storage
+    if (!key) return this.#storage
 
-    return (this.#storage as any)[key] ?? defaultValue
+    return this.#storage[key as keyof StorageType] ?? defaultValue
   }
 
   async set(key: string, value: any) {

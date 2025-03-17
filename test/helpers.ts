@@ -130,8 +130,8 @@ function produceMemoryStore(): Storage {
   }
 
   return {
-    get: (key, defaultValue): any => {
-      if (key === null) {
+    get: (key?: string, defaultValue?: any): any => {
+      if (!key) {
         return Object.fromEntries(
           Object.entries(Object.fromEntries(storage)).map(([k, value]) => [k, formatValue(value)])
         )
