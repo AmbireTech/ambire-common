@@ -1,6 +1,5 @@
 /* eslint no-console: "off" */
 
-import { StorageController } from 'controllers/storage/storage'
 import { ethers } from 'ethers'
 import fetch from 'node-fetch'
 import { EventEmitter } from 'stream'
@@ -34,6 +33,7 @@ import { KeystoreController } from '../keystore/keystore'
 import { NetworksController } from '../networks/networks'
 import { PortfolioController } from '../portfolio/portfolio'
 import { ProvidersController } from '../providers/providers'
+import { StorageController } from '../storage/storage'
 import { getFeeSpeedIdentifier } from './helper'
 import { SignAccountOpController, SigningStatus } from './signAccountOp'
 

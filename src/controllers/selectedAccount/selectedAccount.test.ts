@@ -1,5 +1,4 @@
 import EventEmitterClass from 'controllers/eventEmitter/eventEmitter'
-import { StorageController } from 'controllers/storage/storage'
 import EventEmitter from 'events'
 import fetch from 'node-fetch'
 
@@ -18,6 +17,7 @@ import { DefiPositionsController } from '../defiPositions/defiPositions'
 import { NetworksController } from '../networks/networks'
 import { PortfolioController } from '../portfolio/portfolio'
 import { ProvidersController } from '../providers/providers'
+import { StorageController } from '../storage/storage'
 import { DEFAULT_SELECTED_ACCOUNT_PORTFOLIO, SelectedAccountController } from './selectedAccount'
 
 const providers = Object.fromEntries(
